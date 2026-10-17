@@ -17,7 +17,7 @@ use crate::{
 use float_arithmetic::float_dyad;
 use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{
-    agreement::{block, blocks, each_block, map1, map2, read_mapped, Mapping}, buffer::{ComplexWidth, Complexes, DType, Element, FloatWidth, Floats, Ints, Source, View, Width},
+    agreement::{block, blocks, each_block, map1, map2, read_mapped, Mapping}, buffer::{Buffer, ComplexWidth, Complexes, DType, Element, FloatWidth, Floats, Ints, Source, View, Width},
     linalg::{AndOr, Inner, MaxPlus, MinPlus, OrAnd, Orientation, PlusEqual, PlusNotEqual, PlusTimes}, pairs, reduce::{self, Reduction}, search::Grouped,
     tolerant::{Tolerant, TolerantComplex}, with_complex_width, with_complexes, with_float_width, with_floats, with_ints, with_tolerance, with_width,
     Arg, CHUNK, Native
@@ -535,13 +535,11 @@ fn products(left: &Value, right: &Value, width: Width, agreement: &Agreement) ->
     let bounds = |v: &Value| match v.as_items() {
         Items::Compact(View::Integers(ints)) if !v.is_empty() => Some(with_ints!(ints, |n| {
             let (lo, hi) = reduce::extremes(n);
-            [i128::from(lo.to_i64()), i128::from(hi.to_i64())]
+            [lo.to_i64(), hi.to_i64()]
         })),
         _ => None,
     };
-    let ([a, b], [c, d]) = (bounds(left)?, bounds(right)?);
-    let corners = [a * c, a * d, b * c, b * d];
-    let (lo, hi) = (i64::try_from(corners.into_iter().min()?).ok()?, i64::try_from(corners.into_iter().max()?).ok()?);
+    let [lo, hi] = rustymath::integer::product_bounds(bounds(left)?, bounds(right)?)?;
     let to = Width::narrowest(lo, hi).join(width);
     match width {
         Width::U8 => run::<u8>(left, right, to, agreement), Width::I16 => run::<i16>(left, right, to, agreement),
@@ -696,14 +694,6 @@ fn circle(codes: &Value, right: &Value, agreement: &Agreement, inverse: bool, nu
 /// One item's result for `rustymath::pairs`: the value, or `B::FILL` and a failure.
 #[inline]
 fn item_result<B: Stored>(result: Option<B>) -> (B, bool) { (result.unwrap_or(B::FILL), result.is_some()) }
-
-/// One item's result in the scans. A failure clears `ok` and gives `B::FILL`.
-#[inline]
-fn noted<B: Stored>(ok: &mut bool, result: Option<B>) -> B {
-    let (value, good) = item_result(result);
-    *ok &= good;
-    value
-}
 
 /// A loop over the frame of `agreement`. Kernels of approximate numbers compare within the tolerance of their width in `numeric`.
 struct Map<'a, X, Y> { x: &'a [X], y: &'a [Y], agreement: &'a Agreement, numeric: Numeric }
@@ -902,15 +892,7 @@ impl<F: Stored> Monad<F> for Stage<'_, '_, F> {
 /// A reduction of compact values along `axis`, from the right as the general fold does. `+`, `×`, `⌊` and `⌈` on reals, and `-` and `÷` along lanes of consecutive items, may combine the items in any order, which lets them vectorize. Float sums and products use algebraic operations for that. A quotient whose running products leave the normal range folds item by item instead. Other functions need at least two items in each lane. Kernels of approximate numbers compare within the tolerance of their width.
 pub(crate) fn fold(p: Primitive, right: &Value, axis: &Lanes, shape: Vec<usize>, numeric: Numeric) -> Option<Value> {
     if let Some(result) = halves(&[Some(right)], numeric, |v, numeric| fold(p, v[0]?, axis, shape.clone(), numeric)) { return result; }
-    match right.as_items() {
-        Items::Compact(View::Floats(data)) => with_floats!(kernel data, |data| float_fold(p, data, axis, shape, numeric)),
-        // `+/` counts the 1s, and `∧/ ∨/ ⌊/ ⌈/ ≠/ =/` fold by rustymath's Boolean reductions. Other logical functions and comparisons give Booleans. Other functions read Booleans as integers.
-        Items::Compact(View::Booleans(data)) => with_truth_reduction!(p, axis.len, R => Stored::build_narrowed(shape.clone(), reduce::along::<bool, R>(data, axis.dims()).0))
-            .flatten().or_else(|| bool::dyad(p, Fold::exact(data, axis, shape.clone()))?).or_else(|| integer_fold(p, truth_bytes(data), axis, shape)),
-        Items::Compact(View::Integers(ints)) => with_ints!(ints, |data| integer_fold(p, data, axis, shape)),
-        Items::Compact(View::Complexes(data)) => with_complexes!(data, |data| complex_fold(p, data, axis, shape, numeric)),
-        _ => None,
-    }
+    Value::from_buffer(shape, native_fold(p, right.view()?, axis.dims(), None, axis.len, numeric)?).ok()
 }
 
 /// The fold by `p` of each group of the vector `right` that `groups` gives: `+`, `×`, `⌈` and `⌊` of floats, `+`, `⌈` and `⌊` of integers, and Booleans by the reductions that `fold` gives them. Each group's fold combines its items in their order, where `fold`'s kernels may combine them in another order. `None` for any other function or storage, or where an integer sum leaves `i64`.
@@ -919,7 +901,7 @@ pub(crate) fn fold_groups(p: Primitive, right: &Value, groups: &Grouped, numeric
     let shape = vec![groups.firsts.len()];
     match right.as_items() {
         Items::Compact(View::Floats(data)) => with_floats!(kernel data, |data| float_groups(p, data, groups, shape)),
-        Items::Compact(View::Booleans(data)) => with_truth_reduction!(p, data.len(), R => Stored::build_narrowed(shape, group_folds::<bool, R>(data, groups).0)).flatten(),
+        Items::Compact(View::Booleans(data)) => with_truth_reduction!(p, data.len(), R => Stored::build_narrowed(shape, groups.fold::<bool, R>(data).0)).flatten(),
         Items::Compact(View::Integers(ints)) => with_ints!(ints, |data| integer_groups(p, data, groups, shape)),
         _ => None,
     }
@@ -927,50 +909,39 @@ pub(crate) fn fold_groups(p: Primitive, right: &Value, groups: &Grouped, numeric
 
 /// `fold_groups` of floats of width `F`, by the `Reduction` that `with_float_reduction!` names.
 fn float_groups<F: Float + Native + Kernels>(p: Primitive, data: &[F], groups: &Grouped, shape: Vec<usize>) -> Option<Value> where bool: Source<F> {
-    with_float_reduction!(p, R => F::build_narrowed(shape, group_folds::<F, R>(data, groups).0)).flatten()
+    with_float_reduction!(p, R => F::build_narrowed(shape, groups.fold::<F, R>(data).0)).flatten()
 }
 
 /// `fold_groups` of integers.
 fn integer_groups<T: Whole>(p: Primitive, data: &[T], groups: &Grouped, shape: Vec<usize>) -> Option<Value> where
     reduce::Sum: Reduction<T, Total = i64>, reduce::Max: Reduction<T, Total = T>, reduce::Min: Reduction<T, Total = T> {
     match p {
-        Primitive::Arithmetic(Arithmetic::Plus) => match group_folds::<T, reduce::Sum>(data, groups) { (sums, true) => i64::build_narrowed(shape, sums), _ => None },
-        Primitive::Math(Math::Ceiling) => T::build_narrowed(shape, group_folds::<T, reduce::Max>(data, groups).0),
-        Primitive::Math(Math::Floor) => T::build_narrowed(shape, group_folds::<T, reduce::Min>(data, groups).0),
+        Primitive::Arithmetic(Arithmetic::Plus) => match groups.fold::<T, reduce::Sum>(data) { (sums, true) => i64::build_narrowed(shape, sums), _ => None },
+        Primitive::Math(Math::Ceiling) => T::build_narrowed(shape, groups.fold::<T, reduce::Max>(data).0),
+        Primitive::Math(Math::Floor) => T::build_narrowed(shape, groups.fold::<T, reduce::Min>(data).0),
         _ => None,
     }
 }
 
-/// The fold by `R` of each group of `data` that `groups` gives, in order, and whether every fold fits.
-fn group_folds<T: Copy, R: Reduction<T>>(data: &[T], groups: &Grouped) -> (Vec<R::Total>, bool) {
-    let mut fits = true;
-    let totals = groups.each().map(|rows| {
-        let (mut total, mut ok) = R::one(data[rows[0] as usize]);
-        for &r in &rows[1..] {
-            let (t, k) = R::checked(total, data[r as usize]);
-            (total, ok) = (t, ok && k);
-        }
-        fits &= ok;
-        total
-    }).collect();
-    (totals, fits)
-}
-
 /// A reduction of floats of width `F`, by the `Reduction` that `with_float_reduction!` names, by `alternating` for `-/` and `÷/`, or by the general fold.
-fn float_fold<F: Float + Native + Kernels>(p: Primitive, data: &[F], axis: &Lanes, shape: Vec<usize>, numeric: Numeric) -> Option<Value> where bool: Source<F> {
-    if let Some(result) = with_float_reduction!(p, R => F::build_narrowed(shape.clone(), reduce::along::<F, R>(data, axis.dims()).0)) { return result; }
-    match alternating(p, data, axis) { Some(lanes) => F::build_narrowed(shape, lanes), None => F::dyad(p, Fold { data, axis, shape, numeric })? }
+fn float_fold<F: Float + Native + Kernels>(p: Primitive, data: &[F], dims: [usize; 3], tail: Option<View<'_>>, numeric: Numeric) -> Option<Buffer> where bool: Source<F> {
+    if let Some(result) = with_float_reduction!(p, R => reduced::<F, R>(data, dims, tail)) { return result; }
+    if tail.is_none() {
+        if let Some(lanes) = alternating(p, data, dims) { return Some(F::buffer(lanes)); }
+    }
+    F::dyad(p, Fold::new(data, dims, tail, numeric)?)?
 }
 
 /// The reduction of complex numbers whose parts have width `F`. `+/` adds them through rustymath's sums, and `-/` and `÷/` fold through `alternating`. Other functions fold item by item.
-fn complex_fold<F: Native>(p: Primitive, data: &[Complex<F>], axis: &Lanes, shape: Vec<usize>, numeric: Numeric) -> Option<Value> where Complex<F>: Kernels,
+fn complex_fold<F: Native>(p: Primitive, data: &[Complex<F>], dims: [usize; 3], tail: Option<View<'_>>, numeric: Numeric) -> Option<Buffer> where Complex<F>: Kernels,
     bool: Source<Complex<F>> {
     if let Primitive::Arithmetic(Arithmetic::Plus) = p {
-        return Complex::<F>::build_narrowed(shape, reduce::along::<Complex<F>, reduce::Sum>(data, axis.dims()).0);
+        return reduced::<Complex<F>, reduce::Sum>(data, dims, tail);
     }
-    match alternating(p, data, axis) {
-        Some(lanes) => Complex::<F>::build_narrowed(shape, lanes), None => Complex::<F>::dyad(p, Fold { data, axis, shape, numeric })?
+    if tail.is_none() {
+        if let Some(lanes) = alternating(p, data, dims) { return Some(Complex::<F>::buffer(lanes)); }
     }
+    Complex::<F>::dyad(p, Fold::new(data, dims, tail, numeric)?)?
 }
 
 /// Runs `$body` with the type `$r` standing for rustymath's `Reduction` by which `$p/` folds floats, for `+/`, `×/`, `⌈/` and `⌊/`, or gives `None` for any other `$p`.
@@ -1000,55 +971,39 @@ macro_rules! with_float_reduction {
 pub(crate) use with_float_reduction;
 
 /// A reduction of compact integers. `+/` sums at 64 bits, and a sum outside `i64` takes the `Number` path. `⌊/` and `⌈/` run at the items' width. `-/` along a lane of consecutive items sums its pairs' differences at 64 bits. `∧/` and `∨/` on 0s and 1s are their minimum and maximum. Other functions, and the cases above that don't fit, run the exact fold on the items as 64-bit integers.
-fn integer_fold<T: Whole>(p: Primitive, data: &[T], axis: &Lanes, shape: Vec<usize>) -> Option<Value> where
+fn integer_fold<T: Whole>(p: Primitive, data: &[T], dims: [usize; 3], tail: Option<View<'_>>) -> Option<Buffer> where
     reduce::Sum: Reduction<T, Total = i64> + reduce::Alternating<T, Total = i64>, reduce::Max: Reduction<T, Total = T>, reduce::Min: Reduction<T, Total = T> {
     use {Arithmetic::*, Math::*};
-    let dims = axis.dims();
+    let axis = Lanes { outer: dims[0], len: dims[1], inner: dims[2] };
     let boolean = || {
-        axis.len > 0 && { let (min, max) = reduce::extremes(data); min.to_i64() >= 0 && max.to_i64() <= 1 }
+        tail.is_none() && axis.len > 0 && { let (min, max) = reduce::extremes(data); min.to_i64() >= 0 && max.to_i64() <= 1 }
     };
     // The exact fold reads 64-bit items in place, and narrower items widened.
-    let exact = |shape| {
+    let exact = || {
         let wide: Cow<'_, [i64]> =
             if T::WIDTH == Width::I64 { Cow::Borrowed(bytemuck::cast_slice(data)) } else { Cow::Owned(data.iter().map(|n| n.to_i64()).collect()) };
-        i64::dyad(p, Fold::exact(&wide, axis, shape))
+        i64::dyad(p, Fold::new(&wide, dims, tail, Numeric::EXACT)?)?
     };
     match p {
-        Primitive::Arithmetic(Plus) => match reduce::along::<T, reduce::Sum>(data, dims) { (sums, true) => i64::build_narrowed(shape, sums), _ => None },
-        Primitive::Math(Ceiling) => T::build_narrowed(shape, reduce::along::<T, reduce::Max>(data, dims).0),
-        Primitive::Math(Floor) => T::build_narrowed(shape, reduce::along::<T, reduce::Min>(data, dims).0),
-        Primitive::Math(Gcd) if boolean() => T::build_narrowed(shape, reduce::along::<T, reduce::Max>(data, dims).0),
-        Primitive::Math(Lcm) if boolean() => T::build_narrowed(shape, reduce::along::<T, reduce::Min>(data, dims).0),
-        Primitive::Arithmetic(Minus) if axis.inner == 1 => match lanes_by::<T, reduce::Sum>(data, axis.len) {
-            Some(sums) => i64::build_narrowed(shape, sums), None => exact(shape)?
+        Primitive::Arithmetic(Plus) => reduced::<T, reduce::Sum>(data, dims, tail),
+        Primitive::Math(Ceiling) => reduced::<T, reduce::Max>(data, dims, tail),
+        Primitive::Math(Floor) => reduced::<T, reduce::Min>(data, dims, tail),
+        Primitive::Math(Gcd) if boolean() => reduced::<T, reduce::Max>(data, dims, tail),
+        Primitive::Math(Lcm) if boolean() => reduced::<T, reduce::Min>(data, dims, tail),
+        Primitive::Arithmetic(Minus) if axis.inner == 1 && tail.is_none() => match reduce::alternating_lanes::<T, reduce::Sum>(data, axis.len) {
+            Some(sums) => Some(i64::buffer(sums)), None => exact()
         },
-        _ => exact(shape)?,
+        _ => exact(),
     }
 }
 
 /// The folds by `-` or `÷` of lanes of consecutive items, through rustymath's `Alternating`: the sums of the lanes' pairs' differences, or the products of their ratios. `None` for any other function or axis, or where a fold doesn't fit.
-fn alternating<A: Copy>(p: Primitive, data: &[A], axis: &Lanes) -> Option<Vec<A>> where reduce::Sum: reduce::Alternating<A, Total = A>,
+fn alternating<A: Copy>(p: Primitive, data: &[A], dims: [usize; 3]) -> Option<Vec<A>> where reduce::Sum: reduce::Alternating<A, Total = A>,
     reduce::Product: reduce::Alternating<A, Total = A> {
     match p {
-        Primitive::Arithmetic(Arithmetic::Minus) if axis.inner == 1 => lanes_by::<A, reduce::Sum>(data, axis.len),
-        Primitive::Arithmetic(Arithmetic::Divide) if axis.inner == 1 => lanes_by::<A, reduce::Product>(data, axis.len), _ => None
+        Primitive::Arithmetic(Arithmetic::Minus) if dims[2] == 1 => reduce::alternating_lanes::<A, reduce::Sum>(data, dims[1]),
+        Primitive::Arithmetic(Arithmetic::Divide) if dims[2] == 1 => reduce::alternating_lanes::<A, reduce::Product>(data, dims[1]), _ => None
     }
-}
-
-/// The alternating fold by `R` of each lane of `len` consecutive items of `data`, or `None` where one doesn't fit.
-fn lanes_by<A: Copy, R: reduce::Alternating<A>>(data: &[A], len: usize) -> Option<Vec<R::Total>> {
-    data.chunks(len.max(1)).map(|lane| match R::alternating(lane) { (total, true) => Some(total), _ => None }).collect()
-}
-/// `data` with each lane's items after its first negated, or every item when `seeded`. `-\` scans `((x0 - x1) - x2) - …`, which is the running sum of the result's lane, with the seed as its start.
-fn negated_tail<A: Copy, B: Copy + std::ops::Neg<Output = B>>(data: &[A], axis: &Lanes, seeded: bool, read: impl Fn(A) -> B) -> Vec<B> {
-    let mut out = Vec::with_capacity(data.len());
-    if data.is_empty() { return out; }
-    let keep = if seeded { 0 } else { axis.inner };
-    for lane in data.chunks(axis.len * axis.inner) {
-        out.extend(lane[..keep].iter().map(|&x| read(x)));
-        out.extend(lane[keep..].iter().map(|&x| -read(x)));
-    }
-    out
 }
 
 /// Runs `$body` with the type `$r` standing for rustymath's `Reduction` by which `$p/` folds Booleans, or gives `None` for any other `$p`. `+/` counts the trues in the narrowest integer type that holds the length `$len` of a lane. A lane of fewer than 256 items counts into a byte, which takes an eighth of the memory of a 64-bit count: counting lanes of 3 into bytes took about half the time of counting them into 64-bit totals. `∧/` and `⌊/` fold by `Min`, `∨/` and `⌈/` by `Max`, `≠/` by `Xor` and `=/` by `Xnor`.
@@ -1067,39 +1022,25 @@ macro_rules! with_truth_reduction {
     };
 }
 pub(crate) use with_truth_reduction;
-/// A reduction along `axis`. Kernels of approximate numbers compare within the tolerance of their width in `numeric`.
-struct Fold<'a, A> { data: &'a [A], axis: &'a Lanes, shape: Vec<usize>, numeric: Numeric }
+/// A native right fold, with an optional already folded right tail. Output keeps its computing type until its caller builds a Value.
+struct Fold<'a, A: Element> { data: &'a [A], dims: [usize; 3], tail: Option<Cow<'a, [A]>>, numeric: Numeric }
 impl<'a, A: Stored> Fold<'a, A> {
-    /// A reduction whose kernels compare exactly, as integers and Booleans do.
-    fn exact(data: &'a [A], axis: &'a Lanes, shape: Vec<usize>) -> Self { Self { data, axis, shape, numeric: Numeric::EXACT } }
-    /// Each lane reduces as `x0 f (x1 f (… f xn))`. Lanes along an inner axis share one pass down the rows.
-    #[inline]
-    fn lanes<B: Copy>(&self, f: impl Fn(A, A) -> Option<B>, cast: impl Fn(B) -> A) -> Option<Vec<B>> {
-        let (axis, len) = (self.axis, self.axis.len);
-        let mut result = Vec::with_capacity(axis.outer * axis.inner);
-        for i in 0..axis.outer {
-            let row = |j: usize| &self.data[axis.offset(i, j, 0)..axis.offset(i, j, axis.inner)];
-            if axis.inner == 1 {
-                let lane = &self.data[axis.offset(i, 0, 0)..axis.offset(i, len, 0)];
-                let mut value = f(lane[len - 2], lane[len - 1])?;
-                for &x in lane[..len - 2].iter().rev() { value = f(x, cast(value))?; }
-                result.push(value);
-                continue;
-            }
-            let start = result.len();
-            for (&x, &y) in row(len - 2).iter().zip(row(len - 1)) { result.push(f(x, y)?); }
-            for j in (0..len - 2).rev() { for (value, &x) in result[start..].iter_mut().zip(row(j)) { *value = f(x, cast(*value))?; } }
-        }
-        Some(result)
+    fn new(data: &'a [A], dims: [usize; 3], tail: Option<View<'a>>, numeric: Numeric) -> Option<Self> {
+        let tail = match tail { None => None, Some(view) => Some(carried::<A>(view)?) };
+        Some(Self { data, dims, tail, numeric })
     }
 }
 impl<A: Stored> Dyad<A> for Fold<'_, A> where bool: Source<A> {
-    type Output = Option<Value>;
+    type Output = Option<Buffer>;
     fn numeric(&self) -> Numeric { self.numeric }
     #[inline]
-    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> { A::build_narrowed(self.shape.clone(), self.lanes(f, |b| b)?) }
+    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Self::Output {
+        Some(A::buffer(reduce::right_fold(self.data, self.dims, self.tail.as_deref(), f, |x| x)?))
+    }
     #[inline]
-    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Option<Value> { bool::build(self.shape.clone(), self.lanes(f, Source::<A>::read)?) }
+    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Self::Output {
+        Some(bool::buffer(reduce::right_fold(self.data, self.dims, self.tail.as_deref(), f, Source::<A>::read)?))
+    }
 }
 
 /// A scan of compact values along `axis` by successive left accumulation, as the general scan does. Kernels of approximate numbers compare within the tolerance of their width in `numeric`.
@@ -1153,7 +1094,7 @@ fn scanned(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Lanes, nume
         if minus && simple && !matches!(ints, Ints::I64(_)) { return with_ints!(ints, |data| integer_sums(data, axis, true, None, right.shape().to_vec())); }
         let tail: Vec<i64>;
         let (p, ints) = if minus && !matches!(&ints, Ints::I64(d) if d.contains(&i64::MIN)) {
-            tail = with_ints!(ints, |data| negated_tail(data, axis, seed.is_some(), |n| n.into()));
+            tail = with_ints!(ints, |data| reduce::negated_tail(data, axis.dims(), seed.is_some(), |n| n.into()));
             (Primitive::Arithmetic(Arithmetic::Plus), Ints::I64(&tail))
         } else { (p, ints) };
         // A seed that fits 64 bits starts each lane's sums.
@@ -1224,7 +1165,7 @@ impl<'a> ScanPlan<'a> {
     }
     /// For `-\` when the scan doesn't invert, `data` with each lane's items after its first negated, which `+\` then scans.
     fn minus_tail<A: Copy + std::ops::Neg<Output = A>>(&self, p: Primitive, data: &[A]) -> Option<Vec<A>> {
-        matches!((p, self.inverse), (Primitive::Arithmetic(Arithmetic::Minus), false)).then(|| negated_tail(data, self.axis, self.seed.is_some(), |x| x))
+        matches!((p, self.inverse), (Primitive::Arithmetic(Arithmetic::Minus), false)).then(|| reduce::negated_tail(data, self.axis.dims(), self.seed.is_some(), |x| x))
     }
 }
 
@@ -1256,14 +1197,12 @@ fn narrow_scan<T: Whole + Kernels>(p: Primitive, scan: Scan<'_, T>) -> Option<Va
 
 /// Running sums along each lane, from `start` or 0, of items between `lo` and `hi`. With `minus`, `-\` along lanes of consecutive items instead: `((x0 - x1) - x2) - …` is `2×x0` less the running sum. `start`, `lo`, `hi` and the lanes' length bound every sum and difference, which fixes the narrowest width that holds them before any is written. The scan wraps at that width, which leaves every sum exact. `None` where 64 bits might not hold them.
 fn running_sums<T: reduce::Term>(data: &[T], [lo, hi]: [i64; 2], axis: &Lanes, minus: bool, start: Option<i64>, shape: Vec<usize>) -> Option<Value> {
-    let (lo, hi, len, s) = (i128::from(lo), i128::from(hi), axis.len as i128, i128::from(start.unwrap_or(0)));
-    let (mut least, mut most) = (s + lo.min(len * lo), s + hi.max(len * hi));
-    if minus { (least, most) = (least.min(2 * lo - most), most.max(2 * hi - least)); }
-    with_width!(Width::narrowest(i64::try_from(least).ok()?, i64::try_from(most).ok()?), U => {
+    let [least, most] = rustymath::integer::sum_bounds([lo, hi], axis.len, start, minus)?;
+    with_width!(Width::narrowest(least, most), U => {
         let mut result: Vec<U> = Vec::with_capacity(data.len());
-        reduce::scan_along::<T, reduce::SumAs<U>>(data, axis.dims(), start.map(reduce::Tally::low), &mut result); if minus && axis.len > 0 {
-            for (lane, totals) in data.chunks(axis.len).zip(result.chunks_mut(axis.len)) { let first: U = reduce::Term::term(lane[0]);
-                for total in totals { *total = first.wrapping_add(first).wrapping_sub(*total) } } } U::build(shape, result)
+        if minus { reduce::subtract_sums(data, axis.len, &mut result); }
+        else { reduce::scan_along::<T, reduce::SumAs<U>>(data, axis.dims(), start.map(reduce::Tally::low), &mut result); }
+        U::build(shape, result)
     })
 }
 
@@ -1287,33 +1226,9 @@ impl<A: Stored> Scan<'_, A> {
     #[inline]
     fn running(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> {
         if self.inverse { return None; }
-        let (axis, seed, mut ok) = (self.axis, self.seed, true);
-        let first = |ok: &mut bool, x: A| match seed { Some(s) => noted(ok, f(s, x)), None => x };
         let mut result = Vec::with_capacity(self.data.len());
-        if axis.inner == 1 {
-            for lane in self.data.chunks(axis.len) {
-                let mut total = first(&mut ok, lane[0]);
-                result.push(total);
-                for &x in &lane[1..] {
-                    total = noted(&mut ok, f(total, x));
-                    result.push(total);
-                }
-            }
-        } else {
-            // Each column of a lane keeps its own total. Each row updates them in place, then appends them.
-            let mut totals = vec![A::FILL; axis.inner];
-            for i in 0..axis.outer {
-                let mut rows = self.data[axis.offset(i, 0, 0)..axis.offset(i, axis.len, 0)].chunks(axis.inner);
-                let Some(row) = rows.next() else { continue };
-                for (t, &x) in totals.iter_mut().zip(row) { *t = first(&mut ok, x) }
-                result.extend_from_slice(&totals);
-                for row in rows {
-                    for (t, &x) in totals.iter_mut().zip(row) { *t = noted(&mut ok, f(*t, x)) }
-                    result.extend_from_slice(&totals);
-                }
-            }
-        }
-        if ok { A::build_narrowed(self.shape, result) } else { None }
+        if !reduce::left_scan(self.data, self.axis.dims(), self.seed, f, &mut result) { return None; }
+        A::build_narrowed(self.shape, result)
     }
     /// The scan by rustymath's reduction `R` along the axis, through `reduce::scan_along`. `None` where a result doesn't fit.
     #[inline]
@@ -1325,109 +1240,25 @@ impl<A: Stored> Scan<'_, A> {
     /// The inverse of a scan by `f`: each item after a lane's first row combined with the item one row before it, and the first row with the seed, as `f(before, item)`, or as `f(item, before)` with `flip`.
     #[inline]
     fn paired(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> {
-        let (step, flip, mut ok) = (self.axis.inner, self.flip, true);
-        let g = move |before, x| if flip { f(x, before) } else { f(before, x) };
+        let g = move |before, x| if self.flip { f(x, before) } else { f(before, x) };
         let mut result = Vec::with_capacity(self.data.len());
-        for i in 0..self.axis.outer {
-            let data = &self.data[self.axis.offset(i, 0, 0)..self.axis.offset(i, self.axis.len, 0)];
-            if data.is_empty() { continue; }
-            let (first, rest) = (&data[..step], data.len() - step);
-            ok &= match self.seed {
-                Some(s) => pairs(Arg::One(s), Arg::Many(first), step, &mut result, |s, y| item_result(g(s, y))),
-                None => { result.extend_from_slice(first); true }
-            };
-            ok &= pairs(Arg::Many(&data[..rest]), Arg::Many(&data[step..]), rest, &mut result, |x, y| item_result(g(x, y)));
-        }
+        let first = |head: &[A], out: &mut Vec<A>| match self.seed {
+            Some(s) => pairs(Arg::One(s), Arg::Many(head), head.len(), out, |s, y| item_result(g(s, y))),
+            None => { out.extend_from_slice(head); true }
+        };
+        let combine = |before: &[A], next: &[A], out: &mut Vec<A>| {
+            pairs(Arg::Many(before), Arg::Many(next), next.len(), out, |x, y| item_result(g(x, y)))
+        };
+        let ok = reduce::adjacent(self.data, self.axis.dims(), &mut result, first, combine);
         if ok { A::build_narrowed(self.shape, result) } else { None }
     }
 }
 impl<A: Stored> Scan<'_, A> where bool: Source<A> {
-    /// The scan of a comparison. After a lane's first result each total is 0 or 1. `both(t, xs, out)` appends the comparison of `t` with each `x` of `xs`, where `t` is one item or a slice as long as `xs`. Called with each total in turn on a run of items, it gives each item's result at a total of 0 and at a total of 1, whatever lanes the run crosses. A lane's first results don't depend on a total. In a seeded scan the first is the lane's start. Otherwise the first is the lane's first item, and the second is the comparison of its first two items. Along lanes, one call of `reduce::chosen` picks a chunk's results, each by the total before it, and restarts each lane at its last such result, however many lanes the chunk holds. Lanes with no other results get theirs directly. Down columns, each row of a span picks for all its columns at once. A seeded scan gives Booleans. Otherwise the Booleans convert back to the item type, as folds convert them.
+    /// A comparison scan through rustymath's two-total runner. Seeded scans give Booleans; otherwise each lane keeps its original first row and item type.
     fn compared(self, both: &dyn Fn(Arg<'_, A>, &[A], &mut Vec<bool>) -> bool) -> Option<Value> {
         let read = <bool as Source<A>>::read;
-        let (zero, one, mut ok) = (read(false), read(true), true);
         let &Lanes { len, inner, .. } = self.axis;
-        let (mut bits, mut low, mut high) = (Vec::with_capacity(self.data.len()), Vec::new(), Vec::new());
-        let (mut heads, mut seconds, mut pair) = (Vec::new(), Vec::new(), Vec::new());
-        // How many of a lane's first results don't depend on a total, and need no results at both totals.
-        let fixed = 1 + usize::from(self.starts.is_none());
-        // Each item's results of `xs` at a total of 0, in `low`, and at a total of 1, in `high`.
-        let at_both = |xs: &[A], low: &mut Vec<bool>, high: &mut Vec<bool>| {
-            low.clear();
-            high.clear();
-            both(Arg::One(zero), xs, low) & both(Arg::One(one), xs, high)
-        };
-        if inner == 1 && len > 0 && len <= fixed {
-            // Every result is fixed: each lane's first item, or its result against the seed, and without a seed its second item's result against its first.
-            if let Some(starts) = self.starts { return bool::build(self.shape, starts.to_vec()); }
-            let mut result = self.data.to_vec();
-            if len == 2 {
-                let (firsts, seconds): (Vec<A>, Vec<A>) = self.data.chunks_exact(2).map(|p| (p[0], p[1])).unzip();
-                if !both(Arg::Many(&firsts), &seconds, &mut pair) { return None; }
-                for (r, &v) in result[1..].iter_mut().step_by(2).zip(&pair) { *r = read(v); }
-            }
-            return A::build_narrowed(self.shape, result);
-        }
-        if len > 0 && inner == 1 {
-            let mut total = false;
-            for (at, xs) in (0..).step_by(CHUNK).zip(self.data.chunks(CHUNK)) {
-                ok &= at_both(xs, &mut low, &mut high);
-                // `first` is the chunk's first item that holds a lane's last fixed result, where `chosen` restarts the lane.
-                let first = (fixed - 1 + len - at % len) % len;
-                let count = xs.len().saturating_sub(first).div_ceil(len);
-                let restarts = match self.starts {
-                    Some(starts) => &starts[(at + first) / len..][..count],
-                    None => {
-                        heads.clear();
-                        seconds.clear();
-                        pair.clear();
-                        if count > 0 {
-                            let base = at + first - 1;
-                            heads.extend((0..count).map(|i| self.data[base + i * len]));
-                            seconds.extend((0..count).map(|i| self.data[base + i * len + 1]));
-                            ok &= both(Arg::Many(&heads), &seconds, &mut pair);
-                        }
-                        &pair[..]
-                    }
-                };
-                reduce::chosen(total, &low, &high, len, first, restarts, &mut bits);
-                total = bits[bits.len() - 1];
-            }
-        } else if len > 0 {
-            let rows = (CHUNK / inner).max(1);
-            for (first, span) in (0..).step_by(rows).zip(self.data.chunks(rows * inner)) {
-                let span_rows = first..first + span.len() / inner;
-                if span_rows.clone().any(|r| r % len >= fixed) { ok &= at_both(span, &mut low, &mut high); }
-                pair.clear();
-                if self.starts.is_none() {
-                    let row = |r: usize| &self.data[r * inner..(r + 1) * inner];
-                    let mut second = span_rows.clone().filter(|r| r % len == 1);
-                    if span.len() == inner { if let Some(r) = second.next() { ok &= both(Arg::Many(row(r - 1)), row(r), &mut pair); } } else {
-                        heads.clear();
-                        seconds.clear();
-                        for r in second {
-                            heads.extend_from_slice(row(r - 1));
-                            seconds.extend_from_slice(row(r));
-                        }
-                        ok &= both(Arg::Many(&heads), &seconds, &mut pair);
-                    }
-                }
-                let mut pairs = pair.chunks(inner);
-                for (j, r) in span_rows.enumerate() {
-                    match (r % len, self.starts) {
-                        (0, Some(starts)) => bits.extend_from_slice(&starts[r / len * inner..(r / len + 1) * inner]),
-                        (0, None) => bits.extend(std::iter::repeat_n(false, inner)),
-                        (1, None) => bits.extend_from_slice(pairs.next().expect("a pair for each lane's second row")),
-                        _ => {
-                            let before = bits.len() - inner;
-                            bits.extend_from_within(before..);
-                            let (lo, hi) = (&low[j * inner..(j + 1) * inner], &high[j * inner..(j + 1) * inner]);
-                            for ((t, &l), &h) in bits[before + inner..].iter_mut().zip(lo).zip(hi) { *t = (*t & h) | (!*t & l); }
-                        }
-                    }
-                }
-            }
-        }
+        let (bits, ok) = reduce::comparison_scan(self.data, self.axis.dims(), self.starts, read(false), read(true), both);
         if !ok { return None; }
         if self.starts.is_some() { return bool::build(self.shape, bits); }
         let mut result: Vec<A> = bits.iter().map(|&b| read(b)).collect();
@@ -1460,24 +1291,28 @@ impl<A: Stored> Dyad<A> for Scan<'_, A> where bool: Source<A> {
     }
 }
 
-/// `x f.g y` for compact arguments laid out as `rows`×`n` and `n`×`cols`, with `n` at least 1. rustymath's tiled inner products run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, `∨.∧` on Booleans, and the counts `+.=` and `+.≠` on integers, Booleans, characters and floats that compare exactly. Otherwise each row applies `g` to its block of the right argument and folds `f` down the block's columns. Kernels of approximate numbers compare within the tolerance of their width. `orientations` says whether each argument's items hold its matrix transposed. Only float and complex `+.×`, `⌈.+` and `⌊.+` read a transposed argument, and anything else gives `None` for one.
+/// `x f.g y` for compact arguments laid out as `rows`×`n` and `n`×`cols`, with `n` at least 1. rustymath's tiled inner products run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, `∨.∧` on Booleans, and the counts `+.=` and `+.≠` on integers, Booleans, characters and floats that compare exactly. Other pairs use rustymath's bounded inner product with the native kernels and right fold. Kernels of approximate numbers compare within the tolerance of their width. `orientations` says whether each argument's items hold its matrix transposed. Only float and complex `+.×`, `⌈.+` and `⌊.+` read a transposed argument, and anything else gives `None` for one.
 pub(crate) fn inner(f: Primitive, g: Primitive, x: &Value, y: &Value, size: [usize; 3], shape: Vec<usize>, numeric: Numeric, orientations: [Orientation; 2]) -> Option<Value> {
     if let Some(result) = halves(&[Some(x), Some(y)], numeric, |v, numeric| inner(f, g, v[0]?, v[1]?, size, shape.clone(), numeric, orientations)) { return result; }
-    fn typed<A: Kernels>(f: Primitive, g: Primitive, x: &[A], y: &[A], [rows, n, cols]: [usize; 3], numeric: Numeric) -> Option<Vec<Value>> {
-        (0..rows).map(|i| {
-            let block = A::dyad(g, Block { x: &x[i * n..(i + 1) * n], y, cols, numeric })??;
-            if n == 1 { Some(block) } else { fold(f, &block, &Lanes { outer: 1, len: n, inner: cols }, vec![cols], numeric) }
-        }).collect()
+    fn typed<A: Kernels>(f: Primitive, g: Primitive, x: &[A], y: &[A], size: [usize; 3], shape: &[usize], numeric: Numeric) -> Option<Value> {
+        let mapped = |x: View<'_>, y: View<'_>, agreement: &rustymath::agreement::Agreement| {
+            let agreement = Agreement { layout: agreement.layout.clone().into(), len: agreement.len, left: agreement.left.clone(), right: agreement.right.clone() };
+            let result = A::dyad(g, Map { x: A::of(x).ok_or(())?, y: A::of(y).ok_or(())?, agreement: &agreement, numeric }).flatten().ok_or(())?;
+            result.into_buffer().map_err(|_| ())
+        };
+        let folded = |data: View<'_>, dims, tail: Option<View<'_>>| native_fold(f, data, dims, tail, size[1], numeric).ok_or(());
+        let data = rustymath::linalg::inner_with(A::view(x), A::view(y), size, mapped, folded).ok()?;
+        Value::from_buffer(shape, data).ok()
     }
     let normal = orientations == [Orientation::Normal; 2];
     let pair = pair(g, x, y)?;
     if !normal && !matches!(pair, Pair::Floats(_) | Pair::Complex(_)) { return None; }
-    let parts = match pair {
+    match pair {
         Pair::Floats(width) => with_float_width!(kernel width, F => {
             let (a, b) = (read_as::<F>(x)?, read_as::<F>(y)?); if let Some(result) = tiled::<F>(f, g, &a, &b, size, &shape, numeric, orientations) { return Some(result); }
             if !normal { return None; }
-            typed(f, g, &a, &b, size, numeric)
-        })?,
+            typed(f, g, &a, &b, size, &shape, numeric)
+        }),
         Pair::Booleans(a, b) if matches!((f, g), (Primitive::Math(Math::Gcd), Primitive::Math(Math::Lcm))) => {
             return bool::build(shape, OrAnd.inner(a, b, size))
         }
@@ -1489,40 +1324,27 @@ pub(crate) fn inner(f: Primitive, g: Primitive, x: &Value, y: &Value, size: [usi
             // `∧` multiplies Booleans.
             let product = if g == Primitive::Math(Math::Lcm) { Primitive::Arithmetic(Arithmetic::Times) } else { g };
             if let Some(result) = tiled_integers(f, product, &wide_a, &wide_b, size, &shape) { return Some(result); }
-            typed(f, g, a, b, size, numeric).or_else(|| typed(f, g, &wide_a, &wide_b, size, numeric))?
+            typed(f, g, a, b, size, &shape, numeric).or_else(|| typed(f, g, &wide_a, &wide_b, size, &shape, numeric))
         }
         Pair::Integers(a, b) => {
             if let Some(result) = tiled_integers(f, g, &a, &b, size, &shape) { return Some(result); }
-            typed(f, g, &a, &b, size, numeric)?
+            typed(f, g, &a, &b, size, &shape, numeric)
         }
         Pair::Characters(a, b) => match (f, g) {
             (Primitive::Arithmetic(Arithmetic::Plus), Primitive::Compare(op @ (Comparison::Equal | Comparison::NotEqual))) => {
                 let codes = |c: &[char]| c.iter().map(|&c| i64::from(u32::from(c))).collect::<Vec<_>>();
                 return counts(op, &codes(a), &codes(b), size, &shape);
             }
-            _ => typed(f, g, a, b, size, numeric)?,
+            _ => typed(f, g, a, b, size, &shape, numeric),
         },
         Pair::Complex(width) => with_complex_width!(width, C => {
             let (a, b) = (read_as::<C>(x)?, read_as::<C>(y)?);
             if matches!((f, g), (Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times))) {
-                return C::build(shape, PlusTimes.inner_ops(&a, &b, orientations, size)); } typed(f, g, &a, &b, size, numeric)
-        })?,
-    };
-    let floats = |width| with_float_width!(width, F => joined::<F>(&shape, &parts));
-    if let Some(result) = joined::<bool>(&shape, &parts).or_else(|| parts.first()?.float_width().and_then(floats)) { return Some(result); }
-    // Each row narrows on its own. Rows of integers can therefore differ in width.
-    let rows: Option<Vec<_>> = parts.iter().map(|r| match r.as_items() { Items::Compact(View::Integers(ints)) => Some(ints), _ => None }).collect();
-    if let Some(rows) = rows { return i64::build_narrowed(shape, rows.into_iter().flat_map(|ints| ints.widened().into_owned()).collect()); }
-    if parts.iter().all(|r| matches!(r.as_items(), Items::Compact(View::Complexes(_) | View::Floats(_)))) {
-        let width = ComplexWidth::from(parts.iter().filter_map(Value::float_width).max()?);
-        return with_complex_width!(width, C => C::build(shape, parts.iter().flat_map(|r| read_as::<C>(r).unwrap().into_owned()).collect()));
+                return C::build(shape, PlusTimes.inner_ops(&a, &b, orientations, size)); }
+            if !normal { return None; }
+            typed(f, g, &a, &b, size, &shape, numeric)
+        }),
     }
-    None
-}
-
-/// The rows `parts` as one array of `shape`, when every row has element type `A`.
-fn joined<A: Stored>(shape: &[usize], parts: &[Value]) -> Option<Value> {
-    A::build(shape.to_vec(), parts.iter().map(A::slice).collect::<Option<Vec<_>>>()?.concat())
 }
 
 /// `x f.g y` for floats of width `F`, laid out as `rows`×`n` and `n`×`cols` in the orientations given, through rustymath's tiled inner products: `+.×`, `⌈.+` and `⌊.+`, and, with neither operand transposed, `+.=` and `+.≠` where `F` compares exactly. `None` for any other pair.
@@ -1561,23 +1383,26 @@ fn counts<T>(op: Comparison, x: &[T], y: &[T], size: [usize; 3], shape: &[usize]
     i64::build_narrowed(shape.to_vec(), data)
 }
 
-/// One row of an inner product: `g` between each item of the row and the matching row of the right argument.
-struct Block<'a, A> { x: &'a [A], y: &'a [A], cols: usize, numeric: Numeric }
-impl<A: Stored> Block<'_, A> {
-    #[inline]
-    fn apply<B: Stored>(&self, f: impl Fn(A, A) -> Option<B> + Sync) -> Option<Value> {
-        let mut data = Vec::with_capacity(self.y.len());
-        let rows = self.x.iter().zip(self.y.chunks(self.cols));
-        let ok = rows.fold(true, |ok, (&a, row)| pairs(Arg::One(a), Arg::Many(row), self.cols, &mut data, |a, b| item_result(f(a, b))) & ok);
-        if !ok { return None; }
-        B::build([self.x.len(), self.cols], data)
+/// A native fold, optionally continuing an inner product's right tail. `len` is the whole lane's length, so Boolean counts choose one width across all its blocks.
+fn native_fold(p: Primitive, data: View<'_>, dims: [usize; 3], tail: Option<View<'_>>, len: usize, numeric: Numeric) -> Option<Buffer> {
+    match data {
+        View::Booleans(data) => with_truth_reduction!(p, len, R => reduced::<_, R>(data, dims, tail)).flatten()
+            .or_else(|| bool::dyad(p, Fold::new(data, dims, tail, Numeric::EXACT)?)?)
+            .or_else(|| integer_fold(p, truth_bytes(data), dims, tail)),
+        View::Integers(data) => with_ints!(data, |data| integer_fold(p, data, dims, tail)),
+        View::Floats(data) => with_floats!(kernel data, |data| float_fold(p, data, dims, tail, numeric)),
+        View::Complexes(data) => with_complexes!(data, |data| complex_fold(p, data, dims, tail, numeric)),
+        View::Characters(_) => None,
     }
 }
-impl<A: Stored> Dyad<A> for Block<'_, A> {
-    type Output = Option<Value>;
-    fn numeric(&self) -> Numeric { self.numeric }
-    #[inline]
-    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> { self.apply(f) }
-    #[inline]
-    fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Option<Value> { self.apply(f) }
+
+fn carried<A: Element>(view: View<'_>) -> Option<Cow<'_, [A]>> {
+    if let Some(data) = A::of(view) { return Some(Cow::Borrowed(data)); }
+    Some(Cow::Owned(A::vec(Buffer::cast(view, A::DTYPE).ok()?)?))
+}
+
+fn reduced<A: Copy + Sync, R: Reduction<A>>(data: &[A], dims: [usize; 3], tail: Option<View<'_>>) -> Option<Buffer> where R::Total: Element {
+    let tail = match tail { None => None, Some(view) => Some(carried::<R::Total>(view)?) };
+    let (data, fits) = reduce::along_with_tail::<A, R>(data, dims, tail.as_deref());
+    fits.then(|| R::Total::buffer(data))
 }

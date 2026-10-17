@@ -12,13 +12,12 @@
 //!
 //! Other data takes the pairwise comparison.
 use crate::{
-    array::Items, element::read_as, execution::Context, number::int::Int,
+    array::Items, element::read_as, execution::Context,
     Error, ErrorKind, Value
 };
 use foldhash::fast::RandomState;
 use rustymath::{
-    buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains, Key}, tolerant::{self, Near, Tolerance}, with_float_width,
-    with_ints
+    buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains}, tolerant::{self, Near, Tolerance}, with_float_width
 };
 use std::{borrow::Cow, hash::{BuildHasher, Hash, Hasher}};
 
@@ -50,26 +49,10 @@ fn compared_at(span: &Context<'_>, width: Option<FloatWidth>) -> (FloatWidth, To
     (width, span.numeric().tolerance_at(width))
 }
 
-/// Compact integers searched for 64-bit floats that each equal a whole number below `tolerant::whole_limit`, as a search of the integers at their own width. At that width an integer reads as itself, and no tolerance makes such a whole number equal to another integer. `pervasive::against_whole` compares integers with one such float the same way.
-fn whole_needles(haystack: &Cells, needles: &Cells, width: FloatWidth, t: Tolerance) -> Option<Vec<u32>> {
-    if width != FloatWidth::F64 { return None; }
-    let (Some(Items::Compact(View::Integers(x))), Some(Items::Compact(View::Floats(Floats::F64(y))))) = (haystack.items(), needles.items()) else { return None };
-    let limit = tolerant::whole_limit(t);
-    let y: Vec<i64> = y.iter().map(|&v| (v.fract() == 0.0 && v.abs() < limit).then_some(v as i64)).collect::<Option<_>>()?;
-    Some(with_ints!(x, |x| narrowed(x, &y)))
-}
-
-/// For each item of `y`, its first position in `x`, or the length of `x` where it has none or `x`'s type can't hold it.
-fn narrowed<T: Int + Key>(x: &[T], y: &[i64]) -> Vec<u32> {
-    let mut found = search::index_of(x, &y.iter().filter_map(|&n| T::narrowed(n)).collect::<Vec<_>>()).into_iter();
-    y.iter().map(|&n| T::narrowed(n).and_then(|_| found.next()).unwrap_or(x.len() as u32)).collect()
-}
-
 /// For each needle, the position of the first haystack cell that matches it, or the number of haystack cells when none does.
 pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Error> {
     let (width, t) = compared_at(span, haystack.float_width().max(needles.float_width()));
     if let Some(found) = compact_view(haystack).zip(compact_view(needles)).and_then(|(x, y)| search::view_index_of(x, y, t, || span.check_now())) { return found; }
-    if let Some(found) = whole_needles(haystack, needles, width, t) { return Ok(found); }
     let compact = with_float_width!(width, F => match (haystack, needles) {
         (Cells::Items(x), Cells::Items(y)) => read_as::<F>(x).zip(read_as::<F>(y)).map(|(x, y)| tolerant::index_of_with(t, &x, &y, || span.check_now())),
         _ => None,

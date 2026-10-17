@@ -133,8 +133,7 @@ fn ranks(down: bool, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) 
     let grade = match Primitive::Grade(down).call(None, right, cx) { Ok(g) => g, Err(e) => return Some(Err(e)) };
     let Items::Compact(View::Integers(ints)) = grade.as_items() else { return Some(Primitive::Grade(false).call(None, &grade, cx).map(Bound::from)) };
     let n = grade.len();
-    let mut ranks = vec![0u32; n];
-    rustymath::with_ints!(ints, |positions| for (k, &p) in positions.iter().enumerate() { ranks[i64::from(p) as usize] = k as u32; });
+    let ranks = rustymath::with_ints!(ints, |positions| rustymath::search::inverse_permutation(positions.iter().map(|&p| i64::from(p) as usize)));
     Some(Value::positions_u32([n], n, ranks).error_at(cx.span, "invalid ranks").map(Bound::from))
 }
 

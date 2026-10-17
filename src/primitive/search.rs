@@ -1,9 +1,8 @@
 //! Search and ordering primitives: index of, membership, without, union, intersection, unique, duplicates, find, classification, run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
-use rustymath::{buffer::View, error::Kind, with_floats};
+use rustymath::{buffer::View, error::Kind};
 use crate::search::compact_view;
 use super::*;
-use rustymath::tolerant::Tolerant;
 
 /// A mask over the major cells of `x`. With `found`, it marks the cells among the major cells of `y`, and otherwise the cells that aren't.
 fn found_mask(x: &Value, y: &Value, found: bool, span: &Context<'_>) -> Result<Value, Error> {
@@ -33,30 +32,18 @@ pub(super) fn intersection(left: &Value, right: &Value, span: &Context<'_>) -> R
 
 pub(super) fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let shape = right.shape();
-    let mut pattern_shape = vec![1; shape.len().saturating_sub(left.shape().len())];
-    pattern_shape.extend_from_slice(left.shape());
-    let mut data = vec![false; right.len()];
-    if pattern_shape.len() <= shape.len() {
-        // The offset of each pattern item from the start of a match.
-        let strides = strides(shape);
-        let pattern: Vec<usize> = (0..left.len()).map(|i| digits(i, &pattern_shape).map(|(axis, c)| c * strides[axis]).sum()).collect();
-        let (x, y) = (left.as_items(), right.as_items());
-        let integers = x.ints().zip(y.ints());
-        let t = span.numeric();
-        let same = |i: usize, o: usize| match (&x, &y, integers) {
-            (_, _, Some((x, y))) => Ok(x.get(i) == y.get(o)), (Items::Compact(View::Booleans(x)), Items::Compact(View::Booleans(y)), _) => Ok(x[i] == y[o]),
-            (Items::Compact(View::Floats(x)), Items::Compact(View::Floats(y)), _) => Ok(t.tolerance_at(x.tag().max(y.tag())).matches(x.get(i), y.get(o))),
-            (Items::Compact(View::Characters(x)), Items::Compact(View::Characters(y)), _) => Ok(x[i] == y[o]), _ => left.at(i).matches(&right.at(o), span)
-        };
-        let mut coords = vec![0; shape.len()];
-        for (flat, result) in data.iter_mut().enumerate() {
-            for (axis, c) in digits(flat, shape) { coords[axis] = c; }
-            if coords.iter().zip(&pattern_shape).zip(shape).any(|((&i, &len), &size)| len > size - i) { continue; }
-            let mut matched = true;
-            for (i, &o) in pattern.iter().enumerate() { if !same(i, flat + o)? { matched = false; break; } }
-            *result = matched;
+    let (x, y) = (left.as_items(), right.as_items());
+    let compact = match (x, y) {
+        (Items::Compact(x), Items::Compact(y)) => {
+            let width = left.float_width().max(right.float_width()).unwrap_or(FloatWidth::F64);
+            rustymath::search::view_find(x, left.shape(), y, shape, span.numeric().tolerance_at(width))
         }
-    }
+        _ => None,
+    };
+    let data = match compact {
+        Some(data) => data,
+        None => rustymath::search::find_with(left.shape(), shape, |i, o| left.at(i).matches(&right.at(o), span))?,
+    };
     if right.is_atom() { return Ok(Value::Number(Number::from_bool(data[0]))); }
     Value::booleans(shape.to_vec(), data).and_then(|v| v.with_layout(right.layout().clone())).error_at(span, "invalid find result")
 }
@@ -135,7 +122,7 @@ fn positions(right: &Value, indices: Vec<u32>) -> Result<Value, ErrorKind> {
 /// The coordinates of flat position `flat`. An axis with a negative length counts down.
 fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, float: Option<FloatWidth>) -> Value {
     let mut data = vec![0; lengths.len()];
-    for (axis, c) in digits(flat, shape) { data[axis] = (if lengths[axis] < 0 { shape[axis] - 1 - c } else { c }) as u64; }
+    for (axis, c) in rustymath::layout::coordinates(flat, shape) { data[axis] = (if lengths[axis] < 0 { shape[axis] - 1 - c } else { c }) as u64; }
     generated_items(vec![data.len()], data, float).unwrap()
 }
 
@@ -234,7 +221,7 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
     let mut data = Vec::with_capacity(total);
     for (i, &n) in counts.iter().enumerate() {
         let index = if right.shape().len() == 1 { position_value(right, 0, i) } else {
-            let mut coords: Vec<_> = digits(i, right.shape()).map(|(axis, c)| position_value(right, axis, c)).collect();
+            let mut coords: Vec<_> = rustymath::layout::coordinates(i, right.shape()).map(|(axis, c)| position_value(right, axis, c)).collect();
             coords.reverse();
             Value::from_parts(vec![coords.len()], coords, integer(0)).unwrap()
         };
@@ -306,23 +293,12 @@ fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
     Some(left.len().cmp(&right.len()).then_with(|| left.shape().cmp(right.shape())))
 }
 
-/// The grade of `right`'s `count` major cells by rustymath's `sort_rows`, when its items are all Booleans, all floats, all integers or all characters, in at most 16 columns, keyed by their order keys. `sort_rows` counts keys that span a small range. It radix-sorts other keys. `Float::order_key` orders floats as `array_order` does, with a key as wide as the float.
+/// The grade of `right`'s `count` major cells by rustymath's `view_lexgrade`, for compact Booleans, floats, integers or characters in at most 16 columns. It shares native-width order keys and stable counting/radix sorting with scalar grade.
 fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
-    use rustymath::{search::{sort_rows, OrderKey as _, RadixKey}, with_ints, Float as _};
-    /// Each column's keys, complemented when grading down. Single-column keys use `view_grade`'s parallel vectorized pass.
-    fn columns<T: Copy + Sync, K: RadixKey>(x: &[T], width: usize, down: bool, key: impl Fn(T) -> K + Sync) -> Vec<Vec<K>> {
-        let key = move |v: T| if down { !key(v) } else { key(v) };
-        (0..width).map(|c| x.chunks_exact(width).map(|row| key(row[c])).collect()).collect()
-    }
     let width = right.len().checked_div(count).unwrap_or(0);
     if width > 16 { return None; }
-    if width == 1 { return rustymath::search::view_grade(compact_view(&Cells::Items(right))?, down); }
-    Some(match right.as_items() {
-        Items::Compact(View::Floats(x)) => with_floats!(x, |x| sort_rows(count, columns(x, width, down, |v| v.order_key()))),
-        Items::Compact(View::Integers(x)) => with_ints!(x, |x| sort_rows(count, columns(x, width, down, |v| v.order_key()))),
-        Items::Compact(View::Characters(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())),
-        Items::Compact(View::Booleans(x)) => sort_rows(count, columns(x, width, down, |v| v.order_key())), _ => return None
-    })
+    let view = compact_view(&Cells::Items(right))?;
+    rustymath::search::view_lexgrade(count, (0..width).map(|c| (view, c, width)), down)
 }
 pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
     if right.is_unit() || left.is_some_and(Value::is_unit) { return Err(span.error(Kind::Rank, "grade needs arrays of rank at least one")); }
@@ -342,7 +318,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
         let mut weights: HashMap<char, Vec<usize>> = HashMap::new();
         for (i, c) in alphabet.into_iter().enumerate() {
             let weight = weights.entry(c).or_insert_with(|| missing.clone());
-            for (w, (_, c)) in weight.iter_mut().zip(digits(i, collation.shape())) { *w = (*w).min(c); }
+            for (w, (_, c)) in weight.iter_mut().zip(rustymath::layout::coordinates(i, collation.shape())) { *w = (*w).min(c); }
         }
         let cells: Vec<_> = text.iter().map(|c| weights.get(c).unwrap_or(&missing)).collect();
         let size = crate::array::element_count(&right.shape()[1..]).at(span)?;

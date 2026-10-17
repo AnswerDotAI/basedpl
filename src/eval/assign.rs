@@ -455,7 +455,7 @@ impl Session {
         };
         let width = counts.iter().filter(|&&c| c == 0).count();
         let cells = (rounds + 1) * width;
-        if cells > 2 * offsets.len() || !dense(offsets, array.len()) { return Ok(None); }
+        if cells > 2 * offsets.len() || !dense_offsets(offsets, array.len()) { return Ok(None); }
         // A target's count numbers it among the targets at its position. The first one there gives the position its column.
         let (mut positions, mut column, mut size, mut placed) =
             (Vec::with_capacity(width), vec![0; array.len()], vec![0; width], Vec::with_capacity(offsets.len()));

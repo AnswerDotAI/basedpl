@@ -858,12 +858,3 @@ fn pervasive_axes(p: Primitive, left: &Value, right: &Value, spec: &Value, span:
     let agreement = Agreement::with_axes(left.layout(), right.layout(), &axes).error_at(span, "pervasive-function axis lengths differ")?;
     p.pervasive_mapped(Some(left), right, span, false, agreement)
 }
-
-/// Each axis of an array of `shape` with the coordinate of flat position `flat` along it, from the last axis to the first.
-pub(crate) fn digits(mut flat: usize, shape: &[usize]) -> impl Iterator<Item = (usize, usize)> + '_ {
-    shape.iter().enumerate().rev().map(move |(axis, &len)| {
-        let c = flat % len;
-        flat /= len;
-        (axis, c)
-    })
-}

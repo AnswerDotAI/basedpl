@@ -11,7 +11,7 @@ use crate::{
     Error, ErrorKind, Function, Number, Operand, Value};
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::borrow::Cow;
-use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth, Floats, View, Width}, gather::Steps};
+use rustymath::{agreement::Mapping, buffer::{Buffer, DType, FloatBuf, FloatWidth, Floats, View, Width}, gather::Steps};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
@@ -271,12 +271,8 @@ pub(crate) fn scatter_add(items: &Value, ids: &Value, layout: &Layout, zero: &Va
         rustymath::gather::scatter_add(&mut out, pairs);
         out
     }
-    let floats = |width: FloatWidth, out: Vec<f64>| {
-        if layout.shape().is_empty() { return Ok(Value::Number(Number::float(out[0], width))); }
-        layout.floats(width, out).error_at(cx.span, "invalid sum")
-    };
-    if let Some(xs) = f64s(items) { return floats(FloatWidth::F64, added(n, &offsets, xs, single)); }
-    if let Some(xs) = f32s(items) { return floats(FloatWidth::F32, added(n, &offsets, xs, single).into_iter().map(f64::from).collect()); }
+    if let Some(xs) = f64s(items) { return float_result(layout, FloatBuf::F64(added(n, &offsets, xs, single)), cx); }
+    if let Some(xs) = f32s(items) { return float_result(layout, FloatBuf::F32(added(n, &offsets, xs, single)), cx); }
     let pick = |k: usize| if single { 0 } else { k };
     let mut out = vec![zero.clone(); n];
     let plus = Primitive::Arithmetic(Arithmetic::Plus);
@@ -464,9 +460,15 @@ fn summed<T: Copy + Default + std::ops::AddAssign>(len: usize, dense: Option<&Va
     let items = parts.iter().map(|p| slice(&p.items)).collect::<Option<Vec<_>>>()?;
     let mut out = dense.map_or_else(|| vec![T::default(); len], <[T]>::to_vec);
     for (p, xs) in parts.iter().zip(items) {
-        for (&a, &f) in p.at.iter().zip(&p.from) { out[a] += xs[f]; }
+        rustymath::gather::scatter_add(&mut out, p.at.iter().zip(&p.from).map(|(&a, &f)| (a, xs[f])));
     }
     Some(out)
+}
+
+/// A completed floating cotangent, keeping its buffer's width without another conversion.
+fn float_result(layout: &Layout, out: FloatBuf, cx: &Context<'_>) -> Result<Value, Error> {
+    if layout.shape().is_empty() { return Ok(Value::Number(Number::float(out.view().get(0), out.view().tag()))); }
+    Value::from_buffer(layout.shape(), Buffer::Floats(out)).and_then(|v| v.with_layout(layout.clone())).error_at(cx.span, "invalid cotangent")
 }
 
 /// The node's whole cotangent: its dense part with every part added in.
@@ -475,10 +477,8 @@ fn collected(c: Cotangent, n: &Linear, cx: &Context<'_>) -> Result<Value, Error>
     if parts.is_empty() { return Ok(dense.expect("a gathered cotangent has a dense part or parts")); }
     let layout = &n.layout;
     if !layout.shape().is_empty() && dense.as_ref().is_none_or(|d| d.layout() == layout) {
-        if let Some(out) = summed(size(layout), dense.as_ref(), &parts, f64s) { return layout.floats(FloatWidth::F64, out).error_at(cx.span, "invalid cotangent"); }
-        if let Some(out) = summed(size(layout), dense.as_ref(), &parts, f32s) {
-            return layout.floats(FloatWidth::F32, out.into_iter().map(f64::from)).error_at(cx.span, "invalid cotangent");
-        }
+        if let Some(out) = summed(size(layout), dense.as_ref(), &parts, f64s) { return float_result(layout, FloatBuf::F64(out), cx); }
+        if let Some(out) = summed(size(layout), dense.as_ref(), &parts, f32s) { return float_result(layout, FloatBuf::F32(out), cx); }
     }
     let plus = Primitive::Arithmetic(Arithmetic::Plus);
     let mut total = dense;

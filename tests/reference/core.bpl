@@ -4262,6 +4262,12 @@ gg←2 3 4 5 ⋄ 9,gg₁,3 4   ⍝ 9 3 3 4
 ⍝ — A column scan keeps negative zeros
 1÷+⍀ -[3 2]⍴0   ⍝ [¯∞ ¯∞⋄¯∞ ¯∞⋄¯∞ ¯∞]
 
+⍝ native-scan-lanes — Bulk comparisons cross chunks and keep lane starts, seeds and inverse heads
+m←[17 503]⍴3|⍳8551
+[(<\m)≡{⍺<⍵}\m;(<⍀m)≡{⍺<⍵}⍀m;(0.5<⍀m)≡0.5{⍺<⍵}⍀m;(+⍀⁻¹+⍀m)≡m]
+⍝ =>
+$t $t $t $t
+
 ⍝ — A sum of negative zeros stays negative at each float width, and an empty sum is 0
 x←16•float -3⍴0 ⋄ 1÷[+/ -3⍴0; +/x; +/16•float⍬]   ⍝ ¯∞ ¯∞ ∞
 
@@ -4741,6 +4747,21 @@ z←1+16E¯15
 ⍝ — A vector pattern does not fit a unit search target
 (,1)⍷1   ⍝ $f
 
+⍝ native-search-shapes — Compact and mixed patterns share shape traversal; fractional needles keep tolerant matching
+p←[1 [2 3]] ⋄ v←[1 [2 3] 0 1 [2 3]]
+[p⍷v;[1 2]⍷[1 2 1⋄1 2 3];[1 2 3]ₓ⍳[2 2.000000000000001]]
+⍝ =>
+[$t $f $f $t $f;[$t $f $f⋄$t $f $f];[1 1]ₓ]
+
+⍝ native-find-widths — Compact float patterns use the wider operand's tolerance and match NaNs
+[(32•float[1])⍷[1+8E¯15];(32•float[1])⍷32•float[1+8E¯7];[$n]⍷[$n 0]]
+⍝ =>
+[[$t] [$f] [$t $f]]
+
+⍝ native-row-ranks — Narrow row keys grade stably and ordinal ranks invert that grade
+m←[3 0⋄1 2⋄3 0⋄2 1]ₓ
+[⍋m;⍋⍋m]   ⍝ [[1 3 0 2]ₓ [2 0 3 1]ₓ]
+
 ⍝ — An empty pattern still cannot exceed the target on another axis
 (2 0⍴0)⍷1 3⍴1   ⍝ 1 3⍴$f
 
@@ -5076,6 +5097,18 @@ r←⍬ {⎕←⍴⍵ ⋄ ⍳3}⌸ 0 2⍴0
 
 ⍝ —
 (2 3⍴⍳6)+.×3 2⍴⍳6   ⍝ [10 13⋄28 40]
+
+⍝ — Native inner products keep right-fold order and comparisons can be either operand
+a←[1 2 4⋄8 16 32] ⋄ b←[2 3⋄5 7⋄11 13]
+[(a-.×b)≡a{⍺-⍵}.{⍺×⍵}b;(a<.+b)≡a{⍺<⍵}.{⍺+⍵}b;(a+.>b)≡a{⍺+⍵}.{⍺>⍵}b]
+⍝ =>
+$t $t $t
+
+⍝ — Contractions carry the right tail across chunks, keep singleton kinds and widen exact overflow
+a←⍳4103 ⋄ b←4103⍴1
+[(a-.×b)≡a{⍺-⍵}.{⍺×⍵}b;([9223372036854775807 9223372036854775807]ₓ)+.×[2 2]ₓ;(•storage ((,2)+.>(,1))).kind]
+⍝ =>
+[$t;36893488147419103228ₓ;"boolean"]
 
 ⍝ — An empty contraction fills every result cell with the reduction identity
 (2 0⍴0)+.×0 3⍴0   ⍝ 2 3⍴0
