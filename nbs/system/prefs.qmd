@@ -28,7 +28,15 @@ Display shows part of an array of more than `limit` items: the first and last `e
 
 `threads` sets how many threads this session's large calls split across. A call splits only when it has enough work to repay the extra threads. Float results can differ in their last bits between thread counts. The default, 0, uses the number in the `RAYON_NUM_THREADS` environment variable where it's set, and one thread for each core otherwise. 1 runs every call on the thread that evaluates the code. When several BPL processes run at once, such as a pool of Python workers, set 1 in each of them to keep them from competing for the cores. The browser build runs every call on one thread, whatever the setting.
 
-`fusion` shows where large float computations stop fusing. Calls of `+ - × ÷ ⌈ ⌊ |` and the comparisons on large arrays of floats run together, block by block, reading each array once. They wait until something else reads their result: a call that can't run with them, display, or Python. With `fusion` set to `$t`, the innermost call that reads such a result writes a line naming its function and position, such as `fusion ends at ⌽ (<input>:1:46)`. A reduction such as `+/` of such a result runs with the calls and writes nothing.
+`fusion` shows where large float computations stop fusing. Dyadic calls of `+ - × ÷ ⌈ ⌊ |`, monadic calls of `+ - ÷ |` and the comparisons, on large arrays of floats, run together, block by block, reading each array once. They wait until something else reads their result: a call that can't run with them, display, or Python. With `fusion` set to `$t`, the innermost call that reads such a result writes a line naming its function and position, such as `fusion ends at ⌽ (<input>:1:46)`. A reduction such as `+/` of such a result runs with the calls and writes nothing.
+
+[`•explain`](explain.qmd) records the same events. In the first example, the comparison runs with the arithmetic and `+/`. In the second, monadic `⌊` ends the fusion of `y×2`:
+
+```bpl
+y←¿1000000⍴0
+(•explain "+/(y+1)<|y-0.5").fused.glyphs    ⍝ ["-|+<+/"]
+(•explain "+/⌊y×2").forced.function         ⍝ ["⌊"]
+```
 
 ```bpl
 •prefs ["tolerance":0] ⋄ 0.3=0.1+0.2    ⍝ $f

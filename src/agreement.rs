@@ -1,5 +1,5 @@
 use crate::{array::Layout, ErrorKind, Value};
-use rustymath::{agreement::Mapping, error::Error, gather::Steps, layout::strides};
+use rustymath::error::Error;
 use std::borrow::Cow;
 
 /// Rustymath's agreement, holding basedpl's layout with its renderer.
@@ -33,18 +33,3 @@ impl Agree for Agreement {
 
 /// `core`, the pairing of `left` and `right`, with the renderer their layouts agree on.
 fn with_renderer(core: Result<Core, Error>, left: &Layout, right: &Layout) -> Result<Agreement, ErrorKind> { Ok(core?.map_layout(|core| Layout::paired(core, left, right))) }
-
-/// `m`'s offsets for a frame of `frame`, from a base, as one entry for each axis of the frame. An agreement's mapping adds up axis by axis, so each entry is a `Stride` of the offset's change along its axis, 0 where the array broadcasts. `None` for `Positions`, whose offsets don't add up axis by axis.
-pub(crate) fn entries(m: &Mapping, frame: &[usize]) -> Option<(usize, Vec<Steps>)> {
-    let base = match m {
-        Mapping::Steps { base, steps } => return Some((*base, steps.clone())),
-        Mapping::Positions(_) => return None,
-        Mapping::Single | Mapping::Linear(_) | Mapping::Tiled(_) => m.get(0)?,
-    };
-    let strides = strides(frame);
-    let steps = frame.iter().zip(&strides).map(|(&len, &stride)| {
-        let step = if len > 1 { m.get(stride)? as isize - base as isize } else { 0 };
-        Some(Steps::Stride { start: 0, len, step })
-    });
-    Some((base, steps.collect::<Option<_>>()?))
-}

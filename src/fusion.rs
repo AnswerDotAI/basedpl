@@ -8,7 +8,7 @@
 //!
 //! A structural glyph that copies one source through rustymath `Steps` (`remapped`) gives a pending copy (`copy`) where its result has at least `MIN_ITEMS` items, for a source of any compact kind. Forcing composes a read of a copy with the copy's map, and moves a read with no repeat or fill under each pending pervasive call it reaches that only it holds (`Pending::resolved`). `2×⌽v+1` then runs as one graph that reads `v` backwards. A copy of floats that no call reads through, and a copy of any other kind, walks its source as `remapped` does.
 use crate::{
-    agreement::{entries, Agreement}, array::{Items, Lanes, Layout, Storage}, element::{Stored, Float}, number::{Arithmetic, Math, Numeric},
+    agreement::Agreement, array::{Items, Lanes, Layout, Storage}, element::{Stored, Float}, explain::{Live, Counted}, number::{Arithmetic, Math, Numeric},
     pervasive::{self, with_float_reduction, with_truth_reduction, Kernels}, primitive::{FoldKind, Primitive}, Number, Value
 };
 use rustymath::{agreement::{expanded, Mapping}, buffer::{DType, FloatWidth, View}, gather::Steps, reduce::{self, Reduction}, Arg, Native};
@@ -82,6 +82,7 @@ pub(crate) struct Pending {
     numeric: Numeric,
     /// The calls that forcing this array would gather: 1 plus the sizes of the pending arrays its call reads, counting a shared one each time, and at most `MAX_NODES`.
     size: usize,
+    _live: Live,
 }
 
 /// What computes a pending array's items: its call, or the graph that a fold built from that call and left for a later read.
@@ -93,7 +94,32 @@ struct Call { operation: Operation, left: Option<Read>, right: Read }
 enum Operation { Primitive(Primitive), Copy }
 
 /// What a pending call reads. An array reads its items through the `Mapping` that the call's agreement gave it. A pending array keeps the layout that the call saw it with, which a view can change.
+#[derive(Clone)]
 enum Read { Input(Value, Mapping), Scalar(Value), Pending(Arc<Pending>, Mapping, Layout) }
+
+/// A pending copy's source and composed read, without computing or consuming the copy. Dense readers still use its cached storage.
+pub(crate) fn source(value: &Value) -> Option<(Value, Mapping)> {
+    let frame = value.shape();
+    let mut result = None;
+    loop {
+        let (value, outer) = result.as_ref().map_or((value, &Mapping::Linear(1)), |(v, m)| (v, m));
+        let Some(pending) = value.pending() else { break };
+        let read = {
+            let work = pending.work.lock().unwrap_or_else(PoisonError::into_inner);
+            if pending.is_forced() { break; }
+            match work.as_ref() {
+                Some(Work::Call(Call { operation: Operation::Copy, right, .. })) => right.clone(),
+                _ => break,
+            }
+        };
+        let (source, inner) = match read {
+            Read::Input(v, inner) => (v, inner), Read::Pending(p, inner, layout) => (Value::deferred(layout, p), inner), Read::Scalar(_) => unreachable!("a copy reads an array"),
+        };
+        let Some(mapping) = inner.compose(outer, pending.layout.shape(), frame) else { break };
+        result = Some((source, mapping));
+    }
+    result
+}
 
 impl Call {
     fn args(&self) -> impl Iterator<Item = &Read> { self.left.iter().chain([&self.right]) }
@@ -109,9 +135,7 @@ impl Read {
     fn moved(&self, outer: &[Steps], shape: &[usize]) -> Option<Option<Mapping>> {
         let (Read::Input(_, m) | Read::Pending(_, m, _)) = self else { return Some(None) };
         if matches!(m, Mapping::Single) { return Some(None); }
-        let (base, inner) = entries(m, shape)?;
-        let (base, steps) = Steps::through(outer, shape, base, &inner)?;
-        Some(Some(Mapping::Steps { base, steps }))
+        Some(Some(m.through(outer, shape)?))
     }
 }
 
@@ -140,7 +164,7 @@ pub(crate) fn defer(p: Primitive, x: Option<&Value>, y: &Value, agreement: Agree
     }
     let work = Mutex::new(Some(Work::Call(call)));
     let (dtype, prototype) = match p { Primitive::Compare(_) => (DType::Boolean, Number::from_bool(false)), _ => (DType::Float(width), Number::float(0.0, width)) };
-    let pending = Pending { work, result: OnceLock::new(), layout: layout.clone(), width, dtype, prototype: Value::Number(prototype), numeric, size };
+    let pending = Pending { work, result: OnceLock::new(), layout: layout.clone(), width, dtype, prototype: Value::Number(prototype), numeric, size, _live: Live::new(Counted::Pending) };
     Ok(Value::deferred(layout, Arc::new(pending)))
 }
 
@@ -160,7 +184,7 @@ pub(crate) fn copy(source: &Value, layout: &Layout, tables: &[Steps]) -> Option<
         }
     };
     let work = Mutex::new(Some(Work::Call(Call { operation: Operation::Copy, left: None, right: read })));
-    let pending = Pending { work, result: OnceLock::new(), layout: Layout::from(layout.shape().to_vec()), width, dtype, prototype: source.prototype(), numeric, size };
+    let pending = Pending { work, result: OnceLock::new(), layout: Layout::from(layout.shape().to_vec()), width, dtype, prototype: source.prototype(), numeric, size, _live: Live::new(Counted::Pending) };
     Some(Value::deferred(layout.clone(), Arc::new(pending)))
 }
 
@@ -217,6 +241,20 @@ impl Pending {
     pub(crate) fn is_forced(&self) -> bool { self.result.get().is_some() }
     pub(crate) fn dtype(&self) -> DType { self.dtype }
     pub(crate) fn prototype(&self) -> Value { self.prototype.clone() }
+    /// The bytes that this pending array keeps alive: its items once computed, and until then the arrays that its call or graph reads. Each allocation counts once in `seen`.
+    pub(crate) fn footprint_in(this: &Arc<Self>, seen: &mut foldhash::HashSet<usize>) -> usize {
+        if !seen.insert(Arc::as_ptr(this) as usize) { return 0; }
+        if let Some(storage) = this.result.get() { return storage.footprint_in(seen); }
+        let work = this.work.lock().unwrap_or_else(PoisonError::into_inner);
+        match work.as_ref() {
+            Some(Work::Call(call)) => call.args().map(|read| match read {
+                Read::Input(v, _) | Read::Scalar(v) => v.footprint_in(seen),
+                Read::Pending(p, ..) => Self::footprint_in(p, seen),
+            }).sum(),
+            Some(Work::Graph(graph)) => graph.inputs.iter().map(|(v, _)| v.footprint_in(seen)).sum(),
+            None => 0,
+        }
+    }
     /// The items, computed on the first call.
     pub(crate) fn storage(&self) -> &Storage {
         self.result.get_or_init(|| match self.take() {
@@ -254,10 +292,8 @@ impl Pending {
         if Arc::strong_count(&p) != 1 || p.is_forced() { return Read::Pending(p, mapping, layout); }
         let mut work = p.work.lock().unwrap_or_else(PoisonError::into_inner);
         let rewritten = match work.as_ref() {
-            Some(Work::Call(Call { operation: Operation::Copy, right: Read::Input(_, Mapping::Steps { base, steps }) | Read::Pending(_, Mapping::Steps { base, steps }, _), .. })) => entries(&mapping, self.layout.shape())
-                .filter(|(b, _)| *b == 0)
-                .and_then(|(_, outer)| Steps::through(&outer, p.layout.shape(), *base, steps))
-                .map(|(base, steps)| vec![Some(Mapping::Steps { base, steps })]),
+            Some(Work::Call(Call { operation: Operation::Copy, right: Read::Input(_, inner) | Read::Pending(_, inner, _), .. })) => inner
+                .compose(&mapping, p.layout.shape(), self.layout.shape()).map(|mapping| vec![Some(mapping)]),
             Some(Work::Call(call)) if matches!(call.operation, Operation::Primitive(_)) && p.floats() && p.width == self.width => match &mapping {
                 Mapping::Steps { base: 0, steps: outer } if !outer.iter().any(Steps::spreads) && !Steps::rereads(outer, p.layout.shape()) => call.args().map(|a| a.moved(outer, p.layout.shape())).collect(),
                 _ => None,
@@ -274,7 +310,7 @@ impl Pending {
         let right = next(call.right);
         let moved = Pending {
             work: Mutex::new(Some(Work::Call(Call { operation: call.operation, left, right }))), result: OnceLock::new(), layout: self.layout.clone(),
-            width: p.width, dtype: p.dtype, prototype: p.prototype.clone(), numeric: p.numeric, size: p.size,
+            width: p.width, dtype: p.dtype, prototype: p.prototype.clone(), numeric: p.numeric, size: p.size, _live: Live::new(Counted::Pending),
         };
         Read::Pending(Arc::new(moved), Mapping::Linear(1), self.layout.clone())
     }

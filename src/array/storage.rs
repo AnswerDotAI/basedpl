@@ -130,6 +130,13 @@ macro_rules! copy_into {
 
 impl Storage {
     pub(super) fn mixed(data: Vec<Value>) -> Self { Self::Mixed(data, Memo::default()) }
+    /// The bytes of these items: a compact buffer's allocation, or a mixed array's values with what each one keeps alive. Each allocation counts once in `seen`.
+    pub(crate) fn footprint_in(&self, seen: &mut foldhash::HashSet<usize>) -> usize {
+        match self {
+            Self::Compact(buffer) => buffer.capacity() * buffer.dtype().bytes(),
+            Self::Mixed(values, _) => values.capacity() * size_of::<Value>() + values.iter().map(|v| v.footprint_in(seen)).sum::<usize>(),
+        }
+    }
     /// The integers `data` at the narrowest width that holds them, from their minimum and maximum, which rustymath finds together in one pass at the width of `T`.
     pub(crate) fn narrowed<T: Whole>(data: Vec<T>) -> Self where rustymath::reduce::Max: rustymath::reduce::Reduction<T, Total = T>,
         rustymath::reduce::Min: rustymath::reduce::Reduction<T, Total = T> {

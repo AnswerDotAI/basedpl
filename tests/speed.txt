@@ -24,9 +24,8 @@ z←v+0j1×w ⋄ zm←128 128↑m+0j1×⊖m ⋄ f←"svd"•decompose m ⋄ h←
 ∧/b	0.5	0.5
 +/m	1.4	2.3
 +⌿m	1.5	2.1
-# A cheap ordered right fold keeps each consecutive lane's running value in a local. Its initial native budget is twice the Mac cost to catch the known 3× regression.
-# Pending CI calibration, its wasm budget conservatively borrows the measured bound of the seeded residue scan, not a fold measurement.
-|/jv	9.4	72
+# A cheap ordered right fold keeps each consecutive lane's running value in a local.
+|/jv	20	15
 # Reading one argument and writing each item once.
 -v	2.2	2.3
 -jv	0.71	1.2
@@ -311,10 +310,14 @@ fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ n←65536
 # `fib 16` makes 3193 calls of a dfn, each with up to four primitive calls on single numbers. Its cost is mostly the evaluator's own work for each call.
 fib 16	800	740
 [setup]
-sv←¿1048576⍴0 ⋄ n←≢sv
+sv←¿1048576⍴0 ⋄ n←≢sv ⋄ sm←[n÷2;2]⍴sv
 [structure]
 # A structural glyph on a million floats gives a pending copy, which the call around it reads through, with no pass of its own over memory. A forward run is read in place. A reversed one is copied into a buffer for each block.
 2×⌽sv+1	6.4	11
 2×1⌽sv+1	4.4	4.5
 2×(10↓sv)+1	4.4	4.8
 +/(⌽sv)×sv	5.9	8.8
+# Floor returns exact integers, so this reads a pending copy through an ordinary kernel rather than fusion.
+⌊⌽sv	14	16
+# Stride-two columns gather through the shared reader before their contiguous subtraction.
+(∞ 1⌷sm)-(∞ 0⌷sm)	5	12

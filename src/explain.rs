@@ -1,10 +1,14 @@
 //! The events that `•explain` reports about a run: the fused groups that ran, the pending arrays that calls forced, and the fast combinations taken. Events are recorded only while `•explain` runs. Fusion runs its graphs without a session, so every event goes to a sink on the thread that runs the expression.
+//!
+//! The module also counts the live nodes that `•memory` reports: the record nodes of `∂` and the pending arrays. A node counts for the thread that made it, even when another thread drops it.
 use crate::{keyed, Error, ErrorAt, Value};
-use std::{cell::RefCell, sync::Arc};
+use std::{cell::RefCell, sync::{atomic::{AtomicUsize, Ordering}, Arc}};
 
 thread_local! {
     /// The events of the `•explain` running on this thread, if any.
     static EVENTS: RefCell<Option<Events>> = const { RefCell::new(None) };
+    /// The live nodes of each kind that this thread made.
+    static MADE: Arc<[AtomicUsize; 2]> = Arc::default();
 }
 
 /// The events of one `•explain`.
@@ -64,3 +68,21 @@ impl Events {
         entries(&["value", "fused", "forced", "fast"], vec![value, fused, forced, fast])
     }
 }
+
+/// The kinds of node that `•memory` counts.
+#[derive(Clone, Copy)]
+pub(crate) enum Counted { Record, Pending }
+
+/// One live node, counted for the thread that made it until it's dropped, on whichever thread.
+pub(crate) struct Live(Arc<[AtomicUsize; 2]>, Counted);
+
+impl Live {
+    pub(crate) fn new(kind: Counted) -> Self { MADE.with(|made| { made[kind as usize].fetch_add(1, Ordering::Relaxed); Self(made.clone(), kind) }) }
+}
+
+impl Drop for Live {
+    fn drop(&mut self) { self.0[self.1 as usize].fetch_sub(1, Ordering::Relaxed); }
+}
+
+/// The live nodes of `kind` that this thread made.
+pub(crate) fn live(kind: Counted) -> usize { MADE.with(|made| made[kind as usize].load(Ordering::Relaxed)) }

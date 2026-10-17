@@ -144,7 +144,7 @@ const BUILTINS: &[(&str, Call, Valence, Item, fn(&Context<'_>) -> Value)] = &[
     ("•nc", Call::Session(crate::Session::system_nc), Monadic, Text, number), ("•nl", Call::Session(crate::Session::system_nl), Ambivalent, Whole, texts),
     ("•src", Call::Session(crate::Session::system_src), Monadic, Text, text), ("•ex", Call::Session(crate::Session::system_ex), Monadic, Text, number),
     ("•literal", Call::Session(crate::Session::system_literal), Monadic, Text, number),
-    ("•explain", Call::Session(crate::Session::system_explain), Monadic, Text, record), ("•memory", Call::Value(memory), Monadic, Whole, record),
+    ("•explain", Call::Session(crate::Session::system_explain), Monadic, Text, record), ("•memory", Call::Inspect(memory), Monadic, Whole, record),
 ];
 
 /// Every system function's name.
@@ -241,9 +241,11 @@ fn storage(_: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, 
     crate::keyed::record(["kind", "pending", "view", "active"].map(Into::into).to_vec(), values).error_at(cx, "invalid storage record")
 }
 
-/// `•memory x`: what this thread holds for differentiation, as a record, whatever `x` is. `records` counts the record nodes alive, which each `∂` frees when it returns.
-fn memory(_: Option<&Value>, _: &Value, cx: &Context<'_>) -> Result<Value, Error> {
-    crate::keyed::record(vec!["records".into()], vec![integer(crate::linear::live() as i64)]).error_at(cx, "invalid memory record")
+/// `•memory x`: what this thread holds, and what `x` keeps alive, as a record. `records` counts the live record nodes of `∂`, which each `∂` frees when it returns, and `pending` the live pending arrays. Each counts the nodes this thread made, wherever they are dropped. `bytes` counts the allocations that `x` keeps alive (`Value::footprint`). It reads no items, so it never forces a pending array, and it takes active values under `∂`.
+fn memory(_: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+    use crate::explain::{live, Counted};
+    let counts = [live(Counted::Record), live(Counted::Pending), right.footprint()].map(|n| integer(n as i64)).to_vec();
+    crate::keyed::record(["records", "pending", "bytes"].map(Into::into).to_vec(), counts).error_at(cx, "invalid memory record")
 }
 
 /// `width •float Y`: the numbers of `Y` as floats of `width` bits, 16, 32 or 64. `•float Y` gives floats of the default width, which the `float` pref sets. Arrays nested in `Y` convert too.

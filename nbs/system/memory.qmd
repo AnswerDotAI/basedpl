@@ -1,14 +1,24 @@
 # `•memory` — Memory
 
-`•memory x` gives a record of what this thread holds for differentiation, whatever `x` is. `•memory 0` is the usual spelling.
+`•memory x` gives a record of what this thread holds, and of what `x` keeps alive. `•memory 0` is the usual spelling for the counts alone.
 
-- `records` counts the record nodes alive: the linear calls that reverse mode records while `∂` runs. Each `∂` frees its record when it returns, so the count is 0 between programs.
+- `records` counts the live record nodes: the linear calls that reverse mode records while `∂` runs. Each `∂` frees its record when it returns, so the count is 0 between programs.
+- `pending` counts the live pending arrays, whose items wait for their first read.
+- `bytes` counts the bytes that `x` keeps alive: its items, the base of a view, the arrays that a pending array reads, the parts of a value that `∂` is differentiating, and the nodes of a record. An allocation that `x` reaches twice counts once.
 
-The count covers the thread that runs the session. A session on another thread doesn't change it.
+`records` and `pending` count the nodes that this thread made, even when another thread holds one. `•memory` reads no items, so it never forces a pending array, and it accepts values that `∂` is differentiating.
 
 ```bpl
 {+/⍵×⍵}∂ 1 2 3     ⍝ 2 4 6
-•memory 0          ⍝ ["records":0ₓ]
+•memory 0          ⍝ ["records":0ₓ "pending":0ₓ "bytes":0ₓ]
+```
+
+A reshape is a view, which keeps all of its base's items alive:
+
+```bpl
+v←⍳1000
+m←2 500⍴v
+(•memory m).bytes  ⍝ 8000ₓ
 ```
 
 [`•explain`](explain.qmd) reports what happened while an expression ran.

@@ -8,7 +8,7 @@ use crate::{
     execution::Context,
     number::Arithmetic,
     primitive::{FoldKind, Primitive},
-    Error, ErrorKind, Function, Number, Operand, Value};
+    explain::{Live, Counted}, Error, ErrorKind, Function, Number, Operand, Value};
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::borrow::Cow;
 use rustymath::{agreement::Mapping, buffer::{Buffer, DType, FloatBuf, FloatWidth, Floats, View, Width}, gather::Steps};
@@ -19,15 +19,9 @@ use std::sync::{
 
 /// The next sequence number. A node's children always have smaller numbers, so visiting nodes by decreasing number visits each one after every node that reads it.
 static NEXT: AtomicU64 = AtomicU64::new(0);
-thread_local! {
-    /// The record nodes alive on this thread. The thread that evaluates a `∂` makes its record and frees it.
-    static LIVE: std::cell::Cell<isize> = const { std::cell::Cell::new(0) };
-}
-/// The record nodes alive on this thread, which `•memory` reports.
-pub(crate) fn live() -> usize { LIVE.with(|n| n.get().max(0) as usize) }
 
-/// One node of a record: the linear call it records, its result's layout, a zero of its kind, and its sequence number.
-pub(crate) struct Linear { pub(crate) op: Op, pub(crate) layout: Layout, pub(crate) zero: Value, seq: u64 }
+/// One node of a record: the linear call it records, its result's layout, a zero of its kind, its sequence number, and the guard that counts it for `•memory`.
+pub(crate) struct Linear { pub(crate) op: Op, pub(crate) layout: Layout, pub(crate) zero: Value, seq: u64, _live: Live }
 
 /// The linear calls a record holds. Each one's transpose is one of them, so a record that an outer `∂` makes of an inner transpose's calls is a record too.
 pub(crate) enum Op {
@@ -51,12 +45,15 @@ pub(crate) enum Op {
 }
 
 impl Op {
-    fn children(&self) -> Vec<&Arc<Linear>> {
+    /// The value that this call holds, a coefficient, ids or a fold's axis, and the nodes that it reads.
+    fn parts(&self) -> (Option<&Value>, Vec<&Arc<Linear>>) {
         match self {
-            Op::Seed(_) => vec![],
-            Op::Scale(_, c, _) | Op::Expand(c) | Op::View(c) | Op::Fold { child: c, .. } | Op::ScatterAdd { child: c, .. } | Op::Product { child: c, .. } => vec![c],
-            Op::Add(a, b) => vec![a, b],
-            Op::Gather { sources, .. } => sources.iter().collect(),
+            Op::Seed(_) => (None, vec![]),
+            Op::Scale(c, t, _) | Op::Product { coefficient: c, child: t, .. } | Op::ScatterAdd { ids: c, child: t } => (Some(c), vec![t]),
+            Op::Fold { child, axis, .. } => (axis.as_ref(), vec![child]),
+            Op::Expand(t) | Op::View(t) => (None, vec![t]),
+            Op::Add(a, b) => (None, vec![a, b]),
+            Op::Gather { sources, ids } => (Some(ids), sources.iter().collect()),
         }
     }
 }
@@ -64,7 +61,6 @@ impl Op {
 /// A record holds every node it reads, so dropping a long one by recursion could overflow the stack. This unlinks the children that nothing else holds in a loop instead.
 impl Drop for Linear {
     fn drop(&mut self) {
-        LIVE.with(|n| n.set(n.get() - 1));
         let mut stack = take(&mut self.op);
         while let Some(child) = stack.pop() {
             if let Ok(mut node) = Arc::try_unwrap(child) { stack.extend(take(&mut node.op)); }
@@ -72,23 +68,30 @@ impl Drop for Linear {
     }
 }
 
-fn take(op: &mut Op) -> Vec<Arc<Linear>> {
-    match std::mem::replace(op, Op::Seed(0)) {
-        Op::Seed(_) => vec![],
-        Op::Scale(_, c, _) | Op::Expand(c) | Op::View(c) | Op::Fold { child: c, .. } | Op::ScatterAdd { child: c, .. } | Op::Product { child: c, .. } => vec![c],
-        Op::Add(a, b) => vec![a, b],
-        Op::Gather { sources, .. } => sources,
-    }
-}
+/// The nodes that `op` reads, taken out of it.
+fn take(op: &mut Op) -> Vec<Arc<Linear>> { std::mem::replace(op, Op::Seed(0)).parts().1.into_iter().cloned().collect() }
 
 impl std::fmt::Debug for Linear {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("Linear").field("shape", &self.layout.shape()).field("seq", &self.seq).finish() }
 }
 
+impl Linear {
+    /// The bytes of the record that this node starts: its nodes, and the coefficients and ids they hold. Each node and each allocation counts once in `seen`.
+    pub(crate) fn footprint_in(this: &Arc<Self>, seen: &mut HashSet<usize>) -> usize {
+        let (mut stack, mut bytes) = (vec![this], 0);
+        while let Some(node) = stack.pop() {
+            if !seen.insert(Arc::as_ptr(node) as usize) { continue; }
+            let (held, children) = node.op.parts();
+            bytes += size_of::<Linear>() + node.zero.footprint_in(seen) + held.map_or(0, |v| v.footprint_in(seen));
+            stack.extend(children);
+        }
+        bytes
+    }
+}
+
 /// A record node as a value.
 fn node(op: Op, layout: Layout, zero: Value) -> Value {
-    LIVE.with(|n| n.set(n.get() + 1));
-    Value::from_linear(Arc::new(Linear { op, layout, zero, seq: NEXT.fetch_add(1, Ordering::Relaxed) }))
+    Value::from_linear(Arc::new(Linear { op, layout, zero, seq: NEXT.fetch_add(1, Ordering::Relaxed), _live: Live::new(Counted::Record) }))
 }
 
 fn size(layout: &Layout) -> usize { layout.shape().iter().product() }
@@ -298,7 +301,7 @@ pub(crate) fn order(root: &Arc<Linear>) -> Vec<Arc<Linear>> {
     let (mut seen, mut stack, mut nodes) = (HashSet::new(), vec![root.clone()], Vec::new());
     while let Some(n) = stack.pop() {
         if !seen.insert(Arc::as_ptr(&n)) { continue; }
-        stack.extend(n.op.children().into_iter().cloned());
+        stack.extend(n.op.parts().1.into_iter().cloned());
         nodes.push(n);
     }
     nodes.sort_by_key(|n| n.seq);
@@ -372,7 +375,7 @@ fn sum_back(u: &Value, layout: &Layout, zero: &Value, cx: &mut Context<'_>) -> R
 
 /// The axes of a result of `shape` that `m` repeats its input along, where it reads the input's items once each, in order, along the other axes.
 fn repeated(m: &Mapping, shape: &[usize]) -> Option<Vec<usize>> {
-    let Some((0, steps)) = crate::agreement::entries(m, shape) else { return None };
+    let Some((0, steps)) = m.entries(shape) else { return None };
     let (mut axes, mut stride) = (Vec::new(), 1);
     for (axis, s) in steps.iter().enumerate().rev() {
         match *s {

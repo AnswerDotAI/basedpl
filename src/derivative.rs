@@ -12,7 +12,6 @@ use rustymath::agreement::Mapping;
 /// The message of the UNSUPPORTED error that a dual gives where it reaches code that `∂` can't differentiate (`number::Failure::Dual`).
 pub(crate) const UNSUPPORTED: &str = "∂ can't differentiate this here";
 
-
 /// A running `∂` call: its tag, the number of frames when it started, and the bindings outside those frames that it wrote, each with its frame, or its module for a global, which it strips when it returns.
 pub(crate) struct Level { pub(crate) tag: u32, pub(crate) frames: usize, pub(crate) writes: Vec<(Option<usize>, usize, String)> }
 
@@ -28,6 +27,12 @@ pub(crate) struct Dual {
 
 impl Dual {
     pub(crate) fn new(tag: u32, primal: Value, tangent: Value) -> Self { Self { tag, primal, tangent, items: std::sync::OnceLock::new(), full: std::sync::OnceLock::new() } }
+    /// The bytes of the primal, the tangent and the items built from them. Each allocation counts once in `seen`.
+    pub(crate) fn footprint_in(this: &std::sync::Arc<Self>, seen: &mut foldhash::HashSet<usize>) -> usize {
+        if !seen.insert(std::sync::Arc::as_ptr(this) as usize) { return 0; }
+        let cached = this.items.get().map_or(0, |s| s.footprint_in(seen)) + this.full.get().map_or(0, |v| v.footprint_in(seen));
+        this.primal.footprint_in(seen) + this.tangent.footprint_in(seen) + cached
+    }
     /// The tangent in the primal's layout, expanded once where the stored tangent is smaller.
     pub(crate) fn full_tangent(&self) -> &Value {
         if self.tangent.layout() == self.primal.layout() { return &self.tangent; }
@@ -553,7 +558,7 @@ fn broadcast(v: &Value, mapping: &Mapping, len: usize, layout: Layout) -> Value 
     if v.is_atom() {
         data.fill(v, len);
     } else {
-        let (base, steps) = crate::agreement::entries(mapping, layout.shape()).expect("an agreement's mapping has steps");
+        let (base, steps) = mapping.entries(layout.shape()).expect("an agreement's mapping has steps");
         data.walk(v, base, &steps);
     }
     data.finish(layout, || v.prototype()).expect("a broadcast fits its layout")

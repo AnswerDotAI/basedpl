@@ -363,7 +363,7 @@ macro_rules! with_reals {
 
 /// Runs a call that has 16-bit floats as `run` on 32-bit copies of them, with `Numeric::widened`, because basedpl's kernel tables, folds, scans and inner products have no 16-bit instances, and one conversion here serves them all. rustymath's function objects have 16-bit forms, which compute each item in 32 bits, and Python's functions use those. A call that computes at 16 bits first rounds each exact operand to 16 bits, as at any width. It rounds its float results back to 16 bits. Gives `None` without running anything when no value holds 16-bit floats and the default width is 32 or 64 bits.
 fn halves(values: &[Option<&Value>], numeric: Numeric, run: impl FnOnce(&[Option<&Value>], Numeric) -> Option<Value>) -> Option<Option<Value>> {
-    let half = |v: &&Value| matches!(v.as_items(), Items::Compact(View::Floats(Floats::F16(_))));
+    let half = |v: &&Value| v.dtype() == Some(DType::Float(FloatWidth::F16));
     let floats = values.iter().flatten().any(half);
     if numeric.width != FloatWidth::F16 && !floats { return None; }
     let width = numeric.width_of(values.iter().flatten().map(|v| v.float_width()));
@@ -383,29 +383,57 @@ fn halves(values: &[Option<&Value>], numeric: Numeric, run: impl FnOnce(&[Option
 fn halved(value: Value) -> Value {
     if matches!(value.as_items(), Items::Compact(View::Floats(Floats::F32(_)))) { value.to_float_width(FloatWidth::F16).expect("32-bit floats narrow") } else { value }
 }
+
+/// One logical argument and, for a pending copy, the storage and maps that read it without filling its compact cache.
+struct Input<'a> { value: &'a Value, mapped: Option<(Value, Mapping, Mapping)> }
+impl<'a> Input<'a> {
+    fn new(value: &'a Value, mapping: &Mapping, frame: &[usize]) -> Self {
+        let mapped = crate::fusion::source(value).and_then(|(source, inner)| {
+            let read = inner.compose(mapping, value.shape(), frame)?;
+            Some((source, inner, read))
+        });
+        Self { value, mapped }
+    }
+    fn source(&self) -> &Value { self.mapped.as_ref().map_or(self.value, |(source, ..)| source) }
+    fn view(&self) -> Option<rustymath::array::ArrayView<'_>> {
+        let mapping = self.mapped.as_ref().map_or(&Mapping::Linear(1), |(_, inner, _)| inner);
+        Some(rustymath::array::ArrayView::new(self.value.layout(), self.source().view()?, mapping))
+    }
+    fn items(&self) -> Option<rustymath::buffer::Items<'_>> { let view = self.view()?; view.cast(view.dtype()).ok() }
+    fn agreement(left: Option<&Self>, right: &Self, a: &Agreement) -> Option<Agreement> {
+        if left.is_none_or(|x| x.mapped.is_none()) && right.mapped.is_none() { return None; }
+        let map = |x: Option<&Self>, original: &Mapping| x.and_then(|x| x.mapped.as_ref()).map_or(original, |(_, _, m)| m).clone();
+        Some(Agreement { layout: a.layout.clone(), len: a.len, left: map(left, &a.left), right: map(Some(right), &a.right) })
+    }
+}
 /// A pervasive function applied to compact arguments, on the frame of `agreement`. The kind that holds both arguments picks the kernel. Kernels of approximate numbers compare within the tolerance of their width.
 pub(crate) fn map(p: Primitive, left: Option<&Value>, right: &Value, agreement: &Agreement, numeric: Numeric) -> Option<Value> {
     if let Some(result) = halves(&[left, Some(right)], numeric, |v, numeric| map(p, v[0], v[1]?, agreement, numeric)) { return result; }
-    let Some(left) = left else { return monadic_map(p, right, agreement, numeric) };
+    let (x, y) = (left.map(|x| Input::new(x, &agreement.left, agreement.layout.shape())), Input::new(right, &agreement.right, agreement.layout.shape()));
+    let paired = Input::agreement(x.as_ref(), &y, agreement);
+    let agreement = paired.as_ref().unwrap_or(agreement);
+    let (left, right) = (x.as_ref().map(Input::source), y.source());
+    let Some(left) = left else { return monadic_map(p, &y, agreement, numeric) };
     if let Primitive::Math(op @ (Math::Circle | Math::Arc)) = p { return circle(left, right, agreement, op == Math::Arc, numeric); }
     if let Primitive::Compare(_) = p { if let Some(result) = against_whole(p, left, right, agreement, numeric) { return Some(result); } }
     if let Primitive::Math(Math::Magnitude) = p { if let Some(result) = residues(left, right, agreement, numeric) { return Some(result); } }
-    let reals_or_complex = |width| reals(p, left, right, agreement, numeric, width).or_else(|| complex_results(p, Some(left), right, agreement, numeric));
+    let reals_or_complex = |width| reals(p, x.as_ref()?, &y, agreement, numeric, width).or_else(|| complex_results(p, Some(left), right, agreement, numeric));
     match left.dtype()?.join(right.dtype()?, Widening::Arrays)? {
         DType::Float(width) => reals_or_complex(width), DType::Boolean | DType::Integer(_) if approximate(p, true) => reals_or_complex(numeric.width),
         DType::Complex(width) => complexes(p, left, right, agreement, numeric, width),
         DType::Character => dyadic::<char, _, _>(p, chars(left)?, chars(right)?, agreement, Numeric::EXACT),
         DType::Integer(width) if matches!(p, Primitive::Arithmetic(Arithmetic::Times)) => with_width!(width, T => masked::<T>(left, right, agreement))
-            .or_else(|| products(left, right, width, agreement)).or_else(|| whole(p, Some(left), right, DType::Integer(width), agreement)),
+            .or_else(|| products(x.as_ref()?, &y, width, agreement)).or_else(|| whole(p, Some(left), right, DType::Integer(width), agreement)),
         dtype => whole(p, Some(left), right, dtype, agreement)
     }
 }
 
 /// A pervasive function applied to one compact argument.
-fn monadic_map(p: Primitive, right: &Value, agreement: &Agreement, numeric: Numeric) -> Option<Value> {
+fn monadic_map(p: Primitive, input: &Input<'_>, agreement: &Agreement, numeric: Numeric) -> Option<Value> {
+    let right = input.source();
     let complex = || complex_results(p, None, right, agreement, numeric);
     match right.as_items() {
-        Items::Compact(View::Floats(y)) => with_floats!(kernel y, |y| float_map(p, y, agreement, numeric)).or_else(complex),
+        Items::Compact(View::Floats(y)) => with_floats!(kernel y, |y| float_map(p, y, input, agreement, numeric)).or_else(complex),
         y @ Items::Compact(View::Booleans(_) | View::Integers(_)) if approximate(p, false) => {
             with_float_width!(kernel numeric.width, F => with_exact!(y, |y| mixed_monadic::<F, _>(p, y, agreement, numeric), None)).or_else(complex)
         }
@@ -433,13 +461,13 @@ fn approximate(p: Primitive, dyadic: bool) -> bool {
 }
 
 /// A pervasive function applied to floats of width `F`. `⌊ ⌈ ×` on floats that hold an infinity or NaN give floats of that width, through `float_whole`.
-fn float_map<F: Float + Kernels>(p: Primitive, y: &[F], agreement: &Agreement, numeric: Numeric) -> Option<Value> {
-    monadic::<F, F>(p, y, agreement, numeric).or_else(|| float_whole(p, y, agreement, numeric))
+fn float_map<F: Float + Kernels>(p: Primitive, y: &[F], input: &Input<'_>, agreement: &Agreement, numeric: Numeric) -> Option<Value> {
+    monadic::<F, F>(p, y, agreement, numeric).or_else(|| float_whole(p, y, input, agreement, numeric))
 }
 
 /// `⌊ ⌈ ×` on floats that hold an infinity or NaN, which no integer holds, as floats of their width. Floats that are all finite give `None`. The plain kernel gave up on them because one is too large for an integer, and the `Number` path gives exact results.
-fn float_whole<F: Float>(p: Primitive, y: &[F], agreement: &Agreement, numeric: Numeric) -> Option<Value> {
-    if y.iter().all(|&n| n.wide().is_finite()) { return None; }
+fn float_whole<F: Float>(p: Primitive, y: &[F], input: &Input<'_>, agreement: &Agreement, numeric: Numeric) -> Option<Value> {
+    if input.view()?.items::<F>().ok()?.iter().all(|&n| n.wide().is_finite()) { return None; }
     let map = Map { x: &[] as &[F], y, agreement, numeric };
     with_tolerance!(numeric.tolerance_at(F::WIDTH), |t| match p {
         Primitive::Math(Math::Floor) => map.unary(move |v: F| Some(t.floor(v))),
@@ -470,10 +498,14 @@ fn mixed_monadic<A: Mixed, Y: Source<A>>(p: Primitive, y: &[Y], agreement: &Agre
 }
 
 /// Reals at `width`: the wider of their float widths, or the session's width where both are exact, for a function whose results are always approximate. Booleans and integers beside floats, and 32-bit floats beside 64-bit floats, read at that width through `mixed_dyadic`. Two exact arguments read the left one as floats first. `⌊` and `⌈` don't pair exact numbers with non-finite floats, because `Number` keeps an exact number exact beside them.
-fn reals(p: Primitive, left: &Value, right: &Value, agreement: &Agreement, t: Numeric, width: FloatWidth) -> Option<Value> {
+fn reals(p: Primitive, left: &Input<'_>, right: &Input<'_>, agreement: &Agreement, t: Numeric, width: FloatWidth) -> Option<Value> {
     let exact = |items: &Items| matches!(items, Items::Compact(View::Booleans(_) | View::Integers(_)));
-    let (x, y) = (left.as_items(), right.as_items());
-    if let (Items::Compact(View::Floats(f)), other) | (other, Items::Compact(View::Floats(f))) = (x, y) { if exact(&other) && keeps_exact(p, f) { return None; } }
+    let (x, y) = (left.source().as_items(), right.source().as_items());
+    if matches!(p, Primitive::Math(Math::Floor | Math::Ceiling)) {
+        let floats = match (x, y) { (Items::Compact(View::Floats(_)), other) if exact(&other) => Some(left), (other, Items::Compact(View::Floats(_))) if exact(&other) => Some(right), _ => None };
+        if let Some(floats) = floats { if let View::Floats(f) = floats.items()?.view() { if keeps_exact(p, f) { return None; } } }
+    }
+    let (left, right) = (left.source(), right.source());
     with_float_width!(kernel width, F => match (x, y) {
         (Items::Compact(View::Floats(Floats::F32(x))), Items::Compact(View::Floats(Floats::F64(_)))) => mixed_dyadic::<F, _, F>(p, x, &read_as::<F>(right)?, agreement, t),
         (Items::Compact(View::Floats(Floats::F64(_))), Items::Compact(View::Floats(Floats::F32(y)))) => mixed_dyadic::<F, F, _>(p, &read_as::<F>(left)?, y, agreement, t),
@@ -509,6 +541,10 @@ pub(crate) fn object<K>(k: K, right: &Value, agreement: &Agreement, numeric: Num
     K: rustymath::Unary<f32, Out = f32> + rustymath::Unary<f64, Out = f64> + Copy + Sync,
     K: rustymath::Unary<Complex32, Out = Complex32> + rustymath::Unary<Complex64, Out = Complex64> {
     if let Some(result) = halves(&[Some(right)], numeric, |v, numeric| object(k, v[0]?, agreement, numeric)) { return result; }
+    let input = Input::new(right, &agreement.right, agreement.layout.shape());
+    let paired = Input::agreement(None, &input, agreement);
+    let agreement = paired.as_ref().unwrap_or(agreement);
+    let right = input.source();
     let complex = |width: ComplexWidth| with_complex_width!(width, C => Monad::<C>::many(Map::exact(&[] as &[C], &read_as::<C>(right)?, agreement), k));
     if let Items::Compact(View::Complexes(y)) = right.as_items() { return complex(y.tag()); }
     let width = right.float_width().unwrap_or(numeric.width);
@@ -526,14 +562,14 @@ fn masked<A: Whole>(left: &Value, right: &Value, agreement: &Agreement) -> Optio
 }
 
 /// `×` of integers at the narrowest width that holds the products of their least and greatest items, and at least `width`, the wider argument's width. One pass over each argument at its own width finds those bounds, which rule out overflow before the loop starts. The loop then needs no overflow test, and the call runs once. `None` for 64-bit integers, which take `whole`'s checked product: NEON has no vector 64-bit multiply, so the overflow test costs little, and the bounds path measured slower for `jv×kv`. Also `None` where an argument is empty or no integer width holds the bounds.
-fn products(left: &Value, right: &Value, width: Width, agreement: &Agreement) -> Option<Value> {
+fn products(left: &Input<'_>, right: &Input<'_>, width: Width, agreement: &Agreement) -> Option<Value> {
     fn run<T: Whole>(x: &Value, y: &Value, to: Width, agreement: &Agreement) -> Option<Value> {
         let (x, y) = (side::<T>(x)?, side::<T>(y)?);
         with_width!(to, A => Map::exact(&x, &y, agreement).binary(|x: T, y: T| Some(A::from_i64(x.to_i64() * y.to_i64()))))
     }
     if width == Width::I64 { return None; }
-    let bounds = |v: &Value| match v.as_items() {
-        Items::Compact(View::Integers(ints)) if !v.is_empty() => Some(with_ints!(ints, |n| {
+    let bounds = |v: &Input<'_>| match v.items()?.view() {
+        View::Integers(ints) if !v.value.is_empty() => Some(with_ints!(ints, |n| {
             let (lo, hi) = reduce::extremes(n);
             [lo.to_i64(), hi.to_i64()]
         })),
@@ -541,6 +577,7 @@ fn products(left: &Value, right: &Value, width: Width, agreement: &Agreement) ->
     };
     let [lo, hi] = rustymath::integer::product_bounds(bounds(left)?, bounds(right)?)?;
     let to = Width::narrowest(lo, hi).join(width);
+    let (left, right) = (left.source(), right.source());
     match width {
         Width::U8 => run::<u8>(left, right, to, agreement), Width::I16 => run::<i16>(left, right, to, agreement),
         Width::I32 => run::<i32>(left, right, to, agreement), Width::I64 => None

@@ -29,6 +29,7 @@ These trains and compositions give the result of applying their parts in turn, f
 
 ```bpl
 v←30 10 20 50 40 60 70 80 90 0
-2↑< v              ⍝ 0 10
-5⌷< v              ⍝ 50
+2↑< v                                ⍝ 0 10
+5⌷< v                                ⍝ 50
+(•explain "5⌷< v").fast.combination  ⍝ ["partial sort"]
 ```

@@ -192,6 +192,17 @@ impl ArrayData {
     fn linear(&self) -> Option<&Arc<crate::linear::Linear>> { match &self.data { Data::Linear(t) => Some(t), _ => None } }
     /// Whether this array reads another array's items, as a view.
     fn is_view(&self) -> bool { matches!(self.data, Data::Of(_)) }
+    /// The bytes of the allocations that this array keeps alive, as `Value::footprint` counts them. Each allocation counts once in `seen`.
+    fn footprint_in(this: &Arc<Self>, seen: &mut foldhash::HashSet<usize>) -> usize {
+        if !seen.insert(Arc::as_ptr(this) as usize) { return 0; }
+        match &this.data {
+            Data::Own(storage) => storage.footprint_in(seen),
+            Data::Of(base) => Self::footprint_in(base, seen),
+            Data::Node(pending) => Pending::footprint_in(pending, seen),
+            Data::Dual(dual) => crate::derivative::Dual::footprint_in(dual, seen),
+            Data::Linear(t) => crate::linear::Linear::footprint_in(t, seen),
+        }
+    }
 }
 
 /// A pending array's items, computed on the first read. Cold and out of line, so that `ArrayData::storage`'s other arms stay small.
@@ -580,6 +591,19 @@ impl Value {
     }
     /// Whether the array reads another array's items, as a view.
     pub(crate) fn is_view(&self) -> bool { matches!(self, Self::Array(a) if a.is_view()) }
+    /// The bytes of the allocations that this value keeps alive: its items, a view's base, the arrays that a pending array reads, a dual's parts and a record's nodes. A shared allocation counts once. An atom that holds no array gives 0.
+    pub(crate) fn footprint(&self) -> usize { self.footprint_in(&mut foldhash::HashSet::default()) }
+    pub(crate) fn footprint_in(&self, seen: &mut foldhash::HashSet<usize>) -> usize {
+        match self {
+            Self::Array(a) => ArrayData::footprint_in(a, seen),
+            Self::Number(n) => {
+                let (mut n, mut bytes) = (n, 0);
+                while let Some(d) = n.as_dual() { bytes += d.tangent.footprint_in(seen); n = &d.primal; }
+                bytes
+            }
+            _ => 0,
+        }
+    }
     pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Compact(View::Floats(Floats::F64(v))) => Some(v), _ => None } }
     pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items() { Items::Compact(View::Integers(Ints::I64(v))) => Some(v), _ => None } }
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Compact(View::Booleans(v)) => Some(v), _ => None } }

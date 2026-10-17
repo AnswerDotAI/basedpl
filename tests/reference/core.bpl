@@ -3585,6 +3585,27 @@ $t $t $t $t $t
 ⍝ — Reading a pending array's shape, tally or binding leaves it pending for later calls to fuse with
 y←1.5+¿200000⍴0 ⋄ z←y ⋄ _←[≢y;≢⍴z] ⋄ (•storage y).pending   ⍝ $t
 
+⍝ — Ordinary kernels read pending copies at both float widths without fusing or forcing them; a dense reader fills their cache
+check←{
+  v←⍵•float⍳262144
+  r←⌽v ⋄ z←⌊r
+  reversed←(•storage r).pending∧z≡⌽⌊v
+  ordinary←0=≢(•explain "⌊⌽v").fused.glyphs
+  z←2○r
+  circular←(•storage r).pending∧z≡⌽2○v
+  m←512 512⍴v ⋄ r←⊖m ⋄ z←⌊r
+  rows←(•storage r).pending∧z≡⊖⌊m
+  q←⌽r ⋄ z←⌊q
+  composed←(•storage r).pending∧(•storage q).pending∧z≡⌽⊖⌊m
+  z←<,r
+  [ordinary;reversed;circular;rows;composed;~(•storage r).pending]
+}
+check¨32 64   ⍝ [6⍴$t;6⍴$t]
+
+⍝ — Unselected backing values do not change whole-array numeric policy
+v←(262144⍴1E20),∞ ⋄ r←262144↑v
+(•storage⌊r).kind   ⍝ "mixed"
+
 ⍝ — A reshape reads its argument's items as a view
 (•storage 2 3⍴⍳6).view   ⍝ $t
 
