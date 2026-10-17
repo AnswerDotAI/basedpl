@@ -1,0 +1,180 @@
+
+
+# `•prefs` — Session settings
+
+`•prefs Y` applies the settings in the record `Y` to this session, and
+returns every setting. The result is shy when `Y` sets something, as an
+assignment’s is. `•prefs ⍬` changes nothing, and shows every setting.
+
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Holds</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>box</code></td>
+<td><code>$t</code> draws matrices, nested arrays and strings in boxes,
+and leaves other vectors plain</td>
+<td><code>$t</code> in the REPL, the BPL Jupyter kernel and IPython once
+it loads BPL’s magics, <code>$f</code> elsewhere</td>
+</tr>
+<tr>
+<td><code>trees</code></td>
+<td><code>$t</code> shows functions and dissected expressions as trees;
+<code>$f</code> uses linear notation. Independent of
+<code>box</code></td>
+<td>as <code>box</code></td>
+</tr>
+<tr>
+<td><code>fns</code></td>
+<td><code>$f</code> leaves output made inside functions unboxed</td>
+<td>as <code>box</code></td>
+</tr>
+<tr>
+<td><code>dissect</code></td>
+<td><code>$t</code> shows the bound expression before each normal
+result, using <code>trees</code></td>
+<td><code>$f</code></td>
+</tr>
+<tr>
+<td><code>fusion</code></td>
+<td><code>$t</code> writes a line for each call that ends a fused
+computation, as described below</td>
+<td><code>$f</code></td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>The most items display shows in full. <code>∞</code> shows every
+item</td>
+<td><code>1000</code></td>
+</tr>
+<tr>
+<td><code>edges</code></td>
+<td>Positions shown at each end of a long axis</td>
+<td><code>3</code></td>
+</tr>
+<tr>
+<td><code>prec</code></td>
+<td>Significant digits shown for each float. <code>∞</code> shows every
+digit</td>
+<td><code>10</code></td>
+</tr>
+<tr>
+<td><code>width</code></td>
+<td>The widest line display shows. <code>∞</code> allows any width</td>
+<td>The terminal’s width in the REPL, <code>∞</code> elsewhere</td>
+</tr>
+<tr>
+<td><code>notation</code></td>
+<td>Generated function and operator notation: <code>"apl"</code>,
+<code>"simplified"</code> or <code>"traditional"</code></td>
+<td><code>"apl"</code></td>
+</tr>
+<tr>
+<td><code>tolerance</code></td>
+<td>The relative tolerance of approximate comparison of 64-bit floats,
+from 0 to <code>1E¯14</code>. Narrower floats compare exactly</td>
+<td><code>1E¯14</code></td>
+</tr>
+<tr>
+<td><code>float</code></td>
+<td>The width of new floats in bits, 16, 32 or 64</td>
+<td><code>64</code></td>
+</tr>
+<tr>
+<td><code>threads</code></td>
+<td>The number of threads that large calls split across. <code>0</code>
+gives the default. <code>1</code> keeps every call on one thread</td>
+<td><code>0</code></td>
+</tr>
+</tbody>
+</table>
+
+Display shows part of an array of more than `limit` items: the first and
+last `edges` positions of each axis longer than twice `edges`. `…`
+replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where
+they cross. A nested array follows the same rule on its own. A line
+wider than `width` hides columns in the same way, keeping as many at
+each end as fit. `⎕←` always shows every item, and rounds floats to
+`prec` as display does. [`⍕`](../glyphs/thorn.qmd) and source text
+always hold every item and every digit.
+
+`notation` changes generated function and operator displays, including
+trees and dissected expressions. Dfn source stays as written; strings,
+record keys and field separators stay unchanged. All three spellings are
+always accepted in code, including mixed notation, whatever the display
+setting. Generated source and structural APIs keep canonical APL
+spellings.
+
+`tolerance` sets how approximate numbers compare. `x` equals `y` when
+`|x-y|` is less than the tolerance times the larger magnitude. The
+setting applies to 64-bit floats. 32-bit and 16-bit floats always
+compare exactly. Comparison at a tolerance of 0 is exact and faster. A
+float still stands for a count, a position or a Boolean when it lies
+within `1E¯14` of one, whatever the setting.
+[Power](../glyphs/star-diaeresis.qmd) `⍣∞` stops at two results within
+`1E¯14` of each other, or within 4 units in the last place of a 32-bit
+or 16-bit float, whatever the setting.
+
+`float` sets the default width of floats, in bits: the width of bare
+numbers in code parsed after the change, of numbers that `•csv`,
+`•json`, `•vfi` and `•image` read, of random numbers, and of floats that
+a function gives from exact arguments. Code already parsed keeps its
+numbers. A change partway through some code therefore applies from the
+next input, or from text that [`⍎`](../glyphs/hydrant.qmd) parses later.
+Leading `•prefs` calls on a literal record are the exception. They run
+before the rest of their code is parsed, as in the examples below. A
+script, a notebook cell or a line typed at the REPL can set its own
+width this way. In a module that [`•load`](load.qmd) runs, they run in
+order with the rest of its code. See
+[Numbers](../numbers.qmd#float-widths).
+
+`threads` sets how many threads this session’s large calls split across.
+A call splits only when it has enough work to repay the extra threads.
+Float results can differ in their last bits between thread counts. The
+default, 0, uses the number in the `RAYON_NUM_THREADS` environment
+variable where it’s set, and one thread for each core otherwise. 1 runs
+every call on the thread that evaluates the code. When several BPL
+processes run at once, such as a pool of Python workers, set 1 in each
+of them to keep them from competing for the cores. The browser build
+runs every call on one thread, whatever the setting.
+
+`fusion` shows where large float computations stop fusing. Dyadic calls
+of `+ - × ÷ ⌈ ⌊ |`, monadic calls of `+ - ÷ |` and the comparisons, on
+large arrays of floats, run together, block by block, reading each array
+once. They wait until something else reads their result: a call that
+can’t run with them, display, or Python. With `fusion` set to `$t`, the
+innermost call that reads such a result writes a line naming its
+function and position, such as `fusion ends at ⌽ (<input>:1:46)`. A
+reduction such as `+/` of such a result runs with the calls and writes
+nothing.
+
+[`•explain`](explain.qmd) records the same events. In the first example,
+the comparison runs with the arithmetic and `+/`. In the second, monadic
+`⌊` ends the fusion of `y×2`:
+
+``` bpl
+y←¿1000000⍴0
+(•explain "+/(y+1)<|y-0.5").fused.glyphs    ⍝ ["-|+<+/"]
+(•explain "+/⌊y×2").forced.function         ⍝ ["⌊"]
+```
+
+``` bpl
+•prefs ["tolerance":0] ⋄ 0.3=0.1+0.2    ⍝ $f
+•prefs ["tolerance":1E¯14] ⋄ 0.3=0.1+0.2    ⍝ $t
+•prefs ["tolerance":1E¯14] ⋄ 1ₛ=1.0000001ₛ    ⍝ $f
+•prefs ["float":32] ⋄ (•storage 1.5).kind    ⍝ "float32"
+•prefs ["float":64] ⋄ (•storage 1.5).kind    ⍝ "float64"
+•prefs ["threads":1] ⋄ "threads"⊃•prefs ⍬    ⍝ 1ₓ
+```
+
+Errors: `DOMAIN` for an unknown setting or an invalid value.

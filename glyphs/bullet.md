@@ -1,0 +1,12 @@
+
+
+# `•` — System
+
+System. Keys: `Alt-y`
+
+`•` starts a [system function](../system-functions.qmd) name. Names are
+case-insensitive.
+
+``` bpl
+•c "AbC"           ⍝ "abc"
+```

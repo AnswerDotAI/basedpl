@@ -1,0 +1,22 @@
+
+
+# `⌈` — Ceiling / Maximum
+
+Function. Keys: `Alt-s`. Ranks: `0` monadic, `0 0` dyadic
+
+`⌈Y` rounds up to an exact integer. Pervasive; tolerant near integers.
+An infinity or NaN stays a float. Complex ceiling is `-⌊-Y`.
+
+``` bpl
+⌈1.2 ¯1.2         ⍝ [2 ¯1]ₓ
+⌈3r2              ⍝ 2ₓ
+```
+
+`X⌈Y` takes the real maximum. Pervasive. Beside NaN it gives `Y`’s item.
+Beside NaN, `⌈/` and `⌈\` give NaN or the greatest other item, depending
+on the processor. Empty reduction identity: `¯∞`.
+
+``` bpl
+3⌈1 5             ⍝ 3 5
+3⌈1 $n 5          ⍝ 3 $n 5
+```

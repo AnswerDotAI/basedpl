@@ -1,0 +1,28 @@
+
+
+# `•storage` — Storage
+
+`•storage Y` gives a record of how the items of `Y` are held. It reads
+no items, and a pending call stays pending.
+
+- `kind` names the storage: `"boolean"`, `"integer"`, `"float64"`,
+  `"float32"`, `"float16"`, `"complex128"`, `"complex64"`, `"character"`
+  or `"mixed"`. An atom gives its own kind. That can also be
+  `"rational"`, for an exact rational or an integer beyond 64 bits, or
+  `"function"`. Compact storage holds items of one kind. `"integer"`
+  covers integers of every width. Mixed storage keeps each item’s kind.
+  Boxed display marks the same storage on its bottom edge.
+  [Storage](../numbers.qmd#storage) describes each storage.
+- `pending` is `$t` while fusion hasn’t yet run the call that computes
+  the items.
+- `view` is `$t` when `Y` reads another array’s items, as a reshape
+  does.
+- `active` counts the levels of `∂` whose tags `Y` carries. Under `∂`,
+  `kind` names the storage of the value being differentiated.
+
+``` bpl
+•storage 1.5 2.5             ⍝ ["kind":"float64" "pending":$f "view":$f "active":0ₓ]
+(•storage 2 3⍴⍳6).view       ⍝ $t
+y←1.5+¿200000⍴0
+(•storage y).pending         ⍝ $t
+```

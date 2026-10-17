@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.19">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>mercer-based-system – BasedPL</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-f2788e636de456f6409e966386820849.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [],
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="../fonts.css">
+<link rel="stylesheet" href="../styles.css">
+<meta property="og:title" content="BasedPL">
+<meta property="og:description" content="BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.">
+<meta property="og:site_name" content="BasedPL">
+<meta name="twitter:title" content="BasedPL">
+<meta name="twitter:description" content="BasedPL, the Based-array Programming Language, is an APL-derived array language, borrowing ideas from J and BQN, with an emphasis on simple, consistent notation.">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../index.html">
+    <span class="navbar-title">BasedPL</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../getting-started.html" aria-current="page"> 
+<span class="menu-text">Get started</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../glyphs.html"> 
+<span class="menu-text">Glyph reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../python.html"> 
+<span class="menu-text">Python</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/AnswerDotAI/basedpl"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../playground.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Playground</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../gallery.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gallery</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../web.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL on the web</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../python.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Python</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notebooks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Using BPL notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../repl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">REPL</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command line</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../glyphs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyph reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../keyboard.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Keyboard map</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../syntax.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Syntax</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../evaluation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Evaluation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../terms.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Terms</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../system-functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">System functions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../comparison.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL, APL and BQN side by side</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">Explanations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../overview.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language overview</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../principles.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language principles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../arrays.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Arrays</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../numbers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Numbers</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../strings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Characters and strings</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../bracket-types.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Types of brackets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../scripts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Superscripts and subscripts</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../assignment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Assignment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../dfns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dfns</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../modules.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modules and namespaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../keyed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Axis keys</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Working with data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Files, CSV and JSON</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../regex.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regex</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../distributions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Probability distributions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../xml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">XML, SVG and images</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plots</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tooling</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../introspection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Names and help</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../processes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Process interfaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../dyalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dyalog sessions</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#a-based-system-for-general-arrays" id="toc-a-based-system-for-general-arrays" class="nav-link active" data-scroll-target="#a-based-system-for-general-arrays">A Based System for General Arrays</a>
+  <ul class="collapse">
+  <li><a href="#abstract" id="toc-abstract" class="nav-link" data-scroll-target="#abstract">Abstract</a></li>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link" data-scroll-target="#introduction">Introduction</a></li>
+  <li><a href="#what-is-an-element" id="toc-what-is-an-element" class="nav-link" data-scroll-target="#what-is-an-element">What is an Element?</a></li>
+  <li><a href="#depth-in-gs-and-fs" id="toc-depth-in-gs-and-fs" class="nav-link" data-scroll-target="#depth-in-gs-and-fs">Depth in GS and FS</a></li>
+  <li><a href="#a-deficiency-of-the-floating-system" id="toc-a-deficiency-of-the-floating-system" class="nav-link" data-scroll-target="#a-deficiency-of-the-floating-system">A Deficiency of the Floating System</a></li>
+  <li><a href="#a-deficiency-of-the-grounded-system" id="toc-a-deficiency-of-the-grounded-system" class="nav-link" data-scroll-target="#a-deficiency-of-the-grounded-system">A Deficiency of the Grounded System</a></li>
+  <li><a href="#the-based-system" id="toc-the-based-system" class="nav-link" data-scroll-target="#the-based-system">The Based System</a></li>
+  <li><a href="#rephrasing-the-definition-of-the-based-system" id="toc-rephrasing-the-definition-of-the-based-system" class="nav-link" data-scroll-target="#rephrasing-the-definition-of-the-based-system">Rephrasing the Definition of the Based System</a></li>
+  <li><a href="#depth-and-rank-of-functions" id="toc-depth-and-rank-of-functions" class="nav-link" data-scroll-target="#depth-and-rank-of-functions">Depth and Rank of Functions</a></li>
+  <li><a href="#depth-and-fs" id="toc-depth-and-fs" class="nav-link" data-scroll-target="#depth-and-fs">Depth and FS</a></li>
+  <li><a href="#conclusions" id="toc-conclusions" class="nav-link" data-scroll-target="#conclusions">Conclusions</a></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="mercer-based-system-commonmark.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+
+
+
+
+<section id="a-based-system-for-general-arrays" class="level1">
+<h1>A Based System for General Arrays</h1>
+<p><strong>Randall Mercer</strong></p>
+<p><em>APL Quote Quad</em> 12 2, December 1981, pp.&nbsp;18–21.</p>
+<p>Manually transcribed from the page images in <code>basedpaper.pdf</code>. The preceding article’s ending on page 18 is omitted. Enclose and Disclose are normalized from the author’s IPSA spellings <code>&lt;</code> and <code>&gt;</code> to <code>⊂</code> and <code>⊃</code>. The symbol <code>↮</code> represents the source’s crossed-out equivalence arrow.</p>
+<section id="abstract" class="level2">
+<h2 class="anchored" data-anchor-id="abstract">Abstract</h2>
+<p>The “floating” and “grounded” systems for including general arrays in APL are compared, and their deficiencies discussed. Finally, an alternative grounded system, the “based” system, is defined; in it the floating and grounded systems can be modeled easily and these deficiencies do not appear.</p>
+</section>
+<section id="introduction" class="level2">
+<h2 class="anchored" data-anchor-id="introduction">Introduction</h2>
+<p>Methods for allowing arrays to contain other arrays have long been discussed in the APL community. Two fundamentally different approaches have been developed. One, frequently called the “floating system” (FS), is based on the array theory of Trenchard More and has become the basis for an experimental Nested Arrays System at STSC, Inc.&nbsp;[1]. The other, frequently called the “grounded system” (GS), is the basis for a recent extension [2] of the I.P. Sharp Associates production system to include “enclosed arrays”. Both systems define functions Enclose and Disclose, represented by <code>&lt;</code> and <code>&gt;</code> at IPSA and by <code>⊂</code> and <code>⊃</code> at STSC. [The author uses the IPSA spellings throughout the original; this transcription uses <code>⊂</code> and <code>⊃</code>.]</p>
+<p>For convenience in the ensuing discussion, I shall consider only monadic functions and arrays of rank 0 or 1 only. In presentations below, except where further restricted, <em>A</em> represents any array, <em>SA</em> represents any simple array (as in APL without general arrays), and <em>S</em> represents a simple scalar.</p>
+<p>In both FS and GS:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴⍴⊂</span>A  ↔  <span class="dv">0</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">⊃⊂</span>A   ↔  A</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">⊃</span>S    ↔  S</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>SA[S] yields a scalar</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>In FS:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⊂</span>S  ↔  S</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>but in GS:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⊂</span>S  ↮  S</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>I shall not discuss the extensions to <code>⊃</code> made by STSC and IPSA to apply to arrays of rank exceeding 0.</p>
+</section>
+<section id="what-is-an-element" class="level2">
+<h2 class="anchored" data-anchor-id="what-is-an-element">What is an Element?</h2>
+<p>I must digress here to define “element” and “contains”, lest confusion reign. I define element <em>S</em> of <em>A</em> through an explicit disclose, as:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⊃</span>A[S]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Alternatively, <em>A</em> contains <code>⊃A[S]</code> at its position <em>S</em>. The justification for this definition of element is that indexed selection in APL is not really an element-selection function, but a function for selecting a subarray—it extracts elements from the source of the selection and puts them inside an array whose shape is given by the shape of the index.</p>
+<p>This definition of element is analogous to that of set theory, where one distinguishes between an element of a set and a subset containing that element. For example, consider the set Q defined by:</p>
+<pre class="text"><code>Q={{1,2},{3,4},{5,6}}</code></pre>
+<p>It contains three elements, i.e.:</p>
+<pre class="text"><code>{1,2}, {3,4}, and {5,6}</code></pre>
+<p>each of which is less deeply nested than Q. Each nonempty subset of Q, e.g., <code>{1,2}</code>, is as deeply nested as Q. The operation analogous to indexed selection in APL is selection of a subset, e.g., <code>{1,2}</code>, which must be disclosed to get an element of Q—in this case, <code>{1,2}</code>.</p>
+<p>In both FS and GS, then, simple arrays contain simple scalars as their elements, and the element of <code>,⊂A</code> is <em>A</em>, not <code>⊂A</code>. With this definition of element, GS has the curious property that both simple arrays and arrays of enclosed scalars contain scalars. I think this is the reason why those who like GS prefer to think of <code>A[S]</code>, not <code>⊃A[S]</code>, as element <em>S</em> of <em>A</em>.</p>
+</section>
+<section id="depth-in-gs-and-fs" class="level2">
+<h2 class="anchored" data-anchor-id="depth-in-gs-and-fs">Depth in GS and FS</h2>
+<p>A function, <em>DEPTH</em>, can be defined to correspond to the intuitive notion of the depth of a general array:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>DEPTH SA  ↔  <span class="dv">1</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>DEPTH A   ↔  <span class="dv">1</span><span class="fu">+⌈</span><span class="op">/</span>DEPTH<span class="op">¨</span><span class="fu">,</span>A    <span class="co">⍝ for non-simple arrays A</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>where <code>¨</code> is STSC’s operator “each”.</p>
+<p>Notice that in GS we have the identity:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>DEPTH <span class="fu">⊂</span>A  ↔  <span class="dv">1</span><span class="fu">+</span>DEPTH A</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>which fails to hold in FS for simple scalar <em>A</em>. There is, of course, an identity in FS for all rank-0 arrays <em>A</em>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>DEPTH <span class="fu">⊂⊃</span>A  ↔  DEPTH A</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>that fails to hold in GS for simple scalar <em>A</em>.</p>
+</section>
+<section id="a-deficiency-of-the-floating-system" class="level2">
+<h2 class="anchored" data-anchor-id="a-deficiency-of-the-floating-system">A Deficiency of the Floating System</h2>
+<p>A major usage [3] of strand notation in STSC’s system has been to pass more than two arguments to a defined function. To compare the ability of FS and GS to make use of some construct for achieving this end, I define the value of <code>(A;B;C;...)</code> to be the same as the value of <code>(⊂A),(⊂B),(⊂C),...</code>. This “list” notation is similar in a floating system to the strand notation defined by STSC, but works equally well in either FS or GS. (Strand notation in GS would require the adoption of heterogeneous arrays.)</p>
+<p>The use of list or strand notation exposes a minor disadvantage of FS—you cannot define in the obvious way a function that takes a variable number of simple arrays as arguments. For example in FS, where <code>(1;2;3)</code> is equivalent to <code>1 2 3</code>, the following behavior would not be possible:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>      <span class="st">'I2'</span> <span class="bu">⎕FMT</span> (<span class="dv">1</span>;<span class="dv">2</span>;<span class="dv">3</span>)</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>      <span class="st">'I2'</span> <span class="bu">⎕FMT</span> (<span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span>)</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a> <span class="dv">1</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a> <span class="dv">2</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a> <span class="dv">3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>In GS, there is no problem, because <code>(1;2;3)</code> is not equivalent to <code>1 2 3</code>.</p>
+<p>It is possible in FS to pass a variable number of simple arrays as arguments by using a one-element vector instead of a list when there is only one argument to pass. For example, <code>(A;B;C)</code> would be suitable for passing three arguments, but <code>,⊂A</code> would be used to pass a single argument. This circumvents the problem with only a minor notational inconvenience. However, it still does not allow a function to treat simple arrays quite differently from arrays of simple arrays as <code>⎕FMT</code> does in either implementation, since an array of scalars is both a simple array and an array of simple arrays in FS.</p>
+</section>
+<section id="a-deficiency-of-the-grounded-system" class="level2">
+<h2 class="anchored" data-anchor-id="a-deficiency-of-the-grounded-system">A Deficiency of the Grounded System</h2>
+<p>Consider the “with” operator <code>¨</code> of IPSA’s GS. <code>F¨⊃</code> works almost like STSC’s each operator used with <em>F</em>. However, if <em>F</em> is a function such that <code>F A</code> has the same depth as <em>A</em>, then <code>F¨⊃SA</code> will exceed the depth of simple array <em>SA</em>, even though the depth of <code>F¨⊃A</code> is the same as the depth of <em>A</em> when <em>A</em> is not simple. This is a consequence of combining a permissive disclose with a strict enclose, i.e., that <code>DEPTH ⊂⊃S</code> is <code>1+DEPTH S</code>. This means that although you can use <code>¨</code> to apply a defined mixed function to each element of an array of enclosed arrays, you cannot apply in the same way a defined scalar function to a simple array of scalars. For example, using Iverson’s direct-definition operator [6] on the IPSA system:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>      F<span class="kw">←</span><span class="st">' '</span><span class="va">∇</span><span class="st">'+/⍳⍴⍵'</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>      <span class="fu">-</span>F<span class="op">¨</span><span class="fu">⊃</span><span class="dv">3</span> <span class="dv">2</span> <span class="dv">3</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>DOMAIN ERROR</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>      <span class="fu">-</span>F<span class="op">¨</span><span class="fu">⊃</span><span class="dv">3</span> <span class="dv">2</span> <span class="dv">3</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>      ^</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>On STSC’s system, however, we get:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>      <span class="fu">-</span>F<span class="op">¨</span><span class="dv">3</span> <span class="dv">2</span> <span class="dv">3</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="dv">¯6</span> <span class="dv">¯3</span> <span class="dv">¯6</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<blockquote class="blockquote">
+<p>Transcription note: the scan includes <code>⍴</code> in both direct-definition bodies. The triangular-number results shown here imply <code>+/⍳⍵</code>, and <code>⊃+/⍳⍵</code> in the based-system example below. The printed bodies are retained.</p>
+</blockquote>
+</section>
+<section id="the-based-system" class="level2">
+<h2 class="anchored" data-anchor-id="the-based-system">The Based System</h2>
+<p>Two assumptions have been implicitly accepted by the proponents of either FS or GS:</p>
+<ol type="1">
+<li>Indexed selection returns an array whose elements are elements of the array to which indexed selection was applied.</li>
+<li>The elements of simple arrays are simple scalars.</li>
+</ol>
+<p>From these one must conclude that either:</p>
+<ol start="3" type="1">
+<li>Scalars contain themselves because <code>SA[S]</code> is element <em>S</em> of <em>A</em> which is a scalar.</li>
+</ol>
+<p>or:</p>
+<p><strong>(3′)</strong> Array elements are not analogous to set elements—in particular, element <em>S</em> of <em>A</em> is not <code>⊃A[S]</code> but <code>A[S]</code>.</p>
+<p>The “based system” (BS) eliminates these conclusions by replacing assumption (2) with:</p>
+<p><strong>(2′)</strong> The elements of simple arrays are disclosed scalars, which are not the same as scalars.</p>
+<p>BS may be summarized by the following identities:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴⍴⊂</span>A  ↔  <span class="dv">0</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">⊃⊂</span>A   ↔  A</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="fu">⊂</span>S    ↮  S</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="fu">⊃</span>S    ↮  S</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>SA[S] yields a scalar</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Let us call <code>⊃S</code> a disclosed scalar. To extend the primitive functions of APL to disclosed scalars, I posit three further identities. Let <em>MSF</em> be any monadic scalar function and <em>AOF</em> any other primitive function; then:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⊃⊃</span>S     ↔  Domain Error</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>MSF <span class="fu">⊃</span>S  ↔  <span class="fu">⊃</span> MSF S</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>AOF <span class="fu">⊃</span>S  ↔  AOF S</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>In BS, there is no problem in passing a variable number of simple-array arguments to a defined function by using list notation, since a list of scalars is distinguishable from a simple vector, with the former containing scalars and the latter containing disclosed scalars.</p>
+<p>The with operator also displays more felicitous behavior in BS. <code>F¨⊃SA</code> has the same depth as <em>SA</em>, allowing you to define your own scalar functions (mapping disclosed scalars to disclosed scalars) and to use <code>¨⊃</code> to apply them over all the elements of an array:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>      F<span class="kw">←</span><span class="st">' '</span><span class="va">∇</span><span class="st">' ⊃+/⍳⍴⍵'</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>      <span class="fu">-</span>F<span class="op">¨</span><span class="fu">⊃</span><span class="dv">3</span> <span class="dv">2</span> <span class="dv">3</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="dv">¯6</span> <span class="dv">¯3</span> <span class="dv">¯6</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>In BS, <em>DEPTH</em> may be defined by the following properties:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>DEPTH <span class="fu">⊃</span>S  ↔  <span class="dv">0</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>DEPTH A   ↔  <span class="dv">1</span><span class="fu">+⌈</span><span class="op">/</span>DEPTH<span class="op">¨</span><span class="fu">⊃</span>A</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>with which definition both these identities hold:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>DEPTH <span class="fu">⊂</span>A   ↔  <span class="dv">1</span><span class="fu">+</span>DEPTH A</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>DEPTH <span class="fu">⊂⊃</span>A  ↔  DEPTH A    <span class="co">⍝ for A of rank 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Another interesting depth-related identity holds in BS but does not hold in either FS or GS:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>DEPTH A[S]  ↔  DEPTH A</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>for any array whose elements all have the same depth.</p>
+</section>
+<section id="rephrasing-the-definition-of-the-based-system" class="level2">
+<h2 class="anchored" data-anchor-id="rephrasing-the-definition-of-the-based-system">Rephrasing the Definition of the Based System</h2>
+<p>Let us rephrase the definition of the based system, calling “scalars” what I previously called “disclosed scalars” and calling “enclosed scalars” what have previously been called “scalars”:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode apl code-with-copy"><code class="sourceCode dyalog"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴⍴⊂</span>A  ↔  <span class="dv">0</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">⊃⊂</span>A   ↔  A</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="fu">⊂</span>S    ↮  S</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="fu">⊃</span>S    ↔  Domain Error</span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>SA[S] yields an enclosed scalar</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>A monadic scalar function is then a function that operates on a scalar to produce a scalar result and operates on an array of scalars to return an array of scalars in the familiar fashion.</p>
+<p>The definitions of other functions must be modified to refer to enclosed scalars rather than to scalars, and a rule must be adopted:</p>
+<blockquote class="blockquote">
+<p><strong>Global Equivalence Rule for Scalars</strong>—Except where explicitly defined otherwise, a scalar argument to a primitive function is treated as though it were an enclosed scalar.</p>
+</blockquote>
+<p>It should be noted that some implementations already have a rule for empty arrays, though it is not always stated as such:</p>
+<blockquote class="blockquote">
+<p><strong>Global Equivalence Rule for Empty Arrays</strong>—Except where explicitly defined otherwise, empty character arguments and empty numeric arguments will be treated in the same way.</p>
+</blockquote>
+<p>Also, by extending the equivalence rule for scalars, you can get a version of the based system that behaves almost exactly like the floating system, but you can pass variable numbers of simple-array arguments without difficulty, and the identities for the depth function hold:</p>
+<blockquote class="blockquote">
+<p><strong>Extended Global Equivalence Rule for Scalars</strong>—Except where explicitly defined otherwise, a scalar argument or a multiply enclosed scalar argument to a primitive function is treated as though it were an enclosed scalar.</p>
+</blockquote>
+</section>
+<section id="depth-and-rank-of-functions" class="level2">
+<h2 class="anchored" data-anchor-id="depth-and-rank-of-functions">Depth and Rank of Functions</h2>
+<p>Iverson has suggested [5] that argument and result ranks might usefully be defined for primitive functions, where the argument rank is the rank of arrays to which a primitive function “naturally” applies and the result rank is the rank of the result after applying a primitive function to an argument of its argument rank. For example, reversal (<code>⌽</code>) has argument rank 1 and result rank 1, and matrix inversion (<code>⌹</code>) has argument rank 2 and result rank 2.</p>
+<p>It is also possible to define argument and result “depths” for functions. In BS, scalar functions have arguments of depth 0 and results of depth 0. Disclose has a result depth of one less than the argument depth. Enclose has a result depth of one more than the argument depth. Other mixed functions have argument and result depth of 1. The function <em>DEPTH</em>, defined above, has result depth 1, but accepts an argument of any depth. <code>-¨⊃</code> is a function with result depth the same as argument depth (unlike GS, where the result depth and argument depth sometimes differ).</p>
+</section>
+<section id="depth-and-fs" class="level2">
+<h2 class="anchored" data-anchor-id="depth-and-fs">Depth and FS</h2>
+<p>The difficulty with passing a variable number of simple-array arguments in FS can now be seen as a deficiency of FS in dealing with functions, such as <em>DEPTH</em> and <code>⎕FMT</code>, of arguments of arbitrary depth. I could contrive other examples, e.g., a function that sums the leaves of its argument weighted by the depths of the leaves. However, whether there are many functions of practical utility depending strongly on that feature is an open question.</p>
+</section>
+<section id="conclusions" class="level2">
+<h2 class="anchored" data-anchor-id="conclusions">Conclusions</h2>
+<p>The floating system is inconvenient for passing a variable number of simple arrays as arguments to a defined function by means of strand or list notation. Also, the <em>DEPTH</em> function fails to satisfy a simple identity that is satisfied in both the grounded and based systems. It is also possible that there are useful functions where depth matters which the floating system does not handle well.</p>
+<p>In the grounded system, a user cannot define a scalar function and then use the with operator and disclose to get the usual kind of extension of a scalar function to simple arrays of scalars. Some identities of the floating and based systems that involve the <em>DEPTH</em> function fail in the grounded system. These negative aspects of the grounded system are consequences of the requirement that the disclose of a simple scalar be a scalar.</p>
+<p>The based system that I have presented does not have these deficiencies, but requires disclosed scalars to be the fundamental entities in APL, and that a rule be introduced to extend the definitions of current nonscalar primitive functions to apply to disclosed scalars as well as to scalars.</p>
+<p>Randall Mercer<br>
+Data General, E111<br>
+4400 Computer Drive<br>
+Westboro, Massachusetts<br>
+USA 01580</p>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ol type="1">
+<li>Carl M. Cheney. <em>APL*PLUS Nested Arrays, Reference Manual</em>, STSC, Inc.&nbsp;(1981).</li>
+<li>K.E. Iverson and R. Bernecky. Operators and enclosed arrays, <em>APL Users Meeting Proceedings</em>, I.P. Sharp Assocs. (1980) pp.&nbsp;319–381.</li>
+<li>Bob Smith. On strand notation (Letter to the editor in reply to [4]), <em>APL Quote Quad</em> 11 3 (March 1981) pp.&nbsp;4–6.</li>
+<li>K.E. Iverson. On strand notation (Letter to the editor), <em>APL Quote Quad</em> 11 3 (March 1981) pp.&nbsp;3–4.</li>
+<li>K.E. Iverson. Operators, <em>ACM Trans. on Prog. Lang. and Systems</em> (Oct.&nbsp;1979) pp.&nbsp;161–179.</li>
+<li>K.E. Iverson and P.K. Wooster. A function-definition operator, <em>APL 81 Conference Proceedings</em>, <em>APL Quote Quad</em> 12 1 (Sept.&nbsp;1981) pp.&nbsp;142–145.</li>
+</ol>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/answerdotai\.github\.io\/basedpl");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

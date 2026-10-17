@@ -1,0 +1,9 @@
+
+
+# `•nl` — Name list
+
+`prefix •nl classes` lists the visible user names in `classes` that
+begin with `prefix`, as a sorted vector of strings. `•nl classes` lists
+them all. [Introspection](../introspection.ipynb) has examples.
+
+Errors: `DOMAIN` for unsupported classes; `RANK` for a class matrix.

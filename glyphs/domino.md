@@ -1,0 +1,62 @@
+
+
+# `⌹` — Matrix inverse / Matrix divide
+
+Function. Keys: `Alt-q u`. Ranks: `2` monadic, `∞ 2` dyadic
+
+`⌹Y` gives the inverse of a square matrix, and the pseudoinverse of any
+other matrix. Units reciprocate.
+
+``` bpl
+⌹2ₓ                ⍝ 1r2
+⌹[1 0⋄0 2]ₓ     ⍝ [1ₓ 0ₓ⋄0ₓ 1r2]
+```
+
+On an array of rank 3 or more, `⌹Y` inverts each matrix, and `X⌹Y`
+divides `X` by each matrix.
+
+``` bpl
+⌹2 2 2⍴[1 0 0 1 2 0 0 4]ₓ   ⍝ 2 2 2⍴[1 0 0 1 1r2 0 0 1r4]ₓ
+```
+
+`X⌹Y` solves `Y+.×Z = X`, giving the least-squares solution when there
+are more rows than columns.
+
+``` bpl
+[3 5 7]ₓ⌹[1 1⋄1 2⋄1 3]ₓ      ⍝ [1 2]ₓ
+```
+
+Where many least-squares solutions exist, as for a singular or wide
+matrix, `⌹` gives the one with the least norm, as NumPy’s `lstsq` and
+`pinv` do. A square matrix is singular where a pivot of its LU
+factorization is no greater than [`$m`](../system/constants.qmd) times
+its size times its largest magnitude. Singular values no greater than
+`$m` times the larger of the matrix’s two lengths times the largest
+singular value then count as zero.
+
+``` bpl
+[1 2]ₓ⌹[1 0 1⋄0 1 0]ₓ      ⍝ [1r2 2 1r2]ₓ
+⌹[1 2⋄2 4]ₓ                ⍝ [1r25 2r25⋄2r25 4r25]
+⌹[1 2⋄2 4]                 ⍝ [0.04 0.08⋄0.08 0.16]
+```
+
+Exact arguments stay exact, through row reduction. Approximate real and
+complex arguments take LU with partial pivoting where a square matrix
+isn’t singular. Other matrices take the SVD. The LU result applies no
+cutoff: `⌹[1 1e8⋄0 1]` gives the exact inverse `[1 ¯1e8⋄0 1]`, though
+the SVD’s cutoff would count its smaller singular value as zero.
+
+## Inverse
+
+`⌹⁻¹Y` is `⌹Y`.
+
+``` bpl
+⌹⁻¹[1 0⋄0 2]ₓ   ⍝ [1 0⋄0 1r2]ₓ
+```
+
+## Errors
+
+- `LENGTH`: `X` and `Y` have different numbers of rows
+- `DOMAIN`: an item that isn’t a number
+
+A matrix that holds an infinity or NaN gives NaN results.

@@ -1,0 +1,123 @@
+
+
+# `⌷` — Materialise / Index
+
+Function. Keys: `Alt-q Backslash`. Ranks: `∞` monadic, `1 ∞` dyadic
+
+`I⌷Y` indexes `Y`. The left argument has one item for each leading axis
+of `Y`. Axes that it omits are taken whole. `⌷Y` is identity. A
+[subscript](../scripts.ipynb#subscripts) writes a single position: `m₁`
+is `1⌷m`. After an array, [Dot](dot.qmd) indexing is `⌷`: `x.[I]` is
+`[I]⌷x`.
+
+``` bpl
+m←3 4⍴⍳12
+1⌷m                ⍝ 4 5 6 7
+1 2⌷m              ⍝ 6
+```
+
+Each item of the left argument is a single position, an array of
+positions, or `∞`. Selecting with a single position drops that axis from
+the result. Selecting with an array of positions puts the array’s shape
+in place of the axis. An array of positions for one axis is one item, as
+in `[[2 0]]`, because `[2 0]` gives a position on each of two axes.
+
+``` bpl
+v←10 20 30
+[[2 0]]⌷v          ⍝ 30 10
+m←3 4⍴⍳12
+[1 2;0 3]⌷m        ⍝ [4 7⋄8 11]
+```
+
+Positions count from 0. Negative positions count from the end. `¯1` is
+the last position.
+
+``` bpl
+v←10 20 30
+¯1⌷v               ⍝ 30
+[[¯1 0]]⌷v         ⍝ 30 10
+```
+
+An array of positions whose items are vectors does choose indexing. Each
+vector is one coordinate, with one position for each axis of `Y`.
+
+``` bpl
+m←3 4⍴⍳12
+[[0 1;2 ¯1]]⌷m     ⍝ 1 11
+```
+
+`∞` takes a whole axis, and `¯∞` takes it in reverse order. They are
+valid only as a whole item, not inside an array of positions.
+
+``` bpl
+m←3 4⍴⍳12
+∞ 1⌷m              ⍝ 1 5 9
+¯∞ ∞⌷m             ⍝ ⊖3 4⍴⍳12
+```
+
+On a keyed axis, a string is one key.
+
+``` bpl
+T←"aa" "bb":1 2
+"bb"⌷T             ⍝ 2
+```
+
+An array of positions with named axes is a named selector, such as a
+[named index](iota.qmd) from `⍳["i":n]`. Its axes replace the axis it
+selects, with their names and any keys it has. A named vector without
+keys keeps the keys at the positions it selects. Named selectors that
+share a name pair, as arithmetic pairs named axes, and read one position
+along both. `[i;i]⌷m` is therefore the diagonal. Selectors with
+different names, and unnamed selectors, combine as above.
+
+``` bpl
+m←3 3⍴⍳9 ⋄ i←⍳["i":3] ⋄ j←⍳["j":3]
+[i;i]⌷m            ⍝ ["i":3]⍴[0 4 8]
+⍴[i;j]⌷m           ⍝ ["i":3 "j":3]ₓ
+```
+
+A named selector reads the prototype outside its axis, and a negative
+position in it never counts back from the end. Unnamed selectors keep
+the rules above. To clamp or wrap a named index, compute it, as in
+`x.[0⌈i-1]` or `x.[5|i-1]`.
+
+``` bpl
+x←10×⍳5 ⋄ i←⍳["i":5]
+x.[i-1]            ⍝ ["i":5]⍴[0 0 10 20 30]
+x.[5|i-1]          ⍝ ["i":5]⍴[40 0 10 20 30]
+```
+
+Assignment through `⌷` replaces the selected items. A missing key is
+added, even on an axis with no keys.
+
+``` bpl
+x←10 20 30
+(¯1⌷x)←9
+x                  ⍝ 10 20 9
+T←"aa" "bb":1 2
+("cc"⌷T)←3
+T                  ⍝ "aa" "bb" "cc":1 2 3
+```
+
+With an axis, `⌷⍠K` applies the left argument’s items to the axes `K`.
+
+``` bpl
+1⌷⍠1 (3 4⍴⍳12)      ⍝ 1 5 9
+```
+
+## Inverse
+
+`⌷⁻¹Y` is `⌷Y`.
+
+``` bpl
+⌷⁻¹1 2   ⍝ 1 2
+```
+
+## Errors
+
+- `LENGTH`: more items than axes, named selectors that share a name but
+  differ in length or keys
+- `INDEX`: position outside its axis, missing key, assignment through a
+  named selector that reaches outside its axis
+- `DOMAIN`: non-integral position, `∞` or `¯∞` inside an array of
+  positions
