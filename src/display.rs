@@ -1,6 +1,5 @@
 use rustymath::{buffer::FloatWidth, error::Kind};
 use crate::{keyed, symbols::Notation, ErrorAt, Number, Value};
-use rustymath::tolerant::{Tolerance, Tolerant};
 use unicode_width::UnicodeWidthStr;
 
 /// A column of numbers aligned on their decimal points: its widest text before the point, and its widest from the point on.
@@ -31,12 +30,14 @@ pub(crate) struct Elide {
     /// The float width that numbers show without a marker: the session's default width. `None` marks every width, as `•literal⁻¹` does.
     pub plain: Option<FloatWidth>,
     pub notation: Notation,
+    /// Whether text shows hidden axis names, which start with `_`. Source text and box mode show them, and plain display leaves them out.
+    pub hidden: bool,
 }
 impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, prec: 10, ..Self::NONE } } }
 impl Elide {
     /// Shows every item and every digit, as source text and `⍕` do, with 64-bit floats plain.
     pub const NONE: Self =
-        Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), notation: Notation::Apl };
+        Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), notation: Notation::Apl, hidden: true };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
     pub fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
@@ -55,6 +56,8 @@ impl Elide {
     pub fn width_marker(self, width: FloatWidth) -> Option<char> { (Some(width) != self.plain).then(|| crate::syntax::width_marker(width)) }
     /// The width marker that `n` writes: that of its float width, when it isn't `plain`.
     pub fn marker(self, n: &Number) -> Option<char> { n.float_width().and_then(|w| self.width_marker(w)) }
+    /// `name` as text shows it: `None` for a hidden name that `hidden` leaves out.
+    pub fn name(self, name: &Option<std::sync::Arc<str>>) -> Option<&std::sync::Arc<str>> { name.as_ref().filter(|n| self.hidden || !rustymath::layout::hidden(n)) }
 }
 
 /// The positions display shows along an axis of `len` items: all of them, or the first and last `edges` with `None` for the gap between.
@@ -109,8 +112,8 @@ impl Settings {
     /// Display text for `a`, boxed where `boxes` says, unless boxing is off, or `inside` a function while boxing there is off. A line wider than `width` elides columns, keeping as many at each end of the last axes as fit.
     pub fn array(&self, a: &Value, inside: bool) -> String {
         let text = |columns| {
-            let elide = Elide { columns, ..self.elide };
-            if self.boxed && (!inside || self.functions) && boxes(a) { array(a, elide).text() } else { plain(a, elide) }
+            let elide = Elide { columns, hidden: self.boxed, ..self.elide };
+            if self.boxed && (!inside || self.functions) && boxes(a, elide) { array(a, elide).text() } else { plain(a, elide) }
         };
         let fits = |t: &str| t.lines().all(|line| line.width() <= self.elide.width);
         let full = text(usize::MAX);
@@ -166,21 +169,17 @@ impl Settings {
     }
 }
 
-/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width. `threads` is the number of threads that the session's large calls split across, from then on. 0 gives the default. 1 runs them on the evaluating thread alone. Until the session sets it, `threads` reports the evaluating thread's own setting.
+/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `threads` is the number of threads that the session's large calls split across, from then on. 0 gives the default. 1 runs them on the evaluating thread alone. Until the session sets it, `threads` reports the evaluating thread's own setting.
 pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::Span) -> Result<(Value, bool), crate::Error> {
-    let (mut display, mut numeric, mut threads) = (session.display, session.numeric, session.threads);
-    let tolerance = |v: &Value| {
-        let t = v.as_number().and_then(|n| n.to_float().ok()).and_then(Tolerance::new);
-        t.filter(|&t| t <= Tolerance::DEFAULT).ok_or(Kind::Domain)
-    };
+    let (mut display, mut numeric, mut threads, mut hanzi_aliases) = (session.display, session.numeric, session.threads, session.hanzi_aliases);
     let pairs = keyed::pairs(right).error_at(span, "•prefs takes a record of settings")?;
     let shy = !pairs.is_empty();
     for (key, value) in pairs {
+        if numeric.set(&key, &value).map_err(|message| span.domain_error(message))? { continue; }
         match &*key {
-            "tolerance" => numeric.tolerance = tolerance(&value).error_at(span, "tolerance must be from 0 to 1E¯14")?,
-            "float" => {
-                let bits = value.as_number().and_then(|n| n.integer().ok());
-                numeric.width = bits.and_then(FloatWidth::of_bits).ok_or(Kind::Domain).error_at(span, "float must be 16, 32 or 64")?;
+            "hanzi_aliases" => {
+                if !session.prefacing { return Err(span.domain_error("hanzi_aliases needs a leading •prefs declaration on a literal record")); }
+                hanzi_aliases = value.boolean().error_at(span, "hanzi_aliases must be Boolean")?;
             }
             "threads" => {
                 let n = value.as_number().and_then(|n| n.integer().ok()).and_then(|n| usize::try_from(n).ok());
@@ -191,13 +190,15 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
             }
         }
     }
-    (session.display, session.numeric, session.threads) = (display, numeric, threads);
+    (session.display, session.numeric, session.threads, session.hanzi_aliases) = (display, numeric, threads, hanzi_aliases);
+    numeric.set_current();
     if let Some(n) = threads { rustymath::parallel::set_threads(n); }
-    let (mut keys, mut values): (Vec<std::sync::Arc<str>>, Vec<Value>) = display.entries(numeric.width).into_iter().map(|(k, v)| (k.into(), v)).unzip();
-    keys.extend(["tolerance".into(), "float".into(), "threads".into()]);
-    values.push(Value::Number(Number::float(numeric.tolerance.value(), FloatWidth::F64)));
-    values.push(Value::Number(Number::from_integer(numeric.width.bits())));
-    values.push(Value::Number(Number::from_integer(rustymath::parallel::thread_setting() as i64)));
+    let entries = display.entries(numeric.width).into_iter().chain(numeric.entries());
+    let (mut keys, mut values): (Vec<std::sync::Arc<str>>, Vec<Value>) = entries.map(|(k, v)| (k.into(), v)).unzip();
+    keys.push("threads".into());
+    values.push(Value::integer(rustymath::parallel::thread_setting() as i64));
+    keys.push("hanzi_aliases".into());
+    values.push(Value::Number(Number::from_bool(hanzi_aliases)));
     Ok((keyed::record(keys, values).error_at(span, "invalid settings record")?, shy))
 }
 
@@ -308,9 +309,10 @@ pub(crate) fn grid(columns: usize, rows: Vec<(usize, Vec<Cell>)>, style: Style) 
 
 /// The bottom-edge marker for an array's storage. Floats of a width that `el` doesn't leave plain show that width's marker.
 fn marker(a: &Value, el: Elide) -> char {
-    match a.storage_name() {
-        "boolean" => '$', "integer" => 'ₓ', "float16" | "float32" | "float64" => a.float_width().and_then(|w| el.width_marker(w)).unwrap_or('~'),
-        "complex64" | "complex128" => 'j', "character" => '─', _ => '+'
+    use rustymath::buffer::DType;
+    match a.held().dtype() {
+        Some(DType::Boolean) => '$', Some(DType::Integer(_)) => 'ₓ', Some(DType::Float(w)) => el.width_marker(w).unwrap_or('~'),
+        Some(DType::Complex(_)) => 'j', Some(DType::Character) => '─', None => '+'
     }
 }
 
@@ -349,13 +351,13 @@ fn array(a: &Value, el: Elide) -> Block {
     Block::measured(lines.concat(), UnicodeWidthStr::width).framed(a.shape(), kind, nested)
 }
 
-/// Whether plain display shows `a` as its raw text, as it shows a string: an unkeyed, unnamed, nonempty vector of characters. The text alone doesn't show that its items are characters.
-fn raw_text(a: &Value) -> bool {
-    a.shape().len() == 1 && !a.has_keys() && a.axis_names().iter().all(Option::is_none) && !a.is_empty() && a.elements().all(|e| matches!(e, Value::Character(_)))
+/// Whether plain display shows `a` as its raw text, as it shows a string: an unkeyed nonempty vector of characters that shows no axis name. The text alone doesn't show that its items are characters.
+fn raw_text(a: &Value, el: Elide) -> bool {
+    a.shape().len() == 1 && !a.has_keys() && !a.shows_names(el) && !a.is_empty() && a.elements().all(|e| matches!(e, Value::Character(_)))
 }
 
 /// Whether box mode draws `a` in a box. Every simple vector but a string keeps its plain form, which shows its kind, keys and axis name. A string's plain form is its raw text, and it keeps its box.
-fn boxes(a: &Value) -> bool { a.shape().len() != 1 || !a.is_simple() || raw_text(a) }
+fn boxes(a: &Value, el: Elide) -> bool { a.shape().len() != 1 || !a.is_simple() || raw_text(a, el) }
 
 /// Display text for `a` without frames: a vector or unit as source text, a string as its characters, and higher ranks as rows.
 pub(crate) fn plain(a: &Value, el: Elide) -> String {
@@ -366,8 +368,8 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
     let edges = el.edges(a.shape());
     if a.shape().len() <= 1 {
-        return if raw_text(a) { a.elided_text(el.last(a.shape())) }
-        else if a.is_strand() && a.mark(el).is_none() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") }
+        return if raw_text(a, el) { a.elided_text(el.last(a.shape())) }
+        else if a.is_strand(el) && a.mark(el).is_none() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") }
         else { a.source(el) };
     }
     if a.is_empty() { return a.literal(); }

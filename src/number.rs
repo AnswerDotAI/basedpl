@@ -6,7 +6,7 @@ use num_complex::{Complex32, Complex64};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
 use rustymath::{
-    buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats}, error::Kind, tolerant::{Tolerance, Tolerant, TolerantComplex},
+    buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats, Width}, error::Kind, tolerant::{Tolerance, Tolerant, TolerantComplex},
     with_float_width, Binary as _, Float as _, Unary as _
 };
 use std::{borrow::Cow, cmp::Ordering, fmt};
@@ -88,7 +88,7 @@ pub(crate) const TRUE_NAME: &str = "$t";
 pub(crate) const FALSE_NAME: &str = "$f";
 
 /// The session's numeric settings, which `•prefs` changes. Comparisons and kernels take their tolerance from them, and operations that create floats from exact numbers take their width.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Numeric {
     /// The comparison tolerance of 64-bit floats, which the `tolerance` pref sets.
     pub tolerance: Tolerance,
@@ -96,11 +96,64 @@ pub(crate) struct Numeric {
     units: f64,
     /// The width of new floats: literals parsed from now on, numbers read from data, and float results of exact arguments.
     pub width: FloatWidth,
+    /// Whether a result's kind may depend on its arguments' values, which the `kinds` pref sets.
+    pub kinds: Kinds,
+    /// The width of new integers under static kinds, which the `int` pref sets. An integer array computes at least at this width.
+    pub int: Width,
 }
-impl Default for Numeric { fn default() -> Self { Self { tolerance: Tolerance::DEFAULT, units: 0.0, width: FloatWidth::F64 } } }
+/// Whether a result's kind may depend on its arguments' values. Under static kinds it follows from the operation, its arguments' kinds and the settings alone, as `meta/kinds.md` describes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Kinds { Dynamic, Static }
+impl Kinds {
+    /// The `kinds` pref's name for these kinds.
+    pub(crate) fn name(self) -> &'static str { match self { Self::Dynamic => "dynamic", Self::Static => "static" } }
+    /// The kinds that the `kinds` pref calls `name`.
+    pub(crate) fn named(name: &str) -> Option<Self> { [Self::Dynamic, Self::Static].into_iter().find(|k| k.name() == name) }
+}
+impl Default for Numeric { fn default() -> Self { Self::DEFAULT } }
+thread_local! {
+    /// The numeric settings of the session that last evaluated or parsed on this thread. Each evaluation and parse sets them from its session, and `•prefs` changes them. Nothing resets them. A value read after its evaluation ends reads under its session's settings, unless another session has run on the thread since. Kernels on rustymath's worker threads never read them: they get the values they need passed in.
+    static CURRENT: std::cell::Cell<Numeric> = const { std::cell::Cell::new(Numeric::DEFAULT) };
+}
 impl Numeric {
     /// Exact comparison at every width, for kernels that compare no floats.
-    pub(crate) const EXACT: Self = Self { tolerance: Tolerance::EXACT, units: 0.0, width: FloatWidth::F64 };
+    pub(crate) const EXACT: Self = Self { tolerance: Tolerance::EXACT, units: 0.0, width: FloatWidth::F64, kinds: Kinds::Dynamic, int: Width::I64 };
+    /// The settings of a new session.
+    pub(crate) const DEFAULT: Self = Self { tolerance: Tolerance::DEFAULT, ..Self::EXACT };
+    /// The settings of the session that last evaluated or parsed on this thread.
+    pub(crate) fn current() -> Self { CURRENT.with(std::cell::Cell::get) }
+    /// Makes these settings this thread's, as each evaluation, each parse and `•prefs` do.
+    pub(crate) fn set_current(self) { CURRENT.with(|c| c.set(self)) }
+    /// Runs `f` with these settings as this thread's, then restores the settings they replaced, even if `f` panics. Forcing a pending array runs its work this way, under the settings it was made under.
+    pub(crate) fn while_current<R>(self, f: impl FnOnce() -> R) -> R {
+        struct Restore(Numeric);
+        impl Drop for Restore { fn drop(&mut self) { self.0.set_current(); } }
+        let _restore = Restore(Self::current());
+        self.set_current();
+        f()
+    }
+    /// Applies the `•prefs` setting `key` with `value`. Gives whether `key` is a numeric setting, or why `value` is invalid for it. `•prefs` and a leading header's lexing both apply settings through it.
+    pub(crate) fn set(&mut self, key: &str, value: &Value) -> Result<bool, &'static str> {
+        let integer = || value.as_number().and_then(|n| n.integer().ok());
+        match key {
+            "tolerance" => {
+                let t = value.as_number().and_then(|n| n.to_float().ok()).and_then(Tolerance::new).filter(|&t| t <= Tolerance::DEFAULT);
+                self.tolerance = t.ok_or("tolerance must be from 0 to 1E¯14")?;
+            }
+            "float" => self.width = integer().and_then(FloatWidth::of_bits).ok_or("float must be 16, 32 or 64")?,
+            "kinds" => self.kinds = crate::keyed::name(value).as_deref().and_then(Kinds::named).ok_or("kinds must be \"dynamic\" or \"static\"")?,
+            "int" => self.int = match integer() { Some(32) => Width::I32, Some(64) => Width::I64, _ => return Err("int must be 32 or 64") },
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+    /// Each numeric setting's `•prefs` key and value, as `set` takes them.
+    pub(crate) fn entries(&self) -> [(&'static str, Value); 4] {
+        [
+            ("tolerance", Value::Number(Number::float(self.tolerance.value(), FloatWidth::F64))), ("float", Value::integer(self.width.bits())),
+            ("kinds", crate::keyed::text(self.kinds.name())), ("int", Value::integer(if self.int == Width::I32 { 32 } else { 64 })),
+        ]
+    }
     /// These settings with the tolerances within which `f⍣∞` takes two results as the same, whatever the pref: `Tolerance::DEFAULT` at f64, and 4 units in the last place at a narrower width. An iteration can settle into a cycle between adjacent floats, which then counts as converged.
     pub(crate) fn convergence(self) -> Self { Self { tolerance: Tolerance::DEFAULT, units: 4.0, ..self } }
     /// The tolerance of a comparison at `width`, after promotion.
@@ -113,9 +166,40 @@ impl Numeric {
         let run = width.max(FloatWidth::F32);
         Self { units: self.units * width.epsilon() / run.epsilon(), width: self.width.max(FloatWidth::F32), ..self }
     }
+    /// The settings that a call runs under when its operands' float widths are `widths`, with `None` for an exact operand, and whether it rounds its float results to 16 bits. A call with a 16-bit operand, or any call while the default width is 16, runs at 32 bits or more under `widened`, because basedpl has no 16-bit kernels. An exact operand then converts once, at that width. The call rounds its float results to 16 bits when they would be 16-bit floats. `None` for a call that runs at its own width.
+    pub(crate) fn halving(self, widths: impl Iterator<Item = Option<FloatWidth>> + Clone) -> Option<(Self, bool)> {
+        if self.width != FloatWidth::F16 && !widths.clone().any(|w| w == Some(FloatWidth::F16)) { return None; }
+        let width = self.width_of(widths);
+        Some((self.widened(width), width == FloatWidth::F16))
+    }
     /// The width of a float computed from values whose float widths are `widths`, with `None` for an exact value. It's the widest float width, or the default width when every value is exact.
     pub(crate) fn width_of(self, widths: impl IntoIterator<Item = Option<FloatWidth>>) -> FloatWidth {
         widths.into_iter().flatten().max().unwrap_or(self.width)
+    }
+    /// Whether every result's kind follows from kinds alone.
+    pub(crate) fn is_static(self) -> bool { self.kinds == Kinds::Static }
+    /// Exact comparison, as `EXACT` gives, under these kinds settings. Integer and Boolean kernels take it.
+    pub(crate) fn exact(self) -> Self { Self { kinds: self.kinds, int: self.int, ..Self::EXACT } }
+    /// The kind that an array of `dtype` computes in. Under static kinds, integers compute at least at the `int` width, whatever width their storage takes. Other dtypes, and every dtype under dynamic kinds, are their own.
+    pub(crate) fn kind(self, dtype: DType) -> DType {
+        match dtype { DType::Integer(w) if self.is_static() => DType::Integer(w.join(self.int)), d => d }
+    }
+    /// The width of the floats that exact arguments of `dtype` compute in, for a function whose results are approximate. It's the default width under dynamic kinds. Under static kinds it's the float that `DType::inexact` gives for the argument's kind, no wider than the default.
+    pub(crate) fn exact_width(self, dtype: DType) -> FloatWidth {
+        match self.kind(dtype).inexact(self.width) { Some((DType::Float(w), _)) if self.is_static() => w, _ => self.width }
+    }
+    /// These settings with new floats of `width`, as a literal's width marker gives them.
+    pub(crate) fn with_width(self, width: FloatWidth) -> Self { Self { width, ..self } }
+    /// `x` as a float of the default width.
+    pub(crate) fn float(self, x: f64) -> Number { Number::float(x, self.width) }
+    /// Whether the integer `n` fits the `int` width.
+    pub(crate) fn fits(self, n: i64) -> bool { self.int == Width::I64 || i32::try_from(n).is_ok() }
+    /// The exact integer `n` wrapped to the `int` width, as static kinds give an integer result that doesn't fit: its low bits, as two's complement.
+    pub(crate) fn wrap(self, n: &BigInt) -> i64 {
+        let bytes = n.to_signed_bytes_le();
+        let fill = if n.is_negative() { 0xFF } else { 0 };
+        let low = i64::from_le_bytes(std::array::from_fn(|k| bytes.get(k).copied().unwrap_or(fill)));
+        if self.int == Width::I32 { i64::from(low as i32) } else { low }
     }
 }
 
@@ -343,17 +427,17 @@ macro_rules! reals {
 pub(crate) enum Domain { Exact, Single, Double, Complex }
 
 impl Domain {
-    /// The domain that `numbers` compute in, and the float width of their results.
-    pub(crate) fn of<'a>(numbers: impl Iterator<Item = &'a Number>, numeric: Numeric) -> (Self, FloatWidth) {
+    /// The domain that `numbers` compute in, and the float width of their results under the current settings.
+    pub(crate) fn of<'a>(numbers: impl Iterator<Item = &'a Number>) -> (Self, FloatWidth) {
         let (domain, width) = numbers.fold((Self::Exact, None), Self::join);
-        (domain, numeric.width_of([width]))
+        (domain, Numeric::current().width_of([width]))
     }
 
     /// The domain and widest float width of some numbers, joined with the number `n`.
     fn join((domain, width): (Self, Option<FloatWidth>), n: &Number) -> (Self, Option<FloatWidth>) { (domain.max(n.domain()), width.max(n.float_width())) }
 
-    /// The domain that the items of `arrays` compute in, and the float width of their results. Compact storage gives its domain without a pass over its items. `None` where an item, or the prototype of an array with no items, isn't a number.
-    pub(crate) fn of_arrays(arrays: &[&Value], numeric: Numeric) -> Option<(Self, FloatWidth)> {
+    /// The domain that the items of `arrays` compute in, and the float width of their results under the current settings. Compact storage gives its domain without a pass over its items. `None` where an item, or the prototype of an array with no items, isn't a number.
+    pub(crate) fn of_arrays(arrays: &[&Value]) -> Option<(Self, FloatWidth)> {
         let (mut domain, mut width) = (Self::Exact, None);
         for a in arrays {
             let (d, w) = match a.dtype() {
@@ -369,7 +453,7 @@ impl Domain {
             };
             (domain, width) = (domain.max(d), width.max(w));
         }
-        Some((domain, numeric.width_of([width])))
+        Some((domain, Numeric::current().width_of([width])))
     }
 
     /// This domain for an algorithm that has no exact form, where exact numbers compute as floats of `width`.
@@ -405,7 +489,7 @@ impl Field for BigRational {
         Some(Cow::Owned(integers.iter().map(|&n| Self::from_integer(n.into())).collect()))
     }
     fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind> {
-        Layout::from(shape).collect(x.into_iter().map(|r| Value::Number(r.number(width))), Value::Number(Number::from_integer(0)))
+        Layout::from(shape).collect(x.into_iter().map(|r| Value::Number(r.number(width))), Value::integer(0))
     }
 }
 
@@ -439,8 +523,8 @@ macro_rules! with_field {
             domain => unreachable!("{domain:?} isn't among this call's domains"),
         }
     };
-    ($numbers:expr, $numeric:expr, $t:ident, $width:ident => $body:expr) => {{
-        let (domain, $width) = $crate::number::Domain::of($numbers, $numeric);
+    ($numbers:expr, $t:ident, $width:ident => $body:expr) => {{
+        let (domain, $width) = $crate::number::Domain::of($numbers);
         $crate::number::with_field!(domain, [Exact, Double, Complex], $t => $body)
     }};
 }
@@ -509,15 +593,21 @@ impl Number {
     fn from_float<F: Float>(y: F) -> Self { Self::float(y.wide(), F::WIDTH) }
     /// A complex number with parts of `width`, or 32-bit parts for 16 bits, holding `z` rounded to them. With no imaginary part left, it is a float of `width`.
     pub fn complex(z: Complex64, width: FloatWidth) -> Self {
-        let n = Complex32::new(z.re as f32, z.im as f32);
-        match ComplexWidth::from(width) {
-            _ if z.im == 0.0 => Self::float(z.re, width), ComplexWidth::F64 => Self(Complex(z)), ComplexWidth::F32 if n.im == 0.0 => Self::float(z.re, width),
-            ComplexWidth::F32 => Self(Complex32(n))
-        }
+        match Self::complex_kept(z, width) { n if n.as_complex().is_some_and(|z| z.im == 0.0) => Self::float(z.re, width), n => n }
+    }
+    /// A complex number with parts of `width`, as the current settings' kinds make it. Under static kinds it stays complex with no imaginary part. Under dynamic kinds it becomes a float, as `complex` makes it. Item reads from complex storage, parsed literals, and numbers imported from Python or the JSON protocol use it.
+    pub fn complex_in_session(z: Complex64, width: FloatWidth) -> Self { if Numeric::current().is_static() { Self::complex_kept(z, width) } else { Self::complex(z, width) } }
+    /// A complex number with parts of `width`, or 32-bit parts for 16 bits, holding `z` rounded to them, even with no imaginary part. Static kinds keep complex results complex.
+    pub(crate) fn complex_kept(z: Complex64, width: FloatWidth) -> Self {
+        match ComplexWidth::from(width) { ComplexWidth::F64 => Self(Complex(z)), ComplexWidth::F32 => Self(Complex32(Complex32::new(z.re as f32, z.im as f32))) }
+    }
+    /// `z` at `width`, as a complex number like this one becomes. One with no imaginary part stays complex, because only static kinds make one. Any other narrows as `complex` does.
+    fn complex_like(&self, z: Complex64, width: FloatWidth) -> Self {
+        if self.as_complex().is_some_and(|z| z.im == 0.0) { Self::complex_kept(z, width) } else { Self::complex(z, width) }
     }
     /// This number, with a 64-bit float or complex number rounded to `width`. Other numbers stay as they are.
     pub(crate) fn at_width(self, width: FloatWidth) -> Self {
-        match self.0 { Float(n) => Self::float(n, width), Complex(z) => Self::complex(z, width), _ => self }
+        match self.0 { Float(n) => Self::float(n, width), Complex(z) => self.complex_like(z, width), _ => self }
     }
     /// The width of this float, or of the parts of this complex number. `None` for any other number.
     pub(crate) fn float_width(&self) -> Option<FloatWidth> { self.0.float().map(|(_, width)| width).or_else(|| self.0.complex().map(|(_, width)| width)) }
@@ -557,15 +647,22 @@ impl Number {
         (BigRational::from_float(f)? == *rational).then_some(f)
     }
 
-    /// The number that `text` writes, with plain letters for its suffixes. A float takes `width`, and a complex number parts of `width`.
-    pub(crate) fn parse(text: &str, width: FloatWidth) -> Result<Self, ErrorKind> {
-        let text = text.replace('¯', "-").replace('∞', "inf");
+    /// The number that `text` writes, with plain letters for its suffixes. A float takes the default width, and a complex number parts of that width. Under static kinds, a complex number stays complex with no imaginary part, and an exact integer must fit the `int` width.
+    pub(crate) fn parse(text: &str, numeric: Numeric) -> Result<Self, ErrorKind> {
+        let (text, width) = (text.replace('¯', "-").replace('∞', "inf"), numeric.width);
         let integer = |s: &str| s.parse::<BigInt>().map_err(|_| ErrorKind::Syntax);
         if let Some((re, im)) = text.split_once(['J', 'j']) {
             let part = |s: &str| if width == FloatWidth::F64 { s.parse::<f64>() } else { s.parse::<f32>().map(f64::from) }.map_err(|_| ErrorKind::Syntax);
-            return Ok(Self::complex(Complex64::new(part(re)?, part(im)?), width));
+            let z = Complex64::new(part(re)?, part(im)?);
+            return Ok(Self::complex_in_session(z, width));
         }
-        if let Some(n) = text.strip_suffix(['x', 'ₓ']) { return Ok(integer(n)?.into()); }
+        if let Some(n) = text.strip_suffix(['x', 'ₓ']) {
+            let n: Self = integer(n)?.into();
+            if numeric.is_static() && !n.as_integer().is_some_and(|i| numeric.fits(i)) {
+                return Err(rustymath::error::Error::new(Kind::Limit, "under static kinds an exact integer must fit the int width").into());
+            }
+            return Ok(n);
+        }
         if let Some((n, d)) = text.split_once('r') { return Self::try_from(BigRational::new_raw(integer(n)?, integer(d)?)); }
         with_float_width!(width, F => Ok(Self::from_float(text.parse::<F>().map_err(|_| ErrorKind::Syntax)?)))
     }
@@ -591,7 +688,7 @@ impl Number {
     }
     /// This number as a float of `width`, or a complex number with parts of `width`, which are 32-bit for 16 bits.
     pub(crate) fn to_float_width(&self, width: FloatWidth) -> Result<Self, &'static str> {
-        match self.as_complex() { Some(z) => Ok(Self::complex(z, width)), None => Ok(Self::float(self.to_float()?, width)) }
+        match self.as_complex() { Some(z) => Ok(self.complex_like(z, width)), None => Ok(Self::float(self.to_float()?, width)) }
     }
     /// This real as a float of type `F`, rounded to it.
     pub(crate) fn to_real<F: Float>(&self) -> Result<F, &'static str> { self.to_float().map(F::narrow).map_err(Into::into) }
@@ -902,9 +999,19 @@ impl Number {
         Ok(if x.im == 0.0 && y.im == 0.0 { Self::float(result.re, width) } else { Self::complex(result, width) })
     }
 
+    /// The operands of a call that `Numeric::halving` widens, with its 16-bit floats as the 32-bit floats it runs on, the settings it runs under, and whether it rounds its float results back to 16 bits. It's the rule `pervasive::halves` applies to arrays. An exact operand stays exact, and converts once, at the width the call runs at. `None` for a call that runs at its own width.
+    pub(crate) fn halves(x: Option<&Self>, y: &Self, t: Numeric) -> Option<(Option<Self>, Self, Numeric, bool)> {
+        let (t, halve) = t.halving([x.and_then(Self::float_width), y.float_width()].into_iter())?;
+        let single = |n: &Self| if matches!(n.0, Half(_)) { n.to_float_width(FloatWidth::F32).expect("a 16-bit float widens") } else { n.clone() };
+        Some((x.map(single), single(y), t, halve))
+    }
+    /// This number with a 32-bit float rounded to 16 bits, as a call that computes at 16 bits rounds its result. Other numbers stay as they are.
+    pub(crate) fn halved(self) -> Self { if let Single(n) = self.0 { Self::float(n.into(), FloatWidth::F16) } else { self } }
+
     /// The order of the numbers, within the tolerance of the width they compare at. `None` when either is NaN, which IEEE leaves unordered. The tolerance is relative, with none absolute near zero, as Dyalog's `⎕CT` is.
     pub(crate) fn compare(&self, right: &Self, t: Numeric) -> Result<Option<Ordering>, &'static str> {
         if self.is_dual() || right.is_dual() { return self.plain().compare(right.plain(), t); }
+        if let Some((Some(x), y, t, _)) = Self::halves(Some(self), right, t) { return x.compare(&y, t); }
         if self.has_boolean(right) { return self.numeric().compare(&right.numeric(), t); }
         if self.is_nan() || right.is_nan() { return Ok(None); }
         if self.is_infinite() || right.is_infinite() || (self.is_exact() && right.is_exact()) { return self.order(right).map(Some); }
@@ -987,7 +1094,7 @@ impl Number {
         let round = |x: f64| if digits >= 17 || !x.is_finite() { x } else { format!("{x:.*e}", digits - 1).parse().unwrap_or(x) };
         match &self.0 {
             repr if let Some((x, width)) = repr.float() => Self::float(round(x), width),
-            repr if let Some((z, width)) = repr.complex() => Self::complex(Complex64::new(round(z.re), round(z.im)), width), _ => self.clone()
+            repr if let Some((z, width)) = repr.complex() => self.complex_like(Complex64::new(round(z.re), round(z.im)), width), _ => self.clone()
         }
     }
 }

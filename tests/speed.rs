@@ -16,7 +16,7 @@ fn functions_cost_what_their_work_needs() {
     let mut stderr = std::io::stderr();
     if print_all { for c in &failures { writeln!(stderr, "{}", line(c)).unwrap(); } }
     failures.retain(over);
-    let failures = timing::retried(failures, |failed, pause| {
+    let failures = rustymath::timing::retried(failures, |failed, pause| {
         for c in &failed { writeln!(stderr, "{}: over, timed again after {pause} s", line(c)).unwrap(); }
         let codes: Vec<&str> = failed.iter().map(|c| c.code).collect();
         let mut retimed = timing::costs(speed, Some(&codes), &Default::default()).unwrap();

@@ -1,4 +1,4 @@
-use crate::{data, display, element::read_as, execution::Context, keyed, Error, ErrorAt, Value};
+use crate::{data, display, element::read_as, execution::Context, keyed, number::Numeric, Error, ErrorAt, Value};
 use rustymath::{buffer::DType, error::Kind};
 
 /// Decoding and encoding of image files: ImageIO on Apple platforms, and the `image` and `png` crates elsewhere.
@@ -31,7 +31,7 @@ pub(crate) fn image(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
     layout(&picture, delays.clone(), span)?;
     let renderer = display::renderer("image-renderer", render);
     let renderer = match delays {
-        Some(d) => crate::eval::before(Value::floats(vec![d.len()], span.numeric().width, d).error_at(span, "invalid delays")?, renderer, span.span)?,
+        Some(d) => crate::eval::before(Value::floats(vec![d.len()], Numeric::current().width, d).error_at(span, "invalid delays")?, renderer, span.span)?,
         None => renderer,
     };
     picture.with_renderer(renderer).error_at(span, "invalid image")
@@ -75,7 +75,7 @@ fn render(delays: Option<&Value>, picture: &Value, span: &Context<'_>) -> Result
 fn decoded(bytes: &[u8], span: &Context<'_>) -> Result<Value, Error> {
     let Raster { count, height, width, channels, data } = codec::decode(bytes).map_err(|e| span.domain_error(format!("invalid image: {e}")))?;
     let shape = match count { 1 if channels == 1 => vec![height, width], 1 => vec![height, width, channels], n => vec![n, height, width, channels] };
-    Value::floats(shape, span.numeric().width, data.into_iter().map(|v| f64::from(v) / 65535.)).error_at(span, "image exceeds array limits")
+    Value::floats(shape, Numeric::current().width, data.into_iter().map(|v| f64::from(v) / 65535.)).error_at(span, "image exceeds array limits")
 }
 
 /// `frames` encoded in `format`, as an animation with `delays`. Only PNG holds an animation. JPEG drops alpha.

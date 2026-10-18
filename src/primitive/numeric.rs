@@ -117,7 +117,7 @@ pub(crate) fn lambert_w(right: &Value, span: &Context<'_>) -> Result<Value, Erro
     if !right.is_atom() {
         let agreement = Agreement::new(&Default::default(), right.layout()).error_at(span, "array shapes do not agree")?;
         if agreement.len > 0 {
-            if let Some(result) = crate::pervasive::object(rustymath::LambertW, right, &agreement, span.numeric()) {
+            if let Some(result) = crate::pervasive::object(rustymath::LambertW, right, &agreement) {
                 return result.with_layout(agreement.layout).error_at(span, "invalid keyed result");
             }
         }
@@ -145,13 +145,13 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<
         Some(x) => right.layout().axes(1..right.shape().len()).concat(&x.layout().axes(1..x.shape().len())),
         None => right.layout().axes((0..right.shape().len()).rev()),
     };
-    generated_len(&[n, k]).map_err(|e| span.error(e, "matrix result is too large"))?;
-    let positions = left.map(|x| Mapping::contract(right.layout(), 0, x.layout(), 0)).transpose().error_at(span, "matrix row keys must agree")?;
+    generated_len(&[n, k]).at(span)?;
+    let positions = left.map(|x| Mapping::contract(right.layout(), 0, x.layout(), 0)).transpose().at(span)?;
     let scalar = layout.shape().is_empty() && (right.is_atom() || !right.is_unit()) && left.is_none_or(|x| x.is_atom() || !x.is_unit());
     let (domain, width) = match left { Some(x) => domain_of(&[right, x], span), None => domain_of(&[right], span) }?;
     if n == 0 {
         let prototype = if domain == Domain::Exact { right.prototype() } else { Value::Number(Number::float(0.0, width)) };
-        return layout.collect(vec![], prototype).map_err(|e| span.error(e, "invalid matrix shape"));
+        return layout.collect(vec![], prototype).error_at(span, "invalid matrix shape");
     }
     with_field!(domain, [Exact, Single, Double, Complex], T => {
         let a = read::<T>(right, span)?; let b = ordered(left.map(|x| read::<T>(x, span)).transpose()?, positions.as_ref(), m, k);
@@ -161,7 +161,7 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<
 
 /// Monadic `-.×` on the `n`×`n` matrix `a`: its determinant. Exact numbers stay exact, through row reduction. Floats and complex numbers take rustymath's LU determinant, read as `⌹` reads them. `None` where an item isn't a number.
 pub(crate) fn determinant(a: &Value, n: usize, span: &Context<'_>) -> Result<Option<Value>, Error> {
-    let Some((domain, width)) = Domain::of_arrays(&[a], span.numeric()) else { return Ok(None) };
+    let Some((domain, width)) = Domain::of_arrays(&[a]) else { return Ok(None) };
     let d = with_field!(domain, [Exact, Single, Double, Complex], T => T::determinant(&read::<T>(a, span)?, n, span)?.number(width));
     Ok(Some(Value::Number(d)))
 }
@@ -179,7 +179,7 @@ pub(crate) fn matrix_inverse(a: &Value, span: &Context<'_>) -> Result<Option<(Va
 /// A result of `⌹`, `x`, laid out by `layout`, or its one item where it's `scalar`.
 fn matrix_result<T: Field>(mut x: Vec<T>, layout: Layout, scalar: bool, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> {
     if scalar { return Ok(Value::Number(x.swap_remove(0).number(width))); }
-    T::array(x, layout.shape().to_vec(), width).and_then(|v| v.with_layout(layout)).map_err(|e| span.error(e, "invalid matrix result"))
+    T::array(x, layout.shape().to_vec(), width).and_then(|v| v.with_layout(layout)).error_at(span, "invalid matrix result")
 }
 
 /// A matrix function that `f⍤2` applies to a whole stack of matrices in one call: dyadic `+.×` or `⌹`, or monadic `⌹` or `-.×`.
@@ -313,9 +313,9 @@ fn factored<T>(d: &Decomposition, a: &[T], [m, n]: [usize; 2], width: FloatWidth
         "cholesky" => (vec!["l"], vec![matrix(linalg::cholesky(a, n).ok_or(Fault::Indefinite)?, [n, n], width)]),
         "lu" => {
             let f = linalg::lu(a, n);
-            let perm = f.perm.iter().map(|&i| crate::primitive::integer(i as i64)).collect();
+            let perm = f.perm.iter().map(|&i| Value::integer(i as i64)).collect();
             (vec!["l", "u", "p"],
-                vec![matrix(f.lower(), [n, n], width), matrix(f.upper(), [n, n], width), Value::from_parts(vec![n], perm, crate::primitive::integer(0))])
+                vec![matrix(f.lower(), [n, n], width), matrix(f.upper(), [n, n], width), Value::from_parts(vec![n], perm, Value::integer(0))])
         }
         "eigen" if hermitian() && d.vectors => {
             let f = linalg::eigh(a, n).ok_or(Fault::Converge)?;
@@ -339,7 +339,7 @@ fn record((names, factors): (Vec<&'static str>, Vec<Value>)) -> Result<Value, Fa
 
 /// The [`Domain`] that the items of `arrays` compute in, and the float width of the results. DOMAIN where an item isn't a number.
 fn domain_of(arrays: &[&Value], span: &Context<'_>) -> Result<(Domain, FloatWidth), Error> {
-    Domain::of_arrays(arrays, span.numeric()).ok_or_else(|| span.domain_error("expected numeric elements"))
+    Domain::of_arrays(arrays).ok_or_else(|| span.domain_error("expected numeric elements"))
 }
 
 /// The `rows`×`columns` matrix that `x` holds row by row, with floats at `width`.
@@ -520,7 +520,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
             if let Some(result) = encode_whole(left.as_items(), right.as_items(), &layout) { return Ok(result); }
         }
         let (xs, ys) = (numbers(left)?, numbers(right)?);
-        let width = span.numeric().width_of(xs.iter().chain(&ys).map(Number::float_width));
+        let width = Numeric::current().width_of(xs.iter().chain(&ys).map(Number::float_width));
         let mut data = Vec::with_capacity(len);
         for i in 0..if xlen == 0 { 0 } else { agreement.len } {
             span.check()?;
@@ -536,7 +536,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
                     value = Number::from(v);
                     &integral
                 } else { base };
-                let digit = base.residue(&value, span.numeric()).map_err(error)?;
+                let digit = base.residue(&value, Numeric::current()).map_err(error)?;
                 if k != 0 {
                     value = if base.grade_order(&base.zero()).is_eq() { zero.clone() }
                     else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(<&str>::from).map_err(error)? };
@@ -549,7 +549,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool, span: &Context<'_
         return layout.collect(data, Value::Number(zero)).error_at(span, "invalid encode result");
     }
     let positions = Mapping::contract(left.layout(), left.shape().len().saturating_sub(1), right.layout(), right.shape().len().saturating_sub(1))
-        .error_at(span, "decode contraction keys must agree")?;
+        .at(span)?;
     let len = decode_length(xlen, ylen, span)?;
     // The general path gives a cell of one digit that digit unchanged, exact or not.
     if let (Mapping::Single, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
@@ -612,16 +612,16 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
     let fill = fill || right.is_empty();
     let item = |e: Value, rng: &mut R| {
         if let a @ Value::Array(_) = e { return roll(&a, span, fill, rng); }
-        let float = counted_width(&e, span);
+        let float = counted_width(&e);
         if fill { return Ok(generated(0, float)); }
         Ok(draw(
-            numeric(&e, span)?.nonnegative_integer::<u64>().error_at(span, "roll needs a nonnegative integer")?, float, float.unwrap_or(span.numeric().width),
+            numeric(&e, span)?.nonnegative_integer::<u64>().error_at(span, "roll needs a nonnegative integer")?, float, float.unwrap_or(Numeric::current().width),
             rng))
     };
     if right.is_atom() { return item(right.clone(), rng); }
-    let prototype = if right.is_empty() { item(right.prototype(), rng)? } else { integer(0) };
-    let float = match right.as_items() { Items::Compact(View::Integers(_)) => None, Items::Compact(View::Floats(f)) => Some(f.tag()), _ => Some(span.numeric().width) };
-    let unit = float.unwrap_or(span.numeric().width);
+    let prototype = if right.is_empty() { item(right.prototype(), rng)? } else { Value::integer(0) };
+    let float = match right.as_items() { Items::Compact(View::Integers(_)) => None, Items::Compact(View::Floats(f)) => Some(f.tag()), _ => Some(Numeric::current().width) };
+    let unit = float.unwrap_or(Numeric::current().width);
     let mut data = Gather::items(right.len());
     match right.as_items() {
         Items::Values(items) => { for e in items { data.add(item(e.clone(), rng)?); } }
@@ -651,7 +651,7 @@ pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut
         if !a.is_singleton() { return Err(span.error(Kind::Length, "deal needs one count per argument")); }
         let item = a.at(0);
         let n = numeric(&item, span)?;
-        Ok((n.nonnegative_integer().error_at(span, "deal needs nonnegative integer counts")?, counted_width(&item, span)))
+        Ok((n.nonnegative_integer().error_at(span, "deal needs nonnegative integer counts")?, counted_width(&item)))
     };
     let ((n, count_float), (total, total_float)) = (count(left)?, count(right)?);
     if n > total { return Err(span.domain_error("cannot deal more items than the population")); }

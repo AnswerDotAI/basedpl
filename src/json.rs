@@ -102,10 +102,10 @@ fn import(value: &Read, fill: &Number, span: &Context<'_>) -> Result<Value, Erro
         Read::Bool(b) => Value::Number(Number::from_bool(*b)),
         Read::Text(s) => keyed::text(s),
         Read::Integer(n) => Value::Number(exact(n.clone()).error_at(span, "JSON number is outside the supported range")?),
-        Read::Float(x) => Value::Number(Number::float(*x, span.numeric().width)),
+        Read::Float(x) => Value::Number(Number::float(*x, crate::number::Numeric::current().width)),
         Read::List(items) => {
             let data = items.iter().map(|v| import(v, fill, span)).collect::<Result<Vec<_>, _>>()?;
-            imported(vec![data.len()], data, |i| matches!(items[i], Read::Null), Value::Number(Number::from_integer(0))).error_at(span, "invalid JSON array")?
+            imported(vec![data.len()], data, |i| matches!(items[i], Read::Null), Value::integer(0)).error_at(span, "invalid JSON array")?
         }
         Read::Record(entries) => {
             let keys = entries.iter().map(|(k, _)| k.as_str().into()).collect();

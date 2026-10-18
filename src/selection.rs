@@ -1,5 +1,5 @@
-use rustymath::{buffer::View, error::Kind};
-use crate::{array::{generated_len, Frame, Gather, Items}, primitive::{Selection, Targets}, Error, ErrorAt, ErrorKind, Number, Span, Value};
+use rustymath::{buffer::View, error::Kind, gather::Steps};
+use crate::{array::{generated_len, Frame, Gather, Items}, primitive::{Selection, Targets}, At, Error, ErrorAt, ErrorKind, Span, Value};
 use foldhash::{HashMap, HashMapExt};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -44,17 +44,17 @@ impl Labels {
                 _ => {
                     let Places::Paths(paths) = &mut self.places else { unreachable!() };
                     paths.push(path.clone());
-                    Value::Number(Number::from_integer(paths.len() as i64))
+                    Value::integer(paths.len() as i64)
                 }
             });
             path.pop();
         }
         let prototype = if a.is_empty() { Self::prototype(&a.prototype(), &mut HashMap::new()).error_at(span, "invalid selection prototype")? }
-        else { Value::Number(Number::from_integer(0)) };
+        else { Value::integer(0) };
         a.layout().collect(items, prototype).error_at(span, "invalid selection labels")
     }
     fn prototype(e: &Value, seen: &mut HashMap<usize, Value>) -> Result<Value, ErrorKind> {
-        let a @ Value::Array(_) = e else { return Ok(Value::Number(Number::from_integer(0))); };
+        let a @ Value::Array(_) = e else { return Ok(Value::integer(0)); };
         if let Some(p) = seen.get(&a.storage_id()) { return Ok(p.clone()); }
         let items = a.elements().map(|e| Self::prototype(&e, seen)).collect::<Result<Vec<_>, _>>()?;
         let prototype = Self::prototype(&a.prototype(), seen)?;
@@ -62,13 +62,17 @@ impl Labels {
         seen.insert(a.storage_id(), result.clone());
         Ok(result)
     }
-    /// Adds the place of label `id`, and reports whether it has one. Label 0 is fill, which has no place.
+    /// Adds the place of label `id`, and reports whether it has one. Label 0 is a fill, whose target `Selection` drops.
     fn place(&self, id: usize, targets: &mut Targets) -> bool {
-        let Some(i) = id.checked_sub(1) else { return false };
+        let Some(i) = id.checked_sub(1) else { targets.push(&[Steps::FILL]); return true };
         match &self.places {
             Places::Offsets(n) if i < *n => targets.push(&[i]), Places::Paths(paths) if i < paths.len() => targets.push(&paths[i]), _ => return false
         }
         true
+    }
+    /// Whether a selected item is a fill, whose label is 0, or an array of fills, as a prototype is.
+    fn fill(item: &Value) -> bool {
+        match item { Value::Number(n) => matches!(n.nonnegative_integer(), Ok(0)), Value::Array(_) => item.elements().all(|e| Self::fill(&e)), _ => false }
     }
     pub fn replacements(&self, selected: &Value, right: &Value, kind: SelectionKind, span: &Span) -> Result<(Selection, Value), Error> {
         let mut targets = Targets::Offsets(Vec::with_capacity(selected.len()));
@@ -78,6 +82,7 @@ impl Labels {
                 targets.push(path);
                 true
             } else if let Some(n) = selected.as_number() { self.place(n.nonnegative_integer().error_at(span, "invalid selection label")?, &mut targets) }
+            else if Self::fill(selected) { targets.push(&[Steps::FILL]); true }
             else { false };
             if !found { return Err(span.error(Kind::Index, "cannot assign to a missing item")); }
             values.fill(right, 1);
@@ -97,7 +102,6 @@ impl Labels {
         }
         let pick = |i: usize| if right.is_singleton() { 0 } else { i };
         let label = |i: usize, id: usize, targets: &mut Targets, values: &mut Gather| -> Result<(), Error> {
-            if id == 0 { return Ok(()); }
             if !self.place(id, targets) { return Err(span.error(Kind::Index, "cannot assign to fill introduced by a selection")); }
             values.push(right, pick(i));
             Ok(())

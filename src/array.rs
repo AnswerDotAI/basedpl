@@ -4,7 +4,7 @@ use crate::{
 };
 use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{
-    agreement::Mapping, buffer::{Buffer, ComplexBuf, ComplexWidth, DType, FloatBuf, FloatWidth, Floats, IntBuf, Ints, View, Width}, error::Kind, search::Key,
+    agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Floats, IntBuf, Ints, View, Width}, error::Kind, search::Key,
     tolerant::Tolerant, with_float_width, with_floats, with_tolerance, with_width
 };
 use std::{borrow::Cow, fmt, sync::{Arc, OnceLock}};
@@ -104,7 +104,7 @@ impl Frame {
     /// Positions on this frame, each below `bound`. `bound` gives their width, with no pass over them to find it. A direct application gives its one position as an atom.
     pub fn positions(self, mut items: impl ExactSizeIterator<Item = usize>, bound: usize) -> Result<Value, ErrorKind> {
         match (self, items.len()) {
-            (Self::Direct, 1) => Ok(Value::Number(Number::from_integer(items.next().unwrap() as i64))), (Self::Direct, _) => Err(Kind::Length.into()),
+            (Self::Direct, 1) => Ok(Value::integer(items.next().unwrap() as i64)), (Self::Direct, _) => Err(Kind::Length.into()),
             (Self::Array(layout), _) => Value::positions(layout.shape(), bound, items)?.with_layout(layout)
         }
     }
@@ -254,8 +254,8 @@ impl Value {
         }
     }
     /// Whether the values match, as `≡` and search compare them, within the session's tolerance.
-    pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> { self.matches_within(other, cx.numeric(), cx) }
-    /// Whether the values match, with each pair of numbers within the tolerance of the width they compare at. Numbers match whatever their exactness, and NaN matches NaN. Keyed arrays match by key. Functions and operators match when built from matching parts. Renderers take no part.
+    pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> { self.matches_within(other, Numeric::current(), cx) }
+    /// Whether the values match, with each pair of numbers within the tolerance of the width they compare at. Numbers match whatever their exactness, and NaN matches NaN. Two axes match as arithmetic pairs them: their names don't conflict, as `rustymath::layout::names_conflict` says, and when both have keys, they hold the same keys in any order. Items along keyed axes compare by key. Functions and operators match when built from matching parts. Renderers take no part.
     pub(crate) fn matches_within(&self, other: &Self, t: Numeric, cx: &Context<'_>) -> Result<bool, Error> {
         cx.check()?;
         match (self, other) {
@@ -264,8 +264,9 @@ impl Value {
             (Self::Operator(x), Self::Operator(y)) => return x.matches(y, t, cx), _ => return Ok(false)
         }
         if self.shape() != other.shape() { return Ok(false); }
+        if self.axis_names().iter().zip(other.axis_names()).any(|(a, b)| rustymath::layout::names_conflict(a.as_deref(), b.as_deref())) { return Ok(false); }
         let keyed = self.has_keys() || other.has_keys();
-        let differ = |axis| match (self.keys(axis), other.keys(axis)) { (None, None) => false, (Some(x), Some(y)) => y.align(x).contains(&None), _ => true };
+        let differ = |axis| match (self.keys(axis), other.keys(axis)) { (Some(x), Some(y)) => y.align(x).contains(&None), _ => false };
         if keyed && (0..self.shape().len()).any(differ) { return Ok(false); }
         if self.is_empty() { return self.prototype().matches_within(&other.prototype(), t, cx); }
         if !keyed {
@@ -407,8 +408,12 @@ impl Value {
     }
     /// Integers at the narrowest width that holds them.
     pub fn integers(shape: impl Into<Shape>, data: Vec<i64>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::narrowed(data)) }
+    /// The exact integer `n`, as an atom.
+    pub fn integer(n: i64) -> Self { Value::Number(Number::from_integer(n)) }
     /// The items as a rustymath view, borrowed, when the storage is compact.
     pub fn view(&self) -> Option<View<'_>> { match self.as_items() { Items::Compact(v) => Some(v), Items::Values(_) => None } }
+    /// The array whose items this unbuilt structural copy reads through an affine map, with the offset of this array's first item and each axis's stride, counted in that array's items. A buffer export lends the items this way, so windows and reversals reach NumPy without being built.
+    pub fn affine(&self) -> Option<(Value, usize, Vec<isize>)> { crate::fusion::affine(self) }
     /// The items as a compact buffer: moved with no copy where nothing else holds them, and copied otherwise. A pending array computes them first. Gives the value back when its items aren't compact.
     pub fn into_buffer(self) -> Result<Buffer, Value> {
         if !matches!(self, Self::Array(_)) {
@@ -432,9 +437,15 @@ impl Value {
     }
     /// The storage of this array for writing. The layout and the storage are copied first when anything else holds them.
     fn storage_mut(&mut self) -> &mut Storage { let Self::Array(a) = self else { unreachable!("only an array has storage") }; Arc::make_mut(a).storage_mut() }
-    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins. Storage that can't hold an item widens as a `Gather` does. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame.
+    /// The items for writing in place, when compact storage holds `A`s. The storage is copied first when anything else holds it.
+    pub(crate) fn items_mut<A: crate::element::Stored>(&mut self) -> Option<&mut [A]> {
+        if A::slice(self).is_none() { return None; }
+        match self.storage_mut() { Storage::Compact(b) => A::of_mut(b), Storage::Mixed(..) => None }
+    }
+    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins, and a `Steps::FILL` offset writes nothing. Storage that can't hold an item widens as a `Gather` does. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame.
     pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) {
-        if offsets.is_empty() { return; }
+        // Writes only at fills change nothing, so storage doesn't widen for them.
+        if offsets.iter().all(|&o| o == rustymath::gather::Steps::FILL) { return; }
         if crate::derivative::tag(self).is_some() || crate::derivative::tag(source).is_some() {
             let Ok(()) = crate::derivative::both(self, source, |t, s| Ok::<_, std::convert::Infallible>(t.scatter(offsets, s)));
             return;
@@ -442,7 +453,7 @@ impl Value {
         let data = self.storage_mut();
         if let Storage::Mixed(items, memo) = data {
             if offsets.contains(&0) { memo.prototype.take(); }
-            if source.environment().is_some() || offsets.iter().any(|&o| items[o].environment().is_some()) { memo.environment.take(); }
+            if source.environment().is_some() || offsets.iter().any(|&o| o != rustymath::gather::Steps::FILL && items[o].environment().is_some()) { memo.environment.take(); }
         }
         let mut gather = Gather::resume(std::mem::replace(data, Storage::Compact(Buffer::Booleans(Vec::new()))));
         gather.scatter(offsets, source);
@@ -506,6 +517,15 @@ impl Value {
     }
     /// Whether every number, including those in nested arrays, is exact. Non-finite values in integer storage count as exact.
     pub fn is_exact(&self) -> bool { self.exact_domain() == Some(true) }
+    /// This value as a weak argument beside `strong`, as NEP 50 treats a Python scalar: a float atom takes the width of the floats among `strong`, and a complex atom the width of their parts. Python's API converts its scalar arguments this way. BPL itself has no weak values. Other values are unchanged.
+    pub fn weakened(self, strong: &[Value]) -> Value {
+        let (Some(weak @ (DType::Float(_) | DType::Complex(_))), true) = (self.dtype(), self.is_atom()) else { return self };
+        let Some(beside) = strong.iter().filter_map(Value::dtype).reduce(|a, b| a.common(b).unwrap_or(a)) else { return self };
+        match beside.common_weak(weak).filter(|&target| target != weak).map(DType::real) {
+            Some(DType::Float(w)) => self.to_float_width(w).unwrap_or(self),
+            _ => self,
+        }
+    }
 
     /// Empty arrays require a prototype item; their shape is never inferred from the buffer.
     pub fn empty(shape: impl Into<Shape>, prototype: Value) -> Result<Self, ErrorKind> { Self::empty_of(shape, prototype, false) }
@@ -579,14 +599,12 @@ impl Value {
             match inner { Some(inner) => value = inner, None => return value }
         }
     }
-    /// The name of the storage that holds the items, as `•storage` gives it and boxed display marks it. It reads no items: a pending array answers from its call's dtype, and a dual from its primal. An atom gives its own kind.
+    /// The name of the storage that holds the items, as `•storage` gives it: rustymath's name for a compact dtype, except that integers of any width are `"integer"`, because dynamic kinds choose an integer's width from its value. It reads no items: a pending array answers from its call's dtype, and a dual from its primal. An atom gives its own kind.
     pub(crate) fn storage_name(&self) -> &'static str {
         let held = self.held();
         match (&held, held.dtype()) {
-            (_, Some(DType::Boolean)) => "boolean", (_, Some(DType::Integer(_))) => "integer",
-            (_, Some(DType::Float(width))) => match width { FloatWidth::F16 => "float16", FloatWidth::F32 => "float32", FloatWidth::F64 => "float64" },
-            (_, Some(DType::Complex(width))) => match width { ComplexWidth::F32 => "complex64", ComplexWidth::F64 => "complex128" },
-            (_, Some(DType::Character)) => "character", (Self::Number(_), None) => "rational", (Self::Function(_), None) => "function", _ => "mixed"
+            (_, Some(DType::Integer(_))) => "integer", (_, Some(dtype)) => dtype.name(),
+            (Self::Number(_), None) => "rational", (Self::Function(_), None) => "function", _ => "mixed"
         }
     }
     /// Whether the array reads another array's items, as a view.
@@ -639,11 +657,11 @@ impl Value {
         if *shape == *self.shape() && !self.is_atom() { return Ok(self.clone()); }
         self.relaid(shape.into())
     }
-    /// The array viewed with `layout`, which has as many items in any shape. The view shares this array's items.
+    /// The array viewed with `layout`, which has as many items in any shape. The view shares this array's items. A name that `layout` gives more than one axis is dropped from all of them, as `with_layout` drops it.
     pub(crate) fn relaid(&self, layout: Layout) -> Result<Self, ErrorKind> {
         if element_count(layout.shape())? != self.len() { return Err(Kind::Length.into()); }
         let Self::Array(a) = self else { return Self::new(layout.shape().to_vec(), vec![self.clone()])?.with_layout(layout) };
-        Ok(ArrayData::view(a, layout))
+        Ok(ArrayData::view(a, layout.unique_names()))
     }
 
     pub fn axis_names(&self) -> &[Option<Arc<str>>] { self.layout().names() }

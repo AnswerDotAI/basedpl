@@ -44,14 +44,14 @@ impl<'a> Cells<'a> {
 pub(crate) fn compact_view<'a>(cells: &Cells<'a>) -> Option<View<'a>> { match cells.items()? { Items::Compact(x) => Some(x), Items::Values(_) => None } }
 
 /// The float width that a search compares at, the widest among its cells or f64 without floats, and that width's tolerance.
-fn compared_at(span: &Context<'_>, width: Option<FloatWidth>) -> (FloatWidth, Tolerance) {
+fn compared_at(width: Option<FloatWidth>) -> (FloatWidth, Tolerance) {
     let width = width.unwrap_or(FloatWidth::F64);
-    (width, span.numeric().tolerance_at(width))
+    (width, crate::number::Numeric::current().tolerance_at(width))
 }
 
 /// For each needle, the position of the first haystack cell that matches it, or the number of haystack cells when none does.
 pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Error> {
-    let (width, t) = compared_at(span, haystack.float_width().max(needles.float_width()));
+    let (width, t) = compared_at(haystack.float_width().max(needles.float_width()));
     if let Some(found) = compact_view(haystack).zip(compact_view(needles)).and_then(|(x, y)| search::view_index_of(x, y, t, || span.check_now())) { return found; }
     let compact = with_float_width!(width, F => match (haystack, needles) {
         (Cells::Items(x), Cells::Items(y)) => read_as::<F>(x).zip(read_as::<F>(y)).map(|(x, y)| tolerant::index_of_with(t, &x, &y, || span.check_now())),
@@ -81,7 +81,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
 
 /// The representative of each cell's class. Compact cells take rustymath's classes. With a tolerance, a class of real atoms is a run that `tolerant::runs` gives, or the reals equal to one whole number when every real equals one below `tolerant::whole_limit`, and the class's earliest position represents it. Two reals in one class therefore needn't match each other. Other cells are compared only with earlier representatives. A cell that matches none represents a new class.
 pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Error> {
-    let (width, t) = compared_at(span, cells.float_width());
+    let (width, t) = compared_at(cells.float_width());
     if let Some(classes) = compact_view(cells).and_then(|x| search::view_classes(x, t, || span.check())) { return classes; }
     let compact = with_float_width!(width, F => match cells {
         Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::classes_with(t, &x, || span.check())), Cells::Arrays(_) => None,
@@ -98,14 +98,14 @@ pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Er
 
 /// The number of cells in each class, in order of first appearance, as the groups of `grouped` hold them, with no group built.
 pub(crate) fn class_counts(cells: &Cells, span: &Context<'_>) -> Result<Vec<usize>, Error> {
-    let (_, t) = compared_at(span, cells.float_width());
+    let (_, t) = compared_at(cells.float_width());
     if let Some(counts) = compact_view(cells).and_then(|x| search::view_class_counts(x, t, || span.check())) { return counts; }
     Ok(search::numbered(&classify(cells, span)?).counts)
 }
 
 /// The classes of `cells`, numbered in order of first appearance, with the positions of each. Booleans, characters and integers whose values span a table group straight from those values. Other cells group by the representatives that `classify` gives them.
 pub(crate) fn grouped(cells: &Cells, span: &Context<'_>) -> Result<search::Grouped, Error> {
-    let (_, t) = compared_at(span, cells.float_width());
+    let (_, t) = compared_at(cells.float_width());
     if let Some(grouped) = compact_view(cells).and_then(|x| search::view_grouped(x, t, || span.check())) { return grouped; }
     let search::Numbered { firsts, numbers, .. } = search::numbered(&classify(cells, span)?);
     Ok(search::Grouped::new(firsts, &numbers))
@@ -135,7 +135,7 @@ fn earliest(cells: &Cells, positions: impl IntoIterator<Item = usize>, classes: 
 
 /// Whether each cell is the first of its class.
 pub(crate) fn firsts(cells: &Cells, span: &Context<'_>) -> Result<Vec<bool>, Error> {
-    let (width, t) = compared_at(span, cells.float_width());
+    let (width, t) = compared_at(cells.float_width());
     if let Some(mask) = compact_view(cells).and_then(|x| search::view_firsts(x, t, || span.check())) { return mask; }
     let compact = with_float_width!(width, F => match cells {
         Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::firsts_with(t, &x, || span.check())), Cells::Arrays(_) => None,

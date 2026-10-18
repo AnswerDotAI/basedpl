@@ -1,61 +1,11 @@
 //! What the native build takes from its operating system and crates: the clock, files, the environment, Unicode normalization, `•fetch`'s transport and `•r`'s regular expressions. `host_web.rs` gives the browser's versions of the same functions. Each passes straight through to its host, and keeps the host's own behaviour and syntax.
-use crate::{array::generated_len, data::{Request, Response}, execution::Context, regex::Match, Error, ErrorAt};
+use crate::{array::generated_len, data::{Request, Response}, execution::Context, regex::Match, At, Error};
 use std::{io, path::{Path, PathBuf}, time::Duration};
 
 pub(crate) use std::time::Instant;
 
-/// The file whose lock keeps timings apart from builds and test runs on this machine, as DEV.md describes. Timings take it exclusively. Builds and test runs take it shared.
-const TIMING_LOCK: &str = "/tmp/aai-ws-timing.lock";
-
-/// A hold on the timing lock, released when dropped. An exclusive hold also runs the holding thread's rustymath calls on that thread alone until then, because the budgets are for one thread.
-pub struct TimingLock {
-    _file: std::fs::File,
-    /// The thread count that an exclusive hold replaced, to restore when dropped.
-    threads: Option<usize>,
-}
-
-impl Drop for TimingLock { fn drop(&mut self) { if let Some(n) = self.threads { rustymath::parallel::set_threads(n); } } }
-
-/// Takes the timing lock, exclusively for a timing or `shared` for a test run. It waits up to 5 minutes while the lock can't be taken. After that, an exclusive hold fails, and a shared hold goes ahead without the lock. The operating system releases the lock when its process ends, even by a crash. On macOS an exclusive hold also sets the calling thread's QoS class to user-interactive. macOS then keeps the thread, which runs the timing, on the performance cores. An exclusive hold that has waited 30 seconds prints, once, the other processes that have the lock's file open.
-pub fn timing_lock(shared: bool) -> Result<TimingLock, String> {
-    #[cfg(target_vendor = "apple")]
-    if !shared {
-        unsafe { libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0) };
-    }
-    let held = |file| Ok(TimingLock { _file: file, threads: (!shared).then(|| rustymath::parallel::set_threads(1)) });
-    let file = std::fs::File::options().create(true).append(true).open(TIMING_LOCK).map_err(|e| format!("{TIMING_LOCK}: {e}"))?;
-    let (start, mut waiting, mut reported) = (Instant::now(), false, false);
-    loop {
-        match if shared { file.try_lock_shared() } else { file.try_lock() } {
-            Ok(()) => return held(file), Err(std::fs::TryLockError::WouldBlock) => {}
-            Err(std::fs::TryLockError::Error(e)) => return Err(format!("{TIMING_LOCK}: {e}"))
-        }
-        if start.elapsed() > Duration::from_secs(300) {
-            if shared { return held(file); }
-            return Err(format!("a build or another timing has held {TIMING_LOCK} for 5 minutes"));
-        }
-        if !waiting { eprintln!("waiting for {} to release {TIMING_LOCK}", if shared { "a timing" } else { "a build or another timing" }); }
-        if !shared && !reported && start.elapsed() > Duration::from_secs(30) {
-            eprintln!("{TIMING_LOCK} is still taken after 30 seconds. Processes with it open: {}", lock_users());
-            reported = true;
-        }
-        waiting = true;
-        std::thread::sleep(Duration::from_millis(250));
-    }
-}
-
-/// The processes other than this one that have the timing lock's file open, as `pid command` pairs from `lsof`. On macOS, where `lsof` doesn't show `flock` holds, the list also includes any other process waiting for the lock.
-fn lock_users() -> String {
-    let Ok(out) = std::process::Command::new("lsof").args(["+c", "0", "-F", "pc", TIMING_LOCK]).output() else {
-        return "unknown, because lsof didn't run".into();
-    };
-    let (text, me) = (String::from_utf8_lossy(&out.stdout), std::process::id().to_string());
-    let (mut users, mut pid) = (Vec::new(), "");
-    for line in text.lines() {
-        match line.split_at_checked(1) { Some(("p", p)) => pid = p, Some(("c", c)) if pid != me => users.push(format!("{pid} {c}")), _ => {} }
-    }
-    if users.is_empty() { "none".into() } else { users.join(", ") }
-}
+/// Takes the machine's timing lock exclusively, as `rustymath::timing::exclusive` describes.
+pub(crate) fn timing_lock() -> Result<rustymath::timing::Hold, String> { rustymath::timing::exclusive().map_err(|e| e.to_string()) }
 
 pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> { std::fs::read(path) }
 /// The name that identifies the file at `path`, for `•load`'s cycle check.

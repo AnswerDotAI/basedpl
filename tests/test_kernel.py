@@ -49,9 +49,12 @@ async def kernel_story():
         assert (await complete('`lar'))['matches'] == ['←', '⍺']
         assert len((await complete('`do'))['matches']) > 1 and len((await complete('`de'))['matches']) > 1
         # A backtick in a string or comment starts no name.
-        for code in ['"`io', '"can\'t `io', '"a""`io', '⍝ `io', '注 `io']: assert (await complete(code))['matches'] == [], code
+        for code in ['"`io', '"can\'t `io', '"a""`io', '⍝ `io']: assert (await complete(code))['matches'] == [], code
         for code in ['한+`io', '"text" `io', "''' `io", "'a' `io", '⍝ comment\n`io', '注 comment\n`io']:
             assert (await complete(code))['matches'] == ['⎕'], code
+        await kc.exec_ok('•prefs ["hanzi_aliases":$t]', silent=True)
+        assert (await complete('注 `io'))['matches'] == []
+        await kc.exec_ok('•prefs ["hanzi_aliases":$f]', silent=True)
         definition = '{⍝ Sum without running during inspection\n⎕←999 ⋄ +/⍵}'
         await kc.exec_ok('inspectme←'+definition, silent=True)
         for detail in (0,1):

@@ -64,6 +64,13 @@ In Python, the workspace object `bpl` has each system function under its name wi
 | [`•rand`](system/rand.qmd) | Generator |
 | [`•distribution`](system/distribution.qmd) | Distributions |
 
+## Positions
+
+| Name | Description |
+|---|---|
+| [`•index`](system/index.qmd) | Fresh indices |
+| [`•edge`](system/edge.qmd) | Edge modes |
+
 ## Programs
 
 | Name | Description |
@@ -71,6 +78,7 @@ In Python, the workspace object `bpl` has each system function under its name wi
 | [`•load`](system/load.qmd) | Load |
 | [`•signal`](system/signal.qmd) | Signal |
 | [`•storage`](system/storage.qmd) | Storage |
+| [`•detach`](system/detach.qmd) | Detach |
 | [`•float`](system/float.qmd) | Float width |
 | [`•time`](system/time.qmd) | Timing |
 | [`•host`](system/host.qmd) | Host facts |
@@ -85,3 +93,5 @@ In Python, the workspace object `bpl` has each system function under its name wi
 | [`•nl`](system/nl.qmd) | Name list |
 | [`•src`](system/src.qmd) | Source |
 | [`•ex`](system/ex.qmd) | Erase |
+| [`•explain`](system/explain.qmd) | Explain |
+| [`•memory`](system/memory.qmd) | Memory |

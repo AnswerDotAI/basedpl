@@ -14,6 +14,8 @@ website:
           - glyphs.qmd
           - keyboard.qmd
           - syntax.qmd
+          - hanzi-notation.ipynb
+          - hanzi-notation-zh.ipynb
           - evaluation.qmd
           - terms.qmd
           - system-functions.qmd

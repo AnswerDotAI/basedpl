@@ -484,7 +484,7 @@ box←{  ⍝ Frame a text array, with optional internal row and column borders.
   ⍺←⍬ ⍬ 0 ⋄ ar←{⍵,(≢⍵)↓⍬ ⍬ 0}{2>≡⍵?,⊂,⍵;⍵}⍺
   ch←{⍵?"++++++++-|+";"┌┐└┘┬┤├┴─│┼"}1=ar₂
   rh←(×/¯1↓⍴⍵),¯1↑1,⍴⍵ ⋄ z←rh⍴⍵
-  0∊⍴∊2↑ar?q←ch₈⍪(ch₉,z,ch₉)⍪ch₈ ⋄ q.[0 ¯1;0 ¯1]←2 2⍴ch ⋄ q;
+  0∊⍴∊2↑ar?q←ch₈⍪(ch₉,z,ch₉)⍪ch₈ ⋄ [0 ¯1;0 ¯1]⌷q ←2 2⍴ch ⋄ q;
   [r c]←rh{∪⍺{(⍵∊⍳≥⍺)#⍵}⍵,(~¯1∊⍵)#0,⍺}¨,¨2↑ar
   [rw cl]←rh{<⍵∪0,⍺}¨[r c]
   (~ 0,rh₁ ∊ c){
@@ -497,7 +497,7 @@ box←{  ⍝ Frame a text array, with optional internal row and column borders.
     vr←(rh₀,w)⍴ch₉
     ∨/0∊¨⍴¨[rw cl]?(⍵⍪hz),vr⍪q;
     q₀←ch₄ ⋄ q.[∞ ¯1]←ch₅ ⋄ q.[∞ 0]←ch₆ ⋄ q₋₁←ch₇
-    q.[0 ¯1;0 ¯1]←2 2⍴ch ⋄ (⍵⍪hz),vr⍪q
+    [0 ¯1;0 ¯1]⌷q ←2 2⍴ch ⋄ (⍵⍪hz),vr⍪q
   }z
 }
 
@@ -1091,7 +1091,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          (⊂[b c])∊1↓bkts?∇ rgt [[∆l L] Aa (ebk b) R ∆r]; ⍝ empty brackets [].
          (⊂[a c])∊bkts?∇ rgt [∆l L (a bkt Bb) R ∆r];    ⍝ bracketed single value Bb.
          (⊂a)∊rbs?∇ lft lft ⍵;                    ⍝ right bracket: skip left.
-         ≥/([[[A B] [B C]]]⌷xmat)?∇ lft ⍵;          ⍝ A:B ≥ B:C → skip left.
+         ≥/xmat.[[A B] [B C]]?∇ lft ⍵;              ⍝ A:B ≥ B:C → skip left.
          BbCc←zmat.[≤B;≤C],⊂[b c]              ⍝ B bound with C.
          ∇ show [[∆l L] Aa BbCc R ∆r]            ⍝ binds with token to the right?
      }                                           ⍝ :: ∇ stream → stream
@@ -1133,7 +1133,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      class←{                                     ⍝ classification of expr tokens.
          pairs←,/⍺,¨¨≥⍳⍴⍺                      ⍝ token-category pairs.
          [toks cats]←↓⍉⊃pairs                    ⍝ category of each token.
-         (toks⍳⍵)⊃¨⊂cats,0                      ⍝ token categories.
+         [toks⍳⍵]⌷cats,0                        ⍝ token categories.
      }
 
      pfmt←atop↢tfmt⌿                             ⍝ format of (token cat) pair.
@@ -1301,7 +1301,7 @@ ratsum←{
         ntab←vals+⊗vals
         base←2#⍴⍵
         vtab←-min-base⊤base⊥min+base⊤ntab
-        ptab←↓(min+vtab)⊃¨⊂⍵
+        ptab←↓[min+vtab]⌷⍵
         {(ptab,⍵)⍪⍵,⊂"0."}⍵,¨'.'
     }
     rsum←(atab ⍶~"{}"){

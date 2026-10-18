@@ -1,6 +1,7 @@
 //! The session's evaluation API, names, display, file loading and name lookup, and calls of dfns with their error guards.
 
 use rustymath::{buffer::FloatWidth, error::Kind};
+use crate::syntax::Statement;
 use super::*;
 
 impl Session {
@@ -41,7 +42,7 @@ impl Session {
         names.into_iter()
     }
     pub fn name_class(&self, name: &str) -> i64 {
-        match crate::inspection::item(name) {
+        match crate::inspection::item(name, self.hanzi_aliases) {
             Some(NodeKind::Name(name)) => self.lookup(&name).map_or(0, Binding::class),
             Some(NodeKind::System(name)) => crate::system::lookup(&name).map_or(0, |f| Binding::Function(f).class()), _ => -1
         }
@@ -50,7 +51,7 @@ impl Session {
         self.names().filter(|name| name.starts_with(prefix) && classes.contains(&self.name_class(name))).map(str::to_owned).collect()
     }
     pub fn inspect(&self, name: &str) -> Option<crate::Inspection> {
-        let info = match crate::inspection::item(name) {
+        let info = match crate::inspection::item(name, self.hanzi_aliases) {
             Some(NodeKind::Name(name)) => self.lookup(&name).and_then(|binding| binding.inspection(self)),
             Some(NodeKind::System(name)) => {
                 let mut info = Binding::Function(crate::system::lookup(&name)?).inspection(self)?;
@@ -108,7 +109,7 @@ impl Session {
         }
     }
     pub fn erase(&mut self, name: &str) -> bool {
-        let Some(NodeKind::Name(name)) = crate::inspection::item(name) else { return false; };
+        let Some(NodeKind::Name(name)) = crate::inspection::item(name, self.hanzi_aliases) else { return false; };
         if implicit_name(&name) { return false; }
         if let Some((owner, _)) = self.binding(&name) { self.remove_name(owner, &name); }
         true
@@ -125,10 +126,10 @@ impl Session {
         f(self, &name).map_err(|kind| span.error(kind, format!("cannot inspect name: {name}")))
     }
     pub(crate) fn system_nc(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-        self.named(right, span, |s, name| Ok(crate::primitive::integer(s.name_class(name))))
+        self.named(right, span, |s, name| Ok(Value::integer(s.name_class(name))))
     }
     pub(crate) fn system_ex(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-        self.named(right, span, |s, name| Ok(crate::primitive::integer(s.erase(name) as i64)))
+        self.named(right, span, |s, name| Ok(Value::integer(s.erase(name) as i64)))
     }
     pub(crate) fn system_src(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         self.named(right, span, |s, name| s.name_source(name).map(|text| crate::keyed::text(&text)))
@@ -197,7 +198,7 @@ impl Session {
     pub fn set(&mut self, name: &str, value: Value) -> Result<(), ErrorKind> { self.set_value(name, Binding::from_element(value)) }
     pub fn set_function(&mut self, name: &str, value: Function) -> Result<(), ErrorKind> { self.set_value(name, Binding::Function(value)) }
     fn set_value(&mut self, name: &str, value: Binding) -> Result<(), ErrorKind> {
-        let Some(NodeKind::Name(name)) = crate::inspection::item(name) else { return Err(ErrorKind::Syntax); };
+        let Some(NodeKind::Name(name)) = crate::inspection::item(name, self.hanzi_aliases) else { return Err(ErrorKind::Syntax); };
         if implicit_name(&name) { return Err(ErrorKind::Syntax); }
         self.names.insert(name, value);
         Ok(())
@@ -206,10 +207,11 @@ impl Session {
     pub fn eval_with(&mut self, code: &str, options: crate::EvalOptions) -> Evaluation {
         self.evaluation(options, |s| s.evaluate_source(Source::new("<input>", code)))
     }
-    /// One evaluation under `options`: `evaluate`'s result, with the output it produced. Its rustymath calls split across the session's `threads` where `•prefs` set them, and across the thread's own setting otherwise. Afterwards it restores the thread's own setting.
+    /// One evaluation under `options`: `evaluate`'s result, with the output it produced. Its rustymath calls split across the session's `threads` where `•prefs` set them, and across the thread's own setting otherwise. It makes the session's numeric settings the thread's current ones, and leaves them in force after it returns. It restores the thread's own thread count.
     fn evaluation(&mut self, options: crate::EvalOptions, evaluate: impl FnOnce(&mut Self) -> Evaluation) -> Evaluation {
         let threads = rustymath::parallel::thread_setting();
         if let Some(n) = self.threads { rustymath::parallel::set_threads(n); }
+        self.numeric.set_current();
         self.execution.begin(options);
         let result = evaluate(self);
         self.execution.flush();
@@ -266,7 +268,7 @@ impl Session {
         for line in source.text.split_inclusive('\n') {
             let pending = &source.text[start..offset];
             if line.trim_start().starts_with(']')
-                && (pending.trim().is_empty() || !matches!(crate::parse(Source::new("", pending)), ParseStatus::Incomplete(_))) {
+                && (pending.trim().is_empty() || !matches!(self.parse(Source::new("", pending)), ParseStatus::Incomplete(_))) {
                     if !pending.trim().is_empty() { parts.push(start..offset); }
                     parts.push(offset..offset + line.len());
                     start = offset + line.len();
@@ -286,34 +288,30 @@ impl Session {
         }
         result
     }
-    /// Code at the top level of an evaluation, such as a script, a notebook cell or a REPL turn. Its leading `•prefs` statements, each on a literal record, run before the rest is parsed. The rest then reads its numbers at the width they set. A syntax error anywhere in the code stops it before anything runs. `•load` and `⍎` run no header.
+    /// Code at the top level of an evaluation, such as a script, a notebook cell or a REPL turn. A syntax error anywhere in the code stops it before anything runs.
     fn evaluate_code(&mut self, source: Arc<Source>) -> Evaluation {
-        let mut parsed = match self.parse(source.clone()).complete() { Ok(parsed) => parsed, Err(e) => return Evaluation::failed(e) };
-        let header = parsed.statements.iter().take_while(|s| prefs_header(&s.nodes)).count();
-        if header == 0 || header == parsed.statements.len() { return self.eval_display(&parsed, false, false); }
-        parsed.statements.truncate(header);
-        let result = self.eval_display(&parsed, false, false);
-        if result.error.is_some() { return result; }
-        match self.parse(source).complete() {
-            Ok(mut rest) => { rest.statements.drain(..header); self.eval_display(&rest, false, false) } Err(e) => Evaluation::failed(e)
-        }
+        match self.parse(source).complete() { Ok(parsed) => self.eval_display(&parsed, false, false), Err(e) => Evaluation::failed(e) }
     }
-    /// The program in `source`, with numbers that have no marker read as floats of the session's default width.
-    pub fn parse(&self, source: Arc<Source>) -> crate::ParseStatus { crate::syntax::parse_at(source, self.numeric.width) }
+    /// The program in `source`, with numbers that have no marker read as floats of the session's default width, or of the width that a leading `•prefs` statement on a literal record sets. The parse makes the session's numeric settings the thread's current ones.
+    pub fn parse(&self, source: Arc<Source>) -> crate::ParseStatus { self.numeric.set_current(); crate::syntax::parse_with_aliases(source, self.hanzi_aliases) }
     /// The default width of floats, which the `float` pref sets.
     pub fn float_width(&self) -> FloatWidth { self.numeric.width }
+    /// Whether this session reads Hanzi as glyph aliases instead of name characters.
+    pub fn hanzi_aliases(&self) -> bool { self.hanzi_aliases }
     pub fn eval_parsed(&mut self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation {
         self.evaluation(options, |s| s.eval_display(parsed, false, false))
     }
     fn eval_display(&mut self, parsed: &Parsed, diagram: bool, dissect: bool) -> Evaluation {
         let mut result = Evaluation::default();
+        let mut leading = true;
         for (i, statement) in parsed.statements.iter().enumerate() {
             (result.function, result.operator) = (None, None);
             let nodes = &statement.nodes;
             let previous = self.capture;
             let dissecting = self.depth == 0 && (dissect || self.display.dissect && self.execution.echo);
             self.capture = dissecting;
-            let bound = self.bind(nodes);
+            leading &= crate::syntax::prefs_record(nodes).is_some();
+            let bound = self.bind_statement(statement, leading);
             self.capture = previous;
             match bound {
                 Ok(bound) => {
@@ -491,11 +489,20 @@ impl Session {
     fn execute_source(&mut self, source: Arc<Source>, span: &Span) -> Result<Bound, Error> {
         let parsed = self.parse(source).complete()?;
         let mut result = Bound::new(Binding::NoResult);
+        let mut leading = true;
         for statement in &parsed.statements {
             if let Binding::Value(a) = &result.value { if self.execution.echo && !result.shy { self.display_value(a, span)?; } }
-            result = self.bind(&statement.nodes).map_err(|mut e| { e.calls.push(span.clone()); e })?;
+            leading &= crate::syntax::prefs_record(&statement.nodes).is_some();
+            result = self.bind_statement(statement, leading).map_err(|mut e| { e.calls.push(span.clone()); e })?;
         }
         Ok(result)
+    }
+
+    fn bind_statement(&mut self, statement: &Statement, leading: bool) -> Result<Bound, Error> {
+        let prefacing = std::mem::replace(&mut self.prefacing, leading);
+        let result = self.bind(&statement.nodes);
+        self.prefacing = prefacing;
+        result
     }
 
     // Resolving one structural item may execute a group, but never derives an operator or consumes a neighbouring item. The binder alone chooses grammatical reductions.
@@ -521,9 +528,14 @@ impl Session {
                 let mut entries = Vec::new();
                 for nodes in cells {
                     let Some(colon) = crate::syntax::key_colon(nodes) else { entries.extend(self.item_result(nodes)?.map(|item| (None, item))); continue; };
-                    // The value and the key evaluate separately, value first. As one expression, `key:f` would be a train.
-                    let Some(value) = self.item_result(&nodes[colon + 1..])? else { continue };
-                    let key = self.array_result(&nodes[..colon])?;
+                    // The value and the key evaluate separately, value first. As one expression, `key:f` would be a train. A key with no value is a name, which gives both: `[a:]` is `["a":a]`.
+                    let name = match &nodes[..colon] {
+                        _ if colon + 1 < nodes.len() => None,
+                        [Node { kind: NodeKind::Name(name), .. }] => Some(name),
+                        _ => return Err(nodes[colon].span.error(ErrorKind::Syntax, "a key with no value is a name, as in [a:]")),
+                    };
+                    let Some(value) = self.item_result(if name.is_some() { &nodes[..colon] } else { &nodes[colon + 1..] })? else { continue };
+                    let key = match name { Some(name) => crate::keyed::text(name), None => self.array_result(&nodes[..colon])? };
                     let item = Function::primitive(Primitive::Keys).call(Some(&key), &value, &mut self.at(&nodes[colon].span))?.array(&node.span)?;
                     entries.extend(crate::keyed::entries(&item).error_at(&node.span, "key:value items must give keyed vectors")?);
                 }
@@ -735,15 +747,8 @@ impl Catch {
 /// `$e` in a handler: the caught error's kind and message, and the source, line and column where it happened.
 fn caught(error: &Error) -> Value {
     let (line, column) = error.span.position();
-    let number = |n: usize| Value::Number(crate::Number::from_integer(n as i64));
+    let number = |n: usize| Value::integer(n as i64);
     let text = crate::keyed::text;
     let values = vec![text(error.kind.name()), text(&error.message), text(&error.span.source.name), number(line), number(column)];
     crate::keyed::record(["kind", "message", "source", "line", "column"].map(Into::into).to_vec(), values).expect("an error fits in a record")
-}
-
-/// Whether `nodes` are a header statement: `•prefs` applied to a literal record.
-fn prefs_header(nodes: &[Node]) -> bool {
-    let nodes = match nodes { [Node { kind: NodeKind::Run(inner), .. }] => inner.as_slice(), _ => nodes };
-    matches!(nodes, [Node { kind: NodeKind::System(name), .. }, record @ Node { kind: NodeKind::ArrayLiteral { record: true, .. }, .. }]
-        if name.eq_ignore_ascii_case("•prefs") && crate::syntax::non_literal(std::slice::from_ref(record), &|_| false).is_none())
 }

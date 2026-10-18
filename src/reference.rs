@@ -251,12 +251,13 @@ pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
             code.push('\n');
         }
         if expected.is_none() && !closing { continue; }
+        // The expectation evaluates first, so that the page's session evaluates last and its settings are in force for both reads.
+        let wanted = expected.map(|e| Session::new().eval_with(e, options()));
         let result = bpl.eval_with(&code, options());
-        let message = match (result.error, result.value, expected) {
+        let message = match (result.error, result.value, wanted) {
             (Some(error), _, _) => Some(error.to_string()),
             (None, _, None) => None,
-            (None, actual, Some(expected)) => {
-                let wanted = Session::new().eval_with(expected, options());
+            (None, actual, Some(wanted)) => {
                 let shown = bpl.display_settings();
                 match (actual, wanted.value, wanted.error) {
                     (_, _, Some(error)) => Some(format!("expectation: {error}")),

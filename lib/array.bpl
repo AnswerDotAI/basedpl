@@ -253,7 +253,7 @@ from ← {  ⍝ Select (1↓⍴⍵)-cells from array ⍵.
     [indx axis]←⍺  ⍝ index and axis for selection.
     indx≡,⊂⍬?⍵;  ⍝ skip: select all items.
     vec←⊂⍠(⍳⍴⍴⍵ ~ [axis])⍵  ⍝ vector along given axis.
-    sel←⊃indx⊃¨⊂vec
+    sel←⊃[indx]⌷vec
     pos←axis+⍳⍴⍴indx
     (pos , ⍳⍴⍴sel ~ pos)⍉sel  ⍝ simple selection.
   }/⌽(⊂⍵),↓⍉⊃[indx axes]

@@ -4,10 +4,11 @@
 
 - `value` is the result of `text`.
 - `fused` has a row for each fused group that ran, as [`•prefs`](prefs.qmd) describes fusion. `glyphs` lists the glyphs of the group's calls in the order they ran. A fold that reads through the group, without building it, adds its glyph last. `items` is the group's item count.
-- `forced` has a row for each call that computed a pending argument, which ends the argument's fusion. `function` is the call's function, and `line` and `column` give its position in `text`.
-- `fast` has a row for each [fast combination](../terms.qmd#term-fast-combination) taken. `combination` names it, and `function` is the function that took it. The names are `"partial grade"`, `"partial sort"`, `"ranks"`, `"group counts"`, `"group folds"`, `"determinant"` and `"permanent"`.
+- `forced` has a row for each call or assignment that computed items of pending arrays. Computing an array ends its fusion. `function` is the call's function, or `←` for an assignment that computed one by writing into it, displaying it with `⎕←` or destructuring it. `line` and `column` give its position in `text`, and `items` is how many items it computed. A selection of a few items, such as `↑r` or `2↑r`, reads a pending copy through its map and computes nothing. From a pending result that nothing else holds, such as `2×y+1` in `5↑2×y+1`, it computes only the items it reads. A pending result that a name holds is computed whole on its first read, and keeps its items for later reads.
+- `fast` has a row for each [fast combination](../terms.qmd#term-fast-combination) taken, and for each fold of [windows](../glyphs/up-down-arrow.qmd) that slides over their source without building them. `combination` names it, and `function` is the function that took it. The names are `"partial grade"`, `"partial sort"`, `"ranks"`, `"group counts"`, `"group folds"`, `"determinant"`, `"permanent"` and `"sliding fold"`.
+- `accumulations` has a row for each sum that added items at positions an index gave them, as the gradient of a selection that repeats positions does under [`∂`](../glyphs/partial.qmd). `items` is how many items it added, and `size` is its result's item count. The gradients of reversal, rotation, take, drop, transpose, windows that move by 1, and `⌈` and `⌊` folds read the cotangent instead, and make no row.
 
-Each of `fused`, `forced` and `fast` is a record of columns, as `•csv` gives a table, so `(•explain t).fast.combination` lists the combinations taken. `•prefs ["fusion":$t]` writes each forcing call as it happens. Nothing is recorded outside `•explain`.
+Each of `fused`, `forced`, `fast` and `accumulations` is a record of columns, as `•csv` gives a table, so `(•explain t).fast.combination` lists the combinations taken. `•prefs ["fusion":$t]` writes each forcing call and assignment as it happens. Nothing is recorded outside `•explain`.
 
 ```bpl
 y←¿1000000⍴0
@@ -15,7 +16,13 @@ y←¿1000000⍴0
 e←•explain "≢⍕(2×y+1.5)-1"
 e.forced.function                            ⍝ ["⍕"]
 e.fused.glyphs                               ⍝ ["+×-"]
+(•explain "5↑2×y+1").forced.items            ⍝ [5]ₓ
+s←2×y+1 ⋄ (•explain "5↑s").forced.items      ⍝ [1000000]ₓ
+r←⌽y ⋄ (•explain "r.[0]←0").forced.function   ⍝ ["←"]
 (•explain "(10↑)∘⍋ y").fast.combination     ⍝ ["partial grade"]
+x←¿1000⍴0 ⋄ p←¿1000⍴1000
+(•explain "{+/,(3↕⍵)×⍤1⊢1 2 1}∂ x").accumulations  ⍝ ["items":⍬ₓ "size":⍬ₓ]
+(•explain "{+/⍵.[p]}∂ x").accumulations            ⍝ ["items":[1000]ₓ "size":[1000]ₓ]
 ```
 
 [`•memory`](memory.qmd) reports the live record nodes and pending arrays, and what a value keeps alive.

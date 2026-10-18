@@ -6,6 +6,7 @@ from decimal import Decimal
 from . import BplError, _output_text, _written
 
 INSTALLED_BPL = Path(sysconfig.get_path('scripts'))/'bpl' # The `bpl` that `cargo develop` installs and replaces
+NATIVE = {'RUSTYMATH_NATIVE': '1'} # The environment that runs rustymath's own linear algebra in place of Accelerate, in a macOS build with rustymath's `native` feature
 
 class Worker:
     "One request at a time. Interrupt from another thread; never retry a request automatically."
@@ -14,7 +15,7 @@ class Worker:
         bpl=None, # A native `bpl` to run, such as a copy of `INSTALLED_BPL` saved before a change; None: `INSTALLED_BPL`
         native=False # Run rustymath's own linear algebra in place of Accelerate, through `RUSTYMATH_NATIVE=1`, in a macOS build with rustymath's `native` feature
     ):
-        env = {**os.environ, 'RUSTYMATH_NATIVE': '1'} if native else None
+        env = os.environ | NATIVE if native else None
         self.process = subprocess.Popen((bpl or INSTALLED_BPL, '--worker'), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             encoding='utf-8', bufsize=1, start_new_session=True, env=env)
         self._replies, self._stderr = queue.Queue(), deque(maxlen=30)

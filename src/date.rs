@@ -116,9 +116,9 @@ pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
         let rows = moments.iter().map(|t| {
             let fields = [t.year(), t.month() as i32, t.day() as i32, t.hour() as i32, t.minute() as i32, t.second() as i32, t.nanosecond() as i32];
             let derived = [t.weekday().number_from_monday(), t.ordinal(), t.iso_week().week()].map(|n| n as i32);
-            fields.into_iter().chain(derived).map(|n| Value::Number(Number::from_integer(n.into()))).collect()
+            fields.into_iter().chain(derived).map(|n| Value::integer(n.into())).collect()
         });
-        return keyed::table(&FIELDS, shape, rows.collect(), vec![Value::Number(Number::from_integer(0)); FIELDS.len()]).error_at(span, "invalid date record");
+        return keyed::table(&FIELDS, shape, rows.collect(), vec![Value::integer(0); FIELDS.len()]).error_at(span, "invalid date record");
     };
     let texts = moments.iter().map(|t| {
         let mut s = String::new();

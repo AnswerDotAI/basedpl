@@ -1,9 +1,9 @@
-use rustymath::{agreement::Mapping, error::Kind, search::{dense_offsets, occurrences}, structure::Windows};
+use rustymath::{agreement::Mapping, error::Kind, search::occurrences, structure::Windows};
 use crate::{
-    agreement::{Agree, Agreement}, array::{generated_len, Frame as ResultFrame, Gather, Lanes}, execution::Context,
-    primitive::{integer, remapped, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets}, selection::SelectionKind,
+    agreement::{Agree, Agreement}, array::{generated_len, Frame as ResultFrame, Gather, Lanes}, execution::Context, number::Numeric,
+    primitive::{remapped, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets}, selection::SelectionKind,
     symbols::Notation, syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind},
-    DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value
+    At, DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::{borrow::Cow, convert::Infallible, sync::Arc};
@@ -54,7 +54,7 @@ impl Function {
         })
     }
     /// Whether the functions match within tolerance `t`, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
-    pub(crate) fn matches(&self, other: &Self, t: crate::number::Numeric, cx: &Context<'_>) -> Result<bool, Error> {
+    pub(crate) fn matches(&self, other: &Self, t: Numeric, cx: &Context<'_>) -> Result<bool, Error> {
         self.equal_by(other, &mut |x, y| x.matches_within(y, t, cx))
     }
 }
@@ -70,6 +70,13 @@ const STACK_SEGMENT: usize = 16 << 20;
 /// The LIMIT error for evaluation deeper than `MAX_CALL_DEPTH`.
 #[cold]
 fn depth_error(span: &Span) -> Error { span.error(Kind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}")) }
+/// Reports `report` for `function` at `cx`'s position. The `fusion` pref writes it, and `•explain` records the `items` items of pending arrays that `function` computed (`explain::forced`).
+fn fusion_report(cx: &mut Context<'_>, report: &str, function: &str, items: usize) {
+    cx.session.fusion_reports += 1;
+    let (line, column) = cx.span.position();
+    if items > 0 && cx.session.explaining { crate::explain::forced(function.to_owned(), line, column, items); }
+    if cx.session.display.fusion { cx.write(&format!("{report} at {function} ({}:{line}:{column})\n", cx.span.source.name)); }
+}
 /// The name classes that `•nl` and `name_class` report, as in Dyalog.
 const SUBJECT_CLASS: i64 = 2;
 const FUNCTION_CLASS: i64 = 3;
@@ -143,32 +150,45 @@ impl FunctionNode {
 
 impl Function {
     fn node(&self) -> &FunctionNode { &self.node.kind }
+    /// The primitive this function is, where it is one.
+    fn as_primitive(&self) -> Option<Primitive> { match self.node() { FunctionNode::Primitive(p) => Some(*p), _ => None } }
+    /// `f` and the text after the dot of a function built from `f.name` or `f.[I]`: the field name, or the selectors.
+    fn dotted(&self, notation: Notation) -> Option<(&Function, String)> {
+        let FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(s), Operand::Function(f)]) = self.node() else { return None };
+        let FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(b)]) = s.node() else { return None };
+        match b.as_primitive()? {
+            Primitive::Mix => crate::keyed::name(a).map(|name| (f, name.to_string())),
+            Primitive::Bracket => Some((f, a.operand(notation))),
+            _ => None,
+        }
+    }
     pub(crate) fn environment(&self) -> Option<usize> { self.node.environment }
     fn late(&self) -> bool { self.node.late }
     fn from_value(value: Binding, span: &Span) -> Result<Self, Error> {
         match value { Binding::Function(f) => Ok(f), _ => Err(span.error(ErrorKind::Syntax, "call requires a function expression")) }
     }
-    fn selection_kind(&self, left: Option<&Value>, right: &Value, kind: SelectionKind) -> Option<SelectionKind> {
+    fn selection_kind(&self, left: Option<&Value>, right: &Value, kind: SelectionKind, cx: &Context<'_>) -> Result<Option<SelectionKind>, Error> {
         use Primitive::*;
-        if !self.selects(left.is_some()) { return None; }
-        Some(match self.node() {
+        if !self.selects(left.is_some()) { return Ok(None); }
+        Ok(Some(match self.node() {
             FunctionNode::Primitive(p) => match (p, left) {
-                (Identity(_), _) | (Index, None) => kind,
+                (Identity(_), _) | (Index | Bracket, None) => kind,
                 (Take, None) if right.shape().len() <= 1 => SelectionKind::Item,
                 (Mix, Some(x)) if x.is_empty() => kind,
-                (Mix | Index, Some(x))
+                (Mix, Some(x)) => if crate::primitive::picks_item(x, right, cx)? { SelectionKind::Item } else { SelectionKind::Elements },
+                (Index | Bracket, Some(x))
                     if {
-                        let fields = crate::primitive::coordinate_fields(x);
+                        let fields = crate::primitive::coordinate_fields(x).collect::<Vec<_>>();
                         fields.len() == right.shape().len().max(1)
                             && fields.iter().all(|e| (e.is_atom() && !e.as_number().is_some_and(|n| n.is_infinite())) || crate::keyed::name(e).is_some())
                     } =>
                 { SelectionKind::Item }
                 _ => SelectionKind::Elements,
             },
-            FunctionNode::Axis(f, _) => return f.selection_kind(left, right, kind),
-            FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(f)]) => return f.selection_kind(Some(a), right, kind),
+            FunctionNode::Axis(f, _) => return f.selection_kind(left, right, kind, cx),
+            FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(f)]) => return f.selection_kind(Some(a), right, kind, cx),
             _ => SelectionKind::Elements,
-        })
+        }))
     }
     /// Whether the function only selects or rearranges the items of its right argument, whatever the values of its arguments. Each and Rank need this of their operand, which they apply to every cell of the labels.
     fn selects(&self, dyadic: bool) -> bool {
@@ -242,7 +262,7 @@ impl Function {
             }
             _ => {}
         }
-        let Some(kind) = self.selection_kind(left, labels, kind) else { return Ok(None) };
+        let Some(kind) = self.selection_kind(left, labels, kind, cx)? else { return Ok(None) };
         Ok(Some((self.call_array(left, labels, cx)?, kind)))
     }
     /// The fork this function equals with one argument, which selection follows: `f↣g` is `f g ⊢`, `f↢g` is `⊢ f g`, and sorting is `⊂∘⍋⌷⊢`, or `⊂∘⍒⌷⊢` for `>`.
@@ -270,6 +290,7 @@ impl Function {
     pub(crate) fn text(&self, notation: Notation, budget: &mut usize) -> String {
         if *budget == 0 { return "…".into(); }
         *budget -= 1;
+        if let Some((f, key)) = self.dotted(notation) { return format!("{}.{}", f.left_text(notation, budget), key); }
         match self.node() {
             FunctionNode::Primitive(_) | FunctionNode::System(_) => self.node().label(notation),
             FunctionNode::LateBound(_, span) => span.source.text.clone(),
@@ -354,9 +375,15 @@ impl Function {
                 match (op, a) {
                     (Fold(kind), Operand::Function(f)) => FunctionNode::Fold(f, kind),
                     (Super(Superscript::Power(-1)), Operand::Function(f)) => return f.inverse(span),
-                    (Super(Superscript::Power(n)), Operand::Function(f)) => FunctionNode::Composed(Power, [Operand::Function(f), Operand::Value(integer(n))]),
+                    (Super(Superscript::Power(n)), Operand::Function(f)) => FunctionNode::Composed(Power, [Operand::Function(f), Operand::Value(Value::integer(n))]),
                     (Super(_), _) => return Err(span.domain_error("ᵀ transposes an array, not a function")), (op, a) => FunctionNode::Modified(op, a)
                 }
+            }
+            // An array has no meaning as an inner product's right operand. After a function, as after an array, text reads a field of the result and other arrays select from it.
+            FunctionNode::Composed(Product, [Operand::Function(f), Operand::Value(a)]) => {
+                let read = if crate::keyed::name(&a).is_some() { Primitive::Mix } else { Primitive::Bracket };
+                let select = Self::new(FunctionNode::Composed(Before, [Operand::Value(a), Operand::Function(Self::primitive(read))]), span)?;
+                FunctionNode::Composed(Atop, [Operand::Function(select), Operand::Function(f)])
             }
             FunctionNode::Composed(op, [a, b]) => {
                 let info = op.info();
@@ -403,25 +430,18 @@ impl Function {
         cx.check()?;
         result
     }
-    /// `dispatch` under `•prefs ["fusion":$t]` or `•explain`. Where no call inside it reported, it reports each pending argument that this call computed, and each dual argument whose items it read one by one (`derivative`), with the function and its position. The pref writes each report, and `•explain` records each computed argument (`explain::forced`). Out of line, so that `call` pays one branch.
+    /// `dispatch` under `•prefs ["fusion":$t]` or `•explain`. Where no call inside it reported, it reports the items of pending arrays that this call computed, and each dual argument whose items it read one by one (`derivative`), with the function and its position. `fusion_report` writes and records each report. Out of line, so that `call` pays one branch.
     #[cold]
     #[inline(never)]
     fn reported(&self, left: Option<&Value>, right: &Value, room: bool, cx: &mut Context<'_>) -> Result<Bound, Error> {
-        let pending = [left, Some(right)].map(|v| v.and_then(Value::pending).is_some());
         let whole = [left, Some(right)].map(|v| v.and_then(Value::dual_items_built) == Some(false));
-        let reports = cx.session.fusion_reports;
+        let (reports, before) = (cx.session.fusion_reports, crate::explain::computed_so_far());
         let result = if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
-        let args = [left, Some(right)];
-        let forced = args.iter().zip(pending).any(|(v, was)| was && v.is_some_and(|v| v.pending().is_none()));
-        let report = if forced { Some("fusion ends") }
-            else if args.iter().zip(whole).any(|(v, was)| was && v.and_then(Value::dual_items_built) == Some(true)) { Some("∂ runs item by item") }
+        let items = crate::explain::computed_so_far() - before;
+        let report = if items > 0 { Some("fusion ends") }
+            else if [left, Some(right)].iter().zip(whole).any(|(v, was)| was && v.and_then(Value::dual_items_built) == Some(true)) { Some("∂ runs item by item") }
             else { None };
-        if let (Some(report), true) = (report, cx.session.fusion_reports == reports) {
-            cx.session.fusion_reports += 1;
-            let (line, column) = cx.span.position();
-            if forced && cx.session.explaining { crate::explain::forced(self.bpl(), line, column); }
-            if cx.session.display.fusion { cx.write(&format!("{report} at {} ({}:{line}:{column})\n", self.bpl(), cx.span.source.name)); }
-        }
+        if let (Some(report), true) = (report, cx.session.fusion_reports == reports) { fusion_report(cx, report, &self.bpl(), items); }
         result
     }
     // Inlined into `call`, this would add `stacker::grow`'s setup to the stack frame of every BPL call.
@@ -481,7 +501,7 @@ impl Function {
         for element in right.elements() {
             let bound = self.call(left, &element, cx)?;
             shy &= bound.shy;
-            items.push(if matches!(bound.value, Binding::NoResult) { crate::syntax::zilde(crate::Number::float(0.0, cx.numeric().width)) }
+            items.push(if matches!(bound.value, Binding::NoResult) { crate::syntax::zilde(Numeric::current().float(0.0)) }
             else { bound.array(cx.span)? });
         }
         let value = right.layout().collect(items, prototype(cx)).error_at(cx.span, "invalid result")?;
@@ -551,7 +571,7 @@ impl Function {
             FunctionNode::LateBound(..) | FunctionNode::Composed(..) | FunctionNode::Ruled(..) | Defined(_) | Derived(..) => unreachable!(),
             // Like a system function that takes text, `⍎` maps over an array that holds several strings.
             FunctionNode::Primitive(Primitive::Execute) if crate::system::Item::Text.maps(right) => {
-                return self.each_item(left, right, |cx| Value::Number(crate::Number::float(0.0, cx.numeric().width)), cx);
+                return self.each_item(left, right, |_| Value::Number(Numeric::current().float(0.0)), cx);
             }
             FunctionNode::Primitive(Primitive::Execute) => return cx.session.execute(left, right, cx.span),
             FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, cx),
@@ -564,7 +584,7 @@ impl Function {
             FunctionNode::Modified(OperatorKind::Optimize, Operand::Function(f)) => crate::optimize::optimize(f, left, right, cx),
             FunctionNode::Modified(..) => unreachable!(),
             FunctionNode::Primitive(p) if matches!((p, left), (Primitive::Mix, Some(_)) | (Primitive::Take, None)) => {
-                let item = crate::primitive::pick(left.unwrap_or(&crate::primitive::integer(0)), right, cx.session.prototype, cx)?;
+                let item = crate::primitive::pick(left.unwrap_or(&Value::integer(0)), right, cx.session.prototype, cx)?;
                 return Ok(Bound::from(item));
             }
             FunctionNode::Primitive(p @ (Primitive::MatrixDivide | Primitive::Decode))
@@ -574,12 +594,12 @@ impl Function {
             }
             FunctionNode::Primitive(p) => p.call(left, right, cx),
             FunctionNode::System(f) => {
-                if !matches!(f.call, crate::system::Call::Inspect(_)) && crate::derivative::either_active(cx, left, right) { return Err(crate::derivative::system(f.name, cx)); }
+                if !matches!(f.call, crate::system::Call::Active(_)) && crate::derivative::either_active(cx, left, right) { return Err(crate::derivative::system(f.name, cx)); }
                 f.check(left, cx.span)?;
                 if f.item.maps(right) { return self.each_item(left, right, f.prototype.expect("a mapped system function has a result prototype"), cx); }
                 if let (true, Some(prototype)) = (cx.session.prototype, f.prototype) { return Ok(Bound::from(prototype(cx))); }
                 match &f.call {
-                    crate::system::Call::Value(call) | crate::system::Call::Inspect(call) => call(left, right, cx),
+                    crate::system::Call::Value(call) | crate::system::Call::Active(call) => call(left, right, cx),
                     crate::system::Call::Effect(call) => return call(left, right, cx).map(|(value, shy)| Bound { shy, ..Bound::from(value) }),
                     crate::system::Call::Element(tag) => crate::xml::element(tag, left, right, cx),
                     crate::system::Call::Canvas(source) => crate::canvas::draw(source, left, right, cx),
@@ -639,7 +659,7 @@ impl Function {
     pub fn builtin(name: &str) -> Option<Self> {
         let first = name.chars().next()?;
         if crate::symbols::canonical(first) == '•' { return crate::system::lookup(&format!("•{}", &name[first.len_utf8()..])); }
-        name.parse::<char>().ok().and_then(Primitive::from_glyph).map(Self::primitive)
+        name.parse::<char>().ok().map(crate::symbols::canonical).and_then(Primitive::from_glyph).map(Self::primitive)
     }
 
     /// The function that operator `kind` derives from `operands`, or a primitive's train or composition that `kind` names.
@@ -647,7 +667,7 @@ impl Function {
         let span = Span::whole(Source::new("<function>", kind));
         let fun = |a: &Operand| Self::from_value(a.value(), &span);
         let constant = |a: &Operand| match a { Operand::Value(v) => Self::constant(v.clone(), &span), _ => fun(a) };
-        let glyph = kind.parse::<char>().ok();
+        let glyph = kind.parse::<char>().ok().map(crate::symbols::canonical);
         let operator = glyph.and_then(OperatorKind::from_glyph);
         let node = match (kind, operands.as_slice(), operator) {
             ("fork", [a, b, c], ..) => FunctionNode::Fork([constant(a)?, fun(b)?, constant(c)?]),
@@ -731,7 +751,7 @@ impl Operator {
         Ok(Arc::ptr_eq(&self.0, &other.0) || self.0.equal_by(&other.0, values)?)
     }
     /// Whether the operators match within tolerance `t`, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
-    pub(crate) fn matches(&self, other: &Self, t: crate::number::Numeric, cx: &Context<'_>) -> Result<bool, Error> {
+    pub(crate) fn matches(&self, other: &Self, t: Numeric, cx: &Context<'_>) -> Result<bool, Error> {
         self.equal_by(other, &mut |x, y| x.matches_within(y, t, cx))
     }
 }
@@ -862,7 +882,7 @@ impl Binding {
 }
 struct Bound { value: Binding, shy: bool, expression: Option<Box<Expression>> }
 struct Application {
-    function: Function, left: Option<Value>, right: Value, span: Span, unshy: bool, selection: Option<SelectionKind>, expression: Option<Box<Expression>>
+    function: Function, left: Option<Value>, right: Value, span: Span, unshy: bool, selection: Option<(Value, SelectionKind)>, expression: Option<Box<Expression>>
 }
 enum Step { Done(Bound), Tail(Application) }
 
@@ -894,7 +914,9 @@ impl Evaluation {
 pub struct Session {
     pub(crate) execution: crate::execution::Execution,
     pub(crate) display: crate::display::Settings,
-    pub(crate) numeric: crate::number::Numeric,
+    pub(crate) numeric: Numeric,
+    pub(crate) hanzi_aliases: bool,
+    pub(crate) prefacing: bool,
     /// The rustymath thread count that `•prefs` set for this session's evaluations. `None` leaves the evaluating thread's own setting.
     pub(crate) threads: Option<usize>,
     display_defaults: crate::display::Settings,

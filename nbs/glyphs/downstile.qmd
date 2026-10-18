@@ -15,7 +15,7 @@ Complex floor uses APL's Gaussian-integer rule.
 ⌊1.5j0.5          ⍝ 1j1
 ```
 
-`X⌊Y` takes the real minimum. Pervasive. Beside NaN it gives `Y`'s item. Beside NaN, `⌊/` and `⌊\` give NaN or the least other item, depending on the processor. Empty reduction identity: `∞`.
+`X⌊Y` takes the real minimum. Pervasive. Beside NaN, `X⌊Y` gives NaN or the other argument. `⌊/` and `⌊\` give NaN or the least other item. Which one depends on the processor and the code path. Remove NaNs first where that matters, as in `⌊/(v=v)#v`. Empty reduction identity: `∞`.
 
 ```bpl
 3⌊1 5             ⍝ 1 3

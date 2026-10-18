@@ -1,7 +1,7 @@
 use rustymath::{buffer::FloatWidth, error::Kind, with_float_width};
 use crate::{
     agreement::{Agree, Agreement}, array::{generated_len, Cells, Layout}, element::{read_as, Float}, execution::Context,
-    number::{with_field, Arithmetic, Field, Math}, DomainAt, Error, ErrorAt, Number, Value
+    number::{with_field, Arithmetic, Field, Math}, At, DomainAt, Error, ErrorAt, Number, Value
 };
 
 fn int(n: usize) -> Number { Number::from_integer(n as i64) }
@@ -49,7 +49,7 @@ impl Polynomial {
             Self::Coefficients(c) => Ok(c.clone()),
             Self::Factored(m, roots) => {
                 generated_len(&[roots.len() + 1]).at(span)?;
-                Ok(with_field!(std::iter::once(m).chain(roots), span.numeric(), T, width => {
+                Ok(with_field!(std::iter::once(m).chain(roots), T, width => {
                     let roots: Vec<T> = roots.iter().map(T::of).collect();
                     rustymath::polynomial::from_roots_with(T::of(m), &roots, || span.check_now())?.into_iter().map(|c| c.number(width)).collect()
                 }))
@@ -80,10 +80,10 @@ impl Polynomial {
         if x.len() != 1 && x.len() != self.variables() { return Err(span.error(Kind::Length, "coordinates must match polynomial variables")); }
         if x.is_empty() { return Err(span.error(Kind::Length, "polynomial needs coordinates")); }
         match self {
-            Self::Coefficients(c) => Ok(with_field!(c.iter().chain(x), span.numeric(), T, width => {
+            Self::Coefficients(c) => Ok(with_field!(c.iter().chain(x), T, width => {
                 let c: Vec<T> = c.iter().map(T::of).collect(); rustymath::polynomial::value_with(&c, &T::of(&x[0]), || span.check_now())?.number(width)
             })),
-            Self::Factored(m, roots) => Ok(with_field!(std::iter::once(m).chain(roots).chain(x), span.numeric(), T, width => {
+            Self::Factored(m, roots) => Ok(with_field!(std::iter::once(m).chain(roots).chain(x), T, width => {
                 let roots: Vec<T> = roots.iter().map(T::of).collect();
                 rustymath::polynomial::factored_with(&T::of(m), &roots, &T::of(&x[0]), || span.check_now())?.number(width)
             })),
@@ -107,7 +107,7 @@ impl Polynomial {
     fn roots(&self, span: &Context<'_>) -> Result<Value, Error> {
         let mut c = self.coefficients(span)?;
         // Real roots take the coefficients' float width, or the default width when the coefficients are exact.
-        let width = span.numeric().width_of(c.iter().map(Number::float_width));
+        let width = crate::number::Numeric::current().width_of(c.iter().map(Number::float_width));
         while c.last().is_some_and(Number::is_zero) { c.pop(); }
         let m = c.last().cloned().unwrap_or_else(|| int(0));
         let degree = c.len().saturating_sub(1);
@@ -123,7 +123,7 @@ impl Polynomial {
     fn partial(&self, axis: usize, order: usize, span: &Context<'_>) -> Result<Self, Error> {
         if !matches!(self, Self::Powers { .. }) {
             let c = self.coefficients(span)?;
-            return Ok(Self::Coefficients(with_field!(c.iter(), span.numeric(), T, width => {
+            return Ok(Self::Coefficients(with_field!(c.iter(), T, width => {
                 let mut c: Vec<T> = c.iter().map(T::of).collect(); for _ in 0..order { c = rustymath::polynomial::derivative_with(&c, || span.check_now())? }
                 c.into_iter().map(|c| c.number(width)).collect()
             })));

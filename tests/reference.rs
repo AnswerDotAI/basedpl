@@ -58,7 +58,7 @@ fn reference_format_and_comparison() {
 #[test]
 fn enabled_reference_cases() {
     // Shared, so that no timing runs while the cases load the machine.
-    let _lock = basedpl::timing::timing_lock(true).unwrap();
+    let _lock = rustymath::timing::shared().unwrap();
     let mut ids = std::collections::HashSet::new();
     let mut chosen = Vec::new();
     let selected = std::env::var("BASEDPL_CASE").ok();

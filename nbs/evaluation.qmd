@@ -66,7 +66,7 @@ A space before an argument keeps the train separate from it. `+/÷≢ x` applies
 
 Two names next to each other need a space between them. A literal can touch a name, as it touches a glyph: `1+⌽f5`. Inside a longer expression, put a name argument in parentheses, as in `1+⌽f(x)`. Without them, `1+⌽f x` applies the train `1+⌽f` to `x`. A run that starts with a function is a call: `×2` is the sign of 2.
 
-Some trains and compositions are [fast combinations](terms.qmd#term-fast-combination): BPL computes them by a faster algorithm than applying their parts in turn, with the same result. `10↑⍋ v` selects the first 10 positions of the grade without ordering the rest. The glyph pages list each combination under "Fast combinations", and [`•explain`](system/explain.qmd) reports the ones a run takes. BPL recognises a combination only where its functions form one function: a train, a composition, or an operator's operand. The expression `10↑⍋v` grades the whole of `v` before it takes 10 positions.
+Some trains and compositions are [fast combinations](terms.qmd#term-fast-combination): BPL computes them by a faster algorithm than applying their parts in turn, with the same result. `10↑⍋ v` selects the first 10 positions of the grade without ordering the rest. The glyph pages list each combination under "Fast combinations", and [`•explain`](system/explain.qmd) reports the ones a run takes. BPL recognises a combination only where its functions form one function: a train, a composition, or an operator's operand. The expression `10↑⍋v` grades the whole of `v` before it takes 10 positions. A result that BPL defers is the exception. `+/50↕v` folds the windows that `↕` defers by sliding over `v`, without building them.
 
 ## Agreement and pervasion
 
@@ -131,7 +131,7 @@ Search, membership, match and the functions that find distinct major cells use t
 Grade and interval index ignore tolerance. They order values like this:
 
 - Numbers come before characters, and characters before nested arrays.
-- Numbers compare by value. Complex numbers compare by real part, then by imaginary part.
+- Numbers compare by value. NaN comes after every other number. Complex numbers compare by real part, then by imaginary part.
 - Characters compare by code point.
 - Nested arrays compare by rank, then by ravel lexicographically, then by shape. Prototypes don't count.
 

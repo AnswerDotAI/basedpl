@@ -153,7 +153,7 @@ impl Value {
             }
             Self::Operator(op) => { let text = op.text(el.notation); if text.contains(' ') { format!("({text})") } else { text } }
             Self::Array(_) => {
-                if self.axis_names().iter().any(Option::is_some) { return self.named_literal(el); }
+                if self.shows_names(el) { return self.named_literal(el); }
                 let edges = if self.shape().len() == 1 { el.last(self.shape()) } else { el.edges(self.shape()) };
                 if self.string_literal().is_some() { return quoted(&self.elided_text(edges)); }
                 if let Some(s) = crate::keyed::name(self) {
@@ -220,10 +220,13 @@ impl Value {
         match content { Self::Function(f) => f.superscripted("ᵘ", el.notation, &mut 1000), _ => format!("{}{}", el.notation.glyph("⊂"), content.item(el)) }
     }
 
+    /// Whether text shows any of the value's axis names.
+    pub(crate) fn shows_names(&self, el: Elide) -> bool { self.axis_names().iter().any(|n| el.name(n).is_some()) }
+
     /// An array with named axes: its keyed shape reshapes the array without names. Reshape keeps position keys.
     fn named_literal(&self, el: Elide) -> String {
         let shape: Vec<_> =
-            self.axis_names().iter().zip(self.shape()).map(|(n, len)| n.as_ref().map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(n)))).collect();
+            self.axis_names().iter().zip(self.shape()).map(|(n, len)| el.name(n).map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(n)))).collect();
         format!("[{}]⍴{}", shape.join(" "), self.clone().with_axis_names(vec![]).unwrap().source(el))
     }
 
@@ -240,8 +243,8 @@ impl Value {
     }
 
     /// Whether plain display shows the vector as a strand: a vector of two or more numbers, characters or strings. Exact integers show in brackets instead.
-    pub(crate) fn is_strand(&self) -> bool {
-        matches!(self, Self::Array(_)) && self.shape().len() == 1 && self.len() >= 2 && !self.has_keys() && self.axis_names().iter().all(Option::is_none)
+    pub(crate) fn is_strand(&self, el: Elide) -> bool {
+        matches!(self, Self::Array(_)) && self.shape().len() == 1 && self.len() >= 2 && !self.has_keys() && !self.shows_names(el)
             && self.string_literal().is_none() && match self.as_items() {
                 Items::Values(items) => {
                     items.iter().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal().is_some())
@@ -270,7 +273,7 @@ impl Value {
     fn vector_literal(&self, el: Elide, edges: Option<usize>) -> String {
         // An empty record keeps its keyed axis, which `[]` would lose.
         if self.keys(0).is_some() && self.is_empty() { return "⍬:⍬".into(); }
-        if self.keys(0).is_none() && self.len() >= 2 && self.elements().all(|e| e.is_row()) {
+        if self.keys(0).is_none() && self.len() >= 2 && self.elements().all(|e| e.is_row(el)) {
             let mark = self.elements().map(|e| e.mark(el)).reduce(|a, b| if a == b { a } else { None }).flatten();
             let item = if mark.is_some() { Self::unmarked_item } else { Self::item };
             let rows = self.shown_items(edges, |e| e.bracket_items(item, el, el.edges(e.shape()))).join("⋄");
@@ -289,9 +292,9 @@ impl Value {
     }
 
     /// Whether the value prints as one row of `(a⋄b)`: a vector with items, other than a string.
-    fn is_row(&self) -> bool {
+    fn is_row(&self, el: Elide) -> bool {
         matches!(self, Self::Array(_)) && self.shape().len() == 1 && !self.is_empty() && crate::keyed::name(self).is_none()
-            && self.axis_names().iter().all(Option::is_none)
+            && !self.shows_names(el)
     }
 
     /// A major cell as one part of array notation: a vector's items side by side, a higher rank in its own notation, or one item. A row with one item needs its own brackets, because a single item would be a cell by itself. `edges` elides the whole array's positions.

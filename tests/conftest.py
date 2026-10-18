@@ -1,6 +1,6 @@
 import pytest
 from basedpl import bpl
-from basedpl.bpltests import timing_lock
+from fastws.cargo import timing_lock
 
 
 @pytest.fixture(autouse=True, scope='session')

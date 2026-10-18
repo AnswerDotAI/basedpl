@@ -24,12 +24,12 @@ A shape vector generates an array of coordinate vectors. A negative length rever
 ⍳2 ¯2              ⍝ [[0 1] [0 0]⋄[1 1] [1 0]]
 ```
 
-A keyed shape names the result's axes, as it does for [reshape](rho.qmd). The result is a named index, which pairs by name with axes of the same name. [Indexing](squad.qmd) by a named index fills outside the axis:
+A keyed shape names the result's axes, as it does for [reshape](rho.qmd). The result is a named index, which pairs by name with axes of the same name. [Indexing](squad.qmd) by a named index gives the result its name. [`•index`](../system/index.qmd) gives an index whose name can't collide with a caller's names:
 
 ```bpl
 ⍴⍳["i":3]          ⍝ ["i":3]ₓ
 x←10×⍳5 ⋄ i←⍳["i":5]
-x.[i+1]            ⍝ ["i":5]⍴[10 20 30 40 0]
+x.[5|i+1]          ⍝ ["i":5]⍴[10 20 30 40 0]
 ```
 
 On a matrix, `⍳` applies to each row, as [Rank](jot-diaeresis.qmd) does. Fill pads the results to a common shape.

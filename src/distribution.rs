@@ -1,8 +1,8 @@
 use rustymath::{buffer::FloatWidth, error::Kind};
 use crate::{
-    array::generated_len, element::read_as, execution::Context, keyed, primitive::{integer, numeric, pervade, real}, system::{
+    array::generated_len, element::read_as, execution::Context, keyed, number::Numeric, primitive::{numeric, pervade, real}, system::{
         natives, Call, Valence::{Ambivalent, Dyadic, Monadic}
-    }, Error, ErrorAt, Number, Value
+    }, At, Error, ErrorAt, Number, Value
 };
 use rand::{rngs::Xoshiro256PlusPlus, SeedableRng};
 pub(crate) use rustymath::distribution::Distribution;
@@ -91,7 +91,7 @@ fn bundle(d: Distribution) -> Value {
     ])
 }
 
-fn exact(n: u64) -> Value { match i64::try_from(n) { Ok(n) => integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) } }
+fn exact(n: u64) -> Value { match i64::try_from(n) { Ok(n) => Value::integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) } }
 
 /// `len` draws from `d`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of the session's width otherwise. Draws come in blocks, with an interrupt check before each.
 fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
@@ -101,7 +101,7 @@ fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: Vec<usize>, len: usiz
         d.samples(rng, block);
     }
     let made =
-        if d.is_discrete() { Value::integers(shape, out.into_iter().map(|k| k as i64).collect()) } else { Value::floats(shape, span.numeric().width, out) };
+        if d.is_discrete() { Value::integers(shape, out.into_iter().map(|k| k as i64).collect()) } else { Value::floats(shape, Numeric::current().width, out) };
     made.error_at(span, "invalid distribution sample")
 }
 
@@ -116,11 +116,11 @@ fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Context<'_>) 
                 Operation::Density => Pdf(*d).many(Arg::Many(&x), x.len(), &mut out), Operation::Cdf => Cdf(*d).many(Arg::Many(&x), x.len(), &mut out),
                 _ => Quantile(*d).many(Arg::Many(&x), x.len(), &mut out)
             };
-            let width = right.float_width().unwrap_or(span.numeric().width);
+            let width = right.float_width().unwrap_or(Numeric::current().width);
             return right.layout().floats(width, out).error_at(span, "invalid distribution result");
         }
     }
-    pervade(right, &|e| point(d, op, real(&e, span)?, e.float_width().unwrap_or(span.numeric().width), span), span)
+    pervade(right, &|e| point(d, op, real(&e, span)?, e.float_width().unwrap_or(Numeric::current().width), span), span)
 }
 
 /// The density, cdf or quantile of `d` at one number x, as a float of `width`, or as an exact integer for a finite discrete quantile.

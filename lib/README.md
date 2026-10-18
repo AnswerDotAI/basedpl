@@ -5,7 +5,7 @@ BPL utilities and Dyalog dfns adapted from [April's ports](https://github.com/ph
 Each file is a module. `•load` runs it and returns a record of its names. Take the names you use, with paths relative to the repository root:
 
 ```bpl
-[phinary]←•load "lib/numeric.bpl"
+[phinary:]←•load "lib/numeric.bpl"
 phinary 42                     ⍝ "10100010.00100001"
 ```
 

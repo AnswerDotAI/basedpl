@@ -7,23 +7,20 @@ use pyo3::{
 };
 use std::{ffi::c_int, sync::{atomic::{AtomicPtr, Ordering}, Arc, Mutex}};
 
-fn import_array(raw: &Bound<'_, PyDict>) -> PyResult<Value> {
-    // Python floats take the width that `_array` gives, the workspace's default width.
-    let width = match raw.get_item("width")? {
-        Some(bits) => FloatWidth::of_bits(bits.extract()?).ok_or_else(|| PyValueError::new_err("invalid float width"))?, None => FloatWidth::F64
-    };
+/// The value that Python's `_array` describes in `raw`, with its floats at `width`. A complex number follows the current settings' kinds.
+fn import_array(raw: &Bound<'_, PyDict>, width: FloatWidth) -> PyResult<Value> {
     let element = |o: Bound<'_, PyAny>| -> PyResult<Value> {
         if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return a.value().cloned(); }
         if let Ok(f) = o.extract::<PyRef<'_, PyFunction>>() { return Ok(Value::Function(f.inner.clone())); }
         if let Ok(op) = o.extract::<PyRef<'_, PyOperator>>() { return Ok(Value::Operator(op.inner.clone())); }
-        if let Ok(d) = o.cast::<PyDict>() { return import_array(d); }
+        if let Ok(d) = o.cast::<PyDict>() { return import_array(d, width); }
         if let Ok(s) = o.cast::<PyString>() {
             return basedpl::protocol::character(s.to_str()?).map(Value::Character).ok_or_else(|| PyValueError::new_err("expected one character"));
         }
         let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) }
         else if o.is_instance_of::<PyFloat>() { Ok(Number::float(o.extract::<f64>()?, width)) }
         else if let Ok(z) = o.cast::<PyComplex>() {
-            Ok(Number::complex(num_complex::Complex64::new(z.real(), z.imag()), width))
+            Ok(Number::complex_in_session(num_complex::Complex64::new(z.real(), z.imag()), width))
         } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) }
         else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) }
         else { return Err(PyTypeError::new_err("unsupported BPL element")); };
@@ -92,6 +89,12 @@ impl PyArray {
 #[pyclass(frozen)]
 struct Lent { value: Value, shape: Box<[isize]>, strides: Box<[isize]> }
 
+/// The array whose compact items an export lends for `value`, with the offset of `value`'s first item in them and, for a structural copy read through an affine map, each axis's stride in items. A copy that hasn't been built lends its source's items this way. Otherwise `value` lends its own items where they're compact. `None` where neither applies.
+fn lendable(value: &Value) -> Option<(Value, usize, Option<Vec<isize>>)> {
+    if let Some((source, offset, strides)) = value.affine().filter(|(source, ..)| source.view().is_some()) { return Some((source, offset, Some(strides))); }
+    value.view().map(|_| (value.clone(), 0, None))
+}
+
 /// Items that `own` moved out of BPL, which NumPy views writably through `data`, their address, as `dtype`. NumPy can write any bytes into them, so Booleans are held as `u8` and characters as `i32`, which have no invalid values.
 #[pyclass(frozen)]
 struct Owned { dtype: DType, items: Buffer, data: AtomicPtr<u8>, shape: Box<[isize]>, strides: Box<[isize]> }
@@ -133,8 +136,6 @@ impl Owned {
 
 #[pymethods]
 impl PyArray {
-    #[new]
-    fn new(raw: &Bound<'_, PyDict>) -> PyResult<Self> { Ok(import_array(raw)?.into()) }
     /// The array that `data` holds, read through the buffer protocol and copied once into C order, or `None` when `data` exports no buffer.
     #[staticmethod]
     fn numeric(data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
@@ -173,20 +174,22 @@ impl PyArray {
         let plain = value.shape().len() == 1 && !value.has_keys() && value.axis_names().is_empty();
         Ok(match value.view() { Some(View::Characters(c)) if plain => Some(c.iter().collect()), _ => None })
     }
-    /// Whether NumPy can read the items through the buffer protocol: compact storage.
+    /// Whether NumPy can read the items through the buffer protocol: compact storage, or a structural copy that reads compact items through an affine map.
     #[getter]
-    fn exports(&self) -> PyResult<bool> { Ok(self.value()?.view().is_some()) }
-    /// Exports the items read-only and without a copy, so that NumPy can't change a BPL value through them.
+    fn exports(&self) -> PyResult<bool> { Ok(lendable(self.value()?).is_some()) }
+    /// Exports the items read-only and without a copy, so that NumPy can't change a BPL value through them. An unbuilt structural copy with an affine read, such as windows or a reversal, lends its source's items with strides, without being built.
     unsafe fn __getbuffer__(slf: Bound<'_, Self>, view: *mut ffi::Py_buffer, flags: c_int) -> PyResult<()> {
         let value = slf.borrow().value()?.clone();
-        let dtype = value.view().ok_or_else(|| PyBufferError::new_err("an array of mixed or exact items has no buffer"))?.dtype();
-        let (shape, strides) = rustymath_buffer::geometry(dtype, value.shape());
+        let (items, offset, strides) = lendable(&value).ok_or_else(|| PyBufferError::new_err("an array of mixed or exact items has no buffer"))?;
+        let dtype = items.view().expect("lendable items are compact").dtype();
+        let (shape, strides) = match strides { Some(s) => rustymath_buffer::strided_geometry(dtype, value.shape(), &s), None => rustymath_buffer::geometry(dtype, value.shape()) };
         // An atom holds its items inline, so the pointer comes from the copy that `lent` keeps.
-        let lent = Bound::new(slf.py(), Lent { value, shape, strides })?;
+        let lent = Bound::new(slf.py(), Lent { value: items, shape, strides })?;
         let this = lent.get();
-        let items = this.value.view().expect("the items are compact");
+        // SAFETY: the offset and strides reach only items of `this.value`, as the copy's map does.
+        let data = unsafe { this.value.view().expect("the items are compact").as_ptr().add(offset * dtype.bytes()) };
         // SAFETY: `lent` never changes its value, shape or strides, and the export holds `lent`.
-        unsafe { rustymath_buffer::export(view, flags, lent.as_any(), dtype, items.as_ptr().cast_mut(), items.len(), &this.shape, &this.strides, true) }
+        unsafe { rustymath_buffer::export(view, flags, lent.as_any(), dtype, data.cast_mut(), value.shape().iter().product(), &this.shape, &this.strides, true) }
     }
     /// The items for NumPy to view writably: moved with no copy where nothing else holds them, and copied otherwise. For items it can't move, such as exact numbers, it still empties the array and returns `None`, so the caller copies them first.
     fn own(&mut self) -> PyResult<Option<Owned>> {
@@ -200,8 +203,9 @@ impl PyArray {
     fn atom(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let value = self.value()?;
         if !value.is_singleton() { return Err(PyValueError::new_err("conversion requires a singleton array")); }
-        if matches!(value.at(0), Value::Array(_)) { return Err(PyTypeError::new_err("conversion requires an atom")); }
-        array(py, &value.at(0))
+        let item = value.at(0);
+        if matches!(item, Value::Array(_)) { return Err(PyTypeError::new_err("conversion requires an atom")); }
+        array(py, &item)
     }
     fn cells(&self) -> PyResult<Vec<Self>> {
         let value = self.value()?;
@@ -300,13 +304,16 @@ impl PySession {
         let bindings = bindings.into_iter().map(|(n, a)| Ok((n, operand(&a)?))).collect::<PyResult<_>>()?;
         self.request(py, EvalRequest { run: code.map(Run::Code), bindings, options: options(timeout, echo)? }, show)
     }
-    /// Calls `function` with `args`, as `eval` runs code.
-    #[pyo3(signature = (function, args, *, timeout=None, show=None))]
+    /// Calls `function` with `args`, as `eval` runs code. Each argument that `weak` marks came from a Python scalar, and takes the width that NEP 50 gives it beside the others (`Value::weakened`).
+    #[pyo3(signature = (function, args, *, weak=Vec::new(), timeout=None, show=None))]
     fn call(
-        &self, py: Python<'_>, function: PyRef<'_, PyFunction>, args: Vec<PyRef<'_, PyArray>>, timeout: Option<f64>, show: Option<Py<PyAny>>
+        &self, py: Python<'_>, function: PyRef<'_, PyFunction>, args: Vec<PyRef<'_, PyArray>>, weak: Vec<bool>, timeout: Option<f64>, show: Option<Py<PyAny>>
     ) -> PyResult<Py<PyDict>> {
-        let run = Run::Call(function.inner.clone(), args.iter().map(|a| a.value().cloned()).collect::<PyResult<_>>()?);
-        self.request(py, EvalRequest { run: Some(run), bindings: Vec::new(), options: options(timeout, false)? }, show)
+        let values = args.iter().map(|a| a.value().cloned()).collect::<PyResult<Vec<_>>>()?;
+        let is_weak = |i: usize| weak.get(i).copied().unwrap_or(false);
+        let strong: Vec<Value> = values.iter().enumerate().filter(|&(i, _)| !is_weak(i)).map(|(_, v)| v.clone()).collect();
+        let values = values.into_iter().enumerate().map(|(i, v)| if is_weak(i) { v.weakened(&strong) } else { v }).collect();
+        self.request(py, EvalRequest { run: Some(Run::Call(function.inner.clone(), values)), bindings: Vec::new(), options: options(timeout, false)? }, show)
     }
     #[pyo3(signature = (*, name=None, function=None))]
     fn inspect(&self, py: Python<'_>, name: Option<String>, function: Option<PyRef<'_, PyFunction>>) -> PyResult<Option<Py<PyDict>>> {
@@ -330,8 +337,11 @@ impl PySession {
         };
         response(py, result)
     }
-    /// The bits of the session's default float width, which Python floats take.
-    fn float_bits(&self, py: Python<'_>) -> i64 { self.session.lock_py_attached(py).unwrap().float_width().bits() }
+    /// The array that the Python data in `raw` describes. Python floats take the session's default float width.
+    fn array(&self, py: Python<'_>, raw: &Bound<'_, PyDict>) -> PyResult<PyArray> {
+        let width = self.session.lock_py_attached(py).unwrap().float_width();
+        Ok(import_array(raw, width)?.into())
+    }
     /// Gives the session the display defaults of BPL's REPL and Jupyter kernel, for the BPL magics in IPython.
     fn make_interactive(&self, py: Python<'_>) { self.session.lock_py_attached(py).unwrap().make_interactive() }
     #[pyo3(signature = (prefix="", classes=vec![2, 3, 4], complete=false))]

@@ -108,7 +108,7 @@ impl Points {
 /// The floats that `code`, one expression, gives, ravelled.
 #[track_caller]
 fn floats(session: &mut Session, code: &str) -> Vec<f64> {
-    let result = session.eval(&format!("•float ,{code}"));
+    let result = session.eval(&format!("0+,({code})"));
     assert!(result.error.is_none(), "{code}: {:?}", result.error);
     result.value.as_ref().and_then(Value::as_floats).unwrap_or_else(|| panic!("{code} gave no floats")).to_vec()
 }

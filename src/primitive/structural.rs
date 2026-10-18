@@ -68,7 +68,7 @@ pub(super) fn enclose_axes(right: &Value, axes: &[usize], span: &Context<'_>) ->
     generated_len(frame.shape()).at(span)?;
     let len = generated_len(cell.shape()).at(span)?;
     let tables: Vec<_> = axes.iter().map(|&a| Steps::along(shape[a], stride[a])).collect();
-    let data = Steps::combined(&others.iter().map(|&a| Steps::along(shape[a], stride[a])).collect::<Vec<_>>()).into_iter().map(|base| {
+    let data = Steps::combined(0, &others.iter().map(|&a| Steps::along(shape[a], stride[a])).collect::<Vec<_>>()).into_iter().map(|base| {
         let mut data = Gather::new(&[right], len);
         data.walk(right, base, &tables);
         data.finish(cell.clone(), || right.prototype())
@@ -115,6 +115,12 @@ pub(super) fn reshape(dimensions: &Value, right: &Value, span: &Context<'_>) -> 
     data.finish(shape.into(), || right.prototype()).and_then(|a| a.with_axis_names(names)).error_at(span, "invalid reshape")
 }
 
+/// `right` reshaped to `shape`, through the reshape primitive's call. That call applies `∂`'s rules to duals and records.
+pub(crate) fn reshape_to(shape: &[usize], right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let shape = Value::integers(vec![shape.len()], shape.iter().map(|&n| n as i64).collect()).error_at(span, "invalid shape")?;
+    Primitive::Shape.call(Some(&shape), right, span)
+}
+
 /// `right` copied by `plan`, with no renderer.
 pub(crate) fn remapped(right: &Value, plan: Plan) -> Result<Value, ErrorKind> { copied(right, plan.layout.into(), &plan.steps) }
 
@@ -123,12 +129,15 @@ pub(super) fn remap(right: &Value, plan: Plan, span: &Context<'_>) -> Result<Val
     copied(right, Layout::rearranged(plan.layout, right), &plan.steps).error_at(span, "invalid structural result")
 }
 
-/// Items of `right` laid out by `layout`, read through one `Steps` per axis as `Gather::walk` reads them.
-fn copied(right: &Value, layout: Layout, tables: &[Steps]) -> Result<Value, ErrorKind> {
-    generated_len(layout.shape())?;
+/// Items of `right` laid out by `layout`, read through one `Steps` per axis as `Gather::walk` reads them. Tables that read every item of `right` in order give `right` under `layout`, with no items copied. A record, or a dual whose tangent is a record, copies its record as one `Op::Copy` of these tables (`linear::copy`).
+pub(crate) fn copied(right: &Value, layout: Layout, tables: &[Steps]) -> Result<Value, ErrorKind> {
+    let len = generated_len(layout.shape())?;
     if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }
+    if right.len() == len && Steps::in_order(tables) { return right.relaid(layout); }
+    if let Some(t) = right.linear() { return Ok(crate::linear::copy(t, layout, tables)); }
     if let Some(copy) = crate::fusion::copy(right, &layout, tables) { return Ok(copy); }
-    if let Some((tag, primal, tangent)) = right.dual().filter(|(_, _, t)| t.linear().is_none()) {
+    if let Some((tag, primal, tangent)) = right.dual() {
+        if let Some(t) = tangent.linear() { return Ok(crate::derivative::dual(tag, copied(&primal, layout.clone(), tables)?, crate::linear::copy(t, layout, tables))); }
         if let (Some(p), Some(t)) = (crate::fusion::copy(&primal, &layout, tables), crate::fusion::copy(&tangent, &layout, tables)) { return Ok(crate::derivative::dual(tag, p, t)); }
     }
     walked(right, layout, 0, tables)
@@ -201,7 +210,7 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
     if !inverse && !keyed && traversal.outer * traversal.inner == 1 && (single || len == traversal.len) && any >= 0 {
         let total = shape[axis];
         let layout =
-            Layout::rearranged(CoreLayout::from(shape).with_keys(keys).error_at(span, "invalid replication keys")?.inherit_names(right.axis_names().to_vec()), right);
+            Layout::rearranged(CoreLayout::from(shape).with_keys(keys).at(span)?.inherit_names(right.axis_names().to_vec()), right);
         let mut data = Gather::new(&[right], total);
         if boolean { data.compress(right, &counts, total) }
         else { data.replicate(right, &counts, total) }
@@ -215,7 +224,7 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
         // Each count uses up one cell, and a negative count gives that cell's place to fills. The inverse uses up the cells each count made, and gives back one cell for each count: a fill for a count that kept nothing.
         consumed = consumed.saturating_add(if inverse { saturated(n.unsigned_abs()) } else { 1 });
         let repeats = if inverse { 1 } else { saturated(n.unsigned_abs()) };
-        let offset = pos.map(|p| p * traversal.inner);
+        let offset = pos.map_or(Steps::FILL, |p| p * traversal.inner);
         if repeats == 1 { table.push(offset) }
         else { table.extend(std::iter::repeat_n(offset, repeats)) }
         if keyed { positions.extend(std::iter::repeat_n(pos, repeats)); }
@@ -223,9 +232,9 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
     if inverse && traversal.len != 1 && consumed != traversal.len {
         return Err(span.error(Kind::Length, "replication counts must use every cell to invert"));
     }
-    let layout = if keyed { CoreLayout::select(right.layout(), axis, positions.into_iter()).error_at(span, "replication repeats or invents axis keys")? }
-    else { CoreLayout::from(shape).with_keys(keys).error_at(span, "invalid replication keys")?.inherit_names(right.axis_names().to_vec()) };
-    let steps = vec![Steps::along(traversal.outer, traversal.len * traversal.inner), Steps::Table(table), Steps::along(traversal.inner, 1)];
+    let layout = if keyed { CoreLayout::select(right.layout(), axis, positions.into_iter()).at(span)? }
+    else { CoreLayout::from(shape).with_keys(keys).at(span)?.inherit_names(right.axis_names().to_vec()) };
+    let steps = vec![Steps::along(traversal.outer, traversal.len * traversal.inner), Steps::table(table), Steps::along(traversal.inner, 1)];
     remap(right, Plan { layout, steps }, span)
 }
 
@@ -305,12 +314,14 @@ fn holds_name(value: &Value) -> bool { crate::keyed::name(value).is_some() || !v
 
 fn transpose_groups(spec: &Value, right: &Value, inverse: bool, span: &Context<'_>) -> Result<Vec<TransposeGroup>, Error> {
     if spec.shape().len() > 1 { return Err(span.error(Kind::Rank, "transpose axes must be a unit or vector")); }
-    let items = if crate::keyed::name(spec).is_some() { vec![spec.clone()] } else { spec.elements().collect() };
+    // `⍉` takes destinations, where a named vector gives its numbers. In `⍉⁻¹`, a named vector names its axis, as a string does.
+    let named = |v: &Value| if inverse { super::named_axis(v) } else { crate::keyed::name(v) };
+    let items = if named(spec).is_some() { vec![spec.clone()] } else { spec.elements().collect() };
     items.into_iter().enumerate().map(|(i, item)| {
         if !inverse && holds_name(&item) {
             return Err(span.domain_error("⍉ takes numeric destinations. Names select axes in ⍉⁻¹, and a named ⍉⁻¹ has no inverse"));
         }
-        let paired = item.shape().len() == 1 && item.elements().all(|p| p.shape() == [2] && crate::keyed::name(&p).is_none());
+        let paired = item.shape().len() == 1 && item.elements().all(|p| p.shape() == [2] && named(&p).is_none());
         let (selectors, sizes, factor_names) = if paired {
             let sizes = item.elements().map(|pair| {
                 let size = pair.at(1);
@@ -462,7 +473,7 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
     let vector = right.shape().len() == 1 && !right.has_keys() && right.axis_names().is_empty();
     let part = |range: std::ops::Range<usize>| -> Result<Value, Error> {
         if vector { return right.part(range.clone(), vec![range.len()]).error_at(span, "invalid partition"); }
-        let layout = cell_layout(range.clone()).error_at(span, "invalid partition keys")?;
+        let layout = cell_layout(range.clone()).at(span)?;
         let steps = vec![
             Steps::along(traversal.outer, traversal.len * traversal.inner),
             Steps::Stride { start: range.start * traversal.inner, len: range.len(), step: traversal.inner as isize }, Steps::along(traversal.inner, 1),

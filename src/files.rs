@@ -65,7 +65,7 @@ fn row(path: &Path, shown: &str) -> Vec<Value> {
     let mut row = vec![
         keyed::text(shown), keyed::text(&name), keyed::text(kind),
         keyed::text(&fs::read_link(path).map_or(String::new(), |t| t.to_string_lossy().into_owned())),
-        Value::Number(Number::from_integer(meta.as_ref().map_or(0, |m| m.len() as i64))), time(meta.as_ref().map(fs::Metadata::modified)),
+        Value::integer(meta.as_ref().map_or(0, |m| m.len() as i64)), time(meta.as_ref().map(fs::Metadata::modified)),
         time(meta.as_ref().map(fs::Metadata::accessed)), time(meta.as_ref().map(fs::Metadata::created)),
         flag(meta.as_ref().is_some_and(|m| m.permissions().readonly())), flag(name.starts_with('.')),
     ];
@@ -76,8 +76,8 @@ fn row(path: &Path, shown: &str) -> Vec<Value> {
         let uid = meta.as_ref().map(MetadataExt::uid);
         let owner = uid.and_then(|u| nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(u)).ok().flatten()).map_or(String::new(), |u| u.name);
         row.extend([
-            Value::Number(Number::from_integer(uid.map_or(0, i64::from))),
-            Value::Number(Number::from_integer(meta.as_ref().map_or(0, |m| i64::from(m.mode())))), keyed::text(&owner),
+            Value::integer(uid.map_or(0, i64::from)),
+            Value::integer(meta.as_ref().map_or(0, |m| i64::from(m.mode()))), keyed::text(&owner),
         ]);
     }
     row
@@ -98,7 +98,7 @@ const TEXT_COLUMNS: [&str; 5] = ["path", "name", "kind", "target", "owner"];
 
 /// A table of `rows`, one for each entry.
 fn entries(rows: Vec<Vec<Value>>, span: &Context<'_>) -> Result<Value, Error> {
-    let empty = COLUMNS.iter().map(|c| if TEXT_COLUMNS.contains(c) { keyed::text("") } else { Value::Number(Number::from_integer(0)) });
+    let empty = COLUMNS.iter().map(|c| if TEXT_COLUMNS.contains(c) { keyed::text("") } else { Value::integer(0) });
     keyed::table(COLUMNS, &[rows.len()], rows, empty.collect()).error_at(span, "invalid table of entries")
 }
 

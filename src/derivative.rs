@@ -7,7 +7,7 @@ use crate::{
     agreement::{Agree, Agreement}, array::{Gather, Layout, Promotion}, error::ErrorAt, execution::Context, number::{Arithmetic, Math}, primitive::{Comparison, Primitive}, Error, ErrorKind,
     Function, Number, Span, Value,
 };
-use rustymath::agreement::Mapping;
+use rustymath::{agreement::Mapping, buffer::FloatWidth, gather::Steps};
 
 /// The message of the UNSUPPORTED error that a dual gives where it reaches code that `∂` can't differentiate (`number::Failure::Dual`).
 pub(crate) const UNSUPPORTED: &str = "∂ can't differentiate this here";
@@ -148,6 +148,24 @@ pub(crate) fn dual(tag: u32, primal: Value, tangent: Value) -> Value {
 /// `value` with level `tag` taken off: each dual at that tag replaced by its primal. Duals with other tags stay.
 pub(crate) fn strip(value: &Value, tag: u32) -> Value { walk(value, &mut |leaf| Ok(split(leaf, tag).0)).expect("stripping can't fail") }
 
+/// `value` with each dual replaced by its primal, at every tag, as `•detach` gives it.
+pub(crate) fn detach(value: &Value) -> Value {
+    walk(value, &mut |leaf| Ok(match tag(leaf) { Some(t) => detach(&split(leaf, t).0), None => leaf.clone() })).expect("detaching can't fail")
+}
+
+/// `value` with its numbers as floats of `width`, as `width•float` gives it. A dual's primal and tangent both convert. A tangent keeps its primal's kind. A tangent that's a record converts through `linear::cast`.
+pub(crate) fn to_float_width(value: &Value, width: FloatWidth, span: &Span) -> Result<Value, Error> {
+    if !active(value) && value.linear().is_none() { return value.to_float_width(width).error_at(span, "•float takes numbers"); }
+    walk(value, &mut |leaf| match (tag(leaf), leaf.linear()) {
+        (Some(t), _) => {
+            let (primal, tangent) = split(leaf, t);
+            Ok(dual(t, to_float_width(&primal, width, span)?, to_float_width(&tangent.expect("a dual has a tangent"), width, span)?))
+        }
+        (None, Some(record)) => Ok(crate::linear::cast(record, width)),
+        _ => leaf.to_float_width(width).error_at(span, "•float takes numbers"),
+    })
+}
+
 /// Zeros in `like`'s layout, in the kind of its plain items.
 pub(crate) fn zeros(like: &Value) -> Value {
     let zero = like.prototype();
@@ -165,11 +183,7 @@ pub(crate) fn both<E>(target: &mut Value, source: &Value, write: impl Fn(&mut Va
     let symbolic = [&tangent, &tangents].iter().any(|t| t.as_ref().is_some_and(|t| t.linear().is_some()));
     let tangent = if symbolic {
         let mut sources = crate::linear::Sources::default();
-        let mut ids = |t: &Option<Value>, like: &Value| match t.as_ref().and_then(Value::linear) {
-            Some(r) => sources.ids(r),
-            None => crate::linear::fill_ids(like),
-        };
-        let (mut target_ids, source_ids) = (ids(&tangent, &primal), ids(&tangents, &items));
+        let (mut target_ids, source_ids) = (sources.of(tangent.as_ref(), &primal), sources.of(tangents.as_ref(), &items));
         write(&mut target_ids, &source_ids)?;
         crate::linear::gather(sources.records, target_ids, crate::linear::zero_of(&primal))
     } else {
@@ -306,7 +320,7 @@ fn laid_out(right: &Value, primal: &Value, entry: &mut dyn FnMut(usize, usize) -
     let rows = if primal.is_atom() { 1 } else { primal.len() };
     if right.is_atom() {
         if primal.is_atom() { return Ok(entry(0, 0)); }
-        return primal.layout().collect((0..rows).map(|i| entry(i, 0)).collect::<Vec<_>>(), || Value::Number(Number::from_integer(0))).error_at(span, "invalid Jacobian");
+        return primal.layout().collect((0..rows).map(|i| entry(i, 0)).collect::<Vec<_>>(), || Value::integer(0)).error_at(span, "invalid Jacobian");
     }
     let layout = Agreement::outer(primal.layout(), right.layout()).error_at(span, "Jacobian is too large")?.layout;
     let mut items = Vec::with_capacity(rows * right.len());
@@ -315,7 +329,7 @@ fn laid_out(right: &Value, primal: &Value, entry: &mut dyn FnMut(usize, usize) -
         let mut next = || { j += 1; entry(i, j - 1) };
         for k in 0..right.len() { items.push(rebuild(&right.at(k), &mut next, span)?); }
     }
-    layout.collect(items, || Value::Number(Number::from_integer(0))).error_at(span, "invalid Jacobian")
+    layout.collect(items, || Value::integer(0)).error_at(span, "invalid Jacobian")
 }
 
 /// `f∂ right` in reverse mode: one run of `f` against seeds that record its linear calls, then a transpose of the record for each result item, or a forward evaluation for each number of `right`, whichever are fewer.
@@ -402,7 +416,7 @@ fn linearize(f: &Function, left: Option<&Value>, right: &Value, tag: u32, cx: &m
     numeric(&primal, span)?;
     let record = match tangent {
         Some(t) => match t.linear() {
-            Some(r) => crate::linear::expand(r, primal.layout()).linear().cloned(),
+            Some(_) => expand(&t, primal.layout()).linear().cloned(),
             None => return Err(span.error(ErrorKind::Unsupported, "∂ can't differentiate this result in reverse mode")),
         },
         None => None,
@@ -427,7 +441,7 @@ fn tag_of_items(value: &Value) -> Option<u32> {
 fn rebuild(value: &Value, next: &mut dyn FnMut() -> Value, span: &Span) -> Result<Value, Error> {
     walk(value, &mut |leaf| match numbers(leaf, span)? {
         _ if leaf.is_atom() => Ok(next()),
-        n => leaf.layout().collect((0..n).map(|_| next()).collect::<Vec<_>>(), || Value::Number(Number::from_integer(0))).error_at(span, "invalid Jacobian"),
+        n => leaf.layout().collect((0..n).map(|_| next()).collect::<Vec<_>>(), || Value::integer(0)).error_at(span, "invalid Jacobian"),
     })
 }
 
@@ -546,21 +560,24 @@ fn add(a: &Value, b: &Value, cx: &Context<'_>) -> Result<Value, Error> { Primiti
 
 /// The tangent `t` laid out as `layout`, its primal's: repeated where it was smaller, as broadcasting repeats it. A linear operation, whose transpose sums back. A dual keeps the smaller tangent that a pervasive rule gives, which later calls broadcast as they go, and only code that copies items expands it (`Dual::full_tangent`).
 pub(crate) fn expand(t: &Value, layout: &crate::array::Layout) -> Value {
-    if let Some(r) = t.linear() { return crate::linear::expand(r, layout); }
     let agreement = Agreement::new(layout, t.layout()).expect("a tangent agrees with its primal");
     broadcast(t, &agreement.right, agreement.len, agreement.layout)
 }
 
-/// `v` laid out as `layout` through `mapping`, as broadcasting reads it. One `Gather::walk` copies every kind, and moves a dual's primal and tangent together. An atom fills the layout.
+/// The tables that copy an argument onto a result of `shape` through broadcasting's `mapping`, as `primitive::copied` reads them.
+pub(crate) fn broadcast_tables(mapping: &Mapping, shape: &[usize]) -> Vec<Steps> {
+    let (base, steps) = mapping.entries(shape).expect("an agreement's mapping has steps");
+    Steps::with_base(base, steps)
+}
+
+/// `v` laid out as `layout` through `mapping`, as broadcasting reads it. An array copies as a structural glyph copies, through `primitive::copied`, which moves a dual's primal and tangent together and copies a record as one `Op::Copy`. An atom fills the layout.
 fn broadcast(v: &Value, mapping: &Mapping, len: usize, layout: Layout) -> Value {
-    if matches!(mapping, Mapping::Linear(1)) && v.len() == len { return v.relaid(layout).expect("an identity mapping keeps the items"); }
-    let mut data = Gather::new(&[v], len);
-    if v.is_atom() {
-        data.fill(v, len);
-    } else {
-        let (base, steps) = mapping.entries(layout.shape()).expect("an agreement's mapping has steps");
-        data.walk(v, base, &steps);
+    if !v.is_atom() {
+        let tables = broadcast_tables(mapping, layout.shape());
+        return crate::primitive::copied(v, layout, &tables).expect("a broadcast fits its layout");
     }
+    let mut data = Gather::new(&[v], len);
+    data.fill(v, len);
     data.finish(layout, || v.prototype()).expect("a broadcast fits its layout")
 }
 
@@ -596,10 +613,9 @@ fn polynomial(c: &Value, x: &Value, tag: u32, cx: &Context<'_>) -> Result<Value,
 /// The tangent of `C⌻x` along `tc`, a record of the tangents of `C`. `C⌻x` is linear in its coefficients `C`, whose last axis holds each polynomial's coefficients. The points broadcast against the frame of `C`, as `⌻` pairs them. Each point's powers scale its coefficients' tangents, and a product with ones sums them.
 fn coefficients(tc: &std::sync::Arc<crate::linear::Linear>, x: &Value, cx: &Context<'_>) -> Result<Value, Error> {
     if !x.all_numbers() { return Err(cx.span.error(ErrorKind::Unsupported, "∂ can't transpose ⌻")); }
-    let integer = |n: i64| Value::Number(Number::from_integer(n));
     let shape = tc.layout.shape();
     let (frame, n) = match shape.split_last() { Some((&n, frame)) => (frame.to_vec(), n), None => (Vec::new(), 1) };
-    let points = Primitive::Arithmetic(Arithmetic::Plus).call(Some(&crate::linear::reshape(&frame, &integer(0), cx)?), x, cx)?;
+    let points = Primitive::Arithmetic(Arithmetic::Plus).call(Some(&crate::primitive::reshape_to(&frame, &Value::integer(0), cx)?), x, cx)?;
     let mut column = points.shape().to_vec();
     // The coefficients take length-1 axes between their frame and their last axis, so that they agree with points of higher rank.
     let padded: Vec<usize> = frame.iter().copied().chain(std::iter::repeat_n(1, column.len() - frame.len())).chain([n]).collect();
@@ -608,7 +624,7 @@ fn coefficients(tc: &std::sync::Arc<crate::linear::Linear>, x: &Value, cx: &Cont
     column.push(1);
     row.push(n);
     let exponents = Value::integers(vec![n], (0..n as i64).collect()).error_at(cx.span, "invalid powers")?;
-    let powers = Primitive::Math(Math::Power).call(Some(&crate::linear::reshape(&column, &points, cx)?), &crate::linear::reshape(&row, &exponents, cx)?, cx)?;
+    let powers = Primitive::Math(Math::Power).call(Some(&crate::primitive::reshape_to(&column, &points, cx)?), &crate::primitive::reshape_to(&row, &exponents, cx)?, cx)?;
     let ones = Value::integers(vec![n], vec![1; n]).error_at(cx.span, "invalid ones")?;
     let scaled = scale(&powers, &coefficients, cx)?;
     Ok(crate::linear::product(&ones, scaled.linear().expect("a scaled record is a record"), false, points.layout().clone()))
@@ -659,19 +675,18 @@ fn regular_inverse(a: &Value, glyph: &str, cx: &mut Context<'_>) -> Result<(Valu
 
 /// `⊥`, as `d+.×⌽×\1,⌽1↓b` for digits `d` and base `b`, each taken to the length that `⊥` decodes along: the weight of each digit is the product of the bases after it. Running that on the duals differentiates with respect to both. Monadic `⊥` has base 2. A base with more than one axis gives UNSUPPORTED.
 fn decode(left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
-    let base = left.cloned().unwrap_or_else(|| Value::Number(Number::from_integer(2)));
+    let base = left.cloned().unwrap_or_else(|| Value::integer(2));
     let (xlen, ylen) = (base.shape().last().copied().unwrap_or(1), right.shape().last().copied().unwrap_or(1));
     let len = crate::primitive::decode_length(xlen, ylen, cx)?;
     if base.shape().len() > 1 { return Err(cx.span.error(ErrorKind::Unsupported, "∂ differentiates ⊥ only with a scalar or vector base")); }
-    let integer = |n: i64| Value::Number(Number::from_integer(n));
     let reverse = |v: &Value, cx: &Context<'_>| Primitive::Reverse(false).call(None, v, cx);
     let digits = if ylen == len { right.clone() } else {
         let d = if right.is_atom() { Primitive::Ravel.call(None, right, cx)? } else { right.clone() };
-        Primitive::Replicate.call_axis(Some(&integer(len as i64)), &d, Some(d.shape().len() - 1), cx)?
+        Primitive::Replicate.call_axis(Some(&Value::integer(len as i64)), &d, Some(d.shape().len() - 1), cx)?
     };
     let shape = Value::integers(vec![1], vec![len as i64]).error_at(cx.span, "invalid shape")?;
     let bases = Primitive::Shape.call(Some(&shape), &base, cx)?;
-    let after = Primitive::Ravel.call(Some(&integer(1)), &reverse(&Primitive::Drop.call(Some(&integer(1)), &bases, cx)?, cx)?, cx)?;
+    let after = Primitive::Ravel.call(Some(&Value::integer(1)), &reverse(&Primitive::Drop.call(Some(&Value::integer(1)), &bases, cx)?, cx)?, cx)?;
     let scan = Function::build("\\", vec![crate::Operand::Function(crate::linear::primitive("×"))]).expect("×\\ builds");
     let weights = reverse(&scan.call_array(None, &after, cx)?, cx)?;
     product(&digits, &weights, cx)
@@ -720,44 +735,43 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
     let call = |p: Primitive, a: Option<&Value>, b: &Value| p.call(a, b, cx);
     let dyad = |p: Primitive, a: &Value, b: &Value| call(p, Some(a), b);
     let monad = |p: Primitive, b: &Value| call(p, None, b);
-    let int = |n: i64| Value::Number(Number::from_integer(n));
     let (times, divide, plus, minus) = (P::Arithmetic(Times), P::Arithmetic(Divide), P::Arithmetic(Plus), P::Arithmetic(Minus));
     let neg = |v: &Value| monad(minus, v);
     let recip = |v: &Value| monad(divide, v);
     let square = |v: &Value| dyad(times, v, v);
     let ln = |v: &Value| monad(P::Math(Log), v);
-    let circle = |k: i64, v: &Value| dyad(P::Math(Circle), &int(k), v);
+    let circle = |k: i64, v: &Value| dyad(P::Math(Circle), &Value::integer(k), v);
     let compare = |op: Comparison, a: &Value, b: &Value| dyad(P::Compare(op), a, b);
     let [nx, ny] = need;
     let lazy = |need: bool, f: &dyn Fn() -> Result<Value, Error>| need.then(f).transpose();
     let Some(x) = x else {
         let d = match p {
-            P::Arithmetic(Plus) => int(1),
-            P::Arithmetic(Minus) => int(-1),
+            P::Arithmetic(Plus) => Value::integer(1),
+            P::Arithmetic(Minus) => Value::integer(-1),
             P::Arithmetic(Divide) => neg(&square(r)?)?,
             P::Math(Power) => r.clone(),
             P::Math(Log) => recip(y)?,
             P::Math(Root) => recip(&dyad(plus, r, r)?)?,
             P::Math(Magnitude) => monad(times, y)?,
-            P::Math(Pi) => monad(P::Math(Pi), &int(1))?,
+            P::Math(Pi) => monad(P::Math(Pi), &Value::integer(1))?,
             _ => unreachable!("only pervasive glyphs take partials"),
         };
         return Ok([None, Some(d)]);
     };
     Ok(match p {
-        P::Arithmetic(Plus) => [nx.then(|| int(1)), ny.then(|| int(1))],
-        P::Arithmetic(Minus) => [nx.then(|| int(1)), ny.then(|| int(-1))],
+        P::Arithmetic(Plus) => [nx.then(|| Value::integer(1)), ny.then(|| Value::integer(1))],
+        P::Arithmetic(Minus) => [nx.then(|| Value::integer(1)), ny.then(|| Value::integer(-1))],
         P::Arithmetic(Times) => [nx.then(|| y.clone()), ny.then(|| x.clone())],
         P::Arithmetic(Divide) => [lazy(nx, &|| recip(y))?, lazy(ny, &|| neg(&dyad(divide, r, y)?))?],
         P::Math(Power) => [
             // 0 where x is 0 and y is less than 1, as Futhark gives: there x stands in as 1, and the mask clears the result.
             lazy(nx, &|| {
-                let keep = dyad(P::Math(Nand), &compare(Equal, x, &int(0))?, &compare(Less, y, &int(1))?)?;
+                let keep = dyad(P::Math(Nand), &compare(Equal, x, &Value::integer(0))?, &compare(Less, y, &Value::integer(1))?)?;
                 let base = dyad(plus, x, &monad(P::Math(Not), &keep)?)?;
-                dyad(times, &keep, &dyad(times, y, &dyad(P::Math(Power), &base, &dyad(minus, y, &int(1))?)?)?)
+                dyad(times, &keep, &dyad(times, y, &dyad(P::Math(Power), &base, &dyad(minus, y, &Value::integer(1))?)?)?)
             })?,
             // 0 where x isn't positive: there x stands in as 1, whose logarithm is 0.
-            lazy(ny, &|| dyad(times, r, &ln(&dyad(P::Math(Ceiling), x, &compare(LessEqual, x, &int(0))?)?)?))?,
+            lazy(ny, &|| dyad(times, r, &ln(&dyad(P::Math(Ceiling), x, &compare(LessEqual, x, &Value::integer(0))?)?)?))?,
         ],
         P::Math(Log) => [
             lazy(nx, &|| neg(&dyad(divide, r, &dyad(times, x, &ln(x)?)?)?))?,
@@ -770,13 +784,13 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
         P::Math(Magnitude) => [
             // 0 where x is 0, where the residue is y itself.
             lazy(nx, &|| {
-                let zero = compare(Equal, x, &int(0))?;
+                let zero = compare(Equal, x, &Value::integer(0))?;
                 let quotient = monad(P::Math(Floor), &dyad(divide, y, &dyad(plus, x, &zero)?)?)?;
                 neg(&dyad(times, &monad(P::Math(Not), &zero)?, &quotient)?)
             })?,
-            ny.then(|| int(1)),
+            ny.then(|| Value::integer(1)),
         ],
-        P::Math(Pi) => [lazy(nx, &|| dyad(P::Math(Pi), &int(1), y))?, lazy(ny, &|| neg(&dyad(divide, r, y)?))?],
+        P::Math(Pi) => [lazy(nx, &|| dyad(P::Math(Pi), &Value::integer(1), y))?, lazy(ny, &|| neg(&dyad(divide, r, y)?))?],
         // A tie goes to the left argument, as in Futhark.
         P::Math(Ceiling) => [lazy(nx, &|| compare(GreaterEqual, x, y))?, lazy(ny, &|| compare(Less, x, y))?],
         P::Math(Floor) => [lazy(nx, &|| compare(LessEqual, x, y))?, lazy(ny, &|| compare(Greater, x, y))?],
@@ -787,17 +801,17 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
                 (_, Some(0)) => neg(&dyad(divide, y, r)?)?,
                 (Circle, Some(1)) => circle(2, y)?,
                 (Circle, Some(2)) => neg(&circle(1, y)?)?,
-                (Circle, Some(3)) => dyad(plus, &int(1), &square(r)?)?,
+                (Circle, Some(3)) => dyad(plus, &Value::integer(1), &square(r)?)?,
                 (Circle | Arc, Some(4)) => dyad(divide, y, r)?,
                 (Circle, Some(5)) => circle(6, y)?,
                 (Circle, Some(6)) => circle(5, y)?,
-                (Circle, Some(7)) => dyad(minus, &int(1), &square(r)?)?,
+                (Circle, Some(7)) => dyad(minus, &Value::integer(1), &square(r)?)?,
                 (_, Some(1)) => recip(&circle(0, y)?)?,
                 (_, Some(2)) => neg(&recip(&circle(0, y)?)?)?,
-                (_, Some(3)) => recip(&dyad(plus, &int(1), &square(y)?)?)?,
+                (_, Some(3)) => recip(&dyad(plus, &Value::integer(1), &square(y)?)?)?,
                 (_, Some(5)) => recip(&circle(4, y)?)?,
                 (_, Some(6)) => recip(&circle(5, r)?)?,
-                (_, Some(7)) => recip(&dyad(minus, &int(1), &square(y)?)?)?,
+                (_, Some(7)) => recip(&dyad(minus, &Value::integer(1), &square(y)?)?)?,
                 _ => return Err(cx.span.domain_error("∂ can't differentiate this circle code")),
             };
             [None, Some(d)]

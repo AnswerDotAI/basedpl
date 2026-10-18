@@ -232,7 +232,7 @@ stpaths ← {  ⍝ Spanning tree paths.
   paths{  ⍝ path to current vertices.
     next←(⍵=⊂tree)#¨⊂⍳⍴tree  ⍝ vertices at next tree level.
     (⊂⍬)∧.≡next?⍺;  ⍝ all null: finished.
-    exts←⊂¨⍵⊃¨⊂⍺ ,¨¨ next  ⍝ paths to next tree level.
+    exts←⊂¨[⍵]⌷⍺ ,¨¨ next  ⍝ paths to next tree level.
     indx←,/next
     paths←,/exts @indx ⍺
     paths ∇ indx  ⍝ advance to next tree level.

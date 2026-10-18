@@ -27,10 +27,9 @@ pub(super) enum Pick { Take(i64), Item(i64) }
 
 /// The idiom that `node` is, if any.
 pub(super) fn recognise(node: &FunctionNode) -> Option<Idiom> {
-    let primitive = |f: &Function| match f.node() { FunctionNode::Primitive(p) => Some(*p), _ => None };
     match node {
         FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(f), Operand::Function(g)]) => {
-            let (grade, down) = match primitive(g)? {
+            let (grade, down) = match g.as_primitive()? {
                 Primitive::Grade(down) => (true, down),
                 Primitive::Compare(Comparison::Less) => (false, false),
                 Primitive::Compare(Comparison::Greater) => (false, true),
@@ -41,23 +40,23 @@ pub(super) fn recognise(node: &FunctionNode) -> Option<Idiom> {
                 FunctionNode::Primitive(Primitive::Take) => Pick::Item(0),
                 FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(s)]) => {
                     let k = a.as_number()?.integer().ok()?;
-                    match primitive(s)? { Primitive::Take => Pick::Take(k), Primitive::Index | Primitive::Mix => Pick::Item(k), _ => return None }
+                    match s.as_primitive()? { Primitive::Take => Pick::Take(k), Primitive::Index | Primitive::Mix => Pick::Item(k), _ => return None }
                 }
                 _ => return None,
             };
             Some(Idiom::Selected { grade, down, pick })
         }
-        FunctionNode::Composed(OperatorKind::Product, [Operand::Function(f), Operand::Function(g)]) => match primitive_pair(f, g)? {
+        FunctionNode::Composed(OperatorKind::Product, [Operand::Function(f), Operand::Function(g)]) => match f.as_primitive().zip(g.as_primitive())? {
             (Primitive::Arithmetic(Arithmetic::Minus), Primitive::Arithmetic(Arithmetic::Times)) => Some(Idiom::Determinant),
             (Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times)) => Some(Idiom::Permanent),
             _ => None,
         },
         FunctionNode::Modified(OperatorKind::Key, Operand::Function(f)) => {
             let FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(r), Operand::Function(i)]) = f.node() else { return None };
-            if !matches!(primitive(i)?, Primitive::Identity(false)) { return None; }
+            if !matches!(i.as_primitive()?, Primitive::Identity(false)) { return None; }
             match r.node() {
                 FunctionNode::Primitive(Primitive::Tally) => Some(Idiom::Counts),
-                FunctionNode::Fold(g, kind) if !kind.scan => match primitive(g)? {
+                FunctionNode::Fold(g, kind) if !kind.scan => match g.as_primitive()? {
                     p @ (Primitive::Arithmetic(Arithmetic::Plus | Arithmetic::Times) | Primitive::Math(Math::Ceiling | Math::Floor)) => Some(Idiom::Folds(p)),
                     _ => None,
                 },
@@ -122,7 +121,7 @@ fn selected(grade: bool, down: bool, pick: Pick, left: Option<&Value>, right: &V
             let selector = Value::new([1], vec![positions]).error_at(cx.span, "invalid selected order")?;
             Primitive::Index.call(Some(&selector), right, cx)?
         };
-        Ok(Bound::from(if item { crate::primitive::pick(&integer(0), &selected, cx.session.prototype, cx)? } else { selected }))
+        Ok(Bound::from(if item { crate::primitive::pick(&Value::integer(0), &selected, cx.session.prototype, cx)? } else { selected }))
     })())
 }
 
@@ -154,7 +153,7 @@ fn permanent(left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Optio
     if left.is_some() || crate::derivative::active_in(cx, right) { return None; }
     let [m, n] = matrix(right)?;
     if m != n || n >= 64 { return None; }
-    let (domain, width) = Domain::of_arrays(&[right], cx.numeric())?;
+    let (domain, width) = Domain::of_arrays(&[right])?;
     Some((|| {
         let p = with_field!(domain, [Exact, Single, Double, Complex], T => rustymath::linalg::exact::permanent_with(&read::<T>(right, cx)?, n, || cx.check_now())?.number(width));
         Ok(Bound::from(Value::Number(p)))

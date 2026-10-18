@@ -59,9 +59,9 @@ p←•r 'a' ⋄ 'x' p.matches "abc"
 ⍝ error: SYNTAX ERROR
 
 ⍝ regex:callback-empty — No match does not call the APL operand
-[regex_replace]←•load "lib/regex.bpl"
+[regex_replace:]←•load "lib/regex.bpl"
 'z' ({÷0} regex_replace) "abc"   ⍝ "abc"
 
 ⍝ regex:callback-empty-match — Retain intervening Unicode text
-[regex_replace]←•load "lib/regex.bpl"
+[regex_replace:]←•load "lib/regex.bpl"
 "" ({'-'} regex_replace) "é🐈"   ⍝ "-é-🐈-"

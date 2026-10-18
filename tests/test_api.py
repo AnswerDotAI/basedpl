@@ -64,11 +64,11 @@ def test_load(tmp_path, monkeypatch):
     lib.mkdir()
     source = lib/'defs.bpl'
     source.write_text('_half←{⍵÷2}\nhalve←{_half ⍵}\ntwice←{⍶ ⍶ ⍵}\nx←7\n')
-    (lib/'main.bpl').write_text('[halve]←•load "./defs.bpl"\nq←halve 10\n')
+    (lib/'main.bpl').write_text('[halve:]←•load "./defs.bpl"\nq←halve 10\n')
     m = bpl('•load "lib/defs.bpl"').py
     assert sorted(m) == ['halve', 'twice', 'x']
     assert m['twice'](bpl.fn('{⍵+1}'))(3).py == 5
-    assert bpl('{m←•load "lib/defs.bpl" ⋄ [halve x]←m ⋄ (halve x),-m.twice 3}0').py.tolist() == [3.5, 3]
+    assert bpl('{m←•load "lib/defs.bpl" ⋄ [halve: x:]←m ⋄ (halve x),-m.twice 3}0').py.tolist() == [3.5, 3]
     assert 'halve' not in bpl.names()
     assert bpl('•LOAD "lib/main.bpl"').py['q'] == 5
     (lib/'a.bpl').write_text('•load "./b.bpl"')
@@ -225,6 +225,14 @@ def test_own():
     assert chars.tolist() == ['a', 'b', 'c'] and chars.flags.writeable
     flags = bpl('0 1 0=1').own()
     assert flags.dtype == bool and flags.tolist() == [False, True, False] and flags.flags.writeable
+    # A structural copy that reads its source through strides lends the source's items, without being built.
+    bpl('v←0.5×⍳1000000 ⋄ m←1000 1000⍴v')
+    source, windows = np.asarray(bpl['v'], copy=False), np.lib.stride_tricks.sliding_window_view
+    for code, expected in [('3↕v', windows(source, 3)), ('⌽v', source[::-1]), ('2↓v', source[2:]), ('2 2↕m', windows(source.reshape(1000, 1000), (2, 2)))]:
+        copy = bpl(code)
+        lent = np.asarray(copy, copy=False)
+        np.testing.assert_array_equal(lent, expected)
+        assert np.may_share_memory(lent, source) and bpl('(•storage x).pending', x=copy).py
 
 def test_keyed_arrays():
     t = bpl('["b":[1 2] "a":["x":"hi" "n":3]]')

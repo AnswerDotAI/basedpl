@@ -10,37 +10,46 @@ impl Session {
         })
     }
 
-    // After a value, `.name` is `'name'⊃value` and `.[I]` is `[I]⌷value`. `.(expr)` evaluates `expr` with the value's keys as names. Between functions the dot stays inner product. A subscript then selects from the item before it, so `T.a₁` is `1⌷'a'⊃T`.
+    // After a value, `.name` is `'name'⊃value` and `.[I]` is bracket indexing, which pairs index arrays by broadcasting. `.(expr)` evaluates `expr` with the value's keys as names. Between functions the dot stays inner product. A subscript then selects from the item before it, so `T.a₁` is `1⌷'a'⊃T`.
     pub(super) fn members<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
         if !Self::has_members(nodes) { return Cow::Borrowed(nodes); }
         let mut out: Vec<Node> = Vec::with_capacity(nodes.len());
-        let mut i = 0;
+        // Whether the last node in `out` is the right operand of a `.` after a function.
+        let (mut i, mut on_function) = (0, false);
         while i < nodes.len() {
             if let (NodeKind::Operator(OperatorKind::Product), Some(next)) = (&nodes[i].kind, nodes.get(i + 1)) {
-                let root = out.last().filter(|root| match &root.kind {
+                let root = out.last().filter(|root| !on_function && match &root.kind {
                     NodeKind::Name(_) | NodeKind::System(_) | NodeKind::Group(_) => self.holds_array(root),
                     NodeKind::Literal(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Scope(..) => true, _ => false
                 });
-                let path = |key: Node, function, root: &Node| {
-                    NodeKind::Group(vec![key, Node { kind: NodeKind::Function(function), span: nodes[i].span.clone() }, root.clone()])
-                };
-                let kind = root.and_then(|root| match &next.kind {
-                    NodeKind::Name(name) => {
-                        Some(path(Node { kind: NodeKind::Literal(crate::keyed::text(name)), span: next.span.clone() }, Primitive::Mix, root))
+                // `.name` reads a field and `.[I]` selects, after an array or a function. After a function, a name that starts a dot path to a function is an inner product's operand instead, as in `+.ops.mul`.
+                let read = match &next.kind {
+                    NodeKind::Name(name) if root.is_some() || !self.path_function(&nodes[i + 1..]) => {
+                        Some((Node { kind: NodeKind::Literal(crate::keyed::text(name)), span: next.span.clone() }, Primitive::Mix))
                     }
-                    NodeKind::ArrayLiteral { form: ListForm::Items | ListForm::Cells, .. } => Some(path(next.clone(), Primitive::Index, root)),
-                    NodeKind::Group(_) | NodeKind::ArrayLiteral { form: ListForm::Rows, .. } => {
-                        Some(NodeKind::Scope(Box::new(root.clone()), Box::new(next.clone())))
-                    }
+                    NodeKind::ArrayLiteral { form: ListForm::Items | ListForm::Cells, .. } => Some((next.clone(), Primitive::Bracket)),
                     _ => None,
-                });
-                if let Some(kind) = kind {
-                    let root = out.pop().expect("a root was found");
-                    out.push(Node { kind, span: Span { source: next.span.source.clone(), range: root.span.range.start..next.span.range.end } });
-                    i += 2;
+                };
+                if let Some(root) = root {
+                    let kind = match (read, &next.kind) {
+                        (Some((key, function)), _) => Some(NodeKind::Group(vec![key, Node { kind: NodeKind::Function(function), span: nodes[i].span.clone() }, root.clone()])),
+                        (None, NodeKind::Group(_) | NodeKind::ArrayLiteral { form: ListForm::Rows, .. }) => Some(NodeKind::Scope(Box::new(root.clone()), Box::new(next.clone()))),
+                        _ => None,
+                    };
+                    if let Some(kind) = kind {
+                        let root = out.pop().expect("a root was found");
+                        out.push(Node { kind, span: Span { source: next.span.source.clone(), range: root.span.range.start..next.span.range.end } });
+                        i += 2;
+                        continue;
+                    }
+                } else if let Some((key, _)) = read {
+                    // After a function, the read stays the operand of `.`, which `Function::new` builds. A path goes on from there: `⊢.x.[0].a`.
+                    out.extend([nodes[i].clone(), key]);
+                    (i, on_function) = (i + 2, true);
                     continue;
                 }
             }
+            on_function = false;
             if let NodeKind::Subscript(index) = nodes[i].kind {
                 let item = out.pop().expect("the parser puts an item before each subscript");
                 let span = Span { source: item.span.source.clone(), range: item.span.range.start..nodes[i].span.range.end };
@@ -92,18 +101,33 @@ impl Session {
         if let [Node { kind: NodeKind::Run(inner), .. }] = out.as_mut_slice() { return Cow::Owned(std::mem::take(inner)); }
         Cow::Owned(out)
     }
+    /// The value that the dot path from `name` through `keys` names, read without evaluating anything. It starts from `name`'s array and reads each key's field in turn.
+    fn static_path<'k>(&self, name: &str, keys: impl IntoIterator<Item = &'k str>) -> Option<Value> {
+        let Binding::Value(value) = self.lookup(name)? else { return None };
+        keys.into_iter().try_fold(value.clone(), |value, key| crate::keyed::field(&value, key))
+    }
+
     /// The value a dot path such as `m.f` or `m.a.f` names, read without evaluating anything. Dot access writes `m.f` as the group `"f"⊃m`.
     fn static_field(&self, node: &Node) -> Option<Value> {
-        match &node.kind {
-            NodeKind::Name(name) => match self.lookup(name)? { Binding::Value(v) => Some(v.clone()), _ => None },
-            NodeKind::Group(inner) => match &inner[..] {
-                [Node { kind: NodeKind::Literal(key), .. }, Node { kind: NodeKind::Function(Primitive::Mix), .. }, root] => {
-                    crate::keyed::field(&self.static_field(root)?, &crate::keyed::name(key)?)
-                }
-                _ => None,
-            },
-            _ => None,
+        let (mut node, mut keys) = (node, Vec::new());
+        while let NodeKind::Group(inner) = &node.kind {
+            let [Node { kind: NodeKind::Literal(key), .. }, Node { kind: NodeKind::Function(Primitive::Mix), .. }, root] = &inner[..] else { return None };
+            keys.push(crate::keyed::name(key)?);
+            node = root;
         }
+        let NodeKind::Name(name) = &node.kind else { return None };
+        self.static_path(name, keys.iter().rev().map(|k| &**k))
+    }
+
+    /// Whether the dot path that starts `nodes`, such as `mul` or `ops.mul`, names a function or operator, read without evaluating anything.
+    fn path_function(&self, nodes: &[Node]) -> bool {
+        let Some(NodeKind::Name(name)) = nodes.first().map(|n| &n.kind) else { return false };
+        if matches!(self.lookup(name), Some(Binding::Function(_) | Binding::Operator(_))) { return true; }
+        let keys = nodes[1..].chunks_exact(2).map_while(|pair| match pair {
+            [Node { kind: NodeKind::Operator(OperatorKind::Product), .. }, Node { kind: NodeKind::Name(key), .. }] => Some(&**key),
+            _ => None,
+        });
+        matches!(self.static_path(name, keys), Some(Value::Function(_) | Value::Operator(_)))
     }
 }
 
@@ -117,7 +141,12 @@ enum Term {
     Left(Value, Function),
     /// Arrays side by side, one item each. They become a vector when used.
     Strand(Vec<Value>),
+    /// A selection from the array that an assignment target names.
+    Marked(Box<Marked>),
 }
+/// A selection from the array that an assignment target names. `labels` holds the positions it selects, as `Labels` makes them. `values` holds the items at those positions, which a fork's other tines read.
+#[derive(Clone)]
+pub(super) struct Marked { pub(super) labels: Value, pub(super) values: Value, pub(super) kind: SelectionKind }
 pub(super) enum Tine { Array(Value), Function(Function) }
 /// The last entity of a run, or the call it ends in when that call is in tail position.
 enum Reduced { Entity(Entity), Tail(Application) }
@@ -126,7 +155,6 @@ pub(super) struct Entity {
     /// The `u32` offsets of the entity's text in the source of the binder's nodes. They keep `Entity` within 64 bytes, which the assertion below checks. A `Span` is rebuilt from them only where one is needed.
     range: std::ops::Range<u32>,
     shy: bool,
-    selection: Option<SelectionKind>,
     expression: Option<Box<Expression>>,
 }
 const _: () = assert!(std::mem::size_of::<Entity>() <= 64);
@@ -139,7 +167,7 @@ fn span_of(source: &Arc<Source>, range: &std::ops::Range<u32>) -> Span { Span { 
 impl Entity {
     fn category(&self) -> Category {
         match self.term {
-            Term::Binding(ref value) => Category::of(value), Term::Strand(_) => Category::Value, Term::Train(_) => Category::Train,
+            Term::Binding(ref value) => Category::of(value), Term::Strand(_) | Term::Marked(_) => Category::Value, Term::Train(_) => Category::Train,
             Term::Left(..) => Category::Left
         }
     }
@@ -149,6 +177,7 @@ impl Entity {
             Term::Binding(v) => v, Term::Train(tines) => Binding::Function(self::Function::train(tines, &span())?),
             Term::Left(a, f) => Binding::Function(before(a, f, &span())?),
             Term::Strand(items) => Binding::Value(Value::new(vec![items.len()], items).map_err(|k| span().error(k, "invalid strand"))?),
+            Term::Marked(marked) => Binding::Value(marked.labels),
         })
     }
     fn function(self, source: &Arc<Source>) -> Result<Function, Error> {
@@ -156,6 +185,8 @@ impl Entity {
         match self.value(source)? { Binding::Function(f) => Ok(f), value => Function::from_value(value, &span_of(source, &range)) }
     }
     fn array(self, source: &Arc<Source>) -> Result<Value, Error> { match self.value(source)? { Binding::Value(a) => Ok(a), _ => unreachable!() } }
+    /// The selection the entity holds when it comes from an assignment target.
+    fn marked(&self) -> Option<&Marked> { match &self.term { Term::Marked(marked) => Some(marked), _ => None } }
     /// The entity's value, with whether it displays and the expression it captured.
     fn bound(mut self, source: &Arc<Source>) -> Result<Bound, Error> {
         let (shy, expression) = (self.shy, self.expression.take());
@@ -216,8 +247,8 @@ impl Binder {
         Self::evaluate_marked(nodes, session, tail, None, None).map(|(step, _)| step)
     }
     pub(super) fn evaluate_marked(
-        nodes: &[Node], session: &mut Session, tail: bool, marked: Option<(usize, Value, SelectionKind)>, seed: Option<Entity>
-    ) -> Result<(Step, Option<SelectionKind>), Error> {
+        nodes: &[Node], session: &mut Session, tail: bool, marked: Option<(usize, Marked)>, seed: Option<Entity>
+    ) -> Result<(Step, Option<Marked>), Error> {
         let (reduced, selection) = Self::reduced(nodes, session, tail, marked, seed)?;
         let step = match reduced { Reduced::Tail(call) => Step::Tail(call), Reduced::Entity(entity) => Step::Done(entity.bound(&nodes[0].span.source)?) };
         Ok((step, selection))
@@ -252,8 +283,8 @@ impl Binder {
         }
     }
     fn reduced(
-        nodes: &[Node], session: &mut Session, tail: bool, marked: Option<(usize, Value, SelectionKind)>, seed: Option<Entity>
-    ) -> Result<(Reduced, Option<SelectionKind>), Error> {
+        nodes: &[Node], session: &mut Session, tail: bool, marked: Option<(usize, Marked)>, seed: Option<Entity>
+    ) -> Result<(Reduced, Option<Marked>), Error> {
         let joined = if marked.is_none() { session.joined(nodes) } else { Cow::Borrowed(nodes) };
         let members = if marked.is_none() { session.members(&joined) } else { Cow::Borrowed(&joined[..]) };
         let nodes = &members[..];
@@ -270,9 +301,9 @@ impl Binder {
                 let i = cursor;
                 let node = &nodes[i];
                 if matches!(node.kind, NodeKind::Assign) { assignment = Some(i); None } else {
-                    let selected = marked.as_ref().filter(|(index, ..)| *index == i);
-                    let (term, expression) = if let Some((_, array, _)) = selected {
-                        (Term::Binding(Binding::Value(array.clone())), None)
+                    let selected = marked.as_ref().filter(|(index, _)| *index == i);
+                    let (term, expression) = if let Some((_, selected)) = selected {
+                        (Term::Marked(Box::new(selected.clone())), None)
                     } else if matches!(&node.kind, NodeKind::Run(inner) if session.ends_in_dyadic_operator(inner)) {
                         // A run that ends in a dyadic operator takes the next run as its right operand, because each run acts as one token.
                         let NodeKind::Run(inner) = &node.kind else { unreachable!() };
@@ -285,7 +316,7 @@ impl Binder {
                         let bound = Self::nested(node, session)?;
                         (Term::Binding(bound.value), bound.expression)
                     } else { let bound = session.resolve(node)?; (Term::Binding(bound.value), bound.expression) };
-                    Some(Entity { term, expression, range: narrow(&node.span.range), shy: false, selection: selected.map(|(_, _, kind)| *kind) })
+                    Some(Entity { term, expression, range: narrow(&node.span.range), shy: false })
                 }
             } else { None };
             if let Some(left) = pending.last() {
@@ -302,8 +333,7 @@ impl Binder {
                     let Some(entity) = binder.stack.pop() else {
                         cursor = begin + session.assignment_start(&nodes[begin..i])?;
                         if !session.modify_monadic(&nodes[cursor..i])? { return Err(missing()); }
-                        pending.push(Entity { term: Term::Binding(Binding::NoResult), range: narrow(&nodes[i].span.range), shy: true, selection: None,
-                            expression: None });
+                        pending.push(Entity { term: Term::Binding(Binding::NoResult), range: narrow(&nodes[i].span.range), shy: true, expression: None });
                         continue;
                     };
                     let value = entity.value(source)?;
@@ -311,7 +341,7 @@ impl Binder {
                     if matches!(value, Binding::Absent) { return Err(nodes[i].span.error(ErrorKind::Value, ABSENT)); }
                     cursor = begin + session.assignment_start(&nodes[begin..i])?;
                     session.assign(&nodes[cursor..i], &value)?;
-                    pending.push(Entity { term: Term::Binding(value), range: narrow(&nodes[i].span.range), shy: true, selection: None, expression: None });
+                    pending.push(Entity { term: Term::Binding(value), range: narrow(&nodes[i].span.range), shy: true, expression: None });
                     continue;
                 }
                 break;
@@ -323,17 +353,18 @@ impl Binder {
                             session.stacks.extend([binder.stack, pending]);
                             return Ok((Reduced::Tail(call), None));
                         }
+                    let mut cx = session.at(&call.span);
                     let entity = match call.selection {
-                        Some(kind) => {
-                            let (selected, kind) = call.function.select(call.left.as_ref(), &call.right, None, kind, &mut session.at(&call.span))?
+                        Some((values, kind)) => {
+                            let (labels, kind) = call.function.select(call.left.as_ref(), &call.right, Some(&values), kind, &mut cx)?
                                 .ok_or_else(|| call.span.domain_error("function is not valid for selective assignment"))?;
-                            Entity { term: Term::Binding(Binding::Value(selected)), range: narrow(&call.span.range), shy: false, selection: Some(kind),
+                            let values = call.function.call_array(call.left.as_ref(), &values, &mut cx)?;
+                            Entity { term: Term::Marked(Box::new(Marked { labels, values, kind })), range: narrow(&call.span.range), shy: false,
                                 expression: call.expression }
                         }
                         None => {
-                            let bound = call.function.call(call.left.as_ref(), &call.right, &mut session.at(&call.span))?;
-                            Entity { term: Term::Binding(bound.value), range: narrow(&call.span.range), shy: bound.shy, selection: None,
-                                expression: call.expression }
+                            let bound = call.function.call(call.left.as_ref(), &call.right, &mut cx)?;
+                            Entity { term: Term::Binding(bound.value), range: narrow(&call.span.range), shy: bound.shy, expression: call.expression }
                         }
                     };
                     binder.stack.push(entity);
@@ -347,7 +378,7 @@ impl Binder {
         }
         let entity = binder.stack.pop().expect("nonempty expression");
         session.stacks.extend([binder.stack, pending]);
-        let selection = entity.selection;
+        let selection = entity.marked().cloned();
         Ok((Reduced::Entity(entity), selection))
     }
     fn reduce(&mut self, capture: bool, source: &Arc<Source>) -> Result<Option<Application>, Error> {
@@ -356,7 +387,7 @@ impl Binder {
         let mut right = self.stack.pop().unwrap();
         let (range, right_range) = (left.range.clone(), right.range.clone());
         let span = || span_of(source, &range);
-        let selection = left.selection.or(right.selection);
+        let selection = left.marked().or(right.marked()).map(|m| (m.values.clone(), m.kind));
         let selectable = matches!((left.category(), right.category()), (Function | Train | Left, Value));
         if selection.is_some() && !selectable { return Err(span().error(ErrorKind::Syntax, INVALID_SELECTION)); }
         let rule = Rule::get(left.category(), right.category());
@@ -401,7 +432,7 @@ impl Binder {
                     // A superscript on an array is a call to `*` or `⍉`.
                     if let (self::OperatorNode::Primitive(OperatorKind::Super(s)), Operand::Value(array)) = (&operator, &operand) {
                         let (function, left, right) = match *s {
-                            Superscript::Power(n) => (Primitive::Math(crate::number::Math::Power), Some(array.clone()), integer(n)),
+                            Superscript::Power(n) => (Primitive::Math(crate::number::Math::Power), Some(array.clone()), crate::Value::integer(n)),
                             Superscript::Transpose => (Primitive::Transpose, None, array.clone()), Superscript::Unit => unreachable!()
                         };
                         let function = self::Function::primitive(function);
@@ -443,7 +474,7 @@ impl Binder {
         };
         // Function/operator location, rather than an attached left argument, owns a call.
         let range = if matches!(term, Term::Left(..)) { right_range } else { range };
-        self.stack.push(Entity { term, range, shy: false, selection, expression });
+        self.stack.push(Entity { term, range, shy: false, expression });
         Ok(None)
     }
 }

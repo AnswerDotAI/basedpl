@@ -55,8 +55,7 @@ impl Promotion for DType {
             return Some(if self == Boolean { other } else { self });
         }
         if widening == Widening::Items && (self.exact() == Some(true) || other.exact() == Some(true)) { return None; }
-        // An exact integer takes the float or complex dtype beside it, where NumPy's rule would widen it. Floats and complex numbers promote as NumPy's do.
-        match (self, other) { (Integer(_), d) | (d, Integer(_)) => Some(d), _ => self.common(other) }
+        self.common(other)
     }
     fn wider(self) -> Option<Self> {
         match self { Self::Boolean => Some(Self::Integer(Width::U8)), Self::Integer(width) => width.wider().map(Self::Integer), _ => None }
@@ -164,10 +163,10 @@ impl Storage {
     pub(super) fn item(&self, i: usize) -> Value {
         match self.items() {
             Items::Compact(View::Booleans(v)) => Value::Number(Number::from_bool(v[i])),
-            Items::Compact(View::Integers(v)) => Value::Number(Number::from_integer(v.get(i))),
+            Items::Compact(View::Integers(v)) => Value::integer(v.get(i)),
             Items::Compact(View::Floats(v)) => Value::Number(Number::float(with_floats!(v, |x| f64::from(x[i])), v.tag())),
-            // An item with no imaginary part is a widened real.
-            Items::Compact(View::Complexes(v)) => Value::Number(with_complexes!(v, |x| x[i].into())),
+            // An item with no imaginary part is a widened real, except under static kinds.
+            Items::Compact(View::Complexes(v)) => Value::Number(Number::complex_in_session(with_complexes!(v, |x| Complex64::new(x[i].re.into(), x[i].im.into())), v.tag().into())),
             Items::Compact(View::Characters(v)) => Value::Character(v[i]),
             Items::Values(v) => v[i].clone(),
         }
@@ -178,7 +177,7 @@ impl Storage {
     pub(super) fn prototype(&self) -> Value {
         if let Self::Mixed(d, memo) = self { return memo.prototype.get_or_init(|| Box::new(d[0].fill())).as_ref().clone(); }
         match self.items() {
-            Items::Compact(View::Booleans(_)) => Value::Number(Number::from_bool(false)), Items::Compact(View::Integers(_)) => Value::Number(Number::from_integer(0)),
+            Items::Compact(View::Booleans(_)) => Value::Number(Number::from_bool(false)), Items::Compact(View::Integers(_)) => Value::integer(0),
             Items::Compact(View::Floats(v)) => Value::Number(Number::float(0.0, v.tag())), Items::Compact(View::Complexes(v)) => Value::Number(Number::float(0.0, v.tag().into())),
             Items::Compact(View::Characters(_)) => Value::Character(' '), Items::Values(_) => unreachable!("mixed storage gives its prototype above")
         }
@@ -279,9 +278,6 @@ pub(crate) struct Gather { pub(super) data: Storage, dtype: Option<DType>, open:
 /// One level of duals in a `Gather`: the primals and the tangents of the items copied, for the `∂` call tagged `tag`. Where the tangents are records (`linear`), the tangent buffer holds the ids that `records` gives them.
 struct Level { tag: u32, primal: Gather, tangent: Gather, records: Option<crate::linear::Sources> }
 
-/// The tangent of an item that isn't active at a level.
-fn zero() -> Value { Value::Number(Number::from_integer(0)) }
-
 impl Gather {
     /// A buffer for an operation's result, joining compact arrays.
     pub(crate) fn new(sources: &[&Value], capacity: usize) -> Self { Self::with_widening(sources, capacity, Widening::Arrays) }
@@ -325,7 +321,7 @@ impl Gather {
         let len = self.len();
         let primal = std::mem::replace(self, Self::items(0));
         let mut tangent = Self { widening: primal.widening, ..Self::items(len) };
-        tangent.fill(&zero(), len);
+        tangent.fill(&Value::integer(0), len);
         self.dual = Some(Box::new(Level { tag, primal, tangent, records: None }));
     }
     /// Runs the copy `op` on the level's primals with `source`'s primal, and on its tangents with `source`'s tangent. An inactive source appends tangents of 0, or, for a copy that `replaces` items, writes 0 where it writes.
@@ -335,17 +331,14 @@ impl Gather {
         let before = level.primal.len();
         op(&mut level.primal, &primal);
         match tangent {
-            Some(tangent) => match tangent.linear() {
-                Some(record) => {
-                    let ids = level.records.get_or_insert_with(Default::default).ids(record);
-                    op(&mut level.tangent, &ids)
-                }
-                // A buffer of record ids takes an inactive tangent as fill ids. Such a tangent is always zeros.
-                None if level.records.is_some() => op(&mut level.tangent, &crate::linear::fill_ids(&tangent)),
-                None => op(&mut level.tangent, &tangent),
-            },
-            None if replaces => op(&mut level.tangent, &zero()),
-            None => { let n = level.primal.len() - before; level.tangent.fill(&zero(), n) }
+            // A buffer of record ids takes an inactive tangent as fill ids.
+            Some(tangent) if tangent.linear().is_some() || level.records.is_some() => {
+                let ids = level.records.get_or_insert_with(Default::default).of(Some(&tangent), &tangent);
+                op(&mut level.tangent, &ids)
+            }
+            Some(tangent) => op(&mut level.tangent, &tangent),
+            None if replaces => op(&mut level.tangent, &Value::integer(0)),
+            None => { let n = level.primal.len() - before; level.tangent.fill(&Value::integer(0), n) }
         }
     }
     /// Appends `item`.
@@ -418,15 +411,6 @@ impl Gather {
         if !source.is_empty() { return self.extend(source, 0..source.len()); }
         if source.dtype().is_none() { self.mixed(); }
     }
-    /// Copies the items of `source` at `indices`, each in `-n..n` for `n` items. A negative index counts back from the end.
-    pub(crate) fn items_at<I: Int>(&mut self, source: &Value, indices: &[I]) {
-        if self.leveled(source) { return self.each(source, false, |g, s| g.items_at(s, indices)); }
-        self.follow(source.dtype());
-        let n = source.len() as i64;
-        let at = |i: I| { let i = i.to_i64(); (i + (n & (i >> 63))) as usize };
-        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::take(d, s, indices, f)) { return; }
-        self.mixed().extend(indices.iter().map(|&i| source.at(at(i))))
-    }
     /// Appends `len` items, cycling through the items of the nonempty `source`.
     pub(crate) fn cycle(&mut self, source: &Value, len: usize) {
         if len == 0 { return; }
@@ -450,10 +434,11 @@ impl Gather {
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::compress(d, mask, total, |j| f(s[j]))) { return; }
         self.mixed().extend(source.elements().zip(mask).filter(|&(_, &n)| n.key() == 1).map(|(x, _)| x))
     }
-    /// Copies the cells of `source` at `rows`, each `width` items long.
+    /// Copies the cells of `source` at `rows`, each `width` items long. A pending source is read by `walk`.
     pub(crate) fn rows<R: num_traits::AsPrimitive<usize>>(&mut self, source: &Value, rows: &[R], width: usize) {
         if rows.is_empty() || width == 0 { return; }
         if self.leveled(source) { return self.each(source, false, |g, s| g.rows(s, rows, width)); }
+        if source.pending().is_some() { return self.walk(source, 0, &[Steps::table(rows.iter().map(|&r| r.as_() * width).collect()), Steps::along(width, 1)]); }
         self.follow(source.dtype());
         let at = |r: R| r.as_() * width..(r.as_() + 1) * width;
         let copied = if width == 1 {
@@ -473,7 +458,7 @@ impl Gather {
         if self.leveled(item) { return self.each(item, false, |g, s| g.fill(s, n)); }
         if !self.compact_fill(item, n) { self.mixed().extend(std::iter::repeat_n(item.clone(), n)) }
     }
-    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one. A later offset wins.
+    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one. A later offset wins. A `Steps::FILL` offset writes nothing.
     pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) {
         if offsets.is_empty() { return; }
         if self.leveled(source) { return self.each(source, true, |g, s| g.scatter(offsets, s)); }
@@ -482,11 +467,12 @@ impl Gather {
         self.follow(source.dtype());
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::scatter(d, offsets, s, f)) { return; }
         let d = self.mixed();
-        for (k, &o) in offsets.iter().enumerate() { d[o] = source.at(pick(k)) }
+        for (k, &o) in offsets.iter().enumerate() { if o != Steps::FILL { d[o] = source.at(pick(k)) } }
     }
-    /// Copies the items of `source` that `steps` reach from `base`, through rustymath's `gather::walk`: one `Steps` for each axis, with the last varying fastest. A `None` offset gives the prototype of `source` in place of the item. Compact storage is copied in one typed loop.
+    /// Copies the items of `source` that `steps` reach from `base`, through rustymath's `gather::walk`: one `Steps` for each axis, with the last varying fastest. A `None` offset gives the prototype of `source` in place of the item. Compact storage is copied in one typed loop. A pending copy that the walk reads fewer items of is read through its map, without building it (`fusion::walk_through`).
     pub(crate) fn walk(&mut self, source: &Value, base: usize, steps: &[Steps]) {
         if self.leveled(source) { return self.each(source, false, |g, s| g.walk(s, base, steps)); }
+        if let Some((inner, base, steps)) = crate::fusion::walk_through(source, base, steps) { return self.walk(&inner, base, &steps); }
         self.follow(source.dtype());
         if copy_into!(&mut self.data, source.as_items(), |d, s| rustymath::gather::walk(d, s, base, steps, fill_of(s), rustymath::gather::Same)) { return; }
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(d, s, base, steps, fill_of(s), f)) { return; }
@@ -496,9 +482,9 @@ impl Gather {
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
         if let Some(level) = self.dual {
             let Level { tag, primal, tangent, records, .. } = *level;
-            let zero_of = records.as_ref().and_then(|r| r.records.first()).map_or_else(zero, |r| r.zero.clone());
+            let zero_of = records.as_ref().and_then(|r| r.records.first()).map_or_else(|| Value::integer(0), |r| r.zero.clone());
             let primal = primal.finish(layout.clone(), prototype)?;
-            let tangent = tangent.finish(layout, zero())?;
+            let tangent = tangent.finish(layout, Value::integer(0))?;
             // A level that copied records holds their ids, which give the record's `Gather`.
             let tangent = match records { Some(sources) => crate::linear::assemble(sources.records, tangent, zero_of), None => tangent };
             return Ok(Value::from_dual(tag, primal, tangent));

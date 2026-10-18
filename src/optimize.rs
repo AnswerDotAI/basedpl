@@ -1,8 +1,8 @@
 //! `⇄`, the operator that minimizes its operand, or solves for where its operand is zero, through `rustymath::optimize`.
 use rustymath::{buffer::FloatWidth, error::Kind};
 use crate::{
-    array::Layout, data::Options, derivative::Linearized, element::Float, execution::Context, keyed, primitive::{integer, real},
-    Error, ErrorAt, ErrorKind, Function, Number, Span, Value
+    array::Layout, data::Options, derivative::Linearized, element::Float, execution::Context, keyed, primitive::{real},
+    At, Error, ErrorAt, ErrorKind, Function, Number, Span, Value
 };
 use num_traits::ToPrimitive;
 use rustymath::{linalg::Factor, optimize::{self, Bounds, Mapping, Method, Objective, Task}, Native};
@@ -15,7 +15,7 @@ const OPTIONS: &[&str] =
 /// `f⇄ start` or `options f⇄ start`: the point where `f` is least, searching from `start`. With the `solve` option, `f` gives residuals. The point is then where they're zero, or where the sum of their squares is least when there are more residuals than variables. With `linear` as well, `f` is affine. The point has `start`'s shape and keys. With the `report` option, the result is a record of the point, its value, the number of evaluations and whether the search converged.
 pub(crate) fn optimize(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     let options = Options::new("⇄", left, None, OPTIONS, cx)?;
-    let width = right.float_width().unwrap_or(cx.numeric().width);
+    let width = right.float_width().unwrap_or(crate::number::Numeric::current().width);
     match width { FloatWidth::F64 => run::<f64>(f, &options, right, width, cx), _ => run::<f32>(f, &options, right, width, cx) }
 }
 
@@ -113,7 +113,7 @@ impl<'a> Point<'a> {
         if !report { return Ok(x); }
         let names = ["x", "value", "evaluations", "converged"].map(Into::into).to_vec();
         let value = Value::Number(Number::float(found.value.wide(), self.width));
-        let fields = vec![x, value, integer(found.evaluations as i64), Value::Number(Number::from_bool(found.converged))];
+        let fields = vec![x, value, Value::integer(found.evaluations as i64), Value::Number(Number::from_bool(found.converged))];
         keyed::record(names, fields).error_at(span, "invalid report")
     }
 }

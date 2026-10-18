@@ -125,7 +125,7 @@ fn imported(js: Js, width: FloatWidth) -> Result<Option<Value>, ErrorKind> {
         Js::Undefined => return Ok(None),
         Js::Bool(b) => Value::Number(Number::from_bool(b)),
         Js::Number(x) => Value::Number(Number::float(x, width)),
-        Js::BigInt(n) => Value::Number(Number::from_integer(n)),
+        Js::BigInt(n) => Value::integer(n),
         Js::Text(s) => keyed::text(&s),
         Js::Typed(t) => typed(vec![t.len()], t)?,
         Js::List(items) => {
@@ -341,6 +341,6 @@ mod web {
         let f = f.get();
         let result = match left { Some(left) => f.call2(&JsValue::UNDEFINED, &arg(left)?, &arg(right)?), None => f.call1(&JsValue::UNDEFINED, &arg(right)?) };
         let result = from_js(&result.map_err(|e| cx.domain_error(message(&e)))?).map_err(|e| cx.domain_error(e))?;
-        imported(result, cx.numeric().width).map_err(|_| cx.domain_error("the JavaScript result has no BPL form"))
+        imported(result, crate::number::Numeric::current().width).map_err(|_| cx.domain_error("the JavaScript result has no BPL form"))
     }
 }

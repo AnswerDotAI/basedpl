@@ -52,13 +52,15 @@ Keys only name axes. Item `i` still describes input axis `i`, whatever its key.
 
 ## Inverse
 
-`⍉⁻¹Y` is `⍉Y`. In `X⍉⁻¹Y`, `X` lists the source axes in output order, as einops does. A numeric `X` reverses `X⍉`. A name in `X` selects that axis of `Y`.
+`⍉⁻¹Y` is `⍉Y`. In `X⍉⁻¹Y`, `X` lists the source axes in output order, as einops does. A numeric `X` reverses `X⍉`. A name in `X` selects that axis of `Y`, and so does a named index, such as one from `⍳⍠` or [`•index`](../system/index.qmd).
 
 ```bpl
 2 0 1⍉⁻¹2 0 1⍉2 3 4⍴⍳24   ⍝ 2 3 4⍴⍳24
 ⍴2⍉⁻¹2 3 4⍴⍳24            ⍝ [4 2 3]ₓ
 x←["b":2 "h":3 "w":4]⍴⍳24
 ⍴["w" "b" "h"]⍉⁻¹x       ⍝ ["w":4 "b":2 "h":3]ₓ
+w←⍳⍠"w" x ⋄ b←⍳⍠"b" x
+⍴[w b]⍉⁻¹x               ⍝ ["w":4 "b":2 "h":3]ₓ
 ```
 
 A nested list merges the axes it selects, in that order. Its items can also be `[source size]` pairs, as a split's are. Each size must match its axis's length. A size of `∞` matches any length. The inverse of a bound split reads its pairs this way.

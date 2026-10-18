@@ -1,14 +1,16 @@
 "Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set the budgets of basedpl's and rustymath's speed tests."
-import fcntl, json, math, os, re, subprocess, sys, time, tomllib
-from contextlib import contextmanager
+import json, math, os, re, subprocess, sys, tomllib
 from collections import defaultdict
 from decimal import Context, Decimal, ROUND_CEILING
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated
+from fastws.cargo import timing_lock
+from fastcore.script import parse_cli
 from ._core import _captured_literal
 from .reference import Corpus, _dyalog_string
 from . import BplError
-from .worker import Worker
+from .worker import NATIVE, Worker
 
 HEADER = re.compile(r'^⍝ (?:(\S*) )?—(?: (.*))?$')
 SEPARATOR = '⍝ =>'
@@ -231,7 +233,7 @@ def _failures(request):
 
 def check_file(
     path, # A `.bpl` reference file
-    ids=None # Check only these cases, each named by its id or its header's line number
+    ids:Annotated[int|str, {'nargs':'*'}]=None # Check only these cases, each named by its id or its header's line number
 ):
     "Check the cases in `path` in a fresh worker, as `tests/reference.rs` does, and return the failures."
     return _failures(dict(reference=dict(text=Path(path).read_text(), ids=ids)))
@@ -245,20 +247,19 @@ def check_page(
 
 _SPEED = Path(__file__).parents[2]/'tests'/'speed.txt'
 _PKG = _SPEED.with_name('wasm-pkg.mjs')
-_LOCK_JS = _SPEED.with_name('timing-lock.mjs')
 
 class Costs(list):
     "Each case's cost, as `(code, picoseconds per item, copies)` rows. Copies is `None` where one copy of the data is too quick to time."
     def __repr__(self): return '\n'.join(f'{ps:>10,.0f} ps {("-" if copies is None else f"{copies:.2f}"):>9} copies  {code}' for code, ps, copies in self)
 
 def time_cases(
-    cases, # A BPL expression to time, or a list of them
-    setup=None, # BPL that defines the data and its number of items `n`; None: the first `[setup]` section of `tests/speed.txt`
+    cases:Annotated[str, {'nargs':'+'}], # A BPL expression to time, or a list of them
+    setup:str=None, # BPL that defines the data and its number of items `n`; None: the first `[setup]` section of `tests/speed.txt`
     prefs='', # BPL that runs before `setup`, such as `•prefs ["float":32]`
     threads=1, # Threads that each case's rustymath calls split across, for a scaling check; 0: rustymath's default
     native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
-    bpl=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
-    timeout=None # Seconds before the worker is closed
+    bpl:Path=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
+    timeout:float=None # Seconds before the worker is closed
 ):
     "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data."
     speed = _SPEED.read_text() if setup is None else f'[setup]\n{setup}'
@@ -276,32 +277,13 @@ class SpeedCosts(list):
         rows = ((s, c, cost, '-' if b is None else f'{b:g}', 'over' if b is not None and cost > b else '') for s, c, cost, b in self)
         return '\n'.join(f'{cost:>9.2f} {b:>9} {over:4}  {s} {c}' for s, c, cost, b, over in rows)
 
-# The file whose lock keeps timings apart from builds and `pytest` on this machine, as DEV.md describes. Native timings take it
-# exclusively in Rust, in `basedpl::timing`, and wasm timings through `tests/timing-lock.mjs`. Builds and `pytest` take it shared.
-_TIMING_LOCK = '/tmp/aai-ws-timing.lock'
-
-@contextmanager
-def timing_lock():
-    "Hold the timing lock shared, as `pytest` does, waiting up to 5 minutes while a timing holds it, then going ahead without it. Never hold the timing lock in the shared kernel process. A timing started from the kernel would wait on that hold for up to 5 minutes. All that time, every agent's kernel calls wait too."
-    with open(_TIMING_LOCK, 'a') as f:
-        start, waiting = time.monotonic(), False
-        while time.monotonic() - start < 300:
-            try:
-                fcntl.flock(f, fcntl.LOCK_SH | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if not waiting: print(f'waiting for a timing to release {_TIMING_LOCK}', file=sys.stderr)
-                waiting = True
-                time.sleep(0.25)
-        yield
-
 def speed_costs(
-    wasm=None, # A directory that `cargo wasm --out` wrote, to time in that browser build, as `tests/wasm-speed.mjs` does; None: a fresh native worker, as `tests/speed.rs` does
+    wasm:Path=None, # A directory that `cargo wasm --out` wrote, to time in that browser build, as `tests/wasm-speed.mjs` does; None: a fresh native worker, as `tests/speed.rs` does
     native=False, # Time rustymath's own linear algebra in place of Accelerate in a native timing, as `Worker`'s `native` does
-    bpl=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
-    speed=None, # Text in `speed.txt`'s format; None: `tests/speed.txt`
-    timeout=None, # Seconds before the timing stops
-    cases=None # A case's code, or a list of codes, to time in every section that has it; None: every case
+    bpl:Path=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
+    speed:str=None, # Text in `speed.txt`'s format; None: `tests/speed.txt`
+    timeout:float=None, # Seconds before the timing stops
+    cases:Annotated[str, {'nargs':'*'}]=None # A case's code, or a list of codes, to time in every section that has it; None: every case
 ):
     "Time every case in `speed` as the speed test does, with the budget that limits it in that build."
     speed = _SPEED.read_text() if speed is None else speed
@@ -311,18 +293,18 @@ def speed_costs(
         if e := r['error']: raise ValueError(e['message'])
         rows = r['costs']
     else:
-        script = (f'import {{ costs }} from {json.dumps(_PKG.as_uri())}; import {{ timingLock }} from {json.dumps(_LOCK_JS.as_uri())}; '
-                  f'import {{ readFileSync }} from "node:fs"; const release = await timingLock(); '
-                  f'try {{ process.stdout.write(JSON.stringify(costs(readFileSync(0, "utf8"), {json.dumps(cases)}))) }} finally {{ release() }}')
-        p = subprocess.run(['node', '--no-liftoff', '--input-type=module', '-e', script], input=speed, capture_output=True, text=True,
-                           timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(wasm)))
+        script = (f'import {{ costs }} from {json.dumps(_PKG.as_uri())}; import {{ readFileSync }} from "node:fs"; '
+                  f'process.stdout.write(JSON.stringify(costs(readFileSync(0, "utf8"), {json.dumps(cases)})))')
+        with timing_lock(exclusive=True):
+            p = subprocess.run(['node', '--no-liftoff', '--input-type=module', '-e', script], input=speed, capture_output=True, text=True,
+                               timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(wasm)))
         if p.returncode: raise ValueError(p.stderr)
         if p.stderr: sys.stderr.write(p.stderr)
         rows = json.loads(p.stdout)
     i = 0 if wasm is None else 1
     return SpeedCosts((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None) for c in rows)
 
-_LOGGED = re.compile(r'^(?:\S*Z )?(?:# )?(\w+) (.*): ([\d.]+|inf|NaN|Infinity), budget ([\d.]+)$')
+_LOGGED = re.compile(r'^(?:\S*Z )?(?:# )?(\w+) (\S(?:(?!: ).)*): ([\d.]+|inf|NaN|Infinity), budget ([\d.]+)$')
 _CPU = re.compile(r'^(?:\S*Z )?model name\s*:\s*(.+?)\s*$', re.M)
 
 def logged_costs(
@@ -336,18 +318,32 @@ def logged_costs(
         if row[:2] not in rows or row[2] < rows[row[:2]][2]: rows[row[:2]] = row
     return SpeedCosts(rows.values(), cpu)
 
-def cargo_costs(
-    path='.', # A Cargo package, such as basedpl or rustymath, whose `tests/speed.rs` prints every cost when `<NAME>_COSTS` is set
-    timeout=None # Seconds before the run stops
-):
-    "The rows that `logged_costs` reads from what the speed test of the package at `path` prints, run as `cargo test` runs it. A case over its budget still gives its row."
+def _run_costs(cmd, path, timeout, native=False, env=None):
+    "The rows that `logged_costs` reads from what `cmd` prints, run in the package at `path` with `<NAME>_COSTS` set. A case over its budget still gives its row."
     path = Path(path).expanduser()
     name = tomllib.loads((path/'Cargo.toml').read_text())['package']['name']
-    p = subprocess.run(['cargo', 'test', '--test', 'speed'], cwd=path, capture_output=True, text=True, timeout=timeout,
-                       env=os.environ | {f'{name.upper()}_COSTS': '1'})
+    p = subprocess.run(cmd, cwd=path, capture_output=True, text=True, timeout=timeout, env=os.environ | {f'{name.upper()}_COSTS': '1'} | (NATIVE if native else {}) | (env or {}))
     costs = logged_costs(p.stdout + p.stderr)
-    if p.returncode and not costs: raise ValueError(p.stderr)
+    if p.returncode and not costs: raise ValueError(p.stdout + p.stderr)
     return costs
+
+def cargo_costs(
+    path='.', # A Cargo package, such as basedpl or rustymath, whose `tests/speed.rs` prints every cost when `<NAME>_COSTS` is set
+    native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
+    timeout:float=None # Seconds before the run stops
+):
+    "The rows that `logged_costs` reads from what the speed test of the package at `path` prints, run as `cargo test` runs it. A case over its budget still gives its row."
+    return _run_costs(['cargo', 'test', '--test', 'speed'], path, timeout, native)
+
+def pytest_costs(
+    path='.', # A package, such as rustymath, whose `tests/test_speed.py` prints every cost when `<NAME>_COSTS` is set
+    saved:Path=None, # A directory that holds a copy of the package's Python package, saved before a change, to time in place of the installed one
+    native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
+    timeout:float=None # Seconds before the run stops
+):
+    "The rows that `logged_costs` reads from what the Python speed test of the package at `path` prints, run with `pytest`. A case over its budget still gives its row."
+    env = dict(PYTHONPATH=os.pathsep.join(filter(None, [str(Path(saved).expanduser()), os.environ.get('PYTHONPATH')]))) if saved else {}
+    return _run_costs([sys.executable, '-m', 'pytest', '-q', 'tests/test_speed.py'], path, timeout, native, env)
 
 class Report(str):
     "What a test runner printed, displayed as its text."
@@ -356,12 +352,13 @@ class Report(str):
 def wasm_test(
     wasm, # A directory that `cargo wasm --out` wrote
     speed=False, # Run `tests/wasm-speed.mjs`, with V8's `--no-liftoff` and `BASEDPL_COSTS` as CI runs it, in place of `tests/wasm.mjs`? Its report then lists every case's cost, which `logged_costs` reads
-    timeout=None # Seconds before the run stops
+    timeout:float=None # Seconds before the run stops
 ):
-    "Run `tests/wasm.mjs` or `tests/wasm-speed.mjs` under `node --test` against the browser build in `wasm`, as CI runs them, and give the runner's report. Only the `node` process gets `BASEDPL_WASM` and `BASEDPL_COSTS`. A failing test raises `ValueError` with the report."
+    "Run `tests/wasm.mjs` or `tests/wasm-speed.mjs` under `node --test` against the browser build in `wasm`, as CI runs them, and give the runner's report. Only the `node` process gets `BASEDPL_WASM` and `BASEDPL_COSTS`. It holds the machine's timing lock, exclusively for the speed test and shared for the others. A failing test raises `ValueError` with the report."
     test = _SPEED.with_name('wasm-speed.mjs' if speed else 'wasm.mjs')
-    p = subprocess.run(['node', *(['--no-liftoff'] if speed else []), '--test', str(test)], cwd=_SPEED.parents[1], capture_output=True,
-                       text=True, timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(Path(wasm).expanduser())) | (dict(BASEDPL_COSTS='1') if speed else {}))
+    with timing_lock(exclusive=speed):
+        p = subprocess.run(['node', *(['--no-liftoff'] if speed else []), '--test', str(test)], cwd=_SPEED.parents[1], capture_output=True,
+                           text=True, timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(Path(wasm).expanduser())) | (dict(BASEDPL_COSTS='1') if speed else {}))
     report = Report(p.stdout + p.stderr)
     if p.returncode: raise ValueError(report)
     return report
@@ -410,3 +407,14 @@ def set_budgets(
         lines[k] = '\t'.join(fields)
     path.write_text('\n'.join(lines))
     return changes
+
+_COMMANDS = 'check_file check_page time_cases speed_costs cargo_costs pytest_costs wasm_test'.split()
+
+def main():
+    "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."
+    if len(sys.argv) < 2 or sys.argv[1] not in _COMMANDS: sys.exit(f'usage: bpl-tests NAME ARGUMENT..., where NAME is one of {", ".join(_COMMANDS)}')
+    name = sys.argv.pop(1)
+    sys.argv[0] = f'bpl-tests {name}' # The program name in argparse's usage line
+    f = globals()[name]
+    args, kwargs, _ = parse_cli(f)
+    print(repr(f(*args, **kwargs)))

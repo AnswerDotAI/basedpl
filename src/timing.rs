@@ -1,6 +1,5 @@
-//! The speed test's measurements, shared by `tests/speed.rs`, the browser build's `costs` and the worker's `timing` and `costs` requests, which serve `basedpl.bpltests.time_cases` and `speed_costs`. A time is the fastest of five evaluations of a case, after one to warm up. The case is parsed once, before them. Its unit is one copy, as `copy` times it, of the `n` items in the data of the `[setup]` before the case's section. `costs` and `request` hold the machine's timing lock while they run. `timing_lock` describes the lock. The reference test takes it shared.
-pub use crate::host::timing_lock;
-use crate::{host::Instant, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
+//! The speed test's measurements, shared by `tests/speed.rs`, the browser build's `costs` and the worker's `timing` and `costs` requests, which serve `basedpl.bpltests.time_cases` and `speed_costs`. A time is the fastest of five evaluations of a case, after one to warm up. The case is parsed once, before them. Its unit is one copy, as `copy` times it, of the `n` items in the data of the `[setup]` before the case's section. `costs` and `request` hold the machine's timing lock exclusively while they run, as `rustymath::timing` describes.
+use crate::{host::{timing_lock, Instant}, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
 use serde_json::{json, Value as JsonValue};
 use std::{collections::HashMap, hint::black_box};
 
@@ -28,20 +27,6 @@ fn fastest(mut f: impl FnMut()) -> f64 {
         f();
         start.elapsed()
     }).min().unwrap().as_secs_f64()
-}
-
-/// The pauses, in seconds, before each retry in `retried`. All of a case's runs together take a fraction of a millisecond, and one disturbance on a shared machine can last that long. `tests/wasm-speed.mjs` uses the same pauses.
-pub const RETRY_PAUSES: [f64; 2] = [0.1, 1.0];
-
-/// The failures of a timing test that still fail after every retry. After each pause in `RETRY_PAUSES`, `retime` gets the failures and the pause, times them again, prints the retry and gives those that still fail. The speed and scaling tests call it after timing every case.
-#[cfg(not(web))]
-pub fn retried<T>(mut failures: Vec<T>, mut retime: impl FnMut(Vec<T>, f64) -> Vec<T>) -> Vec<T> {
-    for pause in RETRY_PAUSES {
-        if failures.is_empty() { break; }
-        std::thread::sleep(std::time::Duration::from_secs_f64(pause));
-        failures = retime(failures, pause);
-    }
-    failures
 }
 
 /// A session that has run `prefs`, then `setup`, or the evaluation that failed.
@@ -84,7 +69,7 @@ pub struct Case<'a> { pub section: &'a str, pub code: &'a str, pub budgets: Vec<
 
 /// Every case in `text`, in `speed.txt`'s format, with its cost. The first section is `[setup]`. Each later `[setup]` starts a new group of sections. Each section's cases run in a session that has run the section's prefs and then the `[setup]` before it. Each group makes its sessions when its turn comes and drops them before the next group starts. A cost is in copies of the group's `n` items, timed just before the case, except in `[widths]`. There it is the case's time as a fraction of its time in `[exact]`. `only`, when given, lists the codes of the cases to run. A group then makes sessions only for the sections that hold those cases, plus `[exact]` for a `[widths]` case.
 pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
-    let _lock = timing_lock(false)?;
+    let _lock = timing_lock()?;
     let failure = |code: &str, failed: Evaluation| format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default());
     let code_of = |line: &'a str| line.split('\t').next().unwrap_or_default();
     let wanted = |code: &str| only.is_none_or(|only| only.contains(&code));
@@ -122,7 +107,7 @@ pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHand
 
 /// The reply to the worker's `timing` request, which gives `speed`, text in `speed.txt`'s format whose first section is `[setup]`, the `prefs` its session starts with, and the `cases` to time. The reply gives the setup's `n` and each case's time in seconds and in copies, or the evaluation that failed. Each case's copy is timed just before the case. An optional `threads` sets how many threads each case's rustymath calls split across, for a scaling check. Without it they run on the timing thread alone, as in the speed test.
 pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
-    let _lock = timing_lock(false)?;
+    let _lock = timing_lock()?;
     if let Some(threads) = spec["threads"].as_u64() { rustymath::parallel::set_threads(threads as usize); }
     let text = |key| spec[key].as_str().ok_or_else(|| format!("timing needs {key} as a string"));
     let cases = spec["cases"].as_array().ok_or("timing needs cases as an array")?;

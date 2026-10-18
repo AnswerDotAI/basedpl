@@ -6,8 +6,8 @@ use web_sys::{Url, XmlHttpRequest, XmlHttpRequestResponseType};
 
 pub(crate) use web_time::Instant;
 
-/// The browser build takes no timing lock. `tests/wasm-speed.mjs` and `basedpl.bpltests.speed_costs` take it around the module's timing, through `tests/timing-lock.mjs`.
-pub fn timing_lock(_shared: bool) -> Result<(), String> { Ok(()) }
+/// The browser build takes no timing lock. `basedpl.bpltests` takes it around the module's timings.
+pub(crate) fn timing_lock() -> Result<(), String> { Ok(()) }
 
 thread_local! {
     /// The URL that relative paths resolve against: the page's.

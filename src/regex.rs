@@ -1,6 +1,6 @@
 //! `•r pattern` compiles a regular expression into a record of two functions: `matches`, which gives a table of the matches in a text, and `replace`. The host compiles, matches and replaces, each with its own syntax for patterns and replacement templates: natively the regex crate's, and in the browser JavaScript's.
 use crate::{
-    array::generated_len, data::text, execution::Context, host::Regex, keyed, system::{natives, Call, Valence::{Dyadic, Monadic}}, Error, ErrorAt, Number, Value
+    array::generated_len, data::text, execution::Context, host::Regex, keyed, system::{natives, Call, Valence::{Dyadic, Monadic}}, At, Error, ErrorAt, Value
 };
 use std::sync::Arc;
 
@@ -31,9 +31,9 @@ pub(crate) fn call(regex: &Regex, op: Operation, left: Option<&Value>, right: &V
     let mut rows = Vec::new();
     regex.each(&source, |m| {
         span.check()?;
-        rows.push(vec![keyed::text(&m.text), Value::Number(Number::from_integer(m.position as i64)), texts(m.groups, span)?]);
+        rows.push(vec![keyed::text(&m.text), Value::integer(m.position as i64), texts(m.groups, span)?]);
         generated_len(&[rows.len()]).at(span).map(drop)
     })?;
-    let empty = vec![keyed::text(""), Value::Number(Number::from_integer(0)), texts(vec![String::new(); regex.groups()], span)?];
+    let empty = vec![keyed::text(""), Value::integer(0), texts(vec![String::new(); regex.groups()], span)?];
     keyed::table(&["text", "position", "groups"], &[rows.len()], rows, empty).error_at(span, "invalid regex result")
 }

@@ -11,6 +11,7 @@ fn label((glyph, name): &(&str, &str)) -> String { format!("{glyph} {name}{}", c
 
 #[derive(Default)]
 struct Input {
+    aliases: bool,
     // Only a typed prefix auto-expands. Paste, history and cursor movement cancel this state.
     active: bool,
     pending: Option<(Range<usize>, String)>,
@@ -58,7 +59,7 @@ impl Input {
         let plain = key.1.is_empty();
         let delimiter = plain && matches!(key.0, KeyCode::Char(c) if !c.is_alphabetic());
         if tab || self.active && (enter || delimiter) {
-            if let Some((start, prefix)) = entry(line, pos) {
+            if let Some((start, prefix)) = entry(line, pos, self.aliases) {
                 let found = matches(prefix);
                 if let [(glyph, _)] = found.as_slice() {
                     self.active = key == KeyEvent::from('`');
@@ -76,7 +77,7 @@ impl Input {
             }
         }
         self.active = match key {
-            KeyEvent(KeyCode::Char('`'), Modifiers::NONE) => in_code(&line[..pos]),
+            KeyEvent(KeyCode::Char('`'), Modifiers::NONE) => in_code(&line[..pos], self.aliases),
             KeyEvent(KeyCode::Char(c), Modifiers::NONE) if c.is_ascii_alphabetic() => self.active, KeyEvent(KeyCode::Backspace, Modifiers::NONE) => self.active,
             _ => false
         };
@@ -101,7 +102,7 @@ impl Completer for Symbols {
         if let Some((range, replacement)) = self.0.lock().unwrap().pending.take() {
             return Ok((range.start, vec![Pair { display: replacement.clone(), replacement }]));
         }
-        let Some((start, prefix)) = entry(line, pos) else { return Ok((pos, vec![])); };
+        let Some((start, prefix)) = entry(line, pos, self.0.lock().unwrap().aliases) else { return Ok((pos, vec![])); };
         // List ambiguous names without extending their common prefix: the typed text stays as it is.
         let choices = matches(prefix).into_iter().map(|found| Pair { display: label(&found), replacement: line[start..pos].into() }).collect();
         Ok((start, choices))
@@ -122,7 +123,7 @@ impl Hinter for Symbols {
             let keys: String = layout().display_keys(&state.keys).map(|(key, _)| key).collect();
             return Some(Suggestion(format!("  {}:{keys}", state.terminator)));
         }
-        let (_, prefix) = entry(line, pos)?;
+        let (_, prefix) = entry(line, pos, self.0.lock().unwrap().aliases)?;
         let found = matches(prefix);
         let message = if prefix.is_empty() { "Tab: symbol names".into() }
         else if found.is_empty() { "unknown symbol".into() } else {
@@ -164,7 +165,7 @@ impl Highlighter for Symbols {
     // Every edit repaints the line, so it always shows its classes, including the final repaint when Enter submits it.
     fn highlight<'l>(&self, line: &'l str, _: usize) -> Cow<'l, str> {
         let (mut out, mut at) = (String::new(), 0);
-        for (range, colour) in basedpl::highlight(line).into_iter().filter_map(|(range, class)| Some((range, colour(class)?))) {
+        for (range, colour) in basedpl::highlight(line, self.0.lock().unwrap().aliases).into_iter().filter_map(|(range, class)| Some((range, colour(class)?))) {
             out.push_str(&format!("{}\x1b[{colour}m{}\x1b[0m", &line[at..range.start], &line[range.start..range.end]));
             at = range.end;
         }
@@ -193,8 +194,8 @@ impl LineEditor {
         Ok(Self { editor, history })
     }
 
-    pub fn readline(&mut self, prompt: &str) -> rustyline::Result<String> {
-        *self.editor.helper().unwrap().0.lock().unwrap() = Input::default();
+    pub fn readline(&mut self, prompt: &str, aliases: bool) -> rustyline::Result<String> {
+        *self.editor.helper().unwrap().0.lock().unwrap() = Input { aliases, ..Input::default() };
         let mut line = self.editor.readline(prompt)?;
         if let Some((range, glyph)) = self.editor.helper().unwrap().0.lock().unwrap().pending.take() { line.replace_range(range, &glyph); }
         Ok(line)

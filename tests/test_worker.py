@@ -31,6 +31,8 @@ def test_worker_bindings_calls_and_echo():
         for value in [float('inf'), float('-inf'), float('nan')]:
             with pytest.raises(ValueError): w.request(dict(bindings=dict(x=dict(shape=[], data=[value], prototype=0))))
         assert w.eval('x', timeout=2)['value'] == a
+        w.eval('•prefs ["kinds":"static"]')
+        assert w.request(dict(bindings=dict(z={'complex': [1, 0]}), code='⎕←(•storage z).kind'))['output'][0]['data']['text/plain'] == 'complex128'
     assert fresh('⎕←1 ⋄ 2') == '1\n2'
     with pytest.raises(BplError) as e: fresh('1÷"a"')
     assert e.value.kind == 'DOMAIN'

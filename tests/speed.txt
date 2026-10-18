@@ -24,6 +24,9 @@ z←v+0j1×w ⋄ zm←128 128↑m+0j1×⊖m ⋄ f←"svd"•decompose m ⋄ h←
 ∧/b	0.5	0.5
 +/m	1.4	2.3
 +⌿m	1.5	2.1
+# A fold over several axes of a simple array needs no call per cell. `+ × ⌈ ⌊` fold each axis in turn. Other primitives fold each cell's ravel once.
++/⍠1 2 ms	3.8	4.9
+-/⍠1 2 ms	4.6	6.3
 # A cheap ordered right fold keeps each consecutive lane's running value in a local.
 |/jv	20	15
 # Reading one argument and writing each item once.
@@ -53,13 +56,15 @@ c=c	0.86	1.9
 (⍳√n)×⊗⍳√n	2.3	2.9
 # Products of 64-bit integers that leave 64 bits become exact big integers, each held in an allocation of its own.
 kv×kv	1700	1700
+# A tolerant gcd of floats walks the continued fraction of each pair's ratio in 64-bit integers wherever the ratio fits.
+v∨w	2900	4700
 # Compressing by a mask can't be vectorised, because each kept item's place depends on the items before it.
 b#v	6.2	7.6
 ⍸b	2.9	4.3
 # Replicating by counts of 0 to 2 writes four copies of each item where its run starts. The next item overwrites the copies past its count.
 cnt#v	17	18
 # Counts held as floats are checked for whole numbers 256 at a time before they replicate.
-(•float cnt)#v	30	33
+(0+cnt)#v	30	33
 # A range with an approximate length converts each position from an integer to a float. Wasm has no vector instruction for that, so there each block of 8 positions adds 0 to 7 to the block's first float.
 ⍳n	2.3	2.4
 # Comparing within tolerance takes a subtraction, the magnitudes, a scale and a comparison for each item. Tolerant floor raises each item by its scaled magnitude, capped below a half, before it floors.
@@ -122,10 +127,11 @@ i (+/⊢)⌸ v	370	430
 [i]⌷v	12	12
 # An indexed assignment copies the array once, then writes each value at its index.
 {x←v ⋄ x.[i]←w ⋄ x}0	17	17
-# A modified assignment with repeated indices applies its function to each index's values in turn, one round of distinct indices at a time.
+# A modified assignment with repeated indices combines each value into the array at its index, in turn, in place.
 {x←v ⋄ x.[i]+←w ⋄ x}0	82	82
-# Few distinct indices make a table with a column for each, which a scan down the columns reduces.
+# Few distinct indices take the same loop. Most of the time goes to reading the float positions that `10|jv` gives.
 {h←10⍴0 ⋄ h.[10|jv]+←1 ⋄ h}0	92	94
+{h←10⍴0ₓ ⋄ h.[10|jv]+←1ₓ ⋄ h}0	130	230
 # An approximate divisor reads the integers as floats. Each item then needs a float division and a floor within tolerance.
 3|jv	5.6	12
 # rustymath's `exp` evaluates a polynomial of 10 terms for each item, and `ln` one of 7 terms and a division.
@@ -182,6 +188,12 @@ v⍳w	240	320
 ⍋⍋ v	290	320
 # Unique sorts the reals, then compares each with the next one.
 ∪v	250	250
+# Rank calls a fold, a structural function or a fold of a ravel once on the whole stack, along the cells' axes, rather than once for each cell.
++/⍤1 t	12	8.8
+(+/,)⍤2 ms	4	5.1
+(1 1↣⌷)⍤2 ms	1.2	1.8
+⊖⍤2 ms	15	17
+⌽⍤1 ms	6.1	7
 # The inner products in `rustymath` run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, Boolean `∨.∧` and `∧.∨`, and the counts `+.=` and `+.≠`. `rustymath`'s own speed test times those products. Each case here checks that basedpl sends one kind of pair to them. A pair that misses them takes the bounded generic path, several times slower. A case with `⍤2` makes one call for each of 1024 matrices of 8×8.
 +.×⍤2⍨ ms	36	48
 m+.×m	140	320
@@ -310,14 +322,42 @@ fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ n←65536
 # `fib 16` makes 3193 calls of a dfn, each with up to four primitive calls on single numbers. Its cost is mostly the evaluator's own work for each call.
 fib 16	800	740
 [setup]
-sv←¿1048576⍴0 ⋄ n←≢sv ⋄ sm←[n÷2;2]⍴sv
+sv←¿1048576⍴0 ⋄ n←≢sv ⋄ sm←[n÷2;2]⍴sv ⋄ sq←[1024 1024]⍴sv ⋄ cimg←[256 256 16]⍴sv ⋄ ck←¿[144 32]⍴0 ⋄ vq←1024↑sv ⋄ kq←¿[9 1]⍴0
 [structure]
 # A structural glyph on a million floats gives a pending copy, which the call around it reads through, with no pass of its own over memory. A forward run is read in place. A reversed one is copied into a buffer for each block.
 2×⌽sv+1	6.4	11
 2×1⌽sv+1	4.4	4.5
 2×(10↓sv)+1	4.4	4.8
 +/(⌽sv)×sv	5.9	8.8
+# A copy of a copy that fills or wraps, such as a rotate of an overtake, walks the inner copy into a buffer, then reads that buffer.
+2×¯1⌽(n+2)↑sv	8	8.3
 # Floor returns exact integers, so this reads a pending copy through an ordinary kernel rather than fusion.
 ⌊⌽sv	14	16
 # Stride-two columns gather through the shared reader before their contiguous subtraction.
 (∞ 1⌷sm)-(∞ 0⌷sm)	5	12
+# A fold by a reduction reads a pending copy through its map. A copy that reads a contiguous block of its source with its axes in another order, such as a transpose, a reversal, or 2 by 2 windows that don't overlap, folds that block in its own order, at the cost of folding the source. Totals that come out in another order stay a pending copy, which the next fold reads the same way.
++/⍉sq	3.4	4.5
++⌿⊖sq	3.3	4.3
++/⌽sv	2.3	2.4
+⌈/⌈/[[2 2]⋄[2 2]]↕sq	6.9	9.4
++/⍉cimg	3.8	4.4
+# A fold of windows slides over its source and never builds the windows. Windows of up to 8 rows fold directly. Wider windows take van Herk-Gil-Werman, at a cost that doesn't grow with the width. Windows of a matrix fold in two separable passes.
++/3↕sv	16	17
+⌈/3↕sv	17	20
++/50↕sv	29	35
+⌈/50↕sv	30	40
++/+/3 3↕sq	28	39
+# Padded windows of a vector slide over one padded copy of their source.
++/¯3↕sv	19	20
+# A copy's gradient reads its cotangent: a reversal's through the inverse map, windows' through a correlation that reads the cotangent's frames at each window position, and a sum of windows' through a sliding sum of the padded cotangent.
+{+/sv×⌽⍵}∂ sv	25	32
+{+/,(3↕sv)×3↕⍵}∂ sv	110	170
+{+/,+/50↕⍵}∂ sv	110	170
+# A product of windows reads them a block of rows at a time, straight into the matrix product, and never builds the windows matrix. A product of a single-channel image's windows with one filter adds each column of the windows, read where it lies, into the result. Its gradient for the kernel reads them again in blocks. Its gradient for the image is one product of the windows of the zero-padded cotangent with the kernel reversed.
+([64516 144]⍴3 3↕cimg)+.×ck	84	820
+([1044484 9]⍴3 3↕sq)+.×kq	30	41
+{+/,([64516 144]⍴3 3↕cimg)+.×⍵}∂ ck	190	1700
+{+/,([64516 144]⍴3 3↕⍵)+.×ck}∂ cimg	290	1700
+# A transpose of a million floats is a pending copy. A product reads it where it lies, as a transposed matrix. A fused call reads it in blocks of whole rows, as many as a cache line holds items.
+(⍉sq)+.×vq	0.5	20
+2×⍉sq	13	17

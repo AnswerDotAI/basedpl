@@ -1,0 +1,24 @@
+# `•edge` — Edge modes
+
+`n•edge p` gives the position on an axis of `n` items that each position in `p` reads, under an edge mode. `[mode n]•edge p` chooses the mode: `"fill"`, the default, `"clamp"`, `"wrap"` or `"reflect"`. Positions inside the axis stay as they are in every mode.
+
+```bpl
+4•edge ¯1 0 3 4                  ⍝ $n 0 3 $n
+["clamp" 4]•edge ¯1 0 3 4        ⍝ [0 0 3 3]ₓ
+["wrap" 4]•edge ¯1 0 3 4         ⍝ [3 0 3 0]ₓ
+["reflect" 4]•edge ¯2 ¯1 0 3 4 5 ⍝ [2 1 0 3 2 1]ₓ
+```
+
+Fill gives NaN for a position outside the axis, as a float. The other modes give exact integers. `"reflect"` leaves out the edge item, as NumPy's and PyTorch's `reflect` do. An axis of length 0 gives NaN in every mode. A NaN in `p` stays NaN.
+
+A selection reads the positions that `•edge` gives. A NaN position reads the fill, and a write through it writes nothing. A position with spaces in it goes in parentheses inside brackets:
+
+```bpl
+x←10 20 30 40 ⋄ i←⍳4
+x.[(4•edge i-1)]                 ⍝ 0 10 20 30
+x.[(["clamp" 4]•edge i-1)]       ⍝ 10 10 20 30
+```
+
+Each mode is arithmetic on positions. Wrap is `n|p`, and clamp is `0⌈(n-1)⌊p`. A bare negative position counts back from the end, as in every selection.
+
+[Dot](../glyphs/dot.qmd) and [`⌷`](../glyphs/squad.qmd) select.

@@ -37,7 +37,7 @@ pub fn canonical(c: char) -> char {
     }).get(&c).unwrap_or(&c)
 }
 
-/// The spelling of generated function and operator notation. Input always accepts every spelling.
+/// The spelling of generated function and operator notation, independent of input preferences.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Notation { #[default] Apl, Simplified, Traditional }
 impl Notation {
@@ -196,8 +196,8 @@ pub fn matches(query: &str) -> Vec<(&'static str, &'static str)> {
     match shortest { Some(shortest) if found.len() > 1 => vec![shortest], _ => found }
 }
 
-pub fn entry(line: &str, pos: usize) -> Option<(usize, &str)> {
+pub fn entry(line: &str, pos: usize, aliases: bool) -> Option<(usize, &str)> {
     let start = line[..pos].rfind('`')?;
     let prefix = &line[start + 1..pos];
-    (prefix.bytes().all(|c| c.is_ascii_alphabetic()) && crate::syntax::in_code(&line[..start])).then_some((start, prefix))
+    (prefix.bytes().all(|c| c.is_ascii_alphabetic()) && crate::syntax::in_code(&line[..start], aliases)).then_some((start, prefix))
 }

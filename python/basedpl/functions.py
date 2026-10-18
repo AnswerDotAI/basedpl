@@ -66,7 +66,7 @@ class Function(_Combinators):
             args = (kwargs, args[0] if len(args) == 1 else list(args))
         elif len(args) == 1 and self._valence == 2: return _build('↢', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this BPL function')
-        return bpl._call(self._inner, [_array(o) for o in args], _show).value
+        return bpl._call(self._inner, [_array(o) for o in args], _show, [type(o) in (int, float, complex) for o in args]).value
 
 class _Attaching(Function):
     "`f.undo` or `f.derivative`. Called with one function `g`, it attaches `g` to `f` as its inverse or derivative, as `f⁻¹←g` and `f∂←g` do in BPL."

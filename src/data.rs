@@ -1,6 +1,6 @@
 use rustymath::{buffer::{Buffer, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
 use crate::{
-    array::{Items, Storage}, execution::Context, keyed, primitive::{numeric, real},
+    array::{Items, Storage}, execution::Context, keyed, number::Numeric, primitive::{numeric, real},
     DomainAt, Error, ErrorAt, ErrorKind, Number, Value
 };
 use foldhash::{HashMap, HashMapExt};
@@ -61,7 +61,7 @@ impl Options {
 
     pub fn fill(&self, span: &Context<'_>) -> Result<Number, Error> {
         match self.values.get("fill") {
-            None => Ok(Number::float(f64::NAN, span.numeric().width)), Some(Value::Number(n)) if n.as_complex().is_none() => Ok(n.clone()),
+            None => Ok(Numeric::current().float(f64::NAN)), Some(Value::Number(n)) if n.as_complex().is_none() => Ok(n.clone()),
             _ => Err(span.domain_error(format!("{} fill must be a real number", self.name)))
         }
     }
@@ -72,12 +72,12 @@ pub(crate) fn vfi(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Re
     let separators = left.map(|a| text(a, span)).transpose()?;
     let mut valid = Vec::new();
     let mut numbers = Vec::new();
-    let width = span.numeric().width;
-    let zero = Number::float(0.0, width);
+    let numeric = Numeric::current();
+    let zero = numeric.float(0.0);
     let mut field = |s: &str| -> Result<(), Error> {
         span.check()?;
         let s = s.trim();
-        let n = if s.is_empty() { Ok(zero.clone()) } else { Number::parse(s, width) };
+        let n = if s.is_empty() { Ok(zero.clone()) } else { Number::parse(s, numeric) };
         valid.push(i64::from(n.is_ok()));
         numbers.push(Value::Number(n.unwrap_or_else(|_| zero.clone())));
         Ok(())
@@ -200,7 +200,7 @@ pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
     let opts = file_options("•nput", left, Some("path"), &["path", "encoding", "overwrite", "unique", "prefix"], span)?;
     let path = opts.text("path", None, span)?;
     let data = payload(right, span)?;
-    let count = Value::Number(Number::from_integer(data.len() as i64));
+    let count = Value::integer(data.len() as i64);
     if path != "-" { return write_file(&opts, &path, &data, count, span); }
     if opts.values.contains_key("unique") || opts.values.contains_key("prefix") {
         return Err(span.domain_error("standard output can't take the unique or prefix options"));
@@ -257,6 +257,6 @@ pub(crate) fn fetch(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
     else { keyed::text(&String::from_utf8(body).map_err(|e| span.io_error(&url, e))?) };
     let (names, values) = response.headers.into_iter().map(|(n, v)| (n.into(), keyed::text(&v))).unzip();
     let headers = keyed::record(names, values).error_at(span, "invalid headers")?;
-    keyed::record(vec!["status".into(), "headers".into(), "body".into()], vec![Value::Number(Number::from_integer(response.status)), headers, body])
+    keyed::record(vec!["status".into(), "headers".into(), "body".into()], vec![Value::integer(response.status), headers, body])
         .error_at(span, "invalid response")
 }

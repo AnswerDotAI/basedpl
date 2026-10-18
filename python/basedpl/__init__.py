@@ -95,10 +95,6 @@ def _rectangular(value, seen):
     if any(shape != parts[0][0] for shape,_ in parts): return (len(value),), list(value)
     return (len(value),)+parts[0][0], [o for _,data in parts for o in data]
 
-def _float_bits():
-    "The bits of the workspace's default float width, which Python floats take."
-    return bpl._session.float_bits()
-
 def _array(value, seen=None):
     if isinstance(value, Array): return value._inner
     if isinstance(value, _Array): return value
@@ -119,9 +115,9 @@ def _array(value, seen=None):
         keys = [None if type(k) is int and k == i else k for i,k in enumerate(value)]
         if not all(k is None or isinstance(k, str) for k in keys): raise TypeError('keyed arrays need string keys, or an integer key equal to its position')
         seen.add(id(value))
-        try: return _Array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, axis_keys=[keys], width=_float_bits()))
+        try: return bpl._session.array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, axis_keys=[keys]))
         finally: seen.remove(id(value))
-    if isinstance(value, str): return _Array(dict(shape=[len(value)], data=list(value), prototype=' '))
+    if isinstance(value, str): return bpl._session.array(dict(shape=[len(value)], data=list(value), prototype=' '))
     # Any object with a buffer, such as a NumPy or rustymath array or a `memoryview`, is read through it.
     if not (numpy and kind in 'UO') and (read := _Array.numeric(value)) is not None: return read
     if numpy:
@@ -129,9 +125,9 @@ def _array(value, seen=None):
         if kind == 'U': prototype = ' '
     else:
         shape, data = _rectangular(value, seen)
-        if not shape: return _Array(dict(atom=_element(value, seen), width=_float_bits()))
+        if not shape: return bpl._session.array(dict(atom=_element(value, seen)))
     seen.add(id(value))
-    try: return _Array(dict(shape=list(shape), data=[_element(o, seen) for o in data], prototype=prototype, width=_float_bits()))
+    try: return bpl._session.array(dict(shape=list(shape), data=[_element(o, seen) for o in data], prototype=prototype))
     finally: seen.remove(id(value))
 
 class _Operators:
@@ -322,9 +318,9 @@ class _Workspace:
         bindings = [(k, v._inner if isinstance(v, Function) else _array(v)) for k,v in bindings.items()]
         return _result(self._session.eval(code=source, bindings=bindings, timeout=self.timeout, echo=echo, show=show))
 
-    def _call(self, function, args, show=None):
-        "Call the native `function` with the native `args`, calling `show` with each output event as BPL produces it."
-        return _result(self._session.call(function, args, timeout=self.timeout, show=show))
+    def _call(self, function, args, show=None, weak=()):
+        "Call the native `function` with the native `args`, calling `show` with each output event as BPL produces it. `weak` marks the arguments that came from Python scalars."
+        return _result(self._session.call(function, args, weak=list(weak), timeout=self.timeout, show=show))
 
     def __call__(self, source=None, capture=None, /, **bindings):
         "Bind keyword arguments, then evaluate source. Print explicit output and return the value. With `capture` of 'explicit' or 'repl', return a `Result` without printing."

@@ -36,7 +36,7 @@ pub(super) fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Va
     let compact = match (x, y) {
         (Items::Compact(x), Items::Compact(y)) => {
             let width = left.float_width().max(right.float_width()).unwrap_or(FloatWidth::F64);
-            rustymath::search::view_find(x, left.shape(), y, shape, span.numeric().tolerance_at(width))
+            rustymath::search::view_find(x, left.shape(), y, shape, Numeric::current().tolerance_at(width))
         }
         _ => None,
     };
@@ -83,7 +83,7 @@ pub(super) fn duplicates(right: &Value, span: &Context<'_>) -> Result<Value, Err
 
 /// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪` matches them. `#⁻¹` decodes the result back to `right`. `#/` does too, unless `right` is a unit or has leading keys. A unit gives the rank-0 length 1 and the unit itself. A keyed leading axis moves into a third item, the keys of every position, because a run's cells can have different keys.
 pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if right.is_unit() { return Value::new(vec![2], vec![integer(1), right.clone()]).error_at(span, "invalid runs"); }
+    if right.is_unit() { return Value::new(vec![2], vec![Value::integer(1), right.clone()]).error_at(span, "invalid runs"); }
     let (first, axis) = classes(right, span)?;
     let starts: Vec<bool> = first.iter().enumerate().map(|(i, &f)| i == 0 || f != first[i - 1]).collect();
     let mut lengths: Vec<u64> = Vec::new();
@@ -116,7 +116,7 @@ pub(super) fn groups(right: &Value, span: &Context<'_>) -> Result<Value, Error> 
 fn positions(right: &Value, indices: Vec<u32>) -> Result<Value, ErrorKind> {
     let len = right.shape().first().copied().unwrap_or(1);
     if right.keys(0).is_none() { return Value::positions_u32([indices.len()], len, indices); }
-    Value::from_parts(vec![indices.len()], indices.into_iter().map(|i| position_value(right, 0, i as usize)).collect(), integer(0))
+    Value::from_parts(vec![indices.len()], indices.into_iter().map(|i| position_value(right, 0, i as usize)).collect(), Value::integer(0))
 }
 
 /// The coordinates of flat position `flat`. An axis with a negative length counts down.
@@ -132,7 +132,7 @@ pub(super) fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let lengths = right.as_items().integers().error_at(span, "invalid iota dimension")?;
     let shape: Vec<usize> = lengths.iter().map(|n| saturated(n.unsigned_abs())).collect();
     let len = generated_len(&shape).at(span)?;
-    let float = counted_width(right, span);
+    let float = counted_width(right);
     let indices = if right.is_singleton() {
         let down = lengths[0] < 0;
         if let Some(width) = float {
@@ -154,7 +154,7 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
         Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(span.domain_error("range needs real numbers or two characters"))
     };
     let steps = |distance: &Number| -> Result<usize, Error> {
-        let whole = distance.math_monad(Math::Magnitude).and_then(|d| d.floor(span.numeric())).domain_at(span)?;
+        let whole = distance.math_monad(Math::Magnitude).and_then(|d| d.floor(Numeric::current())).domain_at(span)?;
         whole.nonnegative_integer().error_at(span, "range needs a finite length")
     };
     let counts = |items: std::ops::Range<usize>| {
@@ -179,8 +179,8 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
     let (any, sum) = or_and_sum(counts);
     if any < 0 { return Err(span.domain_error("where needs nonnegative integer counts")); }
     let boolean = any <= 1;
-    let total = if boolean { Some(sum as usize) } else { counts.iter().try_fold(0usize, |total, &n| total.checked_add(saturated(n.unsigned_abs()))) };
-    let total = total.ok_or(Kind::Limit.into()).and_then(|t| generated_len(&[t])).error_at(span, "where exceeds array limits")?;
+    let total = if boolean { sum as usize } else { counts.iter().fold(0usize, |total, &n| total.saturating_add(saturated(n.unsigned_abs()))) };
+    let total = generated_len(&[total]).at(span)?;
     let data = if boolean {
         let mut data = Vec::new();
         rustymath::gather::positions(&mut data, counts, total, |j| j as i64);
@@ -211,8 +211,7 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
     }
     if let (Items::Compact(View::Integers(counts)), [_]) = (right.as_items(), right.shape()) { if right.keys(0).is_none() { return where_vector(&counts.widened(), span); } }
     let counts = right.as_items().nonnegative_integers().error_at(span, "where needs nonnegative integer counts")?;
-    let total = counts.iter().try_fold(0usize, |total, &n| total.checked_add(n)).ok_or(Kind::Limit.into()).and_then(|t| generated_len(&[t]))
-        .error_at(span, "where exceeds array limits")?;
+    let total = generated_len(&[counts.iter().fold(0usize, |total, &n| total.saturating_add(n))]).at(span)?;
     if right.shape().len() == 1 && right.keys(0).is_none() {
         let mut data = Vec::with_capacity(total);
         for (i, &n) in counts.iter().enumerate() { data.extend(std::iter::repeat_n(i as i64, n)); }
@@ -223,11 +222,11 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
         let index = if right.shape().len() == 1 { position_value(right, 0, i) } else {
             let mut coords: Vec<_> = rustymath::layout::coordinates(i, right.shape()).map(|(axis, c)| position_value(right, axis, c)).collect();
             coords.reverse();
-            Value::from_parts(vec![coords.len()], coords, integer(0)).unwrap()
+            Value::from_parts(vec![coords.len()], coords, Value::integer(0)).unwrap()
         };
         data.extend(std::iter::repeat_n(index, n));
     }
-    let prototype = if right.shape().len() == 1 { integer(0) } else { Value::integers(vec![right.shape().len()], vec![0; right.shape().len()]).unwrap() };
+    let prototype = if right.shape().len() == 1 { Value::integer(0) } else { Value::integers(vec![right.shape().len()], vec![0; right.shape().len()]).unwrap() };
     Value::from_parts(vec![data.len()], data, prototype).error_at(span, "invalid where result")
 }
 
@@ -262,7 +261,7 @@ fn major_axis(right: &Value) -> Layout { if right.is_unit() { vec![1].into() } e
 pub(super) fn index_of(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (positions, frame) = search(left, right, span)?;
     if left.keys(0).is_some() {
-        return frame.collect(positions.into_iter().map(|p| position_value(left, 0, p as usize)), integer(0)).error_at(span, "invalid index-of result");
+        return frame.collect(positions.into_iter().map(|p| position_value(left, 0, p as usize)), Value::integer(0)).error_at(span, "invalid index-of result");
     }
     // A miss gives the number of haystack cells, so every position is at most that.
     let bound = left.shape().first().map_or(1, |&n| n + 1);
@@ -384,6 +383,6 @@ pub(super) fn interval_index(left: &Value, right: &Value, span: &Context<'_>) ->
     // The number of boundaries at or below each value, as in BQN. On a keyed axis, the key of the last of them.
     let Some(keys) = left.keys(0) else { return frame.positions_u32(data, boundaries.len() + 1).error_at(span, "invalid interval index") };
     let key = |n: u32| n.checked_sub(1).and_then(|i| keys.names().get(i as usize)?.clone());
-    let data = data.into_iter().map(|n| key(n).map_or_else(|| integer(i64::from(n)), |k| crate::keyed::text(&k)));
-    frame.collect(data, integer(0)).error_at(span, "invalid interval index")
+    let data = data.into_iter().map(|n| key(n).map_or_else(|| Value::integer(i64::from(n)), |k| crate::keyed::text(&k)));
+    frame.collect(data, Value::integer(0)).error_at(span, "invalid interval index")
 }

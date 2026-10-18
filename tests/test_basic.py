@@ -16,6 +16,16 @@ def test_native_calls_and_explicit_output():
     assert bpl('+/x', x=a).py == Fraction(7, 3)
 
 
+def test_static_kinds_read_under_the_session_settings():
+    "After a static-kinds evaluation returns, its items still read under that session's settings. Python data imports under them too."
+    try:
+        z = bpl('•prefs ["kinds":"static"] ⋄ 0j1 1j0×1')
+        assert isinstance(z.py[1], np.complexfloating) and z.py[1] == 1
+        assert z.bpl == '0ⱼ1 1ⱼ0'
+        assert bpl('(•storage x).kind', x=1+0j).py == 'complex128'
+    finally: bpl('•prefs ["kinds":"dynamic"]')
+
+
 def test_clear_restores_starting_workspace():
     bpl('•prefs ["box":$t]')
     bpl(x=1)

@@ -94,7 +94,7 @@ In `[…]ₓ` and `(…)ₓ`, every number is exact, at any depth. Each item mus
 
 ## Storage
 
-An array keeps its items in one of nine storages: `boolean`, `integer`, `float64`, `float32`, `float16`, `complex128`, `complex64`, `character` or `mixed`. `(•storage x).kind` names the storage of `x`. Mixed storage keeps each item's own kind. A literal list of exact and approximate numbers uses it:
+An array keeps its items in one of nine storages: `bool`, `integer`, `float64`, `float32`, `float16`, `complex128`, `complex64`, `character` or `mixed`. `(•storage x).kind` names the storage of `x`. Mixed storage keeps each item's own kind. A literal list of exact and approximate numbers uses it:
 
 ```bpl
 x←1ₓ 0.5 2ₓ
@@ -119,7 +119,7 @@ Integer storage keeps each item in 1, 2, 4 or 8 bytes. One byte holds 0 to 255. 
 
 Floats come in three widths: 64, 32 and 16 bits. `•storage` gives their kind as `"float64"`, `"float32"` and `"float16"`. [`•float`](system/float.qmd) converts an array to any of them. A 64-bit float holds about 16 significant digits, a 32-bit float about 7 and a 16-bit float about 3. They take 8, 4 and 2 bytes. The largest finite 16-bit float is 65504.
 
-Bare numbers are floats of the default width: 64 bits, or 16 or 32 after [`•prefs`](system/prefs.qmd) `["float":16]` or `["float":32]`. Code parsed after the change reads its numbers at the new width. In a REPL or a notebook, that is the next input. Leading `•prefs` calls on a literal record run before the rest of their code is parsed. A script or a notebook cell that starts with `•prefs ["float":32]` therefore reads its own numbers at 32 bits. Numbers that `•csv`, `•json` and `•vfi` read also take the default width. So do random numbers, the numbers that `•image` reads, and floats that a function gives from exact arguments, such as `√2ₓ`. Times from `•time` and `•date` are always 64-bit, because a 32-bit float holds seconds since 1970 only to within about two minutes. `ₕ` marks a 16-bit float, `ₛ` a 32-bit float and `ₚ` a 64-bit float, whatever the default. Display marks floats of the other widths, once after an array's notation. `•literal⁻¹` marks every float. Its text therefore reads back the same at any default.
+Bare numbers are floats of the default width: 64 bits, or 16 or 32 after [`•prefs`](system/prefs.qmd) `["float":16]` or `["float":32]`. Code parsed after the change reads its numbers at the new width. In a REPL or a notebook, that is the next input. Leading `•prefs` calls on a literal record run before the rest of their code is parsed. A script, a notebook cell, a module or `⍎` text that starts with `•prefs ["float":32]` therefore reads its own numbers at 32 bits. Numbers that `•csv`, `•json` and `•vfi` read also take the default width. So do random numbers, the numbers that `•image` reads, and floats that a function gives from exact arguments, such as `√2ₓ`. Times from `•time` and `•date` are always 64-bit, because a 32-bit float holds seconds since 1970 only to within about two minutes. `ₕ` marks a 16-bit float, `ₛ` a 32-bit float and `ₚ` a 64-bit float, whatever the default. Display marks floats of the other widths, once after an array's notation. `•literal⁻¹` marks every float. Its text therefore reads back the same at any default.
 
 ```bpl
 {(•storage ⍵).kind}¨[1.5ₕ;1.5ₛ;[1.5 2.5]ₚ;⍬ₛ]   ⍝ "float16" "float32" "float64" "float32"
@@ -127,11 +127,12 @@ Bare numbers are floats of the default width: 64 bits, or 16 or 32 after [`•pr
 •literal⁻¹ 0.5                     ⍝ "0.5ₚ"
 ```
 
-An operation on floats computes at their width. An exact operand rounds to that width first. Floats of two widths compute at the wider. No operation widens floats on its own.
+An operation on floats computes at their width. An exact operand rounds to the width that the operation computes at. Floats of two widths compute at the wider. No operation widens floats on its own.
 
 ```bpl
 v←32 •float 1.5 2.5
 {(•storage ⍵).kind}¨[v×2ₓ;v×v;*v;v×2]   ⍝ "float32" "float32" "float32" "float64"
+•float v                     ⍝ 32ₓ
 (32 •float 1.5)×16777217ₓ    ⍝ 25165824
 ```
 
@@ -146,6 +147,13 @@ Each operation on 16-bit floats computes in 32 bits and rounds its result to 16 
 
 ```bpl
 +/(16 •float 4096⍴0.1)   ⍝ 409.5ₕ
+```
+
+An exact operand converts straight to 32 bits, not to 16. A count larger than 65,504, the largest 16-bit float, still divides a 16-bit sum:
+
+```bpl
+h←16 •float 100000⍴1 0
+(+/h)÷≢h                 ⍝ 0.49975586ₕ
 ```
 
 Comparisons of 16-bit and 32-bit floats are always exact. The tolerance that [`•prefs`](system/prefs.qmd) sets applies to 64-bit floats. [`⍣∞`](glyphs/star-diaeresis.qmd) takes two 16-bit or 32-bit results as the same when they lie within 4 units in the last place of each other.
@@ -186,6 +194,29 @@ CSV and JSON imports give NaN for a missing number. An integer column with gaps 
 
 Arithmetic with an infinity gives floats.
 
+## Static kinds
+
+Some functions choose a result's kind from their arguments' values. `√¯4` is complex because the argument is negative, `1j0` is a float because its imaginary part is zero, and an exact integer that overflows grows. Under [`•prefs`](system/prefs.qmd) `["kinds":"static"]`, a result's kind follows from the function and its arguments' kinds alone. A fused computation needs that, because it decides each result's kind before it runs. Real arguments give real results, with NaN outside a function's domain, and complex results stay complex. `⌊`, `⌈` and monadic `×` of floats give floats, and integer `÷` gives floats:
+
+```bpl
+•prefs ["kinds":"static"]
+√¯4 9                ⍝ $n 3
+0j1×0j1              ⍝ ¯1ⱼ0
+⌊2.5 ∞               ⍝ 2 ∞
+7ₓ÷2ₓ                ⍝ 3.5
+•prefs ["kinds":"dynamic"]
+```
+
+Integers compute at the width that the `int` pref sets, 64 bits by default, or at a wider integer's width, and wrap where a result doesn't fit. An integer beside a float takes the float's width. Atoms promote as arrays do. A bare literal at the default width widens narrower floats. Exact fractions stay exact, and comparisons keep their tolerance. Under `•prefs ["int":32]`, an exact integer literal that doesn't fit 32 bits is a LIMIT error:
+
+```bpl
+•prefs ["kinds":"static"]
+9223372036854775807ₓ+1ₓ    ⍝ ¯9223372036854775808ₓ
+(•storage (32 •float 1 2)×2).kind     ⍝ "float64"
+(•storage (32 •float 1 2)×2ₓ).kind    ⍝ "float32"
+•prefs ["kinds":"dynamic"]
+```
+
 ## Booleans
 
 Comparisons give Booleans. So does every function whose result is a truth value, such as `~`, `∊`, `⍷` and `≡`. `$t` is true and `$f` is false:
@@ -214,6 +245,6 @@ $t∧$f                ⍝ $f
 Boolean storage takes one byte for each item. Boxed display marks it with `$`:
 
 ```bpl
-(•storage $t $f).kind   ⍝ "boolean"
+(•storage $t $f).kind   ⍝ "bool"
 ```
 

@@ -48,6 +48,19 @@ A function right operand computes the ranks from the arguments, as BQN's `⎉` d
 
 To apply a function along chosen axes, see [Axis](quad-colon.qmd).
 
+## Calls on the whole argument
+
+Rank calls `f` once for each cell, except where one call on the whole argument gives the same result. These run as one call:
+
+- a pervasive function of cells without axis names, as in `m +⍤1 v`
+- a fold or scan by a pervasive primitive on a simple array, as in `+/⍤1 m`, which runs as `+/m` does
+- a monadic primitive at its own rank or above, such as `⌽⍤1 m`, except `⍳`, `↦` and `⍎`
+- `⊖`, `,`, `↑`, `↓` and `⌷` along the cells' axes, `≢` and `⍴`, and a reshape that keeps each cell's items in order
+- `+.×`, `⌹`, `-.×` and [`•decompose`](../system/decompose.qmd) on a stack of matrices
+- an atop `f∘g` where `g` runs as one call, with Rank applying `f` to the cells of its result
+
+Other functions, including dfns and functions that give nested results, run once for each cell.
+
 ## Inverse
 
 `(f⍤k)⁻¹` is `f⁻¹⍤k`.

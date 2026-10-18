@@ -35,7 +35,7 @@ pub fn key_lists(value: &Value) -> Vec<Option<Vec<Option<&str>>>> {
 pub fn with_key_lists(value: Value, lists: Vec<Option<Vec<Option<String>>>>) -> Result<Value, String> {
     if lists.len() != value.shape().len() { return Err("axis_keys must have one entry per axis".into()); }
     let keys = lists.into_iter().map(|k| k.map(|names| Keys::partial(names.into_iter().map(|n| n.map(Into::into)).collect())).transpose())
-        .collect::<Result<_, _>>().map_err(|_| "axis keys must be unique")?;
+        .collect::<Result<_, _>>().map_err(|e| e.to_string())?;
     value.with_keys(keys).map_err(|_| "key lists must match array axes".into())
 }
 
@@ -138,7 +138,7 @@ pub(crate) fn merge(old: &Value, new: &Value) -> Result<Value, ErrorKind> {
 }
 
 /// A position, as the selector of a position with no name.
-fn position(i: usize) -> Value { Value::Number(crate::Number::from_integer(i as i64)) }
+fn position(i: usize) -> Value { Value::integer(i as i64) }
 
 /// Names for positions: one name, or a vector of names in which a position with no name gives its own position.
 fn names(value: &Value) -> Result<Vec<Option<Arc<str>>>, ErrorKind> {
@@ -242,7 +242,7 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
         keys[axis] = Some(Keys::partial(all)?);
     }
     let stride = strides(target.shape());
-    let tables: Vec<_> = shape.iter().zip(target.shape()).zip(stride).map(|((&len, &size), stride)| Steps::Clipped { start: 0, len, size, stride }).collect();
+    let tables: Vec<_> = shape.iter().zip(target.shape()).zip(stride).map(|((&len, &size), stride)| Steps::clipped(0, len, size, stride)).collect();
     let names = target.axis_names().to_vec();
     *target = crate::primitive::remapped(target, rustymath::structure::Plan { layout: shape.into(), steps: tables })?.with_keys(keys)?.with_axis_names(names)?;
     Ok(())
@@ -261,7 +261,7 @@ pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool)
         Ok(match target(axis) {
             Some((src, dst)) => {
                 keys[axis] = Some(dst.clone());
-                Steps::Table(src.positions(dst, subset)?.into_iter().map(|p| Some(p * stride[axis])).collect())
+                Steps::table(src.positions(dst, subset)?.into_iter().map(|p| p * stride[axis]).collect())
             }
             None => { keys[axis] = value.keys(axis).cloned(); Steps::along(shape[axis], stride[axis]) }
         })

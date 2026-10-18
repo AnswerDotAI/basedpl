@@ -161,14 +161,15 @@ Source: the April tests. `⌷` takes one item for each axis, like APL's index fi
 
 ### Choose indexing
 
-Source: the April tests. When the positions are vectors, `⌷` reads each one as a coordinate. `[0 1;2 0]` is a list of two coordinates. In `[[0 1;2 0]]`, that list is one item. `;` separates items that contain spaces.
+Source: the April tests. Dot indexing pairs its arrays of positions, one array for each axis: `0 2` holds the coordinates' rows and `1 0` their columns. A list of coordinates in one item reads the item at each, as Dyalog's choose indexing does. `;` separates items that contain spaces.
 
 ```dyalog
 (3 4⍴⍳9)[(1 2)(3 1)]
 ```
 
 ```bpl
-[[0 1;2 0]]⌷3 4⍴⍳9    ⍝ 1 8
+(3 4⍴⍳9).[0 2;1 0]    ⍝ 1 8
+(3 4⍴⍳9).[[0 1;2 0]]  ⍝ 1 8
 ```
 
 ```bqn
@@ -212,7 +213,7 @@ mat←(÷⟜(𝕨‿𝕨⊑swap))⌾(𝕨⊸⊏)swap
 
 ### Assigning to a block of a matrix
 
-Source: `box` in the dfns workspace. Dot indexing takes one item for each axis, like APL's bracket index. Because `0,h` and `0,w` have no spaces, each is one item. The target of `←` is the run before it. BQN assigns through a selection with Under, `⌾`.
+Source: `box` in the dfns workspace. `⌷` takes one item for each axis and selects their cross product, like APL's bracket index. Because `0,h` and `0,w` have no spaces, each is one item. The target of `←` is the selection in parentheses. BQN assigns through a selection with Under, `⌾`.
 
 ```dyalog
 q[1,h;1,w]←2 2⍴ch
@@ -220,7 +221,7 @@ q[1,h;1,w]←2 2⍴ch
 
 ```bpl
 q←5 5⍴0 ⋄ h←4 ⋄ w←4 ⋄ ch←1 2 3 4
-q.[0,h 0,w]←2 2⍴ch
+[0,h 0,w]⌷q ←2 2⍴ch
 q   ⍝ [1 0 0 0 2⋄0 0 0 0 0⋄0 0 0 0 0⋄0 0 0 0 0⋄3 0 0 0 4]
 ```
 
@@ -349,7 +350,7 @@ Source: `Depth` in the dfns workspace. It applies its left operand at the depths
 ```
 
 ```bpl
-[Depth]←•load "lib/dyalog.bpl"
+[Depth:]←•load "lib/dyalog.bpl"
 1 2 +Depth 0 [3 4]     ⍝ 4 6
 ```
 

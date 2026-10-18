@@ -13,10 +13,10 @@ BPL's modules follow BQN's [namespaces](https://mlochbaum.github.io/BQN/doc/name
 
 ## Taking names
 
-Destructuring takes names from the record by key. Names the list doesn't mention stay in the record. [Assignment](assignment.ipynb#destructuring) covers destructuring.
+A pattern takes names from the record by key, as in `[factors: factorial:]`. Each name reads the item with the same key. Names the pattern doesn't mention stay in the record. [Assignment](assignment.ipynb#destructuring) covers patterns.
 
 ```bpl
-[factors factorial]←•load "lib/numeric.bpl"
+[factors: factorial:]←•load "lib/numeric.bpl"
 factorial 5                ⍝ 120
 ```
 
@@ -25,7 +25,7 @@ A record holds operators as well as functions and arrays. A dot path or a destru
 ```bpl
 a←•load "lib/array.bpl"
 10 -a.foldl 1 2 3          ⍝ 4
-[foldl]←a
+[foldl:]←a
 10 -foldl 1 2 3            ⍝ 4
 ```
 
@@ -102,7 +102,7 @@ _stats←•load "./stats.bpl"
 summary←{[_stats.mean ⍵;_stats.var ⍵]}
 ```
 
-A public name exports on purpose. With `stats←•load "./stats.bpl"`, the record of `report.bpl` would hold the `stats` record too. Destructured names are public as well: `[mean]←•load "./stats.bpl"` makes `mean` one of the module's names.
+A public name exports on purpose. With `stats←•load "./stats.bpl"`, the record of `report.bpl` would hold the `stats` record too. Destructured names are public as well: `[mean:]←•load "./stats.bpl"` makes `mean` one of the module's names.
 
 A file that loads itself, directly or through other files, is a `DOMAIN` error.
 

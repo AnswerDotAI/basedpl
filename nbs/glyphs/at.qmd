@@ -6,7 +6,7 @@ Dyadic operator
 
 ## Positions
 
-An array `g` lists positions along the leading axis, as `[g]⌷Y` reads them. Negative positions count from the end. The shape of `g` comes before the axes of each cell. An item that is itself a list of positions reaches into nested items. A keyed replacement aligns by key with the selected positions, as it does in assignment.
+An array `g` lists positions along the leading axis, as `[g]⌷Y` reads them. Where its items are vectors, each one is a path, as the left argument of [Pick](right-shoe.qmd) is, and selects the item or cell at its end. Negative positions count from the end. The shape of `g` comes before the axes of each cell. A keyed replacement aligns by key with the selected positions, as it does in assignment.
 
 ```bpl
 -@[0 2] 1 2 3                                          ⍝ ¯1 2 ¯3
@@ -26,7 +26,7 @@ x←3 8 2 ⋄ 10+@[5>] x       ⍝ 13 8 12
 
 ## Selecting functions
 
-When a function `g` only selects or rearranges, `f@g Y` writes the result of `f(g Y)` back where `g` took it from. These functions select, and [selective assignment](left-arrow.qmd) accepts the first two kinds as targets:
+When a function `g` only selects or rearranges, `f@g Y` writes the result of `f(g Y)` back where `g` took it from. These functions select, in Under and in [selective assignment](left-arrow.qmd) targets alike:
 
 - Take, First, Drop, Replicate, Expand, Reshape, Reverse, Rotate, Transpose, Ravel, Table, Enlist, Pick, Partition, Windows and `⌷`
 - Each, Rank, Axis, Atop, Over and a whole-number Power of selecting functions
@@ -91,3 +91,4 @@ See [assigning an inverse](../assignment.ipynb#inverses-and-derivatives).
 - `DOMAIN`: `g` can drop items but doesn't only select, as in `-@(+/1 0 1#)`
 - `INDEX`: a position is outside `Y`
 - `LENGTH`: the result of `f` doesn't fit the selection
+- `LENGTH`: paths in `g` end at cells of different shapes, or some at items and some at cells

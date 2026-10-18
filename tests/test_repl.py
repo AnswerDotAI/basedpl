@@ -63,16 +63,16 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         enter('sum`assign +`reduce\r', '\r\n')  # Enter accepts and submits
         enter('sum 한\r', '\r\n6\r\n')
         enter('`iotx\x7fa3\r', '\r\n0 1 2\r\n')  # backspace while entering a name
-        data = enter('`do\t \r', 'UNSUPPORTED')  # ambiguous Tab must not choose a glyph
+        data = enter('`do\t \r', 'VALUE ERROR')  # ambiguous Tab must not choose a glyph
         assert b'`do ' in data
-        enter('`iota\x1b[D\r', 'UNSUPPORTED')  # moving the cursor ends name entry
+        enter('`iota\x1b[D\r', 'VALUE ERROR')  # moving the cursor ends name entry
         enter('x`larr-5\r', '\r\n')  # completion replaces only the name
         enter('x\r', '\r\n¯5\r\n')
         enter('2+2\r', '\r\n4\r\n')
         data = enter('⍝ \\ `iota \r', '\r\n')
         assert b'\\ `iota ' in data  # comments and literal backslash are untouched
         enter('6+7\r', '\r\n13\r\n')
-        enter('\x1b[200~`iota\x1b[201~\r', 'UNSUPPORTED')  # pasted names do not auto-expand
+        enter('\x1b[200~`iota\x1b[201~\r', 'VALUE ERROR')  # pasted names do not auto-expand
         enter('(2+\r', '\r\n')
         enter('\x03', '\r\n')  # Ctrl-C discards the whole unfinished expression
         enter('h←[3\r', '\r\n')

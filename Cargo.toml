@@ -61,7 +61,7 @@ num-complex = { version = ">=0.4.6, <1", features = ["bytemuck"] }
 num-bigint = ">=0.4.6, <0.5"
 num-traits = ">=0.2.19, <1"
 half = { version = ">=2.7.1, <3", features = ["num-traits", "bytemuck"] }
-rustymath = { version = ">=0.1.28, <1", default-features = false }
+rustymath = { version = ">=0.1.29, <1", default-features = false }
 strength_reduce = ">=0.2.4, <1"
 rand = ">=0.10.2, <1"
 # AnswerDotAI's fork measures text with a canvas, which works in a Web Worker: plotters-rs/plotters#746.
@@ -81,8 +81,6 @@ rustix = { version = ">=1.1.5, <2", features = ["termios", "fs"] }
 nix = { version = ">=0.31.3, <1", default-features = false, features = ["user"] }
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
-# The timing lock's QoS call, which keeps a timing on the performance cores.
-libc = ">=0.2.190, <1"
 # The Mac build links the zlib that macOS ships, in place of compiling `miniz_oxide`.
 flate2 = { version = ">=1.1.10, <2", default-features = false, features = ["zlib"] }
 

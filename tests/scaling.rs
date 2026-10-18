@@ -1,5 +1,5 @@
 //! How time and memory grow with the size of the arguments. Each case runs at `N` and `8 * N` items. Its time, allocated bytes and peak bytes may each grow by at most `LIMIT` times. A linear or n log n cost stays below that. A quadratic cost grows about 64 times. A global allocator counts, on the calling thread alone, the bytes that each call allocates, its peak and the bytes it keeps. The test harness's other threads stay out of the measurements. Rustymath runs on the calling thread too, with `set_threads(1)`. Otherwise memory that the calling thread allocates and a Rayon worker frees, such as a block of Rayon's job queue, counts as kept.
-use basedpl::{timing, EvalOptions, Session};
+use basedpl::{EvalOptions, Session};
 use std::{alloc::{GlobalAlloc, Layout, System}, cell::Cell, io::Write, time::{Duration, Instant}};
 
 thread_local! {
@@ -62,7 +62,7 @@ fn cost(session: &mut Session, code: &str) -> Cost {
     Cost { time, allocated, peak, kept }
 }
 
-/// The ways in which each of `codes` grows faster than `LIMIT` allows, or keeps memory. A time that grows too fast is measured again after the rest, by `timing::retried`, and fails only if it grows too fast every time. Each retry writes both growths straight to stderr, where they appear even when the test passes. Byte counts are the same on every run.
+/// The ways in which each of `codes` grows faster than `LIMIT` allows, or keeps memory. A time that grows too fast is measured again after the rest, by `rustymath::timing::retried`, and fails only if it grows too fast every time. Each retry writes both growths straight to stderr, where they appear even when the test passes. Byte counts are the same on every run.
 fn growth_failures(codes: &[&str]) -> Vec<String> {
     let (mut small, mut large) = (session(N), session(8 * N));
     let ratio = |a: usize, b: usize| a as f64 / b.max(1) as f64;
@@ -80,7 +80,7 @@ fn growth_failures(codes: &[&str]) -> Vec<String> {
         if s.kept + l.kept > 0 { failures.push(format!("{code}: keeps {} and {} bytes", s.kept, l.kept)); }
     }
     let mut stderr = std::io::stderr();
-    let slow = timing::retried(slow, |slow, pause| {
+    let slow = rustymath::timing::retried(slow, |slow, pause| {
         slow.into_iter().filter_map(|(code, before)| {
             let r = time(&cost(&mut small, code), &cost(&mut large, code));
             writeln!(stderr, "{code}: time grew {before:.1} times, then {r:.1} times after {pause} s").unwrap();
@@ -91,18 +91,18 @@ fn growth_failures(codes: &[&str]) -> Vec<String> {
     failures
 }
 
-/// Each case may allocate `times` its result's bytes, plus `scratch` bytes for each argument item. Pervasive and structural functions write their result once. A reshape that keeps the number of items shares its argument's storage. Search builds a table of the items it searches. Grade's radix sort moves pairs of a key and a position between two buffers, and returns its positions in one of them. Format builds each number's text once, then converts it to characters. Its data is fixed, because the text's length decides where its buffer doubles.
+/// Each case may allocate `times` its result's bytes, plus `scratch` bytes for each argument item. Pervasive and structural functions write their result once. A reshape that keeps the number of items shares its argument's storage. Indexing builds a table of its positions. Search builds a table of the items it searches. Grade's radix sort moves pairs of a key and a position between two buffers, and returns its positions in one of them. Format builds each number's text once, then converts it to characters. Its data is fixed, because the text's length decides where its buffer doubles.
 const BUDGETS: &[(&str, f64, usize)] = &[
     ("-v", 1.0, 0), ("v+w", 1.0, 0), ("v<w", 1.0, 0), ("⌊v", 1.0, 0), ("*v", 1.0, 0), ("iv+1ₓ", 1.0, 0), ("iv×0.5", 1.0, 0), ("v×iv", 1.0, 0),
     ("+/v", 1.0, 0), ("⌈/iv", 1.0, 0), ("+\\v", 1.0, 0), ("v,w", 1.0, 0), ("⌽v", 1.0, 0), ("1⌽v", 1.0, 0), ("⍉m", 1.0, 0), ("⊖m", 1.0, 0),
-    ("((≢v)÷2)↑v", 1.0, 0), ("((≢v)÷2)↓v", 1.0, 0), ("[i]⌷v", 1.0, 0), ("b#v", 1.0, 0), ("⍸b", 1.0, 0), (",m", 0.0, 0), ("(⍴m)⍴v", 0.0, 0),
+    ("((≢v)÷2)↑v", 1.0, 0), ("((≢v)÷2)↓v", 1.0, 0), ("[i]⌷v", 1.0, 8), ("b#v", 1.0, 0), ("⍸b", 1.0, 0), (",m", 0.0, 0), ("(⍴m)⍴v", 0.0, 0),
     ("v⍳w", 1.0, 48), ("iv⍳i", 1.0, 16), ("i∊iv", 1.0, 16), ("≠i", 1.0, 16), ("∪i", 1.0, 24), ("⍋v", 1.0, 24), ("⍕q", 1.5, 0),
 ];
 
 /// The bytes that the result of `code` holds: its number of items times the size of one item in its storage.
 fn result_bytes(session: &mut Session, code: &str) -> usize {
     let sizes = format!("[1 8 8 16 4 {}]ₓ", std::mem::size_of::<basedpl::Value>());
-    let names = r#""boolean" "integer" "float64" "complex" "character" "mixed""#;
+    let names = r#""bool" "integer" "float64" "complex128" "character" "mixed""#;
     let result = session.eval(&format!("r←{code} ⋄ s←(•storage r).kind ⋄ (≢,r)×({names}⍳⊂s)⌷{sizes}"));
     assert!(result.error.is_none(), "{code}: {:?}", result.error);
     result.value.and_then(|v| v.as_number()).and_then(|n| n.as_integer()).unwrap() as usize

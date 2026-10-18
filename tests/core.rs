@@ -206,6 +206,7 @@ fn boxed_display_and_function_trees() {
     assert_eq!(s.eval("1 2").output_text(), ["1 2"]);
     let wide = s.eval("]Display '界' 'a'").output_text().join("\n");
     assert!(wide.contains("界"));
+    s.eval(r#"•prefs ["hanzi_aliases":$t]"#);
     assert!(s.eval(r#"•prefs ["notation":"simplified" "trees":$f]"#).error.is_none());
     assert_eq!(s.eval("+/÷≢").output_text(), ["加总除数"]);
     assert_eq!(s.eval("/").output_text(), ["总"]);
@@ -381,10 +382,19 @@ fn structural_completeness_and_source_lifetime() {
 }
 
 #[test]
+fn unicode_names() {
+    equiv("😎←2 ⋄ 中文←3 ⋄ 한글←4 ⋄ 😎+中文+한글", "9");
+    equiv("加←7 ⋄ _語←8 ⋄ 加+_語", "15");
+    equiv("x_1←7 ⋄ x_12←8 ⋄ x_1+x_12", "15");
+    equiv("f←- ⋄ f2", "¯2");
+}
+
+#[test]
 fn hanzi_spellings_and_language() {
     use basedpl::symbols::{canonical, symbols, Notation};
     let mut seen = std::collections::HashMap::new();
     let mut s = Session::new();
+    equiv_in(&mut s, r#"•prefs ["hanzi_aliases":$t] ⋄ mean是加总除数句mean 2 4 9"#, "5");
     assert_eq!(symbols().len(), 98);
     for symbol in symbols() {
         for (aliases, notation) in symbol.hanzi.into_iter().zip([Notation::Simplified, Notation::Traditional]) {
@@ -411,30 +421,40 @@ fn hanzi_spellings_and_language() {
     assert_eq!(s.name_class("系time"), 3);
     assert_eq!(s.inspect("系time").unwrap().source, "•time");
     assert!(s.set("乙", number(1)).is_err() && !s.erase("乙"));
-    equiv("{系nc \"乙\"}0", "2ₓ");
+    equiv_in(&mut s, "{系nc \"乙\"}0", "2ₓ");
     // Reserving Han does not reserve other scripts used in names.
     equiv("かな←2 ⋄ 한글←3 ⋄ かな+한글", "5");
     let code = "加总 1 2句語";
     let error = s.eval(code).error.unwrap();
     assert_eq!(error.span.range, 13..16);
     assert_eq!(error.span.source.text, code);
+    fails_in(&mut s, "DOMAIN", &[r#"0 ⋄ •prefs ["hanzi_aliases":$f]"#, r#"p←["hanzi_aliases":$f] ⋄ •prefs p"#]);
+    equiv_in(&mut s, r#"•prefs ["hanzi_aliases":$f] ⋄ 中文←7 ⋄ 中文"#, "7");
+    equiv_in(&mut s, "中文+1", "8");
+}
+
+#[test]
+fn leading_prefs_set_how_their_code_reads() {
+    let mut s = Session::new();
+    s.eval(r#"•prefs ["kinds":"static" "int":32]"#);
+    equiv_in(&mut s, r#"•prefs ["kinds":"dynamic" "int":64] ⋄ 2147483648ₓ"#, "2147483648ₓ");
+    equiv_in(&mut s, r#"⍎"•prefs [""float"":32] ⋄ (•storage 1.5).kind""#, r#""float32""#);
 }
 
 #[test]
 fn highlight_classes_and_code_context() {
-    let classes = |text: &'static str| basedpl::highlight(text).into_iter().map(|(range, class)| (&text[range], class)).collect::<Vec<_>>();
+    let classes = |text: &'static str| basedpl::highlight(text, false).into_iter().map(|(range, class)| (&text[range], class)).collect::<Vec<_>>();
     let expected = [("⍵", "argument"), ("∘", "dyadic-operator"), ("+", "function"), ("¨", "monadic-operator"), ("\"a+b\"", "string"), ("⍝ c+d", "comment")];
     assert_eq!(classes("⍵∘+¨\"a+b\" ⍝ c+d"), expected);
-    assert_eq!(
-        classes("乙承加遍\"加负\" 注 中文"),
-        [("乙", "argument"), ("承", "dyadic-operator"), ("加", "function"), ("遍", "monadic-operator"), ("\"加负\"", "string"), ("注 中文", "comment")]
-    );
+    assert_eq!(classes("中文←2"), [("←", "syntax"), ("2", "literal")]);
+    let code = "•prefs [\"hanzi_aliases\":$t]\n加1 注 comment";
+    assert_eq!(basedpl::highlight(code, false).last().map(|(range, class)| (&code[range.clone()], *class)), Some(("注 comment", "comment")));
     // An unclosed string, as while typing, runs to the end of the text.
     assert_eq!(classes("x←1+\"a+"), [("←", "syntax"), ("1", "literal"), ("+", "function"), ("\"a+", "string")]);
     // The end of the text is in code unless it is inside a comment or an unclosed literal.
-    assert!(basedpl::in_code("\"a\"+") && basedpl::in_code("1 ⍝ c\n"));
-    assert!(!basedpl::in_code("1+\"a") && !basedpl::in_code("1 ⍝ c") && !basedpl::in_code("'"));
-    assert!(!basedpl::in_code("1 注 中文") && basedpl::in_code("1 注 中文\n"));
+    assert!(basedpl::in_code("\"a\"+", false) && basedpl::in_code("1 ⍝ c\n", false));
+    assert!(!basedpl::in_code("1+\"a", false) && !basedpl::in_code("1 ⍝ c", false) && !basedpl::in_code("'", false));
+    assert!(basedpl::in_code("1 注 中文", false) && !basedpl::in_code("1 注 中文", true));
 }
 
 #[test]

@@ -57,8 +57,9 @@ impl ErrorKind {
 impl From<rustymath::error::Error> for ErrorKind {
     fn from(e: rustymath::error::Error) -> Self { Self::Array(e) }
 }
+/// A kind with no message, for `Span::error` or `error_at` to supply one.
 impl From<Kind> for ErrorKind {
-    fn from(kind: Kind) -> Self { Self::Array(kind.into()) }
+    fn from(kind: Kind) -> Self { Self::Array(rustymath::error::Error::new(kind, "")) }
 }
 
 /// `DOMAIN ERROR` and so on. Interrupts, timeouts and unsupported features show their names alone.
@@ -92,17 +93,14 @@ impl Span {
     pub(crate) fn read(&self, path: &str) -> Result<Vec<u8>, Error> { crate::host::read(&self.path(path)).map_err(|e| self.io_error(path, e)) }
 }
 
-/// Places an error at a source span. A kind that carries its own message, as rustymath's errors do, keeps that message.
-pub(crate) trait ErrorAt<T> {
-    /// With `message` where the kind carries none.
-    fn error_at(self, span: &Span, message: &str) -> Result<T, Error>;
-    /// For an error whose kind always carries a message, such as one from `generated_len`.
-    fn at(self, span: &Span) -> Result<T, Error>;
-}
-impl<T, K: Into<ErrorKind>> ErrorAt<T> for Result<T, K> {
-    fn error_at(self, span: &Span, message: &str) -> Result<T, Error> { self.map_err(|k| span.error(k, message)) }
-    fn at(self, span: &Span) -> Result<T, Error> { self.map_err(|k| span.error(k, "")) }
-}
+/// Places one of basedpl's error kinds at a source span, with `message` where the kind carries none. An `ErrorKind` that wraps a rustymath error keeps that error's message. A rustymath error itself takes `At`.
+pub(crate) trait ErrorAt<T> { fn error_at(self, span: &Span, message: &str) -> Result<T, Error>; }
+impl<T> ErrorAt<T> for Result<T, ErrorKind> { fn error_at(self, span: &Span, message: &str) -> Result<T, Error> { self.map_err(|k| span.error(k, message)) } }
+impl<T> ErrorAt<T> for Result<T, Kind> { fn error_at(self, span: &Span, message: &str) -> Result<T, Error> { self.map_err(|k| span.error(k, message)) } }
+
+/// Places a rustymath error at a source span, with the message that every rustymath error carries.
+pub(crate) trait At<T> { fn at(self, span: &Span) -> Result<T, Error>; }
+impl<T> At<T> for Result<T, rustymath::error::Error> { fn at(self, span: &Span) -> Result<T, Error> { self.map_err(|e| span.error(e, "")) } }
 
 /// Places an error from numeric code, which carries only its message, at a source span as a DOMAIN error.
 pub(crate) trait DomainAt<T> { fn domain_at(self, span: &Span) -> Result<T, Error>; }

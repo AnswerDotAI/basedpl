@@ -1,5 +1,5 @@
 use rustymath::error::Kind;
-use crate::{array::generated_len, data::text as string, execution::Context, keyed, Error, ErrorAt, Number, Value};
+use crate::{array::generated_len, data::text as string, execution::Context, keyed, At, Error, ErrorAt, Number, Value};
 use num_bigint::BigInt;
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ impl Options {
         let mut allowed = vec!["separator", "quotechar", "escapechar", "doublequote", "decimal", "thousands", "trim", "header", "fill"];
         allowed.extend(if import { &["text_columns", "numeric_columns", "missing"][..] } else { &["forcequotes", "lineending"][..] });
         let common = crate::data::Options::new(if import { "•csv" } else { "•csv⁻¹" }, left, None, &allowed, span)?;
-        let width = span.numeric().width;
+        let width = crate::number::Numeric::current().width;
         let mut opts = Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None, width };
         let byte = |c: Option<char>| -> Result<Option<u8>, Error> {
             c.map(|c| {
@@ -152,7 +152,7 @@ fn import(source: &str, opts: &Options, span: &Context<'_>) -> Result<Value, Err
                     None => return Err(span.domain_error(format!("CSV row {}, column {}: invalid number {s:?}", i + 1 + usize::from(header), j + 1)))
                 }));
             }
-            crate::data::imported(vec![cells.len()], numbers, |i| absent[i], Value::Number(Number::from_integer(0)))
+            crate::data::imported(vec![cells.len()], numbers, |i| absent[i], Value::integer(0))
         } else { keyed::texts(&[cells.len()], cells.iter().zip(&absent).map(|(s, &a)| keyed::text(if a { "" } else { s })).collect()) };
         result.push(column.error_at(span, "invalid CSV column")?);
     }

@@ -1,5 +1,5 @@
 //! How the element types of compact storage read their items from a `Value` and build arrays from them. Each type's fill and its conversions to other types are rustymath's `Element` and `Source`.
-use crate::{array::{Items, Storage}, number::int::Int, Value};
+use crate::{array::{Items, Storage}, number::{int::Int, Numeric}, Value};
 use num_complex::{Complex32, Complex64};
 use rustymath::{buffer::{ComplexBuf, Complexes, Element, FloatWidth, Ints, read_all, Source, View, Width}, with_complexes, with_floats, with_ints};
 use std::borrow::Cow;
@@ -10,6 +10,8 @@ pub(crate) trait Stored: Element {
     fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Compact(v) => Self::of(v), Items::Values(_) => None } }
     /// An array of `data`, stored as this element type. Integers keep their width.
     fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Compact(Self::buffer(data))).ok() }
+    /// An array of `data` under `numeric`'s kinds. Only complex numbers build differently: dynamic kinds narrow them to floats where no item has an imaginary part, and static kinds keep them complex.
+    fn build_at(shape: impl Into<crate::Shape>, data: Vec<Self>, _numeric: Numeric) -> Option<Value> { Self::build(shape, data) }
     /// An array of `data`, with integers moved to the narrowest width that holds them, in a pass over them. Other element types are stored as `build` stores them.
     fn build_narrowed(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Self::build(shape, data) }
     /// This whole number as an integer of type `T`, when `T` holds it. Only the numbers that kernels give as integers have one.
@@ -24,6 +26,9 @@ macro_rules! complex_elements {
     ($($t:ty: $width:ident),+) => {$(
         impl Stored for $t {
             fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::complex(shape, ComplexBuf::$width(data)).ok() }
+            fn build_at(shape: impl Into<crate::Shape>, data: Vec<Self>, numeric: Numeric) -> Option<Value> {
+                if numeric.is_static() { Value::from_storage(shape, Storage::Compact(Self::buffer(data))).ok() } else { Self::build(shape, data) }
+            }
             fn from_complexes(items: Complexes<'_>) -> Option<Vec<Self>> { Some(with_complexes!(items, |z| read_all(z))) }
         }
     )+};

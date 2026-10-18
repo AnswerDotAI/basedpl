@@ -43,6 +43,26 @@ A negative size pads its axis. Each window is centred on a position, as in [Sten
 
 An axis of length `n` has `0⌈≥⌊M÷⍨n-S` full windows, or `⌈M÷⍨n-0=2|S` padded windows. Movements default to 1.
 
+## Folds of windows
+
+`↕` defers large windows. A fold along the windows' own axis then slides over the argument and never builds them. Windows of up to 8 items fold directly. Wider windows take van Herk-Gil-Werman's method, at a cost for each item that doesn't grow with the width. This covers `+ × ⌈ ⌊` of floats, `+ ⌈ ⌊` of integers, and the Boolean folds. Windows of a matrix, as in `+/+/3 3↕m`, fold in one pass along each axis. A fold of windows that don't overlap, as in 2 by 2 pooling, `⌈/⌈/[[2 2]⋄[2 2]]↕m`, reads the argument in place and costs what the same fold of a reshape costs. Under [`∂`](partial.qmd), a maximum or minimum of windows also takes each window's first extreme from the argument. [`•explain`](../system/explain.qmd) reports each sliding fold.
+
+```bpl
+v←¿100000⍴0
+(•explain "+/50↕v").fast.combination      ⍝ ["sliding fold"]
+```
+
+## Products of windows
+
+A matrix product of windows, as in a convolution written `([f c]⍴3 3↕img)+.×k`, reads the windows a block of rows at a time and never builds them. Under [`∂`](partial.qmd), the kernel's gradient reads the windows again in blocks. The image's gradient is one product: the windows of the gradient with zeros around it, times the kernel reversed along its window axes.
+
+```bpl
+w←[99998 3]⍴3↕¿100000⍴0
+k←¿3 4⍴0
+(•explain "w+.×k").forced.function   ⍝ 0⍴⊂""
+(•storage w).pending                 ⍝ $t
+```
+
 ## Inverse
 
 `↕⁻¹Y` rebuilds an array from its pairs `Y`. `N↕⁻¹Y` rebuilds it from its windows of size `N`.
