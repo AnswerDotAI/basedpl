@@ -52,5 +52,6 @@ Use actual glyphs in files, pipes and `-e`; backtick names are a [REPL input met
 | `bpl --help` | Usage |
 | `bpl --version` | Version |
 | `bpl --worker` | JSON-lines requests with deadlines and interruption |
+| `bpl --costs FILE` | Times the cases in a file in `tests/speed.txt`'s format, as the speed test does, and prints each cost with this machine's budget. A case over its budget leaves the exit status at 0 |
 
 See [process interfaces](processes.qmd) for machine-readable output. The exit status is 0 on success, 1 after an evaluation or I/O error, and 2 for invalid command arguments. An error doesn't discard the output written before it.

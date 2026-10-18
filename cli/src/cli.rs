@@ -2,7 +2,7 @@ use basedpl::{EvalOptions, Evaluation, Input, InterruptHandle, Output, ParseStat
 use rustyline::error::ReadlineError;
 use std::{io::{self, IsTerminal, Read, Write}, sync::{Arc, Mutex}};
 
-const USAGE: &str = "Usage: bpl [-e EXPR [ARG...] | FILE [ARG...] | - [ARG...] | --worker | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent BPL REPL (Ctrl-D to exit, Ctrl-C to cancel input or interrupt an evaluation).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source.\n`•host \"args\"` gives the ARGs.\nUse --worker for JSON-lines requests with deadlines and interruption.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
+const USAGE: &str = "Usage: bpl [-e EXPR [ARG...] | FILE [ARG...] | - [ARG...] | --worker | --costs FILE | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent BPL REPL (Ctrl-D to exit, Ctrl-C to cancel input or interrupt an evaluation).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ⍳5.\nUse - to execute all of stdin as one source.\n`•host \"args\"` gives the ARGs.\nUse --worker for JSON-lines requests with deadlines and interruption.\nUse --costs FILE to time the cases in FILE, in speed.txt's format, printing each cost and this machine's budget.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
 
 /// Writes each output to stdout as the evaluation produces it. A failed write interrupts the evaluation, and `finish` then gives the write's error. Evaluations can also read standard input, when the program didn't come from it. Ctrl-C interrupts the evaluation that is running.
 struct Printer { interrupt: Arc<Mutex<InterruptHandle>>, failure: Arc<Mutex<Option<io::Error>>>, input: Option<Arc<dyn Input>> }
@@ -112,6 +112,14 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
     }
 }
 
+/// Times the cases in `text`, in `speed.txt`'s format, as the speed test does, and writes each cost and this machine's native budget to `out`. Gives 0 even when cases are over budget, and 1 when a case fails to run.
+fn costs(text: &str, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
+    let mut written = Ok(());
+    let measured = basedpl::timing::measured(text, true, |line| if written.is_ok() { written = writeln!(out, "{line}"); });
+    written?;
+    match measured { Ok(_) => Ok(0), Err(e) => writeln!(err, "{e}").map(|_| 1) }
+}
+
 /// Runs `bpl` with `args`, the command line after the program name, and gives the exit status.
 pub(crate) fn run(args: &[String]) -> i32 {
     if let [mode, flag, file] = args {
@@ -126,6 +134,7 @@ pub(crate) fn run(args: &[String]) -> i32 {
     let result = match args {
         [] => repl(&mut err, stdin.is_terminal() && stdout.is_terminal()),
         [flag] if flag == "--worker" => crate::worker::run(&mut stdout.lock()).map(|_| 0),
+        [flag, file] if flag == "--costs" => std::fs::read_to_string(file).and_then(|text| costs(&text, &mut stdout.lock(), &mut err)),
         [flag, code] if flag == "-e" => expression(Source::new("<expression>", code.as_str()), true, program_args, &mut err),
         [flag] if flag == "--help" || flag == "-h" => write!(stdout.lock(), "{USAGE}").map(|_| 0),
         [flag] if flag == "--version" => writeln!(stdout.lock(), "basedpl {}", env!("CARGO_PKG_VERSION")).map(|_| 0),

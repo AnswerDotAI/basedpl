@@ -246,6 +246,14 @@ def check_page(
     return _failures(dict(page=dict(text=Path(path).read_text())))
 
 _SPEED = Path(__file__).parents[2]/'tests'/'speed.txt'
+# The budgets on each case line of a budget file, after its code, in order: macOS on Apple silicon, Linux on CI's x86 runner, then the browser build where the file has one.
+_BUDGETS = ('macos', 'linux', 'wasm')
+
+def _platform():
+    "This machine's platform, whose native budgets its runs set, as `rustymath::timing::NATIVE_COLUMN` picks it."
+    import rustymath
+    return _BUDGETS[rustymath.timing().column]
+
 _PKG = _SPEED.with_name('wasm-pkg.mjs')
 
 class Costs(list):
@@ -269,10 +277,10 @@ def time_cases(
     return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
 
 class SpeedCosts(list):
-    "Each case's cost and the budget that limits it, as `(section, code, cost, budget)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. `cpu` is the CPU model that a CI log reports, or `None`."
-    def __init__(self, rows=(), cpu=None):
+    "Each case's cost and the budget that limits it, as `(section, code, cost, budget)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs inform, 'macos' or 'linux', or `None` for a browser build."
+    def __init__(self, rows=(), cpu=None, platform=None):
         super().__init__(rows)
-        self.cpu = cpu
+        self.cpu, self.platform = cpu, platform
     def __repr__(self):
         rows = ((s, c, cost, '-' if b is None else f'{b:g}', 'over' if b is not None and cost > b else '') for s, c, cost, b in self)
         return '\n'.join(f'{cost:>9.2f} {b:>9} {over:4}  {s} {c}' for s, c, cost, b, over in rows)
@@ -301,29 +309,32 @@ def speed_costs(
         if p.returncode: raise ValueError(p.stderr)
         if p.stderr: sys.stderr.write(p.stderr)
         rows = json.loads(p.stdout)
-    i = 0 if wasm is None else 1
-    return SpeedCosts((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None) for c in rows)
+    build = _platform() if wasm is None else 'wasm'
+    i = _BUDGETS.index(build)
+    rows = ((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None) for c in rows)
+    return SpeedCosts(rows, platform=None if wasm else build)
 
 _LOGGED = re.compile(r'^(?:\S*Z )?(?:# )?(\w+) (\S(?:(?!: ).)*): ([\d.]+|inf|NaN|Infinity), budget ([\d.]+)$')
 _CPU = re.compile(r'^(?:\S*Z )?model name\s*:\s*(.+?)\s*$', re.M)
 
 def logged_costs(
-    log # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Test` or `Speed` workflow
+    log, # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Test` or `Speed` workflow
+    platform='linux' # The platform whose native budgets the log's costs inform: 'linux' for CI's runner, or 'macos' for a Mac
 ):
-    "The rows that `speed_costs` gives, read from `log`, with the CPU model that the log reports as their `cpu`. A case that the log times more than once, as after a retry, gives its lowest cost."
+    "The rows that `speed_costs` gives, read from `log`, with the CPU model that the log reports as their `cpu`, and `platform`. A case that the log times more than once, as after a retry, gives its lowest cost."
     cpu = c[1] if (c := _CPU.search(log)) else None
     rows = {}
     for m in filter(None, map(_LOGGED.match, log.splitlines())):
         row = (m[1], m[2], float(m[3]), float(m[4]))
         if row[:2] not in rows or row[2] < rows[row[:2]][2]: rows[row[:2]] = row
-    return SpeedCosts(rows.values(), cpu)
+    return SpeedCosts(rows.values(), cpu, platform)
 
 def _run_costs(cmd, path, timeout, native=False, env=None):
     "The rows that `logged_costs` reads from what `cmd` prints, run in the package at `path` with `<NAME>_COSTS` set. A case over its budget still gives its row."
     path = Path(path).expanduser()
     name = tomllib.loads((path/'Cargo.toml').read_text())['package']['name']
     p = subprocess.run(cmd, cwd=path, capture_output=True, text=True, timeout=timeout, env=os.environ | {f'{name.upper()}_COSTS': '1'} | (NATIVE if native else {}) | (env or {}))
-    costs = logged_costs(p.stdout + p.stderr)
+    costs = logged_costs(p.stdout + p.stderr, _platform())
     if p.returncode and not costs: raise ValueError(p.stdout + p.stderr)
     return costs
 
@@ -373,24 +384,24 @@ def _budget(section, cost, untimed):
     return Context(prec=2, rounding=ROUND_CEILING).create_decimal(repr(max(0.5, (4 if untimed else 2)*cost)))
 
 def set_budgets(
-    native=(), # `SpeedCosts` from each run that counts for the native budgets, such as `speed_costs()`, `cargo_costs(path)` and `logged_costs(log)`
+    native=(), # `SpeedCosts` from each run that counts for the native budgets, such as `speed_costs()`, `cargo_costs(path)` and `logged_costs(log)`. Each run sets the budgets of its own `platform`
     wasm=(), # `SpeedCosts` from each run that counts for the wasm budgets
-    path=_SPEED, # The budget file to rewrite: basedpl's `tests/speed.txt`, or rustymath's
+    path=_SPEED, # The budget file to rewrite: basedpl's `tests/speed.txt`, or rustymath's `tests/speed.txt` or `tests/speed_python.txt`
     cases=None, # A case's code, or a list of codes, whose budgets to change; None: every case
     sections=None, # A section's name, or a list of names, whose budgets to change; None: every section
-    untimed=False # Whether the runs are Mac runs of cases that CI hasn't timed yet. A budget in copies is then four times the cost, as `speed.txt`'s header says
+    untimed=False # Whether the runs are Mac runs of cases that CI hasn't timed yet. They then set the Linux and wasm budgets, and a budget in copies is four times the cost, as the file's header says
 ):
     "Rewrite each budget in `path` under the rule in its header, from the case's worst cost in the runs that count. A case with no cost, or outside `cases` or `sections`, keeps its budget. Returns the budgets that changed."
     if isinstance(cases, str): cases = [cases]
     if isinstance(sections, str): sections = [sections]
     worst = {}
-    for i, runs in ((1, native), (2, wasm)):
-        for costs in runs:
-            for s, c, cost, _ in costs:
-                if cases is not None and c not in cases: continue
-                if sections is not None and s not in sections: continue
-                if not math.isfinite(cost): raise ValueError(f'{s} {c} costs {cost}')
-                worst[s, c, i] = max(cost, worst.get((s, c, i), cost))
+    for costs, build in [(r, 'linux' if untimed else r.platform) for r in native] + [(r, 'wasm') for r in wasm]:
+        if build not in _BUDGETS: raise ValueError(f"a native run's platform must be 'macos' or 'linux', not {build!r}")
+        for s, c, cost, _ in costs:
+            if cases is not None and c not in cases: continue
+            if sections is not None and s not in sections: continue
+            if not math.isfinite(cost): raise ValueError(f'{s} {c} costs {cost}')
+            worst[s, c, build] = max(cost, worst.get((s, c, build), cost))
     path = Path(path)
     lines, section, changes = path.read_text().split('\n'), None, Budgets()
     for k, line in enumerate(lines):
@@ -399,8 +410,8 @@ def set_budgets(
             section = m[1]
             continue
         fields = line.split('\t')
-        for i, build in ((1, 'native'), (2, 'wasm')):
-            if (cost := worst.get((section, fields[0], i))) is None: continue
+        for i, build in enumerate(_BUDGETS, 1):
+            if i >= len(fields) or (cost := worst.get((section, fields[0], build))) is None: continue
             new = f'{_budget(section, cost, untimed).normalize():f}'
             if new != fields[i]: changes.append((section, fields[0], build, fields[i], new))
             fields[i] = new

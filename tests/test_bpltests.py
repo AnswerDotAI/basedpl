@@ -77,14 +77,16 @@ def test_incremental_export(tmp_path):
 
 def test_set_budgets(tmp_path):
     path = tmp_path/'speed.txt'
-    path.write_text('# `⌽v` has no CI figure yet.\n[setup]\nn←4\n[copies]\n-v\t2.8\t3.4\n⌽v\t3\t4.8\n[widths] •prefs ["float":32]\n-v\t0.83\t0.79\n')
-    mac = SpeedCosts([('copies', '-v', 1.37, 3.4), ('widths', '-v', 0.55, 0.83)])
+    path.write_text('# `⌽v` has no CI figure yet.\n[setup]\nn←4\n[copies]\n-v\t2.8\t2.8\t3.4\n⌽v\t3\t3\t4.8\n[widths] •prefs ["float":32]\n-v\t0.83\t0.83\t0.79\n')
+    mac = SpeedCosts([('copies', '-v', 1.37, 3.4), ('widths', '-v', 0.55, 0.83)], platform='macos')
     stamp = '2026-10-12T00:58:18.5848621Z '
     ci = logged_costs(f'{stamp}model name\t: CPU A\n{stamp}copies -v: 2.04, budget 3.4\n{stamp}widths -v: 0.60, budget 0.83\n')
     ci_wasm = logged_costs(f'{stamp}model name\t: CPU B\n{stamp}copies ⌽v: 0.10, budget 4.8\n')
     changes = set_budgets(native=[mac, ci], wasm=[ci_wasm], path=path)
     assert path.read_text() == ('# `⌽v` has no CI figure yet.\n'
-                                '[setup]\nn←4\n[copies]\n-v\t4.1\t3.4\n⌽v\t3\t0.5\n[widths] •prefs ["float":32]\n-v\t0.85\t0.79\n')
-    assert len(changes) == 3
-    set_budgets(native=[SpeedCosts([('copies', '-v', 3, 3.4), ('widths', '-v', 0.7, 0.85)])], path=path, cases='-v', sections='widths')
-    assert '[copies]\n-v\t4.1\t3.4\n' in path.read_text() and '[widths] •prefs ["float":32]\n-v\t0.95\t0.79\n' in path.read_text()
+                                '[setup]\nn←4\n[copies]\n-v\t2.8\t4.1\t3.4\n⌽v\t3\t3\t0.5\n[widths] •prefs ["float":32]\n-v\t0.8\t0.85\t0.79\n')
+    assert len(changes) == 4
+    set_budgets(native=[SpeedCosts([('copies', '-v', 3, 3.4), ('widths', '-v', 0.7, 0.85)], platform='linux')], path=path, cases='-v', sections='widths')
+    assert '[copies]\n-v\t2.8\t4.1\t3.4\n' in path.read_text() and '[widths] •prefs ["float":32]\n-v\t0.8\t0.95\t0.79\n' in path.read_text()
+    set_budgets(native=[SpeedCosts([('copies', '⌽v', 2, 3)], platform='macos')], path=path, untimed=True)
+    assert '⌽v\t3\t8\t0.5\n' in path.read_text()

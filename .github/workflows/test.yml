@@ -17,7 +17,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       # The repository has no `Cargo.lock`. Creating one first makes rust-cache's key change when a dependency publishes a new version.
       - run: cargo generate-lockfile
-      # The `Speed` workflow restores this cache and the `wasm` job's, by their `shared-key`.
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: native
@@ -41,6 +40,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - run: cargo generate-lockfile
+      # The `Speed` workflow's `wasm` job restores this cache, by its `shared-key`.
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: wasm

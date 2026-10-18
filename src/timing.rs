@@ -105,6 +105,34 @@ pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHand
     Ok(result)
 }
 
+/// Times every case in `text` as `costs` does, then times each case over this machine's native budget again, after each pause in `rustymath::timing::retried`. `print` gets every first cost when `all` is set, and each retry's earlier and new costs. Each line gives a case's section, code, cost and native budget, in the form that `basedpl.bpltests.logged_costs` reads. A case with no native budget is never over. Gives the lines of the cases still over budget after the last retry. `tests/speed.rs` and `bpl --costs` both measure with it.
+#[cfg(not(web))]
+pub fn measured(text: &str, all: bool, mut print: impl FnMut(&str)) -> Result<Vec<String>, String> {
+    use rustymath::timing::{retried, NATIVE_COLUMN};
+    fn budget<'a>(c: &Case<'a>) -> Option<&'a str> { c.budgets.get(NATIVE_COLUMN).copied() }
+    let line = |c: &Case| format!("{} {}: {:.2}, budget {}", c.section, c.code, c.cost, budget(c).unwrap_or("-"));
+    let over = |c: &Case| budget(c).and_then(|b| b.parse::<f64>().ok()).is_some_and(|b| c.cost > b);
+    let interrupt = InterruptHandle::default();
+    let mut first = costs(text, None, &interrupt)?;
+    if all { for c in &first { print(&line(c)); } }
+    first.retain(over);
+    let mut failed = Ok(());
+    let over_budget = retried(first, |cases, pause| {
+        for c in &cases { print(&format!("{}: over, timed again after {pause} s", line(c))); }
+        let codes: Vec<&str> = cases.iter().map(|c| c.code).collect();
+        match costs(text, Some(&codes), &interrupt) {
+            Ok(mut retimed) => {
+                retimed.retain(|c| cases.iter().any(|f| (f.section, f.code) == (c.section, c.code)));
+                for c in &retimed { print(&line(c)); }
+                retimed.into_iter().filter(over).collect()
+            }
+            Err(e) => { failed = Err(e); Vec::new() }
+        }
+    });
+    failed?;
+    Ok(over_budget.iter().map(line).collect())
+}
+
 /// The reply to the worker's `timing` request, which gives `speed`, text in `speed.txt`'s format whose first section is `[setup]`, the `prefs` its session starts with, and the `cases` to time. The reply gives the setup's `n` and each case's time in seconds and in copies, or the evaluation that failed. Each case's copy is timed just before the case. An optional `threads` sets how many threads each case's rustymath calls split across, for a scaling check. Without it they run on the timing thread alone, as in the speed test.
 pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
     let _lock = timing_lock()?;

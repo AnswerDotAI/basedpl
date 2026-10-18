@@ -17,8 +17,8 @@ const RETRY_PAUSES = [0.1, 1];
 assert.ok(process.execArgv.includes('--no-liftoff'), 'run with node --no-liftoff');
 test('each case in speed.txt takes no longer than its wasm budget', async () => {
     const speed = readFileSync(new URL('speed.txt', import.meta.url), 'utf8');
-    const line = ({ section, code, budgets: [, budget], cost }) => `${section} ${code}: ${cost.toFixed(2)}, budget ${budget}`;
-    const over = ({ budgets: [, budget], cost }) => cost > Number(budget);
+    const line = ({ section, code, budgets: [, , budget], cost }) => `${section} ${code}: ${cost.toFixed(2)}, budget ${budget}`;
+    const over = ({ budgets: [, , budget], cost }) => cost > Number(budget);
     const all = costs(speed);
     if (process.env.BASEDPL_COSTS) for (const c of all) console.log(line(c));
     let failures = all.filter(over);
