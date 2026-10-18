@@ -12,7 +12,7 @@ Hanzi are ordinary name characters by default. Enable their glyph spellings with
 
 The setting persists across inputs and loaded files. When enabled, simplified, traditional and APL spellings can be mixed. `+/`, `加总`, `加總` and `加/` all name the same function. Each alias retains the whole glyph's meaning in both valences. The [notation preference](system/prefs.qmd) changes printed functions, not accepted input.
 
-`是` names assignment `←`: `mean是加总除数` defines the mean without spaces. `内` (`內`) names the inner-product operator `.`. Ordinary `.` remains the usual spelling for fields and indexing, as in `record.field` and `a.[i]`. Hanzi inside strings and comments remain ordinary text. [Hanzi as mathematical notation](hanzi-notation.ipynb) and [汉字 BPL](hanzi-notation-zh.ipynb) introduce the notation through examples.
+`是` names assignment `←`: `mean是加总除数` defines the mean without spaces. `内` (`內`) names the inner-product operator `.`. Ordinary `.` remains the usual spelling for fields and indexing, as in `record.field` and `a.[i]`. Hanzi inside strings and comments remain ordinary text. [Hanzi as notation](hanzi-notation.ipynb) and [汉字 BPL](hanzi-notation-zh.ipynb) introduce the notation through examples.
 
 ## Names
 
