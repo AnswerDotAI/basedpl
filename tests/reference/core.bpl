@@ -893,6 +893,32 @@ k←0 2 1 2 ⋄ k⍚[- ⊢ 10×] 1 2 3 4   ⍝ ¯1 20 3 40
 ⍝ — A result of one item spreads across each of its cells, even where other cases' cells differ in shape
 0 1 2⍚[5 (1↓)⍤1 ⊢] [1 2 3⋄4 5 6⋄7 8 9]   ⍝ [5 5 5⋄5 6 0⋄7 8 9]
 
+⍝ agenda:singleton-fill — A one-item list fills a cell even when only one cell picks its case
+0 1⍚[[5] ⊢] [1 2 3⋄4 5 6]   ⍝ [5 5 5⋄4 5 6]
+
+⍝ agenda:constant-fill-shape — When every result fills, the argument gives the cell shape
+0 0⍚[0 ⊢] [1 2 3⋄4 5 6]   ⍝ [0 0 0⋄0 0 0]
+
+⍝ agenda:result-keys — A case's result keys align with the cells that picked it
+x←["a":1 "b":2 "c":3]
+p←{["a":0 "b":1 "c":1]} ⋄ f←{⌽⍵+0j1}
+p⍚[⊢ f] x
+⍝ =>
+["a":1 "b":2j1 "c":3j1]
+
+⍝ agenda:cell-names — Conflicting result-cell names drop, as in ordinary assembly
+m←["r":2 "c":2]⍴⍳4
+⍴0 1⍚[{["r":1 "a":2]⍴⍵} {["r":1 "b":2]⍴⍵}] m
+⍝ =>
+["r":2 2]ₓ
+
+⍝ agenda:padded-fill-keys — A no-case fill keeps the keys that padded result cells agree on
+r←["a":1 "b":2 "c":3] ⋄ x←[r⋄r⋄r]
+0 1 $n⍚[⊢ {[⍵⋄]}] x
+⍝ =>
+r←["a":1 "b":2 "c":3]
+0 1 2⍚[⊢ {[⍵⋄]} 0] [r⋄r⋄r]
+
 ⍝ — The selector's axes pair with the argument's by name, and cells of the argument's rank return to its axes
 m←["i":2 "j":3]⍴⍳6 ⋄ {4<+⌿⍵}⍚[⊢ -] m   ⍝ ["i":2 "j":3]⍴0 ¯1 ¯2 3 ¯4 ¯5
 
@@ -3988,6 +4014,13 @@ conv←{
   [same image (•storage w).pending 0=≢e.forced.function 0=≢ei.forced.function 0=≢ei.accumulations.items]
 }
 conv 0   ⍝ 6⍴$t
+
+⍝ fusion:reshaped-transpose-product — A product reads a reshaped pending transpose in its new matrix dimensions
+x←[2 65536]⍴⍳131072
+y←65536⍴1
+([2 65536]⍴⍉x)+.×y
+⍝ =>
+3221192704 5368676352
 
 ⍝ — Unselected backing values do not change whole-array numeric policy
 v←(262144⍴1E20),∞ ⋄ r←262144↑v

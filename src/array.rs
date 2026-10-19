@@ -77,6 +77,23 @@ impl Layout {
     pub fn floats(&self, width: FloatWidth, data: impl IntoIterator<Item = f64>) -> Result<Value, ErrorKind> {
         Value::floats(self.shape(), width, data)?.with_layout(self.clone())
     }
+    /// The layout that cells share when assembled by trailing-axis agreement. Shorter cells pad with fill; keys survive only along unpadded axes, and keys and names must agree.
+    pub(crate) fn assembled<'a>(cells: impl Iterator<Item = &'a Self> + Clone) -> Result<Self, ErrorKind> {
+        let rank = cells.clone().map(|c| c.shape().len()).max().unwrap_or(0);
+        let mut shape = vec![0; rank];
+        for cell in cells.clone() {
+            let pad = rank - cell.shape().len();
+            for (axis, len) in shape.iter_mut().enumerate() { *len = (*len).max(if axis < pad { 1 } else { cell.shape()[axis - pad] }); }
+        }
+        let (mut keys, mut names) = (Vec::with_capacity(rank), Vec::with_capacity(rank));
+        for axis in 0..rank {
+            let cell_axis = |cell: &Self| axis.checked_sub(rank - cell.shape().len());
+            let unpadded = cells.clone().all(|c| cell_axis(c).map_or(1, |a| c.shape()[a]) == shape[axis]);
+            keys.push(if unpadded { agreed(cells.clone().map(|c| cell_axis(c).and_then(|a| c.keys(a)))) } else { None });
+            names.push(agreed(cells.clone().map(|c| cell_axis(c).and_then(|a| c.name(a)))));
+        }
+        Ok(Self::from(shape).with_keys(keys)?.inherit_names(names))
+    }
     /// The array with this layout holding `cells`, as `Value::assemble` gives it.
     pub fn assemble(&self, cells: &[Value], empty_cell: &Value) -> Result<Value, ErrorKind> {
         Value::assemble_layout(self, cells, empty_cell, Widening::Items)
@@ -739,27 +756,18 @@ impl Value {
         let cells: Vec<_> = self.elements().collect();
         Self::assemble_layout(self.layout(), &cells, &self.prototype(), widening)
     }
-    /// The shape that cells of `shapes` take when assembled by trailing-axis agreement: as many axes as the cell with the most, each as long as the longest cell along it. A cell with fewer axes counts as length 1 along the leading axes it lacks.
-    pub(crate) fn assembled_shape<'a>(shapes: impl Iterator<Item = &'a [usize]> + Clone) -> Vec<usize> {
-        let rank = shapes.clone().map(<[usize]>::len).max().unwrap_or(0);
-        let mut cell_shape = vec![0; rank];
-        for shape in shapes {
-            let pad = rank - shape.len();
-            for (axis, len) in cell_shape.iter_mut().enumerate() { *len = (*len).max(if axis < pad { 1 } else { shape[axis - pad] }); }
-        }
-        cell_shape
-    }
     fn assemble_layout(frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening) -> Result<Self, ErrorKind> {
         if element_count(frame.shape())? != cells.len() { return Err(Kind::Length.into()); }
         if cells.is_empty() { return frame.concat(empty_cell.layout()).collect(vec![], empty_cell.prototype()); }
-        let cell_shape = Self::assembled_shape(cells.iter().map(Value::shape));
+        let cell_layout = Layout::assembled(cells.iter().map(Value::layout))?;
+        let cell_shape = cell_layout.shape();
         let rank = cell_shape.len();
-        let shape = [frame.shape(), &cell_shape].concat();
+        let shape = [frame.shape(), cell_shape].concat();
         let len = generated_len(&shape)?;
-        let cell_len = element_count(&cell_shape)?;
+        let cell_len = element_count(cell_shape)?;
         let mut data = Gather::with_widening(&cells.iter().collect::<Vec<_>>(), len, widening);
         for cell in cells {
-            if cell.shape() == cell_shape.as_slice() { data.extend(cell, 0..cell_len); continue; }
+            if cell.shape() == cell_shape { data.extend(cell, 0..cell_len); continue; }
             let pad = rank - cell.shape().len();
             let fill = cell.prototype();
             for i in 0..cell_len {
@@ -775,16 +783,7 @@ impl Value {
                 if inside { data.push(cell, source) } else { data.fill(&fill, 1) }
             }
         }
-        let mut keys = frame.all_keys();
-        let mut names = (0..frame.shape().len()).map(|a| frame.name(a).cloned()).collect::<Vec<_>>();
-        for axis in 0..rank {
-            let cell_axis = |cell: &Value| axis.checked_sub(rank - cell.shape().len());
-            // As in arithmetic, an unkeyed or unnamed cell agrees with the others. Keys also need every cell to fill the axis without padding.
-            let unpadded = cells.iter().all(|c| cell_axis(c).map_or(1, |a| c.shape()[a]) == cell_shape[axis]);
-            keys.push(if unpadded { agreed(cells.iter().map(|c| cell_axis(c).and_then(|a| c.keys(a)))) } else { None });
-            names.push(agreed(cells.iter().map(|c| cell_axis(c).and_then(|a| c.axis_name(a)))));
-        }
-        data.finish(Layout::from(shape).with_keys(keys)?.inherit_names(names), || cells[0].prototype())
+        data.finish(frame.concat(&cell_layout), || cells[0].prototype())
     }
 
     fn fill_array(&self) -> Self {

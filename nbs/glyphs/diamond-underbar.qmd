@@ -18,7 +18,7 @@ choose←>⍚[- ÷] ⋄ 12 choose 3                  ⍝ 4
 
 ## A case for each cell
 
-Any other selector picks a case for each cell of the argument. Unnamed axes of the selector take the argument's leading axes, and a named axis takes the argument's axis with that name. The argument's other axes form its cells. Each case runs once, on the list of all the cells that pick it. It gives one result for each of those cells, or a result with exactly one item, which fills them all, as `@` fills its selection. That item can be a single value or a list of one, such as `[¯2]`. A case that no cell picks doesn't run. Below, `√` never sees a negative number.
+Any other selector picks a case for each cell of the argument. Unnamed axes of the selector take the argument's leading axes, and a named axis takes the argument's axis with that name. The argument's other axes form its cells. Each case runs once, on the list of all the cells that pick it. It gives one result for each of those cells, paired by key where both lists have keys, or a result with exactly one item, which fills them all, as `@` fills its selection. That item can be a single value or a list of one, such as `[¯2]`. A case that no cell picks doesn't run. Below, `√` never sees a negative number.
 
 ```bpl
 (0≤)⍚[0 √] ¯4 9 16                 ⍝ 0 3 4
@@ -44,7 +44,7 @@ m←["i":2 "j":3]⍴⍳6
 {4<+⌿⍵}⍚[⊢ -] m                    ⍝ ["i":2 "j":3]⍴0 ¯1 ¯2 3 ¯4 ¯5
 ```
 
-A NaN in the selector picks no case, and its cell gets the result's fill. Results keep their kinds, as Each's results do. Results whose cells differ in shape are padded, as Rank pads them, but a single value still fills every item of its cells. An argument with no cells gives an empty result: as Each does with prototypes, the case that the selector's fill picks runs on no cells, and the result is empty, with that case's cells.
+A NaN in the selector picks no case, and its cell gets the result's fill. Results keep their kinds, as Each's results do. Result cells keep the keys and names they agree on and pad differing shapes, as Rank does. A single value fills every item of its cells; when every result fills, the argument gives the cell shape. An argument with no cells gives an empty result: as Each does with prototypes, the case that the selector's fill picks runs on no cells, and the result is empty, with that case's cells.
 
 ```bpl
 0 1 2⍚[5 (1↓)⍤1 ⊢] [1 2 3⋄4 5 6⋄7 8 9]   ⍝ [5 5 5⋄5 6 0⋄7 8 9]

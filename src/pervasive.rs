@@ -1634,8 +1634,9 @@ fn mapped_product(f: Primitive, g: Primitive, x: &Value, y: &Value, size: [usize
         _ => return None,
     };
     let held = |v: &Value| (v.clone(), Mapping::Linear(1));
-    let read = |m: Option<(Value, Mapping)>, v: &Value| m.map_or_else(|| (held(v), Orientation::Normal), |(s, m)| untransposed(s, m));
-    let (((xs, xm), ox), ((ys, ym), oy)) = (read(mx, x), read(my, y));
+    let [rows, n, cols] = size;
+    let read = |m: Option<(Value, Mapping)>, v: &Value, shape| m.map_or_else(|| (held(v), Orientation::Normal), |(s, m)| untransposed(s, m, shape));
+    let (((xs, xm), ox), ((ys, ym), oy)) = (read(mx, x, [rows, n]), read(my, y, [n, cols]));
     macro_rules! product { ($t:ty) => {{
         let (a, b) = (read_as::<$t>(&xs)?, read_as::<$t>(&ys)?);
         <$t>::build(shape.to_vec(), PlusTimes.inner_mapped(Mapped { data: &a, mapping: &xm }, Mapped { data: &b, mapping: &ym }, [ox, oy], size))
@@ -1646,10 +1647,9 @@ fn mapped_product(f: Primitive, g: Primitive, x: &Value, y: &Value, size: [usize
         _ => None,
     }
 }
-/// The source and map that a product reads for an operand that `fusion::source` gives as `s` read through `m`, with the operand's orientation. Where `m` transposes `s` as a matrix, the product reads `s` itself, through its own source where it's a pending copy, as a transposed operand. A transpose is then never built, even over a pending copy whose map doesn't compose with it.
-fn untransposed(s: Value, m: Mapping) -> ((Value, Mapping), Orientation) {
-    let &[r, c] = s.shape() else { return ((s, m), Orientation::Normal) };
-    if m.affine(&[c, r]) != Some((0, vec![1, c as isize])) { return ((s, m), Orientation::Normal) }
+/// The source and map that a product reads for an operand that `fusion::source` gives as `s` read through `m`, with the operand's orientation. Where `m` transposes the matrix of `shape` that the product takes, the product reads `s` itself, through its own source where it's a pending copy, as a transposed operand. A reshape may change those matrix dimensions without changing the map.
+fn untransposed(s: Value, m: Mapping, shape @ [rows, _]: [usize; 2]) -> ((Value, Mapping), Orientation) {
+    if m.affine(&shape) != Some((0, vec![1, rows as isize])) { return ((s, m), Orientation::Normal) }
     (crate::fusion::source(&s).unwrap_or_else(|| (s, Mapping::Linear(1))), Orientation::Transpose)
 }
 /// `x f.g y` for integers, laid out as `rows`×`n` and `n`×`cols`, through rustymath's tiled inner products: `+.×`, `⌈.+`, `⌊.+`, `+.=` and `+.≠`. `None` for any other pair, and where a result could overflow 64 bits. The per-row path then computes it exactly.
