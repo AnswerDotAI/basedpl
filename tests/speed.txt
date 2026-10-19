@@ -1,5 +1,5 @@
 # The cases that `tests/speed.rs` times in the native build and `tests/wasm-speed.mjs` times in the browser build. Each case line holds the code, two native budgets and a wasm budget, separated by tabs. The first native budget is for macOS on Apple silicon, where matrix products and decompositions run on Accelerate. The second is for Linux on CI's x86 runner, where they run on rustymath's own kernels. `rustymath::timing::NATIVE_COLUMN` picks the native budget a machine checks. Each section starts with its name in brackets and the prefs its session starts with. Every session then runs the lines under the `[setup]` before its section.
-# Budgets in `[copies]`, `[exact]`, `[images]`, `[objectives]`, `[calls]`, `[derivatives]` and `[structure]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. It is 0.25 more than the fraction measured where the budget applies: on a Mac for the macOS budget, on CI's runner for the Linux budget, and the worse of the two in the browser module for the wasm budget.
+# Budgets in `[copies]`, `[exact]`, `[images]`, `[objectives]`, `[calls]`, `[derivatives]`, `[structure]` and `[maps]` count copies of the `n` items that the section's setup makes. A budget in `[widths]` is the most that the time in that section's 32-bit session may be, as a fraction of the time in the `[exact]` session. It is 0.25 more than the fraction measured where the budget applies: on a Mac for the macOS budget, on CI's runner for the Linux budget, and the worse of the two in the browser module for the wasm budget.
 # A native budget in copies is twice the most the case has cost on its own platform: on a Mac for the macOS budget, on CI's runner for the Linux budget. A wasm budget in copies is twice the most the case has cost on a Mac and on CI's runner, in the module that `cargo wasm` builds. Each budget in copies is at least 0.5.
 # A case in copies that CI hasn't timed yet has a Linux budget of four times its Mac cost, timed with `native=True` where it runs matrix products or decompositions, and a wasm budget of four times its Mac cost in the browser module. A `[widths]` case that CI hasn't timed yet has its Mac fraction plus 0.25. The next CI run that logs every cost, a push's `Test` run or a `Speed` run, sets their budgets under the rules above.
 # The CI figures come from the `Test` and `Speed` runs that last set each budget. Every one ran on the AMD Ryzen 9 7950X3D 16-Core Processor.
@@ -132,6 +132,12 @@ i (+/⊢)⌸ v	200	370	220
 # Few distinct indices take the same loop. Most of the time goes to reading the float positions that `10|jv` gives.
 {h←10⍴0 ⋄ h.[10|jv]+←1 ⋄ h}0	36	58	47
 {h←10⍴0ₓ ⋄ h.[10|jv]+←1ₓ ⋄ h}0	31	64	49
+# `@` with a mask changes the items or rows that the mask picks. `⍚` with a selector for each cell runs each case once, on the cells that pick it.
+√@[0≤]s	16	32	35
+(0≤)⍚[0 √] s	18	35	38
+cnt⍚[- ⊢ 10×] v	40	80	77
+-@[{side↑b}] m	13	26	24
+(side↑b)⍚[⊢ -] m	38	75	89
 # An approximate divisor reads the integers as floats. Each item then needs a float division and a floor within tolerance.
 3|jv	5.1	5.6	12
 # rustymath's `exp` evaluates a polynomial of 10 terms for each item, and `ln` one of 7 terms and a division.
@@ -285,6 +291,10 @@ img×1-0.5×img	6.1	5.5	6.8
 +/[4500000 8]⍴flat	1.7	1.7	1.7
 # The comparison's Booleans count into a byte for each pixel.
 +/img>0.5	1.9	1.8	3.4
+# A comparison that a later call reads runs in that call's graph, writing 1 and 0 as floats rather than storing Booleans.
++/flat×flat>0.5	3.8	7.6	11
+# Here the calls hold three blocks of results at once, so the graph runs smaller blocks, whose buffers stay in the cache.
+((flat-0.5)×flat+0.5)+(flat+1)×flat-1	11	22	32
 [setup]
 mx←¯0.5+¿[1024 64]⍴0 ⋄ my←1○+/mx ⋄ mp←["w":0.25×¯0.5+¿[64 256]⍴0 "b":256⍴0 "v":0.1×¯0.5+¿256⍴0 "c":0]
 mlp←{[x y]←⍺ ⋄ [w b v c]←⍵ ⋄ h←7○b+⍤1 x+.×w ⋄ (+/÷≢)⊼y-c+h+.×v}
@@ -329,6 +339,8 @@ sv←¿1048576⍴0 ⋄ n←≢sv ⋄ sm←[n÷2;2]⍴sv ⋄ sq←[1024 1024]⍴s
 2×1⌽sv+1	4.5	4.4	4.5
 2×(10↓sv)+1	4.4	7.6	4.8
 +/(⌽sv)×sv	5.8	5.9	8.8
+# A reversed read moves only under a call that reads one array. `sv×sv+0.5` reads two, so it runs forward first, and `2×` then reads its result backwards.
+2×⌽sv×sv+0.5	6.3	13	18
 # A copy of a copy that fills or wraps, such as a rotate of an overtake, walks the inner copy into a buffer, then reads that buffer.
 2×¯1⌽(n+2)↑sv	4	7.1	4.1
 # Floor returns exact integers, so this reads a pending copy through an ordinary kernel rather than fusion.
@@ -361,3 +373,28 @@ sv←¿1048576⍴0 ⋄ n←≢sv ⋄ sm←[n÷2;2]⍴sv ⋄ sq←[1024 1024]⍴s
 # A transpose of a million floats is a pending copy. A product reads it where it lies, as a transposed matrix. A fused call reads it in blocks of whole rows, as many as a cache line holds items.
 (⍉sq)+.×vq	0.5	8.7	11
 2×⍉sq	6.8	12	11
+[setup]
+v←¿65536⍴0 ⋄ n←≢v ⋄ sg←¿[128 128]⍴0 ⋄ g←0.6<¿[128 128]⍴0 ⋄ X←¿[4096 8]⍴0 ⋄ thz←¿8⍴0 ⋄ vv←¿8⍴0
+f←{+/⊼1○⍵} ⋄ loss←{th←⍵ ⋄ +/{⊼1○+/th×⍵}⍤1⊢X} ⋄ lossw←{+/⊼1○X+.×⍵} ⋄ hv←{+/vv×loss∂ ⍵} ⋄ hvw←{+/vv×lossw∂ ⍵}
+life←{s←+/,⍵ ⋄ (s=3)∨(1 1⌷⍵)∧s=4} ⋄ lifew←{s←+/+/¯3 ¯3↕⍵ ⋄ (s=3)∨⍵∧s=4} ⋄ sq←{⍵×⍵} ⋄ sq∂←{⍺×3×⍵}
+[maps]
+# Each, Rank and `⌺` call their operand once for each cell. Each mapped case sits beside the same computation written with whole arrays, whose cost a map that runs once over the whole frame should approach.
+{⍵×⍵+1}¨v	7000	15000	22000
+v×v+1	4.9	11	11
+{+/,⍵}⌺3 3⊢sg	3700	7500	13000
++/+/¯3 ¯3↕sg	11	22	25
+# The Game of Life on a 128 by 128 Boolean grid, as a stencil and with padded windows.
+life⌺3 3⊢g	8200	17000	28000
+lifew g	10	24	25
+# A guard on each cell's value.
+{⍵<0?0;⍵}¨v	5600	12000	19000
+# The gradient of a loss mapped over the rows of `X`, whose parameter every row shares, then per-example gradients, then a Hessian–vector product through the mapped loss. Each sits beside its form with `+.×`, or its closed form.
+loss∂ thz	4600	9200	15000
+lossw∂ thz	9	23	33
+{f∂ ⍵}⍤1⊢X	5300	11000	17000
+2×(1○X)×2○X	18	35	61
+hv∂ thz	14000	27000	40000
+hvw∂ thz	22	49	77
+# An attached rule inside Each, beside the same rule on the whole array.
+{+/sq¨⍵}∂ v	34000	70000	110000
+{+/sq ⍵}∂ v	15	30	34

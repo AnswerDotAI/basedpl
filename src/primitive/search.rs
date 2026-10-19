@@ -62,7 +62,7 @@ pub(super) fn self_classify(right: &Value, span: &Context<'_>) -> Result<Value, 
     let (classes, major) = (distinct(right, span)?, major_axis(right));
     let n = major.shape()[0];
     let mut data = vec![false; classes.firsts.len() * n];
-    for (row, these) in data.chunks_mut(n.max(1)).zip(classes.each()) { for &p in these { row[p as usize] = true } }
+    for (row, these) in data.chunks_mut(n.max(1)).zip(classes.groups.each()) { for &p in these { row[p as usize] = true } }
     Layout::from(vec![classes.firsts.len()]).concat(&major).booleans(data).error_at(span, "invalid classification")
 }
 
@@ -77,7 +77,7 @@ fn distinct(right: &Value, span: &Context<'_>) -> Result<rustymath::search::Grou
 pub(super) fn duplicates(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (classes, major) = (distinct(right, span)?, major_axis(right));
     let mut mask = vec![false; major.shape()[0]];
-    for (&first, &size) in classes.firsts.iter().zip(&classes.sizes) { mask[first] = size > 1 }
+    for (&first, &size) in classes.firsts.iter().zip(&classes.groups.sizes) { mask[first] = size > 1 }
     replicate(&major.booleans(mask).error_at(span, "invalid duplicates mask")?, right, None, false, span)
 }
 
@@ -104,8 +104,8 @@ pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
 pub(super) fn groups(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let classes = distinct(right, span)?;
     let groups = match right.keys(0) {
-        None => crate::search::class_positions(classes, right.shape().first().copied().unwrap_or(1)),
-        Some(_) => classes.each().map(|these| positions(right, these.to_vec())).collect(),
+        None => crate::search::class_positions(classes.groups, right.shape().first().copied().unwrap_or(1)),
+        Some(_) => classes.groups.each().map(|these| positions(right, these.to_vec())).collect(),
     };
     let groups = groups.error_at(span, "invalid groups")?;
     Value::from_parts(vec![groups.len()], groups, positions(right, Vec::new()).error_at(span, "invalid groups")?).error_at(span, "invalid groups")

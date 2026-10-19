@@ -259,8 +259,9 @@ impl<'a> Items<'a> {
         if let Some((n, _)) = converted { return Ok(Cow::Owned(n)); }
         self.each(Ok, real::integer, Number::integer).map(Cow::Owned)
     }
-    /// Each item as a signed position: an integer, or `None` for NaN, which reads a fill. Floats decode as rustymath's `structure::float_position` reads them. A fraction, an infinity or a non-number is DOMAIN.
+    /// Each item as a signed position: an integer, or `None` for NaN, which reads a fill. Compact storage decodes through rustymath's `structure::signed_positions`, and every float as `structure::float_position` reads it. A fraction, an infinity or a non-number is DOMAIN.
     pub(crate) fn positions(&self) -> Result<Vec<Option<i64>>, ErrorKind> {
+        if let Self::Compact(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) = *self { return rustymath::structure::signed_positions(view).map_err(|_| Kind::Domain.into()); }
         let real = |y: f64| -> Result<Option<i64>, ErrorKind> { rustymath::structure::float_position(y).map_err(|_| Kind::Domain.into()) };
         self.each(|n| Ok(Some(n)), real, |n| match n.as_float() { Some(y) => real(y), None => n.integer().map(Some) })
     }
@@ -467,16 +468,19 @@ impl Gather {
         if self.leveled(item) { return self.each(item, false, |g, s| g.fill(s, n)); }
         if !self.compact_fill(item, n) { self.mixed().extend(std::iter::repeat_n(item.clone(), n)) }
     }
-    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one. A later offset wins. A `Steps::FILL` offset writes nothing.
-    pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) {
-        if offsets.is_empty() { return; }
-        if self.leveled(source) { return self.each(source, true, |g, s| g.scatter(offsets, s)); }
+    /// Replaces each item that `writes` reaches with the matching item of `source`, or with its only item when it has one. A later write wins, and a write at a fill writes nothing. A walk writes without listing its positions, through rustymath's `gather::scatter_walk`, which copies cells of adjacent items as slices and cells a stride apart in blocks.
+    pub(crate) fn scatter(&mut self, writes: Writes<'_>, source: &Value) {
+        if writes.is_empty() { return; }
+        if self.leveled(source) { return self.each(source, true, |g, s| g.scatter(writes, s)); }
         let single = source.len() == 1;
         let pick = |k: usize| if single { 0 } else { k };
         self.follow(source.dtype());
-        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::scatter(d, offsets, s, f)) { return; }
+        if copy_into!(&mut self.data, source.as_items(), |d, s, f| match writes {
+            Writes::Offsets(offsets) => rustymath::gather::scatter(d, offsets, s, f),
+            Writes::Walk { base, steps } => rustymath::gather::scatter_walk(d, s, base, steps, f),
+        }) { return; }
         let d = self.mixed();
-        for (k, &o) in offsets.iter().enumerate() { if o != Steps::FILL { d[o] = source.at(pick(k)) } }
+        for (k, &o) in writes.offsets().iter().enumerate() { if o != Steps::FILL { d[o] = source.at(pick(k)) } }
     }
     /// Copies the items of `source` that `steps` reach from `base`, through rustymath's `gather::walk`: one `Steps` for each axis, with the last varying fastest. A `None` offset gives the prototype of `source` in place of the item. Compact storage is copied in one typed loop. A pending copy that the walk reads fewer items of is read through its map, without building it (`fusion::walk_through`).
     pub(crate) fn walk(&mut self, source: &Value, base: usize, steps: &[Steps]) {
@@ -507,6 +511,25 @@ impl Gather {
     }
 }
 
+/// Where a scatter writes: at flat offsets, or at the positions that `steps` reach from `base`, in the order `walk` reads them. A `Steps::FILL` offset, or a fill position, writes nothing.
+#[derive(Clone, Copy)]
+pub(crate) enum Writes<'a> { Offsets(&'a [usize]), Walk { base: usize, steps: &'a [Steps] } }
+
+impl Writes<'_> {
+    /// The flat offset of each write, as `Steps::combined` gives a walk's.
+    pub(crate) fn offsets(&self) -> Cow<'_, [usize]> {
+        match *self { Self::Offsets(offsets) => Cow::Borrowed(offsets), Self::Walk { base, steps } => Cow::Owned(Steps::combined(base, steps)) }
+    }
+    /// Whether there are no writes.
+    pub(crate) fn is_empty(&self) -> bool { match *self { Self::Offsets(offsets) => offsets.is_empty(), Self::Walk { steps, .. } => steps.iter().any(|s| s.len() == 0) } }
+    /// Whether every write is at a fill, which writes nothing, as an empty set of writes is.
+    pub(crate) fn only_fills(&self) -> bool {
+        match *self {
+            Self::Offsets(offsets) => offsets.iter().all(|&o| o == Steps::FILL),
+            Self::Walk { steps, .. } => self.is_empty() || (steps.iter().any(Steps::fills) && self.offsets().iter().all(|&o| o == Steps::FILL)),
+        }
+    }
+}
 /// The fill of compact storage that holds `s`'s element type, which is that storage's prototype.
 fn fill_of<S: Stored>(_: &[S]) -> S { S::FILL }
 

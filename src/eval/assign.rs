@@ -104,7 +104,7 @@ impl Session {
 
     fn update_array(&mut self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> {
         if value.environment() > binding.owner { return Err(span.domain_error("array would export a local closure")); }
-        if self.differentiating() { self.record_write(binding.owner, &binding.name); }
+        if self.transforming() { self.record_write(binding.owner, &binding.name); }
         self.insert_name(binding.owner, &binding.name, Binding::from_element(value));
         Ok(())
     }
@@ -424,6 +424,8 @@ impl Session {
 
     /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. A target at a fill reads the fill, and its write is dropped. An error leaves the array unchanged. When `f` is a pervasive primitive, `pervasive::scatter` combines the targets into the array in place. Where it can't, one call covers all the targets at distinct positions, and repeated positions take rounds. Any other `f` runs once for each target. `•explain` records each path as an accumulation.
     fn write_modified(&mut self, binding: ArrayBinding, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<(), Error> {
+        // The routes below read each target's offset or path, so a walk lists its targets first.
+        if let Some(listed) = selection.listed() { return self.write_modified(binding, &listed, f, right, span); }
         let right = selection.checked(right, &self.at(span))?;
         // The modifier never runs for a target at a fill.
         if let Some((kept, right)) = selection.without_fills(&right, &self.at(span))? { return self.write_modified(binding, &kept, f, &right, span); }
@@ -448,12 +450,9 @@ impl Session {
                     };
                     crate::explain::accumulated(offsets.len(), z.len(), "rounds");
                     // Round r holds the r-th target at each position. Its positions are distinct. One call computes the round from the values that earlier rounds wrote into a copy of the array. The copy then replaces the array.
-                    let (order, sizes) = rustymath::search::grouped(&counts.iter().map(|&c| c as usize).collect::<Vec<_>>(), rounds);
+                    let order = crate::search::grouped_by(&counts, rounds, |c| c as usize, cx)?;
                     let mut current = z.clone();
-                    let mut rest = &order[..];
-                    for size in sizes {
-                        let (targets, more) = rest.split_at(size);
-                        rest = more;
+                    for targets in order.each() {
                         let round = Selection::offsets(targets.iter().map(|&t| offsets[t as usize]).collect());
                         let items = round.read(&current, cx)?;
                         let values = match &unit {

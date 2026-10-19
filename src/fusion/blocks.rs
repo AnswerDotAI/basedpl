@@ -56,9 +56,10 @@ impl Graph {
         let extra_of: Vec<Option<usize>> = (0..self.nodes.len()).map(|k| self.extras.iter().position(|&(j, _)| j == k)).collect();
         let sources: Vec<(Option<Source<F>>, Source<F>)> = self.nodes.iter().map(|node| (node.left.as_ref().map(|o| Source::of(o, &slot)), Source::of(&node.right, &slot))).collect();
         let block = self.block::<F>();
+        let readings: Vec<Reading> = inputs.iter().map(|&(_, m)| reading(m, block)).collect();
         // A cycle shorter than a block reads from its period repeated once to cover a block at any phase. Each run reads it in place there, so it never splits a block into runs.
-        let cycles: Vec<Option<Vec<F>>> = inputs.iter().map(|&(data, m)| match *m {
-            Mapping::Tiled(p) if p < block => Some(data[..p].iter().copied().cycle().take(block + p - 1).collect()),
+        let cycles: Vec<Option<Vec<F>>> = inputs.iter().zip(&readings).map(|(&(data, _), r)| match *r {
+            Reading::Cycle(p) => Some(data[..p].iter().copied().cycle().take(block + p - 1).collect()),
             _ => None,
         }).collect();
         cycles.iter().flatten().for_each(|cycle| tally.copied(cycle.len()));
@@ -71,9 +72,8 @@ impl Graph {
             tally.block();
             let mut from = start;
             while from < end {
-                let to = inputs.iter().fold(end, |to, &(_, m)| match *m {
-                    Mapping::Linear(r) if r >= RUN => to.min((from / r + 1) * r),
-                    Mapping::Tiled(r) if r >= block => to.min((from / r + 1) * r),
+                let to = readings.iter().fold(end, |to, r| match *r {
+                    Reading::Runs(Some(r)) => to.min((from / r + 1) * r),
                     _ => to
                 });
                 let n = to - from;
@@ -122,12 +122,45 @@ impl Graph {
         assert!(ok, "a fusible kernel failed");
     }
 
-    /// Items in each block: `BLOCK`, or the whole rows that an input's map asks for through `Mapping::line_block`, where it skips items as a transpose's does.
-    fn block<F>(&self) -> usize { self.inputs.iter().fold(BLOCK, |n, (_, m)| n.max(m.line_block(size_of::<F>()))) }
+    /// Items in each block: `BLOCK`, halved until the buffers that a block fills at once hold at most `BUFFERED` bytes, or the whole rows that an input's map asks for through `Mapping::line_block`, where it skips items as a transpose's does. A block fills a buffer for each node slot (`slots`) and reads a block of each input at that block size: an input that `reading` copies counts twice, for its buffer and the items it gathers, and a repeated item counts as none.
+    fn block<F>(&self) -> usize {
+        let slots = self.slots().1;
+        let read = |m: &Mapping, block| match (reading(m, block), m) {
+            (Reading::Copied, _) => 2,
+            (_, Mapping::Single | Mapping::Linear(2..)) => 0,
+            _ => 1,
+        };
+        let buffers = |block| slots + self.inputs.iter().map(|(_, m)| read(m, block)).sum::<usize>();
+        let mut block = BLOCK;
+        while block > RUN && buffers(block) * block * size_of::<F>() > BUFFERED { block /= 2; }
+        self.inputs.iter().fold(block, |n, (_, m)| n.max(m.line_block(size_of::<F>())))
+    }
 }
 
 /// Where a graph's last node writes: the slots of the call's result, or one block's floats and Booleans, which the function sees after each block, with the position of the block's first item.
 enum Last<'a, 'b, F> { Slots(pervasive::Out<'a, 'b, F>), Vecs(&'a mut Vec<F>, &'a mut Vec<bool>, &'a mut dyn FnMut(usize, &mut Vec<F>, &mut Vec<bool>)) }
+
+/// How the run loop reads an input in blocks of a given size.
+enum Reading {
+    /// In place, run by run. A run ends at each multiple of the period, where there is one.
+    Runs(Option<usize>),
+    /// From its period, written out once to cover a block at any phase: a cycle shorter than a block.
+    Cycle(usize),
+    /// Copied into a buffer, run by run.
+    Copied,
+}
+
+/// How the run loop reads an input through `m` in blocks of `block` items. Runs end at each repeat of at least `RUN` items and each cycle of at least `block` items, so that each run reads one repeat, or a stretch of one cycle, in place. A shorter repeat copies. A map of steps copies where `Mapping::copies` says most blocks would.
+fn reading(m: &Mapping, block: usize) -> Reading {
+    match *m {
+        Mapping::Linear(r) if r >= RUN => Reading::Runs(Some(r)),
+        Mapping::Linear(r) if r > 1 => Reading::Copied,
+        Mapping::Tiled(p) if p >= block => Reading::Runs(Some(p)),
+        Mapping::Tiled(p) => Reading::Cycle(p),
+        _ if m.copies(block) => Reading::Copied,
+        _ => Reading::Runs(None),
+    }
+}
 
 /// A copy node's results: `x`'s `n` items written to `out`. A graph with a copy node holds floats.
 fn copied<F: Copy>(x: Arg<'_, F>, n: usize, out: pervasive::Out<'_, '_, F>) -> bool {

@@ -795,12 +795,12 @@ a (b b)   ⍝ [1 2;[3 4;3 4]]
 
 ⍝ — Agenda chooses negate for a negative argument
 cases←[- ⊢]
-abs←0≤ ⍚cases
+abs←(0≤)⍚cases
 abs¯3   ⍝ 3
 
 ⍝ — Agenda chooses identity for a nonnegative argument
 cases←[- ⊢]
-abs←0≤ ⍚cases
+abs←(0≤)⍚cases
 abs3   ⍝ 3
 
 ⍝ — A constant selector chooses the second function
@@ -817,15 +817,14 @@ choose←0⍚[{↑⍵} ⊢]
 f←choose [+ ×]
 2 f 3   ⍝ 5
 
-⍝ — A singleton vector is not a unit selector
-,1 ⍚[+ ×]
-⍝ error: RANK ERROR
+⍝ — A singleton vector is a selector for each cell, and its axis expands
+(,0)⍚[- ⊢] 4 5   ⍝ ¯4 ¯5
 
 ⍝ — The cases must be a vector, not a function-containing scalar
 1⍚ ⍬⍴[+]
 ⍝ error: RANK ERROR
 
-⍝ — A selector function must return a unit index
+⍝ — Each axis of a selector needs an axis of the argument to pair with
 {1 2}⍚[+ ×] 3
 ⍝ error: RANK ERROR
 
@@ -860,6 +859,114 @@ f←choose [+ ×]
 choose←{⎕←9 ⋄ 1}⍚[{⎕←1 ⋄ 1÷0} {⎕←2 ⋄ ⍺-⍵}] ⋄ 10 choose 3
 7
 ⍝ ⎕: 9\n2
+
+⍝ — A selector for each cell runs each case only on the cells that pick it
+(0≤)⍚[0 √] ¯4 9 16   ⍝ 0 3 4
+
+⍝ — An index for each cell picks among several cases
+k←0 2 1 2 ⋄ k⍚[- ⊢ 10×] 1 2 3 4   ⍝ ¯1 20 3 40
+
+⍝ — With `⊣` and `⊢` as its cases, a selector picks each item from one of the arguments
+3 1 4 <⍚[⊣ ⊢] 2 5 1   ⍝ 3 5 4
+
+⍝ — A case runs once, on the list of all the cells that pick it
+(0≤)⍚[{⎕←⍵ ⋄ -⍵} √] ¯1 4 ¯9 16
+1 2 9 4
+⍝ ⎕: ¯1 ¯9
+
+⍝ — A unit result fills each cell of its case
+(0≤)⍚[{+/⍵} ⊢] ¯1 4 ¯2   ⍝ ¯3 4 ¯3
+
+⍝ — So does a result of one item, as under `@`
+(0≤)⍚[{1↓⍵} ⊢] ¯1 4 ¯2   ⍝ ¯2 4 ¯2
+
+⍝ — Any other result needs one cell for each cell of its case
+(0≤)⍚[{2↑⍵} ⊢] ¯1 4 ¯2 ¯3
+⍝ error: LENGTH ERROR
+
+⍝ — An array case gives one value for each cell that picks it
+(0≤)⍚[[10 20] ⊢] ¯1 4 ¯2   ⍝ 10 4 20
+
+⍝ — A selector of the leading axis picks a case for each row, and a unit fills the whole row
+(0<⊣/)⍚[1 ⊢] [¯1 2⋄3 4]   ⍝ [1 1⋄3 4]
+
+⍝ — A result of one item spreads across each of its cells, even where other cases' cells differ in shape
+0 1 2⍚[5 (1↓)⍤1 ⊢] [1 2 3⋄4 5 6⋄7 8 9]   ⍝ [5 5 5⋄5 6 0⋄7 8 9]
+
+⍝ — The selector's axes pair with the argument's by name, and cells of the argument's rank return to its axes
+m←["i":2 "j":3]⍴⍳6 ⋄ {4<+⌿⍵}⍚[⊢ -] m   ⍝ ["i":2 "j":3]⍴0 ¯1 ¯2 3 ¯4 ¯5
+
+⍝ — Cells of another rank keep the selector's axes first
+m←["i":2 "j":3]⍴⍳6 ⋄ {4<+⌿⍵}⍚[+/ ⌈/] m   ⍝ ["j":3]⍴3 4 5
+
+⍝ — An empty frame along a named axis keeps the argument's axes in their places
+⍴{4<+⌿⍵}⍚[⊢ -] ["i":2 "j":0]⍴0   ⍝ ["i":2 "j":0]ₓ
+
+⍝ — A keyed selector lines up with the argument by key
+k←["a":1 "b":0] ⋄ k⍚[- ⊢] ["b":4 "a":5]   ⍝ ["b":¯4 "a":5]
+
+⍝ — A cell whose key the selector lacks counts as NaN: it picks no case, and gets the result's fill
+k←["a":1] ⋄ k⍚[- ⊢] ["b":4 "a":5]   ⍝ ["b":0 "a":5]
+
+⍝ — A key that only the selector has is ignored
+["a":1 "c":0]⍚[- 10×] ["b":4 "a":5]   ⍝ ["b":0 "a":50]
+
+⍝ — A left argument lines up with the right argument by position, and a unit goes whole to each case
+10 (0≤⊢)⍚[- +] ¯1 2   ⍝ 11 12
+
+⍝ —
+10 20 (0≤⊢)⍚[- +] ¯1 2 3
+⍝ error: LENGTH ERROR
+
+⍝ — A keyed left argument lines up by key: a key it lacks reads the fill, and a key that only it has is ignored
+["b":10 "a":20 "c":30] (0≤⊢)⍚[- +] ["a":1 "b":¯2]   ⍝ ["a":21 "b":12]
+
+⍝ —
+["a":20] (0≤⊢)⍚[- +] ["a":1 "b":¯2]   ⍝ ["a":21 "b":2]
+
+⍝ — A left argument's axis of length 1 stretches across the frame, as agreement stretches it
+(1 3⍴100 200 300) +@[{1 0 1}] [1 2 3⋄4 5 6⋄7 8 9]   ⍝ [101 202 303⋄4 5 6⋄107 208 309]
+
+⍝ — A case that no cell picks doesn't run
+(0≤)⍚[{÷0} √] 4 9   ⍝ 2 3
+
+⍝ — An argument with no cells gives an empty result, with the cells of the case that the selector's fill picks
+⍴ (0≤)⍚[0 ⊢] 0 3⍴0   ⍝ [0 3]ₓ
+
+⍝ — A case that fails on no cells gives an empty result, as Each's operand does
+{⍵>0}⍚[{÷0} ⊢] ⍬   ⍝ ⍬
+
+⍝ — Selector values decode as positions do, so a negative value counts back from the end
+¯1 0⍚[- ⊢] 4 5   ⍝ 4 ¯5
+
+⍝ —
+2 0⍚[- ⊢] 4 5
+⍝ error: INDEX ERROR
+
+⍝ —
+0.5 0⍚[- ⊢] 4 5
+⍝ error: DOMAIN ERROR
+
+⍝ — A NaN picks no case, and its cell gets the result's fill
+0 1 $n⍚[- ⊢] 4 5 6   ⍝ ¯4 5 0
+
+⍝ — A case of `⊢` leaves its cells where they are, and the other cases' results go around them
+(0>)⍚[⊢ -] ¯1 4 ¯2   ⍝ 1 4 2
+
+⍝ — With a case of `⊢`, a NaN cell still gets the fill
+{1 $n 0}⍚[⊢ -] 4 5 6   ⍝ ¯4 0 6
+
+⍝ — With a case of `⊢`, a result of another kind keeps its kind
+⍕(0>)⍚[⊢ {2ₓ}] ¯1 4 ¯2   ⍝ "2ₓ 4 2ₓ"
+
+⍝ — ⍚ keeps each result's kind, as Each does
+⍕(0≤)⍚[0ₓ √] ¯4 9   ⍝ "0ₓ 3"
+
+⍝ — `f@[p] Y` matches `p⍚[⊢ f] Y`
+(√@[0≤] ¯4 9) ≡ (0≤)⍚[⊢ √] ¯4 9   ⍝ $t
+
+⍝ — The derivative goes through the case that each cell picks
+{+/(⍵>0)⍚[0 √]⍵}∂ 0 1 4   ⍝ 0 0.5 0.25
 
 ⍝⍝ Leading unit axis broadcasting
 
@@ -3303,6 +3410,54 @@ x←["a":1 "b":2 "c":3] ⋄ ["b":20 "a":10]@0 1 x   ⍝ ["a":10 "b":20 "c":3]
 ⍝ — `[p]` picks out the positions where `p` of the argument is true
 0@[1=2|] ⍳5   ⍝ 0 0 2 0 4
 
+⍝ — With `[p]` or positions, a left argument lines up with the right argument by position
+10 20 30 +@[0>] ¯1 2 ¯3   ⍝ 9 2 27
+
+⍝ —
+10 20 30 +@[1 2] 1 2 3   ⍝ 1 22 33
+
+⍝ —
+10 20 +@[1 2] 1 2 3
+⍝ error: LENGTH ERROR
+
+⍝ — A keyed left argument lines up with the right argument by key
+k←["a":1 "b":0] ⋄ ["b":10 "a":20] +@[k⍨] ["a":1 "b":2]   ⍝ ["a":21 "b":2]
+
+⍝ — A key that the left argument lacks reads the fill, and a key that only it has is ignored
+k←["a":1 "b":1] ⋄ ["a":20] +@[k⍨] ["a":1 "b":2]   ⍝ ["a":21 "b":2]
+
+⍝ —
+["b":10 "a":20 "c":30] +@[0 1] ["a":1 "b":2]   ⍝ ["a":21 "b":12]
+
+⍝ — `[p]` lines up with the argument by axis names
+m←["i":2 "j":3]⍴⍳6 ⋄ -@[{4<+⌿⍵}] m   ⍝ ["i":2 "j":3]⍴0 ¯1 ¯2 3 ¯4 ¯5
+
+⍝ — A mask from `[p]` must have the argument's length
+-@[{1 0}] 1 2 3
+⍝ error: LENGTH ERROR
+
+⍝ — A mask's values pick one of two cases, so a 2 is outside them
+(10×⊢)@[⊢] 0 2 1
+⍝ error: INDEX ERROR
+
+⍝ — An empty selection from `[p]` doesn't run the function
+{1 2 3+⍵}@[0<] ¯1 ¯2   ⍝ ¯1 ¯2
+
+⍝ — A cell whose key the mask lacks counts as NaN, and keeps its value
+k←["a":1] ⋄ -@[k⍨] ["b":4 "a":5]   ⍝ ["b":4 "a":¯5]
+
+⍝ — A NaN in the mask picks no case, so its cell keeps its value
+m←1 $n 0 ⋄ -@[m⍨] 4 5 6   ⍝ ¯4 5 6
+
+⍝ — A key that only the mask has is ignored
+k←["a":1 "c":0] ⋄ -@[k⍨] ["b":4 "a":5]   ⍝ ["b":4 "a":¯5]
+
+⍝ — A unit mask of NaN leaves the argument as it is
+-@[{$n}] 1 2 3   ⍝ 1 2 3
+
+⍝ — `@` converts its result to one kind, as assignment does
+⍕0ₓ@[0>] ¯4 9   ⍝ "0 9"
+
 ⍝ — Repeated replacement indices use the last supplied value
 10 20@1 1⍳3   ⍝ 0 20 2
 
@@ -3338,6 +3493,18 @@ a   ⍝ 0 1 2
 {⍵}⌺3⍳1
 ⍝ error: DOMAIN ERROR
 
+⍝ — An argument that's empty along a windowed axis gives an empty result
+⍴{+/,⍵}⌺1 3⊢0 5⍴0   ⍝ [0 5]ₓ
+
+⍝ — An even size over an empty axis gives no windows
+⍴{+/,⍵}⌺4⊢⍬   ⍝ [0]ₓ
+
+⍝ — Each result's shape comes from one call on a window of fill
+⍴{2⍴+/,⍵}⌺3⊢⍬   ⍝ [0 2]ₓ
+
+⍝ — Padded windows over an empty axis give an empty frame
+⍴¯3↕⍬   ⍝ [0 3]ₓ
+
 ⍝ —
 {⍵}⌺0⍳3
 ⍝ error: DOMAIN ERROR
@@ -3369,10 +3536,8 @@ H←("" '*'@[[[0 1] 0] [[1 2] 1]])G
 {⍵×10}@[[0 1] [1]] [1 2 3⋄4 5 6]
 ⍝ error: LENGTH ERROR
 
-⍝ — At calls its operand once even for an empty selection
-{⎕←99 ⋄ ⍵}@⍬⍳3
-⍳3
-⍝ ⎕: 99
+⍝ — An empty selection leaves the argument as it is, without calling the function
+{⎕←99 ⋄ ⍵}@⍬⍳3   ⍝ 0 1 2
 
 ⍝⍝ Encode decode
 
@@ -3744,6 +3909,10 @@ $t $t $t $t $t $t $t $t
 $t $t $t $t $t $t $t
 $t $t $t $t
 $t $t $t $t $t
+
+⍝ — Under dynamic kinds, ⌊ and ⌈ keep an exact number exact beside an infinity or NaN. On a large array they don't fuse beside an exact number or a comparison, because a fused graph reads them as floats
+x←¿1000000⍴0 ⋄ x.[[0 1 2 3]]←[∞ ¯∞ $n 0] ⋄ [4↑x⌊0ₓ ⋄ 4↑x⌈0ₓ ⋄ 4↑x⌊x>0 ⋄ 4↑x⌈$t]
+[0ₓ ¯∞ 0 0⋄∞ 0ₓ 0 0⋄1ₓ ¯∞ 0 0⋄∞ 1ₓ 1 1]
 
 ⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position
 •prefs ["fusion":$t] ⋄ x←1.5+¿1000000⍴0 ⋄ r←⍴⍋x ⋄ •prefs ["fusion":$f] ⋄ r
@@ -5269,6 +5438,81 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍬
 ⍝ ⎕: 8
 
+⍝⍝ Each, Rank and stencil operands
+
+⍝ — Each keeps a keyed frame's keys
+{⍵×2}¨["a":1 "b":2]   ⍝ ["a":2 "b":4]
+
+⍝ — Rank keeps the keys of its frame
+{+/⍵}⍤1⊢"x" "y":[1 2⋄3 4]   ⍝ ["x":3 "y":7]
+
+⍝ — Each inside an Each operand maps each cell's items
+{{⍵+1}¨⍵}¨[1 2;3 4 5]   ⍝ [2 3;4 5 6]
+
+⍝ — A guard on the cell picks each cell's body
+{⍵<0?0;⍵}¨¯1 2 ¯3   ⍝ 0 2 0
+
+⍝ — A power count that comes from the cell
+{2×⍣⍵ 1}¨0 1 2 3   ⍝ 1 2 4 8
+
+⍝ — An axis that comes from the cell
+{+/⍠⍵⊢[1 2⋄3 4]}¨0 1   ⍝ [4 6;3 7]
+
+⍝ — Cells whose results differ in shape
+{⍳⍵}¨1 2 3   ⍝ [[0];0 1;0 1 2]
+
+⍝ — Each cell writes to an outer name in turn
+a←0
+{a+←⍵}¨1 2 3
+a   ⍝ 6
+
+⍝ — Each cell displays in turn
+{⎕←⍵}¨1 2
+1 2
+⍝ ⎕: 1\n2
+
+⍝ — A system function runs on each cell
+{•json⁻¹ ⍵}¨1 2   ⍝ "1.0" "2.0"
+
+⍝ — An error in any cell is the map's error
+{⍵⊃10 20}¨0 5
+⍝ error: INDEX ERROR
+
+⍝ — `∂` inside the operand differentiates each cell on its own
+{{⍵×⍵}∂ ⍵}¨1 2 3   ⍝ 2 4 6
+
+⍝ — Dot access reads each cell's record
+{⍵.a}¨[["a":1 "b":2];["a":3 "b":4]]   ⍝ 1 3
+
+⍝ — Selective assignment changes each cell's local copy
+{x←⍵ ⋄ x.[0]←9 ⋄ x}¨[1 2;3 4]   ⍝ [9 2;9 4]
+
+⍝ — A loss mapped over the rows of `X` has the gradient of the same loss written with `+.×`
+X←[3 2]⍴0.1×⍳6
+loss←{th←⍵ ⋄ +/{⊼1○+/th×⍵}⍤1⊢X}
+lossw←{+/⊼1○X+.×⍵}
+(loss∂ 0.5 ¯0.25)≡lossw∂ 0.5 ¯0.25   ⍝ $t
+
+⍝ — Per-example gradients under Rank match the closed form
+X←[3 2]⍴0.1×⍳6
+f←{+/⊼1○⍵}
+({f∂ ⍵}⍤1⊢X)≡2×(1○X)×2○X   ⍝ $t
+
+⍝ — A Hessian–vector product through the mapped loss matches the one through `+.×`
+X←[3 2]⍴0.1×⍳6
+loss←{th←⍵ ⋄ +/{⊼1○+/th×⍵}⍤1⊢X}
+lossw←{+/⊼1○X+.×⍵}
+hv←{+/1 2×loss∂ ⍵}
+hvw←{+/1 2×lossw∂ ⍵}
+(hv∂ 0.5 ¯0.25)≡hvw∂ 0.5 ¯0.25   ⍝ $t
+
+⍝ — A stencil steps a Game of Life glider
+life←{s←+/,⍵ ⋄ (s=3)∨(1 1⌷⍵)∧s=4}
+g←[0 1 0 0⋄0 0 1 0⋄1 1 1 0⋄0 0 0 0]=1
+life⌺3 3⊢g
+⍝ =>
+[0 0 0 0⋄1 0 1 0⋄0 1 1 0⋄0 1 0 0]=1
+
 ⍝⍝ Composition rank and dyadic operators
 
 ⍝ — A named Atop operator derives a sum-of-iota function
@@ -5341,6 +5585,9 @@ f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
 
 ⍝ — Empty Key retains the operand's result-cell shape
 {⍳3}⌸⍬   ⍝ 0 3⍴0
+
+⍝ — An empty Key whose operand fails on the prototypes gives an empty result, as Each's operand does
+{÷0}⌸⍬   ⍝ ⍬
 
 ⍝ — Predicate power tests the next iterate after each step
 1 +⍣{⍺>4} 0   ⍝ 5

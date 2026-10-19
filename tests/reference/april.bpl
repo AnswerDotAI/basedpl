@@ -2281,8 +2281,8 @@ test←{0=3|⍵}
 ⍝ april:1773 — Dialect port checked against original independent expectation and Dyalog; Apply union with Each at the selected item; enclose the changed item instead of changing the selection shape
 (∪↢1∘,)¨@4 [2 3;3;2 4;1 5;3]   ⍝ [[2 3] 3 [2 4] [1 5] [3 1]]
 
-⍝ april:1774 —
-(9+3 4⍴⍳12)⊣@2 1 2 [4 4]⍴⍳16
+⍝ april:1774 — An array operand replaces the selected rows, and the last of a repeated position wins
+(9+3 4⍴⍳12)@2 1 2 [4 4]⍴⍳16
 [0 1 2 3⋄13 14 15 16⋄17 18 19 20⋄12 13 14 15]
 
 ⍝ april:1775 — Dyalog operand names (April aliases)

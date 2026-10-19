@@ -2,7 +2,7 @@
 
 `params •distribution name` returns the distribution called `name`, with parameters `params`. `•distribution name` uses the distribution's standard parameters, listed in the table below. A distribution is a keyed vector of four functions:
 
-- `sample shape` draws random values. `g sample shape` draws them from a generator made by `•rand`.
+- `sample shape` draws random values from the session's stream, as [`¿`](../glyphs/inverted-question.qmd) does. `g sample shape` draws them from a generator made by `•rand`.
 - `density x` gives the probability density, or the probability mass for a discrete distribution.
 - `cdf x` gives P(X ≤ x).
 - `quantile p` inverts the CDF. `cdf⁻¹` is `quantile`. `quantile⁻¹` is `cdf`.

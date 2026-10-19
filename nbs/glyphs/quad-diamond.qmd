@@ -18,6 +18,12 @@ Negative sizes in [Windows](up-down-arrow.qmd) return the same windows as one ar
 
 Results assemble with fill.
 
+An argument that's empty along a windowed axis gives an empty result. The shape of each result comes from one call of `f` on a window of fill, as Each's function runs on prototypes:
+
+```bpl
+⍴{2⍴+/,⍵}⌺3⊢⍬   ⍝ [0 2]ₓ
+```
+
 A function right operand computes the specification from the argument: `f⌺g Y` is `f⌺(g Y) Y`. [Rank](jot-diaeresis.qmd) and [Axis](quad-colon.qmd) take a function right operand in the same way. Here the window size is the square root of the length, rounded up:
 
 ```bpl
@@ -28,4 +34,4 @@ A function right operand computes the specification from the argument: `f⌺g Y`
 
 - `RANK`: specification not a unit, vector or two-row matrix, or more axes than `Y`
 - `LENGTH`: a matrix without two rows
-- `DOMAIN`: no axes, nonpositive sizes or movements, or a size of at least twice its axis length
+- `DOMAIN`: no axes, nonpositive sizes or movements, or a size of at least twice the length of an axis that isn't empty

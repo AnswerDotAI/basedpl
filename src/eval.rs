@@ -17,11 +17,6 @@ mod session;
 pub(crate) use binder::before;
 use {binder::*, dissect::*, operators::*};
 
-/// A sum or running sum of `right`, by `kind` along the axis option `axis`: `+/`, `+⌿`, `+\` or `+⍀` (`linear`).
-pub(crate) fn fold_plus(kind: FoldKind, axis: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
-    fold(&Function::primitive(Primitive::Arithmetic(crate::number::Arithmetic::Plus)), kind, axis, None, right, cx)
-}
-
 #[derive(Clone, Debug)]
 pub struct Function { node: Arc<FunctionData> }
 
@@ -359,6 +354,8 @@ impl Function {
     fn primitive(p: Primitive) -> Self { Self { node: Arc::new(FunctionData { kind: FunctionNode::Primitive(p), environment: None, late: false, idiom: None }) } }
     /// A function that returns `a` whatever its arguments, as `a⍨` writes it.
     fn constant(a: Value, span: &Span) -> Result<Self, Error> { Self::new(FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)), span) }
+    /// The array that a function from `constant` returns, or `None` for any other function.
+    fn as_constant(&self) -> Option<&Value> { match self.node() { FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Some(a), _ => None } }
     pub(crate) fn system(f: crate::system::SystemFunction) -> Self {
         Self { node: Arc::new(FunctionData { kind: FunctionNode::System(f), environment: None, late: false, idiom: None }) }
     }
@@ -398,7 +395,8 @@ impl Function {
                     let options = fs.elements().map(|e| match e {
                         Value::Function(f) => Ok(Value::Function(f)), a => Function::constant(a, span).map(Value::Function)
                     }).collect::<Result<Vec<_>, _>>()?;
-                    if let Operand::Value(index) = &a { agenda_index(index, options.len(), span)?; }
+                    // A selector for each cell meets the argument only when the function runs.
+                    if let Operand::Value(index) = &a { if index.is_unit() { agenda_index(index, options.len(), span)?; } }
                     b = Operand::Value(Value::new(vec![options.len()], options).error_at(span, "invalid agenda options")?);
                 }
                 match (op, a, b) {
@@ -460,16 +458,15 @@ impl Function {
         if let Some(idiom) = &f.node.idiom { if let Some(result) = idiom.call(f, left, right, cx) { return result; } }
         match f.node() {
             FunctionNode::Composed(op, operands) => composition(*op, operands, left, right, cx),
-            FunctionNode::Ruled(f, Rules { derivative: Some(g), .. }) if left.is_none() && cx.session.differentiating() => match crate::derivative::deep_tag(right) {
-                Some(tag) => crate::derivative::attached(f, g, right, tag, cx).map(Bound::from),
-                None => f.ruled(left, right, cx),
+            FunctionNode::Ruled(f, Rules { derivative: Some(g), .. }) if cx.session.transforming() => match left {
+                None => match crate::derivative::deep_tag(right) {
+                    Some(tag) => crate::derivative::attached(f, g, right, tag, cx).map(Bound::from),
+                    None => f.ruled(left, right, cx),
+                },
+                // A rule describes a function of one argument, so a call with two can't use it.
+                Some(x) if crate::derivative::active(x) || crate::derivative::active(right) => Err(crate::derivative::two_arguments(cx)),
+                Some(_) => f.ruled(left, right, cx),
             },
-            // A rule describes a function of one argument, so a call with two can't use it.
-            FunctionNode::Ruled(_, Rules { derivative: Some(_), .. })
-                if left.is_some() && cx.session.differentiating() && (left.is_some_and(crate::derivative::active) || crate::derivative::active(right)) =>
-            {
-                Err(crate::derivative::two_arguments(cx))
-            }
             FunctionNode::Ruled(f, _) => f.ruled(left, right, cx),
             FunctionNode::Defined(_) | FunctionNode::Derived(..) => cx.session.call_defined(f, left, right).map_err(|mut e| {
                 e.calls.push(cx.span.clone());
@@ -911,6 +908,12 @@ impl Evaluation {
     pub(crate) fn failed(error: Error) -> Self { Self { error: Some(error), ..Self::default() } }
 }
 
+/// A running level, which a `∂` call starts: its tag, the number of frames when it started, and the bindings outside those frames that it wrote, each with its frame, or its module for a global. The call strips its tag from those bindings when it returns.
+struct Level { tag: u32, frames: usize, writes: Vec<(Option<usize>, usize, String)> }
+
+/// A running map, such as Each, Rank's general path, an outer product or a stencil: its id and the cell it is running. Each cell draws random numbers from a stream of its own (`distribution::Stream`).
+pub(crate) struct MapCell { pub(crate) id: u64, pub(crate) cell: u64 }
+
 #[derive(Default)]
 pub struct Session {
     pub(crate) execution: crate::execution::Execution,
@@ -941,10 +944,16 @@ pub struct Session {
     fusion_reports: usize,
     /// Whether `•explain` is running, which records events (`explain`).
     pub(crate) explaining: bool,
-    /// The `∂` calls that are running, innermost last.
-    pub(crate) derivatives: Vec<crate::derivative::Level>,
-    /// The last tag that a `∂` call took. Tags only grow, so a call inside another has the larger tag.
+    /// The running levels, innermost last.
+    levels: Vec<Level>,
+    /// The last tag that a level took. Tags only grow, so a level inside another has the larger tag.
     tags: u32,
+    /// The session's random numbers, which `¿` and a distribution's `sample` draw when no `•rand` generator is given.
+    pub(crate) generator: crate::distribution::Generator,
+    /// The running maps, innermost last.
+    pub(crate) maps: Vec<MapCell>,
+    /// The last id that a map took. Ids only grow, so a map inside another has the larger id.
+    pub(crate) map_ids: u64,
     /// The program's command-line arguments.
     pub(crate) args: Vec<String>,
 }
@@ -958,4 +967,14 @@ impl Context<'_> {
         self.session.prototype = previous;
         result
     }
+    /// Runs `f` as a map, whose cells each draw random numbers from a stream of their own, then ends the map, after success and after an error. `f` names each cell with `cell` before running it.
+    fn mapped<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        self.session.map_ids += 1;
+        self.session.maps.push(MapCell { id: self.session.map_ids, cell: 0 });
+        let result = f(self);
+        self.session.maps.pop();
+        result
+    }
+    /// Makes cell `i` of the innermost map the running one.
+    fn cell(&mut self, i: usize) { if let Some(map) = self.session.maps.last_mut() { map.cell = i as u64; } }
 }

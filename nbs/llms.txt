@@ -35,7 +35,7 @@ Each entry below names a difference from Dyalog APL, gives a short example, and 
 
 - [Glyph reference](glyphs.html.md): lists every glyph with its name. A glyph's page is `glyphs/<name>.html.md`. Read it before using the glyph.
 - [Removed forms](glyphs.html.md#language-wide-differences-from-dyalog-apl): Dyalog's bracket indexing `Y[I]`, bracket axes `f[A]`, outer product `∘.f`, windowed reduce and laminate aren't in BPL.
-- [`@` Under](glyphs/at.html.md): `f@g` applies `f` to what `g` selects and writes it back, as BQN's `⌾`, not Dyalog's `@`. `⌊@ 10× 1.25 2.78` is `1.2 2.7`.
+- [`@` Under](glyphs/at.html.md): `f@g` applies `f` to what `g` selects and writes it back, as BQN's `⌾`, not Dyalog's `@`. `⌊@ 10× 1.25 2.78` is `1.2 2.7`. With positions or `[p]`, a left argument lines up with the right argument by position, or by key where both have keys: `10 20 30 +@[0 2] 1 2 3` is `11 2 33`.
 - [`∘` atop](glyphs/jot.html.md): `⍺ f∘g ⍵` is `f ⍺ g ⍵`, as BQN's atop, where Dyalog's is `⍺ f g ⍵`. `10 -∘| ¯3` is `¯7`.
 - [`⍤` rank](glyphs/jot-diaeresis.html.md): rank only: `+/⍤1 m` sums each row. A function right operand computes the ranks.
 - [`⍠` axis](glyphs/quad-colon.html.md): applies a function along axes given by number or name. Both `+/⍠0 m` and `+/⍠"month" sales` sum along one axis, chosen by number in one and by name in the other.
@@ -68,7 +68,7 @@ Each entry below names a difference from Dyalog APL, gives a short example, and 
 
 ## Glyphs that Dyalog lacks
 
-- [`¿` roll](glyphs/inverted-question.html.md): roll and deal, Dyalog's `?`.
+- [`¿` roll](glyphs/inverted-question.html.md): roll and deal, Dyalog's `?`. `•prefs ["seed":42]` seeds it, in place of Dyalog's `⎕RL`.
 - [`⊼` nand](glyphs/wedge-bar.html.md) and [`⊽` nor](glyphs/vee-bar.html.md): Dyalog's `⍲` and `⍱`. The monads square and double: `⊼3` is `9`.
 - [`π` pi-times](glyphs/pi.html.md): `π1` is `3.141592654`.
 - [`√` sqrt](glyphs/radical.html.md): square root and root, as BQN's `√`: `3√8` is `2`.
@@ -83,7 +83,7 @@ Each entry below names a difference from Dyalog APL, gives a short example, and 
 - [`↢` after](glyphs/left-tail-arrow.html.md): as BQN's `⟜`. `f↢a` binds a right argument: `*↢2` squares.
 - [`⊗` outer product](glyphs/circle-times.html.md): as BQN's `⌜`, in place of `∘.f`: `1 2+⊗10 20` is `[11 21⋄12 22]`.
 - [`⊘` valences](glyphs/circle-slash.html.md): `f⊘g` calls `f` with one argument and `g` with two, as BQN's `⊘`.
-- [`⍚` agenda](glyphs/diamond-underbar.html.md): `selector⍚cases` calls the function that `selector` picks, as BQN's `◶`.
+- [`⍚` agenda](glyphs/diamond-underbar.html.md): `selector⍚cases` calls the function that `selector` picks, as BQN's `◶`. A selector that isn't a unit picks a function for each cell: `(0≤)⍚[0 √] ¯4 9` is `0 3`.
 - [`⇄` optimize](glyphs/right-left-arrows.html.md): `cost⇄ start` finds where `cost` is least, searching from `start`. A left argument holds options.
 - [`∂` derivative](glyphs/partial.html.md): `f∂x` is the derivative, or Jacobian, of `f` at `x`: `{⍵*2}∂3` is `6`.
 - [`•` system](glyphs/bullet.html.md): starts a system name, as in `•json`, in place of Dyalog's `⎕NAME`.

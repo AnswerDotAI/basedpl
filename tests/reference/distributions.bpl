@@ -173,8 +173,21 @@ b←h.roll 1000 1000
 k←•rand 42
 (a,b)≡k.roll 4⍴1000   ⍝ $t
 
-⍝ distribution:generator-values — A seed fixes the draws, which pins the generator algorithm
-(•rand 42).roll 6 6 6   ⍝ 4 1 5
+⍝ distribution:session-seed — The seed setting fixes the draws of `¿`
+•prefs ["seed":42] ⋄ a←¿6 6 6 ⋄ •prefs ["seed":42] ⋄ a≡¿6 6 6   ⍝ $t
+
+⍝ distribution:map-streams — Each cell of a map draws from a stream of its own, so its draws don't depend on how many values other cells draw
+•prefs ["seed":7] ⋄ a←{¿⍵⍴6}¨1 3 ⋄ •prefs ["seed":7] ⋄ b←{¿⍵⍴6}¨5 3 ⋄ [(1⊃a)≡1⊃b;(0⊃a)≡1↑0⊃b]   ⍝ $t $t
+
+⍝ distribution:generator-map-streams — A map splits a `•rand` generator in the same way
+g←•rand 3 ⋄ a←{g.roll ⍵⍴6}¨1 3 ⋄ g←•rand 3 ⋄ b←{g.roll ⍵⍴6}¨5 3 ⋄ (1⊃a)≡1⊃b   ⍝ $t
+
+⍝ distribution:map-rank — Rank's cells draw as Each's do
+•prefs ["seed":7] ⋄ x←{¿6}¨⍳4 ⋄ •prefs ["seed":7] ⋄ y←{¿6}⍤0⊢⍳4 ⋄ x≡y   ⍝ $t
+
+⍝ distribution:session-seed-domain — The seed is one nonnegative integer
+•prefs ["seed":¯1]
+⍝ error: DOMAIN ERROR
 
 ⍝ distribution:generator-seed — The seed is one nonnegative integer
 •rand ¯1

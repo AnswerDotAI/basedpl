@@ -81,17 +81,17 @@ impl Session {
     pub(super) fn remove_name(&mut self, owner: Option<usize>, name: &str) -> Option<Binding> {
         match owner { Some(i) => self.frames[i].remove(Key::of(name)), None => self.table_mut(self.module()).remove(name) }
     }
-    /// Whether a `∂` call is running.
-    pub(crate) fn differentiating(&self) -> bool { !self.derivatives.is_empty() }
-    /// Starts a `∂` call: a new level with a fresh tag, larger than every running call's. Returns the tag.
+    /// Whether a level is running. Code outside every level pays only for this test.
+    pub(crate) fn transforming(&self) -> bool { !self.levels.is_empty() }
+    /// Starts a `∂` call: a new level with a fresh tag, larger than every running level's. Returns the tag.
     pub(crate) fn begin_derivative(&mut self) -> u32 {
         self.tags += 1;
-        self.derivatives.push(crate::derivative::Level { tag: self.tags, frames: self.frames.len(), writes: Vec::new() });
+        self.levels.push(Level { tag: self.tags, frames: self.frames.len(), writes: Vec::new() });
         self.tags
     }
     /// Ends the innermost `∂` call, taking its tag off each binding outside its frames that it wrote.
     pub(crate) fn end_derivative(&mut self) {
-        let level = self.derivatives.pop().expect("a running ∂ call");
+        let level = self.levels.pop().expect("a running ∂ call");
         for (owner, module, name) in level.writes {
             let value = match owner { Some(i) => self.frames.get(i).and_then(|f| f.get(Key::of(&name))), None => self.table(module).get(&name) };
             let Some(Binding::Value(v)) = value else { continue };
@@ -102,7 +102,7 @@ impl Session {
     /// Records, for each running `∂` call, a write to the binding of `name` in `owner`, or in the running module's names when `owner` is `None`, when that binding lies outside the call's frames.
     pub(super) fn record_write(&mut self, owner: Option<usize>, name: &str) {
         let module = self.module();
-        for level in &mut self.derivatives {
+        for level in &mut self.levels {
             if owner.is_none_or(|o| o < level.frames) && !level.writes.iter().any(|(w, m, n)| *w == owner && *m == module && n == name) {
                 level.writes.push((owner, module, name.to_owned()));
             }

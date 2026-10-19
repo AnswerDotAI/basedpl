@@ -162,7 +162,7 @@ fn cell_offset(array: &Value, from: usize, fields: &[Value], prototype: bool, sp
         let n = numeric(&selector, span)?;
         // A NaN position reads the fill, as a position past an empty axis does.
         if n.as_float().is_some_and(f64::is_nan) { offset = None; continue; }
-        let k = n.integer().error_at(span, "index must be an integer")?;
+        let k = n.integer().error_at(span, rustymath::structure::NOT_WHOLE)?;
         offset = match rustymath::layout::position(k, size) {
             Some(i) => offset.map(|o| o * size + i),
             None if prototype || size == 0 && (k == 0 || k == -1) => None,
@@ -192,22 +192,40 @@ pub(crate) fn extend_path(items: &[Value], mut array: &mut Value, descend: bool,
 }
 
 pub(crate) fn position(n: &Number, size: usize, span: &Span) -> Result<usize, Error> {
-    let n = n.integer().error_at(span, "index must be an integer")?;
+    let n = n.integer().error_at(span, rustymath::structure::NOT_WHOLE)?;
     rustymath::layout::position(n, size).ok_or_else(|| span.error(Kind::Index, "index is outside the array"))
+}
+
+/// The positions that the index values of `a` give along an axis of length `size`, as `structure::positions` reads them: a negative value counts back from the end, and a NaN gives `Steps::FILL`. Storage that isn't compact reads each value through `Items::positions`.
+pub(crate) fn positions(a: &Value, size: usize, span: &Context<'_>) -> Result<Vec<usize>, Error> {
+    match a.as_items() {
+        Items::Compact(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => rustymath::structure::positions(view, size),
+        items => rustymath::structure::counted_positions(&items.positions().error_at(span, rustymath::structure::NOT_WHOLE)?, size),
+    }.at(span)
 }
 
 /// An atomic `∞` selects a whole axis in order, and `¯∞` selects it in reverse. Returns whether it is reversed.
 fn whole_axis(part: &Value) -> Option<bool> { match part { Value::Number(n) if n.is_infinite() => n.as_float().map(|f| f < 0.), _ => None } }
 
-/// The items a selection reaches. An offset is a flat position in the array. A path goes down through nested items, one position for each level, and the empty path is the whole array.
-pub(crate) enum Targets { Offsets(Vec<usize>), Paths(Vec<Vec<usize>>) }
+/// The items a selection reaches. An offset is a flat position in the array. A path goes down through nested items, one position for each level, and the empty path is the whole array. A walk reaches the positions that `steps` give from `base`, in the order `walk` reads them, without listing them, as a selection of cells along axes does.
+pub(crate) enum Targets { Offsets(Vec<usize>), Paths(Vec<Vec<usize>>), Walk { base: usize, steps: Vec<Steps> } }
 
 impl Targets {
-    pub(crate) fn len(&self) -> usize { match self { Self::Offsets(o) => o.len(), Self::Paths(p) => p.len() } }
+    pub(crate) fn len(&self) -> usize {
+        match self { Self::Offsets(o) => o.len(), Self::Paths(p) => p.len(), Self::Walk { steps, .. } => steps.iter().map(Steps::len).product() }
+    }
     /// Whether any target is at a fill.
-    pub(crate) fn at_fill(&self) -> bool { match self { Self::Offsets(o) => o.contains(&Steps::FILL), Self::Paths(p) => p.iter().any(|p| p.contains(&Steps::FILL)) } }
-    /// The path of target `i`. An offset is a path of one position.
-    pub(crate) fn path(&self, i: usize) -> &[usize] { match self { Self::Offsets(o) => std::slice::from_ref(&o[i]), Self::Paths(p) => &p[i] } }
+    pub(crate) fn at_fill(&self) -> bool {
+        match self { Self::Offsets(o) => o.contains(&Steps::FILL), Self::Paths(p) => p.iter().any(|p| p.contains(&Steps::FILL)), Self::Walk { steps, .. } => steps.iter().any(Steps::fills) }
+    }
+    /// The path of target `i`. An offset is a path of one position. A walk's targets are listed first (`Selection::listed`).
+    pub(crate) fn path(&self, i: usize) -> &[usize] {
+        match self { Self::Offsets(o) => std::slice::from_ref(&o[i]), Self::Paths(p) => &p[i], Self::Walk { .. } => unreachable!("a walk's targets are listed before their paths are read") }
+    }
+    /// These targets as a scatter's writes, or `None` for paths, which go down through nested items.
+    pub(crate) fn writes(&self) -> Option<crate::array::Writes<'_>> {
+        match self { Self::Offsets(o) => Some(crate::array::Writes::Offsets(o)), Self::Walk { base, steps } => Some(crate::array::Writes::Walk { base: *base, steps }), Self::Paths(_) => None }
+    }
     /// Adds the target at `path`. A path of one position stays an offset.
     pub(crate) fn push(&mut self, path: &[usize]) {
         match (&mut *self, path) {
@@ -218,6 +236,7 @@ impl Targets {
                 *self = Self::Paths(paths);
             }
             (Self::Paths(p), _) => p.push(path.to_vec()),
+            (Self::Walk { .. }, _) => unreachable!("a walk isn't built target by target"),
         }
     }
     /// Adds the target at `path` followed by `last`.
@@ -225,7 +244,7 @@ impl Targets {
         match (&mut *self, path) {
             (Self::Offsets(o), []) => o.push(last),
             (Self::Paths(p), _) => p.push([path, &[last]].concat()),
-            (Self::Offsets(_), _) => self.push(&[path, &[last]].concat()),
+            (Self::Offsets(_) | Self::Walk { .. }, _) => self.push(&[path, &[last]].concat()),
         }
     }
 }
@@ -240,6 +259,11 @@ impl Selection {
     /// The selection of the items at `offsets`, as a vector.
     pub(crate) fn offsets(offsets: Vec<usize>) -> Selection {
         Selection { frame: Frame::Array(vec![offsets.len()].into()), targets: Targets::Offsets(offsets) }
+    }
+    /// This selection with a walk's targets listed as offsets, for code that reads each target's path. `None` where the targets are listed already.
+    pub(crate) fn listed(&self) -> Option<Selection> {
+        let Targets::Walk { base, steps } = &self.targets else { return None };
+        Some(Selection { frame: self.frame.clone(), targets: Targets::Offsets(Steps::combined(*base, steps)) })
     }
     /// `values` ready for the targets. A keyed value aligns to the keys of the selection. A singleton goes to every target, and otherwise the shape must match the selection's.
     pub(crate) fn checked(&self, values: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -258,6 +282,7 @@ impl Selection {
     /// This selection without its targets at a fill, which write nothing, and `values`, as `checked` gives them, cut to the targets kept. `None` where no target is at a fill.
     pub(crate) fn without_fills(&self, values: &Value, span: &Context<'_>) -> Result<Option<(Selection, Value)>, Error> {
         if !self.targets.at_fill() { return Ok(None); }
+        if let Some(listed) = self.listed() { return listed.without_fills(values, span); }
         let kept: Vec<usize> = (0..self.targets.len()).filter(|&i| !self.targets.path(i).contains(&Steps::FILL)).collect();
         let mut targets = Targets::Offsets(Vec::with_capacity(kept.len()));
         for &i in &kept { targets.push(self.targets.path(i)); }
@@ -274,6 +299,7 @@ impl Selection {
             (Targets::Paths(paths), Frame::Direct) => {
                 return Frame::Direct.collect(paths.iter().map(|p| item_at(array, p)), || array.prototype()).map_err(invalid)
             }
+            (Targets::Walk { .. }, Frame::Direct) => return self.listed().expect("a walk lists its targets").read(array, span),
             (_, Frame::Array(layout)) => layout,
         };
         let data = match &self.targets {
@@ -293,6 +319,11 @@ impl Selection {
                         None => data.add(array.clone()),
                     }
                 }
+                data
+            }
+            Targets::Walk { base, steps } => {
+                let mut data = Gather::new(&[array], self.targets.len());
+                data.walk(array, *base, steps);
                 data
             }
         };
@@ -324,6 +355,11 @@ impl Selection {
                 else { for (path, item) in updates { array.write_path(path, item) } }
                 return Ok(());
             }
+            Targets::Walk { base, steps } => {
+                if array.is_atom() || matches!(self.frame, Frame::Direct) { return self.listed().expect("a walk lists its targets").write_into(array, &values, span); }
+                array.scatter_walk(*base, steps, &values);
+                return Ok(());
+            }
         };
         if array.is_atom() {
             if let Some(i) = offsets.len().checked_sub(1) { *array = self.item(&values, i); }
@@ -342,6 +378,7 @@ impl Selection {
         let targets = match self.targets {
             Targets::Offsets(offsets) => Targets::Paths(offsets.iter().map(|&i| inside(&[i])).collect()),
             Targets::Paths(paths) => Targets::Paths(paths.iter().map(|p| inside(p)).collect()),
+            Targets::Walk { base, steps } => Targets::Paths(Steps::combined(base, &steps).iter().map(|&i| inside(&[i])).collect()),
         };
         Self { targets, ..self }
     }
@@ -417,8 +454,9 @@ fn item_offset(right: &Value, parts: &[Option<Value>]) -> Option<usize> {
 pub(crate) fn selection(right: &Value, parts: &[Option<Value>], paired: bool, span: &Context<'_>) -> Result<Selection, Error> {
     if parts.is_empty() { return Ok(Selection { frame: Frame::Direct, targets: Targets::Paths(vec![vec![]]) }); }
     let (plan, direct) = match axis_positions(right, parts, paired, span)? { Positions::Plan(plan, direct) => (plan, direct), Positions::Paths(paths) => return Ok(paths) };
-    let targets = Targets::Offsets(Steps::combined(0, &plan.steps));
-    Ok(Selection { frame: if direct { Frame::Direct } else { Frame::Array(plan.layout.into()) }, targets })
+    // A walk writes cells without listing their positions.
+    if direct { return Ok(Selection { frame: Frame::Direct, targets: Targets::Offsets(Steps::combined(0, &plan.steps)) }); }
+    Ok(Selection { frame: Frame::Array(plan.layout.into()), targets: Targets::Walk { base: 0, steps: plan.steps } })
 }
 
 /// How a selection by parts reads: a plan of positions, with whether it reads one item, or pick paths.
@@ -450,10 +488,7 @@ fn axis_positions(right: &Value, parts: &[Option<Value>], paired: bool, span: &C
         let part = part.map(|p| axis_selector(p, right, axis, span)).transpose()?;
         selectors.push(if let Some(a) = part.as_ref().filter(|a| whole_axis(a).is_none()) {
             direct &= a.is_atom();
-            let positions = match a.as_items() {
-                Items::Compact(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => rustymath::structure::positions(view, size),
-                items => rustymath::structure::filled_positions(&items.positions().error_at(span, "index must be an integer")?.iter().map(|q| q.map_or(f64::NAN, |i| i as f64)).collect::<Vec<_>>(), size),
-            }.at(span)?;
+            let positions = positions(a, size, span)?;
             match positions[..] { [i] if a.is_atom() && i != Steps::FILL => AxisSelector::At(i), _ => AxisSelector::Indices { layout: rustymath::layout::Layout::clone(a.layout()), positions } }
         } else {
             direct = false;

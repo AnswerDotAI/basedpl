@@ -12,9 +12,6 @@ use rustymath::{agreement::Mapping, buffer::FloatWidth, gather::Steps};
 /// The message of the UNSUPPORTED error that a dual gives where it reaches code that `∂` can't differentiate (`number::Failure::Dual`).
 pub(crate) const UNSUPPORTED: &str = "∂ can't differentiate this here";
 
-/// A running `∂` call: its tag, the number of frames when it started, and the bindings outside those frames that it wrote, each with its frame, or its module for a global, which it strips when it returns.
-pub(crate) struct Level { pub(crate) tag: u32, pub(crate) frames: usize, pub(crate) writes: Vec<(Option<usize>, usize, String)> }
-
 /// An array that `∂` is differentiating: the tag of the `∂` call, the primal, and the tangent, which agrees with the primal's layout. Either part can be pending. `items` holds the array's items as number duals, built on the first read by code with no rule for duals (`array::dual_items`).
 pub(crate) struct Dual {
     pub(crate) tag: u32,
@@ -78,7 +75,7 @@ pub(crate) fn deep_tag(value: &Value) -> Option<u32> {
 pub(crate) fn active(value: &Value) -> bool { deep_tag(value).is_some() }
 
 /// Whether a `∂` is running and `value` holds a dual.
-pub(crate) fn active_in(cx: &Context<'_>, value: &Value) -> bool { cx.session.differentiating() && active(value) }
+pub(crate) fn active_in(cx: &Context<'_>, value: &Value) -> bool { cx.session.transforming() && active(value) }
 
 /// The number of `∂` levels whose tags `value` carries, through its duals' primals and tangents and inside nested arrays. It counts no tags inside records. A record's coefficients belong to the dual that holds the record as its tangent.
 pub(crate) fn levels(value: &Value) -> usize {

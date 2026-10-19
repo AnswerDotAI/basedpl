@@ -105,16 +105,29 @@ pub(crate) fn class_counts(cells: &Cells, span: &Context<'_>) -> Result<Vec<usiz
 
 /// The classes of `cells`, numbered in order of first appearance, with the positions of each. Booleans, characters and integers whose values span a table group straight from those values. Other cells group by the representatives that `classify` gives them.
 pub(crate) fn grouped(cells: &Cells, span: &Context<'_>) -> Result<search::Grouped, Error> {
+    groupable(cells.len(), span)?;
     let (_, t) = compared_at(cells.float_width());
     if let Some(grouped) = compact_view(cells).and_then(|x| search::view_grouped(x, t, || span.check())) { return grouped; }
     let search::Numbered { firsts, numbers, .. } = search::numbered(&classify(cells, span)?);
     Ok(search::Grouped::new(firsts, &numbers))
 }
 
+/// The positions of `items` grouped by the group that `group` gives each item, as rustymath's `search::grouped_by` gives them. More than `u32::MAX` items, which 32-bit positions can't hold, raises LIMIT ERROR.
+pub(crate) fn grouped_by<T: Copy + Sync>(items: &[T], n: usize, group: impl Fn(T) -> usize + Sync, span: &Context<'_>) -> Result<search::Groups, Error> {
+    groupable(items.len(), span)?;
+    Ok(search::grouped_by(items, n, group))
+}
+
+/// A LIMIT ERROR for more items than grouped positions hold, which is `u32::MAX`.
+fn groupable(len: usize, span: &Context<'_>) -> Result<(), Error> {
+    if u32::try_from(len).is_err() { return Err(span.error(rustymath::error::Kind::Limit, "grouping holds at most 4294967295 items")); }
+    Ok(())
+}
+
 /// The positions of each class along an axis of `len` cells, as exact integers at the narrowest width that holds every position below `len`. A 32-bit result keeps each buffer that a class owns. Otherwise each class copies its positions once, from the buffer it shares.
-pub(crate) fn class_positions(classes: search::Grouped, len: usize) -> Result<Vec<Value>, ErrorKind> {
+pub(crate) fn class_positions(classes: search::Groups, len: usize) -> Result<Vec<Value>, ErrorKind> {
     if matches!(rustymath::buffer::Width::below(len), rustymath::buffer::Width::I32) {
-        return classes.into_classes().into_iter().map(|these| Value::positions_u32([these.len()], len, these)).collect();
+        return classes.into_buffers().into_iter().map(|these| Value::positions_u32([these.len()], len, these)).collect();
     }
     classes.each().map(|these| Value::positions([these.len()], len, these.iter().copied())).collect()
 }

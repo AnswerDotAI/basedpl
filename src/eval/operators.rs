@@ -37,15 +37,20 @@ pub(super) fn composition(op: OperatorKind, operands: &[Operand; 2], left: Optio
     }
 }
 
+/// The case that the unit `index` picks from `len` cases: a whole number, which counts back from the end where it's negative.
 pub(super) fn agenda_index(index: &Value, len: usize, span: &Span) -> Result<usize, Error> {
-    if !index.is_unit() { return Err(span.error(Kind::Rank, "agenda index must be a unit")); }
     let n = index.as_number().ok_or_else(|| span.domain_error("agenda index must be numeric"))?;
     crate::primitive::position(&n, len, span)
 }
 
+/// `selector⍚cases`. A unit selector picks one case, which runs on the whole arguments. Any other selector picks a case for each cell (`Cells::chosen`).
 fn agenda(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let [selector, Operand::Value(fs)] = operands else { unreachable!() };
     let index = computed(selector, left, right, cx)?;
+    if !index.is_unit() {
+        let cases: Vec<_> = fs.elements().map(|f| match f { Value::Function(f) => f, _ => unreachable!() }).collect();
+        return Ok(Bound::from(Cells::new(&index, left, right, cx.span)?.chosen(&index, &cases, left, right, cx)?));
+    }
     let Value::Function(f) = fs.at(agenda_index(&index, fs.len(), cx.span)?) else { unreachable!() };
     f.call(left, right, cx)
 }
@@ -55,20 +60,335 @@ fn computed(operand: &Operand, left: Option<&Value>, right: &Value, cx: &mut Con
     match operand { Operand::Value(a) => Ok(a.clone()), Operand::Function(g) => g.call_array(left, right, cx) }
 }
 
-/// `f@g`: `f` applied to the selection that `g` makes from the argument, then written back in its place. An array `f` replaces the selection. An array `g` lists positions along the leading axis, as `[g]⌷` reads them, and `[p]` selects where `p` of the argument is true. With positions, a left argument goes to `f` whole, as for Dyalog's `@`.
+/// `f@g`: `f` applied to the selection that `g` makes from the argument, then written back in its place. An array `f` replaces the selection. An array `g` lists positions along the leading axis, as `[g]⌷` reads them, and a selection of no items leaves the argument as it is, without calling `f`. `[p]` runs `f` on the cells where `p` of the argument is 1 (`masked`). With positions or `[p]`, a left argument is laid over the right argument (`Laid`), and a unit goes whole to `f`.
 fn under(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let [Operand::Function(f), g] = operands else { unreachable!() };
     let positions = match g {
         Operand::Function(g) => return under_function(f, g, left, right, cx),
-        Operand::Value(a) => match predicate(a) { Some(p) => Primitive::Where.call(None, &p.call_array(None, right, cx)?, cx)?, None => a.clone() },
+        Operand::Value(a) => match predicate(a) {
+            Some(p) => return Ok(Bound::from(masked(f, &p.call_array(None, right, cx)?, left, right, cx)?)),
+            None => a,
+        },
     };
-    let selection = crate::primitive::at_indices(right, &positions, cx)?;
-    let values = f.call_array(left, &selection.read(right, cx)?, cx)?;
+    let selection = crate::primitive::at_indices(right, positions, cx)?;
+    if selection.targets.len() == 0 { return Ok(Bound::from(right.clone())); }
+    let x = match left {
+        Some(x) if !x.is_unit() => {
+            let x = Laid::new(x, &right.layout().axes(0..1), cx.span)?.aligned(cx)?;
+            Some(crate::primitive::at_indices(&x, positions, cx)?.read(&x, cx)?)
+        }
+        _ => None,
+    };
+    let values = f.call_array(x.as_ref().or(left), &selection.read(right, cx)?, cx)?;
     Ok(Bound::from(selection.write(right, &values, cx)?))
 }
 
 /// The function of `[p]`, a one-item vector that holds a function.
 fn predicate(a: &Value) -> Option<Function> { if a.shape() != [1] { return None; } match a.at(0) { Value::Function(p) => Some(p), _ => None } }
+
+/// `f@[p]`, where `p` gives the mask `selector`: `f` runs once on the cells that the mask marks 1 (`Cells::marked`), and its results go back in their places under assignment's rule. Every other cell keeps its value, including one marked NaN, or whose key the mask lacks. A unit mask marks the whole argument or none of it.
+fn masked(f: &Function, selector: &Value, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    if selector.shape().is_empty() {
+        let [k] = crate::primitive::positions(selector, 2, cx)?[..] else { unreachable!("a unit has one position") };
+        if k != 1 { return Ok(right.clone()); }
+        let every = Selection { frame: ResultFrame::Array(right.layout().clone()), targets: Targets::Offsets((0..right.len()).collect()) };
+        return every.write(right, &f.call_array(left, right, cx)?, cx);
+    }
+    let cells = Cells::new(selector, left, right, cx.span)?;
+    let rows = cells.marked(selector, cx)?;
+    if rows.is_empty() { return Ok(right.clone()); }
+    let selection = cells.framed.selection(&rows, cx.span)?;
+    let values = cells.case(f, &rows, left, right, cx)?;
+    selection.write(right, &values, cx)
+}
+
+/// A case's result, classified once: one cell for each cell that picks the case, or one item that fills them all, as `@` fills a selection.
+enum Made { Cells(Value), Fill(Value) }
+
+impl Made {
+    /// `values` from a case that `rows` cells pick. Any other result is a LENGTH ERROR.
+    fn new(values: Value, rows: usize, span: &Span) -> Result<Self, Error> {
+        if values.shape().first() == Some(&rows) { return Ok(Self::Cells(values)); }
+        if values.is_singleton() { return Ok(Self::Fill(values)); }
+        Err(span.error(Kind::Length, "a case needs one result for each cell that picks it"))
+    }
+    fn value(&self) -> &Value { match self { Self::Cells(v) | Self::Fill(v) => v } }
+}
+
+/// The cells of `right` along the axes that a selector's axes pair with, for `⍚` with a selector for each cell and for `@[p]`. The selector's axes pair with the argument's by name and then from the front. The selector, and a left argument that isn't a unit, are each laid over the frame as agreement lays them (`lookup`, `Laid`). Cells are read, and written, where they lie (`Framed`): no axis of either argument moves.
+struct Cells { framed: Framed, axes: Vec<usize>, lookup: Mapping, x: Option<Laid>, len: usize }
+
+impl Cells {
+    fn new(selector: &Value, left: Option<&Value>, right: &Value, span: &Span) -> Result<Self, Error> {
+        let axes = rustymath::agreement::Agreement::paired_axes(right.layout(), selector.layout(), true);
+        if axes.iter().any(|&a| a >= right.shape().len()) { return Err(span.error(Kind::Rank, "the selector has an axis that the argument lacks")); }
+        let framed = Framed::new(right.layout(), &axes, span)?;
+        let frame = framed.frame();
+        let len = frame.shape().iter().product();
+        let lookup = lookup(selector.layout(), &frame, len, "the selector doesn't agree with the argument", span)?;
+        let x = left.filter(|x| !x.is_unit()).map(|x| Laid::new(x, &frame, span)).transpose()?;
+        Ok(Self { framed, axes, lookup, x, len })
+    }
+
+    /// The frame positions that `selector` marks 1, in order. A Boolean mask that lies in frame order goes straight to `⍸`'s kernel. Any other mask decodes as `picked` decodes it.
+    fn marked(&self, selector: &Value, cx: &Context<'_>) -> Result<Vec<u32>, Error> {
+        if let (Mapping::Linear(1), crate::array::Items::Compact(rustymath::buffer::View::Booleans(mask))) = (&self.lookup, selector.as_items()) {
+            let mut rows = Vec::new();
+            rustymath::gather::positions(&mut rows, mask, mask.iter().map(|&b| usize::from(b)).sum(), |j| j as u32);
+            return Ok(rows);
+        }
+        Ok(self.picked(selector, 2, cx)?.group(1).to_vec())
+    }
+
+    /// The frame positions grouped by the case of `cases` that each picks (`picked`).
+    fn picked(&self, selector: &Value, cases: usize, cx: &Context<'_>) -> Result<rustymath::search::Groups, Error> {
+        picked(selector, (!matches!(self.lookup, Mapping::Linear(1))).then_some(&self.lookup), self.len, cases, cx)
+    }
+
+    /// The left argument's cells at frame positions `rows`, or `None` where the left argument is a unit or absent.
+    fn left_cells(&self, rows: &[u32], cx: &Context<'_>) -> Result<Option<Value>, Error> { self.x.as_ref().map(|x| x.cells(rows, cx)).transpose() }
+
+    /// The result of case `f` on the cells of `right` at frame positions `rows`. `f` gets the left argument's cells at the same positions, or `left` whole where it's a unit. A constant case doesn't look at its cells.
+    fn case(&self, f: &Function, rows: &[u32], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+        if let Some(a) = f.as_constant() { return Ok(a.clone()); }
+        let xs = self.left_cells(rows, cx)?;
+        f.call_array(xs.as_ref().or(left), &self.framed.read(right, rows, cx)?, cx)
+    }
+
+    /// `⍚` with a selector for each cell. Each case runs once, on the list of all the cells that pick it (`case`), and gives one result for each of them or one item for all of them (`Made`). A case that no cell picks doesn't run. A cell that picks no case gets the fill. Numbers keep their kinds. A case of `⊢` doesn't run: when every other result has the argument's cells, the result starts from the argument, so `⊢`'s cells stay where they are. Otherwise `⊢`'s cells join the other results.
+    fn chosen(&self, selector: &Value, cases: &[Function], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+        let span = cx.span;
+        if self.len == 0 { return self.no_cells(selector, cases, left, right, cx); }
+        let picked = self.picked(selector, cases.len(), cx)?;
+        let keeps = |k: usize| cases[k].as_primitive() == Some(Primitive::Identity(false));
+        let mut made = Vec::new();
+        for (k, f) in cases.iter().enumerate() {
+            let rows = picked.group(k);
+            if rows.is_empty() || keeps(k) { continue }
+            let values = self.case(f, rows, left, right, cx)?;
+            made.push((k, Made::new(values, rows.len(), span)?));
+        }
+        let kept: Vec<usize> = (0..cases.len()).filter(|&k| keeps(k) && !picked.group(k).is_empty()).collect();
+        // The first case that some cell picks gives the fill. A kept case's cells are the argument's.
+        let fill = match (kept.first(), made.first()) {
+            (Some(&k), first) if first.is_none_or(|(j, _)| k < *j) => right.prototype(),
+            (_, Some((_, m))) => m.value().prototype(),
+            _ => right.prototype(),
+        };
+        let cell = self.framed.cells();
+        let start = (!kept.is_empty() && made.iter().all(|(_, m)| matches!(m, Made::Fill(_)) || m.value().shape()[1..] == *cell.shape())).then_some(right);
+        if start.is_none() {
+            for &k in &kept { made.push((k, Made::Cells(self.framed.read(right, picked.group(k), cx)?))); }
+            made.sort_by_key(|&(k, _)| k);
+        }
+        self.assembled(&picked, picked.group(cases.len()), &made, fill, start, cx)
+    }
+
+    /// The results of the cases as one array, laid out as `placed` gives it. `none` lists the cells that pick no case, which get `fill`. A fill result fills each cell of its case. Results whose cells differ in shape are padded, as Rank pads them, and a fill result spreads across the shape that the others pad to. `start`, where a case of `⊢` keeps its cells and every result has the argument's cells, is the argument, which the result starts from. Numbers keep their kinds.
+    fn assembled(&self, picked: &rustymath::search::Groups, none: &[u32], made: &[(usize, Made)], fill: Value, start: Option<&Value>, cx: &Context<'_>) -> Result<Value, Error> {
+        let span = cx.span;
+        let cells = || made.iter().filter_map(|(k, m)| match m { Made::Cells(v) => Some((*k, v)), Made::Fill(_) => None });
+        let shape = Value::assembled_shape(cells().map(|(_, v)| &v.shape()[1..]));
+        if cells().any(|(_, v)| v.shape()[1..] != *shape) {
+            let mut items = vec![fill.clone(); self.len];
+            for (k, m) in made {
+                let rows = picked.group(*k);
+                match m {
+                    Made::Cells(v) => {
+                        let cells = v.cells(v.shape().len() - 1).and_then(|c| c.framed()).error_at(span, "invalid result")?;
+                        for (j, &i) in rows.iter().enumerate() { items[i as usize] = cells.at(j); }
+                    }
+                    Made::Fill(v) => {
+                        let n = shape.iter().product();
+                        let mut spread = Gather::items(n);
+                        spread.fill(&v.at(0), n);
+                        let item = spread.finish(crate::array::Layout::from(shape.to_vec()), fill.clone()).error_at(span, "invalid result")?;
+                        for &i in rows { items[i as usize] = item.clone(); }
+                    }
+                }
+            }
+            let result = self.framed.frame().assemble(&items, &fill).error_at(span, "invalid result")?;
+            let (_, positions) = placed(&self.framed, &self.axes, &crate::array::Layout::from(shape.to_vec()), span)?;
+            if positions.iter().enumerate().all(|(j, &a)| j == a) { return Ok(result); }
+            return move_axes(&result, &fronted(&self.axes, self.framed.layout.shape().len()), cx);
+        }
+        let cell = match start { Some(_) => self.framed.cells(), None => cells().next().map_or_else(Default::default, |(_, v)| v.layout().axes(1..v.shape().len())) };
+        let (layout, positions) = placed(&self.framed, &self.axes, &cell, span)?;
+        let target = Framed::new(&layout, &positions, span)?;
+        let width: usize = cell.shape().iter().product();
+        let mut data = Gather::items(self.len * width);
+        // Where every cell picks a case, the case that fills the most cells with one item fills the whole array first.
+        let base = if none.is_empty() && start.is_none() { made.iter().filter(|(_, m)| matches!(m, Made::Fill(_))).max_by_key(|(k, _)| picked.group(*k).len()).map(|(k, _)| *k) } else { None };
+        match start {
+            Some(argument) => data.walk(argument, 0, &[rustymath::gather::Steps::Stride { start: 0, len: argument.len(), step: 1 }]),
+            None => data.fill(&made.iter().find(|(k, _)| Some(*k) == base).map_or_else(|| fill.clone(), |(_, m)| m.value().at(0)), self.len * width),
+        }
+        let mut write = |rows: &[u32], values: &Value| data.scatter(target.targets(rows).writes().expect("cells' targets are offsets or a walk"), values);
+        for (k, m) in made.iter().filter(|(k, _)| Some(*k) != base) { write(picked.group(*k), m.value()) }
+        if start.is_some() && !none.is_empty() { write(none, &fill) }
+        data.finish(layout, fill).error_at(span, "invalid result")
+    }
+
+    /// `chosen` for a frame with no cells. As Each calls its operand on prototypes, the case that the selector's fill picks runs on the empty list of cells (`on_prototypes`). The result is empty, with that case's cells, laid out as `placed` gives it.
+    fn no_cells(&self, selector: &Value, cases: &[Function], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+        let span = cx.span;
+        let k = match crate::primitive::positions(&selector.prototype(), cases.len(), cx)?[..] { [k] if k != rustymath::gather::Steps::FILL => k, _ => return Err(span.domain_error("the selector's fill picks no case")) };
+        let xs = self.left_cells(&[], cx)?;
+        let result = on_prototypes(&cases[k], xs.as_ref().or(left), &self.framed.read(right, &[], cx)?, cx)?.array(span)?;
+        let cell = if result.shape().first() == Some(&0) { result.layout().axes(1..result.shape().len()) } else { Default::default() };
+        placed(&self.framed, &self.axes, &cell, span)?.0.collect(Vec::new(), result.prototype()).error_at(span, "invalid result")
+    }
+}
+
+/// The cells of an array along its axes `frame`, in the frame's order, as flat offsets into the array: `starts` gives where each cell starts, by its position in the frame, `within` where each item of a cell lies from that start, and `steps` the cell's axes that give `within`. `layout` has the frame's axes first and then a cell's, as `⍉` would move them, but no item moves.
+struct Framed { layout: crate::array::Layout, rank: usize, starts: Starts, within: Vec<usize>, steps: Vec<rustymath::gather::Steps> }
+
+/// Where each cell of a frame starts. A frame whose map is affine, as a transpose's is, gives a start as `base` plus each coordinate times its axis's stride, from each axis's length and stride. A frame whose map isn't keeps a table of every start.
+enum Starts { Affine { base: usize, axes: Vec<(usize, isize)> }, Table(Vec<usize>) }
+
+impl Starts {
+    /// The start of the cell at frame position `j`.
+    fn at(&self, j: usize) -> usize {
+        match self {
+            Self::Table(starts) => starts[j],
+            Self::Affine { base, axes } => match axes[..] {
+                [(_, stride)] => base.wrapping_add_signed(stride * j as isize),
+                _ => {
+                    let (mut j, mut start) = (j, *base);
+                    for &(len, stride) in axes.iter().rev() { start = start.wrapping_add_signed(stride * (j % len) as isize); j /= len; }
+                    start
+                }
+            },
+        }
+    }
+}
+
+impl Framed {
+    fn new(layout: &crate::array::Layout, frame: &[usize], span: &Span) -> Result<Self, Error> {
+        use rustymath::gather::Steps;
+        let plan = rustymath::structure::transpose(layout, &destination(&fronted(frame, layout.shape().len()))).at(span)?;
+        let rank = frame.len();
+        let affine: Option<Vec<_>> = plan.steps[..rank].iter().map(|s| s.affine().map(|(start, stride)| (start, s.len(), stride))).collect();
+        let starts = match affine {
+            Some(axes) => Starts::Affine { base: axes.iter().map(|a| a.0).sum(), axes: axes.into_iter().map(|(_, len, stride)| (len, stride)).collect() },
+            None => Starts::Table(Steps::combined(0, &plan.steps[..rank])),
+        };
+        Ok(Self { layout: plan.layout.into(), rank, starts, within: Steps::combined(0, &plan.steps[rank..]), steps: plan.steps[rank..].to_vec() })
+    }
+    /// The frame's axes, with their names and keys.
+    fn frame(&self) -> crate::array::Layout { self.layout.axes(0..self.rank) }
+    /// The cells' axes, with their names and keys.
+    fn cells(&self) -> crate::array::Layout { self.layout.axes(self.rank..self.layout.shape().len()) }
+    /// The targets of the cells at frame positions `rows`, cell by cell. Single items are their offsets, which are the positions themselves where the cells lie in frame order. Wider cells are a walk, a table of the cells' starts followed by the cells' own steps, which reads and writes cells whose items lie a stride apart, as columns' do, in tiles.
+    fn targets(&self, rows: &[u32]) -> Targets {
+        match (&self.within[..], &self.starts) {
+            ([0], Starts::Affine { base: 0, axes }) if matches!(axes[..], [(_, 1)]) => Targets::Offsets(rows.iter().map(|&j| j as usize).collect()),
+            (&[w], starts) => Targets::Offsets(rows.iter().map(|&j| starts.at(j as usize) + w).collect()),
+            _ => {
+                let starts = rustymath::gather::Steps::table(rows.iter().map(|&j| self.starts.at(j as usize)).collect());
+                Targets::Walk { base: 0, steps: std::iter::once(starts).chain(self.steps.iter().cloned()).collect() }
+            }
+        }
+    }
+    /// The selection of the cells at frame positions `rows`, as a list (`listed`).
+    fn selection(&self, rows: &[u32], span: &Span) -> Result<Selection, Error> {
+        Ok(Selection { frame: ResultFrame::Array(listed(&self.frame(), rows, &self.cells(), span)?), targets: self.targets(rows) })
+    }
+    /// The cells at frame positions `rows` of `array`, as a list (`listed`).
+    fn read(&self, array: &Value, rows: &[u32], cx: &Context<'_>) -> Result<Value, Error> { self.selection(rows, cx.span)?.read(array, cx) }
+}
+
+/// The layout of the cells at positions `rows` of `frame`, as a list of cells laid out by `cell`. A frame of one axis keeps its name and the keys at `rows`.
+fn listed(frame: &crate::array::Layout, rows: &[u32], cell: &crate::array::Layout, span: &Span) -> Result<crate::array::Layout, Error> {
+    let list = if frame.shape().len() == 1 { frame.select(0, rows.iter().map(|&j| Some(j as usize))).error_at(span, "invalid selection")? } else { crate::array::Layout::from(vec![rows.len()]) };
+    Ok(list.concat(cell))
+}
+
+/// The `len` cells of the frame grouped by the case of `cases` that each picks. `mapping` reads each cell's value from `selector`, and `None` reads them in place, where a Boolean is its own case number. A NaN, or a key that the selector lacks, picks no case, and those cells form a group after the cases.
+fn picked(selector: &Value, mapping: Option<&Mapping>, len: usize, cases: usize, cx: &Context<'_>) -> Result<rustymath::search::Groups, Error> {
+    use {crate::search::grouped_by, rustymath::gather::Steps};
+    match (mapping, selector.as_items()) {
+        (None, crate::array::Items::Compact(rustymath::buffer::View::Booleans(mask))) if cases > 1 => grouped_by(mask, cases, usize::from, cx),
+        _ => {
+            let values = crate::primitive::positions(selector, cases, cx)?;
+            let keys = match mapping {
+                None => values,
+                Some(m) => (0..len).map(|j| m.get(j).map_or(Steps::FILL, |i| values[i])).collect(),
+            };
+            grouped_by(&keys, cases + usize::from(keys.contains(&Steps::FILL)), |p| p.min(cases), cx)
+        }
+    }
+}
+
+/// The map from each of the `len` positions of `frame` to a position of `input`, whose axes lie along the frame's in order, as agreement pairs them. An axis of length 1 stretches across the frame. Where both axes have keys, each position looks its key up (`Mapping::new`): a key that `input` lacks gives no position, and a key that only `input` has is never read. Any other axis needs the frame's length, or the call is a LENGTH ERROR with the message `mismatch`.
+fn lookup(input: &crate::array::Layout, frame: &crate::array::Layout, len: usize, mismatch: &str, span: &Span) -> Result<Mapping, Error> {
+    let rank = frame.shape().len();
+    if (0..rank).any(|a| !(input.keys(a).is_some() && frame.keys(a).is_some()) && ![frame.shape()[a], 1].contains(&input.shape()[a])) {
+        return Err(span.error(Kind::Length, mismatch));
+    }
+    Ok(Mapping::new(input, &(0..rank).collect::<Vec<_>>(), frame, len))
+}
+
+/// A left argument laid over a frame. Its axes pair with the frame's by name and then from the front, and each frame position reads the cell that `lookup` maps it to. A position whose key the argument lacks reads a cell of fills.
+struct Laid { value: Value, framed: Framed, lookup: Mapping, frame: crate::array::Layout }
+
+impl Laid {
+    fn new(x: &Value, frame: &crate::array::Layout, span: &Span) -> Result<Self, Error> {
+        const MISMATCH: &str = "the left argument doesn't line up with the right argument";
+        let axes = rustymath::agreement::Agreement::paired_axes(x.layout(), frame, true);
+        if axes.iter().any(|&a| a >= x.shape().len()) { return Err(span.error(Kind::Length, MISMATCH)); }
+        let framed = Framed::new(x.layout(), &axes, span)?;
+        let lookup = lookup(&framed.frame(), frame, frame.shape().iter().product(), MISMATCH, span)?;
+        Ok(Self { value: x.clone(), framed, lookup, frame: frame.clone() })
+    }
+
+    /// The cells for frame positions `rows`, as a list that keeps the frame's keys at `rows` (`listed`).
+    fn cells(&self, rows: &[u32], cx: &Context<'_>) -> Result<Value, Error> {
+        let width = self.framed.within.len();
+        let mut offsets = Vec::with_capacity(rows.len() * width);
+        for &j in rows {
+            match self.lookup.get(j as usize) {
+                Some(i) => { let start = self.framed.starts.at(i); offsets.extend(self.framed.within.iter().map(|&w| start + w)) }
+                None => offsets.extend(std::iter::repeat_n(rustymath::gather::Steps::FILL, width)),
+            }
+        }
+        let layout = listed(&self.frame, rows, &self.framed.cells(), cx.span)?;
+        Selection { frame: ResultFrame::Array(layout), targets: Targets::Offsets(offsets) }.read(&self.value, cx)
+    }
+
+    /// The argument laid over the whole frame: its cells in frame order, with the frame's axes first.
+    fn aligned(&self, cx: &Context<'_>) -> Result<Value, Error> {
+        let len = self.frame.shape().iter().product::<usize>();
+        self.cells(&(0..len as u32).collect::<Vec<_>>(), cx)
+    }
+}
+
+/// The layout of `Cells::chosen`'s result: the frame of `framed`, whose axes are `axes` of the argument, with cells laid out by `cell`. Where the cells have the rank of the argument's cells, the frame's axes keep their places in the argument. Otherwise they come first, as a frame does in Rank. Also gives the positions of the frame's axes in the result.
+fn placed(framed: &Framed, axes: &[usize], cell: &crate::array::Layout, span: &Span) -> Result<(crate::array::Layout, Vec<usize>), Error> {
+    let first = framed.frame().concat(cell);
+    let n = framed.layout.shape().len();
+    if cell.shape().len() != n - axes.len() { return Ok((first, (0..axes.len()).collect())); }
+    let plan = rustymath::structure::transpose(&first, &fronted(axes, n)).at(span)?;
+    Ok((plan.layout.into(), axes.to_vec()))
+}
+
+/// `operand` called on prototypes, as Each calls it for a frame with no cells. A call that fails gives 0, so the result is empty with prototype 0, as in J.
+fn on_prototypes(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    match operand.call_prototype(left, right, cx) {
+        Err(e) if super::session::Catch::All.catches(&e.kind) => Ok(Bound::from(Value::Number(Numeric::current().float(0.0)))),
+        result => result,
+    }
+}
+
+/// The order of the axes of an array of rank `n` with the axes `first` moved to the front, in their order, and the others after them, in theirs.
+fn fronted(first: &[usize], n: usize) -> Vec<usize> { first.iter().copied().chain((0..n).filter(|a| !first.contains(a))).collect() }
+
+/// The destination of each axis, as `⍉` takes it, that puts an array's axes in `order`.
+fn destination(order: &[usize]) -> Vec<usize> {
+    let mut destination = vec![0; order.len()];
+    for (j, &a) in order.iter().enumerate() { destination[a] = j; }
+    destination
+}
 
 /// `f@g` for a function `g`: `f⍥g`, with the result written back. A `g` that selects writes it back where it took it from. Any other `g` is undone by its inverse.
 fn under_function(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -91,6 +411,7 @@ fn over(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &mu
     f.call(x.as_ref(), &y, cx)
 }
 
+/// `f⌺spec`: `f` on each window of `right`, with the window's border as its left argument, mixed as Rank mixes its results. With no windows, `f` runs on prototypes, as Each's operand does.
 fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let (sizes, movements) = crate::primitive::window_spec(spec, cx.span)?;
     if sizes.is_empty() { return Err(cx.span.domain_error("stencil needs at least one axis")); }
@@ -98,16 +419,16 @@ fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> R
     let windows = Windows::new(&sizes, &movements, |_| true, right.shape()).at(cx.span)?;
     generated_len(windows.cell()).at(cx.span)?;
     let count = generated_len(windows.frame()).at(cx.span)?;
-    let mut results = Vec::with_capacity(count);
-    for position in 0..count {
+    let layout = crate::array::Layout::from(windows.frame_layout(right.layout()).at(cx.span)?);
+    let span = cx.span;
+    // `starts` gives an empty frame one position, whose window is the prototype pair's right argument.
+    let pair = |position| {
         let starts = windows.starts(position);
         let border = Value::floats(vec![starts.len()], Numeric::current().width, windows.border(&starts).into_iter().map(|n| n as f64)).unwrap();
-        let window = remapped(right, windows.window(right.layout(), &starts).at(cx.span)?).error_at(cx.span, "invalid stencil window")?;
-        results.push(f.call_array(Some(&border), &window, cx)?);
-    }
-    let layout = crate::array::Layout::from(windows.frame_layout(right.layout()).at(cx.span)?);
-    let result = layout.assemble(&results, &Value::Number(Numeric::current().float(0.0))).error_at(cx.span, "invalid stencil result")?;
-    Ok(Bound::from(result))
+        let window = remapped(right, windows.window(right.layout(), &starts).at(span)?).error_at(span, "invalid stencil window")?;
+        Ok((Some(border), window))
+    };
+    mixed(each_pair(f, count, layout, pair, cx)?, span, "invalid stencil result")
 }
 
 fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -410,7 +731,7 @@ pub(super) fn key(derived: &Function, left: Option<&Value>, right: &Value, cx: &
         let cells = keys.cells(keys.shape().len() - 1).error_at(cx.span, "invalid key cells")?;
         let x = cells.prototype().error_at(cx.span, "invalid key prototype")?;
         let y = select(&[]).error_at(cx.span, "invalid key group")?;
-        let result = f.call_prototype(Some(&if cells.shape().is_empty() { x.at(0) } else { x }), &y, cx)?.array(cx.span)?;
+        let result = on_prototypes(f, Some(&if cells.shape().is_empty() { x.at(0) } else { x }), &y, cx)?.array(cx.span)?;
         return Ok(Bound::from(Value::assemble(&[0], &[], &result).error_at(cx.span, "invalid key result")?));
     }
     let firsts = std::mem::take(&mut classes.firsts);
@@ -421,11 +742,11 @@ pub(super) fn key(derived: &Function, left: Option<&Value>, right: &Value, cx: &
     };
     match &values {
         None => {
-            for (g, y) in crate::search::class_positions(classes, right.shape()[0]).error_at(cx.span, "invalid key group")?.into_iter().enumerate() {
+            for (g, y) in crate::search::class_positions(classes.groups, right.shape()[0]).error_at(cx.span, "invalid key group")?.into_iter().enumerate() {
                 apply(g, y, cx)?
             }
         }
-        Some(_) => { for (g, rows) in classes.each().enumerate() { apply(g, select(rows).error_at(cx.span, "invalid key group")?, cx)? } }
+        Some(_) => { for (g, rows) in classes.groups.each().enumerate() { apply(g, select(rows).error_at(cx.span, "invalid key group")?, cx)? } }
     }
     Ok(Bound::from(Value::assemble(&[count], &results, &results[0]).error_at(cx.span, "invalid key result")?))
 }
@@ -444,14 +765,14 @@ pub(super) fn outer(operand: &Function, left: Option<&Value>, right: &Value, cx:
     // With no pairs, an empty argument gives its prototype and a nonempty one its first item.
     let item = |a: &Value, i| if a.is_empty() { a.prototype() } else { a.at(i) };
     let columns = right.len().max(1);
-    each_pair(operand, len, layout, |i| (Some(item(left, i / columns)), item(right, i % columns)), cx)
+    each_pair(operand, len, layout, |i| Ok((Some(item(left, i / columns)), item(right, i % columns))), cx)
 }
 
 fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     use crate::number::Arithmetic::{Plus, Times};
     let Some(left) = left else { return expansion(f, g, right, cx) };
     // The tangent of `A+.×B` is `(tA+.×B)+A+.×tB`, through the same product kernels.
-    if cx.session.differentiating() && matches!(f.as_primitive().zip(g.as_primitive()), Some((Primitive::Arithmetic(Plus), Primitive::Arithmetic(Times)))) {
+    if cx.session.transforming() && matches!(f.as_primitive().zip(g.as_primitive()), Some((Primitive::Arithmetic(Plus), Primitive::Arithmetic(Times)))) {
         // A record reaches here only as a dual's tangent, which the terms below record with the primal's layout (`linear::product`).
         if left.linear().is_some() || right.linear().is_some() { return Err(cx.span.error(crate::ErrorKind::Unsupported, "∂ can't transpose this product")); }
         if let Some(tag) = crate::derivative::tag(left).max(crate::derivative::tag(right)) {
@@ -482,7 +803,7 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
     let active = crate::derivative::either_active(cx, Some(left), right);
     if let (Some((pf, pg)), false) = (f.as_primitive().zip(g.as_primitive()), active) {
         if nx == ny && n > 0 && size > 0 && !left.is_unit() && !right.is_unit() && matches!(positions, Mapping::Linear(1)) {
-            if let Some(result) = crate::pervasive::inner(pf, pg, left, right, [rows, n, cols], layout.shape().to_vec(), [rustymath::linalg::Orientation::Normal; 2]) {
+            if let Some(result) = crate::pervasive::inner(pf, pg, left, right, [rows, n, cols], layout.shape().to_vec()) {
                 if layout.shape().is_empty() { return Ok(Bound::from(result.at(0))); }
                 return Ok(Bound::from(result.with_layout(layout).error_at(cx.span, "invalid inner product result")?));
             }
@@ -576,9 +897,13 @@ pub(super) fn rank(operand: &Function, ranks: &Value, left: Option<&Value>, righ
     let framed = |a: &Value, rank| a.cells(rank)?.framed();
     let ys = framed(right, yr).error_at(cx.span, "invalid rank cells")?;
     let xs = left.map(|a| framed(a, xr)).transpose().error_at(cx.span, "invalid rank cells")?;
-    let results = paired(operand, xs.as_ref(), &ys, cx)?;
+    mixed(paired(operand, xs.as_ref(), &ys, cx)?, cx.span, "invalid rank result")
+}
+
+/// A map's results, one for each position of its frame, mixed into one array whose numbers keep their kinds, as Rank and stencils mix them.
+fn mixed(results: Bound, span: &Span, what: &str) -> Result<Bound, Error> {
     let Binding::Value(results) = results.value else { return Ok(results) };
-    Ok(Bound::from(results.mix(crate::array::Widening::Items).error_at(cx.span, "invalid rank result")?))
+    Ok(Bound::from(results.mix(crate::array::Widening::Items).error_at(span, what)?))
 }
 
 /// `operand⍤k` in calls on whole arguments, where they give what one call for each cell gives. `xr` and `yr` are the cell ranks. `None` where no rule applies. Rank then calls `operand` once for each cell.
@@ -772,38 +1097,31 @@ fn move_axes(x: &Value, destination: &[usize], span: &crate::execution::Context<
 /// `x` with the `selected` axes moved to the end, in their order.
 fn moved_last(x: &Value, selected: &[usize], span: &crate::execution::Context<'_>) -> Result<Value, Error> {
     let n = x.shape().len();
-    let mut destination = vec![0; n];
-    for (j, i) in (0..n).filter(|i| !selected.contains(i)).chain(selected.iter().copied()).enumerate() { destination[i] = j; }
-    move_axes(x, &destination, span)
+    move_axes(x, &destination(&(0..n).filter(|i| !selected.contains(i)).chain(selected.iter().copied()).collect::<Vec<_>>()), span)
 }
 
-/// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`. With no pairs it calls the operand once in prototype mode, on `pair(0)`, for the result's prototype. If that call fails, the result is empty with prototype 0, as in J. A call that gives no result contributes `⍬`.
+/// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`. With no pairs it calls the operand once on prototypes (`on_prototypes`), on `pair(0)`, for the result's prototype. A call that gives no result contributes `⍬`. The calls run as a map, whose cells each draw random numbers from a stream of their own (`Context::mapped`).
 fn each_pair(
-    operand: &Function, len: usize, layout: crate::array::Layout, pair: impl Fn(usize) -> (Option<Value>, Value), cx: &mut Context<'_>
+    operand: &Function, len: usize, layout: crate::array::Layout, pair: impl Fn(usize) -> Result<(Option<Value>, Value), Error>, cx: &mut Context<'_>
 ) -> Result<Bound, Error> {
-    let empty = len == 0;
-    let mut data = Gather::items(len);
-    let mut first = None;
-    for i in 0..len.max(1) {
-        let (x, y) = pair(i);
-        let result = if empty { operand.call_prototype(x.as_ref(), &y, cx) } else { operand.call(x.as_ref(), &y, cx) };
-        let result = match result {
-            Err(e) if empty && super::session::Catch::All.catches(&e.kind) => {
-                return Ok(Bound::new(Binding::Value(
-                    layout.collect(Vec::new(), Value::Number(Numeric::current().float(0.0))).error_at(cx.span, "invalid result")?,
-                )));
-            }
-            result => result?,
-        };
-        let item = match result.value {
-            Binding::Value(a) => a, Binding::Function(f) => Value::Function(f),
-            Binding::NoResult => crate::syntax::zilde(Numeric::current().float(0.0)),
-            _ => return Err(cx.span.error(ErrorKind::Syntax, "the operand must return an array, function or no result"))
-        };
-        if empty { first = Some(item) } else { data.add(item) }
-    }
-    let value = Binding::Value(data.finish(layout, || first.unwrap().fill()).error_at(cx.span, "invalid result")?);
-    Ok(Bound::new(value))
+    cx.mapped(|cx| {
+        let empty = len == 0;
+        let mut data = Gather::items(len);
+        let mut first = None;
+        for i in 0..len.max(1) {
+            cx.cell(i);
+            let (x, y) = pair(i)?;
+            let result = if empty { on_prototypes(operand, x.as_ref(), &y, cx)? } else { operand.call(x.as_ref(), &y, cx)? };
+            let item = match result.value {
+                Binding::Value(a) => a, Binding::Function(f) => Value::Function(f),
+                Binding::NoResult => crate::syntax::zilde(Numeric::current().float(0.0)),
+                _ => return Err(cx.span.error(ErrorKind::Syntax, "the operand must return an array, function or no result"))
+            };
+            if empty { first = Some(item) } else { data.add(item) }
+        }
+        let value = Binding::Value(data.finish(layout, || first.unwrap().fill()).error_at(cx.span, "invalid result")?);
+        Ok(Bound::new(value))
+    })
 }
 
 pub(super) fn each(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -815,7 +1133,7 @@ pub(super) fn each(operand: &Function, left: Option<&Value>, right: &Value, cx: 
 /// Calls `operand` on each pair of items that the frames' agreement pairs, through `each_pair`. An empty frame gives an empty result when the call on its prototype items fails, as in J.
 fn paired(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(cx.span, "frames do not agree")?;
-    each_pair(operand, agreement.len, agreement.layout.clone(), |i| agreement.values(left, right, i), cx)
+    each_pair(operand, agreement.len, agreement.layout.clone(), |i| Ok(agreement.values(left, right, i)), cx)
 }
 
 fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Context<'_>) -> Result<Value, Error> {
@@ -846,7 +1164,7 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
 
 pub(super) fn fold(
     operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
-    if left.is_none() && cx.session.differentiating() {
+    if left.is_none() && cx.session.transforming() {
         if right.linear().is_some() || right.dual_tag().is_some() {
             if let Some(folded) = in_turn(operand, kind, axis, right, cx)? { return Ok(folded); }
         }

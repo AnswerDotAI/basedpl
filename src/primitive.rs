@@ -406,15 +406,19 @@ impl Primitive {
             _ => self.call_axis(left, right, Some(single_axis(spec, right.shape().len().max(left.map_or(0, |x| x.shape().len())), span)?), span),
         }
     }
+    /// The call as a running `∂` handles it, or `None` where no running `∂` tracks an argument. A record goes to reverse mode (`linear::call`), except a right record of a glyph that copies its right argument through a plan, which copies the record itself. A dual goes to forward mode (`derivative::call`), for a call without an axis. Callers test `Session::transforming` first, so code outside every level pays only that test.
+    #[inline(never)]
+    fn transformed(self, left: Option<&Value>, right: &Value, axis: Option<usize>, span: &Context<'_>) -> Option<Result<Value, Error>> {
+        if left.is_some_and(|x| x.linear().is_some()) || (right.linear().is_some() && !crate::linear::planned(self, left.is_some())) {
+            return Some(crate::linear::call(self, left, right, axis, span));
+        }
+        if axis.is_some() { return None; }
+        crate::derivative::call(self, left, right, span)
+    }
     pub(crate) fn call_axis(self, left: Option<&Value>, right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
         use Comparison::{Equal, Greater, GreaterEqual, Less, LessEqual, NotEqual};
         span.check()?;
-        // A dual argument means a running `∂` differentiates this call, and a record argument means reverse mode records it (`linear`). A glyph that copies its right argument through a plan copies a record itself.
-        if span.session.differentiating() {
-            let left_record = left.is_some_and(|x| x.linear().is_some());
-            if left_record || (right.linear().is_some() && !crate::linear::planned(self, left.is_some())) { return crate::linear::call(self, left, right, axis, span); }
-            if axis.is_none() { if let Some(result) = crate::derivative::call(self, left, right, span) { return result; } }
-        }
+        if span.session.transforming() { if let Some(result) = self.transformed(left, right, axis, span) { return result; } }
         if axis.is_some() && !self.takes_axes(left.is_some()) { return Err(span.error(ErrorKind::Syntax, "axis is not supported by this primitive")); }
         let info = self.info();
         if left.is_none() && info.monad.is_none() {
@@ -464,7 +468,7 @@ impl Primitive {
             (Self::Range, _) => range(left, right, span),
             (Self::Where, Some(x)) => interval_index(x, right, span),
             (Self::Where, None) => { fits_int(right.len().saturating_sub(1), span)?; where_indices(right, span) }
-            (Self::Random, Some(x)) => deal(x, right, &mut rand::rng(), span),
+            (Self::Random, Some(x)) => crate::distribution::drawn(None, span, |rng| deal(x, right, rng, span)),
             (Self::Replicate, Some(x)) => replicate(x, right, axis, false, span),
             (Self::Replicate, None) => runs(right, span),
             (Self::Reverse(first), _) => rotate(left, right, axis.unwrap_or(if first { 0 } else { right.shape().len().saturating_sub(1) }), span),
@@ -516,7 +520,7 @@ impl Primitive {
     }
 
     fn pervasive_apply(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
-        if matches!(self, Self::Random) && !fill { return roll_array(right, &mut rand::rng(), span); }
+        if matches!(self, Self::Random) && !fill { return crate::distribution::drawn(None, span, |rng| roll_array(right, rng, span)); }
         if right.is_atom() && left.is_none_or(Value::is_atom) { return self.pervasive_item(left, right, span, fill); }
         let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "array shapes do not agree")?;
         self.pervasive_mapped(left, right, span, fill, agreement)
@@ -524,7 +528,7 @@ impl Primitive {
     /// `x f⊗ y` for a pervasive function. Each argument keeps its own axes, and the left argument's axes come first.
     pub(crate) fn outer(self, left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let agreement = Agreement::outer(left.layout(), right.layout()).error_at(span, "outer product is too large")?;
-        if span.session.differentiating() && (crate::derivative::tag(left).is_some() || crate::derivative::tag(right).is_some()) {
+        if span.session.transforming() && (crate::derivative::tag(left).is_some() || crate::derivative::tag(right).is_some()) {
             return crate::derivative::outer(self, left, right, &agreement, span);
         }
         self.pervasive_mapped(Some(left), right, span, false, agreement)
@@ -554,8 +558,7 @@ impl Primitive {
 
     fn pervasive_item(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
         span.check()?;
-        if !fill && span.session.differentiating() && (right.linear().is_some() || left.is_some_and(|x| x.linear().is_some())) { return crate::linear::call(self, left, right, None, span); }
-        if !fill && span.session.differentiating() { if let Some(result) = crate::derivative::call(self, left, right, span) { return result; } }
+        if !fill && span.session.transforming() { if let Some(result) = self.transformed(left, right, None, span) { return result; } }
         if matches!((self, left, right), (Self::Arithmetic(Arithmetic::Plus), None, Value::Character(_))) { return Ok(right.clone()); }
         if matches!(right, Value::Array(_)) || matches!(left, Some(Value::Array(_))) { return self.pervasive_apply(left, right, span, fill); }
         if let (Self::Arithmetic(op @ (Arithmetic::Plus | Arithmetic::Minus)), Some(left)) = (self, left) {

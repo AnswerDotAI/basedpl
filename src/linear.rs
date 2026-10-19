@@ -254,6 +254,15 @@ pub(crate) fn plus_times(x: &Value, y: &Value, cx: &mut Context<'_>) -> Result<V
     f.call_array(Some(x), y, cx)
 }
 
+/// `+` folded by `kind` along `axis` of `v`, as `+/⍠axis` folds it, through dispatch.
+fn plus_fold(kind: FoldKind, axis: Option<&Value>, v: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    let fold = Function::build(kind.glyph(), vec![Operand::Function(primitive("+"))]).expect("+ folds");
+    match axis {
+        Some(axis) => Function::build("axis", vec![Operand::Function(fold), Operand::Value(axis.clone())])?.call_array(None, v, cx),
+        None => fold.call_array(None, v, cx),
+    }
+}
+
 /// `c+.×t`, or `t+.×c` where `left` is false, where `t` is a record, with the primal product's `layout`. The product contracts the last axis of its left argument with the first of its right.
 pub(crate) fn product(c: &Value, t: &Arc<Linear>, left: bool, layout: Layout) -> Value {
     node(Op::Product { coefficient: c.clone(), child: t.clone(), left }, layout, t.zero.clone())
@@ -482,7 +491,7 @@ fn slide(tables: &[Steps], shape: &[usize], source: &[usize], axis: usize) -> Op
 /// The cotangent of `source` from the cotangent `u` of a sum along a window's axis of a copy of `source`, which `slide` describes: a sliding sum of `u` padded with zeros, sent back through the rest of the copy. The sliding sum folds a copy of the padded `u`'s windows, which fusion runs as a sliding fold without building them.
 fn slid_back(u: &Value, slide: Slide, source: &Linear, cx: &mut Context<'_>) -> Result<Value, Error> {
     let windows = read_back(&read_back(u, slide.padded, cx)?, slide.windows, cx)?;
-    let summed = crate::eval::fold_plus(FoldKind::REDUCE, None, &windows, cx)?;
+    let summed = plus_fold(FoldKind::REDUCE, None, &windows, cx)?;
     copied_back(&summed, &slide.rest.steps, &slide.rest.layout.into(), source, cx)
 }
 
@@ -505,12 +514,12 @@ fn relay(v: &Value, layout: &Layout, cx: &Context<'_>) -> Result<Value, Error> {
     v.relaid(layout.clone()).error_at(cx.span, "invalid view")
 }
 
-/// A running sum along `along` of `v`, from the far end where `reversed`.
+/// `+` folded by `kind` along `axis` of `v`. A scan runs from the far end of axis `along` where `reversed`.
 fn scan(kind: FoldKind, axis: Option<&Value>, along: usize, reversed: bool, v: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
-    if !reversed { return crate::eval::fold_plus(kind, axis, v, cx); }
+    if !reversed { return plus_fold(kind, axis, v, cx); }
     let flip = Function::build("⍠", vec![Operand::Function(primitive("⌽")), Operand::Value(Value::integer(along as i64))]).expect("⌽⍠k builds");
     let flipped = flip.call_array(None, v, cx)?;
-    let scanned = crate::eval::fold_plus(kind, axis, &flipped, cx)?;
+    let scanned = plus_fold(kind, axis, &flipped, cx)?;
     flip.call_array(None, &scanned, cx)
 }
 
@@ -548,7 +557,7 @@ fn flat(v: &Value, cx: &Context<'_>) -> Result<Value, Error> { if v.is_atom() { 
 
 /// `u` summed along each of `axes`, highest first. Summing a higher axis first leaves each lower axis at its position.
 fn summed_along(u: Value, axes: &[usize], cx: &mut Context<'_>) -> Result<Value, Error> {
-    axes.iter().rev().try_fold(u, |v, &axis| crate::eval::fold_plus(FoldKind::REDUCE, Some(&Value::integer(axis as i64)), &v, cx))
+    axes.iter().rev().try_fold(u, |v, &axis| plus_fold(FoldKind::REDUCE, Some(&Value::integer(axis as i64)), &v, cx))
 }
 
 /// The cotangent of `t` from `u`, the cotangent of the copy that broadcasts `t` to `u`'s layout (`derivative::broadcast`).
@@ -558,30 +567,21 @@ fn sum_back(u: &Value, t: &Linear, cx: &mut Context<'_>) -> Result<Value, Error>
     copied_back(u, &crate::derivative::broadcast_tables(&agreement.right, agreement.layout.shape()), &agreement.layout, t, cx)
 }
 
-/// The cotangent of `t`, the child of the `Product` `c+.×t` or `t+.×c`, from `u`, the product's cotangent: `(⍉c)+.×u` or `u+.×⍉c`, with `c` and `u` taken as matrices. Compact floats and complex numbers read `c`'s transpose in place (`pervasive::inner`). Other items transpose `c` first.
+/// The cotangent of `t`, the child of the `Product` `c+.×t` or `t+.×c`, from `u`, the product's cotangent: `(⍉c)+.×u` or `u+.×⍉c`, with `c` and `u` taken as matrices. The product goes through dispatch. `c`'s transpose is a pending copy, whatever its size, which the product reads in place (`pervasive::mapped_product`). A `c` that isn't compact transposes through dispatch.
 fn product_transpose(c: &Value, u: &Value, t: &Linear, left: bool, cx: &mut Context<'_>) -> Result<Value, Error> {
-    use rustymath::linalg::Orientation::{Normal, Transpose};
-    let total = |s: &[usize]| s.iter().product::<usize>();
-    let tsize = size(&t.layout);
-    let (x, y, orientations, [m, k, n]) = if left {
+    let (csize, tsize) = (c.shape().iter().product::<usize>(), size(&t.layout));
+    let transposed = |[rows, cols]: [usize; 2], cx: &Context<'_>| -> Result<Value, Error> {
+        let matrix = crate::primitive::reshape_to(&[cols, rows], c, cx)?;
+        let plan = rustymath::structure::transpose(matrix.layout(), &[1, 0]).at(cx.span)?;
+        match crate::fusion::pending(&matrix, &plan.layout.into(), &plan.steps) { Some(t) => Ok(t), None => Primitive::Transpose.call(None, &matrix, cx) }
+    };
+    let matrix = |shape: [usize; 2], cx: &Context<'_>| crate::primitive::reshape_to(&shape, u, cx);
+    let result = if left {
         let k = c.shape().last().copied().unwrap_or(1).max(1);
-        (c, u, [Transpose, Normal], [k, total(c.shape()) / k, tsize / k])
+        plus_times(&transposed([k, csize / k], cx)?, &matrix([csize / k, tsize / k], cx)?, cx)?
     } else {
         let k = c.shape().first().copied().unwrap_or(1).max(1);
-        (u, c, [Normal, Transpose], [tsize / k, total(c.shape()) / k, k])
-    };
-    // A dual has no compact kind, which keeps the kernels from building its per-item fallback.
-    let compact = x.dtype().is_some() && y.dtype().is_some();
-    let (plus, times) = (Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times));
-    let result = match compact.then(|| crate::pervasive::inner(plus, times, x, y, [m, k, n], vec![m, n], orientations)).flatten() {
-        Some(result) => result,
-        None => {
-            let oriented = |v: &Value, o, [rows, cols]: [usize; 2], cx: &Context<'_>| match o {
-                Transpose => Primitive::Transpose.call(None, &crate::primitive::reshape_to(&[cols, rows], v, cx)?, cx),
-                Normal => crate::primitive::reshape_to(&[rows, cols], v, cx),
-            };
-            plus_times(&oriented(x, orientations[0], [m, k], cx)?, &oriented(y, orientations[1], [k, n], cx)?, cx)?
-        }
+        plus_times(&matrix([tsize / k, csize / k], cx)?, &transposed([csize / k, k], cx)?, cx)?
     };
     relay(&result, &t.layout, cx)
 }

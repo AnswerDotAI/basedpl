@@ -248,7 +248,7 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
     Ok(())
 }
 
-/// `value` with each keyed axis in the order of its keys in `wanted`. Other axes keep their order.
+/// `value` with each keyed axis in the order of its keys in `wanted`. Other axes keep their order. With `subset`, `wanted` may leave out keys of `value`. Otherwise both need the same keys (`Keys::positions`).
 pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool) -> Result<Value, ErrorKind> {
     let target = |axis| match (value.keys(axis), wanted.get(axis).and_then(Option::as_ref)) {
         (Some(src), Some(dst)) if src != dst => Some((src, dst)), _ => None

@@ -1,6 +1,6 @@
 # `•prefs` — Session settings
 
-`•prefs Y` applies the settings in the record `Y` to this session, and returns every setting. The result is shy when `Y` sets something, as an assignment's is. `•prefs ⍬` changes nothing, and shows every setting.
+`•prefs Y` applies the settings in the record `Y` to this session, and returns every setting except `seed`. The result is shy when `Y` sets something, as an assignment's is. `•prefs ⍬` changes nothing, and shows every setting.
 
 | Setting | Holds | Default |
 |---|---|---|
@@ -20,6 +20,7 @@
 | `kinds` | `"static"` makes each result's kind follow from its arguments' kinds and these settings alone. `"dynamic"` lets some functions choose it from values, as described below | `"dynamic"` |
 | `int` | The width of integers in bits under static kinds, 32 or 64 | `64` |
 | `threads` | The number of threads that large calls split across. `0` gives the default. `1` keeps every call on one thread | `0` |
+| `seed` | A nonnegative integer that seeds the session's random numbers | A seed from the operating system |
 
 Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. A line wider than `width` hides columns in the same way, keeping as many at each end as fit. `⎕←` always shows every item, and rounds floats to `prec` as display does. [`⍕`](../glyphs/thorn.qmd) and source text always hold every item and every digit.
 
@@ -35,7 +36,9 @@ Display shows part of an array of more than `limit` items: the first and last `e
 
 `threads` sets how many threads this session's large calls split across. A call splits only when it has enough work to repay the extra threads. Float results can differ in their last bits between thread counts. The default, 0, uses the number in the `RAYON_NUM_THREADS` environment variable where it's set, and one thread for each core otherwise. 1 runs every call on the thread that evaluates the code. When several BPL processes run at once, such as a pool of Python workers, set 1 in each of them to keep them from competing for the cores. The browser build runs every call on one thread, whatever the setting.
 
-`fusion` shows where large computations stop waiting. Calls of these glyphs on large arrays of floats run together, block by block, reading each array once: monadic `+ - ÷ | * π ⊼ ⊽ ≤ ≥`, and dyadic `+ - × ÷ | ⌈ ⌊ π` and the comparisons. Structural functions such as `⌽`, `⍉`, `↑`, `↓` and `↕` on large arrays of any kind wait too, as a map of their argument. Each call waits until something reads its result. Fused calls, reductions, other pervasive calls and `+.×` read a waiting structural result through its map, without building it. A read of a few items computes only those items. Any other reader computes the whole result first, such as `⍋`, display, and Python conversions other than NumPy views of structural results. With `fusion` set to `$t`, the innermost call that computes items of a waiting result writes a line naming its function and position, such as `fusion ends at ⍋ (<input>:1:46)`. A reduction such as `+/` of a waiting result runs with the calls and writes nothing.
+`seed` restarts the session's random numbers from the seed given, so the same seed gives the same draws of [`¿`](../glyphs/inverted-question.qmd) and of a distribution's `sample`. The settings that `•prefs` returns leave `seed` out, because the stream moves on with each draw. Restoring saved settings therefore never reseeds it.
+
+`fusion` shows where large computations stop waiting. Calls of these glyphs on large arrays of floats run together, block by block, reading each array once: monadic `+ - ÷ | * π ⊼ ⊽ ≤ ≥`, and dyadic `+ - × ÷ | ⌈ ⌊ π` and the comparisons. A comparison runs with a later call that reads it, as in `y×x>0`, unless a name also holds it. Structural functions such as `⌽`, `⍉`, `↑`, `↓` and `↕` on large arrays of any kind wait too, as a map of their argument. Each call waits until something reads its result. Fused calls, reductions, other pervasive calls and `+.×` read a waiting structural result through its map, without building it. A read of a few items computes only those items. Any other reader computes the whole result first, such as `⍋`, display, and Python conversions other than NumPy views of structural results. With `fusion` set to `$t`, the innermost call that computes items of a waiting result writes a line naming its function and position, such as `fusion ends at ⍋ (<input>:1:46)`. A reduction such as `+/` of a waiting result runs with the calls and writes nothing.
 
 [`•explain`](explain.qmd) records the same events. In the first example, the comparison runs with the arithmetic and `+/`. In the second, monadic `⌊` ends the fusion of `y×2`:
 
@@ -68,6 +71,7 @@ dyads←"+-×÷|⌈⌊*⍟√!π∨∧=≠<≤>≥"
 •prefs ["kinds":"static"] ⋄ √¯4    ⍝ $n
 •prefs ["kinds":"static" "int":32] ⋄ 2147483647ₓ+1ₓ    ⍝ ¯2147483648ₓ
 •prefs ["kinds":"dynamic" "int":64] ⋄ √¯4    ⍝ 0ⱼ2
+•prefs ["seed":42] ⋄ a←¿6 6 6 ⋄ •prefs ["seed":42] ⋄ a≡¿6 6 6    ⍝ $t
 ```
 
 Errors: `DOMAIN` for an unknown setting or an invalid value. Under static kinds, `LIMIT` for an exact integer literal that doesn't fit the `int` width, or for a count or position that doesn't fit it.

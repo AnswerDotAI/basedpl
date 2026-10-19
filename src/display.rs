@@ -182,9 +182,10 @@ impl Settings {
     }
 }
 
-/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `threads` is the number of threads that the session's large calls split across, from then on. 0 gives the default. 1 runs them on the evaluating thread alone. Until the session sets it, `threads` reports the evaluating thread's own setting.
+/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `threads` is the number of threads that the session's large calls split across, from then on. 0 gives the default. 1 runs them on the evaluating thread alone. Until the session sets it, `threads` reports the evaluating thread's own setting. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws.
 pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::Span) -> Result<(Value, bool), crate::Error> {
     let (mut display, mut numeric, mut threads, mut hanzi_aliases) = (session.display, session.numeric, session.threads, session.hanzi_aliases);
+    let mut seed = None;
     let pairs = keyed::pairs(right).error_at(span, "•prefs takes a record of settings")?;
     let shy = !pairs.is_empty();
     for (key, value) in pairs {
@@ -198,12 +199,17 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
                 let n = value.as_number().and_then(|n| n.integer().ok()).and_then(|n| usize::try_from(n).ok());
                 threads = Some(n.ok_or(Kind::Domain).error_at(span, "threads must be a nonnegative integer")?);
             }
+            "seed" => {
+                let n = value.as_number().and_then(|n| n.nonnegative_integer::<u64>().ok());
+                seed = Some(n.ok_or(Kind::Domain).error_at(span, "seed must be a nonnegative integer")?);
+            }
             key => {
                 if !display.set(key, &value).error_at(span, "invalid display setting")? { return Err(span.domain_error("unknown setting")); }
             }
         }
     }
     (session.display, session.numeric, session.threads, session.hanzi_aliases) = (display, numeric, threads, hanzi_aliases);
+    if let Some(seed) = seed { session.generator = crate::distribution::Stream::seeded(seed, session.map_ids); }
     numeric.set_current();
     if let Some(n) = threads { rustymath::parallel::set_threads(n); }
     let entries = display.entries(numeric.width).into_iter().chain(numeric.entries());

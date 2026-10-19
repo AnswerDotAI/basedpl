@@ -110,7 +110,7 @@ A dyadic operator takes an operand on each side, as in `f⍤1`. The columns are 
 | `.` [dot](glyphs/dot.qmd) | | determinant | inner-product | `f.g`. The monad is J's determinant form, `u .v`. Also array fields and indexing |
 | `⍣` [star-diaeresis](glyphs/star-diaeresis.qmd) | Alt-1 8 | power | | `f⍣n` iterates or inverts, `f⍣∞` finds a fixed point, `f⍣g` repeats until `g`, and `f⍣[g]` keeps the history until `g`. List counts give history, as J/BQN |
 | `⊘` [circle-slash](glyphs/circle-slash.qmd) | Alt-o / | valences | | `f⊘g` calls `f` with one argument and `g` with two, as BQN's `⊘` |
-| `⍚` [diamond-underbar](glyphs/diamond-underbar.qmd) | Alt-Minus Backtick | agenda | | `selector⍚cases` selects and calls one function, as BQN's `◶` |
+| `⍚` [diamond-underbar](glyphs/diamond-underbar.qmd) | Alt-Minus Backtick | agenda | | `selector⍚cases` calls the function that the selector picks, as BQN's `◶`, or one for each cell |
 | `@` [at](glyphs/at.qmd) | | under | | `f@g`, `f@a`, `f@[p]` apply `f` under a selection, positions, mask or transform. As BQN's `⌾`, not Dyalog's `@` |
 | `⌺` [quad-diamond](glyphs/quad-diamond.qmd) | Alt-q Backtick | stencil | | `f⌺a`, `f⌺g` |
 

@@ -445,20 +445,25 @@ impl Value {
         match self.storage_mut() { Storage::Compact(b) => A::of_mut(b), Storage::Mixed(..) => None }
     }
     /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins, and a `Steps::FILL` offset writes nothing. Storage that can't hold an item widens as a `Gather` does. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame.
-    pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) {
+    pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) { self.written(Writes::Offsets(offsets), source) }
+    /// `scatter` at the positions that `steps` reach from `base`, in the order `walk` reads them, without listing them (`Gather::scatter_walk`).
+    pub(crate) fn scatter_walk(&mut self, base: usize, steps: &[rustymath::gather::Steps], source: &Value) { self.written(Writes::Walk { base, steps }, source) }
+    /// The items of `source` written in place where `writes` says, as `scatter` writes them.
+    fn written(&mut self, writes: Writes<'_>, source: &Value) {
         // Writes only at fills change nothing, so storage doesn't widen for them.
-        if offsets.iter().all(|&o| o == rustymath::gather::Steps::FILL) { return; }
+        if writes.only_fills() { return; }
         if crate::derivative::tag(self).is_some() || crate::derivative::tag(source).is_some() {
-            let Ok(()) = crate::derivative::both(self, source, |t, s| Ok::<_, std::convert::Infallible>(t.scatter(offsets, s)));
+            let Ok(()) = crate::derivative::both(self, source, |t, s| Ok::<_, std::convert::Infallible>(t.written(writes, s)));
             return;
         }
         let data = self.storage_mut();
         if let Storage::Mixed(items, memo) = data {
+            let offsets = writes.offsets();
             if offsets.contains(&0) { memo.prototype.take(); }
             if source.environment().is_some() || offsets.iter().any(|&o| o != rustymath::gather::Steps::FILL && items[o].environment().is_some()) { memo.environment.take(); }
         }
         let mut gather = Gather::resume(std::mem::replace(data, Storage::Compact(Buffer::Booleans(Vec::new()))));
-        gather.scatter(offsets, source);
+        gather.scatter(writes, source);
         *data = gather.data;
     }
     /// Writes `item` at `path` in place, through nested items. The empty path replaces the whole array.
@@ -734,15 +739,21 @@ impl Value {
         let cells: Vec<_> = self.elements().collect();
         Self::assemble_layout(self.layout(), &cells, &self.prototype(), widening)
     }
+    /// The shape that cells of `shapes` take when assembled by trailing-axis agreement: as many axes as the cell with the most, each as long as the longest cell along it. A cell with fewer axes counts as length 1 along the leading axes it lacks.
+    pub(crate) fn assembled_shape<'a>(shapes: impl Iterator<Item = &'a [usize]> + Clone) -> Vec<usize> {
+        let rank = shapes.clone().map(<[usize]>::len).max().unwrap_or(0);
+        let mut cell_shape = vec![0; rank];
+        for shape in shapes {
+            let pad = rank - shape.len();
+            for (axis, len) in cell_shape.iter_mut().enumerate() { *len = (*len).max(if axis < pad { 1 } else { shape[axis - pad] }); }
+        }
+        cell_shape
+    }
     fn assemble_layout(frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening) -> Result<Self, ErrorKind> {
         if element_count(frame.shape())? != cells.len() { return Err(Kind::Length.into()); }
         if cells.is_empty() { return frame.concat(empty_cell.layout()).collect(vec![], empty_cell.prototype()); }
-        let rank = cells.iter().map(|a| a.shape().len()).max().unwrap();
-        let mut cell_shape = vec![0; rank];
-        for cell in cells {
-            let pad = rank - cell.shape().len();
-            for (axis, len) in cell_shape.iter_mut().enumerate() { *len = (*len).max(if axis < pad { 1 } else { cell.shape()[axis - pad] }); }
-        }
+        let cell_shape = Self::assembled_shape(cells.iter().map(Value::shape));
+        let rank = cell_shape.len();
         let shape = [frame.shape(), &cell_shape].concat();
         let len = generated_len(&shape)?;
         let cell_len = element_count(&cell_shape)?;

@@ -41,7 +41,7 @@ A negative size pads its axis. Each window is centred on a position, as in [Sten
 ⍴¯3 2↕3 4⍴⍳12        ⍝ [3 3 3 2]ₓ
 ```
 
-An axis of length `n` has `0⌈≥⌊M÷⍨n-S` full windows, or `⌈M÷⍨n-0=2|S` padded windows. Movements default to 1.
+An axis of length `n` has `0⌈≥⌊M÷⍨n-S` full windows, or `⌈M÷⍨0⌈n-0=2|S` padded windows. Movements default to 1.
 
 ## Folds of windows
 
@@ -76,4 +76,4 @@ k←¿3 4⍴0
 
 - `RANK`: sizes not a unit, vector or two-row matrix, or too many axes
 - `LENGTH`: a matrix without two rows
-- `DOMAIN`: non-integral size, nonpositive movement, or a padded size of at least twice its axis length
+- `DOMAIN`: non-integral size, nonpositive movement, or a padded size of at least twice the length of an axis that isn't empty
