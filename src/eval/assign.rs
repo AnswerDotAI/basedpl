@@ -422,7 +422,7 @@ impl Session {
         Ok((binding, labels, selected.expect("a selection target's value stays marked")))
     }
 
-    /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. A target at a fill reads the fill, and its write is dropped. An error leaves the array unchanged. When `f` is a pervasive primitive, `pervasive::scatter` combines the targets into the array in place. Where it can't, one call covers all the targets at distinct positions, and repeated positions take rounds.
+    /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. A target at a fill reads the fill, and its write is dropped. An error leaves the array unchanged. When `f` is a pervasive primitive, `pervasive::scatter` combines the targets into the array in place. Where it can't, one call covers all the targets at distinct positions, and repeated positions take rounds. Any other `f` runs once for each target. `•explain` records each path as an accumulation.
     fn write_modified(&mut self, binding: ArrayBinding, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<(), Error> {
         let right = selection.checked(right, &self.at(span))?;
         // The modifier never runs for a target at a fill.
@@ -435,16 +435,18 @@ impl Session {
                     Some(if item.is_atom() { item } else { item.enclose().error_at(span, "invalid modified selection")? })
                 } else { None };
                 return self.write_kept(binding, span, |z, cx| {
-                    if crate::pervasive::scatter(p, z, offsets, unit.as_ref().unwrap_or(&right)) {
-                        crate::explain::accumulated(offsets.len(), z.len());
+                    if let Some(route) = crate::pervasive::scatter(p, z, offsets, unit.as_ref().unwrap_or(&right)) {
+                        crate::explain::accumulated(offsets.len(), z.len(), route.name());
                         return Ok(());
                     }
                     let Some((counts, rounds)) = occurrences(offsets, z.len()) else {
+                        crate::explain::accumulated(offsets.len(), z.len(), "one call");
                         let items = selection.read(z, cx)?;
                         let right = match unit { Some(unit) if right.shape() != items.shape() => unit, _ => right };
                         let values = f.call_array(Some(&items), &right, cx)?;
                         return selection.write_into(z, &values, cx);
                     };
+                    crate::explain::accumulated(offsets.len(), z.len(), "rounds");
                     // Round r holds the r-th target at each position. Its positions are distinct. One call computes the round from the values that earlier rounds wrote into a copy of the array. The copy then replaces the array.
                     let (order, sizes) = rustymath::search::grouped(&counts.iter().map(|&c| c as usize).collect::<Vec<_>>(), rounds);
                     let mut current = z.clone();
@@ -474,6 +476,7 @@ impl Session {
             results.push(f.call_array(Some(&item), &selection.item(&right, i), &mut self.at(span))?);
             latest.insert(path, i);
         }
+        crate::explain::accumulated(selection.targets.len(), original.len(), "item by item");
         let values = match &selection.frame {
             ResultFrame::Direct => results.pop().unwrap_or(right),
             ResultFrame::Array(layout) if !results.is_empty() => Value::new(layout.shape().to_vec(), results).error_at(span, "invalid modified selection")?,

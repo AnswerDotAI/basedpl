@@ -30,6 +30,8 @@ pub(crate) trait Dyad<A> {
     /// The session's numeric settings: the tolerance that kernels of approximate numbers compare within, and the width of the floats that kernels create from exact numbers.
     fn numeric(&self) -> Numeric;
     fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Self::Output;
+    /// `f` on each pair of items, for a kernel none of whose results fails: `same`'s loop with nothing to check or undo.
+    fn same_total(self, f: impl Fn(A, A) -> A + Copy + Sync) -> Self::Output where Self: Sized { self.same(move |x, y| Some(f(x, y))) }
     fn boolean(self, f: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Self::Output;
     /// `f` on each pair of items, through its slice form where the loop has slices of items, and its scalar form elsewhere. A NaN result from arguments that aren't NaN fails the item, because rustymath gives NaN for an argument outside a function's real domain.
     fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> Self::Output where Self: Sized { self.same(move |x, y| f.checked(x, y)) }
@@ -151,15 +153,15 @@ mod float_kernels {
             fn direct_dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Result<R::Output, R> {
                 use {Arithmetic::*, Math::*};
                 Ok(match p {
-                    Primitive::Arithmetic(Plus) => run.same(|x, y| Some(rustymath::Add.one(x, y))),
-                    Primitive::Arithmetic(Minus) => run.same(|x, y| Some(rustymath::Subtract.one(x, y))),
-                    Primitive::Arithmetic(Times) => run.same(|x, y| Some(rustymath::Multiply.one(x, y))),
-                    Primitive::Arithmetic(Divide) => run.same(|x, y| Some(rustymath::Divide.one(x, y))),
+                    Primitive::Arithmetic(Plus) => run.same_total(|x, y| rustymath::Add.one(x, y)),
+                    Primitive::Arithmetic(Minus) => run.same_total(|x, y| rustymath::Subtract.one(x, y)),
+                    Primitive::Arithmetic(Times) => run.same_total(|x, y| rustymath::Multiply.one(x, y)),
+                    Primitive::Arithmetic(Divide) => run.same_total(|x, y| rustymath::Divide.one(x, y)),
                     Primitive::Math(Power) => match run.constants() {
-                        (_, Some(y)) if y == 2.0 => run.same(|x, _| Some(x * x)),
+                        (_, Some(y)) if y == 2.0 => run.same_total(|x, _| x * x),
                         _ => run.many(rustymath::Pow),
                     },
-                    Primitive::Math(Pi) => run.same(|x, y| Some(real::pi_times(x / y))),
+                    Primitive::Math(Pi) => run.same_total(|x, y| real::pi_times(x / y)),
                     _ => return Err(run),
                 })
             }
@@ -294,11 +296,11 @@ mod complex_kernels {
             fn direct_dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Result<R::Output, R> {
                 use Arithmetic::*;
                 Ok(match p {
-                    Primitive::Arithmetic(Plus) => run.same(|x, y| Some(rustymath::Add.one(x, y))),
-                    Primitive::Arithmetic(Minus) => run.same(|x, y| Some(rustymath::Subtract.one(x, y))),
-                    Primitive::Arithmetic(Times) => run.same(|x, y| Some(rustymath::Multiply.one(x, y))),
-                    Primitive::Arithmetic(Divide) => run.same(|x, y| Some(rustymath::Divide.one(x, y))),
-                    Primitive::Math(Math::Pi) => run.same(|x, y| Some(rustymath::divide(x, y) * std::f64::consts::PI as F)),
+                    Primitive::Arithmetic(Plus) => run.same_total(|x, y| rustymath::Add.one(x, y)),
+                    Primitive::Arithmetic(Minus) => run.same_total(|x, y| rustymath::Subtract.one(x, y)),
+                    Primitive::Arithmetic(Times) => run.same_total(|x, y| rustymath::Multiply.one(x, y)),
+                    Primitive::Arithmetic(Divide) => run.same_total(|x, y| rustymath::Divide.one(x, y)),
+                    Primitive::Math(Math::Pi) => run.same_total(|x, y| rustymath::divide(x, y) * std::f64::consts::PI as F),
                     _ => return Err(run),
                 })
             }
@@ -440,74 +442,87 @@ fn joined(left: &Value, right: &Value, numeric: Numeric) -> Option<DType> {
     numeric.kind(left.dtype()?).join(numeric.kind(right.dtype()?), Widening::Arrays)
 }
 
-/// `p` applied to the items of `z` at `offsets`, in turn and in place: `z[o]` becomes `z[o] p y`, where `y` is the target's item of `values`, or its only item. A repeated offset applies `p` to the result of the one before. Items compute at the kind that `map` computes `z p values` in, and `z` converts to that kind first. 16-bit floats accumulate in 32 bits and round once. Only `+ - × ÷ ⌈ ⌊` on compact numbers take this path. It gives false, with `z` unchanged, for any other call, and where an item needs the `Number` path, such as an integer result that doesn't fit 64 bits.
-pub(crate) fn scatter(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value) -> bool {
+/// `p` applied to the items of `z` at `offsets`, in turn and in place: `z[o]` becomes `z[o] p y`, where `y` is the target's item of `values`, or its only item. A repeated offset applies `p` to the result of the one before. Items compute at the kind that `map` computes `z p values` in, and `z` converts to that kind first. 16-bit floats accumulate in 32 bits and round once. Only `+ - × ÷ ⌈ ⌊` on compact numbers take this path. It gives the route it took, and `None`, with `z` unchanged, for any other call, and where an item needs the `Number` path, such as an integer result that doesn't fit 64 bits.
+pub(crate) fn scatter(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value) -> Option<Route> {
     use {Arithmetic::*, Math::*};
-    if !matches!(p, Primitive::Arithmetic(Plus | Minus | Times | Divide) | Primitive::Math(Ceiling | Floor)) || !matches!(z, Value::Array(_)) { return false; }
-    if crate::derivative::tag(z).is_some() || crate::derivative::tag(values).is_some() { return false; }
+    if !matches!(p, Primitive::Arithmetic(Plus | Minus | Times | Divide) | Primitive::Math(Ceiling | Floor)) || !matches!(z, Value::Array(_)) { return None; }
+    if crate::derivative::tag(z).is_some() || crate::derivative::tag(values).is_some() { return None; }
     let numeric = Numeric::current();
     if numeric.halving([z.float_width(), values.float_width()].into_iter()).is_none() { return scatter_under(p, z, offsets, values, numeric); }
     let wide = halves(&[Some(&*z), Some(values)], |v, numeric| {
         let mut wide = v[0]?.clone();
-        scatter_under(p, &mut wide, offsets, v[1]?, numeric).then_some(wide)
+        scatter_under(p, &mut wide, offsets, v[1]?, numeric).map(|_| wide)
     });
-    match wide { Some(wide) => { *z = wide; true } None => false }
+    wide.map(|wide| { *z = wide; Route::Copied })
+}
+
+/// How `scatter` added its values: in place with nothing recorded, in place keeping each target's old item so that a failing target can restore them, or on a converted copy of `z`, as for 16-bit floats, which then replaces it.
+#[derive(Clone, Copy)]
+pub(crate) enum Route { InPlace, Logged, Copied }
+
+impl Route {
+    /// The route's name, as `•explain` reports it.
+    pub(crate) fn name(self) -> &'static str { match self { Route::InPlace => "in place", Route::Logged => "logged", Route::Copied => "on a copy" } }
 }
 
 /// `scatter` under `numeric`, where no argument holds 16-bit floats.
-fn scatter_under(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value, numeric: Numeric) -> bool {
-    let Some(dtype) = joined(z, values, numeric) else { return false };
-    match dtype {
+fn scatter_under(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value, numeric: Numeric) -> Option<Route> {
+    match joined(z, values, numeric)? {
         DType::Float(width) => scatter_floats(p, z, offsets, values, width, numeric),
-        DType::Boolean | DType::Integer(_) if inexact(p, true, numeric) => scatter_floats(p, z, offsets, values, numeric.exact_width(dtype), numeric),
-        DType::Complex(width) => with_complex_width!(width, C => scattered::<C>(p, z, offsets, values, read_as::<C>, numeric) == Some(true)),
-        DType::Boolean | DType::Integer(_) => scatter_wholes(p, z, offsets, values, dtype, numeric),
-        _ => false,
+        dtype @ (DType::Boolean | DType::Integer(_)) if inexact(p, true, numeric) => scatter_floats(p, z, offsets, values, numeric.exact_width(dtype), numeric),
+        DType::Complex(width) => with_complex_width!(width, C => scattered::<C>(p, z, offsets, values, read_as::<C>, numeric)).flatten(),
+        dtype @ (DType::Boolean | DType::Integer(_)) => scatter_wholes(p, z, offsets, values, dtype, numeric),
+        _ => None,
     }
 }
 
 /// `scatter` at float `width`. Under dynamic kinds, `⌊` and `⌈` beside exact numbers take the general path, which keeps an exact number exact beside an infinity or NaN.
-fn scatter_floats(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value, width: FloatWidth, numeric: Numeric) -> bool {
+fn scatter_floats(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value, width: FloatWidth, numeric: Numeric) -> Option<Route> {
     let exact = |v: &Value| matches!(v.dtype(), Some(DType::Boolean | DType::Integer(_)));
-    if !numeric.is_static() && matches!(p, Primitive::Math(Math::Floor | Math::Ceiling)) && (exact(z) || exact(values)) { return false; }
-    with_float_width!(kernel width, F => scattered::<F>(p, z, offsets, values, read_as::<F>, numeric)) == Some(true)
+    if !numeric.is_static() && matches!(p, Primitive::Math(Math::Floor | Math::Ceiling)) && (exact(z) || exact(values)) { return None; }
+    with_float_width!(kernel width, F => scattered::<F>(p, z, offsets, values, read_as::<F>, numeric)).flatten()
 }
 
 /// `scatter` on Booleans and integers at the kinds that `first_fit` tries. Where a result doesn't fit a width, the next width up starts again from the original items. Under static kinds, integers keep their kind's width and wrap.
-fn scatter_wholes(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value, dtype: DType, numeric: Numeric) -> bool {
+fn scatter_wholes(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value, dtype: DType, numeric: Numeric) -> Option<Route> {
     let attempt = |kind| match kind {
         DType::Boolean => scattered::<bool>(p, z, offsets, values, truths_of, numeric),
         DType::Integer(width) => with_width!(width, T => scattered::<T>(p, z, offsets, values, side::<T>, numeric)),
         _ => None,
-    }.map(|done| done.then_some(()));
-    first_fit(dtype, numeric, attempt) == Some(Some(()))
+    };
+    first_fit(dtype, numeric, attempt).flatten()
 }
 
 /// The items of compact Booleans.
 fn truths_of(value: &Value) -> Option<Cow<'_, [bool]>> { bool::slice(value).map(Cow::Borrowed) }
 
-/// `scatter` at item type `A`: in place where `z` holds `A`s already, and otherwise on a copy of `z` read as `A`s, which replaces `z` when every target succeeds. `None` where `p` has no kernel at `A` or an argument doesn't read as `A`s, and `Some(false)` where a target fails. `z` is unchanged in both cases.
-fn scattered<A: Kernels>(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value, read: impl Fn(&Value) -> Option<Cow<'_, [A]>>, numeric: Numeric) -> Option<bool> {
+/// `scatter` at item type `A`: in place where `z` holds `A`s already, and otherwise on a copy of `z` read as `A`s, which replaces `z` when every target succeeds. `None` where `p` has no kernel at `A` or an argument doesn't read as `A`s, `Some(None)` where a target fails, and otherwise the route taken. `z` is unchanged unless every target succeeds.
+fn scattered<A: Kernels>(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value, read: impl Fn(&Value) -> Option<Cow<'_, [A]>>, numeric: Numeric) -> Option<Option<Route>> {
     let ys = read(values)?;
     let ys = match Arg::of(&ys) { Arg::Many(many) if many.len() != offsets.len() => return None, ys => ys };
     if let Some(out) = z.items_mut::<A>() { return A::dyad(p, Scatter { out, offsets, values: ys, numeric }); }
     let mut data = read(z)?.into_owned();
-    let done = A::dyad(p, Scatter { out: &mut data, offsets, values: ys, numeric })?;
-    if done { *z = A::build(z.shape(), data)?.with_layout(z.layout().clone()).ok()?; }
-    Some(done)
+    let route = A::dyad(p, Scatter { out: &mut data, offsets, values: ys, numeric })?;
+    if route.is_some() { *z = A::build(z.shape(), data)?.with_layout(z.layout().clone()).ok()?; }
+    Some(route.map(|_| Route::Copied))
 }
 
 /// The loop of `scatter`: each target applies the kernel to the item of `out` at its offset and to its own value, in turn. A target that fails restores every item that earlier targets changed. A kernel that can't fail, or whose failed results are kept, writes in place with no record to restore from. Kernels that give Booleans don't scatter.
 struct Scatter<'a, A> { out: &'a mut [A], offsets: &'a [usize], values: Arg<'a, A>, numeric: Numeric }
 impl<A: Stored> Dyad<A> for Scatter<'_, A> {
-    type Output = bool;
+    type Output = Option<Route>;
     fn numeric(&self) -> Numeric { self.numeric }
-    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> bool { rustymath::gather::try_scatter_with(self.out, rustymath::gather::targets(self.offsets, self.values), f) }
-    fn boolean(self, _: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> bool { false }
-    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> bool {
+    fn same(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Route> {
+        rustymath::gather::try_scatter_with(self.out, rustymath::gather::targets(self.offsets, self.values), f).then_some(Route::Logged)
+    }
+    fn same_total(self, f: impl Fn(A, A) -> A + Copy + Sync) -> Option<Route> {
+        rustymath::gather::scatter_with(self.out, rustymath::gather::targets(self.offsets, self.values), f);
+        Some(Route::InPlace)
+    }
+    fn boolean(self, _: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Option<Route> { None }
+    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> Option<Route> {
         if !total(&f) && !kept(&f, self.numeric) { return self.same(move |x, y| f.checked(x, y)); }
-        rustymath::gather::scatter_with(self.out, rustymath::gather::targets(self.offsets, self.values), |x, y| f.one(x, y));
-        true
+        self.same_total(move |x, y| f.one(x, y))
     }
 }
 

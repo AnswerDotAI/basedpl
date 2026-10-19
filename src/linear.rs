@@ -3,7 +3,7 @@
 //! A record is never computed, so reading its items is a bug: `ArrayData::storage` panics on one. Records live only in the tangents of duals, and only the code that handles tangents meets them.
 use crate::{
     agreement::{Agree, Agreement},
-    array::{Items, Layout, Storage},
+    array::{Gather, Items, Layout, Storage},
     error::{At, ErrorAt},
     execution::Context,
     number::Arithmetic,
@@ -11,17 +11,17 @@ use crate::{
     explain::{Live, Counted}, Error, ErrorKind, Function, Number, Operand, Value};
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::borrow::Cow;
-use rustymath::{buffer::{Buffer, DType, FloatBuf, FloatWidth, Floats, View, Width}, gather::Steps, structure::Plan};
+use rustymath::{buffer::{Buffer, DType, FloatBuf, FloatWidth, Floats, View, Width}, gather::{Steps, counts_up}, structure::Plan};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Arc,
+    Arc, OnceLock,
 };
 
 /// The next sequence number. A node's children always have smaller numbers, so visiting nodes by decreasing number visits each one after every node that reads it.
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
-/// One node of a record: the linear call it records, its result's layout, a zero of its kind, its sequence number, and the guard that counts it for `•memory`.
-pub(crate) struct Linear { pub(crate) op: Op, pub(crate) layout: Layout, pub(crate) zero: Value, seq: u64, _live: Live }
+/// One node of a record: the linear call it records, its result's layout, a zero of its kind, its ids counted from 1 once a copy has read it, its sequence number, and the guard that counts it for `•memory`.
+pub(crate) struct Linear { pub(crate) op: Op, pub(crate) layout: Layout, pub(crate) zero: Value, ids: OnceLock<Value>, seq: u64, _live: Live }
 
 /// The linear calls a record holds. Each one's transpose is one of them, so a record that an outer `∂` makes of an inner transpose's calls is a record too.
 pub(crate) enum Op {
@@ -32,10 +32,10 @@ pub(crate) enum Op {
     Add(Arc<Linear>, Arc<Linear>),
     /// A sum, or with `kind.scan` a running sum, along an axis: the fold's axis option, and the axis it resolves to. A reversed scan runs from the far end.
     Fold { child: Arc<Linear>, kind: FoldKind, axis: Option<Value>, along: usize, reversed: bool },
-    /// Each item read from the sources, joined end to end and counted from 1, at the position its id gives. An id of 0 marks fill, which reads 0.
-    Gather { sources: Vec<Arc<Linear>>, ids: Value },
-    /// Zeros of this node's layout, with each item of the child added at the position its id gives, counted from 1. An id of 0 drops its item.
-    ScatterAdd { child: Arc<Linear>, ids: Value },
+    /// Each item read from the sources, joined end to end, at its offset among their items. A `Steps::FILL` offset reads 0.
+    Gather { sources: Vec<Arc<Linear>>, offsets: Vec<usize> },
+    /// Zeros of this node's layout, with item `k` of the child added at `offsets[k]`. A `Steps::FILL` offset drops its item.
+    ScatterAdd { child: Arc<Linear>, offsets: Vec<usize> },
     /// The child's items in the same order, under this node's layout.
     View(Arc<Linear>),
     /// The child's items read through one `Steps` table for each axis of this node's layout, as a structural glyph copies values (`primitive::copied`). A position that the tables give no offset for reads 0.
@@ -47,15 +47,15 @@ pub(crate) enum Op {
 }
 
 impl Op {
-    /// The value that this call holds, a coefficient, ids or a fold's axis, and the nodes that it reads.
+    /// The value that this call holds, a coefficient or a fold's axis, and the nodes that it reads.
     fn parts(&self) -> (Option<&Value>, Vec<&Arc<Linear>>) {
         match self {
             Op::Seed(_) => (None, vec![]),
-            Op::Scale(c, t, _) | Op::Product { coefficient: c, child: t, .. } | Op::ScatterAdd { ids: c, child: t } => (Some(c), vec![t]),
+            Op::Scale(c, t, _) | Op::Product { coefficient: c, child: t, .. } => (Some(c), vec![t]),
             Op::Fold { child, axis, .. } => (axis.as_ref(), vec![child]),
-            Op::View(t) | Op::Cast(t, _) | Op::Copy { child: t, .. } => (None, vec![t]),
+            Op::View(t) | Op::Cast(t, _) | Op::Copy { child: t, .. } | Op::ScatterAdd { child: t, .. } => (None, vec![t]),
             Op::Add(a, b) => (None, vec![a, b]),
-            Op::Gather { sources, ids } => (Some(ids), sources.iter().collect()),
+            Op::Gather { sources, .. } => (None, sources.iter().collect()),
         }
     }
 }
@@ -84,8 +84,8 @@ impl Linear {
         while let Some(node) = stack.pop() {
             if !seen.insert(Arc::as_ptr(node) as usize) { continue; }
             let (held, children) = node.op.parts();
-            let tables = match &node.op { Op::Copy { tables, .. } => tables.iter().map(Steps::footprint).sum(), _ => 0 };
-            bytes += size_of::<Linear>() + node.zero.footprint_in(seen) + held.map_or(0, |v| v.footprint_in(seen)) + tables;
+            let maps = match &node.op { Op::Copy { tables, .. } => tables.iter().map(Steps::footprint).sum(), Op::Gather { offsets, .. } | Op::ScatterAdd { offsets, .. } => offsets.capacity() * size_of::<usize>(), _ => 0 };
+            bytes += size_of::<Linear>() + node.zero.footprint_in(seen) + held.map_or(0, |v| v.footprint_in(seen)) + maps + node.ids.get().map_or(0, |v| v.footprint_in(seen));
             stack.extend(children);
         }
         bytes
@@ -94,7 +94,7 @@ impl Linear {
 
 /// A record node as a value.
 fn node(op: Op, layout: Layout, zero: Value) -> Value {
-    Value::from_linear(Arc::new(Linear { op, layout, zero, seq: NEXT.fetch_add(1, Ordering::Relaxed), _live: Live::new(Counted::Record) }))
+    Value::from_linear(Arc::new(Linear { op, layout, zero, ids: OnceLock::new(), seq: NEXT.fetch_add(1, Ordering::Relaxed), _live: Live::new(Counted::Record) }))
 }
 
 fn size(layout: &Layout) -> usize { layout.shape().iter().product() }
@@ -119,16 +119,18 @@ fn laid(layout: &Layout, ids: Vec<i64>) -> Value {
 /// The ids of `t`'s items, counted from `first`, in its layout.
 fn ids(t: &Linear, first: i64) -> Value { laid(&t.layout, (first..first + size(&t.layout) as i64).collect()) }
 
-/// The records that a copy reads, in the order it meets them, and the next id to give out. `gather` finds an item's source from its id.
+/// The records that a copy reads, in the order it first meets them, and the next id to give out. `gather` finds an item's source from its id.
 #[derive(Default)]
-pub(crate) struct Sources { pub(crate) records: Vec<Arc<Linear>>, next: i64 }
+pub(crate) struct Sources { pub(crate) records: Vec<Arc<Linear>>, next: i64, given: HashMap<*const Linear, Value> }
 
 impl Sources {
-    /// `t`'s ids, which follow the ids of the records before it.
+    /// `t`'s ids, which follow the ids of the records before it. A record met again gets the ids it got first. A first record's ids count from 1 and stay on the record, where every copy that reads it first shares them.
     pub(crate) fn ids(&mut self, t: &Arc<Linear>) -> Value {
-        let ids = ids(t, self.next + 1);
+        if let Some(ids) = self.given.get(&Arc::as_ptr(t)) { return ids.clone(); }
+        let ids = if self.next == 0 { t.ids.get_or_init(|| ids(t, 1)).clone() } else { ids(t, self.next + 1) };
         self.next += size(&t.layout) as i64;
         self.records.push(t.clone());
+        self.given.insert(Arc::as_ptr(t), ids.clone());
         ids
     }
     /// The ids of `tangent` where it's a record. An inactive tangent, which is zeros, gives ids of 0 in the layout of `like`.
@@ -176,24 +178,23 @@ pub(crate) fn planned(p: Primitive, dyadic: bool) -> bool {
 }
 
 /// Item `i` of the record `t`, as a record of one number.
-pub(crate) fn item(t: &Arc<Linear>, i: usize) -> Value { node(Op::Gather { sources: vec![t.clone()], ids: Value::integer(i as i64 + 1) }, Layout::default(), t.zero.clone()) }
+pub(crate) fn item(t: &Arc<Linear>, i: usize) -> Value { node(Op::Gather { sources: vec![t.clone()], offsets: vec![i] }, Layout::default(), t.zero.clone()) }
 
-/// The ids of `ids`, an atom or an array of exact integers, read from its storage where it can be.
-fn offsets(ids: &Value) -> Cow<'_, [i64]> {
+/// The offsets that `ids` give, an atom or an array of exact integers counted from 1: each id less 1, or `Steps::FILL` for an id of 0.
+fn offsets(ids: &Value) -> Vec<usize> {
     let one = |v: Value| match v { Value::Number(m) => m.as_integer().unwrap_or(0), _ => 0 };
-    if ids.is_atom() { return Cow::Owned(vec![one(ids.clone())]); }
-    ids.as_items().integers().unwrap_or_else(|_| Cow::Owned(ids.elements().map(one).collect()))
+    let ids = if ids.is_atom() { Cow::Owned(vec![one(ids.clone())]) } else { ids.as_items().integers().unwrap_or_else(|_| Cow::Owned(ids.elements().map(one).collect())) };
+    ids.iter().map(|&id| if id > 0 { id as usize - 1 } else { Steps::FILL }).collect()
 }
 
 /// The record that reads `sources` at `ids`, laid out as `ids` is. Ids that count up from 1 through one whole source give that source's `View`.
 pub(crate) fn gather(sources: Vec<Arc<Linear>>, ids: Value, zero: Value) -> Value {
     let layout = ids.layout().clone();
+    let offsets = offsets(&ids);
     if let [source] = sources.as_slice() {
-        if !ids.is_atom() && ids.len() == size(&source.layout) && offsets(&ids).iter().enumerate().all(|(i, &id)| id == i as i64 + 1) {
-            return view(source, layout);
-        }
+        if !ids.is_atom() && offsets.len() == size(&source.layout) && counts_up(&offsets) { return view(source, layout); }
     }
-    node(Op::Gather { sources, ids }, layout, zero)
+    node(Op::Gather { sources, offsets }, layout, zero)
 }
 
 /// The tangent of what a `Gather` level copied: the record's `Gather` of `ids`, or, where the level joined whole records as items, a mixed array of records. Each number of `ids` then becomes a record of the one item it reads. A record of records keeps each record's layout, which a `Gather` of nested ids couldn't.
@@ -266,48 +267,85 @@ pub(crate) fn fold(kind: FoldKind, axis: Option<&Value>, t: &Arc<Linear>, cx: &m
     Ok(node(Op::Fold { child: t.clone(), kind, axis: axis.cloned(), along, reversed: false }, layout, t.zero.clone()))
 }
 
-/// Zeros of `layout`, with each item of `items` added at the position its id in `ids` gives, counted from 1. A dual adds its primal and its tangent apart, so that forward and reverse mode can differentiate the sums themselves.
-pub(crate) fn scatter_add(items: &Value, ids: &Value, layout: &Layout, zero: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+/// Zeros of `layout`, with each item of `items` added at its offset in `offsets`, as `added` adds them. A dual adds its primal and its tangent apart, so that forward and reverse mode can differentiate the sums themselves.
+pub(crate) fn scatter_add(items: &Value, offsets: &[usize], layout: &Layout, zero: &Value, cx: &Context<'_>) -> Result<Value, Error> {
     if let Some(tag) = crate::derivative::tag(items) {
         let (primal, tangent) = crate::derivative::split(items, tag);
-        let primal = scatter_add(&primal, ids, layout, zero, cx)?;
+        let primal = scatter_add(&primal, offsets, layout, zero, cx)?;
         let tangent = tangent.expect("a dual has a tangent");
         let tangent = match tangent.linear() {
-            Some(r) => node(Op::ScatterAdd { child: r.clone(), ids: ids.clone() }, layout.clone(), r.zero.clone()),
-            None => scatter_add(&tangent, ids, layout, zero, cx)?,
+            Some(r) => node(Op::ScatterAdd { child: r.clone(), offsets: offsets.to_vec() }, layout.clone(), r.zero.clone()),
+            None => scatter_add(&tangent, offsets, layout, zero, cx)?,
         };
         return Ok(crate::derivative::dual(tag, primal, tangent));
     }
-    let n = size(layout);
-    let offsets = offsets(ids);
-    crate::explain::accumulated(offsets.len(), n);
-    let single = items.len() == 1 && offsets.len() != 1;
-    fn added<T: Copy + Default + std::ops::AddAssign>(n: usize, offsets: &[i64], xs: &[T], single: bool) -> Vec<T> {
-        let mut out = vec![T::default(); n];
-        let pairs = offsets.iter().enumerate().filter(|&(_, &o)| o > 0).map(|(k, &o)| (o as usize - 1, xs[if single { 0 } else { k }]));
-        rustymath::gather::scatter_with(&mut out, pairs, |mut a, x| { a += x; a });
-        out
-    }
-    if let Some(xs) = f64s(items) { return float_result(layout, FloatBuf::F64(added(n, &offsets, xs, single)), cx); }
-    if let Some(xs) = f32s(items) { return float_result(layout, FloatBuf::F32(added(n, &offsets, xs, single)), cx); }
-    let pick = |k: usize| if single { 0 } else { k };
-    let mut out = vec![zero.clone(); n];
-    let plus = Primitive::Arithmetic(Arithmetic::Plus);
-    for (k, &o) in offsets.iter().enumerate() {
-        if o > 0 { out[o as usize - 1] = plus.call(Some(&out[o as usize - 1]), &items.at(pick(k)), cx)?; }
-    }
-    if layout.shape().is_empty() { return Ok(out.into_iter().next().unwrap_or_else(|| zero.clone())); }
-    layout.collect(out, || zero.clone()).error_at(cx.span, "invalid sum")
+    let (sum, path) = added(zeros(layout, zero, cx)?, items, offsets, zero, cx)?;
+    if let Some(path) = path { crate::explain::accumulated(offsets.len(), size(layout), path); }
+    Ok(sum)
 }
 
-/// The items of `sources`, joined end to end and counted from 1, at `ids`, with `zero` for an id of 0, laid out as `layout`.
-fn read_at(sources: &[Value], ids: &Value, layout: &Layout, zero: &Value, cx: &Context<'_>) -> Result<Value, Error> {
-    let ravel = |v: &Value| Primitive::Ravel.call(None, v, cx);
-    let mut all = ravel(zero)?;
-    for s in sources { all = Primitive::CatenateFirst.call(Some(&all), &ravel(s)?, cx)?; }
-    let positions = if ids.is_atom() { ids.clone() } else { Primitive::Ravel.call(None, ids, cx)? };
-    let picked = Primitive::Index.call(Some(&positions.enclose().expect("ids enclose")), &all, cx)?;
-    relay(&picked, layout, cx)
+/// Zeros of `layout`, of `zero`'s kind, compact for 32- and 64-bit floats.
+fn zeros(layout: &Layout, zero: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+    let n = size(layout);
+    match zero.float_width() {
+        Some(FloatWidth::F64) => float_result(layout, FloatBuf::F64(vec![0.0; n]), cx),
+        Some(FloatWidth::F32) => float_result(layout, FloatBuf::F32(vec![0.0; n]), cx),
+        _ if layout.shape().is_empty() => Ok(zero.clone()),
+        _ => layout.collect(vec![zero.clone(); n], || zero.clone()).error_at(cx.span, "invalid sum"),
+    }
+}
+
+/// `base` with each item of `items` added at its offset in `offsets`, and the path that added them, as `explain::accumulated` names it. A `Steps::FILL` offset drops its item, and a single item goes to every offset. `pervasive::scatter` adds compact numbers in place. Where either side is a dual, `scatter_add` sums the items and records its own paths, and the sum adds to `base` whole, with no path given.
+fn added(mut base: Value, items: &Value, offsets: &[usize], zero: &Value, cx: &Context<'_>) -> Result<(Value, Option<&'static str>), Error> {
+    let plus = Primitive::Arithmetic(Arithmetic::Plus);
+    if crate::derivative::tag(items).is_some() || crate::derivative::tag(&base).is_some() {
+        let sums = scatter_add(items, offsets, base.layout(), zero, cx)?;
+        return Ok((plus.call(Some(&base), &sums, cx)?, None));
+    }
+    if let Some(route) = crate::pervasive::scatter(plus, &mut base, offsets, items) { return Ok((base, Some(route.name()))); }
+    let single = items.len() == 1;
+    let mut out: Vec<Value> = if base.is_atom() { vec![base.clone()] } else { base.elements().collect() };
+    for (k, &o) in offsets.iter().enumerate() {
+        if o != Steps::FILL { out[o] = plus.call(Some(&out[o]), &items.at(if single { 0 } else { k }), cx)?; }
+    }
+    if base.is_atom() { return Ok((out.swap_remove(0), Some("item by item"))); }
+    Ok((base.layout().collect(out, || zero.clone()).error_at(cx.span, "invalid sum")?, Some("item by item")))
+}
+
+/// Where each of `sizes` starts among them all joined end to end, with the total last.
+fn starts(sizes: impl Iterator<Item = usize>) -> Vec<usize> {
+    let mut next = 0;
+    let mut starts: Vec<usize> = sizes.map(|n| { next += n; next - n }).collect();
+    starts.push(next);
+    starts
+}
+
+/// The source that holds item `o` of the joined sources whose `starts` are given, checking `s`, the previous item's source, first.
+fn source_at(starts: &[usize], o: usize, s: usize) -> usize { if starts[s] <= o && o < starts[s + 1] { s } else { starts.partition_point(|&first| first <= o) - 1 } }
+
+/// The items of `sources`, joined end to end, at `offsets`, laid out as `layout`. A `Steps::FILL` offset reads `zero`.
+fn read_at(sources: &[Value], offsets: &[usize], layout: &Layout, zero: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+    let mut data = Gather::new(&sources.iter().collect::<Vec<_>>(), offsets.len());
+    let (starts, mut s, mut local, mut rest) = (starts(sources.iter().map(|v| size(v.layout()))), 0, vec![], offsets);
+    while let Some(&o) = rest.first() {
+        let n = if o == Steps::FILL {
+            let n = rest.iter().take_while(|&&p| p == Steps::FILL).count();
+            data.fill(zero, n);
+            n
+        } else {
+            s = source_at(&starts, o, s);
+            let within = starts[s]..starts[s + 1];
+            let n = rest.iter().take_while(|&&p| within.contains(&p)).count();
+            if within.start == 0 { data.rows(&sources[s], &rest[..n], 1) } else {
+                local.clear();
+                local.extend(rest[..n].iter().map(|&p| p - within.start));
+                data.rows(&sources[s], &local, 1)
+            }
+            n
+        };
+        rest = &rest[n..];
+    }
+    relay(&data.finish(Layout::from([offsets.len()]), || zero.clone()).error_at(cx.span, "invalid read")?, layout, cx)
 }
 
 /// The window sizes of a copy whose frames move by 1 and cover each of the source's first axes (rustymath's `Steps::windows_of`). `None` for any other copy.
@@ -384,9 +422,7 @@ fn copied_back(u: &Value, tables: &[Steps], layout: &Layout, child: &Linear, cx:
         return reads.try_fold(first, |sum, read| Primitive::Arithmetic(Arithmetic::Plus).call(Some(&sum), &read?, cx));
     }
     if let Some(v) = strided_back(&u, &tables, child, cx)? { return Ok(v); }
-    let ids: Vec<i64> = Steps::combined(0, &tables).into_iter().map(|o| if o == Steps::FILL { 0 } else { o as i64 + 1 }).collect();
-    let ids = laid(u.layout(), ids);
-    scatter_add(&flat(&u, cx)?, &ids, &child.layout, &child.zero, cx)
+    scatter_add(&flat(&u, cx)?, &Steps::combined(0, &tables), &child.layout, &child.zero, cx)
 }
 
 /// The cotangent of `child` from the cotangent `u` of a copy of `child` whose frames move by more than 1 (rustymath's `Steps::windows_of`): each frame of `u` added back where its window read, by rustymath's `overlap_add`. It adds along one source axis at a time, from the last, reading `u` in its own order. `None` for any other copy, and for a `u` that isn't plain 32- or 64-bit floats.
@@ -493,8 +529,8 @@ pub(crate) fn evaluate(nodes: &[Arc<Linear>], seeds: &[Value], cx: &mut Context<
             }
             Op::Add(a, b) => Primitive::Arithmetic(Arithmetic::Plus).call(Some(&get(a)), &get(b), cx)?,
             Op::Fold { child, kind, axis, along, reversed } => scan(*kind, axis.as_ref(), *along, *reversed, &get(child), cx)?,
-            Op::Gather { sources, ids } => read_at(&sources.iter().map(get).collect::<Vec<_>>(), ids, &n.layout, &n.zero, cx)?,
-            Op::ScatterAdd { child, ids } => scatter_add(&flat(&get(child), cx)?, ids, &n.layout, &n.zero, cx)?,
+            Op::Gather { sources, offsets } => read_at(&sources.iter().map(get).collect::<Vec<_>>(), offsets, &n.layout, &n.zero, cx)?,
+            Op::ScatterAdd { child, offsets } => scatter_add(&flat(&get(child), cx)?, offsets, &n.layout, &n.zero, cx)?,
             Op::View(t) => relay(&get(t), &n.layout, cx)?,
             Op::Cast(t, width) => crate::derivative::to_float_width(&get(t), *width, cx.span)?,
             Op::Copy { child, tables } => crate::primitive::copied(&get(child), n.layout.clone(), tables).error_at(cx.span, "invalid copy")?,
@@ -550,8 +586,8 @@ fn product_transpose(c: &Value, u: &Value, t: &Linear, left: bool, cx: &mut Cont
     relay(&result, &t.layout, cx)
 }
 
-/// Items of a flat cotangent that add into a node: item `from[k]` of `items` adds into the node's item `at[k]`.
-struct Part { at: Vec<usize>, from: Vec<usize>, items: Value }
+/// Items of a flat cotangent that add into a node: item `from[k]` of `items` adds into the node's item `at[k]`. A part from scattered items is an accumulation, which `•explain` records when it adds.
+struct Part { at: Vec<usize>, from: Vec<usize>, items: Value, scattered: bool }
 
 /// A node's cotangent while the transpose gathers it: a dense array, plus parts that add into it. A node that many cells read, such as an argument that Rank splits into cells, gets one part from each cell. The parts add in one pass when the walk reaches the node, not as a full-size array for each cell.
 #[derive(Default)]
@@ -589,19 +625,6 @@ impl Run {
     }
 }
 
-/// `dense`, or zeros, with every part added, where all of them are floats that `slice` reads.
-fn summed<T: Copy + Default + std::ops::AddAssign>(len: usize, dense: Option<&Value>, parts: &[Part], slice: fn(&Value) -> Option<&[T]>) -> Option<Vec<T>> {
-    let plain = |v: &Value| !v.is_atom() && crate::derivative::tag(v).is_none();
-    if !dense.is_none_or(plain) || !parts.iter().all(|p| plain(&p.items)) { return None; }
-    let dense = match dense { Some(d) => Some(slice(d)?), None => None };
-    let items = parts.iter().map(|p| slice(&p.items)).collect::<Option<Vec<_>>>()?;
-    let mut out = dense.map_or_else(|| vec![T::default(); len], <[T]>::to_vec);
-    for (p, xs) in parts.iter().zip(items) {
-        rustymath::gather::scatter_with(&mut out, p.at.iter().zip(&p.from).map(|(&a, &f)| (a, xs[f])), |mut a, x| { a += x; a });
-    }
-    Some(out)
-}
-
 /// A completed floating cotangent, keeping its buffer's width without another conversion.
 fn float_result(layout: &Layout, out: FloatBuf, cx: &Context<'_>) -> Result<Value, Error> {
     if layout.shape().is_empty() { return Ok(Value::Number(Number::float(out.view().get(0), out.view().tag()))); }
@@ -612,20 +635,20 @@ fn float_result(layout: &Layout, out: FloatBuf, cx: &Context<'_>) -> Result<Valu
 fn collected(c: Cotangent, n: &Linear, cx: &Context<'_>) -> Result<Value, Error> {
     let Cotangent { dense, parts } = c;
     if parts.is_empty() { return Ok(dense.expect("a gathered cotangent has a dense part or parts")); }
-    let layout = &n.layout;
-    if !layout.shape().is_empty() && dense.as_ref().is_none_or(|d| d.layout() == layout) {
-        if let Some(out) = summed(size(layout), dense.as_ref(), &parts, f64s) { return float_result(layout, FloatBuf::F64(out), cx); }
-        if let Some(out) = summed(size(layout), dense.as_ref(), &parts, f32s) { return float_result(layout, FloatBuf::F32(out), cx); }
-    }
-    let plus = Primitive::Arithmetic(Arithmetic::Plus);
-    let mut total = dense;
+    let mut total = match dense { Some(d) => laid_out(&d, &n.layout), None => zeros(&n.layout, &n.zero, cx)? };
     for p in parts {
-        let mut ids = vec![0; if p.items.is_atom() { 1 } else { p.items.len() }];
-        for (&a, &f) in p.at.iter().zip(&p.from) { ids[f] = a as i64 + 1; }
-        let v = scatter_add(&p.items, &laid(p.items.layout(), ids), layout, &n.zero, cx)?;
-        total = Some(match total { Some(t) => plus.call(Some(&t), &v, cx)?, None => v });
+        let len = if p.items.is_atom() { 1 } else { p.items.len() };
+        // A part whose items are the whole cotangent in order adds them at `at` as they stand. Any other part reads only its own items from the cotangent it shares.
+        let gathered;
+        let items = if p.from.len() == len && counts_up(&p.from) { &p.items } else {
+            gathered = read_at(std::slice::from_ref(&p.items), &p.from, &Layout::from([p.from.len()]), &n.zero, cx)?;
+            &gathered
+        };
+        let (sum, path) = added(total, items, &p.at, &n.zero, cx)?;
+        if let (true, Some(path)) = (p.scattered, path) { crate::explain::accumulated(p.at.len(), size(&n.layout), path); }
+        total = sum;
     }
-    Ok(total.expect("a part gives a cotangent"))
+    Ok(total)
 }
 
 /// The cotangents of the seeds of the record whose `order` is `nodes`, from `u`, the cotangent of its result: the vector–Jacobian product. `None` for a seed that the result doesn't depend on.
@@ -679,22 +702,16 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, cx: &mut 
                 };
                 push(&mut cotangents, child, v, cx)?
             }
-            Op::Gather { sources, ids } => {
-                // One pass over the ids sorts the cotangent's items into the sources they came from. A source whose ids run in order through all of it, as a cell of Rank or of a mix does, takes a slice of the cotangent.
+            Op::Gather { sources, offsets } => {
+                // One pass over the offsets sorts the cotangent's items into the sources they came from. A source whose offsets run in order through all of it, as a cell of Rank or of a mix does, takes a slice of the cotangent.
                 let u = flat(&laid_out(&u, &n.layout), cx)?;
-                let mut starts = Vec::with_capacity(sources.len() + 1);
-                let mut next = 1;
-                for s in sources {
-                    starts.push(next);
-                    next += size(&s.layout) as i64;
-                }
-                starts.push(next);
+                let starts = starts(sources.iter().map(|s| size(&s.layout)));
                 let mut runs: Vec<Run> = sources.iter().map(|_| Run::Empty).collect();
                 let mut s = 0;
-                for (k, &id) in offsets(ids).iter().enumerate() {
-                    if id <= 0 { continue; }
-                    if id < starts[s] || id >= starts[s + 1] { s = starts.partition_point(|&first| first <= id) - 1; }
-                    runs[s].push((id - starts[s]) as usize, k);
+                for (k, &o) in offsets.iter().enumerate() {
+                    if o == Steps::FILL { continue; }
+                    s = source_at(&starts, o, s);
+                    runs[s].push(o - starts[s], k);
                 }
                 for (src, run) in sources.iter().zip(runs) {
                     let part = match run {
@@ -709,17 +726,14 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, cx: &mut 
                                 push(&mut cotangents, src, v, cx)?;
                                 continue;
                             }
-                            None => Part { at: (at..at + len).collect(), from: (from..from + len).collect(), items: u.clone() },
+                            None => Part { at: (at..at + len).collect(), from: (from..from + len).collect(), items: u.clone(), scattered: false },
                         },
-                        Run::Scattered(at, from) => {
-                            crate::explain::accumulated(at.len(), size(&src.layout));
-                            Part { at, from, items: u.clone() }
-                        }
+                        Run::Scattered(at, from) => Part { at, from, items: u.clone(), scattered: true },
                     };
                     cotangents.entry(Arc::as_ptr(src)).or_default().parts.push(part);
                 }
             }
-            Op::ScatterAdd { child, ids } => push(&mut cotangents, child, read_at(&[u], ids, &child.layout, &child.zero, cx)?, cx)?,
+            Op::ScatterAdd { child, offsets } => push(&mut cotangents, child, read_at(&[u], offsets, &child.layout, &child.zero, cx)?, cx)?,
             Op::View(t) => push(&mut cotangents, t, relay(&u, &t.layout, cx)?, cx)?,
             Op::Cast(t, _) => push(&mut cotangents, t, match t.zero.float_width() { Some(w) => u.to_float_width(w).error_at(cx.span, "a cotangent converts to floats")?, None => u }, cx)?,
             Op::Copy { child, tables } => {

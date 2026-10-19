@@ -578,7 +578,7 @@ pub(super) fn rank(operand: &Function, ranks: &Value, left: Option<&Value>, righ
     let xs = left.map(|a| framed(a, xr)).transpose().error_at(cx.span, "invalid rank cells")?;
     let results = paired(operand, xs.as_ref(), &ys, cx)?;
     let Binding::Value(results) = results.value else { return Ok(results) };
-    Ok(Bound::from(Primitive::Mix.call(None, &results, cx)?))
+    Ok(Bound::from(results.mix(crate::array::Widening::Items).error_at(cx.span, "invalid rank result")?))
 }
 
 /// `operand⍤k` in calls on whole arguments, where they give what one call for each cell gives. `xr` and `yr` are the cell ranks. `None` where no rule applies. Rank then calls `operand` once for each cell.
@@ -765,7 +765,7 @@ pub(super) fn cell_axes(f: &Function, spec: &Value, left: Option<&Value>, right:
 
 /// Transpose so that axis `i` of `x` becomes axis `destination[i]`.
 fn move_axes(x: &Value, destination: &[usize], span: &crate::execution::Context<'_>) -> Result<Value, Error> {
-    if destination.iter().enumerate().all(|(i, &d)| i == d) { return Ok(x.clone()); }
+    if rustymath::gather::counts_up(destination) { return Ok(x.clone()); }
     crate::primitive::transpose_axes(destination.to_vec(), x, span)
 }
 

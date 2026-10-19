@@ -16,7 +16,7 @@ fn←"rtd"⍳↑ ⍚[⌽ 1↑ 1↓ ⊢] ⋄ [fn "r123";fn "d123";fn "123"]
 [-⊘+ 6;3 -⊘+ 2]   ⍝ ¯6 5
 
 ⍝ bqn:valences:17 — Valences with array operands tests for a left argument
-[{⍺ 0⊘1 ⍵}'x';'w'{⍺ 0⊘1 ⍵}'x']   ⍝ 0 1
+[{⍺ 0⊘1 ⍵}'x' 'w'{⍺ 0⊘1 ⍵}'x']   ⍝ 0 1
 
 ⍝⍝ Under
 
@@ -133,7 +133,7 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 ⍝⍝ Based arrays
 
 ⍝ bqn:based:23 — Numbers and characters are atoms with depth 0, and enclosing adds a level
-[≡3;≡⊂3;≡'3';≡"abc";≡≡"abc"]   ⍝ [0 1 0 1 0]ₓ
+[≡3 ≡⊂3 ≡'3' ≡"abc" ≡≡"abc"]   ⍝ [0 1 0 1 0]ₓ
 
 ⍝⍝ Scan
 
@@ -171,7 +171,7 @@ s←["words" "go" "here"⋄"some" "other" "words"] ⋄ ⊂∘∊⍤1 s
 "wordsgohere" "someotherwords"
 
 ⍝ bqn:rank:146 — Rank 2 on an array with empty cells keeps the frame and the cell shape
-x←⊂⍤2⍳4 3 2 1 0 ⋄ [⍴x;⍴↑,x]   ⍝ (4ₓ 3ₓ 2ₓ⋄1ₓ 0ₓ)
+x←⊂⍤2⍳4 3 2 1 0 ⋄ [⍴x ⍴↑,x]   ⍝ (4ₓ 3ₓ 2ₓ⋄1ₓ 0ₓ)
 
 ⍝ bqn:rank:183 — A matrix product through Rank with an infinite rank for the right argument
 m←[0 1 0⋄¯1 0 0⋄0 0 1] ⋄ m (+⌿∘×)⍤[1 ∞] 1 2 3×⊗1 10
@@ -220,7 +220,7 @@ c+x
 {⍵+←2 ⋄ [0 ⍵]}3   ⍝ 0 5
 
 ⍝ bqn:block:55 — An absent left argument makes the function that receives it monadic
-[3{(2×⍺)-⍵}1;{(2×⍺)-⍵}1]   ⍝ 5 ¯1
+[3{(2×⍺)-⍵}1 {(2×⍺)-⍵}1]   ⍝ 5 ¯1
 
 ⍝ bqn:block:60 — An absent left argument in a train leaves an atop
 [3{(⍺-⌽)⍵}1 2;{(⍺-⌽)⍵}1 2]   ⍝ (1 2⋄¯2 ¯1)

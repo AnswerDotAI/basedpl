@@ -1,4 +1,5 @@
 use rustymath::{buffer::FloatWidth, error::Kind};
+use std::borrow::Cow;
 use crate::{keyed, symbols::Notation, ErrorAt, Number, Value};
 use unicode_width::UnicodeWidthStr;
 
@@ -30,14 +31,17 @@ pub(crate) struct Elide {
     /// The float width that numbers show without a marker: the session's default width. `None` marks every width, as `•literal⁻¹` does.
     pub plain: Option<FloatWidth>,
     pub notation: Notation,
-    /// Whether text shows hidden axis names, which start with `_`. Source text and box mode show them, and plain display leaves them out.
-    pub hidden: bool,
+    /// How text shows hidden names, which start with `_`. Source text shows them in full. Box mode shortens them. Plain display leaves hidden axis names out and shortens hidden keys.
+    pub hidden: Hidden,
 }
+/// How text shows a hidden name, which starts with `_`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Hidden { Full, Short, Omit }
 impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, prec: 10, ..Self::NONE } } }
 impl Elide {
     /// Shows every item and every digit, as source text and `⍕` do, with 64-bit floats plain.
     pub const NONE: Self =
-        Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), notation: Notation::Apl, hidden: true };
+        Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), notation: Notation::Apl, hidden: Hidden::Full };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
     pub fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
@@ -56,8 +60,17 @@ impl Elide {
     pub fn width_marker(self, width: FloatWidth) -> Option<char> { (Some(width) != self.plain).then(|| crate::syntax::width_marker(width)) }
     /// The width marker that `n` writes: that of its float width, when it isn't `plain`.
     pub fn marker(self, n: &Number) -> Option<char> { n.float_width().and_then(|w| self.width_marker(w)) }
-    /// `name` as text shows it: `None` for a hidden name that `hidden` leaves out.
-    pub fn name(self, name: &Option<std::sync::Arc<str>>) -> Option<&std::sync::Arc<str>> { name.as_ref().filter(|n| self.hidden || !rustymath::layout::hidden(n)) }
+    /// `name` as text shows it: `None` for a hidden name that `hidden` leaves out, otherwise as `shown` gives it.
+    pub fn name(self, name: &Option<std::sync::Arc<str>>) -> Option<Cow<'_, str>> {
+        name.as_deref().filter(|n| self.hidden != Hidden::Omit || !rustymath::layout::hidden(n)).map(|n| self.shown(n))
+    }
+    /// `text` as display shows it: a hidden name cut after its last `system::FRESH`, as in `_b·…`, unless `hidden` is `Full`.
+    pub fn shown(self, text: &str) -> Cow<'_, str> {
+        match text.rfind(crate::system::FRESH) {
+            Some(i) if self.hidden != Hidden::Full && rustymath::layout::hidden(text) => format!("{}…", &text[..i + crate::system::FRESH.len_utf8()]).into(),
+            _ => text.into(),
+        }
+    }
 }
 
 /// The positions display shows along an axis of `len` items: all of them, or the first and last `edges` with `None` for the gap between.
@@ -112,7 +125,7 @@ impl Settings {
     /// Display text for `a`, boxed where `boxes` says, unless boxing is off, or `inside` a function while boxing there is off. A line wider than `width` elides columns, keeping as many at each end of the last axes as fit.
     pub fn array(&self, a: &Value, inside: bool) -> String {
         let text = |columns| {
-            let elide = Elide { columns, hidden: self.boxed, ..self.elide };
+            let elide = Elide { columns, hidden: if self.boxed { Hidden::Short } else { Hidden::Omit }, ..self.elide };
             if self.boxed && (!inside || self.functions) && boxes(a, elide) { array(a, elide).text() } else { plain(a, elide) }
         };
         let fits = |t: &str| t.lines().all(|line| line.width() <= self.elide.width);
@@ -339,7 +352,7 @@ fn array(a: &Value, el: Elide) -> Block {
                         Value::Array(_) => array(&item, el),
                         Value::Function(_) | Value::Operator(_) => Block::new(plain(&item, el)),
                     };
-                    let block = match a.keys(0).and_then(|keys| keys.names().get(i)?.clone()) { Some(key) => block.labelled(&key), None => block };
+                    let block = match a.shown_key(0, i, el) { Some(key) => block.labelled(&key), None => block };
                     Cell::item(block, &item)
                 })
             })
@@ -397,7 +410,7 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
 fn labelled(a: &Value, el: Elide) -> String {
     let rank = a.shape().len();
     let edges = el.edges(a.shape());
-    let label = |axis: usize, i: usize| a.keys(axis).and_then(|k| k.names()[i].clone());
+    let label = |axis: usize, i: usize| a.shown_key(axis, i, el);
     let (rows_keyed, columns_keyed) = (a.keys(rank - 2).is_some(), a.keys(rank - 1).is_some());
     let table = a.shape()[rank - 2] * a.shape()[rank - 1];
     let pages: Vec<_> = frames(&a.shape()[..rank - 2], edges).into_iter().map(|(_, index)| {

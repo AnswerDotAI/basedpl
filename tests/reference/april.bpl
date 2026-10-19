@@ -338,7 +338,7 @@
 [[3 4 1 5 2 6 0]]⌷"MARANGA"   ⍝ "ANAGRAM"
 
 ⍝ april:673 —
-[⍬,4;0]⌷5 5⍴⍳25   ⍝ [20]
+[⍬,4 0]⌷5 5⍴⍳25   ⍝ [20]
 
 ⍝ april:674 —
 [4 3;0]⌷5 5⍴⍳25   ⍝ 20 15
@@ -606,7 +606,7 @@ v←1 2 3 ⋄ ⊂v ≡ ⊂1 2 3   ⍝ $t
 "UNDER",⍠0.0'-'   ⍝ "UNDER-"
 
 ⍝ april:808 —
-↓⊃["UNDER";5⍴'-']   ⍝ "UNDER" "-----"
+↓⊃["UNDER" 5⍴'-']   ⍝ "UNDER" "-----"
 
 ⍝ april:810 —
 ↓"HELLO"{⍺,⍵}⍤0'.'   ⍝ "H." "E." "L." "L." "O."
@@ -1030,15 +1030,15 @@ v←1 2 3 ⋄ ⊂v ≡ ⊂1 2 3   ⍝ $t
 
 ⍝ april:1033 —
 ⊂⍠1 2 (2 3 4⍴"GRAYGOLDBLUESILKWOOLYARN")
-[["GRAY"⋄"GOLD"⋄"BLUE"];["SILK"⋄"WOOL"⋄"YARN"]]
+[["GRAY"⋄"GOLD"⋄"BLUE"] ["SILK"⋄"WOOL"⋄"YARN"]]
 
 ⍝ april:1036 —
 ⊂⍠0 2 (2 3 4⍴"GRAYGOLDBLUESILKWOOLYARN")
-[["GRAY"⋄"SILK"];["GOLD"⋄"WOOL"];["BLUE"⋄"YARN"]]
+[["GRAY"⋄"SILK"] ["GOLD"⋄"WOOL"] ["BLUE"⋄"YARN"]]
 
 ⍝ april:1040 —
 ⊂⍠0 1 (2 3 4⍴"GRAYGOLDBLUESILKWOOLYARN")
-[["GGB"⋄"SWY"];["ROL"⋄"IOA"];["ALU"⋄"LOR"];["YDE"⋄"KLN"]]
+[["GGB"⋄"SWY"] ["ROL"⋄"IOA"] ["ALU"⋄"LOR"] ["YDE"⋄"KLN"]]
 
 ⍝ april:1043 —
 {x←⊂⍠1 ⋄ x ⍵} 2 3 4⍴⍳9
@@ -2566,7 +2566,7 @@ a
 
 ⍝ april:1951 — Assignment from an array to an area of an array with the same shape
 x←8 8⍴0
-[2+⍳3;3+⍳4]⌷x ←3 4⍴⍳9
+[2+⍳3 3+⍳4]⌷x ←3 4⍴⍳9
 x
 ⍝ =>
 [0 0 0 0 0 0 0 0⋄0 0 0 0 0 0 0 0⋄0 0 0 0 1 2 3 0⋄0 0 0 4 5 6 7 0⋄0 0 0 8 0 1 2 0⋄0 0 0 0 0 0 0 0⋄0 0 0 0 0 0 0 0⋄0 0 0 0 0 0 0 0]
@@ -2642,7 +2642,7 @@ a
 ⍝ april:1984 — Assignment by function result of array after after function applied
 q←3×1-⍨3 3⍴⍳4
 p←4 4⍴1
-[⍳3;⍳3]⌷p ×←q=0
+[⍳3 ⍳3]⌷p ×←q=0
 p
 ⍝ =>
 [0 1 0 1⋄0 0 1 1⋄0 0 0 1⋄1 1 1 1]
@@ -3869,29 +3869,29 @@ $t
 ⍝ april/libraries/dfns/array/demo.lisp:165 — Upstream from selection helper; test arrays keep 1-based digit labels, and positions count from 0
 [from:]←•load "lib/array.bpl"
 [ta_1 ta_2 ta_3 ta_4]←{10⊥¨1+⍳⌽⍵}¨,\5 4 3 2
-(2 3 4⍴1 3 4) {([⍵;∞;⍺]⌷ta_3) ≡ [⍵;,⊂⍬;⍺] from ta_3} 2 2⍴1 0
+(2 3 4⍴1 3 4) {([⍵ ∞ ⍺]⌷ta_3) ≡ [⍵ ,⊂⍬ ⍺] from ta_3} 2 2⍴1 0
 ⍝ =>
 $t
 
 ⍝ april/libraries/dfns/array/demo.lisp:166 — Upstream from selection helper; test arrays keep 1-based digit labels, and positions count from 0
 [from:]←•load "lib/array.bpl"
 [ta_1 ta_2 ta_3 ta_4]←{10⊥¨1+⍳⌽⍵}¨,\5 4 3 2
-⍴ [,0;,1;,2] from ta_3   ⍝ [1 1 1]ₓ
+⍴ [,0 ,1 ,2] from ta_3   ⍝ [1 1 1]ₓ
 
 ⍝ april/libraries/dfns/array/demo.lisp:167 — Upstream from selection helper; test arrays keep 1-based digit labels, and positions count from 0
 [from:]←•load "lib/array.bpl"
 [ta_1 ta_2 ta_3 ta_4]←{10⊥¨1+⍳⌽⍵}¨,\5 4 3 2
-⍴⍴ [,0;,1;,2] from ta_3   ⍝ [3]ₓ
+⍴⍴ [,0 ,1 ,2] from ta_3   ⍝ [3]ₓ
 
 ⍝ april/libraries/dfns/array/demo.lisp:168 — Upstream from selection helper; test arrays keep 1-based digit labels, and positions count from 0
 [from:]←•load "lib/array.bpl"
 [ta_1 ta_2 ta_3 ta_4]←{10⊥¨1+⍳⌽⍵}¨,\5 4 3 2
-⍴⍴ [,0;1;,2] from ta_3   ⍝ [2]ₓ
+⍴⍴ [,0 1 ,2] from ta_3   ⍝ [2]ₓ
 
 ⍝ april/libraries/dfns/array/demo.lisp:169 — Upstream from selection helper; test arrays keep 1-based digit labels, and positions count from 0
 [from:]←•load "lib/array.bpl"
 [ta_1 ta_2 ta_3 ta_4]←{10⊥¨1+⍳⌽⍵}¨,\5 4 3 2
-⍴⍴ [0;1;,2] from ta_3   ⍝ [1]ₓ
+⍴⍴ [0 1 ,2] from ta_3   ⍝ [1]ₓ
 
 ⍝ april/libraries/dfns/array/demo.lisp:170 — Upstream from selection helper; test arrays keep 1-based digit labels, and positions count from 0
 [from:]←•load "lib/array.bpl"
@@ -5333,19 +5333,19 @@ det 2 2⍴ 0 1, 1 0   ⍝ ¯1
 [tryGJ:]←•load "lib/numeric.bpl"
 tryGJ [1 1 2⋄¯1 ¯2 3⋄3 ¯7 4]
 ⍝ =>
-[[0.25 ¯0.3461538461538461 0.1346153846153846⋄0.25 ¯0.03846153846153846 ¯0.09615384615384616⋄0.25 0.1923076923076923 ¯0.01923076923076923];[0.25 ¯0.3461538461538461 0.1346153846153846⋄0.25 ¯0.03846153846153844 ¯0.09615384615384615⋄0.25 0.1923076923076923 ¯0.01923076923076924]]
+[[0.25 ¯0.3461538461538461 0.1346153846153846⋄0.25 ¯0.03846153846153846 ¯0.09615384615384616⋄0.25 0.1923076923076923 ¯0.01923076923076923] [0.25 ¯0.3461538461538461 0.1346153846153846⋄0.25 ¯0.03846153846153844 ¯0.09615384615384615⋄0.25 0.1923076923076923 ¯0.01923076923076924]]
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:225 — Compare both built-in inverse/solve and Gauss-Jordan results independently; move upstream 1E-13 comparison allowance into fixture metadata instead of assigning ⎕CT
 [tryGJ:]←•load "lib/numeric.bpl"
 tryGJ [4 8 4 0⋄1 4 7 2⋄1 5 4 ¯3⋄1 3 0 ¯2]
 ⍝ =>
-[[1.020833333333333 ¯1.25 1.166666666666667 ¯3⋄¯0.4791666666666667 0.75 ¯0.8333333333333333 2⋄0.1875 ¯0.25 0.5 ¯1⋄¯0.2083333333333334 0.5 ¯0.6666666666666666 1];[1.020833333333333 ¯1.25 1.166666666666667 ¯3⋄¯0.4791666666666667 0.75 ¯0.8333333333333333 2⋄0.1875 ¯0.25 0.5 ¯1⋄¯0.2083333333333334 0.5 ¯0.6666666666666666 1]]
+[[1.020833333333333 ¯1.25 1.166666666666667 ¯3⋄¯0.4791666666666667 0.75 ¯0.8333333333333333 2⋄0.1875 ¯0.25 0.5 ¯1⋄¯0.2083333333333334 0.5 ¯0.6666666666666666 1] [1.020833333333333 ¯1.25 1.166666666666667 ¯3⋄¯0.4791666666666667 0.75 ¯0.8333333333333333 2⋄0.1875 ¯0.25 0.5 ¯1⋄¯0.2083333333333334 0.5 ¯0.6666666666666666 1]]
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:226 — Compare both built-in inverse/solve and Gauss-Jordan results independently; move upstream 1E-13 comparison allowance into fixture metadata instead of assigning ⎕CT
 [tryGJ:]←•load "lib/numeric.bpl"
 tryGJ [1 2 3⋄¯3 1 5⋄2 4 ¯1]
 ⍝ =>
-[[0.4285714285714285 ¯0.2857142857142857 ¯0.1428571428571428⋄¯0.1428571428571428 0.1428571428571428 0.2857142857142857⋄0.2857142857142857 0 ¯0.1428571428571428];[0.4285714285714285 ¯0.2857142857142857 ¯0.1428571428571428⋄¯0.1428571428571428 0.1428571428571428 0.2857142857142857⋄0.2857142857142857 0 ¯0.1428571428571428]]
+[[0.4285714285714285 ¯0.2857142857142857 ¯0.1428571428571428⋄¯0.1428571428571428 0.1428571428571428 0.2857142857142857⋄0.2857142857142857 0 ¯0.1428571428571428] [0.4285714285714285 ¯0.2857142857142857 ¯0.1428571428571428⋄¯0.1428571428571428 0.1428571428571428 0.2857142857142857⋄0.2857142857142857 0 ¯0.1428571428571428]]
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:227 — Compare both built-in inverse/solve and Gauss-Jordan results independently; move upstream 1E-13 comparison allowance into fixture metadata instead of assigning ⎕CT
 [tryGJ:]←•load "lib/numeric.bpl"
@@ -5909,7 +5909,7 @@ ss[⍳10;3 4 5;88 99]   ⍝ 0 1 2 88 99 6 7 8 9
 ⍝ april/libraries/dfns/string/demo.lisp:162 — Embedded display helper uses existing glyphs: 0-origin offsets, character-prototype test instead of April ⎕TY, matrix ⍕ instead of ⎕FMT. Full example/setup retained
 [disp:]←•load "lib/array.bpl"
 [ssmat:]←•load "lib/string.bpl"
-↓disp ssmat[["Is you is or"⋄"is you aint?"];"is";"was"]
+↓disp ssmat[["Is you is or"⋄"is you aint?"] "is" "was"]
 ⍝ =>
 "Is you was or" "was you aint?"
 
@@ -6153,7 +6153,7 @@ newl←•ucs 13
 [ltov:]←•load "lib/string.bpl"
 "and" ',' ltov "red" "and" "yellow" ',' "pink" "and" "green"
 ⍝ =>
-[1⍴⊂"red";1⍴⊂"yellow";1⍴⊂"pink";1⍴⊂"green"]
+[1⍴⊂"red" 1⍴⊂"yellow" 1⍴⊂"pink" 1⍴⊂"green"]
 
 ⍝ april/libraries/dfns/string/demo.lisp:216 —
 [vtol:]←•load "lib/string.bpl"

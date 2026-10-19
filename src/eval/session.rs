@@ -359,7 +359,7 @@ impl Session {
         let code = span.source.text.trim();
         let (command, args) = code.split_once(char::is_whitespace).unwrap_or((code, ""));
         if command.eq_ignore_ascii_case("]help") {
-            let usage = "usage: ]help name [-source], or ]help llms for the language reference";
+            let usage = "usage: ]help name [-source], or ]help llms for the documentation index for LLMs";
             let Some((name, detail)) = crate::inspection::help_command(code) else { return failed(ErrorKind::Syntax, usage.into()) };
             // `llms` is a topic, not a name. A variable called `llms` can't hide the reference.
             let (text, markdown) = if name == "llms" { (crate::inspection::LLMS.to_owned(), crate::inspection::LLMS.to_owned()) } else {
@@ -548,7 +548,7 @@ impl Session {
                 if arrays.is_empty() { return Ok(Bound::from(crate::syntax::zilde(crate::Number::float(0.0, self.numeric.width)))); }
                 let result = if *form == ListForm::Cells {
                     // Each row is a major cell, so unit rows give a vector: `[1⋄2]` is `1 2`.
-                    Value::assemble_written(&[arrays.len()], &arrays, &arrays[0])
+                    Value::assemble(&[arrays.len()], &arrays, &arrays[0])
                 } else { Value::new(vec![arrays.len()], arrays) };
                 Binding::Value(result.error_at(&node.span, "invalid array literal")?)
             }

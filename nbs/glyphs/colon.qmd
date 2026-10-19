@@ -31,5 +31,5 @@ M←axes:[1 2 3⋄4 5 6]
 `K:⁻¹Y` removes the keys `K` from `Y`, which must have exactly those keys.
 
 ```bpl
-"a" "b":⁻¹["a":1;"b":2]   ⍝ 1 2
+"a" "b":⁻¹["a":1 "b":2]   ⍝ 1 2
 ```

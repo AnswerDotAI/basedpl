@@ -79,7 +79,7 @@ Each number written in a literal list or in brackets keeps its own exactness, ev
 
 ```bpl
 1ₓ 0.5÷2ₓ            ⍝ 1r2 0.25
-[1ₓ;0.5]÷2ₓ          ⍝ 1r2 0.25
+[1ₓ 0.5]÷2ₓ          ⍝ 1r2 0.25
 ```
 
 In `[…]ₓ` and `(…)ₓ`, every number is exact, at any depth. Each item must be a literal, and each number must be whole. A vector of exact integers displays as `[…]ₓ`, and rows of them as `(…)ₓ`. `⍕` writes them the same way:
@@ -122,7 +122,7 @@ Floats come in three widths: 64, 32 and 16 bits. `•storage` gives their kind a
 Bare numbers are floats of the default width: 64 bits, or 16 or 32 after [`•prefs`](system/prefs.qmd) `["float":16]` or `["float":32]`. Code parsed after the change reads its numbers at the new width. In a REPL or a notebook, that is the next input. Leading `•prefs` calls on a literal record run before the rest of their code is parsed. A script, a notebook cell, a module or `⍎` text that starts with `•prefs ["float":32]` therefore reads its own numbers at 32 bits. Numbers that `•csv`, `•json` and `•vfi` read also take the default width. So do random numbers, the numbers that `•image` reads, and floats that a function gives from exact arguments, such as `√2ₓ`. Times from `•time` and `•date` are always 64-bit, because a 32-bit float holds seconds since 1970 only to within about two minutes. `ₕ` marks a 16-bit float, `ₛ` a 32-bit float and `ₚ` a 64-bit float, whatever the default. Display marks floats of the other widths, once after an array's notation. `•literal⁻¹` marks every float. Its text therefore reads back the same at any default.
 
 ```bpl
-{(•storage ⍵).kind}¨[1.5ₕ;1.5ₛ;[1.5 2.5]ₚ;⍬ₛ]   ⍝ "float16" "float32" "float64" "float32"
+{(•storage ⍵).kind}¨[1.5ₕ 1.5ₛ [1.5 2.5]ₚ ⍬ₛ]   ⍝ "float16" "float32" "float64" "float32"
 [1.5 2.5]ₛ                          ⍝ [1.5 2.5]ₛ
 •literal⁻¹ 0.5                     ⍝ "0.5ₚ"
 ```
@@ -131,7 +131,7 @@ An operation on floats computes at their width. An exact operand rounds to the w
 
 ```bpl
 v←32 •float 1.5 2.5
-{(•storage ⍵).kind}¨[v×2ₓ;v×v;*v;v×2]   ⍝ "float32" "float32" "float32" "float64"
+{(•storage ⍵).kind}¨[v×2ₓ v×v *v v×2]   ⍝ "float32" "float32" "float32" "float64"
 •float v                     ⍝ 32ₓ
 (32 •float 1.5)×16777217ₓ    ⍝ 25165824
 ```
@@ -163,8 +163,8 @@ Comparisons of 16-bit and 32-bit floats are always exact. The tolerance that [`�
 Floats follow IEEE 754. Besides finite numbers, they include `∞`, `¯∞`, NaN and `¯0`. An undefined result is NaN rather than an error. `1÷0` is `∞`, and `⍟0` is `¯∞`. NaN is written `$n`:
 
 ```bpl
-[0÷0;∞-∞]            ⍝ $n $n
-[1÷0;⍟0]             ⍝ ∞ ¯∞
+[0÷0 ∞-∞]            ⍝ $n $n
+[1÷0 ⍟0]             ⍝ ∞ ¯∞
 ```
 
 Under `=`, NaN equals nothing, as in IEEE. `≡`, search, grade and Key treat NaN as one value, and grade puts it after every other number:

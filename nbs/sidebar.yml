@@ -25,6 +25,7 @@ website:
           - overview.ipynb
           - principles.ipynb
           - arrays.ipynb
+          - indexing.ipynb
           - numbers.qmd
           - strings.ipynb
           - bracket-types.ipynb

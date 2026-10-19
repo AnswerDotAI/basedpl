@@ -38,6 +38,18 @@ fn explain_and_memory() {
     ] {
         check(&mut session, &format!(r#"≢(•explain "{code}").accumulations.items"#), &format!("{scatters}ₓ"));
     }
+    // Each path that adds a selection's items has a name: in place, logged for exact integers whose sums can overflow, on a converted copy, in rounds for repeated positions, in one call for distinct ones, and item by item for a dfn.
+    check(&mut session, "i←¿1000⍴1000 ⋄ z←1000⍴0 ⋄ zx←1000⍴0ₓ ⋄ zc←1000⍴0ₓ ⋄ zr←1000⍴1ᵣ2 ⋄ $t", "$t");
+    for (code, path) in [
+        ("z.[i]+←1", "in place"), ("zx.[i]+←1ₓ", "logged"), ("zc.[i]+←0.5", "on a copy"),
+        ("zr.[i]+←1ᵣ3", "rounds"), ("zr.[⍳10]+←1ᵣ3", "one call"), ("z.[i] {⍺+⍵}←1", "item by item"),
+    ] {
+        check(&mut session, &format!(r#"(•explain "{code}").accumulations.path≡["{path}"]"#), "$t");
+    }
+    // A fused group counts the runs that a long cycle splits its blocks into, and the items it copies out of inputs. A pending input that a name holds is stored on its own first.
+    check(&mut session, r#"big←¿[256 5000]⍴0 ⋄ f←(•explain "q←2×big+⍤1⊢¿5000⍴0 ⋄ q≡q").fused ⋄ ∧/f.runs>f.blocks"#, "$t");
+    check(&mut session, r#"sv←¿1048576⍴0 ⋄ (•explain "q←2×⌽sv+1 ⋄ q≡q").fused.copied"#, "[1048576]ₓ");
+    check(&mut session, r#"x←¿1000000⍴0 ⋄ (•explain "s←x-0.25 ⋄ q←s×1-s ⋄ q≡q").stored.reason≡["held outside the graph"]"#, "$t");
     // `•memory` counts the pending arrays this thread made, including one dropped on another thread. `bytes` counts what a value keeps alive, a shared base once, and takes active values under `∂`.
     let mut held = Session::new();
     check(&mut held, "w←⍳262144 ⋄ n←(•memory 0).pending ⋄ p←⌽w ⋄ (•memory 0).pending-n", "1ₓ");

@@ -33,6 +33,8 @@ const N: usize = 1000;
 const LIMIT: f64 = 16.0;
 /// The most bytes that a call's peak may grow by for each added item. `⍕v` needs the most: about 19 characters of 4 bytes for each number, beside the text they're read from.
 const PEAK_PER_ITEM: usize = 128;
+/// The same for a gradient through Each, which records nodes and values for each cell: about 930 bytes for each row of two items.
+const RECORD_PEAK_PER_ITEM: usize = 1200;
 
 struct Cost { time: Duration, allocated: usize, peak: usize, kept: usize }
 
@@ -62,8 +64,8 @@ fn cost(session: &mut Session, code: &str) -> Cost {
     Cost { time, allocated, peak, kept }
 }
 
-/// The ways in which each of `codes` grows faster than `LIMIT` allows, or keeps memory. A time that grows too fast is measured again after the rest, by `rustymath::timing::retried`, and fails only if it grows too fast every time. Each retry writes both growths straight to stderr, where they appear even when the test passes. Byte counts are the same on every run.
-fn growth_failures(codes: &[&str]) -> Vec<String> {
+/// The ways in which each of `codes` grows faster than `LIMIT` allows, peaks above `peak_per_item` bytes for each added item, or keeps memory. A time that grows too fast is measured again after the rest, by `rustymath::timing::retried`, and fails only if it grows too fast every time. Each retry writes both growths straight to stderr, where they appear even when the test passes. Byte counts are the same on every run.
+fn growth_failures(codes: &[&str], peak_per_item: usize) -> Vec<String> {
     let (mut small, mut large) = (session(N), session(8 * N));
     let ratio = |a: usize, b: usize| a as f64 / b.max(1) as f64;
     let time = |s: &Cost, l: &Cost| l.time.as_secs_f64() / s.time.as_secs_f64();
@@ -76,7 +78,7 @@ fn growth_failures(codes: &[&str]) -> Vec<String> {
             if r > LIMIT { failures.push(format!("{code}: {what} grow {r:.1} times")); }
         }
         let per_item = l.peak.saturating_sub(s.peak) / (7 * N);
-        if per_item > PEAK_PER_ITEM { failures.push(format!("{code}: peaks at {per_item} bytes per item")); }
+        if per_item > peak_per_item { failures.push(format!("{code}: peaks at {per_item} bytes per item")); }
         if s.kept + l.kept > 0 { failures.push(format!("{code}: keeps {} and {} bytes", s.kept, l.kept)); }
     }
     let mut stderr = std::io::stderr();
@@ -122,12 +124,13 @@ fn allocation_failures() -> Vec<String> {
     failures
 }
 
-/// Pervasive functions, reductions, catenation, indexing, search, Key, partitions, display and each are linear. So are loops of single-item updates and of appends, in their count. Grade is n log n. Each case in `BUDGETS` allocates within its budget.
+/// Pervasive functions, reductions, catenation, indexing, search, Key, partitions, display and each are linear. So are loops of single-item updates and of appends, in their count. So is a gradient through a split into rows that a mix puts back together, where each row reads a few items of one record and of one shared cotangent. Grade is n log n. Each case in `BUDGETS` allocates within its budget.
 #[test]
 fn costs_grow_as_expected() {
     rustymath::parallel::set_threads(1);
     let mut failures =
-        growth_failures(&["v+w", "+/v", "v,w", "[i]⌷v", "v⍳w", "{≢⍵}⌸b", "b⊂iv", "⍕v", "{⍵+1}¨iv", "⍋v", "x←0×iv ⋄ {x.[⍵]←1}¨iv", "r←⍬ ⋄ {r,←⍵}¨iv"]);
+        growth_failures(&["v+w", "+/v", "v,w", "[i]⌷v", "v⍳w", "{≢⍵}⌸b", "b⊂iv", "⍕v", "{⍵+1}¨iv", "⍋v", "x←0×iv ⋄ {x.[⍵]←1}¨iv", "r←⍬ ⋄ {r,←⍵}¨iv"], PEAK_PER_ITEM);
+    failures.extend(growth_failures(&["{y←{⍵×⍵}¨↓⍵ ⋄ z←⊃⍠0 y ⋄ +/,z}∂ m"], RECORD_PEAK_PER_ITEM));
     failures.extend(allocation_failures());
     assert!(failures.is_empty(), "{failures:#?}");
 }

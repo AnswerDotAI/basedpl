@@ -20,6 +20,8 @@ pub(crate) enum Call {
     Generator(crate::distribution::Generator, crate::distribution::Draw),
     Load,
     Element(std::sync::Arc<str>),
+    /// An edge-mode function from `•edge`, holding its mode.
+    Edge(rustymath::structure::Edge),
     /// A `•canvas` drawing function, holding its JavaScript source.
     Canvas(std::sync::Arc<str>),
     /// A JavaScript function, which only the browser build has.
@@ -72,7 +74,7 @@ impl PartialEq for SystemFunction {
         self.name == other.name && match (&self.call, &other.call) {
             (Call::Regex(x, a), Call::Regex(y, b)) => (x.as_str(), a) == (y.as_str(), b),
             (Call::Distribution(x, a), Call::Distribution(y, b)) => (x, a) == (y, b),
-            (Call::Generator(x, a), Call::Generator(y, b)) => std::sync::Arc::ptr_eq(x, y) && a == b, (Call::Element(x), Call::Element(y)) => x == y,
+            (Call::Generator(x, a), Call::Generator(y, b)) => std::sync::Arc::ptr_eq(x, y) && a == b, (Call::Element(x), Call::Element(y)) => x == y, (Call::Edge(x), Call::Edge(y)) => x == y,
             (Call::Canvas(x), Call::Canvas(y)) => x == y, #[cfg(web)] (Call::Js(x), Call::Js(y)) => std::sync::Arc::ptr_eq(x, y),
             (x, y) => std::mem::discriminant(x) == std::mem::discriminant(y)
         }
@@ -89,7 +91,11 @@ impl Valence {
     }
 }
 
-impl SystemFunction { pub(crate) fn check(&self, left: Option<&Value>, span: &crate::Span) -> Result<(), Error> { self.valence.check(self.name, left, span) } }
+impl SystemFunction {
+    pub(crate) fn check(&self, left: Option<&Value>, span: &crate::Span) -> Result<(), Error> { self.valence.check(self.name, left, span) }
+    /// The name that a factory made this function from, as `•element` makes one from a tag and `•edge` from a mode. Display writes it after the system name.
+    pub(crate) fn argument(&self) -> Option<&str> { match &self.call { Call::Element(tag) => Some(tag), Call::Edge(mode) => Some(mode.name()), _ => None } }
+}
 
 /// A function that calls `call` natively, taking its right argument whole. A generator's draw and a distribution's sample have a result prototype. In prototype mode they return it without drawing.
 pub(crate) fn native(name: &'static str, call: Call, valence: Valence) -> Function {
@@ -148,7 +154,7 @@ const BUILTINS: &[Builtin] = &[
     ("•literal", Call::Session(crate::Session::system_literal), Monadic, Text, Some(number)),
     ("•explain", Call::Session(crate::Session::system_explain), Monadic, Text, Some(record)), ("•memory", Call::Active(memory), Monadic, Whole, Some(record)),
     ("•detach", Call::Active(detach), Monadic, Whole, None), ("•index", Call::Value(index), Ambivalent, Number, Some(numbers)),
-    ("•edge", Call::Value(edge), Dyadic, Whole, Some(number)),
+    ("•edge", Call::Value(edge), Ambivalent, Text, Some(number)),
 ];
 
 /// Every system function's name.
@@ -260,6 +266,8 @@ fn memory(_: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, E
 /// `•detach Y`: `Y` with every `∂` tag stripped. No derivative flows back through the result. Outside `∂`, it gives `Y`.
 fn detach(_: Option<&Value>, right: &Value, _: &Context<'_>) -> Result<Value, Error> { Ok(crate::derivative::detach(right)) }
 
+/// The separator between a fresh name's stem and its random part. Display cuts a hidden name after it.
+pub(crate) const FRESH: char = '·';
 /// `•index n` is `⍳n` along a fresh hidden axis name. The name is `_`, the left argument's text as a readable stem, `·`, and 64 random bits as 13 base-32 digits.
 fn index(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     const DIGITS: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
@@ -269,37 +277,34 @@ fn index(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Valu
     };
     let mut bits: u64 = rand::random();
     let random: String = (0..13).map(|_| { let digit = DIGITS[(bits % 32) as usize] as char; bits /= 32; digit }).collect();
-    Primitive::Iota.call(None, right, span)?.with_axis_names(vec![Some(format!("_{stem}·{random}").into())]).error_at(span, "invalid index")
+    Primitive::Iota.call(None, right, span)?.with_axis_names(vec![Some(format!("_{stem}{FRESH}{random}").into())]).error_at(span, "invalid index")
 }
 
-/// `n •edge p` and `[mode n] •edge p`: the position on an axis of `n` items that each position in `p` reads under an edge mode, as rustymath's `structure::Edge` gives it. The modes are `"fill"`, the default, `"clamp"`, `"wrap"` and `"reflect"`. Fill gives NaN for a position outside the axis, which reads the fill, so its result is floats of the session's width. The other modes give integers. A NaN in `p` stays NaN.
+/// `•edge mode`: the function `n f p` that maps positions `p` on an axis of `n` items by the edge mode named `mode`, one of rustymath's `structure::Edge::MODES`. `n •edge p` maps them by the fill mode.
 fn edge(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     use rustymath::structure::Edge;
-    let left = left.expect("•edge is dyadic");
-    let (mode, n) = if left.is_atom() { (Edge::Fill, left.clone()) } else {
-        let [mode, n] = &left.elements().collect::<Vec<_>>()[..] else { return Err(span.error(Kind::Length, "•edge takes a length, or a mode and a length")) };
-        let mode = match crate::keyed::name(mode).as_deref() {
-            Some("fill") => Edge::Fill, Some("clamp") => Edge::Clamp, Some("wrap") => Edge::Wrap, Some("reflect") => Edge::Reflect,
-            _ => return Err(span.domain_error("•edge's modes are fill, clamp, wrap and reflect")),
-        };
-        (mode, n.clone())
+    let Some(n) = left else {
+        let mode = crate::keyed::name(right).and_then(|m| Edge::named(&m)).ok_or_else(|| {
+            let names: Vec<_> = Edge::MODES.iter().map(|(name, _)| *name).collect();
+            let (last, rest) = names.split_last().expect("modes");
+            span.domain_error(format!("•edge's modes are {} and {last}", rest.join(", ")))
+        })?;
+        return Ok(Value::Function(native("•edge", Call::Edge(mode), Dyadic)));
     };
+    edged(Edge::Fill, n, right, span)
+}
+/// The position on an axis of `n` items that each position in `p` reads under edge mode `mode`, as rustymath's `structure::Edge` gives it. Fill gives NaN for a position outside the axis, which reads the fill, so its result is 64-bit floats, whatever the float pref. The other modes give integers, unless the axis is empty. A NaN in `p` stays NaN.
+pub(crate) fn edged(mode: rustymath::structure::Edge, n: &Value, p: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let n = n.as_number().and_then(|n| n.nonnegative_integer().ok()).ok_or_else(|| span.domain_error("•edge takes a nonnegative whole length"))?;
-    let whole = || span.domain_error("•edge takes whole positions");
-    let positions: Vec<Option<i64>> = match right.as_items().integers() {
-        Ok(ints) => ints.iter().map(|&i| Some(i)).collect(),
-        Err(_) => right.elements().map(|e| e.as_number().and_then(|p| p.as_float()).ok_or_else(whole)
-            .and_then(|y| rustymath::structure::float_position(y).map_err(|_| whole()))).collect::<Result<_, _>>()?,
-    };
-    let mapped: Vec<Option<usize>> = positions.iter().map(|p| p.and_then(|p| mode.position(p, n))).collect();
-    let width = crate::number::Numeric::current().width;
-    let result = if mode == Edge::Fill || mapped.contains(&None) {
+    let positions = p.as_items().positions().map_err(|_| span.domain_error("•edge takes whole positions"))?;
+    let mapped: Vec<Option<usize>> = positions.iter().map(|q| q.and_then(|q| mode.position(q, n))).collect();
+    let result = if mode == rustymath::structure::Edge::Fill || mapped.contains(&None) {
         let floats = mapped.iter().map(|q| q.map_or(f64::NAN, |q| q as f64));
-        if right.is_atom() { return Ok(Value::Number(crate::Number::float(floats.last().unwrap_or(f64::NAN), width))); }
-        right.layout().floats(width, floats)
+        if p.is_atom() { return Ok(Value::Number(crate::Number::float(floats.last().unwrap_or(f64::NAN), FloatWidth::F64))); }
+        p.layout().floats(FloatWidth::F64, floats)
     } else {
-        if right.is_atom() { return Ok(Value::integer(mapped[0].unwrap_or(0) as i64)); }
-        right.layout().integers(mapped.iter().map(|q| q.unwrap_or(0) as i64).collect())
+        if p.is_atom() { return Ok(Value::integer(mapped[0].unwrap_or(0) as i64)); }
+        p.layout().integers(mapped.iter().map(|q| q.unwrap_or(0) as i64).collect())
     };
     result.error_at(span, "invalid positions")
 }

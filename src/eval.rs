@@ -139,7 +139,7 @@ impl FunctionNode {
     /// The node's label in a function tree: its glyph, or its source for a node without operands.
     fn label(&self, notation: Notation) -> String {
         match self {
-            Self::Primitive(p) => notation.glyph(p.glyph()).into(), Self::System(f) => system_name(f.name, notation),
+            Self::Primitive(p) => notation.glyph(p.glyph()).into(), Self::System(f) => system_name(f.name, notation) + &f.argument().map_or(String::new(), |a| crate::array::quoted(&a)),
             Self::Ruled(f, _) => f.node().label(notation), Self::LateBound(_, span) => span.source.text.clone(),
             Self::Defined(c) | Self::Derived(c, ..) => c.text().into(), Self::Fold(_, h) => notation.glyph(h.glyph()).into(),
             Self::Inverse(_) => "⁻¹".into(), Self::Axis(..) => notation.glyph("⍠").into(),
@@ -602,6 +602,7 @@ impl Function {
                     crate::system::Call::Value(call) | crate::system::Call::Active(call) => call(left, right, cx),
                     crate::system::Call::Effect(call) => return call(left, right, cx).map(|(value, shy)| Bound { shy, ..Bound::from(value) }),
                     crate::system::Call::Element(tag) => crate::xml::element(tag, left, right, cx),
+                    crate::system::Call::Edge(mode) => crate::system::edged(*mode, left.expect("an edge function is dyadic"), right, cx),
                     crate::system::Call::Canvas(source) => crate::canvas::draw(source, left, right, cx),
                     #[cfg(web)]
                     crate::system::Call::Js(f) => {

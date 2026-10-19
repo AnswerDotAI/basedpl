@@ -14,7 +14,7 @@ m←p.matches "abc123def45"
 ⍝ regex:unicode — Positions count characters, not UTF-8 bytes
 p←•r "é|🐈+"
 m←p.matches "aé🐈🐈z"
-[m.position;≢¨m.text]   ⍝ [1 2;1 2]ₓ
+[m.position ≢¨m.text]   ⍝ [1 2;1 2]ₓ
 
 ⍝ regex:empty — Empty matches occur at character boundaries
 p←•r "" ⋄ [(p.matches "é🐈").position;'-' p.replace "é🐈"]
@@ -25,7 +25,7 @@ p←•r "(z)"
 m←p.matches "abc"
 [m.text;m.position;m.groups;'x' p.replace "abc"]
 ⍝ =>
-[0⍴⊂"";⍬ₓ;0⍴⊂,⊂"";"abc"]
+[0⍴⊂"" ⍬ₓ 0⍴⊂,⊂"" "abc"]
 
 ⍝ regex:replacement — The regex crate's capture expansion and literal dollar
 p←•r "(?P<word>[a-z]+)([0-9]+)"

@@ -4,6 +4,7 @@ from pathlib import Path
 from collections import deque
 from decimal import Decimal
 from . import BplError, _output_text, _written
+from fastcore.meta import delegates
 
 INSTALLED_BPL = Path(sysconfig.get_path('scripts'))/'bpl' # The `bpl` that `cargo develop` installs and replaces
 NATIVE = {'RUSTYMATH_NATIVE': '1'} # The environment that runs rustymath's own linear algebra in place of Accelerate, in a macOS build with rustymath's `native` feature
@@ -110,11 +111,13 @@ class Worker:
     def __enter__(self): return self
     def __exit__(self, *args): self.close()
 
+@delegates(Worker)
 def fresh(
     code, # BPL source
-    timeout=None # Seconds before the evaluation is interrupted
+    timeout=None, # Seconds before the evaluation is interrupted
+    **kwargs
 ):
     "Return what `code` prints in a fresh worker process. A BPL error raises `BplError`."
-    with Worker() as w: r = w.eval(code, timeout)
+    with Worker(**kwargs) as w: r = w.eval(code, timeout)
     if r['error']: raise BplError(r['error'], r['output'])
     return _written(r['output']).removesuffix('\n')

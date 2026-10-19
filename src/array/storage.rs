@@ -259,6 +259,11 @@ impl<'a> Items<'a> {
         if let Some((n, _)) = converted { return Ok(Cow::Owned(n)); }
         self.each(Ok, real::integer, Number::integer).map(Cow::Owned)
     }
+    /// Each item as a signed position: an integer, or `None` for NaN, which reads a fill. Floats decode as rustymath's `structure::float_position` reads them. A fraction, an infinity or a non-number is DOMAIN.
+    pub(crate) fn positions(&self) -> Result<Vec<Option<i64>>, ErrorKind> {
+        let real = |y: f64| -> Result<Option<i64>, ErrorKind> { rustymath::structure::float_position(y).map_err(|_| Kind::Domain.into()) };
+        self.each(|n| Ok(Some(n)), real, |n| match n.as_float() { Some(y) => real(y), None => n.integer().map(Some) })
+    }
     /// The items of Boolean or integer storage as integers. `None` for any other storage.
     pub(crate) fn exact_integers(&self) -> Option<Cow<'a, [i64]>> { match self { Self::Compact(View::Booleans(_) | View::Integers(_)) => self.integers().ok(), _ => None } }
     /// The integers of integer storage of any width.
@@ -451,6 +456,10 @@ impl Gather {
         if copied { return; }
         let d = self.mixed();
         for &r in rows { d.extend(source.items(at(r))) }
+    }
+    /// Copies the items of `source` at `offsets`. A `Steps::FILL` offset gives the prototype of `source`, as `walk` does.
+    pub(crate) fn at(&mut self, source: &Value, offsets: &[usize]) {
+        if offsets.contains(&Steps::FILL) { self.walk(source, 0, &[Steps::table(offsets.to_vec())]) } else { self.rows(source, offsets, 1) }
     }
     /// Appends `n` copies of `item`.
     pub(crate) fn fill(&mut self, item: &Value, n: usize) {

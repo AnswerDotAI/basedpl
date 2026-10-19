@@ -236,6 +236,7 @@ def check_file(
     ids:Annotated[int|str, {'nargs':'*'}]=None # Check only these cases, each named by its id or its header's line number
 ):
     "Check the cases in `path` in a fresh worker, as `tests/reference.rs` does, and return the failures."
+    if isinstance(ids, (int, str)): ids = [ids]
     return _failures(dict(reference=dict(text=Path(path).read_text(), ids=ids)))
 
 
@@ -411,7 +412,8 @@ def set_budgets(
             continue
         fields = line.split('\t')
         for i, build in enumerate(_BUDGETS, 1):
-            if i >= len(fields) or (cost := worst.get((section, fields[0], build))) is None: continue
+            if (cost := worst.get((section, fields[0], build))) is None: continue
+            fields += [''] * (i + 1 - len(fields))
             new = f'{_budget(section, cost, untimed).normalize():f}'
             if new != fields[i]: changes.append((section, fields[0], build, fields[i], new))
             fields[i] = new

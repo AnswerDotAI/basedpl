@@ -35,8 +35,8 @@ The names in these tables are the ones you type. In the REPL, a backtick and any
 | `¿` [inverted-question](glyphs/inverted-question.qmd) | Alt-/ | roll | deal | Dyalog's `?` |
 | `∨` [vee](glyphs/vee.qmd) | Alt-9 | real-imag | or | Monad as J's `+.` |
 | `∧` [wedge](glyphs/wedge.qmd) | Alt-0 | polar | and | Monad as J's `*.` |
-| `⊼` [wedge-bar](glyphs/wedge-bar.qmd) | Alt-Minus 0 | square | nand | Monad as J's `*:` |
-| `⊽` [vee-bar](glyphs/vee-bar.qmd) | Alt-Minus 9 | double | nor | Monad as J's `+:` |
+| `⊼` [wedge-bar](glyphs/wedge-bar.qmd) | Alt-Minus 0 | square | nand | Dyad as Dyalog's `⍲`. Monad as J's `*:` |
+| `⊽` [vee-bar](glyphs/vee-bar.qmd) | Alt-Minus 9 | double | nor | Dyad as Dyalog's `⍱`. Monad as J's `+:` |
 | `~` [tilde](glyphs/tilde.qmd) | | not | without | Major cells, as BQN |
 | `=` [equals](glyphs/equals.qmd) | | classify | equal | Monad as J |
 | `≠` [not-equals](glyphs/not-equals.qmd) | Alt-Shift-= | unique-mask | not-equal | |
@@ -159,3 +159,5 @@ Index origin: 0. Negative positions and axes count from the end. Comparison tole
 - [Major cells](principles.ipynb#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
 - [System names](system-functions.qmd): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.ipynb) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`. `T.(expr)` and `T⍎Y` evaluate with the keys of `T` as names.
+- [Dfns](dfns.ipynb): BPL has dfns, with no tradfns and no colon control structures such as `:If`.
+- Removed forms: Dyalog's bracket axes `f[A]`, outer product `∘.f`, windowed reduce and laminate are not in BPL. Use [`⍠`](glyphs/quad-colon.qmd) for axes, [`⊗`](glyphs/circle-times.qmd) for outer products, [`↕`](glyphs/up-down-arrow.qmd) for windows, as in `+/3↕v`, and `[x⋄y]` for rows. `/ ⌿ \ ⍀` are only reduce and scan. A left argument to them is a seed, as in BQN: `2+/1 2 3` is `8`. Replicate and expand are [`#`](glyphs/hash.qmd) and `#⁻¹`.

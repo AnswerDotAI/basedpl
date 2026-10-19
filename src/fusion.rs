@@ -2,16 +2,16 @@
 //!
 //! Without fusion, each call of a pervasive primitive reads and writes a whole array. `1.2×img-0.5` makes two passes over memory. An array larger than the cache comes back from memory for each pass. A graph runs all its calls on one block of `BLOCK` items while the block is in the cache, then moves to the next block. It reads its inputs once and writes its result once.
 //!
-//! Dispatch defers a call of a fusible primitive that would give at least `MIN_ITEMS` floats: `Primitive::pervasive_mapped` gives a pending array (`Pending`) in place of the call's result. A pending call reads input arrays, scalars and other pending arrays, including pending arrays that names hold. Its items are computed when something reads them, such as a call that isn't fusible, display, or Python. Forcing gathers the pending calls that only the forced array's graph reads into one `Graph`. A pending array that something outside the graph also holds runs first, as its own graph, and keeps its items. A name, a dfn's argument and a train's argument all hold their values outside any graph. A shared intermediate, as `s` in `s←img-0.5 ⋄ s×1-s`, therefore runs on its own before the graph that reads it. A reduction such as `+/` or `⌈⌿` of a pending array that nothing else holds folds each block's results while they are in the cache, and never builds the array. A graph of fewer than `MIN_NODES` calls runs each call on whole arrays, as an unfused call does. A graph that runs block by block, or that a reduction folds, splits across threads in pieces of whole blocks. A fold's pieces come from rustymath's `reduce::fold_pieces`. With `•prefs ["fusion":$t]`, `Function::call` reports the innermost call that computes each pending argument.
+//! Dispatch defers a call of a fusible primitive that would give at least `MIN_ITEMS` floats: `Primitive::pervasive_mapped` gives a pending array (`Pending`) in place of the call's result. A pending call reads input arrays, scalars and other pending arrays, including pending arrays that names hold. Its items are computed when something reads them, such as a call that isn't fusible, display, or Python. Forcing gathers the pending calls that only the forced array's graph reads into one `Graph`. A pending array that something outside the graph also holds runs first, as its own graph, and keeps its items. A name and a train's argument hold their values outside any graph, and so does a dfn's argument while the dfn runs. A shared intermediate, as `s` in `s←img-0.5 ⋄ s×1-s`, therefore runs on its own before the graph that reads it. A reduction such as `+/` or `⌈⌿` of a pending array that nothing else holds folds each block's results while they are in the cache, and never builds the array. A graph of fewer than `MIN_NODES` calls runs each call on whole arrays, as an unfused call does. A graph that runs block by block, or that a reduction folds, splits across threads in pieces of whole blocks. A fold's pieces come from rustymath's `reduce::fold_pieces`. With `•prefs ["fusion":$t]`, `Function::call` reports the innermost call that computes each pending argument.
 //!
 //! A graph is data. Each node names its primitive and its operands. An operand is an input array, a scalar, or the results of an earlier node. The last node gives the graph's result. A graph's arrays have plain layouts and one float width, 32 or 64 bits. Arrays of different shapes broadcast as they do in an unfused call. Each array reads its items through the `Mapping` that `Agreement` gives it against the graph's result. A scalar operand is a float of at most the graph's width. A primitive fuses where its float kernel keeps its arguments' type or gives Booleans, and can't fail (`pervasive::fuses`). The `fusion` entry of `nbs/system/prefs.qmd` lists those primitives. A comparison ends its graph, because it gives Booleans. Each node takes the kernel that `pervasive::map` takes for the same arguments. A graph therefore gives the result that its calls give.
 //!
 //! A structural glyph that copies one source through rustymath `Steps` (`remapped`) gives a pending copy (`copy`) where its result has at least `MIN_ITEMS` items, for a source of any compact kind. Forcing composes a read of a copy with the copy's map, and moves a read with no repeat or fill under each pending pervasive call it reaches that only it holds (`Pending::resolved`). `2×⌽v+1` then runs as one graph that reads `v` backwards. A copy of floats that no call reads through, and a copy of any other kind, walks its source as `remapped` does. A fold of a copy of windows along its own axis runs sliding folds over the source (`slide`), at a cost for each item that doesn't grow with the window's width.
 use crate::{
-    agreement::Agreement, array::{Items, Lanes, Layout, Storage}, element::{read_as, Stored, Float}, explain::{Live, Counted}, number::Numeric,
+    agreement::Agreement, array::{Items, Lanes, Layout, Storage}, element::{read_as, Stored, Float}, explain::{Live, Counted, Tally}, number::Numeric,
     pervasive::{self, with_float_reduction, with_truth_reduction, Kernels}, primitive::{FoldKind, Primitive}, Number, Value
 };
-use rustymath::{agreement::{expanded, Mapping}, buffer::{DType, FloatWidth, View}, with_float_width, gather::Steps, layout::strides, reduce::{self, Reduction}, Arg, Native};
+use rustymath::{agreement::{expanded, in_place, Mapping}, buffer::{DType, FloatWidth, View}, with_float_width, gather::Steps, layout::strides, reduce::{self, Reduction}, Arg, Native};
 use std::{collections::HashMap, ops::Range, sync::{Arc, Mutex, OnceLock, PoisonError}};
 
 mod blocks;
@@ -20,10 +20,10 @@ mod blocks;
 const MIN_ITEMS: usize = 1 << 17;
 /// The fewest items in a block, which a graph reads in whole rows of an input that skips items (`Graph::block`). Each node's results for a block stay in the cache until the nodes that read them have run.
 const BLOCK: usize = 1 << 12;
-/// The shortest repeat or cycle of an input that splits a block into runs. Within a run, the input reads its one item, or a slice of its items, in place. A shorter repeat or cycle copies into a buffer for each block.
+/// The shortest repeat of an input that splits a block into runs. Within a run, the input reads its one item in place. A shorter repeat copies into a buffer for each block. A cycle shorter than a block never splits it: `Graph::blocks` repeats its period once, then reads each run from that buffer in place. A longer cycle splits a block into runs.
 const RUN: usize = 256;
-/// The fewest calls that a graph runs block by block. A smaller graph runs each call on whole arrays, as an unfused call does, unless a reduction folds it. In blocks, a graph writes its result to memory in loops of `BLOCK` items. On the Mac such loops took about 40% longer per item than one loop over 36 million items, whatever the loop computed. Two fused calls on arrays of one shape still gained about 12%. Two fused calls that broadcast lost about 20%. In larger graphs, a first call that reads a second operand cost more than it does unfused: about 40 to 75 ps per item where that operand cycles in 8 to 32 KB, as a row repeated down a matrix does, and about 100 ps for a cycle of 72 KB or more. A single fused call paid none of that. Blocks of 2,048 items cut it by about a third, but slowed every other graph more.
-const MIN_NODES: usize = 3;
+/// The fewest calls that a graph runs block by block. A graph of one call runs it on whole arrays, as an unfused call does, unless a reduction folds it. Measured on the Mac on 19 October 2026, two fused calls cost less than two unfused ones in every case timed. At 8 million items, `2×big+big` cost 220 against 255 ps per item. Adding a row to every row, as `2×big+⍤1⊢row` does, cost 226 to 251 against 256 to 276 ps for rows of 3 to 8,192 items. Before `Graph::blocks` read a short cycle from its repeated period, each period was a run of its own, and rows of 256 to 3,000 items made two fused calls 10% to 30% slower than unfused ones. A cycle of 72 KB or more, which still splits blocks into runs, cost larger graphs about 100 ps per item more than unfused, as measured before 19 October 2026.
+const MIN_NODES: usize = 2;
 
 /// Calls that run together, block by block.
 pub(crate) struct Graph {
@@ -37,8 +37,8 @@ pub(crate) struct Graph {
     width: FloatWidth,
     /// The settings in force when the graph is built, as an array is forced. Its kernels get them passed in, because they run on rustymath's worker threads.
     numeric: Numeric,
-    /// A node before the last whose results the graph also gives, for a dual whose primal and tangent run together (`force_together`).
-    extra: Option<usize>,
+    /// Nodes before the last whose results the graph also gives, each with the pending array that keeps them. A dual's primal runs with its tangent this way (`force_together`).
+    extras: Vec<(usize, Arc<Pending>)>,
 }
 
 /// A call of a primitive, or a copy that reads `right` unchanged. `left` is `None` for a monadic call or a copy.
@@ -131,7 +131,7 @@ fn narrow(read: &Read, outer: &Mapping, shape: &[usize], frame: &[usize], small:
         }
         Some(Work::Graph(graph)) if computing() => {
             let inputs = graph.inputs.iter().map(|(v, m)| Some((v.clone(), within(m, &mapping, graph.layout.shape(), frame, small)?))).collect::<Option<_>>()?;
-            let graph = Graph { inputs, nodes: graph.nodes.clone(), layout: Layout::from(frame.to_vec()), len: n, width: graph.width, numeric: graph.numeric, extra: None };
+            let graph = Graph { inputs, nodes: graph.nodes.clone(), layout: Layout::from(frame.to_vec()), len: n, width: graph.width, numeric: graph.numeric, extras: Vec::new() };
             Some(computed(pending, Work::Graph(graph), frame))
         }
         _ => kept(),
@@ -369,10 +369,11 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind) -> Option<Value>
             }
         },
     };
-    let folded = graph.fold(p, kind);
+    let tally = Tally::new();
+    let folded = graph.fold(p, kind, &tally);
     match folded {
         Some(_) => {
-            graph.explained(Some((p, kind)));
+            graph.explained(Some((p, kind)), &tally);
             pending.put(Work::Graph(graph))
         }
         None => pending.result.set(pending.counted(graph.run().into_storage())).expect("a pending array computes its items once"),
@@ -390,8 +391,7 @@ pub(crate) fn force_together(primal: &Value, tangent: &Value) {
                 (Ok(tc), Ok(pc)) => {
                     let (calls, position) = t.gather(vec![tc, pc], HashMap::from_iter([(Arc::as_ptr(p), 1)]));
                     let order = order(&calls, &position, &[0, 1]);
-                    let (tangent_items, primal_items) = t.build(calls, &position, order, Some(1)).run_pair();
-                    p.result.set(p.counted(primal_items.into_storage())).expect("a pending array computes its items once");
+                    let tangent_items = t.build(calls, &position, order, vec![(1, p.clone())]).run();
                     t.result.set(t.counted(tangent_items.into_storage())).expect("a pending array computes its items once");
                 }
                 (tc, pc) => {
@@ -464,7 +464,7 @@ impl Pending {
             right => Err(Call { operation: Operation::Copy, left: None, right }),
         }
     }
-    /// `read`, simplified where it reads a pending array that only it holds, for a frame of this array's layout. A copy composes with what the copy reads (`through`). A pervasive call read through a map with no repeat or fill moves under the read: each of its reads composes with the map, and the call becomes a new pending array that the frame reads in order. `gather` resolves each call it gathers, so a move continues down a chain of such calls.
+    /// `read`, simplified where it reads a pending array that only it holds, for a frame of this array's layout. A copy composes with what the copy reads (`through`). A pervasive call at this array's width and settings, read through a map with no repeat or fill, moves under the read: each of its reads composes with the map, and the call becomes a new pending array that the frame reads in order. `gather` resolves each call it gathers, so a move continues down a chain of such calls.
     fn resolved(&self, read: Read) -> Read {
         let Read::Pending(p, mapping, layout) = read else { return read };
         if Arc::strong_count(&p) != 1 || p.is_forced() { return Read::Pending(p, mapping, layout); }
@@ -472,7 +472,7 @@ impl Pending {
         let rewritten = match work.as_ref() {
             Some(Work::Call(Call { operation: Operation::Copy, right: Read::Input(_, inner) | Read::Pending(_, inner, _), .. })) => inner
                 .compose(&mapping, p.layout.shape(), self.layout.shape()).map(|mapping| vec![Some(mapping)]),
-            Some(Work::Call(call)) if matches!(call.operation, Operation::Primitive(_)) && p.floats() && p.width == self.width => match &mapping {
+            Some(Work::Call(call)) if matches!(call.operation, Operation::Primitive(_)) && p.floats() && p.width == self.width && p.numeric == self.numeric => match &mapping {
                 Mapping::Steps { base: 0, steps: outer } if !outer.iter().any(Steps::spreads) && !Steps::rereads(outer, p.layout.shape()) => call.args().map(|a| a.moved(outer, p.layout.shape())).collect(),
                 _ => None,
             },
@@ -498,17 +498,30 @@ impl Pending {
         };
         crate::primitive::walked(&source, self.layout.clone(), base, &steps).expect("a copy's items fit its layout").into_storage()
     }
-    /// Whether a graph that gives this array's items can compute `pending`, which it reads through `mapping`, as a node: from its call, item by item, at the graph's width, and without comparing.
-    fn reads_as_node(&self, pending: &Pending, mapping: &Mapping) -> bool {
-        matches!(mapping, Mapping::Linear(1)) && pending.floats() && pending.width == self.width && pending.numeric == self.numeric && pending.len() == self.len()
-            && matches!(*pending.work.lock().unwrap_or_else(PoisonError::into_inner), Some(Work::Call(_)))
+    /// Why a graph that gives this array's items can't compute `pending`, which it reads through `mapping`, as one of its calls, or `None` where it can: from its call, item by item, at the graph's width, and without comparing. `•explain` reports the reason for a pending array that the graph reads as an input.
+    fn not_a_node(&self, pending: &Pending, mapping: &Mapping) -> Option<&'static str> {
+        if !matches!(mapping, Mapping::Linear(1)) { return Some("read through a map"); }
+        let fits = pending.floats() && pending.width == self.width && pending.numeric == self.numeric && pending.len() == self.len();
+        match *pending.work.lock().unwrap_or_else(PoisonError::into_inner) {
+            Some(Work::Graph(_)) => Some("kept by a fold"),
+            Some(Work::Call(_)) if fits => None,
+            _ => Some("a different kind or width"),
+        }
+    }
+    /// The glyph of the call that computes the items, or the glyphs of the graph that a fold left. A copy has none.
+    fn glyphs(&self) -> String {
+        match &*self.work.lock().unwrap_or_else(PoisonError::into_inner) {
+            Some(Work::Call(Call { operation: Operation::Primitive(p), .. })) => p.info().glyph.to_owned(),
+            Some(Work::Graph(graph)) => graph.glyphs(None),
+            _ => String::new(),
+        }
     }
 
     /// The graph whose last node is `root`, a call that `root` gave.
     fn graph(&self, root: Call) -> Graph {
         let (calls, position) = self.gather(vec![root], HashMap::new());
         let order = order(&calls, &position, &[0]);
-        self.build(calls, &position, order, None)
+        self.build(calls, &position, order, Vec::new())
     }
 
     /// `calls`, which start with this array's call, and each pending call they reach that only gathered calls hold, with the position in the result of each pending array gathered. `position` starts with the positions of the calls given after the first. A shared intermediate, as `s` in `s×1-s`, is then one call. A pending array that something outside the graph also holds isn't gathered. No `Arc` is cloned here, so a pending array's strong count is the number of calls and arrays that hold it.
@@ -517,7 +530,7 @@ impl Pending {
         let mut next = 0;
         while next < calls.len() {
             let reached: Vec<(*const Pending, usize)> = calls[next].args().filter_map(|a| match a {
-                Read::Pending(pending, mapping, _) if self.reads_as_node(pending, mapping) => Some((Arc::as_ptr(pending), Arc::strong_count(pending))), _ => None
+                Read::Pending(pending, mapping, _) if self.not_a_node(pending, mapping).is_none() => Some((Arc::as_ptr(pending), Arc::strong_count(pending))), _ => None
             }).collect();
             for (id, holders) in reached {
                 let held = references.entry(id).or_insert(0);
@@ -534,12 +547,12 @@ impl Pending {
         (calls, position)
     }
 
-    /// The graph of `calls` in `order`. A gathered call is a node. Any other pending array is an input, which runs first, as its own graph, and keeps its items. The call at position `extra` also gives a result, as `Graph::extra` says.
-    fn build(&self, calls: Vec<Call>, position: &HashMap<*const Pending, usize>, order: Vec<usize>, extra: Option<usize>) -> Graph {
+    /// The graph of `calls` in `order`. A gathered call is a node. Any other pending array is an input, which runs first, as its own graph, and keeps its items. The calls at the positions in `extras` also give results, as `Graph::extras` says.
+    fn build(&self, calls: Vec<Call>, position: &HashMap<*const Pending, usize>, order: Vec<usize>, extras: Vec<(usize, Arc<Pending>)>) -> Graph {
         let mut node = vec![0; calls.len()];
         for (i, &k) in order.iter().enumerate() { node[k] = i; }
         let mut calls: Vec<Option<Call>> = calls.into_iter().map(Some).collect();
-        let mut graph = Graph { inputs: Vec::new(), nodes: Vec::with_capacity(order.len()), layout: self.layout.clone(), len: self.len(), width: self.width, numeric: self.numeric, extra: None };
+        let mut graph = Graph { inputs: Vec::new(), nodes: Vec::with_capacity(order.len()), layout: self.layout.clone(), len: self.len(), width: self.width, numeric: self.numeric, extras: Vec::new() };
         for k in order {
             let Call { operation, left, right } = calls[k].take().expect("each call is a node once");
             let mut operand = |a: Read| {
@@ -558,8 +571,13 @@ impl Pending {
             let right = operand(right);
             graph.nodes.push(Node { operation, left, right });
         }
-        graph.extra = extra.map(|k| node[k]);
-        for (input, _) in &graph.inputs { input.force(); }
+        graph.extras = extras.into_iter().map(|(k, pending)| (node[k], pending)).collect();
+        for (input, mapping) in &graph.inputs {
+            if let Some(pending) = input.pending().filter(|p| !p.is_forced()) {
+                crate::explain::stored(|| (pending.glyphs(), pending.len(), self.not_a_node(pending, mapping).unwrap_or("held outside the graph")));
+            }
+            input.force();
+        }
         graph
     }
 }
@@ -603,27 +621,36 @@ impl Graph {
     /// Whether the graph's last node is a comparison, which gives Booleans.
     fn compares(&self) -> bool { matches!(self.nodes.last().expect("a graph has a node").operation, Operation::Primitive(Primitive::Compare(_))) }
 
-    /// Records the graph's run for `•explain`: the glyphs of its calls in the order they run, with the glyph of a fold that reads through it last, and its item count. A copy reads items and adds no glyph.
-    fn explained(&self, fold: Option<(Primitive, FoldKind)>) {
-        crate::explain::fused(|| {
-            let mut glyphs: String = self.nodes.iter().filter_map(|n| match n.operation { Operation::Primitive(p) => Some(p.info().glyph), Operation::Copy => None }).collect();
-            if let Some((p, kind)) = fold { glyphs.push_str(p.info().glyph); glyphs.push(if kind.first { '⌿' } else { '/' }); }
-            glyphs
-        }, self.len);
+    /// The glyphs of the graph's calls in the order they run, with the glyph of a fold that reads through it last. A copy reads items and adds no glyph.
+    fn glyphs(&self, fold: Option<(Primitive, FoldKind)>) -> String {
+        let mut glyphs: String = self.nodes.iter().filter_map(|n| match n.operation { Operation::Primitive(p) => Some(p.info().glyph), Operation::Copy => None }).collect();
+        if let Some((p, kind)) = fold { glyphs.push_str(p.info().glyph); glyphs.push(if kind.first { '⌿' } else { '/' }); }
+        glyphs
     }
 
-    /// The result of the graph's calls. A graph of fewer than `MIN_NODES` calls runs each call on whole arrays.
+    /// Records the graph's run for `•explain`: its glyphs, its item count and what `tally` counted while it ran.
+    fn explained(&self, fold: Option<(Primitive, FoldKind)>, tally: &Tally) { crate::explain::fused(|| self.glyphs(fold), self.len, tally) }
+
+    /// The result of the graph's calls, after storing each extra node's results in its pending array. A graph of fewer than `MIN_NODES` calls runs each call on whole arrays.
     pub(crate) fn run(&self) -> Value {
-        if self.nodes.len() < MIN_NODES { return self.unfused(); }
-        self.explained(None);
-        match self.width {
-            FloatWidth::F32 => self.typed::<f32>(), FloatWidth::F64 => self.typed::<f64>(),
-            FloatWidth::F16 => unreachable!("a graph's floats have a kernel width")
+        let (last, extras) = if self.nodes.len() < MIN_NODES {
+            let mut results = self.unfused_all();
+            let extras: Vec<Value> = self.extras.iter().map(|&(k, _)| results[k].clone()).collect();
+            (results.pop().expect("a graph has a node"), extras)
+        } else {
+            let tally = Tally::new();
+            let results = match self.width {
+                FloatWidth::F32 => self.typed::<f32>(&tally), FloatWidth::F64 => self.typed::<f64>(&tally),
+                FloatWidth::F16 => unreachable!("a graph's floats have a kernel width")
+            };
+            self.explained(None, &tally);
+            results
+        };
+        for ((_, pending), items) in self.extras.iter().zip(extras) {
+            pending.result.set(pending.counted(items.into_storage())).expect("a pending array computes its items once");
         }
+        last
     }
-
-    /// The result of the graph's calls, each run on whole arrays, through the maps that each input's call gave it.
-    fn unfused(&self) -> Value { self.unfused_all().pop().expect("a graph has a node") }
 
     /// The result of each of the graph's nodes, run on whole arrays.
     fn unfused_all(&self) -> Vec<Value> {
@@ -646,23 +673,8 @@ impl Graph {
         results
     }
 
-    /// The results of the graph's last node and of its `extra` node, from one pass over the inputs. Both give floats.
-    fn run_pair(&self) -> (Value, Value) {
-        let extra = self.extra.expect("a graph with a second result");
-        if self.nodes.len() < MIN_NODES {
-            let mut results = self.unfused_all();
-            let last = results.pop().expect("a graph has a node");
-            return (last, results.swap_remove(extra));
-        }
-        self.explained(None);
-        match self.width {
-            FloatWidth::F32 => self.paired::<f32>(), FloatWidth::F64 => self.paired::<f64>(),
-            FloatWidth::F16 => unreachable!("a graph's floats have a kernel width")
-        }
-    }
-
     /// What `p/` or `p⌿` gives on the graph's result, as `fold` in `eval::operators` gives it. It folds each block's results while they are in the cache, and never builds the graph's result. `None` for a scan, an axis of fewer than 2 items, or a fold without a form that takes one block at a time: `with_float_reduction!`'s on floats, and `with_truth_reduction!`'s on a comparison's Booleans.
-    pub(crate) fn fold(&self, p: Primitive, kind: FoldKind) -> Option<Value> {
+    pub(crate) fn fold(&self, p: Primitive, kind: FoldKind, tally: &Tally) -> Option<Value> {
         let shape = self.layout.shape();
         let axis = kind.default_axis(shape.len());
         let traversal = Lanes::new(shape, axis).ok()?;
@@ -670,7 +682,7 @@ impl Graph {
         let mut rest = shape.to_vec();
         rest.remove(axis);
         let result = match self.width {
-            FloatWidth::F32 => self.folded::<f32>(p, &traversal, rest), FloatWidth::F64 => self.folded::<f64>(p, &traversal, rest),
+            FloatWidth::F32 => self.folded::<f32>(p, &traversal, rest, tally), FloatWidth::F64 => self.folded::<f64>(p, &traversal, rest, tally),
             FloatWidth::F16 => unreachable!("a graph's floats have a kernel width")
         }?;
         // A vector's fold is its one item.

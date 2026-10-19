@@ -2,7 +2,7 @@ use crate::{syntax::NodeKind, ParseStatus, Source};
 
 include!(concat!(env!("OUT_DIR"), "/help.rs"));
 
-/// The language reference for LLMs, `nbs/llms.txt`, which `]help llms` shows.
+/// The index of BPL's documentation for LLMs, `nbs/llms.txt`, which `]help llms` shows.
 pub(crate) const LLMS: &str = include_str!("../nbs/llms.txt");
 
 #[derive(Clone, Debug)]

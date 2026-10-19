@@ -222,11 +222,13 @@ impl Value {
 
     /// Whether text shows any of the value's axis names.
     pub(crate) fn shows_names(&self, el: Elide) -> bool { self.axis_names().iter().any(|n| el.name(n).is_some()) }
+    /// Key `i` of `axis` as display text shows it, with a hidden name shortened as `Elide::shown` shortens it.
+    pub(crate) fn shown_key(&self, axis: usize, i: usize, el: Elide) -> Option<String> { self.keys(axis)?.names().get(i)?.as_deref().map(|k| el.shown(k).into_owned()) }
 
     /// An array with named axes: its keyed shape reshapes the array without names. Reshape keeps position keys.
     fn named_literal(&self, el: Elide) -> String {
         let shape: Vec<_> =
-            self.axis_names().iter().zip(self.shape()).map(|(n, len)| el.name(n).map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(n)))).collect();
+            self.axis_names().iter().zip(self.shape()).map(|(n, len)| el.name(n).map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(&n)))).collect();
         format!("[{}]⍴{}", shape.join(" "), self.clone().with_axis_names(vec![]).unwrap().source(el))
     }
 
@@ -235,7 +237,7 @@ impl Value {
         let edges = el.edges(self.shape());
         let lists: Vec<_> = self.shape().iter().enumerate().map(|(axis, &len)| {
             let keys: Vec<_> = positions(len, edges)
-                .map(|i| i.map_or_else(|| "…".into(), |i| self.keys(axis).and_then(|k| k.names()[i].as_ref()).map_or_else(|| i.to_string(), |k| quoted(k))))
+                .map(|i| i.map_or_else(|| "…".into(), |i| self.shown_key(axis, i, el).map_or_else(|| i.to_string(), |k| quoted(&k))))
                 .collect();
             match keys.len() { 0 => "⍬".into(), 1 => format!("[{}]", keys[0]), _ => keys.join(" ") }
         }).collect();
@@ -284,9 +286,8 @@ impl Value {
 
     /// A vector's items as they appear between brackets, each written by `item`, with `…` for the gap that `edges` leaves.
     fn bracket_items(&self, item: fn(&Self, Elide) -> String, el: Elide, edges: Option<usize>) -> String {
-        let key = |i: usize| self.keys(0).and_then(|k| k.names()[i].clone());
         let items: Vec<_> = positions(self.len(), edges)
-            .map(|i| i.map_or_else(|| "…".into(), |i| key(i).map_or_else(|| item(&self.at(i), el), |k| format!("{}:{}", quoted(&k), item(&self.at(i), el)))))
+            .map(|i| i.map_or_else(|| "…".into(), |i| self.shown_key(0, i, el).map_or_else(|| item(&self.at(i), el), |k| format!("{}:{}", quoted(&k), item(&self.at(i), el)))))
             .collect();
         items.join(" ")
     }

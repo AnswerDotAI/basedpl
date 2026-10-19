@@ -7,7 +7,7 @@ Monadic operator. Keys: `Alt-f`
 ```bpl
 {⍵×⍵}∂3                                              ⍝ 6
 {+/⍵×⍵}∂ 1 2 3                                       ⍝ 2 4 6
-cart←{[r t]←⍵ ⋄ [r×2○t; r×1○t]} ⋄ -.×cart∂ 2 0.5   ⍝ 2
+cart←{[r t]←⍵ ⋄ [r×2○t r×1○t]} ⋄ -.×cart∂ 2 0.5    ⍝ 2
 3 {⍺×⍵×⍵}∂ 2                                         ⍝ 12
 ```
 

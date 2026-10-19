@@ -111,7 +111,7 @@ An array of more than 1000 items shows only the first and last 3 positions of ea
 |---|---|
 | `]help +` | Help for a name or glyph |
 | `]help mean -source` | Definition source |
-| `]help llms` | The language reference for LLMs, [llms.txt](llms.txt) |
+| `]help llms` | The index of BPL's documentation for LLMs, [llms.txt](llms.txt) |
 | `]Display [[1 2] [3 4]]` | Draw one array in a box, whatever the settings |
 | `]dissect expression` | Show the bound expression before its result |
 | `]clear` | Remove every name and restore the starting display settings |

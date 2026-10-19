@@ -8,7 +8,7 @@ pub(super) fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, span: &
     let Some(axes) = axes else { return select(right, &squad_parts(left, right, None, span)?, false, span) };
     let (order, firsts) = listed_axes(left, axes, right.shape().len(), span)?;
     let moved;
-    let right = if order.iter().enumerate().all(|(p, &a)| p == a) { right } else {
+    let right = if rustymath::gather::counts_up(&order) { right } else {
         let mut to = vec![0; order.len()];
         for (p, &a) in order.iter().enumerate() { to[a] = p; }
         moved = remap(right, rustymath::structure::transpose(right.layout(), &to).at(span)?, span)?;
@@ -279,8 +279,7 @@ impl Selection {
         let data = match &self.targets {
             Targets::Offsets(offsets) => {
                 let mut data = Gather::new(&[array], offsets.len());
-                // A fill offset reads the fill, as `walk` gives it.
-                if offsets.contains(&Steps::FILL) { data.walk(array, 0, &[Steps::table(offsets.clone())]) } else { data.rows(array, offsets, 1) }
+                data.at(array, offsets);
                 data
             }
             // Each item comes from the array that holds it. A path that reaches an atom stops there.
@@ -453,7 +452,7 @@ fn axis_positions(right: &Value, parts: &[Option<Value>], paired: bool, span: &C
             direct &= a.is_atom();
             let positions = match a.as_items() {
                 Items::Compact(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => rustymath::structure::positions(view, size),
-                items => rustymath::structure::index_positions(&items.integers().error_at(span, "index must be an integer")?[..], size),
+                items => rustymath::structure::filled_positions(&items.positions().error_at(span, "index must be an integer")?.iter().map(|q| q.map_or(f64::NAN, |i| i as f64)).collect::<Vec<_>>(), size),
             }.at(span)?;
             match positions[..] { [i] if a.is_atom() && i != Steps::FILL => AxisSelector::At(i), _ => AxisSelector::Indices { layout: rustymath::layout::Layout::clone(a.layout()), positions } }
         } else {

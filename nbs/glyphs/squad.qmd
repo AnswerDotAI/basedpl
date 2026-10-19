@@ -52,12 +52,13 @@ a←2 3 4⍴⍳24
 [[[1 2] [0 0]]]⌷(10 20⋄30 40 50)   ⍝ 50 10
 ```
 
-An array of positions with named axes is a named selector, such as a [named index](iota.qmd) from `⍳["i":n]` or [`•index`](../system/index.qmd). A selector with one name selects along the axis of `Y` with that name, wherever the selector stands in the left argument. Without such an axis, it takes the next free axis that has no other name. Its axes replace the axis it selects, with their names and any keys it has. A named vector without keys keeps the keys at the positions it selects. Selectors that share a name pair, as arithmetic pairs named axes, and read one position along both. `[i;i]⌷m` is therefore the diagonal. Selectors with different names, and unnamed selectors, combine as above.
+An array of positions with named axes is a named selector, such as a [named index](iota.qmd) from `⍳["i":n]` or [`•index`](../system/index.qmd). A selector whose name no other selector has selects along the axis of `Y` with that name, wherever the selector stands in the left argument. Without such an axis, it takes the next free axis that has no other name. Its axes replace the axis it selects, with their names and any keys it has. A named vector without keys keeps the keys at the positions it selects. Selectors that share a name pair with each other, as arithmetic pairs named axes. Together they take the free axes in order, as unnamed selectors do. `[i i]⌷m` is therefore the diagonal. With `k` along axis `j`, `[k j]⌷m` reads row `k` of each column, as NumPy's `m[k, j]` does. Selectors with different names, and unnamed selectors, combine as above. [Indexing](../indexing.ipynb) shows everyday uses.
 
 ```bpl
-m←3 3⍴⍳9 ⋄ i←⍳["i":3] ⋄ j←⍳["j":3]
-[i;i]⌷m            ⍝ ["i":3]⍴[0 4 8]
-⍴[i;j]⌷m           ⍝ ["i":3 "j":3]ₓ
+m←3 3⍴⍳9 ⋄ i←⍳["i":3] ⋄ j←⍳["j":3] ⋄ k←["j":3]⍴2 0 1
+[i i]⌷m            ⍝ ["i":3]⍴[0 4 8]
+⍴[i j]⌷m           ⍝ ["i":3 "j":3]ₓ
+[k j]⌷m            ⍝ ["j":3]⍴[6 1 5]
 sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
 t←⍳⍠"month" sales
 sales≡[t]⌷sales     ⍝ $t
@@ -66,10 +67,10 @@ sales≡[t]⌷sales     ⍝ $t
 A named selector counts a negative position back from the end, as an unnamed one does, and a position outside its axis is an Index error. A NaN position reads fill. Other rules for the edges are arithmetic on positions, and [`•edge`](../system/edge.qmd) names them. It gives NaN outside the axis by default:
 
 ```bpl
-x←10×1+⍳5 ⋄ i←⍳["i":5]
+x←10×1+⍳5 ⋄ i←⍳["i":5] ⋄ clamp←•edge "clamp"
 x.[i-1]                      ⍝ ["i":5]⍴[50 10 20 30 40]
 x.[(5•edge i-1)]             ⍝ ["i":5]⍴[0 10 20 30 40]
-x.[(["clamp" 5]•edge i-1)]   ⍝ ["i":5]⍴[10 10 20 30 40]
+x.[(5 clamp i-1)]            ⍝ ["i":5]⍴[10 10 20 30 40]
 ```
 
 Assignment through `⌷` replaces the selected items. A space before `←` makes the whole run before it the target, as parentheses would. A missing key is added, even on an axis with no keys.

@@ -53,6 +53,7 @@ impl Layout {
     pub fn inherit_names(self, names: Vec<Option<Arc<str>>>) -> Self { Self::kept(self.core.inherit_names(names), self.renderer) }
     fn unique_names(self) -> Self { Self::kept(self.core.unique_names(), self.renderer) }
     pub fn with_keys(self, keys: Vec<Option<Arc<Keys>>>) -> Result<Self, ErrorKind> { Ok(Self::kept(self.core.with_keys(keys)?, self.renderer)) }
+    pub fn without_keys(self, axis: usize) -> Self { Self::kept(self.core.without_keys(axis), self.renderer) }
     pub fn select(&self, axis: usize, positions: impl ExactSizeIterator<Item = Option<usize>>) -> Result<Self, ErrorKind> {
         Ok(Self::kept(self.core.select(axis, positions)?, self.renderer.clone()))
     }
@@ -76,8 +77,9 @@ impl Layout {
     pub fn floats(&self, width: FloatWidth, data: impl IntoIterator<Item = f64>) -> Result<Value, ErrorKind> {
         Value::floats(self.shape(), width, data)?.with_layout(self.clone())
     }
+    /// The array with this layout holding `cells`, as `Value::assemble` gives it.
     pub fn assemble(&self, cells: &[Value], empty_cell: &Value) -> Result<Value, ErrorKind> {
-        Value::assemble_layout(self, cells, empty_cell, Widening::Arrays)
+        Value::assemble_layout(self, cells, empty_cell, Widening::Items)
     }
 }
 
@@ -670,6 +672,8 @@ impl Value {
         let layout = self.layout().clone().with_names(names)?;
         self.with_layout(layout)
     }
+    /// `self`, a vector of positions along `source`'s leading axis, with that axis's name.
+    pub(crate) fn along_first_of(self, source: &Value) -> Result<Self, ErrorKind> { self.with_axis_names(vec![source.axis_name(0).cloned()]) }
     pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.layout().keys(axis) }
     pub fn has_keys(&self) -> bool { self.layout().has_keys() }
     pub(crate) fn renderer(&self) -> Option<&crate::Function> { self.layout().renderer() }
@@ -720,13 +724,15 @@ impl Value {
 
     pub(crate) fn disclose(&self) -> Value { self.elements().next().unwrap_or_else(|| self.prototype().clone()) }
 
-    /// Assemble cells by trailing-axis agreement, padding each with its own fill.
+    /// Assemble cells by trailing-axis agreement, padding each with its own fill. Each number keeps its exactness, as items gathered one at a time do, whether written in brackets or computed one cell at a time.
     pub(crate) fn assemble(frame: &[usize], cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
         Layout::from(frame.to_vec()).assemble(cells, empty_cell)
     }
-    /// Assemble rows written in brackets, as `assemble` does. Each number keeps its exactness.
-    pub(crate) fn assemble_written(frame: &[usize], cells: &[Self], empty_cell: &Self) -> Result<Self, ErrorKind> {
-        Self::assemble_layout(&Layout::from(frame.to_vec()), cells, empty_cell, Widening::Items)
+    /// The items of this array assembled into one array by trailing-axis agreement, as `assemble` does. A simple array is unchanged. `widening` says how numbers of different dtypes share compact storage: mix joins arrays, and Rank assembles the results it computed one cell at a time.
+    pub(crate) fn mix(&self, widening: Widening) -> Result<Self, ErrorKind> {
+        if !self.is_atom() && self.is_simple() { return Ok(self.clone()); }
+        let cells: Vec<_> = self.elements().collect();
+        Self::assemble_layout(self.layout(), &cells, &self.prototype(), widening)
     }
     fn assemble_layout(frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening) -> Result<Self, ErrorKind> {
         if element_count(frame.shape())? != cells.len() { return Err(Kind::Length.into()); }

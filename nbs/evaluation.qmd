@@ -1,6 +1,6 @@
 # Evaluation
 
-After [Syntax](syntax.qmd) divides a statement into runs, BPL binds the runs as it evaluates them. Binding depends on values. A name can hold a subject, a function or an operator. BPL looks a name up when the statement runs.
+After [Syntax](syntax.qmd) divides a statement into runs, BPL binds the runs as it evaluates them. Binding depends on values. A name can hold a subject, a function or an operator. A name's case doesn't decide which, as it does in BQN. BPL looks a name up when the statement runs.
 
 ## Binding
 

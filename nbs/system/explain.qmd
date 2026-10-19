@@ -3,26 +3,40 @@
 `•explain text` runs `text` in the caller's scope, as `⍎` does, and gives a record of its result and of what happened while it ran:
 
 - `value` is the result of `text`.
-- `fused` has a row for each fused group that ran, as [`•prefs`](prefs.qmd) describes fusion. `glyphs` lists the glyphs of the group's calls in the order they ran. A fold that reads through the group, without building it, adds its glyph last. `items` is the group's item count.
+- `fused` has a row for each fused group that ran, as [`•prefs`](prefs.qmd) describes fusion. `glyphs` lists the glyphs of the group's calls in the order they ran. A fold that reads through the group, without building it, adds its glyph last. `items` is the group's item count. `blocks` counts the blocks of items that the group ran in turn. `runs` counts the pieces of work that those blocks split into. A block splits where it crosses the end of a long repeat or cycle in an input, as in adding a row of 5,000 items to every row of a matrix. More runs than blocks means the group ran in smaller pieces. `copied` counts the items copied out of inputs before the calls read them, as a reversed read needs. A `copied` of 0 means the group read every input in place.
+- `stored` has a row for each pending array that a fused group read as an input after computing it on its own. `glyphs` gives the glyph of the call that computed it, which a copy, such as a reversal, doesn't have. `items` is its item count. `reason` says why the group didn't compute it as one of its calls:
+  - `"held outside the graph"`: a name or another array also holds it, as `t` holds `t←y-0.25` in `t×1-t`.
+  - `"read through a map"`: the group reads it reversed, shifted or repeated.
+  - `"kept by a fold"`: a fold left its calls in it, to compute later.
+  - `"a different kind or width"`: its items aren't floats of the group's width, or its settings differ.
 - `forced` has a row for each call or assignment that computed items of pending arrays. Computing an array ends its fusion. `function` is the call's function, or `←` for an assignment that computed one by writing into it, displaying it with `⎕←` or destructuring it. `line` and `column` give its position in `text`, and `items` is how many items it computed. A selection of a few items, such as `↑r` or `2↑r`, reads a pending copy through its map and computes nothing. From a pending result that nothing else holds, such as `2×y+1` in `5↑2×y+1`, it computes only the items it reads. A pending result that a name holds is computed whole on its first read, and keeps its items for later reads.
 - `fast` has a row for each [fast combination](../terms.qmd#term-fast-combination) taken, and for each fold of [windows](../glyphs/up-down-arrow.qmd) that slides over their source without building them. `combination` names it, and `function` is the function that took it. The names are `"partial grade"`, `"partial sort"`, `"ranks"`, `"group counts"`, `"group folds"`, `"determinant"`, `"permanent"` and `"sliding fold"`.
-- `accumulations` has a row for each sum that added items at positions an index gave them, as the gradient of a selection that repeats positions does under [`∂`](../glyphs/partial.qmd). `items` is how many items it added, and `size` is its result's item count. The gradients of reversal, rotation, take, drop, transpose, windows that move by 1, and `⌈` and `⌊` folds read the cotangent instead, and make no row.
+- `accumulations` has a row for each sum that added items at positions an index gave them, as the gradient of a selection that repeats positions does under [`∂`](../glyphs/partial.qmd), and for each modified assignment to a selection, as `z.[p]+←1` makes. `items` is how many items it added, and `size` is its result's item count. The gradients of reversal, rotation, take, drop, transpose, windows that move by 1, and `⌈` and `⌊` folds read the cotangent instead, and make no row. `path` names how the items were added:
+  - `"in place"` adds into the array, with nothing to undo.
+  - `"logged"` keeps each target's old item, to restore the array if a target fails. Exact integers take this path, because a sum can overflow.
+  - `"on a copy"` converts the array first, as for 16-bit floats, or for exact integers that get floats.
+  - `"rounds"` makes one call for each repeat of a position.
+  - `"one call"` makes one call for targets at distinct positions.
+  - `"item by item"` calls the function once for each target, as a dfn does.
 
-Each of `fused`, `forced`, `fast` and `accumulations` is a record of columns, as `•csv` gives a table, so `(•explain t).fast.combination` lists the combinations taken. `•prefs ["fusion":$t]` writes each forcing call and assignment as it happens. Nothing is recorded outside `•explain`.
+Each of `fused`, `stored`, `forced`, `fast` and `accumulations` is a record of columns, as `•csv` gives a table, so `(•explain t).fast.combination` lists the combinations taken. `•prefs ["fusion":$t]` writes each forcing call and assignment as it happens. Nothing is recorded outside `•explain`.
 
 ```bpl
 y←¿1000000⍴0
-(•explain "+/(2×y+1.5)-1").fused            ⍝ ["glyphs":["+×-+/"] "items":[1000000]ₓ]
+(•explain "+/(2×y+1.5)-1").fused            ⍝ ["glyphs":["+×-+/"] "items":[1000000]ₓ "blocks":[245]ₓ "runs":[245]ₓ "copied":[0]ₓ]
 e←•explain "≢⍕(2×y+1.5)-1"
 e.forced.function                            ⍝ ["⍕"]
 e.fused.glyphs                               ⍝ ["+×-"]
+(•explain "q←2×⌽y+1 ⋄ q≡q").fused.copied     ⍝ [1000000]ₓ
+t←y-0.25 ⋄ (•explain "q←t×1-t ⋄ q≡q").stored  ⍝ ["glyphs":["-"] "items":[1000000]ₓ "reason":["held outside the graph"]]
 (•explain "5↑2×y+1").forced.items            ⍝ [5]ₓ
 s←2×y+1 ⋄ (•explain "5↑s").forced.items      ⍝ [1000000]ₓ
 r←⌽y ⋄ (•explain "r.[0]←0").forced.function   ⍝ ["←"]
 (•explain "(10↑)∘⍋ y").fast.combination     ⍝ ["partial grade"]
 x←¿1000⍴0 ⋄ p←¿1000⍴1000
-(•explain "{+/,(3↕⍵)×⍤1⊢1 2 1}∂ x").accumulations  ⍝ ["items":⍬ₓ "size":⍬ₓ]
-(•explain "{+/⍵.[p]}∂ x").accumulations            ⍝ ["items":[1000]ₓ "size":[1000]ₓ]
+(•explain "{+/,(3↕⍵)×⍤1⊢1 2 1}∂ x").accumulations  ⍝ ["items":⍬ₓ "size":⍬ₓ "path":0⍴⊂""]
+(•explain "{+/⍵.[p]}∂ x").accumulations            ⍝ ["items":[1000]ₓ "size":[1000]ₓ "path":["in place"]]
+z←1000⍴0ₓ ⋄ (•explain "z.[p]+←1ₓ").accumulations.path  ⍝ ["logged"]
 ```
 
 [`•memory`](memory.qmd) reports the live record nodes and pending arrays, and what a value keeps alive.

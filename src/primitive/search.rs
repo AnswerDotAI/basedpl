@@ -94,9 +94,8 @@ pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let lengths = generated_items(vec![lengths.len()], lengths, None).error_at(span, "invalid run lengths")?;
     let values = replicate(&axis.booleans(starts).error_at(span, "invalid run starts")?, right, None, false, span)?;
     if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).error_at(span, "invalid runs"); }
-    let mut keys = values.layout().all_keys();
-    keys[0] = None;
-    let values = values.with_keys(keys).error_at(span, "invalid runs")?;
+    let layout = values.layout().clone().without_keys(0);
+    let values = values.with_layout(layout).error_at(span, "invalid runs")?;
     let all = positions(right, (0..right.shape()[0] as u32).collect()).error_at(span, "invalid run keys")?;
     Value::new(vec![3], vec![lengths, values, all]).error_at(span, "invalid runs")
 }
@@ -344,7 +343,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
         });
         if unordered { return Err(span.domain_error("functions have no ordering")); }
     }
-    positions(right, indices).error_at(span, "invalid grade result")
+    positions(right, indices).and_then(|g| g.along_first_of(right)).error_at(span, "invalid grade result")
 }
 
 /// `right`'s major cells in the order that `grade` gives, as `[⍋v]⌷v` or `[⍒v]⌷v`. A unit has one item, so it is already sorted.

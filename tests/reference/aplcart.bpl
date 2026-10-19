@@ -394,7 +394,7 @@ mat ← 2 3⍴⍳6 ⋄ mat ⍪ 7 8 9   ⍝ [0 1 2⋄3 4 5⋄7 8 9]
 
 ⍝ aplcart/table.tsv:119 — Enclose: Scalar containing Y
 [[1 [2 3]];⊂ [1 [2 3]];⊂⊂ [1 [2 3]]]
-[[1 [2 3]];⊂[1 [2 3]];⊂⊂[1 [2 3]]]
+[[1 [2 3]] ⊂[1 [2 3]] ⊂⊂[1 [2 3]]]
 
 ⍝ aplcart/table.tsv:120 — Partitioned enclose of Y according to Av (along last axis) beginning enclosures on 1s
 0 1 0 1 ⊂ 1 2 3 4   ⍝ [2 3;,4]
@@ -405,7 +405,7 @@ mat ← 2 3⍴⍳6 ⋄ mat ⍪ 7 8 9   ⍝ [0 1 2⋄3 4 5⋄7 8 9]
 
 ⍝ aplcart/table.tsv:122 — Partition Y according to Mv (along last axis) beginning partitions on increases
 [1 0 0 1 1 ⊆ 1 2 3 4 5;1 1 2 2 2 ⊆ ⍳5]
-[[,1;4 5];[0 1;2 3 4]]
+[[,1;4 5] [0 1;2 3 4]]
 
 ⍝ aplcart/table.tsv:123 — Materialise items of Y in workspace
 Y←2 3⍴⍳6 ⋄ ⌷Y   ⍝ [0 1 2⋄3 4 5]
@@ -667,7 +667,7 @@ cube ← 2 2 3⍴⍳12
 cmat ← ["abc"⋄"zxy"]
 [,⍤2 cube;⍋⍤1 cmat]
 ⍝ =>
-[[0 1 2 3 4 5⋄6 7 8 9 10 11];[0 1 2⋄1 2 0]ₓ]
+[[0 1 2 3 4 5⋄6 7 8 9 10 11] [0 1 2⋄1 2 0]ₓ]
 
 ⍝ aplcart/table.tsv:208 — Unpack a vector X into an array based on mask B
 "XYZ"@[{$f $t $t $f $f $t}] "abcdef"   ⍝ "aXYdeZ"
@@ -701,7 +701,7 @@ mat ← 3 2⍴⍳6 ⋄ (8 9@1) mat   ⍝ [0 1⋄8 9⋄4 5]
 
 ⍝ aplcart/table.tsv:218 — Stencil: f on padding-size and (possibly overlapping) rectangles of Y of size and (optionally step) Jm; dfns display import/wrappers omitted to test underlying arrays
 mat ← 1+4 4⍴⍳16 ⋄ [{⊂⍵}⌺3 3 mat;{+/,⍵}⌺3 3 mat]
-[4 4⍴[[0 0 0⋄0 1 2⋄0 5 6];[0 0 0⋄1 2 3⋄5 6 7];[0 0 0⋄2 3 4⋄6 7 8];[0 0 0⋄3 4 0⋄7 8 0];[0 1 2⋄0 5 6⋄0 9 10];[1 2 3⋄5 6 7⋄9 10 11];[2 3 4⋄6 7 8⋄10 11 12];[3 4 0⋄7 8 0⋄11 12 0];[0 5 6⋄0 9 10⋄0 13 14];[5 6 7⋄9 10 11⋄13 14 15];[6 7 8⋄10 11 12⋄14 15 16];[7 8 0⋄11 12 0⋄15 16 0];[0 9 10⋄0 13 14⋄0 0 0];[9 10 11⋄13 14 15⋄0 0 0];[10 11 12⋄14 15 16⋄0 0 0];[11 12 0⋄15 16 0⋄0 0 0]];[14 24 30 22⋄33 54 63 45⋄57 90 99 69⋄46 72 78 54]]
+[4 4⍴[[0 0 0⋄0 1 2⋄0 5 6] [0 0 0⋄1 2 3⋄5 6 7] [0 0 0⋄2 3 4⋄6 7 8] [0 0 0⋄3 4 0⋄7 8 0] [0 1 2⋄0 5 6⋄0 9 10] [1 2 3⋄5 6 7⋄9 10 11] [2 3 4⋄6 7 8⋄10 11 12] [3 4 0⋄7 8 0⋄11 12 0] [0 5 6⋄0 9 10⋄0 13 14] [5 6 7⋄9 10 11⋄13 14 15] [6 7 8⋄10 11 12⋄14 15 16] [7 8 0⋄11 12 0⋄15 16 0] [0 9 10⋄0 13 14⋄0 0 0] [9 10 11⋄13 14 15⋄0 0 0] [10 11 12⋄14 15 16⋄0 0 0] [11 12 0⋄15 16 0⋄0 0 0]];[14 24 30 22⋄33 54 63 45⋄57 90 99 69⋄46 72 78 54]]
 
 ⍝ aplcart/table.tsv:223 — Modified Selective Assignment: exp is an expression that selects elements of "name" (tradfns/tradops only)
 var←20 30 40
@@ -754,11 +754,11 @@ r←¿⍨Js
 
 ⍝ aplcart/table.tsv:530 — Ones, same shape and structure
 [3 3⍴⍳9;"";=⍨ 3 3⍴⍳9]
-[[0 1 2⋄3 4 5⋄6 7 8];"";[$t $t $t⋄$t $t $t⋄$t $t $t]]
+[[0 1 2⋄3 4 5⋄6 7 8] "" [$t $t $t⋄$t $t $t⋄$t $t $t]]
 
 ⍝ aplcart/table.tsv:531 — Zeros, same shape and structure
 [3 3⍴⍳9;"";≠⍨ 3 3⍴⍳9]
-[[0 1 2⋄3 4 5⋄6 7 8];"";[$f $f $f⋄$f $f $f⋄$f $f $f]]
+[[0 1 2⋄3 4 5⋄6 7 8] "" [$f $f $f⋄$f $f $f⋄$f $f $f]]
 
 ⍝ aplcart/table.tsv:532 — Increment: N+1
 [1↣+ 10 20 30;1↣+ ¯10 ¯20 ¯30;3 3⍴4;1↣+ 3 3⍴4]
@@ -1044,11 +1044,11 @@ X f∘⊣ Y   ⍝ 3
 
 ⍝ aplcart/table.tsv:611 — Join corresponding items; dfns display import/wrappers omitted to test underlying arrays
 [5 6 7 ,¨ 10 11 12;5 6 7 ,¨ 15]
-[[5 10;6 11;7 12];[5 15;6 15;7 15]]
+[[5 10;6 11;7 12] [5 15;6 15;7 15]]
 
 ⍝ aplcart/table.tsv:612 — Catenate items of Yv along their last axes; dfns display import/wrappers omitted to test underlying arrays
 [[9 10;20 40 60;4 5];,/ [9 10;20 40 60;4 5];[3 3⍴⍳9;3 3⍴⍳9];,/ [3 3⍴⍳9;3 3⍴⍳9]]
-[[9 10;20 40 60;4 5];9 10 20 40 60 4 5;[[0 1 2⋄3 4 5⋄6 7 8];[0 1 2⋄3 4 5⋄6 7 8]];[0 1 2 0 1 2⋄3 4 5 3 4 5⋄6 7 8 6 7 8]]
+[[9 10;20 40 60;4 5];9 10 20 40 60 4 5;[[0 1 2⋄3 4 5⋄6 7 8] [0 1 2⋄3 4 5⋄6 7 8]];[0 1 2 0 1 2⋄3 4 5 3 4 5⋄6 7 8 6 7 8]]
 
 ⍝ aplcart/table.tsv:613 — All possible subvectors of length Is (Yv must be simple); dfns display import/wrappers omitted to test underlying arrays
 [2 4 6 8 10 12;,/2↕ 2 4 6 8 10 12;,/4↕ 2 4 6 8 10 12]
@@ -1059,7 +1059,7 @@ X f∘⊣ Y   ⍝ 3
 
 ⍝ aplcart/table.tsv:615 — Catenate items of Yv along their first axes; dfns display import/wrappers omitted to test underlying arrays
 [[9 10;20 40 60;4 5];⍪/ [9 10;20 40 60;4 5];[3 3⍴⍳9;3 3⍴⍳9];⍪/ [3 3⍴⍳9;3 3⍴⍳9]]
-[[9 10;20 40 60;4 5];9 10 20 40 60 4 5;[[0 1 2⋄3 4 5⋄6 7 8];[0 1 2⋄3 4 5⋄6 7 8]];[0 1 2⋄3 4 5⋄6 7 8⋄0 1 2⋄3 4 5⋄6 7 8]]
+[[9 10;20 40 60;4 5];9 10 20 40 60 4 5;[[0 1 2⋄3 4 5⋄6 7 8] [0 1 2⋄3 4 5⋄6 7 8]];[0 1 2⋄3 4 5⋄6 7 8⋄0 1 2⋄3 4 5⋄6 7 8]]
 
 ⍝ aplcart/table.tsv:616 — First element (as vector) and remaining elements
 Y←1 2 3 4 5 ⋄ 1 1↣⊂Y   ⍝ [,1;2 3 4 5]
@@ -1160,7 +1160,7 @@ C f⍥•c D   ⍝ $f
 
 ⍝ aplcart/table.tsv:661 — Rotate 180°
 [3 3⍴⍳9;"";⌽∘⊖ 3 3⍴⍳9]
-[[0 1 2⋄3 4 5⋄6 7 8];"";[8 7 6⋄5 4 3⋄2 1 0]]
+[[0 1 2⋄3 4 5⋄6 7 8] "" [8 7 6⋄5 4 3⋄2 1 0]]
 
 ⍝ aplcart/table.tsv:662 — Division: force DOMAIN ERROR for division by 0
 M←2 3
@@ -1262,7 +1262,7 @@ Y←3 1 2 1 ⋄ ⍋∘⍋Y   ⍝ [3 0 2 1]ₓ
 
 ⍝ aplcart/table.tsv:693 — Enclose columns of a matrix; dfns display import/wrappers omitted to test underlying arrays
 [3 3⍴⍳9;⊂⍠0 (3 3⍴⍳9)]
-[[0 1 2⋄3 4 5⋄6 7 8];[0 3 6;1 4 7;2 5 8]]
+[[0 1 2⋄3 4 5⋄6 7 8] [0 3 6;1 4 7;2 5 8]]
 
 ⍝ aplcart/table.tsv:694 — Convert table to inverted table (character data as vectors of vectors); dfns display import/wrappers omitted to test underlying arrays
 (⊃¨⊂⍠0) ["Ab" 1 7⋄"Cdef" 2 3]   ⍝ [["Ab  "⋄"Cdef"];1 2;7 3]
@@ -1272,11 +1272,11 @@ Nm←[1j2 3j4⋄5j6 7j8] ⋄ ⍉∘+Nm   ⍝ [1j¯2 5j¯6⋄3j¯4 7j¯8]
 
 ⍝ aplcart/table.tsv:696 — Rotate 90° clockwise
 [3 3⍴⍳9;⌽∘⍉ 3 3⍴⍳9]
-[[0 1 2⋄3 4 5⋄6 7 8];[6 3 0⋄7 4 1⋄8 5 2]]
+[[0 1 2⋄3 4 5⋄6 7 8] [6 3 0⋄7 4 1⋄8 5 2]]
 
 ⍝ aplcart/table.tsv:697 — Rotate 90° counter-clockwise
 [3 3⍴⍳9;⍉∘⌽ 3 3⍴⍳9]
-[[0 1 2⋄3 4 5⋄6 7 8];[2 5 8⋄1 4 7⋄0 3 6]]
+[[0 1 2⋄3 4 5⋄6 7 8] [2 5 8⋄1 4 7⋄0 3 6]]
 
 ⍝ aplcart/table.tsv:698 — Matrix with columns from vectors Yv
 Yv←[1 2;3 4 5] ⋄ ⍉∘⊃Yv   ⍝ [1 3⋄2 4⋄0 5]
@@ -1339,7 +1339,7 @@ Xv+.=Yv   ⍝ 2ₓ
 m ← ⊃"Finn" "Gary" "Gary" "Anna" "Carl" "Dana" "Carl" "Gary" "Gary" "Beau"
 [m;m ∧.= "Gary"]
 ⍝ =>
-[["Finn"⋄"Gary"⋄"Gary"⋄"Anna"⋄"Carl"⋄"Dana"⋄"Carl"⋄"Gary"⋄"Gary"⋄"Beau"];[$f $t $t $f $f $f $f $t $t $f]]
+[["Finn"⋄"Gary"⋄"Gary"⋄"Anna"⋄"Carl"⋄"Dana"⋄"Carl"⋄"Gary"⋄"Gary"⋄"Beau"] [$f $t $t $f $f $f $f $t $t $f]]
 
 ⍝ aplcart/table.tsv:713 — Boolean rows of Xm all equal to scalar Ys
 Xm←[1 1 1⋄1 0 1⋄0 0 0]
@@ -3077,7 +3077,7 @@ X ⊢↢≢>⍳⍨ Y   ⍝ $f $t $f
 
 ⍝ aplcart/table.tsv:1187 — Prefixes
 [(↦∘≢)↑¨⊂ "ABCD";(↦∘≢)↑¨⊂ ⍪"ABCD"]
-[["A" "AB" "ABC" "ABCD"];[(1 1⍴"A") ["A"⋄"B"] ["A"⋄"B"⋄"C"] ["A"⋄"B"⋄"C"⋄"D"]]]
+[["A" "AB" "ABC" "ABCD"] [(1 1⍴"A") ["A"⋄"B"] ["A"⋄"B"⋄"C"] ["A"⋄"B"⋄"C"⋄"D"]]]
 
 ⍝ aplcart/table.tsv:1188 — Indicator of first occurrence of each unique major cell of Y
 Y←3 1 3 2 ⋄ ⍳⍨=⍳∘≢ Y   ⍝ $t $t $f $t
@@ -3587,7 +3587,7 @@ Jv←2 3 1 ⋄ +\∊⍨↢↦+/ Jv   ⍝ $f $t $f $f $t $t
 B←1 1 0 1 0 1 0 ⋄ ∧⍀∨⍀↣= ↣∧B   ⍝ 1 1 0 0 0 0 0
 
 ⍝ aplcart/table.tsv:1327 — Progressive index of (⍳) cyclic uniques (∪) without replacement
-[i←¯1+[0]~⍨,⍉(1+⊢)⌸"abracadabra";[i]⌷"abracadabra"]
+[i←¯1+[0]~⍨,⍉(1+⊢)⌸"abracadabra" [i]⌷"abracadabra"]
 [0 1 2 4 6 3 8 9 5 7 10;"abrcdabraaa"]
 
 ⍝ aplcart/table.tsv:1328 — Length of vector Nv
@@ -5477,8 +5477,8 @@ N←1 2 3 4 5
 Iv{-/⍠1∘(⌽⍠1)∘ 2↣↕ 0⍪[¯1++\⍺]⌷+⍀⍵}N   ⍝ 3 12
 
 ⍝ aplcart/table.tsv:1973 — Remove trailing blank columns
-[(2 10⍴" 2    a       a a    "),"||";({⍵#⍠¯1⍨⌽∨\⌽' '∨.≠⍵} 2 10⍴" 2    a       a a    "),"||"]
-[[" 2    a   |"⋄"    a a   |"];[" 2    a|"⋄"    a a|"]]
+[(2 10⍴" 2    a       a a    "),"||" ({⍵#⍠¯1⍨⌽∨\⌽' '∨.≠⍵} 2 10⍴" 2    a       a a    "),"||"]
+[[" 2    a   |"⋄"    a a   |"] [" 2    a|"⋄"    a a|"]]
 
 ⍝ aplcart/table.tsv:1974 — Grade up (⍋) for sorting each subarray of Y indicated by Av
 Av←1 0 1 0 0
@@ -5596,8 +5596,8 @@ Av{~≠\z#⁻¹(≠/∘(2↣↕))0,~⍵#⍨z←⍺≥⍵}Bv
 $t $t $t $f $f
 
 ⍝ aplcart/table.tsv:2007 — Mesh major cells of elements of Yv
-[{[⍋∊⍳∘≢¨⍵]⌷⊃⍪/⍵} ["abc" $d "ABCDEF"];{[⍋∊⍳∘≢¨⍵]⌷⊃⍪/⍵} [["aa"⋄"bb"⋄"cc"⋄"dd"];["AA"⋄"BB"]]]
-["a0Ab1Bc2C3D4E5F6789";["aa"⋄"AA"⋄"bb"⋄"BB"⋄"cc"⋄"dd"]]
+[{[⍋∊⍳∘≢¨⍵]⌷⊃⍪/⍵} ["abc" $d "ABCDEF"];{[⍋∊⍳∘≢¨⍵]⌷⊃⍪/⍵} [["aa"⋄"bb"⋄"cc"⋄"dd"] ["AA"⋄"BB"]]]
+["a0Ab1Bc2C3D4E5F6789" ["aa"⋄"AA"⋄"bb"⋄"BB"⋄"cc"⋄"dd"]]
 
 ⍝ aplcart/table.tsv:2008 — Determinant of three-row matrix
 Nm←[1 2 3⋄0 4 5⋄1 0 6]
@@ -5610,7 +5610,7 @@ X{[⍺⋄⍵]}Y   ⍝ [1 2 3⋄4 5 6]
 
 ⍝ aplcart/table.tsv:2010 — Remove trailing blank rows
 [mat←["  "⋄"2 "⋄"  "⋄" a"⋄"  "⋄"aa"⋄"  "⋄"  "⋄"  "⋄"  "];"--";{⍵↓⍨-+/∧\⌽⍵∧.=' '} mat]
-[["  "⋄"2 "⋄"  "⋄" a"⋄"  "⋄"aa"⋄"  "⋄"  "⋄"  "⋄"  "];"--";["  "⋄"2 "⋄"  "⋄" a"⋄"  "⋄"aa"]]
+[["  "⋄"2 "⋄"  "⋄" a"⋄"  "⋄"aa"⋄"  "⋄"  "⋄"  "⋄"  "] "--" ["  "⋄"2 "⋄"  "⋄" a"⋄"  "⋄"aa"]]
 
 ⍝ aplcart/table.tsv:2011 — Rows of matrix Ym starting with Xv
 Xv←1 2
@@ -6073,7 +6073,7 @@ Iv{+\1+((⍳+/⍺)∊+\0,⍺)#⁻¹⍵-¯1↓1,⍺+⍵}Jv
 
 ⍝ aplcart/table.tsv:2114 — Number of areas intersecting areas in N (⍴N ↔ (n × 2 × dim))
 N←3 2 2⍴0 0 2 2 1 1 3 3 4 4 5 5
-{+/∧↢⍉⍨∧/⍵.[∞;a⍴0]≤1 0 2⍉⍵.[∞;1⍴⍨a←≢⍵]}N
+{+/∧↢⍉⍨∧/⍵.[∞ a⍴0]≤1 0 2⍉⍵.[∞ 1⍴⍨a←≢⍵]}N
 ⍝ =>
 [2 2 1]ₓ
 
@@ -6146,7 +6146,7 @@ D← ["a b "⋄" cd "]
 
 ⍝ aplcart/table.tsv:2132 — Tesselate: Cut Y into tiles of size Iv (padding Y if necessary); dfns display import/wrappers omitted to test underlying arrays
 2 3 {⊂⍠ 1+2×⍳k (,s,⍪r)⍴⍵↑⍨r×s←⌈R÷r←1+(-k←≢R←⍴⍵)↑⍺-1} 4 5⍴$a
-2 2⍴[["ABC"⋄"FGH"];["DE "⋄"IJ "];["KLM"⋄"PQR"];["NO "⋄"ST "]]
+2 2⍴[["ABC"⋄"FGH"] ["DE "⋄"IJ "] ["KLM"⋄"PQR"] ["NO "⋄"ST "]]
 
 ⍝ aplcart/table.tsv:2133 — ASCII frame a matrix
 Dm← ["abc"⋄"def"]
@@ -6156,7 +6156,7 @@ Dm← ["abc"⋄"def"]
 
 ⍝ aplcart/table.tsv:2134 — Tesselate: Distribute Y's elements into evenly-sized tiles in an array of shape Iv (padding Y if necessary); dfns display import/wrappers omitted to test underlying arrays
 2 3 {⊂⍠ 2×⍳k (,s,⍪r)⍴⍵↑⍨r×s←⌈R÷r←1+(-k←≢R←⍴⍵)↑⍺-1} 4 5⍴$a
-2 3⍴[["AD"⋄"KN"];["BE"⋄"LO"];["C "⋄"M "];["FI"⋄"PS"];["GJ"⋄"QT"];["H "⋄"R "]]
+2 3⍴[["AD"⋄"KN"] ["BE"⋄"LO"] ["C "⋄"M "] ["FI"⋄"PS"] ["GJ"⋄"QT"] ["H "⋄"R "]]
 
 ⍝ aplcart/table.tsv:2135 — Unicode frame a matrix
 Dm← ["abc"⋄"def"]
@@ -8101,28 +8101,28 @@ N←0 1.5 2.75 ⋄ 0 1↣⊤N   ⍝ [0 0⋄1 0.5⋄2 0.75]
 
 ⍝ aplcart/tt.tsv:871 — Is Bm a full lower triangular matrix with diagonal?; nested displayed values saved once in evaluation order and returned together
 [r_1←[1 1 1⋄1 1 1⋄1 1 1];(⊢≡≥⊗⍨∘⍳∘≢) r_1;r_3←[1 0 0⋄1 1 0⋄1 1 1];(⊢≡≥⊗⍨∘⍳∘≢) r_3;r_5←[0 0 0⋄1 0 0⋄1 1 0];(⊢≡≥⊗⍨∘⍳∘≢) r_5;r_7←[0 0 0⋄0 0 0⋄1 0 0];(⊢≡≥⊗⍨∘⍳∘≢) r_7]
-[[1 1 1⋄1 1 1⋄1 1 1];$f;[1 0 0⋄1 1 0⋄1 1 1];$t;[0 0 0⋄1 0 0⋄1 1 0];$f;[0 0 0⋄0 0 0⋄1 0 0];$f]
+[[1 1 1⋄1 1 1⋄1 1 1] $f [1 0 0⋄1 1 0⋄1 1 1] $t [0 0 0⋄1 0 0⋄1 1 0] $f [0 0 0⋄0 0 0⋄1 0 0] $f]
 
 ⍝ aplcart/tt.tsv:872 — Is Bm a full lower triangular matrix with diagonal?; Reuse concrete inputs from aplcart/table.tsv:1300; execute this alternate recipe independently
 Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ⊢≡≥⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:873 — Is Bm a full lower triangular matrix without diagonal?; nested displayed values saved once in evaluation order and returned together
 [r_1←[1 1 1⋄1 1 1⋄1 1 1];(⊢≡>⊗⍨∘⍳∘≢) r_1;r_3←[1 0 0⋄1 1 0⋄1 1 1];(⊢≡>⊗⍨∘⍳∘≢) r_3;r_5←[0 0 0⋄1 0 0⋄1 1 0];(⊢≡>⊗⍨∘⍳∘≢) r_5;r_7←[0 0 0⋄0 0 0⋄1 0 0];(⊢≡>⊗⍨∘⍳∘≢) r_7]
-[[1 1 1⋄1 1 1⋄1 1 1];$f;[1 0 0⋄1 1 0⋄1 1 1];$f;[0 0 0⋄1 0 0⋄1 1 0];$t;[0 0 0⋄0 0 0⋄1 0 0];$f]
+[[1 1 1⋄1 1 1⋄1 1 1] $f [1 0 0⋄1 1 0⋄1 1 1] $f [0 0 0⋄1 0 0⋄1 1 0] $t [0 0 0⋄0 0 0⋄1 0 0] $f]
 
 ⍝ aplcart/tt.tsv:874 — Is Bm a full lower triangular matrix without diagonal?; Reuse concrete inputs from aplcart/table.tsv:1301; execute this alternate recipe independently
 Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ⊢≡>⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:875 — Is Bm a full upper triangular matrix with diagonal?; nested displayed values saved once in evaluation order and returned together
 [r_1←[1 1 1⋄1 1 1⋄1 1 1];(⊢≡≤⊗⍨∘⍳∘≢) r_1;r_3←[1 1 1⋄0 1 1⋄0 0 1];(⊢≡≤⊗⍨∘⍳∘≢) r_3;r_5←[0 1 1⋄0 0 1⋄0 0 0];(⊢≡≤⊗⍨∘⍳∘≢) r_5;r_7←[0 0 1⋄0 0 0⋄0 0 0];(⊢≡≤⊗⍨∘⍳∘≢) r_7]
-[[1 1 1⋄1 1 1⋄1 1 1];$f;[1 1 1⋄0 1 1⋄0 0 1];$t;[0 1 1⋄0 0 1⋄0 0 0];$f;[0 0 1⋄0 0 0⋄0 0 0];$f]
+[[1 1 1⋄1 1 1⋄1 1 1] $f [1 1 1⋄0 1 1⋄0 0 1] $t [0 1 1⋄0 0 1⋄0 0 0] $f [0 0 1⋄0 0 0⋄0 0 0] $f]
 
 ⍝ aplcart/tt.tsv:876 — Is Bm a full upper triangular matrix with diagonal?; Reuse concrete inputs from aplcart/table.tsv:1299; execute this alternate recipe independently
 Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ⊢≡≤⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:877 — Is Bm a full upper triangular matrix without diagonal?; nested displayed values saved once in evaluation order and returned together
 [r_1←[1 1 1⋄1 1 1⋄1 1 1];(⊢≡<⊗⍨∘⍳∘≢) r_1;r_3←[1 1 1⋄0 1 1⋄0 0 1];(⊢≡<⊗⍨∘⍳∘≢) r_3;r_5←[0 1 1⋄0 0 1⋄0 0 0];(⊢≡<⊗⍨∘⍳∘≢) r_5;r_7←[0 0 1⋄0 0 0⋄0 0 0];(⊢≡<⊗⍨∘⍳∘≢) r_7]
-[[1 1 1⋄1 1 1⋄1 1 1];$f;[1 1 1⋄0 1 1⋄0 0 1];$f;[0 1 1⋄0 0 1⋄0 0 0];$t;[0 0 1⋄0 0 0⋄0 0 0];$f]
+[[1 1 1⋄1 1 1⋄1 1 1] $f [1 1 1⋄0 1 1⋄0 0 1] $f [0 1 1⋄0 0 1⋄0 0 0] $t [0 0 1⋄0 0 0⋄0 0 0] $f]
 
 ⍝ aplcart/tt.tsv:878 — Is Bm a full upper triangular matrix without diagonal?; Reuse concrete inputs from aplcart/table.tsv:1298; execute this alternate recipe independently
 Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ⊢≡<⊗⍨∘⍳∘≢ Bm   ⍝ $f
@@ -8962,7 +8962,7 @@ r,seen   ⍝ 3 3
 [quzzle:]←•load "lib/dyalog.bpl"
 0 quzzle ["A "⋄"  "]
 ⍝ =>
-3 1⍴["Top-right";"in 1 moves";["  "⋄"A→"]]
+3 1⍴["Top-right" "in 1 moves" ["  "⋄"A→"]]
 
 ⍝ aplcart/table.tsv:1598 — ⍺-separated segments of vector ⍵; Ported in lib/dyalog.bpl; checked against the independent Dyalog expectation; Concrete arguments; shared 0-origin based-array port loaded from lib/dyalog.bpl
 [segs:]←•load "lib/dyalog.bpl"
@@ -9632,7 +9632,7 @@ K⍪⊃(:¨rows)
 [["a" "b"] ["12" "7"]]
 
 ⍝ aplcart/table.tsv:505 — Convert CSV data from APL inverted table (character data as matrices)
-•csv⁻¹ ↓¨[["a"⋄"b"];["c"⋄"d"]]
+•csv⁻¹ ↓¨[["a"⋄"b"] ["c"⋄"d"]]
 •ucs 97 44 99 10 98 44 100 10
 
 ⍝ aplcart/table.tsv:506 — Convert CSV data from APL inverted table (character data as vectors of vectors)
@@ -9650,7 +9650,7 @@ T←•csv "name,score",(•ucs 10),"Ada,12",(•ucs 10),"Ben,7"
 [12 ¯3 7]ₓ
 
 ⍝ aplcart/table.tsv:1837 — Validate inverted table (character data as matrices)
-{∞::0 ⋄ 1⊣•csv⁻¹ ⍵}¨[[1 2 3;4 5 6];[1 2;3 4 5]]   ⍝ 1 0
+{∞::0 ⋄ 1⊣•csv⁻¹ ⍵}¨[[1 2 3;4 5 6] [1 2;3 4 5]]   ⍝ 1 0
 
 ⍝ aplcart/table.tsv:328 — Convert JSON text to APL array
 •json "[1,2,""many""]"   ⍝ 1ₓ 2ₓ "many"
@@ -9763,7 +9763,7 @@ testpath •nput "héllo",(•ucs 10),"世界"
 testpath •nput "one",(•ucs 10 10),"two",•ucs 10
 {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
 ⍝ =>
-["one";"";"two"]
+["one" "" "two"]
 
 ⍝ aplcart/table.tsv:466 — Read lines into a padded character matrix
 testpath •nput "ab",(•ucs 10),'c',•ucs 10
@@ -9799,7 +9799,7 @@ testpath •nput "κόσμος"   ⍝ 12ₓ
 testpath •nput 'a',(•ucs 9),'b',(•ucs 10),'c',•ucs 10
 {¯1↓¨(1,¯1↓⍵=•ucs 10)⊂⍵}•nget testpath
 ⍝ =>
-['a',(•ucs 9),'b';"c"]
+['a',(•ucs 9),'b' "c"]
 
 ⍝ aplcart/table.tsv:1842 — Convert APL vector X to JSON Lines file Dv
 X←[["a":1ₓ] ["a":2ₓ]]
@@ -10316,7 +10316,7 @@ u←["unique":1] •mkdir testpath ⋄ (•metadata u).kind   ⍝ ["dir"]
 
 ⍝ aplcart/table.tsv:2765 — Packing current date (YYMMDD); Ported with `•time 0` and `•date⁻¹`. The case checks structure, because the current time changes
 t←•time 0
-(⍎ "%y%m%d" •date⁻¹ t)=(•date⁻¹ t).(100⊥100|[year;month;day])
+(⍎ "%y%m%d" •date⁻¹ t)=(•date⁻¹ t).(100⊥100|[year month day])
 ⍝ =>
 $t
 

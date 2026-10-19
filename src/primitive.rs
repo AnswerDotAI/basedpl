@@ -1,7 +1,7 @@
 use rustymath::{agreement::Mapping, buffer::{FloatWidth, Width}, error::Kind, layout::strides, with_width};
 use crate::{
     agreement::{Agree, Agreement},
-    array::{generated_len, or_and_sum, saturated, Frame, Gather, Items, Lanes, Layout, Steps, Storage},
+    array::{generated_len, or_and_sum, saturated, Frame, Gather, Items, Lanes, Layout, Steps, Storage, Widening},
     execution::Context, keyed::Selector, number::{int::Int, Arithmetic, Math, Numeric}, search::{classify, first_matches, firsts, grouped, Cells},
     At, DomainAt, Error, ErrorAt, ErrorKind, Number, Span, Value
 };
@@ -495,10 +495,7 @@ impl Primitive {
             (Self::Mix, Some(x)) => pick(x, right, false, span),
             (Self::Mix, None) => {
                 if let Some(axis) = axis { return mix_axes(right, &axis_value(axis), span); }
-                // Mixing a simple array changes nothing.
-                if !right.is_atom() && right.is_simple() { return Ok(right.clone()); }
-                let cells: Vec<_> = right.elements().collect();
-                right.layout().assemble(&cells, &right.prototype()).error_at(span, "cannot assemble cells")
+                right.mix(Widening::Arrays).error_at(span, "cannot assemble cells")
             }
             (Self::Enclose | Self::Nest, Some(x)) => partition(x, right, axis, matches!(self, Self::Nest), span),
             (Self::Enclose | Self::Nest, None) => {

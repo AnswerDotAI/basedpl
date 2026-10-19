@@ -68,7 +68,7 @@ phinary "¯10.01" "100.01"   ⍝ ¯2 3
 
 ⍝ — path finds no path between vertices in different components
 [path:]←•load "lib/graph.bpl"
-g←[1;0;3;2]
+g←[1 0 3 2]
 g path 0 3   ⍝ ⍬
 
 ⍝ — A minimum spanning tree of a disconnected graph leaves the unreachable vertices at ¯1
@@ -137,7 +137,7 @@ t←0↣(put foldl) [["a" 1] ["b" 2] ["c" 3]]
 [base_64:]←•load "lib/dyalog.bpl"
 v←"f" "fo" "foo" "foob" "fooba" "foobar"
 e←base_64¨•ucs¨v
-[e;v≡•ucs¨base_64¨e]
+[e v≡•ucs¨base_64¨e]
 ⍝ =>
 [["Zg==" "Zm8=" "Zm9v" "Zm9vYg==" "Zm9vYmE=" "Zm9vYmFy"] $t]
 
@@ -220,7 +220,7 @@ M←4 4⍴7
 
 ⍝ — packT expands what it packs: a run longer than 256, text holding its escape candidates, and text with nothing to pack
 [packT:]←•load "lib/dyalog.bpl"
-{⍵ ≡ 0 packT packT ⍵}¨["hello";300⍴"ab",300⍴"a";(•ucs 0 8 10),"xyz"]
+{⍵ ≡ 0 packT packT ⍵}¨["hello" 300⍴"ab",300⍴"a" (•ucs 0 8 10),"xyz"]
 ⍝ =>
 $t $t $t
 
@@ -366,6 +366,6 @@ x←5 7⍴↦35
 
 ⍝ — Fraction helpers preserve exact rationals beyond float precision
 [cfract: rational:]←•load "lib/numeric.bpl"
-[rational9007199254740993r29;cfract9007199254740993r29]
+[rational9007199254740993r29 cfract9007199254740993r29]
 ⍝ =>
 [[9007199254740993 29]ₓ [310593077749689 2 2 2 2]ₓ]

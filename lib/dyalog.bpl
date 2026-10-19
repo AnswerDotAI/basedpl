@@ -488,7 +488,7 @@ box←{  ⍝ Frame a text array, with optional internal row and column borders.
   [r c]←rh{∪⍺{(⍵∊⍳≥⍺)#⍵}⍵,(~¯1∊⍵)#0,⍺}¨,¨2↑ar
   [rw cl]←rh{<⍵∪0,⍺}¨[r c]
   (~ 0,rh₁ ∊ c){
-    (↑⍺)↓⍠1(-⍺₁)↓⍠1[∞;⍋(≥⍳rh₁),cl]⌷⍵
+    (↑⍺)↓⍠1(-⍺₁)↓⍠1[∞ ⍋(≥⍳rh₁),cl]⌷⍵
   }(~ 0,rh₀ ∊ r){
     (↑⍺)↓⍠0(-⍺₁)↓⍠0[⍋(≥⍳rh₀),rw]⌷⍵
   }{
@@ -1092,7 +1092,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          (⊂[a c])∊bkts?∇ rgt [∆l L (a bkt Bb) R ∆r];    ⍝ bracketed single value Bb.
          (⊂a)∊rbs?∇ lft lft ⍵;                    ⍝ right bracket: skip left.
          ≥/xmat.[[A B] [B C]]?∇ lft ⍵;              ⍝ A:B ≥ B:C → skip left.
-         BbCc←zmat.[≤B;≤C],⊂[b c]              ⍝ B bound with C.
+         BbCc←zmat.[≤B ≤C],⊂[b c]              ⍝ B bound with C.
          ∇ show [[∆l L] Aa BbCc R ∆r]            ⍝ binds with token to the right?
      }                                           ⍝ :: ∇ stream → stream
 

@@ -116,7 +116,7 @@ fn selected(grade: bool, down: bool, pick: Pick, left: Option<&Value>, right: &V
     let keys = rustymath::search::view_order_keys(view)?;
     let order = rustymath::search::select_positions(n, range, |a, b| if down { keys[b].cmp(&keys[a]) } else { keys[a].cmp(&keys[b]) });
     Some((|| {
-        let positions = Value::positions_u32([order.len()], n, order).error_at(cx.span, "invalid selected order")?;
+        let positions = Value::positions_u32([order.len()], n, order).and_then(|p| p.along_first_of(right)).error_at(cx.span, "invalid selected order")?;
         let selected = if grade { positions } else {
             let selector = Value::new([1], vec![positions]).error_at(cx.span, "invalid selected order")?;
             Primitive::Index.call(Some(&selector), right, cx)?
@@ -133,7 +133,7 @@ fn ranks(down: bool, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) 
     let Items::Compact(View::Integers(ints)) = grade.as_items() else { return Some(Primitive::Grade(false).call(None, &grade, cx).map(Bound::from)) };
     let n = grade.len();
     let ranks = rustymath::with_ints!(ints, |positions| rustymath::search::inverse_permutation(positions.iter().map(|&p| i64::from(p) as usize)));
-    Some(Value::positions_u32([n], n, ranks).error_at(cx.span, "invalid ranks").map(Bound::from))
+    Some(Value::positions_u32([n], n, ranks).and_then(|r| r.along_first_of(right)).error_at(cx.span, "invalid ranks").map(Bound::from))
 }
 
 /// Monadic `-.×`, which `f` is. A square matrix takes `primitive::determinant`. Under `∂`, the determinant's rule calls `f` on the primal.

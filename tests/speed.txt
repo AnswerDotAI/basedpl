@@ -124,7 +124,7 @@ i (+/⊢)⌸ v	200	370	220
 +\⁻¹v	2.5	2.4	3.2
 ≠\⁻¹b	0.5	0.5	0.55
 # Each item waits for a read from a random place.
-[i]⌷v	13	11
+[i]⌷v	13	11	21
 # An indexed assignment copies the array once, then writes each value at its index.
 {x←v ⋄ x.[i]←w ⋄ x}0	19	17	17
 # A modified assignment with repeated indices combines each value into the array at its index, in turn, in place.
@@ -218,7 +218,7 @@ ms⌹⍤2 sps	120	150	200
 "cholesky"•decompose⍤2 sps	71	87	110
 "svd"•decompose⍤2 ms	1600	1400	1200
 "svd"•decompose⁻¹ f	40	160	330
-["kind":"svd" "rank":8]•decompose m	72	230
+["kind":"svd" "rank":8]•decompose m	72	230	460
 "eigen"•decompose⁻¹ h	530	1400	1800
 "eigen"•decompose⍤2 ss	790	750	720
 "eigen"•decompose⍤2 ms	1700	1700	2100
@@ -296,7 +296,7 @@ dx←¿1048576⍴0 ⋄ dp←["w":¿[64 256]⍴0 "b":¿256⍴0 "v":¿256⍴0 "c":
 [objectives]
 # Functions that `∂` will differentiate, timed without `∂`. Each gives the cost that its gradient's cost will be measured against.
 # The mean squared error of a network with one hidden layer of 256 tanh units, over 1024 inputs of 64 values. Its parameters are in a record.
-[mx my] mlp mp	130	520
+[mx my] mlp mp	130	520	1100
 # ADBench's Gaussian mixture objective, for 1000 points in 32 dimensions and 25 components, without its constant terms and with its Wishart prior at gamma 1 and m 0. Each component's precision factor has the exponentials of `q` on its diagonal and `l` below it.
 gx gmm gp	240	640	680
 # The k-means cost sums the squared distance from each of 16384 points to the nearest of 64 centres, in 32 dimensions.
@@ -313,7 +313,7 @@ kx kmeans kc	320	800	880
 # A JVP of the training loss in `[objectives]` along a fixed direction `dp`, which takes one pass through `+.×`, Rank, `7○` and `+/`.
 {[mx my] mlp mp+⍵×dp}∂0	220	650	970
 # Gradients of the three objectives in `[objectives]`, each from one run that records its linear calls and one transpose of the record. The bar's "Gradient cost" row asks for a small multiple of the objective's own cost.
-[mx my] mlp∂ mp	220	1200
+[mx my] mlp∂ mp	220	1200	2000
 gx gmm∂ gp	2100	5500	5200
 kx kmeans∂ kc	840	2600	2400
 [setup]
