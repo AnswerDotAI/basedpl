@@ -198,11 +198,11 @@ def test_array_surface():
     np.testing.assert_array_equal(a[[True, True], np.array([False, True, True])], [2, 6])
     assert a[:, [False, False, False]].shape == (2, 0)
     np.testing.assert_array_equal(a[:, [0, 1, 1]], [[1, 2, 2], [4, 5, 5]])
-    for mask in ([True], [[True, False, True]], True):
+    for mask in ([True], [[True, False, True]], True, Array(True), np.bool_(True)):
         with pytest.raises(IndexError, match='Boolean selector'): a[:, mask]
     np.testing.assert_array_equal(bpl('[mask]⌷v', mask=[False, True, True], v=[10, 20, 30]), [10, 20, 20])
     np.testing.assert_array_equal(list(a)[0], [1, 2, 3])
-    with pytest.raises(BplError): a[2, 0]
+    with pytest.raises(IndexError): a[2, 0]
     np.testing.assert_array_equal(a[1:2, :], [[4, 5, 6]])
     np.testing.assert_array_equal(a[:, ::-1], [[3, 2, 1], [6, 5, 4]])
     np.testing.assert_array_equal(a[:, -2:], [[2, 3], [5, 6]])
@@ -224,6 +224,38 @@ def test_array_surface():
     assert repr(Array(2)) != repr(Array(2.))
     assert [repr(Array(s)) for s in ('text', '', ['ab', 'cd'])] == ["'text'", "''", "['ab', 'cd']"]
 
+def test_python_array_value_semantics():
+    a = Array([[1, 2], [3, 4]], keys=[['a', 'b'], None], names=['row', 'col'])
+    held, view, f = Array(a), a[:, ::-1], add.left(a)
+    snapshot = np.asarray(a, copy=False)
+    a[None, ..., 1] = [[20, 40]]
+    a.keys, a.names = None, None
+    teq(a.np, [[1, 20], [3, 40]])
+    teq(held.np, [[1, 2], [3, 4]])
+    teq(view.np, [[2, 1], [4, 3]])
+    teq(snapshot, held.np)
+    teq(f(0).np, held.np)
+    assert held.keys == (('a', 'b'), None) and held.names == ('row', 'col')
+    assert a.keys == (None, None) and a.names == (None, None)
+
+def test_rustymath_mixed_operators():
+    import rustymath as rm
+    a, b = Array([[1, 2], [3, 4]]), rm.array([[4, 3], [2, 1]])
+    for op in (operator.add, operator.sub, operator.lt, operator.matmul, operator.and_):
+        for x,y in ((a, b), (b, a)):
+            result = op(x, y)
+            assert isinstance(result, Array)
+            teq(result.np, op(Array(x), Array(y)).np)
+
+def test_matrix_stack_operator():
+    import rustymath as rm
+    a, b, v = np.arange(12).reshape(2, 2, 3), np.arange(24).reshape(2, 3, 4), np.arange(3)
+    for x,y in ((a, b), (a, b[:, None]), (a, v), (v, b), (v, v)):
+        result, expected = Array(x) @ Array(y), rm.matmul(x, y)
+        teq(result.np, np.asarray(expected))
+    for x,y in ((1, v), (v, 1)):
+        with pytest.raises(ValueError): Array(x) @ Array(y)
+
 def test_own():
     fresh = bpl('100000⍴0.5')
     items = np.asarray(fresh, copy=False).ctypes.data
@@ -231,8 +263,10 @@ def test_own():
     assert moved.ctypes.data == items and moved.flags.writeable
     with pytest.raises(ValueError): fresh.shape
     held = bpl('shared←100000⍴0.5 ⋄ shared')
+    twin = Array(held)
     items = np.asarray(held, copy=False).ctypes.data
     assert held.own().ctypes.data != items
+    teq(twin.np, np.full(100000, .5))
     teq(bpl('+/shared').py, 50000.)
     chars = bpl('"abc"').own()
     assert chars.tolist() == ['a', 'b', 'c'] and chars.flags.writeable
@@ -260,32 +294,32 @@ def test_keyed_arrays():
     k = Array(dict(qty=4, price=1, tax=2))
     assert k['price'].py == 1 and k['price'].is_atom and k[1].py == 1
     assert list(k[['tax', 'qty']].py) == ['tax', 'qty']
-    assert k.axis_keys == (('qty', 'price', 'tax'),)
-    with pytest.raises(BplError, match='INDEX'): k['missing']
-    with pytest.raises(BplError, match='DOMAIN'): k[['qty', 'qty']]
+    assert k.keys == (('qty', 'price', 'tax'),)
+    with pytest.raises(KeyError): k['missing']
+    with pytest.raises(ValueError): k[['qty', 'qty']]
 
-def test_axis_keys_dataframe():
+def test_keys_dataframe():
     import pandas as pd
-    m = Array([[10, 2], [20, 4]], axis_keys=[['alice', 'bob'], ['price', 'qty']])
-    assert m.axis_keys == (('alice', 'bob'), ('price', 'qty'))
+    m = Array([[10, 2], [20, 4]], keys=[['alice', 'bob'], ['price', 'qty']])
+    assert m.keys == (('alice', 'bob'), ('price', 'qty'))
     assert m['alice'].py == dict(price=10, qty=2)
     assert m[:, 'qty'].py == dict(alice=2, bob=4)
     assert m['alice':'bob', 'qty'].py == dict(alice=2, bob=4)
     np.testing.assert_array_equal(m[:, 'price':'qty'], [[10, 2], [20, 4]])
-    assert m['bob':'alice':-1, 'price'].axis_keys == (('bob', 'alice'),)
+    assert m['bob':'alice':-1, 'price'].keys == (('bob', 'alice'),)
     assert m[0:'alice', 'price'].py == dict(alice=10)
     with pytest.raises(KeyError): m['carol':]
     with pytest.raises(KeyError): Array([1, 2])['a':]
     pd.testing.assert_frame_equal(m.py, pd.DataFrame(np.array([[10, 2], [20, 4]], dtype=np.uint8), index=['alice', 'bob'], columns=['price', 'qty']))
     np.testing.assert_array_equal(m.np, [[10, 2], [20, 4]])
-    h = Array(np.arange(8).reshape(2, 2, 2), axis_keys=[['aa', 'bb'], None, ['xx', 'yy']])
+    h = Array(np.arange(8).reshape(2, 2, 2), keys=[['aa', 'bb'], None, ['xx', 'yy']])
     pd.testing.assert_frame_equal(h.py, pd.DataFrame(np.arange(8, dtype=np.uint8).reshape(4, 2),
         index=pd.MultiIndex.from_product([['aa', 'bb'], [0, 1]]), columns=['xx', 'yy']))
     pd.testing.assert_frame_equal(Array(3).df, pd.DataFrame([[3]], index=[0], columns=[0]))
     pd.testing.assert_frame_equal(Array([3, 4]).df, pd.DataFrame(np.array([3, 4], dtype=np.uint8), index=[0, 1], columns=[0]))
-    assert Array([[1, 2]]).axis_keys == (None, None)
+    assert Array([[1, 2]]).keys == (None, None)
     for keys in ([None], [['a', 'a'], None], [None, ['a']]):
-        with pytest.raises(ValueError): Array([[1, 2], [3, 4]], axis_keys=keys)
+        with pytest.raises(ValueError): Array([[1, 2], [3, 4]], keys=keys)
 
 def test_based_values():
     atom, unit, vector = [bpl(code) for code in ('3', '⊂3', ',3')]
@@ -381,57 +415,57 @@ def test_math_construction():
     np.testing.assert_allclose(bpl('{(⍵×4)-8}').optimize(0, solve=True, linear=True, precondition=bpl('{⍵÷4}')), 2)
 
 
-def test_axis_names():
+def test_names():
     data = np.arange(6).reshape(2, 3)
-    m = Array(data, axis_names=('city', 'month'))
-    month = Array([10, 20, 30], axis_names=('month',))
+    m = Array(data, names=('city', 'month'))
+    month = Array([10, 20, 30], names=('month',))
     teq((m + month).np, data + [10, 20, 30])
     teq((m + [10, 20]).np, data + np.array([[10], [20]]))
-    teq((month + m).axis_names, ('month', 'city'))
+    teq((month + m).names, ('month', 'city'))
     teq((month + m).np, (data + [10, 20, 30]).T)
     teq((m + transpose(m)).np, data * 2)
-    a = Array(data, axis_names=('city', None))
-    b = Array(data.T, axis_names=(None, 'city'))
+    a = Array(data, names=('city', None))
+    b = Array(data.T, names=(None, 'city'))
     teq((a + b).np, data * 2)
-    product = Array(np.arange(12).reshape(4, 3), axis_names=('product', None))
-    teq((a + product).axis_names, ('city', None, 'product'))
+    product = Array(np.arange(12).reshape(4, 3), names=('product', None))
+    teq((a + product).names, ('city', None, 'product'))
     teq((a + product).np, data[:, :, None] + product.np.T[None, :, :])
-    teq(add.reduce['month'](m).axis_names, ('city',))
+    teq(add.reduce['month'](m).names, ('city',))
     teq(add.reduce['month'](m).np, [3, 12])
-    keyed = Array(m, axis_keys=(('Paris', 'London'), ('Jan', 'Feb', 'Mar')))
-    other = Array([30, 20, 10], axis_names=('month',), axis_keys=(('Mar', 'Feb', 'Jan'),))
+    keyed = Array(m, keys=(('Paris', 'London'), ('Jan', 'Feb', 'Mar')))
+    other = Array([30, 20, 10], names=('month',), keys=(('Mar', 'Feb', 'Jan'),))
     teq((keyed + other).np, data + [10, 20, 30])
     assert keyed.df.index.name == 'city' and keyed.df.columns.name == 'month'
     bpl(M=keyed)
     assert bpl('⍴M').py == dict(city=2, month=3)
     renamed = bpl('("town" 1:⍴M)⍴M')
-    teq(renamed.axis_names, ('town', None))
-    teq(renamed.axis_keys, keyed.axis_keys)
+    teq(renamed.names, ('town', None))
+    teq(renamed.keys, keyed.keys)
     assert bpl('⍴("town" 1:⍴M)⍴M').py == {'town': 2, 1: 3}
-    teq(bpl('(:⍴M)⍴M').axis_names, (None, None))
-    teq(bpl('(⍴M)⍴(:⍴M)⍴M').axis_names, keyed.axis_names)
+    teq(bpl('(:⍴M)⍴M').names, (None, None))
+    teq(bpl('(⍴M)⍴(:⍴M)⍴M').names, keyed.names)
     assert bpl('⍴("items":2)⍴1 2').py == dict(items=2)
     for code in ['["city":2 "city":3]⍴M', '("city" "city":⍴M)⍴M', '(1 1:⍴M)⍴M']:
         with pytest.raises(BplError, match='DOMAIN'): bpl(code)
     teq(bpl('"Paris"⌷⍠"city" M').np, data[0])
-    teq(bpl('1⌷M').axis_names, ('month',))
+    teq(bpl('1⌷M').names, ('month',))
     teq(bpl('+/⍠"city" "month" M').np, 15)
-    teq(bpl('⍉M').axis_names, ('month', 'city'))
-    teq(bpl('2 3⍴M').axis_names, (None, None))
-    teq(bpl('(⍴M)⍴M').axis_names, ('city', 'month'))
-    teq(bpl(':M').axis_names, ('city', 'month'))
-    teq(bpl('+/¨⊂⍠1 M').axis_names, ('city',))
-    teq(bpl('⌽⍤1 M').axis_names, ('city', 'month'))
+    teq(bpl('⍉M').names, ('month', 'city'))
+    teq(bpl('2 3⍴M').names, (None, None))
+    teq(bpl('(⍴M)⍴M').names, ('city', 'month'))
+    teq(bpl(':M').names, ('city', 'month'))
+    teq(bpl('+/¨⊂⍠1 M').names, ('city',))
+    teq(bpl('⌽⍤1 M').names, ('city', 'month'))
     with pytest.raises(BplError, match='INDEX'): bpl('+/⍠"missing" M')
-    v = Array([1, 2], axis_names=('city',))
-    teq(multiply.outer_product(v, v).axis_names, (None, None))
-    teq(reshape([4], v).axis_names, (None,))
-    teq(add.scan(v).axis_names, ('city',))
+    v = Array([1, 2], names=('city',))
+    teq(multiply.outer_product(v, v).names, (None, None))
+    teq(reshape([4], v).names, (None,))
+    teq(add.scan(v).names, ('city',))
     bpl(V=v)
     for code, names in [('2#V', ('city',)), ('1↕V', (None, None)), ('{⍵}⌺1 V', (None, None)), ('V,V', ('city',))]:
-        teq(bpl(code).axis_names, names)
-    with pytest.raises(ValueError, match='DOMAIN'): Array(data, axis_names=('city', 'city'))
-    with pytest.raises(ValueError): Array(data, axis_names=('city',))
+        teq(bpl(code).names, names)
+    with pytest.raises(ValueError, match='DOMAIN'): Array(data, names=('city', 'city'))
+    with pytest.raises(ValueError): Array(data, names=('city',))
 
 
 def test_mathematical_monads():

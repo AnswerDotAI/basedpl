@@ -22,6 +22,16 @@ pub(super) fn membership(left: &Value, right: &Value, span: &Context<'_>) -> Res
     frame.booleans(matches.into_iter().map(|p| p < miss).collect()).error_at(span, "invalid membership result")
 }
 
+impl Value {
+    /// Whether `query` matches one major cell, using this session's membership rules. Rank-0 values are not containers.
+    pub fn contains(&self, query: &Value, session: &mut crate::Session) -> Result<bool, Error> {
+        let span = Span::whole(crate::Source::new("<contains>", "∊"));
+        if self.is_unit() { return Err(span.error(Kind::Rank, "a rank-0 value is not a container")); }
+        if self.shape()[1..] != *query.shape() { return Ok(false); }
+        session.numeric.while_current(|| membership(query, self, &session.at(&span))?.boolean().error_at(&span, "invalid membership result"))
+    }
+}
+
 pub(super) fn unique(right: &Value, span: &Context<'_>) -> Result<Value, Error> { replicate(&unique_mask(right, span)?, right, None, false, span) }
 
 pub(super) fn union(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> { catenate(left, &without(right, left, span)?, None, true, span) }

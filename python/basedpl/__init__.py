@@ -6,7 +6,7 @@ Modules:
 - `basedpl.editors`: Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page kinds, keys and ranks.
 - `basedpl.keyboards`: Generate regional BPL keyboards from macOS layouts."""
 
-import array, math, operator, sys
+import math, operator, sys
 from dataclasses import dataclass
 from fractions import Fraction
 from ._core import __version__, symbols, _Array, _Function, _Operator, _Session
@@ -37,7 +37,7 @@ def _value(raw, as_array=False):
         return _value(o) if isinstance(o, (dict, _Array)) else o
     if isinstance(raw, _Array):
         if not as_array and (text := raw.text) is not None: return text
-        keys = raw.axis_keys
+        keys = raw.keys
         if not as_array and any(k is not None for k in keys): return _dataframe(raw) if len(raw.shape) > 1 else dict(zip(_labels(keys[0]), raw.tolist()))
         import numpy as np
         return np.array(raw)
@@ -65,7 +65,7 @@ def _dataframe(raw):
     except ImportError: raise ImportError('DataFrame conversion requires pandas: pip install pandas') from None
     data = _value(raw, as_array=True)
     shape = data.shape
-    keys, names = (raw.axis_keys, raw.axis_names) if isinstance(raw, _Array) else (raw.get('axis_keys', [None] * len(shape)), raw.get('axis_names', [None] * len(shape)))
+    keys, names = (raw.keys, raw.names) if isinstance(raw, _Array) else (raw.get('axis_keys', [None] * len(shape)), raw.get('axis_names', [None] * len(shape)))
     labels = [list(range(n)) if k is None else _labels(k) for n,k in zip(shape, keys)]
     if len(shape) < 2:
         index = pd.Index(labels[0], name=names[0]) if labels else [0]
@@ -81,9 +81,8 @@ def _element(value, seen):
     if isinstance(value, (Function, Operator)): return value._inner
     if type(value) in (int, float, complex): return value
     if isinstance(value, str) and len(value) == 1: return value
-    if isinstance(value, (Array, str, list, tuple, range, dict)) or np is not None and isinstance(value, np.ndarray): return _array(value, seen)
+    if isinstance(value, (Array, str, list, tuple, range, dict)) or hasattr(value, '__array__'): return _array(value, seen)
     if (read := _Array.numeric(value)) is not None: return read
-    if hasattr(value, '__array__'): return _array(value, seen)
     raise TypeError(f'cannot convert {type(value).__name__} to BPL')
 
 def _rectangular(value, seen):
@@ -122,8 +121,9 @@ def _array(value, seen=None):
     # Any object with a buffer, such as a NumPy or rustymath array or a `memoryview`, is read through it.
     if not (numpy and kind in 'UO') and (read := _Array.numeric(value)) is not None: return read
     if not numpy and hasattr(value, '__array__'):
-        import numpy as np
-        return _array(np.asarray(value), seen)
+        seen.add(id(value))
+        try: return _array(value.__array__(), seen)
+        finally: seen.remove(id(value))
     if numpy:
         shape, data = value.shape, value.ravel().tolist()
         if kind == 'U': prototype = ' '
@@ -133,16 +133,6 @@ def _array(value, seen=None):
     seen.add(id(value))
     try: return bpl._session.array(dict(shape=list(shape), data=[_element(o, seen) for o in data], prototype=prototype))
     finally: seen.remove(id(value))
-
-def _positions(s, n, keys):
-    "The positions that slice `s` picks along an axis of `n` items with `keys`. A number bound is a position, as in a Python slice. A key bound is its key's position. A key stop includes its key."
-    def position(key):
-        if keys is None or key not in keys: raise KeyError(key)
-        return keys.index(key)
-    step = 1 if s.step is None else operator.index(s.step)
-    start, stop = (position(b) if isinstance(b, str) else b for b in (s.start, s.stop))
-    if isinstance(s.stop, str): stop = stop + 1 if step > 0 else stop - 1 if stop else None
-    return range(*slice(start, stop, step).indices(n))
 
 class _Operators:
     __hash__ = None
@@ -189,8 +179,8 @@ def _raw(raw):
     if not shape: data = [data]
     for _ in shape[1:]: data = [o for row in data for o in row]
     result = dict(shape=shape, data=data)
-    if any(k is not None for k in raw.axis_keys): result['axis_keys'] = list(raw.axis_keys)
-    if any(n is not None for n in raw.axis_names): result['axis_names'] = list(raw.axis_names)
+    if any(k is not None for k in raw.keys): result['axis_keys'] = list(raw.keys)
+    if any(n is not None for n in raw.names): result['axis_names'] = list(raw.names)
     return result
 
 def _array_repr(raw):
@@ -207,27 +197,31 @@ def _array_repr(raw):
         if not dims: return item(next(data))
         return '[' + ', '.join(cells(dims[1:]) for _ in range(dims[0])) + ']'
     if 'axis_names' in raw:
-        attrs = ', '.join(f'{k}={raw[k]!r}' for k in ('axis_keys', 'axis_names') if k in raw)
+        attrs = ', '.join(f'{k.removeprefix("axis_")}={raw[k]!r}' for k in ('axis_keys', 'axis_names') if k in raw)
         return f'Array({cells(shape)}, {attrs})'
     if 'axis_keys' in raw:
         if len(shape) == 1: return '{' + ', '.join(f'{k!r}: {item(o)}' for k,o in zip(_labels(raw['axis_keys'][0]), raw['data'])) + '}'
-        return f'Array({cells(shape)}, axis_keys={raw["axis_keys"]!r})'
+        return f'Array({cells(shape)}, keys={raw["axis_keys"]!r})'
     if math.prod(shape) == 0: return f'Array([], shape={tuple(shape)})'
     return cells(shape)
 
 class Array(_Operators):
-    "An immutable native BPL value. Conversion to Python or NumPy makes a copy."
+    "A native BPL value with shape, keys and names."
     __slots__ = ('_inner',)
-    def __init__(self, value, *, axis_keys=None, axis_names=None):
-        self._inner = _array(value)
-        if axis_keys is not None: self._inner = self._inner.with_axis_keys(axis_keys)
-        if axis_names is not None: self._inner = self._inner.with_axis_names(axis_names)
+    def __init__(self, value, *, keys=None, names=None):
+        self._inner = value._inner.copy() if isinstance(value, Array) else _array(value)
+        if keys is not None: self.keys = keys
+        if names is not None: self.names = names
     @property
     def shape(self): return tuple(self._inner.shape)
     @property
-    def axis_keys(self): return tuple(None if k is None else tuple(k) for k in self._inner.axis_keys)
+    def keys(self): return tuple(None if k is None else tuple(k) for k in self._inner.keys)
+    @keys.setter
+    def keys(self, value): self._inner = self._inner.with_keys(value)
     @property
-    def axis_names(self): return tuple(self._inner.axis_names)
+    def names(self): return tuple(self._inner.names)
+    @names.setter
+    def names(self, value): self._inner = self._inner.with_names(value)
     @property
     def is_atom(self): return self._inner.is_atom
     def _numpy(self, copy=True):
@@ -236,7 +230,7 @@ class Array(_Operators):
         return np.array(self._inner, copy=copy)
     @property
     def py(self):
-        keyed = any(k is not None for k in self._inner.axis_keys)
+        keyed = any(k is not None for k in self._inner.keys)
         if not (self.is_atom or keyed) and self._inner.text is None and (result := self._numpy()) is not None: return result
         return _value(self._inner.parts())
     @property
@@ -262,25 +256,12 @@ class Array(_Operators):
         if not self.shape: raise TypeError('a unit has no length')
         return self.shape[0]
     def __iter__(self): return (Array(a) for a in self._inner.cells())
-    def __contains__(self, item): raise TypeError('use member for BPL membership')
+    def __contains__(self, item): return self._inner.contains(_array(item), bpl._session)
     def __getitem__(self, index):
-        "Select along the leading axes. An integer or a key picks one position. A Boolean vector filters its matching axis; other lists pick positions. A slice picks a range as Python's slices do, except that a slice of keys includes its end key. `...` stands for full slices of the axes that the index leaves out."
-        parts = index if isinstance(index, tuple) else (index,)
-        ellipses = [i for i,o in enumerate(parts) if o is Ellipsis]
-        if len(ellipses) > 1: raise IndexError('an index can hold only one ...')
-        if ellipses: parts = parts[:ellipses[0]] + (slice(None),)*max(len(self.shape)-len(parts)+1, 0) + parts[ellipses[0]+1:]
-        def part(axis, o):
-            if isinstance(o, slice):
-                if o.start is None and o.stop is None and o.step is None: return None
-                if axis >= len(self.shape): raise IndexError(f'too many indices for an array of rank {len(self.shape)}')
-                return _array(array.array('q', _positions(o, self.shape[axis], self._inner.axis_keys[axis])))
-            o = _array(o)
-            if o.exports and (mask := memoryview(o)).format == '?':
-                if axis >= len(self.shape) or mask.shape != (self.shape[axis],):
-                    raise IndexError('a Boolean selector must be a vector matching its axis')
-                return _array(array.array('q', (i for i,b in enumerate(mask) if b)))
-            return o
-        return _result(self._inner.select([part(axis, o) for axis,o in enumerate(parts)])).value
+        "Select by positions, keys, slices or per-axis masks. `None` inserts an axis and `...` keeps omitted axes."
+        return _result(self._inner.select(index, _array)).value
+    def __setitem__(self, index, value): self._inner = self._inner.assign(index, _array(value), _array)
+    def __rustymath_array__(self): return self._inner.__rustymath_array__()
     def __matmul__(self, other):
         if isinstance(other, Function): raise TypeError('inner product requires two arrays or two functions')
         return _glyph('+').inner_product(_glyph('×'))(self, other)

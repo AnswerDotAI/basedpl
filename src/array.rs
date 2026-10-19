@@ -5,7 +5,7 @@ use crate::{
 use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{
     agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Floats, IntBuf, Ints, View, Width}, error::Kind, search::Key,
-    tolerant::Tolerant, with_float_width, with_floats, with_tolerance, with_width
+    with_float_width, with_width
 };
 use std::{borrow::Cow, fmt, sync::{Arc, OnceLock}};
 
@@ -265,25 +265,14 @@ impl Value {
             (Plain::Character(x), Plain::Character(y)) => return Ok(x == y), (Plain::Function(x), Plain::Function(y)) => return x.matches(y, t, cx),
             (Plain::Operator(x), Plain::Operator(y)) => return x.matches(y, t, cx), _ => return Ok(false)
         }
-        if self.shape() != other.shape() { return Ok(false); }
-        if self.axis_names().iter().zip(other.axis_names()).any(|(a, b)| rustymath::layout::names_conflict(a.as_deref(), b.as_deref())) { return Ok(false); }
+        if !self.layout().matches(other.layout()) { return Ok(false); }
         let keyed = self.has_keys() || other.has_keys();
-        let differ = |axis| match (self.keys(axis), other.keys(axis)) { (Some(x), Some(y)) => y.align(x).contains(&None), _ => false };
-        if keyed && (0..self.shape().len()).any(differ) { return Ok(false); }
         if self.is_empty() { return self.prototype().matches_within(&other.prototype(), t, cx); }
         if !keyed {
             let (x, y) = (self.as_items(), other.as_items());
-            if let (Some(x), Some(y)) = (x.ints(), y.ints()) { return Ok(x == y); }
-            match (x, y) {
-                (Items::Compact(View::Floats(x)), Items::Compact(View::Floats(y))) => {
-                    let t = t.tolerance_at(x.tag().max(y.tag()));
-                    return Ok(with_tolerance!(t, |t| with_floats!(x, |x| with_floats!(y, |y| x
-                        .iter()
-                        .zip(y)
-                        .all(|(&a, &b)| t.matches::<f64>(a.into(), b.into()))))));
-                }
-                (Items::Compact(View::Characters(x)), Items::Compact(View::Characters(y))) => return Ok(x == y),
-                _ => (),
+            if let (Items::Compact(x), Items::Compact(y)) = (x, y) {
+                let width = self.float_width().max(other.float_width()).unwrap_or(FloatWidth::F64);
+                if let Some(matched) = rustymath::search::view_matches(x, y, t.tolerance_at(width)) { return Ok(matched); }
             }
         }
         let mapping = keyed.then(|| Mapping::new(other.layout(), &(0..self.shape().len()).collect::<Vec<_>>(), self.layout(), self.len()));
@@ -658,6 +647,13 @@ impl Value {
     pub(crate) fn layout(&self) -> &Layout {
         static ATOM: Layout = Layout::EMPTY;
         match self { Self::Array(a) => &a.layout, _ => &ATOM }
+    }
+    /// The array's shape, axis keys and names, shared with numerical array frontends.
+    pub fn core_layout(&self) -> &rustymath::layout::Layout { self.layout() }
+    /// Keeps the items and renderer under `layout`; the item count must stay unchanged.
+    pub fn with_core_layout(self, layout: rustymath::layout::Layout) -> Result<Self, ErrorKind> {
+        let renderer = self.renderer().cloned();
+        self.with_layout(Layout::kept(layout, renderer))
     }
     pub(crate) fn with_layout(self, layout: Layout) -> Result<Self, ErrorKind> {
         let layout = layout.unique_names();

@@ -431,6 +431,19 @@ impl Value {
         let span = Span { source: crate::Source::new("<index>", "[]"), range: 0..2 };
         select(self, parts, true, &crate::Session::new().at(&span))
     }
+    /// Reads a checked structural selection. `atom` distinguishes a direct item from a rank-zero array.
+    pub fn selected(&self, plan: Plan, atom: bool) -> Result<Value, Error> {
+        let span = Span { source: crate::Source::new("<index>", "[]"), range: 0..2 };
+        let session = crate::Session::new();
+        let cx = session.at(&span);
+        if atom && plan.layout.shape().is_empty() { return Ok(item_or_prototype(self, Some(Steps::combined(0, &plan.steps)[0]).filter(|&o| o != Steps::FILL))); }
+        remap(self, plan, &cx)
+    }
+    /// Replaces a checked structural selection without changing the original value.
+    pub fn assigned(&self, plan: Plan, atom: bool, values: &Value) -> Result<Value, Error> {
+        let span = Span { source: crate::Source::new("<index>", "[]"), range: 0..2 };
+        planned_selection(plan, atom).write(self, values, &crate::Session::new().at(&span))
+    }
 }
 /// The items that `parts` read from `right`, one part for each leading axis: their cross product, or where `paired`, with index arrays paired by broadcasting.
 pub(crate) fn select(right: &Value, parts: &[Option<Value>], paired: bool, span: &Context<'_>) -> Result<Value, Error> {
@@ -451,9 +464,12 @@ fn item_offset(right: &Value, parts: &[Option<Value>]) -> Option<usize> {
 pub(crate) fn selection(right: &Value, parts: &[Option<Value>], paired: bool, span: &Context<'_>) -> Result<Selection, Error> {
     if parts.is_empty() { return Ok(Selection { frame: Frame::Direct, targets: Targets::Paths(vec![vec![]]) }); }
     let (plan, direct) = match axis_positions(right, parts, paired, span)? { Positions::Plan(plan, direct) => (plan, direct), Positions::Paths(paths) => return Ok(paths) };
-    // A walk writes cells without listing their positions.
-    if direct { return Ok(Selection { frame: Frame::Direct, targets: Targets::Offsets(Steps::combined(0, &plan.steps)) }); }
-    Ok(Selection { frame: Frame::Array(plan.layout.into()), targets: Targets::Walk { base: 0, steps: plan.steps } })
+    Ok(planned_selection(plan, direct))
+}
+
+fn planned_selection(plan: Plan, direct: bool) -> Selection {
+    if direct && plan.layout.shape().is_empty() { return Selection { frame: Frame::Direct, targets: Targets::Offsets(Steps::combined(0, &plan.steps)) }; }
+    Selection { frame: Frame::Array(plan.layout.into()), targets: Targets::Walk { base: 0, steps: plan.steps } }
 }
 
 /// How a selection by parts reads: a plan of positions, with whether it reads one item, or pick paths.

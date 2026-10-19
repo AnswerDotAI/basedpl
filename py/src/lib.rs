@@ -5,7 +5,7 @@ use pyo3::{
     exceptions::{PyBufferError, PyTypeError, PyValueError}, ffi, prelude::*, sync::MutexExt,
     types::{PyBool, PyBoolMethods, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple}, IntoPyObjectExt
 };
-use std::{ffi::c_int, sync::{atomic::{AtomicPtr, Ordering}, Arc, Mutex}};
+use std::{cell::RefCell, collections::HashMap, ffi::c_int, sync::{atomic::{AtomicPtr, Ordering}, Arc, Mutex}};
 
 /// The value that Python's `_array` describes in `raw`, with its floats at `width`. A complex number follows the current settings' kinds.
 fn import_array(raw: &Bound<'_, PyDict>, width: FloatWidth) -> PyResult<Value> {
@@ -86,6 +86,32 @@ impl PyArray {
     fn value(&self) -> PyResult<&Value> { self.inner.as_ref().ok_or_else(|| PyValueError::new_err("own() moved this array's items into NumPy")) }
 }
 
+fn selection(value: &Value, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<(rustymath::structure::Plan, bool)> {
+    let cache = RefCell::new(HashMap::<usize, Value>::new());
+    let converted = |obj: &Bound<'_, PyAny>| -> PyResult<Value> {
+        let id = obj.as_ptr() as usize;
+        if let Some(value) = cache.borrow().get(&id) { return Ok(value.clone()); }
+        let array = convert.call1((obj,))?;
+        let value = array.extract::<PyRef<'_, PyArray>>()?.value()?.clone();
+        cache.borrow_mut().insert(id, value.clone());
+        Ok(value)
+    };
+    rustymath_buffer::selection::selection(value.core_layout(), index,
+        |obj| {
+            if obj.is_instance_of::<pyo3::types::PySlice>() { return Ok(None); }
+            Ok(rustymath::structure::sole_name(converted(obj)?.core_layout()).map(str::to_owned))
+        },
+        |layout, axis, obj| {
+            let indices = converted(obj)?;
+            let items = indices.view().ok_or_else(|| PyTypeError::new_err("a Python index array must contain ordinary numbers or keys"))?;
+            if let View::Characters(text) = items && indices.shape().len() <= 1 {
+                return Ok(rustymath::structure::Selector::At(rustymath_buffer::selection::key(layout, axis, &text.iter().collect::<String>())?));
+            }
+            rustymath_buffer::selection::array_selector(indices.core_layout().clone(), items, layout.shape()[axis], indices.is_atom())
+        },
+    )
+}
+
 /// A BPL value lent read-only to one buffer export, with the shape and strides of the export. The export holds this object, which keeps all three valid.
 #[pyclass(frozen)]
 struct Lent { value: Value, shape: Box<[isize]>, strides: Box<[isize]> }
@@ -140,24 +166,34 @@ impl PyArray {
     /// The array that `data` holds, read through the buffer protocol and copied once into C order, or `None` when `data` exports no buffer.
     #[staticmethod]
     fn numeric(data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
-        let Some(read) = rustymath_buffer::read(data)? else { return Ok(None) };
-        let shape = read.shape().to_vec();
-        Value::from_buffer(shape, read.into_buffer()).map(|v| Some(v.into())).map_err(|k| PyValueError::new_err(k.to_string()))
+        let Some((read, layout)) = rustymath_buffer::read_array(data)? else { return Ok(None) };
+        let value = Value::from_buffer(layout.shape(), read.into_buffer()).and_then(|v| v.with_core_layout(layout));
+        value.map(|v| Some(v.into())).map_err(|k| PyValueError::new_err(k.to_string()))
     }
+    fn copy(&self) -> PyResult<Self> { Ok(self.value()?.clone().into()) }
     #[getter]
     fn shape(&self) -> PyResult<Vec<usize>> { Ok(self.value()?.shape().to_vec()) }
     #[getter]
-    fn axis_names(&self) -> PyResult<Vec<Option<String>>> {
+    fn names(&self) -> PyResult<Vec<Option<String>>> {
         let value = self.value()?;
         Ok((0..value.shape().len()).map(|a| value.axis_name(a).map(|n| n.to_string())).collect())
     }
-    fn with_axis_names(&self, names: Vec<Option<String>>) -> PyResult<Self> {
-        Ok(basedpl::keyed::with_names(self.value()?.clone(), names).map_err(PyValueError::new_err)?.into())
+    fn with_names(&self, names: Option<Vec<Option<String>>>) -> PyResult<Self> {
+        let value = self.value()?;
+        let layout = value.core_layout().clone().with_names(names.unwrap_or_default().into_iter().map(|n| n.map(Arc::from)).collect()).map_err(rustymath_buffer::py_err)?;
+        Ok(value.clone().with_core_layout(layout).map_err(|k| PyValueError::new_err(k.to_string()))?.into())
     }
     #[getter]
-    fn axis_keys(&self) -> PyResult<Vec<Option<Vec<Option<&str>>>>> { Ok(basedpl::keyed::key_lists(self.value()?)) }
-    fn with_axis_keys(&self, keys: Vec<Option<Vec<Option<String>>>>) -> PyResult<Self> {
-        Ok(basedpl::keyed::with_key_lists(self.value()?.clone(), keys).map_err(PyValueError::new_err)?.into())
+    fn keys(&self) -> PyResult<Vec<Option<Vec<Option<&str>>>>> { Ok(basedpl::keyed::key_lists(self.value()?)) }
+    fn with_keys(&self, keys: Option<Vec<Option<Vec<Option<String>>>>>) -> PyResult<Self> {
+        let value = self.value()?;
+        let keys = rustymath_buffer::axis_keys(keys.unwrap_or_default())?;
+        let layout = value.core_layout().clone().with_keys(keys).map_err(rustymath_buffer::py_err)?;
+        Ok(value.clone().with_core_layout(layout).map_err(|k| PyValueError::new_err(k.to_string()))?.into())
+    }
+    fn __rustymath_array__(&self, py: Python<'_>) -> PyResult<(Self, Py<PyAny>, Vec<Option<String>>)> {
+        if !self.exports()? { return Err(PyTypeError::new_err("only ordinary compact values can cross to Rustymath; convert exact or mixed values explicitly")); }
+        Ok((self.copy()?, self.keys()?.into_py_any(py)?, self.names()?))
     }
     #[getter]
     fn is_atom(&self) -> PyResult<bool> { Ok(self.value()?.is_atom()) }
@@ -214,13 +250,24 @@ impl PyArray {
         let cells = value.major_cells().map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(cells.into_iter().map(Self::from).collect())
     }
-    fn select(&self, py: Python<'_>, parts: Vec<Option<PyRef<'_, PyArray>>>) -> PyResult<Py<PyDict>> {
-        let parts = parts.into_iter().map(|a| a.map(|a| a.value().cloned()).transpose()).collect::<PyResult<Vec<_>>>()?;
+    fn select(&self, py: Python<'_>, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Py<PyDict>> {
+        let (plan, atom) = selection(self.value()?, index, convert)?;
         let mut result = Evaluation::default();
-        match self.value()?.select(&parts) {
-            Ok(Value::Function(f)) => result.function = Some(f), Ok(a) => result.value = Some(a), Err(e) => result.error = Some(e)
+        match self.value()?.selected(plan, atom) {
+            Ok(Value::Function(f)) => result.function = Some(f), Ok(a) => result.value = Some(a), Err(e) => return Err(PyValueError::new_err(e.to_string()))
         }
         response(py, result)
+    }
+    fn assign(&self, index: &Bound<'_, PyAny>, values: PyRef<'_, PyArray>, convert: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let (plan, atom) = selection(self.value()?, index, convert)?;
+        self.value()?.assigned(plan, atom, values.value()?).map(Self::from).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+    fn contains(&self, py: Python<'_>, query: PyRef<'_, PyArray>, session: PyRef<'_, PySession>) -> PyResult<bool> {
+        if self.value()?.shape().is_empty() { return Err(PyTypeError::new_err("a unit has no major cells")); }
+        let (value, query) = (self.value()?.clone(), query.value()?.clone());
+        let mut guard = session.session.lock_py_attached(py).unwrap();
+        let session = &mut *guard;
+        py.detach(|| value.contains(&query, session)).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 }
 

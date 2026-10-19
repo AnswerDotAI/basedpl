@@ -83,7 +83,7 @@ def test_numpy_inputs_and_copies():
         result = bpl('x', x=a)
         np.testing.assert_array_equal(result, a)
         assert np.shape(result) == a.shape
-    assert bpl('x', x=np.arange(3, dtype=np.int8)).np.dtype == np.uint8 and bpl('x', x=np.ones(2, np.float32)).np.dtype == np.float32
+    assert bpl('x', x=np.arange(3, dtype=np.int8)).np.dtype == np.int16 and bpl('x', x=np.ones(2, np.float32)).np.dtype == np.float32
     assert bpl('x', x=np.array([0.5, 65504], np.float16)).np.dtype == np.float16
     z = np.array([[1+2j, 3.5-4j]], np.complex64)
     np.testing.assert_array_equal(bpl('x', x=z), z)
