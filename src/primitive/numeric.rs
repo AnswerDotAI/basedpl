@@ -71,6 +71,7 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
 }
 
 pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    span.formats(left, right)?;
     let Some(spec) = left else { return right.formatted().error_at(span, "formatted array is too large"); };
     if spec.shape().len() > 1 { return Err(span.error(Kind::Rank, "format specification must be a unit or vector")); }
     let spec = spec.elements().map(|e| {
@@ -182,13 +183,15 @@ fn matrix_result<T: Field>(mut x: Vec<T>, layout: Layout, scalar: bool, width: F
     T::array(x, layout.shape().to_vec(), width).and_then(|v| v.with_layout(layout)).error_at(span, "invalid matrix result")
 }
 
-/// A matrix function that `f⍤2` applies to a whole stack of matrices in one call: dyadic `+.×` or `⌹`, or monadic `⌹` or `-.×`.
-#[derive(Clone, Copy)]
-pub(crate) enum Stacked { Product, Solve, Inverse, Determinant }
-
-/// `f⍤2` on stacks of 32- or 64-bit float matrices with plain layouts, through the rustymath function that `f` uses on one matrix. `x` is the left stack for `+.×` and `⌹`, and absent for the monads. The stacks' frames pair through `Frames`, as Rank pairs them, and the cells split across rustymath's threads through `stack_with`. `None` where `f⍤2` takes its general path, which also raises the error for frames that don't agree.
-pub(crate) fn stacked(op: Stacked, x: Option<&Value>, y: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
+/// `f⍤2` on stacks of 32- or 64-bit float matrices with plain layouts, through the rustymath function that `f` uses on one matrix. `op` names `f`: dyadic `+.×` or `⌹`, or monadic `⌹` or `-.×`. `x` is the left stack, absent for the monads. The stacks' frames pair through `Frames`, as Rank pairs them, and the cells split across rustymath's threads through `stack_with`. `None` where `f⍤2` takes its general path, which also raises the error for frames that don't agree.
+pub(crate) fn stacked(op: Operation, x: Option<&Value>, y: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
     use crate::element::{read_as, Stored};
+    // Decided before any items are read: reading them would compute a pending argument that Rank's other paths would fuse.
+    let divide = match (op, x) {
+        (Operation::Primitive(Primitive::MatrixDivide), _) => true,
+        (Operation::PLUS_TIMES, Some(_)) | (Operation::MINUS_TIMES, None) => false,
+        _ => return None,
+    };
     let width = |a: &Value| match a.as_items() { Items::Compact(View::Floats(_)) if a.layout().plain() && a.shape().len() >= 2 => a.float_width(), _ => None };
     let w = width(y)?;
     if x.is_some_and(|x| width(x) != Some(w)) { return None; }
@@ -199,18 +202,18 @@ pub(crate) fn stacked(op: Stacked, x: Option<&Value>, y: &Value, span: &Context<
     rustymath::with_float_width!(kernel w, F => {
         let ys = read_as::<F>(y)?;
         let build = |f: &Frames, cell: &[usize], v: Result<Vec<F>, Error>| v.map(|v| F::build([f.layout.shape(), cell].concat(), v)).transpose();
-        match (op, x) {
-            (Stacked::Inverse, None) => { let f = frames(&[y])?; let ycell = |i: usize| &ys[f.cell(0, i) * r * c..][..r * c];
+        match x {
+            None if divide => { let f = frames(&[y])?; let ycell = |i: usize| &ys[f.cell(0, i) * r * c..][..r * c];
                 build(&f, &[c, r], cells(f.count, c * r, |i, out, w: &mut linalg::LuWork<F>| w.pinv_into(ycell(i), [r, c], out), span)) }
-            (Stacked::Determinant, None) if r == c => { let f = frames(&[y])?; let ycell = |i: usize| &ys[f.cell(0, i) * r * c..][..r * c];
+            None if r == c => { let f = frames(&[y])?; let ycell = |i: usize| &ys[f.cell(0, i) * r * c..][..r * c];
                 build(&f, &[], cells(f.count, 1, |i, out, w: &mut linalg::LuWork<F>| out[0] = w.factor(ycell(i), r).determinant(), span)) }
-            (Stacked::Product | Stacked::Solve, Some(x)) => { let [m, k] = matrix(x); let solve = matches!(op, Stacked::Solve);
-                if (if solve { m } else { k }) != r || m == 0 || k == 0 { return None }
+            None => None,
+            Some(x) => { let [m, k] = matrix(x);
+                if (if divide { m } else { k }) != r || m == 0 || k == 0 { return None }
                 let (xs, f) = (read_as::<F>(x)?, frames(&[x, y])?);
                 let (xcell, ycell) = (|i: usize| &xs[f.cell(0, i) * m * k..][..m * k], |i: usize| &ys[f.cell(1, i) * r * c..][..r * c]);
-                if solve { build(&f, &[c, k], cells(f.count, c * k, |i, out: &mut [F], w: &mut linalg::LuWork<F>| out.copy_from_slice(&w.solve(ycell(i), xcell(i), [r, c], k)), span)) }
+                if divide { build(&f, &[c, k], cells(f.count, c * k, |i, out: &mut [F], w: &mut linalg::LuWork<F>| out.copy_from_slice(&w.solve(ycell(i), xcell(i), [r, c], k)), span)) }
                 else { build(&f, &[m, c], cells(f.count, m * c, |i, out: &mut [F], _: &mut ()| PlusTimes.inner_into(xcell(i), ycell(i), [m, k, c], out), span)) } }
-            _ => None,
         }
     })
 }
@@ -596,6 +599,17 @@ fn decode_compact(bases: &Value, digits: &Value, xlen: usize, ylen: usize, len: 
     }
     let (b, d) = (bases.as_items().exact_integers()?, digits.as_items().exact_integers()?);
     layout.integers(rustymath::integer::decode(&spread(&b, xlen, len), &spread(&d, ylen, len))?).ok()
+}
+
+/// `¿`, drawing from `generator`, or from the session's generator where `generator` is `None`. It deals where `left` is given, and rolls each item of `right` otherwise. In a batched run, each cell draws from its own stream, with that cell of each batched argument (`batch::cell`).
+pub(crate) fn drawn_value(generator: Option<&crate::distribution::Generator>, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    crate::distribution::drawn_cells(generator, span, |c, rng| {
+        let right = crate::batch::cell(right, c, span)?;
+        match left {
+            Some(x) => deal(&crate::batch::cell(x, c, span)?, &right, rng, span),
+            None => roll_array(&right, rng, span),
+        }
+    })
 }
 
 /// Roll every item of `right`, keeping its layout. Each result is exact when its bound is.

@@ -429,8 +429,8 @@ fn map_under(p: Primitive, left: Option<&Value>, right: &Value, agreement: &Agre
     if let Primitive::Compare(_) = p { if let Some(result) = against_whole(p, left, right, agreement, numeric) { return Some(result); } }
     if let Primitive::Math(Math::Magnitude) = p { if let Some(result) = residues(left, right, agreement, numeric) { return Some(result); } }
     let reals_or_complex = |width| reals(p, x.as_ref()?, &y, agreement, numeric, width).or_else(|| complex_results(p, Some(left), right, agreement, numeric));
-    match joined(left, right, numeric)? {
-        DType::Float(width) => reals_or_complex(width), dtype @ (DType::Boolean | DType::Integer(_)) if inexact(p, true, numeric) => reals_or_complex(numeric.exact_width(dtype)),
+    match table(p, true, joined(left, right, numeric)?, numeric) {
+        DType::Float(width) => reals_or_complex(width),
         DType::Complex(width) => complexes(p, left, right, agreement, numeric, width),
         DType::Character => dyadic::<char, _, _>(p, chars(left)?, chars(right)?, agreement, Numeric::EXACT),
         DType::Integer(width) if matches!(p, Primitive::Arithmetic(Arithmetic::Times)) => with_width!(width, T => masked::<T>(left, right, agreement))
@@ -448,7 +448,7 @@ fn joined(left: &Value, right: &Value, numeric: Numeric) -> Option<DType> {
 pub(crate) fn scatter(p: Primitive, z: &mut Value, offsets: &[usize], values: &Value) -> Option<Route> {
     use {Arithmetic::*, Math::*};
     if !matches!(p, Primitive::Arithmetic(Plus | Minus | Times | Divide) | Primitive::Math(Ceiling | Floor)) || !matches!(z, Value::Array(_)) { return None; }
-    if crate::derivative::tag(z).is_some() || crate::derivative::tag(values).is_some() { return None; }
+    if z.carries_here() || values.carries_here() { return None; }
     let numeric = Numeric::current();
     if numeric.halving([z.float_width(), values.float_width()].into_iter()).is_none() { return scatter_under(p, z, offsets, values, numeric); }
     let wide = halves(&[Some(&*z), Some(values)], |v, numeric| {
@@ -533,8 +533,8 @@ fn monadic_map(p: Primitive, input: &Input<'_>, agreement: &Agreement, numeric: 
     let complex = || complex_results(p, None, right, agreement, numeric);
     match right.as_items() {
         Items::Compact(View::Floats(y)) => with_floats!(kernel y, |y| float_map(p, y, input, agreement, numeric)).or_else(complex),
-        y @ Items::Compact(View::Booleans(_) | View::Integers(_)) if inexact(p, false, numeric) => {
-            with_float_width!(kernel numeric.exact_width(right.dtype()?), F => with_exact!(y, |y| mixed_monadic::<F, _>(p, y, agreement, numeric), None)).or_else(complex)
+        y @ Items::Compact(View::Booleans(_) | View::Integers(_)) if let Some(DType::Float(width)) = right.dtype().map(|kind| table(p, false, kind, numeric)) => {
+            with_float_width!(kernel width, F => with_exact!(y, |y| mixed_monadic::<F, _>(p, y, agreement, numeric), None)).or_else(complex)
         }
         Items::Compact(View::Booleans(_)) => whole(p, None, right, DType::Boolean, agreement, numeric),
         Items::Compact(View::Integers(ints)) => whole(p, None, right, DType::Integer(ints.tag()), agreement, numeric),
@@ -561,6 +561,13 @@ fn approximate(p: Primitive, dyadic: bool) -> bool {
 
 /// Whether `p` gives floats for Booleans and integers under `numeric`'s kinds: where `approximate` says so, and for `÷` under static kinds, which divides integers as floats, as NumPy's `/` does.
 fn inexact(p: Primitive, dyadic: bool, numeric: Numeric) -> bool { approximate(p, dyadic) || numeric.is_static() && matches!(p, Primitive::Arithmetic(Arithmetic::Divide)) }
+/// The kind whose kernel table runs `p` on arguments of kind `kind`. Booleans and integers run on floats at `Numeric::exact_width` where `inexact` says that `p` gives floats for them. Otherwise each kind runs on its own table.
+fn table(p: Primitive, dyadic: bool, kind: DType, numeric: Numeric) -> DType {
+    match kind {
+        DType::Boolean | DType::Integer(_) if inexact(p, dyadic, numeric) => DType::Float(numeric.exact_width(kind)),
+        kind => kind,
+    }
+}
 
 /// A pervasive function applied to floats of width `F`. `⌊ ⌈ ×` on floats that hold an infinity or NaN give floats of that width, through `float_whole`.
 fn float_map<F: Float + Kernels>(p: Primitive, y: &[F], input: &Input<'_>, agreement: &Agreement, numeric: Numeric) -> Option<Value> {
@@ -1073,30 +1080,65 @@ impl<F: Stored> Monad<F> for Stage<'_, '_, F> {
     }
 }
 
-/// Whether a node of a `fusion::Graph` can run `p`'s float kernel under the current settings. That needs a kernel that keeps its arguments' type or gives Booleans, and never fails. The answer comes from the loop that the kernel asks for. Every `same` and `boolean` kernel of floats gives `Some`. An object's kernel never fails where the object is total, and under static kinds it runs where `keeps` keeps its failed results. A kernel's loop for a constant argument, such as `x*2`'s, doesn't count. The two float widths share one table.
-#[inline(never)]
-pub(crate) fn fuses(p: Primitive, dyadic: bool) -> bool {
-    let numeric = Numeric::current();
-    (if dyadic { f64::dyad(p, Fuses(numeric)) } else { f64::monad(p, Fuses(numeric)) }).unwrap_or(false)
+/// The kind of a kernel's results, and whether every result takes it, as `kernel` reads them from a kernel table.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Kernel {
+    /// The kind of the kernel's results, at the width of the table that `kernel` reads. A result can have another width of the same kind. Compare kinds with `DType::kind`.
+    pub(crate) kind: DType,
+    /// Whether every result takes `kind`, for any items. That holds where no result fails, and where the call keeps failed results (`keeps`).
+    pub(crate) total: bool,
 }
 
-/// The loop that `fuses` hands a kernel table, which answers without running anything.
-struct Fuses(Numeric);
-impl<A: Stored> Dyad<A> for Fuses {
-    type Output = bool;
-    fn numeric(&self) -> Numeric { self.0 }
-    fn same(self, _: impl Fn(A, A) -> Option<A> + Copy + Sync) -> bool { true }
-    fn boolean(self, _: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> bool { true }
-    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> bool { total(&f) || kept(&f, self.0) }
-    fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> bool { total(&f) || kept(&f, self.0) }
+/// The kernel that `map` runs first for `p` on arguments of kind `kind` under `numeric`. `kind` is the kind that `joined` gives two arguments, or one argument's own kind. Booleans and integers take the float kernels where `table` sends them. Booleans take the integer kernels where the Boolean table lacks `p`, as in `first_fit`. `None` where no table has a kernel for `p`. Such a call runs through a route of its own, as dyadic `○` does, or through the `Number` path.
+pub(crate) fn kernel(p: Primitive, dyadic: bool, kind: DType, numeric: Numeric) -> Option<Kernel> {
+    fn read<A: Kernels>(p: Primitive, dyadic: bool, numeric: Numeric) -> Option<Kernel> { if dyadic { A::dyad(p, Survey(numeric)) } else { A::monad(p, Survey(numeric)) } }
+    match table(p, dyadic, numeric.kind(kind), numeric) {
+        DType::Boolean => read::<bool>(p, dyadic, numeric).or_else(|| read::<i64>(p, dyadic, numeric)),
+        DType::Integer(_) => read::<i64>(p, dyadic, numeric),
+        DType::Float(_) => read::<f64>(p, dyadic, numeric),
+        DType::Complex(_) => read::<Complex64>(p, dyadic, numeric),
+        DType::Character => read::<char>(p, dyadic, numeric),
+    }
 }
-impl<A: Stored> Monad<A> for Fuses {
-    type Output = bool;
+
+/// The kind of every item of `p`'s result on compact `left` and `right` under the current settings, where one route decides it for all items at once. That route is the kernel that the arguments' kinds pick (`kernel`), or for dyadic `○`, the route for reals. Where the route can't take some item, another route computes the whole call. That route's kind then holds for every item, including items that the first route could take. `None` under static kinds, where the arguments' kinds decide every result's kind. Also `None` where no route takes those kinds, because the `Number` path then computes each item alone.
+pub(crate) fn expected(p: Primitive, left: Option<&Value>, right: &Value) -> Option<DType> {
+    let numeric = Numeric::current();
+    if numeric.is_static() { return None; }
+    let Some(left) = left else { return kernel(p, false, right.dtype()?, numeric).map(|k| k.kind) };
+    match (p, joined(left, right, numeric)?) {
+        (Primitive::Math(Math::Circle | Math::Arc), DType::Complex(width)) => Some(DType::Complex(width)),
+        (Primitive::Math(Math::Circle | Math::Arc), _) => Some(DType::Float(numeric.width)),
+        (p, kind) => kernel(p, true, kind, numeric).map(|k| k.kind),
+    }
+}
+
+/// Whether a node of a `fusion::Graph` can run `p`'s float kernel under the current settings. That needs a kernel that never fails and that keeps its arguments' type or gives Booleans (`kernel`). The two float widths share one table.
+#[inline(never)]
+pub(crate) fn fuses(p: Primitive, dyadic: bool) -> bool {
+    kernel(p, dyadic, DType::Float(FloatWidth::F64), Numeric::current()).is_some_and(|k| k.total && matches!(k.kind, DType::Float(_) | DType::Boolean))
+}
+
+/// The loop that `kernel` hands a kernel table. It answers without running anything. An object's kernel never fails where the object is total. Under static kinds, it also counts as total where `keeps` keeps its failed results. `kernel` reads the general loop, never a kernel's loop for a constant argument such as `x*2`'s.
+struct Survey(Numeric);
+/// Whether every `same` and `boolean` kernel of `A` gives `Some`, as those of floats and Booleans do.
+fn sure<A: Element>() -> bool { matches!(A::DTYPE, DType::Float(_) | DType::Boolean) }
+impl<A: Stored> Dyad<A> for Survey {
+    type Output = Kernel;
     fn numeric(&self) -> Numeric { self.0 }
-    fn same(self, _: impl Fn(A) -> Option<A> + Copy + Sync) -> bool { true }
-    fn integer(self, _: Width, _: impl Fn(A) -> Option<A> + Copy + Sync) -> bool { false }
-    fn other<B: Stored>(self, _: impl Fn(A) -> Option<B> + Copy + Sync) -> bool { false }
-    fn many(self, f: impl rustymath::Unary<A, Out = A> + Copy + Sync) -> bool { total(&f) || kept(&f, self.0) }
+    fn same(self, _: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Kernel { Kernel { kind: A::DTYPE, total: sure::<A>() } }
+    fn same_total(self, _: impl Fn(A, A) -> A + Copy + Sync) -> Kernel { Kernel { kind: A::DTYPE, total: true } }
+    fn boolean(self, _: impl Fn(A, A) -> Option<bool> + Copy + Sync) -> Kernel { Kernel { kind: DType::Boolean, total: sure::<A>() } }
+    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> Kernel { Kernel { kind: A::DTYPE, total: total(&f) || kept(&f, self.0) } }
+    fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> Kernel { Kernel { kind: DType::Boolean, total: total(&f) || kept(&f, self.0) } }
+}
+impl<A: Stored> Monad<A> for Survey {
+    type Output = Kernel;
+    fn numeric(&self) -> Numeric { self.0 }
+    fn same(self, _: impl Fn(A) -> Option<A> + Copy + Sync) -> Kernel { Kernel { kind: A::DTYPE, total: sure::<A>() } }
+    fn integer(self, width: Width, _: impl Fn(A) -> Option<A> + Copy + Sync) -> Kernel { Kernel { kind: DType::Integer(width), total: false } }
+    fn other<B: Stored>(self, _: impl Fn(A) -> Option<B> + Copy + Sync) -> Kernel { Kernel { kind: B::DTYPE, total: false } }
+    fn others<B: Stored>(self, f: impl rustymath::Unary<A, Out = B> + Copy + Sync) -> Kernel { Kernel { kind: B::DTYPE, total: total(&f) || kept(&f, self.0) } }
 }
 /// Whether no result of the object `K` fails, at any arity.
 fn total<A, K: rustymath::Results<A, N>, const N: usize>(_: &K) -> bool { K::TOTAL }

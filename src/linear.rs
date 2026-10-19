@@ -1,4 +1,4 @@
-//! A record of linear calls, for `∂` in reverse mode. Reverse mode seeds each part of the argument it differentiates with a record (`seed`) in place of a tangent. The tangent rules then run as in forward mode, but their linear calls on records add nodes to the record instead of computing values. Primitive dispatch sends a call with a record argument to `call`, and folds, inner products, structural copies, views and writes record their own nodes. `transpose` runs the record backwards from a cotangent of the result, which gives the vector–Jacobian product. `evaluate` runs it forwards from seed values, which gives a Jacobian–vector product without running the function again.
+//! A record of linear calls, for `∂` in reverse mode. Reverse mode pushes a record level just before its `∂` call, and seeds each part of the argument it differentiates with a record at that level (`seed`) in place of a tangent. Every node of a record belongs to one record level. The tangent rules then run as in forward mode, but their linear calls on records add nodes to the record instead of computing values. Routing (`transform`) sends a call whose newest level is a record level to `call` or `route`, and folds, inner products, structural copies, views and writes record their own nodes. `transpose` runs the record backwards from a cotangent of the result, which gives the vector–Jacobian product. `evaluate` runs it forwards from seed values, which gives a Jacobian–vector product without running the function again.
 //!
 //! A record is never computed, so reading its items is a bug: `ArrayData::storage` panics on one. Records live only in the tangents of duals, and only the code that handles tangents meets them.
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     error::{At, ErrorAt},
     execution::Context,
     number::Arithmetic,
-    primitive::{FoldKind, Primitive},
+    primitive::{Facts, FoldKind, Form, LinearMap, Primitive},
     explain::{Live, Counted}, Error, ErrorKind, Function, Number, Operand, Value};
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::borrow::Cow;
@@ -20,8 +20,8 @@ use std::sync::{
 /// The next sequence number. A node's children always have smaller numbers, so visiting nodes by decreasing number visits each one after every node that reads it.
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
-/// One node of a record: the linear call it records, its result's layout, a zero of its kind, its ids counted from 1 once a copy has read it, its sequence number, and the guard that counts it for `•memory`.
-pub(crate) struct Linear { pub(crate) op: Op, pub(crate) layout: Layout, pub(crate) zero: Value, ids: OnceLock<Value>, seq: u64, _live: Live }
+/// One node of a record: the linear call it records, the record level it belongs to (`transform::Kind::Record`), its result's layout, a zero of its kind, its ids counted from 1 once a copy has read it, its sequence number, and the guard that counts it for `•memory`.
+pub struct Linear { pub(crate) op: Op, pub(crate) level: u64, pub(crate) layout: Layout, pub(crate) zero: Value, ids: OnceLock<Value>, seq: u64, _live: Live }
 
 /// The linear calls a record holds. Each one's transpose is one of them, so a record that an outer `∂` makes of an inner transpose's calls is a record too.
 pub(crate) enum Op {
@@ -92,23 +92,42 @@ impl Linear {
     }
 }
 
-/// A record node as a value.
-fn node(op: Op, layout: Layout, zero: Value) -> Value {
-    Value::from_linear(Arc::new(Linear { op, layout, zero, ids: OnceLock::new(), seq: NEXT.fetch_add(1, Ordering::Relaxed), _live: Live::new(Counted::Record) }))
+/// A record node as a value, at record level `level`. A coefficient that the call holds carries only older levels' data, as a dual's parts do (`derivative::Dual::new`).
+fn node(op: Op, layout: Layout, zero: Value, level: u64) -> Value {
+    if let Op::Scale(c, ..) | Op::Product { coefficient: c, .. } = &op { assert!(c.older_than(level), "a record's coefficient carries only older levels' data"); }
+    Value::from_linear(Arc::new(Linear { op, level, layout, zero, ids: OnceLock::new(), seq: NEXT.fetch_add(1, Ordering::Relaxed), _live: Live::new(Counted::Record) }))
+}
+
+/// The record level of `nodes`, which the nodes that one node reads all share.
+fn shared_level<'a>(nodes: impl IntoIterator<Item = &'a Arc<Linear>>) -> u64 {
+    let mut nodes = nodes.into_iter();
+    let level = nodes.next().expect("a node reads a node").level;
+    assert!(nodes.all(|n| n.level == level), "the nodes that one node reads share one record level");
+    level
+}
+
+/// A record's items, which nothing computes: reverse mode keeps records in tangents, which only the code that handles tangents reads. Reading them is a bug.
+#[cold]
+#[inline(never)]
+pub(crate) fn storage() -> &'static Storage {
+    panic!("a record of linear calls has no items: code that reads a tangent missed a record, at\n{}", std::backtrace::Backtrace::force_capture())
 }
 
 fn size(layout: &Layout) -> usize { layout.shape().iter().product() }
 
+/// `value`'s record of linear calls, or `None` for a value that isn't one.
+pub(crate) fn record_of(value: &Value) -> Option<&Arc<Linear>> { match value.carrier() { Some(crate::transform::Carrier::Record(t)) => Some(t), _ => None } }
+
 /// A zero of the kind of the numbers in `like`.
 pub(crate) fn zero_of(like: &Value) -> Value {
-    match if like.is_atom() { like.clone() } else { like.prototype() } {
-        Value::Number(n) => Value::Number(n.plain().zero()),
+    match if like.is_atom() { like.template() } else { like.prototype() } {
+        Value::Number(n) => Value::Number(n.zero()),
         _ => Value::integer(0),
     }
 }
 
-/// The seed for the `k`th part of the argument, `like`.
-pub(crate) fn seed(k: usize, like: &Value) -> Value { node(Op::Seed(k), like.layout().clone(), zero_of(like)) }
+/// The seed for the `k`th part of the argument, `like`, at record level `level`.
+pub(crate) fn seed(k: usize, like: &Value, level: u64) -> Value { node(Op::Seed(k), like.layout().clone(), zero_of(like), level) }
 
 /// `ids` laid out as `layout`: an atom for an empty shape. Ids stay 64-bit, which saves a pass to narrow them and another to widen them when read.
 fn laid(layout: &Layout, ids: Vec<i64>) -> Value {
@@ -119,14 +138,17 @@ fn laid(layout: &Layout, ids: Vec<i64>) -> Value {
 /// The ids of `t`'s items, counted from `first`, in its layout.
 fn ids(t: &Linear, first: i64) -> Value { laid(&t.layout, (first..first + size(&t.layout) as i64).collect()) }
 
-/// The records that a copy reads, in the order it first meets them, and the next id to give out. `gather` finds an item's source from its id.
+/// The records that a copy reads, in the order it first meets them, the next id to give out, and the first record met. `gather` finds an item's source from its id. A record that a join keeps whole as an item gets no ids, but can be the first record met (`retained`).
 #[derive(Default)]
-pub(crate) struct Sources { pub(crate) records: Vec<Arc<Linear>>, next: i64, given: HashMap<*const Linear, Value> }
+pub(crate) struct Sources { records: Vec<Arc<Linear>>, next: i64, given: HashMap<*const Linear, Value>, first: Option<Arc<Linear>> }
 
 impl Sources {
+    /// Sources whose record level `t` sets before any record gets ids, as a join's do where a source's tangent is a record (`derivative::Join::of`). A join that copies no items still finishes into a record at that level.
+    pub(crate) fn meeting(t: &Arc<Linear>) -> Self { Self { first: Some(t.clone()), ..Self::default() } }
     /// `t`'s ids, which follow the ids of the records before it. A record met again gets the ids it got first. A first record's ids count from 1 and stay on the record, where every copy that reads it first shares them.
     pub(crate) fn ids(&mut self, t: &Arc<Linear>) -> Value {
         if let Some(ids) = self.given.get(&Arc::as_ptr(t)) { return ids.clone(); }
+        self.first.get_or_insert_with(|| t.clone());
         let ids = if self.next == 0 { t.ids.get_or_init(|| ids(t, 1)).clone() } else { ids(t, self.next + 1) };
         self.next += size(&t.layout) as i64;
         self.records.push(t.clone());
@@ -135,7 +157,18 @@ impl Sources {
     }
     /// The ids of `tangent` where it's a record. An inactive tangent, which is zeros, gives ids of 0 in the layout of `like`.
     pub(crate) fn of(&mut self, tangent: Option<&Value>, like: &Value) -> Value {
-        match tangent.and_then(Value::linear) { Some(t) => self.ids(t), None => fill_ids(like) }
+        match tangent.and_then(record_of) { Some(t) => self.ids(t), None => fill_ids(like) }
+    }
+    /// `t` as one item that a join keeps whole, in its own layout (`derivative::Join::add`). It gets no ids. `assembled` keeps it as it is.
+    pub(crate) fn retained(&mut self, t: &Arc<Linear>) -> Value {
+        self.first.get_or_insert_with(|| t.clone());
+        Value::from_linear(t.clone())
+    }
+    /// The tangent that `ids` give once they hold these sources' ids in place of their records: records that read the sources, nested as `ids` is, with each retained record kept whole (`assemble`). Ids that read no source read fill, zeros of `zero`'s kind. A write passes its target's kind. With `None`, the zeros take the first record's kind. Where no record got ids, as where a join kept every record whole, the ids read fill from the first record met, which gives them its record level: reverse mode needs a record in every active result.
+    pub(crate) fn assembled(self, ids: Value, zero: Option<Value>) -> Value {
+        let zero = zero.or_else(|| self.first.as_ref().map(|r| r.zero.clone())).unwrap_or_else(|| Value::integer(0));
+        let sources = if self.records.is_empty() { self.first.into_iter().collect() } else { self.records };
+        assemble(sources, ids, zero)
     }
 }
 
@@ -147,38 +180,33 @@ fn scale(c: &Value, t: &Arc<Linear>, left: bool, cx: &Context<'_>) -> Result<Val
     let (l, r) = if left { (c.layout(), &t.layout) } else { (&t.layout, c.layout()) };
     let layout = Agreement::new(l, r).error_at(cx.span, "a coefficient agrees with its tangent")?.layout;
     let zero = Primitive::Arithmetic(Arithmetic::Times).call(Some(&zero_of(c)), &t.zero, cx)?;
-    Ok(node(Op::Scale(c.clone(), t.clone(), left), layout, zero))
+    Ok(node(Op::Scale(c.clone(), t.clone(), left), layout, zero, t.level))
 }
 
 /// `a+b`, where both are records.
 fn add(a: &Arc<Linear>, b: &Arc<Linear>, cx: &Context<'_>) -> Result<Value, Error> {
     let layout = Agreement::new(&a.layout, &b.layout).error_at(cx.span, "tangents agree")?.layout;
-    Ok(node(Op::Add(a.clone(), b.clone()), layout, a.zero.clone()))
+    Ok(node(Op::Add(a.clone(), b.clone()), layout, a.zero.clone(), shared_level([a, b])))
 }
 
 /// The record `t` under `layout`, which has as many items.
 pub(crate) fn view(t: &Arc<Linear>, layout: Layout) -> Value {
     if t.layout == layout { return Value::from_linear(t.clone()); }
     if let Op::View(base) = &t.op { return view(base, layout); }
-    node(Op::View(t.clone()), layout, t.zero.clone())
+    node(Op::View(t.clone()), layout, t.zero.clone(), t.level)
 }
 
 /// The record `t` with its values as floats of `width`, as `width•float` converts a tangent.
 pub(crate) fn cast(t: &Arc<Linear>, width: FloatWidth) -> Value {
     if t.zero.float_width() == Some(width) { return Value::from_linear(t.clone()); }
-    node(Op::Cast(t.clone(), width), t.layout.clone(), t.zero.to_float_width(width).unwrap_or_else(|_| t.zero.clone()))
+    node(Op::Cast(t.clone(), width), t.layout.clone(), t.zero.to_float_width(width).unwrap_or_else(|_| t.zero.clone()), t.level)
 }
 
 /// The record `t` copied through `tables`, one for each axis of `layout`, as `primitive::copied` copies a value.
-pub(crate) fn copy(t: &Arc<Linear>, layout: Layout, tables: &[Steps]) -> Value { node(Op::Copy { child: t.clone(), tables: tables.to_vec() }, layout, t.zero.clone()) }
-
-/// Whether `p` gives one copy of its right argument through a plan that reads only that argument's layout. Dispatch then lets the glyph copy a record itself, as one `Op::Copy`, rather than through ids (`through`).
-pub(crate) fn planned(p: Primitive, dyadic: bool) -> bool {
-    matches!((p, dyadic), (Primitive::Reverse(_) | Primitive::Transpose | Primitive::Windows, _) | (Primitive::Take | Primitive::Drop, true))
-}
+pub(crate) fn copy(t: &Arc<Linear>, layout: Layout, tables: &[Steps]) -> Value { node(Op::Copy { child: t.clone(), tables: tables.to_vec() }, layout, t.zero.clone(), t.level) }
 
 /// Item `i` of the record `t`, as a record of one number.
-pub(crate) fn item(t: &Arc<Linear>, i: usize) -> Value { node(Op::Gather { sources: vec![t.clone()], offsets: vec![i] }, Layout::default(), t.zero.clone()) }
+pub(crate) fn item(t: &Arc<Linear>, i: usize) -> Value { node(Op::Gather { sources: vec![t.clone()], offsets: vec![i] }, Layout::default(), t.zero.clone(), t.level) }
 
 /// The offsets that `ids` give, an atom or an array of exact integers counted from 1: each id less 1, or `Steps::FILL` for an id of 0.
 fn offsets(ids: &Value) -> Vec<usize> {
@@ -188,61 +216,87 @@ fn offsets(ids: &Value) -> Vec<usize> {
 }
 
 /// The record that reads `sources` at `ids`, laid out as `ids` is. Ids that count up from 1 through one whole source give that source's `View`.
-pub(crate) fn gather(sources: Vec<Arc<Linear>>, ids: Value, zero: Value) -> Value {
+fn gather(sources: Vec<Arc<Linear>>, ids: Value, zero: Value) -> Value {
     let layout = ids.layout().clone();
     let offsets = offsets(&ids);
     if let [source] = sources.as_slice() {
         if !ids.is_atom() && offsets.len() == size(&source.layout) && counts_up(&offsets) { return view(source, layout); }
     }
-    node(Op::Gather { sources, offsets }, layout, zero)
+    let level = shared_level(&sources);
+    node(Op::Gather { sources, offsets }, layout, zero, level)
 }
 
-/// The tangent of what a `Gather` level copied: the record's `Gather` of `ids`, or, where the level joined whole records as items, a mixed array of records. Each number of `ids` then becomes a record of the one item it reads. A record of records keeps each record's layout, which a `Gather` of nested ids couldn't.
-pub(crate) fn assemble(sources: Vec<Arc<Linear>>, ids: Value, zero: Value) -> Value {
+/// The record that reads `sources` at `ids`, which can be nested: a `Gather` of simple ids, or, for nested ids, an array of records nested as they are. A record of records keeps each record's layout, which a `Gather` of nested ids couldn't. An item that is already a record, as `Sources::retained` keeps it, stays as it is.
+fn assemble(sources: Vec<Arc<Linear>>, ids: Value, zero: Value) -> Value {
     if ids.is_simple() { return gather(sources, ids, zero); }
-    let items = ids.elements().map(|e| match e { Value::Number(_) => gather(sources.clone(), e, zero.clone()), record => record }).collect::<Vec<_>>();
+    let items = ids.elements().map(|e| if record_of(&e).is_some() { e } else { assemble(sources.clone(), e, zero.clone()) }).collect::<Vec<_>>();
     ids.layout().collect(items, || zero.clone()).expect("records fill their layout")
 }
 
-/// A call of a primitive that copies items, on arguments that are records or hold records as items: the same call on their ids gives the record's `Gather`.
+/// A call of a primitive that copies items, on arguments that are records or hold records as items: the same call on their ids gives the record that reads them (`assemble`), nested where the call nests its result.
 fn through(p: Primitive, left: Option<&Value>, right: &Value, axis: Option<usize>, cx: &Context<'_>) -> Result<Value, Error> {
     let mut sources = Sources::default();
     let left = left.map(|x| replaced(x, &mut sources));
     let right = replaced(right, &mut sources);
-    let zero = sources.records[0].zero.clone();
     let ids = p.call_axis(left.as_ref(), &right, axis, cx)?;
-    Ok(gather(sources.records, ids, zero))
+    Ok(sources.assembled(ids, None))
+}
+
+/// Writes `source` into `target` with `write`, as `transform::written` does where one of them is a record and the other a record or a tangent of zeros: `write` runs on their ids (`Sources`), and the record reads the ids it gives. An item that a write replaces loses its id. An error from `write` leaves `target` unchanged.
+pub(crate) fn written<E>(target: &mut Value, source: &Value, write: impl Fn(&mut Value, &Value) -> Result<(), E>) -> Result<(), E> {
+    let mut sources = Sources::default();
+    let (mut ids, source_ids) = (sources.of(Some(target), target), sources.of(Some(source), source));
+    write(&mut ids, &source_ids)?;
+    *target = sources.assembled(ids, Some(zero_of(target)));
+    Ok(())
 }
 
 /// `v` with each record in it, whole or as an item, replaced by its ids, which count on from `next`. The records join `sources`. Beside records, an item is a tangent of zeros, which read as fill ids.
 fn replaced(v: &Value, sources: &mut Sources) -> Value {
-    if let Some(t) = v.linear() { return sources.ids(t); }
+    if let Some(t) = record_of(v) { return sources.ids(t); }
     if !holds_records(v) { return v.clone(); }
     v.layout().collect(v.elements().map(|e| replaced(&e, sources)).collect::<Vec<_>>(), Value::integer(0)).expect("ids fill their layout")
 }
 
 /// Whether `v` holds records as items, as a tangent assembled from cells with record tangents does.
-pub(crate) fn holds_records(v: &Value) -> bool { v.holds_values() && v.elements().any(|e| e.linear().is_some()) }
+pub(crate) fn holds_records(v: &Value) -> bool { v.holds_values() && v.elements().any(|e| record_of(&e).is_some()) }
 
-/// A primitive's call with a record argument. It records the call where the call is linear in its records, and otherwise gives UNSUPPORTED ERROR.
+/// A primitive's call with a record argument. A form that moves items moves the record's items by their ids (`through`). A form that is a linear map, called with records where it is linear, adds that map to the record (`primitive::LinearMap`). Anything else gives UNSUPPORTED ERROR.
 pub(crate) fn call(p: Primitive, left: Option<&Value>, right: &Value, axis: Option<usize>, cx: &Context<'_>) -> Result<Value, Error> {
-    use Arithmetic::*;
-    if axis.is_some() { return if crate::derivative::copies(p, left.is_some()) { through(p, left, right, axis, cx) } else { Err(cx.span.error(ErrorKind::Unsupported, format!("∂ can't transpose {} along an axis", p.info().glyph))) }; }
+    let facts = p.facts(left.is_some());
+    if matches!(facts.form, Form::Moves { .. }) { return through(p, left, right, axis, cx); }
+    let unsupported = |along: &str| -> Result<Value, Error> { Err(cx.span.error(ErrorKind::Unsupported, format!("∂ can't transpose {}{along}", p.info().glyph))) };
+    if axis.is_some() { return unsupported(" along an axis"); }
     let minus = |t: &Arc<Linear>| scale(&Value::integer(-1), t, true, cx);
     let agreed = |l: &Layout, r: &Layout| Agreement::new(l, r).map(|a| a.layout).error_at(cx.span, "a tangent agrees with its primal");
-    match (p, left, left.and_then(Value::linear), right.linear()) {
-        (Primitive::Arithmetic(Times), Some(l), None, Some(t)) => scale(l, t, true, cx),
-        (Primitive::Arithmetic(Times), Some(_), Some(t), None) => scale(right, t, false, cx),
-        (Primitive::Arithmetic(Divide), Some(_), Some(t), None) => scale(&Primitive::Arithmetic(Divide).call(None, right, cx)?, t, false, cx),
-        (Primitive::Arithmetic(Plus), Some(_), Some(a), Some(b)) => add(a, b, cx),
-        (Primitive::Arithmetic(Plus), None, _, Some(_)) => Ok(right.clone()),
+    match (facts.linear, left, left.and_then(record_of), record_of(right)) {
+        (Some(LinearMap::Product), Some(l), None, Some(t)) => scale(l, t, true, cx),
+        (Some(LinearMap::Product), Some(_), Some(t), None) => scale(right, t, false, cx),
+        (Some(LinearMap::Quotient), Some(_), Some(t), None) => scale(&Primitive::Arithmetic(Arithmetic::Divide).call(None, right, cx)?, t, false, cx),
+        (Some(LinearMap::Sum), Some(_), Some(a), Some(b)) => add(a, b, cx),
         // A numeric tangent beside a record is an inactive tangent, all zeros, so the sum is the record, broadcast to the agreed layout.
-        (Primitive::Arithmetic(Plus), Some(l), None, Some(t)) => Ok(crate::derivative::expand(right, &agreed(l.layout(), &t.layout)?)),
-        (Primitive::Arithmetic(Plus), Some(l), Some(t), None) => Ok(crate::derivative::expand(l, &agreed(&t.layout, right.layout())?)),
-        (Primitive::Arithmetic(Minus), None, _, Some(t)) => minus(t),
-        (Primitive::Arithmetic(Minus), Some(_), Some(a), Some(b)) => add(a, minus(b)?.linear().expect("a scaled record is a record"), cx),
-        _ if crate::derivative::copies(p, left.is_some()) => through(p, left, right, None, cx),
-        _ => Err(cx.span.error(ErrorKind::Unsupported, format!("∂ can't transpose {}", p.info().glyph))),
+        (Some(LinearMap::Sum), Some(l), None, Some(t)) => Ok(crate::agreement::expand(right, &agreed(l.layout(), &t.layout)?)),
+        (Some(LinearMap::Sum), Some(l), Some(t), None) => Ok(crate::agreement::expand(l, &agreed(&t.layout, right.layout())?)),
+        (Some(LinearMap::Difference), Some(_), Some(a), Some(b)) => add(a, record_of(&minus(b)?).expect("a scaled record is a record"), cx),
+        (Some(LinearMap::Same), None, _, Some(_)) => Ok(right.clone()),
+        (Some(LinearMap::Negation), None, _, Some(t)) => minus(t),
+        _ => unsupported(""),
+    }
+}
+
+/// `op` with a record argument, as reverse mode handles it, or `None` to leave it to forward mode and to the operation's own code. `row` is the operation's row (`Op::row`). A fold whose row is a sum records a sum, along one axis at a time. Another fold gives UNSUPPORTED ERROR. Every product gives UNSUPPORTED ERROR for a record argument. Its own code would otherwise read the record's items. A record reaches a product only as a dual's tangent. `+.×`'s dual rule records the product's terms itself (`product`).
+pub(crate) fn route(op: crate::transform::Op<'_>, row: Option<&Facts>, right: &Value, cx: &mut Context<'_>) -> Option<Result<Value, Error>> {
+    use crate::transform::Op as Routed;
+    match op {
+        Routed::Fold(operand, kind, axis) => {
+            if let Some(folded) = crate::eval::in_turn(operand, kind, axis, right, cx).transpose() { return Some(folded); }
+            Some(match row.and_then(|r| r.linear) {
+                Some(LinearMap::Sum) => fold(kind, axis, record_of(right)?, cx),
+                _ => Err(cx.span.error(ErrorKind::Unsupported, "∂ can't transpose this fold")),
+            })
+        }
+        Routed::Product(..) => Some(Err(cx.span.error(ErrorKind::Unsupported, "∂ can't transpose this product"))),
+        _ => None,
     }
 }
 
@@ -265,7 +319,7 @@ fn plus_fold(kind: FoldKind, axis: Option<&Value>, v: &Value, cx: &mut Context<'
 
 /// `c+.×t`, or `t+.×c` where `left` is false, where `t` is a record, with the primal product's `layout`. The product contracts the last axis of its left argument with the first of its right.
 pub(crate) fn product(c: &Value, t: &Arc<Linear>, left: bool, layout: Layout) -> Value {
-    node(Op::Product { coefficient: c.clone(), child: t.clone(), left }, layout, t.zero.clone())
+    node(Op::Product { coefficient: c.clone(), child: t.clone(), left }, layout, t.zero.clone(), t.level)
 }
 
 /// A sum or running sum, by `kind` and the axis option `axis`, of the record `t`. A record value carries its layout, so it resolves the axis. A sum drops that axis, and a running sum keeps the layout.
@@ -273,7 +327,7 @@ pub(crate) fn fold(kind: FoldKind, axis: Option<&Value>, t: &Arc<Linear>, cx: &m
     let along = kind.axis(axis, &Value::from_linear(t.clone()), cx.span)?;
     let rank = t.layout.shape().len();
     let layout = if kind.scan { t.layout.clone() } else { t.layout.axes((0..rank).filter(move |&a| a != along)) };
-    Ok(node(Op::Fold { child: t.clone(), kind, axis: axis.cloned(), along, reversed: false }, layout, t.zero.clone()))
+    Ok(node(Op::Fold { child: t.clone(), kind, axis: axis.cloned(), along, reversed: false }, layout, t.zero.clone(), t.level))
 }
 
 /// Zeros of `layout`, with each item of `items` added at its offset in `offsets`, as `added` adds them. A dual adds its primal and its tangent apart, so that forward and reverse mode can differentiate the sums themselves.
@@ -282,8 +336,8 @@ pub(crate) fn scatter_add(items: &Value, offsets: &[usize], layout: &Layout, zer
         let (primal, tangent) = crate::derivative::split(items, tag);
         let primal = scatter_add(&primal, offsets, layout, zero, cx)?;
         let tangent = tangent.expect("a dual has a tangent");
-        let tangent = match tangent.linear() {
-            Some(r) => node(Op::ScatterAdd { child: r.clone(), offsets: offsets.to_vec() }, layout.clone(), r.zero.clone()),
+        let tangent = match record_of(&tangent) {
+            Some(r) => node(Op::ScatterAdd { child: r.clone(), offsets: offsets.to_vec() }, layout.clone(), r.zero.clone(), r.level),
             None => scatter_add(&tangent, offsets, layout, zero, cx)?,
         };
         return Ok(crate::derivative::dual(tag, primal, tangent));
@@ -393,8 +447,8 @@ fn read_back(v: &Value, plan: Plan, cx: &Context<'_>) -> Result<Value, Error> {
     crate::primitive::remapped(v, plan).error_at(cx.span, "a cotangent copies back")
 }
 
-/// The cotangent `u` laid out as `layout` by `derivative::expand`, except that a `u` already laid out that way comes back unchanged, an atom included.
-fn laid_out(u: &Value, layout: &Layout) -> Value { if u.layout() == layout { u.clone() } else { crate::derivative::expand(u, layout) } }
+/// The cotangent `u` laid out as `layout` by `agreement::expand`, except that a `u` already laid out that way comes back unchanged, an atom included.
+fn laid_out(u: &Value, layout: &Layout) -> Value { if u.layout() == layout { u.clone() } else { crate::agreement::expand(u, layout) } }
 
 /// The record that a copy of shape `shape` reads through `tables` from `child`, composed through each child that is itself a copy, while the composed copy still transposes by reads alone (`Steps::transposed`). A chain of copies then sends its cotangent back in one read. A copy that a fold or product reads is recognised as windows before this, with its own shape.
 fn composed<'a>(mut child: &'a Arc<Linear>, tables: &'a [Steps], shape: &[usize]) -> (&'a Arc<Linear>, Cow<'a, [Steps]>) {
@@ -564,7 +618,7 @@ fn summed_along(u: Value, axes: &[usize], cx: &mut Context<'_>) -> Result<Value,
 fn sum_back(u: &Value, t: &Linear, cx: &mut Context<'_>) -> Result<Value, Error> {
     if u.layout() == &t.layout { return Ok(u.clone()); }
     let agreement = Agreement::new(u.layout(), &t.layout).error_at(cx.span, "a cotangent agrees with its tangent")?;
-    copied_back(u, &crate::derivative::broadcast_tables(&agreement.right, agreement.layout.shape()), &agreement.layout, t, cx)
+    copied_back(u, &crate::agreement::broadcast_tables(&agreement.right, agreement.layout.shape(), &[]), &agreement.layout, t, cx)
 }
 
 /// The cotangent of `t`, the child of the `Product` `c+.×t` or `t+.×c`, from `u`, the product's cotangent: `(⍉c)+.×u` or `u+.×⍉c`, with `c` and `u` taken as matrices. The product goes through dispatch. `c`'s transpose is a pending copy, whatever its size, which the product reads in place (`pervasive::mapped_product`). A `c` that isn't compact transposes through dispatch.
@@ -698,7 +752,7 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, cx: &mut 
                     // The cotangent of a sum goes to every item it summed: a length-1 axis where the fold removed one, broadcast back.
                     let mut shape = n.layout.shape().to_vec();
                     shape.insert(*along, 1);
-                    crate::derivative::expand(&crate::primitive::reshape_to(&shape, &u, cx)?, &child.layout)
+                    crate::agreement::expand(&crate::primitive::reshape_to(&shape, &u, cx)?, &child.layout)
                 };
                 push(&mut cotangents, child, v, cx)?
             }

@@ -994,6 +994,45 @@ k←["a":1] ⋄ k⍚[- ⊢] ["b":4 "a":5]   ⍝ ["b":0 "a":5]
 ⍝ — The derivative goes through the case that each cell picks
 {+/(⍵>0)⍚[0 √]⍵}∂ 0 1 4   ⍝ 0 0.5 0.25
 
+⍝ agenda:masked-unpicked — Where every case can run on every item, a select runs each case on all the items and keeps what each item picks: `÷` gives ∞ for the 0 that picks `⊢`, and no result keeps it
+(0≥)⍚[÷ ⊢] ¯2 0 4   ⍝ ¯2 0 0.25
+
+⍝ agenda:masked-explain — `•explain` names a select as a fast combination
+(•explain "(0≥)⍚[÷ ⊢] ¯2 0 4").fast.combination   ⍝ ["masked select"]
+
+⍝ agenda:masked-nan — A NaN or ¯0 item picks its case by the comparison's result, as it does without the select
+(0>)⍚[⊢ -] ¯4 $n ¯0 2   ⍝ 4 $n ¯0 2
+
+⍝ agenda:masked-kind — A 64-bit constant beside 32-bit items keeps the gathered path, whose result is 64-bit only where some item picks the constant
+(•storage (0>)⍚[⊢ 0.5] 32 •float 1 2 3).kind   ⍝ "float32"
+
+⍝ —
+(•storage (0>)⍚[⊢ 0.5] 32 •float ¯1 2 3).kind   ⍝ "float64"
+
+⍝ agenda:masked-narrow — A 32-bit constant case beside 64-bit items keeps the gathered path, whose result keeps the constant's width where every item picks it
+(•storage (0<)⍚[⊢ (32 •float 0.5)] 1.5 2.5).kind   ⍝ "float32"
+
+⍝ agenda:masked-sparse — Without fusion, a select costs less than gathering only where enough items pick a case that computes: for `-`, 1 in 10 isn't enough and 3 in 10 is
+(•explain "-@[0>] ¯1 2 3 4 5 6 7 8 9 10").fast.combination   ⍝ 0⍴⊂""
+
+⍝ —
+(•explain "-@[0>] ¯1 ¯2 ¯3 4 5 6 7 8 9 10").fast.combination   ⍝ ["masked select"]
+
+⍝ agenda:masked-costly — A costly kernel such as `*` runs on every item in a select, so it needs more items to pick it: 5 in 10 keep the gathered path, and 7 in 10 take the select
+(•explain "*@[0>] ¯1 2 ¯3 4 ¯5 6 ¯7 8 ¯9 10").fast.combination   ⍝ 0⍴⊂""
+
+⍝ —
+(•explain "*@[0>] ¯1 ¯2 ¯3 ¯4 ¯5 ¯6 ¯7 8 9 10").fast.combination   ⍝ ["masked select"]
+
+⍝ agenda:masked-costly-fused — On a large array, fusion runs a select without counting its mask only for cheap kernels: for `*`, a mask that picks 1 item in 100 is counted, and keeps the gathered path
+x←(⍳200000)÷200000 ⋄ (•explain "*@[0.99<]x").fast.combination   ⍝ 0⍴⊂""
+
+⍝ agenda:masked-derivative — Under ∂, each case still runs only on the items that pick it, so `÷`'s infinite slope at 0 can't make the gradient NaN
+{+/(⍵>0)⍚[0 ÷] ⍵}∂ 0 1 4   ⍝ 0 ¯1 ¯0.0625
+
+⍝ agenda:masked-fused — On a large array, the comparison, the cases, the select and a fold of its result run as one fused graph
+x←¯0.5+(⍳200000)÷200000 ⋄ (•explain "+/(0>)⍚[⊢ -] x").fused.glyphs   ⍝ "÷+" ">-⍚+/"
+
 ⍝⍝ Leading unit axis broadcasting
 
 ⍝ — Unit axes broadcast a column against a row; predicates return exact Booleans
@@ -1043,6 +1082,9 @@ x(-⍤1)⍤2 1⊢m
 
 ⍝ — Keyed frames align by key under Rank, and a missing key fills
 x←"a" "b":[1 2⋄3 4] ⋄ y←"a" "c":[10 20⋄30 40] ⋄ x(+⍤1)y   ⍝ "a" "b" "c":[11 22⋄3 4⋄30 40]
+
+⍝ — Under Rank, a key that one argument lacks reads a cell of that argument's prototype, as overtake fills a new row
+x←"a" "b":2 2⍴[1 2;3;4;5 6] ⋄ y←"a" "c":[10 20⋄30 40] ⋄ :2⌷x({⍺}⍤1)y   ⍝ (0 0⋄0 0)
 
 ⍝ — A keyed vector cell keeps its keys on the result's cell axis
 r←("p" "q":10 20)(+⍤1)2 2⍴⍳4 ⋄ r.[∞ "q"]   ⍝ 21 23
@@ -1111,6 +1153,9 @@ y←(2 2 2)⍴1 0 0 1 2 0 0 2
 ⍝ — Each and rank 0 align leading axes as pervasive functions do
 x←2 3⍴⍳6 ⋄ [x+10 20;x+¨10 20;x+⍤0[10 20]]
 3⍴⊂[10 11 12⋄23 24 25]
+
+⍝ — Rank 0 passes a scalar argument to every cell, where Each passes the scalar's item
+[1 2 3 {≢⍵}⍤0 ⊂4 5;1 2 3 {≢⍵}¨ ⊂4 5]   ⍝ (1 1 1⋄2 2 2)ₓ
 
 ⍝ —
 a←[10⋄20]
@@ -2252,6 +2297,12 @@ x←1 2 ⋄ v←1 0 ⋄ rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x} ⋄ {r
 ⍝ — Reverse over reverse gives a Hessian
 rosen←{[x y]←⍵ ⋄ ⊼1-x + 100×⊼y-⊼x} ⋄ {rosen∂ ⍵}∂ 1 2   ⍝ [402 ¯400⋄¯400 200]
 
+⍝ — Reverse over reverse moves items and folds them: the Hessian of +/⍵×⌽⍵ is 2 on the anti-diagonal
+{{+/⍵×⌽⍵}∂ ⍵}∂ 1 2 3   ⍝ [0 0 2⋄0 2 0⋄2 0 0]
+
+⍝ — An outer dual can be the coefficient of an inner record: the gradient of +/⍵×x is x, whose derivative is the identity
+{x←⍵ ⋄ {+/⍵×x}∂ ⍵}∂ 1 2   ⍝ [1 0⋄0 1]
+
 ⍝ — A Jacobian with no more results than numbers takes one transpose for each result
 cart←{[r t]←⍵ ⋄ [r×2○t; r×1○t]} ⋄ (cart∂ 2 0.5) - [2○0.5 ¯2×1○0.5⋄1○0.5 2×2○0.5]   ⍝ [0 0⋄0 0]
 
@@ -2287,6 +2338,49 @@ j←{⍵×¿0}∂ 1 2 ⋄ (0 0⌷j)=1 1⌷j   ⍝ $t
 
 ⍝ — ∂ strips its tangents from a value that its function wrote to an outer name
 s←0 ⋄ f←{s+←⍵×2 ⋄ ⍵×⍵} ⋄ _←f∂3 ⋄ s×10   ⍝ 60
+
+⍝ — ∂ also strips its tangents from an outer array that its function changed by selective assignment or by appending in place
+c←0 0
+a←⍬
+f←{([[0]]⌷c)←⍵ ⋄ a,←⍵ ⋄ ⍵×2}
+_←f∂3
+(•storage c).active (•storage a).active   ⍝ [0 0]ₓ
+
+⍝ — A power count reads its primal, so the count takes no derivative
+{(⍵×)⍣⍵⊢1}∂ 3   ⍝ 27
+
+⍝ — A unit selector reads its primal to pick a case
+{⍵⍚[{⍵×⍵} {⍵×⍵×⍵}] ⍵}∂ 1   ⍝ 3
+
+⍝ — A predicate reads its primal to pick a body, so it takes no derivative
+{(0×⍵)?1;⍵×3}∂ 2   ⍝ 3
+
+⍝ — A cell rank reads its primal, so a dual ∞ is ∞
+{(+/⍤⍵)[1 2 3⋄4 5 6]}∂ ∞   ⍝ 0 0
+
+⍝ — An index selector reads its primal, so a dual ∞ selects a whole axis
+{+/⍵⌷10 20 30}∂ ∞   ⍝ 0
+
+⍝ — A position reads its primal, so a selection by ⌷, dot selection or pick takes no derivative from it
+{⍵×(⍵⌷10 20 30)+((10 20 30).[⍵])+[⍵]⊃10 20 30}∂ 1   ⍝ 60
+
+⍝ — A count reads its primal, so take, drop, rotate, reshape, replicate and windows take no derivative from it
+v←1 2 3 4 ⋄ {⍵×+/(⍵↑v),(⍵↓v),(⍵⌽v),(⍵⍴v),(⍵#v),,⍵↕v}∂ 2   ⍝ 58
+
+⍝ — Display shows a dual as its primal, with the primal's width marker
+{⎕←⍵ ⋄ ⍵×⍵}∂ 1.5ₛ
+3ₛ
+⍝ ⎕: 1.5ₛ
+
+⍝ — Display rounds a dual as it rounds its primal
+{⎕←⍵+0.2 ⋄ ⍵}∂ 0.1
+1
+⍝ ⎕: 0.3
+
+⍝ — •storage reads a dual's view flag from its primal, as it reads the dual's kind and pending flag
+m←[1 2⋄3 4] ⋄ {⎕←(•storage ⍵).view ⋄ +/⍵}∂ ,m
+1 1 1 1
+⍝ ⎕: $t
 
 ⍝ — An exact argument gives an exact derivative
 {⍵×⍵}∂3ₓ   ⍝ 6ₓ
@@ -2326,6 +2420,27 @@ x←["i":2 "j":3]⍴[1 5 3 4 2 6]ₓ ⋄ [{+/⍠"i" "j" ⍵×⍵}∂x; {+/⌈/�
 
 ⍝ — A transpose's transpose reads the cotangent transposed, and a gradient over a nested argument keeps its nesting
 [{+/,(⍉⍵)×⍵}∂ [1 2⋄3 4]; {+/(⍵₀)×⍵₁}∂ [2;3 4]]   ⍝ [[2 6⋄4 8]; [7; 2 2]]
+
+⍝ — A gradient through a tangent that holds an active item beside a constant one keeps the constant's tangent as zeros
+[{+/↑{⍵}¨[⍵ 1]}∂ 1 2 3; {+/∊{⍵}¨[⍵ 1]}∂ 1 2 3]   ⍝ [1 1 1; 1 1 1]
+
+⍝ — A result built only from a partition's empty parts has an empty Jacobian
+⍴{+/,2⊂⍵}∂ 1.5 2.5 3.5   ⍝ [0 3]ₓ
+
+⍝ — A dual atom that a ravel or an enclosure leaves inside a plain array stays active beside a dual, in forward and in reverse mode
+[{(,⍵)+(,⍵)+,⍵}∂ 2; {+/⊃(⊂,⍵)+(⊂,⍵)+⊂,⍵}∂ 1.5; {+/,,¨⍵}∂ 1 2 3; {+/,⊂¨⍵}∂ 1 2 3]   ⍝ [[3]; 3; 1 3⍴1; 1 1 1]
+
+⍝ — An inner ∂ whose function closes over the outer argument differentiates through ⊥
+x←1.5 2.5 3.5 ⋄ {y←⍵ ⋄ {+/,y⊥⍵}∂ 2.5}∂ x   ⍝ 0 3.5 3.5
+
+⍝ — A gradient through an empty selection of the argument is zeros
+{+/,∩⍵}∂ 1.5 2.5 3.5   ⍝ 0 0 0
+
+⍝ — Rank over cells whose results are empty gives a gradient of zeros
+{m←3 3⍴⍵ ⋄ +/,{0↑⍵}⍤1⊢m}∂ 1.5 2.5 3.5   ⍝ 0 0 0
+
+⍝ — An inner ∂ whose derivative doesn't depend on the outer argument it closes over gives a gradient of zeros
+{y←⍵ ⋄ +/,{+/,y,⍵}∂2.5}∂ 1.5 2.5 3.5   ⍝ 0 0 0
 
 ⍝ — A 32-bit argument gives a 32-bit gradient through a reversal
 {+/⌽⍵×⍵}∂ 32•float 1 2 3   ⍝ [2 4 6]ₛ
@@ -2399,6 +2514,10 @@ cart←{[r t]←⍵ ⋄ [r×2○t; r×1○t]} ⋄ -.×cart∂ 2 0.5   ⍝ 2
 {|⍵}∂3j4
 ⍝ error: UNSUPPORTED
 
+⍝ — A dual reaching a system function's own code, such as the JSON encoder that •json⁻¹ runs, gives UNSUPPORTED, not that code's own error
+{•json⁻¹ ⍵}∂ 3
+⍝ error: UNSUPPORTED
+
 ⍝ — A system function is outside the subset
 {•ucs ⍵}∂3
 ⍝ error: UNSUPPORTED
@@ -2432,6 +2551,162 @@ cart←{[r t]←⍵ ⋄ [r×2○t; r×1○t]} ⋄ -.×cart∂ 2 0.5   ⍝ 2
 ⍝ — Converting coefficients to roots and back gives the coefficients again [atol=1e-10]
 [⌻⁻¹⌻0 16 ¯12 2;⌻⁻¹⌻1 0 1;⌻⁻¹⌻1 ¯2 1]
 [0 16 ¯12 2;1 0 1;1 ¯2 1]
+
+⍝⍝ ∂ through forms that move or order items
+
+⍝ derivative-moves-same — same (`⊢`) moves a tangent with its primal, in forward mode and in reverse mode
+[{⊢⍵×1 2 3}∂ 1; {+/1 2 3×⊢⍵}∂ 2.5 1.5 3.5]   ⍝ [1 2 3;1 2 3]
+
+⍝ derivative-moves-same-left — same left (`⊣`) moves a tangent with its primal, in forward mode and in reverse mode
+[{⊣⍵×1 2 3}∂ 1; {+/1 2 3×⊣⍵}∂ 2.5 1.5 3.5]   ⍝ [1 2 3;1 2 3]
+
+⍝ derivative-moves-ravel — ravel (`,`) moves a tangent with its primal, in forward mode and in reverse mode
+[{,⍵×[1 2⋄3 4]}∂ 1; {+/1 2 3 4×,⍵}∂ [1.5 2.5⋄3.5 4.5]]   ⍝ [[1 2 3 4] [1 2⋄3 4]]
+
+⍝ derivative-moves-table — table (`⍪`) moves a tangent with its primal, in forward mode and in reverse mode
+[{⍪⍵×1 2 3}∂ 1; {+/,[1⋄2⋄3]×⍪⍵}∂ 2.5 1.5 3.5]   ⍝ [[[1]⋄[2]⋄[3]] [1 2 3]]
+
+⍝ derivative-moves-enclose — enclose (`⊂`) moves a tangent with its primal, in forward mode and in reverse mode
+[{∊⊂⍵×1 2}∂ 1; {+/1 2×∊⊂⍵}∂ 2.5 1.5]   ⍝ [1 2;1 2]
+
+⍝ derivative-moves-mix — mix (`⊃`) moves a tangent with its primal, in forward mode and in reverse mode
+[{⊃[⍵×1 2;⍵×3 4]}∂ 1; {+/,[1 2⋄3 4]×⊃⍵}∂ [1.5 2.5;3.5 4.5]]   ⍝ [[1 2⋄3 4] [1 2;3 4]]
+
+⍝ derivative-moves-nest — nest (`⊆`) moves a tangent with its primal, in forward mode and in reverse mode
+[{∊⊆⍵×1 2}∂ 1; {+/1 2×∊⊆⍵}∂ 2.5 1.5]   ⍝ [1 2;1 2]
+
+⍝ derivative-moves-enlist — enlist (`∊`) moves a tangent with its primal, in forward mode and in reverse mode
+[{∊[⍵×1 2;⍵×3]}∂ 1; {+/1 2 3×∊⍵}∂ [1.5 2.5;3.5]]   ⍝ [1 2 3;[[1 2] 3]]
+
+⍝ derivative-moves-first — first (`↑`) moves a tangent with its primal, in forward mode and in reverse mode
+[{↑⍵×[1 2⋄3 4]}∂ 1; {+/,1 2×↑⍵}∂ [1.5 2.5⋄3.5 4.5]]   ⍝ [[1 2] [1 2⋄0 0]]
+
+⍝ derivative-moves-split — split (`↓`) moves a tangent with its primal, in forward mode and in reverse mode
+[{∊↓⍵×[1 2⋄3 4]}∂ 1; {+/1 2 3 4×∊↓⍵}∂ [1.5 2.5⋄3.5 4.5]]   ⍝ [[1 2 3 4] [1 2⋄3 4]]
+
+⍝ derivative-moves-reverse — reverse (`⌽`) moves a tangent with its primal, in forward mode and in reverse mode
+[{⌽⍵×1 2 3}∂ 1; {+/1 2 3×⌽⍵}∂ 2.5 1.5 3.5]   ⍝ [3 2 1;3 2 1]
+
+⍝ derivative-moves-reverse-first — reverse first (`⊖`) moves a tangent with its primal, in forward mode and in reverse mode
+[{⊖⍵×[1 2⋄3 4]}∂ 1; {+/,[1 2⋄3 4]×⊖⍵}∂ [1.5 2.5⋄3.5 4.5]]   ⍝ [[3 4⋄1 2] [3 4⋄1 2]]
+
+⍝ derivative-moves-transpose — transpose (`⍉`) moves a tangent with its primal, in forward mode and in reverse mode
+[{⍉⍵×[1 2⋄3 4]}∂ 1; {+/,[1 2⋄3 4]×⍉⍵}∂ [1.5 2.5⋄3.5 4.5]]   ⍝ [[1 3⋄2 4] [1 3⋄2 4]]
+
+⍝ derivative-moves-materialise — materialise (`⌷`) moves a tangent with its primal, in forward mode and in reverse mode
+[{⌷⍵×1 2 3}∂ 1; {+/1 2 3×⌷⍵}∂ 2.5 1.5 3.5]   ⍝ [1 2 3;1 2 3]
+
+⍝ derivative-moves-pairs — pairs (`↕`) moves a tangent with its primal, in forward mode and in reverse mode
+[{↕⍵×1 2 3}∂ 1; {+/,[1 2⋄3 4]×↕⍵}∂ 2.5 1.5 3.5]   ⍝ [[1 2⋄2 3] [1 5 4]]
+
+⍝ derivative-moves-unkey — unkey (`:`) moves a tangent with its primal, in forward mode and in reverse mode
+[{:⍵×"a" "b":1 2}∂ 1; {+/1 2×:⍵}∂ "a" "b":2.5 1.5]   ⍝ [1 2;["a":1 "b":2]]
+
+⍝ derivative-moves-right — right (`⊢`) moves a tangent with its primal, in forward mode and in reverse mode
+[{5⊢⍵×1 2}∂ 1; {+/1 2×5⊢⍵}∂ 2.5 1.5]   ⍝ [1 2;1 2]
+
+⍝ derivative-moves-left — left (`⊣`) moves a tangent with its primal, in forward mode and in reverse mode
+[{(⍵×1 2)⊣5}∂ 1; {+/1 2×⍵⊣5}∂ 2.5 1.5]   ⍝ [1 2;1 2]
+
+⍝ derivative-moves-catenate — catenate (`,`) moves a tangent with its primal, in forward mode and in reverse mode
+[{(⍵×1 2),⍵×3}∂ 1; {+/1 2 3 4×⍵,⍵×2}∂ 2.5 1.5]   ⍝ [1 2 3;7 10]
+
+⍝ derivative-moves-catenate-first — catenate first (`⍪`) moves a tangent with its primal, in forward mode and in reverse mode
+[{(⍵×[1 2⋄3 4])⍪⍵×[5 6⋄]}∂ 1; {+/,[1 2⋄3 4]×⍵⍪⍵×2}∂ [1.5 2.5⋄]]   ⍝ [[1 2⋄3 4⋄5 6] [7 10⋄]]
+
+⍝ derivative-moves-reshape — reshape (`⍴`) moves a tangent with its primal, in forward mode and in reverse mode
+[{2 2⍴⍵×1 2 3}∂ 1; {+/1 2 3 4×4⍴⍵}∂ 2.5 1.5 3.5]   ⍝ [[1 2⋄3 1] [5 2 3]]
+
+⍝ derivative-moves-partitioned-enclose — partitioned enclose (`⊂`) moves a tangent with its primal, in forward mode and in reverse mode
+[{∊1 0 1⊂⍵×1 2 3}∂ 1; {+/1 2 3×∊1 0 1⊂⍵}∂ 2.5 1.5 3.5]   ⍝ [1 2 3;1 2 3]
+
+⍝ derivative-moves-pick — pick (`⊃`) moves a tangent with its primal, in forward mode and in reverse mode
+[{1⊃⍵×1 2 3}∂ 1; {1⊃⍵}∂ 2.5 1.5 3.5]   ⍝ [2;0 1 0]
+
+⍝ derivative-moves-partition — partition (`⊆`) moves a tangent with its primal, in forward mode and in reverse mode
+[{∊1 1 2⊆⍵×1 2 3}∂ 1; {+/1 2 3×∊1 1 2⊆⍵}∂ 2.5 1.5 3.5]   ⍝ [1 2 3;1 2 3]
+
+⍝ derivative-moves-take — take (`↑`) moves a tangent with its primal, in forward mode and in reverse mode
+[{2↑⍵×1 2 3}∂ 1; {+/1 2 3 4×4↑⍵}∂ 2.5 1.5 3.5]   ⍝ [1 2;1 2 3]
+
+⍝ derivative-moves-drop — drop (`↓`) moves a tangent with its primal, in forward mode and in reverse mode
+[{1↓⍵×1 2 3}∂ 1; {+/1 2×1↓⍵}∂ 2.5 1.5 3.5]   ⍝ [2 3;0 1 2]
+
+⍝ derivative-moves-rotate — rotate (`⌽`) moves a tangent with its primal, in forward mode and in reverse mode
+[{1⌽⍵×1 2 3}∂ 1; {+/1 2 3×1⌽⍵}∂ 2.5 1.5 3.5]   ⍝ [2 3 1;3 1 2]
+
+⍝ derivative-moves-rotate-first — rotate first (`⊖`) moves a tangent with its primal, in forward mode and in reverse mode
+[{1⊖⍵×[1 2⋄3 4]}∂ 1; {+/,[1 2⋄3 4]×1⊖⍵}∂ [1.5 2.5⋄3.5 4.5]]   ⍝ [[3 4⋄1 2] [3 4⋄1 2]]
+
+⍝ derivative-moves-reorder-axes — reorder axes (`⍉`) moves a tangent with its primal, in forward mode and in reverse mode
+[{0 0⍉⍵×[1 2⋄3 4]}∂ 1; {+/1 2×0 0⍉⍵}∂ [1.5 2.5⋄3.5 4.5]]   ⍝ [[1 4] [1 0⋄0 2]]
+
+⍝ derivative-moves-index — index (`⌷`) moves a tangent with its primal, in forward mode and in reverse mode
+[{[[2 0]]⌷⍵×1 2 3}∂ 1; {+/1 2×[[2 0]]⌷⍵}∂ 2.5 1.5 3.5]   ⍝ [3 1;2 0 1]
+
+⍝ derivative-moves-bracket — bracket (`.[]`) moves a tangent with its primal, in forward mode and in reverse mode
+[{(⍵×1 2 3).[[2 0]]}∂ 1; {+/1 2×⍵.[[2 0]]}∂ 2.5 1.5 3.5]   ⍝ [3 1;2 0 1]
+
+⍝ derivative-moves-replicate — replicate (`#`) moves a tangent with its primal, in forward mode and in reverse mode
+[{2 0 1#⍵×1 2 3}∂ 1; {+/1 2 3×2 0 1#⍵}∂ 2.5 1.5 3.5]   ⍝ [1 1 3;3 0 3]
+
+⍝ derivative-moves-windows — windows (`↕`) moves a tangent with its primal, in forward mode and in reverse mode
+[{2↕⍵×1 2 3}∂ 1; {+/,[1 2⋄3 4]×2↕⍵}∂ 2.5 1.5 3.5]   ⍝ [[1 2⋄2 3] [1 5 4]]
+
+⍝ derivative-moves-keyed — keyed (`:`) moves a tangent with its primal, in forward mode and in reverse mode
+[{"a" "b":⍵×1 2}∂ 1; {+/1 2×:"a" "b":⍵}∂ 2.5 1.5]   ⍝ [["a":1 "b":2];1 2]
+
+⍝ derivative-orders-sort-up — sort up (`<`) orders a tangent with its primal, in forward mode and in reverse mode
+[{<3 1 2+⍵×10 20 30}∂ 0; {+/1 2 3×<⍵}∂ 3.5 1.5 2.5]   ⍝ [20 30 10;3 1 2]
+
+⍝ derivative-orders-sort-down — sort down (`>`) orders a tangent with its primal, in forward mode and in reverse mode
+[{>3 1 2+⍵×10 20 30}∂ 0; {+/1 2 3×>⍵}∂ 3.5 1.5 2.5]   ⍝ [10 30 20;1 3 2]
+
+⍝ derivative-orders-unique — unique (`∪`) orders a tangent with its primal, in forward mode and in reverse mode
+[{∪3 1 3 2+⍵×10 20 30 40}∂ 0; {+/1 2 3×∪⍵}∂ 3.5 1.5 3.5 2.5]   ⍝ [10 20 40;1 2 0 3]
+
+⍝ derivative-orders-duplicates — duplicates (`∩`) orders a tangent with its primal, in forward mode and in reverse mode
+[{∩3 1 3 2 3+⍵×10 20 30 40 50}∂ 0; {+/1×∩⍵}∂ 3.5 1.5 3.5 2.5 3.5]   ⍝ [[10];1 0 0 0 0]
+
+⍝ derivative-orders-runs — runs (`#`) orders a tangent with its primal, in forward mode and in reverse mode
+[{1⊃#3 3 1+⍵×10 20 30}∂ 0; {+/1 2×1⊃#⍵}∂ 3.5 3.5 1.5]   ⍝ [10 30;1 0 2]
+
+⍝ derivative-orders-union — union (`∪`) orders a tangent with its primal, in forward mode and in reverse mode
+[{(1 2+⍵×10 20)∪2 3+⍵×30 40}∂ 0; {+/1 2 3×⍵∪2.5 3.5}∂ 1.5 2.5]   ⍝ [10 20 40;1 2]
+
+⍝ derivative-orders-union-right — union (`∪`) orders a tangent with its primal, in forward mode and in reverse mode
+[{1 2∪2 3+⍵×30 40}∂ 0; {+/1 2 3×1.5 2.5∪⍵}∂ 2.5 3.5]   ⍝ [0 0 40;0 3]
+
+⍝ derivative-orders-intersection — intersection (`∩`) orders a tangent with its primal, in forward mode and in reverse mode
+[{(1 2 3 4+⍵×10 20 30 40)∩2 4}∂ 0; {+/1 2×⍵∩2.5 4.5}∂ 1.5 2.5 3.5 4.5]   ⍝ [20 40;0 1 0 2]
+
+⍝ derivative-orders-without — without (`~`) orders a tangent with its primal, in forward mode and in reverse mode
+[{(1 2 3 4+⍵×10 20 30 40)~2 4}∂ 0; {+/1 2×⍵~2.5 4.5}∂ 1.5 2.5 3.5 4.5]   ⍝ [10 30;1 0 2 0]
+
+⍝ derivative-orders-duplicates-repeated — duplicates (`∩`) keeps the first of each repeated value, in first-occurrence order
+[{∩3 1 1 3 3 1+⍵×10 20 30 40 50 60}∂ 0; {+/1 2×∩⍵}∂ 3.5 1.5 1.5 3.5 3.5 1.5]   ⍝ [10 20;1 2 0 0 0 0]
+
+⍝ derivative-orders-union-duplicates — union (`∪`) keeps duplicates from both arguments, with their tangents
+[{(1 1 2+⍵×10 20 30)∪2 3 3+⍵×40 50 60}∂ 0; {+/1 2 3 4 5×⍵∪⍵+1}∂ 1.5 2.5 2.5]   ⍝ [10 20 30 50 60;1 6 8]
+
+⍝ derivative-orders-intersection-duplicates — intersection (`∩`) and without (`~`) keep the left argument's duplicates, with their tangents
+[{(1 1 2 3+⍵×10 20 30 40)∩1 3}∂ 0; {(1 1 2 3+⍵×10 20 30 40)~,1}∂ 0]   ⍝ [10 20 40;30 40]
+
+⍝ derivative-orders-keys — ordered items keep their keys, with their tangents
+[{∪("a" "b" "c":3 1 3)+⍵×10 20 30}∂ 0; {<("a" "b" "c":3 1 2)+⍵×10 20 30}∂ 0]   ⍝ [["a":10 "b":20] ["b":20 "c":30 "a":10]]
+
+⍝ derivative-orders-cells — unique (`∪`) and sort (`<`) order major cells, with their tangents
+[{∪[1 2⋄3 4⋄1 2]+⍵×[10 20⋄30 40⋄50 60]}∂ 0; {<[3 4⋄1 2]+⍵×[10 20⋄30 40]}∂ 0]   ⍝ [[10 20⋄30 40] [30 40⋄10 20]]
+
+⍝ derivative-orders-stable — sort (`<`) keeps equal values in order, with their tangents
+[{<3 1 3+⍵×10 20 30}∂ 0; {+/1 2 3×>⍵}∂ 3.5 1.5 3.5]   ⍝ [20 10 30;1 3 2]
+
+⍝ derivative-sort-unit — sorting (`<`, `>`) a unit leaves it unchanged under ∂, as it does without ∂
+[{<⍵}∂ 3; {>2×⍵}∂ 3]   ⍝ 1 2
+
+⍝ derivative-orders-unit — intersection (`∩`) still refuses a unit right argument under ∂
+{⍵∩3}∂ 1 2
+⍝ error: RANK ERROR
 
 ⍝⍝ Optimizing
 
@@ -3509,6 +3784,9 @@ a   ⍝ 0 1 2
 ⍝ — Stencil reports leading-axis edge padding even when rows are empty
 {⍺}⌺3 [2 0]⍴0   ⍝ [[1]⋄[¯1]]
 
+⍝ — Stencil borders over three padded axes, one row of ⍺ for each window in ravel order
+,{⍺}⌺3 3 3⊢[2 2 2]⍴0   ⍝ 1 1 1 1 1 ¯1 1 ¯1 1 1 ¯1 ¯1 ¯1 1 1 ¯1 1 ¯1 ¯1 ¯1 1 ¯1 ¯1 ¯1
+
 ⍝ — A two-row stencil specification gives window size then movement
 {+/,⍵}⌺[[3]⋄[2]]⍳8   ⍝ 1 6 12 18
 
@@ -4003,6 +4281,9 @@ sel 0   ⍝ 4⍴$t
 
 ⍝ — A read of a few items from a pending graph that nothing else holds computes only those items, as `•explain` counts them. A pending graph that a name holds is computed whole on its first read
 v←⍳262144 ⋄ s←1+v ⋄ items←{(•explain ⍵).forced.items} ⋄ [(items "5↑1+v")≡[5]ₓ;(items "3⊃2×v+1")≡[1]ₓ;(items "5↑s")≡[262144]ₓ;(5↑1+v)≡1 2 3 4 5]   ⍝ $t $t $t $t
+
+⍝ — Rank leaves a pending argument pending where its operand isn't one that runs on whole stacks of matrices, so the call fuses as it would without Rank
+x←[4 256 256]⍴0.5 ⋄ e←•explain "(-⍤2) x+1" ⋄ [0=≢e.forced.function;e.value≡-x+1]   ⍝ $t $t
 
 ⍝ — `+.×` reads a pending copy of windows a block of rows at a time without forcing it, and its gradients force nothing and scatter nothing
 conv←{
@@ -5471,7 +5752,7 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍬
 ⍝ ⎕: 8
 
-⍝⍝ Each, Rank and stencil operands
+⍝⍝ Each, Rank, stencil and outer product operands
 
 ⍝ — Each keeps a keyed frame's keys
 {⍵×2}¨["a":1 "b":2]   ⍝ ["a":2 "b":4]
@@ -5479,17 +5760,182 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍝ — Rank keeps the keys of its frame
 {+/⍵}⍤1⊢"x" "y":[1 2⋄3 4]   ⍝ ["x":3 "y":7]
 
+⍝ — Each pairs keyed arguments by key, whatever order each holds its keys in
+["a":1 "b":2] {⍵×2}¨ ["b":10 "a":20]   ⍝ ["a":40 "b":20]
+
+⍝ — Rank pairs keyed frames by key, whatever order each holds its keys in
+["a":1 "b":2] {⍵×2}⍤0 ⊢ ["b":10 "a":20]   ⍝ ["a":40 "b":20]
+
+⍝ — A shorter frame extends over the other argument's trailing frame axis
+1 2 3 {⍺+⍵}¨ [10 20⋄30 40⋄50 60]   ⍝ [11 21⋄32 42⋄53 63]
+
+⍝ — A frame axis of length 1 extends to the other argument's length
+[1 2 3⋄] {⍺+⍵}¨ [10 20 30⋄40 50 60]   ⍝ [11 22 33⋄41 52 63]
+
 ⍝ — Each inside an Each operand maps each cell's items
 {{⍵+1}¨⍵}¨[1 2;3 4 5]   ⍝ [2 3;4 5 6]
 
 ⍝ — A guard on the cell picks each cell's body
 {⍵<0?0;⍵}¨¯1 2 ¯3   ⍝ 0 2 0
 
+⍝ — A dfn whose batched run stopped on its guard skips the batched try on later calls
+•prefs ["batch":$t] ⋄ f←{⍵<2?⍵;⍵×2} ⋄ r←f¨⍳5
+(•explain "f¨⍳5").fallbacks.reason   ⍝ ["an earlier stop: a cell's value"]
+
+⍝ — A dfn whose guard caught an error in some cells of a batched run batches again on later calls, because the stop depended on the cells' data
+•prefs ["batch":$t] ⋄ f←{"DOMAIN"::¯1 ⋄ ⍵○0.5} ⋄ r←f¨1 2 13
+(•explain "f¨1 2 3").fallbacks.reason   ⍝ 0⍴⊂""
+
+⍝ — A dfn whose batched run stopped on a call with no rule for batches skips the batched try on later calls whose arguments have the same kinds and cell shapes
+•prefs ["batch":$t] ⋄ f←{⍋⍵} ⋄ r←f⍤1⊢2 3⍴⍳6
+(•explain "f⍤1⊢2 3⍴⍳6").fallbacks.reason   ⍝ ["an earlier stop: no batch rule"]
+
+⍝ — The same dfn tries a batched run again on cells of another shape
+•prefs ["batch":$t] ⋄ f←{⍋⍵} ⋄ r←f⍤1⊢2 3⍴⍳6
+(•explain "f⍤1⊢2 4⍴⍳8").fallbacks.reason   ⍝ ["no batch rule for ⍋"]
+
+⍝ — A system function in a batched run stops it for an effect
+•prefs ["batch":$t]
+(•explain "{•json⁻¹ ⍵}¨1 2").fallbacks.reason   ⍝ ["an effect"]
+
+⍝ — A system function on a cell's value stops a batched run for an effect, as one on a constant does
+•prefs ["batch":$t]
+(•explain "{•ucs ⍵}¨""abc""").fallbacks.reason   ⍝ ["an effect"]
+
+⍝ — A system function on a constant inside the operand stops a batched run for an effect
+•prefs ["batch":$t]
+(•explain "{x←•ucs ""a"" ⋄ ⍵}¨⍳3").fallbacks.reason   ⍝ ["an effect"]
+
+⍝ — ⍕ of a cell stops a batched run for an effect
+•prefs ["batch":$t]
+(•explain "{⍕⍵}¨⍳3").fallbacks.reason   ⍝ ["an effect"]
+
+⍝ — ⍕ of a strand that holds a cell stops a batched run for an effect too
+•prefs ["batch":$t]
+(•explain "{⍕[⍵ 1]}¨⍳3").fallbacks.reason   ⍝ ["an effect"]
+
+⍝ — A write to a name outside the map stops a batched run
+•prefs ["batch":$t] ⋄ n←0
+(•explain "{n+←1 ⋄ ⍵}¨1 2").fallbacks.reason   ⍝ ["a write"]
+
+⍝ — A guard that would catch an error stops a batched run
+•prefs ["batch":$t]
+(•explain "{""DOMAIN""::¯1 ⋄ ⍵○0.5}¨1 2 13").fallbacks.reason   ⍝ ["a caught error"]
+
+⍝ — A system function's inverse writes each cell's literal
+{•literal⁻¹ ⍵}¨1 2 3   ⍝ "1ₚ" "2ₚ" "3ₚ"
+
+⍝ — Each cell's literal has its own length
+{≢•literal⁻¹ ⍵}¨1 22 333   ⍝ [2 3 4]ₓ
+
+⍝ — The inverse of ⍎ writes each cell's literal too
+{⍎⁻¹ ⍵}¨1 2 3   ⍝ "1ₚ" "2ₚ" "3ₚ"
+
+⍝ — ⍎ of each cell's text stops the batched run, because each cell holds its own code
+•prefs ["batch":$t]
+(•explain "{⍎⍵}⍤1⊢2 3⍴""1+1""").fallbacks.reason   ⍝ ["a cell's value"]
+
+⍝ — Each cell's floor keeps its own kind: an infinity stays a float beside exact integers
+{⌊⍵}¨1.5 ∞ 2.5   ⍝ 1ₓ ∞ 2ₓ
+
+⍝ — A batched run takes square roots of exact integers, because every cell gives floats
+•prefs ["batch":$t]
+(•explain "{√⍵}¨4ₓ 9ₓ").fallbacks.reason   ⍝ 0⍴⊂""
+
+⍝ — A strand of the cell's values gives each cell a vector
+{⍵ (2×⍵)}¨1 2 3   ⍝ [1 2;2 4;3 6]
+
+⍝ — Rank mixes each cell's strand into a row
+{[⍵ 2×⍵]}⍤0⊢1 2 3   ⍝ [1 2⋄2 4⋄3 6]
+
+⍝ — A fold over a strand of the cell's values
+{+/[⍵ (2×⍵) 3]}¨1 2   ⍝ 6 9
+
+⍝ — A result that doesn't depend on the cell is every cell's result
+{7}¨1 2 3   ⍝ 7 7 7
+
+⍝ — Rank mixes a result that doesn't depend on the cell into each row
+{1 2}⍤0⊢"abc"   ⍝ [1 2⋄1 2⋄1 2]
+
+⍝ — Each cell gives the same empty vector
+{⍬}¨1 2   ⍝ ⍬ ⍬
+
 ⍝ — A power count that comes from the cell
 {2×⍣⍵ 1}¨0 1 2 3   ⍝ 1 2 4 8
 
 ⍝ — An axis that comes from the cell
 {+/⍠⍵⊢[1 2⋄3 4]}¨0 1   ⍝ [4 6;3 7]
+
+⍝ — Each cell joins itself
+{⍵,⍵}⍤1⊢[1 2⋄3 4]   ⍝ [1 2 1 2⋄3 4 3 4]
+
+⍝ — Atoms from the same cell join into a vector
+{⍵,2×⍵}¨1 2 3   ⍝ [1 2;2 4;3 6]
+
+⍝ — A vector that every cell shares joins each cell
+{0 0,⍵}⍤1⊢[1 2⋄3 4]   ⍝ [0 0 1 2⋄0 0 3 4]
+
+⍝ — An atom joins each matrix cell as a column
+{⍵,0}⍤2⊢[[1 2⋄3 4]⋄[5 6⋄7 8]]   ⍝ [[1 2 0⋄3 4 0]⋄[5 6 0⋄7 8 0]]
+
+⍝ — Each cell's sum joins the cell, which has one more axis
+{(+/⍵),⍵}⍤1⊢[1 2⋄3 4]   ⍝ [3 1 2⋄7 3 4]
+
+⍝ — `⍪` joins each cell along its first axis
+{⍵⍪0}⍤2⊢[[1 2⋄3 4]⋄[5 6⋄7 8]]   ⍝ [[1 2⋄3 4⋄0 0]⋄[5 6⋄7 8⋄0 0]]
+
+⍝ — `⊣` gives its left argument, which every cell shares
+{0⊣⍵}¨1 2 3   ⍝ 0 0 0
+
+⍝ — A rotation count that comes from the cell
+{⍵⌽1 2 3}¨0 1 2   ⍝ [1 2 3;2 3 1;3 1 2]
+
+⍝ — Each cell's transpose
+{⍉⍵}⍤2⊢[[1 2 3⋄4 5 6]⋄[7 8 9⋄10 11 12]]   ⍝ [[1 4⋄2 5⋄3 6]⋄[7 10⋄8 11⋄9 12]]
+
+⍝ — Replicate along each cell's first axis
+{1 0 2#⍵}⍤1⊢[1 2 3⋄4 5 6]   ⍝ [1 3 3⋄4 6 6]
+
+⍝ — Decode each cell
+{2⊥⍵}⍤1⊢[1 0 1⋄1 1 1]   ⍝ 5 7
+
+⍝ — Rank joins each pair of cells in one call where both arguments have the same frame
+[1 2⋄3 4] ,⍤1 [5 6⋄7 8]   ⍝ [1 2 5 6⋄3 4 7 8]
+
+⍝ — A batched run joins and transposes cells without falling back
+•prefs ["batch":$t]
+(•explain "{⍵,⍉⍵}⍤2⊢2 2 2⍴0.5").fallbacks.reason   ⍝ 0⍴⊂""
+
+⍝ — Each passes a scalar's item to every cell
+1 2{⍺+≢⍵}¨⊂10 20   ⍝ 3 4
+
+⍝ — A grade inside a batched run orders each cell's own items
+{⍋⍤1 ⍵}⍤2⊢2 3 2⍴3 2 1 4 2 1 5 6 4 5 6 4   ⍝ [[1 0⋄0 1⋄1 0]⋄[0 1⋄0 1⋄1 0]]ₓ
+
+⍝ — A batched run multiplies each cell's matrices as one stack
+{⍵+.×⍵}⍤2⊢2 2 2⍴1 2 3 4 5 6 7 8   ⍝ [[7 10⋄15 22]⋄[67 78⋄91 106]]
+
+⍝ — A batched run takes each cell's determinant as one stack
+{-.×⍵}⍤2⊢2 2 2⍴1 2 3 4 5 6 7 8   ⍝ ¯2 ¯2
+
+⍝ — A batched run divides each cell by a matrix that every cell shares
+{⍵⌹2 2⍴2 0 0 2}⍤2⊢2 2 2⍴2 4 6 8 2 2 2 2   ⍝ [[1 2⋄3 4]⋄[1 1⋄1 1]]
+
+⍝ — A batched run stops where a large constant, repeated for every cell, would hold far more items than the arguments
+•prefs ["batch":$t] ⋄ x←2000000⍴0.5
+(•explain "{+/x×⍵}¨1 2 3 4 5 6 7 8 9 10").fallbacks.reason   ⍝ ["too many items"]
+
+⍝ — A short constant, repeated for every cell, still batches
+•prefs ["batch":$t]
+(•explain "{⍵×1 2 3 4 5}¨0.5+⍳1000").fallbacks.reason   ⍝ 0⍴⊂""
+
+⍝ — A count that comes from the cell inside a strand stops the batched run
+•prefs ["batch":$t]
+(•explain "{[⍵ 1]↑2 2⍴⍳4}¨1 2").fallbacks.reason   ⍝ ["a cell's value"]
+
+⍝ — A kernel that reads a number from the cell, which no rule for batches covers, stops the batched run
+•prefs ["batch":$t]
+(•explain "{⊤[⍵ 1]}¨1 2").fallbacks.reason   ⍝ ["no batch rule"]
 
 ⍝ — Cells whose results differ in shape
 {⍳⍵}¨1 2 3   ⍝ [[0];0 1;0 1 2]
@@ -5498,6 +5944,16 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 a←0
 {a+←⍵}¨1 2 3
 a   ⍝ 6
+
+⍝ — Each cell writes selectively to an outer array in turn
+c←0 0
+r←{([[0]]⌷c)+←1 ⋄ ⍵×2}¨⍳5
+c   ⍝ 5 0
+
+⍝ — Each cell appends in place to an outer array in turn
+a←⍬
+r←{a,←1 ⋄ ⍵×2}¨⍳5
+a   ⍝ 1 1 1 1 1
 
 ⍝ — Each cell displays in turn
 {⎕←⍵}¨1 2
@@ -5513,6 +5969,21 @@ a   ⍝ 6
 
 ⍝ — `∂` inside the operand differentiates each cell on its own
 {{⍵×⍵}∂ ⍵}¨1 2 3   ⍝ 2 4 6
+
+⍝ — `∂` with respect to each row under Rank differentiates each row on its own
+{{+/⍵×⍵}∂ ⍵}⍤1⊢2 3⍴⍳6   ⍝ [0 2 4⋄6 8 10]
+
+⍝ — `∂` with respect to a batch of rows stops the batched run, because no rule of `∂` covers it
+•prefs ["batch":$t]
+(•explain "{{+/⍵×⍵}∂ ⍵}⍤1⊢2 3⍴⍳6").fallbacks.reason   ⍝ ["no batch rule"]
+
+⍝ — `∂` inside the operand refuses complex cells, as it refuses a complex argument outside a map
+{{⍵×⍵}∂ ⍵}¨1j1 2j1
+⍝ error: UNSUPPORTED
+
+⍝ — `∂` inside the operand refuses character cells, as it refuses a character argument outside a map
+{⊢∂⍵}¨"ab"
+⍝ error: DOMAIN ERROR
 
 ⍝ — Dot access reads each cell's record
 {⍵.a}¨[["a":1 "b":2];["a":3 "b":4]]   ⍝ 1 3
@@ -5545,6 +6016,9 @@ g←[0 1 0 0⋄0 0 1 0⋄1 1 1 0⋄0 0 0 0]=1
 life⌺3 3⊢g
 ⍝ =>
 [0 0 0 0⋄1 0 1 0⋄0 1 1 0⋄0 1 0 0]=1
+
+⍝ — An outer product's result has the left argument's axes, then the right's
+[1 2⋄3 4] {⍺×⍵}⊗ 10 100   ⍝ 2 2 2⍴10 100 20 200 30 300 40 400
 
 ⍝⍝ Composition rank and dyadic operators
 

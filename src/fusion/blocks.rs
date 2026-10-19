@@ -54,7 +54,7 @@ impl Graph {
         let mut copies: Vec<Vec<F>> = inputs.iter().map(|_| Vec::new()).collect();
         let (slot, count) = self.slots();
         let extra_of: Vec<Option<usize>> = (0..self.nodes.len()).map(|k| self.extras.iter().position(|&(j, _)| j == k)).collect();
-        let sources: Vec<(Option<Source<F>>, Source<F>)> = self.nodes.iter().map(|node| (node.left.as_ref().map(|o| Source::of(o, &slot)), Source::of(&node.right, &slot))).collect();
+        let sources: Vec<Operands<Source<F>>> = self.nodes.iter().map(|node| node.operands.as_ref().map(|o| Source::of(o, &slot))).collect();
         let block = self.block::<F>();
         let readings: Vec<Reading> = inputs.iter().map(|&(_, m)| reading(m, block)).collect();
         // A cycle shorter than a block reads from its period repeated once to cover a block at any phase. Each run reads it in place there, so it never splits a block into runs.
@@ -87,7 +87,7 @@ impl Graph {
                         None
                     }),
                 }));
-                for (k, (node, (left, right))) in self.nodes.iter().zip(&sources).enumerate() {
+                for (k, (node, operands)) in self.nodes.iter().zip(&sources).enumerate() {
                     let run = |buffers: &[Vec<F>], out: Out<'_, '_, F>| {
                         let operand = |source: &Source<F>| match *source {
                             Source::Input(i) => reads[i].unwrap_or_else(|| Arg::Many(&copies[i][..n])),
@@ -95,8 +95,13 @@ impl Graph {
                             Source::Node(b) => Arg::Many(&buffers[b][..]),
                         };
                         match node.operation {
-                            Operation::Primitive(p) => pervasive::node(p, left.as_ref().map(operand), operand(right), n, out, self.numeric),
-                            Operation::Copy => copied(operand(right), n, out),
+                            Operation::Primitive(p) => pervasive::node(p, operands.left.as_ref().map(operand), operand(&operands.right), n, out, self.numeric),
+                            Operation::Copy => copied(operand(&operands.right), n, out),
+                            Operation::Select => match out {
+                                Out::Floats(o) => F::choose(operand(operands.left.as_ref().expect("a select reads two operands")), operand(&operands.right), operand(operands.mask.as_ref().expect("a select reads its mask")), n, o),
+                                Out::Bools(_) => unreachable!("a select writes floats"),
+                            },
+                            Operation::Fold(..) | Operation::Product(..) => unreachable!("fusion defers only primitives, copies and selects"),
                         }
                     };
                     ok &= if k + 1 < self.nodes.len() {
@@ -167,7 +172,7 @@ fn copied<F: Copy>(x: Arg<'_, F>, n: usize, out: pervasive::Out<'_, '_, F>) -> b
     match (x, out) {
         (Arg::Many(s), pervasive::Out::Floats(o)) => { o.copy(&s[..n]); true }
         (Arg::One(v), pervasive::Out::Floats(o)) => o.pairs(Arg::One(v), Arg::One(()), n, |v, ()| (v, true)),
-        (_, pervasive::Out::Bools(_)) => false,
+        (_, pervasive::Out::Bools(_)) => unreachable!("a graph with a copy node writes floats"),
     }
 }
 
@@ -178,10 +183,4 @@ impl<F: Float> Source<F> {
     fn of(operand: &Operand, slot: &[usize]) -> Self {
         match *operand { Operand::Input(i) => Self::Input(i), Operand::Scalar(ref c) => Self::Constant(scalar(c)), Operand::Node(j) => Self::Node(slot[j]) }
     }
-}
-
-/// The float atom `c` at width `F`.
-fn scalar<F: Float>(c: &Value) -> F {
-    let Items::Compact(View::Floats(floats)) = c.as_items() else { unreachable!("a scalar operand is a float") };
-    F::narrow(floats.get(0))
 }

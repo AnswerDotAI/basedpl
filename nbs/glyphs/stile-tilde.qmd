@@ -35,7 +35,7 @@ N←700ₓ ⋄ N××/1ₓ-÷∪⨸N     ⍝ 240ₓ
 3⍭700                    ⍝ 240ₓ
 ```
 
-Unit cells; results assemble with fill. Primality testing is deterministic through 64 bits, probabilistic above that (false-positive bound `2⁻⁶⁴`).
+Unit cells; results assemble with fill. Primality uses the Baillie–PSW test, which is exact below `2⁶⁴` and a probable-prime test for larger inputs. A passing result above that range is not a proof of primality.
 
 ## Errors
 

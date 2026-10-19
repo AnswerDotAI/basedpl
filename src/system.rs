@@ -93,13 +93,23 @@ impl Valence {
 
 impl SystemFunction {
     pub(crate) fn check(&self, left: Option<&Value>, span: &crate::Span) -> Result<(), Error> { self.valence.check(self.name, left, span) }
+    /// Asks the running levels before this function or its inverse runs (`Levels::effect`). A random draw runs in a batched run, from each cell's stream. Any other system function stops the run, because it would act once for all the cells, or read a batch through code with no rule for one.
+    pub(crate) fn acts(&self, cx: &Context<'_>) -> Result<(), Error> {
+        if self.call.draws() { return Ok(()); }
+        cx.session.levels.effect(crate::transform::Effect::Acts).at(cx.span)
+    }
     /// The name that a factory made this function from, as `•element` makes one from a tag and `•edge` from a mode. Display writes it after the system name.
     pub(crate) fn argument(&self) -> Option<&str> { match &self.call { Call::Element(tag) => Some(tag), Call::Edge(mode) => Some(mode.name()), _ => None } }
 }
 
+impl Call {
+    /// Whether this call draws random numbers: a generator's roll or deal, or a distribution's sample. A batched run lets a draw through, because each cell then draws from its own stream (`distribution::drawn`).
+    pub(crate) fn draws(&self) -> bool { matches!(self, Call::Generator(..) | Call::Distribution(_, crate::distribution::Operation::Sample)) }
+}
+
 /// A function that calls `call` natively, taking its right argument whole. A generator's draw and a distribution's sample have a result prototype. In prototype mode they return it without drawing.
 pub(crate) fn native(name: &'static str, call: Call, valence: Valence) -> Function {
-    let draws = matches!(call, Call::Generator(..) | Call::Distribution(_, crate::distribution::Operation::Sample));
+    let draws = call.draws();
     Function::system(SystemFunction { name, call, valence, item: Whole, prototype: draws.then_some(float) })
 }
 
@@ -185,6 +195,7 @@ const INVERSES: &[(&str, Native, Valence)] = &[
 /// `f⁻¹` for a system function `f` that has an inverse.
 pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
     use crate::distribution::Operation::{Cdf, Quantile};
+    f.acts(cx)?;
     if let Call::Distribution(d, op @ (Cdf | Quantile)) = &f.call {
         return crate::distribution::call(d, if matches!(op, Cdf) { Quantile } else { Cdf }, left, right, cx);
     }
@@ -244,15 +255,11 @@ fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<(Value,
     Ok((Value::Number(crate::Number::float(start.elapsed().as_secs_f64(), FloatWidth::F64)), true))
 }
 
-/// `•storage Y`: how `Y`'s items are held, as a record. `kind` names the storage. Under static kinds, an integer's kind names its width as well, `int32` or `int64`, because the width is part of the kind there. `pending` is true while the items wait in a pending call, and `view` while `Y` reads another array's items. `active` counts the `∂` levels whose tags `Y` carries. Reading no items, it never forces a pending array.
+/// `•storage Y`: how `Y`'s items are held, as a record. `kind` names the storage (`Value::storage_kind`). Under static kinds, an integer's kind names its width as well, `int32` or `int64`, because the width is part of the kind there. `pending` is true while the items wait in a pending call, and `view` while `Y` reads another array's items. `active` counts the `∂` levels whose tags `Y` carries. Reading no items, it never forces a pending array.
 fn storage(_: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
     let flag = |b: bool| Value::Number(crate::Number::from_bool(b));
-    let numeric = Numeric::current();
-    let kind = match right.held().dtype().map(|d| numeric.kind(d)) {
-        Some(dtype @ rustymath::buffer::DType::Integer(_)) if numeric.is_static() => dtype.name(),
-        _ => right.storage_name(),
-    };
-    let values = vec![crate::keyed::text(kind), flag(right.held().pending().is_some()), flag(right.is_view()), Value::integer(crate::derivative::levels(right) as i64)];
+    let kind = right.storage_kind(Numeric::current());
+    let values = vec![crate::keyed::text(kind), flag(right.template().pending().is_some()), flag(right.template().is_view()), Value::integer(crate::derivative::levels(right) as i64)];
     crate::keyed::record(["kind", "pending", "view", "active"].map(Into::into).to_vec(), values).error_at(cx, "invalid storage record")
 }
 
@@ -320,11 +327,11 @@ fn to_float(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<V
 
 /// The widest float width among the numbers in `v`, nested arrays and a dual's primal included, or `None` when they're all exact. Characters and functions are DOMAIN.
 fn widest(v: &Value) -> Result<Option<FloatWidth>, ErrorKind> {
-    let v = v.held();
+    let v = v.template();
     match v.dtype() {
         Some(DType::Character) => Err(Kind::Domain.into()),
         Some(_) => Ok(v.float_width()),
-        None if matches!(v, Value::Number(_)) => Ok(v.as_number().and_then(|n| n.plain().float_width())),
+        None if matches!(v, Value::Number(_)) => Ok(v.as_number().and_then(|n| n.float_width())),
         None if matches!(v, Value::Array(_)) => {
             let items = if v.is_empty() { vec![v.prototype()] } else { v.elements().collect() };
             items.iter().map(widest).try_fold(None, |w, e| Ok(w.max(e?)))
@@ -388,6 +395,7 @@ fn normalize(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<
 
 /// `•literal⁻¹ Y` writes `Y` as BPL source, which `•literal` reads back. A value that holds a function or an operator is a DOMAIN error.
 pub(crate) fn write_literal(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    span.formats(None, right)?;
     if right.holds_function() { return Err(span.domain_error("•literal⁻¹ writes data, not functions")); }
     Ok(crate::keyed::text(&right.source(crate::display::Elide { plain: None, ..crate::display::Elide::NONE })))
 }

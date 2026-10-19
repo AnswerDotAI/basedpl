@@ -24,6 +24,8 @@ pub enum ErrorKind {
     Unsupported,
     Interrupt,
     Timeout,
+    /// A batched run's stop, which holds the id of the level that owns the run and whether a later run of the same operand would stop again (`transform::Stop`). Only that level catches it.
+    Stop(crate::transform::Stop),
     /// An error of a kind that rustymath's functions on arrays share: Length, Rank, Index, Limit, Domain or Overflow.
     Array(rustymath::error::Error),
     /// A kind that a program names when it signals an error, in upper case.
@@ -41,7 +43,7 @@ impl ErrorKind {
     /// The name that guards and `•signal` use, such as `DOMAIN`. Rustymath's Overflow is LIMIT, because BPL's exact integers grow and BPL has no overflow kind.
     pub fn name(&self) -> &str {
         match self {
-            Self::Syntax => "SYNTAX", Self::Value => "VALUE", Self::Io => "IO", Self::Unsupported => "UNSUPPORTED", Self::Interrupt => "INTERRUPT", Self::Timeout => "TIMEOUT",
+            Self::Syntax => "SYNTAX", Self::Value => "VALUE", Self::Io => "IO", Self::Unsupported => "UNSUPPORTED", Self::Interrupt => "INTERRUPT", Self::Timeout => "TIMEOUT", Self::Stop { .. } => "STOP",
             Self::Array(e) => match e.kind { Kind::Domain => "DOMAIN", Kind::Length => "LENGTH", Kind::Limit | Kind::Overflow => "LIMIT", Kind::Rank => "RANK", Kind::Index => "INDEX" },
             Self::Custom(name) => name
         }
@@ -52,6 +54,8 @@ impl ErrorKind {
         let name = name.to_uppercase();
         Some(Self::builtin().into_iter().find(|k| k.name() == name).unwrap_or_else(|| Self::Custom(name.into())))
     }
+    /// Whether an error of this kind controls evaluation rather than reporting a failure. An interrupt or a timeout ends the evaluation. A batched run's stop sends its level back to running cell by cell. A handler that catches every error lets these pass.
+    pub(crate) fn is_control(&self) -> bool { matches!(self, Self::Interrupt | Self::Timeout | Self::Stop { .. }) }
 }
 
 impl From<rustymath::error::Error> for ErrorKind {
@@ -62,10 +66,10 @@ impl From<Kind> for ErrorKind {
     fn from(kind: Kind) -> Self { Self::Array(rustymath::error::Error::new(kind, "")) }
 }
 
-/// `DOMAIN ERROR` and so on. Interrupts, timeouts and unsupported features show their names alone.
+/// `DOMAIN ERROR` and so on. Interrupts, timeouts, stops and unsupported features show their names alone.
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self { Self::Unsupported | Self::Interrupt | Self::Timeout => f.write_str(self.name()), _ => write!(f, "{} ERROR", self.name()) }
+        match self { Self::Unsupported | Self::Interrupt | Self::Timeout | Self::Stop { .. } => f.write_str(self.name()), _ => write!(f, "{} ERROR", self.name()) }
     }
 }
 

@@ -224,27 +224,30 @@ def add(ids, output='tests/reference', directory='provenance'):
     return list(rows)
 
 
-def _failures(request):
-    "The failures that a fresh worker gives for `request`, a `reference` or `page` request."
-    with Worker() as w: r = w.request(request)
+def _failures(request, bpl=None):
+    "The failures that a fresh worker running `bpl` gives for `request`, a `reference` or `page` request."
+    with Worker(bpl) as w: r = w.request(request)
     if e := r['error']: raise ValueError(e['message'])
     return r['failures']
 
 
 def check_file(
     path, # A `.bpl` reference file
-    ids:Annotated[int|str, {'nargs':'*'}]=None # Check only these cases, each named by its id or its header's line number
+    ids:Annotated[int|str, {'nargs':'*'}]=None, # Check only these cases, each named by its id or its header's line number
+    bpl:Path=None # A native `bpl` to check, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
 ):
     "Check the cases in `path` in a fresh worker, as `tests/reference.rs` does, and return the failures."
     if isinstance(ids, (int, str)): ids = [ids]
-    return _failures(dict(reference=dict(text=Path(path).read_text(), ids=ids)))
+    return _failures(dict(reference=dict(text=Path(path).read_text(), ids=ids)), bpl)
 
 
 def check_page(
-    path # A `.qmd` page
+    path, # A `.qmd` page
+    bpl:Path=None, # A native `bpl` to check, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
+    unbatched:bool=False # Run each example with the `batch` pref off
 ):
     "Run the BPL examples in `.qmd` page `path` in a fresh worker, as `tests/core.rs` does, and return the failures."
-    return _failures(dict(page=dict(text=Path(path).read_text())))
+    return _failures(dict(page=dict(text=Path(path).read_text(), batch=False if unbatched else None)), bpl)
 
 _SPEED = Path(__file__).parents[2]/'tests'/'speed.txt'
 # The budgets on each case line of a budget file, after its code, in order: macOS on Apple silicon, Linux on CI's x86 runner, then the browser build where the file has one.
@@ -292,11 +295,11 @@ def speed_costs(
     bpl:Path=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
     speed:str=None, # Text in `speed.txt`'s format; None: `tests/speed.txt`
     timeout:float=None, # Seconds before the timing stops
-    cases:Annotated[str, {'nargs':'*'}]=None # A case's code, or a list of codes, to time in every section that has it; None: every case
+    cases:Annotated[str, {'nargs':'*', 'opt':False}]=None # A case's code, or a list of codes, to time in every section that has it; None or empty: every case
 ):
     "Time every case in `speed` as the speed test does, with the budget that limits it in that build."
     speed = _SPEED.read_text() if speed is None else speed
-    if isinstance(cases, str): cases = [cases]
+    cases = [cases] if isinstance(cases, str) else cases or None
     if wasm is None:
         with Worker(bpl, native) as w: r = w.request(dict(costs=dict(speed=speed, cases=cases)), timeout)
         if e := r['error']: raise ValueError(e['message'])

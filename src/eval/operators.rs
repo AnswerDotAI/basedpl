@@ -5,10 +5,11 @@ use super::*;
 
 // Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
 #[inline(never)]
-pub(super) fn composition(op: OperatorKind, operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+pub(super) fn composition(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     use OperatorKind::*;
-    if matches!(op, Under) { return under(operands, left, right, cx); }
-    if matches!(op, Agenda) { return agenda(operands, left, right, cx); }
+    let &FunctionNode::Composed(op, ref operands) = f.node() else { unreachable!("composition takes a composed function") };
+    if matches!(op, Under) { return under(operands, left, right, || f.bpl(), cx); }
+    if matches!(op, Agenda) { return agenda(operands, left, right, || f.bpl(), cx); }
     if matches!(op, Stencil) {
         if left.is_some() { return Err(cx.span.error(ErrorKind::Syntax, "stencil is monadic")); }
         let [Operand::Function(f), spec] = operands else { unreachable!() };
@@ -39,16 +40,19 @@ pub(super) fn composition(op: OperatorKind, operands: &[Operand; 2], left: Optio
 
 /// The case that the unit `index` picks from `len` cases: a whole number, which counts back from the end where it's negative.
 pub(super) fn agenda_index(index: &Value, len: usize, span: &Span) -> Result<usize, Error> {
-    let n = index.as_number().ok_or_else(|| span.domain_error("agenda index must be numeric"))?;
-    crate::primitive::position(&n, len, span)
+    let Plain::Number(n) = index.observed().at(span)? else { return Err(span.domain_error("agenda index must be numeric")) };
+    crate::primitive::position(n, len, span)
 }
 
-/// `selector⍚cases`. A unit selector picks one case, which runs on the whole arguments. Any other selector picks a case for each cell (`Cells::chosen`).
-fn agenda(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+/// `selector⍚cases`. A unit selector picks one case, which runs on the whole arguments. Any other selector picks a case for each cell (`Cells::chosen`), or, where a select can run both cases on every item, selects their results item by item (`selected`).
+fn agenda(operands: &[Operand; 2], left: Option<&Value>, right: &Value, text: impl FnOnce() -> String, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let [selector, Operand::Value(fs)] = operands else { unreachable!() };
     let index = computed(selector, left, right, cx)?;
     if !index.is_unit() {
         let cases: Vec<_> = fs.elements().map(|f| match f { Value::Function(f) => f, _ => unreachable!() }).collect();
+        if let [no, yes, ..] = &cases[..] {
+            if let Some(result) = selected(&index, [Some(no), Some(yes)], left, right, text, cx)? { return Ok(Bound::from(result)); }
+        }
         return Ok(Bound::from(Cells::new(&index, left, right, cx.span)?.chosen(&index, &cases, left, right, cx)?));
     }
     let Value::Function(f) = fs.at(agenda_index(&index, fs.len(), cx.span)?) else { unreachable!() };
@@ -61,12 +65,12 @@ fn computed(operand: &Operand, left: Option<&Value>, right: &Value, cx: &mut Con
 }
 
 /// `f@g`: `f` applied to the selection that `g` makes from the argument, then written back in its place. An array `f` replaces the selection. An array `g` lists positions along the leading axis, as `[g]⌷` reads them, and a selection of no items leaves the argument as it is, without calling `f`. `[p]` runs `f` on the cells where `p` of the argument is 1 (`masked`). With positions or `[p]`, a left argument is laid over the right argument (`Laid`), and a unit goes whole to `f`.
-fn under(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+fn under(operands: &[Operand; 2], left: Option<&Value>, right: &Value, text: impl FnOnce() -> String, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let [Operand::Function(f), g] = operands else { unreachable!() };
     let positions = match g {
         Operand::Function(g) => return under_function(f, g, left, right, cx),
         Operand::Value(a) => match predicate(a) {
-            Some(p) => return Ok(Bound::from(masked(f, &p.call_array(None, right, cx)?, left, right, cx)?)),
+            Some(p) => return Ok(Bound::from(masked(f, &p.call_array(None, right, cx)?, left, right, text, cx)?)),
             None => a,
         },
     };
@@ -86,20 +90,84 @@ fn under(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
 /// The function of `[p]`, a one-item vector that holds a function.
 fn predicate(a: &Value) -> Option<Function> { if a.shape() != [1] { return None; } match a.at(0) { Value::Function(p) => Some(p), _ => None } }
 
-/// `f@[p]`, where `p` gives the mask `selector`: `f` runs once on the cells that the mask marks 1 (`Cells::marked`), and its results go back in their places under assignment's rule. Every other cell keeps its value, including one marked NaN, or whose key the mask lacks. A unit mask marks the whole argument or none of it.
-fn masked(f: &Function, selector: &Value, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+/// `f@[p]`, where `p` gives the mask `selector`: `f` runs once on the cells that the mask marks 1 (`Cells::marked`), and its results go back in their places under assignment's rule. Every other cell keeps its value, including one marked NaN, or whose key the mask lacks. A unit mask marks the whole argument or none of it. Where a select can run `f` on every item, it does (`selected`), and `•explain` names the call with `text`.
+fn masked(f: &Function, selector: &Value, left: Option<&Value>, right: &Value, text: impl FnOnce() -> String, cx: &mut Context<'_>) -> Result<Value, Error> {
     if selector.shape().is_empty() {
         let [k] = crate::primitive::positions(selector, 2, cx)?[..] else { unreachable!("a unit has one position") };
         if k != 1 { return Ok(right.clone()); }
         let every = Selection { frame: ResultFrame::Array(right.layout().clone()), targets: Targets::Offsets((0..right.len()).collect()) };
         return every.write(right, &f.call_array(left, right, cx)?, cx);
     }
+    if let Some(result) = selected(selector, [None, Some(f)], left, right, text, cx)? { return Ok(result); }
     let cells = Cells::new(selector, left, right, cx.span)?;
     let rows = cells.marked(selector, cx)?;
     if rows.is_empty() { return Ok(right.clone()); }
     let selection = cells.framed.selection(&rows, cx.span)?;
     let values = cells.case(f, &rows, left, right, cx)?;
     selection.write(right, &values, cx)
+}
+
+/// The costs, in copies per item, that decide between a select and a gather of each case's cells (`Cells`) where `selected` counts the mask. A gather pays `GATHERED` for every item, and `PICKED` plus the case's cost for each item that picks a case that computes. A select pays `CHOSEN` for every item, plus the cost of every case that computes. The values come from a fit on 19 October 2026 on this Mac, an Apple M5 Max, to `-@[p] s` and `*@[p] s` on 65,536 floats with 10% to 90% of items picked. The fit puts the crossover at about 22% picked for `-` and 55% for `*`. CI's timings can refine it.
+const GATHERED: f64 = 2.3;
+const PICKED: f64 = 7.3;
+const CHOSEN: f64 = 3.1;
+/// The dearest kernel, in copies per item (`Facts::cost`), that fusion runs in a select without counting the mask first. Measured on 19 October 2026 on this Mac on a million floats: a select through `√` (2) or `⌊` (3) cost 4.1 and 3.5 copies with 1 item in 100 picked, against 2.5 by gathering, and 4.0 and 3.4 with half picked, against 7.3 and 6.9. One through `*` (7) cost 9.5 copies with 1 item in 100 picked, against 2.5.
+const DEFERRED: u32 = 3;
+
+/// `cases[1]` on the items where the Boolean `mask` is 1 and `cases[0]` where it's 0, each run on every item of `right` and then chosen item by item (`fusion::select`), in place of gathering each case's cells (`Cells`). A case of `None` keeps `right`'s items, as `@[p]` keeps the items it doesn't select. A case then also runs on items that didn't pick it, which can't show where it never fails and gives the argument's kind (`select_cost`). `None` leaves the call to `Cells`: for a left argument, an empty argument, a mask that isn't Booleans with the argument's layout, an argument that isn't floats of 32 or 64 bits, an argument that `∂` tracks, whose gradient a select could make NaN where a case's slope is infinite on an item that didn't pick it, or a case that a select can't run. A select also has to cost less than the gather, by its cases' costs and the counts of the items that pick them (`GATHERED`). Fusion runs a select without counting the mask only where no case holds a kernel dearer than `DEFERRED`, because a dearer kernel run on every item can cost more than the gather it saves. `•explain` reports a select as a fast combination, named by `text`.
+fn selected(mask: &Value, cases: [Option<&Function>; 2], left: Option<&Value>, right: &Value, text: impl FnOnce() -> String, cx: &mut Context<'_>) -> Result<Option<Value>, Error> {
+    use rustymath::buffer::{DType, FloatWidth};
+    let Some(DType::Float(width @ (FloatWidth::F32 | FloatWidth::F64))) = right.dtype() else { return Ok(None) };
+    if left.is_some() || right.is_empty() || mask.dtype() != Some(DType::Boolean) || **mask.layout() != **right.layout() || cx.carried(left, right) { return Ok(None); }
+    let [Some(no), Some(yes)] = cases.map(|f| f.map_or(Some(Cost::NONE), |f| select_cost(f, width))) else { return Ok(None) };
+    let keeps = |f: Option<&Function>| f.is_none_or(|f| matches!(f.as_primitive(), Some(Primitive::Identity(_))));
+    if no.dearest.max(yes.dearest) > DEFERRED || !crate::fusion::defers_select(mask, width, right.layout()) {
+        let crate::array::Items::Compact(rustymath::buffer::View::Booleans(bits)) = mask.as_items() else { unreachable!("a Boolean mask is compact") };
+        let ones = bits.iter().filter(|&&b| b).count();
+        let picked = |f: Option<&Function>, count: usize, cost: Cost| if keeps(f) { 0.0 } else { count as f64 * (PICKED + f64::from(cost.copies)) };
+        let n = bits.len() as f64;
+        if (CHOSEN + f64::from(no.copies + yes.copies)) * n >= GATHERED * n + picked(cases[0], bits.len() - ones, no) + picked(cases[1], ones, yes) { return Ok(None); }
+    }
+    let mut items = |f: Option<&Function>| -> Result<Value, Error> {
+        let Some(f) = f.filter(|_| !keeps(f)) else { return Ok(right.clone()) };
+        if let Some(a) = f.as_constant() { return Ok(a.clone()); }
+        f.call_array(None, right, cx)
+    };
+    let [no, yes] = cases;
+    let (y, x) = (items(no)?, items(yes)?);
+    if cx.session.explaining { crate::explain::fast("masked select", text()); }
+    Ok(Some(crate::fusion::select(mask, &x, &y, right.layout())))
+}
+
+/// What a select pays to run a case on every item: its kernels' costs in copies per item (`Facts::cost`), in all and of the dearest one.
+#[derive(Clone, Copy)]
+struct Cost { copies: u32, dearest: u32 }
+impl Cost {
+    /// The cost of a case that runs no kernel: `⊢`, a constant, or the items that `@[p]` keeps.
+    const NONE: Self = Self { copies: 0, dearest: 0 };
+    fn and(self, other: Self) -> Self { Self { copies: self.copies + other.copies, dearest: self.dearest.max(other.dearest) } }
+}
+
+/// What a select pays to run `f` on every item of an array of floats of `width`, or `None` where it can't run `f`. A select can run `f` where it never fails, and gives one float of that width for each item, from that item alone. That holds for `⊢`, for a constant float of exactly `width`, and for trains built from those and from primitives whose float kernel never fails and gives floats (`pervasive::kernel`). A constant beside such a primitive can be narrower, because the primitive's result takes the argument's width. Any other constant would make the result's kind depend on which items pick the case.
+fn select_cost(f: &Function, width: rustymath::buffer::FloatWidth) -> Option<Cost> {
+    use rustymath::buffer::DType;
+    let real = |a: &Value| match a { Value::Number(n) if !n.is_exact() && n.as_bool().is_none() && n.as_float().is_some() => a.float_width(), _ => None };
+    let numeric = Numeric::current();
+    let kernel = |p: Primitive, dyadic: bool| {
+        let copies = u32::from(p.facts(dyadic).cost);
+        crate::pervasive::kernel(p, dyadic, DType::Float(width), numeric).is_some_and(|k| k.total && matches!(k.kind, DType::Float(_))).then_some(Cost { copies, dearest: copies })
+    };
+    let dyad = |g: &Function| g.as_primitive().and_then(|p| kernel(p, true));
+    if let Some(a) = f.as_constant() { return (real(a) == Some(width)).then_some(Cost::NONE); }
+    if let Some((parts, bound)) = f.called_parts(false) {
+        if bound.is_some_and(|a| !real(a).is_some_and(|w| w <= width)) { return None; }
+        return parts.iter().try_fold(Cost::NONE, |cost, &(g, dyadic)| Some(cost.and(if dyadic { dyad(g)? } else { select_cost(g, width)? })));
+    }
+    match f.node() {
+        FunctionNode::Primitive(Primitive::Identity(_)) => Some(Cost::NONE),
+        FunctionNode::Primitive(p) => kernel(*p, false),
+        _ => None,
+    }
 }
 
 /// A case's result, classified once: one cell for each cell that picks the case, or one item that fills them all, as `@` fills a selection.
@@ -356,10 +424,13 @@ fn placed(framed: &Framed, axes: &[usize], cell: &crate::array::Layout, span: &S
     Ok((plan.layout.into(), axes.to_vec()))
 }
 
-/// `operand` called on prototypes, as Each calls it for a frame with no cells. A call that fails gives 0, so the result is empty with prototype 0, as in J.
+/// `operand` called on prototypes, as Each calls it for a frame with no cells. A call that fails gives 0, the prototype of the empty result, as in J. Inside a batched run, a call that fails stops the run, as a guard does (`session::Catch`).
 fn on_prototypes(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     match operand.call_prototype(left, right, cx) {
-        Err(e) if super::session::Catch::All.catches(&e.kind) => Ok(Bound::from(Value::Number(Numeric::current().float(0.0)))),
+        Err(e) if super::session::Catch::All.catches(&e.kind) => {
+            cx.session.levels.effect(crate::transform::Effect::Catches).at(&e.span)?;
+            Ok(Bound::from(Value::Number(Numeric::current().float(0.0))))
+        }
         result => result,
     }
 }
@@ -405,14 +476,23 @@ fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> R
     let count = generated_len(windows.frame()).at(cx.span)?;
     let layout = crate::array::Layout::from(windows.frame_layout(right.layout()).at(cx.span)?);
     let span = cx.span;
-    // `starts` gives an empty frame one position, whose window is the prototype pair's right argument.
+    // `starts` and `border` give an empty frame one position, whose window is the prototype pair's right argument.
     let pair = |position| {
         let starts = windows.starts(position);
-        let border = Value::floats(vec![starts.len()], Numeric::current().width, windows.border(&starts).into_iter().map(|n| n as f64)).unwrap();
+        let border = Value::floats(vec![starts.len()], Numeric::current().width, windows.border(position).into_iter().map(|n| n as f64)).unwrap();
         let window = remapped(right, windows.window(right.layout(), &starts).at(span)?).error_at(span, "invalid stencil window")?;
         Ok((Some(border), window))
     };
-    mixed(each_pair(f, count, layout, pair, cx)?, span, "invalid stencil result")
+    // A batched try reads every window at once, with every window's border as its left argument (`batch::tried`). `whole` builds the table of every window's border only when the try runs, after the try's own checks. An argument with keys runs window by window, because each window of a keyed axis has its own keys, and the cells of a batch share one layout. Windows that together hold more items than an array can (`MAX_GENERATED_ELEMENTS`) also run one at a time.
+    let whole = || {
+        if (0..right.shape().len()).any(|a| right.keys(a).is_some()) { return None; }
+        let padded = windows.padding().map(|p| remapped(right, p)).transpose().ok()?;
+        let source = padded.as_ref().unwrap_or(right);
+        let windowed = remapped(source, windows.plan(right.layout(), source.shape()).ok()?).ok()?;
+        let left = Value::floats([windows.frame(), &[sizes.len()]].concat(), Numeric::current().width, windows.borders().into_iter().map(|n| n as f64)).ok()?;
+        Some(crate::batch::Arguments { left: Some((left, 1)), right: (windowed, windows.cell().len()) })
+    };
+    each_pair(f, count, layout, pair, whole, Some("invalid stencil result"), cx)
 }
 
 fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -435,7 +515,7 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
     let mut value = right.clone();
     match operand {
         Operand::Value(count) if count.is_atom() => {
-            let (negative, n) = checked_count(count, cx.span)?;
+            let (negative, n) = power_count(count.observed().at(cx.span)?).domain_at(cx.span)?;
             let inverse;
             let f = if negative { inverse = f.inverse(cx.span)?; &inverse } else { f };
             if n == u64::MAX { converge(f, &mut value, cx)?; } else {
@@ -490,28 +570,23 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut 
     Ok(Bound::from(value))
 }
 
-/// A count's direction and its number of steps, with `u64::MAX` for `∞`, or `None` for a count that is neither whole nor infinite.
-pub(super) fn power_count(n: &crate::Number) -> Option<(bool, u64)> {
-    if n.is_infinite() { return Some((n.as_float().is_some_and(|x| x < 0.), u64::MAX)); }
-    n.integer().ok().map(|n| (n < 0, n.unsigned_abs()))
-}
-
-/// The count that the atom `e` holds.
-fn checked_count(e: &Value, span: &Span) -> Result<(bool, u64), Error> {
-    let Value::Number(n) = e else { return Err(span.domain_error("power counts must be numeric")) };
-    power_count(n).ok_or_else(|| span.domain_error("power counts must be integral or infinite"))
+/// The count that the observed value `e` gives: its direction and its number of steps, with `u64::MAX` for `∞`. Any other value gives the message of its DOMAIN error.
+pub(super) fn power_count(e: Plain<'_>) -> Result<(bool, u64), &'static str> {
+    if let Some(negative) = e.infinity() { return Ok((negative, u64::MAX)); }
+    let Plain::Number(n) = e else { return Err("power counts must be numeric") };
+    n.integer().map(|n| (n < 0, n.unsigned_abs())).map_err(|_| "power counts must be integral or infinite")
 }
 
 /// The counts in a count array, through any nesting.
 fn power_counts(count: &Value, span: &Span, counts: &mut Vec<(bool, u64)>) -> Result<(), Error> {
-    for e in count.elements() { match &e { Value::Array(_) => power_counts(&e, span, counts)?, _ => counts.push(checked_count(&e, span)?) } }
+    for e in count.elements() { match &e { Value::Array(_) => power_counts(&e, span, counts)?, _ => counts.push(power_count(e.observed().at(span)?).domain_at(span)?) } }
     Ok(())
 }
 
 /// `count` with each count replaced by the state after that many steps, as one item. A nested count array gives a nested item.
 fn power_states(count: &Value, states: &HashMap<(bool, u64), Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let items = count.elements().map(|e| {
-        let state = match &e { Value::Array(_) => power_states(&e, states, right, span)?, _ => states[&checked_count(&e, span)?].clone() };
+        let state = match &e { Value::Array(_) => power_states(&e, states, right, span)?, _ => states[&power_count(e.observed().at(span)?).domain_at(span)?].clone() };
         state.enclose().error_at(span, "power result is too large")
     }).collect::<Result<Vec<_>, _>>()?;
     count.layout().assemble(&items, &right.enclose().error_at(span, "power result is too large")?).error_at(span, "power result is too large")
@@ -530,7 +605,7 @@ pub(super) fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value
         Primitive(p) => crate::primitive::inverse(*p, bound, right, None, cx),
         Ruled(_, Rules { inverse: Some(g), .. }) if first => return g.call(left, right, cx),
         Ruled(g, Rules { inverse: None, .. }) => return inverse(g, bound, right, cx),
-        Composed(Under, [Operand::Function(g), h]) => return composition(Under, &[Operand::Function(operand_inverse(g)?), h.clone()], left, right, cx),
+        Composed(Under, [Operand::Function(g), h]) => return composition(&Function::new(Composed(Under, [Operand::Function(operand_inverse(g)?), h.clone()]), cx.span)?, left, right, cx),
         Inverse(g) if first => return g.call(left, right, cx),
         Modified(Each, Operand::Function(g)) => return each(&operand_inverse(g)?, left, right, cx),
         Modified(Outer, Operand::Function(g)) => {
@@ -692,7 +767,7 @@ pub(super) fn key(derived: &Function, left: Option<&Value>, right: &Value, cx: &
     }
     let mut classes = crate::search::grouped(&key_cells, cx)?;
     let count = classes.firsts.len();
-    if let Some(folds @ Idiom::Folds(p)) = idiom.filter(|_| left.is_some() && count > 0 && right.shape().len() == 1 && !crate::derivative::active_in(cx, right)) {
+    if let Some(folds @ Idiom::Folds(p)) = idiom.filter(|_| left.is_some() && count > 0 && right.shape().len() == 1 && !cx.carried(None, right)) {
         if let Some(result) = crate::pervasive::fold_groups(*p, right, &classes) {
             folds.taken(derived, cx);
             return Ok(Bound::from(result));
@@ -737,40 +812,32 @@ pub(super) fn key(derived: &Function, left: Option<&Value>, right: &Value, cx: &
 
 /// The primitive in `f`, when `f` is a primitive whose form for this valence is a pervasive function. Each and Outer call such a primitive on whole arrays.
 fn pervasive_primitive(f: &Function, dyadic: bool) -> Option<Primitive> {
-    f.as_primitive().filter(|p| p.pervasive(dyadic))
+    f.as_primitive().filter(|p| p.facts(dyadic).pervasive)
 }
 
 pub(super) fn outer(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let left = left.ok_or_else(|| cx.span.error(ErrorKind::Syntax, "outer product needs a left argument"))?;
     if left.is_atom() && right.is_atom() { return operand.call(Some(left), right, cx); }
     if let Some(p) = pervasive_primitive(operand, true) { return Ok(Bound::from(p.outer(left, right, cx)?)); }
-    let layout = left.layout().concat(right.layout());
-    let len = generated_len(layout.shape()).at(cx.span)?;
-    // With no pairs, an empty argument gives its prototype and a nonempty one its first item.
-    let item = |a: &Value, i| if a.is_empty() { a.prototype() } else { a.at(i) };
-    let columns = right.len().max(1);
-    each_pair(operand, len, layout, |i| Ok((Some(item(left, i / columns)), item(right, i % columns))), cx)
+    outer_items(operand, left, right, cx)
 }
 
+/// The outer product's general path: `operand` on each pair of an item of `left` and an item of `right` (`each_pair`).
+// Out of line, as `each_items` is, so that `outer`'s frame holds only its fast paths.
+#[inline(never)]
+fn outer_items(operand: &Function, left: &Value, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+    let agreement = Agreement::outer(left.layout(), right.layout()).error_at(cx.span, "outer product is too large")?;
+    // A batched try reads each argument laid over the result's frame (`batch::Arguments::laid`).
+    let whole = || crate::batch::Arguments::laid(&agreement, Some((left.clone(), 0)), (right.clone(), 0));
+    each_pair(operand, agreement.len, agreement.layout.clone(), |i| Ok(agreement.values(Some(left), right, i)), whole, None, cx)
+}
+
+/// `f.g` between `left` and `right`, as an array.
+pub(crate) fn inner_product(f: &Function, g: &Function, left: &Value, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> { inner(f, g, Some(left), right, cx)?.array(cx.span) }
+
 fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
-    use crate::number::Arithmetic::{Plus, Times};
     let Some(left) = left else { return expansion(f, g, right, cx) };
-    // The tangent of `A+.×B` is `(tA+.×B)+A+.×tB`, through the same product kernels.
-    if cx.session.transforming() && matches!(f.as_primitive().zip(g.as_primitive()), Some((Primitive::Arithmetic(Plus), Primitive::Arithmetic(Times)))) {
-        // A record reaches here only as a dual's tangent, which the terms below record with the primal's layout (`linear::product`).
-        if left.linear().is_some() || right.linear().is_some() { return Err(cx.span.error(crate::ErrorKind::Unsupported, "∂ can't transpose this product")); }
-        if let Some(tag) = crate::derivative::tag(left).max(crate::derivative::tag(right)) {
-            let (a, ta) = crate::derivative::split(left, tag);
-            let (b, tb) = crate::derivative::split(right, tag);
-            let r = inner(f, g, Some(&a), &b, cx)?.array(cx.span)?;
-            let mut t = ta.map(|ta| crate::derivative::product(&ta, &b, cx)).transpose()?;
-            if let Some(tb) = tb {
-                let term = crate::derivative::product(&a, &tb, cx)?;
-                t = Some(match t { Some(t) => Primitive::Arithmetic(crate::number::Arithmetic::Plus).call(Some(&t), &term, cx)?, None => term });
-            }
-            return Ok(Bound::from(crate::derivative::dual(tag, r, t.expect("a dual argument has a tangent"))));
-        }
-    }
+    if cx.session.transforming() { if let Some(result) = crate::transform::route(crate::transform::Op::Product(f, g), Some(left), right, cx) { return result.map(Bound::from); } }
     let nx = left.shape().last().copied().unwrap_or(1);
     let ny = right.shape().first().copied().unwrap_or(1);
     let positions =
@@ -784,7 +851,7 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
     let rows = generated_len(xf).at(cx.span)?;
     let cols = generated_len(yf).at(cx.span)?;
     generated_len(&[n.max(1), cols.max(1)]).at(cx.span)?;
-    let active = crate::derivative::either_active(cx, Some(left), right);
+    let active = cx.carried(Some(left), right);
     if let (Some((pf, pg)), false) = (f.as_primitive().zip(g.as_primitive()), active) {
         if nx == ny && n > 0 && size > 0 && !left.is_unit() && !right.is_unit() && matches!(positions, Mapping::Linear(1)) {
             if let Some(result) = crate::pervasive::inner(pf, pg, left, right, [rows, n, cols], layout.shape().to_vec()) {
@@ -824,7 +891,6 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
 /// Monadic `f.g`, as J defines it: the expansion of a matrix by minors along its first column. A vector is one column, and an atom one item. `-.×` is the determinant and `+.×` the permanent, which `idioms` computes by faster algorithms.
 fn expansion(f: &Function, g: &Function, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let [m, n] = matrix(right).ok_or_else(|| cx.span.error(Kind::Rank, "monadic f.g needs a matrix, a vector or a number"))?;
-    if crate::derivative::active_in(cx, right) { return Err(cx.span.error(ErrorKind::Unsupported, "∂ differentiates monadic f.g only as -.×")); }
     if m > 64 { return Err(cx.span.error(Kind::Limit, "monadic f.g expands at most 64 rows")); }
     let items: Vec<Value> = (0..m * n).map(|i| right.at(i)).collect();
     let rows = if m == 0 { 0 } else { u64::MAX >> (64 - m) };
@@ -859,9 +925,9 @@ fn expand(
 fn cell_ranks(ranks: &Value, cx: &Context<'_>) -> Result<[isize; 3], Error> {
     if ranks.shape().len() > 1 { return Err(cx.span.error(Kind::Rank, "rank operand must be a unit or vector")); }
     if !(1..=3).contains(&ranks.len()) { return Err(cx.span.error(Kind::Length, "rank operand needs one to three items")); }
-    let ranks = ranks.elements().map(|e| match e {
-            Value::Number(n) if n.is_infinite() => Ok(if n.as_float().is_some_and(f64::is_sign_positive) { isize::MAX } else { isize::MIN }),
-            Value::Number(n) => {
+    let ranks = ranks.elements().map(|e| match e.observed().at(cx.span).map(|e| (e.infinity(), e))? {
+            (Some(negative), _) => Ok(if negative { isize::MIN } else { isize::MAX }),
+            (None, Plain::Number(n)) => {
                 n.integer().map(|n| isize::try_from(n).unwrap_or(if n < 0 { isize::MIN } else { isize::MAX })).error_at(cx.span, "cell ranks must be integers")
             }
             _ => Err(cx.span.domain_error("cell ranks must be numeric")),
@@ -877,84 +943,166 @@ pub(super) fn rank(operand: &Function, ranks: &Value, left: Option<&Value>, righ
     let [p, q, r] = cell_ranks(ranks, cx)?;
     let yr = within(right.shape().len(), if left.is_some() { r } else { p });
     let xr = left.map_or(0, |a| within(a.shape().len(), q));
-    if let Some(result) = try_bulk(operand, left, right, [xr, yr], cx) { return result; }
-    let framed = |a: &Value, rank| a.cells(rank)?.framed();
-    let ys = framed(right, yr).error_at(cx.span, "invalid rank cells")?;
-    let xs = left.map(|a| framed(a, xr)).transpose().error_at(cx.span, "invalid rank cells")?;
-    mixed(paired(operand, xs.as_ref(), &ys, cx)?, cx.span, "invalid rank result")
+    if let Some(result) = whole(operand, left, right, [xr, yr], cx) { return result; }
+    rank_cells(operand, left, right, [xr, yr], cx)
 }
 
-/// A map's results, one for each position of its frame, mixed into one array whose numbers keep their kinds, as Rank and stencils mix them.
-fn mixed(results: Bound, span: &Span, what: &str) -> Result<Bound, Error> {
-    let Binding::Value(results) = results.value else { return Ok(results) };
-    Ok(Bound::from(results.mix(crate::array::Widening::Items).error_at(span, what)?))
+/// Rank's general path: `operand` on each pair of cells of ranks `xr` and `yr`, paired by the agreement of the cells' frames (`each_pair`).
+// Out of line, as `each_items` is, so that `rank`'s frame holds only its fast paths (`whole`).
+#[inline(never)]
+fn rank_cells(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [usize; 2], cx: &mut Context<'_>) -> Result<Bound, Error> {
+    let span = cx.span;
+    let ys = right.cells(yr).error_at(span, "invalid rank cells")?;
+    let xs = left.map(|a| a.cells(xr)).transpose().error_at(span, "invalid rank cells")?;
+    let agreement = Agreement::new(&xs.as_ref().map_or_else(Default::default, |c| c.frame_layout()), &ys.frame_layout()).error_at(span, "frames do not agree")?;
+    let cell = |c: &crate::array::Cells<'_>, j: Option<usize>| j.map_or_else(|| c.prototype(), |j| c.get(j)).error_at(span, "invalid rank cells");
+    let pair = |i| {
+        let [x, y] = agreement.positions(i, [xs.as_ref().map_or(0, |c| c.len()), ys.len()]);
+        Ok((xs.as_ref().map(|c| cell(c, x)).transpose()?, cell(&ys, y)?))
+    };
+    each_pair(operand, agreement.len, agreement.layout.clone(), pair, || crate::batch::Arguments::laid(&agreement, left.map(|a| (a.clone(), xr)), (right.clone(), yr)), Some("invalid rank result"), cx)
 }
 
-/// `operand⍤k` in calls on whole arguments, where they give what one call for each cell gives. `xr` and `yr` are the cell ranks. `None` where no rule applies. Rank then calls `operand` once for each cell.
-fn try_bulk(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [usize; 2], cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
+/// `operand⍤k` as calls on whole arguments, for operands where those calls give what one call for each cell gives. `xr` and `yr` are the cell ranks. It gives `None` for other operands, and Rank then calls `operand` once for each cell.
+fn whole(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [usize; 2], cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
     // With no frame, the one cell is the whole argument.
     if yr == right.shape().len() && left.is_none_or(|x| xr == x.shape().len()) { return Some(operand.call(left, right, cx)); }
-    if let Some(result) = stacked(operand, left, right, [xr, yr], cx) { return Some(result); }
+    if let Some(result) = decomposed(operand, left, right, [xr, yr], cx) { return Some(result); }
+    if let Some(result) = operand.operation().and_then(|op| whole_cells(op, left.map(|x| (x, xr)), (right, yr), cx)) { return Some(result.map(Bound::from)); }
     if let Some(result) = pervasive_cells(operand, left, right, [xr, yr], cx) { return Some(result); }
     if left.is_some() { return None; }
     cell_rule(operand, right, yr, cx).map(|result| result.map(Bound::from))
 }
 
+/// `operation` on each pair of cells of `left` and `right`, each given with the rank of its cells, as calls on the whole arguments. An argument with no axes besides its cells' is the same in every cell. The other arguments' frames agree, as Rank pairs them. `None` where no route covers the call. Rank (`whole`) and batched maps (`batch::call` and `batch::route`) share it. The routes, in order:
+/// - `+.×`, `⌹` and `-.×` on stacks of matrices (`primitive::stacked`). Values that `∂` tracks take another route, because the stacked kernels read compact storage.
+/// - A pervasive primitive, in one call with padded frames (`padded_call`).
+/// - Any other primitive with one argument, or with a left argument that is the same in every cell, by its rule for cells (`primitive_cells`).
+/// - A primitive whose two arguments' frames match, or whose right argument is the same in every cell, by its rule for pairs of cells (`paired_cells`). An empty argument takes the path through cells, because a call on prototype cells gives its result's shape.
+pub(crate) fn whole_cells(operation: Operation, left: Option<(&Value, usize)>, (y, yk): (&Value, usize), cx: &Context<'_>) -> Option<Result<Value, Error>> {
+    let x = left.map(|(x, _)| x);
+    if yk == 2 && left.is_none_or(|(_, xk)| xk == 2) && !cx.carried(x, y) {
+        if let Some(result) = crate::primitive::stacked(operation, x, y, cx) { return Some(result); }
+    }
+    let Operation::Primitive(p) = operation else { return None };
+    let frame = |v: &Value, k: usize| v.shape().len() - k;
+    if p.facts(left.is_some()).pervasive {
+        let fx = left.map(|(x, xk)| [frame(x, xk)]);
+        if let Some(result) = padded_call(p, x.zip(fx.as_ref().map(|f| &f[..])), (y, &[frame(y, yk)]), cx) { return Some(result); }
+    }
+    let Some((x, xk)) = left else { return primitive_cells(p, None, y, yk, cx) };
+    let (fx, fy) = (frame(x, xk), frame(y, yk));
+    if fx == 0 { return primitive_cells(p, Some(x), y, yk, cx); }
+    if x.is_empty() || y.is_empty() || (fy > 0 && x.layout().axes(0..fx) != y.layout().axes(0..fy)) { return None; }
+    paired_cells(p, x, xk, y, yk, cx).map(Ok)
+}
+
 /// `f` on each rank-`k` cell of `y`, as calls on the whole of `y` along the cells' axes. The frame's axes keep their keys and names. `None` where no rule covers `f`.
 fn cell_rule(f: &Function, y: &Value, k: usize, cx: &mut Context<'_>) -> Option<Result<Value, Error>> {
-    use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::{Atop, Before}};
-    let frame = y.shape().len() - k;
-    // Cell axes `from..from + count`, numbered as axes of the whole of `y`.
-    let axes = |from: usize, count: usize| Value::integers(vec![count], (frame + from..frame + from + count).map(|a| a as i64).collect()).expect("axes are integers");
+    use {crate::primitive::CellRule, FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::{Atop, Before}};
     match f.node() {
-        N::Primitive(p) => {
-            if p.extends_at(None, k) { return Some(p.call(None, y, cx)); }
-            match p {
-                Primitive::Reverse(true) if k > 0 => Some(p.call_axes(None, y, &axes(0, 1), cx)),
-                Primitive::Ravel => Some(p.call_axes(None, y, &axes(0, k), cx)),
-                Primitive::Tally => Some(constant(y, frame, &[], &[if k == 0 { 1 } else { y.shape()[frame] as i64 }], cx)),
-                // The shape of a cell with named axes is keyed by the names.
-                Primitive::Shape if y.layout().names().iter().skip(frame).all(Option::is_none) => {
-                    Some(constant(y, frame, &[k], &y.shape()[frame..].iter().map(|&n| n as i64).collect::<Vec<_>>(), cx))
-                }
-                _ => None,
-            }
-        }
-        // A pervasive primitive's fold or scan of each cell of a simple array is simple. Rank's mix of those results gives what the whole-array call gives.
-        N::Fold(g, kind) if k > 0 && folds_whole(g, None, y) => {
-            let axis = Value::integer((frame + kind.default_axis(k)) as i64);
-            Some(if kind.scan { scan(g, *kind, Some(&axis), None, y, cx) } else { fold(g, *kind, Some(&axis), None, y, cx) })
-        }
-        N::Composed(Before, [V(a), F(g)]) if a.keys(0).is_none() => {
-            let Some(p) = g.as_primitive() else { return None };
-            if p.extends_at(Some(a), k) { return Some(p.call(Some(a), y, cx)); }
-            // A left argument of take, drop or index has one item for each leading cell axis it applies to.
-            let leading = match a.shape() { [] => 1, &[n] => n, _ => return None };
-            match p {
-                // A named selector stays on the cell path, because the whole array's frame axes could pair with its name.
-                Primitive::Index if leading <= k && a.elements().any(|e| e.axis_names().iter().any(Option::is_some)) => None,
-                Primitive::Take | Primitive::Drop | Primitive::Index if leading <= k => Some(p.call_axes(Some(a), y, &axes(0, leading), cx)),
-                Primitive::Reverse(true) if a.shape().is_empty() && k > 0 => Some(p.call_axes(Some(a), y, &axes(0, 1), cx)),
-                // A reshape that keeps a cell's items in order is a view.
-                Primitive::Shape => {
-                    let shape: Vec<usize> = a.elements().map(|e| e.as_number().and_then(|n| n.as_integer()).and_then(|n| usize::try_from(n).ok())).collect::<Option<_>>()?;
-                    if shape.iter().product::<usize>() != y.shape()[frame..].iter().product::<usize>() { return None; }
-                    Some(y.relaid(y.layout().axes(0..frame).concat(&crate::array::Layout::from(shape))).error_at(cx.span, "invalid cell reshape"))
-                }
-                _ => None,
-            }
-        }
+        N::Primitive(p) => primitive_cells(*p, None, y, k, cx),
+        N::Fold(g, kind) => folded_cells(g, *kind, y, k, cx),
+        N::Composed(Before, [V(a), F(g)]) => primitive_cells(g.as_primitive()?, Some(a), y, k, cx),
         N::Composed(Atop, [F(g), F(h)]) => {
-            // A fold of each cell's ravel folds all the cell axes at once. That takes folds in turn where the primitive allows them. Folds in turn reach sliding folds over windows.
-            if let (N::Fold(op, kind), Some(Primitive::Ravel)) = (g.node(), h.as_primitive()) {
-                if !kind.scan && k > 0 && folds_whole(op, None, y) { return Some(fold(op, *kind, Some(&axes(0, k)), None, y, cx)); }
+            // A fold of each cell's items, joined into one axis as monadic `,` joins them (`CellRule::Every`), folds all the cell axes at once. That takes folds in turn where the primitive allows them. Folds in turn reach sliding folds over windows.
+            if let (N::Fold(op, kind), Some(p)) = (g.node(), h.as_primitive()) {
+                let frame = y.shape().len() - k;
+                let axes = Value::integers(vec![k], (frame..frame + k).map(|a| a as i64).collect()).expect("axes are integers");
+                if p.facts(false).cells == CellRule::Every && !kind.scan && k > 0 && folds_whole(op, None, y) { return Some(fold(op, *kind, Some(&axes), None, y, cx)); }
             }
             let inner = match cell_rule(h, y, k, cx)? { Ok(inner) => inner, Err(e) => return Some(Err(e)) };
-            let ranks = Value::integer((inner.shape().len() - frame) as i64);
+            let ranks = Value::integer((inner.shape().len() - (y.shape().len() - k)) as i64);
             Some(rank(g, &ranks, None, &inner, cx).and_then(|result| result.array(cx.span)))
         }
         _ => None,
     }
+}
+
+/// The primitive `p` on each rank-`k` cell of `y`, as calls on the whole of `y` along the cells' axes, with `left` as the left argument of every cell where it has one. The frame's axes keep their keys and names. `None` where no rule covers `p`. The routes for whole arguments use it (`whole_cells`), and so does Rank for a monadic operand (`cell_rule`).
+fn primitive_cells(p: Primitive, left: Option<&Value>, y: &Value, k: usize, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+    use crate::primitive::CellRule;
+    let frame = y.shape().len() - k;
+    // Cell axes `from..from + count`, numbered as axes of the whole of `y`.
+    let axes = |from: usize, count: usize| Value::integers(vec![count], (frame + from..frame + from + count).map(|a| a as i64).collect()).expect("axes are integers");
+    // `y` with each frame axis kept in place and each cell axis `j` sent to cell axis `to[j]`, by dyadic `⍉`. Cell axes that `to` leaves out follow, as `⍉` places them.
+    let moved = |to: &[usize]| {
+        let to: Vec<i64> = (0..frame).chain(to.iter().map(|d| frame + d)).map(|a| a as i64).collect();
+        Primitive::Transpose.call(Some(&Value::integers(vec![to.len()], to).expect("axes are integers")), y, cx)
+    };
+    let Some(a) = left else {
+        if p.extends_at(None, k) { return Some(p.call(None, y, cx)); }
+        return match p.facts(false).cells {
+            CellRule::First if k > 0 => Some(p.call_axes(None, y, &axes(0, 1), cx)),
+            CellRule::Every => Some(p.call_axes(None, y, &axes(0, k), cx)),
+            CellRule::Length => Some(constant(y, frame, &[], &[if k == 0 { 1 } else { y.shape()[frame] as i64 }], cx)),
+            // The shape of a cell with named axes is keyed by the names.
+            CellRule::Shape if y.layout().names().iter().skip(frame).all(Option::is_none) => {
+                Some(constant(y, frame, &[k], &y.shape()[frame..].iter().map(|&n| n as i64).collect::<Vec<_>>(), cx))
+            }
+            // Monadic `⍉` reverses each cell's axes.
+            CellRule::Axes => Some(moved(&(0..k).rev().collect::<Vec<_>>())),
+            _ => None,
+        };
+    };
+    if a.keys(0).is_some() { return None; }
+    if p.extends_at(Some(a), k) { return Some(p.call(Some(a), y, cx)); }
+    let vector = a.shape().len() <= 1;
+    match p.facts(true).cells {
+        // A left argument of a form that runs along leading cell axes has one item for each axis it applies to. A named selector stays on the cell path, because the whole array's frame axes could pair with its name.
+        CellRule::Leading if vector && a.len() <= k && !a.elements().any(|e| e.layout().has_names()) => Some(p.call_axes(Some(a), y, &axes(0, a.len()), cx)),
+        CellRule::First if a.shape().is_empty() && k > 0 => Some(p.call_axes(Some(a), y, &axes(0, 1), cx)),
+        CellRule::Along if vector && k > 0 => Some(p.call_axes(Some(a), y, &axes(0, 1), cx)),
+        // Each destination lies inside the cell.
+        CellRule::Axes if vector => a.as_items().nonnegative_integers::<usize>().ok().filter(|to| to.iter().all(|&d| d < k)).map(|to| moved(&to)),
+        // A reshape that keeps a cell's items in order is a view.
+        CellRule::Reshape if vector => {
+            let shape: Vec<usize> = a.as_items().nonnegative_integers().ok()?;
+            if shape.iter().product::<usize>() != y.shape()[frame..].iter().product::<usize>() { return None; }
+            Some(y.relaid(y.layout().axes(0..frame).concat(&crate::array::Layout::from(shape))).error_at(cx.span, "invalid cell reshape"))
+        }
+        // Any other form pairs each cell with the left argument, the same in every cell.
+        _ => paired_cells(p, a, a.shape().len(), y, k, cx).map(Ok),
+    }
+}
+
+/// The primitive `p` on each pair of cells of `x` and `y`, of ranks `xk` and `yk`, as one call on the whole arguments. An argument with no axes besides its cell's is the same in every cell. Any other argument has the frame: the axes before its cells, the same in both arguments. A form that takes an argument that is the same in every cell gets it repeated over the frame first (`agreement::spread`). The routes for whole arguments use it (`whole_cells`). These forms have a rule:
+/// - A form that joins its arguments' cells (`CellRule::Join`) joins the whole arguments along the cell axis that one call on a pair of cells joins. An argument with no axes extends to every cell. Otherwise the cells differ in rank by at most 1, and the lower one gains an axis of length 1 where they join, as in a call on one pair.
+/// - A form that extends, at cell ranks of at least its own. A call on two arguments pairs their frames as Rank does, wherever the call succeeds (`declared_ranks_match_rank` in `tests/core.rs`).
+///
+/// `None` for any other form, for an argument with a named axis, which a whole call could pair by name, and where the call fails. The calls on each cell then give the result or the error.
+fn paired_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: usize, cx: &Context<'_>) -> Option<Value> {
+    use crate::primitive::CellRule;
+    if x.layout().has_names() || y.layout().has_names() { return None; }
+    let frame = if x.shape().len() > xk { x.layout().axes(0..x.shape().len() - xk) } else { y.layout().axes(0..y.shape().len() - yk) };
+    let unit = |v: &Value| v.shape().is_empty();
+    // An argument that is the same in every cell, repeated over the frame. One with no axes needn't be, because it extends to every cell.
+    let spread = |v: &Value, k: usize| if v.shape().len() > k || unit(v) { Some(v.clone()) } else { crate::agreement::spread(v, &frame).ok() };
+    match p.facts(true).cells {
+        CellRule::Join { last } => {
+            if !unit(x) && !unit(y) && xk.abs_diff(yk) > 1 { return None; }
+            let k = xk.max(yk);
+            // Atoms join into a vector, so each argument with axes gains a last axis of length 1 first.
+            let joined = |v: &Value, vk: usize| {
+                let v = spread(v, vk)?;
+                if k > 0 || unit(&v) { Some(v) } else { v.relaid(v.layout().concat(&crate::array::Layout::from(vec![1]))).ok() }
+            };
+            let axis = frame.shape().len() + if last { k.max(1) - 1 } else { 0 };
+            p.call_axes(Some(&joined(x, xk)?), &joined(y, yk)?, &Value::integer(axis as i64), cx).ok()
+        }
+        _ => {
+            let [rx, ry] = p.info().dyad.ranks.map(usize::from);
+            if !p.facts(true).extends || xk < rx || yk < ry { return None; }
+            p.call(Some(&spread(x, xk)?), &spread(y, yk)?, cx).ok()
+        }
+    }
+}
+
+/// A fold or scan by `g` of each rank-`k` cell of `y` along the cell's default axis, as one call on the whole of `y`, where `g` is a primitive that folds a simple array whole (`folds_whole`). A pervasive primitive's fold or scan of each cell of a simple array is simple, so Rank's mix of those results gives what the whole-array call gives. `None` otherwise. Rank and batched maps (`batch::route`) share it.
+pub(crate) fn folded_cells(g: &Function, kind: FoldKind, y: &Value, k: usize, cx: &mut Context<'_>) -> Option<Result<Value, Error>> {
+    if k == 0 || !folds_whole(g, None, y) { return None; }
+    let axis = Value::integer((y.shape().len() - k + kind.default_axis(k)) as i64);
+    Some(if kind.scan { scan(g, kind, Some(&axis), None, y, cx) } else { fold(g, kind, Some(&axis), None, y, cx) })
 }
 
 /// An array with `y`'s first `frame` axes and their keys, then `tail`, holding `items` at each frame position. Monads whose result depends only on a cell's shape give this for every cell.
@@ -964,15 +1112,21 @@ fn constant(y: &Value, frame: usize, tail: &[usize], items: &[i64], span: &crate
     Value::integers(layout.shape().to_vec(), items.iter().copied().cycle().take(count).collect()).and_then(|v| v.with_layout(layout)).error_at(span, "invalid cell shapes")
 }
 
-/// `f⍤k` in one call, where `f` is a pervasive primitive, or Rank nested down to one, as in `(-⍤1)⍤2 1`. A monad maps each item, whatever its cells. Each level of Rank pairs its arguments' frames as leading axes. So for a dyad, each argument gets length-1 axes after each level's frame, up to the other argument's frame at that level, and one call then pairs frames with frames and cells with cells. Some calls take the path through cells instead. Separate calls never pair axes by name, so arguments with axis names do. An empty argument does, because its result's shape comes from a call on prototype cells. So do arguments whose padded layouts don't agree. That path reports the error.
+/// `f⍤k` in one call, where `f` is a pervasive primitive, or Rank nested down to one, as in `(-⍤1)⍤2 1`. Each level of Rank pairs its arguments' frames as leading axes, so each argument's frame splits into one run of axes for each level (`frames`), and one padded call pairs them all (`padded_call`).
 fn pervasive_cells(operand: &Function, left: Option<&Value>, right: &Value, ranks: [usize; 2], cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
-    if left.into_iter().chain([right]).any(|a| a.is_empty() || !a.layout().names().is_empty()) { return None; }
     let (f, levels) = rank_levels(operand, left.is_some(), ranks, cx)?;
-    let Some(x) = left else { return Some(f.call(None, right, cx)) };
-    let (fx, fy) = (frames(x, &levels, 0), frames(right, &levels, 1));
-    let (x, y) = (padded(x, &fx, &fy).ok()?, padded(right, &fy, &fx).ok()?);
-    Agreement::new(x.layout(), y.layout()).ok()?;
-    Some(f.call(Some(&x), &y, cx))
+    let (fx, fy) = (left.map(|x| frames(x, &levels, 0)), frames(right, &levels, 1));
+    padded_call(pervasive_primitive(f, left.is_some())?, left.zip(fx.as_deref()), (right, &fy), cx).map(|result| result.map(Bound::from))
+}
+
+/// The pervasive primitive `p` in one call on `left` and `right`, each with the lengths of its frame's runs of axes. A monad maps each item, whatever its cells. For a dyad, each argument gets axes of length 1 after each run, up to the length of the other argument's run, so the call pairs frames with frames and cells with cells (`agreement::padded`). Arguments with axis names take the path through cells, because separate calls never pair axes by name. So does an empty argument, because its result's shape comes from a call on prototype cells, and so do arguments whose padded layouts don't agree. That path reports the error.
+fn padded_call(p: Primitive, left: Option<(&Value, &[usize])>, (y, fy): (&Value, &[usize]), cx: &Context<'_>) -> Option<Result<Value, Error>> {
+    if left.iter().map(|&(x, _)| x).chain([y]).any(|a| a.is_empty() || a.layout().has_names()) { return None; }
+    let Some((x, fx)) = left else { return Some(p.call(None, y, cx)) };
+    let (x, y) = (crate::agreement::padded(x, fx, fy), crate::agreement::padded(y, fy, fx));
+    // A unit agrees with any argument, and so does an argument laid out the same.
+    if !(x.shape().is_empty() || y.shape().is_empty() || x.layout() == y.layout()) { Agreement::new(x.layout(), y.layout()).ok()?; }
+    Some(p.call(Some(&x), &y, cx))
 }
 
 /// The pervasive primitive that `operand` is, or that Rank nested in `operand` comes down to, with each level's cell ranks as `[left, right]`, starting from `ranks`.
@@ -994,50 +1148,23 @@ fn frames(a: &Value, levels: &[[usize; 2]], side: usize) -> Vec<usize> {
     levels.iter().map(|l| std::mem::replace(&mut above, l[side]) - l[side]).collect()
 }
 
-/// A view of `a` with length-1 axes after each level's frame, up to the length of the other argument's frame at that level. `frame` and `other` hold those lengths. Length-1 axes after `a`'s last own axis change nothing, because leading-axis agreement extends it over trailing axes.
-fn padded(a: &Value, frame: &[usize], other: &[usize]) -> Result<Value, ErrorKind> {
-    let (mut axes, mut next) = (vec![], 0);
-    for (&n, &m) in frame.iter().zip(other) {
-        axes.extend((next..next + n).map(Some));
-        axes.extend(std::iter::repeat_n(None, m.saturating_sub(n)));
-        next += n;
-    }
-    axes.extend((next..a.shape().len()).map(Some));
-    while axes.last() == Some(&None) { axes.pop(); }
-    if axes.len() == a.shape().len() { return Ok(a.clone()); }
-    let shape: Vec<_> = axes.iter().map(|&s| s.map_or(1, |i| a.shape()[i])).collect();
-    a.relaid(crate::array::Layout::from(shape).with_keys(axes.iter().map(|&s| s.and_then(|i| a.keys(i).cloned())).collect())?)
-}
-
-/// `operand⍤2` on a whole stack of matrices in one call, where `operand` is dyadic `+.×` or `⌹`, monadic `⌹` or `-.×`, or `•decompose` with its kind bound to it or as one whole left cell. `xr` and `yr` are the cell ranks. `None` where it takes the general path of one call for each cell.
-fn stacked(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [usize; 2], cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
-    use crate::{number::Arithmetic, primitive::{stacked as matrices, stacked_decompositions, Stacked}};
+/// `•decompose⍤2` on a whole stack of matrices in one call, with its kind bound to it or as one whole left cell (`primitive::stacked_decompositions`). `xr` and `yr` are the cell ranks. `None` where it takes the general path of one call for each cell.
+fn decomposed(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [usize; 2], cx: &Context<'_>) -> Option<Result<Bound, Error>> {
     // The stacked kernels read compact storage, which a dual doesn't have: its cells go through the operand one by one (`derivative`).
-    if yr != 2 || crate::derivative::either_active(cx, left, right) { return None; }
+    if yr != 2 || cx.carried(left, right) { return None; }
     let decompose = |f: &Function| matches!(f.node(), FunctionNode::System(s) if s.name == "•decompose");
     let kind = match (operand.node(), left) {
-        (FunctionNode::System(_), Some(kind)) if decompose(operand) && xr == kind.shape().len() => Some(kind),
-        (FunctionNode::Composed(OperatorKind::Before, [Operand::Value(kind), Operand::Function(f)]), None) if decompose(f) => Some(kind), _ => None
-    };
-    if let Some(kind) = kind { return Some(stacked_decompositions(kind, right, cx)?.map(Bound::from)); }
-    if left.is_some() && xr != 2 { return None; }
-    let op = match (operand.node(), left) {
-        (FunctionNode::Primitive(Primitive::MatrixDivide), None) => Stacked::Inverse,
-        (FunctionNode::Primitive(Primitive::MatrixDivide), Some(_)) => Stacked::Solve,
-        (FunctionNode::Composed(OperatorKind::Product, [Operand::Function(f), Operand::Function(g)]), _) => match (f.as_primitive().zip(g.as_primitive()), left) {
-            (Some((Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times))), Some(_)) => Stacked::Product,
-            (Some((Primitive::Arithmetic(Arithmetic::Minus), Primitive::Arithmetic(Arithmetic::Times))), None) => Stacked::Determinant,
-            _ => return None,
-        },
+        (FunctionNode::System(_), Some(kind)) if decompose(operand) && xr == kind.shape().len() => kind,
+        (FunctionNode::Composed(OperatorKind::Before, [Operand::Value(kind), Operand::Function(f)]), None) if decompose(f) => kind,
         _ => return None,
     };
-    matrices(op, left, right, cx).map(|r| r.map(Bound::from))
+    Some(crate::primitive::stacked_decompositions(kind, right, cx)?.map(Bound::from))
 }
 
 /// `f⍠spec`: a primitive with its own axis form, a reduce or scan along an axis, or `f` on the cells that the axes make.
 pub(super) fn along_axes(f: &Function, spec: &Value, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     match f.node() {
-        FunctionNode::Primitive(p) if p.takes_axes(left.is_some()) => Ok(Bound::from(p.call_axes(left, right, spec, cx)?)),
+        FunctionNode::Primitive(p) if p.facts(left.is_some()).axes => Ok(Bound::from(p.call_axes(left, right, spec, cx)?)),
         FunctionNode::Fold(operand, kind) => Ok(Bound::from(fold(operand, *kind, Some(spec), left, right, cx)?)), _ => cell_axes(f, spec, left, right, cx)
     }
 }
@@ -1084,11 +1211,15 @@ fn moved_last(x: &Value, selected: &[usize], span: &crate::execution::Context<'_
     move_axes(x, &destination(&(0..n).filter(|i| !selected.contains(i)).chain(selected.iter().copied()).collect::<Vec<_>>()), span)
 }
 
-/// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`. With no pairs it calls the operand once on prototypes (`on_prototypes`), on `pair(0)`, for the result's prototype. A call that gives no result contributes `⍬`. The calls run as a map, whose cells each draw random numbers from a stream of their own (`Context::mapped`).
+/// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`. They become the result's items, or with `mixed` they mix into one array whose numbers keep their kinds, as Rank and stencils mix them. `mixed` gives the message for results that don't mix. It first tries one call on batches of all the cells, from the whole arguments that `whole` builds (`batch::tried`), except for one cell of atoms. With no pairs it calls the operand once on prototypes (`on_prototypes`), on `pair(0)`, for the result's prototype. A call that gives no result contributes `⍬`. The calls run as a map, whose cells each draw random numbers from a stream of their own (`Context::mapped`).
 fn each_pair(
-    operand: &Function, len: usize, layout: crate::array::Layout, pair: impl Fn(usize) -> Result<(Option<Value>, Value), Error>, cx: &mut Context<'_>
+    operand: &Function, len: usize, layout: crate::array::Layout, pair: impl Fn(usize) -> Result<(Option<Value>, Value), Error>,
+    whole: impl FnOnce() -> Option<crate::batch::Arguments>, mixed: Option<&'static str>, cx: &mut Context<'_>
 ) -> Result<Bound, Error> {
     cx.mapped(|cx| {
+        // One cell of atoms runs faster on its own than through a batched call. A cell of rank 1 or more doesn't.
+        let atoms = len == 1 && { let (x, y) = pair(0)?; x.as_ref().is_none_or(Value::is_atom) && y.is_atom() };
+        if !atoms { if let Some(result) = crate::batch::tried(operand, whole, &layout, mixed.is_some(), cx) { return result.map(Bound::from); } }
         let empty = len == 0;
         let mut data = Gather::items(len);
         let mut first = None;
@@ -1103,26 +1234,30 @@ fn each_pair(
             };
             if empty { first = Some(item) } else { data.add(item) }
         }
-        let value = Binding::Value(data.finish(layout, || first.unwrap().fill()).error_at(cx.span, "invalid result")?);
-        Ok(Bound::new(value))
+        let items = data.finish(layout, || first.unwrap().fill()).error_at(cx.span, "invalid result")?;
+        match mixed { Some(what) => Ok(Bound::from(items.mix(crate::array::Widening::Items).error_at(cx.span, what)?)), None => Ok(Bound::new(Binding::Value(items))) }
     })
 }
 
 pub(super) fn each(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     if right.is_atom() && left.is_none_or(Value::is_atom) { return operand.call(left, right, cx); }
     if pervasive_primitive(operand, left.is_some()).is_some() { return operand.call(left, right, cx); }
-    paired(operand, left, right, cx)
+    each_items(operand, left, right, cx)
 }
 
-/// Calls `operand` on each pair of items that the frames' agreement pairs, through `each_pair`. An empty frame gives an empty result when the call on its prototype items fails, as in J.
-fn paired(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
+/// Each's general path: `operand` on each pair of items, paired by the agreement of the arguments' frames (`each_pair`).
+// Out of line, so that `each`'s frame holds only its fast paths. Recursion through them, as in Each on a scalar, keeps that frame on the browser's stack, whose size limits the depth of recursion (`tests/wasm.mjs`).
+#[inline(never)]
+fn each_items(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
     let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(cx.span, "frames do not agree")?;
-    each_pair(operand, agreement.len, agreement.layout.clone(), |i| Ok(agreement.values(left, right, i)), cx)
+    // Each passes a scalar argument's item to every cell, where Rank passes the scalar. The item is the argument's one cell, whatever its rank.
+    let whole = |a: &Value| if a.shape().is_empty() && !a.is_atom() { let item = a.at(0); let rank = item.shape().len(); (item, rank) } else { (a.clone(), 0) };
+    each_pair(operand, agreement.len, agreement.layout.clone(), |i| Ok(agreement.values(left, right, i)), || crate::batch::Arguments::laid(&agreement, left.map(whole), whole(right)), None, cx)
 }
 
 fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Context<'_>) -> Result<Value, Error> {
     use crate::primitive::Identity::*;
-    let id = operand.as_primitive().and_then(|p| p.info().dyad.and_then(|d| d.identity));
+    let id = operand.as_primitive().and_then(|p| p.info().dyad.identity);
     let id = id.ok_or_else(|| span.domain_error("this function has no reduction identity"))?;
     let number = |n: f64| Ok(crate::primitive::float_like(n, prototype));
     match (id, prototype) {
@@ -1146,18 +1281,9 @@ fn identity(operand: &Function, prototype: &Value, span: &crate::execution::Cont
     }
 }
 
-pub(super) fn fold(
+pub(crate) fn fold(
     operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
-    if left.is_none() && cx.session.transforming() {
-        if right.linear().is_some() || right.dual_tag().is_some() {
-            if let Some(folded) = in_turn(operand, kind, axis, right, cx)? { return Ok(folded); }
-        }
-        if let Some(t) = right.linear() {
-            let plus = matches!(operand.as_primitive(), Some(Primitive::Arithmetic(crate::number::Arithmetic::Plus)));
-            return if plus { crate::linear::fold(kind, axis, t, cx) } else { Err(cx.span.error(crate::ErrorKind::Unsupported, "∂ can't transpose this fold")) };
-        }
-        if let Some(result) = fold_dual(operand, kind, axis, right, cx) { return result; }
-    }
+    if left.is_none() && cx.session.transforming() { if let Some(result) = crate::transform::route(crate::transform::Op::Fold(operand, kind, axis), None, right, cx) { return result; } }
     let axis = axis.map(|a| crate::primitive::resolve_axes(a, right, cx.span)).transpose()?;
     if !kind.scan {
         if let Some(axes) = axis.as_ref().filter(|a| !a.is_singleton()) {
@@ -1187,25 +1313,10 @@ pub(super) fn fold(
 /// Whether a fold by `operand` gives a simple result for each cell of `right`: a pervasive primitive on a simple array, with no seed or an atom seed. Other folds can give arrays or nested results. Folds over several axes, and Rank's rules for whole arrays, then call the fold once for each cell.
 fn folds_whole(operand: &Function, left: Option<&Value>, right: &Value) -> bool { right.is_simple() && left.is_none_or(Value::is_atom) && pervasive_primitive(operand, true).is_some() }
 
-/// A fold of a dual, by a rule where its operand has one: `+` folds the primal and the tangent alike, and `×`, `⌈` and `⌊` along the fold's own axis have rules of whole-array calls. `None` leaves the fold to its general path, which calls the operand on the dual's items.
-#[cold]
-#[inline(never)]
-fn fold_dual(operand: &Function, kind: FoldKind, axis: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Option<Result<Value, Error>> {
-    use crate::number::{Arithmetic::*, Math::{Ceiling, Floor}};
-    let Some(p) = operand.as_primitive() else { return None };
-    let (tag, x, tx) = right.dual()?;
-    Some(match p {
-        Primitive::Arithmetic(Plus) => fold(operand, kind, axis, None, &x, cx)
-            .and_then(|r| Ok(crate::derivative::dual(tag, r, fold(operand, kind, axis, None, &tx, cx)?))),
-        Primitive::Arithmetic(Times) | Primitive::Math(Ceiling | Floor) if !x.shape().is_empty() => fold_rule(operand, p, kind, axis, &x, &tx, cx).map(|(r, t)| crate::derivative::dual(tag, r, t)),
-        _ => return None,
-    })
-}
-
 /// A fold by `+`, `×`, `⌈` or `⌊` along several axes, as folds along one axis at a time from the last, for an argument that `∂` differentiates. The four operands are associative and commutative. Folding one axis at a time therefore gives the fold of the ravelled cells. `None` for any other fold.
 #[cold]
 #[inline(never)]
-fn in_turn(operand: &Function, kind: FoldKind, axis: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Option<Value>, Error> {
+pub(crate) fn in_turn(operand: &Function, kind: FoldKind, axis: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Option<Value>, Error> {
     use crate::number::{Arithmetic::*, Math::{Ceiling, Floor}};
     let Some(axis) = axis.filter(|_| !kind.scan) else { return Ok(None) };
     if !matches!(operand.as_primitive(), Some(Primitive::Arithmetic(Plus | Times) | Primitive::Math(Ceiling | Floor))) { return Ok(None); }
@@ -1231,78 +1342,6 @@ fn fold_ravels(operand: &Function, kind: FoldKind, axes: &Value, left: Option<&V
     folded.with_layout(right.layout().axes(others.iter().copied())).error_at(cx.span, "invalid fold keys")
 }
 
-/// The primal and tangent of a fold or scan by `p`, which is `×`, `⌈` or `⌊`, of `x` with tangent `tx`, through the linear operations that reverse mode transposes. A product's tangent scales each item's tangent by the product of the others and sums: the product of the nonzero items, times the sum of `tx÷x` where no item is zero, or times the zero item's tangent where one is, and 0 where more are. A maximum's or minimum's tangent gathers the tangent of the item that gives it, the first of any ties, as dyadic `⌈` and `⌊` give a tie to their left argument.
-fn fold_rule(operand: &Function, p: Primitive, kind: FoldKind, axis: Option<&Value>, x: &Value, tx: &Value, cx: &mut Context<'_>) -> Result<(Value, Value), Error> {
-    use crate::{number::Arithmetic::*, primitive::Comparison::{Equal, NotEqual}};
-    let call = |p: Primitive, a: &Value, b: &Value, cx: &Context<'_>| p.call(Some(a), b, cx);
-    let (times, plus) = (Primitive::Arithmetic(Times), Function::primitive(Primitive::Arithmetic(Plus)));
-    let r = fold(operand, kind, axis, None, x, cx)?;
-    let t = if matches!(p, Primitive::Arithmetic(Times)) {
-        let zero = call(Primitive::Compare(Equal), x, &Value::integer(0), cx)?;
-        let ones = call(Primitive::Arithmetic(Plus), x, &zero, cx)?;
-        let rest = fold(operand, kind, axis, None, &ones, cx)?;
-        let zeros = fold(&plus, kind, axis, None, &zero, cx)?;
-        let reciprocal = call(Primitive::Arithmetic(Divide), &call(Primitive::Arithmetic(Minus), &Value::integer(1), &zero, cx)?, &ones, cx)?;
-        let none = fold(&plus, kind, axis, None, &call(times, &reciprocal, tx, cx)?, cx)?;
-        let one = fold(&plus, kind, axis, None, &call(times, &zero, tx, cx)?, cx)?;
-        let none = call(times, &call(times, &rest, &call(Primitive::Compare(Equal), &zeros, &Value::integer(0), cx)?, cx)?, &none, cx)?;
-        let one = call(times, &call(times, &rest, &call(Primitive::Compare(Equal), &zeros, &Value::integer(1), cx)?, cx)?, &one, cx)?;
-        call(Primitive::Arithmetic(Plus), &none, &one, cx)?
-    } else {
-        let shape = x.shape();
-        let along = kind.axis(axis, x, cx.span)?;
-        let lanes = Lanes::new(shape, along).at(cx.span)?;
-        let Lanes { outer, len: n, inner } = lanes;
-        let booleans = |v: Value| v.as_booleans().map(<[bool]>::to_vec).unwrap_or_else(|| v.elements().map(|e| matches!(e, Value::Number(n) if !n.is_zero())).collect());
-        let (offsets, one_per_lane) = if kind.scan {
-            // A running maximum or minimum changes only where an item gives a new extreme, whose tangent it then follows. Where it doesn't change, the earlier item keeps it.
-            let drop = |d: i64, cx: &Context<'_>| {
-                let spec = Value::integers(vec![along + 1], (0..=along).map(|a| if a == along { d } else { 0 }).collect()).error_at(cx.span, "invalid drop")?;
-                Primitive::Drop.call(Some(&spec), &r, cx)
-            };
-            let changed = booleans(call(Primitive::Compare(NotEqual), &drop(1, cx)?, &drop(-1, cx)?, cx)?);
-            let mut offsets = Vec::with_capacity(outer * n * inner);
-            for o in 0..outer {
-                for k in 0..n {
-                    for i in 0..inner {
-                        let at = lanes.offset(o, k, i);
-                        offsets.push(if k == 0 || changed[(o * (n - 1) + k - 1) * inner + i] { at as i64 } else { offsets[at - inner] });
-                    }
-                }
-            }
-            (offsets, false)
-        } else if let Some(offsets) = (along == kind.default_axis(shape.len())).then(|| crate::fusion::picks(x, p, kind)).flatten() {
-            // Windows that slide along the fold's axis give their extremes' positions from their source, with no windows built.
-            (offsets, false)
-        } else {
-            // `r` takes a length-1 axis in place of the folded axis to pair with `x`, unless the fold removed the last axis.
-            let back = if along + 1 < shape.len() {
-                let mut shape = r.shape().iter().map(|&n| n as i64).collect::<Vec<_>>();
-                shape.insert(along, 1);
-                Primitive::Shape.call(Some(&Value::integers(vec![shape.len()], shape).error_at(cx.span, "invalid shape")?), &r, cx)?
-            } else { r.clone() };
-            let hit = booleans(call(Primitive::Compare(Equal), x, &back, cx)?);
-            // The first item of each lane that gives its extreme, or the lane's first item where none does, as for NaN.
-            let firsts = (0..outer)
-                .flat_map(|o| (0..inner).map(move |i| (o, i)))
-                .map(|(o, i)| (0..n).map(|k| lanes.offset(o, k, i)).find(|&at| hit[at]).unwrap_or(lanes.offset(o, 0, i)) as i64)
-                .collect::<Vec<_>>();
-            (firsts, true)
-        };
-        // Where reverse mode records one item from each lane, the tangent folds the tangent times a mask of the chosen items. Its transpose reads: each item takes its lane's cotangent where it was chosen, and 0 elsewhere. A gather's transpose would scatter.
-        if one_per_lane && (tx.linear().is_some() || crate::derivative::active(tx)) {
-            let mut chosen = vec![false; x.len()];
-            for &at in &offsets { chosen[at as usize] = true; }
-            let mask = x.layout().booleans(chosen).error_at(cx.span, "invalid mask")?;
-            return Ok((r, fold(&plus, kind, axis, None, &call(times, &mask, tx, cx)?, cx)?));
-        }
-        let offsets = Value::integers(vec![offsets.len()], offsets).error_at(cx.span, "invalid positions")?.enclose().expect("positions enclose");
-        let picked = Primitive::Index.call(Some(&offsets), &Primitive::Ravel.call(None, tx, cx)?, cx)?;
-        if r.is_atom() { picked.at(0) } else { picked.relaid(r.layout().clone()).expect("the gathered tangents fill the fold's result") }
-    };
-    Ok((r, t))
-}
-
 fn fold_array(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
     // Scan keeps every position, so it keeps every key.
     if kind.scan { return scan(operand, kind, axis, left, right, cx)?.with_layout(right.layout().clone()).error_at(cx.span, "invalid scan result"); }
@@ -1318,7 +1357,7 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Op
         let item = match left { Some(seed) => seed.clone(), None => identity(operand, &right.prototype(), cx)? };
         return Value::new(shape, vec![item; size]).error_at(cx.span, "invalid identity result");
     }
-    let active = crate::derivative::active_in(cx, right);
+    let active = cx.carried(None, right);
     if let (None, Some(p), false) = (left, operand.as_primitive(), active) {
         use crate::number::Arithmetic::{Plus, Times};
         // Float sums and products take the kernel for any number of items, because they fold in any order.
@@ -1391,7 +1430,7 @@ pub(super) fn scan(
     if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, cx), None => Ok(right.clone()) }; }
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
     // Kernels that read numbers directly leave a dual to the general path, which calls the operand through dispatch.
-    let active = crate::derivative::active_in(cx, right);
+    let active = cx.carried(None, right);
     if let (Some(p), false) = (operand.as_primitive(), active) {
         if let Some(result) = crate::pervasive::scan(p, right, seed, &axis) { return Ok(result); }
     }

@@ -5,7 +5,7 @@ use crate::search::compact_view;
 use super::*;
 
 /// A mask over the major cells of `x`. With `found`, it marks the cells among the major cells of `y`, and otherwise the cells that aren't.
-fn found_mask(x: &Value, y: &Value, found: bool, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn found_mask(x: &Value, y: &Value, found: bool, span: &Context<'_>) -> Result<Value, Error> {
     let (matches, frame) = search(y, x, span)?;
     if frame.shape().len() > 1 { return Err(span.error(Kind::Rank, "set functions need cells of the same rank")); }
     let miss = y.shape()[0] as u32;
@@ -73,13 +73,16 @@ pub(super) fn unique_mask(right: &Value, span: &Context<'_>) -> Result<Value, Er
 /// The classes of the major cells of `right`, numbered in order of first appearance as `∪` finds them, with the positions of each.
 fn distinct(right: &Value, span: &Context<'_>) -> Result<rustymath::search::Grouped, Error> { grouped(&major_cells(right, span)?, span) }
 
-/// The distinct major cells that occur more than once, in order of first appearance.
-pub(super) fn duplicates(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+/// A mask of the first of each distinct major cell of `right` that occurs more than once, in order of first appearance.
+pub(super) fn duplicates_mask(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let (classes, major) = (distinct(right, span)?, major_axis(right));
     let mut mask = vec![false; major.shape()[0]];
     for (&first, &size) in classes.firsts.iter().zip(&classes.groups.sizes) { mask[first] = size > 1 }
-    replicate(&major.booleans(mask).error_at(span, "invalid duplicates mask")?, right, None, false, span)
+    major.booleans(mask).error_at(span, "invalid duplicates mask")
 }
+
+/// The distinct major cells that occur more than once, in order of first appearance.
+pub(super) fn duplicates(right: &Value, span: &Context<'_>) -> Result<Value, Error> { replicate(&duplicates_mask(right, span)?, right, None, false, span) }
 
 /// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪` matches them. `#⁻¹` decodes the result back to `right`. `#/` does too, unless `right` is a unit or has leading keys. A unit gives the rank-0 length 1 and the unit itself. A keyed leading axis moves into a third item, the keys of every position, because a run's cells can have different keys.
 pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -272,23 +275,28 @@ fn position_value(array: &Value, axis: usize, position: usize) -> Value {
     generated(position as u64, None)
 }
 
-/// The order of two items. `None` when the comparison reaches a function, which has no ordering.
-fn element_order(left: &Value, right: &Value) -> Option<Ordering> {
-    Some(match (left, right) {
-        (Value::Function(_) | Value::Operator(_), _) | (_, Value::Function(_) | Value::Operator(_)) => return None,
+/// The order of two items. `None` when the comparison reaches a function, which has no ordering. A carried item orders as the value that a reader outside every call sees (`Carrier::observed`): a dual as its primal. A batch stops its map's run, because no one value stands for all its cells.
+fn element_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate::transform::Stop> {
+    Ok(Some(match (left, right) {
+        (Value::Carried(x), y) => return x.observed()?.map_or(Ok(None), |x| element_order(x, y)),
+        (x, Value::Carried(y)) => return y.observed()?.map_or(Ok(None), |y| element_order(x, y)),
+        (Value::Function(_) | Value::Operator(_), _) | (_, Value::Function(_) | Value::Operator(_)) => return Ok(None),
         (Value::Number(x), Value::Number(y)) => x.grade_order(y), (Value::Character(x), Value::Character(y)) => x.cmp(y),
         (Value::Number(_), Value::Character(_)) => Ordering::Less, (Value::Character(_), Value::Number(_)) => Ordering::Greater,
         (x @ Value::Array(_), y @ Value::Array(_)) => return array_order(x, y), (Value::Array(_), _) => Ordering::Greater,
         (_, Value::Array(_)) => Ordering::Less
-    })
+    }))
 }
 
-/// The order of two arrays: by rank, then item by item, then by length and shape. `None` when the comparison reaches a function.
-fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
+/// The order of two arrays: by rank, then item by item, then by length and shape. `None` when the comparison reaches a function, and a stop where it reaches a batch (`element_order`).
+fn array_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate::transform::Stop> {
     let rank_order = left.shape().len().cmp(&right.shape().len());
-    if !rank_order.is_eq() { return Some(rank_order); }
-    for (x, y) in left.elements().zip(right.elements()) { let order = element_order(&x, &y)?; if !order.is_eq() { return Some(order); } }
-    Some(left.len().cmp(&right.len()).then_with(|| left.shape().cmp(right.shape())))
+    if !rank_order.is_eq() { return Ok(Some(rank_order)); }
+    for (x, y) in left.elements().zip(right.elements()) {
+        let Some(order) = element_order(&x, &y)? else { return Ok(None) };
+        if !order.is_eq() { return Ok(Some(order)); }
+    }
+    Ok(Some(left.len().cmp(&right.len()).then_with(|| left.shape().cmp(right.shape()))))
 }
 
 /// The grade of `right`'s `count` major cells by rustymath's `view_lexgrade`, for compact Booleans, floats, integers or characters in at most 16 columns. It shares native-width order keys and stable counting/radix sorting with scalar grade.
@@ -332,15 +340,15 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
         });
     } else if let Some(order) = key_grade(right, count, down) { indices = order; } else {
         let cells = right.cells(right.shape().len() - 1).and_then(|c| c.collect()).error_at(span, "invalid grade cells")?;
-        // A sort comparison can't fail. It notes a function instead, and the error follows the sort.
-        let mut unordered = false;
+        // A sort comparison can't fail. It notes a function or a stop instead, and the error follows the sort.
+        let (mut unordered, mut stopped) = (false, None);
         indices = (0..count as u32).collect();
-        indices.sort_by(|&a, &b| {
-            direction(array_order(&cells[a as usize], &cells[b as usize]).unwrap_or_else(|| {
-                unordered = true;
-                Ordering::Equal
-            }))
+        indices.sort_by(|&a, &b| match array_order(&cells[a as usize], &cells[b as usize]) {
+            Ok(Some(order)) => direction(order),
+            Ok(None) => { unordered = true; Ordering::Equal }
+            Err(stop) => { stopped = Some(stop); Ordering::Equal }
         });
+        if let Some(stop) = stopped { return Err(stop).at(span); }
         if unordered { return Err(span.domain_error("functions have no ordering")); }
     }
     positions(right, indices).and_then(|g| g.along_first_of(right)).error_at(span, "invalid grade result")
@@ -365,7 +373,7 @@ pub(super) fn interval_index(left: &Value, right: &Value, span: &Context<'_>) ->
     let data = match compact_view(&boundaries).zip(compact_view(&values)).and_then(|(x, y)| rustymath::search::view_bins(x, y)) {
         Some(data) => data,
         None => {
-            let order = |x: &Value, y: &Value| array_order(x, y).ok_or_else(|| span.domain_error("functions have no ordering"));
+            let order = |x: &Value, y: &Value| match array_order(x, y) { Ok(Some(order)) => Ok(order), Ok(None) => Err(span.domain_error("functions have no ordering")), Err(stop) => Err(stop).at(span) };
             let mut data = Vec::with_capacity(values.len());
             for value in (0..values.len()).map(|i| values.get(i)) {
                 let (mut lo, mut hi) = (0, boundaries.len());

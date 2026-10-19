@@ -32,6 +32,8 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&output_error, EvalOptions::default())["status"], "mismatch");
     let exactness = json!({"code":"1", "expected_code":"1ₓ"});
     assert_eq!(reference::check(&exactness, EvalOptions::default())["status"], "mismatch");
+    let kinds = reference::check(&json!({"code":r#"{⍵?1;$t}"batch"⊃•prefs ⍬"#, "expected":{"shape":[], "data":[1], "prototype":0}}), EvalOptions::default());
+    assert_eq!((kinds["status"].as_str(), kinds["message"].as_str()), (Some("mismatch"), Some("storage kind: float64 with the batch pref on, bool with it off")));
     let captured = json!({"code":"1ₓ", "expected":{"shape":[], "data":[1], "prototype":0}});
     assert_eq!(reference::check(&captured, EvalOptions::default())["status"], "pass");
     let parsed = cases("⍝  — [rtol=1e-14 atol=1e-15]\nf←{\n\n⍵+1\n}\nf 2\n⍝ =>\n3\n\n⍝  —\n\"unfinished\n⍝ error: SYNTAX ERROR\n\n");
@@ -55,8 +57,9 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&case, EvalOptions::default())["status"], "mismatch");
 }
 
+/// Every case, with the `batch` pref off and then on, under which maps first try one call of their operand on batches of their cells. Both runs must meet the case's expectation, with values held in the same kinds of storage (`reference::check`).
 #[test]
-fn enabled_reference_cases() {
+fn reference_cases() {
     // Shared, so that no timing runs while the cases load the machine.
     let _lock = rustymath::timing::shared().unwrap();
     let mut ids = std::collections::HashSet::new();
@@ -86,5 +89,5 @@ fn enabled_reference_cases() {
     }).collect();
     assert!(count > 0, "no reference cases selected");
     assert!(failures.is_empty(), "{} of {count} reference cases failed:\n{}", failures.len(), failures.join("\n"));
-    eprintln!("{count} reference cases passed");
+    eprintln!("{count} reference cases passed with the batch pref off and on");
 }

@@ -2,6 +2,7 @@
 
 use super::*;
 use rustymath::buffer::View;
+use crate::transform::Plain;
 
 /// Text as a double-quoted string literal.
 pub(crate) fn quoted(text: &str) -> String { format!("\"{}\"", text.replace('"', "\"\"")) }
@@ -141,18 +142,18 @@ impl Value {
 
     /// Source text for the value, with large arrays elided as `el` says. Elided text doesn't read back.
     pub(crate) fn source(&self, el: Elide) -> String {
-        match self {
-            Self::Number(n) => el.number(n),
-            Self::Character(c) if c.is_control() => format!("•ucs {}", *c as u32),
-            Self::Character(c) => format!("'{c}'"),
-            Self::Function(f) => {
+        match self.displayed() {
+            Plain::Number(n) => el.number(n),
+            Plain::Character(c) if c.is_control() => format!("•ucs {}", c as u32),
+            Plain::Character(c) => format!("'{c}'"),
+            Plain::Function(f) => {
                 let text = f.text(el.notation, &mut 1000);
                 // A native function with no source spelling, such as a generator's `roll`, can't read back.
                 if f.system_call().is_some() && crate::system::lookup(&f.bpl()).is_none() { return format!("⟨{text}⟩"); }
                 if text.contains(' ') { format!("({text})") } else { text }
             }
-            Self::Operator(op) => { let text = op.text(el.notation); if text.contains(' ') { format!("({text})") } else { text } }
-            Self::Array(_) => {
+            Plain::Operator(op) => { let text = op.text(el.notation); if text.contains(' ') { format!("({text})") } else { text } }
+            Plain::Array(_) => {
                 if self.shows_names(el) { return self.named_literal(el); }
                 let edges = if self.shape().len() == 1 { el.last(self.shape()) } else { el.edges(self.shape()) };
                 if self.string_literal().is_some() { return quoted(&self.elided_text(edges)); }

@@ -1,5 +1,5 @@
 //! Development-only checks, shared by the tests and the worker: reference cases, `.bpl` reference files and the examples in `.qmd` pages.
-use crate::{EvalOptions, InterruptHandle, Session, Value};
+use crate::{number::Numeric, EvalOptions, InterruptHandle, Session, Value};
 use serde_json::{json, Value as JsonValue};
 use std::{collections::VecDeque, sync::{Arc, Mutex}};
 
@@ -11,10 +11,9 @@ pub fn expected_array(value: &JsonValue) -> Option<Value> {
     result.prototype().same(&prototype).then_some(result)
 }
 
-/// Numbers match when they are equal: exact ones exactly, and others within the tolerances. With `exactness`, an exact number never matches an approximate one.
-fn same_element(x: &Value, y: &Value, relative: f64, absolute: f64, exactness: bool) -> bool {
+/// Numbers match when they are equal: exact ones exactly, and others within the tolerances. With `exactness`, an exact number never matches an approximate one. Other atoms match when they are the same.
+fn same_atom(x: &Value, y: &Value, relative: f64, absolute: f64, exactness: bool) -> bool {
     match (x, y) {
-        (x @ Value::Array(_), y @ Value::Array(_)) => difference(x, y, relative, absolute, exactness).is_none(),
         (Value::Number(x), Value::Number(y)) if exactness && (x.is_exact() != y.is_exact() || x.as_bool().is_some() != y.as_bool().is_some()) => false,
         (Value::Number(x), Value::Number(y)) if x.is_nan() && y.is_nan() => true,
         (Value::Number(x), Value::Number(y)) if !x.is_exact() || !y.is_exact() => {
@@ -25,15 +24,26 @@ fn same_element(x: &Value, y: &Value, relative: f64, absolute: f64, exactness: b
     }
 }
 
-/// Locate a structural or numeric mismatch. Approximate numbers may differ by the tolerances. With `exactness`, each number's exactness must match too.
+/// Locate a structural or numeric mismatch. Approximate numbers may differ by the tolerances. With `exactness`, each number's exactness must match too. Items compare before prototypes, because a nested array's prototype comes from its first item. A mismatch inside an item that is an array adds its own message, as in `data[0]: shape: [0] != [1]`.
 pub fn difference(x: &Value, y: &Value, relative: f64, absolute: f64, exactness: bool) -> Option<String> {
-    let same = |a: &Value, b: &Value| same_element(a, b, relative, absolute, exactness);
+    let inner = |a: &Value, b: &Value| {
+        if a.is_atom() && b.is_atom() { (!same_atom(a, b, relative, absolute, exactness)).then(String::new) }
+        else { difference(a, b, relative, absolute, exactness).map(|m| format!(": {m}")) }
+    };
     if x.is_atom() != y.is_atom() { return Some("atom versus array".into()); }
-    if x.is_atom() { return (!same(x, y)).then(|| "atom".into()); }
+    if x.is_atom() { return inner(x, y).map(|_| "atom".into()); }
     if x.shape() != y.shape() { return Some(format!("shape: {:?} != {:?}", x.shape(), y.shape())); }
     if x.layout().all_keys() != y.layout().all_keys() || x.axis_names() != y.axis_names() { return Some("axis keys or names".into()); }
-    if !same(&x.prototype(), &y.prototype()) { return Some("prototype".into()); }
-    x.elements().zip(y.elements()).position(|(a, b)| !same(&a, &b)).map(|i| format!("data[{i}]"))
+    let items = x.elements().zip(y.elements()).enumerate().find_map(|(i, (a, b))| inner(&a, &b).map(|m| format!("data[{i}]{m}")));
+    items.or_else(|| inner(&x.prototype(), &y.prototype()).map(|m| format!("prototype{m}")))
+}
+
+/// The kinds of storage, as `•storage` names them under `numeric`, at the first place where `x` and `y` are held differently. It walks into the items of arrays that both hold as mixed storage.
+fn kind_difference(x: &Value, y: &Value, numeric: Numeric) -> Option<(&'static str, &'static str)> {
+    let (a, b) = (x.storage_kind(numeric), y.storage_kind(numeric));
+    if a != b { return Some((a, b)); }
+    if a != "mixed" || x.is_atom() || y.is_atom() || x.len() != y.len() { return None; }
+    x.elements().zip(y.elements()).find_map(|(p, q)| kind_difference(&p, &q, numeric))
 }
 
 /// The text at `key` in `case`, or `None` without one. Anything else makes the case invalid, as `what` describes.
@@ -50,7 +60,7 @@ impl crate::Input for Lines {
     fn rest(&self) -> std::io::Result<Vec<u8>> { Ok(self.0.lock().unwrap().drain(..).map(|line| line + "\n").collect::<String>().into_bytes()) }
 }
 
-/// Check an independent captured value or BPL expectation. Each side receives a fresh session. A BPL expectation must match each number's exactness. A value captured from another interpreter carries none, so its numbers compare by value.
+/// Check `case`'s code against an independent captured value or BPL expectation. Each side receives a fresh session. A BPL expectation must match each number's exactness. A value captured from another interpreter carries none, so its numbers compare by value. A Boolean `batch` in `case` runs the code once, with the `batch` pref set to it. Without one, the code runs with the pref off, then with it on. Each run must meet the expectation. The two runs' values must also be held in the same kinds of storage. The message of a failure with the pref on says so. A failure with the pref off ends the check before the run with it on.
 pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
     let Some(code) = case["code"].as_str() else { return json!({"status":"invalid", "message":"missing code"}); };
     let error_kind = case["expected_error"].as_str().filter(|s| !s.is_empty());
@@ -72,42 +82,67 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
     if [relative, absolute].iter().any(|t| !t.is_finite() || *t < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
         return json!({"status":"invalid", "message":"invalid or missing independent expectation"});
     }
+    let met = |result: crate::Evaluation| -> Result<Option<Value>, JsonValue> {
+        if let Some(error) = &result.error {
+            let kind = error.kind.to_string();
+            if matches!(error.kind, crate::ErrorKind::Timeout | crate::ErrorKind::Interrupt) {
+                return Err(json!({"status": kind.to_lowercase(), "message":error.message}));
+            }
+            if error_kind != Some(kind.as_str()) {
+                return Err(json!({"status":"error", "kind":kind, "message":error.message, "actual":crate::protocol::response(result)}));
+            }
+        }
+        let mismatch = if result.error.is_some() { None }
+        else if result.function.is_some() || result.operator.is_some() { Some("unexpected function or operator result".into()) } else {
+            match (error_kind, &result.value, &expected) {
+                (Some(kind), _, _) => Some(format!("expected {kind}")), (_, None, _) if no_result => None, (_, None, _) => Some("no result".into()),
+                (_, Some(_), _) if no_result => Some("expected no result".into()),
+                (_, Some(actual), Some(expected)) => difference(actual, expected, relative, absolute, exactness), _ => unreachable!()
+            }
+        };
+        let mismatch = mismatch.or_else(|| {
+            output.and_then(|expected| {
+                let written: String = result.output.iter().map(crate::Output::written).collect();
+                let actual = written.strip_suffix('\n').unwrap_or(&written);
+                (actual != expected).then(|| format!("output: {actual:?} != {expected:?}"))
+            })
+        });
+        match mismatch {
+            Some(message) => Err(json!({"status":"mismatch", "message":message, "actual":crate::protocol::response(result)})), None => Ok(result.value)
+        }
+    };
+    let paired = case["batch"].as_bool().is_none();
+    let mut values = Vec::new();
+    for batch in case["batch"].as_bool().map_or(vec![false, true], |batch| vec![batch]) {
+        let (result, session) = match evaluated(code, input, batch, options.timeout, &options.interrupt) { Ok(run) => run, Err(invalid) => return invalid };
+        match met(result) {
+            Ok(value) => values.push((value, session.numeric)),
+            Err(mut failure) => {
+                if paired && batch { failure["message"] = json!(format!("with the batch pref on: {}", failure["message"].as_str().unwrap_or_default())); }
+                return failure;
+            }
+        }
+    }
+    let kinds = match &values[..] { [(Some(off), _), (Some(on), numeric)] => kind_difference(on, off, *numeric), _ => None };
+    match kinds {
+        Some((on, off)) => json!({"status":"mismatch", "message":format!("storage kind: {on} with the batch pref on, {off} with it off")}),
+        None => json!({"status":"pass"}),
+    }
+}
+
+/// `code` run in a fresh session with the `batch` pref set to `batch`, a `testpath` fixture where the code names one, and `input` as its lines of input. Gives the evaluation and the session as the code left it.
+fn evaluated(code: &str, input: Option<&str>, batch: bool, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<(crate::Evaluation, Session), JsonValue> {
     let mut session = Session::new();
+    session.batch = Some(batch);
     let _files = if code.contains("testpath") {
-        let dir = match tempfile::tempdir() { Ok(dir) => dir, Err(e) => return json!({"status":"invalid", "message":format!("temporary fixture: {e}")}) };
+        let dir = tempfile::tempdir().map_err(|e| json!({"status":"invalid", "message":format!("temporary fixture: {e}")}))?;
         let path = dir.path().join("data");
         session.set("testpath", crate::keyed::text(&path.to_string_lossy())).expect("valid fixture name");
         Some(dir)
     } else { None };
     let input = input.map(|text| Arc::new(Lines(Mutex::new(text.lines().map(String::from).collect()))) as Arc<dyn crate::Input>);
-    let result = session.eval_with(code, EvalOptions { echo: false, input, ..options });
-    if let Some(error) = &result.error {
-        let kind = error.kind.to_string();
-        if matches!(error.kind, crate::ErrorKind::Timeout | crate::ErrorKind::Interrupt) {
-            return json!({"status": kind.to_lowercase(), "message":error.message});
-        }
-        if error_kind != Some(kind.as_str()) {
-            return json!({"status":"error", "kind":kind, "message":error.message, "actual":crate::protocol::response(result)});
-        }
-    }
-    let mismatch = if result.error.is_some() { None }
-    else if result.function.is_some() || result.operator.is_some() { Some("unexpected function or operator result".into()) } else {
-        match (error_kind, &result.value, expected) {
-            (Some(kind), _, _) => Some(format!("expected {kind}")), (_, None, _) if no_result => None, (_, None, _) => Some("no result".into()),
-            (_, Some(_), _) if no_result => Some("expected no result".into()),
-            (_, Some(actual), Some(expected)) => difference(actual, &expected, relative, absolute, exactness), _ => unreachable!()
-        }
-    };
-    let mismatch = mismatch.or_else(|| {
-        output.and_then(|expected| {
-            let written: String = result.output.iter().map(crate::Output::written).collect();
-            let actual = written.strip_suffix('\n').unwrap_or(&written);
-            (actual != expected).then(|| format!("output: {actual:?} != {expected:?}"))
-        })
-    });
-    match mismatch {
-        Some(message) => json!({"status":"mismatch", "message":message, "actual":crate::protocol::response(result)}), None => json!({"status":"pass"})
-    }
+    let result = session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input, ..EvalOptions::default() });
+    Ok((result, session))
 }
 
 /// How long each evaluation of a case or a page example may run.
@@ -237,12 +272,12 @@ pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, interrupt: &
     failures.into_iter().map(|(_, f)| f).collect()
 }
 
-/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a session of its own. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within 1e-13 with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
-pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
+/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own, with the `batch` pref set to `batch` unless that is `None`. Each expectation runs in a fresh session with the pref at its default. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within 1e-13 with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
+pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     let options = || EvalOptions { timeout: Some(TIMEOUT), echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
     let (mut failures, mut session, mut code) = (Vec::new(), None, String::new());
     for (i, line) in text.lines().enumerate() {
-        if line == "```bpl" { session = Some(Session::new()); continue; }
+        if line == "```bpl" { let mut fresh = Session::new(); fresh.batch = batch; session = Some(fresh); continue; }
         let Some(bpl) = session.as_mut() else { continue };
         let closing = line.starts_with("```");
         let (source, expected) = line.split_once(" ⍝ ").map_or((line, None), |(c, e)| (c, Some(e)));
@@ -286,7 +321,7 @@ pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Jso
     Ok(json!({"failures": failures(selected, interrupt), "error": null}))
 }
 
-/// The reply to the worker's `page` request, which gives the `text` of a `.qmd` page. The reply gives the examples that fail, as `page` gives them.
+/// The reply to the worker's `page` request, which gives the `text` of a `.qmd` page and, optionally, a Boolean `batch` that sets the `batch` pref for its examples. The reply gives the examples that fail, as `page` gives them.
 pub fn page_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
-    Ok(json!({"failures": page(spec["text"].as_str().ok_or("page needs text as a string")?, interrupt), "error": null}))
+    Ok(json!({"failures": page(spec["text"].as_str().ok_or("page needs text as a string")?, spec["batch"].as_bool(), interrupt), "error": null}))
 }

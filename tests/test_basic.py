@@ -77,7 +77,7 @@ def test_numpy_inputs_and_copies():
     saved = bpl['m'].np
     saved[:] = 77
     np.testing.assert_array_equal(bpl('+/m'), [2, 10, 18])
-    for a in [np.array(True), np.array(3, dtype=np.float32), np.array([1., 2j]), np.array([2**64-1], dtype=np.uint64).astype(object),
+    for a in [np.array(True), np.array(3, dtype=np.float32), np.array([1., 2j]), np.array([2**64-1], dtype=np.uint64),
         np.empty((0, 3), dtype=int), np.empty((2, 0)), np.array([np.inf, -np.inf]), np.array([['a', 'b'], ['c', 'd']]), np.array([[1, Fraction(2, 3)]], dtype=object),
         np.arange(6, dtype=np.int8).reshape(2, 3).T, np.array([0.5, -0.], dtype=np.float32), np.array([2**63-1], dtype=np.uint64), np.array([1., np.nan]), np.array([0.1, -65504], dtype=np.float16)]:
         result = bpl('x', x=a)
@@ -90,6 +90,13 @@ def test_numpy_inputs_and_copies():
     assert bpl('x×2ₓ', x=z).np.dtype == np.complex64 and bpl('x+0.5', x=z).np.dtype == np.complex128 and bpl('(•storage x).kind', x=z).py == 'complex64'
     flat, nested = array.array('i', [1, -2]), [memoryview(array.array('d', [0.5]))]
     assert bpl('x', x=flat).np.tolist() == [1, -2] and bpl('≡x', x=nested).py == 2 and bpl('↑x', x=nested).np.tolist() == [0.5]
+    class ArrayLike:
+        def __array__(self, dtype=None, copy=None): return np.arange(3, dtype=np.float32)
+    assert bpl('x', x=ArrayLike()).np.dtype == np.float32
+    np.testing.assert_array_equal(Array([ArrayLike()]).np[0], [0, 1, 2])
+    class BrokenArray:
+        def __array__(self, dtype=None, copy=None): raise ValueError('provider error')
+    with pytest.raises(ValueError, match='provider error'): Array(BrokenArray())
     bpl('•prefs ["float":32]')
     assert bpl('(•storage x).kind', x=[1.5, 2.5]).py == 'float32' and bpl('(•storage x).kind', x=np.ones(2)).py == 'float64'
     assert bpl('(•storage x).kind', x=[1+2j, 3.5]).py == 'complex64' and bpl('(•storage x).kind', x=np.ones(2, np.complex128)).py == 'complex128'
@@ -97,7 +104,6 @@ def test_numpy_inputs_and_copies():
     assert bpl('x', x=np.float32(1.5)).py == 1.5
     assert bpl('x', x=np.int64(3)).py == 3
     assert bpl('x+1', x=float('inf')).py == float('inf')
-    with pytest.raises(ValueError): bpl(x=np.array([2**64-1], dtype=np.uint64))
     for a in [np.array([b'a']), np.array(['2020'], dtype='datetime64[Y]'), object()]:
         with pytest.raises(TypeError): bpl(x=a)
     np.testing.assert_array_equal(saved, np.full((3, 2), 77))
@@ -115,7 +121,9 @@ def test_exact_nested_and_character_values():
     assert bpl('x', x=['a', 'b']).py == 'ab'
     strings = bpl('x', x=['ab', 'cd']).np
     assert strings.dtype == object and strings.tolist() == ['ab', 'cd']
-    ragged = bpl('x', x=[[1, 2], [3]]).np
+    np.testing.assert_array_equal(Array([range(3), range(3, 6)]), [[0, 1, 2], [3, 4, 5]])
+    np.testing.assert_array_equal(bpl('x', x=range(2, 8, 2)), [2, 4, 6])
+    ragged = bpl('x', x=[range(1, 3), range(3, 4)]).np
     assert ragged.shape == (2,) and ragged.dtype == object
     np.testing.assert_array_equal(ragged[0], [1, 2])
     np.testing.assert_array_equal(ragged[1], [3])

@@ -1,12 +1,13 @@
 use rustymath::{agreement::Mapping, error::Kind, search::occurrences, structure::Windows};
 use crate::{
     agreement::{Agree, Agreement}, array::{generated_len, Frame as ResultFrame, Gather, Lanes}, execution::Context, number::Numeric,
-    primitive::{remapped, FoldKind, OperandKind, OperatorKind, Primitive, Selection, Superscript, Targets}, selection::SelectionKind,
+    primitive::{remapped, FoldKind, OperandKind, Operation, OperatorKind, Primitive, Selection, Superscript, Targets}, selection::SelectionKind,
     symbols::Notation, syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind},
     At, DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value
 };
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::{borrow::Cow, convert::Infallible, sync::Arc};
+use crate::transform::Plain;
 
 mod assign;
 mod binder;
@@ -14,7 +15,10 @@ mod dissect;
 mod idioms;
 mod operators;
 mod session;
+mod tree;
 pub(crate) use binder::before;
+pub(crate) use tree::Recording;
+pub(crate) use operators::{fold, folded_cells, in_turn, inner_product, whole_cells};
 use {binder::*, dissect::*, operators::*};
 
 #[derive(Clone, Debug)]
@@ -119,7 +123,19 @@ fn system_name(name: &str, notation: Notation) -> String {
     name.strip_prefix('•').map_or_else(|| name.into(), |name| format!("{}{name}", notation.glyph("•")))
 }
 
+/// The name of `f.g`, where `f` and `g` are primitives.
+pub(crate) fn product(f: &Function, g: &Function) -> Option<Operation> { Some(Operation::Product(f.as_primitive()?, g.as_primitive()?)) }
+
 impl FunctionNode {
+    /// The operation this node names: a primitive, a fold or scan by a primitive, or an inner product of two primitives.
+    fn operation(&self) -> Option<Operation> {
+        match self {
+            Self::Primitive(p) => Some(Operation::Primitive(*p)),
+            Self::Fold(f, kind) => Some(Operation::Fold(f.as_primitive()?, *kind)),
+            Self::Composed(OperatorKind::Product, [Operand::Function(f), Operand::Function(g)]) => product(f, g),
+            _ => None,
+        }
+    }
     /// The operands, left to right. Primitives, system functions, dfns and late-bound names have none.
     fn operands(&self) -> Vec<Operand> {
         let fun = |f: &Function| Operand::Function(f.clone());
@@ -147,6 +163,21 @@ impl Function {
     fn node(&self) -> &FunctionNode { &self.node.kind }
     /// The primitive this function is, where it is one.
     fn as_primitive(&self) -> Option<Primitive> { match self.node() { FunctionNode::Primitive(p) => Some(*p), _ => None } }
+    /// The operation this function names, where it names one (`FunctionNode::operation`).
+    pub(crate) fn operation(&self) -> Option<Operation> { self.node().operation() }
+    /// The dfn that this function runs, where it's a dfn or a dfn operator's derived function.
+    pub(crate) fn definition(&self) -> Option<&Definition> { match self.node() { FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => Some(c.definition.as_ref()), _ => None } }
+    /// The call that a running level can take over when `dispatch` calls this function with `left`: an attached derivative, `⌹` or `⊥`, a system function, or `f.g` with one argument. Other calls route where their operations run.
+    fn op(&self, left: Option<&Value>) -> Option<crate::transform::Op<'_>> {
+        use crate::transform::Op;
+        match self.node() {
+            FunctionNode::Ruled(f, Rules { derivative: Some(g), .. }) => Some(Op::Ruled(f, g)),
+            FunctionNode::Primitive(p @ (Primitive::MatrixDivide | Primitive::Decode)) => Some(Op::Operated(*p)),
+            FunctionNode::System(f) => Some(Op::System(f)),
+            FunctionNode::Composed(OperatorKind::Product, _) if left.is_none() => Some(Op::Expansion(self)),
+            _ => None,
+        }
+    }
     /// `f` and the text after the dot of a function built from `f.name` or `f.[I]`: the field name, or the selectors.
     fn dotted(&self, notation: Notation) -> Option<(&Function, String)> {
         let FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(s), Operand::Function(f)]) = self.node() else { return None };
@@ -175,7 +206,7 @@ impl Function {
                     if {
                         let fields = crate::primitive::coordinate_fields(x).collect::<Vec<_>>();
                         fields.len() == right.shape().len().max(1)
-                            && fields.iter().all(|e| (e.is_atom() && !e.as_number().is_some_and(|n| n.is_infinite())) || crate::keyed::name(e).is_some())
+                            && fields.iter().try_fold(true, |all, e| Ok::<_, crate::transform::Stop>(all && ((e.is_atom() && e.observed()?.infinity().is_none()) || crate::keyed::name(e).is_some()))).at(cx.span)?
                     } =>
                 { SelectionKind::Item }
                 _ => SelectionKind::Elements,
@@ -185,6 +216,18 @@ impl Function {
             _ => SelectionKind::Elements,
         }))
     }
+    /// The functions that a composition or fork runs, each with the valence it runs at, and the array that a bound composition (`a↣f` or `f↢a`) binds. `None` for any other function.
+    fn called_parts(&self, dyadic: bool) -> Option<(Vec<(&Function, bool)>, Option<&Value>)> {
+        use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::*};
+        Some(match self.node() {
+            N::Composed(Atop, [F(f), F(g)]) => (vec![(g, dyadic), (f, false)], None),
+            N::Composed(Over, [F(f), F(g)]) => (vec![(g, false), (f, dyadic)], None),
+            N::Composed(Before, [V(a), F(f)]) | N::Composed(After, [F(f), V(a)]) => (vec![(f, true)], Some(a)),
+            N::Modified(Commute, F(f)) => (vec![(f, true)], None),
+            N::Fork([f, g, h]) => (vec![(f, dyadic), (h, dyadic), (g, true)], None),
+            _ => return None,
+        })
+    }
     /// Whether the function only selects or rearranges the items of its right argument, whatever the values of its arguments. Each and Rank need this of their operand, which they apply to every cell of the labels.
     fn selects(&self, dyadic: bool) -> bool {
         use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::*};
@@ -192,10 +235,9 @@ impl Function {
         match self.node() {
             N::Primitive(p) => p.selects(dyadic),
             N::Axis(f, _) | N::Modified(Each, F(f)) | N::Composed(Rank, [F(f), V(_)]) => f.selects(dyadic),
-            N::Composed(Atop, [F(f), F(g)]) => f.selects(false) && g.selects(dyadic),
-            N::Composed(Over, [F(f), F(g)]) => f.selects(dyadic) && g.selects(false),
+            N::Composed(Atop | Over, _) => self.called_parts(dyadic).is_some_and(|(parts, _)| parts.iter().all(|&(f, v)| f.selects(v))),
             N::Composed(Before, [V(_), F(f)]) => !dyadic && f.selects(true),
-            N::Composed(Power, [F(f), V(n)]) => matches!(n.as_number().as_ref().and_then(power_count), Some((false, n)) if n != u64::MAX) && f.selects(dyadic),
+            N::Composed(Power, [F(f), V(n)]) => matches!(n.observed().map(power_count), Ok(Ok((false, n))) if n != u64::MAX) && f.selects(dyadic),
             N::Inverse(f) if f.transposes() => true,
             // Expand, the inverse of replicate, gives each cell of its argument or a fill.
             N::Inverse(f) => match f.node() { N::Composed(Before, [V(_), F(r)]) => !dyadic && replicate(r), _ => dyadic && replicate(f) },
@@ -212,14 +254,11 @@ impl Function {
     /// Whether the function can drop items of its argument. Under uses an inverse only for a function that can't, as BQN's spec requires. An inverse drops items only where its function does, except inverse transpose, which never drops any. The inverse of a catenate, BPL's one other inverse that drops items, checks the items it drops. Dfns, system functions, functions with an inverse that `f⁻¹←g` attaches, and constants count as keeping every item.
     fn discards(&self, dyadic: bool) -> bool {
         use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::*};
+        if let Some((parts, _)) = self.called_parts(dyadic) { return parts.iter().any(|&(f, v)| f.discards(v)); }
         match self.node() {
             N::Primitive(p) => p.discards(dyadic), N::Fold(f, _) => f.discards(true) || matches!(f.node(), N::Primitive(Primitive::Identity(_))),
-            N::Composed(Atop, [F(f), F(g)]) => f.discards(false) || g.discards(dyadic),
-            N::Composed(Over, [F(f), F(g)]) => f.discards(dyadic) || g.discards(false),
-            N::Composed(Before | After, [V(_), F(f)] | [F(f), V(_)]) | N::Modified(Commute, F(f)) => f.discards(true),
             N::Ruled(_, Rules { inverse: Some(_), .. }) => false, N::Inverse(f) if f.transposes() => false,
             N::Axis(f, _) | N::Inverse(f) | N::Ruled(f, _) | N::Modified(Each, F(f)) | N::Composed(Power | Rank, [F(f), V(_)]) => f.discards(dyadic),
-            N::Fork([f, g, h]) => f.discards(dyadic) || g.discards(true) || h.discards(dyadic),
             N::Modified(Commute, V(_)) | N::System(_) | N::Defined(_) | N::Derived(..) | N::LateBound(..) => false,
             node => node.operands().iter().any(|o| matches!(o, F(f) if f.discards(false) || f.discards(true)))
         }
@@ -238,7 +277,7 @@ impl Function {
                 return g.select(outer.as_ref(), &labels, actual.as_ref(), kind, cx);
             }
             FunctionNode::Composed(OperatorKind::Power, [Operand::Function(g), Operand::Value(n)]) => {
-                let Some((false, n)) = n.as_number().as_ref().and_then(power_count).filter(|&(_, n)| n != u64::MAX) else { return Ok(None) };
+                let Some((false, n)) = n.observed().ok().and_then(|n| power_count(n).ok()).filter(|&(_, n)| n != u64::MAX) else { return Ok(None) };
                 let (mut labels, mut actual, mut kind) = (labels.clone(), actual.cloned(), kind);
                 for _ in 0..n {
                     let Some(step) = g.select(left, &labels, actual.as_ref(), kind, cx)? else { return Ok(None) };
@@ -351,7 +390,7 @@ impl Function {
         }
         Ok(result)
     }
-    fn primitive(p: Primitive) -> Self { Self { node: Arc::new(FunctionData { kind: FunctionNode::Primitive(p), environment: None, late: false, idiom: None }) } }
+    pub(crate) fn primitive(p: Primitive) -> Self { Self { node: Arc::new(FunctionData { kind: FunctionNode::Primitive(p), environment: None, late: false, idiom: None }) } }
     /// A function that returns `a` whatever its arguments, as `a⍨` writes it.
     fn constant(a: Value, span: &Span) -> Result<Self, Error> { Self::new(FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)), span) }
     /// The array that a function from `constant` returns, or `None` for any other function.
@@ -432,12 +471,13 @@ impl Function {
     #[cold]
     #[inline(never)]
     fn reported(&self, left: Option<&Value>, right: &Value, room: bool, cx: &mut Context<'_>) -> Result<Bound, Error> {
-        let whole = [left, Some(right)].map(|v| v.and_then(Value::dual_items_built) == Some(false));
+        let built = |v: Option<&Value>| v.and_then(Value::carrier).map(crate::transform::Carrier::items_built);
+        let whole = [left, Some(right)].map(|v| built(v) == Some(false));
         let (reports, before) = (cx.session.fusion_reports, crate::explain::computed_so_far());
         let result = if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
         let items = crate::explain::computed_so_far() - before;
         let report = if items > 0 { Some("fusion ends") }
-            else if [left, Some(right)].iter().zip(whole).any(|(v, was)| was && v.and_then(Value::dual_items_built) == Some(true)) { Some("∂ runs item by item") }
+            else if [left, Some(right)].into_iter().zip(whole).any(|(v, was)| was && built(v) == Some(true)) { Some("∂ runs item by item") }
             else { None };
         if let (Some(report), true) = (report, cx.session.fusion_reports == reports) { fusion_report(cx, report, &self.bpl(), items); }
         result
@@ -455,18 +495,10 @@ impl Function {
     fn dispatch(&self, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         let resolved;
         let f = if self.late() { resolved = self.resolve(cx.session, &mut HashMap::new(), 0)?; &resolved } else { self };
+        if cx.session.transforming() { if let Some(result) = f.op(left).and_then(|op| crate::transform::route(op, left, right, cx)) { return result.map(Bound::from); } }
         if let Some(idiom) = &f.node.idiom { if let Some(result) = idiom.call(f, left, right, cx) { return result; } }
         match f.node() {
-            FunctionNode::Composed(op, operands) => composition(*op, operands, left, right, cx),
-            FunctionNode::Ruled(f, Rules { derivative: Some(g), .. }) if cx.session.transforming() => match left {
-                None => match crate::derivative::deep_tag(right) {
-                    Some(tag) => crate::derivative::attached(f, g, right, tag, cx).map(Bound::from),
-                    None => f.ruled(left, right, cx),
-                },
-                // A rule describes a function of one argument, so a call with two can't use it.
-                Some(x) if crate::derivative::active(x) || crate::derivative::active(right) => Err(crate::derivative::two_arguments(cx)),
-                Some(_) => f.ruled(left, right, cx),
-            },
+            FunctionNode::Composed(..) => composition(f, left, right, cx),
             FunctionNode::Ruled(f, _) => f.ruled(left, right, cx),
             FunctionNode::Defined(_) | FunctionNode::Derived(..) => cx.session.call_defined(f, left, right).map_err(|mut e| {
                 e.calls.push(cx.span.clone());
@@ -554,11 +586,7 @@ impl Function {
         use FunctionNode::{Defined, Derived, Fold, Fork};
         // A form whose own code handles only arguments up to its ranks applies to cells of those ranks through Rank.
         if let FunctionNode::Primitive(p) = self.node() {
-            let info = p.info();
-            let cells = match left {
-                None => info.monad.and_then(|m| m.cells(right)).map(|r| vec![r]), Some(x) => info.dyad.and_then(|d| d.cells(x, right)).map(Vec::from)
-            };
-            if let Some(cells) = cells {
+            if let Some(cells) = p.cells(left, right) {
                 let ranks = Value::integers(vec![cells.len()], cells.into_iter().map(i64::from).collect()).error_at(cx.span, "invalid cell ranks")?;
                 return rank(self, &ranks, left, right, cx);
             }
@@ -584,14 +612,9 @@ impl Function {
                 let item = crate::primitive::pick(left.unwrap_or(&Value::integer(0)), right, cx.session.prototype, cx)?;
                 return Ok(Bound::from(item));
             }
-            FunctionNode::Primitive(p @ (Primitive::MatrixDivide | Primitive::Decode))
-                if crate::derivative::either_active(cx, left, right) =>
-            {
-                crate::derivative::operated(*p, left, right, cx)
-            }
             FunctionNode::Primitive(p) => p.call(left, right, cx),
             FunctionNode::System(f) => {
-                if !matches!(f.call, crate::system::Call::Active(_)) && crate::derivative::either_active(cx, left, right) { return Err(crate::derivative::system(f.name, cx)); }
+                f.acts(cx)?;
                 f.check(left, cx.span)?;
                 if f.item.maps(right) { return self.each_item(left, right, f.prototype.expect("a mapped system function has a result prototype"), cx); }
                 if let (true, Some(prototype)) = (cx.session.prototype, f.prototype) { return Ok(Bound::from(prototype(cx))); }
@@ -613,7 +636,7 @@ impl Function {
                     crate::system::Call::Time => cx.session.system_time(left, right, cx.span),
                     crate::system::Call::Regex(regex, operation) => crate::regex::call(regex, *operation, left, right, cx),
                     crate::system::Call::Distribution(d, operation) => crate::distribution::call(d, *operation, left, right, cx),
-                    crate::system::Call::Generator(g, draw) => crate::distribution::generator_call(g, *draw, left, right, cx),
+                    crate::system::Call::Generator(g, _) => crate::primitive::drawn_value(Some(g), left, right, cx),
                     crate::system::Call::Load => return cx.session.load(right, cx.span),
                 }
             }
@@ -908,12 +931,6 @@ impl Evaluation {
     pub(crate) fn failed(error: Error) -> Self { Self { error: Some(error), ..Self::default() } }
 }
 
-/// A running level, which a `∂` call starts: its tag, the number of frames when it started, and the bindings outside those frames that it wrote, each with its frame, or its module for a global. The call strips its tag from those bindings when it returns.
-struct Level { tag: u32, frames: usize, writes: Vec<(Option<usize>, usize, String)> }
-
-/// A running map, such as Each, Rank's general path, an outer product or a stencil: its id and the cell it is running. Each cell draws random numbers from a stream of its own (`distribution::Stream`).
-pub(crate) struct MapCell { pub(crate) id: u64, pub(crate) cell: u64 }
-
 #[derive(Default)]
 pub struct Session {
     pub(crate) execution: crate::execution::Execution,
@@ -923,6 +940,8 @@ pub struct Session {
     pub(crate) prefacing: bool,
     /// The rustymath thread count that `•prefs` set for this session's evaluations. `None` leaves the evaluating thread's own setting.
     pub(crate) threads: Option<usize>,
+    /// The `batch` pref that `•prefs` set, or `None` before it sets one. `batching` gives the pref's value.
+    pub(crate) batch: Option<bool>,
     display_defaults: crate::display::Settings,
     names: HashMap<String, Binding>,
     /// The names of each loaded file. Module `m` is `modules[m-1]`.
@@ -944,16 +963,10 @@ pub struct Session {
     fusion_reports: usize,
     /// Whether `•explain` is running, which records events (`explain`).
     pub(crate) explaining: bool,
-    /// The running levels, innermost last.
-    levels: Vec<Level>,
-    /// The last tag that a level took. Tags only grow, so a level inside another has the larger tag.
-    tags: u32,
+    /// The running `∂` calls and maps.
+    pub(crate) levels: crate::transform::Levels,
     /// The session's random numbers, which `¿` and a distribution's `sample` draw when no `•rand` generator is given.
     pub(crate) generator: crate::distribution::Generator,
-    /// The running maps, innermost last.
-    pub(crate) maps: Vec<MapCell>,
-    /// The last id that a map took. Ids only grow, so a map inside another has the larger id.
-    pub(crate) map_ids: u64,
     /// The program's command-line arguments.
     pub(crate) args: Vec<String>,
 }
@@ -969,12 +982,11 @@ impl Context<'_> {
     }
     /// Runs `f` as a map, whose cells each draw random numbers from a stream of their own, then ends the map, after success and after an error. `f` names each cell with `cell` before running it.
     fn mapped<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
-        self.session.map_ids += 1;
-        self.session.maps.push(MapCell { id: self.session.map_ids, cell: 0 });
+        self.session.begin(crate::transform::Kind::MAP);
         let result = f(self);
-        self.session.maps.pop();
+        self.session.end();
         result
     }
     /// Makes cell `i` of the innermost map the running one.
-    fn cell(&mut self, i: usize) { if let Some(map) = self.session.maps.last_mut() { map.cell = i as u64; } }
+    fn cell(&mut self, i: usize) { self.session.levels.cell(i as u64); }
 }

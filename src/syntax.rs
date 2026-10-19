@@ -2,7 +2,7 @@ use rustymath::{buffer::FloatWidth, error::Kind};
 use crate::{number::{Math, Numeric}, primitive::{OperatorKind, Primitive, Superscript}, symbols::canonical,
     Error, ErrorAt, ErrorKind, Number, Source, Span, Value
 };
-use std::{iter::Peekable, str::CharIndices, sync::{atomic::{AtomicUsize, Ordering::Relaxed}, Arc}};
+use std::{iter::Peekable, str::CharIndices, sync::{atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed}, Arc}};
 use unicode_script::{Script, UnicodeScript};
 
 #[derive(Clone, Debug)]
@@ -42,12 +42,16 @@ pub(crate) enum ListForm {
 pub(crate) enum DefinitionKind { Function, MonadicOperator, DyadicOperator }
 
 #[derive(Debug)]
-pub(crate) struct Definition { pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, names: AtomicUsize }
+pub(crate) struct Definition { pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, names: AtomicUsize, remembered: AtomicU64 }
 impl Definition {
     /// The most names any call of this definition has bound. A call's frame starts with room for that many.
     pub fn names(&self) -> usize { self.names.load(Relaxed) }
     /// Records that a call bound `names` names.
     pub fn bound(&self, names: usize) { if names > self.names() { self.names.store(names, Relaxed) } }
+    /// What maps remember of a stopped batched run of this definition, as `batch::tried` encodes it: nothing, every later call, or the arguments whose later tries it skips (`transform::Cause::kept`).
+    pub fn remembered(&self) -> u64 { self.remembered.load(Relaxed) }
+    /// Records what maps remember of a stopped batched run of this definition.
+    pub fn remember(&self, memory: u64) { self.remembered.store(memory, Relaxed) }
 }
 
 fn definition_kind(nodes: &[Node]) -> DefinitionKind {
@@ -70,7 +74,8 @@ pub(crate) struct Node { pub kind: NodeKind, pub span: Span }
 pub struct Parsed { pub(crate) statements: Vec<Statement> }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Statement { pub nodes: Vec<Node>, pub kind: StatementKind }
+/// A statement. A dfn's statement records its binder steps on its first evaluation (`eval::Recording`), which later evaluations replay.
+pub(crate) struct Statement { pub nodes: Vec<Node>, pub kind: StatementKind, pub(crate) recording: std::sync::OnceLock<Option<crate::eval::Recording>> }
 
 #[derive(Clone, Copy, Debug)]
 /// A predicate ends with `?`. When it fails, the dfn moves on to its next body.
@@ -90,7 +95,7 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
     } else if matches!(&nodes[0].kind, NodeKind::Name(name) if name == "⍺") && matches!(nodes.get(1).map(|n| &n.kind), Some(NodeKind::Assign)) {
         StatementKind::DefaultArgument
     } else { StatementKind::Expression };
-    Ok(Statement { nodes, kind })
+    Ok(Statement { nodes, kind, recording: Default::default() })
 }
 
 #[derive(Debug)]
@@ -645,7 +650,7 @@ impl Parser<'_> {
                         TokenKind::BraceOpen => {
                             let bodies = bodies(inner, &span)?;
                             let kind = bodies.iter().flatten().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
-                            NodeKind::Dfn(Arc::new(Definition { bodies, span: span.clone(), kind, names: AtomicUsize::new(0) }))
+                            NodeKind::Dfn(Arc::new(Definition { bodies, span: span.clone(), kind, names: AtomicUsize::new(0), remembered: AtomicU64::new(0) }))
                         }
                         TokenKind::Open if let Some(mark) = mark => marked_literal(parenthesised(inner, &span)?, &span, mark)?,
                         TokenKind::Open => parenthesised(inner, &span)?,
@@ -963,7 +968,7 @@ pub(crate) fn parse_with_aliases(source: Arc<Source>, aliases: bool) -> ParseSta
     let tokens = match lex(&source, aliases, None) { Ok(tokens) => tokens, Err(failure) => return failure.into() };
     match (Parser { tokens: &tokens, pos: 0 }).pieces(None).and_then(statements) {
         Ok(statements) => {
-            ParseStatus::Complete(Parsed { statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() })
+            ParseStatus::Complete(Parsed { statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression, recording: Default::default() }).collect() })
         }
         Err(failure) => failure.into(),
     }

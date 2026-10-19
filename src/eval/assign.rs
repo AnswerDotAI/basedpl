@@ -104,7 +104,7 @@ impl Session {
 
     fn update_array(&mut self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> {
         if value.environment() > binding.owner { return Err(span.domain_error("array would export a local closure")); }
-        if self.transforming() { self.record_write(binding.owner, &binding.name); }
+        if self.transforming() { self.record_write(binding.owner, &binding.name).at(span)?; }
         self.insert_name(binding.owner, &binding.name, Binding::from_element(value));
         Ok(())
     }
@@ -136,6 +136,7 @@ impl Session {
                 NodeKind::Output => {
                     return match value {
                         Binding::Value(a) => {
+                            self.levels.effect(crate::transform::Effect::Acts).at(span)?;
                             self.execution.output(crate::OutputKind::Explicit, self.display_settings().explicit(a, self.current.is_some()));
                             Ok(())
                         }
@@ -341,11 +342,12 @@ impl Session {
         self.write_kept(binding, span, |value, context| selection.write_into(value, values, context))
     }
 
-    /// Runs `write` on the array that `binding` kept, then stores it under the name. The name's current binding goes first, so the write happens in place unless something else holds the array. `write` makes every check before it changes anything, so an error leaves the name as it was. `fusion_report` reports a write that computes a pending array, as `←`.
+    /// Runs `write` on the array that `binding` kept, then stores it under the name. The name's current binding goes first, so the write happens in place unless something else holds the array. Running levels record the write first (`Session::record_write`), so a batched map stops before it. `write` makes every check before it changes anything, so an error or a stop leaves the name as it was. `fusion_report` reports a write that computes a pending array, as `←`.
     fn write_kept(
         &mut self, binding: ArrayBinding, span: &Span, write: impl FnOnce(&mut Value, &mut crate::execution::Context<'_>) -> Result<(), Error>
     ) -> Result<(), Error> {
         let ArrayBinding { name, owner, mut value } = binding;
+        if self.transforming() { self.record_write(owner, &name).at(span)?; }
         let watch = self.watch(&value);
         // The kept array can be written in place only when the name no longer holds it too.
         let current = self.remove_name(owner, &name);
@@ -430,7 +432,7 @@ impl Session {
         // The modifier never runs for a target at a fill.
         if let Some((kept, right)) = selection.without_fills(&right, &self.at(span))? { return self.write_modified(binding, &kept, f, &right, span); }
         if let (ResultFrame::Array(_), Targets::Offsets(offsets), Some(p)) = (&selection.frame, &selection.targets, f.as_primitive()) {
-            if p.pervasive(true) {
+            if p.facts(true).pervasive {
                 // A singleton goes to every target, as a unit.
                 let unit = if right.is_singleton() {
                     let item = right.at(0);

@@ -194,9 +194,22 @@ def test_array_surface():
     np.testing.assert_array_equal(10 - a, [[9, 8, 7], [6, 5, 4]])
     np.testing.assert_array_equal(a[1, :], [4, 5, 6])
     np.testing.assert_array_equal(a[:, [0, 2]], [[1, 3], [4, 6]])
+    np.testing.assert_array_equal(a[:, a[0] > 1], [[2, 3], [5, 6]])
+    np.testing.assert_array_equal(a[[True, True], np.array([False, True, True])], [2, 6])
+    assert a[:, [False, False, False]].shape == (2, 0)
+    np.testing.assert_array_equal(a[:, [0, 1, 1]], [[1, 2, 2], [4, 5, 5]])
+    for mask in ([True], [[True, False, True]], True):
+        with pytest.raises(IndexError, match='Boolean selector'): a[:, mask]
+    np.testing.assert_array_equal(bpl('[mask]⌷v', mask=[False, True, True], v=[10, 20, 30]), [10, 20, 20])
     np.testing.assert_array_equal(list(a)[0], [1, 2, 3])
     with pytest.raises(BplError): a[2, 0]
-    with pytest.raises(TypeError): a[1:2, :]
+    np.testing.assert_array_equal(a[1:2, :], [[4, 5, 6]])
+    np.testing.assert_array_equal(a[:, ::-1], [[3, 2, 1], [6, 5, 4]])
+    np.testing.assert_array_equal(a[:, -2:], [[2, 3], [5, 6]])
+    np.testing.assert_array_equal(a[..., 0], [1, 4])
+    assert a[:, 5:].shape == (2, 0)
+    with pytest.raises(ValueError): a[::0]
+    with pytest.raises(IndexError): a[:, :, 1:]
     assert (Array(7) % 3).py == 1 and (Array(7) // 3).py == 2
     assert (Array(2) ** 3).py == 8 and (Array(3) / 2).py == Fraction(3, 2)
     assert operator.index(Array(3)) == 3 and int(Array(3.5)) == 3 and float(Array(Fraction(1, 2))) == .5
@@ -257,6 +270,12 @@ def test_axis_keys_dataframe():
     assert m.axis_keys == (('alice', 'bob'), ('price', 'qty'))
     assert m['alice'].py == dict(price=10, qty=2)
     assert m[:, 'qty'].py == dict(alice=2, bob=4)
+    assert m['alice':'bob', 'qty'].py == dict(alice=2, bob=4)
+    np.testing.assert_array_equal(m[:, 'price':'qty'], [[10, 2], [20, 4]])
+    assert m['bob':'alice':-1, 'price'].axis_keys == (('bob', 'alice'),)
+    assert m[0:'alice', 'price'].py == dict(alice=10)
+    with pytest.raises(KeyError): m['carol':]
+    with pytest.raises(KeyError): Array([1, 2])['a':]
     pd.testing.assert_frame_equal(m.py, pd.DataFrame(np.array([[10, 2], [20, 4]], dtype=np.uint8), index=['alice', 'bob'], columns=['price', 'qty']))
     np.testing.assert_array_equal(m.np, [[10, 2], [20, 4]])
     h = Array(np.arange(8).reshape(2, 2, 2), axis_keys=[['aa', 'bb'], None, ['xx', 'yy']])

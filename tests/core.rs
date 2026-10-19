@@ -62,7 +62,7 @@ fn language_examples() {
                     }
                 }
             }
-            for f in basedpl::reference::page(&text, &Default::default()) {
+            for f in basedpl::reference::page(&text, None, &Default::default()) {
                 failures.push(format!("{}:{}: {}\n{}", path.display(), f["line"], f["code"].as_str().unwrap(), f["message"].as_str().unwrap()));
             }
         }

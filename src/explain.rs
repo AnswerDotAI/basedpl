@@ -1,4 +1,4 @@
-//! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, and the accumulations, which add items at scattered positions, with the path each took. Events are recorded only while `•explain` runs. Fusion runs its graphs without a session, so every event goes to a sink on the thread that runs the expression.
+//! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, the accumulations, which add items at scattered positions, with the path each took, and the places where a batched run's calls fell back to slower code. Events are recorded only while `•explain` runs. Fusion runs its graphs without a session, so every event goes to a sink on the thread that runs the expression.
 //!
 //! The module also counts the live nodes that `•memory` reports: the record nodes of `∂` and the pending arrays. A node counts for the thread that made it, even when another thread drops it.
 use crate::{keyed, Error, ErrorAt, Value};
@@ -27,7 +27,8 @@ enum Column { Text, Count }
 /// - `forced`: each call that computed pending arrays' items, with the function, its line and column, and the number of items computed.
 /// - `fast`: each fast combination taken, with its name and the function that computed it.
 /// - `accumulations`: each accumulation that ran, with the items it added, the items of its result, and the path it took.
-const KINDS: [(&str, &[(&str, Column)]); 5] = {
+/// - `fallbacks`: each batched map that fell back to calling its operand once for each cell, and each read of a batch's items one at a time, with the reason and the number of cells or items it concerns.
+const KINDS: [(&str, &[(&str, Column)]); 6] = {
     use Column::*;
     [
         ("fused", &[("glyphs", Text), ("items", Count), ("blocks", Count), ("runs", Count), ("copied", Count)]),
@@ -35,12 +36,13 @@ const KINDS: [(&str, &[(&str, Column)]); 5] = {
         ("forced", &[("function", Text), ("line", Count), ("column", Count), ("items", Count)]),
         ("fast", &[("combination", Text), ("function", Text)]),
         ("accumulations", &[("items", Count), ("size", Count), ("path", Text)]),
+        ("fallbacks", &[("reason", Text), ("items", Count)]),
     ]
 };
 
 /// A kind of event, by its position in `KINDS`.
 #[derive(Clone, Copy)]
-enum Kind { Fused, Stored, Forced, Fast, Accumulations }
+enum Kind { Fused, Stored, Forced, Fast, Accumulations, Fallbacks }
 
 /// The events of one `•explain`: for each of `KINDS`, one row for each event.
 #[derive(Clone, Default)]
@@ -110,6 +112,9 @@ pub(crate) fn fast(name: &'static str, function: String) { record(Kind::Fast, ||
 
 /// Records an accumulation that added `items` items into a result of `size` items, each at a position that a table of offsets or ids gives, as scattering adds them. `path` names how it added them, as `pervasive::Route` names a scatter's paths, or `"rounds"`, `"one call"` or `"item by item"` for the general paths.
 pub(crate) fn accumulated(items: usize, size: usize, path: &'static str) { record(Kind::Accumulations, || vec![Field::Count(items), Field::Count(size), Field::Text(path.into())]) }
+
+/// Records that a batched run's calls fell back to slower code, with `reason` and the number of `items` it concerns. The reason becomes text only while `•explain` records. `"item reads"` is code with no rule for batches reading a batch's items one at a time (`batch::Batch::storage`). A stop gives its cause (`transform::Stop`).
+pub(crate) fn fallback(reason: impl std::fmt::Display, items: usize) { record(Kind::Fallbacks, || vec![Field::Text(reason.to_string()), Field::Count(items)]) }
 
 impl Events {
     /// `•explain`'s record: the expression's `value`, then a record for each of `KINDS`, holding its columns, with one row for each event.

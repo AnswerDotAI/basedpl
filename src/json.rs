@@ -127,6 +127,7 @@ fn export(value: &Value, fill: Option<&Number>, span: &Context<'_>) -> Result<Js
             Err(span.domain_error("JSON numbers must be finite floats or integers"))
         }
         Value::Function(_) | Value::Operator(_) => Err(span.domain_error("JSON cannot encode functions or operators")),
+        Value::Carried(carrier) => Err(carrier.refused().at(span)),
         _ if value.keys(0).is_none() && keyed::name(value).is_some() => Ok(Json::String(text(value, span)?)),
         _ if value.shape().is_empty() => export(&value.at(0), fill, span),
         _ => {

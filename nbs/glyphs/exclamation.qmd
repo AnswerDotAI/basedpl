@@ -17,3 +17,5 @@ Function. Ranks: `0` monadic, `0 0` dyadic
 ```
 
 Extends through Gamma to non-integral and complex arguments. At a pole, a negative integer, the result is an infinity or NaN, as the gamma function gives it.
+
+For nonnegative exact integers, factorial is limited to 100000. Exact binomial products are limited to about 100000 multiplicative steps. Exceeding either limit gives `DOMAIN`.

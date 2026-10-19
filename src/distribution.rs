@@ -2,7 +2,7 @@ use rustymath::{buffer::FloatWidth, error::Kind};
 use crate::{
     array::generated_len, element::read_as, execution::Context, keyed, number::Numeric, primitive::{numeric, pervade, real}, system::{
         natives, Call, Valence::{Ambivalent, Dyadic, Monadic}
-    }, At, Error, ErrorAt, Number, Value
+    }, transform::{Cause, Stop}, At, Error, ErrorAt, Number, Value
 };
 use rand::{rngs::ChaCha8Rng, Rng, SeedableRng};
 pub(crate) use rustymath::distribution::Distribution;
@@ -94,14 +94,14 @@ fn bundle(d: Distribution) -> Value {
 fn exact(n: u64) -> Value { match i64::try_from(n) { Ok(n) => Value::integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) } }
 
 /// `len` draws from `d`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of the session's width otherwise. Draws come in blocks, with an interrupt check before each.
-fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: Vec<usize>, len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
+fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: &[usize], len: usize, rng: &mut R, span: &Context<'_>) -> Result<Value, Error> {
     let mut out = vec![0.0; len];
     for block in out.chunks_mut(1 << 14) {
         span.check()?;
         d.samples(rng, block);
     }
     let made =
-        if d.is_discrete() { Value::integers(shape, out.into_iter().map(|k| k as i64).collect()) } else { Value::floats(shape, Numeric::current().width, out) };
+        if d.is_discrete() { Value::integers(shape.to_vec(), out.into_iter().map(|k| k as i64).collect()) } else { Value::floats(shape.to_vec(), Numeric::current().width, out) };
     made.error_at(span, "invalid distribution sample")
 }
 
@@ -136,21 +136,21 @@ pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right:
     if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "sample shape must be a unit or vector")); }
     let shape = right.as_items().nonnegative_integers().error_at(span, "invalid sample dimension")?;
     let len = generated_len(&shape).at(span)?;
-    let Some(left) = left else { return drawn(None, span, |rng| samples(d, shape, len, rng, span)); };
+    let Some(left) = left else { return drawn(None, span, |rng| samples(d, &shape, len, rng, span)); };
     let generator = generator_of(left).ok_or_else(|| span.domain_error("sample takes a •rand generator on the left"))?;
-    drawn(Some(&generator), span, |rng| samples(d, shape, len, rng, span))
+    drawn(Some(&generator), span, |rng| samples(d, &shape, len, rng, span))
 }
 
 /// A stream of random numbers: the session's, which `¿` and a distribution's `sample` draw, or one that `•rand` makes. Every copy of a `•rand` record draws from the same stream.
 pub(crate) type Generator = Arc<Mutex<Stream>>;
 
-/// A generator's state. A map that starts after the generator is made splits it. When one of the map's cells first draws, the map takes a key from the generator's stream, and cell c then draws from stream c of that key, in call order. A nested map takes its key from the outer cell's stream. A generator made inside a cell belongs to that cell, so that cell's map doesn't split it. `born` is the last map id when the generator was made.
+/// A generator's state. A map that starts after the generator is made splits it. When one of the map's cells first draws, the map takes a key from the generator's stream, and cell c then draws from stream c of that key, in call order. A nested map takes its key from the outer cell's stream. A generator made inside a cell belongs to that cell, so that cell's map doesn't split it. `born` is the last level id (`transform::Levels::last`) when the generator was made.
 #[derive(Debug)]
 pub(crate) struct Stream { rng: ChaCha8Rng, born: u64, splits: Vec<Split> }
 
-/// A map's split of a generator: the map's id, the key it took, and the stream of the cell that drew last.
+/// A map's split of a generator: the map's id, the key it took, the stream of the cell that drew last, and, in a batched run, how far each cell's draws have reached in its own stream.
 #[derive(Debug)]
-struct Split { map: u64, key: [u8; 32], cell: u64, rng: ChaCha8Rng }
+struct Split { map: u64, key: [u8; 32], cell: u64, rng: ChaCha8Rng, positions: Vec<u128> }
 
 impl Default for Stream {
     /// The session's stream until a program sets a seed, seeded by the operating system.
@@ -158,30 +158,52 @@ impl Default for Stream {
 }
 
 impl Stream {
-    /// A generator seeded by `seed`, made while maps up to id `born` run.
+    /// A generator seeded by `seed`, made when the last level id was `born`.
     pub(crate) fn seeded(seed: u64, born: u64) -> Generator { Arc::new(Mutex::new(Self { rng: ChaCha8Rng::seed_from_u64(seed), born, splits: Vec::new() })) }
 
-    /// The stream that a draw reads while `maps` run: the generator's own, or the stream of the running cell of the innermost map that splits it. A finished map's split goes at the next draw.
-    fn current(&mut self, maps: &[crate::eval::MapCell]) -> &mut ChaCha8Rng {
-        let maps = &maps[maps.partition_point(|m| m.id <= self.born)..];
-        for (i, map) in maps.iter().enumerate() {
-            match self.splits.get(i).map(|s| (s.map == map.id, s.cell == map.cell)) {
+    /// The stream that a draw reads while `maps` run, given as ids and running cells, outermost first: the generator's own, or the stream of the running cell of the innermost map that splits it. A finished map's split goes at the next draw.
+    fn current(&mut self, maps: impl Iterator<Item = (u64, u64)>) -> &mut ChaCha8Rng {
+        let (born, mut depth) = (self.born, 0);
+        for (i, (id, cell)) in maps.filter(|&(id, _)| id > born).enumerate() {
+            depth = i + 1;
+            match self.splits.get(i).map(|s| (s.map == id, s.cell == cell)) {
                 Some((true, true)) => {}
                 Some((true, false)) => {
                     self.splits.truncate(i + 1);
                     let split = &mut self.splits[i];
-                    (split.cell, split.rng) = (map.cell, cell_stream(split.key, map.cell));
+                    (split.cell, split.rng) = (cell, cell_stream(split.key, cell));
                 }
                 _ => {
                     self.splits.truncate(i);
                     let mut key = [0; 32];
                     self.splits.last_mut().map_or(&mut self.rng, |s| &mut s.rng).fill_bytes(&mut key);
-                    self.splits.push(Split { map: map.id, key, cell: map.cell, rng: cell_stream(key, map.cell) });
+                    self.splits.push(Split { map: id, key, cell, rng: cell_stream(key, cell), positions: Vec::new() });
                 }
             }
         }
-        self.splits.truncate(maps.len());
+        self.splits.truncate(depth);
         self.splits.last_mut().map_or(&mut self.rng, |s| &mut s.rng)
+    }
+
+    /// The split of batched map `level`, for a draw that every cell of `level` makes at once. It's the split that `current` makes for `level` on the map's first draw, with a word position for each of `cells` cells. `None` unless `level` is the innermost map that splits this generator. After a fallback, the run over cells finds this split and its key.
+    fn batched(&mut self, maps: impl Iterator<Item = (u64, u64)>, level: u64, cells: usize) -> Option<&mut Split> {
+        let maps: Vec<_> = maps.filter(|&(id, _)| id > self.born).collect();
+        if maps.last()?.0 != level { return None; }
+        self.current(maps.into_iter());
+        let split = self.splits.last_mut()?;
+        if split.positions.len() != cells { split.positions = vec![0; cells]; }
+        Some(split)
+    }
+}
+
+impl Split {
+    /// `f` drawing from cell `c`'s stream, from where that cell's last draw in this batched run left it.
+    fn draw<T>(&mut self, c: usize, f: impl FnOnce(&mut ChaCha8Rng) -> T) -> T {
+        let mut rng = cell_stream(self.key, c as u64);
+        rng.set_word_pos(self.positions[c]);
+        let drawn = f(&mut rng);
+        self.positions[c] = rng.get_word_pos();
+        drawn
     }
 }
 
@@ -192,9 +214,21 @@ fn cell_stream(key: [u8; 32], cell: u64) -> ChaCha8Rng {
     rng
 }
 
-/// `f` drawing from `generator`, or from the session's generator where it's `None`, through the splits of the maps that `span` runs (`Stream::current`).
-pub(crate) fn drawn<T>(generator: Option<&Generator>, span: &Context<'_>, f: impl FnOnce(&mut ChaCha8Rng) -> T) -> T {
-    f(generator.unwrap_or(&span.session.generator).lock().unwrap_or_else(PoisonError::into_inner).current(&span.session.maps))
+/// `f` drawing from `generator`, or from the session's generator where it's `None`, through the splits of the maps that `span` runs (`Stream::current`). In a batched run it draws once for each cell, as `drawn_cells` does.
+pub(crate) fn drawn(generator: Option<&Generator>, span: &Context<'_>, f: impl Fn(&mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
+    drawn_cells(generator, span, |_, rng| f(rng))
+}
+
+/// `f` drawing from `generator`, as `drawn` does, where `f` also takes the cell it draws for. `primitive::drawn_value` uses the cell to give each draw that cell of each batched argument (`batch::cell`). Outside a batched run, `f` draws once, for cell 0. In a batched run, `f` draws once for each cell of the batched map, from that cell's stream. `batch::from_cells` joins the cells' values into one batch.
+///
+/// The run stops where the batched map isn't the innermost map that splits the generator, as for a draw inside a map in the run's operand. That stop comes from what the operand does (`Cause::Effect`). Where the cells' values don't stack, as deals of different lengths don't, the stop is for a call with no rule for these arguments (`Cause::Rule`).
+pub(crate) fn drawn_cells(generator: Option<&Generator>, span: &Context<'_>, f: impl Fn(usize, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
+    let levels = &span.session.levels;
+    let mut stream = generator.unwrap_or(&span.session.generator).lock().unwrap_or_else(PoisonError::into_inner);
+    let Some((level, frame)) = levels.batched() else { return f(0, stream.current(levels.maps())) };
+    let Some(split) = stream.batched(levels.maps(), level, frame.shape().iter().product()) else { return Err(Stop::new(level, Cause::Effect).at(span.span)) };
+    let cells = (0..split.positions.len()).map(|c| split.draw(c, |rng| f(c, rng))).collect::<Result<Vec<_>, _>>()?;
+    crate::batch::from_cells(level, frame, cells).ok_or_else(|| Stop::new(level, Cause::Rule).at(span.span))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -205,14 +239,8 @@ pub(crate) fn generator(_: Option<&Value>, right: &Value, span: &Context<'_>) ->
     if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "•rand needs a unit or vector seed")); }
     if !right.is_singleton() { return Err(span.error(Kind::Length, "•rand needs one seed")); }
     let seed = numeric(&right.at(0), span)?.nonnegative_integer::<u64>().error_at(span, "•rand needs a nonnegative integer seed")?;
-    let rng = Stream::seeded(seed, span.session.map_ids);
+    let rng = Stream::seeded(seed, span.session.levels.last());
     Ok(natives([("roll", Call::Generator(rng.clone(), Draw::Roll), Monadic), ("deal", Call::Generator(rng, Draw::Deal), Dyadic)]))
-}
-
-pub(crate) fn generator_call(generator: &Generator, op: Draw, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    drawn(Some(generator), span, |rng| match (op, left) {
-        (Draw::Deal, Some(left)) => crate::primitive::deal(left, right, rng, span), _ => crate::primitive::roll_array(right, rng, span)
-    })
 }
 
 /// The stream behind a record from `•rand`.

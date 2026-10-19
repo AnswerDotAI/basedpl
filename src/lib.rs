@@ -1,5 +1,6 @@
 mod agreement;
 mod array;
+mod batch;
 mod canvas;
 mod csv;
 mod data;
@@ -41,6 +42,7 @@ mod syntax;
 pub mod system;
 #[doc(hidden)]
 pub mod timing;
+mod transform;
 mod xml;
 
 pub use array::{Prototype, Shape, Value};

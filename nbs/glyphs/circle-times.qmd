@@ -14,6 +14,8 @@ Monadic operator. Keys: `Alt-o m`
 
 Array frames collect pair results as items. See [inner product](dot.qmd).
 
+Where it can, `⊗` calls `g` once on all the pairs together, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as from one call for each pair.
+
 ## Inverse
 
 With either argument fixed, `X f⊗⁻¹ Y` gives the argument whose outer product with `X` is `Y`.

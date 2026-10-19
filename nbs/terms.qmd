@@ -33,6 +33,7 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [major cell]{#term-major-cell} | a cell made of every axis but the first: a matrix's rows are its major cells |
 | [frame]{#term-frame} | the axes before the cells, with one cell at each position |
 | [assembly]{#term-assembly} | building one array from results, one for each position of a frame: the shape is the frame followed by the results' shape, each result fills its position with its items, and shorter results are padded with fill |
+| [map]{#term-map} | a call of Each, Rank, an outer product or a stencil, which applies its operand at each position of a frame: to each item, cell, pair of items or window. These are the map's cells. [Evaluation](evaluation.qmd#functions-and-effects) describes how a map calls its operand |
 | [fill]{#term-fill} | the value an operation uses where an array has no item, as when `5↑1 2` gives `1 2 0 0 0`. It comes from the array's prototype: its first item with each number made 0, each character made a space, and each function kept |
 | [selection]{#term-selection} | values read from an argument together with their places in it, as a list of positions or a function such as `1↓` reads them |
 | [glyph]{#term-glyph} | a symbol for a primitive or for syntax, as the [glyph reference](glyphs.qmd) lists |

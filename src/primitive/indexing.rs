@@ -159,7 +159,7 @@ fn cell_offset(array: &Value, from: usize, fields: &[Value], prototype: bool, sp
     for (axis, (field, &size)) in fields.iter().zip(shape).enumerate() {
         if array.is_unit() && crate::keyed::name(field).is_some() { return Err(span.error(Kind::Rank, "a unit has no axis to look up a key on")); }
         let selector = axis_selector(field, array, from + axis, span)?;
-        let n = numeric(&selector, span)?;
+        let n = selector.observed_number().error_at(span, "expected numeric elements")?;
         // A NaN position reads the fill, as a position past an empty axis does.
         if n.as_float().is_some_and(f64::is_nan) { offset = None; continue; }
         let k = n.integer().error_at(span, rustymath::structure::NOT_WHOLE)?;
@@ -203,9 +203,6 @@ pub(crate) fn positions(a: &Value, size: usize, span: &Context<'_>) -> Result<Ve
         items => rustymath::structure::counted_positions(&items.positions().error_at(span, rustymath::structure::NOT_WHOLE)?, size),
     }.at(span)
 }
-
-/// An atomic `∞` selects a whole axis in order, and `¯∞` selects it in reverse. Returns whether it is reversed.
-fn whole_axis(part: &Value) -> Option<bool> { match part { Value::Number(n) if n.is_infinite() => n.as_float().map(|f| f < 0.), _ => None } }
 
 /// The items a selection reaches. An offset is a flat position in the array. A path goes down through nested items, one position for each level, and the empty path is the whole array. A walk reaches the positions that `steps` give from `base`, in the order `walk` reads them, without listing them, as a selection of cells along axes does.
 pub(crate) enum Targets { Offsets(Vec<usize>), Paths(Vec<Vec<usize>>), Walk { base: usize, steps: Vec<Steps> } }
@@ -352,12 +349,12 @@ impl Selection {
                 sorted.dedup();
                 // Writing a target can remove a path inside it, so a selection with such paths writes into a copy.
                 if sorted.windows(2).any(|w| w[1].starts_with(w[0])) { *array = write_paths(array, &updates, span)?; }
-                else { for (path, item) in updates { array.write_path(path, item) } }
+                else { for (path, item) in updates { array.write_path(path, item).at(span)? } }
                 return Ok(());
             }
             Targets::Walk { base, steps } => {
                 if array.is_atom() || matches!(self.frame, Frame::Direct) { return self.listed().expect("a walk lists its targets").write_into(array, &values, span); }
-                array.scatter_walk(*base, steps, &values);
+                array.scatter_walk(*base, steps, &values).at(span)?;
                 return Ok(());
             }
         };
@@ -367,7 +364,7 @@ impl Selection {
         }
         // A direct target takes the whole value as one item.
         let source = if matches!(self.frame, Frame::Direct) && !values.is_atom() { values.enclose().error_at(span, "invalid amended array")? } else { values };
-        array.scatter(offsets, &source);
+        array.scatter(offsets, &source).at(span)?;
         Ok(())
     }
 
@@ -486,13 +483,15 @@ fn axis_positions(right: &Value, parts: &[Option<Value>], paired: bool, span: &C
         let size = shape[axis];
         sources.push(vec![axis]);
         let part = part.map(|p| axis_selector(p, right, axis, span)).transpose()?;
-        selectors.push(if let Some(a) = part.as_ref().filter(|a| whole_axis(a).is_none()) {
+        // An atomic `∞` selects a whole axis in order, and `¯∞` selects it in reverse.
+        let infinity = match &part { Some(a) => a.observed().at(span)?.infinity(), None => None };
+        selectors.push(if let Some(a) = part.as_ref().filter(|_| infinity.is_none()) {
             direct &= a.is_atom();
             let positions = positions(a, size, span)?;
             match positions[..] { [i] if a.is_atom() && i != Steps::FILL => AxisSelector::At(i), _ => AxisSelector::Indices { layout: rustymath::layout::Layout::clone(a.layout()), positions } }
         } else {
             direct = false;
-            let reversed = part.as_ref().and_then(whole_axis) == Some(true);
+            let reversed = infinity == Some(true);
             AxisSelector::Range { start: if reversed { size.saturating_sub(1) } else { 0 }, len: size, step: if reversed { -1 } else { 1 } }
         });
         axis += 1;

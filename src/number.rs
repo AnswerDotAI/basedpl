@@ -15,22 +15,25 @@ use std::{borrow::Cow, cmp::Ordering, fmt};
 #[derive(Clone, Debug, PartialEq)]
 pub struct Number(Repr);
 
-/// Why an operation on numbers failed: a domain error with its message, or a dual that reached code `∂` can't differentiate.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Failure { Domain(&'static str), Dual }
+/// Why an operation on numbers failed: a domain error with its message, a value that `∂` carries, which reached code that reads numbers directly (`Value::computed`), or a batched run's stop at such a read.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Failure { Domain(&'static str), Carried, Stop(crate::transform::Stop) }
 
 impl From<&'static str> for Failure { fn from(message: &'static str) -> Self { Self::Domain(message) } }
 
 impl From<Failure> for &'static str {
-    fn from(failure: Failure) -> Self { match failure { Failure::Domain(message) => message, Failure::Dual => crate::derivative::UNSUPPORTED } }
+    fn from(failure: Failure) -> Self {
+        match failure { Failure::Domain(message) => message, Failure::Carried => crate::transform::UNSUPPORTED, Failure::Stop(_) => crate::transform::STOPPED }
+    }
 }
 
 impl Failure {
-    /// The error this failure gives at `span`: DOMAIN with its message, or UNSUPPORTED for a dual.
+    /// The error this failure gives at `span`: DOMAIN with its message, UNSUPPORTED for a value that `∂` carries, or the batched run's stop.
     pub(crate) fn at(self, span: &crate::Span) -> crate::Error {
         match self {
             Failure::Domain(message) => span.domain_error(message),
-            Failure::Dual => span.error(crate::ErrorKind::Unsupported, crate::derivative::UNSUPPORTED),
+            Failure::Carried => span.error(crate::ErrorKind::Unsupported, crate::transform::UNSUPPORTED),
+            Failure::Stop(stop) => stop.at(span),
         }
     }
 }
@@ -52,12 +55,7 @@ enum Repr {
     Complex(Complex64),
     /// A complex number with 32-bit parts. Arithmetic reads it as the `Complex64` it converts to exactly.
     Complex32(Complex32),
-    /// A number that `∂` is differentiating, which only `Number::dual` makes.
-    Dual(Box<NumberDual>),
 }
-/// A dual number's parts: the tag of the `∂` call that made it, its primal and its tangent.
-#[derive(Clone, Debug)]
-pub(crate) struct NumberDual { pub(crate) tag: u32, pub(crate) primal: Number, pub(crate) tangent: crate::Value }
 use Repr::*;
 impl Repr {
     /// A float's value, which converts to `f64` exactly, and its width. `None` for any other number.
@@ -75,7 +73,7 @@ impl Repr {
 impl PartialEq for Repr {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Dual(x), Dual(y)) => x.tag == y.tag && x.primal == y.primal && x.tangent.same_tangent(&y.tangent), (Boolean(x), Boolean(y)) => x == y, (Integer(x), Integer(y)) => x == y, (Float(x), Float(y)) => x == y,
+            (Boolean(x), Boolean(y)) => x == y, (Integer(x), Integer(y)) => x == y, (Float(x), Float(y)) => x == y,
             (x, y) if let (Some((x, _)), Some((y, _))) = (x.float(), y.float()) => x == y, (Exact(x), Exact(y)) => x == y,
             (x, y) if let (Some((x, _)), Some((y, _))) = (x.complex(), y.complex()) => x == y, _ => false
         }
@@ -477,7 +475,7 @@ pub(crate) trait Field: Clone + num_traits::NumAssignRef {
 /// The items of the array `a` in the domain of `T`: compact storage converted in one pass, and other items one at a time. DOMAIN where an item isn't a number, and UNSUPPORTED for a dual, whose domain is its primal's.
 pub(crate) fn read<'a, T: Field>(a: &'a Value, span: &Span) -> Result<Cow<'a, [T]>, Error> {
     if let Some(x) = T::compact(a) { return Ok(x); }
-    let item = |i| crate::primitive::numeric(&a.at(i), span).and_then(|n| if n.is_dual() { Err(Failure::Dual.at(span)) } else { Ok(T::of(&n)) });
+    let item = |i| crate::primitive::numeric(&a.at(i), span).map(T::of);
     (0..a.len()).map(item).collect::<Result<_, _>>().map(Cow::Owned)
 }
 
@@ -540,14 +538,8 @@ pub(crate) use {field_type, with_field};
 impl Number {
     pub fn from_integer(n: i64) -> Self { Self(Integer(n)) }
     pub fn from_bool(b: bool) -> Self { Self(Boolean(b)) }
-    /// A number that `∂` is differentiating: `primal`, with the tangent that the `∂` call tagged `tag` carries. The primal can itself be a dual with a smaller tag (`derivative`).
-    pub(crate) fn dual(tag: u32, primal: Self, tangent: crate::Value) -> Self { Self(Dual(Box::new(NumberDual { tag, primal, tangent }))) }
-    pub(crate) fn as_dual(&self) -> Option<&NumberDual> { match &self.0 { Dual(d) => Some(d), _ => None } }
-    pub(crate) fn is_dual(&self) -> bool { matches!(self.0, Dual(_)) }
-    /// The number with every tangent taken off: a dual's innermost primal. Comparison, equality, hashing and display read it.
-    pub(crate) fn plain(&self) -> &Self { match &self.0 { Dual(d) => d.primal.plain(), _ => self } }
     /// Whether this is zero. Exact fractions and complex numbers are normalised, so neither is ever zero.
-    pub(crate) fn is_zero(&self) -> bool { let n = self.plain(); matches!(n.0, Integer(0) | Boolean(false)) || n.as_float() == Some(0.0) }
+    pub(crate) fn is_zero(&self) -> bool { matches!(self.0, Integer(0) | Boolean(false)) || self.as_float() == Some(0.0) }
     /// This exact integer's value. A Boolean gives 0 or 1.
     pub fn as_integer(&self) -> Option<i64> { match self.0 { Integer(n) => Some(n), Boolean(b) => Some(b.into()), _ => None } }
     pub(crate) fn integer_slice(&self) -> Option<&[i64]> { match &self.0 { Integer(n) => Some(std::slice::from_ref(n)), _ => None } }
@@ -613,10 +605,10 @@ impl Number {
     pub(crate) fn float_width(&self) -> Option<FloatWidth> { self.0.float().map(|(_, width)| width).or_else(|| self.0.complex().map(|(_, width)| width)) }
     /// The width that a result of this number and `right` takes: the wider of their float widths, or 64 bits when both are exact. The caller rounds a result of exact numbers to the default width.
     fn width_with(&self, right: Option<&Self>) -> FloatWidth { self.float_width().max(right.and_then(Self::float_width)).unwrap_or(FloatWidth::F64) }
-    pub(crate) fn is_infinite(&self) -> bool { self.plain().as_float().is_some_and(f64::is_infinite) }
-    pub(crate) fn is_nan(&self) -> bool { self.plain().as_float().is_some_and(f64::is_nan) }
+    pub(crate) fn is_infinite(&self) -> bool { self.as_float().is_some_and(f64::is_infinite) }
+    pub(crate) fn is_nan(&self) -> bool { self.as_float().is_some_and(f64::is_nan) }
     /// Whether this is an infinity or NaN. These never make an exact number approximate.
-    pub(crate) fn is_nonfinite(&self) -> bool { self.plain().as_float().is_some_and(|n| !n.is_finite()) }
+    pub(crate) fn is_nonfinite(&self) -> bool { self.as_float().is_some_and(|n| !n.is_finite()) }
     pub fn as_exact(&self) -> Option<BigRational> { self.exact_ref().map(Cow::into_owned) }
     /// The exact value, borrowed where this number holds a big one.
     pub(crate) fn exact_ref(&self) -> Option<Cow<'_, BigRational>> {
@@ -674,9 +666,8 @@ impl Number {
     pub(crate) fn zero(&self) -> Self { self.like(0) }
     pub(crate) fn one(&self) -> Self { self.like(1) }
 
-    /// This number as an `f64`. A dual gives `Failure::Dual`.
+    /// This number as an `f64`.
     pub(crate) fn to_float(&self) -> Result<f64, Failure> {
-        if self.is_dual() { return Err(Failure::Dual); }
         self.plain_float().map_err(Failure::Domain)
     }
     fn plain_float(&self) -> Result<f64, &'static str> {
@@ -735,7 +726,6 @@ impl Number {
 
     /// Whether the numbers are equal, within the tolerance of the width they compare at. NaN equals nothing, as in IEEE.
     pub(crate) fn equal(&self, right: &Self, t: Numeric) -> Result<bool, &'static str> {
-        if self.is_dual() || right.is_dual() { return self.plain().equal(right.plain(), t); }
         if self.is_nonfinite() || right.is_nonfinite() { return Ok(self == right); }
         if self.as_complex().is_none() && right.as_complex().is_none() { return Ok(self.compare(right, t)? == Some(Ordering::Equal)); }
         Ok(t.tolerance_at(self.width_with(Some(right))).complex_equal(self.to_complex()?, right.to_complex()?))
@@ -936,7 +926,6 @@ impl Number {
     }
 
     pub(crate) fn order(&self, right: &Self) -> Result<Ordering, &'static str> {
-        if self.is_dual() || right.is_dual() { return self.plain().order(right.plain()); }
         if self.has_boolean(right) { return self.numeric().order(&right.numeric()); }
         if self.as_complex().is_some() || right.as_complex().is_some() { return Err("expected real numbers"); }
         if self.is_nonfinite() || right.is_nonfinite() { return Ok(self.grade_order(right)); }
@@ -947,7 +936,6 @@ impl Number {
 
     /// The total order that grade uses. NaN follows every other number.
     pub(crate) fn grade_order(&self, right: &Self) -> Ordering {
-        if self.is_dual() || right.is_dual() { return self.plain().grade_order(right.plain()); }
         if self.has_boolean(right) { return self.numeric().grade_order(&right.numeric()); }
         if self.is_nan() || right.is_nan() { return self.is_nan().cmp(&right.is_nan()); }
         if let Some(x) = self.as_float().filter(|n| n.is_infinite()) {
@@ -1010,7 +998,6 @@ impl Number {
 
     /// The order of the numbers, within the tolerance of the width they compare at. `None` when either is NaN, which IEEE leaves unordered. The tolerance is relative, with none absolute near zero, as Dyalog's `⎕CT` is.
     pub(crate) fn compare(&self, right: &Self, t: Numeric) -> Result<Option<Ordering>, &'static str> {
-        if self.is_dual() || right.is_dual() { return self.plain().compare(right.plain(), t); }
         if let Some((Some(x), y, t, _)) = Self::halves(Some(self), right, t) { return x.compare(&y, t); }
         if self.has_boolean(right) { return self.numeric().compare(&right.numeric(), t); }
         if self.is_nan() || right.is_nan() { return Ok(None); }
@@ -1018,9 +1005,8 @@ impl Number {
         reals!(self, right => |x, y: F| Ok(t.tolerance_at(F::WIDTH).compare(x, y)))
     }
 
-    /// `op self`. A dual gives `Failure::Dual`.
+    /// `op self`.
     pub(crate) fn monad(&self, op: Arithmetic) -> Result<Self, Failure> {
-        if self.is_dual() { return Err(Failure::Dual); }
         self.plain_monad(op).map_err(Failure::Domain)
     }
     fn plain_monad(&self, op: Arithmetic) -> Result<Self, &'static str> {
@@ -1043,7 +1029,6 @@ impl Number {
                 Times => Self::from_integer(real::signum(y.into()) as i64),
                 Divide => Self::from_float(F::narrow(1.0) / y),
             })),
-            Dual(_) => unreachable!("`monad` checks for duals"),
             repr => {
                 let (y, width) = repr.complex().expect("the other numbers are complex");
                 let result = match op {
@@ -1054,9 +1039,8 @@ impl Number {
         }
     }
 
-    /// `self op right`. A dual on either side gives `Failure::Dual`.
+    /// `self op right`.
     pub(crate) fn dyad(&self, op: Arithmetic, right: &Self) -> Result<Self, Failure> {
-        if self.is_dual() || right.is_dual() { return Err(Failure::Dual); }
         self.plain_dyad(op, right).map_err(Failure::Domain)
     }
     fn plain_dyad(&self, op: Arithmetic, right: &Self) -> Result<Self, &'static str> {
@@ -1135,7 +1119,6 @@ impl<W: fmt::Write + ?Sized> fmt::Write for HighMinus<'_, W> {
 /// `{:#}` leaves out an exact integer's `ₓ`. Array notation then marks the whole array once.
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_dual() { return fmt::Display::fmt(self.plain(), f); }
         use fmt::Write;
         let mark = if f.alternate() { "" } else { "ₓ" };
         let mut out = HighMinus(f);
@@ -1143,7 +1126,6 @@ impl fmt::Display for Number {
             Boolean(b) => out.write_str(if *b { TRUE_NAME } else { FALSE_NAME }), Integer(n) => write!(out, "{n}{mark}"), Half(n) => write_float(&mut out, *n),
             Single(n) => write_float(&mut out, *n), Float(n) => write_float(&mut out, *n), Exact(n) if n.is_integer() => write!(out, "{}{mark}", n.numer()),
             Exact(n) => write!(out, "{}ᵣ{}", n.numer(), n.denom()), Complex(n) => write_complex(&mut out, *n), Complex32(n) => write_complex(&mut out, *n),
-            Dual(_) => unreachable!("a dual displays its primal"),
         }
     }
 }

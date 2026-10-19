@@ -17,16 +17,16 @@ Each reference case has a two-second deadline.
 To run active cases, set `BASEDPL_CASE` to an ID or ID prefix:
 
 ```bash
-BASEDPL_CASE=ngn:177 cargo test --test reference enabled_reference_cases -- --nocapture
+BASEDPL_CASE=ngn:177 cargo test --test reference reference_cases -- --nocapture
 ```
 
 To run the active cases of one file, set `BASEDPL_SOURCE` to its name without `.bpl`:
 
 ```bash
-BASEDPL_SOURCE=core cargo test --test reference enabled_reference_cases -- --nocapture
+BASEDPL_SOURCE=core cargo test --test reference reference_cases -- --nocapture
 ```
 
-Pending cases do not count as passing tests. New failures in active cases fail the suite. Code and expectation execute in separate fresh sessions. Tests compare shape, axis keys and names, nesting, data and prototype. Numeric comparisons use `rtol=1e-13` and `atol=1e-13` unless a case specifies its own. The bound is `max(absolute, relative × max(|actual|, |expected|))`. The default absolute tolerance treats every value below `1e-13` as zero. Round such residues to zero in expectations. The tolerances apply only to approximate numbers. Each number's exactness must match, and exact numbers compare exactly. Shape and nesting remain exact. Display expectations remain separate from array expectations.
+Pending cases do not count as passing tests. New failures in active cases fail the suite. Code and expectation execute in separate fresh sessions. Each case's code runs twice, with the `batch` pref off and then on. Both runs must meet the expectation with values held in the same kinds of storage. Tests compare shape, axis keys and names, nesting, data and prototype. Numeric comparisons use `rtol=1e-13` and `atol=1e-13` unless a case specifies its own. The bound is `max(absolute, relative × max(|actual|, |expected|))`. The default absolute tolerance treats every value below `1e-13` as zero. Round such residues to zero in expectations. The tolerances apply only to approximate numbers. Each number's exactness must match, and exact numbers compare exactly. Shape and nesting remain exact. Display expectations remain separate from array expectations.
 
 ## BPL record format
 

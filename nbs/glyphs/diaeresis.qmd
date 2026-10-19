@@ -22,6 +22,8 @@ On empty arguments, Each calls `f` once using prototypes. If that call fails, th
 
 Other errors and explicit output remain observable in that call.
 
+Where it can, Each calls `f` once on all the items together, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as from one call for each item.
+
 ## Inverse
 
 `f¨⁻¹` is `f⁻¹¨`.

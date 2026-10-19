@@ -34,10 +34,11 @@ impl serde::Serialize for Json<'_> {
                 map.serialize_entry("shape", a.shape())?;
                 map.serialize_entry("data", &Data(a))?;
                 map.serialize_entry("prototype", &Json(&a.prototype()))?;
-                if !a.axis_names().is_empty() { map.serialize_entry("axis_names", &a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>())?; }
+                if a.layout().has_names() { map.serialize_entry("axis_names", &a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>())?; }
                 if a.has_keys() { map.serialize_entry("axis_keys", &keyed::key_lists(a))?; }
                 map.end()
             }
+            Value::Carried(carrier) => Json(carrier.template()).serialize(s),
             Value::Function(_) | Value::Operator(_) => Err(S::Error::custom("a function has no JSON value")),
         }
     }

@@ -17,6 +17,7 @@ Each entry below names a difference from Dyalog APL, gives a short example, and 
 - [Syntax](syntax.html.md): spaces divide a statement into runs, each read as one parenthesised group: `a+b × c+d` is `(a+b)(×)(c+d)`. Digits in a name need `_`, as in `x_1`. `x1` is `x` applied to `1`.
 - [Evaluation](evaluation.html.md): a run that ends in a function is a train. `+/÷≢ x` is the mean of `x`, while `+/÷≢x` reads as `+/÷(≢x)`.
 - [Agreement](evaluation.html.md#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes: `[1 2 3⋄4 5 6]+10 20` is `[11 12 13⋄24 25 26]`. An axis of length 1 expands.
+- [Maps](evaluation.html.md#functions-and-effects): Each, Rank, stencils and outer products call a dfn once on all their cells where they can: `{⍵×⍵+1}¨v` costs about what `v×v+1` costs. A predicate on a cell's value, output or a nested result makes them call it once for each cell.
 - [Arrays](arrays.html.md): numbers, characters and functions are atoms, distinct from scalars, as in BQN. `⊂` always adds a layer: `⊂3 ≡ 3` is `$f`.
 - [Brackets](glyphs/brackets.html.md): `[a b]` is a vector, even `[a]`. Inside brackets, spaces separate items. `;` separates items that contain spaces: `[1 2;3 4]` has two items. `⋄` separates rows: `[1 2⋄3 4]` is a matrix. `"k":v` items make a record: `["a":1 "b":2]`.
 - [Characters and strings](strings.html.md): `"abc"` is a character vector. `'a'` is one character atom. A single-quoted string such as `'abc'` is an error.

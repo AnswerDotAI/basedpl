@@ -1,6 +1,6 @@
 use crate::{
-    display::{positions, Elide}, element::{Stored, Whole}, execution::Context, fusion::Pending, keyed::Keys, number::{int::Int, real, Numeric},
-    DomainAt, Error, ErrorKind, Number
+    display::{positions, Elide}, element::{Stored, Whole}, execution::Context, fusion::Pending, keyed::Keys, number::{int::Int, real, Numeric}, transform::Carrier,
+    At, DomainAt, Error, ErrorKind, Number
 };
 use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{
@@ -16,8 +16,9 @@ pub(crate) use {storage::*, text::*};
 pub use rustymath::layout::Shape;
 pub(crate) use rustymath::layout::agreed;
 
+/// A number, character, array, function or operator. An atom that a running level carries, such as a number that `∂` is differentiating, is `Carried` (`transform::Carrier`).
 #[derive(Clone, Debug)]
-pub enum Value { Number(Number), Character(char), Array(Arc<ArrayData>), Function(crate::Function), Operator(crate::Operator) }
+pub enum Value { Number(Number), Character(char), Array(Arc<ArrayData>), Function(crate::Function), Operator(crate::Operator), Carried(crate::transform::Carrier) }
 
 /// An array's layout: rustymath's shape, keys and names, plus the BPL function that renders the array for display. Methods that change only keys or names keep the renderer, and so does `select`. A structural copy keeps its argument's renderer when the rank doesn't change (`rearranged`). Pairing two layouts by broadcasting keeps the renderer they agree on (`paired`). Layouts built from shapes, from rustymath's layouts, or from axes have none.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -171,13 +172,13 @@ impl Cells<'_> {
 #[derive(Clone, Debug)]
 pub struct ArrayData { layout: Layout, data: Data }
 
-/// An array's items. `Of` shares a base array's items with no copy. `Node` holds the pending call that computes them on the first read (`fusion::Pending`). `Dual` holds an array that `∂` is differentiating, as its primal and tangent (`derivative::Dual`). `Linear` is a record of linear calls (`linear::Linear`), whose items are never computed. A base holds `Own`, `Node` or `Dual`.
+/// An array's items. `Of` shares a base array's items with no copy. `Node` holds the pending call that computes them on the first read (`fusion::Pending`). `Carried` holds a running level's data in their place (`transform::Carrier`): a dual's primal and tangent, or a record of linear calls, whose items are never computed. A base holds `Own` or `Node`.
 #[derive(Clone, Debug)]
-enum Data { Own(Storage), Of(Arc<ArrayData>), Node(Arc<Pending>), Dual(Arc<crate::derivative::Dual>), Linear(Arc<crate::linear::Linear>) }
+enum Data { Own(Storage), Of(Arc<ArrayData>), Node(Arc<Pending>), Carried(Carrier) }
 
 impl ArrayData {
     fn array(shape: Shape, data: Storage) -> Value { Value::Array(Arc::new(Self { layout: shape.into(), data: Data::Own(data) })) }
-    fn storage(&self) -> &Storage { match &self.data { Data::Own(storage) => storage, Data::Of(base) => base.storage(), Data::Node(pending) => forced(pending), Data::Dual(dual) => dual_items(dual), Data::Linear(_) => linear_items() } }
+    fn storage(&self) -> &Storage { match &self.data { Data::Own(storage) => storage, Data::Of(base) => base.storage(), Data::Node(pending) => forced(pending), Data::Carried(carrier) => carrier.storage() } }
     fn into_storage(self) -> Storage { Self::owned(self.data) }
     /// The items that `data` holds: taken with no copy where nothing else holds them, and copied otherwise. A pending array computes them first.
     fn owned(data: Data) -> Storage {
@@ -185,8 +186,7 @@ impl ArrayData {
             Data::Own(storage) => storage,
             Data::Of(base) => Arc::try_unwrap(base).map_or_else(|base| base.storage().clone(), Self::into_storage),
             Data::Node(pending) => Arc::try_unwrap(pending).map_or_else(|pending| forced(&pending).clone(), Pending::into_storage),
-            Data::Dual(dual) => dual_items(&dual).clone(),
-            Data::Linear(_) => linear_items().clone(),
+            Data::Carried(carrier) => carrier.storage().clone(),
         }
     }
     /// This array's storage, to change in place. A view or pending array takes its items where it holds the only reference to them, and copies them otherwise.
@@ -195,20 +195,18 @@ impl ArrayData {
         let Data::Own(storage) = &mut self.data else { unreachable!("a view or pending array takes its storage above") };
         storage
     }
-    /// An array of `layout` that shares `this`'s items, with no copy.
+    /// An array of `layout` that shares `this`'s items, with no copy. A carried array gives a carrier of views of its parts (`Carrier::view`), so `Of` never wraps a carrier.
     fn view(this: &Arc<Self>, layout: Layout) -> Value {
-        if let Data::Linear(t) = &this.data { return crate::linear::view(t, layout); }
+        if let Data::Carried(carrier) = &this.data { return carrier.view(layout); }
         let base = match &this.data { Data::Of(base) => base.clone(), _ => this.clone() };
         Value::Array(Arc::new(Self { layout, data: Data::Of(base) }))
     }
     /// The call that computes this array's items, while they haven't been computed. A view answers for its base.
     fn pending(&self) -> Option<&Arc<Pending>> {
-        match &self.data { Data::Node(pending) => Some(pending), Data::Of(base) => base.pending(), Data::Own(_) | Data::Dual(_) | Data::Linear(_) => None }.filter(|p| !p.is_forced())
+        match &self.data { Data::Node(pending) => Some(pending), Data::Of(base) => base.pending(), Data::Own(_) | Data::Carried(_) => None }.filter(|p| !p.is_forced())
     }
-    /// The parts of a dual array (`derivative`). A view answers for its base, whose layout can differ from its own.
-    fn dual(&self) -> Option<&Arc<crate::derivative::Dual>> { match &self.data { Data::Dual(dual) => Some(dual), Data::Of(base) => base.dual(), _ => None } }
-    /// The record of linear calls that this array is, if it is one (`linear`). A view of a record is a record itself.
-    fn linear(&self) -> Option<&Arc<crate::linear::Linear>> { match &self.data { Data::Linear(t) => Some(t), _ => None } }
+    /// The running level's data that this array holds in place of items, if any.
+    fn carrier(&self) -> Option<&Carrier> { match &self.data { Data::Carried(carrier) => Some(carrier), _ => None } }
     /// Whether this array reads another array's items, as a view.
     fn is_view(&self) -> bool { matches!(self.data, Data::Of(_)) }
     /// The bytes of the allocations that this array keeps alive, as `Value::footprint` counts them. Each allocation counts once in `seen`.
@@ -218,8 +216,7 @@ impl ArrayData {
             Data::Own(storage) => storage.footprint_in(seen),
             Data::Of(base) => Self::footprint_in(base, seen),
             Data::Node(pending) => Pending::footprint_in(pending, seen),
-            Data::Dual(dual) => crate::derivative::Dual::footprint_in(dual, seen),
-            Data::Linear(t) => crate::linear::Linear::footprint_in(t, seen),
+            Data::Carried(carrier) => carrier.footprint_in(seen),
         }
     }
 }
@@ -230,18 +227,6 @@ impl ArrayData {
 fn forced(pending: &Pending) -> &Storage {
     pending.storage()
 }
-/// A dual array's items as number duals, built on the first read by code with no rule for duals. Cold and out of line, as `forced` is.
-#[cold]
-#[inline(never)]
-fn dual_items(dual: &crate::derivative::Dual) -> &Storage {
-    dual.items.get_or_init(|| Storage::mixed((0..dual.primal.len()).map(|i| crate::derivative::dual(dual.tag, dual.primal.at(i), dual.full_tangent().at(i))).collect()))
-}
-/// A record's items, which nothing computes: reverse mode keeps records in tangents, which only the code that handles tangents reads (`linear`).
-#[cold]
-#[inline(never)]
-fn linear_items() -> &'static Storage {
-    panic!("a record of linear calls has no items: code that reads a tangent missed a record, at\n{}", std::backtrace::Backtrace::force_capture())
-}
 
 pub(crate) use rustymath::layout::{element_count, generated_len, Lanes};
 
@@ -250,25 +235,22 @@ pub(crate) fn saturated(n: u64) -> usize { usize::try_from(n).unwrap_or(usize::M
 
 impl Value {
     fn exact_domain(&self) -> Option<bool> {
-        match self {
-            Self::Number(n) => Some(n.is_exact()), Self::Character(_) | Self::Function(_) | Self::Operator(_) => None, Self::Array(a) if a.linear().is_some() => a.linear().and_then(|t| t.zero.exact_domain()), Self::Array(a) if a.dual().is_some() => a.dual().and_then(|d| d.primal.exact_domain()), Self::Array(a) => a.pending().map_or_else(|| a.storage().exact(), |p| p.dtype().exact())
-        }
+        if let Some(carrier) = self.carrier() { return carrier.template().exact_domain(); }
+        match self { Self::Number(n) => Some(n.is_exact()), Self::Array(a) => a.pending().map_or_else(|| a.storage().exact(), |p| p.dtype().exact()), _ => None }
     }
     pub fn fill(&self) -> Self {
+        if let Some(carrier) = self.carrier() { return carrier.fill(); }
         match self {
             Self::Number(n) if n.as_bool().is_some() => Self::Number(Number::from_bool(false)), Self::Number(n) => Self::Number(n.zero()),
-            Self::Character(_) => Self::Character(' '), Self::Array(_) => self.fill_array(), Self::Function(_) | Self::Operator(_) => self.clone()
+            Self::Character(_) => Self::Character(' '), Self::Array(_) => self.fill_array(), _ => self.clone(),
         }
     }
     /// Whether the values are identical: the same kinds, items, exactness, keys, names and renderer. Internal checks use it, and `≡` uses `matches`.
     pub fn same(&self, other: &Self) -> bool {
+        match (self.carrier(), other.carrier()) { (Some(a), Some(b)) => return a.same(b), (None, None) => {}, _ => return false }
         match (self, other) {
             (Self::Number(x), Self::Number(y)) => x == y, (Self::Character(x), Self::Character(y)) => x == y,
-            (Self::Array(x), Self::Array(y)) => Arc::ptr_eq(x, y) || match (self.linear(), other.linear()) {
-                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
-                (None, None) => x.layout == y.layout && x.storage() == y.storage(),
-                _ => false,
-            },
+            (Self::Array(x), Self::Array(y)) => Arc::ptr_eq(x, y) || (x.layout == y.layout && x.storage() == y.storage()),
             (Self::Function(x), Self::Function(y)) => x == y, (Self::Operator(x), Self::Operator(y)) => x == y, _ => false
         }
     }
@@ -277,10 +259,11 @@ impl Value {
     /// Whether the values match, with each pair of numbers within the tolerance of the width they compare at. Numbers match whatever their exactness, and NaN matches NaN. Two axes match as arithmetic pairs them: their names don't conflict, as `rustymath::layout::names_conflict` says, and when both have keys, they hold the same keys in any order. Items along keyed axes compare by key. Functions and operators match when built from matching parts. Renderers take no part.
     pub(crate) fn matches_within(&self, other: &Self, t: Numeric, cx: &Context<'_>) -> Result<bool, Error> {
         cx.check()?;
-        match (self, other) {
-            (Self::Array(_), Self::Array(_)) => (), (Self::Number(x), Self::Number(y)) => return x.matches(y, t).domain_at(cx),
-            (Self::Character(x), Self::Character(y)) => return Ok(x == y), (Self::Function(x), Self::Function(y)) => return x.matches(y, t, cx),
-            (Self::Operator(x), Self::Operator(y)) => return x.matches(y, t, cx), _ => return Ok(false)
+        use crate::transform::Plain;
+        match (self.observed().at(cx)?, other.observed().at(cx)?) {
+            (Plain::Array(_), Plain::Array(_)) => (), (Plain::Number(x), Plain::Number(y)) => return x.matches(y, t).domain_at(cx),
+            (Plain::Character(x), Plain::Character(y)) => return Ok(x == y), (Plain::Function(x), Plain::Function(y)) => return x.matches(y, t, cx),
+            (Plain::Operator(x), Plain::Operator(y)) => return x.matches(y, t, cx), _ => return Ok(false)
         }
         if self.shape() != other.shape() { return Ok(false); }
         if self.axis_names().iter().zip(other.axis_names()).any(|(a, b)| rustymath::layout::names_conflict(a.as_deref(), b.as_deref())) { return Ok(false); }
@@ -312,7 +295,7 @@ impl Value {
     }
     pub(crate) fn environment(&self) -> Option<usize> {
         match self {
-            Self::Function(f) => f.environment(), Self::Operator(op) => op.environment(), Self::Array(a) if a.pending().is_some() || a.dual().is_some() || a.linear().is_some() => None,
+            Self::Function(f) => f.environment(), Self::Operator(op) => op.environment(), Self::Array(a) if a.pending().is_some() || a.carrier().is_some() => None,
             Self::Array(a) => a.storage().environment().map(usize::from),
             _ => None
         }
@@ -334,35 +317,15 @@ impl Value {
     /// An array of `layout` whose items `pending` computes when they're first read.
     pub(crate) fn deferred(layout: Layout, pending: Arc<Pending>) -> Self { Self::Array(Arc::new(ArrayData { layout, data: Data::Node(pending) })) }
     /// The dual array of `primal` and `tangent` at level `tag` of `∂` (`derivative`). The tangent has the primal's layout.
-    pub(crate) fn from_dual(tag: u32, primal: Value, tangent: Value) -> Self {
-        Self::Array(Arc::new(ArrayData { layout: primal.layout().clone(), data: Data::Dual(Arc::new(crate::derivative::Dual::new(tag, primal, tangent))) }))
+    pub(crate) fn from_dual(tag: u64, primal: Value, tangent: Value) -> Self {
+        Self::from_carrier(primal.layout().clone(), Carrier::Dual(Arc::new(crate::derivative::Dual::new(tag, primal, tangent))))
     }
     /// A record of linear calls as an array (`linear`). Its items are never computed.
-    pub(crate) fn from_linear(t: Arc<crate::linear::Linear>) -> Self { Self::Array(Arc::new(ArrayData { layout: t.layout.clone(), data: Data::Linear(t) })) }
-    /// The record of linear calls that this array is, if it is one.
-    pub(crate) fn linear(&self) -> Option<&Arc<crate::linear::Linear>> { let Self::Array(a) = self else { return None }; a.linear() }
-    /// Whether two tangents are the same: equal numbers, or the same record.
-    pub(crate) fn same_tangent(&self, other: &Value) -> bool {
-        match (self, other) { (Self::Number(a), Self::Number(b)) => a == b, _ => self.linear().zip(other.linear()).is_some_and(|(a, b)| Arc::ptr_eq(a, b)) }
-    }
-    /// The tag, primal and tangent of a dual array, in this array's layout, with the tangent expanded to it. A view of a dual array answers for its base.
-    pub(crate) fn dual(&self) -> Option<(u32, Value, Value)> {
-        let Self::Array(a) = self else { return None };
-        let dual = a.dual()?;
-        let tangent = dual.full_tangent();
-        if dual.primal.layout() == &a.layout { return Some((dual.tag, dual.primal.clone(), tangent.clone())); }
-        Some((dual.tag, dual.primal.relaid(a.layout.clone()).ok()?, tangent.relaid(a.layout.clone()).ok()?))
-    }
-    /// `dual`, keeping the tangent as small as the rule that made it left it, where this array isn't a view with another layout.
-    pub(crate) fn dual_raw(&self) -> Option<(u32, Value, Value)> {
-        let Self::Array(a) = self else { return None };
-        let dual = a.dual()?;
-        if dual.primal.layout() == &a.layout { Some((dual.tag, dual.primal.clone(), dual.tangent.clone())) } else { self.dual() }
-    }
-    /// The tag of a dual array, without reading its parts.
-    pub(crate) fn dual_tag(&self) -> Option<u32> { let Self::Array(a) = self else { return None }; a.dual().map(|d| d.tag) }
-    /// For a dual array, whether code with no rule for duals has read its items one by one. `None` for any other value.
-    pub(crate) fn dual_items_built(&self) -> Option<bool> { let Self::Array(a) = self else { return None }; a.dual().map(|d| d.items.get().is_some()) }
+    pub(crate) fn from_linear(t: Arc<crate::linear::Linear>) -> Self { Self::from_carrier(t.layout.clone(), Carrier::Record(t)) }
+    /// An array of `layout` that holds `carrier` in place of its items.
+    pub(crate) fn from_carrier(layout: Layout, carrier: Carrier) -> Self { Self::Array(Arc::new(ArrayData { layout, data: Data::Carried(carrier) })) }
+    /// The running level's data that this value carries: an array's, in place of its items, or a carried atom's (`transform::Carrier`).
+    pub(crate) fn carrier(&self) -> Option<&Carrier> { match self { Self::Array(a) => a.carrier(), Self::Carried(carrier) => Some(carrier), _ => None } }
     /// Computes a pending array's items now. Timing calls it on each result, so that a deferred result isn't dropped unread.
     pub(crate) fn force(&self) { if let Self::Array(a) = self { if a.pending().is_some() { a.storage(); } } }
     /// An array's items: its own, or a copy where something else shares them.
@@ -370,13 +333,13 @@ impl Value {
         let Self::Array(a) = self else { unreachable!("only an array has storage") };
         Arc::try_unwrap(a).map_or_else(|a| a.storage().clone(), ArrayData::into_storage)
     }
-    /// Whether this is an array that holds values as items: mixed storage, and neither a dual nor a record of linear calls (`derivative`).
-    pub(crate) fn holds_values(&self) -> bool { matches!(self, Self::Array(a) if a.dual().is_none() && a.linear().is_none()) && self.dtype().is_none() }
+    /// Whether this is an array that holds values as items: mixed storage, and no running level's data (`transform::Carrier`).
+    pub(crate) fn holds_values(&self) -> bool { matches!(self, Self::Array(a) if a.carrier().is_none()) && self.dtype().is_none() }
     /// Whether no item is an array. Compact storage holds none. An empty array answers for its prototype.
     pub(crate) fn is_simple(&self) -> bool {
-        if self.pending().is_some() || self.linear().is_some() { return true; }
-        // A dual answers for its primal, which can hold arrays as items before a mix.
-        if let Self::Array(a) = self { if let Some(dual) = a.dual() { return dual.primal.is_simple(); } }
+        if self.pending().is_some() { return true; }
+        // A carrier answers for the value that holds its items. A dual's primal can hold arrays as items before a mix.
+        if let Some(carrier) = self.carrier() { return carrier.template().is_simple(); }
         match self.as_items() { Items::Values([]) => self.prototype().is_atom(), Items::Values(items) => items.iter().all(Value::is_atom), _ => true }
     }
     pub fn from_parts(shape: impl Into<Shape>, data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
@@ -461,18 +424,15 @@ impl Value {
         if A::slice(self).is_none() { return None; }
         match self.storage_mut() { Storage::Compact(b) => A::of_mut(b), Storage::Mixed(..) => None }
     }
-    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins, and a `Steps::FILL` offset writes nothing. Storage that can't hold an item widens as a `Gather` does. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame.
-    pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) { self.written(Writes::Offsets(offsets), source) }
+    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins, and a `Steps::FILL` offset writes nothing. Storage that can't hold an item widens as a `Gather` does. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame. A write into a batch, or of one, stops its map's run (`transform::written`).
+    pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) -> Result<(), crate::transform::Stop> { self.written(Writes::Offsets(offsets), source) }
     /// `scatter` at the positions that `steps` reach from `base`, in the order `walk` reads them, without listing them (`Gather::scatter_walk`).
-    pub(crate) fn scatter_walk(&mut self, base: usize, steps: &[rustymath::gather::Steps], source: &Value) { self.written(Writes::Walk { base, steps }, source) }
+    pub(crate) fn scatter_walk(&mut self, base: usize, steps: &[rustymath::gather::Steps], source: &Value) -> Result<(), crate::transform::Stop> { self.written(Writes::Walk { base, steps }, source) }
     /// The items of `source` written in place where `writes` says, as `scatter` writes them.
-    fn written(&mut self, writes: Writes<'_>, source: &Value) {
+    fn written(&mut self, writes: Writes<'_>, source: &Value) -> Result<(), crate::transform::Stop> {
         // Writes only at fills change nothing, so storage doesn't widen for them.
-        if writes.only_fills() { return; }
-        if crate::derivative::tag(self).is_some() || crate::derivative::tag(source).is_some() {
-            let Ok(()) = crate::derivative::both(self, source, |t, s| Ok::<_, std::convert::Infallible>(t.written(writes, s)));
-            return;
-        }
+        if writes.only_fills() { return Ok(()); }
+        if let Some(result) = crate::transform::written(self, source, |t, s| t.written(writes, s)) { return result; }
         let data = self.storage_mut();
         if let Storage::Mixed(items, memo) = data {
             let offsets = writes.offsets();
@@ -482,13 +442,14 @@ impl Value {
         let mut gather = Gather::resume(std::mem::replace(data, Storage::Compact(Buffer::Booleans(Vec::new()))));
         gather.scatter(writes, source);
         *data = gather.data;
+        Ok(())
     }
-    /// Writes `item` at `path` in place, through nested items. The empty path replaces the whole array.
-    pub(crate) fn write_path(&mut self, path: &[usize], item: Value) {
-        let Some((&last, outer)) = path.split_last() else { return *self = item };
+    /// Writes `item` at `path` in place, through nested items. The empty path replaces the whole array. A write into a batch, or of one, stops its map's run (`transform::written`).
+    pub(crate) fn write_path(&mut self, path: &[usize], item: Value) -> Result<(), crate::transform::Stop> {
+        let Some((&last, outer)) = path.split_last() else { *self = item; return Ok(()) };
         let dependent = item.environment().is_some();
         let source = if item.is_atom() { item } else { item.enclose().expect("a unit holds any item") };
-        self.item_mut(outer, dependent).scatter(&[last], &source);
+        self.item_mut(outer, dependent).scatter(&[last], &source)
     }
     /// The item at `path`, for writing in place. Each level on the way is copied first only when something else holds it. Its memo forgets the prototype when the path goes through item 0, and the environment when `dependent` is set or the item on the path depends on a frame.
     pub(crate) fn item_mut(&mut self, path: &[usize], dependent: bool) -> &mut Value {
@@ -503,7 +464,7 @@ impl Value {
     }
     /// Appends the major cells of `cells` in place. `cells` has this array's rank and matches its other axes. `names` holds the keys of the new cells when the leading axis has keys or gains them. Positions already there keep their keys, or have none. A Domain error, with the array unchanged, when a new key is already on the leading axis or appears twice. The caller checks that the length is within the limit.
     pub(crate) fn append(&mut self, cells: &Value, names: Option<&[Option<Arc<str>>]>) -> Result<(), ErrorKind> {
-        if crate::derivative::tag(self).is_some() || crate::derivative::tag(cells).is_some() { return crate::derivative::both(self, cells, |t, c| t.append(c, names)); }
+        if let Some(result) = crate::transform::written(self, cells, |t, c| t.append(c, names)) { return result; }
         let Self::Array(a) = self else { unreachable!("only an array grows") };
         let a = Arc::make_mut(a);
         a.layout.append(cells.shape()[0], names)?;
@@ -578,13 +539,13 @@ impl Value {
             Self::Array(a) => a.storage().items(), Self::Number(n) => n.bool_slice().map(View::Booleans)
                 .or_else(|| n.integer_slice().map(|n| View::Integers(Ints::I64(n)))).or_else(|| n.float_items().map(View::Floats))
                 .or_else(|| n.complex_items().map(View::Complexes)).map_or(Items::Values(std::slice::from_ref(self)), Items::Compact),
-            Self::Character(c) => Items::Compact(View::Characters(std::slice::from_ref(c))), Self::Function(_) | Self::Operator(_) => Items::Values(std::slice::from_ref(self))
+            Self::Character(c) => Items::Compact(View::Characters(std::slice::from_ref(c))), Self::Function(_) | Self::Operator(_) | Self::Carried(_) => Items::Values(std::slice::from_ref(self))
         }
     }
     /// The compact kind of the items, as a kernel reads them. An atom takes the narrowest kind that holds it.
     pub(crate) fn dtype(&self) -> Option<DType> {
         match self {
-            Self::Array(a) if a.dual().is_some() || a.linear().is_some() => None,
+            Self::Array(a) if a.carrier().is_some() => None,
             Self::Array(a) => a.pending().map_or_else(|| a.storage().items().dtype(), |p| Some(p.dtype())),
             atom => item_dtype(atom),
         }
@@ -611,22 +572,17 @@ impl Value {
             }
         }
     }
-    /// The value whose storage holds this one's items: a dual's primal, a record's zero, or the value itself. Finding it reads no items.
-    pub(crate) fn held(&self) -> Value {
+    /// The value that answers, in this one's place, the queries that read no items: a dual's primal, a record's zero or a batch's first cell, through every carrier (`Carrier::template`), or else the value itself.
+    pub(crate) fn template(&self) -> Value {
         let mut value = self.clone();
-        loop {
-            let inner = match &value {
-                Self::Array(a) => a.dual().map(|d| d.primal.clone()).or_else(|| a.linear().map(|t| t.zero.clone())),
-                Self::Number(n) => n.as_dual().map(|d| Self::Number(d.primal.clone())),
-                _ => None,
-            };
-            match inner { Some(inner) => value = inner, None => return value }
-        }
+        while let Some(inner) = value.carrier().map(|carrier| carrier.template().clone()) { value = inner; }
+        value
     }
-    /// The name of the storage that holds the items, as `•storage` gives it: rustymath's name for a compact dtype, except that integers of any width are `"integer"`, because dynamic kinds choose an integer's width from its value. It reads no items: a pending array answers from its call's dtype, and a dual from its primal. An atom gives its own kind.
-    pub(crate) fn storage_name(&self) -> &'static str {
-        let held = self.held();
+    /// The name of the storage that holds the items under the settings `numeric`, as `•storage` gives it: rustymath's name for a compact dtype, except for integers. Under dynamic kinds, which choose an integer's width from its value, integers of any width are `"integer"`. Under static kinds an integer names the width it computes at, because the width is part of its kind there. It reads no items: a pending array answers from its call's dtype, and a dual from its primal. An atom gives its own kind.
+    pub(crate) fn storage_kind(&self, numeric: Numeric) -> &'static str {
+        let held = self.template();
         match (&held, held.dtype()) {
+            (_, Some(dtype @ DType::Integer(_))) if numeric.is_static() => numeric.kind(dtype).name(),
             (_, Some(DType::Integer(_))) => "integer", (_, Some(dtype)) => dtype.name(),
             (Self::Number(_), None) => "rational", (Self::Function(_), None) => "function", _ => "mixed"
         }
@@ -638,11 +594,7 @@ impl Value {
     pub(crate) fn footprint_in(&self, seen: &mut foldhash::HashSet<usize>) -> usize {
         match self {
             Self::Array(a) => ArrayData::footprint_in(a, seen),
-            Self::Number(n) => {
-                let (mut n, mut bytes) = (n, 0);
-                while let Some(d) = n.as_dual() { bytes += d.tangent.footprint_in(seen); n = &d.primal; }
-                bytes
-            }
+            Self::Carried(carrier) => carrier.footprint_in(seen),
             _ => 0,
         }
     }
@@ -652,8 +604,7 @@ impl Value {
     pub fn at(&self, i: usize) -> Value { self.at_ref(i).into_owned() }
     /// Item `i`, borrowed where this value holds it as a value.
     pub(crate) fn at_ref(&self, i: usize) -> Cow<'_, Value> {
-        if let Some(t) = self.linear() { return Cow::Owned(crate::linear::item(t, i)); }
-        if let Some((tag, primal, tangent)) = self.dual() { return Cow::Owned(crate::derivative::dual(tag, primal.at(i), tangent.at(i))); }
+        if let Self::Array(a) = self { if let Some(carrier) = a.carrier() { return Cow::Owned(carrier.at(i)); } }
         match self.storage() { Some(s) => s.item_ref(i), None => { assert_eq!(i, 0); Cow::Borrowed(self) } }
     }
     pub fn elements(&self) -> impl DoubleEndedIterator<Item = Value> + ExactSizeIterator + Clone + '_ { (0..self.len()).map(|i| self.at(i)) }
@@ -671,8 +622,7 @@ impl Value {
     /// An array's prototype. Compact storage gives its kind's zero. An empty mixed array keeps a stored prototype. Other arrays fill their first item on first request and keep the result.
     pub fn prototype(&self) -> Value {
         let Self::Array(a) = self else { return self.fill() };
-        if let Some(t) = a.linear() { return t.zero.clone(); }
-        if let Some(dual) = a.dual() { return dual.primal.prototype(); }
+        if let Some(carrier) = a.carrier() { return carrier.template().prototype(); }
         match a.pending() { Some(p) => p.prototype(), None => a.storage().prototype() }
     }
 
@@ -714,7 +664,8 @@ impl Value {
         if layout.shape() != self.shape() { return Err(Kind::Length.into()); }
         if &layout == self.layout() { return Ok(self); }
         let Self::Array(mut a) = self else { return Err(Kind::Domain.into()); };
-        if let Some(data) = Arc::get_mut(&mut a) { data.layout = layout; return Ok(Self::Array(a)); }
+        // A carrier's parts keep its layout, so a carried array takes a new layout through its view.
+        if !matches!(a.data, Data::Carried(_)) { if let Some(data) = Arc::get_mut(&mut a) { data.layout = layout; return Ok(Self::Array(a)); } }
         Ok(ArrayData::view(&a, layout))
     }
     pub(crate) fn with_keys(self, keys: Vec<Option<Arc<Keys>>>) -> Result<Self, ErrorKind> {
@@ -739,9 +690,10 @@ impl Value {
 
     pub fn as_number(&self) -> Option<Number> { if !self.is_unit() { return None; } match self.at(0) { Value::Number(n) => Some(n), _ => None } }
 
+    /// The one item of this singleton as a Boolean, as an observer reads it: LENGTH for any other count of items, and DOMAIN for an item that isn't 0 or 1.
     pub(crate) fn boolean(&self) -> Result<bool, ErrorKind> {
         if !self.is_singleton() { return Err(Kind::Length.into()); }
-        match self.at(0) { Value::Number(n) => n.boolean().map_err(|_| Kind::Domain.into()), _ => Err(Kind::Domain.into()) }
+        match self.at(0).observed()? { crate::transform::Plain::Number(n) => n.boolean().map_err(|_| Kind::Domain.into()), _ => Err(Kind::Domain.into()) }
     }
 
     pub(crate) fn disclose(&self) -> Value { self.elements().next().unwrap_or_else(|| self.prototype().clone()) }
@@ -788,8 +740,6 @@ impl Value {
 
     fn fill_array(&self) -> Self {
         let Self::Array(a) = self else { unreachable!() };
-        if let Some(t) = a.linear() { return t.layout.collect(vec![t.zero.clone(); t.layout.shape().iter().product()], t.zero.clone()).expect("zeros fill a record's layout"); }
-        if let Some((_, primal, _)) = self.dual() { return primal.fill(); }
         Self::Array(Arc::new(ArrayData { data: Data::Own(match (a.storage(), a.storage().items()) {
             (Storage::Mixed(v, memo), _) if v.is_empty() => Storage::Mixed(vec![], memo.clone()),
             (Storage::Mixed(v, _), _) => Storage::compact(v.iter().map(Value::fill).collect(), Widening::Items),

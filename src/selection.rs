@@ -113,14 +113,14 @@ impl Labels {
             return Ok(());
         }
         for (i, item) in selected.elements().enumerate() {
-            match item {
-                Value::Number(n) => label(i, n.nonnegative_integer().error_at(span, "invalid selection label")?, targets, values)?,
+            match &item {
+                Value::Number(_) | Value::Carried(_) => label(i, item.observed_number().and_then(|n| n.nonnegative_integer()).error_at(span, "invalid selection label")?, targets, values)?,
                 a @ Value::Array(_) => match self.nested.get(&a.storage_id()) {
                     Some((_, path)) => {
                         targets.push(path);
                         values.push(right, pick(i));
                     }
-                    None => self.collect(&a, &right.at(pick(i)), span, targets, values)?,
+                    None => self.collect(a, &right.at(pick(i)), span, targets, values)?,
                 },
                 Value::Character(_) | Value::Function(_) | Value::Operator(_) => return Err(span.domain_error("invalid selection")),
             }

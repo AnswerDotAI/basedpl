@@ -174,16 +174,85 @@ k←•rand 42
 (a,b)≡k.roll 4⍴1000   ⍝ $t
 
 ⍝ distribution:session-seed — The seed setting fixes the draws of `¿`
-•prefs ["seed":42] ⋄ a←¿6 6 6 ⋄ •prefs ["seed":42] ⋄ a≡¿6 6 6   ⍝ $t
+•prefs ["seed":42]
+a←¿6 6 6
+•prefs ["seed":42]
+a≡¿6 6 6   ⍝ $t
 
 ⍝ distribution:map-streams — Each cell of a map draws from a stream of its own, so its draws don't depend on how many values other cells draw
-•prefs ["seed":7] ⋄ a←{¿⍵⍴6}¨1 3 ⋄ •prefs ["seed":7] ⋄ b←{¿⍵⍴6}¨5 3 ⋄ [(1⊃a)≡1⊃b;(0⊃a)≡1↑0⊃b]   ⍝ $t $t
+•prefs ["seed":7]
+a←{¿⍵⍴6}¨1 3
+•prefs ["seed":7]
+b←{¿⍵⍴6}¨5 3
+[(1⊃a)≡1⊃b;(0⊃a)≡1↑0⊃b]   ⍝ $t $t
 
 ⍝ distribution:generator-map-streams — A map splits a `•rand` generator in the same way
-g←•rand 3 ⋄ a←{g.roll ⍵⍴6}¨1 3 ⋄ g←•rand 3 ⋄ b←{g.roll ⍵⍴6}¨5 3 ⋄ (1⊃a)≡1⊃b   ⍝ $t
+g←•rand 3
+a←{g.roll ⍵⍴6}¨1 3
+g←•rand 3
+b←{g.roll ⍵⍴6}¨5 3
+(1⊃a)≡1⊃b   ⍝ $t
 
 ⍝ distribution:map-rank — Rank's cells draw as Each's do
-•prefs ["seed":7] ⋄ x←{¿6}¨⍳4 ⋄ •prefs ["seed":7] ⋄ y←{¿6}⍤0⊢⍳4 ⋄ x≡y   ⍝ $t
+•prefs ["seed":7]
+x←{¿6}¨⍳4
+•prefs ["seed":7]
+y←{¿6}⍤0⊢⍳4
+x≡y   ⍝ $t
+
+⍝ distribution:batched-draws — A batched map and a map run cell by cell give the same seeded draws, during the map and after it
+•prefs ["seed":7 "batch":$f]
+a←{⍵+(¿10)+¿100}¨⍳6
+b←¿10 10 10
+•prefs ["seed":7 "batch":$t]
+e←•explain "{⍵+(¿10)+¿100}¨⍳6"
+[a≡e.value;b≡¿10 10 10;0=≢e.fallbacks.reason]
+⍝ =>
+$t $t $t
+
+⍝ distribution:batched-arguments — In a batched call, each cell draws with its own arguments, from `¿` and from a `•rand` generator
+•prefs ["seed":7 "batch":$f]
+g←•rand 3
+a←{¿⍵}¨5 6 7 8
+b←{3¿⍵}¨10 20 30
+c←{g.roll ⍵}¨5 6 7 8
+•prefs ["seed":7 "batch":$t]
+g←•rand 3
+e←•explain "{¿⍵}¨5 6 7 8"
+f←•explain "{3¿⍵}¨10 20 30"
+h←•explain "{g.roll ⍵}¨5 6 7 8"
+[a≡e.value;b≡f.value;c≡h.value;0=≢e.fallbacks.reason,f.fallbacks.reason,h.fallbacks.reason]
+⍝ =>
+$t $t $t $t
+
+⍝ distribution:batched-generator — A `•rand` generator and a distribution draw from each cell's stream in the same way
+•prefs ["batch":$f]
+g←•rand 3
+d←2 0.5 •distribution "binomial"
+a←{⍵+(g.roll 10)+(g d.sample 1)}¨⍳5
+•prefs ["batch":$t]
+g←•rand 3
+e←•explain "{⍵+(g.roll 10)+(g d.sample 1)}¨⍳5"
+[a≡e.value;0=≢e.fallbacks.reason]   ⍝ $t $t
+
+⍝ distribution:batched-nested — After a draw in a map inside the operand stops a batched call, the cells run one at a time and draw the same values
+•prefs ["seed":7 "batch":$f]
+a←{{¿10}¨⍳3}¨⍳4
+•prefs ["seed":7 "batch":$t]
+e←•explain "{{¿10}¨⍳3}¨⍳4"
+[a≡e.value;e.fallbacks.reason]
+⍝ =>
+[$t;["an effect"]]
+
+⍝ distribution:batched-scalars — After draws that give each cell a scalar stop a batched call, the cells run one at a time and draw the same values
+•prefs ["seed":7 "batch":$f]
+d←2 0.5 •distribution "binomial"
+a←{⍵+d.sample ⍬}¨⍳5
+•prefs ["seed":7 "batch":$t]
+e←•explain "{⍵+d.sample ⍬}¨⍳5"
+[a≡e.value;e.fallbacks.reason]
+⍝ =>
+[$t;["no batch rule"]]
 
 ⍝ distribution:session-seed-domain — The seed is one nonnegative integer
 •prefs ["seed":¯1]

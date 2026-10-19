@@ -65,6 +65,12 @@ A cell's derivative comes only from the case that the cell picks. Below, the cel
 
 `f@[p] Y` is `p⍚[⊢ f] Y`, with two differences. [Under](at.qmd) converts its result to one kind, as assignment does. Under also leaves a cell that picks no case unchanged, where `⍚` gives it the fill.
 
+Where the selector gives a Boolean for each item of a float argument, and every case is a function that can't fail, such as `⊢`, `-`, `2×` or a constant, `⍚` and `@[p]` can run each case on the whole argument, then keep for each item the result of the case it picks. That gives the same result faster. On a large argument, the selector's comparison, the cases and the pick then run as one [fused](../system/prefs.qmd) group. `•explain` names this `"masked select"`:
+
+```bpl
+(•explain "(0>)⍚[⊢ -] ¯1 4 ¯2").fast.combination   ⍝ ["masked select"]
+```
+
 ## Errors
 
 - `RANK`: the selector has an axis that the argument lacks

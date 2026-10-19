@@ -4,12 +4,12 @@
 //!
 //! Dispatch defers a call of a fusible primitive that would give at least `MIN_ITEMS` floats: `Primitive::pervasive_mapped` gives a pending array (`Pending`) in place of the call's result. A pending call reads input arrays, scalars and other pending arrays, including pending arrays that names hold. Its items are computed when something reads them, such as a call that isn't fusible, display, or Python. Forcing gathers the pending calls that only the forced array's graph reads into one `Graph`. A pending array that something outside the graph also holds runs first, as its own graph, and keeps its items. A name and a train's argument hold their values outside any graph, and so does a dfn's argument while the dfn runs. A shared intermediate, as `s` in `s←img-0.5 ⋄ s×1-s`, therefore runs on its own before the graph that reads it. A reduction such as `+/` or `⌈⌿` of a pending array that nothing else holds folds each block's results while they are in the cache, and never builds the array. A graph of fewer than `MIN_NODES` calls runs each call on whole arrays, as an unfused call does. A graph that runs block by block, or that a reduction folds, splits across threads in pieces of whole blocks. A fold's pieces come from rustymath's `reduce::fold_pieces`. With `•prefs ["fusion":$t]`, `Function::call` reports the innermost call that computes each pending argument.
 //!
-//! A graph is data. Each node names its primitive and its operands. An operand is an input array, a scalar, or the results of an earlier node. The last node gives the graph's result. A graph's arrays have plain layouts and one float width, 32 or 64 bits. Arrays of different shapes broadcast as they do in an unfused call. Each array reads its items through the `Mapping` that `Agreement` gives it against the graph's result. Reads of one array through one map share an input. A scalar operand is a float of at most the graph's width. A primitive fuses where its float kernel keeps its arguments' type or gives Booleans, and can't fail (`pervasive::fuses`). The `fusion` entry of `nbs/system/prefs.qmd` lists those primitives. A comparison gives Booleans where it ends its graph. Before the last node it writes 1 and 0 as floats, which later nodes read as a call reads Booleans beside floats. It joins the graph of a call that reads it only where nothing outside that call holds it, so a graph never reads stored Booleans, which it would have to convert to floats. A call that reads a comparison computed outside the graph runs on whole arrays (`Pending::unfused`). A function that `pervasive::keeps_exact` takes no exact argument, a comparison included, because a graph reads exact arguments as floats. Each node takes the kernel that `pervasive::map` takes for the same arguments. A graph therefore gives the result that its calls give.
+//! A graph is data. Each node names its primitive and its operands. An operand is an input array, a scalar, or the results of an earlier node. The last node gives the graph's result. A graph's arrays have plain layouts and one float width, 32 or 64 bits. Arrays of different shapes broadcast as they do in an unfused call. Each array reads its items through the `Mapping` that `Agreement` gives it against the graph's result. Reads of one array through one map share an input. A scalar operand is a float of at most the graph's width. A primitive fuses where its float kernel keeps its arguments' type or gives Booleans, and can't fail (`pervasive::fuses`). The `fusion` entry of `nbs/system/prefs.qmd` lists those primitives. A comparison gives Booleans where it ends its graph. Before the last node it writes 1 and 0 as floats, which later nodes read as a call reads Booleans beside floats. It joins the graph of a call that reads it only where nothing outside that call holds it, so a graph never reads stored Booleans, which it would have to convert to floats. A call that reads a comparison computed outside the graph runs on whole arrays (`Pending::unfused`). A select, the masked lowering of `⍚` and `@[p]` (`select`), reads a comparison's 1s and 0s as its mask and takes each item from one of two operands. A function that `pervasive::keeps_exact` takes no exact argument, a comparison included, because a graph reads exact arguments as floats. Each node takes the kernel that `pervasive::map` takes for the same arguments. A graph therefore gives the result that its calls give.
 //!
 //! A structural glyph that copies one source through rustymath `Steps` (`remapped`) gives a pending copy (`copy`) where its result has at least `MIN_ITEMS` items, for a source of any compact kind. Forcing composes a read of a copy with the copy's map, and moves a read with no repeat or fill under each pending pervasive call it reaches that only it holds (`Pending::resolved`). `2×⌽v+1` then runs as one graph that reads `v` backwards. A read that copies (`Mapping::copies`), such as a reversal's, moves only under a call that reads one array, so `2×⌽y×x+0.5` computes `y×x+0.5` first and then reads it backwards. A call whose two array arguments copy arrays of one layout through one map that gives no fill runs on those arrays instead, and the map copies its result once (`copied_once`): `(3↕x)×3↕y` runs as `3↕x×y`. A copy of floats that no call reads through, and a copy of any other kind, walks its source as `remapped` does. A fold of a copy of windows along its own axis runs sliding folds over the source (`slide`), at a cost for each item that doesn't grow with the window's width.
 use crate::{
     agreement::Agreement, array::{Items, Lanes, Layout, Storage}, element::{read_as, Stored, Float}, explain::{Live, Counted, Tally}, number::Numeric,
-    pervasive::{self, with_float_reduction, with_truth_reduction, Kernels}, primitive::{FoldKind, Primitive}, Number, Value
+    pervasive::{self, with_float_reduction, with_truth_reduction, Kernels}, primitive::{FoldKind, Operation, Primitive}, Number, Value
 };
 use rustymath::{agreement::{expanded, in_place, Mapping}, buffer::{DType, FloatWidth, View}, with_float_width, gather::Steps, layout::strides, reduce::{self, Reduction}, Arg, Native};
 use std::{collections::HashMap, ops::Range, sync::{Arc, Mutex, OnceLock, PoisonError}};
@@ -43,13 +43,39 @@ pub(crate) struct Graph {
     extras: Vec<(usize, Arc<Pending>)>,
 }
 
-/// A call of a primitive, or a copy that reads `right` unchanged. `left` is `None` for a monadic call or a copy.
+/// What a call or node reads: the left operand of a dyad or a select, the right operand that every operation reads, and a select's mask, visited in that order. `left` is `None` for a monad or a copy, and `mask` for any operation but a select.
 #[derive(Clone)]
-struct Node { operation: Operation, left: Option<Operand>, right: Operand }
+struct Operands<T> { left: Option<T>, right: T, mask: Option<T> }
+
+impl<T> Operands<T> {
+    /// A monad's or a copy's one operand.
+    fn one(right: T) -> Self { Self { left: None, right, mask: None } }
+    fn as_ref(&self) -> Operands<&T> { Operands { left: self.left.as_ref(), right: &self.right, mask: self.mask.as_ref() } }
+    fn iter(&self) -> impl Iterator<Item = &T> { self.as_ref().into_iter() }
+    /// Each operand through `f`, in order.
+    fn map<U>(self, mut f: impl FnMut(T) -> U) -> Operands<U> { Operands { left: self.left.map(&mut f), right: f(self.right), mask: self.mask.map(&mut f) } }
+    /// `map` for an `f` that can fail, which stops at the first `None`.
+    fn try_map<U>(self, mut f: impl FnMut(T) -> Option<U>) -> Option<Operands<U>> {
+        let left = match self.left { Some(l) => Some(f(l)?), None => None };
+        let right = f(self.right)?;
+        let mask = match self.mask { Some(m) => Some(f(m)?), None => None };
+        Some(Operands { left, right, mask })
+    }
+}
+
+impl<T> IntoIterator for Operands<T> {
+    type Item = T;
+    type IntoIter = std::iter::Flatten<std::array::IntoIter<Option<T>, 3>>;
+    fn into_iter(self) -> Self::IntoIter { [self.left, Some(self.right), self.mask].into_iter().flatten() }
+}
+
+/// A call of a primitive, a copy that reads `right` unchanged, or a select, which reads `left` where `mask` is 1 and `right` where it's 0.
+#[derive(Clone)]
+struct Node { operation: Operation, operands: Operands<Operand> }
 
 impl Node {
     /// The earlier nodes whose results this node reads.
-    fn reads(&self) -> impl Iterator<Item = usize> + '_ { self.left.iter().chain([&self.right]).filter_map(|o| match *o { Operand::Node(j) => Some(j), _ => None }) }
+    fn reads(&self) -> impl Iterator<Item = usize> + '_ { self.operands.iter().filter_map(|o| match *o { Operand::Node(j) => Some(j), _ => None }) }
 }
 
 /// What a node reads.
@@ -87,11 +113,8 @@ pub(crate) struct Pending {
 /// What computes a pending array's items: its call, or the graph that a fold built from that call and left for a later read.
 enum Work { Call(Call), Graph(Graph) }
 
-/// A pending call: of a primitive, or a structural copy, which reads its one source through a `Mapping::Steps`.
-struct Call { operation: Operation, left: Option<Read>, right: Read }
-
-#[derive(Clone, Copy)]
-enum Operation { Primitive(Primitive), Copy }
+/// A pending call: of a primitive, a structural copy, which reads its one source through a `Mapping::Steps`, or a select, which reads `left` where `mask` is 1 and `right` where it's 0.
+struct Call { operation: Operation, operands: Operands<Read> }
 
 /// What a pending call reads. An array reads its items through the `Mapping` that the call's agreement gave it. A pending array keeps the layout that the call saw it with, which a view can change.
 #[derive(Clone)]
@@ -125,11 +148,10 @@ fn narrow(read: &Read, outer: &Mapping, shape: &[usize], frame: &[usize], small:
     let computing = || small && computes && (0..n).all(|k| mapping.get(k).is_some());
     let work = pending.work.lock().unwrap_or_else(PoisonError::into_inner);
     match work.as_ref() {
-        Some(Work::Call(call)) if matches!(call.operation, Operation::Copy) => narrow(&call.right, &mapping, pending.layout.shape(), frame, small, only(call, &call.right)).or_else(kept),
+        Some(Work::Call(call)) if matches!(call.operation, Operation::Copy) => narrow(&call.operands.right, &mapping, pending.layout.shape(), frame, small, only(call, &call.operands.right)).or_else(kept),
         Some(Work::Call(call)) if computing() => {
             let narrowed = |r: &Read| narrow(r, &mapping, pending.layout.shape(), frame, small, only(call, r));
-            let left = match &call.left { Some(left) => Some(narrowed(left)?), None => None };
-            Some(computed(pending, Work::Call(Call { operation: call.operation, left, right: narrowed(&call.right)? }), frame))
+            Some(computed(pending, Work::Call(Call { operation: call.operation, operands: call.operands.as_ref().try_map(narrowed)? }), frame))
         }
         Some(Work::Graph(graph)) if computing() => {
             let inputs = graph.inputs.iter().map(|(v, m)| Some((v.clone(), within(m, &mapping, graph.layout.shape(), frame, small)?))).collect::<Option<_>>()?;
@@ -143,7 +165,7 @@ fn narrow(read: &Read, outer: &Mapping, shape: &[usize], frame: &[usize], small:
 /// Whether forcing would gather the pending array that `read` reads into the graph of `call`, because only `call` holds it.
 fn only(call: &Call, read: &Read) -> bool {
     let Read::Pending(p, ..) = read else { return false };
-    Arc::strong_count(p) == call.args().filter(|a| matches!(a, Read::Pending(q, ..) if Arc::ptr_eq(p, q))).count()
+    Arc::strong_count(p) == call.operands.iter().filter(|a| matches!(a, Read::Pending(q, ..) if Arc::ptr_eq(p, q))).count()
 }
 
 /// A read of a new pending array like `pending`, of shape `frame`, whose items `work` computes.
@@ -190,11 +212,6 @@ pub(crate) fn affine(value: &Value) -> Option<(Value, usize, Vec<isize>)> {
     Some((array, offset, strides))
 }
 
-impl Call {
-    fn args(&self) -> impl Iterator<Item = &Read> { self.left.iter().chain([&self.right]) }
-    fn into_args(self) -> impl Iterator<Item = Read> { self.left.into_iter().chain([self.right]) }
-}
-
 impl Read {
     /// This read, through `mapping` in place of its own.
     fn through(self, mapping: Mapping) -> Read {
@@ -210,8 +227,9 @@ impl Read {
     fn value(self) -> (Value, Mapping) { match self { Read::Input(v, m) => (v, m), Read::Scalar(c) => (c, Mapping::Single), Read::Pending(p, m, layout) => (Value::deferred(layout, p), m) } }
 }
 
-/// `operation` on whole arrays, as an unfused call computes it: on `x` and `y`, each with the map from the positions of the result, which has `layout` and `len` items, to its items. `Graph::unfused_all` runs each of a small graph's nodes this way, and `Pending::unfused` a call that runs without a graph.
-fn called(operation: Operation, x: Option<(Value, Mapping)>, (y, right): (Value, Mapping), layout: &Layout, len: usize) -> Value {
+/// `operation` on whole arrays, as an unfused call computes it: on its `operands`, each with the map from the positions of the result, which has `layout` and `len` items, to its items. `Graph::unfused_all` runs each of a small graph's nodes this way, and `Pending::unfused` a call that runs without a graph.
+fn called(operation: Operation, operands: Operands<(Value, Mapping)>, layout: &Layout, len: usize) -> Value {
+    let Operands { left: x, right: (y, right), mask } = operands;
     let agreement = Agreement { layout: layout.clone(), len, left: x.as_ref().map_or(Mapping::Single, |(_, m)| m.clone()), right };
     let called = match operation {
         Operation::Primitive(p) => pervasive::map(p, x.as_ref().map(|(v, _)| v), &y, &agreement).expect("a fusible primitive has a float kernel"),
@@ -219,8 +237,25 @@ fn called(operation: Operation, x: Option<(Value, Mapping)>, (y, right): (Value,
             Mapping::Steps { base, ref steps } => crate::primitive::walked(&y, layout.clone(), base, steps).expect("a copy's items fit its layout"),
             _ => y,
         },
+        Operation::Select => chosen(mask.expect("a select reads its mask"), (x.expect("a select reads two operands").0, agreement.left), (y, agreement.right), layout, len),
+        Operation::Fold(..) | Operation::Product(..) => unreachable!("fusion defers only primitives, copies and selects"),
     };
-    called.with_layout(layout.clone()).expect("a graph's arrays have plain layouts")
+    called.with_layout(layout.clone()).expect("a call's result fits its layout")
+}
+
+/// `x` where `mask`'s Booleans are true and `y` where they're false, on whole arrays, through rustymath's `Choose`. Each operand reads through its map from the positions of the result, which has `layout` and `len` items, and an atom serves every item. `x` and `y` hold floats of one width.
+fn chosen((mask, m): (Value, Mapping), (x, xm): (Value, Mapping), (y, ym): (Value, Mapping), layout: &Layout, len: usize) -> Value {
+    fn view(v: &Value) -> rustymath::array::ArrayView<'_> { rustymath::array::ArrayView::new(v.layout(), v.view().expect("a select reads compact items"), &Mapping::Linear(1)) }
+    let agreement = |left, right| rustymath::agreement::Agreement { layout: rustymath::layout::Layout::clone(layout), len, left, right };
+    let kernels = rustymath::kernels!(Ternary rustymath::Choose);
+    let (buffer, _) = kernels.ternary(&rustymath::Choose, [view(&x), view(&y), view(&mask)], &agreement(xm, ym), &agreement(Mapping::Linear(1), m)).expect("`Choose` has a kernel at every float width");
+    Value::from_storage(layout.shape().to_vec(), Storage::Compact(buffer)).expect("a select's items fit its layout")
+}
+
+/// The float atom `c` at width `F`.
+fn scalar<F: Float>(c: &Value) -> F {
+    let Items::Compact(View::Floats(floats)) = c.as_items() else { unreachable!("a scalar operand is a float") };
+    F::narrow(floats.get(0))
 }
 
 /// Whether a call of `p` with a result of `len` items can be deferred under the current settings. Dispatch runs only this check inline, and `defer` the rest.
@@ -238,28 +273,56 @@ pub(crate) fn defer(p: Primitive, x: Option<&Value>, y: &Value, agreement: Agree
     if pervasive::keeps_exact(p, numeric) && [x, Some(y)].into_iter().flatten().any(pervasive::exact) { return Err(agreement); }
     // An exact atom reads at the graph's width, as the kernels read an exact operand.
     let fits = |v: &Value, m: &Mapping| if v.is_atom() { pervasive::exact(v) || floats(v).is_some_and(|w| w <= width) } else {
-        v.layout().plain() && (floats(v) == Some(width) || matches!(m, Mapping::Linear(1)) && v.unshared_pending().is_some_and(|c| c.same_settings(width, numeric) && c.compares()))
+        v.layout().plain() && (floats(v) == Some(width) || matches!(m, Mapping::Linear(1)) && v.unshared_pending().is_some_and(|c| c.comparison_at(width, numeric)))
     };
     let at_width = |v: &Value| if !pervasive::exact(v) { v.clone() } else {
         with_float_width!(width, F => read_as::<F>(v).map(|x| Value::Number(Number::float(x[0].into(), width)))).expect("a real atom reads as a float")
     };
     if !agreement.layout.plain() || !x.is_none_or(|x| fits(x, &agreement.left)) || !fits(y, &agreement.right) { return Err(agreement); }
     let Agreement { layout, left, right, .. } = agreement;
-    let arg = |v: &Value, mapping: Mapping| match v.pending() {
-        _ if v.is_atom() => Read::Scalar(at_width(v)),
+    let arg = |v: &Value, mapping: Mapping| read(&at_width(v), mapping);
+    let call = Call { operation: Operation::Primitive(p), operands: Operands { left: x.map(|x| arg(x, left)), right: arg(y, right), mask: None } };
+    let (dtype, prototype) = match p { Primitive::Compare(_) => (DType::Boolean, Number::from_bool(false)), _ => (DType::Float(width), Number::float(0.0, width)) };
+    Ok(pending_call(call, layout, width, dtype, prototype))
+}
+
+/// A read of `v` through `mapping`: an atom's value, a pending array's call, or an array's items.
+fn read(v: &Value, mapping: Mapping) -> Read {
+    match v.pending() {
+        _ if v.is_atom() => Read::Scalar(v.clone()),
         Some(pending) => Read::Pending(pending.clone(), mapping, v.layout().clone()),
         None => Read::Input(v.clone(), mapping),
-    };
-    let call = Call { operation: Operation::Primitive(p), left: x.map(|x| arg(x, left)), right: arg(y, right) };
+    }
+}
+
+/// `call` as a pending array of `layout`, holding items of `dtype` with the floats it reads at `width`, under the current settings. Where the call would gather more than `MAX_NODES` calls, the pending arrays it reads run first.
+fn pending_call(call: Call, layout: Layout, width: FloatWidth, dtype: DType, prototype: Number) -> Value {
     let gathered = |a: &Read| match a { Read::Pending(pending, ..) if !pending.is_forced() => pending.size, _ => 0 };
-    let mut size = 1 + call.args().map(gathered).sum::<usize>();
+    let mut size = 1 + call.operands.iter().map(gathered).sum::<usize>();
     if size > MAX_NODES {
-        for a in call.args() { if let Read::Pending(pending, ..) = a { pending.storage(); } }
+        for a in call.operands.iter() { if let Read::Pending(pending, ..) = a { pending.storage(); } }
         size = 1;
     }
-    let (dtype, prototype) = match p { Primitive::Compare(_) => (DType::Boolean, Number::from_bool(false)), _ => (DType::Float(width), Number::float(0.0, width)) };
     let pending = Pending::new(Work::Call(call), layout.clone(), width, dtype, Value::Number(prototype), size);
-    Ok(Value::deferred(layout, Arc::new(pending)))
+    Value::deferred(layout, Arc::new(pending))
+}
+
+/// Whether `select` defers a select by `mask` between floats of `width`, into a result of `layout`: where the result has at least `MIN_ITEMS` items and `mask` is a comparison still to be computed that nothing else holds. A graph then computes the comparison, the operands and the select together, and the comparison never becomes stored Booleans.
+pub(crate) fn defers_select(mask: &Value, width: FloatWidth, layout: &Layout) -> bool {
+    let numeric = Numeric::current();
+    layout.shape().iter().product::<usize>() >= MIN_ITEMS && layout.plain() && mask.unshared_pending().is_some_and(|c| c.comparison_at(width, numeric))
+}
+
+/// `x` where `mask` is 1 and `y` where it's 0, the masked lowering of `⍚` and `@[p]` (`selected` in `eval/operators.rs`). `x` and `y` hold floats of one width, each as an array of `layout` or an atom of that width, and `mask` holds Booleans of `layout`. The select is pending where `defers_select` says, and otherwise runs at once.
+pub(crate) fn select(mask: &Value, x: &Value, y: &Value, layout: &Layout) -> Value {
+    let width = [x, y].into_iter().find_map(Value::float_width).expect("a select reads floats");
+    let mapped = |v: &Value| if v.is_atom() { Mapping::Single } else { Mapping::Linear(1) };
+    if !defers_select(mask, width, layout) {
+        let len = layout.shape().iter().product();
+        return called(Operation::Select, Operands { left: Some((x.clone(), mapped(x))), right: (y.clone(), mapped(y)), mask: Some((mask.clone(), Mapping::Linear(1))) }, layout, len);
+    }
+    let call = Call { operation: Operation::Select, operands: Operands { left: Some(read(x, mapped(x))), right: read(y, mapped(y)), mask: Some(read(mask, Mapping::Linear(1))) } };
+    pending_call(call, layout.clone(), width, DType::Float(width), Number::float(0.0, width))
 }
 
 /// `p` on `x` and `y`, run on the arrays that they copy, where both are pending copies of arrays of one layout through one map that gives no fill, the call pairs them item for item, and neither copy has fewer items than its source. The result copies the call's result once through the map, where a graph would gather each argument through it: `(3↕x)×3↕y` runs as `3↕x×y`. `None` where the call can't run that way.
@@ -300,7 +363,7 @@ fn deferred_copy(source: &Value, layout: &Layout, mapping: Mapping) -> Option<Va
             (Read::Input(source.clone(), mapping), if let DType::Float(w) = dtype { w } else { FloatWidth::F64 }, 1)
         }
     };
-    let work = Work::Call(Call { operation: Operation::Copy, left: None, right: read });
+    let work = Work::Call(Call { operation: Operation::Copy, operands: Operands::one(read) });
     let pending = Pending::new(work, Layout::from(layout.shape().to_vec()), width, dtype, source.prototype(), size);
     Some(Value::deferred(layout.clone(), Arc::new(pending)))
 }
@@ -369,7 +432,7 @@ fn slide(value: &Value, p: Primitive, kind: FoldKind) -> Option<Value> {
     let (w, k, width) = windowed(value, kind)?;
     let shape = value.shape();
     let buffer = pervasive::sliding(p, w.region()?, w.rows, width)?;
-    crate::explain::fast("sliding fold", format!("{}{}", p.info().glyph, kind.glyph()));
+    crate::explain::fast("sliding fold", Operation::Fold(p, kind).glyph());
     let layout = value.layout().axes((0..shape.len()).filter(|&r| r != k));
     let (folded, tables) = w.folded(shape, k, width);
     if Steps::in_order(&tables) { return Value::from_buffer(layout.shape().to_vec(), buffer).ok()?.with_layout(layout).ok(); }
@@ -415,7 +478,7 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind) -> Option<Value>
     let folded = graph.fold(p, kind, &tally);
     match folded {
         Some(_) => {
-            graph.explained(Some((p, kind)), &tally);
+            graph.explained(Some(Operation::Fold(p, kind)), &tally);
             pending.put(Work::Graph(graph))
         }
         None => pending.result.set(pending.counted(graph.run().into_storage())).expect("a pending array computes its items once"),
@@ -465,7 +528,7 @@ impl Pending {
         if let Some(storage) = this.result.get() { return storage.footprint_in(seen); }
         let work = this.work.lock().unwrap_or_else(PoisonError::into_inner);
         match work.as_ref() {
-            Some(Work::Call(call)) => call.args().map(|read| match read {
+            Some(Work::Call(call)) => call.operands.iter().map(|read| match read {
                 Read::Input(v, _) | Read::Scalar(v) => v.footprint_in(seen),
                 Read::Pending(p, ..) => Self::footprint_in(p, seen),
             }).sum(),
@@ -498,27 +561,29 @@ impl Pending {
     fn compares(&self) -> bool { self.dtype == DType::Boolean && matches!(&*self.work.lock().unwrap_or_else(PoisonError::into_inner), Some(Work::Call(call)) if self.runs(call)) }
     /// Whether a graph at float `width` under `numeric` computes this array's items as its own call would: the same width and numeric settings.
     fn same_settings(&self, width: FloatWidth, numeric: Numeric) -> bool { self.width == width && self.numeric == numeric }
+    /// Whether this is a comparison that a graph of floats of `width` under `numeric` can read as float lanes.
+    fn comparison_at(&self, width: FloatWidth, numeric: Numeric) -> bool { self.same_settings(width, numeric) && self.compares() }
     /// Whether this array can be a node in `graph`'s graph: the same width, settings and length.
     fn fits(&self, graph: &Pending) -> bool { self.same_settings(graph.width, graph.numeric) && self.len() == graph.len() }
     /// Whether a graph of this array can compute each comparison that `call` reads as a node: one still to be computed, which only `call` holds, at this array's width, settings and length. A call that reads a comparison's stored Booleans runs without a graph, because a graph would widen them to floats.
     fn holds_comparisons(&self, call: &Call) -> bool {
-        call.args().all(|a| match a {
+        call.operands.iter().all(|a| match a {
             Read::Pending(c, ..) if c.dtype == DType::Boolean => !c.is_forced() && only(call, a) && c.fits(self),
             _ => true,
         })
     }
     /// `call`, with each of its reads resolved.
-    fn resolve(&self, call: Call) -> Call { Call { operation: call.operation, left: call.left.map(|r| self.resolved(r)), right: self.resolved(call.right) } }
+    fn resolve(&self, call: Call) -> Call { Call { operation: call.operation, operands: call.operands.map(|r| self.resolved(r)) } }
     /// `call`, resolved, as the root of this array's graph. A copy whose read moved under a call becomes that call. `Err` gives back a call that runs without a graph (`unfused`): a copy whose read moved under none, or a call that reads a comparison that the graph can't compute (`holds_comparisons`).
     fn root(&self, call: Call) -> Result<Call, Call> {
         let call = self.resolve(call);
         let call = if !matches!(call.operation, Operation::Copy) { call } else {
-            match call.right {
+            match call.operands.right {
                 Read::Pending(moved, Mapping::Linear(1), _) => {
                     let Work::Call(call) = moved.take() else { unreachable!("a moved call is a call") };
                     self.resolve(call)
                 }
-                right => return Err(Call { operation: Operation::Copy, left: None, right }),
+                right => return Err(Call { operation: Operation::Copy, operands: Operands::one(right) }),
             }
         };
         if self.holds_comparisons(&call) { Ok(call) } else { Err(call) }
@@ -529,10 +594,10 @@ impl Pending {
         if Arc::strong_count(&p) != 1 || p.is_forced() { return Read::Pending(p, mapping, layout); }
         let mut work = p.work.lock().unwrap_or_else(PoisonError::into_inner);
         let rewritten = match work.as_ref() {
-            Some(Work::Call(Call { operation: Operation::Copy, right: Read::Input(_, inner) | Read::Pending(_, inner, _), .. })) => inner
+            Some(Work::Call(Call { operation: Operation::Copy, operands: Operands { right: Read::Input(_, inner) | Read::Pending(_, inner, _), .. } })) => inner
                 .compose(&mapping, p.layout.shape(), self.layout.shape()).map(|mapping| vec![Some(mapping)]),
             Some(Work::Call(call)) if matches!(call.operation, Operation::Primitive(_)) && p.runs(call) && p.same_settings(self.width, self.numeric) => match &mapping {
-                Mapping::Steps { base: 0, steps: outer } if Self::moves_under(&mapping, outer, call, p.layout.shape()) => call.args().map(|a| a.moved(outer, p.layout.shape())).collect(),
+                Mapping::Steps { base: 0, steps: outer } if Self::moves_under(&mapping, outer, call, p.layout.shape()) => call.operands.iter().map(|a| a.moved(outer, p.layout.shape())).collect(),
                 _ => None,
             },
             _ => None,
@@ -542,24 +607,22 @@ impl Pending {
         drop(work);
         let mut maps = maps.into_iter();
         let mut next = |r: Read| match maps.next().flatten() { Some(m) => r.through(m), None => r };
-        if matches!(call.operation, Operation::Copy) { return self.resolved(next(call.right)); }
-        let left = call.left.map(&mut next);
-        let right = next(call.right);
-        let moved = p.with_work(Work::Call(Call { operation: call.operation, left, right }), self.layout.clone());
+        if matches!(call.operation, Operation::Copy) { return self.resolved(next(call.operands.right)); }
+        let moved = p.with_work(Work::Call(Call { operation: call.operation, operands: call.operands.map(&mut next) }), self.layout.clone());
         Read::Pending(Arc::new(moved), Mapping::Linear(1), self.layout.clone())
     }
     /// Whether a read through `mapping`, the steps `outer`, can move under `call`, which computes an array of `shape`. The map must repeat no item and read none twice. A map that copies most blocks doesn't move under a call that reads two or more arrays, because each of them would then gather through it, where the call's result gathers once.
     fn moves_under(mapping: &Mapping, outer: &[Steps], call: &Call, shape: &[usize]) -> bool {
         let repeats = outer.iter().any(Steps::spreads);
         let rereads = Steps::rereads(outer, shape);
-        let gathers_each = mapping.copies(BLOCK) && call.args().filter(|a| !matches!(a, Read::Scalar(_))).count() > 1;
+        let gathers_each = mapping.copies(BLOCK) && call.operands.iter().filter(|a| !matches!(a, Read::Scalar(_))).count() > 1;
         !repeats && !rereads && !gathers_each
     }
     /// The items of `call` computed on whole arrays, as an unfused call computes them, where `root` finds no graph for it.
-    fn unfused(&self, call: Call) -> Storage { called(call.operation, call.left.map(Read::value), call.right.value(), &self.layout, self.len()).into_storage() }
+    fn unfused(&self, call: Call) -> Storage { called(call.operation, call.operands.map(Read::value), &self.layout, self.len()).into_storage() }
     /// Why a graph that gives this array's items can't compute `pending`, which it reads through `mapping`, as one of its calls, or `None` where it can: from its call, item by item, at the graph's width, with each comparison that the call reads computed in the graph too (`holds_comparisons`). `•explain` reports the reason for a pending array that the graph reads as an input.
     fn not_a_node(&self, pending: &Pending, mapping: &Mapping) -> Option<&'static str> {
-        if !matches!(mapping, Mapping::Linear(1)) { return Some("read through a map"); }
+        if !matches!(mapping, Mapping::Linear(1)) { return Some("read out of order"); }
         let fits = pending.fits(self);
         match *pending.work.lock().unwrap_or_else(PoisonError::into_inner) {
             Some(Work::Graph(_)) => Some("kept by a fold"),
@@ -567,12 +630,12 @@ impl Pending {
             _ => Some("a different kind or width"),
         }
     }
-    /// The glyph of the call that computes the items, or the glyphs of the graph that a fold left. A copy has none.
+    /// The glyphs of the call that computes the items, or of the graph that a fold left.
     fn glyphs(&self) -> String {
         match &*self.work.lock().unwrap_or_else(PoisonError::into_inner) {
-            Some(Work::Call(Call { operation: Operation::Primitive(p), .. })) => p.info().glyph.to_owned(),
+            Some(Work::Call(call)) => call.operation.glyph(),
             Some(Work::Graph(graph)) => graph.glyphs(None),
-            _ => String::new(),
+            None => String::new(),
         }
     }
 
@@ -588,14 +651,14 @@ impl Pending {
         let mut references = HashMap::<*const Pending, usize>::new();
         let mut next = 0;
         while next < calls.len() {
-            let reached: Vec<(*const Pending, usize)> = calls[next].args().filter_map(|a| match a {
+            let reached: Vec<(*const Pending, usize)> = calls[next].operands.iter().filter_map(|a| match a {
                 Read::Pending(pending, mapping, _) if self.not_a_node(pending, mapping).is_none() => Some((Arc::as_ptr(pending), Arc::strong_count(pending))), _ => None
             }).collect();
             for (id, holders) in reached {
                 let held = references.entry(id).or_insert(0);
                 *held += 1;
                 if *held == holders && !position.contains_key(&id) {
-                    let work = calls[next].args().find_map(|a| match a { Read::Pending(pending, ..) if Arc::as_ptr(pending) == id => Some(pending.take()), _ => None });
+                    let work = calls[next].operands.iter().find_map(|a| match a { Read::Pending(pending, ..) if Arc::as_ptr(pending) == id => Some(pending.take()), _ => None });
                     let Some(Work::Call(call)) = work else { unreachable!("a gathered pending array holds its call") };
                     position.insert(id, calls.len());
                     calls.push(self.resolve(call));
@@ -615,7 +678,7 @@ impl Pending {
         // The array behind each input: a pending array, or the shared data of an input array.
         let mut sources: Vec<*const ()> = Vec::new();
         for k in order {
-            let Call { operation, left, right } = calls[k].take().expect("each call is a node once");
+            let Call { operation, operands } = calls[k].take().expect("each call is a node once");
             let mut operand = |a: Read| {
                 if let Read::Scalar(c) = a { return Operand::Scalar(c); }
                 if let Read::Pending(pending, ..) = &a { if let Some(&j) = position.get(&Arc::as_ptr(pending)) { return Operand::Node(node[j]); } }
@@ -625,9 +688,7 @@ impl Pending {
                 let shared = (0..graph.inputs.len()).find(|&i| !array.is_null() && sources[i] == array && graph.inputs[i].1 == mapping);
                 Operand::Input(shared.unwrap_or_else(|| { sources.push(array); graph.inputs.push((value, mapping)); graph.inputs.len() - 1 }))
             };
-            let left = left.map(&mut operand);
-            let right = operand(right);
-            graph.nodes.push(Node { operation, left, right });
+            graph.nodes.push(Node { operation, operands: operands.map(&mut operand) });
         }
         graph.extras = extras.into_iter().map(|(k, pending)| (node[k], pending)).collect();
         for (input, mapping) in &graph.inputs {
@@ -649,7 +710,7 @@ fn order(calls: &[Call], position: &HashMap<*const Pending, usize>, roots: &[usi
         if done { order.push(k); continue; }
         if std::mem::replace(&mut seen[k], true) { continue; }
         stack.push((k, true));
-        stack.extend(calls[k].args().filter_map(|a| match a { Read::Pending(pending, ..) => position.get(&Arc::as_ptr(pending)).map(|&j| (j, false)), _ => None }));
+        stack.extend(calls[k].operands.iter().filter_map(|a| match a { Read::Pending(pending, ..) => position.get(&Arc::as_ptr(pending)).map(|&j| (j, false)), _ => None }));
     }
     order
 }
@@ -659,7 +720,7 @@ impl Drop for Pending {
     fn drop(&mut self) {
         fn unlink(work: Option<Work>, chain: &mut Vec<Arc<Pending>>) {
             let Some(Work::Call(call)) = work else { return };
-            chain.extend(call.into_args().filter_map(|a| match a { Read::Pending(pending, ..) => Some(pending), _ => None }));
+            chain.extend(call.operands.into_iter().filter_map(|a| match a { Read::Pending(pending, ..) => Some(pending), _ => None }));
         }
         let mut chain = Vec::new();
         unlink(self.work.get_mut().unwrap_or_else(PoisonError::into_inner).take(), &mut chain);
@@ -679,15 +740,11 @@ impl Graph {
     /// Whether the graph's last node is a comparison, which gives Booleans.
     fn compares(&self) -> bool { matches!(self.nodes.last().expect("a graph has a node").operation, Operation::Primitive(Primitive::Compare(_))) }
 
-    /// The glyphs of the graph's calls in the order they run, with the glyph of a fold that reads through it last. A copy reads items and adds no glyph.
-    fn glyphs(&self, fold: Option<(Primitive, FoldKind)>) -> String {
-        let mut glyphs: String = self.nodes.iter().filter_map(|n| match n.operation { Operation::Primitive(p) => Some(p.info().glyph), Operation::Copy => None }).collect();
-        if let Some((p, kind)) = fold { glyphs.push_str(p.info().glyph); glyphs.push(if kind.first { '⌿' } else { '/' }); }
-        glyphs
-    }
+    /// The glyphs of the graph's calls in the order they run, then those of the fold that reads through it, if any.
+    fn glyphs(&self, fold: Option<Operation>) -> String { self.nodes.iter().map(|n| n.operation).chain(fold).map(Operation::glyph).collect() }
 
     /// Records the graph's run for `•explain`: its glyphs, its item count and what `tally` counted while it ran.
-    fn explained(&self, fold: Option<(Primitive, FoldKind)>, tally: &Tally) { crate::explain::fused(|| self.glyphs(fold), self.len, tally) }
+    fn explained(&self, fold: Option<Operation>, tally: &Tally) { crate::explain::fused(|| self.glyphs(fold), self.len, tally) }
 
     /// The result of the graph's calls, after storing each extra node's results in its pending array. A graph of fewer than `MIN_NODES` calls runs each call on whole arrays.
     pub(crate) fn run(&self) -> Value {
@@ -717,7 +774,7 @@ impl Graph {
             let value = |operand: &Operand| match operand {
                 Operand::Input(i) => self.inputs[*i].clone(), Operand::Scalar(c) => (c.clone(), Mapping::Single), Operand::Node(j) => (results[*j].clone(), Mapping::Linear(1))
             };
-            let result = called(node.operation, node.left.as_ref().map(value), value(&node.right), &self.layout, self.len);
+            let result = called(node.operation, node.operands.as_ref().map(value), &self.layout, self.len);
             results.push(result);
         }
         results

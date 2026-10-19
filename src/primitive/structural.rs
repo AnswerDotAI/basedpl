@@ -129,17 +129,13 @@ pub(super) fn remap(right: &Value, plan: Plan, span: &Context<'_>) -> Result<Val
     copied(right, Layout::rearranged(plan.layout, right), &plan.steps).error_at(span, "invalid structural result")
 }
 
-/// Items of `right` laid out by `layout`, read through one `Steps` per axis as `Gather::walk` reads them. Tables that read every item of `right` in order give `right` under `layout`, with no items copied. A record, or a dual whose tangent is a record, copies its record as one `Op::Copy` of these tables (`linear::copy`).
+/// Items of `right` laid out by `layout`, read through one `Steps` per axis as `Gather::walk` reads them. Tables that read every item of `right` in order give `right` under `layout`, with no items copied. A carried array copies each part of a dual alike, and a record as one `Op::Copy` of these tables (`Carrier::copied`).
 pub(crate) fn copied(right: &Value, layout: Layout, tables: &[Steps]) -> Result<Value, ErrorKind> {
     let len = generated_len(layout.shape())?;
     if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }
     if right.len() == len && Steps::in_order(tables) { return right.relaid(layout); }
-    if let Some(t) = right.linear() { return Ok(crate::linear::copy(t, layout, tables)); }
+    if let Some(carrier) = right.carrier() { return carrier.copied(layout, tables); }
     if let Some(copy) = crate::fusion::copy(right, &layout, tables) { return Ok(copy); }
-    if let Some((tag, primal, tangent)) = right.dual() {
-        if let Some(t) = tangent.linear() { return Ok(crate::derivative::dual(tag, copied(&primal, layout.clone(), tables)?, crate::linear::copy(t, layout, tables))); }
-        if let (Some(p), Some(t)) = (crate::fusion::copy(&primal, &layout, tables), crate::fusion::copy(&tangent, &layout, tables)) { return Ok(crate::derivative::dual(tag, p, t)); }
-    }
     walked(right, layout, 0, tables)
 }
 
@@ -254,8 +250,10 @@ fn promoted(a: &Value, other: &Value, rank: usize, axis: usize, span: &Context<'
         let mut shape: crate::Shape = if other.is_unit() { [1].into() } else { other.shape().into() };
         shape[axis] = 1;
         let len = generated_len(&shape).at(span)?;
-        // `collect` goes through `Gather`, so a number dual becomes an array dual rather than an item of a mixed array (`derivative`).
-        return Layout::from(shape).collect(vec![a.at(0); len], || a.prototype()).error_at(span, "invalid unit extension");
+        // `Gather` makes a dual atom an array dual, not an item of a mixed array (`derivative`).
+        let mut data = Gather::items(len);
+        data.fill(&a.at(0), len);
+        return data.finish(Layout::from(shape), || a.prototype()).error_at(span, "invalid unit extension");
     }
     if a.shape().len() + 1 != rank { return Err(span.error(Kind::Rank, "catenate ranks differ by more than one")); }
     let shape: crate::Shape = a.shape()[..axis].iter().chain(&[1]).chain(&a.shape()[axis..]).copied().collect();
@@ -297,12 +295,8 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let size = layout.shape().iter().product();
     let traversal = Lanes::new(layout.shape(), axis).at(span)?;
     let mut data = Gather::new(&[&left, &right], size);
-    for i in 0..if size == 0 { 0 } else { traversal.outer } {
-        for a in [&left, &right] {
-            let len = a.shape()[axis] * traversal.inner;
-            data.extend(a, i * len..(i + 1) * len);
-        }
-    }
+    let lens = [&left, &right].map(|a| a.shape()[axis] * traversal.inner);
+    data.lanes(&[&left, &right], &lens, if size == 0 { 0 } else { traversal.outer });
     data.finish(Layout::paired(layout, left.layout(), right.layout()), || left.prototype()).error_at(span, "invalid catenate result")
 }
 
@@ -325,7 +319,7 @@ fn transpose_groups(spec: &Value, right: &Value, inverse: bool, span: &Context<'
         let (selectors, sizes, factor_names) = if paired {
             let sizes = item.elements().map(|pair| {
                 let size = pair.at(1);
-                let n = numeric(&size, span)?;
+                let n = size.observed_number().error_at(span, "split sizes must be nonnegative integers or ∞")?;
                 if n.as_float() == Some(f64::INFINITY) { Ok(None) }
                 else { n.nonnegative_integer().map(Some).error_at(span, "split sizes must be nonnegative integers or ∞") }
             }).collect::<Result<Vec<_>, _>>()?;
@@ -470,7 +464,7 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
     }
     let cell_layout = |range: std::ops::Range<usize>| CoreLayout::select(right.layout(), axis, range.map(Some));
     let prototype = cell_layout(0..0).map_err(ErrorKind::from).and_then(|layout| Layout::rearranged(layout, &right).collect(vec![], right.prototype())).error_at(span, "invalid partition prototype")?;
-    let vector = right.shape().len() == 1 && !right.has_keys() && right.axis_names().is_empty();
+    let vector = right.shape().len() == 1 && right.layout().plain();
     let part = |range: std::ops::Range<usize>| -> Result<Value, Error> {
         if vector { return right.part(range.clone(), vec![range.len()]).error_at(span, "invalid partition"); }
         let layout = cell_layout(range.clone()).at(span)?;

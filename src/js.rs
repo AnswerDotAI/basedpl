@@ -48,6 +48,7 @@ pub fn export(value: &Value) -> Result<Js, ErrorKind> {
         Value::Number(n) => number(n),
         Value::Character(c) => Ok(Js::Text(c.to_string())),
         Value::Function(_) | Value::Operator(_) => Err(Kind::Domain.into()),
+        Value::Carried(carrier) => export(carrier.template()),
         Value::Array(_) => {
             if value.keys(0).is_none() { if let Some(text) = keyed::name(value) { return Ok(Js::Text(text.to_string())); } }
             if value.shape().len() == 1 && value.keys(0).is_some_and(|k| k.complete()) {

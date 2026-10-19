@@ -1,6 +1,6 @@
 use rustymath::{buffer::FloatWidth, error::Kind};
 use std::borrow::Cow;
-use crate::{keyed, symbols::Notation, ErrorAt, Number, Value};
+use crate::{keyed, symbols::Notation, transform::Plain, ErrorAt, Number, Value};
 use unicode_width::UnicodeWidthStr;
 
 /// A column of numbers aligned on their decimal points: its widest text before the point, and its widest from the point on.
@@ -182,9 +182,9 @@ impl Settings {
     }
 }
 
-/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `threads` is the number of threads that the session's large calls split across, from then on. 0 gives the default. 1 runs them on the evaluating thread alone. Until the session sets it, `threads` reports the evaluating thread's own setting. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws.
+/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `threads` is the number of threads that the session's large calls split across, from then on. 0 gives the default. 1 runs them on the evaluating thread alone. Until the session sets it, `threads` reports the evaluating thread's own setting. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::tried`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. A session starts with `batch` on.
 pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::Span) -> Result<(Value, bool), crate::Error> {
-    let (mut display, mut numeric, mut threads, mut hanzi_aliases) = (session.display, session.numeric, session.threads, session.hanzi_aliases);
+    let (mut display, mut numeric, mut threads, mut hanzi_aliases, mut batch) = (session.display, session.numeric, session.threads, session.hanzi_aliases, session.batch);
     let mut seed = None;
     let pairs = keyed::pairs(right).error_at(span, "•prefs takes a record of settings")?;
     let shy = !pairs.is_empty();
@@ -203,13 +203,14 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
                 let n = value.as_number().and_then(|n| n.nonnegative_integer::<u64>().ok());
                 seed = Some(n.ok_or(Kind::Domain).error_at(span, "seed must be a nonnegative integer")?);
             }
+            "batch" => batch = Some(value.boolean().error_at(span, "batch must be Boolean")?),
             key => {
                 if !display.set(key, &value).error_at(span, "invalid display setting")? { return Err(span.domain_error("unknown setting")); }
             }
         }
     }
-    (session.display, session.numeric, session.threads, session.hanzi_aliases) = (display, numeric, threads, hanzi_aliases);
-    if let Some(seed) = seed { session.generator = crate::distribution::Stream::seeded(seed, session.map_ids); }
+    (session.display, session.numeric, session.threads, session.hanzi_aliases, session.batch) = (display, numeric, threads, hanzi_aliases, batch);
+    if let Some(seed) = seed { session.generator = crate::distribution::Stream::seeded(seed, session.levels.last()); }
     numeric.set_current();
     if let Some(n) = threads { rustymath::parallel::set_threads(n); }
     let entries = display.entries(numeric.width).into_iter().chain(numeric.entries());
@@ -218,6 +219,8 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
     values.push(Value::integer(rustymath::parallel::thread_setting() as i64));
     keys.push("hanzi_aliases".into());
     values.push(Value::Number(Number::from_bool(hanzi_aliases)));
+    keys.push("batch".into());
+    values.push(Value::Number(Number::from_bool(session.batching())));
     Ok((keyed::record(keys, values).error_at(span, "invalid settings record")?, shy))
 }
 
@@ -271,7 +274,7 @@ impl Cell {
     }
     /// A cell holding `block`, the text of `item`.
     fn item(block: Block, item: &Value) -> Self {
-        let number = matches!(item, Value::Number(_)).then(|| Decimals::of(block.lines[0].chars()));
+        let number = matches!(item.displayed(), Plain::Number(_)).then(|| Decimals::of(block.lines[0].chars()));
         Self { block, number, nested: matches!(item, Value::Array(_)) }
     }
     pub fn height(&self) -> usize { self.block.lines.len() }
@@ -329,7 +332,7 @@ pub(crate) fn grid(columns: usize, rows: Vec<(usize, Vec<Cell>)>, style: Style) 
 /// The bottom-edge marker for an array's storage. Floats of a width that `el` doesn't leave plain show that width's marker.
 fn marker(a: &Value, el: Elide) -> char {
     use rustymath::buffer::DType;
-    match a.held().dtype() {
+    match a.template().dtype() {
         Some(DType::Boolean) => '$', Some(DType::Integer(_)) => 'ₓ', Some(DType::Float(w)) => el.width_marker(w).unwrap_or('~'),
         Some(DType::Complex(_)) => 'j', Some(DType::Character) => '─', None => '+'
     }
@@ -350,13 +353,13 @@ fn array(a: &Value, el: Elide) -> Block {
                 Cell::spot(spot, |i| {
                     let item = if a.is_empty() { a.prototype() } else { a.at(i) };
                     chars &= matches!(item, Value::Character(_));
-                    let block = match &item {
+                    let block = match item.displayed() {
                         // An `ₓ` box already says its numbers are exact, and a width's marker gives their width.
-                        Value::Number(n) if Some(kind) == a.mark(el) => Block::new(el.unmarked(n)),
-                        Value::Number(n) => Block::new(el.number(n)),
-                        Value::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
-                        Value::Array(_) => array(&item, el),
-                        Value::Function(_) | Value::Operator(_) => Block::new(plain(&item, el)),
+                        Plain::Number(n) if Some(kind) == a.mark(el) => Block::new(el.unmarked(n)),
+                        Plain::Number(n) => Block::new(el.number(n)),
+                        Plain::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
+                        Plain::Array(item) => array(item, el),
+                        Plain::Function(_) | Plain::Operator(_) => Block::new(plain(&item, el)),
                     };
                     let block = match a.shown_key(0, i, el) { Some(key) => block.labelled(&key), None => block };
                     Cell::item(block, &item)
@@ -380,9 +383,9 @@ fn boxes(a: &Value, el: Elide) -> bool { a.shape().len() != 1 || !a.is_simple() 
 
 /// Display text for `a` without frames: a vector or unit as source text, a string as its characters, and higher ranks as rows.
 pub(crate) fn plain(a: &Value, el: Elide) -> String {
-    match a {
-        Value::Number(n) => return el.number(n), Value::Function(f) => return format!("⟨{}⟩", f.text(el.notation, &mut 1000)),
-        Value::Operator(op) => return op.text(el.notation), Value::Character(_) => return a.literal(), Value::Array(_) => ()
+    match a.displayed() {
+        Plain::Number(n) => return el.number(n), Plain::Function(f) => return format!("⟨{}⟩", f.text(el.notation, &mut 1000)),
+        Plain::Operator(op) => return op.text(el.notation), Plain::Character(_) => return a.literal(), Plain::Array(_) => ()
     }
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
     let edges = el.edges(a.shape());
@@ -399,9 +402,9 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
                 Value::Character(c) => Cell::text(c.into()),
                 item => {
                     spaced = true;
-                    match item {
-                        Value::Number(n) => Cell::number(el.number(&n)), item @ (Value::Function(_) | Value::Operator(_)) => Cell::text(plain(&item, el)),
-                        item => Cell::text(item.item(el))
+                    match item.displayed() {
+                        Plain::Number(n) => Cell::number(el.number(n)), Plain::Function(_) | Plain::Operator(_) => Cell::text(plain(&item, el)),
+                        _ => Cell::text(item.item(el))
                     }
                 }
             })

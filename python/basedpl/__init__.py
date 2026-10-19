@@ -6,7 +6,7 @@ Modules:
 - `basedpl.editors`: Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page kinds, keys and ranks.
 - `basedpl.keyboards`: Generate regional BPL keyboards from macOS layouts."""
 
-import math, operator, sys
+import array, math, operator, sys
 from dataclasses import dataclass
 from fractions import Fraction
 from ._core import __version__, symbols, _Array, _Function, _Operator, _Session
@@ -81,12 +81,13 @@ def _element(value, seen):
     if isinstance(value, (Function, Operator)): return value._inner
     if type(value) in (int, float, complex): return value
     if isinstance(value, str) and len(value) == 1: return value
-    if isinstance(value, (Array, str, list, tuple, dict)) or np is not None and isinstance(value, np.ndarray): return _array(value, seen)
+    if isinstance(value, (Array, str, list, tuple, range, dict)) or np is not None and isinstance(value, np.ndarray): return _array(value, seen)
     if (read := _Array.numeric(value)) is not None: return read
+    if hasattr(value, '__array__'): return _array(value, seen)
     raise TypeError(f'cannot convert {type(value).__name__} to BPL')
 
 def _rectangular(value, seen):
-    if not isinstance(value, (list, tuple)): return (), [value]
+    if not isinstance(value, (list, tuple, range)): return (), [value]
     if not value: return (0,), []
     if id(value) in seen: raise ValueError('cyclic Python container')
     seen.add(id(value))
@@ -105,9 +106,9 @@ def _array(value, seen=None):
     if numpy:
         kind, size = value.dtype.kind, value.dtype.itemsize
         if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16: raise TypeError('unsupported NumPy dtype')
-        if kind == 'u' and size == 8 and value.size and value.max() >= 1<<63: raise ValueError('uint64 values above the int64 range; convert with .astype(object) for exact integers')
-        # Signed bytes cross as `int16`, and wider unsigned integers as `int64`, which holds them after the check above. Every other number crosses
-        # at its own width, in native byte order. Strings and objects cross item by item.
+        # Signed bytes cross as `int16`, and wider unsigned integers as `int64`. A `uint64` array with a value past the `int64` range crosses item by item,
+        # as exact integers. Every other number crosses at its own width, in native byte order. Strings and objects cross item by item.
+        if kind == 'u' and size == 8 and value.size and value.max() >= 1<<63: value, kind = value.astype(object), 'O'
         if kind == 'i' and size == 1 or kind == 'u' and size > 1: value = value.astype('i2' if size == 1 else 'i8')
         elif kind in 'biufc' and not value.dtype.isnative: value = value.astype(value.dtype.newbyteorder('='))
     prototype = 0.
@@ -120,6 +121,9 @@ def _array(value, seen=None):
     if isinstance(value, str): return bpl._session.array(dict(shape=[len(value)], data=list(value), prototype=' '))
     # Any object with a buffer, such as a NumPy or rustymath array or a `memoryview`, is read through it.
     if not (numpy and kind in 'UO') and (read := _Array.numeric(value)) is not None: return read
+    if not numpy and hasattr(value, '__array__'):
+        import numpy as np
+        return _array(np.asarray(value), seen)
     if numpy:
         shape, data = value.shape, value.ravel().tolist()
         if kind == 'U': prototype = ' '
@@ -129,6 +133,16 @@ def _array(value, seen=None):
     seen.add(id(value))
     try: return bpl._session.array(dict(shape=list(shape), data=[_element(o, seen) for o in data], prototype=prototype))
     finally: seen.remove(id(value))
+
+def _positions(s, n, keys):
+    "The positions that slice `s` picks along an axis of `n` items with `keys`. A number bound is a position, as in a Python slice. A key bound is its key's position. A key stop includes its key."
+    def position(key):
+        if keys is None or key not in keys: raise KeyError(key)
+        return keys.index(key)
+    step = 1 if s.step is None else operator.index(s.step)
+    start, stop = (position(b) if isinstance(b, str) else b for b in (s.start, s.stop))
+    if isinstance(s.stop, str): stop = stop + 1 if step > 0 else stop - 1 if stop else None
+    return range(*slice(start, stop, step).indices(n))
 
 class _Operators:
     __hash__ = None
@@ -160,6 +174,7 @@ class _Operators:
     def __neg__(self): return _unary('-', self)
     def __pos__(self): return _unary('+', self)
     def __invert__(self): return _unary('~', self)
+    def __abs__(self): return _unary('|', self)
 
 def _text(raw):
     "The string in an unkeyed character vector, else `None`"
@@ -249,12 +264,23 @@ class Array(_Operators):
     def __iter__(self): return (Array(a) for a in self._inner.cells())
     def __contains__(self, item): raise TypeError('use member for BPL membership')
     def __getitem__(self, index):
+        "Select along the leading axes. An integer or a key picks one position. A Boolean vector filters its matching axis; other lists pick positions. A slice picks a range as Python's slices do, except that a slice of keys includes its end key. `...` stands for full slices of the axes that the index leaves out."
         parts = index if isinstance(index, tuple) else (index,)
-        def part(o):
-            if not isinstance(o, slice): return _array(o)
-            if o.start is not None or o.stop is not None or o.step is not None: raise TypeError('only a full : slice is supported; use BPL index arrays')
-            return None
-        return _result(self._inner.select([part(o) for o in parts])).value
+        ellipses = [i for i,o in enumerate(parts) if o is Ellipsis]
+        if len(ellipses) > 1: raise IndexError('an index can hold only one ...')
+        if ellipses: parts = parts[:ellipses[0]] + (slice(None),)*max(len(self.shape)-len(parts)+1, 0) + parts[ellipses[0]+1:]
+        def part(axis, o):
+            if isinstance(o, slice):
+                if o.start is None and o.stop is None and o.step is None: return None
+                if axis >= len(self.shape): raise IndexError(f'too many indices for an array of rank {len(self.shape)}')
+                return _array(array.array('q', _positions(o, self.shape[axis], self._inner.axis_keys[axis])))
+            o = _array(o)
+            if o.exports and (mask := memoryview(o)).format == '?':
+                if axis >= len(self.shape) or mask.shape != (self.shape[axis],):
+                    raise IndexError('a Boolean selector must be a vector matching its axis')
+                return _array(array.array('q', (i for i,b in enumerate(mask) if b)))
+            return o
+        return _result(self._inner.select([part(axis, o) for axis,o in enumerate(parts)])).value
     def __matmul__(self, other):
         if isinstance(other, Function): raise TypeError('inner product requires two arrays or two functions')
         return _glyph('+').inner_product(_glyph('×'))(self, other)

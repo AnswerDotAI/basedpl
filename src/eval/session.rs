@@ -10,6 +10,8 @@ impl Session {
     pub fn with_args(self, args: Vec<String>) -> Self { Self { args, ..self } }
     /// This session at `span`, for a call that takes a `Context`.
     pub(crate) fn at<'a>(&'a mut self, span: &'a Span) -> Context<'a> { Context { span, session: self } }
+    /// Whether the `batch` pref is on. While it is, maps first try one call of their operand on batches of all their cells (`batch::tried`). A session starts with it on.
+    pub(crate) fn batching(&self) -> bool { self.batch.unwrap_or(true) }
     /// A session for a person at a terminal, with boxed display elided to the terminal's width.
     pub fn interactive() -> Self {
         let mut session = Self::default();
@@ -81,32 +83,25 @@ impl Session {
     pub(super) fn remove_name(&mut self, owner: Option<usize>, name: &str) -> Option<Binding> {
         match owner { Some(i) => self.frames[i].remove(Key::of(name)), None => self.table_mut(self.module()).remove(name) }
     }
-    /// Whether a level is running. Code outside every level pays only for this test.
-    pub(crate) fn transforming(&self) -> bool { !self.levels.is_empty() }
-    /// Starts a `∂` call: a new level with a fresh tag, larger than every running level's. Returns the tag.
-    pub(crate) fn begin_derivative(&mut self) -> u32 {
-        self.tags += 1;
-        self.levels.push(Level { tag: self.tags, frames: self.frames.len(), writes: Vec::new() });
-        self.tags
-    }
-    /// Ends the innermost `∂` call, taking its tag off each binding outside its frames that it wrote.
-    pub(crate) fn end_derivative(&mut self) {
-        let level = self.levels.pop().expect("a running ∂ call");
+    /// Whether a level whose kind wraps values is running (`transform::Levels::transforming`).
+    pub(crate) fn transforming(&self) -> bool { self.levels.transforming() }
+    /// Starts a level of `kind` and returns its id, which is larger than every running level's. A `∂` call's id is its tag, and a record level's id is the level its records carry.
+    pub(crate) fn begin(&mut self, kind: crate::transform::Kind) -> u64 { self.levels.begin(kind, self.frames.len()) }
+    /// Ends the innermost level, applying its kind's exit rule to each binding outside its frames that it wrote (`transform::Kind::exit`).
+    pub(crate) fn end(&mut self) {
+        let level = self.levels.end();
+        let Some(exit) = level.kind.exit() else { return };
         for (owner, module, name) in level.writes {
             let value = match owner { Some(i) => self.frames.get(i).and_then(|f| f.get(Key::of(&name))), None => self.table(module).get(&name) };
             let Some(Binding::Value(v)) = value else { continue };
-            let v = Binding::Value(crate::derivative::strip(v, level.tag));
+            let v = Binding::Value(exit(v, level.id));
             match owner { Some(_) => self.insert_name(owner, &name, v), None => { self.table_mut(module).insert(name, v); } }
         }
     }
-    /// Records, for each running `∂` call, a write to the binding of `name` in `owner`, or in the running module's names when `owner` is `None`, when that binding lies outside the call's frames.
-    pub(super) fn record_write(&mut self, owner: Option<usize>, name: &str) {
+    /// Records a write to the binding of `name` in `owner`, or in the running module's names when `owner` is `None`, for each running level whose exit acts on it, or stops a batched map's run before it (`transform::Levels::record_write`).
+    pub(super) fn record_write(&mut self, owner: Option<usize>, name: &str) -> Result<(), crate::transform::Stop> {
         let module = self.module();
-        for level in &mut self.levels {
-            if owner.is_none_or(|o| o < level.frames) && !level.writes.iter().any(|(w, m, n)| *w == owner && *m == module && n == name) {
-                level.writes.push((owner, module, name.to_owned()));
-            }
-        }
+        self.levels.record_write(owner, module, name)
     }
     pub fn erase(&mut self, name: &str) -> bool {
         let Some(NodeKind::Name(name)) = crate::inspection::item(name, self.hanzi_aliases) else { return false; };
@@ -389,9 +384,11 @@ impl Session {
         }
         failed(ErrorKind::Syntax, "unknown user command".into())
     }
-    pub(super) fn bind(&mut self, nodes: &[Node]) -> Result<Bound, Error> {
+    pub(super) fn bind(&mut self, nodes: &[Node]) -> Result<Bound, Error> { self.bound(nodes, None) }
+    /// `nodes` evaluated as one statement, one level deeper (`nested`), through `slot` as `statement_step` uses it.
+    pub(super) fn bound(&mut self, nodes: &[Node], slot: Option<&std::sync::OnceLock<Option<super::Recording>>>) -> Result<Bound, Error> {
         self.nested(nodes, |session| {
-            let Step::Done(result) = Binder::evaluate(nodes, session, false)? else { unreachable!() };
+            let Step::Done(result) = session.statement_step(slot, nodes, false)? else { unreachable!() };
             Ok(result)
         })
     }
@@ -437,7 +434,7 @@ impl Session {
                     self.execution.emit(Output { kind: crate::OutputKind::Display, data });
                     return Ok(());
                 }
-                Err(e) if matches!(e.kind, ErrorKind::Interrupt | ErrorKind::Timeout) => return Err(e),
+                Err(e) if e.kind.is_control() => return Err(e),
                 Err(_) => (),
             }
         }
@@ -457,7 +454,9 @@ impl Session {
         match left { Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)), None => self.execute_source(source, span) }
     }
 
+    /// The text that `right` holds, as `⍎` and `•load` read it: an observing read, which stops a batched run where `right` is a batch of each cell's text (`Value::observed`).
     fn source_text(right: &Value, span: &Span) -> Result<String, Error> {
+        right.observed().at(span)?;
         if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "expected a unit or vector of characters")); }
         if !matches!(right.prototype(), Value::Character(_)) { return Err(span.domain_error("expected characters")); }
         right.elements().map(|e| match e { Value::Character(c) => Ok(c), _ => Err(span.domain_error("expected characters")) }).collect()
@@ -559,10 +558,13 @@ impl Session {
                     DefinitionKind::MonadicOperator | DefinitionKind::DyadicOperator => Binding::Operator(OperatorNode::Defined(closure)),
                 }
             }
-            NodeKind::Output => match self.execution.line(&node.span)? {
-                Some(line) => Binding::Value(crate::keyed::text(&line)),
-                None => Binding::Value(crate::syntax::zilde(crate::Number::float(0.0, self.numeric.width))),
-            },
+            NodeKind::Output => {
+                self.levels.effect(crate::transform::Effect::Acts).at(&node.span)?;
+                match self.execution.line(&node.span)? {
+                    Some(line) => Binding::Value(crate::keyed::text(&line)),
+                    None => Binding::Value(crate::syntax::zilde(crate::Number::float(0.0, self.numeric.width))),
+                }
+            }
             _ => return Err(node.span.error(ErrorKind::Syntax, "unexpected assignment symbol")),
         }))
     }
@@ -583,7 +585,7 @@ impl Session {
     // Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
     #[inline(never)]
     pub(super) fn call_defined(&mut self, function: &Function, left: Option<&Value>, right: &Value) -> Result<Bound, Error> {
-        let return_span = match function.node() { FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => c.definition.span.clone(), _ => unreachable!() };
+        let return_span = function.definition().expect("call_defined calls a dfn").span.clone();
         let caller = self.current;
         let base = self.frames.len();
         let (mut function, mut left, mut right) = (function.clone(), left.cloned(), right.clone());
@@ -665,14 +667,15 @@ impl Session {
         if matches!(bound.value, Binding::Absent) { Ok(None) } else { bound.array(&nodes[0].span).map(Some) }
     }
 
-    fn return_expression(&mut self, mut nodes: &[Node], tail: bool) -> Result<Step, Error> {
+    /// A body's last statement, or an error handler's expression, as the dfn's result. `slot` holds a statement's recording of its binder steps (`tree.rs`).
+    fn return_expression(&mut self, mut nodes: &[Node], tail: bool, slot: Option<&std::sync::OnceLock<Option<super::Recording>>>) -> Result<Step, Error> {
         if nodes.is_empty() { return Ok(Step::Done(Bound::new(Binding::NoResult))); }
         let mut unshy = false;
         while let [Node { kind: NodeKind::Group(inner), .. }] = nodes {
             nodes = inner;
             unshy = true;
         }
-        let step = if nodes.iter().any(|n| matches!(n.kind, NodeKind::Assign)) { Step::Done(self.bind(nodes)?) } else { Binder::evaluate(nodes, self, tail)? };
+        let step = if nodes.iter().any(|n| matches!(n.kind, NodeKind::Assign)) { Step::Done(self.bind(nodes)?) } else { self.statement_step(slot, nodes, tail)? };
         match step {
             Step::Done(mut bound) => { if unshy { bound.shy = false; } bound.result(&nodes[0].span).map(Step::Done) }
             Step::Tail(mut call) => { call.unshy = unshy; Ok(Step::Tail(call)) }
@@ -703,11 +706,11 @@ impl Session {
                         }
                         StatementKind::Predicate => {
                             let span = crate::syntax::cover(nodes);
-                            if !self.array_result(nodes)?.boolean().error_at(&span, "a predicate requires a Boolean singleton")? { continue 'bodies; }
+                            if !self.bound(nodes, Some(&statement.recording))?.array(&nodes[0].span)?.boolean().error_at(&span, "a predicate requires a Boolean singleton")? { continue 'bodies; }
                         }
                         StatementKind::Expression => {
-                            if position + 1 == body.len() { return self.return_expression(nodes, handlers.is_empty()); }
-                            self.bind(nodes)?;
+                            if position + 1 == body.len() { return self.return_expression(nodes, handlers.is_empty(), Some(&statement.recording)); }
+                            self.bound(nodes, Some(&statement.recording))?;
                         }
                     }
                 }
@@ -719,27 +722,28 @@ impl Session {
         while let Err(error) = &result {
             let Some((handler, catch)) = handlers.pop() else { break };
             if !catch.catches(&error.kind) { continue; }
+            if let Err(stop) = self.levels.effect(crate::transform::Effect::Catches) { let span = error.span.clone(); result = Err(stop).at(&span); break; }
             if matches!(error.kind, ErrorKind::Interrupt) { self.execution.clear_interrupt(); }
             self.frames[frame].insert(Key::Named("$e"), Binding::Value(caught(error)));
-            result = self.return_expression(handler, false);
+            result = self.return_expression(handler, false, None);
         }
         definition.bound(self.frames[frame].names.len());
         result
     }
 }
 
-/// The errors a guard catches: the kinds it names, or with `∞` every kind but an interrupt, a timeout or an unsupported feature. Unsupported features must not turn into plausible results.
+/// The errors a guard catches: the kinds it names, or with `∞` every kind but an interrupt, a timeout or an unsupported feature. Unsupported features must not turn into plausible results. No guard catches a batched run's stop, even one that names its kind, because only the level that owns the run catches it. Inside a batched run, a guard that would catch an error stops the run instead (`transform::Levels::effect` with `Effect::Catches`). The run over cells then catches the error in the cells that raise it.
 pub(super) enum Catch { All, Kinds(Vec<ErrorKind>) }
 impl Catch {
     fn new(value: &Value, span: &Span) -> Result<Self, Error> {
-        if value.as_number().is_some_and(|n| n.is_infinite() && n.as_float().is_some_and(|x| x > 0.)) { return Ok(Self::All); }
+        if value.observed().at(span)?.infinity() == Some(false) { return Ok(Self::All); }
         let invalid = || span.domain_error("a guard names error kinds, as in \"DOMAIN\"::, or catches every kind with ∞::");
         let (_, names) = crate::keyed::text_items(value).ok_or_else(invalid)?;
         Ok(Self::Kinds(names.iter().map(|n| ErrorKind::named(n)).collect::<Option<_>>().ok_or_else(invalid)?))
     }
     pub(super) fn catches(&self, kind: &ErrorKind) -> bool {
         match self {
-            Self::All => !matches!(kind, ErrorKind::Interrupt | ErrorKind::Timeout | ErrorKind::Unsupported), Self::Kinds(kinds) => kinds.iter().any(|k| k.name() == kind.name())
+            Self::All => !kind.is_control() && !matches!(kind, ErrorKind::Unsupported), Self::Kinds(kinds) => !matches!(kind, ErrorKind::Stop { .. }) && kinds.iter().any(|k| k.name() == kind.name())
         }
     }
 }

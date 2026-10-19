@@ -30,6 +30,8 @@ A function right operand computes the specification from the argument: `f⌺g Y`
 +/⊢ ⌺{⌈√≢⍵} ⍳9   ⍝ 1 3 6 9 12 15 18 21 15
 ```
 
+Where it can, Stencil calls `f` once on all the windows together, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as from one call for each window.
+
 ## Errors
 
 - `RANK`: specification not a unit, vector or two-row matrix, or more axes than `Y`

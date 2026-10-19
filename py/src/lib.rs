@@ -57,6 +57,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyAny>> {
             a @ Value::Array(_) => array(py, a)?,
             Value::Function(f) => Py::new(py, PyFunction { inner: f.clone() })?.into_any(),
             Value::Operator(op) => Py::new(py, PyOperator { inner: op.clone() })?.into_any(),
+            Value::Carried(_) => return Err(PyValueError::new_err("a value that a running ∂ carries has no Python value")),
         })
     }
     if !a.is_atom() && a.view().is_some() { return Ok(Py::new(py, PyArray::from(a.clone()))?.into_any()); }
