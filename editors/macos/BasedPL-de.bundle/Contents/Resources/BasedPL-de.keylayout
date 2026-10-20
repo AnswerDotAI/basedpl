@@ -1613,6 +1613,7 @@
   </action>
   <action id="k11-m0">
    <when state="none" output="b"/>
+   <when state="superscript" output="ᵇ"/>
    <when state="circle" output="⍎"/>
   </action>
   <action id="k13-m0">

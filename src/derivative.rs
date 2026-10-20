@@ -461,6 +461,8 @@ fn linearize(f: &Function, left: Option<&Value>, right: &Value, tag: u64, record
     let record = match tangent {
         Some(t) => match crate::linear::record_of(&t) {
             Some(_) => crate::linear::record_of(&expand(&t, primal.layout())).cloned(),
+            // A tangent with no record anywhere in it came only from constants, as when `c∩⍵` draws its items from `c`. The result then doesn't depend on the argument.
+            None if !t.carried() => None,
             None => return Err(span.error(ErrorKind::Unsupported, "∂ can't differentiate this result in reverse mode")),
         },
         None => None,
@@ -507,9 +509,35 @@ pub(crate) fn call(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, 
         Form::Own if matches!(p, Primitive::Polynomial) => polynomial(left.expect("⌻ takes coefficients on the left"), right, tag, cx),
         // Monadic `#` runs its own code, on the dual's items.
         Form::Own if matches!(p, Primitive::Replicate) => return None,
+        // `x↦y` counts from `x`, so every item moves with `x` (`range`). Monadic `↦` is constant.
+        Form::Own if matches!(p, Primitive::Range) => range(left.expect("only dyadic ↦ has its own rule"), right, tag, cx),
+        // Monadic `∨` and `∧` give each real number's two parts along a new last axis (`real_parts`).
+        Form::Own if matches!(p, Primitive::Math(Math::Gcd | Math::Lcm)) => real_parts(p, right, tag, cx),
         // `transform::route` sends calls of `⌹` and `⊥` with a dual argument to `operated`. Only Rust code that calls them directly reaches this arm with them.
         Form::Own | Form::Unsupported => Err(cx.span.error(ErrorKind::Unsupported, format!("∂ can't differentiate {}", p.info().glyph))),
     })
+}
+
+/// `x↦y` under `∂`. Each item is `x` plus a whole number, so the result's tangent is `x`'s, which agrees with every item. `y` gives only the count, whose plain value it reads, as counts do.
+fn range(left: &Value, right: &Value, tag: u64, cx: &Context<'_>) -> Result<Value, Error> {
+    let (x, tx) = split_raw(left, tag);
+    let r = Primitive::Range.call(Some(&x), &strip(right, tag), cx)?;
+    Ok(match tx { Some(t) => dual(tag, r, t), None => r })
+}
+
+/// Monadic `∨` or `∧` of real numbers under `∂`. Each gives a number's two parts along a new last axis: `∨` its real and imaginary parts, and `∧` its magnitude and angle. For a real number the second part is constant, and the first is the number, or for `∧` its magnitude, whose derivative is the number's sign. So the tangent is `y`'s tangent, times its sign for `∧`, beside a 0.
+fn real_parts(p: Primitive, right: &Value, tag: u64, cx: &Context<'_>) -> Result<Value, Error> {
+    let (y, ty) = split(right, tag);
+    if complex(&y) { return Err(cx.span.error(ErrorKind::Unsupported, format!("∂ can't differentiate {} on complex numbers", p.info().glyph))); }
+    let r = p.call(None, &y, cx)?;
+    let Some(t) = ty else { return Ok(r) };
+    let times = Primitive::Arithmetic(Arithmetic::Times);
+    let t = if matches!(p, Primitive::Math(Math::Lcm)) { times.call(Some(&times.call(None, &y, cx)?), &t, cx)? } else { t };
+    // `t` gains a last axis of length 1, which agreement extends over `1 0` laid along the new last axis.
+    let k = y.shape().len();
+    let first = Value::integers([vec![1; k], vec![2]].concat(), vec![1, 0]).error_at(cx.span, "invalid shape")?;
+    let t = if k == 0 { t } else { t.relaid(t.layout().concat(&crate::array::Layout::from(vec![1]))).error_at(cx.span, "invalid shape")? };
+    Ok(dual(tag, r, times.call(Some(&t), &first, cx)?))
 }
 
 /// A form that orders items, at level `tag`: the primal's and the tangent's items at the positions that the form takes (`Primitive::taken`). Indexing by those positions gives what the form itself gives, without running it again. `None` where the form takes no such positions, which leaves it its own code.
@@ -892,7 +920,7 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
         P::Math(Ceiling) => [lazy(nx, &|| compare(GreaterEqual, x, y))?, lazy(ny, &|| compare(Less, x, y))?],
         P::Math(Floor) => [lazy(nx, &|| compare(LessEqual, x, y))?, lazy(ny, &|| compare(Greater, x, y))?],
         P::Math(op @ (Circle | Arc)) => {
-            if nx { return Err(cx.span.domain_error("∂ can't differentiate a circle code")); }
+            // A circle code reads its plain value, as a count does, so its own derivative is 0.
             let code = match x { Value::Number(n) => n.integer().ok(), _ => None };
             let d = match (op, code) {
                 (_, Some(0)) => neg(&dyad(divide, y, r)?)?,
@@ -911,7 +939,7 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
                 (_, Some(7)) => recip(&dyad(minus, &Value::integer(1), &square(y)?)?)?,
                 _ => return Err(cx.span.domain_error("∂ can't differentiate this circle code")),
             };
-            [None, Some(d)]
+            [nx.then(|| Value::integer(0)), Some(d)]
         }
         _ => unreachable!("only pervasive glyphs take partials"),
     })

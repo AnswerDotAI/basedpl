@@ -48,6 +48,7 @@ kv+kv	3	3.4	4.1
 v×2	2.2	2.3	2.2
 jv×2	1.8	1.8	2.2
 jv=jv	0.52	0.54	1.1
+jv∧ᵇjv	0.87	1.8	2.2
 b×jv	0.75	0.72	0.81
 b×kv	2.6	2.6	3.5
 v⌊w	3.3	3.3	3.4
@@ -108,6 +109,9 @@ i (+/⊢)⌸ v	200	370	220
 -\jv	5.2	5.1	5.5
 ⌈\jv	1.5	1.4	1.4
 +\z	4.4	4.3	4.7
+# A fold or scan by a primitive that `ᵇ` lifts runs its table through the integer kernels, one item at a time.
+∧ᵇ/kv	16	31	39
+∨ᵇ\jv	17	33	49
 # After a lane's first result, a comparison scan's totals are 0 or 1. The kernel computes each item's result at both, and rustymath picks between them 64 at a time.
 <\v	5.8	7.5	13
 =⍀m	7.1	8.5	14
@@ -337,7 +341,7 @@ fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ n←65536
 # `fib 16` makes 3193 calls of a dfn, each with up to four primitive calls on single numbers. Its cost is mostly the evaluator's own work for each call.
 fib 16	350	800	740
 [setup]
-sv←¿1048576⍴0 ⋄ n←≢sv ⋄ sm←[n÷2;2]⍴sv ⋄ sq←[1024 1024]⍴sv ⋄ cimg←[256 256 16]⍴sv ⋄ ck←¿[144 32]⍴0 ⋄ vq←1024↑sv ⋄ kq←¿[9 1]⍴0 ⋄ s_4←[n÷4;4]⍴sv ⋄ w_4←s_4+0 ⋄ p_2←[n÷4;2]⍴sv
+sv←¿1048576⍴0 ⋄ n←≢sv ⋄ sm←[n÷2;2]⍴sv ⋄ sq←[1024 1024]⍴sv ⋄ cimg←[256 256 16]⍴sv ⋄ ck←¿[144 32]⍴0 ⋄ vq←1024↑sv ⋄ kq←¿[9 1]⍴0 ⋄ s_4←[n÷4;4]⍴sv ⋄ w_4←s_4+0 ⋄ p_2←[n÷4;2]⍴sv ⋄ ism←[n÷2;2]⍴⍳256ₓ ⋄ ip_2←[n÷4;2]⍴⍳256ₓ
 [structure]
 # A structural glyph on a million floats gives a pending copy, which the call around it reads through, with no pass of its own over memory. A forward run is read in place. A reversed one is copied into a buffer for each block.
 2×⌽sv+1	5.1	12	7.3
@@ -351,15 +355,19 @@ sv←¿1048576⍴0 ⋄ n←≢sv ⋄ sm←[n÷2;2]⍴sv ⋄ sq←[1024 1024]⍴s
 # Floor returns exact integers, so this reads a pending copy through an ordinary kernel rather than fusion.
 ⌊⌽sv	7	14	16
 # Stride-two columns gather through the shared reader before their contiguous subtraction.
-(∞ 1⌷sm)-(∞ 0⌷sm)	4.6	5	12
+([: 1]⌷sm)-([: 0]⌷sm)	4.6	5	12
 # A join along the last axis writes each argument's lanes in one typed loop where the lanes are short. `sm` has lanes of 2.
 sm,sm	9.3	19	24
+# A join of 8-bit integers to floats converts each item as the same loop writes it. `ism` holds exact positions, which take a byte each.
+ism,sm	9.4	19	26
 # Two of the four columns of `s_4`, picked by position, read as a stride. The copy walks each row's two items in one loop of fixed width. A list of positions with uneven steps, and a rotation of each row, take the same loop through a table of offsets.
-⌊[∞;0 1]⌷s_4	4.7	9.4	10
-⌊[∞;0 1 3]⌷s_4	6.5	13	16
+⌊[:;0 1]⌷s_4	4.7	9.4	10
+⌊[:;0 1 3]⌷s_4	6.5	13	16
 ⌊1⌽s_4	8	16	19
 # A write of two columns goes through the same loop. It overwrites `w_4` in place.
-[∞;0 1]⌷w_4 ←p_2	1.8	3.6	4
+[:;0 1]⌷w_4 ←p_2	1.8	3.6	4
+# A write of two columns of 8-bit integers into floats converts each item as the same loop writes it, as for Booleans and integers of every width.
+[:;0 1]⌷w_4 ←ip_2	2	3.9	5.2
 # A fold by a reduction reads a pending copy through its map. A copy that reads a contiguous block of its source with its axes in another order, such as a transpose, a reversal, or 2 by 2 windows that don't overlap, folds that block in its own order, at the cost of folding the source. Totals that come out in another order stay a pending copy, which the next fold reads the same way.
 +/⍉sq	1.7	1.6	2.3
 +⌿⊖sq	1.7	1.7	2.3

@@ -106,6 +106,7 @@ mod booleans {
         fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
             use {Comparison::*, Math::*};
             Some(match p {
+                Primitive::Bitwise(table) => run.same_total(move |x, y| int::bitwise(table, x, y)),
                 Primitive::Math(Lcm | Floor) => run.same(|x, y| Some(x & y)), Primitive::Math(Gcd | Ceiling) => run.same(|x, y| Some(x | y)),
                 Primitive::Math(Nand) => run.boolean(|x, y| Some(!(x & y))), Primitive::Math(Nor) => run.boolean(|x, y| Some(!(x | y))),
                 Primitive::Compare(Equal) => run.boolean(|x, y| Some(x == y)), Primitive::Compare(NotEqual) => run.boolean(|x, y| Some(x != y)),
@@ -115,7 +116,7 @@ mod booleans {
             })
         }
         fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
-            match p { Primitive::Math(Math::Not) => Some(run.same(|y: bool| Some(!y))), _ => None }
+            match p { Primitive::Bitwise(table) => Some(run.same(move |y| Some(int::bitwise(table, false, y)))), Primitive::Math(Math::Not) => Some(run.same(|y: bool| Some(!y))), _ => None }
         }
     }
 }
@@ -239,15 +240,19 @@ mod wholes {
     use super::*;
     use rustymath::{tolerant::{self, Tolerance}, Binary, Flipped, Unary};
 
-    /// Kernels for every integer width. The arithmetic and the functions with rustymath objects run those objects' forms at the width, which fail where a result doesn't fit it. The others compute at 64 bits and give `None` where the result doesn't fit the width.
+    /// Kernels for every integer width. The arithmetic and the functions with rustymath objects run those objects' forms at the width, which fail where a result doesn't fit it. The others compute at 64 bits and give `None` where the result doesn't fit the width, apart from `ᵇ` at a signed width, whose results always fit it.
     impl<T: Whole> Kernels for T where
         rustymath::Add: Binary<T, Out = T>, rustymath::Subtract: Binary<T, Out = T>, rustymath::Multiply: Binary<T, Out = T>, rustymath::Pow: Binary<T, Out = T>,
         Flipped<rustymath::Binom>: Binary<T, Out = T>, tolerant::Residue: Binary<T, Out = T>, tolerant::Gcd: Binary<T, Out = T>, tolerant::Lcm: Binary<T, Out = T>,
         rustymath::Abs: Unary<T, Out = T>, rustymath::Sign: Unary<T, Out = T>,
+        T: std::ops::BitAnd<Output = T> + std::ops::BitOr<Output = T> + std::ops::BitXor<Output = T> + std::ops::Not<Output = T>,
     {
         fn dyad<R: Dyad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
             use {Arithmetic::*, Comparison::*, Math::*};
             Some(match p {
+                // A signed width holds every result, because each leading sign bit takes the same entry of the table. An unsigned byte's leading zeros become ones where entry 0 is true, so it computes at 64 bits and fails where a result doesn't fit.
+                Primitive::Bitwise(table) if T::WIDTH != Width::U8 => run.same_total(move |x: T, y: T| int::bitwise(table, x, y)),
+                Primitive::Bitwise(table) => run.same(move |x: T, y: T| T::narrowed(int::bitwise(table, x.to_i64(), y.to_i64()))),
                 Primitive::Arithmetic(Plus) => run.many(rustymath::Add), Primitive::Arithmetic(Minus) => run.many(rustymath::Subtract),
                 Primitive::Arithmetic(Times) => run.many(rustymath::Multiply),
                 Primitive::Arithmetic(Divide) => run.same(|x: T, y: T| int::divide(x.to_i64(), y.to_i64()).and_then(T::narrowed)),
@@ -266,6 +271,8 @@ mod wholes {
         fn monad<R: Monad<Self>>(p: Primitive, run: R) -> Option<R::Output> {
             use {Arithmetic::*, Math::*};
             Some(match p {
+                Primitive::Bitwise(table) if T::WIDTH != Width::U8 => run.same(move |y: T| Some(int::bitwise(table, T::from_i64(0), y))),
+                Primitive::Bitwise(table) => run.same(move |y: T| T::narrowed(int::bitwise(table, 0, y.to_i64()))),
                 Primitive::Arithmetic(Plus) | Primitive::Math(Floor | Ceiling) => run.same(Some),
                 Primitive::Arithmetic(Minus) if run.numeric().is_static() => run.same(|y: T| Some(T::from_i64(y.to_i64().wrapping_neg()))),
                 Primitive::Arithmetic(Minus) => run.same(|y: T| rustymath::Subtract.checked(T::from_i64(0), y)),
@@ -696,6 +703,7 @@ fn products(left: &Input<'_>, right: &Input<'_>, width: Width, agreement: &Agree
 fn whole(p: Primitive, left: Option<&Value>, right: &Value, mut dtype: DType, agreement: &Agreement, numeric: Numeric) -> Option<Value> {
     // Negating Booleans or unsigned bytes fails at their width for any nonzero item, so it starts at the first signed width.
     if !numeric.is_static() && left.is_none() && matches!(p, Primitive::Arithmetic(Arithmetic::Minus)) && matches!(dtype, DType::Boolean | DType::Integer(Width::U8)) { dtype = DType::Integer(Width::I16); }
+    if matches!((p, dtype), (Primitive::Bitwise(table), DType::Integer(Width::U8)) if table & 1 != 0) { dtype = DType::Integer(Width::I16); }
     let run = |kind| match kind {
         DType::Boolean => truths(p, left, right, agreement, numeric), DType::Integer(width) => with_width!(width, T => at::<T>(p, left, right, agreement, numeric)),
         _ => None,
@@ -1479,6 +1487,20 @@ impl Dyad<bool> for LogicalScan<'_> {
     }
     #[inline]
     fn boolean(self, f: impl Fn(bool, bool) -> Option<bool> + Copy + Sync) -> Option<Value> { self.same(f) }
+}
+
+/// The truth table, indexed by `2*x+y`, of `p`'s kernel on Booleans, where `p` has one that gives a Boolean for every pair. A dyadic call, fold or scan of `gᵇ` with such a `g` runs as `Primitive::Bitwise` of the table (`Function::dyadic_primitive`).
+pub(crate) fn truth_table(p: Primitive) -> Option<u8> { bool::dyad(p, Truths)? }
+
+/// The runner that reads a Boolean kernel's truth table for `truth_table`, by calling it on the four pairs of Booleans.
+struct Truths;
+impl Dyad<bool> for Truths {
+    type Output = Option<u8>;
+    fn numeric(&self) -> Numeric { Numeric::EXACT }
+    fn same(self, f: impl Fn(bool, bool) -> Option<bool> + Copy + Sync) -> Option<u8> {
+        (0..4u8).try_fold(0, |table, i| Some(table | u8::from(f(i & 2 != 0, i & 1 != 0)?) << i))
+    }
+    fn boolean(self, f: impl Fn(bool, bool) -> Option<bool> + Copy + Sync) -> Option<u8> { self.same(f) }
 }
 
 /// A scan of integers at their own width: `⌈\` and `⌊\` through rustymath's running maximums and minimums, whose results never leave that width, and any other function through its kernel. `None` where a result doesn't fit.

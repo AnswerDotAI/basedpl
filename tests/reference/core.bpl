@@ -1,3 +1,37 @@
+⍝⍝ Bitwise lifting
+
+⍝ bitwise-defined — Boolean-valued dfns supply their truth table
+6{~⍺∧⍵}ᵇ3   ⍝ ¯3ₓ
+
+⍝ bitwise-implication — A true zero-bit case extends the result's sign bits
+6≤ᵇ3   ⍝ ¯5ₓ
+
+⍝ bitwise-constant — A true constant fills every bit, not just the low bit
+{1}ᵇ6   ⍝ ¯1ₓ
+
+⍝ bitwise-big — Complement preserves arbitrary integer precision
+~ᵇ1208925819614629174706176ₓ   ⍝ ¯1208925819614629174706177ₓ
+
+⍝ bitwise-map — A bitwise call keeps native batching of mapped arguments
+6{⍺∧ᵇ⍵}¨3 5   ⍝ [2 4]ₓ
+
+⍝ bitwise-fold — A fold by a lifted primitive applies its table from the right, as other folds do
+[∧ᵇ/[12 10 14]ₓ; <ᵇ/[1 2 7]ₓ]   ⍝ [8 4]ₓ
+
+⍝ bitwise-scan — A scan by a lifted primitive accumulates from the left
+≠ᵇ\[5 3 6]ₓ   ⍝ [5 6 0]ₓ
+
+⍝ bitwise-boolean-fold — Folds and scans of Booleans by a lifted primitive give Booleans
+[∨ᵇ/$f $f $t; ∨ᵇ\$f $t $f]   ⍝ [$t; $f $t $t]
+
+⍝ bitwise-whole — Fractional input is not an integer bit pattern
+~ᵇ1.5
+⍝ error: DOMAIN ERROR
+
+⍝ bitwise-table — Every truth-table entry must be Boolean-valued
+6+ᵇ3
+⍝ error: DOMAIN ERROR
+
 ⍝⍝ Selection after ordering
 
 ⍝ selected-order — Bound take and ranked selection compose with stable sort and grade
@@ -123,7 +157,7 @@ M←["alice" "bob";"price" "qty"]:[10 2⋄20 4]
 
 ⍝ axis-selection — Atomic row selection retains column keys; one string is one selector
 M←["alice" "bob";"price" "qty"]:[10 2⋄20 4]
-["bob"⌷M;∞ "price"⌷M;"alice" "qty"⌷M;[,⊂"alice"]⌷M]
+["bob"⌷M;[: "price"]⌷M;"alice" "qty"⌷M;[,⊂"alice"]⌷M]
 ⍝ =>
 [["price":20 "qty":4] ["alice":10 "bob":20] 2 ([["alice"];"price" "qty"]:[10 2⋄])]
 
@@ -1087,7 +1121,7 @@ x←"a" "b":[1 2⋄3 4] ⋄ y←"a" "c":[10 20⋄30 40] ⋄ x(+⍤1)y   ⍝ "a" 
 x←"a" "b":2 2⍴[1 2;3;4;5 6] ⋄ y←"a" "c":[10 20⋄30 40] ⋄ :2⌷x({⍺}⍤1)y   ⍝ (0 0⋄0 0)
 
 ⍝ — A keyed vector cell keeps its keys on the result's cell axis
-r←("p" "q":10 20)(+⍤1)2 2⍴⍳4 ⋄ r.[∞ "q"]   ⍝ 21 23
+r←("p" "q":10 20)(+⍤1)2 2⍴⍳4 ⋄ r.[: "q"]   ⍝ 21 23
 
 ⍝ — An empty frame keeps its shape under a pervasive function
 ⍴(0 3⍴0)+⍤1[1 2 3]   ⍝ [0 3]ₓ
@@ -1965,7 +1999,7 @@ k←⍳3
 m.[k~[1] 3]   ⍝ 3 11
 
 ⍝ — Dot indexing chains from left to right
-A←2 3 4⍴⍳24 ⋄ A.[1 ∞ 0].[¯1]   ⍝ 20
+A←2 3 4⍴⍳24 ⋄ A.[1 : 0].[¯1]   ⍝ 20
 
 ⍝ — Dot indexing binds tightly inside a larger expression
 v←10 20 30 ⋄ 9,v.[1],3   ⍝ 9 20 3
@@ -1993,7 +2027,7 @@ v   ⍝ 8 20 7
 
 ⍝ —
 m←2 2⍴⍳4
-m.[∞ 1]←0
+m.[: 1]←0
 m   ⍝ [0 0⋄2 0]
 
 ⍝ — Dot assignment adds missing keys
@@ -2358,7 +2392,7 @@ _←f∂3
 ⍝ — A cell rank reads its primal, so a dual ∞ is ∞
 {(+/⍤⍵)[1 2 3⋄4 5 6]}∂ ∞   ⍝ 0 0
 
-⍝ — An index selector reads its primal, so a dual ∞ selects a whole axis
+⍝ — An index selector reads its primal, so a dual ∞ selects every remaining axis
 {+/⍵⌷10 20 30}∂ ∞   ⍝ 0
 
 ⍝ — A position reads its primal, so a selection by ⌷, dot selection or pick takes no derivative from it
@@ -2507,16 +2541,36 @@ cart←{[r t]←⍵ ⋄ [r×2○t; r×1○t]} ⋄ -.×cart∂ 2 0.5   ⍝ 2
 ⍝ — ⊥ differentiates with respect to its digits and its base, a scalar or a mixed radix, and a single digit extends to the base's length
 [{10⊥⍵}∂ 1 2 3; {24 60 60⊥⍵}∂ 1 2 3; {⍵⊥1 2 3}∂ 10; {⍵⊥1 2 3}∂ 24 60 60; {⊥⍵}∂ 1 0 1; {10 10 10⊥⍵}∂ 2]   ⍝ [100 10 1; 3600 60 1; 22; 0 60 62; 4 2 1; 111]
 
+⍝ — ⊥ under Rank differentiates each cell, monadic, with a base, or with its base bound
+[{+/,⊥⍤1⊢[3 3]⍴⍵}∂ ⍳9; {+/,2⊥⍤1⊢[3 3]⍴⍵}∂ ⍳9; {+/,(2↣⊥)⍤1⊢[3 3]⍴⍵}∂ ⍳9]   ⍝ 3#⊂9⍴4 2 1
+
 ⍝ — Mix of dual cells copies each part whole
 {+/,⊃[⍵ 2×⍵]}∂ 1 2 3   ⍝ 3 3 3
+
+⍝ — Discrete results have derivative 0: the digits of ⊤ and the draws of ¿
+[{+/2 2⊤⍵}∂ 3; {¿⍵}∂ 5]   ⍝ 0 0
+
+⍝ — The bits that ᵇ gives have derivative 0
+{⍵∧ᵇ3}∂ 2   ⍝ 0ₓ
+
+⍝ — The items of x↦y move with the start x, so each has derivative 1 with respect to it. The end gives only the count, as monadic ↦ does
+[{+/⍵↦5}∂ 2; {+/2↦⍵}∂ 5; {+/↦⍵}∂ 5; {+/⍵₀↦5}∂ 2 3]   ⍝ [4;0;0;4 0]
+
+⍝ — On real numbers, monadic ∨ gives each number and 0, and monadic ∧ its magnitude and angle, whose derivatives are 1 or the sign, beside 0
+[{+/,∨⍵}∂ 1 2; {+/,∧⍵}∂ 1 ¯2; {+/∧⍵}∂ ¯3]   ⍝ [1 1;1 ¯1;¯1]
+
+⍝ — A circle code reads its plain value, as a count does, so its derivative is 0
+{+/⍵○1}∂ 1 2   ⍝ 0 0
+
+⍝ — In reverse mode, a result drawn only from constants has a gradient of zeros
+c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0
 
 ⍝ — Complex arguments are outside the subset
 {|⍵}∂3j4
 ⍝ error: UNSUPPORTED
 
-⍝ — A dual reaching a system function's own code, such as the JSON encoder that •json⁻¹ runs, gives UNSUPPORTED, not that code's own error
-{•json⁻¹ ⍵}∂ 3
-⍝ error: UNSUPPORTED
+⍝ — •json⁻¹ writes a dual as its plain value, as ⍕ does, so the length of its text has derivative 0
+{≢•json⁻¹ ⍵}∂ 3   ⍝ 0ₓ
 
 ⍝ — A system function is outside the subset
 {•ucs ⍵}∂3
@@ -2756,8 +2810,8 @@ r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵}
 {⊼⍵}⇄ 1 2
 ⍝ error: DOMAIN ERROR
 
-⍝ — L-BFGS needs a gradient, which ∂ can't take through a system function. The JSON round trip is there only as two numeric system functions with no rule under ∂. It gives back its numbers unchanged
-["method":"l-bfgs"] {+/⊼•json •json⁻¹ ⍵}⇄ 1 2
+⍝ — L-BFGS needs a gradient, which ∂ can't take through a system function. The •ucs round trip is there only as two numeric system functions with no rule under ∂. It gives back its whole numbers unchanged
+["method":"l-bfgs"] {+/⊼•ucs •ucs ⍵}⇄ 1 2
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Differential evolution needs finite bounds
@@ -2821,8 +2875,8 @@ g←{(t+.×⍵)-c} ⋄ g∂←{t+.×⍺}
 r←["solve":$t "linear":$t "report":$t] g⇄ 0 0
 [r.x-c⌹t; r.value]   ⍝ [0 0; 0.5773502691896258]
 
-⍝ — Least squares needs products with the transpose, which ∂ can't give through a system function. The JSON round trip is there only as two numeric system functions with no rule under ∂. It gives back its numbers unchanged
-["solve":$t "linear":$t] {([1 0⋄0 1⋄1 1]+.×•json •json⁻¹ ⍵)-1 2 4}⇄ 0 0
+⍝ — Least squares needs products with the transpose, which ∂ can't give through a system function. The •ucs round trip is there only as two numeric system functions with no rule under ∂. It gives back its whole numbers unchanged
+["solve":$t "linear":$t] {([1 0⋄0 1⋄1 1]+.×•ucs •ucs ⍵)-1 2 4}⇄ 0 0
 ⍝ error: DOMAIN ERROR
 
 ⍝ — Linear needs solve
@@ -3922,8 +3976,8 @@ a←2 3 4⍴⍳24 ⋄ a.[[0 1] [1 2]]   ⍝ [4 5 6 7⋄20 21 22 23]
 ⍝ — Paired positions count from the end when negative
 [1 2⋄3 4].[[¯1 0] [¯1 ¯1]]   ⍝ 4 2
 
-⍝ — Paired axes take the place of the first array, and ∞ keeps its axis in place
-a←2 3 4⍴⍳24 ⋄ ⍴a.[[0 1] ∞ [1 2]]   ⍝ [2 3]ₓ
+⍝ — Paired axes take the place of the first array, and : keeps its axis in place
+a←2 3 4⍴⍳24 ⋄ ⍴a.[[0 1] : [1 2]]   ⍝ [2 3]ₓ
 
 ⍝ — Paired arrays broadcast against each other
 m←3 4⍴⍳12 ⋄ m≡m.[[3 1]⍴0 1 2;[1 4]⍴⍳4]   ⍝ $t
@@ -3959,17 +4013,36 @@ m←3 4⍴⍳12 ⋄ m.[⍸m>9]←0 ⋄ m   ⍝ [0 1 2 3⋄4 5 6 7⋄8 9 0 0]
 ⍝ —
 ⌷1 2   ⍝ 1 2
 
-⍝ — ∞ takes a whole axis
-∞ 2⌷3 4⍴⍳12   ⍝ 2 6 10
+⍝ — : takes a whole axis
+[: 2]⌷3 4⍴⍳12   ⍝ 2 6 10
 
-⍝ — ¯∞ takes a whole axis in reverse order
-¯∞ ∞⌷[1 2⋄3 4]   ⍝ [3 4⋄1 2]
+⍝ — Reverse has its own primitive
+⌽⍠0⊢[1 2⋄3 4]   ⍝ [3 4⋄1 2]
 
 ⍝ —
-∞ ¯∞⌷[1 2⋄3 4]   ⍝ [2 1⋄4 3]
+⌽[1 2⋄3 4]   ⍝ [2 1⋄4 3]
 
-⍝ — ¯∞ reverses a keyed axis with its keys
-¯∞⌷"aa" "bb":1 2   ⍝ "bb" "aa":2 1
+⍝ — Reverse keeps keys with their items
+⌽"aa" "bb":1 2   ⍝ "bb" "aa":2 1
+
+⍝ new-axis-shapes — ¯∞ inserts without consuming an axis, including on units
+m←2 3⍴⍳6 ⋄ ∧/[[1 2 3]≡⍴[¯∞ : :]⌷m;[2 1 3]≡⍴[: ¯∞ :]⌷m;[2 3 1]≡⍴m.[∞ ¯∞];[1]≡⍴¯∞⌷7;[1]≡⍴¯∞⌷⍬⍴7]   ⍝ $t
+
+⍝ rest-axis-selection — Rest can span several axes or none between explicit selectors
+a←2 3 4⍴⍳24 ⋄ [a.[1 ∞ 2];⍴a.[¯∞ ∞ 0];a.[0 ∞ ¯∞ 1 2]]   ⍝ [14 18 22;[1 2 3]ₓ;[6]]
+
+⍝ new-axis-selection — Paired indices, listed axes and Under use the same inserted axes
+m←2 3⍴⍳6 ⋄ [⍴m.[[0 1] ¯∞ [1 2]];⍴([¯∞ :]⌷⍠1) m;(-@([: ¯∞ 1]⌷))m]   ⍝ [[2 1]ₓ [2 1 3]ₓ [0 ¯1 2⋄3 ¯4 5]]
+
+⍝ new-axis-paths — A path emits its index frame before suffixes traverse the ending cell
+x←(10 20⋄30 40 50) ⋄ p←[[1 2] [0 0]] ⋄ c←1 1⍴⊂[10 20⋄30 40] ⋄ q←[[0 0 1]] ⋄ [⍴[¯∞ p]⌷x;⍴[p ¯∞]⌷x;[q ∞ ¯∞]⌷c]   ⍝ [[1 2]ₓ;[2 1]ₓ;1 2 1⍴30 40]
+
+⍝ empty-path-cell-frame — Empty paths retain the nested ending cell from their prototype
+x←[(2 3⍴⍳6)] ⋄ p←0↑[[0 0]] ⋄ ⍴[p ∞ ¯∞]⌷x   ⍝ [0 3 1]ₓ
+
+⍝ named-coordinate-span — Even empty coordinates must fit after their named source axis
+p←["b":0]⍴⊂0 0 0 ⋄ [p]⌷["a":2 "b":2 "c":2]⍴⍳8
+⍝ error: INDEX ERROR
 
 ⍝ — Negative positions count from the end
 ¯1⌷10 20 30   ⍝ 30
@@ -3980,10 +4053,13 @@ m←3 4⍴⍳12 ⋄ m.[⍸m>9]←0 ⋄ m   ⍝ [0 1 2 3⋄4 5 6 7⋄8 9 0 0]
 ⍝ — An array of positions can mix signs
 [[¯1 0]]⌷10 20 30   ⍝ 30 10
 
-⍝ — Selective assignment through ¯∞ writes in reverse order
+⍝ — Selective assignment through Reverse writes in reverse order
 x←[1 2⋄3 4]
-¯∞ ∞⌷x ←[5 6⋄7 8]
+⌽⍠0⊢x ←[5 6⋄7 8]
 x   ⍝ [7 8⋄5 6]
+
+⍝ new-axis-writeback — An inserted axis changes the selection frame, not its targets
+m←2 3⍴⍳6 ⋄ m.[¯∞ : 1]←1 2⍴10 20 ⋄ T←["a":1] ⋄ [¯∞ "b"]⌷T ←2 ⋄ [m;T]   ⍝ [[0 10 2⋄3 20 5];["a":1 "b":2]]
 
 ⍝ — Selective assignment through a negative position
 x←10 20 30
@@ -4041,7 +4117,7 @@ x   ⍝ 10 20 9
 
 ⍝ —
 1 2⌷1 2
-⍝ error: LENGTH ERROR
+⍝ error: INDEX ERROR
 
 ⍝ —
 2⌷1 2
@@ -4243,6 +4319,10 @@ $t $t $t $t $t
 ≢+/⍉2 30000 3↑2 0 3⍴0   ⍝ 3ₓ
 
 ⍝⍝ Numeric storage
+
+⍝ dynamic-integer-fold-storage — Integer reductions compact their array result
+r←+/[1 2 3⋄4 5 6]ₓ
+(•memory r).bytes=(•memory [6 15]ₓ).bytes   ⍝ $t
 
 ⍝ — •storage's kind names the storage that holds an array's items
 {(•storage ⍵).kind}¨[⍳3ₓ;⍳3;1j2 3;"abc";1ₓ 0.5;[1 2;3]]
@@ -4828,7 +4908,7 @@ f←{•missing ⍵} ⋄ 1   ⍝ 1
 
 ⍝ — A system name includes its entire word
 •c_unknown2 "abc"
-⍝ error: UNSUPPORTED
+⍝ error: VALUE ERROR
 
 ⍝ — System functions are read-only
 •c←+
@@ -4852,7 +4932,7 @@ $a←"abc"
 
 ⍝ — basedpl has fixed origin zero, not a mutable index-origin variable
 •io←0
-⍝ error: UNSUPPORTED
+⍝ error: VALUE ERROR
 
 ⍝ —
 'abc
@@ -5163,10 +5243,10 @@ v←⊂1 2 3 ⋄ 1⌷↑v   ⍝ 2
 1 0⌷[1 2 3⋄4 5 6]   ⍝ 4
 
 ⍝ —
-∞ 1⌷[1 2 3⋄4 5 6]   ⍝ 2 5
+[: 1]⌷[1 2 3⋄4 5 6]   ⍝ 2 5
 
 ⍝ —
-1 ∞⌷[1 2 3⋄4 5 6]   ⍝ 4 5 6
+[1 :]⌷[1 2 3⋄4 5 6]   ⍝ 4 5 6
 
 ⍝ —
 [[2 0]]⌷10 20 30   ⍝ 30 10
@@ -5300,7 +5380,7 @@ x←["b":2 "h":3 "w":4]⍴⍳24
 ⍝ error: DOMAIN ERROR
 
 ⍝ — A dfn's separators don't split the surrounding matrix
-∞ 0⌷[{⍵=0?1;⍵+2}0 3⋄4 5]   ⍝ 1 4
+[: 0]⌷[{⍵=0?1;⍵+2}0 3⋄4 5]   ⍝ 1 4
 
 ⍝ — Reversing twice, flipping twice, transposing twice and splitting then mixing give back the argument
 {[⌽⌽⍵ ⊖⊖⍵ ⍉⍉⍵ ⊃↓⍵]}¨[0 3;3 0;2 3;2 2 3]⍴¨⊂⍳12
@@ -6331,9 +6411,8 @@ y←1j1.000000000000012 1j1.00000000000002 1j5E¯15 1j5E¯14 0j1E¯100 1.7E308j1
 [1.5 2]ₓ
 ⍝ error: DOMAIN ERROR
 
-⍝ — Marked brackets need literal items
-x←1 ⋄ [x 2]ₓ
-⍝ error: SYNTAX ERROR
+⍝ — After brackets that hold anything but literals, ₓ is ⌊
+x←1.5 ⋄ [x 2]ₓ   ⍝ [1 2]ₓ
 
 ⍝ — Empty marked brackets are the exact empty vector
 1↑[]ₓ   ⍝ [0]ₓ
@@ -7361,6 +7440,16 @@ v←3 4 ⋄ v₀²+v₁²   ⍝ 25
 
 ⍝ — A subscript after a space selects from the whole run before it
 x←1 2 ⋄ [2 3 ₁;x+1 ₁]   ⍝ 3 3
+
+⍝ subscript-floor-name — After a name or an expression in parentheses, ₓ is ⌊
+x←3.7 ¯2.5 ⋄ [xₓ;(x+0.5)ₓ]   ⍝ [[3 ¯3]ₓ [4 ¯2]ₓ]
+
+⍝ subscript-floor-positions — ⍳ of a count floored by ₓ gives exact positions
+n←4.5 ⋄ ⍳nₓ   ⍝ [0 1 2 3]ₓ
+
+⍝ subscript-floor-function — ₓ floors an array, not a function
++ₓ
+⍝ error: DOMAIN ERROR
 
 ⍝ —
 [[1 3] [2 4]]⍳⊂1 3   ⍝ 0ₓ

@@ -46,7 +46,7 @@ av {(⍋𝕨++`𝕨)⊏𝕩} bv
 
 ### Sort rows by a column
 
-Source: APLcart. `[∞ ⍺]⌷⍵` is column `⍺` of `⍵`. Index takes one position for each axis, with `∞` for a whole axis. The outer `⌷` gets one item, the grade, and selects rows with it.
+Source: APLcart. `[: ⍺]⌷⍵` is column `⍺` of `⍵`. Index takes one position for each axis, with `:` for a whole axis. The outer `⌷` gets one item, the grade, and selects rows with it.
 
 ```dyalog
 I{⍵[⍋⍵[;⍺];]}Ym
@@ -54,7 +54,7 @@ I{⍵[⍋⍵[;⍺];]}Ym
 
 ```bpl
 I←1 ⋄ Ym←[5 3⋄1 9⋄4 2]
-I{[⍋[∞ ⍺]⌷⍵]⌷⍵}Ym      ⍝ [4 2⋄5 3⋄1 9]
+I{[⍋[: ⍺]⌷⍵]⌷⍵}Ym      ⍝ [4 2⋄5 3⋄1 9]
 ```
 
 ```bqn
@@ -145,14 +145,14 @@ next←(𝕨⊏graph)(∊/⊣)¨</𝕩=¯2
 
 ### Chained indexing
 
-Source: the April tests. `⌷` takes one item for each axis, like APL's index fields. `;` separates the items. `∞` takes a whole axis, in place of an empty field.
+Source: the April tests. `⌷` takes one item for each axis, like APL's index fields. `;` separates the items. `:` takes a whole axis, in place of an empty field.
 
 ```dyalog
 (6 8 5⍴⍳9)[1 4;;2 1][1;2 4 5;]
 ```
 
 ```bpl
-[0;1 3 4]⌷[0 3;∞;1 0]⌷6 8 5⍴⍳9     ⍝ [6 5⋄7 6⋄3 2]
+[0;1 3 4]⌷[0 3;:;1 0]⌷6 8 5⍴⍳9     ⍝ [6 5⋄7 6⋄3 2]
 ```
 
 ```bqn

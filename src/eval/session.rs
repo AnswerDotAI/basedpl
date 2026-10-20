@@ -516,7 +516,7 @@ impl Session {
                 None => return Err(node.span.error(ErrorKind::Value, format!("undefined name: {name}")))
             },
             NodeKind::System(name) => {
-                Binding::Function(crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Unsupported, format!("{name} is not supported yet")))?)
+                Binding::Function(crate::system::lookup(name).ok_or_else(|| node.span.error(ErrorKind::Value, format!("undefined name: {name}")))?)
             }
             NodeKind::Group(_) | NodeKind::Run(_) => return Binder::nested(node, self),
             NodeKind::Scope(root, body) => {

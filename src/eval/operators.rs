@@ -3,6 +3,19 @@
 use rustymath::error::Kind;
 use super::*;
 
+/// `gᵇ`, which is `f`, called on `left` and `right`, where `operand` is `g`. A dyadic call takes `f`'s primitive where `g`'s Boolean kernel gives its truth table (`Function::dyadic_primitive`), as folds and scans do. Otherwise the call builds the table by calling `g` on Booleans: for a monadic call, whose table comes from `g`'s monadic form, and for a `g` that isn't a primitive.
+pub(super) fn bitwise(f: &Function, operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    if left.is_some() && let Some(p) = f.dyadic_primitive() { return p.call(left, right, cx); }
+    let mut table = 0;
+    for i in 0..if left.is_some() { 4 } else { 2 } {
+        let boolean = |b| Value::Number(crate::Number::from_bool(b));
+        let (x, y) = (boolean(i & 2 != 0), boolean(i & 1 != 0));
+        let result = operand.call_array(left.map(|_| &x), &y, cx)?.boolean().error_at(cx.span, "a bitwise operand must return a Boolean")?;
+        table |= u8::from(result) << i;
+    }
+    Primitive::Bitwise(table).call(left, right, cx)
+}
+
 // Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
 #[inline(never)]
 pub(super) fn composition(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -810,9 +823,9 @@ pub(super) fn key(derived: &Function, left: Option<&Value>, right: &Value, cx: &
     Ok(Bound::from(Value::assemble(&[count], &results, &results[0]).error_at(cx.span, "invalid key result")?))
 }
 
-/// The primitive in `f`, when `f` is a primitive whose form for this valence is a pervasive function. Each and Outer call such a primitive on whole arrays.
+/// The primitive in `f`, when `f` is a primitive whose form for this valence is a pervasive function, or a `gᵇ` called with two arguments (`Function::dyadic_primitive`). Each and Outer call such a primitive on whole arrays.
 fn pervasive_primitive(f: &Function, dyadic: bool) -> Option<Primitive> {
-    f.as_primitive().filter(|p| p.facts(dyadic).pervasive)
+    (if dyadic { f.dyadic_primitive() } else { f.as_primitive() }).filter(|p| p.facts(dyadic).pervasive)
 }
 
 pub(super) fn outer(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -1019,9 +1032,13 @@ fn cell_rule(f: &Function, y: &Value, k: usize, cx: &mut Context<'_>) -> Option<
     }
 }
 
+/// Whether the routes for whole arguments must leave `p` to calls on each cell. `∂`'s rules for `⌹` and `⊥` need a `&mut Context`, so only a routed call reaches them (`Op::Operated`). With a value that `∂` tracks, each cell's call takes that route.
+fn by_cells(p: Primitive, left: Option<&Value>, y: &Value, cx: &Context<'_>) -> bool { matches!(p, Primitive::MatrixDivide | Primitive::Decode) && cx.carried(left, y) }
+
 /// The primitive `p` on each rank-`k` cell of `y`, as calls on the whole of `y` along the cells' axes, with `left` as the left argument of every cell where it has one. The frame's axes keep their keys and names. `None` where no rule covers `p`. The routes for whole arguments use it (`whole_cells`), and so does Rank for a monadic operand (`cell_rule`).
 fn primitive_cells(p: Primitive, left: Option<&Value>, y: &Value, k: usize, cx: &Context<'_>) -> Option<Result<Value, Error>> {
     use crate::primitive::CellRule;
+    if by_cells(p, left, y, cx) { return None; }
     let frame = y.shape().len() - k;
     // Cell axes `from..from + count`, numbered as axes of the whole of `y`.
     let axes = |from: usize, count: usize| Value::integers(vec![count], (frame + from..frame + from + count).map(|a| a as i64).collect()).expect("axes are integers");
@@ -1073,7 +1090,7 @@ fn primitive_cells(p: Primitive, left: Option<&Value>, y: &Value, k: usize, cx: 
 /// `None` for any other form, for an argument with a named axis, which a whole call could pair by name, and where the call fails. The calls on each cell then give the result or the error.
 fn paired_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: usize, cx: &Context<'_>) -> Option<Value> {
     use crate::primitive::CellRule;
-    if x.layout().has_names() || y.layout().has_names() { return None; }
+    if x.layout().has_names() || y.layout().has_names() || by_cells(p, Some(x), y, cx) { return None; }
     let frame = if x.shape().len() > xk { x.layout().axes(0..x.shape().len() - xk) } else { y.layout().axes(0..y.shape().len() - yk) };
     let unit = |v: &Value| v.shape().is_empty();
     // An argument that is the same in every cell, repeated over the frame. One with no axes needn't be, because it extends to every cell.
@@ -1299,7 +1316,7 @@ pub(crate) fn fold(
             return cell_axes(&ravelled, axes, None, right, cx)?.array(cx.span);
         }
     }
-    if let (None, None, Some(p)) = (&axis, left, operand.as_primitive()) {
+    if let (None, None, Some(p)) = (&axis, left, operand.dyadic_primitive()) {
         if let Some(folded) = crate::fusion::fold(right, p, kind) { return Ok(folded); }
     }
     let result = fold_array(operand, kind, axis.as_ref(), left, right, cx)?;
@@ -1358,7 +1375,7 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Op
         return Value::new(shape, vec![item; size]).error_at(cx.span, "invalid identity result");
     }
     let active = cx.carried(None, right);
-    if let (None, Some(p), false) = (left, operand.as_primitive(), active) {
+    if let (None, Some(p), false) = (left, operand.dyadic_primitive(), active) {
         use crate::number::Arithmetic::{Plus, Times};
         // Float sums and products take the kernel for any number of items, because they fold in any order.
         if traversal.len >= 2 || (matches!(right.as_items(), crate::array::Items::Compact(rustymath::buffer::View::Floats(_))) && matches!(p, Primitive::Arithmetic(Plus | Times))) {
@@ -1431,7 +1448,7 @@ pub(super) fn scan(
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
     // Kernels that read numbers directly leave a dual to the general path, which calls the operand through dispatch.
     let active = cx.carried(None, right);
-    if let (Some(p), false) = (operand.as_primitive(), active) {
+    if let (Some(p), false) = (operand.dyadic_primitive(), active) {
         if let Some(result) = crate::pervasive::scan(p, right, seed, &axis) { return Ok(result); }
     }
     if let (Some(Primitive::Arithmetic(op)), false) = (operand.as_primitive(), active) {

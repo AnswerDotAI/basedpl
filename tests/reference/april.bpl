@@ -1700,7 +1700,7 @@ x←55 ⋄ x   ⍝ 55
 
 ⍝ april:1466 —
 x←2 3 4⍴⍳9
-x.[∞ 0]←7
+x.[: 0]←7
 x
 ⍝ =>
 [[7 7 7 7⋄4 5 6 7⋄8 0 1 2]⋄[7 7 7 7⋄7 8 0 1⋄2 3 4 5]]
@@ -2508,7 +2508,7 @@ a←3 4⍴⍳12 ⋄ ⍴[⍬]⌷a   ⍝ [0 4]ₓ
 ⍝ april:1922 — Indexing with variables
 x←3 3⍴⍳9
 y←0
-[∞ y]⌷x   ⍝ 0 3 6
+[: y]⌷x   ⍝ 0 3 6
 
 ⍝ april:1923 — Application of functions to indexed array elements
 gg←2 3 4 5 ⋄ 9,gg₁,3 4   ⍝ 9 3 3 4
@@ -2544,7 +2544,7 @@ a,b
 ↓"+∘×"₁↣, 3 3⍴"ab"   ⍝ "∘aba" "∘bab" "∘aba"
 
 ⍝ april:1940 — Selection from an array with multiple elided dimensions
-1 ∞ 2 ∞ 1⌷2 3 3 4 5⍴⍳9   ⍝ [5 1 6 2⋄2 7 3 8⋄8 4 0 5]
+[1 : 2 : 1]⌷2 3 3 4 5⍴⍳9   ⍝ [5 1 6 2⋄2 7 3 8⋄8 4 0 5]
 
 ⍝ april:1942 — Selection from an array with multi-index, array and elided dimensions
 [0 1;2 2⍴⍳3]⌷3 3 3⍴⍳27
@@ -2552,7 +2552,7 @@ a,b
 
 ⍝ april:1947 — Elided assignment
 a←2 3 4⍴⍳9
-a.[1 ∞ 2]←0
+a.[1 : 2]←0
 a
 ⍝ =>
 [[0 1 2 3⋄4 5 6 7⋄8 0 1 2]⋄[3 4 0 6⋄7 8 0 1⋄2 3 0 5]]
@@ -2582,11 +2582,11 @@ gg
 [[0 3]]⌷6 8⍴⍳9   ⍝ [0 1 2 3 4 5 6 7⋄6 7 8 0 1 2 3 4]
 
 ⍝ april:1959 — As above but more complex
-[0 3;∞;1 0]⌷6 8 5⍴⍳9
+[0 3;:;1 0]⌷6 8 5⍴⍳9
 [[1 0⋄6 5⋄2 1⋄7 6⋄3 2⋄8 7⋄4 3⋄0 8]⋄[4 3⋄0 8⋄5 4⋄1 0⋄6 5⋄2 1⋄7 6⋄3 2]]
 
 ⍝ april:1962 — Indices of indices
-[0;1 3 4]⌷[0 3;∞;1 0]⌷6 8 5⍴⍳9   ⍝ [6 5⋄7 6⋄3 2]
+[0;1 3 4]⌷[0 3;:;1 0]⌷6 8 5⍴⍳9   ⍝ [6 5⋄7 6⋄3 2]
 
 ⍝ april:1964 — Array as array index
 [(2 3⍴⍳9)]⌷10+⍳9   ⍝ [10 11 12⋄13 14 15]
@@ -2620,7 +2620,7 @@ toasn
 [⍬]⌷⍳3   ⍝ ⍬
 
 ⍝ april:1979 — As above with multiple dimensions
-⍴[∞;⍬;1 2]⌷5 5 5⍴1 , ⍴[⍬]⌷3 3⍴1   ⍝ [5 0 2 0 3]ₓ
+⍴[:;⍬;1 2]⌷5 5 5⍴1 , ⍴[⍬]⌷3 3⍴1   ⍝ [5 0 2 0 3]ₓ
 
 ⍝ april:1980 — Assignment by function
 a←3 2 1
@@ -2634,7 +2634,7 @@ a   ⍝ 3 7 1
 
 ⍝ april:1982 — Elided assignment of applied function's results
 a←2 3 4⍴⍳9
-a.[1 ∞ 2]+←10
+a.[1 : 2]+←10
 a
 ⍝ =>
 [[0 1 2 3⋄4 5 6 7⋄8 0 1 2]⋄[3 4 15 6⋄7 8 10 1⋄2 3 14 5]]
@@ -2761,7 +2761,7 @@ b←a₂←30
 "RA**OM" "CHA*CE"
 
 ⍝ april:2042 — Selective assignment with ⌷ indexing of the array being assigned to
-{A←4 3⍴"RANDOM" "CHANCE" ⋄ (¯2↑¨[∞;0 2]⌷A)←⍵ ⋄ ⍕¨A} '*'
+{A←4 3⍴"RANDOM" "CHANCE" ⋄ (¯2↑¨[:;0 2]⌷A)←⍵ ⋄ ⍕¨A} '*'
 ["RAND**" "CHANCE" "RAND**"⋄"CHAN**" "RANDOM" "CHAN**"⋄"RAND**" "CHANCE" "RAND**"⋄"CHAN**" "RANDOM" "CHAN**"]
 
 ⍝ april:2048 — Selective assignment using aliased [⌷ index] function
@@ -3869,7 +3869,7 @@ $t
 ⍝ april/libraries/dfns/array/demo.lisp:165 — Upstream from selection helper; test arrays keep 1-based digit labels, and positions count from 0
 [from:]←•load "lib/array.bpl"
 [ta_1 ta_2 ta_3 ta_4]←{10⊥¨1+⍳⌽⍵}¨,\5 4 3 2
-(2 3 4⍴1 3 4) {([⍵ ∞ ⍺]⌷ta_3) ≡ [⍵ ,⊂⍬ ⍺] from ta_3} 2 2⍴1 0
+(2 3 4⍴1 3 4) {([⍵ : ⍺]⌷ta_3) ≡ [⍵ ,⊂⍬ ⍺] from ta_3} 2 2⍴1 0
 ⍝ =>
 $t
 
@@ -7234,8 +7234,8 @@ N←¯3 ⋄ (1⌈|N)#(N>0)#⁻¹0⍴⊂2 2⍴[(⊂3 3⍴1+⍳6) 9 8 7]
 ⍝ april:1330 — With one item, expand is replicate: `N\Y` is `N#Y`
 1 ¯2 3 ¯4 5#3   ⍝ [3 0 0 3 3 3 0 0 0 0 3 3 3 3 3]
 
-⍝ april:1945 — Selection from within an array with spaces in axis specification; Bracket indexing written with `⌷`, with `∞` for the elided axis; Positions count from 0, so `⍳n` became `1+⍳n`
-[∞;3 2]⌷3 4⍴1+⍳12   ⍝ [4 3⋄8 7⋄12 11]
+⍝ april:1945 — Selection from within an array with spaces in axis specification; Bracket indexing written with `⌷`, with `:` for the elided axis; Positions count from 0, so `⍳n` became `1+⍳n`
+[:;3 2]⌷3 4⍴1+⍳12   ⍝ [4 3⋄8 7⋄12 11]
 
 ⍝ april:2055 — Index of variable with value assigned inside its own index; Bracket indexing written with `⌷`. The assignment is on the right, which BPL evaluates first
 [⍋y]⌷y←1 8 4 2   ⍝ [1 2 4 8]

@@ -84,7 +84,7 @@ Pervasion repeats these rules inside nested items. Each and Rank frames also use
 
 Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be an integer, or a float within `1E¯14` of an integer, whatever the tolerance setting.
 
-[Index](glyphs/squad.qmd) `⌷` selects along leading axes. Its result has the shape of the positions, followed by the shape of each selected cell. `∞` selects a whole axis. [Dot indexing](glyphs/dot.qmd) writes the same selection after an array: `m.[∞ 1]` is `[∞ 1]⌷m`. A [subscript](scripts.ipynb#subscripts) selects one position on the leading axis.
+[Index](glyphs/squad.qmd) `⌷` selects along leading axes. Its result has the shape of the positions, followed by the shape of each selected cell. `:` selects one whole axis; `∞` keeps the remaining axes. [Dot indexing](glyphs/dot.qmd) writes the same selection after an array: `m.[: 1]` is `[: 1]⌷m`. A [subscript](scripts.ipynb#subscripts) selects one position on the leading axis.
 
 ```bpl
 v←10 20 30 40 ⋄ [[2 0]]⌷v       ⍝ 30 10
@@ -92,7 +92,7 @@ v←10 20 30 40 ⋄ [⊂1]⌷v          ⍝ ⊂20
 v←10 20 30 40 ⋄ [[1]]⌷v         ⍝ [20]
 v←10 20 30 40 ⋄ v₋₁             ⍝ 40
 m←[1 2 3⋄4 5 6] ⋄ 1⌷m         ⍝ 4 5 6
-m←[1 2 3⋄4 5 6] ⋄ ∞ 1⌷m       ⍝ 2 5
+m←[1 2 3⋄4 5 6] ⋄ [: 1]⌷m       ⍝ 2 5
 ```
 
 [Axis](glyphs/quad-colon.qmd) `⍠` applies a function along axes given as numbers or names, as in `+/⍠0` and `+/⍠"month"`. [Rank](glyphs/jot-diaeresis.qmd) `⍤` applies a function to trailing cells. `⍤0` passes an atom item as itself, and an array item as a scalar holding it.

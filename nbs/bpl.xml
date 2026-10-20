@@ -15,7 +15,7 @@
         <RegExpr String="\$[ad]" attribute="String"/>
         <RegExpr String="[\])](?=ₓ)" attribute="Normal Text" context="Mark"/>
         <AnyChar String="+加-减減×乘号號÷除⌈上⌊下|绝余絕餘*幂冪⍟对對○圆圓π周√根!阶拣階揀∧极且極∨析或⊼方否⊽双莫雙~非无無=等≠别初別&lt;小≤限退&gt;大≥达进達進⍳位↦至:键卸鍵⍴形≢数异數異≡同深,连連⍪接矩⊂包⊃选合選⊆巢段∊属展屬∪并独併獨∩交重⍋升⍒降↑取↓去拆⌽转轉⊖纵縱⍉翻⊤编編⊥译譯⍎行⍕文⌷索⌹解逆#复複↕窗⍭素⨸因⌻零值⍸处间處間⍷寻群尋⊢右⊣左¿掷抽擲" attribute="Function"/>
-        <AnyChar String="¨遍⍨己换換⊗表⌸组組⇄优優∂导梯導/总總⌿汇匯\累⍀续續⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ" attribute="MonadicOperator"/>
+        <AnyChar String="¨遍ᵇ按⍨己换換⊗表⌸组組⇄优優∂导梯導/总總⌿汇匯\累⍀续續⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ" attribute="MonadicOperator"/>
         <AnyChar String="↣先⍤秩∘承⍠轴軸⍥经經↢后後.内內⍣次止⊘兼@于於⍚择擇⌺邻鄰" attribute="DyadicOperator"/>
         <AnyChar String="⍺甲⍵乙⍶丙⍹丁∇递遞⍢循" attribute="Argument"/>
         <AnyChar String="←是⎕出入⋄句?若₀₁₂₃₄₅₆₇₈₉₋" attribute="Keyword"/>

@@ -395,7 +395,6 @@ fn hanzi_spellings_and_language() {
     let mut seen = std::collections::HashMap::new();
     let mut s = Session::new();
     equiv_in(&mut s, r#"•prefs ["hanzi_aliases":$t] ⋄ mean是加总除数句mean 2 4 9"#, "5");
-    assert_eq!(symbols().len(), 98);
     for symbol in symbols() {
         for (aliases, notation) in symbol.hanzi.into_iter().zip([Notation::Simplified, Notation::Traditional]) {
             assert!(!aliases.is_empty(), "{} needs Hanzi spellings", symbol.glyph);

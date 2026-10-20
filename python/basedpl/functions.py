@@ -2,10 +2,12 @@
 import builtins
 from keyword import iskeyword
 from unicodedata import normalize
-from . import _Operators, _Function, _array, _show, bpl, symbols
+from . import Array, _Operators, _Function, _array, _show, bpl, symbols
 from ._core import _system_functions
 
 _HOLE = object()
+
+def _arguments(args): return [_array(o) for o in args], [type(o) in (int, float, complex) for o in args]
 
 def _build(kind, *operands, valence=0):
     if any(o is _HOLE or isinstance(o, _Pending) for o in operands): return _Pending(kind, operands, valence)
@@ -66,7 +68,9 @@ class Function(_Combinators):
             args = (kwargs, args[0] if len(args) == 1 else list(args))
         elif len(args) == 1 and self._valence == 2: return _build('↢', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this BPL function')
-        return bpl._call(self._inner, [_array(o) for o in args], _show, [type(o) in (int, float, complex) for o in args]).value
+        return self._invoke(*_arguments(args))
+    def __rrshift__(self, value): return self(value)
+    def _invoke(self, args, weak): return bpl._call(self._inner, args, _show, weak).value
 
 class _Attaching(Function):
     "`f.undo` or `f.derivative`. Called with one function `g`, it attaches `g` to `f` as its inverse or derivative, as `f⁻¹←g` and `f∂←g` do in BPL."
@@ -135,10 +139,32 @@ def _glyph(glyph):
     "The primitive function `glyph`, with both valences."
     return Function(_Function.builtin(glyph))
 
-def _binary(glyph, x, y):
-    f = _glyph(glyph)
-    return fork(x, f, y) if isinstance(x, _Combinators) or isinstance(y, _Combinators) else f(x, y)
+def _binary(f, x, y):
+    if isinstance(f, str): f = _glyph(f)
+    composed = isinstance(x, _Combinators) or isinstance(y, _Combinators)
+    try:
+        if composed: operands = [o if isinstance(o, _Combinators) else _array(o) for o in (x, y)]
+        else: args = _arguments((x, y))
+    except TypeError: return NotImplemented
+    return fork(operands[0], f, operands[1]) if composed else f._invoke(*args)
 
-def _unary(glyph, y):
-    f = _glyph(glyph)
+def _unary(f, y):
+    if y is NotImplemented: return NotImplemented
+    if isinstance(f, str): f = _glyph(f)
     return atop(f, y) if isinstance(y, _Combinators) else f(y)
+
+def _bitwise(glyph, *operands):
+    try: operands = [o if isinstance(o, (Array, _Combinators)) else Array(o) for o in operands]
+    except TypeError: return NotImplemented
+    if any(isinstance(o, Array) and not o._inner.is_integral for o in operands): raise TypeError('bitwise operations require integers or Booleans')
+    f = _glyph(glyph).bitwise
+    return _unary(f, *operands) if len(operands) == 1 else _binary(f, *operands)
+
+def _matmul(x, y):
+    if isinstance(x, _Combinators) or isinstance(y, _Combinators): raise TypeError('inner product requires two arrays or two functions')
+    try: x, y = (o if isinstance(o, Array) else Array(o) for o in (x, y))
+    except TypeError: return NotImplemented
+    left, right = x.shape, y.shape
+    if not left or not right: raise ValueError('matrix multiplication requires rank at least one')
+    if left[-1] != right[-min(2, len(right))]: raise ValueError('matrix multiplication contraction lengths must agree')
+    return _glyph('+').inner_product(_glyph('×')).rank(2)(x, y)

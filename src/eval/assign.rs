@@ -285,7 +285,11 @@ impl Session {
         let span = nodes[0].span.clone();
         let value = self.array_result(&nodes[..i])?;
         // `⌷` and `.[]` select in one level. A path's items go down level by level.
-        let items = if matches!(nodes[i].kind, NodeKind::Function(Primitive::Mix)) { crate::primitive::coordinate_fields(&value).collect() } else { vec![value.clone()] };
+        let pick = matches!(nodes[i].kind, NodeKind::Function(Primitive::Mix));
+        let items = if pick { crate::primitive::coordinate_fields(&value).collect() } else { vec![value.clone()] };
+        let extend = |target: &mut Value, write, cx: &Context<'_>| if pick {
+            crate::primitive::extend_path(&items, target, descend, write, cx)
+        } else { crate::primitive::extend_indices(&items[0], target, descend, write, cx) };
         // Replace the keys with their value, so that they are evaluated once.
         nodes.splice(..i, [Node { kind: NodeKind::Literal(value), span: span.clone() }]);
         if !items.iter().flat_map(crate::primitive::coordinate_fields).any(|s| matches!(crate::keyed::Selector::of(&s), Ok(Some(_)))) { return Ok(()); }
@@ -293,15 +297,15 @@ impl Session {
         self.extend_selected(&mut container, true)?;
         if let Some((binding, path)) = self.direct_item(&mut container)? {
             let mut target = crate::primitive::item_at(&binding.value, &path);
-            let lacks = crate::primitive::extend_path(&items, &mut target, descend, false, &self.at(&span))?;
+            let lacks = extend(&mut target, false, &self.at(&span))?;
             // Holding the item would make the write copy it.
             drop(target);
             if lacks {
-                self.write_kept(binding, &span, |value, cx| crate::primitive::extend_path(&items, value.item_mut(&path, false), descend, true, cx).map(drop))?;
+                self.write_kept(binding, &span, |value, cx| extend(value.item_mut(&path, false), true, cx).map(drop))?;
             }
         } else {
             let mut target = self.array_result(&container)?;
-            if crate::primitive::extend_path(&items, &mut target, descend, true, &self.at(&span))? {
+            if extend(&mut target, true, &self.at(&span))? {
                 self.assign_selected(&container, None, &Binding::Value(target))?;
             }
         }

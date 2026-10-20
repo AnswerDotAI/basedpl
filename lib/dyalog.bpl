@@ -488,7 +488,7 @@ box←{  ⍝ Frame a text array, with optional internal row and column borders.
   [r c]←rh{∪⍺{(⍵∊⍳≥⍺)#⍵}⍵,(~¯1∊⍵)#0,⍺}¨,¨2↑ar
   [rw cl]←rh{<⍵∪0,⍺}¨[r c]
   (~ 0,rh₁ ∊ c){
-    (↑⍺)↓⍠1(-⍺₁)↓⍠1[∞ ⍋(≥⍳rh₁),cl]⌷⍵
+    (↑⍺)↓⍠1(-⍺₁)↓⍠1[: ⍋(≥⍳rh₁),cl]⌷⍵
   }(~ 0,rh₀ ∊ r){
     (↑⍺)↓⍠0(-⍺₁)↓⍠0[⍋(≥⍳rh₀),rw]⌷⍵
   }{
@@ -496,7 +496,7 @@ box←{  ⍝ Frame a text array, with optional internal row and column borders.
     hz←(h,rh₁)⍴ch₈
     vr←(rh₀,w)⍴ch₉
     ∨/0∊¨⍴¨[rw cl]?(⍵⍪hz),vr⍪q;
-    q₀←ch₄ ⋄ q.[∞ ¯1]←ch₅ ⋄ q.[∞ 0]←ch₆ ⋄ q₋₁←ch₇
+    q₀←ch₄ ⋄ q.[: ¯1]←ch₅ ⋄ q.[: 0]←ch₆ ⋄ q₋₁←ch₇
     [0 ¯1;0 ¯1]⌷q ←2 2⍴ch ⋄ (⍵⍪hz),vr⍪q
   }z
 }
@@ -799,7 +799,7 @@ packH←{                      ⍝ Huffman packing.
 
      eval←{ ⍝ ⍺: environment, ⍵: expression
          isNum ⍵?⍵;
-         isAtom ⍵?[⍺.[∞ 0]⍳⊂⍵ 1]⌷⍺;
+         isAtom ⍵?[⍺.[: 0]⍳⊂⍵ 1]⌷⍺;
          0≡≢⍵?⍬;
          "quote"≡↑⍵?⍵₁;
          (1↑⍵)∊,¨'\' "lambda"?["closure" ⍺],1↓⍵;

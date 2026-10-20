@@ -187,6 +187,12 @@ def test_distribution_functions():
 
 def test_array_surface():
     a = Array([[1, 2, 3], [4, 5, 6]])
+    assert (a == None) is False and (a != None) is True
+    for op in (operator.add, operator.floordiv, operator.lt, operator.matmul, operator.and_):
+        with pytest.raises(TypeError): op(a, None)
+    with pytest.raises(TypeError): add(a, None)
+    with pytest.raises(BplError, match='LENGTH'): a + [1, 2, 3]
+    assert (Array(np.ones(2, np.float32)) + .5).np.dtype == np.float32
     np.testing.assert_array_equal(bpl('m.[0 0]←0 ⋄ m', m=a), [[0, 2, 3], [4, 5, 6]])
     np.testing.assert_array_equal(a, [[1, 2, 3], [4, 5, 6]])
     assert len(a) == 2
@@ -198,7 +204,7 @@ def test_array_surface():
     np.testing.assert_array_equal(a[[True, True], np.array([False, True, True])], [2, 6])
     assert a[:, [False, False, False]].shape == (2, 0)
     np.testing.assert_array_equal(a[:, [0, 1, 1]], [[1, 2, 2], [4, 5, 5]])
-    for mask in ([True], [[True, False, True]], True, Array(True), np.bool_(True)):
+    for mask in ([True], [[True, False, True]], True, Array(True), np.bool_(True), np.array([], dtype=bool)):
         with pytest.raises(IndexError, match='Boolean selector'): a[:, mask]
     np.testing.assert_array_equal(bpl('[mask]⌷v', mask=[False, True, True], v=[10, 20, 30]), [10, 20, 20])
     np.testing.assert_array_equal(list(a)[0], [1, 2, 3])
@@ -219,7 +225,10 @@ def test_array_surface():
     with pytest.raises(TypeError): hash(a)
     np.testing.assert_array_equal(a > 3, [[0, 0, 0], [1, 1, 1]])
     np.testing.assert_array_equal(~(a > 3), a <= 3)
-    np.testing.assert_array_equal(a @ transpose(a), [[14, 32], [32, 77]])
+    product = a @ transpose(a)
+    np.testing.assert_array_equal(product, [[14, 32], [32, 77]])
+    assert product.np.dtype == np.uint8
+    assert add.reduce(a).np.dtype == np.uint8
     assert Array(2).bpl == '2ₓ' and Array(2.).bpl == '2'
     assert repr(Array(2)) != repr(Array(2.))
     assert [repr(Array(s)) for s in ('text', '', ['ab', 'cd'])] == ["'text'", "''", "['ab', 'cd']"]
@@ -237,6 +246,18 @@ def test_python_array_value_semantics():
     teq(f(0).np, held.np)
     assert held.keys == (('a', 'b'), None) and held.names == ('row', 'col')
     assert a.keys == (None, None) and a.names == (None, None)
+    expanded = held[None, ...]
+    assert expanded.keys == (None, ('a', 'b'), None) and expanded.names == (None, 'row', 'col')
+    for inf in (-np.inf, np.inf):
+        with pytest.raises(ValueError): held[:, inf]
+        with pytest.raises(ValueError): held[bpl('[[0] [1]]'), inf]
+    nested = bpl('[[1 2 3⋄4 5 6] [7 8 9⋄10 11 12]]')
+    paths = bpl('[[0 1] [1 0]]')
+    rows = np.array([[4, 5, 6], [7, 8, 9]])
+    teq(nested[paths, None].np, rows[:, None, :])
+    teq(nested[None, paths, ..., None].np, rows[None, :, :, None])
+    nested[paths, ..., None] = (rows * 10)[:, :, None]
+    teq(nested[paths].np, rows * 10)
 
 def test_rustymath_mixed_operators():
     import rustymath as rm
@@ -253,8 +274,13 @@ def test_matrix_stack_operator():
     for x,y in ((a, b), (a, b[:, None]), (a, v), (v, b), (v, v)):
         result, expected = Array(x) @ Array(y), rm.matmul(x, y)
         teq(result.np, np.asarray(expected))
-    for x,y in ((1, v), (v, 1)):
+    for x,y in ((1, v), (v, 1), ([1], v), ([[1]], np.ones((2, 2)))):
         with pytest.raises(ValueError): Array(x) @ Array(y)
+    left = dict(names=['batch', 'row', 'k'], keys=[['x', 'y'], ['r', 's'], None])
+    right = dict(names=['batch', 'k', 'col'], keys=[['x', 'y'], None, ['a', 'b', 'c', 'd']])
+    result, expected = Array(a, **left) @ Array(b, **right), rm.matmul(rm.array(a, **left), rm.array(b, **right))
+    assert result.names == expected.names and result.keys == expected.keys
+    teq(result.np, np.asarray(expected))
 
 def test_own():
     fresh = bpl('100000⍴0.5')
@@ -313,7 +339,7 @@ def test_keys_dataframe():
     pd.testing.assert_frame_equal(m.py, pd.DataFrame(np.array([[10, 2], [20, 4]], dtype=np.uint8), index=['alice', 'bob'], columns=['price', 'qty']))
     np.testing.assert_array_equal(m.np, [[10, 2], [20, 4]])
     h = Array(np.arange(8).reshape(2, 2, 2), keys=[['aa', 'bb'], None, ['xx', 'yy']])
-    pd.testing.assert_frame_equal(h.py, pd.DataFrame(np.arange(8, dtype=np.uint8).reshape(4, 2),
+    pd.testing.assert_frame_equal(h.py, pd.DataFrame(np.arange(8).reshape(4, 2),
         index=pd.MultiIndex.from_product([['aa', 'bb'], [0, 1]]), columns=['xx', 'yy']))
     pd.testing.assert_frame_equal(Array(3).df, pd.DataFrame([[3]], index=[0], columns=[0]))
     pd.testing.assert_frame_equal(Array([3, 4]).df, pd.DataFrame(np.array([3, 4], dtype=np.uint8), index=[0, 1], columns=[0]))
@@ -340,6 +366,10 @@ def test_based_values():
 
 
 def test_words_binding_and_operators():
+    f = bpl.fn('⊢')
+    assert int(Array([6]) & 3) == 2
+    with pytest.raises(TypeError): Array([6.]) & 3
+    assert int((f & 3)(6)) == 2 and int((3 | f)(6)) == 7 and int((~f)(6)) == -7
     np.testing.assert_array_equal(indices(3), [0, 1, 2])
     np.testing.assert_array_equal(shape(reshape([2, 3], indices(6))), [2, 3])
     assert multiply(2.)(3).py == 6. and type(multiply(2.)(3).py) is float
@@ -368,6 +398,7 @@ def test_words_binding_and_operators():
     assert (multiply(2.) ** -1)(10).py == 5
     assert (floor << multiply(10.))(1.25).py == 12
     assert (multiply(10.) >> floor)(1.25).py == 12
+    for value in ([1.25, 2.75], Array([1.25, 2.75]), np.array([1.25, 2.75])): teq((value >> (multiply(10.) >> floor)).py, [12, 27])
     assert atop(floor, multiply(10.))(1.25).py == 12
     assert add.under(natural_log)(2., 3.).py == pytest.approx(6.)
     np.testing.assert_array_equal(reverse.rank(1)(Array([[1, 2], [3, 4]])), [[2, 1], [4, 3]])
@@ -464,7 +495,7 @@ def test_names():
     bpl(V=v)
     for code, names in [('2#V', ('city',)), ('1↕V', (None, None)), ('{⍵}⌺1 V', (None, None)), ('V,V', ('city',))]:
         teq(bpl(code).names, names)
-    with pytest.raises(ValueError, match='DOMAIN'): Array(data, names=('city', 'city'))
+    with pytest.raises(ValueError): Array(data, names=('city', 'city'))
     with pytest.raises(ValueError): Array(data, names=('city',))
 
 

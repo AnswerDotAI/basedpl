@@ -533,11 +533,12 @@ impl Binder {
                     };
                     Term::Binding(Binding::Value(crate::Value::Function(f).enclose().error_at(&span(), "invalid scalar")?))
                 } else {
-                    // A superscript on an array is a call to `*` or `⍉`.
+                    // On an array, a power calls `*`, `ᵀ` calls `⍉` and `ₓ` calls `⌊`.
                     if let (self::OperatorNode::Primitive(OperatorKind::Super(s)), Operand::Value(array)) = (&operator, &operand) {
                         let (function, left, right) = match *s {
                             Superscript::Power(n) => (Primitive::Math(crate::number::Math::Power), Some(array.clone()), crate::Value::integer(n)),
-                            Superscript::Transpose => (Primitive::Transpose, None, array.clone()), Superscript::Unit => unreachable!()
+                            Superscript::Transpose => (Primitive::Transpose, None, array.clone()),
+                            Superscript::Floor => (Primitive::Math(crate::number::Math::Floor), None, array.clone()), Superscript::Unit => unreachable!()
                         };
                         let function = self::Function::primitive(function);
                         let expression = capture.then(|| {

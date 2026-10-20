@@ -223,7 +223,7 @@ alt ← {  ⍝ Alternant.
   0=r?⍹⌿,⍵;
   1≥c?⍶⌿,⍵;
   M←(⍳r)~⍤1⍪⍳r  ⍝ minors
-  ⍵.[∞ 0]⍶.⍹∇¨⊂⍠[1 2][M 1↓⍳c]⌷⍵
+  ⍵.[: 0]⍶.⍹∇¨⊂⍠[1 2][M 1↓⍳c]⌷⍵
 }
 
 bayes ← {⍺ ×÷+.× ⍵}  ⍝ Bayes' formula. (implemented as a fork)
@@ -254,10 +254,10 @@ det ← {  ⍝ Determinant of square matrix.
 
 gauss_jordan ← {  ⍝ Gauss-Jordan elimination.
   elim←{  ⍝ elimination of row/col ⍺
-    p←⍺+↑⍒|⍺↓[∞ ⍺]⌷⍵
+    p←⍺+↑⍒|⍺↓[: ⍺]⌷⍵
     swap←⊖@[⍺ p] ⍵  ⍝ ⍺th and pth rows exchanged
     mat←swap.[⍺ ⍺]÷⍨@⍺ swap  ⍝ col diagonal reduced to 1
-    mat-(mat.[∞ ⍺]×⍺≠⍳≢⍵)×⊗⍺⌷mat
+    mat-(mat.[: ⍺]×⍺≠⍳≢⍵)×⊗⍺⌷mat
   }
   ⍺←=/⊃⍳⍴⍵
   (⍴⍺)⍴(0 1×⍴⍵)↓(⍵,⍺)elim/⌽⍳⌊/⍴⍵

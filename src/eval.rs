@@ -131,7 +131,7 @@ impl FunctionNode {
     fn operation(&self) -> Option<Operation> {
         match self {
             Self::Primitive(p) => Some(Operation::Primitive(*p)),
-            Self::Fold(f, kind) => Some(Operation::Fold(f.as_primitive()?, *kind)),
+            Self::Fold(f, kind) => Some(Operation::Fold(f.dyadic_primitive()?, *kind)),
             Self::Composed(OperatorKind::Product, [Operand::Function(f), Operand::Function(g)]) => product(f, g),
             _ => None,
         }
@@ -162,7 +162,15 @@ impl FunctionNode {
 impl Function {
     fn node(&self) -> &FunctionNode { &self.node.kind }
     /// The primitive this function is, where it is one.
-    fn as_primitive(&self) -> Option<Primitive> { match self.node() { FunctionNode::Primitive(p) => Some(*p), _ => None } }
+    pub(crate) fn as_primitive(&self) -> Option<Primitive> { match self.node() { FunctionNode::Primitive(p) => Some(*p), _ => None } }
+    /// The primitive this function is when called with two arguments: its own primitive, or for `gᵇ`, `Primitive::Bitwise` of `g`'s truth table, where `g`'s Boolean kernel gives one (`pervasive::truth_table`). A dyadic call of `gᵇ`, and folds and scans, which call their operand with two arguments, use it to run `gᵇ` through the kernels. A monadic `gᵇ` reads `g`'s monadic form, which this table doesn't describe.
+    pub(crate) fn dyadic_primitive(&self) -> Option<Primitive> {
+        match self.node() {
+            FunctionNode::Primitive(p) => Some(*p),
+            FunctionNode::Modified(OperatorKind::Bitwise, Operand::Function(g)) => crate::pervasive::truth_table(g.dyadic_primitive()?).map(Primitive::Bitwise),
+            _ => None,
+        }
+    }
     /// The operation this function names, where it names one (`FunctionNode::operation`).
     pub(crate) fn operation(&self) -> Option<Operation> { self.node().operation() }
     /// The dfn that this function runs, where it's a dfn or a dfn operator's derived function.
@@ -202,12 +210,7 @@ impl Function {
                 (Take, None) if right.shape().len() <= 1 => SelectionKind::Item,
                 (Mix, Some(x)) if x.is_empty() => kind,
                 (Mix, Some(x)) => if crate::primitive::picks_item(x, right, cx)? { SelectionKind::Item } else { SelectionKind::Elements },
-                (Index | Bracket, Some(x))
-                    if {
-                        let fields = crate::primitive::coordinate_fields(x).collect::<Vec<_>>();
-                        fields.len() == right.shape().len().max(1)
-                            && fields.iter().try_fold(true, |all, e| Ok::<_, crate::transform::Stop>(all && ((e.is_atom() && e.observed()?.infinity().is_none()) || crate::keyed::name(e).is_some()))).at(cx.span)?
-                    } =>
+                (Index | Bracket, Some(x)) if crate::primitive::squad_item(x, right, cx)? =>
                 { SelectionKind::Item }
                 _ => SelectionKind::Elements,
             },
@@ -412,6 +415,7 @@ impl Function {
                     (Fold(kind), Operand::Function(f)) => FunctionNode::Fold(f, kind),
                     (Super(Superscript::Power(-1)), Operand::Function(f)) => return f.inverse(span),
                     (Super(Superscript::Power(n)), Operand::Function(f)) => FunctionNode::Composed(Power, [Operand::Function(f), Operand::Value(Value::integer(n))]),
+                    (Super(Superscript::Floor), _) => return Err(span.domain_error("ₓ floors an array, not a function")),
                     (Super(_), _) => return Err(span.domain_error("ᵀ transposes an array, not a function")), (op, a) => FunctionNode::Modified(op, a)
                 }
             }
@@ -601,6 +605,7 @@ impl Function {
             FunctionNode::Primitive(Primitive::Execute) => return cx.session.execute(left, right, cx.span),
             FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, cx),
             FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, cx),
+            FunctionNode::Modified(OperatorKind::Bitwise, Operand::Function(f)) => bitwise(self, f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Outer, Operand::Function(f)) => return outer(f, left, right, cx),
             FunctionNode::Modified(OperatorKind::Key, Operand::Function(_)) => return key(self, left, right, cx),
             FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => crate::derivative::differentiate(f, left, right, cx),

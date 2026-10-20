@@ -23,12 +23,19 @@ pub(super) fn membership(left: &Value, right: &Value, span: &Context<'_>) -> Res
 }
 
 impl Value {
-    /// Whether `query` matches one major cell, using this session's membership rules. Rank-0 values are not containers.
+    /// Whether `query` matches one major cell, as `≡` matches arrays, within this session's tolerance. Its layout must match a cell's (`rustymath::search::member_layout`). Compact items search through `rustymath::search::view_member`, and other items search as `∊` does. A rank-0 value gives a Rank error.
     pub fn contains(&self, query: &Value, session: &mut crate::Session) -> Result<bool, Error> {
         let span = Span::whole(crate::Source::new("<contains>", "∊"));
-        if self.is_unit() { return Err(span.error(Kind::Rank, "a rank-0 value is not a container")); }
-        if self.shape()[1..] != *query.shape() { return Ok(false); }
-        session.numeric.while_current(|| membership(query, self, &session.at(&span))?.boolean().error_at(&span, "invalid membership result"))
+        if rustymath::search::member_layout(self.core_layout(), query.core_layout()).at(&span)?.is_none() { return Ok(false); }
+        session.numeric.while_current(|| {
+            let cx = session.at(&span);
+            if let (Items::Compact(x), Items::Compact(y)) = (self.as_items(), query.as_items()) {
+                let t = Numeric::current().tolerance_at(self.float_width().max(query.float_width()).unwrap_or(FloatWidth::F64));
+                return rustymath::search::view_member(self.core_layout(), x, query.core_layout(), y, t, || cx.check_now()).at(&span)?;
+            }
+            let (found, _) = search(self, query, &cx)?;
+            Ok((found[0] as usize) < self.shape()[0])
+        })
     }
 }
 

@@ -1,5 +1,5 @@
 use rustymath::error::Kind;
-use crate::{array::Items, data::{imported, text, Options}, execution::Context, keyed, Error, ErrorAt, ErrorKind, Number, Value};
+use crate::{array::Items, data::{imported, text, Options}, error::At, execution::Context, keyed, Error, ErrorAt, ErrorKind, Number, Value};
 use foldhash::{HashMap, HashMapExt};
 use num_bigint::BigInt;
 use num_rational::BigRational;
@@ -127,7 +127,8 @@ fn export(value: &Value, fill: Option<&Number>, span: &Context<'_>) -> Result<Js
             Err(span.domain_error("JSON numbers must be finite floats or integers"))
         }
         Value::Function(_) | Value::Operator(_) => Err(span.domain_error("JSON cannot encode functions or operators")),
-        Value::Carried(carrier) => Err(carrier.refused().at(span)),
+        // A value that `∂` carries writes as its plain value, as `⍕` writes it (`Carrier::observed`). A batch stops its run.
+        Value::Carried(carrier) => match carrier.observed().at(span)? { Some(plain) => export(plain, fill, span), None => Err(carrier.refused().at(span)) },
         _ if value.keys(0).is_none() && keyed::name(value).is_some() => Ok(Json::String(text(value, span)?)),
         _ if value.shape().is_empty() => export(&value.at(0), fill, span),
         _ => {

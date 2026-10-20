@@ -28,7 +28,7 @@ def add_scripts(font):
         pen = TTGlyphPen(font.getGlyphSet())
         pen.addComponent(src, (scale, 0, 0, scale, 0, offset))
         add_glyph(font, char, pen.glyph(), round(font['hmtx'][src][0]*scale))
-    for char, source in zip('⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘ', '0123456789-Tu'): add(char, source, 2/3, 392)
+    for char, source in zip('⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵇᵀᵘ', '0123456789-bTu'): add(char, source, 2/3, 392)
     for char, source in zip('₀₁₂₃₄₅₆₇₈₉₋', '⁰¹²³⁴⁵⁶⁷⁸⁹⁻'): add(char, source, 1, -532)
     for char, source in zip('ₓᵣₑⱼ', 'xrej'):
         if ord(char) in cmap: continue

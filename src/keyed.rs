@@ -203,11 +203,10 @@ fn axis_selectors(value: &Value, axes: &[usize], named: bool) -> Result<Value, E
 }
 
 /// For each axis of `target`, the keys in `selectors` that it lacks, each once.
-pub(crate) fn missing(target: &Value, selectors: &[Option<Value>]) -> Result<Vec<Vec<Arc<str>>>, ErrorKind> {
+pub(crate) fn missing<'a>(target: &Value, selectors: impl IntoIterator<Item = (usize, &'a Value)>) -> Result<Vec<Vec<Arc<str>>>, ErrorKind> {
     let rank = target.shape().len();
     let mut added: Vec<Vec<Arc<str>>> = vec![vec![]; rank];
-    for (axis, selector) in selectors.iter().enumerate() {
-        let Some(selector) = selector else { continue; };
+    for (axis, selector) in selectors {
         let Some(selector) = Selector::of(selector)? else { continue; };
         if axis >= rank { return Err(Kind::Rank.into()); }
         let wanted = match selector { Selector::One(k) => vec![k], Selector::Many(_, names) => names };

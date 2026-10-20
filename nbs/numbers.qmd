@@ -82,7 +82,7 @@ Each number written in a literal list or in brackets keeps its own exactness, ev
 [1ₓ 0.5]÷2ₓ          ⍝ 1r2 0.25
 ```
 
-In `[…]ₓ` and `(…)ₓ`, every number is exact, at any depth. Each item must be a literal, and each number must be whole. A vector of exact integers displays as `[…]ₓ`, and rows of them as `(…)ₓ`. `⍕` writes them the same way:
+Around literals, `[…]ₓ` and `(…)ₓ` make every number exact, at any depth. Each number must be whole. After a list or group that holds anything else, as after a name, `ₓ` is [`⌊`](glyphs/downstile.qmd), as [Superscripts and subscripts](scripts.ipynb) describes. A vector of exact integers displays as `[…]ₓ`, and rows of them as `(…)ₓ`. `⍕` writes them the same way:
 
 ```bpl
 [1 0 1]ₓ≡1ₓ 0ₓ 1ₓ    ⍝ $t
@@ -113,7 +113,7 @@ x←1ₓ 0.5 2ₓ
 
 Boxed display marks mixed storage with `+`, and exact integers with `ₓ`.
 
-Integer storage keeps each item in 1, 2, 4 or 8 bytes. One byte holds 0 to 255. Literals, imported data, reductions and positions take the fewest bytes that hold every item. Pervasive arithmetic keeps its arguments' size, and moves to the next size up when a result doesn't fit. An exact result beyond 8 bytes becomes a big integer in mixed storage. The size never changes a result, and `•storage` doesn't show it.
+Integer storage keeps each item in 1, 2, 4 or 8 bytes. One byte holds 0 to 255. Literals, reductions and positions take the fewest bytes that hold every item. Imported buffers preserve supported item widths. Pervasive arithmetic keeps its arguments' size, and moves to the next size up when a result doesn't fit. An exact result beyond 8 bytes becomes a big integer in mixed storage. The size never changes a result, and `•storage` doesn't show it.
 
 ## Float widths
 

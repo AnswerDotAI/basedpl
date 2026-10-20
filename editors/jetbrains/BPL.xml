@@ -79,6 +79,11 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="bitwise" value="ᵇ" description="ᵇ" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="bullet" value="•" description="•" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
@@ -1140,6 +1145,11 @@
     </context>
   </template>
   <template name="subtract" value="-" description="-" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="superscript-b" value="ᵇ" description="ᵇ" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>

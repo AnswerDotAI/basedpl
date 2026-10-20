@@ -70,10 +70,17 @@ def test_bindings_functions_and_output(capsys):
 
 
 def test_numpy_inputs_and_copies():
+    for values,dtype in (([np.float16(1.5), 2], np.float16), ([np.float32(.5), 2], np.float32),
+                         ([np.complex64(1+2j), np.complex64(3+4j)], np.complex64)):
+        native = Array(values)
+        assert native.shape == (2,) and native.np.dtype == dtype
+    mixed = Array([np.complex64(1+2j), 2]).np
+    assert mixed.dtype == object and mixed.tolist() == [1+2j, 2] and type(mixed[1]) is int
     original = np.arange(12).reshape(3, 4)[:, ::2]
     bpl(m=original)
     original[:] = 99
     np.testing.assert_array_equal(bpl('+/m'), [2, 10, 18])
+    assert bpl['m'].np.dtype == np.int64
     saved = bpl['m'].np
     saved[:] = 77
     np.testing.assert_array_equal(bpl('+/m'), [2, 10, 18])

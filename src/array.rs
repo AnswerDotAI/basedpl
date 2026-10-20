@@ -394,13 +394,17 @@ impl Value {
         if self.view().is_none() { return Err(self); }
         match self.into_storage() { Storage::Compact(b) => Ok(b), Storage::Mixed(..) => unreachable!("compact items stay compact") }
     }
-    /// An array of shape `shape` holding the items of `buffer`. Integers take the narrowest width that holds them.
+    /// An array of shape `shape` holding `buffer`. Integer storage narrows to its smallest fitting width.
     pub fn from_buffer(shape: impl Into<Shape>, buffer: Buffer) -> Result<Self, ErrorKind> {
         let storage = match buffer {
             Buffer::Integers(IntBuf::U8(v)) => Storage::narrowed(v), Buffer::Integers(IntBuf::I16(v)) => Storage::narrowed(v),
             Buffer::Integers(IntBuf::I32(v)) => Storage::narrowed(v), Buffer::Integers(IntBuf::I64(v)) => Storage::narrowed(v), compact => Storage::Compact(compact)
         };
         Self::from_storage(shape, storage)
+    }
+    /// A frontend buffer imported at its supplied dtype, without integer narrowing.
+    pub fn imported_buffer(shape: impl Into<Shape>, buffer: Buffer) -> Result<Self, ErrorKind> {
+        Self::from_storage(shape, Storage::Compact(buffer))
     }
     /// An array of shape `shape` holding `items`, as data imported from another language. Numbers become floats when every one converts exactly and any is a float, and otherwise each item keeps its own kind.
     pub fn imported(shape: Vec<usize>, items: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
@@ -491,6 +495,16 @@ impl Value {
     }
     /// Whether every number, including those in nested arrays, is exact. Non-finite values in integer storage count as exact.
     pub fn is_exact(&self) -> bool { self.exact_domain() == Some(true) }
+    /// Whether all items are Boolean or exact integers, with no active transformation.
+    pub fn is_integral(&self) -> bool {
+        if self.carrier().is_some() { return false; }
+        if let Some(dtype) = self.dtype() { return dtype.is_integral(); }
+        match self {
+            Self::Number(n) => n.is_integral(),
+            Self::Array(_) => if self.is_empty() { self.prototype().is_integral() } else { self.elements().all(|v| v.is_integral()) },
+            _ => false,
+        }
+    }
     /// This value as a weak argument beside `strong`, as NEP 50 treats a Python scalar: a float atom takes the width of the floats among `strong`, and a complex atom the width of their parts. Python's API converts its scalar arguments this way. BPL itself has no weak values. Other values are unchanged.
     pub fn weakened(self, strong: &[Value]) -> Value {
         let (Some(weak @ (DType::Float(_) | DType::Complex(_))), true) = (self.dtype(), self.is_atom()) else { return self };

@@ -11,7 +11,7 @@ type Ref = *const c_void;
 struct Rect { x: f64, y: f64, width: f64, height: f64 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     fn CFRelease(object: Ref);
     fn CFDataCreate(allocator: Ref, bytes: *const u8, length: isize) -> Ref;
     fn CFDataCreateMutable(allocator: Ref, capacity: isize) -> Ref;
@@ -21,7 +21,7 @@ extern "C" {
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     fn CGImageGetWidth(image: Ref) -> usize;
     fn CGImageGetHeight(image: Ref) -> usize;
     fn CGImageGetBitsPerComponent(image: Ref) -> usize;
@@ -48,7 +48,7 @@ extern "C" {
 }
 
 #[link(name = "ImageIO", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     fn CGImageSourceCreateWithData(data: Ref, options: Ref) -> Ref;
     fn CGImageSourceGetCount(source: Ref) -> usize;
     fn CGImageSourceCreateImageAtIndex(source: Ref, index: usize, options: Ref) -> Ref;

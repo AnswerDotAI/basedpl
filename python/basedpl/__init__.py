@@ -75,7 +75,9 @@ def _dataframe(raw):
 
 def _element(value, seen):
     np = sys.modules.get('numpy')
-    if np is not None and isinstance(value, np.generic): value = value.item()
+    if np is not None and isinstance(value, np.generic):
+        if value.dtype.kind in 'biufc': return _array(value.__array__(), seen).native_atom()
+        value = value.item()
     if isinstance(value, bool): return value
     if isinstance(value, Fraction): return value.numerator, value.denominator
     if isinstance(value, (Function, Operator)): return value._inner
@@ -105,11 +107,8 @@ def _array(value, seen=None):
     if numpy:
         kind, size = value.dtype.kind, value.dtype.itemsize
         if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16: raise TypeError('unsupported NumPy dtype')
-        # Signed bytes cross as `int16`, and wider unsigned integers as `int64`. A `uint64` array with a value past the `int64` range crosses item by item,
-        # as exact integers. Every other number crosses at its own width, in native byte order. Strings and objects cross item by item.
+        # The object path preserves unsigned values outside int64 as exact integers.
         if kind == 'u' and size == 8 and value.size and value.max() >= 1<<63: value, kind = value.astype(object), 'O'
-        if kind == 'i' and size == 1 or kind == 'u' and size > 1: value = value.astype('i2' if size == 1 else 'i8')
-        elif kind in 'biufc' and not value.dtype.isnative: value = value.astype(value.dtype.newbyteorder('='))
     prototype = 0.
     if isinstance(value, dict):
         keys = [None if type(k) is int and k == i else k for i,k in enumerate(value)]
@@ -151,10 +150,10 @@ class _Operators:
     def __rmod__(self, other): return _binary('|', self, other)
     def __pow__(self, other): return _binary('*', self, other)
     def __rpow__(self, other): return _binary('*', other, self)
-    def __and__(self, other): return _binary('∧', self, other)
-    def __rand__(self, other): return _binary('∧', other, self)
-    def __or__(self, other): return _binary('∨', self, other)
-    def __ror__(self, other): return _binary('∨', other, self)
+    def __and__(self, other): return _bitwise('∧', self, other)
+    def __rand__(self, other): return _bitwise('∧', other, self)
+    def __or__(self, other): return _bitwise('∨', self, other)
+    def __ror__(self, other): return _bitwise('∨', other, self)
     def __eq__(self, other): return _binary('=', self, other)
     def __ne__(self, other): return _binary('≠', self, other)
     def __lt__(self, other): return _binary('<', self, other)
@@ -163,7 +162,7 @@ class _Operators:
     def __ge__(self, other): return _binary('≥', self, other)
     def __neg__(self): return _unary('-', self)
     def __pos__(self): return _unary('+', self)
-    def __invert__(self): return _unary('~', self)
+    def __invert__(self): return _bitwise('~', self)
     def __abs__(self): return _unary('|', self)
 
 def _text(raw):
@@ -251,21 +250,26 @@ class Array(_Operators):
     def __float__(self): return float(self._atom())
     def __int__(self): return int(self._atom())
     def __index__(self): return operator.index(self._atom())
-    def __bool__(self): return bool(self._atom())
+    def __bool__(self):
+        if math.prod(self.shape) != 1: raise ValueError('an array with other than one item has ambiguous truth')
+        return bool(self._atom())
     def __len__(self):
         if not self.shape: raise TypeError('a unit has no length')
         return self.shape[0]
     def __iter__(self): return (Array(a) for a in self._inner.cells())
-    def __contains__(self, item): return self._inner.contains(_array(item), bpl._session)
+    def __contains__(self, item):
+        # A one-character string is an atom. A longer one is one item where the major cells are items, as a list of strings holds them, and otherwise a character vector, which matches a row of characters.
+        if isinstance(item, str) and len(item) == 1: query = bpl._session.array(dict(atom=item))
+        elif isinstance(item, str) and len(self.shape) == 1: query = bpl._session.array(dict(shape=[], data=[_array(item)], prototype=' '))
+        else: query = _array(item)
+        return self._inner.contains(query, bpl._session)
     def __getitem__(self, index):
         "Select by positions, keys, slices or per-axis masks. `None` inserts an axis and `...` keeps omitted axes."
         return _result(self._inner.select(index, _array)).value
     def __setitem__(self, index, value): self._inner = self._inner.assign(index, _array(value), _array)
     def __rustymath_array__(self): return self._inner.__rustymath_array__()
-    def __matmul__(self, other):
-        if isinstance(other, Function): raise TypeError('inner product requires two arrays or two functions')
-        return _glyph('+').inner_product(_glyph('×'))(self, other)
-    def __rmatmul__(self, other): return _glyph('+').inner_product(_glyph('×'))(other, self)
+    def __matmul__(self, other): return _matmul(self, other)
+    def __rmatmul__(self, other): return _matmul(other, self)
     def __array__(self, dtype=None, copy=None):
         result = self._numpy(copy=copy is not False)
         if result is None:
@@ -374,7 +378,7 @@ class _Workspace:
 bpl = _Workspace()
 fn = bpl.fn
 
-from .functions import Function, Operator, fork, atop, __all__ as _function_names, _binary, _unary, _builtin, _builtins, _glyph
+from .functions import Function, Operator, fork, atop, __all__ as _function_names, _binary, _unary, _bitwise, _matmul, _builtin, _builtins, _glyph
 from .printing import to_python
 from .syntax import parse
 __all__ += ['to_python', 'parse']

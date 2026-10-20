@@ -750,7 +750,7 @@ impl Graph {
     pub(crate) fn run(&self) -> Value {
         let (last, extras) = if self.nodes.len() < MIN_NODES {
             let mut results = self.unfused_all();
-            let extras: Vec<Value> = self.extras.iter().map(|&(k, _)| results[k].clone()).collect();
+            let mut extras = Vec::with_capacity(self.extras.len()); for &(k, _) in &self.extras { extras.push(results[k].clone()); } // A plain loop keeps edits to `run` from recompiling the codegen unit that would hold a closure's generic instance.
             (results.pop().expect("a graph has a node"), extras)
         } else {
             let tally = Tally::new();

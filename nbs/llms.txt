@@ -19,11 +19,11 @@ Each entry below names a difference from Dyalog APL, gives a short example, and 
 - [Agreement](evaluation.html.md#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes: `[1 2 3⋄4 5 6]+10 20` is `[11 12 13⋄24 25 26]`. An axis of length 1 expands.
 - [Maps](evaluation.html.md#functions-and-effects): Each, Rank, stencils and outer products call a dfn once on all their cells where they can: `{⍵×⍵+1}¨v` costs about what `v×v+1` costs. A predicate on a cell's value, output or a nested result makes them call it once for each cell.
 - [Arrays](arrays.html.md): numbers, characters and functions are atoms, distinct from scalars, as in BQN. `⊂` always adds a layer: `⊂3 ≡ 3` is `$f`.
-- [Brackets](glyphs/brackets.html.md): `[a b]` is a vector, even `[a]`. Inside brackets, spaces separate items. `;` separates items that contain spaces: `[1 2;3 4]` has two items. `⋄` separates rows: `[1 2⋄3 4]` is a matrix. `"k":v` items make a record: `["a":1 "b":2]`.
+- [Brackets](glyphs/brackets.html.md): `[a b]` is a vector, even `[a]`. Inside brackets, spaces separate items. `;` separates items, each read as if parenthesised: `[1 2;3 4]` is `[(1 2) (3 4)]`, two items. `⋄` separates rows: `[1 2⋄3 4]` is a matrix. `"k":v` items make a record: `["a":1 "b":2]`.
 - [Characters and strings](strings.html.md): `"abc"` is a character vector. `'a'` is one character atom. A single-quoted string such as `'abc'` is an error.
 - [Indexing](indexing.html.md): `Y[I]` isn't BPL. `I⌷A` takes a cross product, while `A.[I J]` pairs its index arrays as NumPy does: with `i←⍳3`, `m.[i i]` is the diagonal. Positions count from 0. Negative positions count from the end.
 - [Numbers](numbers.html.md): bare numbers behave as in Dyalog. BPL adds exact integers, as in `3ₓ`, and exact rationals, as in `1r3`, and arithmetic on exact numbers stays exact.
-- [Superscripts and subscripts](scripts.html.md): `x²` is `x*2`, `f⁻¹` is the inverse of `f`, and `v₁` is `1⌷v`.
+- [Superscripts and subscripts](scripts.html.md): `x²` is `x*2`, `f⁻¹` is the inverse of `f`, `v₁` is `1⌷v`, and `nₓ` is `⌊n`.
 - [Keyed arrays](keyed.html.md): axes can have names and keys. `T.a` reads field `a` of a record, and `⊢.a` is `{⍵.a}`. Arithmetic pairs axes by name: with `i←⍳["i":3]` and `j←⍳["j":3]`, `i+j` is a 3×3 table.
 - [Dfns](dfns.html.md): BPL has only dfns, with no tradfns and no control structures such as `:If`. A dfn returns its last statement. A predicate picks a body, as in BQN: `{⍵<0?-⍵;⍵} ¯3` is `3`. An absent `⍺` drops out of expressions, as BQN's `𝕨` does. A dfn operator's operands are `⍶` and `⍹`, not `⍺⍺` and `⍵⍵`. `⍢` calls the operator recursively. An error guard names its kinds as text, as in `"DOMAIN"::`.
 - [Assignment](assignment.html.md): `←` is local. Modified and selective updates change the nearest binding. `[a b]←Y` destructures the items of `Y` by position. A space before `←` makes the whole run the target: `[[0 2]]⌷v ←0`.
@@ -45,7 +45,7 @@ Each entry below names a difference from Dyalog APL, gives a short example, and 
 - [`⍣` power](glyphs/star-diaeresis.html.md): a list of counts keeps the history: `2×⍣(⍳5) 1` is `1 2 4 8 16`. `f⍣∞` finds a fixed point.
 - [`/` reduce](glyphs/slash.html.md), [`⌿`](glyphs/slash-bar.html.md), [`\`](glyphs/backslash.html.md) and [`⍀`](glyphs/backslash-bar.html.md): only reduce and scan. A left argument is a seed, as in BQN: `2+/1 2 3` is `8`. Scans accumulate left to right.
 - [`⍉` transpose](glyphs/circle-backslash.html.md): `A⍉Y` sends each axis of `Y` to the destination `A` gives it, as in BQN. `A⍉⁻¹Y` reorders axes as einops does: `["b" "patch":["i" "j"]]⍉⁻¹y`.
-- [`⌷` index](glyphs/squad.html.md): selects along leading axes: `[[2 0]]⌷10 20 30` is `30 10`. `∞` selects a whole axis.
+- [`⌷` index](glyphs/squad.html.md): selects along leading axes: `[[2 0]]⌷10 20 30` is `30 10`. `:` keeps one axis, `∞` the rest; `¯∞` inserts a length-one axis. Write `[: 1]`, not `[:1]`.
 - [`⊃` pick](glyphs/right-shoe.html.md): pick follows a path, one level for each item: `[1 2]⊃v` is item 2 of item 1.
 - [`⍳` iota](glyphs/iota.html.md): positions count from 0: `⍳3` is `0 1 2`. A negative argument counts down: `⍳¯3` is `2 1 0`.
 - [`⍸` where](glyphs/iota-underbar.html.md): the dyad counts the items at or below each value, as BQN's `⍋`: `1 3 5⍸4 0 5` is `2 0 3`.
@@ -87,6 +87,7 @@ Each entry below names a difference from Dyalog APL, gives a short example, and 
 - [`⍚` agenda](glyphs/diamond-underbar.html.md): `selector⍚cases` calls the function that `selector` picks, as BQN's `◶`. A selector that isn't a unit picks a function for each cell: `(0≤)⍚[0 √] ¯4 9` is `0 3`.
 - [`⇄` optimize](glyphs/right-left-arrows.html.md): `cost⇄ start` finds where `cost` is least, searching from `start`. A left argument holds options.
 - [`∂` derivative](glyphs/partial.html.md): `f∂x` is the derivative, or Jacobian, of `f` at `x`: `{⍵*2}∂3` is `6`.
+- [`ᵇ` bitwise](glyphs/superscript-b.html.md): applies a Boolean function to integer bits: `6∧ᵇ3` is `2ₓ`, and `~ᵇ6` is `¯7ₓ`.
 - [`•` system](glyphs/bullet.html.md): starts a system name, as in `•json`, in place of Dyalog's `⎕NAME`.
 
 ## System functions

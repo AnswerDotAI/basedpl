@@ -438,10 +438,9 @@ impl Gather {
         let single = source.len() == 1;
         let pick = |k: usize| if single { 0 } else { k };
         self.follow(source.dtype());
-        if copy_into!(&mut self.data, source.as_items(), |d, s, f| match writes {
-            Writes::Offsets(offsets) => rustymath::gather::scatter(d, offsets, s, f),
-            Writes::Walk { base, steps } => rustymath::gather::scatter_walk(d, s, base, steps, f),
-        }) { return; }
+        // Items of the buffer's own type move without a conversion pass (`gather::Same`).
+        if copy_into!(&mut self.data, source.as_items(), |d, s| writes.write(d, s, rustymath::gather::Same)) { return; }
+        if copy_into!(&mut self.data, source.as_items(), |d, s, f| writes.write(d, s, f)) { return; }
         let d = self.mixed();
         for (k, &o) in writes.offsets().iter().enumerate() { if o != Steps::FILL { d[o] = source.at(pick(k)) } }
     }
@@ -499,6 +498,13 @@ impl Writes<'_> {
         match *self {
             Self::Offsets(offsets) => offsets.iter().all(|&o| o == Steps::FILL),
             Self::Walk { steps, .. } => self.is_empty() || (steps.iter().any(Steps::fills) && self.offsets().iter().all(|&o| o == Steps::FILL)),
+        }
+    }
+    /// Writes `items` at these places in `out`, each converted by `conv`, through rustymath's `gather::scatter` or `gather::scatter_walk`.
+    fn write<S: rustymath::gather::Item, D: rustymath::gather::Item>(self, out: &mut [D], items: &[S], conv: impl rustymath::gather::Convert<S, D>) {
+        match self {
+            Self::Offsets(offsets) => rustymath::gather::scatter(out, offsets, items, conv),
+            Self::Walk { base, steps } => rustymath::gather::scatter_walk(out, items, base, steps, conv),
         }
     }
 }

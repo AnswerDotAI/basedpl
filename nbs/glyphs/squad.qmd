@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-q Backslash`. Ranks: `∞` monadic, `1 ∞` dyadic
 
-`I⌷Y` indexes `Y`. The left argument has one item for each leading axis of `Y`. Axes that it omits are taken whole. `⌷Y` is identity. A [subscript](../scripts.ipynb#subscripts) writes a single position: `m₁` is `1⌷m`. After an array, [Dot](dot.qmd) indexing, `x.[I]`, pairs arrays of positions with each other instead: `m.[[0 2] [1 3]]` reads the items at 0,1 and 2,3, where `[[0 2] [1 3]]⌷m` reads a 2 by 2 block.
+`I⌷Y` indexes `Y`. The left argument lists selectors for leading axes of `Y`. Axes that it omits are taken whole. `⌷Y` is identity. A [subscript](../scripts.ipynb#subscripts) writes a single position: `m₁` is `1⌷m`. After an array, [Dot](dot.qmd) indexing, `x.[I]`, pairs arrays of positions with each other instead: `m.[[0 2] [1 3]]` reads the items at 0,1 and 2,3, where `[[0 2] [1 3]]⌷m` reads a 2 by 2 block.
 
 ```bpl
 m←3 4⍴⍳12
@@ -10,7 +10,7 @@ m←3 4⍴⍳12
 1 2⌷m              ⍝ 6
 ```
 
-Each item of the left argument is a single position, an array of positions, an array of coordinates, or `∞`. Selecting with a single position drops that axis from the result. Selecting with an array of positions puts the array's shape in place of the axis. Arrays of positions for several axes give their cross product. An array of positions for one axis is one item, as in `[[2 0]]`, because `[2 0]` gives a position on each of two axes.
+Each item of the left argument is a single position, an array of positions, an array of coordinates, `:`, `∞` or `¯∞`. Selecting with a single position drops that axis from the result. Selecting with an array of positions puts the array's shape in place of the axis. Arrays of positions for several axes give their cross product. An array of positions for one axis is one item, as in `[[2 0]]`, because `[2 0]` gives a position on each of two axes.
 
 ```bpl
 v←10 20 30
@@ -27,12 +27,15 @@ v←10 20 30
 [[¯1 0]]⌷v         ⍝ 30 10
 ```
 
-`∞` takes a whole axis, and `¯∞` takes it in reverse order. They are valid only as a whole item, not inside an array of positions.
+`:` takes one whole input axis. `∞` takes all remaining axes here, as Python's `...` does. At most one `∞` is allowed. `¯∞` inserts an unnamed, unkeyed axis of length one without consuming an input axis. Write each marker as a separate bracket item: `[: 1]`, not `[:1]`, which applies Unkey to `1`. [Reverse](circle-stile.qmd), `⌽`, reverses the last axis:
 
 ```bpl
 m←3 4⍴⍳12
-∞ 1⌷m              ⍝ 1 5 9
-¯∞ ∞⌷m             ⍝ ⊖3 4⍴⍳12
+[: 1]⌷m            ⍝ 1 5 9
+⍴[¯∞ ∞]⌷m          ⍝ [1 3 4]ₓ
+⍴[: ¯∞ :]⌷m        ⍝ [3 1 4]ₓ
+⍴m.[∞ ¯∞]          ⍝ [3 4 1]ₓ
+⌽⍠0 m              ⍝ [8 9 10 11⋄4 5 6 7⋄0 1 2 3]
 ```
 
 On a keyed axis, a string is one key.
@@ -51,6 +54,18 @@ a←2 3 4⍴⍳24
 [[[0 1] [1 2]] [3 0]]⌷a   ⍝ [7 4⋄23 20]
 [[[1 2] [0 0]]]⌷(10 20⋄30 40 50)   ⍝ 50 10
 ```
+
+A path array's axes precede the cells it reaches. `¯∞` before the path array inserts before those axes. After paths enter nested items, suffix selectors are limited to `:`, `∞` and `¯∞` (Python full slices, `...` and `None`). They apply to the reached cells' common shape:
+
+```bpl
+nest←[[1 2 3⋄4 5 6] [7 8 9⋄10 11 12]]
+paths←[[0 1] [1 0]]
+⍴[¯∞ paths]⌷nest       ⍝ [1 2 3]ₓ
+⍴[paths ¯∞]⌷nest       ⍝ [2 1 3]ₓ
+⍴[paths : ¯∞]⌷nest     ⍝ [2 3 1]ₓ
+⍴nest.[paths ∞ ¯∞]     ⍝ [2 3 1]ₓ
+```
+
 
 An array of positions with named axes is a named selector, such as a [named index](iota.qmd) from `⍳["i":n]` or [`•index`](../system/index.qmd). A selector whose name no other selector has selects along the axis of `Y` with that name, wherever the selector stands in the left argument. Without such an axis, it takes the next free axis that has no other name. Its axes replace the axis it selects, with their names and any keys it has. A named vector without keys keeps the keys at the positions it selects. Selectors that share a name pair with each other, as arithmetic pairs named axes. Together they take the free axes in order, as unnamed selectors do. `[i i]⌷m` is therefore the diagonal. With `k` along axis `j`, `[k j]⌷m` reads row `k` of each column, as NumPy's `m[k, j]` does. Selectors with different names, and unnamed selectors, combine as above. [Indexing](../indexing.ipynb) shows everyday uses.
 
@@ -103,6 +118,6 @@ m←["r":3 "c":3]⍴⍳9 ⋄ p←["r":3]⍴2 0 1
 
 ## Errors
 
-- `LENGTH`: more items than axes, selectors that share a name but differ in length, coordinates that end at cells of different shapes
-- `INDEX`: position outside its axis, missing key, two selectors for one axis, a named selector with no axis to select
-- `DOMAIN`: non-integral position other than NaN, `∞` or `¯∞` inside an array of positions, coordinates that go inside items or differ in length beside another item
+- `LENGTH`: selectors that share a name but differ in length, coordinates that end at cells of different shapes
+- `INDEX`: selectors consuming more axes than the array has, position outside its axis, missing key, two selectors for one axis, a named selector with no axis to select
+- `DOMAIN`: non-integral position other than NaN, `∞` or `¯∞` inside an array of positions, selectors other than `:`, `∞` or `¯∞` after nested paths, coordinates of differing lengths beside another selector

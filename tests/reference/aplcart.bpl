@@ -5245,7 +5245,7 @@ Av{⍵⌷⍨⊂⍋⍺++\⍺}Y   ⍝ 1 3 2 4 5
 ⍝ aplcart/table.tsv:1905 — Sort rows of matrix Ym according to column(s) I
 I←1
 Ym←[1 30⋄2 10⋄3 20]
-I{[⍋[∞ ⍺]⌷⍵]⌷⍵}Ym   ⍝ [2 10⋄3 20⋄1 30]
+I{[⍋[: ⍺]⌷⍵]⌷⍵}Ym   ⍝ [2 10⋄3 20⋄1 30]
 
 ⍝ aplcart/table.tsv:1906 — Deal: Is random items from ⍳Jv (without replacement); Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
 Is←4
@@ -6073,7 +6073,7 @@ Iv{+\1+((⍳+/⍺)∊+\0,⍺)#⁻¹⍵-¯1↓1,⍺+⍵}Jv
 
 ⍝ aplcart/table.tsv:2114 — Number of areas intersecting areas in N (⍴N ↔ (n × 2 × dim))
 N←3 2 2⍴0 0 2 2 1 1 3 3 4 4 5 5
-{+/∧↢⍉⍨∧/⍵.[∞ a⍴0]≤1 0 2⍉⍵.[∞ 1⍴⍨a←≢⍵]}N
+{+/∧↢⍉⍨∧/⍵.[: a⍴0]≤1 0 2⍉⍵.[: 1⍴⍨a←≢⍵]}N
 ⍝ =>
 [2 2 1]ₓ
 
@@ -6085,7 +6085,7 @@ Is{r←+\⍵=d←↑⍵ ⋄ 0<⍺?⍵#⍨r>⍺;⍵#⍨r≤⍺+⊃⌽r}Dv
 "/cd/ef"
 
 ⍝ aplcart/table.tsv:2119 — Numeric matrix of all permutations of length Js in lexicographical order
-{0=⍵?1 0⍴0;,⍠0 1 [∞;0,1+∇ ⍵-1]⌷⍒⍤1=⊗⍨⍳⍵} 3
+{0=⍵?1 0⍴0;,⍠0 1 [:;0,1+∇ ⍵-1]⌷⍒⍤1=⊗⍨⍳⍵} 3
 6 3⍴[0 1 2 0 2 1 1 0 2 1 2 0 2 0 1 2 1 0]ₓ
 
 ⍝ aplcart/table.tsv:2120 — Sorting rows of matrix Y into ascending order (Fast (⊂∘⍋⌷⊢)⍤1)
@@ -6989,7 +6989,7 @@ Iv{⍵#⁻¹⍨(↦⍵≢↣++/⍶)∊+\1+¯1↓0,⍶#⁻¹⍨⍹∊⍨⍳≢⍵
 f←{(↑⍺)-↑⍵}
 Y←[2 30⋄1 90⋄2 10⋄1 70⋄2 20]
 r←f{1≥≢⍵?⍵;c←⍵ (⍶-⍶⍨)⍤¯1 99 ¿∘≢↣⌷⍵ ⋄ (∇⍵#⍨0>c)⍪(⍵#⍨0=c)⍪∇⍵#⍨0<c}Y
-r≡([(⍋∞ 0⌷Y)]⌷Y)   ⍝ $t
+r≡([(⍋[: 0]⌷Y)]⌷Y)   ⍝ $t
 
 ⍝ aplcart/table.tsv:2331 — Delta; assignment recipes also read the target, and definition recipes call the defined function/operator
 ∆←42 ⋄ ∆   ⍝ 42

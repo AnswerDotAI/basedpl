@@ -244,16 +244,24 @@ fn exact_number(text: &str, numeric: Numeric) -> Result<Number, ErrorKind> {
 /// The empty numeric vector whose prototype is `fill`.
 pub(crate) fn zilde(fill: Number) -> Value { Value::empty([0], Value::Number(fill)).unwrap() }
 
-/// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth: as exact after `ₓ`, and as floats or complex numbers of the marked width after `ₕ`, `ₛ` or `ₚ`. Booleans stay as they are.
-fn mark_literals(tokens: &mut [Token]) -> Result<(), Error> {
+/// Whether a token can be part of a marked literal: a literal, a parenthesis or bracket, `;`, `⋄`, a key's colon, or a superscript that the parser folds into the number before it.
+fn literal_token(kind: &TokenKind) -> bool {
+    matches!(kind, TokenKind::Literal(_) | TokenKind::Open | TokenKind::Close(_) | TokenKind::BracketOpen | TokenKind::BracketClose(_)
+        | TokenKind::Semicolon | TokenKind::Separator | TokenKind::Function(Primitive::Keys)
+        | TokenKind::Operator(OperatorKind::Super(Superscript::Power(_) | Superscript::Transpose)))
+}
+
+/// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth: as exact after `ₓ`, and as floats or complex numbers of the marked width after `ₕ`, `ₛ` or `ₚ`. Booleans stay as they are. The `ₓ` after a group that holds anything but literals (`literal_token`) is `⌊`, as after a name.
+fn mark_literals(tokens: &mut Vec<Token>) -> Result<(), Error> {
     let numeric = Numeric::current();
-    let mut open = Vec::new();
+    let (mut open, mut floors) = (Vec::new(), Vec::new());
     for i in 0..tokens.len() {
         match tokens[i].kind {
             TokenKind::Open | TokenKind::BracketOpen => open.push(i),
             TokenKind::Close(mark) | TokenKind::BracketClose(mark) => {
                 let Some(start) = open.pop() else { continue };
                 let Some(mark) = mark else { continue };
+                if mark == Mark::Exact && !tokens[start + 1..i].iter().all(|t| literal_token(&t.kind)) { floors.push(i); continue }
                 for token in &mut tokens[start + 1..i] {
                     let text = &token.span.source.text[token.span.range.clone()];
                     let value = match (&token.kind, mark) {
@@ -275,6 +283,15 @@ fn mark_literals(tokens: &mut [Token]) -> Result<(), Error> {
             }
             _ => (),
         }
+    }
+    // Each such group loses its mark. Its `ₓ` becomes a token of its own, the `⌊` that `ₓ` is after a name.
+    for i in floors.into_iter().rev() {
+        let close = &mut tokens[i];
+        close.kind = match close.kind { TokenKind::Close(_) => TokenKind::Close(None), _ => TokenKind::BracketClose(None) };
+        let end = close.span.range.end;
+        close.span.range.end = end - EXACT.1.len_utf8();
+        let marker = Span { source: close.span.source.clone(), range: close.span.range.end..end };
+        tokens.insert(i + 1, Token { kind: TokenKind::Operator(OperatorKind::Super(Superscript::Floor)), span: marker });
     }
     Ok(())
 }
@@ -559,6 +576,8 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             }
             'ᵀ' => TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)),
             'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
+            // A literal number, `)` and `]` take the `ₓ` after them (`mark_literals`). An `ₓ` that reaches here follows another item, such as a name, and is `⌊`.
+            'ₓ' => TokenKind::Operator(OperatorKind::Super(Superscript::Floor)),
             c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
                 let power = script_integer(c, chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| span(position(chars, len)).error(k, m))?;
                 TokenKind::Operator(OperatorKind::Super(Superscript::Power(power)))
@@ -847,7 +866,7 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
                 let NodeKind::Literal(Value::Number(n)) = &node.kind else { break };
                 let raised = match power {
                     Superscript::Power(k) => n.math_dyad(Math::Power, &Number::from_integer(k)), Superscript::Transpose => Ok(n.clone()),
-                    Superscript::Unit => break
+                    Superscript::Unit | Superscript::Floor => break
                 };
                 node.span.range.end = end;
                 let raised = raised.map_err(|m| node.span.error(Kind::Domain, m))?;
