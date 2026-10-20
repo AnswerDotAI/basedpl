@@ -39,7 +39,7 @@ Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`, `$f`
 
 `ₓ` straight after a number, `⍬`, or a `]` or `)` that closes literals makes every number it covers exact, as in `5ₓ`, `[1 2]ₓ` and `(0 1⋄2 3)ₓ`. After anything else, as in `nₓ`, `ₓ` is [`⌊`](glyphs/downstile.qmd).
 
-After a number, a plain `e`, `j` or `r` continues the number only when the rest of a number follows it, as in `1e5`, `2j3` and `1r3`. Otherwise it starts a name. `2edges` is `2` beside the name `edges`. The subscripts `ₑ`, `ⱼ` and `ᵣ` always continue the number.
+After a number, `e`, `j` or `r`, or its subscript `ₑ`, `ⱼ` or `ᵣ`, continues the number only when the rest of a number follows it, as in `1e5`, `2ⱼ3` and `1r3`. Otherwise a plain letter starts a name: `2edges` is `2` beside the name `edges`. A subscript there, or between any two items, joins the items on each side into one term, as [Numbers](numbers.qmd#writing-numbers) describes: `2ₑn` is `2×10*n`.
 
 Literals separated by spaces form a [strand](terms.qmd#term-strand), which is one vector. Literals that touch stay separate, as `3` and `'b'` do in `'a',⍣3'b'`. Names never join a literal strand. Inside brackets without `;`, a space separates items and forms no strand.
 

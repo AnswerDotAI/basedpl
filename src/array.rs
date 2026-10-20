@@ -350,11 +350,6 @@ impl Value {
         if data.is_empty() { Self::empty_of(shape, empty_prototype.value(), true) } else { Self::from_storage(shape, Storage::mixed(data)) }
     }
 
-    /// Items that keep their own kinds. An empty array takes `empty_prototype` in mixed storage.
-    pub(crate) fn keeping_kinds(shape: impl Into<Shape>, data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
-        if data.is_empty() { Self::mixed(shape, data, empty_prototype) } else { Self::new(shape, data) }
-    }
-
     pub(crate) fn from_storage(shape: impl Into<Shape>, data: Storage) -> Result<Self, ErrorKind> {
         let shape = shape.into();
         if generated_len(&shape)? != data.len() { return Err(Kind::Length.into()); }

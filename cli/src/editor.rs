@@ -149,10 +149,11 @@ fn styled(entry: &str) -> String {
     format!("\x1b[1;36m{glyph}\x1b[0m {name}{}", key.map_or(String::new(), |key| format!(" \x1b[2m{key}\x1b[0m")))
 }
 
-/// The ANSI colour of each highlight class the REPL colours. Numbers, names, system names and syntax keep the terminal's colour.
+/// The ANSI colour of each highlight class the REPL colours. Numbers, system names and syntax keep the terminal's colour.
 fn colour(class: &str) -> Option<&'static str> {
     Some(match class {
-        "function" => "32", "monadic-operator" => "35", "dyadic-operator" => "33", "argument" => "34", "string" => "36", "comment" => "2", _ => return None
+        "function" => "38;2;17;57;249", "monadic-operator" | "dyadic-operator" => "38;2;223;0;244",
+        "argument" => "34", "string" => "36", "comment" => "38;2;0;175;147", "name" => "38;2;255;107;1", _ => return None
     })
 }
 

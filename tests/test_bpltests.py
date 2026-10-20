@@ -29,7 +29,7 @@ def test_records_and_boundaries():
     for bad in ['⍝  —\n1\n2\n3\n\n', '⍝  —\n1\n⍝ =>\n2\n⍝ =>\n3\n\n', '⍝ —\n1\n2\n⍝ —\n3\n3']:
         with pytest.raises(ValueError): parse(bad)
     with pytest.raises(ValueError, match='duplicate'): parse(render([cases[0], cases[0]]))
-    with pytest.raises(ValueError, match='reserved'): render([Case('1\n⍝ =>\n2', '2')])
+    with pytest.raises(ValueError, match='use one'): render([Case('1\n⍝ =>\n2', '2')])
     with pytest.raises(ValueError, match='tolerance'): parse('⍝  — [rtol=-1]\n1\n1\n\n')
     cases = [Case('⎕←9 ⋄ ⎕←2 ⋄ 7', '7', section='Agenda', output='9\n2'),
         Case('1', '1', section='Silence', output=''), Case("⎕←'\\'", "'\\'", section='Silence', output='\\')]

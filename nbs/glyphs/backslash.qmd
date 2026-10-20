@@ -11,6 +11,8 @@ Monadic operator
 
 `S f\ Y` uses the seed `S` as the previous result for the first item. The result doesn't include the seed.
 
+A dfn that scans several lanes, such as each row of a matrix, runs each stage on every lane at once, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as scanning each lane in turn.
+
 ```bpl
 10-\1 2 3          ⍝ 9 7 4
 100+\10 20         ⍝ 110 130

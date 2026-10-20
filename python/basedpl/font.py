@@ -70,6 +70,24 @@ def add_arrows(font):
         if mirror: glyph.coordinates = GlyphCoordinates((advance-x, y) for x, y in glyph.coordinates)
         add_glyph(font, char, glyph, advance)
 
+def thicken_slashes(font, amount=0.05):
+    "Thicken the shared diagonal of / and ⌿ perpendicular to its slope."
+    cmap, glyf = font.getBestCmap(), font['glyf']
+    slash = glyf[cmap[ord('/')]]
+    points = list(slash.coordinates)
+    cx, cy = (slash.xMin + slash.xMax)/2, (slash.yMin + slash.yMax)/2
+    # Points 1–2 form one straight edge of the diagonal in the pinned SAX2 outline.
+    dx, dy = points[2][0] - points[1][0], points[2][1] - points[1][1]
+    for char in '/⌿':
+        name = cmap[ord(char)]
+        glyph = glyf[name]
+        glyph.removeHinting()
+        for i, (x, y) in enumerate(points):
+            shift = amount*((x-cx)*dy - (y-cy)*dx)/(dx*dx + dy*dy)
+            glyph.coordinates[i] = round(x + shift*dy), round(y - shift*dx)
+        glyph.recalcBounds(glyf)
+        font['hmtx'][name] = font['hmtx'][name][0], glyph.xMin
+
 def build(dest='nbs/fonts'):
     "Write SAX2B as TTF and WOFF2 with SAX2's licence to `dest`."
     dest = Path(dest)
@@ -77,6 +95,7 @@ def build(dest='nbs/fonts'):
     font = TTFont(io.BytesIO(urlread(SAX2_URL + 'SAX2.ttf', decode=False, timeout=30)))
     add_scripts(font)
     add_arrows(font)
+    thicken_slashes(font)
     names = {1: 'SAX2B', 3: 'SAX2B-2.001', 4: 'SAX2B', 6: 'SAX2B'}
     for record in font['name'].names:
         if record.nameID in names:

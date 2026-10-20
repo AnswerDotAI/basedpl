@@ -48,7 +48,7 @@ kv+kv	3	3.4	4.1
 v×2	2.2	2.3	2.2
 jv×2	1.8	1.8	2.2
 jv=jv	0.52	0.54	1.1
-jv∧ᵇjv	0.87	1.8	2.2
+jv∧ᵇjv	0.87	0.76	2.2
 b×jv	0.75	0.72	0.81
 b×kv	2.6	2.6	3.5
 v⌊w	3.3	3.3	3.4
@@ -110,8 +110,8 @@ i (+/⊢)⌸ v	200	370	220
 ⌈\jv	1.5	1.4	1.4
 +\z	4.4	4.3	4.7
 # A fold or scan by a primitive that `ᵇ` lifts runs its table through the integer kernels, one item at a time.
-∧ᵇ/kv	16	31	39
-∨ᵇ\jv	17	33	49
+∧ᵇ/kv	16	15	39
+∨ᵇ\jv	17	24	49
 # After a lane's first result, a comparison scan's totals are 0 or 1. The kernel computes each item's result at both, and rustymath picks between them 64 at a time.
 <\v	5.8	7.5	13
 =⍀m	7.1	8.5	14
@@ -143,8 +143,8 @@ cnt⍚[- ⊢ 10×] v	34	80	77
 -@[{side↑b}] m	5.7	26	24
 (side↑b)⍚[⊢ -] m	6	75	89
 # A select runs cases that can't fail on every item and keeps the result of the case each item picks, where enough items pick a case that computes.
--@[0>]s	8.2	17	25
-(0>)⍚[- 2×] s	11	22	30
+-@[0>]s	8.2	11	25
+(0>)⍚[- 2×] s	11	14	30
 # An approximate divisor reads the integers as floats. Each item then needs a float division and a floor within tolerance.
 3|jv	5.1	5.6	12
 # rustymath's `exp` evaluates a polynomial of 10 terms for each item, and `ln` one of 7 terms and a division.
@@ -194,7 +194,7 @@ v⍳w	120	240	320
 <jv	7	7.9	7.3
 <b	0.83	0.88	0.79
 # Sorting under `∂` grades the primal once, then reads the primal and the tangent at the positions the grade gives.
-{+/(⍳≢⍵)×<⍵}∂ v	220	440	490
+{+/(⍳≢⍵)×<⍵}∂ v	220	270	490
 # Taking a few items of a grade or a sort selects them, without sorting the rest.
 (10↑)∘⍋ v	38	79	85
 (10↑)∘< v	38	78	86
@@ -302,6 +302,9 @@ img×1-0.5×img	6.1	5.5	6.8
 +/img>0.5	1.9	1.8	3.4
 # A comparison that a later call reads runs in that call's graph, writing 1 and 0 as floats rather than storing Booleans.
 +/flat×flat>0.5	3.8	7.6	11
+# A select by a comparison that a graph would run reads a sample of the comparison's items to choose between a select and a gather. A sparse mask gathers the few items it picks. A dense one runs as one fused select.
+-@[0.99<]flat	6.5	13	18
+*@[0.5<]flat	20	39	56
 # Here the calls hold three blocks of results at once, so the graph runs smaller blocks, whose buffers stay in the cache.
 ((flat-0.5)×flat+0.5)+(flat+1)×flat-1	11	22	32
 [setup]
@@ -321,7 +324,7 @@ gx gmm gp	240	640	680
 # The k-means cost sums the squared distance from each of 16384 points to the nearest of 64 centres, in 32 dimensions.
 kx kmeans kc	320	800	880
 # A 3 by 3 blur of a 128 by 128 grid. `⌺` calls its operand once, on a batch of all the windows.
-{+/,sk×⍵}⌺3 3⊢sg	26	8000	14000
+{+/,sk×⍵}⌺3 3⊢sg	21	38	39
 [derivatives]
 # `∂` beside the function it differentiates. A unit argument takes one pass, whose tangent is an array of the result's shape. The bar's "Primal cost" row in the design notes asks that the primal keeps its kernels, and the tangent adds whole-array calls beside it.
 1○dx	240	230	430
@@ -357,17 +360,17 @@ sv←¿1048576⍴0 ⋄ n←≢sv ⋄ sm←[n÷2;2]⍴sv ⋄ sq←[1024 1024]⍴s
 # Stride-two columns gather through the shared reader before their contiguous subtraction.
 ([: 1]⌷sm)-([: 0]⌷sm)	4.6	5	12
 # A join along the last axis writes each argument's lanes in one typed loop where the lanes are short. `sm` has lanes of 2.
-sm,sm	9.3	19	24
+sm,sm	9.3	11	24
 # A join of 8-bit integers to floats converts each item as the same loop writes it. `ism` holds exact positions, which take a byte each.
-ism,sm	9.4	19	26
+ism,sm	9.4	12	26
 # Two of the four columns of `s_4`, picked by position, read as a stride. The copy walks each row's two items in one loop of fixed width. A list of positions with uneven steps, and a rotation of each row, take the same loop through a table of offsets.
-⌊[:;0 1]⌷s_4	4.7	9.4	10
-⌊[:;0 1 3]⌷s_4	6.5	13	16
-⌊1⌽s_4	8	16	19
+⌊[:;0 1]⌷s_4	4.7	4.2	10
+⌊[:;0 1 3]⌷s_4	6.5	5.8	16
+⌊1⌽s_4	8	7.1	19
 # A write of two columns goes through the same loop. It overwrites `w_4` in place.
-[:;0 1]⌷w_4 ←p_2	1.8	3.6	4
+[:;0 1]⌷w_4 ←p_2	1.8	2.1	4
 # A write of two columns of 8-bit integers into floats converts each item as the same loop writes it, as for Booleans and integers of every width.
-[:;0 1]⌷w_4 ←ip_2	2	3.9	5.2
+[:;0 1]⌷w_4 ←ip_2	2	2.9	5.2
 # A fold by a reduction reads a pending copy through its map. A copy that reads a contiguous block of its source with its axes in another order, such as a transpose, a reversal, or 2 by 2 windows that don't overlap, folds that block in its own order, at the cost of folding the source. Totals that come out in another order stay a pending copy, which the next fold reads the same way.
 +/⍉sq	1.7	1.6	2.3
 +⌿⊖sq	1.7	1.7	2.3
@@ -395,22 +398,24 @@ ism,sm	9.4	19	26
 (⍉sq)+.×vq	0.5	8.7	11
 2×⍉sq	6.8	12	11
 # A select by a comparison runs as one graph with the comparison and the cases: `0.5<sv` stays a lane mask, and `-` runs on every item.
-(0.5<)⍚[⊢ -] sv	6.6	14	18
+(0.5<)⍚[⊢ -] sv	6.6	7.1	18
 [setup]
 v←¿65536⍴0 ⋄ n←≢v ⋄ sg←¿[128 128]⍴0 ⋄ g←0.6<¿[128 128]⍴0 ⋄ X←¿[4096 8]⍴0 ⋄ thz←¿8⍴0 ⋄ vv←¿8⍴0 ⋄ cs←¿400⍴0 ⋄ big←¿[4 256 256]⍴0 ⋄ st←¿[4096 4 4]⍴0
 f←{+/⊼1○⍵} ⋄ loss←{th←⍵ ⋄ +/{⊼1○+/th×⍵}⍤1⊢X} ⋄ lossw←{+/⊼1○X+.×⍵} ⋄ hv←{+/vv×loss∂ ⍵} ⋄ hvw←{+/vv×lossw∂ ⍵}
 life←{s←+/,⍵ ⋄ (s=3)∨(1 1⌷⍵)∧s=4} ⋄ lifew←{s←+/+/¯3 ¯3↕⍵ ⋄ (s=3)∨⍵∧s=4} ⋄ sq←{⍵×⍵} ⋄ sq∂←{⍺×3×⍵}
 [maps]
 # Each, Rank and `⌺` first try one call of their operand on batches of all their cells, and call it once for each cell where that call stops. Maps inside `∂` don't batch. Each mapped case sits beside the same computation written with whole arrays, whose cost a batched map should approach.
-{⍵×⍵+1}¨v	5.5	15000	22000
+{⍵×⍵+1}¨v	5.5	6.5	5.8
 v×v+1	4.9	11	11
-{+/,⍵}⌺3 3⊢sg	20	7500	13000
+{+/,⍵}⌺3 3⊢sg	15	30	29
 +/+/¯3 ¯3↕sg	11	22	25
 # The Game of Life on a 128 by 128 Boolean grid, as a stencil and with padded windows.
-life⌺3 3⊢g	24	17000	28000
+life⌺3 3⊢g	20	40	44
 lifew g	10	24	25
-# A guard on each cell's value stops a batched run. The map then calls its operand once for each cell.
-{⍵<0?0;⍵}¨v	4100	12000	19000
+# A guard on each cell's value runs as `⍚` runs a selector for each cell. Each side runs once, on the cells that take it. In the first case every cell takes the second body. In the second, about half the cells take each body, as in the `⍚` beside it.
+{⍵<0?0;⍵}¨v	4.1	8.1	11
+{⍵<0.5?0;√⍵}¨v	25	50	55
+(0.5≤)⍚[0 √] v	16	32	36
 # The gradient of a loss mapped over the rows of `X`, whose parameter every row shares, then per-example gradients, then a Hessian–vector product through the mapped loss. Each sits beside its form with `+.×`, or its closed form.
 loss∂ thz	4600	9200	15000
 lossw∂ thz	9	23	33
@@ -422,23 +427,31 @@ hvw∂ thz	22	49	77
 {+/sq¨⍵}∂ v	32000	70000	110000
 {+/sq ⍵}∂ v	15	30	34
 # 1000 Each calls on one atom, in turn. A map over one cell of atoms calls its operand without trying a batched call.
-{⍵+1}¨⍣1000⊢,0	99	200	280
+{⍵+1}¨⍣1000⊢,0	99	150	280
 # A map of 400 scalars against `v`. Repeated for each cell, `v` would hold 26 million items, past the memory limit of a batched run. The map then calls its operand once for each cell, holding one copy of `v` at a time.
-{+/(v-⍵)×v-⍵}¨cs	3600	7200	7300
+{+/(v-⍵)×v-⍵}¨cs	3600	3900	7300
 # Four cells of 256 by 256 floats, whose operand stops at `⍳`, which has no batch rule. The dfn remembers the stop. Later calls skip the batched try, which would run `1○` on every cell before stopping.
-{r←1○⍵ ⋄ (,r)⍳0.5}⍤2⊢big	78	160	580
+{r←1○⍵ ⋄ (,r)⍳0.5}⍤2⊢big	78	300	580
 # Rank of a dfn on each row of `X` makes one batched call. The subtraction pads each row's total, `+/⍵`, over the row.
-{⍵-(+/⍵)÷≢⍵}⍤1⊢X	5.9	12	22
-X-(+/X)÷8	3.4	6.8	12
+{⍵-(+/⍵)÷≢⍵}⍤1⊢X	5.9	9.9	22
+X-(+/X)÷8	3.4	5.7	12
 # An outer product of a dfn makes one batched call, with both arguments laid over the result's frame.
-(⍳256){⍺×⍵+1}⊗⍳256	9.9	20	23
-(⍳256)×⊗1+⍳256	2	4	6
-# Each cell of a batched call draws from its own stream, as it would in a call for each cell.
-{⍵+¿10}¨v	2400	4800	9300
-v+¿n⍴10	120	240	530
+(⍳256){⍺×⍵+1}⊗⍳256	9.9	9.8	23
+(⍳256)×⊗1+⍳256	2	2.3	6
+# A roll in a batched call draws once, on the whole frame, from the stream that a call for each cell would draw from in turn.
+{⍵+¿10}¨v	120	240	550
+v+¿n⍴10	120	140	530
 # The join rule runs a join of each row with itself as one call on `X`.
-{⍵,⍵}⍤1⊢X	5.2	11	13
-X,X	4.9	9.7	12
+{⍵,⍵}⍤1⊢X	5.2	7.2	13
+X,X	4.9	6.5	12
 # A matrix product of each 4 by 4 matrix in a stack with itself runs as one call of the stacked kernel.
-{⍵+.×⍵}⍤2⊢st	55	160	310
-+.×⍤2⍨ st	57	150	270
+{⍵+.×⍵}⍤2⊢st	55	120	310
++.×⍤2⍨ st	57	120	270
+# A fold or scan by a dfn along the rows of `X` runs as one batched map over the rows. Each stage is one call, on every row at once. Each sits beside its primitive form.
+{⍺+⍵}/X	7.6	16	17
++/X	0.72	1.5	2
+{⍺+0.9×⍵}\X	14	27	33
++\X	2.4	4.7	4.8
+# An inner product with a dfn `g` calls `g` once, on every triple of a row, a position along the contraction and a column. `f` then folds along the contraction.
+(⍉X) +.{⍺×⍵} X	28	56	73
+(⍉X)+.×X	8	18	25

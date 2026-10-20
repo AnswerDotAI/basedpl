@@ -184,7 +184,7 @@ fn boxed_display_and_function_trees() {
     assert_eq!(r.output_text(), ["┌→─────────────────────┐\n↓ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │DUCK│ │SWAN│ │BIRD│ │\n│ └────┘ └────┘ └────┘ │\n│ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │WORM│ │CAKE│ │SEED│ │\n│ └────┘ └────┘ └────┘ │\n└∊─────────────────────┘"]);
     assert_eq!(s.eval(r#"⍬ ⋄ "abc" ⋄ ["i":2]⍴1 2"#).output_text(), ["⍬", "┌→──┐\n│abc│\n└───┘", r#"["i":2]⍴[1 2]"#]);
     assert_eq!(s.eval("0 3⍴0").output_text(), ["┌→────┐\n⌽0 0 0│\n└~────┘"]);
-    assert_eq!(s.eval("1 2⍴1↓'a' 1 2").output_text(), ["┌→──┐\n↓1 2│\n└+──┘"]);
+    assert_eq!(s.eval("1 2⍴1ₓ 0.5").output_text(), ["┌→─────┐\n↓1ₓ 0.5│\n└+─────┘"]);
     assert_eq!(s.eval("2 2⍴⍳4ₓ").output_text(), ["┌→──┐\n↓0 1│\n│2 3│\n└ₓ──┘"]);
     let f = s.eval("avg←+/÷≢ ⋄ avg");
     assert!(f.error.is_none() && f.value.is_none());
@@ -351,14 +351,14 @@ fn huge_shapes_count_exactly() {
 fn errors_and_evaluation_order() {
     // The right argument fails before the parenthesized left argument is evaluated.
     let e = run("(÷'a')+(×'b')").unwrap_err();
-    assert_eq!(&e.span.source.text[e.span.range], "×");
+    assert_eq!(&e.span.source.text[e.span.range.clone()], "×");
     let e = run("¯2+1÷'a'").unwrap_err();
     assert_eq!(e.span.range, 5..7); // UTF-8 bytes, not glyph indices.
     assert_eq!(e.to_string(), "DOMAIN ERROR: expected numeric elements\n --> test:1:5\n¯2+1÷'a'\n    ^");
     let e = run("(2\n 1÷'a')").unwrap_err();
     assert!(e.to_string().contains("test:2:3\n 1÷'a')\n  ^"));
     let e = run("¯2+1r0").unwrap_err();
-    assert_eq!(&e.span.source.text[e.span.range], "1r0");
+    assert_eq!(&e.span.source.text[e.span.range.clone()], "1r0");
 }
 
 #[test]
@@ -445,11 +445,14 @@ fn highlight_classes_and_code_context() {
     let classes = |text: &'static str| basedpl::highlight(text, false).into_iter().map(|(range, class)| (&text[range], class)).collect::<Vec<_>>();
     let expected = [("⍵", "argument"), ("∘", "dyadic-operator"), ("+", "function"), ("¨", "monadic-operator"), ("\"a+b\"", "string"), ("⍝ c+d", "comment")];
     assert_eq!(classes("⍵∘+¨\"a+b\" ⍝ c+d"), expected);
-    assert_eq!(classes("中文←2"), [("←", "syntax"), ("2", "literal")]);
+    assert_eq!(classes("中文←2"), [("中文", "name"), ("←", "syntax"), ("2", "literal")]);
     let code = "•prefs [\"hanzi_aliases\":$t]\n加1 注 comment";
     assert_eq!(basedpl::highlight(code, false).last().map(|(range, class)| (&code[range.clone()], *class)), Some(("注 comment", "comment")));
     // An unclosed string, as while typing, runs to the end of the text.
-    assert_eq!(classes("x←1+\"a+"), [("←", "syntax"), ("1", "literal"), ("+", "function"), ("\"a+", "string")]);
+    assert_eq!(classes("x←1+\"a+"), [("x", "name"), ("←", "syntax"), ("1", "literal"), ("+", "function"), ("\"a+", "string")]);
+    // A group's `ₓ` is part of its literal, or `⌊` after a group that holds anything else. `ⱼ` between two items joins them into a number.
+    let expected = [("1", "literal"), ("2", "literal"), ("ₓ", "literal"), ("+", "function"), ("x", "name"), ("+", "function"), ("1", "literal"), ("ₓ", "monadic-operator"), ("+", "function"), ("x", "name"), ("ⱼ", "literal"), ("y", "name")];
+    assert_eq!(classes("[1 2]ₓ+(x+1)ₓ+xⱼy"), expected);
     // The end of the text is in code unless it is inside a comment or an unclosed literal.
     assert!(basedpl::in_code("\"a\"+", false) && basedpl::in_code("1 ⍝ c\n", false));
     assert!(!basedpl::in_code("1+\"a", false) && !basedpl::in_code("1 ⍝ c", false) && !basedpl::in_code("'", false));

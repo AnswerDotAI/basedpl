@@ -9665,7 +9665,7 @@ T←•csv "name,score",(•ucs 10),"Ada,12",(•ucs 10),"Ben,7"
 ⍝ aplcart/table.tsv:1533 — Convert any rank APL array to JSON
 •json⁻¹ 2 2 2⍴⍳8ₓ   ⍝ "[[[0,1],[2,3]],[[4,5],[6,7]]]"
 
-⍝ aplcart/table.tsv:1867 — Convert JSON Lines text Dv to APL vector
+⍝ aplcart/table.tsv:1867 — Convert JSON Lines text Dv to APL vector [mixed]
 {•json¨⍵⊆⍨⍵≠•ucs 10}"{""a"":1}",(•ucs 10 10),"{""a"":2}"
 [["a":1] ["a":2]]ₓ
 
@@ -9812,7 +9812,7 @@ testpath •nput ∊(•json⁻¹¨X),¨•ucs 10
 testpath •nput ∊"ab" "cd",¨⊂•ucs[13 10] ⋄ •nget testpath
 "ab",(•ucs 13 10),"cd",•ucs 13 10
 
-⍝ aplcart/table.tsv:1945 — Convert JSON Lines file Dv to APL vector
+⍝ aplcart/table.tsv:1945 — Convert JSON Lines file Dv to APL vector [mixed]
 testpath •nput "{""a"":1}",(•ucs 10 10),"{""a"":2}",•ucs 10
 {•json¨⍵⊆⍨⍵≠•ucs 10}•nget testpath
 ⍝ =>

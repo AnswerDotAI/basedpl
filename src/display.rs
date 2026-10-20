@@ -57,7 +57,7 @@ impl Elide {
     /// The text of `n` rounded as `number` rounds it, without a marker, for an array that writes one marker for all its numbers.
     pub fn unmarked(self, n: &Number) -> String { format!("{:#}", n.rounded(self.prec)) }
     /// The marker of a float of `width`, when the width isn't `plain`.
-    pub fn width_marker(self, width: FloatWidth) -> Option<char> { (Some(width) != self.plain).then(|| crate::syntax::width_marker(width)) }
+    pub fn width_marker(self, width: FloatWidth) -> Option<char> { (Some(width) != self.plain).then(|| crate::number::width_marker(width)) }
     /// The width marker that `n` writes: that of its float width, when it isn't `plain`.
     pub fn marker(self, n: &Number) -> Option<char> { n.float_width().and_then(|w| self.width_marker(w)) }
     /// `name` as text shows it: `None` for a hidden name that `hidden` leaves out, otherwise as `shown` gives it.
@@ -210,7 +210,7 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
         }
     }
     (session.display, session.numeric, session.threads, session.hanzi_aliases, session.batch) = (display, numeric, threads, hanzi_aliases, batch);
-    if let Some(seed) = seed { session.generator = crate::distribution::Stream::seeded(seed, session.levels.last()); }
+    if let Some(seed) = seed { session.generator = crate::distribution::Stream::seeded(seed); }
     numeric.set_current();
     if let Some(n) = threads { rustymath::parallel::set_threads(n); }
     let entries = display.entries(numeric.width).into_iter().chain(numeric.entries());

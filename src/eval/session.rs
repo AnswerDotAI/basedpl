@@ -565,6 +565,7 @@ impl Session {
                     None => Binding::Value(crate::syntax::zilde(crate::Number::float(0.0, self.numeric.width))),
                 }
             }
+            NodeKind::Joiner(_) => return Err(node.span.error(ErrorKind::Syntax, "ⱼ, ₑ and ᵣ join the two arrays they touch, as in xⱼy or 2ₑn")),
             _ => return Err(node.span.error(ErrorKind::Syntax, "unexpected assignment symbol")),
         }))
     }
@@ -605,7 +606,7 @@ impl Session {
             }
             if let Some(f) = right_operand { frame.insert(Key::RIGHT_OPERAND, f.value()); }
             if let Err(error) = self.enter(frame, &closure.definition.span) { break Err(error); }
-            match self.run_definition(&closure.definition) {
+            match self.run_definition(&closure.definition, (0, 0), true) {
                 Ok(Step::Done(bound)) => break Ok(bound),
                 Err(error) => break Err(error),
                 Ok(Step::Tail(call)) => {
@@ -682,12 +683,13 @@ impl Session {
         }
     }
 
-    fn run_definition(&mut self, definition: &Definition) -> Result<Step, Error> {
+    /// Runs `definition`'s bodies in the current frame, from statement `start.1` of body `start.0`. With `tail`, a last statement that calls a function gives the call to the caller's loop (`Step::Tail`), unless an error guard is active.
+    fn run_definition(&mut self, definition: &Definition, start: (usize, usize), tail: bool) -> Result<Step, Error> {
         let frame = self.current.unwrap();
         let mut handlers = Vec::new();
         let result = (|| {
-            'bodies: for body in &definition.bodies {
-                for (position, statement) in body.iter().enumerate() {
+            'bodies: for (b, body) in definition.bodies.iter().enumerate().skip(start.0) {
+                for (position, statement) in body.iter().enumerate().skip(if b == start.0 { start.1 } else { 0 }) {
                     let nodes = &statement.nodes;
                     match statement.kind {
                         StatementKind::DefaultArgument => {
@@ -706,10 +708,19 @@ impl Session {
                         }
                         StatementKind::Predicate => {
                             let span = crate::syntax::cover(nodes);
-                            if !self.bound(nodes, Some(&statement.recording))?.array(&nodes[0].span)?.boolean().error_at(&span, "a predicate requires a Boolean singleton")? { continue 'bodies; }
+                            let value = self.bound(nodes, Some(&statement.recording))?.array(&nodes[0].span)?;
+                            let level = if self.transforming() { self.levels.batched().map(|(level, _)| level) } else { None };
+                            let holds = match level.and_then(|level| crate::batch::truths(&value, level).map(|truths| (level, truths))) {
+                                None => value.boolean().error_at(&span, PREDICATE)?,
+                                Some((level, truths)) => match self.guard(definition, frame, (b, position), &truths.error_at(&span, PREDICATE)?, level, &span)? {
+                                    Guarded::Unanimous(holds) => holds,
+                                    Guarded::Joined(value) => return Ok(Step::Done(Bound::from(value))),
+                                },
+                            };
+                            if !holds { continue 'bodies; }
                         }
                         StatementKind::Expression => {
-                            if position + 1 == body.len() { return self.return_expression(nodes, handlers.is_empty(), Some(&statement.recording)); }
+                            if position + 1 == body.len() { return self.return_expression(nodes, tail && handlers.is_empty(), Some(&statement.recording)); }
                             self.bound(nodes, Some(&statement.recording))?;
                         }
                     }
@@ -730,7 +741,52 @@ impl Session {
         definition.bound(self.frames[frame].names.len());
         result
     }
+
+    /// A guard on predicate `truths`, which gives each cell of batched run `level` a Boolean of its own, at statement `at.1` of body `at.0` of `definition`, running in frame `frame` (`operators::guard`). Each side runs as a guard case on its own cells (`transform::Levels::case`): the rest of the body where the predicate holds, and the bodies after it elsewhere. A case reads each batched value at its cells (`restricted`), and runs its last call before it returns, to give a value.
+    #[cold]
+    #[inline(never)]
+    fn guard(&mut self, definition: &Definition, frame: usize, at: (usize, usize), truths: &Value, level: u64, span: &Span) -> Result<Guarded, Error> {
+        let key = definition as *const Definition as usize;
+        super::operators::guard(truths, level, &mut self.at(span), |holds, rows, cells, cx| {
+            let (_, first) = cx.session.levels.case(key, frame, cells.clone()).at(cx.span)?;
+            let shared = &*cx;
+            let restricted = shared.session.restricted(frame, first, level, &|whole, axes| super::operators::cells_at(whole, axes, rows, shared), shared.span);
+            let result = restricted.and_then(|bindings| {
+                let saved = cx.session.swap(bindings);
+                let step = cx.session.run_definition(definition, if holds { (at.0, at.1 + 1) } else { (at.0 + 1, 0) }, false);
+                cx.session.swap(saved);
+                step
+            });
+            cx.session.levels.end_case();
+            match result? { Step::Done(bound) => bound.array(cx.span), Step::Tail(_) => unreachable!("a case runs its last call") }
+        })
+    }
+
+    /// The bindings of each frame from `first` to `frame`, with each batched value of run `level` read at a guard case's cells through `read` (`batch::read_cells`), for `swap`. These frames are the calls that started during the run. A closure that a case calls reads its defining frame, which can be any of them, whether or not it lies on `frame`'s lexical chain. Frames before `first` started before the run and hold none of its batches.
+    fn restricted(&self, frame: usize, first: usize, level: u64, read: &impl Fn(&Value, usize) -> Result<Value, Error>, span: &Span) -> Result<Vec<(usize, Bindings)>, Error> {
+        (first..=frame).map(|i| {
+            let mut bindings = (self.frames[i].implicit.clone(), self.frames[i].names.clone());
+            for binding in bindings.0.iter_mut().flatten().chain(bindings.1.values_mut()) {
+                if let Binding::Value(v) = binding { *v = crate::batch::read_cells(v, level, read, span)?; }
+            }
+            Ok((i, bindings))
+        }).collect()
+    }
+
+    /// Puts `bindings` into their frames, and gives back the bindings they replace.
+    fn swap(&mut self, bindings: Vec<(usize, Bindings)>) -> Vec<(usize, Bindings)> {
+        bindings.into_iter().map(|(i, (implicit, names))| {
+            let frame = &mut self.frames[i];
+            (i, (std::mem::replace(&mut frame.implicit, implicit), std::mem::replace(&mut frame.names, names)))
+        }).collect()
+    }
 }
+
+/// A frame's bindings, as `Session::restricted` reads them and `Session::swap` puts them back.
+type Bindings = ([Option<Binding>; 6], HashMap<String, Binding>);
+
+/// The error for a predicate that isn't one Boolean, in a call and in each cell of a batched run.
+const PREDICATE: &str = "a predicate requires a Boolean singleton";
 
 /// The errors a guard catches: the kinds it names, or with `∞` every kind but an interrupt, a timeout or an unsupported feature. Unsupported features must not turn into plausible results. No guard catches a batched run's stop, even one that names its kind, because only the level that owns the run catches it. Inside a batched run, a guard that would catch an error stops the run instead (`transform::Levels::effect` with `Effect::Catches`). The run over cells then catches the error in the cells that raise it.
 pub(super) enum Catch { All, Kinds(Vec<ErrorKind>) }

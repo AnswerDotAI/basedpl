@@ -175,6 +175,8 @@ impl Function {
     pub(crate) fn operation(&self) -> Option<Operation> { self.node().operation() }
     /// The dfn that this function runs, where it's a dfn or a dfn operator's derived function.
     pub(crate) fn definition(&self) -> Option<&Definition> { match self.node() { FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => Some(c.definition.as_ref()), _ => None } }
+    /// The dfn that keeps the stops of this function's batched runs (`batch::tried`): its own dfn, or a fold's operand's, because a fold by a dfn calls the dfn at each stage.
+    pub(crate) fn remembers(&self) -> Option<&Definition> { match self.node() { FunctionNode::Fold(f, _) => f.remembers(), _ => self.definition() } }
     /// The call that a running level can take over when `dispatch` calls this function with `left`: an attached derivative, `⌹` or `⊥`, a system function, or `f.g` with one argument. Other calls route where their operations run.
     fn op(&self, left: Option<&Value>) -> Option<crate::transform::Op<'_>> {
         use crate::transform::Op;
@@ -972,6 +974,8 @@ pub struct Session {
     pub(crate) levels: crate::transform::Levels,
     /// The session's random numbers, which `¿` and a distribution's `sample` draw when no `•rand` generator is given.
     pub(crate) generator: crate::distribution::Generator,
+    /// Each generator that a running batched try has drawn from, with its state before the try's first draw from it, for the try to put back where it falls back (`distribution::Drawn`).
+    pub(crate) drawn: crate::distribution::Drawn,
     /// The program's command-line arguments.
     pub(crate) args: Vec<String>,
 }
@@ -985,13 +989,4 @@ impl Context<'_> {
         self.session.prototype = previous;
         result
     }
-    /// Runs `f` as a map, whose cells each draw random numbers from a stream of their own, then ends the map, after success and after an error. `f` names each cell with `cell` before running it.
-    fn mapped<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
-        self.session.begin(crate::transform::Kind::MAP);
-        let result = f(self);
-        self.session.end();
-        result
-    }
-    /// Makes cell `i` of the innermost map the running one.
-    fn cell(&mut self, i: usize) { self.session.levels.cell(i as u64); }
 }

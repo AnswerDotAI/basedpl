@@ -107,6 +107,14 @@ pub(crate) fn computed(items: usize) { COMPUTED.with(|c| c.set(c.get() + items))
 /// The items that pending arrays have computed on this thread so far. A call's `forced` row takes the difference across the call.
 pub(crate) fn computed_so_far() -> usize { COMPUTED.with(Cell::get) }
 
+/// Runs `f` without counting the items that pending arrays compute inside it (`computed`). A sample that a decision reads ends no fusion.
+pub(crate) fn uncounted<T>(f: impl FnOnce() -> T) -> T {
+    let before = computed_so_far();
+    let result = f();
+    COMPUTED.with(|c| c.set(before));
+    result
+}
+
 /// Records that `function` computed the fast combination named `name`.
 pub(crate) fn fast(name: &'static str, function: String) { record(Kind::Fast, || vec![Field::Text(name.into()), Field::Text(function)]) }
 

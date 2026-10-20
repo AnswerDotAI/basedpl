@@ -14,6 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: node tests/input.mjs
+      # `tests/highlighting.mjs` reads the TextMate grammar through `shiki`, which `package.json` pins.
+      - run: npm ci
+      - run: node tests/highlighting.mjs
       - uses: dtolnay/rust-toolchain@stable
       # The repository has no `Cargo.lock`. Creating one first makes rust-cache's key change when a dependency publishes a new version.
       - run: cargo generate-lockfile

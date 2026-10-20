@@ -2,6 +2,10 @@ import os, json
 from importlib.resources import files
 import fcntl, pty, re, select, subprocess, termios, time
 
+def visible(data):
+    "The text a terminal shows for `data`: its bytes without escape sequences"
+    return re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', data)
+
 def test_terminal_symbol_entry_and_exit(tmp_path):
     history = tmp_path/'.config/basedpl/history'
     history.parent.mkdir(parents=True)
@@ -64,13 +68,13 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         enter('sum 한\r', '\r\n6\r\n')
         enter('`iotx\x7fa3\r', '\r\n0 1 2\r\n')  # backspace while entering a name
         data = enter('`do\t \r', 'VALUE ERROR')  # ambiguous Tab must not choose a glyph
-        assert b'`do ' in data
+        assert b'`do ' in visible(data)
         enter('`iota\x1b[D\r', 'VALUE ERROR')  # moving the cursor ends name entry
         enter('x`larr-5\r', '\r\n')  # completion replaces only the name
         enter('x\r', '\r\n¯5\r\n')
         enter('2+2\r', '\r\n4\r\n')
         data = enter('⍝ \\ `iota \r', '\r\n')
-        assert b'\\ `iota ' in data  # comments and literal backslash are untouched
+        assert b'\\ `iota ' in visible(data)  # comments and literal backslash are untouched
         enter('6+7\r', '\r\n13\r\n')
         enter('\x1b[200~`iota\x1b[201~\r', 'VALUE ERROR')  # pasted names do not auto-expand
         enter('(2+\r', '\r\n')
@@ -88,8 +92,7 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         os.write(master, b'\x04')
         tail = read_until(b'\r\n')
         assert child.wait(timeout=5) == 0
-        visible = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', tail)
-        assert visible.endswith(b'\r\n')  # EOF must not leave the shell prompt indented
+        assert visible(tail).endswith(b'\r\n')  # EOF must not leave the shell prompt indented
         saved = history.read_text().splitlines()
         assert saved.count('8+9') == 1
         assert r'h←[3\n4]' in saved

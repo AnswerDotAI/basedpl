@@ -1,35 +1,40 @@
-//! The core that running transformations share: one stack of running levels, the routing that hands a call to the newest level among its arguments, and the read point for code that isn't a call. The levels are `∂` calls, the record levels of `∂` calls in reverse mode, and maps such as Each, which give each cell a random stream of its own. One counter numbers every level, so a level inside another has the larger id. A `∂` call's id is the tag its duals carry, and a record level's id is the level its records carry. A reader outside a call sees a value through `Value::observed` or `Value::computed`, never past a level's data. A batched map's run stops (`Stop`) where it can't go on for all its cells at once, as at an observing read. Only that map catches the stop.
+//! The core that running transformations share: one stack of running levels, the routing that hands a call to the newest level among its arguments, and the read point for code that isn't a call. The levels are `∂` calls, the record levels of `∂` calls in reverse mode, and the batched runs of maps such as Each. One counter numbers every level, so a level inside another has the larger id. A `∂` call's id is the tag its duals carry, and a record level's id is the level its records carry. A reader outside a call sees a value through `Value::observed` or `Value::computed`, never past a level's data. A batched run stops (`Stop`) where it can't go on for all its cells at once, as at an observing read. Only the try that began the run catches the stop (`batch::tried`).
 
 use crate::{agreement::{Agree, Agreement}, execution::Context, number::Failure, primitive::{Facts, FoldKind, Operation, Primitive}, system::SystemFunction, At, Error, ErrorKind, Function, Number, Operator, Span, Value};
 
-/// The running levels, innermost last, the last id a level took, and the number of running levels whose kind wraps values.
+/// The running levels, innermost last, and the last id a level took.
 #[derive(Default)]
-pub(crate) struct Levels { stack: Vec<Level>, last: u64, wrapping: u32 }
+pub(crate) struct Levels { stack: Vec<Level>, last: u64 }
 
 /// A running level: its id, its kind, the number of frames when it started, and the bindings outside those frames that it wrote, each with its frame, or its module for a global, where its kind's exit acts on them (`Kind::exit`).
 pub(crate) struct Level { pub(crate) id: u64, pub(crate) kind: Kind, frames: usize, pub(crate) writes: Vec<(Option<usize>, usize, String)> }
 
+/// A running level's kind. Each kind's values carry its data, so that calls on them go through its rules (`call`, `route`): a `∂` call's duals, a record level's records, or a batched run's batches.
 pub(crate) enum Kind {
     /// A `∂` call.
     Derivative,
     /// Reverse mode's record of linear calls, pushed just before its `∂` call, whose duals' tangents are records at this level (`linear::Linear`).
     Record,
-    /// Each, Rank's general path, an outer product or a stencil, with the cell it is running. Each cell draws random numbers from a stream of its own (`distribution::Stream`). While the map calls its operand once, on batches of all the cells of a frame, `batched` holds that frame (`batch`).
-    Map { cell: u64, batched: Option<crate::array::Layout> },
+    /// A batched run, which calls a map's operand once, on batches of all the cells of the map's frame (`batch::tried`). The map is an Each, Rank's general path, an outer product, a stencil, or a dfn's fold, scan or inner product.
+    Batched(Batched),
 }
 
+/// A batched run's frame, and the guard cases running inside the run, innermost last (`Levels::case`).
+pub(crate) struct Batched { frame: crate::array::Layout, cases: Vec<Case> }
+
+/// A guard case that runs on some of a batched run's cells: the definition whose guard split the cells, the frame it runs in, and the frame boundary and frame that the case replaced, which its end restores.
+struct Case { definition: usize, at: usize, frames: usize, frame: crate::array::Layout }
+
 impl Kind {
-    /// A map, starting at its first cell.
-    pub(crate) const MAP: Self = Self::Map { cell: 0, batched: None };
-    /// Whether this kind's values carry its data, so that calls on them go through its rules: a `∂` call's duals, a record level's records, or a batched map's batches. A map running cell by cell carries none.
-    fn wraps(&self) -> bool { matches!(self, Kind::Derivative | Kind::Record | Kind::Map { batched: Some(_), .. }) }
+    /// A batched run of a map on the cells that `frame` lays out, as `batch::tried` begins it.
+    pub(crate) fn batched(frame: crate::array::Layout) -> Self { Kind::Batched(Batched { frame, cases: Vec::new() }) }
     /// The rule this kind's exit applies to each binding outside its frames that it wrote, given the binding's value and the level's id. A `∂` call strips its tag. Other kinds have no rule, and record no writes.
-    pub(crate) fn exit(&self) -> Option<fn(&Value, u64) -> Value> { match self { Kind::Derivative => Some(crate::derivative::strip), Kind::Record | Kind::Map { .. } => None } }
-    /// The stop that a level of this kind, with id `id`, gives before `effect`, or `None` where the effect runs as it is. A batched map stops it (`Effect::stop`).
+    pub(crate) fn exit(&self) -> Option<fn(&Value, u64) -> Value> { match self { Kind::Derivative => Some(crate::derivative::strip), Kind::Record | Kind::Batched(_) => None } }
+    /// The stop that a level of this kind, with id `id`, gives before `effect`, or `None` where the effect runs as it is. A batched run stops it (`Effect::stop`).
     fn stop(&self, id: u64, effect: Effect) -> Option<Stop> {
         match self {
-            Kind::Map { batched: Some(_), .. } => Some(effect.stop(id)),
-            Kind::Derivative | Kind::Record | Kind::Map { .. } => None,
+            Kind::Batched(_) => Some(effect.stop(id)),
+            Kind::Derivative | Kind::Record => None,
         }
     }
 }
@@ -46,48 +51,46 @@ pub(crate) enum Effect {
 }
 
 impl Effect {
-    /// The stop that batched map level `level` gives before this effect, because the effect would happen once for all its cells (`Kind::stop`, and `written` for a write into a batch or of one).
+    /// The stop that batched run `level` gives before this effect, because the effect would happen once for all its cells (`Kind::stop`, and `written` for a write into a batch or of one).
     fn stop(self, level: u64) -> Stop { Stop::new(level, match self { Effect::Acts => Cause::Effect, Effect::Catches => Cause::Caught, Effect::Writes => Cause::Write }) }
 }
 
 impl Levels {
-    /// Whether a level whose kind wraps values is running. Code outside every such level, including code inside a map, pays only for this test.
-    pub(crate) fn transforming(&self) -> bool { self.wrapping > 0 }
-    /// The last id a level took.
-    pub(crate) fn last(&self) -> u64 { self.last }
+    /// Whether a level is running. Code outside every level, including a map that calls its operand once for each cell, pays only for this test.
+    pub(crate) fn transforming(&self) -> bool { !self.stack.is_empty() }
     /// Starts a level of `kind` while `frames` frames run, and returns its id.
     pub(crate) fn begin(&mut self, kind: Kind, frames: usize) -> u64 {
         self.last += 1;
-        self.wrapping += u32::from(kind.wraps());
         self.stack.push(Level { id: self.last, kind, frames, writes: Vec::new() });
         self.last
     }
     /// Ends the innermost level and returns it.
     pub(crate) fn end(&mut self) -> Level {
-        let level = self.stack.pop().expect("a running level");
-        self.wrapping -= u32::from(level.kind.wraps());
-        level
+        self.stack.pop().expect("a running level")
     }
-    /// Makes cell `i` of the innermost map the running one.
-    pub(crate) fn cell(&mut self, i: u64) {
-        if let Some(cell) = self.stack.iter_mut().rev().find_map(|l| match &mut l.kind { Kind::Map { cell, .. } => Some(cell), Kind::Derivative | Kind::Record => None }) { *cell = i; }
+    /// The id and frame of the batched run, if one is running. Only one can run, because a map inside a batched run calls its operand once for each cell.
+    pub(crate) fn batched(&self) -> Option<(u64, &crate::array::Layout)> { self.running().map(|(id, b)| (id, &b.frame)) }
+    /// Starts a case of a guard that `definition` runs in frame `frame`, on some cells of the batched run, which `cells` lays out. Until `end_case`, those cells are the run's frame, and a write to a binding in a frame before `frame` stops the run, because those frames outlive the case. Gives the run's id and the first frame of the run, or the stop of a recursive call, where a guard of `definition` already splits the run's cells in another frame. A later guard in the same call splits a case's cells again.
+    pub(crate) fn case(&mut self, definition: usize, frame: usize, cells: crate::array::Layout) -> Result<(u64, usize), Stop> {
+        let (id, frames, batched) = self.running_mut();
+        if batched.cases.iter().any(|c| c.definition == definition && c.at != frame) { return Err(Stop::new(id, Cause::Recursion)); }
+        let first = batched.cases.first().map_or(*frames, |c| c.frames);
+        batched.cases.push(Case { definition, at: frame, frames: std::mem::replace(frames, frame), frame: std::mem::replace(&mut batched.frame, cells) });
+        Ok((id, first))
     }
-    /// The running maps' ids and running cells, outermost first.
-    pub(crate) fn maps(&self) -> impl Iterator<Item = (u64, u64)> + '_ {
-        self.stack.iter().filter_map(|l| match l.kind { Kind::Map { cell, .. } => Some((l.id, cell)), Kind::Derivative | Kind::Record => None })
+    /// Ends the innermost guard case (`case`), restoring the run's frame and the frames that its writes stay inside.
+    pub(crate) fn end_case(&mut self) {
+        let (_, frames, batched) = self.running_mut();
+        let case = batched.cases.pop().expect("a running case");
+        (*frames, batched.frame) = (case.frames, case.frame);
     }
-    /// Switches the innermost map to calling its operand on batches of all the cells of `frame`, or back to calling it once for each cell where `frame` is `None`, and returns the map's id. The map keeps its id either way, so random streams key on the same map.
-    pub(crate) fn batch(&mut self, frame: Option<crate::array::Layout>) -> u64 {
-        let map = self.stack.iter_mut().rev().find(|l| matches!(l.kind, Kind::Map { .. })).expect("a running map");
-        self.wrapping -= u32::from(map.kind.wraps());
-        let Kind::Map { batched, .. } = &mut map.kind else { unreachable!("the level is a map") };
-        *batched = frame;
-        self.wrapping += u32::from(map.kind.wraps());
-        map.id
+    /// The batched run, as its id and its batched state (`batched`).
+    fn running(&self) -> Option<(u64, &Batched)> {
+        self.stack.iter().find_map(|l| match &l.kind { Kind::Batched(b) => Some((l.id, b)), Kind::Derivative | Kind::Record => None })
     }
-    /// The id and frame of the map that runs on batches, if one is running. Only one can run, because a map inside a batched run calls its operand once for each cell.
-    pub(crate) fn batched(&self) -> Option<(u64, &crate::array::Layout)> {
-        self.stack.iter().find_map(|l| match &l.kind { Kind::Map { batched: Some(frame), .. } => Some((l.id, frame)), Kind::Derivative | Kind::Record | Kind::Map { .. } => None })
+    /// The batched run, for a guard case to change: its id, the frames that writes must stay inside, and its batched state.
+    fn running_mut(&mut self) -> (u64, &mut usize, &mut Batched) {
+        self.stack.iter_mut().find_map(|l| match &mut l.kind { Kind::Batched(b) => Some((l.id, &mut l.frames, b)), Kind::Derivative | Kind::Record => None }).expect("a batched run")
     }
     /// Asks each running level, innermost last, how it treats `effect`, before code that must run once for each cell does it. Gives the stop of the first level that stops it (`Kind::stop`).
     pub(crate) fn effect(&self, effect: Effect) -> Result<(), Stop> {
@@ -123,9 +126,9 @@ impl Plain<'_> {
 pub struct Stop(u64);
 
 impl Stop {
-    /// The stop of batched map level `level`'s run, for `cause`.
+    /// The stop of batched run `level`, for `cause`.
     pub(crate) fn new(level: u64, cause: Cause) -> Self { Self(level << 10 | cause as u64) }
-    /// The stop of batched map level `level`'s run at a call of `p` with no rule for batches of its arguments (`Cause::Rule`). It keeps `p`'s glyph as the position of the first primitive in `Primitive::all()` with that glyph, because `Bracket` shares `⌷` with `Index` and isn't listed.
+    /// The stop of batched run `level` at a call of `p` with no rule for batches of its arguments (`Cause::Rule`). It keeps `p`'s glyph as the position of the first primitive in `Primitive::all()` with that glyph, because `Bracket` shares `⌷` with `Index` and isn't listed.
     pub(crate) fn refusing(level: u64, p: Primitive) -> Self {
         let glyph = Primitive::all().position(|q| q.glyph() == p.glyph()).map_or(0, |i| i as u64 + 1);
         Self(Self::new(level, Cause::Rule).0 | glyph << 3)
@@ -154,7 +157,7 @@ pub(crate) enum Cause {
     Effect = 0,
     /// A write to a binding outside the map's frames (`Effect::Writes`).
     Write = 1,
-    /// An observing read of a batch, as a predicate or a count that comes from the cell makes (`Value::observed`).
+    /// An observing read of a batch, as a count or a position that comes from the cell makes (`Value::observed`).
     Observed = 2,
     /// A call with no rule for batches of its arguments: a primitive with an axis or with no rule for cells, a rule that declines these arguments, a kernel's read of a cell's number (`Value::computed`), or `∂` with respect to cells that are arrays.
     Rule = 3,
@@ -162,6 +165,8 @@ pub(crate) enum Cause {
     Memory = 4,
     /// A guard or a call on prototypes that would catch an error (`Effect::Catches`).
     Caught = 5,
+    /// A guard on a batched value in a dfn whose guard already splits the run's cells, as a recursive call makes (`Levels::case`).
+    Recursion = 6,
 }
 
 /// How long a dfn operand remembers a stop of its batched run (`batch::tried`).
@@ -179,7 +184,7 @@ impl Cause {
     /// How long a dfn operand remembers a stop for this cause.
     pub(crate) fn kept(self) -> Kept {
         match self {
-            Cause::Effect | Cause::Write | Cause::Observed => Kept::Always,
+            Cause::Effect | Cause::Write | Cause::Observed | Cause::Recursion => Kept::Always,
             Cause::Rule => Kept::Arguments { frame: false },
             Cause::Memory => Kept::Arguments { frame: true },
             Cause::Caught => Kept::Never,
@@ -187,13 +192,13 @@ impl Cause {
     }
     /// The cause that `bits` encode, as a stop and a dfn operand's memory of a stop hold it.
     pub(crate) fn from_bits(bits: u64) -> Cause {
-        match bits { 0 => Cause::Effect, 1 => Cause::Write, 2 => Cause::Observed, 3 => Cause::Rule, 4 => Cause::Memory, _ => Cause::Caught }
+        match bits { 0 => Cause::Effect, 1 => Cause::Write, 2 => Cause::Observed, 3 => Cause::Rule, 4 => Cause::Memory, 5 => Cause::Caught, _ => Cause::Recursion }
     }
     /// What `•explain` reports in `fallbacks` for a stop for this cause.
     pub(crate) fn reason(self) -> &'static str {
         match self {
             Cause::Effect => "an effect", Cause::Write => "a write", Cause::Observed => "a cell's value",
-            Cause::Rule => "no batch rule", Cause::Memory => "too many items", Cause::Caught => "a caught error",
+            Cause::Rule => "no batch rule", Cause::Memory => "too many items", Cause::Caught => "a caught error", Cause::Recursion => "a recursive call",
         }
     }
 }

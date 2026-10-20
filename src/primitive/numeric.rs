@@ -62,7 +62,7 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
         let mut significant = 0;
         let mut exponent = false;
         text = text.chars().map(|c| {
-            if c == crate::syntax::EXPONENT.1 { exponent = true; }
+            if c == crate::number::EXPONENT.1 { exponent = true; }
             if !exponent && c.is_ascii_digit() && (c != '0' || significant != 0) { significant += 1; }
             if !exponent && c.is_ascii_digit() && significant > 16 { '_' } else { c }
         }).collect();
@@ -601,15 +601,10 @@ fn decode_compact(bases: &Value, digits: &Value, xlen: usize, ylen: usize, len: 
     layout.integers(rustymath::integer::decode(&spread(&b, xlen, len), &spread(&d, ylen, len))?).ok()
 }
 
-/// `¿`, drawing from `generator`, or from the session's generator where `generator` is `None`. It deals where `left` is given, and rolls each item of `right` otherwise. In a batched run, each cell draws from its own stream, with that cell of each batched argument (`batch::cell`).
+/// `¿`, drawing from `generator`, or from the session's generator where `generator` is `None`. It deals where `left` is given, and rolls each item of `right` otherwise. In a batched run, a roll draws once for every cell (`distribution::drawn_items`), and each cell deals in turn, with that cell of each batched argument (`batch::cell`).
 pub(crate) fn drawn_value(generator: Option<&crate::distribution::Generator>, left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    crate::distribution::drawn_cells(generator, span, |c, rng| {
-        let right = crate::batch::cell(right, c, span)?;
-        match left {
-            Some(x) => deal(&crate::batch::cell(x, c, span)?, &right, rng, span),
-            None => roll_array(&right, rng, span),
-        }
-    })
+    let Some(left) = left else { return crate::distribution::drawn_items(generator, right, span, |right, rng| roll_array(right, rng, span)) };
+    crate::distribution::drawn_cells(generator, span, |c, rng| deal(&crate::batch::cell(left, c, span)?, &crate::batch::cell(right, c, span)?, rng, span))
 }
 
 /// Roll every item of `right`, keeping its layout. Each result is exact when its bound is.

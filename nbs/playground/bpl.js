@@ -27,15 +27,23 @@ const grammar = JSON.parse(await text('bpl.tmLanguage.json'));
 const classes = [['comment', 'co'], ['string.quoted.double', 'st'], ['string.quoted.single', 'ch'], ['constant.numeric', 'dv'],
     ['support.function', 'fu'], ['support.function.system', 'bu'], ['keyword.operator.monadic', 'op'],
     ['keyword.operator.dyadic', 'ex'], ['variable.parameter', 'va'], ['keyword.control', 'kw']];
-export const highlight = await createHighlighterCore({langs: [grammar], engine: createJavaScriptRegexEngine(), themes: [{
+const highlighter = await createHighlighterCore({langs: [grammar], engine: createJavaScriptRegexEngine(), themes: [{
     name: 'quarto', type: 'light', fg: color('kw'), bg: css.getPropertyValue('--bs-body-bg').trim(),
-    settings: classes.map(([scope, cls]) => ({scope, settings: {foreground: color(cls), fontStyle: cls === 'kw' ? 'bold' : ''}}))
+    settings: [...classes.map(([scope, cls]) => ({scope, settings: {foreground: color(cls), fontStyle: ''}})),
+        {scope: 'variable.other', settings: {foreground: css.getPropertyValue('--bpl-name-color').trim(), fontStyle: 'bold'}}]
 }]});
+
+export function highlight(text) {
+    return highlighter.codeToHtml(text, {lang: 'bpl', theme: 'quarto', transformers: [{
+        pre(node) { this.addClassToHast(node, 'sourceCode bpl code-with-copy'); delete node.properties.style; },
+        code(node) { this.addClassToHast(node, 'sourceCode bpl'); }
+    }]});
+}
 // `lb.js` finds the page's Monaco editors through `window.monaco`.
 window.monaco = monaco;
 window.MonacoEnvironment = {getWorker: () => new Worker(new URL('monaco-worker.js', import.meta.url), {type: 'module'})};
 monaco.languages.register({id: 'bpl'});
-shikiToMonaco(highlight, monaco);
+shikiToMonaco(highlighter, monaco);
 
 // A Monaco editor for BPL in `element`, in the element's font. Ctrl-Enter or Cmd-Enter calls `run`. `options` adds to the defaults.
 export async function editor(element, run, options) {

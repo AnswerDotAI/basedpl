@@ -17,7 +17,7 @@ Function. Keys: `Alt-/`. Ranks: `0` monadic, `0 0` dyadic
 
 Bounds are nonnegative integers; `M≤N`. Exact arguments give exact integer draws. Dyalog APL writes Roll and Deal as `?`, which BPL uses for [predicates](question.qmd).
 
-`¿` draws from the session's stream of random numbers, which the operating system seeds when the session starts. [`•prefs ["seed":n]`](../system/prefs.qmd) seeds it with the nonnegative integer `n`, and the same seed gives the same draws. In a [map](../terms.qmd#term-map), each cell draws from a stream of its own. A cell's draws don't depend on how many values the other cells draw, or on whether the map makes a [batched call](../evaluation.qmd#functions-and-effects). [`•rand`](../system/rand.qmd) makes a separate stream.
+`¿` draws from the session's stream of random numbers, which the operating system seeds when the session starts. [`•prefs ["seed":n]`](../system/prefs.qmd) seeds it with the nonnegative integer `n`, and the same seed gives the same draws. In a [map](../terms.qmd#term-map), the cells take the stream's numbers in turn. A [batched call](../evaluation.qmd#functions-and-effects) takes every cell's numbers for one `¿` at once, in cell order. [`•rand`](../system/rand.qmd) makes a separate stream.
 
 ```bpl
 •prefs ["seed":42] ⋄ a←¿6 6 6 ⋄ •prefs ["seed":42] ⋄ a≡¿6 6 6    ⍝ $t

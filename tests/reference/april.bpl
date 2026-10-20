@@ -2605,7 +2605,7 @@ gg
 [[[[1 2] 0] [[0 0] 1]]]⌷2 3⍴["JAN" 1;"FEB" 2;"MAR" 3;"APR" 4;"MAY" 5;"JUN" 6]
 "JUN" 1
 
-⍝ april:1973 — Reach indexing assignment
+⍝ april:1973 — Reach indexing assignment [mixed]
 toasn←["JAN" 1;"FEB" 2;"MAR" 3;"APR" 4;"MAY" 5;"JUN" 6]
 toasn.[[[1 0] [0 1]]]←45 67
 toasn

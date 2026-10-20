@@ -20,7 +20,7 @@ pub(crate) fn imported(shape: Vec<usize>, items: Vec<Value>, filled: impl Fn(usi
             return Value::from_storage(shape, Storage::Compact(Buffer::Floats(FloatBuf::collect(width, floats.into_iter()))));
         }
     }
-    Value::keeping_kinds(shape, items, empty_prototype)
+    Value::from_parts(shape, items, empty_prototype)
 }
 
 pub(crate) struct Options { pub values: HashMap<String, Value>, name: &'static str }

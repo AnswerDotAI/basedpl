@@ -546,6 +546,30 @@ macro_rules! field_type {
 }
 pub(crate) use {field_type, with_field};
 
+/// A numeric suffix: the plain letters that spell it, and its subscript.
+pub(crate) type Suffix = (&'static [char], char);
+pub(crate) const EXPONENT: Suffix = (&['e', 'E'], 'ₑ');
+pub(crate) const IMAGINARY: Suffix = (&['J', 'j'], 'ⱼ');
+pub(crate) const DENOMINATOR: Suffix = (&['r'], 'ᵣ');
+pub(crate) const EXACT: Suffix = (&[], 'ₓ');
+/// The markers of float widths: `ₕ` for 16-bit ("half"), `ₛ` for 32-bit ("single") and `ₚ` for 64-bit ("precise"). Unicode has no subscript `d`.
+pub(crate) const WIDTHS: [(Suffix, FloatWidth); 3] = [((&[], 'ₕ'), FloatWidth::F16), ((&[], 'ₛ'), FloatWidth::F32), ((&[], 'ₚ'), FloatWidth::F64)];
+pub(crate) const SUFFIXES: [Suffix; 7] = [EXPONENT, IMAGINARY, DENOMINATOR, EXACT, WIDTHS[0].0, WIDTHS[1].0, WIDTHS[2].0];
+
+/// Whether `c` is the subscript of a numeric suffix.
+pub(crate) fn subscript(c: char) -> bool { SUFFIXES.iter().any(|s| s.1 == c) }
+
+/// The marker that writes floats of `width`.
+pub(crate) fn width_marker(width: FloatWidth) -> char { WIDTHS.iter().find(|w| w.1 == width).expect("every width has a marker").0 .1 }
+
+/// `text` with the subscript of each suffix written as its first plain letter, and the width that a trailing width marker gives, for `Number::parse`. `ₓ` has no plain letter and stays.
+fn plain_suffixes(text: &str) -> (std::borrow::Cow<'_, str>, Option<FloatWidth>) {
+    // No subscript is ASCII.
+    if text.is_ascii() { return (text.into(), None); }
+    let (text, width) = WIDTHS.iter().find_map(|&(s, w)| text.strip_suffix(s.1).map(|t| (t, Some(w)))).unwrap_or((text, None));
+    (text.chars().map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c)).collect(), width)
+}
+
 impl Number {
     pub fn from_integer(n: i64) -> Self { Self(Integer(n)) }
     pub fn from_bool(b: bool) -> Self { Self(Boolean(b)) }
@@ -555,6 +579,16 @@ impl Number {
     pub fn as_integer(&self) -> Option<i64> { match self.0 { Integer(n) => Some(n), Boolean(b) => Some(b.into()), _ => None } }
     pub(crate) fn integer_slice(&self) -> Option<&[i64]> { match &self.0 { Integer(n) => Some(std::slice::from_ref(n)), _ => None } }
     pub fn as_bool(&self) -> Option<bool> { match self.0 { Boolean(b) => Some(b), _ => None } }
+    /// The compact dtype that holds this number. An integer takes the narrowest width that holds it. A rational has none.
+    pub(crate) fn dtype(&self) -> Option<DType> {
+        match self.0 {
+            Boolean(_) => Some(DType::Boolean), Integer(n) => Some(DType::Integer(Width::narrowest(n, n))),
+            Float(_) => Some(DType::Float(FloatWidth::F64)), Single(_) => Some(DType::Float(FloatWidth::F32)), Half(_) => Some(DType::Float(FloatWidth::F16)),
+            Complex(_) => Some(DType::Complex(ComplexWidth::F64)), Complex32(_) => Some(DType::Complex(ComplexWidth::F32)), Exact(_) => None,
+        }
+    }
+    /// Whether `other` has this number's representation, such as both 64-bit floats or both exact integers, whatever their widths.
+    pub(crate) fn same_variant(&self, other: &Number) -> bool { std::mem::discriminant(&self.0) == std::mem::discriminant(&other.0) }
     pub(crate) fn bool_slice(&self) -> Option<&[bool]> { match &self.0 { Boolean(b) => Some(std::slice::from_ref(b)), _ => None } }
     pub fn is_exact(&self) -> bool { matches!(self.0, Boolean(_) | Integer(_) | Exact(_)) }
     pub(crate) fn is_integral(&self) -> bool { matches!(self.0, Boolean(_) | Integer(_)) || matches!(&self.0, Exact(n) if n.is_integer()) }
@@ -651,8 +685,10 @@ impl Number {
         (BigRational::from_float(f)? == *rational).then_some(f)
     }
 
-    /// The number that `text` writes, with plain letters for its suffixes. A float takes the default width, and a complex number parts of that width. Under static kinds, a complex number stays complex with no imaginary part, and an exact integer must fit the `int` width.
+    /// The number that `text` writes, with plain letters or subscripts for its suffixes, as BPL writes and displays numbers. A trailing width marker gives the float width, and otherwise a float takes the default width. A complex number has parts of that width. Under static kinds, a complex number stays complex with no imaginary part, and an exact integer must fit the `int` width.
     pub(crate) fn parse(text: &str, numeric: Numeric) -> Result<Self, ErrorKind> {
+        let (text, marked) = plain_suffixes(text);
+        let numeric = marked.map_or(numeric, |w| numeric.with_width(w));
         let (text, width) = (text.replace('¯', "-").replace('∞', "inf"), numeric.width);
         let integer = |s: &str| s.parse::<BigInt>().map_err(|_| ErrorKind::Syntax);
         if let Some((re, im)) = text.split_once(['J', 'j']) {
@@ -1125,7 +1161,7 @@ fn write_complex<F: Copy + Into<f64> + fmt::Display + fmt::UpperExp>(out: &mut i
 /// `text`, which Rust wrote in exponent notation, with the exponent subscript in place of Rust's `e` or `E`.
 pub(crate) fn scientific(text: &str) -> String {
     let (mantissa, exponent) = text.split_once(['e', 'E']).expect("exponent notation");
-    format!("{mantissa}{}{exponent}", crate::syntax::EXPONENT.1)
+    format!("{mantissa}{}{exponent}", EXPONENT.1)
 }
 
 /// Writes text with the high minus `¯` in place of each `-`.

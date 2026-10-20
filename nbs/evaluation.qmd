@@ -151,11 +151,15 @@ Evaluation is right to left, including tines. Items inside brackets evaluate lef
 
 A [map](terms.qmd#term-map) with no cells, and an empty inner product, call their operand on prototypes. Empty scan makes no calls. Generic reduction associates to the right. Float sum and product may reassociate. All scans accumulate left to right.
 
-Where it can, a map calls its operand once on all its cells together, in one batched call. Each primitive that the operand calls then runs once on the whole arguments: `{⍵×⍵+1}¨v` costs about what `v×v+1` costs. The results, errors, output and writes to names are the same as when the operand runs once for each cell. Each cell draws random numbers from a stream of its own, as [`¿`](glyphs/inverted-question.qmd) describes, whichever way the map calls its operand.
+Where it can, a map calls its operand once on all its cells together, in one batched call. Each primitive that the operand calls then runs once on the whole arguments: `{⍵×⍵+1}¨v` costs about what `v×v+1` costs. The results, errors, output and writes to names are the same as when the operand runs once for each cell. A batched call takes the random numbers for each draw for all its cells at once, in cell order, as [`¿`](glyphs/inverted-question.qmd) describes. A cell that draws more than once then gets different numbers from those it gets when the operand runs once for each cell. A guard that splits the batched call, described next, also changes the numbers: each side draws for its own cells in turn.
+
+A guard's predicate that reads a cell's value splits the batched call, as [`⍚`](glyphs/diamond-underbar.qmd) splits its argument's cells. The cells where the predicate holds run the rest of the body together, and the other cells run the bodies after it together, each with its own cells of every value that differs from cell to cell. `{⍵<0?0;√⍵}¨v` runs `√` once, on the cells that aren't negative. A side that no cell takes doesn't run.
+
+A fold or scan by a dfn of an array with more than one lane, such as one along each row of a matrix, makes one batched call for each stage. The call at position `j` runs on item `j` of every lane. `{⍺-⍵}/m` folds every row of `m` from the right with one call for each column, rather than one for each item. In `x f.g y` with a dfn `g`, one batched call runs `g` on every pairing of a row of `x`, a position along the contraction and a column of `y`. `f` then folds along the contraction. Where its batched call stops, a fold or inner product calls its operand once for each item, for the same reasons as a map, below.
 
 The map calls its operand once for each cell instead where the operand:
 
-- reads a cell's value to choose what to do, how many items to make or which items to read, as a predicate, a count or a position does
+- reads a cell's value to choose how many items to make or which items to read, as a count or a position does
 - writes output, reads input, or formats a cell's value with `⍕`
 - calls a system function other than a random draw
 - writes to a name outside the map
@@ -163,11 +167,12 @@ The map calls its operand once for each cell instead where the operand:
 - differentiates with respect to a cell that is an array, with `∂`
 - gives a result that holds arrays as items
 - calls a primitive that can't run on all the cells at once
+- has a guard on a cell's value whose two sides give results of different kinds or shapes, write to a name outside the dfn, or call the dfn again
 - combines each cell with an array that every cell shares, where repeating that array for every cell would hold more than about 16 million items and 4 times the items of the call's arguments
 
-A dfn remembers why its batched call stopped, and later maps skip the batched call while that cause would recur. After output, input, `⍕`, a system function, a write to a name outside the map or a read of a cell's value, they skip it on every later call. After a call that can't run on all the cells at once, they skip it while the arguments keep their kinds and cell shapes. After a call that would repeat a shared array too far, they skip it while the frame also keeps its shape. A caught error isn't remembered, because whether an error arises depends on the cells' values.
+A dfn remembers why its batched call stopped, and later maps skip the batched call while that cause would recur. After output, input, `⍕`, a system function, a write to a name outside the map, a read of a cell's value or a guard in a recursive call, they skip it on every later call. After a call that can't run on all the cells at once, they skip it while the arguments keep their kinds and cell shapes. After a call that would repeat a shared array too far, they skip it while the frame also keeps its shape. A caught error isn't remembered, because whether an error arises depends on the cells' values.
 
-A map always calls its operand once for each cell where an argument that differs from cell to cell is held in mixed storage, as [`•storage`](system/storage.qmd) reports for nested arrays and exact rationals, or has named axes. So do a stencil of an array with keys and a map inside a function that [`∂`](glyphs/partial.qmd) differentiates. A map of one cell whose arguments' cells are atoms makes no batched call either, because one plain call is faster. The `fallbacks` table of [`•explain`](system/explain.qmd) lists, with the reason, each map whose batched call fell back to one call for each cell, each map that skipped its batched call because an earlier one stopped, and each batched call that read its cells' items one at a time. With `batch` set to `$f` in [`•prefs`](system/prefs.qmd), every map calls its operand once for each cell.
+A map always calls its operand once for each cell where an argument that differs from cell to cell is held in mixed storage, as [`•storage`](system/storage.qmd) reports for nested arrays and exact rationals, or has named axes. So does a map inside a function that [`∂`](glyphs/partial.qmd) differentiates. A map of one cell whose arguments' cells are atoms makes no batched call either, because one plain call is faster. The `fallbacks` table of [`•explain`](system/explain.qmd) lists, with the reason, each map whose batched call fell back to one call for each cell, each map that skipped its batched call because an earlier one stopped, and each batched call that read its cells' items one at a time. With `batch` set to `$f` in [`•prefs`](system/prefs.qmd), every map calls its operand once for each cell.
 
 ## Errors
 

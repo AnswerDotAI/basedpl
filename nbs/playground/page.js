@@ -32,10 +32,7 @@ function go() {
     scaffold.className = 'code-copy-outer-scaffold';
     const source = scaffold.appendChild(document.createElement('div'));
     source.className = 'sourceCode';
-    source.innerHTML = highlight.codeToHtml(text, {lang: 'bpl', theme: 'quarto', transformers: [{
-        pre(node) { this.addClassToHast(node, 'sourceCode bpl code-with-copy'); delete node.properties.style; },
-        code(node) { this.addClassToHast(node, 'sourceCode bpl'); }
-    }]});
+    source.innerHTML = highlight(text);
     scaffold.insertAdjacentHTML('beforeend', '<button type="button" class="code-copy-button" title="Copy to Clipboard" aria-label="Copy to Clipboard"><i class="bi" aria-hidden="true"></i></button>');
     out = cell.appendChild(document.createElement('div'));
     out.className = 'cell-output cell-output-display';

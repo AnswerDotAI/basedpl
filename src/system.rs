@@ -103,7 +103,7 @@ impl SystemFunction {
 }
 
 impl Call {
-    /// Whether this call draws random numbers: a generator's roll or deal, or a distribution's sample. A batched run lets a draw through, because each cell then draws from its own stream (`distribution::drawn`).
+    /// Whether this call draws random numbers: a generator's roll or deal, or a distribution's sample. A batched run lets a draw through, because it draws for every cell of the run (`distribution::drawn_cells`).
     pub(crate) fn draws(&self) -> bool { matches!(self, Call::Generator(..) | Call::Distribution(_, crate::distribution::Operation::Sample)) }
 }
 

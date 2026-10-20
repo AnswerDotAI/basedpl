@@ -38,12 +38,13 @@ pub fn difference(x: &Value, y: &Value, relative: f64, absolute: f64, exactness:
     items.or_else(|| inner(&x.prototype(), &y.prototype()).map(|m| format!("prototype{m}")))
 }
 
-/// The kinds of storage, as `•storage` names them under `numeric`, at the first place where `x` and `y` are held differently. It walks into the items of arrays that both hold as mixed storage.
-fn kind_difference(x: &Value, y: &Value, numeric: Numeric) -> Option<(&'static str, &'static str)> {
+/// The kinds of storage, as `•storage` names them under `numeric`, at the first place where `x` and `y` are held differently. It walks into the items of arrays that both hold as mixed storage. With `compact_alike`, every compact kind counts as one, so only mixed storage against compact storage differs.
+fn kind_difference(x: &Value, y: &Value, numeric: Numeric, compact_alike: bool) -> Option<(&'static str, &'static str)> {
     let (a, b) = (x.storage_kind(numeric), y.storage_kind(numeric));
-    if a != b { return Some((a, b)); }
+    let differ = if compact_alike { (a == "mixed") != (b == "mixed") } else { a != b };
+    if differ { return Some((a, b)); }
     if a != "mixed" || x.is_atom() || y.is_atom() || x.len() != y.len() { return None; }
-    x.elements().zip(y.elements()).find_map(|(p, q)| kind_difference(&p, &q, numeric))
+    x.elements().zip(y.elements()).find_map(|(p, q)| kind_difference(&p, &q, numeric, compact_alike))
 }
 
 /// The text at `key` in `case`, or `None` without one. Anything else makes the case invalid, as `what` describes.
@@ -60,7 +61,13 @@ impl crate::Input for Lines {
     fn rest(&self) -> std::io::Result<Vec<u8>> { Ok(self.0.lock().unwrap().drain(..).map(|line| line + "\n").collect::<String>().into_bytes()) }
 }
 
-/// Check `case`'s code against an independent captured value or BPL expectation. Each side receives a fresh session. A BPL expectation must match each number's exactness. A value captured from another interpreter carries none, so its numbers compare by value. A Boolean `batch` in `case` runs the code once, with the `batch` pref set to it. Without one, the code runs with the pref off, then with it on. Each run must meet the expectation. The two runs' values must also be held in the same kinds of storage. The message of a failure with the pref on says so. A failure with the pref off ends the check before the run with it on.
+/// The runs of a case without a `batch` field, each with the words that name it in a failure: the `batch` pref off, then on, then on with fusion's small sizes (`fusion::Sizes::SMALL`), under which every fusible call waits and a graph splits even small arrays into blocks.
+const RUNS: [(bool, bool, &str); 3] = [(false, false, ""), (true, false, "with the batch pref on"), (true, true, "with fusion at any size")];
+
+/// The header options that set a flag on a case, each setting the field of its own name to `true`: `unfused` leaves out the run with fusion's small sizes, and `mixed` leaves out the comparison of the result's storage with the expectation's.
+const FLAGS: [&str; 2] = ["unfused", "mixed"];
+
+/// Check `case`'s code against an independent captured value or BPL expectation. Each side receives a fresh session. A BPL expectation must match each number's exactness. A value captured from another interpreter carries none, so its numbers compare by value. A Boolean `batch` in `case` runs the code once, with the `batch` pref set to it. Without one, the code runs once for each of `RUNS`, leaving out the run with fusion's small sizes where `unfused` is set, as for a case that inspects fusion itself through `•explain`. Each run must meet the expectation, and each later run's value must be held in the same kind of storage as the first's. A failure's message names its run, and a failure ends the check before the runs after it.
 pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
     let Some(code) = case["code"].as_str() else { return json!({"status":"invalid", "message":"missing code"}); };
     let error_kind = case["expected_error"].as_str().filter(|s| !s.is_empty());
@@ -111,27 +118,36 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
             Some(message) => Err(json!({"status":"mismatch", "message":message, "actual":crate::protocol::response(result)})), None => Ok(result.value)
         }
     };
-    let paired = case["batch"].as_bool().is_none();
+    let runs: Vec<_> = match case["batch"].as_bool() {
+        Some(batch) => vec![(batch, false, "")],
+        None => RUNS.into_iter().filter(|&(_, fused, _)| !fused || case["unfused"] != true).collect(),
+    };
     let mut values = Vec::new();
-    for batch in case["batch"].as_bool().map_or(vec![false, true], |batch| vec![batch]) {
-        let (result, session) = match evaluated(code, input, batch, options.timeout, &options.interrupt) { Ok(run) => run, Err(invalid) => return invalid };
+    for &(batch, fused, run) in &runs {
+        let (result, session) = match evaluated(code, input, batch, fused, options.timeout, &options.interrupt) { Ok(run) => run, Err(invalid) => return invalid };
         match met(result) {
             Ok(value) => values.push((value, session.numeric)),
             Err(mut failure) => {
-                if paired && batch { failure["message"] = json!(format!("with the batch pref on: {}", failure["message"].as_str().unwrap_or_default())); }
+                if !run.is_empty() { failure["message"] = json!(format!("{run}: {}", failure["message"].as_str().unwrap_or_default())); }
                 return failure;
             }
         }
     }
-    let kinds = match &values[..] { [(Some(off), _), (Some(on), numeric)] => kind_difference(on, off, *numeric), _ => None };
-    match kinds {
-        Some((on, off)) => json!({"status":"mismatch", "message":format!("storage kind: {on} with the batch pref on, {off} with it off")}),
-        None => json!({"status":"pass"}),
+    for ((value, numeric), &(_, _, run)) in values.iter().zip(&runs).skip(1) {
+        if let (Some(value), Some(first)) = (value, &values[0].0) && let Some((kind, first_kind)) = kind_difference(value, first, *numeric, false) {
+            return json!({"status":"mismatch", "message":format!("storage kind: {kind} {run}, {first_kind} with the batch pref off")});
+        }
     }
+    // The result's storage must be mixed where the BPL expectation's is, and compact where it's compact. A `mixed` case leaves this out. An in-place write keeps mixed storage mixed, and a record from JSON or Python keeps each entry's own kind.
+    if let (true, Some((Some(value), numeric)), Some(expected)) = (exactness && case["mixed"] != true, values.first(), &expected)
+        && let Some((kind, expected_kind)) = kind_difference(value, expected, *numeric, true) {
+        return json!({"status":"mismatch", "message":format!("storage kind: {kind}, {expected_kind} in the expectation")});
+    }
+    json!({"status":"pass"})
 }
 
-/// `code` run in a fresh session with the `batch` pref set to `batch`, a `testpath` fixture where the code names one, and `input` as its lines of input. Gives the evaluation and the session as the code left it.
-fn evaluated(code: &str, input: Option<&str>, batch: bool, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<(crate::Evaluation, Session), JsonValue> {
+/// `code` run in a fresh session with the `batch` pref set to `batch` and, where `fused`, fusion's small sizes (`fusion::Sizes::SMALL`), a `testpath` fixture where the code names one, and `input` as its lines of input. Gives the evaluation and the session as the code left it.
+fn evaluated(code: &str, input: Option<&str>, batch: bool, fused: bool, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<(crate::Evaluation, Session), JsonValue> {
     let mut session = Session::new();
     session.batch = Some(batch);
     let _files = if code.contains("testpath") {
@@ -141,7 +157,9 @@ fn evaluated(code: &str, input: Option<&str>, batch: bool, timeout: Option<std::
         Some(dir)
     } else { None };
     let input = input.map(|text| Arc::new(Lines(Mutex::new(text.lines().map(String::from).collect()))) as Arc<dyn crate::Input>);
+    let replaced = fused.then(|| crate::fusion::set_sizes(crate::fusion::Sizes::SMALL));
     let result = session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input, ..EvalOptions::default() });
+    if let Some(sizes) = replaced { crate::fusion::set_sizes(sizes); }
     Ok((result, session))
 }
 
@@ -181,14 +199,14 @@ fn unescaped(text: &str, location: &str) -> Result<String, String> {
     Ok(result)
 }
 
-/// The cases of `text`, in the format of a `.bpl` reference file, as `check` takes them. Each case also gives its `id`, its header's `line` and its `section`. `tests/reference/README.md` describes the format.
+/// The cases of `text`, in the format of a `.bpl` reference file, as `check` takes them. Each case also gives its `id`, its header's `line`, its `section`, and its header's `comment` without the options. Two cases can't share an id. `tests/reference/README.md` describes the format.
 pub fn cases(text: &str) -> Result<Vec<JsonValue>, String> {
     if text.is_empty() { return Ok(Vec::new()); }
     let lines: Vec<_> = text.split_terminator('\n').collect();
     let mut starts: Vec<_> = lines.iter().enumerate().filter_map(|(i, s)| (header(s).is_some() || s.starts_with("⍝⍝ ")).then_some(i)).collect();
     if starts.first() != Some(&0) { return Err("expected a case or section header on line 1".into()); }
     starts.push(lines.len());
-    let (mut section, mut cases) = ("", Vec::new());
+    let (mut section, mut cases, mut ids) = ("", Vec::new(), std::collections::HashSet::new());
     for range in starts.windows(2) {
         let (start, end) = (range[0], range[1]);
         if let Some(title) = lines[start].strip_prefix("⍝⍝ ") {
@@ -198,11 +216,18 @@ pub fn cases(text: &str) -> Result<Vec<JsonValue>, String> {
         }
         let (id, comment) = header(lines[start]).expect("each start is a header");
         let location = format!("line {} ({id})", start + 1);
+        if !id.is_empty() && !ids.insert(id) { return Err(format!("line {}: duplicate ID {id}", start + 1)); }
         let fail = |message: String| format!("{location}: {message}");
-        let mut case = json!({"id":id, "line":start + 1, "section":section});
-        let suffix = comment.strip_prefix('[').or_else(|| comment.rsplit_once(" [").map(|(_, s)| s));
-        if let Some(options) = suffix.and_then(|s| s.strip_suffix(']')).filter(|s| s.starts_with("rtol=") || s.starts_with("atol=")) {
+        let suffix = comment.strip_prefix('[').map(|s| ("", s)).or_else(|| comment.rsplit_once(" ["));
+        let options = suffix.and_then(|(text, s)| Some((text, s.strip_suffix(']')?))).filter(|(_, s)| s.starts_with("rtol=") || s.starts_with("atol=") || FLAGS.iter().any(|f| s.starts_with(f)));
+        let mut case = json!({"id":id, "line":start + 1, "section":section, "comment":options.map_or(comment, |(text, _)| text)});
+        if let Some((_, options)) = options {
             for option in options.split_whitespace() {
+                if FLAGS.contains(&option) {
+                    if case.get(option).is_some() { return Err(fail(format!("repeated option {option}"))); }
+                    case[option] = json!(true);
+                    continue;
+                }
                 let invalid = || fail(format!("invalid tolerance {option}"));
                 let (key, value) = option.split_once('=').ok_or_else(invalid)?;
                 let key = match key {

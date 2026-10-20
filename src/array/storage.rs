@@ -62,17 +62,14 @@ impl Promotion for DType {
     }
 }
 
-/// The compact dtype that holds `item`, if any does. An integer takes the narrowest width that holds it.
+/// The compact dtype that holds `item`, if any does (`Number::dtype`).
 pub(crate) fn item_dtype(item: &Value) -> Option<DType> {
-    match item {
-        Value::Number(n) if n.as_bool().is_some() => Some(DType::Boolean),
-        Value::Number(n) => match n.as_integer() {
-            Some(i) => Some(DType::Integer(Width::narrowest(i, i))), None if n.as_float().is_some() => n.float_width().map(DType::Float),
-            None if n.as_complex().is_some() => n.float_width().map(|w| DType::Complex(w.into())), None => None
-        },
-        Value::Character(_) => Some(DType::Character),
-        _ => None,
-    }
+    match item { Value::Number(n) => n.dtype(), Value::Character(_) => Some(DType::Character), _ => None }
+}
+
+/// Whether `a` and `b` are items of one representation, such as two 64-bit floats, two exact integers or two characters (`Number::same_variant`).
+fn same_variant(a: &Value, b: &Value) -> bool {
+    match (a, b) { (Value::Number(x), Value::Number(y)) => x.same_variant(y), _ => std::mem::discriminant(a) == std::mem::discriminant(b) }
 }
 
 /// Runs `$body` with `$d` bound to the target buffer, `$s` to the source items and `$f` to the conversion of a source item for the target, when the target's compact dtype holds the source's items. Gives whether it ran. Each line lists the sources that one target takes and how it converts them. Numbers widen from Boolean through the integer widths to the float widths to the complex widths. A narrower float or complex buffer receives wider items only when a conversion asks for that width. A narrower integer line takes a 64-bit source only for an atom, whose value `Gather::follow` makes sure the buffer's width holds. A conversion between items of one type is the identity. With `|$d, $s|` and no `$f`, the macro runs `$body` only where the source and target hold one type.
@@ -199,8 +196,18 @@ impl Storage {
     }
     /// Compact storage of the dtype that `widening` gives the items, when there is one. Other items stay mixed. Integers take the narrowest width that holds them all.
     pub(super) fn compact(data: Vec<Value>, widening: Widening) -> Self {
-        let mut dtypes = data.iter().map(item_dtype);
-        let Some(dtype) = dtypes.next().flatten().and_then(|first| dtypes.try_fold(first, |k, i| k.join(i?, widening))) else { return Self::mixed(data) };
+        let Some(first) = data.first() else { return Self::mixed(data) };
+        let Some(first_dtype) = item_dtype(first) else { return Self::mixed(data) };
+        // Comparing each item's variant with the first item's is cheap enough for copies of mixed storage that stay mixed. Only items from the first one of another variant on need their dtypes joined.
+        let run = data.iter().position(|v| !same_variant(v, first)).unwrap_or(data.len());
+        let head = match first_dtype {
+            DType::Integer(_) => {
+                let (lo, hi) = data[..run].iter().filter_map(|v| if let Value::Number(n) = v { n.as_integer() } else { None }).fold((i64::MAX, i64::MIN), |(lo, hi), i| (lo.min(i), hi.max(i)));
+                DType::Integer(Width::narrowest(lo, hi))
+            }
+            dtype => dtype,
+        };
+        let Some(dtype) = data[run..].iter().try_fold(head, |k, v| k.join(item_dtype(v)?, widening)) else { return Self::mixed(data) };
         // Collecting from `data.iter()` sizes the compact buffer exactly. Consuming `data` would reuse its larger allocation.
         Self::of_dtype(dtype, &data)
     }
@@ -470,13 +477,14 @@ impl Gather {
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(d, s, base, steps, fill_of(s), f)) { return; }
         walk_values(self.mixed(), source, &std::cell::OnceCell::new(), base, steps);
     }
-    /// The gathered array, laid out by `layout`. An empty array takes `prototype`. A buffer that joins duals gives a dual array (`derivative::Join::finish`).
+    /// The gathered array, laid out by `layout`. Mixed items that one compact dtype holds, under the rule for items gathered one at a time (`Widening::Items`), are held compact, as the same items written in brackets are. An empty array takes `prototype`, and the storage `prototype`'s kind gives it. A buffer that joins duals gives a dual array (`derivative::Join::finish`).
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
         if let Some(join) = self.join { return join.finish(layout, prototype); }
         let shape = crate::Shape::from(layout.shape());
         let value = match self.data {
-            Storage::Mixed(ref d, _) if d.is_empty() && !self.open => Value::empty_of(shape, prototype.value(), true)?,
-            data if data.len() == 0 => Value::empty(shape, prototype.value())?, data => Value::from_storage(shape, data)?
+            data if data.len() == 0 => Value::empty(shape, prototype.value())?,
+            Storage::Mixed(items, _) => Value::from_storage(shape, Storage::compact(items, Widening::Items))?,
+            data => Value::from_storage(shape, data)?
         };
         value.with_layout(layout)
     }

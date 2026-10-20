@@ -213,7 +213,7 @@ impl Value {
     /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in `⊂3` or `0 3⍴0`, needs parentheses.
     pub(crate) fn operand(&self, notation: crate::symbols::Notation) -> String {
         let text = self.source(Elide { notation, ..Elide::NONE });
-        if outside(&text, |c| !(c.is_ascii_digit() || " ¯.∞⍬".contains(c) || crate::syntax::subscript(c))) { format!("({text})") } else { text }
+        if outside(&text, |c| !(c.is_ascii_digit() || " ¯.∞⍬".contains(c) || crate::number::subscript(c))) { format!("({text})") } else { text }
     }
 
     /// Source text for a scalar holding `content`: `ᵘ` after a function, and `⊂` before anything else.

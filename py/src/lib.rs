@@ -574,6 +574,12 @@ fn _captured_literal(value: &str) -> PyResult<String> {
     basedpl::reference::expected_array(&value).map(|v| v.literal()).ok_or_else(|| PyValueError::new_err("invalid captured array"))
 }
 
+/// The cases of `text`, in the format of a `.bpl` reference file, as `reference::cases` reads them.
+#[pyfunction]
+fn _reference_cases(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
+    python(py, &serde_json::Value::Array(basedpl::reference::cases(text).map_err(PyValueError::new_err)?))
+}
+
 /// The character offset of each byte offset in `text` that starts a character or ends the text. Python indexes strings by character.
 fn char_offsets(text: &str) -> Vec<usize> {
     let mut chars = vec![0; text.len() + 1];
@@ -612,6 +618,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFunction>()?;
     m.add_class::<PyOperator>()?;
     m.add_function(wrap_pyfunction!(_captured_literal, m)?)?;
+    m.add_function(wrap_pyfunction!(_reference_cases, m)?)?;
     m.add_function(wrap_pyfunction!(_parse, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("symbols", python(m.py(), &basedpl::symbols::rows())?)?;

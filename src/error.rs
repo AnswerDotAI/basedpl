@@ -73,8 +73,16 @@ impl fmt::Display for ErrorKind {
     }
 }
 
+/// An error: its kind, message and span, and the calls it passed through. Boxing its fields keeps each `Result<T, Error>` to one pointer on the stack that deep recursion uses.
 #[derive(Clone, Debug)]
-pub struct Error { pub kind: ErrorKind, pub message: String, pub span: Span, pub calls: Vec<Span> }
+pub struct Error(Box<ErrorData>);
+
+/// The fields of an [`Error`], which it dereferences to.
+#[derive(Clone, Debug)]
+pub struct ErrorData { pub kind: ErrorKind, pub message: String, pub span: Span, pub calls: Vec<Span> }
+
+impl std::ops::Deref for Error { type Target = ErrorData; fn deref(&self) -> &ErrorData { &self.0 } }
+impl std::ops::DerefMut for Error { fn deref_mut(&mut self) -> &mut ErrorData { &mut self.0 } }
 
 impl Span {
     /// The whole of `source`.
@@ -83,7 +91,7 @@ impl Span {
     pub(crate) fn error(&self, kind: impl Into<ErrorKind>, message: impl Into<String>) -> Error {
         let mut kind = kind.into();
         let message = match &mut kind { ErrorKind::Array(e) if !e.message.is_empty() => std::mem::take(&mut e.message).into_owned(), _ => message.into() };
-        Error { kind, message, span: self.clone(), calls: Vec::new() }
+        Error(Box::new(ErrorData { kind, message, span: self.clone(), calls: Vec::new() }))
     }
     pub(crate) fn domain_error(&self, message: impl Into<String>) -> Error { self.error(Kind::Domain, message) }
     /// The file `path` names. A path that starts with `./` or `../` is relative to the file holding this code. Other relative paths, and every path in code not read from a file, are relative to the working directory.

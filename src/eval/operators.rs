@@ -120,27 +120,27 @@ fn masked(f: &Function, selector: &Value, left: Option<&Value>, right: &Value, t
     selection.write(right, &values, cx)
 }
 
-/// The costs, in copies per item, that decide between a select and a gather of each case's cells (`Cells`) where `selected` counts the mask. A gather pays `GATHERED` for every item, and `PICKED` plus the case's cost for each item that picks a case that computes. A select pays `CHOSEN` for every item, plus the cost of every case that computes. The values come from a fit on 19 October 2026 on this Mac, an Apple M5 Max, to `-@[p] s` and `*@[p] s` on 65,536 floats with 10% to 90% of items picked. The fit puts the crossover at about 22% picked for `-` and 55% for `*`. CI's timings can refine it.
+/// The costs, in copies per item, that decide between a select and a gather of each case's cells (`Cells`). A gather pays `GATHERED` for every item, and `PICKED` plus the case's cost for each item that picks a case that computes. A select pays `CHOSEN` for every item, or `FUSED` where fusion runs it with the comparison that gives its mask, plus the cost of every case that computes. `GATHERED`, `PICKED` and `CHOSEN` come from a fit on 19 October 2026 on this Mac, an Apple M5 Max, to `-@[p] s` and `*@[p] s` on 65,536 floats with 10% to 90% of items picked. They put the crossover at about 22% picked for `-` and 55% for `*`. `FUSED` comes from `-@[p<]x` and `*@[p<]x` on a million floats on 20 October 2026, where a fused select cost 2.0 copies plus its kernel for `-`, and 2.3 for `*`. It puts the crossover at about 10% picked for `-` and 47% for `*`. CI's timings can refine all four.
 const GATHERED: f64 = 2.3;
 const PICKED: f64 = 7.3;
 const CHOSEN: f64 = 3.1;
-/// The dearest kernel, in copies per item (`Facts::cost`), that fusion runs in a select without counting the mask first. Measured on 19 October 2026 on this Mac on a million floats: a select through `√` (2) or `⌊` (3) cost 4.1 and 3.5 copies with 1 item in 100 picked, against 2.5 by gathering, and 4.0 and 3.4 with half picked, against 7.3 and 6.9. One through `*` (7) cost 9.5 copies with 1 item in 100 picked, against 2.5.
-const DEFERRED: u32 = 3;
+const FUSED: f64 = 2.1;
+/// The items of a pending mask that `selected` reads to estimate the share of items that pick each case. Fusion computes only those items (`fusion::walk_through`). The rest of the mask stays pending for the select.
+const SAMPLE: usize = 256;
 
-/// `cases[1]` on the items where the Boolean `mask` is 1 and `cases[0]` where it's 0, each run on every item of `right` and then chosen item by item (`fusion::select`), in place of gathering each case's cells (`Cells`). A case of `None` keeps `right`'s items, as `@[p]` keeps the items it doesn't select. A case then also runs on items that didn't pick it, which can't show where it never fails and gives the argument's kind (`select_cost`). `None` leaves the call to `Cells`: for a left argument, an empty argument, a mask that isn't Booleans with the argument's layout, an argument that isn't floats of 32 or 64 bits, an argument that `∂` tracks, whose gradient a select could make NaN where a case's slope is infinite on an item that didn't pick it, or a case that a select can't run. A select also has to cost less than the gather, by its cases' costs and the counts of the items that pick them (`GATHERED`). Fusion runs a select without counting the mask only where no case holds a kernel dearer than `DEFERRED`, because a dearer kernel run on every item can cost more than the gather it saves. `•explain` reports a select as a fast combination, named by `text`.
+/// `cases[1]` on the items where the Boolean `mask` is 1 and `cases[0]` where it's 0, each run on every item of `right` and then chosen item by item (`fusion::select`), in place of gathering each case's cells (`Cells`). A case of `None` keeps `right`'s items, as `@[p]` keeps the items it doesn't select. A case then also runs on items that didn't pick it, which can't show where it never fails and gives the argument's kind (`select_cost`). `None` leaves the call to `Cells`: for a left argument, an empty argument, a mask that isn't Booleans with the argument's layout, an argument that isn't floats of 32 or 64 bits, an argument that `∂` tracks, whose gradient a select could make NaN where a case's slope is infinite on an item that didn't pick it, or a case that a select can't run. A select also has to cost less than the gather, by its cases' costs and the share of items that pick each (`GATHERED`). The share is counted from a stored mask, and estimated from a sample of a comparison that fusion runs inside the select (`share`). `•explain` reports a select as a fast combination, named by `text`.
 fn selected(mask: &Value, cases: [Option<&Function>; 2], left: Option<&Value>, right: &Value, text: impl FnOnce() -> String, cx: &mut Context<'_>) -> Result<Option<Value>, Error> {
     use rustymath::buffer::{DType, FloatWidth};
     let Some(DType::Float(width @ (FloatWidth::F32 | FloatWidth::F64))) = right.dtype() else { return Ok(None) };
     if left.is_some() || right.is_empty() || mask.dtype() != Some(DType::Boolean) || **mask.layout() != **right.layout() || cx.carried(left, right) { return Ok(None); }
-    let [Some(no), Some(yes)] = cases.map(|f| f.map_or(Some(Cost::NONE), |f| select_cost(f, width))) else { return Ok(None) };
+    let [Some(no), Some(yes)] = cases.map(|f| f.map_or(Some(0), |f| select_cost(f, width))) else { return Ok(None) };
     let keeps = |f: Option<&Function>| f.is_none_or(|f| matches!(f.as_primitive(), Some(Primitive::Identity(_))));
-    if no.dearest.max(yes.dearest) > DEFERRED || !crate::fusion::defers_select(mask, width, right.layout()) {
-        let crate::array::Items::Compact(rustymath::buffer::View::Booleans(bits)) = mask.as_items() else { unreachable!("a Boolean mask is compact") };
-        let ones = bits.iter().filter(|&&b| b).count();
-        let picked = |f: Option<&Function>, count: usize, cost: Cost| if keeps(f) { 0.0 } else { count as f64 * (PICKED + f64::from(cost.copies)) };
-        let n = bits.len() as f64;
-        if (CHOSEN + f64::from(no.copies + yes.copies)) * n >= GATHERED * n + picked(cases[0], bits.len() - ones, no) + picked(cases[1], ones, yes) { return Ok(None); }
-    }
+    let fused = crate::fusion::defers_select(mask, width, right.layout());
+    let ones = share(mask, fused);
+    let picked = |f: Option<&Function>, share: f64, copies: u32| if keeps(f) { 0.0 } else { share * (PICKED + f64::from(copies)) };
+    // `share` counts, and so computes, a mask of at most `SAMPLE` items, which can then no longer run inside the select.
+    let chosen = if fused && mask.len() > SAMPLE { FUSED } else { CHOSEN };
+    if chosen + f64::from(no + yes) >= GATHERED + picked(cases[0], 1.0 - ones, no) + picked(cases[1], ones, yes) { return Ok(None); }
     let mut items = |f: Option<&Function>| -> Result<Value, Error> {
         let Some(f) = f.filter(|_| !keeps(f)) else { return Ok(right.clone()) };
         if let Some(a) = f.as_constant() { return Ok(a.clone()); }
@@ -152,32 +152,32 @@ fn selected(mask: &Value, cases: [Option<&Function>; 2], left: Option<&Value>, r
     Ok(Some(crate::fusion::select(mask, &x, &y, right.layout())))
 }
 
-/// What a select pays to run a case on every item: its kernels' costs in copies per item (`Facts::cost`), in all and of the dearest one.
-#[derive(Clone, Copy)]
-struct Cost { copies: u32, dearest: u32 }
-impl Cost {
-    /// The cost of a case that runs no kernel: `⊢`, a constant, or the items that `@[p]` keeps.
-    const NONE: Self = Self { copies: 0, dearest: 0 };
-    fn and(self, other: Self) -> Self { Self { copies: self.copies + other.copies, dearest: self.dearest.max(other.dearest) } }
+/// The share of `mask`'s items that are 1, counted, or estimated from `SAMPLE` items where `sampled`. An odd stride keeps the sample from lining up with a mask that repeats with a period of a power of two.
+fn share(mask: &Value, sampled: bool) -> f64 {
+    let n = mask.len();
+    let k = if sampled { SAMPLE.min(n) } else { n };
+    let sample = (k < n).then(|| crate::explain::uncounted(|| crate::primitive::walked(mask, crate::array::Layout::from(vec![k]), 0, &[rustymath::gather::Steps::along(k, (n / k - 1) | 1)])).expect("a sample fits its layout"));
+    let crate::array::Items::Compact(rustymath::buffer::View::Booleans(bits)) = sample.as_ref().unwrap_or(mask).as_items() else { unreachable!("a Boolean mask is compact") };
+    bits.iter().filter(|&&b| b).count() as f64 / k as f64
 }
 
-/// What a select pays to run `f` on every item of an array of floats of `width`, or `None` where it can't run `f`. A select can run `f` where it never fails, and gives one float of that width for each item, from that item alone. That holds for `⊢`, for a constant float of exactly `width`, and for trains built from those and from primitives whose float kernel never fails and gives floats (`pervasive::kernel`). A constant beside such a primitive can be narrower, because the primitive's result takes the argument's width. Any other constant would make the result's kind depend on which items pick the case.
-fn select_cost(f: &Function, width: rustymath::buffer::FloatWidth) -> Option<Cost> {
+/// What a select pays to run `f` on every item of an array of floats of `width`, in copies per item (`Facts::cost`), or `None` where it can't run `f`. A select can run `f` where it never fails, and gives one float of that width for each item, from that item alone. That holds for `⊢`, for a constant float of exactly `width`, and for trains built from those and from primitives whose float kernel never fails and gives floats (`pervasive::kernel`). A constant beside such a primitive can be narrower, because the primitive's result takes the argument's width. Any other constant would make the result's kind depend on which items pick the case.
+fn select_cost(f: &Function, width: rustymath::buffer::FloatWidth) -> Option<u32> {
     use rustymath::buffer::DType;
     let real = |a: &Value| match a { Value::Number(n) if !n.is_exact() && n.as_bool().is_none() && n.as_float().is_some() => a.float_width(), _ => None };
     let numeric = Numeric::current();
     let kernel = |p: Primitive, dyadic: bool| {
         let copies = u32::from(p.facts(dyadic).cost);
-        crate::pervasive::kernel(p, dyadic, DType::Float(width), numeric).is_some_and(|k| k.total && matches!(k.kind, DType::Float(_))).then_some(Cost { copies, dearest: copies })
+        crate::pervasive::kernel(p, dyadic, DType::Float(width), numeric).is_some_and(|k| k.total && matches!(k.kind, DType::Float(_))).then_some(copies)
     };
     let dyad = |g: &Function| g.as_primitive().and_then(|p| kernel(p, true));
-    if let Some(a) = f.as_constant() { return (real(a) == Some(width)).then_some(Cost::NONE); }
+    if let Some(a) = f.as_constant() { return (real(a) == Some(width)).then_some(0); }
     if let Some((parts, bound)) = f.called_parts(false) {
         if bound.is_some_and(|a| !real(a).is_some_and(|w| w <= width)) { return None; }
-        return parts.iter().try_fold(Cost::NONE, |cost, &(g, dyadic)| Some(cost.and(if dyadic { dyad(g)? } else { select_cost(g, width)? })));
+        return parts.iter().try_fold(0, |cost, &(g, dyadic)| Some(cost + if dyadic { dyad(g)? } else { select_cost(g, width)? }));
     }
     match f.node() {
-        FunctionNode::Primitive(Primitive::Identity(_)) => Some(Cost::NONE),
+        FunctionNode::Primitive(Primitive::Identity(_)) => Some(0),
         FunctionNode::Primitive(p) => kernel(*p, false),
         _ => None,
     }
@@ -327,6 +327,35 @@ impl Cells {
             else if result.shape().first() == Some(&0) { result.layout().axes(1..result.shape().len()) } else { Default::default() };
         placed(&self.framed, &self.axes, &cell, span)?.0.collect(Vec::new(), result.prototype()).error_at(span, "invalid result")
     }
+}
+
+/// What a guard on a batched predicate gives (`guard`): the side that every cell takes, or the batch that joins the two sides' results.
+pub(super) enum Guarded { Unanimous(bool), Joined(Value) }
+
+/// A guard whose predicate gives each cell of batched run `level` a Boolean of its own, run as `⍚` runs a selector for each cell (`Cells`). `truths` holds the Booleans, laid out as the run's frame (`batch::truths`). Where the cells take both sides, `side` runs each side once, on the cells that take it, given whether the predicate holds there, the cells' positions in the frame and their layout as a list. It gives a batch over those cells or a constant (`batch::whole_over`), and the two results join into one batch over the frame. A side whose cells differ in layout from the other side's stops the run, because a batch's cells share one layout.
+pub(super) fn guard(truths: &Value, level: u64, cx: &mut Context<'_>, mut side: impl FnMut(bool, &[u32], &crate::array::Layout, &mut Context<'_>) -> Result<Value, Error>) -> Result<Guarded, Error> {
+    use crate::transform::{Cause, Stop};
+    let cells = Cells::new(truths, None, truths, cx.span)?;
+    let groups = cells.picked(truths, 2, cx)?;
+    let picked: Vec<&[u32]> = groups.each().collect();
+    if let Some(k) = (0..2).find(|&k| picked[k].is_empty()) { return Ok(Guarded::Unanimous(k == 0)); }
+    let mut made = Vec::new();
+    for k in [0, 1] {
+        let frame = listed(&cells.framed.frame(), picked[k], &Default::default(), cx.span)?;
+        let result = side(k == 1, picked[k], &frame, cx)?;
+        let whole = crate::batch::whole_over(result, level, &frame).ok_or_else(|| Stop::new(level, Cause::Rule).at(cx.span))?;
+        made.push((k, Made::Cells(whole)));
+    }
+    let cell = |m: &Made| m.value().layout().axes(1..m.value().shape().len());
+    if cell(&made[0].1) != cell(&made[1].1) { return Err(Stop::new(level, Cause::Rule).at(cx.span)); }
+    let fill = made[0].1.value().prototype();
+    let whole = cells.assembled(&picked, &[], &made, fill, None, cx)?;
+    crate::batch::result(level, whole, truths.shape().len(), || true, Stop::new(level, Cause::Rule), cx).map(Guarded::Joined)
+}
+
+/// The cells at frame positions `rows` of `array`, whose first `frame` axes are its frame, as a list, as a guard case reads a batch's whole (`batch::read_cells`).
+pub(super) fn cells_at(array: &Value, frame: usize, rows: &[u32], cx: &Context<'_>) -> Result<Value, Error> {
+    Framed::new(array.layout(), &(0..frame).collect::<Vec<_>>(), cx.span)?.read(array, rows, cx)
 }
 
 /// The cells of an array along its frame axes. `layout` and `steps` put the frame's axes first and then a cell's, as `⍉` would, but no item moves. The first `rank` steps reach each cell's start; the rest read its items.
@@ -489,23 +518,33 @@ fn stencil(f: &Function, spec: &Value, right: &Value, cx: &mut Context<'_>) -> R
     let count = generated_len(windows.frame()).at(cx.span)?;
     let layout = crate::array::Layout::from(windows.frame_layout(right.layout()).at(cx.span)?);
     let span = cx.span;
+    let width = Numeric::current().width;
     // `starts` and `border` give an empty frame one position, whose window is the prototype pair's right argument.
     let pair = |position| {
         let starts = windows.starts(position);
-        let border = Value::floats(vec![starts.len()], Numeric::current().width, windows.border(position).into_iter().map(|n| n as f64)).unwrap();
         let window = remapped(right, windows.window(right.layout(), &starts).at(span)?).error_at(span, "invalid stencil window")?;
-        Ok((Some(border), window))
+        Ok((Some(border_floats(vec![starts.len()], width, windows.border(position))), window))
     };
-    // A batched try reads every window at once, with every window's border as its left argument (`batch::tried`). `whole` builds the table of every window's border only when the try runs, after the try's own checks. An argument with keys runs window by window, because each window of a keyed axis has its own keys, and the cells of a batch share one layout. Windows that together hold more items than an array can (`MAX_GENERATED_ELEMENTS`) also run one at a time.
+    // A batched try reads every window at once, with every window's border as its left argument (`batch::tried`). The table of borders is built only when the run first reads its items, so an operand that never reads `⍺` never builds it (`batch::Deferred`). Windows that together hold more items than an array can (`MAX_GENERATED_ELEMENTS`) run one at a time.
     let whole = || {
-        if (0..right.shape().len()).any(|a| right.keys(a).is_some()) { return None; }
         let padded = windows.padding().map(|p| remapped(right, p)).transpose().ok()?;
         let source = padded.as_ref().unwrap_or(right);
         let windowed = remapped(source, windows.plan(right.layout(), source.shape()).ok()?).ok()?;
-        let left = Value::floats([windows.frame(), &[sizes.len()]].concat(), Numeric::current().width, windows.borders().into_iter().map(|n| n as f64)).ok()?;
-        Some(crate::batch::Arguments { left: Some((left, 1)), right: (windowed, windows.cell().len()) })
+        let shape = [windows.frame(), &[sizes.len()]].concat();
+        generated_len(&shape).ok()?;
+        let all = windows.clone();
+        let left = crate::batch::Deferred {
+            layout: crate::array::Layout::from(shape.clone()), dtype: rustymath::buffer::DType::Float(width), first: border_floats(vec![sizes.len()], width, windows.border(0)),
+            build: Box::new(move || border_floats(shape.clone(), width, all.borders())),
+        };
+        Some(crate::batch::Arguments { left: Some(crate::batch::Argument::Deferred(left)), right: crate::batch::Argument::Cells(windowed, windows.cell().len()) })
     };
     each_pair(f, count, layout, pair, whole, Some("invalid stencil result"), cx)
+}
+
+/// A stencil's border counts (`Windows::border`) as floats of `width`, laid out as `shape`, as the stencil passes them to its operand as `⍺`.
+fn border_floats(shape: Vec<usize>, width: rustymath::buffer::FloatWidth, counts: Vec<isize>) -> Value {
+    Value::floats(shape, width, counts.into_iter().map(|n| n as f64)).expect("border counts fill their shape")
 }
 
 fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -742,7 +781,7 @@ fn inverse_outer(f: &Function, bound: &Value, first: bool, right: &Value, cx: &m
 }
 
 fn inverse_scan(f: &Function, h: FoldKind, axis: Option<&Value>, seed: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
-    let axis = scan_axis(h, axis, right, cx.span)?;
+    let (_, axis) = scan_axis(h, axis, right, cx.span)?;
     if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
     let inverse = f.inverse(cx.span)?;
     if right.is_atom() { return inverse.call_array(seed, right, cx); }
@@ -873,6 +912,9 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
             }
         }
     }
+    if n > 0 && size > 0 && nx == ny && !left.is_singleton() && !right.is_singleton() && matches!(positions, Mapping::Linear(1)) {
+        if let Some(result) = by_triples(f, g, left, right, [rows, n, cols], &layout, cx) { return result.map(Bound::from); }
+    }
     // An empty result, or an empty contraction, calls the operands only for prototypes, so in prototype mode.
     let item = |a: &Value, offset| if n == 0 || a.is_empty() { a.prototype() } else { a.at(if a.is_singleton() { 0 } else { offset }) };
     let mut results = cx.prototype_mode(size == 0, |cx| {
@@ -899,6 +941,23 @@ fn inner(f: &Function, g: &Function, left: Option<&Value>, right: &Value, cx: &m
     if size == 0 { results.clear(); }
     let result = layout.collect(results, prototype);
     Ok(Bound::from(result.error_at(cx.span, "invalid inner product result")?))
+}
+
+/// `left f.g right` as one batched call of `g` on every triple of a row of `left`, a position along the contraction and a column of `right`, followed by the fold of `f` along the contraction by the fold's own route. The frame is `size`: rows by contraction by columns. `left` lies on it as rows by contraction by 1, and `right` as 1 by contraction by columns. `None` where the laid arguments would hold too many items (`batch::too_many`), and where the run falls back. After a fallback, the loop over rows runs from the start and keeps effects in order.
+fn by_triples(f: &Function, g: &Function, left: &Value, right: &Value, [rows, n, cols]: [usize; 3], layout: &crate::array::Layout, cx: &mut Context<'_>) -> Option<Result<Value, Error>> {
+    if !crate::batch::tries(cx) { return None; }
+    let laid = rows.saturating_mul(n).saturating_mul(cols);
+    if crate::batch::too_many(laid.saturating_mul(2), left.len() + right.len()) {
+        crate::explain::fallback(crate::transform::Cause::Memory.reason(), laid);
+        return None;
+    }
+    let x = left.relaid(crate::array::Layout::from(vec![rows, n, 1])).ok()?;
+    let y = right.relaid(crate::array::Layout::from(vec![1, n, cols])).ok()?;
+    let agreement = Agreement::new(x.layout(), y.layout()).ok()?;
+    let frame = agreement.layout.clone();
+    let products = crate::batch::tried(g, || crate::batch::Arguments::laid(&agreement, Some((x, 0)), (y, 0)), &frame, false, cx)?;
+    let folded = products.and_then(|p| fold(f, FoldKind::REDUCE, Some(&Value::integer(1)), None, &p, cx));
+    Some(folded.and_then(|v| if layout.shape().is_empty() { Ok(v.at(0)) } else { v.relaid(layout.clone()).error_at(cx.span, "invalid inner product result") }))
 }
 
 /// Monadic `f.g`, as J defines it: the expansion of a matrix by minors along its first column. A vector is one column, and an atom one item. `-.×` is the determinant and `+.×` the permanent, which `idioms` computes by faster algorithms.
@@ -1228,32 +1287,29 @@ fn moved_last(x: &Value, selected: &[usize], span: &crate::execution::Context<'_
     move_axes(x, &destination(&(0..n).filter(|i| !selected.contains(i)).chain(selected.iter().copied()).collect::<Vec<_>>()), span)
 }
 
-/// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`. They become the result's items, or with `mixed` they mix into one array whose numbers keep their kinds, as Rank and stencils mix them. `mixed` gives the message for results that don't mix. It first tries one call on batches of all the cells, from the whole arguments that `whole` builds (`batch::tried`), except for one cell of atoms. With no pairs it calls the operand once on prototypes (`on_prototypes`), on `pair(0)`, for the result's prototype. A call that gives no result contributes `⍬`. The calls run as a map, whose cells each draw random numbers from a stream of their own (`Context::mapped`).
+/// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`. They become the result's items, or with `mixed` they mix into one array whose numbers keep their kinds, as Rank and stencils mix them. `mixed` gives the message for results that don't mix. It first tries one call on batches of all the cells, from the whole arguments that `whole` builds (`batch::tried`), except for one cell of atoms. With no pairs it calls the operand once on prototypes (`on_prototypes`), on `pair(0)`, for the result's prototype. A call that gives no result contributes `⍬`.
 fn each_pair(
     operand: &Function, len: usize, layout: crate::array::Layout, pair: impl Fn(usize) -> Result<(Option<Value>, Value), Error>,
     whole: impl FnOnce() -> Option<crate::batch::Arguments>, mixed: Option<&'static str>, cx: &mut Context<'_>
 ) -> Result<Bound, Error> {
-    cx.mapped(|cx| {
-        // One cell of atoms runs faster on its own than through a batched call. A cell of rank 1 or more doesn't.
-        let atoms = len == 1 && { let (x, y) = pair(0)?; x.as_ref().is_none_or(Value::is_atom) && y.is_atom() };
-        if !atoms { if let Some(result) = crate::batch::tried(operand, whole, &layout, mixed.is_some(), cx) { return result.map(Bound::from); } }
-        let empty = len == 0;
-        let mut data = Gather::items(len);
-        let mut first = None;
-        for i in 0..len.max(1) {
-            cx.cell(i);
-            let (x, y) = pair(i)?;
-            let result = if empty { on_prototypes(operand, x.as_ref(), &y, cx)? } else { operand.call(x.as_ref(), &y, cx)? };
-            let item = match result.value {
-                Binding::Value(a) => a, Binding::Function(f) => Value::Function(f),
-                Binding::NoResult => crate::syntax::zilde(Numeric::current().float(0.0)),
-                _ => return Err(cx.span.error(ErrorKind::Syntax, "the operand must return an array, function or no result"))
-            };
-            if empty { first = Some(item) } else { data.add(item) }
-        }
-        let items = data.finish(layout, || first.unwrap().fill()).error_at(cx.span, "invalid result")?;
-        match mixed { Some(what) => Ok(Bound::from(items.mix(crate::array::Widening::Items).error_at(cx.span, what)?)), None => Ok(Bound::new(Binding::Value(items))) }
-    })
+    // One cell of atoms runs faster on its own than through a batched call. A cell of rank 1 or more doesn't.
+    let atoms = len == 1 && { let (x, y) = pair(0)?; x.as_ref().is_none_or(Value::is_atom) && y.is_atom() };
+    if !atoms { if let Some(result) = crate::batch::tried(operand, whole, &layout, mixed.is_some(), cx) { return result.map(Bound::from); } }
+    let empty = len == 0;
+    let mut data = Gather::items(len);
+    let mut first = None;
+    for i in 0..len.max(1) {
+        let (x, y) = pair(i)?;
+        let result = if empty { on_prototypes(operand, x.as_ref(), &y, cx)? } else { operand.call(x.as_ref(), &y, cx)? };
+        let item = match result.value {
+            Binding::Value(a) => a, Binding::Function(f) => Value::Function(f),
+            Binding::NoResult => crate::syntax::zilde(Numeric::current().float(0.0)),
+            _ => return Err(cx.span.error(ErrorKind::Syntax, "the operand must return an array, function or no result"))
+        };
+        if empty { first = Some(item) } else { data.add(item) }
+    }
+    let items = data.finish(layout, || first.unwrap().fill()).error_at(cx.span, "invalid result")?;
+    match mixed { Some(what) => Ok(Bound::from(items.mix(crate::array::Widening::Items).error_at(cx.span, what)?)), None => Ok(Bound::new(Binding::Value(items))) }
 }
 
 pub(super) fn each(operand: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
@@ -1383,8 +1439,15 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<&Value>, left: Op
         }
         if let Primitive::Arithmetic(op) = p { if right.all_numbers() { return number_lanes(op, false, right, None, &traversal, shape, cx); } }
     }
+    if let Some(result) = by_lanes(operand, kind, left, right, axis, &traversal, cx) { return result; }
     let data = fold_items(&traversal, left, |offset| right.at(offset), |x, y| operand.call_array(Some(x), y, cx))?;
-    Value::new(shape, data).error_at(cx.span, "invalid fold result")
+    lane_results(shape, data, active, "invalid fold result", cx)
+}
+
+/// The results of a fold's lanes or a scan's items by an operand with no kernel, laid out by `shape`. Over a batch (`active`), each result is a batch: a fold gives one for each lane of the cells, and a scan one for each stage. They join into one batch (`batch::joined`).
+fn lane_results(shape: Vec<usize>, data: Vec<Value>, active: bool, what: &str, cx: &Context<'_>) -> Result<Value, Error> {
+    let value = Value::new(shape, data).error_at(cx.span, what)?;
+    Ok(if active { crate::batch::joined(&value).unwrap_or(value) } else { value })
 }
 
 /// A fold or scan by `op` of plain numbers, with an optional `seed`: the general path for an arithmetic primitive when every item is a number.
@@ -1435,27 +1498,43 @@ fn scan_items<T: Clone>(axis: &Lanes, seed: Option<T>, item: impl Fn(usize) -> T
     Ok(data)
 }
 
-fn scan_axis(kind: FoldKind, axis: Option<&Value>, right: &Value, span: &Span) -> Result<Lanes, Error> {
-    if right.is_unit() && axis.is_none() { return Ok(Lanes { outer: 1, len: 1, inner: 1 }); }
+/// The axis that a scan runs along, and its lanes. A unit with no axis given has one lane of one item.
+fn scan_axis(kind: FoldKind, axis: Option<&Value>, right: &Value, span: &Span) -> Result<(usize, Lanes), Error> {
+    if right.is_unit() && axis.is_none() { return Ok((0, Lanes { outer: 1, len: 1, inner: 1 })); }
     let index = kind.axis(axis, right, span)?;
-    Lanes::new(right.shape(), index).at(span)
+    Ok((index, Lanes::new(right.shape(), index).at(span)?))
 }
 
 pub(super) fn scan(
     operand: &Function, kind: FoldKind, axis: Option<&Value>, seed: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
-    let axis = scan_axis(kind, axis, right, cx.span)?;
+    let (index, lanes) = scan_axis(kind, axis, right, cx.span)?;
     if right.is_atom() { return match seed { Some(seed) => operand.call_array(Some(seed), right, cx), None => Ok(right.clone()) }; }
-    if right.is_empty() || (seed.is_none() && axis.len == 1) { return Ok(right.clone()); }
+    if right.is_empty() || (seed.is_none() && lanes.len == 1) { return Ok(right.clone()); }
     // Kernels that read numbers directly leave a dual to the general path, which calls the operand through dispatch.
     let active = cx.carried(None, right);
     if let (Some(p), false) = (operand.dyadic_primitive(), active) {
-        if let Some(result) = crate::pervasive::scan(p, right, seed, &axis) { return Ok(result); }
+        if let Some(result) = crate::pervasive::scan(p, right, seed, &lanes) { return Ok(result); }
     }
     if let (Some(Primitive::Arithmetic(op)), false) = (operand.as_primitive(), active) {
         if right.all_numbers() && seed.is_none_or(|a| matches!(a, Value::Number(_))) {
-            return number_lanes(op, true, right, seed, &axis, right.shape().to_vec(), cx);
+            return number_lanes(op, true, right, seed, &lanes, right.shape().to_vec(), cx);
         }
     }
-    let data = scan_items(&axis, seed.cloned(), |i| right.at(i), |x, y| operand.call_array(Some(x), y, cx))?;
-    Value::new(right.shape().to_vec(), data).error_at(cx.span, "invalid scan result")
+    if let Some(result) = by_lanes(operand, kind, seed, right, index, &lanes, cx) { return result; }
+    let data = scan_items(&lanes, seed.cloned(), |i| right.at(i), |x, y| operand.call_array(Some(x), y, cx))?;
+    lane_results(right.shape().to_vec(), data, active, "invalid scan result", cx)
+}
+
+/// The fold or scan of `right` along `axis` by `operand`, with `seed` as each lane's left argument, as one batched map over the lanes that `lanes` gives. The map's operand is the derived fold or scan along the last axis. The fold axis moves last for the run, and a scan moves it back in its result. Inside the run, the fold calls `operand` once for each stage, on every lane at once (`batch::route`). `None` for a primitive operand, whose kernels run instead, for one lane, for lanes with no call to make, and where the run falls back. After a fallback, the loop over lanes runs from the start and keeps effects in order.
+fn by_lanes(operand: &Function, kind: FoldKind, seed: Option<&Value>, right: &Value, axis: usize, lanes: &Lanes, cx: &mut Context<'_>) -> Option<Result<Value, Error>> {
+    if operand.dyadic_primitive().is_some() || lanes.outer * lanes.inner < 2 || lanes.len <= usize::from(seed.is_none()) || !crate::batch::tries(cx) { return None; }
+    let rank = right.shape().len();
+    let order: Vec<usize> = (0..rank).filter(|&a| a != axis).chain([axis]).collect();
+    let moved = match move_axes(right, &destination(&order), cx) { Ok(moved) => moved, Err(e) => return Some(Err(e)) };
+    let frame = moved.layout().axes(0..rank - 1);
+    let fold = match Function::new(FunctionNode::Fold(operand.clone(), FoldKind { scan: kind.scan, first: false }), cx.span) { Ok(fold) => fold, Err(e) => return Some(Err(e)) };
+    use crate::batch::{Argument, Arguments};
+    let arguments = || Some(Arguments { left: seed.map(|s| Argument::Cells(s.clone(), s.shape().len())), right: Argument::Cells(moved, 1) });
+    let result = crate::batch::tried(&fold, arguments, &frame, kind.scan, cx)?;
+    Some(if kind.scan { result.and_then(|v| move_axes(&v, &order, cx)) } else { result })
 }

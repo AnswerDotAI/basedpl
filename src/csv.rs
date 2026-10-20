@@ -205,7 +205,7 @@ fn export(table: &Value, opts: &Options, span: &Context<'_>) -> Result<Value, Er
     for i in 0..rows {
         span.check()?;
         let fields = columns.iter().enumerate()
-            .map(|(j, c)| field(&c.at(i), opts, &fill, span).map_err(|e| span.error(e.kind, format!("CSV row {}, column {}: {}", i + 1, j + 1, e.message))))
+            .map(|(j, c)| field(&c.at(i), opts, &fill, span).map_err(|mut e| { e.message = format!("CSV row {}, column {}: {}", i + 1, j + 1, e.message); e }))
             .collect::<Result<_, _>>()?;
         write(&mut writer, fields)?;
     }

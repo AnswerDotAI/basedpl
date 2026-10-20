@@ -19,8 +19,9 @@ BPL has two kinds of number. A bare number such as `0.5` is approximate: a float
 | `⍬`, `⍬ₓ`, `⍬ₕ`, `⍬ₛ`, `⍬ₚ` | The approximate, the exact, and the 16-bit, 32-bit and 64-bit [empty vector](glyphs/zilde.qmd) |
 | `[…]ₓ`, `(…)ₓ` | A list, or rows, in which every number is exact |
 | `[…]ₕ`, `[…]ₛ`, `[…]ₚ` | A list, or rows, in which every real number is a 16-bit, 32-bit or 64-bit float, and every complex number has parts of that width, or 32-bit parts after `ₕ` |
+| `xⱼy`, `xₑy`, `xᵣy` | Between two items, such as names: `x+y×0ⱼ1`, `x×10*y` and `xₓ÷yₓ`, as one term |
 
-A plain `e`, `j` or `r` starts a name unless the rest of a number follows it, as in `1e5`, `1r3` and `2j3`. The subscript forms are always part of the number, and results display with them, as in `1ᵣ3`, `2ⱼ3` and `1ₑ20`.
+A plain `e`, `j` or `r` starts a name unless the rest of a number follows it, as in `1e5`, `1r3` and `2j3`. Results display with the subscript forms, as in `1ᵣ3`, `2ⱼ3` and `1ₑ20`. A subscript form that the rest of a number doesn't follow, or one between two other items such as names, joins the items on each side into one term, as a literal is one, with the value the table gives. A literal on the left gives what the all-literal form gives: with `n←3`, `2ₑn` is `2ₑ3`.
 
 ```bpl
 1j2+3j4              ⍝ 4j6
@@ -29,6 +30,8 @@ A plain `e`, `j` or `r` starts a name unless the rest of a number follows it, as
 2J3≡2j3              ⍝ $t
 1ᵣ3≡1r3              ⍝ $t
 edges←3 ⋄ 2edges     ⍝ 2 3
+x←2 ⋄ n←3 ⋄ xⱼn      ⍝ 2j3
+2ₑn                  ⍝ 2000
 ```
 
 ## Exact and approximate
@@ -103,7 +106,7 @@ x←1ₓ 0.5 2ₓ
 
 Rationals and exact integers beyond 64 bits have no compact storage. An array that holds one uses mixed storage, as does an array that holds numbers together with characters, nested arrays or functions. An imported JSON object is mixed too.
 
-Selecting from, catenating or assigning into mixed storage keeps each item's kind. Arithmetic builds fresh storage from its results, and each result keeps its own kind. Every result of `1×x` is approximate, which makes it a float array. `1ₓ×x` keeps the exact results exact:
+Selecting from, catenating or assigning into mixed storage keeps each item's kind. A selection or catenation whose items one compact storage holds uses it, as the same items written in brackets do: `1↓'a' 1ₓ 2ₓ` is held as integers. An assignment into mixed storage leaves it mixed. Arithmetic builds fresh storage from its results, and each result keeps its own kind. Every result of `1×x` is approximate, which makes it a float array. `1ₓ×x` keeps the exact results exact:
 
 ```bpl
 x←1ₓ 0.5 2ₓ

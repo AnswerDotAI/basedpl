@@ -2,21 +2,20 @@
 import json, math, os, re, subprocess, sys, tomllib
 from collections import defaultdict
 from decimal import Context, Decimal, ROUND_CEILING
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Annotated
 from fastws.cargo import timing_lock
 from fastcore.script import parse_cli
-from ._core import _captured_literal
+from ._core import _captured_literal, _reference_cases
 from .reference import Corpus, _dyalog_string
 from . import BplError
 from .worker import NATIVE, Worker
 
-HEADER = re.compile(r'^⍝ (?:(\S*) )?—(?: (.*))?$')
 SEPARATOR = '⍝ =>'
 INPUT = '⍝ input:'
 OUTPUT = '⍝ ⎕:'
-OPTIONS = re.compile(r'(?:^| )\[((?:r|a)tol=.*)\]$')
+ERROR = '⍝ error: '
 
 
 @dataclass
@@ -27,100 +26,53 @@ class Case:
     comment: str = ''
     rtol: float = 0
     atol: float = 0
+    unfused: bool = False
+    mixed: bool = False
     line: int = field(default=0, compare=False, repr=False)
     section: str = ''
     output: str | None = None
     input: str | None = None
 
 
-def _unescaped(text):
-    try: return re.sub(r'\\(.)?', lambda m: {'n': '\n', '\\': '\\'}[m[1]], text)
-    except KeyError as e: raise ValueError(r'input and output escapes are \n and \\') from e
-
-
 def _escaped(text): return text.replace('\\', '\\\\').replace('\n', '\\n')
 
 
-def _comment(text):
-    chars = iter(enumerate(text))
-    for i,c in chars:
-        if c=='"': next((j for j,d in chars if d=='"'), None)
-        elif c=="'":
-            next(chars, None)
-            if not text.startswith("''", i) or text.startswith("'''", i): next(chars, None)
-        elif c=='⍝': return text[:i].rstrip(), text[i+1:].lstrip()
-
-
 def parse(text):
-    "Read header-delimited records. Blank lines inside either expression are preserved."
-    if not text: return []
-    lines = text.split('\n')
-    if lines[-1]=='': lines.pop()
-    starts = [i for i,line in enumerate(lines) if HEADER.fullmatch(line) or line.startswith('⍝⍝ ')]
-    if not starts or starts[0]!=0: raise ValueError('expected a case or section header on line 1')
-    result, ids, section = [], set(), ''
-    for start,end in zip(starts, starts[1:]+[len(lines)]):
-        if lines[start].startswith('⍝⍝ '):
-            if any(lines[start+1:end]): raise ValueError(f'line {start+1}: expected a case after section heading')
-            section = lines[start][3:]
-            continue
-        id, comment = HEADER.fullmatch(lines[start]).groups()
-        id = id or ''
-        if id and id in ids: raise ValueError(f'line {start+1}: duplicate ID {id}')
-        ids.add(id)
-        comment, options = comment or '', {}
-        if match := OPTIONS.search(comment):
-            for option in match[1].split():
-                key, value = option.split('=', 1)
-                value = float(value)
-                if key not in ('rtol', 'atol') or key in options or not math.isfinite(value) or value<0:
-                    raise ValueError(f'line {start+1}: invalid tolerance {option}')
-                options[key] = value
-            comment = comment[:match.start()]
-        body = lines[start+1:end]
-        if body and body[-1]=='': body.pop()
-        elif end<len(lines): raise ValueError(f'line {start+1}: missing blank record separator')
-        output = input = None
-        if body and body[-1].startswith(OUTPUT): output = _unescaped(body.pop()[len(OUTPUT):].removeprefix(' '))
-        if body and body[-1].startswith(INPUT): input = _unescaped(body.pop()[len(INPUT):].removeprefix(' '))
-        if any(line.startswith((INPUT, OUTPUT)) for line in body): raise ValueError(f'line {start+1}: input and output lines must end the case, input first')
-        count = body.count(SEPARATOR)
-        if count==1:
-            split = body.index(SEPARATOR)
-            code, expect = '\n'.join(body[:split]), '\n'.join(body[split+1:])
-        elif count==0 and body and (pair := _comment('\n'.join(body))) and '\n' not in pair[1] and (len(body)==1 or pair[0].count('\n')==len(body)-1): code,expect = pair
-        elif count==0 and len(body)==2: code,expect = body
-        else: raise ValueError(f'line {start+1}: use one {SEPARATOR!r} between multiline expressions, or an inline expectation on the last line')
-        if not expect: raise ValueError(f'line {start+1}: missing expectation')
-        result.append(Case(code, expect, id, comment, line=start+1, section=section, output=output, input=input, **options))
-    return result
+    "The cases of `text`, a `.bpl` reference file, as Rust's `reference::cases` reads them. A malformed file raises `ValueError`."
+    return [Case(code=c['code'], expect=c['expected_code'] if 'expected_code' in c else ERROR+c['expected_error'], id=c['id'], comment=c['comment'],
+                 rtol=c.get('relative_tolerance', 0), atol=c.get('absolute_tolerance', 0), unfused=c.get('unfused', False), mixed=c.get('mixed', False), line=c['line'],
+                 section=c['section'], output=c.get('expected_output'), input=c.get('input')) for c in _reference_cases(text)]
+
+
+def _reads_back(record, case):
+    "Whether `parse` reads `record`, the text of one case without its section heading, as `case`."
+    try: [read] = parse(record)
+    except ValueError: return False
+    return replace(read, section=case.section) == case
 
 
 def render(cases):
-    "Write each case inline, as a pair of lines, or with `⍝ =>` between multiline expressions."
+    "Write each case inline, as a pair of lines, or with `⍝ =>` between multiline expressions. Raises `ValueError` where `parse` wouldn't read the result back as `cases`."
     result, section = [], ''
     for case in cases:
-        if '\n' in case.section: raise ValueError('section must fit one line')
         if case.section != section:
-            if not case.section: raise ValueError('a section needs a name')
             result.append(f'⍝⍝ {case.section}\n\n')
             section = case.section
-        if re.search(r'\s', case.id) or '\n' in case.comment: raise ValueError('ID and comment must fit the header')
-        for source in (case.code, case.expect):
-            if any(HEADER.fullmatch(line) or line==SEPARATOR or line.startswith(('⍝⍝ ', INPUT, OUTPUT)) for line in source.split('\n')):
-                raise ValueError(f'{case.id}: source contains a reserved fixture marker')
-        options = ' '.join(f'{key}={getattr(case, key)}' for key in ('rtol', 'atol') if getattr(case, key))
+        options = ' '.join([f'{key}={getattr(case, key)}' for key in ('rtol', 'atol') if getattr(case, key)] + ['unfused']*case.unfused + ['mixed']*case.mixed)
         comment = case.comment + (f' [{options}]' if options else '')
         header = '⍝ ' + (case.id+' ' if case.id else '') + '—' + (f' {comment.lstrip()}' if comment else '')
+        fixtures = ''.join('' if text is None else '\n'+marker+(' '+_escaped(text) if text else '') for marker,text in ((INPUT, case.input), (OUTPUT, case.output)))
+        def record(separator): return header+'\n'+case.code+separator+case.expect+fixtures+'\n\n'
         separator = f'\n{SEPARATOR}\n' if '\n' in case.code or '\n' in case.expect else '\n'
         last = case.code.rsplit('\n', 1)[-1]
         short = len(last)+len(case.expect)<40 if '\n' in case.code else len(case.code)+len(case.expect)+5<70
-        if ('\n' not in case.expect and short and case.output is None and case.input is None
-            and case.code==case.code.rstrip() and case.expect==case.expect.lstrip()
-            and not case.expect.startswith('⍝') and _comment(case.code) is None): separator = '   ⍝ '
-        fixtures = ''.join('' if text is None else '\n'+marker+(' '+_escaped(text) if text else '') for marker,text in ((INPUT, case.input), (OUTPUT, case.output)))
-        result.append(header+'\n'+case.code+separator+case.expect+fixtures+'\n\n')
-    return ''.join(result)
+        if short and case.output is None and case.input is None and not case.expect.startswith('⍝') and _reads_back(record('   ⍝ '), case): separator = '   ⍝ '
+        result.append(record(separator))
+    text = ''.join(result)
+    if (read := parse(text)) != list(cases):
+        case = next((c for c, r in zip(cases, read) if c != r), cases[-1])
+        raise ValueError(f'{case.id or case.code}: the rendered text reads back as a different case')
+    return text
 
 
 def literal(array):
@@ -191,7 +143,7 @@ def description(row):
 
 def convert(row):
     "Convert a prepared reference record without evaluating its program or changing its status."
-    if error := row.get('expected_error'): expect = '⍝ error: '+error
+    if error := row.get('expected_error'): expect = ERROR+error
     elif 'expected_code' in row: expect = row['expected_code']
     elif 'expected' in row: expect = literal(row['expected'])
     else: raise ValueError(f"{row['id']}: missing independent expectation")
@@ -318,7 +270,7 @@ def speed_costs(
     rows = ((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None) for c in rows)
     return SpeedCosts(rows, platform=None if wasm else build)
 
-_LOGGED = re.compile(r'^(?:\S*Z )?(?:# )?(\w+) (\S(?:(?!: ).)*): ([\d.]+|inf|NaN|Infinity), budget ([\d.]+)$')
+_LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S(?:(?!: ).)*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+)$')
 _CPU = re.compile(r'^(?:\S*Z )?model name\s*:\s*(.+?)\s*$', re.M)
 
 def logged_costs(
@@ -329,7 +281,8 @@ def logged_costs(
     cpu = c[1] if (c := _CPU.search(log)) else None
     rows = {}
     for m in filter(None, map(_LOGGED.match, log.splitlines())):
-        row = (m[1], m[2], float(m[3]), float(m[4]))
+        code = re.sub(r'\\([\\#])', r'\1', m['code']) if m['tap'] else m['code'] # Node's TAP diagnostics escape `\` and `#`
+        row = (m['section'], code, float(m['cost']), float(m['budget']))
         if row[:2] not in rows or row[2] < rows[row[:2]][2]: rows[row[:2]] = row
     return SpeedCosts(rows.values(), cpu, platform)
 

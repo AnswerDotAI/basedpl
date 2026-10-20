@@ -13,6 +13,8 @@ Singleton contraction axes extend. Empty contractions use the reduction identity
 
 Float and complex `+.×` read a large operand that is a transpose, or windows of an array, without copying it. A transpose goes to the matrix product where it lies. Windows are read a block of rows at a time, as [Windows](up-down-arrow.qmd) describes.
 
+Where `g` is a dfn, `X f.g Y` calls it once on all the pairings together, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as from one call for each pairing.
+
 `f.g Y`, with no left argument, expands the matrix `Y` by minors along its first column, as J's `u .v` does. `-.×` gives the determinant, and `+.×` the permanent.
 
 ```bpl

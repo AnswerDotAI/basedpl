@@ -1,18 +1,30 @@
-//! Recorded statements, step 9 of `meta/programs.md` ("Cached statement trees"). The binder logs the steps it takes on a dfn statement's first evaluation (`Recorder`): each node it resolves, and whether it shifts the node onto its stack or holds it on its pending stack, each move between those stacks, and each reduction. Later evaluations replay the log (`Recording::replay`), which makes the same calls in the same order with no category decisions, dot-access scans or node dispatch. The binder's decisions depend only on categories, so the replay checks the category of each name, group and call result against the recorded one. Where one differs, the binder carries on from the replay's state (`Binder::resumed`).
+//! Recorded statements, step 9 of `meta/programs.md` ("Cached statement trees"). The binder logs the steps it takes on a dfn statement's first evaluation (`Recorder`): each node it resolves, and whether it shifts the node onto its stack or holds it on its pending stack, each move between those stacks, and each reduction. Later evaluations replay the log (`Recording::replay`), which makes the same calls in the same order with no category decisions, dot-access scans or node dispatch. A recording keeps each fact about what names hold that the binding read (`Fact`), and replays only while every fact still holds. A statement that dot access, a subscript, a joiner or a run that starts with an operator rewrites also keeps the nodes that the binder walked. The binder's decisions depend only on categories, so the replay checks the category of each name, group and call result against the recorded one. Where one differs, the binder carries on from the replay's state (`Binder::resumed`).
 use super::*;
-use super::binder::{attached, narrow, split_call, strand, tail_call, Binder, Category, Entity, Resume, Stacked, Term};
+use super::binder::{attached, bound_right, derived, narrow, split_call, strand, tail_call, train, Binder, Category, Derived, Entity, Resume, Stacked, Term, Tine};
 use std::{borrow::Cow, ops::Range, sync::OnceLock};
 
 /// The most items that a replay keeps on either stack. A statement that needs more isn't recorded.
 const DEPTH: usize = 8;
 
-/// A statement's recorded binder steps, with the runs whose operator tests depend on what names hold.
+/// A statement's recorded binder steps, the facts about what names hold that its binding read, and the nodes that the binder walked where `Session::joined` or `Session::members` rewrote the statement.
 #[derive(Clone, Debug)]
-pub(crate) struct Recording { ops: Vec<Recorded>, guards: Vec<Guard> }
+pub(crate) struct Recording { ops: Vec<Recorded>, facts: Vec<Fact>, rewrite: Option<Box<[Node]>> }
 
-/// A run, by node, that a name could turn into one the binder treats differently: one whose first member is an operator, which joins the run to the node before it (`Starts`), or one whose last member is a dyadic operator, which takes the next run as its operand (`Ends`).
+/// A fact about what names hold that a statement's binding read, with the answer it got: whether `node` holds an array (`Session::holds_array`), whether the dot path that starts the nodes names a function (`Session::path_function`), whether a run starts with an operator (`Session::starts_with_operator`), or whether a run ends in a dyadic operator (`Session::ends_in_dyadic_operator`).
 #[derive(Clone, Debug)]
-enum Guard { Starts(usize), Ends(usize) }
+pub(super) enum Fact { Array(Node, bool), PathFunction(Vec<Node>, bool), Starts(Vec<Node>, bool), Ends(Vec<Node>, bool) }
+
+impl Fact {
+    /// Whether the fact's answer is different now.
+    fn changed(&self, session: &Session) -> bool {
+        match self {
+            Fact::Array(node, holds) => session.holds_array(node) != *holds,
+            Fact::PathFunction(nodes, names) => session.path_function(nodes) != *names,
+            Fact::Starts(run, starts) => session.starts_with_operator(run) != *starts,
+            Fact::Ends(run, ends) => session.ends_in_dyadic_operator(run) != *ends,
+        }
+    }
+}
 
 /// One binder step.
 #[derive(Clone, Debug)]
@@ -32,6 +44,8 @@ pub(super) enum Recorded {
 pub(super) enum Leaf {
     Value(Value),
     Function(Function),
+    /// An operator glyph.
+    Operator(OperatorNode),
     /// Any other node that `Session::resolve` evaluates.
     Resolve(Category),
     /// A group or run, with its own recording.
@@ -50,15 +64,25 @@ pub(super) enum Reduction {
     Call { span: Span, range: Range<u32>, result: Category },
     /// An attach and then its call: a dyadic call, made as `Call` is.
     Dyadic { span: Span, range: Range<u32>, result: Category },
+    /// An operator applied to its operand at `span`: a derived function, or the call that a power, `ᵀ` or `ₓ` on an array stands for. `result` is the recorded result's category, and `range` its text. `value` is what a derived term was when recorded, which a replay reuses where the operand and the operator are both constant.
+    Derive { span: Span, range: Range<u32>, result: Category, value: Option<Binding> },
+    /// A dyadic operator bound to its right operand.
+    BindRight,
+    /// Two items joined as tines of a train.
+    Train,
 }
 
-/// The steps logged while the binder evaluates a statement. `held` is the leaf just resolved, until the binder shifts or holds it, and `call` marks a call that `reduce` has returned and not yet made. `failed` records a step outside the subset that recordings cover, and `deepest` is the most items either of the binder's stacks has held.
+/// The steps logged while the binder evaluates a statement. `held` is the leaf just resolved, until the binder shifts or holds it, and `call` marks a call that `reduce` has returned and not yet made, with `derive` where a superscript on an array gave it. `failed` records a step outside the subset that recordings cover, and `deepest` is the most items either of the binder's stacks has held. `facts` and `rewrite` become the recording's.
 #[derive(Default)]
-pub(super) struct Recorder { ops: Vec<Recorded>, held: Option<(Leaf, Range<u32>)>, pub(super) call: bool, failed: bool, deepest: usize }
+pub(super) struct Recorder { ops: Vec<Recorded>, held: Option<(Leaf, Range<u32>)>, pub(super) call: bool, pub(super) derive: bool, failed: bool, deepest: usize, facts: Vec<Fact>, rewrite: Option<Box<[Node]>> }
 
 impl Recorder {
     pub(super) fn fail(&mut self) { self.failed = true; }
     pub(super) fn push(&mut self, op: Recorded) { self.ops.push(op); }
+    /// The facts about what names hold that the binding reads, which `Session::joined`, `Session::members` and the binder log.
+    pub(super) fn facts(&mut self) -> &mut Vec<Fact> { &mut self.facts }
+    /// Notes that the binder walks `nodes`, which `Session::joined` and `Session::members` rewrote the statement into.
+    pub(super) fn rewritten(&mut self, nodes: Vec<Node>) { self.rewrite = Some(nodes.into_boxed_slice()); }
     /// Notes the lengths of the binder's two stacks, which it reports before taking each node.
     pub(super) fn depth(&mut self, stack: usize, pending: usize) { self.deepest = self.deepest.max(stack).max(pending); }
     /// Holds the leaf for `node`, which resolved to `binding`.
@@ -66,42 +90,36 @@ impl Recorder {
         self.held = Some((match (&node.kind, binding) {
             (NodeKind::Literal(_), Binding::Value(v)) => Leaf::Value(v.clone()),
             (NodeKind::Function(_), Binding::Function(f)) => Leaf::Function(f.clone()),
+            (NodeKind::Operator(_), Binding::Operator(op)) => Leaf::Operator(op.clone()),
             _ => Leaf::Resolve(Category::of(binding)),
         }, narrow(&node.span.range)));
     }
     /// Holds the leaf for the group or run `node`, which `child` recorded and which gave `bound`.
     pub(super) fn group(&mut self, node: &Node, child: Recorder, bound: &Bound) {
-        let (NodeKind::Group(inner) | NodeKind::Run(inner)) = &node.kind else { unreachable!() };
-        match child.finish(inner) { Some(recording) => self.held = Some((Leaf::Group(recording, Category::of(&bound.value)), narrow(&node.span.range))), None => self.failed = true }
+        match child.finish() { Some(recording) => self.held = Some((Leaf::Group(recording, Category::of(&bound.value)), narrow(&node.span.range))), None => self.failed = true }
     }
     /// Logs the held leaf, which the binder shifted, or held when `shift` is false.
     pub(super) fn next(&mut self, shift: bool) {
         match self.held.take() { Some((leaf, range)) => self.ops.push(Recorded::Next { leaf, shift, range }), None => self.failed = true }
     }
-    /// Logs the call that `reduce` returned, made at `span`, whose result had category `result`. A call straight after the attach that gives its left argument logs as one dyadic call.
+    /// Logs the call that `reduce` returned, made at `span`, whose result had category `result`. A call straight after the attach that gives its left argument logs as one dyadic call, and the call that a superscript on an array stands for logs as its derive.
     pub(super) fn called(&mut self, span: Span, result: Category) {
         if !std::mem::take(&mut self.call) { self.failed = true; return; }
         let range = narrow(&span.range);
+        if std::mem::take(&mut self.derive) { self.ops.push(Recorded::Reduce(Reduction::Derive { span, range, result, value: None })); return; }
         let dyadic = matches!(self.ops.last(), Some(Recorded::Reduce(Reduction::Attach)));
         if dyadic { self.ops.pop(); }
         self.ops.push(Recorded::Reduce(if dyadic { Reduction::Dyadic { span, range, result } } else { Reduction::Call { span, range, result } }));
     }
-    /// The recording of `nodes`, unless a step was outside the subset or a stack held more than `DEPTH` items.
-    pub(super) fn finish(self, nodes: &[Node]) -> Option<Recording> {
+    /// The recording, unless a step was outside the subset or a stack held more than `DEPTH` items.
+    pub(super) fn finish(self) -> Option<Recording> {
         if self.failed || self.held.is_some() || self.call || self.deepest > DEPTH { return None; }
-        let named = |node: Option<&Node>| node.is_some_and(Session::names_valence);
-        let mut guards = Vec::new();
-        for (i, node) in nodes.iter().enumerate() {
-            let NodeKind::Run(inner) = &node.kind else { continue };
-            if i > 0 && named(inner.first()) { guards.push(Guard::Starts(i)); }
-            if named(inner.last()) { guards.push(Guard::Ends(i)); }
-        }
-        Some(Recording { ops: self.ops, guards })
+        Some(Recording { ops: self.ops, facts: self.facts, rewrite: self.rewrite })
     }
 }
 
 /// An item on a replay's stacks: an entity's term, with literals and primitives borrowed from the recording.
-enum Part<'p> { Array(Cow<'p, Value>), Function(Cow<'p, Function>), Other(Binding), Left(Cow<'p, Value>, Cow<'p, Function>), Strand(Vec<Value>) }
+enum Part<'p> { Array(Cow<'p, Value>), Function(Cow<'p, Function>), Other(Binding), Left(Cow<'p, Value>, Cow<'p, Function>), Strand(Vec<Value>), Train(Vec<Tine>), Operator(&'p OperatorNode) }
 /// An entity on a replay's stacks: its term, its text and whether it displays.
 struct Item<'p> { part: Part<'p>, range: Range<u32>, shy: bool }
 
@@ -111,7 +129,7 @@ impl<'p> Item<'p> {
         Self { part, range, shy }
     }
     fn category(&self) -> Category {
-        match &self.part { Part::Array(_) | Part::Strand(_) => Category::Value, Part::Function(_) => Category::Function, Part::Left(..) => Category::Left, Part::Other(b) => Category::of(b) }
+        match &self.part { Part::Array(_) | Part::Strand(_) => Category::Value, Part::Function(_) => Category::Function, Part::Left(..) => Category::Left, Part::Train(_) => Category::Train, Part::Operator(op) => Category::of_operator(op), Part::Other(b) => Category::of(b) }
     }
     /// The binder's entity for this item.
     fn entity(self) -> Entity {
@@ -121,6 +139,8 @@ impl<'p> Item<'p> {
             Part::Other(b) => Term::Binding(b),
             Part::Left(x, f) => Term::Left(x.into_owned(), f.into_owned()),
             Part::Strand(items) => Term::Strand(items),
+            Part::Train(tines) => Term::Train(tines),
+            Part::Operator(op) => Term::Binding(Binding::Operator(op.clone())),
         };
         Entity { term, range: self.range, shy: self.shy, expression: None }
     }
@@ -166,14 +186,11 @@ fn resumed(nodes: &[Node], session: &mut Session, tail: bool, stack: Stack<'_>, 
     Binder::resumed(nodes, session, tail, Resume { stack: stack.entities(), pending: pending.entities(), cursor, next: next.map(Item::entity), after_call })
 }
 
-/// The run at node `i`'s members.
-fn run(nodes: &[Node], i: usize) -> &[Node] { let NodeKind::Run(inner) = &nodes[i].kind else { unreachable!("a guard names a run") }; inner }
-
 impl Recording {
     /// `nodes` evaluated by replaying the recorded steps, which gives what `Binder::evaluate` gives.
     fn replay(&self, nodes: &[Node], session: &mut Session, tail: bool) -> Result<Step, Error> {
-        let changed = |guard: &Guard| match *guard { Guard::Starts(i) => session.starts_with_operator(run(nodes, i)), Guard::Ends(i) => session.ends_in_dyadic_operator(run(nodes, i)) };
-        if self.guards.iter().any(changed) { return Binder::evaluate(nodes, session, tail); }
+        if self.facts.iter().any(|fact| fact.changed(session)) { return Binder::evaluate(nodes, session, tail); }
+        let nodes = self.rewrite.as_deref().unwrap_or(nodes);
         session.execution.check(&nodes[0].span)?;
         let source = &nodes[0].span.source;
         let (mut stack, mut pending, mut cursor) = (Stack::new(), Stack::new(), nodes.len());
@@ -186,6 +203,7 @@ impl Recording {
                     let (item, check) = match leaf {
                         Leaf::Value(v) => (Item { part: Part::Array(Cow::Borrowed(v)), range, shy: false }, None),
                         Leaf::Function(f) => (Item { part: Part::Function(Cow::Borrowed(f)), range, shy: false }, None),
+                        Leaf::Operator(op) => (Item { part: Part::Operator(op), range, shy: false }, None),
                         Leaf::Resolve(check) => (Item::of(session.resolve(node)?.value, range, false), Some(*check)),
                         Leaf::Group(recording, check) => {
                             let (NodeKind::Group(inner) | NodeKind::Run(inner)) = &node.kind else { unreachable!() };
@@ -216,6 +234,22 @@ impl Recording {
                     stack.push(item);
                     if differs { return resumed(nodes, session, tail, stack, pending, cursor, None, true); }
                 }
+                Recorded::Reduce(Reduction::Derive { span, range, result, value }) => {
+                    let (operand, operator) = (stack.pop(), stack.pop());
+                    // On a literal or primitive operand, an operator glyph derives what it derived when recorded.
+                    let constant = matches!(operand.part, Part::Array(Cow::Borrowed(_)) | Part::Function(Cow::Borrowed(_))) && matches!(operator.part, Part::Operator(_));
+                    let item = match value.as_ref().filter(|_| constant) {
+                        Some(Binding::Function(f)) => Item { part: Part::Function(Cow::Borrowed(f)), range: range.clone(), shy: false },
+                        Some(Binding::Value(v)) => Item { part: Part::Array(Cow::Borrowed(v)), range: range.clone(), shy: false },
+                        _ => match derived(operand.binding(source)?, operator.binding(source)?, span)? {
+                            Derived::Term(binding) => Item::of(binding, range.clone(), false),
+                            Derived::Call(f, x, y) => { let bound = f.call(x.as_ref(), &y, &mut session.at(span))?; Item::of(bound.value, range.clone(), bound.shy) }
+                        },
+                    };
+                    let differs = item.category() != *result;
+                    stack.push(item);
+                    if differs { return resumed(nodes, session, tail, stack, pending, cursor, None, true); }
+                }
                 Recorded::Reduce(reduction) => {
                     let (left, right) = (stack.pop(), stack.pop());
                     match reduction {
@@ -229,7 +263,15 @@ impl Recording {
                             let (x, f, range) = attached(left, right, source)?;
                             stack.push(Item { part: Part::Left(x, f), range, shy: false });
                         }
-                        Reduction::Call { .. } | Reduction::Dyadic { .. } => unreachable!("calls match above"),
+                        Reduction::BindRight => {
+                            let range = left.range.clone();
+                            stack.push(Item::of(bound_right(left.binding(source)?, right.binding(source)?), range, false));
+                        }
+                        Reduction::Train => {
+                            let range = left.range.clone();
+                            stack.push(Item { part: Part::Train(train(left.entity(), right.entity(), source)?), range, shy: false });
+                        }
+                        Reduction::Call { .. } | Reduction::Dyadic { .. } | Reduction::Derive { .. } => unreachable!("calls and derives match above"),
                     }
                 }
             }

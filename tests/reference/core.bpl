@@ -292,11 +292,11 @@ A +⍤1 B
 ⍝ =>
 "alice" "bob" "cara":[1 2⋄13 24⋄30 40]
 
-⍝ axis-windows — Sliding frames are unkeyed; stencil centres keep their axis labels
+⍝ axis-windows — Windows have no keys on their windowed axes; stencil centres keep their axis labels
 V←"aa" "bb" "cc":1 2 3
-[2↕V;3↕V;{+/⍵}⌺3 V;{(⍳⍠0 ⍵)≡"aa" "bb" "cc"}⌺3 V]
+[2↕V;3↕V;{+/⍵}⌺3 V;{(⍳⍠0 ⍵)≡⍳3}⌺3 V]
 ⍝ =>
-[[1 2⋄2 3];"aa" "bb" "cc":⍠1 [1 2 3⋄];["aa":3 "bb":6 "cc":5];["aa":$f "bb":$t "cc":$f]]
+[[1 2⋄2 3];[1 2 3⋄];["aa":3 "bb":6 "cc":5];["aa":$t "bb":$t "cc":$t]]
 
 ⍝ axis-coordinates — Pick, Squad and coordinate indexing resolve each axis independently
 M←["alice" "bob";"price" "qty"]:[10 2⋄20 4]
@@ -461,6 +461,20 @@ T←["a":1 "b":2] ⋄ T .b+1   ⍝ 3
 ⍝ — An operator that starts a bracket item has no run before it
 [≢ ⌸0 1 1]
 ⍝ error: SYNTAX ERROR
+
+⍝⍝ Recorded statements
+
+⍝ — A dfn's statement replays on later calls, and binds again where an operand it read turns from a function into an array
+w←{X¨⍵} ⋄ X←{⍵+1} ⋄ a←w 1 2 ⋄ X←5 ⋄ b←w 1 2 ⋄ a b   ⍝ [2 3;5 5]
+
+⍝ — An operator name that changes between calls
+r←{+O ⍵} ⋄ O←/ ⋄ a←r 1 2 3 ⋄ O←\ ⋄ b←r 1 2 3 ⋄ a b   ⍝ [6;1 3 6]
+
+⍝ — A dot root that turns from a record into a function
+s←{T.a ⍵} ⋄ T←["a":5] ⋄ a←s 1 ⋄ b←s 2 ⋄ T←⊢ ⋄ c←s ["a":7] ⋄ a b c   ⍝ [5 1;5 2;7]
+
+⍝ — A superscript on an array, a subscript and a train replay as they first bound
+f←{(⍵₀²)+(+/÷≢)⍵} ⋄ (f 1 3) (f 2 4)   ⍝ 3 7
 
 ⍝⍝ Mathematical monads
 
@@ -1051,6 +1065,14 @@ k←["a":1] ⋄ k⍚[- ⊢] ["b":4 "a":5]   ⍝ ["b":0 "a":5]
 
 ⍝ —
 (•explain "-@[0>] ¯1 ¯2 ¯3 4 5 6 7 8 9 10").fast.combination   ⍝ ["masked select"]
+
+⍝ agenda:masked-sampled — Above the size where fusion starts, a select estimates the share its pending comparison picks from a sample: 1 item in 100 picked gathers, and half picked stays one fused select that computes nothing early
+x←¿262144⍴0 ⋄ e←•explain "-@[0.5<]x" ⋄ s←•explain "-@[0.99<]x" ⋄ [≢e.fast.combination ≢e.forced.function ≢s.fast.combination]
+[1 0 0]ₓ
+
+⍝ —
+x←¿262144⍴0 ⋄ [(-@[0.99<]x)≡x-2×x×0.99<x (-@[0.5<]x)≡x-2×x×0.5<x]
+[$t $t]
 
 ⍝ agenda:masked-costly — A costly kernel such as `*` runs on every item in a select, so it needs more items to pick it: 5 in 10 keep the gathered path, and 7 in 10 take the select
 (•explain "*@[0>] ¯1 2 ¯3 4 ¯5 6 ¯7 8 ¯9 10").fast.combination   ⍝ 0⍴⊂""
@@ -4318,6 +4340,14 @@ $t $t $t $t $t
 ⍝ — A transpose reads through a large take from an empty array, whose items are all fill
 ≢+/⍉2 30000 3↑2 0 3⍴0   ⍝ 3ₓ
 
+⍝ — A chain of pending calls that reads a fresh array with each call computes its earlier calls once it would keep alive more than 8 times its largest array, while a chain that reads one named array again and again keeps it once and stays pending
+N←131072 ⋄ r←{⍵+¿N⍴0}⍣40⊢N⍴0.0 ⋄ x←N⍴0.5 ⋄ s←{⍵+x}⍣40⊢x ⋄ [((•memory r).bytes≤8×8×N) ((•memory s).bytes=8×N) (•storage s).pending]
+$t $t $t
+
+⍝ fusion:comparison-operand — A call reads a pending comparison inside its graph, as 1s and 0s, on either side of the call and in a dfn's recorded statement
+v←(⍳262144)÷262144 ⋄ m←+/(v>0.5)#v ⋄ e←•explain "+/v×v>0.5" ⋄ f←{+/⍵×⍵>0.5} ⋄ [e.value=m; 0=≢e.forced.function; (+/(v>0.5)×v)=m; (f v)=m; (f v)=m]
+$t $t $t $t $t
+
 ⍝⍝ Numeric storage
 
 ⍝ dynamic-integer-fold-storage — Integer reductions compact their array result
@@ -4359,22 +4389,33 @@ sel←{
 }
 sel 0   ⍝ 4⍴$t
 
-⍝ — A read of a few items from a pending graph that nothing else holds computes only those items, as `•explain` counts them. A pending graph that a name holds is computed whole on its first read
-v←⍳262144 ⋄ s←1+v ⋄ items←{(•explain ⍵).forced.items} ⋄ [(items "5↑1+v")≡[5]ₓ;(items "3⊃2×v+1")≡[1]ₓ;(items "5↑s")≡[262144]ₓ;(5↑1+v)≡1 2 3 4 5]   ⍝ $t $t $t $t
+⍝ — A read of a few items from a pending graph gives the items that computing it whole gives
+v←⍳262144 ⋄ s←1+v ⋄ [5↑1+v;3⊃2×v+1;5↑s]   ⍝ [1 2 3 4 5;8;1 2 3 4 5]
+
+⍝ — A read of a few items from a pending graph that nothing else holds computes only those items, as `•explain` counts them. A pending graph that a name holds is computed whole on its first read [unfused]
+v←⍳262144 ⋄ s←1+v ⋄ items←{(•explain ⍵).forced.items} ⋄ [(items "5↑1+v")≡[5]ₓ;(items "3⊃2×v+1")≡[1]ₓ;(items "5↑s")≡[262144]ₓ]   ⍝ $t $t $t
 
 ⍝ — Rank leaves a pending argument pending where its operand isn't one that runs on whole stacks of matrices, so the call fuses as it would without Rank
 x←[4 256 256]⍴0.5 ⋄ e←•explain "(-⍤2) x+1" ⋄ [0=≢e.forced.function;e.value≡-x+1]   ⍝ $t $t
 
-⍝ — `+.×` reads a pending copy of windows a block of rows at a time without forcing it, and its gradients force nothing and scatter nothing
+⍝ — `+.×` on a pending copy of windows, and its gradients, give what they give on a stored copy, and the copy stays pending
 conv←{
   img←¿64 64 16⍴0 ⋄ k←¿144 8⍴0
   w←[3844 144]⍴3 3↕img ⋄ wf←[3844 144]⍴(3 3↕img)+0
-  e←•explain "{+/,w+.×⍵}∂k" ⋄ ei←•explain "{+/,([3844 144]⍴3 3↕⍵)+.×k}∂img"
-  same←((w+.×k)≡wf+.×k)∧e.value≡{+/,wf+.×⍵}∂k
-  image←ei.value≡0.5×{+/,(2×[3844 144]⍴3 3↕⍵)+.×k}∂img
-  [same image (•storage w).pending 0=≢e.forced.function 0=≢ei.forced.function 0=≢ei.accumulations.items]
+  same←((w+.×k)≡wf+.×k)∧({+/,w+.×⍵}∂k)≡{+/,wf+.×⍵}∂k
+  image←({+/,([3844 144]⍴3 3↕⍵)+.×k}∂img)≡0.5×{+/,(2×[3844 144]⍴3 3↕⍵)+.×k}∂img
+  [same image (•storage w).pending]
 }
-conv 0   ⍝ 6⍴$t
+conv 0   ⍝ 3⍴$t
+
+⍝ — `+.×` reads a pending copy of windows a block of rows at a time without forcing it, and its gradients force nothing and scatter nothing [unfused]
+conv←{
+  img←¿64 64 16⍴0 ⋄ k←¿144 8⍴0
+  w←[3844 144]⍴3 3↕img
+  e←•explain "{+/,w+.×⍵}∂k" ⋄ ei←•explain "{+/,([3844 144]⍴3 3↕⍵)+.×k}∂img"
+  [0=≢e.forced.function 0=≢ei.forced.function 0=≢ei.accumulations.items]
+}
+conv 0   ⍝ 3⍴$t
 
 ⍝ fusion:reshaped-transpose-product — A product reads a reshaped pending transpose in its new matrix dimensions
 x←[2 65536]⍴⍳131072
@@ -4546,14 +4587,14 @@ x←'a' 1ₓ 2ₓ
 x₀←0ₓ
 (•storage x).kind   ⍝ "mixed"
 
-⍝ — Rearranging or combining mixed storage keeps it mixed
+⍝ — Rearranging or combining mixed storage keeps it mixed while its items need it
 m←1ₓ 0.5 2ₓ
-{(•storage ⍵).kind}¨[⌽m;2↑m;4↑m;1 0 1#m;1 0 1 1#⁻¹m;(⊂1 0)⌷m;2 1⍴m;⍉2 1⍴m;m,m;m⍪m;1⌽m;∪m;m~,2ₓ;↑⊂m;∊⊂m;↑↓2 2⍴m;↑1 1 0⊆m;0⊃⊂m]
+{(•storage ⍵).kind}¨[⌽m;2↑m;4↑m;1 0 1 1#⁻¹m;(⊂1 0)⌷m;2 1⍴m;⍉2 1⍴m;m,m;m⍪m;1⌽m;∪m;m~,2ₓ;↑⊂m;∊⊂m;↑↓2 2⍴m;↑1 1 0⊆m;0⊃⊂m]
 ⍝ =>
-18⍴⊂"mixed"
+17⍴⊂"mixed"
 
-⍝ —
-{(•storage ⍵).kind}¨[1↓'a' 1ₓ 2ₓ;(1↓'a' 1ₓ 2ₓ),3ₓ]   ⍝ "mixed" "mixed"
+⍝ — A copy of mixed storage whose items one dtype holds is compact, as a literal of those items is
+{(•storage ⍵).kind}¨[1 0 1#1ₓ 0.5 2ₓ;1↓'a' 1ₓ 2ₓ;(1↓'a' 1ₓ 2ₓ),3ₓ]   ⍝ "integer" "integer" "integer"
 
 ⍝ — Arithmetic builds fresh storage from its results
 (•storage 1ₓ×1↓'a' 1ₓ 2ₓ).kind   ⍝ "integer"
@@ -5858,8 +5899,62 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍝ — A guard on the cell picks each cell's body
 {⍵<0?0;⍵}¨¯1 2 ¯3   ⍝ 0 2 0
 
-⍝ — A dfn whose batched run stopped on its guard skips the batched try on later calls
-•prefs ["batch":$t] ⋄ f←{⍵<2?⍵;⍵×2} ⋄ r←f¨⍳5
+⍝ — A guard on a batched value runs each side once, on the cells that take it, so √ sees no negative cell and the kind stays real
+{⍵<0?0;√⍵}¨¯4 9 ¯1 16   ⍝ 0 3 0 4
+
+⍝ — A batched guard makes no fallback
+•prefs ["batch":$t] ⋄ (•explain "{⍵<0?0;√⍵}¨¯4 9 ¯1 16").fallbacks.reason   ⍝ 0⍴⊂""
+
+⍝ — A later guard in the same call splits a side's cells again
+{⍵<0?0;⍵>10?10;⍵}¨¯5 3 20 7 ¯1   ⍝ 0 3 10 7 0
+
+⍝ — Locals assigned before a batched guard reach both sides, each at its own cells
+{x←⍵×2 ⋄ x>3?x;x+100}¨⍳6   ⍝ 100 102 4 6 8 10
+
+⍝ — A batched predicate may give the numbers 0 and 1
+{2|⍵?⍵×3;⍵÷2}¨⍳8   ⍝ 0 3 1 9 2 15 3 21
+
+⍝ — A guard in a dfn that the operand calls splits the batched run's cells
+{g←{⍵>2?⍵×10;⍵} ⋄ g ⍵}¨⍳5   ⍝ 0 1 2 30 40
+
+⍝ — A batched guard in Rank
+{(+/⍵)>4?+/⍵;0}⍤1⊢[3 2]⍴⍳6   ⍝ 0 5 9
+
+⍝ — A batched guard in an outer product
++/(⍳3){⍺>⍵?⍺;⍵×10}⊗⍳3   ⍝ 30 31 24
+
+⍝ — A batched guard in a stencil
+{(+/⍵)>6?1;0}⌺3⊢⍳6   ⍝ 0 0 0 1 1 1
+
+⍝ — A stencil over a keyed axis makes a batched try, because its windows have no keys
+•prefs ["batch":$t] ⋄ V←"aa" "bb" "cc":1 2 3 ⋄ (•explain "{x←•ucs ""a"" ⋄ +/⍵}⌺3 V").fallbacks.reason   ⍝ ["an effect"]
+
+⍝ — A batched guard in an Each over keys
+{⍵>20?⍵;-⍵}¨["a":10 "b":30 "c":5]   ⍝ ["a":¯10 "b":30 "c":¯5]
+
+⍝ — Sides whose cells differ in kind fall back, with each cell's own result
+{⍵>2?⍵>3;⍵}¨⍳5   ⍝ 0 1 2 $f $t
+
+⍝ — Sides whose cells differ in shape fall back, with each cell's own result
+{⍵>2?⍵ ⍵;0}¨⍳5   ⍝ [0 0 0 [3 3] [4 4]]
+
+⍝ — A constant scalar that isn't an atom stays a scalar in each cell
+{⍬⍴5}¨⍳3   ⍝ [⊂5 ⊂5 ⊂5]
+
+⍝ — A batched guard in a recursive call falls back
+•prefs ["batch":$t] ⋄ (•explain "{⍵<2?⍵;(∇⍵-1)+∇⍵-2}¨⍳8").fallbacks.reason   ⍝ ["a recursive call"]
+
+⍝ — A side that writes to a binding of an enclosing frame gives each cell's own result
+{n←0 ⋄ g←{⍵>2?n+←1;0} ⋄ r←g ⍵ ⋄ n}¨⍳5   ⍝ 0 0 0 1 1
+
+⍝ — A side that writes to a binding of an enclosing frame falls back, because the frame outlives the side
+•prefs ["batch":$t] ⋄ (•explain "{n←0 ⋄ g←{⍵>2?n+←1;0} ⋄ r←g ⍵ ⋄ n}¨⍳5").fallbacks.reason   ⍝ ["a write"]
+
+⍝ — A random draw in a side draws for the cells that take it
+•prefs ["batch":$t] ⋄ e←•explain "{⍵>0?¿⍵;0}¨0 3 0 5" ⋄ [0=≢e.fallbacks.reason;∧/e.value<1⌈0 3 0 5]   ⍝ $t $t
+
+⍝ — A dfn whose batched run stopped on a count from its cell skips the batched try on later calls
+•prefs ["batch":$t] ⋄ f←{2×⍣⍵⊢1} ⋄ r←f¨⍳5
 (•explain "f¨⍳5").fallbacks.reason   ⍝ ["an earlier stop: a cell's value"]
 
 ⍝ — A dfn whose guard caught an error in some cells of a batched run batches again on later calls, because the stop depended on the cells' data
@@ -6099,6 +6194,58 @@ life⌺3 3⊢g
 
 ⍝ — An outer product's result has the left argument's axes, then the right's
 [1 2⋄3 4] {⍺×⍵}⊗ 10 100   ⍝ 2 2 2⍴10 100 20 200 30 300 40 400
+
+⍝ stage-fold-rows — A dfn folds each row from the right, with each stage called on every row at once
+m←[3 4]⍴⍳12
+{⍺-⍵}/m   ⍝ ¯2 ¯2 ¯2
+
+⍝ stage-fold-columns — A dfn folds each column from the bottom
+m←[3 4]⍴⍳12
+{⍺-⍵}⌿m   ⍝ 4 5 6 7
+
+⍝ stage-fold-seed — A seed is each row's right argument at the first stage
+m←[3 4]⍴⍳12
+100{⍺-⍵}/m   ⍝ 98 98 98
+
+⍝ stage-scan-rows — A dfn scans each row from the left
+m←[3 4]⍴⍳12
+{⍺-⍵}\m
+⍝ =>
+[0 ¯1 ¯3 ¯6⋄4 ¯1 ¯7 ¯14⋄8 ¯1 ¯11 ¯22]
+
+⍝ stage-scan-seed — A seeded dfn scan down the columns
+m←[3 4]⍴⍳12
+100{⍺-⍵}⍀m
+⍝ =>
+[100 99 98 97⋄96 94 92 90⋄88 85 82 79]
+
+⍝ stage-rank — A dfn fold or scan inside Rank runs on each cell's row, stage by stage
+m←[3 4]⍴⍳12
+({{⍺-⍵}/⍵}⍤1⊢m) ({{⍺-⍵}\⍵}⍤1⊢m)
+⍝ =>
+[¯2 ¯2 ¯2;[0 ¯1 ¯3 ¯6⋄4 ¯1 ¯7 ¯14⋄8 ¯1 ¯11 ¯22]]
+
+⍝ stage-matrix-cells — A dfn fold of each matrix cell folds every row of the cell
+{{⍺-⍵}/⍵}⍤2⊢[2 3 4]⍴⍳24   ⍝ [2 3]⍴¯2
+
+⍝ stage-seed-each — A seed that differs from cell to cell
+m←[3 4]⍴⍳12
+{⍵{⍺-⍵}/m}¨10 20   ⍝ [8 8 8;18 18 18]
+
+⍝ stage-inner — A dfn on either side of an inner product
+a←[2 3]⍴⍳6
+b←[3 2]⍴⍳6
+(a {⍺-⍵}.× b) (a +.{⍺-⍵} b)   ⍝ [[6 7⋄12 16];[¯3 ¯6⋄6 3]]
+
+⍝ stage-inner-vectors — A dfn inner product of two vectors is an atom
+1 2 3 {⍺-⍵}.{⍺×⍵} 4 5 6   ⍝ 12
+
+⍝ stage-array-results — A dfn fold that returns arrays gives each row's result as an item
+{⍺ ⍵}/[2 3]⍴⍳6   ⍝ [[0 [1 2]];[3 [4 5]]]
+
+⍝ stage-effect-order — A dfn with output folds row by row, in the order of calls without batching
+{⎕←⍺ ⋄ ⍺-⍵}/[2 3]⍴⍳6   ⍝ 1 4
+⍝ ⎕: 1\n0\n4\n3
 
 ⍝⍝ Composition rank and dyadic operators
 
@@ -7451,6 +7598,19 @@ n←4.5 ⋄ ⍳nₓ   ⍝ [0 1 2 3]ₓ
 +ₓ
 ⍝ error: DOMAIN ERROR
 
+⍝ subscript-join-names — Between two items, ⱼ, ₑ and ᵣ join them as one term: xⱼy is x+y×0ⱼ1, xₑy is x×10*y and xᵣy is xₓ÷yₓ
+x←3 ⋄ y←2 ⋄ [xⱼy xₑy xᵣy]   ⍝ [3ⱼ2 300 3ᵣ2]
+
+⍝ subscript-join-literal-left — A literal before ⱼ, ₑ or ᵣ gives what the all-literal form gives
+n←3 ⋄ [2ₑn 1ᵣn 1ⱼn]   ⍝ [2ₑ3 1ᵣ3 1ⱼ3]
+
+⍝ subscript-join-items — Subscripts and dot paths bind before ⱼ, ₑ or ᵣ joins, the left item takes its superscripts, a superscript after the right item applies to the term, and ₑ joins before ⱼ
+v←10 20 30 ⋄ T←["a":1 "b":2] ⋄ x←1 ⋄ y←2 ⋄ [v₁ⱼT.b xⱼy² x²ⱼy xⱼyₑ1]   ⍝ [20ⱼ2 ¯3ⱼ4 1ⱼ2 1ⱼ20]
+
+⍝ subscript-join-function — ⱼ, ₑ and ᵣ join two arrays, not a function
+f←- ⋄ fⱼ1
+⍝ error: SYNTAX ERROR
+
 ⍝ —
 [[1 3] [2 4]]⍳⊂1 3   ⍝ 0ₓ
 
@@ -7593,7 +7753,7 @@ T←["name":"Ann" "addr":"city":"Paris" "items":[["name":"pen"] ["name":"ink"]]]
 "missing"⌷"aa":1
 ⍝ error: INDEX ERROR
 
-⍝ axis-assignment-alignment — Keyed RHS aligns to selection and ignores extra keys
+⍝ axis-assignment-alignment — Keyed RHS aligns to selection and ignores extra keys [mixed]
 T←"price" "qty":[1 2 3;4 5 6]
 T.[["price" "qty"]]←"qty" "extra" "price":7 9 8
 T   ⍝ "price" "qty":8 7
@@ -7959,7 +8119,7 @@ fill •json⁻¹ fill •json "{""x"":[null,2]}"
 ⍝ — Unkeyed scalar arrays export their contents
 •json⁻¹ ⊂2ₓ   ⍝ "2"
 
-⍝ — Duplicate object members follow the JSON library's last-value rule
+⍝ — Duplicate object members follow the JSON library's last-value rule [mixed]
 •json "{""name"":1,""name"":2}"   ⍝ "name":2ₓ
 
 ⍝ — Malformed JSON gives a located error

@@ -12,6 +12,8 @@ Monadic operator
 
 Reduction returns the accumulator. An unseeded one-item reduction returns that item. Unreduced axes supply the result frame.
 
+A dfn that reduces several lanes, such as each row of a matrix, runs each stage on every lane at once, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as reducing each lane in turn.
+
 ```bpl
 ,/⊂2 3            ⍝ 2 3
 ,/,⊂2 3           ⍝ 2 3

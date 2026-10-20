@@ -20,12 +20,13 @@
   - `"one call"` makes one call for targets at distinct positions.
   - `"item by item"` calls the function once for each target, as a dfn does.
 - `fallbacks` has a row for each [map](../terms.qmd#term-map) that called its operand once for each cell after its [batched call](../evaluation.qmd#functions-and-effects) fell back, or without a batched call because an earlier one stopped. It also has a row for each time a batched call read its cells' items one at a time, through code with no rule for all the cells at once, even where the call then succeeded. `items` is the number of cells or items, and `reason` says why:
-  - `"an effect"`: the operand writes output, reads input, formats a cell's value with `⍕`, or runs a system function other than a random draw. A batched call would do each of these once for all the cells. A random draw in a map inside the operand stops it too.
-  - `"a write"`: the operand writes to a name outside the map.
-  - `"a cell's value"`: the operand reads a cell's value to choose what to do, as a predicate does, or to give a count or a position.
-  - `"no batch rule"`: the operand calls a function with no rule for batches of these arguments, such as `⍋`. Where the stop comes from a primitive's call, the primitive's glyph follows, as in `"no batch rule for ⍋"`. A kernel that reads a cell's number directly, and `∂` with respect to cells that are arrays, give no glyph.
+  - `"an effect"`: the operand writes output, reads input, formats a cell's value with `⍕`, or runs a system function other than a random draw. A batched call would do each of these once for all the cells. A random draw in a map inside the operand stops it too, and so does a random draw on a side of a guard on a cell's value.
+  - `"a write"`: the operand writes to a name outside the map, or a side of a guard on a cell's value writes to a name outside its dfn.
+  - `"a cell's value"`: the operand reads a cell's value to give a count or a position, as `2×⍣⍵` does. A predicate on a cell's value doesn't stop the batched call: each side of the guard runs once, on the cells that take it, as [Evaluation](../evaluation.qmd#functions-and-effects) describes.
+  - `"no batch rule"`: the operand calls a function with no rule for batches of these arguments, such as `⍋`, or the two sides of a guard on a cell's value give results of different kinds or shapes. Where the stop comes from a primitive's call, the primitive's glyph follows, as in `"no batch rule for ⍋"`. A kernel that reads a cell's number directly, and `∂` with respect to cells that are arrays, give no glyph.
   - `"too many items"`: a call would repeat an array that every cell shares into far more items than its arguments hold.
   - `"a caught error"`: a guard would catch an error.
+  - `"a recursive call"`: a guard on a cell's value runs in a recursive call of a dfn whose guard already split the cells, as in `{⍵<2?⍵;(∇⍵-1)+∇⍵-2}¨v`.
   - `"an earlier stop: "` and one of the reasons above: the operand is a dfn whose batched call stopped on an earlier call, for a cause that would recur, as [Evaluation](../evaluation.qmd#functions-and-effects) describes. The map calls it once for each cell without trying a batched call.
   - `"an error"`: the batched call failed. The calls on each cell then report the error, if one of them fails.
   - `"the result"`: the operand's result wasn't a batch of the cells' results, such as a function. A strand counts as one batch where each of its items holds an atom for each cell and the items' kinds join. So a strand that holds a vector for each cell falls back, and so does one that mixes numbers and characters.
@@ -49,7 +50,7 @@ x←¿1000⍴0 ⋄ p←¿1000⍴1000
 (•explain "{+/,(3↕⍵)×⍤1⊢1 2 1}∂ x").accumulations  ⍝ ["items":⍬ₓ "size":⍬ₓ "path":0⍴⊂""]
 (•explain "{+/⍵.[p]}∂ x").accumulations            ⍝ ["items":[1000]ₓ "size":[1000]ₓ "path":["in place"]]
 z←1000⍴0ₓ ⋄ (•explain "z.[p]+←1ₓ").accumulations.path  ⍝ ["logged"]
-(•explain "{⍵<2?⍵;⍵×2}¨⍳5").fallbacks  ⍝ ["reason":["a cell's value"] "items":[5]ₓ]
+(•explain "{2×⍣⍵⊢1}¨⍳5").fallbacks  ⍝ ["reason":["a cell's value"] "items":[5]ₓ]
 ```
 
 [`•memory`](memory.qmd) reports the live record nodes and pending arrays, and what a value keeps alive.

@@ -23,16 +23,18 @@ CLASSES = {'Function': ('dsFunction', 'function', ''), 'MonadicOperator': ('dsOp
 SPELLINGS = {s['glyph']: ''.join(dict.fromkeys(s['glyph'] + ''.join(s['hanzi']))) for s in symbols}
 BPL = {cls: ''.join(SPELLINGS[s['glyph']] for s in symbols if s['kind'] == kind) + scripts for cls, (_, kind, scripts) in CLASSES.items()}
 TOKEN_PATTERNS = {'System': r'•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*', 'Empty': r'⍬ₓ?',
-                  'Number': r'¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?|ₓ|[rᵣ]¯?\d+)?'}
+                  'Number': r'¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?|ₓ|[rᵣ]¯?\d+)?|[ₑⱼᵣ]'}
 TOKEN_PATTERNS = {cls: ''.join('[' + re.escape(SPELLINGS[c]) + ']' if c in '•¯∞⍬' else c for c in pattern).replace(r'\.', '[' + SPELLINGS['.'] + ']')
                   for cls, pattern in TOKEN_PATTERNS.items()}
+NAME_CHAR = r'[^\s\p{Cc}0-9' + re.escape(''.join(SPELLINGS.values()) + _superscripts + _subscripts + r'''()[]{}'";$_ₑⱼᵣ''') + ']'
+TOKEN_PATTERNS['Name'] = rf'(?:_\d+|_\S|_|{NAME_CHAR})+'
 DYALOG = {'Function': '+-×÷⌈⌊|*⍟○!?~∧∨⍲⍱<≤=≥>≠≡≢⍴,⍪⌽⊖⍉↑↓⊂⊃⊆⊇⌷⍋⍒⊤⊥⍳⍸∊⍷∪∩⊣⊢⍎⍕⌹', 'MonadicOperator': r'¨⍨/⌿\⍀⌸&⌶',
           'DyadicOperator': '∘⍤⍥⍣⍠⌺@.⍛', 'Argument': '⍺⍵∇', 'Keyword': '←→⋄:⎕⍞'}
 BQN = {'Function': '+-×÷⋆√⌊⌈|¬∧∨<>≠=≤≥≡≢⊣⊢⥊∾≍⋈↑↓↕«»⌽⍉/⍋⍒⊏⊑⊐⊒∊⍷⊔!', 'MonadicOperator': '˙˜˘¨⌜⁼´˝`',
        'DyadicOperator': '∘○⊸⟜⌾⊘◶⎉⚇⍟⎊', 'Argument': '𝕨𝕩𝕗𝕘𝕤𝕣𝕎𝕏𝔽𝔾𝕊', 'Keyword': '←↩⇐⋄,‿·?:;'}
 HIGHLIGHTERS = {Path('nbs/bpl.xml'): BPL, Path('nbs/dyalog.xml'): DYALOG, Path('nbs/bqn.xml'): BQN}
 TEXTMATE = Path(__file__).with_name('bpl.tmLanguage.json')
-SCOPES = {'Normal Text': 'source.bpl', 'Comment': 'comment.line.bpl', 'String': 'string.quoted.double.bpl',
+SCOPES = {'Normal Text': 'source.bpl', 'Name': 'variable.other.bpl', 'Comment': 'comment.line.bpl', 'String': 'string.quoted.double.bpl',
           'Char': 'string.quoted.single.bpl', 'Number': 'constant.numeric.bpl', 'System': 'support.function.system.bpl',
           'Function': 'support.function.bpl', 'MonadicOperator': 'keyword.operator.monadic.bpl',
           'DyadicOperator': 'keyword.operator.dyadic.bpl', 'Argument': 'variable.parameter.bpl', 'Keyword': 'keyword.control.bpl'}
@@ -59,6 +61,7 @@ def quarto(text, glyphs):
         text = _replace(text, f'<AnyChar String="[^"]*" attribute="{cls}"/>', f'<AnyChar String="{escape(glyphs[cls], {chr(34): "&quot;"})}" attribute="{cls}"/>')
         text = _replace(text, f'<itemData name="{cls}" defStyleNum="[^"]*"/>', f'<itemData name="{cls}" defStyleNum="{style}"/>')
     if glyphs is BPL:
+        text = _replace(text, r'<RegExpr String="[^"]*" attribute="Name"/>', f'<RegExpr String="{escape(TOKEN_PATTERNS["Name"], {chr(34): "&quot;"})}" attribute="Name"/>')
         for cls, marker in [('System', '•'), ('Number', '∞'), ('Empty', '⍬')]:
             attr = 'Number' if cls == 'Empty' else cls
             text = _replace(text, f'<RegExpr String="[^"]*{marker}[^"]*" attribute="{attr}"/>',
@@ -92,6 +95,8 @@ def textmate(xml):
 
 def vim(text):
     "The vim syntax `text` with each class's glyph list regenerated."
+    name = TOKEN_PATTERNS['Name'].replace('(?:', '%(').replace(r'\p{Cc}', r'\x00-\x1f\x7f-\x9f').replace('/', r'\/')
+    text = _replace(text, r'(?m)^syntax match bplName .*$', rf'syntax match bplName /\v{name}/')
     for cls in CLASSES: text = _replace(text, f'(?m)^syntax match bpl{cls} .*$', f'syntax match bpl{cls} {vim_class(BPL[cls])}')
     for cls, marker, pattern in [('System', '•', TOKEN_PATTERNS['System']),
                                  ('Number', '∞', TOKEN_PATTERNS['Number'] + '|' + TOKEN_PATTERNS['Empty']),
@@ -172,8 +177,11 @@ def write():
     for path, glyphs in HIGHLIGHTERS.items(): keyboards.write_changed(path, quarto(path.read_text(), glyphs))
     keyboards.write_changed(TEXTMATE, json.dumps(textmate(Path('nbs/bpl.xml').read_text()), ensure_ascii=False, indent=2) + '\n')
     keyboards.write_changed(JETBRAINS/'BPL.tmbundle/Syntaxes/bpl.tmLanguage.json', TEXTMATE.read_bytes())
+    keyboards.write_changed(Path('nbs/playground/bpl.tmLanguage.json'), TEXTMATE.read_bytes())
     keyboards.write_changed(JETBRAINS/'BPL.xml', jetbrains())
     keyboards.write_changed(VIM, vim(VIM.read_text()))
     keyboards.write()
     windows_keyboard.write()
     glyph_pages()
+
+if __name__ == '__main__': write()

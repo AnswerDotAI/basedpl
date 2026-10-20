@@ -1,5 +1,5 @@
 use rustymath::{buffer::FloatWidth, error::Kind};
-use crate::{number::{Math, Numeric}, primitive::{OperatorKind, Primitive, Superscript}, symbols::canonical,
+use crate::{number::{subscript, width_marker, Arithmetic, Math, Numeric, Suffix, DENOMINATOR, EXACT, EXPONENT, IMAGINARY, SUFFIXES, WIDTHS}, primitive::{OperatorKind, Primitive, Superscript}, symbols::canonical,
     Error, ErrorAt, ErrorKind, Number, Source, Span, Value
 };
 use std::{iter::Peekable, str::CharIndices, sync::{atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed}, Arc}};
@@ -20,6 +20,8 @@ pub(crate) enum NodeKind {
     Run(Vec<Node>),
     /// A subscript, as in `v₁`: `(1⌷v)` for the item just before it, which binding finds after dot access.
     Subscript(i64),
+    /// `ⱼ`, `ₑ` or `ᵣ` between two items, as in `xⱼy`, which binding joins into one term once dot access and subscripts are bound.
+    Joiner(Joiner),
     /// `T.(expr)`, which dot access builds: the second node evaluated with the keys of the first as names.
     Scope(Box<Node>, Box<Node>),
     /// An array literal. `record`: at least one item is `key:value`, and the items build one keyed vector.
@@ -117,6 +119,8 @@ enum TokenKind {
     Operator(OperatorKind),
     /// A subscript integer, such as `₁` or `₋₁`, which selects a major cell of the item just before it.
     Subscript(i64),
+    /// `ⱼ`, `ₑ` or `ᵣ` after an item other than a literal number.
+    Joiner(Joiner),
     Open,
     /// A closing parenthesis, and the number marker after it.
     Close(Option<Mark>),
@@ -172,22 +176,6 @@ fn real_literal(chars: &mut Characters<'_>) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// A numeric suffix: the plain letters that spell it, and its subscript.
-type Suffix = (&'static [char], char);
-pub(crate) const EXPONENT: Suffix = (&['e', 'E'], 'ₑ');
-const IMAGINARY: Suffix = (&['J', 'j'], 'ⱼ');
-const DENOMINATOR: Suffix = (&['r'], 'ᵣ');
-const EXACT: Suffix = (&[], 'ₓ');
-/// The markers of float widths: `ₕ` for 16-bit ("half"), `ₛ` for 32-bit ("single") and `ₚ` for 64-bit ("precise"). Unicode has no subscript `d`.
-const WIDTHS: [(Suffix, FloatWidth); 3] = [((&[], 'ₕ'), FloatWidth::F16), ((&[], 'ₛ'), FloatWidth::F32), ((&[], 'ₚ'), FloatWidth::F64)];
-const SUFFIXES: [Suffix; 7] = [EXPONENT, IMAGINARY, DENOMINATOR, EXACT, WIDTHS[0].0, WIDTHS[1].0, WIDTHS[2].0];
-
-/// Whether `c` is the subscript of a numeric suffix.
-pub(crate) fn subscript(c: char) -> bool { SUFFIXES.iter().any(|s| s.1 == c) }
-
-/// The marker that writes floats of `width`.
-pub(crate) fn width_marker(width: FloatWidth) -> char { WIDTHS.iter().find(|w| w.1 == width).expect("every width has a marker").0 .1 }
-
 /// What a number marker after a literal makes its numbers: exact, or floats of one width.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mark { Exact, Width(FloatWidth) }
@@ -196,6 +184,25 @@ impl Mark {
     fn marker(self) -> char { match self { Self::Exact => EXACT.1, Self::Width(w) => width_marker(w) } }
     /// The zero of the marked numbers, the prototype of an empty marked list.
     fn zero(self) -> Number { match self { Self::Exact => Number::from_integer(0), Self::Width(w) => Number::float(0.0, w) } }
+}
+
+/// `ⱼ`, `ₑ` or `ᵣ` between two items, as in `xⱼy`. The binder joins the items into one term (`joined_term`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Joiner { Imaginary, Exponent, Denominator }
+
+/// The group that `left`, `joiner` at `at` and `right` stand for: `xⱼy` is `x+y×0ⱼ1`, `xₑy` is `x×10*y` and `xᵣy` is `xₓ÷yₓ`.
+pub(crate) fn joined_term(left: Node, joiner: Joiner, at: &Span, right: Node) -> Node {
+    let span = Span { source: at.source.clone(), range: left.span.range.start..right.span.range.end };
+    let node = |kind| Node { kind, span: at.clone() };
+    let number = |text| node(NodeKind::Literal(Value::Number(literal_number(text, Numeric::current()).expect("a joiner's constant is a number"))));
+    let function = |p| node(NodeKind::Function(p));
+    let floor = || node(NodeKind::Operator(OperatorKind::Super(Superscript::Floor)));
+    let nodes = match joiner {
+        Joiner::Imaginary => vec![left, function(Primitive::Arithmetic(Arithmetic::Plus)), right, function(Primitive::Arithmetic(Arithmetic::Times)), number("0j1")],
+        Joiner::Exponent => vec![left, function(Primitive::Arithmetic(Arithmetic::Times)), number("10"), function(Primitive::Math(Math::Power)), right],
+        Joiner::Denominator => vec![left, floor(), function(Primitive::Arithmetic(Arithmetic::Divide)), right, floor()],
+    };
+    Node { kind: NodeKind::Group(nodes), span }
 }
 
 /// Consumes a number marker when one comes next.
@@ -212,10 +219,10 @@ fn number_part(mut chars: Characters<'_>) -> bool {
     }
 }
 
-/// Whether `suffix` comes next: its subscript, or one of its plain letters with a number part after it, as in `1e5`. A plain letter before anything else starts a name, so `2edges` is `2` beside `edges`.
+/// Whether `suffix` comes next. A suffix with no plain letters, such as `ₓ`, ends a number and comes next wherever it appears. A suffix with plain letters joins two numbers, as in `1e5` or `1ⱼ2`, and comes next only before a number part: `2edges` is `2` beside `edges`, and `2ₑn` is `2` before `ₑ`, which joins `2` and `n`.
 fn suffix_follows(chars: &Characters<'_>, (plain, sub): Suffix) -> bool {
     let mut ahead = chars.clone();
-    match ahead.next() { Some((_, c)) if c == sub => true, Some((_, c)) if plain.contains(&c) => number_part(ahead), _ => false }
+    match ahead.next() { Some((_, c)) if c == sub || plain.contains(&c) => plain.is_empty() || number_part(ahead), _ => false }
 }
 
 /// Consumes `suffix` when it comes next, and gives whether it did.
@@ -225,11 +232,9 @@ fn suffix(chars: &mut Characters<'_>, suffix: Suffix) -> bool {
     follows
 }
 
-/// The number that literal text writes, read by `Number::parse` after each subscript suffix becomes its plain letter. A float with no width marker takes the default width in `numeric`. `•vfi` shares `Number::parse` and reads only the plain letters.
+/// The number that literal text writes, read by `Number::parse` once each character takes its canonical spelling.
 fn literal_number(text: &str, numeric: Numeric) -> Result<Number, ErrorKind> {
-    let (text, numeric) = WIDTHS.iter().find_map(|&(s, w)| text.strip_suffix(s.1).map(|t| (t, numeric.with_width(w)))).unwrap_or((text, numeric));
-    Number::parse(
-        &text.chars().map(canonical).map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c)).collect::<String>(), numeric)
+    Number::parse(&text.chars().map(canonical).collect::<String>(), numeric)
 }
 
 /// A number written inside `[…]ₓ`. An integer's digits read exactly, and a whole float becomes exact.
@@ -251,10 +256,10 @@ fn literal_token(kind: &TokenKind) -> bool {
         | TokenKind::Operator(OperatorKind::Super(Superscript::Power(_) | Superscript::Transpose)))
 }
 
-/// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth: as exact after `ₓ`, and as floats or complex numbers of the marked width after `ₕ`, `ₛ` or `ₚ`. Booleans stay as they are. The `ₓ` after a group that holds anything but literals (`literal_token`) is `⌊`, as after a name.
-fn mark_literals(tokens: &mut Vec<Token>) -> Result<(), Error> {
+/// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth: as exact after `ₓ`, and as floats or complex numbers of the marked width after `ₕ`, `ₛ` or `ₚ`. Booleans stay as they are. The `ₓ` after a group that holds anything but literals (`literal_token`) is `⌊`, as after a name. Gives the byte ranges of those `ₓ`s, for highlighting.
+fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>, Error> {
     let numeric = Numeric::current();
-    let (mut open, mut floors) = (Vec::new(), Vec::new());
+    let (mut open, mut floors, mut floored) = (Vec::new(), Vec::new(), Vec::new());
     for i in 0..tokens.len() {
         match tokens[i].kind {
             TokenKind::Open | TokenKind::BracketOpen => open.push(i),
@@ -291,9 +296,10 @@ fn mark_literals(tokens: &mut Vec<Token>) -> Result<(), Error> {
         let end = close.span.range.end;
         close.span.range.end = end - EXACT.1.len_utf8();
         let marker = Span { source: close.span.source.clone(), range: close.span.range.end..end };
+        floored.push(marker.range.clone());
         tokens.insert(i + 1, Token { kind: TokenKind::Operator(OperatorKind::Super(Superscript::Floor)), span: marker });
     }
-    Ok(())
+    Ok(floored)
 }
 
 /// The offset of the next character, or the end of the text.
@@ -322,8 +328,8 @@ pub(crate) fn name_char_in(c: char, aliases: bool) -> bool { !(aliases && han(c)
 
 const SUPERSCRIPT_DIGITS: &str = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 const SUBSCRIPT_DIGITS: &str = "₀₁₂₃₄₅₆₇₈₉";
-/// The characters that write a superscript, for the editors' glyph lists.
-pub fn superscripts() -> String { [SUPERSCRIPT_DIGITS, "⁻ᵀᵘ"].concat() }
+/// The characters that write a superscript operator, `ₓ` among them, for the editors' glyph lists.
+pub fn superscripts() -> String { [SUPERSCRIPT_DIGITS, "⁻ᵀᵘₓ"].concat() }
 /// The characters that write a subscript, for the editors' glyph lists.
 pub fn subscripts() -> String { [SUBSCRIPT_DIGITS, "₋"].concat() }
 
@@ -446,6 +452,8 @@ fn lexed(source: &Arc<Source>, aliases: bool, mut highlights: Option<&mut Highli
                 Some(kind) => class(kind, &source.text[start..position(&mut chars, len)], canonical), None => (canonical(c) == '⍝').then_some("comment")
             };
             if let Some(class) = class { classes.push((start..position(&mut chars, len), class)); }
+            // A group's mark is part of its literal, unless `mark_literals` finds that the group holds anything else.
+            if let Some(TokenKind::Close(Some(_)) | TokenKind::BracketClose(Some(_))) = &kind { classes.push((start + c.len_utf8()..position(&mut chars, len), "literal")); }
         }
         let Some(kind) = kind else { continue };
         if let Some(at) = line_break.take().filter(|_| !absorbs_line_break(&kind, false)) { tokens.push(Token { kind: TokenKind::Separator, span: at }); }
@@ -459,7 +467,8 @@ fn lexed(source: &Arc<Source>, aliases: bool, mut highlights: Option<&mut Highli
         }
         tokens.push(Token { kind, span: span(position(&mut chars, len)) });
     }
-    mark_literals(&mut tokens)?;
+    let floored = mark_literals(&mut tokens)?;
+    if let Some(classes) = highlights { for (range, class) in classes.iter_mut() { if floored.contains(range) { *class = "monadic-operator"; } } }
     Ok(tokens)
 }
 
@@ -578,6 +587,10 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
             // A literal number, `)` and `]` take the `ₓ` after them (`mark_literals`). An `ₓ` that reaches here follows another item, such as a name, and is `⌊`.
             'ₓ' => TokenKind::Operator(OperatorKind::Super(Superscript::Floor)),
+            // A literal number takes `ⱼ`, `ₑ` or `ᵣ` only before a number part (`suffix_follows`). One that reaches here joins two items, as in `xⱼy`.
+            'ⱼ' => TokenKind::Joiner(Joiner::Imaginary),
+            'ₑ' => TokenKind::Joiner(Joiner::Exponent),
+            'ᵣ' => TokenKind::Joiner(Joiner::Denominator),
             c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
                 let power = script_integer(c, chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| span(position(chars, len)).error(k, m))?;
                 TokenKind::Operator(OperatorKind::Super(Superscript::Power(power)))
@@ -609,7 +622,8 @@ fn class(kind: &TokenKind, text: &str, canonical: fn(char) -> char) -> Option<&'
     match kind {
         TokenKind::Literal(_) => Some(if text.starts_with(['"', '\'']) { "string" } else { "literal" }),
         TokenKind::Operator(OperatorKind::Super(_)) => Some("monadic-operator"), TokenKind::Subscript(_) | TokenKind::ErrorGuard => Some("syntax"),
-        TokenKind::System(_) => Some("system"), _ => None
+        TokenKind::Joiner(_) => Some("literal"),
+        TokenKind::Name(_) => Some("name"), TokenKind::System(_) => Some("system"), _ => None
     }
 }
 
@@ -681,6 +695,7 @@ impl Parser<'_> {
                 TokenKind::Function(f) => NodeKind::Function(*f),
                 TokenKind::Operator(op) => NodeKind::Operator(*op),
                 TokenKind::Subscript(index) => NodeKind::Subscript(*index),
+                TokenKind::Joiner(joiner) => NodeKind::Joiner(*joiner),
                 TokenKind::Name(name) => NodeKind::Name(name.clone()),
                 TokenKind::System(name) => NodeKind::System(name.clone()),
                 TokenKind::Assign => NodeKind::Assign,
@@ -1082,7 +1097,7 @@ impl NodeKind {
             Self::Literal(_) => "Literal", Self::Function(_) => "Function", Self::Operator(_) => "Operator", Self::Name(_) => "Name",
             Self::System(_) => "System", Self::Assign => "Assign", Self::Output => "Output", Self::ErrorGuard => "ErrorGuard", Self::Group(_) => "Group",
             Self::Run(_) => "Run", Self::Subscript(_) => "Subscript", Self::Scope(..) => "Scope", Self::ArrayLiteral { .. } => "ArrayLiteral",
-            Self::Dfn(_) => "Dfn"
+            Self::Dfn(_) => "Dfn", Self::Joiner(_) => "Joiner"
         }
     }
 }
