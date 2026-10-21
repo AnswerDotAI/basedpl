@@ -320,30 +320,11 @@ impl Pairing<'_> {
     pub(crate) fn stacked(stacked: bool) -> Self { if stacked { Pairing::Matrices } else { Pairing::Axis(None) } }
 }
 
-/// The call of `op` as the newest level among its arguments handles it, or `None` to run its own code (`Operation::run`). A record level records the call (`linear::call`), unless only the right argument is a record and a primitive's form copies it through a plan, whose own code records it. A `∂` call applies the operation's rule (`derivative::call`). A batched map runs a call on its batches' whole arguments, or stops its run (`batch::call`). A label level takes a primitive along an axis (`selection::call`), and leaves other operations to their own code, whose calls of primitives carry the labels on. For `⌻`, `⌹`, `⊥` and monadic `f.g`, the newest level can sit inside the arguments' nested arrays. An outer product broadcasts both arguments to its result's layout and calls `op` once. Callers test `Session::transforming` first.
-#[inline(never)]
-pub(crate) fn call(op: Operation, pairing: Pairing<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Value, Error>> {
-    let within = match op { Operation::Primitive(p) => matches!(p, Primitive::Polynomial | Primitive::MatrixDivide | Primitive::Decode), Operation::Product(..) => left.is_none(), _ => false };
-    let newest = newest(left, right, within)?;
-    if let Pairing::Outer(agreement) = pairing {
-        let (x, y) = agreement.laid(left, right);
-        return Some(op.call(Pairing::Axis(None), x.as_ref(), &y, cx));
-    }
-    match newest {
-        Mark::Record(_) => {
-            let planned = matches!(op, Operation::Primitive(p) if matches!(p.facts(left.is_some()).form, crate::primitive::Form::Moves { planned: true, .. }));
-            if planned && !left.is_some_and(|x| crate::linear::record_of(x).is_some()) { return None; }
-            crate::linear::call(op, pairing, left, right, cx)
-        }
-        Mark::Dual(tag) => crate::derivative::call(op, pairing, left, right, tag, cx),
-        Mark::Batch(level) => crate::batch::call(op, pairing, left, right, level, cx),
-        Mark::Label(level) => match (op, pairing) { (Operation::Primitive(p), Pairing::Axis(axis)) => crate::selection::call(p, axis, left, right, level, cx), _ => None },
-    }
-}
-
-/// A call that a running level can take over, where the level's rule calls functions and so needs a `&mut Context`. `call` routes primitives and the operations that they name, which need only a `&Context`.
+/// A call that a running level can take over: an operation that primitives name, paired by its `Pairing`, or an operation by functions that aren't primitives.
 #[derive(Clone, Copy)]
 pub(crate) enum Op<'a> {
+    /// A primitive, a fold or scan by one, an inner product of two, a copy or a select (`Operation`).
+    Operation(Operation, Pairing<'a>),
     /// A fold or scan by an operand that isn't a primitive, along `axis`, without a seed.
     Fold(FoldKind, Option<&'a Value>),
     /// `f.g`, where `f` or `g` isn't a primitive, with one argument or two.
@@ -354,16 +335,29 @@ pub(crate) enum Op<'a> {
     System(&'a SystemFunction),
 }
 
-/// `op` on `left` and `right` as the newest level among them handles it, or `None` to run its own code, whose calls route again. A record level hands the call to reverse mode (`linear::route`), a `∂` call to forward mode at its tag (`derivative::route`), and a batched map to `batch::route`. Attached rules, monadic `f.g` and system functions look for the newest level inside nested arrays too. A fold, or `f.g` with two arguments, looks only at its arguments' outer layer. Callers test `Session::transforming` first.
+/// The call of `op` as the newest level among its arguments handles it, or `None` to run its own code, whose calls route again. A record level records the call (`linear::call`), unless only the right argument is a record and a primitive's form copies it through a plan, whose own code records it. A `∂` call applies the operation's rule, or a rule that `f∂←g` attached (`derivative::call`). A batched map runs a call on its batches' whole arguments, or stops its run (`batch::call`). A label level takes a primitive along an axis (`selection::call`), and leaves other operations to their own code, whose calls of primitives carry the labels on. For `⌻`, `⌹`, `⊥`, monadic `f.g`, attached rules and system functions, the newest level can sit inside the arguments' nested arrays. An outer product broadcasts both arguments to its result's layout and calls the operation once. Callers test `Session::transforming` first.
 #[inline(never)]
-pub(crate) fn route(op: Op<'_>, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Option<Result<Value, Error>> {
-    let within = match op { Op::Fold(..) => false, Op::Product => left.is_none(), Op::Ruled(..) | Op::System(_) => true };
-    match newest(left, right, within)? {
-        Mark::Record(_) => crate::linear::route(op, cx),
-        Mark::Dual(tag) => crate::derivative::route(op, left, right, tag, cx),
-        Mark::Batch(level) => crate::batch::route(op, left, right, level, cx),
-        // A label level has no rule for an operation. Its own code runs and reads values, and a call inside it that selects carries the labels on.
-        Mark::Label(_) => None,
+pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+    let within = match op {
+        Op::Operation(Operation::Primitive(p), _) => matches!(p, Primitive::Polynomial | Primitive::MatrixDivide | Primitive::Decode),
+        Op::Operation(Operation::Product(..), _) | Op::Product => left.is_none(),
+        Op::Operation(..) | Op::Fold(..) => false,
+        Op::Ruled(..) | Op::System(_) => true,
+    };
+    let newest = newest(left, right, within)?;
+    if let Op::Operation(operation, Pairing::Outer(agreement)) = op {
+        let (x, y) = agreement.laid(left, right);
+        return Some(operation.call(Pairing::Axis(None), x.as_ref(), &y, cx));
+    }
+    match newest {
+        Mark::Record(_) => {
+            let planned = matches!(op, Op::Operation(Operation::Primitive(p), _) if matches!(p.facts(left.is_some()).form, crate::primitive::Form::Moves { planned: true, .. }));
+            if planned && !left.is_some_and(|x| crate::linear::record_of(x).is_some()) { return None; }
+            crate::linear::call(op, left, right, cx)
+        }
+        Mark::Dual(tag) => crate::derivative::call(op, left, right, tag, cx),
+        Mark::Batch(level) => crate::batch::call(op, left, right, level, cx),
+        Mark::Label(level) => match op { Op::Operation(Operation::Primitive(p), Pairing::Axis(axis)) => crate::selection::call(p, axis, left, right, level, cx), _ => None },
     }
 }
 
@@ -372,7 +366,7 @@ impl Context<'_> {
     pub(crate) fn carried(&self, left: Option<&Value>, right: &Value) -> bool { self.session.transforming() && (right.carried() || left.is_some_and(Value::carried)) }
     /// Asks the running levels before code that formats `left` and `right` as text, as `⍕` and `•literal⁻¹` do. A batch displays as its first cell (`Value::displayed`), so formatting a value that holds one stops the batched run (`Effect::Acts`).
     pub(crate) fn formats(&self, left: Option<&Value>, right: &Value) -> Result<(), Error> {
-        if self.carried(left, right) { self.session.levels.effect(Effect::Acts).at(self.span)?; }
+        if self.carried(left, right) { self.session.effect(Effect::Acts).at(self.span)?; }
         Ok(())
     }
 }
@@ -403,7 +397,7 @@ impl Carrier {
     /// The items, as code with no rule for this level reads them (`ArrayData::storage`): a dual's items as dual atoms, or a batch's as batches of atoms. A record has none to give.
     pub(crate) fn storage(&self) -> &crate::array::Storage { match self { Carrier::Dual(dual) => dual.storage(), Carrier::Record(_) => crate::linear::storage(), Carrier::Batch(b) => b.storage(), Carrier::Labelled(l) => l.storage() } }
     /// The bytes that this carrier keeps alive, as `Value::footprint` counts them. Each allocation counts once in `seen`.
-    pub(crate) fn footprint_in(&self, seen: &mut foldhash::HashSet<usize>) -> usize {
+    pub(crate) fn footprint_in(&self, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
         match self { Carrier::Dual(dual) => crate::derivative::Dual::footprint_in(dual, seen), Carrier::Record(t) => crate::linear::Linear::footprint_in(t, seen), Carrier::Batch(b) => crate::batch::Batch::footprint_in(b, seen), Carrier::Labelled(l) => crate::selection::Labelled::footprint_in(l, seen) }
     }
     /// This carrier under `layout`, which has as many items: each part as a view under `layout`, with no items copied. A dual's tangent goes under it expanded to the primal's layout, and a batch's cells each go under it.

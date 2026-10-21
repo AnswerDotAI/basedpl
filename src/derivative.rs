@@ -26,7 +26,7 @@ impl Dual {
         Self { tag, primal, tangent, items: std::sync::OnceLock::new(), full: std::sync::OnceLock::new() }
     }
     /// The bytes of the primal, the tangent and the items built from them. Each allocation counts once in `seen`.
-    pub(crate) fn footprint_in(this: &std::sync::Arc<Self>, seen: &mut foldhash::HashSet<usize>) -> usize {
+    pub(crate) fn footprint_in(this: &std::sync::Arc<Self>, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
         if !seen.insert(std::sync::Arc::as_ptr(this) as usize) { return 0; }
         let cached = this.items.get().map_or(0, |s| s.footprint_in(seen)) + this.full.get().map_or(0, |v| v.footprint_in(seen));
         this.primal.footprint_in(seen) + this.tangent.footprint_in(seen) + cached
@@ -292,10 +292,7 @@ fn direction(leaf: &Value, n: usize, k: &mut usize, j: usize) -> Value {
 /// The tangent of `value` at level `tag`, in `value`'s structure: 0 for a number without that tag.
 fn tangent(value: &Value, tag: u64, span: &Span) -> Result<Value, Error> {
     walk(value, &mut |leaf| match (leaf, dual_of(leaf)) {
-        (_, Some(dual)) if dual.tag == tag => {
-            crate::fusion::force_together(&dual.primal, dual.full_tangent());
-            Ok(dual.full_tangent().clone())
-        }
+        (_, Some(dual)) if dual.tag == tag => Ok(dual.full_tangent().clone()),
         (Value::Number(_) | Value::Carried(_), _) => Ok(crate::linear::zero_of(leaf)),
         (Value::Array(_), _) => Ok(zeros(leaf)),
         _ => Err(span.domain_error("∂ needs a numeric result")),
@@ -303,7 +300,7 @@ fn tangent(value: &Value, tag: u64, span: &Span) -> Result<Value, Error> {
 }
 
 /// `f∂ right`, or `left f∂ right`: the Jacobian of `f` at `right`, with the layout of `(f right)×⊗right`. `left` passes to `f` unchanged.
-pub(crate) fn differentiate(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+pub(crate) fn differentiate(f: &Function, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
     let n = leaves(right, cx.span)?;
     if n > 1 { return reverse(f, left, right, n, cx); }
     let tag = cx.session.begin(crate::transform::Kind::Derivative);
@@ -314,7 +311,7 @@ pub(crate) fn differentiate(f: &Function, left: Option<&Value>, right: &Value, c
 }
 
 /// The result of `f` without tangents, and the tangent from one forward pass when `x` holds one number. `n` is 0 or 1: `reverse` handles more.
-fn pass(f: &Function, left: Option<&Value>, right: &Value, tag: u64, n: usize, cx: &mut Context<'_>) -> Result<(Value, Vec<Value>), Error> {
+fn pass(f: &Function, left: Option<&Value>, right: &Value, tag: u64, n: usize, cx: &Context<'_>) -> Result<(Value, Vec<Value>), Error> {
     if n == 0 { return Ok((f.call_array(left, right, cx)?, Vec::new())); }
     let result = f.call_array(left, &seed(right, tag, 0, cx.span)?, cx)?;
     Ok((strip(&result, tag), vec![tangent(&result, tag, cx.span)?]))
@@ -371,7 +368,7 @@ fn laid_out(right: &Value, primal: &Value, entry: &mut dyn FnMut(usize, usize) -
 }
 
 /// `f∂ right` in reverse mode: one run of `f` against seeds that record its linear calls, then a transpose of the record for each result item, or a forward evaluation for each number of `right`, whichever are fewer.
-fn reverse(f: &Function, left: Option<&Value>, right: &Value, n: usize, cx: &mut Context<'_>) -> Result<Value, Error> {
+fn reverse(f: &Function, left: Option<&Value>, right: &Value, n: usize, cx: &Context<'_>) -> Result<Value, Error> {
     let lin = linearized(f, left, right, cx)?;
     let primal = &lin.value;
     // A unit result's Jacobian is its gradient, which has the argument's structure, with no axis for the result.
@@ -395,7 +392,7 @@ fn reverse(f: &Function, left: Option<&Value>, right: &Value, n: usize, cx: &mut
 pub(crate) struct Linearized { argument: Value, parts: Vec<Value>, pub(crate) value: Value, nodes: Vec<std::sync::Arc<crate::linear::Linear>> }
 
 /// `f` linearised at `right`, with `left` as its left argument.
-pub(crate) fn linearized(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Linearized, Error> {
+pub(crate) fn linearized(f: &Function, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Linearized, Error> {
     let record = cx.session.begin(crate::transform::Kind::Record);
     let tag = cx.session.begin(crate::transform::Kind::Derivative);
     let run = linearize(f, left, right, tag, record, cx);
@@ -407,29 +404,29 @@ pub(crate) fn linearized(f: &Function, left: Option<&Value>, right: &Value, cx: 
 
 impl Linearized {
     /// `u`, which has the value's layout, times the Jacobian, as one gradient for each part.
-    fn transposed(&self, u: Value, cx: &mut Context<'_>) -> Result<Vec<Value>, Error> {
+    fn transposed(&self, u: Value, cx: &Context<'_>) -> Result<Vec<Value>, Error> {
         if self.nodes.is_empty() { return Ok(self.parts.iter().map(zeros).collect()); }
         let grads = crate::linear::transpose(&self.nodes, u, self.parts.len(), cx)?;
         Ok(grads.into_iter().zip(&self.parts).map(|(g, part)| g.unwrap_or_else(|| zeros(part))).collect())
     }
 
     /// The derivative along `seeds`, one for each part.
-    fn evaluated(&self, seeds: &[Value], cx: &mut Context<'_>) -> Result<Value, Error> {
+    fn evaluated(&self, seeds: &[Value], cx: &Context<'_>) -> Result<Value, Error> {
         if self.nodes.is_empty() { return Ok(zeros(&self.value)); }
         crate::linear::evaluate(&self.nodes, seeds, cx)
     }
 
     /// `u` times the Jacobian, with the argument's layout.
-    pub(crate) fn vjp(&self, u: Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    pub(crate) fn vjp(&self, u: Value, cx: &Context<'_>) -> Result<Value, Error> {
         let mut grads = self.transposed(u, cx)?.into_iter();
         walk(&self.argument, &mut |_| Ok(grads.next().expect("one gradient for each part")))
     }
 
     /// The gradient, for a value that is one number.
-    pub(crate) fn gradient(&self, cx: &mut Context<'_>) -> Result<Value, Error> { self.vjp(unit(&self.value, 0), cx) }
+    pub(crate) fn gradient(&self, cx: &Context<'_>) -> Result<Value, Error> { self.vjp(unit(&self.value, 0), cx) }
 
     /// The derivative along `v`, which has the argument's layout.
-    pub(crate) fn jvp(&self, v: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+    pub(crate) fn jvp(&self, v: &Value, cx: &Context<'_>) -> Result<Value, Error> {
         let mut seeds = Vec::with_capacity(self.parts.len());
         walk(v, &mut |leaf| { seeds.push(leaf.clone()); Ok(leaf.clone()) })?;
         self.evaluated(&seeds, cx)
@@ -440,7 +437,7 @@ impl Linearized {
 fn numbers_of(v: &Value) -> Vec<Value> { if v.is_atom() { vec![v.clone()] } else { v.elements().collect() } }
 
 /// Runs `f` once, with each part of `right` that `∂` differentiates seeded with a record at record level `record`, as the tangent of a dual at level `tag`. Gives those parts, the result without tangents, and the record of the result's tangent, laid out as the result. The record is `None` where the result doesn't depend on `right`.
-fn linearize(f: &Function, left: Option<&Value>, right: &Value, tag: u64, record: u64, cx: &mut Context<'_>) -> Result<(Vec<Value>, Value, Option<std::sync::Arc<crate::linear::Linear>>), Error> {
+fn linearize(f: &Function, left: Option<&Value>, right: &Value, tag: u64, record: u64, cx: &Context<'_>) -> Result<(Vec<Value>, Value, Option<std::sync::Arc<crate::linear::Linear>>), Error> {
     let mut parts = Vec::new();
     let span = cx.span;
     let seeded = walk(right, &mut |leaf| {
@@ -485,10 +482,18 @@ fn rebuild(value: &Value, next: &mut dyn FnMut() -> Value, span: &Span) -> Resul
     })
 }
 
-/// `op` applied to arguments of which some is a dual of the running `∂` call `tag`, which `transform::call` finds, or `None` where its own code handles the duals, through the calls it makes. A primitive's form gives its rule (`primitive_rule`), except for `⌹` and `⊥`, whose rules compute through matrix products (`solve` and `decode`). A fold by `+`, `×`, `⌈` or `⌊` takes its fold rule (`fold_dual`), `+.×` with two arguments the product rule (`product_dual`), and `-.×` with one the determinant's (`determinant`). With `Pairing::Matrices`, `⌹`, `+.×` and `-.×` take each matrix of a stack, or each pair of matrices of two stacks, in one call.
+/// `op` applied to arguments of which some is a dual of the running `∂` call `tag`, which `transform::call` finds, or `None` where its own code handles the duals, through the calls it makes. A primitive's form gives its rule (`primitive_rule`), except for `⌹` and `⊥`, whose rules compute through matrix products (`solve` and `decode`). A fold by `+`, `×`, `⌈` or `⌊` takes its fold rule (`fold_dual`), `+.×` with two arguments the product rule (`product_dual`), and `-.×` with one the determinant's (`determinant`). With `Pairing::Matrices`, `⌹`, `+.×` and `-.×` take each matrix of a stack, or each pair of matrices of two stacks, in one call. A rule that `f∂←g` attached applies to a call with one argument (`attached`). A system function other than a random draw, and `f.g` by functions that aren't primitives with one argument, give UNSUPPORTED ERROR. A fold by an operand that isn't a primitive, or such an `f.g` with two arguments, runs its own code, whose calls of primitives take their rules.
 #[cold]
 #[inline(never)]
-pub(crate) fn call(op: Operation, pairing: Pairing<'_>, left: Option<&Value>, right: &Value, tag: u64, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+    let (op, pairing) = match op {
+        Op::Operation(op, pairing) => (op, pairing),
+        // A rule describes a function of one argument, so a call with two can't use it.
+        Op::Ruled(f, rule) => return Some(if left.is_none() { attached(f, rule, right, tag, cx) } else { Err(two_arguments(cx)) }),
+        Op::System(f) => return (!matches!(f.call, crate::system::Call::Active(_))).then(|| Err(system(f.name, cx))),
+        Op::Product if left.is_none() => return Some(Err(expansion(cx))),
+        Op::Fold(..) | Op::Product => return None,
+    };
     let stacked = matches!(pairing, Pairing::Matrices);
     match (op, pairing) {
         (Operation::Fold(p, kind), Pairing::Axis(axis)) => fold_dual(p, kind, axis, right, cx),
@@ -781,7 +786,7 @@ fn coordinate(t: &Value, k: usize) -> Value {
 /// A call of `f`, which has a JVP rule `g` that `f∂←g` attached, on an argument with a dual at level `tag`, inside a function that `∂` differentiates. The primal is `f` on the primal argument. `g` runs on the primal with `⍺` a dual of zeros whose tangent is the argument's, so the tangent of its result is the rule applied to that tangent: a value in forward mode, and a record in reverse mode, as JAX transposes a `custom_jvp`. A rule must be linear in `⍺`.
 #[cold]
 #[inline(never)]
-pub(crate) fn attached(f: &Function, g: &Function, right: &Value, tag: u64, cx: &mut Context<'_>) -> Result<Value, Error> {
+pub(crate) fn attached(f: &Function, g: &Function, right: &Value, tag: u64, cx: &Context<'_>) -> Result<Value, Error> {
     let (x, tx) = split_deep(right, tag);
     let r = f.call_array(None, &x, cx)?;
     let origin = walk(&x, &mut |leaf| Ok(zeros(leaf)))?;
@@ -789,17 +794,6 @@ pub(crate) fn attached(f: &Function, g: &Function, right: &Value, tag: u64, cx: 
     let (_, t) = split_deep(&packed(&g.call_array(Some(&direction), &x, cx)?, tag), tag);
     let t = match t { Some(t) => t, None => walk(&r, &mut |leaf| Ok(zeros(leaf)))? };
     Ok(along(&r, &t, tag))
-}
-
-/// `op`, an operation by functions that aren't primitives, on arguments of which some is a dual of the running `∂` call `tag`, as forward mode handles it, or `None` where the operation's own code takes the dual's items. An attached rule applies to a call with one argument (`attached`). A system function other than a random draw, and `f.g` with one argument, give UNSUPPORTED ERROR. A fold, or `f.g` with two arguments, runs its own code, whose calls of primitives take their rules.
-pub(crate) fn route(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, cx: &mut Context<'_>) -> Option<Result<Value, Error>> {
-    match op {
-        // A rule describes a function of one argument, so a call with two can't use it.
-        Op::Ruled(f, rule) => Some(if left.is_none() { attached(f, rule, right, tag, cx) } else { Err(two_arguments(cx)) }),
-        Op::System(f) => (!matches!(f.call, crate::system::Call::Active(_))).then(|| Err(system(f.name, cx))),
-        Op::Product if left.is_none() => Some(Err(expansion(cx))),
-        Op::Fold(..) | Op::Product => None,
-    }
 }
 
 /// A fold of a dual by `p`, where the fold has a row (`Operation::facts`). A linear fold, by `+`, folds the primal and the tangent alike. Folds by `×`, `⌈` and `⌊` have rules of whole-array calls (`fold_rule`). `None` leaves the fold to its own code, which calls `p` on the dual's items.

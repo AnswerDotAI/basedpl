@@ -9,7 +9,7 @@ impl Session {
         let [node] = nodes else { return false };
         match &node.kind {
             NodeKind::Name(name) => {
-                (self.current.is_some() && !implicit_name(name)) || !matches!(self.lookup(name), Some(Binding::Function(_) | Binding::Operator(_)))
+                (self.current.get().is_some() && !implicit_name(name)) || !matches!(self.peek(name), Some((_, Category::Function | Category::Operator | Category::DyadicOperator)))
             }
             NodeKind::Group(inner) => self.assignment_names(inner),
             // Inside brackets every name is a target, whatever it holds. A pattern's cells each have a key, which `targets` checks.
@@ -28,7 +28,7 @@ impl Session {
         match &node.kind {
             NodeKind::Function(_) => Function,
             NodeKind::Operator(op) => Category::of(&Binding::Operator(self::OperatorNode::Primitive(*op))),
-            NodeKind::Name(name) => self.lookup(name).map_or(Value, Category::of),
+            NodeKind::Name(name) => self.peek(name).map_or(Value, |(_, category)| category),
             NodeKind::System(_) => Function,
             NodeKind::Dfn(d) => match d.kind {
                 DefinitionKind::Function => Function, DefinitionKind::MonadicOperator => Operator, DefinitionKind::DyadicOperator => DyadicOperator
@@ -87,10 +87,10 @@ impl Session {
     }
 
     /// Inside a dfn, `⍵` is a local name bound to the argument. The other argument and operand names can't be assigned.
-    fn assignable(&self, name: &str) -> bool { !implicit_name(name) || name == "⍵" && self.current.is_some() }
-    fn store(&mut self, name: &str, value: Binding, span: &Span) -> Result<(), Error> {
+    fn assignable(&self, name: &str) -> bool { !implicit_name(name) || name == "⍵" && self.current.get().is_some() }
+    fn store(&self, name: &str, value: Binding, span: &Span) -> Result<(), Error> {
         if !self.assignable(name) { return Err(span.error(ErrorKind::Syntax, "arguments and operands cannot be assigned here")); }
-        self.insert_name(self.current, name, value);
+        self.insert_name(self.current.get(), name, value);
         Ok(())
     }
 
@@ -99,10 +99,10 @@ impl Session {
         let Some((owner, Binding::Value(value))) = self.binding(name) else {
             return Err(span.error(ErrorKind::Value, "assignment target must be an existing array"));
         };
-        Ok(ArrayBinding { name: name.to_owned(), owner, value: value.clone() })
+        Ok(ArrayBinding { name: name.to_owned(), owner, value })
     }
 
-    fn update_array(&mut self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> {
+    fn update_array(&self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> {
         if value.environment() > binding.owner { return Err(span.domain_error("array would export a local closure")); }
         if self.transforming() { self.record_write(binding.owner, &binding.name).at(span)?; }
         self.insert_name(binding.owner, &binding.name, Binding::from_element(value));
@@ -110,7 +110,7 @@ impl Session {
     }
 
     /// Assigns `value` to `target`. `fusion_report` reports an assignment that computed a pending value, as display and destructuring do, as `←`.
-    pub(super) fn assign(&mut self, target: &[Node], value: &Binding) -> Result<(), Error> {
+    pub(super) fn assign(&self, target: &[Node], value: &Binding) -> Result<(), Error> {
         let watch = match value { Binding::Value(v) => self.watch(v), _ => None };
         self.assign_to(target, value)?;
         self.report_assigned(&target[0].span, watch);
@@ -118,16 +118,16 @@ impl Session {
     }
 
     /// The count of items that pending arrays have computed, taken before an assignment that would compute `value`, a pending array, where `fusion_report` would report it.
-    fn watch(&self, value: &Value) -> Option<usize> { ((self.explaining || self.display.fusion) && value.pending().is_some()).then(crate::explain::computed_so_far) }
+    fn watch(&self, value: &Value) -> Option<usize> { (crate::explain::reporting() && value.pending().is_some()).then(crate::explain::computed_so_far) }
 
     /// Reports, as `←`, the items that pending arrays computed since `watch` counted them.
-    fn report_assigned(&mut self, span: &Span, watch: Option<usize>) {
+    fn report_assigned(&self, span: &Span, watch: Option<usize>) {
         let Some(before) = watch else { return };
         let items = crate::explain::computed_so_far() - before;
-        if items > 0 { fusion_report(&mut self.at(span), "fusion ends", "←", items); }
+        if items > 0 { fusion_report(&self.at(span), "fusion ends", "←", items); }
     }
 
-    fn assign_to(&mut self, target: &[Node], value: &Binding) -> Result<(), Error> {
+    fn assign_to(&self, target: &[Node], value: &Binding) -> Result<(), Error> {
         let span = &target[0].span;
         if let [target] = target {
             match &target.kind {
@@ -136,8 +136,8 @@ impl Session {
                 NodeKind::Output => {
                     return match value {
                         Binding::Value(a) => {
-                            self.levels.effect(crate::transform::Effect::Acts).at(span)?;
-                            self.execution.output(crate::OutputKind::Explicit, self.display_settings().explicit(a, self.current.is_some()));
+                            self.effect(crate::transform::Effect::Acts).at(span)?;
+                            self.execution.output(crate::OutputKind::Explicit, self.display_settings().explicit(a, self.current.get().is_some()));
                             Ok(())
                         }
                         _ => return Err(target.span.domain_error("output requires a subject")),
@@ -165,11 +165,11 @@ impl Session {
     fn rule_target<'a>(&self, nodes: &'a [Node]) -> Option<(&'a str, bool)> {
         let [Node { kind: NodeKind::Name(name), .. }, Node { kind: NodeKind::Operator(op), .. }] = nodes else { return None };
         let derivative = match op { OperatorKind::Differentiate => true, OperatorKind::Super(Superscript::Power(-1)) => false, _ => return None };
-        matches!(self.lookup(name), Some(Binding::Function(_))).then_some((name.as_str(), derivative))
+        matches!(self.peek(name), Some((_, Category::Function))).then_some((name.as_str(), derivative))
     }
 
     /// `f⁻¹←g` or `f∂←g`: the nearest binding of `f` gets `g` attached as its inverse or derivative.
-    fn attach_rule(&mut self, name: &str, derivative: bool, value: &Binding, span: &Span) -> Result<(), Error> {
+    fn attach_rule(&self, name: &str, derivative: bool, value: &Binding, span: &Span) -> Result<(), Error> {
         if !self.assignable(name) { return Err(span.error(ErrorKind::Syntax, "arguments and operands cannot be assigned here")); }
         let Binding::Function(g) = value else { return Err(span.domain_error("an inverse or derivative must be a function")) };
         let Some((owner, Binding::Function(f))) = self.binding(name) else { unreachable!("`rule_target` checked the binding") };
@@ -180,14 +180,14 @@ impl Session {
     }
 
     /// Splits a modified assignment's target into its array part and its function, as `a` and `f` in `a(f)←`.
-    fn modified_target<'a>(&mut self, target: &'a [Node]) -> Result<Option<(&'a [Node], Function)>, Error> {
+    fn modified_target<'a>(&self, target: &'a [Node]) -> Result<Option<(&'a [Node], Function)>, Error> {
         let (operand, category) = self.assignment_operand(target, target.len())?;
         if operand == 0 || !matches!(category, Category::Function) { return Ok(None); }
         Ok(self.modifier(&target[operand..])?.map(|f| (&target[..operand], f)))
     }
 
     /// Updates the array part of a modified assignment's target with `modifier`, taking `value` as its right argument.
-    fn modify(&mut self, array: &[Node], modifier: Function, value: &Binding) -> Result<(), Error> {
+    fn modify(&self, array: &[Node], modifier: Function, value: &Binding) -> Result<(), Error> {
         let span = &array[0].span;
         if self.assignment_names(array) { return self.modify_names(array, &value.clone().into_value(span)?, &modifier); }
         match array {
@@ -197,14 +197,14 @@ impl Session {
     }
 
     /// `a(f)←` with no value sets `a` to `f a`, and gives whether `target` has that form. It runs as the dyadic form with `f∘⊣`, which ignores its right argument of 0.
-    pub(super) fn modify_monadic(&mut self, target: &[Node]) -> Result<bool, Error> {
+    pub(super) fn modify_monadic(&self, target: &[Node]) -> Result<bool, Error> {
         let Some((array, f)) = self.modified_target(target)? else { return Ok(false) };
         let f = atop(f, Function::primitive(Primitive::Identity(true)), &target[0].span)?;
         self.modify(array, f, &Binding::Value(Value::integer(0)))?;
         Ok(true)
     }
 
-    fn modify_names(&mut self, nodes: &[Node], right: &Value, modifier: &Function) -> Result<(), Error> {
+    fn modify_names(&self, nodes: &[Node], right: &Value, modifier: &Function) -> Result<(), Error> {
         let [node] = nodes else { unreachable!() };
         match &node.kind {
             NodeKind::Group(inner) => self.modify_names(inner, right, modifier),
@@ -220,7 +220,7 @@ impl Session {
                         });
                     }
                 }
-                let updated = modifier.call_array(Some(&binding.value), right, &mut self.at(&node.span))?;
+                let updated = modifier.call_array(Some(&binding.value), right, &self.at(&node.span))?;
                 self.update_array(&binding, updated, &node.span)
             }
             NodeKind::ArrayLiteral { cells, record, .. } => {
@@ -270,14 +270,14 @@ impl Session {
         }).collect()
     }
 
-    fn modifier(&mut self, nodes: &[Node]) -> Result<Option<Function>, Error> {
+    fn modifier(&self, nodes: &[Node]) -> Result<Option<Function>, Error> {
         if nodes.is_empty() { return Ok(None); }
         match self.bind(nodes)?.value {
             Binding::Function(f) => Ok(Some(f)), _ => Err(nodes[0].span.error(ErrorKind::Syntax, "modified assignment needs a function"))
         }
     }
 
-    fn extend_selected(&mut self, nodes: &mut Vec<Node>, descend: bool) -> Result<(), Error> {
+    fn extend_selected(&self, nodes: &mut Vec<Node>, descend: bool) -> Result<(), Error> {
         if let [Node { kind: NodeKind::Group(inner), .. }] = nodes.as_mut_slice() { return self.extend_selected(inner, descend); }
         // A key before `⊃`, `⌷` or `.[]` may name an entry that the container lacks. It can be a list of keys.
         let Some(i) = nodes.iter().position(|n| matches!(n.kind, NodeKind::Function(Primitive::Mix | Primitive::Index | Primitive::Bracket))) else { return Ok(()) };
@@ -320,7 +320,7 @@ impl Session {
         match &nodes.last()?.kind { NodeKind::Group(inner) | NodeKind::Run(inner) => self.root_assignment(inner), _ => None }
     }
 
-    fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Binding) -> Result<(), Error> {
+    fn assign_selected(&self, nodes: &[Node], modifier: Option<Function>, value: &Binding) -> Result<(), Error> {
         if let Some(span) = self.root_assignment(nodes) { return Err(span.error(ErrorKind::Syntax, INVALID_SELECTION)); }
         let right = &value.clone().into_value(&nodes[0].span)?;
         let span = crate::syntax::cover(nodes);
@@ -350,7 +350,7 @@ impl Session {
     }
 
     /// Writes `values` at `selection` into the array that `binding` kept, then stores it under the name.
-    fn write_selection(&mut self, binding: ArrayBinding, selection: &Selection, values: &Value, span: &Span) -> Result<(), Error> {
+    fn write_selection(&self, binding: ArrayBinding, selection: &Selection, values: &Value, span: &Span) -> Result<(), Error> {
         // The items already in the array passed this check when they were stored.
         if values.environment() > binding.owner { return Err(span.domain_error("array would export a local closure")); }
         self.write_kept(binding, span, |value, context| selection.write_into(value, values, context))
@@ -358,7 +358,7 @@ impl Session {
 
     /// Runs `write` on the array that `binding` kept, then stores it under the name. The name's current binding goes first, so the write happens in place unless something else holds the array. Running levels record the write first (`Session::record_write`), so a batched map stops before it. `write` makes every check before it changes anything, so an error or a stop leaves the name as it was. `fusion_report` reports a write that computes a pending array, as `←`.
     fn write_kept(
-        &mut self, binding: ArrayBinding, span: &Span, write: impl FnOnce(&mut Value, &mut crate::execution::Context<'_>) -> Result<(), Error>
+        &self, binding: ArrayBinding, span: &Span, write: impl FnOnce(&mut Value, &crate::execution::Context<'_>) -> Result<(), Error>
     ) -> Result<(), Error> {
         let ArrayBinding { name, owner, mut value } = binding;
         if self.transforming() { self.record_write(owner, &name).at(span)?; }
@@ -367,7 +367,7 @@ impl Session {
         let current = self.remove_name(owner, &name);
         let same = matches!(&current, Some(Binding::Value(v)) if v.storage_id() == value.storage_id());
         let current = current.filter(|_| !same);
-        if let Err(e) = write(&mut value, &mut self.at(span)) {
+        if let Err(e) = write(&mut value, &self.at(span)) {
             if let Some(restored) = if same { Some(Binding::Value(value)) } else { current } { self.insert_name(owner, &name, restored); }
             return Err(e);
         }
@@ -377,7 +377,7 @@ impl Session {
     }
 
     /// A target whose text gives its positions: `I⌷`, `.[I]` or a path `L⊃` of a name or of such a target, as dot access writes them. It gives the binding and the selection without the labels that other targets need. Each index is evaluated once and its node becomes its value, so a target that needs labels after all evaluates nothing twice.
-    fn direct_target(&mut self, nodes: &mut [Node]) -> Result<Option<(ArrayBinding, Selection)>, Error> {
+    fn direct_target(&self, nodes: &mut [Node]) -> Result<Option<(ArrayBinding, Selection)>, Error> {
         let span = nodes[0].span.clone();
         match nodes {
             [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_target(inner),
@@ -397,7 +397,7 @@ impl Session {
     }
 
     /// The array that `nodes` names, or the one whole item that a direct target reaches: its binding and its path.
-    fn direct_item(&mut self, nodes: &mut [Node]) -> Result<Option<(ArrayBinding, Vec<usize>)>, Error> {
+    fn direct_item(&self, nodes: &mut [Node]) -> Result<Option<(ArrayBinding, Vec<usize>)>, Error> {
         match nodes {
             [Node { kind: NodeKind::Name(name), span }] => Ok(Some((self.array_binding(name, span)?, vec![]))),
             [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_item(inner),
@@ -409,14 +409,14 @@ impl Session {
     }
 
     /// The value of `node`, which then becomes a literal, so that nothing evaluates it again.
-    fn evaluate_once(&mut self, node: &mut Node) -> Result<Value, Error> {
+    fn evaluate_once(&self, node: &mut Node) -> Result<Value, Error> {
         let value = self.array_result(std::slice::from_ref(node))?;
         node.kind = NodeKind::Literal(value.clone());
         Ok(value)
     }
 
     /// The target `nodes` evaluated on its root name's array, labelled at label level `level` (`selection::labelled`), with the binding the name kept and the labels that turn the result's labels back into places. A group or run that ends the target is the root of the nodes before it.
-    fn selection_expression(&mut self, nodes: &[Node], level: u64) -> Result<(ArrayBinding, crate::selection::Labels, Value), Error> {
+    fn selection_expression(&self, nodes: &[Node], level: u64) -> Result<(ArrayBinding, crate::selection::Labels, Value), Error> {
         let members = self.members(nodes);
         let nodes = &members[..];
         let root = nodes.len() - 1;
@@ -441,7 +441,7 @@ impl Session {
     }
 
     /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. A target at a fill reads the fill, and its write is dropped. An error leaves the array unchanged. When `f` is a pervasive primitive, `pervasive::scatter` combines the targets into the array in place. Where it can't, one call covers all the targets at distinct positions, and repeated positions take rounds. Any other `f` runs once for each target. `•explain` records each path as an accumulation.
-    fn write_modified(&mut self, binding: ArrayBinding, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<(), Error> {
+    fn write_modified(&self, binding: ArrayBinding, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<(), Error> {
         // The routes below read each target's offset or path, so a walk lists its targets first.
         if let Some(listed) = selection.listed() { return self.write_modified(binding, &listed, f, right, span); }
         let right = selection.checked(right, &self.at(span))?;
@@ -490,7 +490,7 @@ impl Session {
         for i in 0..selection.targets.len() {
             let path = selection.targets.path(i);
             let item = match latest.get(path) { Some(&j) => results[j].clone(), None => crate::primitive::item_at(original, path) };
-            results.push(f.call_array(Some(&item), &selection.item(&right, i), &mut self.at(span))?);
+            results.push(f.call_array(Some(&item), &selection.item(&right, i), &self.at(span))?);
             latest.insert(path, i);
         }
         crate::explain::accumulated(selection.targets.len(), original.len(), "item by item");

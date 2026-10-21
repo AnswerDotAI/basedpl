@@ -1385,21 +1385,14 @@ fn scanned_under(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Lanes
     };
     let plan = |numeric: Numeric| ScanPlan { seed: seed.filter(|_| starts.is_none()), starts: starts.as_deref(), axis, shape: right.shape().to_vec(), numeric,
         inverse, flip };
-    // `+\`, from a seed that fits 64 bits or from none, and `-\` of narrow integers, bound their running sums by the seed and the items' least and greatest values, and scan straight into the width that holds them. Other scans of integers run at 64 bits, and the result narrows in a pass of its own once the scan ends. `⌈\`, `⌊\`, comparisons and inverses scan at the items' own width first: a maximum or minimum never leaves it, a comparison gives 0 or 1, and an inverse whose difference doesn't fit scans again at 64 bits.
+    // `+\` and `-\`, from a seed that fits 64 bits or from none, bound their results by the seed and the items' least and greatest values, and scan straight into the width that holds them. A `-\` whose results 64 bits might not hold scans at 64 bits with checks, as other functions do. Other scans of integers run at 64 bits, and the result narrows in a pass of its own once the scan ends. `⌈\`, `⌊\`, comparisons and inverses scan at the items' own width first: a maximum or minimum never leaves it, a comparison gives 0 or 1, and an inverse whose difference doesn't fit scans again at 64 bits.
     let integers = |ints: Ints| {
-        let simple = seed.is_none() && !inverse && axis.inner == 1;
-        let minus = matches!(p, Primitive::Arithmetic(Arithmetic::Minus)) && !inverse;
-        // A narrow `-\` subtracts its running sums from `2×x0`, with no widened copy. Another `-\` is `+\` of a copy whose items after each lane's first are negated, or all of them after a seed.
-        if minus && simple && !matches!(ints, Ints::I64(_)) { return with_ints!(ints, |data| integer_sums(data, axis, true, None, right.shape().to_vec())); }
-        let tail: Vec<i64>;
-        let (p, ints) = if minus && !matches!(&ints, Ints::I64(d) if d.contains(&i64::MIN)) {
-            tail = with_ints!(ints, |data| reduce::negated_tail(data, axis.dims(), seed.is_some(), |n| n.into()));
-            (Primitive::Arithmetic(Arithmetic::Plus), Ints::I64(&tail))
-        } else { (p, ints) };
-        // A seed that fits 64 bits starts each lane's sums.
+        let minus = matches!(p, Primitive::Arithmetic(Arithmetic::Minus));
+        // A seed that fits 64 bits starts each lane's sums or differences.
         let start = match seed { None => Some(None), Some(s) if s.is_atom() => i64::slice(s).map(|v| Some(v[0])), Some(_) => None };
-        if let (Primitive::Arithmetic(Arithmetic::Plus), false, Some(start)) = (p, inverse, start) {
-            return with_ints!(ints, |data| integer_sums(data, axis, false, start, right.shape().to_vec()));
+        if let (Primitive::Arithmetic(Arithmetic::Plus | Arithmetic::Minus), false, Some(start)) = (p, inverse, start) {
+            let sums = with_ints!(&ints, |data| integer_sums(&data[..], axis, minus, start, right.shape().to_vec()));
+            if sums.is_some() || !minus { return sums; }
         }
         if inverse || p.info().dyad.picks || p.facts(true).booleans {
             let narrow = with_ints!(&ints, |data| plan(numeric.exact()).of(&data[..]).and_then(|scan| narrow_scan(p, scan)));
@@ -1437,21 +1430,23 @@ fn seeded(p: Primitive, right: &Value, seed: &Value, axis: &Lanes) -> Option<Vec
     bool::slice(&results).map(<[bool]>::to_vec)
 }
 
-/// The scan of floats of width `F`. `+\`, `×\`, `⌈\` and `⌊\` run through `rustymath::reduce`'s scans, by `Scan::reduced`, and `-\` as `+\` of a copy with each lane's items after its first negated.
+/// The scan of floats of width `F`. `+\`, `×\`, `⌈\` and `⌊\` run through `rustymath::reduce`'s scans, by `Scan::reduced`, and `-\` through its running differences, by `Scan::differences`.
 fn float_scan<'a, F: Float + Native + Kernels>(p: Primitive, plan: ScanPlan<'a>, data: &'a [F]) -> Option<Value> where bool: Source<F> {
-    if let Some(tail) = plan.minus_tail(p, data) { return float_scan(Primitive::Arithmetic(Arithmetic::Plus), plan, &tail); }
     let scan = plan.of(data)?;
     match p {
-        Primitive::Arithmetic(Arithmetic::Plus) => scan.reduced::<reduce::Sum>(), Primitive::Arithmetic(Arithmetic::Times) => scan.reduced::<reduce::Product>(),
+        Primitive::Arithmetic(Arithmetic::Plus) => scan.reduced::<reduce::Sum>(), Primitive::Arithmetic(Arithmetic::Minus) if !scan.inverse => scan.differences(),
+        Primitive::Arithmetic(Arithmetic::Times) => scan.reduced::<reduce::Product>(),
         Primitive::Math(Math::Ceiling) => scan.reduced::<reduce::Max>(), Primitive::Math(Math::Floor) => scan.reduced::<reduce::Min>(), _ => F::dyad(p, scan)?
     }
 }
 
-/// The scan of complex numbers whose parts have width `F`. `+\` runs through rustymath's running sums, by `Scan::reduced`, and `-\` as `+\` of a copy with each lane's items after its first negated.
+/// The scan of complex numbers whose parts have width `F`. `+\` runs through rustymath's running sums, by `Scan::reduced`, and `-\` through its running differences, by `Scan::differences`.
 fn complex_scan<'a, F: Native>(p: Primitive, plan: ScanPlan<'a>, data: &'a [Complex<F>]) -> Option<Value> where Complex<F>: Kernels, bool: Source<Complex<F>> {
-    if let Some(tail) = plan.minus_tail(p, data) { return complex_scan(Primitive::Arithmetic(Arithmetic::Plus), plan, &tail); }
     let scan = plan.of(data)?;
-    match p { Primitive::Arithmetic(Arithmetic::Plus) => scan.reduced::<reduce::Sum>(), _ => Complex::<F>::dyad(p, scan)? }
+    match p {
+        Primitive::Arithmetic(Arithmetic::Plus) => scan.reduced::<reduce::Sum>(), Primitive::Arithmetic(Arithmetic::Minus) if !scan.inverse => scan.differences(),
+        _ => Complex::<F>::dyad(p, scan)?
+    }
 }
 
 /// How a scan runs, whatever its items: the seed, the axis, the result's shape, the numeric settings, and whether it inverts.
@@ -1461,10 +1456,6 @@ impl<'a> ScanPlan<'a> {
     fn of<A: Stored>(self, data: &'a [A]) -> Option<Scan<'a, A>> {
         let seed = match self.seed { None => None, Some(s) if s.is_atom() => Some(A::slice(s)?[0]), Some(_) => return None };
         Some(Scan { data, seed, starts: self.starts, axis: self.axis, shape: self.shape, numeric: self.numeric, inverse: self.inverse, flip: self.flip })
-    }
-    /// For `-\` when the scan doesn't invert, `data` with each lane's items after its first negated, which `+\` then scans.
-    fn minus_tail<A: Copy + std::ops::Neg<Output = A>>(&self, p: Primitive, data: &[A]) -> Option<Vec<A>> {
-        matches!((p, self.inverse), (Primitive::Arithmetic(Arithmetic::Minus), false)).then(|| reduce::negated_tail(data, self.axis.dims(), self.seed.is_some(), |x| x))
     }
 }
 
@@ -1508,18 +1499,18 @@ fn narrow_scan<T: Whole + Kernels>(p: Primitive, scan: Scan<'_, T>) -> Option<Va
     }
 }
 
-/// Running sums along each lane, from `start` or 0, of items between `lo` and `hi`. With `minus`, `-\` along lanes of consecutive items instead: `((x0 - x1) - x2) - …` is `2×x0` less the running sum. `start`, `lo`, `hi` and the lanes' length bound every sum and difference, which fixes the narrowest width that holds them before any is written. The scan wraps at that width, which leaves every sum exact. `None` where 64 bits might not hold them.
+/// Running sums along each lane, from `start` or 0, of items between `lo` and `hi`, or with `minus`, running differences. `start`, `lo`, `hi` and the lanes' length bound every result, which fixes the narrowest width that holds them before any is written. The scan wraps at that width, which leaves every result exact. `None` where 64 bits might not hold them.
 fn running_sums<T: reduce::Term>(data: &[T], [lo, hi]: [i64; 2], axis: &Lanes, minus: bool, start: Option<i64>, shape: Vec<usize>) -> Option<Value> {
     let [least, most] = rustymath::integer::sum_bounds([lo, hi], axis.len, start, minus)?;
     with_width!(Width::narrowest(least, most), U => {
         let mut result: Vec<U> = Vec::with_capacity(data.len());
-        if minus { reduce::subtract_sums(data, axis.len, &mut result); }
+        if minus { reduce::difference_scan_as(data, axis.dims(), start.map(reduce::Tally::low), &mut result); }
         else { reduce::scan_along::<T, reduce::SumAs<U>>(data, axis.dims(), start.map(reduce::Tally::low), &mut result); }
         U::build(shape, result)
     })
 }
 
-/// `+\` on integers, from `start` or 0, or with `minus`, `-\` along lanes of consecutive integers narrower than 64 bits, through `running_sums`. Where 64 bits might not hold the sums, `+\` runs through rustymath's running sums at 64 bits, which report overflow. `None` on overflow.
+/// `+\` on integers, or with `minus`, `-\`, from `start` or 0, through `running_sums`. Where 64 bits might not hold the sums, `+\` runs through rustymath's running sums at 64 bits, which report overflow. `None` on overflow, and for `-\` wherever 64 bits might not hold the differences.
 fn integer_sums<T: Whole>(data: &[T], axis: &Lanes, minus: bool, start: Option<i64>, shape: Vec<usize>) -> Option<Value> where
     reduce::Sum: Reduction<T, Total = i64>, reduce::Max: Reduction<T, Total = T>, reduce::Min: Reduction<T, Total = T> {
     let (lo, hi) = reduce::extremes(data);
@@ -1548,6 +1539,13 @@ impl<A: Stored> Scan<'_, A> {
     fn reduced<R: Reduction<A, Total = A>>(self) -> Option<Value> {
         let mut result = Vec::with_capacity(self.data.len());
         if !reduce::scan_along::<A, R>(self.data, self.axis.dims(), self.seed, &mut result) { return None; }
+        A::build_narrowed(self.shape, result)
+    }
+    /// The scan by `-`, through `reduce::difference_scan_along`.
+    #[inline]
+    fn differences(self) -> Option<Value> where A: std::ops::Neg<Output = A> + std::ops::Add<Output = A> {
+        let mut result = Vec::with_capacity(self.data.len());
+        reduce::difference_scan_along(self.data, self.axis.dims(), self.seed, &mut result);
         A::build_narrowed(self.shape, result)
     }
     /// The inverse of a scan by `f`: each item after a lane's first row combined with the item one row before it, and the first row with the seed, as `f(before, item)`, or as `f(item, before)` with `flip`.

@@ -18,7 +18,7 @@ The setting persists across inputs and loaded files. When enabled, simplified, t
 
 A name accepts characters not reserved for syntax, glyphs, numbers or whitespace, including hanzi and emoji. A digit ends a name, as it ends a glyph. `f2` therefore applies `f` to 2, the same way `⍳2` applies `⍳` to 2.
 
-`_` adds the next non-whitespace character to a name. When Hanzi aliases are enabled, hanzi cannot occur in names, even escaped. Digits straight after `_` all stay in the name. A name can't end in `_`, except the lone name `_`. A lone `_` is a name when a space, `]`, `)`, `←`, `;`, `⋄` or the end of the line follows it. Assign to `_` a value that nothing reads.
+`_` adds the next non-whitespace character to a name, including glyphs and Hanzi aliases: `_+` and `_加_总` are names. Hanzi that aren't aliases remain name characters when aliases are enabled. Digits straight after `_` all stay in the name. A name can't end in `_`, except the lone name `_`. A lone `_` is a name when a space, `]`, `)`, `←`, `;`, `⋄` or the end of the line follows it. Assign to `_` a value that nothing reads.
 
 After a dot, digits stay in the key: `T.q1` is the entry with key `q1`.
 
@@ -164,4 +164,4 @@ Spaces change grouping only at the first two levels.
 
 ## Syntax highlighting
 
-The [BPL TextMate grammar](https://cdn.jsdelivr.net/npm/basedpl/bpl.tmLanguage.json) works with TextMate-compatible editors and Shiki. It is generated from the Quarto XML definition by `scripts/prep.py` and is also included in the Python and npm packages as `bpl.tmLanguage.json`.
+Use `bpl` code fences for ordinary names and `hpl` for Hanzi glyph spellings. The [BPL TextMate grammar](https://cdn.jsdelivr.net/npm/basedpl/bpl.tmLanguage.json) and its [BPL (Hanzi) overlay](https://cdn.jsdelivr.net/npm/basedpl/hpl.tmLanguage.json) work with TextMate-compatible editors and Shiki. `scripts/prep.py` generates both from the Quarto XML and shared glyph table. The Python and npm packages include `bpl.tmLanguage.json` and `hpl.tmLanguage.json`. Load both grammars to use `hpl`.

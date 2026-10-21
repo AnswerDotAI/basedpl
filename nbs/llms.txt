@@ -28,7 +28,7 @@ Each entry below names a difference from Dyalog APL, gives a short example, and 
 - [Dfns](dfns.html.md): BPL has only dfns, with no tradfns and no control structures such as `:If`. A dfn returns its last statement. A predicate picks a body, as in BQN: `{⍵<0?-⍵;⍵} ¯3` is `3`. An absent `⍺` drops out of expressions, as BQN's `𝕨` does. A dfn operator's operands are `⍶` and `⍹`, not `⍺⍺` and `⍵⍵`. `⍢` calls the operator recursively. An error guard names its kinds as text, as in `"DOMAIN"::`.
 - [Assignment](assignment.html.md): `←` is local. Modified and selective updates change the nearest binding. `[a b]←Y` destructures the items of `Y` by position. A space before `←` makes the whole run the target: `[[0 2]]⌷v ←0`.
 - [Modules and namespaces](modules.html.md): `•load "file.bpl"` runs a module and returns its public names as a record. Names that start with `_` are private.
-- [Hanzi spellings](syntax.html.md#hanzi-spellings): hanzi are ordinary name characters. A leading `•prefs ["hanzi_aliases":$t]` makes them spell glyphs instead, as in `加总` for `+/`.
+- [Hanzi spellings](syntax.html.md#hanzi-spellings): hanzi are ordinary name characters. A leading `•prefs ["hanzi_aliases":$t]` enables aliases such as `加总` for `+/`. Non-alias Hanzi remain names; `_` quotes any next non-whitespace character into a name, as in `_加_总`.
 - [Constants and `$` names](system/constants.html.md): `$t $f $n` are true, false and NaN. `$a` and `$d` hold the uppercase alphabet and the digits.
 - [Style](style.html.md): read before writing any BPL.
 

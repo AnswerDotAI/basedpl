@@ -92,7 +92,7 @@ pub(crate) struct Numeric {
     /// The comparison tolerance of 64-bit floats, which the `tolerance` pref sets.
     pub tolerance: Tolerance,
     /// The units in the last place within which narrower floats compare: 0, so that they compare exactly, except in `f⍣∞`.
-    units: f64,
+    pub(crate) units: f64,
     /// The width of new floats: literals parsed from now on, numbers read from data, and float results of exact arguments.
     pub width: FloatWidth,
     /// Whether a result's kind may depend on its arguments' values, which the `kinds` pref sets.
@@ -110,27 +110,14 @@ impl Kinds {
     pub(crate) fn named(name: &str) -> Option<Self> { [Self::Dynamic, Self::Static].into_iter().find(|k| k.name() == name) }
 }
 impl Default for Numeric { fn default() -> Self { Self::DEFAULT } }
-thread_local! {
-    /// The numeric settings of the session that last evaluated or parsed on this thread. Each evaluation and parse sets them from its session, and `•prefs` changes them. Nothing resets them. A value read after its evaluation ends reads under its session's settings, unless another session has run on the thread since. Kernels on rustymath's worker threads never read them: they get the values they need passed in.
-    static CURRENT: std::cell::Cell<Numeric> = const { std::cell::Cell::new(Numeric::DEFAULT) };
-}
 impl Numeric {
     /// Exact comparison at every width, for kernels that compare no floats.
     pub(crate) const EXACT: Self = Self { tolerance: Tolerance::EXACT, units: 0.0, width: FloatWidth::F64, kinds: Kinds::Dynamic, int: Width::I64 };
-    /// The settings of a new session.
+    /// The default settings.
     pub(crate) const DEFAULT: Self = Self { tolerance: Tolerance::DEFAULT, ..Self::EXACT };
-    /// The settings of the session that last evaluated or parsed on this thread.
-    pub(crate) fn current() -> Self { CURRENT.with(std::cell::Cell::get) }
-    /// Makes these settings this thread's, as each evaluation, each parse and `•prefs` do.
-    pub(crate) fn set_current(self) { CURRENT.with(|c| c.set(self)) }
-    /// Runs `f` with these settings as this thread's, then restores the settings they replaced, even if `f` panics. Forcing a pending array runs its work this way, under the settings it was made under.
-    pub(crate) fn while_current<R>(self, f: impl FnOnce() -> R) -> R {
-        struct Restore(Numeric);
-        impl Drop for Restore { fn drop(&mut self) { self.0.set_current(); } }
-        let _restore = Restore(Self::current());
-        self.set_current();
-        f()
-    }
+    /// The settings in force (`settings`).
+    #[inline]
+    pub(crate) fn current() -> Self { crate::settings::numeric() }
     /// Applies the `•prefs` setting `key` with `value`. Gives whether `key` is a numeric setting, or why `value` is invalid for it. `•prefs` and a leading header's lexing both apply settings through it.
     pub(crate) fn set(&mut self, key: &str, value: &Value) -> Result<bool, &'static str> {
         let integer = || value.as_number().and_then(|n| n.integer().ok());
@@ -176,6 +163,7 @@ impl Numeric {
         widths.into_iter().flatten().max().unwrap_or(self.width)
     }
     /// Whether every result's kind follows from kinds alone.
+    #[inline]
     pub(crate) fn is_static(self) -> bool { self.kinds == Kinds::Static }
     /// Exact comparison, as `EXACT` gives, under these kinds settings. Integer and Boolean kernels take it.
     pub(crate) fn exact(self) -> Self { Self { kinds: self.kinds, int: self.int, ..Self::EXACT } }
@@ -611,6 +599,7 @@ impl Number {
         Ok(if plain_suffixes(text).1.is_some() { n } else { n.marked(true) })
     }
     pub(crate) fn bool_slice(&self) -> Option<&[bool]> { match &self.0 { Boolean(b) => Some(std::slice::from_ref(b)), _ => None } }
+    #[inline]
     pub fn is_exact(&self) -> bool { matches!(self.0, Boolean(_) | Integer(_) | Exact(_)) }
     pub(crate) fn is_integral(&self) -> bool { matches!(self.0, Boolean(_) | Integer(_)) || matches!(&self.0, Exact(n) if n.is_integer()) }
     /// The domain this number computes in: exact, complex, or real in 64 bits.
@@ -1084,7 +1073,10 @@ impl Number {
     }
 
     /// The operands of a call that `Numeric::halving` widens, with its 16-bit floats as the 32-bit floats it runs on, the settings it runs under, and whether it rounds its float results back to 16 bits. It's the rule `pervasive::halves` applies to arrays. An exact operand stays exact, and converts once, at the width the call runs at. `None` for a call that runs at its own width.
+    #[inline]
     pub(crate) fn halves(x: Option<&Self>, y: &Self, t: Numeric) -> Option<(Option<Self>, Self, Numeric, bool)> {
+        // Most calls have no 16-bit operand, and a tag test decides that before the iterator that `halving` takes.
+        if t.width != FloatWidth::F16 && !matches!(y.0, Half(..)) && !x.is_some_and(|x| matches!(x.0, Half(..))) { return None; }
         let (t, halve) = t.halving([x.and_then(Self::float_width), y.float_width()].into_iter())?;
         let single = |n: &Self| if matches!(n.0, Half(..)) { n.to_float_width(FloatWidth::F32).expect("a 16-bit float widens") } else { n.clone() };
         Some((x.map(single), single(y), t, halve))

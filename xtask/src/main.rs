@@ -46,7 +46,8 @@ fn main() -> anyhow::Result<()> {
     });
     fs::write(pkg.join("package.json"), serde_json::to_string_pretty(&package)?)?;
     fs::copy(root.join("wasm/README.md"), pkg.join("README.md"))?;
-    let assets = ["python/basedpl/lb.js", "python/basedpl/input.js", "python/basedpl/layout.json", "python/basedpl/bpl.tmLanguage.json", "src/canvas.js"]
+    let assets = ["python/basedpl/lb.js", "python/basedpl/input.js", "python/basedpl/layout.json", "python/basedpl/bpl.tmLanguage.json",
+        "python/basedpl/hpl.tmLanguage.json", "src/canvas.js"]
         .map(|a| root.join(a));
     for asset in &assets { fs::copy(asset, pkg.join(asset.file_name().expect("an asset is a file")))?; }
     if out.is_none() {

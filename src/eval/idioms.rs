@@ -76,10 +76,10 @@ impl Idiom {
         }
     }
     /// Records the combination for `•explain`, where it's on. `f` is the function that the combination computes.
-    pub(super) fn taken(&self, f: &Function, cx: &Context<'_>) { if cx.session.explaining { crate::explain::fast(self.name(), f.bpl()); } }
+    pub(super) fn taken(&self, f: &Function) { if crate::explain::recording() { crate::explain::fast(self.name(), f.bpl()); } }
     /// The idiom's result for these arguments, or `None` where they don't suit it. `f` is the function that the idiom computes.
     #[inline(never)]
-    pub(super) fn call(&self, f: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
+    pub(super) fn call(&self, f: &Function, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
         let result = match *self {
             Idiom::Selected { grade, down, pick } => selected(grade, down, pick, left, right, cx),
             Idiom::Ranks { down } => ranks(down, left, right, cx),
@@ -88,13 +88,13 @@ impl Idiom {
             Idiom::Determinant => determinant(left, right, cx),
             Idiom::Permanent => permanent(left, right, cx),
         };
-        if result.is_some() { self.taken(f, cx); }
+        if result.is_some() { self.taken(f); }
         result
     }
 }
 
 /// The items of `right`'s order that `pick` names, through rustymath's partial selection.
-fn selected(grade: bool, down: bool, pick: Pick, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
+fn selected(grade: bool, down: bool, pick: Pick, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
     use rustymath::buffer::View;
     if left.is_some() || right.shape().len() != 1 || right.keys(0).is_some() || cx.carried(None, right) { return None; }
     let n = right.len();
@@ -121,12 +121,12 @@ fn selected(grade: bool, down: bool, pick: Pick, left: Option<&Value>, right: &V
             let selector = Value::new([1], vec![positions]).error_at(cx.span, "invalid selected order")?;
             Primitive::Index.call(Some(&selector), right, cx)?
         };
-        Ok(Bound::from(if item { crate::primitive::pick(&Value::integer(0), &selected, cx.session.prototype, cx)? } else { selected }))
+        Ok(Bound::from(if item { crate::primitive::pick(&Value::integer(0), &selected, cx.session.prototype.get(), cx)? } else { selected }))
     })())
 }
 
 /// Each major cell's rank in the order that `⍋` or, where `down`, `⍒` gives: the inverse of the grade's permutation.
-fn ranks(down: bool, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
+fn ranks(down: bool, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
     use {crate::array::Items, rustymath::buffer::View};
     if left.is_some() || right.shape().is_empty() || right.keys(0).is_some() || cx.carried(None, right) { return None; }
     let grade = match Primitive::Grade(down).call(None, right, cx) { Ok(g) => g, Err(e) => return Some(Err(e)) };
@@ -136,8 +136,8 @@ fn ranks(down: bool, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) 
     Some(Value::positions_u32([n], n, ranks).and_then(|r| r.along_first_of(right)).error_at(cx.span, "invalid ranks").map(Bound::from))
 }
 
-/// Monadic `-.×`. A square matrix takes `primitive::determinant`. A running level takes a call on its carried values before the idiom (`transform::route`).
-fn determinant(left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
+/// Monadic `-.×`. A square matrix takes `primitive::determinant`. A running level takes a call on its carried values before the idiom (`transform::call`).
+fn determinant(left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
     if left.is_some() { return None; }
     let [m, n] = matrix(right)?;
     if m != n || n == 0 { return None; }
@@ -145,7 +145,7 @@ fn determinant(left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Opt
 }
 
 /// Monadic `+.×` of a square matrix of fewer than 64 rows of numbers, by rustymath's `permanent_with` at the matrix's own field, which `primitive::determinant` also reads.
-fn permanent(left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
+fn permanent(left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
     use crate::number::{read, with_field, Domain, Field};
     if left.is_some() || cx.carried(None, right) { return None; }
     let [m, n] = matrix(right)?;

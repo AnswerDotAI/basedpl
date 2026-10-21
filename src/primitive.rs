@@ -5,7 +5,7 @@ use crate::{
     execution::Context, keyed::Selector, number::{int::Int, Arithmetic, Math, Numeric}, search::{classify, first_matches, firsts, grouped, Cells},
     At, DomainAt, Error, ErrorAt, ErrorKind, Number, Span, Value
 };
-use foldhash::{HashMap, HashMapExt};
+use rustymath::hashing::{HashMap, HashMapExt};
 use rand::RngExt;
 use std::{borrow::Cow, cmp::Ordering};
 use crate::transform::Plain;
@@ -30,22 +30,16 @@ impl Operation {
     pub(crate) const MINUS_TIMES: Self = Self::Product(Primitive::Arithmetic(Arithmetic::Minus), Primitive::Arithmetic(Arithmetic::Times));
     /// Whether Rank's routes run the operation with this valence on a whole stack of matrices at once (`primitive::stacked`): `⌹`, dyadic `+.×` and monadic `-.×`.
     pub(crate) fn stacks(self, dyadic: bool) -> bool { matches!((self, dyadic), (Self::Primitive(Primitive::MatrixDivide), _) | (Self::PLUS_TIMES, true) | (Self::MINUS_TIMES, false)) }
-    /// The operation on `left` and `right`, paired by `pairing`, as the newest running level among them takes it (`transform::call`), or else by its own code (`run`). It needs only a `&Context`, so code that holds no `&mut Context`, such as `∂`'s rules and Rank's routes on whole arguments, calls folds, products and stacks of matrices through it. A primitive along an axis calls `Primitive::call_axis`, which routes the same way. Under `•prefs ["fusion":$t]` or `•explain`, a call that computed pending arrays, where no call inside it reported, reports them as a function call does (`eval::fusion_report`), named by the operation's glyphs (`glyph`).
+    /// The operation on `left` and `right`, paired by `pairing`, as the newest running level among them takes it (`transform::call`), or else by its own code (`run`). `∂`'s rules and Rank's routes on whole arguments call folds, products and stacks of matrices through it. A primitive along an axis calls `Primitive::call_axis`, which routes the same way. Under `•prefs ["fusion":$t]` or `•explain`, a call that computed pending arrays, where no call inside it reported, reports them as a function call does (`eval::watched`), named by the operation's glyphs (`glyph`).
     pub(crate) fn call(self, pairing: crate::transform::Pairing<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
         if let (Self::Primitive(p), crate::transform::Pairing::Axis(axis)) = (self, &pairing) { return p.call_axis(left, right, *axis, cx); }
-        if !(cx.session.display.fusion | cx.session.explaining) { return self.routed(pairing, left, right, cx); }
-        let (reports, before) = (cx.session.fusion_reports.get(), crate::explain::computed_so_far());
-        let result = self.routed(pairing, left, right, cx);
-        let items = crate::explain::computed_so_far() - before;
-        if items > 0 && cx.session.fusion_reports.get() == reports {
-            let matrices = if matches!(pairing, crate::transform::Pairing::Matrices) { "⍤2" } else { "" };
-            crate::eval::fusion_report(cx, "fusion ends", &[self.glyph().as_str(), matrices].concat(), items);
-        }
-        result
+        if !crate::explain::reporting() { return self.routed(pairing, left, right, cx); }
+        let matrices = if matches!(pairing, crate::transform::Pairing::Matrices) { "⍤2" } else { "" };
+        crate::eval::watched(cx, || [self.glyph().as_str(), matrices].concat(), || self.routed(pairing, left, right, cx), || None)
     }
     /// The call as the newest running level takes it, or else by the operation's own code.
     fn routed(self, pairing: crate::transform::Pairing<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
-        if cx.session.transforming() { if let Some(result) = crate::transform::call(self, pairing, left, right, cx) { return result; } }
+        if cx.session.transforming() { if let Some(result) = crate::transform::call(crate::transform::Op::Operation(self, pairing), left, right, cx) { return result; } }
         self.run(pairing, left, right, cx)
     }
     /// The operation's own code: rustymath's kernels where they apply, and otherwise calls of the primitives that define it, each of which routes again. A fold or scan takes `eval::primitive_fold`, a product `eval::primitive_product` or `eval::primitive_expansion`, and `Pairing::Matrices` takes each matrix or pair of matrices (`eval::matrices`).
@@ -363,6 +357,7 @@ impl Dyad {
 }
 
 /// The number `e` holds, as a kernel reads it (`Value::computed`). A dual number is UNSUPPORTED, and any other value is DOMAIN.
+#[inline]
 pub(crate) fn numeric<'a>(e: &'a Value, span: &Span) -> Result<&'a Number, Error> {
     match e.computed().domain_at(span)? { Plain::Number(n) => Ok(n), _ => Err(span.domain_error("expected numeric elements")) }
 }
@@ -539,6 +534,18 @@ impl Primitive {
         let info = self.info();
         match left { None => info.monad.cells(right).map(|r| vec![r]), Some(x) => info.dyad.cells(x, right).map(Vec::from) }
     }
+    /// Whether this form, called with `dyadic` arguments, applies a kernel to each pair of items (`pervasive_apply`). Arithmetic, math functions and dyadic comparisons do, except the forms that `run_axis` gives code of their own: monadic `⊼`, `⊽`, `∨` and `∧`, and dyadic `~`. `run_axis` and `scalar_call` both decide by it.
+    #[inline]
+    pub(crate) fn scalar(self, dyadic: bool) -> bool {
+        match self {
+            Self::Arithmetic(_) => true,
+            Self::Math(Math::Nand | Math::Nor | Math::Gcd | Math::Lcm) => dyadic,
+            Self::Math(Math::Not) => !dyadic,
+            Self::Math(_) => true,
+            Self::Compare(_) => dyadic,
+            _ => false,
+        }
+    }
     /// Whether this form only selects or rearranges the items of its right argument. Under and selective assignment write back through such a form.
     pub(crate) fn selects(self, dyadic: bool) -> bool { matches!(self.facts(dyadic).form, Form::Moves { selects: Selects::Whole | Selects::Part, .. }) }
     /// Whether this form can drop items of its right argument. An inverse can't restore a dropped item, and Under uses an inverse only for a function with no such form.
@@ -595,7 +602,7 @@ impl Primitive {
     }
     pub(crate) fn call_axis(self, left: Option<&Value>, right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
         span.check()?;
-        if span.session.transforming() { if let Some(result) = crate::transform::call(Operation::Primitive(self), crate::transform::Pairing::Axis(axis), left, right, span) { return result; } }
+        if span.session.transforming() { if let Some(result) = crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Axis(axis)), left, right, span) { return result; } }
         self.run_axis(left, right, axis, span)
     }
     /// `call_axis` without routing to a running level: the primitive's own code, which a level's rule runs on a value that the level carries (`selection::call`).
@@ -603,6 +610,7 @@ impl Primitive {
         use Comparison::{Equal, Greater, GreaterEqual, Less, LessEqual, NotEqual};
         if axis.is_some() && !self.facts(left.is_some()).axes { return Err(span.error(ErrorKind::Syntax, "axis is not supported by this primitive")); }
         match (self, left) {
+            _ if self.scalar(left.is_some()) => self.pervasive_apply(left, right, span, false),
             (Self::Keys, None) => Ok(right.unkeyed()),
             (Self::Keys, Some(x)) => crate::keyed::construct(x, right, None).error_at(span, "invalid axis keys"),
             (Self::Identity(true), Some(x)) => Ok(x.clone()),
@@ -683,7 +691,7 @@ impl Primitive {
                 else { crate::keyed::partial_vector(right.axis_names().to_vec(), dimensions) };
                 shape.error_at(span, "invalid shape")
             }
-            (Self::Mix, Some(x)) => pick(x, right, span.session.prototype, span),
+            (Self::Mix, Some(x)) => pick(x, right, span.session.prototype.get(), span),
             (Self::Mix, None) => {
                 if let Some(axis) = axis { return mix_axes(right, &axis_value(axis), span); }
                 right.mix(Widening::Arrays).error_at(span, "cannot assemble cells")
@@ -699,27 +707,37 @@ impl Primitive {
                 }
                 right.enclose().error_at(span, "invalid enclosure")
             }
-            (Self::Take, None) => pick(&Value::integer(0), right, span.session.prototype, span),
+            (Self::Take, None) => pick(&Value::integer(0), right, span.session.prototype.get(), span),
             (Self::Drop, None) => split(right, axis, span),
             (Self::Take | Self::Drop, Some(x)) => take_drop(matches!(self, Self::Take), x, right, axis.map(|a| vec![a]).as_deref(), span),
-            _ => self.pervasive_apply(left, right, span, false),
+            _ => unreachable!("every form that `scalar` excludes has code of its own, and `apply` runs `⍎`"),
         }
     }
 
     fn pervasive_apply(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
-        let (wl, wr) = weakened(left, right);
-        let (left, right) = (wl.as_ref().or(left), wr.as_ref().unwrap_or(right));
-        if right.is_atom() && left.is_none_or(Value::is_atom) { return self.pervasive_item(left, right, span, fill); }
-        let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "array shapes do not agree")?;
-        self.pervasive_mapped(left, right, span, fill, agreement)
+        weakened(left, right, |left, right| {
+            if right.is_atom() && left.is_none_or(Value::is_atom) { return self.pervasive_item(left, right, span, fill); }
+            let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "array shapes do not agree")?;
+            self.pervasive_mapped(left, right, span, fill, agreement)
+        })
+    }
+    /// This form's result where it applies a kernel to each pair of items (`scalar`) and its arguments are numbers: what `pervasive_apply` gives, without the steps that arrays need, so that `Function::call` runs a call on numbers at once. `None` for any other form or arguments.
+    #[inline]
+    pub(crate) fn scalar_call(self, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Value, Error>> {
+        if !matches!(right, Value::Number(_)) || !left.is_none_or(|x| matches!(x, Value::Number(_))) || !self.scalar(left.is_some()) { return None; }
+        // A number reads as itself, without `numeric`'s check for a dual.
+        #[inline]
+        fn number<'a>(v: &'a Value, span: &Span) -> Result<&'a Number, Error> { match v { Value::Number(n) => Ok(n), v => numeric(v, span) } }
+        Some(weakened(left, right, |left, right| left.map(|x| number(x, span)).transpose().and_then(|x| self.on_numbers(x, number(right, span)?, Numeric::current(), span))))
     }
     /// `x f⊗ y` for a pervasive function. Each argument keeps its own axes, and the left argument's axes come first.
     pub(crate) fn outer(self, left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-        let (wl, wr) = weakened(Some(left), right);
-        let (left, right) = (wl.as_ref().unwrap_or(left), wr.as_ref().unwrap_or(right));
-        let agreement = Agreement::outer(left.layout(), right.layout()).error_at(span, "outer product is too large")?;
-        if span.session.transforming() { if let Some(result) = crate::transform::call(Operation::Primitive(self), crate::transform::Pairing::Outer(&agreement), Some(left), right, span) { return result; } }
-        self.pervasive_mapped(Some(left), right, span, false, agreement)
+        weakened(Some(left), right, |left, right| {
+            let left = left.expect("an outer product is dyadic");
+            let agreement = Agreement::outer(left.layout(), right.layout()).error_at(span, "outer product is too large")?;
+            if span.session.transforming() { if let Some(result) = crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Outer(&agreement)), Some(left), right, span) { return result; } }
+            self.pervasive_mapped(Some(left), right, span, false, agreement)
+        })
     }
     /// The function applied to the items that `agreement` pairs, laid out as `agreement` lays out the result.
     fn pervasive_mapped(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool, agreement: Agreement) -> Result<Value, Error> {
@@ -741,7 +759,7 @@ impl Primitive {
 
     fn pervasive_item(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
         span.check()?;
-        if !fill && span.session.transforming() { if let Some(result) = crate::transform::call(Operation::Primitive(self), crate::transform::Pairing::Axis(None), left, right, span) { return result; } }
+        if !fill && span.session.transforming() { if let Some(result) = crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Axis(None)), left, right, span) { return result; } }
         if matches!((self, left, right), (Self::Arithmetic(Arithmetic::Plus), None, Value::Character(_))) { return Ok(right.clone()); }
         if matches!(right, Value::Array(_)) || matches!(left, Some(Value::Array(_))) { return self.pervasive_apply(left, right, span, fill); }
         if let (Self::Arithmetic(op @ (Arithmetic::Plus | Arithmetic::Minus)), Some(left)) = (self, left) {
@@ -761,23 +779,26 @@ impl Primitive {
                 _ => float_like(0.0, right),
             });
         }
-        match self {
-            Self::Math(_) | Self::Arithmetic(_) | Self::Bitwise(_) => {
-                let x = left.map(|x| numeric(x, span)).transpose()?;
-                self.number(x, numeric(right, span)?, Numeric::current()).map(Value::Number).domain_at(span)
+        match (self, left, right) {
+            // Match, which `=` uses for items other than two numbers, treats NaN as one value.
+            (Self::Compare(op @ (Comparison::Equal | Comparison::NotEqual)), Some(x), y) if !matches!((x, y), (Value::Number(_), Value::Number(_))) => {
+                Ok(Value::Number(Number::from_bool(x.matches(y, span)? == matches!(op, Comparison::Equal))))
             }
-            // `=` follows IEEE, where NaN equals nothing. Match, which `=` uses for other items, treats NaN as one value.
+            _ => self.on_numbers(left.map(|x| numeric(x, span)).transpose()?, numeric(right, span)?, Numeric::current(), span),
+        }
+    }
+    /// This form's result on the number `y`, and on `x` when it's dyadic, under the settings `t`: the kernel that `pervasive_item` applies to each pair of items, and that `scalar_call` applies to a call on numbers. `=` follows IEEE, where NaN equals nothing.
+    fn on_numbers(self, x: Option<&Number>, y: &Number, t: Numeric, span: &Span) -> Result<Value, Error> {
+        match self {
+            Self::Math(_) | Self::Arithmetic(_) | Self::Bitwise(_) => self.number(x, y, t).map(Value::Number).domain_at(span),
             Self::Compare(op @ (Comparison::Equal | Comparison::NotEqual)) => {
-                let equal = match (left.unwrap(), right) {
-                    (Value::Number(x), Value::Number(y)) => x.equal(y, Numeric::current()).domain_at(span)?, (x, y) => x.matches(y, span)?
-                };
-                Ok(Value::Number(Number::from_bool(equal == matches!(op, Comparison::Equal))))
+                Ok(Value::Number(Number::from_bool(x.expect("a dyadic comparison").equal(y, t).domain_at(span)? == matches!(op, Comparison::Equal))))
             }
             Self::Compare(op) => {
-                let order = numeric(left.unwrap(), span)?.compare(numeric(right, span)?, Numeric::current()).domain_at(span)?;
+                let order = x.expect("a dyadic comparison").compare(y, t).domain_at(span)?;
                 Ok(Value::Number(Number::from_bool(order.is_some_and(|order| op.ordered(order)))))
             }
-            _ => unreachable!(),
+            _ => unreachable!("only arithmetic, math, bitwise and comparison functions apply a kernel to each item"),
         }
     }
 
@@ -880,10 +901,17 @@ pub(crate) fn pervade(
     pairwise(left, right, agreement, &|x, y| pervade(x, y, f, whole, span), span)
 }
 
-/// The replacements for `left` and `right` in a dyadic call, where a weak number beside an array or a strong number takes the width that `Number::weak_width` gives it, as NEP 50 treats a Python scalar (`Value::weakened`). Only a weak number beside an argument that isn't weak changes, so other calls return at once.
-fn weakened(left: Option<&Value>, right: &Value) -> (Option<Value>, Option<Value>) {
+/// `f` on `left` and `right` for a dyadic call, where a weak number beside an array or a strong number takes the width that `Number::weak_width` gives it, as NEP 50 treats a Python scalar (`Value::weakened`). Only a weak number beside an argument that isn't weak changes, so other calls pass their arguments straight to `f`.
+#[inline]
+fn weakened<R>(left: Option<&Value>, right: &Value, f: impl FnOnce(Option<&Value>, &Value) -> R) -> R {
     let weak = |v: &Value| matches!(v, Value::Number(n) if n.is_weak());
-    match left { Some(x) if weak(x) != weak(right) => (x.weakened(right), right.weakened(x)), _ => (None, None) }
+    match left {
+        Some(x) if weak(x) != weak(right) => {
+            let (wl, wr) = (x.weakened(right), right.weakened(x));
+            f(Some(wl.as_ref().unwrap_or(x)), wr.as_ref().unwrap_or(right))
+        }
+        _ => f(left, right),
+    }
 }
 
 /// `f` on each pair of items that `agreement` pairs from `left` and `right`, gathered as items and laid out as `agreement` lays out the result.

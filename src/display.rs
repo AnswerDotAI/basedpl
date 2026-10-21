@@ -1,6 +1,6 @@
 use rustymath::{buffer::FloatWidth, error::Kind};
 use std::borrow::Cow;
-use crate::{keyed, symbols::Notation, transform::Plain, ErrorAt, Number, Value};
+use crate::{keyed, settings, symbols::Notation, transform::Plain, ErrorAt, Number, Value};
 use unicode_width::UnicodeWidthStr;
 
 /// A column of numbers aligned on their decimal points: its widest text before the point, and its widest from the point on.
@@ -117,9 +117,9 @@ pub(crate) fn rows(shape: &[usize], edges: Option<usize>, last: Option<usize>) -
     }).collect()
 }
 
-/// Display settings for a session. `•prefs` reads and changes them.
+/// The display settings, which `•prefs` reads and changes.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct Settings { pub boxed: bool, pub trees: bool, pub functions: bool, pub dissect: bool, pub fusion: bool, pub elide: Elide }
+pub(crate) struct Settings { pub boxed: bool, pub trees: bool, pub functions: bool, pub dissect: bool, pub elide: Elide }
 
 impl Settings {
     /// The REPL's settings: boxed, with lines elided to the terminal's width.
@@ -147,11 +147,11 @@ impl Settings {
         Self { elide: Elide { prec: self.elide.prec, plain: self.elide.plain, notation: self.elide.notation, ..Elide::NONE }, ..*self }.array(a, inside)
     }
     /// Each setting's key and value. An unlimited count is `∞`, a float of `width`.
-    fn entries(&self, width: FloatWidth) -> [(&'static str, Value); 10] {
+    fn entries(&self, width: FloatWidth) -> [(&'static str, Value); 9] {
         let flag = |b| Value::Number(Number::from_bool(b));
         let count = |n: usize| Value::Number(if n == usize::MAX { Number::float(f64::INFINITY, width) } else { Number::from_integer(n as i64) });
         [
-            ("box", flag(self.boxed)), ("trees", flag(self.trees)), ("fns", flag(self.functions)), ("dissect", flag(self.dissect)), ("fusion", flag(self.fusion)),
+            ("box", flag(self.boxed)), ("trees", flag(self.trees)), ("fns", flag(self.functions)), ("dissect", flag(self.dissect)),
             ("limit", count(self.elide.limit)), ("edges", count(self.elide.edges)), ("prec", count(self.elide.prec)), ("width", count(self.elide.width)), (
                 "notation", keyed::text(match self.elide.notation {
                     Notation::Apl => "apl", Notation::Simplified => "simplified", Notation::Traditional => "traditional"
@@ -170,7 +170,6 @@ impl Settings {
             "trees" => self.trees = value.boolean()?,
             "fns" => self.functions = value.boolean()?,
             "dissect" => self.dissect = value.boolean()?,
-            "fusion" => self.fusion = value.boolean()?,
             "limit" => self.elide.limit = count(value)?,
             "edges" => self.elide.edges = count(value)?,
             "prec" => self.elide.prec = positive(value)?,
@@ -187,17 +186,17 @@ impl Settings {
     }
 }
 
-/// `•prefs Y` applies the settings in the record `Y` to the session, and returns all of them. The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `threads` is the number of threads that the session's large calls split across, from then on. 0 gives the default. 1 runs them on the evaluating thread alone. Until the session sets it, `threads` reports the evaluating thread's own setting. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::tried`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. A session starts with `batch` on.
-pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::Span) -> Result<(Value, bool), crate::Error> {
-    let (mut display, mut numeric, mut threads, mut hanzi_aliases, mut batch) = (session.display, session.numeric, session.threads, session.hanzi_aliases, session.batch);
-    let mut seed = None;
+/// `•prefs Y` applies the settings in the record `Y`, and returns all of them. Settings hold for the whole process (`settings`). The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `fusion` makes each call that computes a pending argument report it. `threads` is the number of threads that large calls split across, from then on. 0 gives the default. 1 runs them on the calling thread alone. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::tried`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. `batch` starts on.
+pub(crate) fn prefs(session: &crate::Session, right: &Value, span: &crate::Span) -> Result<(Value, bool), crate::Error> {
+    let (mut display, mut numeric, mut threads, mut seed) = (settings::display(), settings::numeric(), None, None);
+    let (mut hanzi_aliases, mut batch, mut fusion) = (settings::hanzi_aliases(), settings::batch(), settings::reports_fusion());
     let pairs = keyed::pairs(right).error_at(span, "•prefs takes a record of settings")?;
     let shy = !pairs.is_empty();
     for (key, value) in pairs {
         if numeric.set(&key, &value).map_err(|message| span.domain_error(message))? { continue; }
         match &*key {
             "hanzi_aliases" => {
-                if !session.prefacing { return Err(span.domain_error("hanzi_aliases needs a leading •prefs declaration on a literal record")); }
+                if !session.prefacing.get() { return Err(span.domain_error("hanzi_aliases needs a leading •prefs declaration on a literal record")); }
                 hanzi_aliases = value.boolean().error_at(span, "hanzi_aliases must be Boolean")?;
             }
             "threads" => {
@@ -208,24 +207,25 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
                 let n = value.as_number().and_then(|n| n.nonnegative_integer::<u64>().ok());
                 seed = Some(n.ok_or(Kind::Domain).error_at(span, "seed must be a nonnegative integer")?);
             }
-            "batch" => batch = Some(value.boolean().error_at(span, "batch must be Boolean")?),
+            "batch" => batch = value.boolean().error_at(span, "batch must be Boolean")?,
+            "fusion" => fusion = value.boolean().error_at(span, "fusion must be Boolean")?,
             key => {
                 if !display.set(key, &value).error_at(span, "invalid display setting")? { return Err(span.domain_error("unknown setting")); }
             }
         }
     }
-    (session.display, session.numeric, session.threads, session.hanzi_aliases, session.batch) = (display, numeric, threads, hanzi_aliases, batch);
-    if let Some(seed) = seed { session.generator = crate::distribution::Stream::seeded(seed); }
-    numeric.set_current();
+    settings::set_display(display);
+    settings::set_numeric(numeric);
+    settings::set_hanzi_aliases(hanzi_aliases);
+    settings::set_batch(batch);
+    settings::set_reports_fusion(fusion);
     if let Some(n) = threads { rustymath::parallel::set_threads(n); }
-    let entries = display.entries(numeric.width).into_iter().chain(numeric.entries());
-    let (mut keys, mut values): (Vec<std::sync::Arc<str>>, Vec<Value>) = entries.map(|(k, v)| (k.into(), v)).unzip();
-    keys.push("threads".into());
-    values.push(Value::integer(rustymath::parallel::thread_setting() as i64));
-    keys.push("hanzi_aliases".into());
-    values.push(Value::Number(Number::from_bool(hanzi_aliases)));
-    keys.push("batch".into());
-    values.push(Value::Number(Number::from_bool(session.batching())));
+    if let Some(seed) = seed { *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Stream::seeded(seed); }
+    let flag = |b| Value::Number(Number::from_bool(b));
+    let entries = display.entries(numeric.width).into_iter().chain(numeric.entries()).chain([
+        ("fusion", flag(fusion)), ("threads", Value::integer(rustymath::parallel::thread_setting() as i64)), ("hanzi_aliases", flag(hanzi_aliases)), ("batch", flag(batch)),
+    ]);
+    let (keys, values): (Vec<std::sync::Arc<str>>, Vec<Value>) = entries.map(|(k, v)| (k.into(), v)).unzip();
     Ok((keyed::vector(keys, values).error_at(span, "invalid settings record")?, shy))
 }
 

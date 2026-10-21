@@ -15,7 +15,7 @@ use crate::{
     array::Items, element::read_as, execution::Context,
     Error, ErrorKind, Value
 };
-use foldhash::fast::RandomState;
+use rustymath::hashing::Hashing;
 use rustymath::{
     buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains}, tolerant::{self, Near, Tolerance}, with_float_width
 };
@@ -50,7 +50,7 @@ fn compared_at(width: Option<FloatWidth>) -> (FloatWidth, Tolerance) {
 }
 
 /// For each needle, the position of the first haystack cell that matches it, or the number of haystack cells when none does.
-pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Error> {
+pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &impl crate::execution::Checks) -> Result<Vec<u32>, Error> {
     let (width, t) = compared_at(haystack.float_width().max(needles.float_width()));
     if let Some(found) = compact_view(haystack).zip(compact_view(needles)).and_then(|(x, y)| search::view_index_of(x, y, t, || span.check_now())) { return found; }
     let compact = with_float_width!(width, F => match (haystack, needles) {
@@ -59,7 +59,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &Context<'_
     });
     if let Some(found) = compact { return found; }
     if needles.len() > 1 && haystack.len() >= 8 && haystack.len().saturating_mul(needles.len()) >= 256 {
-        let seed = RandomState::default();
+        let seed = Hashing::default();
         if let Some(x) = hashes(haystack, &seed) { if let Some(y) = hashes(needles, &seed) { return hashed_first(haystack, &x, needles, &y, span); } }
         if let (Some(x), Some(y)) = (reals(haystack, width), reals(needles, width)) { return tolerant::index_of_with(t, &*x, &*y, || span.check_now()); }
         if let (Some(x), Some(y)) = (leading_reals(haystack, width), leading_reals(needles, width)) {
@@ -87,7 +87,7 @@ pub(crate) fn classify(cells: &Cells, span: &Context<'_>) -> Result<Vec<u32>, Er
         Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::classes_with(t, &x, || span.check())), Cells::Arrays(_) => None,
     });
     if let Some(classes) = compact { return classes; }
-    if let Some(x) = hashes(cells, &RandomState::default()) { return hashed_classes(cells, &x, span); }
+    if let Some(x) = hashes(cells, &Hashing::default()) { return hashed_classes(cells, &x, span); }
     if let Some(x) = reals(cells, width) { return tolerant::classes_with(t, &*x, || span.check()); }
     let mut classes = vec![0; cells.len()];
     if let Some(x) = leading_reals(cells, width) {
@@ -158,7 +158,7 @@ pub(crate) fn firsts(cells: &Cells, span: &Context<'_>) -> Result<Vec<bool>, Err
 }
 
 /// A hash of each cell by `seed`, when every cell holds only exact numbers, characters and unkeyed arrays of these. A search hashes both its arguments with the same seed.
-fn hashes(cells: &Cells, seed: &RandomState) -> Option<Vec<u64>> {
+fn hashes(cells: &Cells, seed: &Hashing) -> Option<Vec<u64>> {
     fn feed(value: &Value, state: &mut impl Hasher) -> Option<()> {
         match value {
             Value::Number(n) => match n.as_integer() { Some(i) => (0u8, i).hash(state), None => (1u8, n.exact_ref()?).hash(state) },
@@ -179,7 +179,7 @@ fn hashes(cells: &Cells, seed: &RandomState) -> Option<Vec<u64>> {
     }).collect()
 }
 
-fn hashed_first(haystack: &Cells, x: &[u64], needles: &Cells, y: &[u64], span: &Context<'_>) -> Result<Vec<u32>, Error> {
+fn hashed_first(haystack: &Cells, x: &[u64], needles: &Cells, y: &[u64], span: &impl crate::execution::Checks) -> Result<Vec<u32>, Error> {
     let mut chains = Chains::new(x.len());
     for (i, &hash) in x.iter().enumerate() { chains.push(hash, i); }
     y.iter().enumerate().map(|(j, &hash)| {

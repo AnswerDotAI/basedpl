@@ -61,24 +61,46 @@ impl crate::Input for Lines {
     fn rest(&self) -> std::io::Result<Vec<u8>> { Ok(self.0.lock().unwrap().drain(..).map(|line| line + "\n").collect::<String>().into_bytes()) }
 }
 
-/// The runs of a case without a `batch` field, each with the words that name it in a failure: the `batch` pref off, then on, then on with fusion's small sizes (`fusion::Sizes::SMALL`), under which every fusible call waits and a graph splits even small arrays into blocks.
-const RUNS: [(bool, bool, &str); 3] = [(false, false, ""), (true, false, "with the batch pref on"), (true, true, "with fusion at any size")];
+/// A run of a case: whether the `batch` pref is on, whether fusion takes its small sizes (`fusion::Sizes::SMALL`), and the words that name the run in a failure.
+type Run = (bool, bool, &'static str);
+/// The runs of a case without a `batch` field: the `batch` pref off, then on, then on with fusion's small sizes, under which every fusible call waits and a graph splits even small arrays into blocks.
+const RUNS: [Run; 3] = [(false, false, ""), (true, false, "with the batch pref on"), (true, true, "with fusion at any size")];
 
-/// The header options that set a flag on a case, each setting the field of its own name to `true`: `unfused` leaves out the run with fusion's small sizes, and `mixed` leaves out the comparison of the result's storage with the expectation's.
-const FLAGS: [&str; 2] = ["unfused", "mixed"];
+/// The header options that set a flag on a case, each setting the field of its own name to `true`: `unfused` leaves out the run with fusion's small sizes, `batched` leaves out the run with the `batch` pref off, `mixed` leaves out the comparison of the result's storage with the expectation's, and `serial` runs the case alone, as a case that calls `•prefs` must run.
+const FLAGS: [&str; 4] = ["unfused", "batched", "mixed", "serial"];
 
-/// Check `case`'s code against an independent captured value or BPL expectation. Each side receives a fresh session. A BPL expectation must match each number's exactness. A value captured from another interpreter carries none, so its numbers compare by value. A Boolean `batch` in `case` runs the code once, with the `batch` pref set to it. Without one, the code runs once for each of `RUNS`, leaving out the run with fusion's small sizes where `unfused` is set, as for a case that inspects fusion itself through `•explain`. Each run must meet the expectation, and each later run's value must be held in the same kind of storage as the first's. A failure's message names its run, and a failure ends the check before the runs after it.
-pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
-    let Some(code) = case["code"].as_str() else { return json!({"status":"invalid", "message":"missing code"}); };
+/// The runs that `case` takes: one with its Boolean `batch` field where it has one, and otherwise each of `RUNS` that its `unfused` and `batched` options leave in.
+fn runs(case: &JsonValue) -> Vec<Run> {
+    match case["batch"].as_bool() {
+        Some(batch) => vec![(batch, false, "")],
+        None => RUNS.into_iter().filter(|&(batch, fused, _)| !(fused && case["unfused"] == true) && (batch || case["batched"] != true)).collect(),
+    }
+}
+
+/// Puts in force the settings that `run` of a case runs under, where the case's file has the leading `•prefs` header `prefs`: the defaults, then the header, then the run's `batch` pref and fusion sizes.
+fn enter(prefs: Option<&str>, (batch, fused, _): Run) -> Result<(), JsonValue> {
+    crate::settings::reset();
+    if let Some(prefs) = prefs && let Some(error) = Session::new().eval_with(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() }).error {
+        return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
+    }
+    crate::settings::set_batch(batch);
+    crate::settings::set_small_sizes(fused);
+    Ok(())
+}
+
+/// One run of a case: the value its code gave, the numeric settings in force after it, and the value its BPL expectation gave.
+struct Outcome { value: Option<Value>, numeric: Numeric, expected: Option<Value> }
+
+/// `case`'s code checked against an independent captured value or BPL expectation, in `run`, under the settings in force. Each side receives a fresh session, and the expectation evaluates after the code, under the settings that the code leaves. A BPL expectation must match each number's exactness. A value captured from another interpreter carries none, so its numbers compare by value. A failure's message names its run.
+fn outcome(case: &JsonValue, (_, _, run): Run, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<Outcome, JsonValue> {
+    let Some(code) = case["code"].as_str() else { return Err(json!({"status":"invalid", "message":"missing code"})); };
     let error_kind = case["expected_error"].as_str().filter(|s| !s.is_empty());
-    let (output, input) = match (optional_text(case, "expected_output", "output expectation"), optional_text(case, "input", "input")) {
-        (Ok(output), Ok(input)) => (output, input), (Err(invalid), _) | (_, Err(invalid)) => return invalid
-    };
+    let (output, input) = (optional_text(case, "expected_output", "output expectation")?, optional_text(case, "input", "input")?);
+    let result = evaluated(code, input, timeout, interrupt)?;
     let (expected, no_result) = if let Some(source) = case["expected_code"].as_str() {
-        let expected = Session::new()
-            .eval_with(source, EvalOptions { timeout: options.timeout, interrupt: options.interrupt.clone(), echo: false, ..EvalOptions::default() });
+        let expected = Session::new().eval_with(source, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, ..EvalOptions::default() });
         if expected.error.is_some() || expected.function.is_some() || expected.operator.is_some() {
-            return json!({"status":"invalid", "message":"expectation must produce a value or no result", "actual":crate::protocol::response(expected)});
+            return Err(json!({"status":"invalid", "message":"expectation must produce a value or no result", "actual":crate::protocol::response(expected)}));
         }
         let no_result = expected.value.is_none();
         (expected.value, no_result)
@@ -87,69 +109,60 @@ pub fn check(case: &JsonValue, options: EvalOptions) -> JsonValue {
     let relative = case["relative_tolerance"].as_f64().unwrap_or(1e-13);
     let absolute = case["absolute_tolerance"].as_f64().unwrap_or(1e-13);
     if [relative, absolute].iter().any(|t| !t.is_finite() || *t < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
-        return json!({"status":"invalid", "message":"invalid or missing independent expectation"});
+        return Err(json!({"status":"invalid", "message":"invalid or missing independent expectation"}));
     }
-    let met = |result: crate::Evaluation| -> Result<Option<Value>, JsonValue> {
-        if let Some(error) = &result.error {
-            let kind = error.kind.to_string();
-            if matches!(error.kind, crate::ErrorKind::Timeout | crate::ErrorKind::Interrupt) {
-                return Err(json!({"status": kind.to_lowercase(), "message":error.message}));
-            }
-            if error_kind != Some(kind.as_str()) {
-                return Err(json!({"status":"error", "kind":kind, "message":error.message, "actual":crate::protocol::response(result)}));
-            }
-        }
-        let mismatch = if result.error.is_some() { None }
-        else if result.function.is_some() || result.operator.is_some() { Some("unexpected function or operator result".into()) } else {
-            match (error_kind, &result.value, &expected) {
-                (Some(kind), _, _) => Some(format!("expected {kind}")), (_, None, _) if no_result => None, (_, None, _) => Some("no result".into()),
-                (_, Some(_), _) if no_result => Some("expected no result".into()),
-                (_, Some(actual), Some(expected)) => difference(actual, expected, relative, absolute, exactness), _ => unreachable!()
-            }
-        };
-        let mismatch = mismatch.or_else(|| {
-            output.and_then(|expected| {
-                let written: String = result.output.iter().map(crate::Output::written).collect();
-                let actual = written.strip_suffix('\n').unwrap_or(&written);
-                (actual != expected).then(|| format!("output: {actual:?} != {expected:?}"))
-            })
-        });
-        match mismatch {
-            Some(message) => Err(json!({"status":"mismatch", "message":message, "actual":crate::protocol::response(result)})), None => Ok(result.value)
+    let failed = |mut failure: JsonValue| {
+        if !run.is_empty() { failure["message"] = json!(format!("{run}: {}", failure["message"].as_str().unwrap_or_default())); }
+        Err(failure)
+    };
+    if let Some(error) = &result.error {
+        let (kind, message) = (error.kind.to_string(), error.message.clone());
+        if matches!(error.kind, crate::ErrorKind::Timeout | crate::ErrorKind::Interrupt) { return failed(json!({"status": kind.to_lowercase(), "message":message})); }
+        if error_kind != Some(kind.as_str()) { return failed(json!({"status":"error", "kind":kind, "message":message, "actual":crate::protocol::response(result)})); }
+    }
+    let mismatch = if result.error.is_some() { None }
+    else if result.function.is_some() || result.operator.is_some() { Some("unexpected function or operator result".into()) } else {
+        match (error_kind, &result.value, &expected) {
+            (Some(kind), _, _) => Some(format!("expected {kind}")), (_, None, _) if no_result => None, (_, None, _) => Some("no result".into()),
+            (_, Some(_), _) if no_result => Some("expected no result".into()),
+            (_, Some(actual), Some(expected)) => difference(actual, expected, relative, absolute, exactness), _ => unreachable!()
         }
     };
-    let runs: Vec<_> = match case["batch"].as_bool() {
-        Some(batch) => vec![(batch, false, "")],
-        None => RUNS.into_iter().filter(|&(_, fused, _)| !fused || case["unfused"] != true).collect(),
-    };
-    let mut values = Vec::new();
-    for &(batch, fused, run) in &runs {
-        let (result, session) = match evaluated(code, input, batch, fused, options.timeout, &options.interrupt) { Ok(run) => run, Err(invalid) => return invalid };
-        match met(result) {
-            Ok(value) => values.push((value, session.numeric)),
-            Err(mut failure) => {
-                if !run.is_empty() { failure["message"] = json!(format!("{run}: {}", failure["message"].as_str().unwrap_or_default())); }
-                return failure;
-            }
+    let mismatch = mismatch.or_else(|| {
+        output.and_then(|expected| {
+            let written: String = result.output.iter().map(crate::Output::written).collect();
+            let actual = written.strip_suffix('\n').unwrap_or(&written);
+            (actual != expected).then(|| format!("output: {actual:?} != {expected:?}"))
+        })
+    });
+    match mismatch {
+        Some(message) => failed(json!({"status":"mismatch", "message":message, "actual":crate::protocol::response(result)})),
+        None => Ok(Outcome { value: result.value, numeric: crate::settings::numeric(), expected }),
+    }
+}
+
+/// Whether a case's runs agree: each later run's value must be held in the same kind of storage as the first's. Where the expectation is BPL, the first's storage must be mixed where the expectation's is, and compact where it's compact. A `mixed` case leaves this out. An in-place write keeps mixed storage mixed, and a record from JSON or Python keeps each entry's own kind.
+fn verdict(case: &JsonValue, outcomes: &[(Run, Outcome)]) -> JsonValue {
+    let Some(((_, _, first_run), first)) = outcomes.first() else { return json!({"status":"pass"}) };
+    let named = |run: &'static str| if run.is_empty() { "with the batch pref off" } else { run };
+    for ((_, _, run), outcome) in &outcomes[1..] {
+        if let (Some(value), Some(first)) = (&outcome.value, &first.value) && let Some((kind, first_kind)) = kind_difference(value, first, outcome.numeric, false) {
+            return json!({"status":"mismatch", "message":format!("storage kind: {kind} {}, {first_kind} {}", named(run), named(first_run))});
         }
     }
-    for ((value, numeric), &(_, _, run)) in values.iter().zip(&runs).skip(1) {
-        if let (Some(value), Some(first)) = (value, &values[0].0) && let Some((kind, first_kind)) = kind_difference(value, first, *numeric, false) {
-            return json!({"status":"mismatch", "message":format!("storage kind: {kind} {run}, {first_kind} with the batch pref off")});
-        }
-    }
-    // The result's storage must be mixed where the BPL expectation's is, and compact where it's compact. A `mixed` case leaves this out. An in-place write keeps mixed storage mixed, and a record from JSON or Python keeps each entry's own kind.
-    if let (true, Some((Some(value), numeric)), Some(expected)) = (exactness && case["mixed"] != true, values.first(), &expected)
-        && let Some((kind, expected_kind)) = kind_difference(value, expected, *numeric, true) {
+    if case["expected_code"].is_string() && case["mixed"] != true && let (Some(value), Some(expected)) = (&first.value, &first.expected)
+        && let Some((kind, expected_kind)) = kind_difference(value, expected, first.numeric, true) {
         return json!({"status":"mismatch", "message":format!("storage kind: {kind}, {expected_kind} in the expectation")});
     }
     json!({"status":"pass"})
 }
 
-/// `code` run in a fresh session with the `batch` pref set to `batch` and, where `fused`, fusion's small sizes (`fusion::Sizes::SMALL`), a `testpath` fixture where the code names one, and `input` as its lines of input. Gives the evaluation and the session as the code left it.
-fn evaluated(code: &str, input: Option<&str>, batch: bool, fused: bool, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<(crate::Evaluation, Session), JsonValue> {
+/// `case` checked as `failures` checks the cases of a file: `{"status":"pass"}`, or the case with the `status`, `message` and `kind` of its failure.
+pub fn check(case: &JsonValue, interrupt: &InterruptHandle) -> JsonValue { failures([case], interrupt).pop().unwrap_or_else(|| json!({"status":"pass"})) }
+
+/// `code` run in a fresh session with the settings in force, a `testpath` fixture where the code names one, and `input` as its lines of input.
+fn evaluated(code: &str, input: Option<&str>, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<crate::Evaluation, JsonValue> {
     let mut session = Session::new();
-    session.batch = Some(batch);
     let _files = if code.contains("testpath") {
         let dir = tempfile::tempdir().map_err(|e| json!({"status":"invalid", "message":format!("temporary fixture: {e}")}))?;
         let path = dir.path().join("data");
@@ -157,10 +170,8 @@ fn evaluated(code: &str, input: Option<&str>, batch: bool, fused: bool, timeout:
         Some(dir)
     } else { None };
     let input = input.map(|text| Arc::new(Lines(Mutex::new(text.lines().map(String::from).collect()))) as Arc<dyn crate::Input>);
-    let replaced = fused.then(|| crate::fusion::set_sizes(crate::fusion::Sizes::SMALL));
     let result = session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input, ..EvalOptions::default() });
-    if let Some(sizes) = replaced { crate::fusion::set_sizes(sizes); }
-    Ok((result, session))
+    Ok(result)
 }
 
 /// How long each evaluation of a case or a page example may run.
@@ -199,14 +210,16 @@ fn unescaped(text: &str, location: &str) -> Result<String, String> {
     Ok(result)
 }
 
-/// The cases of `text`, in the format of a `.bpl` reference file, as `check` takes them. Each case also gives its `id`, its header's `line`, its `section`, and its header's `comment` without the options. Two cases can't share an id. `tests/reference/README.md` describes the format.
+/// The cases of `text`, in the format of a `.bpl` reference file, as `check` takes them. Each case also gives its `id`, its header's `line`, its `section`, its header's `comment` without the options, and the file's leading `•prefs` header as `prefs`, where the file has one. Two cases can't share an id. `tests/reference/README.md` describes the format.
 pub fn cases(text: &str) -> Result<Vec<JsonValue>, String> {
     if text.is_empty() { return Ok(Vec::new()); }
     let lines: Vec<_> = text.split_terminator('\n').collect();
-    let mut starts: Vec<_> = lines.iter().enumerate().filter_map(|(i, s)| (header(s).is_some() || s.starts_with("⍝⍝ ")).then_some(i)).collect();
-    if starts.first() != Some(&0) { return Err("expected a case or section header on line 1".into()); }
+    let prefs = lines.first().filter(|line| line.starts_with("•prefs")).copied();
+    let first = if prefs.is_some() { lines.iter().skip(1).position(|s| !s.is_empty()).map_or(lines.len(), |i| i + 1) } else { 0 };
+    let mut starts: Vec<_> = lines.iter().enumerate().skip(first).filter_map(|(i, s)| (header(s).is_some() || s.starts_with("⍝⍝ ")).then_some(i)).collect();
+    if starts.first() != Some(&first) { return Err(format!("expected a case or section header on line {}", first + 1)); }
     starts.push(lines.len());
-    let (mut section, mut cases, mut ids) = ("", Vec::new(), std::collections::HashSet::new());
+    let (mut section, mut cases, mut ids) = ("", Vec::new(), rustymath::hashing::HashSet::default());
     for range in starts.windows(2) {
         let (start, end) = (range[0], range[1]);
         if let Some(title) = lines[start].strip_prefix("⍝⍝ ") {
@@ -221,6 +234,7 @@ pub fn cases(text: &str) -> Result<Vec<JsonValue>, String> {
         let suffix = comment.strip_prefix('[').map(|s| ("", s)).or_else(|| comment.rsplit_once(" ["));
         let options = suffix.and_then(|(text, s)| Some((text, s.strip_suffix(']')?))).filter(|(_, s)| s.starts_with("rtol=") || s.starts_with("atol=") || FLAGS.iter().any(|f| s.starts_with(f)));
         let mut case = json!({"id":id, "line":start + 1, "section":section, "comment":options.map_or(comment, |(text, _)| text)});
+        if let Some(prefs) = prefs { case["prefs"] = json!(prefs); }
         if let Some((_, options)) = options {
             for option in options.split_whitespace() {
                 if FLAGS.contains(&option) {
@@ -267,42 +281,83 @@ pub fn cases(text: &str) -> Result<Vec<JsonValue>, String> {
     Ok(cases)
 }
 
-/// The cases of `cases` that fail `check`, in their order. Each failure adds `check`'s `status` and `message`, and the `kind` of the error that the case gave. Each case has `TIMEOUT` to run. The cases run on one thread for each core. Each thread takes the next case that no thread has taken. After an interrupt, no thread takes another case, and failures after the first interrupted case drop out.
+/// The cases of `cases` that fail `check`, in their order. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Cases from files with the same leading `•prefs` header (`prefs`) run together, one run at a time (`RUNS`). For each run, `enter` puts the run's settings in force, the cases without the `serial` option run in parallel, on one thread for each core, and then each `serial` case runs alone, with the settings put in force again before it. A case without `serial` that calls `•prefs` fails, because it would change the settings of the cases running beside it. Each case has `TIMEOUT` to run. After an interrupt, no case starts, and failures after the first interrupted case drop out. The settings are reset at the end.
 pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, interrupt: &InterruptHandle) -> Vec<JsonValue> {
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+    use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
     let cases: Vec<&JsonValue> = cases.into_iter().collect();
-    let (next, stop) = (AtomicUsize::new(0), AtomicBool::new(false));
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(cases.len());
-    let mut failures: Vec<(usize, JsonValue)> = std::thread::scope(|scope| {
-        let workers: Vec<_> = (0..threads).map(|_| {
-            scope.spawn(|| {
-                let mut found = Vec::new();
-                while !stop.load(Relaxed) {
-                    let i = next.fetch_add(1, Relaxed);
-                    let Some(&case) = cases.get(i) else { break };
-                    let result = check(case, EvalOptions { timeout: Some(TIMEOUT), interrupt: interrupt.clone(), ..EvalOptions::default() });
-                    if result["status"] == "pass" { continue; }
-                    if result["status"] == "interrupt" { stop.store(true, Relaxed); }
-                    let mut failure = case.clone();
-                    for key in ["status", "message", "kind"] { if let Some(value) = result.get(key) { failure[key] = value.clone(); } }
-                    found.push((i, failure));
-                }
-                found
-            })
-        }).collect();
-        workers.into_iter().flat_map(|w| w.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))).collect()
-    });
-    failures.sort_by_key(|&(i, _)| i);
-    if let Some(first) = failures.iter().position(|(_, f)| f["status"] == "interrupt") { failures.truncate(first + 1); }
-    failures.into_iter().map(|(_, f)| f).collect()
+    let stop = AtomicBool::new(false);
+    let step = |case: &JsonValue, run: Run| {
+        let calls_prefs = case["code"].as_str().is_some_and(|code| code.to_lowercase().contains("•prefs"));
+        let result = if calls_prefs && case["serial"] != true { Err(json!({"status":"invalid", "message":"a case that calls •prefs needs the serial option"})) }
+            else { outcome(case, run, Some(TIMEOUT), interrupt) };
+        if result.as_ref().is_err_and(|f| f["status"] == "interrupt") { stop.store(true, Relaxed); }
+        result
+    };
+    let mut outcomes: Vec<Result<Vec<(Run, Outcome)>, JsonValue>> = cases.iter().map(|_| Ok(Vec::new())).collect();
+    let mut headers: Vec<Option<&str>> = Vec::new();
+    for case in &cases { if !headers.contains(&case["prefs"].as_str()) { headers.push(case["prefs"].as_str()); } }
+    for header in headers {
+        for run in RUNS {
+            let takes = |i: usize| cases[i]["prefs"].as_str() == header && runs(cases[i]).iter().any(|r| (r.0, r.1) == (run.0, run.1));
+            let wanted: Vec<usize> = (0..cases.len()).filter(|&i| outcomes[i].is_ok() && takes(i)).collect();
+            let (serial, parallel): (Vec<usize>, Vec<usize>) = wanted.into_iter().partition(|&i| cases[i]["serial"] == true);
+            let mut record = |i: usize, result: Result<Outcome, JsonValue>| match result {
+                Ok(outcome) => if let Ok(list) = &mut outcomes[i] { list.push((run, outcome)) },
+                Err(failure) => outcomes[i] = Err(failure),
+            };
+            if let Err(invalid) = enter(header, run) {
+                for &i in serial.iter().chain(&parallel) { record(i, Err(invalid.clone())); }
+                continue;
+            }
+            for (i, result) in in_parallel(&parallel, &stop, |i| step(cases[i], run)) { record(i, result); }
+            for i in serial {
+                if stop.load(Relaxed) { break; }
+                record(i, enter(header, run).and_then(|()| step(cases[i], run)));
+            }
+        }
+    }
+    crate::settings::reset();
+    let mut failures: Vec<JsonValue> = cases.iter().zip(outcomes).filter_map(|(case, outcome)| {
+        let result = outcome.map_or_else(|failure| failure, |list| verdict(case, &list));
+        (result["status"] != "pass").then(|| {
+            let mut failure = (*case).clone();
+            for key in ["status", "message", "kind"] { if let Some(value) = result.get(key) { failure[key] = value.clone(); } }
+            failure
+        })
+    }).collect();
+    if let Some(first) = failures.iter().position(|f| f["status"] == "interrupt") { failures.truncate(first + 1); }
+    failures
 }
 
-/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own, with the `batch` pref set to `batch` unless that is `None`. Each expectation runs in a fresh session with the pref at its default. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within 1e-13 with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
+/// `f` of each of `items`, with each item, run on one thread for each core. Each thread takes the next item that no thread has taken, until `stop` is set.
+fn in_parallel<T: Send>(items: &[usize], stop: &std::sync::atomic::AtomicBool, f: impl Fn(usize) -> T + Sync) -> Vec<(usize, T)> {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    let next = AtomicUsize::new(0);
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(items.len());
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads).map(|_| scope.spawn(|| {
+            let mut done = Vec::new();
+            while !stop.load(Relaxed) {
+                let Some(&i) = items.get(next.fetch_add(1, Relaxed)) else { break };
+                done.push((i, f(i)));
+            }
+            done
+        })).collect();
+        workers.into_iter().flat_map(|w| w.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))).collect()
+    })
+}
+
+/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own, with the `batch` pref set to `batch` unless that is `None`. Each expectation runs in a fresh session after its lines, under the settings they leave. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within 1e-13 with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
 pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     let options = || EvalOptions { timeout: Some(TIMEOUT), echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
     let (mut failures, mut session, mut code) = (Vec::new(), None, String::new());
     for (i, line) in text.lines().enumerate() {
-        if line == "```bpl" { let mut fresh = Session::new(); fresh.batch = batch; session = Some(fresh); continue; }
+        if line == "```bpl" {
+            crate::settings::reset();
+            if let Some(batch) = batch { crate::settings::set_batch(batch); }
+            session = Some(Session::new());
+            continue;
+        }
         let Some(bpl) = session.as_mut() else { continue };
         let closing = line.starts_with("```");
         let (source, expected) = line.split_once(" ⍝ ").map_or((line, None), |(c, e)| (c, Some(e)));
@@ -311,9 +366,9 @@ pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec
             code.push('\n');
         }
         if expected.is_none() && !closing { continue; }
-        // The expectation evaluates first, so that the page's session evaluates last and its settings are in force for both reads.
-        let wanted = expected.map(|e| Session::new().eval_with(e, options()));
         let result = bpl.eval_with(&code, options());
+        // The expectation evaluates after the code, under the settings that the code leaves.
+        let wanted = expected.map(|e| Session::new().eval_with(e, options()));
         let message = match (result.error, result.value, wanted) {
             (Some(error), _, _) => Some(error.to_string()),
             (None, _, None) => None,

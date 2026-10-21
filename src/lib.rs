@@ -37,6 +37,7 @@ pub mod reference;
 mod regex;
 mod search;
 mod selection;
+pub mod settings;
 pub mod symbols;
 mod syntax;
 pub mod system;

@@ -218,7 +218,7 @@ class Array(_Operators):
         if not self.shape: raise TypeError('a unit has no length')
         return self.shape[0]
     def __iter__(self): return (Array(a) for a in self._inner.cells())
-    def __contains__(self, item): return self._inner.contains(item if isinstance(item, str) else _array(item), bpl._session)
+    def __contains__(self, item): return self._inner.contains(item if isinstance(item, str) else _array(item))
     def __getitem__(self, index):
         "Select by positions, keys, slices or per-axis masks. `None` inserts an axis and `...` keeps omitted axes."
         return _result(self._inner.select(index, _array)).value

@@ -1,11 +1,11 @@
-use basedpl::{reference, EvalOptions, InterruptHandle};
+use basedpl::{reference, InterruptHandle};
 use serde_json::{json, Value};
 
 const SOURCES: &[(&str, &str)] = &[
     ("core", include_str!("reference/core.bpl")), ("graphics", include_str!("reference/graphics.bpl")), ("ngn", include_str!("reference/ngn.bpl")),
     ("april", include_str!("reference/april.bpl")), ("aplcart", include_str!("reference/aplcart.bpl")), ("dyalog", include_str!("reference/dyalog.bpl")),
     ("regex", include_str!("reference/regex.bpl")), ("distributions", include_str!("reference/distributions.bpl")), ("lib", include_str!("reference/lib.bpl")),
-    ("bqn", include_str!("reference/bqn.bpl")),
+    ("bqn", include_str!("reference/bqn.bpl")), ("static", include_str!("reference/static.bpl")), ("static-int32", include_str!("reference/static-int32.bpl")),
 ];
 
 fn cases(text: &str) -> Vec<Value> { reference::cases(text).unwrap() }
@@ -13,10 +13,10 @@ fn cases(text: &str) -> Vec<Value> { reference::cases(text).unwrap() }
 #[test]
 fn reference_format_and_comparison() {
     let file = json!({"code":r#"testpath •nput "héllo" ⋄ •nget testpath"#, "expected_code":r#""héllo""#});
-    for _ in 0..2 { assert_eq!(reference::check(&file, EvalOptions::default())["status"], "pass"); }
+    for _ in 0..2 { assert_eq!(reference::check(&file, &InterruptHandle::default())["status"], "pass"); }
     let compact = cases(&format!("⍝ —\n{}", r#""a""⍝b" '⍝'   ⍝ "a""⍝b" '⍝'"#));
     assert_eq!(compact[0]["code"], r#""a""⍝b" '⍝'"#);
-    assert_eq!(reference::check(&compact[0], EvalOptions::default())["status"], "pass");
+    assert_eq!(reference::check(&compact[0], &InterruptHandle::default())["status"], "pass");
     for source in ["⍝ —\n1\n1", "⍝ —\n{\n⍵\n}1\n⍝ =>\n1", "⍝ —\n⎕←1\n1\n⍝ ⎕: 1"] {
         for ending in ["", "\n", "\n\n"] { assert_eq!(cases(&format!("{source}{ending}")), cases(&format!("{source}\n\n"))); }
     }
@@ -25,21 +25,21 @@ fn reference_format_and_comparison() {
     assert_eq!(parsed_output[0]["section"], "Output");
     assert_eq!(parsed_output[0]["expected_output"], "9\n2");
     assert_eq!(parsed_output[2]["input"], "3\n4");
-    for case in parsed_output { assert_eq!(reference::check(&case, EvalOptions::default())["status"], "pass"); }
+    for case in parsed_output { assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "pass"); }
     let mut output_error = json!({"code":"⎕←9 ⋄ 1÷'a'", "expected_error":"DOMAIN ERROR", "expected_output":"9"});
-    assert_eq!(reference::check(&output_error, EvalOptions::default())["status"], "pass");
+    assert_eq!(reference::check(&output_error, &InterruptHandle::default())["status"], "pass");
     output_error["expected_output"] = json!("2");
-    assert_eq!(reference::check(&output_error, EvalOptions::default())["status"], "mismatch");
+    assert_eq!(reference::check(&output_error, &InterruptHandle::default())["status"], "mismatch");
     let exactness = json!({"code":"1", "expected_code":"1ₓ"});
-    assert_eq!(reference::check(&exactness, EvalOptions::default())["status"], "mismatch");
-    let kinds = reference::check(&json!({"code":r#"{⍵?1;$t}"batch"⊃•prefs ⍬"#, "expected":{"shape":[], "data":[1], "prototype":0}}), EvalOptions::default());
+    assert_eq!(reference::check(&exactness, &InterruptHandle::default())["status"], "mismatch");
+    let kinds = reference::check(&json!({"code":r#"{⍵?1;$t}"batch"⊃•prefs ⍬"#, "expected":{"shape":[], "data":[1], "prototype":0}, "serial":true}), &InterruptHandle::default());
     assert_eq!((kinds["status"].as_str(), kinds["message"].as_str()), (Some("mismatch"), Some("storage kind: float64 with the batch pref on, bool with the batch pref off")));
     let captured = json!({"code":"1ₓ", "expected":{"shape":[], "data":[1], "prototype":0}});
-    assert_eq!(reference::check(&captured, EvalOptions::default())["status"], "pass");
+    assert_eq!(reference::check(&captured, &InterruptHandle::default())["status"], "pass");
     let parsed = cases("⍝  — [rtol=1e-14 atol=1e-15]\nf←{\n\n⍵+1\n}\nf 2\n⍝ =>\n3\n\n⍝  —\n\"unfinished\n⍝ error: SYNTAX ERROR\n\n");
     assert_eq!(parsed[0]["code"], "f←{\n\n⍵+1\n}\nf 2");
     assert_eq!(parsed[1]["line"], 10);
-    for case in parsed { assert_eq!(reference::check(&case, EvalOptions::default())["status"], "pass"); }
+    for case in parsed { assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "pass"); }
     for (code, expect, status) in [
         ("1E¯10", "0", "mismatch"), ("1E¯16", "0", "pass"), ("1+1E¯15", "1", "pass"), ("a←3", "a", "invalid"), ("1", "{}0", "mismatch"),
         ("{}0", "{}0", "pass"), ("+", "{}0", "mismatch"), ("⍬", r#""""#, "mismatch"), (",1", "1", "mismatch"), ("0⍴⊂1 2", "0⍴⊂1", "mismatch"),
@@ -47,14 +47,14 @@ fn reference_format_and_comparison() {
         ("3", "÷'a'", "invalid"),
     ] {
         let case = json!({"code":code, "expected_code":expect});
-        assert_eq!(reference::check(&case, EvalOptions::default())["status"], status, "{code} vs {expect}");
+        assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], status, "{code} vs {expect}");
     }
     let mut case = json!({"code":"1E¯16", "expected_code":"0", "relative_tolerance":1e-14, "absolute_tolerance":0.0});
-    assert_eq!(reference::check(&case, EvalOptions::default())["status"], "mismatch");
+    assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "mismatch");
     case["absolute_tolerance"] = json!(1e-15);
-    assert_eq!(reference::check(&case, EvalOptions::default())["status"], "pass");
+    assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "pass");
     case["code"] = json!("1E¯10");
-    assert_eq!(reference::check(&case, EvalOptions::default())["status"], "mismatch");
+    assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "mismatch");
 }
 
 /// Every case, run once for each of `reference::check`'s runs: with the `batch` pref off, then on, under which maps first try one call of their operand on batches of their cells, then on with fusion's small sizes, under which every fusible call waits and a graph splits even small arrays into blocks. Each run must meet the case's expectation, with values held in the same kinds of storage.

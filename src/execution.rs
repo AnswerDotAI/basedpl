@@ -58,7 +58,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(10);
 pub(crate) struct Execution {
     interrupt: InterruptHandle,
     timeout: Option<(Instant, Duration)>,
-    pub echo: bool,
+    pub echo: Cell<bool>,
     output: Option<OutputSink>,
     /// Output that no sink takes, kept for the evaluation's result.
     captured: RefCell<Vec<Output>>,
@@ -74,7 +74,7 @@ impl Execution {
     pub(crate) fn begin(&mut self, options: EvalOptions) {
         self.interrupt = options.interrupt;
         self.timeout = options.timeout.map(|d| (Instant::now(), d));
-        self.echo = options.echo;
+        self.echo.set(options.echo);
         self.output = options.output;
         self.input = options.input;
         self.poll = options.poll.map(|poll| (poll, Cell::new(Instant::now())));
@@ -142,8 +142,9 @@ impl Execution {
 }
 
 /// Where an evaluation step runs: the span it reports errors at, and the session it reads and changes.
-pub(crate) struct Context<'a> { pub span: &'a Span, pub session: &'a mut crate::Session }
+pub(crate) struct Context<'a> { pub span: &'a Span, pub session: &'a crate::Session }
 impl Context<'_> {
+    #[inline]
     pub(crate) fn check(&self) -> Result<(), Error> { self.session.execution.check(self.span) }
     /// A check that reads the clock at once, for callers whose checks are too far apart for [`check`](Self::check)'s countdown.
     pub(crate) fn check_now(&self) -> Result<(), Error> { self.session.execution.check_now(self.span) }
@@ -155,4 +156,23 @@ impl Context<'_> {
 impl Deref for Context<'_> {
     type Target = Span;
     fn deref(&self) -> &Span { self.span }
+}
+/// Where a long computation reports its errors and checks between its steps for an interrupt or a passed deadline, as searches and matches do.
+pub(crate) trait Checks: Deref<Target = Span> {
+    fn check(&self) -> Result<(), Error>;
+    fn check_now(&self) -> Result<(), Error>;
+}
+impl Checks for Context<'_> {
+    fn check(&self) -> Result<(), Error> { Context::check(self) }
+    fn check_now(&self) -> Result<(), Error> { Context::check_now(self) }
+}
+/// A span with no evaluation behind it, for a search that runs outside any evaluation, as Python's `in` does. No interrupt or deadline applies there, so its checks always pass.
+pub(crate) struct Unchecked<'a>(pub &'a Span);
+impl Deref for Unchecked<'_> {
+    type Target = Span;
+    fn deref(&self) -> &Span { self.0 }
+}
+impl Checks for Unchecked<'_> {
+    fn check(&self) -> Result<(), Error> { Ok(()) }
+    fn check_now(&self) -> Result<(), Error> { Ok(()) }
 }

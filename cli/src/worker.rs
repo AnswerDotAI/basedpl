@@ -1,5 +1,5 @@
 use basedpl::{EvalOptions, InterruptHandle, Session};
-use foldhash::{HashMap, HashMapExt};
+use std::collections::HashMap;
 use serde_json::Value;
 use std::{io::{self, BufRead, Write}, sync::{mpsc, Arc, Mutex}};
 
@@ -60,7 +60,7 @@ impl serde::Serialize for Line {
 fn reply(session: &mut Session, request: &Value, interrupt: InterruptHandle) -> Result<Reply, String> {
     if request.get("id").is_some_and(|id| !id.is_u64()) { return Err("id must be a nonnegative integer".into()); }
     let options = EvalOptions { interrupt, ..basedpl::protocol::options(request)? };
-    if let Some(case) = request.get("case") { return Ok(Reply::Json(basedpl::reference::check(case, options))); }
+    if let Some(case) = request.get("case") { return Ok(Reply::Json(basedpl::reference::check(case, &options.interrupt))); }
     if let Some(spec) = request.get("timing") { return basedpl::timing::request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("costs") { return basedpl::timing::file_request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("reference") { return basedpl::reference::file_request(spec, &options.interrupt).map(Reply::Json); }

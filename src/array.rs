@@ -1,5 +1,5 @@
 use crate::{
-    display::{positions, Elide}, element::{Stored, Whole}, execution::Context, fusion::Pending, keyed::Keys, number::{int::Int, real, Numeric}, transform::Carrier,
+    display::{positions, Elide}, element::{Stored, Whole}, fusion::Pending, keyed::Keys, number::{int::Int, real, Numeric}, transform::Carrier,
     At, DomainAt, Error, ErrorKind, Number
 };
 use num_complex::{Complex, Complex32, Complex64};
@@ -210,7 +210,7 @@ impl ArrayData {
     /// Whether this array reads another array's items, as a view.
     fn is_view(&self) -> bool { matches!(self.data, Data::Of(_)) }
     /// The bytes of the allocations that this array keeps alive, as `Value::footprint` counts them. Each allocation counts once in `seen`.
-    fn footprint_in(this: &Arc<Self>, seen: &mut foldhash::HashSet<usize>) -> usize {
+    fn footprint_in(this: &Arc<Self>, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
         if !seen.insert(Arc::as_ptr(this) as usize) { return 0; }
         match &this.data {
             Data::Own(storage) => storage.footprint_in(seen),
@@ -255,9 +255,9 @@ impl Value {
         }
     }
     /// Whether the values match, as `≡` and search compare them, within the session's tolerance.
-    pub(crate) fn matches(&self, other: &Self, cx: &Context<'_>) -> Result<bool, Error> { self.matches_within(other, Numeric::current(), cx) }
+    pub(crate) fn matches(&self, other: &Self, cx: &impl crate::execution::Checks) -> Result<bool, Error> { self.matches_within(other, Numeric::current(), cx) }
     /// Whether the values match, with each pair of numbers within the tolerance of the width they compare at. Numbers match whatever their exactness, and NaN matches NaN. Two axes match as arithmetic pairs them: their names don't conflict, as `rustymath::layout::names_conflict` says, and when both have keys, they hold the same keys in any order. Items along keyed axes compare by key. Functions and operators match when built from matching parts. Renderers take no part.
-    pub(crate) fn matches_within(&self, other: &Self, t: Numeric, cx: &Context<'_>) -> Result<bool, Error> {
+    pub(crate) fn matches_within(&self, other: &Self, t: Numeric, cx: &impl crate::execution::Checks) -> Result<bool, Error> {
         cx.check()?;
         use crate::transform::Plain;
         match (self.observed().at(cx)?, other.observed().at(cx)?) {
@@ -596,8 +596,8 @@ impl Value {
     /// Whether the array reads another array's items, as a view.
     pub(crate) fn is_view(&self) -> bool { matches!(self, Self::Array(a) if a.is_view()) }
     /// The bytes of the allocations that this value keeps alive: its items, a view's base, the arrays that a pending array reads, a dual's parts and a record's nodes. A shared allocation counts once. An atom that holds no array gives 0.
-    pub(crate) fn footprint(&self) -> usize { self.footprint_in(&mut foldhash::HashSet::default()) }
-    pub(crate) fn footprint_in(&self, seen: &mut foldhash::HashSet<usize>) -> usize {
+    pub(crate) fn footprint(&self) -> usize { self.footprint_in(&mut rustymath::hashing::HashSet::default()) }
+    pub(crate) fn footprint_in(&self, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
         match self {
             Self::Array(a) => ArrayData::footprint_in(a, seen),
             Self::Carried(carrier) => carrier.footprint_in(seen),

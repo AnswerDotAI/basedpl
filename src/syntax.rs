@@ -3,7 +3,6 @@ use crate::{number::{subscript, width_marker, Arithmetic, Math, Numeric, Suffix,
     Error, ErrorAt, ErrorKind, Number, Source, Span, Value
 };
 use std::{iter::Peekable, str::CharIndices, sync::{atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed}, Arc}};
-use unicode_script::{Script, UnicodeScript};
 
 #[derive(Clone, Debug)]
 pub(crate) enum NodeKind {
@@ -313,8 +312,6 @@ fn run_on(chars: &mut Characters<'_>, digit: bool) -> Option<usize> {
     ((digit && c.is_ascii_digit()) || canonical(c) == '.' || suffix).then(|| i + c.len_utf8())
 }
 
-fn han(c: char) -> bool { c >= '\u{2e80}' && c.script() == Script::Han }
-
 /// Whether `c` can start or continue a name. Syntax, glyphs and digits end a name.
 pub(crate) fn name_char(c: char) -> bool {
     !c.is_whitespace() && !c.is_control() && !c.is_ascii_digit() && !subscript(c)
@@ -324,7 +321,7 @@ pub(crate) fn name_char(c: char) -> bool {
         && Primitive::from_glyph(c).is_none() && OperatorKind::from_glyph(c).is_none()
 }
 
-pub(crate) fn name_char_in(c: char, aliases: bool) -> bool { !(aliases && han(c)) && name_char(if aliases { canonical(c) } else { c }) }
+pub(crate) fn name_char_in(c: char, aliases: bool) -> bool { name_char(if aliases { canonical(c) } else { c }) }
 
 const SUPERSCRIPT_DIGITS: &str = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 const SUBSCRIPT_DIGITS: &str = "₀₁₂₃₄₅₆₇₈₉";
@@ -363,7 +360,6 @@ fn name(chars: &mut Characters<'_>, key: bool) -> Result<(), (usize, &'static st
                 let (i, _) = chars.next().unwrap();
                 if first && lone(chars.peek()) { return Ok(()); }
                 match chars.next() {
-                    Some((at, q)) if aliases && han(q) => return Err((at + q.len_utf8(), "Hanzi aliases are enabled, so Hanzi cannot occur in names")),
                     Some((_, q)) if !q.is_whitespace() => { if q.is_ascii_digit() { digits(chars); } } _ => return Err((i + 1, UNQUOTED))
                 }
             }
@@ -391,7 +387,7 @@ pub(crate) fn prefs_record(nodes: &[Node]) -> Option<&Node> {
     }
 }
 
-/// Whether `tokens` hold a `•prefs` statement on a literal record. If so, its `hanzi_aliases` setting goes into `aliases`, and its numeric settings become the thread's, for the tokens after it to read under. A setting with an invalid value is left as it was, for the statement's evaluation to report.
+/// Whether `tokens` hold a `•prefs` statement on a literal record. If so, its `hanzi_aliases` setting goes into `aliases`, and its numeric settings come into force, for the tokens after it to read under. A setting with an invalid value is left as it was, for the statement's evaluation to report.
 fn header(tokens: &[Token], aliases: &mut bool) -> bool {
     let Some(start) = tokens.iter().position(|t| !matches!(t.kind, TokenKind::Separator)) else { return false };
     let tokens = &tokens[start..];
@@ -406,15 +402,15 @@ fn header(tokens: &[Token], aliases: &mut bool) -> bool {
         let Some(key) = crate::keyed::name(key) else { continue };
         if &*key == "hanzi_aliases" { if let Ok(on) = value.boolean() { *aliases = on; } } else { let _ = numeric.set(&key, value); }
     }
-    numeric.set_current();
+    crate::settings::set_numeric(numeric);
     true
 }
 
 type Highlights = Vec<(std::ops::Range<usize>, &'static str)>;
 
-/// The tokens of `source`. Each leading `•prefs` statement on a literal record sets the hanzi aliases and the numeric settings that the tokens after it read under, as `header` applies them. The thread's settings are restored afterwards.
+/// The tokens of `source`. Each leading `•prefs` statement on a literal record sets the hanzi aliases and the numeric settings that the tokens after it read under, as `header` applies them.
 fn lex(source: &Arc<Source>, aliases: bool, highlights: Option<&mut Highlights>) -> Result<Vec<Token>, ParseFailure> {
-    Numeric::current().while_current(|| lexed(source, aliases, highlights))
+    lexed(source, aliases, highlights)
 }
 
 fn lexed(source: &Arc<Source>, aliases: bool, mut highlights: Option<&mut Highlights>) -> Result<Vec<Token>, ParseFailure> {

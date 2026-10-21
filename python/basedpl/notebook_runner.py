@@ -7,12 +7,14 @@ from fastcore.xtras import working_directory
 from fastcore.nbio import write_nb
 from . import bpl
 
+LANGUAGES = {'bpl', 'hpl'}
+
 
 def run_notebook(path, save=False):
     "Run BPL cells in a cleared workspace, from the notebook's directory. Save outputs only when requested."
     path = Path(path)
     nb = json.loads(path.read_text())
-    if nb['metadata']['kernelspec']['language'] != 'bpl': raise ValueError(f'{path}: expected a BPL notebook')
+    if nb['metadata']['kernelspec']['language'] not in LANGUAGES: raise ValueError(f'{path}: expected a BPL notebook')
     bpl(']clear')
     with working_directory(path.parent):
         for i, cell in enumerate(nb['cells'], 1):
@@ -33,7 +35,7 @@ def main(
     "Run BPL notebooks without starting Jupyter."
     paths = sorted(path.rglob('*.ipynb')) if path.is_dir() else [path]
     for p in paths:
-        if path.is_dir() and json.loads(p.read_text())['metadata'].get('kernelspec', {}).get('language') != 'bpl': continue
+        if path.is_dir() and json.loads(p.read_text())['metadata'].get('kernelspec', {}).get('language') not in LANGUAGES: continue
         run_notebook(p, save)
 
 

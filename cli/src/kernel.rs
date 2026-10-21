@@ -90,10 +90,10 @@ impl LanguageSession for BplSession {
         self.worker.call(move |session| {
             let end = request.code.char_indices().nth(cursor(request.cursor_pos)).map_or(request.code.len(), |(i, _)| i);
             let before = &request.code[..end];
-            let (start, mut matches) = if let Some((start, query)) = basedpl::symbols::entry(before, end, session.hanzi_aliases()) {
+            let (start, mut matches) = if let Some((start, query)) = basedpl::symbols::entry(before, end, basedpl::settings::hanzi_aliases()) {
                 (start, basedpl::symbols::matches(query).into_iter().map(|(glyph, _)| glyph.to_owned()).collect::<Vec<_>>())
-            } else if basedpl::in_code(before, session.hanzi_aliases()) {
-                let start = before.char_indices().rev().find(|(_, c)| !basedpl::inspection::word_char(*c, session.hanzi_aliases())).map_or(0, |(i, c)| i + c.len_utf8());
+            } else if basedpl::in_code(before, basedpl::settings::hanzi_aliases()) {
+                let start = before.char_indices().rev().find(|(_, c)| !basedpl::inspection::word_char(*c, basedpl::settings::hanzi_aliases())).map_or(0, |(i, c)| i + c.len_utf8());
                 (start, session.complete(&before[start..]))
             } else { (end, vec![]) };
             matches.sort();
@@ -103,7 +103,7 @@ impl LanguageSession for BplSession {
 
     async fn inspect(&self, request: InspectRequest) -> kernmini::Result<Value> {
         self.worker.call(move |session| {
-            let info = basedpl::inspection::at_cursor(&request.code, cursor(request.cursor_pos), session.hanzi_aliases()).and_then(|name| session.inspect(name));
+            let info = basedpl::inspection::at_cursor(&request.code, cursor(request.cursor_pos), basedpl::settings::hanzi_aliases()).and_then(|name| session.inspect(name));
             let data = info.as_ref().map(|i| json!({"text/plain":i.text(request.detail_level>0), "text/markdown":i.markdown(request.detail_level>0)}));
             json!({"status":"ok", "found":info.is_some(), "data":data.unwrap_or(json!({})), "metadata":{}})
         }).await

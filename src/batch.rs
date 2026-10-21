@@ -65,7 +65,7 @@ impl Batch {
         Ok(batch(self.level, crate::primitive::copied(&self.whole, self.frame_layout().concat(&layout), &steps)?, self.frame))
     }
     /// The bytes of the whole, the first cell and the items built from them. Each allocation counts once in `seen`.
-    pub(crate) fn footprint_in(this: &Arc<Self>, seen: &mut foldhash::HashSet<usize>) -> usize {
+    pub(crate) fn footprint_in(this: &Arc<Self>, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
         if !seen.insert(Arc::as_ptr(this) as usize) { return 0; }
         this.whole.footprint_in(seen) + this.first.get().map_or(0, |v| v.footprint_in(seen)) + this.items.get().map_or(0, |s| s.footprint_in(seen))
     }
@@ -108,7 +108,7 @@ impl<'a> Arg<'a> {
 
 /// Cell `c` of `value` in the batched run that `cx` is in. A batch at the run's level gives its cell `c`. Any other value is the same for every cell and gives itself, as it does outside a batched run.
 pub(crate) fn cell(value: &Value, c: usize, cx: &Context<'_>) -> Result<Value, Error> {
-    match cx.session.levels.batched().map(|(level, _)| arg(value, level)) {
+    match cx.session.batched().map(|(level, _)| arg(value, level)) {
         Some(Arg::Batched(b)) => b.cell(c).error_at(cx.span, "invalid batch"),
         _ => Ok(value.clone()),
     }
@@ -215,8 +215,26 @@ fn named<'a>(values: impl IntoIterator<Item = &'a Value>) -> bool { values.into_
 /// - `¿` runs its own code, which draws from the generator's one stream: a roll once on the batch's whole, and a deal for each cell in cell order (`primitive::drawn_value`).
 /// - `⍕` runs its own code, whose effect check stops the run, as it does for a batch inside a nested argument (`Context::formats`).
 /// - A fold or scan of each cell by a primitive runs by Rank's rule for folds (`eval::folded_cells`). A fold of an atom is the atom. A fold along an axis that isn't one of the cell's stops the run, so that each cell's call gives its own result or error.
-/// - Any other call, such as a product, or `⌹`, `+.×` or `-.×` on each matrix of stacks, runs on the whole arguments by Rank's routes (`whole_call`). A call that no route covers stops the run.
-pub(crate) fn call(op: Operation, pairing: Pairing<'_>, left: Option<&Value>, right: &Value, level: u64, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+/// - A fold or scan by an operand that isn't a primitive runs its own loop, which calls the operand once for each stage, on item `j` of every cell as one batch of atoms (`Batch::at`). A fold of an atom is the atom, and a fold along several axes, or along an axis that isn't one of the cell's, stops the run.
+/// - A system function runs its own code. Its effect check stops the run, as it does for a batch inside a nested argument, except for a random draw, which draws for each cell as `¿` does (`system::SystemFunction::acts`).
+/// - A function with an attached rule runs its own code on a batch. Where the batch's whole carries a dual, the rule applies at that dual's level, as it would to each cell.
+/// - `f.g` by functions that aren't primitives stops the run.
+/// - Any other call, such as a product of primitives, or `⌹`, `+.×` or `-.×` on each matrix of stacks, runs on the whole arguments by Rank's routes (`whole_call`). A call that no route covers stops the run.
+pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+    let (op, pairing) = match op {
+        Op::Operation(op, pairing) => (op, pairing),
+        Op::System(_) => return None,
+        Op::Ruled(f, rule) => {
+            let tag = match arg(right, level) { Arg::Batched(b) => crate::derivative::tag(&b.whole), Arg::Constant(c) => crate::derivative::tag(c) };
+            return tag.map(|tag| if left.is_none() { crate::derivative::attached(f, rule, right, tag, cx) } else { Err(crate::derivative::two_arguments(cx)) });
+        }
+        Op::Fold(kind, axis) => {
+            let (None, Arg::Batched(b)) = (left, arg(right, level)) else { return stop(Stop::new(level, Cause::Rule), cx) };
+            if b.rank() == 0 { return Some(Ok(right.clone())); }
+            return match kind.axis(axis, b.template(), cx.span) { Ok(_) => None, Err(_) => stop(Stop::new(level, Cause::Rule), cx) };
+        }
+        Op::Product => return stop(Stop::new(level, Cause::Rule), cx),
+    };
     let (x, y) = (left.map(|v| arg(v, level)), arg(right, level));
     match (op, pairing) {
         (Operation::Primitive(p), Pairing::Axis(axis)) => {
@@ -237,27 +255,6 @@ pub(crate) fn call(op: Operation, pairing: Pairing<'_>, left: Option<&Value>, ri
             }
         }
         _ => whole_call(op, x, y, matches!(pairing, Pairing::Matrices), level, cx).or_else(|| stop(refusal(level, op), cx)),
-    }
-}
-
-/// `op`, an operation by functions that aren't primitives, as batched run `level` handles it (`transform::route`).
-/// - A system function runs its own code. Its effect check stops the run, as it does for a batch inside a nested argument, except for a random draw, which draws for each cell as `¿` does (`system::SystemFunction::acts`).
-/// - A function with an attached rule runs its own code on a batch. Where the batch's whole carries a dual, the rule applies at that dual's level, as it would to each cell.
-/// - A fold or scan runs its own loop, which calls the operand once for each stage, on item `j` of every cell as one batch of atoms (`Batch::at`). A fold of an atom is the atom, and a fold along several axes, or along an axis that isn't one of the cell's, stops the run.
-/// Anything else, such as a product, stops the run.
-pub(crate) fn route(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64, cx: &mut Context<'_>) -> Option<Result<Value, Error>> {
-    match op {
-        Op::System(_) => None,
-        Op::Ruled(f, rule) => {
-            let tag = match arg(right, level) { Arg::Batched(b) => crate::derivative::tag(&b.whole), Arg::Constant(c) => crate::derivative::tag(c) };
-            tag.map(|tag| if left.is_none() { crate::derivative::attached(f, rule, right, tag, cx) } else { Err(crate::derivative::two_arguments(cx)) })
-        }
-        Op::Fold(kind, axis) => {
-            let (None, Arg::Batched(b)) = (left, arg(right, level)) else { return stop(Stop::new(level, Cause::Rule), cx) };
-            if b.rank() == 0 { return Some(Ok(right.clone())); }
-            match kind.axis(axis, b.template(), cx.span) { Ok(_) => None, Err(_) => stop(Stop::new(level, Cause::Rule), cx) }
-        }
-        Op::Product => stop(Stop::new(level, Cause::Rule), cx),
     }
 }
 
@@ -381,7 +378,7 @@ fn side((value, rank): (Value, usize)) -> Option<Side> {
 enum Ended { Stopped(Stop), Fell(&'static str), Passed(Error) }
 
 /// One batched run of `operand` on the cells that `frame` lays out, with a batch of the cells of each batched side, and each constant as it is. It gives the whole of the cells' results (`whole_over`).
-fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, cx: &mut Context<'_>) -> Result<Value, Ended> {
+fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, cx: &Context<'_>) -> Result<Value, Ended> {
     let level = cx.session.begin(crate::transform::Kind::batched(frame.clone()));
     let wrapped = |side: &Side| match side { Side::Batched(v) => batch(level, v.clone(), frame.shape().len()), Side::Constant(c) => c.clone() };
     let called = operand.call_array(x.map(&wrapped).as_ref(), &wrapped(y), cx);
@@ -397,8 +394,8 @@ fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, cx: &mut 
 }
 
 /// The whole of the cells' results from batched runs of `operand` on successive chunks of `chunk` cells of the frame that `frame` lays out, each run on its chunk's cells of the batched sides. The chunks' results join as the run over cells assembles its cells' results (`Widening::Items`). Each generator first gets back its state from before the try, so the chunks draw what one run on all the cells would draw.
-fn chunked(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, chunk: usize, cx: &mut Context<'_>) -> Result<Value, Ended> {
-    crate::distribution::settle(&mut cx.session.drawn, true);
+fn chunked(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, chunk: usize, cx: &Context<'_>) -> Result<Value, Ended> {
+    crate::distribution::settle(&cx.session.drawn, true);
     let (axes, cells) = (frame.shape().len(), frame.shape().iter().product::<usize>());
     let mut wholes = Vec::new();
     for start in (0..cells).step_by(chunk) {
@@ -428,7 +425,7 @@ fn chunked(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, chunk
 /// The call: `operand` runs once, with a batch of the cells of each argument that has a frame, and with each other argument as it is (`run`). Where the call stops for too many items with chunks of cells that wouldn't (`Stop::chunk`), the operand runs once on each chunk instead (`chunked`). A chunk that stops for too many items again starts the chunks over with the smaller chunks that its stop gives. Where a call stops at this level for another cause, or fails, `tried` gives `None` after a `fallbacks` event that names the stop's cause (`transform::Stop`), or `"an error"`. A dfn operand remembers the stop for as long as its cause says (`transform::Cause::kept`). An interrupt, a timeout and an older level's stop pass through. Unless the try gives a result, each generator that it drew from gets back its state from before the try (`distribution::settle`), and the run over cells draws the same numbers as with no try.
 ///
 /// The result's assembly: the cells' results come from the call's result where that is a batch of the cells, or holds batches as items that join into one batch, as a strand of batches does (`joined`). A result that is an atom or a compact array, with no carrier and no named axis, is every cell's result. For any other result, such as a function, `tried` gives `None` after a `fallbacks` event.
-pub(crate) fn tried(operand: &Function, arguments: impl FnOnce() -> Option<Arguments>, layout: &Layout, mixed: bool, cx: &mut Context<'_>) -> Option<Result<Value, Error>> {
+pub(crate) fn tried(operand: &Function, arguments: impl FnOnce() -> Option<Arguments>, layout: &Layout, mixed: bool, cx: &Context<'_>) -> Option<Result<Value, Error>> {
     let frame = layout.shape();
     if !tries(cx) || frame.is_empty() || frame.contains(&0) || layout.has_names() { return None; }
     let memory = operand.remembers().map_or(NOTHING, |d| d.remembered());
@@ -441,7 +438,7 @@ pub(crate) fn tried(operand: &Function, arguments: impl FnOnce() -> Option<Argum
     if memory != NOTHING && memory & !CAUSE == signature(memory & 1 == 1) { return fell_back(Earlier::of(memory), cells); }
     let mut ran = run(operand, x.as_ref(), &y, layout, cx);
     while let Err(Ended::Stopped(stop)) = &ran && let Some(chunk) = stop.chunk() { ran = chunked(operand, x.as_ref(), &y, layout, chunk, cx); }
-    crate::distribution::settle(&mut cx.session.drawn, ran.is_err());
+    crate::distribution::settle(&cx.session.drawn, ran.is_err());
     let whole = match ran {
         Ok(whole) => whole,
         Err(Ended::Stopped(stop)) => {
@@ -465,7 +462,7 @@ pub(crate) fn tried(operand: &Function, arguments: impl FnOnce() -> Option<Argum
 }
 
 /// Whether a map may try a batched call: the `batch` pref is on, and the running levels admit a batched run (`transform::Levels::admits_batch`). `tried` checks it first. A caller checks it before building arguments that only a try reads.
-pub(crate) fn tries(cx: &Context<'_>) -> bool { cx.session.batching() && cx.session.levels.admits_batch() }
+pub(crate) fn tries(cx: &Context<'_>) -> bool { crate::settings::batch() && cx.session.admits_batch() }
 
 /// `None`, after a `fallbacks` event of `•explain` for a batched try of `cells` cells that falls back for `reason`.
 fn fell_back<T>(reason: impl std::fmt::Display, cells: usize) -> Option<T> {

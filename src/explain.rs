@@ -55,20 +55,41 @@ const SLOW: [(Kind, usize); 5] = [(Kind::Stored, 2), (Kind::Forced, 0), (Kind::F
 #[derive(Clone, Default)]
 pub(crate) struct Events { rows: [Vec<Vec<Field>>; KINDS.len()], unclaimed: Vec<(&'static str, usize)> }
 
-/// Starts recording. Returns the events of an enclosing `•explain`, which `finish` restores.
-pub(crate) fn start() -> Option<Events> { EVENTS.with(|e| e.replace(Some(Events::default()))) }
-
-/// Stops recording and returns this run's events. An enclosing `•explain` gets them too, because they happened during its run.
-pub(crate) fn finish(outer: Option<Events>) -> Events {
-    EVENTS.with(|e| {
-        let events = e.replace(None).unwrap_or_default();
-        if let Some(mut outer) = outer {
-            outer.extend(&events);
-            e.replace(Some(outer));
-        }
-        events
-    })
+/// Runs `run` as `•explain` runs its text: recording events, inside any `•explain` that encloses it. Gives what `run` gives and the events it recorded, which an enclosing `•explain` gets too, because they happened during its run. `•explain` and the speed check both run through it.
+pub(crate) fn explained<T>(run: impl FnOnce() -> T) -> (T, Events) {
+    let mut under_way = Run::start();
+    let result = run();
+    (result, under_way.end())
 }
+
+/// An `•explain` run under way on this thread, from `start` to `end`. Dropping it before `end`, as a panic in the run does, ends it too. A panic then leaves the count of runs (`EXPLAINING`) and this thread's events (`EVENTS`) as they were before the run, which matters because Python turns a panic into an exception and carries on.
+struct Run { outer: Option<Events>, ended: bool }
+
+impl Run {
+    /// Counts a run under way, and gives this thread empty events to record into, keeping the enclosing run's.
+    fn start() -> Self {
+        EXPLAINING.fetch_add(1, Ordering::Relaxed);
+        Self { outer: EVENTS.with(|e| e.replace(Some(Events::default()))), ended: false }
+    }
+    /// Lowers the count of runs under way, and gives the events this run recorded after adding them to the enclosing run's, which this thread records into again.
+    fn end(&mut self) -> Events {
+        self.ended = true;
+        EXPLAINING.fetch_sub(1, Ordering::Relaxed);
+        EVENTS.with(|e| {
+            let events = e.replace(None).unwrap_or_default();
+            if let Some(mut outer) = self.outer.take() {
+                outer.extend(&events);
+                e.replace(Some(outer));
+            }
+            events
+        })
+    }
+}
+
+impl Drop for Run { fn drop(&mut self) { if !self.ended { self.end(); } } }
+
+/// The `•explain` runs under way on any thread. The count is process-wide so that `reporting`, which every call reads, costs one plain atomic load and no thread-local lookup. While any thread's `•explain` runs, calls on every other thread take the slower reporting path too, and record nothing.
+static EXPLAINING: AtomicUsize = AtomicUsize::new(0);
 
 /// Adds the row that `row` gives to the events of `kind`, while an `•explain` records on this thread.
 fn record(kind: Kind, row: impl FnOnce() -> Vec<Field>) { EVENTS.with(|e| if let Some(events) = e.borrow_mut().as_mut() { events.rows[kind as usize].push(row()) }) }
@@ -86,7 +107,10 @@ pub(crate) fn stored(event: impl FnOnce() -> (String, usize, &'static str)) {
 }
 
 /// Whether an `•explain` records on this thread.
-fn recording() -> bool { EVENTS.with(|e| e.borrow().is_some()) }
+pub(crate) fn recording() -> bool { EVENTS.with(|e| e.borrow().is_some()) }
+/// Whether calls report the pending arrays they compute: under `•prefs ["fusion":$t]`, or while an `•explain` runs on any thread. A call on another thread then records nothing (`recording`).
+#[inline]
+pub(crate) fn reporting() -> bool { crate::settings::reports_fusion() || EXPLAINING.load(Ordering::Relaxed) > 0 }
 
 /// What a fused group's blocks did while `•explain` records: the blocks, the runs that they split into where an input repeats or cycles, and the items copied out of inputs before the kernels read them. Blocks run on worker threads, so each count is atomic. Outside `•explain` a tally holds no counts, so the threads share no counters.
 pub(crate) struct Tally(Option<Counts>);

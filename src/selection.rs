@@ -1,6 +1,6 @@
 use rustymath::{agreement::Mapping, buffer::View, error::Kind, gather::Steps};
 use crate::{array::{generated_len, Frame, Gather, Items, Layout, Prototype, Storage, Widening}, execution::Context, primitive::{Form, Origin, Primitive, Selection, Targets}, transform::Carrier, At, Error, ErrorAt, ErrorKind, Span, Value};
-use foldhash::{HashMap, HashMapExt};
+use rustymath::hashing::{HashMap, HashMapExt};
 use std::sync::{Arc, OnceLock};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -222,7 +222,7 @@ impl Labelled {
     /// The value that answers queries that read no items: an atom's own value, the values where something has read them, or else the root, whose kind and prototype a selection from it shares.
     pub(crate) fn template(&self) -> &Value { if self.atom { self.values() } else { self.values.get().unwrap_or(&self.root) } }
     pub(crate) fn storage(&self) -> &Storage { self.values().storage().expect("a labelled array's values are an array") }
-    pub(crate) fn footprint_in(this: &Arc<Self>, seen: &mut foldhash::HashSet<usize>) -> usize {
+    pub(crate) fn footprint_in(this: &Arc<Self>, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
         if !seen.insert(Arc::as_ptr(this) as usize) { return 0; }
         let ids = match &this.labels { Lead::Ids(ids) => ids.footprint_in(seen), Lead::Mapped(_) => 0 };
         this.root.footprint_in(seen) + this.values.get().map_or(0, |v| v.footprint_in(seen)) + ids

@@ -2,7 +2,7 @@
 
 BPL glyph lists come from its symbol metadata. Dyalog APL and BQN lists for the comparison page are defined here. `keyboards` generates the macOS bundles. Paths are relative to the repository root.
 
-`write()` updates all generated editor files during release preparation, including `bpl.tmLanguage.json` beside this module, exported from `nbs/bpl.xml`, and the JetBrains bundle and templates. `icon()` rebuilds the common input-menu icon when its design changes; it needs Pillow and macOS's `iconutil`. Keyboard generation copies the icon without rebuilding it."""
+`write()` updates all generated editor files during release preparation, including the BPL and Hanzi TextMate grammars beside this module, exported from the Quarto XML, and the JetBrains bundle and templates. The Hanzi grammar includes BPL and adds its aliases from the same symbol metadata. `icon()` rebuilds the common input-menu icon when its design changes; it needs Pillow and macOS's `iconutil`. Keyboard generation copies the icon without rebuilding it."""
 import json, re, subprocess, tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -21,19 +21,16 @@ CLASSES = {'Function': ('dsFunction', 'function', ''), 'MonadicOperator': ('dsOp
            'DyadicOperator': ('dsExtension', 'dyadic-operator', ''), 'Argument': ('dsVariable', 'argument', ''), 'Keyword': ('dsKeyword', 'syntax', _subscripts)}
 # The characters each class colours in each language. The Dyalog APL and BQN tables serve the comparison page.
 SPELLINGS = {s['glyph']: ''.join(dict.fromkeys(s['glyph'] + ''.join(s['hanzi']))) for s in symbols}
-BPL = {cls: ''.join(SPELLINGS[s['glyph']] for s in symbols if s['kind'] == kind) + scripts for cls, (_, kind, scripts) in CLASSES.items()}
+BPL = {cls: ''.join(s['glyph'] for s in symbols if s['kind'] == kind) + scripts for cls, (_, kind, scripts) in CLASSES.items()}
+HANZI = {cls: ''.join(SPELLINGS[s['glyph']][1:] for s in symbols if s['kind'] == kind) for cls, (_, kind, _) in CLASSES.items()}
 TOKEN_PATTERNS = {'System': r'•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*', 'Empty': r'⍬ₓ?',
                   'Number': r'¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?|ₓ|[rᵣ]¯?\d+)?|[ₑⱼᵣ]'}
-TOKEN_PATTERNS = {cls: ''.join('[' + re.escape(SPELLINGS[c]) + ']' if c in '•¯∞⍬' else c for c in pattern).replace(r'\.', '[' + SPELLINGS['.'] + ']')
-                  for cls, pattern in TOKEN_PATTERNS.items()}
-NAME_CHAR = r'[^\s\p{Cc}0-9' + re.escape(''.join(SPELLINGS.values()) + _superscripts + _subscripts + r'''()[]{}'";$_ₑⱼᵣ''') + ']'
-TOKEN_PATTERNS['Name'] = rf'(?:_\d+|_\S|_|{NAME_CHAR})+'
 DYALOG = {'Function': '+-×÷⌈⌊|*⍟○!?~∧∨⍲⍱<≤=≥>≠≡≢⍴,⍪⌽⊖⍉↑↓⊂⊃⊆⊇⌷⍋⍒⊤⊥⍳⍸∊⍷∪∩⊣⊢⍎⍕⌹', 'MonadicOperator': r'¨⍨/⌿\⍀⌸&⌶',
           'DyadicOperator': '∘⍤⍥⍣⍠⌺@.⍛', 'Argument': '⍺⍵∇', 'Keyword': '←→⋄:⎕⍞'}
 BQN = {'Function': '+-×÷⋆√⌊⌈|¬∧∨<>≠=≤≥≡≢⊣⊢⥊∾≍⋈↑↓↕«»⌽⍉/⍋⍒⊏⊑⊐⊒∊⍷⊔!', 'MonadicOperator': '˙˜˘¨⌜⁼´˝`',
        'DyadicOperator': '∘○⊸⟜⌾⊘◶⎉⚇⍟⎊', 'Argument': '𝕨𝕩𝕗𝕘𝕤𝕣𝕎𝕏𝔽𝔾𝕊', 'Keyword': '←↩⇐⋄,‿·?:;'}
 HIGHLIGHTERS = {Path('nbs/bpl.xml'): BPL, Path('nbs/dyalog.xml'): DYALOG, Path('nbs/bqn.xml'): BQN}
-TEXTMATE = Path(__file__).with_name('bpl.tmLanguage.json')
+TEXTMATE = Path(__file__).parent
 SCOPES = {'Normal Text': 'source.bpl', 'Name': 'variable.other.bpl', 'Comment': 'comment.line.bpl', 'String': 'string.quoted.double.bpl',
           'Char': 'string.quoted.single.bpl', 'Number': 'constant.numeric.bpl', 'System': 'support.function.system.bpl',
           'Function': 'support.function.bpl', 'MonadicOperator': 'keyword.operator.monadic.bpl',
@@ -55,31 +52,65 @@ def vim_class(chars):
     return f'{delimiter}[{body}]{delimiter}'
 
 
+def token_patterns(spellings):
+    "Lexical rules with `spellings` for each BPL glyph."
+    patterns = {cls: ''.join('[' + re.escape(spellings[c]) + ']' if c in '•¯∞⍬' else c for c in pattern)
+        .replace(r'\.', '[' + spellings['.'] + ']') for cls, pattern in TOKEN_PATTERNS.items()}
+    name = r'[^\s\p{Cc}0-9' + re.escape(''.join(spellings.values()) + _superscripts + _subscripts + r'''()[]{}'";$_ₑⱼᵣ''') + ']'
+    return patterns | {'Name': rf'(?:_\d+|_\S|_|{name})+'}
+
+
 def quarto(text, glyphs):
     "The Quarto highlighter `text`, with each class's style regenerated and its glyph list taken from `glyphs`."
     for cls, (style, *_) in CLASSES.items():
         text = _replace(text, f'<AnyChar String="[^"]*" attribute="{cls}"/>', f'<AnyChar String="{escape(glyphs[cls], {chr(34): "&quot;"})}" attribute="{cls}"/>')
         text = _replace(text, f'<itemData name="{cls}" defStyleNum="[^"]*"/>', f'<itemData name="{cls}" defStyleNum="{style}"/>')
     if glyphs is BPL:
-        text = _replace(text, r'<RegExpr String="[^"]*" attribute="Name"/>', f'<RegExpr String="{escape(TOKEN_PATTERNS["Name"], {chr(34): "&quot;"})}" attribute="Name"/>')
+        patterns = token_patterns({glyph: glyph for glyph in SPELLINGS})
+        text = _replace(text, r'<RegExpr String="[^"]*" attribute="Name"/>', f'<RegExpr String="{escape(patterns["Name"], {chr(34): "&quot;"})}" attribute="Name"/>')
         for cls, marker in [('System', '•'), ('Number', '∞'), ('Empty', '⍬')]:
             attr = 'Number' if cls == 'Empty' else cls
             text = _replace(text, f'<RegExpr String="[^"]*{marker}[^"]*" attribute="{attr}"/>',
-                            f'<RegExpr String="{escape(TOKEN_PATTERNS[cls])}" attribute="{attr}"/>')
+                f'<RegExpr String="{escape(patterns[cls])}" attribute="{attr}"/>')
         text = _replace(text, r'<(?:DetectChar char|AnyChar String)="[^"]*" attribute="Comment" context="Comment"/>',
-                        f'<AnyChar String="{SPELLINGS["⍝"]}" attribute="Comment" context="Comment"/>')
+            '<AnyChar String="⍝" attribute="Comment" context="Comment"/>')
     return text
 
 
-def textmate(xml):
-    r"Export BPL's line-local XML rules as a TextMate grammar."
+def hanzi_grammar(xml):
+    "Hanzi-sensitive rules followed by an include of the BPL grammar."
+    root, patterns = ET.fromstring(xml), token_patterns(SPELLINGS)
+    root.set('name', 'BPL (Hanzi)')
+    root.set('extensions', '*.hpl')
+    contexts = root.find('./highlighting/contexts')
+    normal = contexts.find("context[@name='Normal']")
+    contexts.clear()
+    contexts.append(normal)
+    for rule in list(normal):
+        attr, value = rule.get('attribute'), rule.get('String', '')
+        if attr == 'Comment':
+            rule.set('String', SPELLINGS['⍝'][1:])
+            rule.set('context', 'Comment##BPL')
+        elif attr == 'Name' or attr == 'System': rule.set('String', patterns[attr])
+        elif rule.tag == 'RegExpr' and any(c in value for c in '∞⍬'): rule.set('String', patterns['Empty' if '⍬' in value else 'Number'])
+        elif rule.tag == 'AnyChar' and attr in HANZI: rule.set('String', HANZI[attr])
+        else: normal.remove(rule)
+    ET.SubElement(normal, 'IncludeRules', context='Normal##BPL')
+    ET.indent(root, space='  ')
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE language>\n' + ET.tostring(root, encoding='unicode') + '\n'
+
+
+def textmate(xml, language='bpl', base=None):
+    r"Export line-local XML rules as a TextMate grammar; `base` supplies included BPL contexts."
     contexts = {c.get('name'): c for c in ET.fromstring(xml).findall('./highlighting/contexts/context')}
+    if base: contexts |= {c.get('name') + '##BPL': c for c in ET.fromstring(base).findall('./highlighting/contexts/context')}
     def pattern(rule):
         if rule.tag == 'RegExpr': return rule.get('String')
         if rule.tag == 'AnyChar': return '[' + re.escape(rule.get('String')) + ']'
         if rule.tag in ('DetectChar', 'Detect2Chars'): return re.escape(rule.get('char') + rule.get('char1', ''))
         raise ValueError(f'unsupported XML rule: {rule.tag}')
     def convert(rule):
+        if rule.tag == 'IncludeRules': return {'include': 'source.bpl'}
         scope, target = SCOPES[rule.get('attribute')], rule.get('context', '#stay')
         if target == '#stay': return {'match': pattern(rule), 'name': scope}
         context = contexts[target]
@@ -90,17 +121,18 @@ def textmate(xml):
                   'patterns': [convert(r) for r in context if r not in pops], 'applyEndPatternLast': True}
         if pops: result['endCaptures'] = {'0': {'name': SCOPES[pops[0].get('attribute')]}}
         return result
-    return {'name': 'bpl', 'scopeName': 'source.bpl', 'fileTypes': ['bpl'], 'patterns': [convert(r) for r in contexts['Normal']]}
+    return dict(name=language, displayName='BPL (Hanzi)' if language == 'hpl' else 'BPL', scopeName='source.' + language,
+        fileTypes=[language], patterns=[convert(r) for r in contexts['Normal']])
 
 
 def vim(text):
     "The vim syntax `text` with each class's glyph list regenerated."
-    name = TOKEN_PATTERNS['Name'].replace('(?:', '%(').replace(r'\p{Cc}', r'\x00-\x1f\x7f-\x9f').replace('/', r'\/')
+    patterns = token_patterns({glyph: glyph for glyph in SPELLINGS})
+    name = patterns['Name'].replace('(?:', '%(').replace(r'\p{Cc}', r'\x00-\x1f\x7f-\x9f').replace('/', r'\/')
     text = _replace(text, r'(?m)^syntax match bplName .*$', rf'syntax match bplName /\v{name}/')
     for cls in CLASSES: text = _replace(text, f'(?m)^syntax match bpl{cls} .*$', f'syntax match bpl{cls} {vim_class(BPL[cls])}')
-    for cls, marker, pattern in [('System', '•', TOKEN_PATTERNS['System']),
-                                 ('Number', '∞', TOKEN_PATTERNS['Number'] + '|' + TOKEN_PATTERNS['Empty']),
-                                 ('Comment', '⍝', f'[{SPELLINGS["⍝"]}].*$')]:
+    for cls, marker, pattern in [('System', '•', patterns['System']),
+        ('Number', '∞', patterns['Number'] + '|' + patterns['Empty']), ('Comment', '⍝', r'⍝.*$')]:
         text = _replace(text, f'(?m)^syntax match bpl{cls} .*{marker}.*$', f'syntax match bpl{cls} /\\v{pattern}/')
     return text
 
@@ -187,9 +219,13 @@ def icon():
 def write():
     "Write highlighters, glyph-entry templates, regional keyboard bundles, and glyph-page kinds, keys, hanzi and ranks."
     for path, glyphs in HIGHLIGHTERS.items(): keyboards.write_changed(path, quarto(path.read_text(), glyphs))
-    keyboards.write_changed(TEXTMATE, json.dumps(textmate(Path('nbs/bpl.xml').read_text()), ensure_ascii=False, indent=2) + '\n')
-    keyboards.write_changed(JETBRAINS/'BPL.tmbundle/Syntaxes/bpl.tmLanguage.json', TEXTMATE.read_bytes())
-    keyboards.write_changed(Path('nbs/playground/bpl.tmLanguage.json'), TEXTMATE.read_bytes())
+    base = Path('nbs/bpl.xml').read_text()
+    hanzi = hanzi_grammar(base)
+    keyboards.write_changed(Path('nbs/hpl.xml'), hanzi)
+    for lang, xml in [('bpl', base), ('hpl', hanzi)]:
+        grammar = json.dumps(textmate(xml, lang, base), ensure_ascii=False, indent=2) + '\n'
+        for folder in [TEXTMATE, JETBRAINS/'BPL.tmbundle/Syntaxes', Path('nbs/playground')]:
+            keyboards.write_changed(folder/f'{lang}.tmLanguage.json', grammar)
     keyboards.write_changed(JETBRAINS/'BPL.xml', jetbrains())
     keyboards.write_changed(VIM, vim(VIM.read_text()))
     keyboards.write()

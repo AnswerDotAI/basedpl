@@ -140,7 +140,7 @@ pub(crate) fn reshape_to(shape: &[usize], right: &Value, span: &Context<'_>) -> 
 pub(crate) fn remapped(right: &Value, plan: Plan) -> Result<Value, ErrorKind> { copied(right, plan.layout.into(), &plan.steps) }
 
 /// `right` copied by `plan`, keeping `right`'s renderer where the rank doesn't change.
-pub(super) fn remap(right: &Value, plan: Plan, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn remap(right: &Value, plan: Plan, span: &Span) -> Result<Value, Error> {
     copied(right, Layout::rearranged(plan.layout, right), &plan.steps).error_at(span, "invalid structural result")
 }
 
@@ -303,10 +303,11 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let axis = axis.unwrap_or(if first { 0 } else { rank - 1 });
     if axis >= rank { return Err(span.domain_error("catenate axis is outside result rank")); }
     // A weak number takes the width that the other argument gives it, as in arithmetic (`Value::weakened`), before `promoted` makes it an array.
-    let (wl, wr) = super::weakened(Some(left), right);
-    let (left, right) = (wl.as_ref().unwrap_or(left), wr.as_ref().unwrap_or(right));
-    let left = promoted(left, right, rank, axis, span)?;
-    let right = promoted(right, &left, rank, axis, span)?;
+    let (left, right) = super::weakened(Some(left), right, |left, right| {
+        let left = promoted(left.expect("catenation is dyadic"), right, rank, axis, span)?;
+        let right = promoted(right, &left, rank, axis, span)?;
+        Ok::<_, Error>((left, right))
+    })?;
     let wanted = (0..rank).map(|a| if a == axis { None } else { left.keys(a).cloned() }).collect::<Vec<_>>();
     let right = crate::keyed::reorder(&right, &wanted, false).error_at(span, "catenate axis keys differ")?;
     let layout = structure::catenate(left.layout(), right.layout(), axis).at(span)?;

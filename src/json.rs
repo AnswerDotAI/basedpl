@@ -1,6 +1,6 @@
 use rustymath::error::Kind;
 use crate::{array::Items, data::{imported, text, Options}, error::At, execution::Context, keyed, Error, ErrorAt, ErrorKind, Number, Value};
-use foldhash::{HashMap, HashMapExt};
+use rustymath::hashing::{HashMap, HashMapExt};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use serde_json::Value as Json;

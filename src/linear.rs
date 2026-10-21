@@ -9,7 +9,7 @@ use crate::{
     number::Arithmetic,
     primitive::{FoldKind, Form, LinearMap, Operation, Primitive}, transform::Pairing,
     explain::{Live, Counted}, Error, ErrorKind, Number, Value};
-use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use rustymath::hashing::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::borrow::Cow;
 use rustymath::{buffer::{Buffer, DType, FloatBuf, FloatWidth, Floats, View, Width}, gather::{Steps, counts_up}, structure::Plan};
 use std::sync::{
@@ -259,16 +259,18 @@ fn replaced(v: &Value, sources: &mut Sources) -> Value {
 /// Whether `v` holds records as items, as a tangent assembled from cells with record tangents does.
 pub(crate) fn holds_records(v: &Value) -> bool { v.holds_values() && v.elements().any(|e| record_of(&e).is_some()) }
 
-/// The call of `op` with a record argument (`transform::call`), as reverse mode handles it, or `None` to leave it to the operation's own code. A primitive takes its record rule (`primitive_call`). A fold by `+` records a sum (`fold`), and another fold gives UNSUPPORTED ERROR. So does every product, whose own code would otherwise read the record's items. A record reaches a product only as a dual's tangent, and `+.×`'s dual rule records the product's terms itself (`derivative::product`).
-pub(crate) fn call(op: Operation, pairing: Pairing<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Value, Error>> {
-    match (op, pairing) {
-        (Operation::Primitive(p), Pairing::Axis(axis)) => Some(primitive_call(p, left, right, axis, cx)),
-        (Operation::Fold(_, kind), Pairing::Axis(axis)) => match op.facts(false).and_then(|r| r.linear) {
+/// The call of `op` with a record argument (`transform::call`), as reverse mode handles it, or `None` to leave it to the operation's own code. A primitive takes its record rule (`primitive_call`). A fold by `+` records a sum (`fold`), and every other fold gives UNSUPPORTED ERROR. So does every product, whose own code would otherwise read the record's items. A record reaches a product of primitives only as a dual's tangent, and `+.×`'s dual rule records the product's terms itself (`derivative::product`).
+pub(crate) fn call(op: crate::transform::Op<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+    use crate::transform::Op as Routed;
+    match op {
+        Routed::Operation(Operation::Primitive(p), Pairing::Axis(axis)) => Some(primitive_call(p, left, right, axis, cx)),
+        Routed::Operation(operation @ Operation::Fold(_, kind), Pairing::Axis(axis)) => match operation.facts(false).and_then(|r| r.linear) {
             Some(LinearMap::Sum) => Some(fold(kind, axis, record_of(right)?, cx)),
             _ => Some(Err(untransposable("this fold", cx))),
         },
-        (Operation::Product(..), _) => Some(Err(untransposable("this product", cx))),
-        (Operation::Primitive(p), _) => Some(Err(untransposable(p.info().glyph, cx))),
+        Routed::Fold(..) => Some(Err(untransposable("this fold", cx))),
+        Routed::Operation(Operation::Product(..), _) | Routed::Product => Some(Err(untransposable("this product", cx))),
+        Routed::Operation(Operation::Primitive(p), _) => Some(Err(untransposable(p.info().glyph, cx))),
         _ => None,
     }
 }
@@ -297,12 +299,6 @@ pub(crate) fn primitive_call(p: Primitive, left: Option<&Value>, right: &Value, 
         (Some(LinearMap::Negation), None, _, Some(t)) => minus(t),
         _ => unsupported(""),
     }
-}
-
-/// `op`, an operation by functions that aren't primitives, with a record argument (`transform::route`): UNSUPPORTED ERROR for a fold or a product, whose own code would read the record's items, and `None` for anything else, whose own code runs.
-pub(crate) fn route(op: crate::transform::Op<'_>, cx: &Context<'_>) -> Option<Result<Value, Error>> {
-    use crate::transform::Op as Routed;
-    match op { Routed::Fold(..) => Some(Err(untransposable("this fold", cx))), Routed::Product => Some(Err(untransposable("this product", cx))), _ => None }
 }
 
 /// `x+.×y`, or, where `stacked`, `x+.×⍤2 y`: the product of each pair of matrices of two stacks whose frames agree, which `primitive::stacked`'s kernels compute where they can.
@@ -430,7 +426,7 @@ fn whole_windows(tables: &[Steps], shape: &[usize], source: &[usize]) -> Option<
 }
 
 /// The cotangent of a copy's source, for a product `child+.×c` whose `child` is that copy, or views of it, holding every window that moves by 1 (`whole_windows`). `u` is the product's cotangent, laid out as `layout`. The cotangent is the full convolution of `u`, as frames then filters, with `c`, as windows, filters, then the source's other axes. It's one product through the reads that `rustymath::signal::correlation` gives, which builds neither the windows' cotangent nor the padded windows. `None` for any other `child`.
-fn convolved_back<'a>(c: &Value, u: &Value, child: &'a Arc<Linear>, layout: &Layout, cx: &mut Context<'_>) -> Result<Option<(&'a Arc<Linear>, Value)>, Error> {
+fn convolved_back<'a>(c: &Value, u: &Value, child: &'a Arc<Linear>, layout: &Layout, cx: &Context<'_>) -> Result<Option<(&'a Arc<Linear>, Value)>, Error> {
     let mut copy = child;
     while let Op::View(t) = &copy.op { copy = t; }
     let Op::Copy { child: source, tables } = &copy.op else { return Ok(None) };
@@ -477,7 +473,7 @@ fn composed<'a>(mut child: &'a Arc<Linear>, tables: &'a [Steps], shape: &[usize]
 }
 
 /// The cotangent of `child` from the cotangent `u` of a copy of `child` through `tables`, laid out as `layout`. A spread axis, along which every position reads one item, sums `u` along it first. A broadcast's axes are spread axes. Where rustymath's `Steps::transposed` then finds reads that send each item of `u` back where the copy read it, their sum is the cotangent: one read for a copy that reads each item at most once, and a correlation for overlapping windows that move by 1. The reads give 0 where the copy read nothing, and the correlation's reads fuse into one graph. Any other copy adds each item of `u` where the copy read it.
-fn copied_back(u: &Value, tables: &[Steps], layout: &Layout, child: &Linear, cx: &mut Context<'_>) -> Result<Value, Error> {
+fn copied_back(u: &Value, tables: &[Steps], layout: &Layout, child: &Linear, cx: &Context<'_>) -> Result<Value, Error> {
     let mut u = laid_out(u, layout);
     let mut tables = Cow::Borrowed(tables);
     if let Some((base, steps)) = Steps::per_axis(&tables, u.shape()) {
@@ -502,7 +498,7 @@ fn copied_back(u: &Value, tables: &[Steps], layout: &Layout, child: &Linear, cx:
 }
 
 /// The cotangent of `child` from the cotangent `u` of a copy of `child` whose frames move by more than 1 (rustymath's `Steps::windows_of`): each frame of `u` added back where its window read, by rustymath's `overlap_add`. It adds along one source axis at a time, from the last, reading `u` in its own order. `None` for any other copy, and for a `u` that isn't plain 32- or 64-bit floats.
-fn strided_back(u: &Value, tables: &[Steps], child: &Linear, cx: &mut Context<'_>) -> Result<Option<Value>, Error> {
+fn strided_back(u: &Value, tables: &[Steps], child: &Linear, cx: &Context<'_>) -> Result<Option<Value>, Error> {
     let source = child.layout.shape();
     let Some(windows) = Steps::windows_of(tables, u.shape(), source) else { return Ok(None) };
     if windows.iter().all(|&[_, _, step]| step == 1) || u.carries_here() { return Ok(None); }
@@ -556,7 +552,7 @@ fn slide(tables: &[Steps], shape: &[usize], source: &[usize], axis: usize) -> Op
 }
 
 /// The cotangent of `source` from the cotangent `u` of a sum along a window's axis of a copy of `source`, which `slide` describes: a sliding sum of `u` padded with zeros, sent back through the rest of the copy. The sliding sum folds a copy of the padded `u`'s windows, which fusion runs as a sliding fold without building them.
-fn slid_back(u: &Value, slide: Slide, source: &Linear, cx: &mut Context<'_>) -> Result<Value, Error> {
+fn slid_back(u: &Value, slide: Slide, source: &Linear, cx: &Context<'_>) -> Result<Value, Error> {
     let windows = read_back(&read_back(u, slide.padded, cx)?, slide.windows, cx)?;
     let summed = plus_fold(FoldKind::REDUCE, None, &windows, cx)?;
     copied_back(&summed, &slide.rest.steps, &slide.rest.layout.into(), source, cx)
@@ -589,7 +585,7 @@ fn scan(kind: FoldKind, axis: Option<usize>, along: usize, reversed: bool, v: &V
 }
 
 /// The value of the record whose `order` is `nodes`, from `seeds` for its seeds: a Jacobian–vector product.
-pub(crate) fn evaluate(nodes: &[Arc<Linear>], seeds: &[Value], cx: &mut Context<'_>) -> Result<Value, Error> {
+pub(crate) fn evaluate(nodes: &[Arc<Linear>], seeds: &[Value], cx: &Context<'_>) -> Result<Value, Error> {
     let root = nodes.last().expect("a record has a root");
     let mut values: HashMap<*const Linear, Value> = HashMap::with_capacity(nodes.len());
     for n in nodes {
@@ -621,12 +617,12 @@ pub(crate) fn evaluate(nodes: &[Arc<Linear>], seeds: &[Value], cx: &mut Context<
 fn flat(v: &Value, cx: &Context<'_>) -> Result<Value, Error> { if v.is_atom() { Ok(v.clone()) } else { Primitive::Ravel.call(None, v, cx) } }
 
 /// `u` summed along each of `axes`, highest first. Summing a higher axis first leaves each lower axis at its position.
-fn summed_along(u: Value, axes: &[usize], cx: &mut Context<'_>) -> Result<Value, Error> {
+fn summed_along(u: Value, axes: &[usize], cx: &Context<'_>) -> Result<Value, Error> {
     axes.iter().rev().try_fold(u, |v, &axis| plus_fold(FoldKind::REDUCE, Some(axis), &v, cx))
 }
 
 /// The cotangent of `t` from `u`, the cotangent of the copy that broadcasts `t` to `u`'s layout (`derivative::broadcast`). Both end in cells of rank `cell`, which pair as they are. Their frames agree as broadcasting pairs them, and `u` sums over the frame axes and positions that `t` repeats.
-fn sum_back(u: &Value, t: &Linear, cell: usize, cx: &mut Context<'_>) -> Result<Value, Error> {
+fn sum_back(u: &Value, t: &Linear, cell: usize, cx: &Context<'_>) -> Result<Value, Error> {
     if u.layout() == &t.layout { return Ok(u.clone()); }
     let (n, m) = (u.shape().len(), t.layout.shape().len());
     let agreement = Agreement::new(&u.layout().axes(0..n - cell), &t.layout.axes(0..m - cell)).error_at(cx.span, "a cotangent agrees with its tangent")?;
@@ -635,14 +631,14 @@ fn sum_back(u: &Value, t: &Linear, cell: usize, cx: &mut Context<'_>) -> Result<
 }
 
 /// The cotangent of `t`, the child of the stacked `Product` `c+.×⍤2 t` or `t+.×⍤2 c`, from `u`, the product's cotangent: `(⍉c)+.×⍤2 u` or `u+.×⍤2 ⍉c` with each matrix of `c` transposed, summed over the frame axes and positions that `t` repeats (`sum_back`, with matrices as cells).
-fn stacked_transpose(c: &Value, u: &Value, t: &Linear, left: bool, cx: &mut Context<'_>) -> Result<Value, Error> {
+fn stacked_transpose(c: &Value, u: &Value, t: &Linear, left: bool, cx: &Context<'_>) -> Result<Value, Error> {
     let c = swapped(c, cx)?;
     let back = if left { plus_times(&c, u, true, cx)? } else { plus_times(u, &c, true, cx)? };
     sum_back(&back, t, 2, cx)
 }
 
 /// The cotangent of `t`, the child of the `Product` `c+.×t` or `t+.×c`, from `u`, the product's cotangent: `(⍉c)+.×u` or `u+.×⍉c`, with `c` and `u` taken as matrices. The product goes through dispatch. `c`'s transpose is a pending copy, whatever its size, which the product reads in place (`pervasive::mapped_product`). A `c` that isn't compact transposes through dispatch.
-fn product_transpose(c: &Value, u: &Value, t: &Linear, left: bool, cx: &mut Context<'_>) -> Result<Value, Error> {
+fn product_transpose(c: &Value, u: &Value, t: &Linear, left: bool, cx: &Context<'_>) -> Result<Value, Error> {
     let (csize, tsize) = (c.shape().iter().product::<usize>(), size(&t.layout));
     let transposed = |[rows, cols]: [usize; 2], cx: &Context<'_>| -> Result<Value, Error> {
         let matrix = crate::primitive::reshape_to(&[cols, rows], c, cx)?;
@@ -726,7 +722,7 @@ fn collected(c: Cotangent, n: &Linear, cx: &Context<'_>) -> Result<Value, Error>
 }
 
 /// The cotangents of the seeds of the record whose `order` is `nodes`, from `u`, the cotangent of its result: the vector–Jacobian product. `None` for a seed that the result doesn't depend on.
-pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, cx: &mut Context<'_>) -> Result<Vec<Option<Value>>, Error> {
+pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, cx: &Context<'_>) -> Result<Vec<Option<Value>>, Error> {
     let root = nodes.last().expect("a record has a root");
     let plus = Primitive::Arithmetic(Arithmetic::Plus);
     let mut cotangents: HashMap<*const Linear, Cotangent> = HashMap::with_capacity(nodes.len());

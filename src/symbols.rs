@@ -1,6 +1,6 @@
 //! Every glyph's kind, names and ranks, shared by completion, help and Python.
 use crate::primitive::{OperatorKind, Primitive, Rank, WHOLE};
-use foldhash::HashMap;
+use rustymath::hashing::HashMap;
 use std::sync::OnceLock;
 
 // Glyph, simplified aliases, traditional aliases; an empty third field keeps the simplified spellings.

@@ -13,14 +13,14 @@ const OPTIONS: &[&str] =
     &["method", "lower", "upper", "bracket", "tolerance", "evaluations", "population", "seed", "batch", "report", "solve", "linear", "precondition"];
 
 /// `f⇄ start` or `options f⇄ start`: the point where `f` is least, searching from `start`. With the `solve` option, `f` gives residuals. The point is then where they're zero, or where the sum of their squares is least when there are more residuals than variables. With `linear` as well, `f` is affine. The point has `start`'s shape and keys. With the `report` option, the result is a record of the point, its value, the number of evaluations and whether the search converged.
-pub(crate) fn optimize(f: &Function, left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Result<Value, Error> {
+pub(crate) fn optimize(f: &Function, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
     let options = Options::new("⇄", left, None, OPTIONS, cx)?;
     let width = right.float_width().unwrap_or(crate::number::Numeric::current().width);
     match width { FloatWidth::F64 => run::<f64>(f, &options, right, width, cx), _ => run::<f32>(f, &options, right, width, cx) }
 }
 
 /// The search, in working floats `F`, with points and results as floats of `width`.
-fn run<F: Native + Float + Factor>(f: &Function, options: &Options, start: &Value, width: FloatWidth, cx: &mut Context<'_>) -> Result<Value, Error> {
+fn run<F: Native + Float + Factor>(f: &Function, options: &Options, start: &Value, width: FloatWidth, cx: &Context<'_>) -> Result<Value, Error> {
     let span = cx.span;
     let (solve, linear) = (options.boolean("solve", false, cx)?, options.boolean("linear", false, cx)?);
     let refuse = |keys: &[&str], when: &str| {
@@ -94,7 +94,7 @@ impl<'a> Point<'a> {
     }
 
     /// Calls `f` on the point `x`, with `left` as its left argument, and reads its numbers into `out`. A result with another number of them gives LENGTH with `message`.
-    fn call<F: Native + Float>(&self, f: &Function, left: Option<&Value>, x: &[F], out: &mut [F], message: &str, cx: &mut Context<'_>) -> Result<(), Error> {
+    fn call<F: Native + Float>(&self, f: &Function, left: Option<&Value>, x: &[F], out: &mut [F], message: &str, cx: &Context<'_>) -> Result<(), Error> {
         let span = cx.span;
         let y = f.call_array(left, &self.value(x, span)?, cx)?;
         fill(out, &y, message, span)
@@ -120,7 +120,7 @@ impl<'a> Point<'a> {
 
 /// The linearisation of `f` at `x`, from `last` where it was made at `x`, or at any point where `affine`, because an affine map's derivative is the same everywhere. A value, a gradient and products at one point then run `f` once.
 fn linearized_at<'a, F: Native>(
-    last: &'a mut Option<(Vec<f64>, Linearized)>, f: &Function, point: &Point<'_>, x: &[F], affine: bool, cx: &mut Context<'_>,
+    last: &'a mut Option<(Vec<f64>, Linearized)>, f: &Function, point: &Point<'_>, x: &[F], affine: bool, cx: &Context<'_>,
 ) -> Result<&'a Linearized, Error> {
     let key = point_key(x);
     if !matches!(last, Some((k, _)) if affine || *k == key) { *last = Some((key, crate::derivative::linearized(f, None, &point.value(x, cx.span)?, cx)?)); }
@@ -131,7 +131,7 @@ fn linearized_at<'a, F: Native>(
 fn point_key<F: Native>(x: &[F]) -> Vec<f64> { x.iter().map(|v| v.wide()).collect() }
 
 /// The operand as `rustymath::optimize` minimizes it. Where `∂` differentiates it and the search runs L-BFGS, each value comes from a linearisation that also gives the gradient there.
-struct Goal<'a, 'c> { cost: &'a Function, gradient: bool, last: Option<(Vec<f64>, Linearized)>, shape: Point<'a>, batch: bool, cx: &'a mut Context<'c> }
+struct Goal<'a, 'c> { cost: &'a Function, gradient: bool, last: Option<(Vec<f64>, Linearized)>, shape: Point<'a>, batch: bool, cx: &'a Context<'c> }
 
 impl<F: Native + Float> Objective<F> for Goal<'_, '_> {
     type Error = Error;
@@ -173,7 +173,7 @@ struct Residual<'a, 'c> {
     /// Whether `f` is affine, so that one record serves every point.
     affine: bool,
     last: Option<(Vec<f64>, Linearized)>,
-    cx: &'a mut Context<'c>,
+    cx: &'a Context<'c>,
 }
 
 impl<F: Native + Float> Mapping<F> for Residual<'_, '_> {

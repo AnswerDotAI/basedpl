@@ -2,21 +2,19 @@
 use super::*;
 
 impl Graph {
-    /// The graph's result, and the results of each node in `extras`, in order. `tally` counts what the blocks did, for `•explain`.
-    pub(super) fn typed<F: Float + Kernels + 'static>(&self, tally: &Tally) -> (Value, Vec<Value>) {
+    /// The graph's result. `tally` counts what the blocks did, for `•explain`.
+    pub(super) fn typed<F: Float + Kernels + 'static>(&self, tally: &Tally) -> Value {
         let shape = self.layout.shape().to_vec();
-        let mut extras: Vec<Vec<F>> = self.extras.iter().map(|_| Vec::new()).collect();
-        let last = (if self.compares() { bool::build(shape.clone(), self.results::<F, bool>(&mut extras, |slots| pervasive::Out::Bools(slots), tally)) }
-        else { F::build(shape.clone(), self.results::<F, F>(&mut extras, |slots| pervasive::Out::Floats(slots), tally)) }).expect("a graph's result fits its layout");
-        (last, extras.into_iter().map(|items| F::build(shape.clone(), items).expect("a graph's result fits its layout")).collect())
+        (if self.compares() { bool::build(shape, self.results::<F, bool>(|slots| pervasive::Out::Bools(slots), tally)) }
+        else { F::build(shape, self.results::<F, F>(|slots| pervasive::Out::Floats(slots), tally)) }).expect("a graph's result fits its layout")
     }
 
-    /// The graph's results, which each block's last node writes straight into the result through `out`, while each node in `extras` copies its block to `extras`. Pieces of whole blocks split across threads as rustymath's `parallel::extended_with` splits them, and run whole where this thread's calls run on one thread.
+    /// The graph's results, which each block's last node writes straight into the result through `out`. Pieces of whole blocks split across threads as rustymath's `parallel::extended` splits them, and run whole where this thread's calls run on one thread.
     fn results<F: Float + Kernels + 'static, B: Copy + Send + 'static>(
-        &self, extras: &mut [Vec<F>], out: impl for<'a, 'b> Fn(&'a mut rustymath::parallel::Slots<'b, B>) -> pervasive::Out<'a, 'b, F> + Sync, tally: &Tally) -> Vec<B> {
+        &self, out: impl for<'a, 'b> Fn(&'a mut rustymath::parallel::Slots<'b, B>) -> pervasive::Out<'a, 'b, F> + Sync, tally: &Tally) -> Vec<B> {
         let mut results = Vec::new();
-        rustymath::parallel::extended_with(&mut results, extras, self.len, self.block::<F>(), &|range, slots, extras| {
-            self.blocks::<F>(range, Last::Slots(out(slots)), extras, tally);
+        rustymath::parallel::extended(&mut results, self.len, self.block::<F>(), &|range, slots| {
+            self.blocks::<F>(range, Last::Slots(out(slots)), tally);
             true
         });
         results
@@ -42,18 +40,17 @@ impl Graph {
                 let items = pick(floats, bools);
                 fold(start, items);
                 items.clear();
-            }), &mut [], tally)
+            }), tally)
         });
         totals
     }
 
-    /// Runs the graph's nodes on each block of the items in `range` in turn. The last node writes to `last`: the result's slots, or for a fold, a block's floats, or its Booleans for a comparison. Every other node writes to the buffer that `slots` gives it, and a node in `self.extras` also copies each block to its slots in `extras`. A block splits into runs at the boundaries of each input's repeats or cycles of at least `RUN` results. `pervasive::expanded` reads each input once for each run, in place where the run lies within one repeat or cycle. `tally`, which `•explain` reads, counts the blocks, the runs and the items copied out of inputs.
-    fn blocks<F: Float + Kernels + 'static>(&self, range: Range<usize>, mut last: Last<'_, '_, F>, extras: &mut [rustymath::parallel::Slots<'_, F>], tally: &Tally) {
+    /// Runs the graph's nodes on each block of the items in `range` in turn. The last node writes to `last`: the result's slots, or for a fold, a block's floats, or its Booleans for a comparison. Every other node writes to the buffer that `slots` gives it. A block splits into runs at the boundaries of each input's repeats or cycles of at least `RUN` results. `pervasive::expanded` reads each input once for each run, in place where the run lies within one repeat or cycle. `tally`, which `•explain` reads, counts the blocks, the runs and the items copied out of inputs.
+    fn blocks<F: Float + Kernels + 'static>(&self, range: Range<usize>, mut last: Last<'_, '_, F>, tally: &Tally) {
         use {pervasive::Out, rustymath::parallel::Slots};
         let inputs: Vec<(&[F], &Mapping)> = self.inputs.iter().map(|(v, m)| (F::slice(v).expect("an input has the graph's width"), m)).collect();
         let mut copies: Vec<Vec<F>> = inputs.iter().map(|_| Vec::new()).collect();
         let (slot, count) = self.slots();
-        let extra_of: Vec<Option<usize>> = (0..self.nodes.len()).map(|k| self.extras.iter().position(|&(j, _)| j == k)).collect();
         let sources: Vec<Operands<Source<F>>> = self.nodes.iter().map(|node| node.operands.as_ref().map(|o| Source::of(o, &slot))).collect();
         let block = self.block::<F>();
         let readings: Vec<Reading> = inputs.iter().map(|&(_, m)| reading(m, block, self.settings.sizes.run)).collect();
@@ -109,8 +106,6 @@ impl Graph {
                         results.clear();
                         let done = Slots::append(&mut results, n, |slots| run(&buffers, Out::Floats(slots)));
                         buffers[slot[k]] = results;
-                        // A node whose results the graph also gives copies each block to them, while the block is in the cache.
-                        if let Some(j) = extra_of[k] { extras[j].copy(&buffers[slot[k]][..n]); }
                         done
                     } else {
                         match &mut last {

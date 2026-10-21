@@ -191,7 +191,7 @@ impl<'p> Stack<'p> {
 
 /// The binder, carrying on from a replay's state: its stacks and cursor, with the entity just resolved, or after a call's result.
 #[allow(clippy::too_many_arguments)]
-fn resumed(nodes: &[Node], session: &mut Session, tail: bool, stack: Stack<'_>, pending: Stack<'_>, cursor: usize, next: Option<Item<'_>>, after_call: bool) -> Result<Step, Error> {
+fn resumed(nodes: &[Node], session: &Session, tail: bool, stack: Stack<'_>, pending: Stack<'_>, cursor: usize, next: Option<Item<'_>>, after_call: bool) -> Result<Step, Error> {
     Binder::resumed(nodes, session, tail, Resume { stack: stack.entities(), pending: pending.entities(), cursor, next: next.map(Item::entity), after_call })
 }
 
@@ -206,7 +206,7 @@ impl Recording {
     }
 
     /// `nodes` evaluated by replaying the recorded steps, which gives what `Binder::evaluate` gives.
-    fn replay(&self, nodes: &[Node], session: &mut Session, tail: bool) -> Result<Step, Error> {
+    fn replay(&self, nodes: &[Node], session: &Session, tail: bool) -> Result<Step, Error> {
         if self.facts.iter().any(|fact| fact.changed(session)) { return Binder::evaluate(nodes, session, tail); }
         let nodes = self.rewrite.as_deref().unwrap_or(nodes);
         session.execution.check(&nodes[0].span)?;
@@ -301,7 +301,7 @@ impl Recording {
     }
 
     /// The group or run `node`, whose members are `nodes`, evaluated by replay, as `Binder::nested` evaluates it.
-    fn group(&self, node: &Node, nodes: &[Node], session: &mut Session) -> Result<Bound, Error> {
+    fn group(&self, node: &Node, nodes: &[Node], session: &Session) -> Result<Bound, Error> {
         let Step::Done(bound) = self.replay(nodes, session, false)? else { unreachable!("a group isn't in tail position") };
         Binder::group_bound(node, session, bound)
     }
@@ -309,7 +309,7 @@ impl Recording {
 
 impl Session {
     /// `nodes`, a statement or the part of one that `return_expression` evaluates, as `Binder::evaluate` gives it. Where `slot` is given, the first evaluation records the binder's steps in it, and later evaluations replay them.
-    pub(super) fn statement_step(&mut self, slot: Option<&OnceLock<Option<Recording>>>, nodes: &[Node], tail: bool) -> Result<Step, Error> {
+    pub(super) fn statement_step(&self, slot: Option<&OnceLock<Option<Recording>>>, nodes: &[Node], tail: bool) -> Result<Step, Error> {
         let Some(slot) = slot else { return Binder::evaluate(nodes, self, tail) };
         match slot.get() {
             Some(Some(recording)) => recording.replay(nodes, self, tail),

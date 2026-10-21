@@ -1,6 +1,6 @@
 use rustymath::{buffer::{FloatWidth, View}, error::Kind, layout::strides};
 use crate::{array::{Items, Steps}, ErrorKind, Number, Value};
-use foldhash::{HashSet, HashSetExt};
+use rustymath::hashing::{HashSet, HashSetExt};
 use std::sync::Arc;
 
 pub use rustymath::layout::Keys;

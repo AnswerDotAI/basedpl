@@ -1,5 +1,5 @@
 "Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set the budgets of basedpl's and rustymath's speed tests."
-import json, math, os, re, subprocess, sys, tomllib
+import json, math, os, re, subprocess, sys, tempfile, tomllib
 from collections import defaultdict
 from decimal import Context, Decimal, ROUND_CEILING
 from dataclasses import dataclass, field, replace
@@ -10,12 +10,15 @@ from fastcore.script import parse_cli
 from ._core import _captured_literal, _reference_cases
 from .reference import Corpus, _dyalog_string
 from . import BplError
-from .worker import NATIVE, Worker
+from .worker import INSTALLED_BPL, NATIVE, Worker
 
 SEPARATOR = '⍝ =>'
 INPUT = '⍝ input:'
 OUTPUT = '⍝ ⎕:'
 ERROR = '⍝ error: '
+
+# The header options that set a flag on a case, as Rust's `reference::FLAGS` names them.
+FLAGS = 'unfused', 'batched', 'mixed', 'serial'
 
 
 @dataclass
@@ -27,11 +30,14 @@ class Case:
     rtol: float = 0
     atol: float = 0
     unfused: bool = False
+    batched: bool = False
     mixed: bool = False
+    serial: bool = False
     line: int = field(default=0, compare=False, repr=False)
     section: str = ''
     output: str | None = None
     input: str | None = None
+    prefs: str | None = None
 
 
 def _escaped(text): return text.replace('\\', '\\\\').replace('\n', '\\n')
@@ -40,25 +46,26 @@ def _escaped(text): return text.replace('\\', '\\\\').replace('\n', '\\n')
 def parse(text):
     "The cases of `text`, a `.bpl` reference file, as Rust's `reference::cases` reads them. A malformed file raises `ValueError`."
     return [Case(code=c['code'], expect=c['expected_code'] if 'expected_code' in c else ERROR+c['expected_error'], id=c['id'], comment=c['comment'],
-                 rtol=c.get('relative_tolerance', 0), atol=c.get('absolute_tolerance', 0), unfused=c.get('unfused', False), mixed=c.get('mixed', False), line=c['line'],
-                 section=c['section'], output=c.get('expected_output'), input=c.get('input')) for c in _reference_cases(text)]
+                 rtol=c.get('relative_tolerance', 0), atol=c.get('absolute_tolerance', 0), **{key: c.get(key, False) for key in FLAGS}, line=c['line'],
+                 section=c['section'], output=c.get('expected_output'), input=c.get('input'), prefs=c.get('prefs')) for c in _reference_cases(text)]
 
 
 def _reads_back(record, case):
     "Whether `parse` reads `record`, the text of one case without its section heading, as `case`."
     try: [read] = parse(record)
     except ValueError: return False
-    return replace(read, section=case.section) == case
+    return replace(read, section=case.section, prefs=case.prefs) == case
 
 
 def render(cases):
     "Write each case inline, as a pair of lines, or with `⍝ =>` between multiline expressions. Raises `ValueError` where `parse` wouldn't read the result back as `cases`."
-    result, section = [], ''
+    if len({case.prefs for case in cases}) > 1: raise ValueError('cases from files with different `•prefs` headers')
+    result, section = [cases[0].prefs+'\n\n'] if cases and cases[0].prefs else [], ''
     for case in cases:
         if case.section != section:
             result.append(f'⍝⍝ {case.section}\n\n')
             section = case.section
-        options = ' '.join([f'{key}={getattr(case, key)}' for key in ('rtol', 'atol') if getattr(case, key)] + ['unfused']*case.unfused + ['mixed']*case.mixed)
+        options = ' '.join([f'{key}={getattr(case, key)}' for key in ('rtol', 'atol') if getattr(case, key)] + [key for key in FLAGS if getattr(case, key)])
         comment = case.comment + (f' [{options}]' if options else '')
         header = '⍝ ' + (case.id+' ' if case.id else '') + '—' + (f' {comment.lstrip()}' if comment else '')
         fixtures = ''.join('' if text is None else '\n'+marker+(' '+_escaped(text) if text else '') for marker,text in ((INPUT, case.input), (OUTPUT, case.output)))
@@ -242,6 +249,35 @@ def time_cases(
     if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
     return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
 
+class Instructions(list):
+    "Each case's instructions per unit of `N`, as `(code, instructions)` rows."
+    def __repr__(self): return '\n'.join(f'{n:>12,.0f}  {code}' for code, n in self)
+
+# The line of each platform's counter that gives the instructions a process retired: `/usr/bin/time -l`'s on macOS, `perf stat -x,`'s on Linux.
+_RETIRED = dict(darwin=re.compile(r'^\s*(\d+)\s+instructions retired$', re.M), linux=re.compile(r'^(\d+),[^,]*,instructions', re.M))
+
+def _retired(code, bpl):
+    "The instructions that a fresh `bpl` process retires running `code`."
+    if sys.platform not in _RETIRED: raise ValueError(f'no instruction counter on {sys.platform}')
+    with tempfile.NamedTemporaryFile('r') as report:
+        counter = ['/usr/bin/time', '-l', '-o', report.name] if sys.platform == 'darwin' else ['perf', 'stat', '-x,', '-e', 'instructions:u', '-o', report.name, '--']
+        p = subprocess.run([*counter, bpl or INSTALLED_BPL, '-e', code], capture_output=True, text=True)
+        if p.returncode: raise ValueError(p.stdout + p.stderr)
+        return int(_RETIRED[sys.platform].search(report.read())[1])
+
+def instructions(
+    cases:Annotated[str, {'nargs':'+'}], # A BPL expression that makes one call per step of `N`, such as `{⍵}⍣N⊢0`, or a list of them
+    setup='', # BPL that defines what the cases use, run before each case
+    counts:Annotated[int, {'nargs':2}]=(1_000, 101_000), # The two values of `N`
+    runs=3, # Processes at each value of `N`, of which the lowest count is used
+    bpl:Path=None # A native `bpl` to count, such as a copy saved before a change; None: the installed one
+):
+    "The instructions that each case retires per unit of `N`, on one thread: the difference between fresh `bpl` processes at the two `counts`, divided by the difference in `N`, which cancels startup and `setup`. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent. A case must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost."
+    cases = [cases] if isinstance(cases, str) else list(cases)
+    def count(code, n): return min(_retired(f'•prefs ["threads":1]\nN←{n}\n{setup}\nr←{code}\n0', bpl) for _ in range(runs))
+    lo, hi = counts
+    return Instructions((code, (count(code, hi) - count(code, lo)) / (hi - lo)) for code in cases)
+
 class SpeedCosts(list):
     "Each case's cost and the budget that limits it, as `(section, code, cost, budget)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build."
     def __init__(self, rows=(), cpu=None, platform=None):
@@ -382,7 +418,7 @@ def set_budgets(
     path.write_text('\n'.join(lines))
     return changes
 
-_COMMANDS = 'check_file check_page time_cases speed_costs cargo_costs pytest_costs wasm_test'.split()
+_COMMANDS = 'check_file check_page time_cases instructions speed_costs cargo_costs pytest_costs wasm_test'.split()
 
 def main():
     "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."

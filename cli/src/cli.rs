@@ -76,7 +76,7 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
     let mut failed = false;
     loop {
         let read = if let Some(editor) = &mut editor {
-            match editor.readline(if code.is_empty() { "      " } else { "    · " }, session.hanzi_aliases()) {
+            match editor.readline(if code.is_empty() { "      " } else { "    · " }, basedpl::settings::hanzi_aliases()) {
                 Ok(line) => {
                     code.push_str(&line);
                     code.push('\n');

@@ -117,8 +117,8 @@ fn shaped(shape: Vec<usize>, data: Js, names: Vec<Js>, keys: Vec<Js>) -> Js {
     Js::Object(fields)
 }
 
-/// The value that `js` describes, or `None` for `undefined` and `null`. Its numbers become floats of `session`'s default width.
-pub fn import(js: Js, session: &crate::Session) -> Result<Option<Value>, ErrorKind> { imported(js, session.numeric.width) }
+/// The value that `js` describes, or `None` for `undefined` and `null`. Its numbers become floats of the default width.
+pub fn import(js: Js) -> Result<Option<Value>, ErrorKind> { imported(js, crate::settings::float_width()) }
 
 /// The value that `js` describes, with its numbers as floats of `width`. A typed array keeps its own width.
 fn imported(js: Js, width: FloatWidth) -> Result<Option<Value>, ErrorKind> {

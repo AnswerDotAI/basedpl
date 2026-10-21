@@ -154,8 +154,8 @@ impl Default for Stream {
 }
 
 impl Stream {
-    /// A generator seeded by `seed`.
-    pub(crate) fn seeded(seed: u64) -> Generator { Arc::new(Mutex::new(Self { rng: ChaCha8Rng::seed_from_u64(seed) })) }
+    /// A stream seeded by `seed`.
+    pub(crate) fn seeded(seed: u64) -> Self { Self { rng: ChaCha8Rng::seed_from_u64(seed) } }
     /// The stream's state: its seed, its stream number and how far its draws have reached.
     fn state(&self) -> State { (self.rng.get_seed(), self.rng.get_stream(), self.rng.get_word_pos()) }
     /// Puts the stream back in `state`.
@@ -173,8 +173,8 @@ type State = ([u8; 32], u64, u128);
 pub(crate) type Drawn = Mutex<Vec<(Generator, State)>>;
 
 /// Ends a batched try's record of its draws, putting each generator's state back where the try fell back (`batch::tried`).
-pub(crate) fn settle(drawn: &mut Drawn, fell_back: bool) {
-    let drawn = std::mem::take(drawn.get_mut().unwrap_or_else(PoisonError::into_inner));
+pub(crate) fn settle(drawn: &Drawn, fell_back: bool) {
+    let drawn = std::mem::take(&mut *drawn.lock().unwrap_or_else(PoisonError::into_inner));
     if fell_back { for (generator, state) in drawn { locked(&generator).restore(state); } }
 }
 
@@ -184,12 +184,12 @@ fn locked(generator: &Generator) -> std::sync::MutexGuard<'_, Stream> { generato
 fn drawing(generator: Option<&Generator>, span: &Context<'_>, draw: impl FnOnce(Option<(u64, &crate::array::Layout)>, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
     let generator = generator.unwrap_or(&span.session.generator);
     let mut stream = locked(generator);
-    let batched = span.session.levels.batched();
+    let batched = span.session.batched();
     if batched.is_some() {
         let mut drawn = span.session.drawn.lock().unwrap_or_else(PoisonError::into_inner);
         if !drawn.iter().any(|(g, _)| Arc::ptr_eq(g, generator)) { drawn.push((generator.clone(), stream.state())); }
     }
-    draw(batched, &mut stream.rng)
+    draw(batched.as_ref().map(|(level, frame)| (*level, frame)), &mut stream.rng)
 }
 
 /// `f` drawing from `generator`, as `drawn_cells` does, where `f` doesn't depend on the cell.
@@ -230,7 +230,7 @@ pub(crate) fn generator(_: Option<&Value>, right: &Value, span: &Context<'_>) ->
     if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "•rand needs a unit or vector seed")); }
     if !right.is_singleton() { return Err(span.error(Kind::Length, "•rand needs one seed")); }
     let seed = numeric(&right.at(0), span)?.nonnegative_integer::<u64>().error_at(span, "•rand needs a nonnegative integer seed")?;
-    let rng = Stream::seeded(seed);
+    let rng = Arc::new(Mutex::new(Stream::seeded(seed)));
     Ok(natives([("roll", Call::Generator(rng.clone(), Draw::Roll), Monadic), ("deal", Call::Generator(rng, Draw::Deal), Dyadic)]))
 }
 

@@ -365,7 +365,7 @@ impl PyArray {
         }.map(Self::from).map_err(index_error)
     }
     /// Whether this array holds `query`, a native array or a `str`. A one-character string is an atom. A longer one is one item where the major cells are items, as a list of strings holds them, and otherwise a character vector, which matches a row of characters.
-    fn contains(&self, py: Python<'_>, query: &Bound<'_, PyAny>, session: PyRef<'_, PySession>) -> PyResult<bool> {
+    fn contains(&self, py: Python<'_>, query: &Bound<'_, PyAny>) -> PyResult<bool> {
         let value = self.value()?.clone();
         let query = match query.cast::<PyString>() {
             Ok(s) => match text(s)? {
@@ -374,9 +374,7 @@ impl PyArray {
             },
             Err(_) => query.extract::<PyRef<'_, PyArray>>()?.value()?.clone(),
         };
-        let mut guard = session.session.lock_py_attached(py).unwrap();
-        let session = &mut *guard;
-        py.detach(|| value.contains(&query, session)).map_err(|e| match &e.kind {
+        py.detach(move || value.contains(&query)).map_err(|e| match &e.kind {
             basedpl::ErrorKind::Array(e) if e.kind == rustymath::error::Kind::Rank => PyTypeError::new_err(e.message.to_string()),
             _ => PyValueError::new_err(e.to_string()),
         })
@@ -494,13 +492,13 @@ impl PySession {
         };
         response(py, result)
     }
-    /// The array that the Python data `obj` gives. Python floats take the session's default float width.
-    fn array(&self, py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<PyArray> {
-        let width = self.session.lock_py_attached(py).unwrap().float_width();
+    /// The array that the Python data `obj` gives. Python floats take the default float width.
+    fn array(&self, obj: &Bound<'_, PyAny>) -> PyResult<PyArray> {
+        let width = basedpl::settings::float_width();
         Ok(import(obj, width)?.into())
     }
-    /// Gives the session the display defaults of BPL's REPL and Jupyter kernel, for the BPL magics in IPython.
-    fn make_interactive(&self, py: Python<'_>) { self.session.lock_py_attached(py).unwrap().make_interactive() }
+    /// Makes the display defaults of BPL's REPL and Jupyter kernel the current ones, for the BPL magics in IPython. Settings are process-wide, so this takes no lock on the session.
+    fn make_interactive(&self) { Session::make_interactive() }
     #[pyo3(signature = (prefix="", classes=vec![2, 3, 4], complete=false))]
     fn names(&self, py: Python<'_>, prefix: &str, classes: Vec<i64>, complete: bool) -> Vec<String> {
         let session = self.session.lock_py_attached(py).unwrap();

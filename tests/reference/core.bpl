@@ -207,7 +207,7 @@ x←10ₓ×⍳5ₓ ⋄ i←⍳["i":5] ⋄ x.[i+1]←0
 ⍝ nan-positions — A NaN position reads the fill in every selection form, `•edge` gives NaN for a position outside its axis, and a write through a NaN position writes nothing
 x←10 20 30 40 ⋄ m←[1 2⋄3 4] ⋄ n←[1 2;3 4] ⋄ [x.[[1 $n]];[[1 $n]]⌷m;[$n]⊃x;n.[[[1 $n] [0 1]]];-@[1 $n] x;x.[(4•edge (⍳4ₓ)-1ₓ)]]   ⍝ [20 0;[3 4⋄0 0];0;0 2;10 ¯20 30 40;0 10 20 30]
 
-⍝ nan-exact-positions — Exact positions beside a NaN decode as other positions do, in selection and in `•edge`, and `•edge`'s fill keeps every position exact under a narrow float pref
+⍝ nan-exact-positions — Exact positions beside a NaN decode as other positions do, in selection and in `•edge`, and `•edge`'s fill keeps every position exact under a narrow float pref [serial]
 x←10 20 30 40 ⋄ •prefs ["float":16] ⋄ e←4096ₓ•edge 2049ₓ ⋄ •prefs ["float":64] ⋄ [x.[[1ₓ $n]];4ₓ•edge [1ₓ $n];e]   ⍝ [[20 0] [1 $n] 2049]
 
 ⍝ nan-writes — A write through a NaN position writes nothing, at a position, an item or a path level alike, and a modifier never runs for it. An atom keeps its value, and an empty array keeps its storage
@@ -4013,6 +4013,9 @@ i←[0 3⋄1 2]
 ⍝ — Index arrays select along any axis, beside an atom or another index array, and a negative position counts back from the end. Evenly spaced positions, rising or falling, give the same items as any other
 m←5 5⍴⍳25ₓ ⋄ [[2ₓ [0 1 4]ₓ]⌷m ; [[¯1 0]ₓ 1ₓ]⌷m ; [[1 3]ₓ [¯1 ¯2]ₓ]⌷m ; [⍳5ₓ]⌷⍳5ₓ ; [⌽⍳5ₓ]⌷10ₓ×⍳5ₓ ; m.[[4 0]ₓ [0 4]ₓ]]   ⍝ [[10 11 14]ₓ [21 1]ₓ [9 8⋄19 18]ₓ [0 1 2 3 4]ₓ [40 30 20 10 0]ₓ [20 4]ₓ]
 
+⍝ — Writes through exact index arrays count a negative position back from the end, let a later write win, spread a single value, and combine in turn under modified assignment
+x←⍳6 ⋄ y←⍳4 ⋄ z←⍳4 ⋄ x.[[1 ¯1 1 0]ₓ]←10 20 30 40 ⋄ y.[[3 ¯4]ₓ]←9 ⋄ z.[[2 2 ¯1]ₓ]+←1 ⋄ [x;y;z]   ⍝ [40 30 2 3 4 20;9 1 2 9;0 1 4 4]
+
 ⍝ — Functional update leaves the original array unchanged
 a←⍳3ₓ
 b←0@2 a
@@ -4440,7 +4443,7 @@ v←⍳1000ₓ ⋄ +/v+v   ⍝ 999000ₓ
 ⍝ — Structure keeps float storage, and an empty array takes its prototype's storage
 {(•storage ⍵).kind}¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float64" "float64" "float64" "integer"
 
-⍝ — Fused calls on a large array, across runs and parentheses, where one call joins two fused graphs, across assignments, through a shared intermediate, through a long iteration, and through both tines of a fork, give the result that each row gives, and their fold gives the fold of that result. 32-bit floats compare exactly, and their last bit can differ between routes, so `near` compares them within a tolerance
+⍝ — Fused calls on a large array, across runs and parentheses, where one call joins two fused graphs, across assignments, through a shared intermediate, through a long iteration, and through both tines of a fork, give the result that each row gives, and their fold gives the fold of that result. 32-bit floats compare exactly, and their last bit can differ between routes, so `near` compares them within a tolerance [serial]
 •prefs ["seed":7] ⋄ x←¿1000000⍴0
 x.[[0 1 2 3]]←[∞ ¯∞ $n 0]
 m←[1000 1000]⍴x
@@ -4478,18 +4481,10 @@ $t $t $t $t $t
 x←¿1000000⍴0 ⋄ x.[[0 1 2 3]]←[∞ ¯∞ $n 0] ⋄ [4↑x⌊0ₓ ⋄ 4↑x⌈0ₓ ⋄ 4↑x⌊x>0 ⋄ 4↑x⌈$t]
 [0ₓ ¯∞ 0 0⋄∞ 0ₓ 0 0⋄1ₓ ¯∞ 0 0⋄∞ 1ₓ 1 1]
 
-⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position
+⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position [serial]
 x←1.5+¿1000000⍴0 ⋄ •prefs ["fusion":$t] ⋄ r←⍴⍋x ⋄ •prefs ["fusion":$f] ⋄ r
 [1000000]ₓ
 ⍝ ⎕: fusion ends at ⍋ (<input>:1:46)
-
-⍝ — A pending computation runs under the settings in force when it was made, even after •prefs changes them
-•prefs ["kinds":"static"] ⋄ v←⌊131072⍴1.5 ⋄ •prefs ["kinds":"dynamic" "tolerance":0] ⋄ w←131072⍴1.000000000000001 ⋄ c←w=1 ⋄ •prefs ["tolerance":1e¯14] ⋄ [+/3+2×v+1 +/c]
-917504 0ₓ
-
-⍝ — Reading a copy of a pending call made under other settings runs the call under its own settings
-f←{•prefs ["kinds":"static"] ⋄ s←√200000⍴¯1 ⋄ •prefs ["kinds":"dynamic"] ⋄ s} ⋄ r←⌽ f 0 ⋄ n←r≡r ⋄ ↑r
-$n
 
 ⍝ — A structural glyph on a large array gives a pending copy, which later calls and folds read through, with a fill that no call computes
 v←1.0×¿1000000⍴1000 ⋄ mm←1000000 2⍴v ⋄ iv←¿1000000⍴100 ⋄ cv←1000000⍴"abc" ⋄ s←{s←⍵+1 ⋄ (2×⌽s)+s} ⋄ [(2×⌽v+1)≡⌽2×v+1; (2×1⌽v+1)≡1⌽2×v+1; (2×(10↓v)+1)≡10↓2×v+1; (2×⌽(v×2)+1)≡⌽2×(v×2)+1; (s v)≡(2×⌽v+1)+v+1; (2×1⌽⌽v+1)≡1⌽⌽2×v+1; ((⌽v)+mm)≡⌽⍠0 v+⌽⍠0 mm; (¯5↑2×1000005↑v+1)≡5⍴0; (+/⌽v+1)=+/v+1; (+/(⌽v)×v)=+/v×⌽v; (+/,3↕v)=+/(¯2↓v)+(1↓¯1↓v)+2↓v; ((⌽iv)₀=iv₋₁)∧(⌽cv)₀=cv₋₁; ({+/⌽v×⍵}∂1)=+/v]
@@ -4847,33 +4842,9 @@ nl←•ucs 10
 
 ⍝⍝ Static kinds
 
-⍝ — Under static kinds, a result's kind follows from its arguments' kinds: real arguments stay real, complex results stay complex, ⌊ and ÷ give floats, and integers compute at the int width
-•prefs ["kinds":"static"] ⋄ r←{(•storage ⍵).kind}¨[√¯4 9;1j0;0j1×0j1;⌊2.5 3.5;7ₓ÷2ₓ;[1 2]ₓ] ⋄ •prefs ["kinds":"dynamic"] ⋄ r
-"float64" "complex128" "complex128" "float64" "float64" "int64"
-
-⍝ — Static kinds give NaN outside the real domain and wrap integers that don't fit. Exact fractions stay exact
-•prefs ["kinds":"static"] ⋄ r←[√¯4 9;⌊2.5 ∞;7ₓ÷2ₓ;9223372036854775807ₓ+1ₓ;2ₓ*100ₓ;1r3+1r6] ⋄ •prefs ["kinds":"dynamic"] ⋄ r
-[[$n 3] [2 ∞] 3.5 ¯9223372036854775808ₓ 0ₓ 1ᵣ2]
-
-⍝ — Under static kinds, a weak atom takes the width of the floats beside it, as under dynamic kinds. An integer beside a float takes the float's width. Booleans add as integers
-•prefs ["kinds":"static"] ⋄ r←{(•storage ⍵).kind}¨[(32•float 1 2)×2;(32•float 1 2)+0j1;[1 2]ₓ+0.5;[1 2]ₓ+32•float 0.5;$t $f+$t $t] ⋄ •prefs ["kinds":"dynamic"] ⋄ r
-"float32" "complex64" "float64" "float32" "int64"
-
-⍝ — The int pref sets the width at which integers compute and wrap
-•prefs ["kinds":"static" "int":32] ⋄ r←[2147483647ₓ+1ₓ (•storage [1 2]ₓ).kind] ⋄ •prefs ["kinds":"dynamic" "int":64] ⋄ r
-¯2147483648ₓ "int32"
-
-⍝ — An item of complex storage with no imaginary part reads as a float under dynamic kinds, and stays complex under static kinds
+⍝ — An item of complex storage with no imaginary part reads as a float under dynamic kinds, and stays complex under static kinds [serial]
 z←0j1 1j0×1 ⋄ d←(•storage z₁).kind ⋄ •prefs ["kinds":"static"] ⋄ s←(•storage z₁).kind ⋄ •prefs ["kinds":"dynamic"] ⋄ [d s]
 "float64" "complex128"
-
-⍝ — Under static kinds, folds, scans and integer products wrap too, where dynamic kinds widen to exact integers of any size
-•prefs ["kinds":"static"] ⋄ r←[+/[9223372036854775807 1]ₓ +\[9223372036854775807 1]ₓ ×/[4294967296 4294967296]ₓ [9223372036854775807 1]ₓ+.×[1 1]ₓ] ⋄ •prefs ["kinds":"dynamic"] ⋄ r
-[¯9223372036854775808ₓ [9223372036854775807 ¯9223372036854775808]ₓ 0ₓ ¯9223372036854775808ₓ]
-
-⍝ — Under static kinds, ÷ divides integers as floats on every route: on arrays, in folds and in scans, lanes of one item included
-•prefs ["kinds":"static"] ⋄ r←{(•storage ⍵).kind}¨[[6 8]ₓ÷[3 2]ₓ;÷/[6 3]ₓ;÷\[6 3]ₓ;÷/,5ₓ;÷\,5ₓ;÷/[2 1]⍴5ₓ 7ₓ] ⋄ •prefs ["kinds":"dynamic"] ⋄ r
-"float64" "float64" "float64" "float64" "float64" "float64"
 
 ⍝ — A weak seed takes the width of the items that it folds or scans, as a weak atom beside them does
 v←32•float 1 2 3 ⋄ {(•storage ⍵).kind}¨[2.5+/v;2.5+\v]
@@ -4883,7 +4854,7 @@ v←32•float 1 2 3 ⋄ {(•storage ⍵).kind}¨[2.5+/v;2.5+\v]
 v←32•float 1.5 2.5 ⋄ w←1.5 2.5 ⋄ {(•storage ⍵).kind}¨[v×2.5;v×2.5ₚ;v×w₀;v₀×2.5;v×0j1;2.5×3.5]
 "float32" "float64" "float64" "float32" "complex64" "float64"
 
-⍝ — Each gives the same kinds whether it calls its function once on all cells or once for each cell, where weak and strong numbers meet
+⍝ — Each gives the same kinds whether it calls its function once on all cells or once for each cell, where weak and strong numbers meet [serial]
 v←32•float 1.5 2.5 ⋄ w←1.5 2.5 ⋄ k←{(•storage ⍵).kind} ⋄ a←[k {⍵×2.5}¨v;k {+/⍵×v}¨w] ⋄ •prefs ["batch":$f] ⋄ b←[k {⍵×2.5}¨v;k {+/⍵×v}¨w] ⋄ •prefs ["batch":$t] ⋄ [(a≡b) a]
 [$t ["float32" "float64"]]
 
@@ -4899,19 +4870,15 @@ v←32•float 0.1 0.2 ⋄ e←v=0.1 ⋄ v.[0]+←2.5 ⋄ [e (•storage v).kind
 v←32•float 1.5 2.5 ⋄ k←{(•storage ⍵).kind} ⋄ [k v,2.5;k 2.5⍪v;k v∪3.5;k v,2.5ₚ;k v,0j1;k {w←v ⋄ w.[[0]]←2.5 ⋄ w}0;k {w←v ⋄ w.[[0]]←2.5ₚ ⋄ w}0;k {2.5}@[0] v]
 "float32" "float32" "float32" "float64" "complex64" "float32" "float64" "float32"
 
-⍝ — An array built from items, such as a list in brackets or a map's results, gives a weak number the width of the strong floats among them, wherever it sits, and Each's two routes agree. A strong 64-bit float widens the array. Where the items stay mixed, a weak number becomes strong, so a copy keeps its width
+⍝ — An array built from items, such as a list in brackets or a map's results, gives a weak number the width of the strong floats among them, wherever it sits, and Each's two routes agree. A strong 64-bit float widens the array. Where the items stay mixed, a weak number becomes strong, so a copy keeps its width [serial]
 v←32•float 1.5 0.5 2.5 ⋄ k←{(•storage ⍵).kind} ⋄ f←{[k {⍵>1?2.5;⍵}¨v;k {⍵>1?⍵;2.5}¨v]} ⋄ a←f 0 ⋄ •prefs ["batch":$f] ⋄ b←f 0 ⋄ •prefs ["batch":$t] ⋄ x←[0.1 v₀ "a"] ⋄ [k [v₀ 2.5];k [2.5 v₀];a≡b;a;k [2.5 v₀ (64•float 1)];k ¯1↓x;(¯1↓x)₀≡x₀]
 ["float32" "float32" $t ["float32" "float32"] "float64" "float64" $t]
 
-⍝ — Under static kinds with the int pref at 32, folds, scans and inner products wrap at 32 bits, as arithmetic does. ⌈.+ wraps each sum before comparing it
-•prefs ["kinds":"static" "int":32] ⋄ a←[2147483647 5]ₓ ⋄ r←[+/a +\a -/[¯2147483648 1]ₓ ×/a,2ₓ a+.×[1 1]ₓ a⌈.+[1 1]ₓ (•storage +\a).kind] ⋄ •prefs ["kinds":"dynamic" "int":64] ⋄ r
-[¯2147483644ₓ [2147483647 ¯2147483644]ₓ 2147483647ₓ ¯10ₓ ¯2147483644ₓ 6ₓ "int32"]
-
-⍝ — Under static kinds, an integer array computes at the wider of its storage width and the int width, so a 64-bit array under the int pref at 32 wraps at 64 bits
+⍝ — Under static kinds, an integer array computes at the wider of its storage width and the int width, so a 64-bit array under the int pref at 32 wraps at 64 bits [serial]
 a←[4000000000 2]ₓ ⋄ •prefs ["kinds":"static" "int":32] ⋄ r←[a×a +/a×a (•storage a×a).kind] ⋄ •prefs ["kinds":"dynamic" "int":64] ⋄ r
 [[¯2446744073709551616 4]ₓ ¯2446744073709551612ₓ "int64"]
 
-⍝ — Under static kinds, √ fuses, because its kernel keeps NaN where dynamic kinds would rerun on complex numbers. ∂ gives a NaN tangent outside the domain
+⍝ — Under static kinds, √ fuses, because its kernel keeps NaN where dynamic kinds would rerun on complex numbers. ∂ gives a NaN tangent outside the domain [serial]
 y←¿1000000⍴0 ⋄ •prefs ["kinds":"static"] ⋄ r←[(•explain "+/√y-0.5").fused.glyphs;{+/√⍵}∂4 ¯1 9] ⋄ •prefs ["kinds":"dynamic"] ⋄ r
 ("-√+/"⋄0.25 $n (÷6))
 
@@ -5316,6 +5283,9 @@ gg←2 3 4 5 ⋄ 9,gg₁,3 4   ⍝ 9 3 3 4
 
 ⍝ — Subtraction scan accumulates from left to right
 -\1 2 3   ⍝ 1 ¯1 ¯4
+
+⍝ — Subtraction scans of long lanes and along the leading axis match the dfn scan
+v←1+⍳20 ⋄ m←[4 20]⍴v ⋄ z←v+0j1×v ⋄ [(-\v)≡{⍺-⍵}\v;(5-\v)≡5{⍺-⍵}\v;(-\m)≡{⍺-⍵}\m;(-⍀m)≡{⍺-⍵}⍀m;(-\z)≡{⍺-⍵}\z]   ⍝ $t $t $t $t $t
 
 ⍝ — Float scan retains left-to-right accumulation through cancellation
 +\1E100 ¯1E100 1   ⍝ 1E100 0 1
@@ -6118,8 +6088,8 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍝ — A guard on a batched value runs each side once, on the cells that take it, so √ sees no negative cell and the kind stays real
 {⍵<0?0;√⍵}¨¯4 9 ¯1 16   ⍝ 0 3 0 4
 
-⍝ — A batched guard makes no fallback
-•prefs ["batch":$t] ⋄ (•explain "{⍵<0?0;√⍵}¨¯4 9 ¯1 16").fallbacks.reason   ⍝ 0⍴⊂""
+⍝ — A batched guard makes no fallback [batched]
+(•explain "{⍵<0?0;√⍵}¨¯4 9 ¯1 16").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — A later guard in the same call splits a side's cells again
 {⍵<0?0;⍵>10?10;⍵}¨¯5 3 20 7 ¯1   ⍝ 0 3 10 7 0
@@ -6142,8 +6112,8 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍝ — A batched guard in a stencil
 {(+/⍵)>6?1;0}⌺3⊢⍳6ₓ   ⍝ 0 0 0 1 1 1
 
-⍝ — A stencil over a keyed axis makes a batched try, because its windows have no keys
-•prefs ["batch":$t] ⋄ V←"aa" "bb" "cc":1 2 3 ⋄ (•explain "{x←•ucs ""a"" ⋄ +/⍵}⌺3 V").fallbacks.reason   ⍝ ["an effect"]
+⍝ — A stencil over a keyed axis makes a batched try, because its windows have no keys [batched]
+V←"aa" "bb" "cc":1 2 3 ⋄ (•explain "{x←•ucs ""a"" ⋄ +/⍵}⌺3 V").fallbacks.reason   ⍝ ["an effect"]
 
 ⍝ — A batched guard in an Each over keys
 {⍵>20?⍵;-⍵}¨["a":10 "b":30 "c":5]   ⍝ ["a":¯10 "b":30 "c":¯5]
@@ -6157,60 +6127,54 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍝ — A constant scalar that isn't an atom stays a scalar in each cell
 {⍬⍴5}¨⍳3ₓ   ⍝ [⊂5 ⊂5 ⊂5]
 
-⍝ — A batched guard in a recursive call falls back
-•prefs ["batch":$t] ⋄ (•explain "{⍵<2?⍵;(∇⍵-1)+∇⍵-2}¨⍳8ₓ").fallbacks.reason   ⍝ ["a recursive call"]
+⍝ — A batched guard in a recursive call falls back [batched]
+(•explain "{⍵<2?⍵;(∇⍵-1)+∇⍵-2}¨⍳8ₓ").fallbacks.reason   ⍝ ["a recursive call"]
 
 ⍝ — A side that writes to a binding of an enclosing frame gives each cell's own result
 {n←0 ⋄ g←{⍵>2?n+←1;0} ⋄ r←g ⍵ ⋄ n}¨⍳5ₓ   ⍝ 0 0 0 1 1
 
-⍝ — A side that writes to a binding of an enclosing frame falls back, because the frame outlives the side
-•prefs ["batch":$t] ⋄ (•explain "{n←0 ⋄ g←{⍵>2?n+←1;0} ⋄ r←g ⍵ ⋄ n}¨⍳5ₓ").fallbacks.reason   ⍝ ["a write"]
+⍝ — A side that writes to a binding of an enclosing frame falls back, because the frame outlives the side [batched]
+(•explain "{n←0 ⋄ g←{⍵>2?n+←1;0} ⋄ r←g ⍵ ⋄ n}¨⍳5ₓ").fallbacks.reason   ⍝ ["a write"]
 
-⍝ — A random draw in a side draws for the cells that take it
-•prefs ["batch":$t] ⋄ e←•explain "{⍵>0?¿⍵;0}¨0 3 0 5" ⋄ [0=≢e.fallbacks.reason;∧/e.value<1⌈0 3 0 5]   ⍝ $t $t
+⍝ — A random draw in a side draws for the cells that take it [batched]
+e←•explain "{⍵>0?¿⍵;0}¨0 3 0 5" ⋄ [0=≢e.fallbacks.reason;∧/e.value<1⌈0 3 0 5]   ⍝ $t $t
 
-⍝ — A dfn whose batched run stopped on a count from its cell skips the batched try on later calls
-•prefs ["batch":$t] ⋄ f←{2×⍣⍵⊢1} ⋄ r←f¨⍳5ₓ
+⍝ — A dfn whose batched run stopped on a count from its cell skips the batched try on later calls [batched]
+f←{2×⍣⍵⊢1} ⋄ r←f¨⍳5ₓ
 (•explain "f¨⍳5ₓ").fallbacks.reason   ⍝ ["an earlier stop: a cell's value"]
 
-⍝ — A dfn whose guard caught an error in some cells of a batched run batches again on later calls, because the stop depended on the cells' data
-•prefs ["batch":$t] ⋄ f←{"DOMAIN"::¯1 ⋄ ⍵○0.5} ⋄ r←f¨1 2 13
+⍝ — A dfn whose guard caught an error in some cells of a batched run batches again on later calls, because the stop depended on the cells' data [batched]
+f←{"DOMAIN"::¯1 ⋄ ⍵○0.5} ⋄ r←f¨1 2 13
 (•explain "f¨1 2 3").fallbacks.reason   ⍝ 0⍴⊂""
 
-⍝ — A dfn whose batched run stopped on a call with no rule for batches skips the batched try on later calls whose arguments have the same kinds and cell shapes
-•prefs ["batch":$t] ⋄ f←{⍋⍵} ⋄ r←f⍤1⊢2 3⍴⍳6ₓ
+⍝ — A dfn whose batched run stopped on a call with no rule for batches skips the batched try on later calls whose arguments have the same kinds and cell shapes [batched]
+f←{⍋⍵} ⋄ r←f⍤1⊢2 3⍴⍳6ₓ
 (•explain "f⍤1⊢2 3⍴⍳6ₓ").fallbacks.reason   ⍝ ["an earlier stop: no batch rule"]
 
-⍝ — The same dfn tries a batched run again on cells of another shape
-•prefs ["batch":$t] ⋄ f←{⍋⍵} ⋄ r←f⍤1⊢2 3⍴⍳6ₓ
+⍝ — The same dfn tries a batched run again on cells of another shape [batched]
+f←{⍋⍵} ⋄ r←f⍤1⊢2 3⍴⍳6ₓ
 (•explain "f⍤1⊢2 4⍴⍳8ₓ").fallbacks.reason   ⍝ ["no batch rule for ⍋"]
 
-⍝ — A system function in a batched run stops it for an effect
-•prefs ["batch":$t]
+⍝ — A system function in a batched run stops it for an effect [batched]
 (•explain "{•json⁻¹ ⍵}¨1 2").fallbacks.reason   ⍝ ["an effect"]
 
-⍝ — A system function on a cell's value stops a batched run for an effect, as one on a constant does
-•prefs ["batch":$t]
+⍝ — A system function on a cell's value stops a batched run for an effect, as one on a constant does [batched]
 (•explain "{•ucs ⍵}¨""abc""").fallbacks.reason   ⍝ ["an effect"]
 
-⍝ — A system function on a constant inside the operand stops a batched run for an effect
-•prefs ["batch":$t]
+⍝ — A system function on a constant inside the operand stops a batched run for an effect [batched]
 (•explain "{x←•ucs ""a"" ⋄ ⍵}¨⍳3ₓ").fallbacks.reason   ⍝ ["an effect"]
 
-⍝ — ⍕ of a cell stops a batched run for an effect
-•prefs ["batch":$t]
+⍝ — ⍕ of a cell stops a batched run for an effect [batched]
 (•explain "{⍕⍵}¨⍳3ₓ").fallbacks.reason   ⍝ ["an effect"]
 
-⍝ — ⍕ of a strand that holds a cell stops a batched run for an effect too
-•prefs ["batch":$t]
+⍝ — ⍕ of a strand that holds a cell stops a batched run for an effect too [batched]
 (•explain "{⍕[⍵ 1]}¨⍳3ₓ").fallbacks.reason   ⍝ ["an effect"]
 
-⍝ — A write to a name outside the map stops a batched run
-•prefs ["batch":$t] ⋄ n←0
+⍝ — A write to a name outside the map stops a batched run [batched]
+n←0
 (•explain "{n+←1 ⋄ ⍵}¨1 2").fallbacks.reason   ⍝ ["a write"]
 
-⍝ — A guard that would catch an error stops a batched run
-•prefs ["batch":$t]
+⍝ — A guard that would catch an error stops a batched run [batched]
 (•explain "{""DOMAIN""::¯1 ⋄ ⍵○0.5}¨1 2 13").fallbacks.reason   ⍝ ["a caught error"]
 
 ⍝ — A system function's inverse writes each cell's literal
@@ -6222,15 +6186,13 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍝ — The inverse of ⍎ writes each cell's literal too
 {⍎⁻¹ ⍵}¨1 2 3   ⍝ "1ₚ" "2ₚ" "3ₚ"
 
-⍝ — ⍎ of each cell's text stops the batched run, because each cell holds its own code
-•prefs ["batch":$t]
+⍝ — ⍎ of each cell's text stops the batched run, because each cell holds its own code [batched]
 (•explain "{⍎⍵}⍤1⊢2 3⍴""1+1""").fallbacks.reason   ⍝ ["a cell's value"]
 
 ⍝ — Each cell's floor keeps its own kind: an infinity stays a float beside exact integers
 {⌊⍵}¨1.5 ∞ 2.5   ⍝ 1ₓ ∞ 2ₓ
 
-⍝ — A batched run takes square roots of exact integers, because every cell gives floats
-•prefs ["batch":$t]
+⍝ — A batched run takes square roots of exact integers, because every cell gives floats [batched]
 (•explain "{√⍵}¨4ₓ 9ₓ").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — A strand of the cell's values gives each cell a vector
@@ -6293,8 +6255,7 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍝ — Rank joins each pair of cells in one call where both arguments have the same frame
 [1 2⋄3 4] ,⍤1 [5 6⋄7 8]   ⍝ [1 2 5 6⋄3 4 7 8]
 
-⍝ — A batched run joins and transposes cells without falling back
-•prefs ["batch":$t]
+⍝ — A batched run joins and transposes cells without falling back [batched]
 (•explain "{⍵,⍉⍵}⍤2⊢2 2 2⍴0.5").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — Each passes a scalar's item to every cell
@@ -6312,36 +6273,33 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 ⍝ — A batched run divides each cell by a matrix that every cell shares
 {⍵⌹2 2⍴2 0 0 2}⍤2⊢2 2 2⍴2 4 6 8 2 2 2 2   ⍝ [[1 2⋄3 4]⋄[1 1⋄1 1]]
 
-⍝ — A batched run stops where one cell's share of a large constant alone would hold too many items
-•prefs ["batch":$t] ⋄ x←2000000⍴0.5
+⍝ — A batched run stops where one cell's share of a large constant alone would hold too many items [batched]
+x←2000000⍴0.5
 (•explain "{+/x×⍵}¨1 2 3 4 5 6 7 8 9 10").fallbacks.reason   ⍝ ["too many items"]
 
-⍝ — A batched run whose constants, repeated for every cell, would hold too many items runs on chunks of cells instead
-•prefs ["batch":$t] ⋄ x←⍳16384ₓ ⋄ c←⍳2048ₓ
+⍝ — A batched run whose constants, repeated for every cell, would hold too many items runs on chunks of cells instead [batched]
+x←⍳16384ₓ ⋄ c←⍳2048ₓ
 (•explain "{+/(x-⍵)×x-⍵}¨c").fallbacks.reason   ⍝ 0⍴⊂""
 
-⍝ — Chunks of cells give what the run over cells gives, cell by cell
+⍝ — Chunks of cells give what the run over cells gives, cell by cell [serial]
 x←⍳16384ₓ ⋄ c←⍳2048ₓ ⋄ f←{+/(x-⍵)×x-⍵} ⋄ a←f¨c
 •prefs ["batch":$f] ⋄ a≡f¨c   ⍝ $t
 
-⍝ — A chunk whose later call repeats a larger constant starts the chunks over, with smaller chunks
+⍝ — A chunk whose later call repeats a larger constant starts the chunks over, with smaller chunks [serial]
 x←⍳1024ₓ ⋄ y←⍳4096ₓ ⋄ c←⍳4096ₓ ⋄ f←{(+/y×⍵)++/x-⍵} ⋄ a←f¨c
 •prefs ["batch":$f] ⋄ a≡f¨c   ⍝ $t
 
-⍝ — Chunks draw the numbers that the run over cells draws
+⍝ — Chunks draw the numbers that the run over cells draws [serial]
 •prefs ["seed":7] ⋄ x←⍳4096ₓ ⋄ c←⍳1024ₓ ⋄ f←{(+/x-⍵)+¿100} ⋄ a←f¨c
 •prefs ["seed":7 "batch":$f] ⋄ b←f¨c ⋄ a≡b   ⍝ $t
 
-⍝ — A short constant, repeated for every cell, still batches
-•prefs ["batch":$t]
+⍝ — A short constant, repeated for every cell, still batches [batched]
 (•explain "{⍵×1 2 3 4 5}¨0.5+⍳1000ₓ").fallbacks.reason   ⍝ 0⍴⊂""
 
-⍝ — A count that comes from the cell inside a strand stops the batched run
-•prefs ["batch":$t]
+⍝ — A count that comes from the cell inside a strand stops the batched run [batched]
 (•explain "{[⍵ 1]↑2 2⍴⍳4ₓ}¨1 2").fallbacks.reason   ⍝ ["a cell's value"]
 
-⍝ — A kernel that reads a number from the cell, which no rule for batches covers, stops the batched run
-•prefs ["batch":$t]
+⍝ — A kernel that reads a number from the cell, which no rule for batches covers, stops the batched run [batched]
 (•explain "{⊤[⍵ 1]}¨1 2").fallbacks.reason   ⍝ ["no batch rule"]
 
 ⍝ — Cells whose results differ in shape
@@ -6377,8 +6335,7 @@ a   ⍝ 1 1 1 1 1
 ⍝ — A map inside `∂` makes one batched call: the batch rules take each call first, and their calls on whole arrays reach the `∂` rules
 m←[2 3]⍴⍳6 ⋄ {+/{+/⍵×⍵}⍤1⊢⍵}∂ m   ⍝ [0 2 4⋄6 8 10]
 
-⍝ — A map inside `∂` records no fallback
-•prefs ["batch":$t]
+⍝ — A map inside `∂` records no fallback [batched]
 (•explain "{+/{+/⍵×⍵}⍤1⊢⍵}∂ [2 3]⍴⍳6ₓ").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — A stencil inside `∂` whose kernel is the parameter: each offset's gradient sums its windows' items
@@ -6402,8 +6359,7 @@ s←[2 2 2]⍴⍳8ₓ ⋄ {+/-.×⍤2⊢⍵}∂ s+0.5   ⍝ [2 2 2]⍴3.5 ¯2.5 
 ⍝ — Inverses of a stack of matrices inside `∂` take the `∂` rule for `⌹` matrix by matrix
 s←[2 2 2]⍴⍳8ₓ ⋄ {+/,⌹⍤2⊢⍵}∂ s+0.5   ⍝ [2 2 2]⍴¯0.5 0.5 0.5 ¯0.5 ¯0.5 0.5 0.5 ¯0.5
 
-⍝ — A stack of matrices inside `∂` records no fallback
-•prefs ["batch":$t]
+⍝ — A stack of matrices inside `∂` records no fallback [batched]
 (•explain "s←[2 2 2]⍴⍳8 ⋄ {+/,⍵+.×⍤2⊢⍵}∂ s").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — `∂` inside the operand differentiates each cell on its own
@@ -6412,8 +6368,7 @@ s←[2 2 2]⍴⍳8ₓ ⋄ {+/,⌹⍤2⊢⍵}∂ s+0.5   ⍝ [2 2 2]⍴¯0.5 0.5 
 ⍝ — `∂` with respect to each row under Rank differentiates each row on its own
 {{+/⍵×⍵}∂ ⍵}⍤1⊢2 3⍴⍳6ₓ   ⍝ [0 2 4⋄6 8 10]ₓ
 
-⍝ — `∂` with respect to a batch of rows makes one batched call, with no fallback
-•prefs ["batch":$t]
+⍝ — `∂` with respect to a batch of rows makes one batched call, with no fallback [batched]
 (•explain "{{+/⍵×⍵}∂ ⍵}⍤1⊢2 3⍴⍳6ₓ").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — A Jacobian under Rank, one for each row
@@ -6443,8 +6398,7 @@ m←[2 3]⍴⍳6ₓ ⋄ [{{+/,(2 2⍴⍵)*2}∂⍵}⍤1⊢m;{{+/(1 0 2#⍵)*2}�
 ⍝ — An attached rule inside Each under an outer `∂` uses the rule, which here differs from the function's body
 w←{⍵×2} ⋄ w∂←{⍺×10} ⋄ {+/w¨⍵}∂ 1 2 3   ⍝ 10 10 10
 
-⍝ — A Jacobian with more results than numbers, and a row catenated with a constant, make one batched call with no fallback
-•prefs ["batch":$t]
+⍝ — A Jacobian with more results than numbers, and a row catenated with a constant, make one batched call with no fallback [batched]
 m←[2 2]⍴1 2 3 4 ⋄ [(•explain "{{(⍵*2),+/⍵}∂⍵}⍤1⊢m").fallbacks.reason;(•explain "{{+/(⍵,1)*2}∂⍵}⍤1⊢m").fallbacks.reason]   ⍝ [0⍴⊂"" 0⍴⊂""]
 
 ⍝ — `∂` inside the operand refuses complex cells, as it refuses a complex argument outside a map

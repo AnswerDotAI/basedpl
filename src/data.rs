@@ -3,7 +3,7 @@ use crate::{
     array::{Items, Storage}, execution::Context, keyed, number::Numeric, primitive::{numeric, real},
     DomainAt, Error, ErrorAt, ErrorKind, Number, Value
 };
-use foldhash::{HashMap, HashMapExt};
+use rustymath::hashing::{HashMap, HashMapExt};
 use std::io::Read;
 
 pub(crate) fn text(value: &Value, span: &Context<'_>) -> Result<String, Error> {

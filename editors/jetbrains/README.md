@@ -8,7 +8,7 @@ Syntax highlighting and glyph-entry templates for IntelliJ IDEA, PyCharm, WebSto
 2. Under **Settings > Editor > TextMate Bundles**, click **+** and select this folder's `BPL.tmbundle` directory.
 3. Open a `.bpl` file.
 
-The bundle contains the same generated TextMate grammar used by BPL's playground. See JetBrains' [TextMate instructions](https://www.jetbrains.com/help/idea/textmate.html).
+The bundle contains the same generated TextMate grammars used by BPL's playground. Select **BPL (Hanzi)** for Hanzi glyph spellings (`.hpl` files). **BPL** treats Hanzi as names. See JetBrains' [TextMate instructions](https://www.jetbrains.com/help/idea/textmate.html).
 
 ## Glyph entry
 

@@ -93,7 +93,7 @@ impl Session {
             NodeKind::Operator(op) => Some(OperatorNode::Primitive(*op).is_dyadic()),
             NodeKind::Dfn(d) => (d.kind != DefinitionKind::Function).then(|| d.kind == DefinitionKind::DyadicOperator),
             _ if !Self::names_valence(node) => None,
-            NodeKind::Name(name) => match self.lookup(name) { Some(Binding::Operator(op)) => Some(op.is_dyadic()), _ => None },
+            NodeKind::Name(name) => match self.peek(name) { Some((_, Category::DyadicOperator)) => Some(true), Some((_, Category::Operator)) => Some(false), _ => None },
             NodeKind::Group(_) => match self.static_field(node) { Some(Value::Operator(op)) => Some(op.0.is_dyadic()), _ => None },
             _ => unreachable!("names_valence lists the nodes whose answer names decide"),
         }
@@ -137,7 +137,7 @@ impl Session {
     /// The value that the dot path from `name` through `keys` names, read without evaluating anything. It starts from `name`'s array and reads each key's field in turn.
     fn static_path<'k>(&self, name: &str, keys: impl IntoIterator<Item = &'k str>) -> Option<Value> {
         let Binding::Value(value) = self.lookup(name)? else { return None };
-        keys.into_iter().try_fold(value.clone(), |value, key| crate::keyed::field(&value, key))
+        keys.into_iter().try_fold(value, |value, key| crate::keyed::field(&value, key))
     }
 
     /// The value a dot path such as `m.f` or `m.a.f` names, read without evaluating anything. Dot access writes `m.f` as the group `"f"⊃m`.
@@ -155,7 +155,7 @@ impl Session {
     /// Whether the dot path that starts `nodes`, such as `mul` or `ops.mul`, names a function or operator, read without evaluating anything.
     pub(super) fn path_function(&self, nodes: &[Node]) -> bool {
         let Some(NodeKind::Name(name)) = nodes.first().map(|n| &n.kind) else { return false };
-        if matches!(self.lookup(name), Some(Binding::Function(_) | Binding::Operator(_))) { return true; }
+        if matches!(self.peek(name), Some((_, Category::Function | Category::Operator | Category::DyadicOperator))) { return true; }
         let keys = nodes[1..].chunks_exact(2).map_while(|pair| match pair {
             [Node { kind: NodeKind::Operator(OperatorKind::Product), .. }, Node { kind: NodeKind::Name(key), .. }] => Some(&**key),
             _ => None,
@@ -365,28 +365,28 @@ impl Rule {
 
 pub(super) struct Binder { stack: Vec<Entity> }
 impl Binder {
-    pub(super) fn evaluate(nodes: &[Node], session: &mut Session, tail: bool) -> Result<Step, Error> {
+    pub(super) fn evaluate(nodes: &[Node], session: &Session, tail: bool) -> Result<Step, Error> {
         Self::reduced(nodes, session, tail, None, None, None)?.step(&nodes[0].span.source)
     }
     /// `nodes` evaluated with `seed` already on the binder's stack, as the entity to the right of them all.
-    pub(super) fn evaluate_seeded(nodes: &[Node], session: &mut Session, seed: Entity) -> Result<Bound, Error> {
+    pub(super) fn evaluate_seeded(nodes: &[Node], session: &Session, seed: Entity) -> Result<Bound, Error> {
         let Step::Done(bound) = Self::reduced(nodes, session, false, Some(seed), None, None)?.step(&nodes[0].span.source)? else { unreachable!("a run with no tail call gives its value") };
         Ok(bound)
     }
     /// `nodes` evaluated as `evaluate` evaluates them, with the recording of the binder's steps when they stay within the subset that recordings cover (`tree.rs`).
-    pub(super) fn recorded(nodes: &[Node], session: &mut Session, tail: bool) -> Result<(Step, Option<Recording>), Error> {
+    pub(super) fn recorded(nodes: &[Node], session: &Session, tail: bool) -> Result<(Step, Option<Recording>), Error> {
         let mut recorder = Recorder::default();
         let reduced = Self::reduced(nodes, session, tail, None, Some(&mut recorder), None)?;
         Ok((reduced.step(&nodes[0].span.source)?, recorder.finish()))
     }
     /// `nodes` evaluated from `resume`, the state where a replay stopped matching.
-    pub(super) fn resumed(nodes: &[Node], session: &mut Session, tail: bool, resume: Resume) -> Result<Step, Error> {
+    pub(super) fn resumed(nodes: &[Node], session: &Session, tail: bool, resume: Resume) -> Result<Step, Error> {
         Self::reduced(nodes, session, tail, None, None, Some(resume))?.step(&nodes[0].span.source)
     }
     /// The run or parenthesised group `node`, as the run around it uses it. A run reduces to one value: an array, a function, or an operator that a dot path such as `m.op` names.
-    pub(super) fn nested(node: &Node, session: &mut Session) -> Result<Bound, Error> { Self::nested_with(node, session, None) }
+    pub(super) fn nested(node: &Node, session: &Session) -> Result<Bound, Error> { Self::nested_with(node, session, None) }
     /// `nested`, with `rec` recording the group's reductions.
-    fn nested_with(node: &Node, session: &mut Session, rec: Option<&mut Recorder>) -> Result<Bound, Error> {
+    fn nested_with(node: &Node, session: &Session, rec: Option<&mut Recorder>) -> Result<Bound, Error> {
         let (NodeKind::Group(nodes) | NodeKind::Run(nodes)) = &node.kind else { unreachable!() };
         let Reduced::Entity(entity) = session.nested(nodes, |session| Self::reduced(nodes, session, false, None, rec, None))? else { unreachable!() };
         Self::group_bound(node, session, entity.bound(&nodes[0].span.source)?)
@@ -419,7 +419,7 @@ impl Binder {
         }
     }
     fn reduced(
-        nodes: &[Node], session: &mut Session, tail: bool, seed: Option<Entity>, mut rec: Option<&mut Recorder>, resume: Option<Resume>
+        nodes: &[Node], session: &Session, tail: bool, seed: Option<Entity>, mut rec: Option<&mut Recorder>, resume: Option<Resume>
     ) -> Result<Reduced, Error> {
         // A replay resumes the binder on the rewritten nodes it walked, whose positions its cursor counts.
         let rewriting = resume.is_none();
@@ -431,7 +431,10 @@ impl Binder {
         else if matches!(joined, Cow::Owned(_)) || matches!(members, Cow::Owned(_)) { log(&mut rec, |rc| rc.rewritten(nodes.to_vec())); }
         let (mut binder, mut pending, mut cursor, mut held, mut after_call) = match resume {
             Some(r) => (Self { stack: r.stack }, r.pending, r.cursor, r.next, r.after_call),
-            None => (Self { stack: session.stacks.pop().unwrap_or_default() }, session.stacks.pop().unwrap_or_default(), nodes.len(), None, false),
+            None => {
+                let mut stacks = session.stacks.borrow_mut();
+                (Self { stack: stacks.pop().unwrap_or_default() }, stacks.pop().unwrap_or_default(), nodes.len(), None, false)
+            }
         };
         binder.stack.extend(seed);
         let mut assignment = None;
@@ -496,15 +499,15 @@ impl Binder {
                 }
                 }
             loop {
-                let call = if std::mem::take(&mut after_call) { None } else { binder.reduce(session.capture, source, rec.as_deref_mut())? };
+                let call = if std::mem::take(&mut after_call) { None } else { binder.reduce(session.capture.get(), source, rec.as_deref_mut())? };
                 if let Some(call) = call {
                     if assignment.is_none() && tail_call(tail, cursor, pending.len() + binder.stack.len(), &call.function) {
                             log(&mut rec, |rc| rc.called(call.span.clone(), Category::Value));
-                            session.stacks.extend([binder.stack, pending]);
+                            session.stacks.borrow_mut().extend([binder.stack, pending]);
                             return Ok(Reduced::Tail(call));
                         }
-                    let mut cx = session.at(&call.span);
-                    let bound = call.function.call(call.left.as_ref(), &call.right, &mut cx)?;
+                    let cx = session.at(&call.span);
+                    let bound = call.function.call(call.left.as_ref(), &call.right, &cx)?;
                     let entity = Entity { term: Term::Binding(bound.value), range: narrow(&call.span.range), shy: bound.shy, expression: call.expression };
                     log(&mut rec, |rc| rc.called(call.span.clone(), entity.category()));
                     binder.stack.push(entity);
@@ -518,7 +521,7 @@ impl Binder {
             }
         }
         let entity = binder.stack.pop().expect("nonempty expression");
-        session.stacks.extend([binder.stack, pending]);
+        session.stacks.borrow_mut().extend([binder.stack, pending]);
         Ok(Reduced::Entity(entity))
     }
     fn reduce(&mut self, capture: bool, source: &Arc<Source>, mut rec: Option<&mut Recorder>) -> Result<Option<Application>, Error> {

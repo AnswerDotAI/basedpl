@@ -1,7 +1,8 @@
 //! The speed test's measurements, shared by `tests/speed.rs`, the browser build's `costs` and the worker's `timing` and `costs` requests, which serve `basedpl.bpltests.time_cases` and `speed_costs`. A time is the fastest of five evaluations of a case, after one to warm up. The case is parsed once, before them. Its unit is one copy, as `copy` times it, of the `n` items in the data of the `[setup]` before the case's section. `costs` and `request` hold the machine's timing lock exclusively while they run, as `rustymath::timing` describes.
 use crate::{host::{timing_lock, Instant}, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
 use serde_json::{json, Value as JsonValue};
-use std::{collections::HashMap, hint::black_box};
+use rustymath::hashing::{HashMap, HashMapExt};
+use std::hint::black_box;
 
 /// One section of a file in `speed.txt`'s format: its name, the prefs its session starts with, and its lines.
 pub type Section<'a> = (&'a str, &'a str, Vec<&'a str>);
@@ -63,8 +64,15 @@ fn fastest(mut f: impl FnMut()) -> f64 {
     }).min().unwrap().as_secs_f64()
 }
 
-/// A session that has run `prefs`, then `setup`, or the evaluation that failed.
+/// Puts the default settings in force, on one thread, as speed budgets are for one thread.
+fn single_threaded_defaults() {
+    crate::settings::reset();
+    rustymath::parallel::set_threads(1);
+}
+
+/// A session that has run `prefs`, then `setup`, or the evaluation that failed. It starts from `single_threaded_defaults`.
 pub fn session(prefs: &str, setup: &str) -> Result<Session, Evaluation> {
+    single_threaded_defaults();
     let mut session = Session::new();
     let result = session.eval(&format!("{prefs}\n{setup}"));
     if result.error.is_some() { Err(result) } else { Ok(session) }
@@ -101,12 +109,17 @@ pub fn copy(n: usize) -> f64 {
 /// One case of a file in `speed.txt`'s format, with its cost: the section it's in, its code, its budgets in the file's order, and the cost those budgets limit.
 pub struct Case<'a> { pub section: &'a str, pub code: &'a str, pub budgets: Vec<&'a str>, pub cost: f64 }
 
-/// The sessions of one group of sections, by section name, and the `n` of each.
-struct Group<'a> { sessions: HashMap<&'a str, Session>, sizes: HashMap<&'a str, usize> }
+/// The sessions of one group of sections, by section name, each with its section's `•prefs` header, and the `n` of each.
+struct Group<'a> { sessions: HashMap<&'a str, (&'a str, Session)>, sizes: HashMap<&'a str, usize> }
 
 impl Group<'_> {
-    /// The session of section `name`.
-    fn session(&mut self, name: &str) -> Result<&mut Session, String> { self.sessions.get_mut(name).ok_or_else(|| format!("speed's {name} section is missing")) }
+    /// The session of section `name`, with the settings reset, on one thread, and its section's header applied, so that no other section's settings stay in force.
+    fn session(&mut self, name: &str) -> Result<&mut Session, String> {
+        let (prefs, session) = self.sessions.get_mut(name).ok_or_else(|| format!("speed's {name} section is missing"))?;
+        single_threaded_defaults();
+        session.eval(prefs);
+        Ok(session)
+    }
 }
 
 /// A failed evaluation of `code`, as the speed checks report it.
@@ -125,7 +138,7 @@ fn each_case<'a>(text: &'a str, only: Option<&[&str]>, mut visit: impl FnMut(&mu
         for &(name, prefs, _) in cases.iter().filter(|s| used.contains(&s.0)) {
             let mut session = session(prefs, &setup).map_err(|failed| failure(prefs, failed))?;
             sessions.sizes.insert(name, items(&mut session).ok_or("each setup must define n, its number of items")?);
-            sessions.sessions.insert(name, session);
+            sessions.sessions.insert(name, (prefs, session));
         }
         for &(section, _, ref lines) in cases { for &line in lines.iter().filter(|l| wanted(l)) { visit(&mut sessions, section, line)?; } }
     }
@@ -167,7 +180,7 @@ pub fn routes<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHan
         };
         let warm = run(session);
         if warm.error.is_some() { return Err(failure(code, warm)); }
-        let (evaluation, events) = session.explained(run);
+        let (evaluation, events) = crate::explain::explained(|| run(session));
         if evaluation.error.is_some() { return Err(failure(code, evaluation)); }
         result.push(Route { section, code, slow: events.slow(), named: named.remove(&(section, code)).unwrap_or_default() });
         Ok(())
@@ -206,12 +219,12 @@ pub fn measured(text: &str, all: bool, mut print: impl FnMut(&str)) -> Result<Ve
 /// The reply to the worker's `timing` request, which gives `speed`, text in `speed.txt`'s format whose first section is `[setup]`, the `prefs` its session starts with, and the `cases` to time. The reply gives the setup's `n` and each case's time in seconds and in copies, or the evaluation that failed. Each case's copy is timed just before the case. An optional `threads` sets how many threads each case's rustymath calls split across, for a scaling check. Without it they run on the timing thread alone, as in the speed test.
 pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
     let _lock = timing_lock()?;
-    if let Some(threads) = spec["threads"].as_u64() { rustymath::parallel::set_threads(threads as usize); }
     let text = |key| spec[key].as_str().ok_or_else(|| format!("timing needs {key} as a string"));
     let cases = spec["cases"].as_array().ok_or("timing needs cases as an array")?;
     let sections = sections(text("speed")?)?;
     let setup = match sections.first() { Some(("setup", _, lines)) => lines.join("\n"), _ => return Err("speed's first section must be [setup]".into()) };
     let mut session = match session(text("prefs")?, &setup) { Ok(session) => session, Err(failed) => return Ok(response(failed)) };
+    if let Some(threads) = spec["threads"].as_u64() { rustymath::parallel::set_threads(threads as usize); }
     let n = items(&mut session).ok_or("the setup must define n, its number of items")?;
     let mut costs = Vec::new();
     for code in cases {

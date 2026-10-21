@@ -14,7 +14,7 @@ pub(crate) enum Call {
     Active(Native),
     /// A native called for its effect.
     Effect(Effect),
-    Session(fn(&mut crate::Session, Option<&Value>, &Value, &crate::Span) -> Result<Value, Error>),
+    Session(fn(&crate::Session, Option<&Value>, &Value, &crate::Span) -> Result<Value, Error>),
     Regex(std::sync::Arc<crate::host::Regex>, crate::regex::Operation),
     Distribution(std::sync::Arc<crate::distribution::Distribution>, crate::distribution::Operation),
     Generator(crate::distribution::Generator, crate::distribution::Draw),
@@ -96,7 +96,7 @@ impl SystemFunction {
     /// Asks the running levels before this function or its inverse runs (`Levels::effect`). A random draw runs in a batched run, from each cell's stream. Any other system function stops the run, because it would act once for all the cells, or read a batch through code with no rule for one.
     pub(crate) fn acts(&self, cx: &Context<'_>) -> Result<(), Error> {
         if self.call.draws() { return Ok(()); }
-        cx.session.levels.effect(crate::transform::Effect::Acts).at(cx.span)
+        cx.session.effect(crate::transform::Effect::Acts).at(cx.span)
     }
     /// The name that a factory made this function from, as `•element` makes one from a tag and `•edge` from a mode. Display writes it after the system name.
     pub(crate) fn argument(&self) -> Option<&str> { match &self.call { Call::Element(tag) => Some(tag), Call::Edge(mode) => Some(mode.name()), _ => None } }

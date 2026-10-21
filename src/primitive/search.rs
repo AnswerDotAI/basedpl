@@ -2,6 +2,7 @@
 
 use rustymath::{buffer::View, error::Kind};
 use crate::search::compact_view;
+use crate::execution::Checks;
 use super::*;
 
 /// A mask over the major cells of `x`. With `found`, it marks the cells among the major cells of `y`, and otherwise the cells that aren't.
@@ -23,19 +24,17 @@ pub(super) fn membership(left: &Value, right: &Value, span: &Context<'_>) -> Res
 }
 
 impl Value {
-    /// Whether `query` matches one major cell, as `≡` matches arrays, within this session's tolerance. Its layout must match a cell's (`rustymath::search::member_layout`). Compact items search through `rustymath::search::view_member`, and other items search as `∊` does. A rank-0 value gives a Rank error.
-    pub fn contains(&self, query: &Value, session: &mut crate::Session) -> Result<bool, Error> {
+    /// Whether `query` matches one major cell, as `≡` matches arrays, within the tolerance. Its layout must match a cell's (`rustymath::search::member_layout`). Compact items search through `rustymath::search::view_member`, and other items search as `∊` does. A rank-0 value gives a Rank error. It runs outside any evaluation, so nothing interrupts it.
+    pub fn contains(&self, query: &Value) -> Result<bool, Error> {
         let span = Span::whole(crate::Source::new("<contains>", "∊"));
         if rustymath::search::member_layout(self.core_layout(), query.core_layout()).at(&span)?.is_none() { return Ok(false); }
-        session.numeric.while_current(|| {
-            let cx = session.at(&span);
-            if let (Items::Compact(x), Items::Compact(y)) = (self.as_items(), query.as_items()) {
-                let t = Numeric::current().tolerance_at(self.float_width().max(query.float_width()).unwrap_or(FloatWidth::F64));
-                return rustymath::search::view_member(self.core_layout(), x, query.core_layout(), y, t, || cx.check_now()).at(&span)?;
-            }
-            let (found, _) = search(self, query, &cx)?;
-            Ok((found[0] as usize) < self.shape()[0])
-        })
+        let unchecked = crate::execution::Unchecked(&span);
+        if let (Items::Compact(x), Items::Compact(y)) = (self.as_items(), query.as_items()) {
+            let t = Numeric::current().tolerance_at(self.float_width().max(query.float_width()).unwrap_or(FloatWidth::F64));
+            return rustymath::search::view_member(self.core_layout(), x, query.core_layout(), y, t, || unchecked.check_now()).at(&span)?;
+        }
+        let (found, _) = search(self, query, &unchecked)?;
+        Ok((found[0] as usize) < self.shape()[0])
     }
 }
 
@@ -254,7 +253,7 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
 }
 
 /// The rank of the major cells of `haystack`, and the frame that the leading axes of `needles` form around cells of that rank.
-fn search_frame(haystack: &Value, needles: &Value, span: &Context<'_>) -> Result<(usize, Frame), Error> {
+fn search_frame(haystack: &Value, needles: &Value, span: &Span) -> Result<(usize, Frame), Error> {
     if haystack.is_unit() { return Err(span.error(Kind::Rank, "the searched argument must not be a unit")); }
     let rank = haystack.shape().len() - 1;
     let split = needles.shape().len().checked_sub(rank).ok_or_else(|| span.error(Kind::Rank, "search cells need the rank of a major cell"))?;
@@ -262,12 +261,12 @@ fn search_frame(haystack: &Value, needles: &Value, span: &Context<'_>) -> Result
     Ok((rank, if split == 0 { Frame::Direct } else { Frame::Array(needles.layout().axes(0..split)) }))
 }
 
-fn search_cells<'a>(array: &'a Value, rank: usize, span: &Context<'_>) -> Result<Cells<'a>, Error> {
+fn search_cells<'a>(array: &'a Value, rank: usize, span: &Span) -> Result<Cells<'a>, Error> {
     Cells::of(array, rank).error_at(span, "invalid search cells")
 }
 
 /// Where each cell of `needles` first matches a major cell of `haystack`, or the number of major cells when none does, and the frame that the needles form around those cells.
-fn search(haystack: &Value, needles: &Value, span: &Context<'_>) -> Result<(Vec<u32>, Frame), Error> {
+fn search(haystack: &Value, needles: &Value, span: &impl crate::execution::Checks) -> Result<(Vec<u32>, Frame), Error> {
     let (rank, frame) = search_frame(haystack, needles, span)?;
     Ok((first_matches(&search_cells(haystack, rank, span)?, &search_cells(needles, rank, span)?, span)?, frame))
 }
