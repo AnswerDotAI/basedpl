@@ -87,6 +87,8 @@ impl std::ops::DerefMut for Error { fn deref_mut(&mut self) -> &mut ErrorData { 
 impl Span {
     /// The whole of `source`.
     pub(crate) fn whole(source: Arc<Source>) -> Self { Self { range: 0..source.text.len(), source } }
+    /// The source text the span covers.
+    pub(crate) fn text(&self) -> &str { &self.source.text[self.range.clone()] }
     /// An error at this span. A kind that carries its own message, as rustymath's errors do, gives the error that message in place of `message`.
     pub(crate) fn error(&self, kind: impl Into<ErrorKind>, message: impl Into<String>) -> Error {
         let mut kind = kind.into();

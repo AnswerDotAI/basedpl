@@ -41,7 +41,11 @@ impl Value {
 
 pub(super) fn unique(right: &Value, span: &Context<'_>) -> Result<Value, Error> { replicate(&unique_mask(right, span)?, right, None, false, span) }
 
-pub(super) fn union(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> { catenate(left, &without(right, left, span)?, None, true, span) }
+/// `left` with the cells of `right` that it lacks. A weak `right` takes the width that `left` gives it first, as `catenate` weakens its arguments, because `without` makes it an array.
+pub(super) fn union(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let weak = right.weakened(left);
+    catenate(left, &without(weak.as_ref().unwrap_or(right), left, span)?, None, true, span)
+}
 
 pub(super) fn intersection(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     replicate(&found_mask(left, right, true, span)?, left, None, false, span)

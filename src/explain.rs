@@ -1,4 +1,4 @@
-//! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, the accumulations, which add items at scattered positions, with the path each took, and the places where a batched run's calls fell back to slower code. Events are recorded only while `•explain` runs. Fusion runs its graphs without a session, so every event goes to a sink on the thread that runs the expression.
+//! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, the accumulations, which add items at scattered positions, with the path each took, the places where a batched run's calls fell back to slower code, the writes that left a compact array in mixed storage, and the routes that handled an array's items one at a time. Events are recorded only while `•explain` runs. Fusion runs its graphs without a session, so every event goes to a sink on the thread that runs the expression.
 //!
 //! The module also counts the live nodes that `•memory` reports: the record nodes of `∂` and the pending arrays. A node counts for the thread that made it, even when another thread drops it.
 use crate::{keyed, Error, ErrorAt, Value};
@@ -27,8 +27,10 @@ enum Column { Text, Count }
 /// - `forced`: each call that computed pending arrays' items, with the function, its line and column, and the number of items computed.
 /// - `fast`: each fast combination taken, with its name and the function that computed it.
 /// - `accumulations`: each accumulation that ran, with the items it added, the items of its result, and the path it took.
-/// - `fallbacks`: each batched map that fell back to calling its operand once for each cell, and each read of a batch's items one at a time, with the reason and the number of cells or items it concerns.
-const KINDS: [(&str, &[(&str, Column)]); 6] = {
+/// - `fallbacks`: each batched map that fell back to calling its operand once for each cell, with the reason and the number of cells it concerns.
+/// - `mixed`: each write that left a compact array in mixed storage, with the code of the call that wrote, its line and column, the array's kind before the write, the kind written, and the array's item count.
+/// - `itemwise`: each route that handled an array's items one at a time where whole-array code covers most calls, with the innermost call that ran it, that call's line and column, the route, and the items it handled. A route outside any call counts for the `•explain` call itself.
+const KINDS: [(&str, &[(&str, Column)]); 8] = {
     use Column::*;
     [
         ("fused", &[("glyphs", Text), ("items", Count), ("blocks", Count), ("runs", Count), ("copied", Count)]),
@@ -37,16 +39,21 @@ const KINDS: [(&str, &[(&str, Column)]); 6] = {
         ("fast", &[("combination", Text), ("function", Text)]),
         ("accumulations", &[("items", Count), ("size", Count), ("path", Text)]),
         ("fallbacks", &[("reason", Text), ("items", Count)]),
+        ("mixed", &[("code", Text), ("line", Count), ("column", Count), ("target", Text), ("written", Text), ("items", Count)]),
+        ("itemwise", &[("function", Text), ("line", Count), ("column", Count), ("route", Text), ("items", Count)]),
     ]
 };
 
 /// A kind of event, by its position in `KINDS`.
 #[derive(Clone, Copy)]
-enum Kind { Fused, Stored, Forced, Fast, Accumulations, Fallbacks }
+enum Kind { Fused, Stored, Forced, Fast, Accumulations, Fallbacks, Mixed, Itemwise }
 
-/// The events of one `•explain`: for each of `KINDS`, one row for each event.
+/// The kinds whose events mark a slow path, each with the column that names its event: a pending array that a fused group computed on its own (its reason), a call that computed pending arrays' items (its function), a batched map's fallback (its reason), a write that left a compact array mixed (its code), and a route that handled items one at a time (its route).
+const SLOW: [(Kind, usize); 5] = [(Kind::Stored, 2), (Kind::Forced, 0), (Kind::Fallbacks, 0), (Kind::Mixed, 0), (Kind::Itemwise, 3)];
+
+/// The events of one `•explain`: for each of `KINDS`, one row for each event. `unclaimed` holds the routes that have handled items one at a time since the innermost call that reports began (`itemwise`), with the items each handled, until a call claims them as `itemwise` rows (`claim_itemwise`).
 #[derive(Clone, Default)]
-pub(crate) struct Events { rows: [Vec<Vec<Field>>; KINDS.len()] }
+pub(crate) struct Events { rows: [Vec<Vec<Field>>; KINDS.len()], unclaimed: Vec<(&'static str, usize)> }
 
 /// Starts recording. Returns the events of an enclosing `•explain`, which `finish` restores.
 pub(crate) fn start() -> Option<Events> { EVENTS.with(|e| e.replace(Some(Events::default()))) }
@@ -121,13 +128,48 @@ pub(crate) fn fast(name: &'static str, function: String) { record(Kind::Fast, ||
 /// Records an accumulation that added `items` items into a result of `size` items, each at a position that a table of offsets or ids gives, as scattering adds them. `path` names how it added them, as `pervasive::Route` names a scatter's paths, or `"rounds"`, `"one call"` or `"item by item"` for the general paths.
 pub(crate) fn accumulated(items: usize, size: usize, path: &'static str) { record(Kind::Accumulations, || vec![Field::Count(items), Field::Count(size), Field::Text(path.into())]) }
 
-/// Records that a batched run's calls fell back to slower code, with `reason` and the number of `items` it concerns. The reason becomes text only while `•explain` records. `"item reads"` is code with no rule for batches reading a batch's items one at a time (`batch::Batch::storage`). A stop gives its cause (`transform::Stop`).
+/// Records that a batched run's calls fell back to slower code, with `reason` and the number of `items` it concerns. The reason becomes text only while `•explain` records. A stop gives its cause (`transform::Stop`).
 pub(crate) fn fallback(reason: impl std::fmt::Display, items: usize) { record(Kind::Fallbacks, || vec![Field::Text(reason.to_string()), Field::Count(items)]) }
+
+/// Records a write by the call at `span` that left a compact array of `items` items in mixed storage, with the array's kind before the write and the kind written, as `•storage` names them.
+pub(crate) fn mixed(span: &crate::Span, target: &'static str, written: &'static str, items: usize) {
+    record(Kind::Mixed, || {
+        let (line, column) = span.position();
+        vec![Field::Text(span.text().into()), Field::Count(line), Field::Count(column), Field::Text(target.into()), Field::Text(written.into()), Field::Count(items)]
+    })
+}
+
+/// Counts `items` items that `route` handled one at a time, where whole-array code covers most calls, while an `•explain` records on this thread. The innermost call that reports claims the count (`claim_itemwise`).
+pub(crate) fn itemwise(route: &'static str, items: usize) {
+    EVENTS.with(|e| if let Some(events) = e.borrow_mut().as_mut() {
+        events.unclaimed.push((route, items))
+    })
+}
+
+/// Where a call's `itemwise` counts begin, while an `•explain` records on this thread.
+pub(crate) fn itemwise_mark() -> Option<usize> { EVENTS.with(|e| e.borrow().as_ref().map(|events| events.unclaimed.len())) }
+
+/// Records the `itemwise` counts made since `mark`, as `itemwise_mark` gave it, as rows for the call at `span`, whose code `function` gives.
+pub(crate) fn claim_itemwise(mark: usize, function: impl FnOnce() -> String, span: &crate::Span) {
+    EVENTS.with(|e| if let Some(events) = e.borrow_mut().as_mut() && events.unclaimed.len() > mark {
+        let entries = events.unclaimed.drain(mark..).collect();
+        events.claimed(entries, function(), span);
+    })
+}
+
+/// `entries` with each route's items summed, in the order of each route's first entry.
+fn by_route(entries: impl IntoIterator<Item = (&'static str, usize)>) -> Vec<(&'static str, usize)> {
+    let mut routes: Vec<(&'static str, usize)> = Vec::new();
+    for (route, items) in entries { match routes.iter_mut().find(|(r, _)| *r == route) { Some((_, n)) => *n += items, None => routes.push((route, items)) } }
+    routes
+}
 
 impl Events {
     /// `•explain`'s record: the expression's `value`, then a record for each of `KINDS`, holding its columns, with one row for each event.
-    pub(crate) fn report(self, value: Value, span: &crate::Span) -> Result<Value, Error> {
-        let record = |names: Vec<&str>, values: Vec<Value>| keyed::record(names.into_iter().map(Arc::from).collect(), values).error_at(span, "invalid explain record");
+    pub(crate) fn report(mut self, value: Value, span: &crate::Span) -> Result<Value, Error> {
+        let unclaimed = std::mem::take(&mut self.unclaimed);
+        self.claimed(unclaimed, span.text().into(), span);
+        let record = |names: Vec<&str>, values: Vec<Value>| keyed::vector(names.into_iter().map(Arc::from).collect(), values).error_at(span, "invalid explain record");
         let mut tables = vec![value];
         for (&(_, columns), rows) in KINDS.iter().zip(&self.rows) {
             let n = rows.len();
@@ -143,6 +185,21 @@ impl Events {
     /// Adds `other`'s events after these, as `finish` gives an enclosing `•explain` the events of one inside it.
     fn extend(&mut self, other: &Events) {
         for (rows, more) in self.rows.iter_mut().zip(&other.rows) { rows.extend(more.iter().cloned()); }
+        self.unclaimed.extend(other.unclaimed.iter().copied());
+    }
+
+    /// Adds an `itemwise` row for each route in `entries`, with its items summed, for the call at `span` whose code is `function`.
+    fn claimed(&mut self, entries: Vec<(&'static str, usize)>, function: String, span: &crate::Span) {
+        let (line, column) = span.position();
+        for (route, items) in by_route(entries) { self.rows[Kind::Itemwise as usize].push(vec![Field::Text(function.clone()), Field::Count(line), Field::Count(column), Field::Text(route.into()), Field::Count(items)]) }
+    }
+
+    /// The rows of the records that mark a slow path (`SLOW`), each as its record's name, the text of the column that names the event, and all its fields, with the routes that no call claimed as `itemwise` rows. The speed check expects none for a case beyond the events its `# allows` lines name.
+    pub(crate) fn slow(&self) -> Vec<(&'static str, String, String)> {
+        let fields = |row: &[Field]| row.iter().map(|f| match f { Field::Text(t) => t.clone(), Field::Count(n) => n.to_string() }).collect::<Vec<_>>().join(" ");
+        let mut rows: Vec<_> = SLOW.iter().flat_map(|&(kind, key)| self.rows[kind as usize].iter().map(move |row| (KINDS[kind as usize].0, row[key].text().to_owned(), fields(row)))).collect();
+        rows.extend(by_route(self.unclaimed.iter().copied()).into_iter().map(|(route, items)| ("itemwise", route.to_owned(), format!("{route} {items}"))));
+        rows
     }
 }
 

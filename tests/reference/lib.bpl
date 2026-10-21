@@ -74,7 +74,7 @@ g path 0 3   ⍝ ⍬
 ⍝ — A minimum spanning tree of a disconnected graph leaves the unreachable vertices at ¯1
 [wmst:]←•load "lib/graph.bpl"
 aa←⊃[[[1] [0] [3] [2]] [[5] [5] [7] [7]]]
-aa wmst 0   ⍝ ¯1 0 ¯1 ¯1
+aa wmst 0   ⍝ [¯1 0 ¯1 ¯1]ₓ
 
 ⍝⍝ Trees
 
@@ -172,9 +172,9 @@ M←["abc"⋄"def"]
 
 ⍝ — Cut partitions both axes of a matrix, given a fret vector for each
 [Cut:]←•load "lib/dyalog.bpl"
-[[1 0 1;1 0](⊂Cut 1)3 2⍴⍳6;[1 0 1;0 1](⊂Cut 2)3 2⍴⍳6]
+[[1 0 1;1 0](⊂Cut 1)3 2⍴⍳6ₓ;[1 0 1;0 1](⊂Cut 2)3 2⍴⍳6ₓ]
 ⍝ =>
-[2 1⍴[[0 1⋄2 3] [4 5⋄]];2 1⍴[[0 1⋄] [2 3⋄4 5]]]
+[2 1⍴[[0 1⋄2 3] [4 5⋄]];2 1⍴[[0 1⋄] [2 3⋄4 5]]]ₓ
 
 ⍝ — days counts each row of a matrix of dates: 1900-01-01 is day 1, and 1900 is not a leap year
 [days:]←•load "lib/dyalog.bpl" ⋄ days [2000 1 1⋄1900 1 1]   ⍝ 36525 1

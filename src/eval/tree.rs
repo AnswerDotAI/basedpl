@@ -42,7 +42,9 @@ pub(super) enum Recorded {
 /// A resolved node. A category is the one that the node had when recorded.
 #[derive(Clone, Debug)]
 pub(super) enum Leaf {
+    /// A literal, or the array that a constant group gave (`Recording::constant`).
     Value(Value),
+    /// A primitive, or the function that a constant group gave.
     Function(Function),
     /// An operator glyph.
     Operator(OperatorNode),
@@ -66,8 +68,8 @@ pub(super) enum Reduction {
     Dyadic { span: Span, range: Range<u32>, result: Category },
     /// An operator applied to its operand at `span`: a derived function, or the call that a power, `ᵀ` or `ₓ` on an array stands for. `result` is the recorded result's category, and `range` its text. `value` is what a derived term was when recorded, which a replay reuses where the operand and the operator are both constant.
     Derive { span: Span, range: Range<u32>, result: Category, value: Option<Binding> },
-    /// A dyadic operator bound to its right operand.
-    BindRight,
+    /// A dyadic operator bound to its right operand. It holds the bound operator as recorded, which a replay reuses where the operator is a glyph and the operand constant.
+    BindRight(OperatorNode),
     /// Two items joined as tines of a train.
     Train,
 }
@@ -94,9 +96,14 @@ impl Recorder {
             _ => Leaf::Resolve(Category::of(binding)),
         }, narrow(&node.span.range)));
     }
-    /// Holds the leaf for the group or run `node`, which `child` recorded and which gave `bound`.
+    /// Holds the leaf for the group or run `node`, which `child` recorded and which gave `bound`. A constant group holds the array or function it gave.
     pub(super) fn group(&mut self, node: &Node, child: Recorder, bound: &Bound) {
-        match child.finish() { Some(recording) => self.held = Some((Leaf::Group(recording, Category::of(&bound.value)), narrow(&node.span.range))), None => self.failed = true }
+        let Some(recording) = child.finish() else { self.failed = true; return };
+        self.held = Some((match &bound.value {
+            Binding::Value(v) if recording.constant() => Leaf::Value(v.clone()),
+            Binding::Function(f) if recording.constant() => Leaf::Function(f.clone()),
+            value => Leaf::Group(recording, Category::of(value)),
+        }, narrow(&node.span.range)));
     }
     /// Logs the held leaf, which the binder shifted, or held when `shift` is false.
     pub(super) fn next(&mut self, shift: bool) {
@@ -118,7 +125,7 @@ impl Recorder {
     }
 }
 
-/// An item on a replay's stacks: an entity's term, with literals and primitives borrowed from the recording.
+/// An item on a replay's stacks: an entity's term. Constant items are borrowed from the recording: literals, primitives, operator glyphs, constant groups, and what a derive or a bind on constant items gave when recorded.
 enum Part<'p> { Array(Cow<'p, Value>), Function(Cow<'p, Function>), Other(Binding), Left(Cow<'p, Value>, Cow<'p, Function>), Strand(Vec<Value>), Train(Vec<Tine>), Operator(&'p OperatorNode) }
 /// An entity on a replay's stacks: its term, its text and whether it displays.
 struct Item<'p> { part: Part<'p>, range: Range<u32>, shy: bool }
@@ -131,6 +138,8 @@ impl<'p> Item<'p> {
     fn category(&self) -> Category {
         match &self.part { Part::Array(_) | Part::Strand(_) => Category::Value, Part::Function(_) => Category::Function, Part::Left(..) => Category::Left, Part::Train(_) => Category::Train, Part::Operator(op) => Category::of_operator(op), Part::Other(b) => Category::of(b) }
     }
+    /// Whether the item is constant, borrowed from the recording.
+    fn constant(&self) -> bool { matches!(self.part, Part::Array(Cow::Borrowed(_)) | Part::Function(Cow::Borrowed(_)) | Part::Operator(_)) }
     /// The binder's entity for this item.
     fn entity(self) -> Entity {
         let term = match self.part {
@@ -187,6 +196,15 @@ fn resumed(nodes: &[Node], session: &mut Session, tail: bool, stack: Stack<'_>, 
 }
 
 impl Recording {
+    /// Whether replaying gives the same binding every time: every leaf is a literal, a primitive, an operator glyph or a constant group, and no step makes a call. Facts concern names and groups, and a name, or a group that holds one, gives a leaf that isn't constant.
+    fn constant(&self) -> bool {
+        self.ops.iter().all(|op| match op {
+            Recorded::Next { leaf, .. } => matches!(leaf, Leaf::Value(_) | Leaf::Function(_) | Leaf::Operator(_)),
+            Recorded::Reduce(reduction) => !matches!(reduction, Reduction::Call { .. } | Reduction::Dyadic { .. } | Reduction::Derive { value: None, .. }),
+            Recorded::Unpend | Recorded::Pend => true,
+        })
+    }
+
     /// `nodes` evaluated by replaying the recorded steps, which gives what `Binder::evaluate` gives.
     fn replay(&self, nodes: &[Node], session: &mut Session, tail: bool) -> Result<Step, Error> {
         if self.facts.iter().any(|fact| fact.changed(session)) { return Binder::evaluate(nodes, session, tail); }
@@ -226,7 +244,7 @@ impl Recording {
                         (x, f, right.argument(source)?)
                     };
                     if tail_call(tail, cursor, pending.len + stack.len, &f) {
-                        return Ok(Step::Tail(Application { function: f.into_owned(), left: x.map(Cow::into_owned), right: y.into_owned(), span: span.clone(), unshy: false, selection: None, expression: None }));
+                        return Ok(Step::Tail(Application { function: f.into_owned(), left: x.map(Cow::into_owned), right: y.into_owned(), span: span.clone(), unshy: false, expression: None }));
                     }
                     let bound = f.call(x.as_deref(), &y, &mut session.at(span))?;
                     let item = Item::of(bound.value, range.clone(), bound.shy);
@@ -236,8 +254,8 @@ impl Recording {
                 }
                 Recorded::Reduce(Reduction::Derive { span, range, result, value }) => {
                     let (operand, operator) = (stack.pop(), stack.pop());
-                    // On a literal or primitive operand, an operator glyph derives what it derived when recorded.
-                    let constant = matches!(operand.part, Part::Array(Cow::Borrowed(_)) | Part::Function(Cow::Borrowed(_))) && matches!(operator.part, Part::Operator(_));
+                    // On a constant operand, an operator glyph, or one bound to a constant operand, derives what it derived when recorded.
+                    let constant = operand.constant() && operator.constant();
                     let item = match value.as_ref().filter(|_| constant) {
                         Some(Binding::Function(f)) => Item { part: Part::Function(Cow::Borrowed(f)), range: range.clone(), shy: false },
                         Some(Binding::Value(v)) => Item { part: Part::Array(Cow::Borrowed(v)), range: range.clone(), shy: false },
@@ -263,9 +281,10 @@ impl Recording {
                             let (x, f, range) = attached(left, right, source)?;
                             stack.push(Item { part: Part::Left(x, f), range, shy: false });
                         }
-                        Reduction::BindRight => {
+                        Reduction::BindRight(bound) => {
                             let range = left.range.clone();
-                            stack.push(Item::of(bound_right(left.binding(source)?, right.binding(source)?), range, false));
+                            let constant = left.constant() && right.constant();
+                            stack.push(if constant { Item { part: Part::Operator(bound), range, shy: false } } else { Item::of(Binding::Operator(bound_right(left.binding(source)?, right.binding(source)?)), range, false) });
                         }
                         Reduction::Train => {
                             let range = left.range.clone();

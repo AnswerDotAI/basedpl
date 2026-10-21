@@ -137,7 +137,7 @@ fn imported(js: Js, width: FloatWidth) -> Result<Option<Value>, ErrorKind> {
         Js::Object(fields) => {
             let (keys, values): (Vec<_>, Vec<_>) =
                 fields.into_iter().map(|(k, v)| Ok((k.into(), item(v, width)?))).collect::<Result<Vec<_>, ErrorKind>>()?.into_iter().unzip();
-            keyed::record(keys, values)?
+            keyed::vector(keys, values)?
         }
         #[cfg(web)]
         Js::Function(f) => web::value(f),
@@ -145,7 +145,7 @@ fn imported(js: Js, width: FloatWidth) -> Result<Option<Value>, ErrorKind> {
 }
 
 /// An item of an array or record, which must have a value.
-fn item(js: Js, width: FloatWidth) -> Result<Value, ErrorKind> { imported(js, width)?.ok_or(Kind::Domain.into()) }
+fn item(js: Js, width: FloatWidth) -> Result<Value, ErrorKind> { imported(js, width)?.ok_or_else(|| Kind::Domain.into()) }
 
 fn typed(shape: Vec<usize>, t: Typed) -> Result<Value, ErrorKind> {
     match t {

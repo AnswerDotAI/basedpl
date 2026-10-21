@@ -1,7 +1,7 @@
-use rustymath::{agreement::Mapping, error::Kind, search::occurrences, structure::Windows};
+use rustymath::{agreement::Mapping, error::Kind, search::occurrences};
 use crate::{
     agreement::{Agree, Agreement}, array::{generated_len, Frame as ResultFrame, Gather, Lanes}, execution::Context, number::Numeric,
-    primitive::{remapped, FoldKind, OperandKind, Operation, OperatorKind, Primitive, Selection, Superscript, Targets}, selection::SelectionKind,
+    primitive::{FoldKind, OperandKind, Operation, OperatorKind, Primitive, Selection, Superscript, Targets},
     symbols::Notation, syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind},
     At, DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value
 };
@@ -18,7 +18,7 @@ mod session;
 mod tree;
 pub(crate) use binder::before;
 pub(crate) use tree::Recording;
-pub(crate) use operators::{fold, folded_cells, in_turn, inner_product, whole_cells};
+pub(crate) use operators::{fold, folded_cells, matrices, primitive_expansion, primitive_fold, primitive_product, whole_cells};
 use {binder::*, dissect::*, operators::*};
 
 #[derive(Clone, Debug)]
@@ -69,9 +69,9 @@ const STACK_SEGMENT: usize = 16 << 20;
 /// The LIMIT error for evaluation deeper than `MAX_CALL_DEPTH`.
 #[cold]
 fn depth_error(span: &Span) -> Error { span.error(Kind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}")) }
-/// Reports `report` for `function` at `cx`'s position. The `fusion` pref writes it, and `•explain` records the `items` items of pending arrays that `function` computed (`explain::forced`).
-fn fusion_report(cx: &mut Context<'_>, report: &str, function: &str, items: usize) {
-    cx.session.fusion_reports += 1;
+/// Reports `report` for `function` at `cx`'s position. The `fusion` pref writes it, and `•explain` records the `items` items of pending arrays that `function` computed (`explain::forced`). A function call (`Function::reported`) and an operation's call (`Operation::call`) report this way.
+pub(crate) fn fusion_report(cx: &Context<'_>, report: &str, function: &str, items: usize) {
+    cx.session.fusion_reports.set(cx.session.fusion_reports.get() + 1);
     let (line, column) = cx.span.position();
     if items > 0 && cx.session.explaining { crate::explain::forced(function.to_owned(), line, column, items); }
     if cx.session.display.fusion { cx.write(&format!("{report} at {function} ({}:{line}:{column})\n", cx.span.source.name)); }
@@ -177,14 +177,12 @@ impl Function {
     pub(crate) fn definition(&self) -> Option<&Definition> { match self.node() { FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => Some(c.definition.as_ref()), _ => None } }
     /// The dfn that keeps the stops of this function's batched runs (`batch::tried`): its own dfn, or a fold's operand's, because a fold by a dfn calls the dfn at each stage.
     pub(crate) fn remembers(&self) -> Option<&Definition> { match self.node() { FunctionNode::Fold(f, _) => f.remembers(), _ => self.definition() } }
-    /// The call that a running level can take over when `dispatch` calls this function with `left`: an attached derivative, `⌹` or `⊥`, a system function, or `f.g` with one argument. Other calls route where their operations run.
-    fn op(&self, left: Option<&Value>) -> Option<crate::transform::Op<'_>> {
+    /// The call that a running level can take over when `dispatch` calls this function with `left`: an attached derivative or a system function. Other calls route where their operations run.
+    fn op(&self, _: Option<&Value>) -> Option<crate::transform::Op<'_>> {
         use crate::transform::Op;
         match self.node() {
             FunctionNode::Ruled(f, Rules { derivative: Some(g), .. }) => Some(Op::Ruled(f, g)),
-            FunctionNode::Primitive(p @ (Primitive::MatrixDivide | Primitive::Decode)) => Some(Op::Operated(*p)),
             FunctionNode::System(f) => Some(Op::System(f)),
-            FunctionNode::Composed(OperatorKind::Product, _) if left.is_none() => Some(Op::Expansion(self)),
             _ => None,
         }
     }
@@ -203,24 +201,6 @@ impl Function {
     fn from_value(value: Binding, span: &Span) -> Result<Self, Error> {
         match value { Binding::Function(f) => Ok(f), _ => Err(span.error(ErrorKind::Syntax, "call requires a function expression")) }
     }
-    fn selection_kind(&self, left: Option<&Value>, right: &Value, kind: SelectionKind, cx: &Context<'_>) -> Result<Option<SelectionKind>, Error> {
-        use Primitive::*;
-        if !self.selects(left.is_some()) { return Ok(None); }
-        Ok(Some(match self.node() {
-            FunctionNode::Primitive(p) => match (p, left) {
-                (Identity(_), _) | (Index | Bracket, None) => kind,
-                (Take, None) if right.shape().len() <= 1 => SelectionKind::Item,
-                (Mix, Some(x)) if x.is_empty() => kind,
-                (Mix, Some(x)) => if crate::primitive::picks_item(x, right, cx)? { SelectionKind::Item } else { SelectionKind::Elements },
-                (Index | Bracket, Some(x)) if crate::primitive::squad_item(x, right, cx)? =>
-                { SelectionKind::Item }
-                _ => SelectionKind::Elements,
-            },
-            FunctionNode::Axis(f, _) => return f.selection_kind(left, right, kind, cx),
-            FunctionNode::Composed(OperatorKind::Before, [Operand::Value(a), Operand::Function(f)]) => return f.selection_kind(Some(a), right, kind, cx),
-            _ => SelectionKind::Elements,
-        }))
-    }
     /// The functions that a composition or fork runs, each with the valence it runs at, and the array that a bound composition (`a↣f` or `f↢a`) binds. `None` for any other function.
     fn called_parts(&self, dyadic: bool) -> Option<(Vec<(&Function, bool)>, Option<&Value>)> {
         use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::*};
@@ -232,22 +212,6 @@ impl Function {
             N::Fork([f, g, h]) => (vec![(f, dyadic), (h, dyadic), (g, true)], None),
             _ => return None,
         })
-    }
-    /// Whether the function only selects or rearranges the items of its right argument, whatever the values of its arguments. Each and Rank need this of their operand, which they apply to every cell of the labels.
-    fn selects(&self, dyadic: bool) -> bool {
-        use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::*};
-        fn replicate(f: &Function) -> bool { match f.node() { N::Primitive(Primitive::Replicate) => true, N::Axis(f, _) => replicate(f), _ => false } }
-        match self.node() {
-            N::Primitive(p) => p.selects(dyadic),
-            N::Axis(f, _) | N::Modified(Each, F(f)) | N::Composed(Rank, [F(f), V(_)]) => f.selects(dyadic),
-            N::Composed(Atop | Over, _) => self.called_parts(dyadic).is_some_and(|(parts, _)| parts.iter().all(|&(f, v)| f.selects(v))),
-            N::Composed(Before, [V(_), F(f)]) => !dyadic && f.selects(true),
-            N::Composed(Power, [F(f), V(n)]) => matches!(n.observed().map(power_count), Ok(Ok((false, n))) if n != u64::MAX) && f.selects(dyadic),
-            N::Inverse(f) if f.transposes() => true,
-            // Expand, the inverse of replicate, gives each cell of its argument or a fill.
-            N::Inverse(f) => match f.node() { N::Composed(Before, [V(_), F(r)]) => !dyadic && replicate(r), _ => dyadic && replicate(f) },
-            _ => false,
-        }
     }
     /// Whether the function is `⍉`, with or without a bound left argument. Its inverse gives each item exactly once.
     fn transposes(&self) -> bool {
@@ -267,56 +231,6 @@ impl Function {
             N::Modified(Commute, V(_)) | N::System(_) | N::Defined(_) | N::Derived(..) | N::LateBound(..) => false,
             node => node.operands().iter().any(|o| matches!(o, F(f) if f.discards(false) || f.discards(true)))
         }
-    }
-    /// `self` applied to the labelled positions of a selection, with the kind of selection it makes, or `None` when `self` isn't structural. Selective assignment and Under both select this way. An atop, an over or a whole-number power of structural functions is structural. So is a fork whose middle function selects from the tine on the selected path: the other tine computes from `actual`, the real argument, which only Under supplies.
-    fn select(
-        &self, left: Option<&Value>, labels: &Value, actual: Option<&Value>, kind: SelectionKind, cx: &mut Context<'_>
-    ) -> Result<Option<(Value, SelectionKind)>, Error> {
-        if left.is_none() { if let Some(fork) = self.monadic_fork(cx.span)? { return fork.select(None, labels, actual, kind, cx); } }
-        match self.node() {
-            FunctionNode::Composed(op @ (OperatorKind::Atop | OperatorKind::Over), [Operand::Function(g), Operand::Function(h)]) => {
-                // Atop passes `left` to `h`. Over applies `h` to `left` as well, and passes that to `g`.
-                let (inner, outer) = match op { OperatorKind::Atop => (left, None), _ => (None, left.map(|x| h.call_array(None, x, cx)).transpose()?) };
-                let Some((labels, kind)) = h.select(inner, labels, actual, kind, cx)? else { return Ok(None) };
-                let actual = actual.map(|a| h.call_array(inner, a, cx)).transpose()?;
-                return g.select(outer.as_ref(), &labels, actual.as_ref(), kind, cx);
-            }
-            FunctionNode::Composed(OperatorKind::Power, [Operand::Function(g), Operand::Value(n)]) => {
-                let Some((false, n)) = n.observed().ok().and_then(|n| power_count(n).ok()).filter(|&(_, n)| n != u64::MAX) else { return Ok(None) };
-                let (mut labels, mut actual, mut kind) = (labels.clone(), actual.cloned(), kind);
-                for _ in 0..n {
-                    let Some(step) = g.select(left, &labels, actual.as_ref(), kind, cx)? else { return Ok(None) };
-                    actual = actual.map(|a| g.call_array(left, &a, cx)).transpose()?;
-                    (labels, kind) = step;
-                }
-                return Ok(Some((labels, kind)));
-            }
-            FunctionNode::Fork([f, g, h]) => {
-                let Some(actual) = actual else { return Ok(None) };
-                let (path, other, g) = match g.node() { FunctionNode::Modified(OperatorKind::Commute, Operand::Function(g)) => (f, h, g), _ => (h, f, g) };
-                let Some((labels, kind)) = path.select(left, labels, Some(actual), kind, cx)? else { return Ok(None) };
-                let x = other.call_array(left, actual, cx)?;
-                let along = path.call_array(left, actual, cx)?;
-                return g.select(Some(&x), &labels, Some(&along), kind, cx);
-            }
-            _ => {}
-        }
-        let Some(kind) = self.selection_kind(left, labels, kind, cx)? else { return Ok(None) };
-        Ok(Some((self.call_array(left, labels, cx)?, kind)))
-    }
-    /// The fork this function equals with one argument, which selection follows: `f↣g` is `f g ⊢`, `f↢g` is `⊢ f g`, and sorting is `⊂∘⍋⌷⊢`, or `⊂∘⍒⌷⊢` for `>`.
-    fn monadic_fork(&self, span: &Span) -> Result<Option<Self>, Error> {
-        use {crate::primitive::Comparison, FunctionNode as N, Operand::Function as F, Primitive as P};
-        let p = Self::primitive;
-        let tines = match self.node() {
-            N::Composed(OperatorKind::Before, [F(f), F(g)]) => [f.clone(), g.clone(), p(P::Identity(false))],
-            N::Composed(OperatorKind::After, [F(f), F(g)]) => [p(P::Identity(false)), f.clone(), g.clone()],
-            N::Primitive(P::Compare(c @ (Comparison::Less | Comparison::Greater))) => {
-                [atop(p(P::Enclose), p(P::Grade(*c == Comparison::Greater)), span)?, p(P::Index), p(P::Identity(false))]
-            }
-            _ => return Ok(None),
-        };
-        Self::new(N::Fork(tines), span).map(Some)
     }
     fn tree(&self, notation: Notation, budget: &mut usize) -> crate::display::Tree {
         use crate::display::Tree;
@@ -473,19 +387,20 @@ impl Function {
         cx.check()?;
         result
     }
-    /// `dispatch` under `•prefs ["fusion":$t]` or `•explain`. Where no call inside it reported, it reports the items of pending arrays that this call computed, and each dual argument whose items it read one by one (`derivative`), with the function and its position. `fusion_report` writes and records each report. Out of line, so that `call` pays one branch.
+    /// `dispatch` under `•prefs ["fusion":$t]` or `•explain`. Where no call inside it reported, it reports the items of pending arrays that this call computed, and each dual argument whose items it read one by one (`derivative`), with the function and its position. It claims the routes that ran item by item inside it and that no call inside it claimed (`explain::claim_itemwise`). `fusion_report` writes and records each report. Out of line, so that `call` pays one branch.
     #[cold]
     #[inline(never)]
     fn reported(&self, left: Option<&Value>, right: &Value, room: bool, cx: &mut Context<'_>) -> Result<Bound, Error> {
         let built = |v: Option<&Value>| v.and_then(Value::carrier).map(crate::transform::Carrier::items_built);
         let whole = [left, Some(right)].map(|v| built(v) == Some(false));
-        let (reports, before) = (cx.session.fusion_reports, crate::explain::computed_so_far());
+        let (reports, before, mark) = (cx.session.fusion_reports.get(), crate::explain::computed_so_far(), crate::explain::itemwise_mark());
         let result = if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
         let items = crate::explain::computed_so_far() - before;
         let report = if items > 0 { Some("fusion ends") }
             else if [left, Some(right)].into_iter().zip(whole).any(|(v, was)| was && built(v) == Some(true)) { Some("∂ runs item by item") }
             else { None };
-        if let (Some(report), true) = (report, cx.session.fusion_reports == reports) { fusion_report(cx, report, &self.bpl(), items); }
+        if let (Some(report), true) = (report, cx.session.fusion_reports.get() == reports) { fusion_report(cx, report, &self.bpl(), items); }
+        if let Some(mark) = mark { crate::explain::claim_itemwise(mark, || self.bpl(), cx.span); }
         result
     }
     // Inlined into `call`, this would add `stacker::grow`'s setup to the stack frame of every BPL call.
@@ -533,6 +448,7 @@ impl Function {
     /// `self` called on each element of `right`, with `left` whole for each, as a system function does with a right argument that holds several of its items. An element that still holds several maps again. The result is shy when every call's result is. An empty argument gives an empty result with `prototype`, without a call, because a system function can have effects. A call that gives no result contributes `⍬`.
     fn each_item(&self, left: Option<&Value>, right: &Value, prototype: fn(&Context<'_>) -> Value, cx: &mut Context<'_>) -> Result<Bound, Error> {
         let (mut items, mut shy) = (Vec::with_capacity(right.len()), !right.is_empty());
+        crate::explain::itemwise("system items", right.len());
         for element in right.elements() {
             let bound = self.call(left, &element, cx)?;
             shy &= bound.shy;
@@ -615,10 +531,6 @@ impl Function {
             FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Ok(a.clone()),
             FunctionNode::Modified(OperatorKind::Optimize, Operand::Function(f)) => crate::optimize::optimize(f, left, right, cx),
             FunctionNode::Modified(..) => unreachable!(),
-            FunctionNode::Primitive(p) if matches!((p, left), (Primitive::Mix, Some(_)) | (Primitive::Take, None)) => {
-                let item = crate::primitive::pick(left.unwrap_or(&Value::integer(0)), right, cx.session.prototype, cx)?;
-                return Ok(Bound::from(item));
-            }
             FunctionNode::Primitive(p) => p.call(left, right, cx),
             FunctionNode::System(f) => {
                 f.acts(cx)?;
@@ -712,7 +624,7 @@ impl Function {
 #[derive(Clone, Debug)]
 struct Closure { definition: Arc<Definition>, environment: Option<usize>, module: usize }
 
-impl Closure { fn text(&self) -> &str { let span = &self.definition.span; &span.source.text[span.range.clone()] } }
+impl Closure { fn text(&self) -> &str { self.definition.span.text() } }
 impl PartialEq for Closure {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.definition, &other.definition) && (self.environment, self.module) == (other.environment, other.module)
@@ -910,7 +822,7 @@ impl Binding {
 }
 struct Bound { value: Binding, shy: bool, expression: Option<Box<Expression>> }
 struct Application {
-    function: Function, left: Option<Value>, right: Value, span: Span, unshy: bool, selection: Option<(Value, SelectionKind)>, expression: Option<Box<Expression>>
+    function: Function, left: Option<Value>, right: Value, span: Span, unshy: bool, expression: Option<Box<Expression>>
 }
 enum Step { Done(Bound), Tail(Application) }
 
@@ -964,10 +876,11 @@ pub struct Session {
     primitives: HashMap<Primitive, Function>,
     current: Option<usize>,
     depth: usize,
-    prototype: bool,
+    /// Whether an empty map is calling its operand on prototypes to find its result's prototype.
+    pub(crate) prototype: bool,
     capture: bool,
     /// Reports that `•prefs ["fusion":$t]` has written. An enclosing call reports a pending argument only when no call inside it reported.
-    fusion_reports: usize,
+    pub(crate) fusion_reports: std::cell::Cell<usize>,
     /// Whether `•explain` is running, which records events (`explain`).
     pub(crate) explaining: bool,
     /// The running `∂` calls and maps.

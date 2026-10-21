@@ -2,7 +2,7 @@
 //!
 //! Only functions get idioms: the trains, compositions and operator applications that build one. An expression that applies the same functions in turn, such as `10↑⍋v`, takes the general path, while the train `10↑⍋ v` takes the idiom. The glyph pages list each idiom under "Fast combinations", and `•explain` reports each one taken, by the name `Idiom::name` gives.
 use super::*;
-use crate::{number::{Arithmetic, Math}, primitive::Comparison};
+use crate::primitive::Comparison;
 
 /// A combination of functions with a faster algorithm.
 #[derive(Debug)]
@@ -57,7 +57,7 @@ pub(super) fn recognise(node: &FunctionNode) -> Option<Idiom> {
             match r.node() {
                 FunctionNode::Primitive(Primitive::Tally) => Some(Idiom::Counts),
                 FunctionNode::Fold(g, kind) if !kind.scan => match g.as_primitive()? {
-                    p @ (Primitive::Arithmetic(Arithmetic::Plus | Arithmetic::Times) | Primitive::Math(Math::Ceiling | Math::Floor)) => Some(Idiom::Folds(p)),
+                    p if p.info().dyad.reduction.is_some() => Some(Idiom::Folds(p)),
                     _ => None,
                 },
                 _ => None,
@@ -147,7 +147,7 @@ fn determinant(left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Opt
 /// Monadic `+.×` of a square matrix of fewer than 64 rows of numbers, by rustymath's `permanent_with` at the matrix's own field, which `primitive::determinant` also reads.
 fn permanent(left: Option<&Value>, right: &Value, cx: &mut Context<'_>) -> Option<Result<Bound, Error>> {
     use crate::number::{read, with_field, Domain, Field};
-    if left.is_some() { return None; }
+    if left.is_some() || cx.carried(None, right) { return None; }
     let [m, n] = matrix(right)?;
     if m != n || n >= 64 { return None; }
     let (domain, width) = Domain::of_arrays(&[right])?;

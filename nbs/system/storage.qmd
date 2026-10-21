@@ -9,7 +9,7 @@
 
 ```bpl
 •storage 1.5 2.5             ⍝ ["kind":"float64" "pending":$f "view":$f "active":0ₓ]
-(•storage 2 3⍴⍳6).view       ⍝ $t
+(•storage 2 3⍴⍳6ₓ).view       ⍝ $t
 y←1.5+¿200000⍴0
 (•storage y).pending         ⍝ $t
 ```

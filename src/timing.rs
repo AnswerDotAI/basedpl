@@ -10,13 +10,47 @@ pub type Section<'a> = (&'a str, &'a str, Vec<&'a str>);
 pub fn sections(text: &str) -> Result<Vec<Section<'_>>, String> {
     let mut sections: Vec<Section> = Vec::new();
     for line in text.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
-        let header = line.strip_prefix('[').and_then(|l| l.split_once(']'));
-        match header.filter(|(name, prefs)| !name.contains(' ') && (prefs.is_empty() || prefs.starts_with(' '))) {
-            Some((name, prefs)) => sections.push((name, prefs.trim(), Vec::new())),
+        match header(line) {
+            Some((name, prefs)) => sections.push((name, prefs, Vec::new())),
             None => sections.last_mut().ok_or_else(|| format!("{line:?} comes before the first section"))?.2.push(line),
         }
     }
     Ok(sections)
+}
+
+/// The name and prefs of a section that `line` starts, in `speed.txt`'s format: `[name]` or `[name] prefs`.
+fn header(line: &str) -> Option<(&str, &str)> {
+    line.strip_prefix('[').and_then(|l| l.split_once(']')).filter(|(name, prefs)| !name.contains(' ') && (prefs.is_empty() || prefs.starts_with(' '))).map(|(name, prefs)| (name, prefs.trim()))
+}
+
+/// A case line's code: the text before its first tab.
+fn code_of(line: &str) -> &str { line.split('\t').next().unwrap_or_default() }
+
+/// The slow-path events that a case's comment lines name, each as its record's name and its event's text. An `# allows RECORD "EVENT": principle` line names an event that a principle allows. A `# gap RECORD "EVENT": what should happen` line names an event that a faster route should remove, which the case tolerates until then. An event's text names it as `•explain`'s record does: the function for `forced`, the reason for `stored` and `fallbacks`, the code for `mixed` and the route for `itemwise`, with any `"` in it doubled. Each line applies to the next case line after it.
+#[derive(Default)]
+pub struct Named<'a> { pub allowed: Vec<(&'a str, String)>, pub gaps: Vec<(&'a str, String)> }
+
+/// The events that each case's `# allows` and `# gap` lines name (`Named`), by section and code.
+fn annotations(text: &str) -> HashMap<(&str, &str), Named<'_>> {
+    let (mut section, mut pending, mut named) = ("", Named::default(), HashMap::new());
+    for line in text.lines() {
+        if let Some((name, _)) = header(line) { section = name; }
+        else if let Some(rest) = line.strip_prefix("# allows ") { pending.allowed.push(event(rest)); }
+        else if let Some(rest) = line.strip_prefix("# gap ") { pending.gaps.push(event(rest)); }
+        else if !line.is_empty() && !line.starts_with('#') { named.insert((section, code_of(line)), std::mem::take(&mut pending)); }
+    }
+    named
+}
+
+/// The record and event text of an `# allows` or `# gap` line's `RECORD "EVENT": ...`.
+fn event(rest: &str) -> (&str, String) {
+    let (record, quoted) = rest.split_once(' ').unwrap_or((rest, ""));
+    let (mut event, mut chars) = (String::new(), quoted.trim_start().strip_prefix('"').unwrap_or_default().chars().peekable());
+    while let Some(c) = chars.next() {
+        if c == '"' && chars.next_if_eq(&'"').is_none() { break; }
+        event.push(c);
+    }
+    (record, event)
 }
 
 /// The fastest of five calls of `f`, in seconds, after one call to warm up.
@@ -67,41 +101,77 @@ pub fn copy(n: usize) -> f64 {
 /// One case of a file in `speed.txt`'s format, with its cost: the section it's in, its code, its budgets in the file's order, and the cost those budgets limit.
 pub struct Case<'a> { pub section: &'a str, pub code: &'a str, pub budgets: Vec<&'a str>, pub cost: f64 }
 
-/// Every case in `text`, in `speed.txt`'s format, with its cost. The first section is `[setup]`. Each later `[setup]` starts a new group of sections. Each section's cases run in a session that has run the section's prefs and then the `[setup]` before it. Each group makes its sessions when its turn comes and drops them before the next group starts. A cost is in copies of the group's `n` items, timed just before the case, except in `[widths]`. There it is the case's time as a fraction of its time in `[exact]`. `only`, when given, lists the codes of the cases to run. A group then makes sessions only for the sections that hold those cases, plus `[exact]` for a `[widths]` case.
-pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
-    let _lock = timing_lock()?;
-    let failure = |code: &str, failed: Evaluation| format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default());
-    let code_of = |line: &'a str| line.split('\t').next().unwrap_or_default();
-    let wanted = |code: &str| only.is_none_or(|only| only.contains(&code));
-    let sections = sections(text)?;
-    let mut result = Vec::new();
-    for group in sections.chunk_by(|_, next| next.0 != "setup") {
+/// The sessions of one group of sections, by section name, and the `n` of each.
+struct Group<'a> { sessions: HashMap<&'a str, Session>, sizes: HashMap<&'a str, usize> }
+
+impl Group<'_> {
+    /// The session of section `name`.
+    fn session(&mut self, name: &str) -> Result<&mut Session, String> { self.sessions.get_mut(name).ok_or_else(|| format!("speed's {name} section is missing")) }
+}
+
+/// A failed evaluation of `code`, as the speed checks report it.
+fn failure(code: &str, failed: Evaluation) -> String { format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default()) }
+
+/// Calls `visit` with the sessions of each case's group, the case's section and its line, for every case in `text`, in `speed.txt`'s format. The first section is `[setup]`. Each later `[setup]` starts a new group of sections. Each section's cases run in a session that has run the section's prefs and then the `[setup]` before it. Each group makes its sessions when its turn comes and drops them before the next group starts. `only`, when given, lists the codes of the cases to visit. A group then makes sessions only for the sections that hold those cases, plus `[exact]` for a `[widths]` case.
+fn each_case<'a>(text: &'a str, only: Option<&[&str]>, mut visit: impl FnMut(&mut Group<'a>, &'a str, &'a str) -> Result<(), String>) -> Result<(), String> {
+    let wanted = |line: &str| only.is_none_or(|only| only.contains(&code_of(line)));
+    for group in sections(text)?.chunk_by(|_, next| next.0 != "setup") {
         let [("setup", _, setup), cases @ ..] = group else { return Err("the first section must be [setup]".into()) };
-        let mut used: Vec<&str> = cases.iter().filter(|(_, _, lines)| lines.iter().any(|l| wanted(code_of(l)))).map(|s| s.0).collect();
+        let mut used: Vec<&str> = cases.iter().filter(|(_, _, lines)| lines.iter().any(|l| wanted(l))).map(|s| s.0).collect();
         if used.contains(&"widths") { used.push("exact"); }
         if used.is_empty() { continue; }
         let setup = setup.join("\n");
-        let (mut sessions, mut sizes) = (HashMap::new(), HashMap::new());
+        let mut sessions = Group { sessions: HashMap::new(), sizes: HashMap::new() };
         for &(name, prefs, _) in cases.iter().filter(|s| used.contains(&s.0)) {
             let mut session = session(prefs, &setup).map_err(|failed| failure(prefs, failed))?;
-            sizes.insert(name, items(&mut session).ok_or("each setup must define n, its number of items")?);
-            sessions.insert(name, session);
+            sessions.sizes.insert(name, items(&mut session).ok_or("each setup must define n, its number of items")?);
+            sessions.sessions.insert(name, session);
         }
-        let mut timed = |name: &str, code: &str| {
-            let session = sessions.get_mut(name).ok_or_else(|| format!("speed's {name} section is missing"))?;
-            time(session, code, interrupt).map_err(|failed| failure(code, failed))
-        };
-        for &(section, _, ref lines) in cases {
-            for line in lines {
-                let mut fields = line.split('\t');
-                let code = fields.next().unwrap_or_default();
-                if !wanted(code) { continue; }
-                let cost = if section == "widths" { timed(section, code)? / timed("exact", code)? }
-                else { let unit = copy(sizes[section]); timed(section, code)? / unit };
-                result.push(Case { section, code, budgets: fields.collect(), cost });
-            }
-        }
+        for &(section, _, ref lines) in cases { for &line in lines.iter().filter(|l| wanted(l)) { visit(&mut sessions, section, line)?; } }
     }
+    Ok(())
+}
+
+/// Every case in `text`, in `speed.txt`'s format, with its cost, in the sessions that `each_case` gives. A cost is in copies of the group's `n` items, timed just before the case, except in `[widths]`. There it is the case's time as a fraction of its time in `[exact]`. `only`, when given, lists the codes of the cases to time.
+pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
+    let _lock = timing_lock()?;
+    let mut result = Vec::new();
+    each_case(text, only, |group, section, line| {
+        let mut fields = line.split('\t');
+        let code = fields.next().unwrap_or_default();
+        let unit = (section != "widths").then(|| copy(group.sizes[section]));
+        let mut timed = |name: &str| time(group.session(name)?, code, interrupt).map_err(|failed| failure(code, failed));
+        let cost = match unit { Some(unit) => timed(section)? / unit, None => timed(section)? / timed("exact")? };
+        result.push(Case { section, code, budgets: fields.collect(), cost });
+        Ok(())
+    })?;
+    Ok(result)
+}
+
+/// One case of a file in `speed.txt`'s format, with the slow-path events that `•explain` records for it (`explain::Events::slow`), each as its record's name and its fields, and the events that the case's comment lines name.
+pub struct Route<'a> { pub section: &'a str, pub code: &'a str, pub slow: Vec<(&'static str, String, String)>, pub named: Named<'a> }
+
+/// Every case in `text`, in `speed.txt`'s format, in the sessions that `each_case` gives, run once to warm up, as `time` does, and then once as `•explain` runs its text, computing its value. The warm-up computes the setup's pending arrays and records what a first call records, so the events are those of the run that the speed test times. `only`, when given, lists the codes of the cases to run.
+pub fn routes<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Route<'a>>, String> {
+    let mut named = annotations(text);
+    let mut result = Vec::new();
+    each_case(text, only, |group, section, line| {
+        let code = code_of(line);
+        let session = group.session(section)?;
+        let parsed = session.parse(Source::new("<input>", code)).complete().map_err(|e| failure(code, Evaluation::failed(e)))?;
+        let options = || EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
+        let run = |s: &mut Session| {
+            let evaluation = s.eval_parsed(&parsed, options());
+            if let Some(value) = &evaluation.value { value.force(); }
+            evaluation
+        };
+        let warm = run(session);
+        if warm.error.is_some() { return Err(failure(code, warm)); }
+        let (evaluation, events) = session.explained(run);
+        if evaluation.error.is_some() { return Err(failure(code, evaluation)); }
+        result.push(Route { section, code, slow: events.slow(), named: named.remove(&(section, code)).unwrap_or_default() });
+        Ok(())
+    })?;
     Ok(result)
 }
 

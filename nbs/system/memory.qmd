@@ -16,9 +16,9 @@
 A reshape is a view, which keeps all of its base's items alive:
 
 ```bpl
-v←⍳1000
+v←⍳1000ₓ
 m←2 500⍴v
-(•memory m).bytes  ⍝ 8000ₓ
+(•memory m).bytes  ⍝ 2000ₓ
 ```
 
 [`•explain`](explain.qmd) reports what happened while an expression ran.

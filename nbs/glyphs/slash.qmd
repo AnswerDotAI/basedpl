@@ -1,6 +1,6 @@
 # `/` — Reduce
 
-Monadic operator
+Monadic operator. Hanzi: `总` (`總`)
 
 `f/Y` inserts `f` between the items along the last axis, then evaluates that expression as usual, from the right. `-/1 2 3` is `1-2-3`, which is 2. An empty axis reduces to `f`'s identity.
 
@@ -24,9 +24,9 @@ A dfn that reduces several lanes, such as each row of a matrix, runs each stage 
 
 ```bpl
 10-/1 2 3          ⍝ ¯8
-10+/2 3⍴⍳6         ⍝ 13 22
+10+/2 3⍴⍳6ₓ         ⍝ [13 22]
 ⊂10 +/ 1 2 3       ⍝ ⊂16
-10 20 +/⍤0 1 [2 3]⍴⍳6 ⍝ 13 32
+10 20 +/⍤0 1 [2 3]⍴⍳6ₓ ⍝ [13 32]
 ```
 
 Nested paths use seeded Pick reduction.
@@ -49,23 +49,23 @@ Use [full windows](up-down-arrow.qmd) for moving reductions.
 Several axes form one reduction cell. `f/⍠A Y` ravels each selected cell before reducing, equivalent to `(f/,)¨⊂⍠A Y`. This is an exception to the general rule in [Axis](quad-colon.qmd). A single axis retains ordinary reduction behavior.
 
 ```bpl
-n←2 2 3⍴⍳6
-+/⍠1 2 n             ⍝ 15 15
-+/⍠0 2 n             ⍝ 6 24
+n←2 2 3⍴⍳6ₓ
++/⍠1 2 n             ⍝ [15 15]ₓ
++/⍠0 2 n             ⍝ [6 24]ₓ
 ```
 
 Axis order determines the ravel order. Unselected axes retain their order and keys. Selecting every axis gives the reduced value itself, as a dfn along the same axes does.
 
 ```bpl
--/⍠0 1 (2 2⍴⍳4)      ⍝ ¯2
--/⍠1 0 (2 2⍴⍳4)      ⍝ ¯4
+-/⍠0 1 (2 2⍴⍳4ₓ)      ⍝ ¯2ₓ
+-/⍠1 0 (2 2⍴⍳4ₓ)      ⍝ ¯4ₓ
 ```
 
 An empty axis vector makes singleton cells. A seed is passed whole to each cell.
 
 ```bpl
 +/⍠⍬ [1 2 3]          ⍝ 1 2 3
-10+/⍠1 2 (2 2 3⍴⍳6)   ⍝ 25 25
+10+/⍠1 2 (2 2 3⍴⍳6ₓ)   ⍝ [25 25]
 ```
 
 Float sum and product reductions can reassociate their operands. Other reductions keep operand order.

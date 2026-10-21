@@ -1,6 +1,6 @@
 # `⨸` — Factors / Factor spec
 
-Function. Keys: `Alt-o u`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-o u`. Hanzi: `因`. Ranks: `0` monadic, `0 0` dyadic
 
 `⨸N`: sorted prime factors, with multiplicity. J's `q:` family. Positive integral input; exact integer results.
 

@@ -152,7 +152,7 @@ Source: the April tests. `⌷` takes one item for each axis, like APL's index fi
 ```
 
 ```bpl
-[0;1 3 4]⌷[0 3;:;1 0]⌷6 8 5⍴⍳9     ⍝ [6 5⋄7 6⋄3 2]
+[0;1 3 4]⌷[0 3;:;1 0]⌷6 8 5⍴⍳9ₓ     ⍝ [6 5⋄7 6⋄3 2]ₓ
 ```
 
 ```bqn
@@ -168,8 +168,8 @@ Source: the April tests. Dot indexing pairs its arrays of positions, one array f
 ```
 
 ```bpl
-(3 4⍴⍳9).[0 2;1 0]    ⍝ 1 8
-(3 4⍴⍳9).[[0 1;2 0]]  ⍝ 1 8
+(3 4⍴⍳9ₓ).[0 2;1 0]    ⍝ [1 8]ₓ
+(3 4⍴⍳9ₓ).[[0 1;2 0]]  ⍝ [1 8]ₓ
 ```
 
 ```bqn
@@ -334,7 +334,7 @@ An operator takes one token to its right. In APL, `⊢` separates the operand `1
 ```
 
 ```bpl
-+/⍤1[2 3]⍴⍳6           ⍝ 3 12
++/⍤1[2 3]⍴⍳6ₓ           ⍝ [3 12]ₓ
 ```
 
 ```bqn
@@ -367,8 +367,8 @@ Source: `Depth` in the dfns workspace. It applies its left operand at the depths
 ```
 
 ```bpl
-n←2 3 4⍴⍳24
-+/⍠1 2 n               ⍝ 66 210
+n←2 3 4⍴⍳24ₓ
++/⍠1 2 n               ⍝ [66 210]ₓ
 ```
 
 ```bqn
@@ -377,14 +377,14 @@ n←2 3 4⍴⍳24
 
 ### Stencil with a numeric operand
 
-The operand ends at the space. `1 2 3 4` is in brackets to keep it out of the operand. `(+/⊢)` reduces each window and ignores the padding counts that Stencil passes as its left argument. The second line gets the same result without Stencil, because `↕` with a negative size pads the ends. BQN has no Stencil. Its line pads with zeros.
+The operand ends at the space. `1 2 3 4` is in brackets to keep it out of the operand. Stencil calls its operand on each window alone, as J's `u;._3` does, so `+/` reduces each window. Dyalog passes the padding counts as a left argument, which its dfn ignores. The second line gets the same result without Stencil, because `↕` with a negative size pads the ends. BQN has no Stencil. Its line pads with zeros.
 
 ```dyalog
 {+/,⍵}⌺3⊢1 2 3 4
 ```
 
 ```bpl
-+/⊢ ⌺3 [1 2 3 4]       ⍝ 3 6 9 7
++/⌺3 [1 2 3 4]          ⍝ 3 6 9 7
 +/¯3↕1 2 3 4           ⍝ 3 6 9 7
 ```
 
@@ -401,7 +401,7 @@ A list of counts gives the result for each count, as BQN's Repeat does. `⍳5` i
 ```
 
 ```bpl
-⊽⍣(⍳5) 1               ⍝ 1 2 4 8 16
+⊽⍣(⍳5ₓ) 1               ⍝ [1 2 4 8 16]
 ```
 
 ```bqn
@@ -468,8 +468,8 @@ a +˝∘×⎉1‿∞ b
 ```
 
 ```bpl
-a←2 3⍴⍳6 ⋄ b←3 2⍴⍳6
-a (+⌿×)⍤1 ∞ b           ⍝ [10 13⋄28 40]
+a←2 3⍴⍳6ₓ ⋄ b←3 2⍴⍳6ₓ
+a (+⌿×)⍤1 ∞ b           ⍝ [10 13⋄28 40]ₓ
 ```
 
 ### A vector bound into a composition

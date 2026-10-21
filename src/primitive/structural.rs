@@ -3,22 +3,38 @@
 use rustymath::error::Kind;
 use super::*;
 
-use rustymath::{layout::Layout as CoreLayout, structure::{self, Plan, Windows}};
+use rustymath::{layout::Layout as CoreLayout, structure::{self, Edge, Plan, Windows}};
 
-/// The sizes and movements in a window specification for the leading axes of an argument. The specification is a unit or vector of sizes, or a two-row matrix of sizes above movements. `↕` and `⌺` share it.
-pub(crate) fn window_spec(spec: &Value, span: &Span) -> Result<(Vec<i64>, Vec<i64>), Error> {
-    let count = match spec.shape() {
-        [] | [_] => spec.len(), [2, n] => *n, [_, _] => return Err(span.error(Kind::Length, "window matrix needs two rows")),
-        _ => return Err(span.error(Kind::Rank, "window specification must be a unit, vector or two-row matrix"))
-    };
-    let mut sizes = spec.as_items().integers().error_at(span, "window sizes and movements must be integers")?.to_vec();
-    let moves = sizes.split_off(count);
-    Ok((sizes, moves))
+/// A window specification for the leading axes of an argument, as `↕` and `⌺` read it: sizes, movements, and an edge mode that pads every windowed axis. Without an edge mode, a size below 0 pads its axis with fill.
+pub(crate) struct WindowSpec { pub(crate) sizes: Vec<i64>, pub(crate) moves: Vec<i64>, pub(crate) edge: Option<Edge> }
+
+impl WindowSpec {
+    /// The specification in `spec`: a record of `size`, `edge` and `step`, or a unit or vector of sizes, or a two-row matrix of sizes above movements.
+    pub(crate) fn new(spec: &Value, span: &Context<'_>) -> Result<Self, Error> {
+        let integers = |v: &Value| v.as_items().integers().error_at(span, "window sizes and movements must be integers").map(|n| n.to_vec());
+        if spec.keys(0).is_some() {
+            let options = crate::data::Options::new("window", Some(spec), None, &["size", "edge", "step"], span)?;
+            let field = |key: &str| options.values.get(key).map(|v| if v.shape().len() > 1 { Err(span.error(Kind::Rank, format!("window {key} must be a unit or vector"))) } else { integers(v) }).transpose();
+            let sizes = field("size")?.ok_or_else(|| span.domain_error("window options need size"))?;
+            let edge = options.values.get("edge").map(|v| crate::system::edge_mode(v, span)).transpose()?;
+            return Ok(Self { sizes, moves: field("step")?.unwrap_or_default(), edge });
+        }
+        let count = match spec.shape() {
+            [] | [_] => spec.len(), [2, n] => *n, [_, _] => return Err(span.error(Kind::Length, "window matrix needs two rows")),
+            _ => return Err(span.error(Kind::Rank, "window specification must be a unit, vector or two-row matrix"))
+        };
+        let mut sizes = integers(spec)?;
+        let moves = sizes.split_off(count);
+        Ok(Self { sizes, moves, edge: None })
+    }
 }
-pub(super) fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let (sizes, moves) = window_spec(spec, span)?;
-    if sizes.is_empty() { return Ok(right.clone()); }
-    let windows = Windows::new(&sizes, &moves, |size| size < 0, right.shape()).at(span)?;
+
+pub(super) fn windows(spec: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> { windowed(&WindowSpec::new(spec, span)?, right, span) }
+
+/// The windows that `spec` gives over the leading axes of `right`: a copy that pads each padded axis by its edge mode where any does, read by the plan of every window.
+pub(crate) fn windowed(spec: &WindowSpec, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    if spec.sizes.is_empty() { return Ok(right.clone()); }
+    let windows = Windows::new(&spec.sizes, &spec.moves, |size| spec.edge.or((size < 0).then_some(Edge::Fill)), right.shape()).at(span)?;
     let padded = windows.padding().map(|p| remapped(right, p)).transpose().error_at(span, "invalid windows")?;
     let source = padded.as_ref().unwrap_or(right);
     let plan = windows.plan(right.layout(), source.shape()).at(span)?;
@@ -107,12 +123,11 @@ pub(super) fn reshape(dimensions: &Value, right: &Value, span: &Context<'_>) -> 
     let len = generated_len(&shape).at(span)?;
     let names = shape_names(dimensions);
     if right.shape() == shape && !right.is_atom() { return right.clone().with_axis_names(names).error_at(span, "invalid axis names"); }
-    // The same number of items in a new shape shares the argument's storage.
-    if len == right.len() && !right.is_atom() { return right.with_shape(shape).and_then(|a| a.with_axis_names(names)).error_at(span, "invalid reshape"); }
-    let mut data = Gather::new(&[right], len);
-    if right.is_empty() { data.fill(&right.prototype(), len) }
-    else { data.cycle(right, len) }
-    data.finish(shape.into(), || right.prototype()).and_then(|a| a.with_axis_names(names)).error_at(span, "invalid reshape")
+    // The items in order, cycling where the shape holds more, and fills where there are none. Where they fit in order, the result views the argument's storage.
+    let n = right.len();
+    let flat = right.relaid(Layout::from([n])).error_at(span, "invalid reshape")?;
+    let steps = if n == 0 { Steps::clipped(0, len, 0, 1) } else { Steps::padded(0, len, n, 1, Edge::Wrap) };
+    copied(&flat, Layout::from([len]), &[steps]).and_then(|a| a.relaid(Layout::from(shape))).and_then(|a| a.with_axis_names(names)).error_at(span, "invalid reshape")
 }
 
 /// `right` reshaped to `shape`, through the reshape primitive's call. That call applies `∂`'s rules to duals and records.
@@ -287,6 +302,9 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let rank = left.shape().len().max(right.shape().len()).max(1);
     let axis = axis.unwrap_or(if first { 0 } else { rank - 1 });
     if axis >= rank { return Err(span.domain_error("catenate axis is outside result rank")); }
+    // A weak number takes the width that the other argument gives it, as in arithmetic (`Value::weakened`), before `promoted` makes it an array.
+    let (wl, wr) = super::weakened(Some(left), right);
+    let (left, right) = (wl.as_ref().unwrap_or(left), wr.as_ref().unwrap_or(right));
     let left = promoted(left, right, rank, axis, span)?;
     let right = promoted(right, &left, rank, axis, span)?;
     let wanted = (0..rank).map(|a| if a == axis { None } else { left.keys(a).cloned() }).collect::<Vec<_>>();

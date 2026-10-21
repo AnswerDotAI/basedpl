@@ -209,6 +209,14 @@ def test_array_surface():
     np.testing.assert_array_equal(bpl('[mask]⌷v', mask=[False, True, True], v=[10, 20, 30]), [10, 20, 20])
     np.testing.assert_array_equal(list(a)[0], [1, 2, 3])
     with pytest.raises(IndexError): a[2, 0]
+    with pytest.raises(IndexError, match='outside'): a[:, np.array([0, 3])]
+    k = bpl('["aa":1 "bb":2]')
+    np.testing.assert_array_equal(k[Array(['bb', 'aa'])], [2, 1])
+    for key in ('zz', ['aa', 'zz'], Array(['aa', 'zz'])):
+        with pytest.raises(KeyError): k[key]
+    nested, paths = bpl('[2 3⍴⍳6ₓ;2 2⍴⍳4ₓ]'), bpl('[[0 1] [1 0]]')
+    np.testing.assert_array_equal(nested[paths, 0], [3, 0])
+    with pytest.raises(TypeError, match='partial slices'): nested[paths, 1:]
     np.testing.assert_array_equal(a[1:2, :], [[4, 5, 6]])
     np.testing.assert_array_equal(a[:, ::-1], [[3, 2, 1], [6, 5, 4]])
     np.testing.assert_array_equal(a[:, -2:], [[2, 3], [5, 6]])

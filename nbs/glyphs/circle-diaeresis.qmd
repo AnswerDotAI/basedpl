@@ -1,6 +1,6 @@
 # `⍥` — Over
 
-Dyadic operator. Keys: `Alt-1 o`
+Dyadic operator. Keys: `Alt-1 o`. Hanzi: `经` (`經`)
 
 `f⍥g Y` is `f(g Y)`.
 

@@ -129,14 +129,22 @@ impl Session {
     pub(crate) fn system_src(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         self.named(right, span, |s, name| s.name_source(name).map(|text| crate::keyed::text(&text)))
     }
-    /// `•explain text` runs `text` in the caller's scope, as `⍎` does, and gives a record of its value and of what happened while it ran (`explain`).
+    /// `•explain text` runs `text` in the caller's scope, as `⍎` does, computes its value, and gives a record of that value and of what happened while it ran and computed (`explain`). Computing a pending value records no `forced` row, as the speed timer's computing records none.
     pub(crate) fn system_explain(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        let (result, events) = self.explained(|s| {
+            let result = s.execute(None, right, span).and_then(|r| r.array(span));
+            if let Ok(value) = &result { value.force(); }
+            result
+        });
+        events.report(result?, span)
+    }
+    /// Runs `run` as `•explain` runs its text: with `explaining` set and events recorded, inside any `•explain` that encloses it. Gives what `run` gives and the events it recorded. `•explain` and the speed check both run through it.
+    pub(crate) fn explained<T>(&mut self, run: impl FnOnce(&mut Self) -> T) -> (T, crate::explain::Events) {
         let outer = crate::explain::start();
         let explaining = std::mem::replace(&mut self.explaining, true);
-        let result = self.execute(None, right, span);
+        let result = run(self);
         self.explaining = explaining;
-        let events = crate::explain::finish(outer);
-        events.report(result?.array(span)?, span)
+        (result, crate::explain::finish(outer))
     }
     /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
     pub(crate) fn system_literal(&mut self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
@@ -147,7 +155,7 @@ impl Session {
                 || matches!(kind, NodeKind::System(name) if name.eq_ignore_ascii_case("•ucs"))
         };
         if let Some(node) = crate::syntax::non_literal(&statement.nodes, &written) {
-            return Err(span.domain_error(format!("•literal reads data, not code: {}", &node.span.source.text[node.span.range.clone()])));
+            return Err(span.domain_error(format!("•literal reads data, not code: {}", node.span.text())));
         }
         self.bind(&statement.nodes)?.array(span)
     }
@@ -647,7 +655,7 @@ impl Session {
 
     /// Runs `f` in a new frame in which each key on the first axis of `record` names what `T.key` selects: an item of a vector, or a major cell of a higher-rank array. Other names resolve in the caller's scope, and assignments stay in the new frame. `T.(expr)` and `T⍎text` evaluate this way.
     fn scoped(&mut self, record: &Value, span: &Span, f: impl FnOnce(&mut Self) -> Result<Bound, Error>) -> Result<Bound, Error> {
-        let entries = record.keys(0).ok_or(ErrorKind::from(Kind::Domain)).and_then(|keys| {
+        let entries = record.keys(0).ok_or_else(|| ErrorKind::from(Kind::Domain)).and_then(|keys| {
             let items = if record.shape().len() == 1 { record.elements().collect() } else { record.major_cells()? };
             Ok(keys.names().iter().cloned().zip(items).collect::<Vec<_>>())
         }).error_at(span, "a scope needs keys on its first axis")?;
@@ -810,5 +818,5 @@ fn caught(error: &Error) -> Value {
     let number = |n: usize| Value::integer(n as i64);
     let text = crate::keyed::text;
     let values = vec![text(error.kind.name()), text(&error.message), text(&error.span.source.name), number(line), number(column)];
-    crate::keyed::record(["kind", "message", "source", "line", "column"].map(Into::into).to_vec(), values).expect("an error fits in a record")
+    crate::keyed::vector(["kind", "message", "source", "line", "column"].map(Into::into).to_vec(), values).expect("an error fits in a record")
 }

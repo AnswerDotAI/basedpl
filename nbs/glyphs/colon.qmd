@@ -1,6 +1,6 @@
 # `:` — Unkey / Keyed
 
-Function. Ranks: `∞` monadic, `1 ∞` dyadic
+Function. Hanzi: `键/卸` (`鍵/卸`). Ranks: `∞` monadic, `1 ∞` dyadic
 
 As a separate [index](squad.qmd) selector, `:` takes one whole axis: `[: 1]⌷M` selects column 1.
 
@@ -16,7 +16,7 @@ In `K`, a position's own number leaves that position without a key. Axis names a
 
 ```bpl
 "aa" 1:10 20        ⍝ ["aa":10 20]
-M←["city":2 "month":3]⍴⍳6
+M←["city":2 "month":3]⍴⍳6ₓ
 ⍴M⍴⍨:⍴M            ⍝ [2 3]ₓ
 ```
 

@@ -1,6 +1,6 @@
 # `⌊` — Floor / Minimum
 
-Function. Keys: `Alt-d`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-d`. Hanzi: `下`. Ranks: `0` monadic, `0 0` dyadic
 
 `⌊Y` rounds down to an exact integer. Pervasive; tolerant near integers. An infinity or NaN stays a float.
 

@@ -1,6 +1,6 @@
 # `↢` — After
 
-Dyadic operator. Keys: `Alt-,`
+Dyadic operator. Keys: `Alt-,`. Hanzi: `后` (`後`)
 
 `f↢g Y` is `Y f(g Y)`. The left argument of `f` is `Y` itself. For `f(g Y)`, use [Atop](jot.qmd), `f∘g`.
 

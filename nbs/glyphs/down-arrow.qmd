@@ -1,11 +1,11 @@
 # `↓` — Split / Drop
 
-Function. Keys: `Alt-j`. Ranks: `1` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-j`. Hanzi: `去/拆`. Ranks: `1` monadic, `1 ∞` dyadic
 
 `↓Y` nests vectors along the last axis.
 
 ```bpl
-↓2 3⍴⍳6            ⍝ [[0 1 2] [3 4 5]]
+↓2 3⍴⍳6ₓ            ⍝ [[0 1 2] [3 4 5]]ₓ
 ```
 
 `N↓Y` drops from the front; negative `N` drops from the end.
@@ -18,13 +18,13 @@ Function. Keys: `Alt-j`. Ranks: `1` monadic, `1 ∞` dyadic
 With [axes](quad-colon.qmd), `⍠K` selects the split axis or the drop axes.
 
 ```bpl
-↓⍠0 (2 3⍴⍳6)       ⍝ [[0 3] [1 4] [2 5]]
+↓⍠0 (2 3⍴⍳6ₓ)       ⍝ [[0 3] [1 4] [2 5]]ₓ
 ```
 
 Vector counts apply to successive leading axes. Overdrop gives an empty axis.
 
 ```bpl
-1 1↓2 3⍴⍳6         ⍝ [4 5⋄]
+1 1↓2 3⍴⍳6ₓ         ⍝ [4 5⋄]ₓ
 5↓1 2              ⍝ ⍬
 ```
 

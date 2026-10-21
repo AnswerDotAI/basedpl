@@ -1,6 +1,6 @@
 # `⊣` — Same left / Left
 
-Function. Keys: `Alt-;`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-;`. Hanzi: `左`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⊣Y` returns `Y`.
 

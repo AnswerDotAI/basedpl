@@ -2,43 +2,135 @@ use basedpl::{buffer::{Buffer, DType, FloatWidth, IntBuf, View}, EvalOptions, Ev
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
-    exceptions::{PyBufferError, PyTypeError, PyValueError}, ffi, prelude::*, sync::MutexExt,
-    types::{PyBool, PyBoolMethods, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple}, IntoPyObjectExt
+    exceptions::{PyBufferError, PyKeyError, PyTypeError, PyValueError}, ffi, prelude::*, sync::{MutexExt, PyOnceLock},
+    types::{PyBool, PyBoolMethods, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyRange, PySlice, PyString, PyTuple, PyType}, IntoPyObjectExt
 };
-use rustymath::structure::IndexPart;
-use std::{cell::RefCell, collections::HashMap, ffi::c_int, sync::{atomic::{AtomicPtr, Ordering}, Arc, Mutex}};
+use rustymath::{layout::Keys, structure::IndexPart};
+use rustymath_buffer::walk::{Collect, walked, within};
+use std::{ffi::c_int, sync::{atomic::{AtomicPtr, Ordering}, Arc, Mutex}};
 
-/// The value that Python's `_array` describes in `raw`, with its floats at `width`. A complex number follows the current settings' kinds.
-fn import_array(raw: &Bound<'_, PyDict>, width: FloatWidth) -> PyResult<Value> {
-    let element = |o: Bound<'_, PyAny>| -> PyResult<Value> {
+/// The collector for Python data that becomes BPL values: each item converts on its own, and a level whose items differ in shape nests them, with Python floats at `width`.
+struct Items { width: FloatWidth }
+
+impl Collect for Items {
+    type Piece = Value;
+    fn int(&mut self, n: i128) -> Value { Value::Number(BigInt::from(n).into()) }
+    fn piece(&mut self, obj: &Bound<'_, PyAny>) -> PyResult<Option<(Value, Vec<usize>)>> { Ok(Some((element(obj, self.width)?, vec![]))) }
+    fn element(&mut self, obj: &Bound<'_, PyAny>) -> PyResult<Value> { element(obj, self.width) }
+}
+
+fn value_error(e: impl ToString) -> PyErr { PyValueError::new_err(e.to_string()) }
+
+/// A float zero at `width`, as the prototype of imported numbers.
+fn zero(width: FloatWidth) -> Value { Value::Number(Number::float(0.0, width).marked(true)) }
+
+/// The array that the Python data `obj` gives, with Python floats at `width`. Nested lists, tuples and ranges give axes, a `str` gives a character vector, and any other object gives the value it gives as an item. Numbers take the import rules: they become floats only when every number converts exactly.
+fn import(obj: &Bound<'_, PyAny>, width: FloatWidth) -> PyResult<Value> {
+    if let Ok(s) = obj.cast::<PyString>() { return characters(s); }
+    let (layout, mut items) = walked(obj, &mut Items { width })?;
+    if layout.shape().is_empty() { return Ok(items.pop().expect("a unit holds one item")); }
+    Value::imported(layout.shape().to_vec(), items, zero(width)).map_err(value_error)
+}
+
+/// The characters of `s`, as a character vector.
+fn characters(s: &Bound<'_, PyString>) -> PyResult<Value> {
+    let chars: Vec<Value> = s.to_str()?.chars().map(Value::Character).collect();
+    Value::imported(vec![chars.len()], chars, Value::Character(' ')).map_err(value_error)
+}
+
+/// The item that the `str` `s` gives: one character, or a character vector.
+fn text(s: &Bound<'_, PyString>) -> PyResult<Value> {
+    let mut chars = s.to_str()?.chars();
+    match (chars.next(), chars.next()) { (Some(c), None) => Ok(Value::Character(c)), _ => characters(s) }
+}
+
+/// A keyed vector of `data`, as a dict's values or a frame's columns give, with its axis keyed by `keys` and named `name`. It reads as a literal of its items reads, so exact and approximate numbers stay apart, as in a JSON object.
+fn record(keys: Arc<Keys>, data: Vec<Value>, name: Option<Arc<str>>, width: FloatWidth) -> PyResult<Value> {
+    labelled(Value::from_parts(vec![data.len()], data, zero(width)).map_err(value_error)?, vec![Some(keys)], vec![name])
+}
+
+/// `value` with `keys` and `names` on its axes.
+fn labelled(value: Value, keys: Vec<Option<Arc<Keys>>>, names: Vec<Option<Arc<str>>>) -> PyResult<Value> {
+    let layout = value.core_layout().clone().with_keys(keys).and_then(|l| l.with_names(names)).map_err(rustymath_buffer::py_err)?;
+    value.with_core_layout(layout).map_err(value_error)
+}
+
+/// The value of an object that exports a buffer, such as a rustymath array or a `memoryview`, with its dtype and labels.
+fn numeric(obj: &Bound<'_, PyAny>) -> PyResult<Option<Value>> {
+    let Some((read, layout)) = rustymath_buffer::read_array(obj)? else { return Ok(None) };
+    Value::imported_buffer(layout.shape(), read.into_buffer()).and_then(|v| v.with_core_layout(layout)).map(Some).map_err(value_error)
+}
+
+/// NumPy's `generic` and `ndarray` types, once NumPy is imported. Until then no object is NumPy's, so NumPy needn't be installed.
+fn numpy_types(py: Python<'_>) -> PyResult<Option<&'static (Py<PyType>, Py<PyType>)>> {
+    static TYPES: PyOnceLock<(Py<PyType>, Py<PyType>)> = PyOnceLock::new();
+    if let Some(types) = TYPES.get(py) { return Ok(Some(types)); }
+    let Ok(np) = py.import("sys")?.getattr("modules")?.get_item("numpy") else { return Ok(None) };
+    let types = (np.getattr("generic")?.cast_into::<PyType>()?.unbind(), np.getattr("ndarray")?.cast_into::<PyType>()?.unbind());
+    Ok(Some(TYPES.get_or_init(py, || types)))
+}
+
+/// The value of a NumPy scalar or array, or `None` for any other object. A scalar of a numeric dtype keeps its dtype. Arrays of `str` or objects convert item by item, as do unsigned 64-bit values beyond `int64`, which stay exact.
+fn numpy(obj: &Bound<'_, PyAny>, width: FloatWidth) -> PyResult<Option<Value>> {
+    let Some((generic, ndarray)) = numpy_types(obj.py())? else { return Ok(None) };
+    let dtype = |o: &Bound<'_, PyAny>| -> PyResult<(char, usize)> { let d = o.getattr("dtype")?; Ok((d.getattr("kind")?.extract()?, d.getattr("itemsize")?.extract()?)) };
+    if obj.is_instance(generic.bind(obj.py()))? {
+        if !"biufc".contains(dtype(obj)?.0) { return element(&obj.call_method0("item")?, width).map(Some); }
+        let value = numeric(&obj.call_method0("__array__")?)?.ok_or_else(|| PyTypeError::new_err("unsupported NumPy dtype"))?;
+        return Ok(Some(value.at(0)));
+    }
+    if !obj.is_instance(ndarray.bind(obj.py()))? { return Ok(None); }
+    let (mut kind, size) = dtype(obj)?;
+    if !"biufcUO".contains(kind) || kind == 'f' && size > 8 || kind == 'c' && size > 16 { return Err(PyTypeError::new_err("unsupported NumPy dtype")); }
+    let mut obj = obj.clone();
+    if kind == 'u' && size == 8 && obj.getattr("size")?.extract::<usize>()? > 0 && obj.call_method0("max")?.ge(1u64 << 63)? { (obj, kind) = (obj.call_method1("astype", ("O",))?, 'O'); }
+    if !"UO".contains(kind) { return numeric(&obj); }
+    let data = obj.call_method0("ravel")?.call_method0("tolist")?.try_iter()?.map(|o| element(&o?, width)).collect::<PyResult<Vec<_>>>()?;
+    let prototype = if kind == 'U' { Value::Character(' ') } else { zero(width) };
+    Value::imported(obj.getattr("shape")?.extract()?, data, prototype).map(Some).map_err(value_error)
+}
+
+/// Python's `fractions.Fraction`.
+fn fraction(py: Python<'_>) -> PyResult<&Bound<'_, PyType>> {
+    static FRACTION: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+    FRACTION.import(py, "fractions", "Fraction")
+}
+
+/// The BPL value of `obj` as an item of an array, with Python floats at `width`. A Python float or complex number is weak, a complex number follows the current settings' kinds, and `None` reads as NaN. A `dict` and a data frame give keyed vectors, and a list gives a nested array.
+fn element(obj: &Bound<'_, PyAny>, width: FloatWidth) -> PyResult<Value> {
+    if let Ok(b) = obj.cast_exact::<PyBool>() { return Ok(Value::Number(Number::from_bool(b.is_true()))); }
+    if obj.is_exact_instance_of::<PyInt>() { return Ok(Value::Number(obj.extract::<BigInt>()?.into())); }
+    if obj.is_exact_instance_of::<PyFloat>() { return Ok(Value::Number(Number::float(obj.extract()?, width).marked(true))); }
+    if let Ok(z) = obj.cast_exact::<PyComplex>() {
+        return Ok(Value::Number(Number::complex_in_session(num_complex::Complex64::new(z.real(), z.imag()), width).marked(true)));
+    }
+    if obj.is_none() { return Ok(Value::Number(Number::float(f64::NAN, width))); }
+    if let Ok(s) = obj.cast::<PyString>() { return text(s); }
+    // A native value, or Python's `Array`, `Function` or `Operator` around one.
+    for o in [Some(obj.clone()), obj.getattr_opt("_inner")?].into_iter().flatten() {
         if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return a.value().cloned(); }
         if let Ok(f) = o.extract::<PyRef<'_, PyFunction>>() { return Ok(Value::Function(f.inner.clone())); }
         if let Ok(op) = o.extract::<PyRef<'_, PyOperator>>() { return Ok(Value::Operator(op.inner.clone())); }
-        if let Ok(d) = o.cast::<PyDict>() { return import_array(d, width); }
-        if let Ok(s) = o.cast::<PyString>() {
-            return basedpl::protocol::character(s.to_str()?).map(Value::Character).ok_or_else(|| PyValueError::new_err("expected one character"));
-        }
-        let number = if let Ok(b) = o.cast::<PyBool>() { Ok(Number::from_bool(b.is_true())) }
-        else if o.is_instance_of::<PyFloat>() { Ok(Number::float(o.extract::<f64>()?, width)) }
-        else if let Ok(z) = o.cast::<PyComplex>() {
-            Ok(Number::complex_in_session(num_complex::Complex64::new(z.real(), z.imag()), width))
-        } else if o.is_instance_of::<PyInt>() { Ok(o.extract::<BigInt>()?.into()) }
-        else if o.is_instance_of::<PyTuple>() { let (n, d) = o.extract::<(BigInt, BigInt)>()?; Number::try_from(BigRational::new_raw(n, d)) }
-        else { return Err(PyTypeError::new_err("unsupported BPL element")); };
-        number.map(Value::Number).map_err(|k| PyValueError::new_err(k.to_string()))
-    };
-    let field = |key| raw.get_item(key)?.ok_or_else(|| PyValueError::new_err("missing array field"));
-    if let Some(atom) = raw.get_item("atom")? { return element(atom); }
-    let shape = field("shape")?.extract::<Vec<usize>>()?;
-    let data = field("data")?.try_iter()?.map(|o| element(o?)).collect::<PyResult<Vec<_>>>()?;
-    let prototype = element(field("prototype")?)?;
-    // Python data takes the import rules. A dict keeps each value's kind, as a JSON object does. Other data becomes floats only when every number converts exactly.
-    let record = raw.get_item("axis_keys")?.is_some();
-    let mut result = if record { Value::mixed(shape, data, prototype) } else { Value::imported(shape, data, prototype) }
-        .map_err(|k| PyValueError::new_err(k.to_string()))?;
-    if let Some(names) = raw.get_item("axis_names")? { result = basedpl::keyed::with_names(result, names.extract()?).map_err(PyValueError::new_err)?; }
-    let Some(keys) = raw.get_item("axis_keys")? else { return Ok(result); };
-    basedpl::keyed::with_key_lists(result, keys.extract()?).map_err(PyValueError::new_err)
+    }
+    if let Ok(d) = obj.cast::<PyDict>() {
+        let keys = Keys::partial(rustymath_buffer::labels(&d.keys())?).map_err(rustymath_buffer::py_err)?;
+        let data = within(obj, || d.values().iter().map(|v| element(&v, width)).collect::<PyResult<Vec<_>>>())?;
+        return record(keys, data, None, width);
+    }
+    if obj.is_instance_of::<PyList>() || obj.is_instance_of::<PyTuple>() || obj.is_instance_of::<PyRange>() { return import(obj, width); }
+    if obj.is_instance(fraction(obj.py())?)? {
+        let rational = BigRational::new_raw(obj.getattr("numerator")?.extract()?, obj.getattr("denominator")?.extract()?);
+        return Number::try_from(rational).map(Value::Number).map_err(value_error);
+    }
+    if let Some(value) = numpy(obj, width)? { return Ok(value); }
+    if let Some(frame) = rustymath_buffer::frame::frame(obj)? {
+        let ([rows, cols], [row, col]) = (frame.keys, frame.names);
+        let columns = frame.columns.iter().map(|c| labelled(import(c, width)?, vec![rows.clone()], vec![row.clone()])).collect::<PyResult<Vec<_>>>()?;
+        return record(cols.ok_or_else(|| PyValueError::new_err("a frame's columns need labels"))?, columns, col, width);
+    }
+    if let Some(value) = numeric(obj)? { return Ok(value); }
+    if obj.hasattr("__array__")? { return within(obj, || import(&obj.call_method0("__array__")?, width)); }
+    Err(PyTypeError::new_err(format!("cannot convert {} to BPL", obj.get_type().name()?)))
 }
 
 /// `a`'s parts for Python: its `_Array` for compact items, which Python reads through `tolist` or the buffer protocol, or else a dict of its shape, items, prototype, keys and names.
@@ -89,82 +181,38 @@ impl PyArray {
 
 enum IndexSelection { Planned(rustymath::structure::Plan, bool), Rich(Vec<IndexPart<Value>>) }
 
+/// The Python exception for an indexing error: `KeyError` for a missing key, and otherwise the exception for the error's kind, with BPL's message.
 fn index_error(error: basedpl::Error) -> PyErr {
-    match &error.kind { basedpl::ErrorKind::Array(e) => rustymath_buffer::py_err(e.clone()), _ => PyValueError::new_err(error.to_string()) }
+    let basedpl::ErrorKind::Array(e) = &error.kind else { return PyValueError::new_err(error.to_string()) };
+    let text = if error.message.is_empty() { e.to_string() } else { error.message.clone() };
+    if let Some(key) = text.strip_prefix("missing key: ") { return PyKeyError::new_err(key.to_owned()); }
+    rustymath_buffer::py_err(rustymath::error::Error::new(e.kind, text))
 }
 
-fn index_names(value: &Value) -> Option<Vec<String>> {
-    value.elements().map(|v| match v.view() {
-        Some(View::Characters(chars)) if v.shape().len() <= 1 => Some(chars.iter().collect()), _ => None,
-    }).collect()
-}
-
+/// Decodes a Python index of `value` once, for reads and writes, through `⌷`'s planner. Python's own kinds, slices, keys, integers and lists of keys, decode without converting. `convert` turns other selectors into arrays, which decode as `⌷` decodes them, except Boolean masks, which select where they hold true. Pick paths allow positions, keys, full slices, None and ... as suffixes, but not partial slices or masks.
 fn selection(value: &Value, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<IndexSelection> {
-    let cache = RefCell::new(HashMap::<usize, Value>::new());
-    let converted = |obj: &Bound<'_, PyAny>| -> PyResult<Value> {
-        let id = obj.as_ptr() as usize;
-        if let Some(value) = cache.borrow().get(&id) { return Ok(value.clone()); }
-        let array = convert.call1((obj,))?;
-        let value = array.extract::<PyRef<'_, PyArray>>()?.value()?.clone();
-        cache.borrow_mut().insert(id, value.clone());
-        Ok(value)
-    };
+    let converted = |obj: &Bound<'_, PyAny>| -> PyResult<Value> { Ok(convert.call1((obj,))?.extract::<PyRef<'_, PyArray>>()?.value()?.clone()) };
     let parts = rustymath_buffer::selection::parts(index)?;
-    let mut rich = false;
-    for part in &parts {
-        let IndexPart::Axis(part) = part else { continue };
-        if !part.is_instance_of::<pyo3::types::PySlice>() && part.extract::<Vec<String>>().is_err() {
-            let part = converted(part)?;
-            rich |= part.view().is_none() && index_names(&part).is_none();
-        }
-    }
-    if rich {
-        // Only masks and bounded slices need Python policy bound to a source axis. Other rich values stay untouched for BPL's coordinate/path lowering.
-        let bound = parts.iter().any(|p| p.axis().is_some_and(|p| p.is_instance_of::<pyo3::types::PySlice>() || converted(p).is_ok_and(|v| matches!(v.view(), Some(View::Booleans(_))))));
-        let mut axes = vec![0; parts.len()];
-        if bound {
-            let claims = parts.iter().map(|p| p.as_ref().try_map(|p| -> PyResult<_> {
-                if p.is_instance_of::<pyo3::types::PySlice>() { return Ok((None, 1)); }
-                let v = converted(p)?;
-                Ok((rustymath::structure::sole_name(v.core_layout()).map(str::to_owned), v.index_width()))
-            })).collect::<PyResult<Vec<_>>>()?;
-            let borrowed = claims.iter().map(|p| p.as_ref().map(|(name, width)| (name.as_deref(), *width))).collect::<Vec<_>>();
-            for (axis, part) in rustymath::structure::addressed_parts(value.core_layout(), &borrowed, None).map_err(rustymath_buffer::py_err)? {
-                if let IndexPart::Axis(i) = part { axes[i] = axis; }
-            }
-        }
-        let values = parts.iter().enumerate().map(|(i, part)| part.as_ref().try_map(|part| -> PyResult<Value> {
-            let axis = axes[i];
-            if part.is_instance_of::<pyo3::types::PySlice>() {
-                let (selector, _) = rustymath_buffer::selection::selector(value.core_layout(), axis, part, || unreachable!("a slice is decoded before an array"))?;
-                let rustymath::structure::Selector::Range { start, len, step } = selector else { unreachable!("a slice gives a range") };
-                return Value::integers([len], (0..len).map(|i| start as i64 + i as i64 * step as i64).collect()).map_err(|k| PyValueError::new_err(k.to_string()));
-            }
-            let indices = converted(part)?;
-            if let Some(view @ View::Booleans(_)) = indices.view() {
-                let (selector, _) = rustymath_buffer::selection::array_selector(value.core_layout(), axis, indices.core_layout().clone(), view, false)?;
-                let rustymath::structure::Selector::Indices { positions, .. } = selector else { unreachable!("a Boolean mask gives positions") };
-                return Value::integers([positions.len()], positions.into_iter().map(|p| p as i64).collect()).map_err(|k| PyValueError::new_err(k.to_string()));
-            }
-            Ok(indices)
+    let values = parts.iter().map(|p| p.as_ref().try_map(|p| if rustymath_buffer::selection::native(p) { Ok(None) } else { converted(p).map(Some) })).collect::<PyResult<Vec<_>>>()?;
+    if let Some(IndexPart::Axis(Some(first))) = values.iter().find(|p| matches!(p, IndexPart::Axis(_) | IndexPart::All)) && value.picks_paths(first).map_err(index_error)? {
+        let paths = parts.iter().zip(values).map(|(p, v)| v.try_map(|v| match (p.axis(), v) {
+            (_, Some(v)) if !matches!(v.view(), Some(View::Booleans(_))) => Ok(v),
+            (Some(p), None) if !p.is_instance_of::<PySlice>() => converted(p),
+            _ => Err(PyTypeError::new_err("an index with pick paths takes positions, keys, full slices, None and ..., not partial slices or masks")),
         })).collect::<PyResult<Vec<_>>>()?;
-        return Ok(IndexSelection::Rich(values));
+        return Ok(IndexSelection::Rich(paths));
     }
-    rustymath_buffer::selection::select_parts(value.core_layout(), parts,
-        |obj| {
-            if obj.is_instance_of::<pyo3::types::PySlice>() { return Ok(None); }
-            Ok(rustymath::structure::sole_name(converted(obj)?.core_layout()).map(str::to_owned))
-        },
-        |layout, axis, obj| {
-            let indices = converted(obj)?;
-            if indices.view().is_none() && let Some(names) = index_names(&indices) {
-                let positions = names.iter().map(|n| rustymath_buffer::selection::key(layout, axis, n)).collect::<PyResult<Vec<_>>>()?;
-                return Ok((rustymath::structure::Selector::Indices { layout: indices.core_layout().clone(), positions }, false));
-            }
-            let items = indices.view().ok_or_else(|| PyTypeError::new_err("a Python index array must contain ordinary numbers or keys"))?;
-            rustymath_buffer::selection::array_selector(layout, axis, indices.core_layout().clone(), items, indices.is_atom())
-        },
-    ).map(|(plan, atom)| IndexSelection::Planned(plan, atom))
+    let layout = value.core_layout();
+    value.planned(&values, |i, axis| {
+        let (IndexPart::Axis(p), IndexPart::Axis(v)) = (&parts[i], &values[i]) else { unreachable!("planned decodes axis parts") };
+        match v {
+            None => Some(rustymath_buffer::selection::selector(layout, axis, p, || unreachable!("a native selector decodes without converting"))),
+            Some(v) => match v.view() {
+                Some(mask @ View::Booleans(_)) => Some(rustymath_buffer::selection::array_selector(layout, axis, v.core_layout().clone(), mask, false)),
+                _ => None,
+            },
+        }
+    }, index_error).map(|(plan, atom)| IndexSelection::Planned(plan, atom))
 }
 
 /// A BPL value lent read-only to one buffer export, with the shape and strides of the export. The export holds this object, which keeps all three valid.
@@ -218,13 +266,6 @@ impl Owned {
 
 #[pymethods]
 impl PyArray {
-    /// Reads a compact buffer or sibling-array snapshot with its dtype and labels.
-    #[staticmethod]
-    fn numeric(data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
-        let Some((read, layout)) = rustymath_buffer::read_array(data)? else { return Ok(None) };
-        let value = Value::imported_buffer(layout.shape(), read.into_buffer()).and_then(|v| v.with_core_layout(layout));
-        value.map(|v| Some(v.into())).map_err(|k| PyValueError::new_err(k.to_string()))
-    }
     fn copy(&self) -> PyResult<Self> { Ok(self.value()?.clone().into()) }
     #[getter]
     fn shape(&self) -> PyResult<Vec<usize>> { Ok(self.value()?.shape().to_vec()) }
@@ -323,8 +364,16 @@ impl PyArray {
             IndexSelection::Rich(parts) => self.value()?.assigned_parts(&parts, values.value()?),
         }.map(Self::from).map_err(index_error)
     }
-    fn contains(&self, py: Python<'_>, query: PyRef<'_, PyArray>, session: PyRef<'_, PySession>) -> PyResult<bool> {
-        let (value, query) = (self.value()?.clone(), query.value()?.clone());
+    /// Whether this array holds `query`, a native array or a `str`. A one-character string is an atom. A longer one is one item where the major cells are items, as a list of strings holds them, and otherwise a character vector, which matches a row of characters.
+    fn contains(&self, py: Python<'_>, query: &Bound<'_, PyAny>, session: PyRef<'_, PySession>) -> PyResult<bool> {
+        let value = self.value()?.clone();
+        let query = match query.cast::<PyString>() {
+            Ok(s) => match text(s)? {
+                chars @ Value::Array(_) if value.shape().len() == 1 => Value::from_parts(Vec::<usize>::new(), vec![chars], Value::Character(' ')).map_err(value_error)?,
+                item => item,
+            },
+            Err(_) => query.extract::<PyRef<'_, PyArray>>()?.value()?.clone(),
+        };
         let mut guard = session.session.lock_py_attached(py).unwrap();
         let session = &mut *guard;
         py.detach(|| value.contains(&query, session)).map_err(|e| match &e.kind {
@@ -415,15 +464,12 @@ impl PySession {
         let bindings = bindings.into_iter().map(|(n, a)| Ok((n, operand(&a)?))).collect::<PyResult<_>>()?;
         self.request(py, EvalRequest { run: code.map(Run::Code), bindings, options: options(timeout, echo)? }, show)
     }
-    /// Calls `function` with `args`, as `eval` runs code. Each argument that `weak` marks came from a Python scalar, and takes the width that NEP 50 gives it beside the others (`Value::weakened`).
-    #[pyo3(signature = (function, args, *, weak=Vec::new(), timeout=None, show=None))]
+    /// Calls `function` with `args`, as `eval` runs code. A Python float or complex scalar arrives as a weak number (`Number::is_weak`).
+    #[pyo3(signature = (function, args, *, timeout=None, show=None))]
     fn call(
-        &self, py: Python<'_>, function: PyRef<'_, PyFunction>, args: Vec<PyRef<'_, PyArray>>, weak: Vec<bool>, timeout: Option<f64>, show: Option<Py<PyAny>>
+        &self, py: Python<'_>, function: PyRef<'_, PyFunction>, args: Vec<PyRef<'_, PyArray>>, timeout: Option<f64>, show: Option<Py<PyAny>>
     ) -> PyResult<Py<PyDict>> {
         let values = args.iter().map(|a| a.value().cloned()).collect::<PyResult<Vec<_>>>()?;
-        let is_weak = |i: usize| weak.get(i).copied().unwrap_or(false);
-        let strong: Vec<Value> = values.iter().enumerate().filter(|&(i, _)| !is_weak(i)).map(|(_, v)| v.clone()).collect();
-        let values = values.into_iter().enumerate().map(|(i, v)| if is_weak(i) { v.weakened(&strong) } else { v }).collect();
         self.request(py, EvalRequest { run: Some(Run::Call(function.inner.clone(), values)), bindings: Vec::new(), options: options(timeout, false)? }, show)
     }
     #[pyo3(signature = (*, name=None, function=None))]
@@ -448,10 +494,10 @@ impl PySession {
         };
         response(py, result)
     }
-    /// The array that the Python data in `raw` describes. Python floats take the session's default float width.
-    fn array(&self, py: Python<'_>, raw: &Bound<'_, PyDict>) -> PyResult<PyArray> {
+    /// The array that the Python data `obj` gives. Python floats take the session's default float width.
+    fn array(&self, py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<PyArray> {
         let width = self.session.lock_py_attached(py).unwrap().float_width();
-        Ok(import_array(raw, width)?.into())
+        Ok(import(obj, width)?.into())
     }
     /// Gives the session the display defaults of BPL's REPL and Jupyter kernel, for the BPL magics in IPython.
     fn make_interactive(&self, py: Python<'_>) { self.session.lock_py_attached(py).unwrap().make_interactive() }

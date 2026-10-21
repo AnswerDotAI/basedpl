@@ -1,6 +1,6 @@
 # `⍣` — Power
 
-Dyadic operator. Keys: `Alt-1 8`
+Dyadic operator. Keys: `Alt-1 8`. Hanzi: `次/止`
 
 `f⍣N Y` applies `f` `N` times. `N=0` returns `Y`. In dyadic calls the left argument stays fixed. Separate a numeric argument from a literal count with `⊢` or [parentheses](parentheses.qmd).
 
@@ -27,10 +27,10 @@ Inverses propagate through Atop, dyadic After and Before, bound arguments, Each,
 A vector of counts gives one item for each count, holding the state after that many steps. Counts `⍳N` give the first `N` states, starting with `Y`. A nested vector of counts gives a nested result, with one item for each inner vector. A scalar count gives a scalar. Computed counts go in parentheses or in the run after `⍣`.
 
 ```bpl
-⊽⍣(⍳5) 1               ⍝ 1 2 4 8 16
-≥⍣(-⍳3) 5             ⍝ 5 4 3
+⊽⍣(⍳5ₓ) 1               ⍝ [1 2 4 8 16]
+≥⍣(-⍳3ₓ) 5             ⍝ [5 4 3]
 ≥⍣3 ¯2 0 3⊢10        ⍝ 13 8 10 13
-{⍵,1}⍣ ⍳3 [2]         ⍝ [[2] [2 1] [2 1 1]]
+{⍵,1}⍣ ⍳3ₓ [2]         ⍝ [[2] [2 1] [2 1 1]]
 ⍴ {÷'a'}⍣(0 2⍴0) "ab"  ⍝ [0 2]ₓ
 ⊽⍣[2 [4 ¯2 1]] 1        ⍝ [4 [16 0.25 2]]
 ⊽⍣(⊂3) 1               ⍝ ⊂8

@@ -1,6 +1,6 @@
 # `π` — Pi times / Pi ratio
 
-Function. Keys: `Alt-p`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-p`. Hanzi: `周`. Ranks: `0` monadic, `0 0` dyadic
 
 `πY`: πY. Pervasive.
 

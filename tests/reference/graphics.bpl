@@ -65,23 +65,23 @@ apng←{∨/"acTL"⍷•ucs "image/png"⊃•mime ⍵}
 (apng •image 2 3 4 3⍴0.5) (apng ["fps":12]•image 5 3 4⍴0.5) (apng •image 3 4⍴0.5)   ⍝ $t $t $f
 
 ⍝ image-animation-inverse — An animated PNG decodes to its frames, and a single frame to a picture
-f←0.2×2 2 3 3⍴5|⍳36ₓ
-g←0.2×3 2 2 1⍴5|⍳12ₓ
+f←0.2×2 2 3 3⍴5ₓ|⍳36ₓ
+g←0.2×3 2 2 1⍴5ₓ|⍳12ₓ
 s←⍴•image •image⁻¹ 1 2 3 3⍴0.2
 (f≡•image •image⁻¹ f) (g≡•image •image⁻¹ g) (s≡[2 3 3])   ⍝ $t $t $t
 
 ⍝ image-inverse-fps — With fps, •image⁻¹ encodes grey frames that have no channel axis
-h←0.2×3 2 2⍴5|⍳12ₓ
+h←0.2×3 2 2⍴5ₓ|⍳12ₓ
 (3 2 2 1⍴h)≡•image ["fps":12]•image⁻¹ h   ⍝ $t
 
 ⍝ image-delay — delay sets each frame's seconds, stored exactly as 1/n for a whole rate n, otherwise in milliseconds or seconds
-delays←{t←⍸"fcTL"⍷•ucs ⍵ ⋄ {256⊥2 2⍴⍵}⍤1 (⊂t+⊗24+⍳4)⌷⍵}
+delays←{t←⍸"fcTL"⍷•ucs ⍵ ⋄ {256⊥2 2⍴⍵}⍤1 (⊂t+⊗24ₓ+⍳4ₓ)⌷⍵}
 delays ["delay":[1÷24 0.04 1.6 100]]•image⁻¹ 4 2 2⍴0.2
 ⍝ =>
 [1 24⋄1 25⋄1600 1000⋄100 1]
 
 ⍝ image-delay-time — delay makes the first axis time, and one delay applies to every frame
-h←0.2×3 2 2⍴5|⍳12ₓ
+h←0.2×3 2 2⍴5ₓ|⍳12ₓ
 (3 2 2 1⍴h)≡•image ["delay":0.1]•image⁻¹ h   ⍝ $t
 
 ⍝ image-delay-length — delay needs one number, or one for each frame

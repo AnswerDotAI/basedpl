@@ -1,6 +1,6 @@
 # `⇄` — Optimize
 
-Monadic operator. Keys: `Alt-4`
+Monadic operator. Keys: `Alt-4`. Hanzi: `优` (`優`)
 
 `f⇄ X` searches from the start `X` for the point where `f` is least, and returns that point. `X` is a number or an array of real numbers. The point has its shape and keys. `f` takes a point and returns one real number. `O f⇄ X` takes options from the keyed record `O`. With option `solve`, `f` returns residuals instead, and `⇄` searches for the point where they're zero.
 

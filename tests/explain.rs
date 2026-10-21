@@ -1,5 +1,5 @@
 //! `•explain` and `•memory`, which report what a run did, what the thread that runs a session holds, and what a value keeps alive.
-use basedpl::Session;
+use basedpl::{timing, InterruptHandle, Session};
 
 /// Checks that `code` gives the value that `expected` gives, both run in `session`.
 fn check(session: &mut Session, code: &str, expected: &str) {
@@ -9,6 +9,29 @@ fn check(session: &mut Session, code: &str, expected: &str) {
         result.value
     });
     assert!(actual.zip(wanted).is_some_and(|(a, w)| a.same(&w)), "{code} didn't give {expected}");
+}
+
+/// Every case in `speed.txt` takes the routes its work needs, or names the gap. Run as `•explain` runs its text, after a warm-up run, a case records no slow-path event (`explain::Events::slow`) beyond the events that its comment lines name (`timing::Named`): `# allows` lines, each with the principle that allows its event, and `# gap` lines, each with what a faster route should do instead. A line whose event no longer appears fails too, so the lines stay true and a fixed gap's line goes. The test prints the gaps it tolerates, which `cargo test -- --nocapture` shows. Like the speed test, it runs each case at its full size on one thread. It holds the timing lock shared, as a test run does.
+#[test]
+fn speed_cases_take_their_routes() {
+    let _lock = rustymath::timing::shared().unwrap();
+    rustymath::parallel::set_threads(1);
+    let routes = timing::routes(include_str!("speed.txt"), None, &InterruptHandle::default()).unwrap();
+    let (mut wrong, mut gaps) = (Vec::new(), Vec::new());
+    for r in &routes {
+        let case = format!("[{}] {}", r.section, r.code);
+        let lines: Vec<(&str, &str, &str)> = r.named.allowed.iter().map(|(a, e)| ("allows", *a, e.as_str())).chain(r.named.gaps.iter().map(|(a, e)| ("gap", *a, e.as_str()))).collect();
+        for (record, event, fields) in &r.slow {
+            match lines.iter().find(|&&(_, a, e)| a == *record && e == *event) {
+                None => wrong.push(format!("{case}: {record} \"{event}\" ({fields})")),
+                Some(("gap", ..)) => gaps.push(format!("{case}: {record} \"{event}\" ({fields})")),
+                Some(_) => {}
+            }
+        }
+        wrong.extend(lines.iter().filter(|&&(_, a, e)| !r.slow.iter().any(|(record, event, _)| a == *record && e == *event)).map(|(word, a, e)| format!("{case}: {word} {a} \"{e}\", which no longer appears")));
+    }
+    println!("gaps that speed cases tolerate: {gaps:#?}");
+    assert!(wrong.is_empty(), "name an event above its case with `# allows RECORD \"EVENT\": principle` only where a principle allows it, or with `# gap RECORD \"EVENT\": what should happen` where a faster route should remove it: {wrong:#?}");
 }
 
 #[test]
@@ -39,9 +62,9 @@ fn explain_and_memory() {
         check(&mut session, &format!(r#"≢(•explain "{code}").accumulations.items"#), &format!("{scatters}ₓ"));
     }
     // Each path that adds a selection's items has a name: in place, logged for exact integers whose sums can overflow, on a converted copy, in rounds for repeated positions, in one call for distinct ones, and item by item for a dfn.
-    check(&mut session, "i←¿1000⍴1000 ⋄ z←1000⍴0 ⋄ zx←1000⍴0ₓ ⋄ zc←1000⍴0ₓ ⋄ zr←1000⍴1ᵣ2 ⋄ $t", "$t");
+    check(&mut session, "i←¿1000⍴1000 ⋄ z←1000⍴0 ⋄ zx←1000⍴0ₓ ⋄ zh←16 •float 1000⍴0 ⋄ zr←1000⍴1ᵣ2 ⋄ $t", "$t");
     for (code, path) in [
-        ("z.[i]+←1", "in place"), ("zx.[i]+←1ₓ", "logged"), ("zc.[i]+←0.5", "on a copy"),
+        ("z.[i]+←1", "in place"), ("zx.[i]+←1ₓ", "logged"), ("zh.[i]+←1", "on a copy"),
         ("zr.[i]+←1ᵣ3", "rounds"), ("zr.[⍳10]+←1ᵣ3", "one call"), ("z.[i] {⍺+⍵}←1", "item by item"),
     ] {
         check(&mut session, &format!(r#"(•explain "{code}").accumulations.path≡["{path}"]"#), "$t");

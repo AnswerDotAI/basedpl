@@ -1,6 +1,6 @@
 # `∧` — Polar / And
 
-Function. Keys: `Alt-0`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-0`. Hanzi: `极/且` (`極/且`). Ranks: `0` monadic, `0 0` dyadic
 
 `∧Y` gives a magnitude and an angle for each number in `Y`, along a new last axis. Angles are in radians.
 

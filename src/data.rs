@@ -256,7 +256,7 @@ pub(crate) fn fetch(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
     let body = if opts.boolean("binary", false, span)? { byte_vector(body).error_at(span, "invalid byte vector")? }
     else { keyed::text(&String::from_utf8(body).map_err(|e| span.io_error(&url, e))?) };
     let (names, values) = response.headers.into_iter().map(|(n, v)| (n.into(), keyed::text(&v))).unzip();
-    let headers = keyed::record(names, values).error_at(span, "invalid headers")?;
-    keyed::record(vec!["status".into(), "headers".into(), "body".into()], vec![Value::integer(response.status), headers, body])
+    let headers = keyed::vector(names, values).error_at(span, "invalid headers")?;
+    keyed::vector(vec!["status".into(), "headers".into(), "body".into()], vec![Value::integer(response.status), headers, body])
         .error_at(span, "invalid response")
 }

@@ -1,11 +1,11 @@
 # `¿` — Roll / Deal
 
-Function. Keys: `Alt-/`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-/`. Hanzi: `掷/抽` (`擲/抽`). Ranks: `0` monadic, `0 0` dyadic
 
 `¿N`: uniform draw from `⍳N`. `¿0`: U(0,1). Pervasive.
 
 ```bpl
-¿6 ∊ ⍳6           ⍝ $t
+¿6 ∊ ⍳6ₓ           ⍝ $t
 ```
 
 `M¿N`: `M` draws without replacement from `⍳N`.

@@ -294,12 +294,20 @@ impl Value {
     /// This value as a unit: an atom is itself, and an array is enclosed. A 0-cell inside a frame is the unit of its item.
     pub(crate) fn unit(self) -> Result<Self, ErrorKind> { if self.is_atom() { Ok(self) } else { self.enclose() } }
     pub(crate) fn storage_id(&self) -> usize { match self { Self::Array(a) => Arc::as_ptr(a) as usize, _ => 0 } }
-    fn storage(&self) -> Option<&Storage> { match self { Self::Array(a) => Some(a.storage()), _ => None } }
+    pub(crate) fn storage(&self) -> Option<&Storage> { match self { Self::Array(a) => Some(a.storage()), _ => None } }
     /// The pending call that computes this array's items, while they haven't been computed.
     pub(crate) fn pending(&self) -> Option<&Arc<Pending>> { match self { Self::Array(a) => a.pending(), _ => None } }
     /// The pending call of an array that no other array holds, which a fold can read block by block without building it. The array isn't a view. A caller that only borrows the array can still read it after the fold, so the fold must leave the array able to compute its items.
-    pub(crate) fn unshared_pending(&self) -> Option<&Arc<Pending>> {
+    pub(crate) fn unshared_pending(&self) -> Option<&Arc<Pending>> { self.unshared(false) }
+    /// As `unshared_pending`, and also, for a view that no other array holds, its base's pending call where only the view holds the base. A view lists its base's items in order under its own layout, so a fold that reads the base by the view's shape gives the view's fold.
+    pub(crate) fn folded_pending(&self) -> Option<&Arc<Pending>> { self.unshared(true) }
+    fn unshared(&self, views: bool) -> Option<&Arc<Pending>> {
         let Self::Array(a) = self else { return None };
+        let mut a = a;
+        if let (true, Data::Of(base)) = (views, &a.data) {
+            if Arc::strong_count(a) != 1 { return None; }
+            a = base;
+        }
         let Data::Node(pending) = &a.data else { return None };
         (Arc::strong_count(a) == 1 && Arc::strong_count(pending) == 1 && !pending.is_forced()).then_some(pending)
     }
@@ -336,18 +344,19 @@ impl Value {
     }
     /// One item for each position of `shape`: the item itself when `shape` is empty, otherwise an array of them.
     pub(crate) fn shaped(shape: &[usize], mut data: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
-        if shape.is_empty() { data.pop().ok_or(Kind::Length.into()) } else { Self::from_parts(shape, data, empty_prototype) }
+        if shape.is_empty() { data.pop().ok_or_else(|| Kind::Length.into()) } else { Self::from_parts(shape, data, empty_prototype) }
     }
 
     /// Nonempty construction of items gathered one at a time, such as an operation's results or a literal list. Each number keeps its exactness. Exact and approximate numbers together stay mixed. Characters share character storage. Other items stay mixed. The prototype comes from the first item when it is first needed.
     pub fn new(shape: impl Into<Shape>, data: Vec<Value>) -> Result<Self, ErrorKind> {
         if data.is_empty() { return Err(Kind::Length.into()); }
+        if data.iter().any(|v| v.carrier().is_some_and(crate::transform::Carrier::joins_at_once)) {
+            let mut items = Gather::with_widening(&data.iter().collect::<Vec<_>>(), data.len(), Widening::Items);
+            let shape: Shape = shape.into();
+            for item in data { items.add(item) }
+            return items.finish(Layout::from(shape.to_vec()), Value::integer(0));
+        }
         Self::from_storage(shape, Storage::compact(data, Widening::Items))
-    }
-
-    /// Mixed storage, which keeps each item's kind. An empty array takes `empty_prototype`.
-    pub fn mixed(shape: impl Into<Shape>, data: Vec<Value>, empty_prototype: impl Prototype) -> Result<Self, ErrorKind> {
-        if data.is_empty() { Self::empty_of(shape, empty_prototype.value(), true) } else { Self::from_storage(shape, Storage::mixed(data)) }
     }
 
     pub(crate) fn from_storage(shape: impl Into<Shape>, data: Storage) -> Result<Self, ErrorKind> {
@@ -363,7 +372,7 @@ impl Value {
     pub(crate) fn characters(shape: impl Into<Shape>, data: Vec<char>) -> Result<Self, ErrorKind> { Self::from_storage(shape, Storage::Compact(Buffer::Characters(data))) }
     /// The positions `items`, each below `bound`, written straight to the narrowest width that holds them.
     pub(crate) fn positions<P: num_traits::AsPrimitive<i64>>(shape: impl Into<Shape>, bound: usize, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
-        with_width!(Width::below(bound), T => T::build(shape, items.map(|i| T::from_i64(i.as_())).collect())).ok_or(Kind::Length.into())
+        with_width!(Width::below(bound), T => T::build(shape, items.map(|i| T::from_i64(i.as_())).collect())).ok_or_else(|| Kind::Length.into())
     }
     /// `positions` from a buffer of them. As 32-bit integers they keep the buffer, with no pass over it.
     pub(crate) fn positions_u32(shape: impl Into<Shape>, bound: usize, data: Vec<u32>) -> Result<Self, ErrorKind> {
@@ -412,7 +421,7 @@ impl Value {
         if A::slice(self).is_none() { return None; }
         match self.storage_mut() { Storage::Compact(b) => A::of_mut(b), Storage::Mixed(..) => None }
     }
-    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins, and a `Steps::FILL` offset writes nothing. Storage that can't hold an item widens as a `Gather` does. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame. A write into a batch, or of one, stops its map's run (`transform::written`).
+    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins, and a `Steps::FILL` offset writes nothing. A weak number takes this array's width, as in arithmetic (`Gather`). Storage that can't hold an item widens or turns mixed by the rule for items (`Widening::Items`), as a literal of the same items would: each number keeps its exactness, and a Boolean stays apart from other numbers. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame. A write into a batch, or of one, stops its map's run (`transform::written`).
     pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) -> Result<(), crate::transform::Stop> { self.written(Writes::Offsets(offsets), source) }
     /// `scatter` at the positions that `steps` reach from `base`, in the order `walk` reads them, without listing them (`Gather::scatter_walk`).
     pub(crate) fn scatter_walk(&mut self, base: usize, steps: &[rustymath::gather::Steps], source: &Value) -> Result<(), crate::transform::Stop> { self.written(Writes::Walk { base, steps }, source) }
@@ -423,11 +432,10 @@ impl Value {
         if let Some(result) = crate::transform::written(self, source, |t, s| t.written(writes, s)) { return result; }
         let data = self.storage_mut();
         if let Storage::Mixed(items, memo) = data {
-            let offsets = writes.offsets();
-            if offsets.contains(&0) { memo.prototype.take(); }
-            if source.environment().is_some() || offsets.iter().any(|&o| o != rustymath::gather::Steps::FILL && items[o].environment().is_some()) { memo.environment.take(); }
+            if writes.kept().any(|(_, o)| o == 0) { memo.prototype.take(); }
+            if source.environment().is_some() || writes.kept().any(|(_, o)| items[o].environment().is_some()) { memo.environment.take(); }
         }
-        let mut gather = Gather::resume(std::mem::replace(data, Storage::Compact(Buffer::Booleans(Vec::new()))));
+        let mut gather = Gather::resume(std::mem::replace(data, Storage::Compact(Buffer::Booleans(Vec::new()))), Widening::Items);
         gather.scatter(writes, source);
         *data = gather.data;
         Ok(())
@@ -461,7 +469,7 @@ impl Value {
             if items.is_empty() && !cells.is_empty() { memo.prototype.take(); }
             if cells.environment().is_some() { memo.environment.take(); }
         }
-        let mut gather = Gather::resume(std::mem::replace(data, Storage::Compact(Buffer::Booleans(Vec::new()))));
+        let mut gather = Gather::resume(std::mem::replace(data, Storage::Compact(Buffer::Booleans(Vec::new()))), Widening::Arrays);
         gather.append(cells);
         *data = gather.data;
         Ok(())
@@ -500,25 +508,23 @@ impl Value {
             _ => false,
         }
     }
-    /// This value as a weak argument beside `strong`, as NEP 50 treats a Python scalar: a float atom takes the width of the floats among `strong`, and a complex atom the width of their parts. Python's API converts its scalar arguments this way. BPL itself has no weak values. Other values are unchanged.
-    pub fn weakened(self, strong: &[Value]) -> Value {
-        let (Some(weak @ (DType::Float(_) | DType::Complex(_))), true) = (self.dtype(), self.is_atom()) else { return self };
-        let Some(beside) = strong.iter().filter_map(Value::dtype).reduce(|a, b| a.common(b).unwrap_or(a)) else { return self };
-        match beside.common_weak(weak).filter(|&target| target != weak).map(DType::real) {
-            Some(DType::Float(w)) => self.to_float_width(w).unwrap_or(self),
-            _ => self,
-        }
+    /// This value beside `other` in a dyadic call: a weak number beside an array or a strong number takes the width that `Number::weak_width` gives it, as NEP 50 treats a Python scalar. `None` where it keeps its own width.
+    #[inline]
+    pub(crate) fn weakened(&self, other: &Value) -> Option<Value> {
+        let Value::Number(n) = self else { return None };
+        if !n.is_weak() { return None; }
+        if matches!(other, Value::Number(o) if o.is_weak()) { return None; }
+        self.to_float_width(n.weak_width(other.dtype()?)?).ok()
     }
+    /// This value with a weak number made strong (`Number::is_weak`), as an explicit width conversion makes it.
+    pub(crate) fn strong(self) -> Value { match self { Value::Number(n) => Value::Number(n.marked(false)), v => v } }
 
-    /// Empty arrays require a prototype item; their shape is never inferred from the buffer.
-    pub fn empty(shape: impl Into<Shape>, prototype: Value) -> Result<Self, ErrorKind> { Self::empty_of(shape, prototype, false) }
-
-    /// An empty array whose storage is mixed when `mixed` is set or when no compact kind holds the prototype.
-    fn empty_of(shape: impl Into<Shape>, prototype: Value, mixed: bool) -> Result<Self, ErrorKind> {
+    /// Empty arrays require a prototype item; their shape is never inferred from the buffer. The storage is mixed where no compact kind holds the prototype.
+    pub fn empty(shape: impl Into<Shape>, prototype: Value) -> Result<Self, ErrorKind> {
         let shape = shape.into();
         if element_count(&shape)? != 0 { return Err(Kind::Length.into()); }
         let prototype = prototype.fill();
-        let data = match item_dtype(&prototype).filter(|_| !mixed) {
+        let data = match item_dtype(&prototype) {
             Some(dtype) => Storage::with_capacity(Some(dtype), 0),
             None => Storage::Mixed(Vec::new(), Memo { prototype: OnceLock::from(Box::new(prototype)), ..Memo::default() }),
         };
@@ -576,6 +582,8 @@ impl Value {
         while let Some(inner) = value.carrier().map(|carrier| carrier.template().clone()) { value = inner; }
         value
     }
+    /// The dtype of the items a reader sees: the `dtype` of `template`, so that a dual answers for its primal and a batch for its cells. `dtype` gives `None` for an array that carries a level's data, so that kernels never read its storage as compact.
+    pub(crate) fn template_dtype(&self) -> Option<DType> { self.template().dtype() }
     /// The name of the storage that holds the items under the settings `numeric`, as `•storage` gives it: rustymath's name for a compact dtype, except for integers. Under dynamic kinds, which choose an integer's width from its value, integers of any width are `"integer"`. Under static kinds an integer names the width it computes at, because the width is part of its kind there. It reads no items: a pending array answers from its call's dtype, and a dual from its primal. An atom gives its own kind.
     pub(crate) fn storage_kind(&self, numeric: Numeric) -> &'static str {
         let held = self.template();
@@ -600,6 +608,8 @@ impl Value {
     pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items() { Items::Compact(View::Integers(Ints::I64(v))) => Some(v), _ => None } }
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Compact(View::Booleans(v)) => Some(v), _ => None } }
     pub fn at(&self, i: usize) -> Value { self.at_ref(i).into_owned() }
+    /// Item `i`, or the prototype where `i` is `Steps::FILL`. A pending array gives the item without computing the rest.
+    pub(crate) fn at_or_fill(&self, i: usize) -> Value { if i == rustymath::gather::Steps::FILL { self.prototype() } else { crate::fusion::item(self, i) } }
     /// Item `i`, borrowed where this value holds it as a value.
     pub(crate) fn at_ref(&self, i: usize) -> Cow<'_, Value> {
         if let Self::Array(a) = self { if let Some(carrier) = a.carrier() { return Cow::Owned(carrier.at(i)); } }

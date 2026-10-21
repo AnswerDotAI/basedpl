@@ -1,6 +1,6 @@
 # `∪` — Unique / Union
 
-Function. Keys: `Alt-v`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-v`. Hanzi: `并/独` (`併/獨`). Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `∪Y` keeps the first of each matching major cell. Uses tolerant matching.
 

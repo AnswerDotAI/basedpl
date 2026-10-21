@@ -1,6 +1,6 @@
 # `∇` — Recursion
 
-Argument. Keys: `Alt-g`
+Argument. Keys: `Alt-g`. Hanzi: `递` (`遞`)
 
 `∇` calls the current dfn or derived function recursively.
 

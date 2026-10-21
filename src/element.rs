@@ -18,6 +18,8 @@ pub(crate) trait Stored: Element {
     fn whole<T: Whole>(self) -> Option<T> { None }
     /// `items` read as this element type, which only the complex element types can do.
     fn from_complexes(_items: Complexes<'_>) -> Option<Vec<Self>> { None }
+    /// The real number `x` as this element type, which only the float and complex types have. A survey of the kernel tables gives them their constant arguments this way.
+    fn real(_x: f64) -> Option<Self> { None }
 }
 
 impl Stored for bool {}
@@ -30,6 +32,7 @@ macro_rules! complex_elements {
                 if numeric.is_static() { Value::from_storage(shape, Storage::Compact(Self::buffer(data))).ok() } else { Self::build(shape, data) }
             }
             fn from_complexes(items: Complexes<'_>) -> Option<Vec<Self>> { Some(with_complexes!(items, |z| read_all(z))) }
+            fn real(x: f64) -> Option<Self> { Some(Self::new(x as _, 0.0)) }
         }
     )+};
 }
@@ -65,6 +68,7 @@ macro_rules! float {
         impl Stored for $t {
             #[inline]
             fn whole<T: Whole>(self) -> Option<T> { rustymath::convert::int(self) }
+            fn real(x: f64) -> Option<Self> { Some(x as $t) }
         }
         impl Float for $t {
             const WIDTH: FloatWidth = FloatWidth::$width;

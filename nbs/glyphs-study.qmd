@@ -1,0 +1,13 @@
+# Glyphs Study Guide
+
+Work through these notebooks in order. Each part introduces the terms and glyphs used in its examples. Run them in a BPL notebook or try the examples in the [playground](playground.qmd).
+
+1. [Basics](study/01_basics.ipynb): numbers, vectors, grouping, functions and strings.
+2. [Functions and arrays](study/02_functions.ipynb): comparisons, counting, finding and filtering.
+3. [Operators and axes](study/03_operators.ipynb): build functions from other functions, work with rows and columns, and repeat calculations.
+4. [Nested arrays and trains](study/04_nested-arrays.ipynb): work with arrays inside arrays, keyed data and combinations of functions.
+5. [Searching and indexing](study/05_searching-indexing.ipynb): membership, patterns, repeated values, selections and grades.
+6. [Rearranging and transforming arrays](study/06_rearranging-arrays.ipynb): reverse and rotate, transpose axes, change selections, choose functions, and execute or format text.
+7. [Numerical tools](study/07_numerical-tools.ipynb): integer bits, primes, factors, polynomials and numerical searches.
+
+Use the [glyph reference](glyphs.qmd) for the full definitions and [Terms](terms.qmd) to look up the vocabulary.

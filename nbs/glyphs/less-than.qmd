@@ -1,6 +1,6 @@
 # `<` — Sort up / Less
 
-Function. Ranks: `∞` monadic, `0 0` dyadic
+Function. Hanzi: `小`. Ranks: `∞` monadic, `0 0` dyadic
 
 `<Y` sorts the major cells of `Y` ascending, as `[⍋Y]⌷Y` does. Ties keep their order.
 

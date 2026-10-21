@@ -1,6 +1,6 @@
 # `⍵` — Right argument
 
-Argument. Keys: `Alt-w`
+Argument. Keys: `Alt-w`. Hanzi: `乙`
 
 `⍵` is the current dfn's right argument.
 

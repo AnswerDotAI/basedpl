@@ -1,6 +1,6 @@
 # `ᵇ` — Bitwise
 
-Monadic operator. Keys: `Alt-6 b`
+Monadic operator. Keys: `Alt-6 b`. Hanzi: `按`
 
 `fᵇ` applies the Boolean function `f` separately to each bit of its integer arguments. Negative integers use infinite two's complement.
 

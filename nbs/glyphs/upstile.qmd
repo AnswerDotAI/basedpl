@@ -1,6 +1,6 @@
 # `⌈` — Ceiling / Maximum
 
-Function. Keys: `Alt-s`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-s`. Hanzi: `上`. Ranks: `0` monadic, `0 0` dyadic
 
 `⌈Y` rounds up to an exact integer. Pervasive; tolerant near integers. An infinity or NaN stays a float. Complex ceiling is `-⌊-Y`.
 

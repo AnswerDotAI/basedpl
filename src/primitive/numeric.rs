@@ -54,9 +54,7 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
         let scale = 10_f64.powi(places);
         let scaled = y * scale;
         let y = if scale.is_finite() && scale != 0.0 && scaled.abs() < 1e16 { scaled.round() / scale } else { y };
-        if precision >= 0 {
-            if y == 0.0 && y.is_sign_negative() { format!(" {:.*}", digits, 0.0) } else { format!("{y:.digits$}") }
-        } else { crate::number::scientific(&format!("{:.*e}", digits - 1, y)) }
+        if precision >= 0 { format!("{y:.digits$}") } else { crate::number::scientific(&format!("{:.*e}", digits - 1, y)) }
     };
     if !n.is_exact() {
         let mut significant = 0;
@@ -70,9 +68,13 @@ fn format_number(n: &Number, precision: isize, span: &Context<'_>) -> Result<Str
     Ok(text.replace('-', "¯"))
 }
 
+/// `⍕right`, or `left⍕right`, where `left` is a precision, a width and precision, or a width and precision for each column. A width of 0 fits a column to its longest number, with one space before each column after the first.
 pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     span.formats(left, right)?;
-    let Some(spec) = left else { return right.formatted().error_at(span, "formatted array is too large"); };
+    use crate::display::Elide;
+    let Some(spec) = left else { return right.formatted(Elide::NONE).error_at(span, "formatted array is too large"); };
+    // An empty spec, `⍬` or `''`, gives monadic `⍕`'s text without the markers of numbers' kinds.
+    if spec.shape().len() == 1 && spec.is_empty() { return right.formatted(Elide { marks: false, ..Elide::NONE }).error_at(span, "formatted array is too large"); }
     if spec.shape().len() > 1 { return Err(span.error(Kind::Rank, "format specification must be a unit or vector")); }
     let spec = spec.elements().map(|e| {
         numeric(&e, span)?.integer().and_then(|n| isize::try_from(n).map_err(|_| Kind::Limit.into())).error_at(span, "format specification must be integral")
@@ -91,7 +93,7 @@ pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'
     }
     let text = right.elements().enumerate().map(|(i, e)| {
         let s = format_number(numeric(&e, span)?, specs[i % columns].1, span)?;
-        if specs[i % columns].0 == 0 { widths[i % columns] = widths[i % columns].max(s.chars().count() + 1); }
+        if specs[i % columns].0 == 0 { widths[i % columns] = widths[i % columns].max(s.chars().count() + usize::from(i % columns > 0)); }
         Ok(s)
     }).collect::<Result<Vec<_>, Error>>()?;
     let width = widths.iter().sum();
@@ -105,7 +107,7 @@ pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'
         let len = s.chars().count();
         let s = if len > width { "*".repeat(width) }
         else if specs[i % columns].1 < 0 {
-            let leading = usize::from(specs[i % columns].0 == 0);
+            let leading = usize::from(specs[i % columns].0 == 0 && i % columns > 0);
             format!("{}{s}{}", " ".repeat(leading), " ".repeat(width - len - leading))
         } else { format!("{}{s}", " ".repeat(width - len)) };
         data.extend(s.chars().map(Value::Character));
@@ -115,16 +117,29 @@ pub(super) fn format_array(left: Option<&Value>, right: &Value, span: &Context<'
 
 /// Lambert W of every item. A compact array runs through `LambertW`'s slice forms, and other items through `Number`.
 pub(crate) fn lambert_w(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if !right.is_atom() {
-        let agreement = Agreement::new(&Default::default(), right.layout()).error_at(span, "array shapes do not agree")?;
-        if agreement.len > 0 {
-            if let Some(result) = crate::pervasive::object(rustymath::LambertW, right, &agreement) {
-                return result.with_layout(agreement.layout).error_at(span, "invalid keyed result");
-            }
-        }
-    }
-    let w = |e: Value| numeric(&e, span)?.lambert_w().map(Value::Number).domain_at(span);
-    pervade(right, &w, span)
+    unnamed(None, right, &|_, r, a| crate::pervasive::object(rustymath::LambertW, r, a), &|_, y| y.lambert_w(), span)
+}
+
+/// ψ of every item, which the derivative of monadic `!` needs. A compact array runs through `Digamma`'s slice form, and other items through `Number`.
+pub(crate) fn digamma(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    unnamed(None, right, &|_, r, a| crate::pervasive::real_object(rustymath::Digamma, r, a), &|_, y| y.digamma(), span)
+}
+
+/// The partial derivative of `k!n`, C(n, k), with respect to `n`, or else to `k`, at each pair of items. Compact arrays run through rustymath's `BinomDn` or `BinomDk`, flipped as `!` flips `Binom`, and other items through `Number`.
+pub(crate) fn binomial_partial(k: &Value, n: &Value, wrt_n: bool, span: &Context<'_>) -> Result<Value, Error> {
+    use rustymath::{BinomDk, BinomDn, Flipped};
+    let kernel = |x: Option<&Value>, y: &Value, a: &Agreement| {
+        if wrt_n { crate::pervasive::binary_object(Flipped(BinomDn), x?, y, a) } else { crate::pervasive::binary_object(Flipped(BinomDk), x?, y, a) }
+    };
+    unnamed(Some(k), n, &kernel, &|x, y| x.map_or(Err("a binomial needs two arguments"), |x| x.binomial_partial(y, wrt_n)), span)
+}
+
+/// Applies a function that no glyph names to every item of `right`, or to every pair of items of `left` and `right`, at any depth. `kernel` takes compact arrays whole where it can, and `item` takes each other item.
+fn unnamed(
+    left: Option<&Value>, right: &Value, kernel: &dyn Fn(Option<&Value>, &Value, &Agreement) -> Option<Value>,
+    item: &dyn Fn(Option<&Number>, &Number) -> Result<Number, &'static str>, span: &Context<'_>,
+) -> Result<Value, Error> {
+    pervade(left, right, &|x, y| item(x.map(|x| numeric(x, span)).transpose()?, numeric(y, span)?).map(Value::Number).domain_at(span), kernel, span)
 }
 
 pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
@@ -187,11 +202,8 @@ fn matrix_result<T: Field>(mut x: Vec<T>, layout: Layout, scalar: bool, width: F
 pub(crate) fn stacked(op: Operation, x: Option<&Value>, y: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
     use crate::element::{read_as, Stored};
     // Decided before any items are read: reading them would compute a pending argument that Rank's other paths would fuse.
-    let divide = match (op, x) {
-        (Operation::Primitive(Primitive::MatrixDivide), _) => true,
-        (Operation::PLUS_TIMES, Some(_)) | (Operation::MINUS_TIMES, None) => false,
-        _ => return None,
-    };
+    if !op.stacks(x.is_some()) { return None; }
+    let divide = op == Operation::Primitive(Primitive::MatrixDivide);
     let width = |a: &Value| match a.as_items() { Items::Compact(View::Floats(_)) if a.layout().plain() && a.shape().len() >= 2 => a.float_width(), _ => None };
     let w = width(y)?;
     if x.is_some_and(|x| width(x) != Some(w)) { return None; }
@@ -337,7 +349,7 @@ fn factored<T>(d: &Decomposition, a: &[T], [m, n]: [usize; 2], width: FloatWidth
 
 /// The record of the factors that `factored` gave, under their names.
 fn record((names, factors): (Vec<&'static str>, Vec<Value>)) -> Result<Value, Fault> {
-    crate::keyed::record(names.into_iter().map(Into::into).collect(), factors).map_err(Fault::Record)
+    crate::keyed::vector(names.into_iter().map(Into::into).collect(), factors).map_err(Fault::Record)
 }
 
 /// The [`Domain`] that the items of `arrays` compute in, and the float width of the results. DOMAIN where an item isn't a number.
@@ -614,7 +626,7 @@ pub(crate) fn roll_array<R: rand::Rng + ?Sized>(right: &Value, rng: &mut R, span
 
 /// One number below `n`, as `generated` gives it, or a float of width `unit` between 0 and 1 when `n` is 0.
 fn draw<R: rand::Rng + ?Sized>(n: u64, float: Option<FloatWidth>, unit: FloatWidth, rng: &mut R) -> Value {
-    if n == 0 { Value::Number(Number::float(rng.sample(rand::distr::Open01), unit)) } else { generated(rng.random_range(0..n), float) }
+    if n == 0 { Value::Number(Number::float(rustymath::random::unit(rng.next_u64()), unit)) } else { generated(rng.random_range(0..n), float) }
 }
 
 fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rng: &mut R) -> Result<Value, Error> {
@@ -644,7 +656,8 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Context<'_>, fill: bool, rn
                     .error_at(span, "invalid roll result");
             }
             if bounds.iter().all(|&n| n == 0) {
-                let draws = bounds.iter().map(|_| rng.sample::<f64, _>(rand::distr::Open01));
+                let mut draws = Vec::with_capacity(bounds.len());
+                rustymath::random::units(bounds.len(), rng, &mut draws);
                 return right.layout().floats(unit, draws).error_at(span, "invalid roll result");
             }
             for n in bounds { data.add(draw(n, float, unit, rng)); }

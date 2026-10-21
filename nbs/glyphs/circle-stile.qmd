@@ -1,12 +1,12 @@
 # `⌽` — Reverse / Rotate
 
-Function. Keys: `Alt-2`. Ranks: `1` monadic, `0 1` dyadic
+Function. Keys: `Alt-2`. Hanzi: `转` (`轉`). Ranks: `1` monadic, `0 1` dyadic
 
 `⌽Y` reverses the last axis. `⌽⍠K` selects the axis.
 
 ```bpl
 ⌽1 2 3             ⍝ 3 2 1
-⌽⍠0 (2 2⍴⍳4)        ⍝ [2 3⋄0 1]
+⌽⍠0 (2 2⍴⍳4ₓ)        ⍝ [2 3⋄0 1]ₓ
 ```
 
 `N⌽Y` rotates left by `N` places; negative `N` rotates right. Integral counts cycle modulo axis length.

@@ -35,7 +35,8 @@ fn outside(text: &str, test: impl Fn(char) -> bool) -> bool {
 fn needs_group(text: &str) -> bool { outside(text, |c| matches!(crate::symbols::canonical(c), ' ' | ':')) }
 
 impl Value {
-    pub(crate) fn formatted(&self) -> Result<Self, ErrorKind> {
+    /// `⍕`'s text for this value. Numbers show their kind's markers where `el.marks` is set, as monadic `⍕` shows them.
+    pub(crate) fn formatted(&self, el: Elide) -> Result<Self, ErrorKind> {
         if self.is_unit() {
             if let Value::Function(f) = self.at(0) { let text = f.to_string(); return Self::characters([text.chars().count()], text.chars().collect()); }
         }
@@ -43,20 +44,22 @@ impl Value {
         let keyed = self.has_keys();
         if !keyed && matches!(self.prototype(), Value::Character(_)) && self.elements().all(|e| matches!(e, Value::Character(_))) { return Ok(self.clone()); }
         let numeric = matches!(self.prototype(), Value::Number(_)) && self.all_numbers();
-        if !numeric && !keyed { return self.formatted_cells(); }
+        if !numeric && !keyed { return self.formatted_cells(el); }
         let (shape, text) = if !keyed && self.shape().len() > 1 {
-            let columns = *self.shape().last().unwrap();
-            // One line per row, without blank lines between planes, as the result keeps the leading axes.
-            let rows = crate::display::rows(self.shape(), None, None).into_iter().map(|(_, _, spots)| {
-                (0, spots.iter().map(|spot| crate::display::Cell::spot(spot, |i| crate::display::Cell::number(self.at(i).to_string()))).collect())
-            }).collect();
-            let (width, lines) = crate::display::grid(columns, rows, crate::display::Style::Uniform { spaced: true, right: true });
+            // One line per row, without blank lines between planes, as the result keeps the leading axes. Numbers that share a marked kind write each matrix as a bracketed literal with one mark.
+            let rank = self.shape().len();
+            let (width, rows) = crate::display::table(self, el, false);
+            let lines = match self.mark(el) {
+                Some(m) => crate::display::bracketed(rows, &self.shape()[..rank - 1], 1, m),
+                None => rows.into_iter().flat_map(|(_, lines)| lines).collect(),
+            };
+            let width = lines.iter().map(|line| line.chars().count()).max().unwrap_or(width);
             let mut shape = self.shape().to_vec();
             *shape.last_mut().unwrap() = width;
-            (shape, lines.concat().concat())
-        } else if !keyed && self.len() >= 2 && matches!(self.as_items(), Items::Compact(View::Integers(_))) {
-            // An exact vector writes as it displays, with one `ₓ` after its brackets.
-            let text = self.literal();
+            (shape, lines.iter().map(|line| format!("{line:<width$}")).collect())
+        } else if el.marks && !keyed && self.len() >= 2 && self.mark(el).is_some() {
+            // A vector whose numbers share a marked kind writes as it displays, with one mark after its brackets.
+            let text = self.source(el);
             (vec![text.chars().count()], text)
         } else if !keyed {
             // Other numbers join with spaces, whatever form the value displays in.
@@ -65,11 +68,11 @@ impl Value {
             for (i, e) in self.elements().enumerate() {
                 if i > 0 { text.push(' '); }
                 let Value::Number(n) = e else { unreachable!("every item is a number") };
-                write!(text, "{n}").unwrap();
+                if el.marks { write!(text, "{n}") } else { write!(text, "{n:#}") }.unwrap();
             }
             (vec![text.chars().count()], text)
         } else {
-            let text = self.to_string();
+            let text = crate::display::plain(self, el);
             let lines: Vec<_> = text.split('\n').collect();
             if lines.len() == 1 { (vec![text.chars().count()], text) } else {
                 let width = lines.iter().map(|s| s.chars().count()).max().unwrap();
@@ -83,7 +86,7 @@ impl Value {
         Self::characters(shape, chars)
     }
 
-    fn formatted_cells(&self) -> Result<Self, ErrorKind> {
+    fn formatted_cells(&self, el: Elide) -> Result<Self, ErrorKind> {
         use crate::display::{grid, Cell, Style};
         if self.is_empty() { return Self::empty([0], Value::Character(' ')); }
         let rank = self.shape().len();
@@ -92,7 +95,7 @@ impl Value {
         for start in (0..self.len()).step_by(columns) {
             let mut cells = Vec::with_capacity(columns);
             for item in self.items(start..start + columns) {
-                let text = item.clone().formatted()?;
+                let text = item.clone().formatted(el)?;
                 size += text.len();
                 generated_len(&[size])?;
                 matrix |= text.shape().len() > 1;
@@ -199,12 +202,16 @@ impl Value {
         }
     }
 
-    /// The marker that a nonempty array writes once after its notation, in place of one for each number: `ₓ` for integer storage, and a width's marker for floats, or complex numbers with parts, of a width that `el` doesn't leave plain.
+    /// The marker that a nonempty array writes once after its notation, in place of one for each number: `ₓ` where every item is an exact integer, and a width's marker where every item is a float, or a complex number with parts, of one width that `el` doesn't leave plain.
     pub(crate) fn mark(&self, el: Elide) -> Option<char> {
+        use rustymath::buffer::DType;
         if self.is_empty() { return None; }
-        match self.as_items() {
-            Items::Compact(View::Integers(_)) => Some('ₓ'), Items::Compact(View::Floats(f)) => el.width_marker(f.tag()), Items::Compact(View::Complexes(z)) => el.width_marker(z.tag().into()), _ => None
-        }
+        match self.shown_dtype()? { DType::Integer(_) => el.marks.then_some('ₓ'), DType::Float(w) => el.width_marker(w), DType::Complex(w) => el.width_marker(w.into()), _ => None }
+    }
+    /// The kind of item that every item of the array holds, which display marks once for the whole array: compact storage's dtype, or for mixed storage the dtype that would hold its items compactly under the rule for items (`items_dtype`). Display then depends on the items, not on how they're stored. A carrier shows its template's kind.
+    pub(crate) fn shown_dtype(&self) -> Option<rustymath::buffer::DType> {
+        let held = self.template();
+        match held.as_items() { Items::Values(items) => super::storage::items_dtype(items, Widening::Items), Items::Compact(_) => held.dtype() }
     }
     /// A number of an array that `mark` marks, without its own marker.
     fn unmarked_item(&self, el: Elide) -> String { let Self::Number(n) = self else { unreachable!("compact storage holds numbers") }; el.unmarked(n) }
@@ -248,12 +255,11 @@ impl Value {
     /// Whether plain display shows the vector as a strand: a vector of two or more numbers, characters or strings. Exact integers show in brackets instead.
     pub(crate) fn is_strand(&self, el: Elide) -> bool {
         matches!(self, Self::Array(_)) && self.shape().len() == 1 && self.len() >= 2 && !self.has_keys() && !self.shows_names(el)
-            && self.string_literal().is_none() && match self.as_items() {
+            && self.string_literal().is_none() && !matches!(self.shown_dtype(), Some(rustymath::buffer::DType::Integer(_))) && match self.as_items() {
                 Items::Values(items) => {
                     items.iter().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal().is_some())
                 }
                 Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()),
-                Items::Compact(View::Integers(_)) => false,
                 _ => true,
             }
     }

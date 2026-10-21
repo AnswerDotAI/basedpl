@@ -1,6 +1,6 @@
 # `⍸` — Where / Interval index
 
-Function. Keys: `Alt-Minus i`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-Minus i`. Hanzi: `处/间` (`處/間`). Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⍸Y` lists exact positions, repeated according to their nonnegative integer counts. Higher-rank arguments give coordinate vectors.
 

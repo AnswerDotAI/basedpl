@@ -196,7 +196,7 @@ sieve ← {  ⍝ Sieve of Eratosthenes.
 
 to ← {  ⍝ Sequence ⍺ .. ⍵
   [from step]←1 ¯1×-\2↑⍺,⍺+×⍵-⍺  ⍝ step default is +/- 1.
-  from+step×⍳0⌈≥⌊(⍵-from)÷step+step=0
+  from+step×⍳0ₓ⌈≥⌊(⍵-from)÷step+step=0
 }
 
 ⍝ From http://dfns.dyalog.com/s_to.htm
@@ -214,7 +214,7 @@ xTo ← {  ⍝ Sequence ⍺ .. ⍵
 
 rg ← {(⍺₀⍶ ⍵)∧⍺₁⍹ ⍵}  ⍝ Range operator
 
-xr ← {d←⍉⊃+/×⍵,.-⍺ᵀ ⋄ (2∨.=|d #⍠¯1 d)←2 ⋄ 3⊥dᵀ}  ⍝ Outside location
+xr ← {d←⍉⊃+/×⍵,.-⍺ᵀ ⋄ (2∨.=|d #⍠¯1 d)←2ₓ ⋄ 3⊥dᵀ}  ⍝ Outside location
 
 ⍝ From http://dfns.dyalog.com/c_alt.htm
 
@@ -330,8 +330,8 @@ phinary ← {  ⍝ Phinary representation; left argument 0 returns exponents.
     ⍺=0?⍵;
     ⍵≡⍬?"0";
     fmt←{[⍵]⌷"01"}
-    lft←(⌽⍳0⌈≥⌈/⍵)∊⍵
-    rgt←(-≥⍳0⌈|⌊/⍵)∊⍵
+    lft←(⌽⍳0ₓ⌈≥⌈/⍵)∊⍵
+    rgt←(-≥⍳0ₓ⌈|⌊/⍵)∊⍵
     rgt∧.=0?fmt lft;
     lft∧.=0?"0.",fmt rgt;
     (fmt lft),'.',fmt rgt

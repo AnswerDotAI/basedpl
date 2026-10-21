@@ -1,6 +1,6 @@
 # `⍚` — Agenda
 
-Dyadic operator. Keys: `Alt-Minus Backtick`
+Dyadic operator. Keys: `Alt-Minus Backtick`. Hanzi: `择` (`擇`)
 
 `selector⍚cases` derives a function that runs one of `cases` on the whole argument, or picks one for each cell. `cases` is a nonempty vector of functions, and an array among them acts as a constant function. The selector is an array, or a function that runs once on the original arguments. Its values pick cases as positions pick items: whole numbers that count from 0, where a negative value counts back from the end. A Boolean selector picks case 0 for `$f` and case 1 for `$t`.
 
@@ -40,8 +40,8 @@ x←1 2 3 ⋄ y←10 20 30 ⋄ x 0 1 0⍚[⊣ ⊢] y   ⍝ 1 20 3
 A selector with a named axis picks cells along the argument's axis of that name. Here the selector's axis is `"j"`, so each column picks a case. Where a case's cells have the rank of the argument's cells, the selector's axes keep their places in the result. Otherwise they come first, as a frame does in Rank.
 
 ```bpl
-m←["i":2 "j":3]⍴⍳6
-{4<+⌿⍵}⍚[⊢ -] m                    ⍝ ["i":2 "j":3]⍴0 ¯1 ¯2 3 ¯4 ¯5
+m←["i":2 "j":3]⍴⍳6ₓ
+{4<+⌿⍵}⍚[⊢ -] m                    ⍝ ["i":2 "j":3]⍴[0 ¯1 ¯2 3 ¯4 ¯5]ₓ
 ```
 
 A NaN in the selector picks no case, and its cell gets the result's fill. Results keep their kinds, as Each's results do. Result cells keep the keys and names they agree on and pad differing shapes, as Rank does. A single value fills every item of its cells; when every result fills, the argument gives the cell shape. An argument with no cells gives an empty result: as Each does with prototypes, the case that the selector's fill picks runs on no cells, and the result is empty, with that case's cells.

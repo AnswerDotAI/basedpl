@@ -9,7 +9,7 @@ use serde_json::Value as Json;
 pub(crate) fn number(n: &serde_json::Number, width: rustymath::buffer::FloatWidth) -> Result<Number, ErrorKind> {
     if let Some(i) = n.as_i64() { return Ok(Number::from_integer(i)); }
     if n.as_str().contains(['.', 'e', 'E']) {
-        return n.as_str().parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| Number::float(x, width)).ok_or(Kind::Domain.into());
+        return n.as_str().parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| Number::float(x, width)).ok_or_else(|| Kind::Domain.into());
     }
     exact(n.as_str().parse::<BigInt>().map_err(|_| Kind::Domain)?)
 }
@@ -110,7 +110,7 @@ fn import(value: &Read, fill: &Number, span: &Context<'_>) -> Result<Value, Erro
         Read::Record(entries) => {
             let keys = entries.iter().map(|(k, _)| k.as_str().into()).collect();
             let data = entries.iter().map(|(_, v)| import(v, fill, span)).collect::<Result<_, _>>()?;
-            keyed::record(keys, data).error_at(span, "invalid JSON object")?
+            keyed::vector(keys, data).error_at(span, "invalid JSON object")?
         }
     };
     Ok(value)
@@ -128,7 +128,7 @@ fn export(value: &Value, fill: Option<&Number>, span: &Context<'_>) -> Result<Js
         }
         Value::Function(_) | Value::Operator(_) => Err(span.domain_error("JSON cannot encode functions or operators")),
         // A value that `∂` carries writes as its plain value, as `⍕` writes it (`Carrier::observed`). A batch stops its run.
-        Value::Carried(carrier) => match carrier.observed().at(span)? { Some(plain) => export(plain, fill, span), None => Err(carrier.refused().at(span)) },
+        Value::Carried(carrier) => match carrier.observed().at(span)? { Some(plain) => export(plain, fill, span), None => Err(carrier.computed().err().expect("only a record observes no value, and a record refuses a direct read").at(span)) },
         _ if value.keys(0).is_none() && keyed::name(value).is_some() => Ok(Json::String(text(value, span)?)),
         _ if value.shape().is_empty() => export(&value.at(0), fill, span),
         _ => {

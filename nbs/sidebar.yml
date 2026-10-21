@@ -23,6 +23,8 @@ website:
       - section: Explanations
         contents:
           - overview.ipynb
+          - href: glyphs-study.qmd
+            text: Glyphs Study Guide
           - principles.ipynb
           - arrays.ipynb
           - indexing.ipynb

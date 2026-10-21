@@ -1,6 +1,6 @@
 # `≠` — Unique mask / Not equal
 
-Function. Keys: `Alt-Shift-=`. Ranks: `∞` monadic, `0 0` dyadic
+Function. Keys: `Alt-Shift-=`. Hanzi: `别/初` (`別/初`). Ranks: `∞` monadic, `0 0` dyadic
 
 `≠Y` marks the first occurrence of each distinct major cell. [Tolerance](../evaluation.qmd#equality-and-ordering) decides which cells are distinct.
 

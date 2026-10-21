@@ -1,11 +1,11 @@
 # `⍳` — Indices / Index of
 
-Function. Keys: `Alt-i`. Ranks: `1` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-i`. Hanzi: `位`. Ranks: `1` monadic, `∞ ∞` dyadic
 
 `⍳N` generates `0…N-1`. A negative `N` counts down, as J's `i.` does. Exact input gives exact coordinates.
 
 ```bpl
-⍳4                 ⍝ 0 1 2 3
+⍳4ₓ                 ⍝ [0 1 2 3]ₓ
 ⍳3ₓ                ⍝ [0 1 2]ₓ
 ⍳¯3                ⍝ 2 1 0
 ```
@@ -20,15 +20,15 @@ Function. Keys: `Alt-i`. Ranks: `1` monadic, `∞ ∞` dyadic
 A shape vector generates an array of coordinate vectors. A negative length reverses its axis.
 
 ```bpl
-⍳2 2               ⍝ [[0 0] [0 1]⋄[1 0] [1 1]]
-⍳2 ¯2              ⍝ [[0 1] [0 0]⋄[1 1] [1 0]]
+⍳2ₓ 2               ⍝ [[0 0] [0 1]⋄[1 0] [1 1]]
+⍳2ₓ ¯2              ⍝ [[0 1] [0 0]⋄[1 1] [1 0]]
 ```
 
 A keyed shape names the result's axes, as it does for [reshape](rho.qmd). The result is a named index, which pairs by name with axes of the same name. [Indexing](squad.qmd) by a named index gives the result its name. [`•index`](../system/index.qmd) gives an index whose name can't collide with a caller's names:
 
 ```bpl
 ⍴⍳["i":3]          ⍝ ["i":3]ₓ
-x←10×⍳5 ⋄ i←⍳["i":5]
+x←10×⍳5ₓ ⋄ i←⍳["i":5]
 x.[5|i+1]          ⍝ ["i":5]⍴[10 20 30 40 0]
 ```
 

@@ -7,7 +7,6 @@ from ._core import _system_functions
 
 _HOLE = object()
 
-def _arguments(args): return [_array(o) for o in args], [type(o) in (int, float, complex) for o in args]
 
 def _build(kind, *operands, valence=0):
     if any(o is _HOLE or isinstance(o, _Pending) for o in operands): return _Pending(kind, operands, valence)
@@ -68,9 +67,9 @@ class Function(_Combinators):
             args = (kwargs, args[0] if len(args) == 1 else list(args))
         elif len(args) == 1 and self._valence == 2: return _build('↢', self, args[0], valence=1)
         if len(args) not in (1, 2) or len(args) == 2 and self._valence == 1: raise TypeError('wrong number of arguments for this BPL function')
-        return self._invoke(*_arguments(args))
+        return self._invoke([_array(o) for o in args])
     def __rrshift__(self, value): return self(value)
-    def _invoke(self, args, weak): return bpl._call(self._inner, args, _show, weak).value
+    def _invoke(self, args): return bpl._call(self._inner, args, _show).value
 
 class _Attaching(Function):
     "`f.undo` or `f.derivative`. Called with one function `g`, it attaches `g` to `f` as its inverse or derivative, as `f⁻¹←g` and `f∂←g` do in BPL."
@@ -144,9 +143,9 @@ def _binary(f, x, y):
     composed = isinstance(x, _Combinators) or isinstance(y, _Combinators)
     try:
         if composed: operands = [o if isinstance(o, _Combinators) else _array(o) for o in (x, y)]
-        else: args = _arguments((x, y))
+        else: args = [_array(o) for o in (x, y)]
     except TypeError: return NotImplemented
-    return fork(operands[0], f, operands[1]) if composed else f._invoke(*args)
+    return fork(operands[0], f, operands[1]) if composed else f._invoke(args)
 
 def _unary(f, y):
     if y is NotImplemented: return NotImplemented

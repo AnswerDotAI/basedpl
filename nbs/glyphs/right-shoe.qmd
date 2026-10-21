@@ -1,6 +1,6 @@
 # `⊃` — Mix / Pick
 
-Function. Keys: `Alt-x`. Ranks: `0` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-x`. Hanzi: `选/合` (`選/合`). Ranks: `0` monadic, `1 ∞` dyadic
 
 `⊃Y` assembles items into rectangular cells, padding to a common shape with fill.
 
@@ -18,9 +18,9 @@ The result keeps the keys and axis names that the cells agree on. A cell without
 `P⊃Y` follows the path `P` into `Y`, one level for each item of `P`. A level is a position or key, or a vector of them with one for each leading axis it selects. With fewer positions than axes, a level selects the cell made of the remaining axes. With one for every axis, it selects that item. The next level enters a nested item. An empty path returns `Y`. `1 1⊃m` takes row 1 of `m`, then item 1 of that row.
 
 ```bpl
-1⊃2 3⍴⍳6           ⍝ 3 4 5
-[[1 1]]⊃2 3⍴⍳6     ⍝ 4
-1 1⊃2 3⍴⍳6         ⍝ 4
+1⊃2 3⍴⍳6ₓ           ⍝ [3 4 5]ₓ
+[[1 1]]⊃2 3⍴⍳6ₓ     ⍝ 4ₓ
+1 1⊃2 3⍴⍳6ₓ         ⍝ 4ₓ
 1 0⊃[[1 2] [3 4]]  ⍝ 3
 ⍬⊃1 2              ⍝ 1 2
 ```
@@ -39,7 +39,7 @@ With axes, `⊃⍠A Y` places the cell axes of Mix among the frame axes. See [Ax
 
 ## Inverse
 
-`⊃⁻¹Y` splits `Y` into its major cells.
+`⊃⁻¹Y` splits `Y` into vectors along its last axis.
 
 ```bpl
 ⊃⁻¹[1 2⋄3 4]   ⍝ [1 2;3 4]

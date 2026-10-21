@@ -174,12 +174,7 @@ pub(super) enum Term {
     Left(Value, Function),
     /// Arrays side by side, one item each. They become a vector when used.
     Strand(Vec<Value>),
-    /// A selection from the array that an assignment target names.
-    Marked(Box<Marked>),
 }
-/// A selection from the array that an assignment target names. `labels` holds the positions it selects, as `Labels` makes them. `values` holds the items at those positions, which a fork's other tines read.
-#[derive(Clone)]
-pub(super) struct Marked { pub(super) labels: Value, pub(super) values: Value, pub(super) kind: SelectionKind }
 pub(super) enum Tine { Array(Value), Function(Function) }
 /// The last entity of a run, or the call it ends in when that call is in tail position.
 enum Reduced { Entity(Entity), Tail(Application) }
@@ -206,7 +201,7 @@ pub(super) fn span_of(source: &Arc<Source>, range: &std::ops::Range<u32>) -> Spa
 impl Entity {
     fn category(&self) -> Category {
         match self.term {
-            Term::Binding(ref value) => Category::of(value), Term::Strand(_) | Term::Marked(_) => Category::Value, Term::Train(_) => Category::Train,
+            Term::Binding(ref value) => Category::of(value), Term::Strand(_) => Category::Value, Term::Train(_) => Category::Train,
             Term::Left(..) => Category::Left
         }
     }
@@ -216,7 +211,6 @@ impl Entity {
             Term::Binding(v) => v, Term::Train(tines) => Binding::Function(self::Function::train(tines, &span())?),
             Term::Left(a, f) => Binding::Function(before(a, f, &span())?),
             Term::Strand(items) => Binding::Value(Value::new(vec![items.len()], items).map_err(|k| span().error(k, "invalid strand"))?),
-            Term::Marked(marked) => Binding::Value(marked.labels),
         })
     }
     pub(super) fn function(self, source: &Arc<Source>) -> Result<Function, Error> {
@@ -224,8 +218,6 @@ impl Entity {
         match self.value(source)? { Binding::Function(f) => Ok(f), value => Function::from_value(value, &span_of(source, &range)) }
     }
     pub(super) fn array(self, source: &Arc<Source>) -> Result<Value, Error> { match self.value(source)? { Binding::Value(a) => Ok(a), _ => unreachable!() } }
-    /// The selection the entity holds when it comes from an assignment target.
-    fn marked(&self) -> Option<&Marked> { match &self.term { Term::Marked(marked) => Some(marked), _ => None } }
     /// The entity's value, with whether it displays and the expression it captured.
     fn bound(mut self, source: &Arc<Source>) -> Result<Bound, Error> {
         let (shy, expression) = (self.shy, self.expression.take());
@@ -313,9 +305,9 @@ pub(super) fn derived(operand: Binding, operator: Binding, span: &Span) -> Resul
 }
 
 /// The dyadic operator `operator` with its right operand `operand` bound (`Rule::BindRight`).
-pub(super) fn bound_right(operator: Binding, operand: Binding) -> Binding {
+pub(super) fn bound_right(operator: Binding, operand: Binding) -> self::OperatorNode {
     let Binding::Operator(operator) = operator else { unreachable!("a bind's left item is a dyadic operator") };
-    Binding::Operator(self::OperatorNode::Bound(Box::new(operator), Operand::from_value(operand)))
+    self::OperatorNode::Bound(Box::new(operator), Operand::from_value(operand))
 }
 
 /// The tines of `left` and then of `right`, which join in a train (`Rule::Train`).
@@ -374,31 +366,29 @@ impl Rule {
 pub(super) struct Binder { stack: Vec<Entity> }
 impl Binder {
     pub(super) fn evaluate(nodes: &[Node], session: &mut Session, tail: bool) -> Result<Step, Error> {
-        Self::evaluate_marked(nodes, session, tail, None, None).map(|(step, _)| step)
+        Self::reduced(nodes, session, tail, None, None, None)?.step(&nodes[0].span.source)
     }
-    pub(super) fn evaluate_marked(
-        nodes: &[Node], session: &mut Session, tail: bool, marked: Option<(usize, Marked)>, seed: Option<Entity>
-    ) -> Result<(Step, Option<Marked>), Error> {
-        let (reduced, selection) = Self::reduced(nodes, session, tail, marked, seed, None, None)?;
-        let step = reduced.step(&nodes[0].span.source)?;
-        Ok((step, selection))
+    /// `nodes` evaluated with `seed` already on the binder's stack, as the entity to the right of them all.
+    pub(super) fn evaluate_seeded(nodes: &[Node], session: &mut Session, seed: Entity) -> Result<Bound, Error> {
+        let Step::Done(bound) = Self::reduced(nodes, session, false, Some(seed), None, None)?.step(&nodes[0].span.source)? else { unreachable!("a run with no tail call gives its value") };
+        Ok(bound)
     }
     /// `nodes` evaluated as `evaluate` evaluates them, with the recording of the binder's steps when they stay within the subset that recordings cover (`tree.rs`).
     pub(super) fn recorded(nodes: &[Node], session: &mut Session, tail: bool) -> Result<(Step, Option<Recording>), Error> {
         let mut recorder = Recorder::default();
-        let (reduced, _) = Self::reduced(nodes, session, tail, None, None, Some(&mut recorder), None)?;
+        let reduced = Self::reduced(nodes, session, tail, None, Some(&mut recorder), None)?;
         Ok((reduced.step(&nodes[0].span.source)?, recorder.finish()))
     }
     /// `nodes` evaluated from `resume`, the state where a replay stopped matching.
     pub(super) fn resumed(nodes: &[Node], session: &mut Session, tail: bool, resume: Resume) -> Result<Step, Error> {
-        Self::reduced(nodes, session, tail, None, None, None, Some(resume))?.0.step(&nodes[0].span.source)
+        Self::reduced(nodes, session, tail, None, None, Some(resume))?.step(&nodes[0].span.source)
     }
     /// The run or parenthesised group `node`, as the run around it uses it. A run reduces to one value: an array, a function, or an operator that a dot path such as `m.op` names.
     pub(super) fn nested(node: &Node, session: &mut Session) -> Result<Bound, Error> { Self::nested_with(node, session, None) }
     /// `nested`, with `rec` recording the group's reductions.
     fn nested_with(node: &Node, session: &mut Session, rec: Option<&mut Recorder>) -> Result<Bound, Error> {
         let (NodeKind::Group(nodes) | NodeKind::Run(nodes)) = &node.kind else { unreachable!() };
-        let Reduced::Entity(entity) = session.nested(nodes, |session| Self::reduced(nodes, session, false, None, None, rec, None))?.0 else { unreachable!() };
+        let Reduced::Entity(entity) = session.nested(nodes, |session| Self::reduced(nodes, session, false, None, rec, None))? else { unreachable!() };
         Self::group_bound(node, session, entity.bound(&nodes[0].span.source)?)
     }
     /// `bound`, the value of the group or run `node`, once checked: a run reduces to one value.
@@ -429,15 +419,15 @@ impl Binder {
         }
     }
     fn reduced(
-        nodes: &[Node], session: &mut Session, tail: bool, marked: Option<(usize, Marked)>, seed: Option<Entity>, mut rec: Option<&mut Recorder>, resume: Option<Resume>
-    ) -> Result<(Reduced, Option<Marked>), Error> {
+        nodes: &[Node], session: &mut Session, tail: bool, seed: Option<Entity>, mut rec: Option<&mut Recorder>, resume: Option<Resume>
+    ) -> Result<Reduced, Error> {
         // A replay resumes the binder on the rewritten nodes it walked, whose positions its cursor counts.
-        let rewriting = marked.is_none() && resume.is_none();
+        let rewriting = resume.is_none();
         let joined = if rewriting { session.joined(nodes, rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(nodes) };
         let members = if rewriting { session.members_with(&joined, rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(&joined[..]) };
         let nodes = &members[..];
         let source = &nodes[0].span.source;
-        if marked.is_some() || seed.is_some() { stop(&mut rec); }
+        if seed.is_some() { stop(&mut rec); }
         else if matches!(joined, Cow::Owned(_)) || matches!(members, Cow::Owned(_)) { log(&mut rec, |rc| rc.rewritten(nodes.to_vec())); }
         let (mut binder, mut pending, mut cursor, mut held, mut after_call) = match resume {
             Some(r) => (Self { stack: r.stack }, r.pending, r.cursor, r.next, r.after_call),
@@ -454,17 +444,14 @@ impl Binder {
                     let i = cursor;
                     let node = &nodes[i];
                     if matches!(node.kind, NodeKind::Assign) { assignment = Some(i); None } else {
-                        let selected = marked.as_ref().filter(|(index, _)| *index == i);
-                        let (term, expression) = if let Some((_, selected)) = selected {
-                            (Term::Marked(Box::new(selected.clone())), None)
-                        } else if matches!(&node.kind, NodeKind::Run(inner) if session.ends_in_dyadic_operator(inner)) {
+                        let (term, expression) = if matches!(&node.kind, NodeKind::Run(inner) if session.ends_in_dyadic_operator(inner)) {
                             // A run that ends in a dyadic operator takes the next run as its right operand, because each run acts as one token.
                             stop(&mut rec);
                             let NodeKind::Run(inner) = &node.kind else { unreachable!() };
                             let Some(right) = binder.stack.pop() else {
                                 return Err(node.span.error(ErrorKind::Syntax, "an operator at the end of a run needs a right operand after it"));
                             };
-                            let (Step::Done(bound), _) = Self::evaluate_marked(inner, session, false, None, Some(right))? else { unreachable!() };
+                            let bound = Self::evaluate_seeded(inner, session, right)?;
                             (Term::Binding(bound.value), bound.expression)
                         } else if matches!(node.kind, NodeKind::Group(_) | NodeKind::Run(_)) {
                             // A run whose last member is a name or group ends in a dyadic operator by what the name holds.
@@ -514,23 +501,12 @@ impl Binder {
                     if assignment.is_none() && tail_call(tail, cursor, pending.len() + binder.stack.len(), &call.function) {
                             log(&mut rec, |rc| rc.called(call.span.clone(), Category::Value));
                             session.stacks.extend([binder.stack, pending]);
-                            return Ok((Reduced::Tail(call), None));
+                            return Ok(Reduced::Tail(call));
                         }
                     let mut cx = session.at(&call.span);
-                    let entity = match call.selection {
-                        Some((values, kind)) => {
-                            let (labels, kind) = call.function.select(call.left.as_ref(), &call.right, Some(&values), kind, &mut cx)?
-                                .ok_or_else(|| call.span.domain_error("function is not valid for selective assignment"))?;
-                            let values = call.function.call_array(call.left.as_ref(), &values, &mut cx)?;
-                            Entity { term: Term::Marked(Box::new(Marked { labels, values, kind })), range: narrow(&call.span.range), shy: false,
-                                expression: call.expression }
-                        }
-                        None => {
-                            let bound = call.function.call(call.left.as_ref(), &call.right, &mut cx)?;
-                            Entity { term: Term::Binding(bound.value), range: narrow(&call.span.range), shy: bound.shy, expression: call.expression }
-                        }
-                    };
-                    log(&mut rec, |rc| match entity.term { Term::Marked(_) => rc.fail(), _ => rc.called(call.span.clone(), entity.category()) });
+                    let bound = call.function.call(call.left.as_ref(), &call.right, &mut cx)?;
+                    let entity = Entity { term: Term::Binding(bound.value), range: narrow(&call.span.range), shy: bound.shy, expression: call.expression };
+                    log(&mut rec, |rc| rc.called(call.span.clone(), entity.category()));
                     binder.stack.push(entity);
                 }
                 // Bound operators still need their left operand before rebinding on the right.
@@ -543,18 +519,13 @@ impl Binder {
         }
         let entity = binder.stack.pop().expect("nonempty expression");
         session.stacks.extend([binder.stack, pending]);
-        let selection = entity.marked().cloned();
-        Ok((Reduced::Entity(entity), selection))
+        Ok(Reduced::Entity(entity))
     }
     fn reduce(&mut self, capture: bool, source: &Arc<Source>, mut rec: Option<&mut Recorder>) -> Result<Option<Application>, Error> {
-        use Category::*;
         let mut left = self.stack.pop().unwrap();
         let mut right = self.stack.pop().unwrap();
         let range = left.range.clone();
         let span = || span_of(source, &range);
-        let selection = left.marked().or(right.marked()).map(|m| (m.values.clone(), m.kind));
-        let selectable = matches!((left.category(), right.category()), (Function | Train | Left, Value));
-        if selection.is_some() && !selectable { return Err(span().error(ErrorKind::Syntax, INVALID_SELECTION)); }
         let rule = Rule::get(left.category(), right.category());
         if let Some(rc) = rec.as_deref_mut() {
             match rule {
@@ -563,9 +534,8 @@ impl Binder {
                 Rule::Adjacent => rc.push(Recorded::Reduce(Reduction::Strand)),
                 Rule::Attach => rc.push(Recorded::Reduce(Reduction::Attach)),
                 Rule::Call if !matches!(right.term, Term::Binding(Binding::Absent)) => rc.call = true,
-                // A derive logs once its result is known.
-                Rule::Derive => {}
-                Rule::BindRight => rc.push(Recorded::Reduce(Reduction::BindRight)),
+                // A derive or a bind logs once its result is known.
+                Rule::Derive | Rule::BindRight => {}
                 Rule::Train => rc.push(Recorded::Reduce(Reduction::Train)),
                 _ => rc.fail(),
             }
@@ -608,10 +578,14 @@ impl Binder {
                         let operand = left_expression.map_or_else(|| Expression::array(x.as_ref().unwrap_or(&y)), |e| *e);
                         Box::new(if x.is_some() { Expression::call(&function, Some(operand), Expression::array(&y)) } else { Expression::call(&function, None, operand) })
                     });
-                    return Ok(Some(Application { function, left: x, right: y, span: span(), unshy: false, selection, expression }));
+                    return Ok(Some(Application { function, left: x, right: y, span: span(), unshy: false, expression }));
                 }
             },
-            Rule::BindRight => Term::Binding(bound_right(left.value(source)?, right.value(source)?)),
+            Rule::BindRight => {
+                let bound = bound_right(left.value(source)?, right.value(source)?);
+                log(&mut rec, |rc| rc.push(Recorded::Reduce(Reduction::BindRight(bound.clone()))));
+                Term::Binding(Binding::Operator(bound))
+            }
             Rule::Attach => {
                 let (x, f, range) = attached(left, right, source)?;
                 self.stack.push(Entity { term: Term::Left(x, f), range, shy: false, expression: left_expression });
@@ -626,7 +600,7 @@ impl Binder {
                         &f, x.as_ref().map(|a| left_expression.map_or_else(|| Expression::array(a), |e| *e)),
                         right_expression.map_or_else(|| Expression::array(&y), |e| *e)))
                 });
-                return Ok(Some(Application { function: f, left: x, right: y, span: span(), unshy: false, selection, expression }));
+                return Ok(Some(Application { function: f, left: x, right: y, span: span(), unshy: false, expression }));
             }
             Rule::Train => Term::Train(train(left, right, source)?),
             _ => return Err(span().error(ErrorKind::Syntax, "these grammatical categories do not bind")),

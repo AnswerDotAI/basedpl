@@ -1,6 +1,6 @@
 # `|` — Magnitude / Residue
 
-Function. Ranks: `0` monadic, `0 0` dyadic
+Function. Hanzi: `绝/余` (`絕/餘`). Ranks: `0` monadic, `0 0` dyadic
 
 `|Y` gives magnitude. Pervasive.
 

@@ -11,4 +11,4 @@ anyhow = ">=1.0.104, <2"
 wasm-bindgen-cli-support = ">=0.2.129, <0.3"
 serde_json = { version = "1", features = ["preserve_order"] }
 toml = ">=1.1.6, <2"
-rustymath = { version = ">=0.1.35, <1", default-features = false }
+rustymath.workspace = true

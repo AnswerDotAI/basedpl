@@ -1,6 +1,6 @@
 # `⊤` — Binary encode / Encode
 
-Function. Keys: `Alt-n`. Ranks: `∞` monadic, `1 0` dyadic
+Function. Keys: `Alt-n`. Hanzi: `编` (`編`). Ranks: `∞` monadic, `1 0` dyadic
 
 `⊤Y` encodes nonnegative integers in binary, choosing enough digits for the largest value. Each number's digits lie along a new last axis. Zero needs zero digits.
 

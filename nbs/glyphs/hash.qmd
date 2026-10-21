@@ -1,6 +1,6 @@
 # `#` — Runs / Replicate
 
-Function. Ranks: `∞` monadic, `1 ∞` dyadic
+Function. Hanzi: `复` (`複`). Ranks: `∞` monadic, `1 ∞` dyadic
 
 `#Y` gives the runs of adjacent matching major cells of `Y`: the length of each run, as exact integers, and the cell that repeats. It matches cells as [`∪`](down-shoe.qmd) does. `#/` rebuilds `Y`, because `N#Y` repeats each cell by its count. `#⁻¹` decodes too, so [Under](at.qmd) can change the runs. Here it doubles each length:
 

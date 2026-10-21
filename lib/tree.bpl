@@ -10,7 +10,7 @@ hang ← {  ⍝ node label ⍺ with formatted subtrees ⍵ hung below it.
   fmts←{⊖⍵}\"┌└"{  ⍝ hang subtrees by ┌─ ─┐ branches.
     0 0≡⍴⍵?⍵;  ⍝ null: done.
     mask←∧\' '=↑↓⌽⍵ᵀ
-    ⍉⌽⊃(⊂⌽⍺,mask#'│'),↓⌽⍵ᵀ
+    ⍉⌽⊃[⌽⍺,mask#'│'],↓⌽⍵ᵀ
   }¨{⊖⍵}\⍵  ⍝ formatted subtrees.
   case←~[null null]≡¨fmts  ⍝ non-null subtree cases.
   join←(⊥case)⊃"∘┐┘┤"
@@ -32,7 +32,7 @@ vec ← {  ⍝ vector of key=value pairs.
 fmt ← {  ⍝ formatted tree ⍵.
   ⍵≡0?0 0⍴"";  ⍝ null tree: null format.
   [[key val] subs]←⍵  ⍝ node info.
-  (⊃,/⍕¨[key '=' val]) hang ∇¨subs
+  (⊃,/(⍬↣⍕)¨[key '=' val]) hang ∇¨subs
 }  ⍝ :: ∇ t → [-;]
 
 chk ← {  ⍝ tree stats / integrity check.
@@ -40,7 +40,7 @@ chk ← {  ⍝ tree stats / integrity check.
   [[key _] subs]←⍵  ⍝ node info and subtrees.
   stats←(≥⍺)∇¨subs  ⍝ subtree stats.
   [oks szs dps hts krs]←↓⍉⊃stats
-  keys←key{⍺,(⊂⍶),⍵}/krs
+  keys←key{⍺,[⍶],⍵}/krs
   okkey←{⍵≡⍳⍴⍵}⍋⊃keys
   okstr←2 2≡(⍴⍵),⍴↑⌽⍵
   ok←okkey∧okstr∧∧/oks  ⍝ good tree.
@@ -136,7 +136,7 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
     [[key _] bal subs]←⍵  ⍝ key, balance and subtrees.
     stats←(≥⍺)∇¨subs  ⍝ subtrees stats.
     [oks szs dps hts krs]←↓⍉⊃stats
-    keys←key{⍺,(⊂⍶),⍵}/krs
+    keys←key{⍺,[⍶],⍵}/krs
     okkey←{⍵≡⍳⍴⍵}⍋⊃keys
     okhgt←bal=--/hts  ⍝ balance is height difference.
     okbal←bal∊¯1 0 1  ⍝ balance is in range.
@@ -152,7 +152,7 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
     ⍵≡0?0 0⍴"";  ⍝ null tree: null format.
     [[key val] bal subs]←⍵  ⍝ node info.
     deco←(≥bal)⊃"><" '─' "<>"
-    (⍺,,/⍕¨[key '=' val]) hang deco∇¨subs
+    (⍺,,/(⍬↣⍕)¨[key '=' val]) hang deco∇¨subs
   }  ⍝ :: ∇ t → [-;]
   proj←{(⍺=0 0 ¯1)⌽¨⍵}  ⍝ ⍺-projection of node ⍵.
   wise←{(⍺=1)⌽⍵}  ⍝ subtrees ⍵ in -⍺, +⍺ order.
@@ -348,7 +348,7 @@ redblack ← {  ⍝ Red-black trees.
     ⍵≡0?⊃,↓"[∘]";  ⍝ null tree: [∘].
     [[key val] red subs]←⍵  ⍝ node info.
     [l r]←red⊃"[]" "<>"
-    (⊃,/⍕¨[l key '=' val r]) hang ∇¨subs
+    (⊃,/(⍬↣⍕)¨[l key '=' val r]) hang ∇¨subs
   }  ⍝ :: ∇ t → [-;]
   chk←{  ⍝ tree statistics.
     0=≡⍵?[0≡⍵ 0ₓ 0ₓ 0ₓ ⍬ 1ₓ 1ₓ];  ⍝ null: ok size dep ht range blks isblk.
@@ -356,7 +356,7 @@ redblack ← {  ⍝ Red-black trees.
     blk←~red  ⍝ black node.
     stats←(≥⍺)∇¨subs  ⍝ subtree stats.
     [oks ss ds hs ks bs bks]←↓⍉⊃stats
-    keys←key{⍺,(⊂⍶),⍵}/ks
+    keys←key{⍺,[⍶],⍵}/ks
     okK←{⍵≡⍳⍴⍵}⍋⊃keys
     okR←blk∨∧/bks  ⍝ check rule [R].
     okB←=/bs  ⍝ check rule [B].
@@ -487,7 +487,7 @@ tfmt ← {  ⍝ Char matrix from tree.
   1=≡,⍵?⊃,↓⍺,⍵;
   node←⍺,↑⍵
   subs←⍺,4↑'·' ↣∇¨1↓⍵  ⍝ subtrees.
-  ⊃(⊂node),,/↓¨subs
+  ⊃[node],,/↓¨subs
 }
 
 ⍝ From http://dfns.dyalog.com/c_tnest.htm

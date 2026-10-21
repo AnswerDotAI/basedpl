@@ -114,7 +114,7 @@ impl<'a> Point<'a> {
         let names = ["x", "value", "evaluations", "converged"].map(Into::into).to_vec();
         let value = Value::Number(Number::float(found.value.wide(), self.width));
         let fields = vec![x, value, Value::integer(found.evaluations as i64), Value::Number(Number::from_bool(found.converged))];
-        keyed::record(names, fields).error_at(span, "invalid report")
+        keyed::vector(names, fields).error_at(span, "invalid report")
     }
 }
 

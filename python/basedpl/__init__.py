@@ -3,7 +3,7 @@
 Modules:
 
 - `basedpl.dyalog`: Run Dyalog APL through RIDE for reference checks.
-- `basedpl.editors`: Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page kinds, keys and ranks.
+- `basedpl.editors`: Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page kinds, keys, hanzi and ranks.
 - `basedpl.keyboards`: Generate regional BPL keyboards from macOS layouts."""
 
 import math, operator, sys
@@ -60,78 +60,39 @@ def _value(raw, as_array=False):
     for i,o in enumerate(data): result[i] = o
     return result.reshape(shape)
 
+def _axes(raw):
+    "The shape, and each axis's keys and name, of the array that `parts` describes in `raw`"
+    if isinstance(raw, _Array): return raw.shape, raw.keys, raw.names
+    shape = raw.get('shape', ())
+    return shape, raw.get('axis_keys', [None] * len(shape)), raw.get('axis_names', [None] * len(shape))
+
 def _dataframe(raw):
     try: import pandas as pd
     except ImportError: raise ImportError('DataFrame conversion requires pandas: pip install pandas') from None
+    def labelled(n, keys): return list(range(n)) if keys is None else _labels(keys)
+    # A vector of columns of one length, as `•csv` and a frame's `Array` give, is a frame by columns, each keeping its own kind.
+    columns = raw['data'] if isinstance(raw, dict) and len(raw.get('shape', ())) == 1 else []
+    axes = [_axes(c) for c in columns if isinstance(c, _Array) or isinstance(c, dict) and 'shape' in c]
+    if columns and len(axes) == len(columns) and all(len(s) == 1 and s[0] == axes[0][0][0] for s,_,_ in axes):
+        _, (keys,), (name,) = _axes(raw)
+        frame = pd.DataFrame({label: pd.Series(_value(c, as_array=True), index=pd.Index(labelled(s[0], k[0]), name=n[0])) for label, c, (s, k, n) in zip(labelled(len(columns), keys), columns, axes)})
+        frame.columns.name = name
+        return frame
     data = _value(raw, as_array=True)
-    shape = data.shape
-    keys, names = (raw.keys, raw.names) if isinstance(raw, _Array) else (raw.get('axis_keys', [None] * len(shape)), raw.get('axis_names', [None] * len(shape)))
-    labels = [list(range(n)) if k is None else _labels(k) for n,k in zip(shape, keys)]
+    shape, keys, names = _axes(raw)
+    labels = [labelled(n, k) for n,k in zip(shape, keys)]
     if len(shape) < 2:
-        index = pd.Index(labels[0], name=names[0]) if labels else [0]
-        return pd.DataFrame(data.reshape(-1, 1), index=index, columns=[0])
-    index = pd.Index(labels[0], name=names[0]) if len(shape) == 2 else pd.MultiIndex.from_product(labels[:-1], names=names[:-1])
-    return pd.DataFrame(data.reshape(math.prod(shape[:-1]), shape[-1]), index=index, columns=pd.Index(labels[-1], name=names[-1]))
+        return pd.DataFrame(data.reshape(-1, 1), index=pd.Index(labels[0], name=names[0]) if labels else [0], columns=[0])
+    rows = pd.Index(labels[0], name=names[0]) if len(shape) == 2 else pd.MultiIndex.from_product(labels[:-1], names=names[:-1])
+    return pd.DataFrame(data.reshape(math.prod(shape[:-1]), shape[-1]), index=rows, columns=pd.Index(labels[-1], name=names[-1]))
 
-def _element(value, seen):
-    np = sys.modules.get('numpy')
-    if np is not None and isinstance(value, np.generic):
-        if value.dtype.kind in 'biufc': return _array(value.__array__(), seen).native_atom()
-        value = value.item()
-    if isinstance(value, bool): return value
-    if isinstance(value, Fraction): return value.numerator, value.denominator
-    if isinstance(value, (Function, Operator)): return value._inner
-    if type(value) in (int, float, complex): return value
-    if isinstance(value, str) and len(value) == 1: return value
-    if isinstance(value, (Array, str, list, tuple, range, dict)) or hasattr(value, '__array__'): return _array(value, seen)
-    if (read := _Array.numeric(value)) is not None: return read
-    raise TypeError(f'cannot convert {type(value).__name__} to BPL')
-
-def _rectangular(value, seen):
-    if not isinstance(value, (list, tuple, range)): return (), [value]
-    if not value: return (0,), []
-    if id(value) in seen: raise ValueError('cyclic Python container')
-    seen.add(id(value))
-    try: parts = [_rectangular(o, seen) for o in value]
-    finally: seen.remove(id(value))
-    if any(shape != parts[0][0] for shape,_ in parts): return (len(value),), list(value)
-    return (len(value),)+parts[0][0], [o for _,data in parts for o in data]
-
-def _array(value, seen=None):
+def _array(value):
+    "The native value of `value`: an `Array`'s own, or the array the session imports from Python data"
+    # `None` is a missing value only as an item, so an operator given a bare `None` returns `NotImplemented`.
+    if value is None: raise TypeError('cannot convert NoneType to BPL')
     if isinstance(value, Array): return value._inner
     if isinstance(value, _Array): return value
-    if seen is None: seen = set()
-    if id(value) in seen: raise ValueError('cyclic Python container')
-    np = sys.modules.get('numpy')
-    numpy = np is not None and isinstance(value, np.ndarray)
-    if numpy:
-        kind, size = value.dtype.kind, value.dtype.itemsize
-        if kind not in 'biufcUO' or kind == 'f' and size > 8 or kind == 'c' and size > 16: raise TypeError('unsupported NumPy dtype')
-        # The object path preserves unsigned values outside int64 as exact integers.
-        if kind == 'u' and size == 8 and value.size and value.max() >= 1<<63: value, kind = value.astype(object), 'O'
-    prototype = 0.
-    if isinstance(value, dict):
-        keys = [None if type(k) is int and k == i else k for i,k in enumerate(value)]
-        if not all(k is None or isinstance(k, str) for k in keys): raise TypeError('keyed arrays need string keys, or an integer key equal to its position')
-        seen.add(id(value))
-        try: return bpl._session.array(dict(shape=[len(value)], data=[_element(o, seen) for o in value.values()], prototype=prototype, axis_keys=[keys]))
-        finally: seen.remove(id(value))
-    if isinstance(value, str): return bpl._session.array(dict(shape=[len(value)], data=list(value), prototype=' '))
-    # Any object with a buffer, such as a NumPy or rustymath array or a `memoryview`, is read through it.
-    if not (numpy and kind in 'UO') and (read := _Array.numeric(value)) is not None: return read
-    if not numpy and hasattr(value, '__array__'):
-        seen.add(id(value))
-        try: return _array(value.__array__(), seen)
-        finally: seen.remove(id(value))
-    if numpy:
-        shape, data = value.shape, value.ravel().tolist()
-        if kind == 'U': prototype = ' '
-    else:
-        shape, data = _rectangular(value, seen)
-        if not shape: return bpl._session.array(dict(atom=_element(value, seen)))
-    seen.add(id(value))
-    try: return bpl._session.array(dict(shape=list(shape), data=[_element(o, seen) for o in data], prototype=prototype))
-    finally: seen.remove(id(value))
+    return bpl._session.array(value)
 
 class _Operators:
     __hash__ = None
@@ -257,12 +218,7 @@ class Array(_Operators):
         if not self.shape: raise TypeError('a unit has no length')
         return self.shape[0]
     def __iter__(self): return (Array(a) for a in self._inner.cells())
-    def __contains__(self, item):
-        # A one-character string is an atom. A longer one is one item where the major cells are items, as a list of strings holds them, and otherwise a character vector, which matches a row of characters.
-        if isinstance(item, str) and len(item) == 1: query = bpl._session.array(dict(atom=item))
-        elif isinstance(item, str) and len(self.shape) == 1: query = bpl._session.array(dict(shape=[], data=[_array(item)], prototype=' '))
-        else: query = _array(item)
-        return self._inner.contains(query, bpl._session)
+    def __contains__(self, item): return self._inner.contains(item if isinstance(item, str) else _array(item), bpl._session)
     def __getitem__(self, index):
         "Select by positions, keys, slices or per-axis masks. `None` inserts an axis and `...` keeps omitted axes."
         return _result(self._inner.select(index, _array)).value
@@ -329,9 +285,9 @@ class _Workspace:
         bindings = [(k, v._inner if isinstance(v, Function) else _array(v)) for k,v in bindings.items()]
         return _result(self._session.eval(code=source, bindings=bindings, timeout=self.timeout, echo=echo, show=show))
 
-    def _call(self, function, args, show=None, weak=()):
-        "Call the native `function` with the native `args`, calling `show` with each output event as BPL produces it. `weak` marks the arguments that came from Python scalars."
-        return _result(self._session.call(function, args, weak=list(weak), timeout=self.timeout, show=show))
+    def _call(self, function, args, show=None):
+        "Call the native `function` with the native `args`, calling `show` with each output event as BPL produces it."
+        return _result(self._session.call(function, args, timeout=self.timeout, show=show))
 
     def __call__(self, source=None, capture=None, /, **bindings):
         "Bind keyword arguments, then evaluate source. Print explicit output and return the value. With `capture` of 'explicit' or 'repl', return a `Result` without printing."

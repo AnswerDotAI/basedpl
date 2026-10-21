@@ -1,6 +1,6 @@
 # `⍪` — Table / Catenate first
 
-Function. Keys: `Alt-Minus ,`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-Minus ,`. Hanzi: `接/矩`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⍪Y` makes a matrix: first axis becomes rows, remaining axes become columns.
 

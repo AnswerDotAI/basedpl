@@ -1,6 +1,6 @@
 # `⍎` — Execute / Execute in
 
-Function. Keys: `Alt-o b`. Ranks: `1` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-o b`. Hanzi: `行`. Ranks: `1` monadic, `∞ ∞` dyadic
 
 `⍎Y` evaluates character code in the current lexical scope.
 

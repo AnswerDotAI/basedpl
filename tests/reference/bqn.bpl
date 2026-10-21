@@ -120,7 +120,7 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 [[0 1 1 0 0⋄1 0 1 0 1]]⌷" +"   ⍝ [" ++  "⋄"+ + +"]
 
 ⍝ bqn:swap:28 — An identity matrix from an outer product with the argument on both sides
-=⊗⍨⍳3   ⍝ [$t $f $f⋄$f $t $f⋄$f $f $t]
+=⊗⍨⍳3ₓ   ⍝ [$t $f $f⋄$f $t $f⋄$f $f $t]
 
 ⍝⍝ Constant
 
@@ -150,7 +150,7 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 
 ⍝ bqn:scan:80 — Scan calls its operand once for each item after the first
 c←0
-{c+←1 ⋄ ⍺+⍵}\⍳10
+{c+←1 ⋄ ⍺+⍵}\⍳10ₓ
 c   ⍝ 9
 
 ⍝ bqn:scan:91 — A Less Than scan
@@ -178,10 +178,10 @@ m←[0 1 0⋄¯1 0 0⋄0 0 1] ⋄ m (+⌿∘×)⍤[1 ∞] 1 2 3×⊗1 10
 [2 20⋄¯1 ¯10⋄3 30]
 
 ⍝ bqn:rank:193 — Rank 1 joins cells, with leading-axis agreement between the frames
-⍴(⍳3 2 5),⍤1 ⍳3 4   ⍝ [3 2 9]ₓ
+⍴(⍳[3 2 5]ₓ),⍤1 ⍳[3 4]ₓ   ⍝ [3 2 9]ₓ
 
 ⍝ bqn:rank:195 — Frames that disagree on the leading axis
-⍴(⍳2 3 5),⍤1 ⍳3 4
+⍴(⍳[2 3 5]ₓ),⍤1 ⍳[3 4]ₓ
 ⍝ error: LENGTH ERROR
 
 ⍝⍝ Fold
@@ -201,15 +201,15 @@ m←[0 1 0⋄¯1 0 0⋄0 0 1] ⋄ m (+⌿∘×)⍤[1 ∞] 1 2 3×⊗1 10
 a←["ab"⋄"cd"⋄"ef"] ⋄ ⊣⍀a   ⍝ ["ab"⋄"ab"⋄"ab"]
 
 ⍝ bqn:leading:90 — Rotate the first axis by 2 and the second by 1
-2⊖1⌽⍳3 5
-[[2 1] [2 2] [2 3] [2 4] [2 0]⋄[0 1] [0 2] [0 3] [0 4] [0 0]⋄[1 1] [1 2] [1 3] [1 4] [1 0]]
+2⊖1⌽⍳[3 5]ₓ
+[[2 1] [2 2] [2 3] [2 4] [2 0]⋄[0 1] [0 2] [0 3] [0 4] [0 0]⋄[1 1] [1 2] [1 3] [1 4] [1 0]]ₓ
 
 ⍝ bqn:leading:94 — Drop applies to the leading axes
 ⍴3 2↓7 7 7 7⍴"abc"   ⍝ [4 5 7 7]ₓ
 
 ⍝ bqn:leading:110 — Leading-axis agreement pairs a matrix with a rank-3 array
-x←3 2 4⍴⍳60
-c←100×(⍳3)=⊗⍳2
+x←3 2 4⍴⍳60ₓ
+c←100×(⍳3ₓ)=⊗⍳2ₓ
 c+x
 ⍝ =>
 [[100 101 102 103⋄4 5 6 7]⋄[8 9 10 11⋄112 113 114 115]⋄[16 17 18 19⋄20 21 22 23]]
@@ -239,7 +239,7 @@ ambiv←{[1 ⍵]}⊘{[2 ⍺ ⍵]} ⋄ [ambiv 'a';'a' ambiv 'b']
 {r←⌽⍵ ⋄ 't'=↑r? r;⍵}¨"test" "this"   ⍝ "tset" "this"
 
 ⍝ bqn:block:237 — Two predicates in one body
-thing←{⍵≥3? ⍵≤8? 2|⍵; ⍵=0? '@'; ∞} ⋄ thing¨⍳10
+thing←{⍵≥3? ⍵≤8? 2|⍵; ⍵=0? '@'; ∞} ⋄ thing¨⍳10ₓ
 '@' ∞ ∞ 1 0 1 0 1 0 ∞
 
 ⍝⍝ BQNcrate

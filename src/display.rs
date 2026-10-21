@@ -30,6 +30,8 @@ pub(crate) struct Elide {
     pub columns: usize,
     /// The float width that numbers show without a marker: the session's default width. `None` marks every width, as `•literal⁻¹` does.
     pub plain: Option<FloatWidth>,
+    /// Whether numbers show their kind: `ₓ` after an exact integer, and the marker of a float width that isn't `plain`. `⍬⍕` and `''⍕` leave both out.
+    pub marks: bool,
     pub notation: Notation,
     /// How text shows hidden names, which start with `_`. Source text shows them in full. Box mode shortens them. Plain display leaves hidden axis names out and shortens hidden keys.
     pub hidden: Hidden,
@@ -41,7 +43,7 @@ impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, pr
 impl Elide {
     /// Shows every item and every digit, as source text and `⍕` do, with 64-bit floats plain.
     pub const NONE: Self =
-        Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), notation: Notation::Apl, hidden: Hidden::Full };
+        Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), marks: true, notation: Notation::Apl, hidden: Hidden::Full };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
     pub fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
@@ -52,12 +54,15 @@ impl Elide {
         let columns = (self.columns != usize::MAX).then_some(self.columns);
         self.edges(shape).map_or(columns, |e| Some(columns.map_or(e, |c| c.min(e))))
     }
-    /// The text of `n` with each float rounded to `prec` significant digits, and the marker of a float width that isn't `plain`.
-    pub fn number(self, n: &Number) -> String { format!("{}{}", n.rounded(self.prec), self.marker(n).map_or(String::new(), String::from)) }
+    /// The text of `n` with each float rounded to `prec` significant digits, and the marker of a float width that isn't `plain`. Without `marks`, it is `unmarked`'s text.
+    pub fn number(self, n: &Number) -> String {
+        if !self.marks { return self.unmarked(n); }
+        format!("{}{}", n.rounded(self.prec), self.marker(n).map_or(String::new(), String::from))
+    }
     /// The text of `n` rounded as `number` rounds it, without a marker, for an array that writes one marker for all its numbers.
     pub fn unmarked(self, n: &Number) -> String { format!("{:#}", n.rounded(self.prec)) }
-    /// The marker of a float of `width`, when the width isn't `plain`.
-    pub fn width_marker(self, width: FloatWidth) -> Option<char> { (Some(width) != self.plain).then(|| crate::number::width_marker(width)) }
+    /// The marker of a float of `width`, when markers show and the width isn't `plain`.
+    pub fn width_marker(self, width: FloatWidth) -> Option<char> { (self.marks && Some(width) != self.plain).then(|| crate::number::width_marker(width)) }
     /// The width marker that `n` writes: that of its float width, when it isn't `plain`.
     pub fn marker(self, n: &Number) -> Option<char> { n.float_width().and_then(|w| self.width_marker(w)) }
     /// `name` as text shows it: `None` for a hidden name that `hidden` leaves out, otherwise as `shown` gives it.
@@ -221,7 +226,7 @@ pub(crate) fn prefs(session: &mut crate::Session, right: &Value, span: &crate::S
     values.push(Value::Number(Number::from_bool(hanzi_aliases)));
     keys.push("batch".into());
     values.push(Value::Number(Number::from_bool(session.batching())));
-    Ok((keyed::record(keys, values).error_at(span, "invalid settings record")?, shy))
+    Ok((keyed::vector(keys, values).error_at(span, "invalid settings record")?, shy))
 }
 
 /// Lines of text and their width. Display measures text in terminal columns, and `⍕` in characters.
@@ -332,7 +337,7 @@ pub(crate) fn grid(columns: usize, rows: Vec<(usize, Vec<Cell>)>, style: Style) 
 /// The bottom-edge marker for an array's storage. Floats of a width that `el` doesn't leave plain show that width's marker.
 fn marker(a: &Value, el: Elide) -> char {
     use rustymath::buffer::DType;
-    match a.template().dtype() {
+    match a.shown_dtype() {
         Some(DType::Boolean) => '$', Some(DType::Integer(_)) => 'ₓ', Some(DType::Float(w)) => el.width_marker(w).unwrap_or('~'),
         Some(DType::Complex(_)) => 'j', Some(DType::Character) => '─', None => '+'
     }
@@ -341,7 +346,11 @@ fn marker(a: &Value, el: Elide) -> char {
 /// A boxed diagram of `a`: its items in a frame that marks its shape and storage, with nested arrays boxed in turn.
 fn array(a: &Value, el: Elide) -> Block {
     if a.is_unit() || (a.has_keys() && a.shape() == [0]) { return Block::new(plain(a, el)); }
-    if a.has_keys() && a.shape().len() > 1 { return Block::new(plain(a, el)).framed(a.shape(), marker(a, el), false); }
+    if a.has_keys() && a.shape().len() > 1 {
+        // The table inside leaves out the kind that the frame's corner shows.
+        let inner = if a.mark(el).is_some() { Elide { marks: false, ..el } } else { el };
+        return Block::new(plain(a, inner)).framed(a.shape(), marker(a, el), false);
+    }
     // An empty axis shows its prototype.
     let shape: Vec<_> = a.shape().iter().map(|&d| d.max(1)).collect();
     let nested = !a.is_simple();
@@ -388,53 +397,84 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
         Plain::Operator(op) => return op.text(el.notation), Plain::Character(_) => return a.literal(), Plain::Array(_) => ()
     }
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
-    let edges = el.edges(a.shape());
     if a.shape().len() <= 1 {
         return if raw_text(a, el) { a.elided_text(el.last(a.shape())) }
         else if a.is_strand(el) && a.mark(el).is_none() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") }
         else { a.source(el) };
     }
     if a.is_empty() { return a.literal(); }
-    let mut spaced = false;
-    let table: Vec<(usize, Vec<Cell>)> = rows(a.shape(), edges, el.last(a.shape())).into_iter().map(|(breaks, _, spots)| {
-        let cells = spots.iter().map(|spot| {
+    // Numbers that share a marked kind write as their literal laid out in rows, with one mark after its brackets, as a vector does.
+    let mark = a.mark(el);
+    let (_, rows) = table(a, el, mark.is_none());
+    match mark {
+        Some(m) => bracketed(rows, &a.shape()[..a.shape().len() - 1], a.shape().len() - 1, m),
+        None => rows.into_iter().flat_map(|(_, lines)| lines).collect(),
+    }.join("\n")
+}
+
+/// The rows of an unkeyed array of rank 2 or more as `plain` lays them out, with the grid's width: each row's index along the leading axes, or `None` in a gap, and its lines. With `breaks`, a row starts with a blank line for each leading axis but the last whose index changes there. Numbers show unmarked where the array's own mark covers them (`Value::mark`).
+pub(crate) fn table(a: &Value, el: Elide, breaks: bool) -> (usize, Vec<(Option<Vec<usize>>, Vec<String>)>) {
+    let mark = a.mark(el);
+    // Numbers space their columns, in an array with no rows too.
+    let mut spaced = !matches!(a.prototype(), Value::Character(_));
+    let (indices, cells): (Vec<_>, Vec<_>) = rows(a.shape(), el.edges(a.shape()), el.last(a.shape())).into_iter().map(|(blank, index, spots)| {
+        let cells: Vec<Cell> = spots.iter().map(|spot| {
             Cell::spot(spot, |i| match a.at(i) {
                 Value::Character(c) => Cell::text(c.into()),
                 item => {
                     spaced = true;
                     match item.displayed() {
+                        Plain::Number(n) if mark.is_some() => Cell::number(el.unmarked(n)),
                         Plain::Number(n) => Cell::number(el.number(n)), Plain::Function(_) | Plain::Operator(_) => Cell::text(plain(&item, el)),
                         _ => Cell::text(item.item(el))
                     }
                 }
             })
         }).collect();
-        (breaks, cells)
-    }).collect();
-    let columns = table[0].1.len();
-    grid(columns, table, Style::Uniform { spaced, right: true }).1.concat().join("\n")
+        (index, (if breaks { blank } else { 0 }, cells))
+    }).unzip();
+    // An array with no rows, as `⍕` of an empty matrix gives, takes its columns from its shape.
+    let columns = cells.first().map_or_else(|| a.shape().last().copied().unwrap_or(1), |(_, cells)| cells.len());
+    let (width, lines) = grid(columns, cells, Style::Uniform { spaced, right: true });
+    (width, indices.into_iter().zip(lines).collect())
 }
 
-/// Display text for an array of rank 2 or more with keys: a table for each matrix, with keys as labels. Each table of a higher rank follows its index and `⌷`.
+/// The `rows` of a grid as a literal lays them out: before a row, a `[` for each of the last `levels` leading axes whose index starts there, and after it a `]` for each that ends there, with `mark` after the brackets that close all `levels`. A row in a gap gets neither. Each row is one line, as rows of numbers are.
+pub(crate) fn bracketed(rows: Vec<(Option<Vec<usize>>, Vec<String>)>, leading: &[usize], levels: usize, mark: char) -> Vec<String> {
+    let axes = leading.len() - levels..leading.len();
+    rows.into_iter().flat_map(|(index, lines)| {
+        let edge = |at: &dyn Fn(usize) -> bool| axes.clone().rev().take_while(|&a| at(a)).count();
+        let (opens, closes) = index.map_or((0, 0), |ix| (edge(&|a| ix[a] == 0), edge(&|a| ix[a] + 1 == leading[a])));
+        let end = if closes == levels { String::from(mark) } else { String::new() };
+        lines.into_iter().map(move |line| format!("{}{}{line}{}{end}", " ".repeat(levels - opens), "[".repeat(opens), "]".repeat(closes)))
+    }).collect()
+}
+
+/// Display text for an array of rank 2 or more with keys: a table for each matrix, with keys as labels. Items that share a marked kind show the mark once, in the corner. Each table of a higher rank follows its index and `⌷`.
 fn labelled(a: &Value, el: Elide) -> String {
     let rank = a.shape().len();
     let edges = el.edges(a.shape());
     let label = |axis: usize, i: usize| a.shown_key(axis, i, el);
     let (rows_keyed, columns_keyed) = (a.keys(rank - 2).is_some(), a.keys(rank - 1).is_some());
     let table = a.shape()[rank - 2] * a.shape()[rank - 1];
+    // Items that share a marked kind show the mark once, in each table's corner, and their numbers unmarked. A corner needs a header row and a label column.
+    let mark = a.mark(el);
+    let items = if mark.is_some() { Elide { marks: false, ..el } } else { el };
+    let (header, names) = (columns_keyed || mark.is_some(), rows_keyed || mark.is_some());
     let pages: Vec<_> = frames(&a.shape()[..rank - 2], edges).into_iter().map(|(_, index)| {
         let Some(index) = index else { return "⋮".to_string() };
         let start = index.iter().zip(a.shape()).fold(0, |n, (&i, &len)| n * len + i) * table;
         let mut grid_rows: Vec<(usize, Vec<Cell>)> = Vec::new();
-        if columns_keyed {
-            let header = positions(a.shape()[rank - 1], el.last(a.shape()))
-                .map(|j| Cell::text(j.map_or_else(|| "…".into(), |j| label(rank - 1, j).map_or_else(|| j.to_string(), |k| k.to_string()))));
-            grid_rows.push((0, rows_keyed.then(|| Cell::text(String::new())).into_iter().chain(header).collect()));
+        if header {
+            let labels = positions(a.shape()[rank - 1], el.last(a.shape())).map(|j| Cell::text(if !columns_keyed { String::new() } else {
+                j.map_or_else(|| "…".into(), |j| label(rank - 1, j).map_or_else(|| j.to_string(), |k| k.to_string()))
+            }));
+            grid_rows.push((0, names.then(|| Cell::text(mark.map_or_else(String::new, String::from))).into_iter().chain(labels).collect()));
         }
         for (_, row, spots) in rows(&a.shape()[rank - 2..], edges, el.last(a.shape())) {
-            let name = row.map_or_else(|| "⋮".into(), |row| label(rank - 2, row[0]).map_or_else(|| row[0].to_string(), |k| k.to_string()));
-            let cells = spots.iter().map(|spot| Cell::spot(spot, |i| Cell::text(plain(&a.at(start + i), el))));
-            grid_rows.push((0, rows_keyed.then(|| Cell::text(name)).into_iter().chain(cells).collect()));
+            let name = if !rows_keyed { String::new() } else { row.map_or_else(|| "⋮".into(), |row| label(rank - 2, row[0]).map_or_else(|| row[0].to_string(), |k| k.to_string())) };
+            let cells = spots.iter().map(|spot| Cell::spot(spot, |i| Cell::text(plain(&a.at(start + i), items))));
+            grid_rows.push((0, names.then(|| Cell::text(name)).into_iter().chain(cells).collect()));
         }
         let columns = grid_rows[0].1.len();
         let text = grid(columns, grid_rows, Style::Uniform { spaced: true, right: true }).1.concat().join("\n");

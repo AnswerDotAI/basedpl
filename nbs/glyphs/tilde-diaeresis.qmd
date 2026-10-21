@@ -1,6 +1,6 @@
 # `⍨` — Self / Commute
 
-Monadic operator. Keys: `Alt-1 Backtick`
+Monadic operator. Keys: `Alt-1 Backtick`. Hanzi: `己/换` (`己/換`)
 
 `f⍨Y` is `Y f Y`.
 

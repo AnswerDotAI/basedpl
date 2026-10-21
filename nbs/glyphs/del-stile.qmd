@@ -1,6 +1,6 @@
 # `⍒` — Grade down / Grade down by
 
-Function. Keys: `Alt-Backslash g`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-Backslash g`. Hanzi: `降`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `⍒Y` gives indices that sort major cells descending. Stable, with the same [ordering](delta-stile.qmd) as Grade up.
 

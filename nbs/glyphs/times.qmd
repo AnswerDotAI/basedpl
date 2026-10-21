@@ -1,6 +1,6 @@
 # `×` — Sign / Multiply
 
-Function. Keys: `Alt-m`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-m`. Hanzi: `乘/号` (`乘/號`). Ranks: `0` monadic, `0 0` dyadic
 
 `×Y` gives direction: zero, or `Y÷|Y`. The direction of a real number is an exact integer. Pervasive.
 

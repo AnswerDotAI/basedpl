@@ -1,6 +1,6 @@
 # `~` — NOT / Without
 
-Function. Ranks: `0` monadic, `∞ ∞` dyadic
+Function. Hanzi: `非/无` (`非/無`). Ranks: `0` monadic, `∞ ∞` dyadic
 
 `~Y` negates Booleans, pervasively.
 

@@ -1,6 +1,6 @@
 # `⊥` — Binary decode / Decode
 
-Function. Keys: `Alt-b`. Ranks: `1` monadic, `1 1` dyadic
+Function. Keys: `Alt-b`. Hanzi: `译` (`譯`). Ranks: `1` monadic, `1 1` dyadic
 
 `⊥Y` decodes binary digits along the last axis.
 

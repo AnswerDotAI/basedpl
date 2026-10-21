@@ -116,20 +116,20 @@ path ← {  ⍝ Shortest path from/to ⍵ in graph ⍺.
       (⍵,⍺)∇ ⍶ ⍵
     }1↑⍺∩to;  ⍝ found vertex ⍺
     next←[,⍺]⌷graph ∩¨ ⊂⍸⍵=¯2
-    back←,/⍺+0×next
+    back←,/⍺+0ₓ×next
     wave←,/next
     (∪wave)∇ back@wave ⍵  ⍝ advanced wave front
-  }¯2+(⍳⍴⍺)∊fm  ⍝ null spanning tree
+  }¯2ₓ+(⍳⍴⍺)∊fm  ⍝ null spanning tree
 }
 
 ⍝ From http://dfns.dyalog.com/n_span.htm
 
 span ← {  ⍝ Breadth-first spanning tree for graph ⍺.
   graph←⍺  ⍝ ⍺ is graph vector.
-  (¯2 + ⍳⍴⍺ ∊ ,⍵){  ⍝ ⍺: partial spanning tree.
+  (¯2ₓ + ⍳⍴⍺ ∊ ,⍵){  ⍝ ⍺: partial spanning tree.
     ⍵≡⍬?⍺;  ⍝ no vertices: done.
     next←([⍵]⌷graph)∩¨⊂⍸⍺=¯2  ⍝ untravelled edges
-    back←⍵+0×next  ⍝ back link per edge
+    back←⍵+0ₓ×next  ⍝ back link per edge
     tree←(∊back)@ ∊next ⍺  ⍝ partial spanning tree
     tree ∇ ∪∊next  ⍝ advanced wave front
   }⍵  ⍝ ⍵: next wave of vertices to visit.
@@ -145,12 +145,12 @@ dfspan ← {  ⍝ Depth-first spanning tree: graph ⍺ from vertex ⍵.
     tree←⍶@⍺ ⍵  ⍝ ⍶ is ⍺'s parent
     tree (⍺⍢)/ next
   }  ⍝ :: tree ← vtx (vtx ⍢) tree
-  ⍵(¯1 trav)¯2¨⍺  ⍝ depth-first traversal of graph ⍵
+  ⍵(¯1ₓ trav)¯2ₓ¨⍺  ⍝ depth-first traversal of graph ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/s_scc.htm
 
-show ← {⊃(⍕¨⍳0+⍴⍵),¨" → "↣,¨⍕¨⍵}
+show ← {⊃(0⍕¨⍳⍴⍵),¨" → "↣,¨0⍕¨⍵}
 
 ⍝ From http://dfns.dyalog.com/c_scc.htm
 
@@ -267,7 +267,7 @@ X ← {  ⍝ Exact cover: Knuth's Algorithm X.
 ⍝ From http://dfns.dyalog.com/s_X.htm
 
 sudokuMatrix ← {  ⍝ Matrix for ⍵ ⍵-Sudoku puzzle.
-  z←,⍠(⍳6) ,⍠(6+⍳4)⍳10⍴⌊√⍵  ⍝ cell coordinate properties.
+  z←,⍠(⍳6ₓ) ,⍠(6ₓ+⍳4ₓ)⍳10⍴⌊√⍵  ⍝ cell coordinate properties.
   row←↓1 1 0 0 1 1 1 1 1 1#⍠¯1⊃z
   col←↓0 0 1 1 1 1 1 1 1 1#⍠¯1⊃z
   box←↓1 0 1 0 1 1 1 1 1 1#⍠¯1⊃z
@@ -316,7 +316,7 @@ wcost ← {  ⍝ Cost vector for path ⍵ through weighted graph ⍺.
 wpath ← {  ⍝ Quickest path fm/to ⍵ in weighted graph ⍺.
   [graph costs]←↓⍺  ⍝ graph structure and costs
   [fm to]←⍵  ⍝ start and ending vertices
-  tree←¯1¨graph  ⍝ initial spanning tree
+  tree←¯1ₓ¨graph  ⍝ initial spanning tree
   cost←0@fm (⍴costs)⍴∞
   I←⊃¨↢⊂  ⍝ helper function: ⍺th items of ⍵
   fm{  ⍝ from starting vertex.
@@ -331,7 +331,7 @@ wpath ← {  ⍝ Quickest path fm/to ⍵ in weighted graph ⍺.
     best←adjv I¨ ⊂cost  ⍝ costs to beat
     mask←accm<best⌊to⊃cost  ⍝ mask of better routes
     next←mask#¨adjv  ⍝ next vertices to visit
-    back←,/⍺+0×next
+    back←,/⍺+0ₓ×next
     cvec←,/mask#¨accm
     decr←{(⍒cvec)I ⍵}  ⍝ in decreasing order of cost
     wave←decr,/next
@@ -344,7 +344,7 @@ wpath ← {  ⍝ Quickest path fm/to ⍵ in weighted graph ⍺.
 
 wspan ← {  ⍝ Spanning tree for weighted graph ⍺ from ⍵.
   [graph costs]←↓⍺  ⍝ graph structure and costs.
-  tree←¯1¨graph  ⍝ initial spanning tree.
+  tree←¯1ₓ¨graph  ⍝ initial spanning tree.
   cost←0@⍵ (⍴costs)⍴∞
   I←⊃¨↢⊂  ⍝ helper function: ⍺th items of ⍵
   ⍵{  ⍝ from starting vertex.
@@ -355,7 +355,7 @@ wspan ← {  ⍝ Spanning tree for weighted graph ⍺ from ⍵.
     mask←accm < adjv I¨ ⊂cost  ⍝ mask of better routes
     cvec←,/mask#¨accm
     next←mask#¨adjv  ⍝ next vertices to visit
-    back←,/⍺+0×next
+    back←,/⍺+0ₓ×next
     decr←(⍒cvec)I⊢  ⍝ in decreasing order of cost
     wave←decr,/next
     new←[back cvec] {(decr ⍺)@wave ⍵}¨ ⍵  ⍝ successor tree & cost
@@ -377,5 +377,5 @@ wmst ← {  ⍝ Minimum Spanning Tree for wu-graph ⍺.
     [fm to]←{⊃,/masks#¨⍵}¨[xvec graph]
     fm≡⍬?tree;  ⍝ disjoint graph: quit
     (⍺,to)∇ [fm@to tree;todo~to]  ⍝ vertices from G~T to T
-  }[¯1¨graph xvec~,⍵]  ⍝ initial tree and unconnected vertices
+  }[¯1ₓ¨graph xvec~,⍵]  ⍝ initial tree and unconnected vertices
 }

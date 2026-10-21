@@ -232,9 +232,9 @@ fn suffix(chars: &mut Characters<'_>, suffix: Suffix) -> bool {
     follows
 }
 
-/// The number that literal text writes, read by `Number::parse` once each character takes its canonical spelling.
+/// The number that literal text writes, read by `Number::literal` once each character takes its canonical spelling.
 fn literal_number(text: &str, numeric: Numeric) -> Result<Number, ErrorKind> {
-    Number::parse(&text.chars().map(canonical).collect::<String>(), numeric)
+    Number::literal(&text.chars().map(canonical).collect::<String>(), numeric)
 }
 
 /// A number written inside `[…]ₓ`. An integer's digits read exactly, and a whole float becomes exact.
@@ -243,7 +243,7 @@ fn exact_number(text: &str, numeric: Numeric) -> Result<Number, ErrorKind> {
     if text.chars().all(|c| c.is_ascii_digit() || canonical(c) == '¯') {
         return Number::parse(&format!("{}ₓ", text.chars().map(canonical).collect::<String>()), numeric);
     }
-    literal_number(text, numeric)?.marked_exact().ok_or(Kind::Domain.into())
+    literal_number(text, numeric)?.marked_exact().ok_or_else(|| Kind::Domain.into())
 }
 
 /// The empty numeric vector whose prototype is `fill`.
@@ -268,7 +268,7 @@ fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>,
                 let Some(mark) = mark else { continue };
                 if mark == Mark::Exact && !tokens[start + 1..i].iter().all(|t| literal_token(&t.kind)) { floors.push(i); continue }
                 for token in &mut tokens[start + 1..i] {
-                    let text = &token.span.source.text[token.span.range.clone()];
+                    let text = token.span.text();
                     let value = match (&token.kind, mark) {
                         (TokenKind::Literal(Value::Number(n)), _) if n.as_bool().is_some() => continue,
                         (TokenKind::Literal(Value::Number(_)), Mark::Exact) if text.starts_with('$') => continue,
@@ -342,7 +342,7 @@ fn script_integer(c: char, chars: &mut Characters<'_>, digits: &str, what: &str)
     while let Some(d) = chars.peek().and_then(|&(_, c)| script_digit(digits, c)) {
         chars.next();
         count += 1;
-        value = value.checked_mul(10).and_then(|v| v.checked_add(d)).ok_or((ErrorKind::from(Kind::Limit), format!("{what} is too large")))?;
+        value = value.checked_mul(10).and_then(|v| v.checked_add(d)).ok_or_else(|| (ErrorKind::from(Kind::Limit), format!("{what} is too large")))?;
     }
     if count == 0 { return Err((ErrorKind::Syntax, format!("{c} needs a {what} digit after it"))); }
     Ok(if script_digit(digits, c).is_some() { value } else { -value })
@@ -607,7 +607,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
     }))
 }
 
-/// Each token and comment of `text` with its highlight class, as byte ranges in order. The class is the kind that `symbols` gives a glyph, or `"literal"` for a number, `"string"` for a character or string literal, `"system"` for a system name and `"comment"` for a comment. Names and brackets have no class. Text that fails to lex has none either, except an unclosed literal, which is a `"string"` up to where lexing stopped.
+/// Each token and comment of `text` with its highlight class, as byte ranges in order. The class is the kind that `symbols` gives a glyph, or `"literal"` for a number or a joiner, `"string"` for a character or string literal, `"name"` for a name, `"system"` for a system name, `"monadic-operator"` for a superscript operator, `"syntax"` for a subscript or an error guard, and `"comment"` for a comment. Brackets have no class. Text that fails to lex has none either, except an unclosed literal, which is a `"string"` up to where lexing stopped.
 pub fn highlight(text: &str, aliases: bool) -> Vec<(std::ops::Range<usize>, &'static str)> {
     let mut classes = Vec::new();
     let _ = lex(&Source::new("<highlight>", text), aliases, Some(&mut classes));
@@ -645,8 +645,11 @@ impl From<ParseFailure> for ParseStatus {
     }
 }
 
+/// The span from the earliest node's start to the latest node's end, whatever order the nodes are in. The binder's rewrites can put a later node first, as `.[I]` puts its brackets before the array.
 pub(crate) fn cover(nodes: &[Node]) -> Span {
-    Span { source: nodes[0].span.source.clone(), range: nodes[0].span.range.start..nodes[nodes.len() - 1].span.range.end }
+    let start = nodes.iter().map(|n| n.span.range.start).min().expect("at least one node");
+    let end = nodes.iter().map(|n| n.span.range.end).max().expect("at least one node");
+    Span { source: nodes[0].span.source.clone(), range: start..end }
 }
 
 /// Nodes and separators, before the enclosing delimiters give the separators their meaning.

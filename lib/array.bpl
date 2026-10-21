@@ -32,10 +32,10 @@ alset ← {  ⍝ Assoc list ⍺ with (key value) pair ⍵ replaced.
 
 ⍝ From http://dfns.dyalog.com/c_acc.htm
 
-acc ← {⍶{(⊂⍺⍶↑⍬⍴⍵),⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵}  ⍝ Accumulating reduction.
+acc ← {⍶{[⍺⍶↑⍬⍴⍵],⍵}/1↓{⍵,⊂⍬⍴⍵}¯1⌽⍵}  ⍝ Accumulating reduction.
 
 ⍝ Helpers shared by disp, display, displays, displayr and dsp.
-format ← {t←⊃,↓⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Simple array as a character matrix.
+format ← {t←⊃,↓⍬⍕⍵ ⋄ (¯2↑1 1,⍴t)⍴t}  ⍝ Simple array as a character matrix.
 open ← {(1⌈⍴⍵)⍴⍵}  ⍝ Exposure of null axes.
 axes ← {(-2⌈⍴⍴⍵)↑≥×⍴⍵}  ⍝ Array axis types.
 char ← {⍬≡⍴⍵?'─';(↑⍵∊'¯',$d)⊃"#~"}∘⍕  ⍝ Type character of an atom.
@@ -170,7 +170,7 @@ displays ← {  ⍝ Boxed display of array.
     lft,(top⍪w⍪bot),rgt  ⍝ Fully boxed array.
   }
   trim←{[⍵₀ (~1 1⍷∧⌿' '=⍵₁)#⍠¯1⍵₁]}
-  qfmt←{[⍕0+⍴⍺;format open ⍵]}
+  qfmt←{[⍬⍕⍴⍺;format open ⍵]}
   0=≡⍵?' '⍪(format ⍵)⍪(' '≡↑0⍴⍵)⊃" -";
   1 ⍬≡[≡⍵ ⍴⍵]?'∇' 0 0 box ["─";format ⍵];
   1=≡⍵?(deco ⍵)box open ⍵ qfmt ⍵;  ⍝ Simple array.
@@ -182,10 +182,10 @@ displays ← {  ⍝ Boxed display of array.
 displayr ← {  ⍝ Boxed display of array
   box←{  ⍝ box with type and axes
     [vrt hrz]←(≤⍴⍵)⍴¨"│─"  ⍝ vert. and horiz. lines
-    top←(≥⍴hrz)↑(↑ ¯1↑⍺ ⌷ "─⊖",⊂⍕¯1↑⍺₁),hrz
+    top←(≥⍴hrz)↑(↑ ¯1↑⍺ ⌷ "─⊖",⊂⍬⍕¯1↑⍺₁),hrz
     bot←⍴top ↑ ↑2↓⍺ , hrz
     rgt←"┐│",vrt,'┘'  ⍝ right side with corners
-    lax←(↑¨ ¯1↓3↓⍺ ⌷¨ -1⌈≤⍴⍺₁ ↑ ⊂"│⌽" ,¨ (⊂⍕)¨¯1↓0,⍺₁),¨⊂vrt
+    lax←(↑¨ ¯1↓3↓⍺ ⌷¨ -1⌈≤⍴⍺₁ ↑ ⊂"│⌽" ,¨ (⊂⍬↣⍕)¨¯1↓0,⍺₁),¨⊂vrt
     lax←⊂≥⍴vrt ↑¨ lax~¨⊂" " ,¨ '│'  ⍝ pad and trim
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪⍵⍪bot),rgt  ⍝ fully boxed array
@@ -194,7 +194,7 @@ displayr ← {  ⍝ Boxed display of array
   0=≡⍵?' '⍪(open format ⍵)⍪(' '=↑0⍴⍵)⊃" -";
   1 ⍬≡[≡⍵ ⍴⍵]?["" [0 0] '∇' 0 0] box format ⍵;
   1=≡⍵?(deco ⍵)box open' ',format open ⍵;
-  (⊂⍕0+≡⍵ deco ⍵)box trim' ',format ∇¨open ⍵
+  (⊂⍬⍕≡⍵ deco ⍵)box trim' ',format ∇¨open ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_dist.htm
@@ -225,8 +225,8 @@ dsp ← {  ⍝ Reduced version of disp.
   rows←(mrs#¨'│')join¨↓dims↑¨subs  ⍝ complete rows with '│'-separated items
   hzs←'┼'join mcs#¨'─'  ⍝ inter-row horizontal "─┼─" separators
   cells←{⍺⍪hzs⍪⍵}/rows  ⍝ joined rows: array of 2D planes
-  gaps←(⌽≥⍳¯2+⍴⍴⍵)#¨' '  ⍝ increasing cell gaps for higher ranks
-  cjoin←{⍪/(⊂⍺),⍶,⊂⍵}
+  gaps←(⌽≥⍳¯2ₓ+⍴⍴⍵)#¨' '  ⍝ increasing cell gaps for higher ranks
+  cjoin←{⍪/[⍺],⍶,⊂⍵}
   top{(⍺ cjoin)⌿⍵}/gaps,⊂cells
 }
 
@@ -240,7 +240,7 @@ Rgt ← {⊂2↑⍵ , 2↓¯1↓⍵ , ↑⌽⍵}  ⍝ tape-head moves right 1 it
 enlist ← {  ⍝ List ⍺-leaves of nested array.
   ⍺←0  ⍝ default: list 0-leaves.
   ⍺≥≤≡⍵?,⍵;  ⍝ all shallow leaves: finished.
-  1↓,/(⊂⊂↑↑⍵),⍺∇¨,⍵
+  1↓,/[⊂↑↑⍵],⍺∇¨,⍵
 }
 
 ⍝ From http://dfns.dyalog.com/c_from.htm
@@ -256,7 +256,7 @@ from ← {  ⍝ Select (1↓⍴⍵)-cells from array ⍵.
     sel←⊃[indx]⌷vec
     pos←axis+⍳⍴⍴indx
     (pos , ⍳⍴⍴sel ~ pos)⍉sel  ⍝ simple selection.
-  }/⌽(⊂⍵),↓⍉⊃[indx axes]
+  }/⌽[⍵],↓⍉[indx⋄axes]
 }
 
 ⍝ From http://dfns.dyalog.com/n_foldl.htm
@@ -306,7 +306,7 @@ listRmDups ← {  ⍝ remove adjacent duplicates.
 
 match ← {  ⍝ Wildcard match.
   [p x]←{[⍵ '*']}⍣ 1=≡,⍺ ,⍺  ⍝ pattern and wildcard.
-  v←1↓¨{(x↣≡¨⍵)⊂⍵}(⊂x),p
+  v←1↓¨{(x↣≡¨⍵)⊂⍵}[x],p
   h←⊃v⍷¨⊂⍵
   r←0,¯1↓,⊃⍴¨v
   sl←{  ⍝ array shifted left.
@@ -414,7 +414,7 @@ select ← {⍺⊃¨,¨/⊂¨¨⍵}  ⍝ ⍺-selection of items of vector ⍵.
 
 ⍝ From http://dfns.dyalog.com/c_shannon.htm
 
-shannon ← {-+/(2↣⍟×⊣)¨({≢⍵}⌸÷≢)⍵}  ⍝ Shannon entropy of message ⍵.
+shannon ← {-+/(2↣⍟×⊣)¨(≢⊢ ⌸÷≢)⍵}  ⍝ Shannon entropy of message ⍵.
 
 ⍝ From http://dfns.dyalog.com/c_subvec.htm
 

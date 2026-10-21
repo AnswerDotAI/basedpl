@@ -1,6 +1,6 @@
 # `⎕` — IO
 
-Syntax. Keys: `Alt-q`
+Syntax. Keys: `Alt-q`. Hanzi: `出/入`
 
 `⎕←Y` explicitly prints `Y` and retains its value.
 

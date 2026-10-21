@@ -1,4 +1,4 @@
-"""Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page kinds, keys and ranks.
+"""Write editor highlighters, glyph-entry templates, regional macOS keyboards, and glyph-page kinds, keys, hanzi and ranks.
 
 BPL glyph lists come from its symbol metadata. Dyalog APL and BQN lists for the comparison page are defined here. `keyboards` generates the macOS bundles. Paths are relative to the repository root.
 
@@ -122,6 +122,18 @@ def key(shortcut):
     return ' '.join(['Alt-' + keys[0], *keys[1:]]) if keys else ''
 
 
+def keys(s):
+    "The keys that type glyph row `s` from `basedpl.symbols`, such as ``Keys: `Alt-m` ``. A glyph typed without Alt has none."
+    alt = key(s['shortcut'])
+    return f'Keys: `{alt}`' if alt else ''
+
+
+def hanzi(s):
+    "The hanzi that spell glyph row `s` from `basedpl.symbols`, such as ``Hanzi: `乘/号` (`乘/號`)``. The traditional spelling follows in brackets where it differs from the simplified one."
+    simplified, traditional = ('/'.join(h) for h in s['hanzi'])
+    return f'Hanzi: `{simplified}`' + (f' (`{traditional}`)' if traditional != simplified else '')
+
+
 def ranks(s):
     "The ranks of glyph row `s` from `basedpl.symbols`, such as ``Ranks: `1` monadic, `1 0` dyadic``. Only functions have ranks."
     forms = [f"`{s['monad_rank']}` monadic" if s['monad_rank'] else '',
@@ -135,11 +147,11 @@ def kind(s):
 
 
 def glyph_page(text, s):
-    "The page `text` of glyph row `s` with the line after its title regenerated. The line gives the glyph's kind, its keys if it's typed with Alt, and its ranks."
+    "The page `text` of glyph row `s` with the line after its title regenerated. The line gives the glyph's kind, its keys if it's typed with Alt, its hanzi and its ranks."
     title, rest = text.split('\n\n', 1)
     kinds = '|'.join({kind(r) for r in symbols})
     rest = re.sub(rf'\A(?:{kinds})(?:\. .*)?\n\n', '', rest)
-    line = '. '.join(filter(None, [kind(s), f"Keys: `{key(s['shortcut'])}`" if s['shortcut'].strip() else '', ranks(s)]))
+    line = '. '.join(filter(None, [kind(s), keys(s), hanzi(s), ranks(s)]))
     return f'{title}\n\n{line}\n\n{rest}'
 
 
@@ -173,7 +185,7 @@ def icon():
 
 
 def write():
-    "Write highlighters, glyph-entry templates, regional keyboard bundles, and glyph-page kinds, keys and ranks."
+    "Write highlighters, glyph-entry templates, regional keyboard bundles, and glyph-page kinds, keys, hanzi and ranks."
     for path, glyphs in HIGHLIGHTERS.items(): keyboards.write_changed(path, quarto(path.read_text(), glyphs))
     keyboards.write_changed(TEXTMATE, json.dumps(textmate(Path('nbs/bpl.xml').read_text()), ensure_ascii=False, indent=2) + '\n')
     keyboards.write_changed(JETBRAINS/'BPL.tmbundle/Syntaxes/bpl.tmLanguage.json', TEXTMATE.read_bytes())

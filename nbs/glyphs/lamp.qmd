@@ -1,6 +1,6 @@
 # `⍝` — Comment
 
-Comment. Keys: `Alt-o c`
+Comment. Keys: `Alt-o c`. Hanzi: `注`
 
 `⍝` comments to end of line.
 

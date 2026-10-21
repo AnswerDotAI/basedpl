@@ -1,6 +1,6 @@
 # `∊` — Enlist / Member
 
-Function. Keys: `Alt-e`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-e`. Hanzi: `属/展` (`屬/展`). Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `∊Y` recursively ravels all nested leaves.
 

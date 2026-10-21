@@ -120,7 +120,7 @@ fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Context<'_>) 
             return right.layout().floats(width, out).error_at(span, "invalid distribution result");
         }
     }
-    pervade(right, &|e| point(d, op, real(&e, span)?, e.float_width().unwrap_or(Numeric::current().width), span), span)
+    pervade(None, right, &|_, e| point(d, op, real(e, span)?, e.float_width().unwrap_or(Numeric::current().width), span), &|_, _, _| None, span)
 }
 
 /// The density, cdf or quantile of `d` at one number x, as a float of `width`, or as an exact integer for a finite discrete quantile.

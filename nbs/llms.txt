@@ -40,7 +40,7 @@ Each entry below names a difference from Dyalog APL, gives a short example, and 
 - [`∘` atop](glyphs/jot.html.md): `⍺ f∘g ⍵` is `f ⍺ g ⍵`, as BQN's atop, where Dyalog's is `⍺ f g ⍵`. `10 -∘| ¯3` is `¯7`.
 - [`⍤` rank](glyphs/jot-diaeresis.html.md): rank only: `+/⍤1 m` sums each row. A function right operand computes the ranks.
 - [`⍠` axis](glyphs/quad-colon.html.md): applies a function along axes given by number or name. Both `+/⍠0 m` and `+/⍠"month" sales` sum along one axis, chosen by number in one and by name in the other.
-- [`⌺` stencil](glyphs/quad-diamond.html.md): a function right operand computes the window from the arguments.
+- [`⌺` stencil](glyphs/quad-diamond.html.md): shorthand for Rank over centred windows: `f⌺3 v` is `f⍤¯1 [¯3]↕v`, and `life⌺[3 3] g` is `life⍤¯2 [¯3 ¯3]↕g`. `f` gets each window alone, with no `⍺`, as J's `;._3` calls its operand. A function right operand computes the window from the arguments.
 - [`.` dot](glyphs/dot.html.md): after an array, `.name` reads a field and `.[I]` selects. Monadic `f.g` is J's determinant form: `-.×[1 2⋄3 4]` is `¯2`.
 - [`⍣` power](glyphs/star-diaeresis.html.md): a list of counts keeps the history: `2×⍣(⍳5) 1` is `1 2 4 8 16`. `f⍣∞` finds a fixed point.
 - [`/` reduce](glyphs/slash.html.md), [`⌿`](glyphs/slash-bar.html.md), [`\`](glyphs/backslash.html.md) and [`⍀`](glyphs/backslash-bar.html.md): only reduce and scan. A left argument is a seed, as in BQN: `2+/1 2 3` is `8`. Scans accumulate left to right.
@@ -76,7 +76,7 @@ Each entry below names a difference from Dyalog APL, gives a short example, and 
 - [`⍭` primes](glyphs/stile-tilde.html.md): like J's `p:`, with different codes. `⍭⁻¹` counts primes.
 - [`⨸` factors](glyphs/circle-divide.html.md): as J's `q:`: `⨸360ₓ` is `[2 2 2 3 3 5]ₓ`.
 - [`⌻` polynomials](glyphs/quad-jot.html.md): roots and evaluation, as J's `p.`: `[1 2 3]⌻2` is `17`. Coefficients come from `⌻⁻¹`.
-- [`↕` windows](glyphs/up-down-arrow.html.md): as BQN's `↕`: `+/3↕1 2 3 4 5` is `6 9 12`. Monadic `↕` is `2↕`.
+- [`↕` windows](glyphs/up-down-arrow.html.md): as BQN's `↕`: `+/3↕1 2 3 4 5` is `6 9 12`. Monadic `↕` is `2↕`. An options record pads by an edge mode: `["size":3 "edge":"wrap"]↕v`.
 - [`#` replicate](glyphs/hash.html.md): along the first axis, as Dyalog's `⌿`: `1 0 2#"abc"` is `"acc"`. Monadic `#` gives run-length encoding. Dyadic `#⁻¹` expands.
 - [`↦` range](glyphs/right-arrow-from-bar.html.md): `2↦5` counts from 2 to 5, giving `2 3 4 5`.
 - [`:` keys](glyphs/colon.html.md): `K:Y` attaches keys to `Y`. `:Y` removes them.

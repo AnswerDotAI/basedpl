@@ -1,6 +1,6 @@
 # `⍀` — Scan first
 
-Monadic operator. Keys: `Alt-Minus Backslash`
+Monadic operator. Keys: `Alt-Minus Backslash`. Hanzi: `续` (`續`)
 
 `f⍀Y` scans down the first axis.
 

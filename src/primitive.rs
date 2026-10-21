@@ -28,6 +28,36 @@ impl Operation {
     pub(crate) const PLUS_TIMES: Self = Self::Product(Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times));
     /// `-.×`, whose monad is the determinant.
     pub(crate) const MINUS_TIMES: Self = Self::Product(Primitive::Arithmetic(Arithmetic::Minus), Primitive::Arithmetic(Arithmetic::Times));
+    /// Whether Rank's routes run the operation with this valence on a whole stack of matrices at once (`primitive::stacked`): `⌹`, dyadic `+.×` and monadic `-.×`.
+    pub(crate) fn stacks(self, dyadic: bool) -> bool { matches!((self, dyadic), (Self::Primitive(Primitive::MatrixDivide), _) | (Self::PLUS_TIMES, true) | (Self::MINUS_TIMES, false)) }
+    /// The operation on `left` and `right`, paired by `pairing`, as the newest running level among them takes it (`transform::call`), or else by its own code (`run`). It needs only a `&Context`, so code that holds no `&mut Context`, such as `∂`'s rules and Rank's routes on whole arguments, calls folds, products and stacks of matrices through it. A primitive along an axis calls `Primitive::call_axis`, which routes the same way. Under `•prefs ["fusion":$t]` or `•explain`, a call that computed pending arrays, where no call inside it reported, reports them as a function call does (`eval::fusion_report`), named by the operation's glyphs (`glyph`).
+    pub(crate) fn call(self, pairing: crate::transform::Pairing<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+        if let (Self::Primitive(p), crate::transform::Pairing::Axis(axis)) = (self, &pairing) { return p.call_axis(left, right, *axis, cx); }
+        if !(cx.session.display.fusion | cx.session.explaining) { return self.routed(pairing, left, right, cx); }
+        let (reports, before) = (cx.session.fusion_reports.get(), crate::explain::computed_so_far());
+        let result = self.routed(pairing, left, right, cx);
+        let items = crate::explain::computed_so_far() - before;
+        if items > 0 && cx.session.fusion_reports.get() == reports {
+            let matrices = if matches!(pairing, crate::transform::Pairing::Matrices) { "⍤2" } else { "" };
+            crate::eval::fusion_report(cx, "fusion ends", &[self.glyph().as_str(), matrices].concat(), items);
+        }
+        result
+    }
+    /// The call as the newest running level takes it, or else by the operation's own code.
+    fn routed(self, pairing: crate::transform::Pairing<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+        if cx.session.transforming() { if let Some(result) = crate::transform::call(self, pairing, left, right, cx) { return result; } }
+        self.run(pairing, left, right, cx)
+    }
+    /// The operation's own code: rustymath's kernels where they apply, and otherwise calls of the primitives that define it, each of which routes again. A fold or scan takes `eval::primitive_fold`, a product `eval::primitive_product` or `eval::primitive_expansion`, and `Pairing::Matrices` takes each matrix or pair of matrices (`eval::matrices`).
+    fn run(self, pairing: crate::transform::Pairing<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+        use crate::transform::Pairing;
+        match (self, pairing) {
+            (_, Pairing::Matrices) => crate::eval::matrices(self, left, right, cx),
+            (Self::Fold(p, kind), Pairing::Axis(axis)) => crate::eval::primitive_fold(p, kind, axis, None, right, cx),
+            (Self::Product(f, g), Pairing::Axis(None)) => match left { Some(x) => crate::eval::primitive_product(f, g, x, right, cx), None => crate::eval::primitive_expansion(f, g, right, cx) },
+            (op, _) => unreachable!("{op:?} has no call with this pairing"),
+        }
+    }
     /// The glyphs that spell the operation, as `•explain` reports a fused graph. A copy only reads items, so it has none.
     pub(crate) fn glyph(self) -> String {
         match self {
@@ -192,7 +222,7 @@ pub(crate) enum Form {
     Defined,
     /// A rule of its own in each kind's module, as `⌻`, `⌹`, `⊥` and the folds and products in `Operation::facts` have. Monadic `#` has one because its counts sit beside the items it takes.
     Own,
-    /// No kind runs it on carried values: `¿`, `⍎`, `⊤`, `↦`, `!`, monadic `⌻`, and the monads of `○`, `∨` and `∧`, which give complex numbers.
+    /// No kind runs it on carried values: `⍎`, monadic `⌻`, and monadic `○`, which gives complex numbers.
     Unsupported,
 }
 
@@ -253,34 +283,42 @@ pub(crate) enum CellRule {
     Join { last: bool },
 }
 
-/// The facts of a form: either form of a primitive, or a derived operation's row (`Operation::facts`). A form that `extends` handles arguments of any rank in its own code. A call on any other form, with an argument above its rank, applies the form to cells of its rank through Rank. A `pervasive` form gives the same result under Each. An `axes` form has its own meaning with `⍠`, where other functions take the general cell rule. `form` says how levels run the form on carried values, and `linear` is the linear map it is, if any. `cost` is what the form's float kernel costs in copies per item, as timed on 19 October 2026 on this Mac, an Apple M5 Max: 1 for arithmetic and more for transcendental functions. A kernel that its left argument chooses, as `○`'s circle code does, has a typical cost. `cells` says how Rank runs the form on each cell of a larger argument as one call on the whole argument, where `extends` doesn't cover it (`whole` in `eval/operators.rs`).
+/// The facts of a form: either form of a primitive, or a derived operation's row (`Operation::facts`). A form that `extends` handles arguments of any rank in its own code. A call on any other form, with an argument above its rank, applies the form to cells of its rank through Rank. A `pervasive` form gives the same result under Each. An `axes` form has its own meaning with `⍠`, where other functions take the general cell rule. `form` says how levels run the form on carried values, and `linear` is the linear map it is, if any. `cost` is what the form's float kernel costs in copies per item, as timed on 19 October 2026 on this Mac, an Apple M5 Max: 1 for arithmetic and more for transcendental functions. A kernel that its left argument chooses, as `○`'s circle code does, has a typical cost. `cells` says how Rank runs the form on each cell of a larger argument as one call on the whole argument, where `extends` doesn't cover it (`whole` in `eval/operators.rs`). A form whose results are all Booleans has `booleans`. A form whose results from exact arguments are approximate has `approximate`, and its exact arguments compute as floats.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Facts { pub name: &'static str, pub extends: bool, pub pervasive: bool, pub axes: bool, pub form: Form, pub linear: Option<LinearMap>, pub cost: u16, pub cells: CellRule }
+pub(crate) struct Facts { pub name: &'static str, pub extends: bool, pub pervasive: bool, pub axes: bool, pub form: Form, pub linear: Option<LinearMap>, pub cost: u16, pub cells: CellRule, pub booleans: bool, pub approximate: bool }
 
 /// A primitive's monadic form. It gives the same results as its Rank at `rank`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Monad { pub facts: Facts, pub rank: Rank }
 
-/// A primitive's dyadic form. `ranks` are the left and right cell ranks, and `identity` serves reductions.
+/// A primitive's dyadic form. `ranks` are the left and right cell ranks, and `identity` and `reduction` serve reductions. A form that `picks` gives one of its arguments for each item: `⌈`, `⌊`, `⊢` and `⊣`. A `ring` form's integer results, wrapped once at the end, match results wrapped at each step: `+`, `-` and `×`. A `code` form's left argument chooses the function that each item gets, as `○`'s circle code does.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Dyad {
     pub facts: Facts,
     // Rank's shortcut reads only monadic ranks, because a dyadic Rank call can't skip its cell loop in general. A call on a form that doesn't extend reads these ranks, and so do the glyph pages and a test that checks them against Rank.
     pub ranks: [Rank; 2],
     pub identity: Option<Identity>,
+    pub reduction: Option<Reduce>,
+    pub picks: bool,
+    pub ring: bool,
+    pub code: bool,
 }
+
+/// The reduction by which a kernel folds a dyad: `+/` sums, `×/` multiplies, and `⌈/` and `⌊/` take the greatest and the least.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Reduce { Sum, Product, Max, Min }
 
 /// One primitive's facts: its glyph, the glyph's name, and its two forms.
 pub(crate) struct Info { pub glyph: &'static str, pub name: &'static str, pub monad: Monad, pub dyad: Dyad }
 
 /// The facts of a form with `form`, before `monad` or `dyad` names it: it extends, isn't pervasive and has no meaning of its own with `⍠`.
-const fn of(form: Form) -> Facts { Facts { name: "", extends: true, pervasive: false, axes: false, form, linear: None, cost: 1, cells: CellRule::No } }
+const fn of(form: Form) -> Facts { Facts { name: "", extends: true, pervasive: false, axes: false, form, linear: None, cost: 1, cells: CellRule::No, booleans: false, approximate: false } }
 /// The facts of a pervasive form.
 const PERVASIVE: Facts = Facts { pervasive: true, ..of(Form::Pervasive) };
 /// The facts of a form that moves items, selects none of its right argument's, and copies through no plan.
 const MOVES: Facts = of(Form::Moves { selects: Selects::No, planned: false });
 const fn monad(name: &'static str, rank: Rank, facts: Facts) -> Monad { Monad { facts: Facts { name, ..facts }, rank } }
-const fn dyad(name: &'static str, ranks: [Rank; 2], facts: Facts) -> Dyad { Dyad { facts: Facts { name, ..facts }, ranks, identity: None } }
+const fn dyad(name: &'static str, ranks: [Rank; 2], facts: Facts) -> Dyad { Dyad { facts: Facts { name, ..facts }, ranks, identity: None, reduction: None, picks: false, ring: false, code: false } }
 impl Facts {
     /// A form whose own code handles only arguments up to its rank or ranks.
     const fn cellwise(self) -> Self { Self { extends: false, ..self } }
@@ -292,6 +330,10 @@ impl Facts {
     const fn cost(self, copies: u16) -> Self { Self { cost: copies, ..self } }
     /// A form that runs on each cell of a larger argument as `cells` says.
     const fn cells(self, cells: CellRule) -> Self { Self { cells, ..self } }
+    /// A form whose results are all Booleans.
+    const fn booleans(self) -> Self { Self { booleans: true, ..self } }
+    /// A form whose results from exact arguments are approximate.
+    const fn approximate(self) -> Self { Self { approximate: true, ..self } }
     /// A form that moves items and copies its right argument through one plan.
     const fn planned(self) -> Self {
         let Form::Moves { selects, .. } = self.form else { panic!("only a form that moves items copies through a plan") };
@@ -314,6 +356,10 @@ impl Dyad {
         (!self.facts.extends && (above(left, self.ranks[0]) || above(right, self.ranks[1]))).then_some(self.ranks)
     }
     const fn identity(self, identity: Identity) -> Self { Self { identity: Some(identity), ..self } }
+    const fn reduces(self, reduction: Reduce) -> Self { Self { reduction: Some(reduction), ..self } }
+    const fn picks(self) -> Self { Self { picks: true, ..self } }
+    const fn ring(self) -> Self { Self { ring: true, ..self } }
+    const fn code(self) -> Self { Self { code: true, ..self } }
 }
 
 /// The number `e` holds, as a kernel reads it (`Value::computed`). A dual number is UNSUPPORTED, and any other value is DOMAIN.
@@ -400,37 +446,37 @@ impl Primitive {
         const MATERIALISE: Monad = monad("materialise", W, MOVES.axes().selects(Whole));
         const INDEX: Dyad = dyad("index", [1, W], MOVES.cellwise().axes().selects(Part));
         match self {
-            Self::Arithmetic(Plus) => &const { row("+", "plus", monad("conjugate", 0, PERVASIVE.linear(LinearMap::Same)), dyad("add", [0, 0], PERVASIVE.axes().linear(LinearMap::Sum)).identity(Identity::Number(0))) },
-            Self::Arithmetic(Minus) => &const { row("-", "minus", monad("negate", 0, PERVASIVE.linear(LinearMap::Negation)), dyad("subtract", [0, 0], PERVASIVE.axes().linear(LinearMap::Difference)).identity(Identity::Number(0))) },
-            Self::Arithmetic(Times) => &const { row("×", "times", monad("sign", 0, PERVASIVE.form(Constant)), dyad("multiply", [0, 0], PERVASIVE.axes().linear(LinearMap::Product)).identity(Identity::Number(1))) },
+            Self::Arithmetic(Plus) => &const { row("+", "plus", monad("conjugate", 0, PERVASIVE.linear(LinearMap::Same)), dyad("add", [0, 0], PERVASIVE.axes().linear(LinearMap::Sum)).identity(Identity::Number(0)).ring().reduces(Reduce::Sum)) },
+            Self::Arithmetic(Minus) => &const { row("-", "minus", monad("negate", 0, PERVASIVE.linear(LinearMap::Negation)), dyad("subtract", [0, 0], PERVASIVE.axes().linear(LinearMap::Difference)).identity(Identity::Number(0)).ring()) },
+            Self::Arithmetic(Times) => &const { row("×", "times", monad("sign", 0, PERVASIVE.form(Constant)), dyad("multiply", [0, 0], PERVASIVE.axes().linear(LinearMap::Product)).identity(Identity::Number(1)).ring().reduces(Reduce::Product)) },
             Self::Arithmetic(Divide) => &const { row("÷", "obelus", monad("reciprocal", 0, PERVASIVE), dyad("divide", [0, 0], PERVASIVE.axes().linear(LinearMap::Quotient)).identity(Identity::Number(1))) },
             Self::Bitwise(_) => &const { row("ᵇ", "superscript-b", monad("bitwise", 0, PERVASIVE.form(Constant)), dyad("bitwise", [0, 0], PERVASIVE.form(Constant))) },
-            Self::Math(Ceiling) => &const { row("⌈", "upstile", monad("ceiling", 0, PERVASIVE.form(Constant).cost(3)), dyad("maximum", [0, 0], PERVASIVE.axes()).identity(Infinity(false))) },
-            Self::Math(Floor) => &const { row("⌊", "downstile", monad("floor", 0, PERVASIVE.form(Constant).cost(3)), dyad("minimum", [0, 0], PERVASIVE.axes()).identity(Infinity(true))) },
+            Self::Math(Ceiling) => &const { row("⌈", "upstile", monad("ceiling", 0, PERVASIVE.form(Constant).cost(3)), dyad("maximum", [0, 0], PERVASIVE.axes()).identity(Infinity(false)).picks().reduces(Reduce::Max)) },
+            Self::Math(Floor) => &const { row("⌊", "downstile", monad("floor", 0, PERVASIVE.form(Constant).cost(3)), dyad("minimum", [0, 0], PERVASIVE.axes()).identity(Infinity(true)).picks().reduces(Reduce::Min)) },
             Self::Math(Magnitude) => &const { row("|", "stile", monad("magnitude", 0, PERVASIVE), dyad("residue", [0, 0], PERVASIVE.axes().cost(6)).identity(Identity::Number(0))) },
-            Self::Math(Power) => &const { row("*", "star", monad("exponential", 0, PERVASIVE.cost(7)), dyad("exponent", [0, 0], PERVASIVE.axes().cost(25)).identity(Identity::Number(1))) },
-            Self::Math(Log) => &const { row("⍟", "circle-star", monad("natural-log", 0, PERVASIVE.cost(12)), dyad("logarithm", [0, 0], PERVASIVE.axes().cost(12))) },
-            Self::Math(Circle | Arc) => &const { row("○", "circle", monad("cis", 0, PERVASIVE.form(Unsupported).cost(12)), dyad("circular", [0, 0], PERVASIVE.axes().cost(8))) },
-            Self::Math(Pi) => &const { row("π", "pi", monad("pi-times", 0, PERVASIVE), dyad("pi-ratio", [0, 0], PERVASIVE.axes())) },
-            Self::Math(Root) => &const { row("√", "radical", monad("sqrt", 0, PERVASIVE.cost(2)), dyad("root", [0, 0], PERVASIVE.axes().cost(10))) },
-            Self::Math(Factorial) => &const { row("!", "exclamation", monad("factorial", 0, PERVASIVE.form(Unsupported).cost(160)), dyad("binomial", [0, 0], PERVASIVE.axes().form(Unsupported).cost(900)).identity(Identity::Number(1))) },
+            Self::Math(Power) => &const { row("*", "star", monad("exponential", 0, PERVASIVE.cost(7).approximate()), dyad("exponent", [0, 0], PERVASIVE.axes().cost(25)).identity(Identity::Number(1))) },
+            Self::Math(Log) => &const { row("⍟", "circle-star", monad("natural-log", 0, PERVASIVE.cost(12).approximate()), dyad("logarithm", [0, 0], PERVASIVE.axes().cost(12).approximate())) },
+            Self::Math(Circle | Arc) => &const { row("○", "circle", monad("cis", 0, PERVASIVE.form(Unsupported).cost(12)), dyad("circular", [0, 0], PERVASIVE.axes().cost(8).approximate()).code()) },
+            Self::Math(Pi) => &const { row("π", "pi", monad("pi-times", 0, PERVASIVE.approximate()), dyad("pi-ratio", [0, 0], PERVASIVE.axes().approximate())) },
+            Self::Math(Root) => &const { row("√", "radical", monad("sqrt", 0, PERVASIVE.cost(2).approximate()), dyad("root", [0, 0], PERVASIVE.axes().cost(10).approximate())) },
+            Self::Math(Factorial) => &const { row("!", "exclamation", monad("factorial", 0, PERVASIVE.cost(160)), dyad("binomial", [0, 0], PERVASIVE.axes().cost(900)).identity(Identity::Number(1))) },
             Self::Math(Lcm) => &const { row("∧", "wedge", monad("polar", 0, of(Own)), dyad("and", [0, 0], PERVASIVE.axes().form(Constant)).identity(Identity::Logical(true))) },
             Self::Math(Gcd) => &const { row("∨", "vee", monad("real-imag", 0, of(Own)), dyad("or", [0, 0], PERVASIVE.axes().form(Constant)).identity(Identity::Logical(false))) },
-            Self::Math(Nand) => &const { row("⊼", "wedge-bar", monad("square", 0, PERVASIVE.form(Defined)), dyad("nand", [0, 0], PERVASIVE.axes().form(Constant))) },
-            Self::Math(Nor) => &const { row("⊽", "vee-bar", monad("double", 0, PERVASIVE.form(Defined)), dyad("nor", [0, 0], PERVASIVE.axes().form(Constant))) },
-            Self::Math(Not) => &const { row("~", "tilde", monad("not", 0, PERVASIVE.form(Constant)), dyad("without", [W, W], of(Orders))) },
-            Self::Compare(Equal) => &const { row("=", "equals", monad("classify", W, of(Constant)), dyad("equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Boolean(true))) },
-            Self::Compare(NotEqual) => &const { row("≠", "not-equals", monad("unique-mask", W, of(Constant)), dyad("not-equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Boolean(false))) },
-            Self::Compare(Less) => &const { row("<", "less-than", monad("sort-up", W, of(Orders)), dyad("less", [0, 0], PERVASIVE.axes().form(Constant)).identity(Boolean(false))) },
-            Self::Compare(LessEqual) => &const { row("≤", "less-than-or-equal", monad("decrement", 0, PERVASIVE.form(Defined)), dyad("less-equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Boolean(true))) },
-            Self::Compare(Greater) => &const { row(">", "greater-than", monad("sort-down", W, of(Orders)), dyad("greater", [0, 0], PERVASIVE.axes().form(Constant)).identity(Boolean(false))) },
+            Self::Math(Nand) => &const { row("⊼", "wedge-bar", monad("square", 0, PERVASIVE.form(Defined)), dyad("nand", [0, 0], PERVASIVE.axes().form(Constant).booleans())) },
+            Self::Math(Nor) => &const { row("⊽", "vee-bar", monad("double", 0, PERVASIVE.form(Defined)), dyad("nor", [0, 0], PERVASIVE.axes().form(Constant).booleans())) },
+            Self::Math(Not) => &const { row("~", "tilde", monad("not", 0, PERVASIVE.form(Constant).booleans()), dyad("without", [W, W], of(Orders))) },
+            Self::Compare(Equal) => &const { row("=", "equals", monad("classify", W, of(Constant)), dyad("equal", [0, 0], PERVASIVE.axes().form(Constant).booleans()).identity(Boolean(true))) },
+            Self::Compare(NotEqual) => &const { row("≠", "not-equals", monad("unique-mask", W, of(Constant)), dyad("not-equal", [0, 0], PERVASIVE.axes().form(Constant).booleans()).identity(Boolean(false))) },
+            Self::Compare(Less) => &const { row("<", "less-than", monad("sort-up", W, of(Orders)), dyad("less", [0, 0], PERVASIVE.axes().form(Constant).booleans()).identity(Boolean(false))) },
+            Self::Compare(LessEqual) => &const { row("≤", "less-than-or-equal", monad("decrement", 0, PERVASIVE.form(Defined)), dyad("less-equal", [0, 0], PERVASIVE.axes().form(Constant).booleans()).identity(Boolean(true))) },
+            Self::Compare(Greater) => &const { row(">", "greater-than", monad("sort-down", W, of(Orders)), dyad("greater", [0, 0], PERVASIVE.axes().form(Constant).booleans()).identity(Boolean(false))) },
             Self::Compare(GreaterEqual) => &const {
-                row("≥", "greater-than-or-equal", monad("increment", 0, PERVASIVE.form(Defined)), dyad("greater-equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Boolean(true)))
+                row("≥", "greater-than-or-equal", monad("increment", 0, PERVASIVE.form(Defined)), dyad("greater-equal", [0, 0], PERVASIVE.axes().form(Constant).booleans()).identity(Boolean(true)))
             },
             Self::Iota => &const { row("⍳", "iota", monad("indices", 1, of(Constant).cellwise().axes()), dyad("index-of", [W, W], of(Constant))) },
             Self::Range => &const { row("↦", "right-arrow-from-bar", monad("range", 0, of(Constant).cellwise()), dyad("to", [0, 0], of(Own).cellwise())) },
             Self::Keys => &const { row(":", "colon", monad("unkey", W, MOVES.axes()), dyad("keyed", [1, W], MOVES.cellwise().axes())) },
-            Self::Shape => &const { row("⍴", "rho", monad("shape", W, of(Constant).cells(CellRule::Shape)), dyad("reshape", [1, W], MOVES.cellwise().selects(Part).cells(CellRule::Reshape))) },
+            Self::Shape => &const { row("⍴", "rho", monad("shape", W, of(Constant).cells(CellRule::Shape)), dyad("reshape", [1, W], MOVES.cellwise().planned().selects(Part).cells(CellRule::Reshape))) },
             Self::Tally => &const { row("≢", "equal-underbar-slash", monad("tally", W, of(Constant).cells(CellRule::Length)), dyad("not-match", [W, W], of(Constant))) },
             Self::Depth => &const { row("≡", "equal-underbar", monad("depth", W, of(Constant)), dyad("match", [W, W], of(Constant))) },
             Self::Ravel => &const { row(",", "comma", monad("ravel", W, MOVES.axes().selects(Whole).cells(CellRule::Every)), dyad("catenate", [W, W], MOVES.axes().cells(CellRule::Join { last: true })).identity(Empty(false))) },
@@ -462,8 +508,8 @@ impl Primitive {
             Self::Polynomial => &const { row("⌻", "quad-jot", monad("roots", 1, of(Unsupported)), dyad("polyval", [1, 0], of(Own))) },
             Self::Where => &const { row("⍸", "iota-underbar", monad("where", W, of(Constant)), dyad("interval-index", [W, W], of(Constant))) },
             Self::Find => &const { row("⍷", "epsilon-underbar", monad("groups", W, of(Constant)), dyad("find", [W, W], of(Constant))) },
-            Self::Identity(false) => &const { row("⊢", "right-tack", monad("same", W, MOVES.selects(Whole)), dyad("right", [W, W], MOVES.selects(Whole))) },
-            Self::Identity(true) => &const { row("⊣", "left-tack", monad("same-left", W, MOVES.selects(Whole)), dyad("left", [W, W], MOVES)) },
+            Self::Identity(false) => &const { row("⊢", "right-tack", monad("same", W, MOVES.selects(Whole)), dyad("right", [W, W], MOVES.selects(Whole)).picks()) },
+            Self::Identity(true) => &const { row("⊣", "left-tack", monad("same-left", W, MOVES.selects(Whole)), dyad("left", [W, W], MOVES).picks()) },
             Self::Random => &const { row("¿", "inverted-question", monad("roll", 0, of(Constant)), dyad("deal", [0, 0], of(Constant))) },
         }
     }
@@ -548,9 +594,13 @@ impl Primitive {
         }
     }
     pub(crate) fn call_axis(self, left: Option<&Value>, right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
-        use Comparison::{Equal, Greater, GreaterEqual, Less, LessEqual, NotEqual};
         span.check()?;
-        if span.session.transforming() { if let Some(result) = crate::transform::call(self, crate::transform::Pairing::Axis(axis), left, right, span) { return result; } }
+        if span.session.transforming() { if let Some(result) = crate::transform::call(Operation::Primitive(self), crate::transform::Pairing::Axis(axis), left, right, span) { return result; } }
+        self.run_axis(left, right, axis, span)
+    }
+    /// `call_axis` without routing to a running level: the primitive's own code, which a level's rule runs on a value that the level carries (`selection::call`).
+    pub(crate) fn run_axis(self, left: Option<&Value>, right: &Value, axis: Option<usize>, span: &Context<'_>) -> Result<Value, Error> {
+        use Comparison::{Equal, Greater, GreaterEqual, Less, LessEqual, NotEqual};
         if axis.is_some() && !self.facts(left.is_some()).axes { return Err(span.error(ErrorKind::Syntax, "axis is not supported by this primitive")); }
         match (self, left) {
             (Self::Keys, None) => Ok(right.unkeyed()),
@@ -633,7 +683,7 @@ impl Primitive {
                 else { crate::keyed::partial_vector(right.axis_names().to_vec(), dimensions) };
                 shape.error_at(span, "invalid shape")
             }
-            (Self::Mix, Some(x)) => pick(x, right, false, span),
+            (Self::Mix, Some(x)) => pick(x, right, span.session.prototype, span),
             (Self::Mix, None) => {
                 if let Some(axis) = axis { return mix_axes(right, &axis_value(axis), span); }
                 right.mix(Widening::Arrays).error_at(span, "cannot assemble cells")
@@ -649,7 +699,7 @@ impl Primitive {
                 }
                 right.enclose().error_at(span, "invalid enclosure")
             }
-            (Self::Take, None) => pick(&Value::integer(0), right, false, span),
+            (Self::Take, None) => pick(&Value::integer(0), right, span.session.prototype, span),
             (Self::Drop, None) => split(right, axis, span),
             (Self::Take | Self::Drop, Some(x)) => take_drop(matches!(self, Self::Take), x, right, axis.map(|a| vec![a]).as_deref(), span),
             _ => self.pervasive_apply(left, right, span, false),
@@ -657,24 +707,28 @@ impl Primitive {
     }
 
     fn pervasive_apply(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
+        let (wl, wr) = weakened(left, right);
+        let (left, right) = (wl.as_ref().or(left), wr.as_ref().unwrap_or(right));
         if right.is_atom() && left.is_none_or(Value::is_atom) { return self.pervasive_item(left, right, span, fill); }
         let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "array shapes do not agree")?;
         self.pervasive_mapped(left, right, span, fill, agreement)
     }
     /// `x f⊗ y` for a pervasive function. Each argument keeps its own axes, and the left argument's axes come first.
     pub(crate) fn outer(self, left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+        let (wl, wr) = weakened(Some(left), right);
+        let (left, right) = (wl.as_ref().unwrap_or(left), wr.as_ref().unwrap_or(right));
         let agreement = Agreement::outer(left.layout(), right.layout()).error_at(span, "outer product is too large")?;
-        if span.session.transforming() { if let Some(result) = crate::transform::call(self, crate::transform::Pairing::Outer(&agreement), Some(left), right, span) { return result; } }
+        if span.session.transforming() { if let Some(result) = crate::transform::call(Operation::Primitive(self), crate::transform::Pairing::Outer(&agreement), Some(left), right, span) { return result; } }
         self.pervasive_mapped(Some(left), right, span, false, agreement)
     }
     /// The function applied to the items that `agreement` pairs, laid out as `agreement` lays out the result.
     fn pervasive_mapped(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool, agreement: Agreement) -> Result<Value, Error> {
         if agreement.len == 0 {
             let prototype = self.pervasive_item(left.map(Value::prototype).as_ref(), &right.prototype(), span, true)?;
-            return Value::empty(agreement.layout.shape(), prototype).and_then(|v| v.with_layout(agreement.layout)).error_at(span, "invalid empty result");
+            return empty_result(agreement, prototype, span);
         }
         // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
-        let agreement = if !fill && crate::fusion::defers(self, left.is_some(), agreement.len) {
+        let agreement = if !fill && crate::fusion::defers(self, left, right, agreement.len) {
             match crate::fusion::defer(self, left, right, agreement) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }
         } else { agreement };
         if !fill {
@@ -682,17 +736,12 @@ impl Primitive {
                 return result.with_layout(agreement.layout).error_at(span, "invalid keyed result");
             }
         }
-        let mut data = Gather::items(agreement.len);
-        for i in 0..agreement.len {
-            let (x, y) = agreement.values_ref(left, right, i);
-            data.add(self.pervasive_item(x.as_deref(), &y, span, fill)?);
-        }
-        data.finish(agreement.layout, || right.prototype()).error_at(span, "invalid pervasive result")
+        pairwise(left, right, agreement, &|x, y| self.pervasive_item(x, y, span, fill), span)
     }
 
     fn pervasive_item(self, left: Option<&Value>, right: &Value, span: &Context<'_>, fill: bool) -> Result<Value, Error> {
         span.check()?;
-        if !fill && span.session.transforming() { if let Some(result) = crate::transform::call(self, crate::transform::Pairing::Axis(None), left, right, span) { return result; } }
+        if !fill && span.session.transforming() { if let Some(result) = crate::transform::call(Operation::Primitive(self), crate::transform::Pairing::Axis(None), left, right, span) { return result; } }
         if matches!((self, left, right), (Self::Arithmetic(Arithmetic::Plus), None, Value::Character(_))) { return Ok(right.clone()); }
         if matches!(right, Value::Array(_)) || matches!(left, Some(Value::Array(_))) { return self.pervasive_apply(left, right, span, fill); }
         if let (Self::Arithmetic(op @ (Arithmetic::Plus | Arithmetic::Minus)), Some(left)) = (self, left) {
@@ -702,7 +751,7 @@ impl Primitive {
         }
         if fill {
             return Ok(match (self, left, right) {
-                (Self::Compare(_) | Self::Math(Math::Not), _, _) | (Self::Math(Math::Nand | Math::Nor), Some(_), _) => Value::Number(Number::from_bool(false)),
+                _ if self.facts(left.is_some()).booleans => Value::Number(Number::from_bool(false)),
                 (Self::Math(Math::Floor | Math::Ceiling) | Self::Arithmetic(Arithmetic::Times), None, _) => Value::integer(0),
                 (Self::Random, _, Value::Number(y)) => Value::Number(y.zero()),
                 (Self::Math(Math::Circle | Math::Arc | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) => float_like(0.0, right),
@@ -732,10 +781,17 @@ impl Primitive {
         }
     }
 
-    /// This arithmetic or math function on the number `y`, and on `x` when it's dyadic, under the numeric settings `t`, as a pervasive call and the fold of numbers apply it. A float that a function gives from exact numbers takes the default width, and the code of `○` takes no part in that. A call that computes at 16 bits runs on 32-bit copies of its 16-bit floats (`Number::halves`). Under static kinds, `statically` gives the result's kind.
+    /// This arithmetic or math function on the number `y`, and on `x` when it's dyadic, under the numeric settings `t`, as a pervasive call and the fold of numbers apply it. A float that a function gives from exact numbers takes the default width, and the code of `○` takes no part in that. A call that computes at 16 bits runs on 32-bit copies of its 16-bit floats (`Number::halves`). Under static kinds, `statically` gives the result's kind. A result is weak where no float or complex operand is strong (`Number::is_weak`).
     pub(crate) fn number(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> {
         use crate::number::Failure::Domain;
         if let Self::Bitwise(table) = self { return y.bitwise(x, table).map_err(Domain); }
+        // A weak operand beside a strong number takes the width that NEP 50 gives it, and the result is weak only where no float or complex operand is strong.
+        let (x_weak, y_weak) = (x.is_some_and(Number::is_weak), y.is_weak());
+        if let Some(x) = x.filter(|_| x_weak != y_weak) {
+            let beside = |a: &Number, b: &Number| a.weak_width(b.dtype()?);
+            if x_weak { if let Some(width) = beside(x, y) { return self.number(Some(&x.to_float_width(width).map_err(Domain)?), y, t); } }
+            else if let Some(width) = beside(y, x) { return self.number(Some(x), &y.to_float_width(width).map_err(Domain)?, t); }
+        }
         if let Some((x, y, t, halve)) = Number::halves(x, y, t) { return self.number(x.as_ref(), &y, t).map(|n| if halve { n.halved() } else { n }); }
         let n = match (self, x) {
             (Self::Math(Math::Floor), None) => y.floor(t).map_err(Domain)?, (Self::Math(Math::Ceiling), None) => y.ceiling(t).map_err(Domain)?,
@@ -744,17 +800,19 @@ impl Primitive {
             (Self::Math(op), None) => y.math_monad(op).map_err(Domain)?, (Self::Arithmetic(op), Some(x)) => x.dyad(op, y)?,
             (Self::Arithmetic(op), None) => y.monad(op)?, _ => unreachable!("only arithmetic and math functions take numbers here"),
         };
-        let exact = y.is_exact() && (matches!(self, Self::Math(Math::Circle | Math::Arc)) || x.is_none_or(Number::is_exact));
+        let exact = y.is_exact() && (self.info().dyad.code || x.is_none_or(Number::is_exact));
         let n = if exact { n.at_width(t.width) } else { n };
-        if t.is_static() { self.statically(x, y, n, t).map_err(Domain) } else { Ok(n) }
+        let strong = (x.is_some_and(|x| x.float_width().is_some()) && !x_weak) || (y.float_width().is_some() && !y_weak);
+        let n = if t.is_static() { self.statically(x, y, n, t).map_err(Domain)? } else { n };
+        Ok(n.marked(!strong))
     }
 
-    /// The result of this function on numbers under static kinds, from `n`, the result that dynamic kinds give, as `meta/kinds.md` describes. Its kind follows the operands' kinds alone. A complex operand gives a complex result, except in a magnitude. Real operands give a real result, with NaN where dynamic kinds give a complex number, except in cis. A float operand gives a float. Integer operands give integers wrapped to the `int` width, except that `÷` gives floats, and an integer power with a negative exponent is a DOMAIN error. Exact fractions stay exact.
+    /// The result of this function on numbers under static kinds, from `n`, the result that dynamic kinds give, as `meta/kinds.md` describes. Its kind follows the operands' kinds alone. A complex operand gives a complex result, except in a magnitude. Real operands give a real result, with NaN where dynamic kinds give a complex number, except in cis. A float operand gives a float. Integer operands give integers wrapped to the `int` width, except where the call computes in floats (`pervasive::computes`), as `÷` and the approximate functions do, and an integer power with a negative exponent is a DOMAIN error. Exact fractions stay exact.
     fn statically(self, x: Option<&Number>, y: &Number, n: Number, t: Numeric) -> Result<Number, &'static str> {
         use rustymath::buffer::DType;
         let operands = || x.into_iter().chain([y]);
         let width = n.float_width().unwrap_or(t.width);
-        if matches!(self, Self::Math(Math::Not | Math::Nand | Math::Nor)) || n.as_bool().is_some() { return Ok(n); }
+        if self.facts(x.is_some()).booleans || n.as_bool().is_some() { return Ok(n); }
         if operands().any(|o| o.as_complex().is_some()) {
             let real = matches!((self, x), (Self::Math(Math::Magnitude), None));
             return Ok(match n.as_float() { Some(re) if !real => Number::complex_kept(num_complex::Complex64::new(re, 0.0), width), _ => n });
@@ -762,8 +820,10 @@ impl Primitive {
         if n.as_complex().is_some() { return Ok(if matches!((self, x), (Self::Math(Math::Circle), None)) { n } else { Number::float(f64::NAN, width) }); }
         if let Some(w) = operands().filter_map(Number::float_width).max() { return Ok(if n.is_exact() { Number::float(n.to_float().map_err(<&str>::from)?, w) } else { n }); }
         if !operands().all(|o| o.as_integer().is_some()) { return Ok(n); }
-        let w = t.exact_width(if operands().all(|o| o.as_bool().is_some()) { DType::Boolean } else { DType::Integer(t.int) });
-        if matches!(self, Self::Arithmetic(Arithmetic::Divide)) { return Ok(Number::float(n.to_float().map_err(<&str>::from)?, w)); }
+        let kind = if operands().all(|o| o.as_bool().is_some()) { DType::Boolean } else { DType::Integer(t.int) };
+        let w = t.exact_width(kind);
+        let constants = [x.and_then(|x| x.to_float().ok()), y.to_float().ok()];
+        if let Some(DType::Float(w)) = crate::pervasive::computes(self, x.is_some(), constants, kind, t) { return Ok(Number::float(n.to_float().map_err(<&str>::from)?, w)); }
         if let Some(i) = n.as_integer() { return Ok(if t.fits(i) { n } else { Number::from_integer(t.wrap(&i.into())) }); }
         Ok(match n.as_exact() {
             Some(r) if r.is_integer() => Number::from_integer(t.wrap(r.numer())),
@@ -804,13 +864,42 @@ pub(crate) fn depth(right: &Value) -> usize {
     1 + match right.as_items() { Items::Values([]) => depth(&right.prototype()), Items::Values(items) => items.iter().map(depth).max().unwrap_or(0), _ => 0 }
 }
 
-/// `f` applied to each number, character or function in `value`, at any depth. Each array keeps its layout. An empty result's prototype is the argument's, with a float zero for each number, character or function, at its float width or the default width.
-pub(crate) fn pervade(value: &Value, f: &dyn Fn(Value) -> Result<Value, Error>, span: &Context<'_>) -> Result<Value, Error> {
+/// `f` on each number, character or function of `right`, or on each pair of them that agreement pairs from `left` and `right`, at any depth. `whole` runs first on each array that isn't empty, for a kernel that takes compact arrays whole. An empty result's prototype holds a float zero for each number, character or function of the arguments' prototypes, at the right argument's float width or the default width, as a pervasive primitive's prototype does.
+pub(crate) fn pervade(
+    left: Option<&Value>, right: &Value, f: &dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>,
+    whole: &dyn Fn(Option<&Value>, &Value, &Agreement) -> Option<Value>, span: &Context<'_>,
+) -> Result<Value, Error> {
     span.check()?;
-    if value.is_atom() { return f(value.clone()); }
-    let result = if value.is_empty() { Value::empty(value.shape().to_vec(), pervade(&value.prototype(), &|e| Ok(float_like(0.0, &e)), span)?) }
-    else { Value::new(value.shape().to_vec(), value.elements().map(|e| pervade(&e, f, span)).collect::<Result<_, _>>()?) };
-    result.and_then(|v| v.with_layout(value.layout().clone())).error_at(span, "invalid result")
+    if right.is_atom() && left.is_none_or(Value::is_atom) { return f(left, right); }
+    let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).error_at(span, "array shapes do not agree")?;
+    if agreement.len == 0 {
+        let prototype = pervade(left.map(Value::prototype).as_ref(), &right.prototype(), &|_, y| Ok(float_like(0.0, y)), &|_, _, _| None, span)?;
+        return empty_result(agreement, prototype, span);
+    }
+    if let Some(result) = whole(left, right, &agreement) { return result.with_layout(agreement.layout).error_at(span, "invalid keyed result"); }
+    pairwise(left, right, agreement, &|x, y| pervade(x, y, f, whole, span), span)
+}
+
+/// The replacements for `left` and `right` in a dyadic call, where a weak number beside an array or a strong number takes the width that `Number::weak_width` gives it, as NEP 50 treats a Python scalar (`Value::weakened`). Only a weak number beside an argument that isn't weak changes, so other calls return at once.
+fn weakened(left: Option<&Value>, right: &Value) -> (Option<Value>, Option<Value>) {
+    let weak = |v: &Value| matches!(v, Value::Number(n) if n.is_weak());
+    match left { Some(x) if weak(x) != weak(right) => (x.weakened(right), right.weakened(x)), _ => (None, None) }
+}
+
+/// `f` on each pair of items that `agreement` pairs from `left` and `right`, gathered as items and laid out as `agreement` lays out the result.
+fn pairwise(left: Option<&Value>, right: &Value, agreement: Agreement, f: &dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>, span: &Context<'_>) -> Result<Value, Error> {
+    crate::explain::itemwise("item pairs", agreement.len);
+    let mut data = Gather::items(agreement.len);
+    for i in 0..agreement.len {
+        let (x, y) = agreement.values_ref(left, right, i);
+        data.add(f(x.as_deref(), &y)?);
+    }
+    data.finish(agreement.layout, || right.prototype()).error_at(span, "invalid pervasive result")
+}
+
+/// The empty result that `agreement` lays out, each cell `prototype`.
+fn empty_result(agreement: Agreement, prototype: Value, span: &Context<'_>) -> Result<Value, Error> {
+    Value::empty(agreement.layout.shape(), prototype).and_then(|v| v.with_layout(agreement.layout)).error_at(span, "invalid empty result")
 }
 
 pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value, axis: Option<&Value>, span: &Context<'_>) -> Result<Value, Error> {

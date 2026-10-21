@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["fastship>=0.0.11", "fastws-cli>=0.0.26", "maturin>=1.9.4,<2.0", "pytest", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "pillow", "rustymath>=0.1.37"]
+dev = ["fastship>=0.0.11", "fastws-cli>=0.0.26", "maturin>=1.9.4,<2.0", "pytest", "pytest-timeout", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "pillow", "rustymath>=0.1.37"]
 
 [project.scripts]
 bpl-nb = "basedpl.notebook_runner:main"
@@ -53,7 +53,8 @@ branch = "main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+timeout = 60
+timeout_func_only = true
 
 [tool.nbdev]
 lib_path = "python/basedpl"

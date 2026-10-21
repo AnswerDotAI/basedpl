@@ -216,7 +216,7 @@ fn host(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, E
         Some("version") => Ok(crate::keyed::text(env!("CARGO_PKG_VERSION"))),
         Some("env") => {
             let (names, values) = crate::host::environment().into_iter().map(|(k, v)| (k.into(), crate::keyed::text(&v))).unzip();
-            crate::keyed::record(names, values)
+            crate::keyed::vector(names, values)
         }
         Some(fact @ ("width" | "height")) => match terminal_size() {
             Some((rows, columns)) => Ok(Value::integer((if fact == "height" { rows } else { columns }) as i64)), None => Value::integers(vec![0], vec![])
@@ -260,14 +260,14 @@ fn storage(_: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, 
     let flag = |b: bool| Value::Number(crate::Number::from_bool(b));
     let kind = right.storage_kind(Numeric::current());
     let values = vec![crate::keyed::text(kind), flag(right.template().pending().is_some()), flag(right.template().is_view()), Value::integer(crate::derivative::levels(right) as i64)];
-    crate::keyed::record(["kind", "pending", "view", "active"].map(Into::into).to_vec(), values).error_at(cx, "invalid storage record")
+    crate::keyed::vector(["kind", "pending", "view", "active"].map(Into::into).to_vec(), values).error_at(cx, "invalid storage record")
 }
 
 /// `•memory x`: what this thread holds, and what `x` keeps alive, as a record. `records` counts the live record nodes of `∂`, which each `∂` frees when it returns, and `pending` the live pending arrays. Each counts the nodes this thread made, wherever they are dropped. `bytes` counts the allocations that `x` keeps alive (`Value::footprint`). It reads no items and never forces a pending array. It takes active values under `∂`.
 fn memory(_: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
     use crate::explain::{live, Counted};
     let counts = [live(Counted::Record), live(Counted::Pending), right.footprint()].map(|n| Value::integer(n as i64)).to_vec();
-    crate::keyed::record(["records", "pending", "bytes"].map(Into::into).to_vec(), counts).error_at(cx, "invalid memory record")
+    crate::keyed::vector(["records", "pending", "bytes"].map(Into::into).to_vec(), counts).error_at(cx, "invalid memory record")
 }
 
 /// `•detach Y`: `Y` with every `∂` tag stripped. No derivative flows back through the result. Outside `∂`, it gives `Y`.
@@ -287,18 +287,19 @@ fn index(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Valu
     Primitive::Iota.call(None, right, span)?.with_axis_names(vec![Some(format!("_{stem}{FRESH}{random}").into())]).error_at(span, "invalid index")
 }
 
-/// `•edge mode`: the function `n f p` that maps positions `p` on an axis of `n` items by the edge mode named `mode`, one of rustymath's `structure::Edge::MODES`. `n •edge p` maps them by the fill mode.
-fn edge(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+/// The edge mode that `name` names, one of rustymath's `structure::Edge::MODES`, as `•edge` and window options read it.
+pub(crate) fn edge_mode(name: &Value, span: &Context<'_>) -> Result<rustymath::structure::Edge, Error> {
     use rustymath::structure::Edge;
-    let Some(n) = left else {
-        let mode = crate::keyed::name(right).and_then(|m| Edge::named(&m)).ok_or_else(|| {
-            let names: Vec<_> = Edge::MODES.iter().map(|(name, _)| *name).collect();
-            let (last, rest) = names.split_last().expect("modes");
-            span.domain_error(format!("•edge's modes are {} and {last}", rest.join(", ")))
-        })?;
-        return Ok(Value::Function(native("•edge", Call::Edge(mode), Dyadic)));
-    };
-    edged(Edge::Fill, n, right, span)
+    crate::keyed::name(name).and_then(|m| Edge::named(&m)).ok_or_else(|| {
+        let names: Vec<_> = Edge::MODES.iter().map(|(name, _)| *name).collect();
+        let (last, rest) = names.split_last().expect("modes");
+        span.domain_error(format!("the edge modes are {} and {last}", rest.join(", ")))
+    })
+}
+/// `•edge mode`: the function `n f p` that maps positions `p` on an axis of `n` items by the edge mode named `mode` (`edge_mode`). `n •edge p` maps them by the fill mode.
+fn edge(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    let Some(n) = left else { return Ok(Value::Function(native("•edge", Call::Edge(edge_mode(right, span)?), Dyadic))) };
+    edged(rustymath::structure::Edge::Fill, n, right, span)
 }
 /// The position on an axis of `n` items that each position in `p` reads under edge mode `mode`, as rustymath's `structure::Edge` gives it. Fill gives NaN for a position outside the axis, which reads the fill, so its result is 64-bit floats, whatever the float pref. The other modes give integers, unless the axis is empty. A NaN in `p` stays NaN.
 pub(crate) fn edged(mode: rustymath::structure::Edge, n: &Value, p: &Value, span: &Context<'_>) -> Result<Value, Error> {

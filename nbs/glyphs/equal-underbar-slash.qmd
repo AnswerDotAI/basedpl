@@ -1,6 +1,6 @@
 # `≢` — Tally / Not match
 
-Function. Keys: `Alt-?`. Ranks: `∞` monadic, `∞ ∞` dyadic
+Function. Keys: `Alt-?`. Hanzi: `数/异` (`數/異`). Ranks: `∞` monadic, `∞ ∞` dyadic
 
 `≢Y` counts major cells: first-axis length, or 1 for a unit.
 

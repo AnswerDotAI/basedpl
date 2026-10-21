@@ -239,11 +239,11 @@ packX←{  ⍝ Text packed through pairs of unique items.
   ⍺←$t ⋄ ⍺?cmp ⍵;unc ⍵
 }
 
-byfreq ← {[⍒{≢⍵}⌸⍵]⌷∪⍵}  ⍝ Uniques of ⍵, most frequent first. Shared by packQ and packD.
+byfreq ← {[⍒(≢⊢)⌸⍵]⌷∪⍵}  ⍝ Uniques of ⍵, most frequent first. Shared by packQ and packD.
 
 ⍝ From https://dfns.dyalog.com/c_packQ.htm
 packQ←{  ⍝ Frequency-ranked uniques with variable-width keys.
-  key←,/{↓(⍳⍵)>⊗⍳⍵}¨≥⍳23
+  key←,/{↓(⍳⍵)>⊗⍳⍵}¨≥⍳23ₓ
   cmp←{
     dt←,⍵
     u←byfreq dt
@@ -262,7 +262,7 @@ packQ←{  ⍝ Frequency-ranked uniques with variable-width keys.
 ⍝ From https://dfns.dyalog.com/c_packS.htm
 packS←{  ⍝ Shannon-Fano packing.
   cmp←{
-    u←∪,⍵ ⋄ b←{≢⍵}⌸,⍵ ⋄ i←⍒b ⋄ uv←[i]⌷u ⋄ b←[i]⌷b
+    u←∪,⍵ ⋄ b←≢⊢ ⌸,⍵ ⋄ i←⍒b ⋄ uv←[i]⌷u ⋄ b←[i]⌷b
     bv←{(⍵≠2)⊆⍵}∊⍬{
       1=≢⍵?2,⍺;a←⊂⍺ ,¨ 0 1
       2=⍴⍵?a ∇¨ ⍵;
@@ -424,7 +424,7 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
     Moves,←⊂(p⊃Moves)⍪m
     Fin,←⍺⊃ENode
     NPath,←n
-    (⍺⌷NMoves)⌊←n
+    (⍺⌷NMoves)⌊←1×n
     ≤≢Path
   }
   modpath←{
@@ -443,7 +443,7 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
     (⍬⊃Fin)←i#Fin
     0
   }
-  ⍺←⍳3 ⋄ Target←,⍺
+  ⍺←⍳3ₓ ⋄ Target←,⍺
   Tiles←(∪,⍵)~" " ⋄ Shape←⍴⍵
   Path←,⊂,0 ⋄ Moves←,⊂1 2⍴' ' ⋄ NPath←,0 ⋄ Fin←,0
   State←(1,≢,⍵)⍴⍵ ⋄ NMoves←,0 ⋄ ENode←,0
@@ -451,7 +451,7 @@ quzzle←{  ⍝ Shortest sliding-tile paths to the three other corners.
   ∧/Fin=0?"There are no solutions";
   i←∨/{i#⁻¹n=⌊/n←(i←Fin=⍵)#NPath}¨≥⍳≢Target
   x←[[≤i#Fin]⌷Target]⌷"Top-right" "Bottom-left" "Bottom-right"
-  x←[x⋄(⊂"in "),¨({1↓0⍕⍵}¨i#NPath),¨⊂" moves"]
+  x←[x⋄(⊂"in "),¨(0⍕¨i#NPath),¨⊂" moves"]
   x⍪i#Moves
 }
 
@@ -568,7 +568,7 @@ queens←{  ⍝ N-queens solutions up to rotation and reflection.
   cvex←(≥⍳⍵)×⊂¯1 0 1
   free←{⍵~¨⍺+(≢⍵)↑cvex}
   rmdups←{
-    rots←⍒⍣ ⍳4
+    rots←⍒⍣ ⍳4ₓ
     refs←⍋⍣0 1
     best←{(↑⍋⊃⍵)⊃⍵}
     syms←,/refs¨rots⍵
@@ -579,7 +579,7 @@ queens←{  ⍝ N-queens solutions up to rotation and reflection.
     expd←1↓,⊃⍺⍴⊂0 1
     ⊂⍤2 expd#⁻¹⍠¯1chars
   }
-  squares←(⊂⍳⌈⍵÷2),1↓⍵⍴⊂⍳⍵
+  squares←[⍳⌈⍵÷2],1↓⍵⍴⊂⍳⍵
   ⍵ fmt ⍬ search squares
 }
 
@@ -682,7 +682,7 @@ packH←{                      ⍝ Huffman packing.
     compress←{                          ⍝ compression.
         shape←⍴⍵ ⋄ vect←,⍵              ⍝ shape and items of array.
         uniq←∪vect                      ⍝ unique items.
-        freq←{≢⍵}⌸vect                 ⍝ frequency of occurrence.
+        freq←≢⊢ ⌸vect                  ⍝ frequency of occurrence.
 
         tree←{                          ⍝ Huffman tree.
             1=⍴⍵?↑⌽↑⍵;                   ⍝ list exhausted: done
@@ -710,7 +710,7 @@ packH←{                      ⍝ Huffman packing.
         [shape leaves depths bits]←⍵    ⍝ compressed structure.
 
         tree←1⊃↑{                       ⍝ reconstituted Huffman tree.
-            (↑⍺)≠↑↑⍵?(⊂⍺),⍵;             ⍝ distinct adjacent depths: continue.
+            (↑⍺)≠↑↑⍵?[⍺],⍵;              ⍝ distinct adjacent depths: continue.
             [≤↑⍺ [⍺₁ 1⊃↑⍵]] ∇ 1↓⍵      ⍝ identical   ..      ..  : coalesce.
         }/(↓⍉⊃[depths leaves]),¯1       ⍝ depths, leaves with trailing dummy.
 
@@ -768,7 +768,7 @@ packH←{                      ⍝ Huffman packing.
          e≠0?[e p h];
          [e p t]←⍺ ∇ p
          e≠0?[e p t];
-         [0 p (⊂h),t]
+         [0 p [h],t]
      }
 
      parseNum←{
@@ -950,7 +950,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
 ⍝ From https://dfns.dyalog.com/c_packD.htm
  packD←{                                 ⍝ Pack char array to boolean vector.
 
-     key←,/{↓(⍳⍵)>⊗⍳⍵}¨≥⍳23             ⍝ generate the keys (up to 276), they
+     key←,/{↓(⍳⍵)>⊗⍳⍵}¨≥⍳23ₓ             ⍝ generate the keys (up to 276), they
                                         ⍝ start with ones and end with zeros.
      cmp←{                               ⍝ compress:
          dt←,⍵ ⋄ k←1,¨key                ⍝ vectorise items, separators to keys
@@ -995,9 +995,9 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
      cmp←{
          ec←{c←3↑dfnsAV ⋄ (↑⍋+/c=⊗⍵)⌷c},⍵           ⍝ escape: the least frequent of the first three dfnsAV chars
 
-         lv←1,≠/↕,⍵ ⋄ e←ec=,⍵                ⍝ repeat lengths
-         mask←e<¯1↓1 0 0 1⍷lv,1 ⋄ (mask#1⌽lv)←1        ⍝ remove 2's and 3's
-         mask←e<¯1↓1 0 1⍷lv,1 ⋄ (mask#1⌽lv)←1
+         lv←1ₓ,≠/↕,⍵ ⋄ e←ec=,⍵                ⍝ repeat lengths
+         mask←e<¯1↓1 0 0 1⍷lv,1 ⋄ (mask#1⌽lv)←1ₓ       ⍝ remove 2's and 3's
+         mask←e<¯1↓1 0 1⍷lv,1 ⋄ (mask#1⌽lv)←1ₓ
          ln←{-⍨/↕(⍵,1)#⍳≥⍴⍵}lv              ⍝ packables
 
          (lv#lv)←≥⌊ln÷256                   ⍝ adjust for 256 length
@@ -1021,7 +1021,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          ~ec∊1↓⍵?1↓⍵;                         ⍝ packed?
 
          bv←{(↑⍵),</↕⍵}1↓⍵=ec                ⍝ reduce vector
-         ln←0@(⍸¯2⌽bv)(≥dfnsAV⍳ ¯2⌽bv # 1↓⍵)@(⍸¯1⌽bv)~bv  ⍝ lengths: 0 for escapes and counts, the count for each packed character
+         ln←0ₓ@(⍸¯2⌽bv)(≥dfnsAV⍳ ¯2⌽bv # 1↓⍵)@(⍸¯1⌽bv)~bv  ⍝ lengths: 0 for escapes and counts, the count for each packed character
          ln#1↓⍵                              ⍝ do it!
      }
 
@@ -1061,7 +1061,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
 
      table←{                                     ⍝ formatted Bunda-Gerth table.
          [cats bmat zmat]←⍵                      ⍝ categories and binding matrix.
-         fmt←{×⍺ # (⍕⍺),' ',⍵⊃cats,'?'}          ⍝ bond and category.
+         fmt←{×⍺ # (⍬⍕⍺),' ',⍵⊃cats,'?'}          ⍝ bond and category.
          ttl←{[' ' ⍺],.⍪[⍺ ⍵]}                   ⍝ row and column headers.
          cats ttl bmat fmt¨ (≥≢cats)|≤zmat     ⍝ formatted bonds & categories.
      }
@@ -1077,9 +1077,9 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          snip←{                                  ⍝ snip out top corner.
              t←≥(,⍵)⍳'┬'                        ⍝ width up to the uppermost, leftmost ┬
              cnr←⊃[1 t-2 1]↣#¨"  ┌" "  │" "┌─┼"    ⍝ empty corner.
-             cnr@(⍳3 ,⊗ ⍳t) ⍵                 ⍝ snipped formatted matrix.
+             cnr@(⍳3ₓ ,⊗ ⍳t) ⍵                 ⍝ snipped formatted matrix.
          }                                       ⍝ cmat ← ∇ cmat
-         bfmt←snip∘_array.disp∘(⍕¨)∘trim∘table   ⍝ binding matrix formatting.
+         bfmt←snip∘_array.disp∘((⍬↣⍕)¨)∘trim∘table   ⍝ binding matrix formatting.
          bfmt [cats bmat zmat]                   ⍝ formatted table.
      }opt;                                        ⍝ opt-ional formatting.
 
@@ -1120,7 +1120,7 @@ eis←{{⊂1#⍵}⍣ 1=≡,⍵ ⍵}⊘{(eis ⍺),eis ⍵}  ⍝ Enclose if simple
          ⍺=0?⍵;                                  ⍝ ignore bad cat.
          dent←+/∧\(↑↓⍵)∊"┌─┐ "                   ⍝ indent for category.
          top←dent#' ' , (≤⍺)⊃⍶⊣0               ⍝ indented category.
-         ⊃(⊂top),↓⍵                              ⍝ categorised tree.
+         ⊃[top],↓⍵                               ⍝ categorised tree.
      }
 
      vect←{⍺←⍬                                   ⍝ vector from cons list
@@ -1188,11 +1188,11 @@ tc←{  ⍝ Trace function application.
          {⍺,pads,⍵}/col¨↓matr       ⍝ gap-spaced cols.
      }
 
-     col←⍕∘{1=≡⍵?⍪⍵;⊃⍵}            ⍝ formatted numeric or char-vecs column.
+     col←(⍬↣⍕)∘{1=≡⍵?⍪⍵;⊃⍵}          ⍝ formatted numeric or char-vecs column.
 
      [gap max]←2↑⍺,102               ⍝ inter-column-gap and max-width.
      ni←≢⍵                           ⍝ number of items.
-     lens←(⊽≢⍵)↑,⊃⍴¨⍕¨⍵             ⍝ item-lengths.
+     lens←(⊽≢⍵)↑,⊃⍴¨(⍬↣⍕)¨⍵          ⍝ item-lengths.
      ulim←⌈max÷1⌈gap+⌊/ni↑lens       ⍝ cols: upper limit for search.
 
      (maxcols ulim) reshape ⍵        ⍝ multi-column display.
@@ -1203,21 +1203,21 @@ cal←{ ⍝ Calendar for absolute year or (year month).
     cntr←{(⌈0.5×+/∧\' '=⍵)⌽⍵}
     1=≢,⍵?{
         12≥|⍵?•signal "DOMAIN";
-        year←4 3⍴(0 cal¨ ⍵,¨≥⍳12)
+        year←4 3⍴(0 cal¨ ⍵,¨≥⍳12ₓ)
         join←{⍉⊃(↓⍺ᵀ),"   ",↓⍵ᵀ}
-        head←cntr ¯66↑⍕0+⍵
-        head⍪,⍠ ⍳2 ⊃join/year
+        head←cntr ¯66↑⍬⍕⍵
+        head⍪,⍠ ⍳2ₓ ⊃join/year
     }⍵;
     dys←"Su" "Mo" "Tu" "We" "Th" "Fr" "Sa"
     months←"January" "February" "March" "April" "May" "June"
     months,←"July" "August" "September" "October" "November" "December"
     [yyyy mm]←⍵
     day←days [yyyy mm 1]
-    [mms dds]←2↑1↓↓(date day+⍳31)ᵀ
+    [mms dds]←2↑1↓↓(date day+⍳31ₓ)ᵀ
     fmts←2 0↣⍕¨(mm=mms)#dds
     pad←(7|day)↑0↑fmts
     dmat←⊃{⍺,' ',⍵}/dys⍪6 7⍴42↑pad,fmts
-    head←(≤mm ⊃ months),⍺#' ',⍕0+yyyy
+    head←(≤mm ⊃ months),⍺#' ',⍬⍕yyyy
     ⊃(⊂cntr ¯20↑head),↓{(∨/⍵≠' ')#⍵}dmat
 }
 packZ←{ ⍝ LZW: positive bit limit compresses; zero expands; negative returns dictionary.

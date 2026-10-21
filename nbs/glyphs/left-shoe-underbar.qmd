@@ -1,6 +1,6 @@
 # `⊆` — Nest / Partition
 
-Function. Keys: `Alt-Minus z`. Ranks: `∞` monadic, `1 ∞` dyadic
+Function. Keys: `Alt-Minus z`. Hanzi: `巢/段`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 `⊆Y` encloses atoms and simple arrays. Already-nested arrays stay unchanged.
 
@@ -13,7 +13,7 @@ Function. Keys: `Alt-Minus z`. Ranks: `∞` monadic, `1 ∞` dyadic
 
 ```bpl
 1 1 0 1 1⊆"abcde" ⍝ "ab" "de"
-1 1 0 2⊆4 2⍴⍳8    ⍝ [[0 1⋄2 3] [6 7⋄]]
+1 1 0 2⊆4 2⍴⍳8ₓ    ⍝ [[0 1⋄2 3] [6 7⋄]]ₓ
 ```
 
 Marks are nonnegative integers. Unit and singleton marks extend. `N⊆⍠K Y` partitions along axis `K` instead. `N⊆⍤1 Y` partitions each row. Unlike [`⊂`](left-shoe.qmd), positive marks need not start a partition at every position.

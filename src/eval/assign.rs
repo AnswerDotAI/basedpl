@@ -323,20 +323,30 @@ impl Session {
     fn assign_selected(&mut self, nodes: &[Node], modifier: Option<Function>, value: &Binding) -> Result<(), Error> {
         if let Some(span) = self.root_assignment(nodes) { return Err(span.error(ErrorKind::Syntax, INVALID_SELECTION)); }
         let right = &value.clone().into_value(&nodes[0].span)?;
+        let span = crate::syntax::cover(nodes);
+        let mark = crate::explain::itemwise_mark();
         let mut nodes = self.members(nodes).into_owned();
         if modifier.is_none() { self.extend_selected(&mut nodes, false)?; }
-        let span = nodes[0].span.clone();
         let (binding, selection, values) = match self.direct_target(&mut nodes)? {
             Some((binding, selection)) => (binding, selection, right.clone()),
             None => {
-                let (binding, labels, selected) = self.selection_expression(&nodes)?;
-                let (selection, values) = labels.replacements(&selected.labels, right, selected.kind, &span)?;
+                let level = self.begin(crate::transform::Kind::Label);
+                let selected = self.selection_expression(&nodes, level);
+                self.end();
+                let (binding, mut labels, selected) = selected?;
+                let read = labels.read(&selected, level);
+                // The labelled value holds the array too, so dropping it lets the write change the array in place.
+                drop(selected);
+                let read = read.ok_or_else(|| span.domain_error("function is not valid for selective assignment"))?;
+                let (selection, values) = labels.replacements(read, right, &span)?;
                 (binding, selection, values)
             }
         };
-        match modifier {
+        let result = match modifier {
             Some(f) => self.write_modified(binding, &selection, &f, &values, &span), None => self.write_selection(binding, &selection, &values, &span)
-        }
+        };
+        if let Some(mark) = mark { crate::explain::claim_itemwise(mark, || span.text().into(), &span); }
+        result
     }
 
     /// Writes `values` at `selection` into the array that `binding` kept, then stores it under the name.
@@ -405,7 +415,8 @@ impl Session {
         Ok(value)
     }
 
-    fn selection_expression(&mut self, nodes: &[Node]) -> Result<(ArrayBinding, crate::selection::Labels, Marked), Error> {
+    /// The target `nodes` evaluated on its root name's array, labelled at label level `level` (`selection::labelled`), with the binding the name kept and the labels that turn the result's labels back into places. A group or run that ends the target is the root of the nodes before it.
+    fn selection_expression(&mut self, nodes: &[Node], level: u64) -> Result<(ArrayBinding, crate::selection::Labels, Value), Error> {
         let members = self.members(nodes);
         let nodes = &members[..];
         let root = nodes.len() - 1;
@@ -413,19 +424,20 @@ impl Session {
         let (binding, labels, selected) = match &nodes[root].kind {
             NodeKind::Name(name) => {
                 let binding = self.array_binding(name, span)?;
-                let (labels, marks) = crate::selection::Labels::new(&binding.value, span)?;
-                let values = binding.value.clone();
-                (binding, labels, Marked { labels: marks, values, kind: SelectionKind::Item })
+                let (labels, selected) = crate::selection::labelled(&binding.value, level, span)?;
+                (binding, labels, selected)
             }
-            NodeKind::Group(inner) | NodeKind::Run(inner) => self.selection_expression(inner)?,
+            NodeKind::Group(inner) | NodeKind::Run(inner) => self.selection_expression(inner, level)?,
             _ if root > 0 && self.holds_array(&nodes[root - 1]) && self.holds_array(&nodes[root]) => {
                 let span = Span { source: span.source.clone(), range: nodes[root - 1].span.range.start..span.range.end };
                 return Err(span.error(ErrorKind::Syntax, STRAND_TARGET));
             }
             _ => return Err(span.error(ErrorKind::Syntax, "selection must end in an array name")),
         };
-        let (_, selected) = Binder::evaluate_marked(nodes, self, false, Some((root, selected)), None)?;
-        Ok((binding, labels, selected.expect("a selection target's value stays marked")))
+        if root == 0 { return Ok((binding, labels, selected)); }
+        let seed = Entity { term: Term::Binding(Binding::Value(selected)), range: narrow(&span.range), shy: false, expression: None };
+        let selected = Binder::evaluate_seeded(&nodes[..root], self, seed)?.value.into_value(span)?;
+        Ok((binding, labels, selected))
     }
 
     /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. A target at a fill reads the fill, and its write is dropped. An error leaves the array unchanged. When `f` is a pervasive primitive, `pervasive::scatter` combines the targets into the array in place. Where it can't, one call covers all the targets at distinct positions, and repeated positions take rounds. Any other `f` runs once for each target. `•explain` records each path as an accumulation.
@@ -443,7 +455,7 @@ impl Session {
                     Some(if item.is_atom() { item } else { item.enclose().error_at(span, "invalid modified selection")? })
                 } else { None };
                 return self.write_kept(binding, span, |z, cx| {
-                    if let Some(route) = crate::pervasive::scatter(p, z, offsets, unit.as_ref().unwrap_or(&right)) {
+                    if let Some(route) = crate::pervasive::scatter(p, z, offsets, unit.as_ref().unwrap_or(&right), crate::array::Widening::Items) {
                         crate::explain::accumulated(offsets.len(), z.len(), route.name());
                         return Ok(());
                     }
@@ -482,6 +494,7 @@ impl Session {
             latest.insert(path, i);
         }
         crate::explain::accumulated(selection.targets.len(), original.len(), "item by item");
+        crate::explain::itemwise("accumulation", selection.targets.len());
         let values = match &selection.frame {
             ResultFrame::Direct => results.pop().unwrap_or(right),
             ResultFrame::Array(layout) if !results.is_empty() => Value::new(layout.shape().to_vec(), results).error_at(span, "invalid modified selection")?,

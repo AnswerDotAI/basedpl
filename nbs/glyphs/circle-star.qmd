@@ -1,6 +1,6 @@
 # `⍟` — Natural log / Logarithm
 
-Function. Keys: `Alt-o 8`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-o 8`. Hanzi: `对` (`對`). Ranks: `0` monadic, `0 0` dyadic
 
 `⍟Y`: ln Y. Pervasive.
 

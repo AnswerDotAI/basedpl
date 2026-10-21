@@ -1,6 +1,6 @@
 # `≤` — Decrement / Less equal
 
-Function. Keys: `Alt-<`. Ranks: `0` monadic, `0 0` dyadic
+Function. Keys: `Alt-<`. Hanzi: `限/退`. Ranks: `0` monadic, `0 0` dyadic
 
 `≤Y` is `Y-1`. Pervasive.
 

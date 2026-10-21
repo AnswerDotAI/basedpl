@@ -20,10 +20,10 @@ basedpl = { path = "..", default-features = false }
 num-bigint = ">=0.4.6, <0.5"
 num-complex = ">=0.4.6, <1"
 num-rational = ">=0.4.2, <1"
-pyo3 = { version = ">=0.29.2, <1", features = ["extension-module", "num-bigint"] }
-rustymath-buffer = ">=0.1.37, <1"
-rustymath = { version = ">=0.1.37, <1", default-features = false }
+pyo3 = { workspace = true, features = ["extension-module", "num-bigint"] }
+rustymath-buffer.workspace = true
+rustymath.workspace = true
 serde_json = "1"
 
 [build-dependencies]
-pyo3-build-config = ">=0.29.2, <1"
+pyo3-build-config.workspace = true

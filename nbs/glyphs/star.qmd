@@ -1,6 +1,6 @@
 # `*` — Exponential / Exponent
 
-Function. Ranks: `0` monadic, `0 0` dyadic
+Function. Hanzi: `幂` (`冪`). Ranks: `0` monadic, `0 0` dyadic
 
 `*Y`: e<sup>Y</sup>. Pervasive.
 

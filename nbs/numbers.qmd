@@ -85,6 +85,17 @@ Each number written in a literal list or in brackets keeps its own exactness, ev
 [1ₓ 0.5]÷2ₓ          ⍝ 1r2 0.25
 ```
 
+A write keeps each number's exactness too. A float assigned among exact integers, or an exact integer among floats, leaves the array mixed, however the array was made. A Boolean written among other numbers, or a number written among Booleans, leaves it mixed in the same way. Mixed storage is slower. To keep an array compact, write values of its own kind, as the [style guide](style.qmd) shows. [`•explain`](system/explain.qmd) lists each write that left an array mixed, in its `mixed` record. To give an existing array one kind, convert it: `⌊` makes exact integers, `×1` makes floats, and `+0ₓ` compacts items that already share a kind:
+
+```bpl
+r←["a":2ₓ "b":3ₓ]
+r.b←2.5
+r                    ⍝ ["a":2ₓ "b":2.5]
+m←3⍴$f
+m.[[1]]←1
+m                    ⍝ $f 1 $f
+```
+
 Around literals, `[…]ₓ` and `(…)ₓ` make every number exact, at any depth. Each number must be whole. After a list or group that holds anything else, as after a name, `ₓ` is [`⌊`](glyphs/downstile.qmd), as [Superscripts and subscripts](scripts.ipynb) describes. A vector of exact integers displays as `[…]ₓ`, and rows of them as `(…)ₓ`. `⍕` writes them the same way:
 
 ```bpl
@@ -104,7 +115,7 @@ x←1ₓ 0.5 2ₓ
 (•storage x).kind      ⍝ "mixed"
 ```
 
-Rationals and exact integers beyond 64 bits have no compact storage. An array that holds one uses mixed storage, as does an array that holds numbers together with characters, nested arrays or functions. An imported JSON object is mixed too.
+Rationals and exact integers beyond 64 bits have no compact storage. An array that holds one uses mixed storage, as does an array that holds numbers together with characters, nested arrays or functions. A JSON object or a Python dict reads as a literal of its fields does, so its storage is mixed only where the fields need it.
 
 Selecting from, catenating or assigning into mixed storage keeps each item's kind. A selection or catenation whose items one compact storage holds uses it, as the same items written in brackets do: `1↓'a' 1ₓ 2ₓ` is held as integers. An assignment into mixed storage leaves it mixed. Arithmetic builds fresh storage from its results, and each result keeps its own kind. Every result of `1×x` is approximate, which makes it a float array. `1ₓ×x` keeps the exact results exact:
 
@@ -114,7 +125,7 @@ x←1ₓ 0.5 2ₓ
 (•storage 1ₓ×x).kind   ⍝ "mixed"
 ```
 
-Boxed display marks mixed storage with `+`, and exact integers with `ₓ`.
+Display depends on an array's items, not on how they're stored. Boxed display marks an array whose items differ in kind with `+`, and one whose items are all exact integers with `ₓ`, whichever storage holds them.
 
 Integer storage keeps each item in 1, 2, 4 or 8 bytes. One byte holds 0 to 255. Literals, reductions and positions take the fewest bytes that hold every item. Imported buffers preserve supported item widths. Pervasive arithmetic keeps its arguments' size, and moves to the next size up when a result doesn't fit. An exact result beyond 8 bytes becomes a big integer in mixed storage. The size never changes a result, and `•storage` doesn't show it.
 
@@ -130,11 +141,11 @@ Bare numbers are floats of the default width: 64 bits, or 16 or 32 after [`•pr
 •literal⁻¹ 0.5                     ⍝ "0.5ₚ"
 ```
 
-An operation on floats computes at their width. An exact operand rounds to the width that the operation computes at. Floats of two widths compute at the wider. No operation widens floats on its own.
+An operation on floats computes at their width. An exact operand rounds to the width that the operation computes at. Floats of two widths compute at the wider, except that a weak number takes the width of the floats beside it, as NumPy treats a Python scalar. Writes, catenation and arrays built from items, such as a list in brackets or a map's results, follow the same rule, so `v,2.5`, `v.[0]←2.5` and `[v₀ 2.5]` keep a 32-bit `v`'s width. A float or complex literal is weak, and so is a number that `⍎` reads or that Python passes as a scalar. A float computed from weak or exact numbers alone is weak too, such as `2.5×3` or `√2ₓ`. A literal with a width marker is strong, and so is every item of an array and every number that `•json` or `•csv` reads. No operation widens floats on its own.
 
 ```bpl
 v←32 •float 1.5 2.5
-{(•storage ⍵).kind}¨[v×2ₓ v×v *v v×2]   ⍝ "float32" "float32" "float32" "float64"
+{(•storage ⍵).kind}¨[v×2ₓ v×v *v v×2 v×2ₚ v×v₀ v,2.5 [v₀ 2.5]]   ⍝ "float32" "float32" "float32" "float32" "float64" "float32" "float32" "float32"
 •float v                     ⍝ 32ₓ
 (32 •float 1.5)×16777217ₓ    ⍝ 25165824
 ```
@@ -142,7 +153,7 @@ v←32 •float 1.5 2.5
 Complex numbers have 64-bit or 32-bit parts. `•storage` gives their kind as `"complex128"` and `"complex64"`, after their whole size. They follow the rules for floats. A complex number takes the width of the floats it comes from, and a 16-bit float that becomes complex takes 32-bit parts. A complex number beside a float computes at the wider of their widths. A complex result with no imaginary part is a float of its parts' width. `ₛ`, `ₚ` and `ₕ` mark the width of the parts, and display marks parts that aren't of the default width:
 
 ```bpl
-{(•storage ⍵).kind}¨[[2j3]ₛ;[2j3]ₕ;√[¯4]ₛ;[2j3]ₛ×1.5]   ⍝ "complex64" "complex64" "complex64" "complex128"
+{(•storage ⍵).kind}¨[[2j3]ₛ;[2j3]ₕ;√[¯4]ₛ;[2j3]ₛ×1.5]   ⍝ "complex64" "complex64" "complex64" "complex64"
 √¯4ₛ                                       ⍝ 0j2ₛ
 ```
 
@@ -156,7 +167,7 @@ An exact operand converts straight to 32 bits, not to 16. A count larger than 65
 
 ```bpl
 h←16 •float 100000⍴1 0
-(+/h)÷≢h                 ⍝ 0.49975586ₕ
++/÷≢ h                   ⍝ 0.49975586ₕ
 ```
 
 Comparisons of 16-bit and 32-bit floats are always exact. The tolerance that [`•prefs`](system/prefs.qmd) sets applies to 64-bit floats. [`⍣∞`](glyphs/star-diaeresis.qmd) takes two 16-bit or 32-bit results as the same when they lie within 4 units in the last place of each other.
@@ -210,12 +221,12 @@ Some functions choose a result's kind from their arguments' values. `√¯4` is 
 •prefs ["kinds":"dynamic"]
 ```
 
-Integers compute at the width that the `int` pref sets, 64 bits by default, or at a wider integer's width, and wrap where a result doesn't fit. An integer beside a float takes the float's width. Atoms promote as arrays do. A bare literal at the default width widens narrower floats. Exact fractions stay exact, and comparisons keep their tolerance. Under `•prefs ["int":32]`, an exact integer literal that doesn't fit 32 bits is a LIMIT error:
+Integers compute at the width that the `int` pref sets, 64 bits by default, or at a wider integer's width, and wrap where a result doesn't fit. An integer beside a float takes the float's width. A weak number beside floats takes their width, as under dynamic kinds. Exact fractions stay exact, and comparisons keep their tolerance. Under `•prefs ["int":32]`, an exact integer literal that doesn't fit 32 bits is a LIMIT error:
 
 ```bpl
 •prefs ["kinds":"static"]
 9223372036854775807ₓ+1ₓ    ⍝ ¯9223372036854775808ₓ
-(•storage (32 •float 1 2)×2).kind     ⍝ "float64"
+(•storage (32 •float 1 2)×2ₚ).kind    ⍝ "float64"
 (•storage (32 •float 1 2)×2ₓ).kind    ⍝ "float32"
 •prefs ["kinds":"dynamic"]
 ```

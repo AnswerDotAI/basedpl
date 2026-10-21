@@ -1,6 +1,6 @@
 # `⋄` — Separator
 
-Syntax. Keys: `Alt-Backtick`
+Syntax. Keys: `Alt-Backtick`. Hanzi: `句`
 
 At statement level, `⋄` separates expressions. Everywhere, a line break means `⋄`, unless it's next to a bracket, `;`, `⋄` or `?`.
 

@@ -43,7 +43,7 @@ squeeze ← {(~"  "⍷⍵)#⍵}  ⍝ Compress multiple blanks.
 
 timestamp ← {  ⍝ Time-stamped message.
   join←{⊃⍶{⍺,⍶,⍵}/⍵}
-  fmt←{(-2⌈⍴⍕⍵)↑'0',⍕⍵}¨  ⍝ format number with leading zeros.
+  fmt←{(-2⌈⍴⍬⍕⍵)↑'0',⍬⍕⍵}¨  ⍝ format number with leading zeros.
   date←'-'join fmt 3↑⍺  ⍝ date: YYYY-MM-DD
   time←':'join fmt 3↑3↓⍺  ⍝ time: HH:MM:SS
   ' 'join[date time ⍵]  ⍝ blank-separated date, time and message.
@@ -115,7 +115,7 @@ wrap_3 ← {⍺←102  ⍝ ⍺-wrap (John Daintree).
   sze←(⍵∊"-?., ")#≥⍳⍴⍵  ⍝ length of each choice
   len←↑⌽(⍺≥sze)#sze
   len←↑(len∊sze)⌽[⍺ len]
-  (⊂len↑⍵),⍺∇len↓⍵  ⍝ at valid wrap point
+  [len↑⍵],⍺∇len↓⍵  ⍝ at valid wrap point
 }
 
 ⍝ From http://dfns.dyalog.com/c_unwrap.htm
@@ -215,7 +215,7 @@ xtabs ← {  ⍝ Expand/compress HT chars.
 
 tabTrip ← {⍵ ≡ ⍺ xtabs (-⍺) xtabs ⍵}
 
-tabTrips ← {∧/(⍳2+⍴⍵)tabTrip¨⊂⍵}
+tabTrips ← {∧/(⍳2ₓ+⍴⍵)tabTrip¨⊂⍵}
 
 
 ⍝⍝ Blank removal

@@ -69,18 +69,12 @@ pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -
     vector.with_keys(vec![Some(Keys::partial(names)?)])
 }
 
-/// A keyed vector whose entries keep their own kinds, as an imported JSON object's do. Its storage stays mixed.
-pub(crate) fn record(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
-    Value::mixed(vec![names.len()], values, Value::Number(Number::float(0.0, FloatWidth::F64)))?
-        .with_keys(vec![Some(Keys::partial(names.into_iter().map(Some).collect())?)])
-}
-
 /// A record of columns: the field `names[j]` holds item `j` of each row, as an array of `shape`, or as that row's item when `shape` is empty. Without rows, each field is an empty array of `empty[j]`.
 pub(crate) fn table(names: &[&str], shape: &[usize], rows: Vec<Vec<Value>>, empty: Vec<Value>) -> Result<Value, ErrorKind> {
     let mut columns: Vec<Vec<Value>> = vec![Vec::with_capacity(rows.len()); names.len()];
     for row in rows { for (column, item) in columns.iter_mut().zip(row) { column.push(item); } }
     let values = columns.into_iter().zip(empty).map(|(column, empty)| Value::shaped(shape, column, empty));
-    record(names.iter().map(|&n| n.into()).collect(), values.collect::<Result<_, _>>()?)
+    vector(names.iter().map(|&n| n.into()).collect(), values.collect::<Result<_, _>>()?)
 }
 
 /// A record field's name, with one item for each position.
@@ -110,7 +104,7 @@ pub(crate) fn slots(fields: Vec<Field>, names: &[&str], used: usize) -> Result<V
 
 /// The entries of a keyed vector, in order. An empty vector has none. Every entry needs a name.
 pub(crate) fn pairs(value: &Value) -> Result<Vec<(Arc<str>, Value)>, ErrorKind> {
-    entries(value)?.into_iter().map(|(k, v)| Some((k?, v))).collect::<Option<_>>().ok_or(Kind::Domain.into())
+    entries(value)?.into_iter().map(|(k, v)| Some((k?, v))).collect::<Option<_>>().ok_or_else(|| Kind::Domain.into())
 }
 
 /// A keyed vector entry: its name, if it has one, and its value.
