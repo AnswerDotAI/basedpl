@@ -104,12 +104,14 @@ fn entries(rows: Vec<Vec<Value>>, span: &Context<'_>) -> Result<Value, Error> {
 
 /// `•metadata Y`: a table with a row for the path `Y`, or for each path in `Y`.
 pub(crate) fn metadata(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    span.acts()?;
     let (_, paths) = paths(right, span)?;
     entries(paths.iter().map(|p| row(&span.path(p), p)).collect(), span)
 }
 
 /// `•readdir Y`: a table with a row for each entry of the directory `Y`, sorted by path. The left argument is a glob that each entry's path within `Y` must match, or options `glob` and `recurse`, which also lists entries of subdirectories.
 pub(crate) fn readdir(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    span.acts()?;
     let opts = Options::new("•readdir", left, Some("glob"), &["glob", "recurse"], span)?;
     let dir = text(right, span)?;
     let glob = match opts.values.get("glob") {

@@ -1,13 +1,14 @@
 //! The core that running transformations share: one stack of running levels, the routing that hands a call to the newest level among its arguments, and the read point for code that isn't a call. The levels are `∂` calls, the record levels of `∂` calls in reverse mode, and the batched runs of maps such as Each. One counter numbers every level, so a level inside another has the larger id. A `∂` call's id is the tag its duals carry, and a record level's id is the level its records carry. A reader outside a call sees a value through `Value::observed` or `Value::computed`, never past a level's data. A batched run stops (`Stop`) where it can't go on for all its cells at once, as at an observing read. Only the try that began the run catches the stop (`batch::tried`).
 
 use crate::{agreement::{Agree, Agreement}, execution::Context, number::Failure, primitive::{FoldKind, Operation, Primitive}, system::SystemFunction, At, Error, ErrorKind, Function, Number, Operator, Span, Value};
+use crate::array::{Footprint, Seen};
 
 /// The running levels, innermost last, and the last id a level took.
 #[derive(Default)]
 pub(crate) struct Levels { stack: Vec<Level>, last: u64 }
 
-/// A running level: its id, its kind, the number of frames when it started, and the bindings outside those frames that it wrote, each with its frame, or its module for a global, where its kind's exit acts on them (`Kind::exit`).
-pub(crate) struct Level { pub(crate) id: u64, pub(crate) kind: Kind, frames: usize, pub(crate) writes: Vec<(Option<usize>, usize, String)> }
+/// A running level: its id, its kind, the number of frames when it started, and the places of the bindings outside those frames that it wrote, where its kind's exit acts on them (`Kind::exit`).
+pub(crate) struct Level { pub(crate) id: u64, pub(crate) kind: Kind, frames: usize, pub(crate) writes: Vec<crate::eval::Place> }
 
 /// A running level's kind. Each kind's values carry its data, so that calls on them go through its rules (`call`, `route`): a `∂` call's duals, a record level's records, a batched run's batches, or a label level's labelled values.
 pub(crate) enum Kind {
@@ -46,7 +47,7 @@ impl Kind {
 /// Code that must run once for each cell, which a level may stop before it runs (`Levels::effect`).
 #[derive(Clone, Copy)]
 pub(crate) enum Effect {
-    /// Output or input through `⎕`, a system function other than a random draw, or `⍕` of a carried value. The operand does it on every call.
+    /// Output or input through `⎕`, `⍕` of a carried value, or a system function's act (`Context::acts`). The operand does it on every call.
     Acts,
     /// Catching an error, as a guard or a call on prototypes does. Whether an error arises depends on the cells' data.
     Catches,
@@ -102,13 +103,13 @@ impl Levels {
     pub(crate) fn effect(&self, effect: Effect) -> Result<(), Stop> {
         match self.stack.iter().find_map(|l| l.kind.stop(l.id, effect)) { Some(stop) => Err(stop), None => Ok(()) }
     }
-    /// Records, for each running level whose kind has an exit rule (`Kind::exit`), a write to the binding of `name` in frame `owner`, or in module `module`'s names when `owner` is `None`, when that binding lies outside the level's frames. A level that stops such a write (`Effect::Writes`) stops before it instead.
-    pub(crate) fn record_write(&mut self, owner: Option<usize>, module: usize, name: &str) -> Result<(), Stop> {
-        let outside = |frames: usize| owner.is_none_or(|o| o < frames);
+    /// Records, for each running level whose kind has an exit rule (`Kind::exit`), a write to the binding at `place`, when that binding lies outside the level's frames. A level that stops such a write (`Effect::Writes`) stops before it instead.
+    pub(crate) fn record_write(&mut self, place: crate::eval::Place) -> Result<(), Stop> {
+        let outside = |frames: usize| place.frame().is_none_or(|o| o < frames);
         if let Some(stop) = self.stack.iter().filter(|l| outside(l.frames)).find_map(|l| l.kind.stop(l.id, Effect::Writes)) { return Err(stop); }
         for level in self.stack.iter_mut().filter(|l| l.kind.exit().is_some()) {
-            if outside(level.frames) && !level.writes.iter().any(|(w, m, n)| *w == owner && *m == module && n == name) {
-                level.writes.push((owner, module, name.to_owned()));
+            if outside(level.frames) && !level.writes.contains(&place) {
+                level.writes.push(place);
             }
         }
         Ok(())
@@ -169,7 +170,7 @@ impl std::fmt::Display for Stop {
 /// Why a batched run stopped, which says how long a dfn operand remembers the stop (`kept`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Cause {
-    /// Output, input, `⍕` of a carried value, or a system function other than a random draw, which the operand does on every call (`Effect::Acts`). A random draw in a map inside the operand is one too.
+    /// Output, input, `⍕` of a carried value, or a system function's act (`Context::acts`), which the operand does on every call (`Effect::Acts`). A random draw in a map inside the operand is one too.
     Effect = 0,
     /// A write to a binding outside the map's frames (`Effect::Writes`).
     Write = 1,
@@ -331,8 +332,8 @@ pub(crate) enum Op<'a> {
     Product,
     /// A function, and the rule that `f∂←g` attached to it.
     Ruled(&'a Function, &'a Function),
-    /// A system function.
-    System(&'a SystemFunction),
+    /// A system function or its inverse: the function that the call calls, and the system function.
+    System(&'a Function, &'a SystemFunction),
 }
 
 /// The call of `op` as the newest level among its arguments handles it, or `None` to run its own code, whose calls route again. A record level records the call (`linear::call`), unless only the right argument is a record and a primitive's form copies it through a plan, whose own code records it. A `∂` call applies the operation's rule, or a rule that `f∂←g` attached (`derivative::call`). A batched map runs a call on its batches' whole arguments, or stops its run (`batch::call`). A label level takes a primitive along an axis (`selection::call`), and leaves other operations to their own code, whose calls of primitives carry the labels on. For `⌻`, `⌹`, `⊥`, monadic `f.g`, attached rules and system functions, the newest level can sit inside the arguments' nested arrays. An outer product broadcasts both arguments to its result's layout and calls the operation once. Callers test `Session::transforming` first.
@@ -342,7 +343,7 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, cx: &Context
         Op::Operation(Operation::Primitive(p), _) => matches!(p, Primitive::Polynomial | Primitive::MatrixDivide | Primitive::Decode),
         Op::Operation(Operation::Product(..), _) | Op::Product => left.is_none(),
         Op::Operation(..) | Op::Fold(..) => false,
-        Op::Ruled(..) | Op::System(_) => true,
+        Op::Ruled(..) | Op::System(..) => true,
     };
     let newest = newest(left, right, within)?;
     if let Op::Operation(operation, Pairing::Outer(agreement)) = op {
@@ -364,9 +365,11 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, cx: &Context
 impl Context<'_> {
     /// Whether a level that wraps values is running and `left` or `right` carries its data.
     pub(crate) fn carried(&self, left: Option<&Value>, right: &Value) -> bool { self.session.transforming() && (right.carried() || left.is_some_and(Value::carried)) }
+    /// Asks the running levels before code that acts: code that reads or writes files, the network, the clock or the terminal, or that makes something new on each call, such as a random name. A batched run stops before it (`Effect::Acts`), because the code would act once for all its cells.
+    pub(crate) fn acts(&self) -> Result<(), Error> { self.session.effect(Effect::Acts).at(self.span) }
     /// Asks the running levels before code that formats `left` and `right` as text, as `⍕` and `•literal⁻¹` do. A batch displays as its first cell (`Value::displayed`), so formatting a value that holds one stops the batched run (`Effect::Acts`).
     pub(crate) fn formats(&self, left: Option<&Value>, right: &Value) -> Result<(), Error> {
-        if self.carried(left, right) { self.session.effect(Effect::Acts).at(self.span)?; }
+        if self.carried(left, right) { self.acts()?; }
         Ok(())
     }
 }
@@ -396,10 +399,6 @@ impl Carrier {
     pub(crate) fn labelled(&self) -> Option<&std::sync::Arc<crate::selection::Labelled>> { match self { Carrier::Labelled(l) => Some(l), _ => None } }
     /// The items, as code with no rule for this level reads them (`ArrayData::storage`): a dual's items as dual atoms, or a batch's as batches of atoms. A record has none to give.
     pub(crate) fn storage(&self) -> &crate::array::Storage { match self { Carrier::Dual(dual) => dual.storage(), Carrier::Record(_) => crate::linear::storage(), Carrier::Batch(b) => b.storage(), Carrier::Labelled(l) => l.storage() } }
-    /// The bytes that this carrier keeps alive, as `Value::footprint` counts them. Each allocation counts once in `seen`.
-    pub(crate) fn footprint_in(&self, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
-        match self { Carrier::Dual(dual) => crate::derivative::Dual::footprint_in(dual, seen), Carrier::Record(t) => crate::linear::Linear::footprint_in(t, seen), Carrier::Batch(b) => crate::batch::Batch::footprint_in(b, seen), Carrier::Labelled(l) => crate::selection::Labelled::footprint_in(l, seen) }
-    }
     /// This carrier under `layout`, which has as many items: each part as a view under `layout`, with no items copied. A dual's tangent goes under it expanded to the primal's layout, and a batch's cells each go under it.
     pub(crate) fn view(&self, layout: crate::array::Layout) -> Value {
         match self {
@@ -460,6 +459,12 @@ impl Carrier {
     /// The items laid out by `layout`, read through `tables` as `primitive::copied` reads a value's: each part of a dual alike, a record as one copy node (`linear::copy`), or each cell of a batch alike.
     pub(crate) fn copied(&self, layout: crate::array::Layout, tables: &[rustymath::gather::Steps]) -> Result<Value, crate::ErrorKind> {
         match self { Carrier::Dual(dual) => dual.map(|part| crate::primitive::copied(part, layout.clone(), tables)), Carrier::Record(t) => Ok(crate::linear::copy(t, layout, tables)), Carrier::Batch(b) => b.copied(layout, tables), Carrier::Labelled(l) => l.copied(layout, tables) }
+    }
+}
+
+impl Footprint for Carrier {
+    fn footprint_in(&self, seen: &mut Seen) -> usize {
+        match self { Carrier::Dual(dual) => dual.footprint_in(seen), Carrier::Record(t) => t.footprint_in(seen), Carrier::Batch(b) => b.footprint_in(seen), Carrier::Labelled(l) => l.footprint_in(seen) }
     }
 }
 

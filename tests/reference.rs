@@ -10,7 +10,6 @@ const SOURCES: &[(&str, &str)] = &[
 
 fn cases(text: &str) -> Vec<Value> { reference::cases(text).unwrap() }
 
-#[test]
 fn reference_format_and_comparison() {
     let file = json!({"code":r#"testpath •nput "héllo" ⋄ •nget testpath"#, "expected_code":r#""héllo""#});
     for _ in 0..2 { assert_eq!(reference::check(&file, &InterruptHandle::default())["status"], "pass"); }
@@ -57,9 +56,10 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "mismatch");
 }
 
-/// Every case, run once for each of `reference::check`'s runs: with the `batch` pref off, then on, under which maps first try one call of their operand on batches of their cells, then on with fusion's small sizes, under which every fusible call waits and a graph splits even small arrays into blocks. Each run must meet the case's expectation, with values held in the same kinds of storage.
+/// Every case, run once for each of `reference::check`'s runs: with the `batch` pref off, then on, under which maps first try one call of their operand on batches of their cells, then on with fusion's small sizes, under which every fusible call waits and a graph splits even small arrays into blocks, then on with the code as the body of a dfn called twice. Each of the first three runs must meet the case's expectation, with values held in the same kinds of storage. In the fourth, the dfn's second call, which runs the statements its first call recorded, must give the first call's result. The format's own checks run first, in this test, because a case that calls `•explain` records what every thread in its process does, so no other test may evaluate beside it.
 #[test]
 fn reference_cases() {
+    reference_format_and_comparison();
     // Shared, so that no timing runs while the cases load the machine.
     let _lock = rustymath::timing::shared().unwrap();
     let mut ids = std::collections::HashSet::new();

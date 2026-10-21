@@ -149,7 +149,7 @@ fn styled(entry: &str) -> String {
     format!("\x1b[1;36m{glyph}\x1b[0m {name}{}", key.map_or(String::new(), |key| format!(" \x1b[2m{key}\x1b[0m")))
 }
 
-/// The ANSI colour of each highlight class the REPL colours. Numbers, system names and syntax keep the terminal's colour.
+/// The ANSI colour of each highlight class the REPL colours. Numbers and syntax keep the terminal's colour.
 fn colour(class: &str) -> Option<&'static str> {
     Some(match class {
         "function" => "38;2;17;57;249", "monadic-operator" | "dyadic-operator" => "38;2;223;0;244",

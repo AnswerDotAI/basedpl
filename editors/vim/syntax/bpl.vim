@@ -19,7 +19,7 @@ syntax match bplComment /\v⍝.*$/
 syntax match bplComment /\%^#!.*/
 
 highlight default link bplName Identifier
-highlight default link bplSystem PreProc
+highlight default link bplSystem Function
 highlight default link bplNumber Number
 highlight default link bplFunction Function
 highlight default link bplMonadicOperator Operator

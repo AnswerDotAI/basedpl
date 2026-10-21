@@ -151,8 +151,8 @@ impl Value {
             Plain::Character(c) => format!("'{c}'"),
             Plain::Function(f) => {
                 let text = f.text(el.notation, &mut 1000);
-                // A native function with no source spelling, such as a generator's `roll`, can't read back.
-                if f.system_call().is_some() && crate::system::lookup(&f.bpl()).is_none() { return format!("⟨{text}⟩"); }
+                // A native that a factory made, such as a generator's `roll` or a `•canvas` drawing function, has no spelling that reads back.
+                if f.system_function().is_some_and(|s| s.entry.is_none()) { return format!("⟨{text}⟩"); }
                 if text.contains(' ') { format!("({text})") } else { text }
             }
             Plain::Operator(op) => { let text = op.text(el.notation); if text.contains(' ') { format!("({text})") } else { text } }

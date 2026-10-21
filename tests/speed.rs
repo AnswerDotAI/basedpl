@@ -18,7 +18,7 @@ fn functions_cost_what_their_work_needs() {
 
 #[test]
 fn every_case_has_its_three_budgets() {
-    let sections = timing::sections(include_str!("speed.txt")).unwrap();
+    let sections = rustymath::timing::sections(include_str!("speed.txt")).unwrap();
     let budgets = |line: &str| line.split('\t').skip(1).map(str::parse::<f64>).collect::<Result<Vec<_>, _>>().map_or(0, |b| b.len());
     let missing: Vec<&str> = sections.iter().filter(|s| s.0 != "setup").flat_map(|s| s.2.iter().copied()).filter(|l| budgets(l) != 3).collect();
     assert!(missing.is_empty(), "each case needs a macOS, a Linux and a wasm budget: {missing:#?}");

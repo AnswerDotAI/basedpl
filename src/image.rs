@@ -26,7 +26,7 @@ pub(crate) fn image(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
     let options = data::Options::new("•image", left, None, &["fps", "delay"], span)?;
     let delays = timing(&options, "•image", span)?;
     let picture = match keyed::name(right) {
-        Some(path) => decoded(&span.read(&path)?, span)?, None if right.shape().len() == 1 => decoded(&data::bytes(right, span)?, span)?, None => right.clone()
+        Some(path) => { span.acts()?; decoded(&span.read(&path)?, span)? } None if right.shape().len() == 1 => decoded(&data::bytes(right, span)?, span)?, None => right.clone()
     };
     layout(&picture, delays.clone(), span)?;
     let renderer = display::renderer("image-renderer", render);

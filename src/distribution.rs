@@ -197,29 +197,23 @@ pub(crate) fn drawn(generator: Option<&Generator>, span: &Context<'_>, f: impl F
     drawn_cells(generator, span, |_, rng| f(rng))
 }
 
-/// `f` drawing from `generator`, or from the session's generator where it's `None`, where `f` also takes the cell it draws for. Outside a batched run, `f` draws once, for cell 0. In a batched run, `f` draws for each cell of the run in turn (`each_cell`). `primitive::drawn_value` uses the cell to give each draw that cell of each batched argument (`batch::cell`).
+/// `f` drawing from `generator`, or from the session's generator where it's `None`, where `f` also takes the cell it draws for. Outside a batched run, `f` draws once, for cell 0. In a batched run, `f` draws for each cell of the run in turn (`batch::each_cell`). `primitive::drawn_value` uses the cell to give each draw that cell of each batched argument (`batch::cell`).
 pub(crate) fn drawn_cells(generator: Option<&Generator>, span: &Context<'_>, f: impl Fn(usize, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
     drawing(generator, span, |batched, rng| match batched {
-        Some((level, frame)) => each_cell(level, frame, rng, span, f),
+        Some((level, frame)) => crate::batch::each_cell(level, frame, span.span, |c| f(c, rng)),
         None => f(0, rng),
     })
 }
 
-/// `f` drawing from `generator` on `value`, where `f` draws for each item of `value` in turn and keeps its layout, as a roll does. In a batched run, `f` draws once, on `value` laid over the run's frame (`batch::whole_over`). That gives each cell the numbers it gets when the cells draw in turn. A value that can't be laid over the frame draws cell by cell (`each_cell`).
+/// `f` drawing from `generator` on `value`, where `f` draws for each item of `value` in turn and keeps its layout, as a roll does. In a batched run, `f` draws once, on `value` laid over the run's frame (`batch::whole_over`). That gives each cell the numbers it gets when the cells draw in turn. A value that can't be laid over the frame draws cell by cell (`batch::each_cell`).
 pub(crate) fn drawn_items(generator: Option<&Generator>, value: &Value, span: &Context<'_>, f: impl Fn(&Value, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
     drawing(generator, span, |batched, rng| {
         let Some((level, frame)) = batched else { return f(value, rng) };
         match crate::batch::whole_over(value.clone(), level, frame) {
             Some(whole) => crate::batch::result(level, f(&whole, rng)?, frame.shape().len(), || true, Stop::new(level, Cause::Rule), span),
-            None => each_cell(level, frame, rng, span, |c, rng| f(&crate::batch::cell(value, c, span)?, rng)),
+            None => crate::batch::each_cell(level, frame, span.span, |c| f(&crate::batch::cell(value, c, span)?, rng)),
         }
     })
-}
-
-/// `f` drawing for each cell of batched run `level`, whose frame is `frame`, in cell order, with the cells' values joined into one batch (`batch::from_cells`). Where the values don't stack, as deals of different lengths don't, the run stops for a call with no rule for these arguments (`Cause::Rule`).
-fn each_cell(level: u64, frame: &crate::array::Layout, rng: &mut ChaCha8Rng, span: &Context<'_>, f: impl Fn(usize, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
-    let cells = (0..frame.shape().iter().product()).map(|c| f(c, rng)).collect::<Result<Vec<_>, _>>()?;
-    crate::batch::from_cells(level, frame, cells).ok_or_else(|| Stop::new(level, Cause::Rule).at(span.span))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -227,6 +221,8 @@ pub(crate) enum Draw { Roll, Deal }
 
 /// `•rand seed` returns a record of `roll` and `deal`, which draw from one stream seeded by `seed`.
 pub(crate) fn generator(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    // Each call makes a new stream, as each cell of a run cell by cell makes its own.
+    span.acts()?;
     if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "•rand needs a unit or vector seed")); }
     if !right.is_singleton() { return Err(span.error(Kind::Length, "•rand needs one seed")); }
     let seed = numeric(&right.at(0), span)?.nonnegative_integer::<u64>().error_at(span, "•rand needs a nonnegative integer seed")?;
@@ -237,5 +233,5 @@ pub(crate) fn generator(_: Option<&Value>, right: &Value, span: &Context<'_>) ->
 /// The stream behind a record from `•rand`.
 fn generator_of(value: &Value) -> Option<Generator> {
     let Value::Function(f) = keyed::field(value, "roll")? else { return None; };
-    match f.system_call()? { Call::Generator(generator, _) => Some(generator.clone()), _ => None }
+    match &f.system_function()?.call { Call::Generator(generator, _) => Some(generator.clone()), _ => None }
 }

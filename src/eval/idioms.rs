@@ -25,16 +25,21 @@ pub(super) enum Idiom {
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Pick { Take(i64), Item(i64) }
 
+/// Whether `g` orders its argument, as `Some((grade, down))`: a grade, where `grade` is true, or a sort, `<` or `>`, where it's false. `down` is true for `⍒` and `>`. An atop of a selection with such a `g` can be an idiom (`Idiom::Selected`, `Idiom::Ranks`). `operators::train_call` leaves any train whose last tine orders its argument to be built, with its idiom.
+pub(super) fn orders(g: &Function) -> Option<(bool, bool)> {
+    match g.as_primitive()? {
+        Primitive::Grade(down) => Some((true, down)),
+        Primitive::Compare(Comparison::Less) => Some((false, false)),
+        Primitive::Compare(Comparison::Greater) => Some((false, true)),
+        _ => None,
+    }
+}
+
 /// The idiom that `node` is, if any.
 pub(super) fn recognise(node: &FunctionNode) -> Option<Idiom> {
     match node {
         FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(f), Operand::Function(g)]) => {
-            let (grade, down) = match g.as_primitive()? {
-                Primitive::Grade(down) => (true, down),
-                Primitive::Compare(Comparison::Less) => (false, false),
-                Primitive::Compare(Comparison::Greater) => (false, true),
-                _ => return None,
-            };
+            let (grade, down) = orders(g)?;
             let pick = match f.node() {
                 FunctionNode::Primitive(Primitive::Grade(false)) if grade => return Some(Idiom::Ranks { down }),
                 FunctionNode::Primitive(Primitive::Take) => Pick::Item(0),
@@ -57,7 +62,7 @@ pub(super) fn recognise(node: &FunctionNode) -> Option<Idiom> {
             match r.node() {
                 FunctionNode::Primitive(Primitive::Tally) => Some(Idiom::Counts),
                 FunctionNode::Fold(g, kind) if !kind.scan => match g.as_primitive()? {
-                    p if p.info().dyad.reduction.is_some() => Some(Idiom::Folds(p)),
+                    p if crate::pervasive::folds(p).is_some() => Some(Idiom::Folds(p)),
                     _ => None,
                 },
                 _ => None,
@@ -77,6 +82,8 @@ impl Idiom {
     }
     /// Records the combination for `•explain`, where it's on. `f` is the function that the combination computes.
     pub(super) fn taken(&self, f: &Function) { if crate::explain::recording() { crate::explain::fast(self.name(), f.bpl()); } }
+    /// Records that the combination declined arguments of `items` items that don't suit it, and that the general path runs instead (`rustymath::events`).
+    pub(super) fn declined(&self, items: usize) { rustymath::events::declined(self.name(), "arguments that don't suit it", items) }
     /// The idiom's result for these arguments, or `None` where they don't suit it. `f` is the function that the idiom computes.
     #[inline(never)]
     pub(super) fn call(&self, f: &Function, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
@@ -88,7 +95,7 @@ impl Idiom {
             Idiom::Determinant => determinant(left, right, cx),
             Idiom::Permanent => permanent(left, right, cx),
         };
-        if result.is_some() { self.taken(f); }
+        if result.is_some() { self.taken(f); } else if !matches!(self, Idiom::Counts | Idiom::Folds(_)) { self.declined(right.len()); }
         result
     }
 }

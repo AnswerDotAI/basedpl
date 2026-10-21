@@ -61,10 +61,16 @@ impl crate::Input for Lines {
     fn rest(&self) -> std::io::Result<Vec<u8>> { Ok(self.0.lock().unwrap().drain(..).map(|line| line + "\n").collect::<String>().into_bytes()) }
 }
 
-/// A run of a case: whether the `batch` pref is on, whether fusion takes its small sizes (`fusion::Sizes::SMALL`), and the words that name the run in a failure.
-type Run = (bool, bool, &'static str);
-/// The runs of a case without a `batch` field: the `batch` pref off, then on, then on with fusion's small sizes, under which every fusible call waits and a graph splits even small arrays into blocks.
-const RUNS: [Run; 3] = [(false, false, ""), (true, false, "with the batch pref on"), (true, true, "with fusion at any size")];
+/// A run of a case: whether the `batch` pref is on, whether fusion takes its small sizes (`fusion::Sizes::SMALL`), whether the code runs as the body of a dfn called twice (`twice`), and the words that name the run in a failure.
+#[derive(Clone, Copy)]
+struct Run { batch: bool, fused: bool, twice: bool, words: &'static str }
+/// The runs of a case without a `batch` field: the `batch` pref off, then on, then on with fusion's small sizes, under which every fusible call waits and a graph splits even small arrays into blocks, then on with the code as a dfn's body, whose second call runs the statements that its first call recorded.
+const RUNS: [Run; 4] = [
+    Run { batch: false, fused: false, twice: false, words: "" },
+    Run { batch: true, fused: false, twice: false, words: "with the batch pref on" },
+    Run { batch: true, fused: true, twice: false, words: "with fusion at any size" },
+    Run { batch: true, fused: false, twice: true, words: "on a dfn's second call" },
+];
 
 /// The header options that set a flag on a case, each setting the field of its own name to `true`: `unfused` leaves out the run with fusion's small sizes, `batched` leaves out the run with the `batch` pref off, `mixed` leaves out the comparison of the result's storage with the expectation's, and `serial` runs the case alone, as a case that calls `•prefs` must run.
 const FLAGS: [&str; 4] = ["unfused", "batched", "mixed", "serial"];
@@ -72,13 +78,13 @@ const FLAGS: [&str; 4] = ["unfused", "batched", "mixed", "serial"];
 /// The runs that `case` takes: one with its Boolean `batch` field where it has one, and otherwise each of `RUNS` that its `unfused` and `batched` options leave in.
 fn runs(case: &JsonValue) -> Vec<Run> {
     match case["batch"].as_bool() {
-        Some(batch) => vec![(batch, false, "")],
-        None => RUNS.into_iter().filter(|&(batch, fused, _)| !(fused && case["unfused"] == true) && (batch || case["batched"] != true)).collect(),
+        Some(batch) => vec![Run { batch, fused: false, twice: false, words: "" }],
+        None => RUNS.into_iter().filter(|r| !(r.fused && case["unfused"] == true) && (r.batch || case["batched"] != true)).collect(),
     }
 }
 
 /// Puts in force the settings that `run` of a case runs under, where the case's file has the leading `•prefs` header `prefs`: the defaults, then the header, then the run's `batch` pref and fusion sizes.
-fn enter(prefs: Option<&str>, (batch, fused, _): Run) -> Result<(), JsonValue> {
+fn enter(prefs: Option<&str>, Run { batch, fused, .. }: Run) -> Result<(), JsonValue> {
     crate::settings::reset();
     if let Some(prefs) = prefs && let Some(error) = Session::new().eval_with(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() }).error {
         return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
@@ -91,8 +97,11 @@ fn enter(prefs: Option<&str>, (batch, fused, _): Run) -> Result<(), JsonValue> {
 /// One run of a case: the value its code gave, the numeric settings in force after it, and the value its BPL expectation gave.
 struct Outcome { value: Option<Value>, numeric: Numeric, expected: Option<Value> }
 
+/// A case's relative and absolute tolerances for comparing numbers, `1e-13` each unless its header sets them.
+fn tolerances(case: &JsonValue) -> (f64, f64) { (case["relative_tolerance"].as_f64().unwrap_or(1e-13), case["absolute_tolerance"].as_f64().unwrap_or(1e-13)) }
+
 /// `case`'s code checked against an independent captured value or BPL expectation, in `run`, under the settings in force. Each side receives a fresh session, and the expectation evaluates after the code, under the settings that the code leaves. A BPL expectation must match each number's exactness. A value captured from another interpreter carries none, so its numbers compare by value. A failure's message names its run.
-fn outcome(case: &JsonValue, (_, _, run): Run, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<Outcome, JsonValue> {
+fn outcome(case: &JsonValue, Run { words, .. }: Run, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<Outcome, JsonValue> {
     let Some(code) = case["code"].as_str() else { return Err(json!({"status":"invalid", "message":"missing code"})); };
     let error_kind = case["expected_error"].as_str().filter(|s| !s.is_empty());
     let (output, input) = (optional_text(case, "expected_output", "output expectation")?, optional_text(case, "input", "input")?);
@@ -106,13 +115,12 @@ fn outcome(case: &JsonValue, (_, _, run): Run, timeout: Option<std::time::Durati
         (expected.value, no_result)
     } else { (expected_array(&case["expected"]), case.get("expected") == Some(&JsonValue::Null)) };
     let exactness = case["expected_code"].is_string();
-    let relative = case["relative_tolerance"].as_f64().unwrap_or(1e-13);
-    let absolute = case["absolute_tolerance"].as_f64().unwrap_or(1e-13);
+    let (relative, absolute) = tolerances(case);
     if [relative, absolute].iter().any(|t| !t.is_finite() || *t < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
         return Err(json!({"status":"invalid", "message":"invalid or missing independent expectation"}));
     }
     let failed = |mut failure: JsonValue| {
-        if !run.is_empty() { failure["message"] = json!(format!("{run}: {}", failure["message"].as_str().unwrap_or_default())); }
+        if !words.is_empty() { failure["message"] = json!(format!("{words}: {}", failure["message"].as_str().unwrap_or_default())); }
         Err(failure)
     };
     if let Some(error) = &result.error {
@@ -141,13 +149,61 @@ fn outcome(case: &JsonValue, (_, _, run): Run, timeout: Option<std::time::Durati
     }
 }
 
+/// The name of the dfn that `twice` makes from a case's code.
+const TWICE: &str = "reference_case";
+
+/// `case`'s code as the body of a dfn that one session calls twice, under the settings in force. The first call runs each statement through the binder, which records it, and the second call runs the recordings. The second call must give the first's value, storage kind, error and output. Before each call, the session's random numbers restart from seed 0, each call reads its own `input` lines, and the second call finds the `testpath` fixture's directory emptied. A `serial` case's settings go back in force before the second call, because its first call can change them. Code that can't be a dfn's body, such as code with a syntax error, passes this run unchecked.
+fn twice(case: &JsonValue, run: Run, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<Outcome, JsonValue> {
+    let Some(code) = case["code"].as_str() else { return Err(json!({"status":"invalid", "message":"missing code"})); };
+    let input = optional_text(case, "input", "input")?;
+    let options = || EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, ..EvalOptions::default() };
+    let mut session = Session::new();
+    let files = fixture(&mut session, code)?;
+    let mut calls = Vec::new();
+    if session.eval_with(&format!("{TWICE}←{{\n{code}\n}}"), options()).error.is_none() {
+        for call in 0..2 {
+            if call == 1 && case["serial"] == true { enter(case["prefs"].as_str(), run)?; }
+            if call == 1 && let Some(dir) = &files { emptied(dir.path())?; }
+            *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Stream::seeded(0);
+            calls.push(session.eval_with(&format!("{TWICE} 0"), EvalOptions { input: lines(input), ..options() }));
+        }
+    }
+    let numeric = crate::settings::numeric();
+    let Ok([first, second]) = <[crate::Evaluation; 2]>::try_from(calls) else { return Ok(Outcome { value: None, numeric, expected: None }) };
+    let words = run.words;
+    for error in [&first.error, &second.error].into_iter().flatten() {
+        if matches!(error.kind, crate::ErrorKind::Timeout | crate::ErrorKind::Interrupt) {
+            return Err(json!({"status":error.kind.to_string().to_lowercase(), "message":format!("{words}: {}", error.message)}));
+        }
+    }
+    let error = |e: &crate::Evaluation| e.error.as_ref().map(|e| (e.kind.to_string(), e.message.clone()));
+    let written = |e: &crate::Evaluation| e.output.iter().map(crate::Output::written).collect::<String>();
+    let category = |e: &crate::Evaluation| (e.function.is_some(), e.operator.is_some());
+    let (relative, absolute) = tolerances(case);
+    let mismatch = if error(&first) != error(&second) { Some(format!("error {:?}, {:?} on the first call", error(&second), error(&first))) }
+        else if written(&first) != written(&second) { Some(format!("output {:?}, {:?} on the first call", written(&second), written(&first))) }
+        else if category(&first) != category(&second) { Some("a function or operator from one call only".into()) }
+        else {
+            match (&first.value, &second.value) {
+                (Some(a), Some(b)) => difference(b, a, relative, absolute, true)
+                    .or_else(|| kind_difference(b, a, numeric, false).map(|(kind, first_kind)| format!("storage kind: {kind}, {first_kind} on the first call"))),
+                (None, None) => None,
+                _ => Some("a value from one call only".into()),
+            }
+        };
+    match mismatch {
+        Some(message) => Err(json!({"status":"mismatch", "message":format!("{words}: {message}"), "actual":crate::protocol::response(second)})),
+        None => Ok(Outcome { value: None, numeric, expected: None }),
+    }
+}
+
 /// Whether a case's runs agree: each later run's value must be held in the same kind of storage as the first's. Where the expectation is BPL, the first's storage must be mixed where the expectation's is, and compact where it's compact. A `mixed` case leaves this out. An in-place write keeps mixed storage mixed, and a record from JSON or Python keeps each entry's own kind.
 fn verdict(case: &JsonValue, outcomes: &[(Run, Outcome)]) -> JsonValue {
-    let Some(((_, _, first_run), first)) = outcomes.first() else { return json!({"status":"pass"}) };
+    let Some((first_run, first)) = outcomes.first() else { return json!({"status":"pass"}) };
     let named = |run: &'static str| if run.is_empty() { "with the batch pref off" } else { run };
-    for ((_, _, run), outcome) in &outcomes[1..] {
+    for (run, outcome) in &outcomes[1..] {
         if let (Some(value), Some(first)) = (&outcome.value, &first.value) && let Some((kind, first_kind)) = kind_difference(value, first, outcome.numeric, false) {
-            return json!({"status":"mismatch", "message":format!("storage kind: {kind} {}, {first_kind} {}", named(run), named(first_run))});
+            return json!({"status":"mismatch", "message":format!("storage kind: {kind} {}, {first_kind} {}", named(run.words), named(first_run.words))});
         }
     }
     if case["expected_code"].is_string() && case["mixed"] != true && let (Some(value), Some(expected)) = (&first.value, &first.expected)
@@ -163,16 +219,32 @@ pub fn check(case: &JsonValue, interrupt: &InterruptHandle) -> JsonValue { failu
 /// `code` run in a fresh session with the settings in force, a `testpath` fixture where the code names one, and `input` as its lines of input.
 fn evaluated(code: &str, input: Option<&str>, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<crate::Evaluation, JsonValue> {
     let mut session = Session::new();
-    let _files = if code.contains("testpath") {
-        let dir = tempfile::tempdir().map_err(|e| json!({"status":"invalid", "message":format!("temporary fixture: {e}")}))?;
-        let path = dir.path().join("data");
-        session.set("testpath", crate::keyed::text(&path.to_string_lossy())).expect("valid fixture name");
-        Some(dir)
-    } else { None };
-    let input = input.map(|text| Arc::new(Lines(Mutex::new(text.lines().map(String::from).collect()))) as Arc<dyn crate::Input>);
-    let result = session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input, ..EvalOptions::default() });
-    Ok(result)
+    let _files = fixture(&mut session, code)?;
+    Ok(session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input: lines(input), ..EvalOptions::default() }))
 }
+
+/// A new temporary directory for the `testpath` fixture, where `code` names one, with `testpath` in `session` naming a path inside it. The directory lasts as long as the returned guard.
+fn fixture(session: &mut Session, code: &str) -> Result<Option<tempfile::TempDir>, JsonValue> {
+    if !code.contains("testpath") { return Ok(None); }
+    let dir = tempfile::tempdir().map_err(unusable)?;
+    session.set("testpath", crate::keyed::text(&dir.path().join("data").to_string_lossy())).expect("valid fixture name");
+    Ok(Some(dir))
+}
+
+/// Removes everything in `dir`, a fixture's directory.
+fn emptied(dir: &std::path::Path) -> Result<(), JsonValue> {
+    for entry in std::fs::read_dir(dir).map_err(unusable)? {
+        let path = entry.map_err(unusable)?.path();
+        if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) }.map_err(unusable)?;
+    }
+    Ok(())
+}
+
+/// The failure of a case whose fixture directory can't be made or emptied.
+fn unusable(error: std::io::Error) -> JsonValue { json!({"status":"invalid", "message":format!("temporary fixture: {error}")}) }
+
+/// `input` as a case's lines of input.
+fn lines(input: Option<&str>) -> Option<Arc<dyn crate::Input>> { input.map(|text| Arc::new(Lines(Mutex::new(text.lines().map(String::from).collect()))) as Arc<dyn crate::Input>) }
 
 /// How long each evaluation of a case or a page example may run.
 pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
@@ -281,15 +353,15 @@ pub fn cases(text: &str) -> Result<Vec<JsonValue>, String> {
     Ok(cases)
 }
 
-/// The cases of `cases` that fail `check`, in their order. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Cases from files with the same leading `•prefs` header (`prefs`) run together, one run at a time (`RUNS`). For each run, `enter` puts the run's settings in force, the cases without the `serial` option run in parallel, on one thread for each core, and then each `serial` case runs alone, with the settings put in force again before it. A case without `serial` that calls `•prefs` fails, because it would change the settings of the cases running beside it. Each case has `TIMEOUT` to run. After an interrupt, no case starts, and failures after the first interrupted case drop out. The settings are reset at the end.
+/// The cases of `cases` that fail `check`, in their order. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Cases from files with the same leading `•prefs` header (`prefs`) run together, one run at a time (`RUNS`). For each run, `enter` puts the run's settings in force, the cases without the `serial` option run in parallel, on one thread for each core, and then each `serial` case and each case that calls `•explain` runs alone, with the settings put in force again before it. A case that calls `•explain` runs alone because `•explain` records what every thread in its process does. A case without `serial` that calls `•prefs` fails, because it would change the settings of the cases running beside it. Each case has `TIMEOUT` to run. After an interrupt, no case starts, and failures after the first interrupted case drop out. The settings are reset at the end.
 pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
     let cases: Vec<&JsonValue> = cases.into_iter().collect();
     let stop = AtomicBool::new(false);
+    let calls = |case: &JsonValue, name: &str| case["code"].as_str().is_some_and(|code| code.to_lowercase().contains(name));
     let step = |case: &JsonValue, run: Run| {
-        let calls_prefs = case["code"].as_str().is_some_and(|code| code.to_lowercase().contains("•prefs"));
-        let result = if calls_prefs && case["serial"] != true { Err(json!({"status":"invalid", "message":"a case that calls •prefs needs the serial option"})) }
-            else { outcome(case, run, Some(TIMEOUT), interrupt) };
+        let result = if calls(case, "•prefs") && case["serial"] != true { Err(json!({"status":"invalid", "message":"a case that calls •prefs needs the serial option"})) }
+            else if run.twice { twice(case, run, Some(TIMEOUT), interrupt) } else { outcome(case, run, Some(TIMEOUT), interrupt) };
         if result.as_ref().is_err_and(|f| f["status"] == "interrupt") { stop.store(true, Relaxed); }
         result
     };
@@ -298,9 +370,9 @@ pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, interrupt: &
     for case in &cases { if !headers.contains(&case["prefs"].as_str()) { headers.push(case["prefs"].as_str()); } }
     for header in headers {
         for run in RUNS {
-            let takes = |i: usize| cases[i]["prefs"].as_str() == header && runs(cases[i]).iter().any(|r| (r.0, r.1) == (run.0, run.1));
+            let takes = |i: usize| cases[i]["prefs"].as_str() == header && runs(cases[i]).iter().any(|r| (r.batch, r.fused, r.twice) == (run.batch, run.fused, run.twice));
             let wanted: Vec<usize> = (0..cases.len()).filter(|&i| outcomes[i].is_ok() && takes(i)).collect();
-            let (serial, parallel): (Vec<usize>, Vec<usize>) = wanted.into_iter().partition(|&i| cases[i]["serial"] == true);
+            let (serial, parallel): (Vec<usize>, Vec<usize>) = wanted.into_iter().partition(|&i| cases[i]["serial"] == true || calls(cases[i], "•explain"));
             let mut record = |i: usize, result: Result<Outcome, JsonValue>| match result {
                 Ok(outcome) => if let Ok(list) = &mut outcomes[i] { list.push((run, outcome)) },
                 Err(failure) => outcomes[i] = Err(failure),

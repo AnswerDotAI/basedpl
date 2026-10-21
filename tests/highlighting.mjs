@@ -31,7 +31,7 @@ assert.deepEqual(scopes('+/@⍵²₀').map(([, scope]) => scope), ['support.func
 assert.deepEqual(scopes('+/@⍵²₀', 'hpl'), scopes('+/@⍵²₀'));
 for (const text of ['加总内乙', '加總內乙']) assert.deepEqual(scopes(text, 'hpl').map(([, scope]) => scope),
     ['support.function.bpl', 'keyword.operator.monadic.bpl', 'keyword.operator.dyadic.bpl', 'variable.parameter.bpl']);
-assert.ok(scopes('系prefs', 'hpl').every(([, scope]) => scope === 'support.function.system.bpl'));
+assert.ok(scopes('系prefs', 'hpl').every(([, scope]) => scope === 'support.function.bpl'));
 assert.deepEqual(scopes('mean是加总除数', 'hpl').map(([part]) => part), ['mean', '是', '加', '总', '除', '数']);
 assert.equal(scopes('"open\n+').at(-1)[1], 'support.function.bpl');
 assert.equal(scopes('⍝ comment\n+').at(-1)[1], 'support.function.bpl');

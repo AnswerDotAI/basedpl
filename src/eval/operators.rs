@@ -31,12 +31,9 @@ pub(super) fn composition(f: &Function, left: Option<&Value>, right: &Value, cx:
     }
     if matches!(op, Power) { return power(operands, left, right, cx); }
     match (&operands[0], &operands[1]) {
-        (Operand::Value(a), Operand::Function(f)) if matches!(op, Before) => {
-            if left.is_some() { return Err(cx.span.error(ErrorKind::Syntax, "a bound function takes one argument")); }
-            f.call(Some(a), right, cx)
-        }
+        (Operand::Value(a), Operand::Function(f)) if matches!(op, Before) => bound_call(a, f, left, right, cx),
         (Operand::Function(f), Operand::Value(a)) if matches!(op, After) => {
-            if left.is_some() { return Err(cx.span.error(ErrorKind::Syntax, "a bound function takes one argument")); }
+            if left.is_some() { return Err(cx.span.error(ErrorKind::Syntax, ONE_ARGUMENT)); }
             f.call(Some(right), a, cx)
         }
         (Operand::Function(f), ranks) if matches!(op, Rank) => rank(f, &computed(ranks, left, right, cx)?, left, right, cx),
@@ -50,6 +47,49 @@ pub(super) fn composition(f: &Function, left: Option<&Value>, right: &Value, cx:
         },
         _ => Err(cx.span.domain_error("invalid operator operands")),
     }
+}
+
+/// The error for a left argument given to a function whose argument is bound, as `2↣×`'s is.
+const ONE_ARGUMENT: &str = "a bound function takes one argument";
+
+/// `a↣f`'s call: `f` on `right`, with `a` as its left argument. It takes one argument.
+// Composition calls this for each bound function. Out of line, even with `#[inline]`, it cost `{1+⊢ ⍵}` about 25 instructions a call.
+#[inline(always)]
+fn bound_call(a: &Value, f: &Function, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
+    if left.is_some() { return Err(cx.span.error(ErrorKind::Syntax, ONE_ARGUMENT)); }
+    f.call(Some(a), right, cx)
+}
+
+/// A fork's call: its right tine's result (`right`), then its left tine's (`left`), then its middle tine on the two (`middle`).
+// Every call of a fork runs this, inlined into `Function::apply`.
+#[inline(always)]
+pub(super) fn forked(right: impl FnOnce() -> Result<Value, Error>, left: impl FnOnce() -> Result<Value, Error>, middle: impl FnOnce(&Value, &Value) -> Result<Bound, Error>) -> Result<Bound, Error> {
+    let y = right()?;
+    let x = left()?;
+    middle(&x, &y)
+}
+
+/// A part of a train, as `train_call` calls it: a function tine, or an array tine bound as the left argument of the function after it (`a↣f`).
+enum TrainPart<'t> { Function(&'t Function), Bound(&'t Value, &'t Function) }
+
+impl TrainPart<'_> {
+    fn call(&self, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
+        match self { Self::Function(f) => f.call(left, right, cx), Self::Bound(a, f) => bound_call(a, f, left, right, cx) }
+    }
+}
+
+/// The call of the train with tines `tines` on `left` and `right`, made as the train's function would make it, without building the function (`Function::train_shape`). A compiled statement calls a group's train this way (`tree.rs`). It gives `None` in three cases, where the caller builds the train and calls it. The first is while a transformation or `•explain` runs, because each must see the train's own call. The second is an array tine that doesn't bind a function. The third is a last tine that orders its argument (`idioms::orders`), because such a tine can make an idiom with the part before it.
+pub(super) fn train_call(tines: &[Tine], left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
+    if cx.session.transforming() || crate::explain::reporting() { return None; }
+    let Some(Tine::Function(last)) = tines.last() else { return None };
+    if idioms::orders(last).is_some() || tines.windows(2).any(|w| matches!(w, [Tine::Array(_), Tine::Array(_)])) { return None; }
+    let parts = Function::train_parts(tines, TrainPart::Function, |a, part| match part { TrainPart::Function(f) => TrainPart::Bound(a, f), TrainPart::Bound(..) => unreachable!("train_call declines array tines side by side") });
+    let span = cx.span;
+    // The call counts toward the depth limit, as the train's function's own call would.
+    if let Err(error) = cx.session.descend(span) { return Some(Err(error)); }
+    let result = Function::train_shape(parts, |part| part.call(left, right, cx), |g, f, inner| forked(|| inner.array(span), || g.call(left, right, cx)?.array(span), |x, y| f.call(Some(x), y, cx)), |f, inner| f.call(None, &inner.array(span)?, cx));
+    cx.session.ascend();
+    Some(result)
 }
 
 /// The case that the unit `index` picks from `len` cases: a whole number, which counts back from the end where it's negative.
@@ -808,6 +848,7 @@ pub(super) fn key(derived: &Function, left: Option<&Value>, right: &Value, cx: &
             return Ok(Bound::from(result));
         }
     }
+    if let Some(folds @ Idiom::Folds(_)) = idiom { folds.declined(right.len()); }
     // A monadic Key's values are the positions along `right`, which are each group's rows themselves unless that axis has keys.
     let values = match left {
         Some(_) => Some(right.clone()),
@@ -924,7 +965,7 @@ impl Contraction {
 
 /// `left f.g right` as one batched call of `g` on every triple of a row of `left`, a position along the contraction and a column of `right`, followed by the fold of `f` along the contraction by the fold's own route, for each chunk of rows (`by_rows`). `None` where a chunk's run falls back. After a fallback, the loop over rows runs from the start and keeps effects in order.
 fn by_triples(f: &Function, g: &Function, left: &Value, right: &Value, c: &Contraction, cx: &Context<'_>) -> Option<Result<Value, Error>> {
-    if !crate::batch::tries(cx) { return None; }
+    if !crate::batch::tries(cx, c.rows * c.n * c.cols) { return None; }
     let span = cx.span;
     by_rows(c, left, right, span, |x, y| {
         let agreement = Agreement::new(x.layout(), y.layout()).ok()?;
@@ -964,7 +1005,7 @@ fn by_rows(c: &Contraction, left: &Value, right: &Value, span: &Span, mut produc
 pub(crate) fn primitive_product(f: Primitive, g: Primitive, left: &Value, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
     let c = Contraction::new(left, right, cx.span)?;
     if c.ordered && !left.is_unit() && !right.is_unit() && !cx.carried(Some(left), right) {
-        if let Some(result) = crate::pervasive::inner(f, g, left, right, [c.rows, c.n, c.cols], c.layout.shape().to_vec()) {
+        if let Some(result) = crate::pervasive::inner(f, g, left, right, &rustymath::agreement::Frames::one(), [c.rows, c.n, c.cols], c.layout.shape().to_vec(), &mut || true) {
             return if c.layout.shape().is_empty() { Ok(result.at(0)) } else { result.with_layout(c.layout).error_at(cx.span, "invalid inner product result") };
         }
     }
@@ -1070,13 +1111,13 @@ impl<'a> CellPairs<'a> {
     }
     /// Pair `i`'s cells. Where the frames are empty, the one pair holds each argument's prototype cell.
     fn pair(&self, i: usize, span: &Span) -> Result<(Option<Value>, Value), Error> {
-        let [x, y] = self.agreement.positions(i, [self.xs.as_ref().map_or(0, |c| c.len()), self.ys.len()]);
+        let [x, y] = self.agreement.positions(i, || [self.xs.as_ref().map_or(0, |c| c.len()), self.ys.len()]);
         let cell = |c: &crate::array::Cells<'_>, j: Option<usize>| j.map_or_else(|| c.prototype(), |j| c.get(j)).error_at(span, "invalid rank cells");
         Ok((self.xs.as_ref().map(|c| cell(c, x)).transpose()?, cell(&self.ys, y)?))
     }
 }
 
-/// The results of `call` on pairs 0 to `len`, assembled in `layout` as its items. Where `mixed` gives a message, they mix into one array whose numbers keep their kinds, as Rank mixes them, and the message reports results that don't mix. With no pairs, `call` runs once with `true`, on pair 0's prototypes, and that result gives the fill. Rank, Each (`each_pair`) and stacks of matrices (`matrices`) share it.
+/// The results of `call` on pairs 0 to `len`, assembled in `layout` as its items. Where `mixed` gives a message, they mix into one array whose numbers keep their kinds, as Rank mixes them, and the message reports results that don't mix. With no pairs, `call` runs once with `true`, on pair 0's prototypes, and that result gives the fill. Rank, Each (`each_pair`), stacks of matrices (`matrices`) and function arrays (`function_array`) share it.
 fn assembled(len: usize, layout: crate::array::Layout, mixed: Option<&'static str>, span: &Span, mut call: impl FnMut(usize, bool) -> Result<Value, Error>) -> Result<Value, Error> {
     let empty = len == 0;
     let mut data = Gather::items(len);
@@ -1110,7 +1151,7 @@ fn whole(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [usi
 }
 
 /// `operation` on each pair of cells of `left` and `right`, each given with the rank of its cells, as calls on the whole arguments. An argument with no axes besides its cells' is the same in every cell. The other arguments' frames agree, as Rank pairs them. `None` where no route covers the call. Rank (`whole`) and batched maps (`batch::call`) share it. The routes, in order:
-/// - `+.×`, `⌹` and `-.×` on stacks of matrices: rustymath's kernels, which read compact storage (`primitive::stacked`), and for stacks that a running level carries, such as `∂`'s, the level's rule for every pair of matrices at once (`Operation::call` with `Pairing::Matrices`).
+/// - `f.g` where rustymath has a product kernel for the pair, `⌹` and `-.×` on stacks of matrices: rustymath's kernels, which read compact storage (`primitive::stacked`), and for stacks that a running level carries, such as `∂`'s, the level's rule for every pair of matrices at once (`Operation::call` with `Pairing::Matrices`).
 /// - A pervasive primitive, in one call with padded frames (`padded_call`).
 /// - Any other primitive with one argument, or with a left argument that is the same in every cell, by its rule for cells (`primitive_cells`).
 /// - A primitive whose two arguments' frames match, or whose right argument is the same in every cell, by its rule for pairs of cells (`paired_cells`). An empty argument takes the path through cells, because a call on prototype cells gives its result's shape.
@@ -1293,7 +1334,7 @@ fn frames(a: &Value, levels: &[[usize; 2]], side: usize) -> Vec<usize> {
 fn decomposed(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [usize; 2], cx: &Context<'_>) -> Option<Result<Bound, Error>> {
     // The stacked kernels read compact storage, which a dual doesn't have: its cells go through the operand one by one (`derivative`).
     if yr != 2 || cx.carried(left, right) { return None; }
-    let decompose = |f: &Function| matches!(f.node(), FunctionNode::System(s) if s.name == "•decompose");
+    let decompose = |f: &Function| matches!(f.node(), FunctionNode::System(s) if s.entry == Some(crate::system::Entry::DECOMPOSE));
     let kind = match (operand.node(), left) {
         (FunctionNode::System(_), Some(kind)) if decompose(operand) && xr == kind.shape().len() => kind,
         (FunctionNode::Composed(OperatorKind::Before, [Operand::Value(kind), Operand::Function(f)]), None) if decompose(f) => kind,
@@ -1363,14 +1404,34 @@ fn each_pair(
     let span = cx.span;
     let items = assembled(len, layout, mixed, span, |i, empty| {
         let (x, y) = pair(i)?;
-        let result = if empty { on_prototypes(operand, x.as_ref(), &y, cx)? } else { operand.call(x.as_ref(), &y, cx)? };
-        match result.value {
-            Binding::Value(a) => Ok(a), Binding::Function(f) => Ok(Value::Function(f)),
-            Binding::NoResult => Ok(crate::syntax::zilde(Numeric::current().float(0.0))),
-            _ => Err(span.error(ErrorKind::Syntax, "the operand must return an array, function or no result"))
-        }
+        result_item(if empty { on_prototypes(operand, x.as_ref(), &y, cx)? } else { operand.call(x.as_ref(), &y, cx)? }.value, span)
     })?;
     Ok(if mixed.is_some() { Bound::from(items) } else { Bound::new(Binding::Value(items)) })
+}
+
+/// A call's result as an item of a map's result. No result gives `⍬`.
+// Each map calls this once per cell. Out of line, even with `#[inline]`, it cost unbatched maps about 15 instructions per cell.
+#[inline(always)]
+fn result_item(result: Binding, span: &Span) -> Result<Value, Error> {
+    match result {
+        Binding::Value(a) => Ok(a), Binding::Function(f) => Ok(Value::Function(f)),
+        Binding::NoResult => Ok(crate::syntax::zilde(Numeric::current().float(0.0))),
+        _ => Err(span.error(ErrorKind::Syntax, "the operand must return an array, function or no result"))
+    }
+}
+
+/// Calls each function among `array`'s items on the whole arguments, in ravel order, and mixes the results as Rank does, with `array`'s layout as their frame. Any other item is its own result. The function of a unit returns its result as it is, as Rank does for a call on whole arguments.
+pub(super) fn function_array(array: &Value, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
+    if array.is_unit() {
+        let Value::Function(f) = array.at(0) else { unreachable!("a function array's unit holds a function") };
+        return f.call(left, right, cx);
+    }
+    let span = cx.span;
+    let items = assembled(array.len(), array.layout().clone(), Some("invalid function array result"), span, |i, _| match array.at(i) {
+        Value::Function(f) => result_item(f.call(left, right, cx)?.value, span),
+        item => Ok(item),
+    })?;
+    Ok(Bound::from(items))
 }
 
 pub(super) fn each(operand: &Function, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
@@ -1387,6 +1448,12 @@ fn each_items(operand: &Function, left: Option<&Value>, right: &Value, cx: &Cont
     // Each passes a scalar argument's item to every cell, where Rank passes the scalar. The item is the argument's one cell, whatever its rank.
     let whole = |a: &Value| if a.shape().is_empty() && !a.is_atom() { let item = a.at(0); let rank = item.shape().len(); (item, rank) } else { (a.clone(), 0) };
     each_pair(operand, agreement.len, agreement.layout.clone(), |i| Ok(agreement.values(left, right, i)), || crate::batch::Arguments::laid(&agreement, left.map(whole), whole(right)), None, cx)
+}
+
+/// `operand` on each item of `right`, with `left` whole for each: how a system function or `⍎` maps over a right argument that holds several of its items (`system::Item::maps`). It's Each with `left` enclosed.
+pub(super) fn each_whole_left(operand: &Function, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
+    let left = left.map(Value::enclose).transpose().error_at(cx.span, "invalid left argument")?;
+    each_items(operand, left.as_ref(), right, cx)
 }
 
 /// The identity of a fold by `p` of items like `prototype`, which fills a fold's empty lanes.
@@ -1532,7 +1599,7 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<usize>, seed: Opt
                 let active = cx.carried(None, right);
                 let call = |x: &Value, y: &Value| operand.call_array(Some(x), y, cx);
                 let data = if kind.scan { scan_items(&lanes, seed.cloned(), |i| right.at(i), call)? } else { fold_items(&lanes, seed, |i| right.at(i), call)? };
-                lane_results(shape, data, active, if kind.scan { "invalid scan result" } else { "invalid fold result" }, cx)?
+                lane_results(shape, data, active, if kind.scan { "invalid scan result" } else { "invalid fold result" }, cx.span)?
             }
         },
     };
@@ -1557,7 +1624,7 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
             if let Some(result) = (!active).then(|| crate::pervasive::scan(p, right, seed, &lanes)).flatten() { result }
             else if let (Primitive::Arithmetic(op), false, true) = (p, active, right.all_numbers() && seed.is_none_or(|a| matches!(a, Value::Number(_)))) {
                 number_lanes(op, true, right, seed, &lanes, shape, cx)?
-            } else { lane_results(shape, scan_items(&lanes, seed.cloned(), |i| right.at(i), call)?, active, "invalid scan result", cx)? }
+            } else { lane_results(shape, scan_items(&lanes, seed.cloned(), |i| right.at(i), call)?, active, "invalid scan result", cx.span)? }
         }
         FoldPlan::Lanes { lanes, shape } => match seed.is_none().then(|| crate::fusion::fold(right, p, kind, along)).flatten() {
             Some(fused) => fused,
@@ -1568,7 +1635,7 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
                 let result = match ((kernel && (lanes.len >= 2 || any())).then(|| crate::pervasive::fold(p, right, along)).flatten(), p) {
                     (Some(result), _) => result,
                     (None, Primitive::Arithmetic(op)) if kernel && right.all_numbers() => number_lanes(op, false, right, None, &lanes, shape, cx)?,
-                    _ => lane_results(shape, fold_items(&lanes, seed, |offset| right.at(offset), call)?, active, "invalid fold result", cx)?,
+                    _ => lane_results(shape, fold_items(&lanes, seed, |offset| right.at(offset), call)?, active, "invalid fold result", cx.span)?,
                 };
                 if lanes.len == 1 { lone(result) } else { result }
             }
@@ -1586,8 +1653,8 @@ fn folded(result: Value, kind: FoldKind, along: usize, right: &Value, span: &Spa
 }
 
 /// The results of a fold's lanes or a scan's items by an operand with no kernel, laid out by `shape`. Over a batch (`active`), each result is a batch: a fold gives one for each lane of the cells, and a scan one for each stage. They join into one batch (`batch::joined`).
-fn lane_results(shape: Vec<usize>, data: Vec<Value>, active: bool, what: &str, cx: &Context<'_>) -> Result<Value, Error> {
-    let value = Value::new(shape, data).error_at(cx.span, what)?;
+fn lane_results(shape: Vec<usize>, data: Vec<Value>, active: bool, what: &str, span: &Span) -> Result<Value, Error> {
+    let value = Value::new(shape, data).error_at(span, what)?;
     Ok(if active { crate::batch::joined(&value).unwrap_or(value) } else { value })
 }
 
@@ -1641,7 +1708,7 @@ fn scan_items<T: Clone>(axis: &Lanes, seed: Option<T>, item: impl Fn(usize) -> T
 
 /// The fold or scan of `right` along `axis` by `operand`, with `seed` as each lane's left argument, as one batched map over the lanes that `lanes` gives. The map's operand is the derived fold or scan along the last axis. The fold axis moves last for the run, and a scan moves it back in its result. Inside the run, the fold calls `operand` once for each stage, on every lane at once (`batch::call`). `None` for one lane, for lanes with no call to make, and where the run falls back. After a fallback, the loop over lanes runs from the start and keeps effects in order.
 fn by_lanes(operand: &Function, kind: FoldKind, seed: Option<&Value>, right: &Value, axis: usize, lanes: &Lanes, cx: &Context<'_>) -> Option<Result<Value, Error>> {
-    if lanes.outer * lanes.inner < 2 || lanes.len <= usize::from(seed.is_none()) || !crate::batch::tries(cx) { return None; }
+    if lanes.outer * lanes.inner < 2 || lanes.len <= usize::from(seed.is_none()) || !crate::batch::tries(cx, lanes.outer * lanes.inner) { return None; }
     let rank = right.shape().len();
     let order: Vec<usize> = (0..rank).filter(|&a| a != axis).chain([axis]).collect();
     let moved = match move_axes(right, &destination(&order), cx) { Ok(moved) => moved, Err(e) => return Some(Err(e)) };

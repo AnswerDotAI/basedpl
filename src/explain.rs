@@ -1,12 +1,10 @@
-//! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, the accumulations, which add items at scattered positions, with the path each took, the places where a batched run's calls fell back to slower code, the writes that left a compact array in mixed storage, and the routes that handled an array's items one at a time. Events are recorded only while `•explain` runs. Fusion runs its graphs without a session, so every event goes to a sink on the thread that runs the expression.
+//! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, the accumulations, which add items at scattered positions, with the path each took, the places where a batched run's calls fell back to slower code, the writes that left a compact array in mixed storage, the routes that handled an array's items one at a time, and the faster routes that code considered and declined. Events are recorded only while `•explain` runs. Code on every thread records them into the run's store, which `rustymath::events` holds for the whole process while the run lasts. rustymath's declines go into the same store. The store belongs to the process, not to a session, because fusion runs its graphs without one. A process supports one `•explain` at a time.
 //!
 //! The module also counts the live nodes that `•memory` reports: the record nodes of `∂` and the pending arrays. A node counts for the thread that made it, even when another thread drops it.
 use crate::{keyed, Error, ErrorAt, Value};
-use std::{cell::{Cell, RefCell}, sync::{atomic::{AtomicUsize, Ordering}, Arc}};
+use std::{any::Any, cell::Cell, sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex, MutexGuard, PoisonError}};
 
 thread_local! {
-    /// The events of the `•explain` running on this thread, if any.
-    static EVENTS: RefCell<Option<Events>> = const { RefCell::new(None) };
     /// The live nodes of each kind that this thread made.
     static MADE: Arc<[AtomicUsize; 2]> = Arc::default();
     /// The items that pending arrays have computed on this thread, which `forced` counts across one call.
@@ -30,7 +28,8 @@ enum Column { Text, Count }
 /// - `fallbacks`: each batched map that fell back to calling its operand once for each cell, with the reason and the number of cells it concerns.
 /// - `mixed`: each write that left a compact array in mixed storage, with the code of the call that wrote, its line and column, the array's kind before the write, the kind written, and the array's item count.
 /// - `itemwise`: each route that handled an array's items one at a time where whole-array code covers most calls, with the innermost call that ran it, that call's line and column, the route, and the items it handled. A route outside any call counts for the `•explain` call itself.
-const KINDS: [(&str, &[(&str, Column)]); 8] = {
+/// - `declined`: each faster route that code considered and didn't take, with the route, the reason and the items that its declines concerned, summed by route and reason (`rustymath::events`).
+const KINDS: [(&str, &[(&str, Column)]); 9] = {
     use Column::*;
     [
         ("fused", &[("glyphs", Text), ("items", Count), ("blocks", Count), ("runs", Count), ("copied", Count)]),
@@ -41,12 +40,13 @@ const KINDS: [(&str, &[(&str, Column)]); 8] = {
         ("fallbacks", &[("reason", Text), ("items", Count)]),
         ("mixed", &[("code", Text), ("line", Count), ("column", Count), ("target", Text), ("written", Text), ("items", Count)]),
         ("itemwise", &[("function", Text), ("line", Count), ("column", Count), ("route", Text), ("items", Count)]),
+        ("declined", &[("route", Text), ("reason", Text), ("items", Count)]),
     ]
 };
 
 /// A kind of event, by its position in `KINDS`.
 #[derive(Clone, Copy)]
-enum Kind { Fused, Stored, Forced, Fast, Accumulations, Fallbacks, Mixed, Itemwise }
+enum Kind { Fused, Stored, Forced, Fast, Accumulations, Fallbacks, Mixed, Itemwise, Declined }
 
 /// The kinds whose events mark a slow path, each with the column that names its event: a pending array that a fused group computed on its own (its reason), a call that computed pending arrays' items (its function), a batched map's fallback (its reason), a write that left a compact array mixed (its code), and a route that handled items one at a time (its route).
 const SLOW: [(Kind, usize); 5] = [(Kind::Stored, 2), (Kind::Forced, 0), (Kind::Fallbacks, 0), (Kind::Mixed, 0), (Kind::Itemwise, 3)];
@@ -57,42 +57,37 @@ pub(crate) struct Events { rows: [Vec<Vec<Field>>; KINDS.len()], unclaimed: Vec<
 
 /// Runs `run` as `•explain` runs its text: recording events, inside any `•explain` that encloses it. Gives what `run` gives and the events it recorded, which an enclosing `•explain` gets too, because they happened during its run. `•explain` and the speed check both run through it.
 pub(crate) fn explained<T>(run: impl FnOnce() -> T) -> (T, Events) {
-    let mut under_way = Run::start();
+    let sink = Arc::new(Store::default());
+    let under_way = rustymath::events::Run::start(sink.clone());
     let result = run();
-    (result, under_way.end())
+    let outer = under_way.outer().cloned();
+    drop(under_way);
+    let events = std::mem::take(&mut *sink.lock());
+    if let Some(outer) = outer.as_deref().and_then(Store::of) { outer.lock().extend(&events); }
+    (result, events)
 }
 
-/// An `•explain` run under way on this thread, from `start` to `end`. Dropping it before `end`, as a panic in the run does, ends it too. A panic then leaves the count of runs (`EXPLAINING`) and this thread's events (`EVENTS`) as they were before the run, which matters because Python turns a panic into an exception and carries on.
-struct Run { outer: Option<Events>, ended: bool }
+/// The sink of one `•explain` run (`rustymath::events`): its events, behind a lock because code on every thread records into it.
+#[derive(Default)]
+struct Store(Mutex<Events>);
 
-impl Run {
-    /// Counts a run under way, and gives this thread empty events to record into, keeping the enclosing run's.
-    fn start() -> Self {
-        EXPLAINING.fetch_add(1, Ordering::Relaxed);
-        Self { outer: EVENTS.with(|e| e.replace(Some(Events::default()))), ended: false }
-    }
-    /// Lowers the count of runs under way, and gives the events this run recorded after adding them to the enclosing run's, which this thread records into again.
-    fn end(&mut self) -> Events {
-        self.ended = true;
-        EXPLAINING.fetch_sub(1, Ordering::Relaxed);
-        EVENTS.with(|e| {
-            let events = e.replace(None).unwrap_or_default();
-            if let Some(mut outer) = self.outer.take() {
-                outer.extend(&events);
-                e.replace(Some(outer));
-            }
-            events
-        })
-    }
+impl Store {
+    /// `sink` as an `•explain` run's store, if it is one.
+    fn of(sink: &dyn rustymath::events::Sink) -> Option<&Store> { (sink as &dyn Any).downcast_ref() }
+    fn lock(&self) -> MutexGuard<'_, Events> { self.0.lock().unwrap_or_else(PoisonError::into_inner) }
 }
 
-impl Drop for Run { fn drop(&mut self) { if !self.ended { self.end(); } } }
+impl rustymath::events::Sink for Store {
+    fn decline(&self, route: &'static str, reason: &'static str, items: usize) { self.lock().decline(route, reason, items) }
+}
 
-/// The `•explain` runs under way on any thread. The count is process-wide so that `reporting`, which every call reads, costs one plain atomic load and no thread-local lookup. While any thread's `•explain` runs, calls on every other thread take the slower reporting path too, and record nothing.
-static EXPLAINING: AtomicUsize = AtomicUsize::new(0);
+/// `f` on the events of the `•explain` under way, or `None` when none is.
+fn store<T>(f: impl FnOnce(&mut Events) -> T) -> Option<T> { rustymath::events::with(|sink| Store::of(&**sink).map(|s| f(&mut s.lock()))).flatten() }
 
-/// Adds the row that `row` gives to the events of `kind`, while an `•explain` records on this thread.
-fn record(kind: Kind, row: impl FnOnce() -> Vec<Field>) { EVENTS.with(|e| if let Some(events) = e.borrow_mut().as_mut() { events.rows[kind as usize].push(row()) }) }
+/// Adds the row that `row` gives to the events of `kind`, while an `•explain` records. `row` runs before the store's lock is taken.
+fn record(kind: Kind, row: impl FnOnce() -> Vec<Field>) {
+    if recording() { let row = row(); store(|events| events.rows[kind as usize].push(row)); }
+}
 
 /// Records a fused group of `items` items, whose calls have the glyphs `glyphs`, in the order they ran, with what `tally` counted while it ran.
 pub(crate) fn fused(glyphs: impl FnOnce() -> String, items: usize, tally: &Tally) {
@@ -106,11 +101,11 @@ pub(crate) fn stored(event: impl FnOnce() -> (String, usize, &'static str)) {
     record(Kind::Stored, || { let (glyphs, items, reason) = event(); vec![Field::Text(glyphs), Field::Count(items), Field::Text(reason.into())] })
 }
 
-/// Whether an `•explain` records on this thread.
-pub(crate) fn recording() -> bool { EVENTS.with(|e| e.borrow().is_some()) }
-/// Whether calls report the pending arrays they compute: under `•prefs ["fusion":$t]`, or while an `•explain` runs on any thread. A call on another thread then records nothing (`recording`).
+/// Whether an `•explain` is recording.
+pub(crate) fn recording() -> bool { store(|_| ()).is_some() }
+/// Whether calls report the pending arrays they compute: under `•prefs ["fusion":$t]`, or while an `•explain` runs (`rustymath::events::running`).
 #[inline]
-pub(crate) fn reporting() -> bool { crate::settings::reports_fusion() || EXPLAINING.load(Ordering::Relaxed) > 0 }
+pub(crate) fn reporting() -> bool { crate::settings::reports_fusion() || rustymath::events::running() }
 
 /// What a fused group's blocks did while `•explain` records: the blocks, the runs that they split into where an input repeats or cycles, and the items copied out of inputs before the kernels read them. Blocks run on worker threads, so each count is atomic. Outside `•explain` a tally holds no counts, so the threads share no counters.
 pub(crate) struct Tally(Option<Counts>);
@@ -119,7 +114,7 @@ pub(crate) struct Tally(Option<Counts>);
 struct Counts { blocks: AtomicUsize, runs: AtomicUsize, copied: AtomicUsize }
 
 impl Tally {
-    /// A tally that counts while an `•explain` records on this thread, and otherwise counts nothing.
+    /// A tally that counts while an `•explain` records, and otherwise counts nothing.
     pub(crate) fn new() -> Self { Tally(recording().then(Counts::default)) }
     pub(crate) fn block(&self) { self.add(|c| &c.blocks, 1) }
     pub(crate) fn run(&self) { self.add(|c| &c.runs, 1) }
@@ -163,22 +158,18 @@ pub(crate) fn mixed(span: &crate::Span, target: &'static str, written: &'static 
     })
 }
 
-/// Counts `items` items that `route` handled one at a time, where whole-array code covers most calls, while an `•explain` records on this thread. The innermost call that reports claims the count (`claim_itemwise`).
-pub(crate) fn itemwise(route: &'static str, items: usize) {
-    EVENTS.with(|e| if let Some(events) = e.borrow_mut().as_mut() {
-        events.unclaimed.push((route, items))
-    })
-}
+/// Counts `items` items that `route` handled one at a time, where whole-array code covers most calls, while an `•explain` records. The innermost call that reports claims the count (`claim_itemwise`).
+pub(crate) fn itemwise(route: &'static str, items: usize) { store(|events| events.unclaimed.push((route, items))); }
 
-/// Where a call's `itemwise` counts begin, while an `•explain` records on this thread.
-pub(crate) fn itemwise_mark() -> Option<usize> { EVENTS.with(|e| e.borrow().as_ref().map(|events| events.unclaimed.len())) }
+/// Where a call's `itemwise` counts begin, while an `•explain` records.
+pub(crate) fn itemwise_mark() -> Option<usize> { store(|events| events.unclaimed.len()) }
 
 /// Records the `itemwise` counts made since `mark`, as `itemwise_mark` gave it, as rows for the call at `span`, whose code `function` gives.
 pub(crate) fn claim_itemwise(mark: usize, function: impl FnOnce() -> String, span: &crate::Span) {
-    EVENTS.with(|e| if let Some(events) = e.borrow_mut().as_mut() && events.unclaimed.len() > mark {
+    store(|events| if events.unclaimed.len() > mark {
         let entries = events.unclaimed.drain(mark..).collect();
         events.claimed(entries, function(), span);
-    })
+    });
 }
 
 /// `entries` with each route's items summed, in the order of each route's first entry.
@@ -218,11 +209,21 @@ impl Events {
         for (route, items) in by_route(entries) { self.rows[Kind::Itemwise as usize].push(vec![Field::Text(function.clone()), Field::Count(line), Field::Count(column), Field::Text(route.into()), Field::Count(items)]) }
     }
 
-    /// The rows of the records that mark a slow path (`SLOW`), each as its record's name, the text of the column that names the event, and all its fields, with the routes that no call claimed as `itemwise` rows. The speed check expects none for a case beyond the events its `# allows` lines name.
+    /// Adds a decline of `route` for `reason`, for `items` items, to the `declined` rows, summing the items of a route and reason already there.
+    fn decline(&mut self, route: &'static str, reason: &'static str, items: usize) {
+        let rows = &mut self.rows[Kind::Declined as usize];
+        match rows.iter_mut().find(|row| row[0].text() == route && row[1].text() == reason) {
+            Some(row) => row[2] = Field::Count(row[2].count() + items),
+            None => rows.push(vec![Field::Text(route.into()), Field::Text(reason.into()), Field::Count(items)]),
+        }
+    }
+
+    /// The rows of the records that mark a slow path (`SLOW`), each as its record's name, the text of the column that names the event, and all its fields, with the routes that no call claimed as `itemwise` rows. The speed check expects none for a case beyond the events its `# allows` and `# gap` lines name. Each `declined` row follows, named by its route and reason, as in `"fusion: an exact argument"`. A case needn't name a decline, because each one explains another event, but a line that names one must still find it.
     pub(crate) fn slow(&self) -> Vec<(&'static str, String, String)> {
         let fields = |row: &[Field]| row.iter().map(|f| match f { Field::Text(t) => t.clone(), Field::Count(n) => n.to_string() }).collect::<Vec<_>>().join(" ");
         let mut rows: Vec<_> = SLOW.iter().flat_map(|&(kind, key)| self.rows[kind as usize].iter().map(move |row| (KINDS[kind as usize].0, row[key].text().to_owned(), fields(row)))).collect();
         rows.extend(by_route(self.unclaimed.iter().copied()).into_iter().map(|(route, items)| ("itemwise", route.to_owned(), format!("{route} {items}"))));
+        rows.extend(self.rows[Kind::Declined as usize].iter().map(|row| ("declined", format!("{}: {}", row[0].text(), row[1].text()), fields(row))));
         rows
     }
 }

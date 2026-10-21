@@ -88,13 +88,14 @@ v∨w	1400	1400	3300
 # Expected: `b#v` 2 copies: about 1 cycle an item, since each kept item's place depends on the items before it; `⍸b` 2 copies: about 1 cycle an item, as compression.
 b#v	4	4	4
 ⍸b	4	4	4
-# Replicating by counts of 0 to 2 writes four copies of each item where its run starts. The next item overwrites the copies past its count.
+# Replicating by counts of 0 to 2 writes four copies of each item where its run starts. The next item overwrites the copies past its count. A group of 4 items whose counts are all at most 4 writes after one check for the group (`gather::repeat`). With a check and a taken branch for each item, the loop cost about a third more in the speed test's binary than through `bpl`: `cnt#v` measured 7.1 copies there against 5.3, and `(0+cnt)#v` 9.7 against 8.1 (`cp_`, 21 October 2026).
 # Expected: 4 copies: about 2 cycles an item for four stores, which the next item overwrites past its count.
 # Held until studied: `cnt#v` has old Linux and wasm budgets that suggest about 8.5 and 9, more than twice its expected cost. Its Linux and wasm budgets stay at the old value.
 cnt#v	8	17	18
 # Counts held as floats are checked for whole numbers 256 at a time before they replicate.
-# Expected: 4.5 copies: as `cnt#v`, plus a vectorised check for whole numbers.
+# Expected: 6 copies: as `cnt#v`, plus about 1 copy for the add that makes the counts floats, and about 1 more for the whole-number check than `cnt#v` pays to widen its 1-byte counts, because the check rounds each float and writes it as a 64-bit integer.
 # Held until studied: `(0+cnt)#v` has old Linux and wasm budgets that suggest about 15 and 15, more than twice its expected cost. Its Linux and wasm budgets stay at the old value.
+# Its macOS budget of 9 comes from the earlier expected cost of 4.5, which left out the add and most of the check. It measures about 7 copies on macOS.
 (0+cnt)#v	9	30	30
 # A range with an approximate length converts each position from an integer to a float. Wasm has no vector instruction for that, so there each block of 8 positions adds 0 to 7 to the block's first float.
 # Expected: 0.5 copies: writes 8 bytes an item.
@@ -178,8 +179,8 @@ i (+/⊢)⌸ v	200	370	220
 ≠\jv	2	2	5.4
 # Held until studied: `0=\jv` has an old wasm budget that suggests about 2.35, more than twice its expected cost. Its wasm budget stays at the old value.
 0=\jv	2	2	4.7
-# Scans along short lanes make no call for each lane. Comparison and Boolean scans restart lanes inside each 64-bit word of results. Other scans run lanes under 64 items eight side by side, so eight chains of additions are always in flight. Run one lane at a time, as before 21 October 2026, their cost moved with where the code sat: `+\X` cost 1.8 copies in the test binary against 0.9 through `bpl`, and `+\[16384 4]⍴v` 3.4 against 2.
-# Expected: `=\[32768 2]⍴jv` 1 copy: as `≠\jv`, restarting each lane inside a word; `<\[16384 4]⍴v` 3 copies: as `<\v`; `≠\[16384 4]⍴b` 0.5 copies: word-wide bit operations; `+\[16384 4]⍴v` 2 copies: eight lanes run side by side, about 1 cycle an item.
+# Scans along short lanes make no call for each lane. Comparison and Boolean scans restart lanes inside each 64-bit word of results. Other scans run lanes under 64 items eight side by side, so eight chains of additions are always in flight. Run one lane at a time, as before 21 October 2026, their cost moved with where the code sat: `+\X` cost 1.8 copies in the test binary against 0.9 through `bpl`, and `+\[16384 4]⍴v` 3.4 against 2. Scans along a leading axis make no call for each row: `+⍀[16384 4]⍴v` cost 28 copies while each row of 4 items made two calls that stayed out of line.
+# Expected: `=\[32768 2]⍴jv` 1 copy: as `≠\jv`, restarting each lane inside a word; `<\[16384 4]⍴v` 3 copies: as `<\v`; `≠\[16384 4]⍴b` 0.5 copies: word-wide bit operations; `+\[16384 4]⍴v` 2 copies: eight lanes run side by side, about 1 cycle an item; `+⍀[16384 4]⍴v` 3 copies: each row waits on the row before, which it reads back from the output through a store-to-load forwarding before it adds, about 6 cycles for each row of 4 items.
 # Held until studied: `=\[32768 2]⍴jv` measures 9.49 on macOS and has old Linux and wasm budgets that suggest about 8.5 and 10, more than twice its expected cost. Its macOS, Linux and wasm budgets stay at the old value.
 =\[32768 2]⍴jv	20	17	20
 # Held until studied: `<\[16384 4]⍴v` measures 6.39 on macOS and has old Linux and wasm budgets that suggest about 9.5 and 14.5, more than twice its expected cost. Its macOS, Linux and wasm budgets stay at the old value.
@@ -187,6 +188,7 @@ i (+/⊢)⌸ v	200	370	220
 # Held until studied: `≠\[16384 4]⍴b` has old Linux and wasm budgets that suggest about 1.05 and 1.55, more than twice its expected cost. Its Linux and wasm budgets stay at the old value.
 ≠\[16384 4]⍴b	1	2.1	3.1
 +\[16384 4]⍴v	4	4	4
++⍀[16384 4]⍴v	6	6	6
 # A residue scan waits on the result before each item. From a whole float seed on integers it runs as integers.
 # Expected: 16 copies: each item waits for an integer division of about 8 cycles.
 # Held until studied: `7|\jv` has an old wasm budget that suggests about 36, more than twice its expected cost. Its wasm budget stays at the old value.

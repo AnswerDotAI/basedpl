@@ -13,6 +13,7 @@ use crate::{
 };
 use rustymath::{agreement::{expanded, in_place, Mapping}, buffer::{DType, FloatWidth, View}, with_float_width, gather::Steps, layout::strides, reduce::{self, Reduction}, Arg, Native};
 use rustymath::hashing::{HashMap, HashMapExt};
+use crate::array::{Footprint, Seen};
 use std::{ops::Range, sync::{Arc, Mutex, OnceLock, PoisonError}};
 
 mod blocks;
@@ -141,7 +142,7 @@ impl Call {
             match read {
                 Read::Input(v, _) => add((v.storage_id(), v.footprint())),
                 Read::Scalar(_) => {}
-                Read::Pending(p, ..) if p.is_forced() => add((Arc::as_ptr(p) as usize, Pending::footprint_in(p, &mut Default::default()))),
+                Read::Pending(p, ..) if p.is_forced() => add((Arc::as_ptr(p) as usize, p.footprint_in(&mut Default::default()))),
                 Read::Pending(p, ..) => p.kept.iter().copied().for_each(&mut add),
             }
         }
@@ -293,22 +294,29 @@ pub(crate) fn defer(p: Primitive, x: Option<&Value>, y: &Value, agreement: Agree
     if let Some(copied) = x.and_then(|x| copied_once(p, x, y, &agreement)) { return Ok(copied); }
     // A call that `Numeric::halving` widens runs through `pervasive::halves`, which makes its 32-bit copies.
     let numeric = Numeric::current();
-    if numeric.halving([x, Some(y)].into_iter().flatten().map(Value::float_width)).is_some() { return Err(agreement); }
+    if numeric.halving([x, Some(y)].into_iter().flatten().map(Value::float_width)).is_some() { return declined(agreement, "16-bit floats"); }
     let floats = |v: &Value| match v.dtype() { Some(DType::Float(width)) => Some(width), _ => None };
-    let Some(width) = [x, Some(y)].into_iter().flatten().filter(|v| !v.is_atom()).find_map(floats) else { return Err(agreement) };
-    if pervasive::keeps_exact(p, numeric) && [x, Some(y)].into_iter().flatten().any(pervasive::exact) { return Err(agreement); }
+    let Some(width) = [x, Some(y)].into_iter().flatten().filter(|v| !v.is_atom()).find_map(floats) else { return declined(agreement, "no float array") };
+    if pervasive::keeps_exact(p, numeric) && [x, Some(y)].into_iter().flatten().any(pervasive::exact) { return declined(agreement, "an exact argument"); }
     // The call computes at the graph's width, as `map` computes it (`pervasive::computes_in`), so each atom reads at that width, as the kernels read it.
-    if x.is_some_and(|x| pervasive::computes_in(p, x, y, numeric) != Some(DType::Float(width))) { return Err(agreement); }
+    if x.is_some_and(|x| pervasive::computes_in(p, x, y, numeric) != Some(DType::Float(width))) { return declined(agreement, "a result at another width"); }
     let fits = |v: &Value, m: &Mapping| v.is_atom() || v.layout().plain() && (floats(v) == Some(width) || matches!(m, Mapping::Linear(1)) && v.unshared_pending().is_some_and(|c| c.comparison_at(width)));
     let at_width = |v: &Value| if !v.is_atom() || floats(v) == Some(width) { v.clone() } else {
         with_float_width!(width, F => read_as::<F>(v).map(|x| Value::Number(Number::float(x[0].into(), width)))).expect("a real atom reads as a float")
     };
-    if !agreement.layout.plain() || !x.is_none_or(|x| fits(x, &agreement.left)) || !fits(y, &agreement.right) { return Err(agreement); }
+    if !agreement.layout.plain() { return declined(agreement, "keys, names or a renderer"); }
+    if !x.is_none_or(|x| fits(x, &agreement.left)) || !fits(y, &agreement.right) { return declined(agreement, "an argument of another kind or width, or with keys"); }
     let Agreement { layout, left, right, .. } = agreement;
     let arg = |v: &Value, mapping: Mapping| read(&at_width(v), mapping);
     let call = Call { operation: Operation::Primitive(p), operands: Operands { left: x.map(|x| arg(x, left)), right: arg(y, right), mask: None } };
     let (dtype, prototype) = match p { Primitive::Compare(_) => (DType::Boolean, Number::from_bool(false)), _ => (DType::Float(width), Number::float(0.0, width)) };
     Ok(pending_call(call, layout, width, dtype, prototype))
+}
+
+/// `agreement` back, after `defer` declines to fuse its call for `reason` (`rustymath::events`).
+fn declined(agreement: Agreement, reason: &'static str) -> Result<Value, Agreement> {
+    rustymath::events::declined("fusion", reason, agreement.len);
+    Err(agreement)
 }
 
 /// A read of `v` through `mapping`: an atom's value, a pending array's call, or an array's items.
@@ -495,12 +503,17 @@ pub(crate) fn picks(value: &Value, p: Primitive, kind: FoldKind) -> Option<Vec<i
 /// The fold of a pending array along `axis`, as `+/`, `⌈⌿` or a fold with an axis reduces it, computed block by block without building the array. A view of a pending array folds the same way, by its own shape. A copy of windows folded along its default axis slides over its source instead (`slide`), whether or not another array holds it. The result holds the lanes' results by the fold's shape, which the fold's caller lays out (`folded` in `eval::operators`). `None` where another array probably holds the array, so that building it once serves every reader, or where its graph has no such fold. The array's items have then been computed as usual. A fold leaves its graph in the array, so a later read still computes the items, as the other tine of `(⊢÷+/)` does.
 pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axis: usize) -> Option<Value> {
     if axis == kind.default_axis(value.shape().len()) { if let Some(slid) = slide(value, p, kind) { return Some(slid); } }
-    let pending = value.folded_pending()?;
+    let Some(pending) = value.folded_pending() else {
+        if value.pending().is_some_and(|p| !p.is_forced()) { rustymath::events::declined("fused fold", "another array holds the array", value.len()); }
+        return None;
+    };
     let graph = match pending.take() {
         Work::Graph(graph) => graph,
         Work::Call(call) => match pending.root(call) {
             Ok(root) => pending.graph(root),
             Err(copy) => {
+                let reason = if matches!(copy.operation, Operation::Copy) { "a copy that no call moves under" } else { "a comparison computed outside the graph" };
+                rustymath::events::declined("fused fold", reason, pending.len());
                 pending.put(Work::Call(copy));
                 return None;
             }
@@ -513,7 +526,10 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axis: usize) -> 
             graph.explained(Some(Operation::Fold(p, kind)), &tally);
             pending.put(Work::Graph(graph))
         }
-        None => pending.result.set(pending.counted(graph.run().into_storage())).expect("a pending array computes its items once"),
+        None => {
+            rustymath::events::declined("fused fold", "a fold that its graph can't run", pending.len());
+            pending.result.set(pending.counted(graph.run().into_storage())).expect("a pending array computes its items once")
+        }
     }
     folded
 }
@@ -530,27 +546,20 @@ impl Pending {
     pub(crate) fn is_forced(&self) -> bool { self.result.get().is_some() }
     pub(crate) fn dtype(&self) -> DType { self.dtype }
     pub(crate) fn prototype(&self) -> Value { self.prototype.clone() }
-    /// The bytes that this pending array keeps alive: its items once computed, and until then the arrays that its call or graph reads. Each allocation counts once in `seen`.
-    pub(crate) fn footprint_in(this: &Arc<Self>, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
-        if !seen.insert(Arc::as_ptr(this) as usize) { return 0; }
-        if let Some(storage) = this.result.get() { return storage.footprint_in(seen); }
-        let work = this.work.lock().unwrap_or_else(PoisonError::into_inner);
-        match work.as_ref() {
-            Some(Work::Call(call)) => call.operands.iter().map(|read| match read {
-                Read::Input(v, _) | Read::Scalar(v) => v.footprint_in(seen),
-                Read::Pending(p, ..) => Self::footprint_in(p, seen),
-            }).sum(),
-            Some(Work::Graph(graph)) => graph.inputs.iter().map(|(v, _)| v.footprint_in(seen)).sum(),
-            None => 0,
-        }
-    }
     /// `storage`, counted as computed for `•explain`'s `forced` rows.
     fn counted(&self, storage: Storage) -> Storage { crate::explain::computed(self.len()); storage }
     /// The items, computed on the first call.
     pub(crate) fn storage(&self) -> &Storage {
         self.result.get_or_init(|| self.counted(match self.take() {
             Work::Graph(graph) => graph.run().into_storage(),
-            Work::Call(call) => match self.root(call) { Ok(root) => self.graph(root).run().into_storage(), Err(call) => self.unfused(call) },
+            Work::Call(call) => match self.root(call) {
+                Ok(root) => self.graph(root).run().into_storage(),
+                Err(call) => {
+                    // A copy runs as well on its own. A call that reads a comparison would have computed it in the graph.
+                    if !matches!(call.operation, Operation::Copy) { rustymath::events::declined("fusion", "a comparison computed outside the graph", self.len()); }
+                    self.unfused(call)
+                }
+            },
         }))
     }
     /// The items, computed if they haven't been, with no copy.
@@ -710,6 +719,22 @@ impl Pending {
     }
 }
 
+impl Footprint for Pending {
+    /// The bytes that this pending array keeps alive: its items once computed, and until then the arrays that its call or graph reads.
+    fn footprint_in(&self, seen: &mut Seen) -> usize {
+        if let Some(storage) = self.result.get() { return storage.footprint_in(seen); }
+        let work = self.work.lock().unwrap_or_else(PoisonError::into_inner);
+        match work.as_ref() {
+            Some(Work::Call(call)) => call.operands.iter().map(|read| match read {
+                Read::Input(v, _) | Read::Scalar(v) => v.footprint_in(seen),
+                Read::Pending(p, ..) => p.footprint_in(seen),
+            }).sum(),
+            Some(Work::Graph(graph)) => graph.inputs.iter().map(|(v, _)| v.footprint_in(seen)).sum(),
+            None => 0,
+        }
+    }
+}
+
 /// The positions of `calls` in an order where each comes after the gathered calls it reads, ending with the first of `roots`.
 fn order(calls: &[Call], position: &HashMap<*const Pending, usize>, roots: &[usize]) -> Vec<usize> {
     let mut order = Vec::with_capacity(calls.len());
@@ -725,17 +750,12 @@ fn order(calls: &[Call], position: &HashMap<*const Pending, usize>, roots: &[usi
 }
 
 impl Drop for Pending {
-    /// Drops the pending arrays that the call reads in a loop, never by recursion, so that a long chain of calls can't overflow the stack. A graph that a fold left reads only arrays that have been computed.
+    /// Drops the pending arrays that the call reads through `drop_chain`, so that a long chain of calls can't overflow the stack. A graph that a fold left reads only arrays that have been computed.
     fn drop(&mut self) {
-        fn unlink(work: Option<Work>, chain: &mut Vec<Arc<Pending>>) {
-            let Some(Work::Call(call)) = work else { return };
+        crate::array::drop_chain(self, |pending, chain| {
+            let Some(Work::Call(call)) = pending.work.get_mut().unwrap_or_else(PoisonError::into_inner).take() else { return };
             chain.extend(call.operands.into_iter().filter_map(|a| match a { Read::Pending(pending, ..) => Some(pending), _ => None }));
-        }
-        let mut chain = Vec::new();
-        unlink(self.work.get_mut().unwrap_or_else(PoisonError::into_inner).take(), &mut chain);
-        while let Some(pending) = chain.pop() {
-            if let Ok(mut pending) = Arc::try_unwrap(pending) { unlink(pending.work.get_mut().unwrap_or_else(PoisonError::into_inner).take(), &mut chain); }
-        }
+        });
     }
 }
 

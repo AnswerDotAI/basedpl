@@ -215,10 +215,6 @@ fn selection(value: &Value, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>
     }, index_error).map(|(plan, atom)| IndexSelection::Planned(plan, atom))
 }
 
-/// A BPL value lent read-only to one buffer export, with the shape and strides of the export. The export holds this object, which keeps all three valid.
-#[pyclass(frozen)]
-struct Lent { value: Value, shape: Box<[isize]>, strides: Box<[isize]> }
-
 /// The array whose compact items an export lends for `value`, with the offset of `value`'s first item in them and, for a structural copy read through an affine map, each axis's stride in items. A copy that hasn't been built lends its source's items this way. Otherwise `value` lends its own items where they're compact. `None` where neither applies.
 fn lendable(value: &Value) -> Option<(Value, usize, Option<Vec<isize>>)> {
     if let Some((source, offset, strides)) = value.affine().filter(|(source, ..)| source.view().is_some()) { return Some((source, offset, Some(strides))); }
@@ -293,8 +289,9 @@ impl PyArray {
     }
     #[getter]
     fn is_atom(&self) -> PyResult<bool> { Ok(self.value()?.is_atom()) }
+    /// Whether a direct item is a function, which makes the array callable.
     #[getter]
-    fn is_integral(&self) -> PyResult<bool> { Ok(self.value()?.is_integral()) }
+    fn holds_functions(&self) -> PyResult<bool> { Ok(self.value()?.holds_functions()) }
     fn parts(&self, py: Python<'_>) -> PyResult<Py<PyAny>> { array(py, self.value()?) }
     /// The items as nested lists of Python scalars, or one scalar at rank 0, read without NumPy. Only compact items convert.
     fn tolist<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -317,14 +314,8 @@ impl PyArray {
         let value = slf.borrow().value()?.clone();
         let (items, offset, strides) = lendable(&value).ok_or_else(|| PyBufferError::new_err("an array of mixed or exact items has no buffer"))?;
         let dtype = items.view().expect("lendable items are compact").dtype();
-        let (shape, strides) = match strides { Some(s) => rustymath_buffer::strided_geometry(dtype, value.shape(), &s), None => rustymath_buffer::geometry(dtype, value.shape()) };
-        // An atom holds its items inline, so the pointer comes from the copy that `lent` keeps.
-        let lent = Bound::new(slf.py(), Lent { value: items, shape, strides })?;
-        let this = lent.get();
-        // SAFETY: the offset and strides reach only items of `this.value`, as the copy's map does.
-        let data = unsafe { this.value.view().expect("the items are compact").as_ptr().add(offset * dtype.bytes()) };
-        // SAFETY: `lent` never changes its value, shape or strides, and the export holds `lent`.
-        unsafe { rustymath_buffer::export(view, flags, lent.as_any(), dtype, data.cast_mut(), value.shape().iter().product(), &this.shape, &this.strides, true) }
+        // SAFETY: the offset and strides reach only items of `items`, as the copy's map does. An atom holds its items inline, so the pointer comes from the copy that the export holds.
+        unsafe { rustymath_buffer::lend(view, flags, slf.py(), items, |v| v.view().expect("the items are compact").as_ptr().add(offset * dtype.bytes()), dtype, value.shape(), strides.as_deref()) }
     }
     /// The items for NumPy to view writably: moved with no copy where nothing else holds them, and copied otherwise. For items it can't move, such as exact numbers, it still empties the array and returns `None`, so the caller copies them first.
     fn own(&mut self) -> PyResult<Option<Owned>> {

@@ -327,6 +327,7 @@ mod web {
 
     /// `•js Y`: the function that the JavaScript source `Y` evaluates to.
     pub(crate) fn function(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+        span.acts()?;
         let source = crate::data::text(right, span)?;
         let f = js_sys::eval(&source).map_err(|e| span.domain_error(message(&e)))?;
         let f = f.dyn_into::<Function>().map_err(|_| span.domain_error("•js source must give a function"))?;
@@ -338,6 +339,7 @@ mod web {
 
     /// Calls `f` with `right`, or with `left` then `right`. `None` when it returns `undefined` or `null`.
     pub(crate) fn call(f: &JsFunction, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Option<Value>, Error> {
+        cx.acts()?;
         let arg = |v: &Value| export(v).map(to_js).map_err(|_| cx.domain_error("a function or operator can't cross into JavaScript"));
         let f = f.get();
         let result = match left { Some(left) => f.call2(&JsValue::UNDEFINED, &arg(left)?, &arg(right)?), None => f.call1(&JsValue::UNDEFINED, &arg(right)?) };

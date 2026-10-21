@@ -8,7 +8,7 @@
         <DetectChar char="&quot;" attribute="String" context="String"/>
         <RegExpr String="'.?'" attribute="Char"/>
         <RegExpr String="(?:_\d+|_\S|_|[^\s\p{Cc}0-9←⎕•⍺⍵⍶⍹∇⍢⍝⋄\?¯∞⍬\+\-×÷⌈⌊\|\*⍟○π√!∧∨⊼⊽\~=≠&lt;≤&gt;≥⍳↦:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹\#↕⍭⨸⌻⍸⍷⊢⊣¿¨ᵇ⍨↣⍤∘⍠⍥↢\.⊗⌸⍣⇄⊘@∂⍚⌺/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘₓ₀₁₂₃₄₅₆₇₈₉₋\(\)\[\]\{\}'&quot;;\$_ₑⱼᵣ])+" attribute="Name"/>
-        <RegExpr String="[•][A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*" attribute="System"/>
+        <RegExpr String="[•][A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*" attribute="Function"/>
         <RegExpr String="[¯]?[∞]|[¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?([jJⱼ][¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?|ₓ|[rᵣ][¯]?\d+)?|[ₑⱼᵣ]" attribute="Number"/>
         <RegExpr String="[⍬]ₓ?" attribute="Number"/>
         <RegExpr String="\$[tfn]" attribute="Number"/>
@@ -36,7 +36,6 @@
       <itemData name="String" defStyleNum="dsString"/>
       <itemData name="Char" defStyleNum="dsChar"/>
       <itemData name="Number" defStyleNum="dsDecVal"/>
-      <itemData name="System" defStyleNum="dsBuiltIn"/>
       <itemData name="Function" defStyleNum="dsFunction"/>
       <itemData name="MonadicOperator" defStyleNum="dsOperator"/>
       <itemData name="DyadicOperator" defStyleNum="dsExtension"/>

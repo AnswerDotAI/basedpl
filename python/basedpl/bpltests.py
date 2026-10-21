@@ -1,5 +1,5 @@
 "Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set the budgets of basedpl's and rustymath's speed tests."
-import json, math, os, re, subprocess, sys, tempfile, tomllib
+import json, math, os, re, statistics, subprocess, sys, tempfile, time, tomllib
 from collections import defaultdict
 from decimal import Context, Decimal, ROUND_CEILING
 from dataclasses import dataclass, field, replace
@@ -265,18 +265,123 @@ def _retired(code, bpl):
         if p.returncode: raise ValueError(p.stdout + p.stderr)
         return int(_RETIRED[sys.platform].search(report.read())[1])
 
+def _program(code, n, setup):
+    "BPL that runs `code` once with `N` set to `n`, on one thread, after `setup`, and ends without displaying its result."
+    return f'•prefs ["threads":1]\nN←{n}\n{setup}\nr←{code}\n0'
+
+# The instructions that a case retires before the lowest value of `N` that `instructions` picks, and between successive values. A case that allocates an array at each step retires a few tens of millions more instructions over its first steps, while the allocator settles. `{↑[⍵ 1]}⍣N⊢0` counts the same from 3×10⁴ steps on, about 2×10⁸ instructions, and `{fib 10}⍣N⊢0` from 30 steps on. Each process pays a different warm-up, up to about 5×10⁶ instructions, which moves a slope over 5×10⁸ instructions by under 1%. Some cases also pay a one-off cost once `N` passes a size: `≢•ucs N⍴"ab" "cde"` retires about 5×10⁶ more instructions from about 131,350 items on.
+_SETTLE, _SPAN = 5e8, 5e8
+
 def instructions(
     cases:Annotated[str, {'nargs':'+'}], # A BPL expression that makes one call per step of `N`, such as `{⍵}⍣N⊢0`, or a list of them
     setup='', # BPL that defines what the cases use, run before each case
-    counts:Annotated[int, {'nargs':2}]=(1_000, 101_000), # The two values of `N`
+    counts:Annotated[int, {'nargs':'+'}]=None, # Two or more values of `N`; None: four values past the allocator's warm-up, from a rough count at 1,000 steps
     runs=3, # Processes at each value of `N`, of which the lowest count is used
     bpl:Path=None # A native `bpl` to count, such as a copy saved before a change; None: the installed one
 ):
-    "The instructions that each case retires per unit of `N`, on one thread: the difference between fresh `bpl` processes at the two `counts`, divided by the difference in `N`, which cancels startup and `setup`. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent. A case must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost."
+    "The instructions that each case retires per unit of `N`, on one thread. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent. A case must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost."
     cases = [cases] if isinstance(cases, str) else list(cases)
-    def count(code, n): return min(_retired(f'•prefs ["threads":1]\nN←{n}\n{setup}\nr←{code}\n0', bpl) for _ in range(runs))
-    lo, hi = counts
-    return Instructions((code, (count(code, hi) - count(code, lo)) / (hi - lo)) for code in cases)
+    def count(code, n, runs=runs): return min(_retired(_program(code, n, setup), bpl) for _ in range(runs))
+    def steps(code):
+        if counts: return counts
+        rough = max(1, (count(code, 1_000, 1) - count(code, 0, 1)) / 1_000)
+        return [round((_SETTLE + i*_SPAN)/rough) for i in range(4)]
+    def per_step(code):
+        ns = steps(code)
+        cs = [count(code, n) for n in ns]
+        return code, statistics.median((c1-c0)/(n1-n0) for n0, n1, c0, c1 in zip(ns, ns[1:], cs, cs[1:]))
+    return Instructions(per_step(code) for code in cases)
+
+class ProfileDiff(list):
+    "Each function's estimated instructions per step of `N` on two builds, as `(function, before, after)` rows, largest change first, below a row of each build's total."
+    def __init__(self, rows=(), totals=(0, 0)):
+        super().__init__(rows)
+        self.totals = totals
+    def __repr__(self): return '\n'.join(f'{b:>10,.0f} {a:>10,.0f} {a-b:>+10,.0f}  {f[:150]}' for f, b, a in [('total', *self.totals), *self])
+
+# A frame in the call graph that macOS `sample` reports: the tree's drawing characters, whose width gives the frame's depth, then its samples and its symbol.
+_FRAME, _THREAD = re.compile(r'^([ +!:|]*)(\d+) (\S.*?)  [\[(]'), re.compile(r'^\s*\d+ Thread_')
+
+def _self_samples(code, bpl, seconds):
+    "The samples at which each function was at the top of the main thread's stack while a fresh `bpl` process ran `code`, as macOS `sample` counts them over `seconds`, with demangled names, and the thread's total. `code` must run for longer than half a second plus `seconds`. The process is then killed."
+    p = subprocess.Popen([bpl or INSTALLED_BPL, '-e', code], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    try:
+        time.sleep(0.5)
+        if p.poll() is not None: raise ValueError(p.stderr.read())
+        with tempfile.NamedTemporaryFile('r', suffix='.txt') as report:
+            s = subprocess.run(['sample', str(p.pid), str(seconds), '-file', report.name], capture_output=True, text=True)
+            if s.returncode: raise ValueError(s.stdout + s.stderr)
+            lines = report.read().splitlines()
+    finally: p.kill(); p.wait()
+    start = next(i for i, line in enumerate(lines) if 'com.apple.main-thread' in line)
+    total, selfs, stack = int(lines[start].split()[0]), defaultdict(int), []
+    def pop():
+        _, symbol, n, below = stack.pop()
+        selfs[symbol] += n - below
+    for line in lines[start+1:]:
+        if not line.strip() or _THREAD.match(line): break
+        if not (m := _FRAME.match(line)): continue
+        depth, n = len(m[1]), int(m[2])
+        while stack and stack[-1][0] >= depth: pop()
+        if stack: stack[-1][3] += n
+        stack.append([depth, m[3], n, 0])
+    while stack: pop()
+    named = defaultdict(int)
+    for name, n in zip(subprocess.run(['c++filt'], input='\n'.join(selfs), capture_output=True, text=True).stdout.splitlines(), selfs.values()): named[name] += n
+    return named, total
+
+def profile_diff(
+    case, # A BPL expression that makes one call per step of `N`, as `instructions` takes, such as `{⍵}⍣N⊢0`
+    base:Path, # A native `bpl` to compare with, such as a copy saved before a change
+    setup='', # BPL that defines what the case uses, run before it
+    bpl:Path=None, # A native `bpl` to compare with `base`; None: the installed one
+    seconds=3, # How long macOS `sample` watches each build
+    rows=20 # How many functions to show
+):
+    "Where `case`'s instructions per step of `N` moved between two builds, by function, on macOS. For each build, a fresh process repeats the case on one thread while `sample` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone."
+    if sys.platform != 'darwin': raise ValueError(f'no sampling profiler on {sys.platform}')
+    def estimates(b):
+        [(_, per_step)] = instructions(case, setup, bpl=b)
+        samples, total = _self_samples(_program(f'{{⍵⊣({case})}}⍣1000000000⊢0', max(1, round(1e8/per_step)), setup), b, seconds)
+        return {f: per_step*n/total for f, n in samples.items()}, per_step
+    (before, tb), (after, ta) = estimates(base), estimates(bpl)
+    fs = sorted(before.keys() | after.keys(), key=lambda f: -abs(after.get(f, 0) - before.get(f, 0)))
+    return ProfileDiff([(f, before.get(f, 0), after.get(f, 0)) for f in fs[:rows]], (tb, ta))
+
+_CALLS = _SPEED.with_name('instructions.txt')
+
+# How far a case's instructions may be from its count, as a share of the count, before `instruction_budgets` marks it.
+MARGIN = 0.03
+
+def _calls(text):
+    "The setup and the `(code, count)` cases of `text`, in `instructions.txt`'s format. Lines that start with `#` are comments. The lines after `[setup]` define what the cases use, and each line after `[calls]` holds a case's code and its count, separated by a tab."
+    setup, cases, section = [], [], None
+    for line in text.splitlines():
+        if not line.strip() or line.startswith('#'): continue
+        if line in ('[setup]', '[calls]'): section = line
+        elif section == '[setup]': setup.append(line)
+        elif section == '[calls]':
+            code, count = line.rsplit('\t', 1)
+            cases.append((code, int(count)))
+        else: raise ValueError(f'a line before any section: {line}')
+    return '\n'.join(setup), cases
+
+def _mark(n, count): return 'over' if n > count*(1+MARGIN) else 'stale' if n < count*(1-MARGIN) else ''
+
+class InstructionBudgets(list):
+    "Each case's instructions per unit of `N` and its count, as `(code, instructions, count)` rows. A case more than `MARGIN` above its count is `over`. One more than `MARGIN` below is `stale`: its count should come down to it."
+    def __repr__(self): return '\n'.join(f'{n:>12,.0f} {count:>12,} {_mark(n, count):5}  {code}' for code, n, count in self)
+    @property
+    def outside(self): return [row for row in self if _mark(*row[1:])]
+
+def instruction_budgets(
+    calls:str=None, # Text in `instructions.txt`'s format; None: `tests/instructions.txt`
+    bpl:Path=None # A native `bpl` to count, such as a copy saved before a change; None: the installed one
+):
+    "Count each case in `calls` with `instructions`, beside its count."
+    setup, cases = _calls(_CALLS.read_text() if calls is None else calls)
+    counted = instructions([code for code, _ in cases], setup, bpl=bpl)
+    return InstructionBudgets((code, n, count) for (code, n), (_, count) in zip(counted, cases))
 
 class SpeedCosts(list):
     "Each case's cost and the budget that limits it, as `(section, code, cost, budget)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build."
@@ -418,7 +523,7 @@ def set_budgets(
     path.write_text('\n'.join(lines))
     return changes
 
-_COMMANDS = 'check_file check_page time_cases instructions speed_costs cargo_costs pytest_costs wasm_test'.split()
+_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile_diff speed_costs cargo_costs pytest_costs wasm_test'.split()
 
 def main():
     "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."

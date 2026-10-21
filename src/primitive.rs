@@ -28,8 +28,14 @@ impl Operation {
     pub(crate) const PLUS_TIMES: Self = Self::Product(Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times));
     /// `-.×`, whose monad is the determinant.
     pub(crate) const MINUS_TIMES: Self = Self::Product(Primitive::Arithmetic(Arithmetic::Minus), Primitive::Arithmetic(Arithmetic::Times));
-    /// Whether Rank's routes run the operation with this valence on a whole stack of matrices at once (`primitive::stacked`): `⌹`, dyadic `+.×` and monadic `-.×`.
-    pub(crate) fn stacks(self, dyadic: bool) -> bool { matches!((self, dyadic), (Self::Primitive(Primitive::MatrixDivide), _) | (Self::PLUS_TIMES, true) | (Self::MINUS_TIMES, false)) }
+    /// Whether Rank's routes run the operation with this valence on a whole stack of matrices at once (`primitive::stacked`): `⌹`, monadic `-.×`, and dyadic `f.g` where rustymath has a product kernel for the pair (`pervasive::known_product`).
+    pub(crate) fn stacks(self, dyadic: bool) -> bool {
+        match (self, dyadic) {
+            (Self::Primitive(Primitive::MatrixDivide), _) | (Self::MINUS_TIMES, false) => true,
+            (Self::Product(f, g), true) => crate::pervasive::known_product(f, g, true).is_some(),
+            _ => false,
+        }
+    }
     /// The operation on `left` and `right`, paired by `pairing`, as the newest running level among them takes it (`transform::call`), or else by its own code (`run`). `∂`'s rules and Rank's routes on whole arguments call folds, products and stacks of matrices through it. A primitive along an axis calls `Primitive::call_axis`, which routes the same way. Under `•prefs ["fusion":$t]` or `•explain`, a call that computed pending arrays, where no call inside it reported, reports them as a function call does (`eval::watched`), named by the operation's glyphs (`glyph`).
     pub(crate) fn call(self, pairing: crate::transform::Pairing<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
         if let (Self::Primitive(p), crate::transform::Pairing::Axis(axis)) = (self, &pairing) { return p.call_axis(left, right, *axis, cx); }
@@ -182,6 +188,10 @@ pub(crate) enum Primitive {
     Reverse(bool), Transpose, Windows, Prime, Factor, Polynomial
 }
 
+/// A built-in function as the parser reads it: a glyph's primitive, or a system name's entry in the system table. The two differ only in how they're spelled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Builtin { Primitive(Primitive), System(crate::system::Entry) }
+
 /// A natural rank: the rank of the cells a function applies to. `WHOLE` is the whole argument.
 pub(crate) type Rank = u8;
 pub(crate) const WHOLE: Rank = Rank::MAX;
@@ -285,22 +295,17 @@ pub(crate) struct Facts { pub name: &'static str, pub extends: bool, pub pervasi
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Monad { pub facts: Facts, pub rank: Rank }
 
-/// A primitive's dyadic form. `ranks` are the left and right cell ranks, and `identity` and `reduction` serve reductions. A form that `picks` gives one of its arguments for each item: `⌈`, `⌊`, `⊢` and `⊣`. A `ring` form's integer results, wrapped once at the end, match results wrapped at each step: `+`, `-` and `×`. A `code` form's left argument chooses the function that each item gets, as `○`'s circle code does.
+/// A primitive's dyadic form. `ranks` are the left and right cell ranks, and `identity` serves reductions. A form that `picks` gives one of its arguments for each item: `⌈`, `⌊`, `⊢` and `⊣`. A `ring` form's integer results, wrapped once at the end, match results wrapped at each step: `+`, `-` and `×`. A `code` form's left argument chooses the function that each item gets, as `○`'s circle code does.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Dyad {
     pub facts: Facts,
     // Rank's shortcut reads only monadic ranks, because a dyadic Rank call can't skip its cell loop in general. A call on a form that doesn't extend reads these ranks, and so do the glyph pages and a test that checks them against Rank.
     pub ranks: [Rank; 2],
     pub identity: Option<Identity>,
-    pub reduction: Option<Reduce>,
     pub picks: bool,
     pub ring: bool,
     pub code: bool,
 }
-
-/// The reduction by which a kernel folds a dyad: `+/` sums, `×/` multiplies, and `⌈/` and `⌊/` take the greatest and the least.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Reduce { Sum, Product, Max, Min }
 
 /// One primitive's facts: its glyph, the glyph's name, and its two forms.
 pub(crate) struct Info { pub glyph: &'static str, pub name: &'static str, pub monad: Monad, pub dyad: Dyad }
@@ -312,7 +317,7 @@ const PERVASIVE: Facts = Facts { pervasive: true, ..of(Form::Pervasive) };
 /// The facts of a form that moves items, selects none of its right argument's, and copies through no plan.
 const MOVES: Facts = of(Form::Moves { selects: Selects::No, planned: false });
 const fn monad(name: &'static str, rank: Rank, facts: Facts) -> Monad { Monad { facts: Facts { name, ..facts }, rank } }
-const fn dyad(name: &'static str, ranks: [Rank; 2], facts: Facts) -> Dyad { Dyad { facts: Facts { name, ..facts }, ranks, identity: None, reduction: None, picks: false, ring: false, code: false } }
+const fn dyad(name: &'static str, ranks: [Rank; 2], facts: Facts) -> Dyad { Dyad { facts: Facts { name, ..facts }, ranks, identity: None, picks: false, ring: false, code: false } }
 impl Facts {
     /// A form whose own code handles only arguments up to its rank or ranks.
     const fn cellwise(self) -> Self { Self { extends: false, ..self } }
@@ -350,7 +355,6 @@ impl Dyad {
         (!self.facts.extends && (above(left, self.ranks[0]) || above(right, self.ranks[1]))).then_some(self.ranks)
     }
     const fn identity(self, identity: Identity) -> Self { Self { identity: Some(identity), ..self } }
-    const fn reduces(self, reduction: Reduce) -> Self { Self { reduction: Some(reduction), ..self } }
     const fn picks(self) -> Self { Self { picks: true, ..self } }
     const fn ring(self) -> Self { Self { ring: true, ..self } }
     const fn code(self) -> Self { Self { code: true, ..self } }
@@ -441,13 +445,13 @@ impl Primitive {
         const MATERIALISE: Monad = monad("materialise", W, MOVES.axes().selects(Whole));
         const INDEX: Dyad = dyad("index", [1, W], MOVES.cellwise().axes().selects(Part));
         match self {
-            Self::Arithmetic(Plus) => &const { row("+", "plus", monad("conjugate", 0, PERVASIVE.linear(LinearMap::Same)), dyad("add", [0, 0], PERVASIVE.axes().linear(LinearMap::Sum)).identity(Identity::Number(0)).ring().reduces(Reduce::Sum)) },
+            Self::Arithmetic(Plus) => &const { row("+", "plus", monad("conjugate", 0, PERVASIVE.linear(LinearMap::Same)), dyad("add", [0, 0], PERVASIVE.axes().linear(LinearMap::Sum)).identity(Identity::Number(0)).ring()) },
             Self::Arithmetic(Minus) => &const { row("-", "minus", monad("negate", 0, PERVASIVE.linear(LinearMap::Negation)), dyad("subtract", [0, 0], PERVASIVE.axes().linear(LinearMap::Difference)).identity(Identity::Number(0)).ring()) },
-            Self::Arithmetic(Times) => &const { row("×", "times", monad("sign", 0, PERVASIVE.form(Constant)), dyad("multiply", [0, 0], PERVASIVE.axes().linear(LinearMap::Product)).identity(Identity::Number(1)).ring().reduces(Reduce::Product)) },
+            Self::Arithmetic(Times) => &const { row("×", "times", monad("sign", 0, PERVASIVE.form(Constant)), dyad("multiply", [0, 0], PERVASIVE.axes().linear(LinearMap::Product)).identity(Identity::Number(1)).ring()) },
             Self::Arithmetic(Divide) => &const { row("÷", "obelus", monad("reciprocal", 0, PERVASIVE), dyad("divide", [0, 0], PERVASIVE.axes().linear(LinearMap::Quotient)).identity(Identity::Number(1))) },
             Self::Bitwise(_) => &const { row("ᵇ", "superscript-b", monad("bitwise", 0, PERVASIVE.form(Constant)), dyad("bitwise", [0, 0], PERVASIVE.form(Constant))) },
-            Self::Math(Ceiling) => &const { row("⌈", "upstile", monad("ceiling", 0, PERVASIVE.form(Constant).cost(3)), dyad("maximum", [0, 0], PERVASIVE.axes()).identity(Infinity(false)).picks().reduces(Reduce::Max)) },
-            Self::Math(Floor) => &const { row("⌊", "downstile", monad("floor", 0, PERVASIVE.form(Constant).cost(3)), dyad("minimum", [0, 0], PERVASIVE.axes()).identity(Infinity(true)).picks().reduces(Reduce::Min)) },
+            Self::Math(Ceiling) => &const { row("⌈", "upstile", monad("ceiling", 0, PERVASIVE.form(Constant).cost(3)), dyad("maximum", [0, 0], PERVASIVE.axes()).identity(Infinity(false)).picks()) },
+            Self::Math(Floor) => &const { row("⌊", "downstile", monad("floor", 0, PERVASIVE.form(Constant).cost(3)), dyad("minimum", [0, 0], PERVASIVE.axes()).identity(Infinity(true)).picks()) },
             Self::Math(Magnitude) => &const { row("|", "stile", monad("magnitude", 0, PERVASIVE), dyad("residue", [0, 0], PERVASIVE.axes().cost(6)).identity(Identity::Number(0))) },
             Self::Math(Power) => &const { row("*", "star", monad("exponential", 0, PERVASIVE.cost(7).approximate()), dyad("exponent", [0, 0], PERVASIVE.axes().cost(25)).identity(Identity::Number(1))) },
             Self::Math(Log) => &const { row("⍟", "circle-star", monad("natural-log", 0, PERVASIVE.cost(12).approximate()), dyad("logarithm", [0, 0], PERVASIVE.axes().cost(12).approximate())) },
@@ -762,9 +766,11 @@ impl Primitive {
         if !fill && span.session.transforming() { if let Some(result) = crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Axis(None)), left, right, span) { return result; } }
         if matches!((self, left, right), (Self::Arithmetic(Arithmetic::Plus), None, Value::Character(_))) { return Ok(right.clone()); }
         if matches!(right, Value::Array(_)) || matches!(left, Some(Value::Array(_))) { return self.pervasive_apply(left, right, span, fill); }
-        if let (Self::Arithmetic(op @ (Arithmetic::Plus | Arithmetic::Minus)), Some(left)) = (self, left) {
-            if matches!(right, Value::Character(_)) || matches!(left, Value::Character(_)) {
-                return character_arithmetic(op, left, right, fill).domain_at(span);
+        // A character computes as its code point (`pervasive::character_item`). A function that takes no characters, or none of these items, meets them below as it meets any other item that isn't a number. An empty result's fill is the prototype of the result on the arguments' prototypes.
+        if let Some(x) = left.filter(|x| matches!(x, Value::Character(_)) || matches!(right, Value::Character(_))) {
+            if let Some(item) = crate::pervasive::character_item(self, x, right) {
+                let item = item.domain_at(span)?;
+                return Ok(if fill { item.prototype() } else { item });
             }
         }
         if fill {
@@ -860,22 +866,6 @@ fn fits_int(n: usize, span: &Context<'_>) -> Result<(), Error> {
     let t = Numeric::current();
     if t.is_static() && !i64::try_from(n).is_ok_and(|n| t.fits(n)) { return Err(span.error(Kind::Limit, "a count or position doesn't fit the int width")); }
     Ok(())
-}
-
-fn character_arithmetic(op: Arithmetic, left: &Value, right: &Value, fill: bool) -> Result<Value, &'static str> {
-    use Value::{Character, Number};
-    let shift = |c: char, n: &crate::Number, subtract: bool| {
-        let offset = n.integer().map_err(|_| "character offset must be a finite real integer")? as i128;
-        let value = if subtract { c as i128 - offset } else { c as i128 + offset };
-        let result = u32::try_from(value).ok().and_then(char::from_u32).ok_or("character result is not a Unicode scalar value")?;
-        Ok(Character(if fill { ' ' } else { result }))
-    };
-    match (op, left, right) {
-        (Arithmetic::Plus, Character(c), Number(n)) | (Arithmetic::Plus, Number(n), Character(c)) => shift(*c, n, false),
-        (Arithmetic::Minus, Character(c), Number(n)) => shift(*c, n, true),
-        (Arithmetic::Minus, Character(x), Character(y)) => Ok(Value::integer(if fill { 0 } else { *x as i64 - *y as i64 })),
-        _ => Err("unsupported character arithmetic"),
-    }
 }
 
 /// The depth of `right`: 0 for an atom, and for an array one more than its deepest element. An empty array counts its prototype. A carried array answers from its carrier's template, without reading its items.

@@ -259,8 +259,6 @@ pub(crate) mod real {
     pub(crate) fn signum(y: f64) -> f64 { if y == 0.0 { 0.0 } else { y.signum() } }
     /// The order of `x` and `y` for grading: `¯0` equals `0`, and NaN equals itself and follows everything else.
     pub(crate) fn grade(x: f64, y: f64) -> Ordering { x.partial_cmp(&y).unwrap_or_else(|| x.is_nan().cmp(&y.is_nan())) }
-    #[inline]
-    pub(crate) fn pi_times<F: Float>(y: F) -> F { y * F::narrow(std::f64::consts::PI) }
 }
 
 /// Runs `$object` with `$f` bound to the function object of circle code `$code` on reals, or of its inverse. The object gives NaN for a real argument whose result is complex, which fails the item. The whole expression is `None` for a code with no real function. Code 0 is its own inverse. Kernels and `Number` share this one table.
@@ -333,27 +331,15 @@ macro_rules! with_circle {
 }
 pub(crate) use with_circle;
 
-/// Integer cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. `None` means the exact or error path must give the result: an overflow, a fraction, or an argument outside the domain.
+/// Exact integer arithmetic, which `Number` and the compact kernels in `pervasive.rs` share, and the integer widths that compact storage holds.
 pub(crate) mod int {
     use super::Arithmetic;
-    /// Applies a Boolean truth table, indexed by `2*x+y`, to every bit, including the leading sign bits. It computes the table's algebraic normal form, `a0 ^ (a1 & x) ^ (a2 & y) ^ (a3 & x & y)`, with each coefficient spread to every bit. Every table runs the same code. A `match` on the table would put 16 paths into each loop that inlines this function.
-    #[inline]
-    pub(crate) fn bitwise<T>(table: u8, x: T, y: T) -> T where T: Clone + std::ops::BitAnd<Output = T> + std::ops::BitOr<Output = T> + std::ops::BitXor<Output = T> + std::ops::Not<Output = T> {
-        let ones = x.clone() | !x.clone();
-        let zero = ones.clone() ^ ones.clone();
-        let spread = |bit: u8| if bit & 1 == 1 { ones.clone() } else { zero.clone() };
-        let entry = |i: u8| table >> i;
-        // `x`'s coefficient is the parity of entries 0 and 2, `y`'s of entries 0 and 1, and `x & y`'s of all four.
-        let (a0, a1, a2, a3) = (spread(entry(0)), spread(entry(0) ^ entry(2)), spread(entry(0) ^ entry(1)), spread(entry(0) ^ entry(1) ^ entry(2) ^ entry(3)));
-        a0 ^ (x & (a1 ^ (y.clone() & a3))) ^ (y & a2)
-    }
-
     /// `x op y` as an exact integer. Every sum, difference or product of two `i64`s fits in 128 bits. `None` where `÷` gives a fraction or divides by zero. The exact or float path gives those results.
     pub(crate) fn arithmetic(op: Arithmetic, x: i64, y: i64) -> Option<i128> {
         let (wide_x, wide_y) = (i128::from(x), i128::from(y));
         match op {
             Arithmetic::Plus => Some(wide_x + wide_y), Arithmetic::Minus => Some(wide_x - wide_y), Arithmetic::Times => Some(wide_x * wide_y),
-            Arithmetic::Divide => divide(x, y).map(i128::from)
+            Arithmetic::Divide => rustymath::Binary::checked(&rustymath::WholeDivide, x, y).map(i128::from)
         }
     }
     /// An integer width that compact storage holds.
@@ -375,16 +361,6 @@ pub(crate) mod int {
         )+};
     }
     widths!(u8, i16, i32, i64);
-    /// A quotient that isn't an integer is exact. Division by zero gives an infinity or NaN. Both take the general path.
-    #[inline]
-    pub(crate) fn divide(x: i64, y: i64) -> Option<i64> { if x.checked_rem(y) == Some(0) { x.checked_div(y) } else { None } }
-    fn boolean(y: i64) -> Option<bool> { matches!(y, 0 | 1).then_some(y == 1) }
-    #[inline]
-    pub(crate) fn nand(x: i64, y: i64) -> Option<bool> { let (x, y) = (boolean(x)?, boolean(y)?); Some(!(x && y)) }
-    #[inline]
-    pub(crate) fn nor(x: i64, y: i64) -> Option<bool> { let (x, y) = (boolean(x)?, boolean(y)?); Some(!(x || y)) }
-    #[inline]
-    pub(crate) fn not(y: i64) -> Option<bool> { Some(!boolean(y)?) }
 }
 
 /// Complex cases of the pervasive functions, shared by `Number` and the compact kernels in `pervasive.rs`. Arithmetic is `num_complex`'s. Complex storage also holds floats that widened into it. `Number` reads such an item as a float, because its imaginary part is zero. `divide` takes the real case when neither argument has an imaginary part, as `TolerantComplex::complex_equal` does. A real divided by zero then gives an infinity, as it does in float storage. Multiplication applies `num_complex`'s formula to such items too. An infinite or NaN real part times a real then gives a NaN imaginary part. Each function but `circle` works at both widths of parts. `circle` works with 64-bit parts. A caller with 32-bit parts rounds its result.
@@ -777,15 +753,15 @@ impl Number {
     }
     pub(crate) fn bitwise(&self, left: Option<&Self>, table: u8) -> Result<Self, &'static str> {
         if let Some(y) = self.as_bool() {
-            if left.is_none_or(|x| x.as_bool().is_some()) { return Ok(Self::from_bool(int::bitwise(table, left.and_then(Self::as_bool).unwrap_or(false), y))); }
+            if left.is_none_or(|x| x.as_bool().is_some()) { return Ok(Self::from_bool(rustymath::bitwise(table, left.and_then(Self::as_bool).unwrap_or(false), y))); }
         }
         if let Ok(y) = self.integer() {
-            if let Some(x) = left.map_or(Some(0), |x| x.integer().ok()) { return Ok(Self::from_integer(int::bitwise(table, x, y))); }
+            if let Some(x) = left.map_or(Some(0), |x| x.integer().ok()) { return Ok(Self::from_integer(rustymath::bitwise(table, x, y))); }
         }
         let invalid = |_| "bitwise arguments must be whole numbers";
         let y = self.big_integer().map_err(invalid)?;
         let x = left.map(Self::big_integer).transpose().map_err(invalid)?.unwrap_or_default();
-        Ok(Self::from(int::bitwise(table, x, y)))
+        Ok(Self::from(rustymath::bitwise(table, x, y)))
     }
 
     /// The zero of a pervasive result on `left` and this number, as an empty result's prototype. Beside an approximate `left` it's a float, at the wider of their float widths.
@@ -844,7 +820,7 @@ impl Number {
                 Magnitude => Some(Self::from_float(y.abs())),
                 Power => Some(Self::from_float(rustymath::Exp.one(y))),
                 Log => rustymath::Ln.checked(y).map(Self::from_float),
-                Pi => Some(Self::from_float(real::pi_times(y))),
+                Pi => Some(Self::from_float(rustymath::Unary::one(&rustymath::PiTimes, y))),
                 _ => None,
             });
             if let Some(n) = real { return Ok(n); }
@@ -1101,7 +1077,7 @@ impl Number {
         use Arithmetic::*;
         if let Boolean(_) = self.0 { return self.numeric().plain_monad(op); }
         if let Integer(y) = self.0 {
-            let result = match op { Plus => Some(y), Minus => y.checked_neg(), Times => Some(y.signum()), Divide => int::divide(1, y) };
+            let result = match op { Plus => Some(y), Minus => y.checked_neg(), Times => Some(y.signum()), Divide => rustymath::Reciprocal.checked(y) };
             if let Some(n) = result { return Ok(Self(Integer(n))); }
         }
         if let Some(y) = self.as_exact() {

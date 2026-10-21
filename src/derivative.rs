@@ -8,6 +8,7 @@ use crate::{
     Function, Span, Value,
 };
 use rustymath::buffer::FloatWidth;
+use crate::array::{Footprint, Seen};
 
 /// A value, atom or array, that `∂` is differentiating: the tag of the `∂` call, the primal, and the tangent, which agrees with the primal's layout. Either part can be pending. `items` holds an array's items as dual atoms, built on the first read by code with no rule for duals (`Dual::storage`).
 pub struct Dual {
@@ -24,12 +25,6 @@ impl Dual {
     pub(crate) fn new(tag: u64, primal: Value, tangent: Value) -> Self {
         assert!(primal.older_than(tag) && tangent.older_than(tag), "a dual's parts carry only older levels' data");
         Self { tag, primal, tangent, items: std::sync::OnceLock::new(), full: std::sync::OnceLock::new() }
-    }
-    /// The bytes of the primal, the tangent and the items built from them. Each allocation counts once in `seen`.
-    pub(crate) fn footprint_in(this: &std::sync::Arc<Self>, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
-        if !seen.insert(std::sync::Arc::as_ptr(this) as usize) { return 0; }
-        let cached = this.items.get().map_or(0, |s| s.footprint_in(seen)) + this.full.get().map_or(0, |v| v.footprint_in(seen));
-        this.primal.footprint_in(seen) + this.tangent.footprint_in(seen) + cached
     }
     /// The tangent in the primal's layout, expanded once where the stored tangent is smaller.
     pub(crate) fn full_tangent(&self) -> &Value {
@@ -52,6 +47,11 @@ impl Dual {
             crate::array::Storage::mixed((0..self.primal.len()).map(|i| self.at(i)).collect())
         })
     }
+}
+
+impl Footprint for Dual {
+    /// The bytes of the primal, the tangent and the items built from them.
+    fn footprint_in(&self, seen: &mut Seen) -> usize { self.primal.footprint_in(seen) + self.tangent.footprint_in(seen) + self.items.footprint_in(seen) + self.full.footprint_in(seen) }
 }
 
 impl std::fmt::Debug for Dual {
@@ -104,13 +104,13 @@ pub(crate) fn levels(value: &Value) -> usize {
 /// The error for the system function `name` called on a dual, which `∂` can't differentiate.
 #[cold]
 #[inline(never)]
-pub(crate) fn system(name: &str, cx: &Context<'_>) -> Error { cx.span.error(ErrorKind::Unsupported, format!("∂ can't differentiate {name}")) }
+pub(crate) fn system(name: &str, span: &Span) -> Error { span.error(ErrorKind::Unsupported, format!("∂ can't differentiate {name}")) }
 
 /// The error for a call with two arguments of a function that has a rule that `f∂←g` attached, where `∂` needs a derivative through the call. A rule describes a function of one argument.
 #[cold]
 #[inline(never)]
-pub(crate) fn two_arguments(cx: &Context<'_>) -> Error {
-    cx.span.domain_error("∂ can't use an attached derivative in a call with two arguments. Bind the left argument first, as in bound←10↣f ⋄ bound∂←g")
+pub(crate) fn two_arguments(span: &Span) -> Error {
+    span.domain_error("∂ can't use an attached derivative in a call with two arguments. Bind the left argument first, as in bound←10↣f ⋄ bound∂←g")
 }
 
 /// Whether `value`'s numbers are complex, which `∂` doesn't differentiate. A carried value answers from the value its carrier holds (`Carrier::template`): a dual's primal, or a batch's first cell, which has the kind of every cell.
@@ -482,16 +482,17 @@ fn rebuild(value: &Value, next: &mut dyn FnMut() -> Value, span: &Span) -> Resul
     })
 }
 
-/// `op` applied to arguments of which some is a dual of the running `∂` call `tag`, which `transform::call` finds, or `None` where its own code handles the duals, through the calls it makes. A primitive's form gives its rule (`primitive_rule`), except for `⌹` and `⊥`, whose rules compute through matrix products (`solve` and `decode`). A fold by `+`, `×`, `⌈` or `⌊` takes its fold rule (`fold_dual`), `+.×` with two arguments the product rule (`product_dual`), and `-.×` with one the determinant's (`determinant`). With `Pairing::Matrices`, `⌹`, `+.×` and `-.×` take each matrix of a stack, or each pair of matrices of two stacks, in one call. A rule that `f∂←g` attached applies to a call with one argument (`attached`). A system function other than a random draw, and `f.g` by functions that aren't primitives with one argument, give UNSUPPORTED ERROR. A fold by an operand that isn't a primitive, or such an `f.g` with two arguments, runs its own code, whose calls of primitives take their rules.
+/// `op` applied to arguments of which some is a dual of the running `∂` call `tag`, which `transform::call` finds, or `None` where its own code handles the duals, through the calls it makes. A primitive's form gives its rule (`primitive_rule`), except for `⌹` and `⊥`, whose rules compute through matrix products (`solve` and `decode`). A fold by `+`, `×`, `⌈` or `⌊` takes its fold rule (`fold_dual`), `+.×` with two arguments the product rule (`product_dual`), and `-.×` with one the determinant's (`determinant`). With `Pairing::Matrices`, `⌹`, `+.×` and `-.×` take each matrix of a stack, or each pair of matrices of two stacks, in one call. A rule that `f∂←g` attached applies to a call with one argument (`attached`). A system function that refuses duals, as all but `system::Call::Active` ones do, and `f.g` by functions that aren't primitives with one argument, give UNSUPPORTED ERROR. A system function's inverse runs its own code. A fold by an operand that isn't a primitive, or such an `f.g` with two arguments, runs its own code, whose calls of primitives take their rules.
 #[cold]
 #[inline(never)]
 pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, cx: &Context<'_>) -> Option<Result<Value, Error>> {
     let (op, pairing) = match op {
         Op::Operation(op, pairing) => (op, pairing),
         // A rule describes a function of one argument, so a call with two can't use it.
-        Op::Ruled(f, rule) => return Some(if left.is_none() { attached(f, rule, right, tag, cx) } else { Err(two_arguments(cx)) }),
-        Op::System(f) => return (!matches!(f.call, crate::system::Call::Active(_))).then(|| Err(system(f.name, cx))),
-        Op::Product if left.is_none() => return Some(Err(expansion(cx))),
+        Op::Ruled(f, rule) => return Some(if left.is_none() { attached(f, rule, right, tag, cx) } else { Err(two_arguments(cx.span)) }),
+        // A system function's inverse runs its own code, as outside `∂`. `•json⁻¹` writes a dual as its plain value.
+        Op::System(g, f) => return (g.system_function().is_some() && !matches!(f.call, crate::system::Call::Active(_))).then(|| Err(system(f.name, cx.span))),
+        Op::Product if left.is_none() => return Some(Err(expansion(cx.span))),
         Op::Fold(..) | Op::Product => return None,
     };
     let stacked = matches!(pairing, Pairing::Matrices);
@@ -508,7 +509,7 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, cx
         (Operation::Product(..), _) => match left {
             Some(x) if op == Operation::PLUS_TIMES => Some(product_dual(x, right, tag, stacked, cx)),
             None if op == Operation::MINUS_TIMES => Some(determinant(right, tag, stacked, cx)),
-            None => Some(Err(expansion(cx))),
+            None => Some(Err(expansion(cx.span))),
             Some(_) => None,
         },
         _ => None,
@@ -516,7 +517,7 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, cx
 }
 
 /// The UNSUPPORTED ERROR of monadic `f.g` other than `-.×`, the determinant, which is the only one that `∂` differentiates.
-fn expansion(cx: &Context<'_>) -> Error { cx.span.error(ErrorKind::Unsupported, "∂ differentiates monadic f.g only as -.×") }
+fn expansion(span: &Span) -> Error { span.error(ErrorKind::Unsupported, "∂ differentiates monadic f.g only as -.×") }
 
 /// `p` on arguments of which some is a dual of the running `∂` call `tag`, by the rule that its form's row gives (`primitive::Facts`), or `None` where `p`'s own code handles the duals.
 fn primitive_rule(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, cx: &Context<'_>) -> Option<Result<Value, Error>> {
@@ -723,20 +724,10 @@ fn solve(left: Option<&Value>, right: &Value, tag: u64, stacked: bool, cx: &Cont
     Ok(dual(tag, x, product(&r, &t, stacked, cx)?))
 }
 
-/// `⌹a` and the determinant of `a`, from one factorization, for an `a` that `∂` differentiates with respect to, or each matrix's inverse and determinant where `stacked`. A singular matrix gives UNSUPPORTED, naming `glyph`, because `⌹` gives the pseudoinverse of such a matrix, whose derivative differs. An `a` active at an outer `∂` takes its inverse through `⌹`'s call, so that the outer `∂` differentiates it, and gives no determinant.
+/// `⌹a` and the determinant of `a`, from one factorization, for an `a` that `∂` differentiates with respect to, or each matrix's inverse and determinant where `stacked`. A matrix that `⌹` gives the pseudoinverse of, as [`matrix_inverse`](crate::primitive::matrix_inverse) finds by rustymath's pivot test, gives UNSUPPORTED, naming `glyph`, because the pseudoinverse's derivative differs. An `a` active at an outer `∂` takes its inverse through `⌹`'s call, so that the outer `∂` differentiates it, and gives no determinant.
 fn regular_inverse(a: &Value, glyph: &str, stacked: bool, cx: &Context<'_>) -> Result<(Value, Option<Value>), Error> {
-    let singular = |cx: &Context<'_>| cx.span.error(ErrorKind::Unsupported, format!("∂ differentiates {glyph} only at an invertible matrix"));
-    let invert = || Operation::Primitive(Primitive::MatrixDivide).call(Pairing::stacked(stacked), None, a, cx);
-    if !stacked {
-        if a.carried() { return Ok((invert()?, None)); }
-        let (r, d) = crate::primitive::matrix_inverse(a, cx)?.ok_or_else(|| singular(cx))?;
-        return Ok((r, Some(Value::Number(d))));
-    }
-    let r = invert()?;
-    if a.carried() { return Ok((r, None)); }
-    let d = Operation::MINUS_TIMES.call(Pairing::Matrices, None, a, cx)?;
-    let zero = Primitive::Compare(Comparison::Equal).call(Some(&d), &Value::integer(0), cx)?;
-    if zero.as_booleans().is_some_and(|z| z.contains(&true)) { return Err(singular(cx)); }
+    if a.carried() { return Ok((Operation::Primitive(Primitive::MatrixDivide).call(Pairing::stacked(stacked), None, a, cx)?, None)); }
+    let (r, d) = crate::primitive::matrix_inverse(a, stacked, cx)?.ok_or_else(|| cx.span.error(ErrorKind::Unsupported, format!("∂ differentiates {glyph} only at an invertible matrix")))?;
     Ok((r, Some(d)))
 }
 

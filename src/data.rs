@@ -161,6 +161,8 @@ pub(crate) fn uuid(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
         node
     };
     let version = numeric(right, span)?.integer().error_at(span, "•uuid needs a version number")?;
+    // These versions read the clock or random bits.
+    if matches!((version, left), (1 | 4 | 6 | 7, None)) { span.acts()?; }
     let id = match (version, left) {
         (0, None) => Uuid::nil(),
         (1, None) => Uuid::now_v1(&node()),
@@ -188,6 +190,7 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Context<'_>) -> R
     if binary && opts.values.contains_key("encoding") { return Err(span.domain_error("binary files do not take an encoding")); }
     let path = text(right, span)?;
     span.check()?;
+    span.acts()?;
     let data = if path == "-" { span.rest()? } else { span.read(&path)? };
     span.check()?;
     if binary { return byte_vector(data).error_at(span, "invalid byte vector"); }
@@ -251,6 +254,7 @@ pub(crate) fn fetch(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
             .map(|(n, v)| Ok((n.to_string(), text(&v, span)?))).collect::<Result<_, Error>>()?, None => Vec::new()
     };
     let body = opts.values.get("body").map(|b| payload(b, span)).transpose()?;
+    span.acts()?;
     let response = crate::host::fetch(Request { url: url.clone(), method, headers, body }, span)?;
     let body = response.body;
     let body = if opts.boolean("binary", false, span)? { byte_vector(body).error_at(span, "invalid byte vector")? }

@@ -2,6 +2,7 @@ use rustymath::{agreement::Mapping, buffer::View, error::Kind, gather::Steps};
 use crate::{array::{generated_len, Frame, Gather, Items, Layout, Prototype, Storage, Widening}, execution::Context, primitive::{Form, Origin, Primitive, Selection, Targets}, transform::Carrier, At, Error, ErrorAt, ErrorKind, Span, Value};
 use rustymath::hashing::{HashMap, HashMapExt};
 use std::sync::{Arc, OnceLock};
+use crate::array::{Footprint, Seen};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SelectionKind { Item, Elements }
@@ -222,11 +223,6 @@ impl Labelled {
     /// The value that answers queries that read no items: an atom's own value, the values where something has read them, or else the root, whose kind and prototype a selection from it shares.
     pub(crate) fn template(&self) -> &Value { if self.atom { self.values() } else { self.values.get().unwrap_or(&self.root) } }
     pub(crate) fn storage(&self) -> &Storage { self.values().storage().expect("a labelled array's values are an array") }
-    pub(crate) fn footprint_in(this: &Arc<Self>, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
-        if !seen.insert(Arc::as_ptr(this) as usize) { return 0; }
-        let ids = match &this.labels { Lead::Ids(ids) => ids.footprint_in(seen), Lead::Mapped(_) => 0 };
-        this.root.footprint_in(seen) + this.values.get().map_or(0, |v| v.footprint_in(seen)) + ids
-    }
     /// This value under `layout`, which has as many items. A mapping reads positions in the same order under any layout.
     pub(crate) fn view(&self, layout: Layout) -> Value {
         let relaid = |v: &Value| v.relaid(layout.clone()).expect("a view has as many items as its base");
@@ -257,6 +253,13 @@ impl Labelled {
                 Ok(Self::given(self.level, SelectionKind::Elements, self.root.clone(), copy(ids)?, copy(self.values())?))
             }
         }
+    }
+}
+
+impl Footprint for Labelled {
+    fn footprint_in(&self, seen: &mut Seen) -> usize {
+        let ids = match &self.labels { Lead::Ids(ids) => ids.footprint_in(seen), Lead::Mapped(_) => 0 };
+        self.root.footprint_in(seen) + self.values.footprint_in(seen) + ids
     }
 }
 

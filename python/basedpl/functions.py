@@ -155,7 +155,6 @@ def _unary(f, y):
 def _bitwise(glyph, *operands):
     try: operands = [o if isinstance(o, (Array, _Combinators)) else Array(o) for o in operands]
     except TypeError: return NotImplemented
-    if any(isinstance(o, Array) and not o._inner.is_integral for o in operands): raise TypeError('bitwise operations require integers or Booleans')
     f = _glyph(glyph).bitwise
     return _unary(f, *operands) if len(operands) == 1 else _binary(f, *operands)
 
@@ -163,7 +162,4 @@ def _matmul(x, y):
     if isinstance(x, _Combinators) or isinstance(y, _Combinators): raise TypeError('inner product requires two arrays or two functions')
     try: x, y = (o if isinstance(o, Array) else Array(o) for o in (x, y))
     except TypeError: return NotImplemented
-    left, right = x.shape, y.shape
-    if not left or not right: raise ValueError('matrix multiplication requires rank at least one')
-    if left[-1] != right[-min(2, len(right))]: raise ValueError('matrix multiplication contraction lengths must agree')
     return _glyph('+').inner_product(_glyph('×')).rank(2)(x, y)

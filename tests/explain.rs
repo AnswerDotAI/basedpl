@@ -11,9 +11,10 @@ fn check(session: &mut Session, code: &str, expected: &str) {
     assert!(actual.zip(wanted).is_some_and(|(a, w)| a.same(&w)), "{code} didn't give {expected}");
 }
 
-/// Every case in `speed.txt` takes the routes its work needs, or names the gap. Run as `•explain` runs its text, after a warm-up run, a case records no slow-path event (`explain::Events::slow`) beyond the events that its comment lines name (`timing::Named`): `# allows` lines, each with the principle that allows its event, and `# gap` lines, each with what a faster route should do instead. A line whose event no longer appears fails too, so the lines stay true and a fixed gap's line goes. The test prints the gaps it tolerates, which `cargo test -- --nocapture` shows. Like the speed test, it runs each case at its full size on one thread. It holds the timing lock shared, as a test run does.
+/// Every case in `speed.txt` takes the routes its work needs, or names the gap. Run as `•explain` runs its text, after a warm-up run, a case records no slow-path event (`explain::Events::slow`) beyond the events that its comment lines name (`timing::Named`): `# allows` lines, each with the principle that allows its event, and `# gap` lines, each with what a faster route should do instead. A `declined` event needs no line, because it explains another event, but a line may name one. A line whose event no longer appears fails too, so the lines stay true and a fixed gap's line goes. The test prints the gaps it tolerates, which `cargo test -- --nocapture` shows. Like the speed test, it runs each case at its full size on one thread. It holds the timing lock shared, as a test run does. It runs `explain_and_memory`'s checks first, because `•explain` records what every thread in its process does, so no other test may evaluate beside it.
 #[test]
 fn speed_cases_take_their_routes() {
+    explain_and_memory();
     let _lock = rustymath::timing::shared().unwrap();
     rustymath::parallel::set_threads(1);
     let routes = timing::routes(include_str!("speed.txt"), None, &InterruptHandle::default()).unwrap();
@@ -23,6 +24,7 @@ fn speed_cases_take_their_routes() {
         let lines: Vec<(&str, &str, &str)> = r.named.allowed.iter().map(|(a, e)| ("allows", *a, e.as_str())).chain(r.named.gaps.iter().map(|(a, e)| ("gap", *a, e.as_str()))).collect();
         for (record, event, fields) in &r.slow {
             match lines.iter().find(|&&(_, a, e)| a == *record && e == *event) {
+                None if *record == "declined" => {}
                 None => wrong.push(format!("{case}: {record} \"{event}\" ({fields})")),
                 Some(("gap", ..)) => gaps.push(format!("{case}: {record} \"{event}\" ({fields})")),
                 Some(_) => {}
@@ -34,7 +36,6 @@ fn speed_cases_take_their_routes() {
     assert!(wrong.is_empty(), "name an event above its case with `# allows RECORD \"EVENT\": principle` only where a principle allows it, or with `# gap RECORD \"EVENT\": what should happen` where a faster route should remove it: {wrong:#?}");
 }
 
-#[test]
 fn explain_and_memory() {
     let mut session = Session::new();
     check(&mut session, "v←¿1000⍴0 ⋄ k←¿1000⍴7 ⋄ b←0=¿1000⍴3 ⋄ m←[2 1 0⋄1 3 1⋄0 1 4]ₓ ⋄ $t", "$t");
@@ -73,6 +74,13 @@ fn explain_and_memory() {
     check(&mut session, r#"big←¿[256 5000]⍴0 ⋄ f←(•explain "q←2×big+⍤1⊢¿5000⍴0 ⋄ q≡q").fused ⋄ ∧/f.runs>f.blocks"#, "$t");
     check(&mut session, r#"sv←¿1048576⍴0 ⋄ (•explain "q←2×⌽sv+1 ⋄ q≡q").fused.copied"#, "[1048576]ₓ");
     check(&mut session, r#"x←¿1000000⍴0 ⋄ (•explain "s←x-0.25 ⋄ q←s×1-s ⋄ q≡q").stored.reason≡["held outside the graph"]"#, "$t");
+    // A faster route that code considers and doesn't take is a decline, with its reason: a fused fold of a copy that no call moves under, or of an array that a name holds, and an idiom whose arguments don't suit it.
+    for (code, route, reason) in [
+        ("+/⌽sv", "fused fold", "a copy that no call moves under"), ("q←2×sv ⋄ +/q", "fused fold", "another array holds the array"),
+        ("(10↑)∘⍋ 30 4⍴⍳120", "partial grade", "arguments that don't suit it"),
+    ] {
+        check(&mut session, &format!(r#"d←(•explain "{code}").declined ⋄ (d.route≡["{route}"])∧d.reason≡["{reason}"]"#), "$t");
+    }
     // `•memory` counts the pending arrays this thread made, including one dropped on another thread. `bytes` counts what a value keeps alive, a shared base once, and takes active values under `∂`.
     let mut held = Session::new();
     check(&mut held, "w←⍳262144 ⋄ n←(•memory 0).pending ⋄ p←⌽w ⋄ (•memory 0).pending-n", "1ₓ");

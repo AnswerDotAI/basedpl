@@ -9,10 +9,12 @@ Function. Hanzi: `大`. Ranks: `∞` monadic, `0 0` dyadic
 >"b" "a" "c"        ⍝ "c" "b" "a"
 ```
 
-`X>Y` tests X > Y for reals. Pervasive; tolerant.
+`X>Y` tests X > Y for reals, and for characters by code point. A number is less than any character, as [`⍋`](delta-stile.qmd) orders them. Pervasive; tolerant.
 
 ```bpl
 1 2 3>2            ⍝ $f $f $t
+"abd">"abc"        ⍝ $f $f $t
+'a'>3              ⍝ $t
 ```
 
 See [`<`](less-than.qmd) to sort up, and [`⍒`](del-stile.qmd) for the indices that sort.

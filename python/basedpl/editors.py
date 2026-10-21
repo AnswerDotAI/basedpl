@@ -32,7 +32,7 @@ BQN = {'Function': '+-×÷⋆√⌊⌈|¬∧∨<>≠=≤≥≡≢⊣⊢⥊∾≍
 HIGHLIGHTERS = {Path('nbs/bpl.xml'): BPL, Path('nbs/dyalog.xml'): DYALOG, Path('nbs/bqn.xml'): BQN}
 TEXTMATE = Path(__file__).parent
 SCOPES = {'Normal Text': 'source.bpl', 'Name': 'variable.other.bpl', 'Comment': 'comment.line.bpl', 'String': 'string.quoted.double.bpl',
-          'Char': 'string.quoted.single.bpl', 'Number': 'constant.numeric.bpl', 'System': 'support.function.system.bpl',
+          'Char': 'string.quoted.single.bpl', 'Number': 'constant.numeric.bpl',
           'Function': 'support.function.bpl', 'MonadicOperator': 'keyword.operator.monadic.bpl',
           'DyadicOperator': 'keyword.operator.dyadic.bpl', 'Argument': 'variable.parameter.bpl', 'Keyword': 'keyword.control.bpl'}
 
@@ -69,7 +69,7 @@ def quarto(text, glyphs):
         patterns = token_patterns({glyph: glyph for glyph in SPELLINGS})
         text = _replace(text, r'<RegExpr String="[^"]*" attribute="Name"/>', f'<RegExpr String="{escape(patterns["Name"], {chr(34): "&quot;"})}" attribute="Name"/>')
         for cls, marker in [('System', '•'), ('Number', '∞'), ('Empty', '⍬')]:
-            attr = 'Number' if cls == 'Empty' else cls
+            attr = {'Empty': 'Number', 'System': 'Function'}.get(cls, cls)
             text = _replace(text, f'<RegExpr String="[^"]*{marker}[^"]*" attribute="{attr}"/>',
                 f'<RegExpr String="{escape(patterns[cls])}" attribute="{attr}"/>')
         text = _replace(text, r'<(?:DetectChar char|AnyChar String)="[^"]*" attribute="Comment" context="Comment"/>',
@@ -91,7 +91,8 @@ def hanzi_grammar(xml):
         if attr == 'Comment':
             rule.set('String', SPELLINGS['⍝'][1:])
             rule.set('context', 'Comment##BPL')
-        elif attr == 'Name' or attr == 'System': rule.set('String', patterns[attr])
+        elif attr == 'Name': rule.set('String', patterns['Name'])
+        elif rule.tag == 'RegExpr' and '•' in value: rule.set('String', patterns['System'])
         elif rule.tag == 'RegExpr' and any(c in value for c in '∞⍬'): rule.set('String', patterns['Empty' if '⍬' in value else 'Number'])
         elif rule.tag == 'AnyChar' and attr in HANZI: rule.set('String', HANZI[attr])
         else: normal.remove(rule)

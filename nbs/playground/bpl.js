@@ -25,7 +25,7 @@ const css = getComputedStyle(document.documentElement), color = cls => {
 };
 const grammar = JSON.parse(await text('bpl.tmLanguage.json'));
 const classes = [['comment', 'co'], ['string.quoted.double', 'st'], ['string.quoted.single', 'ch'], ['constant.numeric', 'dv'],
-    ['support.function', 'fu'], ['support.function.system', 'bu'], ['keyword.operator.monadic', 'op'],
+    ['support.function', 'fu'], ['keyword.operator.monadic', 'op'],
     ['keyword.operator.dyadic', 'ex'], ['variable.parameter', 'va'], ['keyword.control', 'kw']];
 const highlighter = await createHighlighterCore({langs: [grammar], engine: createJavaScriptRegexEngine(), themes: [{
     name: 'quarto', type: 'light', fg: color('kw'), bg: css.getPropertyValue('--bs-body-bg').trim(),

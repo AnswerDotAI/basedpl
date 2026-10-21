@@ -59,6 +59,7 @@ class _Printer:
             if _builtins.get(name, (None,))[0] == kind: return name, 100
             return _apl(f), 100
         a = args[0]
+        if kind == 'fn': return f'{_literal(a)}.fn', 100
         if kind in ('/', '⌿', '\\', '⍀'):
             axis = f'[{r(args[1])}]' if len(args) == 2 else ''
             return f'{r(a, True, 100)}.{_method(kind, dyad)}{axis}', 100

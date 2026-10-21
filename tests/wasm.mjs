@@ -1,6 +1,6 @@
 // Checks the browser module, built by `cargo wasm`, in Node. The depth checks run in a worker with a stack about the size of a Chrome
-// worker's, once with each of V8's compilers. The call limit allows 188 levels of recursion that makes two calls a level, and 125 of
-// recursion that makes three. Each shape must reach its depth, and recursion to 300 levels must stop with a LIMIT error before the
+// worker's, once with each of V8's compilers. The depth limit allows 171 levels of recursion that counts two a level, and 113 of
+// recursion that counts three. Each shape must reach its depth, and recursion to 300 levels must stop with a LIMIT error before the
 // stack runs out.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -25,12 +25,12 @@ const display = code => {
 
 // Each shape, and the depth it must reach.
 const shapes = {
-    plain: ['{⍵=0?0;1+∇ ⍵-1}', 188],
-    assigned: ['{⍵=0?0;x←∇ ⍵-1 ⋄ x+1}', 188],
-    each: ['{⍵=0?0;1+↑f¨⍵-1}', 188],
-    rank: ['{⍵=0?0;1+↑f⍤0⊢⍵-1}', 188],
-    operand: ['{⍵=0?0;1+(f m) ⍵-1}', 188],
-    outer: ['{⍵=0?0;1+↑(0 f⊗ ⍵-1)}', 125],
+    plain: ['{⍵=0?0;1+∇ ⍵-1}', 171],
+    assigned: ['{⍵=0?0;x←∇ ⍵-1 ⋄ x+1}', 171],
+    each: ['{⍵=0?0;1+↑f¨⍵-1}', 171],
+    rank: ['{⍵=0?0;1+↑f⍤0⊢⍵-1}', 171],
+    operand: ['{⍵=0?0;1+(f m) ⍵-1}', 171],
+    outer: ['{⍵=0?0;1+↑(0 f⊗ ⍵-1)}', 113],
 };
 
 if (isMainThread && process.argv[2] !== 'depths') {

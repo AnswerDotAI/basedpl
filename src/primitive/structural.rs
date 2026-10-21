@@ -172,12 +172,10 @@ pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<
     remap(right, plan, span)
 }
 
-/// `counts` replicates the cells of `right` along `axis`, the leading axis by default. A positive count repeats its cell. A negative count inserts that many fills. The inverse gives one cell for each count. A positive count gives the first of its copies. Other counts give a fill. A Boolean mask's inverse therefore expands.
+/// `counts` replicates the cells of `right` along `axis`, the leading axis by default, through rustymath's `structure::repeat`, or undoes that through `structure::expand` where `inverse`. A plain vector's counts copy its items with no table of offsets: a Boolean mask compresses them, and counts that insert no fills repeat each item.
 pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, span: &Context<'_>) -> Result<Value, Error> {
     if counts.shape().len() > 1 { return Err(span.error(Kind::Rank, "replication counts must be a unit or vector")); }
-    let mut shape = if right.is_unit() { vec![1] } else { right.shape().to_vec() };
     let axis = axis.unwrap_or(0);
-    let traversal = Lanes::new(&shape, axis).at(span)?;
     // A Boolean mask over an unkeyed vector copies the items it selects. The mask is read as it is, with no conversion.
     if let (Some(mask), [n], [m], false) = (counts.as_booleans(), counts.shape(), right.shape(), inverse) {
         if n == m && right.keys(0).is_none() {
@@ -190,63 +188,22 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
     }
     // Validate even an unused singleton count (e.g. fractional count / empty vector).
     let counts = counts.as_items().integers().error_at(span, "replication count must be a representable integer")?;
-    let single = counts.len() == 1;
-    let len = match (inverse, single) {
-        (false, true) => traversal.len,
-        (false, false) if traversal.len == 1 || counts.len() == traversal.len => counts.len(),
-        (false, false) => return Err(span.error(Kind::Length, "replication counts and data do not agree")),
-        (true, true) => match saturated(counts[0].unsigned_abs()) {
-            0 if traversal.len == 0 => 1, n if n > 0 && traversal.len % n == 0 => traversal.len / n,
-            _ => return Err(span.domain_error("one count must divide the number of cells to invert"))
-        },
-        (true, false) => counts.len(),
-    };
-    let count = |j: usize| counts[if single { 0 } else { j }];
-    // The or of the counts is negative when any count is, and at most 1 when they are Boolean. Each nonnegative count is at most their or, which bounds their sum by the or times their number.
+    // The or of the counts is negative when any count is, and at most 1 when they are Boolean. Each nonnegative count is at most their or, which bounds their sum by the or times the number of items. Counts whose sum could pass `i64` take the plan, which reports the overflow.
     let (any, sum) = or_and_sum(&counts);
-    let boolean = !single && any as u64 <= 1;
-    let exact_sum = !single && any >= 0 && (any as u64).checked_mul(counts.len() as u64).is_some_and(|m| m <= i64::MAX as u64);
-    shape[axis] = if inverse { len }
-    else if boolean { sum as usize } else {
-        let each = |j: usize| saturated(count(j).unsigned_abs());
-        match (single, exact_sum) {
-            (true, _) => each(0).checked_mul(len), (false, true) => usize::try_from(sum).ok(),
-            (false, false) => (0..len).try_fold(0usize, |total, j| total.checked_add(each(j)))
-        }.ok_or_else(|| span.error(Kind::Limit, "replication count overflow"))?
-    };
-    generated_len(&shape).at(span)?;
-    let keys = right.layout().all_keys();
-    let keyed = right.keys(axis).is_some();
-    // A vector with no keys and no negative counts copies each item by its count, with no table of offsets.
-    if !inverse && !keyed && traversal.outer * traversal.inner == 1 && (single || len == traversal.len) && any >= 0 {
-        let total = shape[axis];
-        let layout =
-            Layout::rearranged(CoreLayout::from(shape).with_keys(keys).at(span)?.inherit_names(right.axis_names().to_vec()), right);
+    let len = right.len();
+    let plain = axis == 0 && match right.shape() { [] => true, [_] => right.keys(0).is_none(), _ => false };
+    if plain && !inverse && any >= 0 && (counts.len() == 1 || counts.len() == len) && (any as u64).checked_mul(len as u64).is_some_and(|m| m <= i64::MAX as u64) {
+        let total = if counts.len() == 1 { counts[0] as usize * len } else { sum as usize };
+        generated_len(&[total]).at(span)?;
         let mut data = Gather::new(&[right], total);
-        if boolean { data.compress(right, &counts, total) }
-        else { data.replicate(right, &counts, total) }
-        return data.finish(layout, || right.prototype()).error_at(span, "invalid replication");
+        if counts.len() > 1 && any <= 1 { data.compress(right, &counts, total) } else { data.replicate(right, &counts, total) }
+        return data.finish(Layout::rearranged(CoreLayout::from(vec![total]).inherit_names(right.axis_names().to_vec()), right), || right.prototype())
+            .error_at(span, "invalid replication");
     }
-    let (mut table, mut positions, mut consumed) = (Vec::with_capacity(shape[axis]), Vec::new(), 0usize);
-    for j in 0..len {
-        let n = count(j);
-        let source = if traversal.len == 1 { 0 } else { consumed };
-        let pos = (n > 0).then_some(source);
-        // Each count uses up one cell, and a negative count gives that cell's place to fills. The inverse uses up the cells each count made, and gives back one cell for each count: a fill for a count that kept nothing.
-        consumed = consumed.saturating_add(if inverse { saturated(n.unsigned_abs()) } else { 1 });
-        let repeats = if inverse { 1 } else { saturated(n.unsigned_abs()) };
-        let offset = pos.map_or(Steps::FILL, |p| p * traversal.inner);
-        if repeats == 1 { table.push(offset) }
-        else { table.extend(std::iter::repeat_n(offset, repeats)) }
-        if keyed { positions.extend(std::iter::repeat_n(pos, repeats)); }
-    }
-    if inverse && traversal.len != 1 && consumed != traversal.len {
-        return Err(span.error(Kind::Length, "replication counts must use every cell to invert"));
-    }
-    let layout = if keyed { CoreLayout::select(right.layout(), axis, positions.into_iter()).at(span)? }
-    else { CoreLayout::from(shape).with_keys(keys).at(span)?.inherit_names(right.axis_names().to_vec()) };
-    let steps = vec![Steps::along(traversal.outer, traversal.len * traversal.inner), Steps::table(table), Steps::along(traversal.inner, 1)];
-    remap(right, Plan { layout, steps }, span)
+    let unit = CoreLayout::from([1]);
+    let layout = if right.is_unit() { &unit } else { right.layout() };
+    let plan = if inverse { structure::expand(layout, axis, &counts) } else { structure::repeat(layout, axis, &counts) }.at(span)?;
+    remap(right, plan, span)
 }
 
 pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize, span: &Context<'_>) -> Result<Value, Error> {

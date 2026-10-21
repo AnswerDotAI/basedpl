@@ -1,33 +1,11 @@
 //! The speed test's measurements, shared by `tests/speed.rs`, the browser build's `costs` and the worker's `timing` and `costs` requests, which serve `basedpl.bpltests.time_cases` and `speed_costs`. A time is the fastest of five evaluations of a case, after one to warm up. The case is parsed once, before them. Its unit is one copy, as `copy` times it, of the `n` items in the data of the `[setup]` before the case's section. `costs` and `request` hold the machine's timing lock exclusively while they run, as `rustymath::timing` describes.
-use crate::{host::{timing_lock, Instant}, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
+use crate::{host::timing_lock, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
+use rustymath::timing::{code_of, header, sections};
 use serde_json::{json, Value as JsonValue};
 use rustymath::hashing::{HashMap, HashMapExt};
 use std::hint::black_box;
 
-/// One section of a file in `speed.txt`'s format: its name, the prefs its session starts with, and its lines.
-pub type Section<'a> = (&'a str, &'a str, Vec<&'a str>);
-
-/// The sections of `text`, in `speed.txt`'s format: a line `[name]` or `[name] prefs` starts each section. Blank lines and lines that start with `#` are skipped.
-pub fn sections(text: &str) -> Result<Vec<Section<'_>>, String> {
-    let mut sections: Vec<Section> = Vec::new();
-    for line in text.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
-        match header(line) {
-            Some((name, prefs)) => sections.push((name, prefs, Vec::new())),
-            None => sections.last_mut().ok_or_else(|| format!("{line:?} comes before the first section"))?.2.push(line),
-        }
-    }
-    Ok(sections)
-}
-
-/// The name and prefs of a section that `line` starts, in `speed.txt`'s format: `[name]` or `[name] prefs`.
-fn header(line: &str) -> Option<(&str, &str)> {
-    line.strip_prefix('[').and_then(|l| l.split_once(']')).filter(|(name, prefs)| !name.contains(' ') && (prefs.is_empty() || prefs.starts_with(' '))).map(|(name, prefs)| (name, prefs.trim()))
-}
-
-/// A case line's code: the text before its first tab.
-fn code_of(line: &str) -> &str { line.split('\t').next().unwrap_or_default() }
-
-/// The slow-path events that a case's comment lines name, each as its record's name and its event's text. An `# allows RECORD "EVENT": principle` line names an event that a principle allows. A `# gap RECORD "EVENT": what should happen` line names an event that a faster route should remove, which the case tolerates until then. An event's text names it as `•explain`'s record does: the function for `forced`, the reason for `stored` and `fallbacks`, the code for `mixed` and the route for `itemwise`, with any `"` in it doubled. Each line applies to the next case line after it.
+/// The slow-path events that a case's comment lines name, each as its record's name and its event's text. An `# allows RECORD "EVENT": principle` line names an event that a principle allows. A `# gap RECORD "EVENT": what should happen` line names an event that a faster route should remove, which the case tolerates until then. An event's text names it as `•explain`'s record does: the function for `forced`, the reason for `stored` and `fallbacks`, the code for `mixed`, the route for `itemwise`, and the route and reason for `declined`, as in `fusion: an exact argument`, with any `"` in it doubled. Each line applies to the next case line after it.
 #[derive(Default)]
 pub struct Named<'a> { pub allowed: Vec<(&'a str, String)>, pub gaps: Vec<(&'a str, String)> }
 
@@ -54,14 +32,10 @@ fn event(rest: &str) -> (&str, String) {
     (record, event)
 }
 
-/// The fastest of five calls of `f`, in seconds, after one call to warm up.
+/// The time of the fastest of `rustymath::timing::fastest`'s calls of `f`, in seconds, after one call to warm up.
 fn fastest(mut f: impl FnMut()) -> f64 {
     f();
-    (0..5).map(|_| {
-        let start = Instant::now();
-        f();
-        start.elapsed()
-    }).min().unwrap().as_secs_f64()
+    rustymath::timing::fastest(|_| f())
 }
 
 /// Puts the default settings in force, on one thread, as speed budgets are for one thread.
@@ -96,12 +70,12 @@ pub fn time(session: &mut Session, code: &str, interrupt: &InterruptHandle) -> R
     failed.map_or(Ok(seconds), Err)
 }
 
-/// The time of one copy of `n` items, in seconds: writing each of `n` floats negated into another buffer, as rustymath's speed test times its unit. The loop reads and writes each item once. It calls no `memcpy` and allocates nothing, because their speed differs between platforms far more than a loop's does.
+/// The time of one copy (`rustymath::timing::copy`) of `n` floats, in seconds.
 pub fn copy(n: usize) -> f64 {
     let data: Vec<f64> = (1..=n).map(|i| i as f64).collect();
     let mut out = vec![0.0; n];
     fastest(|| {
-        for (o, &v) in out.iter_mut().zip(black_box(&data)) { *o = -v }
+        rustymath::timing::copy(black_box(&data), &mut out);
         black_box(&mut out);
     })
 }

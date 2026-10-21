@@ -11,9 +11,10 @@ pub(crate) trait Agree: Sized {
     fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
     fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind>;
     fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
-    /// The positions that pair `i` reads in arguments of `lens` items. `None` means an argument reads its prototype, as it does for a key that it lacks. With no pairs, each argument reads its first item, or its prototype where it has none.
-    fn positions(&self, i: usize, lens: [usize; 2]) -> [Option<usize>; 2];
+    /// The positions that pair `i` reads. `None` means an argument reads its prototype, as it does for a key that it lacks. With no pairs, each argument reads its first item, or its prototype where it has none. `positions` calls `lens` for the arguments' item counts only where there are no pairs.
+    fn positions(&self, i: usize, lens: impl FnOnce() -> [usize; 2]) -> [Option<usize>; 2];
     /// The pair of items that pair `i` reads (`positions`).
+    #[inline]
     fn values(&self, left: Option<&Value>, right: &Value, i: usize) -> (Option<Value>, Value) {
         let (x, y) = self.values_ref(left, right, i);
         (x.map(Cow::into_owned), y.into_owned())
@@ -28,11 +29,14 @@ impl Agree for Agreement {
     fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> { with_renderer(Core::new(left, right), left, right) }
     fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind> { with_renderer(Core::with_axes(left, right, axes), left, right) }
     fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> { with_renderer(Core::outer(left, right), left, right) }
-    fn positions(&self, i: usize, lens: [usize; 2]) -> [Option<usize>; 2] {
-        if self.len == 0 { lens.map(|n| (n > 0).then_some(0)) } else { [self.left.get(i), self.right.get(i)] }
+    // Maps call these once for each cell.
+    #[inline]
+    fn positions(&self, i: usize, lens: impl FnOnce() -> [usize; 2]) -> [Option<usize>; 2] {
+        if self.len == 0 { lens().map(|n| (n > 0).then_some(0)) } else { [self.left.get(i), self.right.get(i)] }
     }
+    #[inline]
     fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>) {
-        let [x, y] = self.positions(i, [left.map_or(0, Value::len), right.len()]);
+        let [x, y] = self.positions(i, || [left.map_or(0, Value::len), right.len()]);
         let item = |a: &'a Value, j: Option<usize>| j.map_or_else(|| Cow::Owned(a.prototype()), |j| a.at_ref(j));
         (left.map(|a| item(a, x)), item(right, y))
     }

@@ -1,5 +1,5 @@
 use rustymath::{buffer::{DType, FloatWidth, View}, error::Kind};
-use crate::{array::{generated_len, Items}, execution::Context, number::Numeric, primitive::{numeric, Primitive}, At, Error, ErrorAt, ErrorKind, Function, Value};
+use crate::{array::{generated_len, Items}, execution::Context, number::Numeric, primitive::{numeric, Builtin, Primitive}, At, Error, ErrorAt, ErrorKind, Function, Value};
 use std::borrow::Cow;
 
 /// A system function implemented natively, taking an optional left argument and a right argument.
@@ -63,10 +63,10 @@ impl Item {
     }
 }
 
-/// A system function. `prototype` gives the prototype of its result. In prototype mode, a function that has one returns it instead of running. An empty mapped argument gives an empty result with that prototype.
+/// A system function: its name, call, valence, right-argument item and result prototype, and its inverse with the inverse's valence. In prototype mode, a function with a prototype returns it instead of running. An empty mapped argument gives an empty result with that prototype. A format function reads its format, and its inverse writes it. `entry` is the function's row in the system table, which `Entry::function` sets. It's `None` in the table itself, and for a function that a factory made, as `•element` makes one from a tag, even though such a function shares its factory's name.
 #[derive(Clone, Debug)]
 pub(crate) struct SystemFunction {
-    pub name: &'static str, pub call: Call, pub valence: Valence, pub item: Item, pub prototype: Option<fn(&Context<'_>) -> Value>
+    pub name: &'static str, pub call: Call, pub valence: Valence, pub item: Item, pub prototype: Option<fn(&Context<'_>) -> Value>, pub inverse: Option<(Native, Valence)>, pub entry: Option<Entry>
 }
 /// System functions match when they share a name and their data matches. A generator matches only its own stream.
 impl PartialEq for SystemFunction {
@@ -93,24 +93,19 @@ impl Valence {
 
 impl SystemFunction {
     pub(crate) fn check(&self, left: Option<&Value>, span: &crate::Span) -> Result<(), Error> { self.valence.check(self.name, left, span) }
-    /// Asks the running levels before this function or its inverse runs (`Levels::effect`). A random draw runs in a batched run, from each cell's stream. Any other system function stops the run, because it would act once for all the cells, or read a batch through code with no rule for one.
-    pub(crate) fn acts(&self, cx: &Context<'_>) -> Result<(), Error> {
-        if self.call.draws() { return Ok(()); }
-        cx.session.effect(crate::transform::Effect::Acts).at(cx.span)
-    }
     /// The name that a factory made this function from, as `•element` makes one from a tag and `•edge` from a mode. Display writes it after the system name.
     pub(crate) fn argument(&self) -> Option<&str> { match &self.call { Call::Element(tag) => Some(tag), Call::Edge(mode) => Some(mode.name()), _ => None } }
 }
 
 impl Call {
-    /// Whether this call draws random numbers: a generator's roll or deal, or a distribution's sample. A batched run lets a draw through, because it draws for every cell of the run (`distribution::drawn_cells`).
+    /// Whether this call draws random numbers: a generator's roll or deal, or a distribution's sample. A batched run leaves a draw to its own code, which draws for every cell of the run (`distribution::drawn_cells`).
     pub(crate) fn draws(&self) -> bool { matches!(self, Call::Generator(..) | Call::Distribution(_, crate::distribution::Operation::Sample)) }
 }
 
 /// A function that calls `call` natively, taking its right argument whole. A generator's draw and a distribution's sample have a result prototype. In prototype mode they return it without drawing.
 pub(crate) fn native(name: &'static str, call: Call, valence: Valence) -> Function {
     let draws = call.draws();
-    Function::system(SystemFunction { name, call, valence, item: Whole, prototype: draws.then_some(float) })
+    Function::system(SystemFunction { name, call, valence, item: Whole, prototype: draws.then_some(float), inverse: None, entry: None })
 }
 
 /// A keyed vector of native functions, each named by its key.
@@ -132,74 +127,130 @@ fn canvas(_: &Context<'_>) -> Value { crate::canvas::function("".into()) }
 fn valid_numbers(cx: &Context<'_>) -> Value { Value::new(vec![2], vec![numbers(cx), numbers(cx)]).expect("a pair") }
 fn record(_: &Context<'_>) -> Value { crate::keyed::empty_record() }
 
-/// A system table entry: a name, call, valence, right-argument item and result prototype. In prototype mode, a function with a prototype returns it instead of running.
-type Builtin = (&'static str, Call, Valence, Item, Option<fn(&Context<'_>) -> Value>);
-/// Each system function's entry.
-const BUILTINS: &[Builtin] = &[
-    ("•c", Call::Value(case_convert), Ambivalent, Whole, Some(text)), ("•csv", Call::Value(crate::csv::parse), Ambivalent, Text, Some(record)),
-    ("•json", Call::Value(crate::json::parse), Ambivalent, Text, Some(number)), ("•mime", Call::Mime, Ambivalent, Whole, Some(record)),
-    ("•element", Call::Value(crate::xml::factory), Monadic, Text, Some(element)), ("•xml", Call::Value(crate::xml::parse), Monadic, Text, Some(record)),
-    ("•svg", Call::Value(crate::xml::svg), Ambivalent, Whole, Some(record)), ("•plot", Call::Value(crate::plot::plot), Ambivalent, Whole, Some(record)),
-    ("•image", Call::Value(crate::image::image), Ambivalent, Vector, Some(float)), ("•canvas", Call::Value(crate::canvas::factory), Monadic, Text, Some(canvas)),
-    #[cfg(web)] ("•js", Call::Value(crate::js::function), Monadic, Text, Some(crate::js::prototype)),
-    ("•vfi", Call::Value(crate::data::vfi), Ambivalent, Text, Some(valid_numbers)), ("•r", Call::Value(crate::regex::compile), Monadic, Text, Some(record)),
-    ("•distribution", Call::Value(crate::distribution::distribution), Ambivalent, Text, Some(record)),
-    ("•rand", Call::Value(crate::distribution::generator), Monadic, Whole, Some(record)), ("•nget", Call::Value(crate::data::read), Ambivalent, Text, Some(text)),
-    ("•nput", Call::Effect(crate::data::write), Dyadic, Whole, Some(number)), ("•fetch", Call::Value(crate::data::fetch), Ambivalent, Text, Some(record)),
-    ("•deflate", Call::Value(crate::data::inflate), Ambivalent, Vector, Some(numbers)), ("•hash", Call::Value(crate::data::hash), Ambivalent, Vector, Some(text)),
-    ("•uuid", Call::Value(crate::data::uuid), Ambivalent, Number, Some(text)), ("•normalize", Call::Value(normalize), Ambivalent, Text, Some(text)),
-    ("•decompose", Call::Value(crate::primitive::decompose), Dyadic, Whole, Some(record)), ("•ucs", Call::Value(unicode_convert), Ambivalent, Vector, Some(numbers)),
-    ("•load", Call::Load, Monadic, Text, Some(record)), ("•signal", Call::Value(signal), Ambivalent, Whole, Some(number)),
-    ("•storage", Call::Active(storage), Monadic, Whole, Some(record)), ("•float", Call::Active(to_float), Ambivalent, Whole, None),
-    ("•time", Call::Time, Ambivalent, Whole, Some(seconds)), ("•host", Call::Value(host), Monadic, Text, Some(text)), #[cfg(not(web))]
-    ("•delay", Call::Effect(delay), Monadic, Whole, Some(seconds)), ("•date", Call::Value(crate::date::read), Ambivalent, Whole, Some(seconds)), #[cfg(not(web))]
-    ("•path", Call::Value(crate::files::path), Ambivalent, Whole, Some(record)), #[cfg(not(web))]
-    ("•metadata", Call::Value(crate::files::metadata), Monadic, Whole, Some(record)), #[cfg(not(web))]
-    ("•readdir", Call::Value(crate::files::readdir), Ambivalent, Text, Some(record)), #[cfg(not(web))]
-    ("•copy", Call::Effect(crate::files::copy), Dyadic, Whole, Some(text)), #[cfg(not(web))] ("•rename", Call::Effect(crate::files::rename), Dyadic, Whole, Some(text)),
-    #[cfg(not(web))] ("•remove", Call::Effect(crate::files::remove), Ambivalent, Text, Some(text)), #[cfg(not(web))]
-    ("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent, Text, Some(text)), ("•prefs", Call::Prefs, Monadic, Whole, Some(record)),
-    ("•nc", Call::Session(crate::Session::system_nc), Monadic, Text, Some(number)), ("•nl", Call::Session(crate::Session::system_nl), Ambivalent, Whole, Some(texts)),
-    ("•src", Call::Session(crate::Session::system_src), Monadic, Text, Some(text)), ("•ex", Call::Session(crate::Session::system_ex), Monadic, Text, Some(number)),
-    ("•literal", Call::Session(crate::Session::system_literal), Monadic, Text, Some(number)),
-    ("•explain", Call::Session(crate::Session::system_explain), Monadic, Text, Some(record)), ("•memory", Call::Active(memory), Monadic, Whole, Some(record)),
-    ("•detach", Call::Active(detach), Monadic, Whole, None), ("•index", Call::Value(index), Ambivalent, Number, Some(numbers)),
-    ("•edge", Call::Value(edge), Ambivalent, Text, Some(number)),
+/// A row of the table. A system function that maps over several items has a result prototype, which an empty mapped argument gives.
+const fn row(name: &'static str, call: Call, valence: Valence, item: Item, prototype: Option<fn(&Context<'_>) -> Value>, inverse: Option<(Native, Valence)>) -> SystemFunction {
+    assert!(matches!(item, Whole) || prototype.is_some(), "a system function that maps over items needs a result prototype");
+    SystemFunction { name, call, valence, item, prototype, inverse, entry: None }
+}
+
+/// Each system function's row.
+const BUILTINS: &[SystemFunction] = &[
+    row("•c", Call::Value(case_convert), Ambivalent, Whole, Some(text), None),
+    row("•csv", Call::Value(crate::csv::parse), Ambivalent, Text, Some(record), Some((crate::csv::serialize, Ambivalent))),
+    row("•json", Call::Value(crate::json::parse), Ambivalent, Text, Some(number), Some((crate::json::serialize, Ambivalent))),
+    row("•mime", Call::Mime, Ambivalent, Whole, Some(record), None),
+    row("•element", Call::Value(crate::xml::factory), Monadic, Text, Some(element), None),
+    row("•xml", Call::Value(crate::xml::parse), Monadic, Text, Some(record), Some((crate::xml::serialize, Monadic))),
+    row("•svg", Call::Value(crate::xml::svg), Ambivalent, Whole, Some(record), None),
+    row("•plot", Call::Value(crate::plot::plot), Ambivalent, Whole, Some(record), None),
+    row("•image", Call::Value(crate::image::image), Ambivalent, Vector, Some(float), Some((crate::image::encode, Ambivalent))),
+    row("•canvas", Call::Value(crate::canvas::factory), Monadic, Text, Some(canvas), None),
+    #[cfg(web)] row("•js", Call::Value(crate::js::function), Monadic, Text, Some(crate::js::prototype), None),
+    row("•vfi", Call::Value(crate::data::vfi), Ambivalent, Text, Some(valid_numbers), None),
+    row("•r", Call::Value(crate::regex::compile), Monadic, Text, Some(record), None),
+    row("•distribution", Call::Value(crate::distribution::distribution), Ambivalent, Text, Some(record), None),
+    row("•rand", Call::Value(crate::distribution::generator), Monadic, Whole, Some(record), None),
+    row("•nget", Call::Value(crate::data::read), Ambivalent, Text, Some(text), None),
+    row("•nput", Call::Effect(crate::data::write), Dyadic, Whole, Some(number), None),
+    row("•fetch", Call::Value(crate::data::fetch), Ambivalent, Text, Some(record), None),
+    row("•deflate", Call::Value(crate::data::inflate), Ambivalent, Vector, Some(numbers), Some((crate::data::deflate, Ambivalent))),
+    row("•hash", Call::Value(crate::data::hash), Ambivalent, Vector, Some(text), None),
+    row("•uuid", Call::Value(crate::data::uuid), Ambivalent, Number, Some(text), None),
+    row("•normalize", Call::Value(normalize), Ambivalent, Text, Some(text), None),
+    row("•decompose", Call::Value(crate::primitive::decompose), Dyadic, Whole, Some(record), Some((crate::primitive::recompose, Dyadic))),
+    row("•ucs", Call::Value(unicode_convert), Ambivalent, Vector, Some(numbers), Some((unicode_convert, Ambivalent))),
+    row("•load", Call::Load, Monadic, Text, Some(record), None),
+    row("•signal", Call::Value(signal), Ambivalent, Whole, Some(number), None),
+    row("•storage", Call::Active(storage), Monadic, Whole, Some(record), None),
+    row("•float", Call::Active(to_float), Ambivalent, Whole, None, None),
+    row("•time", Call::Time, Ambivalent, Whole, Some(seconds), None),
+    row("•host", Call::Value(host), Monadic, Text, Some(text), None),
+    #[cfg(not(web))] row("•delay", Call::Effect(delay), Monadic, Whole, Some(seconds), None),
+    row("•date", Call::Value(crate::date::read), Ambivalent, Whole, Some(seconds), Some((crate::date::write, Ambivalent))),
+    #[cfg(not(web))] row("•path", Call::Value(crate::files::path), Ambivalent, Whole, Some(record), Some((crate::files::join, Monadic))),
+    #[cfg(not(web))] row("•metadata", Call::Value(crate::files::metadata), Monadic, Whole, Some(record), None),
+    #[cfg(not(web))] row("•readdir", Call::Value(crate::files::readdir), Ambivalent, Text, Some(record), None),
+    #[cfg(not(web))] row("•copy", Call::Effect(crate::files::copy), Dyadic, Whole, Some(text), None),
+    #[cfg(not(web))] row("•rename", Call::Effect(crate::files::rename), Dyadic, Whole, Some(text), None),
+    #[cfg(not(web))] row("•remove", Call::Effect(crate::files::remove), Ambivalent, Text, Some(text), None),
+    #[cfg(not(web))] row("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent, Text, Some(text), None),
+    row("•prefs", Call::Prefs, Monadic, Whole, Some(record), None),
+    row("•nc", Call::Session(crate::Session::system_nc), Monadic, Text, Some(number), None),
+    row("•nl", Call::Session(crate::Session::system_nl), Ambivalent, Whole, Some(texts), None),
+    row("•src", Call::Session(crate::Session::system_src), Monadic, Text, Some(text), None),
+    row("•ex", Call::Session(crate::Session::system_ex), Monadic, Text, Some(number), None),
+    row("•literal", Call::Session(crate::Session::system_literal), Monadic, Text, Some(number), Some((write_literal, Monadic))),
+    row("•explain", Call::Session(crate::Session::system_explain), Monadic, Text, Some(record), None),
+    row("•memory", Call::Active(memory), Monadic, Whole, Some(record), None),
+    row("•detach", Call::Active(detach), Monadic, Whole, None, None),
+    row("•index", Call::Value(index), Ambivalent, Number, Some(numbers), None),
+    row("•edge", Call::Value(edge), Ambivalent, Text, Some(number), None),
 ];
 
 /// Every system function's name.
-pub fn names() -> impl Iterator<Item = &'static str> { BUILTINS.iter().map(|(name, ..)| *name) }
+pub fn names() -> impl Iterator<Item = &'static str> { BUILTINS.iter().map(|row| row.name) }
 
-/// The table entry for system name `name`, ignoring case.
-fn builtin(name: &str) -> Option<&'static Builtin> {
-    BUILTINS.iter().find(|(key, ..)| key.eq_ignore_ascii_case(name))
+/// A system function's entry in the table, which the parser resolves a system name to.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct Entry(u8);
+
+const _: () = assert!(BUILTINS.len() <= u8::MAX as usize, "an `Entry` holds a table position in a `u8`");
+
+impl std::fmt::Debug for Entry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.name()) }
+}
+
+impl Entry {
+    /// `•ucs`, which `•literal` writes a control character with.
+    pub(crate) const UCS: Self = Self::named("•ucs");
+    /// `•prefs`, which heads a file when called with a record literal.
+    pub(crate) const PREFS: Self = Self::named("•prefs");
+    /// `•decompose`, which Rank stacks over matrices.
+    pub(crate) const DECOMPOSE: Self = Self::named("•decompose");
+    /// The entry that the table spells `name`, found when the code compiles.
+    const fn named(name: &str) -> Self {
+        let mut i = 0;
+        while i < BUILTINS.len() {
+            if same(BUILTINS[i].name.as_bytes(), name.as_bytes()) { return Self(i as u8); }
+            i += 1;
+        }
+        panic!("the system table has no row with this name")
+    }
+    /// The entry for system name `name`, ignoring case.
+    pub(crate) fn find(name: &str) -> Option<Self> { BUILTINS.iter().position(|row| row.name.eq_ignore_ascii_case(name)).map(|i| Self(i as u8)) }
+    /// Every entry, in table order.
+    pub(crate) fn all() -> impl Iterator<Item = Self> { (0..BUILTINS.len()).map(|i| Self(i as u8)) }
+    fn row(self) -> &'static SystemFunction { &BUILTINS[self.0 as usize] }
+    /// The system function's name, as the table spells it.
+    pub(crate) fn name(self) -> &'static str { self.row().name }
+    /// The system function, built anew for the table that `Builtin::function` reads.
+    pub(crate) fn built(self) -> Function { Function::system(SystemFunction { entry: Some(self), ..self.row().clone() }) }
+}
+
+/// Whether two byte strings are equal, as a constant can test it.
+const fn same(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() { return false; }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] { return false; }
+        i += 1;
+    }
+    true
 }
 
 /// The help page for system name `name`, ignoring case, from `nbs/system`.
-pub(crate) fn help(name: &str) -> Option<&'static str> { crate::inspection::page(builtin(name)?.0) }
+pub(crate) fn help(name: &str) -> Option<&'static str> { crate::inspection::page(Entry::find(name)?.name()) }
 
 /// The system function named `name`, ignoring case.
-pub(crate) fn lookup(name: &str) -> Option<Function> {
-    let (name, call, valence, item, prototype) = builtin(name)?;
-    Some(Function::system(SystemFunction { name, call: call.clone(), valence: *valence, item: *item, prototype: *prototype }))
-}
-
-/// The system functions with an inverse, each with its inverse and the inverse's valence. A format function reads its format, and its inverse writes it.
-const INVERSES: &[(&str, Native, Valence)] = &[
-    ("•csv", crate::csv::serialize, Ambivalent), ("•json", crate::json::serialize, Ambivalent), ("•xml", crate::xml::serialize, Monadic),
-    ("•image", crate::image::encode, Ambivalent), ("•deflate", crate::data::deflate, Ambivalent), ("•date", crate::date::write, Ambivalent),
-    #[cfg(not(web))] ("•path", crate::files::join, Monadic), ("•literal", write_literal, Monadic), ("•ucs", unicode_convert, Ambivalent),
-    ("•decompose", crate::primitive::recompose, Dyadic),
-];
+pub(crate) fn lookup(name: &str) -> Option<Function> { Entry::find(name).map(|entry| Builtin::System(entry).function()) }
 
 /// `f⁻¹` for a system function `f` that has an inverse.
 pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
     use crate::distribution::Operation::{Cdf, Quantile};
-    f.acts(cx)?;
     if let Call::Distribution(d, op @ (Cdf | Quantile)) = &f.call {
         return crate::distribution::call(d, if matches!(op, Cdf) { Quantile } else { Cdf }, left, right, cx);
     }
-    let (_, call, valence) = INVERSES.iter().find(|(name, ..)| *name == f.name).ok_or_else(|| cx.domain_error("this function has no known inverse"))?;
+    let (call, valence) = f.inverse.ok_or_else(|| cx.domain_error("this function has no known inverse"))?;
     valence.check(&format!("{}⁻¹", f.name), left, cx.span)?;
     call(left, right, cx)
 }
@@ -208,6 +259,7 @@ const HOST_FACTS: &[&str] = &["args", "version", "env", "width", "height", #[cfg
 
 /// `•host name` gives the host fact called `name`: the command-line `"args"`, BPL's `"version"`, the `"env"` record, the terminal's `"width"` and `"height"`, the working directory `"cwd"`, and `"temp"`, the directory for temporary files.
 fn host(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+    span.acts()?;
     let fact = match crate::keyed::name(right).as_deref() {
         Some("args") => {
             let args = &span.session.args;
@@ -257,6 +309,8 @@ fn delay(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<(Value,
 
 /// `•storage Y`: how `Y`'s items are held, as a record. `kind` names the storage (`Value::storage_kind`). Under static kinds, an integer's kind names its width as well, `int32` or `int64`, because the width is part of the kind there. `pending` is true while the items wait in a pending call, and `view` while `Y` reads another array's items. `active` counts the `∂` levels whose tags `Y` carries. Reading no items, it never forces a pending array.
 fn storage(_: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+    // A batched run's cells aren't stored as the cells of a run cell by cell are.
+    cx.acts()?;
     let flag = |b: bool| Value::Number(crate::Number::from_bool(b));
     let kind = right.storage_kind(Numeric::current());
     let values = vec![crate::keyed::text(kind), flag(right.template().pending().is_some()), flag(right.template().is_view()), Value::integer(crate::derivative::levels(right) as i64)];
@@ -265,6 +319,8 @@ fn storage(_: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, 
 
 /// `•memory x`: what this thread holds, and what `x` keeps alive, as a record. `records` counts the live record nodes of `∂`, which each `∂` frees when it returns, and `pending` the live pending arrays. Each counts the nodes this thread made, wherever they are dropped. `bytes` counts the allocations that `x` keeps alive (`Value::footprint`). It reads no items and never forces a pending array. It takes active values under `∂`.
 fn memory(_: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+    // A batched run keeps alive what a run cell by cell doesn't.
+    cx.acts()?;
     use crate::explain::{live, Counted};
     let counts = [live(Counted::Record), live(Counted::Pending), right.footprint()].map(|n| Value::integer(n as i64)).to_vec();
     crate::keyed::vector(["records", "pending", "bytes"].map(Into::into).to_vec(), counts).error_at(cx, "invalid memory record")
@@ -282,6 +338,8 @@ fn index(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Valu
         None => "".into(),
         Some(a) => crate::keyed::name(a).ok_or_else(|| span.domain_error("•index takes text as its stem"))?,
     };
+    // The random bits come from the operating system, anew on each call.
+    span.acts()?;
     let mut bits: u64 = rand::random();
     let random: String = (0..13).map(|_| { let digit = DIGITS[(bits % 32) as usize] as char; bits /= 32; digit }).collect();
     Primitive::Iota.call(None, right, span)?.with_axis_names(vec![Some(format!("_{stem}{FRESH}{random}").into())]).error_at(span, "invalid index")

@@ -56,6 +56,7 @@ def test_python_printer():
     teq(to_python(bpl.fn('{⎕←1 ⋄ ⍵}')), 'fn("{⎕←1 ⋄ ⍵}")')
     teq(to_python(bpl.fn('unknown')), 'fn("unknown")')
     teq(to_python(bpl.fn('(⎕←1)+')), 'fn("(⎕←1)+")')
+    teq(to_python(Array([add, multiply]).fn), 'bpl("[+ ×]").fn')
 
 
 def test_load(tmp_path, monkeypatch):
@@ -282,8 +283,8 @@ def test_matrix_stack_operator():
     for x,y in ((a, b), (a, b[:, None]), (a, v), (v, b), (v, v)):
         result, expected = Array(x) @ Array(y), rm.matmul(x, y)
         teq(result.np, np.asarray(expected))
-    for x,y in ((1, v), (v, 1), ([1], v), ([[1]], np.ones((2, 2)))):
-        with pytest.raises(ValueError): Array(x) @ Array(y)
+    for x,y in ((1, v), (v, 1), ([1], v)): teq(int(Array(x) @ Array(y)), 3)
+    with pytest.raises(BplError): Array(v) @ Array(np.ones(2))
     left = dict(names=['batch', 'row', 'k'], keys=[['x', 'y'], ['r', 's'], None])
     right = dict(names=['batch', 'k', 'col'], keys=[['x', 'y'], None, ['a', 'b', 'c', 'd']])
     result, expected = Array(a, **left) @ Array(b, **right), rm.matmul(rm.array(a, **left), rm.array(b, **right))
@@ -376,7 +377,7 @@ def test_based_values():
 def test_words_binding_and_operators():
     f = bpl.fn('⊢')
     assert int(Array([6]) & 3) == 2
-    with pytest.raises(TypeError): Array([6.]) & 3
+    with pytest.raises(BplError): Array([6.5]) & 3
     assert int((f & 3)(6)) == 2 and int((3 | f)(6)) == 7 and int((~f)(6)) == -7
     np.testing.assert_array_equal(indices(3), [0, 1, 2])
     np.testing.assert_array_equal(shape(reshape([2, 3], indices(6))), [2, 3])
@@ -528,6 +529,14 @@ def test_function_arrays():
     assert pick(1, reverse(fs))(3).py == 23
     bpl(fs=fs)
     assert bpl('f←0⊃fs ⋄ f 3').py == 23
+    assert isinstance(fs, basedpl.FunctionArray) and not callable(Array([1, 2]))
+    v = Array([1, 2])
+    v[0] = add
+    np.testing.assert_array_equal(v(3, 4), [7, 2])
+    v[0] = 0
+    assert not callable(v)
+    bpl('aggs←[+ -]')
+    np.testing.assert_array_equal(bpl.fn('aggs')(3), [3, -3])
 
 
 def test_retained_and_late_bound_functions(capsys):

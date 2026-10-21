@@ -192,6 +192,7 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value, span: &crate::Span)
     let (mut hanzi_aliases, mut batch, mut fusion) = (settings::hanzi_aliases(), settings::batch(), settings::reports_fusion());
     let pairs = keyed::pairs(right).error_at(span, "•prefs takes a record of settings")?;
     let shy = !pairs.is_empty();
+    if shy { session.at(span).acts()?; }
     for (key, value) in pairs {
         if numeric.set(&key, &value).map_err(|message| span.domain_error(message))? { continue; }
         match &*key {

@@ -7,7 +7,7 @@ use rustymath::{
     agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Floats, IntBuf, Ints, View, Width}, error::Kind, search::Key,
     with_float_width, with_width
 };
-use std::{borrow::Cow, fmt, sync::{Arc, OnceLock}};
+use std::{borrow::Cow, fmt, sync::Arc};
 
 mod storage;
 mod text;
@@ -207,18 +207,56 @@ impl ArrayData {
     }
     /// The running level's data that this array holds in place of items, if any.
     fn carrier(&self) -> Option<&Carrier> { match &self.data { Data::Carried(carrier) => Some(carrier), _ => None } }
+    /// Whether a direct item is a function. Compact storage holds none, and a pending array computes numbers.
+    fn holds_functions(&self) -> bool {
+        match &self.data {
+            Data::Own(Storage::Compact(_)) | Data::Node(_) => false,
+            Data::Own(storage) => storage.holds_functions(),
+            Data::Of(base) => base.holds_functions(),
+            Data::Carried(carrier) => carried_functions(carrier),
+        }
+    }
     /// Whether this array reads another array's items, as a view.
     fn is_view(&self) -> bool { matches!(self.data, Data::Of(_)) }
-    /// The bytes of the allocations that this array keeps alive, as `Value::footprint` counts them. Each allocation counts once in `seen`.
-    fn footprint_in(this: &Arc<Self>, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
-        if !seen.insert(Arc::as_ptr(this) as usize) { return 0; }
-        match &this.data {
+}
+
+/// The bytes of the allocations that a value keeps alive, as `Value::footprint` counts them. Each allocation counts once in `seen`.
+pub(crate) trait Footprint { fn footprint_in(&self, seen: &mut Seen) -> usize; }
+
+/// The allocations that a footprint has counted, by address.
+pub(crate) type Seen = rustymath::hashing::HashSet<usize>;
+
+impl<T: Footprint> Footprint for Arc<T> {
+    fn footprint_in(&self, seen: &mut Seen) -> usize { if unseen(self, seen) { (**self).footprint_in(seen) } else { 0 } }
+}
+
+impl<T: Footprint> Footprint for std::sync::OnceLock<T> {
+    fn footprint_in(&self, seen: &mut Seen) -> usize { self.get().map_or(0, |v| v.footprint_in(seen)) }
+}
+
+/// Whether `this`'s allocation is new to `seen`, which then holds it.
+pub(crate) fn unseen<T>(this: &Arc<T>, seen: &mut Seen) -> bool { seen.insert(Arc::as_ptr(this) as usize) }
+
+impl Footprint for ArrayData {
+    fn footprint_in(&self, seen: &mut Seen) -> usize {
+        match &self.data {
             Data::Own(storage) => storage.footprint_in(seen),
-            Data::Of(base) => Self::footprint_in(base, seen),
-            Data::Node(pending) => Pending::footprint_in(pending, seen),
+            Data::Of(base) => base.footprint_in(seen),
+            Data::Node(pending) => pending.footprint_in(seen),
             Data::Carried(carrier) => carrier.footprint_in(seen),
         }
     }
+}
+
+impl Footprint for Value {
+    fn footprint_in(&self, seen: &mut Seen) -> usize { match self { Self::Array(a) => a.footprint_in(seen), Self::Carried(carrier) => carrier.footprint_in(seen), _ => 0 } }
+}
+
+/// Drops `node`'s children in a loop, never by recursion, so that a long chain can't overflow the stack. `take` moves a node's children into the list. Each child that nothing else holds gives up its own children the same way before it drops.
+pub(crate) fn drop_chain<T>(node: &mut T, take: impl Fn(&mut T, &mut Vec<Arc<T>>)) {
+    let mut chain = Vec::new();
+    take(node, &mut chain);
+    while let Some(next) = chain.pop() { if let Ok(mut next) = Arc::try_unwrap(next) { take(&mut next, &mut chain); } }
 }
 
 /// A pending array's items, computed on the first read. Cold and out of line, so that `ArrayData::storage`'s other arms stay small.
@@ -229,6 +267,9 @@ fn forced(pending: &Pending) -> &Storage {
 }
 
 pub(crate) use rustymath::layout::{element_count, generated_len, Lanes};
+
+/// Whether the value that `carrier` stands for holds a function as a direct item. A batch asks its whole argument, which computes no cell, where its template would.
+fn carried_functions(carrier: &Carrier) -> bool { match carrier { Carrier::Batch(b) => b.holds_functions(), carrier => carrier.template().holds_functions() } }
 
 /// The count `n` as a size, or `usize::MAX` when `usize` can't hold it, which every limit on sizes then rejects.
 pub(crate) fn saturated(n: u64) -> usize { usize::try_from(n).unwrap_or(usize::MAX) }
@@ -332,6 +373,11 @@ impl Value {
     }
     /// Whether this is an array that holds values as items: mixed storage, and no running level's data (`transform::Carrier`).
     pub(crate) fn holds_values(&self) -> bool { matches!(self, Self::Array(a) if a.carrier().is_none()) && self.dtype().is_none() }
+    /// Whether a direct item is a function. A batch answers for its cells, any other carrier for the value that holds its items, and a pending array computes numbers.
+    #[inline]
+    pub fn holds_functions(&self) -> bool {
+        match self { Self::Array(a) => a.holds_functions(), Self::Carried(carrier) => carried_functions(carrier), _ => false }
+    }
     /// Whether no item is an array. Compact storage holds none. An empty array answers for its prototype.
     pub(crate) fn is_simple(&self) -> bool {
         if self.pending().is_some() { return true; }
@@ -433,7 +479,8 @@ impl Value {
         let data = self.storage_mut();
         if let Storage::Mixed(items, memo) = data {
             if writes.kept().any(|(_, o)| o == 0) { memo.prototype.take(); }
-            if source.environment().is_some() || writes.kept().any(|(_, o)| items[o].environment().is_some()) { memo.environment.take(); }
+            if source.environment().is_some() || writes.kept().any(|(_, o)| items[o].environment().is_some()) { memo.forget_environment(); }
+            if memo.knows_function() || matches!(source, Value::Function(_)) || source.holds_functions() { memo.forget_functions(); }
         }
         let mut gather = Gather::resume(std::mem::replace(data, Storage::Compact(Buffer::Booleans(Vec::new()))), Widening::Items);
         gather.scatter(writes, source);
@@ -453,7 +500,7 @@ impl Value {
         for &i in path {
             let Storage::Mixed(items, memo) = current.storage_mut() else { unreachable!("only mixed storage holds arrays") };
             if i == 0 { memo.prototype.take(); }
-            if dependent || items[i].environment().is_some() { memo.environment.take(); }
+            if dependent || items[i].environment().is_some() { memo.forget_environment(); }
             current = &mut items[i];
         }
         current
@@ -467,7 +514,8 @@ impl Value {
         let data = a.storage_mut();
         if let Storage::Mixed(items, memo) = data {
             if items.is_empty() && !cells.is_empty() { memo.prototype.take(); }
-            if cells.environment().is_some() { memo.environment.take(); }
+            if cells.environment().is_some() { memo.forget_environment(); }
+            if cells.holds_functions() { memo.forget_functions(); }
         }
         let mut gather = Gather::resume(std::mem::replace(data, Storage::Compact(Buffer::Booleans(Vec::new()))), Widening::Arrays);
         gather.append(cells);
@@ -526,7 +574,7 @@ impl Value {
         let prototype = prototype.fill();
         let data = match item_dtype(&prototype) {
             Some(dtype) => Storage::with_capacity(Some(dtype), 0),
-            None => Storage::Mixed(Vec::new(), Memo { prototype: OnceLock::from(Box::new(prototype)), ..Memo::default() }),
+            None => Storage::Mixed(Vec::new(), Memo::with_prototype(prototype)),
         };
         Ok(ArrayData::array(shape, data))
     }
@@ -596,14 +644,7 @@ impl Value {
     /// Whether the array reads another array's items, as a view.
     pub(crate) fn is_view(&self) -> bool { matches!(self, Self::Array(a) if a.is_view()) }
     /// The bytes of the allocations that this value keeps alive: its items, a view's base, the arrays that a pending array reads, a dual's parts and a record's nodes. A shared allocation counts once. An atom that holds no array gives 0.
-    pub(crate) fn footprint(&self) -> usize { self.footprint_in(&mut rustymath::hashing::HashSet::default()) }
-    pub(crate) fn footprint_in(&self, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
-        match self {
-            Self::Array(a) => ArrayData::footprint_in(a, seen),
-            Self::Carried(carrier) => carrier.footprint_in(seen),
-            _ => 0,
-        }
-    }
+    pub(crate) fn footprint(&self) -> usize { self.footprint_in(&mut Seen::default()) }
     pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Compact(View::Floats(Floats::F64(v))) => Some(v), _ => None } }
     pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items() { Items::Compact(View::Integers(Ints::I64(v))) => Some(v), _ => None } }
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Compact(View::Booleans(v)) => Some(v), _ => None } }

@@ -1,6 +1,6 @@
 //! How time and memory grow with the size of the arguments. Each case runs at `N` and `8 * N` items. Its time, allocated bytes and peak bytes may each grow by at most `LIMIT` times. A linear or n log n cost stays below that. A quadratic cost grows about 64 times. A global allocator counts, on the calling thread alone, the bytes that each call allocates, its peak and the bytes it keeps. The test harness's other threads stay out of the measurements. Rustymath runs on the calling thread too, with `set_threads(1)`. Otherwise memory that the calling thread allocates and a Rayon worker frees, such as a block of Rayon's job queue, counts as kept.
 use basedpl::{EvalOptions, Session};
-use std::{alloc::{GlobalAlloc, Layout, System}, cell::Cell, io::Write, time::{Duration, Instant}};
+use std::{alloc::{GlobalAlloc, Layout, System}, cell::Cell, io::Write};
 
 thread_local! {
     /// A thread can free memory that another thread allocated, so its live count can fall below zero.
@@ -36,7 +36,8 @@ const PEAK_PER_ITEM: usize = 128;
 /// The same for a gradient through Each, which records nodes and values for each cell: about 930 bytes for each row of two items.
 const RECORD_PEAK_PER_ITEM: usize = 1200;
 
-struct Cost { time: Duration, allocated: usize, peak: usize, kept: usize }
+/// A case's time in seconds, as `rustymath::timing::fastest` takes it, and the bytes it allocated, peaked at and kept.
+struct Cost { time: f64, allocated: usize, peak: usize, kept: usize }
 
 /// A session whose arguments have `n` items.
 fn session(n: usize) -> Session {
@@ -56,11 +57,7 @@ fn cost(session: &mut Session, code: &str) -> Cost {
     PEAK.set(live);
     run();
     let (allocated, peak, kept) = (TOTAL.get() - total, (PEAK.get() - live) as usize, (LIVE.get() - live).max(0) as usize);
-    let time = (0..3).map(|_| {
-        let start = Instant::now();
-        run();
-        start.elapsed()
-    }).min().unwrap();
+    let time = rustymath::timing::fastest(|_| run());
     Cost { time, allocated, peak, kept }
 }
 
@@ -68,7 +65,7 @@ fn cost(session: &mut Session, code: &str) -> Cost {
 fn growth_failures(codes: &[&str], peak_per_item: usize) -> Vec<String> {
     let (mut small, mut large) = (session(N), session(8 * N));
     let ratio = |a: usize, b: usize| a as f64 / b.max(1) as f64;
-    let time = |s: &Cost, l: &Cost| l.time.as_secs_f64() / s.time.as_secs_f64();
+    let time = |s: &Cost, l: &Cost| l.time / s.time;
     let (mut failures, mut slow) = (Vec::new(), Vec::new());
     for &code in codes {
         let (s, l) = (cost(&mut small, code), cost(&mut large, code));

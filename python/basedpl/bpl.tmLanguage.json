@@ -50,7 +50,7 @@
     },
     {
       "match": "[•][A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*",
-      "name": "support.function.system.bpl"
+      "name": "support.function.bpl"
     },
     {
       "match": "[¯]?[∞]|[¯]?(\\d+([.]\\d+)?|[.]\\d+)([eEₑ][¯]?\\d+)?([jJⱼ][¯]?(\\d+([.]\\d+)?|[.]\\d+)([eEₑ][¯]?\\d+)?|ₓ|[rᵣ][¯]?\\d+)?|[ₑⱼᵣ]",

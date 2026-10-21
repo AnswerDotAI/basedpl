@@ -1,6 +1,7 @@
 //! Array storage: rustymath's compact buffers or mixed values, the borrowed `Items` view, BPL's promotion rules for compact dtypes, and `Gather`, which builds new storage from the items of existing arrays. `Gather::walk` reads them through rustymath's `gather::Steps`.
 
 use super::*;
+use std::sync::{atomic::{AtomicU32, AtomicU8, Ordering::Relaxed}, OnceLock};
 pub(crate) use rustymath::gather::Steps;
 use rustymath::{
     buffer::{Buffer, ComplexBuf, Complexes, DType, Element, FloatBuf, Floats, IntBuf, Ints, Source, View, Width}, error::Kind, with_complexes,
@@ -11,9 +12,32 @@ use rustymath::{
 #[derive(Clone, Debug)]
 pub(crate) enum Storage { Compact(Buffer), Mixed(Vec<Value>, Memo) }
 
-/// What mixed storage works out about its items on first request. The prototype comes from the first item, and an empty array stores it instead. The environment is the innermost frame that any item depends on. Frame indices stay below the call-depth limit of 20,000, so they fit in `u16`.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Memo { pub(super) prototype: OnceLock<Box<Value>>, pub(super) environment: OnceLock<Option<u16>> }
+/// What mixed storage works out about its items on first request. The prototype comes from the first item, and an empty array stores it instead. `environment` and `functions` hold 0 until their fact is first requested. A fact depends only on the items. Relaxed loads and stores are enough, because threads that work out the same fact at the same time store the same value.
+#[derive(Debug, Default)]
+pub(crate) struct Memo {
+    pub(super) prototype: OnceLock<Box<Value>>,
+    /// The innermost frame that any item depends on: 1 for none, or the frame's index plus 2. Frame indices stay below the call-depth limit of 20,000.
+    environment: AtomicU32,
+    /// Whether any item is a function: 1 for no, 2 for yes.
+    functions: AtomicU8,
+}
+
+impl Clone for Memo {
+    fn clone(&self) -> Self {
+        Self { prototype: self.prototype.clone(), environment: AtomicU32::new(self.environment.load(Relaxed)), functions: AtomicU8::new(self.functions.load(Relaxed)) }
+    }
+}
+
+impl Memo {
+    /// The memo of an empty array, which stores the array's prototype.
+    pub(super) fn with_prototype(prototype: Value) -> Self { Self { prototype: OnceLock::from(Box::new(prototype)), ..Self::default() } }
+    /// Forgets the environment, for a write that may change it.
+    pub(super) fn forget_environment(&mut self) { *self.environment.get_mut() = 0; }
+    /// Forgets whether an item is a function, for a write that may change it.
+    pub(super) fn forget_functions(&mut self) { *self.functions.get_mut() = 0; }
+    /// Whether the memo has found a function among the items.
+    pub(super) fn knows_function(&self) -> bool { self.functions.load(Relaxed) == 2 }
+}
 
 // Storage that holds the same items is equal, whatever its dtype. A nonempty array's prototype follows from its items, so only an empty array's prototype takes part in equality.
 impl PartialEq for Storage {
@@ -153,13 +177,6 @@ macro_rules! copy_into {
 
 impl Storage {
     pub(crate) fn mixed(data: Vec<Value>) -> Self { Self::Mixed(data, Memo::default()) }
-    /// The bytes of these items: a compact buffer's allocation, or a mixed array's values with what each one keeps alive. Each allocation counts once in `seen`.
-    pub(crate) fn footprint_in(&self, seen: &mut rustymath::hashing::HashSet<usize>) -> usize {
-        match self {
-            Self::Compact(buffer) => buffer.capacity() * buffer.dtype().bytes(),
-            Self::Mixed(values, _) => values.capacity() * size_of::<Value>() + values.iter().map(|v| v.footprint_in(seen)).sum::<usize>(),
-        }
-    }
     /// The integers `data` at the narrowest width that holds them, from their minimum and maximum, which rustymath finds together in one pass at the width of `T`.
     pub(crate) fn narrowed<T: Whole>(data: Vec<T>) -> Self where rustymath::reduce::Max: rustymath::reduce::Reduction<T, Total = T>,
         rustymath::reduce::Min: rustymath::reduce::Reduction<T, Total = T> {
@@ -216,10 +233,26 @@ impl Storage {
     /// The innermost frame that any item depends on. Mixed storage works it out on first request. An empty array answers for its prototype.
     pub(super) fn environment(&self) -> Option<u16> {
         let Self::Mixed(items, memo) = self else { return None };
-        *memo.environment.get_or_init(|| {
-            let deepest = if items.is_empty() { self.prototype().environment() } else { items.iter().filter_map(Value::environment).max() };
-            deepest.map(|i| i as u16)
-        })
+        match memo.environment.load(Relaxed) {
+            0 => {
+                let deepest = if items.is_empty() { self.prototype().environment() } else { items.iter().filter_map(Value::environment).max() };
+                memo.environment.store(deepest.map_or(1, |i| i as u32 + 2), Relaxed);
+                deepest.map(|i| i as u16)
+            }
+            known => known.checked_sub(2).map(|i| i as u16),
+        }
+    }
+    /// Whether an item is a function. Compact storage holds none, and mixed storage looks on first request.
+    pub(super) fn holds_functions(&self) -> bool {
+        let Self::Mixed(items, memo) = self else { return false };
+        match memo.functions.load(Relaxed) {
+            0 => {
+                let holds = items.iter().any(|v| matches!(v, Value::Function(_)));
+                memo.functions.store(1 + u8::from(holds), Relaxed);
+                holds
+            }
+            known => known == 2,
+        }
     }
     /// Compact storage of the dtype that `widening` gives the items (`items_dtype`), when there is one. Other items stay mixed, and a weak number among them becomes strong, as an array's items are.
     pub(super) fn compact(mut data: Vec<Value>, widening: Widening) -> Self {
@@ -245,6 +278,16 @@ impl Storage {
             DType::Complex(width) => Buffer::Complexes(ComplexBuf::collect(width, data.iter().map(|e| number(e).unwrap().to_complex().unwrap()))),
             DType::Character => Buffer::Characters(data.iter().map(|e| if let Value::Character(c) = e { *c } else { unreachable!() }).collect()),
         })
+    }
+}
+
+impl Footprint for Storage {
+    /// The bytes of these items: a compact buffer's allocation, or a mixed array's values with what each one keeps alive.
+    fn footprint_in(&self, seen: &mut Seen) -> usize {
+        match self {
+            Self::Compact(buffer) => buffer.capacity() * buffer.dtype().bytes(),
+            Self::Mixed(values, _) => values.capacity() * size_of::<Value>() + values.iter().map(|v| v.footprint_in(seen)).sum::<usize>(),
+        }
     }
 }
 

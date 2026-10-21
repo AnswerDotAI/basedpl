@@ -170,7 +170,7 @@ pub(super) fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     indices.and_then(|a| a.with_axis_names(super::structural::shape_names(right))).error_at(span, "invalid iota")
 }
 
-/// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within comparison tolerance. Each item is `a+i` or `a-i` for an exact count `i`, so the result's type follows `a`. Two characters count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the type of `n`.
+/// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within comparison tolerance. Each item is `a+i` or `a-i` for an exact count `i`, so the result's type follows `a`. The distance is `b-a`, so two characters count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the type of `n`.
 pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
     let real = |v: Value| match v {
         Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(span.domain_error("range needs real numbers or two characters"))
@@ -188,10 +188,7 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
         return Primitive::Arithmetic(Arithmetic::Times).call(Some(&sign), &counts(1..steps(&n)?.saturating_add(1))?, span);
     };
     let start = left.at(0);
-    let distance = match (&start, right.at(0)) {
-        (Value::Character(a), Value::Character(b)) => Number::from_integer(i64::from(u32::from(b)) - i64::from(u32::from(*a))),
-        (_, end) => real(end)?.dyad(Arithmetic::Minus, &real(start.clone())?).domain_at(span)?,
-    };
+    let distance = real(Primitive::Arithmetic(Arithmetic::Minus).call(Some(&right.at(0)), &start, span)?)?;
     let op = if distance.grade_order(&distance.zero()).is_lt() { Arithmetic::Minus } else { Arithmetic::Plus };
     Primitive::Arithmetic(op).call(Some(&start), &counts(0..steps(&distance)?.saturating_add(1))?, span)
 }
@@ -302,7 +299,7 @@ fn element_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate:
         (x, Value::Carried(y)) => return y.observed()?.map_or(Ok(None), |y| element_order(x, y)),
         (Value::Function(_) | Value::Operator(_), _) | (_, Value::Function(_) | Value::Operator(_)) => return Ok(None),
         (Value::Number(x), Value::Number(y)) => x.grade_order(y), (Value::Character(x), Value::Character(y)) => x.cmp(y),
-        (Value::Number(_), Value::Character(_)) => Ordering::Less, (Value::Character(_), Value::Number(_)) => Ordering::Greater,
+        (Value::Number(_), Value::Character(_)) | (Value::Character(_), Value::Number(_)) => rustymath::characters::order_of_kinds(matches!(left, Value::Character(_)), matches!(right, Value::Character(_))),
         (x @ Value::Array(_), y @ Value::Array(_)) => return array_order(x, y), (Value::Array(_), _) => Ordering::Greater,
         (_, Value::Array(_)) => Ordering::Less
     }))

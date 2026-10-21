@@ -108,7 +108,7 @@ pub(crate) fn pairs(value: &Value) -> Result<Vec<(Arc<str>, Value)>, ErrorKind> 
 }
 
 /// A keyed vector entry: its name, if it has one, and its value.
-type Entry = (Option<Arc<str>>, Value);
+pub(crate) type Entry = (Option<Arc<str>>, Value);
 
 /// The entries of a keyed vector, in order, with `None` for an entry that has no name.
 pub(crate) fn entries(value: &Value) -> Result<Vec<Entry>, ErrorKind> {

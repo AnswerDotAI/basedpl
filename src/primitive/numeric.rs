@@ -7,6 +7,8 @@ use num_complex::Complex64;
 use num_rational::BigRational;
 use rustymath::linalg::{self, Factor, Inner, PlusTimes};
 use rustymath::agreement::Frames;
+use rustymath::array::ArrayView;
+use rustymath::buffer::FloatWidth;
 
 pub(super) fn complex_parts(right: &Value, polar: bool, span: &Context<'_>) -> Result<Value, Error> {
     use crate::element::{Stored, Float};
@@ -142,9 +144,8 @@ fn unnamed(
     pervade(left, right, &|x, y| item(x.map(|x| numeric(x, span)).transpose()?, numeric(y, span)?).map(Value::Number).domain_at(span), kernel, span)
 }
 
+/// `⌹` on a matrix, a vector or a number: the solution of `right x = left`, or `right`'s inverse without `left`. A vector is one column, and a number a 1×1 matrix. Floats and complex numbers run through rustymath's [`Stacked`](linalg::Stacked), as stacks of matrices do, where a square matrix with no negligible LU pivot solves or inverts through LU and any other gives the least-squares solution or the pseudoinverse. Exact numbers stay exact, through row reduction.
 pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    // Monadic `⌹` gives an inverse from one factorization where it can, and a pseudoinverse otherwise.
-    if left.is_none() { if let Some((inverse, _)) = matrix_inverse(right, span)? { return Ok(inverse); } }
     let dimensions = |a: &Value| match a.shape() {
         [] => Ok((1, 1)), &[m] => Ok((m, 1)), &[m, n] => Ok((m, n)), _ => Err(span.error(Kind::Rank, "matrix divide requires rank at most two"))
     };
@@ -162,34 +163,57 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, span: &Context<
         None => right.layout().axes((0..right.shape().len()).rev()),
     };
     generated_len(&[n, k]).at(span)?;
-    let positions = left.map(|x| Mapping::contract(right.layout(), 0, x.layout(), 0)).transpose().at(span)?;
     let scalar = layout.shape().is_empty() && (right.is_atom() || !right.is_unit()) && left.is_none_or(|x| x.is_atom() || !x.is_unit());
     let (domain, width) = match left { Some(x) => domain_of(&[right, x], span), None => domain_of(&[right], span) }?;
     if n == 0 {
         let prototype = if domain == Domain::Exact { right.prototype() } else { Value::Number(Number::float(0.0, width)) };
         return layout.collect(vec![], prototype).error_at(span, "invalid matrix shape");
     }
-    with_field!(domain, [Exact, Single, Double, Complex], T => {
-        let a = read::<T>(right, span)?; let b = ordered(left.map(|x| read::<T>(x, span)).transpose()?, positions.as_ref(), m, k);
-        matrix_result(T::solve(&a, b.as_deref(), [m, n], k, span)?, layout, scalar, width, span)
-    })
+    if domain != Domain::Exact {
+        let matrix = match right.shape() { [] => Layout::from([1, 1]), [_] => right.layout().concat(&Layout::from([1])), _ => right.layout().clone() };
+        let args: Vec<_> = [(right, matrix)].into_iter().chain(left.map(|x| (x, if x.shape().is_empty() { Layout::from([1]) } else { x.layout().clone() }))).collect();
+        let x = inexact(&args, (domain, width), span, |s, v| match *v { [a, b] => s.solve(a, b), [a] => s.pinv(a), _ => unreachable!("a view for each argument") }).map_err(|s| s.raised(span))?;
+        let x = value(x.into_compact().1, layout, span)?;
+        return Ok(if scalar { x.at(0) } else { x });
+    }
+    // Monadic `⌹` gives an inverse from one factorization where it can, and a pseudoinverse otherwise.
+    if left.is_none() { if let Some((inverse, _)) = matrix_inverse(right, false, span)? { return Ok(inverse); } }
+    let positions = left.map(|x| Mapping::contract(right.layout(), 0, x.layout(), 0)).transpose().at(span)?;
+    let a = read::<BigRational>(right, span)?;
+    let x = match ordered(left.map(|x| read::<BigRational>(x, span)).transpose()?, positions.as_ref(), m, k) {
+        Some(b) => linalg::exact::solve_with(&a, &b, [m, n], k, || span.check_now()),
+        None => linalg::exact::pinv_with(&a, [m, n], || span.check_now()),
+    }?;
+    matrix_result(x, layout, scalar, width, span)
 }
 
-/// Monadic `-.×` on the `n`×`n` matrix `a`: its determinant. Exact numbers stay exact, through row reduction. Floats and complex numbers take rustymath's LU determinant, read as `⌹` reads them. `None` where an item isn't a number.
+/// Monadic `-.×` on the `n`×`n` matrix `a`: its determinant. Exact numbers stay exact, through row reduction. Floats and complex numbers take the LU determinant of rustymath's [`Stacked`](linalg::Stacked), as `⌹` reads them. `None` where an item isn't a number.
 pub(crate) fn determinant(a: &Value, n: usize, span: &Context<'_>) -> Result<Option<Value>, Error> {
     let Some((domain, width)) = Domain::of_arrays(&[a]) else { return Ok(None) };
-    let d = with_field!(domain, [Exact, Single, Double, Complex], T => T::determinant(&read::<T>(a, span)?, n, span)?.number(width));
-    Ok(Some(Value::Number(d)))
+    if domain == Domain::Exact {
+        return Ok(Some(Value::Number(linalg::exact::determinant_with(&read::<BigRational>(a, span)?, n, || span.check_now())?.number(width))));
+    }
+    let d = inexact(&[(a, Layout::from([n, n]))], (domain, width), span, |s, v| s.det(v[0])).map_err(|s| s.raised(span))?;
+    Ok(Some(value(d.into_compact().1, Layout::default(), span)?.at(0)))
 }
 
-/// `⌹a` and the determinant of `a`, from one factorization, for a square matrix or a number `a`. `None` where `⌹` gives a pseudoinverse: a singular exact matrix, or a float matrix with a pivot that rustymath's `linalg::inverse` finds negligible.
-pub(crate) fn matrix_inverse(a: &Value, span: &Context<'_>) -> Result<Option<(Value, Number)>, Error> {
-    let n = match *a.shape() { [] | [1] => 1, [m, n] if m == n => n, _ => return Ok(None) };
+/// `⌹a` and the determinant of `a`, from one factorization, for a square matrix or a number `a`, or for each matrix in the last two axes of `a` where `stacked`, as `∂`'s rules for `⌹` and `-.×` need them. A stack's determinants keep its frame's axes. `None` where `⌹` gives the pseudoinverse of some matrix: a singular exact matrix, or a float matrix with a negligible LU pivot. Floats and complex numbers go through rustymath's [`Stacked`](linalg::Stacked), as `⌹` reads them. Exact matrices factor in turn on this thread, which checks for interrupts within each.
+pub(crate) fn matrix_inverse(a: &Value, stacked: bool, span: &Context<'_>) -> Result<Option<(Value, Value)>, Error> {
+    let r = a.shape().len();
+    let (frame, n) = match *a.shape() { [] | [1] => (0, 1), [.., m, n] if m == n && (stacked || r == 2) => (r - 2, n), _ => return Ok(None) };
     let (domain, width) = domain_of(&[a], span)?;
-    with_field!(domain, [Exact, Single, Double, Complex], T => {
-        let Some((x, d)) = T::inverse(&read::<T>(a, span)?, n, span)? else { return Ok(None) };
-        Ok(Some((matrix_result(x, a.layout().axes((0..a.shape().len()).rev()), a.is_atom(), width, span)?, d.number(width))))
-    })
+    let (inverse, determinant) = (a.layout().axes((0..frame).chain((frame..r).rev())), a.layout().axes(0..frame));
+    if domain == Domain::Exact {
+        let frames = Frames::new(&[(&**a.layout(), r - frame)]).at(span)?;
+        let items = read::<BigRational>(a, span)?;
+        let Some(cells) = (0..frames.count).map(|i| linalg::exact::inverse_with(&items[frames.items(0, i, n * n)], n, || span.check_now())).collect::<Result<Option<Vec<_>>, _>>()? else { return Ok(None) };
+        let (x, d): (Vec<_>, Vec<_>) = cells.into_iter().unzip();
+        return Ok(Some((matrix_result(x.concat(), inverse, a.is_atom(), width, span)?, matrix_result(d, determinant, frame == 0, width, span)?)));
+    }
+    let matrices = if r < 2 { Layout::from([1, 1]) } else { a.layout().clone() };
+    let Some((x, d)) = inexact(&[(a, matrices)], (domain, width), span, |s, v| s.inverse(v[0])).map_err(|s| s.raised(span))? else { return Ok(None) };
+    let (x, d) = (value(x.into_compact().1, inverse, span)?, value(d.into_compact().1, determinant, span)?);
+    Ok(Some((if a.is_atom() { x.at(0) } else { x }, if frame == 0 { d.at(0) } else { d })))
 }
 
 /// A result of `⌹`, `x`, laid out by `layout`, or its one item where it's `scalar`.
@@ -198,41 +222,66 @@ fn matrix_result<T: Field>(mut x: Vec<T>, layout: Layout, scalar: bool, width: F
     T::array(x, layout.shape().to_vec(), width).and_then(|v| v.with_layout(layout)).error_at(span, "invalid matrix result")
 }
 
-/// `f⍤2` on stacks of 32- or 64-bit float matrices with plain layouts, through the rustymath function that `f` uses on one matrix. `op` names `f`: dyadic `+.×` or `⌹`, or monadic `⌹` or `-.×`. `x` is the left stack, absent for the monads. The stacks' frames pair through `Frames`, as Rank pairs them, and the cells split across rustymath's threads through `stack_with`. `None` where `f⍤2` takes its general path, which also raises the error for frames that don't agree.
+/// `f` on `args`, the arguments of a matrix function with no exact form, each with the layout it takes, through rustymath's [`Stacked`](linalg::Stacked), where exact numbers compute as floats of `width`. Compact storage is read in place. Mixed storage gives its numbers in the field of `domain`.
+fn inexact<R>(args: &[(&Value, Layout)], (domain, width): (Domain, FloatWidth), span: &Context<'_>, f: impl FnOnce(&mut linalg::Stacked<&mut dyn FnMut() -> Result<(), Stopped>>, &[ArrayView<'_>]) -> Result<R, Stopped>) -> Result<R, Stopped> {
+    use rustymath::buffer::{Buffer, Element};
+    let gathered = |a: &Value| match a.view() {
+        Some(_) => Ok(None),
+        None => with_field!(domain, [Single, Double, Complex], T => read::<T>(a, span).map(|x| Some(T::buffer(x.into_owned())))),
+    };
+    let owned = args.iter().map(|(a, _)| gathered(a)).collect::<Result<Vec<_>, _>>().map_err(Stopped::Checked)?;
+    let views: Vec<_> = args.iter().zip(&owned).map(|((a, layout), o)| ArrayView::compact(layout, o.as_ref().map_or_else(|| a.view().expect("compact storage"), Buffer::view))).collect();
+    let mut check = || span.check_now().map_err(Stopped::Checked);
+    f(&mut linalg::Stacked::new(width, &mut check), &views)
+}
+
+/// `f⍤2` on stacks of matrices, through the rustymath function that `f` uses on one matrix. `op` names `f`: dyadic `⌹`, or `f.g` with a product kernel for the pair, or monadic `⌹` or `-.×`. `x` is the left stack, absent for the monads. `⌹` and `-.×` run through rustymath's [`Stacked`](linalg::Stacked), which pairs the stacks' frames as Rank pairs them and splits the cells across rustymath's threads, and `f.g` through [`stacked_product`]. `None` where `f⍤2` takes its general path: for exact matrices, which it computes exactly, for empty stacks, and for shapes, frames or keys that don't fit, whose errors it raises.
 pub(crate) fn stacked(op: Operation, x: Option<&Value>, y: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
-    use crate::element::{read_as, Stored};
     // Decided before any items are read: reading them would compute a pending argument that Rank's other paths would fuse.
     if !op.stacks(x.is_some()) { return None; }
     let divide = op == Operation::Primitive(Primitive::MatrixDivide);
-    let width = |a: &Value| match a.as_items() { Items::Compact(View::Floats(_)) if a.layout().plain() && a.shape().len() >= 2 => a.float_width(), _ => None };
-    let w = width(y)?;
-    if x.is_some_and(|x| width(x) != Some(w)) { return None; }
-    let matrix = |a: &Value| { let s = a.shape(); [s[s.len() - 2], s[s.len() - 1]] };
-    let frames = |args: &[&Value]| Frames::new(&args.iter().map(|a| (&**a.layout(), 2)).collect::<Vec<_>>()).ok().filter(|f| f.count > 0);
-    let [r, c] = matrix(y);
-    if r == 0 || c == 0 { return None }
-    rustymath::with_float_width!(kernel w, F => {
-        let ys = read_as::<F>(y)?;
-        let build = |f: &Frames, cell: &[usize], v: Result<Vec<F>, Error>| v.map(|v| F::build([f.layout.shape(), cell].concat(), v)).transpose();
-        match x {
-            None if divide => { let f = frames(&[y])?; let ycell = |i: usize| &ys[f.cell(0, i) * r * c..][..r * c];
-                build(&f, &[c, r], cells(f.count, c * r, |i, out, w: &mut linalg::LuWork<F>| w.pinv_into(ycell(i), [r, c], out), span)) }
-            None if r == c => { let f = frames(&[y])?; let ycell = |i: usize| &ys[f.cell(0, i) * r * c..][..r * c];
-                build(&f, &[], cells(f.count, 1, |i, out, w: &mut linalg::LuWork<F>| out[0] = w.factor(ycell(i), r).determinant(), span)) }
-            None => None,
-            Some(x) => { let [m, k] = matrix(x);
-                if (if divide { m } else { k }) != r || m == 0 || k == 0 { return None }
-                let (xs, f) = (read_as::<F>(x)?, frames(&[x, y])?);
-                let (xcell, ycell) = (|i: usize| &xs[f.cell(0, i) * m * k..][..m * k], |i: usize| &ys[f.cell(1, i) * r * c..][..r * c]);
-                if divide { build(&f, &[c, k], cells(f.count, c * k, |i, out: &mut [F], w: &mut linalg::LuWork<F>| out.copy_from_slice(&w.solve(ycell(i), xcell(i), [r, c], k)), span)) }
-                else { build(&f, &[m, c], cells(f.count, m * c, |i, out: &mut [F], _: &mut ()| PlusTimes.inner_into(xcell(i), ycell(i), [m, k, c], out), span)) } }
-        }
-    })
+    if let (Some(x), Operation::Product(f, g)) = (x, op) { return stacked_product(f, g, x, y, span); }
+    let [r, c] = matrix_size(y)?;
+    match x { Some(x) if matrix_size(x)?[0] != r => return None, None if !divide && r != c => return None, _ => {} }
+    let args: Vec<(&Value, Layout)> = x.into_iter().chain([y]).map(|a| (a, a.layout().clone())).collect();
+    if args.iter().any(|(a, _)| a.is_empty()) { return None; }
+    let (domain, width) = Domain::of_arrays(&args.iter().map(|(a, _)| *a).collect::<Vec<_>>())?;
+    if domain == Domain::Exact { return None; }
+    let result = inexact(&args, (domain, width), span, |s, v| match *v { [x, y] => s.solve(y, x), [y] if divide => s.pinv(y), [y] => s.det(y), _ => unreachable!("a view for each argument") });
+    match result {
+        Ok(a) => { let (layout, buffer) = a.into_compact(); Some(value(buffer, layout.into(), span)) }
+        Err(Stopped::Checked(e)) => Some(Err(e)),
+        Err(Stopped::Array(_)) => None,
+    }
 }
 
-/// `count` cells of `per` items each, where `write(i, cell, scratch)` writes cell `i`. rustymath's `stack` runs the calls, and `span.check_now()` runs between its rounds.
-fn cells<B: Default + Send, S: Default>(count: usize, per: usize, write: impl Fn(usize, &mut [B], &mut S) + Sync, span: &Context<'_>) -> Result<Vec<B>, Error> {
-    rustymath::parallel::stack(count, per, &write, || span.check_now())
+/// What stops a matrix function on stacks: a rustymath error, after which `f⍤2` takes its general path and one matrix raises it, or an interrupt, a deadline or an item that isn't a number.
+enum Stopped { Array(rustymath::error::Error), Checked(Error) }
+
+impl From<rustymath::error::Error> for Stopped { fn from(e: rustymath::error::Error) -> Self { Self::Array(e) } }
+
+impl Stopped {
+    /// The error that a matrix function on one matrix raises.
+    fn raised(self, span: &Context<'_>) -> Error { match self { Self::Array(e) => span.error(e, ""), Self::Checked(e) => e } }
+}
+
+/// `buffer`, rustymath's result, as a value laid out by `layout`. Complex items with no imaginary parts become floats, as [`Value::complex`] makes them.
+fn value(buffer: rustymath::buffer::Buffer, layout: Layout, span: &Context<'_>) -> Result<Value, Error> {
+    let shape = layout.shape().to_vec();
+    match buffer { rustymath::buffer::Buffer::Complexes(c) => Value::complex(shape, c), b => Value::imported_buffer(shape, b) }
+        .and_then(|v| v.with_layout(layout)).error_at(span, "invalid matrix result")
+}
+
+/// `x f.g⍤2 y` on stacks of compact matrices with plain layouts, through rustymath's product kernel for the pair (`pervasive::inner`), which pairs the stacks' frames and splits the cells across rustymath's threads. `None` where `f.g⍤2` takes its general path, as for [`stacked`], and where the pair has no kernel for the stacks' items.
+fn stacked_product(f: Primitive, g: Primitive, x: &Value, y: &Value, span: &Context<'_>) -> Option<Result<Value, Error>> {
+    let plain = |a: &Value| matches!(a.as_items(), Items::Compact(_)) && a.layout().plain() && a.shape().len() >= 2;
+    if !plain(x) || !plain(y) { return None; }
+    let ([m, k], [r, c]) = (matrix_size(x)?, matrix_size(y)?);
+    if k != r || m == 0 || k == 0 || c == 0 { return None }
+    let frames = Frames::new(&[(&**x.layout(), 2), (&**y.layout(), 2)]).ok().filter(|f| f.count > 0)?;
+    let mut stopped = None;
+    let product = crate::pervasive::inner(f, g, x, y, &frames, [m, k, c], [frames.layout.shape(), &[m, c]].concat(), &mut || span.check_now().map_err(|e| stopped = Some(e)).is_ok());
+    match stopped { Some(e) => Some(Err(e)), None => product.map(Ok) }
 }
 
 /// `kind •decompose m` factors the matrix `m`, and gives the factors as a record. `kind` is `"svd"`, `"qr"`, `"eigen"`, `"cholesky"` or `"lu"`, as text or in a record of options that `Decomposition` describes. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors. The matrix factors in the [`Domain`] of its items, or in floats of the default width where they are all exact.
@@ -253,15 +302,15 @@ pub(crate) fn stacked_decompositions(left: &Value, right: &Value, span: &Context
     if right.dtype().is_none() || !right.layout().plain() || right.shape().len() < 3 { return None; }
     let d = Decomposition::new(Some(left), span).ok()?;
     let frames = Frames::new(&[(&**right.layout(), 2)]).ok().filter(|f| f.count > 0)?;
-    let [m, n] = [right.shape()[right.shape().len() - 2], right.shape()[right.shape().len() - 1]];
+    let [m, n] = matrix_size(right)?;
     if m == 0 || n == 0 || (matches!(d.kind.as_str(), "eigen" | "cholesky" | "lu") && m != n) { return None; }
     let (domain, width) = domain_of(&[right], span).ok()?;
     fn stack<T>(d: &Decomposition, a: &[T], [m, n]: [usize; 2], frames: &Frames, width: FloatWidth, span: &Context<'_>) -> Result<Value, Error> where
         T: Factor + Field + Sync, T::Real: Field + Into<f64> {
-        let results = cells(frames.count, 1, |i, slot: &mut [Option<_>], _: &mut ()| slot[0] = Some(factored(d, &a[frames.cell(0, i) * m * n..][..m * n], [m, n], width)), span)?;
+        let results = linalg::cells(frames, || span.check_now(), |i, _: &mut ()| factored(d, &a[frames.items(0, i, m * n)], [m, n], width))?;
         let (mut items, mut keys) = (Vec::new(), None);
         for cell in results {
-            let (names, factors) = cell.expect("`cells` writes every cell").map_err(|f| fault(d, f, span))?;
+            let (names, factors) = cell.map_err(|f| fault(d, f, span))?;
             if keys.is_none() { keys = Some(record((names, factors.clone())).map_err(|f| fault(d, f, span))?.layout().clone()) }
             items.extend(factors);
         }
@@ -357,42 +406,14 @@ fn domain_of(arrays: &[&Value], span: &Context<'_>) -> Result<(Domain, FloatWidt
     Domain::of_arrays(arrays).ok_or_else(|| span.domain_error("expected numeric elements"))
 }
 
+/// The rows and columns of each matrix in `a`'s last two axes. `None` where `a` has fewer than two axes.
+fn matrix_size(a: &Value) -> Option<[usize; 2]> { match *a.shape() { [.., m, n] => Some([m, n]), _ => None } }
+
 /// The `rows`×`columns` matrix that `x` holds row by row, with floats at `width`.
 fn matrix<T: Field>(x: Vec<T>, [rows, columns]: [usize; 2], width: FloatWidth) -> Result<Value, ErrorKind> { T::array(x, vec![rows, columns], width) }
 
 /// The vector `x`, with floats at `width`.
 fn vector<T: Field>(x: Vec<T>, width: FloatWidth) -> Result<Value, ErrorKind> { let n = x.len(); T::array(x, vec![n], width) }
-
-/// The linear algebra of a [`Field`]: rustymath's exact algorithms for rationals, and its factorizations for floats.
-trait Linear: Field {
-    /// The `x` that solves `a x = b`, or the inverse of `a` without `b`, for the `m`×`n` matrix `a` and the `m`×`k` matrix `b`, each held row by row: the least-squares solution with the least norm, or the pseudoinverse.
-    fn solve(a: &[Self], b: Option<&[Self]>, size: [usize; 2], k: usize, span: &Context<'_>) -> Result<Vec<Self>, Error>;
-    /// The determinant of the `n`×`n` matrix `a`.
-    fn determinant(a: &[Self], n: usize, span: &Context<'_>) -> Result<Self, Error>;
-    /// The inverse of the `n`×`n` matrix `a` and its determinant, from one factorization, or `None` where `solve` would give its pseudoinverse.
-    fn inverse(a: &[Self], n: usize, span: &Context<'_>) -> Result<Option<(Vec<Self>, Self)>, Error>;
-}
-
-impl Linear for BigRational {
-    fn solve(a: &[Self], b: Option<&[Self]>, size: [usize; 2], k: usize, span: &Context<'_>) -> Result<Vec<Self>, Error> {
-        match b { Some(b) => linalg::exact::solve_with(a, b, size, k, || span.check_now()), None => linalg::exact::pinv_with(a, size, || span.check_now()) }
-    }
-    fn determinant(a: &[Self], n: usize, span: &Context<'_>) -> Result<Self, Error> { linalg::exact::determinant_with(a, n, || span.check_now()) }
-    fn inverse(a: &[Self], n: usize, span: &Context<'_>) -> Result<Option<(Vec<Self>, Self)>, Error> { linalg::exact::inverse_with(a, n, || span.check_now()) }
-}
-
-macro_rules! float_linear {
-    ($($t:ty),+) => {$(
-        impl Linear for $t {
-            fn solve(a: &[Self], b: Option<&[Self]>, size: [usize; 2], k: usize, _: &Context<'_>) -> Result<Vec<Self>, Error> {
-                Ok(match b { Some(b) => linalg::solve(a, b, size, k), None => linalg::pinv(a, size) })
-            }
-            fn determinant(a: &[Self], n: usize, _: &Context<'_>) -> Result<Self, Error> { Ok(linalg::lu(a, n).determinant()) }
-            fn inverse(a: &[Self], n: usize, _: &Context<'_>) -> Result<Option<(Vec<Self>, Self)>, Error> { Ok(linalg::inverse(a, n)) }
-        }
-    )+};
-}
-float_linear!(f32, f64, Complex64);
 
 /// `b`, an `m`×`k` matrix held row by row, with row `i` taken from row `positions[i]` when there are positions.
 fn ordered<'a, T: Clone>(b: Option<Cow<'a, [T]>>, positions: Option<&Mapping>, m: usize, k: usize) -> Option<Cow<'a, [T]>> {

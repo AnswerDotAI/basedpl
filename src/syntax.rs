@@ -1,15 +1,17 @@
 use rustymath::{buffer::FloatWidth, error::Kind};
-use crate::{number::{subscript, width_marker, Arithmetic, Math, Numeric, Suffix, DENOMINATOR, EXACT, EXPONENT, IMAGINARY, SUFFIXES, WIDTHS}, primitive::{OperatorKind, Primitive, Superscript}, symbols::canonical,
+use crate::{number::{subscript, width_marker, Arithmetic, Math, Numeric, Suffix, DENOMINATOR, EXACT, EXPONENT, IMAGINARY, SUFFIXES, WIDTHS}, primitive::{Builtin, OperatorKind, Primitive, Superscript}, symbols::canonical,
     Error, ErrorAt, ErrorKind, Number, Source, Span, Value
 };
-use std::{iter::Peekable, str::CharIndices, sync::{atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed}, Arc}};
+use crate::name::{is_implicit, Name};
+use std::{iter::Peekable, str::CharIndices, sync::{atomic::{AtomicU64, Ordering::Relaxed}, Arc}};
 
 #[derive(Clone, Debug)]
 pub(crate) enum NodeKind {
     Literal(Value),
-    Function(Primitive),
+    Function(Builtin),
     Operator(OperatorKind),
-    Name(String),
+    Name(Name),
+    /// A system name that the system table doesn't hold, which is a VALUE error when evaluated. A known system name is a `Function`, as a glyph is.
     System(String),
     Assign,
     Output,
@@ -43,12 +45,10 @@ pub(crate) enum ListForm {
 pub(crate) enum DefinitionKind { Function, MonadicOperator, DyadicOperator }
 
 #[derive(Debug)]
-pub(crate) struct Definition { pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, names: AtomicUsize, remembered: AtomicU64 }
+pub(crate) struct Definition { pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, locals: &'static [Name], remembered: AtomicU64 }
 impl Definition {
-    /// The most names any call of this definition has bound. A call's frame starts with room for that many.
-    pub fn names(&self) -> usize { self.names.load(Relaxed) }
-    /// Records that a call bound `names` names.
-    pub fn bound(&self, names: usize) { if names > self.names() { self.names.store(names, Relaxed) } }
+    /// The names that the definition could assign, sorted, which each of its calls keeps in slots.
+    pub fn locals(&self) -> &'static [Name] { self.locals }
     /// What maps remember of a stopped batched run of this definition, as `batch::tried` encodes it: nothing, every later call, or the arguments whose later tries it skips (`transform::Cause::kept`).
     pub fn remembered(&self) -> u64 { self.remembered.load(Relaxed) }
     /// Records what maps remember of a stopped batched run of this definition.
@@ -57,14 +57,38 @@ impl Definition {
 
 fn definition_kind(nodes: &[Node]) -> DefinitionKind {
     nodes.iter().map(|n| match &n.kind {
-            NodeKind::Name(name) if name == "⍹" => DefinitionKind::DyadicOperator,
-            NodeKind::Name(name) if name == "⍶" => DefinitionKind::MonadicOperator,
+            NodeKind::Name(Name::RIGHT_OPERAND) => DefinitionKind::DyadicOperator,
+            NodeKind::Name(Name::LEFT_OPERAND) => DefinitionKind::MonadicOperator,
             NodeKind::Group(nodes) | NodeKind::Run(nodes) => definition_kind(nodes),
             NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
             _ => DefinitionKind::Function, // Nested definitions classify their own bodies.
         })
         .max()
         .unwrap_or(DefinitionKind::Function)
+}
+
+/// The names that a definition's statements could assign, sorted: each name before an `←`, also inside a group, run or brackets there, but not inside a nested definition, which has frames of its own. A call gives each a slot. Some name a modified assignment's function, or the array that a selective assignment selects from, and their slots stay empty.
+fn locals(bodies: &[Vec<Statement>]) -> &'static [Name] {
+    let mut names = Vec::new();
+    for statement in bodies.iter().flatten() { assigned(&statement.nodes, false, &mut names); }
+    names.retain(|name| name.implicit().is_none());
+    names.sort_unstable();
+    names.dedup();
+    crate::name::kept(&names)
+}
+
+/// Adds to `names` each name in `nodes` that comes before an `←`, or every name where `target` says that `nodes` themselves do.
+fn assigned(nodes: &[Node], target: bool, names: &mut Vec<Name>) {
+    let end = nodes.iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).unwrap_or(0);
+    for (i, node) in nodes.iter().enumerate() {
+        let target = target || i < end;
+        match &node.kind {
+            NodeKind::Name(name) if target => names.push(*name),
+            NodeKind::Group(nodes) | NodeKind::Run(nodes) => assigned(nodes, target, names),
+            NodeKind::ArrayLiteral { cells, .. } => for nodes in cells { assigned(nodes, target, names); },
+            _ => {}
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -75,7 +99,7 @@ pub(crate) struct Node { pub kind: NodeKind, pub span: Span }
 pub struct Parsed { pub(crate) statements: Vec<Statement> }
 
 #[derive(Clone, Debug)]
-/// A statement. A dfn's statement records its binder steps on its first evaluation (`eval::Recording`), which later evaluations replay.
+/// A statement. A dfn's statement compiles its binder steps into `recording` on its first evaluation (`eval::Recording`), and later evaluations run them.
 pub(crate) struct Statement { pub nodes: Vec<Node>, pub kind: StatementKind, pub(crate) recording: std::sync::OnceLock<Option<crate::eval::Recording>> }
 
 #[derive(Clone, Copy, Debug)]
@@ -93,7 +117,7 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
     }
     let kind = if let Some(index) = guard {
         StatementKind::ErrorGuard { index }
-    } else if matches!(&nodes[0].kind, NodeKind::Name(name) if name == "⍺") && matches!(nodes.get(1).map(|n| &n.kind), Some(NodeKind::Assign)) {
+    } else if matches!(nodes[0].kind, NodeKind::Name(Name::ALPHA)) && matches!(nodes.get(1).map(|n| &n.kind), Some(NodeKind::Assign)) {
         StatementKind::DefaultArgument
     } else { StatementKind::Expression };
     Ok(Statement { nodes, kind, recording: Default::default() })
@@ -194,7 +218,7 @@ pub(crate) fn joined_term(left: Node, joiner: Joiner, at: &Span, right: Node) ->
     let span = Span { source: at.source.clone(), range: left.span.range.start..right.span.range.end };
     let node = |kind| Node { kind, span: at.clone() };
     let number = |text| node(NodeKind::Literal(Value::Number(literal_number(text, Numeric::current()).expect("a joiner's constant is a number"))));
-    let function = |p| node(NodeKind::Function(p));
+    let function = |p| node(NodeKind::Function(Builtin::Primitive(p)));
     let floor = || node(NodeKind::Operator(OperatorKind::Super(Superscript::Floor)));
     let nodes = match joiner {
         Joiner::Imaginary => vec![left, function(Primitive::Arithmetic(Arithmetic::Plus)), right, function(Primitive::Arithmetic(Arithmetic::Times)), number("0j1")],
@@ -316,7 +340,8 @@ fn run_on(chars: &mut Characters<'_>, digit: bool) -> Option<usize> {
 pub(crate) fn name_char(c: char) -> bool {
     !c.is_whitespace() && !c.is_control() && !c.is_ascii_digit() && !subscript(c)
         && !matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '\'' | '"' | ';' | ':' | '?' | '$' | '•' | '←' | '⎕' | '⍝' | '⋄'
-            | '⍺' | '⍵' | '⍶' | '⍹' | '∇' | '⍢' | '⍬' | '¯' | '∞' | '⍛' | 'ᵀ' | 'ᵘ' | '⁻' | '₋')
+            | '⍬' | '¯' | '∞' | '⍛' | 'ᵀ' | 'ᵘ' | '⁻' | '₋')
+        && !is_implicit(c)
         && script_digit(SUPERSCRIPT_DIGITS, c).is_none() && script_digit(SUBSCRIPT_DIGITS, c).is_none()
         && Primitive::from_glyph(c).is_none() && OperatorKind::from_glyph(c).is_none()
 }
@@ -382,8 +407,8 @@ fn absorbs_line_break(kind: &TokenKind, before: bool) -> bool {
 pub(crate) fn prefs_record(nodes: &[Node]) -> Option<&Node> {
     let nodes = match nodes { [Node { kind: NodeKind::Run(inner), .. }] => inner.as_slice(), _ => nodes };
     match nodes {
-        [Node { kind: NodeKind::System(name), .. }, record @ Node { kind: NodeKind::ArrayLiteral { record: true, .. }, .. }]
-            if name.eq_ignore_ascii_case("•prefs") && non_literal(std::slice::from_ref(record), &|_| false).is_none() => Some(record), _ => None
+        [Node { kind: NodeKind::Function(Builtin::System(crate::system::Entry::PREFS)), .. }, record @ Node { kind: NodeKind::ArrayLiteral { record: true, .. }, .. }]
+            if non_literal(std::slice::from_ref(record), &|_| false).is_none() => Some(record), _ => None
     }
 }
 
@@ -391,14 +416,14 @@ pub(crate) fn prefs_record(nodes: &[Node]) -> Option<&Node> {
 fn header(tokens: &[Token], aliases: &mut bool) -> bool {
     let Some(start) = tokens.iter().position(|t| !matches!(t.kind, TokenKind::Separator)) else { return false };
     let tokens = &tokens[start..];
-    if !matches!(tokens.first().map(|t| &t.kind), Some(TokenKind::System(name)) if name.eq_ignore_ascii_case("•prefs")) { return false; }
+    if !matches!(tokens.first().map(|t| &t.kind), Some(TokenKind::System(name)) if crate::system::Entry::find(name) == Some(crate::system::Entry::PREFS)) { return false; }
     let Ok(statements) = (Parser { tokens, pos: 0 }).pieces(None).and_then(statements) else { return false };
     let [nodes] = statements.as_slice() else { return false };
     let Some(record) = prefs_record(nodes) else { return false };
     let NodeKind::ArrayLiteral { cells, .. } = &record.kind else { unreachable!() };
     let mut numeric = Numeric::current();
     for nodes in cells {
-        let [Node { kind: NodeKind::Literal(key), .. }, Node { kind: NodeKind::Function(Primitive::Keys), .. }, Node { kind: NodeKind::Literal(value), .. }] = nodes.as_slice() else { continue };
+        let [Node { kind: NodeKind::Literal(key), .. }, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Keys)), .. }, Node { kind: NodeKind::Literal(value), .. }] = nodes.as_slice() else { continue };
         let Some(key) = crate::keyed::name(key) else { continue };
         if &*key == "hanzi_aliases" { if let Ok(on) = value.boolean() { *aliases = on; } } else { let _ = numeric.set(&key, value); }
     }
@@ -574,7 +599,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             '?' => TokenKind::Predicate,
             '{' => TokenKind::BraceOpen,
             '}' => TokenKind::BraceClose,
-            '⍺' | '⍵' | '⍶' | '⍹' | '∇' | '⍢' => TokenKind::Name(c.to_string()),
+            c if is_implicit(c) => TokenKind::Name(c.to_string()),
             '⍝' => {
                 while chars.peek().is_some_and(|(_, c)| *c != '\n') { chars.next(); }
                 return Ok(None);
@@ -603,7 +628,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
     }))
 }
 
-/// Each token and comment of `text` with its highlight class, as byte ranges in order. The class is the kind that `symbols` gives a glyph, or `"literal"` for a number or a joiner, `"string"` for a character or string literal, `"name"` for a name, `"system"` for a system name, `"monadic-operator"` for a superscript operator, `"syntax"` for a subscript or an error guard, and `"comment"` for a comment. Brackets have no class. Text that fails to lex has none either, except an unclosed literal, which is a `"string"` up to where lexing stopped.
+/// Each token and comment of `text` with its highlight class, as byte ranges in order. The class is the kind that `symbols` gives a glyph, or `"literal"` for a number or a joiner, `"string"` for a character or string literal, `"name"` for a name, `"function"` for a system name, as for a glyph function, `"monadic-operator"` for a superscript operator, `"syntax"` for a subscript or an error guard, and `"comment"` for a comment. Brackets have no class. Text that fails to lex has none either, except an unclosed literal, which is a `"string"` up to where lexing stopped.
 pub fn highlight(text: &str, aliases: bool) -> Vec<(std::ops::Range<usize>, &'static str)> {
     let mut classes = Vec::new();
     let _ = lex(&Source::new("<highlight>", text), aliases, Some(&mut classes));
@@ -619,7 +644,7 @@ fn class(kind: &TokenKind, text: &str, canonical: fn(char) -> char) -> Option<&'
         TokenKind::Literal(_) => Some(if text.starts_with(['"', '\'']) { "string" } else { "literal" }),
         TokenKind::Operator(OperatorKind::Super(_)) => Some("monadic-operator"), TokenKind::Subscript(_) | TokenKind::ErrorGuard => Some("syntax"),
         TokenKind::Joiner(_) => Some("literal"),
-        TokenKind::Name(_) => Some("name"), TokenKind::System(_) => Some("system"), _ => None
+        TokenKind::Name(_) => Some("name"), TokenKind::System(_) => Some("function"), _ => None
     }
 }
 
@@ -682,7 +707,7 @@ impl Parser<'_> {
                         TokenKind::BraceOpen => {
                             let bodies = bodies(inner, &span)?;
                             let kind = bodies.iter().flatten().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
-                            NodeKind::Dfn(Arc::new(Definition { bodies, span: span.clone(), kind, names: AtomicUsize::new(0), remembered: AtomicU64::new(0) }))
+                            NodeKind::Dfn(Arc::new(Definition { locals: locals(&bodies), bodies, span: span.clone(), kind, remembered: AtomicU64::new(0) }))
                         }
                         TokenKind::Open if let Some(mark) = mark => marked_literal(parenthesised(inner, &span)?, &span, mark)?,
                         TokenKind::Open => parenthesised(inner, &span)?,
@@ -691,12 +716,12 @@ impl Parser<'_> {
                     }
                 }
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
-                TokenKind::Function(f) => NodeKind::Function(*f),
+                TokenKind::Function(f) => NodeKind::Function(Builtin::Primitive(*f)),
                 TokenKind::Operator(op) => NodeKind::Operator(*op),
                 TokenKind::Subscript(index) => NodeKind::Subscript(*index),
                 TokenKind::Joiner(joiner) => NodeKind::Joiner(*joiner),
-                TokenKind::Name(name) => NodeKind::Name(name.clone()),
-                TokenKind::System(name) => NodeKind::System(name.clone()),
+                TokenKind::Name(name) => NodeKind::Name(Name::new(name)),
+                TokenKind::System(name) => crate::system::Entry::find(name).map_or_else(|| NodeKind::System(name.clone()), |entry| NodeKind::Function(Builtin::System(entry))),
                 TokenKind::Assign => NodeKind::Assign,
                 TokenKind::Output => NodeKind::Output,
                 TokenKind::ErrorGuard => {
@@ -838,7 +863,7 @@ fn marked_literal(kind: NodeKind, span: &Span, mark: Mark) -> Result<NodeKind, P
 /// The first item, at any depth, that isn't a literal, a key's colon or a node that `allowed` accepts. Lists, parentheses and runs are searched through.
 pub(crate) fn non_literal<'a>(nodes: &'a [Node], allowed: &impl Fn(&NodeKind) -> bool) -> Option<&'a Node> {
     nodes.iter().find_map(|node| match &node.kind {
-        NodeKind::Literal(_) | NodeKind::Function(Primitive::Keys) => None,
+        NodeKind::Literal(_) | NodeKind::Function(Builtin::Primitive(Primitive::Keys)) => None,
         NodeKind::ArrayLiteral { cells, .. } => cells.iter().find_map(|cell| non_literal(cell, allowed)),
         NodeKind::Group(nodes) | NodeKind::Run(nodes) => non_literal(nodes, allowed), kind if allowed(kind) => None, _ => Some(node)
     })
@@ -985,7 +1010,7 @@ fn finish((mut out, mut run): (Vec<Node>, Vec<Node>)) -> Vec<Node> {
 
 /// The position of the `:` in a bracketed `key:value` item: its first `:`, which follows keys, with no function before them.
 pub(crate) fn key_colon(nodes: &[Node]) -> Option<usize> {
-    let i = nodes.iter().position(|n| matches!(n.kind, NodeKind::Function(Primitive::Keys)))?;
+    let i = nodes.iter().position(|n| n.kind.primitive() == Some(Primitive::Keys))?;
     (i > 0 && nodes[..i].iter().all(key_node)).then_some(i)
 }
 
@@ -1099,4 +1124,6 @@ impl NodeKind {
             Self::Dfn(_) => "Dfn", Self::Joiner(_) => "Joiner"
         }
     }
+    /// The primitive that a glyph's node holds, or `None` for any other node.
+    pub(crate) fn primitive(&self) -> Option<Primitive> { match self { Self::Function(Builtin::Primitive(p)) => Some(*p), _ => None } }
 }

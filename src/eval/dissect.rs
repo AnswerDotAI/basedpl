@@ -1,5 +1,6 @@
 use super::*;
 
+#[derive(Clone, Debug)]
 pub(super) enum Expression { Atom(Operand), Operator(OperatorNode), Call { function: Function, left: Option<Box<Self>>, right: Box<Self> }, Strand(Vec<Self>) }
 
 impl Expression {

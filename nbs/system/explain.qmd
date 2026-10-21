@@ -1,6 +1,6 @@
 # `•explain` — Explain
 
-`•explain text` runs `text` in the caller's scope, as `⍎` does, computes its result, and gives a record of that result and of what happened while it ran and computed it. Computing a pending result at the end makes no `forced` row:
+`•explain text` runs `text` in the caller's scope, as `⍎` does, computes its result, and gives a record of that result and of what happened while it ran and computed it. Code that another thread runs meanwhile records into the same report. Computing a pending result at the end makes no `forced` row:
 
 - `value` is the result of `text`.
 - `fused` has a row for each fused group that ran, as [`•prefs`](prefs.qmd) describes fusion. `glyphs` lists the glyphs of the group's calls in the order they ran. A fold that reads through the group, without building it, adds its glyph last. `items` is the group's item count. `blocks` counts the blocks of items that the group ran in turn. `runs` counts the pieces of work that those blocks split into. A block splits where it crosses the end of a long repeat or cycle in an input, as in adding a row of 5,000 items to every row of a matrix. More runs than blocks means the group ran in smaller pieces. `copied` counts the items copied out of inputs before the calls read them, as a reversed read needs. A `copied` of 0 means the group read every input in place.
@@ -20,7 +20,7 @@
   - `"one call"` makes one call for targets at distinct positions.
   - `"item by item"` calls the function once for each target, as a dfn does.
 - `fallbacks` has a row for each [map](../terms.qmd#term-map) that called its operand once for each cell after its [batched call](../evaluation.qmd#functions-and-effects) fell back, or without a batched call because an earlier one stopped. `items` is the number of cells, and `reason` says why:
-  - `"an effect"`: the operand writes output, reads input, formats a cell's value with `⍕`, or runs a system function other than a random draw. A batched call would do each of these once for all the cells. A random draw in a map inside the operand stops it too, and so does a random draw on a side of a guard on a cell's value.
+  - `"an effect"`: the operand writes output, reads input, formats a cell's value with `⍕`, or runs a system function that acts, such as `•nget` or `•time`. A batched call would do each of these once for all the cells. A random draw in a map inside the operand stops it too, and so does a random draw on a side of a guard on a cell's value.
   - `"a write"`: the operand writes to a name outside the map, or a side of a guard on a cell's value writes to a name outside its dfn.
   - `"a cell's value"`: the operand reads a cell's value to give a count or a position, as `2×⍣⍵` does. A predicate on a cell's value doesn't stop the batched call: each side of the guard runs once, on the cells that take it, as [Evaluation](../evaluation.qmd#functions-and-effects) describes.
   - `"no batch rule"`: the operand calls a function with no rule for batches of these arguments, such as `⍋`, or the two sides of a guard on a cell's value give results of different kinds or shapes. Where the stop comes from a primitive's call, the primitive's glyph follows, as in `"no batch rule for ⍋"`. A kernel that reads a cell's number directly gives no glyph.
@@ -33,13 +33,18 @@
 - `mixed` has a row for each write that left a compact array in mixed storage, as writing an exact integer among floats does under [the write rule](../numbers.qmd). `code` is the target or call that wrote, and `line` and `column` give its position in `text`. `target` names the array's storage before the write, and `written` the storage of the values written, as [`•storage`](storage.qmd) names them. `items` is the array's item count.
 - `itemwise` has a row for each route that handled an array's items one at a time, where whole-array code runs most calls. `function` is the innermost call that ran it, the target of a selective assignment, or `•explain` for a route outside both, and `line` and `column` give its position in `text`. `items` is how many items the route handled, and `route` names it:
   - `"item pairs"`: a pervasive function called itself on each pair of items of mixed storage or of a nested array.
-  - `"system items"`: a system function ran once for each item of an argument that holds several of its items.
   - `"batched items"`: code with no rule for batches read a batch's items one at a time, even where the batched call then succeeded.
   - `"∂ items"`: code with no rule for [`∂`](../glyphs/partial.qmd) read the items of a value that `∂` tracks one at a time.
   - `"accumulation"`: a sum added items one at a time, as the `accumulations` path `"item by item"` does.
   - `"nested labels"`, `"label ids"` and `"label offsets"`: a selection from a nested array labelled or placed its items one at a time, or read positions that had no plan.
+- `declined` has a row for each faster route that code considered and didn't take. A decline explains why a slower route ran. `route` names the route, `reason` says why code didn't take it, and `items` counts the items that its declines concerned, summed for each route and reason. The routes are:
+  - `"fusion"`: a call that could have joined a fused group ran on its own, because of `"16-bit floats"`, `"no float array"`, `"an exact argument"`, `"a result at another width"`, `"keys, names or a renderer"` or `"an argument of another kind or width, or with keys"`. A pending array also ran without a group where its call reads `"a comparison computed outside the graph"`.
+  - `"fused fold"`: a fold computed its argument instead of reading through its group, because `"another array holds the array"`, as a name does, because the argument is `"a copy that no call moves under"` or reads `"a comparison computed outside the graph"`, or because of `"a fold that its graph can't run"`.
+  - A fast combination's name, as in `"partial grade"`, with `"arguments that don't suit it"`: the general path ran instead.
+  - `"batching"`: a map didn't try a batched call, because `"the batch pref is off"`, because of `"a label level or another batched run"` or `"named axes"`, or because of `"an argument too large to lay over the frame"` or `"an argument that isn't compact or has a named axis"`.
+  - `"in place"`: a kernel copied an argument's items into a buffer instead of reading them where they are, because of `"repeats of each item"`, `"a cycle that wraps"`, `"steps other than a forward run"` or `"a repeated item"`.
 
-Each of `fused`, `stored`, `forced`, `fast`, `accumulations`, `fallbacks`, `mixed` and `itemwise` is a record of columns, as `•csv` gives a table, so `(•explain t).fast.combination` lists the combinations taken. `•prefs ["fusion":$t]` writes each forcing call and assignment as it happens. Nothing is recorded outside `•explain`.
+Each of `fused`, `stored`, `forced`, `fast`, `accumulations`, `fallbacks`, `mixed`, `itemwise` and `declined` is a record of columns, as `•csv` gives a table, so `(•explain t).fast.combination` lists the combinations taken. `•prefs ["fusion":$t]` writes each forcing call and assignment as it happens. Nothing is recorded outside `•explain`.
 
 ```bpl
 y←¿1000000⍴0
@@ -60,6 +65,7 @@ z←1000⍴0ₓ ⋄ (•explain "z.[p]+←1ₓ").accumulations.path  ⍝ ["logge
 (•explain "{2×⍣⍵⊢1}¨⍳5ₓ").fallbacks  ⍝ ["reason":["a cell's value"] "items":[5]ₓ]
 w←4⍴0.5 ⋄ (•explain "(⍳2ₓ)@[1 3] w").mixed  ⍝ ["code":["(⍳2ₓ)@[1 3]"] "line":[1]ₓ "column":[1]ₓ "target":["float64"] "written":["integer"] "items":[4]ₓ]
 m←1ₓ 2.5 ⋄ (•explain "m+1").itemwise  ⍝ ["function":["+"] "line":[1]ₓ "column":[2]ₓ "route":["item pairs"] "items":[2]ₓ]
+(•explain "+/⌽y").declined  ⍝ ["route":["fused fold"] "reason":["a copy that no call moves under"] "items":[1000000]ₓ]
 ```
 
 [`•memory`](memory.qmd) reports the live record nodes and pending arrays, and what a value keeps alive.

@@ -8,9 +8,10 @@ use crate::{
     execution::Context,
     number::Arithmetic,
     primitive::{FoldKind, Form, LinearMap, Operation, Primitive}, transform::Pairing,
-    explain::{Live, Counted}, Error, ErrorKind, Number, Value};
+    explain::{Live, Counted}, Error, ErrorKind, Number, Span, Value};
 use rustymath::hashing::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::borrow::Cow;
+use crate::array::{Footprint, Seen};
 use rustymath::{buffer::{Buffer, DType, FloatBuf, FloatWidth, Floats, View, Width}, gather::{Steps, counts_up}, structure::Plan};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -59,14 +60,9 @@ impl Op {
     }
 }
 
-/// A record holds every node it reads, so dropping a long one by recursion could overflow the stack. This unlinks the children that nothing else holds in a loop instead.
+/// A record holds every node it reads, so dropping a long one by recursion could overflow the stack. `drop_chain` unlinks the children that nothing else holds in a loop instead.
 impl Drop for Linear {
-    fn drop(&mut self) {
-        let mut stack = take(&mut self.op);
-        while let Some(child) = stack.pop() {
-            if let Ok(mut node) = Arc::try_unwrap(child) { stack.extend(take(&mut node.op)); }
-        }
-    }
+    fn drop(&mut self) { crate::array::drop_chain(self, |node, chain| chain.extend(take(&mut node.op))); }
 }
 
 /// The nodes that `op` reads, taken out of it.
@@ -76,18 +72,18 @@ impl std::fmt::Debug for Linear {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("Linear").field("shape", &self.layout.shape()).field("seq", &self.seq).finish() }
 }
 
-impl Linear {
-    /// The bytes of the record that this node starts: its nodes, and the coefficients, ids and tables they hold. Each node and each allocation counts once in `seen`.
-    pub(crate) fn footprint_in(this: &Arc<Self>, seen: &mut HashSet<usize>) -> usize {
-        let (mut stack, mut bytes) = (vec![this], 0);
-        while let Some(node) = stack.pop() {
-            if !seen.insert(Arc::as_ptr(node) as usize) { continue; }
+impl Footprint for Linear {
+    /// The bytes of the record that this node starts: its nodes, and the coefficients, ids and tables they hold. A loop walks the nodes, never recursion, because a record can be long.
+    fn footprint_in(&self, seen: &mut Seen) -> usize {
+        let (mut stack, mut bytes, mut node) = (Vec::new(), 0, self);
+        loop {
             let (held, children) = node.op.parts();
             let maps = match &node.op { Op::Copy { tables, .. } => tables.iter().map(Steps::footprint).sum(), Op::Gather { offsets, .. } | Op::ScatterAdd { offsets, .. } => offsets.capacity() * size_of::<usize>(), _ => 0 };
-            bytes += size_of::<Linear>() + node.zero.footprint_in(seen) + held.map_or(0, |v| v.footprint_in(seen)) + maps + node.ids.get().map_or(0, |v| v.footprint_in(seen));
-            stack.extend(children);
+            bytes += size_of::<Linear>() + node.zero.footprint_in(seen) + held.map_or(0, |v| v.footprint_in(seen)) + maps + node.ids.footprint_in(seen);
+            stack.extend(children.into_iter().filter(|c| crate::array::unseen(*c, seen)).map(|c| &**c));
+            let Some(next) = stack.pop() else { return bytes };
+            node = next;
         }
-        bytes
     }
 }
 
@@ -183,8 +179,8 @@ fn scale(c: &Value, t: &Arc<Linear>, left: bool, cx: &Context<'_>) -> Result<Val
 }
 
 /// `a+b`, where both are records.
-fn add(a: &Arc<Linear>, b: &Arc<Linear>, cx: &Context<'_>) -> Result<Value, Error> {
-    let layout = Agreement::new(&a.layout, &b.layout).error_at(cx.span, "tangents agree")?.layout;
+fn add(a: &Arc<Linear>, b: &Arc<Linear>, span: &Span) -> Result<Value, Error> {
+    let layout = Agreement::new(&a.layout, &b.layout).error_at(span, "tangents agree")?.layout;
     Ok(node(Op::Add(a.clone(), b.clone()), layout, a.zero.clone(), shared_level([a, b])))
 }
 
@@ -265,24 +261,24 @@ pub(crate) fn call(op: crate::transform::Op<'_>, left: Option<&Value>, right: &V
     match op {
         Routed::Operation(Operation::Primitive(p), Pairing::Axis(axis)) => Some(primitive_call(p, left, right, axis, cx)),
         Routed::Operation(operation @ Operation::Fold(_, kind), Pairing::Axis(axis)) => match operation.facts(false).and_then(|r| r.linear) {
-            Some(LinearMap::Sum) => Some(fold(kind, axis, record_of(right)?, cx)),
-            _ => Some(Err(untransposable("this fold", cx))),
+            Some(LinearMap::Sum) => Some(fold(kind, axis, record_of(right)?, cx.span)),
+            _ => Some(Err(untransposable("this fold", cx.span))),
         },
-        Routed::Fold(..) => Some(Err(untransposable("this fold", cx))),
-        Routed::Operation(Operation::Product(..), _) | Routed::Product => Some(Err(untransposable("this product", cx))),
-        Routed::Operation(Operation::Primitive(p), _) => Some(Err(untransposable(p.info().glyph, cx))),
+        Routed::Fold(..) => Some(Err(untransposable("this fold", cx.span))),
+        Routed::Operation(Operation::Product(..), _) | Routed::Product => Some(Err(untransposable("this product", cx.span))),
+        Routed::Operation(Operation::Primitive(p), _) => Some(Err(untransposable(p.info().glyph, cx.span))),
         _ => None,
     }
 }
 
 /// The UNSUPPORTED ERROR of a call that reverse mode can't transpose, naming `what`.
-fn untransposable(what: &str, cx: &Context<'_>) -> Error { cx.span.error(ErrorKind::Unsupported, format!("∂ can't transpose {what}")) }
+fn untransposable(what: &str, span: &Span) -> Error { span.error(ErrorKind::Unsupported, format!("∂ can't transpose {what}")) }
 
 /// A primitive's call with a record argument. A form that moves items moves the record's items by their ids (`through`). A form that is a linear map, called with records where it is linear, adds that map to the record (`primitive::LinearMap`). Anything else gives UNSUPPORTED ERROR.
 pub(crate) fn primitive_call(p: Primitive, left: Option<&Value>, right: &Value, axis: Option<usize>, cx: &Context<'_>) -> Result<Value, Error> {
     let facts = p.facts(left.is_some());
     if matches!(facts.form, Form::Moves { .. }) { return through(p, left, right, axis, cx); }
-    let unsupported = |along: &str| -> Result<Value, Error> { Err(untransposable(&format!("{}{along}", p.info().glyph), cx)) };
+    let unsupported = |along: &str| -> Result<Value, Error> { Err(untransposable(&format!("{}{along}", p.info().glyph), cx.span)) };
     if axis.is_some() { return unsupported(" along an axis"); }
     let minus = |t: &Arc<Linear>| scale(&Value::integer(-1), t, true, cx);
     let agreed = |l: &Layout, r: &Layout| Agreement::new(l, r).map(|a| a.layout).error_at(cx.span, "a tangent agrees with its primal");
@@ -290,11 +286,11 @@ pub(crate) fn primitive_call(p: Primitive, left: Option<&Value>, right: &Value, 
         (Some(LinearMap::Product), Some(l), None, Some(t)) => scale(l, t, true, cx),
         (Some(LinearMap::Product), Some(_), Some(t), None) => scale(right, t, false, cx),
         (Some(LinearMap::Quotient), Some(_), Some(t), None) => scale(&Primitive::Arithmetic(Arithmetic::Divide).call(None, right, cx)?, t, false, cx),
-        (Some(LinearMap::Sum), Some(_), Some(a), Some(b)) => add(a, b, cx),
+        (Some(LinearMap::Sum), Some(_), Some(a), Some(b)) => add(a, b, cx.span),
         // A numeric tangent beside a record is an inactive tangent, all zeros, so the sum is the record, broadcast to the agreed layout.
         (Some(LinearMap::Sum), Some(l), None, Some(t)) => Ok(crate::agreement::expand(right, &agreed(l.layout(), &t.layout)?)),
         (Some(LinearMap::Sum), Some(l), Some(t), None) => Ok(crate::agreement::expand(l, &agreed(&t.layout, right.layout())?)),
-        (Some(LinearMap::Difference), Some(_), Some(a), Some(b)) => add(a, record_of(&minus(b)?).expect("a scaled record is a record"), cx),
+        (Some(LinearMap::Difference), Some(_), Some(a), Some(b)) => add(a, record_of(&minus(b)?).expect("a scaled record is a record"), cx.span),
         (Some(LinearMap::Same), None, _, Some(_)) => Ok(right.clone()),
         (Some(LinearMap::Negation), None, _, Some(t)) => minus(t),
         _ => unsupported(""),
@@ -319,9 +315,9 @@ pub(crate) fn product(c: &Value, t: &Arc<Linear>, left: bool, stacked: bool, lay
 }
 
 /// A sum or running sum, by `kind` along `axis`, or by default the fold's own axis, of the record `t`. A sum drops that axis, and a running sum keeps the layout.
-pub(crate) fn fold(kind: FoldKind, axis: Option<usize>, t: &Arc<Linear>, cx: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn fold(kind: FoldKind, axis: Option<usize>, t: &Arc<Linear>, span: &Span) -> Result<Value, Error> {
     let rank = t.layout.shape().len();
-    if axis.is_some_and(|a| a >= rank) { return Err(cx.span.domain_error("axis is outside array rank")); }
+    if axis.is_some_and(|a| a >= rank) { return Err(span.domain_error("axis is outside array rank")); }
     let along = axis.unwrap_or(kind.default_axis(rank));
     let layout = if kind.scan { t.layout.clone() } else { t.layout.axes((0..rank).filter(move |&a| a != along)) };
     Ok(node(Op::Fold { child: t.clone(), kind, axis, along, reversed: false }, layout, t.zero.clone(), t.level))
@@ -343,19 +339,19 @@ pub(crate) fn scatter_add(items: &Value, offsets: &[usize], layout: &Layout, zer
         }
         Some(crate::transform::Carrier::Record(_) | crate::transform::Carrier::Labelled(_)) | None => (),
     }
-    let (sum, path) = added(zeros(layout, zero, cx)?, items, offsets, zero, cx)?;
+    let (sum, path) = added(zeros(layout, zero, cx.span)?, items, offsets, zero, cx)?;
     if let Some(path) = path { crate::explain::accumulated(offsets.len(), size(layout), path); }
     Ok(sum)
 }
 
 /// Zeros of `layout`, of `zero`'s kind, compact for 32- and 64-bit floats.
-fn zeros(layout: &Layout, zero: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+fn zeros(layout: &Layout, zero: &Value, span: &Span) -> Result<Value, Error> {
     let n = size(layout);
     match zero.float_width() {
-        Some(FloatWidth::F64) => float_result(layout, FloatBuf::F64(vec![0.0; n]), cx),
-        Some(FloatWidth::F32) => float_result(layout, FloatBuf::F32(vec![0.0; n]), cx),
+        Some(FloatWidth::F64) => float_result(layout, FloatBuf::F64(vec![0.0; n]), span),
+        Some(FloatWidth::F32) => float_result(layout, FloatBuf::F32(vec![0.0; n]), span),
         _ if layout.shape().is_empty() => Ok(zero.clone()),
-        _ => layout.collect(vec![zero.clone(); n], || zero.clone()).error_at(cx.span, "invalid sum"),
+        _ => layout.collect(vec![zero.clone(); n], || zero.clone()).error_at(span, "invalid sum"),
     }
 }
 
@@ -442,18 +438,18 @@ fn convolved_back<'a>(c: &Value, u: &Value, child: &'a Arc<Linear>, layout: &Lay
     let kernel: Vec<usize> = windows.iter().copied().chain([filters]).chain(rest.iter().copied()).collect();
     let conv = rustymath::signal::correlation(&input, &kernel, s, rustymath::signal::Mode::Full, &vec![1; s], true).at(cx.span)?;
     let u = laid_out(u, layout);
-    let padded = match conv.padding { Some(p) => read_back(&u, p, cx)?, None => u };
-    let a = crate::primitive::reshape_to(&conv.size[..2], &read_back(&padded, conv.windows, cx)?, cx)?;
+    let padded = match conv.padding { Some(p) => read_back(&u, p, cx.span)?, None => u };
+    let a = crate::primitive::reshape_to(&conv.size[..2], &read_back(&padded, conv.windows, cx.span)?, cx)?;
     // `c` laid out as windows, the source's other axes and filters, with the filters moved after the windows.
     let laid: Vec<usize> = windows.iter().chain(rest).copied().chain([filters]).collect();
     let moved = crate::primitive::transpose_axes((0..s).chain(s + 1..=s + rest.len()).chain([s]).collect(), &crate::primitive::reshape_to(&laid, c, cx)?, cx)?;
-    let b = crate::primitive::reshape_to(&conv.size[1..], &read_back(&moved, conv.kernel, cx)?, cx)?;
+    let b = crate::primitive::reshape_to(&conv.size[1..], &read_back(&moved, conv.kernel, cx.span)?, cx)?;
     Ok(Some((source, relay(&plus_times(&a, &b, false, cx)?, &source.layout, cx)?)))
 }
 
 /// `v` copied through `plan`, as a transpose reads a cotangent back to where a copy read it.
-fn read_back(v: &Value, plan: Plan, cx: &Context<'_>) -> Result<Value, Error> {
-    crate::primitive::remapped(v, plan).error_at(cx.span, "a cotangent copies back")
+fn read_back(v: &Value, plan: Plan, span: &Span) -> Result<Value, Error> {
+    crate::primitive::remapped(v, plan).error_at(span, "a cotangent copies back")
 }
 
 /// The cotangent `u` laid out as `layout` by `agreement::expand`, except that a `u` already laid out that way comes back unchanged, an atom included.
@@ -493,12 +489,12 @@ fn copied_back(u: &Value, tables: &[Steps], layout: &Layout, child: &Linear, cx:
         let first = reads.next().expect("a transpose reads at least once")?;
         return reads.try_fold(first, |sum, read| Primitive::Arithmetic(Arithmetic::Plus).call(Some(&sum), &read?, cx));
     }
-    if let Some(v) = strided_back(&u, &tables, child, cx)? { return Ok(v); }
+    if let Some(v) = strided_back(&u, &tables, child, cx.span)? { return Ok(v); }
     scatter_add(&flat(&u, cx)?, &Steps::combined(0, &tables), &child.layout, &child.zero, cx)
 }
 
 /// The cotangent of `child` from the cotangent `u` of a copy of `child` whose frames move by more than 1 (rustymath's `Steps::windows_of`): each frame of `u` added back where its window read, by rustymath's `overlap_add`. It adds along one source axis at a time, from the last, reading `u` in its own order. `None` for any other copy, and for a `u` that isn't plain 32- or 64-bit floats.
-fn strided_back(u: &Value, tables: &[Steps], child: &Linear, cx: &Context<'_>) -> Result<Option<Value>, Error> {
+fn strided_back(u: &Value, tables: &[Steps], child: &Linear, span: &Span) -> Result<Option<Value>, Error> {
     let source = child.layout.shape();
     let Some(windows) = Steps::windows_of(tables, u.shape(), source) else { return Ok(None) };
     if windows.iter().all(|&[_, _, step]| step == 1) || u.carries_here() { return Ok(None); }
@@ -510,8 +506,8 @@ fn strided_back(u: &Value, tables: &[Steps], child: &Linear, cx: &Context<'_>) -
         }
         x.into_owned()
     }
-    if let Some(x) = f64s(&u) { return float_result(&child.layout, FloatBuf::F64(added(x, &windows, source)), cx).map(Some); }
-    if let Some(x) = f32s(&u) { return float_result(&child.layout, FloatBuf::F32(added(x, &windows, source)), cx).map(Some); }
+    if let Some(x) = f64s(&u) { return float_result(&child.layout, FloatBuf::F64(added(x, &windows, source)), span).map(Some); }
+    if let Some(x) = f32s(&u) { return float_result(&child.layout, FloatBuf::F32(added(x, &windows, source)), span).map(Some); }
     Ok(None)
 }
 
@@ -553,7 +549,7 @@ fn slide(tables: &[Steps], shape: &[usize], source: &[usize], axis: usize) -> Op
 
 /// The cotangent of `source` from the cotangent `u` of a sum along a window's axis of a copy of `source`, which `slide` describes: a sliding sum of `u` padded with zeros, sent back through the rest of the copy. The sliding sum folds a copy of the padded `u`'s windows, which fusion runs as a sliding fold without building them.
 fn slid_back(u: &Value, slide: Slide, source: &Linear, cx: &Context<'_>) -> Result<Value, Error> {
-    let windows = read_back(&read_back(u, slide.padded, cx)?, slide.windows, cx)?;
+    let windows = read_back(&read_back(u, slide.padded, cx.span)?, slide.windows, cx.span)?;
     let summed = plus_fold(FoldKind::REDUCE, None, &windows, cx)?;
     copied_back(&summed, &slide.rest.steps, &slide.rest.layout.into(), source, cx)
 }
@@ -696,16 +692,16 @@ impl Run {
 }
 
 /// A completed floating cotangent, keeping its buffer's width without another conversion.
-fn float_result(layout: &Layout, out: FloatBuf, cx: &Context<'_>) -> Result<Value, Error> {
+fn float_result(layout: &Layout, out: FloatBuf, span: &Span) -> Result<Value, Error> {
     if layout.shape().is_empty() { return Ok(Value::Number(Number::float(out.view().get(0), out.view().tag()))); }
-    Value::from_buffer(layout.shape(), Buffer::Floats(out)).and_then(|v| v.with_layout(layout.clone())).error_at(cx.span, "invalid cotangent")
+    Value::from_buffer(layout.shape(), Buffer::Floats(out)).and_then(|v| v.with_layout(layout.clone())).error_at(span, "invalid cotangent")
 }
 
 /// The node's whole cotangent: its dense part with every part added in.
 fn collected(c: Cotangent, n: &Linear, cx: &Context<'_>) -> Result<Value, Error> {
     let Cotangent { dense, parts } = c;
     if parts.is_empty() { return Ok(dense.expect("a gathered cotangent has a dense part or parts")); }
-    let mut total = match dense { Some(d) => laid_out(&d, &n.layout), None => zeros(&n.layout, &n.zero, cx)? };
+    let mut total = match dense { Some(d) => laid_out(&d, &n.layout), None => zeros(&n.layout, &n.zero, cx.span)? };
     for p in parts {
         let len = if p.items.is_atom() { 1 } else { p.items.len() };
         // A part whose items are the whole cotangent in order adds them at `at` as they stand. Any other part reads only its own items from the cotangent it shares.

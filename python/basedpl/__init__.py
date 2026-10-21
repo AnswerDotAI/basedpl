@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from ._core import __version__, symbols, _Array, _Function, _Operator, _Session
 
-__all__ = ['__version__', 'symbols', 'Array', 'Result', 'BplError', 'bpl', 'fn']
+__all__ = ['__version__', 'symbols', 'Array', 'FunctionArray', 'Result', 'BplError', 'bpl', 'fn']
 __pyskill_sigs__ = False
 
 def _dtype(items):
@@ -166,12 +166,16 @@ def _array_repr(raw):
     return cells(shape)
 
 class Array(_Operators):
-    "A native BPL value with shape, keys and names."
+    "A native BPL value with shape, keys and names. An array that holds a function as a direct item is a `FunctionArray`."
     __slots__ = ('_inner',)
     def __init__(self, value, *, keys=None, names=None):
         self._inner = value._inner.copy() if isinstance(value, Array) else _array(value)
         if keys is not None: self.keys = keys
         if names is not None: self.names = names
+        self._classify()
+    def _classify(self):
+        "Make this a `FunctionArray` exactly when a direct item is a function."
+        self.__class__ = FunctionArray if self._inner.holds_functions else Array
     @property
     def shape(self): return tuple(self._inner.shape)
     @property
@@ -222,7 +226,9 @@ class Array(_Operators):
     def __getitem__(self, index):
         "Select by positions, keys, slices or per-axis masks. `None` inserts an axis and `...` keeps omitted axes."
         return _result(self._inner.select(index, _array)).value
-    def __setitem__(self, index, value): self._inner = self._inner.assign(index, _array(value), _array)
+    def __setitem__(self, index, value):
+        self._inner = self._inner.assign(index, _array(value), _array)
+        self._classify()
     def __rustymath_array__(self): return self._inner.__rustymath_array__()
     def __matmul__(self, other): return _matmul(self, other)
     def __rmatmul__(self, other): return _matmul(other, self)
@@ -238,6 +244,16 @@ class Array(_Operators):
         try: data = _builtin('•mime')(self).py
         except BplError: data = {'text/plain': self.bpl}
         return {k: v if isinstance(v, str) else bytes(v) for k,v in data.items() if (include is None or k in include) and (exclude is None or k not in exclude)}
+
+class FunctionArray(Array):
+    "An `Array` that holds a function as a direct item. Calling it calls each such function on the whole arguments, as `aggs data` does in BPL. Each other item is its own result."
+    __slots__ = ()
+    @property
+    def fn(self):
+        "The array as a `Function`, for composition and operators, as in `aggs.fn.rank(1)` and `aggs.fn >> f`."
+        return _build('fn', self)
+    def __call__(self, *args, **kwargs): return self.fn(*args, **kwargs)
+    def __rrshift__(self, value): return self.fn(value)
 
 @dataclass(frozen=True)
 class Result:
@@ -334,7 +350,7 @@ class _Workspace:
 bpl = _Workspace()
 fn = bpl.fn
 
-from .functions import Function, Operator, fork, atop, __all__ as _function_names, _binary, _unary, _bitwise, _matmul, _builtin, _builtins, _glyph
+from .functions import Function, Operator, fork, atop, __all__ as _function_names, _binary, _unary, _bitwise, _matmul, _builtin, _builtins, _glyph, _build
 from .printing import to_python
 from .syntax import parse
 __all__ += ['to_python', 'parse']

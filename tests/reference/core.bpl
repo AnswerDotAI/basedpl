@@ -461,6 +461,12 @@ x←0 1 1 0 1 1 ⋄ ≢⊢ ⌸x   ⍝ [2 4]ₓ
 ⍝ — A joined run that still starts with an operator joins again
 + / ¨[1 2;3 4 5]   ⍝ 3 12
 
+⍝ — An operator in parentheses, a name that holds one, or a dot path to one starts a run as the operator does without them
+x←0 1 1 0 1 1 ⋄ k←⌸ ⋄ m←["k":⌸] ⋄ [≢⊢ (⌸)x;≢⊢ (k)x;≢⊢ (m.k)x]   ⍝ [2 4;2 4;2 4]ₓ
+
+⍝ — A run that ends in a dyadic operator in parentheses, or in a name that holds one, takes the next run as its right operand
+j←∘ ⋄ [-(∘) | ¯3;-(j) | ¯3]   ⍝ ¯3 ¯3
+
 ⍝ — A dot path after a space reads as the touching form
 T←["a":1 "b":2] ⋄ T .b+1   ⍝ 3
 
@@ -476,8 +482,14 @@ w←{X¨⍵} ⋄ X←{⍵+1} ⋄ a←w 1 2 ⋄ X←5 ⋄ b←w 1 2 ⋄ a b   ⍝
 ⍝ — An operator name that changes between calls
 r←{+O ⍵} ⋄ O←/ ⋄ a←r 1 2 3 ⋄ O←\ ⋄ b←r 1 2 3 ⋄ a b   ⍝ [6;1 3 6]
 
+⍝ — A name in parentheses that turns from an operator into a function, and back, changes whether its run joins the run before it
+k←⌸ ⋄ g←{≢⊢ (k)⍵} ⋄ a←g 1 1 2 ⋄ k←⌽ ⋄ b←g 1 1 2 ⋄ k←⌸ ⋄ a b (g 1 1 2)   ⍝ [[2 1]ₓ 3ₓ [2 1]ₓ]
+
 ⍝ — A dot root that turns from a record into a function
 s←{T.a ⍵} ⋄ T←["a":5] ⋄ a←s 1 ⋄ b←s 2 ⋄ T←⊢ ⋄ c←s ["a":7] ⋄ a b c   ⍝ [5 1;5 2;7]
+
+⍝ — A dot path whose field turns from an operator into a function binds again, though its root stays a record
+m←["k":⌸] ⋄ g←{≢⊢ m.k ⍵} ⋄ a←g 1 1 2 ⋄ m←["k":⌽] ⋄ b←g 1 1 2 ⋄ a b   ⍝ [[2 1]ₓ 3ₓ]
 
 ⍝ — A superscript on an array, a subscript and a train replay as they first bound
 f←{(⍵₀²)+(+/÷≢)⍵} ⋄ (f 1 3) (f 2 4)   ⍝ 3 7
@@ -490,6 +502,116 @@ p←{+/⍤1⊢⍵} ⋄ (p [2 2]⍴⍳4ₓ) (p [2 3]⍴⍳6ₓ)   ⍝ [1 5;3 12]�
 
 ⍝ — An operator bound to a name binds again on each call
 q←{↑,⊖⍤n⊢⍵} ⋄ n←1 ⋄ a←q [2 3]⍴⍳6ₓ ⋄ n←2 ⋄ a (q [2 3]⍴⍳6ₓ)   ⍝ [2 3]ₓ
+
+⍝ — A name that switches from a monadic operator to a superscript binds again where the derive's result changes category
+s←⍨ ⋄ h←{2 s ⍵} ⋄ a←h 5 ⋄ a_2←h 5 ⋄ s←² ⋄ b←h 5 ⋄ b_2←h 5 ⋄ a a_2 b b_2   ⍝ [2 2 [4 5] [4 5]]
+
+⍝ — A group whose name changes category binds again inside the group, and the statement carries on where the group's value keeps its category
+x←- ⋄ f←{(x ⍵)+1} ⋄ a←f 2 ⋄ x←[- +] ⋄ b←f 2 ⋄ a b   ⍝ [¯1 [¯1 3]]
+
+⍝ — A statement binds again where a group's value changes category
+x←- ⋄ f←{(x) ⍵} ⋄ a←f 2 ⋄ x←10 ⋄ b←f 2 ⋄ a b   ⍝ [¯2 [10 2]]
+
+⍝ — A name that changes category with items already on the binder's stacks binds again from that state
+f←{⍵ g 1} ⋄ g←+ ⋄ a←f 2 ⋄ g←10 ⋄ b←f 2 ⋄ a b   ⍝ [3 [2 10 1]]
+
+⍝ — Inside a group in a group, a value that changes category binds again in the middle group, and the statement carries on where the middle group's value keeps its category
+f←{((⍵⊃[- 10]) 1) 2} ⋄ (f 0) (f 1) (f 0)   ⍝ [¯1 2;[10 1] 2;¯1 2]
+
+⍝ — Where the middle group's value changes category too, the statement binds again
+f←{((⍵⊃[⊢ 10])) 5} ⋄ (f 0) (f 1) (f 0)   ⍝ [5 [10 5] 5]
+
+⍝ — A group binds again from its start where what a name holds changes how its run binds, here whether the run ends in a dyadic operator
+o←⊢ ⋄ f←{(+o 0) ⍵} ⋄ a←f 5 ⋄ o←⍤ ⋄ b←f 5 ⋄ o←⊢ ⋄ a b (f 5)   ⍝ [[0 5] 5 [0 5]]
+
+⍝ — A statement that assigns replays, and binds again where its target's start moves: here `x` turns from an array, which `x(g)←` modifies, into a function, which applies to `(g)←3`
+g←+ ⋄ x←1 ⋄ h←{x(g)←⍵ ⋄ 0} ⋄ a←h 2 ⋄ b←x ⋄ x←- ⋄ c←h 3 ⋄ b (x 5) (g 1 2)   ⍝ [3 ¯5 [1 2]]
+
+⍝ — An assignment whose value changes category binds again with the assignment in progress
+h←{x←(⍵⊃[- 5]) ⋄ x 1} ⋄ (h 0) (h 1) (h 0)   ⍝ [¯1 [5 1] ¯1]
+
+⍝ — Chained and destructuring assignments replay
+f←{a←b←⍵+1 ⋄ [c d]←a (b×2) ⋄ c-d} ⋄ (f 1),(f 2)   ⍝ ¯2 ¯3
+
+⍝ — A modified assignment with no value replays
+f←{x←⍵ ⋄ x(-)← ⋄ x} ⋄ (f 3),(f 4)   ⍝ ¯3 ¯4
+
+⍝ — An assignment inside a group replays
+f←{y←⍵ ⋄ z×(z←y+1)} ⋄ (f 3),(f 4)   ⍝ 16 25
+
+⍝ — A last statement that assigns replays, and its call after the assignment returns to the caller's loop
+f←{⍵=0?0;f k←⍵-1} ⋄ f 50   ⍝ 0
+
+⍝ — A default argument replays
+f←{⍺←⍵ ⋄ ⍺+⍵} ⋄ (f 1),(2 f 3),(f 4)   ⍝ 2 5 8
+
+⍝ — An error guard's kinds replay
+k←"INDEX" ⋄ f←{k::¯1 ⋄ ⍵⊃1 2} ⋄ (f 0),(f 5),(f 1)   ⍝ 1 ¯1 2
+
+⍝ — A bracket literal's items replay in order, left to right
+f←{[a←⍵+1;a×10]} ⋄ (f 1),(f 2)   ⍝ 2 20 3 30
+
+⍝ — An item that fails stops the items after it, as when the binder evaluates the literal
+f←{"VALUE"::n ⋄ [n←1;{}0;n←2]} ⋄ (f 0),(f 0)   ⍝ 1 1
+
+⍝ — A keyed item whose keys don't fit its value fails before the items after it, after a successful call has compiled the literal too
+f←{n←0 ⋄ ∞::n ⋄ ["a" "b":⍵;n+←1]} ⋄ a←f 3 ⋄ _←f 1 2 ⋄ a,(f 3)   ⍝ 0 0
+
+⍝ — A literal whose item turns into a function holds the function, and the statement binds again around the literal
+h←2 ⋄ f←{[h;⍵]} ⋄ a←f 1 ⋄ h←+ ⋄ b←f 1 ⋄ a b   ⍝ [2 1] [+ 1]
+
+⍝ — A record literal with constant keys replays, and an absent ⍺ drops its key
+f←{["a":⍺ "b":⍵]} ⋄ (f 1) (2 f 3) (f 4)   ⍝ ["b":1] ["a":2 "b":3] ["b":4]
+
+⍝ — A literal whose key reads a name stays with `resolve`, and follows the name
+k←"x" ⋄ f←{[k:⍵]} ⋄ a←f 1 ⋄ k←"y" ⋄ a (f 2)   ⍝ ["x":1] ["y":2]
+
+⍝ — A run that ends in a dyadic operator replays with its right operand, and binds again where a name changes whether the run ends in one
+op←⍤ ⋄ f←{(+/op 1) ⍵} ⋄ a←f [2 2]⍴⍳4 ⋄ op←⍨ ⋄ b←f [2 2]⍴⍳4 ⋄ a b   ⍝ [1 5;2 ([2 2]⍴⍳4)]
+
+⍝ — A run's right operand that turns from an array into a function binds again
+r←1 ⋄ f←{+/⍤ r ⍵} ⋄ a←f [2 3]⍴⍳6 ⋄ r←{1} ⋄ a (f [2 3]⍴⍳6)   ⍝ [3 12;3 12]
+
+⍝ — A dfn called with and without ⍺ keeps a recording for each
+f←{⍺-⍵} ⋄ (f 3),(5 f 3),(f 3),(1 f 3)   ⍝ ¯3 2 ¯3 ¯2
+
+⍝ — A compiled read of a global follows the global when it's assigned again
+g←1 ⋄ f←{⍵+g} ⋄ a←f 0 ⋄ g←10 ⋄ a,f 0   ⍝ 1 10
+
+⍝ — A global deleted and assigned again keeps its entry, and a compiled read finds the new value
+g←1 ⋄ f←{⍵+g} ⋄ a←f 0 ⋄ _←•ex "g" ⋄ g←5 ⋄ a,f 0   ⍝ 1 5
+
+⍝ — A compiled read of a deleted global is a VALUE error, as the binder's read is
+g←1 ⋄ f←{⍵+g} ⋄ a←f 0 ⋄ _←•ex "g" ⋄ f 0
+⍝ error: VALUE ERROR
+
+⍝ — A closure's read of its parent's local goes on to the global once the local is deleted
+k←7 ⋄ f←{k←3 ⋄ h←{k} ⋄ a←h 0 ⋄ _←•ex "k" ⋄ a,h 0} ⋄ (f 0),(f 0)   ⍝ 3 7 3 7
+
+⍝ — A name that `⍎` binds in the frame hides the global from a compiled read
+x←1 ⋄ f←{a←x ⋄ ⍎"x←2" ⋄ a,x} ⋄ (f 0),(f 0)   ⍝ 1 2 1 2
+
+⍝ — A compiled read in a dfn defined inside a scope reads the scope's key
+r←["k":5] ⋄ f←{r.({⍵+k} ⍵)} ⋄ (f 1),(f 2)   ⍝ 6 7
+
+⍝ — A group's train calls its tines in place on later calls, in the order its function would call them: right tine, left tine, then the middle tine
+a←{⎕←"a" ⋄ ⍵} ⋄ b←{⎕←"b" ⋄ ⍺+⍵} ⋄ c←{⎕←"c" ⋄ ⍵×2} ⋄ f←{(a b c) ⍵} ⋄ (f 1),(f 2)   ⍝ 3 6
+⍝ ⎕: c\na\nb\nc\na\nb
+
+⍝ — A group's train called with a left argument, whose array tine binds the function after it
+f←{⍺ (⍵-+) 10} ⋄ (3 f 1),(5 f 2)   ⍝ ¯12 ¯13
+
+⍝ — A group's train whose last tine is a grade is built, so that it keeps its idiom
+f←{(⍵↑⍋) 5 3 9 1} ⋄ (f 2),(f 3)   ⍝ [3 1 3 1 0]ₓ
+
+⍝ — A run binds again where its first name turns from a function into an operator, which joins the run to the node before it
+s←- ⋄ t←{+ s⍵} ⋄ a←t 1 2 3 ⋄ s←{⍶/⍵} ⋄ b←t 1 2 3 ⋄ s←- ⋄ a b (t 1 2 3)   ⍝ [[¯1 ¯2 ¯3] 6 [¯1 ¯2 ¯3]]
+
+⍝ — A run that ends in a dyadic operator, with a constant right operand, records as the function it gives
+f←{(+/⍤ 1) ⍵} ⋄ (f [2 2]⍴⍳4),(f [2 2]⍴4+⍳4)   ⍝ 1 5 9 13
+
+⍝ — A last statement first recorded while an error guard stops its tail call returns its call to the caller's loop on later calls
+f←{⍺←0 ⋄ ⍺=1?"DOMAIN"::0 ⋄ 0?⍬ ; ⍵≤0?0 ; 0 f ⍵-1} ⋄ [1 f 1;0 f 100000]   ⍝ 0 0
 
 ⍝⍝ Mathematical monads
 
@@ -753,6 +875,120 @@ a←[(2 3⍴⍳6ₓ) 7ₓ] ⋄ z←[(2 0⍴0ₓ) 7ₓ] ⋄ b←a ⋄ ([[[0 1] [0
 ⍝ path-suffix-keys — Each cell that a path reaches resolves the suffix with its own keys, for reads and writes. Where the cells' keys differ, the result's axes keep only their lengths
 ka←["r":"x" "y";"c":"a" "b"] ⋄ kb←["r":"x" "y";"c":"b" "a"] ⋄ t←[(ka:[1 2⋄3 4]ₓ) (kb:[5 6⋄7 8]ₓ)] ⋄ u←t ⋄ ([[[0 0] [1 0]] "b"]⌷u)←20ₓ 50ₓ ⋄ [[[[0 0] [1 0]] "b"]⌷t;[[[0 0] [1 0]] :]⌷t;[[[0 0] [1 0]] :]⌷u]   ⍝ [[2 5]ₓ;[1 2⋄5 6]ₓ;[1 20⋄50 6]ₓ]
 
+⍝⍝ Calling function arrays
+
+⍝ — In a slot that takes only a function, an array that holds functions calls each one on the whole argument
+aggs←["mean":+⌿÷≢ "sum":+⌿] ⋄ aggs∘⊢ 1 2 3   ⍝ ["mean":2 "sum":6]
+
+⍝ — Rank calls the array on each row, and the results keep the array's keys
+aggs←["mean":+⌿÷≢ "sum":+⌿] ⋄ aggs⍤1 ⊢ [1 2 3⋄4 5 6]
+⊃[["mean":2 "sum":6] ["mean":5 "sum":15]]
+
+⍝ — A dyadic call gives each function both arguments, and other items are their own results
+10 [+ 0 -]¨ 1 2   ⍝ [11 0 9;12 0 8]
+
+⍝ — A matrix of functions gives its frame to the results
+6 [+ -⋄× ÷]¨ 2   ⍝ [8 4⋄12 3]
+
+⍝ — Results of different lengths pad with fill, as Rank pads them
+[⍳ ⊢]∘⊢ 3ₓ   ⍝ [0 1 2⋄3 0 0]ₓ
+
+⍝ — A scalar that holds a function adds no axis to the function's result
+{⍵×10}ᵘ∘⊢ 2   ⍝ 20
+
+⍝ — Each calls a scalar that holds a function on each item
+{⍵×10}ᵘ¨ 1 2   ⍝ 10 20
+
+⍝ — A function inside a nested item is a constant, not a call
+[[+] -]∘⊢ 1   ⍝ 2 1⍴[+ ¯1]
+
+⍝ — An empty array holds no function, and acts as a constant
+(0⍴[+ -])¨ 1 2   ⍝ [(0⍴[+ -]) (0⍴[+ -])]
+
+⍝ — The functions run in ravel order
+[{⎕←⍵} {⎕←-⍵}]∘⊢ 7   ⍝ 7 ¯7
+⍝ ⎕: 7\n¯7
+
+⍝ — Reduce calls the array on each pair, as it calls any function
+[+ ×]/ 1 2 3   ⍝ [6 7⋄5 6]
+
+⍝ — An array stops being callable when a write replaces its last function, even after an earlier call [mixed]
+x←[+ 0]
+_←x¨ 1
+x.[0]←5
+x¨ 1 2   ⍝ [5 0;5 0]
+
+⍝ — A write that puts a function into an array makes it callable, even after an earlier call found none
+x←[0 [1 2]]
+_←x¨ 1
+x.[0]←-
+x¨ 5   ⍝ [¯5 0⋄1 2]
+
+⍝ — Appending a function makes an array callable, even after an earlier call found none
+x←[0 [1 2]]
+_←x¨ 1
+x,←-
+x¨ 5   ⍝ [0 0⋄1 2⋄¯5 0]
+
+⍝ — ∂ differentiates through each function of an array
+{+/ , [⊢ ×⍨]⍤0 ⊢ ⍵}∂ 1 2   ⍝ 3 5
+
+⍝ — Before binds a left argument to an array that holds functions
+10↣[+ -] 3   ⍝ 13 7
+
+⍝ — Commute's operand can be either kind, and an array that holds functions stays a constant there
+[+ -]⍨ 5   ⍝ [+ -]
+
+⍝ — A function made from an array reads back from its text
+r←["f":[+ -]¨ "g":[+ ×]⍤1] ⋄ (⍎⍕r)≡r   ⍝ $t
+
+⍝ — An array that holds functions calls them when an array follows it
+aggs←["mean":+⌿÷≢ "sum":+⌿] ⋄ aggs 1 2 3   ⍝ ["mean":2 "sum":6]
+
+⍝ — An array before it is the left argument
+10 [+ -] 3   ⍝ 13 7
+
+⍝ — With nothing after it, an array that holds functions is data, and strands
+10 [+ -]   ⍝ [10 [+ -]]
+
+⍝ — A function before it applies to the call's result
+⊖ [+ -] 1 2   ⍝ [¯1 ¯2⋄1 2]
+
+⍝ — Before a function, the array is that function's left argument
+[+ -] , 10   ⍝ [+ - 10]
+
+⍝ — In a train, the array is data
+f←[+ -], ⋄ ≢f 1 2   ⍝ 4ₓ
+
+⍝ — In brackets, each run is its own item, and a semicolon item calls
+d←1 2 ⋄ [≢[[+ -] d];[+ -] 1]   ⍝ [2ₓ;1 ¯1]
+
+⍝ — An array that holds functions can be another such array's argument
+[≢ ≡] [+ -]   ⍝ [2 1]ₓ
+
+⍝ — A scalar holding a function calls it when an array follows it
+(-ᵘ)3   ⍝ ¯3
+
+⍝ — An array after the absent ⍺ of a monadic call calls it, as a function does, and gives an absent result
+{≢ [+ -] ⍺} 1
+⍝ error: VALUE ERROR
+
+⍝ — A recorded statement resumes the binder when its name's array loses its last function
+f←{x ⍵}
+x←[+ -]
+a←f 1
+x←[1 2]
+b←f 1
+[a;b]   ⍝ [1 ¯1;[1 2] 1]
+
+⍝ — A recorded statement resumes the binder when its name's array gains a function
+f←{x ⍵}
+x←[1 2]
+a←f 1
+x←[+ -]
+b←f 1
+[a;b]   ⍝ [[1 2] 1;1 ¯1]
+
 ⍝⍝ Bracket lists
 
 ⍝ —
@@ -851,8 +1087,8 @@ v←10 20 30 ⋄ v[2]   ⍝ [10 20 30;[2]]
 ⍝ — Two bracket lists side by side form a strand
 [10 20 30] [2 0]   ⍝ [10 20 30;2 0]
 
-⍝ — A scalar holding a function is one item
-≢(-ᵘ)3   ⍝ 2ₓ
+⍝ — A scalar holding a function is one item of a strand when no array follows it
+≢3(-ᵘ)   ⍝ 2ₓ
 
 ⍝ — Each run is one item
 a←1
@@ -2072,6 +2308,16 @@ T←["f":{⍵×2} "a":3] ⋄ T.(f a)   ⍝ 6
 ⍝ — A scope inside a dfn sees the dfn's ⍺
 5 {⍵.(a+⍺)} ["a":1]   ⍝ 6
 
+⍝ — In a scope at top level, ⍺ is an undefined name, as it is at top level itself
+["a":1].(⍺-a)
+⍝ error: VALUE ERROR
+
+⍝ — •ex erases bindings, not a scope's keys: a key still names its item after •ex
+T←["a":1] ⋄ T.({_←•ex "a" ⋄ a} 0)   ⍝ 1
+
+⍝ — A key spelled as one of a dfn's own names names nothing: ⍵ comes from the call
+f←{["⍵":0].(⍵+1)} ⋄ f 5   ⍝ 6
+
 ⍝ — Over a keyed matrix, each key names its major cell, as dot access selects it
 T←"a" "b":[1 2 3⋄4 5 6] ⋄ T.(a+b)   ⍝ 5 7 9
 
@@ -2151,6 +2397,9 @@ T←["a":1 "x":[10 20 30]] ⋄ ops←["mul":×] ⋄ [⊢.a T;1 +.a T;⊢.x.[[2 0
 
 ⍝ — A string that gives no result contributes `⍬`
 ⍎"" "2"   ⍝ ⍬ 2
+
+⍝ — An empty array of strings gives an empty result whose fill is `⍬`, as `⍎¨` gives
+↑⍎ 0⍴⊂"1"   ⍝ ⍬
 
 ⍝ — Execute applies to each row of a character matrix
 ⍎["1+1"⋄"2×3"]   ⍝ 2 6
@@ -5122,6 +5371,15 @@ u←•UcS ⋄ u ["A⍳"⋄"λ😀"]   ⍝ [65 9075⋄955 128512]ₓ
 (•ucs 0)-1
 ⍝ error: DOMAIN ERROR
 
+⍝ — A pending reversal or drop of characters computes through its source
+[(⌽"abc")<"bbb";(1↓"abcd")+1]   ⍝ [$f $f $t;"cde"]
+
+⍝ — A key that a character argument lacks reads a space
+("xx" "yy" "zz":"abc")-("yy" "zz":"ab")   ⍝ "xx" "yy" "zz":[65 1 1]ₓ
+
+⍝ — An inner product counts equal characters through their code points
+"abc"+.="abd"   ⍝ 2ₓ
+
 ⍝⍝ Characters nesting and empty fill
 
 ⍝ — System functions use ordinary binding and composition
@@ -5165,10 +5423,6 @@ $a←"abc"
 ⍝ — A double-quoted string spans lines, with one newline for each line ending and its indentation kept
 •ucs "a
   b"   ⍝ [97 10 32 32 98]ₓ
-
-⍝ — Pervasive ordering is numeric; character sorting uses grade
-'a'<'b'
-⍝ error: DOMAIN ERROR
 
 ⍝ —
 1.5↑1 2
@@ -5241,6 +5495,39 @@ $a←"abc"
 
 ⍝ —
 "abc"="axc"   ⍝ $t $f $t
+
+⍝ — Characters order by code point
+'a'<'b'   ⍝ $t
+
+⍝ — A mixed array compares each pair of items, characters included
+'a' 1<'b' 0   ⍝ $t $f
+
+⍝ —
+"ab"≥"ba"   ⍝ $f $t
+
+⍝ — The maximum and minimum of characters are characters
+"abc"⌈"bab"   ⍝ "bbc"
+
+⍝ —
+'a'⌊'b'   ⍝ 'a'
+
+⍝ — Numbers order before characters, whatever their values
+[3<'a';3<(•ucs 0);3⌈'a';3⌊'a']   ⍝ [$t;$t;'a';3]
+
+⍝ — A compact array against characters takes the order of its kind
+[1 2 3>"abc";"ab"⌊5 6]   ⍝ [$f $f $f;5 6]
+
+⍝ — A mixed array orders each pair of items by kind first
+'a' 2<1 'b'   ⍝ $f $t
+
+⍝ —
+'a' 2⌊1 'b'   ⍝ 1 2
+
+⍝ — An exact fraction orders before a character, and the minimum keeps it exact
+1r3⌊'a'   ⍝ 1r3
+
+⍝ — An empty maximum of numbers and characters has a character prototype
+⍬⌈""   ⍝ ""
 
 ⍝ —
 +"abc"   ⍝ "abc"
@@ -6113,7 +6400,7 @@ f←{⎕←7 ⋄ 100⊃"abc"} ⋄ ≢f¨⍬
 {(+/⍵)>6?1;0}⌺3⊢⍳6ₓ   ⍝ 0 0 0 1 1 1
 
 ⍝ — A stencil over a keyed axis makes a batched try, because its windows have no keys [batched]
-V←"aa" "bb" "cc":1 2 3 ⋄ (•explain "{x←•ucs ""a"" ⋄ +/⍵}⌺3 V").fallbacks.reason   ⍝ ["an effect"]
+V←"aa" "bb" "cc":1 2 3 ⋄ (•explain "{x←•time 0 ⋄ +/⍵}⌺3 V").fallbacks.reason   ⍝ ["an effect"]
 
 ⍝ — A batched guard in an Each over keys
 {⍵>20?⍵;-⍵}¨["a":10 "b":30 "c":5]   ⍝ ["a":¯10 "b":30 "c":¯5]
@@ -6155,14 +6442,23 @@ f←{⍋⍵} ⋄ r←f⍤1⊢2 3⍴⍳6ₓ
 f←{⍋⍵} ⋄ r←f⍤1⊢2 3⍴⍳6ₓ
 (•explain "f⍤1⊢2 4⍴⍳8ₓ").fallbacks.reason   ⍝ ["no batch rule for ⍋"]
 
-⍝ — A system function in a batched run stops it for an effect [batched]
-(•explain "{•json⁻¹ ⍵}¨1 2").fallbacks.reason   ⍝ ["an effect"]
+⍝ — A system function that acts stops a batched run for an effect, even on a constant [batched]
+(•explain "{x←•time 0 ⋄ ⍵}¨⍳3ₓ").fallbacks.reason   ⍝ ["an effect"]
 
-⍝ — A system function on a cell's value stops a batched run for an effect, as one on a constant does [batched]
-(•explain "{•ucs ⍵}¨""abc""").fallbacks.reason   ⍝ ["an effect"]
+⍝ — A system function that doesn't act runs once for each cell inside a batched run [batched]
+(•explain "{•ucs ⍵}¨""abc""").fallbacks.reason   ⍝ 0⍴⊂""
 
-⍝ — A system function on a constant inside the operand stops a batched run for an effect [batched]
-(•explain "{x←•ucs ""a"" ⋄ ⍵}¨⍳3ₓ").fallbacks.reason   ⍝ ["an effect"]
+⍝ — So does one on a constant inside the operand [batched]
+(•explain "{x←•ucs ""a"" ⋄ ⍵}¨⍳3ₓ").fallbacks.reason   ⍝ 0⍴⊂""
+
+⍝ — So does a system function's inverse [batched]
+(•explain "{•json⁻¹ ⍵}¨1 2").fallbacks.reason   ⍝ 0⍴⊂""
+
+⍝ — Cells whose system-function results don't stack into one array fall back [batched]
+(•explain "{•json⁻¹ ⍵}¨1 22").fallbacks.reason   ⍝ ["no batch rule"]
+
+⍝ — Each cell then gets its own result
+{•json⁻¹ ⍵}¨1 22   ⍝ "1.0" "22.0"
 
 ⍝ — ⍕ of a cell stops a batched run for an effect [batched]
 (•explain "{⍕⍵}¨⍳3ₓ").fallbacks.reason   ⍝ ["an effect"]
@@ -6266,6 +6562,15 @@ n←0
 
 ⍝ — A batched run multiplies each cell's matrices as one stack
 {⍵+.×⍵}⍤2⊢2 2 2⍴1 2 3 4 5 6 7 8   ⍝ [[7 10⋄15 22]⋄[67 78⋄91 106]]
+
+⍝ — Rank applies or-and to each pair of a stack's Boolean matrices
+b←[2 2 2]⍴1 0 0 1 1 1 0 1=1 ⋄ b∨.∧⍤2 b   ⍝ [[$t $f⋄$f $t]⋄[$t $t⋄$f $t]]
+
+⍝ — Rank counts equal items for each pair of a stack's exact matrices
+k←[2 2 3]⍴3 1 4 1 5 9 2 6 5 3 5 8ₓ ⋄ k+.=⍤2⍉⍤2 k   ⍝ [[3 0⋄0 3]⋄[3 0⋄0 3]]ₓ
+
+⍝ — A stack of exact products that overflow 64 bits computes each matrix exactly
+j←[2 2 2]⍴(2*40)ₓ ⋄ j+.×⍤2 j   ⍝ [2 2 2]⍴(2*81)ₓ
 
 ⍝ — A batched run takes each cell's determinant as one stack
 {-.×⍵}⍤2⊢2 2 2⍴1 2 3 4 5 6 7 8   ⍝ ¯2 ¯2
@@ -7509,6 +7814,28 @@ fact←{⍵=0?1;⍵×∇⍵-1} ⋄ fact6   ⍝ 720.0
 outer←{even←{⍵=0?1;odd ⍵-1} ⋄ odd←{⍵=0?0;even ⍵-1} ⋄ even ⍵}
 outer8   ⍝ 1.0
 
+⍝ — A read before a dfn's own assignment of a name sees the outer binding
+x←1 ⋄ f←{y←x ⋄ x←2 ⋄ y+x} ⋄ f 0   ⍝ 3
+
+⍝ — Assigning a local from the outer name of the same name leaves the outer one unchanged
+x←1 ⋄ f←{x←x+10 ⋄ x} ⋄ (f 0),x   ⍝ 11 1
+
+⍝ — Execute binds a local that the dfn never assigns in its own text
+f←{⍵>0?(⍎"q←5") ⋄ q;0} ⋄ f 1   ⍝ 5
+
+⍝ — Execute rebinds a local that the dfn assigns in its own text
+f←{x←1 ⋄ ⍎"x←2" ⋄ x} ⋄ f 0   ⍝ 2
+
+⍝ — A name that execute binds in a dfn hides the global from a closure inside it
+x←1 ⋄ f←{h←{x} ⋄ ⍎"x←2" ⋄ h 0} ⋄ f 0   ⍝ 2
+
+⍝ — A name that a dfn assigns only in a body that didn't run is unbound for •nc and •nl
+f←{⍵>0?slotted←1;[•nc "slotted";•nl 2]} ⋄ f 0   ⍝ [0ₓ 0⍴⊂""]
+
+⍝ — ⍺ is never found in an outer frame
+f←{⍺} ⋄ g←{f ⍵} ⋄ 1 g 2
+⍝ error: VALUE ERROR
+
 ⍝ — A callee's error reaches the caller's guard, and the handler sees the caller's locals as they were at the error
 bad←{1÷⍵}
 guarded←{x←10 ⋄ ∞::x ⋄ x←20 ⋄ bad ⍵}
@@ -7863,6 +8190,10 @@ v←10 20 30 ⋄ T←["a":1 "b":2] ⋄ x←1 ⋄ y←2 ⋄ [v₁ⱼT.b xⱼy² x
 
 ⍝ subscript-join-function — ⱼ, ₑ and ᵣ join two arrays, not a function
 f←- ⋄ fⱼ1
+⍝ error: SYNTAX ERROR
+
+⍝ subscript-join-path-function — A dot path to a function is a function there too
+m←["f":-] ⋄ (m.f)ⱼ1
 ⍝ error: SYNTAX ERROR
 
 ⍝ —
@@ -8475,6 +8806,9 @@ fold←/
 •nc "x" "f" "op" "fold" "absent" "bad name"
 ⍝ =>
 [2 3 4 4 0 ¯1]ₓ
+
+⍝ — A glyph and a system name both name a function, and an unknown system name is undefined
+•nc "+" "•json" "•bogus"   ⍝ [3 3 0]ₓ
 
 ⍝ — Name lists are sorted, filtered by prefix and class
 zeta←1

@@ -10,10 +10,12 @@ Function. Hanzi: `小`. Ranks: `∞` monadic, `0 0` dyadic
 <[3 1⋄1 2⋄2 0]  ⍝ [1 2⋄2 0⋄3 1]
 ```
 
-`X<Y` tests X < Y for reals. Pervasive; tolerant.
+`X<Y` tests X < Y for reals, and for characters by code point. A number is less than any character, as [`⍋`](delta-stile.qmd) orders them. Pervasive; tolerant.
 
 ```bpl
 1 2 3<2            ⍝ $t $f $f
+"abc"<"abd"        ⍝ $f $f $t
+3<'a'              ⍝ $t
 ```
 
 See [`>`](greater-than.qmd) to sort down, and [`⍋`](delta-stile.qmd) for the indices that sort.
