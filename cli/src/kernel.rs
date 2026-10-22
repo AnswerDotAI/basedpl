@@ -32,7 +32,7 @@ impl LanguageSession for BplSession {
     fn kernel_info(&self) -> kernmini::Result<KernelInfo> {
         Ok(KernelInfo { implementation: "basedpl".into(), implementation_version: env!("CARGO_PKG_VERSION").into(),
             banner: "BasedPL — an APL-derived array language".into(),
-            language_info: json!({"name": "bpl", "version": env!("CARGO_PKG_VERSION"), "mimetype": "text/apl", "file_extension": ".bpl", "codemirror_mode": "apl"}), supported_features: vec![]
+            language_info: json!({"name": "bpl", "version": env!("CARGO_PKG_VERSION"), "mimetype": "text/apl", "file_extension": ".bpl", "codemirror_mode": "apl"})
         })
     }
 
