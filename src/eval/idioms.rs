@@ -86,14 +86,14 @@ impl Idiom {
     pub(super) fn declined(&self, items: usize) { rustymath::events::declined(self.name(), "arguments that don't suit it", items) }
     /// The idiom's result for these arguments, or `None` where they don't suit it. `f` is the function that the idiom computes.
     #[inline(never)]
-    pub(super) fn call(&self, f: &Function, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
+    pub(super) fn call(&self, f: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Bound, Error>> {
         let result = match *self {
-            Idiom::Selected { grade, down, pick } => selected(grade, down, pick, left, right, cx),
-            Idiom::Ranks { down } => ranks(down, left, right, cx),
+            Idiom::Selected { grade, down, pick } => selected(grade, down, pick, left, right, span),
+            Idiom::Ranks { down } => ranks(down, left, right, span),
             // Key runs these in its own path (`key`), with its validation and classes.
             Idiom::Counts | Idiom::Folds(_) => None,
-            Idiom::Determinant => determinant(left, right, cx),
-            Idiom::Permanent => permanent(left, right, cx),
+            Idiom::Determinant => determinant(left, right),
+            Idiom::Permanent => permanent(left, right),
         };
         if result.is_some() { self.taken(f); } else if !matches!(self, Idiom::Counts | Idiom::Folds(_)) { self.declined(right.len()); }
         result
@@ -101,9 +101,8 @@ impl Idiom {
 }
 
 /// The items of `right`'s order that `pick` names, through rustymath's partial selection.
-fn selected(grade: bool, down: bool, pick: Pick, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
-    use rustymath::buffer::View;
-    if left.is_some() || right.shape().len() != 1 || right.keys(0).is_some() || cx.carried(None, right) { return None; }
+fn selected(grade: bool, down: bool, pick: Pick, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Bound, Error>> {
+    if left.is_some() || right.shape().len() != 1 || right.keys(0).is_some() || crate::transform::carried(None, right) { return None; }
     let n = right.len();
     let (range, item) = match pick {
         Pick::Take(k) if k.unsigned_abs() <= n as u64 => {
@@ -119,47 +118,45 @@ fn selected(grade: bool, down: bool, pick: Pick, left: Option<&Value>, right: &V
     // Large runs cost more to comparison-sort than grading the whole vector by radix/counting.
     if range.len() > n / 4 { return None; }
     let crate::array::Items::Compact(view) = right.as_items() else { return None };
-    if matches!(view, View::Complexes(_)) { return None; }
-    let keys = rustymath::search::view_order_keys(view)?;
-    let order = rustymath::search::select_positions(n, range, |a, b| if down { keys[b].cmp(&keys[a]) } else { keys[a].cmp(&keys[b]) });
+    let order = rustymath::search::view_selected(view, range, down)?;
     Some((|| {
-        let positions = Value::positions_u32([order.len()], n, order).and_then(|p| p.along_first_of(right)).error_at(cx.span, "invalid selected order")?;
+        let positions = Value::positions_u32([order.len()], n, order).and_then(|p| p.along_first_of(right)).described("invalid selected order")?;
         let selected = if grade { positions } else {
-            let selector = Value::new([1], vec![positions]).error_at(cx.span, "invalid selected order")?;
-            Primitive::Index.call(Some(&selector), right, cx)?
+            let selector = Value::new([1], vec![positions]).described("invalid selected order")?;
+            Primitive::Index.call(Some(&selector), right, span)?
         };
-        Ok(Bound::from(if item { crate::primitive::pick(&Value::integer(0), &selected, cx.session.prototype.get(), cx)? } else { selected }))
+        Ok(Bound::from(if item { crate::primitive::pick(&Value::integer(0), &selected, session().prototype.get(), span)? } else { selected }))
     })())
 }
 
 /// Each major cell's rank in the order that `⍋` or, where `down`, `⍒` gives: the inverse of the grade's permutation.
-fn ranks(down: bool, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
+fn ranks(down: bool, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Bound, Error>> {
     use {crate::array::Items, rustymath::buffer::View};
-    if left.is_some() || right.shape().is_empty() || right.keys(0).is_some() || cx.carried(None, right) { return None; }
-    let grade = match Primitive::Grade(down).call(None, right, cx) { Ok(g) => g, Err(e) => return Some(Err(e)) };
-    let Items::Compact(View::Integers(ints)) = grade.as_items() else { return Some(Primitive::Grade(false).call(None, &grade, cx).map(Bound::from)) };
+    if left.is_some() || right.shape().is_empty() || right.keys(0).is_some() || crate::transform::carried(None, right) { return None; }
+    let grade = match Primitive::Grade(down).call(None, right, span) { Ok(g) => g, Err(e) => return Some(Err(e)) };
+    let Items::Compact(View::Integers(ints)) = grade.as_items() else { return Some(Primitive::Grade(false).call(None, &grade, span).map(Bound::from)) };
     let n = grade.len();
     let ranks = rustymath::with_ints!(ints, |positions| rustymath::search::inverse_permutation(positions.iter().map(|&p| i64::from(p) as usize)));
-    Some(Value::positions_u32([n], n, ranks).and_then(|r| r.along_first_of(right)).error_at(cx.span, "invalid ranks").map(Bound::from))
+    Some(Value::positions_u32([n], n, ranks).and_then(|r| r.along_first_of(right)).described("invalid ranks").map(Bound::from))
 }
 
 /// Monadic `-.×`. A square matrix takes `primitive::determinant`. A running level takes a call on its carried values before the idiom (`transform::call`).
-fn determinant(left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
+fn determinant(left: Option<&Value>, right: &Value) -> Option<Result<Bound, Error>> {
     if left.is_some() { return None; }
     let [m, n] = matrix(right)?;
     if m != n || n == 0 { return None; }
-    crate::primitive::determinant(right, n, cx).transpose().map(|d| d.map(Bound::from))
+    crate::primitive::determinant(right, n).transpose().map(|d| d.map(Bound::from))
 }
 
 /// Monadic `+.×` of a square matrix of fewer than 64 rows of numbers, by rustymath's `permanent_with` at the matrix's own field, which `primitive::determinant` also reads.
-fn permanent(left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Bound, Error>> {
+fn permanent(left: Option<&Value>, right: &Value) -> Option<Result<Bound, Error>> {
     use crate::number::{read, with_field, Domain, Field};
-    if left.is_some() || cx.carried(None, right) { return None; }
+    if left.is_some() || crate::transform::carried(None, right) { return None; }
     let [m, n] = matrix(right)?;
     if m != n || n >= 64 { return None; }
     let (domain, width) = Domain::of_arrays(&[right])?;
     Some((|| {
-        let p = with_field!(domain, [Exact, Single, Double, Complex], T => rustymath::linalg::exact::permanent_with(&read::<T>(right, cx)?, n, || cx.check_now())?.number(width));
+        let p = with_field!(domain, [Exact, Single, Double, Complex], T => rustymath::linalg::exact::permanent(&read::<T>(right)?, n)?.number(width));
         Ok(Bound::from(Value::Number(p)))
     })())
 }

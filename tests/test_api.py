@@ -103,7 +103,7 @@ def test_data_io(tmp_path, monkeypatch, capsys):
     with pytest.raises(BplError, match='IO ERROR'): read(str(dest))
     with pytest.raises(BplError, match='IO ERROR'): read(str(tmp_path/'absent'))
     prompts = []
-    monkeypatch.setattr('builtins.input', lambda prompt: prompts.append(prompt) or 'bob')
+    monkeypatch.setattr('builtins.input', lambda prompt: prompts.append(prompt) or bpl('"b","ob"').py)
     teq(bpl('"-" •nput "Name? " ⋄ "Hi ",⎕').py, 'Hi bob')
     teq(prompts, ['Name? '])
     bpl('"-" •nput "a" ⋄ ⎕←1')

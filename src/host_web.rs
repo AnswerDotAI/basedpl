@@ -1,5 +1,5 @@
 //! What the browser build takes from the page: the clock, file reads, Unicode normalization, `•fetch`'s transport and `•r`'s regular expressions. `host.rs` gives the native versions.
-use crate::{data::{Request, Response}, execution::Context, regex::Match, Error};
+use crate::{data::{Request, Response}, regex::Match, Error};
 use js_sys::Uint8Array;
 use std::{cell::RefCell, io, path::{Path, PathBuf}};
 use web_sys::{Url, XmlHttpRequest, XmlHttpRequestResponseType};
@@ -40,10 +40,10 @@ pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> {
     }
 }
 /// The response to `request`. CORS applies, and a relative URL resolves against the page's.
-pub(crate) fn fetch(request: Request, cx: &Context<'_>) -> Result<Response, Error> {
+pub(crate) fn fetch(request: Request) -> Result<Response, Error> {
     let method = request.method.as_deref().unwrap_or(if request.body.is_some() { "POST" } else { "GET" });
-    let url = url(Path::new(&request.url)).map_err(|e| cx.io_error(&request.url, e))?;
-    let (status, headers, body) = send(method, &url, &request.headers, request.body.as_deref()).map_err(|e| cx.io_error(&request.url, e))?;
+    let url = url(Path::new(&request.url)).map_err(|e| Error::io(&request.url, e))?;
+    let (status, headers, body) = send(method, &url, &request.headers, request.body.as_deref()).map_err(|e| Error::io(&request.url, e))?;
     let headers = headers.lines().filter_map(|line| line.split_once(": ")).map(|(name, value)| (name.into(), value.into())).collect();
     Ok(Response { status: status.into(), headers, body })
 }
@@ -86,7 +86,7 @@ impl Regex {
         Ok(())
     }
     /// `text` with each match replaced by `template`, which `String.prototype.replace` expands: `$1`, `$<name>` and `$$`.
-    pub(crate) fn replace(&self, template: &str, text: &str, _: &Context<'_>) -> Result<String, Error> {
+    pub(crate) fn replace(&self, template: &str, text: &str) -> Result<String, Error> {
         let regexp = regexp(&self.pattern).expect("the pattern compiled when •r made it");
         Ok(js_sys::JsString::from(text).replace_by_pattern(&regexp, template).into())
     }

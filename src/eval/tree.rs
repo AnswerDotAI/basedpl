@@ -484,7 +484,7 @@ impl Recording {
     pub(super) fn evaluate(&self, nodes: &[Node], session: &Session, tail: bool) -> Result<Step, Error> {
         if self.facts.iter().any(|fact| fact.changed(session)) { return Binder::evaluate(nodes, session, tail); }
         let nodes = self.rewrite.as_deref().unwrap_or(nodes);
-        session.execution.check(&nodes[0].span)?;
+        crate::execution::check().at(&nodes[0].span)?;
         let mut inline: [Option<Entity>; INLINE];
         let mut heap: Vec<Option<Entity>>;
         let registers: &mut [Option<Entity>] = if self.registers <= INLINE { inline = Default::default(); &mut inline } else {
@@ -551,12 +551,12 @@ impl Recording {
                     if tail && *last && tails(&f) {
                         return Ok(Step::Tail(Application { function: f.into_owned(), left: x.map(Cow::into_owned), right: y.into_owned(), span: span.clone(), unshy: false, expression: None }));
                     }
-                    let bound = f.call(x.as_deref(), &y, &mut session.at(span))?;
+                    let bound = f.call(x.as_deref(), &y, span)?;
                     if !put(registers, *to, Entity::of(bound.value, range.clone(), bound.shy), *result) { continue }
                     (*level, Over::Failed(resume))
                 }
                 Op::CallTines { level, left, function, argument, to, span, range, result, resume } => {
-                    let bound = self.call_tines(session, registers, *left, *function, *argument, span, source)?;
+                    let bound = self.call_tines(registers, *left, *function, *argument, span, source)?;
                     if !put(registers, *to, Entity::of(bound.value, range.clone(), bound.shy), *result) { continue }
                     (*level, Over::Failed(resume))
                 }
@@ -564,7 +564,7 @@ impl Recording {
                     let (operand, operator) = (self.value(registers, *operand, source)?, self.value(registers, *operator, source)?);
                     let entity = match derived(operand, operator, span)? {
                         Derived::Term(binding) => Entity::of(binding, range.clone(), false),
-                        Derived::Call(f, x, y) => { let bound = f.call(x.as_ref(), &y, &mut session.at(span))?; Entity::of(bound.value, range.clone(), bound.shy) }
+                        Derived::Call(f, x, y) => { let bound = f.call(x.as_ref(), &y, span)?; Entity::of(bound.value, range.clone(), bound.shy) }
                     };
                     if !put(registers, *to, entity, *result) { continue }
                     (*level, Over::Failed(resume))
@@ -660,14 +660,13 @@ impl Recording {
 
     /// The call of a group's train, which register `function` holds as its tines: by its tines where `train_call` can call them in place, and otherwise as its function. A level that the binder took over holds its train as a function, which calls as any function does. A train's call is never a tail call.
     #[inline(never)]
-    fn call_tines(&self, session: &Session, registers: &mut [Option<Entity>], left: Option<Read>, function: Read, argument: Read, span: &Span, source: &Arc<Source>) -> Result<Bound, Error> {
+    fn call_tines(&self, registers: &mut [Option<Entity>], left: Option<Read>, function: Read, argument: Read, span: &Span, source: &Arc<Source>) -> Result<Bound, Error> {
         let x = match left { Some(x) => Some(self.argument(registers, x, source)?), None => None };
         let f = self.read(registers, function);
         let y = self.argument(registers, argument, source)?;
-        let cx = session.at(span);
-        if let Term::Tines(tines) = &f.term && let Some(bound) = train_call(tines, x.as_deref(), &y, &cx) { return bound; }
+        if let Term::Tines(tines) = &f.term && let Some(bound) = train_call(tines, x.as_deref(), &y, span) { return bound; }
         let (x, f) = match x { Some(x) => (Some(x), function_of(f, source)?), None => split_call(f, source)? };
-        f.call(x.as_deref(), &y, &cx)
+        f.call(x.as_deref(), &y, span)
     }
 
     /// The entity that `read` gives: a register's, which it takes, or a constant, which it borrows.

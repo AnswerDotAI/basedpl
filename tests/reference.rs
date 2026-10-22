@@ -10,6 +10,7 @@ const SOURCES: &[(&str, &str)] = &[
 
 fn cases(text: &str) -> Vec<Value> { reference::cases(text).unwrap() }
 
+#[test]
 fn reference_format_and_comparison() {
     let file = json!({"code":r#"testpath •nput "héllo" ⋄ •nget testpath"#, "expected_code":r#""héllo""#});
     for _ in 0..2 { assert_eq!(reference::check(&file, &InterruptHandle::default())["status"], "pass"); }
@@ -31,7 +32,7 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&output_error, &InterruptHandle::default())["status"], "mismatch");
     let exactness = json!({"code":"1", "expected_code":"1ₓ"});
     assert_eq!(reference::check(&exactness, &InterruptHandle::default())["status"], "mismatch");
-    let kinds = reference::check(&json!({"code":r#"{⍵?1;$t}"batch"⊃•prefs ⍬"#, "expected":{"shape":[], "data":[1], "prototype":0}, "serial":true}), &InterruptHandle::default());
+    let kinds = reference::check(&json!({"code":r#"{⍵?1;$t}"batch"⊃•prefs ⍬"#, "expected":{"shape":[], "data":[1], "prototype":0}}), &InterruptHandle::default());
     assert_eq!((kinds["status"].as_str(), kinds["message"].as_str()), (Some("mismatch"), Some("storage kind: float64 with the batch pref on, bool with the batch pref off")));
     let captured = json!({"code":"1ₓ", "expected":{"shape":[], "data":[1], "prototype":0}});
     assert_eq!(reference::check(&captured, &InterruptHandle::default())["status"], "pass");
@@ -56,12 +57,13 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "mismatch");
 }
 
-/// Every case, run once for each of `reference::check`'s runs: with the `batch` pref off, then on, under which maps first try one call of their operand on batches of their cells, then on with fusion's small sizes, under which every fusible call waits and a graph splits even small arrays into blocks, then on with the code as the body of a dfn called twice. Each of the first three runs must meet the case's expectation, with values held in the same kinds of storage. In the fourth, the dfn's second call, which runs the statements its first call recorded, must give the first call's result. The format's own checks run first, in this test, because a case that calls `•explain` records what every thread in its process does, so no other test may evaluate beside it.
-#[test]
-fn reference_cases() {
-    reference_format_and_comparison();
-    // Shared, so that no timing runs while the cases load the machine.
-    let _lock = rustymath::timing::shared().unwrap();
+/// The variable that makes a run of `reference_cases` check one share of the cases: the share's number and the number of shares, as in `3 8`.
+const SHARD: &str = "BASEDPL_SHARD";
+/// The start of each line on which a share prints one of its failures, as JSON.
+const FAILURE: &str = "reference failure: ";
+
+/// The cases that `BASEDPL_SOURCE` and `BASEDPL_CASE` select, in `SOURCES`' order, each with its file's name as `file`. Panics on an id that two cases share.
+fn chosen() -> Vec<Value> {
     let mut ids = std::collections::HashSet::new();
     let mut chosen = Vec::new();
     let selected = std::env::var("BASEDPL_CASE").ok();
@@ -75,8 +77,38 @@ fn reference_cases() {
         let wanted = |case: &Value| selected.as_deref().is_none_or(|s| case["id"].as_str().unwrap().starts_with(s));
         chosen.extend(all.into_iter().filter(wanted).map(|mut case| { case["file"] = json!(name); case }));
     }
+    chosen
+}
+
+/// Every case, run once for each of `reference::check`'s runs: with the `batch` pref off, then on, under which maps first try one call of their operand on batches of their cells, then on with fusion's small sizes, under which every fusible call waits and a graph splits even small arrays into blocks, then on with the code as the body of a dfn called twice. Each of the first three runs must meet the case's expectation, with values held in the same kinds of storage. In the fourth, the dfn's second call, which runs the statements its first call recorded, must give the first call's result. A process evaluates one case at a time, so the test runs a child process of itself for each core. Each child checks every n-th case (`SHARD`) and prints its failures for the parent (`FAILURE`).
+#[test]
+fn reference_cases() {
+    let chosen = chosen();
+    if let Ok(shard) = std::env::var(SHARD) {
+        let (k, n) = shard.split_once(' ').and_then(|(k, n)| Some((k.parse().ok()?, n.parse().ok()?))).expect("BASEDPL_SHARD holds a share and a count");
+        for failure in reference::failures(chosen.iter().skip(k).step_by(n), &InterruptHandle::default()) { println!("{FAILURE}{failure}"); }
+        return;
+    }
+    // Shared, so that no timing runs while the cases load the machine.
+    let _lock = rustymath::timing::shared().unwrap();
     let count = chosen.len();
-    let failures: Vec<String> = reference::failures(&chosen, &InterruptHandle::default()).iter().map(|f| {
+    assert!(count > 0, "no reference cases selected");
+    let shards = std::thread::available_parallelism().map_or(1, |n| n.get()).min(count);
+    // macOS reads the directory that holds a process's executable as its bundle when a framework such as ImageIO first asks for the bundle's information, and `target/debug/deps` holds hundreds of thousands of files. The children run from a copy of this test in a directory of its own.
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("reference");
+    std::fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
+    let children: Vec<_> = (0..shards).map(|k| std::process::Command::new(&exe)
+        .args(["reference_cases", "--exact", "--nocapture"]).env(SHARD, format!("{k} {shards}"))
+        .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap()).collect();
+    let mut failures: Vec<Value> = children.into_iter().flat_map(|child| {
+        let output = child.wait_with_output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        assert!(output.status.success(), "a share of the reference cases stopped:\n{stdout}{}", String::from_utf8_lossy(&output.stderr));
+        stdout.lines().filter_map(|line| line.strip_prefix(FAILURE)).map(|line| serde_json::from_str(line).unwrap()).collect::<Vec<Value>>()
+    }).collect();
+    failures.sort_by_key(|f| (SOURCES.iter().position(|&(name, _)| f["file"] == name), f["line"].as_u64()));
+    let failures: Vec<String> = failures.iter().map(|f| {
         format!(
             "{}.bpl:{} [{}] {}: {} ({})",
             f["file"].as_str().unwrap(),
@@ -87,7 +119,6 @@ fn reference_cases() {
             f["kind"]
         )
     }).collect();
-    assert!(count > 0, "no reference cases selected");
     assert!(failures.is_empty(), "{} of {count} reference cases failed:\n{}", failures.len(), failures.join("\n"));
     eprintln!("{count} reference cases passed with the batch pref off, on, and on with fusion at any size");
 }

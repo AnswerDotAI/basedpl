@@ -1,5 +1,5 @@
 //! How time and memory grow with the size of the arguments. Each case runs at `N` and `8 * N` items. Its time, allocated bytes and peak bytes may each grow by at most `LIMIT` times. A linear or n log n cost stays below that. A quadratic cost grows about 64 times. A global allocator counts, on the calling thread alone, the bytes that each call allocates, its peak and the bytes it keeps. The test harness's other threads stay out of the measurements. Rustymath runs on the calling thread too, with `set_threads(1)`. Otherwise memory that the calling thread allocates and a Rayon worker frees, such as a block of Rayon's job queue, counts as kept.
-use basedpl::{EvalOptions, Session};
+use basedpl::{EvalOptions, Session, Turn};
 use std::{alloc::{GlobalAlloc, Layout, System}, cell::Cell, io::Write};
 
 thread_local! {
@@ -40,15 +40,15 @@ const RECORD_PEAK_PER_ITEM: usize = 1200;
 struct Cost { time: f64, allocated: usize, peak: usize, kept: usize }
 
 /// A session whose arguments have `n` items.
-fn session(n: usize) -> Session {
-    let mut session = Session::new();
+fn session(n: usize) -> Turn {
+    let session = Session::new();
     let setup = session.eval(&format!("v←¿{n}⍴0 ⋄ w←¿{n}⍴0 ⋄ iv←⍳{n}ₓ ⋄ b←0=3|iv ⋄ i←¿{n}⍴{n}ₓ ⋄ m←{} 2⍴v ⋄ q←iv÷7", n / 2));
     assert!(setup.error.is_none(), "{:?}", setup.error);
     session
 }
 
-fn cost(session: &mut Session, code: &str) -> Cost {
-    let mut run = || {
+fn cost(session: &Session, code: &str) -> Cost {
+    let run = || {
         let result = session.eval_with(code, EvalOptions { echo: false, ..EvalOptions::default() });
         assert!(result.error.is_none(), "{code}: {:?}", result.error);
     };
@@ -99,7 +99,7 @@ const BUDGETS: &[(&str, f64, usize)] = &[
 ];
 
 /// The bytes that the result of `code` holds: its number of items times the size of one item in its storage.
-fn result_bytes(session: &mut Session, code: &str) -> usize {
+fn result_bytes(session: &Session, code: &str) -> usize {
     let sizes = format!("[1 8 8 16 4 {}]ₓ", std::mem::size_of::<basedpl::Value>());
     let names = r#""bool" "integer" "float64" "complex128" "character" "mixed""#;
     let result = session.eval(&format!("r←{code} ⋄ s←(•storage r).kind ⋄ (≢,r)×({names}⍳⊂s)⌷{sizes}"));
@@ -123,6 +123,7 @@ fn allocation_failures() -> Vec<String> {
 
 /// Pervasive functions, reductions, catenation, indexing, search, Key, partitions, display and each are linear. So are loops of single-item updates and of appends, in their count. So is a gradient through a split into rows that a mix puts back together, where each row reads a few items of one record and of one shared cotangent. Grade is n log n. Each case in `BUDGETS` allocates within its budget.
 #[test]
+#[cfg_attr(debug_assertions, ignore = "debug assertions change the costs it times")]
 fn costs_grow_as_expected() {
     rustymath::parallel::set_threads(1);
     let mut failures =

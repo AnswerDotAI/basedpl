@@ -2,7 +2,7 @@ use basedpl::{buffer::{Buffer, DType, FloatWidth, IntBuf, View}, EvalOptions, Ev
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
-    exceptions::{PyBufferError, PyKeyError, PyTypeError, PyValueError}, ffi, prelude::*, sync::{MutexExt, PyOnceLock},
+    exceptions::{PyBufferError, PyKeyError, PyTypeError, PyValueError}, ffi, prelude::*, sync::PyOnceLock,
     types::{PyBool, PyBoolMethods, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyRange, PySlice, PyString, PyTuple, PyType}, IntoPyObjectExt
 };
 use rustymath::{layout::Keys, structure::IndexPart};
@@ -341,19 +341,21 @@ impl PyArray {
         Ok(cells.into_iter().map(Self::from).collect())
     }
     fn select(&self, py: Python<'_>, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Py<PyDict>> {
-        let value = match selection(self.value()?, index, convert)? {
-            IndexSelection::Planned(plan, atom) => self.value()?.selected(plan, atom),
-            IndexSelection::Rich(parts) => self.value()?.select(&parts),
-        }.map_err(index_error)?;
+        let (value, selection) = (self.value()?.clone(), selection(self.value()?, index, convert)?);
+        let value = py.detach(move || {
+            let _turn = Session::current();
+            match selection { IndexSelection::Planned(plan, atom) => value.selected(plan, atom), IndexSelection::Rich(parts) => value.select(&parts) }
+        }).map_err(index_error)?;
         let mut result = Evaluation::default();
         match value { Value::Function(f) => result.function = Some(f), a => result.value = Some(a) }
         response(py, result)
     }
-    fn assign(&self, index: &Bound<'_, PyAny>, values: PyRef<'_, PyArray>, convert: &Bound<'_, PyAny>) -> PyResult<Self> {
-        match selection(self.value()?, index, convert)? {
-            IndexSelection::Planned(plan, atom) => self.value()?.assigned(plan, atom, values.value()?),
-            IndexSelection::Rich(parts) => self.value()?.assigned_parts(&parts, values.value()?),
-        }.map(Self::from).map_err(index_error)
+    fn assign(&self, py: Python<'_>, index: &Bound<'_, PyAny>, values: PyRef<'_, PyArray>, convert: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let (value, values, selection) = (self.value()?.clone(), values.value()?.clone(), selection(self.value()?, index, convert)?);
+        py.detach(move || {
+            let _turn = Session::current();
+            match selection { IndexSelection::Planned(plan, atom) => value.assigned(plan, atom, &values), IndexSelection::Rich(parts) => value.assigned_parts(&parts, &values) }
+        }).map(Self::from).map_err(index_error)
     }
     /// Whether this array holds `query`, a native array or a `str`. A one-character string is an atom. A longer one is one item where the major cells are items, as a list of strings holds them, and otherwise a character vector, which matches a row of characters.
     fn contains(&self, py: Python<'_>, query: &Bound<'_, PyAny>) -> PyResult<bool> {
@@ -365,7 +367,7 @@ impl PyArray {
             },
             Err(_) => query.extract::<PyRef<'_, PyArray>>()?.value()?.clone(),
         };
-        py.detach(move || value.contains(&query)).map_err(|e| match &e.kind {
+        py.detach(move || { let _turn = Session::current(); value.contains(&query) }).map_err(|e| match &e.kind {
             basedpl::ErrorKind::Array(e) if e.kind == rustymath::error::Kind::Rank => PyTypeError::new_err(e.message.to_string()),
             _ => PyValueError::new_err(e.to_string()),
         })
@@ -424,7 +426,7 @@ impl PyOperator {
 enum Run { Code(String), Call(Function, Vec<Value>) }
 struct EvalRequest { run: Option<Run>, bindings: Vec<(String, Operand)>, options: EvalOptions }
 impl EvalRequest {
-    fn run(&mut self, session: &mut Session) -> Result<Evaluation, &'static str> {
+    fn run(&mut self, session: &Session) -> Result<Evaluation, &'static str> {
         for (name, value) in self.bindings.drain(..) {
             match value {
                 Operand::Value(a) => session.set(&name, a), Operand::Function(f) => session.set_function(&name, f)
@@ -439,12 +441,12 @@ impl EvalRequest {
 }
 
 #[pyclass(frozen, name = "_Session")]
-struct PySession { session: Mutex<Session>, active: Mutex<Option<InterruptHandle>> }
+struct PySession { active: Mutex<Option<InterruptHandle>> }
 
 #[pymethods]
 impl PySession {
     #[new]
-    fn new() -> Self { Self { session: Mutex::new(Session::new()), active: Mutex::new(None) } }
+    fn new() -> Self { Self { active: Mutex::new(None) } }
     /// Runs BPL `code` after binding `bindings`. `show` is called with each output event as BPL produces it, so output and input prompts appear in order.
     #[pyo3(signature = (*, code=None, bindings=Vec::new(), timeout=None, echo=false, show=None))]
     fn eval(
@@ -463,10 +465,11 @@ impl PySession {
     }
     #[pyo3(signature = (*, name=None, function=None))]
     fn inspect(&self, py: Python<'_>, name: Option<String>, function: Option<PyRef<'_, PyFunction>>) -> PyResult<Option<Py<PyDict>>> {
-        let info = {
-            let session = self.session.lock_py_attached(py).unwrap();
-            match (name, function) { (Some(name), _) => session.inspect(&name), (_, Some(f)) => Some(f.inner.inspect(&session)), _ => None }
-        };
+        let function = function.map(|f| f.inner.clone());
+        let info = py.detach(move || {
+            let session = Session::current();
+            match (name, function) { (Some(name), _) => session.inspect(&name), (_, Some(f)) => Some(f.inspect(&session)), _ => None }
+        });
         info.map(|i| {
             let d = PyDict::new(py);
             d.set_item("kind", i.kind)?;
@@ -477,7 +480,7 @@ impl PySession {
     }
     /// The function that `expression` writes, late-bound, with its numbers read at the session's default width.
     fn late_bound(&self, py: Python<'_>, expression: &str) -> PyResult<Py<PyDict>> {
-        let result = match self.session.lock_py_attached(py).unwrap().late_bound(expression) {
+        let result = match py.detach(|| Session::current().late_bound(expression)) {
             Ok(function) => Evaluation { function: Some(function), ..Evaluation::default() },
             Err(error) => Evaluation { error: Some(error), ..Evaluation::default() },
         };
@@ -492,8 +495,7 @@ impl PySession {
     fn make_interactive(&self) { Session::make_interactive() }
     #[pyo3(signature = (prefix="", classes=vec![2, 3, 4], complete=false))]
     fn names(&self, py: Python<'_>, prefix: &str, classes: Vec<i64>, complete: bool) -> Vec<String> {
-        let session = self.session.lock_py_attached(py).unwrap();
-        if complete { session.complete(prefix) } else { session.name_list(&classes, prefix) }
+        py.detach(|| { let session = Session::current(); if complete { session.complete(prefix) } else { session.name_list(&classes, prefix) } })
     }
     fn interrupt(&self) { if let Some(active) = &*self.active.lock().unwrap() { active.interrupt(); } }
 }
@@ -507,11 +509,14 @@ impl PySession {
         request.options.input = Some(Arc::new(PythonInput { caught: signal.clone() }));
         request.options.output = show.map(|show| stream(show, shown.clone(), signal.clone()));
         let mut result = {
-            let mut guard = self.session.lock_py_attached(py).unwrap();
-            let session = &mut *guard;
-            *self.active.lock().unwrap() = Some(request.options.interrupt.clone());
-            let result = py.detach(move || request.run(session));
-            *self.active.lock().unwrap() = None;
+            let active = &self.active;
+            let result = py.detach(move || {
+                let session = Session::current();
+                let outer = active.lock().unwrap().replace(request.options.interrupt.clone());
+                let result = request.run(&session);
+                *active.lock().unwrap() = outer;
+                result
+            });
             result.map_err(PyValueError::new_err)?
         };
         result.output.append(&mut shown.lock().unwrap());
@@ -630,7 +635,7 @@ fn error(py: Python<'_>, e: &basedpl::Error) -> PyResult<Py<PyAny>> {
         serde_json::json!([chars[s.range.start], chars[s.range.end]])
     };
     let mut encoded = basedpl::protocol::error(e);
-    encoded["span"] = span(&e.span);
+    if let Some(s) = &e.span { encoded["span"] = span(s); }
     if let Some(calls) = encoded["calls"].as_array_mut() { for (call, s) in calls.iter_mut().zip(&e.calls) { call["span"] = span(s); } }
     python(py, &encoded)
 }
@@ -657,7 +662,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_parse, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("symbols", python(m.py(), &basedpl::symbols::rows())?)?;
-    m.add("_system_functions", basedpl::system::names().collect::<Vec<_>>())?;
+    m.add("_builtin_names", basedpl::symbols::builtins())?;
     m.add("_superscripts", basedpl::superscripts())?;
     m.add("_subscripts", basedpl::subscripts())?;
     Ok(())

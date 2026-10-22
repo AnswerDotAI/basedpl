@@ -1,11 +1,12 @@
 //! Batched maps. A batched run calls the operand of an Each, a Rank or an outer product once, on carriers that hold the map's whole arguments (`Batch`), instead of once for each cell. Each, Rank and an outer product lay their arguments over the map's frame through the agreement that pairs their cells (`Arguments::laid`). A map starts a run through `tried` while the `batch` pref is on. `tried` begins the run's level (`transform::Kind::Batched`) and ends it after the call. Routing hands each call with a batch at that level to `call`, for a primitive or an operation that primitives name, such as a fold by a primitive, or to `route`, for an operation by a dfn. `call` runs the call on the whole arguments at the cells' ranks, by Rank's routes for whole arrays (`eval::whole_cells` and `eval::folded_cells`). A call with no such rule stops the run (`transform::Stop`). The map then calls the operand once for each cell, as it does without batching. A call that would repeat constants into too many items stops the run with a chunk size instead, and the operand runs once on each chunk of cells (`chunked`). Batches hold only compact items of one kind, whose cells of rank 0 are atoms.
+use crate::session;
 use crate::{
     agreement::{laid_cells, spread, Agreement},
     array::{item_dtype, Gather, Layout, Promotion, Storage, Widening},
-    execution::Context,
+    
     primitive::{Form, Operation, Primitive},
     transform::{Carrier, Cause, Kept, Op, Pairing, Stop},
-    Error, ErrorAt, ErrorKind, Function, Span, Value,
+    Error, Described, ErrorKind, Function, Span, Value,
 };
 use rustymath::{agreement::Mapping, buffer::DType, gather::Steps};
 use std::sync::{Arc, OnceLock};
@@ -51,13 +52,7 @@ impl Batch {
     /// The items, for code with no rule for batches (`ArrayData::storage`). Item `i` is item `i` of every cell, as a batch of atoms. A kernel that reads a number from such an item gets an error (`Value::computed`). An observing read of it stops the run (`Value::observed`). Either way the map falls back to one call for each cell. Building the items records an `itemwise` row in `•explain`.
     #[cold]
     #[inline(never)]
-    pub(crate) fn storage(&self) -> &Storage {
-        self.items.get_or_init(|| {
-            let n = self.template().len();
-            crate::explain::itemwise("batched items", n);
-            Storage::mixed((0..n).map(|i| self.at(i)).collect())
-        })
-    }
+    pub(crate) fn storage(&self) -> &Storage { crate::transform::Carrier::built(&self.items, "batched items", self.template().len(), |i| self.at(i)) }
     /// This batch with each cell laid out by `layout`, as a view of the whole with no items copied. `layout` has as many items as a cell.
     pub(crate) fn view(&self, layout: Layout) -> Value {
         batch(self.level, self.whole.relaid(self.frame_layout().concat(&layout)).expect("a view has as many items as its base"), self.frame)
@@ -109,16 +104,16 @@ impl<'a> Arg<'a> {
     fn first(self) -> &'a Value { match self { Arg::Batched(b) => b.template(), Arg::Constant(c) => c } }
 }
 
-/// Cell `c` of `value` in the batched run that `cx` is in. A batch at the run's level gives its cell `c`. Any other value is the same for every cell and gives itself, as it does outside a batched run.
-pub(crate) fn cell(value: &Value, c: usize, cx: &Context<'_>) -> Result<Value, Error> {
-    match cx.session.batch_level().map(|level| arg(value, level)) {
-        Some(Arg::Batched(b)) => b.cell(c).error_at(cx.span, "invalid batch"),
+/// Cell `c` of `value` in the running batched run. A batch at the run's level gives its cell `c`. Any other value is the same for every cell and gives itself, as it does outside a batched run.
+pub(crate) fn cell(value: &Value, c: usize) -> Result<Value, Error> {
+    match session().batch_level().map(|level| arg(value, level)) {
+        Some(Arg::Batched(b)) => b.cell(c).described("invalid batch"),
         _ => Ok(value.clone()),
     }
 }
 
 /// The error that stops a batched map's run with `stop`, at `span`.
-fn stop<T>(stop: Stop, span: &Span) -> Option<Result<T, Error>> { Some(Err(stop.at(span))) }
+fn stop<T>(stop: Stop) -> Option<Result<T, Error>> { Some(Err(stop.into())) }
 
 /// The stop of batched run `level` at a call of `operation` that no rule for batches covers. A primitive's stop keeps its glyph for `•explain` (`Stop::refusing`).
 fn refusal(level: u64, operation: Operation) -> Stop {
@@ -159,8 +154,8 @@ fn signature(left: Option<&Side>, right: &Side, frame: &[usize], with_frame: boo
 }
 
 /// `whole` as a result batch of level `level`, with `frame` frame axes, or the run's stop, `refused`, where a batch can't hold it. Batches hold only compact items of one kind, whose cells of rank 0 are atoms. Where `whole` has no axes after the frame, `atoms` says whether each cell's own result is an atom.
-pub(crate) fn result(level: u64, whole: Value, frame: usize, atoms: impl FnOnce() -> bool, refused: Stop, cx: &Context<'_>) -> Result<Value, Error> {
-    if whole.template_dtype().is_none() || (whole.shape().len() == frame && !atoms()) { return Err(refused.at(cx.span)); }
+pub(crate) fn result(level: u64, whole: Value, frame: usize, atoms: impl FnOnce() -> bool, refused: Stop) -> Result<Value, Error> {
+    if whole.template_dtype().is_none() || (whole.shape().len() == frame && !atoms()) { return Err(refused.into()); }
     Ok(batch(level, whole, frame))
 }
 
@@ -176,9 +171,9 @@ pub(crate) fn from_cells(level: u64, frame: &Layout, cells: Vec<Value>) -> Optio
 }
 
 /// `f` for each cell of batched run `level`, whose frame is `frame`, in cell order, with the cells' values joined into one batch (`from_cells`). Where the values don't stack, as values of different shapes or kinds don't, the run stops for a call with no rule for these arguments (`Cause::Rule`).
-pub(crate) fn each_cell(level: u64, frame: &Layout, span: &Span, f: impl FnMut(usize) -> Result<Value, Error>) -> Result<Value, Error> {
+pub(crate) fn each_cell(level: u64, frame: &Layout, f: impl FnMut(usize) -> Result<Value, Error>) -> Result<Value, Error> {
     let cells = (0..frame.shape().iter().product()).map(f).collect::<Result<Vec<_>, _>>()?;
-    from_cells(level, frame, cells).ok_or_else(|| Stop::new(level, Cause::Rule).at(span))
+    from_cells(level, frame, cells).ok_or_else(|| Stop::new(level, Cause::Rule).into())
 }
 
 /// `value`, a result of batched run `level` over the cells that `frame` lays out, as one array with the frame's axes first: a batch's whole, or a constant, which is every cell's result, repeated over the frame. A result that holds batches as items, as a strand of batches does, joins into one batch where it can. Primitives handle each batch in such a value on its own, so only a run's results need the join. `None` for any other result, such as a batch over other cells, or a scalar that isn't an atom, because a batch's cells of rank 0 are atoms.
@@ -209,7 +204,7 @@ pub(crate) fn read_cells(value: &Value, level: u64, read: &impl Fn(&Value, usize
     if let Some(b) = value.carrier_at(level).and_then(Carrier::batch) { return Ok(batch(level, read(&b.whole, b.frame)?, 1)); }
     if value.carrier().is_none() && value.holds_values() && value.carried() {
         let items = value.elements().map(|e| read_cells(&e, level, read, span)).collect::<Result<Vec<_>, _>>()?;
-        return value.layout().collect(items, value.prototype()).error_at(span, "invalid array");
+        return value.layout().collect(items, value.prototype()).described("invalid array");
     }
     Ok(value.clone())
 }
@@ -222,84 +217,84 @@ fn named<'a>(values: impl IntoIterator<Item = &'a Value>) -> bool { values.into_
 /// - `⊢` and `⊣` give the argument they choose, a batch or a constant.
 /// - A form defined by other primitives runs its own code, whose calls route again.
 /// - `¿` runs its own code, which draws from the generator's one stream: a roll once on the batch's whole, and a deal for each cell in cell order (`primitive::drawn_value`).
-/// - `⍕` runs its own code, whose effect check stops the run, as it does for a batch inside a nested argument (`Context::formats`).
+/// - `⍕` runs its own code, whose effect check stops the run, as it does for a batch inside a nested argument (`transform::formats`).
 /// - A fold or scan of each cell by a primitive runs by Rank's rule for folds (`eval::folded_cells`). A fold of an atom is the atom. A fold along an axis that isn't one of the cell's stops the run, so that each cell's call gives its own result or error.
 /// - A fold or scan by an operand that isn't a primitive runs its own loop, which calls the operand once for each stage, on item `j` of every cell as one batch of atoms (`Batch::at`). A fold of an atom is the atom, and a fold along several axes, or along an axis that isn't one of the cell's, stops the run.
 /// - A system function runs once for each cell, as it runs once for each item of an argument that holds several, and code in it that acts stops the run (`system`). A random draw runs its own code, which draws for each cell as `¿` does.
 /// - A function with an attached rule runs its own code on a batch. Where the batch's whole carries a dual, the rule applies at that dual's level, as it would to each cell.
 /// - `f.g` by functions that aren't primitives stops the run.
 /// - Any other call, such as a product of primitives, or `⌹`, `+.×` or `-.×` on each matrix of stacks, runs on the whole arguments by Rank's routes (`whole_call`). A call that no route covers stops the run.
-pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64, span: &Span) -> Option<Result<Value, Error>> {
     let (op, pairing) = match op {
         Op::Operation(op, pairing) => (op, pairing),
-        Op::System(function, f) => return system(function, f, left, right, level, cx),
+        Op::System(function, f) => return system(function, f, left, right, level, span),
         Op::Ruled(f, rule) => {
             let tag = match arg(right, level) { Arg::Batched(b) => crate::derivative::tag(&b.whole), Arg::Constant(c) => crate::derivative::tag(c) };
-            return tag.map(|tag| if left.is_none() { crate::derivative::attached(f, rule, right, tag, cx) } else { Err(crate::derivative::two_arguments(cx.span)) });
+            return tag.map(|tag| if left.is_none() { crate::derivative::attached(f, rule, right, tag, span) } else { Err(crate::derivative::two_arguments()) });
         }
         Op::Fold(kind, axis) => {
-            let (None, Arg::Batched(b)) = (left, arg(right, level)) else { return stop(Stop::new(level, Cause::Rule), cx.span) };
+            let (None, Arg::Batched(b)) = (left, arg(right, level)) else { return stop(Stop::new(level, Cause::Rule)) };
             if b.rank() == 0 { return Some(Ok(right.clone())); }
-            return match kind.axis(axis, b.template(), cx.span) { Ok(_) => None, Err(_) => stop(Stop::new(level, Cause::Rule), cx.span) };
+            return match kind.axis(axis, b.template()) { Ok(_) => None, Err(_) => stop(Stop::new(level, Cause::Rule)) };
         }
-        Op::Product => return stop(Stop::new(level, Cause::Rule), cx.span),
+        Op::Product => return stop(Stop::new(level, Cause::Rule)),
     };
     let (x, y) = (left.map(|v| arg(v, level)), arg(right, level));
     match (op, pairing) {
         (Operation::Primitive(p), Pairing::Axis(axis)) => {
-            if axis.is_some() { return stop(Stop::refusing(level, p), cx.span); }
+            if axis.is_some() { return stop(Stop::refusing(level, p)); }
             if matches!(p.facts(left.is_some()).form, Form::Defined) || matches!(p, Primitive::Random | Primitive::Format) { return None; }
             if let Primitive::Identity(chooses_left) = p { return Some(Ok(if chooses_left { left.unwrap_or(right) } else { right }.clone())); }
-            whole_call(op, x, y, false, level, cx)
+            whole_call(op, x, y, false, level, span)
         }
         (Operation::Fold(p, kind), Pairing::Axis(axis)) => {
-            let Arg::Batched(b) = y else { return stop(Stop::new(level, Cause::Rule), cx.span) };
+            let Arg::Batched(b) = y else { return stop(Stop::new(level, Cause::Rule)) };
             if b.rank() == 0 { return Some(Ok(right.clone())); }
             let along = axis.unwrap_or(kind.default_axis(b.rank()));
-            if along >= b.rank() { return stop(Stop::new(level, Cause::Rule), cx.span); }
-            match crate::eval::folded_cells(p, kind, along, &b.whole, b.rank(), cx) {
-                Some(Ok(whole)) => Some(result(level, whole, b.frame, || true, Stop::new(level, Cause::Rule), cx)),
+            if along >= b.rank() { return stop(Stop::new(level, Cause::Rule)); }
+            match crate::eval::folded_cells(p, kind, along, None, &b.whole, b.rank(), span) {
+                Some(Ok(whole)) => Some(result(level, whole, b.frame, || true, Stop::new(level, Cause::Rule))),
                 Some(Err(e)) => Some(Err(e)),
                 None => None,
             }
         }
-        _ => whole_call(op, x, y, matches!(pairing, Pairing::Matrices), level, cx).or_else(|| stop(refusal(level, op), cx.span)),
+        _ => whole_call(op, x, y, matches!(pairing, Pairing::Matrices), level, span).or_else(|| stop(refusal(level, op))),
     }
 }
 
 /// The call of system function `f`, or of its inverse, `function`, as batched run `level` handles it. A random draw runs its own code, which draws for each cell as `¿` does (`distribution::drawn_cells`). Any other system function runs once for each cell, on that cell's arguments, as it runs once for each item of an argument that holds several (`system::Item`), and the cells' results join into one batch (`each_cell`). Code in it that acts stops the run where it acts (`Context::acts`). So does an argument that holds the run's batches inside a nested array, because a cell's call would read them whole.
-fn system(function: &Function, f: &crate::system::SystemFunction, left: Option<&Value>, right: &Value, level: u64, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+fn system(function: &Function, f: &crate::system::SystemFunction, left: Option<&Value>, right: &Value, level: u64, span: &Span) -> Option<Result<Value, Error>> {
     if f.call.draws() { return None; }
     let nested = |v: &Value| v.carrier_at(level).is_none() && v.newest().is_some_and(|m| m.id() == level);
-    if left.is_some_and(nested) || nested(right) { return stop(Stop::new(level, Cause::Rule), cx.span); }
-    let (_, frame) = cx.session.batched()?;
-    Some(each_cell(level, &frame, cx.span, |c| {
-        let x = left.map(|x| cell(x, c, cx)).transpose()?;
-        function.call_array(x.as_ref(), &cell(right, c, cx)?, cx)
+    if left.is_some_and(nested) || nested(right) { return stop(Stop::new(level, Cause::Rule)); }
+    let (_, frame) = session().batched()?;
+    Some(each_cell(level, &frame, |c| {
+        let x = left.map(|x| cell(x, c)).transpose()?;
+        function.call_array(x.as_ref(), &cell(right, c)?, span)
     }))
 }
 
 /// `operation` on `x` and `y` by Rank's routes for whole arguments (`eval::whole_cells`), at the cells' ranks, or on each matrix of the cells where `matrices`, as a result batch at level `level`. `None` where neither argument is a batch at this level, as for `⌻` with a batch inside its point, whose own code then runs. The run stops where the call would hold too many items (`oversized`), where no route covers the call, where a pervasive call's result has a kind that one route wouldn't give every item (`pervasive::expected`), and where a batch can't hold the result (`result`), such as one that gives each cell a scalar.
-fn whole_call(operation: Operation, x: Option<Arg<'_>>, y: Arg<'_>, matrices: bool, level: u64, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+fn whole_call(operation: Operation, x: Option<Arg<'_>>, y: Arg<'_>, matrices: bool, level: u64, span: &Span) -> Option<Result<Value, Error>> {
     let batch = [x, Some(y)].into_iter().flatten().find_map(|a| match a { Arg::Batched(b) => Some(b), Arg::Constant(_) => None })?;
-    if let Some(chunk) = oversized(x, y, batch.cells()) { return stop(Stop::oversized(level, chunk), cx.span); }
-    let pervasive = match operation { Operation::Primitive(p) if p.facts(x.is_some()).pervasive => Some(p), _ => None };
+    if let Some(chunk) = oversized(x, y, batch.cells()) { return stop(Stop::oversized(level, chunk)); }
+    let pervasive = match operation { Operation::Primitive(p) if p.facts(x.is_some()).pervasive() => Some(p), _ => None };
     let kind = pervasive.and_then(|p| crate::pervasive::expected(p, x.map(Arg::all), y.all()));
     let rank = |a: Arg<'_>| if matrices { 2 } else { a.rank() };
-    let whole = match crate::eval::whole_cells(operation, x.map(|a| (a.all(), rank(a))), (y.all(), rank(y)), cx) {
+    let whole = match crate::eval::whole_cells(operation, x.map(|a| (a.all(), rank(a))), (y.all(), rank(y)), span) {
         Some(Ok(whole)) => whole,
         Some(Err(e)) => return Some(Err(e)),
-        None => return stop(refusal(level, operation), cx.span),
+        None => return stop(refusal(level, operation)),
     };
     // A result of another kind took a route that some cells alone wouldn't take.
-    if kind.is_some_and(|k| whole.template_dtype().is_none_or(|d| d.kind() != k.kind())) { return stop(refusal(level, operation), cx.span); }
+    if kind.is_some_and(|k| whole.template_dtype().is_none_or(|d| d.kind() != k.kind())) { return stop(refusal(level, operation)); }
     // A pervasive call gives a cell an atom where every argument at the cell is one, and a constant scalar would make it a scalar. Another primitive's first cell shows it. Stacks of matrices give atoms only as determinants.
     let atoms = || match (operation, pervasive) {
         (_, Some(_)) => [x, Some(y)].into_iter().flatten().all(|a| match a { Arg::Constant(c) => c.is_atom(), Arg::Batched(_) => true }),
-        (Operation::Primitive(p), None) => p.call(x.map(Arg::first), y.first(), cx).is_ok_and(|v| v.is_atom()),
+        (Operation::Primitive(p), None) => p.call(x.map(Arg::first), y.first(), span).is_ok_and(|v| v.is_atom()),
         _ => true,
     };
-    Some(result(level, whole, batch.frame, atoms, refusal(level, operation), cx))
+    Some(result(level, whole, batch.frame, atoms, refusal(level, operation)))
 }
 
 /// The cells of each chunk that a call on `x` and `y` can run on, where on all the frame's `cells` cells it would hold too many items, or `None`. It holds too many where its constants with axes, taken once for each cell, would pass both 4 times the items that its arguments hold, and `CHUNK` items. Broadcasting and spreading repeat such constants (`eval::whole_cells`), and so does a result the size of a constant in each cell, where a run over cells holds one cell's share at a time. A batch counts the items it holds logically, so windows and an outer product's laid arguments count in full. A chunk is the most cells, a power of two, whose share of the constants is at most `CHUNK` items, and at least one cell.
@@ -348,7 +343,7 @@ pub(crate) fn joined(value: &Value) -> Option<Value> {
 }
 
 /// The batch of each cell's sum of its items into zeros of `layout` at `offsets`, as `linear::scatter_add` sums them: one sum on the whole, with each cell's offsets moved to that cell's place in it. A cell of one item goes to every offset.
-pub(crate) fn scatter_add(b: &Batch, offsets: &[usize], layout: &Layout, zero: &Value, cx: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn scatter_add(b: &Batch, offsets: &[usize], layout: &Layout, zero: &Value, span: &Span) -> Result<Value, Error> {
     let frame = b.frame_layout();
     let items = if b.whole.shape()[b.frame..].iter().product::<usize>() == 1 && offsets.len() != 1 {
         let one = b.whole.relaid(frame.concat(&Layout::from([1]))).expect("a cell of one item lays out as one item");
@@ -356,7 +351,7 @@ pub(crate) fn scatter_add(b: &Batch, offsets: &[usize], layout: &Layout, zero: &
     } else { b.whole.clone() };
     let size: usize = layout.shape().iter().product();
     let offsets: Vec<usize> = (0..b.cells()).flat_map(|c| offsets.iter().map(move |&o| if o == Steps::FILL { o } else { c * size + o })).collect();
-    crate::linear::scatter_add(&items, &offsets, &frame.concat(layout), zero, cx).map(|whole| batch(b.level, whole, b.frame))
+    crate::linear::scatter_add(&items, &offsets, &frame.concat(layout), zero, span).map(|whole| batch(b.level, whole, b.frame))
 }
 
 /// A batch whose whole is a dual at level `tag`, split into the batch of the dual's primal and the batch of its tangent. An attached rule that applies at an older `∂` level meets such a batch (`route`). The tangent is the full one, in the primal's layout, because a batch's whole holds the frame's axes, which a pervasive rule's smaller tangent can lack. `None` for any other value.
@@ -399,11 +394,11 @@ fn side((value, rank): (Value, usize)) -> Option<Side> {
 enum Ended { Stopped(Stop), Fell(&'static str), Passed(Error) }
 
 /// One batched run of `operand` on the cells that `frame` lays out, with a batch of the cells of each batched side, and each constant as it is. It gives the whole of the cells' results (`whole_over`).
-fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, cx: &Context<'_>) -> Result<Value, Ended> {
-    let level = cx.session.begin(crate::transform::Kind::batched(frame.clone()));
+fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, span: &Span) -> Result<Value, Ended> {
+    let level = session().begin(crate::transform::Kind::batched(frame.clone()));
     let wrapped = |side: &Side| match side { Side::Batched(v) => batch(level, v.clone(), frame.shape().len()), Side::Constant(c) => c.clone() };
-    let called = operand.call_array(x.map(&wrapped).as_ref(), &wrapped(y), cx);
-    cx.session.end();
+    let called = operand.call_array(x.map(&wrapped).as_ref(), &wrapped(y), span);
+    session().end();
     match called {
         Ok(value) => whole_over(value, level, frame).ok_or(Ended::Fell("the result")),
         Err(e) => Err(match e.kind {
@@ -415,8 +410,8 @@ fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, cx: &Cont
 }
 
 /// The whole of the cells' results from batched runs of `operand` on successive chunks of `chunk` cells of the frame that `frame` lays out, each run on its chunk's cells of the batched sides. The chunks' results join as the run over cells assembles its cells' results (`Widening::Items`). Each generator first gets back its state from before the try, so the chunks draw what one run on all the cells would draw.
-fn chunked(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, chunk: usize, cx: &Context<'_>) -> Result<Value, Ended> {
-    crate::distribution::settle(&cx.session.drawn, true);
+fn chunked(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, chunk: usize, span: &Span) -> Result<Value, Ended> {
+    crate::distribution::settle(&session().drawn, true);
     let (axes, cells) = (frame.shape().len(), frame.shape().iter().product::<usize>());
     let mut wholes = Vec::new();
     for start in (0..cells).step_by(chunk) {
@@ -430,7 +425,7 @@ fn chunked(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, chunk
             }
             Side::Constant(c) => Side::Constant(c.clone()),
         };
-        wholes.push(run(operand, x.map(&slice).as_ref(), &slice(y), &Layout::from(vec![len]), cx)?);
+        wholes.push(run(operand, x.map(&slice).as_ref(), &slice(y), &Layout::from(vec![len]), span)?);
     }
     let cell = wholes[0].layout().axes(1..wholes[0].shape().len());
     if wholes.iter().any(|w| w.layout().axes(1..w.shape().len()) != cell) { return Err(Ended::Fell("the result")); }
@@ -446,12 +441,12 @@ fn chunked(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, chunk
 /// The call: `operand` runs once, with a batch of the cells of each argument that has a frame, and with each other argument as it is (`run`). Where the call stops for too many items with chunks of cells that wouldn't (`Stop::chunk`), the operand runs once on each chunk instead (`chunked`). A chunk that stops for too many items again starts the chunks over with the smaller chunks that its stop gives. Where a call stops at this level for another cause, or fails, `tried` gives `None` after a `fallbacks` event that names the stop's cause (`transform::Stop`), or `"an error"`. A dfn operand remembers the stop for as long as its cause says (`transform::Cause::kept`). An interrupt, a timeout and an older level's stop pass through. Unless the try gives a result, each generator that it drew from gets back its state from before the try (`distribution::settle`), and the run over cells draws the same numbers as with no try.
 ///
 /// The result's assembly: the cells' results come from the call's result where that is a batch of the cells, or holds batches as items that join into one batch, as a strand of batches does (`joined`). A result that is an atom or a compact array, with no carrier and no named axis, is every cell's result. For any other result, such as a function, `tried` gives `None` after a `fallbacks` event.
-pub(crate) fn tried(operand: &Function, arguments: impl FnOnce() -> Option<Arguments>, layout: &Layout, mixed: bool, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+pub(crate) fn tried(operand: &Function, arguments: impl FnOnce() -> Option<Arguments>, layout: &Layout, mixed: bool, span: &Span) -> Option<Result<Value, Error>> {
     let frame = layout.shape();
     if frame.is_empty() || frame.contains(&0) { return None; }
     let cells = frame.iter().product();
     let declined = |reason: &'static str| -> Option<Result<Value, Error>> { rustymath::events::declined("batching", reason, cells); None };
-    if !tries(cx, cells) { return None; }
+    if !tries(cells) { return None; }
     if layout.has_names() { return declined("named axes"); }
     let memory = operand.remembers().map_or(NOTHING, |d| d.remembered());
     if memory & !CAUSE == ALWAYS { return fell_back(Earlier::of(memory), cells); }
@@ -462,9 +457,9 @@ pub(crate) fn tried(operand: &Function, arguments: impl FnOnce() -> Option<Argum
     };
     let signature = |with_frame: bool| signature(x.as_ref(), &y, frame, with_frame);
     if memory != NOTHING && memory & !CAUSE == signature(memory & 1 == 1) { return fell_back(Earlier::of(memory), cells); }
-    let mut ran = run(operand, x.as_ref(), &y, layout, cx);
-    while let Err(Ended::Stopped(stop)) = &ran && let Some(chunk) = stop.chunk() { ran = chunked(operand, x.as_ref(), &y, layout, chunk, cx); }
-    crate::distribution::settle(&cx.session.drawn, ran.is_err());
+    let mut ran = run(operand, x.as_ref(), &y, layout, span);
+    while let Err(Ended::Stopped(stop)) = &ran && let Some(chunk) = stop.chunk() { ran = chunked(operand, x.as_ref(), &y, layout, chunk, span); }
+    crate::distribution::settle(&session().drawn, ran.is_err());
     let whole = match ran {
         Ok(whole) => whole,
         Err(Ended::Stopped(stop)) => {
@@ -484,12 +479,12 @@ pub(crate) fn tried(operand: &Function, arguments: impl FnOnce() -> Option<Argum
     let assembled = if mixed { whole.relaid(layout.concat(&cell)) }
         else if cell.shape().is_empty() { whole.relaid(layout.clone()) }
         else { whole.cells(cell.shape().len()).and_then(|cells| cells.framed()).and_then(|items| items.relaid(layout.clone())) };
-    Some(assembled.error_at(cx.span, "invalid result"))
+    Some(assembled.described("invalid result"))
 }
 
 /// Whether a map of `cells` cells may try a batched call: the `batch` pref is on, and the running levels admit a batched run (`transform::Levels::admits_batch`). Where it may not, the refusal is a decline (`rustymath::events`). `tried` checks it first. A caller checks it before building arguments that only a try reads.
-pub(crate) fn tries(cx: &Context<'_>, cells: usize) -> bool {
-    let reason = if !crate::settings::batch() { "the batch pref is off" } else if !cx.session.admits_batch() { "a label level or another batched run" } else { return true };
+pub(crate) fn tries(cells: usize) -> bool {
+    let reason = if !crate::settings::batch() { "the batch pref is off" } else if !session().admits_batch() { "a label level or another batched run" } else { return true };
     rustymath::events::declined("batching", reason, cells);
     false
 }

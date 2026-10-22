@@ -22,10 +22,10 @@ pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
             if send.send((request, interrupt)).is_err() { break; }
         }
     });
-    let mut session = Session::new();
+    let session = Session::new();
     for (request, interrupt) in receive {
         let id = request.as_ref().ok().and_then(|r| r["id"].as_u64());
-        let result = request.and_then(|r| reply(&mut session, &r, interrupt)).unwrap_or_else(|message| Reply::Json(basedpl::protocol::request_error(&message)));
+        let result = request.and_then(|r| reply(&session, &r, interrupt)).unwrap_or_else(|message| Reply::Json(basedpl::protocol::request_error(&message)));
         if let Some(id) = id { active.lock().unwrap().remove(&id); }
         serde_json::to_writer(&mut *output, &Line { id, result })?;
         writeln!(output)?;
@@ -57,7 +57,7 @@ impl serde::Serialize for Line {
 }
 
 /// The result of one request, or why it can't run.
-fn reply(session: &mut Session, request: &Value, interrupt: InterruptHandle) -> Result<Reply, String> {
+fn reply(session: &Session, request: &Value, interrupt: InterruptHandle) -> Result<Reply, String> {
     if request.get("id").is_some_and(|id| !id.is_u64()) { return Err("id must be a nonnegative integer".into()); }
     let options = EvalOptions { interrupt, ..basedpl::protocol::options(request)? };
     if let Some(case) = request.get("case") { return Ok(Reply::Json(basedpl::reference::check(case, &options.interrupt))); }

@@ -1,10 +1,14 @@
 use crate::{host::Instant, Error, ErrorKind, Span};
-use std::{cell::{Cell, RefCell}, io, ops::Deref, sync::{atomic::{AtomicBool, Ordering}, Arc}, time::Duration};
+use rustymath::error::Kind;
+use std::{cell::{Cell, RefCell}, io, sync::{atomic::{AtomicBool, AtomicU32, Ordering}, Arc, Mutex, MutexGuard, PoisonError}, time::Duration};
 
 /// Cancellation for one evaluation; may be sent to another thread.
 #[derive(Clone, Default)]
 pub struct InterruptHandle(Arc<AtomicBool>);
-impl InterruptHandle { pub fn interrupt(&self) { self.0.store(true, Ordering::Relaxed); } }
+impl InterruptHandle {
+    pub fn interrupt(&self) { self.0.store(true, Ordering::Relaxed); }
+    fn is_set(&self) -> bool { self.0.load(Ordering::Relaxed) }
+}
 
 pub struct EvalOptions {
     pub interrupt: InterruptHandle,
@@ -49,36 +53,78 @@ impl Default for EvalOptions {
     fn default() -> Self { Self { interrupt: InterruptHandle::default(), timeout: None, echo: true, output: None, input: None, poll: None } }
 }
 
-/// Calls to `Execution::check` between clock reads. A loop whose steps each take a millisecond still stops within about 64 ms.
+/// Calls to [`check`] between clock reads. A loop whose steps each take a millisecond still stops within about 64 ms.
 const CHECKS_PER_CLOCK: u32 = 64;
 /// The shortest time between two calls of a poll, and the longest sleep in one `pause`.
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
+/// What stops the running evaluation: its interrupt handle, its deadline as a start and a limit, and its poll with when the poll last ran.
+struct Stops { interrupt: InterruptHandle, timeout: Option<(Instant, Duration)>, poll: Option<(Poll, Instant)> }
+
+/// The stops of the running evaluation. Every thread of the process checks them: the thread with the turn, rustymath's worker threads, and a thread without a turn, such as the one Python's `in` runs on. With one session per process (`meta/session.md`, design 3), an interrupt of the running evaluation stops all the process's work.
+static STOPS: Mutex<Option<Stops>> = Mutex::new(None);
+fn stops() -> MutexGuard<'static, Option<Stops>> { STOPS.lock().unwrap_or_else(PoisonError::into_inner) }
+
+/// Checks left before [`check`] next reads the clock. Each evaluation starts it at zero, so an interrupt set before the evaluation stops it at the first check. Relaxed loads and stores are enough: a check on another thread at the same time, such as Python's `in` makes without a turn, only moves the next clock read.
+static COUNTDOWN: AtomicU32 = AtomicU32::new(0);
+
+/// One evaluation's stops and output, in force until the guard drops. Dropping it restores the evaluation it ran inside, if any, as when a Python callback evaluates inside an evaluation.
+pub(crate) struct Running<'a> { execution: &'a Execution, outer: (Run, bool, u32, Option<Stops>) }
+impl Drop for Running<'_> {
+    fn drop(&mut self) {
+        let (run, echo, countdown, outer) = std::mem::take(&mut self.outer);
+        self.execution.run.replace(run);
+        self.execution.echo.set(echo);
+        COUNTDOWN.store(countdown, Ordering::Relaxed);
+        *stops() = outer;
+    }
+}
+
+/// Why the running evaluation must stop: an interrupt, or a passed deadline. It first calls the poll, when `POLL_INTERVAL` has passed since the poll last ran, outside the lock. `Ok` when no evaluation runs. It's rustymath's interrupt check in this process, which its worker threads call too.
+fn stopped() -> Result<(), rustymath::error::Error> {
+    let now = Instant::now();
+    let (interrupt, poll, late) = {
+        let mut stops = stops();
+        let Some(Stops { interrupt, timeout, poll }) = &mut *stops else { return Ok(()) };
+        let poll = poll.as_mut().filter(|(_, last)| now - *last >= POLL_INTERVAL).map(|(poll, last)| { *last = now; poll.clone() });
+        (interrupt.clone(), poll, matches!(timeout, Some((start, limit)) if now - *start >= *limit))
+    };
+    if poll.is_some_and(|poll| poll()) { interrupt.interrupt(); }
+    if interrupt.is_set() { return Err(rustymath::error::Error::new(Kind::Interrupt, "")); }
+    if late { return Err(rustymath::error::Error::new(Kind::Timeout, "")); }
+    Ok(())
+}
+
+/// Whether the running evaluation has been interrupted.
+fn interrupted() -> bool { stops().as_ref().is_some_and(|s| s.interrupt.is_set()) }
+
+/// Ends an interrupt that a guard caught, so that its handler runs. Another interrupt stops the handler.
+pub(crate) fn clear_interrupt() { if let Some(s) = &*stops() { s.interrupt.0.store(false, Ordering::Relaxed) } }
+
 #[derive(Default)]
 pub(crate) struct Execution {
-    interrupt: InterruptHandle,
-    timeout: Option<(Instant, Duration)>,
     pub echo: Cell<bool>,
+    /// The running evaluation's output and input, which a nested evaluation puts aside until it ends.
+    run: RefCell<Run>,
+}
+/// One evaluation's output sink, output, input and unfinished line.
+#[derive(Default)]
+struct Run {
     output: Option<OutputSink>,
     /// Output that no sink takes, kept for the evaluation's result.
-    captured: RefCell<Vec<Output>>,
+    captured: Vec<Output>,
     input: Option<Arc<dyn Input>>,
     /// Text written since the last line ending, which a read of `⎕` shows as its prompt.
-    pending: RefCell<String>,
-    /// The poll, and when it last ran.
-    poll: Option<(Poll, Cell<Instant>)>,
-    /// Checks left before the next clock read. It starts at zero, so an interrupt set before evaluation stops it at the first check.
-    countdown: Cell<u32>,
+    pending: String,
 }
 impl Execution {
-    pub(crate) fn begin(&mut self, options: EvalOptions) {
-        self.interrupt = options.interrupt;
-        self.timeout = options.timeout.map(|d| (Instant::now(), d));
-        self.echo.set(options.echo);
-        self.output = options.output;
-        self.input = options.input;
-        self.poll = options.poll.map(|poll| (poll, Cell::new(Instant::now())));
-        self.countdown.set(0);
+    /// Starts an evaluation under `options`. Its stops and output are in force on this thread until the returned guard drops. The first evaluation installs [`stopped`] as rustymath's interrupt check.
+    pub(crate) fn begin(&self, options: EvalOptions) -> Running<'_> {
+        rustymath::interrupt::install(stopped);
+        let now = Instant::now();
+        let outer = std::mem::replace(&mut *stops(), Some(Stops { interrupt: options.interrupt, timeout: options.timeout.map(|d| (now, d)), poll: options.poll.map(|poll| (poll, now)) }));
+        let run = self.run.replace(Run { output: options.output, input: options.input, ..Run::default() });
+        Running { execution: self, outer: (run, self.echo.replace(options.echo), COUNTDOWN.swap(0, Ordering::Relaxed), outer) }
     }
     pub(crate) fn output(&self, kind: OutputKind, text: String) { self.emit(Output::plain(kind, text)); }
     /// Sends `output`, after any pending text.
@@ -87,92 +133,52 @@ impl Execution {
         self.send(output);
     }
     /// Sends `output` to the sink, or keeps it for the evaluation's result when there is none.
-    fn send(&self, output: Output) { if let Some(sink) = &self.output { sink(&output); } else { self.captured.borrow_mut().push(output); } }
+    fn send(&self, output: Output) { let sink = self.run.borrow().output.clone(); if let Some(sink) = sink { sink(&output); } else { self.run.borrow_mut().captured.push(output); } }
     /// Writes `text` with no line ending added. Text after the last line ending waits, so that a read of `⎕` can show it as its prompt.
     pub(crate) fn write(&self, text: &str) {
-        let mut pending = self.pending.borrow_mut();
-        pending.push_str(text);
-        let Some(end) = pending.rfind('\n') else { return };
-        let lines = pending.drain(..=end).collect();
-        drop(pending);
+        let mut run = self.run.borrow_mut();
+        run.pending.push_str(text);
+        let Some(end) = run.pending.rfind('\n') else { return };
+        let lines = run.pending.drain(..=end).collect();
+        drop(run);
         self.send(Output::plain(OutputKind::Text, lines));
     }
     /// Sends the text that waits for a line ending.
-    pub(crate) fn flush(&self) { let text = self.pending.take(); if !text.is_empty() { self.send(Output::plain(OutputKind::Text, text)); } }
+    pub(crate) fn flush(&self) { let text = std::mem::take(&mut self.run.borrow_mut().pending); if !text.is_empty() { self.send(Output::plain(OutputKind::Text, text)); } }
     /// The output kept since the last call.
-    pub(crate) fn take_output(&self) -> Vec<Output> { self.captured.take() }
+    pub(crate) fn take_output(&self) -> Vec<Output> { std::mem::take(&mut self.run.borrow_mut().captured) }
     /// The next line of input, shown with the pending text as its prompt. `None` at the end of the input.
-    pub(crate) fn line(&self, span: &Span) -> Result<Option<String>, Error> { self.read(span, |input| input.line(&self.pending.take())) }
+    pub(crate) fn line(&self, span: &Span) -> Result<Option<String>, Error> { self.read(span, |input| { let prompt = std::mem::take(&mut self.run.borrow_mut().pending); input.line(&prompt) }) }
     /// The rest of the input, read after the pending text is sent.
     pub(crate) fn rest(&self, span: &Span) -> Result<Vec<u8>, Error> { self.flush(); self.read(span, |input| input.rest()) }
     /// The result of `read` on the frontend's input. A frontend with no input, or a read that fails, is an IO error. A read that fails as interrupted, or during an interrupt, is an interrupt.
     fn read<T>(&self, span: &Span, read: impl FnOnce(&dyn Input) -> io::Result<T>) -> Result<T, Error> {
-        let input = self.input.as_deref().ok_or_else(|| span.error(ErrorKind::Io, "standard input is unavailable here"))?;
-        read(input).map_err(|e| {
-            if e.kind() == io::ErrorKind::Interrupted || self.interrupt.0.load(Ordering::Relaxed) {
-                span.error(ErrorKind::Interrupt, "evaluation interrupted")
-            } else { span.io_error("standard input", e) }
+        let input = self.run.borrow().input.clone().ok_or_else(|| Error::new(ErrorKind::Io, "standard input is unavailable here").at(span))?;
+        read(&*input).map_err(|e| {
+            if e.kind() == io::ErrorKind::Interrupted || interrupted() {
+                Error::new(ErrorKind::Interrupt, "").at(span)
+            } else { Error::io("standard input", e).at(span) }
         })
     }
-    /// Stops the evaluation when it's interrupted or past its deadline. Most calls only count down, inlined into the caller. Every `CHECKS_PER_CLOCK`th call runs `check_now`.
-    #[inline]
-    pub(crate) fn check(&self, span: &Span) -> Result<(), Error> {
-        match self.countdown.get().checked_sub(1) { Some(n) => { self.countdown.set(n); Ok(()) } None => self.check_now(span) }
-    }
-    /// Reads the clock, calls the poll when `POLL_INTERVAL` has passed since the poll last ran, and stops the evaluation when it's interrupted or past its deadline. Callers whose checks are too far apart for `check`'s countdown call this directly.
-    #[cold]
-    #[inline(never)]
-    pub(crate) fn check_now(&self, span: &Span) -> Result<(), Error> {
-        self.countdown.set(CHECKS_PER_CLOCK - 1);
-        let now = Instant::now();
-        if let Some((poll, last)) = &self.poll { if now - last.get() >= POLL_INTERVAL { last.set(now); if poll() { self.interrupt.interrupt(); } } }
-        if self.interrupt.0.load(Ordering::Relaxed) { return Err(span.error(ErrorKind::Interrupt, "evaluation interrupted")); }
-        if self.timeout.is_some_and(|(start, limit)| now - start >= limit) { return Err(span.error(ErrorKind::Timeout, "evaluation deadline exceeded")); }
-        Ok(())
-    }
-    /// One step of waiting: a full check, then a sleep of `limit` or `POLL_INTERVAL`, whichever is shorter. A loop of these notices an interrupt or a passed deadline within one interval.
-    #[cfg(not(web))]
-    pub(crate) fn pause(&self, span: &Span, limit: Duration) -> Result<(), Error> {
-        self.check_now(span)?;
-        std::thread::sleep(limit.min(POLL_INTERVAL));
-        Ok(())
-    }
-    /// Ends an interrupt that a guard caught, so that its handler runs. Another interrupt stops the handler.
-    pub(crate) fn clear_interrupt(&self) { self.interrupt.0.store(false, Ordering::Relaxed); }
 }
 
-/// Where an evaluation step runs: the span it reports errors at, and the session it reads and changes.
-pub(crate) struct Context<'a> { pub span: &'a Span, pub session: &'a crate::Session }
-impl Context<'_> {
-    #[inline]
-    pub(crate) fn check(&self) -> Result<(), Error> { self.session.execution.check(self.span) }
-    /// A check that reads the clock at once, for callers whose checks are too far apart for [`check`](Self::check)'s countdown.
-    pub(crate) fn check_now(&self) -> Result<(), Error> { self.session.execution.check_now(self.span) }
-    #[cfg(not(web))]
-    pub(crate) fn pause(&self, limit: Duration) -> Result<(), Error> { self.session.execution.pause(self.span, limit) }
-    pub(crate) fn rest(&self) -> Result<Vec<u8>, Error> { self.session.execution.rest(self.span) }
-    pub(crate) fn write(&self, text: &str) { self.session.execution.write(text) }
+/// Stops the running evaluation when it's interrupted or past its deadline. Most calls only count down, inlined into the caller. Every `CHECKS_PER_CLOCK`th call runs [`check_now`].
+#[inline]
+pub(crate) fn check() -> Result<(), Error> {
+    match COUNTDOWN.load(Ordering::Relaxed).checked_sub(1) { Some(n) => { COUNTDOWN.store(n, Ordering::Relaxed); Ok(()) } None => check_now() }
 }
-impl Deref for Context<'_> {
-    type Target = Span;
-    fn deref(&self) -> &Span { self.span }
+/// Runs [`stopped`] at once and restarts the countdown. Callers whose checks are too far apart for `check`'s countdown call this directly.
+#[cold]
+#[inline(never)]
+pub(crate) fn check_now() -> Result<(), Error> {
+    COUNTDOWN.store(CHECKS_PER_CLOCK - 1, Ordering::Relaxed);
+    Ok(stopped()?)
 }
-/// Where a long computation reports its errors and checks between its steps for an interrupt or a passed deadline, as searches and matches do.
-pub(crate) trait Checks: Deref<Target = Span> {
-    fn check(&self) -> Result<(), Error>;
-    fn check_now(&self) -> Result<(), Error>;
+/// One step of waiting: a full check, then a sleep of `limit` or `POLL_INTERVAL`, whichever is shorter. A loop of these notices an interrupt or a passed deadline within one interval.
+#[cfg(not(web))]
+pub(crate) fn pause(limit: Duration) -> Result<(), Error> {
+    check_now()?;
+    std::thread::sleep(limit.min(POLL_INTERVAL));
+    Ok(())
 }
-impl Checks for Context<'_> {
-    fn check(&self) -> Result<(), Error> { Context::check(self) }
-    fn check_now(&self) -> Result<(), Error> { Context::check_now(self) }
-}
-/// A span with no evaluation behind it, for a search that runs outside any evaluation, as Python's `in` does. No interrupt or deadline applies there, so its checks always pass.
-pub(crate) struct Unchecked<'a>(pub &'a Span);
-impl Deref for Unchecked<'_> {
-    type Target = Span;
-    fn deref(&self) -> &Span { self.0 }
-}
-impl Checks for Unchecked<'_> {
-    fn check(&self) -> Result<(), Error> { Ok(()) }
-    fn check_now(&self) -> Result<(), Error> { Ok(()) }
-}
+

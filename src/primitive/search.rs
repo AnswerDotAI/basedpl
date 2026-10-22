@@ -1,56 +1,55 @@
 //! Search and ordering primitives: index of, membership, without, union, intersection, unique, duplicates, find, classification, run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
+use crate::execution::check;
 use rustymath::{buffer::View, error::Kind};
 use crate::search::compact_view;
-use crate::execution::Checks;
 use super::*;
 
 /// A mask over the major cells of `x`. With `found`, it marks the cells among the major cells of `y`, and otherwise the cells that aren't.
-pub(super) fn found_mask(x: &Value, y: &Value, found: bool, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn found_mask(x: &Value, y: &Value, found: bool, span: &Span) -> Result<Value, Error> {
     let (matches, frame) = search(y, x, span)?;
-    if frame.shape().len() > 1 { return Err(span.error(Kind::Rank, "set functions need cells of the same rank")); }
+    if frame.shape().len() > 1 { return Err(Error::new(Kind::Rank, "set functions need cells of the same rank")); }
     let miss = y.shape()[0] as u32;
-    Layout::from(vec![matches.len()]).booleans(matches.into_iter().map(|p| (p < miss) == found).collect()).error_at(span, "invalid set mask")
+    Layout::from(vec![matches.len()]).booleans(matches.into_iter().map(|p| (p < miss) == found).collect()).described("invalid set mask")
 }
 
-pub(super) fn without(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    replicate(&found_mask(left, right, false, span)?, left, None, false, span)
+pub(super) fn without(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
+    replicate(&found_mask(left, right, false, span)?, left, None, false)
 }
 
-pub(super) fn membership(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn membership(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
     let (matches, frame) = search(right, left, span)?;
     let miss = right.shape()[0] as u32;
-    frame.booleans(matches.into_iter().map(|p| p < miss).collect()).error_at(span, "invalid membership result")
+    frame.booleans(matches.into_iter().map(|p| p < miss).collect()).described("invalid membership result")
 }
 
 impl Value {
     /// Whether `query` matches one major cell, as `≡` matches arrays, within the tolerance. Its layout must match a cell's (`rustymath::search::member_layout`). Compact items search through `rustymath::search::view_member`, and other items search as `∊` does. A rank-0 value gives a Rank error. It runs outside any evaluation, so nothing interrupts it.
     pub fn contains(&self, query: &Value) -> Result<bool, Error> {
         let span = Span::whole(crate::Source::new("<contains>", "∊"));
-        if rustymath::search::member_layout(self.core_layout(), query.core_layout()).at(&span)?.is_none() { return Ok(false); }
-        let unchecked = crate::execution::Unchecked(&span);
+        if rustymath::search::member_layout(self.core_layout(), query.core_layout())?.is_none() { return Ok(false); }
         if let (Items::Compact(x), Items::Compact(y)) = (self.as_items(), query.as_items()) {
             let t = Numeric::current().tolerance_at(self.float_width().max(query.float_width()).unwrap_or(FloatWidth::F64));
-            return rustymath::search::view_member(self.core_layout(), x, query.core_layout(), y, t, || unchecked.check_now()).at(&span)?;
+            return rustymath::search::view_member(self.core_layout(), x, query.core_layout(), y, t).map_err(Error::from);
         }
-        let (found, _) = search(self, query, &unchecked)?;
+        let (found, _) = search(self, query, &span)?;
         Ok((found[0] as usize) < self.shape()[0])
     }
 }
 
-pub(super) fn unique(right: &Value, span: &Context<'_>) -> Result<Value, Error> { replicate(&unique_mask(right, span)?, right, None, false, span) }
+pub(super) fn unique(right: &Value, span: &Span) -> Result<Value, Error> { replicate(&unique_mask(right, span)?, right, None, false) }
 
 /// `left` with the cells of `right` that it lacks. A weak `right` takes the width that `left` gives it first, as `catenate` weakens its arguments, because `without` makes it an array.
-pub(super) fn union(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn union(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
     let weak = right.weakened(left);
-    catenate(left, &without(weak.as_ref().unwrap_or(right), left, span)?, None, true, span)
+    catenate(left, &without(weak.as_ref().unwrap_or(right), left, span)?, None, true)
 }
 
-pub(super) fn intersection(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    replicate(&found_mask(left, right, true, span)?, left, None, false, span)
+pub(super) fn intersection(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
+    replicate(&found_mask(left, right, true, span)?, left, None, false)
 }
 
-pub(super) fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn find(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
     let shape = right.shape();
     let (x, y) = (left.as_items(), right.as_items());
     let compact = match (x, y) {
@@ -65,10 +64,10 @@ pub(super) fn find(left: &Value, right: &Value, span: &Context<'_>) -> Result<Va
         None => rustymath::search::find_with(left.shape(), shape, |i, o| left.at(i).matches(&right.at(o), span))?,
     };
     if right.is_atom() { return Ok(Value::Number(Number::from_bool(data[0]))); }
-    Value::booleans(shape.to_vec(), data).and_then(|v| v.with_layout(right.layout().clone())).error_at(span, "invalid find result")
+    Value::booleans(shape.to_vec(), data).and_then(|v| v.with_layout(right.layout().clone())).described("invalid find result")
 }
 
-pub(super) fn self_classify(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn self_classify(right: &Value, span: &Span) -> Result<Value, Error> {
     // A Boolean vector's rows are its items equal to the first, then those that differ, if any do, in passes that vectorize.
     if let (Items::Compact(View::Booleans(b)), [_]) = (right.as_items(), right.shape()) {
         if let Some(&first) = b.first() {
@@ -76,37 +75,37 @@ pub(super) fn self_classify(right: &Value, span: &Context<'_>) -> Result<Value, 
             let mut data = Vec::with_capacity(rows * b.len());
             data.extend(b.iter().map(|&x| x == first));
             if rows == 2 { data.extend(b.iter().map(|&x| x != first)) }
-            return Layout::from(vec![rows]).concat(&major_axis(right)).booleans(data).error_at(span, "invalid classification");
+            return Layout::from(vec![rows]).concat(&major_axis(right)).booleans(data).described("invalid classification");
         }
     }
     let (classes, major) = (distinct(right, span)?, major_axis(right));
     let n = major.shape()[0];
     let mut data = vec![false; classes.firsts.len() * n];
     for (row, these) in data.chunks_mut(n.max(1)).zip(classes.groups.each()) { for &p in these { row[p as usize] = true } }
-    Layout::from(vec![classes.firsts.len()]).concat(&major).booleans(data).error_at(span, "invalid classification")
+    Layout::from(vec![classes.firsts.len()]).concat(&major).booleans(data).described("invalid classification")
 }
 
-pub(super) fn unique_mask(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    major_axis(right).booleans(firsts(&major_cells(right, span)?, span)?).error_at(span, "invalid unique mask")
+pub(super) fn unique_mask(right: &Value, span: &Span) -> Result<Value, Error> {
+    major_axis(right).booleans(firsts(&major_cells(right)?, span)?).described("invalid unique mask")
 }
 
 /// The classes of the major cells of `right`, numbered in order of first appearance as `∪` finds them, with the positions of each.
-fn distinct(right: &Value, span: &Context<'_>) -> Result<rustymath::search::Grouped, Error> { grouped(&major_cells(right, span)?, span) }
+fn distinct(right: &Value, span: &Span) -> Result<rustymath::search::Grouped, Error> { grouped(&major_cells(right)?, span) }
 
 /// A mask of the first of each distinct major cell of `right` that occurs more than once, in order of first appearance.
-pub(super) fn duplicates_mask(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn duplicates_mask(right: &Value, span: &Span) -> Result<Value, Error> {
     let (classes, major) = (distinct(right, span)?, major_axis(right));
     let mut mask = vec![false; major.shape()[0]];
     for (&first, &size) in classes.firsts.iter().zip(&classes.groups.sizes) { mask[first] = size > 1 }
-    major.booleans(mask).error_at(span, "invalid duplicates mask")
+    major.booleans(mask).described("invalid duplicates mask")
 }
 
 /// The distinct major cells that occur more than once, in order of first appearance.
-pub(super) fn duplicates(right: &Value, span: &Context<'_>) -> Result<Value, Error> { replicate(&duplicates_mask(right, span)?, right, None, false, span) }
+pub(super) fn duplicates(right: &Value, span: &Span) -> Result<Value, Error> { replicate(&duplicates_mask(right, span)?, right, None, false) }
 
 /// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪` matches them. `#⁻¹` decodes the result back to `right`. `#/` does too, unless `right` is a unit or has leading keys. A unit gives the rank-0 length 1 and the unit itself. A keyed leading axis moves into a third item, the keys of every position, because a run's cells can have different keys.
-pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if right.is_unit() { return Value::new(vec![2], vec![Value::integer(1), right.clone()]).error_at(span, "invalid runs"); }
+pub(super) fn runs(right: &Value, span: &Span) -> Result<Value, Error> {
+    if right.is_unit() { return Value::new(vec![2], vec![Value::integer(1), right.clone()]).described("invalid runs"); }
     let (first, axis) = classes(right, span)?;
     let starts: Vec<bool> = first.iter().enumerate().map(|(i, &f)| i == 0 || f != first[i - 1]).collect();
     let mut lengths: Vec<u64> = Vec::new();
@@ -114,24 +113,24 @@ pub(super) fn runs(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         if start { lengths.push(0); }
         *lengths.last_mut().expect("the first cell starts a run") += 1;
     }
-    let lengths = generated_items(vec![lengths.len()], lengths, None).error_at(span, "invalid run lengths")?;
-    let values = replicate(&axis.booleans(starts).error_at(span, "invalid run starts")?, right, None, false, span)?;
-    if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).error_at(span, "invalid runs"); }
+    let lengths = generated_items(vec![lengths.len()], lengths, None).described("invalid run lengths")?;
+    let values = replicate(&axis.booleans(starts).described("invalid run starts")?, right, None, false)?;
+    if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).described("invalid runs"); }
     let layout = values.layout().clone().without_keys(0);
-    let values = values.with_layout(layout).error_at(span, "invalid runs")?;
-    let all = positions(right, (0..right.shape()[0] as u32).collect()).error_at(span, "invalid run keys")?;
-    Value::new(vec![3], vec![lengths, values, all]).error_at(span, "invalid runs")
+    let values = values.with_layout(layout).described("invalid runs")?;
+    let all = positions(right, (0..right.shape()[0] as u32).collect()).described("invalid run keys")?;
+    Value::new(vec![3], vec![lengths, values, all]).described("invalid runs")
 }
 
 /// The positions of each distinct major cell, in the order of `∪`.
-pub(super) fn groups(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn groups(right: &Value, span: &Span) -> Result<Value, Error> {
     let classes = distinct(right, span)?;
     let groups = match right.keys(0) {
         None => crate::search::class_positions(classes.groups, right.shape().first().copied().unwrap_or(1)),
         Some(_) => classes.groups.each().map(|these| positions(right, these.to_vec())).collect(),
     };
-    let groups = groups.error_at(span, "invalid groups")?;
-    Value::from_parts(vec![groups.len()], groups, positions(right, Vec::new()).error_at(span, "invalid groups")?).error_at(span, "invalid groups")
+    let groups = groups.described("invalid groups")?;
+    Value::from_parts(vec![groups.len()], groups, positions(right, Vec::new()).described("invalid groups")?).described("invalid groups")
 }
 
 /// The positions `indices` along `right`'s leading axis: its keys when it has them, otherwise exact integers.
@@ -149,11 +148,11 @@ fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, float: Option<Floa
 }
 
 /// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`. A keyed shape names the result's axes, as it does for reshape: `⍳["i":3]` is `0 1 2` along an axis named `i`.
-pub(super) fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    if right.shape().len() > 1 { return Err(span.error(Kind::Rank, "iota needs a unit or vector shape")); }
-    let lengths = right.as_items().integers().error_at(span, "invalid iota dimension")?;
+pub(super) fn iota(right: &Value) -> Result<Value, Error> {
+    if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "iota needs a unit or vector shape")); }
+    let lengths = right.as_items().integers().described("invalid iota dimension")?;
     let shape: Vec<usize> = lengths.iter().map(|n| saturated(n.unsigned_abs())).collect();
-    let len = generated_len(&shape).at(span)?;
+    let len = generated_len(&shape)?;
     let float = counted_width(right);
     let indices = if right.is_singleton() {
         let down = lengths[0] < 0;
@@ -167,20 +166,20 @@ pub(super) fn iota(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
         let data = (0..len).map(|i| coordinates(&lengths, &shape, i, float)).collect();
         Value::from_parts(shape, data, prototype)
     };
-    indices.and_then(|a| a.with_axis_names(super::structural::shape_names(right))).error_at(span, "invalid iota")
+    indices.and_then(|a| a.with_axis_names(super::structural::shape_names(right))).described("invalid iota")
 }
 
 /// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within comparison tolerance. Each item is `a+i` or `a-i` for an exact count `i`, so the result's type follows `a`. The distance is `b-a`, so two characters count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the type of `n`.
-pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let real = |v: Value| match v {
-        Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(span.domain_error("range needs real numbers or two characters"))
+        Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(Error::domain("range needs real numbers or two characters"))
     };
     let steps = |distance: &Number| -> Result<usize, Error> {
-        let whole = distance.math_monad(Math::Magnitude).and_then(|d| d.floor(Numeric::current())).domain_at(span)?;
-        whole.nonnegative_integer().error_at(span, "range needs a finite length")
+        let whole = distance.math_monad(Math::Magnitude)?.floor(Numeric::current())?;
+        whole.nonnegative_integer().described("range needs a finite length")
     };
     let counts = |items: std::ops::Range<usize>| {
-        generated_len(&[items.len()]).map_err(ErrorKind::from).and_then(|len| Value::positions([len], items.end, items)).error_at(span, "range exceeds array limits")
+        generated_len(&[items.len()]).map_err(ErrorKind::from).and_then(|len| Value::positions([len], items.end, items)).described("range exceeds array limits")
     };
     let Some(left) = left else {
         let n = real(right.at(0))?;
@@ -194,12 +193,12 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Context<'_>) -> 
 }
 
 /// `⍸` of an unkeyed vector of integer counts. One pass checks the counts, and a second writes each position.
-fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
+fn where_vector(counts: &[i64]) -> Result<Value, Error> {
     let (any, sum) = or_and_sum(counts);
-    if any < 0 { return Err(span.domain_error("where needs nonnegative integer counts")); }
+    if any < 0 { return Err(Error::domain("where needs nonnegative integer counts")); }
     let boolean = any <= 1;
     let total = if boolean { sum as usize } else { counts.iter().fold(0usize, |total, &n| total.saturating_add(saturated(n.unsigned_abs()))) };
-    let total = generated_len(&[total]).at(span)?;
+    let total = generated_len(&[total])?;
     let data = if boolean {
         let mut data = Vec::new();
         rustymath::gather::positions(&mut data, counts, total, |j| j as i64);
@@ -213,9 +212,9 @@ fn where_vector(counts: &[i64], span: &Context<'_>) -> Result<Value, Error> {
         }
         data
     };
-    Value::integers([total], data).error_at(span, "invalid where result")
+    Value::integers([total], data).described("invalid where result")
 }
-pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn where_indices(right: &Value) -> Result<Value, Error> {
     if let (Items::Compact(View::Booleans(mask)), [_]) = (right.as_items(), right.shape()) {
         if right.keys(0).is_none() {
             let total = mask.iter().map(|&b| usize::from(b)).sum();
@@ -225,16 +224,16 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
                 let mut data: Vec<T> = Vec::new(); rustymath::gather::positions(&mut data, mask, total, |j| T::from_i64(j as i64));
                 Value::from_storage([total], Storage::within(data, width))
             });
-            return built.error_at(span, "invalid where result");
+            return built.described("invalid where result");
         }
     }
-    if let (Items::Compact(View::Integers(counts)), [_]) = (right.as_items(), right.shape()) { if right.keys(0).is_none() { return where_vector(&counts.widened(), span); } }
-    let counts = right.as_items().nonnegative_integers().error_at(span, "where needs nonnegative integer counts")?;
-    let total = generated_len(&[counts.iter().fold(0usize, |total, &n| total.saturating_add(n))]).at(span)?;
+    if let (Items::Compact(View::Integers(counts)), [_]) = (right.as_items(), right.shape()) { if right.keys(0).is_none() { return where_vector(&counts.widened()); } }
+    let counts = right.as_items().nonnegative_integers().described("where needs nonnegative integer counts")?;
+    let total = generated_len(&[counts.iter().fold(0usize, |total, &n| total.saturating_add(n))])?;
     if right.shape().len() == 1 && right.keys(0).is_none() {
         let mut data = Vec::with_capacity(total);
         for (i, &n) in counts.iter().enumerate() { data.extend(std::iter::repeat_n(i as i64, n)); }
-        return Value::integers([total], data).error_at(span, "invalid where result");
+        return Value::integers([total], data).described("invalid where result");
     }
     let mut data = Vec::with_capacity(total);
     for (i, &n) in counts.iter().enumerate() {
@@ -246,45 +245,45 @@ pub(super) fn where_indices(right: &Value, span: &Context<'_>) -> Result<Value, 
         data.extend(std::iter::repeat_n(index, n));
     }
     let prototype = if right.shape().len() == 1 { Value::integer(0) } else { Value::integers(vec![right.shape().len()], vec![0; right.shape().len()]).unwrap() };
-    Value::from_parts(vec![data.len()], data, prototype).error_at(span, "invalid where result")
+    Value::from_parts(vec![data.len()], data, prototype).described("invalid where result")
 }
 
 /// The rank of the major cells of `haystack`, and the frame that the leading axes of `needles` form around cells of that rank.
-fn search_frame(haystack: &Value, needles: &Value, span: &Span) -> Result<(usize, Frame), Error> {
-    if haystack.is_unit() { return Err(span.error(Kind::Rank, "the searched argument must not be a unit")); }
+fn search_frame(haystack: &Value, needles: &Value) -> Result<(usize, Frame), Error> {
+    if haystack.is_unit() { return Err(Error::new(Kind::Rank, "the searched argument must not be a unit")); }
     let rank = haystack.shape().len() - 1;
-    let split = needles.shape().len().checked_sub(rank).ok_or_else(|| span.error(Kind::Rank, "search cells need the rank of a major cell"))?;
-    if haystack.shape()[1..] != needles.shape()[split..] { return Err(span.error(Kind::Length, "search cell shapes do not agree")); }
+    let split = needles.shape().len().checked_sub(rank).ok_or_else(|| Error::new(Kind::Rank, "search cells need the rank of a major cell"))?;
+    if haystack.shape()[1..] != needles.shape()[split..] { return Err(Error::new(Kind::Length, "search cell shapes do not agree")); }
     Ok((rank, if split == 0 { Frame::Direct } else { Frame::Array(needles.layout().axes(0..split)) }))
 }
 
-fn search_cells<'a>(array: &'a Value, rank: usize, span: &Span) -> Result<Cells<'a>, Error> {
-    Cells::of(array, rank).error_at(span, "invalid search cells")
+fn search_cells<'a>(array: &'a Value, rank: usize) -> Result<Cells<'a>, Error> {
+    Cells::of(array, rank).described("invalid search cells")
 }
 
 /// Where each cell of `needles` first matches a major cell of `haystack`, or the number of major cells when none does, and the frame that the needles form around those cells.
-fn search(haystack: &Value, needles: &Value, span: &impl crate::execution::Checks) -> Result<(Vec<u32>, Frame), Error> {
-    let (rank, frame) = search_frame(haystack, needles, span)?;
-    Ok((first_matches(&search_cells(haystack, rank, span)?, &search_cells(needles, rank, span)?, span)?, frame))
+fn search(haystack: &Value, needles: &Value, span: &Span) -> Result<(Vec<u32>, Frame), Error> {
+    let (rank, frame) = search_frame(haystack, needles)?;
+    Ok((first_matches(&search_cells(haystack, rank)?, &search_cells(needles, rank)?, span)?, frame))
 }
 
 /// The first major cell that matches each major cell of `right`, and the layout of the major-cell axis.
-fn classes(right: &Value, span: &Context<'_>) -> Result<(Vec<u32>, Layout), Error> { Ok((classify(&major_cells(right, span)?, span)?, major_axis(right))) }
+fn classes(right: &Value, span: &Span) -> Result<(Vec<u32>, Layout), Error> { Ok((classify(&major_cells(right)?, span)?, major_axis(right))) }
 
 /// The major cells of `right`. A unit is one cell.
-fn major_cells<'a>(right: &'a Value, span: &Context<'_>) -> Result<Cells<'a>, Error> { search_cells(right, right.shape().len().saturating_sub(1), span) }
+fn major_cells<'a>(right: &'a Value) -> Result<Cells<'a>, Error> { search_cells(right, right.shape().len().saturating_sub(1)) }
 
 /// The layout of the major-cell axis of `right`. A unit has one cell.
 fn major_axis(right: &Value) -> Layout { if right.is_unit() { vec![1].into() } else { right.layout().axes(0..1) } }
 
-pub(super) fn index_of(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn index_of(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
     let (positions, frame) = search(left, right, span)?;
     if left.keys(0).is_some() {
-        return frame.collect(positions.into_iter().map(|p| position_value(left, 0, p as usize)), Value::integer(0)).error_at(span, "invalid index-of result");
+        return frame.collect(positions.into_iter().map(|p| position_value(left, 0, p as usize)), Value::integer(0)).described("invalid index-of result");
     }
     // A miss gives the number of haystack cells, so every position is at most that.
     let bound = left.shape().first().map_or(1, |&n| n + 1);
-    frame.positions_u32(positions, bound).error_at(span, "invalid index-of result")
+    frame.positions_u32(positions, bound).described("invalid index-of result")
 }
 
 fn position_value(array: &Value, axis: usize, position: usize) -> Value {
@@ -323,16 +322,16 @@ fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
     let view = compact_view(&Cells::Items(right))?;
     rustymath::search::view_lexgrade(count, (0..width).map(|c| (view, c, width)), down)
 }
-pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
-    if right.is_unit() || left.is_some_and(Value::is_unit) { return Err(span.error(Kind::Rank, "grade needs arrays of rank at least one")); }
-    let count = generated_len(&right.shape()[..1]).at(span)?;
+pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool) -> Result<Value, Error> {
+    if right.is_unit() || left.is_some_and(Value::is_unit) { return Err(Error::new(Kind::Rank, "grade needs arrays of rank at least one")); }
+    let count = generated_len(&right.shape()[..1])?;
     // Only the comparison sorts start from the positions in order. `sort_rows` builds its own.
     let mut indices: Vec<u32>;
     let direction = |order: Ordering| if down { order.reverse() } else { order };
     if let Some(collation) = left {
         let characters = |a: &Value| -> Result<Vec<char>, Error> {
             if !matches!(a.prototype(), Value::Character(_)) || a.elements().any(|e| !matches!(e, Value::Character(_))) {
-                return Err(span.domain_error("dyadic grade needs simple character arrays"));
+                return Err(Error::domain("dyadic grade needs simple character arrays"));
             }
             Ok(a.elements().map(|e| match e { Value::Character(c) => c, _ => unreachable!() }).collect())
         };
@@ -344,7 +343,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
             for (w, (_, c)) in weight.iter_mut().zip(rustymath::layout::coordinates(i, collation.shape())) { *w = (*w).min(c); }
         }
         let cells: Vec<_> = text.iter().map(|c| weights.get(c).unwrap_or(&missing)).collect();
-        let size = crate::array::element_count(&right.shape()[1..]).at(span)?;
+        let size = crate::array::element_count(&right.shape()[1..])?;
         indices = (0..count as u32).collect();
         indices.sort_by(|&a, &b| {
             for (axis, _) in missing.iter().enumerate() {
@@ -356,7 +355,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
             Ordering::Equal
         });
     } else if let Some(order) = key_grade(right, count, down) { indices = order; } else {
-        let cells = right.cells(right.shape().len() - 1).and_then(|c| c.collect()).error_at(span, "invalid grade cells")?;
+        let cells = right.cells(right.shape().len() - 1).and_then(|c| c.collect()).described("invalid grade cells")?;
         // A sort comparison can't fail. It notes a function or a stop instead, and the error follows the sort.
         let (mut unordered, mut stopped) = (false, None);
         indices = (0..count as u32).collect();
@@ -365,38 +364,38 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool, span: &Cont
             Ok(None) => { unordered = true; Ordering::Equal }
             Err(stop) => { stopped = Some(stop); Ordering::Equal }
         });
-        if let Some(stop) = stopped { return Err(stop).at(span); }
-        if unordered { return Err(span.domain_error("functions have no ordering")); }
+        if let Some(stop) = stopped { return Err(stop).map_err(Error::from); }
+        if unordered { return Err(Error::domain("functions have no ordering")); }
     }
-    positions(right, indices).and_then(|g| g.along_first_of(right)).error_at(span, "invalid grade result")
+    positions(right, indices).and_then(|g| g.along_first_of(right)).described("invalid grade result")
 }
 
 /// `right`'s major cells in the order that `grade` gives, as `[⍋v]⌷v` or `[⍒v]⌷v`. A unit has one item, so it is already sorted.
-pub(super) fn sort(right: &Value, down: bool, span: &Context<'_>) -> Result<Value, Error> {
+pub(super) fn sort(right: &Value, down: bool, span: &Span) -> Result<Value, Error> {
     if right.is_unit() { return Ok(right.clone()); }
     if right.shape().len() == 1 && right.keys(0).is_none() {
-        if let Some(sorted) = compact_view(&Cells::Items(right)).and_then(|v| rustymath::search::view_sort(v, down)) {
-            return Value::from_buffer(right.shape(), sorted).and_then(|v| v.with_layout(right.layout().clone())).error_at(span, "invalid sort");
+        if let Some(sorted) = compact_view(&Cells::Items(right)).map(|v| rustymath::search::view_sort(v, down)).transpose()?.flatten() {
+            return Value::from_buffer(right.shape(), sorted).and_then(|v| v.with_layout(right.layout().clone())).described("invalid sort");
         }
     }
-    let order = Value::new(vec![1], vec![grade(None, right, down, span)?]).error_at(span, "invalid sort")?;
+    let order = Value::new(vec![1], vec![grade(None, right, down)?]).described("invalid sort")?;
     squad(&order, right, None, span)
 }
 
-pub(super) fn interval_index(left: &Value, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let (rank, frame) = search_frame(left, right, span)?;
-    let boundaries = search_cells(left, rank, span)?;
-    let values = search_cells(right, rank, span)?;
+pub(super) fn interval_index(left: &Value, right: &Value) -> Result<Value, Error> {
+    let (rank, frame) = search_frame(left, right)?;
+    let boundaries = search_cells(left, rank)?;
+    let values = search_cells(right, rank)?;
     let data = match compact_view(&boundaries).zip(compact_view(&values)).and_then(|(x, y)| rustymath::search::view_bins(x, y)) {
         Some(data) => data,
         None => {
-            let order = |x: &Value, y: &Value| match array_order(x, y) { Ok(Some(order)) => Ok(order), Ok(None) => Err(span.domain_error("functions have no ordering")), Err(stop) => Err(stop).at(span) };
+            let order = |x: &Value, y: &Value| match array_order(x, y) { Ok(Some(order)) => Ok(order), Ok(None) => Err(Error::domain("functions have no ordering")), Err(stop) => Err(stop).map_err(Error::from) };
             let mut data = Vec::with_capacity(values.len());
             for value in (0..values.len()).map(|i| values.get(i)) {
                 let (mut lo, mut hi) = (0, boundaries.len());
                 while lo < hi {
                     let mid = lo + (hi - lo) / 2;
-                    span.check()?;
+                    check()?;
                     if order(&boundaries.get(mid), &value)?.is_gt() { hi = mid; } else { lo = mid + 1; }
                 }
                 data.push(lo as u32);
@@ -405,8 +404,8 @@ pub(super) fn interval_index(left: &Value, right: &Value, span: &Context<'_>) ->
         }
     };
     // The number of boundaries at or below each value, as in BQN. On a keyed axis, the key of the last of them.
-    let Some(keys) = left.keys(0) else { return frame.positions_u32(data, boundaries.len() + 1).error_at(span, "invalid interval index") };
+    let Some(keys) = left.keys(0) else { return frame.positions_u32(data, boundaries.len() + 1).described("invalid interval index") };
     let key = |n: u32| n.checked_sub(1).and_then(|i| keys.names().get(i as usize)?.clone());
     let data = data.into_iter().map(|n| key(n).map_or_else(|| Value::integer(i64::from(n)), |k| crate::keyed::text(&k)));
-    frame.collect(data, Value::integer(0)).error_at(span, "invalid interval index")
+    frame.collect(data, Value::integer(0)).described("invalid interval index")
 }

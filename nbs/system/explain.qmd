@@ -36,6 +36,8 @@
   - `"batched items"`: code with no rule for batches read a batch's items one at a time, even where the batched call then succeeded.
   - `"∂ items"`: code with no rule for [`∂`](../glyphs/partial.qmd) read the items of a value that `∂` tracks one at a time.
   - `"accumulation"`: a sum added items one at a time, as the `accumulations` path `"item by item"` does.
+  - `"item lanes"`: a fold or scan by a function with no kernel for its arguments, such as a primitive on mixed storage or a dfn on a lane that no batched map took, called the function on each pair of items in turn.
+  - `"number parts"`: monadic [`∨`](../glyphs/vee.qmd) or [`∧`](../glyphs/wedge.qmd) took the parts of integers or exact numbers one at a time, where floats and complex numbers take one pass.
   - `"nested labels"`, `"label ids"` and `"label offsets"`: a selection from a nested array labelled or placed its items one at a time, or read positions that had no plan.
 - `declined` has a row for each faster route that code considered and didn't take. A decline explains why a slower route ran. `route` names the route, `reason` says why code didn't take it, and `items` counts the items that its declines concerned, summed for each route and reason. The routes are:
   - `"fusion"`: a call that could have joined a fused group ran on its own, because of `"16-bit floats"`, `"no float array"`, `"an exact argument"`, `"a result at another width"`, `"keys, names or a renderer"` or `"an argument of another kind or width, or with keys"`. A pending array also ran without a group where its call reads `"a comparison computed outside the graph"`.

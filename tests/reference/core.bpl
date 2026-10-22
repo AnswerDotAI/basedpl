@@ -24,6 +24,9 @@
 ⍝ bitwise-boolean-fold — Folds and scans of Booleans by a lifted primitive give Booleans
 [∨ᵇ/$f $f $t; ∨ᵇ\$f $t $f]   ⍝ [$t; $f $t $t]
 
+⍝ bitwise-xnor-fold — An XNOR fold of bytes gives negative totals. Booleans fold by the logical function, unless a number seed turns the fold to the integer one
+[=ᵇ/[200 3]ₓ; =ᵇ\[200 3 7]ₓ; =ᵇ/$t $t; 5=ᵇ/$t $t]   ⍝ [¯204ₓ; [200 ¯204 204]ₓ; $t; 5ₓ]
+
 ⍝ bitwise-whole — Fractional input is not an integer bit pattern
 ~ᵇ1.5
 ⍝ error: DOMAIN ERROR
@@ -65,6 +68,9 @@ n←2 2 3⍴⍳6ₓ
 
 ⍝ reduce-axes-seed — Each cell receives the whole seed
 10 20+/⍠1 2 (2 2 3⍴⍳6ₓ)   ⍝ [25 35⋄25 35]
+
+⍝ reduce-rank-seed — A number on the left of a fold under Rank seeds the fold of every cell, whether the function folds in any order or in its own order
+[10ₓ+/⍤1 [1 2 3⋄4 5 6]ₓ;10ₓ-/⍤1 [1 2 3⋄4 5 6]ₓ;0.5⌈/⍤1 [0 0.25⋄1 0.75]]   ⍝ [[16 25]ₓ;[¯8 ¯5]ₓ;0.5 1]
 
 ⍝ reduce-axes-keys — Unselected axes retain their labels
 +/⍠1 2 ("aa" "bb":2 2 3⍴⍳6ₓ)   ⍝ ("aa" "bb":15 15)ₓ
@@ -207,7 +213,7 @@ x←10ₓ×⍳5ₓ ⋄ i←⍳["i":5] ⋄ x.[i+1]←0
 ⍝ nan-positions — A NaN position reads the fill in every selection form, `•edge` gives NaN for a position outside its axis, and a write through a NaN position writes nothing
 x←10 20 30 40 ⋄ m←[1 2⋄3 4] ⋄ n←[1 2;3 4] ⋄ [x.[[1 $n]];[[1 $n]]⌷m;[$n]⊃x;n.[[[1 $n] [0 1]]];-@[1 $n] x;x.[(4•edge (⍳4ₓ)-1ₓ)]]   ⍝ [20 0;[3 4⋄0 0];0;0 2;10 ¯20 30 40;0 10 20 30]
 
-⍝ nan-exact-positions — Exact positions beside a NaN decode as other positions do, in selection and in `•edge`, and `•edge`'s fill keeps every position exact under a narrow float pref [serial]
+⍝ nan-exact-positions — Exact positions beside a NaN decode as other positions do, in selection and in `•edge`, and `•edge`'s fill keeps every position exact under a narrow float pref
 x←10 20 30 40 ⋄ •prefs ["float":16] ⋄ e←4096ₓ•edge 2049ₓ ⋄ •prefs ["float":64] ⋄ [x.[[1ₓ $n]];4ₓ•edge [1ₓ $n];e]   ⍝ [[20 0] [1 $n] 2049]
 
 ⍝ nan-writes — A write through a NaN position writes nothing, at a position, an item or a path level alike, and a modifier never runs for it. An atom keeps its value, and an empty array keeps its storage
@@ -620,6 +626,9 @@ f←{⍺←0 ⋄ ⍺=1?"DOMAIN"::0 ⋄ 0?⍬ ; ⍵≤0?0 ; 0 f ⍵-1} ⋄ [1 f 1
 
 ⍝ — Exact real parts stay exact
 ∨1r3   ⍝ 1r3 0ₓ
+
+⍝ — A Boolean's parts stay Boolean, with `$f` imaginary parts
+∨ 1 0=1   ⍝ [$t $f⋄$f $f]
 
 ⍝ — Magnitude and phase, in radians
 ∧3j4 0j1   ⍝ [5 0.9272952180016122⋄1 1.5707963267948966]
@@ -1827,6 +1836,11 @@ r,←2ₓ
 [s (•storage r).kind r]
 ⍝ =>
 ["bool" "integer" [1 2]ₓ]
+
+⍝ — Joining short lanes of an integer array and a float array converts the integers as they're written
+a←[5000 2]⍴⌊⍳10000 ⋄ b←a+0.5 ⋄ +/+/a,b
+⍝ =>
+99995000
 
 ⍝ — An empty mixed array takes its prototype from the first appended item
 r←0⍴⊂1 2
@@ -3924,6 +3938,13 @@ d←•distribution "normal" ⋄ [d.cdf⁻¹ 0.5;d.quantile⁻¹ 0]   ⍝ 0 0.5
 "eigen" •decompose⁻¹ "eigen" •decompose 2 2⍴1 1 0 1
 ⍝ error: DOMAIN ERROR
 
+⍝ — •decompose⍤2 gives each matrix of a stack what it gives that matrix alone: a Hermitian matrix's real eigenvalues, beside a rotation's complex ones
+s←2 2 2⍴2 1 1 2 0 ¯1 1 0
+e←"eigen"•decompose⍤2 s
+[(0⌷e)≡("eigen" •decompose 0⌷s);(1⌷e)≡("eigen" •decompose 1⌷s)]
+⍝ =>
+$t $t
+
 ⍝ — Inverse •decompose needs factors whose sizes agree
 "qr" •decompose⁻¹ ["q":2 2⍴1 0 0 1;"r":3 3⍴1]
 ⍝ error: LENGTH ERROR
@@ -4117,6 +4138,18 @@ x←[(9223372036854775807ₓ+[1 0]ₓ)-1ₓ 9223372036854775808r1-[1 2]ₓ]
 [3 6 9]ₓ⌹[1 2⋄2 4⋄3 6]ₓ
 ⍝ =>
 [3r5 6r5]
+
+⍝ — A rank-deficient tall float matrix gives its pseudoinverse, through the QR factorization that the SVD of a tall matrix starts from [atol=1e-18]
+u←1+⍳64 ⋄ v←1+⍳16 ⋄ a←u×⊗v
+⌹a
+⍝ =>
+(⍉(1+⍳64)×⊗1+⍳16)÷(+/(1+⍳64)*2)×+/(1+⍳16)*2
+
+⍝ — A full-rank tall float matrix's pseudoinverse is a left inverse [atol=1e-12]
+a←1○(1+⍳64)×⊗1+⍳16
+(⌹a)+.×a
+⍝ =>
+(=⊗⍨⍳16)×1.0
 
 ⍝ — Monadic -.× is the determinant, exact for exact numbers, and +.× the permanent
 [-.×[1 2 3⋄4 5 6⋄7 8 10]ₓ +.×[1 2⋄3 4]ₓ -.×[1j1 2⋄3 4]]
@@ -4692,7 +4725,7 @@ v←⍳1000ₓ ⋄ +/v+v   ⍝ 999000ₓ
 ⍝ — Structure keeps float storage, and an empty array takes its prototype's storage
 {(•storage ⍵).kind}¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float64" "float64" "float64" "integer"
 
-⍝ — Fused calls on a large array, across runs and parentheses, where one call joins two fused graphs, across assignments, through a shared intermediate, through a long iteration, and through both tines of a fork, give the result that each row gives, and their fold gives the fold of that result. 32-bit floats compare exactly, and their last bit can differ between routes, so `near` compares them within a tolerance [serial]
+⍝ — Fused calls on a large array, across runs and parentheses, where one call joins two fused graphs, across assignments, through a shared intermediate, through a long iteration, and through both tines of a fork, give the result that each row gives, and their fold gives the fold of that result. 32-bit floats compare exactly, and their last bit can differ between routes, so `near` compares them within a tolerance
 •prefs ["seed":7] ⋄ x←¿1000000⍴0
 x.[[0 1 2 3]]←[∞ ¯∞ $n 0]
 m←[1000 1000]⍴x
@@ -4730,7 +4763,7 @@ $t $t $t $t $t
 x←¿1000000⍴0 ⋄ x.[[0 1 2 3]]←[∞ ¯∞ $n 0] ⋄ [4↑x⌊0ₓ ⋄ 4↑x⌈0ₓ ⋄ 4↑x⌊x>0 ⋄ 4↑x⌈$t]
 [0ₓ ¯∞ 0 0⋄∞ 0ₓ 0 0⋄1ₓ ¯∞ 0 0⋄∞ 1ₓ 1 1]
 
-⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position [serial]
+⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position
 x←1.5+¿1000000⍴0 ⋄ •prefs ["fusion":$t] ⋄ r←⍴⍋x ⋄ •prefs ["fusion":$f] ⋄ r
 [1000000]ₓ
 ⍝ ⎕: fusion ends at ⍋ (<input>:1:46)
@@ -5091,7 +5124,7 @@ nl←•ucs 10
 
 ⍝⍝ Static kinds
 
-⍝ — An item of complex storage with no imaginary part reads as a float under dynamic kinds, and stays complex under static kinds [serial]
+⍝ — An item of complex storage with no imaginary part reads as a float under dynamic kinds, and stays complex under static kinds
 z←0j1 1j0×1 ⋄ d←(•storage z₁).kind ⋄ •prefs ["kinds":"static"] ⋄ s←(•storage z₁).kind ⋄ •prefs ["kinds":"dynamic"] ⋄ [d s]
 "float64" "complex128"
 
@@ -5103,7 +5136,7 @@ v←32•float 1 2 3 ⋄ {(•storage ⍵).kind}¨[2.5+/v;2.5+\v]
 v←32•float 1.5 2.5 ⋄ w←1.5 2.5 ⋄ {(•storage ⍵).kind}¨[v×2.5;v×2.5ₚ;v×w₀;v₀×2.5;v×0j1;2.5×3.5]
 "float32" "float64" "float64" "float32" "complex64" "float64"
 
-⍝ — Each gives the same kinds whether it calls its function once on all cells or once for each cell, where weak and strong numbers meet [serial]
+⍝ — Each gives the same kinds whether it calls its function once on all cells or once for each cell, where weak and strong numbers meet
 v←32•float 1.5 2.5 ⋄ w←1.5 2.5 ⋄ k←{(•storage ⍵).kind} ⋄ a←[k {⍵×2.5}¨v;k {+/⍵×v}¨w] ⋄ •prefs ["batch":$f] ⋄ b←[k {⍵×2.5}¨v;k {+/⍵×v}¨w] ⋄ •prefs ["batch":$t] ⋄ [(a≡b) a]
 [$t ["float32" "float64"]]
 
@@ -5119,15 +5152,15 @@ v←32•float 0.1 0.2 ⋄ e←v=0.1 ⋄ v.[0]+←2.5 ⋄ [e (•storage v).kind
 v←32•float 1.5 2.5 ⋄ k←{(•storage ⍵).kind} ⋄ [k v,2.5;k 2.5⍪v;k v∪3.5;k v,2.5ₚ;k v,0j1;k {w←v ⋄ w.[[0]]←2.5 ⋄ w}0;k {w←v ⋄ w.[[0]]←2.5ₚ ⋄ w}0;k {2.5}@[0] v]
 "float32" "float32" "float32" "float64" "complex64" "float32" "float64" "float32"
 
-⍝ — An array built from items, such as a list in brackets or a map's results, gives a weak number the width of the strong floats among them, wherever it sits, and Each's two routes agree. A strong 64-bit float widens the array. Where the items stay mixed, a weak number becomes strong, so a copy keeps its width [serial]
+⍝ — An array built from items, such as a list in brackets or a map's results, gives a weak number the width of the strong floats among them, wherever it sits, and Each's two routes agree. A strong 64-bit float widens the array. Where the items stay mixed, a weak number becomes strong, so a copy keeps its width
 v←32•float 1.5 0.5 2.5 ⋄ k←{(•storage ⍵).kind} ⋄ f←{[k {⍵>1?2.5;⍵}¨v;k {⍵>1?⍵;2.5}¨v]} ⋄ a←f 0 ⋄ •prefs ["batch":$f] ⋄ b←f 0 ⋄ •prefs ["batch":$t] ⋄ x←[0.1 v₀ "a"] ⋄ [k [v₀ 2.5];k [2.5 v₀];a≡b;a;k [2.5 v₀ (64•float 1)];k ¯1↓x;(¯1↓x)₀≡x₀]
 ["float32" "float32" $t ["float32" "float32"] "float64" "float64" $t]
 
-⍝ — Under static kinds, an integer array computes at the wider of its storage width and the int width, so a 64-bit array under the int pref at 32 wraps at 64 bits [serial]
+⍝ — Under static kinds, an integer array computes at the wider of its storage width and the int width, so a 64-bit array under the int pref at 32 wraps at 64 bits
 a←[4000000000 2]ₓ ⋄ •prefs ["kinds":"static" "int":32] ⋄ r←[a×a +/a×a (•storage a×a).kind] ⋄ •prefs ["kinds":"dynamic" "int":64] ⋄ r
 [[¯2446744073709551616 4]ₓ ¯2446744073709551612ₓ "int64"]
 
-⍝ — Under static kinds, √ fuses, because its kernel keeps NaN where dynamic kinds would rerun on complex numbers. ∂ gives a NaN tangent outside the domain [serial]
+⍝ — Under static kinds, √ fuses, because its kernel keeps NaN where dynamic kinds would rerun on complex numbers. ∂ gives a NaN tangent outside the domain
 y←¿1000000⍴0 ⋄ •prefs ["kinds":"static"] ⋄ r←[(•explain "+/√y-0.5").fused.glyphs;{+/√⍵}∂4 ¯1 9] ⋄ •prefs ["kinds":"dynamic"] ⋄ r
 ("-√+/"⋄0.25 $n (÷6))
 
@@ -6586,15 +6619,15 @@ x←2000000⍴0.5
 x←⍳16384ₓ ⋄ c←⍳2048ₓ
 (•explain "{+/(x-⍵)×x-⍵}¨c").fallbacks.reason   ⍝ 0⍴⊂""
 
-⍝ — Chunks of cells give what the run over cells gives, cell by cell [serial]
+⍝ — Chunks of cells give what the run over cells gives, cell by cell
 x←⍳16384ₓ ⋄ c←⍳2048ₓ ⋄ f←{+/(x-⍵)×x-⍵} ⋄ a←f¨c
 •prefs ["batch":$f] ⋄ a≡f¨c   ⍝ $t
 
-⍝ — A chunk whose later call repeats a larger constant starts the chunks over, with smaller chunks [serial]
+⍝ — A chunk whose later call repeats a larger constant starts the chunks over, with smaller chunks
 x←⍳1024ₓ ⋄ y←⍳4096ₓ ⋄ c←⍳4096ₓ ⋄ f←{(+/y×⍵)++/x-⍵} ⋄ a←f¨c
 •prefs ["batch":$f] ⋄ a≡f¨c   ⍝ $t
 
-⍝ — Chunks draw the numbers that the run over cells draws [serial]
+⍝ — Chunks draw the numbers that the run over cells draws
 •prefs ["seed":7] ⋄ x←⍳4096ₓ ⋄ c←⍳1024ₓ ⋄ f←{(+/x-⍵)+¿100} ⋄ a←f¨c
 •prefs ["seed":7 "batch":$f] ⋄ b←f¨c ⋄ a≡b   ⍝ $t
 
@@ -6950,6 +6983,9 @@ a←⍳4103ₓ ⋄ b←4103⍴1
 
 ⍝ — Singleton extension also applies along the contracted axis
 (,2)+.×1 2 3   ⍝ 12
+
+⍝ — A small product and the same product inside a large one agree, a NaN term included, though rustymath computes the small one by a direct loop and the large one on its tiled kernels
+v←⍳16 ⋄ v.[0]←$n ⋄ a←4 4⍴v ⋄ B←64 64↑b←4 4⍴⍳16 ⋄ pad←{(⍺,4 60⍴⍵)⍪60 64⍴⍵} ⋄ hi←[4 4]↑(a pad ¯∞)⌈.+B ⋄ lo←[4 4]↑(a pad ∞)⌊.+B ⋄ [(a⌈.+b)≡hi;(a⌊.+b)≡lo]   ⍝ $t $t
 
 ⍝ — Named outer-product operator
 outer←⊗
@@ -8809,6 +8845,9 @@ fold←/
 
 ⍝ — A glyph and a system name both name a function, and an unknown system name is undefined
 •nc "+" "•json" "•bogus"   ⍝ [3 3 0]ₓ
+
+⍝ — Each row of a character matrix is one name, as each string of an array of strings is
+•nc ["•c"⋄"•r"]   ⍝ [3 3]ₓ
 
 ⍝ — Name lists are sorted, filtered by prefix and class
 zeta←1

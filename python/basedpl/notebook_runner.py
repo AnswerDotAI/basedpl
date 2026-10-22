@@ -5,6 +5,7 @@ from pathlib import Path
 from fastcore.script import call_parse
 from fastcore.xtras import working_directory
 from fastcore.nbio import write_nb
+from fastws.cargo import timing_lock
 from . import bpl
 
 LANGUAGES = {'bpl', 'hpl'}
@@ -32,11 +33,12 @@ def main(
     path:Path=Path('nbs'), # BPL notebook or directory to search
     save:bool=False, # Save outputs in the notebook
 ):
-    "Run BPL notebooks without starting Jupyter."
-    paths = sorted(path.rglob('*.ipynb')) if path.is_dir() else [path]
-    for p in paths:
-        if path.is_dir() and json.loads(p.read_text())['metadata'].get('kernelspec', {}).get('language') not in LANGUAGES: continue
-        run_notebook(p, save)
+    "Run BPL notebooks without starting Jupyter, holding the timing lock shared."
+    with timing_lock():
+        paths = sorted(path.rglob('*.ipynb')) if path.is_dir() else [path]
+        for p in paths:
+            if path.is_dir() and json.loads(p.read_text())['metadata'].get('kernelspec', {}).get('language') not in LANGUAGES: continue
+            run_notebook(p, save)
 
 
 if __name__ == '__main__': main()

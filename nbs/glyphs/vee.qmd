@@ -2,12 +2,13 @@
 
 Function. Keys: `Alt-9`. Hanzi: `析/或`. Ranks: `0` monadic, `0 0` dyadic
 
-`∨Y` gives real/imaginary pairs along a new last axis. Y is a numeric array.
+`∨Y` gives real/imaginary pairs along a new last axis. Y is a numeric array. A real item's imaginary part is a zero of the item's own kind: a number of its type, or `$f` for a Boolean.
 
 ```bpl
 ∨3j4              ⍝ 3 4
 ∨3j4 1j2          ⍝ [3 4⋄1 2]
 ∨1r3              ⍝ 1r3 0ₓ
+∨1=1              ⍝ $t $f
 ```
 
 `X∨Y` gives GCD; on Booleans, OR. Pervasive.

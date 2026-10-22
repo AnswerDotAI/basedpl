@@ -110,7 +110,7 @@ pub fn options(request: &JsonValue) -> Result<EvalOptions, String> {
     Ok(EvalOptions { timeout, echo, ..EvalOptions::default() })
 }
 /// Worker operations use the same array encoding in both directions.
-pub fn request(session: &mut Session, request: &JsonValue, options: EvalOptions) -> Result<Evaluation, String> {
+pub fn request(session: &Session, request: &JsonValue, options: EvalOptions) -> Result<Evaluation, String> {
     let code = request.get("code").map(|v| v.as_str().ok_or("code must be a string")).transpose()?;
     let function = request.get("call").map(|v| v.as_str().ok_or("call must be a function expression string")).transpose()?;
     if code.is_some() && function.is_some() { return Err("choose code or call, not both".into()); }
@@ -133,7 +133,7 @@ pub fn request(session: &mut Session, request: &JsonValue, options: EvalOptions)
 fn location(s: &crate::Span) -> JsonValue { json!({"source": {"name": s.source.name, "text": s.source.text}, "span": [s.range.start, s.range.end]}) }
 
 pub fn error(e: &Error) -> JsonValue {
-    let mut encoded = location(&e.span);
+    let mut encoded = e.span.as_ref().map_or_else(|| json!({}), location);
     encoded["kind"] = json!(e.kind.name());
     encoded["message"] = json!(e.message);
     encoded["display"] = json!(e.to_string());

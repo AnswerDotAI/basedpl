@@ -72,13 +72,13 @@ const RUNS: [Run; 4] = [
     Run { batch: true, fused: false, twice: true, words: "on a dfn's second call" },
 ];
 
-/// The header options that set a flag on a case, each setting the field of its own name to `true`: `unfused` leaves out the run with fusion's small sizes, `batched` leaves out the run with the `batch` pref off, `mixed` leaves out the comparison of the result's storage with the expectation's, and `serial` runs the case alone, as a case that calls `•prefs` must run.
-const FLAGS: [&str; 4] = ["unfused", "batched", "mixed", "serial"];
+/// The header options that set a flag on a case, each setting the field of its own name to `true`: `unfused` leaves out the run with fusion's small sizes, `batched` leaves out the run with the `batch` pref off, and `mixed` leaves out the comparison of the result's storage with the expectation's.
+const FLAGS: [&str; 3] = ["unfused", "batched", "mixed"];
 
-/// The runs that `case` takes: one with its Boolean `batch` field where it has one, and otherwise each of `RUNS` that its `unfused` and `batched` options leave in.
+/// The runs that `case` takes: the one of `RUNS` that its Boolean `batch` field picks, where it has one, and otherwise each of `RUNS` that its `unfused` and `batched` options leave in.
 fn runs(case: &JsonValue) -> Vec<Run> {
     match case["batch"].as_bool() {
-        Some(batch) => vec![Run { batch, fused: false, twice: false, words: "" }],
+        Some(batch) => vec![RUNS[usize::from(batch)]],
         None => RUNS.into_iter().filter(|r| !(r.fused && case["unfused"] == true) && (r.batch || case["batched"] != true)).collect(),
     }
 }
@@ -86,7 +86,7 @@ fn runs(case: &JsonValue) -> Vec<Run> {
 /// Puts in force the settings that `run` of a case runs under, where the case's file has the leading `•prefs` header `prefs`: the defaults, then the header, then the run's `batch` pref and fusion sizes.
 fn enter(prefs: Option<&str>, Run { batch, fused, .. }: Run) -> Result<(), JsonValue> {
     crate::settings::reset();
-    if let Some(prefs) = prefs && let Some(error) = Session::new().eval_with(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() }).error {
+    if let Some(prefs) = prefs && let Some(error) = Session::current().eval_apart(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() }).error {
         return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
     }
     crate::settings::set_batch(batch);
@@ -152,17 +152,17 @@ fn outcome(case: &JsonValue, Run { words, .. }: Run, timeout: Option<std::time::
 /// The name of the dfn that `twice` makes from a case's code.
 const TWICE: &str = "reference_case";
 
-/// `case`'s code as the body of a dfn that one session calls twice, under the settings in force. The first call runs each statement through the binder, which records it, and the second call runs the recordings. The second call must give the first's value, storage kind, error and output. Before each call, the session's random numbers restart from seed 0, each call reads its own `input` lines, and the second call finds the `testpath` fixture's directory emptied. A `serial` case's settings go back in force before the second call, because its first call can change them. Code that can't be a dfn's body, such as code with a syntax error, passes this run unchecked.
+/// `case`'s code as the body of a dfn that one session calls twice, under the settings in force. The first call runs each statement through the binder, which records it, and the second call runs the recordings. The second call must give the first's value, storage kind, error and output. Before each call, the session's random numbers restart from seed 0, each call reads its own `input` lines, and the second call finds the `testpath` fixture's directory emptied. The settings go back in force before the second call, because the first call can change them. Code that can't be a dfn's body, such as code with a syntax error, passes this run unchecked.
 fn twice(case: &JsonValue, run: Run, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<Outcome, JsonValue> {
     let Some(code) = case["code"].as_str() else { return Err(json!({"status":"invalid", "message":"missing code"})); };
     let input = optional_text(case, "input", "input")?;
     let options = || EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, ..EvalOptions::default() };
-    let mut session = Session::new();
-    let files = fixture(&mut session, code)?;
+    let session = Session::new();
+    let files = fixture(&session, code)?;
     let mut calls = Vec::new();
     if session.eval_with(&format!("{TWICE}←{{\n{code}\n}}"), options()).error.is_none() {
         for call in 0..2 {
-            if call == 1 && case["serial"] == true { enter(case["prefs"].as_str(), run)?; }
+            if call == 1 { enter(case["prefs"].as_str(), run)?; }
             if call == 1 && let Some(dir) = &files { emptied(dir.path())?; }
             *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Stream::seeded(0);
             calls.push(session.eval_with(&format!("{TWICE} 0"), EvalOptions { input: lines(input), ..options() }));
@@ -218,13 +218,13 @@ pub fn check(case: &JsonValue, interrupt: &InterruptHandle) -> JsonValue { failu
 
 /// `code` run in a fresh session with the settings in force, a `testpath` fixture where the code names one, and `input` as its lines of input.
 fn evaluated(code: &str, input: Option<&str>, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<crate::Evaluation, JsonValue> {
-    let mut session = Session::new();
-    let _files = fixture(&mut session, code)?;
+    let session = Session::new();
+    let _files = fixture(&session, code)?;
     Ok(session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input: lines(input), ..EvalOptions::default() }))
 }
 
 /// A new temporary directory for the `testpath` fixture, where `code` names one, with `testpath` in `session` naming a path inside it. The directory lasts as long as the returned guard.
-fn fixture(session: &mut Session, code: &str) -> Result<Option<tempfile::TempDir>, JsonValue> {
+fn fixture(session: &Session, code: &str) -> Result<Option<tempfile::TempDir>, JsonValue> {
     if !code.contains("testpath") { return Ok(None); }
     let dir = tempfile::tempdir().map_err(unusable)?;
     session.set("testpath", crate::keyed::text(&dir.path().join("data").to_string_lossy())).expect("valid fixture name");
@@ -353,73 +353,27 @@ pub fn cases(text: &str) -> Result<Vec<JsonValue>, String> {
     Ok(cases)
 }
 
-/// The cases of `cases` that fail `check`, in their order. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Cases from files with the same leading `•prefs` header (`prefs`) run together, one run at a time (`RUNS`). For each run, `enter` puts the run's settings in force, the cases without the `serial` option run in parallel, on one thread for each core, and then each `serial` case and each case that calls `•explain` runs alone, with the settings put in force again before it. A case that calls `•explain` runs alone because `•explain` records what every thread in its process does. A case without `serial` that calls `•prefs` fails, because it would change the settings of the cases running beside it. Each case has `TIMEOUT` to run. After an interrupt, no case starts, and failures after the first interrupted case drop out. The settings are reset at the end.
+/// The cases of `cases` that fail `check`, in their order. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Each case takes its runs (`runs`) one after another, each under its file's leading `•prefs` header and the run's settings (`enter`), and each run has `TIMEOUT`. Callers that check cases in parallel split them across processes, as `tests/reference.rs` and Python's `check_file` do, because a process evaluates one case at a time. After an interrupt, no case starts. The settings are reset at the end.
 pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, interrupt: &InterruptHandle) -> Vec<JsonValue> {
-    use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
-    let cases: Vec<&JsonValue> = cases.into_iter().collect();
-    let stop = AtomicBool::new(false);
-    let calls = |case: &JsonValue, name: &str| case["code"].as_str().is_some_and(|code| code.to_lowercase().contains(name));
-    let step = |case: &JsonValue, run: Run| {
-        let result = if calls(case, "•prefs") && case["serial"] != true { Err(json!({"status":"invalid", "message":"a case that calls •prefs needs the serial option"})) }
-            else if run.twice { twice(case, run, Some(TIMEOUT), interrupt) } else { outcome(case, run, Some(TIMEOUT), interrupt) };
-        if result.as_ref().is_err_and(|f| f["status"] == "interrupt") { stop.store(true, Relaxed); }
-        result
-    };
-    let mut outcomes: Vec<Result<Vec<(Run, Outcome)>, JsonValue>> = cases.iter().map(|_| Ok(Vec::new())).collect();
-    let mut headers: Vec<Option<&str>> = Vec::new();
-    for case in &cases { if !headers.contains(&case["prefs"].as_str()) { headers.push(case["prefs"].as_str()); } }
-    for header in headers {
-        for run in RUNS {
-            let takes = |i: usize| cases[i]["prefs"].as_str() == header && runs(cases[i]).iter().any(|r| (r.batch, r.fused, r.twice) == (run.batch, run.fused, run.twice));
-            let wanted: Vec<usize> = (0..cases.len()).filter(|&i| outcomes[i].is_ok() && takes(i)).collect();
-            let (serial, parallel): (Vec<usize>, Vec<usize>) = wanted.into_iter().partition(|&i| cases[i]["serial"] == true || calls(cases[i], "•explain"));
-            let mut record = |i: usize, result: Result<Outcome, JsonValue>| match result {
-                Ok(outcome) => if let Ok(list) = &mut outcomes[i] { list.push((run, outcome)) },
-                Err(failure) => outcomes[i] = Err(failure),
-            };
-            if let Err(invalid) = enter(header, run) {
-                for &i in serial.iter().chain(&parallel) { record(i, Err(invalid.clone())); }
-                continue;
-            }
-            for (i, result) in in_parallel(&parallel, &stop, |i| step(cases[i], run)) { record(i, result); }
-            for i in serial {
-                if stop.load(Relaxed) { break; }
-                record(i, enter(header, run).and_then(|()| step(cases[i], run)));
-            }
-        }
+    let mut failures = Vec::new();
+    for case in cases {
+        let mut outcomes = Vec::new();
+        let result = runs(case).into_iter().try_for_each(|run| {
+            enter(case["prefs"].as_str(), run)?;
+            outcomes.push((run, if run.twice { twice(case, run, Some(TIMEOUT), interrupt) } else { outcome(case, run, Some(TIMEOUT), interrupt) }?));
+            Ok(())
+        }).map_or_else(|failure| failure, |()| verdict(case, &outcomes));
+        if result["status"] == "pass" { continue; }
+        let mut failure = case.clone();
+        for key in ["status", "message", "kind"] { if let Some(value) = result.get(key) { failure[key] = value.clone(); } }
+        failures.push(failure);
+        if result["status"] == "interrupt" { break; }
     }
     crate::settings::reset();
-    let mut failures: Vec<JsonValue> = cases.iter().zip(outcomes).filter_map(|(case, outcome)| {
-        let result = outcome.map_or_else(|failure| failure, |list| verdict(case, &list));
-        (result["status"] != "pass").then(|| {
-            let mut failure = (*case).clone();
-            for key in ["status", "message", "kind"] { if let Some(value) = result.get(key) { failure[key] = value.clone(); } }
-            failure
-        })
-    }).collect();
-    if let Some(first) = failures.iter().position(|f| f["status"] == "interrupt") { failures.truncate(first + 1); }
     failures
 }
 
-/// `f` of each of `items`, with each item, run on one thread for each core. Each thread takes the next item that no thread has taken, until `stop` is set.
-fn in_parallel<T: Send>(items: &[usize], stop: &std::sync::atomic::AtomicBool, f: impl Fn(usize) -> T + Sync) -> Vec<(usize, T)> {
-    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-    let next = AtomicUsize::new(0);
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(items.len());
-    std::thread::scope(|scope| {
-        let workers: Vec<_> = (0..threads).map(|_| scope.spawn(|| {
-            let mut done = Vec::new();
-            while !stop.load(Relaxed) {
-                let Some(&i) = items.get(next.fetch_add(1, Relaxed)) else { break };
-                done.push((i, f(i)));
-            }
-            done
-        })).collect();
-        workers.into_iter().flat_map(|w| w.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))).collect()
-    })
-}
-
-/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own, with the `batch` pref set to `batch` unless that is `None`. Each expectation runs in a fresh session after its lines, under the settings they leave. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within 1e-13 with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
+/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own, with the `batch` pref set to `batch` unless that is `None`. Each expectation runs in a module of its own after its lines (`Session::eval_apart`), under the settings they leave. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within 1e-13 with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
 pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     let options = || EvalOptions { timeout: Some(TIMEOUT), echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
     let (mut failures, mut session, mut code) = (Vec::new(), None, String::new());
@@ -440,7 +394,7 @@ pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec
         if expected.is_none() && !closing { continue; }
         let result = bpl.eval_with(&code, options());
         // The expectation evaluates after the code, under the settings that the code leaves.
-        let wanted = expected.map(|e| Session::new().eval_with(e, options()));
+        let wanted = expected.map(|e| bpl.eval_apart(e, options()));
         let message = match (result.error, result.value, wanted) {
             (Some(error), _, _) => Some(error.to_string()),
             (None, _, None) => None,

@@ -22,7 +22,7 @@ fn language_examples() {
             let text = std::fs::read_to_string(&path).unwrap();
             // A gallery demo is a whole program, run after the gallery's settings, as the gallery runs it. A demo that defines `frame` also draws its first frame.
             if ext == "bpl" {
-                let mut session = Session::new();
+                let session = Session::new();
                 let error = [prefs.as_str(), &text, r#"{3=•nc "frame"?frame 0;0}0"#].into_iter().find_map(|code| session.eval(code).error);
                 if let Some(error) = error { failures.push(format!("{}: {error}", path.display())); }
                 continue;
@@ -47,7 +47,7 @@ fn language_examples() {
 }
 
 fn boxed_display_and_function_trees() {
-    let mut s = Session::new();
+    let s = Session::new();
     assert!(s.eval(r#"•prefs ["box":$t "trees":$t "fns":$t]"#).error.is_none());
     assert_eq!(s.eval("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂¨[0 1]ₓ").output_text(), ["⊂4ₓ", "⊂⊂4ₓ", "┌→────────┐\n│ ⊂0ₓ ⊂1ₓ │\n└∊────────┘"]);
     let r = s.eval(r#"A←2 3 4⍴"DUCKSWANBIRDWORMCAKESEED" ⋄ ⊂⍠2 A"#);
@@ -60,13 +60,13 @@ fn boxed_display_and_function_trees() {
     let f = s.eval("avg←+/÷≢ ⋄ avg");
     assert!(f.error.is_none() && f.value.is_none());
     assert_eq!(f.output_text(), ["fork\n├─ /\n│  └─ +\n├─ ÷\n└─ ≢"]);
-    equiv_in(&mut s, "avg [1 2 4]ₓ", "7r3");
+    equiv_in(&s, "avg [1 2 4]ₓ", "7r3");
     let r = s.eval("{⎕←⍵ ⋄ ⍵}1 2");
     assert_eq!(r.output_text().len(), 2);
     assert_eq!(r.output_text()[0], r.output_text()[1]);
     assert!(s.eval(r#"•prefs ["fns":$f]"#).error.is_none());
     assert_eq!(s.eval("{⎕←⍵ ⋄ ⍵}1 2").output_text()[0], "1 2");
-    equiv_in(&mut s, "⍕1 2", r#""1 2""#);
+    equiv_in(&s, "⍕1 2", r#""1 2""#);
     assert!(s.eval(r#"•prefs ["box":$f]"#).error.is_none());
     assert_eq!(s.eval("1 2").output_text(), ["1 2"]);
     assert_eq!(s.eval("]Display ⎕←1 2").output_text(), ["1 2", "┌→──┐\n│1 2│\n└~──┘"]);
@@ -106,7 +106,7 @@ fn boxed_display_and_function_trees() {
 }
 
 fn expression_dissection() {
-    let mut s = Session::new();
+    let s = Session::new();
     s.eval(r#"•prefs ["trees":$t]"#);
     let r = s.eval("]dissect -@ 1 0 1# 1 2 3");
     assert!(r.error.is_none(), "{:?}", r.error);
@@ -143,19 +143,19 @@ fn expression_dissection() {
 fn threads_give_the_same_results() {
     let data: Vec<_> = (0..(1 << 18) + 3).map(|i| i % 257 - 128).collect();
     let expected = vector(&data.iter().map(|&x| f64::from(x)).collect::<Vec<_>>());
-    let mut s = Session::new();
+    let s = Session::new();
     s.set("v", AplValue::from_buffer([data.len()], basedpl::buffer::Buffer::Integers(basedpl::buffer::IntBuf::I32(data))).unwrap()).unwrap();
     for threads in [1, 4] {
         assert!(s.eval(&format!(r#"•prefs ["threads":{threads}]"#)).error.is_none());
-        check_in(&mut s, "64•float 32•float v", expected.clone());
+        check_in(&s, "64•float 32•float v", expected.clone());
     }
 }
 
 fn hanzi_spellings_and_language() {
     use basedpl::symbols::{canonical, symbols, Notation};
     let mut seen = std::collections::HashMap::new();
-    let mut s = Session::new();
-    equiv_in(&mut s, r#"•prefs ["hanzi_aliases":$t] ⋄ mean是加总除数句mean 2 4 9"#, "5");
+    let s = Session::new();
+    equiv_in(&s, r#"•prefs ["hanzi_aliases":$t] ⋄ mean是加总除数句mean 2 4 9"#, "5");
     for symbol in symbols() {
         for (aliases, notation) in symbol.hanzi.into_iter().zip([Notation::Simplified, Notation::Traditional]) {
             assert!(!aliases.is_empty(), "{} needs Hanzi spellings", symbol.glyph);
@@ -169,7 +169,7 @@ fn hanzi_spellings_and_language() {
             }
         }
     }
-    equiv_in!(&mut s;
+    equiv_in!(&s;
         "mean是加总除数句mean 2 4 9" => "5", "加累 2 3 4" => "2 5 9", "乘表己至3" => "[1 2 3⋄2 4 6⋄3 6 9]", "加總 1 2 3" => "6",
         "負3减负1" => "¯2", "1e负3加1r负4" => "1e¯3+1r¯4", "[负3 负1]ₓ" => "[¯3 ¯1]ₓ", "[空]ₛ" => "[⍬]ₛ", "负永" => "¯∞",
         "{甲是2句甲加乙}3" => "5", "{永键键7句除'a'}0" => "7", "op是{丙乙}句加op 3" => "3", "r是[\"a1\":7]句r内a1" => "7",
@@ -181,22 +181,22 @@ fn hanzi_spellings_and_language() {
     assert_eq!(s.name_class("系time"), 3);
     assert_eq!(s.inspect("系time").unwrap().source, "•time");
     assert!(s.set("乙", number(1)).is_err() && !s.erase("乙"));
-    equiv_in(&mut s, "{系nc \"乙\"}0", "2ₓ");
+    equiv_in(&s, "{系nc \"乙\"}0", "2ₓ");
     equiv("かな←2 ⋄ 한글←3 ⋄ かな+한글", "5");
     let code = "加总 1 2句辞";
     let error = s.eval(code).error.unwrap();
-    assert_eq!(error.span.range, 13..16);
-    assert_eq!(error.span.source.text, code);
-    fails_in(&mut s, "DOMAIN", &[r#"0 ⋄ •prefs ["hanzi_aliases":$f]"#, r#"p←["hanzi_aliases":$f] ⋄ •prefs p"#]);
-    equiv_in(&mut s, r#"•prefs ["hanzi_aliases":$f] ⋄ 中文←7 ⋄ 中文"#, "7");
-    equiv_in(&mut s, "中文+1", "8");
+    assert_eq!(error.span.as_ref().unwrap().range, 13..16);
+    assert_eq!(error.span.as_ref().unwrap().source.text, code);
+    fails_in(&s, "DOMAIN", &[r#"0 ⋄ •prefs ["hanzi_aliases":$f]"#, r#"p←["hanzi_aliases":$f] ⋄ •prefs p"#]);
+    equiv_in(&s, r#"•prefs ["hanzi_aliases":$f] ⋄ 中文←7 ⋄ 中文"#, "7");
+    equiv_in(&s, "中文+1", "8");
 }
 
 fn leading_prefs_set_how_their_code_reads() {
-    let mut s = Session::new();
+    let s = Session::new();
     s.eval(r#"•prefs ["kinds":"static" "int":32]"#);
-    equiv_in(&mut s, r#"•prefs ["kinds":"dynamic" "int":64] ⋄ 2147483648ₓ"#, "2147483648ₓ");
-    equiv_in(&mut s, r#"⍎"•prefs [""float"":32] ⋄ (•storage 1.5).kind""#, r#""float32""#);
+    equiv_in(&s, r#"•prefs ["kinds":"dynamic" "int":64] ⋄ 2147483648ₓ"#, "2147483648ₓ");
+    equiv_in(&s, r#"⍎"•prefs [""float"":32] ⋄ (•storage 1.5).kind""#, r#""float32""#);
 }
 
 fn highlight_after_a_prefs_header() {

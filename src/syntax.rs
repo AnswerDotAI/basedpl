@@ -1,6 +1,6 @@
 use rustymath::{buffer::FloatWidth, error::Kind};
 use crate::{number::{subscript, width_marker, Arithmetic, Math, Numeric, Suffix, DENOMINATOR, EXACT, EXPONENT, IMAGINARY, SUFFIXES, WIDTHS}, primitive::{Builtin, OperatorKind, Primitive, Superscript}, symbols::canonical,
-    Error, ErrorAt, ErrorKind, Number, Source, Span, Value
+    At, Described, Error, ErrorKind, Number, Source, Span, Value
 };
 use crate::name::{is_implicit, Name};
 use std::{iter::Peekable, str::CharIndices, sync::{atomic::{AtomicU64, Ordering::Relaxed}, Arc}};
@@ -296,12 +296,12 @@ fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>,
                         (TokenKind::Literal(Value::Number(n)), _) if n.as_bool().is_some() => continue,
                         (TokenKind::Literal(Value::Number(_)), Mark::Exact) if text.starts_with('$') => continue,
                         (TokenKind::Literal(Value::Number(_)), Mark::Exact) => {
-                            Value::Number(exact_number(text, numeric).error_at(&token.span, "ₓ marks whole numbers exact")?)
+                            Value::Number(exact_number(text, numeric).described("ₓ marks whole numbers exact").at(&token.span)?)
                         }
                         (TokenKind::Literal(Value::Number(n)), Mark::Width(w)) => {
                             let n = if text.starts_with('$') { Ok(n.clone()) } else { literal_number(text, numeric.with_width(w)) };
                             let n = n.and_then(|n| n.to_float_width(w).map_err(|_| Kind::Domain.into()));
-                            Value::Number(n.error_at(&token.span, &format!("{} marks numbers", mark.marker()))?)
+                            Value::Number(n.described(&format!("{} marks numbers", mark.marker())).at(&token.span)?)
                         }
                         (TokenKind::Literal(_), _) if text.chars().map(canonical).eq(['⍬']) => zilde(mark.zero()),
                         _ => continue,
@@ -462,7 +462,7 @@ fn lexed(source: &Arc<Source>, aliases: bool, mut highlights: Option<&mut Highli
             Err(failure) => {
                 let Some(classes) = highlights.as_deref_mut() else { return Err(failure); };
                 let (ParseFailure::Incomplete(e) | ParseFailure::Invalid(e)) = failure;
-                let end = e.span.range.end.max(start + c.len_utf8());
+                let end = e.span.as_ref().map_or(start, |s| s.range.end).max(start + c.len_utf8());
                 while chars.next_if(|&(i, _)| i < end).is_some() {}
                 if matches!(c, '"' | '\'') { classes.push((start..position(&mut chars, len), "string")); }
                 continue;
@@ -502,41 +502,41 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
     let c = canonical(raw);
     let span = |end| Span { source: source.clone(), range: start..end };
     Ok(Some(if c.is_ascii_digit() || matches!(c, '¯' | '∞') || (c == '.' && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit())) {
-        real_literal(chars).map_err(|message| span(position(chars, len)).error(ErrorKind::Syntax, message))?;
+        real_literal(chars).map_err(|message| Error::new(ErrorKind::Syntax, message).at(&span(position(chars, len))))?;
         if suffix(chars, IMAGINARY) {
-            real_literal(chars).map_err(|message| span(position(chars, len)).error(ErrorKind::Syntax, message))?;
+            real_literal(chars).map_err(|message| Error::new(ErrorKind::Syntax, message).at(&span(position(chars, len))))?;
             width_mark(chars);
-            if let Some(end) = run_on(chars, false) { return Err(span(end).error(ErrorKind::Syntax, "invalid complex numeric literal").into()); }
+            if let Some(end) = run_on(chars, false) { return Err(Error::new(ErrorKind::Syntax, "invalid complex numeric literal").at(&span(end)).into()); }
         } else {
             let rational = suffix(chars, DENOMINATOR);
             if rational {
                 chars.next_if(|&(_, c)| canonical(c) == '¯');
-                if digits(chars) == 0 { return Err(span(position(chars, len)).error(ErrorKind::Syntax, "expected integer denominator").into()); }
+                if digits(chars) == 0 { return Err(Error::new(ErrorKind::Syntax, "expected integer denominator").at(&span(position(chars, len))).into()); }
             }
             if rational || mark(chars).is_some() {
-                if let Some(end) = run_on(chars, true) { return Err(span(end).error(ErrorKind::Syntax, "invalid exact numeric literal").into()); }
+                if let Some(end) = run_on(chars, true) { return Err(Error::new(ErrorKind::Syntax, "invalid exact numeric literal").at(&span(end)).into()); }
             }
         }
         let end = position(chars, len);
         let n = literal_number(&source.text[start..end], numeric)
-            .error_at(&span(end), "invalid numeric literal (real values, finite complex components or integer components with ₓ and r required)")?;
+            .described("invalid numeric literal (real values, finite complex components or integer components with ₓ and r required)").at(&span(end))?;
         TokenKind::Literal(Value::number(n).unwrap())
     } else if name_char_in(raw, chars.aliases) {
         let key = source.text[..start].chars().next_back().is_some_and(|c| canonical(c) == '.');
-        name(chars, key).map_err(|(end, message)| span(end).error(ErrorKind::Syntax, message))?;
+        name(chars, key).map_err(|(end, message)| Error::new(ErrorKind::Syntax, message).at(&span(end)))?;
         TokenKind::Name(source.text[start..position(chars, len)].to_owned())
     } else {
         chars.next();
         match c {
             '\'' => {
-                let unclosed = |at| Err(span(at).error(ErrorKind::Syntax, "unclosed character literal").into());
+                let unclosed = |at| Err(Error::new(ErrorKind::Syntax, "unclosed character literal").at(&span(at)).into());
                 let c = match chars.next() { Some((_, c)) if c != '\n' => c, next => return unclosed(next.map_or(len, |(i, _)| i)) };
                 if c == '\'' && chars.peek().is_none_or(|&(_, c)| c != '\'') { TokenKind::Literal(crate::keyed::text("")) } else {
                     match chars.peek() {
                         Some((_, '\'')) => { chars.next(); }
                         None | Some((_, '\n')) => return unclosed(position(chars, len)),
                         Some(&(i, c)) => {
-                            return Err(span(i + c.len_utf8()).error(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)")
+                            return Err(Error::new(ErrorKind::Syntax, "a character literal holds one character (strings use double quotes)").at(&span(i + c.len_utf8()))
                                 .into())
                         }
                     }
@@ -555,7 +555,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
                             text.push('\n');
                         }
                         Some((_, c)) => text.push(c),
-                        None => return Err(ParseFailure::Incomplete(span(len).error(ErrorKind::Syntax, "unclosed string"))),
+                        None => return Err(ParseFailure::Incomplete(Error::new(ErrorKind::Syntax, "unclosed string").at(&span(len)))),
                     }
                 }
                 TokenKind::Literal(crate::keyed::text(&text))
@@ -574,14 +574,14 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
                         TokenKind::Literal(Value::Number(Number::float(width.epsilon(), width)))
                     }
                     Some((_, 'e')) => TokenKind::Name("$e".into()),
-                    _ => return Err(span(position(chars, len)).error(ErrorKind::Syntax, DOLLAR).into()),
+                    _ => return Err(Error::new(ErrorKind::Syntax, DOLLAR).at(&span(position(chars, len))).into()),
                 };
                 if chars.peek().is_some_and(|&(_, c)| name_char(c) || c.is_ascii_digit()) {
-                    return Err(span(position(chars, len)).error(ErrorKind::Syntax, DOLLAR).into());
+                    return Err(Error::new(ErrorKind::Syntax, DOLLAR).at(&span(position(chars, len))).into());
                 }
                 token
             }
-            '⍛' => return Err(span(start + c.len_utf8()).error(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop").into()),
+            '⍛' => return Err(Error::new(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop").at(&span(start + c.len_utf8())).into()),
             '(' => TokenKind::Open,
             ')' => TokenKind::Close(mark(chars)),
             '[' => TokenKind::BracketOpen,
@@ -590,7 +590,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             '⋄' => TokenKind::Separator,
             '←' => TokenKind::Assign,
             '•' if chars.peek().is_some_and(|&(_, c)| name_char(c)) => {
-                name(chars, false).map_err(|(end, message)| span(end).error(ErrorKind::Syntax, message))?;
+                name(chars, false).map_err(|(end, message)| Error::new(ErrorKind::Syntax, message).at(&span(end)))?;
                 TokenKind::System(format!("•{}", &source.text[start + raw.len_utf8()..position(chars, len)]))
             }
             '⎕' => TokenKind::Output,
@@ -613,16 +613,16 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             'ₑ' => TokenKind::Joiner(Joiner::Exponent),
             'ᵣ' => TokenKind::Joiner(Joiner::Denominator),
             c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
-                let power = script_integer(c, chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| span(position(chars, len)).error(k, m))?;
+                let power = script_integer(c, chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| Error::new(k, m).at(&span(position(chars, len))))?;
                 TokenKind::Operator(OperatorKind::Super(Superscript::Power(power)))
             }
             c if c == '₋' || script_digit(SUBSCRIPT_DIGITS, c).is_some() => {
-                TokenKind::Subscript(script_integer(c, chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| span(position(chars, len)).error(k, m))?)
+                TokenKind::Subscript(script_integer(c, chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| Error::new(k, m).at(&span(position(chars, len))))?)
             }
             c if c.is_whitespace() => return Ok(None),
             c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
                 (Some(op), _) => TokenKind::Operator(op), (_, Some(f)) => TokenKind::Function(f),
-                _ => return Err(span(start + raw.len_utf8()).error(ErrorKind::Unsupported, format!("{raw:?} is not supported yet")).into())
+                _ => return Err(Error::new(ErrorKind::Unsupported, format!("{raw:?} is not supported yet")).at(&span(start + raw.len_utf8())).into())
             },
         }
     }))
@@ -658,7 +658,7 @@ pub fn in_code(text: &str, aliases: bool) -> bool {
 
 enum ParseFailure { Incomplete(Error), Invalid(Error) }
 
-fn invalid(span: &Span, message: &str) -> ParseFailure { ParseFailure::Invalid(span.error(ErrorKind::Syntax, message)) }
+fn invalid(span: &Span, message: &str) -> ParseFailure { ParseFailure::Invalid(Error::new(ErrorKind::Syntax, message).at(span)) }
 impl From<Error> for ParseFailure { fn from(e: Error) -> Self { Self::Invalid(e) } }
 impl From<ParseFailure> for ParseStatus {
     fn from(failure: ParseFailure) -> Self {
@@ -721,7 +721,7 @@ impl Parser<'_> {
                 TokenKind::Subscript(index) => NodeKind::Subscript(*index),
                 TokenKind::Joiner(joiner) => NodeKind::Joiner(*joiner),
                 TokenKind::Name(name) => NodeKind::Name(Name::new(name)),
-                TokenKind::System(name) => crate::system::Entry::find(name).map_or_else(|| NodeKind::System(name.clone()), |entry| NodeKind::Function(Builtin::System(entry))),
+                TokenKind::System(name) => Builtin::find(name).map_or_else(|| NodeKind::System(name.clone()), NodeKind::Function),
                 TokenKind::Assign => NodeKind::Assign,
                 TokenKind::Output => NodeKind::Output,
                 TokenKind::ErrorGuard => {
@@ -731,7 +731,7 @@ impl Parser<'_> {
             };
             pieces.push(Piece::Node(Node { kind, span }));
         }
-        if let Some(open) = open { return Err(ParseFailure::Incomplete(open.span.error(ErrorKind::Syntax, "unclosed delimiter"))); }
+        if let Some(open) = open { return Err(ParseFailure::Incomplete(Error::new(ErrorKind::Syntax, "unclosed delimiter").at(&open.span))); }
         Ok(pieces)
     }
 }
@@ -908,7 +908,7 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
                     Superscript::Unit | Superscript::Floor => break
                 };
                 node.span.range.end = end;
-                let raised = raised.map_err(|m| node.span.error(Kind::Domain, m))?;
+                let raised = raised.at(&node.span)?;
                 node.kind = NodeKind::Literal(Value::Number(raised));
                 nodes.next();
             }
@@ -927,7 +927,7 @@ fn close_strand(strand: &mut Vec<Node>, out: &mut Vec<Node>) -> Result<(), Parse
     if strand.len() < 2 { out.append(strand); return Ok(()); }
     let span = cover(strand);
     let items: Vec<_> = strand.drain(..).map(|n| if let NodeKind::Literal(v) = n.kind { v } else { unreachable!() }).collect();
-    let value = Value::new([items.len()], items).error_at(&span, "invalid literal list")?;
+    let value = Value::new([items.len()], items).described("invalid literal list").at(&span)?;
     out.push(Node { kind: NodeKind::Literal(value), span });
     Ok(())
 }
@@ -1082,8 +1082,7 @@ fn recovered(source: &Arc<Source>) -> Vec<SyntaxNode> {
         match status {
             ParseStatus::Complete(parsed) => nodes.extend(parsed.statements.iter().map(|s| statement_node(s).shifted(start))),
             ParseStatus::Incomplete(mut error) | ParseStatus::Invalid(mut error) => {
-                let range = error.span.range.start + start..error.span.range.end + start;
-                error.span = Span { source: source.clone(), range };
+                if let Some(span) = &mut error.span { *span = Span { source: source.clone(), range: span.range.start + start..span.range.end + start }; }
                 let stop = if text[..end].ends_with('\n') { end - 1 } else { end };
                 nodes.push(SyntaxNode { error: Some(error), ..SyntaxNode::new("Error", start..stop, Vec::new()) });
             }

@@ -150,6 +150,12 @@ pub fn chord(glyph: &str) -> String {
     String::new()
 }
 
+/// Every builtin function's spelling, its glyph's name or its system name without the `•`, and the names of its monadic and dyadic forms, as Python's `basedpl.functions` names them. System functions come first, so that a name that a glyph and a system function share, such as `hash`, names the glyph.
+pub fn builtins() -> Vec<[&'static str; 4]> {
+    let systems = crate::system::Entry::all().map(|entry| [entry.name(), entry.name().trim_start_matches('•'), "", ""]);
+    systems.chain(symbols().iter().filter(|s| s.kind == "function").map(|s| [s.glyph, s.name, s.monad, s.dyad])).collect()
+}
+
 /// Every glyph's row, as `basedpl.symbols` and the browser's language bar read it: the fields of `Symbol`, and `shortcut`, the glyph's `chord`.
 pub fn rows() -> serde_json::Value {
     let row = |s: &Symbol| {

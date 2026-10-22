@@ -1,5 +1,5 @@
 //! `•canvas`: drawing functions written in JavaScript. `•canvas Y` makes a drawing function from the JavaScript source `Y`. `X draw Y` gives a record of the source, the options `X` and the data `Y`, which displays as a canvas. Displaying it calls the JavaScript function with the canvas's 2D context, the data and the options, which `js.rs` converts to JavaScript values.
-use crate::{data, display, execution::Context, js, keyed, system::{native, Call, Valence::Ambivalent}, Error, ErrorAt, Value};
+use crate::{data, display, Span, js, keyed, system::{native, Call, Valence::Ambivalent}, Error, Described, Value};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use std::sync::Arc;
 
@@ -12,24 +12,24 @@ const BYTES_TYPE: &str = "application/x-bpl-canvas-data";
 /// The drawing function for the JavaScript `source`, as `•canvas` returns it.
 pub(crate) fn function(source: Arc<str>) -> Value { Value::Function(native("•canvas", Call::Canvas(source), Ambivalent)) }
 
-pub(crate) fn factory(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { Ok(function(data::text(right, span)?.into())) }
+pub(crate) fn factory(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> { Ok(function(data::text(right)?.into())) }
 
 /// `X draw Y`: a record of the drawing function's source, the options `X` and the data `Y`, displayed as a canvas. Without options, the JavaScript gets an empty object.
-pub(crate) fn draw(source: &str, options: Option<&Value>, data: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn draw(source: &str, options: Option<&Value>, data: &Value) -> Result<Value, Error> {
     let options = options.cloned().unwrap_or_else(keyed::empty_record);
     keyed::vector(vec!["source".into(), "options".into(), "data".into()], vec![keyed::text(source), options, data.clone()])
-        .and_then(|canvas| canvas.with_renderer(display::renderer("canvas-renderer", render))).error_at(span, "canvas exceeds array limits")
+        .and_then(|canvas| canvas.with_renderer(display::renderer("canvas-renderer", render))).described("canvas exceeds array limits")
 }
 
 /// The browser build sends the canvas as JSON, with its typed arrays as bytes, for the page to draw with `canvas.js`. The native build sends HTML that holds the same JSON and bytes, and runs `canvas.js` itself. Both send the text `canvas: N frames` when the options give `fps` and the data is a vector of `N` frames, and `canvas` otherwise.
-fn render(_: Option<&Value>, canvas: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let (json, bytes) = js::serialize(&js::export(canvas).error_at(span, "canvas data must not hold functions")?);
+fn render(_: Option<&Value>, canvas: &Value, _: &Span) -> Result<Value, Error> {
+    let (json, bytes) = js::serialize(&js::export(canvas).described("canvas data must not hold functions")?);
     let json = json.to_string();
     // The default text form would show the whole data.
     let frames = keyed::field(canvas, "options").and_then(|o| keyed::field(&o, "fps")).and(keyed::field(canvas, "data")).filter(|d| d.shape().len() == 1);
     let text = keyed::text(&frames.map_or_else(|| "canvas".into(), |d| format!("canvas: {} frames", d.len())));
     let bundle = if cfg!(web) {
-        let bytes = data::byte_vector(bytes).error_at(span, "canvas data exceeds array limits")?;
+        let bytes = data::byte_vector(bytes).described("canvas data exceeds array limits")?;
         keyed::vector(vec!["text/plain".into(), JSON_TYPE.into(), BYTES_TYPE.into()], vec![text, keyed::text(&json), bytes])
     } else {
         // A JSON string is a JavaScript string literal. Escaping `<` keeps `</script>` out of the script.
@@ -38,5 +38,5 @@ fn render(_: Option<&Value>, canvas: &Value, span: &Context<'_>) -> Result<Value
         let html = format!("<canvas></canvas><script>({SCRIPT})(document.currentScript.previousElementSibling, {json}, Uint8Array.from(atob('{bytes}'), c => c.charCodeAt(0)))</script>");
         keyed::vector(vec!["text/plain".into(), "text/html".into()], vec![text, keyed::text(&html)])
     };
-    bundle.error_at(span, "invalid canvas MIME bundle")
+    bundle.described("invalid canvas MIME bundle")
 }

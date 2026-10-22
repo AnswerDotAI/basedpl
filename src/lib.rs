@@ -49,9 +49,10 @@ mod xml;
 
 pub use array::{Prototype, Shape, Value};
 pub use rustymath::buffer;
-pub(crate) use error::{At, DomainAt, ErrorAt};
+pub(crate) use error::{At, Described};
 pub use error::{Error, ErrorKind, Source, Span};
-pub use eval::{Evaluation, Function, Operand, Operator, Session};
+pub use eval::{Evaluation, Function, Operand, Operator, Session, Turn};
+pub(crate) use eval::session;
 pub use execution::{EvalOptions, Input, InterruptHandle, MimeBundle, MimeData, Output, OutputKind, OutputSink, Poll};
 #[cfg(web)]
 pub use host::configure_browser;

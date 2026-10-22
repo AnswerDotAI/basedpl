@@ -231,7 +231,7 @@ pub use web::{from_js, to_js, JsFunction};
 #[cfg(web)]
 mod web {
     use super::{export, imported, Js, Typed};
-    use crate::{execution::Context, Error, Value};
+    use crate::{Span, Error, Value};
     use js_sys::{
         Array, BigInt64Array, Float32Array, Float64Array, Function, Int16Array, Int32Array, Int8Array, Object, Reflect, Uint16Array, Uint32Array, Uint8Array,
         Uint8ClampedArray,
@@ -326,24 +326,24 @@ mod web {
     }
 
     /// `•js Y`: the function that the JavaScript source `Y` evaluates to.
-    pub(crate) fn function(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-        span.acts()?;
-        let source = crate::data::text(right, span)?;
-        let f = js_sys::eval(&source).map_err(|e| span.domain_error(message(&e)))?;
-        let f = f.dyn_into::<Function>().map_err(|_| span.domain_error("•js source must give a function"))?;
+    pub(crate) fn function(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+        crate::transform::acts()?;
+        let source = crate::data::text(right)?;
+        let f = js_sys::eval(&source).map_err(|e| Error::domain(message(&e)))?;
+        let f = f.dyn_into::<Function>().map_err(|_| Error::domain("•js source must give a function"))?;
         Ok(value(Arc::new(JsFunction::new(f))))
     }
 
     /// `•js`'s result prototype: a function that does nothing.
-    pub(crate) fn prototype(_: &Context<'_>) -> Value { value(Arc::new(JsFunction::new(Function::new_no_args("")))) }
+    pub(crate) fn prototype(_: &Span) -> Value { value(Arc::new(JsFunction::new(Function::new_no_args("")))) }
 
     /// Calls `f` with `right`, or with `left` then `right`. `None` when it returns `undefined` or `null`.
-    pub(crate) fn call(f: &JsFunction, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Option<Value>, Error> {
-        cx.acts()?;
-        let arg = |v: &Value| export(v).map(to_js).map_err(|_| cx.domain_error("a function or operator can't cross into JavaScript"));
+    pub(crate) fn call(f: &JsFunction, left: Option<&Value>, right: &Value) -> Result<Option<Value>, Error> {
+        crate::transform::acts()?;
+        let arg = |v: &Value| export(v).map(to_js).map_err(|_| Error::domain("a function or operator can't cross into JavaScript"));
         let f = f.get();
         let result = match left { Some(left) => f.call2(&JsValue::UNDEFINED, &arg(left)?, &arg(right)?), None => f.call1(&JsValue::UNDEFINED, &arg(right)?) };
-        let result = from_js(&result.map_err(|e| cx.domain_error(message(&e)))?).map_err(|e| cx.domain_error(e))?;
-        imported(result, crate::number::Numeric::current().width).map_err(|_| cx.domain_error("the JavaScript result has no BPL form"))
+        let result = from_js(&result.map_err(|e| Error::domain(message(&e)))?).map_err(|e| Error::domain(e))?;
+        imported(result, crate::number::Numeric::current().width).map_err(|_| Error::domain("the JavaScript result has no BPL form"))
     }
 }

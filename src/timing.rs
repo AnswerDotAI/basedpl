@@ -1,9 +1,8 @@
-//! The speed test's measurements, shared by `tests/speed.rs`, the browser build's `costs` and the worker's `timing` and `costs` requests, which serve `basedpl.bpltests.time_cases` and `speed_costs`. A time is the fastest of five evaluations of a case, after one to warm up. The case is parsed once, before them. Its unit is one copy, as `copy` times it, of the `n` items in the data of the `[setup]` before the case's section. `costs` and `request` hold the machine's timing lock exclusively while they run, as `rustymath::timing` describes.
-use crate::{host::timing_lock, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source};
-use rustymath::timing::{code_of, header, sections};
+//! The speed test's measurements, shared by `tests/speed.rs`, the browser build's `costs` and the worker's `timing` and `costs` requests, which serve `basedpl.bpltests.time_cases` and `speed_costs`. A time is the fastest of five evaluations of a case, after one to warm up. The case is parsed once, before them. Its unit is one copy of the `n` items in the data of the `[setup]` before the case's section, as `rustymath::timing::copy_time` gives it: this machine's stored copy time, or one measured once. `costs` and `request` hold the machine's timing lock exclusively while they run, as `rustymath::timing` describes.
+use crate::{host::timing_lock, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn};
+use rustymath::timing::{code_of, copy_time, header, sections, CopyTime};
 use serde_json::{json, Value as JsonValue};
 use rustymath::hashing::{HashMap, HashMapExt};
-use std::hint::black_box;
 
 /// The slow-path events that a case's comment lines name, each as its record's name and its event's text. An `# allows RECORD "EVENT": principle` line names an event that a principle allows. A `# gap RECORD "EVENT": what should happen` line names an event that a faster route should remove, which the case tolerates until then. An event's text names it as `•explain`'s record does: the function for `forced`, the reason for `stored` and `fallbacks`, the code for `mixed`, the route for `itemwise`, and the route and reason for `declined`, as in `fusion: an exact argument`, with any `"` in it doubled. Each line applies to the next case line after it.
 #[derive(Default)]
@@ -45,21 +44,21 @@ fn single_threaded_defaults() {
 }
 
 /// A session that has run `prefs`, then `setup`, or the evaluation that failed. It starts from `single_threaded_defaults`.
-pub fn session(prefs: &str, setup: &str) -> Result<Session, Evaluation> {
+pub fn session(prefs: &str, setup: &str) -> Result<Turn, Evaluation> {
     single_threaded_defaults();
-    let mut session = Session::new();
+    let session = Session::new();
     let result = session.eval(&format!("{prefs}\n{setup}"));
     if result.error.is_some() { Err(result) } else { Ok(session) }
 }
 
 /// The number of items in the setup's data: the value of `n` in `session`.
-pub fn items(session: &mut Session) -> Option<usize> {
+pub fn items(session: &Session) -> Option<usize> {
     let n = session.eval("n").value?.as_number()?.to_float().ok()?;
     (n >= 0.0 && n.fract() == 0.0).then_some(n as usize)
 }
 
 /// The time of `code` in `session`, in seconds, or the evaluation that failed.
-pub fn time(session: &mut Session, code: &str, interrupt: &InterruptHandle) -> Result<f64, Evaluation> {
+pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<f64, Evaluation> {
     let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
     let mut failed = None;
     let seconds = fastest(|| {
@@ -70,36 +69,43 @@ pub fn time(session: &mut Session, code: &str, interrupt: &InterruptHandle) -> R
     failed.map_or(Ok(seconds), Err)
 }
 
-/// The time of one copy (`rustymath::timing::copy`) of `n` floats, in seconds.
-pub fn copy(n: usize) -> f64 {
-    let data: Vec<f64> = (1..=n).map(|i| i as f64).collect();
-    let mut out = vec![0.0; n];
-    fastest(|| {
-        rustymath::timing::copy(black_box(&data), &mut out);
-        black_box(&mut out);
-    })
+/// One case of a file in `speed.txt`'s format, with its cost: the section it's in, its code, its budgets in the file's order, the cost those budgets limit, its time for each of the section's `n` items in seconds, and the copy that its cost counts, which `[widths]` costs don't use.
+pub struct Case<'a> { pub section: &'a str, pub code: &'a str, pub budgets: Vec<&'a str>, pub cost: f64, pub seconds: f64, pub copy: Option<CopyTime> }
+impl Case<'_> {
+    /// This case's line in a speed test's log, with the budget in `column` of its budgets: 0 for macOS, 1 for Linux, 2 for the browser build. `basedpl.bpltests.logged_costs` reads these lines.
+    pub fn line(&self, column: usize) -> String { rustymath::timing::line(self.section, self.code, self.cost, self.budgets.get(column).copied().unwrap_or("-"), self.seconds) }
+    /// The copy line of the copy that this case's cost counts, as `rustymath::timing::copy_line` writes it. `None` in `[widths]`.
+    pub fn copy_line(&self) -> Option<String> { self.copy.as_ref().map(rustymath::timing::copy_line) }
 }
 
-/// One case of a file in `speed.txt`'s format, with its cost: the section it's in, its code, its budgets in the file's order, and the cost those budgets limit.
-pub struct Case<'a> { pub section: &'a str, pub code: &'a str, pub budgets: Vec<&'a str>, pub cost: f64 }
+/// One group of sections, which share the group's `[setup]` and one session, set up for one section at a time: each section's `•prefs` header, the section the session is set up for, and the setup's `n`.
+struct Group<'a> { session: Turn, setup: String, prefs: HashMap<&'a str, &'a str>, current: &'a str, n: usize }
 
-/// The sessions of one group of sections, by section name, each with its section's `•prefs` header, and the `n` of each.
-struct Group<'a> { sessions: HashMap<&'a str, (&'a str, Session)>, sizes: HashMap<&'a str, usize> }
-
-impl Group<'_> {
-    /// The session of section `name`, with the settings reset, on one thread, and its section's header applied, so that no other section's settings stay in force.
-    fn session(&mut self, name: &str) -> Result<&mut Session, String> {
-        let (prefs, session) = self.sessions.get_mut(name).ok_or_else(|| format!("speed's {name} section is missing"))?;
+impl<'a> Group<'a> {
+    /// The group, with its session set up for section `first`.
+    fn new(setup: String, prefs: HashMap<&'a str, &'a str>, first: &'a str) -> Result<Self, String> {
+        let header = prefs[first];
+        let session = session(header, &setup).map_err(|failed| failure(header, failed))?;
+        let n = items(&session).ok_or("each setup must define n, its number of items")?;
+        Ok(Self { session, setup, prefs, current: first, n })
+    }
+    /// The session, set up for section `name`, with the settings reset, on one thread, and the section's header applied, so that no other section's settings stay in force. Moving to another section sets the session up again: a fresh session runs that section's header and then the group's setup.
+    fn session(&mut self, name: &'a str) -> Result<&Session, String> {
+        let header = *self.prefs.get(name).ok_or_else(|| format!("speed's {name} section is missing"))?;
+        if self.current != name {
+            self.session = session(header, &self.setup).map_err(|failed| failure(header, failed))?;
+            self.current = name;
+        }
         single_threaded_defaults();
-        session.eval(prefs);
-        Ok(session)
+        self.session.eval(header);
+        Ok(&self.session)
     }
 }
 
 /// A failed evaluation of `code`, as the speed checks report it.
 fn failure(code: &str, failed: Evaluation) -> String { format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default()) }
 
-/// Calls `visit` with the sessions of each case's group, the case's section and its line, for every case in `text`, in `speed.txt`'s format. The first section is `[setup]`. Each later `[setup]` starts a new group of sections. Each section's cases run in a session that has run the section's prefs and then the `[setup]` before it. Each group makes its sessions when its turn comes and drops them before the next group starts. `only`, when given, lists the codes of the cases to visit. A group then makes sessions only for the sections that hold those cases, plus `[exact]` for a `[widths]` case.
+/// Calls `visit` with the sessions of each case's group, the case's section and its line, for every case in `text`, in `speed.txt`'s format. The first section is `[setup]`. Each later `[setup]` starts a new group of sections. Each section's cases run in a session that has run the section's prefs and then the `[setup]` before it. A group has one session, set up for one section at a time: moving to another section sets it up again, in a fresh session. `only`, when given, lists the codes of the cases to visit. A group then sets up only the sections that hold those cases, plus `[exact]` for a `[widths]` case.
 fn each_case<'a>(text: &'a str, only: Option<&[&str]>, mut visit: impl FnMut(&mut Group<'a>, &'a str, &'a str) -> Result<(), String>) -> Result<(), String> {
     let wanted = |line: &str| only.is_none_or(|only| only.contains(&code_of(line)));
     for group in sections(text)?.chunk_by(|_, next| next.0 != "setup") {
@@ -107,29 +113,26 @@ fn each_case<'a>(text: &'a str, only: Option<&[&str]>, mut visit: impl FnMut(&mu
         let mut used: Vec<&str> = cases.iter().filter(|(_, _, lines)| lines.iter().any(|l| wanted(l))).map(|s| s.0).collect();
         if used.contains(&"widths") { used.push("exact"); }
         if used.is_empty() { continue; }
-        let setup = setup.join("\n");
-        let mut sessions = Group { sessions: HashMap::new(), sizes: HashMap::new() };
-        for &(name, prefs, _) in cases.iter().filter(|s| used.contains(&s.0)) {
-            let mut session = session(prefs, &setup).map_err(|failed| failure(prefs, failed))?;
-            sessions.sizes.insert(name, items(&mut session).ok_or("each setup must define n, its number of items")?);
-            sessions.sessions.insert(name, (prefs, session));
-        }
-        for &(section, _, ref lines) in cases { for &line in lines.iter().filter(|l| wanted(l)) { visit(&mut sessions, section, line)?; } }
+        let prefs = cases.iter().filter(|s| used.contains(&s.0)).map(|&(name, prefs, _)| (name, prefs)).collect();
+        let mut group = Group::new(setup.join("\n"), prefs, used[0])?;
+        for &(section, _, ref lines) in cases { for &line in lines.iter().filter(|l| wanted(l)) { visit(&mut group, section, line)?; } }
     }
     Ok(())
 }
 
-/// Every case in `text`, in `speed.txt`'s format, with its cost, in the sessions that `each_case` gives. A cost is in copies of the group's `n` items, timed just before the case, except in `[widths]`. There it is the case's time as a fraction of its time in `[exact]`. `only`, when given, lists the codes of the cases to time.
+/// Every case in `text`, in `speed.txt`'s format, with its cost, in the sessions that `each_case` gives. A cost is in copies of the group's `n` items, as `rustymath::timing::copy_time` gives them, except in `[widths]`. There it is the case's time as a fraction of its time in `[exact]`. `only`, when given, lists the codes of the cases to time.
 pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
     let _lock = timing_lock()?;
     let mut result = Vec::new();
     each_case(text, only, |group, section, line| {
         let mut fields = line.split('\t');
         let code = fields.next().unwrap_or_default();
-        let unit = (section != "widths").then(|| copy(group.sizes[section]));
-        let mut timed = |name: &str| time(group.session(name)?, code, interrupt).map_err(|failed| failure(code, failed));
-        let cost = match unit { Some(unit) => timed(section)? / unit, None => timed(section)? / timed("exact")? };
-        result.push(Case { section, code, budgets: fields.collect(), cost });
+        let n = group.n;
+        let copy = (section != "widths").then(|| copy_time::<f64>(n));
+        let mut timed = |name: &'a str| time(group.session(name)?, code, interrupt).map_err(|failed| failure(code, failed));
+        let total = timed(section)?;
+        let cost = match copy { Some(copy) => total / n as f64 / copy.seconds, None => total / timed("exact")? };
+        result.push(Case { section, code, budgets: fields.collect(), cost, seconds: total / n as f64, copy });
         Ok(())
     })?;
     Ok(result)
@@ -147,7 +150,7 @@ pub fn routes<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHan
         let session = group.session(section)?;
         let parsed = session.parse(Source::new("<input>", code)).complete().map_err(|e| failure(code, Evaluation::failed(e)))?;
         let options = || EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
-        let run = |s: &mut Session| {
+        let run = |s: &Session| {
             let evaluation = s.eval_parsed(&parsed, options());
             if let Some(value) = &evaluation.value { value.force(); }
             evaluation
@@ -162,16 +165,20 @@ pub fn routes<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHan
     Ok(result)
 }
 
-/// Times every case in `text` as `costs` does, then times each case over this machine's native budget again, after each pause in `rustymath::timing::retried`. `print` gets every first cost when `all` is set, and each retry's earlier and new costs. Each line gives a case's section, code, cost and native budget, in the form that `basedpl.bpltests.logged_costs` reads. A case with no native budget is never over. Gives the lines of the cases still over budget after the last retry. `tests/speed.rs` and `bpl --costs` both measure with it.
+/// Times every case in `text` as `costs` does, then times each case over this machine's native budget again, after each pause in `rustymath::timing::retried`. `print` gets every first cost when `all` is set, and each retry's earlier and new costs. With `all`, the copy line of each size of data comes first. Each case's line gives its section, code, cost, native budget and time for each item, in the form that `basedpl.bpltests.logged_costs` reads. A case with no native budget is never over. Gives the lines of the cases still over budget after the last retry. `tests/speed.rs` and `bpl --costs` both measure with it.
 #[cfg(not(web))]
 pub fn measured(text: &str, all: bool, mut print: impl FnMut(&str)) -> Result<Vec<String>, String> {
     use rustymath::timing::{retried, NATIVE_COLUMN};
     fn budget<'a>(c: &Case<'a>) -> Option<&'a str> { c.budgets.get(NATIVE_COLUMN).copied() }
-    let line = |c: &Case| format!("{} {}: {:.2}, budget {}", c.section, c.code, c.cost, budget(c).unwrap_or("-"));
+    let line = |c: &Case| c.line(NATIVE_COLUMN);
     let over = |c: &Case| budget(c).and_then(|b| b.parse::<f64>().ok()).is_some_and(|b| c.cost > b);
     let interrupt = InterruptHandle::default();
     let mut first = costs(text, None, &interrupt)?;
-    if all { for c in &first { print(&line(c)); } }
+    if all {
+        let mut copies: Vec<String> = Vec::new();
+        for copy in first.iter().filter_map(Case::copy_line) { if !copies.contains(&copy) { print(&copy); copies.push(copy); } }
+        for c in &first { print(&line(c)); }
+    }
     first.retain(over);
     let mut failed = Ok(());
     let over_budget = retried(first, |cases, pause| {
@@ -197,15 +204,15 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
     let cases = spec["cases"].as_array().ok_or("timing needs cases as an array")?;
     let sections = sections(text("speed")?)?;
     let setup = match sections.first() { Some(("setup", _, lines)) => lines.join("\n"), _ => return Err("speed's first section must be [setup]".into()) };
-    let mut session = match session(text("prefs")?, &setup) { Ok(session) => session, Err(failed) => return Ok(response(failed)) };
+    let session = match session(text("prefs")?, &setup) { Ok(session) => session, Err(failed) => return Ok(response(failed)) };
     if let Some(threads) = spec["threads"].as_u64() { rustymath::parallel::set_threads(threads as usize); }
-    let n = items(&mut session).ok_or("the setup must define n, its number of items")?;
+    let n = items(&session).ok_or("the setup must define n, its number of items")?;
+    let copy = copy_time::<f64>(n);
     let mut costs = Vec::new();
     for code in cases {
         let code = code.as_str().ok_or("each case must be a string")?;
-        let unit = copy(n);
-        match time(&mut session, code, interrupt) {
-            Ok(seconds) => costs.push(json!({"code": code, "seconds": seconds, "copies": seconds / unit})), Err(failed) => return Ok(response(failed))
+        match time(&session, code, interrupt) {
+            Ok(seconds) => costs.push(json!({"code": code, "seconds": seconds, "copies": seconds / n as f64 / copy.seconds})), Err(failed) => return Ok(response(failed))
         }
     }
     Ok(json!({"n": n, "costs": costs, "output": [], "error": null}))

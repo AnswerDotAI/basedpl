@@ -174,7 +174,7 @@ pub(super) fn span_of(source: &Arc<Source>, range: &std::ops::Range<u32>) -> Spa
 
 impl Entity {
     /// An entity with `term`, not yet on the binder's stack.
-    // Out of line, `new` built each entity and then copied it out, about 125 instructions per binder step.
+    // Out of line, `new` built each entity and then copied it out, about 265 instructions for each call of `{x←⍵+1 ⋄ x}`.
     #[inline(always)]
     pub(super) fn new(term: Term, range: std::ops::Range<u32>, shy: bool, expression: Option<Box<Expression>>) -> Self {
         let category = match term {
@@ -202,7 +202,7 @@ impl Entity {
         Ok(match self.term {
             Term::Binding(value) => value, Term::Train(tines) | Term::Tines(tines) => Binding::Function(self::Function::train(tines, &span())?),
             Term::Left(a, f) => Binding::Function(before(a, f, &span())?),
-            Term::Strand(items) => Binding::Value(Value::new(vec![items.len()], items).map_err(|k| span().error(k, "invalid strand"))?),
+            Term::Strand(items) => Binding::Value(Value::new(vec![items.len()], items).map_err(|k| Error::new(k, "invalid strand").at(&span()))?),
             Term::Entries(_) => unreachable!("a keyed item's entries go only into its literal"),
         })
     }
@@ -280,8 +280,8 @@ pub(super) fn derived(operand: Binding, operator: Binding, span: &Span) -> Resul
     if let self::OperatorNode::Primitive(OperatorKind::Super(s)) = &operator {
         match (*s, operand) {
             // `ᵘ` makes a scalar that holds a function. `⊂` encloses a subject.
-            (Superscript::Unit, Operand::Function(f)) => return Ok(Derived::Term(Binding::Value(crate::Value::Function(f).enclose().error_at(span, "invalid scalar")?))),
-            (Superscript::Unit, _) => return Err(span.domain_error("ᵘ makes a scalar that holds a function. Enclose a subject with ⊂")),
+            (Superscript::Unit, Operand::Function(f)) => return Ok(Derived::Term(Binding::Value(crate::Value::Function(f).enclose().described("invalid scalar").at(span)?))),
+            (Superscript::Unit, _) => return Err(Error::domain("ᵘ makes a scalar that holds a function. Enclose a subject with ⊂").at(span)),
             (Superscript::Power(n), Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Math(crate::number::Math::Power)), Some(a), crate::Value::integer(n))),
             (Superscript::Transpose, Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Transpose), None, a)),
             (Superscript::Floor, Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Math(crate::number::Math::Floor)), None, a)),
@@ -297,25 +297,42 @@ pub(super) fn bound_right(operator: Binding, operand: Binding) -> self::Operator
     self::OperatorNode::Bound(Arc::new(operator), Operand::from_value(operand))
 }
 
-/// The tines of `left` and then of `right`, which join in a train (`Rule::Train`).
+/// The tines of `left` and then of `right`, which join in a train (`Rule::Train`). The tines go into a train's own list where either side brings one, and otherwise into a new list with room for `TINES`, so a statement that builds a train at each call allocates once for it.
 #[inline]
 pub(super) fn train(left: Cow<'_, Entity>, right: Cow<'_, Entity>, source: &Arc<Source>) -> Result<Vec<Tine>, Error> {
-    let mut tines = tines_of(left, source)?;
-    tines.extend(tines_of(right, source)?);
-    Ok(tines)
+    Ok(match (left, right) {
+        (Cow::Owned(Entity { term: Term::Train(mut tines), .. }), right) => { push_tines(right, &mut tines, source)?; tines }
+        (left, Cow::Owned(Entity { term: Term::Train(mut tines), .. })) => {
+            let n = tines.len();
+            push_tines(left, &mut tines, source)?;
+            let pushed = tines.len() - n;
+            tines.rotate_right(pushed);
+            tines
+        }
+        (left, right) => {
+            let mut tines = Vec::with_capacity(TINES);
+            push_tines(left, &mut tines, source)?;
+            push_tines(right, &mut tines, source)?;
+            tines
+        }
+    })
 }
 
-/// `entity`'s parts as tines of a train: a train's tines, a bound left argument's array and function, or the entity as one array or function. Where `entity` is borrowed, as a recording's constant is (`tree.rs`), each tine copies only its own array or function.
+/// The tines in a train's new list that a statement such as `(g ⍵-1)+g ⍵-2` fills without growing it.
+const TINES: usize = 4;
+
+/// Appends `entity`'s parts to `tines` as tines of a train: a train's tines, a bound left argument's array and function, or the entity as one array or function. Where `entity` is borrowed, as a recording's constant is (`tree.rs`), each tine copies only its own array or function.
 #[inline]
-fn tines_of(entity: Cow<'_, Entity>, source: &Arc<Source>) -> Result<Vec<Tine>, Error> {
-    Ok(match entity {
-        Cow::Owned(Entity { term: Term::Train(tines), .. }) => tines,
-        Cow::Borrowed(Entity { term: Term::Train(tines), .. }) => tines.clone(),
-        Cow::Owned(Entity { term: Term::Left(a, f), .. }) => vec![Tine::Array(a), Tine::Function(f)],
-        Cow::Borrowed(Entity { term: Term::Left(a, f), .. }) => vec![Tine::Array(a.clone()), Tine::Function(f.clone())],
-        entity if matches!(entity.category, Category::Value | Category::Callable) => vec![Tine::Array(array_of(entity, source)?.into_owned())],
-        entity => vec![Tine::Function(function_of(entity, source)?.into_owned())],
-    })
+fn push_tines(entity: Cow<'_, Entity>, tines: &mut Vec<Tine>, source: &Arc<Source>) -> Result<(), Error> {
+    match entity {
+        Cow::Owned(Entity { term: Term::Train(owned), .. }) => tines.extend(owned),
+        Cow::Borrowed(Entity { term: Term::Train(borrowed), .. }) => tines.extend_from_slice(borrowed),
+        Cow::Owned(Entity { term: Term::Left(a, f), .. }) => tines.extend([Tine::Array(a), Tine::Function(f)]),
+        Cow::Borrowed(Entity { term: Term::Left(a, f), .. }) => tines.extend([Tine::Array(a.clone()), Tine::Function(f.clone())]),
+        entity if matches!(entity.category, Category::Value | Category::Callable) => tines.push(Tine::Array(array_of(entity, source)?.into_owned())),
+        entity => tines.push(Tine::Function(function_of(entity, source)?.into_owned())),
+    }
+    Ok(())
 }
 
 /// Whether a call of `function` can return to the caller's loop as a tail call: the user defined it.
@@ -420,7 +437,7 @@ impl Binder {
     pub(super) fn group_bound(node: &Node, session: &Session, bound: Bound) -> Result<Bound, Error> {
         let (NodeKind::Group(nodes) | NodeKind::Run(nodes)) = &node.kind else { unreachable!() };
         if matches!(node.kind, NodeKind::Run(_)) && matches!(bound.value, Binding::Operator(_)) && !matches!(&session.members(nodes)[..], [Node { kind: NodeKind::Group(_), .. }]) {
-            return Err(node.span.error(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph"));
+            return Err(Error::new(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph").at(&node.span));
         }
         Ok(bound)
     }
@@ -485,7 +502,7 @@ impl Binder {
         if let Some(seed) = seed { binder.push(seed); }
         loop {
             if !after_call {
-                session.execution.check(&nodes[0].span)?;
+                crate::execution::check().at(&nodes[0].span)?;
                 let next = if let Some(entity) = held.take() { Some(entity) } else if pending.is_empty() && assignment.is_none() && cursor > 0 {
                     cursor -= 1;
                     let i = cursor;
@@ -495,7 +512,7 @@ impl Binder {
                             // A run that ends in a dyadic operator takes the next run as its right operand, because each run acts as one token.
                             let NodeKind::Run(inner) = &node.kind else { unreachable!() };
                             let Some(right) = binder.stack.pop() else {
-                                return Err(node.span.error(ErrorKind::Syntax, "an operator at the end of a run needs a right operand after it"));
+                                return Err(Error::new(ErrorKind::Syntax, "an operator at the end of a run needs a right operand after it").at(&node.span));
                             };
                             // The run counts toward the depth limit, as a group does.
                             let bound = match rec.as_deref_mut() {
@@ -530,15 +547,15 @@ impl Binder {
                 } else if binder.stack.len() < 2 {
                     if let Some(i) = assignment.take() {
                         let begin = nodes[..i].iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).map_or(0, |j| j + 1);
-                        if begin == i { return Err(nodes[i].span.error(ErrorKind::Syntax, NO_TARGET)); }
+                        if begin == i { return Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(&nodes[i].span)); }
                         let range = narrow(&nodes[i].span.range);
                         // With nothing after `←`, `a(f)←` sets `a` to `f a` and gives no result.
                         let value = match binder.stack.pop() {
                             None => None,
                             Some(entity) => {
                                 let value = entity.value(source)?;
-                                if matches!(value, Binding::NoResult) { return Err(nodes[i].span.error(ErrorKind::Value, "assignment requires a value")); }
-                                if matches!(value, Binding::Absent) { return Err(nodes[i].span.error(ErrorKind::Value, ABSENT)); }
+                                if matches!(value, Binding::NoResult) { return Err(Error::new(ErrorKind::Value, "assignment requires a value").at(&nodes[i].span)); }
+                                if matches!(value, Binding::Absent) { return Err(Error::new(ErrorKind::Value, ABSENT).at(&nodes[i].span)); }
                                 Some(value)
                             }
                         };
@@ -565,8 +582,7 @@ impl Binder {
                             session.stacks.borrow_mut().extend([binder.stack, pending]);
                             return Ok(Reduced::Tail(call));
                         }
-                    let cx = session.at(&call.span);
-                    let bound = call.function.call(call.left.as_ref(), &call.right, &cx)?;
+                    let bound = call.function.call(call.left.as_ref(), &call.right, &call.span)?;
                     let entity = Entity::new(Term::Binding(bound.value), narrow(&call.span.range), bound.shy, call.expression);
                     log(&mut rec, |rc| rc.called(call.span.clone(), entity.category, last));
                     binder.push(entity);
@@ -576,7 +592,7 @@ impl Binder {
                 if matches!(binder.stack[m - 1].category, Category::Operator) || Self::shifts(&binder.stack[m - 1], &binder.stack[..m - 1]) { break; }
                 pending.push(binder.stack.pop().unwrap());
                 log(&mut rec, |rc| rc.pend());
-                session.execution.check(&nodes[0].span)?;
+                crate::execution::check().at(&nodes[0].span)?;
             }
         }
         let entity = binder.stack.pop().expect("nonempty expression");
@@ -606,8 +622,8 @@ impl Binder {
         let right_expression = right.expression.take();
         let mut expression = None;
         let term = match rule {
-            Rule::Missing => return Err(span().error(ErrorKind::Value, "expression produced no value")),
-            Rule::Absent => return Err(span().error(ErrorKind::Value, ABSENT)),
+            Rule::Missing => return Err(Error::new(ErrorKind::Value, "expression produced no value").at(&span())),
+            Rule::Absent => return Err(Error::new(ErrorKind::Value, ABSENT).at(&span())),
             Rule::Drop => {
                 right.expression = right_expression;
                 self.push(right);
@@ -665,7 +681,7 @@ impl Binder {
                 return Ok(Some(Application { function: f.into_owned(), left: x.map(Cow::into_owned), right: y, span: span(), unshy: false, expression }));
             }
             Rule::Train => Term::Train(train(Cow::Owned(left), Cow::Owned(right), source)?),
-            _ => return Err(span().error(ErrorKind::Syntax, "these grammatical categories do not bind")),
+            _ => return Err(Error::new(ErrorKind::Syntax, "these grammatical categories do not bind").at(&span())),
         };
         self.push(Entity::new(term, range, false, expression));
         Ok(None)

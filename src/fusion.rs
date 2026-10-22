@@ -11,7 +11,7 @@ use crate::{
     agreement::Agreement, array::{Items, Lanes, Layout, Storage}, element::{read_as, Stored, Float}, explain::{Live, Counted, Tally}, number::Numeric,
     pervasive::{self, with_float_reduction, with_truth_reduction, Kernels}, primitive::{FoldKind, Operation, Primitive}, Number, Value
 };
-use rustymath::{agreement::{expanded, in_place, Mapping}, buffer::{DType, FloatWidth, View}, with_float_width, gather::Steps, layout::strides, reduce::{self, Reduction}, Arg, Native};
+use rustymath::{agreement::{expanded, in_place, Mapping}, buffer::{DType, FloatWidth, View}, with_float_width, gather::Steps, structure::Walk, layout::strides, reduce::{self, Reduction}, Arg, Native};
 use rustymath::hashing::{HashMap, HashMapExt};
 use crate::array::{Footprint, Seen};
 use std::{ops::Range, sync::{Arc, Mutex, OnceLock, PoisonError}};
@@ -425,18 +425,17 @@ fn windows(value: &Value, k: usize) -> Option<Windows> {
     let shape = value.shape();
     let (source, Mapping::Steps { base, steps }) = source(value)? else { return None };
     let dims = source.shape().to_vec();
-    let (_, steps, along) = Steps::walked(&Steps::with_base(base, steps), shape, &dims)?;
-    let strides = strides(&dims);
+    let walk = Walk::new(&Steps::with_base(base, steps), shape, &dims)?;
     // An axis of the copy that walks no source axis holds one item.
-    if steps.iter().zip(&along).any(|(s, a)| a.is_none() && s.len() != 1) { return None; }
-    let q = along[k]?;
-    if !along.iter().enumerate().any(|(r, &a)| r != k && a == Some(q)) { return None; }
+    if walk.steps.iter().zip(&walk.along).any(|(s, a)| a.is_none() && s.len() != 1) { return None; }
+    let q = walk.along[k]?;
+    if walk.walking(q).count() < 2 { return None; }
     // The positions that the copy reads along each source axis, where the entries along it walk windows that move by 1.
-    let read = (0..dims.len()).map(|a| Steps::windows_range(steps.iter().zip(&along).filter(|&(_, &b)| b == Some(a)).map(|(s, _)| s), strides[a], dims[a])).collect::<Option<Vec<_>>>()?;
+    let read = (0..dims.len()).map(|a| walk.range(a, dims[a])).collect::<Option<Vec<_>>>()?;
     let outer: usize = dims[..q].iter().product();
     let whole = |a: usize| read[a] == (0..dims[a]);
     if (0..dims.len()).any(|a| a != q && !whole(a)) || outer != 1 && !whole(q) { return None; }
-    Some(Windows { source, along, q, rows: [outer, read[q].len(), strides[q]], lo: read[q].start })
+    Some(Windows { source, rows: [outer, read[q].len(), walk.strides[q]], lo: read[q].start, along: walk.along, q })
 }
 
 impl Windows {

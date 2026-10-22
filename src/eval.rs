@@ -1,9 +1,10 @@
+use crate::execution::check;
 use rustymath::{agreement::Mapping, error::Kind, search::occurrences};
 use crate::{
-    agreement::{Agree, Agreement}, array::{generated_len, Frame as ResultFrame, Gather, Lanes}, execution::Context, number::Numeric,
+    agreement::{Agree, Agreement}, array::{generated_len, Frame as ResultFrame, Gather, Lanes}, number::Numeric,
     primitive::{Builtin, FoldKind, OperandKind, Operation, OperatorKind, Primitive, Selection, Superscript, Targets},
     symbols::Notation, syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind},
-    At, DomainAt, Error, ErrorAt, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value
+    At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value
 };
 use rustymath::hashing::{HashMap, HashMapExt};
 use std::{borrow::Cow, convert::Infallible, sync::Arc};
@@ -56,8 +57,8 @@ impl Function {
         })
     }
     /// Whether the functions match within tolerance `t`, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
-    pub(crate) fn matches(&self, other: &Self, t: Numeric, cx: &impl crate::execution::Checks) -> Result<bool, Error> {
-        self.equal_by(other, &mut |x, y| x.matches_within(y, t, cx))
+    pub(crate) fn matches(&self, other: &Self, t: Numeric, span: &Span) -> Result<bool, Error> {
+        self.equal_by(other, &mut |x, y| x.matches_within(y, t, span))
     }
 }
 impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { let Ok(equal) = self.equal_by(other, &mut same_values); equal } }
@@ -71,21 +72,21 @@ const STACK_RED_ZONE: usize = 1 << 20;
 const STACK_SEGMENT: usize = 16 << 20;
 /// The LIMIT error for evaluation deeper than `MAX_CALL_DEPTH`.
 #[cold]
-fn depth_error(span: &Span) -> Error { span.error(Kind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}")) }
-/// Reports `report` for `function` at `cx`'s position. The `fusion` pref writes it, and `•explain` records the `items` items of pending arrays that `function` computed (`explain::forced`). `watched` reports this way.
-pub(crate) fn fusion_report(cx: &Context<'_>, report: &str, function: &str, items: usize) {
-    cx.session.fusion_reports.set(cx.session.fusion_reports.get() + 1);
-    let (line, column) = cx.span.position();
+fn depth_error(span: &Span) -> Error { Error::new(Kind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}")).at(span) }
+/// Reports `report` for `function` at `span`'s position. The `fusion` pref writes it, and `•explain` records the `items` items of pending arrays that `function` computed (`explain::forced`). `watched` reports this way.
+pub(crate) fn fusion_report(span: &Span, report: &str, function: &str, items: usize) {
+    session().fusion_reports.set(session().fusion_reports.get() + 1);
+    let (line, column) = span.position();
     if items > 0 && crate::explain::recording() { crate::explain::forced(function.to_owned(), line, column, items); }
-    if crate::settings::reports_fusion() { cx.write(&format!("{report} at {function} ({}:{line}:{column})\n", cx.span.source.name)); }
+    if crate::settings::reports_fusion() { session().execution.write(&format!("{report} at {function} ({}:{line}:{column})\n", span.source.name)); }
 }
 /// `run` under `•prefs ["fusion":$t]` or `•explain`. Where no call inside it reported, it reports, as `name`, the items of pending arrays that it computed, or else `other`'s report, if `other` gives one (`fusion_report`). A function call (`Function::reported`) and an operation's call (`Operation::call`) report through it.
-pub(crate) fn watched<T>(cx: &Context<'_>, name: impl FnOnce() -> String, run: impl FnOnce() -> T, other: impl FnOnce() -> Option<&'static str>) -> T {
-    let (reports, before) = (cx.session.fusion_reports.get(), crate::explain::computed_so_far());
+pub(crate) fn watched<T>(span: &Span, name: impl FnOnce() -> String, run: impl FnOnce() -> T, other: impl FnOnce() -> Option<&'static str>) -> T {
+    let (reports, before) = (session().fusion_reports.get(), crate::explain::computed_so_far());
     let result = run();
     let items = crate::explain::computed_so_far() - before;
     let report = if items > 0 { Some("fusion ends") } else { other() };
-    if let (Some(report), true) = (report, cx.session.fusion_reports.get() == reports) { fusion_report(cx, report, &name(), items); }
+    if let (Some(report), true) = (report, session().fusion_reports.get() == reports) { fusion_report(span, report, &name(), items); }
     result
 }
 /// The name classes that `•nl` and `name_class` report, as in Dyalog.
@@ -99,7 +100,7 @@ const ABSENT: &str = "⍺ is absent in a call with one argument: it can only be 
 /// The error for an assignment with no target or no value.
 const NO_TARGET: &str = "assignment needs a target and value";
 /// The error for reading `name`, or assigning to it where it's a system name, when nothing binds it.
-fn undefined(name: impl std::fmt::Display, span: &Span) -> Error { span.error(ErrorKind::Value, format!("undefined name: {name}")) }
+fn undefined(name: impl std::fmt::Display, span: &Span) -> Error { Error::new(ErrorKind::Value, format!("undefined name: {name}")).at(span) }
 /// The error for a selection target that does something other than select from its array, such as assigning the selection.
 const INVALID_SELECTION: &str = "invalid selective-assignment expression";
 
@@ -234,7 +235,7 @@ impl Function {
         match value {
             Binding::Function(f) => Ok(f),
             Binding::Value(a) if a.holds_functions() => Self::from_array(a, span),
-            _ => Err(span.error(ErrorKind::Syntax, "call requires a function expression")),
+            _ => Err(Error::new(ErrorKind::Syntax, "call requires a function expression").at(span)),
         }
     }
     /// The functions that a composition or fork runs, each with the valence it runs at, and the array that a bound composition (`a↣f` or `f↢a`) binds. `None` for any other function.
@@ -375,16 +376,16 @@ impl Function {
             FunctionNode::Modified(op, a) => {
                 let info = op.info();
                 if matches!(op, Fold(_)) && matches!(&a, Operand::Value(v) if !v.holds_functions()) {
-                    return Err(span.domain_error("reduce and scan need a function operand. Replicate with #"));
+                    return Err(Error::domain("reduce and scan need a function operand. Replicate with #").at(span));
                 }
                 let a = if matches!(op, Super(_)) { a } else { constant_operand(info.left, a, span)? };
-                if info.dyadic() || !accepts(info.left, &a) { return Err(span.domain_error("operator needs a function operand")); }
+                if info.dyadic() || !accepts(info.left, &a) { return Err(Error::domain("operator needs a function operand").at(span)); }
                 match (op, a) {
                     (Fold(kind), Operand::Function(f)) => FunctionNode::Fold(f, kind),
                     (Super(Superscript::Power(-1)), Operand::Function(f)) => return f.inverse(span),
                     (Super(Superscript::Power(n)), Operand::Function(f)) => FunctionNode::Composed(Power, [Operand::Function(f), Operand::Value(Value::integer(n))]),
-                    (Super(Superscript::Floor), _) => return Err(span.domain_error("ₓ floors an array, not a function")),
-                    (Super(_), _) => return Err(span.domain_error("ᵀ transposes an array, not a function")), (op, a) => FunctionNode::Modified(op, a)
+                    (Super(Superscript::Floor), _) => return Err(Error::domain("ₓ floors an array, not a function").at(span)),
+                    (Super(_), _) => return Err(Error::domain("ᵀ transposes an array, not a function").at(span)), (op, a) => FunctionNode::Modified(op, a)
                 }
             }
             // An array has no meaning as an inner product's right operand. After a function, as after an array, text reads a field of the result and other arrays select from it.
@@ -397,18 +398,18 @@ impl Function {
                 let info = op.info();
                 let a = constant_operand(info.left, a, span)?;
                 let mut b = match info.right { Some(r) => constant_operand(r, b, span)?, None => b };
-                if !(accepts(info.left, &a) && info.right.is_some_and(|r| accepts(r, &b))) { return Err(span.domain_error("invalid operator operands")); }
+                if !(accepts(info.left, &a) && info.right.is_some_and(|r| accepts(r, &b))) { return Err(Error::domain("invalid operator operands").at(span)); }
                 if matches!(op, Agenda) {
                     let Operand::Value(fs) = &b else { unreachable!() };
-                    if fs.shape().len() != 1 { return Err(span.error(Kind::Rank, "agenda needs a vector of functions")); }
-                    if fs.is_empty() { return Err(span.domain_error("agenda needs a nonempty vector of functions")); }
+                    if fs.shape().len() != 1 { return Err(Error::new(Kind::Rank, "agenda needs a vector of functions").at(span)); }
+                    if fs.is_empty() { return Err(Error::domain("agenda needs a nonempty vector of functions").at(span)); }
                     // An array among the functions acts as a constant function.
                     let options = fs.elements().map(|e| match e {
                         Value::Function(f) => Ok(Value::Function(f)), a => Function::constant(a, span).map(Value::Function)
                     }).collect::<Result<Vec<_>, _>>()?;
                     // A selector for each cell meets the argument only when the function runs.
-                    if let Operand::Value(index) = &a { if index.is_unit() { agenda_index(index, options.len(), span)?; } }
-                    b = Operand::Value(Value::new(vec![options.len()], options).error_at(span, "invalid agenda options")?);
+                    if let Operand::Value(index) = &a { if index.is_unit() { agenda_index(index, options.len()).at(span)?; } }
+                    b = Operand::Value(Value::new(vec![options.len()], options).described("invalid agenda options").at(span)?);
                 }
                 match (op, a, b) {
                     (Axis, Operand::Function(f), Operand::Value(v)) => FunctionNode::Axis(f, v), (op, a, b) => FunctionNode::Composed(op, [a, b])
@@ -424,69 +425,69 @@ impl Function {
         let idiom = idioms::recognise(&node);
         Ok(Self { node: Arc::new(FunctionData { kind: node, environment, late, idiom }) })
     }
-    /// Calls the function, first growing the stack when it's nearly full, except for a primitive (`call_primitive`). `call`, `dispatch` and `call_array` are always inlined, so that each BPL call adds fewer frames to the host stack. In the browser that stack limits the depth of recursion.
+    /// Calls the function, first growing the stack when it's nearly full, except for a primitive (`call_primitive`). `call`, `dispatch` and `call_array` are always inlined, so that each BPL call adds fewer frames to the host stack. In the browser that stack limits the depth of recursion. An error that the function's code raised without a span takes the call's span.
     #[inline(always)]
-    fn call(&self, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
-        cx.check()?;
+    fn call(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+        check().at(span)?;
         // A primitive other than `⍎` never calls back into BPL, so it skips the depth, capture and stack bookkeeping below.
-        if let FunctionNode::Primitive(p) = self.node() { if !matches!(p, Primitive::Execute) && !crate::explain::reporting() { return self.call_primitive(*p, left, right, cx); } }
-        cx.session.descend(cx.span)?;
-        let capture = cx.session.capture.replace(false);
+        if let FunctionNode::Primitive(p) = self.node() { if !matches!(p, Primitive::Execute) && !crate::explain::reporting() { return self.call_primitive(*p, left, right, span); } }
+        session().descend(span)?;
+        let capture = session().capture.replace(false);
         // This is `stacker::maybe_grow`, without its closure's frame. An unknown stack limit grows the stack, as there.
         let room = stacker::remaining_stack().is_some_and(|r| r >= STACK_RED_ZONE);
-        let result = if crate::explain::reporting() { self.reported(left, right, room, cx) } else if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
-        cx.session.capture.set(capture);
-        cx.session.ascend();
-        result
+        let result = if crate::explain::reporting() { self.reported(left, right, room, span) } else if room { self.dispatch(left, right, span) } else { self.grown(left, right, span) };
+        session().capture.set(capture);
+        session().ascend();
+        result.map_err(|e| e.at(span))
     }
     /// A call of the primitive `p`: on numbers, a form that applies a kernel to each pair of items runs it at once (`Primitive::scalar_call`), and any other call goes through `dispatch`.
     #[inline(never)]
-    fn call_primitive(&self, p: Primitive, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
-        if !cx.session.transforming() { if let Some(result) = p.scalar_call(left, right, cx.span) { return result.map(Bound::from); } }
-        self.dispatch(left, right, cx)
+    fn call_primitive(&self, p: Primitive, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+        let scalar = if session().transforming() { None } else { p.scalar_call(left, right) };
+        scalar.map_or_else(|| self.dispatch(left, right, span), |result| result.map(Bound::from)).map_err(|e| e.at(span))
     }
     /// `dispatch` under `•prefs ["fusion":$t]` or `•explain`. Where no call inside it reported, it reports the items of pending arrays that this call computed, and each dual argument whose items it read one by one (`derivative`), with the function and its position. It claims the routes that ran item by item inside it and that no call inside it claimed (`explain::claim_itemwise`). `watched` makes each report. Out of line, so that `call` pays one branch.
     #[cold]
     #[inline(never)]
-    fn reported(&self, left: Option<&Value>, right: &Value, room: bool, cx: &Context<'_>) -> Result<Bound, Error> {
+    fn reported(&self, left: Option<&Value>, right: &Value, room: bool, span: &Span) -> Result<Bound, Error> {
         let built = |v: Option<&Value>| v.and_then(Value::carrier).map(crate::transform::Carrier::items_built);
         let whole = [left, Some(right)].map(|v| built(v) == Some(false));
         let mark = crate::explain::itemwise_mark();
-        let run = || if room { self.dispatch(left, right, cx) } else { self.grown(left, right, cx) };
+        let run = || if room { self.dispatch(left, right, span) } else { self.grown(left, right, span) };
         let unbuilt = || [left, Some(right)].into_iter().zip(whole).any(|(v, was)| was && built(v) == Some(true)).then_some("∂ runs item by item");
-        let result = watched(cx, || self.bpl(), run, unbuilt);
-        if let Some(mark) = mark { crate::explain::claim_itemwise(mark, || self.bpl(), cx.span); }
+        let result = watched(span, || self.bpl(), run, unbuilt);
+        if let Some(mark) = mark { crate::explain::claim_itemwise(mark, || self.bpl(), span); }
         result
     }
     // Inlined into `call`, this would add `stacker::grow`'s setup to the stack frame of every BPL call.
     #[inline(never)]
-    fn grown(&self, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
-        stacker::grow(STACK_SEGMENT, || self.dispatch(left, right, cx))
+    fn grown(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+        stacker::grow(STACK_SEGMENT, || self.dispatch(left, right, span))
     }
     // Inlined into `dispatch`, this would put a second copy of `call` and `dispatch` in the stack frame of every BPL call.
     #[inline(never)]
-    fn ruled(&self, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> { self.call(left, right, cx) }
+    fn ruled(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> { self.call(left, right, span) }
     /// Tries the function's idiom (`idioms`), then sends compositions and dfns straight to their handlers, and other functions to `apply`.
     #[inline(always)]
-    fn dispatch(&self, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
+    fn dispatch(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
         let resolved;
-        let f = if self.late() { resolved = self.resolve(cx.session, &mut HashMap::new(), 0)?; &resolved } else { self };
-        if cx.session.transforming() { if let Some(result) = f.op(left).and_then(|op| crate::transform::call(op, left, right, cx)) { return result.map(Bound::from); } }
-        if let Some(idiom) = &f.node.idiom { if let Some(result) = idiom.call(f, left, right, cx) { return result; } }
+        let f = if self.late() { resolved = self.resolve(session(), &mut HashMap::new(), 0)?; &resolved } else { self };
+        if session().transforming() { if let Some(result) = f.op(left).and_then(|op| crate::transform::call(op, left, right, span)) { return result.map(Bound::from); } }
+        if let Some(idiom) = &f.node.idiom { if let Some(result) = idiom.call(f, left, right, span) { return result; } }
         match f.node() {
-            FunctionNode::Composed(..) => composition(f, left, right, cx),
-            FunctionNode::Ruled(f, _) => f.ruled(left, right, cx),
-            FunctionNode::Defined(_) | FunctionNode::Derived(..) => cx.session.call_defined(f, left, right).map_err(|mut e| {
-                e.calls.push(cx.span.clone());
+            FunctionNode::Composed(..) => composition(f, left, right, span),
+            FunctionNode::Ruled(f, _) => f.ruled(left, right, span),
+            FunctionNode::Defined(_) | FunctionNode::Derived(..) => session().call_defined(f, left, right).map_err(|mut e| {
+                e.calls.push(span.clone());
                 e
             }),
-            _ => f.apply(left, right, cx),
+            _ => f.apply(left, right, span),
         }
     }
     /// The function's result on these arguments, as an array.
     #[inline(always)]
-    pub(crate) fn call_array(&self, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Value, Error> {
-        self.call(left, right, cx)?.array(cx.span)
+    pub(crate) fn call_array(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        self.call(left, right, span)?.array(span)
     }
     /// This function with `g` attached as its inverse, as `f⁻¹←g` attaches it. A derivative already attached stays.
     pub fn with_inverse(&self, g: Function) -> Self { self.attached(|rules| rules.inverse = Some(g)) }
@@ -497,8 +498,8 @@ impl Function {
         set(&mut rules);
         Self::new(FunctionNode::Ruled(f, rules), &Span::whole(Source::new("<function>", ""))).expect("attaching a rule builds no operator node")
     }
-    fn call_prototype(&self, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
-        cx.prototype_mode(true, |cx| self.call(left, right, cx))
+    fn call_prototype(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+        session().prototype_mode(true, || self.call(left, right, span))
     }
     fn inverse(&self, span: &Span) -> Result<Self, Error> {
         match self.node() {
@@ -514,8 +515,8 @@ impl Function {
         let id = Arc::as_ptr(&self.node) as usize;
         if let Some((_, f)) = resolved.get(&id) { return Ok(f.clone()); }
         let result = if let FunctionNode::LateBound(parsed, origin) = self.node() {
-            session.execution.check(origin)?;
-            if depth >= MAX_RESOLUTION_DEPTH { return Err(origin.error(Kind::Limit, "late-bound function resolution exceeds 128 levels")); }
+            crate::execution::check().at(origin)?;
+            if depth >= MAX_RESOLUTION_DEPTH { return Err(Error::new(Kind::Limit, "late-bound function resolution exceeds 128 levels").at(&origin)); }
             let bound = session.bindings.at_top_level(None, || session.bind(&parsed.statements[0].nodes));
             Self::from_value(bound?.value, origin)?.resolve(session, resolved, depth + 1)?
         } else {
@@ -544,62 +545,67 @@ impl Function {
         resolved.insert(id, (self.clone(), result.clone()));
         Ok(result)
     }
-    fn apply(&self, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Result<Bound, Error> {
-        use FunctionNode::{Defined, Derived, Fold, Fork};
-        // A form whose own code handles only arguments up to its ranks applies to cells of those ranks through Rank.
-        if let FunctionNode::Primitive(p) = self.node() {
-            if let Some(cells) = p.cells(left, right) {
-                let ranks = Value::integers(vec![cells.len()], cells.into_iter().map(i64::from).collect()).error_at(cx.span, "invalid cell ranks")?;
-                return rank(self, &ranks, left, right, cx);
-            }
+    fn apply(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+        use {crate::primitive::Extension, FunctionNode::{Defined, Derived, Fold, Fork}};
+        // A form whose own code handles only arguments up to its ranks applies to cells of those ranks through Rank. A builtin that takes items maps over a right argument that holds several, with the left argument whole for each, and takes each row of a character array as one text item.
+        let extension = match self.node() {
+            FunctionNode::Primitive(p) => p.facts(left.is_some()).extension,
+            FunctionNode::System(f) => { f.check(left)?; f.extension }
+            _ => Extension::Whole,
+        };
+        let cells = match (extension, self.node()) {
+            (Extension::Rank, FunctionNode::Primitive(p)) => p.cells(left, right),
+            (Extension::Items(item), _) if item.maps(right) => return each_whole_left(self, left, right, span),
+            (Extension::Items(item), _) => item.rows(left, right),
+            _ => None,
+        };
+        if let Some(cells) = cells {
+            let ranks = Value::integers(vec![cells.len()], cells.into_iter().map(i64::from).collect()).described("invalid cell ranks").at(span)?;
+            return rank(self, &ranks, left, right, span);
         }
         let array = match self.node() {
             // `dispatch` calls these itself.
             FunctionNode::LateBound(..) | FunctionNode::Composed(..) | FunctionNode::Ruled(..) | Defined(_) | Derived(..) => unreachable!(),
-            // Like a system function that takes text, `⍎` maps over an array that holds several strings.
-            FunctionNode::Primitive(Primitive::Execute) if crate::system::Item::Text.maps(right) => return each_whole_left(self, left, right, cx),
-            FunctionNode::Primitive(Primitive::Execute) => return cx.session.execute(left, right, cx.span),
-            FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, cx),
-            FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, cx),
-            FunctionNode::Modified(OperatorKind::Bitwise, Operand::Function(f)) => bitwise(self, f, left, right, cx),
-            FunctionNode::Modified(OperatorKind::Outer, Operand::Function(f)) => return outer(f, left, right, cx),
-            FunctionNode::Modified(OperatorKind::Key, Operand::Function(_)) => return key(self, left, right, cx),
-            FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => crate::derivative::differentiate(f, left, right, cx),
-            FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), cx),
+            FunctionNode::Primitive(Primitive::Execute) => return session().execute(left, right, span),
+            FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, span),
+            FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, span),
+            FunctionNode::Modified(OperatorKind::Bitwise, Operand::Function(f)) => bitwise(self, f, left, right, span),
+            FunctionNode::Modified(OperatorKind::Outer, Operand::Function(f)) => return outer(f, left, right, span),
+            FunctionNode::Modified(OperatorKind::Key, Operand::Function(_)) => return key(self, left, right, span),
+            FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => crate::derivative::differentiate(f, left, right, span),
+            FunctionNode::Modified(OperatorKind::Commute, Operand::Function(f)) => return f.call(Some(right), left.unwrap_or(right), span),
             FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Ok(a.clone()),
-            FunctionNode::Modified(OperatorKind::Optimize, Operand::Function(f)) => crate::optimize::optimize(f, left, right, cx),
+            FunctionNode::Modified(OperatorKind::Optimize, Operand::Function(f)) => crate::optimize::optimize(f, left, right, span),
             FunctionNode::Modified(..) => unreachable!(),
-            FunctionNode::Primitive(p) => p.call(left, right, cx),
+            FunctionNode::Primitive(p) => p.call(left, right, span),
             FunctionNode::System(f) => {
-                f.check(left, cx.span)?;
-                if f.item.maps(right) { return each_whole_left(self, left, right, cx); }
-                if let (true, Some(prototype)) = (cx.session.prototype.get(), f.prototype) { return Ok(Bound::from(prototype(cx))); }
+                if let (true, Some(prototype)) = (session().prototype.get(), f.prototype) { return Ok(Bound::from(prototype(span))); }
                 match &f.call {
-                    crate::system::Call::Value(call) | crate::system::Call::Active(call) => call(left, right, cx),
-                    crate::system::Call::Effect(call) => { cx.acts()?; return call(left, right, cx).map(|(value, shy)| Bound { shy, ..Bound::from(value) }) }
-                    crate::system::Call::Element(tag) => crate::xml::element(tag, left, right, cx),
-                    crate::system::Call::Edge(mode) => crate::system::edged(*mode, left.expect("an edge function is dyadic"), right, cx),
-                    crate::system::Call::Canvas(source) => crate::canvas::draw(source, left, right, cx),
+                    crate::system::Call::Value(call) | crate::system::Call::Active(call) => call(left, right, span),
+                    crate::system::Call::Effect(call) => { crate::transform::acts().at(span)?; return call(left, right, span).map(|(value, shy)| Bound { shy, ..Bound::from(value) }) }
+                    crate::system::Call::Element(tag) => crate::xml::element(tag, left, right),
+                    crate::system::Call::Edge(mode) => crate::system::edged(*mode, left.expect("an edge function is dyadic"), right),
+                    crate::system::Call::Canvas(source) => crate::canvas::draw(source, left, right),
                     #[cfg(web)]
                     crate::system::Call::Js(f) => {
-                        return crate::js::call(f, left, right, cx).map(|v| v.map_or_else(|| Bound::new(Binding::NoResult), Bound::from))
+                        return crate::js::call(f, left, right).map(|v| v.map_or_else(|| Bound::new(Binding::NoResult), Bound::from))
                     }
-                    crate::system::Call::Mime => cx.session.mime(left, right, cx.span),
-                    crate::system::Call::Session(call) => call(cx.session, left, right, cx.span),
+                    crate::system::Call::Mime => session().mime(left, right, span),
+                    crate::system::Call::Session(call) => call(session(), left, right, span),
                     crate::system::Call::Prefs => {
-                        return crate::display::prefs(cx.session, right, cx.span).map(|(value, shy)| Bound { shy, ..Bound::from(value) })
+                        return crate::display::prefs(session(), right).map(|(value, shy)| Bound { shy, ..Bound::from(value) })
                     }
-                    crate::system::Call::Time => cx.session.system_time(left, right, cx.span),
-                    crate::system::Call::Regex(regex, operation) => crate::regex::call(regex, *operation, left, right, cx),
-                    crate::system::Call::Distribution(d, operation) => crate::distribution::call(d, *operation, left, right, cx),
-                    crate::system::Call::Generator(g, _) => crate::primitive::drawn_value(Some(g), left, right, cx),
-                    crate::system::Call::Load => return cx.session.load(right, cx.span),
+                    crate::system::Call::Time => session().system_time(left, right, span),
+                    crate::system::Call::Regex(regex, operation) => crate::regex::call(regex, *operation, left, right),
+                    crate::system::Call::Distribution(d, operation) => crate::distribution::call(d, *operation, left, right, span),
+                    crate::system::Call::Generator(g, _) => crate::primitive::drawn_value(Some(g), left, right, span),
+                    crate::system::Call::Load => return session().load(right, span),
                 }
             }
-            Fork(fns) => return forked(|| fns[2].call_array(left, right, cx), || fns[0].call_array(left, right, cx), |x, y| fns[1].call(Some(x), y, cx)),
-            Fold(operand, kind) => fold(operand, *kind, None, left, right, cx),
-            FunctionNode::Axis(f, spec) => return along_axes(f, spec, left, right, cx),
-            FunctionNode::Array(items) => return function_array(items, left, right, cx),
+            Fork(fns) => return forked(|| fns[2].call_array(left, right, span), || fns[0].call_array(left, right, span), |x, y| fns[1].call(Some(x), y, span)),
+            Fold(operand, kind) => fold(operand, *kind, None, left, right, span),
+            FunctionNode::Axis(f, spec) => return along_axes(f, spec, left, right, span),
+            FunctionNode::Array(items) => return function_array(items, left, right, span),
         }?;
         Ok(Bound::from(array))
     }
@@ -632,11 +638,9 @@ impl Function {
         crate::Inspection::new("function", self.bpl())
     }
 
-    /// The primitive function with glyph `name`, or the system function `name`, which starts with `•`.
+    /// The builtin function spelled `name`: a glyph, or a system name, which starts with `•`.
     pub fn builtin(name: &str) -> Option<Self> {
-        let first = name.chars().next()?;
-        if crate::symbols::canonical(first) == '•' { return crate::system::lookup(&format!("•{}", &name[first.len_utf8()..])); }
-        name.parse::<char>().ok().map(crate::symbols::canonical).and_then(Primitive::from_glyph).map(Self::primitive)
+        Builtin::find(name).map(Builtin::function)
     }
 
     /// The function that operator `kind` derives from `operands`, or a primitive's train or composition that `kind` names.
@@ -652,7 +656,7 @@ impl Function {
             ("axis", [f, Operand::Value(axis)], ..) => FunctionNode::Axis(fun(f)?, axis.clone()), ("⁻¹", [f], ..) => return fun(f)?.inverse(&span),
             (_, [f], Some(op)) if !op.info().dyadic() => FunctionNode::Modified(op, f.clone()),
             (_, [a, b], Some(op)) if op.info().right.is_some() => FunctionNode::Composed(op, [a.clone(), b.clone()]),
-            _ => return Err(span.error(ErrorKind::Syntax, "invalid function construction"))
+            _ => return Err(Error::new(ErrorKind::Syntax, "invalid function construction").at(&span))
         };
         Self::new(node, &span)
     }
@@ -700,8 +704,8 @@ impl Operator {
         Ok(Arc::ptr_eq(&self.0, &other.0) || self.0.equal_by(&other.0, values)?)
     }
     /// Whether the operators match within tolerance `t`, as `≡` compares them: built from matching parts, with `≡`'s rule for the values in them.
-    pub(crate) fn matches(&self, other: &Self, t: Numeric, cx: &impl crate::execution::Checks) -> Result<bool, Error> {
-        self.equal_by(other, &mut |x, y| x.matches_within(y, t, cx))
+    pub(crate) fn matches(&self, other: &Self, t: Numeric, span: &Span) -> Result<bool, Error> {
+        self.equal_by(other, &mut |x, y| x.matches_within(y, t, span))
     }
 }
 impl PartialEq for Operator { fn eq(&self, other: &Self) -> bool { let Ok(equal) = self.equal_by(other, &mut same_values); equal } }
@@ -767,7 +771,7 @@ impl Operator {
         let span = &span;
         let node = match right {
             Some(right) if self.0.is_dyadic() => OperatorNode::Bound(self.0.clone(), right), None if !self.0.is_dyadic() => (*self.0).clone(),
-            _ => return Err(span.domain_error(if self.0.is_dyadic() { "this operator takes two operands" } else { "this operator takes one operand" }))
+            _ => return Err(Error::domain(if self.0.is_dyadic() { "this operator takes two operands" } else { "this operator takes one operand" }).at(span))
         };
         Function::from_value(node.derive(left, span)?, span)
     }
@@ -838,7 +842,7 @@ impl Binding {
         match self {
             Self::Value(a) => Ok(a), v @ Self::Function(_) => Ok(Value::Function(Function::from_value(v, span)?)),
             Self::Operator(op) => Ok(Value::Operator(Operator(Arc::new(op)))),
-            Self::NoResult => Err(span.error(ErrorKind::Value, "expression produced no value")), Self::Absent => Err(span.error(ErrorKind::Value, ABSENT))
+            Self::NoResult => Err(Error::new(ErrorKind::Value, "expression produced no value").at(span)), Self::Absent => Err(Error::new(ErrorKind::Value, ABSENT).at(span))
         }
     }
 }
@@ -858,8 +862,8 @@ impl Bound {
     fn result(self, span: &Span) -> Result<Self, Error> {
         match self.value {
             Binding::Value(_) | Binding::Function(_) | Binding::NoResult => Ok(self),
-            Binding::Operator(_) => Err(span.error(ErrorKind::Syntax, "a dfn can't return an operator")),
-            Binding::Absent => Err(span.error(ErrorKind::Value, ABSENT)),
+            Binding::Operator(_) => Err(Error::new(ErrorKind::Syntax, "a dfn can't return an operator").at(span)),
+            Binding::Absent => Err(Error::new(ErrorKind::Value, ABSENT).at(span)),
         }
     }
 }
@@ -874,7 +878,6 @@ impl Evaluation {
     pub(crate) fn failed(error: Error) -> Self { Self { error: Some(error), ..Self::default() } }
 }
 
-#[derive(Default)]
 pub struct Session {
     pub(crate) execution: crate::execution::Execution,
     pub(crate) prefacing: std::cell::Cell<bool>,
@@ -899,16 +902,65 @@ pub struct Session {
     /// Each generator that a running batched try has drawn from, with its state before the try's first draw from it, for the try to put back where it falls back (`distribution::Drawn`).
     pub(crate) drawn: crate::distribution::Drawn,
     /// The program's command-line arguments.
-    pub(crate) args: Vec<String>,
+    pub(crate) args: std::cell::RefCell<Vec<String>>,
 }
 
-impl Context<'_> {
+/// The process's one session, and its turns. A thread takes a turn to use the session, and another thread that wants a turn waits until it ends. `holder` is the thread with the turn and how many turns it holds.
+struct Slot { holder: std::sync::Mutex<(Option<std::thread::ThreadId>, usize)>, free: std::sync::Condvar, session: std::cell::UnsafeCell<std::mem::MaybeUninit<Session>>, made: std::cell::Cell<bool> }
+// SAFETY: only the thread that holds the turn reaches `session` and `made`. `Turn::take` makes the session under the turn, and `session` is called only by code that runs for the thread holding a turn.
+unsafe impl Sync for Slot {}
+static SLOT: Slot = Slot {
+    holder: std::sync::Mutex::new((None, 0)), free: std::sync::Condvar::new(), session: std::cell::UnsafeCell::new(std::mem::MaybeUninit::uninit()), made: std::cell::Cell::new(false)
+};
+
+/// The process's one session. Only code running for the thread that holds a turn calls this.
+#[inline(always)]
+pub(crate) fn session() -> &'static Session {
+    debug_assert!(SLOT.holder.lock().unwrap_or_else(std::sync::PoisonError::into_inner).0 == Some(std::thread::current().id()), "only the thread holding a turn reads the session");
+    // SAFETY: the thread holding a turn made the session in `Turn::take`, and only that thread gets here.
+    unsafe { (*SLOT.session.get()).assume_init_ref() }
+}
+
+/// A turn at the process's one session, which derefs to it. Another thread that wants a turn waits until this one ends, so cargo's test threads and Python's threads take turns. The thread holding a turn can take another, as a Python callback that evaluates again does. A turn stays on the thread that took it.
+pub struct Turn(std::marker::PhantomData<*const ()>);
+impl Turn {
+    fn take() -> Self {
+        use std::sync::PoisonError;
+        let me = std::thread::current().id();
+        let mut holder = SLOT.holder.lock().unwrap_or_else(PoisonError::into_inner);
+        while holder.0.is_some_and(|thread| thread != me) { holder = SLOT.free.wait(holder).unwrap_or_else(PoisonError::into_inner); }
+        *holder = (Some(me), holder.1 + 1);
+        drop(holder);
+        // SAFETY: this thread holds the turn.
+        if !SLOT.made.replace(true) { unsafe { (*SLOT.session.get()).write(Session::blank()); } }
+        Self(std::marker::PhantomData)
+    }
+    /// This turn, with `args` as the program's command-line arguments, which `•host "args"` gives.
+    pub fn with_args(self, args: Vec<String>) -> Self { self.args.replace(args); self }
+}
+impl Drop for Turn {
+    fn drop(&mut self) {
+        let mut holder = SLOT.holder.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        holder.1 -= 1;
+        if holder.1 == 0 {
+            holder.0 = None;
+            drop(holder);
+            SLOT.free.notify_one();
+        }
+    }
+}
+impl std::ops::Deref for Turn {
+    type Target = Session;
+    fn deref(&self) -> &Session { session() }
+}
+
+impl Session {
     /// Runs `f` in prototype mode when `on`, then restores the caller's mode, after success and after an error.
-    fn prototype_mode<T>(&self, on: bool, f: impl FnOnce(&Self) -> T) -> T {
-        let previous = self.session.prototype.get();
-        self.session.prototype.set(previous | on);
-        let result = f(self);
-        self.session.prototype.set(previous);
+    fn prototype_mode<T>(&self, on: bool, f: impl FnOnce() -> T) -> T {
+        let previous = self.prototype.get();
+        self.prototype.set(previous | on);
+        let result = f();
+        self.prototype.set(previous);
         result
     }
 }

@@ -41,13 +41,17 @@ impl Memo {
 
 // Storage that holds the same items is equal, whatever its dtype. A nonempty array's prototype follows from its items, so only an empty array's prototype takes part in equality.
 impl PartialEq for Storage {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Compact(x), Self::Compact(y)) if std::mem::discriminant(x) == std::mem::discriminant(y) => x == y,
-            (Self::Mixed(x, _), Self::Mixed(y, _)) if !x.is_empty() => x.len() == y.len() && x.iter().zip(y).all(|(a, b)| a.same(b)),
-            _ if self.len() != other.len() => false, _ if self.len() == 0 => self.prototype().same(&other.prototype()),
-            _ => (0..self.len()).all(|i| self.item(i).same(&other.item(i)))
-        }
+    fn eq(&self, other: &Self) -> bool { same_items(self.items(), other.items(), || (self.prototype(), other.prototype())) }
+}
+
+/// Whether `x` and `y` hold the same items: compact items of one kind by value across widths, values by `Value::same`, and empty items by the prototypes that `prototypes` gives.
+pub(super) fn same_items(x: Items, y: Items, prototypes: impl FnOnce() -> (Value, Value)) -> bool {
+    match (x, y) {
+        (Items::Compact(a), Items::Compact(b)) if std::mem::discriminant(&a) == std::mem::discriminant(&b) => a == b,
+        (Items::Values(a), Items::Values(b)) if !a.is_empty() => a.len() == b.len() && a.iter().zip(b).all(|(p, q)| p.same(q)),
+        _ if x.len() != y.len() => false,
+        _ if x.len() == 0 => { let (p, q) = prototypes(); p.same(&q) }
+        _ => (0..x.len()).all(|i| x.item(i).same(&y.item(i))),
     }
 }
 
@@ -194,26 +198,16 @@ impl Storage {
     pub(super) fn with_capacity(dtype: Option<DType>, capacity: usize) -> Self {
         match dtype { Some(dtype) => Self::Compact(Buffer::with_capacity(dtype, capacity)), None => Self::mixed(Vec::with_capacity(capacity)) }
     }
-    pub(super) fn items(&self) -> Items<'_> {
+    pub(crate) fn items(&self) -> Items<'_> {
         match self { Self::Compact(b) => Items::Compact(b.view()), Self::Mixed(v, _) => Items::Values(v) }
     }
     pub(super) fn len(&self) -> usize { self.items().len() }
+    /// A copy of `items`.
+    pub(super) fn copy_of(items: Items) -> Self { match items { Items::Compact(v) => Self::Compact(Buffer::copied(v, 0..v.len())), Items::Values(v) => Self::mixed(v.to_vec()) } }
     fn capacity(&self) -> usize {
         match self { Self::Compact(b) => b.capacity(), Self::Mixed(v, _) => v.capacity() }
     }
-    pub(super) fn item(&self, i: usize) -> Value {
-        match self.items() {
-            Items::Compact(View::Booleans(v)) => Value::Number(Number::from_bool(v[i])),
-            Items::Compact(View::Integers(v)) => Value::integer(v.get(i)),
-            Items::Compact(View::Floats(v)) => Value::Number(Number::float(with_floats!(v, |x| f64::from(x[i])), v.tag())),
-            // An item with no imaginary part is a widened real, except under static kinds.
-            Items::Compact(View::Complexes(v)) => Value::Number(Number::complex_in_session(with_complexes!(v, |x| Complex64::new(x[i].re.into(), x[i].im.into())), v.tag().into())),
-            Items::Compact(View::Characters(v)) => Value::Character(v[i]),
-            Items::Values(v) => strong(&v[i]).unwrap_or_else(|| v[i].clone()),
-        }
-    }
-    /// Item `i`, borrowed where the storage holds values.
-    pub(super) fn item_ref(&self, i: usize) -> Cow<'_, Value> { match self.items() { Items::Values(v) => strong(&v[i]).map_or(Cow::Borrowed(&v[i]), Cow::Owned), _ => Cow::Owned(self.item(i)) } }
+    pub(super) fn item(&self, i: usize) -> Value { self.items().item(i) }
     /// Compact storage gives its dtype's zero. An empty mixed array keeps a stored prototype. A nonempty one fills its first item on first request and keeps the result.
     pub(super) fn prototype(&self) -> Value {
         if let Self::Mixed(d, memo) = self { return memo.prototype.get_or_init(|| Box::new(d[0].fill())).as_ref().clone(); }
@@ -302,6 +296,23 @@ impl<'a> Items<'a> {
     /// The dtype of these items, or `None` for mixed ones.
     pub(super) fn dtype(&self) -> Option<DType> { match self { Self::Compact(v) => Some(v.dtype()), Self::Values(_) => None } }
     pub(crate) fn len(&self) -> usize { match self { Self::Compact(v) => v.len(), Self::Values(v) => v.len() } }
+    /// The items in `range`, borrowed with no copy.
+    pub(crate) fn slice(self, range: std::ops::Range<usize>) -> Self { match self { Self::Compact(v) => Self::Compact(v.slice(range)), Self::Values(v) => Self::Values(&v[range]) } }
+    #[inline]
+    pub(super) fn item(self, i: usize) -> Value {
+        match self {
+            Self::Compact(View::Booleans(v)) => Value::Number(Number::from_bool(v[i])),
+            Self::Compact(View::Integers(v)) => Value::integer(v.get(i)),
+            Self::Compact(View::Floats(v)) => Value::Number(Number::float(with_floats!(v, |x| f64::from(x[i])), v.tag())),
+            // An item with no imaginary part is a widened real, except under static kinds.
+            Self::Compact(View::Complexes(v)) => Value::Number(Number::complex_in_session(with_complexes!(v, |x| Complex64::new(x[i].re.into(), x[i].im.into())), v.tag().into())),
+            Self::Compact(View::Characters(v)) => Value::Character(v[i]),
+            Self::Values(v) => strong(&v[i]).unwrap_or_else(|| v[i].clone()),
+        }
+    }
+    /// Item `i`, borrowed where the items are values.
+    #[inline]
+    pub(super) fn item_ref(self, i: usize) -> Cow<'a, Value> { match self { Self::Values(v) => strong(&v[i]).map_or(Cow::Borrowed(&v[i]), Cow::Owned), _ => Cow::Owned(self.item(i)) } }
     /// Each item through `int`, `real` or `other` by its storage. A complex item must be real. Characters are DOMAIN. An item that a running level carries reads as a count does (`Value::observed_number`): a dual gives its primal, because no derivative flows through an integer, and a batch stops its run.
     fn each<T>(
         &self, int: impl Fn(i64) -> Result<T, ErrorKind>, real: impl Fn(f64) -> Result<T, ErrorKind>, other: impl Fn(&Number) -> Result<T, ErrorKind>
@@ -339,10 +350,14 @@ impl<'a> Items<'a> {
     pub(crate) fn ints(self) -> Option<Ints<'a>> { match self { Self::Compact(View::Integers(ints)) => Some(ints), _ => None } }
     /// Each item as a count of type `T`. A negative item is also DOMAIN. Compact numbers that `integers` converts in one pass and that are all nonnegative take that path. Others go item by item, which gives the error and reads counts beyond `i64`.
     pub(crate) fn nonnegative_integers<T: TryFrom<u64>>(&self) -> Result<Vec<T>, ErrorKind> {
-        if let Self::Compact(View::Integers(_) | View::Floats(_)) = *self && let Ok(n) = self.integers() && n.iter().all(|&n| n >= 0) {
-            // Every count fits `T` when the largest does, so the conversion loop needs no check of its own.
-            crate::number::count_as::<T>(n.iter().copied().max().unwrap_or(0) as u64)?;
-            return Ok(n.iter().map(|&n| T::try_from(n as u64).ok().expect("each count is at most the largest")).collect());
+        if let Self::Compact(View::Integers(_) | View::Floats(_)) = *self && let Ok(n) = self.integers() {
+            // One fold with no branch finds the least and greatest counts, which keeps the loop vectorised.
+            let (lo, hi) = n.iter().fold((0, 0), |(lo, hi): (i64, i64), &x| (lo.min(x), hi.max(x)));
+            if lo >= 0 {
+                // Every count fits `T` when the largest does, so the conversion loop needs no check of its own.
+                crate::number::count_as::<T>(hi as u64)?;
+                return Ok(n.into_owned().into_iter().map(|n| T::try_from(n as u64).ok().expect("each count is at most the largest")).collect());
+            }
         }
         self.each(|n| u64::try_from(n).map_err(|_| Kind::Domain.into()).and_then(crate::number::count_as), real::nonnegative_integer, Number::nonnegative_integer)
     }
@@ -365,8 +380,7 @@ impl Gather {
     pub(crate) fn with_widening(sources: &[&Value], capacity: usize, widening: Widening) -> Self {
         if let Some(join) = crate::transform::Join::of(sources, capacity, widening) { return Self::joined(join); }
         // An empty compact source holds no items that could change the buffer's dtype.
-        let sources: Vec<_> = sources.iter().filter(|v| !v.is_empty() || v.dtype().is_none()).collect();
-        let mut dtypes = sources.iter().map(|v| (v.dtype(), is_weak(v)));
+        let mut dtypes = sources.iter().filter(|v| !v.is_empty() || v.dtype().is_none()).map(|v| (v.dtype(), is_weak(v)));
         let Some((first, first_weak)) = dtypes.next() else { return Self { widening, ..Self::items(capacity) } };
         let joined = first.and_then(|first| dtypes.try_fold((first, first_weak), |(k, w), (i, iw)| k.join_weak(w, i?, iw, widening)));
         let (dtype, weak) = (joined.map(|(d, _)| d), joined.is_some_and(|(_, w)| w));
@@ -510,24 +524,41 @@ impl Gather {
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| writes.write(d, s, f)) { return; }
         let d = self.mixed();
         // A weak number written into mixed storage becomes strong, as an array's items are.
-        for (k, o) in writes.kept() { let x = source.at(pick(k)); d[o] = strong(&x).unwrap_or(x) }
+        writes.runs_while(&mut |k, run| {
+            for (j, &o) in run.iter().enumerate() { if o != Steps::FILL { let x = source.at(pick(k + j)); d[o] = strong(&x).unwrap_or(x) } }
+            true
+        });
     }
-    /// Appends `outer` rows, each holding `lens[k]` items of `sources[k]` for every source in turn, as arrays joined along an axis lay out their lanes. Where lanes average fewer than 64 items, compact storage grows by all the rows at once, then takes each source's lanes through `scatter`, in one typed loop for each source. Longer lanes, joined duals and storage that isn't compact copy lane by lane.
-    pub(crate) fn lanes(&mut self, sources: &[&Value], lens: &[usize], outer: usize) {
-        let (stride, base) = (lens.iter().sum::<usize>(), self.len());
-        // A lane of 64 items or more costs more to copy than the call that copies it (about 13 ns), so long lanes copy one at a time. Short lanes grow the rows once, as copies of a source's first item in the buffer's dtype, and `scatter` writes each source's lanes over them in one typed loop.
-        let like = sources.iter().zip(lens).find(|&(_, &len)| len > 0).map(|(s, _)| *s);
-        let grown = stride < 64 * sources.len() && outer > 1 && self.join.is_none()
-            && like.is_some_and(|like| copy_into!(&mut self.data, like.as_items(), |d, s, f| d.resize(base + outer * stride, f(s[0]))));
-        if !grown {
-            for i in 0..outer { for (source, &len) in sources.iter().zip(lens) { self.extend(source, i * len..(i + 1) * len) } }
-            return;
+    /// Appends `outer` rows, each holding `lens[0]` items of `sources[0]`, then `lens[1]` items of `sources[1]`, as two arrays joined along an axis lay out their lanes. Where lanes are short, compact sources join through rustymath's `gather::interleave`, which writes each row whole, straight into the buffer (`interleaved`). Long lanes, joined duals and storage that isn't compact copy lane by lane.
+    pub(crate) fn lanes(&mut self, sources: [&Value; 2], lens: [usize; 2], outer: usize) {
+        // A lane of 64 items or more costs more to copy than the call that copies it (about 13 ns), so long lanes copy one at a time, converting as they copy.
+        if lens[0] + lens[1] < 128 && outer > 1 && self.interleaved(sources, lens, outer) { return; }
+        for i in 0..outer { for (source, len) in sources.into_iter().zip(lens) { self.extend(source, i * len..(i + 1) * len) } }
+    }
+    /// Appends the rows that `lanes` describes through `gather::interleave`, and gives whether it could: the buffer has no join, both sources are compact, and the buffer stays compact once both sources' dtypes join it. A source of another dtype converts first, in one pass.
+    fn interleaved(&mut self, sources: [&Value; 2], lens: [usize; 2], outer: usize) -> bool {
+        let [Items::Compact(a), Items::Compact(b)] = sources.map(|s| s.as_items()) else { return false };
+        if self.join.is_some() { return false; }
+        for (source, len) in sources.into_iter().zip(lens) { if len > 0 { self.follow(source.dtype(), is_weak(source)) } }
+        let Storage::Compact(d) = &mut self.data else { return false };
+        let dtype = d.dtype();
+        let mut converted = [None, None];
+        for ((v, len), c) in [a, b].into_iter().zip(lens).zip(&mut converted) {
+            if len == 0 || v.dtype() == dtype { continue; }
+            let mut s = Storage::with_capacity(Some(dtype), v.len());
+            if !copy_into!(&mut s, Items::Compact(v), |d, s, f| rustymath::gather::Convert::slice(&f, d, s)) { return false; }
+            *c = Some(s);
         }
-        let mut at = base;
-        for (source, &len) in sources.iter().zip(lens) {
-            self.scatter(Writes::Walk { base: at, steps: &[Steps::along(outer, stride), Steps::along(len, 1)] }, source);
-            at += len;
-        }
+        rustymath::with_dtype!(dtype, T => {
+            let [a, b] = [(a, &converted[0]), (b, &converted[1])].map(|(v, c)| match c.as_ref().map_or(Items::Compact(v), Storage::items) {
+                Items::Compact(v) => T::of(v).unwrap_or(&[]),
+                _ => unreachable!("compact storage"),
+            });
+            let mut out = T::vec(std::mem::replace(d, Buffer::Booleans(Vec::new()))).expect("the buffer has its dtype");
+            rustymath::gather::interleave(&mut out, [a, b], lens, outer);
+            *d = T::buffer(out);
+        });
+        true
     }
     /// Copies the items of `source` that `steps` reach from `base`, through rustymath's `gather::walk`: one `Steps` for each axis, with the last varying fastest. A `None` offset gives the prototype of `source` in place of the item. Compact storage is copied in one typed loop. A pending copy that the walk reads fewer items of is read through its map, without building it (`fusion::walk_through`).
     pub(crate) fn walk(&mut self, source: &Value, base: usize, steps: &[Steps]) {
@@ -551,37 +582,6 @@ impl Gather {
     }
 }
 
-/// Where a scatter writes: at flat offsets, or at the positions that `steps` reach from `base`, in the order `walk` reads them. A `Steps::FILL` offset, or a fill position, writes nothing.
-#[derive(Clone, Copy)]
-pub(crate) enum Writes<'a> { Offsets(&'a [usize]), Walk { base: usize, steps: &'a [Steps] } }
-
-impl Writes<'_> {
-    /// The flat offset of each write, as `Steps::combined` gives a walk's.
-    pub(crate) fn offsets(&self) -> Cow<'_, [usize]> {
-        match *self { Self::Offsets(offsets) => Cow::Borrowed(offsets), Self::Walk { base, steps } => Cow::Owned(Steps::combined(base, steps)) }
-    }
-    /// Each write not at a fill, as its place among the writes and its flat offset.
-    pub(crate) fn kept(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
-        let offsets = self.offsets();
-        (0..offsets.len()).filter_map(move |k| (offsets[k] != Steps::FILL).then_some((k, offsets[k])))
-    }
-    /// Whether there are no writes.
-    pub(crate) fn is_empty(&self) -> bool { match *self { Self::Offsets(offsets) => offsets.is_empty(), Self::Walk { steps, .. } => steps.iter().any(|s| s.len() == 0) } }
-    /// Whether every write is at a fill, which writes nothing, as an empty set of writes is.
-    pub(crate) fn only_fills(&self) -> bool {
-        match *self {
-            Self::Offsets(_) => self.kept().next().is_none(),
-            Self::Walk { steps, .. } => self.is_empty() || (steps.iter().any(Steps::fills) && self.kept().next().is_none()),
-        }
-    }
-    /// Writes `items` at these places in `out`, each converted by `conv`, through rustymath's `gather::scatter` or `gather::scatter_walk`.
-    fn write<S: rustymath::gather::Item, D: rustymath::gather::Item>(self, out: &mut [D], items: &[S], conv: impl rustymath::gather::Convert<S, D>) {
-        match self {
-            Self::Offsets(offsets) => rustymath::gather::scatter(out, offsets, items, conv),
-            Self::Walk { base, steps } => rustymath::gather::scatter_walk(out, items, base, steps, conv),
-        }
-    }
-}
 /// The fill of compact storage that holds `s`'s element type, which is that storage's prototype.
 fn fill_of<S: Stored>(_: &[S]) -> S { S::FILL }
 

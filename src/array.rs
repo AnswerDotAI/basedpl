@@ -1,10 +1,11 @@
+use crate::execution::check;
 use crate::{
     display::{positions, Elide}, element::{Stored, Whole}, fusion::Pending, keyed::Keys, number::{int::Int, real, Numeric}, transform::Carrier,
-    At, DomainAt, Error, ErrorKind, Number
+    Error, ErrorKind, Number
 };
 use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{
-    agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Floats, IntBuf, Ints, View, Width}, error::Kind, search::Key,
+    agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Floats, IntBuf, Ints, View, Width}, error::Kind, gather::Writes, search::Key,
     with_float_width, with_width
 };
 use std::{borrow::Cow, fmt, sync::Arc};
@@ -144,22 +145,21 @@ impl Frame {
 }
 
 // Retains cell metadata even when the frame has no cells.
-pub(crate) struct Cells<'a> { array: &'a Value, split: usize, count: usize, size: usize }
+pub(crate) struct Cells<'a> { array: &'a Value, split: usize, count: usize, size: usize, cell_layout: Layout }
 impl Cells<'_> {
     pub fn frame(&self) -> &[usize] { &self.array.shape()[..self.split] }
     pub fn frame_layout(&self) -> Layout { self.array.layout().axes(0..self.split) }
-    pub fn cell_layout(&self) -> Layout { self.array.layout().axes(self.split..self.array.shape().len()) }
     pub fn shape(&self) -> &[usize] { &self.array.shape()[self.split..] }
     pub fn len(&self) -> usize { self.count }
     pub fn get(&self, i: usize) -> Result<Value, ErrorKind> {
         if self.split == 0 { return Ok(self.array.clone()); }
         if self.shape().is_empty() { return self.array.at(i).unit(); }
-        self.array.part(i * self.size..(i + 1) * self.size, self.shape())?.with_layout(self.cell_layout())
+        self.array.part(i * self.size..(i + 1) * self.size, self.cell_layout.clone())
     }
     pub fn prototype(&self) -> Result<Value, ErrorKind> {
         if self.shape().is_empty() { return self.array.prototype().unit(); }
         let len = generated_len(self.shape())?;
-        self.cell_layout().collect(vec![self.array.prototype(); len], self.array.prototype())
+        self.cell_layout.collect(vec![self.array.prototype(); len], self.array.prototype())
     }
     pub fn framed(&self) -> Result<Value, ErrorKind> {
         if self.split > 0 && self.shape().is_empty() && self.array.is_simple() { return Ok(self.array.clone()); }
@@ -172,20 +172,34 @@ impl Cells<'_> {
 #[derive(Clone, Debug)]
 pub struct ArrayData { layout: Layout, data: Data }
 
-/// An array's items. `Of` shares a base array's items with no copy. `Node` holds the pending call that computes them on the first read (`fusion::Pending`). `Carried` holds a running level's data in their place (`transform::Carrier`): a dual's primal and tangent, or a record of linear calls, whose items are never computed. A base holds `Own` or `Node`.
+/// An array's items. `Of` shares the items in a range of a base array's, with no copy: the whole base for a view under a new layout, or one part's range (`Value::part`). A view keeps its whole base alive, as a NumPy view does. `Node` holds the pending call that computes them on the first read (`fusion::Pending`). `Carried` holds a running level's data in their place (`transform::Carrier`): a dual's primal and tangent, or a record of linear calls, whose items are never computed. A base holds `Own` or `Node`.
 #[derive(Clone, Debug)]
-enum Data { Own(Storage), Of(Arc<ArrayData>), Node(Arc<Pending>), Carried(Carrier) }
+enum Data { Own(Storage), Of(Arc<ArrayData>, std::ops::Range<usize>), Node(Arc<Pending>), Carried(Carrier) }
 
 impl ArrayData {
     fn array(shape: Shape, data: Storage) -> Value { Value::Array(Arc::new(Self { layout: shape.into(), data: Data::Own(data) })) }
-    fn storage(&self) -> &Storage { match &self.data { Data::Own(storage) => storage, Data::Of(base) => base.storage(), Data::Node(pending) => forced(pending), Data::Carried(carrier) => carrier.storage() } }
+    /// The storage that holds this array's items. A view shares its base's, so read a view's items through `items`. What compact storage says of itself as a whole, such as its prototype, holds for any range of it.
+    fn storage(&self) -> &Storage { match &self.data { Data::Own(storage) => storage, Data::Of(base, _) => base.storage(), Data::Node(pending) => forced(pending), Data::Carried(carrier) => carrier.storage() } }
+    /// This array's items: for a view, its range of its base's. Owned storage, the common case, reads inline.
+    #[inline(always)]
+    fn items(&self) -> Items<'_> { if let Data::Own(storage) = &self.data { storage.items() } else { self.shared_items() } }
+    /// The items of a view, a pending array or a carried array. A view's base is never a view, so it reads its base's storage.
+    fn shared_items(&self) -> Items<'_> {
+        match &self.data {
+            Data::Of(base, range) => { let items = base.storage().items(); if range.len() == items.len() { items } else { items.slice(range.clone()) } }
+            Data::Carried(carrier) => carrier.items(), _ => self.storage().items()
+        }
+    }
+    fn len(&self) -> usize { self.layout.shape().iter().product() }
     fn into_storage(self) -> Storage { Self::owned(self.data) }
     /// The items that `data` holds: taken with no copy where nothing else holds them, and copied otherwise. A pending array computes them first.
     fn owned(data: Data) -> Storage {
         match data {
             Data::Own(storage) => storage,
-            Data::Of(base) => Arc::try_unwrap(base).map_or_else(|base| base.storage().clone(), Self::into_storage),
+            Data::Of(base, range) if range.len() == base.len() => Arc::try_unwrap(base).map_or_else(|base| base.storage().clone(), Self::into_storage),
+            Data::Of(base, range) => Storage::copy_of(base.items().slice(range)),
             Data::Node(pending) => Arc::try_unwrap(pending).map_or_else(|pending| forced(&pending).clone(), Pending::into_storage),
+            Data::Carried(Carrier::Labelled(labelled)) => labelled.values().clone().into_storage(),
             Data::Carried(carrier) => carrier.storage().clone(),
         }
     }
@@ -198,12 +212,17 @@ impl ArrayData {
     /// An array of `layout` that shares `this`'s items, with no copy. A carried array gives a carrier of views of its parts (`Carrier::view`), so `Of` never wraps a carrier.
     fn view(this: &Arc<Self>, layout: Layout) -> Value {
         if let Data::Carried(carrier) = &this.data { return carrier.view(layout); }
-        let base = match &this.data { Data::Of(base) => base.clone(), _ => this.clone() };
-        Value::Array(Arc::new(Self { layout, data: Data::Of(base) }))
+        Self::part(this, 0..this.len(), layout)
+    }
+    /// An array of `layout` that shares the items in `range` of `this`'s, which isn't carried. The view reads `this`'s base, so views never chain.
+    fn part(this: &Arc<Self>, range: std::ops::Range<usize>, layout: Layout) -> Value {
+        debug_assert_eq!(layout.shape().iter().product::<usize>(), range.len());
+        let (base, start) = match &this.data { Data::Of(base, of) => (base.clone(), of.start), _ => (this.clone(), 0) };
+        Value::Array(Arc::new(Self { layout, data: Data::Of(base, start + range.start..start + range.end) }))
     }
     /// The call that computes this array's items, while they haven't been computed. A view answers for its base.
     fn pending(&self) -> Option<&Arc<Pending>> {
-        match &self.data { Data::Node(pending) => Some(pending), Data::Of(base) => base.pending(), Data::Own(_) | Data::Carried(_) => None }.filter(|p| !p.is_forced())
+        match &self.data { Data::Node(pending) => Some(pending), Data::Of(base, _) => base.pending(), Data::Own(_) | Data::Carried(_) => None }.filter(|p| !p.is_forced())
     }
     /// The running level's data that this array holds in place of items, if any.
     fn carrier(&self) -> Option<&Carrier> { match &self.data { Data::Carried(carrier) => Some(carrier), _ => None } }
@@ -212,12 +231,12 @@ impl ArrayData {
         match &self.data {
             Data::Own(Storage::Compact(_)) | Data::Node(_) => false,
             Data::Own(storage) => storage.holds_functions(),
-            Data::Of(base) => base.holds_functions(),
+            Data::Of(base, _) => base.holds_functions(),
             Data::Carried(carrier) => carried_functions(carrier),
         }
     }
     /// Whether this array reads another array's items, as a view.
-    fn is_view(&self) -> bool { matches!(self.data, Data::Of(_)) }
+    fn is_view(&self) -> bool { matches!(self.data, Data::Of(..)) }
 }
 
 /// The bytes of the allocations that a value keeps alive, as `Value::footprint` counts them. Each allocation counts once in `seen`.
@@ -241,7 +260,7 @@ impl Footprint for ArrayData {
     fn footprint_in(&self, seen: &mut Seen) -> usize {
         match &self.data {
             Data::Own(storage) => storage.footprint_in(seen),
-            Data::Of(base) => base.footprint_in(seen),
+            Data::Of(base, _) => base.footprint_in(seen),
             Data::Node(pending) => pending.footprint_in(seen),
             Data::Carried(carrier) => carrier.footprint_in(seen),
         }
@@ -291,24 +310,24 @@ impl Value {
         match (self.carrier(), other.carrier()) { (Some(a), Some(b)) => return a.same(b), (None, None) => {}, _ => return false }
         match (self, other) {
             (Self::Number(x), Self::Number(y)) => x == y, (Self::Character(x), Self::Character(y)) => x == y,
-            (Self::Array(x), Self::Array(y)) => Arc::ptr_eq(x, y) || (x.layout == y.layout && x.storage() == y.storage()),
+            (Self::Array(x), Self::Array(y)) => Arc::ptr_eq(x, y) || (x.layout == y.layout && same_items(x.items(), y.items(), || (x.storage().prototype(), y.storage().prototype()))),
             (Self::Function(x), Self::Function(y)) => x == y, (Self::Operator(x), Self::Operator(y)) => x == y, _ => false
         }
     }
     /// Whether the values match, as `≡` and search compare them, within the session's tolerance.
-    pub(crate) fn matches(&self, other: &Self, cx: &impl crate::execution::Checks) -> Result<bool, Error> { self.matches_within(other, Numeric::current(), cx) }
+    pub(crate) fn matches(&self, other: &Self, span: &crate::Span) -> Result<bool, Error> { self.matches_within(other, Numeric::current(), span) }
     /// Whether the values match, with each pair of numbers within the tolerance of the width they compare at. Numbers match whatever their exactness, and NaN matches NaN. Two axes match as arithmetic pairs them: their names don't conflict, as `rustymath::layout::names_conflict` says, and when both have keys, they hold the same keys in any order. Items along keyed axes compare by key. Functions and operators match when built from matching parts. Renderers take no part.
-    pub(crate) fn matches_within(&self, other: &Self, t: Numeric, cx: &impl crate::execution::Checks) -> Result<bool, Error> {
-        cx.check()?;
+    pub(crate) fn matches_within(&self, other: &Self, t: Numeric, span: &crate::Span) -> Result<bool, Error> {
+        check()?;
         use crate::transform::Plain;
-        match (self.observed().at(cx)?, other.observed().at(cx)?) {
-            (Plain::Array(_), Plain::Array(_)) => (), (Plain::Number(x), Plain::Number(y)) => return x.matches(y, t).domain_at(cx),
-            (Plain::Character(x), Plain::Character(y)) => return Ok(x == y), (Plain::Function(x), Plain::Function(y)) => return x.matches(y, t, cx),
-            (Plain::Operator(x), Plain::Operator(y)) => return x.matches(y, t, cx), _ => return Ok(false)
+        match (self.observed()?, other.observed()?) {
+            (Plain::Array(_), Plain::Array(_)) => (), (Plain::Number(x), Plain::Number(y)) => return x.matches(y, t).map_err(Error::from),
+            (Plain::Character(x), Plain::Character(y)) => return Ok(x == y), (Plain::Function(x), Plain::Function(y)) => return x.matches(y, t, span),
+            (Plain::Operator(x), Plain::Operator(y)) => return x.matches(y, t, span), _ => return Ok(false)
         }
         if !self.layout().matches(other.layout()) { return Ok(false); }
         let keyed = self.has_keys() || other.has_keys();
-        if self.is_empty() { return self.prototype().matches_within(&other.prototype(), t, cx); }
+        if self.is_empty() { return self.prototype().matches_within(&other.prototype(), t, span); }
         if !keyed {
             let (x, y) = (self.as_items(), other.as_items());
             if let (Items::Compact(x), Items::Compact(y)) = (x, y) {
@@ -319,7 +338,7 @@ impl Value {
         let mapping = keyed.then(|| Mapping::new(other.layout(), &(0..self.shape().len()).collect::<Vec<_>>(), self.layout(), self.len()));
         for (i, x) in self.elements().enumerate() {
             let j = mapping.as_ref().map_or(i, |m| m.index(i));
-            if !x.matches_within(&other.at(j), t, cx)? { return Ok(false); }
+            if !x.matches_within(&other.at(j), t, span)? { return Ok(false); }
         }
         Ok(true)
     }
@@ -345,8 +364,8 @@ impl Value {
     fn unshared(&self, views: bool) -> Option<&Arc<Pending>> {
         let Self::Array(a) = self else { return None };
         let mut a = a;
-        if let (true, Data::Of(base)) = (views, &a.data) {
-            if Arc::strong_count(a) != 1 { return None; }
+        if let (true, Data::Of(base, range)) = (views, &a.data) {
+            if Arc::strong_count(a) != 1 || range.len() != base.len() { return None; }
             a = base;
         }
         let Data::Node(pending) = &a.data else { return None };
@@ -369,7 +388,7 @@ impl Value {
     /// An array's items: its own, or a copy where something else shares them.
     pub(crate) fn into_storage(self) -> Storage {
         let Self::Array(a) = self else { unreachable!("only an array has storage") };
-        Arc::try_unwrap(a).map_or_else(|a| a.storage().clone(), ArrayData::into_storage)
+        Arc::try_unwrap(a).map_or_else(|a| ArrayData::owned(a.data.clone()), ArrayData::into_storage)
     }
     /// Whether this is an array that holds values as items: mixed storage, and no running level's data (`transform::Carrier`).
     pub(crate) fn holds_values(&self) -> bool { matches!(self, Self::Array(a) if a.carrier().is_none()) && self.dtype().is_none() }
@@ -478,8 +497,8 @@ impl Value {
         if let Some(result) = crate::transform::written(self, source, |t, s| t.written(writes, s)) { return result; }
         let data = self.storage_mut();
         if let Storage::Mixed(items, memo) = data {
-            if writes.kept().any(|(_, o)| o == 0) { memo.prototype.take(); }
-            if source.environment().is_some() || writes.kept().any(|(_, o)| items[o].environment().is_some()) { memo.forget_environment(); }
+            if !writes.runs_while(&mut |_, run| !run.contains(&0)) { memo.prototype.take(); }
+            if source.environment().is_some() || !writes.runs_while(&mut |_, run| run.iter().all(|&o| o == rustymath::gather::Steps::FILL || items[o].environment().is_none())) { memo.forget_environment(); }
             if memo.knows_function() || matches!(source, Value::Function(_)) || source.holds_functions() { memo.forget_functions(); }
         }
         let mut gather = Gather::resume(std::mem::replace(data, Storage::Compact(Buffer::Booleans(Vec::new()))), Widening::Items);
@@ -588,7 +607,7 @@ impl Value {
     /// The items in their storage type. An atom is its own single item.
     pub(crate) fn as_items(&self) -> Items<'_> {
         match self {
-            Self::Array(a) => a.storage().items(), Self::Number(n) => n.bool_slice().map(View::Booleans)
+            Self::Array(a) => a.items(), Self::Number(n) => n.bool_slice().map(View::Booleans)
                 .or_else(|| n.integer_slice().map(|n| View::Integers(Ints::I64(n)))).or_else(|| n.float_items().map(View::Floats))
                 .or_else(|| n.complex_items().map(View::Complexes)).map_or(Items::Values(std::slice::from_ref(self)), Items::Compact),
             Self::Character(c) => Items::Compact(View::Characters(std::slice::from_ref(c))), Self::Function(_) | Self::Operator(_) | Self::Carried(_) => Items::Values(std::slice::from_ref(self))
@@ -598,7 +617,7 @@ impl Value {
     pub(crate) fn dtype(&self) -> Option<DType> {
         match self {
             Self::Array(a) if a.carrier().is_some() => None,
-            Self::Array(a) => a.pending().map_or_else(|| a.storage().items().dtype(), |p| Some(p.dtype())),
+            Self::Array(a) => a.pending().map_or_else(|| a.items().dtype(), |p| Some(p.dtype())),
             atom => item_dtype(atom),
         }
     }
@@ -654,7 +673,7 @@ impl Value {
     /// Item `i`, borrowed where this value holds it as a value.
     pub(crate) fn at_ref(&self, i: usize) -> Cow<'_, Value> {
         if let Self::Array(a) = self { if let Some(carrier) = a.carrier() { return Cow::Owned(carrier.at(i)); } }
-        match self.storage() { Some(s) => s.item_ref(i), None => { assert_eq!(i, 0); Cow::Borrowed(self) } }
+        match self { Self::Array(a) => a.items().item_ref(i), _ => { assert_eq!(i, 0); Cow::Borrowed(self) } }
     }
     pub fn elements(&self) -> impl DoubleEndedIterator<Item = Value> + ExactSizeIterator + Clone + '_ { (0..self.len()).map(|i| self.at(i)) }
     /// Whether every item is a number. Compact numeric storage answers without reading its items.
@@ -662,11 +681,12 @@ impl Value {
         match self.as_items() { Items::Compact(View::Characters(c)) => c.is_empty(), Items::Values(v) => v.iter().all(|e| matches!(e, Value::Number(_))), _ => true }
     }
     pub(crate) fn items(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Value> + '_ { range.map(|i| self.at(i)) }
-    /// The items in `range`, as an array of `shape` with no keys or axis names. Mixed storage stays mixed.
-    pub(crate) fn part(&self, range: std::ops::Range<usize>, shape: impl Into<Shape>) -> Result<Self, ErrorKind> {
+    /// The items in `range`, as an array laid out by `layout`. Compact items stay in this array's storage, as a view of their range (`ArrayData::part`). Mixed items are copied, because a mixed array's memo answers for all its items.
+    pub(crate) fn part(&self, range: std::ops::Range<usize>, layout: impl Into<Layout>) -> Result<Self, ErrorKind> {
+        if let Self::Array(a) = self { if a.carrier().is_none() && matches!(a.items(), Items::Compact(_)) { return Ok(ArrayData::part(a, range, layout.into())); } }
         let mut data = Gather::new(&[self], range.len());
         data.extend(self, range);
-        data.finish(Layout::from(shape.into()), || self.prototype())
+        data.finish(layout.into(), || self.prototype())
     }
     /// An array's prototype. Compact storage gives its kind's zero. An empty mixed array keeps a stored prototype. Other arrays fill their first item on first request and keep the result.
     pub fn prototype(&self) -> Value {
@@ -741,7 +761,7 @@ impl Value {
         let split = self.shape().len().checked_sub(rank).ok_or(Kind::Rank)?;
         let count = generated_len(&self.shape()[..split])?;
         let size = element_count(&self.shape()[split..])?;
-        Ok(Cells { array: self, split, count, size })
+        Ok(Cells { array: self, split, count, size, cell_layout: self.layout().axes(split..self.shape().len()) })
     }
 
     pub fn as_number(&self) -> Option<Number> { if !self.is_unit() { return None; } match self.at(0) { Value::Number(n) => Some(n), _ => None } }
@@ -796,14 +816,14 @@ impl Value {
 
     fn fill_array(&self) -> Self {
         let Self::Array(a) = self else { unreachable!() };
-        Self::Array(Arc::new(ArrayData { data: Data::Own(match (a.storage(), a.storage().items()) {
+        Self::Array(Arc::new(ArrayData { data: Data::Own(match (a.storage(), a.items()) {
             (Storage::Mixed(v, memo), _) if v.is_empty() => Storage::Mixed(vec![], memo.clone()),
             (Storage::Mixed(v, _), _) => Storage::compact(v.iter().map(Value::fill).collect(), Widening::Items),
-            (data, Items::Compact(View::Booleans(_))) => Storage::Compact(Buffer::Booleans(vec![false; data.len()])),
-            (data, Items::Compact(View::Integers(_))) => Storage::Compact(Buffer::Integers(IntBuf::U8(vec![0; data.len()]))),
-            (data, Items::Compact(View::Floats(v))) => Storage::Compact(Buffer::Floats(FloatBuf::collect(v.tag(), std::iter::repeat_n(0.0, data.len())))),
-            (data, Items::Compact(View::Complexes(z))) => Storage::Compact(Buffer::Floats(FloatBuf::collect(z.tag().into(), std::iter::repeat_n(0.0, data.len())))),
-            (data, Items::Compact(View::Characters(_))) => Storage::Compact(Buffer::Characters(vec![' '; data.len()])), (_, Items::Values(_)) => unreachable!("mixed storage fills above")
+            (_, Items::Compact(View::Booleans(_))) => Storage::Compact(Buffer::Booleans(vec![false; a.len()])),
+            (_, Items::Compact(View::Integers(_))) => Storage::Compact(Buffer::Integers(IntBuf::U8(vec![0; a.len()]))),
+            (_, Items::Compact(View::Floats(v))) => Storage::Compact(Buffer::Floats(FloatBuf::collect(v.tag(), std::iter::repeat_n(0.0, a.len())))),
+            (_, Items::Compact(View::Complexes(z))) => Storage::Compact(Buffer::Floats(FloatBuf::collect(z.tag().into(), std::iter::repeat_n(0.0, a.len())))),
+            (_, Items::Compact(View::Characters(_))) => Storage::Compact(Buffer::Characters(vec![' '; a.len()])), (_, Items::Values(_)) => unreachable!("mixed storage fills above")
         }), layout: a.layout.clone() }))
     }
 }

@@ -1,5 +1,6 @@
+use crate::execution::check;
 use rustymath::error::Kind;
-use crate::{array::Items, data::{imported, text, Options}, error::At, execution::Context, keyed, Error, ErrorAt, ErrorKind, Number, Value};
+use crate::{array::Items, data::{imported, text, Options}, Span, keyed, Described, Error, ErrorKind, Number, Value};
 use rustymath::hashing::{HashMap, HashMapExt};
 use num_bigint::BigInt;
 use num_rational::BigRational;
@@ -26,10 +27,10 @@ pub(crate) fn integer(n: &Number) -> Option<Json> {
 }
 
 /// `•json` reads JSON5, which includes all JSON. `fill` replaces `null`.
-pub(crate) fn parse(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let opts = Options::new("•json", left, None, &["fill"], span)?;
-    let read = json5::from_str(&text(right, span)?).map_err(|e| span.domain_error(format!("JSON {e}")))?;
-    import(&read, &opts.fill(span)?, span)
+pub(crate) fn parse(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    let opts = Options::new("•json", left, None, &["fill"])?;
+    let read = json5::from_str(&text(right)?).map_err(|e| Error::domain(format!("JSON {e}")))?;
+    import(&read, &opts.fill()?, span)
 }
 
 /// A JSON5 value as the `json5` crate reads it. Unlike `serde_json::Value`, it holds NaN.
@@ -72,9 +73,9 @@ impl<'de> serde::de::Visitor<'de> for ReadVisitor {
 }
 
 /// `•json⁻¹`: JSON text for a value. NaN exports as `null`, and so does the number given as `fill`.
-pub(crate) fn serialize(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let opts = Options::new("•json⁻¹", left, None, &["fill"], span)?;
-    let fill = opts.fill(span)?;
+pub(crate) fn serialize(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    let opts = Options::new("•json⁻¹", left, None, &["fill"])?;
+    let fill = opts.fill()?;
     Ok(keyed::text(&export(&exportable(right), opts.values.contains_key("fill").then_some(&fill), span)?.to_string()))
 }
 
@@ -95,50 +96,50 @@ pub(crate) fn exportable(value: &Value) -> Value {
     if keys.is_some() { keyed::partial_vector(names, data) } else { value.layout().collect(data, || value.prototype()) }.expect("subset of a valid array")
 }
 
-fn import(value: &Read, fill: &Number, span: &Context<'_>) -> Result<Value, Error> {
-    span.check()?;
+fn import(value: &Read, fill: &Number, span: &Span) -> Result<Value, Error> {
+    check()?;
     let value = match value {
         Read::Null => Value::Number(fill.clone()),
         Read::Bool(b) => Value::Number(Number::from_bool(*b)),
         Read::Text(s) => keyed::text(s),
-        Read::Integer(n) => Value::Number(exact(n.clone()).error_at(span, "JSON number is outside the supported range")?),
+        Read::Integer(n) => Value::Number(exact(n.clone()).described("JSON number is outside the supported range")?),
         Read::Float(x) => Value::Number(Number::float(*x, crate::number::Numeric::current().width)),
         Read::List(items) => {
             let data = items.iter().map(|v| import(v, fill, span)).collect::<Result<Vec<_>, _>>()?;
-            imported(vec![data.len()], data, |i| matches!(items[i], Read::Null), Value::integer(0)).error_at(span, "invalid JSON array")?
+            imported(vec![data.len()], data, |i| matches!(items[i], Read::Null), Value::integer(0)).described("invalid JSON array")?
         }
         Read::Record(entries) => {
             let keys = entries.iter().map(|(k, _)| k.as_str().into()).collect();
             let data = entries.iter().map(|(_, v)| import(v, fill, span)).collect::<Result<_, _>>()?;
-            keyed::vector(keys, data).error_at(span, "invalid JSON object")?
+            keyed::vector(keys, data).described("invalid JSON object")?
         }
     };
     Ok(value)
 }
 
-fn export(value: &Value, fill: Option<&Number>, span: &Context<'_>) -> Result<Json, Error> {
-    span.check()?;
+fn export(value: &Value, fill: Option<&Number>, span: &Span) -> Result<Json, Error> {
+    check()?;
     match value {
         Value::Number(n) => {
             if let Some(b) = n.as_bool() { return Ok(Json::Bool(b)); }
             if n.is_nan() || fill.is_some_and(|f| n.grade_order(f).is_eq()) { return Ok(Json::Null); }
             if let Some(n) = integer(n) { return Ok(n); }
             if let Some(n) = n.as_float().and_then(serde_json::Number::from_f64) { return Ok(Json::Number(n)); }
-            Err(span.domain_error("JSON numbers must be finite floats or integers"))
+            Err(Error::domain("JSON numbers must be finite floats or integers"))
         }
-        Value::Function(_) | Value::Operator(_) => Err(span.domain_error("JSON cannot encode functions or operators")),
+        Value::Function(_) | Value::Operator(_) => Err(Error::domain("JSON cannot encode functions or operators")),
         // A value that `∂` carries writes as its plain value, as `⍕` writes it (`Carrier::observed`). A batch stops its run.
-        Value::Carried(carrier) => match carrier.observed().at(span)? { Some(plain) => export(plain, fill, span), None => Err(carrier.computed().err().expect("only a record observes no value, and a record refuses a direct read").at(span)) },
-        _ if value.keys(0).is_none() && keyed::name(value).is_some() => Ok(Json::String(text(value, span)?)),
+        Value::Carried(carrier) => match carrier.observed()? { Some(plain) => export(plain, fill, span), None => Err(Error::from(carrier.computed().err().expect("only a record observes no value, and a record refuses a direct read"))) },
+        _ if value.keys(0).is_none() && keyed::name(value).is_some() => Ok(Json::String(text(value)?)),
         _ if value.shape().is_empty() => export(&value.at(0), fill, span),
         _ => {
-            let cells = value.cells(value.shape().len() - 1).error_at(span, "invalid JSON array")?;
+            let cells = value.cells(value.shape().len() - 1).described("invalid JSON array")?;
             let values = (0..cells.len()).map(|i| {
-                let cell = cells.get(i).error_at(span, "invalid JSON cell")?;
+                let cell = cells.get(i).described("invalid JSON cell")?;
                 export(&cell, fill, span)
             }).collect::<Result<Vec<_>, _>>()?;
             let Some(keys) = value.keys(0) else { return Ok(Json::Array(values)) };
-            if !keys.complete() { return Err(span.domain_error("JSON objects need a key for every entry")); }
+            if !keys.complete() { return Err(Error::domain("JSON objects need a key for every entry")); }
             Ok(Json::Object(keys.names().iter().flatten().zip(values).map(|(k, v)| (k.to_string(), v)).collect()))
         }
     }

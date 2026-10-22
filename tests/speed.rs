@@ -9,6 +9,7 @@ use basedpl::timing;
 use std::io::Write;
 
 #[test]
+#[cfg_attr(debug_assertions, ignore = "debug assertions change the costs it times")]
 fn functions_cost_what_their_work_needs() {
     let all = std::env::var_os("BASEDPL_COSTS").is_some();
     let mut stderr = std::io::stderr();

@@ -1,4 +1,4 @@
-use basedpl::{EvalOptions, Input, InterruptHandle, OutputKind, ParseStatus, Session, Source};
+use basedpl::{EvalOptions, Input, InterruptHandle, OutputKind, ParseStatus, Session, Source, Turn};
 use kernmini::{
     CompleteRequest, ExecuteOutcome, ExecuteRequest, ExecutionContext, InspectRequest, KernelInfo, LanguageError, LanguageEvent, LanguageSession, ThreadWorker,
 };
@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
-struct BplSession { worker: ThreadWorker<Session> }
+struct BplSession { worker: ThreadWorker<Turn> }
 
 /// A request's cursor position, as an index into its code's characters.
 fn cursor(pos: u64) -> usize { usize::try_from(pos).unwrap_or(usize::MAX) }
@@ -32,7 +32,7 @@ impl LanguageSession for BplSession {
     fn kernel_info(&self) -> kernmini::Result<KernelInfo> {
         Ok(KernelInfo { implementation: "basedpl".into(), implementation_version: env!("CARGO_PKG_VERSION").into(),
             banner: "BasedPL — an APL-derived array language".into(),
-            language_info: json!({"name": "bpl", "version": env!("CARGO_PKG_VERSION"), "mimetype": "text/apl", "file_extension": ".bpl", "codemirror_mode": "apl"})
+            language_info: json!({"name": "bpl", "version": env!("CARGO_PKG_VERSION"), "mimetype": "text/apl", "file_extension": ".bpl", "codemirror_mode": "apl"}), supported_features: vec![]
         })
     }
 

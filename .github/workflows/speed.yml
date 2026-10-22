@@ -18,6 +18,8 @@ jobs:
       - run: pip install 'fastws-cli>=0.0.25' && cargo stage --profile dist
       - run: grep -m1 'model name' /proc/cpuinfo
       - run: wheel/scripts/bpl --costs tests/speed.txt
+      # `bpl-tests thread_scaling` times a large product, a 512×512 SVD and Hermitian eigendecomposition, a stack of QR decompositions and a large elementwise function on one thread and on the runner's cores, and fails when one speeds up less than 1.5 times. Speed budgets are single-thread measurements, so this is the check of multithreaded speed. It comes last, so that a failure here still leaves every cost logged.
+      - run: pip install -e . && bpl-tests thread_scaling --bpl wheel/scripts/bpl
 
   wasm:
     runs-on: ubicloud-standard-4

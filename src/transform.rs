@@ -1,6 +1,7 @@
 //! The core that running transformations share: one stack of running levels, the routing that hands a call to the newest level among its arguments, and the read point for code that isn't a call. The levels are `∂` calls, the record levels of `∂` calls in reverse mode, and the batched runs of maps such as Each. One counter numbers every level, so a level inside another has the larger id. A `∂` call's id is the tag its duals carry, and a record level's id is the level its records carry. A reader outside a call sees a value through `Value::observed` or `Value::computed`, never past a level's data. A batched run stops (`Stop`) where it can't go on for all its cells at once, as at an observing read. Only the try that began the run catches the stop (`batch::tried`).
 
-use crate::{agreement::{Agree, Agreement}, execution::Context, number::Failure, primitive::{FoldKind, Operation, Primitive}, system::SystemFunction, At, Error, ErrorKind, Function, Number, Operator, Span, Value};
+use crate::session;
+use crate::{agreement::{Agree, Agreement}, number::Failure, primitive::{FoldKind, Operation, Primitive}, system::SystemFunction, Error, ErrorKind, Function, Number, Operator, Span, Value};
 use crate::array::{Footprint, Seen};
 
 /// The running levels, innermost last, and the last id a level took.
@@ -47,7 +48,7 @@ impl Kind {
 /// Code that must run once for each cell, which a level may stop before it runs (`Levels::effect`).
 #[derive(Clone, Copy)]
 pub(crate) enum Effect {
-    /// Output or input through `⎕`, `⍕` of a carried value, or a system function's act (`Context::acts`). The operand does it on every call.
+    /// Output or input through `⎕`, `⍕` of a carried value, or a system function's act (`transform::acts`). The operand does it on every call.
     Acts,
     /// Catching an error, as a guard or a call on prototypes does. Whether an error arises depends on the cells' data.
     Catches,
@@ -156,8 +157,6 @@ impl Stop {
     }
     /// The cells of each chunk that the run can go on in, where the stop is for too many items and gives chunks (`oversized`).
     pub(crate) fn chunk(self) -> Option<usize> { (self.cause() == Cause::Memory && self.detail() > 0).then(|| 1 << self.detail()) }
-    /// The error that carries this stop at `span`. Only the level that owns the run catches it.
-    pub(crate) fn at(self, span: &Span) -> Error { span.error(self, STOPPED) }
 }
 
 /// What `•explain` reports in `fallbacks` for a stop: its cause (`Cause::reason`), then the glyph of the primitive that refused, where the stop keeps one.
@@ -170,7 +169,7 @@ impl std::fmt::Display for Stop {
 /// Why a batched run stopped, which says how long a dfn operand remembers the stop (`kept`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Cause {
-    /// Output, input, `⍕` of a carried value, or a system function's act (`Context::acts`), which the operand does on every call (`Effect::Acts`). A random draw in a map inside the operand is one too.
+    /// Output, input, `⍕` of a carried value, or a system function's act (`transform::acts`), which the operand does on every call (`Effect::Acts`). A random draw in a map inside the operand is one too.
     Effect = 0,
     /// A write to a binding outside the map's frames (`Effect::Writes`).
     Write = 1,
@@ -222,10 +221,6 @@ impl Cause {
 
 impl From<Stop> for ErrorKind {
     fn from(stop: Stop) -> Self { ErrorKind::Stop(stop) }
-}
-
-impl<T> At<T> for Result<T, Stop> {
-    fn at(self, span: &Span) -> Result<T, Error> { self.map_err(|stop| stop.at(span)) }
 }
 
 impl Value {
@@ -338,7 +333,7 @@ pub(crate) enum Op<'a> {
 
 /// The call of `op` as the newest level among its arguments handles it, or `None` to run its own code, whose calls route again. A record level records the call (`linear::call`), unless only the right argument is a record and a primitive's form copies it through a plan, whose own code records it. A `∂` call applies the operation's rule, or a rule that `f∂←g` attached (`derivative::call`). A batched map runs a call on its batches' whole arguments, or stops its run (`batch::call`). A label level takes a primitive along an axis (`selection::call`), and leaves other operations to their own code, whose calls of primitives carry the labels on. For `⌻`, `⌹`, `⊥`, monadic `f.g`, attached rules and system functions, the newest level can sit inside the arguments' nested arrays. An outer product broadcasts both arguments to its result's layout and calls the operation once. Callers test `Session::transforming` first.
 #[inline(never)]
-pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Value, Error>> {
     let within = match op {
         Op::Operation(Operation::Primitive(p), _) => matches!(p, Primitive::Polynomial | Primitive::MatrixDivide | Primitive::Decode),
         Op::Operation(Operation::Product(..), _) | Op::Product => left.is_none(),
@@ -348,30 +343,28 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, cx: &Context
     let newest = newest(left, right, within)?;
     if let Op::Operation(operation, Pairing::Outer(agreement)) = op {
         let (x, y) = agreement.laid(left, right);
-        return Some(operation.call(Pairing::Axis(None), x.as_ref(), &y, cx));
+        return Some(operation.call(Pairing::Axis(None), x.as_ref(), &y, span));
     }
     match newest {
         Mark::Record(_) => {
             let planned = matches!(op, Op::Operation(Operation::Primitive(p), _) if matches!(p.facts(left.is_some()).form, crate::primitive::Form::Moves { planned: true, .. }));
             if planned && !left.is_some_and(|x| crate::linear::record_of(x).is_some()) { return None; }
-            crate::linear::call(op, left, right, cx)
+            crate::linear::call(op, left, right, span)
         }
-        Mark::Dual(tag) => crate::derivative::call(op, left, right, tag, cx),
-        Mark::Batch(level) => crate::batch::call(op, left, right, level, cx),
-        Mark::Label(level) => match op { Op::Operation(Operation::Primitive(p), Pairing::Axis(axis)) => crate::selection::call(p, axis, left, right, level, cx), _ => None },
+        Mark::Dual(tag) => crate::derivative::call(op, left, right, tag, span),
+        Mark::Batch(level) => crate::batch::call(op, left, right, level, span),
+        Mark::Label(level) => match op { Op::Operation(Operation::Primitive(p), Pairing::Axis(axis)) => crate::selection::call(p, axis, left, right, level, span), _ => None },
     }
 }
 
-impl Context<'_> {
-    /// Whether a level that wraps values is running and `left` or `right` carries its data.
-    pub(crate) fn carried(&self, left: Option<&Value>, right: &Value) -> bool { self.session.transforming() && (right.carried() || left.is_some_and(Value::carried)) }
-    /// Asks the running levels before code that acts: code that reads or writes files, the network, the clock or the terminal, or that makes something new on each call, such as a random name. A batched run stops before it (`Effect::Acts`), because the code would act once for all its cells.
-    pub(crate) fn acts(&self) -> Result<(), Error> { self.session.effect(Effect::Acts).at(self.span) }
-    /// Asks the running levels before code that formats `left` and `right` as text, as `⍕` and `•literal⁻¹` do. A batch displays as its first cell (`Value::displayed`), so formatting a value that holds one stops the batched run (`Effect::Acts`).
-    pub(crate) fn formats(&self, left: Option<&Value>, right: &Value) -> Result<(), Error> {
-        if self.carried(left, right) { self.acts()?; }
-        Ok(())
-    }
+/// Whether a level that wraps values is running and `left` or `right` carries its data.
+pub(crate) fn carried(left: Option<&Value>, right: &Value) -> bool { session().transforming() && (right.carried() || left.is_some_and(Value::carried)) }
+/// Asks the running levels before code that acts: code that reads or writes files, the network, the clock or the terminal, or that makes something new on each call, such as a random name. A batched run stops before it (`Effect::Acts`), because the code would act once for all its cells.
+pub(crate) fn acts() -> Result<(), Error> { Ok(session().effect(Effect::Acts)?) }
+/// Asks the running levels before code that formats `left` and `right` as text, as `⍕` and `•literal⁻¹` do. A batch displays as its first cell (`Value::displayed`), so formatting a value that holds one stops the batched run (`Effect::Acts`).
+pub(crate) fn formats(left: Option<&Value>, right: &Value) -> Result<(), Error> {
+    if carried(left, right) { acts()?; }
+    Ok(())
 }
 
 /// The message of the UNSUPPORTED error that a value `∂` carries gives where it reaches code that reads numbers directly (`number::Failure::Carried`).
@@ -399,6 +392,12 @@ impl Carrier {
     pub(crate) fn labelled(&self) -> Option<&std::sync::Arc<crate::selection::Labelled>> { match self { Carrier::Labelled(l) => Some(l), _ => None } }
     /// The items, as code with no rule for this level reads them (`ArrayData::storage`): a dual's items as dual atoms, or a batch's as batches of atoms. A record has none to give.
     pub(crate) fn storage(&self) -> &crate::array::Storage { match self { Carrier::Dual(dual) => dual.storage(), Carrier::Record(_) => crate::linear::storage(), Carrier::Batch(b) => b.storage(), Carrier::Labelled(l) => l.storage() } }
+    /// The items as `ArrayData::items` reads them: a labelled value's values, which can be a range of their base's (`Value::part`), or else the items of `storage`.
+    pub(crate) fn items(&self) -> crate::array::Items<'_> { match self { Carrier::Labelled(l) => l.values().as_items(), carrier => carrier.storage().items() } }
+    /// The items of a dual or a batch for `storage`, built once into `cell` as `n` items from `at`. Building them records an `itemwise` row in `•explain` under `route`.
+    pub(crate) fn built<'a>(cell: &'a std::sync::OnceLock<crate::array::Storage>, route: &'static str, n: usize, at: impl Fn(usize) -> Value) -> &'a crate::array::Storage {
+        cell.get_or_init(|| { crate::explain::itemwise(route, n); crate::array::Storage::mixed((0..n).map(at).collect()) })
+    }
     /// This carrier under `layout`, which has as many items: each part as a view under `layout`, with no items copied. A dual's tangent goes under it expanded to the primal's layout, and a batch's cells each go under it.
     pub(crate) fn view(&self, layout: crate::array::Layout) -> Value {
         match self {
@@ -415,7 +414,7 @@ impl Carrier {
         match self {
             Carrier::Dual(dual) => dual.map(|part| crate::derivative::to_float_width(part, width, span)),
             Carrier::Record(t) => Ok(crate::linear::cast(t, width)),
-            Carrier::Batch(b) => Err(Stop::new(b.level, Cause::Rule).at(span)),
+            Carrier::Batch(b) => Err(Stop::new(b.level, Cause::Rule).into()),
             Carrier::Labelled(l) => crate::derivative::to_float_width(l.values(), width, span),
         }
     }

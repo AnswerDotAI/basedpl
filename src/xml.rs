@@ -1,4 +1,5 @@
-use crate::{display, execution::Context, keyed, system::{native, Call, Valence::Ambivalent}, DomainAt, Error, ErrorAt, Value};
+use crate::execution::check;
+use crate::{display, Span, keyed, system::{native, Call, Valence::Ambivalent}, Described, Error, Value};
 fn valid_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_alphabetic() || c == '_') && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
 }
@@ -6,25 +7,25 @@ fn valid_name(name: &str) -> bool {
 /// The function that builds elements tagged `tag`, as `•element` returns it.
 pub(crate) fn element_function(tag: std::sync::Arc<str>) -> Value { Value::Function(native("•element", Call::Element(tag), Ambivalent)) }
 
-pub(crate) fn factory(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let tag = keyed::name(right).filter(|s| valid_name(s)).ok_or_else(|| span.domain_error("invalid XML element name"))?;
+pub(crate) fn factory(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+    let tag = keyed::name(right).filter(|s| valid_name(s)).ok_or_else(|| Error::domain("invalid XML element name"))?;
     Ok(element_function(tag))
 }
 
-pub(crate) fn element(tag: &str, attrs: Option<&Value>, children: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn element(tag: &str, attrs: Option<&Value>, children: &Value) -> Result<Value, Error> {
     let attrs = attrs.cloned().unwrap_or_else(keyed::empty_record);
     keyed::vector(vec!["tag".into(), "attrs".into(), "children".into()], vec![keyed::text(tag), attrs, children.clone()])
-        .and_then(|e| e.with_renderer(display::renderer("html-renderer", render_html))).error_at(span, "XML element exceeds array limits")
+        .and_then(|e| e.with_renderer(display::renderer("html-renderer", render_html))).described("XML element exceeds array limits")
 }
 
-fn attribute(value: &Value, span: &Context<'_>) -> Result<String, Error> {
+fn attribute(value: &Value) -> Result<String, Error> {
     if let Some(text) = keyed::name(value) { return Ok(text.to_string()); }
-    if value.shape().len() > 1 { return Err(span.domain_error("XML attributes must be text or numeric units or vectors")); }
+    if value.shape().len() > 1 { return Err(Error::domain("XML attributes must be text or numeric units or vectors")); }
     value.elements().map(|v| {
-        let n = v.as_number().ok_or_else(|| span.domain_error("XML attributes must be text or numbers"))?;
+        let n = v.as_number().ok_or_else(|| Error::domain("XML attributes must be text or numbers"))?;
         if let Some(t) = n.integer_text() { return Ok(t); }
-        let x = n.to_float().domain_at(span)?;
-        if !x.is_finite() { return Err(span.domain_error("XML numeric attributes must be finite")); }
+        let x = n.to_float()?;
+        if !x.is_finite() { return Err(Error::domain("XML numeric attributes must be finite")); }
         Ok(x.to_string())
     }).collect::<Result<Vec<_>, _>>().map(|v| v.join(" "))
 }
@@ -44,29 +45,29 @@ enum Markup { Xml, Html, Raw }
 
 const VOID: &[&str] = &["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"];
 
-fn write(value: &Value, output: &mut String, mode: Markup, span: &Context<'_>) -> Result<(), Error> {
-    span.check()?;
+fn write(value: &Value, output: &mut String, mode: Markup, span: &Span) -> Result<(), Error> {
+    check()?;
     if let Some(text) = keyed::name(value) {
         if mode == Markup::Raw { output.push_str(&text) }
         else { escape(&text, output) }
         return Ok(());
     }
     if value.keys(0).is_none() {
-        if value.is_atom() { return Err(span.domain_error("XML children must be text or elements")); }
+        if value.is_atom() { return Err(Error::domain("XML children must be text or elements")); }
         for child in value.elements() { write(&child, output, mode, span)?; }
         return Ok(());
     }
-    let tag = keyed::field(value, "tag").and_then(|v| keyed::name(&v)).filter(|s| valid_name(s)).ok_or_else(|| span.domain_error("invalid XML element"))?;
-    let attrs = keyed::field(value, "attrs").ok_or_else(|| span.domain_error("XML element needs attrs"))?;
-    let children = keyed::field(value, "children").ok_or_else(|| span.domain_error("XML element needs children"))?;
+    let tag = keyed::field(value, "tag").and_then(|v| keyed::name(&v)).filter(|s| valid_name(s)).ok_or_else(|| Error::domain("invalid XML element"))?;
+    let attrs = keyed::field(value, "attrs").ok_or_else(|| Error::domain("XML element needs attrs"))?;
+    let children = keyed::field(value, "children").ok_or_else(|| Error::domain("XML element needs children"))?;
     output.push('<');
     output.push_str(&tag);
-    for (name, value) in keyed::pairs(&attrs).error_at(span, "XML attributes must be a keyed vector")? {
-        if !valid_name(&name) { return Err(span.domain_error("invalid XML attribute name")); }
+    for (name, value) in keyed::pairs(&attrs).described("XML attributes must be a keyed vector")? {
+        if !valid_name(&name) { return Err(Error::domain("invalid XML attribute name")); }
         output.push(' ');
         output.push_str(&name);
         output.push_str("=\"");
-        escape(&attribute(&value, span)?, output);
+        escape(&attribute(&value)?, output);
         output.push('"');
     }
     let html = (mode != Markup::Xml).then(|| tag.to_ascii_lowercase());
@@ -80,24 +81,24 @@ fn write(value: &Value, output: &mut String, mode: Markup, span: &Context<'_>) -
     Ok(())
 }
 
-pub(crate) fn serialize(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> { text(right, Markup::Xml, span) }
+pub(crate) fn serialize(_: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> { text(right, Markup::Xml, span) }
 
-fn text(tree: &Value, mode: Markup, span: &Context<'_>) -> Result<Value, Error> {
+fn text(tree: &Value, mode: Markup, span: &Span) -> Result<Value, Error> {
     let mut output = String::new();
     write(tree, &mut output, mode, span)?;
     Ok(keyed::text(&output))
 }
 
 /// `•xml text` reads XML into the elements that `•xml⁻¹` writes, with the same meaning. Comments, processing instructions and text that is only whitespace are dropped.
-pub(crate) fn parse(_: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
-    let text = crate::data::text(right, span)?;
-    let document = roxmltree::Document::parse(&text).map_err(|e| span.domain_error(format!("XML {e}")))?;
+pub(crate) fn parse(_: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    let text = crate::data::text(right)?;
+    let document = roxmltree::Document::parse(&text).map_err(|e| Error::domain(format!("XML {e}")))?;
     read(document.root_element(), span)
 }
 
 /// The element `node`, with names written with their prefixes, and the namespaces it declares as `xmlns` attributes.
-fn read(node: roxmltree::Node<'_, '_>, span: &Context<'_>) -> Result<Value, Error> {
-    span.check()?;
+fn read(node: roxmltree::Node<'_, '_>, span: &Span) -> Result<Value, Error> {
+    check()?;
     let named = |space: Option<&str>, name: &str| match space.and_then(|uri| node.lookup_prefix(uri)).filter(|p| !p.is_empty()) {
         Some(prefix) => format!("{prefix}:{name}"), None => name.to_string()
     };
@@ -109,20 +110,20 @@ fn read(node: roxmltree::Node<'_, '_>, span: &Context<'_>) -> Result<Value, Erro
     let children = node.children().filter_map(|child| match child.text() {
         _ if child.is_element() => Some(read(child, span)), Some(text) if child.is_text() && !text.trim().is_empty() => Some(Ok(keyed::text(text))), _ => None
     }).collect::<Result<Vec<_>, _>>()?;
-    let children = Value::from_parts(vec![children.len()], children, keyed::text("")).error_at(span, "XML element exceeds array limits")?;
-    let attrs = keyed::vector(names, values).error_at(span, "invalid XML attributes")?;
-    element(&named(node.tag_name().namespace(), node.tag_name().name()), Some(&attrs), &children, span)
+    let children = Value::from_parts(vec![children.len()], children, keyed::text("")).described("XML element exceeds array limits")?;
+    let attrs = keyed::vector(names, values).described("invalid XML attributes")?;
+    element(&named(node.tag_name().namespace(), node.tag_name().name()), Some(&attrs), &children)
 }
 
-pub(crate) fn svg(left: Option<&Value>, right: &Value, span: &Context<'_>) -> Result<Value, Error> {
+pub(crate) fn svg(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let defaults = keyed::vector(vec!["xmlns".into(), "viewBox".into()], vec![keyed::text("http://www.w3.org/2000/svg"), keyed::text("0 0 100 100")]).unwrap();
-    let attrs = left.map_or(Ok(defaults.clone()), |a| keyed::merge(&defaults, a)).error_at(span, "invalid SVG attributes")?;
-    element("svg", Some(&attrs), right, span)?.with_renderer(display::renderer("svg-renderer", render_svg)).error_at(span, "SVG exceeds array limits")
+    let attrs = left.map_or(Ok(defaults.clone()), |a| keyed::merge(&defaults, a)).described("invalid SVG attributes")?;
+    element("svg", Some(&attrs), right)?.with_renderer(display::renderer("svg-renderer", render_svg)).described("SVG exceeds array limits")
 }
 
-fn render_html(_: Option<&Value>, tree: &Value, span: &Context<'_>) -> Result<Value, Error> { markup("text/html", tree, Markup::Html, span) }
-fn render_svg(_: Option<&Value>, tree: &Value, span: &Context<'_>) -> Result<Value, Error> { markup("image/svg+xml", tree, Markup::Xml, span) }
+fn render_html(_: Option<&Value>, tree: &Value, span: &Span) -> Result<Value, Error> { markup("text/html", tree, Markup::Html, span) }
+fn render_svg(_: Option<&Value>, tree: &Value, span: &Span) -> Result<Value, Error> { markup("image/svg+xml", tree, Markup::Xml, span) }
 /// The markup of `tree` as a MIME bundle of type `kind`.
-fn markup(kind: &str, tree: &Value, mode: Markup, span: &Context<'_>) -> Result<Value, Error> {
-    display::mime(kind, text(tree, mode, span)?).error_at(span, "invalid XML MIME bundle")
+fn markup(kind: &str, tree: &Value, mode: Markup, span: &Span) -> Result<Value, Error> {
+    display::mime(kind, text(tree, mode, span)?).described("invalid XML MIME bundle")
 }

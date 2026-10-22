@@ -1,5 +1,6 @@
 "Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set the budgets of basedpl's and rustymath's speed tests."
 import json, math, os, re, statistics, subprocess, sys, tempfile, time, tomllib
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from decimal import Context, Decimal, ROUND_CEILING
 from dataclasses import dataclass, field, replace
@@ -18,7 +19,7 @@ OUTPUT = '⍝ ⎕:'
 ERROR = '⍝ error: '
 
 # The header options that set a flag on a case, as Rust's `reference::FLAGS` names them.
-FLAGS = 'unfused', 'batched', 'mixed', 'serial'
+FLAGS = 'unfused', 'batched', 'mixed'
 
 
 @dataclass
@@ -32,7 +33,6 @@ class Case:
     unfused: bool = False
     batched: bool = False
     mixed: bool = False
-    serial: bool = False
     line: int = field(default=0, compare=False, repr=False)
     section: str = ''
     output: str | None = None
@@ -183,21 +183,23 @@ def add(ids, output='tests/reference', directory='provenance'):
     return list(rows)
 
 
-def _failures(request, bpl=None):
-    "The failures that a fresh worker running `bpl` gives for `request`, a `reference` or `page` request. The request also carries one case that must fail, and a reply that doesn't report it raises `ValueError`, so a worker that checked nothing, or passed everything, never reads as a pass."
-    (kind, spec), = request.items()
-    if kind == 'reference':
-        text = spec['text'].rstrip('\n') + '\n\n⍝ bpltests-sentinel — The checker must report this case\n0   ⍝ 1\n'
-        spec = {**spec, 'text': text, 'ids': spec['ids'] and [*spec['ids'], 'bpltests-sentinel']}
-        sentinel = lambda f: f.get('id') == 'bpltests-sentinel'
-    else:
-        text = spec['text'].rstrip('\n') + '\n\n```bpl\n0 ⍝ 1\n```\n'
-        spec, line = {**spec, 'text': text}, text.count('\n') - 1
-        sentinel = lambda f: f.get('line') == line
-    with Worker(bpl) as w: r = w.request({kind: spec})
+def _checked(worker, kind, spec, sentinel):
+    "The failures that `worker` gives for a `kind` request, `reference` or `page`, with `spec`, without the case that `sentinel` picks. A reply that doesn't report that case raises `ValueError`, so a worker that checked nothing, or passed everything, never reads as a pass."
+    r = worker.request({kind: spec})
     if e := r['error']: raise ValueError(e['message'])
     if sum(map(sentinel, r['failures'])) != 1: raise ValueError("the worker didn't report the case that must fail, so its result can't be trusted")
     return [f for f in r['failures'] if not sentinel(f)]
+
+
+def _failures(kind, specs, sentinel, bpl=None):
+    "The failures that `_checked` gives for each of `specs`, each in a fresh worker running `bpl`, all at once. The workers run while this holds the timing lock shared, as the reference test does. Every worker closes before this returns or raises, which ends any request still running, as after a Ctrl-C."
+    with timing_lock():
+        workers = [Worker(bpl) for _ in specs]
+        pool = ThreadPoolExecutor(len(workers))
+        try: return [f for job in [pool.submit(_checked, w, kind, s, sentinel) for w, s in zip(workers, specs)] for f in job.result()]
+        finally:
+            for w in workers: w.close()
+            pool.shutdown()
 
 
 def check_file(
@@ -205,9 +207,17 @@ def check_file(
     ids:Annotated[int|str, {'nargs':'*'}]=None, # Check only these cases, each named by its id or its header's line number
     bpl:Path=None # A native `bpl` to check, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
 ):
-    "Check the cases in `path` in a fresh worker, as `tests/reference.rs` does, and return the failures."
+    "Check the cases in `path` as `tests/reference.rs` does, in a fresh worker for each core that takes every n-th case, and return the failures in the file's order."
     if isinstance(ids, (int, str)): ids = [ids]
-    return _failures(dict(reference=dict(text=Path(path).read_text(), ids=ids)), bpl)
+    source = Path(path).read_text()
+    cases = _reference_cases(source)
+    lines = [c['line'] for c in cases if ids is None or c['id'] in ids or c['line'] in ids]
+    # An id that names no case goes to every worker, whose error names it.
+    unknown = [i for i in ids or () if not any(i in (c['id'], c['line']) for c in cases)]
+    text = source.rstrip('\n') + '\n\n⍝ bpltests-sentinel — The checker must report this case\n0   ⍝ 1\n'
+    n = max(1, min(os.cpu_count(), len(lines)))
+    specs = [dict(text=text, ids=[*lines[k::n], *unknown, 'bpltests-sentinel']) for k in range(n)]
+    return sorted(_failures('reference', specs, lambda f: f.get('id') == 'bpltests-sentinel', bpl), key=lambda f: f['line'])
 
 
 def check_page(
@@ -216,7 +226,9 @@ def check_page(
     unbatched:bool=False # Run each example with the `batch` pref off
 ):
     "Run the BPL examples in `.qmd` page `path` in a fresh worker, as `tests/core.rs` does, and return the failures."
-    return _failures(dict(page=dict(text=Path(path).read_text(), batch=False if unbatched else None)), bpl)
+    text = Path(path).read_text().rstrip('\n') + '\n\n```bpl\n0 ⍝ 1\n```\n'
+    line = text.count('\n') - 1
+    return _failures('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, bpl)
 
 _SPEED = Path(__file__).parents[2]/'tests'/'speed.txt'
 # The budgets on each case line of a budget file, after its code, in order: macOS on Apple silicon, Linux on CI's x86 runner, then the browser build where the file has one.
@@ -231,7 +243,7 @@ _PKG = _SPEED.with_name('wasm-pkg.mjs')
 
 class Costs(list):
     "Each case's cost, as `(code, picoseconds per item, copies)` rows. Copies is `None` where one copy of the data is too quick to time."
-    def __repr__(self): return '\n'.join(f'{ps:>10,.0f} ps {("-" if copies is None else f"{copies:.2f}"):>9} copies  {code}' for code, ps, copies in self)
+    def __repr__(self): return '\n'.join(f'{ps:>10,.0f} ps {_or_dash(copies, ".2f"):>9} copies  {code}' for code, ps, copies in self)
 
 def time_cases(
     cases:Annotated[str, {'nargs':'+'}], # A BPL expression to time, or a list of them
@@ -248,6 +260,36 @@ def time_cases(
     with Worker(bpl, native) as w: r = w.request(dict(timing=dict(speed=speed, prefs=prefs, cases=cases, threads=threads)), timeout)
     if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
     return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
+
+class Scaling(list):
+    "Each case's time per item in picoseconds on one thread and on `threads` threads, its speedup, and the least speedup it must reach, as `(code, one, many, speedup, least)` rows. A case whose speedup is below its least is marked `slow`."
+    def __init__(self, rows=(), threads=1):
+        super().__init__(rows)
+        self.threads = threads
+    def __repr__(self):
+        rows = (f'{one:>11,.0f} ps {many:>11,.0f} ps {speedup:>6.2f}x of {least:<4g} {"slow" if speedup < least else "":4}  {code}' for code, one, many, speedup, least in self)
+        return '\n'.join([f'1 thread against {self.threads}', *rows])
+
+_SCALING_SETUP = 'pm←¿[1024 1024]⍴0 ⋄ sq←¿[512 512]⍴0 ⋄ hq←sq+⍉sq ⋄ stk←¿[16384 8 8]⍴0 ⋄ big←¿4194304⍴0 ⋄ n←≢big'
+_SCALING_CASES = ['pm+.×pm', '"svd"•decompose sq', '"eigen"•decompose hq', '"qr"•decompose⍤2 stk', '*big']
+# On macOS, Accelerate computes these cases. Its GESDD and SYEVD run on one thread whatever its threading setting, as NumPy's calls into the same Accelerate show, so the SVD and Hermitian eigendecomposition expect no speedup, and fail only where threads slow them. Its 1024×1024 product gained 1.34 to 1.38 times on 8 or 18 threads of an M5 Max, where one thread already ran at about 480 GFLOP/s.
+_ACCELERATED_LEAST = {'pm+.×pm': 1.2, '"svd"•decompose sq': 0.9, '"eigen"•decompose hq': 0.9}
+
+def thread_scaling(
+    threads:int=None, # Threads to compare with one; None: this machine's cores, at most 8
+    least:float=1.5, # The least speedup that each case must reach, apart from `_ACCELERATED_LEAST`'s on macOS
+    cases:str=None, # A case's code, or a list of them; None: a 1024×1024 product, a 512×512 SVD and Hermitian eigendecomposition, QR decompositions of a stack of 16,384 8×8 matrices, and `*` on 4,194,304 floats
+    setup:str=_SCALING_SETUP, # BPL that defines the cases' data and its number of items `n`
+    bpl:Path=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
+    timeout:float=None, # Seconds before each timing stops
+):
+    "Time each case with `time_cases` on one thread and on `threads` threads, and give its speedup. Speed budgets are single-thread measurements, so this checks multithreaded speed instead: in the manual `Speed` workflow and locally, not in the `Test` workflow, where a runner's cores and sharing make it noisy. On macOS, the cases that Accelerate computes need only the speedups in `_ACCELERATED_LEAST`. Raises `ValueError` with the table when any case's speedup is below its least."
+    threads, cases = threads or min(8, os.cpu_count() or 1), cases or _SCALING_CASES
+    one, many = (time_cases(cases, setup, threads=t, bpl=bpl, timeout=timeout) for t in (1, threads))
+    least_for = lambda code: min(least, _ACCELERATED_LEAST.get(code, least)) if sys.platform == 'darwin' else least
+    result = Scaling(((code, a, b, a / b, least_for(code)) for (code, a, _), (_, b, _) in zip(one, many)), threads)
+    if any(speedup < floor for *_, speedup, floor in result): raise ValueError(f'\n{result!r}')
+    return result
 
 class Instructions(list):
     "Each case's instructions per unit of `N`, as `(code, instructions)` rows."
@@ -330,6 +372,31 @@ def _self_samples(code, bpl, seconds):
     for name, n in zip(subprocess.run(['c++filt'], input='\n'.join(selfs), capture_output=True, text=True).stdout.splitlines(), selfs.values()): named[name] += n
     return named, total
 
+def _estimates(case, setup, bpl, seconds):
+    "Each function's estimated instructions per step of `N` for `case` on `bpl`, and the build's instructions per step, as `profile` describes."
+    if sys.platform != 'darwin': raise ValueError(f'no sampling profiler on {sys.platform}')
+    [(_, per_step)] = instructions(case, setup, bpl=bpl)
+    samples, total = _self_samples(_program(f'{{⍵⊣({case})}}⍣1000000000⊢0', max(1, round(1e8/per_step)), setup), bpl, seconds)
+    return {f: per_step*n/total for f, n in samples.items()}, per_step
+
+class Profile(list):
+    "Each function's estimated instructions per step of `N` on one build, as `(function, instructions)` rows, largest first, below a row of the build's total."
+    def __init__(self, rows=(), total=0):
+        super().__init__(rows)
+        self.total = total
+    def __repr__(self): return '\n'.join(f'{n:>10,.0f} {n/self.total:>6.1%}  {f[:150]}' for f, n in [('total', self.total), *self])
+
+def profile(
+    case, # A BPL expression that makes one call per step of `N`, as `instructions` takes, such as `{⍵}⍣N⊢0`
+    setup='', # BPL that defines what the case uses, run before it
+    bpl:Path=None, # A native `bpl` to profile, such as a copy saved before a change; None: the installed one
+    seconds=3, # How long macOS `sample` watches the build
+    rows=20 # How many functions to show
+):
+    "Where `case`'s instructions per step of `N` go, by function, on macOS. A fresh process repeats the case on one thread while `sample` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate."
+    estimates, total = _estimates(case, setup, bpl, seconds)
+    return Profile(sorted(estimates.items(), key=lambda r: -r[1])[:rows], total)
+
 def profile_diff(
     case, # A BPL expression that makes one call per step of `N`, as `instructions` takes, such as `{⍵}⍣N⊢0`
     base:Path, # A native `bpl` to compare with, such as a copy saved before a change
@@ -338,13 +405,8 @@ def profile_diff(
     seconds=3, # How long macOS `sample` watches each build
     rows=20 # How many functions to show
 ):
-    "Where `case`'s instructions per step of `N` moved between two builds, by function, on macOS. For each build, a fresh process repeats the case on one thread while `sample` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone."
-    if sys.platform != 'darwin': raise ValueError(f'no sampling profiler on {sys.platform}')
-    def estimates(b):
-        [(_, per_step)] = instructions(case, setup, bpl=b)
-        samples, total = _self_samples(_program(f'{{⍵⊣({case})}}⍣1000000000⊢0', max(1, round(1e8/per_step)), setup), b, seconds)
-        return {f: per_step*n/total for f, n in samples.items()}, per_step
-    (before, tb), (after, ta) = estimates(base), estimates(bpl)
+    "Where `case`'s instructions per step of `N` moved between two builds, by function, on macOS, from `profile`'s estimates for each build. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone."
+    (before, tb), (after, ta) = _estimates(case, setup, base, seconds), _estimates(case, setup, bpl, seconds)
     fs = sorted(before.keys() | after.keys(), key=lambda f: -abs(after.get(f, 0) - before.get(f, 0)))
     return ProfileDiff([(f, before.get(f, 0), after.get(f, 0)) for f in fs[:rows]], (tb, ta))
 
@@ -383,14 +445,15 @@ def instruction_budgets(
     counted = instructions([code for code, _ in cases], setup, bpl=bpl)
     return InstructionBudgets((code, n, count) for (code, n), (_, count) in zip(counted, cases))
 
+def _or_dash(x, spec): return '-' if x is None else format(x, spec)
+def _over(cost, budget): return budget is not None and cost > budget
+
 class SpeedCosts(list):
-    "Each case's cost and the budget that limits it, as `(section, code, cost, budget)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build."
-    def __init__(self, rows=(), cpu=None, platform=None):
+    "Each case's cost and the budget that limits it, as `(section, code, cost, budget)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build. `copies` holds the copy lines that a log gives, as `(items, bytes, ns per item, stored)` rows, which say whether `rustymath::timing::COPIES` held that machine's copy time or the test measured it."
+    def __init__(self, rows=(), cpu=None, platform=None, copies=()):
         super().__init__(rows)
-        self.cpu, self.platform = cpu, platform
-    def __repr__(self):
-        rows = ((s, c, cost, '-' if b is None else f'{b:g}', 'over' if b is not None and cost > b else '') for s, c, cost, b in self)
-        return '\n'.join(f'{cost:>9.2f} {b:>9} {over:4}  {s} {c}' for s, c, cost, b, over in rows)
+        self.cpu, self.platform, self.copies = cpu, platform, list(copies)
+    def __repr__(self): return '\n'.join(f'{cost:>9.2f} {_or_dash(b, "g"):>9} {"over" if _over(cost, b) else "":4}  {s} {c}' for s, c, cost, b in self)
 
 def speed_costs(
     wasm:Path=None, # A directory that `cargo wasm --out` wrote, to time in that browser build, as `tests/wasm-speed.mjs` does; None: a fresh native worker, as `tests/speed.rs` does
@@ -421,21 +484,41 @@ def speed_costs(
     rows = ((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None) for c in rows)
     return SpeedCosts(rows, platform=None if wasm else build)
 
-_LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+)$')
+_LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+)(?:, [\d.]+ ns)?$')
 _CPU = re.compile(r'^(?:\S*Z )?model name\s*:\s*(.+?)\s*$', re.M)
+_COPY = re.compile(r'^(?:\S*Z )?(?:# )?copy of (?P<items>\d+) (?P<bytes>\d+)-byte items: (?P<ns>[\d.]+) ns an item, (?P<source>stored|measured)', re.M)
 
 def logged_costs(
-    log, # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Test` or `Speed` workflow
+    log, # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Test` or `Speed` workflow, or the path of a file that holds it
     platform='linux' # The platform whose native budgets the log's costs were checked against: 'linux' for CI's runner, or 'macos' for a Mac
 ):
-    "The rows that `speed_costs` gives, read from `log`, with the CPU model that the log reports as their `cpu`, and `platform`. A case that the log times more than once, as after a retry, gives its lowest cost."
+    "The rows that `speed_costs` gives, read from `log`, with the CPU model that the log reports as their `cpu`, `platform`, and the log's copy lines as `copies`. A case that the log times more than once, as after a retry, gives its lowest cost."
+    if isinstance(log, Path): log = log.read_text()
     cpu = c[1] if (c := _CPU.search(log)) else None
     rows = {}
     for m in filter(None, map(_LOGGED.match, log.splitlines())):
         code = re.sub(r'\\([\\#])', r'\1', m['code']) if m['tap'] else m['code'] # Node's TAP diagnostics escape `\` and `#`
         row = (m['section'], code, float(m['cost']), float(m['budget']))
         if row[:2] not in rows or row[2] < rows[row[:2]][2]: rows[row[:2]] = row
-    return SpeedCosts(rows.values(), cpu, platform)
+    copies = list(dict.fromkeys((int(m['items']), int(m['bytes']), float(m['ns']), m['source'] == 'stored') for m in _COPY.finditer(log)))
+    return SpeedCosts(rows.values(), cpu, platform, copies)
+
+CHANGE = 0.2
+class CostChanges(list):
+    "The cases that `compare_costs` reports, as `(section, code, before, after, budget)` rows. Cases over their budget in `after` come first, then cases whose cost moved by more than `CHANGE`, largest change first. `before` is `None` for a case that the earlier run didn't time, and `budget` is `None` for a case with no budget."
+    def __repr__(self): return '\n'.join(f'{_or_dash(b, ".2f"):>9} {a:>9.2f} {_or_dash(b and a/b-1, "+.0%"):>6} {_or_dash(budget, "g"):>9} {"over" if _over(a, budget) else "":4}  {s} {c}' for s, c, b, a, budget in self)
+
+def compare_costs(
+    before:Annotated[SpeedCosts|str|Path, {'type':Path}], # The earlier run: rows that `speed_costs`, `logged_costs`, `cargo_costs` or `pytest_costs` give, or a log that `logged_costs` reads, as its text or its path
+    after:Annotated[SpeedCosts|str|Path, {'type':Path}], # The later run, in any of `before`'s forms
+    platform='linux' # The platform whose native budgets a log's costs were checked against, as `logged_costs` takes it
+):
+    "Each case over its budget in `after`, and each case whose cost moved by more than `CHANGE` from `before` in either direction."
+    before, after = (x if isinstance(x, SpeedCosts) else logged_costs(x, platform) for x in (before, after))
+    old = {(s, c): cost for s, c, cost, _ in before}
+    rows = [(s, c, old.get((s, c)), cost, budget) for s, c, cost, budget in after]
+    def change(row): return abs(row[3]/row[2] - 1) if row[2] else 0
+    return CostChanges(sorted((r for r in rows if _over(r[3], r[4]) or change(r) > CHANGE), key=lambda r: (not _over(r[3], r[4]), -change(r))))
 
 def _run_costs(cmd, path, timeout, native=False, env=None):
     "The rows that `logged_costs` reads from what `cmd` prints, run in the package at `path` with `<NAME>_COSTS` set. A case over its budget still gives its row."
@@ -523,7 +606,7 @@ def set_budgets(
     path.write_text('\n'.join(lines))
     return changes
 
-_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile_diff speed_costs cargo_costs pytest_costs wasm_test'.split()
+_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff speed_costs thread_scaling cargo_costs pytest_costs compare_costs wasm_test'.split()
 
 def main():
     "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."

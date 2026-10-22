@@ -44,7 +44,7 @@ pub fn configure(base: String, panic: Function) {
 #[wasm_bindgen]
 pub fn symbols() -> String { basedpl::symbols::rows().to_string() }
 
-/// Every case in `speed`, text in `speed.txt`'s format, with its cost, as `basedpl::timing::costs` times it: an array of `{section, code, budgets, cost}`. With `cases`, an array of codes, only those cases run. Throws when the setup or a case fails.
+/// Every case in `speed`, text in `speed.txt`'s format, with its cost, as `basedpl::timing::costs` times it: an array of `{section, code, line, copy, budgets, cost}`, where `line` is the case's log line with its wasm budget and `copy` is the copy line of the copy its cost counts, absent in `[widths]`. With `cases`, an array of codes, only those cases run. Throws when the setup or a case fails.
 #[wasm_bindgen]
 pub fn costs(speed: &str, cases: Option<Vec<String>>) -> Result<JsValue, JsValue> {
     let only: Option<Vec<&str>> = cases.as_ref().map(|c| c.iter().map(String::as_str).collect());
@@ -54,6 +54,8 @@ pub fn costs(speed: &str, cases: Option<Vec<String>>) -> Result<JsValue, JsValue
         let row = Object::new();
         _ = Reflect::set(&row, &"section".into(), &c.section.into());
         _ = Reflect::set(&row, &"code".into(), &c.code.into());
+        _ = Reflect::set(&row, &"line".into(), &c.line(2).into());
+        if let Some(copy) = c.copy_line() { _ = Reflect::set(&row, &"copy".into(), &copy.into()); }
         _ = Reflect::set(&row, &"budgets".into(), &c.budgets.into_iter().map(JsValue::from).collect::<Array>());
         _ = Reflect::set(&row, &"cost".into(), &c.cost.into());
         rows.push(&row);
@@ -62,13 +64,13 @@ pub fn costs(speed: &str, cases: Option<Vec<String>>) -> Result<JsValue, JsValue
 }
 
 #[wasm_bindgen]
-#[derive(Default)]
-pub struct Session(basedpl::Session);
+/// A turn at the page's one BPL session. Each `new Session()` clears it, as a new session starts.
+pub struct Session(basedpl::Turn);
 
 #[wasm_bindgen]
 impl Session {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self { Self(basedpl::Session::new()) }
     /// Runs `code`, passing each output to `output` as the program produces it, including any result it displays. Returns the error as an object, or `null`.
     pub fn run(&mut self, code: &str, output: Function) -> JsValue {
         OUTPUT.set(Some(output));

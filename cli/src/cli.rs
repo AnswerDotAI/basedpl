@@ -70,7 +70,7 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
     // Piped input holds the program. At a terminal, `⎕` reads a line typed while the program runs.
     let printer = Printer::new(interactive)?;
     let mut editor = if interactive { Some(crate::editor::LineEditor::new().map_err(io::Error::other)?) } else { None };
-    let mut session = if interactive { Session::interactive() } else { Session::new() };
+    let session = if interactive { Session::interactive() } else { Session::new() };
     let mut code = String::new();
     let mut incomplete = None;
     let mut failed = false;

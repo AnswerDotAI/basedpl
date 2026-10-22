@@ -29,7 +29,7 @@ pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
     let canonical: String = symbol.chars().map(crate::symbols::canonical).collect();
     let symbol = canonical.as_str();
     if symbol.starts_with('$') { return page(symbol); }
-    if let Some(help) = crate::system::help(symbol) { return Some(help); }
+    if let Some(crate::primitive::Builtin::System(entry)) = crate::primitive::Builtin::find(symbol) { return page(entry.name()); }
     page(match symbol {
         "::" => "error-guard", "{" | "}" => "braces", "[" | "]" => "brackets", "(" | ")" => "parentheses", "'" | "\"" => "quote",
         _ => crate::symbols::symbols().iter().find(|s| s.glyph == symbol)?.name

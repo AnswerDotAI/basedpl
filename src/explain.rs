@@ -1,15 +1,13 @@
 //! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, the accumulations, which add items at scattered positions, with the path each took, the places where a batched run's calls fell back to slower code, the writes that left a compact array in mixed storage, the routes that handled an array's items one at a time, and the faster routes that code considered and declined. Events are recorded only while `•explain` runs. Code on every thread records them into the run's store, which `rustymath::events` holds for the whole process while the run lasts. rustymath's declines go into the same store. The store belongs to the process, not to a session, because fusion runs its graphs without one. A process supports one `•explain` at a time.
 //!
 //! The module also counts the live nodes that `•memory` reports: the record nodes of `∂` and the pending arrays. A node counts for the thread that made it, even when another thread drops it.
-use crate::{keyed, Error, ErrorAt, Value};
-use std::{any::Any, cell::Cell, sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex, MutexGuard, PoisonError}};
+use crate::{keyed, Error, Described, Value};
+use std::{any::Any, sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex, MutexGuard, PoisonError}};
 
-thread_local! {
-    /// The live nodes of each kind that this thread made.
-    static MADE: Arc<[AtomicUsize; 2]> = Arc::default();
-    /// The items that pending arrays have computed on this thread, which `forced` counts across one call.
-    static COMPUTED: Cell<usize> = const { Cell::new(0) };
-}
+/// The live nodes of each kind.
+static MADE: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
+/// The items that pending arrays have computed, which `forced` counts across one call.
+static COMPUTED: AtomicUsize = AtomicUsize::new(0);
 
 /// A cell in an event's row.
 #[derive(Clone)]
@@ -127,17 +125,17 @@ pub(crate) fn forced(function: String, line: usize, column: usize, items: usize)
     record(Kind::Forced, || vec![Field::Text(function), Field::Count(line), Field::Count(column), Field::Count(items)])
 }
 
-/// Counts `items` items that a pending array computed. Pending arrays compute on the thread that reads them, so the count stays on that thread.
-pub(crate) fn computed(items: usize) { COMPUTED.with(|c| c.set(c.get() + items)) }
+/// Counts `items` items that a pending array computed, on any thread.
+pub(crate) fn computed(items: usize) { COMPUTED.fetch_add(items, Ordering::Relaxed); }
 
-/// The items that pending arrays have computed on this thread so far. A call's `forced` row takes the difference across the call.
-pub(crate) fn computed_so_far() -> usize { COMPUTED.with(Cell::get) }
+/// The items that pending arrays have computed so far. A call's `forced` row takes the difference across the call.
+pub(crate) fn computed_so_far() -> usize { COMPUTED.load(Ordering::Relaxed) }
 
 /// Runs `f` without counting the items that pending arrays compute inside it (`computed`). A sample that a decision reads ends no fusion.
 pub(crate) fn uncounted<T>(f: impl FnOnce() -> T) -> T {
     let before = computed_so_far();
     let result = f();
-    COMPUTED.with(|c| c.set(before));
+    COMPUTED.store(before, Ordering::Relaxed);
     result
 }
 
@@ -184,13 +182,13 @@ impl Events {
     pub(crate) fn report(mut self, value: Value, span: &crate::Span) -> Result<Value, Error> {
         let unclaimed = std::mem::take(&mut self.unclaimed);
         self.claimed(unclaimed, span.text().into(), span);
-        let record = |names: Vec<&str>, values: Vec<Value>| keyed::vector(names.into_iter().map(Arc::from).collect(), values).error_at(span, "invalid explain record");
+        let record = |names: Vec<&str>, values: Vec<Value>| keyed::vector(names.into_iter().map(Arc::from).collect(), values).described("invalid explain record");
         let mut tables = vec![value];
         for (&(_, columns), rows) in KINDS.iter().zip(&self.rows) {
             let n = rows.len();
             let values = columns.iter().enumerate().map(|(c, &(_, column))| match column {
-                Column::Text => keyed::texts(&[n], rows.iter().map(|row| keyed::text(row[c].text())).collect()).error_at(span, "invalid explain texts"),
-                Column::Count => Value::integers(vec![n], rows.iter().map(|row| row[c].count() as i64).collect()).error_at(span, "invalid explain counts"),
+                Column::Text => keyed::texts(&[n], rows.iter().map(|row| keyed::text(row[c].text())).collect()).described("invalid explain texts"),
+                Column::Count => Value::integers(vec![n], rows.iter().map(|row| row[c].count() as i64).collect()).described("invalid explain counts"),
             }).collect::<Result<_, _>>()?;
             tables.push(record(columns.iter().map(|&(name, _)| name).collect(), values)?);
         }
@@ -239,16 +237,16 @@ impl Field {
 #[derive(Clone, Copy)]
 pub(crate) enum Counted { Record, Pending }
 
-/// One live node, counted for the thread that made it until it's dropped, on whichever thread.
-pub(crate) struct Live(Arc<[AtomicUsize; 2]>, Counted);
+/// One live node, counted until it's dropped.
+pub(crate) struct Live(Counted);
 
 impl Live {
-    pub(crate) fn new(kind: Counted) -> Self { MADE.with(|made| { made[kind as usize].fetch_add(1, Ordering::Relaxed); Self(made.clone(), kind) }) }
+    pub(crate) fn new(kind: Counted) -> Self { MADE[kind as usize].fetch_add(1, Ordering::Relaxed); Self(kind) }
 }
 
 impl Drop for Live {
-    fn drop(&mut self) { self.0[self.1 as usize].fetch_sub(1, Ordering::Relaxed); }
+    fn drop(&mut self) { MADE[self.0 as usize].fetch_sub(1, Ordering::Relaxed); }
 }
 
-/// The live nodes of `kind` that this thread made.
-pub(crate) fn live(kind: Counted) -> usize { MADE.with(|made| made[kind as usize].load(Ordering::Relaxed)) }
+/// The live nodes of `kind` in the process.
+pub(crate) fn live(kind: Counted) -> usize { MADE[kind as usize].load(Ordering::Relaxed) }

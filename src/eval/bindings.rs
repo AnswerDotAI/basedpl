@@ -177,6 +177,15 @@ impl Default for Bindings {
 }
 
 impl Bindings {
+    /// Takes `other`'s bindings in place of these, for `Session::clear`.
+    pub(super) fn replace(&self, other: Bindings) {
+        let Bindings { stack, modules, current, module } = other;
+        self.stack.replace(stack.into_inner());
+        self.modules.replace(modules.into_inner());
+        self.current.set(current.get());
+        self.module.set(module.get());
+    }
+
     /// The frame that code is running in, or `None` at a module's top level.
     #[inline]
     pub(super) fn current(&self) -> Option<usize> { self.current.get() }
@@ -350,7 +359,7 @@ impl Bindings {
     #[inline]
     pub(super) fn enter(&self, mut frame: Frame, implicit: [Option<Binding>; IMPLICIT], span: &Span) -> Result<(), Error> {
         let mut stack = self.stack.borrow_mut();
-        if stack.frames.len() == MAX_FRAME_DEPTH { return Err(span.error(Kind::Limit, format!("lexical frame depth exceeds {MAX_FRAME_DEPTH}"))); }
+        if stack.frames.len() == MAX_FRAME_DEPTH { return Err(Error::new(Kind::Limit, format!("lexical frame depth exceeds {MAX_FRAME_DEPTH}")).at(span)); }
         frame.base = stack.slots.len();
         stack.slots.extend(implicit);
         stack.slots.resize_with(frame.slots().end, || None);

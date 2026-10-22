@@ -107,7 +107,7 @@ impl Points {
 
 /// The floats that `code`, one expression, gives, ravelled.
 #[track_caller]
-fn floats(session: &mut Session, code: &str) -> Vec<f64> {
+fn floats(session: &Session, code: &str) -> Vec<f64> {
     let result = session.eval(&format!("0+,({code})"));
     assert!(result.error.is_none(), "{code}: {:?}", result.error);
     result.value.as_ref().and_then(Value::as_floats).unwrap_or_else(|| panic!("{code} gave no floats")).to_vec()
@@ -129,18 +129,18 @@ fn derivatives_match_numerical_ones() {
         for _ in 0..3 {
             let n: usize = c.shape.iter().product();
             let x: Vec<f64> = (0..n).map(|_| points.next(c.low, c.high)).collect();
-            let mut s = Session::new();
+            let s = Session::new();
             let result = s.eval(&format!("f←{} ⋄ x←{}", c.f, literal(&x, c.shape)));
             assert!(result.error.is_none(), "{}: {:?}", c.f, result.error);
-            let jacobian = floats(&mut s, "f∂x");
+            let jacobian = floats(&s, "f∂x");
             let m = jacobian.len() / n;
             for j in 0..n {
                 let direction = if c.shape.is_empty() { "e←1".to_owned() } else { format!("e←(⍴x)⍴{j}=⍳{n}") };
                 let ok = s.eval(&direction);
                 assert!(ok.error.is_none(), "{direction}: {:?}", ok.error);
                 let column = match c.oracle {
-                    Oracle::Complex => floats(&mut s, "{(⊢/∨⍵)÷1E¯200}f x+0j1E¯200×e"),
-                    Oracle::Central => floats(&mut s, "((f x+1E¯6×e)-f x-1E¯6×e)÷2E¯6"),
+                    Oracle::Complex => floats(&s, "{(⊢/∨⍵)÷1E¯200}f x+0j1E¯200×e"),
+                    Oracle::Central => floats(&s, "((f x+1E¯6×e)-f x-1E¯6×e)÷2E¯6"),
                 };
                 let tolerance = match c.oracle { Oracle::Complex => 1e-9, Oracle::Central => 1e-5 };
                 if column.len() != m { failures.push(format!("{} at {x:?}, direction {j}: {m} items against {}", c.f, column.len())); continue; }
@@ -149,7 +149,7 @@ fn derivatives_match_numerical_ones() {
                     if (got - want).abs() > tolerance * (1.0 + want.abs()) { failures.push(format!("{} at {x:?}, item {i}, direction {j}: {got} against {want}", c.f)); }
                 }
                 // A forward pass along `e` gives the same column, whichever mode built the Jacobian.
-                let forward = floats(&mut s, "{f x+⍵×e}∂0");
+                let forward = floats(&s, "{f x+⍵×e}∂0");
                 if forward.len() != m { failures.push(format!("{} at {x:?}, direction {j}: a forward pass gave {} items against {m}", c.f, forward.len())); continue; }
                 for (i, &want) in forward.iter().enumerate() {
                     let got = jacobian[i * n + j];
@@ -159,19 +159,19 @@ fn derivatives_match_numerical_ones() {
             let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * (1.0 + a.abs().max(b.abs()));
             if n == 1 {
                 // A second number that `f` ignores sends `∂` down reverse mode, which must give the same derivatives.
-                let reverse = floats(&mut s, "⊣/{f ⍵₀}∂ x,0");
+                let reverse = floats(&s, "⊣/{f ⍵₀}∂ x,0");
                 for (i, (&got, &want)) in reverse.iter().zip(&jacobian).enumerate() {
                     if !close(got, want) { failures.push(format!("{} at {x:?}, item {i}: reverse mode's {got} against {want}", c.f)); }
                 }
             } else {
                 // The dot-product test: u·(Jv) from a forward pass must equal (uᵀJ)·v from a transpose.
-                let r = floats(&mut s, "f x").len();
+                let r = floats(&s, "f x").len();
                 let u: Vec<f64> = (0..r).map(|_| points.next(-1.0, 1.0)).collect();
                 let v: Vec<f64> = (0..n).map(|_| points.next(-1.0, 1.0)).collect();
                 let ok = s.eval(&format!("u←(⍴f x)⍴{} ⋄ v←(⍴x)⍴{}", literal(&u, &[r]), literal(&v, &[n])));
                 assert!(ok.error.is_none(), "{}: {:?}", c.f, ok.error);
-                let jv = floats(&mut s, "{f x+⍵×v}∂0");
-                let ujt = floats(&mut s, "{+/,u×(f ⍵)}∂ x");
+                let jv = floats(&s, "{f x+⍵×v}∂0");
+                let ujt = floats(&s, "{+/,u×(f ⍵)}∂ x");
                 let (a, b): (f64, f64) = (u.iter().zip(&jv).map(|(p, q)| p * q).sum(), v.iter().zip(&ujt).map(|(p, q)| p * q).sum());
                 if !close(a, b) { failures.push(format!("{} at {x:?}: u·(Jv) is {a}, (uᵀJ)·v is {b}", c.f)); }
             }

@@ -1,5 +1,6 @@
 //! What the native build takes from its operating system and crates: the clock, files, the environment, Unicode normalization, `•fetch`'s transport and `•r`'s regular expressions. `host_web.rs` gives the browser's versions of the same functions. Each passes straight through to its host, and keeps the host's own behaviour and syntax.
-use crate::{array::generated_len, data::{Request, Response}, execution::Context, regex::Match, At, Error};
+use crate::execution::check;
+use crate::{array::generated_len, data::{Request, Response}, regex::Match, Error};
 use std::{io, path::{Path, PathBuf}, time::Duration};
 
 pub(crate) use std::time::Instant;
@@ -23,16 +24,16 @@ pub(crate) fn normalize(form: &str, text: &str) -> String {
     }
 }
 /// The response to `request`, from the system's `curl`, run with an argument list. An interrupt stops it.
-pub(crate) fn fetch(request: Request, cx: &Context<'_>) -> Result<Response, Error> {
+pub(crate) fn fetch(request: Request) -> Result<Response, Error> {
     let url = &request.url;
     let mut args: Vec<String> = ["--silent", "--show-error", "--location", "--include", "--write-out", "\\n%{size_header}"].map(String::from).into();
     if let Some(method) = &request.method { args.extend(["--request".into(), method.clone()]); }
     for (name, value) in &request.headers { args.extend(["--header".into(), format!("{name}: {value}")]); }
     if request.body.is_some() { args.extend(["--data-binary".into(), "@-".into()]); }
     args.extend(["--url".into(), url.clone()]);
-    let out = curl(&args, request.body, url, cx)?;
+    let out = curl(&args, request.body, url)?;
     // The headers of every response come first, then the body, then the headers' total size.
-    let unreadable = || cx.io_error(url, "curl gave a response BPL can't read");
+    let unreadable = || Error::io(url, "curl gave a response BPL can't read");
     let end = out.iter().rposition(|&b| b == b'\n').ok_or_else(unreadable)?;
     let size = std::str::from_utf8(&out[end + 1..]).ok().and_then(|s| s.parse::<usize>().ok()).filter(|&n| n <= end).ok_or_else(unreadable)?;
     let head = String::from_utf8_lossy(&out[..size]);
@@ -49,20 +50,20 @@ pub(crate) fn fetch(request: Request, cx: &Context<'_>) -> Result<Response, Erro
 }
 
 /// What the system's `curl` writes when run with `args`, given `body` as its input. An interrupt stops it.
-fn curl(args: &[String], body: Option<Vec<u8>>, url: &str, cx: &Context<'_>) -> Result<Vec<u8>, Error> {
+fn curl(args: &[String], body: Option<Vec<u8>>, url: &str) -> Result<Vec<u8>, Error> {
     use std::{io::{Read, Write}, process::{Command, Stdio}};
     let mut child = Command::new("curl").args(args).stdin(if body.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped())
-        .stderr(Stdio::piped()).spawn().map_err(|e| cx.io_error("•fetch needs curl", e))?;
+        .stderr(Stdio::piped()).spawn().map_err(|e| Error::io("•fetch needs curl", e))?;
     if let (Some(body), Some(mut input)) = (body, child.stdin.take()) { std::thread::spawn(move || input.write_all(&body)); }
     let mut output = child.stdout.take().expect("stdout is piped");
     let reader = std::thread::spawn(move || { let mut out = Vec::new(); output.read_to_end(&mut out).map(|_| out) });
-    while !reader.is_finished() { if let Err(e) = cx.pause(Duration::MAX) { let _ = child.kill(); return Err(e); } }
-    let out = reader.join().expect("the reader doesn't panic").map_err(|e| cx.io_error(url, e))?;
-    let status = child.wait().map_err(|e| cx.io_error(url, e))?;
+    while !reader.is_finished() { if let Err(e) = crate::execution::pause(Duration::MAX) { let _ = child.kill(); return Err(e); } }
+    let out = reader.join().expect("the reader doesn't panic").map_err(|e| Error::io(url, e))?;
+    let status = child.wait().map_err(|e| Error::io(url, e))?;
     if status.success() { return Ok(out); }
     let mut message = String::new();
-    child.stderr.take().expect("stderr is piped").read_to_string(&mut message).map_err(|e| cx.io_error(url, e))?;
-    Err(cx.io_error(url, message.trim().trim_start_matches("curl: ")))
+    child.stderr.take().expect("stderr is piped").read_to_string(&mut message).map_err(|e| Error::io(url, e))?;
+    Err(Error::io(url, message.trim().trim_start_matches("curl: ")))
 }
 
 /// A compiled `•r` pattern, in the regex crate's syntax.
@@ -86,14 +87,14 @@ impl Regex {
         Ok(())
     }
     /// `text` with each match replaced by `template`, which the regex crate expands: `$1`, `${name}` and `$$`.
-    pub(crate) fn replace(&self, template: &str, text: &str, cx: &Context<'_>) -> Result<String, Error> {
+    pub(crate) fn replace(&self, template: &str, text: &str) -> Result<String, Error> {
         let (mut result, mut end) = (String::new(), 0);
         for found in self.0.captures_iter(text) {
-            cx.check()?;
+            check()?;
             let whole = found.get(0).expect("a match includes its whole match");
             result.push_str(&text[end..whole.start()]);
             found.expand(template, &mut result);
-            generated_len(&[result.len() / 4]).at(cx)?;
+            generated_len(&[result.len() / 4])?;
             end = whole.end();
         }
         result.push_str(&text[end..]);

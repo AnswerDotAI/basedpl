@@ -1,5 +1,5 @@
 use rustymath::{agreement::Mapping, buffer::View, error::Kind, gather::Steps};
-use crate::{array::{generated_len, Frame, Gather, Items, Layout, Prototype, Storage, Widening}, execution::Context, primitive::{Form, Origin, Primitive, Selection, Targets}, transform::Carrier, At, Error, ErrorAt, ErrorKind, Span, Value};
+use crate::{array::{generated_len, Frame, Gather, Items, Layout, Prototype, Storage, Widening}, primitive::{Form, Origin, Primitive, Selection, Targets}, transform::Carrier, Error, Described, ErrorKind, Span, Value};
 use rustymath::hashing::{HashMap, HashMapExt};
 use std::sync::{Arc, OnceLock};
 use crate::array::{Footprint, Seen};
@@ -17,10 +17,10 @@ enum Places { Offsets(usize), Paths(Vec<Vec<usize>>) }
 fn offset(id: usize, n: usize) -> Option<usize> { let o = crate::transform::id_offset(id); (o == Steps::FILL || o < n).then_some(o) }
 
 /// The offsets that compact `ids` lead to in a root of `n` items with no nested items, in one pass. The error is the one for the first id that leads nowhere.
-fn offsets(ids: &[i64], n: usize, span: &Span) -> Result<Vec<usize>, Error> {
+fn offsets(ids: &[i64], n: usize) -> Result<Vec<usize>, Error> {
     let mut bad = None;
     let offsets = ids.iter().map(|&id| usize::try_from(id).ok().and_then(|i| offset(i, n)).unwrap_or_else(|| { bad.get_or_insert(id); Steps::FILL })).collect();
-    match bad { None => Ok(offsets), Some(id) => Err(label_id(Some(id), span).map_or_else(|e| e, |_| span.error(Kind::Index, FILL_TARGET))) }
+    match bad { None => Ok(offsets), Some(id) => Err(label_id(Some(id)).map_or_else(|e| e, |_| Error::new(Kind::Index, FILL_TARGET))) }
 }
 
 const FILL_TARGET: &str = "cannot assign to fill introduced by a selection";
@@ -56,7 +56,7 @@ impl Labels {
         crate::explain::itemwise("nested labels", a.len());
         let mut items = Vec::new();
         for (i, e) in a.elements().enumerate() {
-            generated_len(&[self.len() + self.nested.len() + 1]).at(span)?;
+            generated_len(&[self.len() + self.nested.len() + 1])?;
             path.push(i);
             items.push(match e {
                 a @ Value::Array(_) => {
@@ -73,9 +73,9 @@ impl Labels {
             });
             path.pop();
         }
-        let prototype = if a.is_empty() { Self::prototype(&a.prototype(), &mut HashMap::new()).error_at(span, "invalid selection prototype")? }
+        let prototype = if a.is_empty() { Self::prototype(&a.prototype(), &mut HashMap::new()).described("invalid selection prototype")? }
         else { Value::integer(0) };
-        a.layout().collect(items, prototype).error_at(span, "invalid selection labels")
+        a.layout().collect(items, prototype).described("invalid selection labels")
     }
     fn prototype(e: &Value, seen: &mut HashMap<usize, Value>) -> Result<Value, ErrorKind> {
         let a @ Value::Array(_) = e else { return Ok(Value::integer(0)); };
@@ -102,7 +102,7 @@ impl Labels {
         let (selected, kind) = match read { Read::Walk(selection) => return Ok((selection, right.clone())), Read::Ids(ids, kind) => (ids, kind) };
         let selected = &selected;
         if let (SelectionKind::Elements, Places::Offsets(n), Items::Compact(View::Integers(ids))) = (kind, &self.places, selected.as_items()) {
-            let offsets = offsets(&ids.widened(), *n, span)?;
+            let offsets = offsets(&ids.widened(), *n)?;
             return Ok((Selection { frame: Frame::Array(selected.layout().clone()), targets: Targets::Offsets(offsets) }, right.clone()));
         }
         let mut targets = Targets::Offsets(Vec::with_capacity(selected.len()));
@@ -111,41 +111,41 @@ impl Labels {
             let found = if let Some((_, path)) = self.nested.get(&selected.storage_id()) {
                 targets.push(path);
                 true
-            } else if let Some(n) = selected.as_number() { self.place(label_id(n.as_integer(), span)?, &mut targets) }
+            } else if let Some(n) = selected.as_number() { self.place(label_id(n.as_integer())?, &mut targets) }
             else if Self::fill(selected) { targets.push(&[Steps::FILL]); true }
             else { false };
-            if !found { return Err(span.error(Kind::Index, "cannot assign to a missing item")); }
+            if !found { return Err(Error::new(Kind::Index, "cannot assign to a missing item")); }
             values.fill(right, 1);
         } else { self.collect(selected, right, span, &mut targets, &mut values)?; }
         let shape = vec![targets.len()];
-        let values = values.finish(shape.clone().into(), || right.prototype()).error_at(span, "invalid replacement")?;
+        let values = values.finish(shape.clone().into(), || right.prototype()).described("invalid replacement")?;
         Ok((Selection { frame: Frame::Array(shape.into()), targets }, values))
     }
     fn collect(&self, selected: &Value, right: &Value, span: &Span, targets: &mut Targets, values: &mut Gather) -> Result<(), Error> {
         crate::explain::itemwise("label ids", selected.len());
         let aligned;
         let right = if right.has_keys() && selected.has_keys() {
-            aligned = crate::keyed::reorder(right, &selected.layout().all_keys(), true).error_at(span, "replacement does not supply selected keys")?;
+            aligned = crate::keyed::reorder(right, &selected.layout().all_keys(), true).described("replacement does not supply selected keys")?;
             &aligned
         } else { right };
         if !right.is_singleton() && right.shape() != selected.shape() {
-            return Err(span.error(Kind::Length, "replacement shape does not match selection"));
+            return Err(Error::new(Kind::Length, "replacement shape does not match selection"));
         }
         let pick = |i: usize| if right.is_singleton() { 0 } else { i };
         let label = |i: usize, id: usize, targets: &mut Targets, values: &mut Gather| -> Result<(), Error> {
-            if !self.place(id, targets) { return Err(span.error(Kind::Index, FILL_TARGET)); }
+            if !self.place(id, targets) { return Err(Error::new(Kind::Index, FILL_TARGET)); }
             values.push(right, pick(i));
             Ok(())
         };
         if let Items::Compact(View::Integers(ids)) = selected.as_items() {
             for (i, &id) in ids.widened().iter().enumerate() {
-                label(i, label_id(Some(id), span)?, targets, values)?;
+                label(i, label_id(Some(id))?, targets, values)?;
             }
             return Ok(());
         }
         for (i, item) in selected.elements().enumerate() {
             match &item {
-                Value::Number(_) | Value::Carried(_) => label(i, label_id(item.observed_number().ok().and_then(|n| n.as_integer()), span)?, targets, values)?,
+                Value::Number(_) | Value::Carried(_) => label(i, label_id(item.observed_number().ok().and_then(|n| n.as_integer()))?, targets, values)?,
                 a @ Value::Array(_) => match self.nested.get(&a.storage_id()) {
                     Some((_, path)) => {
                         targets.push(path);
@@ -153,7 +153,7 @@ impl Labels {
                     }
                     None => self.collect(a, &right.at(pick(i)), span, targets, values)?,
                 },
-                Value::Character(_) | Value::Function(_) | Value::Operator(_) => return Err(span.domain_error("invalid selection")),
+                Value::Character(_) | Value::Function(_) | Value::Operator(_) => return Err(Error::domain("invalid selection")),
             }
         }
         Ok(())
@@ -282,45 +282,45 @@ pub(crate) fn labelled(root: &Value, level: u64, span: &Span) -> Result<(Labels,
 }
 
 /// `id`, a label that a selection holds, as `Labels::place` takes it, or the error for an item that isn't from the root or a label that isn't one.
-fn label_id(id: Option<i64>, span: &Span) -> Result<usize, Error> {
+fn label_id(id: Option<i64>) -> Result<usize, Error> {
     match id {
-        Some(FOREIGN) => Err(span.domain_error("cannot assign to an item that isn't from the target")),
-        id => id.and_then(|n| usize::try_from(n).ok()).ok_or_else(|| span.domain_error("invalid selection label")),
+        Some(FOREIGN) => Err(Error::domain("cannot assign to an item that isn't from the target")),
+        id => id.and_then(|n| usize::try_from(n).ok()).ok_or_else(|| Error::domain("invalid selection label")),
     }
 }
 
 /// The selection kind after `p` selects from `right`, whose kind is `kind`: one item where `p` picks one, its elements otherwise.
-pub(crate) fn kind_after(p: Primitive, left: Option<&Value>, right: &Value, kind: SelectionKind, cx: &Context<'_>) -> Result<SelectionKind, Error> {
+pub(crate) fn kind_after(p: Primitive, left: Option<&Value>, right: &Value, kind: SelectionKind) -> Result<SelectionKind, Error> {
     use Primitive::*;
     Ok(match (p, left) {
         (Identity(_), _) | (Index | Bracket, None) => kind,
         (Take, None) if right.shape().len() <= 1 => SelectionKind::Item,
         (Mix, Some(x)) if x.is_empty() => kind,
-        (Mix, Some(x)) => if crate::primitive::picks_item(x, right, cx)? { SelectionKind::Item } else { SelectionKind::Elements },
-        (Index | Bracket, Some(x)) if crate::primitive::squad_item(x, right, cx)? => SelectionKind::Item,
+        (Mix, Some(x)) => if crate::primitive::picks_item(x, right)? { SelectionKind::Item } else { SelectionKind::Elements },
+        (Index | Bracket, Some(x)) if crate::primitive::squad_item(x, right)? => SelectionKind::Item,
         _ => SelectionKind::Elements,
     })
 }
 
 /// A call of `p` at label level `level`. An ordering form whose items come from the labelled right argument selects them by the positions it takes (`Primitive::taken`), through `⌷`. A primitive that selects, called on a labelled right argument, runs its own code on that argument (`Primitive::run_axis`), so a structural copy carries the labels on through `Labelled::copied`. Where that code reads the values instead, through `Labelled::storage`, its result holds the values, and the call runs once more, on the ids. Any other call reads values, which drops the labels, and a labelled left argument reads as values.
-pub(crate) fn call(p: Primitive, axis: Option<usize>, left: Option<&Value>, right: &Value, level: u64, cx: &Context<'_>) -> Option<Result<Value, Error>> {
+pub(crate) fn call(p: Primitive, axis: Option<usize>, left: Option<&Value>, right: &Value, level: u64, span: &Span) -> Option<Result<Value, Error>> {
     let left = left.map(|x| strip(x, level));
-    let Some(labelled) = at_level(right, level) else { return Some(p.call_axis(left.as_ref(), &strip(right, level), axis, cx)) };
+    let Some(labelled) = at_level(right, level) else { return Some(p.call_axis(left.as_ref(), &strip(right, level), axis, span)) };
     let dyadic = left.is_some();
     if axis.is_none() && matches!(p.facts(dyadic).form, Form::Orders) {
-        if let Some(taken) = p.taken(left.as_ref(), labelled.values(), cx) {
+        if let Some(taken) = p.taken(left.as_ref(), labelled.values(), span) {
             return Some(taken.and_then(|(origin, positions)| match origin {
-                Origin::Right => Primitive::Index.call(Some(&positions.enclose().expect("positions enclose")), right, cx),
-                Origin::Left | Origin::Both => p.call_axis(left.as_ref(), labelled.values(), axis, cx),
+                Origin::Right => Primitive::Index.call(Some(&positions.enclose().expect("positions enclose")), right, span),
+                Origin::Left | Origin::Both => p.call_axis(left.as_ref(), labelled.values(), axis, span),
             }));
         }
     }
-    if !p.selects(dyadic) { return Some(p.call_axis(left.as_ref(), labelled.values(), axis, cx)); }
+    if !p.selects(dyadic) { return Some(p.call_axis(left.as_ref(), labelled.values(), axis, span)); }
     Some((|| {
-        let kind = kind_after(p, left.as_ref(), right, labelled.kind, cx)?;
-        let ran = p.run_axis(left.as_ref(), right, axis, cx)?;
+        let kind = kind_after(p, left.as_ref(), right, labelled.kind)?;
+        let ran = p.run_axis(left.as_ref(), right, axis, span)?;
         if let Some(r) = at_level(&ran, level) { return Ok(r.with_kind(kind)); }
-        Ok(Labelled::given(level, kind, labelled.root.clone(), p.call_axis(left.as_ref(), &labelled.ids(), axis, cx)?, strip(&ran, level)))
+        Ok(Labelled::given(level, kind, labelled.root.clone(), p.call_axis(left.as_ref(), &labelled.ids(), axis, span)?, strip(&ran, level)))
     })())
 }
 

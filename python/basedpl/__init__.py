@@ -263,11 +263,13 @@ class Result:
     def output(self): return _output_text(self.events)
 
 class BplError(RuntimeError):
-    "A BPL diagnostic, with retained source, character spans, calls and captured output."
+    "A BPL diagnostic, with captured output, its calls, and its source and character span where it has one, as an error raised outside an evaluation may not."
     def __init__(self, error, events):
         super().__init__(error['display'])
         self.kind, self.message = error['kind'], error['message']
-        self.source_name, self.source, self.span = error['source']['name'], error['source']['text'], tuple(error['span'])
+        source = error.get('source')
+        self.source_name, self.source = (source['name'], source['text']) if source else (None, None)
+        self.span = tuple(error['span']) if 'span' in error else None
         self.events, self.calls = events, error['calls']
     @property
     def output(self): return _output_text(self.events)

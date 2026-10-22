@@ -3,7 +3,7 @@ import builtins
 from keyword import iskeyword
 from unicodedata import normalize
 from . import Array, _Operators, _Function, _array, _show, bpl, symbols
-from ._core import _system_functions
+from ._core import _builtin_names
 
 _HOLE = object()
 
@@ -115,12 +115,11 @@ def _operator(name, glyph, dyadic, valence):
     return property(lambda self: _build(glyph, self, valence=valence))
 for _name, _spec in _operators.items(): setattr(_Combinators, _name, _operator(_name, *_spec))
 
-_builtins = {alias: (name, 0) for name in _system_functions for alias in (name, name[1:])}
-for _s in symbols:
-    if _s['kind'] != 'function': continue
-    for _name in (_s['glyph'], _s['name']): _builtins[_name] = _builtins[_python_name(_name)] = (_s['glyph'], 0)
-    for _valence, _name in enumerate((_s['monad'], _s['dyad']), 1):
-        if _name: _builtins[_name] = _builtins[_python_name(_name)] = (_s['glyph'], _valence)
+_builtins = {}
+for _spelling, _name, *_forms in _builtin_names:
+    for _alias in (_spelling, _name): _builtins[_alias] = _builtins[_python_name(_alias)] = (_spelling, 0)
+    for _valence, _alias in enumerate(_forms, 1):
+        if _alias: _builtins[_alias] = _builtins[_python_name(_alias)] = (_spelling, _valence)
 
 __all__ = ['Function', 'Operator', 'fork', 'atop', *(name for name in _builtins if name.isidentifier() and not iskeyword(name) and not hasattr(builtins, name))]
 

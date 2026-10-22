@@ -1,5 +1,5 @@
 use crate::{
-    array::Layout, element::{read_as, Float}, Error, ErrorKind, Span, Value
+    array::Layout, element::{read_as, Float}, Error, ErrorKind, Value
 };
 use num_bigint::BigInt;
 use num_complex::{Complex32, Complex64};
@@ -15,32 +15,30 @@ use std::{borrow::Cow, cmp::Ordering, fmt};
 #[derive(Clone, Debug, PartialEq)]
 pub struct Number(Repr);
 
-/// Why an operation on numbers failed: a domain error with its message, a value that `∂` carries, which reached code that reads numbers directly (`Value::computed`), or a batched run's stop at such a read.
+/// Why an operation on numbers failed: a domain error with its message, a value that `∂` carries, which reached code that reads numbers directly (`Value::computed`), a batched run's stop at such a read, or an interrupt or a passed deadline that rustymath's interrupt check reported.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Failure { Domain(&'static str), Carried, Stop(crate::transform::Stop) }
+pub(crate) enum Failure { Domain(&'static str), Carried, Stop(crate::transform::Stop), Interrupt(rustymath::error::Kind) }
 
 impl From<&'static str> for Failure { fn from(message: &'static str) -> Self { Self::Domain(message) } }
 
 impl From<Failure> for &'static str {
     fn from(failure: Failure) -> Self {
-        match failure { Failure::Domain(message) => message, Failure::Carried => crate::transform::UNSUPPORTED, Failure::Stop(_) => crate::transform::STOPPED }
+        match failure { Failure::Domain(message) => message, Failure::Carried => crate::transform::UNSUPPORTED, Failure::Stop(_) => crate::transform::STOPPED, Failure::Interrupt(_) => "evaluation interrupted" }
     }
 }
 
-impl Failure {
-    /// The error this failure gives at `span`: DOMAIN with its message, UNSUPPORTED for a value that `∂` carries, or the batched run's stop.
-    pub(crate) fn at(self, span: &crate::Span) -> crate::Error {
-        match self {
-            Failure::Domain(message) => span.domain_error(message),
-            Failure::Carried => span.error(crate::ErrorKind::Unsupported, crate::transform::UNSUPPORTED),
-            Failure::Stop(stop) => stop.at(span),
+impl From<Failure> for crate::Error {
+    /// DOMAIN with the failure's message, UNSUPPORTED for a value that `∂` carries, the batched run's stop, or the interrupt.
+    fn from(failure: Failure) -> Self {
+        match failure {
+            Failure::Domain(message) => crate::Error::domain(message),
+            Failure::Carried => crate::Error::new(crate::ErrorKind::Unsupported, crate::transform::UNSUPPORTED),
+            Failure::Stop(stop) => stop.into(),
+            Failure::Interrupt(kind) => crate::Error::new(kind, ""),
         }
     }
 }
 
-impl<T> crate::DomainAt<T> for Result<T, Failure> {
-    fn domain_at(self, span: &crate::Span) -> Result<T, crate::Error> { self.map_err(|failure| failure.at(span)) }
-}
 /// A number's representation. A float or complex number's `bool` is `true` where the number is weak (`Number::is_weak`).
 #[derive(Clone, Debug)]
 enum Repr {
@@ -449,9 +447,9 @@ pub(crate) trait Field: Clone + num_traits::NumAssignRef {
 }
 
 /// The items of the array `a` in the domain of `T`: compact storage converted in one pass, and other items one at a time. DOMAIN where an item isn't a number, and UNSUPPORTED for a dual, whose domain is its primal's.
-pub(crate) fn read<'a, T: Field>(a: &'a Value, span: &Span) -> Result<Cow<'a, [T]>, Error> {
+pub(crate) fn read<'a, T: Field>(a: &'a Value) -> Result<Cow<'a, [T]>, Error> {
     if let Some(x) = T::compact(a) { return Ok(x); }
-    let item = |i| crate::primitive::numeric(&a.at(i), span).map(T::of);
+    let item = |i| crate::primitive::numeric(&a.at(i)).map(T::of);
     (0..a.len()).map(item).collect::<Result<_, _>>().map(Cow::Owned)
 }
 
@@ -803,13 +801,13 @@ impl Number {
     }
 
     /// The math functions of one number that need no tolerance. `⌊` and `⌈` take one, through `floor` and `ceiling`.
-    pub(crate) fn math_monad(&self, op: Math) -> Result<Self, &'static str> {
+    pub(crate) fn math_monad(&self, op: Math) -> Result<Self, Failure> {
         use Math::*;
         if matches!(op, Not) { return Ok(Self::from_bool(!self.boolean()?)); }
         if let Boolean(_) = self.0 { return self.numeric().math_monad(op); }
-        if matches!(op, Gcd | Lcm) { return Err("this function produces a pair"); }
-        if matches!(op, Nand | Nor) { return self.dyad(if matches!(op, Nand) { Arithmetic::Times } else { Arithmetic::Plus }, self).map_err(Into::into); }
-        if matches!(op, Root) { return Self::from_integer(2).root(self); }
+        if matches!(op, Gcd | Lcm) { return Err("this function produces a pair".into()); }
+        if matches!(op, Nand | Nor) { return self.dyad(if matches!(op, Nand) { Arithmetic::Times } else { Arithmetic::Plus }, self); }
+        if matches!(op, Root) { return Ok(Self::from_integer(2).root(self)?); }
         if matches!(op, Factorial) { return self.factorial(); }
         if matches!(op, Magnitude) {
             if let Integer(y) = self.0 { if let Some(n) = y.checked_abs() { return Ok(Self(Integer(n))); } }
@@ -856,7 +854,7 @@ impl Number {
     pub(crate) fn ceiling(&self, t: Numeric) -> Result<Self, &'static str> { self.monad(Arithmetic::Minus)?.floor(t)?.monad(Arithmetic::Minus).map_err(Into::into) }
 
     /// The math functions of two numbers that need no tolerance. `|`, `∨` and `∧` take one, through `residue`, `gcd` and `lcm`. The code of `○` selects its function and takes no part in the width.
-    pub(crate) fn math_dyad(&self, op: Math, right: &Self) -> Result<Self, &'static str> {
+    pub(crate) fn math_dyad(&self, op: Math, right: &Self) -> Result<Self, Failure> {
         use Math::*;
         // `⌊` and `⌈` on two Booleans give a Boolean. Other functions read a Boolean as 0 or 1.
         if let (Boolean(x), Boolean(y)) = (&self.0, &right.0) {
@@ -866,21 +864,21 @@ impl Number {
         if op == Log && self.as_complex().is_none() && right.as_complex().is_none() {
             if let Some(n) = reals!(self, right => |x, y: F| rustymath::Logb.checked(x, y).map(Self::from_float)) { return Ok(n); }
         }
-        match op {
-            Factorial => self.binomial(right),
-            Power => self.power(right),
-            Circle | Arc => self.circle(right, op == Arc),
-            Pi => self.dyad(Arithmetic::Divide, right)?.math_monad(Pi),
-            Root => self.root(right),
-            Floor | Ceiling => self.minimum(right, matches!(op, Ceiling)),
-            Log => right.math_monad(Log)?.dyad(Arithmetic::Divide, &self.math_monad(Log)?).map_err(Into::into),
+        Ok(match op {
+            Factorial => self.binomial(right)?,
+            Power => self.power(right)?,
+            Circle | Arc => self.circle(right, op == Arc)?,
+            Pi => self.dyad(Arithmetic::Divide, right)?.math_monad(Pi)?,
+            Root => self.root(right)?,
+            Floor | Ceiling => self.minimum(right, matches!(op, Ceiling))?,
+            Log => right.math_monad(Log)?.dyad(Arithmetic::Divide, &self.math_monad(Log)?)?,
             Nand | Nor => {
                 let (x, y) = (self.boolean()?, right.boolean()?);
-                Ok(Self::from_bool(if matches!(op, Nand) { !(x && y) } else { !(x || y) }))
+                Self::from_bool(if matches!(op, Nand) { !(x && y) } else { !(x || y) })
             }
             Magnitude | Gcd | Lcm => unreachable!("`residue`, `gcd` and `lcm` take a tolerance"),
-            Not => Err("without operates on arrays"),
-        }
+            Not => return Err("without operates on arrays".into()),
+        })
     }
 
     fn minimum(&self, right: &Self, maximum: bool) -> Result<Self, &'static str> {
@@ -965,12 +963,12 @@ impl Number {
         if gcd.is_zero() { Ok(gcd) } else { self.dyad(Arithmetic::Divide, &gcd)?.dyad(Arithmetic::Times, right).map_err(Into::into) }
     }
 
-    fn factorial(&self) -> Result<Self, &'static str> {
+    fn factorial(&self) -> Result<Self, Failure> {
         if let Some(y) = self.exact_ref() {
             if y.is_integer() && !y.is_negative() {
                 let n = self.nonnegative_integer().map_err(|_| "factorial argument is too large")?;
-                if n > 100_000 { return Err("exact factorial argument is too large"); }
-                return Ok(Self::exact(BigRational::from_integer(rustymath::number_theory::factorial(n).into())));
+                if n > 100_000 { return Err("exact factorial argument is too large".into()); }
+                return Ok(Self::exact(BigRational::from_integer(rustymath::number_theory::factorial(n).map_err(|e| Failure::Interrupt(e.kind))?.into())));
             }
         }
         if self.as_complex().is_some() { return Ok(Self::complex(rustymath::Factorial.one(self.to_complex()?), self.width_with(None))); }
@@ -1024,25 +1022,20 @@ impl Number {
         if self.equal(&self.zero(), t)? { Ok(false) } else if self.equal(&self.one(), t)? { Ok(true) } else { Err("expected a Boolean") }
     }
 
-    fn binomial(&self, right: &Self) -> Result<Self, &'static str> {
+    fn binomial(&self, right: &Self) -> Result<Self, Failure> {
         if !(self.is_exact() && right.is_exact()) && self.as_complex().is_none() && right.as_complex().is_none() {
             if let Some(n) = reals!(self, right => |k, n: F| rustymath::Binom.checked(n, k).map(Self::from_float)) { return Ok(n); }
         }
         if let Ok(k) = self.integer() {
             // A float `right` reads as the rational it holds, so the product is exact, then rounds once.
             if let Some(n) = right.exact_ref().or_else(|| right.as_float().and_then(BigRational::from_float).map(Cow::Owned)) {
-                // Counting `binom_with`'s checks, one for every `BETWEEN_CHECKS` steps of its product, stops the product after about 100,000 steps.
-                let (mut checks, most) = (0, 100_000usize.div_ceil(rustymath::BETWEEN_CHECKS));
-                let c = rustymath::exact::binom_with(&n, k, || {
-                    checks += 1;
-                    if checks > most { Err("binomial argument is too large") } else { Ok(()) }
-                })?;
+                let c = rustymath::exact::binom(&n, k).map_err(|e| Failure::Interrupt(e.kind))?;
                 if self.is_exact() && right.is_exact() { return Ok(Self::exact(c)); }
                 return Ok(Self::float(c.to_f64().unwrap_or(f64::NAN), self.width_with(Some(right))));
             }
         }
         let (x, y) = (self.to_complex()?, right.to_complex()?);
-        if y.im == 0.0 && y.re < 0.0 && y.re.fract() == 0.0 { return Err("negative integer upper argument needs an integer selection"); }
+        if y.im == 0.0 && y.re < 0.0 && y.re.fract() == 0.0 { return Err("negative integer upper argument needs an integer selection".into()); }
         let result = rustymath::Binom.one(y, x);
         let width = self.width_with(Some(right));
         Ok(if x.im == 0.0 && y.im == 0.0 { Self::float(result.re, width) } else { Self::complex(result, width) })
