@@ -168,7 +168,10 @@ def _array_repr(raw):
 class Array(_Operators):
     "A native BPL value with shape, keys and names. An array that holds a function as a direct item is a `FunctionArray`."
     __slots__ = ('_inner',)
-    def __init__(self, value, *, keys=None, names=None):
+    def __init__(self, *values, keys=None, names=None, **fields):
+        if values and fields: raise TypeError('use positional values or keyword fields, not both')
+        if not values and not fields: raise TypeError('Array requires a value or keyword fields')
+        value = values[0] if len(values) == 1 else values or fields
         self._inner = value._inner.copy() if isinstance(value, Array) else _array(value)
         if keys is not None: self.keys = keys
         if names is not None: self.names = names
