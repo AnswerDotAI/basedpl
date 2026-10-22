@@ -6,7 +6,7 @@ default-members = [".", "cli", "py"]
 join_comments = true
 
 [workspace.package]
-version = "0.1.70"
+version = "0.1.71"
 edition = "2024"
 rust-version = "1.98"
 license = "Apache-2.0"
