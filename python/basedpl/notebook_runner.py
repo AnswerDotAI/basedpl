@@ -5,7 +5,6 @@ from pathlib import Path
 from fastcore.script import call_parse
 from fastcore.xtras import working_directory
 from fastcore.nbio import write_nb
-from fastws.cargo import timing_lock
 from . import bpl
 
 LANGUAGES = {'bpl', 'hpl'}
@@ -34,6 +33,8 @@ def main(
     save:bool=False, # Save outputs in the notebook
 ):
     "Run BPL notebooks without starting Jupyter, holding the timing lock shared."
+    try: from fastws.cargo import timing_lock
+    except ImportError: raise SystemExit("bpl-nb runs basedpl's own notebooks and needs the dev extras: pip install 'basedpl[dev]'")
     with timing_lock():
         paths = sorted(path.rglob('*.ipynb')) if path.is_dir() else [path]
         for p in paths:

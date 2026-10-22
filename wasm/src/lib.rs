@@ -1,7 +1,7 @@
 //! The browser's interface to BPL. A `Session` runs code and passes each output to a JavaScript function as the program produces it, gives the value of code as a JavaScript value, and binds JavaScript values and functions as BPL names. `nbs/playground/worker.js` loads the module and runs it in a Web Worker.
 #![cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use basedpl::{js, protocol, EvalOptions, MimeData, Output, OutputSink};
-use js_sys::{Array, Function, Object, Reflect, Uint8Array};
+use js_sys::{Function, Object, Reflect, Uint8Array};
 use std::{cell::RefCell, sync::Arc};
 use wasm_bindgen::prelude::*;
 
@@ -44,23 +44,16 @@ pub fn configure(base: String, panic: Function) {
 #[wasm_bindgen]
 pub fn symbols() -> String { basedpl::symbols::rows().to_string() }
 
-/// Every case in `speed`, text in `speed.txt`'s format, with its cost, as `basedpl::timing::costs` times it: an array of `{section, code, line, copy, budgets, cost}`, where `line` is the case's log line with its wasm budget and `copy` is the copy line of the copy its cost counts, absent in `[widths]`. With `cases`, an array of codes, only those cases run. Throws when the setup or a case fails.
+/// Names this machine's CPU for the timing code, which can't read it in a browser, as `rustymath::timing::name_cpu` describes.
+#[wasm_bindgen]
+pub fn name_cpu(name: &str) { basedpl::timing::name_cpu(name) }
+
+/// Every case in `speed`, text in `speed.txt`'s format, with its cost, as `basedpl::timing::costs` times it and `basedpl::timing::rows` encodes it with its wasm budget in its log line: an array of `{section, code, line, copy, budgets, cost, seconds}`. With `cases`, an array of codes, only those cases run. Throws when the setup or a case fails.
 #[wasm_bindgen]
 pub fn costs(speed: &str, cases: Option<Vec<String>>) -> Result<JsValue, JsValue> {
     let only: Option<Vec<&str>> = cases.as_ref().map(|c| c.iter().map(String::as_str).collect());
     let cases = basedpl::timing::costs(speed, only.as_deref(), &Default::default()).map_err(|e| JsValue::from(js_sys::Error::new(&e)))?;
-    let rows = Array::new();
-    for c in cases {
-        let row = Object::new();
-        _ = Reflect::set(&row, &"section".into(), &c.section.into());
-        _ = Reflect::set(&row, &"code".into(), &c.code.into());
-        _ = Reflect::set(&row, &"line".into(), &c.line(2).into());
-        if let Some(copy) = c.copy_line() { _ = Reflect::set(&row, &"copy".into(), &copy.into()); }
-        _ = Reflect::set(&row, &"budgets".into(), &c.budgets.into_iter().map(JsValue::from).collect::<Array>());
-        _ = Reflect::set(&row, &"cost".into(), &c.cost.into());
-        rows.push(&row);
-    }
-    Ok(rows.into())
+    Ok(js_sys::JSON::parse(&basedpl::timing::rows(&cases, basedpl::timing::WASM_COLUMN).to_string())?)
 }
 
 #[wasm_bindgen]

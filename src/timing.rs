@@ -1,6 +1,7 @@
 //! The speed test's measurements, shared by `tests/speed.rs`, the browser build's `costs` and the worker's `timing` and `costs` requests, which serve `basedpl.bpltests.time_cases` and `speed_costs`. A time is the fastest of five evaluations of a case, after one to warm up. The case is parsed once, before them. Its unit is one copy of the `n` items in the data of the `[setup]` before the case's section, as `rustymath::timing::copy_time` gives it: this machine's stored copy time, or one measured once. `costs` and `request` hold the machine's timing lock exclusively while they run, as `rustymath::timing` describes.
 use crate::{host::timing_lock, protocol::response, EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn};
-use rustymath::timing::{code_of, copy_time, header, sections, CopyTime};
+use rustymath::timing::{code_of, copy_time, header, sections, CopyTime, NATIVE_COLUMN};
+pub use rustymath::timing::name_cpu;
 use serde_json::{json, Value as JsonValue};
 use rustymath::hashing::{HashMap, HashMapExt};
 
@@ -69,13 +70,21 @@ pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Resul
     failed.map_or(Ok(seconds), Err)
 }
 
+/// The column of a case's wasm budget in basedpl's `tests/speed.txt`, after the macOS and Linux budgets that `rustymath::timing::NATIVE_COLUMN` picks from.
+pub const WASM_COLUMN: usize = 2;
+
 /// One case of a file in `speed.txt`'s format, with its cost: the section it's in, its code, its budgets in the file's order, the cost those budgets limit, its time for each of the section's `n` items in seconds, and the copy that its cost counts, which `[widths]` costs don't use.
 pub struct Case<'a> { pub section: &'a str, pub code: &'a str, pub budgets: Vec<&'a str>, pub cost: f64, pub seconds: f64, pub copy: Option<CopyTime> }
 impl Case<'_> {
-    /// This case's line in a speed test's log, with the budget in `column` of its budgets: 0 for macOS, 1 for Linux, 2 for the browser build. `basedpl.bpltests.logged_costs` reads these lines.
+    /// This case's line in a speed test's log, with the budget in `column` of its budgets: `rustymath::timing::NATIVE_COLUMN` for this platform's native budget, or `WASM_COLUMN`. `basedpl.bpltests.logged_costs` reads these lines.
     pub fn line(&self, column: usize) -> String { rustymath::timing::line(self.section, self.code, self.cost, self.budgets.get(column).copied().unwrap_or("-"), self.seconds) }
     /// The copy line of the copy that this case's cost counts, as `rustymath::timing::copy_line` writes it. `None` in `[widths]`.
     pub fn copy_line(&self) -> Option<String> { self.copy.as_ref().map(rustymath::timing::copy_line) }
+}
+
+/// Each of `cases` as JSON, as the worker's `costs` reply and the browser build's `costs` give it: its section, code, log `line` with the budget in `column` of its budgets, `copy` line or null, budgets, cost, and time for each item in `seconds`.
+pub fn rows(cases: &[Case], column: usize) -> JsonValue {
+    cases.iter().map(|c| json!({"section": c.section, "code": c.code, "line": c.line(column), "copy": c.copy_line(), "budgets": c.budgets, "cost": c.cost, "seconds": c.seconds})).collect()
 }
 
 /// One group of sections, which share the group's `[setup]` and one session, set up for one section at a time: each section's `•prefs` header, the section the session is set up for, and the setup's `n`.
@@ -218,13 +227,11 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
     Ok(json!({"n": n, "costs": costs, "output": [], "error": null}))
 }
 
-/// The reply to the worker's `costs` request, which gives `speed`, text in `speed.txt`'s format, and optionally `cases`, a list of the codes to time. The reply gives each case with its cost, as `costs` times them: its section, code, budgets and cost.
+/// The reply to the worker's `costs` request, which gives `speed`, text in `speed.txt`'s format, and optionally `cases`, a list of the codes to time. The reply gives each case with its cost, as `costs` times them and `rows` encodes them, with this platform's native budget in each log line.
 pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
     let only: Option<Vec<&str>> = match spec.get("cases") {
         None | Some(JsonValue::Null) => None,
         Some(cases) => Some(cases.as_array().and_then(|c| c.iter().map(JsonValue::as_str).collect()).ok_or("costs needs cases as a list of strings")?),
     };
-    let cases = costs(spec["speed"].as_str().ok_or("costs needs speed as a string")?, only.as_deref(), interrupt)?;
-    let cases: Vec<_> = cases.iter().map(|c| json!({"section": c.section, "code": c.code, "budgets": c.budgets, "cost": c.cost})).collect();
-    Ok(json!({"costs": cases, "error": null}))
+    Ok(json!({"costs": rows(&costs(spec["speed"].as_str().ok_or("costs needs speed as a string")?, only.as_deref(), interrupt)?, NATIVE_COLUMN), "error": null}))
 }

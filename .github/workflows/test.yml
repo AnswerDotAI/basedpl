@@ -23,7 +23,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: native
-      - run: grep -m1 'model name' /proc/cpuinfo
       # With `BASEDPL_COSTS`, the speed tests here and in the `wasm` job log every case's cost, which `basedpl.bpltests.logged_costs` reads.
       - run: BASEDPL_COSTS=1 cargo test
       - uses: actions/setup-python@v7
@@ -49,5 +48,4 @@ jobs:
           shared-key: wasm
       - run: cargo wasm --strip
       - run: node --test tests/wasm.mjs
-      - run: grep -m1 'model name' /proc/cpuinfo
       - run: BASEDPL_COSTS=1 node --no-liftoff --test tests/wasm-speed.mjs

@@ -6,6 +6,8 @@
 // over every time, as in `tests/speed.rs`. With `BASEDPL_COSTS` set, it also prints every case's cost. The `Test` workflow's
 // `wasm` job sets it. Node can't lock a file. `basedpl.bpltests.wasm_test` holds the machine's timing lock around this test.
 // Run directly, as CI runs it, the test takes no lock.
+// The wasm budgets serve CI's x86 runner, as `speed.txt`'s header says. On any other host, the test prints every cost, then
+// each case still over its budget after the retries, marked `over`, and fails on none, as `bpl --costs` does.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -13,14 +15,15 @@ import { costs } from './wasm-pkg.mjs';
 
 // The pauses before each retry, in seconds, as in `rustymath::timing::RETRY_PAUSES`.
 const RETRY_PAUSES = [0.1, 1];
+const ci = process.platform === 'linux' && process.arch === 'x64';
 
 assert.ok(process.execArgv.includes('--no-liftoff'), 'run with node --no-liftoff');
-test('each case in speed.txt takes no longer than its wasm budget', async () => {
+test('each case in speed.txt takes no longer than its wasm budget on CI\'s runner', async () => {
     const speed = readFileSync(new URL('speed.txt', import.meta.url), 'utf8');
     const line = c => c.line;
     const over = ({ budgets: [, , budget], cost }) => cost > Number(budget);
     const all = costs(speed);
-    if (process.env.BASEDPL_COSTS) {
+    if (process.env.BASEDPL_COSTS || !ci) {
         for (const copy of new Set(all.map(c => c.copy).filter(Boolean))) console.log(copy);
         for (const c of all) console.log(line(c));
     }
@@ -33,5 +36,6 @@ test('each case in speed.txt takes no longer than its wasm budget', async () => 
         for (const c of retried) console.log(line(c));
         failures = retried.filter(over);
     }
-    assert.deepEqual(failures.map(line), []);
+    if (ci) assert.deepEqual(failures.map(line), []);
+    else for (const c of failures) console.log(`${line(c)}: over`);
 });

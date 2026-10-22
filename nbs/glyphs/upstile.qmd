@@ -9,11 +9,12 @@ Function. Keys: `Alt-s`. Hanzi: `上`. Ranks: `0` monadic, `0 0` dyadic
 ⌈3r2              ⍝ 2ₓ
 ```
 
-`X⌈Y` takes the real maximum, and for characters the one with the higher code point. A character is greater than any number, as [`⍋`](delta-stile.qmd) orders them. Pervasive. Beside NaN, `X⌈Y` gives NaN or the other argument. `⌈/` and `⌈\` give NaN or the greatest other item. Which one depends on the processor and the code path. Remove NaNs first where that matters, as in `⌈/(v=v)#v`. Empty reduction identity: `¯∞`.
+`X⌈Y` takes the real maximum, and for characters the one with the higher code point. A character is greater than any number, as [`⍋`](delta-stile.qmd) orders them. Pervasive. A NaN beside any number gives NaN, in either order and on every machine. A reduction or scan gives NaN from its first NaN on. To leave NaNs out, remove them first, as in `⌈/(v=v)#v`. Empty reduction identity: `¯∞`.
 
 ```bpl
 3⌈1 5             ⍝ 3 5
 3⌈1 $n 5          ⍝ 3 $n 5
+⌈\1 $n 3          ⍝ 1 $n $n
 "abc"⌈"bab"       ⍝ "bbc"
 3⌈'a'             ⍝ 'a'
 ```

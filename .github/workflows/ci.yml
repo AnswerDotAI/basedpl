@@ -38,9 +38,7 @@ jobs:
       - name: Time the release build
         continue-on-error: true
         timeout-minutes: 20
-        run: |
-          echo "model name : $(if [ "$RUNNER_OS" = macOS ]; then sysctl -n machdep.cpu.brand_string; else lscpu | sed -n 's/^Model name: *//p' | head -1; fi)"
-          bin/${{ matrix.binary }} --costs tests/speed.txt
+        run: bin/${{ matrix.binary }} --costs tests/speed.txt
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}

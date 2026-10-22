@@ -314,14 +314,23 @@ def _program(code, n, setup):
 # The instructions that a case retires before the lowest value of `N` that `instructions` picks, and between successive values. A case that allocates an array at each step retires a few tens of millions more instructions over its first steps, while the allocator settles. `{↑[⍵ 1]}⍣N⊢0` counts the same from 3×10⁴ steps on, about 2×10⁸ instructions, and `{fib 10}⍣N⊢0` from 30 steps on. Each process pays a different warm-up, up to about 5×10⁶ instructions, which moves a slope over 5×10⁸ instructions by under 1%. Some cases also pay a one-off cost once `N` passes a size: `≢•ucs N⍴"ab" "cde"` retires about 5×10⁶ more instructions from about 131,350 items on.
 _SETTLE, _SPAN = 5e8, 5e8
 
+# A case that names `N` outside its strings says itself how it repeats. `_stepped` runs any other case once per step.
+_NAMES_N, _QUOTED = re.compile(r'(?<!\w)N(?!\w)'), re.compile(r'"(?:[^"]|"")*"|\'.\'')
+
+def _stepped(case, force=False):
+    "BPL that makes one call of `case` per step of `N`. A case that names `N`, such as `{⍵}⍣N⊢0`, is that BPL already. Any other case runs once per step, and its result is dropped, or with `force` computed in full through an indexed write. `force` needs a result of rank 1 or more."
+    if _NAMES_N.search(_QUOTED.sub('', case)): return case
+    return f'{{x←{case} ⋄ x.[0]←x.[0] ⋄ ⍵}}⍣N⊢0' if force else f'{{{case} ⋄ ⍵}}⍣N⊢0'
+
 def instructions(
-    cases:Annotated[str, {'nargs':'+'}], # A BPL expression that makes one call per step of `N`, such as `{⍵}⍣N⊢0`, or a list of them
+    cases:Annotated[str, {'nargs':'+'}], # A BPL expression to run once per step, such as `k(⌈/⊢)⌸a`, or one that names `N` and makes its own call per step of it, such as `{⍵}⍣N⊢0`, or a list of them
     setup='', # BPL that defines what the cases use, run before each case
+    force=False, # Compute each step's result in full where it would stay pending, such as large windows or a transpose, for the cases that don't name `N`
     counts:Annotated[int, {'nargs':'+'}]=None, # Two or more values of `N`; None: four values past the allocator's warm-up, from a rough count at 1,000 steps
     runs=3, # Processes at each value of `N`, of which the lowest count is used
     bpl:Path=None # A native `bpl` to count, such as a copy saved before a change; None: the installed one
 ):
-    "The instructions that each case retires per unit of `N`, on one thread. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent. A case must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost."
+    "The instructions that each case retires per unit of `N`, on one thread. A case that doesn't name `N` runs once per step inside `{case ⋄ ⍵}⍣N⊢0`. That dfn's own call adds about 1,900 instructions per step. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost."
     cases = [cases] if isinstance(cases, str) else list(cases)
     def count(code, n, runs=runs): return min(_retired(_program(code, n, setup), bpl) for _ in range(runs))
     def steps(code):
@@ -331,8 +340,8 @@ def instructions(
     def per_step(code):
         ns = steps(code)
         cs = [count(code, n) for n in ns]
-        return code, statistics.median((c1-c0)/(n1-n0) for n0, n1, c0, c1 in zip(ns, ns[1:], cs, cs[1:]))
-    return Instructions(per_step(code) for code in cases)
+        return statistics.median((c1-c0)/(n1-n0) for n0, n1, c0, c1 in zip(ns, ns[1:], cs, cs[1:]))
+    return Instructions((case, per_step(_stepped(case, force))) for case in cases)
 
 class ProfileDiff(list):
     "Each function's estimated instructions per step of `N` on two builds, as `(function, before, after)` rows, largest change first, below a row of each build's total."
@@ -372,11 +381,12 @@ def _self_samples(code, bpl, seconds):
     for name, n in zip(subprocess.run(['c++filt'], input='\n'.join(selfs), capture_output=True, text=True).stdout.splitlines(), selfs.values()): named[name] += n
     return named, total
 
-def _estimates(case, setup, bpl, seconds):
+def _estimates(case, setup, bpl, seconds, force):
     "Each function's estimated instructions per step of `N` for `case` on `bpl`, and the build's instructions per step, as `profile` describes."
     if sys.platform != 'darwin': raise ValueError(f'no sampling profiler on {sys.platform}')
-    [(_, per_step)] = instructions(case, setup, bpl=bpl)
-    samples, total = _self_samples(_program(f'{{⍵⊣({case})}}⍣1000000000⊢0', max(1, round(1e8/per_step)), setup), bpl, seconds)
+    stepped = _stepped(case, force)
+    [(_, per_step)] = instructions(stepped, setup, bpl=bpl)
+    samples, total = _self_samples(_program(f'{{{stepped} ⋄ ⍵}}⍣1000000000⊢0', max(1, round(1e8/per_step)), setup), bpl, seconds)
     return {f: per_step*n/total for f, n in samples.items()}, per_step
 
 class Profile(list):
@@ -387,26 +397,28 @@ class Profile(list):
     def __repr__(self): return '\n'.join(f'{n:>10,.0f} {n/self.total:>6.1%}  {f[:150]}' for f, n in [('total', self.total), *self])
 
 def profile(
-    case, # A BPL expression that makes one call per step of `N`, as `instructions` takes, such as `{⍵}⍣N⊢0`
+    case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N⊢0`
     setup='', # BPL that defines what the case uses, run before it
+    force=False, # Compute each step's result in full, as `instructions`' `force` does
     bpl:Path=None, # A native `bpl` to profile, such as a copy saved before a change; None: the installed one
     seconds=3, # How long macOS `sample` watches the build
     rows=20 # How many functions to show
 ):
     "Where `case`'s instructions per step of `N` go, by function, on macOS. A fresh process repeats the case on one thread while `sample` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate."
-    estimates, total = _estimates(case, setup, bpl, seconds)
+    estimates, total = _estimates(case, setup, bpl, seconds, force)
     return Profile(sorted(estimates.items(), key=lambda r: -r[1])[:rows], total)
 
 def profile_diff(
-    case, # A BPL expression that makes one call per step of `N`, as `instructions` takes, such as `{⍵}⍣N⊢0`
+    case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N⊢0`
     base:Path, # A native `bpl` to compare with, such as a copy saved before a change
     setup='', # BPL that defines what the case uses, run before it
+    force=False, # Compute each step's result in full, as `instructions`' `force` does
     bpl:Path=None, # A native `bpl` to compare with `base`; None: the installed one
     seconds=3, # How long macOS `sample` watches each build
     rows=20 # How many functions to show
 ):
     "Where `case`'s instructions per step of `N` moved between two builds, by function, on macOS, from `profile`'s estimates for each build. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone."
-    (before, tb), (after, ta) = _estimates(case, setup, base, seconds), _estimates(case, setup, bpl, seconds)
+    (before, tb), (after, ta) = _estimates(case, setup, base, seconds, force), _estimates(case, setup, bpl, seconds, force)
     fs = sorted(before.keys() | after.keys(), key=lambda f: -abs(after.get(f, 0) - before.get(f, 0)))
     return ProfileDiff([(f, before.get(f, 0), after.get(f, 0)) for f in fs[:rows]], (tb, ta))
 
@@ -449,11 +461,11 @@ def _or_dash(x, spec): return '-' if x is None else format(x, spec)
 def _over(cost, budget): return budget is not None and cost > budget
 
 class SpeedCosts(list):
-    "Each case's cost and the budget that limits it, as `(section, code, cost, budget)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build. `copies` holds the copy lines that a log gives, as `(items, bytes, ns per item, stored)` rows, which say whether `rustymath::timing::COPIES` held that machine's copy time or the test measured it."
+    "Each case's cost and the budget that limits it, as `(section, code, cost, budget, ns)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. `ns` is the case's time for each item in nanoseconds, or `None` where the timing doesn't give it. Times compare across a change to `rustymath::timing::COPIES`, where costs don't. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build. `copies` holds the copy lines that a log gives, as `(items, bytes, ns per item, stored)` rows, which say whether `rustymath::timing::COPIES` held that machine's copy time or the test measured it."
     def __init__(self, rows=(), cpu=None, platform=None, copies=()):
         super().__init__(rows)
         self.cpu, self.platform, self.copies = cpu, platform, list(copies)
-    def __repr__(self): return '\n'.join(f'{cost:>9.2f} {_or_dash(b, "g"):>9} {"over" if _over(cost, b) else "":4}  {s} {c}' for s, c, cost, b in self)
+    def __repr__(self): return '\n'.join(f'{cost:>9.2f} {_or_dash(b, "g"):>9} {_or_dash(ns, ".3f"):>9} {"over" if _over(cost, b) else "":4}  {s} {c}' for s, c, cost, b, ns in self)
 
 def speed_costs(
     wasm:Path=None, # A directory that `cargo wasm --out` wrote, to time in that browser build, as `tests/wasm-speed.mjs` does; None: a fresh native worker, as `tests/speed.rs` does
@@ -481,44 +493,47 @@ def speed_costs(
         rows = json.loads(p.stdout)
     build = _platform() if wasm is None else 'wasm'
     i = _BUDGETS.index(build)
-    rows = ((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None) for c in rows)
+    rows = ((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None, c['seconds']*1e9 if 'seconds' in c else None) for c in rows) # A saved `bpl` from before 23 October 2026 gives no `seconds`
     return SpeedCosts(rows, platform=None if wasm else build)
 
-_LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+)(?:, [\d.]+ ns)?$')
-_CPU = re.compile(r'^(?:\S*Z )?model name\s*:\s*(.+?)\s*$', re.M)
-_COPY = re.compile(r'^(?:\S*Z )?(?:# )?copy of (?P<items>\d+) (?P<bytes>\d+)-byte items: (?P<ns>[\d.]+) ns an item, (?P<source>stored|measured)', re.M)
+_LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+)(?:, (?P<ns>[\d.]+) ns)?$')
+_COPY = re.compile(r'^(?:\S*Z )?(?:# )?copy of (?P<items>\d+) (?P<bytes>\d+)-byte items: (?P<ns>[\d.]+) ns an item, (?P<source>stored for|measured on) (?P<cpu>[^\r\n]+?)(?:: add it to rustymath::timing::COPIES)?[ \t]*$', re.M)
 
 def logged_costs(
     log, # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Test` or `Speed` workflow, or the path of a file that holds it
     platform='linux' # The platform whose native budgets the log's costs were checked against: 'linux' for CI's runner, or 'macos' for a Mac
 ):
-    "The rows that `speed_costs` gives, read from `log`, with the CPU model that the log reports as their `cpu`, `platform`, and the log's copy lines as `copies`. A case that the log times more than once, as after a retry, gives its lowest cost."
+    "The rows that `speed_costs` gives, read from `log`, with the CPU that its copy lines name as their `cpu`, `platform`, and the log's copy lines as `copies`. A case that the log times more than once, as after a retry, gives its lowest cost, with that timing's time for each item where the log prints one."
     if isinstance(log, Path): log = log.read_text()
-    cpu = c[1] if (c := _CPU.search(log)) else None
+    found = list(_COPY.finditer(log))
+    cpu = next((m['cpu'] for m in found if m['cpu'] != 'a CPU with no name'), None)
     rows = {}
     for m in filter(None, map(_LOGGED.match, log.splitlines())):
         code = re.sub(r'\\([\\#])', r'\1', m['code']) if m['tap'] else m['code'] # Node's TAP diagnostics escape `\` and `#`
-        row = (m['section'], code, float(m['cost']), float(m['budget']))
+        row = (m['section'], code, float(m['cost']), float(m['budget']), m['ns'] and float(m['ns']))
         if row[:2] not in rows or row[2] < rows[row[:2]][2]: rows[row[:2]] = row
-    copies = list(dict.fromkeys((int(m['items']), int(m['bytes']), float(m['ns']), m['source'] == 'stored') for m in _COPY.finditer(log)))
+    copies = list(dict.fromkeys((int(m['items']), int(m['bytes']), float(m['ns']), m['source'] == 'stored for') for m in found))
     return SpeedCosts(rows.values(), cpu, platform, copies)
 
 CHANGE = 0.2
 class CostChanges(list):
-    "The cases that `compare_costs` reports, as `(section, code, before, after, budget)` rows. Cases over their budget in `after` come first, then cases whose cost moved by more than `CHANGE`, largest change first. `before` is `None` for a case that the earlier run didn't time, and `budget` is `None` for a case with no budget."
-    def __repr__(self): return '\n'.join(f'{_or_dash(b, ".2f"):>9} {a:>9.2f} {_or_dash(b and a/b-1, "+.0%"):>6} {_or_dash(budget, "g"):>9} {"over" if _over(a, budget) else "":4}  {s} {c}' for s, c, b, a, budget in self)
+    "The cases that `compare_costs` reports, as `(section, code, before, after, budget, change)` rows. `before` and `after` are costs. `change` is the fractional change in the case's time for each item where both runs give one, and in its cost otherwise, so it holds across a change to `rustymath::timing::COPIES`. Cases over their budget in `after` come first, then cases whose change is more than `CHANGE`, largest first. `before` and `change` are `None` for a case that the earlier run didn't time, and `budget` is `None` for a case with no budget."
+    def __repr__(self): return '\n'.join(f'{_or_dash(b, ".2f"):>9} {a:>9.2f} {_or_dash(d, "+.0%"):>6} {_or_dash(budget, "g"):>9} {"over" if _over(a, budget) else "":4}  {s} {c}' for s, c, b, a, budget, d in self)
 
 def compare_costs(
     before:Annotated[SpeedCosts|str|Path, {'type':Path}], # The earlier run: rows that `speed_costs`, `logged_costs`, `cargo_costs` or `pytest_costs` give, or a log that `logged_costs` reads, as its text or its path
     after:Annotated[SpeedCosts|str|Path, {'type':Path}], # The later run, in any of `before`'s forms
     platform='linux' # The platform whose native budgets a log's costs were checked against, as `logged_costs` takes it
 ):
-    "Each case over its budget in `after`, and each case whose cost moved by more than `CHANGE` from `before` in either direction."
+    "Each case over its budget in `after`, and each case whose time for each item moved by more than `CHANGE` from `before` in either direction, or whose cost did where either run doesn't give the time."
     before, after = (x if isinstance(x, SpeedCosts) else logged_costs(x, platform) for x in (before, after))
-    old = {(s, c): cost for s, c, cost, _ in before}
-    rows = [(s, c, old.get((s, c)), cost, budget) for s, c, cost, budget in after]
-    def change(row): return abs(row[3]/row[2] - 1) if row[2] else 0
-    return CostChanges(sorted((r for r in rows if _over(r[3], r[4]) or change(r) > CHANGE), key=lambda r: (not _over(r[3], r[4]), -change(r))))
+    old = {(s, c): (cost, ns) for s, c, cost, _, ns in before}
+    rows = []
+    for s, c, cost, budget, ns in after:
+        cost0, ns0 = old.get((s, c), (None, None))
+        rows.append((s, c, cost0, cost, budget, ns/ns0 - 1 if ns and ns0 else cost/cost0 - 1 if cost0 else None))
+    def moved(row): return abs(row[5] or 0)
+    return CostChanges(sorted((r for r in rows if _over(r[3], r[4]) or moved(r) > CHANGE), key=lambda r: (not _over(r[3], r[4]), -moved(r))))
 
 def _run_costs(cmd, path, timeout, native=False, env=None):
     "The rows that `logged_costs` reads from what `cmd` prints, run in the package at `path` with `<NAME>_COSTS` set. A case over its budget still gives its row."
