@@ -4759,13 +4759,13 @@ $t $t $t $t $t $t $t
 $t $t $t $t
 $t $t $t $t $t
 
-⍝ — Under dynamic kinds, ⌊ and ⌈ keep an exact number exact beside an infinity, and give NaN beside NaN. On a large array they don't fuse beside an exact number or a comparison, because a fused graph reads them as floats
+⍝ — Under dynamic kinds, ⌊ and ⌈ keep an exact number exact beside an infinity, and give their right argument beside NaN, as a float. On a large array they don't fuse beside an exact number or a comparison, because a fused graph reads them as floats
 x←¿1000000⍴0 ⋄ x.[[0 1 2 3]]←[∞ ¯∞ $n 0] ⋄ [4↑x⌊0ₓ ⋄ 4↑x⌈0ₓ ⋄ 4↑x⌊x>0 ⋄ 4↑x⌈$t]
-[0ₓ ¯∞ $n 0⋄∞ 0ₓ $n 0⋄1ₓ ¯∞ $n 0⋄∞ 1ₓ $n 1]
+[0ₓ ¯∞ 0 0⋄∞ 0ₓ 0 0⋄1ₓ ¯∞ 0 0⋄∞ 1ₓ 1 1]
 
-⍝ max-min-nan — A NaN beside any number gives NaN in ⌈ and ⌊, by every route: dyadic in either order, folds and scans short and long, columns, Key, seeded folds, windows, rows, products, exact and mixed numbers, and a long fold split into pieces
-nans←{+/,~⍵=⍵} ⋄ r←⌈\(⍳10),$n,⍳53 ⋄ m←64 64⍴0.5+⍳4096 ⋄ m.[3 5]←$n ⋄ q←1000 4⍴0.5+⍳4000 ⋄ q.[7 2]←$n ⋄ p←100 20⍴0.5+⍳2000 ⋄ p.[3 4]←$n ⋄ w←0.5+⍳200 ⋄ w.[100]←$n ⋄ s←0.5+⍳1000000 ⋄ s.[900000]←$n ⋄ s.[900001]←1e9 ⋄ [$n⌈3;3⌈$n;$n⌊3;3⌊$n;⌈/1 $n 3;⌊/1 $n 3;⌈/$n,⍳15;⌈/(⍳15),$n;⌈/$n $n;⌈\$n 1 2;⌊\1 $n 3;nans ⌈\$n,⍳63;10↑r;nans r;⌈⌿[1 $n⋄3 4];nans ⌈⌿m;0 1 0 1 (⌈/⊢)⌸ 1 $n 3 4;0⌈/$n 1 2;0⌈/$n,⍳20;⌈/3↕1 $n 3 4 5;nans ⌈/50↕w;⌈/⍤1 [1 $n 3⋄4 5 6];nans ⌈/⍤1 q;nans ⌈/⍤1 p;nans ⌈/⍤1 m;[1 $n⋄3 4]⌈.+2 2⍴0;nans m⌈.+m;nans m⌊.+m;1ₓ⌈$n;$n⌊1ₓ;⌈/1ₓ $n 2.5;⌈/s;⌊/s]
-[$n $n $n $n $n $n $n $n $n [$n $n $n] [1 $n $n] 64ₓ [0 1 2 3 4 5 6 7 8 9] 54ₓ [3 $n] 1ₓ [3 $n] $n $n [$n $n 5] 50ₓ [$n 6] 1ₓ 1ₓ 1ₓ [$n $n⋄4 4] 127ₓ 127ₓ $n $n $n $n $n]
+⍝ max-min-nan — ⌈ and ⌊ give their right argument beside NaN, and every fold, scan and product starts at ¯∞ or ∞ with each item on the left, so a NaN item changes no running result and a NaN seed stays: dyadic in either order, folds and scans short and long, columns, Key, seeded folds, windows, rows, products, exact and mixed numbers, and a long fold split into pieces
+nans←{+/,~⍵=⍵} ⋄ r←⌈\(⍳10),$n,⍳53 ⋄ m←64 64⍴0.5+⍳4096 ⋄ m.[3 5]←$n ⋄ q←1000 4⍴0.5+⍳4000 ⋄ q.[7 2]←$n ⋄ p←100 20⍴0.5+⍳2000 ⋄ p.[3 4]←$n ⋄ w←0.5+⍳200 ⋄ w.[100]←$n ⋄ s←0.5+⍳1000000 ⋄ s.[900000]←$n ⋄ s.[900001]←1e9 ⋄ [$n⌈3;3⌈$n;$n⌊3;3⌊$n;⌈/1 $n 3;⌊/1 $n 3;⌈/$n,⍳15;⌈/(⍳15),$n;⌈/$n $n;⌈\$n 1 2;⌊\1 $n 3;nans ⌈\$n,⍳63;10↑r;nans r;⌈⌿[1 $n⋄3 4];nans ⌈⌿m;0 1 0 1 (⌈/⊢)⌸ 1 $n 3 4;0⌈/$n 1 2;0⌈/$n,⍳20;⌈/3↕1 $n 3 4 5;nans ⌈/50↕w;⌈/⍤1 [1 $n 3⋄4 5 6];nans ⌈/⍤1 q;nans ⌈/⍤1 p;nans ⌈/⍤1 m;[1 $n⋄3 4]⌈.+2 2⍴0;nans m⌈.+m;nans m⌊.+m;1ₓ⌈$n;$n⌊1ₓ;⌈/1ₓ $n 2.5;⌈/s;⌊/s;$n⌈/⍳40;nans $n⌈\⍳300]
+[3 $n 3 $n 3 1 14 14 ¯∞ [¯∞ 1 2] [1 1 1] 0ₓ [0 1 2 3 4 5 6 7 8 9] 0ₓ [3 4] 0ₓ [3 4] 2 19 [3 4 5] 0ₓ [3 6] 0ₓ 0ₓ 0ₓ [1 1⋄4 4] 0ₓ 0ₓ $n 1 2.5 1000000000 0.5 $n 300ₓ]
 
 ⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position
 x←1.5+¿1000000⍴0 ⋄ •prefs ["fusion":$t] ⋄ r←⍴⍋x ⋄ •prefs ["fusion":$f] ⋄ r

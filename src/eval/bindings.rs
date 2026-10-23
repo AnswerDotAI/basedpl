@@ -357,12 +357,12 @@ impl Bindings {
 
     /// Pushes `frame` and makes it current. Its first slots hold `implicit`, the bindings of the six names that a call binds itself, in slot order (`Name::implicit`), and its locals' slots are empty. Fails at the depth limit, before pushing.
     #[inline]
-    pub(super) fn enter(&self, mut frame: Frame, implicit: [Option<Binding>; IMPLICIT], span: &Span) -> Result<(), Error> {
+    pub(super) fn enter(&self, mut frame: Frame, mut implicit: [Option<Binding>; IMPLICIT], span: &Span) -> Result<(), Error> {
         let mut stack = self.stack.borrow_mut();
         if stack.frames.len() == MAX_FRAME_DEPTH { return Err(Error::new(Kind::Limit, format!("lexical frame depth exceeds {MAX_FRAME_DEPTH}")).at(span)); }
         frame.base = stack.slots.len();
-        stack.slots.extend(implicit);
         stack.slots.resize_with(frame.slots().end, || None);
+        stack.slots[frame.base..frame.base + IMPLICIT].swap_with_slice(&mut implicit);
         self.current.set(Some(stack.frames.len()));
         stack.frames.push(frame);
         Ok(())

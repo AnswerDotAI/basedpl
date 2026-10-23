@@ -617,11 +617,10 @@ impl Session {
 
     // Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
     #[inline(never)]
-    pub(super) fn call_defined(&self, function: &Function, left: Option<&Value>, right: &Value) -> Result<Bound, Error> {
-        let return_span = function.definition().expect("call_defined calls a dfn").span.clone();
+    pub(super) fn call_defined(&self, first: &Function, left: Option<&Value>, right: &Value) -> Result<Bound, Error> {
         let caller = self.bindings.current();
         let base = self.bindings.depth();
-        let (mut function, mut left, mut right) = (function.clone(), left.cloned(), right.clone());
+        let (mut function, mut left, mut right) = (first.clone(), left.cloned(), right.clone());
         let mut tail_span = None;
         let mut unshy = false;
         let mut result = loop {
@@ -653,7 +652,7 @@ impl Session {
         };
         if let (Err(error), Some(span)) = (&mut result, tail_span) { error.calls.push(span); }
         if let Ok(bound) = &mut result { if unshy { bound.shy = false; } }
-        self.leave(base, caller, result, &return_span)
+        self.leave(base, caller, result, &first.definition().expect("call_defined calls a dfn").span)
     }
 
     /// Drops the frames from `base` on, makes `caller` current and gives back `result`. A result that refers to a dropped frame is an error.

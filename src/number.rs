@@ -883,7 +883,7 @@ impl Number {
 
     fn minimum(&self, right: &Self, maximum: bool) -> Result<Self, &'static str> {
         if let (Integer(x), Integer(y)) = (&self.0, &right.0) { return Ok(Self(Integer(if maximum { *x.max(y) } else { *x.min(y) }))); }
-        // NaN beside any number gives NaN, at the width the two compute at. An exact number stays exact beside an infinity, and beside another exact number.
+        // Beside NaN it gives `right` at the width the two compute at, as `rustymath::reduce::maximum` gives its `y`. An exact number stays exact beside an infinity, and beside another exact number.
         let nan = self.is_nan() || right.is_nan();
         if !nan && ((self.is_exact() && right.is_exact()) || self.is_infinite() || right.is_infinite()) {
             return Ok((if maximum == self.order(right)?.is_lt() { right } else { self }).clone());

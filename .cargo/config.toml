@@ -12,9 +12,9 @@ MACOSX_DEPLOYMENT_TARGET = "15.0"
 [target.'cfg(target_arch = "x86_64")']
 rustflags = ["-C", "target-cpu=x86-64-v3", "-C", "passes=loop-vectorize,slp-vectorizer"]
 
-# The browser build uses wasm's 128-bit SIMD, which current browsers all support. V8 unrolls loops itself, so LLVM's runtime unrolling is off: under thin LTO it unrolled the vectorized f64 sum's loop twice, which CI's x86 V8 ran about 1.4 times slower.
+# The browser build uses wasm's 128-bit SIMD, which current browsers all support.
 [target.wasm32-unknown-unknown]
-rustflags = ["-C", "target-feature=+simd128", "-C", "passes=loop-vectorize,slp-vectorizer", "-C", "llvm-args=-unroll-runtime=false"]
+rustflags = ["-C", "target-feature=+simd128", "-C", "passes=loop-vectorize,slp-vectorizer"]
 
 [alias]
 # Builds the npm package into `wasm/pkg/`. `xtask` builds optimised, because its wasm-bindgen pass runs on every call.
