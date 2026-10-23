@@ -64,6 +64,14 @@ if (isMainThread && process.argv[2] !== 'depths') {
         assert.equal(s.eval('h←•js "Math.hypot" ⋄ 3 h 4'), 5);
         assert.deepEqual(s.eval('(•js "s => s.toUpperCase()")¨"ab" "cd"'), { shape: [2], data: ['AB', 'CD'] });
     });
+    test('max and min beside NaN give NaN or the expected value, as the reference case max-min-nan checks natively', () => {
+        // The case's code and its expected result are the two lines after its header in core.bpl.
+        const lines = readFileSync(new URL('reference/core.bpl', import.meta.url), 'utf8').split('\n');
+        const at = lines.findIndex(l => l.startsWith('⍝ max-min-nan '));
+        assert.notEqual(at, -1, 'core.bpl holds the case max-min-nan');
+        const s = new Session();
+        assert.deepEqual(s.eval(lines[at + 1]), s.eval(lines[at + 2]));
+    });
     test('a canvas output carries JSON and bytes, which canvas.js draws', () => {
         const data = display('d←•canvas "(ctx, data, options) => ctx.fillRect(options.x, 0, data.data[1], data.shape[0])" ⋄ ["x":5] d 3 2⍴⍳6');
         const calls = [], show = (0, eval)(readFileSync(new URL('canvas.js', pkg), 'utf8'));

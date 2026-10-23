@@ -2,6 +2,7 @@
 import json, math, os, re, statistics, subprocess, sys, tempfile, time, tomllib
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
+from itertools import accumulate
 from decimal import Context, Decimal, ROUND_CEILING
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -336,7 +337,8 @@ def instructions(
     def steps(code):
         if counts: return counts
         rough = max(1, (count(code, 1_000, 1) - count(code, 0, 1)) / 1_000)
-        return [round((_SETTLE + i*_SPAN)/rough) for i in range(4)]
+        # Each value is at least one more than the last, for a case that retires more than `_SPAN` instructions a step, whose warm-up is then a small share of a step.
+        return list(accumulate((round((_SETTLE + i*_SPAN)/rough) for i in range(4)), lambda last, n: max(n, last + 1)))
     def per_step(code):
         ns = steps(code)
         cs = [count(code, n) for n in ns]

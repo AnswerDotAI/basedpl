@@ -32,6 +32,8 @@ pub(crate) trait Dyad<A> {
     fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> Self::Output;
     /// `f`, which gives Booleans, on each pair of items, through its slice form where the loop has slices of items, and its scalar form elsewhere.
     fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> Self::Output;
+    /// `f`, a maximum or minimum, as `many` runs it. A loop that folds values into a running result, as `Scatter` does at a place it writes more than once, folds them by `M` instead. `M`'s step keeps the running result beside a NaN value, where `f`'s keeps the value.
+    fn extremum<M: Reduction<A, Total = A>>(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync, _: M) -> Self::Output where Self: Sized { self.many(f) }
     /// `f`, a comparison, on each pair of items, as `booleans` runs it. A loop that writes floats in place of Booleans writes 1 where `f` holds and 0 elsewhere, through `rustymath::tolerant::Indicator`. The nodes of a fused graph before its last write a comparison this way.
     fn compared<K: rustymath::Binary<A, Out = bool> + Copy + Sync>(self, f: K) -> Self::Output where Self: Sized, rustymath::tolerant::Indicator<K>: rustymath::Binary<A, Out = A> { self.booleans(f) }
     /// The left and the right argument, each when it is one number that every item pairs with. A kernel can then run a loop of its own for that number, as `x*2` squares each item.
@@ -166,8 +168,8 @@ mod float_kernels {
                     },
                     Primitive::Math(Pi) => run.many(rustymath::PiTimes),
                     Primitive::Math(Log) => run.many(rustymath::Logb),
-                    Primitive::Math(Ceiling) => run.many(reduce::Maximum),
-                    Primitive::Math(Floor) => run.many(reduce::Minimum),
+                    Primitive::Math(Ceiling) => run.extremum(reduce::Maximum, reduce::Max),
+                    Primitive::Math(Floor) => run.extremum(reduce::Minimum, reduce::Min),
                     Primitive::Math(Magnitude) => run.many(rustymath::tolerant::Residue(t)),
                     Primitive::Math(Root) => match run.constants() {
                         (Some(n), _) if n == 2.0 => run.many(Right(rustymath::Sqrt)),
@@ -536,6 +538,9 @@ impl<A: Stored> Dyad<A> for Scatter<'_, A> {
         if !total(&f) && !kept(&f, self.numeric) { return self.writes.try_combine(self.out, self.values, move |x, y| f.checked(x, y)).then_some(Route::Logged); }
         self.writes.combine(self.out, self.values, move |x, y| f.one(x, y));
         Some(Route::InPlace)
+    }
+    fn extremum<M: Reduction<A, Total = A>>(self, _: impl rustymath::Binary<A, Out = A> + Copy + Sync, _: M) -> Option<Route> {
+        self.writes.fold::<M, A>(self.out, self.values).then_some(Route::InPlace)
     }
     fn booleans(self, _: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> Option<Route> { None }
 }
@@ -1298,24 +1303,20 @@ impl<'a, A: Stored> Fold<'a, A> {
         let tail = match tail { None => None, Some(view) => Some(carried::<A>(view)?) };
         Some(Self { data, dims, tail, numeric })
     }
-    /// The fold by `f`, which gives `None` where a step fails.
+    /// The fold by `f` through rustymath's right fold. `None` where a step fails, unless `kept` keeps its failed results, as static kinds keep wrapped integers.
     #[inline]
-    fn by(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Buffer> {
-        Some(A::buffer(reduce::right_fold(self.data, self.dims, self.tail.as_deref(), f, |x| x)?))
+    fn by<O: Element + Source<A>>(self, f: &impl rustymath::Binary<A, Out = O>) -> Option<Buffer> {
+        let (out, ok) = reduce::right_fold(f, self.data, self.dims, self.tail.as_deref());
+        (ok || kept(f, self.numeric)).then(|| O::buffer(out))
     }
 }
 impl<A: Stored> Dyad<A> for Fold<'_, A> where bool: Source<A> {
     type Output = Option<Buffer>;
     fn numeric(&self) -> Numeric { self.numeric }
-    /// Each step through `f`'s scalar form. A step that fails gives `None`, unless `keeps` keeps `f`'s failed results, as static kinds keep wrapped integers. An object none of whose steps fails compiles only the first loop.
     #[inline]
-    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> Self::Output {
-        if total(&f) || kept(&f, self.numeric) { self.by(move |x, y| Some(f.one(x, y))) } else { self.by(move |x, y| f.checked(x, y)) }
-    }
+    fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> Self::Output { self.by(&f) }
     #[inline]
-    fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> Self::Output {
-        Some(bool::buffer(reduce::right_fold(self.data, self.dims, self.tail.as_deref(), move |x, y| f.checked(x, y), Source::<A>::read)?))
-    }
+    fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> Self::Output { self.by(&f) }
 }
 
 /// A scan of compact values along `axis` by successive left accumulation, as the general scan does. Kernels of approximate numbers compare within the tolerance of their width in the current settings.
@@ -1389,9 +1390,17 @@ fn scanned_under(p: Primitive, right: &Value, seed: Option<&Value>, axis: &Lanes
     }
     match right.as_items() {
         // The logical functions and comparisons keep Booleans, and scan through their truth tables. Other functions read Booleans as integers.
-        Items::Compact(View::Booleans(data)) => match bool::dyad(p, LogicalScan(plan(numeric.exact()).of(data)?)) {
-            Some(result) => result, None => integers(Ints::U8(truth_bytes(data)))
-        },
+        Items::Compact(View::Booleans(data)) => {
+            let scan = plan(numeric.exact()).of(data)?;
+            match (scan.inverse, logical(p)) {
+                (false, Some(table)) => {
+                    let mut result = Vec::with_capacity(data.len());
+                    table.scan_along(data, scan.axis.dims(), scan.seed, &mut result);
+                    bool::build(scan.shape, result)
+                }
+                _ => match bool::dyad(p, scan) { Some(result) => result, None => integers(Ints::U8(truth_bytes(data))) },
+            }
+        }
         Items::Compact(View::Floats(data)) => with_floats!(kernel data, |data| float_scan(p, plan(numeric), data)),
         Items::Compact(View::Integers(ints)) => integers(ints),
         Items::Compact(View::Complexes(data)) => with_complexes!(data, |data| complex_scan(p, plan(numeric), data)),
@@ -1443,36 +1452,25 @@ impl<'a> ScanPlan<'a> {
     }
 }
 
-/// A scan of Booleans by a function that keeps them Boolean, through rustymath's scan of the function's truth table. The runner reads the table by calling the kernel on the four pairs of Booleans. An inverse scan, or a kernel that fails on a pair, runs through `Scan`.
-struct LogicalScan<'a>(Scan<'a, bool>);
-impl Dyad<bool> for LogicalScan<'_> {
-    type Output = Option<Value>;
-    fn numeric(&self) -> Numeric { self.0.numeric }
-    #[inline]
-    fn many(self, f: impl rustymath::Binary<bool, Out = bool> + Copy + Sync) -> Option<Value> {
-        let scan = self.0;
-        let row = |r| Some([f.checked(r, false)?, f.checked(r, true)?]);
-        let (false, Some(lo), Some(hi)) = (scan.inverse, row(false), row(true)) else { return scan.many(f) };
-        let mut result = Vec::with_capacity(scan.data.len());
-        reduce::Logical([lo, hi]).scan_along(scan.data, scan.axis.dims(), scan.seed, &mut result);
-        bool::build(scan.shape, result)
-    }
-    #[inline]
-    fn booleans(self, f: impl rustymath::Binary<bool, Out = bool> + Copy + Sync) -> Option<Value> { self.many(f) }
+/// The truth table of `p`'s kernel on Booleans, where `p` has one that gives a Boolean for every pair. Folds and scans of Booleans by `p` run through it.
+fn logical(p: Primitive) -> Option<reduce::Logical> { bool::dyad(p, Truths)? }
+
+/// [`logical`]'s table, indexed by `2*x+y`. A dyadic call, fold or scan of `gᵇ` with such a `g` runs as `Primitive::Bitwise` of the table (`Function::dyadic_primitive`).
+pub(crate) fn truth_table(p: Primitive) -> Option<u8> {
+    let reduce::Logical(t) = logical(p)?;
+    Some((0..4).fold(0u8, |table, i| table | u8::from(t[i >> 1][i & 1]) << i))
 }
 
-/// The truth table, indexed by `2*x+y`, of `p`'s kernel on Booleans, where `p` has one that gives a Boolean for every pair. A dyadic call, fold or scan of `gᵇ` with such a `g` runs as `Primitive::Bitwise` of the table (`Function::dyadic_primitive`).
-pub(crate) fn truth_table(p: Primitive) -> Option<u8> { bool::dyad(p, Truths)? }
-
-/// The runner that reads a Boolean kernel's truth table for `truth_table`, by calling it on the four pairs of Booleans.
+/// The runner that reads a Boolean kernel's truth table for [`logical`], by calling it on the four pairs of Booleans.
 struct Truths;
 impl Dyad<bool> for Truths {
-    type Output = Option<u8>;
+    type Output = Option<reduce::Logical>;
     fn numeric(&self) -> Numeric { Numeric::EXACT }
-    fn many(self, f: impl rustymath::Binary<bool, Out = bool> + Copy + Sync) -> Option<u8> {
-        (0..4u8).try_fold(0, |table, i| Some(table | u8::from(f.checked(i & 2 != 0, i & 1 != 0)?) << i))
+    fn many(self, f: impl rustymath::Binary<bool, Out = bool> + Copy + Sync) -> Option<reduce::Logical> {
+        let row = |x| Some([f.checked(x, false)?, f.checked(x, true)?]);
+        Some(reduce::Logical([row(false)?, row(true)?]))
     }
-    fn booleans(self, f: impl rustymath::Binary<bool, Out = bool> + Copy + Sync) -> Option<u8> { self.many(f) }
+    fn booleans(self, f: impl rustymath::Binary<bool, Out = bool> + Copy + Sync) -> Option<reduce::Logical> { self.many(f) }
 }
 
 /// A scan of integers at their own width, or at rustymath's total type for a reduction: `⌈\`, `⌊\` and the scans of `ᵇ`'s and, or, xor and xnor run through rustymath's running reductions, and any other function through its kernel. `None` where a result doesn't fit.
@@ -1509,12 +1507,12 @@ struct Scan<'a, A> {
     data: &'a [A], seed: Option<A>, starts: Option<&'a [bool]>, axis: &'a Lanes, shape: Vec<usize>, numeric: Numeric, inverse: bool, flip: bool
 }
 impl<A: Stored> Scan<'_, A> {
-    /// The scan by `f`, which adds the next item to a running total.
+    /// The scan by `f` through rustymath's left scan, each running total stepped by the next item. `None` where a step fails, unless `kept` keeps its failed results, as `Fold::by` does.
     #[inline]
-    fn running(self, f: impl Fn(A, A) -> Option<A> + Copy + Sync) -> Option<Value> {
+    fn running<O: Element + Source<A>>(self, f: &impl rustymath::Binary<A, Out = O>) -> Option<Value> {
         if self.inverse { return None; }
         let mut result = Vec::with_capacity(self.data.len());
-        if !reduce::left_scan(self.data, self.axis.dims(), self.seed, f, &mut result) { return None; }
+        if !reduce::left_scan(f, self.data, self.axis.dims(), self.seed, &mut result) && !kept(f, self.numeric) { return None; }
         A::build_narrowed(self.shape, result)
     }
     /// The scan by rustymath's reduction `R` along the axis, at `R`'s total type, through `reduce::scan_along`. `None` where a result doesn't fit.
@@ -1572,13 +1570,13 @@ impl<A: Stored> Dyad<A> for Scan<'_, A> where bool: Source<A> {
     /// A scan runs through `running`, each step through `f`'s scalar form, and its inverse through `paired`, with `f`'s slice form.
     #[inline]
     fn many(self, f: impl rustymath::Binary<A, Out = A> + Copy + Sync) -> Option<Value> {
-        if self.inverse { self.paired(move |x, y, n, out| f.many(x, y, n, out)) } else { self.running(move |x, y| f.checked(x, y)) }
+        if self.inverse { self.paired(move |x, y, n, out| f.many(x, y, n, out)) } else { self.running(&f) }
     }
     /// A comparison runs through `compared`, with `f`'s slice form. Its inverse, and a scan from a seed of the items' type, which only functions other than comparisons get, step through `f`'s scalar form, with the Booleans converted back to the item type.
     #[inline]
     fn booleans(self, f: impl rustymath::Binary<A, Out = bool> + Copy + Sync) -> Option<Value> {
         if self.inverse { return self.paired(move |x, y, n, out| pairs(x, y, n, out, |a, b| item_result(f.checked(a, b).map(Source::<A>::read)))); }
-        if self.seed.is_some() { return self.running(move |x, y| f.checked(x, y).map(Source::<A>::read)); }
+        if self.seed.is_some() { return self.running(&f); }
         self.compared(&move |t, xs, out| f.many(t, Arg::Many(xs), xs.len(), out))
     }
 }
@@ -1696,6 +1694,11 @@ fn untransposed(s: Value, m: Mapping, shape @ [rows, _]: [usize; 2]) -> ((Value,
 fn native_fold(p: Primitive, data: View<'_>, dims: [usize; 3], tail: Option<View<'_>>, len: usize, numeric: Numeric) -> Option<Buffer> {
     match data {
         View::Booleans(data) => with_truth_reduction!(p, len, R => reduced::<_, R>(data, dims, tail, false)).flatten()
+            .or_else(|| {
+                if !reduce::Logical::folds(dims) { return None; }
+                let tail = match tail { Some(v) => Some(carried::<bool>(v)?), None => None };
+                Some(bool::buffer(logical(p)?.fold(data, dims[1], tail.as_deref())))
+            })
             .or_else(|| bool::dyad(p, Fold::new(data, dims, tail, Numeric::EXACT)?)?)
             .or_else(|| integer_fold(p, truth_bytes(data), dims, tail, numeric)),
         View::Integers(data) => with_ints!(data, |data| integer_fold(p, data, dims, tail, numeric)),
@@ -1710,10 +1713,10 @@ pub(crate) fn sliding(p: Primitive, data: View<'_>, dims: [usize; 3], width: usi
     with_reduction!(p, data, width, Numeric::current().is_static(), |data, R, kept| fitting(reduce::sliding::<_, R>(data, dims, width), kept))
 }
 
-/// The row of the first item that gives the maximum, for `⌈`, or the minimum, for `⌊`, of each window of `width` rows along the middle axis of `data`, an array of shape `dims`, as `sliding` folds the windows. Each row counts from the start of its lane. `None` for any other function, and for storage other than integers and 32- and 64-bit floats.
-pub(crate) fn sliding_picks(p: Primitive, data: View<'_>, dims: [usize; 3], width: usize) -> Option<Vec<usize>> {
+/// The row of the first item that gives the maximum, for `⌈`, or the minimum, for `⌊`, of each of the folds that `of` chooses along the middle axis of `data`, an array of shape `dims`. Each row counts from the start of its lane. `None` for any other function, and for storage other than Booleans, integers and 32- and 64-bit floats.
+pub(crate) fn picks(p: Primitive, data: View<'_>, dims: [usize; 3], of: reduce::Picks) -> Option<Vec<usize>> {
     let max = match p { Primitive::Math(Math::Ceiling) => true, Primitive::Math(Math::Floor) => false, _ => return None };
-    reduce::view_sliding_picks(data, dims, width, max)
+    reduce::view_picks(data, dims, of, max)
 }
 
 fn carried<A: Element>(view: View<'_>) -> Option<Cow<'_, [A]>> {

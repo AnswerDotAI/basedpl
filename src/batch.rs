@@ -31,6 +31,8 @@ impl Batch {
     pub(crate) fn rank(&self) -> usize { self.whole.shape().len() - self.frame }
     /// The number of cells: the product of the frame's lengths.
     pub(crate) fn cells(&self) -> usize { self.whole.shape()[..self.frame].iter().product() }
+    /// The array that holds every cell, with the frame's axes first.
+    pub(crate) fn whole(&self) -> &Value { &self.whole }
     /// The frame's layout: the whole's first `frame` axes, with their keys and names.
     fn frame_layout(&self) -> Layout { self.whole.layout().axes(0..self.frame) }
     /// One `Steps` for each frame axis, reading item `start` of each cell of the whole, cell by cell.

@@ -486,7 +486,7 @@ pub(crate) fn picks(value: &Value, p: Primitive, kind: FoldKind) -> Option<Vec<i
     let shape = value.shape();
     let (_, tables) = w.folded(shape, k, width);
     if !Steps::in_order(&tables) { return None; }
-    let rows = pervasive::sliding_picks(p, w.region()?, w.rows, width)?;
+    let rows = pervasive::picks(p, w.region()?, w.rows, rustymath::reduce::Picks::Windows(width))?;
     // Each window starts at the position along `q` that the copy's other axes along `q` reach. Its pick lies that many rows before.
     let strides = strides(shape);
     let rest: Vec<usize> = (0..shape.len()).filter(|&r| r != k).collect();

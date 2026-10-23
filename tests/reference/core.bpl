@@ -2883,6 +2883,9 @@ cart←{[r t]←⍵ ⋄ [r×2○t; r×1○t]} ⋄ -.×cart∂ 2 0.5   ⍝ 2
 ⍝ — A maximum's tangent is the tangent of its first largest item
 {⌈/⍵}∂ 1 5 5 2   ⍝ 0 1 0 0
 
+⍝ — In a map over rows, each row's maximum and running maximum take their tangents from that row's own items, whether the map batches or not
+M←[3 1 4⋄1 5 9⋄2 6 5⋄7 7 1] ⋄ [{{⌈/⍵}∂⍵}⍤1⊢M; {{+/⌈\⍵}∂⍵}⍤1⊢M; {⌈/⍵}∂ 1ₓ 2.5 7ₓ]   ⍝ [[0 0 1⋄0 0 1⋄0 1 0⋄1 0 0]; [2 0 1⋄1 1 1⋄1 2 0⋄3 0 0]; 0 0 1]
+
 ⍝ — A minimum along the first axis takes each column's smallest item
 {⌊⌿⍵}∂ [1 5⋄4 2]   ⍝ [2 2 2]⍴1 0 0 0 0 0 0 1
 
@@ -4763,9 +4766,9 @@ $t $t $t $t $t
 x←¿1000000⍴0 ⋄ x.[[0 1 2 3]]←[∞ ¯∞ $n 0] ⋄ [4↑x⌊0ₓ ⋄ 4↑x⌈0ₓ ⋄ 4↑x⌊x>0 ⋄ 4↑x⌈$t]
 [0ₓ ¯∞ 0 0⋄∞ 0ₓ 0 0⋄1ₓ ¯∞ 0 0⋄∞ 1ₓ 1 1]
 
-⍝ max-min-nan — ⌈ and ⌊ give their right argument beside NaN, and every fold, scan and product starts at ¯∞ or ∞ with each item on the left, so a NaN item changes no running result and a NaN seed stays: dyadic in either order, folds and scans short and long, columns, Key, seeded folds, windows, rows, products, exact and mixed numbers, and a long fold split into pieces
-nans←{+/,~⍵=⍵} ⋄ r←⌈\(⍳10),$n,⍳53 ⋄ m←64 64⍴0.5+⍳4096 ⋄ m.[3 5]←$n ⋄ q←1000 4⍴0.5+⍳4000 ⋄ q.[7 2]←$n ⋄ p←100 20⍴0.5+⍳2000 ⋄ p.[3 4]←$n ⋄ w←0.5+⍳200 ⋄ w.[100]←$n ⋄ s←0.5+⍳1000000 ⋄ s.[900000]←$n ⋄ s.[900001]←1e9 ⋄ [$n⌈3;3⌈$n;$n⌊3;3⌊$n;⌈/1 $n 3;⌊/1 $n 3;⌈/$n,⍳15;⌈/(⍳15),$n;⌈/$n $n;⌈\$n 1 2;⌊\1 $n 3;nans ⌈\$n,⍳63;10↑r;nans r;⌈⌿[1 $n⋄3 4];nans ⌈⌿m;0 1 0 1 (⌈/⊢)⌸ 1 $n 3 4;0⌈/$n 1 2;0⌈/$n,⍳20;⌈/3↕1 $n 3 4 5;nans ⌈/50↕w;⌈/⍤1 [1 $n 3⋄4 5 6];nans ⌈/⍤1 q;nans ⌈/⍤1 p;nans ⌈/⍤1 m;[1 $n⋄3 4]⌈.+2 2⍴0;nans m⌈.+m;nans m⌊.+m;1ₓ⌈$n;$n⌊1ₓ;⌈/1ₓ $n 2.5;⌈/s;⌊/s;$n⌈/⍳40;nans $n⌈\⍳300]
-[3 $n 3 $n 3 1 14 14 ¯∞ [¯∞ 1 2] [1 1 1] 0ₓ [0 1 2 3 4 5 6 7 8 9] 0ₓ [3 4] 0ₓ [3 4] 2 19 [3 4 5] 0ₓ [3 6] 0ₓ 0ₓ 0ₓ [1 1⋄4 4] 0ₓ 0ₓ $n 1 2.5 1000000000 0.5 $n 300ₓ]
+⍝ max-min-nan — Beside NaN, ⌈ and ⌊ give NaN or the other argument, which can vary by platform. A fold, scan, window, product, Key fold or repeated write gives NaN or the greatest or least of the items that aren't NaN, and never another number. `ok` takes a result and that result with each NaN left out. The items cover dyadic calls in either order, short and long folds and scans, a NaN at the first and third items of a scan's group of four, columns, Key, seeded folds and scans, windows, rows, products, exact and mixed numbers, a place written more than once, and the long fold split into pieces that once gave 671743.5
+ok←{∧/,(⍺≠⍺)∨⍺=⍵} ⋄ m←64 64⍴0.5+⍳4096 ⋄ mx←m ⋄ mn←m ⋄ m.[3 5]←$n ⋄ mx.[3 5]←¯∞ ⋄ mn.[3 5]←∞ ⋄ q←1000 4⍴0.5+⍳4000 ⋄ qx←q ⋄ q.[7 2]←$n ⋄ qx.[7 2]←¯∞ ⋄ p←100 20⍴0.5+⍳2000 ⋄ px←p ⋄ p.[3 4]←$n ⋄ px.[3 4]←¯∞ ⋄ w←0.5+⍳200 ⋄ wx←w ⋄ w.[100]←$n ⋄ wx.[100]←¯∞ ⋄ s←0.5+⍳1000000 ⋄ s.[900000]←$n ⋄ s.[900001]←1e9 ⋄ h←3⍴0 ⋄ h.[[0 0 0]]⌈←5 $n 3 ⋄ x←1.5 4.5 $n 2.5 ⋄ x.[[0]]←7ₓ ⋄ [($n⌈3) ok 3;(3⌈$n) ok 3;($n⌊3) ok 3;(3⌊$n) ok 3;(⌈/1 $n 3) ok 3;(⌊/1 $n 3) ok 1;(⌈/$n,⍳15) ok 14;(⌈/(⍳15),$n) ok 14;(⌈/$n $n) ok ¯∞;(⌈\$n 1 2) ok ¯∞ 1 2;(⌊\1 $n 3) ok 1 1 1;(⌈\$n,⍳63) ok ¯∞,⍳63;(⌈\(⍳10),$n,⍳53) ok ⌈\(⍳10),¯∞,⍳53;(⌈\(⍳12),$n,⍳51) ok ⌈\(⍳12),¯∞,⍳51;(⌈⌿[1 $n⋄3 4]) ok 3 4;(⌈⌿m) ok ⌈⌿mx;(0 1 0 1 (⌈/⊢)⌸ 1 $n 3 4) ok 3 4;(0 1 1 1 (⌈/⊢)⌸ 1 4 $n 2) ok 1 4;(0⌈/$n 1 2) ok 2;(0⌈/$n,⍳20) ok 19;(⌈/3↕1 $n 3 4 5) ok 3 4 5;(⌈/50↕w) ok ⌈/50↕wx;(⌈/⍤1 [1 $n 3⋄4 5 6]) ok 3 6;(⌈/⍤1 q) ok ⌈/⍤1 qx;(⌈/⍤1 p) ok ⌈/⍤1 px;(⌈/⍤1 m) ok ⌈/⍤1 mx;([1 $n⋄3 4]⌈.+2 2⍴0) ok [1 1⋄4 4];(m⌈.+m) ok mx⌈.+mx;(m⌊.+m) ok mn⌊.+mn;(1ₓ⌈$n) ok 1;($n⌊1ₓ) ok 1;(⌈/1ₓ $n 2.5) ok 2.5;(⌈/s) ok 1e9;(⌊/s) ok 0.5;($n⌈/⍳40) ok 39;($n⌈\⍳300) ok ⍳300;h ok 5 0 0;(⌈\x) ok 7 7 7 7;(⌈/x) ok 7]
+$t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t
 
 ⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position
 x←1.5+¿1000000⍴0 ⋄ •prefs ["fusion":$t] ⋄ r←⍴⍋x ⋄ •prefs ["fusion":$f] ⋄ r

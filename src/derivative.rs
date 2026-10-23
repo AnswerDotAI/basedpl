@@ -806,7 +806,7 @@ fn product_dual(left: &Value, right: &Value, tag: u64, stacked: bool, span: &Spa
 
 /// The primal and tangent of a fold or scan by `p`, which is `×`, `⌈` or `⌊`, of `x` with tangent `tx`, through the linear operations that reverse mode transposes. A product's tangent scales each item's tangent by the product of the others and sums: the product of the nonzero items, times the sum of `tx÷x` where no item is zero, or times the zero item's tangent where one is, and 0 where more are. A maximum's or minimum's tangent gathers the tangent of the item that gives it, the first of any ties, as dyadic `⌈` and `⌊` give a tie to their left argument.
 fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &Value, span: &Span) -> Result<(Value, Value), Error> {
-    use {crate::array::Lanes, Arithmetic::*, Comparison::{Equal, NotEqual}};
+    use {crate::array::Lanes, Arithmetic::*, Comparison::Equal};
     let call = |p: Primitive, a: &Value, b: &Value, span: &Span| p.call(Some(a), b, span);
     let fold = |p: Primitive, v: &Value| Operation::Fold(p, kind).call(Pairing::Axis(axis), None, v, span);
     let (times, plus) = (Primitive::Arithmetic(Times), Primitive::Arithmetic(Plus));
@@ -823,51 +823,35 @@ fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &
         let one = call(times, &call(times, &rest, &call(Primitive::Compare(Equal), &zeros, &Value::integer(1), span)?, span)?, &one, span)?;
         call(plus, &none, &one, span)?
     } else {
-        let shape = x.shape();
-        let along = axis.unwrap_or(kind.default_axis(shape.len()));
-        let lanes = Lanes::new(shape, along)?;
-        let Lanes { outer, len: n, inner } = lanes;
-        let booleans = |v: Value| v.as_booleans().map(<[bool]>::to_vec).unwrap_or_else(|| v.elements().map(|e| matches!(e, Value::Number(n) if !n.is_zero())).collect());
-        let (offsets, one_per_lane) = if kind.scan {
-            // A running maximum or minimum changes only where an item gives a new extreme, whose tangent it then follows. Where it doesn't change, the earlier item keeps it.
-            let drop = |d: i64, span: &Span| {
-                let spec = Value::integers(vec![along + 1], (0..=along).map(|a| if a == along { d } else { 0 }).collect()).described("invalid drop")?;
-                Primitive::Drop.call(Some(&spec), &r, span)
-            };
-            let changed = booleans(call(Primitive::Compare(NotEqual), &drop(1, span)?, &drop(-1, span)?, span)?);
-            let mut offsets = Vec::with_capacity(outer * n * inner);
-            for o in 0..outer {
-                for k in 0..n {
-                    for i in 0..inner {
-                        let at = lanes.offset(o, k, i);
-                        offsets.push(if k == 0 || changed[(o * (n - 1) + k - 1) * inner + i] { at as i64 } else { offsets[at - inner] });
-                    }
-                }
+        let along = axis.unwrap_or(kind.default_axis(x.shape().len()));
+        // One pick on a batch's whole, with the frame's axes first, serves every cell. A batch's scan stops the run, and its map calls the operand once for each cell, because a scan's tangent gathers at each cell's own positions.
+        let batch = x.carrier().and_then(Carrier::batch);
+        if let (Some(b), true) = (batch, kind.scan) { return Err(Stop::new(b.level, Cause::Rule).into()); }
+        let all = batch.map_or(x, |b| b.whole());
+        let lanes = Lanes::new(all.shape(), batch.map_or(0, |b| b.frame) + along)?;
+        // Windows that slide along the fold's axis give their extremes' positions from their source, with no windows built.
+        let windows = (batch.is_none() && along == kind.default_axis(x.shape().len())).then(|| crate::fusion::picks(x, p, kind)).flatten();
+        let one_per_lane = !kind.scan && windows.is_none();
+        let offsets = match windows {
+            Some(offsets) => offsets,
+            None => {
+                let Lanes { outer, len: n, inner } = lanes;
+                let numbers = || Error::domain("∂ takes ⌈ and ⌊ of numbers");
+                // Mixed storage picks among its numbers as floats. Two different exact integers beyond 2⁵³ can round to one float. They then tie, and the earlier one is picked.
+                let floats = match all.view() { Some(_) => None, None => Some(all.to_float_width(FloatWidth::F64).map_err(|_| numbers())?) };
+                let view = floats.as_ref().unwrap_or(all).view().ok_or_else(numbers)?;
+                let of = if kind.scan { rustymath::reduce::Picks::Running } else { rustymath::reduce::Picks::Lanes };
+                let rows = crate::pervasive::picks(p, view, [outer, n, inner], of).ok_or_else(numbers)?;
+                // Each running fold's pick, or each lane's, as a position in the ravel.
+                rows.into_iter().enumerate().map(|(j, row)| lanes.offset(if kind.scan { j / (n * inner) } else { j / inner }, row, j % inner) as i64).collect()
             }
-            (offsets, false)
-        } else if let Some(offsets) = (along == kind.default_axis(shape.len())).then(|| crate::fusion::picks(x, p, kind)).flatten() {
-            // Windows that slide along the fold's axis give their extremes' positions from their source, with no windows built.
-            (offsets, false)
-        } else {
-            // `r` takes a length-1 axis in place of the folded axis to pair with `x`, unless the fold removed the last axis.
-            let back = if along + 1 < shape.len() {
-                let mut shape = r.shape().iter().map(|&n| n as i64).collect::<Vec<_>>();
-                shape.insert(along, 1);
-                Primitive::Shape.call(Some(&Value::integers(vec![shape.len()], shape).described("invalid shape")?), &r, span)?
-            } else { r.clone() };
-            let hit = booleans(call(Primitive::Compare(Equal), x, &back, span)?);
-            // The first item of each lane that gives its extreme, or the lane's first item where none does, as for NaN.
-            let firsts = (0..outer)
-                .flat_map(|o| (0..inner).map(move |i| (o, i)))
-                .map(|(o, i)| (0..n).map(|k| lanes.offset(o, k, i)).find(|&at| hit[at]).unwrap_or(lanes.offset(o, 0, i)) as i64)
-                .collect::<Vec<_>>();
-            (firsts, true)
         };
-        // Where reverse mode records one item from each lane, the tangent folds the tangent times a mask of the chosen items. Its transpose reads: each item takes its lane's cotangent where it was chosen, and 0 elsewhere. A gather's transpose would scatter.
-        if one_per_lane && tx.carried() {
-            let mut chosen = vec![false; x.len()];
+        // Where reverse mode records one item from each lane, or `x` is a batch, the tangent folds the tangent times a mask of the chosen items. Its transpose reads: each item takes its lane's cotangent where it was chosen, and 0 elsewhere. A gather's transpose would scatter.
+        if one_per_lane && (tx.carried() || batch.is_some()) {
+            let mut chosen = vec![false; all.len()];
             for &at in &offsets { chosen[at as usize] = true; }
-            let mask = x.layout().booleans(chosen).described("invalid mask")?;
+            let mask = all.layout().booleans(chosen).described("invalid mask")?;
+            let mask = match batch { Some(b) => crate::batch::batch(b.level, mask, b.frame), None => mask };
             return Ok((r, fold(plus, &call(times, &mask, tx, span)?)?));
         }
         let offsets = Value::integers(vec![offsets.len()], offsets).described("invalid positions")?.enclose().expect("positions enclose");

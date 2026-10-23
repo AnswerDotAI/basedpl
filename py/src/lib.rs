@@ -208,7 +208,7 @@ fn selection(value: &Value, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>
         match v {
             None => Some(rustymath_buffer::selection::selector(layout, axis, p, || unreachable!("a native selector decodes without converting"))),
             Some(v) => match v.view() {
-                Some(mask @ View::Booleans(_)) => Some(rustymath_buffer::selection::array_selector(layout, axis, v.core_layout().clone(), mask, false)),
+                Some(View::Booleans(_)) => Some(rustymath_buffer::selection::array_selector(layout, axis, v.core_layout().clone(), std::sync::Arc::new(v.clone()))),
                 _ => None,
             },
         }

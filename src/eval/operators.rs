@@ -1612,14 +1612,14 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
     let active = crate::transform::carried(None, right);
     let (along, plan) = FoldPlan::new(kind, axis, seed, right, || identity(p, &right.prototype(), span))?;
     let result = match plan {
-        FoldPlan::One(item) => match seed { Some(seed) if kind.scan => call(seed, &item)?, Some(seed) => call(&item, seed)?, None => lone(item) },
+        FoldPlan::One(item) => match seed { Some(seed) if kind.scan => scan_step(p, call)(seed, &item)?, Some(seed) => call(&item, seed)?, None => lone(item) },
         FoldPlan::Whole => lone(right.clone()),
         FoldPlan::Done(result) => result,
         FoldPlan::Lanes { lanes, shape } if kind.scan => {
             if let Some(result) = (!active).then(|| crate::pervasive::scan(p, right, seed, &lanes)).flatten() { result }
             else if let (Primitive::Arithmetic(op), false, true) = (p, active, right.all_numbers() && seed.is_none_or(|a| matches!(a, Value::Number(_)))) {
                 number_lanes(op, true, right, seed, &lanes, shape)?
-            } else { item_lanes(true, &lanes, shape, seed, right, call, active)? }
+            } else { item_lanes(true, &lanes, shape, seed, right, scan_step(p, call), active)? }
         }
         FoldPlan::Lanes { lanes, shape } => {
             // Where `p`'s kernel folds in any order, a number seed joins each lane's result after the fold, as one more item would. The fold then takes the fusion and kernel routes of a fold with no seed. A level that carries `right` keeps the seed in its items, because its kernels don't apply there. So do Booleans under a `ᵇ` table that `sets_high_bits`: they fold by the logical function, and a number seed turns the fold to the integer function.
@@ -1672,7 +1672,7 @@ fn number_lanes(
     let (item, seed) = (|i| number(right.at(i)), seed.cloned().map(number));
     let (p, t) = (Primitive::Arithmetic(op), Numeric::current());
     let step = |x: &crate::Number, y: &crate::Number| { check()?; p.number(Some(x), y, t).map_err(Error::from) };
-    let data = if scan { scan_items(axis, seed, item, step)? } else { fold_items(axis, seed.as_ref(), item, step)? };
+    let data = if scan { scan_items(axis, seed, item, scan_step(p, step))? } else { fold_items(axis, seed.as_ref(), item, step)? };
     Value::new(shape, data.into_iter().map(Value::Number).collect()).described("invalid numeric result")
 }
 
@@ -1690,6 +1690,13 @@ fn fold_items<T: Clone>(axis: &Lanes, seed: Option<&T>, item: impl Fn(usize) -> 
     Ok(data)
 }
 
+/// `apply` as a step of `p`'s scan, which takes the running result and the next item in the order that keeps rustymath's rule beside NaN. `⌈` and `⌊` take the item on the left, because a maximum or minimum keeps its right argument beside NaN. Every other function takes the running result on the left, as a scan from the left does.
+fn scan_step<V>(p: Primitive, mut apply: impl FnMut(&V, &V) -> Result<V, Error>) -> impl FnMut(&V, &V) -> Result<V, Error> {
+    let turned = matches!(p, Primitive::Math(crate::number::Math::Ceiling | crate::number::Math::Floor));
+    move |total, item| if turned { apply(item, total) } else { apply(total, item) }
+}
+
+/// Each lane of `axis` scanned from the left, starting from `seed` or else the lane's first item: `apply(result, item)`.
 fn scan_items<T: Clone>(axis: &Lanes, seed: Option<T>, item: impl Fn(usize) -> T, mut apply: impl FnMut(&T, &T) -> Result<T, Error>) -> Result<Vec<T>, Error> {
     let mut data = vec![item(0); axis.outer * axis.len * axis.inner];
     for i in 0..axis.outer {

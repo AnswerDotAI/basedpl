@@ -8,31 +8,37 @@ on:
 permissions:
   contents: read
 
+# In each job, every test step after the first runs even when an earlier step fails, to report every test's result in one run.
 jobs:
   test:
     runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v7
-      - run: node tests/input.mjs
       # `tests/highlighting.mjs` reads the TextMate grammar through `shiki`, which `package.json` pins.
       - run: npm ci
-      - run: node tests/highlighting.mjs
       - uses: dtolnay/rust-toolchain@stable
       # The repository has no `Cargo.lock`. Creating one first makes rust-cache's key change when a dependency publishes a new version.
       - run: cargo generate-lockfile
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: native
-      # With `BASEDPL_COSTS`, the speed tests here and in the `wasm` job log every case's cost, which `basedpl.bpltests.logged_costs` reads.
-      - run: BASEDPL_COSTS=1 cargo test
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: pip install -e '.[dev]'
       - run: cargo develop
+      - run: node tests/input.mjs
+      - run: node tests/highlighting.mjs
+        if: ${{ !cancelled() }}
+      # With `BASEDPL_COSTS`, the speed tests here and in the `wasm` job log every case's cost, which `basedpl.bpltests.logged_costs` reads.
+      - run: BASEDPL_COSTS=1 cargo test
+        if: ${{ !cancelled() }}
       - run: pytest -q
+        if: ${{ !cancelled() }}
       - run: bpl-nb
+        if: ${{ !cancelled() }}
       - run: nbdev-test
+        if: ${{ !cancelled() }}
 
   wasm:
     runs-on: ubicloud-standard-4
@@ -49,3 +55,4 @@ jobs:
       - run: cargo wasm --strip
       - run: node --test tests/wasm.mjs
       - run: BASEDPL_COSTS=1 node --no-liftoff --test tests/wasm-speed.mjs
+        if: ${{ !cancelled() }}

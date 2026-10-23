@@ -6,6 +6,7 @@
 # A case that costs more than its budget needs study, which finds either a speed bug to fix or something the analysis missed. Avoid raising a budget to match a run without understanding why the case costs what it does.
 # A line above a case can name a slow-path event that `•explain` records for it, named as its record names it, with any `"` doubled: `# allows RECORD "EVENT": principle` where a principle allows the event, and `# gap RECORD "EVENT": what should happen` where a faster route should remove it. `tests/explain.rs` fails on any other slow-path event, and on a line whose event no longer appears.
 # CI's x86 runner is an AMD Ryzen 9 7950X3D 16-Core Processor.
+# On macOS, the header of rustymath's `tests/speed.txt` gives Accelerate's rates for each class of matrix product, as flops in the time of a copy of the same item type. A case whose product runs far from its class's rate gives its own measured rate.
 [setup]
 side←256 ⋄ n←side×side ⋄ v←¿n⍴0 ⋄ w←¿n⍴0 ⋄ s←v-0.5 ⋄ m←[side side]⍴v
 jv←¿n⍴1000ₓ ⋄ kv←¿n⍴1000000000000ₓ ⋄ b←0=¿n⍴3ₓ ⋄ i←¿n⍴⌊n ⋄ cnt←¿n⍴3ₓ
@@ -27,8 +28,7 @@ z←v+0j1×w ⋄ zm←128 128↑m+0j1×⊖m ⋄ f←"svd"•decompose m ⋄ h←
 +/z	2	2	2
 -/v	1	1	1
 -/jv	0.5	0.5	0.5
-# Held until studied: `⌈/v` has an old wasm budget that suggests about 1.35, more than twice its expected cost. Its wasm budget stays at the old value.
-⌈/v	1	1	2.7
+⌈/v	1	1	2
 ∧/b	0.5	0.5	0.5
 +/m	1	1	2
 +⌿m	1	1	2
@@ -228,9 +228,9 @@ cnt⍚[- ⊢ 10×] v	34	80	77
 # Expected: 3.5 copies: a conversion, a float division of about 1 cycle an item, and a tolerant floor.
 3|jv	7	7	7
 # rustymath's `exp` evaluates a polynomial of 10 terms for each item, and `ln` one of 7 terms and a division.
-# Expected: `*s` 6.5 copies: about 26 vector operations an item, at about 4 to a copy, for the clamp, the reduction by ln 2, the polynomial and 2^n built from two halves; `⍟v` 9 copies: about 36 vector operations an item, for splitting x into mantissa and exponent with the step for subnormals, the quotient (m-1)/(m+1), the polynomial, adding e ln 2, the selects for 0, ∞ and a negative x, and the check for a NaN made from a number, with a division that overlaps them. `*s` was 4.5 copies, from a count of 18 that left out the clamp and building 2^n. `⍟v` was 5.3 copies, from a count of 13 that left out the split, the selects and the check, and charged the division 2 copies.
+# Expected: `*s` 6.5 copies: about 26 vector operations an item, at about 4 to a copy, for the clamp, the reduction by ln 2, the polynomial and 2^n built from two halves; `⍟v` 6.5 copies: rustymath's f64 `Ln`, which takes each block of 16 positive, normal, finite items through a form with no special values, as rustymath's `tests/speed.txt` counts it. `*s` was 4.5 copies, from a count of 18 that left out the clamp and building 2^n. `⍟v` was 9 copies until 23 October 2026, when every item took the full form with its special values, and 5.3 before that, from a count that left out the split, the selects and the check for NaN.
 *s	13	13	26
-⍟v	18	18	36
+⍟v	13	13	26
 # rustymath's sine and cosine reduce each item by π in three fused multiply-adds, and evaluate a polynomial of 7 terms. Tangent reduces by π/2, evaluates a polynomial of 9 terms at half the angle, and divides once.
 # Expected: `1○v` and `2○v` 7 copies: about 28 vector operations an item, for the range check, the reduction, the polynomial, the sign flip, the select at 0 and the test that sends rare items to the second pass; `3○v` 8 copies: about 32 vector operations an item, for the range check, the reduction, the polynomial at half the angle, the selects that pick the quotient's terms and the test, with a division that overlaps them. `1○v` and `2○v` were 4 copies, from a count of 16 that took in only the reduction and the polynomial, then 7.3 copies until sine stopped setting the sign of a zero result, which the select at 0 already gives. `3○v` was 6.3 copies, from a count of 17 that left out the range check, the selects and the test, and charged the division 2 copies.
 1○v	14	14	28
@@ -256,13 +256,13 @@ cnt⍚[- ⊢ 10×] v	34	80	77
 v*2	2	2	2
 v*w	30	30	60
 # Bases 2 and 10 and degrees 2 and 3 have loops of their own.
-# Expected: `2⍟v` and `10⍟v` 9 copies: as `⍟v`; `3√v` 9.25 copies: about 37 vector operations an item, for the step for subnormals, the first estimate from the exponent bits, three Newton steps, the last correction, the select for 0, ∞ and NaN, and the sign. `2⍟v` and `10⍟v` were 5.3 copies, as `⍟v` was. `3√v` was 4 copies, from a count of 15 that took in only the Newton steps.
-2⍟v	18	18	36
-10⍟v	18	18	36
+# Expected: `2⍟v` and `10⍟v` 6.5 copies: as `⍟v`, through the fast form of rustymath's `Logb` for bases 2 and 10; `3√v` 9.25 copies: about 37 vector operations an item, for the step for subnormals, the first estimate from the exponent bits, three Newton steps, the last correction, the select for 0, ∞ and NaN, and the sign. `2⍟v` and `10⍟v` were 9 copies, as `⍟v` was. `3√v` was 4 copies, from a count of 15 that took in only the Newton steps.
+2⍟v	13	13	26
+10⍟v	13	13	26
 3√v	19	19	37
 # Exact integers read as floats for a function whose results are always approximate.
-# Expected: `⍟jv` 9.5 copies: as `⍟v`, with about 2 operations to convert each integer; `*jv` 7 copies: as `*s`, with the same conversion; `jv⍟2ₓ` 10.5 copies: a conversion and a logarithm of each base, a division, and a second pass that writes the items whose base is 2 or 10 from `log2` or `log10`; `√jv` 2 copies: a conversion and a square root. `⍟jv`, `*jv` and `jv⍟2ₓ` were 5.3, 4.5 and 7.3 copies, from the old counts for `⍟v` and `*s`.
-⍟jv	19	19	38
+# Expected: `⍟jv` 7 copies: as `⍟v`, with about 2 operations to convert each integer; `*jv` 7 copies: as `*s`, with the same conversion; `jv⍟2ₓ` 10.5 copies: a conversion and a logarithm of each base, a division, and a second pass that writes the items whose base is 2 or 10 from `log2` or `log10`; `√jv` 2 copies: a conversion and a square root. `⍟jv` was 9.5 copies, as `⍟v` was 9, and `*jv` and `jv⍟2ₓ` were 4.5 and 7.3 copies, from the old count for `*s`.
+⍟jv	14	14	28
 *jv	14	14	28
 jv⍟2ₓ	21	21	42
 # Held until studied: `√jv` has old Linux and wasm budgets that suggest about 4.15 and 6.5, more than twice its expected cost. On 22 October 2026 CI measured 3.46 on Linux and 6.01 in wasm. Its Linux and wasm budgets stay at the old value.
@@ -325,19 +325,18 @@ v⍳w	120	250	320
 # Expected: `+/⍤1 t` and `(+/,)⍤2 ms` 0.5 copies: one pass reads 8 bytes an item and writes nothing; `(1 1↣⌷)⍤2 ms` 0.02 copies: reads one item of each cell; `⊖⍤2 ms` and `⌽⍤1 ms` 1 copy: one read and one write per item.
 # `+/⍤1 t` measures 0.71 on macOS: float sums fold rows of 16 to 63 items eight rows side by side (`Reduction::rows` in rustymath), where a call of `slice` for each row cost about 4.5 ns. In wasm it measured 0.75 to 0.86 in seven CI runs from 22 October 2026, where twice its expected cost, 1, would fail when a run's measured copy is fast. CI measured 0.79 on Linux on 22 October 2026, and its Linux budget follows its expected cost. Its wasm budget stays at the old value.
 +/⍤1 t	1	1	4.4
-# Held until studied: `(+/,)⍤2 ms` measures 1.03 to 1.12 on macOS. Its fold goes through `in_turn`, which folds the last axis's 8-item lanes, then the next axis's, at the cost of a second pass and the totals kept between the passes. One pass over each cell's 64 items measured 1.11, because of the same gap as `+/⍤1 t`: the call and setup for each row. Its macOS budget is twice its measured cost, and its Linux and wasm budgets stay at the old value.
+# Held until studied: `(+/,)⍤2 ms` measures 1.03 to 1.12 on macOS. Its fold goes through `in_turn`, which folds the last axis's 8-item lanes, then the next axis's, at the cost of a second pass and the totals kept between the passes. One pass over each cell's 64 items measured 1.11, because of the same gap as `+/⍤1 t`: the call and setup for each row. On 22 and 23 October 2026 CI measured up to 1.14 on Linux and 1.09 in wasm. Its macOS budget is twice its measured cost, and its Linux and wasm budgets stay at the old value.
 (+/,)⍤2 ms	2.2	3	2.6
 (1 1↣⌷)⍤2 ms	0.5	0.5	0.5
 # `⊖⍤2 ms` measures 1.45 on macOS since short cells copy each run of adjacent items as one block (22 October 2026), down from 2.65 to 3.55. In wasm it measured 1.14 to 1.25 in seven CI runs from 22 October 2026. CI measured 1.08 on Linux on 22 October 2026.
 ⊖⍤2 ms	2	2	2
 ⌽⍤1 ms	2	2	2
 # The inner products in `rustymath` run `+.×`, `⌈.+` and `⌊.+` on floats and integers, `+.×` on complex numbers, Boolean `∨.∧` and `∧.∨`, and the counts `+.=` and `+.≠`. `rustymath`'s own speed test times those products. Each case here checks that basedpl sends one kind of pair to them. A pair that misses them takes the bounded generic path, several times slower. A case with `⍤2` makes one call for each of 1024 matrices of 8×8.
-# Expected: `+.×⍤2⍨ ms` 4 copies: one stacked call of 16 flops an item, about 2 copies, plus the stack's overhead; `m+.×m` 16 copies on macOS, 64 on Linux and 128 in wasm: 512 flops an item, at about 32 in a copy's time on Accelerate, 8 for rustymath's own kernels and 4 in wasm; `m⌈.+m` 80 copies: 512 operations an item at about 8 in a copy's time, on every platform; `bm∨.∧bm` and `bm∧.∨bm` 2 copies: bit-packed, about 4 word operations an item; `jm+.×jm` 32 copies: 512 integer operations an item; `jm+.=jm` and `cm+.=⍉cm` 32 copies: 256 vectorised comparisons and counts an item; `zm+.×zm` 8 copies on macOS, 32 on Linux and 64 in wasm: 256 complex flops an item, at about 32 in a copy's time on Accelerate, 8 for rustymath's own kernels and 4 in wasm.
+# Expected: `+.×⍤2⍨ ms` 4 copies: one stacked call of 16 flops an item, about 2 copies, plus the stack's overhead; `m+.×m` 8.8 copies on macOS, 64 on Linux and 128 in wasm: 512 flops an item, at Accelerate's rate for large square products, as rustymath's `linalg::PlusTimes` expects, 8 in a copy's time for rustymath's own kernels and 4 in wasm; `m⌈.+m` 80 copies, and 160 in wasm: 512 operations an item, at about 8 in a copy's time natively and 4 in wasm; `bm∨.∧bm` and `bm∧.∨bm` 2 copies: bit-packed, about 4 word operations an item; `jm+.×jm` 32 copies: 512 integer operations an item; `jm+.=jm` and `cm+.=⍉cm` 32 copies: 256 vectorised comparisons and counts an item; `zm+.×zm` 5.9 copies on macOS, 32 on Linux and 64 in wasm: 256 real flops an item, at Accelerate's rate for complex 128×128 products, which counts complex copies, each taking 2.1 times as long as one of the `n` floats, 8 in a copy's time for rustymath's own kernels and 4 in wasm.
 # Held until studied: `+.×⍤2⍨ ms` measures 11.64 on macOS and has old Linux and wasm budgets that suggest about 18 and 24, more than twice its expected cost. On 22 October 2026 CI measured 16.7 on Linux and 15.1 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 +.×⍤2⍨ ms	24	36	48
-m+.×m	32	130	260
-# Held until studied: `m⌈.+m` has an old wasm budget that suggests about 420, more than twice its expected cost. Its wasm budget stays at the old value.
-m⌈.+m	160	160	840
+m+.×m	18	130	260
+m⌈.+m	160	160	320
 # Held until studied: `bm∨.∧bm` measures 5.64 on macOS and has old Linux and wasm budgets that suggest about 6 and 9.5, more than twice its expected cost. On 22 October 2026 CI measured 4.86 on Linux and 9.74 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 bm∨.∧bm	12	12	19
 # Held until studied: `bm∧.∨bm` measures 5.4 on macOS and has old Linux and wasm budgets that suggest about 6 and 10, more than twice its expected cost. On 22 October 2026 CI measured 5.18 on Linux and 9.97 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
@@ -346,9 +345,9 @@ bm∧.∨bm	12	12	20
 jm+.×jm	64	160	370
 jm+.=jm	64	64	64
 cm+.=⍉cm	64	64	64
-zm+.×zm	16	64	130
+zm+.×zm	12	64	130
 # Matrix division, `•decompose`, `•decompose⁻¹` and the determinant `-.×` run on rustymath. Its own speed test times each factorisation on a 256×256 matrix, the size of `m`, and least squares on a 4096×16 matrix, the size of `t`. On macOS, Accelerate runs matrix products and triangular solves, and the SVD, the Hermitian eigendecomposition and the real nonsymmetric eigendecomposition from the sizes that rustymath's DEV.md gives. rustymath's own code runs LU, Householder QR, Cholesky, the complex nonsymmetric eigendecomposition and the smaller matrices' decompositions, with their block products and triangular solves on Accelerate. On Linux it runs all of them. These cases time basedpl's part on top of each factorisation: reading the arguments, writing the results, the calls in a `⍤2` stack, each path of `⌹`, the route from monadic `-.×` to LU, and rebuilding a matrix from factors. `tq` is tall enough for `⌹` and `"qr"` to take the CholeskyQR2 path.
-# Expected, taking each factorisation's cost from rustymath's speed test on the same platform: `⌹⍤2 ms` 30 copies: 1,024 inverses of 8×8, each about 1,000 cycles of small-matrix work; `ms⌹⍤2 sps` 45 copies: 1,024 solves of 8×8 with 8 right sides, about 1.5 times the inverses; `⌹m` 42 copies on macOS and 133 on Linux: `linalg::Lu::inverse`, 40 and 131, then a read and a write; `(side↑w)⌹m` 25 copies on macOS and 52 on Linux: `linalg::Lu::solve`, 24 and 51, then a read; `((n÷16)↑w)⌹t` 14 copies on macOS: `linalg::lstsq` on the same shape, 13, then a read; `⌹t` 16 copies on macOS: the same tall QR, about 13, then two products with 16 columns and a write; `((n÷4)↑w)⌹tq` 40 copies on macOS: CholeskyQR2's four products with 24 columns, about 1,150 flops an item at about 32 in a copy's time on Accelerate, overlapping five passes over `tq`, which holds 6 copies of data; `"qr"•decompose tq` 46 copies on macOS: the same, then writing Q; `"qr"•decompose⍤2 ms` 60 copies: 1,024 QRs of 8×8, each about 2,000 cycles of small-matrix work; `"qr"•decompose m` 56 copies on macOS and 194 on Linux: `linalg::qr`, 54 and 192, then writing Q and R; `"cholesky"•decompose⍤2 sps` 30 copies: 1,024 Cholesky factors of 8×8, each about 1,000 cycles; `"svd"•decompose⍤2 ms` 400 copies: 1,024 iterative SVDs of 8×8, each about 10,000 operations; `"svd"•decompose⁻¹ f` 20 copies on macOS and 68 on Linux: a 256×256 product, which costs what `m+.×m` costs, 16 and 64, and four passes that scale U by `s`, transpose V, convert the product and write it; `["kind":"svd" "rank":8]•decompose m` 30 copies on macOS and 66 on Linux: Halko's range finder, with 18 columns and two power iterations, makes about six products of 256×256 by 18 columns and thin QRs, about 230 flops an item, and products this thin run far below the peak rate: about 7 flops in a copy's time on Accelerate and 3.5 on rustymath's own kernels, which cost 66 copies on macOS with `--native`; `"eigen"•decompose⁻¹ h` 61 copies on macOS and 200 on Linux: `linalg::Lu::inverse`, 40 and 131, three passes for the vectors' condition number, scaling the vectors by the values, then a 256×256 product, 16 and 64, and a write; `"eigen"•decompose⍤2 ss` 300 copies: 1,024 symmetric eigendecompositions of 8×8, each about 5,000 operations; `"eigen"•decompose⍤2 ms` 700 copies: 1,024 nonsymmetric eigendecompositions of 8×8, each about 13,000 operations; `⌹zm` 21 copies on macOS and 67 on Linux: a complex 128×128 inverse, 8n³/3 complex multiply-adds, about 341 real ones an item, at the rate `linalg::Lu::inverse` reaches on a 256×256 matrix, about 17 and 5.2 in a copy's time, then a read and a write; `-.×m` 24 copies on macOS and 51 on Linux: the LU in `linalg::Lu::solve`, whose solve costs under a copy; `-.×⍤2 ms` 20 copies: 1,024 LUs of 8×8. In wasm, which rustymath's speed test doesn't time, the expected costs stay the flop counts at about 4 in a copy's time: `⌹m` 128, `(side↑w)⌹m` 42, `((n÷16)↑w)⌹t` 8, `⌹t` 12, `((n÷4)↑w)⌹tq` 95, `"qr"•decompose tq` 130, `"qr"•decompose m` 170, `"svd"•decompose⁻¹ f` 128, `"eigen"•decompose⁻¹ h` 128, `⌹zm` 86 and `-.×m` 42.
+# Expected, taking each factorisation's cost from rustymath's speed test on the same platform: `⌹⍤2 ms` 30 copies: 1,024 inverses of 8×8, each about 1,000 cycles of small-matrix work; `ms⌹⍤2 sps` 45 copies: 1,024 solves of 8×8 with 8 right sides, about 1.5 times the inverses; `⌹m` 42 copies on macOS and 133 on Linux: `linalg::Lu::inverse`, 40 and 131, then a read and a write; `(side↑w)⌹m` 25 copies on macOS and 52 on Linux: `linalg::Lu::solve`, 24 and 51, then a read; `((n÷16)↑w)⌹t` 14 copies on macOS: `linalg::lstsq` on the same shape, 13, then a read; `⌹t` 16 copies on macOS: the same tall QR, about 13, then two products with 16 columns and a write; `((n÷4)↑w)⌹tq` 29 copies on macOS: CholeskyQR2 forms two Gram matrices of `tq`'s 24 columns, 288 flops an item each, at about 40 flops in a copy's time, 7.2 each, which Accelerate measured for this Gram product, far above its tall thin Gram rate, whose 4096×16 product spends most of its time on a fixed cost, then solves with a 24×24 triangle, 144 flops an item at the rank-k rate, 4.8, copies `tq`, which holds 6 copies of data, 6, and scans `tq` and multiplies it by `b`, about 3.5; `"qr"•decompose tq` 38 copies on macOS: the same, with a second triangular solve for Q, 4.8, in place of the product with `b`, then writing Q, 6; `"qr"•decompose⍤2 ms` 60 copies: 1,024 QRs of 8×8, each about 2,000 cycles of small-matrix work; `"qr"•decompose m` 56 copies on macOS and 194 on Linux: `linalg::qr`, 54 and 192, then writing Q and R; `"cholesky"•decompose⍤2 sps` 30 copies: 1,024 Cholesky factors of 8×8, each about 1,000 cycles; `"svd"•decompose⍤2 ms` 400 copies: 1,024 iterative SVDs of 8×8, each about 10,000 operations; `"svd"•decompose⁻¹ f` 13 copies on macOS and 68 on Linux: a 256×256 product, which costs what `m+.×m` costs, 8.8 and 64, and four passes that scale U by `s`, transpose V, convert the product and write it; `["kind":"svd" "rank":8]•decompose m` 22 copies on macOS and 66 on Linux: Halko's range finder, with 18 columns and two power iterations, makes six products of 256×256 by 18 columns, 36 flops an item each, five thin QRs and the SVD of an 18×256 matrix, which on Accelerate cost 5.4 for the three products of `m` by 256×18, at about 20 flops in a copy's time, measured for that shape, between the matrix-vector and rank-k rates, 10.3 for the two of `m`'s transpose at the matrix-vector rate, 1.2 for Qᴴ times `m` at the rank-k rate, and 4.6 for the QRs and the SVD, about 32 flops an item at the matrix-vector rate, while products this thin run at about 3.5 flops in a copy's time on rustymath's own kernels, which cost 66 copies on macOS with `--native`; `"eigen"•decompose⁻¹ h` 54 copies on macOS and 200 on Linux: `linalg::Lu::inverse`, 40 and 131, three passes for the vectors' condition number, scaling the vectors by the values, then a 256×256 product, 8.8 and 64, and a write; `"eigen"•decompose⍤2 ss` 300 copies: 1,024 symmetric eigendecompositions of 8×8, each about 5,000 operations; `"eigen"•decompose⍤2 ms` 700 copies: 1,024 nonsymmetric eigendecompositions of 8×8, each about 13,000 operations; `⌹zm` 21 copies on macOS and 67 on Linux: a complex 128×128 inverse, 8n³/3 complex multiply-adds, about 341 real ones an item, at the rate `linalg::Lu::inverse` reaches on a 256×256 matrix, about 17 and 5.2 in a copy's time, then a read and a write; `-.×m` 24 copies on macOS and 51 on Linux: the LU in `linalg::Lu::solve`, whose solve costs under a copy; `-.×⍤2 ms` 20 copies: 1,024 LUs of 8×8. In wasm, which rustymath's speed test doesn't time, the expected costs stay the flop counts at about 4 in a copy's time: `⌹m` 128, `(side↑w)⌹m` 42, `((n÷16)↑w)⌹t` 8, `⌹t` 12, `((n÷4)↑w)⌹tq` 95, `"qr"•decompose tq` 130, `"qr"•decompose m` 170, `"svd"•decompose⁻¹ f` 128, `"eigen"•decompose⁻¹ h` 128, `⌹zm` 86 and `-.×m` 42.
 # Held until studied: `⌹⍤2 ms` measured 63 in wasm on CI on 22 October 2026, about 2.1 times its expected cost. Its wasm budget stays at the old value.
 ⌹⍤2 ms	60	60	160
 ms⌹⍤2 sps	90	90	90
@@ -358,9 +357,9 @@ ms⌹⍤2 sps	90	90	90
 ((n÷16)↑w)⌹t	28	87	110
 # Held until studied: `⌹t` measures 40 on macOS, 2.5 times its expected cost, because it forms U from the tall QR's factors and then multiplies it out. Taking the pseudoinverse as R's pseudoinverse times Q's transpose would save about 10 copies (`lx_`, 22 October 2026). On the earlier route it measured 85 on CI and 72 in wasm. Its budgets stay at the old value.
 ⌹t	120	150	240
-# Held until studied: `((n÷4)↑w)⌹tq` measured 268 on CI and 263 in wasm before 22 October 2026, and 234 to 429 in wasm on today's route in seven CI runs from 22 October 2026, against a wasm expected cost of 95. On 22 October 2026 CI measured 210 on Linux on today's route. Its Linux budget stays at the old value until Linux's expected cost on rustymath's own kernels is worked out, and its wasm budget stays at the old value.
+# Held until studied: `((n÷4)↑w)⌹tq` measured 268 on CI and 263 in wasm before 22 October 2026, and 234 to 429 in wasm on today's route in seven CI runs from 22 October 2026, against a wasm expected cost of 95. On 22 October 2026 CI measured 210 on Linux on today's route. On macOS it measures 53, about twice its expected cost of 29, where a budget of twice it would fail by chance. Its macOS budget stays at the old value. Its Linux budget stays at the old value until Linux's expected cost on rustymath's own kernels is worked out, and its wasm budget stays at the old value.
 ((n÷4)↑w)⌹tq	80	580	700
-# Held until studied: `"qr"•decompose tq` measured 334 on CI and 337 in wasm before 22 October 2026, and 313 to 444 in wasm on today's route in seven CI runs from 22 October 2026, against a wasm expected cost of 130. On 22 October 2026 CI measured 270 on Linux on today's route. Its Linux budget stays at the old value until Linux's expected cost on rustymath's own kernels is worked out, and its wasm budget stays at the old value.
+# Held until studied: `"qr"•decompose tq` measured 334 on CI and 337 in wasm before 22 October 2026, and 313 to 444 in wasm on today's route in seven CI runs from 22 October 2026, against a wasm expected cost of 130. On 22 October 2026 CI measured 270 on Linux on today's route. On macOS it measures 74, about twice its expected cost of 38, where a budget of twice it would fail by chance. Its macOS budget stays at the old value. Its Linux budget stays at the old value until Linux's expected cost on rustymath's own kernels is worked out, and its wasm budget stays at the old value.
 "qr"•decompose tq	92	580	800
 # Held until studied: `"qr"•decompose⍤2 ms` measures about 126 on macOS, about twice its expected cost, and measured 225 on CI before 22 October 2026. Each 8×8 cell retires about 24,000 instructions. `leaf_qr`'s reflections take about 40% of them, two `Zip` adapters that the test profile leaves out of line about 12%, and allocations about 6%, most of them basedpl's, which builds a Q and an R array for each cell of the nested result. Since 22 October 2026 a stack's cells factor in one reused `QrWork` and write into the two outputs directly, which cut the case's instructions by 12%. Its budgets stay at the old value.
 "qr"•decompose⍤2 ms	340	120	120
@@ -369,11 +368,11 @@ ms⌹⍤2 sps	90	90	90
 # `"svd"•decompose⍤2 ms` runs rustymath's own SVD on every platform, because 8×8 lies below rustymath's `GESDD_FROM`. On macOS it measures about 509, against 775 on Accelerate's `?gesdd`, and CI measured 608.
 "svd"•decompose⍤2 ms	800	800	800
 # `"svd"•decompose⁻¹ f` costs a 256×256 product plus four passes. On CI it measured 90.5 when `m+.×m` measured 79.6. Its expected cost used to take the product from rustymath's `linalg::PlusTimes`, 21 copies on Linux, a figure that basedpl's single-threaded product doesn't reach.
-"svd"•decompose⁻¹ f	40	140	260
+"svd"•decompose⁻¹ f	26	140	260
 # `["kind":"svd" "rank":8]•decompose m` in wasm: 82 copies, as CI's x86 V8 measured it on 22 October 2026, at 15.7 ns an item against a copy of 0.192 ns. That's about 2.8 flops in a copy's time, where the group's wasm rate of 4 would give 58. Thin products take 70% of its instructions on rustymath's own kernels, at 70 to 80% of a square product's flops per instruction. CI measured 79 to 92 in seven runs from 22 October 2026. This Mac's V8 takes about the same time, 14.3 ns an item, against a copy 1.6 times faster than CI's, and measures 118 to 121 copies, up to 153 under load.
-["kind":"svd" "rank":8]•decompose m	60	140	170
+["kind":"svd" "rank":8]•decompose m	44	140	170
 # Held until studied: `"eigen"•decompose⁻¹ h` measured 781 in wasm on the route that took the vectors' SVD, before 22 October 2026, and 300 to 413 on the route with one LU in seven CI runs from 22 October 2026, against a wasm expected cost of 128. On 22 October 2026 CI measured 270 in wasm. Its wasm budget stays at the old value.
-"eigen"•decompose⁻¹ h	130	400	1800
+"eigen"•decompose⁻¹ h	110	400	1800
 # `"eigen"•decompose⍤2 ss` runs rustymath's own Hermitian solver on every platform, because 8×8 lies below rustymath's `HEEVD_FROM`. On macOS it measures about 298, against 392 on Accelerate's `?heevd`.
 "eigen"•decompose⍤2 ss	600	600	600
 "eigen"•decompose⍤2 ms	1400	1400	1400
@@ -480,16 +479,18 @@ dx←¿1048576⍴0 ⋄ dp←["w":¿[64 256]⍴0 "b":¿256⍴0 "v":¿256⍴0 "c":
 [objectives]
 # Functions that `∂` will differentiate, timed without `∂`. Each gives the cost that its gradient's cost will be measured against.
 # The mean squared error of a network with one hidden layer of 256 tanh units, over 1024 inputs of 64 values. Its parameters are in a record.
-# Expected: 75 copies on macOS, 95 on Linux and 160 in wasm: a product of 33.5 million flops, about 45 copies on Accelerate, and `7○` on 262,144 items, about 26.
+# Expected: 61 copies on macOS, 108 on Linux and 214 in wasm: a product of 33.5 million flops, 512 an item, which takes 17 at Accelerate's rank-k rate, 64 at 8 in a copy's time for rustymath's own kernels and 128 at 4 in wasm; `7○` on 262,144 items, 40 natively, at the 10 copies for each 65,536 items that rustymath's speed test expects of `Tanh`, and 80 in wasm, where vector arithmetic costs about twice; and the other passes, about 4 natively and 6 in wasm.
 # allows forced "+.×": a matrix product reads its arguments whole
-[mx my] mlp mp	150	150	300
+[mx my] mlp mp	130	220	430
 # ADBench's Gaussian mixture objective, for 1000 points in 32 dimensions and 25 components, without its constant terms and with its Wishart prior at gamma 1 and m 0. Each component's precision factor has the exponentials of `q` on its diagonal and `l` below it.
-# Expected: 120 copies on macOS, 240 on Linux and 400 in wasm: products of about 51 million flops, about 60 copies on Accelerate, and three passes over 800,000 items.
+# Expected: 63 copies on macOS, 135 on Linux and 247 in wasm: 25 products of 1000×32 by 32×32, 781 flops an item in all, which take 26 at Accelerate's rank-k rate, 98 at 8 in a copy's time for rustymath's own kernels and 195 at 4 in wasm; and three passes over 800,000 items, about 12 copies each, 37 natively and 52 in wasm.
+# Held until studied: on 22 and 23 October 2026 CI measured up to 244 on Linux, about twice its Linux expected cost, where a budget of twice it would fail by chance. Its Linux budget stays at the old value.
 # allows forced "+.×⍤2": a matrix product reads its arguments whole
-gx gmm gp	240	480	800
+gx gmm gp	130	480	500
 # The k-means cost sums the squared distance from each of 16384 points to the nearest of 64 centres, in 32 dimensions.
-# Expected: 120 copies on macOS, 300 on Linux and 600 in wasm: a product of 67 million flops, about 70 copies on Accelerate, and passes over a million distances.
-kx kmeans kc	240	600	1200
+# Expected: 84 copies on macOS, 178 on Linux and 326 in wasm: a product of 64×32 by 32×16384, 67 million flops, 1,024 an item, which takes 34 at Accelerate's rank-k rate, 128 at 8 in a copy's time for rustymath's own kernels and 256 at 4 in wasm; and passes over a million distances, about 50 natively and 70 in wasm.
+# Held until studied: on 22 and 23 October 2026 CI measured up to 339 on Linux, about twice its Linux expected cost, where a budget of twice it would fail by chance. Its Linux budget stays at the old value.
+kx kmeans kc	170	600	660
 # A 3 by 3 blur of a 128 by 128 grid. `⌺` calls its operand once, on a batch of all the windows.
 # Expected: 1.5 copies: nine multiply-adds for each of 16,384 windows, read from the cache.
 # Held until studied: `{+/,sk×⍵}⌺3 3⊢sg` measures 10.25 on macOS and has old Linux and wasm budgets that suggest about 19 and 19.5, more than twice its expected cost. On 22 October 2026 CI measured 10.9 on Linux and 10.3 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
@@ -504,25 +505,26 @@ kx kmeans kc	240	600	1200
 # Expected: `(dx-0.5)×dx+0.5` 24 copies: one fused pass over a million items, 16 times `n`; `{(dx-⍵)×dx+⍵}∂0.5` 24 copies: the tangent's fused pass. `∂` skips the primal, because the result holds only the tangent.
 # Held until studied: `(dx-0.5)×dx+0.5` has old Linux and wasm budgets that suggest about 85 and 70, more than twice its expected cost. On 22 October 2026 CI measured 96.7 on Linux and 66.9 in wasm. Its Linux and wasm budgets stay at the old value.
 (dx-0.5)×dx+0.5	48	170	140
-# Held until studied: `{(dx-⍵)×dx+⍵}∂0.5` measures 48 copies on macOS, twice its expected cost, and has old Linux and wasm budgets that suggest about 110 and 110. All three budgets stay at their old values.
+# Held until studied: `{(dx-⍵)×dx+⍵}∂0.5` measures 48 copies on macOS, twice its expected cost, and has old Linux and wasm budgets that suggest about 110 and 110. On 22 and 23 October 2026 CI measured up to 104 on Linux and 76.6 in wasm. All three budgets stay at their old values.
 {(dx-⍵)×dx+⍵}∂0.5	96	220	220
 # A JVP of the training loss in `[objectives]` along a fixed direction `dp`, which takes one pass through `+.×`, Rank, `7○` and `+/`.
-# Expected: 150 copies on macOS, 190 on Linux and 320 in wasm: the primal and one tangent pass of the same size.
+# Expected: 122 copies on macOS, 216 on Linux and 428 in wasm: the primal and one tangent pass of the same size.
 # allows forced "+.×": a matrix product reads its arguments whole
 # allows itemwise "item pairs": `mp+⍵×dp` pairs the parameter record's few arrays one at a time, each by a whole-array call
-{[mx my] mlp mp+⍵×dp}∂0	300	380	640
+{[mx my] mlp mp+⍵×dp}∂0	250	440	860
 # Gradients of the three objectives in `[objectives]`, each from one run that records its linear calls and one transpose of the record. The bar's "Gradient cost" row asks for a small multiple of the objective's own cost.
-# Expected: `[mx my] mlp∂ mp` 190 copies on macOS, 240 on Linux and 320 in wasm: the primal and a transpose with two products and `7○`'s derivative; `gx gmm∂ gp` 360 copies on macOS, 720 on Linux and 1200 in wasm: about three times the objective; `kx kmeans∂ kc` 360 copies on macOS, 900 on Linux and 1800 in wasm: about three times the objective.
+# Expected: `[mx my] mlp∂ mp` 120 copies on macOS, 261 on Linux and 520 in wasm: the primal, a transpose with two products, which take 17 each at Accelerate's rank-k rate, 64 on rustymath's own kernels and 128 in wasm, and `7○`'s derivative with the rest, about 25 natively and 50 in wasm; `gx gmm∂ gp` 189 copies on macOS, 405 on Linux and 741 in wasm: about three times the objective; `kx kmeans∂ kc` 252 copies on macOS, 534 on Linux and 978 in wasm: about three times the objective.
 # allows forced "+.×": a matrix product reads its arguments whole
 # gap stored "held outside the graph": the transpose computes `7○`'s derivative, 262,144 items, on its own, where the group that reads it should compute it
 # gap forced "+/": the gradient of `b` should fold its pending argument along axis 0, rather than compute 524,288 items first
-[mx my] mlp∂ mp	380	380	760
-# Held until studied: `gx gmm∂ gp` has old Linux and wasm budgets that suggest about 2750 and 2600, more than twice its expected cost. On 22 October 2026 CI measured 932 on Linux and 916 in wasm. Its Linux and wasm budgets stay at the old value.
+[mx my] mlp∂ mp	240	530	1100
+# Held until studied: `gx gmm∂ gp` measured up to 932 on Linux on CI on 22 and 23 October 2026, more than twice its expected cost. Its Linux budget stays at the old value.
 # allows forced "+.×⍤2": a matrix product reads its arguments whole
-gx gmm∂ gp	720	5500	5200
+gx gmm∂ gp	380	5500	1500
 # allows forced "+.×": a matrix product reads its arguments whole
+# Held until studied: `kx kmeans∂ kc` measured up to 1267 on Linux on CI on 22 and 23 October 2026, more than twice its expected cost. Its Linux budget stays at the old value.
 # gap forced "⌊⌿": the gradient's `⌊⌿` should fold its pending distances, as `kx kmeans kc` does, rather than compute 2,097,152 items first
-kx kmeans∂ kc	720	1800	3600
+kx kmeans∂ kc	510	1800	2000
 [setup]
 fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ n←65536
 [calls]
@@ -584,23 +586,23 @@ ism,sm	5.2	12	26
 [:;0 1]⌷w_4 ←f_2	2	2	4
 # A fold by a reduction reads a pending copy through its map. A copy that reads a contiguous block of its source with its axes in another order, such as a transpose, a reversal, or 2 by 2 windows that don't overlap, folds that block in its own order, at the cost of folding the source. Totals that come out in another order stay a pending copy, which the next fold reads the same way.
 # Expected: 0.5 copies each: reads 8 bytes an item and writes nothing.
-# Wasm on CI's x86 runner: 1 copy each, twice native, as `+/v`'s comment gives for wasm's fold. In seven CI runs from 22 October 2026, `+/⍉sq` and `+⌿⊖sq` measured 0.69 to 1.38 copies and `+/⌽sv` 1.13 to 1.43. `+/⌽sv` runs `+/v`'s f64 sum, which since 22 October costs about 1.4 times what it did before on CI's V8, though not on this Mac's. The sum's wasm loop changed that day: under thin LTO, LLVM runtime-unrolls the strict sum's 16-result loop twice. Since 23 October 2026, browser builds turn that unrolling off, and the next CI run shows whether the slowdown has gone.
+# Wasm on CI's x86 runner: 1 copy each, twice native, as `+/v`'s comment gives for wasm's fold. In seven CI runs from 22 October 2026, `+/⍉sq` and `+⌿⊖sq` measured 0.69 to 1.38 copies and `+/⌽sv` 1.13 to 1.43. `+/⌽sv` runs `+/v`'s f64 sum, which since 22 October costs about 1.4 times what it did before on CI's V8, though not on this Mac's. The sum's wasm loop changed that day: under thin LTO, LLVM runtime-unrolls the strict sum's 16-result loop twice. Turning that unrolling off in browser builds didn't change the sum's cost on CI's V8. The slowdown's cause is not known yet.
 +/⍉sq	1	1	2
 +⌿⊖sq	1	1	2
 +/⌽sv	1	1	2
-# Held until studied: `⌈/⌈/[[2 2]⋄[2 2]]↕sq` measures 1.7 on macOS and has old Linux and wasm budgets that suggest about 2.3 and 2.15, more than twice its expected cost. Its macOS, Linux and wasm budgets stay at the old value.
-⌈/⌈/[[2 2]⋄[2 2]]↕sq	3.4	4.6	4.3
+# Held until studied: `⌈/⌈/[[2 2]⋄[2 2]]↕sq` measures 1.7 on macOS and has an old Linux budget that suggests about 2.3, more than twice its expected cost. On 23 October 2026 CI measured 1.64 on Linux. Its macOS and Linux budgets stay at the old value.
+⌈/⌈/[[2 2]⋄[2 2]]↕sq	3.4	4.6	2
 # Held until studied: `+/⍉cimg` measures 1.08 on macOS and has an old Linux budget that suggests about 1.05, more than twice its expected cost. On 22 October 2026 CI measured 0.97 on Linux. Its macOS and Linux budgets stay at the old value.
 +/⍉cimg	2.2	2.1	1
 # A fold of windows slides over its source and never builds the windows. Windows of up to 8 rows fold directly. Wider windows take van Herk-Gil-Werman, at a cost that doesn't grow with the width. Windows of a matrix fold in two separable passes.
 # Expected: `+/3↕sv` and `⌈/3↕sv` 1 copy: one read and one write per window, sliding; `+/50↕sv` 1 copy: a running sum, with one addition and one subtraction per window; `⌈/50↕sv` 2 copies: van Herk-Gil-Werman, with two passes of running maxima and a combine; `+/+/3 3↕sq` 2 copies: two separable sliding passes.
 # Held until studied: `+/3↕sv` measures 3.74 on macOS and has old Linux and wasm budgets that suggest about 5.5 and 4.2, more than twice its expected cost. On 22 October 2026 CI measured 5.09 on Linux and 3.41 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 +/3↕sv	7.7	11	8.4
-# Held until studied: `⌈/3↕sv` measures 4.01 on macOS and has old Linux and wasm budgets that suggest about 7.5 and 4.55, more than twice its expected cost. Its macOS, Linux and wasm budgets stay at the old value.
+# Held until studied: `⌈/3↕sv` measures 4.01 on macOS and has old Linux and wasm budgets that suggest about 7.5 and 4.55, more than twice its expected cost. On 23 October 2026 CI measured 5.85 on Linux and 2.6 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 ⌈/3↕sv	8.3	15	9.1
 # Held until studied: `+/50↕sv` measures 6.97 on macOS and has old Linux and wasm budgets that suggest about 24.5 and 14, more than twice its expected cost. On 22 October 2026 CI measured 9.32 on Linux and 6.43 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 +/50↕sv	15	49	28
-# Held until studied: `⌈/50↕sv` measures 7.15 on macOS and has old Linux and wasm budgets that suggest about 26 and 16, more than twice its expected cost. Its macOS, Linux and wasm budgets stay at the old value.
+# Held until studied: `⌈/50↕sv` measures 7.15 on macOS and has old Linux and wasm budgets that suggest about 26 and 16, more than twice its expected cost. On 23 October 2026 CI measured 8.86 on Linux and 14.2 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 ⌈/50↕sv	14	52	32
 # Held until studied: `+/+/3 3↕sq` measures 6.91 on macOS and has old Linux and wasm budgets that suggest about 6.5 and 7.5, more than twice its expected cost. On 22 October 2026 CI measured 10.7 on Linux and 7.65 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 +/+/3 3↕sq	14	13	15
@@ -624,8 +626,8 @@ ism,sm	5.2	12	26
 # gap forced "+/": `+/` under `∂` should fold its pending arguments, as the objective's sliding fold does, rather than compute 2,097,152 items first
 {+/,+/50↕⍵}∂ sv	34	84	59
 # A product of windows reads them a block of rows at a time, straight into the matrix product, and never builds the windows matrix. A product of a single-channel image's windows with one filter adds each column of the windows, read where it lies, into the result. Its gradient for the kernel reads them again in blocks. Its gradient for the image is one product of the windows of the zero-padded cotangent with the kernel reversed.
-# Expected: `([64516 144]⍴3 3↕cimg)+.×ck` 30 copies on macOS, 120 on Linux and 240 in wasm: a product of 595 million flops, at Accelerate's rate; `([1044484 9]⍴3 3↕sq)+.×kq` 2.5 copies: nine multiply-adds per window, read in place; `{+/,([64516 144]⍴3 3↕cimg)+.×⍵}∂ ck` and `{+/,([64516 144]⍴3 3↕⍵)+.×ck}∂ cimg` 60 copies on macOS, 240 on Linux and 480 in wasm: two products of 595 million flops.
-([64516 144]⍴3 3↕cimg)+.×ck	60	240	480
+# Expected: `([64516 144]⍴3 3↕cimg)+.×ck` 28 copies on macOS, 120 on Linux and 240 in wasm: a product of 595 million flops, 567 an item, which on macOS takes 19 at Accelerate's rank-k rate, and gathering the windows a block of rows at a time, about 9; `([1044484 9]⍴3 3↕sq)+.×kq` 2.5 copies: nine multiply-adds per window, read in place; `{+/,([64516 144]⍴3 3↕cimg)+.×⍵}∂ ck` and `{+/,([64516 144]⍴3 3↕⍵)+.×ck}∂ cimg` 56 copies on macOS, 240 on Linux and 480 in wasm: two products of 595 million flops, with their gathers.
+([64516 144]⍴3 3↕cimg)+.×ck	56	240	480
 # Held until studied: `([1044484 9]⍴3 3↕sq)+.×kq` measures 5.54 on macOS, down from 7.49 on 22 October 2026 when rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. Nine multiply-adds per window at NEON's two lanes of f64 take about twice the expected cost. Its old Linux and wasm budgets suggest about 8.5 and 10.5. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 ([1044484 9]⍴3 3↕sq)+.×kq	16	17	21
 {+/,([64516 144]⍴3 3↕cimg)+.×⍵}∂ ck	120	480	960
