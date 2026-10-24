@@ -172,6 +172,9 @@ def keylayout(layout, lang='us'):
     base = bases()[lang]
     states = layout['states'] | base['states']
     bindings = {chord: layout['option'][char] for char, chord in shortcuts(layout, lang, base).items()}
+    unmodified = {OPTION: PLAIN, OPTION_SHIFT: SHIFT, CONTROL_OPTION: PLAIN, CONTROL_OPTION_SHIFT: SHIFT}
+    prefixes = {character(base['keys'][str(code)][unmodified[index]], base): value['state']
+                for (code, index), value in bindings.items() if isinstance(value, dict)}
     actions, keymaps, texts = {}, [], []
     for index in range(len(MODIFIERS)):
         keys = []
@@ -182,10 +185,10 @@ def keylayout(layout, lang='us'):
             if chord not in bindings:
                 native_key = f'{code}:{index}'
                 entries |= {name: s['keys'][native_key] for name, s in base['states'].items() if native_key in s['keys']}
-                char = character(value, base)
-                if index not in (COMMAND, COMMAND_SHIFT, CONTROL, CONTROL_SHIFT, CONTROL_OPTION, CONTROL_OPTION_SHIFT):
-                    entries |= {name: s['keys'][char] for name, s in layout['states'].items() if char in s['keys']}
-            elif isinstance(value, dict): entries[value['state']] = states[value['state']]['terminator']
+            if index not in (COMMAND, COMMAND_SHIFT, CONTROL, CONTROL_SHIFT):
+                char = character(values[unmodified.get(index, index)], base)
+                if name := prefixes.get(char): entries[name] = states[name]['terminator']
+                entries |= {name: s['keys'][char] for name, s in layout['states'].items() if char in s['keys']}
             if int(code) == SPACE: entries |= {name: s['terminator'] for name, s in layout['states'].items()}
             if int(code) in (DELETE, ESCAPE): entries |= {name: '' for name in states}
             texts += [v.get('output', '') if isinstance(v, dict) else v for v in entries.values()]
@@ -295,7 +298,7 @@ Hold Option (Alt) for the large character. Add Shift for the small character abo
 </div>
 ```
 
-Orange borders mark dead keys. Release Option before typing the next key. Repeat the same Option chord, or press Space, to enter the dead key's own character. Follow-ups can be sequences, such as `-1` for a negative superscript or subscript.
+Orange borders mark dead keys. You can hold or release Option between keys. Holding it through `5x51` enters `ₓ₁`. Repeat the prefix key, or press Space, to enter the dead key's own character. Follow-ups can be sequences, such as `-1` for a negative superscript or subscript.
 
 ''' + dead_key_table(layout) + r'''
 

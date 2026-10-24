@@ -13,9 +13,10 @@ Function. Keys: `Alt-o 8`. Hanzi: `对` (`對`). Ranks: `0` monadic, `0 0` dyadi
 ```bpl
 2⍟8               ⍝ 3
 10⍟100            ⍝ 2
+1⍟1               ⍝ 0
 ```
 
-Uses complex logarithms where needed. `⍟0` is `¯∞`, as IEEE 754 gives it. With base 1, the result is an infinity or NaN.
+Uses complex logarithms where needed. `⍟0` is `¯∞`. `1⍟1` gives zero when its floating calculation has a [Mathish type](../terms.qmd#term-mathish-types) and [Mathish mode](../numbers.qmd#mathish-mode) is enabled. Other base-1 cases give an infinity or NaN.
 
 ## Inverse
 

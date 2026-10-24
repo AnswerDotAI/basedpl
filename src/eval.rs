@@ -290,7 +290,7 @@ impl Function {
             FunctionNode::Defined(c) => c.text().into(),
             FunctionNode::Fold(f, h) => format!("{}{}", f.left_text(notation, budget), notation.glyph(h.glyph())),
             FunctionNode::Inverse(f) => f.superscripted("⁻¹", notation, budget),
-            FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), Operand::Function(f)) => f.superscripted(&mark.marker().to_string(), notation, budget),
+            FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), Operand::Function(f)) => f.superscripted(mark.marker(), notation, budget),
             FunctionNode::Axis(f, a) => format!("{}{}{}", f.left_text(notation, budget), notation.glyph("⍠"), a.operand(notation)),
             FunctionNode::Modified(op, a) => format!("{}{}", a.left_text(notation, budget), notation.glyph(op.glyph())),
             FunctionNode::Composed(op, [a, b]) => format!("{}{}{}", a.left_text(notation, budget), notation.glyph(op.glyph()), b.right_text(notation, budget)),
@@ -657,7 +657,7 @@ impl Function {
             ("fn", [a], ..) => return fun(a),
             ("fork", [a, b, c], ..) => FunctionNode::Fork([constant(a)?, fun(b)?, constant(c)?]),
             ("axis", [f, Operand::Value(axis)], ..) => FunctionNode::Axis(fun(f)?, axis.clone()), ("⁻¹", [f], ..) => return fun(f)?.inverse(&span),
-            (_, [f], _) if let Some(mark) = glyph.and_then(crate::number::Mark::of) => FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), f.clone()),
+            (_, [f], _) if let Some(mark) = crate::number::Mark::of(kind) => FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), f.clone()),
             (_, [f], Some(op)) if !op.info().dyadic() => FunctionNode::Modified(op, f.clone()),
             (_, [a, b], Some(op)) if op.info().right.is_some() => FunctionNode::Composed(op, [a.clone(), b.clone()]),
             _ => return Err(Error::new(ErrorKind::Syntax, "invalid function construction").at(&span))

@@ -83,20 +83,6 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
         parts
     };
     let data = match value.as_items() {
-        Items::Compact(View::Booleans(b)) => Js::Typed(Typed::Uint8(b.iter().map(|&b| b.into()).collect())),
-        Items::Compact(View::Integers(Ints::U8(v))) => Js::Typed(Typed::Uint8(v.to_vec())),
-        Items::Compact(View::Integers(Ints::I16(v))) => Js::Typed(Typed::Int16(v.to_vec())),
-        Items::Compact(View::Integers(Ints::I32(v))) => Js::Typed(Typed::Int32(v.to_vec())),
-        Items::Compact(View::Integers(Ints::I64(v))) => Js::Typed(Typed::BigInt64(v.to_vec())),
-        Items::Compact(View::Floats(Floats::F32(v))) => Js::Typed(Typed::Float32(v.to_vec())),
-        Items::Compact(View::Floats(_)) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
-        Items::Compact(View::Complexes(Complexes::F32(v))) => {
-            complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float32(v.iter().flat_map(|z| [z.re, z.im]).collect())))
-        }
-        Items::Compact(View::Complexes(Complexes::F64(v))) => {
-            complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(v.iter().flat_map(|z| [z.re, z.im]).collect())))
-        }
-        Items::Compact(View::Characters(c)) => Js::List(c.iter().map(|c| Js::Text(c.to_string())).collect()),
         Items::Values(items) => match items.iter().map(|v| if let Value::Number(n) = v { Some(n) } else { None }).collect::<Option<Vec<_>>>() {
             Some(numbers) if !numbers.is_empty() || matches!(value.prototype(), Value::Number(_)) => {
                 if numbers.iter().any(|n| n.as_complex().is_some()) {
@@ -105,6 +91,22 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
                 } else { Js::Typed(Typed::Float64(numbers.iter().map(|n| n.to_float()).collect::<Result<_, _>>().map_err(|_| Kind::Domain)?)) }
             }
             _ => Js::List(items.iter().map(export).collect::<Result<_, _>>()?),
+        },
+        items => match items.view().expect("compact items") {
+            View::Booleans(b) => Js::Typed(Typed::Uint8(b.iter().map(|&b| b.into()).collect())),
+            View::Integers(Ints::U8(v)) => Js::Typed(Typed::Uint8(v.to_vec())),
+            View::Integers(Ints::I16(v)) => Js::Typed(Typed::Int16(v.to_vec())),
+            View::Integers(Ints::I32(v)) => Js::Typed(Typed::Int32(v.to_vec())),
+            View::Integers(Ints::I64(v)) => Js::Typed(Typed::BigInt64(v.to_vec())),
+            View::Floats(Floats::F32(v)) => Js::Typed(Typed::Float32(v.to_vec())),
+            View::Floats(_) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
+            View::Complexes(Complexes::F32(v)) => {
+                complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float32(v.iter().flat_map(|z| [z.re, z.im]).collect())))
+            }
+            View::Complexes(Complexes::F64(v)) => {
+                complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(v.iter().flat_map(|z| [z.re, z.im]).collect())))
+            }
+            View::Characters(c) => Js::List(c.iter().map(|c| Js::Text(c.to_string())).collect()),
         },
     };
     Ok(shaped(shape, data, names, keys))

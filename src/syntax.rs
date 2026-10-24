@@ -1,5 +1,5 @@
-use rustymath::{buffer::FloatWidth, error::Kind};
-use crate::{number::{subscript, Arithmetic, Mark, Math, Numeric, Suffix, DENOMINATOR, EXACT, EXPONENT, IMAGINARY, SUFFIXES, WIDTHS}, primitive::{Builtin, Exact, OperatorKind, Primitive, Superscript}, symbols::canonical,
+use rustymath::{buffer::{DType, FloatWidth}, error::Kind};
+use crate::{number::{subscript, Arithmetic, Mark, Math, Numeric, Suffix, DENOMINATOR, EXPONENT, IMAGINARY, MARKS, SUFFIXES}, primitive::{Builtin, Exact, OperatorKind, Primitive, Superscript}, symbols::canonical,
     At, Described, Error, ErrorKind, Number, Source, Span, Value
 };
 use crate::name::{is_implicit, Name};
@@ -218,11 +218,30 @@ pub(crate) fn joined_term(left: Node, joiner: Joiner, at: &Span, right: Node) ->
     Node { kind: NodeKind::Group(nodes), span }
 }
 
-/// Consumes a number marker when one comes next.
-fn mark(chars: &mut Characters<'_>) -> Option<Mark> { if suffix(chars, EXACT) { return Some(Mark::Exact); } width_mark(chars).map(Mark::Width) }
+/// The single-character mark at the next position.
+fn mark_head(chars: &mut Characters<'_>) -> Option<Mark> {
+    let &(_, c) = chars.peek()?;
+    MARKS.iter().find_map(|&(s, m)| s.chars().eq([c]).then_some(m))
+}
+
+fn mark(chars: &mut Characters<'_>) -> Result<Option<Mark>, (ErrorKind, String)> {
+    let Some(mark) = mark_head(chars) else { return Ok(None) };
+    chars.next();
+    if mark != Mark::Exact { return Ok(Some(mark)); }
+    let Some(&(_, c)) = chars.peek().filter(|(_, c)| *c == '₋' || script_digit(SUBSCRIPT_DIGITS, *c).is_some()) else { return Ok(Some(mark)) };
+    chars.next();
+    let bytes = script_integer(c, chars, SUBSCRIPT_DIGITS, "integer width")?;
+    MARKS.iter().find_map(|&(spelling, m)| match m {
+        Mark::Fixed(w) if spelling.ends_with(c) && DType::Integer(w).bytes() as i64 == bytes => Some(Some(m)), _ => None,
+    }).ok_or_else(|| (ErrorKind::Syntax, "fixed integer width must be 1, 2, 4 or 8 bytes".into()))
+}
 
 /// Consumes a float width's marker when one comes next, and gives the width.
-fn width_mark(chars: &mut Characters<'_>) -> Option<FloatWidth> { WIDTHS.iter().find(|&&(s, _)| suffix(chars, s)).map(|&(_, w)| w) }
+fn width_mark(chars: &mut Characters<'_>) -> Option<FloatWidth> {
+    let Mark::Width(width) = mark_head(chars)? else { return None };
+    chars.next();
+    Some(width)
+}
 
 /// Whether `chars` starts a part of a number: a digit, `¯`, `∞`, or a point before a digit.
 fn number_part(mut chars: Characters<'_>) -> bool {
@@ -245,18 +264,18 @@ fn suffix(chars: &mut Characters<'_>, suffix: Suffix) -> bool {
     follows
 }
 
+fn number_text(text: &str) -> String { text.chars().map(canonical).collect() }
+
 /// The number that literal text writes, read by `Number::literal` once each character takes its canonical spelling.
 fn literal_number(text: &str, numeric: Numeric) -> Result<Number, ErrorKind> {
-    Number::literal(&text.chars().map(canonical).collect::<String>(), numeric)
+    Number::literal(&number_text(text), numeric)
 }
 
 /// A number written inside `[…]ₓ`. An integer's digits read exactly, and a whole float becomes exact.
 fn exact_number(text: &str, numeric: Numeric) -> Result<Number, ErrorKind> {
-    let numeric = numeric.with_width(FloatWidth::F64);
-    if text.chars().all(|c| c.is_ascii_digit() || canonical(c) == '¯') {
-        return Number::parse(&format!("{}ₓ", text.chars().map(canonical).collect::<String>()), numeric);
-    }
-    literal_number(text, numeric)?.marked_exact().ok_or_else(|| Kind::Domain.into())
+    let (text, numeric) = (number_text(text), numeric.with_width(FloatWidth::F64));
+    if text.chars().all(|c| c.is_ascii_digit() || c == '¯') { return Number::parse(&format!("{text}ₓ"), numeric); }
+    Number::literal(&text, numeric)?.marked_exact().ok_or_else(|| Kind::Domain.into())
 }
 
 /// The empty numeric vector whose prototype is `fill`.
@@ -283,10 +302,14 @@ fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>,
                 for token in &mut tokens[start + 1..i] {
                     let text = token.span.text();
                     let value = match (&token.kind, mark) {
-                        (TokenKind::Literal(Value::Number(n)), _) if n.as_bool().is_some() => continue,
+                        (TokenKind::Literal(Value::Number(n)), _) if n.as_bool().is_some() && !matches!(mark, Mark::Fixed(_)) => continue,
                         (TokenKind::Literal(Value::Number(_)), Mark::Exact) if text.starts_with('$') => continue,
                         (TokenKind::Literal(Value::Number(_)), Mark::Exact) => {
                             Value::Number(exact_number(text, numeric).described("ₓ marks whole numbers exact").at(&token.span)?)
+                        }
+                        (TokenKind::Literal(Value::Number(n)), Mark::Fixed(w)) => {
+                            let n = match n.as_bool() { Some(b) => Ok(Number::fixed(i64::from(b), w)), None => Number::fixed_literal(&number_text(text), w) };
+                            Value::Number(n.described("fixed markers need integral literals within their width").at(&token.span)?)
                         }
                         (TokenKind::Literal(Value::Number(n)), Mark::Width(w)) => {
                             let n = if text.starts_with('$') { Ok(n.clone()) } else { literal_number(text, numeric.with_width(w)) };
@@ -307,7 +330,7 @@ fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>,
         let close = &mut tokens[i];
         close.kind = match close.kind { TokenKind::Close(_) => TokenKind::Close(None), _ => TokenKind::BracketClose(None) };
         let end = close.span.range.end;
-        close.span.range.end = end - mark.marker().len_utf8();
+        close.span.range.end = end - mark.marker().len();
         let marker = Span { source: close.span.source.clone(), range: close.span.range.end..end };
         markers.push(marker.range.clone());
         tokens.insert(i + 1, Token { kind: TokenKind::Operator(OperatorKind::Super(Superscript::Mark(mark))), span: marker });
@@ -322,7 +345,7 @@ fn position(chars: &mut Characters<'_>, len: usize) -> usize { chars.peek().map_
 fn run_on(chars: &mut Characters<'_>, digit: bool) -> Option<usize> {
     let canonical = chars.spelling();
     let &(i, c) = chars.peek()?;
-    let suffix = SUFFIXES.into_iter().any(|s| suffix_follows(chars, s));
+    let suffix = mark_head(chars).is_some() || SUFFIXES.into_iter().any(|s| suffix_follows(chars, s));
     ((digit && c.is_ascii_digit()) || canonical(c) == '.' || suffix).then(|| i + c.len_utf8())
 }
 
@@ -344,6 +367,13 @@ const SUBSCRIPT_DIGITS: &str = "₀₁₂₃₄₅₆₇₈₉";
 pub fn superscripts() -> String { [SUPERSCRIPT_DIGITS, "⁻ᵀᵘₓ"].concat() }
 /// The characters that write a subscript, for the editors' glyph lists.
 pub fn subscripts() -> String { [SUBSCRIPT_DIGITS, "₋"].concat() }
+
+/// Number markers and their word names, for Python properties and editor generation.
+pub fn number_marks() -> Vec<(&'static str, &'static str)> {
+    MARKS.iter().map(|&(text, mark)| (text, match mark {
+        Mark::Exact => "exact", Mark::Width(w) => DType::Float(w).name(), Mark::Fixed(w) => DType::Integer(w).name(),
+    })).collect()
+}
 
 /// The value of `c` among `digits`, such as `²` among the superscript digits.
 fn script_digit(digits: &str, c: char) -> Option<i64> { digits.chars().position(|d| d == c).map(|i| i as i64) }
@@ -491,6 +521,9 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
     let Some(&(start, raw)) = chars.peek() else { return Ok(None) };
     let c = canonical(raw);
     let span = |end| Span { source: source.clone(), range: start..end };
+    let marked = |chars: &mut Characters<'_>| mark(chars).map_err(|(kind, message)| {
+        ParseFailure::Invalid(Error::new(kind, message).at(&span(position(chars, len))))
+    });
     Ok(Some(if c.is_ascii_digit() || matches!(c, '¯' | '∞') || (c == '.' && chars.clone().nth(1).is_some_and(|(_, c)| c.is_ascii_digit())) {
         real_literal(chars).map_err(|message| Error::new(ErrorKind::Syntax, message).at(&span(position(chars, len))))?;
         if suffix(chars, IMAGINARY) {
@@ -503,7 +536,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
                 chars.next_if(|&(_, c)| canonical(c) == '¯');
                 if digits(chars) == 0 { return Err(Error::new(ErrorKind::Syntax, "expected integer denominator").at(&span(position(chars, len))).into()); }
             }
-            if rational || mark(chars).is_some() {
+            if rational || marked(chars)?.is_some() {
                 if let Some(end) = run_on(chars, true) { return Err(Error::new(ErrorKind::Syntax, "invalid exact numeric literal").at(&span(end)).into()); }
             }
         }
@@ -515,6 +548,8 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
         let key = source.text[..start].chars().next_back().is_some_and(|c| canonical(c) == '.');
         name(chars, key).map_err(|(end, message)| Error::new(ErrorKind::Syntax, message).at(&span(end)))?;
         TokenKind::Name(source.text[start..position(chars, len)].to_owned())
+    } else if let Some(mark) = marked(chars)? {
+        TokenKind::Operator(OperatorKind::Super(Superscript::Mark(mark)))
     } else {
         chars.next();
         match c {
@@ -550,7 +585,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
                 }
                 TokenKind::Literal(crate::keyed::text(&text))
             }
-            '⍬' => TokenKind::Literal(zilde(mark(chars).map_or(numeric.float(0.0), Mark::zero))),
+            '⍬' => TokenKind::Literal(zilde(marked(chars)?.map_or(numeric.float(0.0), Mark::zero))),
             // `$` and one letter: a literal constant, or `$e`, the error a handler caught. `$n` and `$m` take a width mark.
             '$' => {
                 let token = match chars.next() {
@@ -573,9 +608,9 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             }
             '⍛' => return Err(Error::new(ErrorKind::Syntax, "⍛ is retired: use ↣ or ↢ to bind or preprocess, and ∘ for Atop").at(&span(start + c.len_utf8())).into()),
             '(' => TokenKind::Open,
-            ')' => TokenKind::Close(mark(chars)),
+            ')' => TokenKind::Close(marked(chars)?),
             '[' => TokenKind::BracketOpen,
-            ']' => TokenKind::BracketClose(mark(chars)),
+            ']' => TokenKind::BracketClose(marked(chars)?),
             ';' => TokenKind::Semicolon,
             '⋄' => TokenKind::Separator,
             '←' => TokenKind::Assign,
@@ -596,8 +631,6 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             }
             'ᵀ' => TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)),
             'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
-            // A literal number, `)` and `]` take the number marker after them (`mark_literals`). One that reaches here follows another item, such as a name or a function.
-            c if let Some(mark) = Mark::of(c) => TokenKind::Operator(OperatorKind::Super(Superscript::Mark(mark))),
             // A literal number takes `ⱼ`, `ₑ` or `ᵣ` only before a number part (`suffix_follows`). One that reaches here joins two items, as in `xⱼy`.
             'ⱼ' => TokenKind::Joiner(Joiner::Imaginary),
             'ₑ' => TokenKind::Joiner(Joiner::Exponent),
@@ -894,7 +927,7 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
                 if span.range.start != node.span.range.end { break; }
                 let NodeKind::Literal(Value::Number(n)) = &node.kind else { break };
                 let raised = match power {
-                    Superscript::Power(k) => n.math_dyad(Math::Power, &Number::from_integer(k)), Superscript::Transpose => Ok(n.clone()),
+                    Superscript::Power(k) => Primitive::Math(Math::Power).number(Some(n), &Number::from_integer(k).marked(true), Numeric::current()), Superscript::Transpose => Ok(n.clone()),
                     Superscript::Unit | Superscript::Mark(_) => break
                 };
                 node.span.range.end = end;

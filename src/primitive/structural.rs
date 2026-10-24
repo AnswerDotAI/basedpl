@@ -266,8 +266,8 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let rank = left.shape().len().max(right.shape().len()).max(1);
     let axis = axis.unwrap_or(if first { 0 } else { rank - 1 });
     if axis >= rank { return Err(Error::domain("catenate axis is outside result rank")); }
-    // A weak number takes the width that the other argument gives it, as in arithmetic (`Value::weakened`), before `promoted` makes it an array.
-    let (left, right) = super::weakened(Some(left), right, |left, right| {
+    // A weak number takes the width that the other argument gives it, as in arithmetic (`Primitive::weakened`), before `promoted` makes it an array.
+    let (left, right) = Primitive::Ravel.weakened(Some(left), right, |left, right| {
         let left = promoted(left.expect("catenation is dyadic"), right, rank, axis)?;
         let right = promoted(right, &left, rank, axis)?;
         Ok::<_, Error>((left, right))

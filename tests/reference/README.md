@@ -44,7 +44,7 @@ Longer single-line expressions use one line each. A case with more than two top-
 
 Errors use `⍝ error: DOMAIN ERROR` on the expectation line. A no-result expectation is the BPL expression `{}0`. A case overrides the default tolerances with an optional suffix on the header, such as `[rtol=1e-10]`. These are comparison tolerances, not APL `⎕CT`. A case that inspects fusion itself, such as the items that `•explain` reports as forced, adds `unfused` to the suffix, as in `[unfused]`, which leaves out its run under fusion's small sizes. A case whose result is held in mixed storage where its expectation is compact, as after an in-place write into mixed storage or for a record from JSON, adds `mixed`, which leaves out the comparison of their storage. A case that needs the `batch` pref on in every run adds `batched`, which leaves out the run with it off. Every run of a case starts from the default settings and the file's header, whatever settings an earlier case changed with `•prefs`.
 
-Group cases with `⍝⍝ Section name`. Sections are labels, not shared sessions. Each case must supply its own definitions and setup.
+Group cases with `⍝⍝ Section name`. A section may add a `•prefs` suffix, applied before setup. An optional first `⍝⍝ setup` section defines data shared by the file's cases. Checks initialize it afresh for each run and independently for the expected expression. Timing reuses one warmed session within each section.
 
 File cases can use `testpath`. When mentioned in the source, the runner binds it to a new path in a per-case temporary directory, removed after the check. The run that calls the code as a dfn's body twice gives both calls one directory, emptied between them. The file does not yet exist. Write fixture contents before reading them. This works in scans, activation and the Rust suite.
 
@@ -64,9 +64,32 @@ An optional `⍝ input: text` line, just before any `⍝ ⎕:` line, gives the l
 
 During conversion, comments are extracted from descriptions, unchanged ngn assertions, or leading comments in example programs. Known import/review boilerplate is removed from reasons and adaptations. Other clauses are retained on the same header line. Comments are not paraphrased or corrected. Converted comments can therefore contain inaccurate source wording or lack a description where none can be extracted.
 
-Use `basedpl.bpltests.parse(text)` to read records as `Case` objects with `id`, `comment`, `code`, `expect`, `rtol`, `atol`, `unfused`, `batched`, `mixed`, `section`, optional `input` and `output` text, the file's `prefs` header and the header's `line`. `render` writes a file's `prefs` header once, at the top. It reads them with `reference::cases` in `src/reference.rs`, the one parser of this format, which `tests/reference.rs` also uses. Two cases in one file can't share an id. `render(cases)` writes cases back, and raises `ValueError` where `parse` wouldn't read the result as the same cases. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
+Use `basedpl.bpltests.parse(text)` to read records as `Case` objects, including optional expectations and budgets. `src/reference.rs` owns the parser used by Python, native checks and timing, the worker and the browser build. Two cases in one file can't share an id. `render(cases)` writes checked records back and rejects a result that doesn't read back as the same cases. It does not rewrite shared setups or timed files. The conversion checks preserve source text and reproduce captured values, shapes and recursive prototypes; they do not infer new expectations from the program under test.
 
 Use `check_file(path)` from `basedpl.bpltests` to run a reference file in fresh workers, one for each core, and list its failures. It runs the same code from `src/reference.rs` as `tests/reference.rs`. `check_page(path)` does the same for the BPL examples in a `.qmd` page.
+
+### Timed cases
+
+`tests/speed/*.bpl` uses this same format. A footer gives the macOS, Linux and wasm budgets, separated by whitespace:
+
+```bpl
+⍝⍝ setup
+n←65536
+v←¿n⍴0
+
+⍝⍝ copies
+⍝ Negate each item: one read and one write per item.
+-v
+⍝⍝: 2 2 2
+```
+
+A trailing `⍝⍝:` footer identifies a timed case. All preceding body lines are its code, which can span multiple lines. A check uses inline `⍝ expected` or the existing explicit `⍝ =>` marker. Headers and IDs are optional. An absent expectation means unchecked, not no result. The timing runner checks a supplied expectation once, outside timing, in independently initialized sessions. The reference runner checks it with the usual batch, fusion and repeated-call variants. A record must check a result or supply a budget.
+
+`⍝⍝ allows RECORD "EVENT": principle` and `⍝⍝ gap RECORD "EVENT": what should happen` before the code name permitted slow-path events, with doubled `"` inside an event. The route test rejects unlisted events and annotations whose events no longer appear.
+
+Budgets count copies of the setup's `n` items, except in `widths`: there they limit the time as a fraction of the same code's time under `exact`. The runner applies section preferences before setup, parses each case once, warms it once, and takes the fastest of five runs, forcing the returned value each time. It preserves the section's session between cases and repeats. Do not put one-off setup inside timed code.
+
+An initial copy budget is twice the expected cost, at least 0.5. An initial width-ratio budget is the expected fraction plus 0.25. Explain the expected cost in a comment. Change a platform's budget only after understanding its difference. `set_budgets` replaces only budget footers, preserving code and comments. Multiline cases appear in logs by file and id or line number; structured results retain their full code.
 
 ## Attribution
 

@@ -276,15 +276,15 @@ pub(crate) fn position(n: &Number, size: usize) -> Result<usize, Error> {
 
 /// The positions that the index values of `a` give along an axis of length `size`, as `structure::positions` reads them: a negative value counts back from the end, and a NaN gives `Steps::FILL`. Storage that isn't compact reads each value through `Items::positions`.
 pub(crate) fn positions(a: &Value, size: usize) -> Result<Vec<usize>, Error> {
-    match a.as_items() {
-        Items::Compact(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => rustymath::structure::positions(view, size),
-        items => rustymath::structure::counted_positions(&items.positions().described(rustymath::structure::NOT_WHOLE)?, size),
+    match a.view() {
+        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => rustymath::structure::positions(view, size),
+        _ => rustymath::structure::counted_positions(&a.as_items().positions().described(rustymath::structure::NOT_WHOLE)?, size),
     }.map_err(Error::from)
 }
 
 /// A compact array of whole numbers serves as index values that a selection's table reads in place, so that no list of offsets is built from them.
 impl rustymath::gather::IndexSource for Value {
-    fn view(&self) -> View<'_> { match self.as_items() { Items::Compact(view) => view, Items::Values(_) => unreachable!("index values are compact") } }
+    fn view(&self) -> View<'_> { self.as_items().view().expect("index values are compact") }
 }
 
 /// The items a selection reaches. An offset is a flat position in the array. A path goes down through nested items, one position for each level, and the empty path is the whole array. A walk reaches the positions that `steps` give from `base`, in the order `walk` reads them, without listing them, as a selection of cells along axes does. In a batched run, each cell can reach offsets of its own (`batch::Cells`), which a read or a write serves on the batch's whole.
@@ -692,8 +692,8 @@ fn axis_part(value: &Value, layout: &rustymath::layout::Layout, axis: usize) -> 
     }
     let size = layout.shape()[axis];
     let value = axis_selector(value, layout, axis)?;
-    let selector = match value.as_items() {
-        Items::Compact(View::Booleans(_) | View::Integers(_) | View::Floats(_)) if !value.is_atom() => AxisSelector::Indices { layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::structure::index_table(std::sync::Arc::new(value.clone()), size)? },
+    let selector = match value.view() {
+        Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)) if !value.is_atom() => AxisSelector::Indices { layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::structure::index_table(std::sync::Arc::new(value.clone()), size)? },
         _ => {
             let positions = positions(&value, size)?;
             match positions[..] { [i] if value.is_atom() && i != Steps::FILL => AxisSelector::At(i), _ => AxisSelector::Indices { layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::gather::Table::new(positions) } }

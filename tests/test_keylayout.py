@@ -1,6 +1,6 @@
 import json, re
 import xml.etree.ElementTree as ET
-from basedpl.keyboards import LAYOUT, PLAIN, SHIFT, OPTION, OPTION_SHIFT, CONTROL_OPTION, attribute, keylayout, bases, shortcuts, dead_key_table
+from basedpl.keyboards import LAYOUT, PLAIN, SHIFT, OPTION, OPTION_SHIFT, CONTROL_OPTION, CONTROL_OPTION_SHIFT, attribute, keylayout, bases, shortcuts, dead_key_table
 
 layout = json.loads(LAYOUT.read_text())
 KEYS = {char: (int(code), i) for code, values in bases()['us']['keys'].items() if int(code) <= 50
@@ -35,8 +35,8 @@ def expected(presses):
     state, out = None, ''
     for kind, *key in presses:
         s = layout['states'][state] if state else None
-        if s and kind == 'option' and layout['option'].get(key[0]) == {'state': state}: value = s['terminator']
-        elif s and kind == 'key' and key[0] in s['keys']: value = s['keys'][key[0]]
+        if s and kind in ('key', 'option') and key[0] in s['keys']: value = s['keys'][key[0]]
+        elif s and kind in ('key', 'option') and layout['option'].get(key[0]) == {'state': state}: value = s['terminator']
         else:
             if s: out, state = out + s['terminator'] * (kind != 'delete'), None
             if s and kind in ('space', 'delete'): continue
@@ -71,13 +71,15 @@ def test_macos_follows_the_mapping_rules():
         starts |= {v['state']: starts[n] + [('key', k)] for n in list(starts) for k, v in layout['states'][n]['keys'].items() if isinstance(v, dict)}
     sequences = [[('option', k)] for k in layout['option']] + [[('key', '^'), ('key', '2')]]
     for name, start in starts.items():
-        sequences += [start + [('key', k)] for k in layout['states'][name]['keys']]
+        sequences += [start + [(kind, k)] for k in layout['states'][name]['keys'] for kind in ('key', 'option')]
+        if len(start) == 1: sequences += [start + [('key', start[0][1])]]
         sequences += [start + [('space',), ('key', 'x')], start + [('key', 'x')], start + [('delete',), ('key', 'a')], start + [('option', 'h')]]
     for presses in sequences: assert simulate(parsed, codes(presses)) == expected(presses), presses
     assert expected([('option', 'o'), ('key', '-')]) == '⊖'
     assert expected([('option', '6'), ('key', '-'), ('key', '1')]) == '⁻¹'
     assert expected([('option', 'o'), ('space',), ('key', '|')]) == '○|'
     assert expected([('option', 'q'), ('key', 'x')]) == '⎕x'
+    assert simulate(parsed, codes([('option', k) for k in '5x51'])) == 'ₓ₁'
 
 
 def test_regional_layouts_preserve_native_typing_and_bpl():
@@ -103,6 +105,8 @@ def test_regional_layouts_preserve_native_typing_and_bpl():
              ('de', [(10, PLAIN), (24, PLAIN), (0, PLAIN)], '^á'),
              ('de', [(23, OPTION_SHIFT), (18, PLAIN), (22, CONTROL_OPTION), (18, PLAIN)], '₁¹'),
              ('de', [(50, OPTION_SHIFT)], '≥'),
+             ('de', [(35, CONTROL_OPTION), (5, CONTROL_OPTION)], '⍒'),
+             ('fr', [(23, CONTROL_OPTION_SHIFT), (7, CONTROL_OPTION)], 'ₓ'),
              ('de', [(6, OPTION)], '•'), ('fr', [(12, OPTION)], '⍺'),
              ('fr', [(18, SHIFT), (20, PLAIN)], '1"'), ('fr', [(23, OPTION_SHIFT), (27, OPTION_SHIFT)], '[]'),
              ('fr', [(33, PLAIN), (14, PLAIN)], 'ê'), ('es', [(41, SHIFT), (39, PLAIN), (0, PLAIN)], 'Ñá')]

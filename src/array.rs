@@ -5,8 +5,8 @@ use crate::{
 };
 use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{
-    agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Floats, IntBuf, Ints, View, Width}, error::Kind, gather::Writes, search::Key,
-    with_float_width, with_width
+    agreement::Mapping, buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Floats, IntBuf, Ints, View, Width}, error::Kind, gather::Writes, search::Key, tolerant::Tolerant,
+    with_float_width, with_floats, with_ints, with_tolerance, with_width
 };
 use std::{borrow::Cow, fmt, sync::Arc};
 
@@ -174,19 +174,28 @@ pub struct ArrayData { layout: Layout, data: Data }
 
 /// An array's items. `Of` shares the items in a range of a base array's, with no copy: the whole base for a view under a new layout, or one part's range (`Value::part`). A view keeps its whole base alive, as a NumPy view does. `Node` holds the pending call that computes them on the first read (`fusion::Pending`). `Carried` holds a running level's data in their place (`transform::Carrier`): a dual's primal and tangent, or a record of linear calls, whose items are never computed. A base holds `Own` or `Node`.
 #[derive(Clone, Debug)]
-enum Data { Own(Storage), Of(Arc<ArrayData>, std::ops::Range<usize>), Node(Arc<Pending>), Carried(Carrier) }
+enum Data { Own(Storage), Of(Arc<ArrayData>, std::ops::Range<usize>, bool), Node(Arc<Pending>), Carried(Carrier) }
 
 impl ArrayData {
     fn array(shape: Shape, data: Storage) -> Value { Value::Array(Arc::new(Self { layout: shape.into(), data: Data::Own(data) })) }
     /// The storage that holds this array's items. A view shares its base's, so read a view's items through `items`. What compact storage says of itself as a whole, such as its prototype, holds for any range of it.
-    fn storage(&self) -> &Storage { match &self.data { Data::Own(storage) => storage, Data::Of(base, _) => base.storage(), Data::Node(pending) => forced(pending), Data::Carried(carrier) => carrier.storage() } }
+    fn storage(&self) -> &Storage { match &self.data { Data::Own(storage) => storage, Data::Of(base, ..) => base.storage(), Data::Node(pending) => forced(pending), Data::Carried(carrier) => carrier.storage() } }
+    fn dtype(&self) -> Option<DType> {
+        match &self.data { Data::Own(storage) => storage.items().dtype(), Data::Of(base, ..) => base.dtype(), Data::Node(p) => Some(p.dtype()), Data::Carried(_) => None }
+    }
+    fn fixed_width(&self) -> Option<Width> {
+        match &self.data {
+            Data::Own(storage) => storage.fixed_width(), Data::Of(base, _, fixed) => fixed.then(|| match base.dtype() { Some(DType::Integer(w)) => w, _ => unreachable!("only integer views have a fixed width") }),
+            Data::Node(pending) => pending.prototype().fixed_width(), Data::Carried(carrier) => carrier.template().fixed_width(),
+        }
+    }
     /// This array's items: for a view, its range of its base's. Owned storage, the common case, reads inline.
     #[inline(always)]
     fn items(&self) -> Items<'_> { if let Data::Own(storage) = &self.data { storage.items() } else { self.shared_items() } }
     /// The items of a view, a pending array or a carried array. A view's base is never a view, so it reads its base's storage.
     fn shared_items(&self) -> Items<'_> {
         match &self.data {
-            Data::Of(base, range) => { let items = base.storage().items(); if range.len() == items.len() { items } else { items.slice(range.clone()) } }
+            Data::Of(base, range, fixed) => { let items = base.storage().items().fixed(*fixed); if range.len() == items.len() { items } else { items.slice(range.clone()) } }
             Data::Carried(carrier) => carrier.items(), _ => self.storage().items()
         }
     }
@@ -196,8 +205,8 @@ impl ArrayData {
     fn owned(data: Data) -> Storage {
         match data {
             Data::Own(storage) => storage,
-            Data::Of(base, range) if range.len() == base.len() => Arc::try_unwrap(base).map_or_else(|base| base.storage().clone(), Self::into_storage),
-            Data::Of(base, range) => Storage::copy_of(base.items().slice(range)),
+            Data::Of(base, range, fixed) if range.len() == base.len() => Arc::try_unwrap(base).map_or_else(|base| base.storage().clone(), Self::into_storage).fixed(fixed),
+            Data::Of(base, range, fixed) => Storage::copy_of(base.items().slice(range)).fixed(fixed),
             Data::Node(pending) => Arc::try_unwrap(pending).map_or_else(|pending| forced(&pending).clone(), Pending::into_storage),
             Data::Carried(Carrier::Labelled(labelled)) => labelled.values().clone().into_storage(),
             Data::Carried(carrier) => carrier.storage().clone(),
@@ -212,26 +221,26 @@ impl ArrayData {
     /// An array of `layout` that shares `this`'s items, with no copy. A carried array gives a carrier of views of its parts (`Carrier::view`), so `Of` never wraps a carrier.
     fn view(this: &Arc<Self>, layout: Layout) -> Value {
         if let Data::Carried(carrier) = &this.data { return carrier.view(layout); }
-        Self::part(this, 0..this.len(), layout)
+        Self::part(this, 0..this.len(), layout, this.fixed_width().is_some())
     }
     /// An array of `layout` that shares the items in `range` of `this`'s, which isn't carried. The view reads `this`'s base, so views never chain.
-    fn part(this: &Arc<Self>, range: std::ops::Range<usize>, layout: Layout) -> Value {
+    fn part(this: &Arc<Self>, range: std::ops::Range<usize>, layout: Layout, fixed: bool) -> Value {
         debug_assert_eq!(layout.shape().iter().product::<usize>(), range.len());
-        let (base, start) = match &this.data { Data::Of(base, of) => (base.clone(), of.start), _ => (this.clone(), 0) };
-        Value::Array(Arc::new(Self { layout, data: Data::Of(base, start + range.start..start + range.end) }))
+        let (base, start) = match &this.data { Data::Of(base, of, _) => (base.clone(), of.start), _ => (this.clone(), 0) };
+        Value::Array(Arc::new(Self { layout, data: Data::Of(base, start + range.start..start + range.end, fixed) }))
     }
     /// The call that computes this array's items, while they haven't been computed. A view answers for its base.
     fn pending(&self) -> Option<&Arc<Pending>> {
-        match &self.data { Data::Node(pending) => Some(pending), Data::Of(base, _) => base.pending(), Data::Own(_) | Data::Carried(_) => None }.filter(|p| !p.is_forced())
+        match &self.data { Data::Node(pending) => Some(pending), Data::Of(base, ..) => base.pending(), Data::Own(_) | Data::Carried(_) => None }.filter(|p| !p.is_forced())
     }
     /// The running level's data that this array holds in place of items, if any.
     fn carrier(&self) -> Option<&Carrier> { match &self.data { Data::Carried(carrier) => Some(carrier), _ => None } }
     /// Whether a direct item is a function. Compact storage holds none, and a pending array computes numbers.
     fn holds_functions(&self) -> bool {
         match &self.data {
-            Data::Own(Storage::Compact(_)) | Data::Node(_) => false,
+            Data::Own(Storage::Compact(_) | Storage::Fixed(_)) | Data::Node(_) => false,
             Data::Own(storage) => storage.holds_functions(),
-            Data::Of(base, _) => base.holds_functions(),
+            Data::Of(base, ..) => base.holds_functions(),
             Data::Carried(carrier) => carried_functions(carrier),
         }
     }
@@ -260,7 +269,7 @@ impl Footprint for ArrayData {
     fn footprint_in(&self, seen: &mut Seen) -> usize {
         match &self.data {
             Data::Own(storage) => storage.footprint_in(seen),
-            Data::Of(base, _) => base.footprint_in(seen),
+            Data::Of(base, ..) => base.footprint_in(seen),
             Data::Node(pending) => pending.footprint_in(seen),
             Data::Carried(carrier) => carrier.footprint_in(seen),
         }
@@ -328,8 +337,8 @@ impl Value {
     /// The items of an array that owns compact items, not empty, under a layout with no names or keys.
     fn owned_compact(&self) -> Option<View<'_>> {
         let Self::Array(a) = self else { return None };
-        let Data::Own(Storage::Compact(items)) = &a.data else { return None };
-        (a.layout.plain() && items.len() > 0).then(|| items.view())
+        let Data::Own(storage) = &a.data else { return None };
+        (a.layout.plain() && storage.items().len() > 0).then(|| storage.items().view()).flatten()
     }
     /// Whether the values match, with each pair of numbers within the tolerance of the width they compare at. Numbers match whatever their exactness, and NaN matches NaN. Two axes match as arithmetic pairs them: their names don't conflict, as `rustymath::layout::names_conflict` says, and when both have keys, they hold the same keys in any order. Items along keyed axes compare by key. Functions and operators match when built from matching parts. Renderers take no part.
     pub(crate) fn matches_within(&self, other: &Self, t: Numeric, span: &crate::Span) -> Result<bool, Error> {
@@ -380,7 +389,7 @@ impl Value {
     fn unshared(&self, views: bool) -> Option<&Arc<Pending>> {
         let Self::Array(a) = self else { return None };
         let mut a = a;
-        if let (true, Data::Of(base, range)) = (views, &a.data) {
+        if let (true, Data::Of(base, range, _)) = (views, &a.data) {
             if Arc::strong_count(a) != 1 || range.len() != base.len() { return None; }
             a = base;
         }
@@ -467,7 +476,7 @@ impl Value {
     /// The exact integer `n`, as an atom.
     pub fn integer(n: i64) -> Self { Value::Number(Number::from_integer(n)) }
     /// The items as a rustymath view, borrowed, when the storage is compact.
-    pub fn view(&self) -> Option<View<'_>> { match self.as_items() { Items::Compact(v) => Some(v), Items::Values(_) => None } }
+    pub fn view(&self) -> Option<View<'_>> { self.as_items().view() }
     /// The array whose items this unbuilt structural copy reads through an affine map, with the offset of this array's first item and each axis's stride, counted in that array's items. A buffer export lends the items this way, so windows and reversals reach NumPy without being built.
     pub fn affine(&self) -> Option<(Value, usize, Vec<isize>)> { crate::fusion::affine(self) }
     /// The items as a compact buffer: moved with no copy where nothing else holds them, and copied otherwise. A pending array computes them first. Gives the value back when its items aren't compact.
@@ -477,7 +486,7 @@ impl Value {
             return copy.ok_or(self);
         }
         if self.view().is_none() { return Err(self); }
-        match self.into_storage() { Storage::Compact(b) => Ok(b), Storage::Mixed(..) => unreachable!("compact items stay compact") }
+        Ok(self.into_storage().into_buffer().expect("compact items stay compact"))
     }
     /// An array of shape `shape` holding `buffer`. Integer storage narrows to its smallest fitting width.
     pub fn from_buffer(shape: impl Into<Shape>, buffer: Buffer) -> Result<Self, ErrorKind> {
@@ -487,20 +496,24 @@ impl Value {
         };
         Self::from_storage(shape, storage)
     }
+    pub(crate) fn from_numeric_buffer(shape: impl Into<Shape>, buffer: Buffer, numeric: Numeric) -> Result<Self, ErrorKind> {
+        if let Some(width) = numeric.fixed { Self::from_storage(shape, Storage::fixed_at(buffer, width)) } else { Self::from_buffer(shape, buffer) }
+    }
     /// A frontend buffer imported at its supplied dtype, without integer narrowing.
     pub fn imported_buffer(shape: impl Into<Shape>, buffer: Buffer) -> Result<Self, ErrorKind> {
-        Self::from_storage(shape, Storage::Compact(buffer))
+        Self::from_storage(shape, Storage::Compact(buffer).fixed(true))
     }
-    /// An array of shape `shape` holding `items`, as data imported from another language. Numbers become floats when every one converts exactly and any is a float, and otherwise each item keeps its own kind.
+    /// Frontend items of shape `shape`, normalized by the shared numeric import policy in `data::imported`.
     pub fn imported(shape: Vec<usize>, items: Vec<Value>, empty_prototype: Value) -> Result<Self, ErrorKind> {
         crate::data::imported(shape, items, |_| false, empty_prototype)
     }
     /// The storage of this array for writing. The layout and the storage are copied first when anything else holds them.
     fn storage_mut(&mut self) -> &mut Storage { let Self::Array(a) = self else { unreachable!("only an array has storage") }; Arc::make_mut(a).storage_mut() }
+    pub(crate) fn set_fixed(&mut self, fixed: bool) { self.storage_mut().set_fixed(fixed); }
     /// The items for writing in place, when compact storage holds `A`s. The storage is copied first when anything else holds it.
     pub(crate) fn items_mut<A: crate::element::Stored>(&mut self) -> Option<&mut [A]> {
         if A::slice(self).is_none() { return None; }
-        match self.storage_mut() { Storage::Compact(b) => A::of_mut(b), Storage::Mixed(..) => None }
+        match self.storage_mut() { Storage::Compact(b) => A::of_mut(b), Storage::Fixed(b) => A::of_ints_mut(b), Storage::Mixed(..) => None }
     }
     /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins, and a `Steps::FILL` offset writes nothing. A weak number takes this array's width, as in arithmetic (`Gather`). Storage that can't hold an item widens or turns mixed by the rule for items (`Widening::Items`), as a literal of the same items would: each number keeps its exactness, and a Boolean stays apart from other numbers. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame. A write into a batch, or of one, writes every cell at once (`transform::written`).
     pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) -> Result<(), crate::transform::Stop> { self.written(Writes::Offsets(offsets), source) }
@@ -591,14 +604,6 @@ impl Value {
             _ => false,
         }
     }
-    /// This value beside `other` in a dyadic call: a weak number beside an array or a strong number takes the width that `Number::weak_width` gives it, as NEP 50 treats a Python scalar. `None` where it keeps its own width.
-    #[inline]
-    pub(crate) fn weakened(&self, other: &Value) -> Option<Value> {
-        let Value::Number(n) = self else { return None };
-        if !n.is_weak() { return None; }
-        if matches!(other, Value::Number(o) if o.is_weak()) { return None; }
-        self.to_float_width(n.weak_width(other.dtype()?)?).ok()
-    }
     /// This value with a weak number made strong (`Number::is_weak`), as an explicit width conversion makes it.
     pub(crate) fn strong(self) -> Value { match self { Value::Number(n) => Value::Number(n.marked(false)), v => v } }
 
@@ -608,7 +613,7 @@ impl Value {
         if element_count(&shape)? != 0 { return Err(Kind::Length.into()); }
         let prototype = prototype.fill();
         let data = match item_dtype(&prototype) {
-            Some(dtype) => Storage::with_capacity(Some(dtype), 0),
+            Some(dtype) => Storage::with_capacity(Some(dtype), 0).fixed(prototype.fixed_width().is_some()),
             None => Storage::Mixed(Vec::new(), Memo::with_prototype(prototype)),
         };
         Ok(ArrayData::array(shape, data))
@@ -622,20 +627,47 @@ impl Value {
     pub fn is_empty(&self) -> bool { self.len() == 0 }
     /// The items in their storage type. An atom is its own single item.
     pub(crate) fn as_items(&self) -> Items<'_> {
+        if let Self::Number(n) = self && let Some(ints) = n.integer_items() {
+            return Items::Compact(View::Integers(ints)).fixed(n.fixed_width().is_some());
+        }
         match self {
             Self::Array(a) => a.items(), Self::Number(n) => n.bool_slice().map(View::Booleans)
-                .or_else(|| n.integer_slice().map(|n| View::Integers(Ints::I64(n)))).or_else(|| n.float_items().map(View::Floats))
+                .or_else(|| n.float_items().map(View::Floats))
                 .or_else(|| n.complex_items().map(View::Complexes)).map_or(Items::Values(std::slice::from_ref(self)), Items::Compact),
             Self::Character(c) => Items::Compact(View::Characters(std::slice::from_ref(c))), Self::Function(_) | Self::Operator(_) | Self::Carried(_) => Items::Values(std::slice::from_ref(self))
         }
     }
     /// The compact kind of the items, as a kernel reads them. An atom takes the narrowest kind that holds it.
     pub(crate) fn dtype(&self) -> Option<DType> {
+        match self { Self::Array(a) => a.dtype(), atom => item_dtype(atom) }
+    }
+    pub(crate) fn fixed_width(&self) -> Option<Width> { match self { Self::Number(n) => n.fixed_width(), Self::Array(a) => a.fixed_width(), _ => None } }
+    pub(crate) fn ordinary(&self) -> Self {
         match self {
-            Self::Array(a) if a.carrier().is_some() => None,
-            Self::Array(a) => a.pending().map_or_else(|| a.items().dtype(), |p| Some(p.dtype())),
-            atom => item_dtype(atom),
+            Self::Number(n) => Self::Number(n.ordinary()),
+            Self::Array(a) if a.fixed_width().is_some() => ArrayData::part(a, 0..a.len(), a.layout.clone(), false),
+            _ => self.clone(),
         }
+    }
+    pub(crate) fn to_fixed(&self, width: Width) -> Result<Self, ErrorKind> {
+        let numeric = Numeric::current();
+        if let Self::Number(n) = self { return Ok(Self::Number(n.to_fixed(width, numeric)?)); }
+        if !matches!(self, Self::Array(_)) { return Err(Kind::Domain.into()); }
+        if let Self::Array(a) = self && self.dtype() == Some(DType::Integer(width)) {
+            return Ok(ArrayData::part(a, 0..a.len(), a.layout.clone(), true));
+        }
+        let buffer = match self.as_items().view() {
+            Some(View::Integers(ints)) => with_width!(width, T => with_ints!(ints, |v| T::buffer(v.iter().map(|&n| T::from_i64(n.into())).collect()))),
+            Some(View::Booleans(v)) => with_width!(width, T => T::buffer(v.iter().map(|&b| T::from_i64(i64::from(b))).collect())),
+            Some(View::Floats(v)) => with_tolerance!(numeric.tolerance_at(v.tag()), |t| {
+                with_width!(width, T => with_floats!(v, |v| T::buffer(v.iter().map(|&n| rustymath::convert::saturated::<T, f64>(t.floor(f64::from(n)))).collect())))
+            }),
+            _ => {
+                let values = self.elements().map(|v| v.to_fixed(width)).collect::<Result<Vec<_>, _>>()?;
+                return self.layout().collect(values, self.prototype().to_fixed(width)?);
+            },
+        };
+        Self::from_storage(self.shape(), Storage::Compact(buffer).fixed(true)).and_then(|v| v.with_layout(self.layout().clone()))
     }
     /// The width of the floats that hold the items, or of the parts of the complex numbers that do, when compact storage holds them or the value is such an atom.
     pub(crate) fn float_width(&self) -> Option<FloatWidth> { float_width_of(self.dtype()?) }
@@ -643,12 +675,12 @@ impl Value {
     pub(crate) fn to_float_width(&self, width: FloatWidth) -> Result<Self, ErrorKind> {
         if let Self::Number(n) = self { return n.to_float_width(width).map(Self::Number).map_err(|_| Kind::Domain.into()); }
         if !matches!(self, Self::Array(_)) { return Err(Kind::Domain.into()); }
-        match self.as_items() {
-            Items::Compact(View::Booleans(_) | View::Integers(_) | View::Floats(_)) => {
+        match self.view() {
+            Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)) => {
                 let floats = with_float_width!(width, F => F::build(self.shape(), crate::element::read_as::<F>(self).ok_or(Kind::Domain)?.into_owned()));
                 floats.ok_or(Kind::Domain)?.with_layout(self.layout().clone())
             }
-            Items::Compact(View::Complexes(z)) => {
+            Some(View::Complexes(z)) => {
                 let z = Self::complex(self.shape(), ComplexBuf::collect(width.into(), z.widened().iter().copied()))?;
                 z.with_layout(self.layout().clone())
             }
@@ -669,18 +701,26 @@ impl Value {
     pub(crate) fn storage_kind(&self, numeric: Numeric) -> &'static str {
         let held = self.template();
         match (&held, held.dtype()) {
+            (_, Some(dtype)) if held.fixed_width().is_some() => dtype.name(),
             (_, Some(dtype @ DType::Integer(_))) if numeric.is_static() => numeric.kind(dtype).name(),
             (_, Some(DType::Integer(_))) => "integer", (_, Some(dtype)) => dtype.name(),
             (Self::Number(_), None) => "rational", (Self::Function(_), None) => "function", _ => "mixed"
         }
     }
-    /// The compact items for an export to NumPy or rustymath, widened to the width they compute at under the settings in force, which `storage_kind` names. Static kinds can store integers narrower than their kind, and NumPy and rustymath compute at the dtype they receive, so they would wrap at the storage's width. `None` where the items already have that width or aren't compact, so the export lends them as they are.
+    /// The integer width a host export must convert to, or `None` when its storage already has the export dtype. Ordinary dynamic integers export as i64. Fixed integers keep their width, and static ordinary integers use their computation width. This reads metadata without computing pending items.
+    pub fn export_widening(&self) -> Option<Width> {
+        if self.fixed_width().is_some() { return None; }
+        let stored @ DType::Integer(storage_width) = self.dtype()? else { return None };
+        let numeric = Numeric::current();
+        let target = if numeric.is_static() { numeric.kind(stored) } else { DType::Integer(Width::I64) };
+        let DType::Integer(width) = target else { return None };
+        let storage_width = match self { Self::Number(n) => n.integer_items()?.tag(), _ => storage_width };
+        (width != storage_width).then_some(width)
+    }
+    /// Compact integer items converted to their host export dtype. `None` where an export can use the existing storage.
     pub fn widened_for_export(&self) -> Option<Buffer> {
-        let stored @ DType::Integer(_) = self.dtype()? else { return None };
-        let DType::Integer(width) = crate::settings::numeric().kind(stored) else { return None };
-        if DType::Integer(width) == stored { return None; }
-        let items = self.clone().into_buffer().ok()?;
-        let View::Integers(ints) = items.view() else { return None };
+        let width = self.export_widening()?;
+        let View::Integers(ints) = self.view()? else { return None };
         Some(with_width!(width, T => <T as rustymath::buffer::Element>::buffer(crate::element::cast::<T>(ints).into_owned())))
     }
     /// Whether the array reads another array's items, as a view.
@@ -688,7 +728,7 @@ impl Value {
     /// The bytes of the allocations that this value keeps alive: its items, a view's base, the arrays that a pending array reads, a dual's parts and a record's nodes. A shared allocation counts once. An atom that holds no array gives 0.
     pub(crate) fn footprint(&self) -> usize { self.footprint_in(&mut Seen::default()) }
     pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Compact(View::Floats(Floats::F64(v))) => Some(v), _ => None } }
-    pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items() { Items::Compact(View::Integers(Ints::I64(v))) => Some(v), _ => None } }
+    pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items().ints() { Some(Ints::I64(v)) => Some(v), _ => None } }
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Compact(View::Booleans(v)) => Some(v), _ => None } }
     pub fn at(&self, i: usize) -> Value { self.at_ref(i).into_owned() }
     /// Item `i`, or the prototype where `i` is `Steps::FILL`. A pending array gives the item without computing the rest.
@@ -706,7 +746,7 @@ impl Value {
     pub(crate) fn items(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Value> + '_ { range.map(|i| self.at(i)) }
     /// The items in `range`, as an array laid out by `layout`. Compact items stay in this array's storage, as a view of their range (`ArrayData::part`). Mixed items are copied, because a mixed array's memo answers for all its items.
     pub(crate) fn part(&self, range: std::ops::Range<usize>, layout: impl Into<Layout>) -> Result<Self, ErrorKind> {
-        if let Self::Array(a) = self { if a.carrier().is_none() && matches!(a.items(), Items::Compact(_)) { return Ok(ArrayData::part(a, range, layout.into())); } }
+        if let Self::Array(a) = self { if a.carrier().is_none() && a.items().view().is_some() { return Ok(ArrayData::part(a, range, layout.into(), a.fixed_width().is_some())); } }
         let mut data = Gather::new(&[self], range.len());
         data.extend(self, range);
         data.finish(layout.into(), || self.prototype())
@@ -715,7 +755,10 @@ impl Value {
     pub fn prototype(&self) -> Value {
         let Self::Array(a) = self else { return self.fill() };
         if let Some(carrier) = a.carrier() { return carrier.template().prototype(); }
-        match a.pending() { Some(p) => p.prototype(), None => a.storage().prototype() }
+        match a.pending() {
+            Some(p) => p.prototype(),
+            None => a.items().prototype().unwrap_or_else(|| a.storage().prototype()),
+        }
     }
 
     pub(crate) fn with_shape(&self, shape: impl Into<Shape>) -> Result<Self, ErrorKind> {
@@ -847,6 +890,7 @@ impl Value {
             (Storage::Mixed(v, _), _) => Storage::compact(v.iter().map(Value::fill).collect(), Widening::Items),
             (_, Items::Compact(View::Booleans(_))) => Storage::Compact(Buffer::Booleans(vec![false; a.len()])),
             (_, Items::Compact(View::Integers(_))) => Storage::Compact(Buffer::Integers(IntBuf::U8(vec![0; a.len()]))),
+            (_, Items::Fixed(v)) => Storage::Fixed(with_width!(v.tag(), T => match T::buffer(vec![T::from_i64(0); a.len()]) { Buffer::Integers(v) => v, _ => unreachable!() })),
             (_, Items::Compact(View::Floats(v))) => Storage::Compact(Buffer::Floats(FloatBuf::collect(v.tag(), std::iter::repeat_n(0.0, a.len())))),
             (_, Items::Compact(View::Complexes(z))) => Storage::Compact(Buffer::Floats(FloatBuf::collect(z.tag().into(), std::iter::repeat_n(0.0, a.len())))),
             (_, Items::Compact(View::Characters(_))) => Storage::Compact(Buffer::Characters(vec![' '; a.len()])), (_, Items::Values(_)) => unreachable!("mixed storage fills above")

@@ -202,16 +202,19 @@ impl Value {
         }
     }
 
-    /// The marker that a nonempty array writes once after its notation, in place of one for each number: `ₓ` where every item is an exact integer, and a width's marker where every item is a float, or a complex number with parts, of one width that `el` doesn't leave plain.
-    pub(crate) fn mark(&self, el: Elide) -> Option<char> {
-        use rustymath::buffer::DType;
+    /// One numeric marker for a nonempty array whose items share a kind. Float widths obey `el.plain`.
+    pub(crate) fn mark(&self, el: Elide) -> Option<&'static str> {
         if self.is_empty() { return None; }
-        match self.shown_dtype()? { DType::Integer(_) => el.marks.then_some('ₓ'), DType::Float(w) => el.width_marker(w), DType::Complex(w) => el.width_marker(w.into()), _ => None }
+        let (kind, fixed) = self.shown_kind()?;
+        el.kind_marker(kind, fixed)
     }
-    /// The kind of item that every item of the array holds, which display marks once for the whole array: compact storage's dtype, or for mixed storage the dtype that would hold its items compactly under the rule for items (`items_dtype`). Display then depends on the items, not on how they're stored. A carrier shows its template's kind.
-    pub(crate) fn shown_dtype(&self) -> Option<rustymath::buffer::DType> {
+    /// The dtype and fixedness shared by the items, independent of compact or mixed storage. A carrier shows its template's kind.
+    pub(crate) fn shown_kind(&self) -> Option<(rustymath::buffer::DType, bool)> {
         let held = self.template();
-        match held.as_items() { Items::Values(items) => super::storage::items_dtype(items, Widening::Items), Items::Compact(_) => held.dtype() }
+        match held.as_items() {
+            Items::Values(items) => super::storage::items_kind(items, Widening::Items),
+            items => items.dtype().map(|dtype| (dtype, items.fixed_width().is_some())),
+        }
     }
     /// A number of an array that `mark` marks, without its own marker.
     fn unmarked_item(&self, el: Elide) -> String { let Self::Number(n) = self else { unreachable!("compact storage holds numbers") }; el.unmarked(n) }
@@ -255,7 +258,7 @@ impl Value {
     /// Whether plain display shows the vector as a strand: a vector of two or more numbers, characters or strings. Exact integers show in brackets instead.
     pub(crate) fn is_strand(&self, el: Elide) -> bool {
         matches!(self, Self::Array(_)) && self.shape().len() == 1 && self.len() >= 2 && !self.has_keys() && !self.shows_names(el)
-            && self.string_literal().is_none() && !matches!(self.shown_dtype(), Some(rustymath::buffer::DType::Integer(_))) && match self.as_items() {
+            && self.string_literal().is_none() && !matches!(self.shown_kind(), Some((rustymath::buffer::DType::Integer(_), _))) && match self.as_items() {
                 Items::Values(items) => {
                     items.iter().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal().is_some())
                 }
@@ -269,8 +272,8 @@ impl Value {
         let prototype = self.prototype();
         match (self.shape(), &prototype) {
             ([_], Self::Number(n)) if n.as_bool().is_some() => "0⍴$f".into(),
-            ([_], Self::Number(n)) if n.is_exact() => "⍬ₓ".into(),
-            ([_], Self::Number(n)) => format!("⍬{}", el.marker(n).map_or(String::new(), String::from)),
+            ([_], Self::Number(n)) if n.is_exact() => format!("⍬{}", Elide::NONE.marker(n).unwrap_or_default()),
+            ([_], Self::Number(n)) => format!("⍬{}", el.marker(n).unwrap_or_default()),
             ([_], Self::Character(_)) => "\"\"".into(),
             (shape, _) => {
                 let shape: Vec<_> = shape.iter().map(ToString::to_string).collect();
@@ -286,7 +289,7 @@ impl Value {
             let mark = self.elements().map(|e| e.mark(el)).reduce(|a, b| if a == b { a } else { None }).flatten();
             let item = if mark.is_some() { Self::unmarked_item } else { Self::item };
             let rows = self.shown_items(edges, |e| e.bracket_items(item, el, el.edges(e.shape()))).join("⋄");
-            return format!("({rows}){}", mark.map_or(String::new(), String::from));
+            return format!("({rows}){}", mark.unwrap_or_default());
         }
         format!("[{}]", self.bracket_items(Self::item, el, edges))
     }

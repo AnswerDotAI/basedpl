@@ -9,6 +9,7 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [value]{#term-value} | a number, character, function, operator or array |
 | [atom]{#term-atom} | a value that isn't an array: a number, character, function or operator |
 | [number]{#term-number} | an approximate real or complex number, or an exact integer or rational, as [Numbers](numbers.qmd) describes |
+| [Mathish types]{#term-mathish-types} | ordinary exact numbers, 64-bit floats and complex numbers with 64-bit parts, under dynamic kinds. Fixed-integer calculations are excluded. [Mathish mode](numbers.qmd#mathish-mode) applies its conventions when enabled |
 | [character]{#term-character} | one Unicode character, written in single quotes: `'a'` |
 | [primitive]{#term-primitive} | a built-in function or operator, written as one glyph: `+` or `/` |
 | [dfn]{#term-dfn} | a function or operator written in braces, as [Dfns](dfns.ipynb) describes: `{⍵+1}` |

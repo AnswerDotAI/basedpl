@@ -88,7 +88,7 @@ For APL users, some key differences are:
 - **Exact integers and rationals** alongside approximate real and complex numbers.
 - Dfns, trains and operators, with additions such as Under, iteration histories, windows and function arrays.
 
-Positions and axes count from 0, as in BQN and Python. Approximate comparisons use tolerance `1E¯14`. See the [language principles](https://answerdotai.github.io/basedpl/principles.html) for why BPL works this way, the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html) for Dyalog differences and [Arrays](https://answerdotai.github.io/basedpl/arrays.html) for the array model.
+Positions and axes count from 0, as in BQN and Python. Default [Mathish mode](https://answerdotai.github.io/basedpl/numbers.html#mathish-mode) uses relative tolerance `1E¯14` for 64-bit comparisons and defines `0÷0=0` for [Mathish types](https://answerdotai.github.io/basedpl/terms.html#term-mathish-types). See the [language principles](https://answerdotai.github.io/basedpl/principles.html) for the language design, the [glyph reference](https://answerdotai.github.io/basedpl/glyphs.html) for Dyalog differences and [Arrays](https://answerdotai.github.io/basedpl/arrays.html) for the array model.
 
 ### Numbers
 

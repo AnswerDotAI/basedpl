@@ -41,7 +41,7 @@ pub(super) fn unique(right: &Value, span: &Span) -> Result<Value, Error> { repli
 
 /// `left` with the cells of `right` that it lacks. A weak `right` takes the width that `left` gives it first, as `catenate` weakens its arguments, because `without` makes it an array.
 pub(super) fn union(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
-    let weak = right.weakened(left);
+    let weak = Primitive::Union.weaken_value(right, left);
     catenate(left, &without(weak.as_ref().unwrap_or(right), left, span)?, None, true)
 }
 

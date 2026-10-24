@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Annotated
 from fastws.cargo import timing_lock
 from fastcore.script import parse_cli
-from ._core import _captured_literal, _reference_cases
+from ._core import _captured_literal, _reference_file
 from .reference import Corpus, _dyalog_string
 from . import BplError
 from .worker import INSTALLED_BPL, NATIVE, Worker
@@ -26,7 +26,7 @@ FLAGS = 'unfused', 'batched', 'mixed'
 @dataclass
 class Case:
     code: str
-    expect: str
+    expect: str | None = None
     id: str = ''
     comment: str = ''
     rtol: float = 0
@@ -39,16 +39,17 @@ class Case:
     output: str | None = None
     input: str | None = None
     prefs: str | None = None
+    budgets: tuple = ()
 
 
 def _escaped(text): return text.replace('\\', '\\\\').replace('\n', '\\n')
 
 
 def parse(text):
-    "The cases of `text`, a `.bpl` reference file, as Rust's `reference::cases` reads them. A malformed file raises `ValueError`."
-    return [Case(code=c['code'], expect=c['expected_code'] if 'expected_code' in c else ERROR+c['expected_error'], id=c['id'], comment=c['comment'],
+    "The records of `text`, as the shared native BPL parser reads them. Malformed files raise `ValueError`."
+    return [Case(code=c['code'], expect=c.get('expected_code', ERROR+c['expected_error'] if 'expected_error' in c else None), id=c['id'], comment=c['comment'],
                  rtol=c.get('relative_tolerance', 0), atol=c.get('absolute_tolerance', 0), **{key: c.get(key, False) for key in FLAGS}, line=c['line'],
-                 section=c['section'], output=c.get('expected_output'), input=c.get('input'), prefs=c.get('prefs')) for c in _reference_cases(text)]
+                 section=c['section'], output=c.get('expected_output'), input=c.get('input'), prefs=c.get('prefs'), budgets=tuple(c.get('budgets', ()))) for c in _reference_file(text)['cases']]
 
 
 def _reads_back(record, case):
@@ -63,6 +64,7 @@ def render(cases):
     if len({case.prefs for case in cases}) > 1: raise ValueError('cases from files with different `•prefs` headers')
     result, section = [cases[0].prefs+'\n\n'] if cases and cases[0].prefs else [], ''
     for case in cases:
+        if case.expect is None or case.budgets: raise ValueError('edit timed files in place, not through render')
         if case.section != section:
             result.append(f'⍝⍝ {case.section}\n\n')
             section = case.section
@@ -211,7 +213,7 @@ def check_file(
     "Check the cases in `path` as `tests/reference.rs` does, in a fresh worker for each core that takes every n-th case, and return the failures in the file's order."
     if isinstance(ids, (int, str)): ids = [ids]
     source = Path(path).read_text()
-    cases = _reference_cases(source)
+    cases = _reference_file(source)['cases']
     lines = [c['line'] for c in cases if ids is None or c['id'] in ids or c['line'] in ids]
     # An id that names no case goes to every worker, whose error names it.
     unknown = [i for i in ids or () if not any(i in (c['id'], c['line']) for c in cases)]
@@ -232,7 +234,7 @@ def check_page(
     return _failures('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, bpl)
 
 _ROOT = Path(__file__).parents[2]
-_SPEED = _ROOT/'tests'/'speed.txt'
+_SPEED = _ROOT/'tests'/'speed'
 # The budgets on each case line of a budget file, after its code, in order: macOS on Apple silicon, Linux on CI's x86 runner, then the browser build where the file has one.
 _BUDGETS = ('macos', 'linux', 'wasm')
 
@@ -241,7 +243,7 @@ def _platform():
     import rustymath
     return _BUDGETS[rustymath.timing().column]
 
-_PKG = _SPEED.with_name('wasm-pkg.mjs')
+_PKG = _SPEED.parent/'wasm-pkg.mjs'
 
 class Costs(list):
     "Each case's cost, as `(code, picoseconds per item, copies)` rows. Copies is `None` where one copy of the data is too quick to time."
@@ -249,7 +251,7 @@ class Costs(list):
 
 def time_cases(
     cases:Annotated[str, {'nargs':'+'}], # A BPL expression to time, or a list of them
-    setup:str=None, # BPL that defines the data and its number of items `n`; None: the first `[setup]` section of `tests/speed.txt`
+    setup:str=None, # BPL that defines the data and its number of items `n`; None: the setup in tests/speed/arrays.bpl
     prefs='', # BPL that runs before `setup`, such as `•prefs ["float":32]`
     threads=1, # Threads that each case's rustymath calls split across, for a scaling check; 0: rustymath's default
     native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
@@ -257,9 +259,9 @@ def time_cases(
     timeout:float=None # Seconds before the worker is closed
 ):
     "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data."
-    speed = _SPEED.read_text() if setup is None else f'[setup]\n{setup}'
+    setup = _reference_file((_SPEED/'arrays.bpl').read_text())['setup'] if setup is None else setup
     cases = [cases] if isinstance(cases, str) else list(cases)
-    with Worker(bpl, native) as w: r = w.request(dict(timing=dict(speed=speed, prefs=prefs, cases=cases, threads=threads)), timeout)
+    with Worker(bpl, native) as w: r = w.request(dict(timing=dict(setup=setup, prefs=prefs, cases=cases, threads=threads)), timeout)
     if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
     return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
 
@@ -513,34 +515,35 @@ class SpeedCosts(list):
     def __repr__(self): return '\n'.join(f'{cost:>9.2f} {_or_dash(b, "g"):>9} {_or_dash(ns, ".3f"):>9} {"over" if _over(cost, b) else "":4}  {s} {c}' for s, c, cost, b, ns in self)
 
 def speed_costs(
-    wasm:Path=None, # A directory that `cargo wasm --out` wrote, to time in that browser build, as `tests/wasm-speed.mjs` does; None: a fresh native worker, as `tests/speed.rs` does
-    native=False, # Time rustymath's own linear algebra in place of Accelerate in a native timing, as `Worker`'s `native` does
-    bpl:Path=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
-    speed:str=None, # Text in `speed.txt`'s format; None: `tests/speed.txt`
-    prefs='', # BPL that runs before each section's header, such as `•prefs ["kinds":"static"]`
-    timeout:float=None, # Seconds before the timing stops
-    cases:Annotated[str, {'nargs':'*', 'opt':False}]=None # A case's code, or a list of codes, to time in every section that has it; None or empty: every case
+    wasm:Path=None, # A directory that `cargo wasm --out` wrote; None: a fresh native worker
+    native=False, # Time Rustymath's own linear algebra instead of Accelerate
+    bpl:Path=None, # A native bpl to time; None: the installed one
+    speed:str=None, # One BPL speed file's text; None: tests/speed/*.bpl
+    prefs='', # BPL run before each section's preferences and setup
+    timeout:float=None, # Seconds before timing stops
+    cases:Annotated[str, {'nargs':'*', 'opt':False}]=None # Codes or file-qualified labels to time; None: all
 ):
-    "Time every case in `speed` as the speed test does, with the budget that limits it in that build."
-    speed = _SPEED.read_text() if speed is None else speed
+    "Time the BPL speed records, with their budgets, through the shared native/browser runner."
+    files = [dict(name=p.name, text=p.read_text()) for p in sorted(_SPEED.glob('*.bpl'))] if speed is None else [dict(name='<input>', text=speed)]
     cases = [cases] if isinstance(cases, str) else cases or None
     if wasm is None:
-        with Worker(bpl, native) as w: r = w.request(dict(costs=dict(speed=speed, cases=cases, prefs=prefs)), timeout)
+        with Worker(bpl, native) as w: r = w.request(dict(costs=dict(files=files, cases=cases, prefs=prefs)), timeout)
         if e := r['error']: raise ValueError(e['message'])
         rows = r['costs']
     else:
         script = (f'import {{ costs }} from {json.dumps(_PKG.as_uri())}; import {{ readFileSync }} from "node:fs"; '
-                  f'process.stdout.write(JSON.stringify(costs(readFileSync(0, "utf8"), {json.dumps(cases)}, {json.dumps(prefs)})))')
+                  f'process.stdout.write(JSON.stringify(costs(JSON.parse(readFileSync(0, "utf8")), {json.dumps(cases)}, {json.dumps(prefs)})))')
         with timing_lock(exclusive=True):
-            p = subprocess.run(['node', '--no-liftoff', '--input-type=module', '-e', script], input=speed, capture_output=True, text=True,
-                               timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(wasm)))
+            p = subprocess.run(['node', '--no-liftoff', '--input-type=module', '-e', script], input=json.dumps(files), capture_output=True,
+                               text=True, timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(wasm)))
         if p.returncode: raise ValueError(p.stderr)
         if p.stderr: sys.stderr.write(p.stderr)
         rows = json.loads(p.stdout)
     build = _platform() if wasm is None else 'wasm'
     i = _BUDGETS.index(build)
-    rows = ((c['section'], c['code'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None, c['seconds']*1e9 if 'seconds' in c else None) for c in rows) # A saved `bpl` from before 23 October 2026 gives no `seconds`
+    rows = ((c['section'], c['label'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None, c['seconds']*1e9) for c in rows)
     return SpeedCosts(rows, platform=None if wasm else build)
+
 
 _LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+)(?:, (?P<ns>[\d.]+) ns)?$')
 _COPY = re.compile(r'^(?:\S*Z )?(?:# )?copy of (?P<items>\d+) (?P<bytes>\d+)-byte items: (?P<ns>[\d.]+) ns an item, (?P<source>stored for|measured on) (?P<cpu>[^\r\n]+?)(?:: add it to rustymath::timing::COPIES)?[ \t]*$', re.M)
@@ -636,41 +639,52 @@ class Budgets(list):
     def __repr__(self): return '\n'.join(f'{old:>9} -> {new:<9} {build:6}  {s} {c}' for s, c, build, old, new in self)
 
 def _budget(section, expected):
-    "The budget that `speed.txt`'s rule gives a case in `section` that should cost `expected`: twice it in copies, rounded up to two significant figures and at least 0.5, or 0.25 more than it in `[widths]`, rounded up to two decimal places."
+    "Twice the expected copy cost, rounded up to two significant figures and at least 0.5, or the widths ratio plus 0.25, rounded up to two decimal places."
     if section == 'widths': return Decimal(repr(expected + 0.25)).quantize(Decimal('0.01'), ROUND_CEILING)
     return Context(prec=2, rounding=ROUND_CEILING).create_decimal(repr(max(0.5, 2*expected)))
 
 def set_budgets(
-    expected, # Each case's expected cost, from a first-principles analysis for an initial budget or from a fuller understanding of the case later, as a dict from its code to the cost: in copies, or in `[widths]` as a fraction of the 64-bit time
-    path=_SPEED, # The budget file to rewrite: basedpl's `tests/speed.txt`, or rustymath's `tests/speed.txt` or `tests/speed_python.txt`
-    builds=None, # The budget columns to set, 'macos', 'linux' or 'wasm', or a list of them; None: every column the file has. Name a column only for a platform whose expected cost differs, as a comment above the case says
-    sections=None # A section's name, or a list of names, whose cases to set; None: every section
+    expected, # Expected costs keyed by case code, in copies or, for widths, as a 32/64-bit ratio
+    path=_SPEED, # A BPL file/directory, or Rustymath's speed.txt or speed_python.txt
+    builds=None, # macos, linux or wasm, or a list; None: every column present
+    sections=None # Section names to update; None: all
 ):
-    "Set the budgets of each case in `expected` under the rule in `path`'s header. A case outside `expected` or `sections`, and a column outside `builds`, keeps its budget. Returns the budgets that changed."
+    "Replace selected budget footers, leaving source and prose unchanged; return the changed budgets."
     if isinstance(builds, str): builds = [builds]
     if isinstance(sections, str): sections = [sections]
     for code, cost in expected.items():
         if not math.isfinite(cost) or cost < 0: raise ValueError(f'{code} should cost {cost}')
     path = Path(path)
-    lines, section, changes = path.read_text().split('\n'), None, Budgets()
-    width = min(len(_BUDGETS), max((l.count('\t') for l in lines if not l.startswith('#')), default=0))
+    if path.is_dir(): return Budgets(row for p in sorted(path.glob('*.bpl')) for row in set_budgets(expected, p, builds, sections))
+    data, records = path.read_bytes(), []
+    if path.suffix == '.bpl':
+        records = [(c['section'], c['code'], c['budgets'], c['budget_span']) for c in _reference_file(data.decode())['cases'] if 'budgets' in c]
+    else:
+        section, offset = None, 0
+        for line in data.splitlines(keepends=True):
+            text = line.decode().rstrip('\r\n')
+            if m := re.fullmatch(r'\[([^\] ]+)\](?: .*)?', text): section = m[1]
+            elif text and not text.startswith('#') and section != 'setup':
+                code, *budgets = text.split('\t')
+                if budgets: records.append((section, code, budgets, (offset, offset+len(text.encode()))))
+            offset += len(line)
+    width = min(len(_BUDGETS), max((len(row[2]) for row in records), default=0))
     if builds and (unknown := set(builds) - set(_BUDGETS[:width])): raise ValueError(f'{path.name} has no budget column {", ".join(sorted(unknown))}')
-    columns = [i for i, build in enumerate(_BUDGETS[:width], 1) if builds is None or build in builds]
-    for k, line in enumerate(lines):
-        if not line or line.startswith('#'): continue
-        if m := re.fullmatch(r'\[([^\] ]+)\](?: .*)?', line):
-            section = m[1]
-            continue
-        fields = line.split('\t')
-        if section == 'setup' or (cost := expected.get(fields[0])) is None or sections is not None and section not in sections: continue
-        fields += [''] * (width + 1 - len(fields))
+    columns = [i for i, build in enumerate(_BUDGETS[:width]) if builds is None or build in builds]
+    changes, edits = Budgets(), []
+    for section, code, fields, span in records:
+        if (cost := expected.get(code)) is None or sections is not None and section not in sections: continue
+        fields = [*fields, *['']*(width-len(fields))]
         new = f'{_budget(section, cost).normalize():f}'
         for i in columns:
-            if new != fields[i]: changes.append((section, fields[0], _BUDGETS[i-1], fields[i], new))
+            if new != fields[i]: changes.append((section, code, _BUDGETS[i], fields[i], new))
             fields[i] = new
-        lines[k] = '\t'.join(fields)
-    path.write_text('\n'.join(lines))
+        prefix = '⍝⍝: ' if path.suffix == '.bpl' else code+'\t'
+        edits.append((*span, (prefix+'\t'.join(fields)).encode()))
+    for start, end, replacement in reversed(edits): data = data[:start]+replacement+data[end:]
+    if edits: path.write_bytes(data)
     return changes
+
 
 _COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff disasm speed_costs thread_scaling cargo_costs pytest_costs compare_costs wasm_test'.split()
 

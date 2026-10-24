@@ -11,17 +11,18 @@ fn check(session: &Session, code: &str, expected: &str) {
     assert!(actual.zip(wanted).is_some_and(|(a, w)| a.same(&w)), "{code} didn't give {expected}");
 }
 
-/// Every case in `speed.txt` takes the routes its work needs, or names the gap. Run as `•explain` runs its text, after a warm-up run, a case records no slow-path event (`explain::Events::slow`) beyond the events that its comment lines name (`timing::Named`): `# allows` lines, each with the principle that allows its event, and `# gap` lines, each with what a faster route should do instead. A `declined` event needs no line, because it explains another event, but a line may name one. A line whose event no longer appears fails too, so the lines stay true and a fixed gap's line goes. The test prints the gaps it tolerates, which `cargo test -- --nocapture` shows. Like the speed test, it runs each case at its full size on one thread. It holds the timing lock shared, as a test run does. It runs `explain_and_memory`'s checks first, because `•explain` records what every thread in its process does, so no other test may evaluate beside it.
+/// Every case in `speed/*.bpl` takes the routes its work needs, or names the gap. Run as `•explain` runs its text, after a warm-up run, a case records no slow-path event (`explain::Events::slow`) beyond the events that its comment lines name (`timing::Named`): `⍝⍝ allows` lines, each with the principle that allows its event, and `⍝⍝ gap` lines, each with what a faster route should do instead. A `declined` event needs no line, because it explains another event, but a line may name one. A line whose event no longer appears fails too, so the lines stay true and a fixed gap's line goes. The test prints the gaps it tolerates, which `cargo test -- --nocapture` shows. Like the speed test, it runs each case at its full size on one thread. It holds the timing lock shared, as a test run does. It runs `explain_and_memory`'s checks first, because `•explain` records what every thread in its process does, so no other test may evaluate beside it.
 #[test]
 fn speed_cases_take_their_routes() {
     explain_and_memory();
     let _lock = rustymath::timing::shared().unwrap();
     rustymath::parallel::set_threads(1);
-    let routes = timing::routes(include_str!("speed.txt"), None, &InterruptHandle::default()).unwrap();
+    let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
+    let routes = timing::routes(&files, None, &InterruptHandle::default()).unwrap();
     let (mut wrong, mut gaps) = (Vec::new(), Vec::new());
     for r in &routes {
-        let case = format!("[{}] {}", r.section, r.code);
-        let lines: Vec<(&str, &str, &str)> = r.named.allowed.iter().map(|(a, e)| ("allows", *a, e.as_str())).chain(r.named.gaps.iter().map(|(a, e)| ("gap", *a, e.as_str()))).collect();
+        let case = format!("[{}] {}", r.section, r.label);
+        let lines: Vec<(&str, &str, &str)> = r.named.allowed.iter().map(|(a, e)| ("allows", a.as_str(), e.as_str())).chain(r.named.gaps.iter().map(|(a, e)| ("gap", a.as_str(), e.as_str()))).collect();
         for (record, event, fields) in &r.slow {
             match lines.iter().find(|&&(_, a, e)| a == *record && e == *event) {
                 None if *record == "declined" => {}
@@ -33,10 +34,11 @@ fn speed_cases_take_their_routes() {
         wrong.extend(lines.iter().filter(|&&(_, a, e)| !r.slow.iter().any(|(record, event, _)| a == *record && e == *event)).map(|(word, a, e)| format!("{case}: {word} {a} \"{e}\", which no longer appears")));
     }
     println!("gaps that speed cases tolerate: {gaps:#?}");
-    assert!(wrong.is_empty(), "name an event above its case with `# allows RECORD \"EVENT\": principle` only where a principle allows it, or with `# gap RECORD \"EVENT\": what should happen` where a faster route should remove it: {wrong:#?}");
+    assert!(wrong.is_empty(), "name an event above its case with `⍝⍝ allows RECORD \"EVENT\": principle` only where a principle allows it, or with `⍝⍝ gap RECORD \"EVENT\": what should happen` where a faster route should remove it: {wrong:#?}");
 }
 
 fn explain_and_memory() {
+    assert!(std::mem::size_of::<basedpl::Number>() <= 32);
     let session = Session::new();
     check(&session, "v←¿1000⍴0 ⋄ k←¿1000⍴7 ⋄ b←0=¿1000⍴3 ⋄ m←[2 1 0⋄1 3 1⋄0 1 4]ₓ ⋄ $t", "$t");
     // Each documented spelling takes its fast combination once. Reference cases in `core.bpl` check that each gives what the same functions give through a dfn.

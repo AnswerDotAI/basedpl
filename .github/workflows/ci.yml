@@ -30,7 +30,7 @@ jobs:
         run: pip install 'fastws-cli>=0.0.25' && ${{ env.STAGE_BPL }}
       - uses: PyO3/maturin-action@v1
         with:
-          args: --profile dist --no-default-features --out dist -i python3.11 -i python3.12 -i python3.13
+          args: --profile dist --no-default-features --compression-level 9 --out dist -i python3.11 -i python3.12 -i python3.13
           manylinux: auto
           # This runs inside the manylinux container, whose old glibc lets the binary run on older Linux distributions.
           before-script-linux: export PATH="/opt/python/cp311-cp311/bin:$PATH" && python3.11 -m pip install 'fastws-cli>=0.0.25' && ${{ env.STAGE_BPL }}
@@ -38,7 +38,7 @@ jobs:
       - name: Time the release build
         continue-on-error: true
         timeout-minutes: 20
-        run: bin/${{ matrix.binary }} --costs tests/speed.txt
+        run: bin/${{ matrix.binary }} --costs tests/speed
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}

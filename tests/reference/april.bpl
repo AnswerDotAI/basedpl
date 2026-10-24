@@ -7088,8 +7088,8 @@ hex ¯1+2*53   ⍝ ⊂"001fffffffffffff"
 ⍝ april:2362 — Imaginary number; Test Format text; use BasedPL's subscript ⱼ separator instead of April's uppercase J
 ⍕3j9   ⍝ "3ⱼ9"
 
-⍝ april:410 — Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Remove redundant dialect settings; based folds return the result directly
-÷⍨0   ⍝ $n
+⍝ april:410 — Commuted division follows the Mathish zero rule
+÷⍨0   ⍝ 0
 
 ⍝ april:1933 — Strand assignment of nested scalar variable; Pure example translated to completed BasedPL semantics; independent upstream expectation retained; Remove redundant dialect settings; based folds return the result directly
 [a b c]←⊂3 3⍴1 ⋄ +/[a b c]   ⍝ [3 3 3⋄3 3 3⋄3 3 3]

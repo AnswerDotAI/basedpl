@@ -25,17 +25,15 @@ impl Input {
         match action { Action::Text(text) => Cmd::Insert(1, text.clone()), Action::State(name) => { self.dead = Some(name.clone()); Cmd::Repaint } }
     }
 
-    /// The next key after a dead key. A listed key types its text or moves on. Repeating the chord or Space types the terminator. Backspace and Escape cancel and type nothing. Any other key types the terminator, then acts as if nothing were pending. Enter submits the line with the terminator added.
+    /// The next key after a dead key. A listed key types its text or moves on, with or without Alt. Repeating the prefix key or Space types the terminator. Backspace and Escape cancel and type nothing. Any other key types the terminator, then acts as if nothing were pending. Enter submits the line with the terminator added.
     fn pending_key(&mut self, name: &str, key: KeyEvent, line: &str, pos: usize) -> Cmd {
         let state = layout().state(name);
         match key {
-            KeyEvent(KeyCode::Char(c), Modifiers::ALT) if matches!(layout().alt(c), Some(Action::State(next)) if next == name) => {
-                return Cmd::Insert(1, state.terminator.clone())
-            }
-            KeyEvent(KeyCode::Char(' '), Modifiers::NONE) => return Cmd::Insert(1, state.terminator.clone()),
             KeyEvent(KeyCode::Backspace | KeyCode::Esc, _) => return Cmd::Repaint,
-            KeyEvent(KeyCode::Char(c), m) if m.difference(Modifiers::SHIFT).is_empty() => {
+            KeyEvent(KeyCode::Char(' '), m) if m.difference(Modifiers::ALT).is_empty() => return Cmd::Insert(1, state.terminator.clone()),
+            KeyEvent(KeyCode::Char(c), m) if m.difference(Modifiers::SHIFT | Modifiers::ALT).is_empty() => {
                 if let Some(action) = find(&state.keys, c) { return self.act(action); }
+                if matches!(layout().alt(c), Some(Action::State(next)) if next == name) { return Cmd::Insert(1, state.terminator.clone()); }
             }
             _ => {}
         }

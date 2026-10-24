@@ -6,7 +6,7 @@ Each glyph has a name, which links to its definitions and examples. A function g
 
 The [keyboard map](keyboard.qmd) shows the Option and Option-Shift bindings, with dead keys outlined in orange.
 
-Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout. `≤` is Alt-< and `≥` is Alt->, each with Shift held. Where the column shows a second key, release Alt, then press the second key. For example, `Alt-o c` means Alt-o, then `c`. You can type a shifted second key without Shift. For example, `Alt-q ;` types `⍠`, the same as `Alt-q :`. An Alt key that takes a second key types its own glyph when Space or an unlisted key follows. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence.
+Hold Alt, which is Option on a Mac, and press the key in the Key column. Keys refer to a US layout. `≤` is Alt-< and `≥` is Alt->, each with Shift held. Where the column shows a second key, press it with or without Alt held. For example, `Alt-o c` means Alt-o, then `c`. You can type a shifted second key without Shift. For example, `Alt-q ;` types `⍠`, the same as `Alt-q :`. An Alt key that takes a second key types its own glyph when Space or an unlisted key follows. For example, Alt-o then Space gives `○`. Backspace or Escape cancels the sequence.
 
 Superscripts start with Alt-6. The second key is a digit, `-` then a digit, `t` for `ᵀ`, `u` for `ᵘ`, or `b` for `ᵇ`. Subscripts start with Alt-5. The second key is a digit, `-` then a digit, or `x`, `j`, `e` or `r` for the number suffixes `ₓ`, `ⱼ`, `ₑ` and `ᵣ`. A glyph with no key, such as `+`, is on an ordinary ASCII key. The arrows are on hjkl. Alt-[ types nothing, because terminals send it as the start of a control sequence. The identifier characters `∆` and `⍙` are Alt-7, and Alt-Minus then `7`.
 
@@ -147,15 +147,13 @@ A dyadic operator takes an operand on each side, as in `f⍤1`. The columns are 
 
 System names start with `•`. [System functions](system-functions.qmd) lists them.
 
-Index origin: 0. Negative positions and axes count from the end. Comparison tolerance of 64-bit floats: `1E¯14`, which [`•prefs`](system/prefs.qmd) can lower to 0. Narrower floats compare exactly.
-
 ## Language-wide differences from Dyalog APL
 
 - [Vectors](glyphs/brackets.qmd): a bracket list such as `[a b c]` is a vector. A strand of literals, such as `1 2 3`, needs no brackets. `[5]` is a one-item vector, the same as `,5`. [Parentheses](glyphs/parentheses.qmd) group: `(5)` is `5`. A scalar holding `5` is `⊂5`. Arrays side by side also form a vector: `a b` is `[a b]`. `(1 2⋄3)` is the vector of rows `[[1 2] [3]]`.
 - [Runs](syntax.qmd#runs): outside brackets, spaces group an expression into runs, and each run acts as one token. A run that ends in a function is a train: `+/÷≢` is the mean, and `2×` is `2↣×`. An operator takes the token next to it, so after a run that ends in a dyadic operator, the next run is its right operand: in `⌊@ 10× x`, it is `10×`.
-- [Indexing](glyphs/squad.qmd): brackets are used to write vectors, never to index. Index selects: `0⌷v` is the first item of `v`.
+- [Indexing](glyphs/squad.qmd): brackets are used to write vectors, never to index. Positions and axes count from 0. Negative positions and axes count from the end. Index selects: `0⌷v` is the first item of `v`.
 - [Atoms](arrays.ipynb): numbers, characters and functions are atoms, distinct from scalars, as BQN. Enclosing always adds a layer: `⊂3 ≡ 3` is `$f`.
-- [Numbers](numbers.qmd): bare numbers are approximate. `ₓ` marks an exact integer, and `r` or `ᵣ` an exact rational, as in J: `1ₓ÷3ₓ` is `1ᵣ3`. Predicates, positions, tally and shape are exact.
+- [Numbers](numbers.qmd): bare numbers are approximate. `ₓ` marks an exact integer, and `r` or `ᵣ` an exact rational, as in J: `1ₓ÷3ₓ` is `1ᵣ3`. Predicates, positions, tally and shape are exact. See [Mathish mode](numbers.qmd#mathish-mode) for comparison and zero-division conventions.
 - [Agreement](evaluation.qmd#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes. An axis of length 1 expands to match: `2 3⍴⍳6 + 10 20` is `[10 11 12⋄23 24 25]`.
 - [Major cells](principles.ipynb#functions-act-on-major-cells): `∊ ~ ∪ ∩` compare major cells, `N#Y` replicates them, `N⊂Y` and `N⊆Y` split along the first axis. `⊤` and `⊥` put digits on the last axis, as J.
 - [System names](system-functions.qmd): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.

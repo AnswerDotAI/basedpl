@@ -8,12 +8,14 @@ Function. Keys: `Alt-u`. Hanzi: `除`. Ranks: `0` monadic, `0 0` dyadic
 ÷4                ⍝ 0.25
 ```
 
-`X÷Y`: X/Y. Pervasive. Division by zero follows IEEE 754. A nonzero `X` divided by zero gives an infinity with the sign of `X`. Zero divided by zero gives NaN.
+`X÷Y`: X/Y. Pervasive. A nonzero real `X` divided by zero gives an infinity. Zero divided by zero gives zero for [Mathish types](../terms.qmd#term-mathish-types) with [Mathish mode](../numbers.qmd#mathish-mode) enabled. Other floating zero divided by zero cases give NaN.
 
 ```bpl
 1ₓ÷3ₓ             ⍝ 1r3
 ¯1÷0              ⍝ ¯∞
-0÷0               ⍝ $n
+0÷0               ⍝ 0
+0ₓ÷0ₓ             ⍝ 0ₓ
+0÷ₓ0              ⍝ 0ₓ
 ```
 
 ## Inverse

@@ -116,7 +116,7 @@ def test_binary_files(tmp_path):
     path.write_bytes(data)
     read, write = bpl.nget, bpl.nput
     values = read(str(path), binary=1)
-    teq(values.np.dtype, np.dtype('uint8'))
+    teq(values.np.dtype, np.dtype('int64'))
     teq(values.py, list(data))
     opts = dict(path=str(dest))
     teq(write(values, **opts).py, 256)
@@ -236,8 +236,8 @@ def test_array_surface():
     np.testing.assert_array_equal(~(a > 3), a <= 3)
     product = a @ transpose(a)
     np.testing.assert_array_equal(product, [[14, 32], [32, 77]])
-    assert product.np.dtype == np.uint8
-    assert add.reduce(a).np.dtype == np.uint8
+    assert product.np.dtype == np.int64
+    assert add.reduce(a).np.dtype == np.int64
     assert Array(2).bpl == '2ₓ' and Array(2.).bpl == '2'
     assert repr(Array(2)) != repr(Array(2.))
     assert [repr(Array(s)) for s in ('text', '', ['ab', 'cd'])] == ["'text'", "''", "['ab', 'cd']"]
@@ -245,7 +245,9 @@ def test_array_surface():
 def test_python_array_value_semantics():
     a = Array([[1, 2], [3, 4]], keys=[['a', 'b'], None], names=['row', 'col'])
     held, view, f = Array(a), a[:, ::-1], add.left(a)
-    snapshot = np.asarray(a, copy=False)
+    assert a.np.dtype == np.int64
+    with pytest.raises(ValueError, match='copy'): np.asarray(a, copy=False)
+    snapshot = np.asarray(a, dtype=np.uint8, copy=False)
     a[None, ..., 1] = [[20, 40]]
     a.keys, a.names = None, None
     teq(a.np, [[1, 20], [3, 40]])
@@ -345,13 +347,13 @@ def test_keys_dataframe():
     assert m[0:'alice', 'price'].py == dict(alice=10)
     with pytest.raises(KeyError): m['carol':]
     with pytest.raises(KeyError): Array([1, 2])['a':]
-    pd.testing.assert_frame_equal(m.py, pd.DataFrame(np.array([[10, 2], [20, 4]], dtype=np.uint8), index=['alice', 'bob'], columns=['price', 'qty']))
+    pd.testing.assert_frame_equal(m.py, pd.DataFrame(np.array([[10, 2], [20, 4]], dtype=np.int64), index=['alice', 'bob'], columns=['price', 'qty']))
     np.testing.assert_array_equal(m.np, [[10, 2], [20, 4]])
     h = Array(np.arange(8).reshape(2, 2, 2), keys=[['aa', 'bb'], None, ['xx', 'yy']])
     pd.testing.assert_frame_equal(h.py, pd.DataFrame(np.arange(8).reshape(4, 2),
         index=pd.MultiIndex.from_product([['aa', 'bb'], [0, 1]]), columns=['xx', 'yy']))
     pd.testing.assert_frame_equal(Array(3).df, pd.DataFrame([[3]], index=[0], columns=[0]))
-    pd.testing.assert_frame_equal(Array([3, 4]).df, pd.DataFrame(np.array([3, 4], dtype=np.uint8), index=[0, 1], columns=[0]))
+    pd.testing.assert_frame_equal(Array([3, 4]).df, pd.DataFrame(np.array([3, 4], dtype=np.int64), index=[0, 1], columns=[0]))
     assert Array([[1, 2]]).keys == (None, None)
     for keys in ([None], [['a', 'a'], None], [None, ['a']]):
         with pytest.raises(ValueError): Array([[1, 2], [3, 4]], keys=keys)

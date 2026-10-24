@@ -9,12 +9,16 @@ use rustymath::{layout::Keys, structure::IndexPart};
 use rustymath_buffer::walk::{Collect, walked, within};
 use std::{ffi::c_int, sync::{atomic::{AtomicPtr, Ordering}, Arc, Mutex}};
 
+/// The memory guard stops a runaway computation at half of physical memory.
+#[global_allocator]
+static GUARD: rustymath::memory::Guard = rustymath::memory::Guard::new();
+
 /// The collector for Python data that becomes BPL values: each item converts on its own, and a level whose items differ in shape nests them, with Python floats at `width`.
 struct Items { width: FloatWidth }
 
 impl Collect for Items {
     type Piece = Value;
-    fn int(&mut self, n: i128) -> Value { Value::Number(BigInt::from(n).into()) }
+    fn int(&mut self, n: i128) -> Value { Value::Number(Number::from(BigInt::from(n)).marked(true)) }
     fn piece(&mut self, obj: &Bound<'_, PyAny>) -> PyResult<Option<(Value, Vec<usize>)>> { Ok(Some((element(obj, self.width)?, vec![]))) }
     fn element(&mut self, obj: &Bound<'_, PyAny>) -> PyResult<Value> { element(obj, self.width) }
 }
@@ -99,7 +103,7 @@ fn fraction(py: Python<'_>) -> PyResult<&Bound<'_, PyType>> {
 /// The BPL value of `obj` as an item of an array, with Python floats at `width`. A Python float or complex number is weak, a complex number follows the current settings' kinds, and `None` reads as NaN. A `dict` and a data frame give keyed vectors, and a list gives a nested array.
 fn element(obj: &Bound<'_, PyAny>, width: FloatWidth) -> PyResult<Value> {
     if let Ok(b) = obj.cast_exact::<PyBool>() { return Ok(Value::Number(Number::from_bool(b.is_true()))); }
-    if obj.is_exact_instance_of::<PyInt>() { return Ok(Value::Number(obj.extract::<BigInt>()?.into())); }
+    if obj.is_exact_instance_of::<PyInt>() { return Ok(Value::Number(Number::from(obj.extract::<BigInt>()?).marked(true))); }
     if obj.is_exact_instance_of::<PyFloat>() { return Ok(Value::Number(Number::float(obj.extract()?, width).marked(true))); }
     if let Ok(z) = obj.cast_exact::<PyComplex>() {
         return Ok(Value::Number(Number::complex_in_session(num_complex::Complex64::new(z.real(), z.imag()), width).marked(true)));
@@ -283,9 +287,13 @@ impl PyArray {
         let layout = value.core_layout().clone().with_keys(keys).map_err(rustymath_buffer::py_err)?;
         Ok(value.clone().with_core_layout(layout).map_err(|k| PyValueError::new_err(k.to_string()))?.into())
     }
-    fn __rustymath_array__(&self, py: Python<'_>) -> PyResult<(Self, Py<PyAny>, Vec<Option<String>>)> {
+    fn __rustymath_array__(&self, py: Python<'_>) -> PyResult<(Py<PyAny>, Py<PyAny>, Vec<Option<String>>)> {
         if !self.exports()? { return Err(PyTypeError::new_err("only ordinary compact values can cross to Rustymath; convert exact or mixed values explicitly")); }
-        Ok((self.copy()?, self.keys()?.into_py_any(py)?, self.names()?))
+        let value = self.value()?;
+        let owner = match value.widened_for_export() {
+            Some(items) => Owned::new(items, value.shape()).into_py_any(py)?, None => self.copy()?.into_py_any(py)?,
+        };
+        Ok((owner, self.keys()?.into_py_any(py)?, self.names()?))
     }
     #[getter]
     fn is_atom(&self) -> PyResult<bool> { Ok(self.value()?.is_atom()) }
@@ -306,17 +314,17 @@ impl PyArray {
         let plain = value.shape().len() == 1 && !value.has_keys() && value.axis_names().is_empty();
         Ok(match value.view() { Some(View::Characters(c)) if plain => Some(c.iter().collect()), _ => None })
     }
+    /// Character content, independent of metadata, as MIME's text rule reads it.
+    #[getter]
+    fn text_content(&self) -> PyResult<Option<String>> { Ok(basedpl::keyed::name(self.value()?).map(|s| s.to_string())) }
     /// Whether NumPy can read the items through the buffer protocol: compact storage, or a structural copy that reads compact items through an affine map.
     #[getter]
     fn exports(&self) -> PyResult<bool> { Ok(lendable(self.value()?).is_some()) }
-    /// Exports the items read-only and without a copy, so that NumPy can't change a BPL value through them. An unbuilt structural copy with an affine read, such as windows or a reversal, lends its source's items with strides, without being built. Integers that static kinds store narrower than their kind export as a copy at the kind's width (`Value::widened_for_export`), so NumPy and rustymath compute at that width.
+    #[getter]
+    fn export_dtype(&self) -> PyResult<Option<&'static str>> { Ok(self.value()?.export_widening().map(|w| DType::Integer(w).name())) }
+    /// Lends physical storage read-only. The public NumPy adapter selects the logical export dtype before applying the requested dtype and copy policy.
     unsafe fn __getbuffer__(slf: Bound<'_, Self>, view: *mut ffi::Py_buffer, flags: c_int) -> PyResult<()> {
         let value = slf.borrow().value()?.clone();
-        if let Some(items) = value.widened_for_export() {
-            let dtype = items.dtype();
-            // SAFETY: `items` holds every item of `value` in row-major order, and the export holds `items`.
-            return unsafe { rustymath_buffer::lend(view, flags, slf.py(), items, |b| b.view().as_ptr(), dtype, value.shape(), None) };
-        }
         let (items, offset, strides) = lendable(&value).ok_or_else(|| PyBufferError::new_err("an array of mixed or exact items has no buffer"))?;
         let dtype = items.view().expect("lendable items are compact").dtype();
         // SAFETY: the offset and strides reach only items of `items`, as the copy's map does. An atom holds its items inline, so the pointer comes from the copy that the export holds.
@@ -620,10 +628,11 @@ fn _captured_literal(value: &str) -> PyResult<String> {
     basedpl::reference::expected_array(&value).map(|v| v.literal()).ok_or_else(|| PyValueError::new_err("invalid captured array"))
 }
 
-/// The cases of `text`, in the format of a `.bpl` reference file, as `reference::cases` reads them.
+/// Shared setup and records, including native budget-footer byte spans.
 #[pyfunction]
-fn _reference_cases(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
-    python(py, &serde_json::Value::Array(basedpl::reference::cases(text).map_err(PyValueError::new_err)?))
+fn _reference_file(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
+    let file = basedpl::reference::file("", text).map_err(PyValueError::new_err)?;
+    python(py, &serde_json::json!({"setup":file.setup, "cases":file.cases}))
 }
 
 /// The character offset of each byte offset in `text` that starts a character or ends the text. Python indexes strings by character.
@@ -664,12 +673,13 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFunction>()?;
     m.add_class::<PyOperator>()?;
     m.add_function(wrap_pyfunction!(_captured_literal, m)?)?;
-    m.add_function(wrap_pyfunction!(_reference_cases, m)?)?;
+    m.add_function(wrap_pyfunction!(_reference_file, m)?)?;
     m.add_function(wrap_pyfunction!(_parse, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("symbols", python(m.py(), &basedpl::symbols::rows())?)?;
     m.add("_builtin_names", basedpl::symbols::builtins())?;
     m.add("_superscripts", basedpl::superscripts())?;
     m.add("_subscripts", basedpl::subscripts())?;
+    m.add("_number_marks", basedpl::number_marks())?;
     Ok(())
 }

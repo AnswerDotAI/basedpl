@@ -2,8 +2,8 @@
 //!
 //! Each setting that calls and scalar operations read is an atomic, read with a relaxed load. A read of several settings can see some of them from before a concurrent write and some from after it. The display settings, which only display reads, sit behind a lock.
 use crate::{display, fusion::Sizes, number::{Kinds, Numeric}};
-use rustymath::{buffer::{FloatWidth, Width}, tolerant::Tolerance};
-use std::sync::{LazyLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering::Relaxed}};
+use rustymath::buffer::{FloatWidth, Width};
+use std::sync::{LazyLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU8, Ordering::Relaxed}};
 
 /// The defaults of the flags, which their statics start from and `reset` restores: whether hanzi spell glyphs, whether `batch` is on, whether calls report the pending arrays they compute, and whether fusion takes its small sizes.
 const HANZI: bool = false;
@@ -11,7 +11,7 @@ const BATCH: bool = true;
 const REPORTS: bool = false;
 const SMALL: bool = false;
 
-static TOLERANCE: AtomicU64 = AtomicU64::new(Numeric::DEFAULT.tolerance.value().to_bits());
+static MATHISH: AtomicBool = AtomicBool::new(Numeric::DEFAULT.mathish);
 static FLOAT: AtomicU8 = AtomicU8::new(Numeric::DEFAULT.width as u8);
 static STATIC_KINDS: AtomicBool = AtomicBool::new(matches!(Numeric::DEFAULT.kinds, Kinds::Static));
 static INT32: AtomicBool = AtomicBool::new(matches!(Numeric::DEFAULT.int, Width::I32));
@@ -25,13 +25,13 @@ static DISPLAY: LazyLock<RwLock<[display::Settings; 2]>> = LazyLock::new(|| RwLo
 /// The numeric settings in force.
 #[inline]
 pub(crate) fn numeric() -> Numeric {
-    let tolerance = Tolerance::new(f64::from_bits(TOLERANCE.load(Relaxed))).expect("a stored tolerance");
+    let mathish = MATHISH.load(Relaxed);
     let kinds = if STATIC_KINDS.load(Relaxed) { Kinds::Static } else { Kinds::Dynamic };
-    Numeric { tolerance, width: float_width(), kinds, int: if INT32.load(Relaxed) { Width::I32 } else { Width::I64 }, ..Numeric::DEFAULT }
+    Numeric { mathish, width: float_width(), kinds, int: if INT32.load(Relaxed) { Width::I32 } else { Width::I64 }, ..Numeric::DEFAULT }.with_public_tolerance()
 }
 /// Makes `numeric` the numeric settings in force. Only `Numeric::convergence` changes `units`, for its own comparisons, so the store leaves them out.
 pub(crate) fn set_numeric(numeric: Numeric) {
-    TOLERANCE.store(numeric.tolerance.value().to_bits(), Relaxed);
+    MATHISH.store(numeric.mathish, Relaxed);
     FLOAT.store(numeric.width as u8, Relaxed);
     STATIC_KINDS.store(numeric.kinds == Kinds::Static, Relaxed);
     INT32.store(numeric.int == Width::I32, Relaxed);

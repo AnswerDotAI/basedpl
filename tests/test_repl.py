@@ -49,7 +49,8 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         enter('7"\r', '\r\n⍋\r\n')
         enter('"\x1b\\g"\r', '\r\n⍒\r\n')
         enter('"£\x1b£"\r', '\r\n£#\r\n')
-        enter('"\x1b\\\x1b\\ \x1b6\x1b66"\r', '\r\n⍭ ^6\r\n')
+        enter('"\x1b\\\x1b\\ \x1b6\x1b66"\r', '\r\n⍭ ⁶6\r\n')
+        enter('"\x1boo \x1b5\x1bx\x1b5\x1b1"\r', '\r\n○ ₓ₁\r\n')
         layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
         typed = {k: v for k, v in layout['option'].items() if isinstance(v, str)}
         enter('"' + ''.join('\x1b'+k for k in typed) + '"\r', '\r\n' + ''.join(typed.values()) + '\r\n')
@@ -58,8 +59,8 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         enter('3\x1b62\r', '\r\n9\r\n')  # Alt-6, then 2, types ²
         enter('"a^b"\r', '\r\na^b\r\n')  # in a string, ^ types itself
         enter('\x1b-i1 0 1\r', '\r\n[0 2]ₓ\r\n')  # Alt-Minus, then i, types ⍸
-        # Dead keys: Backspace cancels, a plain key types both, Alt-q starts its own, - then 1 types ⁻¹, and Space types ^
-        enter('"\x1bo\x7fx\x1box\x1bo\x1bqt\x1boc\x1bob\x1bon\x1b6-1\x1b6 "\r', '\r\nx○x○⌻⍝⍎⍕⁻¹^\r\n')
+        # Dead keys: Backspace cancels, a plain key types both, Alt-q starts its own, - then 1 types ⁻¹, and Space types ⁶
+        enter('"\x1bo\x7fx\x1box\x1bo\x1bqt\x1boc\x1bob\x1bon\x1b6-1\x1b6 "\r', '\r\nx○x○⌻⍝⍎⍕⁻¹⁶\r\n')
         enter('+/1\x1bl3\r', '\r\n6\r\n')
         enter('한`assign `iot\t4\r', '\r\n')  # space, Tab, Unicode byte offsets
         enter('+/한\r', '\r\n6\r\n')

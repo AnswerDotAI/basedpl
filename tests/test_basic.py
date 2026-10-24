@@ -46,7 +46,7 @@ def test_bindings_functions_and_output(capsys):
     assert mean([1, 2, 4]).py == Fraction(7, 3)
     added = bpl.fn('+')([1, 2, 3], 10)
     np.testing.assert_array_equal(added, [11, 12, 13])
-    assert added.np.dtype == np.uint8
+    assert added.np.dtype == np.int64
     f = bpl.fn('foo')
     bpl('foo←+')
     assert f(3).py == 3
@@ -72,12 +72,10 @@ def test_bindings_functions_and_output(capsys):
 
 
 def test_numpy_inputs_and_copies():
-    for values,dtype in (([np.float16(1.5), 2], np.float16), ([np.float32(.5), 2], np.float32),
-                         ([np.complex64(1+2j), np.complex64(3+4j)], np.complex64)):
+    for values,dtype in (([np.float16(1.5), 2], np.float16), ([np.float32(.5), 2], np.float32), ([np.float32(1.5), .1, 2], np.float32),
+                         ([np.complex64(1+2j), np.complex64(3+4j)], np.complex64), ([np.complex64(1+2j), 2], np.complex64)):
         native = Array(values)
-        assert native.shape == (2,) and native.np.dtype == dtype
-    mixed = Array([np.complex64(1+2j), 2]).np
-    assert mixed.dtype == object and mixed.tolist() == [1+2j, 2] and type(mixed[1]) is int
+        assert native.shape == (len(values),) and native.np.dtype == dtype
     original = np.arange(12).reshape(3, 4)[:, ::2]
     bpl(m=original)
     original[:] = 99

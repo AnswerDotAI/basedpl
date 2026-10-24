@@ -5,9 +5,22 @@ use common::*;
 
 #[test]
 fn checks_that_change_settings() {
-    let checks: [fn(); 7] = [language_examples, boxed_display_and_function_trees, expression_dissection, threads_give_the_same_results,
+    let checks: [fn(); 8] = [language_examples, mathish_arithmetic, boxed_display_and_function_trees, expression_dissection, threads_give_the_same_results,
         hanzi_spellings_and_language, leading_prefs_set_how_their_code_reads, highlight_after_a_prefs_header];
     for check in checks { basedpl::settings::reset(); check(); }
+}
+
+fn mathish_arithmetic() {
+    let s = Session::new();
+    equiv_in!(&s; "0ₓ÷0ₓ" => "0ₓ", "0÷ₓ0" => "0ₓ", "÷/1 0 0" => "∞");
+    equiv_in(&s, r#"•prefs ["mathish":$f] ⋄ [≠⍨0÷0;≠⍨1⍟1;0.3=0.1+0.2]"#, "[$t;$t;$f]");
+    equiv_in(&s, r#"•prefs ["mathish":$t] ⋄ [0÷0;1⍟1;0.3=0.1+0.2]"#, "[0;0;$t]");
+    equiv_in(&s, "[0ₚ÷0ₚ;≠⍨0ₓ₄÷0ₓ₄;≠⍨0ₓ₈÷0ₓ₈]", "[0;$t;$t]");
+    equiv_in(&s, "n←[0ₛ÷0ₛ;0ₓ₂÷0ₓ₂] ⋄ [≠⍨¨n;{(•storage ⍵).kind}¨n]", r#"[$t $t;"float32" "float32"]"#);
+    equiv_in(&s, "[÷¯0÷0;÷¯0 ¯0÷0 0;÷¯0÷¨0 0]", "[¯∞;¯∞ ¯∞;¯∞ ¯∞]");
+    equiv_in(&s, r#"•prefs ["kinds":"static"] ⋄ n←[0÷0;0ₓ÷0ₓ;0j0ₚ÷0j0ₚ;1j0ₚ⍟1j0ₚ] ⋄ [≠⍨¨n;0.3=0.1+0.2]"#, "[$t $t $t $t;$f]");
+    equiv_in(&s, r#"•prefs ["float":32] ⋄ [≠⍨0ₓ÷0ₓ;≠⍨[0 0]ₓ÷[0 0]ₓ;≠⍨0ₓ÷¨[0 0]ₓ]"#, "[$t;$t $t;$t $t]");
+    equiv_in(&s, r#"•prefs ["kinds":"dynamic"] ⋄ n←1ₓ⍟1ₓ ⋄ p←1ₚ⍟1ₚ ⋄ [≠⍨n;(•storage n).kind;p;(•storage p).kind;0.3ₚ=0.1ₚ+0.2ₚ]"#, r#"[$t;"float32";0ₚ;"float64";$t]"#);
 }
 
 fn language_examples() {
@@ -197,6 +210,7 @@ fn leading_prefs_set_how_their_code_reads() {
     s.eval(r#"•prefs ["kinds":"static" "int":32]"#);
     equiv_in(&s, r#"•prefs ["kinds":"dynamic" "int":64] ⋄ 2147483648ₓ"#, "2147483648ₓ");
     equiv_in(&s, r#"a←3000000000ₓ ⋄ •prefs ["kinds":"static" "int":32] ⋄ aₓ≡a"#, "$t");
+    equiv_in(&s, r#"•prefs ["kinds":"static" "int":32] ⋄ 0ₓ₈+/[2000000000 2000000000]ₓ₄"#, "4000000000ₓ₈");
     equiv_in(&s, r#"⍎"•prefs [""float"":32] ⋄ (•storage 1.5).kind""#, r#""float32""#);
 }
 

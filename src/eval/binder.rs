@@ -282,9 +282,12 @@ pub(super) fn derived(operand: Binding, operator: Binding, span: &Span) -> Resul
             // `ᵘ` makes a scalar that holds a function. `⊂` encloses a subject.
             (Superscript::Unit, Operand::Function(f)) => return Ok(Derived::Term(Binding::Value(crate::Value::Function(f).enclose().described("invalid scalar").at(span)?))),
             (Superscript::Unit, _) => return Err(Error::domain("ᵘ makes a scalar that holds a function. Enclose a subject with ⊂").at(span)),
-            (Superscript::Power(n), Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Math(crate::number::Math::Power)), Some(a), crate::Value::integer(n))),
+            (Superscript::Power(n), Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Math(crate::number::Math::Power)), Some(a), crate::Value::Number(crate::Number::from_integer(n).marked(true)))),
             (Superscript::Transpose, Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Transpose), None, a)),
             (Superscript::Mark(crate::number::Mark::Exact), Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Exact(crate::primitive::Exact::Floor)), None, a)),
+            (Superscript::Mark(crate::number::Mark::Fixed(w)), Operand::Value(a)) => {
+                return Ok(Derived::Term(Binding::Value(a.to_fixed(w).described("can't convert to fixed integers").at(span)?)));
+            }
             (Superscript::Mark(crate::number::Mark::Width(w)), Operand::Value(a)) => {
                 let float = crate::primitive::Builtin::find("•float").expect("•float is a system function").function();
                 return Ok(Derived::Call(float, Some(crate::Value::integer(w.bits().into())), a));

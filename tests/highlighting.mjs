@@ -16,13 +16,14 @@ for (const lang of ['bpl', 'hpl']) for (const text of ['"a""b"', '"加""总"', "
     assert.ok(scopes(text, lang).every(([, scope]) => scope.startsWith('string.quoted.')));
 assert.ok(scopes('⍝ "ignored" +ₓ').every(([, scope]) => scope === 'comment.line.bpl'));
 assert.ok(scopes('注 "ignored" 加ₓ', 'hpl').every(([, scope]) => scope === 'comment.line.bpl'));
-assert.deepEqual(scopes(']ₓ+'), [[']', 'source.bpl'], ['ₓ', 'constant.numeric.bpl'], ['+', 'support.function.bpl']]);
+assert.deepEqual(scopes(']ₓ₄+'), [[']', 'source.bpl'], ['ₓ₄', 'constant.numeric.bpl'], ['+', 'support.function.bpl']]);
+assert.deepEqual(scopes('vₓ₁'), [['v', 'variable.other.bpl'], ['ₓ₁', 'keyword.operator.monadic.bpl']]);
 assert.deepEqual(scopes('xⱼy+nₓ').map(([, scope]) => scope), ['variable.other.bpl', 'constant.numeric.bpl', 'variable.other.bpl', 'support.function.bpl', 'variable.other.bpl',
     'keyword.operator.monadic.bpl']);
 for (const lang of ['bpl', 'hpl']) for (const name of ['avg', 'x_12', '测试', '😎', '_+', '_加', '_加_总', 'x_語'])
     assert.deepEqual(scopes(name, lang), [[name, 'variable.other.bpl']]);
 for (const name of ['加总内乙', '加總內乙', '是']) assert.deepEqual(scopes(name), [[name, 'variable.other.bpl']]);
-for (const text of ['¯2ₓ', '1ᵣ3', '1ₑ¯2', '2ⱼ¯4'])
+for (const text of ['¯2ₓ', '1ᵣ3', '1ₑ¯2', '2ⱼ¯4', '255ₓ₁', '⍬ₓ₄', '2ₛ'])
     assert.ok(scopes(text).every(([, scope]) => scope === 'constant.numeric.bpl'));
 for (const text of ['负2ₓ', '負永', '1ₑ负2', '2j負4', '空ₓ', '1内2', '1內2', '内5'])
     assert.ok(scopes(text, 'hpl').every(([, scope]) => scope === 'constant.numeric.bpl'));

@@ -48,11 +48,14 @@ pub fn symbols() -> String { basedpl::symbols::rows().to_string() }
 #[wasm_bindgen]
 pub fn name_cpu(name: &str) { basedpl::timing::name_cpu(name) }
 
-/// Every case in `speed`, text in `speed.txt`'s format, with its cost, as `basedpl::timing::costs` times it and `basedpl::timing::rows` encodes it with its wasm budget in its log line: an array of `{section, code, line, copy, budgets, cost, seconds}`. With `cases`, an array of codes, only those cases run. `prefs` runs before each section's header. Throws when the setup or a case fails.
+/// Time named BPL source files, supplied as `[{name, text}]`. Results retain full code and single-line log labels.
 #[wasm_bindgen]
-pub fn costs(speed: &str, cases: Option<Vec<String>>, prefs: Option<String>) -> Result<JsValue, JsValue> {
+pub fn costs(files: JsValue, cases: Option<Vec<String>>, prefs: Option<String>) -> Result<JsValue, JsValue> {
     let only: Option<Vec<&str>> = cases.as_ref().map(|c| c.iter().map(String::as_str).collect());
-    let cases = basedpl::timing::costs(speed, only.as_deref(), prefs.as_deref().unwrap_or_default(), &Default::default()).map_err(|e| JsValue::from(js_sys::Error::new(&e)))?;
+    let fail = |e: String| JsValue::from(js_sys::Error::new(&e));
+    let files = serde_json::from_str(&js_sys::JSON::stringify(&files)?.as_string().unwrap()).map_err(|e| fail(e.to_string()))?;
+    let files = basedpl::reference::sources(&files).map_err(fail)?;
+    let cases = basedpl::timing::costs(&files, only.as_deref(), prefs.as_deref().unwrap_or_default(), &Default::default()).map_err(fail)?;
     Ok(js_sys::JSON::parse(&basedpl::timing::rows(&cases, basedpl::timing::WASM_COLUMN).to_string())?)
 }
 

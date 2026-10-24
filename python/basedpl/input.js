@@ -6,6 +6,7 @@
     function usKey({code, shiftKey}) {
         if (/^Key[A-Z]$/.test(code)) return shiftKey ? code.slice(3) : code.slice(3).toLowerCase();
         if (/^Digit[0-9]$/.test(code)) return shiftKey ? ')!@#$%^&*('[Number(code[5])] : code[5];
+        if (code === 'Space') return ' ';
         return punctuation[code]?.[Number(shiftKey)];
     }
 
@@ -16,21 +17,22 @@
     // What a key types: `{text, stop}`, where `stop` means the key itself does nothing more, or nothing for an ordinary key.
     // `option` is whether an Option chord counts here.
     function press(ev, option) {
-        const key = usKey(ev), plain = !ev.altKey && !ev.ctrlKey && !ev.metaKey;
-        // Native Option can hide the alias character; accept its US physical chord too.
-        const action = option && ev.altKey && !ev.ctrlKey && !ev.metaKey
-            ? layout.alt_aliases[ev.key] ?? (Object.values(layout.alt_aliases).includes(key) ? key : layout.option[key]) : null;
+        const key = usKey(ev);
         if (pending) {
-            const state = layout.states[pending], repeated = action?.state === pending;
+            const name = pending, state = layout.states[name];
             pending = null;
-            if (repeated) return {text: state.terminator, stop: true};
-            if (plain && ev.key === ' ') return {text: state.terminator, stop: true};
             if (ev.key === 'Backspace' || ev.key === 'Escape') return {text: '', stop: true};
-            if (plain && key in state.keys) return {text: act(state.keys[key]), stop: true};
+            if (!ev.ctrlKey && !ev.metaKey) {
+                if (key in state.keys) return {text: act(state.keys[key]), stop: true};
+                if (key === ' ' || layout.option[key]?.state === name) return {text: state.terminator, stop: true};
+            }
             // Any other key types the terminator, then acts as if nothing were pending.
             const rest = press(ev, option);
             return {text: state.terminator + (rest?.text ?? ''), stop: rest?.stop ?? false};
         }
+        // Native Option can hide the alias character; accept its US physical chord too.
+        const action = option && ev.altKey && !ev.ctrlKey && !ev.metaKey
+            ? layout.alt_aliases[ev.key] ?? (Object.values(layout.alt_aliases).includes(key) ? key : layout.option[key]) : null;
         if (action) return {text: act(action), stop: true};
     }
     const reset = () => { pending = null; };

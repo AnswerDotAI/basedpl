@@ -12,7 +12,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 The script selects the DLL for your system, registers BasedPL-us and installs SAX2B. It does not replace another layout. Add **BasedPL-us** under **English (United States)** in **Settings > Time & language > Language & region > Language options > Keyboards**, then select it with **Win+Space**. Sign out and in if it is not listed.
 
-For example, AltGr+i types `⍳`. AltGr+o followed by `m` types `⊗`. Press a dead-key chord twice, or follow it with Space, to type its own glyph.
+For example, AltGr+i types `⍳`. AltGr+o followed by `m` types `⊗`. You can keep AltGr held for follow-ups. Press a dead key twice, or follow it with Space, to type its own glyph.
 
 Shift+AltGr+1–9 types `¹²³⁴⁵⁶⁷⁸⁹`. Shift+AltGr+Minus types `⁻`. Shift+AltGr+0 types `⍬`.
 

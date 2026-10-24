@@ -4725,8 +4725,8 @@ v←⍳1000ₓ ⋄ +/v+v   ⍝ 999000ₓ
 ⍝ —
 +/[1 2 3]ₓ   ⍝ 6ₓ
 
-⍝ — Zero divided by zero is NaN, applied elementwise
-0 1÷0 2   ⍝ [$n 0.5]
+⍝ — Mathish division gives zero for zero divided by zero in arrays
+0 1÷0 2   ⍝ 0 0.5
 
 ⍝ — Structure keeps float storage, and an empty array takes its prototype's storage
 {(•storage ⍵).kind}¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float64" "float64" "float64" "integer"
@@ -7261,8 +7261,8 @@ x←1.5 ⋄ [x 2]ₓ   ⍝ [1 2]ₓ
 0r0
 ⍝ error: DOMAIN ERROR
 
-⍝ — Exact division by zero gives an infinity, and zero divided by zero gives NaN
-[1ₓ÷0ₓ ÷0ₓ ¯1ₓ÷0ₓ 0ₓ÷0ₓ]   ⍝ [∞ ∞ ¯∞ $n]
+⍝ — Mathish division defines zero divided by zero as zero
+[1ₓ÷0ₓ ÷0ₓ ¯1ₓ÷0ₓ 0ₓ÷0ₓ]   ⍝ [∞ ∞ ¯∞ 0ₓ]
 
 ⍝ —
 1ᵣ
@@ -7685,8 +7685,8 @@ fold←/
 ⍝ — Principal Lambert W has limit infinity
 ×↢*⍨⁻¹∞   ⍝ ∞
 
-⍝ — Indeterminate real arithmetic gives NaN
-[0÷0 ∞-∞ 0×∞ ∞×0ₓ ∞÷∞]   ⍝ 5⍴$n
+⍝ — Mathish division leaves other indeterminate arithmetic unchanged
+[0÷0 ∞-∞ 0×∞ ∞×0ₓ ∞÷∞]   ⍝ [0 $n $n $n $n]
 
 ⍝ — Complex numbers can have infinite parts. A number with no imaginary part is real
 [∞+1j2 1j∞ ∞j0]   ⍝ ∞j2 1j∞ ∞
@@ -8087,10 +8087,13 @@ offset←{+/⍶+⍵} ⋄ (1 2 offset)3   ⍝ 9
 10.0
 
 ⍝ —
-0÷0   ⍝ $n
+0÷0   ⍝ 0
+
+⍝ — Mathish division follows the array and fused routes
+(0÷⍳8)+0   ⍝ 8⍴0
 
 ⍝ —
-0÷¯0   ⍝ $n
+0÷¯0   ⍝ 0
 
 ⍝ —
 ¯0   ⍝ 0.0
@@ -8408,6 +8411,95 @@ tree←[[10 20] [30 [40 50]]] ⋄ tree⊃/⌽1 1 0   ⍝ 40
 
 ⍝ — Whole-seed scan follows a path and retains its intermediate arrays
 [[10 20] [30 40]] ⊃⍨\ 0 1   ⍝ [[10 20] 20]
+
+⍝ sized-seed-wide — Native and dfn folds promote through the same wide seed
+s←0ₓ₈ ⋄ v←[200 200 200]ₓ₁ ⋄ [s+/v;s{⍺+⍵}/v]   ⍝ [600 600]ₓ₈
+
+⍝ sized-seed-kind — The total retains its fixed type for later arithmetic
+v←[200 200 200]ₓ₁ ⋄ (0ₓ₂+/v)+32767ₓ   ⍝ ¯32169ₓ₂
+
+⍝ sized-seed-ordinary — Ordinary array items make a seeded total ordinary
+v←0ₓ₈+/[200 200 200]ₓ ⋄ [(•storage v).kind;v]   ⍝ ["integer";600ₓ]
+
+⍝ sized-seed-narrow — A narrower seed does not narrow the input
+0ₓ₁+/[200 200 200]ₓ₈   ⍝ 600ₓ₈
+
+⍝ sized-sum-ordinary — Removing fixedness gives ordinary integer arithmetic
+v←[200 200 200]ₓ₁ ⋄ +/vₓ   ⍝ 600ₓ
+
+⍝ sized-index — Group a fixed conversion before indexing its result
+v←1 2 3 ⋄ (vₓ₁)₂   ⍝ 3ₓ₁
+
+⍝ sized-width — The complete subscript digit run must name a supported byte width
+3ₓ₁₆
+⍝ error: SYNTAX ERROR
+
+⍝ sized-arithmetic — Fixed widths promote, wrap, and remain visible after arithmetic
+[(•storage 255ₓ₁+1ₓ).kind;255ₓ₁+(1ₓ+0ₓ);1ₓ₁+2ₓ₂]   ⍝ ["uint8";0ₓ₁;3ₓ₂]
+
+⍝ sized-literal-operations — Literal and bound powers and increment preserve the fixed width
+a←16ₓ₁ ⋄ [16ₓ₁²;a²;≥255ₓ₁]   ⍝ [0 0 0]ₓ₁
+
+⍝ sized-negative-power — A fractional power cannot be stored as a fixed integer
+2ₓ₂*¯1ₓ₂
+⍝ error: DOMAIN ERROR
+
+⍝ sized-comparison-values — Comparisons use values without requiring a weak integer to fit
+v←[200 100]ₓ₁ ⋄ [v<300ₓ;v=¯1ₓ;200ₓ₁<300ₓ]   ⍝ [$t $t;$f $f;$t]
+
+⍝ sized-weak — Arithmetic requires a weak integer to fit its fixed partner
+1ₓ₁+256ₓ
+⍝ error: DOMAIN ERROR
+
+⍝ sized-construction — The widest fixed item determines the vector's type in either order
+[(•storage [0ₓ₁ 256ₓ 0ₓ₈]).kind;(•storage [0ₓ₈ 256ₓ 0ₓ₁]).kind;(•storage [256ₓ 0ₓ₁ 0ₓ₈]).kind]   ⍝ ["int64";"int64";"int64"]
+
+⍝ sized-array — Ordinary integer arrays retain ordinary arithmetic
+v←0ₓ₁+[256ₓ] ⋄ [(•storage v).kind;v]   ⍝ ["integer";[256]ₓ]
+
+⍝ sized-array-exact — A large ordinary integer array keeps exact arithmetic
+0ₓ₈+[9223372036854775808ₓ]   ⍝ [9223372036854775808]ₓ
+
+⍝ sized-bool — Boolean arrays promote into the fixed type
+v←255ₓ₁+[$t $f] ⋄ [(•storage v).kind;v]   ⍝ ["uint8";[0 255]ₓ₁]
+
+⍝ sized-fold-scan — Native reductions and scans retain the selected width
+v←[200 200]ₓ₁ ⋄ [(•storage +/v).kind;+/v;+\v]   ⍝ ["uint8";144ₓ₁;[200 144]ₓ₁]
+
+⍝ sized-unfix — Removing fixedness leaves the original array unchanged
+v←[200 200]ₓ₁ ⋄ u←vₓ ⋄ [(•storage v).kind;(•storage u).kind;+/u]   ⍝ ["uint8";"integer";400ₓ]
+
+⍝ sized-modify — Modified assignment wraps fixed values, promotes widths and honors strong ordinary operands
+a←[255]ₓ₁ ⋄ a.[0]+←1ₓ ⋄ b←[255]ₓ₁ ⋄ b.[0]+←↑[0]ₓ ⋄ c←[255]ₓ₁ ⋄ c.[0]+←1ₓ₂
+[(•storage a).kind;a;(•storage b).kind;b;(•storage c).kind;c]   ⍝ ["uint8";[0]ₓ₁;"integer";[255]ₓ;"int16";[256]ₓ₂]
+
+⍝ sized-divide — True division remains floating point even for an integral result
+["float"≡5↑(•storage 4ₓ₁÷2ₓ₁).kind;7ₓ₁÷2ₓ₁]   ⍝ [$t;3.5]
+
+⍝ sized-structure — Extraction, fill and heterogeneous construction retain fixed widths
+[(•storage ↑[1 2]ₓ₄).kind;(•storage 1↑[]ₓ₄).kind;(•storage (1ₓ₁,'a')₀).kind]   ⍝ ["int32";"int32";"uint8"]
+
+⍝ sized-grade — Mixed fixed, ordinary and floating values use the numeric order
+⍋[3ₓ₁ 1ₓ 2.5]   ⍝ [1 2 0]ₓ
+
+⍝ sized-empty — Ordinary operands determine the same empty result kind in either order
+[(•storage ([]ₓ₁+[]ₓ)).kind;(•storage ([]ₓ+[]ₓ₁)).kind]   ⍝ ["integer";"integer"]
+
+⍝ sized-empty-types — Empty calls retain the normal integer or floating result kind
+v←[]ₓ₁ ⋄ [(•storage ⌊v).kind;(•storage v÷1ₓ).kind;(•storage v+1ₓ).kind]   ⍝ ["uint8";"float32";"uint8"]
+
+⍝ sized-inner — Ring products wrap, but Boolean-product counts remain ordinary
+r←[200 200]ₓ₁+.×[200 200]ₓ₁ ⋄ [(•storage r).kind;r;(300⍴1ₓ₁)+.=(300⍴1ₓ₁)]   ⍝ ["uint8";128ₓ₁;300ₓ]
+
+⍝ sized-inner-ordinary — Ordinary array items keep inner products ordinary
+v←[3 3]ₓ₈ ⋄ r←[200 200]ₓ₁+.∧vₓ ⋄ [(•storage r).kind;r]   ⍝ ["integer";1200ₓ]
+
+⍝ sized-each — Direct, Each and Rank-zero calls use the same strong array items
+a←255ₓ₁ ⋄ b←[1 256]ₓ ⋄ [(a+b)≡a+¨b;(a+b)≡a(+⍤0)b;(•storage a+↑b).kind;a+b]   ⍝ [$t;$t;"integer";[256 511]ₓ]
+
+⍝ sized-domain — Nonnumeric atoms cannot be converted to fixed integers
+'a'ₓ₁
+⍝ error: DOMAIN ERROR
 
 ⍝⍝ Axis-key dictionaries and assignment
 

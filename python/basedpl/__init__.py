@@ -29,6 +29,12 @@ def _labels(keys):
     return [i if k is None else k for i,k in enumerate(keys)]
 
 
+def _numpy(raw, dtype=None, copy=True):
+    if not raw.exports: return None
+    import numpy as np
+    return np.array(raw, dtype=raw.export_dtype if dtype is None else dtype, copy=copy)
+
+
 def _value(raw, as_array=False):
     def item(o):
         if isinstance(o, tuple): return Fraction(*o)
@@ -39,8 +45,7 @@ def _value(raw, as_array=False):
         if not as_array and (text := raw.text) is not None: return text
         keys = raw.keys
         if not as_array and any(k is not None for k in keys): return _dataframe(raw) if len(raw.shape) > 1 else dict(zip(_labels(keys[0]), raw.tolist()))
-        import numpy as np
-        return np.array(raw)
+        return _numpy(raw)
     if 'atom' in raw:
         result = item(raw['atom'])
         if not as_array: return result
@@ -191,18 +196,14 @@ class Array(_Operators):
     def names(self, value): self._inner = self._inner.with_names(value)
     @property
     def is_atom(self): return self._inner.is_atom
-    def _numpy(self, copy=True):
-        if not self._inner.exports: return None
-        import numpy as np
-        return np.array(self._inner, copy=copy)
     @property
     def py(self):
         keyed = any(k is not None for k in self._inner.keys)
-        if not (self.is_atom or keyed) and self._inner.text is None and (result := self._numpy()) is not None: return result
+        if not (self.is_atom or keyed) and self._inner.text is None and (result := _numpy(self._inner)) is not None: return result
         return _value(self._inner.parts())
     @property
     def np(self):
-        result = self._numpy()
+        result = _numpy(self._inner)
         return _value(self._inner.parts(), as_array=True) if result is None else result
     def own(self):
         "The NumPy array that `.np` gives, with the items moved where nothing else holds them, and copied otherwise. The array holds nothing afterwards, and using it raises `ValueError`."
@@ -236,17 +237,23 @@ class Array(_Operators):
     def __matmul__(self, other): return _matmul(self, other)
     def __rmatmul__(self, other): return _matmul(other, self)
     def __array__(self, dtype=None, copy=None):
-        result = self._numpy(copy=copy is not False)
-        if result is None:
-            if copy is False: raise ValueError('basedpl conversion requires a copy')
-            result = self.np
-        if copy is False and dtype is not None and result.dtype != dtype: raise ValueError('basedpl conversion requires a copy')
+        result = _numpy(self._inner, dtype=dtype, copy=copy)
+        if result is not None: return result
+        if copy is False: raise ValueError('basedpl conversion requires a copy')
+        result = self.np
         return result if dtype is None else result.astype(dtype, copy=False)
     def __repr__(self): return _array_repr(self._inner.parts())
     def _repr_mimebundle_(self, include=None, exclude=None):
-        try: data = _builtin('•mime')(self).py
+        import numpy as np
+        try:
+            bundle = _builtin('•mime')(self)
+            data = {}
+            for k in bundle.keys[0]:
+                v = bundle[k]
+                text = v._inner.text_content
+                data[k] = text if isinstance(text, str) else np.asarray(v, dtype='uint8').tobytes()
         except BplError: data = {'text/plain': self.bpl}
-        return {k: v if isinstance(v, str) else bytes(v) for k,v in data.items() if (include is None or k in include) and (exclude is None or k not in exclude)}
+        return {k:v for k,v in data.items() if (include is None or k in include) and (exclude is None or k not in exclude)}
 
 class FunctionArray(Array):
     "An `Array` that holds a function as a direct item. Calling it calls each such function on the whole arguments, as `aggs data` does in BPL. Each other item is its own result."

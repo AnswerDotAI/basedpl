@@ -6,7 +6,7 @@ use std::sync::Arc;
 pub use rustymath::layout::Keys;
 
 /// A character atom or vector names one element, whatever storage holds the vector's characters.
-pub(crate) fn name(value: &Value) -> Option<Arc<str>> {
+pub fn name(value: &Value) -> Option<Arc<str>> {
     match (value, value.as_items()) {
         (Value::Character(c), _) => Some(c.to_string().into()),
         (Value::Array(_), Items::Compact(View::Characters(cs))) if value.shape().len() == 1 => Some(cs.iter().collect::<String>().into()),

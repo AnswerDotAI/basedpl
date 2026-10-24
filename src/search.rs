@@ -43,7 +43,7 @@ impl<'a> Cells<'a> {
 }
 
 /// The items of `cells` when they're one array's compact items, which rustymath's searches of views take.
-pub(crate) fn compact_view<'a>(cells: &Cells<'a>) -> Option<View<'a>> { match cells.items()? { Items::Compact(x) => Some(x), Items::Values(_) => None } }
+pub(crate) fn compact_view<'a>(cells: &Cells<'a>) -> Option<View<'a>> { cells.items()?.view() }
 
 /// The float width that a search compares at, the widest among its cells or f64 without floats, and that width's tolerance.
 fn compared_at(width: Option<FloatWidth>) -> (FloatWidth, Tolerance) {
@@ -183,10 +183,12 @@ fn hashes(cells: &Cells, seed: &Hashing) -> Option<Vec<u64>> {
                 (3u8, value.shape()).hash(state);
                 match value.as_items() {
                     Items::Values(items) => for item in items { feed(item, state)?; },
-                    Items::Compact(View::Booleans(x)) => for &b in x { (0u8, i64::from(b)).hash(state) },
-                    Items::Compact(View::Integers(x)) => rustymath::with_ints!(x, |x| for &i in x { (0u8, i64::from(i)).hash(state) }),
-                    Items::Compact(View::Characters(x)) => for &c in x { state.write_u32(c.into()) },
-                    Items::Compact(View::Floats(_) | View::Complexes(_)) => return None,
+                    items => match items.view()? {
+                        View::Booleans(x) => for &b in x { (0u8, i64::from(b)).hash(state) },
+                        View::Integers(x) => rustymath::with_ints!(x, |x| for &i in x { (0u8, i64::from(i)).hash(state) }),
+                        View::Characters(x) => for &c in x { state.write_u32(c.into()) },
+                        View::Floats(_) | View::Complexes(_) => return None,
+                    },
                 }
             }
         }
@@ -210,7 +212,7 @@ impl<'a> Exact<'a> {
             Value::Array(_) if value.carrier().is_none() && value.layout().plain() => Some(value.shape()),
             _ => return None,
         };
-        match value.as_items() { Items::Compact(items @ (View::Booleans(_) | View::Integers(_) | View::Characters(_))) => Some(Self { shape, items }), _ => None }
+        match value.view()? { items @ (View::Booleans(_) | View::Integers(_) | View::Characters(_)) => Some(Self { shape, items }), _ => None }
     }
 }
 
@@ -243,7 +245,7 @@ impl Hash for Exact<'_> {
 /// Each cell as an `Exact` key, when every cell is one.
 fn exact_cells<'a>(cells: &'a Cells) -> Option<Vec<Exact<'a>>> {
     match cells {
-        Cells::Items(a) if a.carrier().is_none() => match a.as_items() { Items::Values(items) => items.iter().map(Exact::of).collect(), Items::Compact(_) => None },
+        Cells::Items(a) if a.carrier().is_none() => match a.as_items() { Items::Values(items) => items.iter().map(Exact::of).collect(), _ => None },
         Cells::Items(_) => None,
         Cells::Arrays(cells) => cells.iter().map(Exact::of).collect(),
     }

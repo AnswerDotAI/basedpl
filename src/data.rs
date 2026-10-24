@@ -1,6 +1,6 @@
 use crate::execution::check;
 use crate::session;
-use rustymath::{buffer::{Buffer, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
+use rustymath::{buffer::{Buffer, ComplexBuf, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
 use crate::{
     array::{Items, Storage}, Span, keyed, number::Numeric, primitive::{numeric, real}, Error, Described, ErrorKind, Number, Value
 };
@@ -11,13 +11,30 @@ pub(crate) fn text(value: &Value) -> Result<String, Error> {
     keyed::name(value).map(|s| s.to_string()).ok_or_else(|| Error::domain("expected text"))
 }
 
-/// Imported items, where `filled` marks the fills for missing values. Numbers become floats of the widest float width among them when every one converts exactly and any is an infinity, a NaN, or a finite float other than a fill. Otherwise each item keeps its own kind. An integer that no float holds exactly therefore stays exact, in mixed storage, beside a missing value. A finite fill never makes exact numbers approximate.
+/// Imported items, where `filled` marks missing-value fills. Approximate inputs select real or complex storage at the widest strong approximate width, or the widest weak width when none is strong. Weak approximate values may round; exact values must convert losslessly. Otherwise items keep their own kinds. A finite real fill alone never makes exact numbers approximate.
 pub(crate) fn imported(shape: Vec<usize>, items: Vec<Value>, filled: impl Fn(usize) -> bool, empty_prototype: Value) -> Result<Value, ErrorKind> {
-    let number = |v: &Value| if let Value::Number(n) = v { Some(n.clone()) } else { None };
-    if items.iter().enumerate().any(|(i, v)| number(v).is_some_and(|n| n.as_float().is_some_and(|f| !f.is_finite() || !filled(i)))) {
-        let width = items.iter().filter_map(|v| number(v)?.float_width()).max().unwrap_or(FloatWidth::F64);
-        let exactly = |n: Number| n.lossless_float().filter(|&f| f.is_nan() || Number::float(f, width).as_float() == Some(f));
-        if let Some(floats) = items.iter().map(|v| number(v).and_then(exactly)).collect::<Option<Vec<_>>>() {
+    fn number(v: &Value) -> Option<&Number> { if let Value::Number(n) = v { Some(n) } else { None } }
+    let numbers = || items.iter().filter_map(number);
+    if items.iter().enumerate().any(|(i, v)| number(v).is_some_and(|n| n.as_float().is_some_and(|f| !f.is_finite() || !filled(i)) || n.as_complex().is_some())) {
+        let (mut width, mut strong, mut complex) = (None, None, false);
+        for n in numbers() {
+            let w = n.float_width();
+            width = width.max(w);
+            complex |= n.as_complex().is_some();
+            if !n.is_weak() { strong = strong.max(w); }
+        }
+        let width = strong.or(width).unwrap_or(FloatWidth::F64);
+        let width = if complex { width.max(FloatWidth::F32) } else { width };
+        let fits = |n: &Number, f: f64| n.is_weak() && !n.is_exact() || f.is_nan() || Number::float(f, width).as_float() == Some(f);
+        let exactly = |n: &Number| n.lossless_float().filter(|&f| fits(n, f));
+        if complex {
+            let values = items.iter().map(|v| {
+                let n = number(v)?;
+                let z = n.as_complex().or_else(|| exactly(n).map(|re| num_complex::Complex64::new(re, 0.0)))?;
+                (fits(n, z.re) && fits(n, z.im)).then_some(z)
+            }).collect::<Option<Vec<_>>>();
+            if let Some(values) = values { return Value::complex(shape, ComplexBuf::collect(width.into(), values.into_iter())); }
+        } else if let Some(floats) = items.iter().map(|v| number(v).and_then(exactly)).collect::<Option<Vec<_>>>() {
             return Value::from_storage(shape, Storage::Compact(Buffer::Floats(FloatBuf::collect(width, floats.into_iter()))));
         }
     }

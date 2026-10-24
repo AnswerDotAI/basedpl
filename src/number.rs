@@ -6,7 +6,7 @@ use num_complex::{Complex32, Complex64};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
 use rustymath::{
-    buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats, Width}, error::Kind, tolerant::{Tolerance, Tolerant, TolerantComplex},
+    buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats, Ints, Width}, error::Kind, tolerant::{Tolerance, Tolerant, TolerantComplex},
     with_float_width, Binary as _, Float as _, Unary as _
 };
 use std::{borrow::Cow, cmp::Ordering, fmt};
@@ -39,24 +39,41 @@ impl From<Failure> for crate::Error {
     }
 }
 
-/// A number's representation. A float or complex number's `bool` is `true` where the number is weak (`Number::is_weak`).
+/// A number's representation. The final `bool` marks a weak ordinary number (`Number::is_weak`).
 #[derive(Clone, Debug)]
 enum Repr {
     /// A truth value. It acts as the integer 0 or 1 wherever a number is expected.
-    Boolean(bool),
-    Integer(i64),
+    Boolean(bool, bool),
+    Integer(i64, bool),
+    Fixed(FixedInt),
     Float(f64, bool),
     /// A float of 32 bits. Arithmetic reads it as the `f64` it converts to exactly.
     Single(f32, bool),
     /// A float of 16 bits. Arithmetic reads it as the `f64` it converts to exactly.
     Half(half::f16, bool),
-    Exact(Box<BigRational>),
+    Exact(Box<BigRational>, bool),
     Complex(Complex64, bool),
     /// A complex number with 32-bit parts. Arithmetic reads it as the `Complex64` it converts to exactly.
     Complex32(Complex32, bool),
 }
 use Repr::*;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum FixedInt { U8(u8), I16(i16), I32(i32), I64(i64) }
+impl FixedInt {
+    fn new(n: i64, width: Width) -> Self {
+        match width { Width::U8 => Self::U8(n as u8), Width::I16 => Self::I16(n as i16), Width::I32 => Self::I32(n as i32), Width::I64 => Self::I64(n) }
+    }
+    fn items(&self) -> Ints<'_> {
+        match self {
+            Self::U8(n) => Ints::U8(std::slice::from_ref(n)), Self::I16(n) => Ints::I16(std::slice::from_ref(n)),
+            Self::I32(n) => Ints::I32(std::slice::from_ref(n)), Self::I64(n) => Ints::I64(std::slice::from_ref(n)),
+        }
+    }
+    fn value(self) -> i64 { self.items().get(0) }
+}
 impl Repr {
+    fn integer(&self) -> Option<i64> { match self { Integer(n, _) => Some(*n), Fixed(n) => Some(n.value()), _ => None } }
     /// A float's value, which converts to `f64` exactly, and its width. `None` for any other number.
     fn float(&self) -> Option<(f64, FloatWidth)> {
         match *self {
@@ -72,8 +89,9 @@ impl Repr {
 impl PartialEq for Repr {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Boolean(x), Boolean(y)) => x == y, (Integer(x), Integer(y)) => x == y, (Float(x, _), Float(y, _)) => x == y,
-            (x, y) if let (Some((x, _)), Some((y, _))) = (x.float(), y.float()) => x == y, (Exact(x), Exact(y)) => x == y,
+            (x, y) if let (Some(x), Some(y)) = (x.integer(), y.integer()) => x == y,
+            (Boolean(x, _), Boolean(y, _)) => x == y, (Float(x, _), Float(y, _)) => x == y,
+            (x, y) if let (Some((x, _)), Some((y, _))) = (x.float(), y.float()) => x == y, (Exact(x, _), Exact(y, _)) => x == y,
             (x, y) if let (Some((x, _)), Some((y, _))) = (x.complex(), y.complex()) => x == y, _ => false
         }
     }
@@ -87,7 +105,9 @@ pub(crate) const FALSE_NAME: &str = "$f";
 /// The session's numeric settings, which `•prefs` changes. Comparisons and kernels take their tolerance from them, and operations that create floats from exact numbers take their width.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Numeric {
-    /// The comparison tolerance of 64-bit floats, which the `tolerance` pref sets.
+    /// Whether public arithmetic uses tolerant comparison and zero divided by zero gives zero.
+    pub mathish: bool,
+    /// The comparison tolerance of 64-bit floats. Convergence can supply its own without changing public division.
     pub tolerance: Tolerance,
     /// The units in the last place within which narrower floats compare: 0, so that they compare exactly, except in `f⍣∞`.
     pub(crate) units: f64,
@@ -97,6 +117,7 @@ pub(crate) struct Numeric {
     pub kinds: Kinds,
     /// The width of new integers under static kinds, which the `int` pref sets. An integer array computes at least at this width.
     pub int: Width,
+    pub(crate) fixed: Option<Width>,
 }
 /// Whether a result's kind may depend on its arguments' values. Under static kinds it follows from the operation, its arguments' kinds and the settings alone, as `meta/kinds.md` describes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -110,9 +131,9 @@ impl Kinds {
 impl Default for Numeric { fn default() -> Self { Self::DEFAULT } }
 impl Numeric {
     /// Exact comparison at every width, for kernels that compare no floats.
-    pub(crate) const EXACT: Self = Self { tolerance: Tolerance::EXACT, units: 0.0, width: FloatWidth::F64, kinds: Kinds::Dynamic, int: Width::I64 };
+    pub(crate) const EXACT: Self = Self { mathish: false, tolerance: Tolerance::EXACT, units: 0.0, width: FloatWidth::F64, kinds: Kinds::Dynamic, int: Width::I64, fixed: None };
     /// The default settings.
-    pub(crate) const DEFAULT: Self = Self { tolerance: Tolerance::DEFAULT, ..Self::EXACT };
+    pub(crate) const DEFAULT: Self = Self { mathish: true, tolerance: Tolerance::DEFAULT, ..Self::EXACT };
     /// The settings in force (`settings`).
     #[inline]
     pub(crate) fn current() -> Self { crate::settings::numeric() }
@@ -120,21 +141,27 @@ impl Numeric {
     pub(crate) fn set(&mut self, key: &str, value: &Value) -> Result<bool, &'static str> {
         let integer = || value.as_number().and_then(|n| n.integer().ok());
         match key {
-            "tolerance" => {
-                let t = value.as_number().and_then(|n| n.to_float().ok()).and_then(Tolerance::new).filter(|&t| t <= Tolerance::DEFAULT);
-                self.tolerance = t.ok_or("tolerance must be from 0 to 1E¯14")?;
+            "mathish" => {
+                self.mathish = value.as_number().and_then(|n| n.as_bool()).ok_or("mathish must be Boolean")?;
             }
             "float" => self.width = integer().and_then(FloatWidth::of_bits).ok_or("float must be 16, 32 or 64")?,
             "kinds" => self.kinds = crate::keyed::name(value).as_deref().and_then(Kinds::named).ok_or("kinds must be \"dynamic\" or \"static\"")?,
             "int" => self.int = match integer() { Some(32) => Width::I32, Some(64) => Width::I64, _ => return Err("int must be 32 or 64") },
             _ => return Ok(false),
         }
+        *self = self.with_public_tolerance();
         Ok(true)
+    }
+    pub(crate) fn mathish_at(self, width: Option<FloatWidth>) -> bool {
+        self.mathish && !self.is_static() && self.fixed.is_none() && width.is_none_or(|w| w == FloatWidth::F64)
+    }
+    pub(crate) fn with_public_tolerance(self) -> Self {
+        Self { tolerance: if self.mathish_at(None) { Tolerance::DEFAULT } else { Tolerance::EXACT }, ..self }
     }
     /// Each numeric setting's `•prefs` key and value, as `set` takes them.
     pub(crate) fn entries(&self) -> [(&'static str, Value); 4] {
         [
-            ("tolerance", Value::Number(Number::float(self.tolerance.value(), FloatWidth::F64))), ("float", Value::integer(self.width.bits())),
+            ("mathish", Value::Number(Number::from_bool(self.mathish))), ("float", Value::integer(self.width.bits())),
             ("kinds", crate::keyed::text(self.kinds.name())), ("int", Value::integer(if self.int == Width::I32 { 32 } else { 64 })),
         ]
     }
@@ -163,15 +190,18 @@ impl Numeric {
     /// Whether every result's kind follows from kinds alone.
     #[inline]
     pub(crate) fn is_static(self) -> bool { self.kinds == Kinds::Static }
+    pub(crate) fn wrapping(self) -> bool { self.fixed.is_some() || self.is_static() }
+    pub(crate) fn integer_width(self) -> Width { self.fixed.unwrap_or(self.int) }
+    pub(crate) fn with_fixed(self, width: Width) -> Self { Self { fixed: Some(width), ..self } }
     /// Exact comparison, as `EXACT` gives, under these kinds settings. Integer and Boolean kernels take it.
-    pub(crate) fn exact(self) -> Self { Self { kinds: self.kinds, int: self.int, ..Self::EXACT } }
+    pub(crate) fn exact(self) -> Self { Self { mathish: self.mathish, kinds: self.kinds, int: self.int, fixed: self.fixed, ..Self::EXACT } }
     /// The kind that an array of `dtype` computes in. Under static kinds, integers compute at least at the `int` width, whatever width their storage takes, except in a call whose results are the same at every width that holds its arguments (`pervasive::first_kind`). Other dtypes, and every dtype under dynamic kinds, are their own.
     pub(crate) fn kind(self, dtype: DType) -> DType {
-        match dtype { DType::Integer(w) if self.is_static() => DType::Integer(w.join(self.int)), d => d }
+        match dtype { DType::Integer(_) if let Some(w) = self.fixed => DType::Integer(w), DType::Integer(w) if self.is_static() => DType::Integer(w.join(self.int)), d => d }
     }
     /// The width of the floats that exact arguments of `dtype` compute in, for a function whose results are approximate. It's the default width under dynamic kinds. Under static kinds it's the float that `DType::inexact` gives for the argument's kind, no wider than the default.
     pub(crate) fn exact_width(self, dtype: DType) -> FloatWidth {
-        match self.kind(dtype).inexact(self.width) { Some((DType::Float(w), _)) if self.is_static() => w, _ => self.width }
+        match self.kind(dtype).inexact(self.width) { Some((DType::Float(w), _)) if self.wrapping() => w, _ => self.width }
     }
     /// These settings with new floats of `width`, as a literal's width marker gives them.
     pub(crate) fn with_width(self, width: FloatWidth) -> Self { Self { width, ..self } }
@@ -184,7 +214,7 @@ impl Numeric {
         let bytes = n.to_signed_bytes_le();
         let fill = if n.is_negative() { 0xFF } else { 0 };
         let low = i64::from_le_bytes(std::array::from_fn(|k| bytes.get(k).copied().unwrap_or(fill)));
-        if self.int == Width::I32 { i64::from(low as i32) } else { low }
+        FixedInt::new(low, self.integer_width()).value()
     }
 }
 
@@ -515,88 +545,118 @@ pub(crate) type Suffix = (&'static [char], char);
 pub(crate) const EXPONENT: Suffix = (&['e', 'E'], 'ₑ');
 pub(crate) const IMAGINARY: Suffix = (&['J', 'j'], 'ⱼ');
 pub(crate) const DENOMINATOR: Suffix = (&['r'], 'ᵣ');
-pub(crate) const EXACT: Suffix = (&[], 'ₓ');
-/// The markers of float widths: `ₕ` for 16-bit ("half"), `ₛ` for 32-bit ("single") and `ₚ` for 64-bit ("precise"). Unicode has no subscript `d`.
-pub(crate) const WIDTHS: [(Suffix, FloatWidth); 3] = [((&[], 'ₕ'), FloatWidth::F16), ((&[], 'ₛ'), FloatWidth::F32), ((&[], 'ₚ'), FloatWidth::F64)];
-pub(crate) const SUFFIXES: [Suffix; 7] = [EXPONENT, IMAGINARY, DENOMINATOR, EXACT, WIDTHS[0].0, WIDTHS[1].0, WIDTHS[2].0];
+pub(crate) const SUFFIXES: [Suffix; 3] = [EXPONENT, IMAGINARY, DENOMINATOR];
+pub(crate) const MARKS: [(&str, Mark); 8] = [
+    ("ₓ₁", Mark::Fixed(Width::U8)), ("ₓ₂", Mark::Fixed(Width::I16)), ("ₓ₄", Mark::Fixed(Width::I32)), ("ₓ₈", Mark::Fixed(Width::I64)),
+    ("ₓ", Mark::Exact), ("ₕ", Mark::Width(FloatWidth::F16)), ("ₛ", Mark::Width(FloatWidth::F32)), ("ₚ", Mark::Width(FloatWidth::F64)),
+];
 
 /// Whether `c` is the subscript of a numeric suffix.
-pub(crate) fn subscript(c: char) -> bool { SUFFIXES.iter().any(|s| s.1 == c) }
+pub(crate) fn subscript(c: char) -> bool { SUFFIXES.iter().any(|s| s.1 == c) || MARKS.iter().any(|(s, _)| s.starts_with(c)) }
 
-/// The marker that writes floats of `width`.
-pub(crate) fn width_marker(width: FloatWidth) -> char { WIDTHS.iter().find(|w| w.1 == width).expect("every width has a marker").0 .1 }
-
-/// A number marker: `ₓ` for exact numbers, or a float width's marker. After a literal it says what the literal's numbers are. After a function it makes the function's results such numbers (`Superscript::Mark`).
+/// A numeric kind marker. After a literal it says what the literal's numbers are. After a function it makes the function's results such numbers (`Superscript::Mark`).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Mark { Exact, Width(FloatWidth) }
+pub(crate) enum Mark { Exact, Width(FloatWidth), Fixed(Width) }
 impl Mark {
     /// The marker's subscript.
-    pub(crate) fn marker(self) -> char { match self { Self::Exact => EXACT.1, Self::Width(w) => width_marker(w) } }
-    /// The marker that `c` is.
-    pub(crate) fn of(c: char) -> Option<Self> { if c == EXACT.1 { return Some(Self::Exact); } WIDTHS.iter().find(|w| w.0 .1 == c).map(|w| Self::Width(w.1)) }
+    pub(crate) fn marker(self) -> &'static str { MARKS.iter().find(|(_, m)| *m == self).expect("every mark has a spelling").0 }
+    /// The marker spelled by `text`.
+    pub(crate) fn of(text: &str) -> Option<Self> { MARKS.iter().find(|(s, _)| *s == text).map(|(_, m)| *m) }
     /// The zero of the marked numbers, the prototype of an empty marked list.
-    pub(crate) fn zero(self) -> Number { match self { Self::Exact => Number::from_integer(0), Self::Width(w) => Number::float(0.0, w) } }
+    pub(crate) fn zero(self) -> Number { match self { Self::Exact => Number::from_integer(0), Self::Width(w) => Number::float(0.0, w), Self::Fixed(w) => Number::fixed(0, w) } }
 }
 
 /// `text` with the subscript of each suffix written as its first plain letter, and the width that a trailing width marker gives, for `Number::parse`. `ₓ` has no plain letter and stays.
-fn plain_suffixes(text: &str) -> (std::borrow::Cow<'_, str>, Option<FloatWidth>) {
+fn plain_suffixes(text: &str) -> (std::borrow::Cow<'_, str>, Option<Mark>) {
     // No subscript is ASCII.
     if text.is_ascii() { return (text.into(), None); }
-    let (text, width) = WIDTHS.iter().find_map(|&(s, w)| text.strip_suffix(s.1).map(|t| (t, Some(w)))).unwrap_or((text, None));
+    let (text, width) = MARKS.iter().find_map(|&(s, m)| text.strip_suffix(s).map(|t| (t, Some(m)))).unwrap_or((text, None));
     (text.chars().map(|c| SUFFIXES.iter().find(|s| s.1 == c).and_then(|s| s.0.first()).copied().unwrap_or(c)).collect(), width)
 }
 
+
 impl Number {
-    pub fn from_integer(n: i64) -> Self { Self(Integer(n)) }
-    pub fn from_bool(b: bool) -> Self { Self(Boolean(b)) }
-    /// Whether this is zero. Exact fractions and complex numbers are normalised, so neither is ever zero.
-    pub(crate) fn is_zero(&self) -> bool { matches!(self.0, Integer(0) | Boolean(false)) || self.as_float() == Some(0.0) }
+    pub fn from_integer(n: i64) -> Self { Self(Integer(n, false)) }
+    pub(crate) fn fixed(n: i64, width: Width) -> Self { Self(Fixed(FixedInt::new(n, width))) }
+    pub(crate) fn fixed_width(&self) -> Option<Width> { match &self.0 { Fixed(n) => Some(n.items().tag()), _ => None } }
+    pub(crate) fn fixed_literal(text: &str, width: Width) -> Result<Self, ErrorKind> {
+        let (text, _) = plain_suffixes(text);
+        let text = text.strip_suffix(['x', 'ₓ']).unwrap_or(&text).replace('¯', "-");
+        let n = text.parse::<BigInt>().map_err(|_| ErrorKind::Syntax)?.to_i64().filter(|&n| Width::narrowest(n, n).join(width) == width)
+            .ok_or_else(|| ErrorKind::from(rustymath::error::Error::new(Kind::Limit, "integer literal doesn't fit its fixed width")))?;
+        Ok(Self::fixed(n, width))
+    }
+    pub(crate) fn fixed_promotion(left: Option<&Self>, right: &Self) -> Result<Option<Width>, &'static str> {
+        if left.is_none_or(|n| n.fixed_width().is_none()) && right.fixed_width().is_none() { return Ok(None); }
+        crate::array::Promoted::fixed(left.into_iter().chain([right]).map(crate::array::Promoted::number))
+    }
+    pub(crate) fn to_fixed(&self, width: Width, numeric: Numeric) -> Result<Self, ErrorKind> {
+        let n = if let Some(n) = self.as_integer() { n }
+        else if let Some((n, w)) = self.0.float() {
+            let n = numeric.tolerance_at(w).floor(n);
+            rustymath::with_width!(width, T => i64::from(rustymath::convert::saturated::<T, f64>(n)))
+        } else if let Exact(q, _) = &self.0 {
+            if q.is_integer() { numeric.with_fixed(width).wrap(q.numer()) }
+            else {
+                let (lo, hi) = rustymath::with_width!(width, T => (i64::from(T::MIN), i64::from(T::MAX)));
+                q.floor().to_integer().to_i64().map_or(if q.is_negative() { lo } else { hi }, |n| n.clamp(lo, hi))
+            }
+        } else { return Err(Kind::Domain.into()); };
+        Ok(Self::fixed(n, width))
+    }
+    pub fn from_bool(b: bool) -> Self { Self(Boolean(b, false)) }
+    /// Whether this is zero. Exact fractions are normalised, so none is zero.
+    pub(crate) fn is_zero(&self) -> bool { self.as_integer() == Some(0) || self.as_float() == Some(0.0) || self.as_complex().is_some_and(|z| z.is_zero()) }
     /// This exact integer's value. A Boolean gives 0 or 1.
-    pub fn as_integer(&self) -> Option<i64> { match self.0 { Integer(n) => Some(n), Boolean(b) => Some(b.into()), _ => None } }
-    pub(crate) fn integer_slice(&self) -> Option<&[i64]> { match &self.0 { Integer(n) => Some(std::slice::from_ref(n)), _ => None } }
-    pub fn as_bool(&self) -> Option<bool> { match self.0 { Boolean(b) => Some(b), _ => None } }
+    pub fn as_integer(&self) -> Option<i64> { self.0.integer().or_else(|| self.as_bool().map(i64::from)) }
+    pub(crate) fn integer_items(&self) -> Option<Ints<'_>> { match &self.0 { Integer(n, _) => Some(Ints::I64(std::slice::from_ref(n))), Fixed(n) => Some(n.items()), _ => None } }
+    pub(crate) fn ordinary(&self) -> Self { match self.0 { Fixed(n) => Self::from_integer(n.value()), _ => self.clone() } }
+    pub fn as_bool(&self) -> Option<bool> { match self.0 { Boolean(b, _) => Some(b), _ => None } }
     /// The compact dtype that holds this number. An integer takes the narrowest width that holds it. A rational has none.
     pub(crate) fn dtype(&self) -> Option<DType> {
         match self.0 {
-            Boolean(_) => Some(DType::Boolean), Integer(n) => Some(DType::Integer(Width::narrowest(n, n))),
+            Boolean(_, _) => Some(DType::Boolean), Integer(n, _) => Some(DType::Integer(Width::narrowest(n, n))), Fixed(n) => Some(DType::Integer(n.items().tag())),
             Float(..) => Some(DType::Float(FloatWidth::F64)), Single(..) => Some(DType::Float(FloatWidth::F32)), Half(..) => Some(DType::Float(FloatWidth::F16)),
-            Complex(..) => Some(DType::Complex(ComplexWidth::F64)), Complex32(..) => Some(DType::Complex(ComplexWidth::F32)), Exact(_) => None,
+            Complex(..) => Some(DType::Complex(ComplexWidth::F64)), Complex32(..) => Some(DType::Complex(ComplexWidth::F32)), Exact(_, _) => None,
         }
     }
     /// Whether `other` has this number's representation, such as both 64-bit floats or both exact integers, whatever their widths.
-    pub(crate) fn same_variant(&self, other: &Number) -> bool { std::mem::discriminant(&self.0) == std::mem::discriminant(&other.0) }
-    /// Whether this number is weak: a float or complex number that a literal without a width marker writes, that Python passes as a scalar, or that a call computes with no strong float or complex operand. A weak number beside a strong one takes the width that `weak_width` gives, as NumPy treats a Python scalar. Items of arrays are strong.
+    pub(crate) fn same_variant(&self, other: &Number) -> bool { std::mem::discriminant(&self.0) == std::mem::discriminant(&other.0) && self.fixed_width() == other.fixed_width() }
+    /// Whether this number is weak for promotion. A result is weak only when every operand is weak. Array items are strong.
     #[inline]
-    pub(crate) fn is_weak(&self) -> bool { matches!(self.0, Float(_, true) | Single(_, true) | Half(_, true) | Complex(_, true) | Complex32(_, true)) }
-    /// This number, weak where `weak` holds and it's a float or a complex number, and otherwise strong.
+    pub(crate) fn is_weak(&self) -> bool { matches!(self.0, Boolean(_, true) | Integer(_, true) | Exact(_, true) | Float(_, true) | Single(_, true) | Half(_, true) | Complex(_, true) | Complex32(_, true)) }
+    /// Sets an ordinary number's promotion strength. Fixed integers stay strong.
     #[inline]
     pub fn marked(mut self, weak: bool) -> Self {
-        if let Float(_, w) | Single(_, w) | Half(_, w) | Complex(_, w) | Complex32(_, w) = &mut self.0 { *w = weak; }
+        self.mark(weak);
         self
     }
-    /// The width that this weak number takes beside numbers of the strong dtype `strong`, as NEP 50 promotes a Python scalar (`DType::common_weak`): the width of the floats among them, or of their parts. `None` where it keeps its own, as beside exact numbers, and where it's strong.
+    pub(crate) fn mark(&mut self, weak: bool) {
+        if let Boolean(_, w) | Integer(_, w) | Exact(_, w) | Float(_, w) | Single(_, w) | Half(_, w) | Complex(_, w) | Complex32(_, w) = &mut self.0 { *w = weak; }
+    }
+    /// The approximate width this weak number takes beside the strong dtype, following NEP 50.
     pub(crate) fn weak_width(&self, strong: DType) -> Option<FloatWidth> {
         if !self.is_weak() { return None; }
         let weak = self.dtype()?;
         match strong.common_weak(weak)?.real() { DType::Float(width) if Some(width) != self.float_width() => Some(width), _ => None }
     }
-    /// The number that literal text writes, as `parse` reads it. A float or complex literal is weak unless a width marker states its width.
+    /// The number that literal text writes. A width marker makes it strong.
     pub(crate) fn literal(text: &str, numeric: Numeric) -> Result<Self, ErrorKind> {
         let n = Self::parse(text, numeric)?;
-        Ok(if plain_suffixes(text).1.is_some() { n } else { n.marked(true) })
+        Ok(n.marked(matches!(plain_suffixes(text).1, None | Some(Mark::Exact))))
     }
-    pub(crate) fn bool_slice(&self) -> Option<&[bool]> { match &self.0 { Boolean(b) => Some(std::slice::from_ref(b)), _ => None } }
+    pub(crate) fn bool_slice(&self) -> Option<&[bool]> { match &self.0 { Boolean(b, _) => Some(std::slice::from_ref(b)), _ => None } }
     #[inline]
-    pub fn is_exact(&self) -> bool { matches!(self.0, Boolean(_) | Integer(_) | Exact(_)) }
-    pub(crate) fn is_integral(&self) -> bool { matches!(self.0, Boolean(_) | Integer(_)) || matches!(&self.0, Exact(n) if n.is_integer()) }
+    pub fn is_exact(&self) -> bool { matches!(self.0, Boolean(_, _) | Integer(_, _) | Fixed(_) | Exact(_, _)) }
+    pub(crate) fn is_integral(&self) -> bool { self.as_integer().is_some() || matches!(&self.0, Exact(n, _) if n.is_integer()) }
     /// The domain this number computes in: exact, complex, or real in 64 bits.
     fn domain(&self) -> Domain { if self.is_exact() { Domain::Exact } else if self.as_complex().is_some() { Domain::Complex } else { Domain::Double } }
     /// This number with a Boolean read as the integer 0 or 1, as arithmetic reads it.
     fn numeric(&self) -> Cow<'_, Self> {
-        match self.0 { Boolean(b) => Cow::Owned(Self(Integer(b.into()))), _ => Cow::Borrowed(self) }
+        match self.0 { Boolean(b, _) => Cow::Owned(Self::from_integer(b.into())), _ => Cow::Borrowed(self) }
     }
-    fn has_boolean(&self, right: &Self) -> bool { matches!(self.0, Boolean(_)) || matches!(right.0, Boolean(_)) }
-    fn exact(n: BigRational) -> Self { if n.is_integer() { if let Some(i) = n.numer().to_i64() { return Self(Integer(i)); } } Self(Exact(Box::new(n))) }
+    fn has_boolean(&self, right: &Self) -> bool { matches!(self.0, Boolean(_, _)) || matches!(right.0, Boolean(_, _)) }
+    fn exact(n: BigRational) -> Self { if n.is_integer() { if let Some(i) = n.numer().to_i64() { return Self::from_integer(i); } } Self(Exact(Box::new(n), false)) }
     /// A whole float as an exact integer of any size. An infinity or NaN stays a float.
     fn exact_integer(n: f64) -> Self {
         if !n.is_finite() { return Self(Float(n, false)); }
@@ -605,7 +665,8 @@ impl Number {
     /// This number written with `ₓ`: exact as it is, or a whole float made exact. An infinity or NaN stays as it is. `None` for a fraction or a complex number.
     pub(crate) fn marked_exact(&self) -> Option<Self> {
         match (&self.0, self.as_float()) {
-            (_, Some(n)) if !n.is_finite() || n.fract() == 0.0 => Some(Self::exact_integer(n)), (Half(..) | Single(..) | Float(..) | Complex(..), _) => None,
+            (Fixed(n), _) => Some(Self::from_integer(n.value())),
+            (_, Some(n)) if !n.is_finite() || n.fract() == 0.0 => Some(Self::exact_integer(n).marked(self.is_weak())), (Half(..) | Single(..) | Float(..) | Complex(..), _) => None,
             _ => Some(self.clone())
         }
     }
@@ -658,10 +719,9 @@ impl Number {
     pub fn as_exact(&self) -> Option<BigRational> { self.exact_ref().map(Cow::into_owned) }
     /// The exact value, borrowed where this number holds a big one.
     pub(crate) fn exact_ref(&self) -> Option<Cow<'_, BigRational>> {
+        if let Some(n) = self.as_integer() { return Some(Cow::Owned(BigRational::from_integer(n.into()))); }
         match &self.0 {
-            Boolean(b) => Some(Cow::Owned(BigRational::from_integer(i64::from(*b).into()))),
-            Integer(n) => Some(Cow::Owned(BigRational::from_integer((*n).into()))),
-            Exact(n) => Some(Cow::Borrowed(n)),
+            Exact(n, _) => Some(Cow::Borrowed(n)),
             _ => None,
         }
     }
@@ -688,7 +748,8 @@ impl Number {
     /// The number that `text` writes, with plain letters or subscripts for its suffixes, as BPL writes and displays numbers. A trailing width marker gives the float width, and otherwise a float takes the default width. A complex number has parts of that width. Under static kinds, a complex number stays complex with no imaginary part, and an exact integer must fit the `int` width.
     pub(crate) fn parse(text: &str, numeric: Numeric) -> Result<Self, ErrorKind> {
         let (text, marked) = plain_suffixes(text);
-        let numeric = marked.map_or(numeric, |w| numeric.with_width(w));
+        if let Some(Mark::Fixed(width)) = marked { return Self::fixed_literal(&text, width); }
+        let numeric = match marked { Some(Mark::Width(w)) => numeric.with_width(w), _ => numeric };
         let (text, width) = (text.replace('¯', "-").replace('∞', "inf"), numeric.width);
         let integer = |s: &str| s.parse::<BigInt>().map_err(|_| ErrorKind::Syntax);
         if let Some((re, im)) = text.split_once(['J', 'j']) {
@@ -696,7 +757,7 @@ impl Number {
             let z = Complex64::new(part(re)?, part(im)?);
             return Ok(Self::complex_in_session(z, width));
         }
-        if let Some(n) = text.strip_suffix(['x', 'ₓ']) {
+        if let Some(n) = text.strip_suffix(['x', 'ₓ']).or_else(|| (marked == Some(Mark::Exact)).then_some(text.as_str())) {
             let n: Self = integer(n)?.into();
             if numeric.is_static() && !n.as_integer().is_some_and(|i| numeric.fits(i)) {
                 return Err(rustymath::error::Error::new(Kind::Limit, "under static kinds an exact integer must fit the int width").into());
@@ -709,7 +770,9 @@ impl Number {
 
     /// `n` as an exact integer if this number is exact, and as a float otherwise.
     pub(crate) fn like(&self, n: i32) -> Self {
-        if self.is_exact() { Self(Integer(n as i64)) } else { Self::float(n.into(), self.float_width().unwrap_or(FloatWidth::F64)) }
+        if let Some(width) = self.fixed_width() { return Self::fixed(n.into(), width); }
+        let value = if self.is_exact() { Self::from_integer(n as i64) } else { Self::float(n.into(), self.float_width().unwrap_or(FloatWidth::F64)) };
+        value.marked(self.is_weak())
     }
     pub(crate) fn zero(&self) -> Self { self.like(0) }
     pub(crate) fn one(&self) -> Self { self.like(1) }
@@ -718,10 +781,12 @@ impl Number {
     pub(crate) fn to_float(&self) -> Result<f64, Failure> {
         self.plain_float().map_err(Failure::Domain)
     }
+    #[inline]
     fn plain_float(&self) -> Result<f64, &'static str> {
         if let Some((n, _)) = self.0.float() { return Ok(n); }
+        if let Some(n) = self.as_integer() { return Ok(n as f64); }
         match &self.0 {
-            Integer(n) => Ok(*n as f64), Boolean(b) => Ok(f64::from(u8::from(*b))), Exact(n) => n.to_f64().ok_or("value is outside floating-point range"),
+            Exact(n, _) => n.to_f64().ok_or("value is outside floating-point range"),
             _ => Err("expected a real number")
         }
     }
@@ -731,7 +796,8 @@ impl Number {
         Ok(n.marked(self.is_weak()))
     }
     /// This real as a float of type `F`, rounded to it.
-    pub(crate) fn to_real<F: Float>(&self) -> Result<F, &'static str> { self.to_float().map(F::narrow).map_err(Into::into) }
+    #[inline(always)]
+    pub(crate) fn to_real<F: Float>(&self) -> Result<F, &'static str> { self.plain_float().map(F::narrow) }
 
     pub(crate) fn to_complex(&self) -> Result<Complex64, &'static str> {
         match self.as_complex() { Some(z) => Ok(z), None => Ok(Complex64::new(self.to_float()?, 0.0)) }
@@ -740,26 +806,27 @@ impl Number {
     /// Structural conversion only; allocation limits belong to the consuming operation.
     pub(crate) fn nonnegative_integer<T: TryFrom<u64>>(&self) -> Result<T, ErrorKind> {
         if let Some((n, _)) = self.0.float() { return real::nonnegative_integer(n); }
+        if let Some(n) = self.as_integer() { return u64::try_from(n).map_err(|_| Kind::Domain.into()).and_then(count_as); }
         let n = match &self.0 {
-            Boolean(b) => u64::from(*b), Integer(n) => u64::try_from(*n).map_err(|_| Kind::Domain)?,
-            Exact(n) => { if n.is_negative() || !n.is_integer() { return Err(Kind::Domain.into()); } n.numer().to_u64().ok_or(Kind::Limit)? }
+            Exact(n, _) => { if n.is_negative() || !n.is_integer() { return Err(Kind::Domain.into()); } n.numer().to_u64().ok_or(Kind::Limit)? }
             _ => return Err(Kind::Domain.into())
         };
         count_as(n)
     }
 
     pub(crate) fn integer(&self) -> Result<i64, ErrorKind> {
+        if let Some(n) = self.as_integer() { return Ok(n); }
         match &self.0 {
-            Integer(n) => Ok(*n), Boolean(b) => Ok((*b).into()), repr if let Some((n, _)) = repr.float() => real::integer(n),
-            Exact(n) if n.is_integer() => n.numer().to_i64().ok_or_else(|| Kind::Limit.into()), _ => Err(Kind::Domain.into())
+            repr if let Some((n, _)) = repr.float() => real::integer(n),
+            Exact(n, _) if n.is_integer() => n.numer().to_i64().ok_or_else(|| Kind::Limit.into()), _ => Err(Kind::Domain.into())
         }
     }
 
     pub(crate) fn big_integer(&self) -> Result<BigInt, ErrorKind> {
+        if let Some(n) = self.as_integer() { return Ok(n.into()); }
         match &self.0 {
-            Integer(n) => Ok((*n).into()), Boolean(b) => Ok(i64::from(*b).into()),
             Half(..) | Single(..) | Float(..) => self.as_float().and_then(near_integer).and_then(BigInt::from_f64).ok_or_else(|| Kind::Domain.into()),
-            Exact(n) if n.is_integer() => Ok(n.to_integer()), _ => Err(Kind::Domain.into())
+            Exact(n, _) if n.is_integer() => Ok(n.to_integer()), _ => Err(Kind::Domain.into())
         }
     }
     pub(crate) fn bitwise(&self, left: Option<&Self>, table: u8) -> Result<Self, &'static str> {
@@ -777,11 +844,12 @@ impl Number {
 
     /// The zero of a pervasive result on `left` and this number, as an empty result's prototype. Beside an approximate `left` it's a float, at the wider of their float widths.
     pub(crate) fn result_zero(&self, left: Option<&Self>) -> Self {
+        if let Some(width) = Self::fixed_promotion(left, self).ok().flatten() { return Self::fixed(0, width); }
         match left {
             Some(x) if x.float_width().is_some() || x.as_complex().is_some() => {
                 Self::float(0.0, x.float_width().max(self.float_width()).unwrap_or(FloatWidth::F64))
             }
-            _ => self.zero(),
+            _ => self.zero().ordinary(),
         }
     }
 
@@ -817,13 +885,13 @@ impl Number {
     pub(crate) fn math_monad(&self, op: Math) -> Result<Self, Failure> {
         use Math::*;
         if matches!(op, Not) { return Ok(Self::from_bool(!self.boolean()?)); }
-        if let Boolean(_) = self.0 { return self.numeric().math_monad(op); }
+        if let Boolean(_, _) = self.0 { return self.numeric().math_monad(op); }
         if matches!(op, Gcd | Lcm) { return Err("this function produces a pair".into()); }
         if matches!(op, Nand | Nor) { return self.dyad(if matches!(op, Nand) { Arithmetic::Times } else { Arithmetic::Plus }, self); }
         if matches!(op, Root) { return Ok(Self::from_integer(2).root(self)?); }
         if matches!(op, Factorial) { return self.factorial(); }
         if matches!(op, Magnitude) {
-            if let Integer(y) = self.0 { if let Some(n) = y.checked_abs() { return Ok(Self(Integer(n))); } }
+            if let Integer(y, _) = self.0 { if let Some(n) = y.checked_abs() { return Ok(Self::from_integer(n)); } }
             if let Some(y) = self.exact_ref() { return Ok(Self::exact(y.abs())); }
         }
         if self.as_complex().is_none() {
@@ -853,9 +921,9 @@ impl Number {
     pub(crate) fn floor(&self, t: Numeric) -> Result<Self, &'static str> {
         Ok(match &self.0 {
             _ if self.is_nonfinite() => self.clone(),
-            Boolean(b) => Self(Integer((*b).into())),
-            Integer(_) => self.clone(),
-            Exact(y) => Self::exact(y.floor()),
+            Boolean(b, _) => Self::from_integer((*b).into()),
+            Integer(_, _) | Fixed(_) => self.clone(),
+            Exact(y, _) => Self::exact(y.floor()),
             repr if let Some((y, width)) = repr.complex() => Self::complex(t.tolerance_at(width).complex_floor(y), width),
             repr => {
                 let (y, width) = repr.float().expect("the other numbers are floats");
@@ -866,17 +934,29 @@ impl Number {
     /// `⌈y`, within the tolerance of its float width: `-⌊-y`.
     pub(crate) fn ceiling(&self, t: Numeric) -> Result<Self, &'static str> { self.monad(Arithmetic::Minus)?.floor(t)?.monad(Arithmetic::Minus).map_err(Into::into) }
 
+    /// The logarithm to this base, with the public Mathish convention when selected.
+    pub(crate) fn logarithm(&self, right: &Self, mathish: bool) -> Result<Self, Failure> {
+        if self.as_complex().is_none() && right.as_complex().is_none() {
+            let n = reals!(self, right => |x, y: F| {
+                let n = if mathish { rustymath::MathishLogb.checked(x, y) } else { rustymath::Logb.checked(x, y) };
+                n.map(Self::from_float)
+            });
+            if let Some(n) = n { return Ok(n); }
+        } else if mathish {
+            let z = rustymath::MathishLogb.one(self.to_complex()?, right.to_complex()?);
+            return Ok(Self::complex(z, self.width_with(Some(right))));
+        }
+        right.math_monad(Math::Log)?.dyad(Arithmetic::Divide, &self.math_monad(Math::Log)?)
+    }
+
     /// The math functions of two numbers that need no tolerance. `|`, `∨` and `∧` take one, through `residue`, `gcd` and `lcm`. The code of `○` selects its function and takes no part in the width.
     pub(crate) fn math_dyad(&self, op: Math, right: &Self) -> Result<Self, Failure> {
         use Math::*;
         // `⌊` and `⌈` on two Booleans give a Boolean. Other functions read a Boolean as 0 or 1.
-        if let (Boolean(x), Boolean(y)) = (&self.0, &right.0) {
+        if let (Boolean(x, _), Boolean(y, _)) = (&self.0, &right.0) {
             match op { Ceiling => return Ok(Self::from_bool(x | y)), Floor => return Ok(Self::from_bool(x & y)), _ => () }
         }
         if self.has_boolean(right) && !matches!(op, Nand | Nor) { return self.numeric().math_dyad(op, &right.numeric()); }
-        if op == Log && self.as_complex().is_none() && right.as_complex().is_none() {
-            if let Some(n) = reals!(self, right => |x, y: F| rustymath::Logb.checked(x, y).map(Self::from_float)) { return Ok(n); }
-        }
         Ok(match op {
             Factorial => self.binomial(right)?,
             Power => self.power(right)?,
@@ -884,7 +964,7 @@ impl Number {
             Pi => self.dyad(Arithmetic::Divide, right)?.math_monad(Pi)?,
             Root => self.root(right)?,
             Floor | Ceiling => self.minimum(right, matches!(op, Ceiling))?,
-            Log => right.math_monad(Log)?.dyad(Arithmetic::Divide, &self.math_monad(Log)?)?,
+            Log => self.logarithm(right, false)?,
             Nand | Nor => {
                 let (x, y) = (self.boolean()?, right.boolean()?);
                 Self::from_bool(if matches!(op, Nand) { !(x && y) } else { !(x || y) })
@@ -895,7 +975,7 @@ impl Number {
     }
 
     fn minimum(&self, right: &Self, maximum: bool) -> Result<Self, &'static str> {
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { return Ok(Self(Integer(if maximum { *x.max(y) } else { *x.min(y) }))); }
+        if let (Integer(x, _), Integer(y, _)) = (&self.0, &right.0) { return Ok(Self::from_integer(if maximum { *x.max(y) } else { *x.min(y) })); }
         // Beside NaN it gives `right` at the width the two compute at, as `rustymath::reduce::maximum` gives its `y`. An exact number stays exact beside an infinity, and beside another exact number.
         let nan = self.is_nan() || right.is_nan();
         if !nan && ((self.is_exact() && right.is_exact()) || self.is_infinite() || right.is_infinite()) {
@@ -909,7 +989,7 @@ impl Number {
         &self, right: &Self, int: impl FnOnce(i64, i64) -> Option<Self>, exact: impl FnOnce(&BigRational, &BigRational) -> Result<Option<Self>, &'static str>,
         real: impl FnOnce() -> Result<Option<Self>, &'static str>, complex: impl FnOnce(Complex64, Complex64) -> Result<Self, &'static str>
     ) -> Result<Self, &'static str> {
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = int(*x, *y) { return Ok(n); } }
+        if let (Some(x), Some(y)) = (self.0.integer(), right.0.integer()) { if let Some(n) = int(x, y) { return Ok(n); } }
         if let (Some(x), Some(y)) = (self.exact_ref(), right.exact_ref()) { if let Some(n) = exact(&x, &y)? { return Ok(n); } }
         if self.as_complex().is_none() && right.as_complex().is_none() { if let Some(n) = real()? { return Ok(n); } }
         complex(self.to_complex()?, right.to_complex()?).map(|n| n.at_width(self.width_with(Some(right))))
@@ -935,13 +1015,14 @@ impl Number {
 
     /// This real number as an exact integer for `ₓ`. Under dynamic kinds a Boolean or whole float becomes exact, and an infinity, NaN or fraction is a DOMAIN error. Under static kinds floats convert as Rust's `as` into the `int` width: NaN gives 0 and out-of-range values saturate. A complex number is a DOMAIN error under either kinds.
     pub(crate) fn whole(&self, t: Numeric) -> Result<Self, Failure> {
+        if self.fixed_width().is_some() { return Ok(self.ordinary()); }
         if !t.is_static() {
-            return Ok(match &self.0 { Boolean(b) => Self(Integer((*b).into())), _ => self.marked_exact().filter(Self::is_integral).ok_or("ₓ gives integers, from finite real numbers")? });
+            return Ok(match &self.0 { Boolean(b, _) => Self::from_integer((*b).into()), _ => self.marked_exact().filter(Self::is_integral).ok_or("ₓ gives integers, from finite real numbers")? });
         }
         let (lo, hi) = if t.int == Width::I32 { (i32::MIN.into(), i32::MAX.into()) } else { (i64::MIN, i64::MAX) };
         Ok(Self::from_integer(match &self.0 {
-            Boolean(b) => (*b).into(), Integer(i) => *i,
-            Exact(r) => r.to_integer().to_i64().map_or(if r.is_negative() { lo } else { hi }, |i| i.clamp(lo, hi)),
+            Boolean(b, _) => (*b).into(), Integer(i, _) => *i,
+            Exact(r, _) => r.to_integer().to_i64().map_or(if r.is_negative() { lo } else { hi }, |i| i.clamp(lo, hi)),
             _ => {
                 let x = self.as_float().ok_or("ₓ gives integers, from real numbers")?;
                 if t.int == Width::I32 { rustymath::convert::saturated::<i32, f64>(x).into() } else { rustymath::convert::saturated::<i64, f64>(x) }
@@ -980,9 +1061,9 @@ impl Number {
 
     /// `x∨y`: the greatest common divisor, within the tolerance of the width they compute at. On two Booleans it is `or`.
     pub(crate) fn gcd(&self, right: &Self, t: Numeric) -> Result<Self, &'static str> {
-        if let (Boolean(x), Boolean(y)) = (&self.0, &right.0) { return Ok(Self::from_bool(x | y)); }
+        if let (Boolean(x, _), Boolean(y, _)) = (&self.0, &right.0) { return Ok(Self::from_bool(x | y)); }
         if self.has_boolean(right) { return self.numeric().gcd(&right.numeric(), t); }
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = rustymath::integer::gcd(*x, *y) { return Ok(Self(Integer(n))); } }
+        if let (Integer(x, _), Integer(y, _)) = (&self.0, &right.0) { if let Some(n) = rustymath::integer::gcd(*x, *y) { return Ok(Self::from_integer(n)); } }
         if self.is_infinite() || right.is_infinite() { return Err("gcd requires finite arguments"); }
         if !self.is_exact() || !right.is_exact() {
             if self.as_complex().is_none() && right.as_complex().is_none() {
@@ -996,9 +1077,9 @@ impl Number {
     }
     /// `x∧y`: the least common multiple, within the tolerance of the width they compute at. On two Booleans it is `and`.
     pub(crate) fn lcm(&self, right: &Self, t: Numeric) -> Result<Self, &'static str> {
-        if let (Boolean(x), Boolean(y)) = (&self.0, &right.0) { return Ok(Self::from_bool(x & y)); }
+        if let (Boolean(x, _), Boolean(y, _)) = (&self.0, &right.0) { return Ok(Self::from_bool(x & y)); }
         if self.has_boolean(right) { return self.numeric().lcm(&right.numeric(), t); }
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { if let Some(n) = rustymath::integer::lcm(*x, *y) { return Ok(Self(Integer(n))); } }
+        if let (Integer(x, _), Integer(y, _)) = (&self.0, &right.0) { if let Some(n) = rustymath::integer::lcm(*x, *y) { return Ok(Self::from_integer(n)); } }
         if let (Some(x), Some(y)) = (self.exact_ref(), right.exact_ref()) { return Ok(Self::exact(rustymath::exact::lcm(&x, &y))); }
         let gcd = self.gcd(right, t)?;
         if gcd.is_zero() { Ok(gcd) } else { self.dyad(Arithmetic::Divide, &gcd)?.dyad(Arithmetic::Times, right).map_err(Into::into) }
@@ -1029,7 +1110,7 @@ impl Number {
         if self.has_boolean(right) { return self.numeric().order(&right.numeric()); }
         if self.as_complex().is_some() || right.as_complex().is_some() { return Err("expected real numbers"); }
         if self.is_nonfinite() || right.is_nonfinite() { return Ok(self.grade_order(right)); }
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { return Ok(x.cmp(y)); }
+        if let (Integer(x, _), Integer(y, _)) = (&self.0, &right.0) { return Ok(x.cmp(y)); }
         if let (Some(x), Some(y)) = (self.exact_ref(), right.exact_ref()) { return Ok(x.cmp(&y)); }
         Ok(self.to_float()?.partial_cmp(&right.to_float()?).unwrap())
     }
@@ -1044,21 +1125,21 @@ impl Number {
             else { Ordering::Less };
         }
         if right.is_infinite() { return right.grade_order(self).reverse(); }
-        if let (Integer(x), Integer(y)) = (&self.0, &right.0) { return x.cmp(y); }
-        if let Integer(x) = self.0 { return Self(Exact(Box::new(BigRational::from_integer(x.into())))).grade_order(right); }
-        if matches!(right.0, Integer(_)) { return right.grade_order(self).reverse(); }
+        if let (Some(x), Some(y)) = (self.0.integer(), right.0.integer()) { return x.cmp(&y); }
+        if let Some(x) = self.0.integer() { return Self(Exact(Box::new(BigRational::from_integer(x.into())), false)).grade_order(right); }
+        if right.0.integer().is_some() { return right.grade_order(self).reverse(); }
         match (&self.0, &right.0) {
             (x, y) if let (Some((x, _)), Some((y, _))) = (x.complex(), y.complex()) => real::grade(x.re, y.re).then(real::grade(x.im, y.im)),
             (x, _) if let Some((x, _)) = x.complex() => Self(Float(x.re, false)).grade_order(right).then(real::grade(x.im, 0.0)),
-            (_, y) if y.complex().is_some() => right.grade_order(self).reverse(), (Exact(x), Exact(y)) => x.cmp(y),
-            (Exact(x), _) => x.as_ref().cmp(&BigRational::from_float(right.as_float().unwrap()).unwrap()), (_, Exact(_)) => right.grade_order(self).reverse(),
+            (_, y) if y.complex().is_some() => right.grade_order(self).reverse(), (Exact(x, _), Exact(y, _)) => x.cmp(y),
+            (Exact(x, _), _) => x.as_ref().cmp(&BigRational::from_float(right.as_float().unwrap()).unwrap()), (_, Exact(_, _)) => right.grade_order(self).reverse(),
             _ => real::grade(self.as_float().unwrap(), right.as_float().unwrap())
         }
     }
 
     /// The Boolean that a number stands for. The f64 default tolerance decides, whatever the pref, as for whole numbers.
     pub(crate) fn boolean(&self) -> Result<bool, &'static str> {
-        if let Boolean(b) = self.0 { return Ok(b); }
+        if let Boolean(b, _) = self.0 { return Ok(b); }
         let t = Numeric::default();
         if self.equal(&self.zero(), t)? { Ok(false) } else if self.equal(&self.one(), t)? { Ok(true) } else { Err("expected a Boolean") }
     }
@@ -1109,10 +1190,10 @@ impl Number {
     }
     fn plain_monad(&self, op: Arithmetic) -> Result<Self, &'static str> {
         use Arithmetic::*;
-        if let Boolean(_) = self.0 { return self.numeric().plain_monad(op); }
-        if let Integer(y) = self.0 {
+        if let Boolean(_, _) = self.0 { return self.numeric().plain_monad(op); }
+        if let Integer(y, _) = self.0 {
             let result = match op { Plus => Some(y), Minus => y.checked_neg(), Times => Some(y.signum()), Divide => rustymath::Reciprocal.checked(y) };
-            if let Some(n) = result { return Ok(Self(Integer(n))); }
+            if let Some(n) = result { return Ok(Self::from_integer(n)); }
         }
         if let Some(y) = self.as_exact() {
             return Ok(Self::exact(match op {
@@ -1218,12 +1299,12 @@ impl<W: fmt::Write + ?Sized> fmt::Write for HighMinus<'_, W> {
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use fmt::Write;
-        let mark = if f.alternate() { "" } else { "ₓ" };
+        let mark = if f.alternate() { "" } else { self.fixed_width().map(Mark::Fixed).unwrap_or(Mark::Exact).marker() };
         let mut out = HighMinus(f);
         match &self.0 {
-            Boolean(b) => out.write_str(if *b { TRUE_NAME } else { FALSE_NAME }), Integer(n) => write!(out, "{n}{mark}"), Half(n, _) => write_float(&mut out, *n),
-            Single(n, _) => write_float(&mut out, *n), Float(n, _) => write_float(&mut out, *n), Exact(n) if n.is_integer() => write!(out, "{}{mark}", n.numer()),
-            Exact(n) => write!(out, "{}ᵣ{}", n.numer(), n.denom()), Complex(n, _) => write_complex(&mut out, *n), Complex32(n, _) => write_complex(&mut out, *n),
+            Boolean(b, _) => out.write_str(if *b { TRUE_NAME } else { FALSE_NAME }), Integer(n, _) => write!(out, "{n}{mark}"), Fixed(n) => write!(out, "{}{mark}", n.value()), Half(n, _) => write_float(&mut out, *n),
+            Single(n, _) => write_float(&mut out, *n), Float(n, _) => write_float(&mut out, *n), Exact(n, _) if n.is_integer() => write!(out, "{}{mark}", n.numer()),
+            Exact(n, _) => write!(out, "{}ᵣ{}", n.numer(), n.denom()), Complex(n, _) => write_complex(&mut out, *n), Complex32(n, _) => write_complex(&mut out, *n),
         }
     }
 }

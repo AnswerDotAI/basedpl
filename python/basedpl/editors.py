@@ -6,9 +6,8 @@ BPL glyph lists come from its symbol metadata. Dyalog APL and BQN lists for the 
 import json, re, subprocess, tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
-from xml.sax.saxutils import escape
 from . import symbols, keyboards, windows_keyboard
-from ._core import _superscripts, _subscripts
+from ._core import _superscripts, _subscripts, _number_marks
 
 VIM = Path('editors/vim/syntax/bpl.vim')
 JETBRAINS = Path('editors/jetbrains')
@@ -23,8 +22,8 @@ CLASSES = {'Function': ('dsFunction', 'function', ''), 'MonadicOperator': ('dsOp
 SPELLINGS = {s['glyph']: ''.join(dict.fromkeys(s['glyph'] + ''.join(s['hanzi']))) for s in symbols}
 BPL = {cls: ''.join(s['glyph'] for s in symbols if s['kind'] == kind) + scripts for cls, (_, kind, scripts) in CLASSES.items()}
 HANZI = {cls: ''.join(SPELLINGS[s['glyph']][1:] for s in symbols if s['kind'] == kind) for cls, (_, kind, _) in CLASSES.items()}
-TOKEN_PATTERNS = {'System': r'•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*', 'Empty': r'⍬ₓ?',
-                  'Number': r'¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?|ₓ|[rᵣ]¯?\d+)?|[ₑⱼᵣ]'}
+TOKEN_PATTERNS = {'System': r'•[A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*', 'Empty': r'⍬{mark}?', 'Mark': r'{mark}',
+                  'Number': r'(?:¯?∞|¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?([jJⱼ]¯?(\d+(\.\d+)?|\.\d+)([eEₑ]¯?\d+)?|[rᵣ]¯?\d+)?){mark}?|[ₑⱼᵣ]'}
 DYALOG = {'Function': '+-×÷⌈⌊|*⍟○!?~∧∨⍲⍱<≤=≥>≠≡≢⍴,⍪⌽⊖⍉↑↓⊂⊃⊆⊇⌷⍋⍒⊤⊥⍳⍸∊⍷∪∩⊣⊢⍎⍕⌹', 'MonadicOperator': r'¨⍨/⌿\⍀⌸&⌶',
           'DyadicOperator': '∘⍤⍥⍣⍠⌺@.⍛', 'Argument': '⍺⍵∇', 'Keyword': '←→⋄:⎕⍞'}
 BQN = {'Function': '+-×÷⋆√⌊⌈|¬∧∨<>≠=≤≥≡≢⊣⊢⥊∾≍⋈↑↓↕«»⌽⍉/⍋⍒⊏⊑⊐⊒∊⍷⊔!', 'MonadicOperator': '˙˜˘¨⌜⁼´˝`',
@@ -54,27 +53,41 @@ def vim_class(chars):
 
 def token_patterns(spellings):
     "Lexical rules with `spellings` for each BPL glyph."
+    marks = '(?:' + '|'.join(re.escape(glyph) for glyph, _ in _number_marks) + ')'
     patterns = {cls: ''.join('[' + re.escape(spellings[c]) + ']' if c in '•¯∞⍬' else c for c in pattern)
-        .replace(r'\.', '[' + spellings['.'] + ']') for cls, pattern in TOKEN_PATTERNS.items()}
-    name = r'[^\s\p{Cc}0-9' + re.escape(''.join(spellings.values()) + _superscripts + _subscripts + r'''()[]{}'";$_ₑⱼᵣ''') + ']'
+        .replace(r'\.', '[' + spellings['.'] + ']').format(mark=marks) for cls, pattern in TOKEN_PATTERNS.items()}
+    name = r'[^\s\p{Cc}0-9' + re.escape(''.join(spellings.values()) + _superscripts + _subscripts + ''.join(glyph for glyph, _ in _number_marks) + r'''()[]{}'";$_ₑⱼᵣ''') + ']'
     return patterns | {'Name': rf'(?:_\d+|_\S|_|{name})+'}
 
 
+def _xml(root):
+    ET.indent(root, space='  ')
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE language>\n' + ET.tostring(root, encoding='unicode') + '\n'
+
+
 def quarto(text, glyphs):
-    "The Quarto highlighter `text`, with each class's style regenerated and its glyph list taken from `glyphs`."
+    "Regenerate glyph classes and numeric rules in a Quarto XML grammar."
+    root = ET.fromstring(text)
+    normal = root.find('./highlighting/contexts/context[@name="Normal"]')
     for cls, (style, *_) in CLASSES.items():
-        text = _replace(text, f'<AnyChar String="[^"]*" attribute="{cls}"/>', f'<AnyChar String="{escape(glyphs[cls], {chr(34): "&quot;"})}" attribute="{cls}"/>')
-        text = _replace(text, f'<itemData name="{cls}" defStyleNum="[^"]*"/>', f'<itemData name="{cls}" defStyleNum="{style}"/>')
+        normal.find(f'AnyChar[@attribute="{cls}"]').set('String', glyphs[cls])
+        root.find(f'./highlighting/itemDatas/itemData[@name="{cls}"]').set('defStyleNum', style)
     if glyphs is BPL:
         patterns = token_patterns({glyph: glyph for glyph in SPELLINGS})
-        text = _replace(text, r'<RegExpr String="[^"]*" attribute="Name"/>', f'<RegExpr String="{escape(patterns["Name"], {chr(34): "&quot;"})}" attribute="Name"/>')
-        for cls, marker in [('System', '•'), ('Number', '∞'), ('Empty', '⍬')]:
-            attr = {'Empty': 'Number', 'System': 'Function'}.get(cls, cls)
-            text = _replace(text, f'<RegExpr String="[^"]*{marker}[^"]*" attribute="{attr}"/>',
-                f'<RegExpr String="{escape(patterns[cls])}" attribute="{attr}"/>')
-        text = _replace(text, r'<(?:DetectChar char|AnyChar String)="[^"]*" attribute="Comment" context="Comment"/>',
-            '<AnyChar String="⍝" attribute="Comment" context="Comment"/>')
-    return text
+        normal.find('RegExpr[@attribute="Name"]').set('String', patterns['Name'])
+        for cls, attr, marker in [('System', 'Function', '•'), ('Number', 'Number', '∞'), ('Empty', 'Number', '⍬')]:
+            next(r for r in normal.findall(f'RegExpr[@attribute="{attr}"]') if marker in r.get('String', '')).set('String', patterns[cls])
+        marked = normal.find('RegExpr[@attribute="MonadicOperator"]')
+        if marked is None:
+            marked = ET.Element('RegExpr', attribute='MonadicOperator')
+            normal.insert(list(normal).index(normal.find('AnyChar[@attribute="MonadicOperator"]')), marked)
+        marked.set('String', patterns['Mark'])
+        normal.find('RegExpr[@context="Mark"]').set('String', r'[\])](?=' + patterns['Mark'] + ')')
+        marked = root.find('./highlighting/contexts/context[@name="Mark"]')[0]
+        marked.tag = 'RegExpr'
+        marked.set('String', patterns['Mark'])
+        normal.find('AnyChar[@attribute="Comment"]').set('String', '⍝')
+    return _xml(root)
 
 
 def hanzi_grammar(xml):
@@ -97,8 +110,7 @@ def hanzi_grammar(xml):
         elif rule.tag == 'AnyChar' and attr in HANZI: rule.set('String', HANZI[attr])
         else: normal.remove(rule)
     ET.SubElement(normal, 'IncludeRules', context='Normal##BPL')
-    ET.indent(root, space='  ')
-    return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE language>\n' + ET.tostring(root, encoding='unicode') + '\n'
+    return _xml(root)
 
 
 def textmate(xml, language='bpl', base=None):
@@ -127,11 +139,14 @@ def textmate(xml, language='bpl', base=None):
 
 
 def vim(text):
-    "The vim syntax `text` with each class's glyph list regenerated."
-    patterns = token_patterns({glyph: glyph for glyph in SPELLINGS})
-    name = patterns['Name'].replace('(?:', '%(').replace(r'\p{Cc}', r'\x00-\x1f\x7f-\x9f').replace('/', r'\/')
-    text = _replace(text, r'(?m)^syntax match bplName .*$', rf'syntax match bplName /\v{name}/')
-    for cls in CLASSES: text = _replace(text, f'(?m)^syntax match bpl{cls} .*$', f'syntax match bpl{cls} {vim_class(BPL[cls])}')
+    "The vim syntax with glyph classes and numeric rules regenerated."
+    patterns = {cls: pattern.replace('(?:', '%(').replace(r'\p{Cc}', r'\x00-\x1f\x7f-\x9f').replace('/', r'\/')
+        for cls, pattern in token_patterns({glyph: glyph for glyph in SPELLINGS}).items()}
+    text = _replace(text, r'(?m)^syntax match bplName .*$', rf'syntax match bplName /\v{patterns["Name"]}/')
+    for cls in CLASSES:
+        glyphs = vim_class(BPL[cls])
+        if cls == 'MonadicOperator': glyphs = glyphs[0] + r'\v' + patterns['Mark'] + '|' + glyphs[1:]
+        text = _replace(text, f'(?m)^syntax match bpl{cls} .*$', f'syntax match bpl{cls} {glyphs}')
     for cls, marker, pattern in [('System', '•', patterns['System']),
         ('Number', '∞', patterns['Number'] + '|' + patterns['Empty']), ('Comment', '⍝', r'⍝.*$')]:
         text = _replace(text, f'(?m)^syntax match bpl{cls} .*{marker}.*$', f'syntax match bpl{cls} /\\v{pattern}/')

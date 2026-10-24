@@ -59,4 +59,4 @@ pub use host::configure_browser;
 pub use inspection::Inspection;
 pub use keyed::Keys;
 pub use number::Number;
-pub use syntax::{highlight, in_code, parse, subscripts, superscripts, syntax_tree, ParseStatus, Parsed, SyntaxNode};
+pub use syntax::{highlight, in_code, number_marks, parse, subscripts, superscripts, syntax_tree, ParseStatus, Parsed, SyntaxNode};

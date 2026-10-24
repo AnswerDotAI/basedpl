@@ -13,10 +13,10 @@ $t+$t                ⍝ 2ₓ
 
 ## `$n` — NaN
 
-`$n` is the float NaN, the result of an undefined operation such as `0÷0`. Under `=` it equals nothing, but `≡` treats it as one value. [Infinities and NaN](../numbers.qmd#infinities-and-nan) has more.
+`$n` is the float NaN, the result of an undefined operation such as `∞-∞`. Under `=` it equals nothing, but `≡` treats it as one value. [Infinities and NaN](../numbers.qmd#infinities-and-nan) has more.
 
 ```bpl
-0÷0                  ⍝ $n
+∞-∞                  ⍝ $n
 $n=$n                ⍝ $f
 ```
 

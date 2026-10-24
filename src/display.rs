@@ -54,17 +54,26 @@ impl Elide {
         let columns = (self.columns != usize::MAX).then_some(self.columns);
         self.edges(shape).map_or(columns, |e| Some(columns.map_or(e, |c| c.min(e))))
     }
-    /// The text of `n` with each float rounded to `prec` significant digits, and the marker of a float width that isn't `plain`. Without `marks`, it is `unmarked`'s text.
+    /// The text of `n` rounded to `prec` significant digits, with its numeric marker when `marks` is set. Float widths obey `plain`.
     pub fn number(self, n: &Number) -> String {
         if !self.marks { return self.unmarked(n); }
-        format!("{}{}", n.rounded(self.prec), self.marker(n).map_or(String::new(), String::from))
+        format!("{}{}", n.rounded(self.prec), n.float_width().and_then(|w| self.width_marker(w)).unwrap_or_default())
     }
     /// The text of `n` rounded as `number` rounds it, without a marker, for an array that writes one marker for all its numbers.
     pub fn unmarked(self, n: &Number) -> String { format!("{:#}", n.rounded(self.prec)) }
     /// The marker of a float of `width`, when markers show and the width isn't `plain`.
-    pub fn width_marker(self, width: FloatWidth) -> Option<char> { (self.marks && Some(width) != self.plain).then(|| crate::number::width_marker(width)) }
-    /// The width marker that `n` writes: that of its float width, when it isn't `plain`.
-    pub fn marker(self, n: &Number) -> Option<char> { n.float_width().and_then(|w| self.width_marker(w)) }
+    pub fn width_marker(self, width: FloatWidth) -> Option<&'static str> { (self.marks && Some(width) != self.plain).then(|| crate::number::Mark::Width(width).marker()) }
+    /// The marker for a numeric dtype and its fixedness under these display settings.
+    pub fn kind_marker(self, kind: rustymath::buffer::DType, fixed: bool) -> Option<&'static str> {
+        use {crate::number::Mark, rustymath::buffer::DType};
+        if !self.marks { return None; }
+        match kind {
+            DType::Integer(w) => Some(if fixed { Mark::Fixed(w) } else { Mark::Exact }.marker()),
+            DType::Float(w) => self.width_marker(w), DType::Complex(w) => self.width_marker(w.into()), _ => None
+        }
+    }
+    /// The numeric marker that `n` writes under these display settings.
+    pub fn marker(self, n: &Number) -> Option<&'static str> { self.kind_marker(n.dtype()?, n.fixed_width().is_some()) }
     /// `name` as text shows it: `None` for a hidden name that `hidden` leaves out, otherwise as `shown` gives it.
     pub fn name(self, name: &Option<std::sync::Arc<str>>) -> Option<Cow<'_, str>> {
         name.as_deref().filter(|n| self.hidden != Hidden::Omit || !rustymath::layout::hidden(n)).map(|n| self.shown(n))
@@ -252,9 +261,9 @@ impl Block {
         let lines = self.lines.iter().enumerate().map(|(i, s)| format!("{}{s}", if i == 0 { &label } else { &pad })).collect();
         Self { lines, width: self.width + label.width(), ..self }
     }
-    fn framed(self, shape: &[usize], kind: char, padded: bool) -> Self {
+    fn framed(self, shape: &[usize], kind: &str, padded: bool) -> Self {
         let pad = usize::from(padded);
-        let width = (self.width + 2 * pad).max(shape.len().saturating_sub(1)).max(1);
+        let width = (self.width + 2 * pad).max(shape.len().saturating_sub(1)).max(kind.width());
         let top = shape.last().map_or('─', |&d| if d == 0 { '⊖' } else { '→' });
         let mut lines = vec![format!("┌{top}{}┐", "─".repeat(width - 1))];
         for row in 0..self.lines.len().max(shape.len().saturating_sub(1)) {
@@ -262,7 +271,7 @@ impl Block {
             let s = self.line(row);
             lines.push(format!("{side}{}{s}{}│", " ".repeat(pad), " ".repeat(width - self.width - pad)));
         }
-        lines.push(format!("└{kind}{}┘", "─".repeat(width - 1)));
+        lines.push(format!("└{kind}{}┘", "─".repeat(width - kind.width())));
         Self { lines, width: width + 2, ..self }
     }
 }
@@ -336,11 +345,13 @@ pub(crate) fn grid(columns: usize, rows: Vec<(usize, Vec<Cell>)>, style: Style) 
 }
 
 /// The bottom-edge marker for an array's storage. Floats of a width that `el` doesn't leave plain show that width's marker.
-fn marker(a: &Value, el: Elide) -> char {
+fn marker(a: &Value, el: Elide) -> &'static str {
     use rustymath::buffer::DType;
-    match a.shown_dtype() {
-        Some(DType::Boolean) => '$', Some(DType::Integer(_)) => 'ₓ', Some(DType::Float(w)) => el.width_marker(w).unwrap_or('~'),
-        Some(DType::Complex(_)) => 'j', Some(DType::Character) => '─', None => '+'
+    match a.shown_kind() {
+        Some((DType::Boolean, _)) => "$",
+        Some((kind @ DType::Integer(_), fixed)) => Elide::NONE.kind_marker(kind, fixed).unwrap(),
+        Some((DType::Float(w), _)) => el.width_marker(w).unwrap_or("~"),
+        Some((DType::Complex(_), _)) => "j", Some((DType::Character, _)) => "─", None => "+"
     }
 }
 
@@ -355,7 +366,7 @@ fn array(a: &Value, el: Elide) -> Block {
     // An empty axis shows its prototype.
     let shape: Vec<_> = a.shape().iter().map(|&d| d.max(1)).collect();
     let nested = !a.is_simple();
-    let kind = if nested { '∊' } else { marker(a, el) };
+    let kind = if nested { "∊" } else { marker(a, el) };
     let mut chars = true;
     let mut grid_rows: Vec<(usize, Vec<Cell>)> = Vec::new();
     for (breaks, _, spots) in rows(&shape, el.edges(&shape), el.last(&shape)) {
@@ -441,12 +452,12 @@ pub(crate) fn table(a: &Value, el: Elide, breaks: bool) -> (usize, Vec<(Option<V
 }
 
 /// The `rows` of a grid as a literal lays them out: before a row, a `[` for each of the last `levels` leading axes whose index starts there, and after it a `]` for each that ends there, with `mark` after the brackets that close all `levels`. A row in a gap gets neither. Each row is one line, as rows of numbers are.
-pub(crate) fn bracketed(rows: Vec<(Option<Vec<usize>>, Vec<String>)>, leading: &[usize], levels: usize, mark: char) -> Vec<String> {
+pub(crate) fn bracketed(rows: Vec<(Option<Vec<usize>>, Vec<String>)>, leading: &[usize], levels: usize, mark: &str) -> Vec<String> {
     let axes = leading.len() - levels..leading.len();
     rows.into_iter().flat_map(|(index, lines)| {
         let edge = |at: &dyn Fn(usize) -> bool| axes.clone().rev().take_while(|&a| at(a)).count();
         let (opens, closes) = index.map_or((0, 0), |ix| (edge(&|a| ix[a] == 0), edge(&|a| ix[a] + 1 == leading[a])));
-        let end = if closes == levels { String::from(mark) } else { String::new() };
+        let end = if closes == levels { mark } else { "" };
         lines.into_iter().map(move |line| format!("{}{}{line}{}{end}", " ".repeat(levels - opens), "[".repeat(opens), "]".repeat(closes)))
     }).collect()
 }

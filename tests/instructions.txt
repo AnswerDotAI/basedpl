@@ -5,7 +5,7 @@
 fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ g←{⍵<2?⍵;(g ⍵-1)+g ⍵-2} ⋄ k←0 ⋄ t←64⍴"ab" "cde" ⋄ m←[0 1⋄¯1 0] ⋄ s←[64 2 2]⍴1 0 0 1 1 1 0 1=1
 [calls]
 # A primitive call.
-+⍣N⊢0	405
++⍣N⊢0	456
 # A dfn call that returns its argument.
 {⍵}⍣N⊢0	1513
 # A dfn that reads a global.
@@ -17,11 +17,11 @@ fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ g←{⍵<2?⍵;(g ⍵-1)+g ⍵-2} ⋄ 
 # A bracket literal.
 {↑[⍵ 1]}⍣N⊢0	5671
 # `fib 10` makes 177 calls, which read `⍵` and `∇`.
-{fib 10}⍣N⊢0	845200
+{fib 10}⍣N⊢0	873342
 # `g 10` makes 177 calls of a dfn that calls itself by name, with spaces that split its statement into runs.
 {g 10}⍣N⊢0	1002600
 # Each over a nested vector, which can't batch, calls `⌽` once for each of the 64 strings in `t`.
-⌽¨⍣N⊢t	277400
+⌽¨⍣N⊢t	290267
 # Rank's general path calls a dfn once for each of the same 64 cells.
 {⌽⍵}⍤0⍣N⊢t	316700
 # A system function maps itself over the same 64 cells.

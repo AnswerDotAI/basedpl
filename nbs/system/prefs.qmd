@@ -15,7 +15,7 @@
 | `width` | The widest line display shows. `∞` allows any width | The terminal's width in the REPL, `∞` elsewhere |
 | `notation` | Generated function and operator notation: `"apl"`, `"simplified"` or `"traditional"` | `"apl"` |
 | `hanzi_aliases` | `$t` enables Hanzi glyph aliases. Other Hanzi remain name characters. Requires a leading declaration on a literal record | `$f` |
-| `tolerance` | The relative tolerance of approximate comparison of 64-bit floats, from 0 to `1E¯14`. Narrower floats compare exactly | `1E¯14` |
+| `mathish` | `$t` applies [Mathish mode](../numbers.qmd#mathish-mode) to [Mathish types](../terms.qmd#term-mathish-types) under dynamic kinds | `$t` |
 | `float` | The width of new floats in bits, 16, 32 or 64 | `64` |
 | `kinds` | `"static"` makes each result's kind follow from its arguments' kinds and these settings alone. `"dynamic"` lets some functions choose it from values, as described below | `"dynamic"` |
 | `int` | The width of integers in bits under static kinds, 32 or 64 | `64` |
@@ -29,7 +29,7 @@ Display shows part of an array of more than `limit` items: the first and last `e
 
 `hanzi_aliases` controls accepted input independently of `notation`. Put `•prefs ["hanzi_aliases":$t]` before any other code to enable Hanzi glyph spellings. The setting persists across notebook cells and REPL inputs. Loaded files use and update the same preferences as their caller. See [Hanzi spellings](../syntax.qmd#hanzi-spellings).
 
-`tolerance` sets how approximate numbers compare. `x` equals `y` when `|x-y|` is less than the tolerance times the larger magnitude. The setting applies to 64-bit floats. 32-bit and 16-bit floats always compare exactly. Comparison at a tolerance of 0 is exact and faster. A float still stands for a count, a position or a Boolean when it lies within `1E¯14` of one, whatever the setting. [Power](../glyphs/star-diaeresis.qmd) `⍣∞` stops at two results within `1E¯14` of each other, or within 4 units in the last place of a 32-bit or 16-bit float, whatever the setting.
+Static calculations ignore `mathish`. `•prefs ⍬` still reports its configured value.
 
 `float` sets the default width of floats, in bits: the width of bare numbers in code parsed after the change, of numbers that `•csv`, `•json`, `•vfi` and `•image` read, of random numbers, and of floats that a function gives from exact arguments. Code already parsed keeps its numbers. A change partway through some code therefore applies from the next input, or from text that [`⍎`](../glyphs/hydrant.qmd) parses later. Leading `•prefs` calls on a literal record are the exception. They run before the rest of their code is parsed, as in the examples below. A script, a notebook cell, a line typed at the REPL, a module that [`•load`](load.qmd) runs and text that `⍎` runs can each set its own width this way. See [Numbers](../numbers.qmd#float-widths).
 
@@ -65,9 +65,9 @@ dyads←"+-×÷|⌈⌊*⍟√!π∨∧=≠<≤>≥"
 ```
 
 ```bpl
-•prefs ["tolerance":0] ⋄ 0.3=0.1+0.2    ⍝ $f
-•prefs ["tolerance":1E¯14] ⋄ 0.3=0.1+0.2    ⍝ $t
-•prefs ["tolerance":1E¯14] ⋄ 1ₛ=1.0000001ₛ    ⍝ $f
+•prefs ["mathish":$f] ⋄ 0.3=0.1+0.2    ⍝ $f
+•prefs ["mathish":$t] ⋄ 0.3=0.1+0.2    ⍝ $t
+1ₛ=1.0000001ₛ                        ⍝ $f
 •prefs ["float":32] ⋄ (•storage 1.5).kind    ⍝ "float32"
 •prefs ["float":64] ⋄ (•storage 1.5).kind    ⍝ "float64"
 •prefs ["threads":1] ⋄ "threads"⊃•prefs ⍬    ⍝ 1ₓ

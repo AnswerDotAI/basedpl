@@ -8,7 +8,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("bqn", include_str!("reference/bqn.bpl")), ("static", include_str!("reference/static.bpl")), ("static-int32", include_str!("reference/static-int32.bpl")),
 ];
 
-fn cases(text: &str) -> Vec<Value> { reference::cases(text).unwrap() }
+fn cases(text: &str) -> Vec<Value> { reference::file("", text).unwrap().cases }
 
 #[test]
 fn reference_format_and_comparison() {
@@ -40,6 +40,14 @@ fn reference_format_and_comparison() {
     assert_eq!(parsed[0]["code"], "f←{\n\n⍵+1\n}\nf 2");
     assert_eq!(parsed[1]["line"], 10);
     for case in parsed { assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "pass"); }
+    let text = "⍝⍝ setup\nv←1 2 3\n\n⍝⍝ copies •prefs [\"float\":32]\n⍝ mutate — expectation gets its own setup\nv←v+1 ⋄ v\n⍝ =>\nv+1\n⍝⍝: 2 3 4\n\n-v\n⍝⍝: 1 1 1\n";
+    let file = reference::file("sample.bpl", text).unwrap();
+    assert_eq!(file.cases.len(), 2);
+    assert_eq!(file.cases[0]["prefs"], "•prefs [\"float\":32]");
+    let span = file.cases[0]["budget_span"].as_array().unwrap();
+    assert_eq!(&text[span[0].as_u64().unwrap() as usize..span[1].as_u64().unwrap() as usize], "⍝⍝: 2 3 4");
+    assert!(reference::failures(file.cases.iter().filter(|c| reference::checked(c)), &file.setup, &InterruptHandle::default()).is_empty());
+    reference::check_once(&file.cases[0], &file.setup, &InterruptHandle::default()).unwrap();
     for (code, expect, status) in [
         ("1E¯10", "0", "mismatch"), ("1E¯16", "0", "pass"), ("1+1E¯15", "1", "pass"), ("a←3", "a", "invalid"), ("1", "{}0", "mismatch"),
         ("{}0", "{}0", "pass"), ("+", "{}0", "mismatch"), ("⍬", r#""""#, "mismatch"), (",1", "1", "mismatch"), ("0⍴⊂1 2", "0⍴⊂1", "mismatch"),
@@ -63,19 +71,18 @@ const SHARD: &str = "BASEDPL_SHARD";
 const FAILURE: &str = "reference failure: ";
 
 /// The cases that `BASEDPL_SOURCE` and `BASEDPL_CASE` select, in `SOURCES`' order, each with its file's name as `file`. Panics on an id that two cases share.
-fn chosen() -> Vec<Value> {
-    let mut ids = std::collections::HashSet::new();
+fn chosen() -> Vec<reference::File> {
     let mut chosen = Vec::new();
     let selected = std::env::var("BASEDPL_CASE").ok();
-    let file = std::env::var("BASEDPL_SOURCE").ok();
-    for &(name, source) in SOURCES {
-        if file.as_deref().is_some_and(|f| f != name) { continue; }
-        let all = reference::cases(source).unwrap_or_else(|e| panic!("{name}.bpl: {e}"));
-        for id in all.iter().filter_map(|case| case["id"].as_str()).filter(|id| !id.is_empty()) {
-            assert!(ids.insert(id.to_owned()), "duplicate source id: {id}");
-        }
+    let source = std::env::var("BASEDPL_SOURCE").ok();
+    let speed = reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
+    for mut file in SOURCES.iter().map(|&(name, text)| reference::file(name, text).unwrap_or_else(|e| panic!("{name}.bpl: {e}"))).chain(speed) {
+        let name = file.name.trim_end_matches(".bpl");
+        if source.as_deref().is_some_and(|f| f != name) { continue; }
         let wanted = |case: &Value| selected.as_deref().is_none_or(|s| case["id"].as_str().unwrap().starts_with(s));
-        chosen.extend(all.into_iter().filter(wanted).map(|mut case| { case["file"] = json!(name); case }));
+        file.cases.retain(|case| reference::checked(case) && wanted(case));
+        for case in &mut file.cases { case["file"] = json!(name); }
+        if !file.cases.is_empty() { chosen.push(file); }
     }
     chosen
 }
@@ -85,13 +92,18 @@ fn chosen() -> Vec<Value> {
 fn reference_cases() {
     let chosen = chosen();
     if let Ok(shard) = std::env::var(SHARD) {
-        let (k, n) = shard.split_once(' ').and_then(|(k, n)| Some((k.parse().ok()?, n.parse().ok()?))).expect("BASEDPL_SHARD holds a share and a count");
-        for failure in reference::failures(chosen.iter().skip(k).step_by(n), &InterruptHandle::default()) { println!("{FAILURE}{failure}"); }
+        let (k, n): (usize, usize) = shard.split_once(' ').and_then(|(k, n)| Some((k.parse().ok()?, n.parse().ok()?))).expect("BASEDPL_SHARD holds a share and a count");
+        let mut offset = 0;
+        for file in &chosen {
+            let cases = file.cases.iter().enumerate().filter(|(i, _)| (offset+i)%n == k).map(|(_, c)| c);
+            for failure in reference::failures(cases, &file.setup, &InterruptHandle::default()) { println!("{FAILURE}{failure}"); }
+            offset += file.cases.len();
+        }
         return;
     }
     // Shared, so that no timing runs while the cases load the machine.
     let _lock = rustymath::timing::shared().unwrap();
-    let count = chosen.len();
+    let count: usize = chosen.iter().map(|f| f.cases.len()).sum();
     assert!(count > 0, "no reference cases selected");
     let shards = std::thread::available_parallelism().map_or(1, |n| n.get()).min(count);
     // macOS reads the directory that holds a process's executable as its bundle when a framework such as ImageIO first asks for the bundle's information, and `target/debug/deps` holds hundreds of thousands of files. The children run from a copy of this test in a directory of its own.
@@ -107,7 +119,7 @@ fn reference_cases() {
         assert!(output.status.success(), "a share of the reference cases stopped:\n{stdout}{}", String::from_utf8_lossy(&output.stderr));
         stdout.lines().filter_map(|line| line.strip_prefix(FAILURE)).map(|line| serde_json::from_str(line).unwrap()).collect::<Vec<Value>>()
     }).collect();
-    failures.sort_by_key(|f| (SOURCES.iter().position(|&(name, _)| f["file"] == name), f["line"].as_u64()));
+    failures.sort_by(|a, b| (a["file"].as_str(), a["line"].as_u64()).cmp(&(b["file"].as_str(), b["line"].as_u64())));
     let failures: Vec<String> = failures.iter().map(|f| {
         format!(
             "{}.bpl:{} [{}] {}: {} ({})",

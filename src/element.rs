@@ -1,19 +1,25 @@
 //! How the element types of compact storage read their items from a `Value` and build arrays from them. Each type's fill and its conversions to other types are rustymath's `Element` and `Source`.
-use crate::{array::{Items, Storage}, number::{int::Int, Numeric}, Value};
+use crate::{array::Storage, number::{int::Int, Numeric}, Value};
 use num_complex::{Complex32, Complex64};
-use rustymath::{buffer::{ComplexBuf, Complexes, Element, FloatWidth, Ints, read_all, Source, View, Width}, with_complexes, with_floats, with_ints};
+use rustymath::{buffer::{ComplexBuf, Complexes, Element, FloatWidth, IntBuf, Ints, read_all, Source, View, Width}, with_complexes, with_floats, with_ints};
 use std::borrow::Cow;
 
 /// An element type of compact storage, read from and built into `Value`s.
 pub(crate) trait Stored: Element {
     /// The items of `value`, when its storage has this type.
-    fn slice(value: &Value) -> Option<&[Self]> { match value.as_items() { Items::Compact(v) => Self::of(v), Items::Values(_) => None } }
+    fn slice(value: &Value) -> Option<&[Self]> { Self::of(value.view()?) }
+    fn of_ints_mut(_ints: &mut IntBuf) -> Option<&mut [Self]> { None }
     /// An array of `data`, stored as this element type. Integers keep their width.
     fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Compact(Self::buffer(data))).ok() }
     /// An array of `data` under `numeric`'s kinds. Only complex numbers build differently: dynamic kinds narrow them to floats where no item has an imaginary part, and static kinds keep them complex.
-    fn build_at(shape: impl Into<crate::Shape>, data: Vec<Self>, _numeric: Numeric) -> Option<Value> { Self::build(shape, data) }
+    fn build_at(shape: impl Into<crate::Shape>, data: Vec<Self>, numeric: Numeric) -> Option<Value> {
+        if numeric.fixed.is_some() { Value::from_numeric_buffer(shape, Self::buffer(data), numeric).ok() } else { Self::build(shape, data) }
+    }
     /// An array of `data`, with integers moved to the narrowest width that holds them, in a pass over them. Other element types are stored as `build` stores them.
     fn build_narrowed(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Self::build(shape, data) }
+    fn build_narrowed_at(shape: impl Into<crate::Shape>, data: Vec<Self>, numeric: Numeric) -> Option<Value> {
+        if numeric.fixed.is_some() { Self::build_at(shape, data, numeric) } else { Self::build_narrowed(shape, data) }
+    }
     /// This whole number as an integer of type `T`, when `T` holds it. Only the numbers that kernels give as integers have one.
     fn whole<T: Whole>(self) -> Option<T> { None }
     /// This number as an integer of type `T`, as Rust's `as` converts it (`rustymath::convert::saturated`), which static kinds use for kernels' results. Only floats have one.
@@ -48,6 +54,7 @@ pub(crate) trait Whole: Stored + Int + rustymath::convert::Int + rustymath::redu
 macro_rules! whole {
     ($($t:ty: $width:ident),+) => {$(
         impl Stored for $t {
+            fn of_ints_mut(ints: &mut IntBuf) -> Option<&mut [Self]> { if let IntBuf::$width(v) = ints { Some(v) } else { None } }
             fn build_narrowed(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::narrowed(data)).ok() }
             #[inline]
             fn whole<T: Whole>(self) -> Option<T> { T::narrowed(self.to_i64()) }
@@ -108,8 +115,8 @@ pub(crate) fn truth_bytes(truths: &[bool]) -> &[u8] { bytemuck::cast_slice(truth
 pub(crate) fn read_as<A: Stored>(value: &Value) -> Option<Cow<'_, [A]>> where bool: Source<A>, u8: Source<A>, i16: Source<A>, i32: Source<A>, i64: Source<A>,
     f64: Source<A>, f32: Source<A>, half::f16: Source<A> {
     if let Some(items) = A::slice(value) { return Some(Cow::Borrowed(items)); }
-    Some(Cow::Owned(match value.as_items() {
-        Items::Compact(View::Booleans(y)) => read_all(y), Items::Compact(View::Integers(ints)) => with_ints!(ints, |y| read_all(y)), Items::Compact(View::Floats(y)) => with_floats!(y, |y| read_all(y)),
-        Items::Compact(View::Complexes(z)) => A::from_complexes(z)?, Items::Compact(View::Characters(_)) | Items::Values(_) => return None
+    Some(Cow::Owned(match value.view()? {
+        View::Booleans(y) => read_all(y), View::Integers(ints) => with_ints!(ints, |y| read_all(y)), View::Floats(y) => with_floats!(y, |y| read_all(y)),
+        View::Complexes(z) => A::from_complexes(z)?, View::Characters(_) => return None
     }))
 }

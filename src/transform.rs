@@ -400,7 +400,7 @@ impl Carrier {
     pub(crate) fn items(&self) -> crate::array::Items<'_> { match self { Carrier::Labelled(l) => l.values().as_items(), carrier => carrier.storage().items() } }
     /// The items of a dual or a batch for `storage`, built once into `cell` as `n` items from `at`. Building them records an `itemwise` row in `•explain` under `route`.
     pub(crate) fn built<'a>(cell: &'a std::sync::OnceLock<crate::array::Storage>, route: &'static str, n: usize, at: impl Fn(usize) -> Value) -> &'a crate::array::Storage {
-        cell.get_or_init(|| { crate::explain::itemwise(route, n); crate::array::Storage::mixed((0..n).map(at).collect()) })
+        cell.get_or_init(|| { crate::explain::itemwise(route, n); crate::array::Storage::mixed((0..n).map(|i| at(i).strong()).collect()) })
     }
     /// This carrier under `layout`, which has as many items: each part as a view under `layout`, with no items copied. A dual's tangent goes under it expanded to the primal's layout, and a batch's cells each go under it.
     pub(crate) fn view(&self, layout: crate::array::Layout) -> Value {

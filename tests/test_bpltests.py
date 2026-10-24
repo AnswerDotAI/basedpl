@@ -76,13 +76,13 @@ def test_incremental_export(tmp_path):
 
 
 def test_set_budgets(tmp_path):
-    path = tmp_path/'speed.txt'
-    path.write_text('# A header.\n[setup]\nn←4\n[copies]\n-v\t2.8\t2.8\t3.4\n⌽v\t3\t3\t4.8\n[widths] •prefs ["float":32]\n-v\t0.83\t0.83\t0.79\n')
+    path = tmp_path/'speed.bpl'
+    path.write_text('⍝⍝ setup\nn←4\n⍝⍝ copies\n⍝ Negation\n-v\n⍝⍝: 2.8\t2.8\t3.4\n\n⌽v\n⍝⍝: 3\t3\t4.8\n\n⍝⍝ widths •prefs ["float":32]\n-v\n⍝⍝: 0.83\t0.83\t0.79\n')
     changes = set_budgets({'-v': 1.37, '⌽v': 0.1}, path=path, sections='copies')
-    assert '[copies]\n-v\t2.8\t2.8\t2.8\n⌽v\t0.5\t0.5\t0.5\n' in path.read_text()
+    assert '⍝ Negation\n-v\n⍝⍝: 2.8\t2.8\t2.8\n\n⌽v\n⍝⍝: 0.5\t0.5\t0.5\n' in path.read_text()
     assert len(changes) == 4
     set_budgets({'-v': 0.5}, path=path, builds='linux', sections='widths')
-    assert '[widths] •prefs ["float":32]\n-v\t0.83\t0.75\t0.79\n' in path.read_text()
+    assert '⍝⍝ widths •prefs ["float":32]\n-v\n⍝⍝: 0.83\t0.75\t0.79\n' in path.read_text()
     rm = tmp_path/'rustymath.txt'
     rm.write_text('[float64]\nneg\t1\t1\n')
     set_budgets({'neg': 1.2}, path=rm)

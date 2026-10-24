@@ -3,7 +3,7 @@ import builtins
 from keyword import iskeyword
 from unicodedata import normalize
 from . import Array, _Operators, _Function, _array, _show, bpl, symbols
-from ._core import _builtin_names
+from ._core import _builtin_names, _number_marks
 
 _HOLE = object()
 
@@ -95,9 +95,9 @@ def _python_name(name):
 
 # Every documented name of an operator is a property, in Python spelling. Its glyph name gives the derived function with both
 # valences, and each name for what it does gives the valences that name covers. A dyadic operator's property waits for its right
-# operand. `f[axis]` also spells `⍠`, `f.undo` spells `⁻¹`, and `f.exact` and `f.float16`, `f.float32` and `f.float64` spell the number markers, which have no rows. `f.undo(g)` and `f.derivative(g)` with a function
-# `g` attach it, as `f⁻¹←g` and `f∂←g` do in BPL.
-_marks = {'ₓ': 'exact', 'ₕ': 'float16', 'ₛ': 'float32', 'ₚ': 'float64'}  # A number marker's glyph: its Python name
+# operand. `f[axis]` spells `⍠`, `f.undo` spells `⁻¹`, and number-marker properties use their native word names.
+# `f.undo(g)` and `f.derivative(g)` attach `g` as an inverse or derivative.
+_marks = dict(_number_marks)
 _operators = {'undo': ('⁻¹', False, 0)} | {name: (glyph, False, 0) for glyph, name in _marks.items()}  # Python name: glyph, whether the operator is dyadic, and the derived function's valence
 _operator_names = {}  # An operator's glyph: its glyph name, then its names with one argument and with two, in Python spelling
 for _s in symbols:
@@ -115,6 +115,8 @@ def _operator(name, glyph, dyadic, valence):
     if dyadic: return property(lambda self: _build(glyph, self, _HOLE, valence=valence))
     return property(lambda self: _build(glyph, self, valence=valence))
 for _name, _spec in _operators.items(): setattr(_Combinators, _name, _operator(_name, *_spec))
+for _name in _marks.values():
+    setattr(Array, _name, property(lambda self, name=_name: getattr(bpl.same, name)(self)))
 
 _builtins = {}
 for _spelling, _name, *_forms in _builtin_names:

@@ -29,6 +29,7 @@ website:
           - arrays.ipynb
           - indexing.ipynb
           - numbers.qmd
+          - mathish.qmd
           - strings.ipynb
           - bracket-types.ipynb
           - scripts.ipynb

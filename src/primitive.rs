@@ -1,5 +1,5 @@
 use crate::execution::check;
-use rustymath::{agreement::Mapping, buffer::{FloatWidth, Width}, error::Kind, layout::strides, with_width};
+use rustymath::{agreement::Mapping, buffer::{FloatWidth, Width}, error::Kind, layout::strides, with_width, Binary as _};
 use crate::session;
 use crate::{
     agreement::{Agree, Agreement},
@@ -216,11 +216,22 @@ impl Exact {
     fn number(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> {
         let n = match (self, x) {
             (Self::Floor, _) => y.floor(t)?, (Self::Ceiling, _) => y.ceiling(t)?,
-            (Self::Quotient, Some(x)) => x.floor_quotient(y, t)?, (Self::Ratio, Some(x)) => return x.dyad(Arithmetic::Divide, y),
+            (Self::Quotient, Some(x)) => number_quotient(x, y, t, true)?, (Self::Ratio, Some(x)) => return number_quotient(x, y, t, false),
             (Self::Quotient | Self::Ratio, None) => unreachable!("a quotient takes two numbers"),
         };
         n.whole(t)
     }
+}
+
+fn number_quotient(x: &Number, y: &Number, t: Numeric, floor: bool) -> Result<Number, crate::number::Failure> {
+    let width = x.float_width().max(y.float_width());
+    if t.mathish_at(width) && x.is_zero() && y.is_zero() {
+        if width.is_none() { Ok(Number::from_integer(0)) }
+        else if x.as_complex().is_some() || y.as_complex().is_some() { Ok(Number::from(rustymath::MathishDivide.one(x.to_complex()?, y.to_complex()?))) }
+        else { Ok(Number::float(rustymath::MathishDivide.one(x.to_float()?, y.to_float()?), FloatWidth::F64)) }
+    }
+    else if floor { x.floor_quotient(y, t).map_err(Into::into) }
+    else { x.dyad(Arithmetic::Divide, y) }
 }
 
 /// A built-in function as the parser reads it: a glyph's primitive, or a system name's entry in the system table. The two differ only in how they're spelled.
@@ -733,7 +744,7 @@ impl Primitive {
             (Self::Compare(NotEqual), None) => unique_mask(right, span),
             (Self::Compare(op @ (LessEqual | GreaterEqual)), None) => {
                 let op = if matches!(op, LessEqual) { Arithmetic::Minus } else { Arithmetic::Plus };
-                Self::Arithmetic(op).call(Some(right), &Value::integer(1), span)
+                Self::Arithmetic(op).call(Some(right), &Value::Number(Number::from_integer(1).marked(true)), span)
             }
             (Self::Compare(op @ (Less | Greater)), None) => sort(right, matches!(op, Greater), span),
             (Self::Prime | Self::Factor, _) => crate::number_theory::call(matches!(self, Self::Factor), left, right),
@@ -816,7 +827,7 @@ impl Primitive {
     }
 
     fn pervasive_apply(self, left: Option<&Value>, right: &Value, span: &Span, fill: bool) -> Result<Value, Error> {
-        weakened(left, right, |left, right| {
+        self.weakened(left, right, |left, right| {
             if right.is_atom() && left.is_none_or(Value::is_atom) { return self.pervasive_item(left, right, span, fill); }
             let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).described("array shapes do not agree")?;
             self.pervasive_mapped(left, right, span, fill, agreement)
@@ -829,11 +840,11 @@ impl Primitive {
         // A number reads as itself, without `numeric`'s check for a dual.
         #[inline]
         fn number<'a>(v: &'a Value) -> Result<&'a Number, Error> { match v { Value::Number(n) => Ok(n), v => numeric(v) } }
-        Some(weakened(left, right, |left, right| left.map(|x| number(x)).transpose().and_then(|x| self.on_numbers(x, number(right)?, Numeric::current()))))
+        Some(self.weakened(left, right, |left, right| left.map(|x| number(x)).transpose().and_then(|x| self.on_numbers(x, number(right)?, Numeric::current()))))
     }
     /// `x f⊗ y` for a pervasive function. Each argument keeps its own axes, and the left argument's axes come first.
     pub(crate) fn outer(self, left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
-        weakened(Some(left), right, |left, right| {
+        self.weakened(Some(left), right, |left, right| {
             let left = left.expect("an outer product is dyadic");
             let agreement = Agreement::outer(left.layout(), right.layout()).described("outer product is too large")?;
             if session().transforming() { if let Some(result) = crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Outer(&agreement)), Some(left), right, span) { return result; } }
@@ -842,18 +853,21 @@ impl Primitive {
     }
     /// The function applied to the items that `agreement` pairs, laid out as `agreement` lays out the result.
     fn pervasive_mapped(self, left: Option<&Value>, right: &Value, span: &Span, fill: bool, agreement: Agreement) -> Result<Value, Error> {
+        let fixed = right.fixed_width().is_some() || left.is_some_and(|v| v.fixed_width().is_some());
+        let numeric = Numeric::current();
+        let numeric = if fixed { crate::pervasive::promoted(self, left, right, numeric).map_err(Error::domain)? } else { numeric };
+        // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
+        let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(self, left, right, agreement.len) {
+            match crate::fusion::defer(self, left, right, agreement) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }
+        } else { agreement };
+        if !fill || agreement.len == 0 {
+            if let Some(result) = crate::pervasive::map(self, left, right, &agreement, numeric) {
+                return result.with_layout(agreement.layout).described("invalid keyed result");
+            }
+        }
         if agreement.len == 0 {
             let prototype = self.pervasive_item(left.map(Value::prototype).as_ref(), &right.prototype(), span, true)?;
             return empty_result(agreement, prototype);
-        }
-        // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
-        let agreement = if !fill && crate::fusion::defers(self, left, right, agreement.len) {
-            match crate::fusion::defer(self, left, right, agreement) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }
-        } else { agreement };
-        if !fill {
-            if let Some(result) = crate::pervasive::map(self, left, right, &agreement) {
-                return result.with_layout(agreement.layout).described("invalid keyed result");
-            }
         }
         pairwise(left, right, agreement, &|x, y| self.pervasive_item(x, y, span, fill))
     }
@@ -892,33 +906,59 @@ impl Primitive {
     }
     /// This form's result on the number `y`, and on `x` when it's dyadic, under the settings `t`: the kernel that `pervasive_item` applies to each pair of items, and that `scalar_call` applies to a call on numbers. `=` follows IEEE, where NaN equals nothing.
     fn on_numbers(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Value, Error> {
-        match self {
-            Self::Math(_) | Self::Arithmetic(_) | Self::Bitwise(_) | Self::Exact(_) => self.number(x, y, t).map(Value::Number).map_err(Error::from),
-            Self::Compare(op @ (Comparison::Equal | Comparison::NotEqual)) => {
-                Ok(Value::Number(Number::from_bool(x.expect("a dyadic comparison").equal(y, t)? == matches!(op, Comparison::Equal))))
-            }
-            Self::Compare(op) => {
-                let order = x.expect("a dyadic comparison").compare(y, t)?;
-                Ok(Value::Number(Number::from_bool(order.is_some_and(|order| op.ordered(order)))))
-            }
-            _ => unreachable!("only arithmetic, math, bitwise and comparison functions apply a kernel to each item"),
-        }
+        self.number(x, y, t).map(Value::Number).map_err(Error::from)
     }
 
-    /// This arithmetic or math function on the number `y`, and on `x` when it's dyadic, under the numeric settings `t`, as a pervasive call and the fold of numbers apply it. A float that a function gives from exact numbers takes the default width, and the code of `○` takes no part in that. A call that computes at 16 bits runs on 32-bit copies of its 16-bit floats (`Number::halves`). Under static kinds, `statically` gives the result's kind. A result is weak where no float or complex operand is strong (`Number::is_weak`).
+    /// This arithmetic or math function on the number `y`, and on `x` when it's dyadic, under the numeric settings `t`, as a pervasive call and the fold of numbers apply it. A float that a function gives from exact numbers takes the default width, and the code of `○` takes no part in that. A call that computes at 16 bits runs on 32-bit copies of its 16-bit floats (`Number::halves`). Under static kinds, `statically` gives the result's kind. A result is weak only when every operand is weak (`Number::is_weak`).
     pub(crate) fn number(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> {
+        let mut result = self.number_value(x, y, t);
+        if let Ok(n) = &mut result { n.mark(y.is_weak() && x.is_none_or(Number::is_weak)); }
+        result
+    }
+    fn number_value(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> {
         use crate::number::Failure::Domain;
+        if let Self::Compare(op) = self {
+            let x = x.expect("a dyadic comparison");
+            let yes = match op {
+                Comparison::Equal | Comparison::NotEqual => x.equal(y, t).map(|eq| eq == matches!(op, Comparison::Equal)),
+                _ => x.compare(y, t).map(|order| order.is_some_and(|order| op.ordered(order))),
+            }.map_err(Domain)?;
+            return Ok(Number::from_bool(yes));
+        }
+        let fixed = y.fixed_width().is_some() || x.is_some_and(|x| x.fixed_width().is_some());
+        if let Self::Exact(e) = self {
+            if !fixed { return e.number(x, y, t); }
+            let (x, y) = (x.map(Number::ordinary), y.ordinary());
+            return e.number(x.as_ref(), &y, t);
+        }
+        if fixed {
+            if let Some(width) = Number::fixed_promotion(x, y).map_err(Domain)? {
+                let t = t.with_fixed(width);
+                let constants = [x.and_then(|x| x.to_float().ok()), y.to_float().ok()];
+                match crate::pervasive::computes(self, x.is_some(), constants, rustymath::buffer::DType::Integer(width), t) {
+                    Some(rustymath::buffer::DType::Boolean | rustymath::buffer::DType::Integer(_)) => {
+                        return crate::pervasive::scalar(self, x, y, t).ok_or(Domain("function has no fixed-width integer kernel"))?.map_err(Domain);
+                    }
+                    Some(rustymath::buffer::DType::Float(w)) => {
+                        let (x, y) = (x.map(|x| x.to_float_width(w)).transpose().map_err(Domain)?, y.to_float_width(w).map_err(Domain)?);
+                        return self.number(x.as_ref(), &y, t);
+                    }
+                    _ => return Err(Domain("function has no fixed-width integer kernel")),
+                }
+            }
+        }
         if let Self::Bitwise(table) = self { return y.bitwise(x, table).map_err(Domain); }
-        if let Self::Exact(e) = self { return e.number(x, y, t); }
-        // A weak operand beside a strong number takes the width that NEP 50 gives it, and the result is weak only where no float or complex operand is strong.
-        let (x_weak, y_weak) = (x.is_some_and(Number::is_weak), y.is_weak());
-        if let Some(x) = x.filter(|_| x_weak != y_weak) {
-            let beside = |a: &Number, b: &Number| a.weak_width(b.dtype()?);
-            if x_weak { if let Some(width) = beside(x, y) { return self.number(Some(&x.to_float_width(width).map_err(Domain)?), y, t); } }
-            else if let Some(width) = beside(y, x) { return self.number(Some(x), &y.to_float_width(width).map_err(Domain)?, t); }
+        // A weak operand beside a strong number takes the width that NEP 50 gives it.
+        if let Some(x) = x {
+            let (x_weak, y_weak) = (x.is_weak(), y.is_weak());
+            let beside = |a: &Number, b: &Number| self.weak_width(a, b.dtype()?, t);
+            if x_weak && !y_weak { if let Some(width) = beside(x, y) { return self.number(Some(&x.to_float_width(width).map_err(Domain)?), y, t); } }
+            else if y_weak && !x_weak { if let Some(width) = beside(y, x) { return self.number(Some(x), &y.to_float_width(width).map_err(Domain)?, t); } }
         }
         if let Some((x, y, t, halve)) = Number::halves(x, y, t) { return self.number(x.as_ref(), &y, t).map(|n| if halve { n.halved() } else { n }); }
         let n = match (self, x) {
+            (Self::Arithmetic(Arithmetic::Divide), Some(x)) => number_quotient(x, y, t, false)?,
+            (Self::Math(Math::Log), Some(x)) if t.mathish_at(Some(t.width_of([x.float_width(), y.float_width()]))) => x.logarithm(y, true)?,
             (Self::Math(Math::Floor), None) => y.floor(t).map_err(Domain)?, (Self::Math(Math::Ceiling), None) => y.ceiling(t).map_err(Domain)?,
             (Self::Math(Math::Magnitude), Some(x)) => x.residue(y, t).map_err(Domain)?, (Self::Math(Math::Gcd), Some(x)) => x.gcd(y, t).map_err(Domain)?,
             (Self::Math(Math::Lcm), Some(x)) => x.lcm(y, t).map_err(Domain)?, (Self::Math(op), Some(x)) => x.math_dyad(op, y)?,
@@ -927,9 +967,8 @@ impl Primitive {
         };
         let exact = y.is_exact() && (self.info().dyad.code || x.is_none_or(Number::is_exact));
         let n = if exact { n.at_width(t.width) } else { n };
-        let strong = (x.is_some_and(|x| x.float_width().is_some()) && !x_weak) || (y.float_width().is_some() && !y_weak);
         let n = if t.is_static() { self.statically(x, y, n, t).map_err(Domain)? } else { n };
-        Ok(n.marked(!strong))
+        Ok(n)
     }
 
     /// The result of this function on numbers under static kinds, from `n`, the result that dynamic kinds give, as `meta/kinds.md` describes. Its kind follows the operands' kinds alone. A complex operand gives a complex result, except in a magnitude. Real operands give a real result, with NaN where dynamic kinds give a complex number, except in cis. A float operand gives a float. Integer operands give integers wrapped to the `int` width, except where the call computes in floats (`pervasive::computes`), as `÷` and the approximate functions do, and an integer power with a negative exponent is a DOMAIN error. Exact fractions stay exact.
@@ -989,16 +1028,32 @@ pub(crate) fn pervade(
     pairwise(left, right, agreement, &|x, y| pervade(x, y, f, whole, span))
 }
 
-/// `f` on `left` and `right` for a dyadic call, where a weak number beside an array or a strong number takes the width that `Number::weak_width` gives it, as NEP 50 treats a Python scalar (`Value::weakened`). Only a weak number beside an argument that isn't weak changes, so other calls pass their arguments straight to `f`.
-#[inline]
-fn weakened<R>(left: Option<&Value>, right: &Value, f: impl FnOnce(Option<&Value>, &Value) -> R) -> R {
-    let weak = |v: &Value| matches!(v, Value::Number(n) if n.is_weak());
-    match left {
-        Some(x) if weak(x) != weak(right) => {
-            let (wl, wr) = (x.weakened(right), right.weakened(x));
-            f(Some(wl.as_ref().unwrap_or(x)), wr.as_ref().unwrap_or(right))
+impl Primitive {
+    /// The floating width of weak `n` beside `strong`, except where this function keeps exact selected values.
+    fn weak_width(self, n: &Number, strong: rustymath::buffer::DType, numeric: Numeric) -> Option<FloatWidth> {
+        if n.is_exact() && crate::pervasive::keeps_exact(self, numeric) { None } else { n.weak_width(strong) }
+    }
+
+    /// A weak `value` at the width that this function gives it beside `other`.
+    #[inline]
+    pub(crate) fn weaken_value(self, value: &Value, other: &Value) -> Option<Value> {
+        let Value::Number(n) = value else { return None };
+        if !n.is_weak() || matches!(other, Value::Number(o) if o.is_weak()) { return None; }
+        if matches!(self, Self::Ravel | Self::CatenateFirst | Self::Union) && other.is_empty() { return None; }
+        value.to_float_width(self.weak_width(n, other.dtype()?, Numeric::current())?).ok()
+    }
+
+    /// `f` with weak numeric operands converted before array mapping or scalar calls.
+    #[inline]
+    fn weakened<R>(self, left: Option<&Value>, right: &Value, f: impl FnOnce(Option<&Value>, &Value) -> R) -> R {
+        let weak = |v: &Value| matches!(v, Value::Number(n) if n.is_weak());
+        match left {
+            Some(x) if weak(x) != weak(right) => {
+                let (wl, wr) = (self.weaken_value(x, right), self.weaken_value(right, x));
+                f(Some(wl.as_ref().unwrap_or(x)), wr.as_ref().unwrap_or(right))
+            }
+            _ => f(left, right),
         }
-        _ => f(left, right),
     }
 }
 
@@ -1105,9 +1160,9 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         }
         Math(Root) => Math(Nand).call(None, right, span),
         Math(Nand) => Math(Root).call(None, right, span),
-        Math(Nor) => Arithmetic(Divide).call(Some(right), &Value::integer(2), span),
-        Compare(Comparison::LessEqual) => Arithmetic(Plus).call(Some(right), &Value::integer(1), span),
-        Compare(Comparison::GreaterEqual) => Arithmetic(Minus).call(Some(right), &Value::integer(1), span),
+        Math(Nor) => Arithmetic(Divide).call(Some(right), &Value::Number(Number::from_integer(2).marked(true)), span),
+        Compare(Comparison::LessEqual) => Arithmetic(Plus).call(Some(right), &Value::Number(Number::from_integer(1).marked(true)), span),
+        Compare(Comparison::GreaterEqual) => Arithmetic(Minus).call(Some(right), &Value::Number(Number::from_integer(1).marked(true)), span),
         Encode => Decode.call(None, right, span),
         Decode => Encode.call(None, right, span),
         Enclose => Take.call(None, right, span),

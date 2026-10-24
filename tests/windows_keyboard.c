@@ -27,9 +27,12 @@ int wmain(int argc, wchar_t **argv) {
     check('O', 6, -1, 0x25cb); check('M', 0, 1, 0x2297);
     check('O', 6, -1, 0x25cb); check('O', 6, 1, 0x25cb);
     check(VK_OEM_5, 6, -1, 0x236d); check('G', 0, 1, 0x2352);
-    check('6', 6, -1, '^'); check(VK_OEM_MINUS, 0, 1, 0x207b);
-    check('6', 6, -1, '^'); check('1', 0, 1, 0x00b9);
-    check('5', 6, -1, '_'); check('1', 0, 1, 0x2081);
+    check('6', 6, -1, 0x2076); check(VK_OEM_MINUS, 0, 1, 0x207b);
+    check('6', 6, -1, 0x2076); check('1', 0, 1, 0x00b9);
+    check('5', 6, -1, 0x2085); check('1', 0, 1, 0x2081);
+    check('O', 6, -1, 0x25cb); check('O', 0, 1, 0x25cb);
+    check('5', 6, -1, 0x2085); check('X', 6, 1, 0x2093);
+    check('5', 6, -1, 0x2085); check('1', 6, 1, 0x2081);
     UnloadKeyboardLayout(layout);
     if (!failures) puts("Windows keyboard translation passed.");
     return failures != 0;

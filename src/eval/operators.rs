@@ -4,14 +4,19 @@ use rustymath::error::Kind;
 use super::*;
 use crate::transform::Pairing;
 
-/// `fₓ`, or `f` with a float width's marker, called on `left` and `right`, where `mark` is the marker: `f`'s results as exact integers, which `Exact::Floor` makes them, or as floats of the marker's width, as `•float` makes them. Where `ₓ` after a primitive reaches an `Exact` function, which computes the integers through one kernel, that function runs instead.
+/// `f`'s results converted to the marker's numeric type. Plain `ₓ` uses a primitive's `Exact` kernel where one exists.
 pub(super) fn marked(f: &Function, mark: crate::number::Mark, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     use crate::{number::Mark, primitive::Exact};
     match mark {
         Mark::Width(w) => crate::derivative::to_float_width(&f.call(left, right, span)?.array(span)?, w, span),
+        Mark::Fixed(w) => f.call(left, right, span)?.array(span)?.to_fixed(w).described("can't convert result to fixed integers").at(span),
         Mark::Exact => match f.as_primitive().and_then(|p| Exact::of(p, left.is_some())) {
             Some(e) => Primitive::Exact(e).call(left, right, span),
-            None => Primitive::Exact(Exact::Floor).call(None, &f.call(left, right, span)?.array(span)?, span),
+            None => {
+                let result = f.call(left, right, span)?.array(span)?;
+                if result.fixed_width().is_some() { Ok(result.ordinary()) }
+                else { Primitive::Exact(Exact::Floor).call(None, &result, span) }
+            },
         },
     }
 }
@@ -704,7 +709,7 @@ pub(super) fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value
             let Primitive(p) = g.node() else { return Err(Error::domain("this commute has no known inverse")); };
             match p {
                 P::Arithmetic(Arithmetic::Plus) => {
-                    P::Arithmetic(Arithmetic::Divide).call(Some(right), &Value::integer(2), span)
+                    P::Arithmetic(Arithmetic::Divide).call(Some(right), &Value::Number(crate::Number::from_integer(2).marked(true)), span)
                 }
                 P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &crate::primitive::float_like(0.5, right), span),
                 _ if p.info().dyad.picks => Ok(right.clone()),
@@ -1639,7 +1644,7 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<usize>, seed: Opt
 /// A fold or scan by the primitive `p` along `axis`, or by default the fold's own axis, with `seed` as each lane's left argument: by fusion and the kernels where they apply, and otherwise by `p` on each pair of items, whose calls a running level takes as it takes any primitive call. A weak seed takes the width of `right`'s floats, as `p` gives it beside each item. Under static kinds, a lane of one item gives the item at the kind that `p` computes (`pervasive::lone`). `fold` and `Operation::run` share it.
 pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, seed: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     use crate::number::Arithmetic::{Plus, Times};
-    let seed = seed.map(|s| s.weakened(right).unwrap_or_else(|| s.clone()));
+    let seed = seed.map(|s| p.weaken_value(s, right).unwrap_or_else(|| s.clone()));
     let seed = seed.as_ref();
     let call = |x: &Value, y: &Value| p.call(Some(x), y, span);
     let lone = |v: Value| if seed.is_none() { crate::pervasive::lone(p, v) } else { v };
@@ -1658,20 +1663,21 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
         }
         FoldPlan::Lanes { lanes, shape } => {
             // Where `p`'s kernel folds in any order, a number seed joins each lane's result after the fold, as one more item would. The fold then takes the fusion and kernel routes of a fold with no seed. A level that carries `right` keeps the seed in its items, because its kernels don't apply there. So do Booleans under a `ᵇ` table that `sets_high_bits`: they fold by the logical function, and a number seed turns the fold to the integer function.
-            let booleans = || matches!(right.as_items(), crate::array::Items::Compact(rustymath::buffer::View::Booleans(_)));
+            // Fixed kinds need the seed before the fold chooses its wrapping width.
+            let fixed_seed = seed.is_some_and(|s| matches!(s, Value::Number(_)) && (right.fixed_width().is_some() || s.fixed_width().is_some()));
             let (seed, last) = match seed {
-                Some(s @ Value::Number(_)) if !active && crate::pervasive::folds(p).is_some() && !(crate::pervasive::sets_high_bits(p) && booleans()) => (None, Some(s)),
+                Some(s @ Value::Number(_)) if !fixed_seed && !active && crate::pervasive::seed_last(p, right) => (None, Some(s)),
                 s => (s, None),
             };
             let result = match seed.is_none().then(|| crate::fusion::fold(right, p, kind, along)).flatten() {
                 Some(fused) => fused,
                 None => {
-                    let kernel = seed.is_none() && !active;
+                    let kernel = !active && (seed.is_none() || fixed_seed);
                     // Float sums and products take the kernel for any number of items, because they fold in any order. Reading the items to see that would compute a pending argument, which the kernel reads more cheaply, so lanes of two or more items take it without asking.
                     let any = || matches!(p, Primitive::Arithmetic(Plus | Times)) && matches!(right.as_items(), crate::array::Items::Compact(rustymath::buffer::View::Floats(_)));
-                    let result = match ((kernel && (lanes.len >= 2 || any())).then(|| crate::pervasive::fold(p, right, along)).flatten(), p) {
+                    let result = match ((kernel && (lanes.len >= 2 || any())).then(|| crate::pervasive::fold(p, right, along, seed)).flatten(), p) {
                         (Some(result), _) => result,
-                        (None, Primitive::Arithmetic(op)) if kernel && right.all_numbers() => number_lanes(op, false, right, None, &lanes, shape)?,
+                        (None, Primitive::Arithmetic(op)) if kernel && right.all_numbers() => number_lanes(op, false, right, seed, &lanes, shape)?,
                         _ => item_lanes(false, &lanes, shape, seed, right, call, active)?,
                     };
                     if lanes.len == 1 { lone(result) } else { result }

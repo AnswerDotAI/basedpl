@@ -1,7 +1,7 @@
 """Generate native Windows keyboard tables from layout.json. Paths are relative to the repository root."""
 import json
 from pathlib import Path
-from .keyboards import LAYOUT, write_changed
+from .keyboards import LAYOUT, character, write_changed
 
 OUTPUT = Path('editors/windows/layout.h')
 ROWS = [('1234567890-=', '!@#$%^&*()_+'), ('qwertyuiop[]', 'QWERTYUIOP{}'),
@@ -42,7 +42,10 @@ def keylayout(layout):
     for state in dict.fromkeys(v['state'] for v in layout['option'].values() if isinstance(v, dict)):
         table = states[state]
         terminator = table['terminator']
-        for key, value in (table['keys'] | {' ': terminator, terminator: terminator}).items():
+        keys = {key: terminator for key, action in layout['option'].items() if action == {'state': state}} | table['keys']
+        keys |= {' ': terminator, terminator: terminator}
+        keys |= {character(action, layout): keys[key] for key, action in layout['option'].items() if key in keys}
+        for key, value in keys.items():
             # A Windows dead-key result is one UTF-16 character; script minus and digit are typed separately.
             if isinstance(value, dict): value = states[value['state']]['terminator']
             lines.append(f'    DEADTRANS(0x{ord(key):04x}, 0x{ord(terminator):04x}, {char(value)}, 0),')
