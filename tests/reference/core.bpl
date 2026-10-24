@@ -3508,6 +3508,9 @@ f←{⍵+1} ⋄ g←{⍵-1} ⋄ {f⁻¹←g ⋄ 0}0 ⋄ f⁻¹ 5   ⍝ 4
 ⍝ — Dyadic under transforms both arguments, then inverts the result
 3 +@ 2× 4   ⍝ 7
 
+⍝ — Under writes back through an overtake, rotated or padding a matrix, and leaves out the fills
+v←1+⍳6 ⋄ m←[2 3]⍴⍳6 ⋄ [(10×)@(8↑) v ; (10×)@(¯8↑) v ; (10×)@(¯1⌽8↑) v ; (1+)@([3 4]↑) m ; (1+)@([¯3 ¯4]↑) m ; 0@(9↑) v]   ⍝ [[10 20 30 40 50 60] [10 20 30 40 50 60] [10 20 30 40 50 60] [1 2 3⋄4 5 6] [1 2 3⋄4 5 6] [0 0 0 0 0 0]]
+
 ⍝ — Monadic under changes coordinates before and after reversal
 ⌽@ 1+ 1 2 3   ⍝ 3 2 1
 
@@ -4612,10 +4615,10 @@ x   ⍝ 10 20 9
 ⍋[1 (1+8E¯15) 1]   ⍝ [0 2 1]ₓ
 
 ⍝ — Fast combinations give what their parts give in turn: partial grades and sorts, ranks, and counts and folds under Key
-v←¿1000⍴0 ⋄ k←¿1000⍴7 ⋄ b←0=¿1000⍴3
-[((10↑)∘⍋ v)≡({10↑⍋⍵} v); (¯10↑< v)≡({¯10↑<⍵} v); (↑> v)≡({↑>⍵} v); ((3⌷)∘⍒ v)≡({3⌷⍒⍵} v); (⍋⍋ v)≡({⍋⍵}⍋v); (⍋⍒ v)≡({⍋⍵}⍒v); ((≢⊢)⌸ k)≡({≢⍵}⌸ k); (k (+/⊢)⌸ v)≡(k {+/⍵}⌸ v); (k (⌈⌿⊢)⌸ v)≡(k {⌈⌿⍵}⌸ v); (k (⌊/⊢)⌸ b)≡(k {⌊/⍵}⌸ b); (k (+/⊢)⌸ k)≡(k {+/⍵}⌸ k)]
+v←¿1000⍴0 ⋄ k←¿1000⍴7 ⋄ b←0=¿1000⍴3 ⋄ d←⍳¯1000 ⋄ z←v ⋄ z.[[3 500 999]]←$n ⋄ z.[[7 9]]←-0
+[((10↑)∘⍋ k)≡({10↑⍋⍵} k); ((¯10↑)∘⍒ k)≡({¯10↑⍒⍵} k); ((10↑)∘< d)≡({10↑<⍵} d); (¯10↑> d)≡({¯10↑>⍵} d); ((5↑)∘⍋ z)≡({5↑⍋⍵} z); ((¯5↑)∘⍋ z)≡({¯5↑⍋⍵} z); ((10↑)∘⍋ v)≡({10↑⍋⍵} v); (¯10↑< v)≡({¯10↑<⍵} v); (↑> v)≡({↑>⍵} v); ((3⌷)∘⍒ v)≡({3⌷⍒⍵} v); (⍋⍋ v)≡({⍋⍵}⍋v); (⍋⍒ v)≡({⍋⍵}⍒v); ((≢⊢)⌸ k)≡({≢⍵}⌸ k); (k (+/⊢)⌸ v)≡(k {+/⍵}⌸ v); (k (⌈⌿⊢)⌸ v)≡(k {⌈⌿⍵}⌸ v); (k (⌊/⊢)⌸ b)≡(k {⌊/⍵}⌸ b); (k (+/⊢)⌸ k)≡(k {+/⍵}⌸ k)]
 ⍝ =>
-$t $t $t $t $t $t $t $t $t $t $t
+$t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t
 
 ⍝ — Numbers precede characters; complex numbers sort by real then imaginary part
 ⍋1j2 1 1j¯2 'a' 0   ⍝ [4 2 1 0 3]ₓ
@@ -5170,6 +5173,10 @@ a←[4000000000 2]ₓ ⋄ •prefs ["kinds":"static" "int":32] ⋄ r←[a×a +/a
 ⍝ — Under static kinds, √ fuses, because its kernel keeps NaN where dynamic kinds would rerun on complex numbers. ∂ gives a NaN tangent outside the domain
 y←¿1000000⍴0 ⋄ •prefs ["kinds":"static"] ⋄ r←[(•explain "+/√y-0.5").fused.glyphs;{+/√⍵}∂4 ¯1 9] ⋄ •prefs ["kinds":"dynamic"] ⋄ r
 ("-√+/"⋄0.25 $n (÷6))
+
+⍝ — A root of degree 0 or ±∞ is a DOMAIN error under dynamic kinds and NaN under static kinds, on scalars and arrays alike. A negative degree gives the reciprocal of the root
+c←"0√8" "↑0√8 8" "∞√8" "↑∞ 2√8 8" "¯2√8" "↑¯2 2√8 8" "¯3√¯8" "↑¯3 3√¯8 ¯8" ⋄ g←{"DOMAIN"::'D' ⋄ ⍎⍵} ⋄ d←g¨c ⋄ •prefs ["kinds":"static"] ⋄ s←g¨c ⋄ •prefs ["kinds":"dynamic"] ⋄ [d s]
+('D' 'D' 'D' 'D' (÷√8) (÷√8) ¯0.5 ¯0.5⋄$n $n $n $n (÷√8) (÷√8) ¯0.5 ¯0.5)
 
 ⍝⍝ Unicode conversion
 
@@ -6175,6 +6182,13 @@ p←[1 [2 3]] ⋄ v←[1 [2 3] 0 1 [2 3]]
 ⍝ =>
 [[$t] [$f] [$t $f]]
 
+⍝ exact-key-search — A search gives the same positions whether every cell is an exact key or one float cell sends them all through `Value::matches`, and for strings held as items or as a matrix's rows
+h←["ab";"cd";"";7ₓ;'x';[3 4]ₓ;"abc";1ₓ] ⋄ ns←32⍴["cd";"zz";"";7ₓ;'x';[3 4]ₓ;"ab";'y';"abc";$t]
+s←["ab";"cd";"ef";"gh";"ij";"kl";"mn";"op"] ⋄ t←32⍴s,⊂"zz"
+[(ns∊h)≡ns∊h,⊂0.5 ; (≠h,ns)≡¯1↓≠h,ns,⊂0.5 ; (h⍳ns)≡8⌊(h,⊂0.5)⍳ns ; (s⍳t)≡(⊃s)⍳⊃t ; 10↑h⍳ns ; h⍳1 1+1E¯15]
+⍝ =>
+[$t;$t;$t;$t;[1 8 2 3 4 5 0 8 6 7]ₓ;[7 7]ₓ]
+
 ⍝ native-row-ranks — Narrow row keys grade stably and ordinal ranks invert that grade
 m←[3 0⋄1 2⋄3 0⋄2 1]ₓ
 [⍋m ⍋⍋m]   ⍝ [[1 3 0 2]ₓ [2 0 3 1]ₓ]
@@ -6475,12 +6489,41 @@ f←{"DOMAIN"::¯1 ⋄ ⍵○0.5} ⋄ r←f¨1 2 13
 (•explain "f¨1 2 3").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — A dfn whose batched run stopped on a call with no rule for batches skips the batched try on later calls whose arguments have the same kinds and cell shapes [batched]
-f←{⍋⍵} ⋄ r←f⍤1⊢2 3⍴⍳6ₓ
+f←{∪⍵} ⋄ r←f⍤1⊢2 3⍴⍳6ₓ
 (•explain "f⍤1⊢2 3⍴⍳6ₓ").fallbacks.reason   ⍝ ["an earlier stop: no batch rule"]
 
 ⍝ — The same dfn tries a batched run again on cells of another shape [batched]
-f←{⍋⍵} ⋄ r←f⍤1⊢2 3⍴⍳6ₓ
-(•explain "f⍤1⊢2 4⍴⍳8ₓ").fallbacks.reason   ⍝ ["no batch rule for ⍋"]
+f←{∪⍵} ⋄ r←f⍤1⊢2 3⍴⍳6ₓ
+(•explain "f⍤1⊢2 4⍴⍳8ₓ").fallbacks.reason   ⍝ ["no batch rule for ∪"]
+
+⍝ — Windows with one specification for every cell, and a cell's shape, run on the batch's whole: a batch's cells share one shape [batched]
+m←4 6⍴⍳24 ⋄ t←2 3 4⍴⍳24
+[({["size":3;"edge":"wrap"]↕⍵}⍤1⊢m)≡4 6 3⍴["size":1 3;"edge":"wrap"]↕m ; ({(×/⍴⍵)⍴⍵}⍤2⊢t)≡2 12⍴t ; (•explain "{3↕⍵}⍤1⊢m").fallbacks.reason,(•explain "{(×/⍴⍵)⍴⍵}⍤2⊢t").fallbacks.reason]   ⍝ [$t $t 0⍴⊂""]
+
+⍝ — `≡` compares a batch's exact-integer or Boolean cells with a float constant on the batch's whole, within the tolerance [batched]
+m←3 2⍴⍳6ₓ ⋄ b←2 2⍴$t $f $f $t ⋄ c←2 3.0000000000000004
+[{⍵≡c}⍤1⊢m ; {⍵≡1 0.0}⍤1⊢b ; (•explain "{⍵≡c}⍤1⊢m").fallbacks.reason]   ⍝ [[$f $t $f] [$t $f] 0⍴⊂""]
+
+⍝ — A record built in a batched run holds a batch for each entry, so Rank and Each whose results are records batch [batched]
+v←⍳4
+[{["a":⍵ "b":2×⍵]}⍤0⊢v ; (•explain "{[""a"":⍵ ""b"":2×⍵]}⍤0⊢v").fallbacks.reason,(•explain "{[""a"":⍵ ""b"":2×⍵]}¨v").fallbacks.reason]   ⍝ [([0 1 2 3;"a" "b"]:[0 0⋄1 2⋄2 4⋄3 6]) 0⍴⊂""]
+
+⍝ — A map inside a batched run widens the run: its operand runs once on the cells of both maps, and reads the outer operand's bindings at those cells [batched]
+s←2 3 4⍴⍳24 ⋄ img←3 6 6⍴⍳108 ⋄ w←3 3⍴1
+unbatched←{•prefs ["batch":$f] ⋄ r←⍎⍵ ⋄ •prefs ["batch":$t] ⋄ r}
+widens←{e←•explain ⍵ ⋄ ∧/[e.value≡unbatched ⍵ ; 0=≢e.fallbacks.reason ; ~(⊂"batching")∊e.declined.route]}
+widens¨"{{+/⍵×⍵}⍤1⊢⍵}⍤2⊢s" "{k←+/⍵ ⋄ {⍵<5?k;⍵}¨⍵}⍤1⊢s" "{{+/,⍵×w}⌺[3 3] ⍵}⍤2⊢img" "{{{⍵+1}¨⍵}⍤1⊢⍵}⍤2⊢s"   ⍝ $t $t $t $t
+
+⍝ — A write from the inner operand to a binding of the outer operand stops the widening, and the inner map calls its operand once for each of its cells inside the outer run [batched]
+s←2 3 4⍴⍳24 ⋄ x←"{n←0 ⋄ {n+←⍵}¨⍵ ⋄ n}⍤1⊢s"
+•prefs ["batch":$f] ⋄ r←⍎x ⋄ •prefs ["batch":$t]
+[r≡⍎x ; (•explain x).fallbacks.reason]   ⍝ [$t ["a write"]]
+
+⍝ — A dyadic `f.g` with dfn operands inside a batched run runs its own code, whose calls of `f` and `g` route again [batched]
+s←2 3 3⍴⍳18 ⋄ m←3 3⍴⍳9
+unbatched←{•prefs ["batch":$f] ⋄ r←⍎⍵ ⋄ •prefs ["batch":$t] ⋄ r}
+same←{e←•explain ⍵ ⋄ [e.value≡unbatched ⍵ ; e.fallbacks.reason]}
+same¨"{⍵ +.{⍺×⍵} ⍉⍵}⍤2⊢s" "{⍵ {⍺+⍵}.× m}⍤2⊢s" "{1 +.{⍺×⍵} ⍵}⍤1⊢s"   ⍝ ($t 0⍴⊂""⋄$t 0⍴⊂""⋄$t 0⍴⊂"")
 
 ⍝ — A system function that acts stops a batched run for an effect, even on a constant [batched]
 (•explain "{x←•time 0 ⋄ ⍵}¨⍳3ₓ").fallbacks.reason   ⍝ ["an effect"]
@@ -6646,6 +6689,35 @@ x←⍳1024ₓ ⋄ y←⍳4096ₓ ⋄ c←⍳4096ₓ ⋄ f←{(+/y×⍵)++/x-⍵
 
 ⍝ — A kernel that reads a number from the cell, which no rule for batches covers, stops the batched run [batched]
 (•explain "{⊤[⍵ 1]}¨1 2").fallbacks.reason   ⍝ ["no batch rule"]
+
+⍝ — Each cell selects at positions of its own, by `⌷`, `⊃` and bracket indexing, from an array that every cell shares or from its own cell
+i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ [{⍵⌷10 20 30}¨i ; i {⍺⊃⍵}⍤[0 1] m ; {[⍵ 2]⌷m}¨i ; i {⍵.[⍺]}⍤[0 1] m ; {⍵.[[0 2]]}⍤1⊢m ; i⌷⍤0 1⊢m]   ⍝ [30 10 20 10 ; 3 4 8 10 ; 9 3 6 3 ; 3 4 8 10 ; [1 3⋄4 6⋄7 9⋄10 12] ; 3 4 8 10]
+
+⍝ — A NaN position reads a fill in each cell that holds one
+q←[0 2⋄1 $n⋄2 2⋄$n 0] ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ q {⍵.[⍺]}⍤[1 1] m   ⍝ [1 3⋄5 0⋄9 9⋄0 10]
+
+⍝ — Selections at each cell's own positions make no fallback [batched]
+i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ (•explain "[{⍵⌷10 20 30}¨i ; i {⍺⊃⍵}⍤[0 1] m ; {[⍵ 2]⌷m}¨i ; i {⍵.[⍺]}⍤[0 1] m ; {⍵.[[0 2]]}⍤1⊢m]").fallbacks.reason   ⍝ 0⍴⊂""
+
+⍝ — In a batched map, `∂` through a selection at each cell's own positions sends each cell's gradient to those positions
+q←[0 2⋄1 $n⋄2 2⋄$n 0] ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ q {a←⍺ ⋄ {+/⍵.[a]×1 2}∂⍵}⍤[1 1] m   ⍝ [1 0 2⋄0 1 0⋄0 0 3⋄2 0 0]
+
+⍝ — `∂` of a running maximum and of a selection at each cell's own positions makes no fallback in a batched map [batched]
+q←[0 2⋄1 $n⋄2 2⋄$n 0] ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ (•explain "[{{+/⌈\⍵}∂⍵}⍤1⊢m ; q {a←⍺ ⋄ {+/⍵.[a]×1 2}∂⍵}⍤[1 1] m]").fallbacks.reason   ⍝ 0⍴⊂""
+
+⍝ — Each cell writes at positions of its own, or at positions every cell shares, by Under and by selective assignment, into its own cell or into an array that every cell shares
+i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ [{1@[⍵] 3⍴0}⍤0⊢i ; i {(-)@[⍺] ⍵}⍤[0 1] m ; {(2×)@[0 2] ⍵}⍤1⊢m ; {x←⍵ ⋄ x.[0]←99 ⋄ x}⍤1⊢m ; {v←3⍴0 ⋄ v.[⍵]←1 ⋄ v}⍤0⊢i]   ⍝ [[0 0 1⋄1 0 0⋄0 1 0⋄1 0 0] [1 2 ¯3⋄¯4 5 6⋄7 ¯8 9⋄¯10 11 12] [2 2 6⋄8 5 12⋄14 8 18⋄20 11 24] [99 2 3⋄99 5 6⋄99 8 9⋄99 11 12] [0 0 1⋄1 0 0⋄0 1 0⋄1 0 0]]
+
+⍝ cell-write-fill — A NaN position writes nothing in a mapped update
+[{(-)@[⍵]1 2 3}¨[0 $n] ; {v←1 2 3 ⋄ v.[⍵]+←10 ⋄ v}¨[0 $n]]
+⍝ =>
+[[¯1 2 3;1 2 3];[11 2 3;1 2 3]]
+
+⍝ — Writes at each cell's own positions, or at positions every cell shares, make no fallback [batched]
+i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ (•explain "[{1@[⍵] 3⍴0}⍤0⊢i ; i {(-)@[⍺] ⍵}⍤[0 1] m ; {(2×)@[0 2] ⍵}⍤1⊢m ; {x←⍵ ⋄ x.[0]←99 ⋄ x}⍤1⊢m ; {v←3⍴0 ⋄ v.[⍵]←1 ⋄ v}⍤0⊢i]").fallbacks.reason   ⍝ 0⍴⊂""
+
+⍝ — A write that a batch can't hold, which mixes a cell's items or writes inside a nested item, gives each cell's own result
+i←2 0 1 0 ⋄ m←[1 2 3⋄4 5 6⋄7 8 9⋄10 11 12] ⋄ n←[1 2 3;4 5 6] ⋄ f←{[{'a'@[0] ⍵}⍤1⊢m ; {x←n ⋄ (1⊃x).[⍵]←0 ⋄ x}¨i]} ⋄ a←f 0 ⋄ •prefs ["batch":$f] ⋄ b←f 0 ⋄ •prefs ["batch":$t] ⋄ [a≡b ; 0⌷0⌷a]   ⍝ [$t ; 'a' 2 3]
 
 ⍝ — Cells whose results differ in shape
 {⍳⍵}¨1 2 3   ⍝ [[0];0 1;0 1 2]
@@ -8212,18 +8284,30 @@ v←3 4 ⋄ v₀²+v₁²   ⍝ 25
 ⍝ — A subscript after a space selects from the whole run before it
 x←1 2 ⋄ [2 3 ₁;x+1 ₁]   ⍝ 3 3
 
-⍝ subscript-floor-name — After a name or an expression in parentheses, ₓ is ⌊
+⍝ subscript-exact-name — After a name or an expression in parentheses, ₓ floors the array to exact integers, as ⌊ₓ does
 x←3.7 ¯2.5 ⋄ [xₓ;(x+0.5)ₓ]   ⍝ [[3 ¯3]ₓ [4 ¯2]ₓ]
 
 ⍝ subscript-floor-positions — ⍳ of a count floored by ₓ gives exact positions
 n←4.5 ⋄ ⍳nₓ   ⍝ [0 1 2 3]ₓ
 
-⍝ subscript-floor-function — ₓ floors an array, not a function
-+ₓ
-⍝ error: DOMAIN ERROR
+⍝ subscript-exact-function — After a function, ₓ floors its results to exact integers, under either kinds
+c←"⌊ₓ 3.7 ¯2.5" "⌈ₓ 3.7 ¯2.5" "×ₓ 3.7 ¯2.5 0" "7 ¯7 7.5÷ₓ2" "7ₓ ¯7ₓ÷ₓ2ₓ" "(+/)ₓ 1.5 2.25" ⋄ d←⍎¨c ⋄ •prefs ["kinds":"static"] ⋄ s←⍎¨c ⋄ •prefs ["kinds":"dynamic"] ⋄ [d s]
+([3 ¯3]ₓ [4 ¯2]ₓ [1 ¯1 0]ₓ [3 ¯4 3]ₓ [3 ¯4]ₓ 3ₓ⋄[3 ¯3]ₓ [4 ¯2]ₓ [1 ¯1 0]ₓ [3 ¯4 3]ₓ [3 ¯4]ₓ 3ₓ)
 
-⍝ subscript-join-names — Between two items, ⱼ, ₑ and ᵣ join them as one term: xⱼy is x+y×0ⱼ1, xₑy is x×10*y and xᵣy is xₓ÷yₓ
-x←3 ⋄ y←2 ⋄ [xⱼy xₑy xᵣy]   ⍝ [3ⱼ2 300 3ᵣ2]
+⍝ subscript-exact-errors — Under dynamic kinds ₓ gives integers from finite real numbers. Under static kinds, which keep a failed result, it converts as Rust's as does, into the int width: NaN gives 0, and a value past the width's range gives its largest or smallest integer. A complex number is a DOMAIN error under either kinds
+c←"⌊ₓ $n" "⌊ₓ ∞" "1÷ₓ0" "⌊ₓ 1j2" "⌊ₓ 1e20" "⌊ₓ 1.5 $n ¯∞" ⋄ g←{"DOMAIN"::'D' ⋄ ⍎⍵} ⋄ d←g¨c ⋄ •prefs ["kinds":"static"] ⋄ s←g¨c ⋄ •prefs ["int":32] ⋄ t←g¨c ⋄ •prefs ["kinds":"dynamic" "int":64] ⋄ [d s t]
+('D' 'D' 'D' 'D' 100000000000000000000ₓ 'D'⋄0ₓ 9223372036854775807ₓ 9223372036854775807ₓ 'D' 9223372036854775807ₓ [1 0 ¯9223372036854775808]ₓ⋄0ₓ 2147483647ₓ 2147483647ₓ 'D' 2147483647ₓ [1 0 ¯2147483648]ₓ)
+
+⍝ subscript-exact-routes — ⌊ₓ, ⌈ₓ and ÷ₓ, which each compute in one pass, give what ₓ gives on the plain function's result, as ×ₓ does through it. ÷ₓ of integers stays exact under static kinds, where ÷ computes in floats
+v←¯3.5 ¯0.5 0 0.5 2.999999999999999 1E15+0.5 ⋄ b←(1ₓ+2ₓ*60ₓ),¯7ₓ ⋄ f←{[(⌊ₓv)≡⊢ₓ⌊v ; (⌈ₓv)≡⊢ₓ⌈v ; (×ₓv)≡⊢ₓ×v ; (v÷ₓ0.1)≡⊢ₓv÷0.1 ; b÷ₓ3ₓ]} ⋄ d←f 0 ⋄ •prefs ["kinds":"static"] ⋄ s←f 0 ⋄ •prefs ["kinds":"dynamic"] ⋄ [d s]
+($t $t $t $t [384307168202282325 ¯3]ₓ⋄$t $t $t $t [384307168202282325 ¯3]ₓ)
+
+⍝ subscript-width — After a function, ₕ, ₛ or ₚ makes its results floats of that width. After an array, as after an expression in parentheses, it converts the array, as •float does
+x←1.5 ⋄ {(•storage ⍎⍵).kind}¨"(-)ₛ 3" "xₛ" "(x+1)ₕ" "(2ₓ)ₚ"
+"float32" "float32" "float16" "float64"
+
+⍝ subscript-join-names — Between two items, ⱼ, ₑ and ᵣ join them as one term: xⱼy is x+y×0ⱼ1, xₑy is x×10*y and xᵣy is the exact quotient of xₓ by yₓ, also under static kinds
+x←3 ⋄ y←2 ⋄ •prefs ["kinds":"static"] ⋄ s←xᵣy ⋄ •prefs ["kinds":"dynamic"] ⋄ [xⱼy xₑy xᵣy s]   ⍝ [3ⱼ2 300 3ᵣ2 3ᵣ2]
 
 ⍝ subscript-join-literal-left — A literal before ⱼ, ₑ or ᵣ gives what the all-literal form gives
 n←3 ⋄ [2ₑn 1ᵣn 1ⱼn]   ⍝ [2ₑ3 1ᵣ3 1ⱼ3]

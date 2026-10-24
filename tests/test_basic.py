@@ -17,13 +17,15 @@ def test_native_calls_and_explicit_output():
 
 
 def test_static_kinds_read_under_the_session_settings():
-    "After a static-kinds evaluation returns, its items still read under that session's settings. Python data imports under them too."
+    "After a static-kinds evaluation returns, its items still read under that session's settings. Python data imports under them too, and integers export at the width they compute at."
     try:
         z = bpl('•prefs ["kinds":"static"] ⋄ 0j1 1j0×1')
         assert isinstance(z.py[1], np.complexfloating) and z.py[1] == 1
         assert z.bpl == '0ⱼ1 1ⱼ0'
         assert bpl('(•storage x).kind', x=1+0j).py == 'complex128'
-    finally: bpl('•prefs ["kinds":"dynamic"]')
+        ints = bpl('•prefs ["int":32] ⋄ ⍳5ₓ')
+        assert ints.np.dtype == np.int32 and ints.own().dtype == np.int32
+    finally: bpl('•prefs ["kinds":"dynamic" "int":64]')
 
 
 def test_clear_restores_starting_workspace():

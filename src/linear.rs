@@ -34,10 +34,10 @@ pub(crate) enum Op {
     Add(Arc<Linear>, Arc<Linear>),
     /// A sum, or with `kind.scan` a running sum, along an axis: the fold's axis, where the call names one, and the axis it resolves to. A reversed scan runs from the far end.
     Fold { child: Arc<Linear>, kind: FoldKind, axis: Option<usize>, along: usize, reversed: bool },
-    /// Each item read from the sources, joined end to end, at its offset among their items. A `Steps::FILL` offset reads 0.
-    Gather { sources: Vec<Arc<Linear>>, offsets: Vec<usize> },
-    /// Zeros of this node's layout, with item `k` of the child added at `offsets[k]`. A `Steps::FILL` offset drops its item.
-    ScatterAdd { child: Arc<Linear>, offsets: Vec<usize> },
+    /// Each item read from the sources, joined end to end, at its offset among their items. A `Steps::FILL` offset reads 0. Each cell's own offsets read one source.
+    Gather { sources: Vec<Arc<Linear>>, offsets: Offsets },
+    /// Zeros of this node's layout, with item `k` of the child added at offset `k`. A `Steps::FILL` offset drops its item.
+    ScatterAdd { child: Arc<Linear>, offsets: Offsets },
     /// The child's items in the same order, under this node's layout.
     View(Arc<Linear>),
     /// The child's items read through one `Steps` table for each axis of this node's layout, as a structural glyph copies values (`primitive::copied`). A position that the tables give no offset for reads 0.
@@ -46,6 +46,22 @@ pub(crate) enum Op {
     Product { coefficient: Value, child: Arc<Linear>, left: bool, stacked: bool },
     /// The child's items as floats of this width. Its transpose converts the cotangent back to the child's width. A gradient then keeps its primal's kind.
     Cast(Arc<Linear>, FloatWidth),
+}
+
+/// Where a `Gather` reads, or a `ScatterAdd` adds, among a cell's items: the same offsets in every cell, or in a batched run each cell's own (`batch::Cells`), as a selection by each cell's own positions gives them.
+pub(crate) enum Offsets { Shared(Vec<usize>), Cells(crate::batch::Cells) }
+
+impl Offsets {
+    /// The bytes that the offsets hold.
+    fn footprint(&self) -> usize { match self { Offsets::Shared(o) => o.capacity() * size_of::<usize>(), Offsets::Cells(c) => c.footprint() } }
+    /// The items of `sources`, joined end to end, at these offsets, laid out as `layout` (`read_at`), or each cell's items at its own offsets, which read one source.
+    fn read(&self, sources: &[Value], layout: &Layout, zero: &Value, span: &Span) -> Result<Value, Error> {
+        match self { Offsets::Shared(o) => read_at(sources, o, layout, zero, span), Offsets::Cells(c) => c.read(&sources[0], layout) }
+    }
+    /// Zeros of `layout`, with each item of `items` added at its offset (`scatter_add`), or each cell's items added at its own offsets.
+    fn added(&self, items: &Value, layout: &Layout, zero: &Value, span: &Span) -> Result<Value, Error> {
+        match self { Offsets::Shared(o) => scatter_add(items, o, layout, zero, span), Offsets::Cells(c) => c.added(items, layout, zero, span) }
+    }
 }
 
 impl Op {
@@ -79,7 +95,7 @@ impl Footprint for Linear {
         let (mut stack, mut bytes, mut node) = (Vec::new(), 0, self);
         loop {
             let (held, children) = node.op.parts();
-            let maps = match &node.op { Op::Copy { tables, .. } => tables.iter().map(Steps::footprint).sum(), Op::Gather { offsets, .. } | Op::ScatterAdd { offsets, .. } => offsets.capacity() * size_of::<usize>(), _ => 0 };
+            let maps = match &node.op { Op::Copy { tables, .. } => tables.iter().map(Steps::footprint).sum(), Op::Gather { offsets, .. } | Op::ScatterAdd { offsets, .. } => offsets.footprint(), _ => 0 };
             bytes += size_of::<Linear>() + node.zero.footprint_in(seen) + held.map_or(0, |v| v.footprint_in(seen)) + maps + node.ids.footprint_in(seen);
             stack.extend(children.into_iter().filter(|c| crate::array::unseen(*c, seen)).map(|c| &**c));
             let Some(next) = stack.pop() else { return bytes };
@@ -202,7 +218,7 @@ pub(crate) fn cast(t: &Arc<Linear>, width: FloatWidth) -> Value {
 pub(crate) fn copy(t: &Arc<Linear>, layout: Layout, tables: &[Steps]) -> Value { node(Op::Copy { child: t.clone(), tables: tables.to_vec() }, layout, t.zero.clone(), t.level) }
 
 /// Item `i` of the record `t`, as a record of one number.
-pub(crate) fn item(t: &Arc<Linear>, i: usize) -> Value { node(Op::Gather { sources: vec![t.clone()], offsets: vec![i] }, Layout::default(), t.zero.clone(), t.level) }
+pub(crate) fn item(t: &Arc<Linear>, i: usize) -> Value { node(Op::Gather { sources: vec![t.clone()], offsets: Offsets::Shared(vec![i]) }, Layout::default(), t.zero.clone(), t.level) }
 
 /// The offsets that `ids` give, an atom or an array of exact integers (`transform::id_offset`). A join builds ids as exact integers, and the primitives that move them keep them exact.
 fn offsets(ids: &Value) -> Vec<usize> {
@@ -210,15 +226,26 @@ fn offsets(ids: &Value) -> Vec<usize> {
     ids.iter().map(|&id| usize::try_from(id).map_or(Steps::FILL, crate::transform::id_offset)).collect()
 }
 
-/// The record that reads `sources` at `ids`, laid out as `ids` is. Ids that count up from 1 through one whole source give that source's `View`.
+/// The record that reads `sources` at `ids`, laid out as `ids` is. Ids that count up from 1 through one whole source give that source's `View`. A batch of ids gives each cell its own offsets, which read one source: the sources joined end to end where there are several.
 fn gather(sources: Vec<Arc<Linear>>, ids: Value, zero: Value) -> Value {
+    if let Some(b) = ids.carrier().and_then(crate::transform::Carrier::batch) {
+        let source = match <[_; 1]>::try_from(sources) {
+            Ok([source]) => source,
+            Err(sources) => {
+                let total = sources.iter().map(|s| size(&s.layout)).sum::<usize>();
+                record_of(&gather(sources, laid(&Layout::from([total]), (1..=total as i64).collect()), zero.clone())).expect("joined records are a record").clone()
+            }
+        };
+        let (layout, level) = (b.whole().layout().axes(b.frame..b.whole().shape().len()), source.level);
+        return node(Op::Gather { sources: vec![source], offsets: Offsets::Cells(crate::batch::Cells::new(b, offsets(b.whole()))) }, layout, zero, level);
+    }
     let layout = ids.layout().clone();
     let offsets = offsets(&ids);
     if let [source] = sources.as_slice() {
         if !ids.is_atom() && offsets.len() == size(&source.layout) && counts_up(&offsets) { return view(source, layout); }
     }
     let level = shared_level(&sources);
-    node(Op::Gather { sources, offsets }, layout, zero, level)
+    node(Op::Gather { sources, offsets: Offsets::Shared(offsets) }, layout, zero, level)
 }
 
 /// The record that reads `sources` at `ids`, which can be nested: a `Gather` of simple ids, or, for nested ids, an array of records nested as they are. A record of records keeps each record's layout, which a `Gather` of nested ids couldn't. An item that is already a record, as `Sources::retained` keeps it, stays as it is.
@@ -333,7 +360,7 @@ pub(crate) fn scatter_add(items: &Value, offsets: &[usize], layout: &Layout, zer
             let primal = scatter_add(&primal, offsets, layout, zero, span)?;
             let tangent = tangent.expect("a dual has a tangent");
             let tangent = match record_of(&tangent) {
-                Some(r) => node(Op::ScatterAdd { child: r.clone(), offsets: offsets.to_vec() }, layout.clone(), r.zero.clone(), r.level),
+                Some(r) => node(Op::ScatterAdd { child: r.clone(), offsets: Offsets::Shared(offsets.to_vec()) }, layout.clone(), r.zero.clone(), r.level),
                 None => scatter_add(&tangent, offsets, layout, zero, span)?,
             };
             return Ok(crate::derivative::dual(dual.tag, primal, tangent));
@@ -595,8 +622,8 @@ pub(crate) fn evaluate(nodes: &[Arc<Linear>], seeds: &[Value], span: &Span) -> R
             }
             Op::Add(a, b) => Primitive::Arithmetic(Arithmetic::Plus).call(Some(&get(a)), &get(b), span)?,
             Op::Fold { child, kind, axis, along, reversed } => scan(*kind, *axis, *along, *reversed, &get(child), span)?,
-            Op::Gather { sources, offsets } => read_at(&sources.iter().map(get).collect::<Vec<_>>(), offsets, &n.layout, &n.zero, span)?,
-            Op::ScatterAdd { child, offsets } => scatter_add(&flat(&get(child), span)?, offsets, &n.layout, &n.zero, span)?,
+            Op::Gather { sources, offsets } => offsets.read(&sources.iter().map(get).collect::<Vec<_>>(), &n.layout, &n.zero, span)?,
+            Op::ScatterAdd { child, offsets } => offsets.added(&flat(&get(child), span)?, &n.layout, &n.zero, span)?,
             Op::View(t) => relay(&get(t), &n.layout, span)?,
             Op::Cast(t, width) => crate::derivative::to_float_width(&get(t), *width, span)?,
             Op::Copy { child, tables } => crate::primitive::copied(&get(child), n.layout.clone(), tables).described("invalid copy")?,
@@ -771,6 +798,15 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, span: &Sp
             Op::Gather { sources, offsets } => {
                 // One pass over the offsets sorts the cotangent's items into the sources they came from. A source whose offsets run in order through all of it, as a cell of Rank or of a mix does, takes a slice of the cotangent.
                 let u = flat(&laid_out(&u, &n.layout), span)?;
+                let offsets = match offsets {
+                    Offsets::Shared(offsets) => offsets,
+                    // Each cell's own offsets read one source, which takes each cell's items added at them.
+                    Offsets::Cells(cells) => {
+                        let source = &sources[0];
+                        push(&mut cotangents, source, cells.added(&u, &source.layout, &source.zero, span)?, span)?;
+                        continue;
+                    }
+                };
                 let starts = starts(sources.iter().map(|s| size(&s.layout)));
                 let mut runs: Vec<Run> = sources.iter().map(|_| Run::Empty).collect();
                 let mut s = 0;
@@ -799,7 +835,7 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, span: &Sp
                     cotangents.entry(Arc::as_ptr(src)).or_default().parts.push(part);
                 }
             }
-            Op::ScatterAdd { child, offsets } => push(&mut cotangents, child, read_at(&[u], offsets, &child.layout, &child.zero, span)?, span)?,
+            Op::ScatterAdd { child, offsets } => push(&mut cotangents, child, offsets.read(&[u], &child.layout, &child.zero, span)?, span)?,
             Op::View(t) => push(&mut cotangents, t, relay(&u, &t.layout, span)?, span)?,
             Op::Cast(t, _) => push(&mut cotangents, t, match t.zero.float_width() { Some(w) => u.to_float_width(w).described("a cotangent converts to floats")?, None => u }, span)?,
             Op::Copy { child, tables } => {

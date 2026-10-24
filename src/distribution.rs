@@ -1,8 +1,8 @@
 use crate::execution::check;
-use rustymath::{buffer::FloatWidth, error::Kind};
+use rustymath::{buffer::FloatWidth, error::Kind, with_float_width, Float as _};
 use crate::session;
 use crate::{
-    array::generated_len, element::read_as, Span, keyed, number::Numeric, primitive::{numeric, pervade, real}, system::{
+    array::generated_len, element::{read_as, Stored}, Span, keyed, number::Numeric, primitive::{numeric, pervade, real}, system::{
         natives, Call, Valence::{Ambivalent, Dyadic, Monadic}
     }, transform::{Cause, Stop}, Described, Error, Number, Value
 };
@@ -107,30 +107,32 @@ fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: &[usize], len: usize,
     made.described("invalid distribution sample")
 }
 
-/// The density, cdf or quantile of `d` at each number in `right`. An array of compact numbers goes to rustymath as one slice, and its result keeps the array's layout. A discrete quantile is an exact integer, so it goes one number at a time, as atoms and nested arrays do.
+/// The density, cdf or quantile of `d` at each number in `right`, computed at the width of `right`'s floats, or the session's float width for other numbers. An array of compact numbers goes to rustymath as one slice, and its result keeps the array's layout. A discrete quantile is an exact integer, so it goes one number at a time, as atoms and nested arrays do.
 fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Span) -> Result<Value, Error> {
     let quantile = op == Operation::Quantile;
     if !right.is_atom() && !(quantile && d.is_discrete()) {
-        if let Some(x) = read_as::<f64>(right) {
-            if quantile && !x.iter().fold(true, |ok, p| ok & (0.0..=1.0).contains(p)) { return Err(Error::domain("probability must be in [0,1]")); }
+        let width = right.float_width().unwrap_or(Numeric::current().width);
+        let computed = with_float_width!(width, F => read_as::<F>(right).map(|x| {
+            if quantile && !x.iter().fold(true, |ok, p| ok & (0.0..=1.0).contains(&p.wide())) { return Err(Error::domain("probability must be in [0,1]")); }
             let mut out = Vec::with_capacity(x.len());
             match op {
                 Operation::Density => Pdf(*d).many(Arg::Many(&x), x.len(), &mut out), Operation::Cdf => Cdf(*d).many(Arg::Many(&x), x.len(), &mut out),
                 _ => Quantile(*d).many(Arg::Many(&x), x.len(), &mut out)
             };
-            let width = right.float_width().unwrap_or(Numeric::current().width);
-            return right.layout().floats(width, out).described("invalid distribution result");
-        }
+            F::build(right.shape(), out).ok_or(Kind::Limit).described("distribution result exceeds array limits")?.with_layout(right.layout().clone()).described("invalid distribution result")
+        }));
+        if let Some(result) = computed { return result; }
     }
     pervade(None, right, &|_, e| point(d, op, real(e)?, e.float_width().unwrap_or(Numeric::current().width)), &|_, _, _| None, span)
 }
 
-/// The density, cdf or quantile of `d` at one number x, as a float of `width`, or as an exact integer for a finite discrete quantile.
+/// The density, cdf or quantile of `d` at one number x, computed at `width` as an array's items are, as a float of `width`. A discrete quantile is computed in `f64` and gives an exact integer where it's finite, because its integers can pass the largest that narrower floats hold exactly.
 fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Result<Value, Error> {
     let quantile = op == Operation::Quantile;
     if quantile && !(0.0..=1.0).contains(&x) { return Err(Error::domain("probability must be in [0,1]")); }
-    let y = match op { Operation::Density => d.pdf(x), Operation::Cdf => d.cdf(x), _ => d.quantile(x) };
-    Ok(if quantile && d.is_discrete() && y.is_finite() { exact(y as u64) } else { Value::Number(Number::float(y, width)) })
+    if quantile && d.is_discrete() { let y = d.quantile(x); return Ok(if y.is_finite() { exact(y as u64) } else { Value::Number(Number::float(y, width)) }); }
+    let y = with_float_width!(width, F => { let x = F::narrow(x); match op { Operation::Density => Pdf(*d).one(x), Operation::Cdf => Cdf(*d).one(x), _ => Quantile(*d).one(x) }.wide() });
+    Ok(Value::Number(Number::float(y, width)))
 }
 
 pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {

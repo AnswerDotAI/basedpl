@@ -43,7 +43,7 @@ impl Labels {
             return selected.is_empty().then(|| Read::Ids(selected.layout().integers(Vec::new()).expect("an empty layout holds no ids"), SelectionKind::Elements));
         };
         if let (SelectionKind::Elements, Lead::Mapped(mapping)) = (l.kind, &l.labels) {
-            if let Some((base, steps)) = mapping.entries(l.layout.shape()).filter(|(_, steps)| !steps.iter().any(Steps::fills)) {
+            if let Some((base, steps)) = mapping.entries(l.layout.shape()) {
                 return Some(Read::Walk(Selection { frame: Frame::Array(l.layout.clone()), targets: Targets::Walk { base, steps } }));
             }
         }

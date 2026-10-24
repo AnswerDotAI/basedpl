@@ -109,6 +109,8 @@ impl Session {
     pub(crate) fn batch_level(&self) -> Option<u64> { self.levels.borrow().batched().map(|(id, _)| id) }
     /// Whether the running levels let a map run batched (`transform::Levels::admits_batch`).
     pub(crate) fn admits_batch(&self) -> bool { self.levels.borrow().admits_batch() }
+    /// Whether a map's batched try widens the running batched run (`transform::Levels::widens`).
+    pub(crate) fn widens(&self) -> bool { self.levels.borrow().widens() }
     pub fn erase(&self, name: &str) -> bool {
         let Some(NodeKind::Name(name)) = crate::inspection::item(name, crate::settings::hanzi_aliases()) else { return false; };
         if name.implicit().is_some() { return false; }
@@ -536,7 +538,7 @@ impl Session {
             NodeKind::Function(builtin) => Binding::Function(builtin.function()),
             NodeKind::Operator(op) => Binding::Operator(OperatorNode::Primitive(*op)),
             NodeKind::Name(name) => match self.bindings.lookup(*name) {
-                Some((_, value)) => value,
+                Some((_, value)) => self.read_binding(value)?,
                 None if *name == Name::ERROR => return Err(Error::new(ErrorKind::Value, "$e is the error a handler caught, and exists only in a handler").at(&node.span)),
                 None => return Err(undefined(name, &node.span))
             },
@@ -591,9 +593,10 @@ impl Session {
         Self::record_literal(node, entries)
     }
 
-    /// The entries of the keyed item in cell `cell` of the bracket literal `node`, whose `:` is at `colon`: `Keys` applies `key` to `value`, which must give a keyed vector. `bracket` and a compiled item's end both call it as soon as the item's value is ready, so an item that fails stops the items after it.
+    /// The entries of the keyed item in cell `cell` of the bracket literal `node`, whose `:` is at `colon`: `Keys` applies `key` to `value`, which must give a keyed vector. A name with a batch of atoms gives one entry that holds the batch, as `Keys` gives one entry in each cell, so a record built in a batched run holds batches as a list literal does. `bracket` and a compiled item's end both call it as soon as the item's value is ready, so an item that fails stops the items after it.
     pub(super) fn keyed(&self, node: &Node, cell: usize, colon: usize, key: &Value, value: &Value) -> Result<Vec<crate::keyed::Entry>, Error> {
         let NodeKind::ArrayLiteral { cells, .. } = &node.kind else { unreachable!("a bracket literal") };
+        if let Some(name) = crate::keyed::name(key) && value.carrier().and_then(crate::transform::Carrier::batch).is_some_and(|b| b.rank() == 0) { return Ok(vec![(Some(name), value.clone())]); }
         let item = Function::primitive(Primitive::Keys).call(Some(key), value, &cells[cell][colon].span)?.array(&node.span)?;
         crate::keyed::entries(&item).described("key:value items must give keyed vectors").at(&node.span)
     }
@@ -756,8 +759,8 @@ impl Session {
     fn guard(&self, definition: &Definition, frame: usize, at: (usize, usize), truths: &Value, level: u64, span: &Span) -> Result<Guarded, Error> {
         let key = definition as *const Definition as usize;
         super::operators::guard(truths, level, |holds, rows, cells| {
-            let (_, first) = session().levels.borrow_mut().case(key, frame, cells.clone()).at(span)?;
-            let restricted = session().restricted(frame, first, level, &|whole, axes| super::operators::cells_at(whole, axes, rows, span), span);
+            let (_, first) = session().levels.borrow_mut().case(Some(key), frame, cells.clone()).at(span)?;
+            let restricted = session().restricted(frame, first, level, truths.len(), rows, span);
             let result = restricted.and_then(|bindings| {
                 let saved = session().bindings.swap(bindings);
                 let step = session().run_definition(definition, if holds { (at.0, at.1 + 1) } else { (at.0 + 1, 0) }, false);
@@ -769,13 +772,36 @@ impl Session {
         })
     }
 
-    /// The bindings of each frame from `first` to `frame`, with each batched value of run `level` read at a guard case's cells through `read` (`batch::read_cells`), for `Bindings::swap`. These frames are the calls that started during the run. A closure that a case calls reads its defining frame, which can be any of them, whether or not it lies on `frame`'s lexical chain. Frames before `first` started before the run and hold none of its batches.
-    fn restricted(&self, frame: usize, first: usize, level: u64, read: &impl Fn(&Value, usize) -> Result<Value, Error>, span: &Span) -> Result<Vec<(usize, FrameBindings)>, Error> {
+    /// The bindings of each frame from `first` to `frame`, with each batched value of run `level` read at a guard case's cells, the cells at positions `rows` of the run's `cells` cells (`batch::read_cells`), for `Bindings::swap`. These frames are the calls that started during the run. A closure that a case calls reads its defining frame, which can be any of them, whether or not it lies on `frame`'s lexical chain. Frames before `first` started before the run and hold none of its batches. A batch made before the run widened has fewer cells than the run, one for each run of cells that the widening's inner frame repeats it over (`read_binding`), so the case reads it at the cells that hold its rows.
+    fn restricted(&self, frame: usize, first: usize, level: u64, cells: usize, rows: &[u32], span: &Span) -> Result<Vec<(usize, FrameBindings)>, Error> {
+        let read = |whole: &Value, axes: usize| {
+            let repeats = (cells / whole.shape()[..axes].iter().product::<usize>()) as u32;
+            let rows: std::borrow::Cow<[u32]> = if repeats == 1 { rows.into() } else { rows.iter().map(|r| r / repeats).collect() };
+            Ok((super::operators::cells_at(whole, axes, &rows, span)?, 1))
+        };
         (first..=frame).map(|i| {
             let mut copy = self.bindings.frame_bindings(i);
-            for value in copy.values_mut() { *value = crate::batch::read_cells(value, level, read, span)?; }
+            for value in copy.values_mut() { *value = crate::batch::read_cells(value, level, &read)?; }
             Ok((i, copy))
         }).collect()
+    }
+
+    /// Runs `run` in the batched run widened to `frame`, the run's frame followed by the frame of a map inside the run (`batch::tried`). Until it returns, a write to a binding in a frame that started before the widening stops the run (`transform::Levels::case`), and code reads each batch of the run that such a frame holds laid over `frame` (`read_binding`).
+    pub(crate) fn widened<T>(&self, frame: &crate::array::Layout, span: &Span, run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+        self.levels.borrow_mut().case(None, self.bindings.depth(), frame.clone()).at(span)?;
+        let result = run();
+        self.levels.borrow_mut().end_case();
+        result
+    }
+
+    /// `binding` as code reads it. Inside a widened batched run, each batch of the run that a binding made before the widening holds reads as laid over the widened frame (`batch::widened`). Elsewhere a binding reads as it is.
+    #[inline]
+    pub(super) fn read_binding(&self, binding: Binding) -> Result<Binding, Error> {
+        if !self.transforming() { return Ok(binding); }
+        let Binding::Value(value) = &binding else { return Ok(binding) };
+        let levels = self.levels.borrow();
+        let Some((level, frame)) = levels.widened() else { return Ok(binding) };
+        crate::batch::widened(value, level, frame).map(Binding::Value)
     }
 }
 

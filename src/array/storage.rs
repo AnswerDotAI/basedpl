@@ -484,23 +484,15 @@ impl Gather {
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::compress(d, mask, total, |j| f(s[j]))) { return; }
         self.mixed().extend(source.elements().zip(mask).filter(|&(_, &n)| n.key() == 1).map(|(x, _)| x))
     }
-    /// Copies the cells of `source` at `rows`, each `width` items long. A pending source is read by `walk`.
+    /// Copies the cells of `source` at `rows`, each `width` items long. Cells of one item gather in one typed loop. Wider cells, and every cell of a pending source, are read by `walk`, whose fixed-width loops copy a short cell as one unit where a copy of each row's slice would cost a call for each row.
     pub(crate) fn rows<R: num_traits::AsPrimitive<usize>>(&mut self, source: &Value, rows: &[R], width: usize) {
         if rows.is_empty() || width == 0 { return; }
         if self.leveled(source) { return self.each(source, false, |g, s| g.rows(s, rows, width)); }
-        if source.pending().is_some() { return self.walk(source, 0, &[Steps::table(rows.iter().map(|&r| r.as_() * width).collect()), Steps::along(width, 1)]); }
+        if width > 1 || source.pending().is_some() { return self.walk(source, 0, &[Steps::table(rows.iter().map(|&r| r.as_() * width).collect()), Steps::along(width, 1)]); }
         self.follow(source.dtype(), is_weak(source));
-        let at = |r: R| r.as_() * width..(r.as_() + 1) * width;
-        let copied = if width == 1 {
-            copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(rows.iter().map(|&r| f(s[r.as_()]))))
-        } else if rows.iter().all(|&r| self.data.copy_slice(source.as_items(), at(r))) { true } else {
-            copy_into!(&mut self.data, source.as_items(), |d, s, f| for &r in rows {
-                d.extend(s[at(r)].iter().map(|&x| f(x)))
-            })
-        };
-        if copied { return; }
+        if copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(rows.iter().map(|&r| f(s[r.as_()])))) { return; }
         let d = self.mixed();
-        for &r in rows { d.extend(source.items(at(r))) }
+        for &r in rows { d.extend(source.items(r.as_()..r.as_() + 1)) }
     }
     /// Copies the items of `source` at `offsets`. A `Steps::FILL` offset gives the prototype of `source`, as `walk` does.
     pub(crate) fn at(&mut self, source: &Value, offsets: &[usize]) {

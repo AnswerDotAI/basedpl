@@ -3,7 +3,7 @@ from fractions import Fraction
 from itertools import repeat
 from json import dumps
 from . import _Array, _Function, _raw, symbols
-from .functions import Function, _builtins, _python_name, _operator_names
+from .functions import Function, _builtins, _python_name, _operator_names, _marks
 
 _names = {s['glyph']: (s['name'], s['monad'], s['dyad']) for s in symbols if s['kind'] == 'function'}
 _monadic = {s['glyph'] for s in symbols if s['kind'] == 'monadic-operator'}
@@ -65,6 +65,7 @@ class _Printer:
             return f'{r(a, True, 100)}.{_method(kind, dyad)}{axis}', 100
         if kind == 'axis': return f'{r(a, dyad, 100)}[{r(args[1])}]', 100
         if kind == 'inverse': return f'{r(a, dyad, 100)}.undo', 100
+        if kind in _marks: return f'{r(a, dyad, 100)}.{_marks[kind]}', 100
         if kind == 'fork':
             b, c = args[1:]
             middle = b.parts()

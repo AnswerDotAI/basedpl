@@ -19,7 +19,7 @@ BPL has two kinds of number. A bare number such as `0.5` is approximate: a float
 | `⍬`, `⍬ₓ`, `⍬ₕ`, `⍬ₛ`, `⍬ₚ` | The approximate, the exact, and the 16-bit, 32-bit and 64-bit [empty vector](glyphs/zilde.qmd) |
 | `[…]ₓ`, `(…)ₓ` | A list, or rows, in which every number is exact |
 | `[…]ₕ`, `[…]ₛ`, `[…]ₚ` | A list, or rows, in which every real number is a 16-bit, 32-bit or 64-bit float, and every complex number has parts of that width, or 32-bit parts after `ₕ` |
-| `xⱼy`, `xₑy`, `xᵣy` | Between two items, such as names: `x+y×0ⱼ1`, `x×10*y` and `xₓ÷yₓ`, as one term |
+| `xⱼy`, `xₑy`, `xᵣy` | Between two items, such as names: `x+y×0ⱼ1`, `x×10*y` and the exact quotient of `xₓ` by `yₓ`, as one term |
 
 A plain `e`, `j` or `r` starts a name unless the rest of a number follows it, as in `1e5`, `1r3` and `2j3`. Results display with the subscript forms, as in `1ᵣ3`, `2ⱼ3` and `1ₑ20`. A subscript form that the rest of a number doesn't follow, or one between two other items such as names, joins the items on each side into one term, as a literal is one, with the value the table gives. A literal on the left gives what the all-literal form gives: with `n←3`, `2ₑn` is `2ₑ3`.
 
@@ -96,7 +96,7 @@ m.[[1]]←1
 m                    ⍝ $f 1 $f
 ```
 
-Around literals, `[…]ₓ` and `(…)ₓ` make every number exact, at any depth. Each number must be whole. After a list or group that holds anything else, as after a name, `ₓ` is [`⌊`](glyphs/downstile.qmd), as [Superscripts and subscripts](scripts.ipynb) describes. A vector of exact integers displays as `[…]ₓ`, and rows of them as `(…)ₓ`. `⍕` writes them the same way:
+Around literals, `[…]ₓ` and `(…)ₓ` make every number exact, at any depth. Each number must be whole. After a list or group that holds anything else, as after a name, `ₓ` floors to exact integers, as [Superscripts and subscripts](scripts.ipynb) describes. A vector of exact integers displays as `[…]ₓ`, and rows of them as `(…)ₓ`. `⍕` writes them the same way:
 
 ```bpl
 [1 0 1]ₓ≡1ₓ 0ₓ 1ₓ    ⍝ $t
@@ -209,7 +209,7 @@ The [`⌈`](glyphs/upstile.qmd) and [`⌊`](glyphs/downstile.qmd) pages give the
 
 ## Static kinds
 
-Some functions choose a result's kind from their arguments' values. `√¯4` is complex because the argument is negative, `1j0` is a float because its imaginary part is zero, and an exact integer that overflows grows. Under [`•prefs`](system/prefs.qmd) `["kinds":"static"]`, a result's kind follows from the function and its arguments' kinds alone. A fused computation needs that, because it decides each result's kind before it runs. Real arguments give real results, with NaN outside a function's domain, and complex results stay complex. `⌊`, `⌈` and monadic `×` of floats give floats, and integer `÷` gives floats:
+Some functions choose a result's kind from their arguments' values. `√¯4` is complex because the argument is negative, `1j0` is a float because its imaginary part is zero, and an exact integer that overflows grows. Under [`•prefs`](system/prefs.qmd) `["kinds":"static"]`, a result's kind follows from the function and its arguments' kinds alone. A fused computation needs that, because it decides each result's kind before it runs. Real arguments give real results, with NaN outside a function's domain, and complex results stay complex. `⌊`, `⌈` and monadic `×` of floats give floats, and integer `÷` gives floats. With `ₓ` after them they give integers, as Rust's `as` converts a float: NaN gives 0, and a value past the `int` width's range gives its largest or smallest integer:
 
 ```bpl
 •prefs ["kinds":"static"]
@@ -217,6 +217,9 @@ Some functions choose a result's kind from their arguments' values. `√¯4` is 
 0j1×0j1              ⍝ ¯1ⱼ0
 ⌊2.5 ∞               ⍝ 2 ∞
 7ₓ÷2ₓ                ⍝ 3.5
+⌊ₓ2.5 ¯2.5           ⍝ [2 ¯3]ₓ
+7ₓ÷ₓ2ₓ               ⍝ 3ₓ
+⌊ₓ $n ∞              ⍝ [0 9223372036854775807]ₓ
 •prefs ["kinds":"dynamic"]
 ```
 

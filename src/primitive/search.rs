@@ -157,9 +157,12 @@ pub(super) fn iota(right: &Value) -> Result<Value, Error> {
     let indices = if right.is_singleton() {
         let down = lengths[0] < 0;
         if let Some(width) = float {
-            let (start, mut data) = (if down { len as i64 - 1 } else { 0 }, Vec::new());
-            rustymath::convert::count(&mut data, start, down, len);
-            Value::floats(shape, width, data)
+            let start = if down { len as i64 - 1 } else { 0 };
+            rustymath::with_float_width!(width, F => {
+                let mut data: Vec<F> = Vec::new();
+                rustymath::convert::count(&mut data, start, down, len);
+                <F as crate::element::Stored>::build(shape, data).ok_or_else(|| Kind::Length.into())
+            })
         } else if down { Value::positions(shape, len, (0..len).rev()) } else { Value::positions(shape, len, 0..len) }
     } else {
         let prototype = generated_items(vec![shape.len()], vec![0; shape.len()], float).unwrap();
@@ -380,6 +383,48 @@ pub(super) fn sort(right: &Value, down: bool, span: &Span) -> Result<Value, Erro
     }
     let order = Value::new(vec![1], vec![grade(None, right, down)?]).described("invalid sort")?;
     squad(&order, right, None, span)
+}
+
+/// Each rank-`k` cell of `y` ordered as `p` orders it (`CellRule::Orders`), in one call on the whole of `y` by rustymath's ordering of lanes. It gives what `grade` and `sort` give on each cell, for compact items where the cells' axes have no keys or names and each major cell of a cell holds at most 16 items, as `key_grade` takes them. `None` otherwise.
+pub(crate) fn ordered_cells(p: Primitive, y: &Value, k: usize) -> Option<Result<Value, Error>> {
+    let (grade, down) = p.orders()?;
+    let rank = y.shape().len();
+    let (frame, cell) = (rank - k, y.layout().axes(rank - k..rank));
+    if k == 0 || y.is_empty() || cell.has_names() || cell.has_keys() { return None; }
+    let view = compact_view(&Cells::Items(y))?;
+    let (n, width) = (y.shape()[frame], y.shape()[frame + 1..].iter().product::<usize>());
+    let dims = [y.len() / width / n, n, 1];
+    if !grade && k == 1 {
+        return rustymath::search::view_sort_along(view, dims, down).transpose().map(|sorted| Value::from_buffer(y.shape(), sorted?).and_then(|v| v.with_layout(y.layout().clone())).described("invalid sort"));
+    }
+    if width > 16 { return None; }
+    let columns: Vec<_> = (0..width).map(|j| (view, j, width)).collect();
+    let order = match rustymath::search::view_lexgrade_along(&columns, dims, down) { Ok(order) => order?, Err(e) => return Some(Err(e.into())) };
+    if grade {
+        let layout = y.layout().axes(0..frame).concat(&crate::array::Layout::from([n]));
+        return Some(Value::positions(layout.shape(), n, order.into_iter()).and_then(|g| g.with_layout(layout)).described("invalid grade result"));
+    }
+    // Row `r` of the whole takes the row of its own cell that the cell's order names.
+    let rows: Vec<usize> = order.iter().enumerate().map(|(r, &g)| r - r % n + g as usize).collect();
+    let mut sorted = crate::array::Gather::new(&[y], y.len());
+    sorted.rows(y, &rows, width);
+    Some(sorted.finish(y.layout().clone(), || y.prototype()).described("invalid sort"))
+}
+
+/// Whether each pair of cells of `x` and `y` matches, as `≡` matches them, or where `not`, whether it doesn't, as one Boolean for each position of `frame`. `x`'s cells have rank `xk` and `y`'s rank `yk`. An argument with no axes besides its cells' is the same in every cell. Every cell of one argument has the same layout, so one check of the cells' layouts serves every pair. `None` where a pair needs `≡`'s own code: keys, an empty argument, or items whose kinds `compact_match` doesn't compare.
+pub(crate) fn matched_cells(x: &Value, xk: usize, y: &Value, yk: usize, frame: &Layout, not: bool) -> Option<Value> {
+    if x.is_empty() || y.is_empty() || x.has_keys() || y.has_keys() { return None; }
+    let cell = |v: &Value, k: usize| v.layout().axes(v.shape().len() - k..v.shape().len());
+    let cells = frame.shape().iter().product();
+    if !cell(x, xk).matches(&cell(y, yk)) { return frame.booleans(vec![not; cells]).ok(); }
+    let (Items::Compact(xs), Items::Compact(ys)) = (x.as_items(), y.as_items()) else { return None };
+    let n = cell(x, xk).shape().iter().product::<usize>();
+    // The items of cell `c` of an argument with a frame, or of the whole of one that is the same in every cell.
+    let items = |framed: bool, c: usize| if framed { c * n..(c + 1) * n } else { 0..n };
+    let (fx, fy) = (x.shape().len() > xk, y.shape().len() > yk);
+    let t = Numeric::current();
+    let matched = (0..cells).map(|c| Some(crate::array::compact_match(xs.slice(items(fx, c)), ys.slice(items(fy, c)), t)? != not));
+    frame.booleans(matched.collect::<Option<_>>()?).ok()
 }
 
 pub(super) fn interval_index(left: &Value, right: &Value) -> Result<Value, Error> {

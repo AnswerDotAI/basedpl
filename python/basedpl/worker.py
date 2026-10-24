@@ -114,7 +114,7 @@ class Worker:
 @delegates(Worker)
 def fresh(
     code, # BPL source
-    timeout=None, # Seconds before the evaluation is interrupted
+    timeout=60, # Seconds before the evaluation is interrupted; None: no limit
     **kwargs
 ):
     "Return what `code` prints in a fresh worker process. A BPL error raises `BplError`."

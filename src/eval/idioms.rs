@@ -2,7 +2,6 @@
 //!
 //! Only functions get idioms: the trains, compositions and operator applications that build one. An expression that applies the same functions in turn, such as `10↑⍋v`, takes the general path, while the train `10↑⍋ v` takes the idiom. The glyph pages list each idiom under "Fast combinations", and `•explain` reports each one taken, by the name `Idiom::name` gives.
 use super::*;
-use crate::primitive::Comparison;
 
 /// A combination of functions with a faster algorithm.
 #[derive(Debug)]
@@ -25,15 +24,8 @@ pub(super) enum Idiom {
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Pick { Take(i64), Item(i64) }
 
-/// Whether `g` orders its argument, as `Some((grade, down))`: a grade, where `grade` is true, or a sort, `<` or `>`, where it's false. `down` is true for `⍒` and `>`. An atop of a selection with such a `g` can be an idiom (`Idiom::Selected`, `Idiom::Ranks`). `operators::train_call` leaves any train whose last tine orders its argument to be built, with its idiom.
-pub(super) fn orders(g: &Function) -> Option<(bool, bool)> {
-    match g.as_primitive()? {
-        Primitive::Grade(down) => Some((true, down)),
-        Primitive::Compare(Comparison::Less) => Some((false, false)),
-        Primitive::Compare(Comparison::Greater) => Some((false, true)),
-        _ => None,
-    }
-}
+/// How `g` orders its argument, where it's a primitive that orders it (`Primitive::orders`). An atop of a selection with such a `g` can be an idiom (`Idiom::Selected`, `Idiom::Ranks`). `operators::train_call` leaves any train whose last tine orders its argument to be built, with its idiom.
+pub(super) fn orders(g: &Function) -> Option<(bool, bool)> { g.as_primitive()?.orders() }
 
 /// The idiom that `node` is, if any.
 pub(super) fn recognise(node: &FunctionNode) -> Option<Idiom> {
@@ -84,25 +76,26 @@ impl Idiom {
     pub(super) fn taken(&self, f: &Function) { if crate::explain::recording() { crate::explain::fast(self.name(), f.bpl()); } }
     /// Records that the combination declined arguments of `items` items that don't suit it, and that the general path runs instead (`rustymath::events`).
     pub(super) fn declined(&self, items: usize) { rustymath::events::declined(self.name(), "arguments that don't suit it", items) }
-    /// The idiom's result for these arguments, or `None` where they don't suit it. `f` is the function that the idiom computes.
+    /// The idiom's result for these arguments, or `None` where they don't suit it. `f` is the function that the idiom computes. Each of these idioms takes one argument. A call with two takes the general path, with no decline recorded.
     #[inline(never)]
     pub(super) fn call(&self, f: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Bound, Error>> {
+        if left.is_some() { return None; }
         let result = match *self {
-            Idiom::Selected { grade, down, pick } => selected(grade, down, pick, left, right, span),
-            Idiom::Ranks { down } => ranks(down, left, right, span),
+            Idiom::Selected { grade, down, pick } => selected(grade, down, pick, right, span),
+            Idiom::Ranks { down } => ranks(down, right, span),
             // Key runs these in its own path (`key`), with its validation and classes.
-            Idiom::Counts | Idiom::Folds(_) => None,
-            Idiom::Determinant => determinant(left, right),
-            Idiom::Permanent => permanent(left, right),
+            Idiom::Counts | Idiom::Folds(_) => return None,
+            Idiom::Determinant => determinant(right),
+            Idiom::Permanent => permanent(right),
         };
-        if result.is_some() { self.taken(f); } else if !matches!(self, Idiom::Counts | Idiom::Folds(_)) { self.declined(right.len()); }
+        if result.is_some() { self.taken(f); } else { self.declined(right.len()); }
         result
     }
 }
 
 /// The items of `right`'s order that `pick` names, through rustymath's partial selection.
-fn selected(grade: bool, down: bool, pick: Pick, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Bound, Error>> {
-    if left.is_some() || right.shape().len() != 1 || right.keys(0).is_some() || crate::transform::carried(None, right) { return None; }
+fn selected(grade: bool, down: bool, pick: Pick, right: &Value, span: &Span) -> Option<Result<Bound, Error>> {
+    if right.shape().len() != 1 || right.keys(0).is_some() || crate::transform::carried(None, right) { return None; }
     let n = right.len();
     let (range, item) = match pick {
         Pick::Take(k) if k.unsigned_abs() <= n as u64 => {
@@ -130,9 +123,9 @@ fn selected(grade: bool, down: bool, pick: Pick, left: Option<&Value>, right: &V
 }
 
 /// Each major cell's rank in the order that `⍋` or, where `down`, `⍒` gives: the inverse of the grade's permutation.
-fn ranks(down: bool, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Bound, Error>> {
+fn ranks(down: bool, right: &Value, span: &Span) -> Option<Result<Bound, Error>> {
     use {crate::array::Items, rustymath::buffer::View};
-    if left.is_some() || right.shape().is_empty() || right.keys(0).is_some() || crate::transform::carried(None, right) { return None; }
+    if right.shape().is_empty() || right.keys(0).is_some() || crate::transform::carried(None, right) { return None; }
     let grade = match Primitive::Grade(down).call(None, right, span) { Ok(g) => g, Err(e) => return Some(Err(e)) };
     let Items::Compact(View::Integers(ints)) = grade.as_items() else { return Some(Primitive::Grade(false).call(None, &grade, span).map(Bound::from)) };
     let n = grade.len();
@@ -141,17 +134,16 @@ fn ranks(down: bool, left: Option<&Value>, right: &Value, span: &Span) -> Option
 }
 
 /// Monadic `-.×`. A square matrix takes `primitive::determinant`. A running level takes a call on its carried values before the idiom (`transform::call`).
-fn determinant(left: Option<&Value>, right: &Value) -> Option<Result<Bound, Error>> {
-    if left.is_some() { return None; }
+fn determinant(right: &Value) -> Option<Result<Bound, Error>> {
     let [m, n] = matrix(right)?;
     if m != n || n == 0 { return None; }
     crate::primitive::determinant(right, n).transpose().map(|d| d.map(Bound::from))
 }
 
 /// Monadic `+.×` of a square matrix of fewer than 64 rows of numbers, by rustymath's `permanent_with` at the matrix's own field, which `primitive::determinant` also reads.
-fn permanent(left: Option<&Value>, right: &Value) -> Option<Result<Bound, Error>> {
+fn permanent(right: &Value) -> Option<Result<Bound, Error>> {
     use crate::number::{read, with_field, Domain, Field};
-    if left.is_some() || crate::transform::carried(None, right) { return None; }
+    if crate::transform::carried(None, right) { return None; }
     let [m, n] = matrix(right)?;
     if m != n || n >= 64 { return None; }
     let (domain, width) = Domain::of_arrays(&[right])?;

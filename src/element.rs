@@ -16,6 +16,8 @@ pub(crate) trait Stored: Element {
     fn build_narrowed(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Self::build(shape, data) }
     /// This whole number as an integer of type `T`, when `T` holds it. Only the numbers that kernels give as integers have one.
     fn whole<T: Whole>(self) -> Option<T> { None }
+    /// This number as an integer of type `T`, as Rust's `as` converts it (`rustymath::convert::saturated`), which static kinds use for kernels' results. Only floats have one.
+    fn saturated<T: Whole>(self) -> Option<T> { None }
     /// `items` read as this element type, which only the complex element types can do.
     fn from_complexes(_items: Complexes<'_>) -> Option<Vec<Self>> { None }
     /// The real number `x` as this element type, which only the float and complex types have. A survey of the kernel tables gives them their constant arguments this way.
@@ -68,6 +70,8 @@ macro_rules! float {
         impl Stored for $t {
             #[inline]
             fn whole<T: Whole>(self) -> Option<T> { rustymath::convert::int(self) }
+            #[inline]
+            fn saturated<T: Whole>(self) -> Option<T> { Some(rustymath::convert::saturated(self)) }
             fn real(x: f64) -> Option<Self> { Some(x as $t) }
         }
         impl Float for $t {
@@ -81,6 +85,8 @@ float!(f32: F32, I32, f64: F64, I64);
 impl Stored for half::f16 {
     #[inline]
     fn whole<T: Whole>(self) -> Option<T> { rustymath::convert::int(self) }
+    #[inline]
+    fn saturated<T: Whole>(self) -> Option<T> { Some(rustymath::convert::saturated(self)) }
 }
 /// `half` computes each operation on 16-bit floats in f32 and rounds the result. Its conversions take one value at a time, through inline assembly that LLVM can't vectorize. Loops that convert 16-bit floats, such as the copies that `pervasive::halves` makes, therefore run one item at a time on the CPU. Eight-lane `fcvtl` and `fcvtn` assembly would vectorize them, as Rust's own `f16` would once it's stable. 16-bit floats needn't be fast on the CPU.
 impl Float for half::f16 {

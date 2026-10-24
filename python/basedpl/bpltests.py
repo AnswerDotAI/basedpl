@@ -231,7 +231,8 @@ def check_page(
     line = text.count('\n') - 1
     return _failures('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, bpl)
 
-_SPEED = Path(__file__).parents[2]/'tests'/'speed.txt'
+_ROOT = Path(__file__).parents[2]
+_SPEED = _ROOT/'tests'/'speed.txt'
 # The budgets on each case line of a budget file, after its code, in order: macOS on Apple silicon, Linux on CI's x86 runner, then the browser build where the file has one.
 _BUDGETS = ('macos', 'linux', 'wasm')
 
@@ -309,8 +310,8 @@ def _retired(code, bpl):
         return int(_RETIRED[sys.platform].search(report.read())[1])
 
 def _program(code, n, setup):
-    "BPL that runs `code` once with `N` set to `n`, on one thread, after `setup`, and ends without displaying its result."
-    return f'•prefs ["threads":1]\nN←{n}\n{setup}\nr←{code}\n0'
+    "BPL that runs `setup`, then `code` once with `N` set to `n`, on one thread, and ends without displaying its result. `setup` comes first so that a `•prefs` call at its start still applies before the program is parsed, which fixes each literal's float width."
+    return f'•prefs ["threads":1]\n{setup}\nN←{n}\nr←{code}\n0'
 
 # The instructions that a case retires before the lowest value of `N` that `instructions` picks, and between successive values. A case that allocates an array at each step retires a few tens of millions more instructions over its first steps, while the allocator settles. `{↑[⍵ 1]}⍣N⊢0` counts the same from 3×10⁴ steps on, about 2×10⁸ instructions, and `{fib 10}⍣N⊢0` from 30 steps on. Each process pays a different warm-up, up to about 5×10⁶ instructions, which moves a slope over 5×10⁸ instructions by under 1%. Some cases also pay a one-off cost once `N` passes a size: `≢•ucs N⍴"ab" "cde"` retires about 5×10⁶ more instructions from about 131,350 items on.
 _SETTLE, _SPAN = 5e8, 5e8
@@ -424,6 +425,48 @@ def profile_diff(
     fs = sorted(before.keys() | after.keys(), key=lambda f: -abs(after.get(f, 0) - before.get(f, 0)))
     return ProfileDiff([(f, before.get(f, 0), after.get(f, 0)) for f in fs[:rows]], (tb, ta))
 
+# basedpl's library and the rustymath library it links, built as CI's Linux runner compiles them. Apple's `clang` assembles the x86-64 source in basedpl's `psm` dependency, because this Mac has no `x86_64-linux-gnu-gcc`. Incremental compilation is off, as on CI, so that code splits into the same codegen units.
+_X86_BUILD = 'cargo build --lib --release --target x86_64-unknown-linux-gnu --target-dir /tmp/aai-ws-x86 -p basedpl --message-format=json-render-diagnostics'.split()
+_X86_ENV = dict(CARGO_INCREMENTAL='0', CC_x86_64_unknown_linux_gnu='clang')
+# A line of `nm`'s listing: an address, or spaces for an undefined symbol, then the symbol's type letter and its name.
+_NM_LINE = re.compile(r'^(?:[0-9a-f]+| +) (\S) (.+)$')
+# A mangled Rust name in `objdump`'s output, in the v0 scheme or the legacy one, with Mach-O's extra leading underscore where it has one.
+_MANGLED = re.compile(r'(?<![\w$.])_?(?:_R|_ZN)[\w$.]+')
+
+def _x86_libraries():
+    "The libraries that `_X86_BUILD` makes, after running it with the timing lock held shared, and a note that's empty unless basedpl failed to compile. Cargo builds rustymath first, so a failed build still gives rustymath's library."
+    with timing_lock():
+        p = subprocess.run(_X86_BUILD, cwd=_ROOT, capture_output=True, text=True, env=os.environ | _X86_ENV)
+    built = map(json.loads, p.stdout.splitlines())
+    files = [f for m in built if m['reason'] == 'compiler-artifact' and m['target']['name'] in ('basedpl', 'rustymath') for f in m['filenames'] if f.endswith('.rlib')]
+    if p.returncode and not files: raise ValueError(p.stderr)
+    return files, "basedpl doesn't compile, so only rustymath's library was read.\n" if p.returncode else ''
+
+def _symbols(files):
+    "Each symbol in `files`, as its `nm` type letter, its mangled name and its demangled name."
+    def listing(*flags): return [_NM_LINE.match(line) for line in subprocess.run(['nm', '-p', *flags, *files], capture_output=True, text=True).stdout.splitlines()]
+    return [(m[1], m[2], d[2]) for m, d in zip(listing(), listing('-C')) if m and d]
+
+def disasm(
+    pattern, # A regex that the function's demangled name matches, such as `reduce::sliding::<f64, rustymath::reduce::Max>`
+    x86=False, # Read the x86-64 code that CI and Linux run, in place of this Mac's
+    bpl:Path=None # A native `bpl` to read, such as a copy saved before a change; None: the installed one. With `x86`, unused
+):
+    "The machine code of the function whose demangled name matches `pattern`, as `objdump` shows it, with names demangled. Where functions of more than one name match, it gives their names. With `x86`, it first builds basedpl's library and the rustymath library it links for Linux x86-64, as CI's runner compiles them, holding the timing lock shared. Where basedpl doesn't compile, it reads rustymath's library alone and says so first. After a change, that build takes minutes."
+    files, note = _x86_libraries() if x86 else ([Path(bpl or INSTALLED_BPL).expanduser()], '')
+    symbols = _symbols(files)
+    if not symbols: raise ValueError(f'nm read no symbols from {files}')
+    matched = sorted({d for t, _, d in symbols if t in 'tT' and re.search(pattern, d)})
+    if not matched: raise ValueError(f'{note}no function matches {pattern!r}. An inlined function has no code of its own. Search for its caller.')
+    if len(matched) > 1: return Report(f'{note}{len(matched)} functions match {pattern!r}:\n' + '\n'.join(matched[:40]))
+    wanted = list(dict.fromkeys(m for t, m, d in symbols if t in 'tT' and d == matched[0]))
+    p = subprocess.run(['objdump', '-d', '-r', '--no-show-raw-insn', f'--disassemble-symbols={",".join(wanted)}', *files], capture_output=True, text=True)
+    if not (code := re.findall(r'^[0-9a-f]+ <.+>:\n(?:.+\n)*', p.stdout, re.M)): raise ValueError(p.stderr)
+    # A branch within the function shows only its target's offset.
+    code = re.sub(rf'<(?:{"|".join(map(re.escape, wanted))})\+', '<+', '\n'.join(code))
+    names = {m: d for _, m, d in symbols}
+    return Report(note + _MANGLED.sub(lambda m: names.get(m[0], m[0]), code))
+
 _CALLS = _SPEED.with_name('instructions.txt')
 
 # How far a case's instructions may be from its count, as a share of the count, before `instruction_budgets` marks it.
@@ -474,6 +517,7 @@ def speed_costs(
     native=False, # Time rustymath's own linear algebra in place of Accelerate in a native timing, as `Worker`'s `native` does
     bpl:Path=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
     speed:str=None, # Text in `speed.txt`'s format; None: `tests/speed.txt`
+    prefs='', # BPL that runs before each section's header, such as `•prefs ["kinds":"static"]`
     timeout:float=None, # Seconds before the timing stops
     cases:Annotated[str, {'nargs':'*', 'opt':False}]=None # A case's code, or a list of codes, to time in every section that has it; None or empty: every case
 ):
@@ -481,12 +525,12 @@ def speed_costs(
     speed = _SPEED.read_text() if speed is None else speed
     cases = [cases] if isinstance(cases, str) else cases or None
     if wasm is None:
-        with Worker(bpl, native) as w: r = w.request(dict(costs=dict(speed=speed, cases=cases)), timeout)
+        with Worker(bpl, native) as w: r = w.request(dict(costs=dict(speed=speed, cases=cases, prefs=prefs)), timeout)
         if e := r['error']: raise ValueError(e['message'])
         rows = r['costs']
     else:
         script = (f'import {{ costs }} from {json.dumps(_PKG.as_uri())}; import {{ readFileSync }} from "node:fs"; '
-                  f'process.stdout.write(JSON.stringify(costs(readFileSync(0, "utf8"), {json.dumps(cases)})))')
+                  f'process.stdout.write(JSON.stringify(costs(readFileSync(0, "utf8"), {json.dumps(cases)}, {json.dumps(prefs)})))')
         with timing_lock(exclusive=True):
             p = subprocess.run(['node', '--no-liftoff', '--input-type=module', '-e', script], input=speed, capture_output=True, text=True,
                                timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(wasm)))
@@ -519,16 +563,21 @@ def logged_costs(
 
 CHANGE = 0.2
 class CostChanges(list):
-    "The cases that `compare_costs` reports, as `(section, code, before, after, budget, change)` rows. `before` and `after` are costs. `change` is the fractional change in the case's time for each item where both runs give one, and in its cost otherwise, so it holds across a change to `rustymath::timing::COPIES`. Cases over their budget in `after` come first, then cases whose change is more than `CHANGE`, largest first. `before` and `change` are `None` for a case that the earlier run didn't time, and `budget` is `None` for a case with no budget."
-    def __repr__(self): return '\n'.join(f'{_or_dash(b, ".2f"):>9} {a:>9.2f} {_or_dash(d, "+.0%"):>6} {_or_dash(budget, "g"):>9} {"over" if _over(a, budget) else "":4}  {s} {c}' for s, c, b, a, budget, d in self)
+    "The cases that `compare_costs` reports, as `(section, code, before, after, budget, change)` rows. `before` and `after` are costs, or `None` for a case that `time_cases` found too quick to time. `change` is the fractional change in the case's time for each item where both runs give one, and in its cost otherwise, so it holds across a change to `rustymath::timing::COPIES`. Cases over their budget in `after` come first, then cases whose change is more than `CHANGE`, largest first. `before` and `change` are `None` for a case that the earlier run didn't time, and `budget` is `None` for a case with no budget."
+    def __repr__(self): return '\n'.join(f'{_or_dash(b, ".2f"):>9} {_or_dash(a, ".2f"):>9} {_or_dash(d, "+.0%"):>6} {_or_dash(budget, "g"):>9} {"over" if _over(a, budget) else "":4}  {s + " " if s else ""}{c}' for s, c, b, a, budget, d in self)
+
+def _comparable(x, platform):
+    "`x`, in any of `compare_costs`'s forms, as `SpeedCosts`. `time_cases`'s rows have no section or budget."
+    if isinstance(x, Costs): return SpeedCosts((None, code, copies, None, ps/1e3) for code, ps, copies in x)
+    return x if isinstance(x, SpeedCosts) else logged_costs(x, platform)
 
 def compare_costs(
-    before:Annotated[SpeedCosts|str|Path, {'type':Path}], # The earlier run: rows that `speed_costs`, `logged_costs`, `cargo_costs` or `pytest_costs` give, or a log that `logged_costs` reads, as its text or its path
-    after:Annotated[SpeedCosts|str|Path, {'type':Path}], # The later run, in any of `before`'s forms
+    before:Annotated[SpeedCosts|Costs|str|Path, {'type':Path}], # The earlier run: rows that `speed_costs`, `logged_costs`, `cargo_costs`, `pytest_costs` or `time_cases` give, or a log that `logged_costs` reads, as its text or its path
+    after:Annotated[SpeedCosts|Costs|str|Path, {'type':Path}], # The later run, in any of `before`'s forms
     platform='linux' # The platform whose native budgets a log's costs were checked against, as `logged_costs` takes it
 ):
     "Each case over its budget in `after`, and each case whose time for each item moved by more than `CHANGE` from `before` in either direction, or whose cost did where either run doesn't give the time."
-    before, after = (x if isinstance(x, SpeedCosts) else logged_costs(x, platform) for x in (before, after))
+    before, after = (_comparable(x, platform) for x in (before, after))
     old = {(s, c): (cost, ns) for s, c, cost, _, ns in before}
     rows = []
     for s, c, cost, budget, ns in after:
@@ -565,7 +614,7 @@ def pytest_costs(
     return _run_costs([sys.executable, '-m', 'pytest', '-q', 'tests/test_speed.py'], path, timeout, native, env)
 
 class Report(str):
-    "What a test runner printed, displayed as its text."
+    "Text displayed as it is, such as a test runner's report or a function's machine code."
     def __repr__(self): return str(self)
 
 def wasm_test(
@@ -576,7 +625,7 @@ def wasm_test(
     "Run `tests/wasm.mjs` or `tests/wasm-speed.mjs` under `node --test` against the browser build in `wasm`, as CI runs them, and give the runner's report. Only the `node` process gets `BASEDPL_WASM` and `BASEDPL_COSTS`. It holds the machine's timing lock, exclusively for the speed test and shared for the others. A failing test raises `ValueError` with the report, starting on a line of its own so that `logged_costs` reads every row of it."
     test = _SPEED.with_name('wasm-speed.mjs' if speed else 'wasm.mjs')
     with timing_lock(exclusive=speed):
-        p = subprocess.run(['node', *(['--no-liftoff'] if speed else []), '--test', str(test)], cwd=_SPEED.parents[1], capture_output=True,
+        p = subprocess.run(['node', *(['--no-liftoff'] if speed else []), '--test', str(test)], cwd=_ROOT, capture_output=True,
                            text=True, timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(Path(wasm).expanduser())) | (dict(BASEDPL_COSTS='1') if speed else {}))
     report = Report(p.stdout + p.stderr)
     if p.returncode: raise ValueError(f'\n{report}')
@@ -623,7 +672,7 @@ def set_budgets(
     path.write_text('\n'.join(lines))
     return changes
 
-_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff speed_costs thread_scaling cargo_costs pytest_costs compare_costs wasm_test'.split()
+_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff disasm speed_costs thread_scaling cargo_costs pytest_costs compare_costs wasm_test'.split()
 
 def main():
     "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."

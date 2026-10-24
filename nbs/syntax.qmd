@@ -37,7 +37,7 @@ Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`, `$f`
 
 `''` and `""` are the same empty character vector. A double-quoted string can span lines. Every line ending inside it reads as one newline, and its indentation stays as written.
 
-`ₓ` straight after a number, `⍬`, or a `]` or `)` that closes literals makes every number it covers exact, as in `5ₓ`, `[1 2]ₓ` and `(0 1⋄2 3)ₓ`. After anything else, as in `nₓ`, `ₓ` is [`⌊`](glyphs/downstile.qmd).
+`ₓ` straight after a number, `⍬`, or a `]` or `)` that closes literals makes every number it covers exact, as in `5ₓ`, `[1 2]ₓ` and `(0 1⋄2 3)ₓ`. After anything else, `ₓ` floors to exact integers: `nₓ` is `⌊ₓn`, and `÷ₓ` divides and floors, as [Superscripts and subscripts](scripts.ipynb) describes.
 
 After a number, `e`, `j` or `r`, or its subscript `ₑ`, `ⱼ` or `ᵣ`, continues the number only when the rest of a number follows it, as in `1e5`, `2ⱼ3` and `1r3`. Otherwise a plain letter starts a name: `2edges` is `2` beside the name `edges`. A subscript there, or between any two items, joins the items on each side into one term, as [Numbers](numbers.qmd#writing-numbers) describes: `2ₑn` is `2×10*n`.
 

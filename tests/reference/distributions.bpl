@@ -244,12 +244,12 @@ g←•rand 3
 e←•explain "{⍵+(g.roll 10)+d.sample 1}¨⍳5"
 [a≡e.value;0=≢e.fallbacks.reason]   ⍝ $t $t
 
-⍝ distribution:batched-nested — A draw in a map inside a batched operand draws for every cell of the batched map
+⍝ distribution:batched-nested — A draw in a map inside a batched operand draws for every cell of both maps, taking the stream's numbers in some order
 •prefs ["seed":7 "batch":$t]
 e←•explain "{{¿10}¨⍳3}¨⍳4"
 •prefs ["seed":7]
 x←¿3 4⍴10
-[(⍉x)≡⊃e.value;0=≢e.fallbacks.reason]
+[(<,x)≡<,⊃e.value;0=≢e.fallbacks.reason]
 ⍝ =>
 $t $t
 

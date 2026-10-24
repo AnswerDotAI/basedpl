@@ -176,6 +176,7 @@ The map calls its operand once for each cell instead where the operand:
 - writes output, reads input, or formats a cell's value with `⍕`
 - calls a system function that acts: one that reads or writes files, the network, the clock or the terminal, or that makes something new on each call, such as `•nget`, `•time` or `•uuid`
 - writes to a name outside the map
+- appends to a value that differs from cell to cell, or writes into one so that it would be held in mixed storage
 - has a guard that catches an error
 - gives a result that holds arrays as items
 - calls a primitive that can't run on all the cells at once

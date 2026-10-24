@@ -6,7 +6,7 @@
 //! - Other Booleans, integers and floats read as floats of the search's float width, as an operand converts, and take `tolerant`'s searches. Only 64-bit floats compare within a tolerance. Floats that all equal whole numbers below `tolerant::whole_limit` search those whole numbers.
 //!
 //! Other cells build an index when a search is large enough, and always for a classification:
-//! - Exact data is hashed. Numbers must be exact, and arrays must have no keys and no functions. A hash bucket is only a candidate list, so `Value::matches` confirms each candidate.
+//! - Exact data is hashed. Numbers must be exact, and arrays must have no keys and no functions. Where every cell is an integer or character atom, or an array of compact Booleans, integers or characters under a plain layout, equal keys are matching cells (`Exact`). Otherwise a hash bucket is only a candidate list, and `Value::matches` confirms each candidate.
 //! - Real atoms take `tolerant`'s searches at 64 bits.
 //! - Cells that are arrays file under their first number, and `Value::matches` confirms each candidate. Classification sorts them by their first number, and compares each with the earlier representatives in its run.
 //!
@@ -30,7 +30,8 @@ impl<'a> Cells<'a> {
         Ok(if rank == 0 { Self::Items(array) } else { Self::Arrays(array.cells(rank)?.collect()?) })
     }
     pub(crate) fn len(&self) -> usize { match self { Self::Items(a) => a.len(), Self::Arrays(cells) => cells.len() } }
-    pub(crate) fn get(&self, i: usize) -> Value { match self { Self::Items(a) => a.at(i), Self::Arrays(cells) => cells[i].clone() } }
+    /// Cell `i`, borrowed where the cells hold it as a value, as cells of mixed storage and cells of higher rank do.
+    pub(crate) fn get(&self, i: usize) -> Cow<'_, Value> { match self { Self::Items(a) => a.at_ref(i), Self::Arrays(cells) => Cow::Borrowed(&cells[i]) } }
     pub(crate) fn items(&self) -> Option<Items<'a>> { match self { Self::Items(a) => Some(a.as_items()), Self::Arrays(_) => None } }
     /// The widest float width among the cells' numbers, when they hold floats: a cell's float storage, or the floats that mixed storage holds.
     fn float_width(&self) -> Option<FloatWidth> {
@@ -50,6 +51,9 @@ fn compared_at(width: Option<FloatWidth>) -> (FloatWidth, Tolerance) {
     (width, crate::number::Numeric::current().tolerance_at(width))
 }
 
+/// The items of `cells` when they're one array's compact items, with the tolerance they compare at. Reading the width of compact items costs nothing, where cells of mixed storage take a pass over every cell.
+fn compact_at<'a>(cells: &Cells<'a>) -> Option<(View<'a>, Tolerance)> { compact_view(cells).map(|x| (x, compared_at(cells.float_width()).1)) }
+
 /// For each needle, the position of the first haystack cell that matches it, or the number of haystack cells when none does.
 pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &crate::Span) -> Result<Vec<u32>, Error> {
     let (width, t) = compared_at(haystack.float_width().max(needles.float_width()));
@@ -61,6 +65,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &crate::Spa
     if let Some(found) = compact { return found.map_err(Error::from); }
     if needles.len() > 1 && haystack.len() >= 8 && haystack.len().saturating_mul(needles.len()) >= 256 {
         let seed = Hashing::default();
+        if let (Some(x), Some(y)) = (exact_cells(haystack), exact_cells(needles)) { return Ok(search::first_matches(&x, &y)); }
         if let Some(x) = hashes(haystack, &seed) { if let Some(y) = hashes(needles, &seed) { return hashed_first(haystack, &x, needles, &y, span); } }
         if let (Some(x), Some(y)) = (reals(haystack, width), reals(needles, width)) { return tolerant::index_of(t, &*x, &*y).map_err(Error::from); }
         if let (Some(x), Some(y)) = (leading_reals(haystack, width), leading_reals(needles, width)) {
@@ -88,6 +93,7 @@ pub(crate) fn classify(cells: &Cells, span: &Span) -> Result<Vec<u32>, Error> {
         Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::classes(t, &x)), Cells::Arrays(_) => None,
     });
     if let Some(classes) = compact { return classes.map_err(Error::from); }
+    if let Some(x) = exact_cells(cells) { return Ok(search::first_classes(&x, |k| k)); }
     if let Some(x) = hashes(cells, &Hashing::default()) { return hashed_classes(cells, &x, span); }
     if let Some(x) = reals(cells, width) { return tolerant::classes(t, &*x).map_err(Error::from); }
     let mut classes = vec![0; cells.len()];
@@ -99,16 +105,14 @@ pub(crate) fn classify(cells: &Cells, span: &Span) -> Result<Vec<u32>, Error> {
 
 /// The number of cells in each class, in order of first appearance, as the groups of `grouped` hold them, with no group built.
 pub(crate) fn class_counts(cells: &Cells, span: &Span) -> Result<Vec<usize>, Error> {
-    let (_, t) = compared_at(cells.float_width());
-    if let Some(counts) = compact_view(cells).and_then(|x| search::view_class_counts(x, t)) { return counts.map_err(Error::from); }
+    if let Some(counts) = compact_at(cells).and_then(|(x, t)| search::view_class_counts(x, t)) { return counts.map_err(Error::from); }
     Ok(search::numbered(&classify(cells, span)?).counts())
 }
 
 /// The classes of `cells`, numbered in order of first appearance, with the positions of each. Booleans, characters and integers whose values span a table group straight from those values. Other cells group by the representatives that `classify` gives them.
 pub(crate) fn grouped(cells: &Cells, span: &Span) -> Result<search::Grouped, Error> {
     groupable(cells.len())?;
-    let (_, t) = compared_at(cells.float_width());
-    if let Some(grouped) = compact_view(cells).and_then(|x| search::view_grouped(x, t)) { return grouped.map_err(Error::from); }
+    if let Some(grouped) = compact_at(cells).and_then(|(x, t)| search::view_grouped(x, t)) { return grouped.map_err(Error::from); }
     let search::Numbered { firsts, numbers, .. } = numbered(cells, span)?;
     Ok(search::Grouped::new(firsts, &numbers))
 }
@@ -116,8 +120,7 @@ pub(crate) fn grouped(cells: &Cells, span: &Span) -> Result<search::Grouped, Err
 /// The classes of `cells` as `grouped` numbers them, with each cell's class number in place of each class's positions, which a fold of each class reads in one pass.
 pub(crate) fn numbered(cells: &Cells, span: &Span) -> Result<search::Numbered, Error> {
     groupable(cells.len())?;
-    let (_, t) = compared_at(cells.float_width());
-    if let Some(numbered) = compact_view(cells).and_then(|x| search::view_numbered(x, t)) { return numbered.map_err(Error::from); }
+    if let Some(numbered) = compact_at(cells).and_then(|(x, t)| search::view_numbered(x, t)) { return numbered.map_err(Error::from); }
     Ok(search::numbered(&classify(cells, span)?))
 }
 
@@ -168,17 +171,23 @@ pub(crate) fn firsts(cells: &Cells, span: &Span) -> Result<Vec<bool>, Error> {
     Ok(classify(cells, span)?.into_iter().enumerate().map(|(i, f)| f as usize == i).collect())
 }
 
-/// A hash of each cell by `seed`, when every cell holds only exact numbers, characters and unkeyed arrays of these. A search hashes both its arguments with the same seed.
+/// A hash of each cell by `seed`, when every cell holds only exact numbers, characters and unkeyed arrays of these. A search hashes both its arguments with the same seed. An array's compact items feed the hasher as the same items held as values would, so storage never changes a hash.
 fn hashes(cells: &Cells, seed: &Hashing) -> Option<Vec<u64>> {
     fn feed(value: &Value, state: &mut impl Hasher) -> Option<()> {
         match value {
             Value::Number(n) => match n.as_integer() { Some(i) => (0u8, i).hash(state), None => (1u8, n.exact_ref()?).hash(state) },
-            Value::Character(c) => (2u8, c).hash(state),
+            Value::Character(c) => state.write_u32((*c).into()),
             Value::Function(_) | Value::Operator(_) | Value::Carried(_) => return None,
             Value::Array(_) => {
-                if value.has_keys() { return None; }
+                if value.has_keys() || value.carrier().is_some() { return None; }
                 (3u8, value.shape()).hash(state);
-                for item in value.elements() { feed(&item, state)?; }
+                match value.as_items() {
+                    Items::Values(items) => for item in items { feed(item, state)?; },
+                    Items::Compact(View::Booleans(x)) => for &b in x { (0u8, i64::from(b)).hash(state) },
+                    Items::Compact(View::Integers(x)) => rustymath::with_ints!(x, |x| for &i in x { (0u8, i64::from(i)).hash(state) }),
+                    Items::Compact(View::Characters(x)) => for &c in x { state.write_u32(c.into()) },
+                    Items::Compact(View::Floats(_) | View::Complexes(_)) => return None,
+                }
             }
         }
         Some(())
@@ -188,6 +197,56 @@ fn hashes(cells: &Cells, seed: &Hashing) -> Option<Vec<u64>> {
         feed(&cells.get(i), &mut state)?;
         Some(state.finish())
     }).collect()
+}
+
+/// A cell that matches another exactly when their shapes and items are equal: an integer or character atom, which has no shape, or an array with no keys, names or renderer whose items are compact Booleans, integers or characters. Equal keys are matching cells, so a search by these keys needs no confirmation by `Value::matches`. Its hash leaves out the shape, which equality compares, and reads a key's characters as one run of bytes.
+#[derive(Clone, Copy)]
+struct Exact<'a> { shape: Option<&'a [usize]>, items: View<'a> }
+
+impl<'a> Exact<'a> {
+    fn of(value: &'a Value) -> Option<Self> {
+        let shape = match value {
+            Value::Number(_) | Value::Character(_) => None,
+            Value::Array(_) if value.carrier().is_none() && value.layout().plain() => Some(value.shape()),
+            _ => return None,
+        };
+        match value.as_items() { Items::Compact(items @ (View::Booleans(_) | View::Integers(_) | View::Characters(_))) => Some(Self { shape, items }), _ => None }
+    }
+}
+
+impl PartialEq for Exact<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        // For keys as short as most strings, a `memcmp` call, which slice equality makes, costs more than comparing item by item.
+        fn equal<T: PartialEq>(x: &[T], y: &[T]) -> bool { x.len() == y.len() && x.iter().zip(y).all(|(a, b)| a == b) }
+        let shapes = match (self.shape, other.shape) { (Some(x), Some(y)) => equal(x, y), (x, y) => x.is_none() && y.is_none() };
+        shapes && match (self.items, other.items) {
+            (View::Characters(x), View::Characters(y)) => equal(x, y),
+            (x, y) => search::view_matches(x, y, Tolerance::EXACT) == Some(true),
+        }
+    }
+}
+
+impl Eq for Exact<'_> {}
+
+impl Hash for Exact<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self.items {
+            // SAFETY: a `char` is a valid `u32`, of the same size and alignment.
+            View::Characters(x) => unsafe { std::slice::from_raw_parts(x.as_ptr().cast::<u32>(), x.len()) }.hash(state),
+            View::Booleans(x) => for &b in x { state.write_i64(b.into()) },
+            View::Integers(x) => rustymath::with_ints!(x, |x| for &i in x { state.write_i64(i.into()) }),
+            View::Floats(_) | View::Complexes(_) => unreachable!("an exact key holds no floats"),
+        }
+    }
+}
+
+/// Each cell as an `Exact` key, when every cell is one.
+fn exact_cells<'a>(cells: &'a Cells) -> Option<Vec<Exact<'a>>> {
+    match cells {
+        Cells::Items(a) if a.carrier().is_none() => match a.as_items() { Items::Values(items) => items.iter().map(Exact::of).collect(), Items::Compact(_) => None },
+        Cells::Items(_) => None,
+        Cells::Arrays(cells) => cells.iter().map(Exact::of).collect(),
+    }
 }
 
 fn hashed_first(haystack: &Cells, x: &[u64], needles: &Cells, y: &[u64], span: &crate::Span) -> Result<Vec<u32>, Error> {

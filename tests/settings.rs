@@ -196,6 +196,7 @@ fn leading_prefs_set_how_their_code_reads() {
     let s = Session::new();
     s.eval(r#"•prefs ["kinds":"static" "int":32]"#);
     equiv_in(&s, r#"•prefs ["kinds":"dynamic" "int":64] ⋄ 2147483648ₓ"#, "2147483648ₓ");
+    equiv_in(&s, r#"a←3000000000ₓ ⋄ •prefs ["kinds":"static" "int":32] ⋄ aₓ≡a"#, "$t");
     equiv_in(&s, r#"⍎"•prefs [""float"":32] ⋄ (•storage 1.5).kind""#, r#""float32""#);
 }
 

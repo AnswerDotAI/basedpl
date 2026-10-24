@@ -309,20 +309,26 @@ impl PyArray {
     /// Whether NumPy can read the items through the buffer protocol: compact storage, or a structural copy that reads compact items through an affine map.
     #[getter]
     fn exports(&self) -> PyResult<bool> { Ok(lendable(self.value()?).is_some()) }
-    /// Exports the items read-only and without a copy, so that NumPy can't change a BPL value through them. An unbuilt structural copy with an affine read, such as windows or a reversal, lends its source's items with strides, without being built.
+    /// Exports the items read-only and without a copy, so that NumPy can't change a BPL value through them. An unbuilt structural copy with an affine read, such as windows or a reversal, lends its source's items with strides, without being built. Integers that static kinds store narrower than their kind export as a copy at the kind's width (`Value::widened_for_export`), so NumPy and rustymath compute at that width.
     unsafe fn __getbuffer__(slf: Bound<'_, Self>, view: *mut ffi::Py_buffer, flags: c_int) -> PyResult<()> {
         let value = slf.borrow().value()?.clone();
+        if let Some(items) = value.widened_for_export() {
+            let dtype = items.dtype();
+            // SAFETY: `items` holds every item of `value` in row-major order, and the export holds `items`.
+            return unsafe { rustymath_buffer::lend(view, flags, slf.py(), items, |b| b.view().as_ptr(), dtype, value.shape(), None) };
+        }
         let (items, offset, strides) = lendable(&value).ok_or_else(|| PyBufferError::new_err("an array of mixed or exact items has no buffer"))?;
         let dtype = items.view().expect("lendable items are compact").dtype();
         // SAFETY: the offset and strides reach only items of `items`, as the copy's map does. An atom holds its items inline, so the pointer comes from the copy that the export holds.
         unsafe { rustymath_buffer::lend(view, flags, slf.py(), items, |v| v.view().expect("the items are compact").as_ptr().add(offset * dtype.bytes()), dtype, value.shape(), strides.as_deref()) }
     }
-    /// The items for NumPy to view writably: moved with no copy where nothing else holds them, and copied otherwise. For items it can't move, such as exact numbers, it still empties the array and returns `None`, so the caller copies them first.
+    /// The items for NumPy to view writably: moved with no copy where nothing else holds them, and copied otherwise. Integers that static kinds store narrower than their kind come widened to it (`Value::widened_for_export`). For items it can't move, such as exact numbers, it still empties the array and returns `None`, so the caller copies them first.
     fn own(&mut self) -> PyResult<Option<Owned>> {
         self.value()?;
         let value = self.inner.take().expect("checked above");
         let shape = value.shape().to_vec();
-        Ok(value.into_buffer().ok().map(|items| Owned::new(items, &shape)))
+        let items = match value.widened_for_export() { Some(items) => Some(items), None => value.into_buffer().ok() };
+        Ok(items.map(|items| Owned::new(items, &shape)))
     }
     fn __repr__(&self) -> PyResult<String> { Ok(self.value()?.to_string()) }
     fn literal(&self) -> PyResult<String> { Ok(self.value()?.literal()) }

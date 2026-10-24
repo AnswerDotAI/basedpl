@@ -8,7 +8,7 @@ use crate::{
     agreement::{expand, Agree, Agreement}, array::{Gather, Layout, Promotion, Prototype, Widening}, error::Described, number::{Arithmetic, Math}, primitive::{Comparison, FoldKind, Form, Operation, Origin, Primitive}, transform::{walk, Carrier, Cause, Mark, Op, Pairing, Stop}, Error, ErrorKind,
     Function, Span, Value,
 };
-use rustymath::buffer::FloatWidth;
+use rustymath::buffer::{DType, FloatWidth};
 use crate::array::{Footprint, Seen};
 
 /// A value, atom or array, that `∂` is differentiating: the tag of the `∂` call, the primal, and the tangent, which agrees with the primal's layout. Either part can be pending. `items` holds an array's items as dual atoms, built on the first read by code with no rule for duals (`Dual::storage`).
@@ -114,7 +114,7 @@ fn complex(value: &Value) -> bool {
     if let Some(carrier) = value.carrier() { return complex(carrier.template()); }
     match value {
         Value::Number(n) => n.as_complex().is_some(),
-        Value::Array(_) => matches!(value.dtype(), Some(rustymath::buffer::DType::Complex(_))),
+        Value::Array(_) => matches!(value.dtype(), Some(DType::Complex(_))),
         _ => false,
     }
 }
@@ -611,6 +611,12 @@ fn pervasive(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, span: 
     if complex(&y) || x.as_ref().is_some_and(complex) || complex(&r) {
         return Err(Error::new(ErrorKind::Unsupported, format!("∂ can't differentiate {} on complex numbers", p.info().glyph)));
     }
+    // A float result's partials are floats of its width, computed from arguments converted to that width. Partials of exact arguments, such as `÷y` of an exact count, would otherwise be exact fractions, computed one item at a time.
+    let floats = |v: Value| match r.template_dtype() {
+        Some(DType::Float(w)) if v.template_dtype() != Some(DType::Float(w)) => to_float_width(&v, w, span),
+        _ => Ok(v),
+    };
+    let (x, y) = (x.map(floats).transpose()?, floats(y)?);
     let [dx, dy] = partials(p, x.as_ref(), &y, &r, [tx.is_some(), ty.is_some()], span)?;
     let mut t: Option<Value> = None;
     for (d, td) in [(dx, tx), (dy, ty)] {
@@ -824,9 +830,8 @@ fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &
         call(plus, &none, &one, span)?
     } else {
         let along = axis.unwrap_or(kind.default_axis(x.shape().len()));
-        // One pick on a batch's whole, with the frame's axes first, serves every cell. A batch's scan stops the run, and its map calls the operand once for each cell, because a scan's tangent gathers at each cell's own positions.
+        // One pick on a batch's whole, with the frame's axes first, serves every cell.
         let batch = x.carrier().and_then(Carrier::batch);
-        if let (Some(b), true) = (batch, kind.scan) { return Err(Stop::new(b.level, Cause::Rule).into()); }
         let all = batch.map_or(x, |b| b.whole());
         let lanes = Lanes::new(all.shape(), batch.map_or(0, |b| b.frame) + along)?;
         // Windows that slide along the fold's axis give their extremes' positions from their source, with no windows built.
@@ -854,7 +859,15 @@ fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &
             let mask = match batch { Some(b) => crate::batch::batch(b.level, mask, b.frame), None => mask };
             return Ok((r, fold(plus, &call(times, &mask, tx, span)?)?));
         }
-        let offsets = Value::integers(vec![offsets.len()], offsets).described("invalid positions")?.enclose().expect("positions enclose");
+        // A batch's scan picks within each cell, at positions of the cell's own.
+        let positions = match batch {
+            Some(b) => {
+                let size = (all.len() / b.cells()) as i64;
+                crate::batch::batch(b.level, all.layout().integers(offsets.iter().map(|&o| o % size).collect()).described("invalid positions")?, b.frame)
+            }
+            None => Value::integers(vec![offsets.len()], offsets).described("invalid positions")?,
+        };
+        let offsets = positions.enclose().expect("positions enclose");
         let picked = Primitive::Index.call(Some(&offsets), &Primitive::Ravel.call(None, tx, span)?, span)?;
         if r.is_atom() { picked.at(0) } else { picked.relaid(r.layout().clone()).expect("the gathered tangents fill the fold's result") }
     };
@@ -899,11 +912,13 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
         P::Arithmetic(Times) => [nx.then(|| y.clone()), ny.then(|| x.clone())],
         P::Arithmetic(Divide) => [lazy(nx, &|| recip(y))?, lazy(ny, &|| neg(&dyad(divide, r, y)?))?],
         P::Math(Power) => [
-            // 0 where x is 0 and y is less than 1, as Futhark gives: there x stands in as 1, and the mask clears the result.
+            // 0 where x is 0 and y is less than 1, as Futhark gives: there x stands in as 1, and the mask clears the result. A singleton y of at least 1, such as the 3 of `⍵*3`, needs no mask, so the partial stays a fusible call on floats.
             lazy(nx, &|| {
-                let keep = dyad(P::Math(Nand), &compare(Equal, x, &Value::integer(0))?, &compare(Less, y, &Value::integer(1))?)?;
-                let base = dyad(plus, x, &monad(P::Math(Not), &keep)?)?;
-                dyad(times, &keep, &dyad(times, y, &dyad(P::Math(Power), &base, &dyad(minus, y, &Value::integer(1))?)?)?)
+                let small = compare(Less, y, &Value::integer(1))?;
+                let power = |base: &Value| dyad(times, y, &dyad(P::Math(Power), base, &dyad(minus, y, &Value::integer(1))?)?);
+                if matches!(small.boolean(), Ok(false)) { return power(x); }
+                let keep = dyad(P::Math(Nand), &compare(Equal, x, &Value::integer(0))?, &small)?;
+                dyad(times, &keep, &power(&dyad(plus, x, &monad(P::Math(Not), &keep)?)?)?)
             })?,
             // 0 where x isn't positive: there x stands in as 1, whose logarithm is 0.
             lazy(ny, &|| dyad(times, r, &ln(&dyad(P::Math(Ceiling), x, &compare(LessEqual, x, &Value::integer(0))?)?)?))?,

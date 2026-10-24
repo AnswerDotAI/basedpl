@@ -269,7 +269,7 @@ pub(super) fn split_call<'p>(left: Cow<'p, Entity>, source: &Arc<Source>) -> Res
     })
 }
 
-/// What the operator `operator` gives on the operand `operand` (`Rule::Derive`): a derived function, a scalar that holds the function for `ᵘ`, or the call that a power, `ᵀ` or `ₓ` on an array stands for, of `*`, `⍉` or `⌊`.
+/// What the operator `operator` gives on the operand `operand` (`Rule::Derive`): a derived function, a scalar that holds the function for `ᵘ`, or the call that a power, `ᵀ` or a number marker on an array stands for: of `*`, `⍉`, `⌊ₓ` or `•float`.
 pub(super) enum Derived { Term(Binding), Call(Function, Option<Value>, Value) }
 
 /// `operand` given to `operator` at `span`, as `Derived` describes.
@@ -284,7 +284,11 @@ pub(super) fn derived(operand: Binding, operator: Binding, span: &Span) -> Resul
             (Superscript::Unit, _) => return Err(Error::domain("ᵘ makes a scalar that holds a function. Enclose a subject with ⊂").at(span)),
             (Superscript::Power(n), Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Math(crate::number::Math::Power)), Some(a), crate::Value::integer(n))),
             (Superscript::Transpose, Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Transpose), None, a)),
-            (Superscript::Floor, Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Math(crate::number::Math::Floor)), None, a)),
+            (Superscript::Mark(crate::number::Mark::Exact), Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Exact(crate::primitive::Exact::Floor)), None, a)),
+            (Superscript::Mark(crate::number::Mark::Width(w)), Operand::Value(a)) => {
+                let float = crate::primitive::Builtin::find("•float").expect("•float is a system function").function();
+                return Ok(Derived::Call(float, Some(crate::Value::integer(w.bits().into())), a));
+            }
             (_, operand) => return Ok(Derived::Term(operator.derive(operand, span)?)),
         }
     }

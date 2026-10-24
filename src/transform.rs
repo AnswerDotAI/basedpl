@@ -23,11 +23,11 @@ pub(crate) enum Kind {
     Label,
 }
 
-/// A batched run's frame, and the guard cases running inside the run, innermost last (`Levels::case`).
+/// A batched run's frame, and the cases running inside the run, innermost last (`Levels::case`).
 pub(crate) struct Batched { frame: crate::array::Layout, cases: Vec<Case> }
 
-/// A guard case that runs on some of a batched run's cells: the definition whose guard split the cells, the frame it runs in, and the frame boundary and frame that the case replaced, which its end restores.
-struct Case { definition: usize, at: usize, frames: usize, frame: crate::array::Layout }
+/// A case of a batched run: a guard case, which runs on some of the run's cells, or a widening, which runs a map inside the run on the run's cells and the map's together (`batch::tried`). It holds the definition whose guard split the cells, or `None` for a widening, the frame it runs in, and the frame boundary and frame that the case replaced, which its end restores.
+struct Case { definition: Option<usize>, at: usize, frames: usize, frame: crate::array::Layout }
 
 impl Kind {
     /// A batched run of a map on the cells that `frame` lays out, as `batch::tried` begins it.
@@ -41,7 +41,7 @@ impl Kind {
             Kind::Derivative | Kind::Record | Kind::Label => None,
         }
     }
-    /// Whether a batched run may begin while a level of this kind runs. A `∂` call and reverse mode's record allow one, because the run's level is newer than theirs, so the batch rules take each call first. A batched run doesn't, because a map inside it calls its operand once for each cell. A label level doesn't, because a batch can't hold labelled items, and Under and selective assignment read a map's cells one at a time under it.
+    /// Whether a batched run may begin while a level of this kind runs. A `∂` call and reverse mode's record allow one, because the run's level is newer than theirs, so the batch rules take each call first. A batched run doesn't: a map inside it widens it instead (`Levels::widens`). A label level doesn't, because a batch can't hold labelled items, and Under and selective assignment read a map's cells one at a time under it.
     fn admits_batch(&self) -> bool { match self { Kind::Derivative | Kind::Record => true, Kind::Batched(_) | Kind::Label => false } }
 }
 
@@ -57,7 +57,7 @@ pub(crate) enum Effect {
 }
 
 impl Effect {
-    /// The stop that batched run `level` gives before this effect, because the effect would happen once for all its cells (`Kind::stop`, and `written` for a write into a batch or of one).
+    /// The stop that batched run `level` gives before this effect, because the effect would happen once for all its cells (`Kind::stop`, and `written` for an append into a batch, or of one).
     fn stop(self, level: u64) -> Stop { Stop::new(level, match self { Effect::Acts => Cause::Effect, Effect::Catches => Cause::Caught, Effect::Writes => Cause::Write }) }
 }
 
@@ -74,19 +74,23 @@ impl Levels {
     pub(crate) fn end(&mut self) -> Level {
         self.stack.pop().expect("a running level")
     }
-    /// The id and frame of the batched run, if one is running. Only one can run, because a map inside a batched run calls its operand once for each cell.
+    /// The id and frame of the batched run, if one is running. Only one can run, because a map inside a batched run widens it instead of beginning another (`case`).
     pub(crate) fn batched(&self) -> Option<(u64, &crate::array::Layout)> { self.running().map(|(id, b)| (id, &b.frame)) }
     /// Whether a batched run may begin: every running level allows one (`Kind::admits_batch`).
     pub(crate) fn admits_batch(&self) -> bool { self.stack.iter().all(|l| l.kind.admits_batch()) }
-    /// Starts a case of a guard that `definition` runs in frame `frame`, on some cells of the batched run, which `cells` lays out. Until `end_case`, those cells are the run's frame, and a write to a binding in a frame before `frame` stops the run, because those frames outlive the case. Gives the run's id and the first frame of the run, or the stop of a recursive call, where a guard of `definition` already splits the run's cells in another frame. A later guard in the same call splits a case's cells again.
-    pub(crate) fn case(&mut self, definition: usize, frame: usize, cells: crate::array::Layout) -> Result<(u64, usize), Stop> {
+    /// Whether a map's batched try widens the batched run instead of beginning one: the run is the innermost level, so no `∂` call or label level wraps the map's values.
+    pub(crate) fn widens(&self) -> bool { matches!(self.stack.last(), Some(Level { kind: Kind::Batched(_), .. })) }
+    /// The id and frame of the batched run while a map inside it has widened it (`case`), for code that reads a binding made before the widening (`Session::read_binding`).
+    pub(crate) fn widened(&self) -> Option<(u64, &crate::array::Layout)> { self.running().filter(|(_, b)| b.cases.iter().any(|c| c.definition.is_none())).map(|(id, b)| (id, &b.frame)) }
+    /// Starts a case of the batched run in frame `frame`, on the cells that `cells` lays out: a guard of `definition`, or a widening where `definition` is `None`. Until `end_case`, those cells are the run's frame, and a write to a binding in a frame before `frame` stops the run, because those frames outlive the case. Gives the run's id and the first frame of the run, or the stop of a recursive call, where a guard of `definition` already splits the run's cells in another frame. A later guard in the same call splits a case's cells again.
+    pub(crate) fn case(&mut self, definition: Option<usize>, frame: usize, cells: crate::array::Layout) -> Result<(u64, usize), Stop> {
         let (id, frames, batched) = self.running_mut();
-        if batched.cases.iter().any(|c| c.definition == definition && c.at != frame) { return Err(Stop::new(id, Cause::Recursion)); }
+        if definition.is_some() && batched.cases.iter().any(|c| c.definition == definition && c.at != frame) { return Err(Stop::new(id, Cause::Recursion)); }
         let first = batched.cases.first().map_or(*frames, |c| c.frames);
         batched.cases.push(Case { definition, at: frame, frames: std::mem::replace(frames, frame), frame: std::mem::replace(&mut batched.frame, cells) });
         Ok((id, first))
     }
-    /// Ends the innermost guard case (`case`), restoring the run's frame and the frames that its writes stay inside.
+    /// Ends the innermost case (`case`), restoring the run's frame and the frames that its writes stay inside.
     pub(crate) fn end_case(&mut self) {
         let (_, frames, batched) = self.running_mut();
         let case = batched.cases.pop().expect("a running case");
@@ -169,7 +173,7 @@ impl std::fmt::Display for Stop {
 /// Why a batched run stopped, which says how long a dfn operand remembers the stop (`kept`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Cause {
-    /// Output, input, `⍕` of a carried value, or a system function's act (`transform::acts`), which the operand does on every call (`Effect::Acts`). A random draw in a map inside the operand is one too.
+    /// Output, input, `⍕` of a carried value, or a system function's act (`transform::acts`), which the operand does on every call (`Effect::Acts`).
     Effect = 0,
     /// A write to a binding outside the map's frames (`Effect::Writes`).
     Write = 1,
@@ -467,12 +471,12 @@ impl Footprint for Carrier {
     }
 }
 
-/// Writes `source` into `target` with `write`, as `Value::scatter` and `Value::append` do, where either carries a running level's data, at the newer of their levels. A dual writes each part into the matching part (`derivative::written`), and a record writes through its ids (`linear::written`). A tangent's write is itself such a write, so a dual whose tangent is a record writes the record through its ids. A batched map stops its run, because a write into a batch, or of one, would happen once for all its cells. `None` where neither carries any data, which leaves the write to the caller. An error from `write` leaves `target` unchanged.
-pub(crate) fn written<E: From<Stop>>(target: &mut Value, source: &Value, write: impl Fn(&mut Value, &Value) -> Result<(), E>) -> Option<Result<(), E>> {
+/// Writes `source` into `target` with `write`, as `Value::scatter` and `Value::append` do, where either carries a running level's data, at the newer of their levels. A dual writes each part into the matching part (`derivative::written`), and a record writes through its ids (`linear::written`). A tangent's write is itself such a write, so a dual whose tangent is a record writes the record through its ids. A scatter into a batch, or of one, writes every cell at once at `writes`, positions in a cell that every cell shares (`batch::written`). An append, which has no `writes`, stops the batched run, because it would happen once for all its cells. `None` where neither carries any data, which leaves the write to the caller. An error from `write` leaves `target` unchanged.
+pub(crate) fn written<E: From<Stop>>(target: &mut Value, source: &Value, writes: Option<rustymath::gather::Writes<'_>>, write: impl Fn(&mut Value, &Value) -> Result<(), E>) -> Option<Result<(), E>> {
     Some(match newest(Some(source), target, false)? {
         Mark::Dual(tag) => crate::derivative::written(target, source, tag, write),
         Mark::Record(_) => crate::linear::written(target, source, write),
-        Mark::Batch(level) => Err(Effect::Writes.stop(level).into()),
+        Mark::Batch(level) => match writes { Some(writes) => crate::batch::written(target, source, level, writes).map_err(E::from), None => Err(Effect::Writes.stop(level).into()) },
         Mark::Label(level) => { *target = crate::selection::strip(target, level); write(target, &crate::selection::strip(source, level)) }
     })
 }

@@ -88,19 +88,19 @@ pub fn rows(cases: &[Case], column: usize) -> JsonValue {
 }
 
 /// One group of sections, which share the group's `[setup]` and one session, set up for one section at a time: each section's `•prefs` header, the section the session is set up for, and the setup's `n`.
-struct Group<'a> { session: Turn, setup: String, prefs: HashMap<&'a str, &'a str>, current: &'a str, n: usize }
+struct Group<'a> { session: Turn, setup: String, prefs: HashMap<&'a str, String>, current: &'a str, n: usize }
 
 impl<'a> Group<'a> {
     /// The group, with its session set up for section `first`.
-    fn new(setup: String, prefs: HashMap<&'a str, &'a str>, first: &'a str) -> Result<Self, String> {
-        let header = prefs[first];
+    fn new(setup: String, prefs: HashMap<&'a str, String>, first: &'a str) -> Result<Self, String> {
+        let header = &prefs[first];
         let session = session(header, &setup).map_err(|failed| failure(header, failed))?;
         let n = items(&session).ok_or("each setup must define n, its number of items")?;
         Ok(Self { session, setup, prefs, current: first, n })
     }
     /// The session, set up for section `name`, with the settings reset, on one thread, and the section's header applied, so that no other section's settings stay in force. Moving to another section sets the session up again: a fresh session runs that section's header and then the group's setup.
     fn session(&mut self, name: &'a str) -> Result<&Session, String> {
-        let header = *self.prefs.get(name).ok_or_else(|| format!("speed's {name} section is missing"))?;
+        let header = self.prefs.get(name).ok_or_else(|| format!("speed's {name} section is missing"))?;
         if self.current != name {
             self.session = session(header, &self.setup).map_err(|failed| failure(header, failed))?;
             self.current = name;
@@ -114,26 +114,26 @@ impl<'a> Group<'a> {
 /// A failed evaluation of `code`, as the speed checks report it.
 fn failure(code: &str, failed: Evaluation) -> String { format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default()) }
 
-/// Calls `visit` with the sessions of each case's group, the case's section and its line, for every case in `text`, in `speed.txt`'s format. The first section is `[setup]`. Each later `[setup]` starts a new group of sections. Each section's cases run in a session that has run the section's prefs and then the `[setup]` before it. A group has one session, set up for one section at a time: moving to another section sets it up again, in a fresh session. `only`, when given, lists the codes of the cases to visit. A group then sets up only the sections that hold those cases, plus `[exact]` for a `[widths]` case.
-fn each_case<'a>(text: &'a str, only: Option<&[&str]>, mut visit: impl FnMut(&mut Group<'a>, &'a str, &'a str) -> Result<(), String>) -> Result<(), String> {
+/// Calls `visit` with the sessions of each case's group, the case's section and its line, for every case in `text`, in `speed.txt`'s format. The first section is `[setup]`. Each later `[setup]` starts a new group of sections. Each section's cases run in a session that has run `start`, the section's prefs and then the `[setup]` before it. A group has one session, set up for one section at a time: moving to another section sets it up again, in a fresh session. `only`, when given, lists the codes of the cases to visit. A group then sets up only the sections that hold those cases, plus `[exact]` for a `[widths]` case.
+fn each_case<'a>(text: &'a str, only: Option<&[&str]>, start: &str, mut visit: impl FnMut(&mut Group<'a>, &'a str, &'a str) -> Result<(), String>) -> Result<(), String> {
     let wanted = |line: &str| only.is_none_or(|only| only.contains(&code_of(line)));
     for group in sections(text)?.chunk_by(|_, next| next.0 != "setup") {
         let [("setup", _, setup), cases @ ..] = group else { return Err("the first section must be [setup]".into()) };
         let mut used: Vec<&str> = cases.iter().filter(|(_, _, lines)| lines.iter().any(|l| wanted(l))).map(|s| s.0).collect();
         if used.contains(&"widths") { used.push("exact"); }
         if used.is_empty() { continue; }
-        let prefs = cases.iter().filter(|s| used.contains(&s.0)).map(|&(name, prefs, _)| (name, prefs)).collect();
+        let prefs = cases.iter().filter(|s| used.contains(&s.0)).map(|&(name, header, _)| (name, [start, header].join("\n").trim().to_owned())).collect();
         let mut group = Group::new(setup.join("\n"), prefs, used[0])?;
         for &(section, _, ref lines) in cases { for &line in lines.iter().filter(|l| wanted(l)) { visit(&mut group, section, line)?; } }
     }
     Ok(())
 }
 
-/// Every case in `text`, in `speed.txt`'s format, with its cost, in the sessions that `each_case` gives. A cost is in copies of the group's `n` items, as `rustymath::timing::copy_time` gives them, except in `[widths]`. There it is the case's time as a fraction of its time in `[exact]`. `only`, when given, lists the codes of the cases to time.
-pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
+/// Every case in `text`, in `speed.txt`'s format, with its cost, in the sessions that `each_case` gives. A cost is in copies of the group's `n` items, as `rustymath::timing::copy_time` gives them, except in `[widths]`. There it is the case's time as a fraction of its time in `[exact]`. `only`, when given, lists the codes of the cases to time. `prefs` runs before each section's header.
+pub fn costs<'a>(text: &'a str, only: Option<&[&str]>, prefs: &str, interrupt: &InterruptHandle) -> Result<Vec<Case<'a>>, String> {
     let _lock = timing_lock()?;
     let mut result = Vec::new();
-    each_case(text, only, |group, section, line| {
+    each_case(text, only, prefs, |group, section, line| {
         let mut fields = line.split('\t');
         let code = fields.next().unwrap_or_default();
         let n = group.n;
@@ -154,7 +154,7 @@ pub struct Route<'a> { pub section: &'a str, pub code: &'a str, pub slow: Vec<(&
 pub fn routes<'a>(text: &'a str, only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Route<'a>>, String> {
     let mut named = annotations(text);
     let mut result = Vec::new();
-    each_case(text, only, |group, section, line| {
+    each_case(text, only, "", |group, section, line| {
         let code = code_of(line);
         let session = group.session(section)?;
         let parsed = session.parse(Source::new("<input>", code)).complete().map_err(|e| failure(code, Evaluation::failed(e)))?;
@@ -182,7 +182,7 @@ pub fn measured(text: &str, all: bool, mut print: impl FnMut(&str)) -> Result<Ve
     let line = |c: &Case| c.line(NATIVE_COLUMN);
     let over = |c: &Case| budget(c).and_then(|b| b.parse::<f64>().ok()).is_some_and(|b| c.cost > b);
     let interrupt = InterruptHandle::default();
-    let mut first = costs(text, None, &interrupt)?;
+    let mut first = costs(text, None, "", &interrupt)?;
     if all {
         let mut copies: Vec<String> = Vec::new();
         for copy in first.iter().filter_map(Case::copy_line) { if !copies.contains(&copy) { print(&copy); copies.push(copy); } }
@@ -193,7 +193,7 @@ pub fn measured(text: &str, all: bool, mut print: impl FnMut(&str)) -> Result<Ve
     let over_budget = retried(first, |cases, pause| {
         for c in &cases { print(&format!("{}: over, timed again after {pause} s", line(c))); }
         let codes: Vec<&str> = cases.iter().map(|c| c.code).collect();
-        match costs(text, Some(&codes), &interrupt) {
+        match costs(text, Some(&codes), "", &interrupt) {
             Ok(mut retimed) => {
                 retimed.retain(|c| cases.iter().any(|f| (f.section, f.code) == (c.section, c.code)));
                 for c in &retimed { print(&line(c)); }
@@ -206,7 +206,7 @@ pub fn measured(text: &str, all: bool, mut print: impl FnMut(&str)) -> Result<Ve
     Ok(over_budget.iter().map(line).collect())
 }
 
-/// The reply to the worker's `timing` request, which gives `speed`, text in `speed.txt`'s format whose first section is `[setup]`, the `prefs` its session starts with, and the `cases` to time. The reply gives the setup's `n` and each case's time in seconds and in copies, or the evaluation that failed. Each case's copy is timed just before the case. An optional `threads` sets how many threads each case's rustymath calls split across, for a scaling check. Without it they run on the timing thread alone, as in the speed test.
+/// The reply to the worker's `timing` request, which gives `speed`, text in `speed.txt`'s format whose first section is `[setup]`, the `prefs` its session starts with, and the `cases` to time. The reply gives the setup's `n` and each case's time in seconds and in copies, or the evaluation that failed. An optional `threads` sets how many threads each case's rustymath calls split across, for a scaling check. Without it they run on the timing thread alone, as in the speed test.
 pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
     let _lock = timing_lock()?;
     let text = |key| spec[key].as_str().ok_or_else(|| format!("timing needs {key} as a string"));
@@ -227,11 +227,11 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
     Ok(json!({"n": n, "costs": costs, "output": [], "error": null}))
 }
 
-/// The reply to the worker's `costs` request, which gives `speed`, text in `speed.txt`'s format, and optionally `cases`, a list of the codes to time. The reply gives each case with its cost, as `costs` times them and `rows` encodes them, with this platform's native budget in each log line.
+/// The reply to the worker's `costs` request, which gives `speed`, text in `speed.txt`'s format, and optionally `cases`, a list of the codes to time, and `prefs`, BPL that runs before each section's header. The reply gives each case with its cost, as `costs` times them and `rows` encodes them, with this platform's native budget in each log line.
 pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
     let only: Option<Vec<&str>> = match spec.get("cases") {
         None | Some(JsonValue::Null) => None,
         Some(cases) => Some(cases.as_array().and_then(|c| c.iter().map(JsonValue::as_str).collect()).ok_or("costs needs cases as a list of strings")?),
     };
-    Ok(json!({"costs": rows(&costs(spec["speed"].as_str().ok_or("costs needs speed as a string")?, only.as_deref(), interrupt)?, NATIVE_COLUMN), "error": null}))
+    Ok(json!({"costs": rows(&costs(spec["speed"].as_str().ok_or("costs needs speed as a string")?, only.as_deref(), spec["prefs"].as_str().unwrap_or_default(), interrupt)?, NATIVE_COLUMN), "error": null}))
 }

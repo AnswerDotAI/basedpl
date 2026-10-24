@@ -408,34 +408,52 @@ fn deferred_copy(source: &Value, layout: &Layout, mapping: Mapping) -> Option<Va
     Some(Value::deferred(layout.clone(), Arc::new(pending)))
 }
 
-/// A pending copy of windows along its axis `k`: that axis and at least one other step along one axis of the copy's source by that axis's stride. `slide` and `picks` read the source in place of the copy.
+/// A pending copy of windows along its axis `k`: that axis steps by 1 along one axis of the copy's source, and at least one other axis steps along it too. `slide` and `picks` read the source in place of the copy.
 struct Windows {
     source: Value,
     /// The source axis that each axis of the copy steps along, or `None` for an axis of one item.
     along: Vec<Option<usize>>,
+    /// The positions that each axis of the copy moves by along its source axis, and 0 for an axis of one item.
+    moves: Vec<usize>,
+    /// The first position that the copy reads along each source axis.
+    first: Vec<usize>,
     /// The source axis that holds the windows.
     q: usize,
     /// The part of the source that the copy reads, as `[outer, len, inner]` rows along `q` from row `lo`.
     rows: [usize; 3],
     lo: usize,
+    /// The positions between the starts of the folds along `q`: 1 for windows that slide, or the windows' width for windows that tile `q`.
+    every: usize,
 }
 
-/// The windows that `value` holds along axis `k`. `None` for a value that isn't a pending copy, for any other map, and for a source whose other axes the copy doesn't read whole.
+/// The windows that `value` holds along axis `k`. `None` for a value that isn't a pending copy, for any other map, for windows that don't move by 1 along their own axis or whose other axes along it neither move by 1 nor tile it, and for a copy that reads a source axis that no axis of the copy walks anywhere but at position 0.
 fn windows(value: &Value, k: usize) -> Option<Windows> {
     let shape = value.shape();
     let (source, Mapping::Steps { base, steps }) = source(value)? else { return None };
     let dims = source.shape().to_vec();
     let walk = Walk::new(&Steps::with_base(base, steps), shape, &dims)?;
     // An axis of the copy that walks no source axis holds one item.
-    if walk.steps.iter().zip(&walk.along).any(|(s, a)| a.is_none() && s.len() != 1) { return None; }
+    if walk.base != 0 || walk.steps.iter().zip(&walk.along).any(|(s, a)| a.is_none() && s.len() != 1) { return None; }
     let q = walk.along[k]?;
     if walk.walking(q).count() < 2 { return None; }
-    // The positions that the copy reads along each source axis, where the entries along it walk windows that move by 1.
-    let read = (0..dims.len()).map(|a| walk.range(a, dims[a])).collect::<Option<Vec<_>>>()?;
+    // Where the copy starts along each source axis, and the positions that its last item along each one reaches (`Walk::read`).
+    let reads = (0..dims.len()).map(|a| walk.read(a, dims[a])).collect::<Option<Vec<_>>>()?;
+    let moves: Vec<usize> = walk.steps.iter().zip(&walk.along).map(|(s, a)| match (s, a) {
+        (Steps::Stride { step, .. }, Some(a)) => *step as usize / walk.strides[*a],
+        _ => 0,
+    }).collect();
+    let width = shape[k];
+    if moves[k] != 1 { return None; }
+    // The folds start at every position along `q`, sliding a window along it, or every `width` positions where the copy's windows tile `q`, as pooling's do.
+    let others: Vec<usize> = walk.walking(q).filter(|&r| r != k).map(|r| moves[r]).collect();
+    let every = if others.iter().all(|&m| m == 1) { 1 } else if others.iter().all(|&m| m % width == 0) { width } else { return None };
+    let (first, read) = &reads[q];
+    let len = 1 + read.iter().map(|&[n, m]| (n - 1) * m).sum::<usize>();
     let outer: usize = dims[..q].iter().product();
-    let whole = |a: usize| read[a] == (0..dims[a]);
-    if (0..dims.len()).any(|a| a != q && !whole(a)) || outer != 1 && !whole(q) { return None; }
-    Some(Windows { source, rows: [outer, read[q].len(), walk.strides[q]], lo: read[q].start, along: walk.along, q })
+    // A source axis before `q` means the folds run over the whole source, and every row along `q`.
+    let (lo, len) = if outer == 1 { (*first, len) } else { (0, dims[q]) };
+    if (first - lo) % every != 0 || len % every != 0 { return None; }
+    Some(Windows { rows: [outer, len, walk.strides[q]], lo, every, first: reads.iter().map(|r| r.0).collect(), source, moves, along: walk.along, q })
 }
 
 impl Windows {
@@ -446,31 +464,39 @@ impl Windows {
         let [outer, len, inner] = self.rows;
         Some(if outer == 1 { view.slice(self.lo * inner..(self.lo + len) * inner) } else { view })
     }
-    /// The source's shape with axis `q` holding one item for each window's start along it, and the tables that read each of the copy's axes but `k` from a buffer of that shape.
+    /// The source's shape with axis `q` holding one item for each fold's start along it, and the tables that read each of the copy's axes but `k` from a buffer of that shape. Each table moves by its axis's moves, in starts along `q`, and the first of them along each source axis starts where the copy does.
     fn folded(&self, shape: &[usize], k: usize, width: usize) -> (Vec<usize>, Vec<Steps>) {
         let mut folded = self.source.shape().to_vec();
-        folded[self.q] = self.rows[1] + 1 - width;
+        folded[self.q] = (self.rows[1] - width) / self.every + 1;
         let folded_strides = strides(&folded);
-        let tables = (0..shape.len()).filter(|&r| r != k).map(|r| Steps::Stride { start: 0, len: shape[r], step: self.along[r].map_or(0, |a| folded_strides[a]) as isize }).collect();
+        let mut started = vec![false; folded.len()];
+        let tables = (0..shape.len()).filter(|&r| r != k).map(|r| match self.along[r] {
+            Some(a) => {
+                let (every, lo) = if a == self.q { (self.every, self.lo) } else { (1, 0) };
+                let start = if std::mem::replace(&mut started[a], true) { 0 } else { (self.first[a] - lo) / every };
+                Steps::Stride { start: start * folded_strides[a], len: shape[r], step: (self.moves[r] / every * folded_strides[a]) as isize }
+            }
+            None => Steps::Stride { start: 0, len: shape[r], step: 0 },
+        }).collect();
         (folded, tables)
     }
 }
 
-/// The windows that a fold by `kind` slides along in `value`, with the fold's axis and the windows' width. `None` for a scan, for a value with no axes, for windows of one item, and for a value that `windows` doesn't read.
-fn windowed(value: &Value, kind: FoldKind) -> Option<(Windows, usize, usize)> {
-    let shape = value.shape();
-    if kind.scan || shape.is_empty() { return None; }
-    let k = kind.default_axis(shape.len());
-    let width = shape[k];
-    if width < 2 { return None; }
-    Some((windows(value, k)?, k, width))
+/// The windows that a fold by `kind` along axis `k` slides along in `value`, with the windows' width. `None` for a scan, for windows of one item, and for a value that `windows` doesn't read.
+fn windowed(value: &Value, kind: FoldKind, k: usize) -> Option<(Windows, usize)> {
+    let width = value.shape()[k];
+    if kind.scan || width < 2 { return None; }
+    Some((windows(value, k)?, width))
 }
 
-/// The fold along its own axis of a pending copy of windows. It runs sliding folds over the copy's source (`pervasive::sliding`) and never builds the windows. Where windows remain along another source axis, as after the first fold of `+/+/3 3↕m`, the result is a copy of the sliding folds. The next fold reads that copy the same way. The result has the fold's shape, without the copy's names and keys, which `folded` in `eval::operators` gives it. `None` for windows of one item, for a value that `windows` doesn't read, and for a function or kind that `pervasive::sliding` doesn't fold.
-fn slide(value: &Value, p: Primitive, kind: FoldKind) -> Option<Value> {
-    let (w, k, width) = windowed(value, kind)?;
+/// The fold along axis `k` of a pending copy of windows along that axis. It runs sliding folds over the copy's source (`pervasive::sliding`) and never builds the windows. Where windows remain along another source axis, as after the first fold of `+/+/3 3↕m`, or start every few positions, as pooling's do, the result is a copy of the sliding folds. The next fold reads that copy the same way. The result has the fold's shape, without the copy's names and keys, which `folded` in `eval::operators` gives it. `None` for windows of one item, for a value that `windows` doesn't read, and for a function or kind that `pervasive::sliding` doesn't fold.
+fn slide(value: &Value, p: Primitive, kind: FoldKind, k: usize) -> Option<Value> {
+    let (w, width) = windowed(value, kind, k)?;
     let shape = value.shape();
-    let buffer = pervasive::sliding(p, w.region()?, w.rows, width)?;
+    // Windows that tile `q` fold one tile to a lane.
+    let [outer, len, inner] = w.rows;
+    let rows = if w.every == 1 { w.rows } else { [outer * len / width, width, inner] };
+    let buffer = pervasive::sliding(p, w.region()?, rows, width)?;
     crate::explain::fast("sliding fold", Operation::Fold(p, kind).glyph());
     let layout = Layout::from((0..shape.len()).filter(|&r| r != k).map(|r| shape[r]).collect::<Vec<_>>());
     let (folded, tables) = w.folded(shape, k, width);
@@ -480,12 +506,13 @@ fn slide(value: &Value, p: Primitive, kind: FoldKind) -> Option<Value> {
     crate::primitive::copied(&partial, layout, &tables).ok()
 }
 
-/// For a maximum or minimum along its own axis of a pending copy of windows, the position in the copy's ravel of the first item of each window that gives its fold, or of the window's first item where none does, as for NaN. The positions come from the source (`pervasive::sliding_picks`), with no windows built. `None` where windows remain along another source axis, and wherever `slide` would give `None`.
+/// For a maximum or minimum along the default axis of a pending copy of windows, the position in the copy's ravel of the first item of each window that gives its fold, or of the window's first item where none does, as for NaN. The positions come from the source (`pervasive::picks`), with no windows built. `None` where windows remain along another source axis, and wherever `slide` would give `None`.
 pub(crate) fn picks(value: &Value, p: Primitive, kind: FoldKind) -> Option<Vec<i64>> {
-    let (w, k, width) = windowed(value, kind)?;
+    let k = kind.default_axis(value.shape().len());
+    let (w, width) = windowed(value, kind, k)?;
     let shape = value.shape();
     let (_, tables) = w.folded(shape, k, width);
-    if !Steps::in_order(&tables) { return None; }
+    if w.every != 1 || !Steps::in_order(&tables) { return None; }
     let rows = pervasive::picks(p, w.region()?, w.rows, rustymath::reduce::Picks::Windows(width))?;
     // Each window starts at the position along `q` that the copy's other axes along `q` reach. Its pick lies that many rows before.
     let strides = strides(shape);
@@ -501,7 +528,7 @@ pub(crate) fn picks(value: &Value, p: Primitive, kind: FoldKind) -> Option<Vec<i
 
 /// The fold of a pending array along `axis`, as `+/`, `⌈⌿` or a fold with an axis reduces it, computed block by block without building the array. A view of a pending array folds the same way, by its own shape. A copy of windows folded along its default axis slides over its source instead (`slide`), whether or not another array holds it. The result holds the lanes' results by the fold's shape, which the fold's caller lays out (`folded` in `eval::operators`). `None` where another array probably holds the array, so that building it once serves every reader, or where its graph has no such fold. The array's items have then been computed as usual. A fold leaves its graph in the array, so a later read still computes the items, as the other tine of `(⊢÷+/)` does.
 pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axis: usize) -> Option<Value> {
-    if axis == kind.default_axis(value.shape().len()) { if let Some(slid) = slide(value, p, kind) { return Some(slid); } }
+    if let Some(slid) = slide(value, p, kind, axis) { return Some(slid); }
     let Some(pending) = value.folded_pending() else {
         if value.pending().is_some_and(|p| !p.is_forced()) { rustymath::events::declined("fused fold", "another array holds the array", value.len()); }
         return None;

@@ -340,7 +340,7 @@ fn factors(d: &Decomposition, right: &Value, hermitian: Option<bool>, span: &Spa
         None if d.kind != "eigen" => false,
         None => {
             let n = right.shape()[rank - 1];
-            let each = with_field!(domain, [Single, Double, Complex], T => hermitians(&read::<T>(right)?, n));
+            let each = with_field!(domain, [Single, Double, Complex], T => read::<T>(right)?.chunks_exact(n * n).map(|a| linalg::is_hermitian(a, n)).collect::<Vec<_>>());
             match (each.contains(&true), each.contains(&false)) { (true, true) => return mixed(d, right, &each, span), (h, _) => h }
         }
     };
@@ -406,9 +406,6 @@ fn record(names: Vec<&'static str>, factors: Vec<Value>) -> Result<Value, Error>
     crate::keyed::vector(names.into_iter().map(Into::into).collect(), factors).described("invalid factors")
 }
 
-/// Whether each `n`×`n` matrix of `a`, held one after another, equals its conjugate transpose.
-fn hermitians<T: Factor>(a: &[T], n: usize) -> Vec<bool> { a.chunks_exact(n * n).map(|a| (0..n).all(|i| (0..n).all(|j| a[i * n + j] == a[j * n + i].conj()))).collect() }
-
 /// The [`Domain`] that the items of `arrays` compute in, and the float width of the results. DOMAIN where an item isn't a number.
 fn domain_of(arrays: &[&Value]) -> Result<(Domain, FloatWidth), Error> {
     Domain::of_arrays(arrays).ok_or_else(|| Error::domain("expected numeric elements"))
@@ -453,67 +450,25 @@ pub(crate) fn recompose(left: Option<&Value>, right: &Value, _: &Span) -> Result
 fn rebuild<T>(kind: &str, f: &[(Cow<'_, [T]>, (usize, usize))], width: FloatWidth) -> Result<Value, Error> where T: Factor + Field,
     PlusTimes: Inner<T, Out = T> {
     let disagree = || Error::new(Kind::Length, format!("{kind} factors have sizes that don't agree"));
-    // `a`, with `rows` rows of `columns` items, conjugated and transposed.
-    let adjoint = |a: &[T], rows: usize, columns: usize| {
-        let mut t = vec![T::zero(); rows * columns];
-        linalg::transpose_into(a, columns, &mut t, rows, [rows, columns], T::conj);
-        t
-    };
-    // `a`, with rows of `columns` items, with each column multiplied by the item of `d` at the same position.
-    let scaled = |a: &[T], d: &[T], columns: usize| { let mut out = Vec::with_capacity(a.len()); for row in a.chunks_exact(columns.max(1)) { out.extend(row.iter().zip(d).map(|(&x, &s)| x * s)) } out };
     let (x, size) = match (kind, f) {
         ("svd", [(u, (m, p)), (s, (ps, _)), (v, (n, pv))]) => {
             if p != ps || pv != ps { return Err(disagree()); }
-            (PlusTimes.inner(&scaled(u, s, *p), &adjoint(v, *n, *p), [*m, *p, *n]), [*m, *n])
+            (linalg::from_svd(u, s, v, [*m, *p, *n]), [*m, *n])
         }
         ("qr", [(q, (m, p)), (r, (pr, n))]) => { if p != pr { return Err(disagree()); } (PlusTimes.inner(q, r, [*m, *p, *n]), [*m, *n]) }
-        ("cholesky", [(l, (n, c))]) => { if n != c { return Err(disagree()); } (PlusTimes.inner(l, &adjoint(l, *n, *n), [*n; 3]), [*n, *n]) }
+        ("cholesky", [(l, (n, c))]) => { if n != c { return Err(disagree()); } (linalg::from_cholesky(l, *n), [*n, *n]) }
         ("eigen", [(values, (n, _)), (vectors, (r, c))]) => {
             if r != n || c != n { return Err(disagree()); }
-            let inverse = independent_inverse(vectors, *n).ok_or_else(|| dependent())?;
-            (PlusTimes.inner(&scaled(vectors, values, *n), &inverse, [*n; 3]), [*n, *n])
+            let a = linalg::from_eigen(values, vectors, *n).ok_or_else(|| Error::domain("eigenvectors that aren't independent can't give back the matrix"))?;
+            (a, [*n, *n])
         }
         ("lu", [(l, (n, c)), (u, (nu, cu)), (p, (np, _))]) => {
             if [c, nu, cu, np].into_iter().any(|x| x != n) { return Err(disagree()); }
-            let order = permutation(p, *n).ok_or_else(|| Error::domain("lu's p must hold each position from 0 to n-1 once"))?;
-            // Row i of L U is row order[i] of the matrix.
-            let product = PlusTimes.inner(l, u, [*n; 3]);
-            let mut a = vec![T::zero(); n * n];
-            for (i, &row) in order.iter().enumerate() { a[row * n..(row + 1) * n].copy_from_slice(&product[i * n..(i + 1) * n]) }
-            (a, [*n, *n])
+            (linalg::from_lu(l, u, p, *n).ok_or_else(|| Error::domain("lu's p must hold each position from 0 to n-1 once"))?, [*n, *n])
         }
         _ => unreachable!("`recompose` names the factors of each kind"),
     };
     matrix(x, size, width).described("invalid matrix")
-}
-
-/// The inverse of the eigenvectors `vectors`, held row by row, from one LU factorization, where they're independent enough to give back their matrix. The 1-norm condition number of the eigenvectors scaled to unit length measures how independent they are. Above 1/√ε, the rebuilt matrix loses about half its digits. A defective matrix's eigenvectors give about 1/ε. `None` there, where a pivot is negligible, and for NaN.
-fn independent_inverse<T: Factor>(vectors: &[T], n: usize) -> Option<Vec<T>> {
-    let mut inverse = vec![T::zero(); n * n];
-    linalg::LuWork::default().inverse_into(vectors, [n, n], &mut inverse)?;
-    // Scaling column j of the vectors to unit length scales row j of the inverse by the column's length.
-    let lengths = rustymath::stats::norm(vectors, [1, n, n], 2.0);
-    let scaled: Vec<T> = vectors.chunks_exact(n).flat_map(|row| row.iter().zip(&lengths).map(|(&x, &l)| x.div_real(l))).collect();
-    let scaled_inverse: Vec<T> = inverse.chunks_exact(n).zip(&lengths).flat_map(|(row, &l)| row.iter().map(move |&x| x.mul_real(l))).collect();
-    let condition = linalg::norm(&scaled, [n, n], linalg::Norm::One) * linalg::norm(&scaled_inverse, [n, n], linalg::Norm::One);
-    (condition <= num_traits::Float::recip(num_traits::Float::sqrt(<T::Real as num_traits::Float>::epsilon()))).then_some(inverse)
-}
-
-/// The error for eigenvectors that aren't independent enough to give back their matrix.
-fn dependent() -> Error { Error::domain("eigenvectors that aren't independent can't give back the matrix") }
-
-/// The positions that `p` holds, where it holds each of `0` to `n - 1` once.
-fn permutation<T: Factor>(p: &[T], n: usize) -> Option<Vec<usize>> {
-    let mut seen = vec![false; n];
-    let mut order = Vec::with_capacity(n);
-    for &x in p {
-        let i = x.re();
-        if x != T::from_real(i) || num_traits::Float::fract(i) != num_traits::Zero::zero() { return None; }
-        let i = num_traits::ToPrimitive::to_usize(&i).filter(|&i| i < n && !seen[i])?;
-        seen[i] = true;
-        order.push(i);
-    }
-    Some(order)
 }
 
 pub(super) fn binary_encode(right: &Value) -> Result<Value, Error> {
@@ -562,30 +517,21 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool) -> Result<Value, 
             if let Some(result) = encode_whole(left.as_items(), right.as_items(), &layout) { return Ok(result); }
         }
         let (xs, ys) = (numbers(left)?, numbers(right)?);
-        let width = Numeric::current().width_of(xs.iter().chain(&ys).map(Number::float_width));
+        let t = Numeric::current();
+        let width = t.width_of(xs.iter().chain(&ys).map(Number::float_width));
         let mut data = Vec::with_capacity(len);
         for i in 0..if xlen == 0 { 0 } else { agreement.len } {
             check()?;
-            let (bases, mut value) = (&xs[cell(&agreement.left, i, xlen)?..][..xlen], ys[cell(&agreement.right, i, 1)?].clone());
-            let mut exact = value.is_exact();
-            let mut digits = vec![Value::Number(zero.clone()); xlen];
-            for k in (0..xlen).rev() {
-                let base = &bases[k];
-                exact &= base.is_exact();
-                let integral;
-                let base = if let (Ok(b), Ok(v)) = (base.big_integer(), value.big_integer()) {
-                    integral = Number::from(b);
-                    value = Number::from(v);
-                    &integral
-                } else { base };
-                let digit = base.residue(&value, Numeric::current()).map_err(error)?;
-                if k != 0 {
-                    value = if base.grade_order(&base.zero()).is_eq() { zero.clone() }
-                    else { value.dyad(Arithmetic::Minus, &digit).and_then(|v| v.dyad(Arithmetic::Divide, base)).map_err(<&str>::from).map_err(error)? };
-                }
-                digits[k] = Value::Number(if !exact && digit.is_exact() { Number::from(digit.to_complex().map_err(error)?).at_width(width) } else { digit });
-            }
-            data.extend(digits);
+            let numbers: Vec<&Number> = xs[cell(&agreement.left, i, xlen)?..][..xlen].iter().chain([&ys[cell(&agreement.right, i, 1)?]]).collect();
+            // Whole numbers encode exactly, floats among them too. Their digits are then floats of `width` where any of them is a float.
+            let whole: Option<Vec<Number>> = numbers.iter().map(|n| n.big_integer().ok().map(Number::from)).collect();
+            let inexact = whole.is_some() && !numbers.iter().all(|n| n.is_exact());
+            let items = whole.unwrap_or_else(|| numbers.into_iter().cloned().collect());
+            let digits = with_field!(items.iter(), T, w => {
+                let items: Vec<T> = items.iter().map(T::of).collect();
+                rustymath::polynomial::encode(&items[..xlen], &items[xlen..], |b, v| b.residue(v, t, w)).into_iter().map(|d| d.number(w)).collect::<Vec<_>>()
+            });
+            for d in digits { data.push(Value::Number(if inexact { d.to_float_width(width).map_err(error)? } else { d })); }
         }
         if left.is_atom() && right.is_atom() { return Ok(data.remove(0)); }
         return layout.collect(data, Value::Number(zero)).described("invalid encode result");
@@ -604,14 +550,18 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool) -> Result<Value, 
     for i in 0..agreement.len {
         check()?;
         let (x, y) = (&xs[cell(&agreement.left, i, xlen)?..], &ys[cell(&agreement.right, i, ylen)?..]);
-        let mut value = zero.clone();
-        for k in 0..len {
-            let y = &y[if ylen == 1 { 0 } else { positions.index(k) }];
-            value = if k == 0 { y.clone() }
-            else { value.dyad(Arithmetic::Times, &x[if xlen == 1 { 0 }
-            else { k }]).and_then(|v| v.dyad(Arithmetic::Plus, y)).map_err(<&str>::from).map_err(error)? };
-        }
-        data.push(Value::Number(value));
+        let digits: Vec<&Number> = (0..len).map(|k| &y[if ylen == 1 { 0 } else { positions.index(k) }]).collect();
+        // A cell's first base is never used, so it takes no part in choosing the domain.
+        let bases: Vec<&Number> = (1..len).map(|k| &x[if xlen == 1 { 0 } else { k }]).collect();
+        data.push(Value::Number(match &digits[..] {
+            [] => zero.clone(),
+            [d] => (*d).clone(),
+            ds => with_field!(bases.iter().chain(ds).copied(), T, width => {
+                // The first digit stands in for the first base, in the domain that the other numbers chose.
+                let bases: Vec<T> = std::iter::once(ds[0]).chain(bases.iter().copied()).map(T::of).collect();
+                rustymath::polynomial::decode(&bases, &ds.iter().map(|&n| T::of(n)).collect::<Vec<_>>()).remove(0).number(width)
+            }),
+        }));
     }
     if agreement.layout.shape().is_empty() { return Ok(data.remove(0)); }
     agreement.layout.collect(data, Value::Number(zero)).described("invalid decode result")

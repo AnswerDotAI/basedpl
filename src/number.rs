@@ -165,7 +165,7 @@ impl Numeric {
     pub(crate) fn is_static(self) -> bool { self.kinds == Kinds::Static }
     /// Exact comparison, as `EXACT` gives, under these kinds settings. Integer and Boolean kernels take it.
     pub(crate) fn exact(self) -> Self { Self { kinds: self.kinds, int: self.int, ..Self::EXACT } }
-    /// The kind that an array of `dtype` computes in. Under static kinds, integers compute at least at the `int` width, whatever width their storage takes. Other dtypes, and every dtype under dynamic kinds, are their own.
+    /// The kind that an array of `dtype` computes in. Under static kinds, integers compute at least at the `int` width, whatever width their storage takes, except in a call whose results are the same at every width that holds its arguments (`pervasive::first_kind`). Other dtypes, and every dtype under dynamic kinds, are their own.
     pub(crate) fn kind(self, dtype: DType) -> DType {
         match dtype { DType::Integer(w) if self.is_static() => DType::Integer(w.join(self.int)), d => d }
     }
@@ -370,18 +370,14 @@ pub(crate) mod complex {
     pub(crate) fn arithmetic<R: Native>(op: Arithmetic, x: Complex<R>, y: Complex<R>) -> Complex<R> {
         match op { Arithmetic::Plus => x + y, Arithmetic::Minus => x - y, Arithmetic::Times => x * y, Arithmetic::Divide => rustymath::divide(x, y) }
     }
-    /// `code○y`, or the inverse of `code○` on `y`. `None` for a code outside 0 to 8. On a real `y`, code 8 gives an imaginary result, as APL's results do. On a branch cut, the sign of `y`'s zero imaginary part chooses the side, as in C99.
+    /// `code○y`, or the inverse of `code○` on `y`, from the table that `with_circle!` holds for codes 0 to 7. `None` for a code outside 0 to 8. On a real `y`, code 8 gives an imaginary result, as APL's results do. On a branch cut, the sign of `y`'s zero imaginary part chooses the side, as in C99.
     pub(crate) fn circle(code: i64, inverse: bool, y: Complex64) -> Option<Complex64> {
-        let one = Complex64::new(1.0, 0.0);
-        Some(match (code, inverse) {
-            (8, _) if y.im == 0.0 => Complex64::new(0.0, if inverse { -rustymath::hypot(y.re, 1.0) } else { rustymath::hypot(y.re, 1.0) }),
-            (0, _) => rustymath::Sqrt1mx2.one(y), (1, false) => rustymath::Sin.one(y), (2, false) => rustymath::Cos.one(y), (3, false) => rustymath::Tan.one(y),
-            (4, false) => rustymath::Sqrt1px2.one(y), (5, false) => rustymath::Sinh.one(y), (6, false) => rustymath::Cosh.one(y),
-            (7, false) => rustymath::Tanh.one(y), (8, false) => rustymath::Sqrt.one(-one - y * y), (1, true) => rustymath::Asin.one(y),
-            (2, true) => rustymath::Acos.one(y), (3, true) => rustymath::Atan.one(y), (4, true) => rustymath::Sqrtx2m1.one(y),
-            (5, true) => rustymath::Asinh.one(y), (6, true) => rustymath::Acosh.one(y), (7, true) => rustymath::Atanh.one(y),
-            (8, true) => -rustymath::Sqrt.one(-one - y * y), _ => return None
-        })
+        let sign = if inverse { -1.0 } else { 1.0 };
+        match code {
+            8 if y.im == 0.0 => Some(Complex64::new(0.0, sign * rustymath::Sqrt1px2.one(y.re))),
+            8 => Some(sign * rustymath::Sqrt.one(-Complex64::new(1.0, 0.0) - y * y)),
+            _ => with_circle!(code, inverse, |f| f.one(y)),
+        }
     }
 }
 
@@ -444,6 +440,8 @@ pub(crate) trait Field: Clone + num_traits::NumAssignRef {
     fn compact(a: &Value) -> Option<Cow<'_, [Self]>>;
     /// The array of `shape` holding `x`, with floats at `width`. Floats and complex numbers take compact storage, and complex numbers with no imaginary parts take float storage.
     fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind>;
+    /// `y`'s residue by `self`, as `Number::residue` gives it, within the tolerance of `width` under `t`.
+    fn residue(&self, y: &Self, t: Numeric, width: FloatWidth) -> Self;
 }
 
 /// The items of the array `a` in the domain of `T`: compact storage converted in one pass, and other items one at a time. DOMAIN where an item isn't a number, and UNSUPPORTED for a dual, whose domain is its primal's.
@@ -463,6 +461,7 @@ impl Field for BigRational {
     fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind> {
         Layout::from(shape).collect(x.into_iter().map(|r| Value::Number(r.number(width))), Value::integer(0))
     }
+    fn residue(&self, y: &Self, _: Numeric, _: FloatWidth) -> Self { rustymath::exact::residue(self, y) }
 }
 
 macro_rules! real_fields {
@@ -472,6 +471,7 @@ macro_rules! real_fields {
             fn number(self, width: FloatWidth) -> Number { Number::float(self.into(), width) }
             fn compact(a: &Value) -> Option<Cow<'_, [Self]>> { read_as(a) }
             fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind> { Value::floats(shape, width, x.into_iter().map(Into::into)) }
+            fn residue(&self, y: &Self, t: Numeric, width: FloatWidth) -> Self { rustymath::tolerant::Residue(t.tolerance_at(width)).one(*self, *y) }
         }
     )+};
 }
@@ -484,6 +484,7 @@ impl Field for Complex64 {
     fn array(x: Vec<Self>, shape: Vec<usize>, width: FloatWidth) -> Result<Value, ErrorKind> {
         Value::complex(shape, ComplexBuf::collect(width.into(), x.into_iter()))
     }
+    fn residue(&self, y: &Self, t: Numeric, width: FloatWidth) -> Self { rustymath::tolerant::Residue(t.tolerance_at(width)).one(*self, *y) }
 }
 
 /// Runs `$body` with the type `$t` standing for the [`Field`] of `$domain`, which is one of the domains listed. Only the listed domains' bodies compile. The second form takes the domain of the numbers `$numbers`, an iterator of `&Number`s, and binds `$width` to the float width of their results.
@@ -524,6 +525,18 @@ pub(crate) fn subscript(c: char) -> bool { SUFFIXES.iter().any(|s| s.1 == c) }
 
 /// The marker that writes floats of `width`.
 pub(crate) fn width_marker(width: FloatWidth) -> char { WIDTHS.iter().find(|w| w.1 == width).expect("every width has a marker").0 .1 }
+
+/// A number marker: `ₓ` for exact numbers, or a float width's marker. After a literal it says what the literal's numbers are. After a function it makes the function's results such numbers (`Superscript::Mark`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Mark { Exact, Width(FloatWidth) }
+impl Mark {
+    /// The marker's subscript.
+    pub(crate) fn marker(self) -> char { match self { Self::Exact => EXACT.1, Self::Width(w) => width_marker(w) } }
+    /// The marker that `c` is.
+    pub(crate) fn of(c: char) -> Option<Self> { if c == EXACT.1 { return Some(Self::Exact); } WIDTHS.iter().find(|w| w.0 .1 == c).map(|w| Self::Width(w.1)) }
+    /// The zero of the marked numbers, the prototype of an empty marked list.
+    pub(crate) fn zero(self) -> Number { match self { Self::Exact => Number::from_integer(0), Self::Width(w) => Number::float(0.0, w) } }
+}
 
 /// `text` with the subscript of each suffix written as its first plain letter, and the width that a trailing width marker gives, for `Number::parse`. `ₓ` has no plain letter and stays.
 fn plain_suffixes(text: &str) -> (std::borrow::Cow<'_, str>, Option<FloatWidth>) {
@@ -911,19 +924,47 @@ impl Number {
             |x, y| Ok(rustymath::tolerant::Residue(t.tolerance_at(self.width_with(Some(right)))).one(x, y).into()))
     }
 
+    /// `⌊x÷y`, as `÷ₓ` computes it before making it exact: exactly for exact numbers, and for floats within the tolerance of the width they compute at, through rustymath's `FloorDivide`, as the kernels compute it. A zero divisor gives an infinity or NaN, as `÷` does.
+    pub(crate) fn floor_quotient(&self, right: &Self, t: Numeric) -> Result<Self, &'static str> {
+        if self.has_boolean(right) { return self.numeric().floor_quotient(&right.numeric(), t); }
+        self.by_level(
+            right, |x, y| rustymath::tolerant::FloorDivide(Tolerance::EXACT).checked(x, y).map(Self::from_integer), |x, y| Ok((!y.is_zero()).then(|| Self::exact((x / y).floor()))),
+            || Ok(Some(reals!(self, right => |x, y: F| Self::from_float(rustymath::tolerant::FloorDivide(t.tolerance_at(F::WIDTH)).one(x, y))))),
+            |_, _| Err("÷ₓ takes real numbers"))
+    }
+
+    /// This real number as an exact integer for `ₓ`. Under dynamic kinds a Boolean or whole float becomes exact, and an infinity, NaN or fraction is a DOMAIN error. Under static kinds floats convert as Rust's `as` into the `int` width: NaN gives 0 and out-of-range values saturate. A complex number is a DOMAIN error under either kinds.
+    pub(crate) fn whole(&self, t: Numeric) -> Result<Self, Failure> {
+        if !t.is_static() {
+            return Ok(match &self.0 { Boolean(b) => Self(Integer((*b).into())), _ => self.marked_exact().filter(Self::is_integral).ok_or("ₓ gives integers, from finite real numbers")? });
+        }
+        let (lo, hi) = if t.int == Width::I32 { (i32::MIN.into(), i32::MAX.into()) } else { (i64::MIN, i64::MAX) };
+        Ok(Self::from_integer(match &self.0 {
+            Boolean(b) => (*b).into(), Integer(i) => *i,
+            Exact(r) => r.to_integer().to_i64().map_or(if r.is_negative() { lo } else { hi }, |i| i.clamp(lo, hi)),
+            _ => {
+                let x = self.as_float().ok_or("ₓ gives integers, from real numbers")?;
+                if t.int == Width::I32 { rustymath::convert::saturated::<i32, f64>(x).into() } else { rustymath::convert::saturated::<i64, f64>(x) }
+            }
+        }))
+    }
+
     pub(crate) fn parts(&self, polar: bool) -> Result<[Self; 2], &'static str> {
         let width = self.width_with(None);
         if polar { return Ok([self.math_monad(Math::Magnitude)?, Self::float(rustymath::Angle.one(self.to_complex()?), width)]); }
         match self.as_complex() { Some(z) => Ok([Self::float(z.re, width), Self::float(z.im, width)]), None => Ok([self.clone(), self.zero()]) }
     }
 
+    /// `x√y`, through rustymath's `Root` at each level. Under dynamic kinds, a degree of 0 or ±∞ is a DOMAIN error. Under static kinds it gives the kernels' NaN, as arrays do.
     fn root(&self, right: &Self) -> Result<Self, &'static str> {
-        if self.is_zero() { return Err("root degree must be nonzero"); }
+        if !Numeric::current().is_static() {
+            if self.is_zero() { return Err("root degree must be nonzero"); }
+            if self.is_infinite() { return Err("root degree must be finite"); }
+        }
         self.by_level(
             right, |_, _| None, |_, _| Ok(None),
-            || reals!(self, right => |n, y: F| if n.is_infinite() { Err("root degree must be finite") } else { Ok(rustymath::Root.checked(n, y).map(Self::from_float)) }),
-            |_, y| if self.grade_order(&Self::from_integer(2)).is_eq() { Ok(rustymath::Sqrt.one(y).into()) }
-            else { right.power(&self.monad(Arithmetic::Divide)?) }
+            || reals!(self, right => |n, y: F| Ok(rustymath::Root.checked(n, y).map(Self::from_float))),
+            |n, y| Ok(rustymath::Root.one(n, y).into()),
         )
     }
 

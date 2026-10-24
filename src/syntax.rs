@@ -1,5 +1,5 @@
 use rustymath::{buffer::FloatWidth, error::Kind};
-use crate::{number::{subscript, width_marker, Arithmetic, Math, Numeric, Suffix, DENOMINATOR, EXACT, EXPONENT, IMAGINARY, SUFFIXES, WIDTHS}, primitive::{Builtin, OperatorKind, Primitive, Superscript}, symbols::canonical,
+use crate::{number::{subscript, Arithmetic, Mark, Math, Numeric, Suffix, DENOMINATOR, EXACT, EXPONENT, IMAGINARY, SUFFIXES, WIDTHS}, primitive::{Builtin, Exact, OperatorKind, Primitive, Superscript}, symbols::canonical,
     At, Described, Error, ErrorKind, Number, Source, Span, Value
 };
 use crate::name::{is_implicit, Name};
@@ -199,31 +199,21 @@ fn real_literal(chars: &mut Characters<'_>) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// What a number marker after a literal makes its numbers: exact, or floats of one width.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Mark { Exact, Width(FloatWidth) }
-impl Mark {
-    /// The marker's subscript.
-    fn marker(self) -> char { match self { Self::Exact => EXACT.1, Self::Width(w) => width_marker(w) } }
-    /// The zero of the marked numbers, the prototype of an empty marked list.
-    fn zero(self) -> Number { match self { Self::Exact => Number::from_integer(0), Self::Width(w) => Number::float(0.0, w) } }
-}
-
 /// `ⱼ`, `ₑ` or `ᵣ` between two items, as in `xⱼy`. The binder joins the items into one term (`joined_term`).
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Joiner { Imaginary, Exponent, Denominator }
 
-/// The group that `left`, `joiner` at `at` and `right` stand for: `xⱼy` is `x+y×0ⱼ1`, `xₑy` is `x×10*y` and `xᵣy` is `xₓ÷yₓ`.
+/// The group that `left`, `joiner` at `at` and `right` stand for: `xⱼy` is `x+y×0ⱼ1`, `xₑy` is `x×10*y` and `xᵣy` is the exact quotient of `xₓ` by `yₓ`, under either kinds (`Exact::Ratio`).
 pub(crate) fn joined_term(left: Node, joiner: Joiner, at: &Span, right: Node) -> Node {
     let span = Span { source: at.source.clone(), range: left.span.range.start..right.span.range.end };
     let node = |kind| Node { kind, span: at.clone() };
     let number = |text| node(NodeKind::Literal(Value::Number(literal_number(text, Numeric::current()).expect("a joiner's constant is a number"))));
     let function = |p| node(NodeKind::Function(Builtin::Primitive(p)));
-    let floor = || node(NodeKind::Operator(OperatorKind::Super(Superscript::Floor)));
+    let mark = || node(NodeKind::Operator(OperatorKind::Super(Superscript::Mark(Mark::Exact))));
     let nodes = match joiner {
         Joiner::Imaginary => vec![left, function(Primitive::Arithmetic(Arithmetic::Plus)), right, function(Primitive::Arithmetic(Arithmetic::Times)), number("0j1")],
         Joiner::Exponent => vec![left, function(Primitive::Arithmetic(Arithmetic::Times)), number("10"), function(Primitive::Math(Math::Power)), right],
-        Joiner::Denominator => vec![left, floor(), function(Primitive::Arithmetic(Arithmetic::Divide)), right, floor()],
+        Joiner::Denominator => vec![left, mark(), function(Primitive::Exact(Exact::Ratio)), right, mark()],
     };
     Node { kind: NodeKind::Group(nodes), span }
 }
@@ -279,17 +269,17 @@ fn literal_token(kind: &TokenKind) -> bool {
         | TokenKind::Operator(OperatorKind::Super(Superscript::Power(_) | Superscript::Transpose)))
 }
 
-/// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth: as exact after `ₓ`, and as floats or complex numbers of the marked width after `ₕ`, `ₛ` or `ₚ`. Booleans stay as they are. The `ₓ` after a group that holds anything but literals (`literal_token`) is `⌊`, as after a name. Gives the byte ranges of those `ₓ`s, for highlighting.
+/// Reads the numbers and `⍬`s inside each `[…]` and `(…)` that has a number marker again, from their own source text, at any depth: as exact after `ₓ`, and as floats or complex numbers of the marked width after `ₕ`, `ₛ` or `ₚ`. Booleans stay as they are. The marker after a group that holds anything but literals (`literal_token`) applies to the group, as after a name. Gives the byte ranges of those markers, for highlighting.
 fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>, Error> {
     let numeric = Numeric::current();
-    let (mut open, mut floors, mut floored) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut open, mut marked, mut markers) = (Vec::new(), Vec::new(), Vec::new());
     for i in 0..tokens.len() {
         match tokens[i].kind {
             TokenKind::Open | TokenKind::BracketOpen => open.push(i),
             TokenKind::Close(mark) | TokenKind::BracketClose(mark) => {
                 let Some(start) = open.pop() else { continue };
                 let Some(mark) = mark else { continue };
-                if mark == Mark::Exact && !tokens[start + 1..i].iter().all(|t| literal_token(&t.kind)) { floors.push(i); continue }
+                if !tokens[start + 1..i].iter().all(|t| literal_token(&t.kind)) { marked.push((i, mark)); continue }
                 for token in &mut tokens[start + 1..i] {
                     let text = token.span.text();
                     let value = match (&token.kind, mark) {
@@ -312,17 +302,17 @@ fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>,
             _ => (),
         }
     }
-    // Each such group loses its mark. Its `ₓ` becomes a token of its own, the `⌊` that `ₓ` is after a name.
-    for i in floors.into_iter().rev() {
+    // Each such group loses its mark, which becomes a token of its own, as after a name.
+    for (i, mark) in marked.into_iter().rev() {
         let close = &mut tokens[i];
         close.kind = match close.kind { TokenKind::Close(_) => TokenKind::Close(None), _ => TokenKind::BracketClose(None) };
         let end = close.span.range.end;
-        close.span.range.end = end - EXACT.1.len_utf8();
+        close.span.range.end = end - mark.marker().len_utf8();
         let marker = Span { source: close.span.source.clone(), range: close.span.range.end..end };
-        floored.push(marker.range.clone());
-        tokens.insert(i + 1, Token { kind: TokenKind::Operator(OperatorKind::Super(Superscript::Floor)), span: marker });
+        markers.push(marker.range.clone());
+        tokens.insert(i + 1, Token { kind: TokenKind::Operator(OperatorKind::Super(Superscript::Mark(mark))), span: marker });
     }
-    Ok(floored)
+    Ok(markers)
 }
 
 /// The offset of the next character, or the end of the text.
@@ -606,8 +596,8 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             }
             'ᵀ' => TokenKind::Operator(OperatorKind::Super(Superscript::Transpose)),
             'ᵘ' => TokenKind::Operator(OperatorKind::Super(Superscript::Unit)),
-            // A literal number, `)` and `]` take the `ₓ` after them (`mark_literals`). An `ₓ` that reaches here follows another item, such as a name, and is `⌊`.
-            'ₓ' => TokenKind::Operator(OperatorKind::Super(Superscript::Floor)),
+            // A literal number, `)` and `]` take the number marker after them (`mark_literals`). One that reaches here follows another item, such as a name or a function.
+            c if let Some(mark) = Mark::of(c) => TokenKind::Operator(OperatorKind::Super(Superscript::Mark(mark))),
             // A literal number takes `ⱼ`, `ₑ` or `ᵣ` only before a number part (`suffix_follows`). One that reaches here joins two items, as in `xⱼy`.
             'ⱼ' => TokenKind::Joiner(Joiner::Imaginary),
             'ₑ' => TokenKind::Joiner(Joiner::Exponent),
@@ -905,7 +895,7 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
                 let NodeKind::Literal(Value::Number(n)) = &node.kind else { break };
                 let raised = match power {
                     Superscript::Power(k) => n.math_dyad(Math::Power, &Number::from_integer(k)), Superscript::Transpose => Ok(n.clone()),
-                    Superscript::Unit | Superscript::Floor => break
+                    Superscript::Unit | Superscript::Mark(_) => break
                 };
                 node.span.range.end = end;
                 let raised = raised.at(&node.span)?;

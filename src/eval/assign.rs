@@ -409,7 +409,7 @@ impl Session {
                     Primitive::Mix => crate::primitive::pick_selection(&left, &item)?,
                     _ => crate::primitive::squad_selection(&left, &item, matches!(p, Primitive::Bracket), &context)?,
                 };
-                Ok(Some((binding, selection.within(&path))))
+                Ok(Some((binding, selection.within(&path)?)))
             }
             _ => Ok(None),
         }

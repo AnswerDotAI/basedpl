@@ -514,7 +514,7 @@ impl Recording {
             // A step that passes its check carries on with the next. Otherwise the binder takes its level over.
             let (level, over) = match op {
                 Op::Resolve { level, node, address, to, range, check, resume } => {
-                    let value = match address.as_ref().and_then(|address| session.bindings.load(address)) { Some(value) => value, None => session.resolve(&self.nodes(*level, statement)[*node as usize])?.value };
+                    let value = match address.as_ref().and_then(|address| session.bindings.load(address)) { Some(value) => session.read_binding(value)?, None => session.resolve(&self.nodes(*level, statement)[*node as usize])?.value };
                     if !put(registers, *to, Entity::of(value, range.clone(), false), *check) { continue }
                     (*level, Over::Failed(resume))
                 }

@@ -4,6 +4,18 @@ use rustymath::error::Kind;
 use super::*;
 use crate::transform::Pairing;
 
+/// `fₓ`, or `f` with a float width's marker, called on `left` and `right`, where `mark` is the marker: `f`'s results as exact integers, which `Exact::Floor` makes them, or as floats of the marker's width, as `•float` makes them. Where `ₓ` after a primitive reaches an `Exact` function, which computes the integers through one kernel, that function runs instead.
+pub(super) fn marked(f: &Function, mark: crate::number::Mark, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    use crate::{number::Mark, primitive::Exact};
+    match mark {
+        Mark::Width(w) => crate::derivative::to_float_width(&f.call(left, right, span)?.array(span)?, w, span),
+        Mark::Exact => match f.as_primitive().and_then(|p| Exact::of(p, left.is_some())) {
+            Some(e) => Primitive::Exact(e).call(left, right, span),
+            None => Primitive::Exact(Exact::Floor).call(None, &f.call(left, right, span)?.array(span)?, span),
+        },
+    }
+}
+
 /// `gᵇ`, which is `f`, called on `left` and `right`, where `operand` is `g`. A dyadic call takes `f`'s primitive where `g`'s Boolean kernel gives its truth table (`Function::dyadic_primitive`), as folds and scans do. Otherwise the call builds the table by calling `g` on Booleans: for a monadic call, whose table comes from `g`'s monadic form, and for a `g` that isn't a primitive.
 pub(super) fn bitwise(f: &Function, operand: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     if left.is_some() && let Some(p) = f.dyadic_primitive() { return p.call(left, right, span); }
@@ -809,6 +821,7 @@ fn inverse_scan(f: &Function, h: FoldKind, axis: Option<&Value>, seed: Option<&V
             return result.with_layout(right.layout().clone()).described("invalid inverse scan");
         }
     }
+    crate::explain::itemwise("inverse scan", right.len());
     let mut data: Vec<_> = right.elements().collect();
     for i in 0..axis.outer {
         for j in usize::from(seed.is_none())..axis.len {
@@ -871,9 +884,10 @@ pub(super) fn key(derived: &Function, left: Option<&Value>, right: &Value, span:
         return Ok(Bound::from(Value::assemble(&[0], &[], &result).described("invalid key result")?));
     }
     let firsts = &classes.firsts;
+    crate::explain::itemwise("key groups", count);
     let mut results = Vec::with_capacity(count);
     let mut apply = |g: usize, y: Value, span: &Span| -> Result<(), Error> {
-        results.push(f.call_array(Some(&key_cells.get(firsts[g])), &y, span)?);
+        results.push(f.call_array(Some(&*key_cells.get(firsts[g])), &y, span)?);
         Ok(())
     };
     match &values {
@@ -1215,13 +1229,20 @@ fn primitive_cells(p: Primitive, left: Option<&Value>, y: &Value, k: usize, span
             CellRule::First if k > 0 => Some(p.call_axes(None, y, &axes(0, 1), span)),
             CellRule::Every => Some(p.call_axes(None, y, &axes(0, k), span)),
             CellRule::Encloses if k > 0 => Some(p.call_axes(None, y, &axes(0, k), span)),
-            CellRule::Length => Some(constant(y, frame, &[], &[if k == 0 { 1 } else { y.shape()[frame] as i64 }])),
-            // The shape of a cell with named axes is keyed by the names.
-            CellRule::Shape if y.layout().names().iter().skip(frame).all(Option::is_none) => {
-                Some(constant(y, frame, &[k], &y.shape()[frame..].iter().map(|&n| n as i64).collect::<Vec<_>>()))
-            }
+            CellRule::Length | CellRule::Shape => cell_constant(p, &y.layout().axes(frame..frame + k)).map(|c| crate::agreement::spread(&c, &y.layout().axes(0..frame)).described("invalid cell shapes")),
             // Monadic `⍉` reverses each cell's axes.
             CellRule::Axes => Some(moved(&(0..k).rev().collect::<Vec<_>>())),
+            CellRule::Orders if k > 0 => crate::primitive::ordered_cells(p, y, k),
+            CellRule::Same if k == 0 => Some(Ok(y.clone())),
+            CellRule::Table => {
+                // Keys and names on a cell's axes would stay on its table's axes.
+                let cell = y.layout().axes(frame..y.shape().len());
+                if cell.has_names() || cell.has_keys() { return None; }
+                let table = [cell.shape().first().copied().unwrap_or(1), cell.shape().iter().skip(1).product()];
+                Some(y.relaid(y.layout().axes(0..frame).concat(&crate::array::Layout::from(table))).described("invalid table"))
+            }
+            CellRule::Head if y.is_simple() && !y.is_empty() => if k == 0 { Some(Ok(y.clone())) } else { primitive_cells(Primitive::Index, Some(&Value::integer(0)), y, k, span) },
+            CellRule::Enlist if y.is_simple() => primitive_cells(Primitive::Ravel, None, y, k, span),
             _ => None,
         };
     };
@@ -1247,6 +1268,8 @@ fn primitive_cells(p: Primitive, left: Option<&Value>, y: &Value, k: usize, span
             let steps: Vec<_> = rustymath::gather::Steps::row_major(outer, n, 0).chain([rustymath::gather::Steps::padded(0, k, n, 1, rustymath::structure::Edge::Wrap)]).collect();
             Some(y.relaid(flat(n)).and_then(|f| crate::primitive::copied(&f, flat(k), &steps)).and_then(to).described("invalid cell reshape"))
         }
+        // The haystack on the left is the same in every cell. Each cell holds whole needles, of the haystack's major cells' rank or more, so the frame stays outside the needles.
+        CellRule::Searches { haystack_left: true } if !a.is_unit() && k + 1 >= a.shape().len() => Some(p.call(Some(a), y, span)),
         // Any other form pairs each cell with the left argument, the same in every cell.
         _ => paired_cells(p, a, a.shape().len(), y, k, span).map(Ok),
     }
@@ -1255,11 +1278,15 @@ fn primitive_cells(p: Primitive, left: Option<&Value>, y: &Value, k: usize, span
 /// The primitive `p` on each pair of cells of `x` and `y`, of ranks `xk` and `yk`, as one call on the whole arguments. An argument with no axes besides its cell's is the same in every cell. Any other argument has the frame: the axes before its cells, the same in both arguments. A form that takes an argument that is the same in every cell gets it repeated over the frame first (`agreement::spread`). The routes for whole arguments use it (`whole_cells`). These forms have a rule:
 /// - A form that joins its arguments' cells (`CellRule::Join`) joins the whole arguments along the cell axis that one call on a pair of cells joins. An argument with no axes extends to every cell. Otherwise the cells differ in rank by at most 1, and the lower one gains an axis of length 1 where they join, as in a call on one pair.
 /// - A form that extends, at cell ranks of at least its own. A call on two arguments pairs their frames as Rank does, wherever the call succeeds (`declared_ranks_match_rank` in `tests/core.rs`).
+/// - `⌷`, `⊃` and bracket indexing whose positions or right argument differ by cell select as one bracket selection of the whole (`primitive::paired_select`).
+/// - `∊`, with the same haystack on the right in every cell, searches all the cells of `x` at once, where each cell holds whole needles (`CellRule::Searches`).
+/// - `≡` and `≢` compare every pair of cells at once (`CellRule::Matches`).
 ///
 /// `None` for any other form, for an argument with a named axis, which a whole call could pair by name, and where the call fails. The calls on each cell then give the result or the error.
 fn paired_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: usize, span: &Span) -> Option<Value> {
     use crate::primitive::CellRule;
     if x.layout().has_names() || y.layout().has_names() { return None; }
+    if let Some(selected) = crate::primitive::paired_select(p, x, xk, y, yk, span) { return Some(selected); }
     let frame = if x.shape().len() > xk { x.layout().axes(0..x.shape().len() - xk) } else { y.layout().axes(0..y.shape().len() - yk) };
     let unit = |v: &Value| v.shape().is_empty();
     // An argument that is the same in every cell, repeated over the frame. One with no axes needn't be, because it extends to every cell.
@@ -1276,6 +1303,9 @@ fn paired_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: usize, span: 
             let axis = frame.shape().len() + if last { k.max(1) - 1 } else { 0 };
             p.call_axes(Some(&joined(x, xk)?), &joined(y, yk)?, &Value::integer(axis as i64), span).ok()
         }
+        // The haystack on the right is the same in every cell, and each cell of `x` holds whole needles.
+        CellRule::Searches { haystack_left: false } if y.shape().len() == yk && !unit(y) && xk + 1 >= yk => p.call(Some(x), y, span).ok(),
+        CellRule::Matches { not } => crate::primitive::matched_cells(x, xk, y, yk, &frame, not),
         _ => {
             let [rx, ry] = p.info().dyad.ranks.map(usize::from);
             if !p.facts(true).extends() || xk < rx || yk < ry { return None; }
@@ -1290,11 +1320,15 @@ pub(crate) fn folded_cells(p: Primitive, kind: FoldKind, axis: usize, seed: Opti
     Some(Operation::Fold(p, kind).call(Pairing::Axis(Some(y.shape().len() - k + axis)), seed, y, span))
 }
 
-/// An array with `y`'s first `frame` axes and their keys, then `tail`, holding `items` at each frame position. Monads whose result depends only on a cell's shape give this for every cell.
-fn constant(y: &Value, frame: usize, tail: &[usize], items: &[i64]) -> Result<Value, Error> {
-    let layout = y.layout().axes(0..frame).concat(&crate::array::Layout::from(tail.to_vec()));
-    let count = crate::array::element_count(layout.shape())?;
-    Value::integers(layout.shape().to_vec(), items.iter().copied().cycle().take(count).collect()).and_then(|v| v.with_layout(layout)).described("invalid cell shapes")
+/// What `p` gives a cell laid out by `cell`, where its rule for cells says that depends only on the cell's shape: the cell's length for `≢` and its shape for monadic `⍴`. `None` for any other rule, and for the shape of a cell with named axes, which the names key. Rank lays it over the frame (`primitive_cells`), and a batched run gives it as every cell's result (`batch::call`).
+pub(crate) fn cell_constant(p: Primitive, cell: &crate::array::Layout) -> Option<Value> {
+    use crate::primitive::CellRule;
+    let shape = cell.shape();
+    match p.facts(false).cells {
+        CellRule::Length => Some(Value::integer(shape.first().map_or(1, |&n| n as i64))),
+        CellRule::Shape if cell.names().iter().all(Option::is_none) => Value::integers(vec![shape.len()], shape.iter().map(|&n| n as i64).collect()).ok(),
+        _ => None,
+    }
 }
 
 /// `f⍤k` in one call, where `f` is a pervasive primitive, or Rank nested down to one, as in `(-⍤1)⍤2 1`. Each level of Rank pairs its arguments' frames as leading axes, so each argument's frame splits into one run of axes for each level (`frames`), and one padded call pairs them all (`padded_call`).
@@ -1551,8 +1585,8 @@ fn fold_ravels(operand: &Function, kind: FoldKind, axes: &Value, left: Option<&V
 enum FoldPlan {
     /// A fold of a unit with no axis given, or a scan of an atom: its one item, which only a seed changes. A fold puts the item on the seed's left, and a scan puts it on the seed's right.
     One(Value),
-    /// A scan of an empty array, or of lanes of one item with no seed, which gives the argument unchanged.
-    Whole,
+    /// The argument's items unchanged, in the result's shape: a scan of an empty array, a scan of lanes of one item with no seed, or a fold of them where no level carries the argument.
+    Whole(Value),
     /// A fold with nothing left to compute: no results, or lanes of no items, each of which gives the seed or the operand's identity.
     Done(Value),
     /// The lanes to fold or scan, and the result's shape.
@@ -1570,7 +1604,7 @@ impl FoldPlan {
         let lanes = if whole { Lanes { outer: 1, len: 1, inner: 1 } } else { Lanes::new(right.shape(), along)? };
         if kind.scan {
             let plan = if right.is_atom() { Self::One(right.clone()) }
-                else if right.is_empty() || (seed.is_none() && lanes.len == 1) { Self::Whole }
+                else if right.is_empty() || (seed.is_none() && lanes.len == 1) { Self::Whole(right.clone()) }
                 else { Self::Lanes { lanes, shape: right.shape().to_vec() } };
             return Ok((along, plan));
         }
@@ -1581,7 +1615,8 @@ impl FoldPlan {
             else if lanes.len == 0 {
                 let item = match seed { Some(seed) => seed.clone(), None => identity()? };
                 Self::Done(Value::new(shape, vec![item; size]).described("invalid identity result")?)
-            } else { Self::Lanes { lanes, shape } };
+            } else if seed.is_none() && lanes.len == 1 && !crate::transform::carried(None, right) { Self::Whole(right.relaid(crate::array::Layout::from(shape)).described("invalid fold result")?) }
+            else { Self::Lanes { lanes, shape } };
         Ok((along, plan))
     }
 }
@@ -1591,7 +1626,7 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<usize>, seed: Opt
     let (along, plan) = FoldPlan::new(kind, axis, seed, right, || Err(Error::domain("this function has no reduction identity")))?;
     let result = match plan {
         FoldPlan::One(item) => match seed { Some(seed) if kind.scan => operand.call_array(Some(seed), &item, span)?, Some(seed) => operand.call_array(Some(&item), seed, span)?, None => item },
-        FoldPlan::Whole => right.clone(),
+        FoldPlan::Whole(items) => items,
         FoldPlan::Done(result) => result,
         FoldPlan::Lanes { lanes, shape } => match by_lanes(operand, kind, seed, right, along, &lanes, span) {
             Some(result) => result?,
@@ -1613,7 +1648,7 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
     let (along, plan) = FoldPlan::new(kind, axis, seed, right, || identity(p, &right.prototype(), span))?;
     let result = match plan {
         FoldPlan::One(item) => match seed { Some(seed) if kind.scan => scan_step(p, call)(seed, &item)?, Some(seed) => call(&item, seed)?, None => lone(item) },
-        FoldPlan::Whole => lone(right.clone()),
+        FoldPlan::Whole(items) => lone(items),
         FoldPlan::Done(result) => result,
         FoldPlan::Lanes { lanes, shape } if kind.scan => {
             if let Some(result) = (!active).then(|| crate::pervasive::scan(p, right, seed, &lanes)).flatten() { result }

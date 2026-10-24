@@ -95,9 +95,10 @@ def _python_name(name):
 
 # Every documented name of an operator is a property, in Python spelling. Its glyph name gives the derived function with both
 # valences, and each name for what it does gives the valences that name covers. A dyadic operator's property waits for its right
-# operand. `f[axis]` also spells `⍠`, and `f.undo` spells `⁻¹`, which has no row. `f.undo(g)` and `f.derivative(g)` with a function
+# operand. `f[axis]` also spells `⍠`, `f.undo` spells `⁻¹`, and `f.exact` and `f.float16`, `f.float32` and `f.float64` spell the number markers, which have no rows. `f.undo(g)` and `f.derivative(g)` with a function
 # `g` attach it, as `f⁻¹←g` and `f∂←g` do in BPL.
-_operators = {'undo': ('⁻¹', False, 0)}  # Python name: glyph, whether the operator is dyadic, and the derived function's valence
+_marks = {'ₓ': 'exact', 'ₕ': 'float16', 'ₛ': 'float32', 'ₚ': 'float64'}  # A number marker's glyph: its Python name
+_operators = {'undo': ('⁻¹', False, 0)} | {name: (glyph, False, 0) for glyph, name in _marks.items()}  # Python name: glyph, whether the operator is dyadic, and the derived function's valence
 _operator_names = {}  # An operator's glyph: its glyph name, then its names with one argument and with two, in Python spelling
 for _s in symbols:
     if not _s['kind'].endswith('-operator'): continue

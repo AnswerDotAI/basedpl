@@ -290,6 +290,15 @@ pub(crate) use rustymath::layout::{element_count, generated_len, Lanes};
 /// Whether the value that `carrier` stands for holds a function as a direct item. A batch asks its whole argument, which computes no cell, where its template would.
 fn carried_functions(carrier: &Carrier) -> bool { match carrier { Carrier::Batch(b) => b.holds_functions(), carrier => carrier.template().holds_functions() } }
 
+/// The width of the floats that items of `dtype` hold, or of the parts of its complex numbers.
+fn float_width_of(dtype: DType) -> Option<FloatWidth> { match dtype { DType::Float(width) => Some(width), DType::Complex(width) => Some(width.into()), _ => None } }
+
+/// Whether compact items `x` and `y` match, where `view_matches` compares their dtypes, with floats compared within the tolerance of the wider width.
+pub(crate) fn compact_match(x: View<'_>, y: View<'_>, t: Numeric) -> Option<bool> {
+    let width = float_width_of(x.dtype()).max(float_width_of(y.dtype())).unwrap_or(FloatWidth::F64);
+    rustymath::search::view_matches(x, y, t.tolerance_at(width))
+}
+
 /// The count `n` as a size, or `usize::MAX` when `usize` can't hold it, which every limit on sizes then rejects.
 pub(crate) fn saturated(n: u64) -> usize { usize::try_from(n).unwrap_or(usize::MAX) }
 
@@ -316,9 +325,20 @@ impl Value {
     }
     /// Whether the values match, as `≡` and search compare them, within the session's tolerance.
     pub(crate) fn matches(&self, other: &Self, span: &crate::Span) -> Result<bool, Error> { self.matches_within(other, Numeric::current(), span) }
+    /// The items of an array that owns compact items, not empty, under a layout with no names or keys.
+    fn owned_compact(&self) -> Option<View<'_>> {
+        let Self::Array(a) = self else { return None };
+        let Data::Own(Storage::Compact(items)) = &a.data else { return None };
+        (a.layout.plain() && items.len() > 0).then(|| items.view())
+    }
     /// Whether the values match, with each pair of numbers within the tolerance of the width they compare at. Numbers match whatever their exactness, and NaN matches NaN. Two axes match as arithmetic pairs them: their names don't conflict, as `rustymath::layout::names_conflict` says, and when both have keys, they hold the same keys in any order. Items along keyed axes compare by key. Functions and operators match when built from matching parts. Renderers take no part.
     pub(crate) fn matches_within(&self, other: &Self, t: Numeric, span: &crate::Span) -> Result<bool, Error> {
         check()?;
+        // Arrays that own compact items under plain layouts, as most searched cells are, match by shape and items, without the observation and layout checks below.
+        if let (Some(x), Some(y)) = (self.owned_compact(), other.owned_compact()) {
+            if self.shape() != other.shape() { return Ok(false); }
+            if let Some(matched) = compact_match(x, y, t) { return Ok(matched); }
+        }
         use crate::transform::Plain;
         match (self.observed()?, other.observed()?) {
             (Plain::Array(_), Plain::Array(_)) => (), (Plain::Number(x), Plain::Number(y)) => return x.matches(y, t).map_err(Error::from),
@@ -329,11 +349,7 @@ impl Value {
         let keyed = self.has_keys() || other.has_keys();
         if self.is_empty() { return self.prototype().matches_within(&other.prototype(), t, span); }
         if !keyed {
-            let (x, y) = (self.as_items(), other.as_items());
-            if let (Items::Compact(x), Items::Compact(y)) = (x, y) {
-                let width = self.float_width().max(other.float_width()).unwrap_or(FloatWidth::F64);
-                if let Some(matched) = rustymath::search::view_matches(x, y, t.tolerance_at(width)) { return Ok(matched); }
-            }
+            if let (Items::Compact(x), Items::Compact(y)) = (self.as_items(), other.as_items()) { if let Some(matched) = compact_match(x, y, t) { return Ok(matched); } }
         }
         let mapping = keyed.then(|| Mapping::new(other.layout(), &(0..self.shape().len()).collect::<Vec<_>>(), self.layout(), self.len()));
         for (i, x) in self.elements().enumerate() {
@@ -486,7 +502,7 @@ impl Value {
         if A::slice(self).is_none() { return None; }
         match self.storage_mut() { Storage::Compact(b) => A::of_mut(b), Storage::Mixed(..) => None }
     }
-    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins, and a `Steps::FILL` offset writes nothing. A weak number takes this array's width, as in arithmetic (`Gather`). Storage that can't hold an item widens or turns mixed by the rule for items (`Widening::Items`), as a literal of the same items would: each number keeps its exactness, and a Boolean stays apart from other numbers. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame. A write into a batch, or of one, stops its map's run (`transform::written`).
+    /// Replaces the item at each offset with the matching item of `source`, or with its only item when it has one, in place. A later offset wins, and a `Steps::FILL` offset writes nothing. A weak number takes this array's width, as in arithmetic (`Gather`). Storage that can't hold an item widens or turns mixed by the rule for items (`Widening::Items`), as a literal of the same items would: each number keeps its exactness, and a Boolean stays apart from other numbers. Mixed storage forgets its prototype when item 0 changes, and its environment when a written or overwritten item depends on a frame. A write into a batch, or of one, writes every cell at once (`transform::written`).
     pub(crate) fn scatter(&mut self, offsets: &[usize], source: &Value) -> Result<(), crate::transform::Stop> { self.written(Writes::Offsets(offsets), source) }
     /// `scatter` at the positions that `steps` reach from `base`, in the order `walk` reads them, without listing them (`Gather::scatter_walk`).
     pub(crate) fn scatter_walk(&mut self, base: usize, steps: &[rustymath::gather::Steps], source: &Value) -> Result<(), crate::transform::Stop> { self.written(Writes::Walk { base, steps }, source) }
@@ -494,7 +510,7 @@ impl Value {
     fn written(&mut self, writes: Writes<'_>, source: &Value) -> Result<(), crate::transform::Stop> {
         // Writes only at fills change nothing, so storage doesn't widen for them.
         if writes.only_fills() { return Ok(()); }
-        if let Some(result) = crate::transform::written(self, source, |t, s| t.written(writes, s)) { return result; }
+        if let Some(result) = crate::transform::written(self, source, Some(writes), |t, s| t.written(writes, s)) { return result; }
         let data = self.storage_mut();
         if let Storage::Mixed(items, memo) = data {
             if !writes.runs_while(&mut |_, run| !run.contains(&0)) { memo.prototype.take(); }
@@ -506,7 +522,7 @@ impl Value {
         *data = gather.data;
         Ok(())
     }
-    /// Writes `item` at `path` in place, through nested items. The empty path replaces the whole array. A write into a batch, or of one, stops its map's run (`transform::written`).
+    /// Writes `item` at `path` in place, through nested items. The empty path replaces the whole array. A write into a batch, or of one, writes every cell at once (`transform::written`).
     pub(crate) fn write_path(&mut self, path: &[usize], item: Value) -> Result<(), crate::transform::Stop> {
         let Some((&last, outer)) = path.split_last() else { *self = item; return Ok(()) };
         let dependent = item.environment().is_some();
@@ -526,7 +542,7 @@ impl Value {
     }
     /// Appends the major cells of `cells` in place. `cells` has this array's rank and matches its other axes. `names` holds the keys of the new cells when the leading axis has keys or gains them. Positions already there keep their keys, or have none. A Domain error, with the array unchanged, when a new key is already on the leading axis or appears twice. The caller checks that the length is within the limit.
     pub(crate) fn append(&mut self, cells: &Value, names: Option<&[Option<Arc<str>>]>) -> Result<(), ErrorKind> {
-        if let Some(result) = crate::transform::written(self, cells, |t, c| t.append(c, names)) { return result; }
+        if let Some(result) = crate::transform::written(self, cells, None, |t, c| t.append(c, names)) { return result; }
         let Self::Array(a) = self else { unreachable!("only an array grows") };
         let a = Arc::make_mut(a);
         a.layout.append(cells.shape()[0], names)?;
@@ -622,9 +638,7 @@ impl Value {
         }
     }
     /// The width of the floats that hold the items, or of the parts of the complex numbers that do, when compact storage holds them or the value is such an atom.
-    pub(crate) fn float_width(&self) -> Option<FloatWidth> {
-        match self.dtype()? { DType::Float(width) => Some(width), DType::Complex(width) => Some(width.into()), _ => None }
-    }
+    pub(crate) fn float_width(&self) -> Option<FloatWidth> { float_width_of(self.dtype()?) }
     /// The numbers of this value as floats of `width`, each rounded once, with the arrays nested in it converted too. Complex numbers take parts of `width`, and 32-bit parts for 16 bits. Characters and functions are DOMAIN.
     pub(crate) fn to_float_width(&self, width: FloatWidth) -> Result<Self, ErrorKind> {
         if let Self::Number(n) = self { return n.to_float_width(width).map(Self::Number).map_err(|_| Kind::Domain.into()); }
@@ -659,6 +673,15 @@ impl Value {
             (_, Some(DType::Integer(_))) => "integer", (_, Some(dtype)) => dtype.name(),
             (Self::Number(_), None) => "rational", (Self::Function(_), None) => "function", _ => "mixed"
         }
+    }
+    /// The compact items for an export to NumPy or rustymath, widened to the width they compute at under the settings in force, which `storage_kind` names. Static kinds can store integers narrower than their kind, and NumPy and rustymath compute at the dtype they receive, so they would wrap at the storage's width. `None` where the items already have that width or aren't compact, so the export lends them as they are.
+    pub fn widened_for_export(&self) -> Option<Buffer> {
+        let stored @ DType::Integer(_) = self.dtype()? else { return None };
+        let DType::Integer(width) = crate::settings::numeric().kind(stored) else { return None };
+        if DType::Integer(width) == stored { return None; }
+        let items = self.clone().into_buffer().ok()?;
+        let View::Integers(ints) = items.view() else { return None };
+        Some(with_width!(width, T => <T as rustymath::buffer::Element>::buffer(crate::element::cast::<T>(ints).into_owned())))
     }
     /// Whether the array reads another array's items, as a view.
     pub(crate) fn is_view(&self) -> bool { matches!(self, Self::Array(a) if a.is_view()) }
@@ -700,11 +723,14 @@ impl Value {
         if *shape == *self.shape() && !self.is_atom() { return Ok(self.clone()); }
         self.relaid(shape.into())
     }
-    /// The array viewed with `layout`, which has as many items in any shape. The view shares this array's items. A name that `layout` gives more than one axis is dropped from all of them, as `with_layout` drops it.
+    /// The array viewed with `layout`, which has as many items in any shape. The view shares this array's items. A name that `layout` gives more than one axis is dropped from all of them, as `with_layout` drops it. A carried array is viewed through its carrier (`Carrier::view`).
     pub(crate) fn relaid(&self, layout: Layout) -> Result<Self, ErrorKind> {
         if element_count(layout.shape())? != self.len() { return Err(Kind::Length.into()); }
-        let Self::Array(a) = self else { return Self::new(layout.shape().to_vec(), vec![self.clone()])?.with_layout(layout) };
-        Ok(ArrayData::view(a, layout.unique_names()))
+        match self {
+            Self::Array(a) => Ok(ArrayData::view(a, layout.unique_names())),
+            Self::Carried(c) if !self.is_atom() => Ok(c.view(layout)),
+            _ => Self::new(layout.shape().to_vec(), vec![self.clone()])?.with_layout(layout),
+        }
     }
 
     pub fn axis_names(&self) -> &[Option<Arc<str>>] { self.layout().names() }

@@ -156,6 +156,11 @@ pub(crate) fn copied(right: &Value, layout: Layout, tables: &[Steps]) -> Result<
     walked(right, layout, 0, tables)
 }
 
+/// Items of `right` at the flat `offsets`, laid out by `layout`, as `copied` reads them.
+pub(crate) fn copied_at(right: &Value, offsets: Vec<usize>, layout: Layout) -> Result<Value, ErrorKind> {
+    copied(&right.relaid(Layout::from([right.len()]))?, Layout::from([offsets.len()]), &[Steps::table(offsets)])?.relaid(layout)
+}
+
 /// Items of `source` laid out by `layout`, copied at once through `steps` from `base` by `Gather::walk`.
 pub(crate) fn walked(source: &Value, layout: Layout, base: usize, steps: &[Steps]) -> Result<Value, ErrorKind> {
     let mut data = Gather::new(&[source], generated_len(layout.shape())?);

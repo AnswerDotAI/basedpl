@@ -29,7 +29,7 @@ x←2 4 9
 ⍴[[1]⋄[2]]       ⍝ [2 1]ₓ
 ```
 
-Around literals, `[…]ₓ` makes every number exact, at any depth. Each number must be whole. After a list that holds anything else, `ₓ` is [`⌊`](downstile.qmd).
+Around literals, `[…]ₓ` makes every number exact, at any depth. Each number must be whole. After a list that holds anything else, `ₓ` floors its numbers to exact integers, as [Superscripts and subscripts](../scripts.ipynb) describes.
 
 ```bpl
 [1 0 1]ₓ≡1ₓ 0ₓ 1ₓ  ⍝ $t

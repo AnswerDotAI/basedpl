@@ -21,7 +21,7 @@ mod tree;
 pub(crate) use binder::before;
 pub(crate) use tree::Recording;
 pub(crate) use bindings::Place;
-pub(crate) use operators::{fold, folded_cells, matrices, primitive_expansion, primitive_fold, primitive_product, whole_cells};
+pub(crate) use operators::{cell_constant, fold, folded_cells, matrices, primitive_expansion, primitive_fold, primitive_product, whole_cells};
 use {binder::*, bindings::{Bindings, Frame, FrameBindings}, dissect::*, operators::*};
 
 #[derive(Clone, Debug)]
@@ -172,6 +172,7 @@ impl FunctionNode {
             Self::Ruled(f, _) => f.node().label(notation), Self::LateBound(_, span) => span.source.text.clone(),
             Self::Defined(c) | Self::Derived(c, ..) => c.text().into(), Self::Fold(_, h) => notation.glyph(h.glyph()).into(),
             Self::Inverse(_) => "⁻¹".into(), Self::Axis(..) => notation.glyph("⍠").into(),
+            Self::Modified(OperatorKind::Super(Superscript::Mark(mark)), _) => mark.marker().into(),
             Self::Array(a) => a.source(crate::display::Elide { notation, ..crate::display::Elide::NONE }),
             Self::Modified(op, _) | Self::Composed(op, _) => notation.glyph(op.glyph()).into(), Self::Fork(_) => "fork".into()
         }
@@ -179,10 +180,10 @@ impl FunctionNode {
 }
 
 impl Builtin {
-    /// This built-in function's `Function`, from one table that every session and thread shares. The table is built on the first read. It holds each system function, each primitive that `Primitive::all` lists, and `Bracket`, the primitive without a glyph. `Arc`, the form that `○⁻¹` calls, and `ᵇ`'s tables never become functions.
+    /// This built-in function's `Function`, from one table that every session and thread shares. The table is built on the first read. It holds each system function, each primitive that `Primitive::all` lists, and the primitives without a glyph: `Bracket`, and the `Exact` functions that `xₓ` and `xᵣy` call. `Arc`, the form that `○⁻¹` calls, and `ᵇ`'s tables never become functions.
     pub(crate) fn function(self) -> Function {
         static TABLE: std::sync::LazyLock<HashMap<Builtin, Function>> = std::sync::LazyLock::new(|| {
-            let primitives = Primitive::all().chain([Primitive::Bracket]).map(|p| (Builtin::Primitive(p), Function::plain(FunctionNode::Primitive(p))));
+            let primitives = Primitive::all().chain([Primitive::Bracket]).chain(crate::primitive::Exact::ALL.map(Primitive::Exact)).map(|p| (Builtin::Primitive(p), Function::plain(FunctionNode::Primitive(p))));
             primitives.chain(crate::system::Entry::all().map(|entry| (Builtin::System(entry), entry.built()))).collect()
         });
         TABLE[&self].clone()
@@ -289,6 +290,7 @@ impl Function {
             FunctionNode::Defined(c) => c.text().into(),
             FunctionNode::Fold(f, h) => format!("{}{}", f.left_text(notation, budget), notation.glyph(h.glyph())),
             FunctionNode::Inverse(f) => f.superscripted("⁻¹", notation, budget),
+            FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), Operand::Function(f)) => f.superscripted(&mark.marker().to_string(), notation, budget),
             FunctionNode::Axis(f, a) => format!("{}{}{}", f.left_text(notation, budget), notation.glyph("⍠"), a.operand(notation)),
             FunctionNode::Modified(op, a) => format!("{}{}", a.left_text(notation, budget), notation.glyph(op.glyph())),
             FunctionNode::Composed(op, [a, b]) => format!("{}{}{}", a.left_text(notation, budget), notation.glyph(op.glyph()), b.right_text(notation, budget)),
@@ -384,7 +386,7 @@ impl Function {
                     (Fold(kind), Operand::Function(f)) => FunctionNode::Fold(f, kind),
                     (Super(Superscript::Power(-1)), Operand::Function(f)) => return f.inverse(span),
                     (Super(Superscript::Power(n)), Operand::Function(f)) => FunctionNode::Composed(Power, [Operand::Function(f), Operand::Value(Value::integer(n))]),
-                    (Super(Superscript::Floor), _) => return Err(Error::domain("ₓ floors an array, not a function").at(span)),
+                    (op @ Super(Superscript::Mark(_)), a @ Operand::Function(_)) => FunctionNode::Modified(op, a),
                     (Super(_), _) => return Err(Error::domain("ᵀ transposes an array, not a function").at(span)), (op, a) => FunctionNode::Modified(op, a)
                 }
             }
@@ -570,6 +572,7 @@ impl Function {
             FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, span),
             FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, span),
             FunctionNode::Modified(OperatorKind::Bitwise, Operand::Function(f)) => bitwise(self, f, left, right, span),
+            FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), Operand::Function(f)) => marked(f, *mark, left, right, span),
             FunctionNode::Modified(OperatorKind::Outer, Operand::Function(f)) => return outer(f, left, right, span),
             FunctionNode::Modified(OperatorKind::Key, Operand::Function(_)) => return key(self, left, right, span),
             FunctionNode::Modified(OperatorKind::Differentiate, Operand::Function(f)) => crate::derivative::differentiate(f, left, right, span),
@@ -654,6 +657,7 @@ impl Function {
             ("fn", [a], ..) => return fun(a),
             ("fork", [a, b, c], ..) => FunctionNode::Fork([constant(a)?, fun(b)?, constant(c)?]),
             ("axis", [f, Operand::Value(axis)], ..) => FunctionNode::Axis(fun(f)?, axis.clone()), ("⁻¹", [f], ..) => return fun(f)?.inverse(&span),
+            (_, [f], _) if let Some(mark) = glyph.and_then(crate::number::Mark::of) => FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), f.clone()),
             (_, [f], Some(op)) if !op.info().dyadic() => FunctionNode::Modified(op, f.clone()),
             (_, [a, b], Some(op)) if op.info().right.is_some() => FunctionNode::Composed(op, [a.clone(), b.clone()]),
             _ => return Err(Error::new(ErrorKind::Syntax, "invalid function construction").at(&span))
