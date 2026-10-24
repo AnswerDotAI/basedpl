@@ -1,0 +1,30 @@
+
+
+# `≤` — Decrement / Less equal
+
+Function. Keys: `Alt-<`. Hanzi: `限/退`. Ranks: `0` monadic, `0 0`
+dyadic
+
+`≤Y` is `Y-1`. Pervasive.
+
+``` bpl
+≤[1 2 3]ₓ         ⍝ [0 1 2]ₓ
+```
+
+`X≤Y` tests whether `X` is less than or equal to `Y`, for real numbers,
+and for characters by code point. A number is less than any character,
+as [`⍋`](delta-stile.qmd) orders them. Pervasive; tolerant.
+
+``` bpl
+1 2 3≤2            ⍝ $t $t $f
+"ab"≤"ba"          ⍝ $t $f
+'a'≤3              ⍝ $f
+```
+
+## Inverse
+
+`≤⁻¹Y` increments `Y`.
+
+``` bpl
+≤⁻¹4   ⍝ 5
+```

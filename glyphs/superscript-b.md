@@ -1,0 +1,36 @@
+
+
+# `ᵇ` — Bitwise
+
+Monadic operator. Keys: `Alt-6 b`. Hanzi: `按`
+
+`fᵇ` applies the Boolean function `f` separately to each bit of its
+integer arguments. Negative integers use infinite two’s complement.
+
+``` bpl
+6∧ᵇ3               ⍝ 2ₓ
+6∨ᵇ3               ⍝ 7ₓ
+6≠ᵇ3               ⍝ 5ₓ
+~ᵇ6                ⍝ ¯7ₓ
+```
+
+Arguments follow the usual [integer
+conversion](../numbers.qmd#exact-and-approximate), including
+whole-valued floats such as bare `6`. Results are exact integers, or
+Booleans when every argument is Boolean. Agreement is pervasive.
+
+``` bpl
+6 3∧ᵇ5             ⍝ [4 1]ₓ
+$t∧ᵇ$f             ⍝ $f
+```
+
+For a monadic call, `f` is evaluated on `$f` and `$t`. For a dyadic
+call, it is evaluated on all four Boolean pairs. Each evaluation must
+return one Boolean value. The operand can be any function or composition
+that satisfies this rule.
+
+`ᵇ` is an ordinary monadic operator. It requires a function operand.
+Differentiation is unsupported.
+
+In Python, `f.bitwise` constructs `fᵇ`. Array and Function `&`, `|` and
+`~` use `∧ᵇ`, `∨ᵇ` and `~ᵇ`. Plain BPL `∧` and `∨` retain LCM and GCD.

@@ -1,0 +1,140 @@
+
+
+# `⍤` — Rank
+
+Dyadic operator. Keys: `Alt-1 t`. Hanzi: `秩`
+
+`f⍤R` applies `f` to the [cells](../terms.qmd#term-cell) of rank `R`.
+With two arguments, `f⍤R` pairs cells using leading agreement of the
+[frames](../terms.qmd#term-frame). Separate a numeric argument from the
+rank with `⊢` or [parentheses](parentheses.qmd), as in `-⍤0⊢5` or
+`-⍤0(5)`. A vector argument goes in touching brackets, as in `-⍤0[2 3]`.
+In `-⍤0 5`, `0 5` is the rank. Three rules give the result:
+
+1.  Inside a frame, the 0-cell at a position holding an atom is that
+    atom. The 0-cell at a position holding an array is a scalar holding
+    the array.
+2.  [Assembly](../terms.qmd#term-assembly) works as for `⊃`. Shorter
+    results are padded with fill to a common shape. The shape of the
+    whole result is the frame followed by that common shape. Each
+    position in the frame holds the items of its result.
+3.  When no argument has a frame, `f⍤R` is the same as `f`. An argument
+    has no frame when its rank is at most its cell rank. An atom never
+    has a frame.
+
+``` bpl
+m←2 3⍴⍳6ₓ
++/⍤1 m             ⍝ [3 12]ₓ
+```
+
+<table>
+<thead>
+<tr>
+<th><code>R</code></th>
+<th>Monad rank</th>
+<th>Dyad left/right ranks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>r</code></td>
+<td><code>r</code></td>
+<td><code>r r</code></td>
+</tr>
+<tr>
+<td><code>q r</code></td>
+<td><code>r</code></td>
+<td><code>q r</code></td>
+</tr>
+<tr>
+<td><code>p q r</code></td>
+<td><code>p</code></td>
+<td><code>q r</code></td>
+</tr>
+</tbody>
+</table>
+
+A negative rank counts back from the argument’s rank. With a rank at
+least as large as the argument’s rank, the whole argument is one cell.
+With an empty frame, `f` is called on a prototype cell. If that call
+fails, the result is empty, with the frame’s shape and prototype 0, as
+in J.
+
+By these rules, `⊢⍤0` returns its argument unchanged. On an array of
+atoms, `f⍤0` is `⊃f¨`. [Each](diaeresis.qmd) passes the items
+themselves, never enclosed. Every call’s result becomes one item of
+Each’s result, with no assembly.
+
+``` bpl
+v←[[1 2] [3 4 5]]
+≢⍤0 v              ⍝ [1 1]ₓ
+≢¨v                ⍝ [2 3]ₓ
+⊢⍤0v ≡ v          ⍝ $t
+{⍵ ⍵}⍤0[1 2]      ⍝ [1 1⋄2 2]
+-⍤0⊢5             ⍝ ¯5
+```
+
+With rank `∞`, the cell is the whole argument, and rank `¯∞` is rank 0.
+For example, `⍤1 ∞` pairs each row on the left with the whole right
+argument. In the examples below, `(+⌿×)⍤1 ∞` is the matrix-vector
+product. With a matrix on the right, the same function multiplies
+matrices.
+
+``` bpl
+m←[1 2 3⋄4 5 6]
+m (+⌿×)⍤1 ∞ [1 2 3]                   ⍝ 14 32
+m (+⌿×)⍤1 ∞ [1 10⋄2 20⋄3 30]      ⍝ [14 140⋄32 320]
+```
+
+A function right operand computes the ranks from the arguments, as BQN’s
+`⎉` does: `f⍤g Y` is `f⍤(g Y) Y`, and `X f⍤g Y` is `X f⍤(X g Y) Y`.
+[Axis](quad-colon.qmd) and [Stencil](quad-diamond.qmd) take a function
+right operand in the same way. Here each cell of `Y` with the rank of
+`X` pairs with `X`:
+
+``` bpl
+[1 2] +⍤{≢⍴⍺} [10 20⋄30 40]   ⍝ [11 22⋄31 42]
+```
+
+To apply a function along chosen axes, see [Axis](quad-colon.qmd).
+
+## Calls on the whole argument
+
+Rank calls each of these functions once on the whole argument, with the
+same result as one call for each cell:
+
+- a pervasive function of cells without axis names, as in `m +⍤1 v`
+- a fold or scan by a pervasive primitive on a simple array, as in
+  `+/⍤1 m`, which runs as `+/m` does
+- a monadic primitive at its own rank or above, such as `⌽⍤1 m`, except
+  `⍳`, `↦` and `⍎`
+- `⊖`, `,`, `↑`, `↓`, `⌷`, `⍉` and `#` along the cells’ axes, `≢` and
+  `⍴`, and a reshape that keeps each cell’s items in order
+- dyadic `,` and `⍪`, joining each pair of cells, where the two
+  arguments’ frames match
+- a dyadic primitive at its own ranks or above, where the two arguments’
+  frames match, such as `v ⌽⍤0 1 m`, except `↦`, `:`, `⊂`, `⊃`, `⊆` and
+  `⍕`
+- `+.×`, `⌹`, `-.×` and [`•decompose`](../system/decompose.qmd) on a
+  stack of matrices
+- an atop `f∘g` where `g` runs as one call, with Rank applying `f` to
+  the cells of its result
+
+Rank calls any other function, a dfn included, once on all the cells
+together where it can, in a [batched
+call](../evaluation.qmd#functions-and-effects). Otherwise it calls the
+function once for each cell.
+
+## Inverse
+
+`(f⍤k)⁻¹` is `f⁻¹⍤k`.
+
+``` bpl
+(⌽⍤1)⁻¹[1 2⋄3 4]   ⍝ [2 1⋄4 3]
+```
+
+## Errors
+
+- `RANK`: a rank operand that is not a unit or vector
+- `LENGTH`: a rank operand with more than three items
+- `DOMAIN`: non-integral ranks

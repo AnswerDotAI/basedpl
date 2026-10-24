@@ -1,0 +1,5 @@
+/* Code fonts for the magics and the docs. The docs load this file through the symlink nbs/fonts.css. */
+:root { --bpl-font: SAX2B; --apl-font: BQN386; }
+@font-face { font-family: SAX2B; src: local("SAX2B"), url("https://cdn.jsdelivr.net/gh/AnswerDotAI/basedpl@main/nbs/fonts/SAX2B.woff2") format("woff2"); }
+@font-face { font-family: BQN386; src: local("BQN386"), url("https://cdn.jsdelivr.net/gh/dzaima/BQN386@master/BQN386.woff2") format("woff2"); }
+.bpl_out { font-family: var(--bpl-font), monospace !important; line-height: 1.05 !important; }

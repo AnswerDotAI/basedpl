@@ -1,0 +1,34 @@
+
+
+# `∧` — Polar / And
+
+Function. Keys: `Alt-0`. Hanzi: `极/且` (`極/且`). Ranks: `0` monadic,
+`0 0` dyadic
+
+`∧Y` gives a magnitude and an angle for each number in `Y`, along a new
+last axis. Angles are in radians.
+
+``` bpl
+∧0j2              ⍝ [2 1π2]
+∧3j4              ⍝ 5 0.9272952180016122
+```
+
+`X∧Y` gives LCM; on Booleans, AND. Pervasive.
+
+``` bpl
+0 0 1 1∧0 1 0 1   ⍝ 0 0 0 1
+4ₓ∧6ₓ              ⍝ 12ₓ
+∧/1 1 0            ⍝ 0
+```
+
+Includes rational and complex LCM. Inputs are finite. Empty reduction
+identity: one, or `$t` on Booleans.
+
+## Inverse
+
+`∧⁻¹Y` rebuilds complex numbers from the magnitude and angle pairs on
+the last axis of `Y`.
+
+``` bpl
+∧⁻¹[2 π0.5]   ⍝ 0j2
+```

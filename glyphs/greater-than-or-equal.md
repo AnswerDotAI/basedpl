@@ -1,0 +1,30 @@
+
+
+# `≥` — Increment / Greater equal
+
+Function. Keys: `Alt->`. Hanzi: `达/进` (`達/進`). Ranks: `0` monadic,
+`0 0` dyadic
+
+`≥Y` is `Y+1`. Pervasive.
+
+``` bpl
+≥[1 2 3]ₓ         ⍝ [2 3 4]ₓ
+```
+
+`X≥Y` tests whether `X` is greater than or equal to `Y`, for real
+numbers, and for characters by code point. A number is less than any
+character, as [`⍋`](delta-stile.qmd) orders them. Pervasive; tolerant.
+
+``` bpl
+1 2 3≥2            ⍝ $f $t $t
+"ba"≥"ab"          ⍝ $t $f
+3≥'a'              ⍝ $f
+```
+
+## Inverse
+
+`≥⁻¹Y` decrements `Y`.
+
+``` bpl
+≥⁻¹5   ⍝ 4
+```

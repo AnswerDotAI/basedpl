@@ -1,0 +1,36 @@
+
+
+# `¿` — Roll / Deal
+
+Function. Keys: `Alt-/`. Hanzi: `掷/抽` (`擲/抽`). Ranks: `0` monadic,
+`0 0` dyadic
+
+`¿N`: uniform draw from `⍳N`. `¿0`: U(0,1). Pervasive.
+
+``` bpl
+¿6 ∊ ⍳6ₓ           ⍝ $t
+```
+
+`M¿N`: `M` draws without replacement from `⍳N`.
+
+``` bpl
+≢3¿10             ⍝ 3ₓ
+≢∪3¿10            ⍝ 3ₓ
+```
+
+Bounds are nonnegative integers; `M≤N`. Exact arguments give exact
+integer draws. Dyalog APL writes Roll and Deal as `?`, which BPL uses
+for [predicates](question.qmd).
+
+`¿` draws from the session’s stream of random numbers, which the
+operating system seeds when the session starts.
+[`•prefs ["seed":n]`](../system/prefs.qmd) seeds it with the nonnegative
+integer `n`, and the same seed gives the same draws. In a
+[map](../terms.qmd#term-map), the cells take the stream’s numbers in
+turn. A [batched call](../evaluation.qmd#functions-and-effects) takes
+every cell’s numbers for one `¿` at once, in cell order.
+[`•rand`](../system/rand.qmd) makes a separate stream.
+
+``` bpl
+•prefs ["seed":42] ⋄ a←¿6 6 6 ⋄ •prefs ["seed":42] ⋄ a≡¿6 6 6    ⍝ $t
+```

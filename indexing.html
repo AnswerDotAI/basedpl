@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.19">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Selecting and changing parts of arrays: positions, blocks, one item per row or column, sorted columns, coordinates, paths, windows, edges and named indices">
+
+<title>Indexing – BasedPL</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-f2788e636de456f6409e966386820849.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [],
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="Indexing – BasedPL">
+<meta property="og:description" content="Selecting and changing parts of arrays: positions, blocks, one item per row or column, sorted columns, coordinates, paths, windows, edges and named indices">
+<meta property="og:site_name" content="BasedPL">
+<meta name="twitter:title" content="Indexing – BasedPL">
+<meta name="twitter:description" content="Selecting and changing parts of arrays: positions, blocks, one item per row or column, sorted columns, coordinates, paths, windows, edges and named indices">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">BasedPL</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="./getting-started.html" aria-current="page"> 
+<span class="menu-text">Get started</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./glyphs.html"> 
+<span class="menu-text">Glyph reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./python.html"> 
+<span class="menu-text">Python</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/AnswerDotAI/basedpl"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./overview.html">Explanations</a></li><li class="breadcrumb-item"><a href="./indexing.html">Indexing</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./playground.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Playground</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./gallery.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gallery</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./web.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL on the web</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./python.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Python</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./notebooks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Using BPL notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./repl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">REPL</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command line</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyph reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyboard.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Keyboard map</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./syntax.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Syntax</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./hanzi-notation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hanzi as notation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./hanzi-notation-zh.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">汉字 BPL：让记号参与思考</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./evaluation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Evaluation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./terms.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Terms</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./system-functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">System functions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./comparison.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL, APL and BQN side by side</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">Explanations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./overview.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language overview</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs-study.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyphs Study Guide</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./principles.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language principles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./arrays.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Arrays</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./indexing.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Indexing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./numbers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Numbers</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./mathish.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mathish mode</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./strings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Characters and strings</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./bracket-types.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Types of brackets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./scripts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Superscripts and subscripts</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./assignment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Assignment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dfns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dfns</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./modules.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modules and namespaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Axis keys</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Working with data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Files, CSV and JSON</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./regex.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regex</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./distributions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Probability distributions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./xml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">XML, SVG and images</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plots</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tooling</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./introspection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Names and help</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./processes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Process interfaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dyalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dyalog sessions</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#positions" id="toc-positions" class="nav-link active" data-scroll-target="#positions">Positions</a></li>
+  <li><a href="#blocks-of-rows-and-columns" id="toc-blocks-of-rows-and-columns" class="nav-link" data-scroll-target="#blocks-of-rows-and-columns">Blocks of rows and columns</a></li>
+  <li><a href="#one-item-from-each-row-or-column" id="toc-one-item-from-each-row-or-column" class="nav-link" data-scroll-target="#one-item-from-each-row-or-column">One item from each row or column</a></li>
+  <li><a href="#sorting-each-column" id="toc-sorting-each-column" class="nav-link" data-scroll-target="#sorting-each-column">Sorting each column</a></li>
+  <li><a href="#coordinates" id="toc-coordinates" class="nav-link" data-scroll-target="#coordinates">Coordinates</a></li>
+  <li><a href="#paths" id="toc-paths" class="nav-link" data-scroll-target="#paths">Paths</a></li>
+  <li><a href="#windows-and-neighbours" id="toc-windows-and-neighbours" class="nav-link" data-scroll-target="#windows-and-neighbours">Windows and neighbours</a></li>
+  <li><a href="#edges" id="toc-edges" class="nav-link" data-scroll-target="#edges">Edges</a></li>
+  <li><a href="#changing-a-selection" id="toc-changing-a-selection" class="nav-link" data-scroll-target="#changing-a-selection">Changing a selection</a></li>
+  <li><a href="#under" id="toc-under" class="nav-link" data-scroll-target="#under">Under</a></li>
+  <li><a href="#named-and-fresh-indices" id="toc-named-and-fresh-indices" class="nav-link" data-scroll-target="#named-and-fresh-indices">Named and fresh indices</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="indexing.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./overview.html">Explanations</a></li><li class="breadcrumb-item"><a href="./indexing.html">Indexing</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Indexing</h1>
+</div>
+
+<div>
+  <div class="description">
+    Selecting and changing parts of arrays: positions, blocks, one item per row or column, sorted columns, coordinates, paths, windows, edges and named indices
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<p>BPL has three ways to select. <code>I⌷A</code> takes selectors for leading axes and gives every combination of them. <code>A.[I J]</code> pairs its arrays of positions item by item, as NumPy’s advanced indexing does. <code>P⊃A</code> follows a path into nested arrays. Each section below shows an everyday task and the form that does it. <a href="./keyed.html">Axis keys</a> covers selecting by key.</p>
+<section id="positions" class="level2">
+<h2 class="anchored" data-anchor-id="positions">Positions</h2>
+<p>Positions count from 0. A negative position counts from the end, as in Python:</p>
+<div id="0e349e8c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ot">v</span><span class="kw">←</span><span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span> <span class="dv">40</span> <span class="dv">50</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ot">v</span><span class="ex">.</span>[[<span class="dv">0</span> <span class="dv">¯1</span>]]</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="ot">v</span><span class="kw">₋₁</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>10 50</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>50</code></pre>
+</div>
+</div>
+<p>A position past the end of an axis is an <code>INDEX</code> error. <code>:</code> selects one whole axis. <code>∞</code> selects all remaining axes here. <a href="./glyphs/circle-stile.html">Reverse</a>, <code>⌽</code>, reverses the last axis:</p>
+<div id="8f36366b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ot">m</span><span class="kw">←</span>[<span class="dv">0</span> <span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span><span class="kw">⋄</span><span class="dv">4</span> <span class="dv">5</span> <span class="dv">6</span> <span class="dv">7</span><span class="kw">⋄</span><span class="dv">8</span> <span class="dv">9</span> <span class="dv">10</span> <span class="dv">11</span>]</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">⌽</span><span class="ot">m</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code> 3  2 1 0
+ 7  6 5 4
+11 10 9 8</code></pre>
+</div>
+</div>
+<p><code>¯∞</code> inserts an unnamed, unkeyed axis of length one without consuming an input axis. It works with both forms of indexing, as Python’s <code>None</code> does:</p>
+<div id="3d3d1076" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴</span>[<span class="dv">¯∞</span> <span class="dv">∞</span>]<span class="fu">⌷</span><span class="ot">m</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">⍴</span><span class="ot">m</span><span class="ex">.</span>[<span class="fu">:</span> <span class="dv">¯∞</span> <span class="fu">:</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[1 3 4]ₓ</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>[3 1 4]ₓ</code></pre>
+</div>
+</div>
+</section>
+<section id="blocks-of-rows-and-columns" class="level2">
+<h2 class="anchored" data-anchor-id="blocks-of-rows-and-columns">Blocks of rows and columns</h2>
+<p><code>⌷</code> selects every combination of its positions. Here are rows 1 and 2 with columns 0 and 3:</p>
+<div id="9d8877e0" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>[<span class="dv">1</span> <span class="dv">2</span>;<span class="dv">0</span> <span class="dv">3</span>]<span class="fu">⌷</span><span class="ot">m</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>4  7
+8 11</code></pre>
+</div>
+</div>
+<p><code>.[]</code> pairs its arrays instead. The same two arrays read <code>m</code> at row 1, column 0 and at row 2, column 3:</p>
+<div id="67b2b562" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ot">m</span><span class="ex">.</span>[[<span class="dv">1</span> <span class="dv">2</span>] [<span class="dv">0</span> <span class="dv">3</span>]]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>4 11</code></pre>
+</div>
+</div>
+<p>Named positions build the block for you. Arrays with different axis names don’t pair. Each keeps its own axis, as in xarray’s broadcasting by dimension name:</p>
+<div id="5a96a22b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ot">x</span><span class="kw">←</span>[<span class="st">"i"</span><span class="fu">:</span><span class="dv">5</span> <span class="st">"j"</span><span class="fu">:</span><span class="dv">5</span>]<span class="fu">⍴⍳</span><span class="dv">25</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="ot">r</span><span class="kw">←</span><span class="dv">1</span><span class="fu">+⍳</span>[<span class="st">"i"</span><span class="fu">:</span><span class="dv">3</span>] <span class="kw">⋄</span> <span class="ot">c</span><span class="kw">←</span><span class="dv">2</span><span class="fu">+⍳</span>[<span class="st">"j"</span><span class="fu">:</span><span class="dv">2</span>]</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="ot">x</span><span class="ex">.</span>[<span class="ot">r</span> <span class="ot">c</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code> 7  8
+12 13
+17 18</code></pre>
+</div>
+</div>
+</section>
+<section id="one-item-from-each-row-or-column" class="level2">
+<h2 class="anchored" data-anchor-id="one-item-from-each-row-or-column">One item from each row or column</h2>
+<p>Pairing picks one item from each row. <code>k</code> gives a column for each row of <code>m</code>, as NumPy’s <code>m[np.arange(3), k]</code> does:</p>
+<div id="d4b9be4e" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ot">k</span><span class="kw">←</span>[<span class="dv">2</span> <span class="dv">0</span> <span class="dv">3</span>]<span class="dv">ₓ</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="ot">m</span><span class="ex">.</span>[<span class="fu">⍳</span><span class="dv">3ₓ</span> <span class="ot">k</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>2 4 11</code></pre>
+</div>
+</div>
+<p>A classifier’s loss reads the probability of each sample’s true class. Each column of <code>P</code> holds one sample’s probabilities for three classes. <code>L</code> gives each sample’s true class. The loss is the mean negative log of those probabilities:</p>
+<div id="2c0a5a1b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ot">P</span><span class="kw">←</span>[<span class="dv">0.7</span> <span class="dv">0.1</span> <span class="dv">0.2</span> <span class="dv">0.1</span><span class="kw">⋄</span><span class="dv">0.2</span> <span class="dv">0.8</span> <span class="dv">0.3</span> <span class="dv">0.1</span><span class="kw">⋄</span><span class="dv">0.1</span> <span class="dv">0.1</span> <span class="dv">0.5</span> <span class="dv">0.8</span>]</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="ot">L</span><span class="kw">←</span>[<span class="dv">0</span> <span class="dv">1</span> <span class="dv">2</span> <span class="dv">2</span>]<span class="dv">ₓ</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="ot">P</span><span class="ex">.</span>[<span class="ot">L</span> <span class="fu">⍳</span><span class="dv">4ₓ</span>]</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="fu">-</span> <span class="fu">+</span><span class="op">/</span><span class="fu">÷≢</span> <span class="fu">⍟</span><span class="ot">P</span><span class="ex">.</span>[<span class="ot">L</span> <span class="fu">⍳</span><span class="dv">4ₓ</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>0.7 0.8 0.5 0.8</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>0.3740273068</code></pre>
+</div>
+</div>
+<p>With named axes, the same pick works through names. <code>labels</code> holds one class number for each sample, along the sample axis <code>b</code>. Because <code>labels</code> and <code>b</code> share that name, they pair and take <code>Pn</code>’s axes in order. <code>labels</code> gives the row and <code>b</code> gives the column, as in <code>P.[L ⍳4ₓ]</code>:</p>
+<div id="5e95289b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="ot">Pn</span><span class="kw">←</span>[<span class="st">"c"</span><span class="fu">:</span><span class="dv">3</span> <span class="st">"b"</span><span class="fu">:</span><span class="dv">4</span>]<span class="fu">⍴</span><span class="ot">P</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="ot">labels</span><span class="kw">←</span>[<span class="st">"b"</span><span class="fu">:</span><span class="dv">4</span>]<span class="fu">⍴</span><span class="ot">L</span> <span class="kw">⋄</span> <span class="ot">b</span><span class="kw">←</span><span class="fu">⍳</span>[<span class="st">"b"</span><span class="fu">:</span><span class="dv">4</span>]</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="ot">Pn</span><span class="ex">.</span>[<span class="ot">labels</span> <span class="ot">b</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>["b":4]⍴[0.7 0.8 0.5 0.8]</code></pre>
+</div>
+</div>
+<p>An array that appears twice pairs with itself, giving a diagonal:</p>
+<div id="e9a8a491" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="ot">i</span><span class="kw">←</span><span class="fu">⍳</span><span class="dv">3ₓ</span> <span class="kw">⋄</span> <span class="ot">m</span><span class="ex">.</span>[<span class="ot">i</span> <span class="ot">i</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>0 5 10</code></pre>
+</div>
+</div>
+</section>
+<section id="sorting-each-column" class="level2">
+<h2 class="anchored" data-anchor-id="sorting-each-column">Sorting each column</h2>
+<p><code>⍋⍠"i" sc</code> grades each column of <code>sc</code>, giving that column’s rows in sorted order. The grades carry both of <code>sc</code>’s axis names. As a selector, they read rows while their <code>j</code> axis lines up with <code>sc</code>’s columns. Each column of <code>sc</code> is read in sorted order, as NumPy’s <code>take_along_axis</code> does with <code>argsort</code>:</p>
+<div id="4965eb9a" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="ot">sc</span><span class="kw">←</span>[<span class="st">"i"</span><span class="fu">:</span><span class="dv">3</span> <span class="st">"j"</span><span class="fu">:</span><span class="dv">4</span>]<span class="fu">⍴</span>[<span class="dv">3</span> <span class="dv">1</span> <span class="dv">4</span> <span class="dv">1</span><span class="kw">⋄</span><span class="dv">5</span> <span class="dv">9</span> <span class="dv">2</span> <span class="dv">6</span><span class="kw">⋄</span><span class="dv">5</span> <span class="dv">3</span> <span class="dv">5</span> <span class="dv">8</span>]</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="ot">gr</span><span class="kw">←</span><span class="fu">⍋</span><span class="ex">⍠</span><span class="st">"i"</span> <span class="ot">sc</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="ot">gr</span></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="ot">sc</span><span class="ex">.</span>[<span class="ot">gr</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[0 0 1 0
+ 1 2 0 1
+ 2 1 2 2]ₓ</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>3 1 2 1
+5 3 4 6
+5 9 5 8</code></pre>
+</div>
+</div>
+</section>
+<section id="coordinates" class="level2">
+<h2 class="anchored" data-anchor-id="coordinates">Coordinates</h2>
+<p><code>⍸</code> gives the coordinates where a condition holds. A selector of coordinates reads at each one:</p>
+<div id="db66c58a" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="ot">m</span><span class="ex">.</span>[<span class="fu">⍸</span><span class="ot">m</span><span class="fu">&gt;</span><span class="dv">8</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>9 10 11</code></pre>
+</div>
+</div>
+<p>Assigning through the same selector changes those items:</p>
+<div id="38ab1a6c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="ot">z</span><span class="kw">←</span><span class="ot">m</span> <span class="kw">⋄</span> <span class="ot">z</span><span class="ex">.</span>[<span class="fu">⍸</span><span class="ot">z</span><span class="fu">&gt;</span><span class="dv">8</span>]<span class="kw">←</span><span class="dv">0</span> <span class="kw">⋄</span> <span class="ot">z</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>0 1 2 3
+4 5 6 7
+8 0 0 0</code></pre>
+</div>
+</div>
+</section>
+<section id="paths" class="level2">
+<h2 class="anchored" data-anchor-id="paths">Paths</h2>
+<p><code>⊃</code> follows a path into nested arrays, one level for each item of the path. Item 2 of item 1:</p>
+<div id="0d3d20cb" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="ot">n</span><span class="kw">←</span>[<span class="dv">1</span> <span class="dv">2</span>;<span class="dv">3</span> <span class="dv">4</span> <span class="dv">5</span>]</span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>[<span class="dv">1</span> <span class="dv">2</span>]<span class="fu">⊃</span><span class="ot">n</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>5</code></pre>
+</div>
+</div>
+<p><a href="./glyphs/squad.html">Index</a> also takes arrays of paths, with <code>¯∞</code> placing new axes before the paths or among the selected cells’ axes.</p>
+</section>
+<section id="windows-and-neighbours" class="level2">
+<h2 class="anchored" data-anchor-id="windows-and-neighbours">Windows and neighbours</h2>
+<p>Adding two named indices builds a table of positions, because their names differ. Reading a vector through that table gives sliding windows:</p>
+<div id="4df8eda3" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="ot">w</span><span class="kw">←</span><span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span> <span class="dv">40</span> <span class="dv">50</span> <span class="kw">⋄</span> <span class="ot">s</span><span class="kw">←</span><span class="fu">⍳</span>[<span class="st">"s"</span><span class="fu">:</span><span class="dv">3</span>] <span class="kw">⋄</span> <span class="ot">t</span><span class="kw">←</span><span class="fu">⍳</span>[<span class="st">"t"</span><span class="fu">:</span><span class="dv">3</span>]</span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a><span class="ot">s</span><span class="fu">+</span><span class="ot">t</span></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a><span class="ot">w</span><span class="ex">.</span>[<span class="ot">s</span><span class="fu">+</span><span class="ot">t</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>0 1 2
+1 2 3
+2 3 4</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>10 20 30
+20 30 40
+30 40 50</code></pre>
+</div>
+</div>
+<p>Differences between neighbours read a vector twice, one position apart:</p>
+<div id="d2bd4673" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="ot">y</span><span class="kw">←</span><span class="dv">10</span> <span class="dv">20</span> <span class="dv">40</span> <span class="dv">70</span> <span class="kw">⋄</span> <span class="ot">p</span><span class="kw">←</span><span class="fu">⍳</span>[<span class="st">"p"</span><span class="fu">:</span><span class="dv">3</span>]</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a><span class="ot">y</span><span class="ex">.</span>[<span class="ot">p</span><span class="fu">+</span><span class="dv">1</span>]<span class="fu">-</span><span class="ot">y</span><span class="ex">.</span>[<span class="ot">p</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>["p":3]⍴[10 20 30]</code></pre>
+</div>
+</div>
+</section>
+<section id="edges" class="level2">
+<h2 class="anchored" data-anchor-id="edges">Edges</h2>
+<p>A neighbour’s position comes from arithmetic and can fall off the axis. At the start, <code>e-1</code> is <code>¯1</code>, which reads the last item:</p>
+<div id="01ce9984" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="ot">u</span><span class="kw">←</span><span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span> <span class="dv">40</span> <span class="kw">⋄</span> <span class="ot">e</span><span class="kw">←</span><span class="fu">⍳</span><span class="dv">4ₓ</span></span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a><span class="ot">u</span><span class="ex">.</span>[<span class="ot">e</span><span class="fu">-</span><span class="dv">1ₓ</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>40 10 20 30</code></pre>
+</div>
+</div>
+<p><a href="./system/edge.html"><code>•edge</code></a> says what happens at the edge instead. <code>4•edge e-1</code> turns each position outside an axis of length 4 into NaN. A NaN position reads fill. Reading <code>u</code> through these positions shifts it right, with a zero at the start:</p>
+<div id="f01636be" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="dv">4</span><span class="fu">•edge</span> <span class="ot">e</span><span class="fu">-</span><span class="dv">1</span></span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a><span class="ot">u</span><span class="ex">.</span>[(<span class="dv">4</span><span class="fu">•edge</span> <span class="ot">e</span><span class="fu">-</span><span class="dv">1</span>)]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>$n 0 1 2</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>0 10 20 30</code></pre>
+</div>
+</div>
+<p><code>•edge "clamp"</code> gives a function that moves each position outside the axis to the nearest end instead. <code>"wrap"</code>, <code>"reflect"</code> and <code>"symmetric"</code> give the other modes:</p>
+<div id="ffd6987c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="ot">clamp</span><span class="kw">←</span><span class="fu">•edge</span> <span class="st">"clamp"</span></span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a><span class="ot">u</span><span class="ex">.</span>[(<span class="dv">4</span> <span class="ot">clamp</span> <span class="ot">e</span><span class="fu">-</span><span class="dv">1</span>)]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>10 10 20 30</code></pre>
+</div>
+</div>
+<p>On an axis of length 6, here is where each mode sends the positions from ¯2 to 5:</p>
+<div id="0f8a5a75" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>[<span class="ot">wrap</span> <span class="ot">reflect</span> <span class="ot">symmetric</span>]<span class="kw">←</span><span class="fu">•edge</span> <span class="st">"wrap"</span> <span class="st">"reflect"</span> <span class="st">"symmetric"</span></span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a><span class="ot">pos</span><span class="kw">←</span><span class="dv">¯2ₓ</span><span class="fu">+⍳</span><span class="dv">8ₓ</span></span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a><span class="dv">6</span> <span class="ot">clamp</span> <span class="ot">pos</span></span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a><span class="dv">6</span> <span class="ot">wrap</span> <span class="ot">pos</span></span>
+<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a><span class="dv">6</span> <span class="ot">reflect</span> <span class="ot">pos</span></span>
+<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a><span class="dv">6</span> <span class="ot">symmetric</span> <span class="ot">pos</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[0 0 0 1 2 3 4 5]ₓ</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>[4 5 0 1 2 3 4 5]ₓ</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>[2 1 0 1 2 3 4 5]ₓ</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>[1 0 0 1 2 3 4 5]ₓ</code></pre>
+</div>
+</div>
+</section>
+<section id="changing-a-selection" class="level2">
+<h2 class="anchored" data-anchor-id="changing-a-selection">Changing a selection</h2>
+<p>Any selection can be an assignment target:</p>
+<div id="9037de28" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb50"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a><span class="ot">a</span><span class="kw">←</span><span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span> <span class="dv">40</span> <span class="dv">50</span> <span class="kw">⋄</span> <span class="ot">a</span><span class="ex">.</span>[[<span class="dv">1</span> <span class="dv">3</span>]]<span class="kw">←</span><span class="dv">0</span> <span class="kw">⋄</span> <span class="ot">a</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>10 0 30 0 50</code></pre>
+</div>
+</div>
+<p>To write a block, use <code>⌷</code> with a space before <code>←</code>. The space makes the whole run before it the target:</p>
+<div id="a2ea5fac" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a><span class="ot">bk</span><span class="kw">←</span><span class="dv">3</span> <span class="dv">6</span><span class="fu">⍴</span><span class="dv">0</span> <span class="kw">⋄</span> [<span class="dv">0</span> <span class="dv">2</span>;<span class="dv">1</span> <span class="dv">4</span>]<span class="fu">⌷</span><span class="ot">bk</span> <span class="fu">+</span><span class="kw">←</span><span class="dv">10</span> <span class="kw">⋄</span> <span class="ot">bk</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>0 10 0 0 10 0
+0  0 0 0  0 0
+0 10 0 0 10 0</code></pre>
+</div>
+</div>
+<p>Modified assignment applies once for each time a position appears. Counting a histogram takes one line:</p>
+<div id="a9158c3d" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a><span class="ot">h</span><span class="kw">←</span><span class="dv">5</span><span class="fu">⍴</span><span class="dv">0</span> <span class="kw">⋄</span> <span class="ot">h</span><span class="ex">.</span>[[<span class="dv">1</span> <span class="dv">3</span> <span class="dv">1</span> <span class="dv">1</span>]]<span class="fu">+</span><span class="kw">←</span><span class="dv">1</span> <span class="kw">⋄</span> <span class="ot">h</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>0 3 0 1 0</code></pre>
+</div>
+</div>
+<p>A write through a NaN position writes nothing. Passing bin numbers through <code>•edge</code> first drops the values that fall outside the bins, here 7 and ¯1:</p>
+<div id="9bba25b9" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb56"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a><span class="ot">g</span><span class="kw">←</span><span class="dv">5</span><span class="fu">⍴</span><span class="dv">0</span> <span class="kw">⋄</span> <span class="ot">d</span><span class="kw">←</span><span class="dv">0.5</span> <span class="dv">1.5</span> <span class="dv">1.7</span> <span class="dv">4.2</span> <span class="dv">7</span> <span class="dv">¯1</span></span>
+<span id="cb56-2"><a href="#cb56-2" aria-hidden="true" tabindex="-1"></a><span class="ot">g</span><span class="ex">.</span>[(<span class="dv">5</span><span class="fu">•edge</span> <span class="fu">⌊</span><span class="ot">d</span>)]<span class="fu">+</span><span class="kw">←</span><span class="dv">1</span> <span class="kw">⋄</span> <span class="ot">g</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>1 2 0 0 1</code></pre>
+</div>
+</div>
+<p>A write is dropped wherever the same read gives fill. <code>5↑abc</code> reads two fills past the end of <code>abc</code>. Writing through it changes only the three items that exist:</p>
+<div id="f5fb54e6" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="ot">abc</span><span class="kw">←</span><span class="dv">1</span> <span class="dv">2</span> <span class="dv">3</span> <span class="kw">⋄</span> <span class="dv">5</span><span class="fu">↑</span><span class="ot">abc</span> <span class="kw">←</span><span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span> <span class="dv">40</span> <span class="dv">50</span> <span class="kw">⋄</span> <span class="ot">abc</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>10 20 30</code></pre>
+</div>
+</div>
+<p>First of an empty string reads a fill. Under can therefore change the first letter of each word, empty words included, with no special case. <code>1•c</code> converts to uppercase:</p>
+<div id="6d9509c1" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span><span class="fu">•c</span><span class="ex">@</span><span class="fu">↑</span><span class="op">¨</span> <span class="st">"hello"</span> <span class="st">""</span> <span class="st">"world"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>"Hello" "" "World"</code></pre>
+</div>
+</div>
+</section>
+<section id="under" class="level2">
+<h2 class="anchored" data-anchor-id="under">Under</h2>
+<p><code>f@g</code> applies <code>f</code> to the selection that <code>g</code> makes, then writes the result back:</p>
+<div id="59c3badb" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb62"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a>{<span class="va">⍵</span><span class="fu">×</span><span class="dv">10</span>}<span class="ex">@</span>[<span class="dv">1</span> <span class="dv">3</span>] <span class="ot">u</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>10 200 30 400</code></pre>
+</div>
+</div>
+<p>After a function, <code>.[I]</code> selects from its result. Under can use <code>⊢.[I]</code> as its selector, with no dfn:</p>
+<div id="ae866c81" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb64"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb64-1"><a href="#cb64-1" aria-hidden="true" tabindex="-1"></a>{<span class="va">⍵</span><span class="fu">×</span><span class="dv">10</span>}<span class="ex">@</span> <span class="fu">⊢</span><span class="ex">.</span>[[<span class="dv">1</span> <span class="dv">3</span>]] <span class="ot">u</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>10 200 30 400</code></pre>
+</div>
+</div>
+<p><code>⊢.name</code> reads a field in the same way, as <code>{⍵.name}</code> does:</p>
+<div id="7633b191" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb66"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a><span class="ot">orders</span><span class="kw">←</span>[[<span class="st">"price"</span><span class="fu">:</span><span class="dv">10</span> <span class="st">"qty"</span><span class="fu">:</span><span class="dv">2</span>] [<span class="st">"price"</span><span class="fu">:</span><span class="dv">5</span> <span class="st">"qty"</span><span class="fu">:</span><span class="dv">1</span>]]</span>
+<span id="cb66-2"><a href="#cb66-2" aria-hidden="true" tabindex="-1"></a><span class="fu">⊢</span><span class="ex">.</span><span class="ot">price</span><span class="op">¨</span> <span class="ot">orders</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>10 5</code></pre>
+</div>
+</div>
+</section>
+<section id="named-and-fresh-indices" class="level2">
+<h2 class="anchored" data-anchor-id="named-and-fresh-indices">Named and fresh indices</h2>
+<p>A named index on its own reads the axis with its name, wherever it’s written. <code>sales.[mo cy]</code> reads months with <code>mo</code> and cities with <code>cy</code>. The result is <code>sales</code> itself:</p>
+<div id="587f4243" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb68"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a><span class="ot">sales</span><span class="kw">←</span>[<span class="st">"city"</span><span class="fu">:</span><span class="st">"NY"</span> <span class="st">"LA"</span>;<span class="st">"month"</span><span class="fu">:</span><span class="st">"Jan"</span> <span class="st">"Feb"</span> <span class="st">"Mar"</span>]<span class="fu">:</span>[<span class="dv">10</span> <span class="dv">20</span> <span class="dv">30</span><span class="kw">⋄</span><span class="dv">40</span> <span class="dv">50</span> <span class="dv">60</span>]</span>
+<span id="cb68-2"><a href="#cb68-2" aria-hidden="true" tabindex="-1"></a><span class="ot">cy</span><span class="kw">←</span><span class="fu">⍳</span><span class="ex">⍠</span><span class="st">"city"</span> <span class="ot">sales</span> <span class="kw">⋄</span> <span class="ot">mo</span><span class="kw">←</span><span class="fu">⍳</span><span class="ex">⍠</span><span class="st">"month"</span> <span class="ot">sales</span></span>
+<span id="cb68-3"><a href="#cb68-3" aria-hidden="true" tabindex="-1"></a><span class="ot">sales</span><span class="fu">≡</span><span class="ot">sales</span><span class="ex">.</span>[<span class="ot">mo</span> <span class="ot">cy</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>$t</code></pre>
+</div>
+</div>
+<p><a href="./system/index.html"><code>•index</code></a> gives an index along a fresh name. Two fresh indices build a grid. Subtracting one reading of <code>q</code> from another gives the difference between every pair of items:</p>
+<div id="fd0eaf57" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb70"><pre class="sourceCode bpl code-with-copy"><code class="sourceCode bpl"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a><span class="ot">q</span><span class="kw">←</span><span class="dv">10</span> <span class="dv">20</span> <span class="dv">40</span> <span class="kw">⋄</span> [<span class="ot">ri</span> <span class="ot">ci</span>]<span class="kw">←</span><span class="fu">•index</span> <span class="dv">3</span> <span class="dv">3</span></span>
+<span id="cb70-2"><a href="#cb70-2" aria-hidden="true" tabindex="-1"></a><span class="ot">q</span><span class="ex">.</span>[<span class="ot">ri</span>]<span class="fu">-</span><span class="ot">q</span><span class="ex">.</span>[<span class="ot">ci</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code> 0 ¯10 ¯30
+10   0 ¯20
+30  20   0</code></pre>
+</div>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/answerdotai\.github\.io\/basedpl");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

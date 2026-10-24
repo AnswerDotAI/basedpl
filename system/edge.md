@@ -1,0 +1,51 @@
+
+
+# `•edge` — Edge modes
+
+`n•edge p` gives the position on an axis of `n` items that each position
+in `p` reads, under the fill mode. `•edge mode` gives the function for
+another mode, `"clamp"`, `"wrap"`, `"reflect"` or `"symmetric"`, which
+takes `n` and `p` the same way. `•edge` maps over a list of mode names,
+as `•element` maps over tags. Like an element function, a mode function
+displays as the call that made it, such as `•edge"clamp"`. Positions
+inside the axis stay as they are in every mode.
+
+``` bpl
+p←¯2+⍳8ₓ
+[clamp wrap reflect symmetric]←•edge "clamp" "wrap" "reflect" "symmetric"
+4•edge p         ⍝ $n $n 0 1 2 3 $n $n
+4 clamp p        ⍝ [0 0 0 1 2 3 3 3]ₓ
+4 wrap p         ⍝ [2 3 0 1 2 3 0 1]ₓ
+4 reflect p      ⍝ [2 1 0 1 2 3 2 1]ₓ
+4 symmetric p    ⍝ [1 0 0 1 2 3 3 2]ₓ
+```
+
+Fill gives 64-bit floats whatever the float pref, with NaN for a
+position outside the axis. The other modes give exact integers.
+`"reflect"` leaves out the edge item, as NumPy’s and PyTorch’s `reflect`
+do. `"symmetric"` repeats it, as NumPy’s `symmetric` does. An axis of
+length 0 gives NaN in every mode. A NaN in `p` stays NaN.
+
+A selection reads the positions that `•edge` gives. A NaN position reads
+the fill, and a write through it writes nothing. A position with spaces
+in it goes in parentheses inside brackets:
+
+``` bpl
+x←10 20 30 40 ⋄ i←⍳4ₓ ⋄ clamp←•edge "clamp"
+x.[(4•edge i-1)]     ⍝ 0 10 20 30
+x.[(4 clamp i-1)]    ⍝ 10 10 20 30
+```
+
+Each mode is arithmetic on positions. Wrap is `n|p`, and clamp is
+`0⌈(n-1)⌊p`. A bare negative position counts back from the end, as in
+every selection.
+
+[Windows](../glyphs/up-down-arrow.qmd) and
+[Stencil](../glyphs/quad-diamond.qmd) take a mode’s name as the `edge`
+of an options record, and read their windows’ positions past the ends by
+it, as in `["size":3 "edge":"wrap"]↕v`.
+
+Errors: `DOMAIN` for a mode name that isn’t one of the five, a length
+that isn’t a nonnegative whole number, or a position that isn’t whole.
+
+[Dot](../glyphs/dot.qmd) and [`⌷`](../glyphs/squad.qmd) select.

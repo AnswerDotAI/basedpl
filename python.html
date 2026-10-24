@@ -1,0 +1,1921 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.19">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Native arrays, callable functions and Python conversions.">
+
+<title>Python – BasedPL</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-f2788e636de456f6409e966386820849.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [],
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+
+
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="Python – BasedPL">
+<meta property="og:description" content="Native arrays, callable functions and Python conversions.">
+<meta property="og:image" content="https://answerdotai.github.io/basedpl/python_files/figure-html/cell-21-output-1.svg">
+<meta property="og:site_name" content="BasedPL">
+<meta name="twitter:title" content="Python – BasedPL">
+<meta name="twitter:description" content="Native arrays, callable functions and Python conversions.">
+<meta name="twitter:image" content="https://answerdotai.github.io/basedpl/python_files/figure-html/cell-21-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">BasedPL</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="./getting-started.html" aria-current="page"> 
+<span class="menu-text">Get started</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./glyphs.html"> 
+<span class="menu-text">Glyph reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./python.html"> 
+<span class="menu-text">Python</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/AnswerDotAI/basedpl"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./python.html">Python</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./playground.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Playground</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./gallery.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gallery</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./web.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL on the web</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./python.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Python</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./notebooks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Using BPL notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./repl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">REPL</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command line</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyph reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyboard.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Keyboard map</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./syntax.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Syntax</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./hanzi-notation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hanzi as notation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./hanzi-notation-zh.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">汉字 BPL：让记号参与思考</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./evaluation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Evaluation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./terms.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Terms</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./system-functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">System functions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./comparison.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BPL, APL and BQN side by side</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">Explanations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./overview.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language overview</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./glyphs-study.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glyphs Study Guide</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./principles.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language principles</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./arrays.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Arrays</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./indexing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Indexing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./numbers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Numbers</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./mathish.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mathish mode</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./strings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Characters and strings</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./bracket-types.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Types of brackets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./scripts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Superscripts and subscripts</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./assignment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Assignment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dfns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dfns</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./modules.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modules and namespaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./keyed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Axis keys</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Working with data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Files, CSV and JSON</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./regex.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regex</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./distributions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Probability distributions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./xml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">XML, SVG and images</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plots</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tooling</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./introspection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Names and help</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./processes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Process interfaces</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dyalog.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dyalog sessions</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#rustymath-vs-basedpl" id="toc-rustymath-vs-basedpl" class="nav-link active" data-scroll-target="#rustymath-vs-basedpl">Rustymath vs BasedPL</a></li>
+  <li><a href="#native-arrays" id="toc-native-arrays" class="nav-link" data-scroll-target="#native-arrays">Native arrays</a></li>
+  <li><a href="#the-workspace" id="toc-the-workspace" class="nav-link" data-scroll-target="#the-workspace">The workspace</a>
+  <ul class="collapse">
+  <li><a href="#names-and-help" id="toc-names-and-help" class="nav-link" data-scroll-target="#names-and-help">Names and help</a></li>
+  </ul></li>
+  <li><a href="#labelled-arrays" id="toc-labelled-arrays" class="nav-link" data-scroll-target="#labelled-arrays">Labelled arrays</a></li>
+  <li><a href="#plots" id="toc-plots" class="nav-link" data-scroll-target="#plots">Plots</a></li>
+  <li><a href="#values-and-conversion" id="toc-values-and-conversion" class="nav-link" data-scroll-target="#values-and-conversion">Values and conversion</a>
+  <ul class="collapse">
+  <li><a href="#fixed-width-integers" id="toc-fixed-width-integers" class="nav-link" data-scroll-target="#fixed-width-integers">Fixed-width integers</a></li>
+  </ul></li>
+  <li><a href="#array-operations" id="toc-array-operations" class="nav-link" data-scroll-target="#array-operations">Array operations</a></li>
+  <li><a href="#callable-functions" id="toc-callable-functions" class="nav-link" data-scroll-target="#callable-functions">Callable functions</a></li>
+  <li><a href="#word-functions" id="toc-word-functions" class="nav-link" data-scroll-target="#word-functions">Word functions</a></li>
+  <li><a href="#numerical-workflows" id="toc-numerical-workflows" class="nav-link" data-scroll-target="#numerical-workflows">Numerical workflows</a></li>
+  <li><a href="#printing-functions" id="toc-printing-functions" class="nav-link" data-scroll-target="#printing-functions">Printing functions</a></li>
+  <li><a href="#parsing-source" id="toc-parsing-source" class="nav-link" data-scroll-target="#parsing-source">Parsing source</a></li>
+  <li><a href="#errors-and-interruption" id="toc-errors-and-interruption" class="nav-link" data-scroll-target="#errors-and-interruption">Errors and interruption</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="python.html.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Python</h1>
+</div>
+
+<div>
+  <div class="description">
+    Native arrays, callable functions and Python conversions.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<div id="7409339b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> bpl, fn, Array, add, tally</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<section id="rustymath-vs-basedpl" class="level2">
+<h2 class="anchored" data-anchor-id="rustymath-vs-basedpl">Rustymath vs BasedPL</h2>
+<p>Both packages use Rustymath’s numerical core and share leading-axis broadcasting, Python selectors, and the <code>.keys</code> and <code>.names</code> metadata interface. Choose Rustymath for eager numerical arrays, or BasedPL for BPL values and composable functions.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th>Rustymath</th>
+<th>BasedPL</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Values</td>
+<td>Homogeneous arrays of fixed dtype</td>
+<td>Exact, mixed and nested values, functions and operators</td>
+</tr>
+<tr class="even">
+<td>Integer arithmetic</td>
+<td>Fixed-width results can wrap</td>
+<td>Ordinary exact integers can grow; explicit fixed-width integers wrap</td>
+</tr>
+<tr class="odd">
+<td>Execution</td>
+<td>Eager numerical operations</td>
+<td>Function fusion, batching and automatic differentiation</td>
+</tr>
+<tr class="even">
+<td>Results</td>
+<td>Python scalars when all inputs are scalars</td>
+<td>Native BPL values; convert explicitly with <code>.py</code> or <code>.np</code></td>
+</tr>
+<tr class="odd">
+<td>Function notation</td>
+<td>Ordinary Python calls</td>
+<td>Also currying, composition and BPL argument/axis conventions</td>
+</tr>
+<tr class="even">
+<td>Settings</td>
+<td>Explicit Mathish functions and a process-wide thread setting</td>
+<td>Process-wide preferences shared with BPL evaluation</td>
+</tr>
+</tbody>
+</table>
+<p>Python operators prefer BasedPL when a Rustymath array and a BasedPL value occur together. Converting ordinary arrays preserves supported dtypes and labels. Active BPL differentiation or batching values cannot convert to Rustymath.</p>
+<p>Rustymath’s ordinary functions use exact comparisons. The <code>rustymath.mathish</code> namespace provides J-inspired numerical conventions. BasedPL enables them for <a href="./terms.html#term-mathish-types">Mathish types</a> under default dynamic kinds. <code>bpl.prefs({'mathish': False})</code> disables them without changing the kinds setting. <a href="./numbers.html#mathish-mode">Numbers</a> describes the comparison and zero-division rules.</p>
+</section>
+<section id="native-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="native-arrays">Native arrays</h2>
+<p><code>bpl</code> is the BPL workspace. It keeps its names for the life of the Python process. Calling it returns a native <code>basedpl.Array</code>. It retains nesting, exact numbers and empty-array prototypes. Use <code>.np</code> or <code>.py</code> to convert it.</p>
+<div id="16a65fc7" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>v <span class="op">=</span> bpl(<span class="st">'1 2 4'</span>)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>v</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>1 2 4</code></pre>
+</div>
+</div>
+<p>Python operators use BPL’s array semantics. Precedence follows Python, which multiplies before adding:</p>
+<div id="bd262623" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>v <span class="op">*</span> <span class="dv">2</span> <span class="op">+</span> <span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>3 5 9</code></pre>
+</div>
+</div>
+<p>Indexing counts from 0, as in Python. Negative positions count from the end. Slices take a start, stop and step, as Python’s do. Iteration yields rows of a matrix rather than individual items:</p>
+<div id="7189ad92" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>a <span class="op">=</span> bpl(<span class="st">'2 3⍴⍳6'</span>)</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>a.shape, a[<span class="dv">0</span>, :], a[:, <span class="dv">1</span>:], a[:, <span class="op">-</span><span class="dv">1</span>], <span class="bu">list</span>(a)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>((2, 3),
+ [0., 1., 2.],
+ [[1., 2.], [4., 5.]],
+ [2., 5.],
+ [[0., 1., 2.], [3., 4., 5.]])</code></pre>
+</div>
+</div>
+<p>BPL also exposes functions by their word names. <code>add.reduce</code> is <code>+/</code>, and <code>add.reduce.each</code> is <code>+/¨</code>. Applied to this nested vector, <code>+/¨</code> sums each item:</p>
+<div id="f5215624" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>nested <span class="op">=</span> bpl(<span class="st">'[[1 2] [3 4 5]]'</span>)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>nested</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>(1 2⋄3 4 5)</code></pre>
+</div>
+</div>
+<p>In Python, chain the corresponding word functions:</p>
+<div id="8573b3fe" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>add.<span class="bu">reduce</span>.each(nested)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>3 12</code></pre>
+</div>
+</div>
+<div id="ec57ffd7" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>f <span class="op">=</span> add.<span class="bu">reduce</span>.each</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>f(nested)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>3 12</code></pre>
+</div>
+</div>
+<p><code>Array(1, 2, 4)</code> makes a vector, as does <code>Array([1, 2, 4])</code>. A single argument keeps its own meaning: <code>Array(3)</code> is an atom. Python integers become ordinary exact values. Their NumPy export uses <code>int64</code> under dynamic kinds.</p>
+<p>Functions compose too: <code>add.reduce / tally</code> builds the mean function <code>+/÷≢</code>. Its result is still a native array, even when it holds a single number:</p>
+<div id="53cb119d" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>exact <span class="op">=</span> Array(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> exact.np.dtype <span class="op">==</span> np.int64</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>mean_native <span class="op">=</span> add.<span class="bu">reduce</span> <span class="op">/</span> tally</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>mean_native(exact)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>7ᵣ3</code></pre>
+</div>
+</div>
+<p>The native representation uses Python numeric notation: <code>2</code> is exact and <code>2.</code> is approximate. <code>.bpl</code> returns the BPL display as a string:</p>
+<div id="d77b9e00" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>v.bpl, exact.bpl</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>('1 2 4', '[1 2 4]ₓ')</code></pre>
+</div>
+</div>
+</section>
+<section id="the-workspace" class="level2">
+<h2 class="anchored" data-anchor-id="the-workspace">The workspace</h2>
+<p><code>bpl</code> is shared by the whole Python process, including the <a href="./notebooks.html">notebook magics</a>. <code>bpl(']clear')</code> removes every name and restores the starting display settings.</p>
+<p>Calling <code>bpl</code> returns a native array or function and prints explicit BPL output. It suppresses implicit BPL display. Use <code>.np</code> or <code>.py</code> when you need a converted result:</p>
+<div id="00cb6751" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>bpl(<span class="st">'3 3⍴⍳9'</span>).np</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>array([[0., 1., 2.],
+       [3., 4., 5.],
+       [6., 7., 8.]])</code></pre>
+</div>
+</div>
+<p>Module and <code>bpl</code> attributes give the builtins by name. For example, <code>bpl.conjugate(2+3j)</code> conjugates, <code>bpl.add(2)</code> adds 2, and <code>bpl.multiply(2)</code> doubles. <a href="#word-functions">Word functions</a> explains the names:</p>
+<div id="6d317506" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>bpl.conjugate(<span class="dv">2</span><span class="op">+</span><span class="ot">3j</span>).py, bpl.add(<span class="dv">2</span>)(<span class="dv">3</span>).py, bpl.multiply(<span class="dv">2</span>)([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>]).py</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>((2-3j), 5, array([2, 4, 6]))</code></pre>
+</div>
+</div>
+<p>Keyword arguments bind Python values in the workspace. Square brackets read a BPL expression or assign a value:</p>
+<div id="09e234b8" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>bpl(x<span class="op">=</span>np.arange(<span class="dv">1</span>, <span class="dv">6</span>))</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>bpl[<span class="st">'v'</span>] <span class="op">=</span> [<span class="dv">3</span>,<span class="dv">1</span>,<span class="dv">4</span>,<span class="dv">1</span>,<span class="dv">5</span>]</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>bpl[<span class="st">'&lt;v'</span>].np</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>array([1, 1, 3, 4, 5])</code></pre>
+</div>
+</div>
+<p><code>fn</code> makes a composable <code>Function</code> from a BPL function expression. It is the same as <code>bpl.fn</code>. Pass one argument for a monadic call or two for a dyadic call. Python integers stay exact. <code>.py</code> converts this mean to a <code>Fraction</code>:</p>
+<div id="6535f50f" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>bpl(<span class="st">'mean←{⍝ Mean of a vector</span><span class="ch">\n</span><span class="st">+/⍵ ÷ ≢⍵}'</span>)</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>mean <span class="op">=</span> fn(<span class="st">'mean'</span>)</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>mean([<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">4</span>]).py</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>Fraction(7, 3)</code></pre>
+</div>
+</div>
+<section id="names-and-help" class="level3">
+<h3 class="anchored" data-anchor-id="names-and-help">Names and help</h3>
+<p>Type <code>mean?</code> for its comment help and <code>mean??</code> for BPL source. The same information is available programmatically:</p>
+<div id="2dbcbd69" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>mean.source, bpl.names(<span class="st">'me'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>('{⍝ Mean of a vector\n+/⍵ ÷ ≢⍵}', ['mean'])</code></pre>
+</div>
+</div>
+<p>See <a href="./introspection.html">names and help</a> for source lookup, erasure and inspection APIs.</p>
+<p><code>fn</code> is late-bound: <code>fn("foo")</code> follows later redefinitions of <code>foo</code>. Use <code>bpl("foo")</code> to retain its current function.</p>
+<p>Calls print only explicit output (<code>⎕←</code> and display commands). Each output prints as soon as BPL produces it, before any later <code>⎕</code> prompt. A second argument of <code>'explicit'</code> captures it instead, returning a <code>Result</code> with the native <code>.value</code> and the captured <code>.output</code>:</p>
+<div id="844db975" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>r <span class="op">=</span> bpl(<span class="st">'⎕←x ⋄ ≥x'</span>, <span class="st">'explicit'</span>, x<span class="op">=</span><span class="dv">3</span>)</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> r.value.py <span class="op">==</span> <span class="dv">4</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> r.output <span class="op">==</span> [<span class="st">'3ₓ'</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>'repl'</code> also captures implicit expression display, as the BPL prompt shows it. The <code>%%bpl</code> cell magic uses it. In ordinary Python notebooks, append <code>;</code> to suppress display of a call’s return value.</p>
+</section>
+</section>
+<section id="labelled-arrays" class="level2">
+<h2 class="anchored" data-anchor-id="labelled-arrays">Labelled arrays</h2>
+<div id="86da077f" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>data <span class="op">=</span> [[<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">30</span>], [<span class="dv">40</span>, <span class="dv">50</span>, <span class="dv">60</span>]]</span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>keys <span class="op">=</span> (<span class="st">'NY'</span>, <span class="st">'LA'</span>), (<span class="st">'Jan'</span>, <span class="st">'Feb'</span>, <span class="st">'Mar'</span>)</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>sales <span class="op">=</span> Array(data, keys<span class="op">=</span>keys, names<span class="op">=</span>(<span class="st">'city'</span>, <span class="st">'month'</span>))</span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>sales.names, sales.keys</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>(('city', 'month'), (('NY', 'LA'), ('Jan', 'Feb', 'Mar')))</code></pre>
+</div>
+</div>
+<p>Keys select as positions do. A slice of keys includes its end key, as pandas’ <code>.loc</code> does:</p>
+<div id="2c2781d6" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>sales[:, <span class="st">'Jan'</span>:<span class="st">'Feb'</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code> ₓ Jan Feb
+NY  10  20
+LA  40  50</code></pre>
+</div>
+</div>
+<p>Arithmetic matches named axes and aligns their keys, rather than relying on order. This adjustment lists the months backwards but still adds 1 to January, 2 to February and 3 to March in each city. <code>.df</code> copies the result to pandas, preserving labels; install pandas to use it.</p>
+<div id="c377a39a" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>months <span class="op">=</span> <span class="st">'Mar'</span>, <span class="st">'Feb'</span>, <span class="st">'Jan'</span></span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>adjustment <span class="op">=</span> Array(<span class="dv">3</span>, <span class="dv">2</span>, <span class="dv">1</span>, keys<span class="op">=</span>(months,), names<span class="op">=</span>(<span class="st">'month'</span>,))</span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>(sales <span class="op">+</span> adjustment).df</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+
+
+<table class="dataframe caption-top table table-sm table-striped small" data-border="1">
+<thead>
+<tr class="header">
+<th data-quarto-table-cell-role="th">month</th>
+<th data-quarto-table-cell-role="th">Jan</th>
+<th data-quarto-table-cell-role="th">Feb</th>
+<th data-quarto-table-cell-role="th">Mar</th>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">city</th>
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th"></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">NY</th>
+<td>11</td>
+<td>22</td>
+<td>33</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">LA</th>
+<td>41</td>
+<td>52</td>
+<td>63</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<p>Assign <code>.keys</code> or <code>.names</code> to replace labels without reordering values. Each tuple has one entry per axis; <code>None</code> marks an unlabelled axis or clears all labels when assigned to the property. Relabelling an <code>Array(sales)</code> copy leaves <code>sales</code> unchanged:</p>
+<div id="4afef9fe" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>renamed <span class="op">=</span> Array(sales)</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>renamed.names <span class="op">=</span> (<span class="st">'place'</span>, <span class="st">'month'</span>)</span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>renamed.keys <span class="op">=</span> ((<span class="st">'New York'</span>, <span class="st">'Los Angeles'</span>), <span class="va">None</span>)</span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> sales.names <span class="op">==</span> (<span class="st">'city'</span>, <span class="st">'month'</span>) <span class="kw">and</span> sales.keys <span class="op">==</span> keys</span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a>renamed.names, renamed.keys, sales.names</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>(('place', 'month'), (('New York', 'Los Angeles'), None), ('city', 'month'))</code></pre>
+</div>
+</div>
+</section>
+<section id="plots" class="level2">
+<h2 class="anchored" data-anchor-id="plots">Plots</h2>
+<p><code>plot</code> draws a chart from an array. Keys label the x axis and the legend, and axis names become the axis titles. Keyword arguments set the chart’s options, with a dictionary for each nested option:</p>
+<div id="110a0118" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>legend <span class="op">=</span> {<span class="st">'position'</span>: <span class="st">'top-left'</span>}</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>bpl.plot(sales, mark<span class="op">=</span><span class="st">'bar'</span>, title<span class="op">=</span><span class="st">'Sales by city'</span>, legend<span class="op">=</span>legend)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="python_files/figure-html/cell-21-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>A dict of equal-length lists is a table. Its <code>x</code> column supplies the x values, and every other column is a series. <a href="./plot.html">Plots</a> lists all the settings.</p>
+<div id="7a987d8d" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a>threads <span class="op">=</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>, <span class="dv">8</span>, <span class="dv">16</span>, <span class="dv">32</span>]</span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>seconds <span class="op">=</span> [<span class="fl">30.1</span>, <span class="fl">15.8</span>, <span class="fl">8.2</span>, <span class="fl">4.4</span>, <span class="fl">2.5</span>, <span class="fl">1.6</span>]</span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>bpl.plot({<span class="st">'x'</span>: threads, <span class="st">'seconds'</span>: seconds}, mark<span class="op">=</span><span class="st">'point'</span>, labels<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>    x<span class="op">=</span>{<span class="st">'title'</span>: <span class="st">'threads'</span>, <span class="st">'scale'</span>: <span class="st">'log'</span>}, y<span class="op">=</span>{<span class="st">'scale'</span>: <span class="st">'log'</span>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="python_files/figure-html/cell-22-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="values-and-conversion" class="level2">
+<h2 class="anchored" data-anchor-id="values-and-conversion">Values and conversion</h2>
+<p><code>Array</code> retains atoms, shape, nesting, numeric domain and empty prototypes. An atom and a scalar both have <code>.shape == ()</code>. <code>.is_atom</code> is <code>True</code> only for an atom. <code>.bpl</code> gives the BPL display. <code>.py</code> converts atoms to Python values and character vectors to strings. Other arrays become NumPy arrays, including scalars. <code>.np</code> always returns an ndarray.</p>
+<p>For <a href="./keyed.html">axis-keyed arrays</a>, <code>.py</code> returns a dict at rank 1 and a pandas DataFrame at higher ranks. <code>.np</code> copies the values. Attach labels with <code>Array(data, keys=[rows, cols])</code>; use <code>None</code> for an unkeyed axis. <code>.keys</code> returns a tuple of label tuples or <code>None</code>.</p>
+<p><code>names</code> names dimensions; <code>keys</code> names positions within them. Matching axis names align before positional broadcasting. <code>.names</code> returns one name or <code>None</code> per dimension.</p>
+<div id="b088a19d" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> Array, add</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="7a2c6a26" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>m <span class="op">=</span> Array([[<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>], [<span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>]], names<span class="op">=</span>(<span class="st">'city'</span>, <span class="st">'month'</span>))</span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>v <span class="op">=</span> Array([<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">30</span>], names<span class="op">=</span>(<span class="st">'month'</span>,))</span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> (m <span class="op">+</span> v).np.tolist() <span class="op">==</span> [[<span class="dv">11</span>, <span class="dv">22</span>, <span class="dv">33</span>], [<span class="dv">14</span>, <span class="dv">25</span>, <span class="dv">36</span>]]</span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> add.<span class="bu">reduce</span>[<span class="st">'month'</span>](m).np.tolist() <span class="op">==</span> [<span class="dv">6</span>, <span class="dv">15</span>]</span>
+<span id="cb39-5"><a href="#cb39-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> add.<span class="bu">reduce</span>[<span class="st">'month'</span>](m).names <span class="op">==</span> (<span class="st">'city'</span>,)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>.df</code> converts any array to a DataFrame. The last axis gives the columns. The earlier axes give the rows, as a MultiIndex above rank 2. Unkeyed axes are labelled from 0. A vector of columns of one length, as <code>•csv</code> or a DataFrame’s <code>Array</code> gives, converts by columns instead: each column keeps its own dtype, and its keys give the index. Install pandas for this conversion. Pandas is imported on demand.</p>
+<p>Axis names become pandas index/column names, including MultiIndex level names.</p>
+<div id="3ff66506" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fractions <span class="im">import</span> Fraction</span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> Array</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="f1876f1c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Array(<span class="dv">2</span>).bpl <span class="op">==</span> <span class="st">'2ₓ'</span></span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Array(<span class="fl">2.</span>).bpl <span class="op">==</span> <span class="st">'2'</span></span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Array(Fraction(<span class="dv">1</span>, <span class="dv">3</span>)).py <span class="op">==</span> Fraction(<span class="dv">1</span>, <span class="dv">3</span>)</span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Array([<span class="dv">1</span>, <span class="va">None</span>]).bpl <span class="op">==</span> <span class="st">'1 $n'</span></span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Array(<span class="st">"x"</span>).shape <span class="op">==</span> (<span class="dv">1</span>,) <span class="kw">and</span> Array({<span class="st">"n"</span>: <span class="st">"x"</span>})[<span class="st">"n"</span>].shape <span class="op">==</span> ()</span>
+<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> Array([<span class="dv">3</span>, <span class="fl">2.5</span>]).bpl <span class="op">==</span> <span class="st">'3 2.5'</span> <span class="kw">and</span> Array(value<span class="op">=</span><span class="dv">3</span>, score<span class="op">=</span><span class="fl">2.5</span>).bpl <span class="op">==</span> <span class="st">'["value":3ₓ "score":2.5]'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Python input</th>
+<th>BPL value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>bool</code>, NumPy Booleans</td>
+<td>Boolean</td>
+</tr>
+<tr class="even">
+<td><code>int</code></td>
+<td><a href="./numbers.html#weak-and-strong-numbers">Weak ordinary integer</a>, exact under dynamic kinds</td>
+</tr>
+<tr class="odd">
+<td>NumPy integers and typed integer buffers</td>
+<td>Fixed-width integer, retaining supported dtype</td>
+</tr>
+<tr class="even">
+<td><code>float</code></td>
+<td>Weak approximate real, at the default width</td>
+</tr>
+<tr class="odd">
+<td><code>Fraction</code></td>
+<td>Exact rational</td>
+</tr>
+<tr class="even">
+<td><code>complex</code></td>
+<td>Weak approximate complex</td>
+</tr>
+<tr class="odd">
+<td><code>None</code> as an item of a list, dict or frame</td>
+<td>NaN, <code>$n</code>. A bare <code>None</code> doesn’t convert</td>
+</tr>
+<tr class="even">
+<td><code>str</code></td>
+<td>Character vector. Inside a list, tuple or dict, a one-character string is a character atom: <code>["a", "b"]</code> gives <code>"ab"</code></td>
+</tr>
+<tr class="odd">
+<td>Rectangular list/tuple/<code>range</code></td>
+<td>Ordinary array</td>
+</tr>
+<tr class="even">
+<td>Ragged list/tuple</td>
+<td>Nested array</td>
+</tr>
+<tr class="odd">
+<td>NumPy ndarray or <code>__array__</code> provider</td>
+<td>Array preserving shape and numeric domain</td>
+</tr>
+<tr class="even">
+<td><code>dict</code> with string keys</td>
+<td><a href="./keyed.html">Keyed vector</a>, recursively. <code>.py</code> returns a <code>dict</code></td>
+</tr>
+<tr class="odd">
+<td>pandas DataFrame</td>
+<td>Keyed vector of its columns, as <code>•csv</code> gives. The index keys each column where every label is a string</td>
+</tr>
+</tbody>
+</table>
+<p>NumPy float and complex scalars keep their explicit widths and are strong, including inside sequences beside weak Python floats or complex numbers. Exact numbers still join losslessly. A list’s items combine under BPL’s usual joining rules: <code>[1, 2.5]</code> gives two floats. A dict’s values each keep their own kind, as a record’s fields do. In <code>{"name": "x", "age": 3, "score": 2.5}</code>, <code>age</code> stays exact beside the float <code>score</code>. Its <code>name</code> is the character atom <code>'x'</code>.</p>
+<p><code>.np</code> or <code>np.asarray(a)</code> always produces an ndarray. Booleans use <code>bool</code>. Fixed integers keep their selected dtype: <code>uint8</code>, <code>int16</code>, <code>int32</code> or <code>int64</code>. Ordinary integers that fit signed 64 bits use <code>int64</code> under dynamic kinds, and at least the <code>int</code> preference’s computation width under static kinds. Floats use <code>float16</code>, <code>float32</code> or <code>float64</code>; complex arrays use <code>complex64</code> or <code>complex128</code>. Fractions, large integers, nested arrays and mixed exact and approximate values use <code>object</code>. Character arrays use <code>U1</code>. The arrays inside a <code>.py</code> result, and the columns of a <code>.df</code> result, use the same dtypes.</p>
+<div id="d5c951f0" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>range</code> works on its own or inside a rectangular sequence. Objects with <code>__array__</code>, such as a pandas Series, also convert. The numeric values transfer without pandas labels:</p>
+<div id="84110210" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>a <span class="op">=</span> Array([<span class="bu">range</span>(<span class="dv">1</span>, <span class="dv">4</span>), <span class="bu">range</span>(<span class="dv">4</span>, <span class="dv">7</span>)])</span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a.np, [[<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>], [<span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>]])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="2aa35e3b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(Array(sales.df.loc[<span class="st">'NY'</span>]), [<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">30</span>])</span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>Array(sales.df.loc[<span class="st">'NY'</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[10 20 30]ₓ₈</code></pre>
+</div>
+</div>
+<p>A pandas DataFrame becomes a keyed vector of its columns, as <code>•csv</code> gives, so each column keeps its own kind. The index keys each column’s rows where every label is a string. <code>.df</code> gives the frame back:</p>
+<div id="a51da6b2" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="d2839b11" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb47"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>orders <span class="op">=</span> pd.DataFrame({<span class="st">'item'</span>: [<span class="st">'tea'</span>, <span class="st">'cake'</span>], <span class="st">'qty'</span>: [<span class="dv">2</span>, <span class="dv">5</span>], <span class="st">'price'</span>: [<span class="fl">3.5</span>, <span class="fl">4.25</span>]}).set_index(<span class="st">'item'</span>)</span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>t <span class="op">=</span> Array(orders)</span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> t.df.equals(orders)</span>
+<span id="cb47-4"><a href="#cb47-4" aria-hidden="true" tabindex="-1"></a>t</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>["qty":["item":2]⍴["tea":2 "cake":5]ₓ₈ "price":["item":2]⍴["tea":3.5 "cake":4.25]]</code></pre>
+</div>
+</div>
+<p><code>.py</code> and <code>.np</code> copy. Foreign buffer exporters, including a <code>memoryview</code> or an <code>array.array</code>, supply shape and numeric items but no labels. Rustymath arrays transfer <code>.keys</code> and <code>.names</code> as well, in either direction, without going through NumPy. Rustymath cannot represent BPL’s nested, mixed or arbitrary exact values; convert those explicitly before passing them.</p>
+<p><code>np.asarray(a, copy=False)</code> gives a read-only view when the storage already has the requested export dtype. A dtype conversion requires a copy and raises with <code>copy=False</code>. Under dynamic kinds, ordinary integer storage narrower than 64 bits needs widening to <code>int64</code> for export. Compatible windows, reversals and drops export their source’s strides without building their items.</p>
+<p><code>a.own()</code> gives the array that <code>.np</code> gives, but moves compatible storage where nothing else holds it, as for a fresh result. Afterwards <code>a</code> holds nothing, and using it raises <code>ValueError</code>. Passing an <code>Array</code> back to BPL shares its value until either owner is updated. Keep <code>Array</code> to preserve empty prototypes and exact nesting.</p>
+<p>The constructors preserve labels on ordinary arrays. Mixed Python operators use BasedPL:</p>
+<div id="f1b14d47" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb49"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> rustymath <span class="im">as</span> rm</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="27a22fb9" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb50"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a>rusty_sales <span class="op">=</span> rm.array(sales)</span>
+<span id="cb50-2"><a href="#cb50-2" aria-hidden="true" tabindex="-1"></a>roundtrip <span class="op">=</span> Array(rusty_sales)</span>
+<span id="cb50-3"><a href="#cb50-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> roundtrip.names <span class="op">==</span> sales.names <span class="kw">and</span> roundtrip.keys <span class="op">==</span> sales.keys</span>
+<span id="cb50-4"><a href="#cb50-4" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(roundtrip, sales)</span>
+<span id="cb50-5"><a href="#cb50-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">isinstance</span>(rusty_sales <span class="op">+</span> sales, Array)</span>
+<span id="cb50-6"><a href="#cb50-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">isinstance</span>(sales <span class="op">+</span> rusty_sales, Array)</span>
+<span id="cb50-7"><a href="#cb50-7" aria-hidden="true" tabindex="-1"></a>rusty_sales, roundtrip.names, roundtrip.keys</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>(Array([[10, 20, 30], [40, 50, 60]], dtype=int64, keys=(('NY', 'LA'), ('Jan', 'Feb', 'Mar')), names=('city', 'month')),
+ ('city', 'month'),
+ (('NY', 'LA'), ('Jan', 'Feb', 'Mar')))</code></pre>
+</div>
+</div>
+<section id="fixed-width-integers" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-width-integers">Fixed-width integers</h3>
+<p>NumPy integer buffers retain their fixed type in BPL. Arithmetic and reduction wrap at that type. A wider typed seed selects a wider accumulator: <code>add.reduce(np.int64(0), pixels)</code> is <code>0ₓ₈+/pixels</code>. The native sum reads the bytes directly rather than building a widened input array. <code>pixels.exact</code> removes fixedness without copying the data and uses ordinary integer arithmetic:</p>
+<div id="ee6dc651" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a>pixels <span class="op">=</span> Array(np.array([<span class="dv">200</span>, <span class="dv">100</span>], dtype<span class="op">=</span>np.uint8))</span>
+<span id="cb52-2"><a href="#cb52-2" aria-hidden="true" tabindex="-1"></a>wrapped <span class="op">=</span> add.<span class="bu">reduce</span>(pixels)</span>
+<span id="cb52-3"><a href="#cb52-3" aria-hidden="true" tabindex="-1"></a>ordinary <span class="op">=</span> add.<span class="bu">reduce</span>(pixels.exact)</span>
+<span id="cb52-4"><a href="#cb52-4" aria-hidden="true" tabindex="-1"></a>wide <span class="op">=</span> add.<span class="bu">reduce</span>(np.int64(<span class="dv">0</span>), pixels)</span>
+<span id="cb52-5"><a href="#cb52-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> [wrapped.py, ordinary.py, wide.py] <span class="op">==</span> [<span class="dv">44</span>, <span class="dv">300</span>, <span class="dv">300</span>]</span>
+<span id="cb52-6"><a href="#cb52-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> wide.np.dtype <span class="op">==</span> np.int64</span>
+<span id="cb52-7"><a href="#cb52-7" aria-hidden="true" tabindex="-1"></a>wrapped.bpl, ordinary.bpl, wide.bpl</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>('44ₓ₁', '300ₓ', '300ₓ₈')</code></pre>
+</div>
+</div>
+<p>The seed participates in promotion and cannot narrow wider input. An ordinary Python <code>0</code> does not request i64. Applying a width conversion to the completed reduction cannot recover a wrapped total. <a href="./numbers.html#fixed-width-integers">Numbers</a> gives the numeric promotion and conversion rules. See <a href="./glyphs/slash.html">Reduce</a> for the BPL spelling.</p>
+<p>Python <code>int</code> arguments are weak. <code>Array(100)</code> preserves that weakness. An integer selected from <code>Array([100])</code> is strong. The last addition below uses ordinary arithmetic:</p>
+<div id="4a719a6c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a>(pixels <span class="op">+</span> <span class="dv">100</span>).bpl, (pixels <span class="op">+</span> Array(<span class="dv">100</span>)).bpl, (pixels <span class="op">+</span> Array([<span class="dv">100</span>])[<span class="dv">0</span>]).bpl</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>('[44 200]ₓ₁', '[44 200]ₓ₁', '[300 200]ₓ')</code></pre>
+</div>
+</div>
+<p>The properties <code>.uint8</code>, <code>.int16</code>, <code>.int32</code>, <code>.int64</code>, <code>.float16</code>, <code>.float32</code> and <code>.float64</code> convert an array to that type. <code>.exact</code> gives ordinary integers. These match BPL’s <a href="./scripts.html#subscripts">numeric suffixes</a>. A marker on a function converts its result after computation:</p>
+<div id="69dde6a5" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb56"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a>pixels.int32, add.<span class="bu">reduce</span>.int32(pixels)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>([200, 100], Array(44))</code></pre>
+</div>
+</div>
+</section>
+</section>
+<section id="array-operations" class="level2">
+<h2 class="anchored" data-anchor-id="array-operations">Array operations</h2>
+<p>Arithmetic aligns leading axes. Indexing starts at 0, and negative positions count from the end. Slices work as in Python. <code>...</code> keeps all remaining axes. <code>None</code> inserts an unnamed, unkeyed length-one axis without consuming an input axis, as <code>¯∞</code> does in <a href="./glyphs/squad.html">BPL indexing</a>. Python <code>:</code> and <code>...</code> correspond to BPL <code>:</code> and <code>∞</code>:</p>
+<div id="4a76690c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a <span class="op">+</span> [<span class="dv">10</span>, <span class="dv">20</span>], [[<span class="dv">11</span>, <span class="dv">12</span>, <span class="dv">13</span>], [<span class="dv">24</span>, <span class="dv">25</span>, <span class="dv">26</span>]])</span>
+<span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a[<span class="dv">1</span>, :], [<span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>])</span>
+<span id="cb58-3"><a href="#cb58-3" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a[:, [<span class="dv">0</span>, <span class="dv">2</span>]], [[<span class="dv">1</span>, <span class="dv">3</span>], [<span class="dv">4</span>, <span class="dv">6</span>]])</span>
+<span id="cb58-4"><a href="#cb58-4" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a[:, <span class="op">-</span><span class="dv">1</span>], [<span class="dv">3</span>, <span class="dv">6</span>])</span>
+<span id="cb58-5"><a href="#cb58-5" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a[:, ::<span class="op">-</span><span class="dv">1</span>], [[<span class="dv">3</span>, <span class="dv">2</span>, <span class="dv">1</span>], [<span class="dv">6</span>, <span class="dv">5</span>, <span class="dv">4</span>]])</span>
+<span id="cb58-6"><a href="#cb58-6" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(a[..., <span class="dv">0</span>], [<span class="dv">1</span>, <span class="dv">4</span>])</span>
+<span id="cb58-7"><a href="#cb58-7" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> a[:, <span class="va">None</span>, :].shape <span class="op">==</span> (<span class="dv">2</span>, <span class="dv">1</span>, <span class="dv">3</span>)</span>
+<span id="cb58-8"><a href="#cb58-8" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> a[<span class="va">None</span>, ..., <span class="va">None</span>].shape <span class="op">==</span> (<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">1</span>)</span>
+<span id="cb58-9"><a href="#cb58-9" aria-hidden="true" tabindex="-1"></a>a[:, <span class="va">None</span>, :].shape, a[<span class="va">None</span>, ..., <span class="va">None</span>].shape</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>((2, 1, 3), (1, 2, 3, 1))</code></pre>
+</div>
+</div>
+<p>A path array selects rows inside nested matrices. Full slices, <code>None</code> and <code>...</code> can follow it for reading and assignment:</p>
+<div id="bcc5e377" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a>matrices <span class="op">=</span> bpl(<span class="st">'[[1 2 3⋄4 5 6] [7 8 9⋄10 11 12]]'</span>)</span>
+<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a>row_paths <span class="op">=</span> bpl(<span class="st">'[[0 1] [1 0]]'</span>)</span>
+<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a>rows <span class="op">=</span> matrices[row_paths, ..., <span class="va">None</span>]</span>
+<span id="cb60-4"><a href="#cb60-4" aria-hidden="true" tabindex="-1"></a>matrices[row_paths, ..., <span class="va">None</span>] <span class="op">=</span> rows <span class="op">*</span> <span class="dv">10</span></span>
+<span id="cb60-5"><a href="#cb60-5" aria-hidden="true" tabindex="-1"></a>rows.shape, matrices[row_paths]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>((2, 3, 1), [[40., 50., 60.], [70., 80., 90.]])</code></pre>
+</div>
+</div>
+<p>Comparisons return arrays. <code>%</code> uses Python’s operand order and <code>//</code> is floor division. Array <code>@</code> applies BPL’s <code>+.×⍤2</code>. It multiplies vectors and matrices, broadcasting leading batch axes.</p>
+<p>Array <code>&amp;</code>, <code>|</code> and <code>~</code> require Boolean or integer inputs and perform bitwise AND, OR and NOT. Their BPL counterparts are <code>∧ᵇ</code>, <code>∨ᵇ</code> and <code>~ᵇ</code> (<a href="./glyphs/superscript-b.html">Bitwise</a>). Plain <code>∧</code> and <code>∨</code> retain LCM and GCD.</p>
+<div id="a7f81c7b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb62"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a>bits <span class="op">=</span> Array([<span class="dv">6</span>, <span class="dv">3</span>])</span>
+<span id="cb62-2"><a href="#cb62-2" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(bits <span class="op">&amp;</span> <span class="dv">5</span>, [<span class="dv">4</span>, <span class="dv">1</span>])</span>
+<span id="cb62-3"><a href="#cb62-3" aria-hidden="true" tabindex="-1"></a>bits <span class="op">&amp;</span> <span class="dv">5</span>, bits <span class="op">|</span> <span class="dv">5</span>, <span class="op">~</span>bits</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>([4, 1], [7, 7], [-7, -4])</code></pre>
+</div>
+</div>
+<p><code>abs</code> gives magnitudes. Python brackets interpret a Boolean vector as a mask for its axis, whose length it must match. BPL source indexing treats Booleans as numeric positions instead. Apply monadic <code>+</code> to a BPL mask for explicit 0/1 positions: <code>a[+mask]</code>. An empty list selects no positions.</p>
+<div id="2de0b67a" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb64"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb64-1"><a href="#cb64-1" aria-hidden="true" tabindex="-1"></a>values <span class="op">=</span> Array([<span class="op">-</span><span class="dv">3</span>, <span class="dv">2</span>, <span class="op">-</span><span class="dv">1</span>, <span class="dv">4</span>])</span>
+<span id="cb64-2"><a href="#cb64-2" aria-hidden="true" tabindex="-1"></a>magnitudes <span class="op">=</span> <span class="bu">abs</span>(values)</span>
+<span id="cb64-3"><a href="#cb64-3" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(values[values <span class="op">&gt;</span> <span class="dv">0</span>], [<span class="dv">2</span>, <span class="dv">4</span>])</span>
+<span id="cb64-4"><a href="#cb64-4" aria-hidden="true" tabindex="-1"></a>magnitudes, a[:, a[<span class="dv">0</span>] <span class="op">&gt;</span> <span class="dv">1</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>([3, 2, 1, 4], [[2, 3], [5, 6]])</code></pre>
+</div>
+</div>
+<p><code>len</code>, iteration and <code>in</code> use major cells: items of a vector, rows of a matrix. Membership compares the whole query with one cell, using native tolerant matching. A query of the wrong rank or cell shape is absent. A string is one item where the array’s items are strings, as in a list of strings, and a row where the array is a character matrix. Keys don’t change value membership. Inspect <code>.keys</code> to search labels. Atoms and rank-0 arrays are not iterable.</p>
+<p>With exactly one item, <code>bool(a)</code> uses that item’s truth value. Other item counts raise <code>ValueError</code>.</p>
+<div id="b2fa459d" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb66"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>] <span class="kw">in</span> a <span class="kw">and</span> <span class="dv">3</span> <span class="kw">not</span> <span class="kw">in</span> a</span>
+<span id="cb66-2"><a href="#cb66-2" aria-hidden="true" tabindex="-1"></a>letters <span class="op">=</span> Array(<span class="st">'abc'</span>)</span>
+<span id="cb66-3"><a href="#cb66-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="st">'a'</span> <span class="kw">in</span> letters <span class="kw">and</span> <span class="st">'z'</span> <span class="kw">not</span> <span class="kw">in</span> letters <span class="kw">and</span> <span class="st">'ab'</span> <span class="kw">not</span> <span class="kw">in</span> letters <span class="kw">and</span> Array(<span class="st">'a'</span>) <span class="kw">not</span> <span class="kw">in</span> letters</span>
+<span id="cb66-4"><a href="#cb66-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="st">'ab'</span> <span class="kw">in</span> Array([<span class="st">'ab'</span>, <span class="st">'cd'</span>]) <span class="kw">and</span> <span class="st">'ef'</span> <span class="kw">not</span> <span class="kw">in</span> Array([<span class="st">'ab'</span>, <span class="st">'cd'</span>]) <span class="kw">and</span> <span class="st">'cd'</span> <span class="kw">in</span> bpl(<span class="st">'2 2⍴"abcd"'</span>)</span>
+<span id="cb66-5"><a href="#cb66-5" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span> <span class="kw">in</span> values, [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>] <span class="kw">in</span> a, <span class="dv">3</span> <span class="kw">in</span> a</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>(True, True, False)</code></pre>
+</div>
+</div>
+<p>Assignment replaces values in the Python array owner. Earlier selections, <code>Array(a)</code> copies and functions that captured its value remain unchanged. The same selectors, including <code>None</code>, work for reading and assignment:</p>
+<div id="099d8235" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb68"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a>previous <span class="op">=</span> Array(values)</span>
+<span id="cb68-2"><a href="#cb68-2" aria-hidden="true" tabindex="-1"></a>selection <span class="op">=</span> values[::<span class="dv">2</span>]</span>
+<span id="cb68-3"><a href="#cb68-3" aria-hidden="true" tabindex="-1"></a>values[<span class="va">None</span>, ::<span class="dv">2</span>] <span class="op">=</span> [[<span class="op">-</span><span class="dv">30</span>, <span class="op">-</span><span class="dv">10</span>]]</span>
+<span id="cb68-4"><a href="#cb68-4" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(previous, [<span class="op">-</span><span class="dv">3</span>, <span class="dv">2</span>, <span class="op">-</span><span class="dv">1</span>, <span class="dv">4</span>])</span>
+<span id="cb68-5"><a href="#cb68-5" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(selection, [<span class="op">-</span><span class="dv">3</span>, <span class="op">-</span><span class="dv">1</span>])</span>
+<span id="cb68-6"><a href="#cb68-6" aria-hidden="true" tabindex="-1"></a>previous, values</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>([-3, 2, -1, 4], [-30, 2, -10, 4])</code></pre>
+</div>
+</div>
+<p><a href="./glyphs/at.html">Under</a> applies a function at selected positions and returns a new array without changing its argument:</p>
+<div id="490c501f" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb70"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a>updated <span class="op">=</span> bpl.multiply(<span class="dv">10</span>).under([<span class="dv">0</span>, <span class="dv">2</span>])(previous)</span>
+<span id="cb70-2"><a href="#cb70-2" aria-hidden="true" tabindex="-1"></a>previous, updated</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>([-3, 2, -1, 4], [-30, 2, -10, 4])</code></pre>
+</div>
+</div>
+</section>
+<section id="callable-functions" class="level2">
+<h2 class="anchored" data-anchor-id="callable-functions">Callable functions</h2>
+<p><code>.fn()</code> creates a callable BPL function. One argument supplies <code>⍵</code>, and two supply <code>⍺</code> and <code>⍵</code>. Arguments pass directly as values.</p>
+<div id="34013958" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb72"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb72-1"><a href="#cb72-1" aria-hidden="true" tabindex="-1"></a>mean <span class="op">=</span> bpl.fn(<span class="st">'{+/⍵ ÷ ≢⍵}'</span>)</span>
+<span id="cb72-2"><a href="#cb72-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> mean([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>]).py <span class="op">==</span> Fraction(<span class="dv">7</span>, <span class="dv">3</span>)</span>
+<span id="cb72-3"><a href="#cb72-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> mean([<span class="fl">1.</span>, <span class="fl">2.</span>, <span class="fl">4.</span>]).py <span class="op">==</span> <span class="dv">7</span> <span class="op">/</span> <span class="dv">3</span></span>
+<span id="cb72-4"><a href="#cb72-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb72-5"><a href="#cb72-5" aria-hidden="true" tabindex="-1"></a>add <span class="op">=</span> bpl.fn(<span class="st">'+'</span>)</span>
+<span id="cb72-6"><a href="#cb72-6" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(add([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>], <span class="dv">10</span>), [<span class="dv">11</span>, <span class="dv">12</span>, <span class="dv">13</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>A Python <code>int</code>, <code>float</code> or <code>complex</code> passed to a BPL function is weak, as NumPy treats Python scalars, and so is a float or complex literal in BPL code. A weak number takes the width of the arrays beside it: <code>add(x, 2.0)</code> keeps a 32-bit <code>x</code> at 32 bits, and so does <code>+2.0</code> in BPL. A literal with a width marker, such as <code>2.0ₚ</code>, is strong, as <code>np.float64(2.0)</code> is in NumPy, and widens 32-bit floats to 64 bits:</p>
+<div id="e85ff842" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb73"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb73-1"><a href="#cb73-1" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> np.array([<span class="fl">1.5</span>, <span class="fl">2.5</span>], dtype<span class="op">=</span>np.float32)</span>
+<span id="cb73-2"><a href="#cb73-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> add(x, <span class="fl">2.0</span>).np.dtype <span class="op">==</span> np.float32</span>
+<span id="cb73-3"><a href="#cb73-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> bpl[<span class="st">'(32•float 1.5 2.5)+2.0'</span>].np.dtype <span class="op">==</span> np.float32</span>
+<span id="cb73-4"><a href="#cb73-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> bpl[<span class="st">'(32•float 1.5 2.5)+2.0ₚ'</span>].np.dtype <span class="op">==</span> np.float64</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>.fn('g')</code> follows later redefinitions of <code>g</code>. <code>bpl('g')</code> keeps the function that <code>g</code> holds now.</p>
+<div id="499d6825" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb74"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> basedpl <span class="im">as</span> b</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Keyword arguments become <code>⍺</code>, as a keyed vector. Positional arguments become <code>⍵</code>. One positional argument is <code>⍵</code> itself, several form a vector, and none gives <code>⍬</code>. System functions take their options as <code>⍺</code>. In Python, pass those options as keyword arguments. Element functions take attributes the same way:</p>
+<div id="8c2a9d35" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb75"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb75-1"><a href="#cb75-1" aria-hidden="true" tabindex="-1"></a>circle <span class="op">=</span> b.element(<span class="st">'circle'</span>)</span>
+<span id="cb75-2"><a href="#cb75-2" aria-hidden="true" tabindex="-1"></a>orange <span class="op">=</span> circle(cx<span class="op">=</span><span class="dv">30</span>, cy<span class="op">=</span><span class="dv">50</span>, r<span class="op">=</span><span class="dv">20</span>, fill<span class="op">=</span><span class="st">'orange'</span>)</span>
+<span id="cb75-3"><a href="#cb75-3" aria-hidden="true" tabindex="-1"></a>blue <span class="op">=</span> circle(cx<span class="op">=</span><span class="dv">70</span>, cy<span class="op">=</span><span class="dv">50</span>, r<span class="op">=</span><span class="dv">20</span>, fill<span class="op">=</span><span class="st">'steelblue'</span>)</span>
+<span id="cb75-4"><a href="#cb75-4" aria-hidden="true" tabindex="-1"></a>pic <span class="op">=</span> b.svg(orange, blue, width<span class="op">=</span><span class="dv">200</span>)</span>
+<span id="cb75-5"><a href="#cb75-5" aria-hidden="true" tabindex="-1"></a>pic</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="python_files/figure-html/cell-47-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The keyword arguments became attributes. System functions read keyword arguments as options:</p>
+<div id="6e66de56" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb76"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb76-1"><a href="#cb76-1" aria-hidden="true" tabindex="-1"></a>b.xml.undo(circle(r<span class="op">=</span><span class="dv">10</span>)), b.json(<span class="st">'{"a": null}'</span>, fill<span class="op">=</span><span class="dv">0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>('&lt;circle r="10"/&gt;', {'a': 0})</code></pre>
+</div>
+</div>
+<p>CSV options work the same way. <code>nget</code> and <code>nput</code> read and write files, as in <code>b.nput(text, path='copy.csv')</code>:</p>
+<div id="b58ff71c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb78"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a>table <span class="op">=</span> b.csv(<span class="st">'price,qty</span><span class="ch">\n</span><span class="st">10.5,2</span><span class="ch">\n</span><span class="st">20.0,4</span><span class="ch">\n</span><span class="st">'</span>)</span>
+<span id="cb78-2"><a href="#cb78-2" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> b.csv.undo(table, separator<span class="op">=</span><span class="st">';'</span>).py</span>
+<span id="cb78-3"><a href="#cb78-3" aria-hidden="true" tabindex="-1"></a>b.csv(text, separator<span class="op">=</span><span class="st">';'</span>).py</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>{'price': array([10.5, 20. ]), 'qty': array([2, 4])}</code></pre>
+</div>
+</div>
+<p><code>r</code> compiles a regex into keyed functions, which Python indexes by name:</p>
+<div id="77c2882d" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb80"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a>p <span class="op">=</span> b.r(<span class="vs">r'</span><span class="kw">(</span><span class="pp">[a-z]</span><span class="op">+</span><span class="kw">)(</span><span class="pp">[0-9]</span><span class="op">+</span><span class="kw">)</span><span class="vs">'</span>)</span>
+<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a>p[<span class="st">'replace'</span>](<span class="st">'$2:$1'</span>, <span class="st">'ab12'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>12:ab</code></pre>
+</div>
+</div>
+<p><a href="./arrays.html#functions-in-arrays">Function vectors</a>, such as <code>[+ × ÷]</code>, retain callable handles. Indexing with a single position, <code>first</code> and <code>pick</code> return the selected function:</p>
+<div id="0cd02b19" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb82"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb82-1"><a href="#cb82-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> first, pick</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="2c091d39" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb83"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb83-1"><a href="#cb83-1" aria-hidden="true" tabindex="-1"></a>fs <span class="op">=</span> bpl(<span class="st">'[+ × ÷]'</span>)</span>
+<span id="cb83-2"><a href="#cb83-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> pick(<span class="dv">1</span>, fs)(<span class="dv">2</span>, <span class="dv">3</span>).py <span class="op">==</span> <span class="dv">6</span></span>
+<span id="cb83-3"><a href="#cb83-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> first(fs)(<span class="dv">2</span>, <span class="dv">3</span>).py <span class="op">==</span> <span class="dv">5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>Array(f, g)</code> constructs a function vector. Keyword arguments construct a record, as in <code>Array(mean=mean, count=tally)</code>. Combining positional data with record fields raises <code>TypeError</code>. <code>keys</code> and <code>names</code> are reserved for axis metadata; use a dict for record fields with those names. <code>.py</code> and object-dtype <code>.np</code> export a function vector’s items as Python callables.</p>
+<p>An array that holds a function as an item is a <code>FunctionArray</code>. Calling it calls each function on the whole arguments, as <code>aggs data</code> does in BPL, and each other item is its own result. An array that holds no function isn’t callable, so <code>callable</code>, which pandas and other libraries check before calling an argument, treats it as data:</p>
+<div id="6de72469" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb84"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb84-1"><a href="#cb84-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fastcore.test <span class="im">import</span> expect_fail</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="7aebefb6" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb85"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a>aggs <span class="op">=</span> Array(mean<span class="op">=</span>mean, count<span class="op">=</span>tally)</span>
+<span id="cb85-2"><a href="#cb85-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">callable</span>(aggs) <span class="kw">and</span> <span class="kw">not</span> <span class="bu">callable</span>(Array([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>]))</span>
+<span id="cb85-3"><a href="#cb85-3" aria-hidden="true" tabindex="-1"></a>aggs([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>["mean":7ᵣ3 "count":3ₓ]</code></pre>
+</div>
+</div>
+<div id="61a6a74f" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb87"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb87-1"><a href="#cb87-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> expect_fail(<span class="pp">TypeError</span>): Array(<span class="dv">1</span>, count<span class="op">=</span><span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>data &gt;&gt; aggs</code> calls it too. <code>.fn</code> gives the array as a <code>Function</code>, which takes operators and composition. Here Rank calls it on each row of a matrix:</p>
+<div id="8239c711" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb88"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb88-1"><a href="#cb88-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> ([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>] <span class="op">&gt;&gt;</span> aggs).py <span class="op">==</span> aggs([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>]).py</span>
+<span id="cb88-2"><a href="#cb88-2" aria-hidden="true" tabindex="-1"></a>aggs.fn.rank(<span class="dv">1</span>)([[<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>], [<span class="dv">3</span>, <span class="dv">3</span>, <span class="dv">3</span>]])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>mean count
+ 7ᵣ3    3ₓ
+  3ₓ    3ₓ</code></pre>
+</div>
+</div>
+<p><code>f.source</code> returns the BPL source. <code>f.inspect()</code> returns the source and help. <code>bpl.names(prefix, classes)</code> lists visible bindings. <code>bpl.inspect(name)</code> reads a name or glyph. IPython supports <code>f?</code>, <code>f??</code> and name completion in <code>bpl</code> strings. See <a href="./introspection.html">names and help</a>.</p>
+<p>A user operator comes back as an <code>Operator</code>, whether it’s a workspace name or a field of a record from <code>•load</code>. Call it with its operand, or both operands of a dyadic operator, to get a <code>Function</code>. Bind an <code>Operator</code> like any other value:</p>
+<div id="55bf15bc" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb90"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb90-1"><a href="#cb90-1" aria-hidden="true" tabindex="-1"></a>bpl(<span class="st">'again←{⍶ ⍶ ⍵}'</span>)</span>
+<span id="cb90-2"><a href="#cb90-2" aria-hidden="true" tabindex="-1"></a>again <span class="op">=</span> bpl.again</span>
+<span id="cb90-3"><a href="#cb90-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> again(bpl.fn(<span class="st">'≥'</span>))(<span class="dv">3</span>).py <span class="op">==</span> <span class="dv">5</span></span>
+<span id="cb90-4"><a href="#cb90-4" aria-hidden="true" tabindex="-1"></a>bpl[<span class="st">'repeat'</span>] <span class="op">=</span> again</span>
+<span id="cb90-5"><a href="#cb90-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> bpl(<span class="st">'-repeat 3'</span>).py <span class="op">==</span> <span class="dv">3</span></span>
+<span id="cb90-6"><a href="#cb90-6" aria-hidden="true" tabindex="-1"></a>again</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>{⍶ ⍶ ⍵}</code></pre>
+</div>
+</div>
+</section>
+<section id="word-functions" class="level2">
+<h2 class="anchored" data-anchor-id="word-functions">Word functions</h2>
+<p>Each builtin function has a Python name for each valence, such as <code>add</code>, <code>subtract</code>, <code>multiply</code> and <code>divide</code>, plus its glyph name, such as <code>plus</code> and <code>times</code>. The names are attributes of <code>basedpl</code> and <code>bpl</code>, and imports from <code>basedpl</code>. A valence name selects one valence. Called with one argument, a dyadic name binds the right argument. <code>.left(x)</code> binds the left argument instead. A glyph name gives the function with both valences, as <code>fn('+')</code> does.</p>
+<div id="e6e40d75" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb92"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb92-1"><a href="#cb92-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> add, multiply, subtract, tally, conjugate, pi_times</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="b8736a3f" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb93"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb93-1"><a href="#cb93-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> multiply(<span class="dv">2</span>)(<span class="dv">3</span>).py <span class="op">==</span> <span class="dv">6</span></span>
+<span id="cb93-2"><a href="#cb93-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> subtract(<span class="dv">2</span>)(<span class="dv">5</span>).py <span class="op">==</span> <span class="dv">3</span>       <span class="co"># 5−2</span></span>
+<span id="cb93-3"><a href="#cb93-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> subtract.left(<span class="dv">2</span>)(<span class="dv">5</span>).py <span class="op">==</span> <span class="op">-</span><span class="dv">3</span> <span class="co"># 2−5</span></span>
+<span id="cb93-4"><a href="#cb93-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb93-5"><a href="#cb93-5" aria-hidden="true" tabindex="-1"></a>mean <span class="op">=</span> add.<span class="bu">reduce</span> <span class="op">/</span> tally</span>
+<span id="cb93-6"><a href="#cb93-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> mean([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>]).py <span class="op">==</span> Fraction(<span class="dv">7</span>, <span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="fddcba92" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb94"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb94-1"><a href="#cb94-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> conjugate(<span class="dv">2</span>).py <span class="op">==</span> <span class="dv">2</span></span>
+<span id="cb94-2"><a href="#cb94-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> b.divide(<span class="dv">2</span>)(<span class="dv">3</span>).py <span class="op">==</span> Fraction(<span class="dv">3</span>, <span class="dv">2</span>)</span>
+<span id="cb94-3"><a href="#cb94-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> pi_times(<span class="dv">1</span>).py <span class="op">==</span> np.pi</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Lookup accepts a glyph, a glyph name or a valence name. Use underscores for hyphenated names, as in <code>circle_star</code>, and a trailing underscore for Python keywords, as in <code>not_</code>. A glyph that is a legal Python identifier, such as <code>π</code>, works directly. Get other glyphs with <code>getattr(bpl, '+')</code>. System functions also accept names without <code>•</code>. When names clash, existing Python attributes come first, then glyph and valence names, then system names. Lookup uses only exact registered names. An unknown name raises <code>AttributeError</code>.</p>
+<p>A workspace name is also an attribute of <code>bpl</code> when no builtin has that name. After <code>add←99</code>, <code>bpl.add</code> is still the builtin, and <code>bpl['add']</code> gives 99. <code>dir(basedpl)</code> lists the builtins, and <code>dir(bpl)</code> also lists workspace names.</p>
+<div id="0b01a8bb" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb95"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb95-1"><a href="#cb95-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> bpl.multiply(<span class="dv">2</span>, <span class="dv">3</span>).py <span class="op">==</span> <span class="dv">6</span></span>
+<span id="cb95-2"><a href="#cb95-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> bpl.index_of([<span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">7</span>], [<span class="dv">7</span>, <span class="dv">4</span>]).py.tolist() <span class="op">==</span> [<span class="dv">2</span>, <span class="dv">0</span>]</span>
+<span id="cb95-3"><a href="#cb95-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">getattr</span>(bpl, <span class="st">'+'</span>)(<span class="dv">2</span>, <span class="dv">3</span>).py <span class="op">==</span> <span class="dv">5</span></span>
+<span id="cb95-4"><a href="#cb95-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> bpl.conjugate(<span class="dv">1</span><span class="op">+</span><span class="ot">2j</span>).py <span class="op">==</span> <span class="dv">1</span><span class="op">-</span><span class="ot">2j</span></span>
+<span id="cb95-5"><a href="#cb95-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> bpl.add(<span class="dv">2</span>)(<span class="dv">3</span>).py <span class="op">==</span> <span class="dv">5</span></span>
+<span id="cb95-6"><a href="#cb95-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> bpl.sign(<span class="op">-</span><span class="dv">2</span>).py <span class="op">==</span> <span class="op">-</span><span class="dv">1</span></span>
+<span id="cb95-7"><a href="#cb95-7" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> bpl.multiply(<span class="dv">2</span>)(<span class="dv">3</span>).py <span class="op">==</span> <span class="dv">6</span></span>
+<span id="cb95-8"><a href="#cb95-8" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> bpl.distribution(<span class="st">'normal'</span>)[<span class="st">'cdf'</span>](<span class="fl">0.</span>).py <span class="op">==</span> <span class="fl">0.5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Names distinguish valences: <code>sign</code>/<code>multiply</code>, <code>shape</code>/<code>reshape</code>, <code>indices</code>/<code>index_of</code>, <code>first</code>/<code>take</code>, <code>mix</code>/<code>pick</code>. A glyph name keeps both valences, so <code>times(-2)</code> gives the sign of -2, and <code>times(2, 3)</code> gives 6. <code>multiply(2.)</code> binds an approximate number, and <code>multiply(2)</code> binds an exact one. Operators use the underlying BPL function.</p>
+<p><code>exponential</code> and <code>exponent</code> name the monadic and dyadic forms of <code>*</code>. <code>power</code> names the operator <code>⍣</code>, exposed as <code>f.power(n)</code>.</p>
+<p><code>basedpl.symbols</code> is the shared naming table used by Python functions and REPL and notebook completion. Each row is a dict with the keys <code>glyph</code>, <code>name</code>, <code>kind</code>, <code>monad</code>, <code>dyad</code>, <code>monad_rank</code>, <code>dyad_ranks</code>, <code>hanzi</code> and <code>shortcut</code>. <code>name</code> is the glyph name, which names the character and the glyph’s reference page. <code>kind</code> is one of <code>function</code>, <code>monadic-operator</code>, <code>dyadic-operator</code>, <code>argument</code>, <code>literal</code>, <code>comment</code>, <code>system</code> or <code>syntax</code>. <code>monad</code> and <code>dyad</code> hold the names for what the glyph does: a function’s monadic and dyadic names, or an operator’s names for its derived function’s valences. They hold <code>""</code> where there’s no name for that valence. An operator whose valences do the same thing holds its one name in <code>monad</code>, as does every other glyph with a name. <code>monad_rank</code> and <code>dyad_ranks</code> give a function’s natural ranks as BPL text, such as <code>1</code> or <code>1 ∞</code>, where <code>∞</code> is the whole argument. <code>hanzi</code> holds two strings of single-character Hanzi spellings, simplified then traditional, each with its preferred spelling first. <code>shortcut</code> is the REPL’s formatted key suffix, derived from <code>layout.json</code>: <code>" h"</code> for Alt-h, <code>" o c"</code> for Alt-o then c, or <code>""</code> when absent. The table is directly JSON-serializable for JavaScript consumers.</p>
+<p>Every operator also has a property named by its glyph name, which gives the derived function with both valences: <code>f.tilde_diaeresis</code> is <code>f⍨</code>, and <code>f.slash</code> is <code>f/</code>. The table lists the names for what each operator does.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Python</th>
+<th>BPL</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>f.reduce</code>, <code>f.scan</code>, <code>f.reduce_first</code>, <code>f.scan_first</code></td>
+<td><code>f/</code>, <code>f\</code>, <code>f⌿</code>, <code>f⍀</code></td>
+</tr>
+<tr class="even">
+<td><code>f.each</code>, <code>f.self</code>, <code>f.commute</code></td>
+<td><code>f¨</code>; <code>f⍨</code> with one argument; <code>f⍨</code> with two</td>
+</tr>
+<tr class="odd">
+<td><code>f.bitwise</code></td>
+<td><code>fᵇ</code>, a Boolean function applied to integer bits</td>
+</tr>
+<tr class="even">
+<td><code>f.outer_product</code>, <code>f.determinant(g)</code>, <code>f.inner_product(g)</code></td>
+<td><code>f⊗</code>; <code>f.g</code> with one argument; <code>f.g</code> with two</td>
+</tr>
+<tr class="odd">
+<td><code>f.key</code>, <code>f.stencil(s)</code></td>
+<td><code>f⌸</code>, <code>f⌺s</code></td>
+</tr>
+<tr class="even">
+<td><code>f.rank(r)</code>, <code>f.atop(g)</code></td>
+<td><code>f⍤r</code>, <code>f∘g</code></td>
+</tr>
+<tr class="odd">
+<td><code>f.after(g)</code>, <code>f.over(g)</code>, <code>f.before(g)</code></td>
+<td><code>f↢g</code>, <code>f⍥g</code>, <code>f↣g</code></td>
+</tr>
+<tr class="even">
+<td><code>f.power(n)</code>, <code>f.power([g])</code></td>
+<td><code>f⍣n</code>, with <code>n</code> a count, a list of counts, <code>∞</code> or a predicate; <code>f⍣[g]</code>, which keeps the history until <code>g</code></td>
+</tr>
+<tr class="odd">
+<td><code>f.undo</code>, <code>f.undo(g)</code>, <code>f.under(g)</code></td>
+<td><code>f⁻¹</code>; <code>f</code> with the inverse <code>g</code>, as <code>f⁻¹←g</code> attaches it; <code>f@g</code>, with <code>g</code> a function, positions or <code>[p]</code></td>
+</tr>
+<tr class="even">
+<td><code>f.valences(g)</code></td>
+<td><code>f⊘g</code>: <code>f</code> with one argument, <code>g</code> with two</td>
+</tr>
+<tr class="odd">
+<td><code>f.agenda(g)</code></td>
+<td><code>f⍚g</code>: the result of <code>f</code> picks which function in the vector <code>g</code> runs, on the whole argument or on each cell</td>
+</tr>
+<tr class="even">
+<td><code>f.derivative</code>, <code>f.derivative(g)</code></td>
+<td><code>f∂</code>, the Jacobian, which with two arguments differentiates with respect to the right one; <code>f</code> with the derivative <code>g</code>, as <code>f∂←g</code> attaches it</td>
+</tr>
+<tr class="odd">
+<td><code>f[k]</code>, <code>f.axis(k)</code></td>
+<td><code>f⍠k</code>, axes <code>k</code></td>
+</tr>
+<tr class="even">
+<td><code>f.optimize(x, lower=l)</code></td>
+<td><code>["lower":l] f⇄ x</code></td>
+</tr>
+</tbody>
+</table>
+<p>Operator properties chain in BPL order: <code>subtract.commute.reduce</code> is <code>-⍨/</code>. Operators needing another operand retain a hole until supplied:</p>
+<div id="ef155e30" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb96"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb96-1"><a href="#cb96-1" aria-hidden="true" tabindex="-1"></a>twice <span class="op">=</span> multiply(<span class="dv">2</span>)</span>
+<span id="cb96-2"><a href="#cb96-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> twice.power.each(<span class="dv">3</span>)([<span class="dv">1</span>, <span class="dv">2</span>]).py.tolist() <span class="op">==</span> [<span class="dv">8</span>, <span class="dv">16</span>]  <span class="co"># twice⍣3¨</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>f.power.each(n)</code> constructs <code>(f⍣n)¨</code>, just like <code>f.power(n).each</code>. For multiple missing operands, successive calls fill the innermost construction first: <code>f.power.each.power(n)(m)</code> constructs <code>((f⍣n)¨)⍣m</code>. Complete the operands before passing evaluation arguments.</p>
+<p>Arithmetic between functions makes forks: <code>f+g</code> is <code>(f+g)</code>. <code>f @ g</code> is inner product. <code>f &lt;&lt; g</code> is the Atop <code>f∘g</code>, and <code>f &gt;&gt; g</code> is <code>g∘f</code>. <code>f ** n</code> is power. Bitwise operators also compose native functions. <code>value &gt;&gt; (f &gt;&gt; g)</code> calls the composed function once. <code>value &gt;&gt; f &gt;&gt; g</code> makes separate calls and misses whole-composition optimizations. Python’s precedence applies when building these expressions:</p>
+<div id="e1e34713" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb97"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb97-1"><a href="#cb97-1" aria-hidden="true" tabindex="-1"></a>bit_filter <span class="op">=</span> (b.same <span class="op">&amp;</span> <span class="dv">5</span>) <span class="op">|</span> <span class="dv">8</span></span>
+<span id="cb97-2"><a href="#cb97-2" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(bit_filter([<span class="dv">6</span>, <span class="dv">3</span>]), [<span class="dv">12</span>, <span class="dv">9</span>])</span>
+<span id="cb97-3"><a href="#cb97-3" aria-hidden="true" tabindex="-1"></a>[<span class="dv">6</span>, <span class="dv">3</span>] <span class="op">&gt;&gt;</span> (bit_filter <span class="op">&gt;&gt;</span> b.add.<span class="bu">reduce</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>21ₓ</code></pre>
+</div>
+</div>
+<p>Math families: <code>prime</code>/<code>prime_mode</code> (<code>⍭</code>), <code>factors</code>/<code>factor_spec</code> (<code>⨸</code>), <code>roots</code>/<code>polyval</code> (<code>⌻</code>). <code>windows</code> is dyadic <code>↕</code>.</p>
+<p>Roots: <code>sqrt</code>/<code>root</code> (<code>√</code>). Complex coordinates: <code>real_imag</code> (<code>∨</code>), <code>polar</code> (<code>∧</code>), <code>cis</code> (<code>○</code>). <code>pi_times</code>/<code>pi_ratio</code> (<code>π</code>) give π multiples/fractions. Also <code>square</code>, <code>double</code>, <code>decrement</code>, <code>increment</code>, <code>classify</code>, <code>binary_encode</code> and <code>binary_decode</code>.</p>
+<div id="1dc620a5" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb99"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb99-1"><a href="#cb99-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> prime, factors, polyval</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="230c0c3a" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb100"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb100-1"><a href="#cb100-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> prime(<span class="dv">9</span>).py <span class="op">==</span> <span class="dv">29</span></span>
+<span id="cb100-2"><a href="#cb100-2" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(factors(<span class="dv">700</span>), [<span class="dv">2</span>, <span class="dv">2</span>, <span class="dv">5</span>, <span class="dv">5</span>, <span class="dv">7</span>])</span>
+<span id="cb100-3"><a href="#cb100-3" aria-hidden="true" tabindex="-1"></a>p <span class="op">=</span> polyval.left([<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>])</span>
+<span id="cb100-4"><a href="#cb100-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> p(<span class="dv">2</span>).py <span class="op">==</span> <span class="dv">17</span></span>
+<span id="cb100-5"><a href="#cb100-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> p.derivative(<span class="dv">2</span>).py <span class="op">==</span> <span class="dv">14</span></span>
+<span id="cb100-6"><a href="#cb100-6" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(p.derivative([<span class="dv">1</span>, <span class="dv">2</span>]), [[<span class="dv">8</span>, <span class="dv">0</span>], [<span class="dv">0</span>, <span class="dv">14</span>]])</span>
+<span id="cb100-7"><a href="#cb100-7" aria-hidden="true" tabindex="-1"></a>cube <span class="op">=</span> bpl(<span class="st">'{⍵*3}'</span>).derivative(bpl(<span class="st">'{⍺×3×⍵*2}'</span>))</span>
+<span id="cb100-8"><a href="#cb100-8" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> cube(<span class="dv">2</span>).py <span class="op">==</span> <span class="dv">8</span> <span class="kw">and</span> cube.derivative(<span class="dv">2</span>).py <span class="op">==</span> <span class="dv">12</span></span>
+<span id="cb100-9"><a href="#cb100-9" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(add.left(<span class="dv">1</span>).power([<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>])(<span class="dv">0</span>), [<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>A scalar perturbation gives the directional derivative <code>J @ direction</code> without building the full Jacobian. Differentiating a weighted sum of outputs gives <code>weights @ J</code>. These compositions use <a href="./glyphs/partial.html">the same derivative operator</a>:</p>
+<div id="8969d776" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb101"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a>point <span class="op">=</span> Array([<span class="fl">1.</span>, <span class="fl">2.</span>])</span>
+<span id="cb101-2"><a href="#cb101-2" aria-hidden="true" tabindex="-1"></a>direction <span class="op">=</span> Array([<span class="fl">2.</span>, <span class="op">-</span><span class="fl">1.</span>])</span>
+<span id="cb101-3"><a href="#cb101-3" aria-hidden="true" tabindex="-1"></a>weights <span class="op">=</span> Array([<span class="fl">3.</span>, <span class="fl">4.</span>])</span>
+<span id="cb101-4"><a href="#cb101-4" aria-hidden="true" tabindex="-1"></a>along <span class="op">=</span> (p <span class="op">&lt;&lt;</span> (point <span class="op">+</span> b.same <span class="op">*</span> direction)).derivative(<span class="fl">0.</span>)</span>
+<span id="cb101-5"><a href="#cb101-5" aria-hidden="true" tabindex="-1"></a>weighted <span class="op">=</span> (b.add.<span class="bu">reduce</span> <span class="op">&lt;&lt;</span> (weights <span class="op">*</span> p)).derivative(point)</span>
+<span id="cb101-6"><a href="#cb101-6" aria-hidden="true" tabindex="-1"></a>np.testing.assert_allclose(along, [<span class="dv">16</span>, <span class="op">-</span><span class="dv">14</span>])</span>
+<span id="cb101-7"><a href="#cb101-7" aria-hidden="true" tabindex="-1"></a>np.testing.assert_allclose(weighted, [<span class="dv">24</span>, <span class="dv">56</span>])</span>
+<span id="cb101-8"><a href="#cb101-8" aria-hidden="true" tabindex="-1"></a>along, weighted</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>([16., -14.], [24., 56.])</code></pre>
+</div>
+</div>
+</section>
+<section id="numerical-workflows" class="level2">
+<h2 class="anchored" data-anchor-id="numerical-workflows">Numerical workflows</h2>
+<p><code>matrix_divide(rhs, matrix)</code> puts the right-hand side first. It solves square systems or finds a least-squares solution. Exact inputs stay exact. Here a line fitted to three observations has intercept 1 and slope 2:</p>
+<div id="8526d5bb" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb103"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb103-1"><a href="#cb103-1" aria-hidden="true" tabindex="-1"></a>design <span class="op">=</span> Array([[<span class="dv">1</span>, <span class="dv">1</span>], [<span class="dv">1</span>, <span class="dv">2</span>], [<span class="dv">1</span>, <span class="dv">3</span>]])</span>
+<span id="cb103-2"><a href="#cb103-2" aria-hidden="true" tabindex="-1"></a>observed <span class="op">=</span> Array([<span class="dv">3</span>, <span class="dv">5</span>, <span class="dv">7</span>])</span>
+<span id="cb103-3"><a href="#cb103-3" aria-hidden="true" tabindex="-1"></a>coefficients <span class="op">=</span> b.matrix_divide(observed, design)</span>
+<span id="cb103-4"><a href="#cb103-4" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(design <span class="op">@</span> coefficients, observed)</span>
+<span id="cb103-5"><a href="#cb103-5" aria-hidden="true" tabindex="-1"></a>coefficients</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[1 2]ₓ</code></pre>
+</div>
+</div>
+<p><a href="./system/decompose.html">Decompositions</a> return records of factors. Request a truncated SVD with <code>rank</code>, inspect its fields, or reconstruct its low-rank approximation with <code>.undo</code>:</p>
+<div id="b36448f7" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb105"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb105-1"><a href="#cb105-1" aria-hidden="true" tabindex="-1"></a>svd <span class="op">=</span> b.decompose(design, kind<span class="op">=</span><span class="st">'svd'</span>, rank<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb105-2"><a href="#cb105-2" aria-hidden="true" tabindex="-1"></a>approximation <span class="op">=</span> b.decompose.undo(svd, kind<span class="op">=</span><span class="st">'svd'</span>)</span>
+<span id="cb105-3"><a href="#cb105-3" aria-hidden="true" tabindex="-1"></a>svd[<span class="st">'u'</span>].shape, svd[<span class="st">'s'</span>], svd[<span class="st">'v'</span>].shape, approximation</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>((3, 1),
+ [4.0791433289417345],
+ (2, 1),
+ [[0.5307147558416979, 1.2064393843590446], [0.8992918259420687, 2.044301698617718], [1.2678688960424391, 2.88216401287639]])</code></pre>
+</div>
+</div>
+<p><a href="./glyphs/right-left-arrows.html">Optimization</a> works on native BPL functions, including composed word functions. Here the loss is the same line fit’s sum of squared residuals. <code>report=True</code> returns the point, value, convergence flag and evaluation count. Ordinary Python callbacks are not BPL operands.</p>
+<div id="2a8dc712" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb107"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb107-1"><a href="#cb107-1" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> (b.add <span class="op">@</span> b.multiply).left(design)</span>
+<span id="cb107-2"><a href="#cb107-2" aria-hidden="true" tabindex="-1"></a>loss <span class="op">=</span> b.add.<span class="bu">reduce</span> <span class="op">&lt;&lt;</span> b.square <span class="op">&lt;&lt;</span> (model <span class="op">-</span> observed)</span>
+<span id="cb107-3"><a href="#cb107-3" aria-hidden="true" tabindex="-1"></a>fit <span class="op">=</span> loss.optimize([<span class="fl">0.</span>, <span class="fl">0.</span>], report<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb107-4"><a href="#cb107-4" aria-hidden="true" tabindex="-1"></a>np.testing.assert_allclose(fit[<span class="st">'x'</span>], coefficients, atol<span class="op">=</span><span class="fl">1e-6</span>)</span>
+<span id="cb107-5"><a href="#cb107-5" aria-hidden="true" tabindex="-1"></a>fit[<span class="st">'x'</span>], fit[<span class="st">'value'</span>], fit[<span class="st">'converged'</span>], fit[<span class="st">'evaluations'</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>([0.9999999999999999, 2.], Array(0.0), Array(True), Array(9))</code></pre>
+</div>
+</div>
+<p>A matrix product of <a href="./glyphs/up-down-arrow.html">windows</a> computes valid correlation. Reverse the kernel for convolution. The windows have one row per output position and one column per kernel item:</p>
+<div id="699bc5f8" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb109"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb109-1"><a href="#cb109-1" aria-hidden="true" tabindex="-1"></a>signal <span class="op">=</span> Array(<span class="bu">range</span>(<span class="dv">8</span>))</span>
+<span id="cb109-2"><a href="#cb109-2" aria-hidden="true" tabindex="-1"></a>kernel <span class="op">=</span> Array([<span class="dv">1</span>, <span class="dv">0</span>, <span class="op">-</span><span class="dv">1</span>])</span>
+<span id="cb109-3"><a href="#cb109-3" aria-hidden="true" tabindex="-1"></a>frames <span class="op">=</span> b.windows(<span class="bu">len</span>(kernel), signal)</span>
+<span id="cb109-4"><a href="#cb109-4" aria-hidden="true" tabindex="-1"></a>correlation <span class="op">=</span> frames <span class="op">@</span> kernel</span>
+<span id="cb109-5"><a href="#cb109-5" aria-hidden="true" tabindex="-1"></a>convolution <span class="op">=</span> frames <span class="op">@</span> b.reverse(kernel)</span>
+<span id="cb109-6"><a href="#cb109-6" aria-hidden="true" tabindex="-1"></a>frames.shape, correlation, convolution</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>((6, 3), [-2, -2, -2, -2, -2, -2], [2, 2, 2, 2, 2, 2])</code></pre>
+</div>
+</div>
+<p>For multiple channels, trailing axes stay inside each window. A two-row window specification gives sizes then movements. Flatten the window and channel axes together before multiplying by a flattened kernel:</p>
+<div id="a522a26c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb111"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb111-1"><a href="#cb111-1" aria-hidden="true" tabindex="-1"></a>samples <span class="op">=</span> b.reshape([<span class="dv">8</span>, <span class="dv">2</span>], <span class="bu">range</span>(<span class="dv">16</span>))</span>
+<span id="cb111-2"><a href="#cb111-2" aria-hidden="true" tabindex="-1"></a>patches <span class="op">=</span> b.windows([[<span class="dv">3</span>], [<span class="dv">2</span>]], samples)</span>
+<span id="cb111-3"><a href="#cb111-3" aria-hidden="true" tabindex="-1"></a>channel_kernel <span class="op">=</span> Array([[<span class="dv">1</span>, <span class="dv">2</span>], [<span class="dv">0</span>, <span class="dv">0</span>], [<span class="op">-</span><span class="dv">1</span>, <span class="op">-</span><span class="dv">2</span>]])</span>
+<span id="cb111-4"><a href="#cb111-4" aria-hidden="true" tabindex="-1"></a>patches.shape, b.reshape([<span class="dv">3</span>, <span class="dv">6</span>], patches) <span class="op">@</span> b.ravel(channel_kernel)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>((3, 3, 2), [-12, -12, -12])</code></pre>
+</div>
+</div>
+<p>Keep a seeded <a href="./system/rand.html">generator</a> to draw repeatedly from one stream. Pass it as the left argument to a <a href="./distributions.html">distribution’s</a> <code>sample</code> function. Recreating the generator with the same seed repeats the draws:</p>
+<div id="30e7caeb" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb113"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb113-1"><a href="#cb113-1" aria-hidden="true" tabindex="-1"></a>generator <span class="op">=</span> b.rand(<span class="dv">42</span>)</span>
+<span id="cb113-2"><a href="#cb113-2" aria-hidden="true" tabindex="-1"></a>normal <span class="op">=</span> b.distribution([<span class="fl">2.</span>, <span class="fl">0.5</span>], <span class="st">'normal'</span>)</span>
+<span id="cb113-3"><a href="#cb113-3" aria-hidden="true" tabindex="-1"></a>first_draw <span class="op">=</span> normal[<span class="st">'sample'</span>](generator, [<span class="dv">3</span>])</span>
+<span id="cb113-4"><a href="#cb113-4" aria-hidden="true" tabindex="-1"></a>second_draw <span class="op">=</span> normal[<span class="st">'sample'</span>](generator, [<span class="dv">3</span>])</span>
+<span id="cb113-5"><a href="#cb113-5" aria-hidden="true" tabindex="-1"></a>np.testing.assert_array_equal(first_draw, normal[<span class="st">'sample'</span>](b.rand(<span class="dv">42</span>), [<span class="dv">3</span>]))</span>
+<span id="cb113-6"><a href="#cb113-6" aria-hidden="true" tabindex="-1"></a>first_draw, second_draw</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>([2.4163560791590704, 1.8655138034731817, 1.5459736645007867],
+ [2.463497459399539, 2.6376029532258425, 2.2547966544824654])</code></pre>
+</div>
+</div>
+</section>
+<section id="printing-functions" class="level2">
+<h2 class="anchored" data-anchor-id="printing-functions">Printing functions</h2>
+<p><code>to_python(f)</code> shows a function using Python word names and combinators.</p>
+<p>An ambivalent primitive prints as its glyph name, because both valences reach it. The <code>tally</code> tine of a mean prints as <code>equal_underbar_slash</code>, since <code>x (add.reduce / tally) y</code> applies <code>≢</code> to two arguments.</p>
+<div id="0b18b08c" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb115"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb115-1"><a href="#cb115-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> to_python, add, multiply, tally</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="25ee6cef" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb116"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb116-1"><a href="#cb116-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(add.<span class="bu">reduce</span> <span class="op">/</span> tally) <span class="op">==</span> <span class="st">'add.reduce / equal_underbar_slash'</span></span>
+<span id="cb116-2"><a href="#cb116-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(multiply(<span class="fl">2.</span>)) <span class="op">==</span> <span class="st">'multiply(2.)'</span></span>
+<span id="cb116-3"><a href="#cb116-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python((add.<span class="bu">reduce</span> <span class="op">/</span> tally).each) <span class="op">==</span> <span class="st">'(add.reduce / equal_underbar_slash).each'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>For an ambivalent function, <code>dyad=True</code> selects the dyadic spelling. Word functions already specify their valence.</p>
+<div id="f826e103" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb117"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb117-1"><a href="#cb117-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(bpl(<span class="st">'×'</span>)) <span class="op">==</span> <span class="st">'times'</span></span>
+<span id="cb117-2"><a href="#cb117-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(bpl(<span class="st">'×'</span>), dyad<span class="op">=</span><span class="va">True</span>) <span class="op">==</span> <span class="st">'multiply'</span></span>
+<span id="cb117-3"><a href="#cb117-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(bpl(<span class="st">'2-'</span>)) <span class="op">==</span> <span class="st">'subtract.left(2.)'</span></span>
+<span id="cb117-4"><a href="#cb117-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> to_python(bpl(<span class="st">'{⍵×2}¨'</span>)) <span class="op">==</span> <span class="st">'fn("{⍵×2}").each'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Dfns and late-bound <code>.fn(...)</code> expressions retain their BPL source. Use <code>bpl('+/÷≢')</code> to evaluate a function expression and print its assembled structure. Printing itself never executes BPL. Approximate <code>2</code> prints as <code>2.</code>, exact <code>2ₓ</code> as <code>2</code>, and fractions as <code>Fraction(...)</code>. Complex array constants retain BPL notation inside <code>bpl(...)</code>.</p>
+<p>The output is explanatory Python spelling. Python argument evaluation order and workspace definitions remain the caller’s responsibility.</p>
+</section>
+<section id="parsing-source" class="level2">
+<h2 class="anchored" data-anchor-id="parsing-source">Parsing source</h2>
+<p><code>parse</code> gives the parse tree of BPL source, for tools that read and rewrite it. Each line of its display shows a node’s <code>kind</code>, its <code>span</code> of character offsets into the source, and its own source <code>text</code>:</p>
+<div id="0d5eb5f0" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb118"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb118-1"><a href="#cb118-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> basedpl <span class="im">import</span> parse</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="583ba732" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb119"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb119-1"><a href="#cb119-1" aria-hidden="true" tabindex="-1"></a>tree <span class="op">=</span> parse(<span class="st">'m←[1 2 ⋄ 3 4] ⋄ (4 ⋄ 4 5)'</span>)</span>
+<span id="cb119-2"><a href="#cb119-2" aria-hidden="true" tabindex="-1"></a>tree</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>Program 0:25 'm←[1 2 ⋄ 3 4] ⋄ (4 ⋄ 4 5)'
+  Statement 0:13 'm←[1 2 ⋄ 3 4]'
+    Name 0:1 'm'
+    Assign 1:2 '←'
+    ArrayLiteral 2:13 '[1 2 ⋄ 3 4]'
+      Cell 3:6 '1 2'
+        ArrayLiteral 3:6 '1 2'
+          Cell 3:4 '1'
+            Literal 3:4 '1'
+          Cell 5:6 '2'
+            Literal 5:6 '2'
+      Cell 9:12 '3 4'
+        ArrayLiteral 9:12 '3 4'
+          Cell 9:10 '3'
+            Literal 9:10 '3'
+          Cell 11:12 '4'
+            Literal 11:12 '4'
+  Statement 16:25 '(4 ⋄ 4 5)'
+    ArrayLiteral 16:25 '(4 ⋄ 4 5)'
+      Cell 17:18 '4'
+        ArrayLiteral 17:18 '4'
+          Cell 17:18 '4'
+            Literal 17:18 '4'
+      Cell 21:24 '4 5'
+        ArrayLiteral 21:24 '4 5'
+          Cell 21:22 '4'
+            Literal 21:22 '4'
+          Cell 23:24 '5'
+            Literal 23:24 '5'</code></pre>
+</div>
+</div>
+<p>Kinds are the parser’s node names, plus <code>Program</code>, <code>Statement</code>, <code>Body</code> for each dfn body, <code>Cell</code> for each array-literal cell, <code>Comment</code> and <code>Error</code>. Separators have no nodes. <code>walk</code> gives a node, then each of its descendants, in source order.</p>
+<p>The text between two cells holds their separator. <code>Node.edit</code> gives a node’s text with each <code>(span, new)</code> pair replaced. <code>basedpl.syntax.edit</code> does the same for any text, such as a Markdown file that holds BPL. This rewrite removes the spaces around each <code>⋄</code> that separates rows, and leaves the statement separator alone:</p>
+<div id="7cd1b33b" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb121"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb121-1"><a href="#cb121-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> cell_gaps(tree):</span>
+<span id="cb121-2"><a href="#cb121-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"The spans between consecutive cells of each array literal."</span></span>
+<span id="cb121-3"><a href="#cb121-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> node <span class="kw">in</span> tree.walk():</span>
+<span id="cb121-4"><a href="#cb121-4" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> node.kind <span class="op">!=</span> <span class="st">'ArrayLiteral'</span>: <span class="cf">continue</span></span>
+<span id="cb121-5"><a href="#cb121-5" aria-hidden="true" tabindex="-1"></a>        cells <span class="op">=</span> [c <span class="cf">for</span> c <span class="kw">in</span> node.children <span class="cf">if</span> c.kind <span class="op">==</span> <span class="st">'Cell'</span>]</span>
+<span id="cb121-6"><a href="#cb121-6" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> a, b <span class="kw">in</span> <span class="bu">zip</span>(cells, cells[<span class="dv">1</span>:]): <span class="cf">yield</span> a.span[<span class="dv">1</span>], b.span[<span class="dv">0</span>]</span>
+<span id="cb121-7"><a href="#cb121-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb121-8"><a href="#cb121-8" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> unspace_rows(text):</span>
+<span id="cb121-9"><a href="#cb121-9" aria-hidden="true" tabindex="-1"></a>    tree <span class="op">=</span> parse(text)</span>
+<span id="cb121-10"><a href="#cb121-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> tree.edit((gap, <span class="st">'⋄'</span>) <span class="cf">for</span> gap <span class="kw">in</span> cell_gaps(tree) <span class="cf">if</span> text[<span class="bu">slice</span>(<span class="op">*</span>gap)].strip() <span class="op">==</span> <span class="st">'⋄'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="e1461495" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb122"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb122-1"><a href="#cb122-1" aria-hidden="true" tabindex="-1"></a>fixed <span class="op">=</span> unspace_rows(<span class="st">'m←[1 2 ⋄ 3 4] ⋄ (4 ⋄ 4 5)'</span>)</span>
+<span id="cb122-2"><a href="#cb122-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> fixed <span class="op">==</span> <span class="st">'m←[1 2⋄3 4] ⋄ (4⋄4 5)'</span></span>
+<span id="cb122-3"><a href="#cb122-3" aria-hidden="true" tabindex="-1"></a>fixed</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>'m←[1 2⋄3 4] ⋄ (4⋄4 5)'</code></pre>
+</div>
+</div>
+<p>Comments are <code>Comment</code> nodes. A line that doesn’t parse becomes an <code>Error</code> node, whose <code>error</code> is the <code>BplError</code>, and parsing continues after it:</p>
+<div id="5cfad1e1" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb124"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb124-1"><a href="#cb124-1" aria-hidden="true" tabindex="-1"></a>bad <span class="op">=</span> parse(<span class="st">'x←1   ⍝ one</span><span class="ch">\n</span><span class="st">[1 2)</span><span class="ch">\n</span><span class="st">y←2'</span>)</span>
+<span id="cb124-2"><a href="#cb124-2" aria-hidden="true" tabindex="-1"></a>bad</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>Program 0:21 'x←1   ⍝ one\n[1 2)\ny←2'
+  Statement 0:3 'x←1'
+    Name 0:1 'x'
+    Assign 1:2 '←'
+    Literal 2:3 '1'
+  Comment 6:11 '⍝ one'
+  Error 12:17 '[1 2)'
+  Statement 18:21 'y←2'
+    Name 18:19 'y'
+    Assign 19:20 '←'
+    Literal 20:21 '2'</code></pre>
+</div>
+</div>
+<div id="deeba2c9" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb126"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb126-1"><a href="#cb126-1" aria-hidden="true" tabindex="-1"></a>[n.error.message <span class="cf">for</span> n <span class="kw">in</span> bad.walk() <span class="cf">if</span> n.kind <span class="op">==</span> <span class="st">'Error'</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>['mismatched closing delimiter']</code></pre>
+</div>
+</div>
+</section>
+<section id="errors-and-interruption" class="level2">
+<h2 class="anchored" data-anchor-id="errors-and-interruption">Errors and interruption</h2>
+<p>Python conversion and indexing failures raise <code>TypeError</code>, <code>ValueError</code> or <code>IndexError</code>. BPL evaluation raises <code>BplError</code>, which provides the diagnostic, <code>kind</code>, <code>message</code>, <code>source</code>, character <code>span</code>, call context and prior <code>output</code>. Completed assignments survive errors. A capturing call keeps its output on the exception. An ordinary call prints its output before raising.</p>
+<p>Ctrl-C interrupts evaluation. From another thread, call <code>bpl.interrupt()</code>. <code>bpl.timeout = 2</code> gives each evaluation a two-second deadline. <code>None</code>, the default, removes it.</p>
+<p>Evaluation runs on the calling thread and releases the GIL. Other Python threads keep running during an evaluation. The workspace remains usable after interruption. Native-library calls can delay cancellation. For a hard-kill fallback, use a <a href="./processes.html#interruptible-worker">process worker</a>.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/answerdotai\.github\.io\/basedpl");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/AnswerDotAI/basedpl/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

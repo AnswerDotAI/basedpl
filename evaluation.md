@@ -1,0 +1,402 @@
+
+
+# Evaluation
+
+After [Syntax](syntax.qmd) divides a statement into runs, BPL binds the
+runs as it evaluates them. Binding depends on values. A name can hold a
+subject, a function or an operator. A name’s case doesn’t decide which,
+as it does in BQN. BPL looks a name up when the statement runs.
+
+## Binding
+
+Evaluation goes from right to left. Functions have no precedence over
+each other. A function’s right argument is everything to its right. Its
+left argument is the subject directly to its left, if there is one. The
+value to a function’s left therefore decides whether the function gets
+one argument or two. In `g(f)4` with `g←÷`, the function `g` stands to
+the left of `(f)`, which makes `f` monadic.
+
+``` bpl
+2×3+4                ⍝ 14
+10-3-2               ⍝ 9
+f←- ⋄ 5(f)3          ⍝ 2
+f←- ⋄ g←÷ ⋄ g(f)4    ⍝ ¯0.25
+```
+
+Subjects side by side form a [strand](terms.qmd#term-strand), a vector
+with one item for each subject. Each run is evaluated before the strand
+forms. A literal strand counts as one item.
+
+``` bpl
+a←1 2 ⋄ b←3 4 ⋄ a b        ⍝ [[1 2] [3 4]]
+a←1 ⋄ b←2 ⋄ a b+1          ⍝ 1 3
+x←5 ⋄ x 1 2                ⍝ [5 [1 2]]
+```
+
+An array that holds a function as an item binds as a function only where
+a subject follows it. There it calls each function on the whole
+arguments, and each other item is its own result, as [Functions in
+arrays](arrays.ipynb#functions-in-arrays) shows. Followed by a function,
+or by nothing, it’s a subject: a left argument, a strand item or an
+argument. `f fs x` applies `f` to `fs x`, and `fs f x` gives `f` the
+left argument `fs`.
+
+``` bpl
+fs←[+ × ÷] ⋄ 2 fs 8          ⍝ 10 16 0.25
+fs←[+ × ÷] ⋄ ≢ fs 4          ⍝ 3ₓ
+fs←[+ × ÷] ⋄ fs≡fs           ⍝ $t
+fs←[+ × ÷] ⋄ ≢fs             ⍝ 3ₓ
+fs←[+ × ÷] ⋄ 1 fs            ⍝ [1 [+ × ÷]]
+```
+
+## Operators and operands
+
+Operators bind before functions apply. An operator’s left
+[operand](terms.qmd#term-operand) is the whole function to its left. Its
+right operand is the one [token](terms.qmd#term-token) to its right. A
+literal strand counts as one token: in `f⍤1 2 M`, the rank is `1 2`. Put
+a vector argument after a literal operand in brackets, as in `f⍤1[2 3]`.
+An argument that touches the operand stays out of it: `+/⍤1m` applies
+`+/⍤1` to `m`, and `'a',⍣3'b'` applies `'a',⍣3` to `'b'`.
+
+A numeric operand and numeric argument need an explicit separator.
+`f⍣¯25` has operand `¯25`, while `f⍣¯2 5` has operand `¯2 5`. Use
+`f⍣¯2(5)` or `f⍣¯2⊢5` to give operand `¯2` and argument `5`.
+
+Each run counts as one token, as a parenthesised group does. An operator
+at the end of a run takes the next run as its right operand, as it takes
+a touching token: in `⌊@ 10× x`, the right operand of `@` is the run
+`10×`. An operator at the start of a run takes the previous run as its
+left operand: in `≢⊢ ⌸x`, the left operand of `⌸` is the run `≢⊢`. Names
+that hold operators count in both places.
+
+``` bpl
+m←2 3⍴⍳6ₓ ⋄ +/⍤1 m               ⍝ [3 12]ₓ
+m←2 3⍴⍳6ₓ ⋄ +/⍤1m                ⍝ [3 12]ₓ
+⌊@ 10× 1.25 2.78                 ⍝ 1.2 2.7
+x←0 1 1 0 1 1 ⋄ ≢⊢ ⌸x            ⍝ [2 4]ₓ
+x←5 ⋄ ≥⍣3 x                     ⍝ 8
+≥⍣3(5)                          ⍝ 8
+≥⍣3⊢5                           ⍝ 8
+```
+
+Where an operator takes only a function, an array that holds a function
+as an item calls each such function on the whole arguments. Each other
+item is its own result. The results combine as Rank combines its
+results, with the array’s shape as their frame. Any other array acts as
+a constant function, like `A⍨`. An operator that takes either kind keeps
+every array as data. Reduce and scan need a function, or an array that
+holds one. `5/` is an error, and Replicate is written `#`.
+
+``` bpl
+5¨ 1 2 3                         ⍝ 5 5 5
+[+ -]¨ 1 2                       ⍝ [1 ¯1;2 ¯2]
+```
+
+## Trains
+
+A run, group or statement that ends in a function is a
+[train](terms.qmd#term-train). BPL builds a train in two steps:
+
+1.  Each subject [binds](terms.qmd#term-bind) the one
+    [part](terms.qmd#term-part) after it. `2×` is `2↣×`, and the parts
+    of `2|#⊢` are `2|`, `#` and `⊢`. To bind a whole train, put it in
+    parentheses, as in `2(+×-)`.
+2.  BPL builds the train from its last part leftwards, as APL does. A
+    bound part takes one argument, so it forms an
+    [atop](terms.qmd#term-atop) with the train built so far. Any other
+    part forms a [fork](terms.qmd#term-fork) with the part before it and
+    the train built so far, or an atop when it comes first.
+
+A fork `f g h` gives `(f ⍵) g (h ⍵)`, and an atop `f g` gives `f (g ⍵)`.
+So `2|#⊢` is the fork `(2|)#⊢`, and `⊢-2×⊢` is `⊢-(2×)∘⊢`, as in APL.
+With two arguments, a fork gives `(⍺ f ⍵) g (⍺ h ⍵)`, and an atop gives
+`f (⍺ g ⍵)`. A bound function takes one argument only: `3 (2×) 4` is a
+`SYNTAX` error.
+
+``` bpl
+f←32+1.8× ⋄ f100     ⍝ 212
+(+/÷≢) 1 2 3 6       ⍝ 3
+(0.5×⊢+÷) 2          ⍝ 1.25
+(2|#⊢) 5 6 7         ⍝ 5 7
+2 (1-×) 5            ⍝ ¯9
+```
+
+A space before an argument keeps the train separate from it. `+/÷≢ x`
+applies the train `+/÷≢` to `x`. `+/÷≢x` is one run, which reads as
+`+/(÷(≢x))`. A train whose subjects and functions alternate, such as
+`32+1.8×`, gives the same result either way.
+
+Two names next to each other need a space between them. A literal can
+touch a name, as it touches a glyph: `1+⌽f5`. Inside a longer
+expression, put a name argument in parentheses, as in `1+⌽f(x)`. Without
+them, `1+⌽f x` applies the train `1+⌽f` to `x`. A run that starts with a
+function is a call: `×2` is the sign of 2.
+
+Some trains and compositions are [fast
+combinations](terms.qmd#term-fast-combination): BPL computes them by a
+faster algorithm than applying their parts in turn, with the same
+result. `10↑⍋ v` selects the first 10 positions of the grade without
+ordering the rest. The glyph pages list each combination under “Fast
+combinations”, and [`•explain`](system/explain.qmd) reports the ones a
+run takes. BPL recognises a combination only where its functions form
+one function: a train, a composition, or an operator’s operand. The
+expression `10↑⍋v` grades the whole of `v` before it takes 10 positions.
+A result that BPL defers is the exception. `+/50↕v` folds the windows
+that `↕` defers by sliding over `v`, without building them.
+
+## Agreement and pervasion
+
+[Pervasive functions](terms.qmd#term-pervasive-function) align the
+leading axes of their arguments. Missing trailing axes count as
+length 1. Axes of equal length agree. An axis of length 1 expands to the
+other length, including to zero. Axes of length 1 in both arguments
+remain. Any other mismatch is a `LENGTH` error.
+
+``` bpl
+[1 2 3⋄4 5 6]+10 20 ⍝ [11 12 13⋄24 25 26]
+[[10]⋄[20]]+[1 2 3⋄] ⍝ [11 12 13⋄21 22 23]
+⍴[[10]⋄]+1 2 3       ⍝ [3 1]ₓ
+```
+
+Pervasion repeats these rules inside nested items. Each and Rank frames
+also use leading agreement. Products, replication, indexing and
+assignment have their own rules. BPL’s agreement extends APL’s. NumPy
+aligns trailing axes instead.
+
+## Axes and indices
+
+Positions and axes count from 0. Negative positions and axes count from
+the end. A count or position must be an integer, or a float within
+`1E¯14` of an integer, whatever the `mathish` setting.
+
+[Index](glyphs/squad.qmd) `⌷` selects along leading axes. Its result has
+the shape of the positions, followed by the shape of each selected cell.
+`:` selects one whole axis; `∞` keeps the remaining axes. [Dot
+indexing](glyphs/dot.qmd) writes the same selection after an array:
+`m.[: 1]` is `[: 1]⌷m`. A [subscript](scripts.ipynb#subscripts) selects
+one position on the leading axis.
+
+``` bpl
+v←10 20 30 40 ⋄ [[2 0]]⌷v       ⍝ 30 10
+v←10 20 30 40 ⋄ [⊂1]⌷v          ⍝ ⊂20
+v←10 20 30 40 ⋄ [[1]]⌷v         ⍝ [20]
+v←10 20 30 40 ⋄ v₋₁             ⍝ 40
+m←[1 2 3⋄4 5 6] ⋄ 1⌷m         ⍝ 4 5 6
+m←[1 2 3⋄4 5 6] ⋄ [: 1]⌷m       ⍝ 2 5
+```
+
+[Axis](glyphs/quad-colon.qmd) `⍠` applies a function along axes given as
+numbers or names, as in `+/⍠0` and `+/⍠"month"`.
+[Rank](glyphs/jot-diaeresis.qmd) `⍤` applies a function to trailing
+cells. `⍤0` passes an atom item as itself, and an array item as a scalar
+holding it.
+
+Some functions have a default axis:
+
+- `/ \ ⌽ ,` work along the last axis.
+- `⌿ ⍀ ⊖ ⍪` work along the first axis.
+- Replicate `N#Y` and the partitions `N⊂Y` and `N⊆Y` work along the
+  first axis.
+- Encode `⊤` puts its digits on the last axis. Decode `⊥` reads them
+  from the last axis.
+
+Structural functions also accept lists of axes.
+
+``` bpl
++/⍠0 [1 2 3⋄4 5 6]           ⍝ 5 7 9
+```
+
+## Equality and ordering
+
+Comparison between exact numbers is exact. Floating comparison follows
+[Mathish mode](numbers.qmd#mathish-mode). Infinity equals itself.
+Infinity never equals a finite number.
+
+``` bpl
+0.3=0.1+0.2          ⍝ $t
+1r3=1ₓ÷3ₓ            ⍝ $t
+```
+
+Search functions compare major cells. `⍳` and `⍸` search their left
+argument. `∊ ~ ∩` search their right argument. The other argument’s
+cells have the same rank as the major cells of the searched argument. A
+unit can’t be searched, because it has no major cells: `s~" "` removes
+spaces, but `s~' '` is a `RANK` error.
+
+Search, membership, match and the functions that find distinct major
+cells use the same comparison rule. Tolerance isn’t transitive. A search
+finds the first match of each cell it looks for. Monadic `∪ ≠ = ∩ ⍷ #`
+and Key treat real numbers as one value when, in ascending order, each
+matches the next. The first and last of these numbers needn’t match. A
+major cell that is an array counts as a copy of the first earlier
+distinct cell that it matches.
+
+``` bpl
+≠[1 1+8E¯15 1+16E¯15]   ⍝ $t $f $f
+[1]⍳1+16E¯15            ⍝ 1ₓ
+```
+
+Grade and interval index ignore tolerance. They order values like this:
+
+- Numbers come before characters, and characters before nested arrays.
+- Numbers compare by value. NaN comes after every other number. Complex
+  numbers compare by real part, then by imaginary part.
+- Characters compare by code point.
+- Nested arrays compare by rank, then by ravel lexicographically, then
+  by shape. Prototypes don’t count.
+
+Grade is stable. Pervasive ordering (`< ≤ > ≥ ⌊ ⌈`) takes real numbers
+and characters, and orders a number before a character, as grade does.
+
+## Functions and effects
+
+Dfns use lexical scope. Plain assignment is local. Modified and
+selective updates change the nearest binding. Arrays have value
+semantics: updating one name leaves other copies unchanged.
+
+``` bpl
+a←1 2 ⋄ b←a ⋄ a₀←9 ⋄ b ⍝ 1 2
+```
+
+Every statement in a dfn body runs. The body’s last statement gives the
+result. A final assignment returns its value without displaying it. An
+assignment at top level displays nothing either. [Dfns](dfns.ipynb)
+covers bodies, predicates and arguments.
+
+Evaluation is right to left, including tines. Items inside brackets
+evaluate left to right, as statements do.
+
+A [map](terms.qmd#term-map) with no cells, and an empty inner product,
+call their operand on prototypes. Empty scan makes no calls. Generic
+reduction associates to the right. Float sum and product may
+reassociate. All scans accumulate left to right.
+
+Where it can, a map calls its operand once on all its cells together, in
+one batched call. Each primitive that the operand calls then runs once
+on the whole arguments: `{⍵×⍵+1}¨v` costs about what `v×v+1` costs. A
+system function that doesn’t act, such as `•json` or `•ucs`, runs once
+for each cell within the batched call. The results, errors, output and
+writes to names are the same as when the operand runs once for each
+cell. A batched call takes the random numbers for each draw for all its
+cells at once, in cell order, as [`¿`](glyphs/inverted-question.qmd)
+describes. A cell that draws more than once then gets different numbers
+from those it gets when the operand runs once for each cell. A guard
+that splits the batched call, described next, also changes the numbers:
+each side draws for its own cells in turn.
+
+A guard’s predicate that reads a cell’s value splits the batched call,
+as [`⍚`](glyphs/diamond-underbar.qmd) splits its argument’s cells. The
+cells where the predicate holds run the rest of the body together, and
+the other cells run the bodies after it together, each with its own
+cells of every value that differs from cell to cell. `{⍵<0?0;√⍵}¨v` runs
+`√` once, on the cells that aren’t negative. A side that no cell takes
+doesn’t run.
+
+A fold or scan by a dfn of an array with more than one lane, such as one
+along each row of a matrix, makes one batched call for each stage. The
+call at position `j` runs on item `j` of every lane. `{⍺-⍵}/m` folds
+every row of `m` from the right with one call for each column, rather
+than one for each item. In `x f.g y` with a dfn `g`, one batched call
+runs `g` on every pairing of a row of `x`, a position along the
+contraction and a column of `y`. `f` then folds along the contraction.
+Where its batched call stops, a fold or inner product calls its operand
+once for each item, for the same reasons as a map, below.
+
+`∂` in the operand differentiates with respect to all the cells in one
+batched call, cells that are arrays included: `{{+/⍵*2}∂⍵}⍤1⊢m` gives
+every row’s gradient at once.
+
+The map calls its operand once for each cell instead where the operand:
+
+- reads a cell’s value to choose how many items to make or which items
+  to read, as a count or a position does
+- writes output, reads input, or formats a cell’s value with `⍕`
+- calls a system function that acts: one that reads or writes files, the
+  network, the clock or the terminal, or that makes something new on
+  each call, such as `•nget`, `•time` or `•uuid`
+- writes to a name outside the map
+- appends to a value that differs from cell to cell, or writes into one
+  so that it would be held in mixed storage
+- has a guard that catches an error
+- gives a result that holds arrays as items
+- calls a primitive that can’t run on all the cells at once
+- has a guard on a cell’s value whose two sides give results of
+  different kinds or shapes, write to a name outside the dfn, or call
+  the dfn again
+- combines each cell with an array that every cell shares, where
+  repeating that array for every cell would hold more than about 2
+  million items and 4 times the items of the call’s arguments, and the
+  array alone holds more than about a million items
+
+Where such a shared array is smaller, the map calls its operand once on
+each chunk of cells instead, so that each call repeats the array into at
+most about 2 million items, and joins the chunks’ results.
+
+A dfn remembers why its batched call stopped, and later maps skip the
+batched call while that cause would recur. After output, input, `⍕`, a
+system function that acts, a write to a name outside the map, a read of
+a cell’s value or a guard in a recursive call, they skip it on every
+later call. After a call that can’t run on all the cells at once, they
+skip it while the arguments keep their kinds and cell shapes. After a
+call that would repeat a shared array too far, they skip it while the
+frame also keeps its shape. A caught error isn’t remembered, because
+whether an error arises depends on the cells’ values.
+
+A map always calls its operand once for each cell where an argument that
+differs from cell to cell is held in mixed storage, as
+[`•storage`](system/storage.qmd) reports for nested arrays and exact
+rationals, or has named axes. A map of one cell whose arguments’ cells
+are atoms makes no batched call either, because one plain call is
+faster. The `fallbacks` table of [`•explain`](system/explain.qmd) lists,
+with the reason, each map whose batched call fell back to one call for
+each cell, each map that skipped its batched call because an earlier one
+stopped. Its `itemwise` table lists each batched call that read its
+cells’ items one at a time. With `batch` set to `$f` in
+[`•prefs`](system/prefs.qmd), every map calls its operand once for each
+cell.
+
+## Errors
+
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Error</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DOMAIN</code></td>
+<td>Invalid values or unknown inverse</td>
+</tr>
+<tr>
+<td><code>RANK</code> / <code>LENGTH</code></td>
+<td>Invalid rank or shape/count agreement</td>
+</tr>
+<tr>
+<td><code>INDEX</code></td>
+<td>Invalid position</td>
+</tr>
+<tr>
+<td><code>SYNTAX</code></td>
+<td>Invalid syntax or call form</td>
+</tr>
+<tr>
+<td><code>VALUE</code></td>
+<td>Undefined name or missing value</td>
+</tr>
+<tr>
+<td><code>IO</code></td>
+<td>A file, directory, URL or standard input that can’t be read, written
+or reached</td>
+</tr>
+</tbody>
+</table>
+
+Each error report gives the error’s location in the source. Unsupported
+features and resource limits have their own errors.
