@@ -13,6 +13,7 @@ const SMALL: bool = false;
 
 static MATHISH: AtomicBool = AtomicBool::new(Numeric::DEFAULT.mathish);
 static FLOAT: AtomicU8 = AtomicU8::new(Numeric::DEFAULT.width as u8);
+static FLOAT_SET: AtomicBool = AtomicBool::new(false);
 static STATIC_KINDS: AtomicBool = AtomicBool::new(matches!(Numeric::DEFAULT.kinds, Kinds::Static));
 static INT32: AtomicBool = AtomicBool::new(matches!(Numeric::DEFAULT.int, Width::I32));
 static HANZI_ALIASES: AtomicBool = AtomicBool::new(HANZI);
@@ -36,11 +37,14 @@ pub(crate) fn set_numeric(numeric: Numeric) {
     STATIC_KINDS.store(numeric.kinds == Kinds::Static, Relaxed);
     INT32.store(numeric.int == Width::I32, Relaxed);
 }
-/// The width of new floats, which the `float` pref sets.
+/// The width of new floats. Until the `float` pref sets one, `Numeric::set` keeps it at the width the kinds give.
 #[inline]
 pub fn float_width() -> FloatWidth {
     match FLOAT.load(Relaxed) { w if w == FloatWidth::F16 as u8 => FloatWidth::F16, w if w == FloatWidth::F32 as u8 => FloatWidth::F32, _ => FloatWidth::F64 }
 }
+/// Whether the `float` pref has set the width of new floats, which a change of `kinds` then leaves alone.
+pub(crate) fn float_set() -> bool { FLOAT_SET.load(Relaxed) }
+pub(crate) fn set_float_set(on: bool) { FLOAT_SET.store(on, Relaxed) }
 /// The display settings in force.
 pub(crate) fn display() -> display::Settings { DISPLAY.read().unwrap_or_else(PoisonError::into_inner)[0] }
 pub(crate) fn set_display(display: display::Settings) { DISPLAY.write().unwrap_or_else(PoisonError::into_inner)[0] = display; }
@@ -64,6 +68,7 @@ pub(crate) fn set_small_sizes(on: bool) { SMALL_SIZES.store(on, Relaxed) }
 /// Restores every setting's default, with the display defaults that `set_display_defaults` gave, and rustymath's default thread count. `]clear` does this, and the test harnesses do it before each test.
 pub fn reset() {
     set_numeric(Numeric::DEFAULT);
+    set_float_set(false);
     for (flag, default) in [(&HANZI_ALIASES, HANZI), (&BATCHING, BATCH), (&REPORTS_FUSION, REPORTS), (&SMALL_SIZES, SMALL)] { flag.store(default, Relaxed); }
     let mut display = DISPLAY.write().unwrap_or_else(PoisonError::into_inner);
     display[0] = display[1];

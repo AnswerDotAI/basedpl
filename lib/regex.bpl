@@ -2,9 +2,9 @@
 regex_replace←{
     s←⍵ ⋄ p←•r ⍺ ⋄ m←p.matches s
     starts←m.position
-    0=≢starts?s;
+    0ₓ=≢starts?s;
     ends←starts+≢¨m.text
-    gaps←(0,ends){⍺↓⍵↑s}¨starts,≢s
+    gaps←(0ₓ,ends){⍺↓⍵↑s}¨starts,≢s
     replacements←⍶¨m.text
     ∊gaps,¨replacements,⊂""
 }

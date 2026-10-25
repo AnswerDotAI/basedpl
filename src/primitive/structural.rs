@@ -247,7 +247,8 @@ type AppendPlan = (Value, Option<Vec<Option<std::sync::Arc<str>>>>);
 pub(crate) fn append_plan(left: &Value, right: &Value, first: bool) -> Result<Option<AppendPlan>, Error> {
     let rank = left.shape().len();
     if rank == 0 || (!first && rank != 1) || right.shape().len() > rank || (left.is_empty() && right.is_empty()) { return Ok(None); }
-    let right = promoted(right, left, rank, 0)?;
+    let weak = Primitive::Ravel.joined_weak(right, left)?;
+    let right = promoted(weak.as_ref().unwrap_or(right), left, rank, 0)?;
     let wanted: Vec<_> = (0..rank).map(|a| if a == 0 { None } else { left.keys(a).cloned() }).collect();
     let right = crate::keyed::reorder(&right, &wanted, false).described("catenate axis keys differ")?;
     if left.shape()[1..] != right.shape()[1..] { return Err(Error::new(Kind::Length, "catenate frames differ")); }
@@ -266,7 +267,8 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let rank = left.shape().len().max(right.shape().len()).max(1);
     let axis = axis.unwrap_or(if first { 0 } else { rank - 1 });
     if axis >= rank { return Err(Error::domain("catenate axis is outside result rank")); }
-    // A weak number takes the width that the other argument gives it, as in arithmetic (`Primitive::weakened`), before `promoted` makes it an array.
+    // A weak number takes the width that the other argument gives it, as in arithmetic (`Primitive::weakened`), before `promoted` makes it an array. A weak integer beside fixed integers must fit their width (`Promoted::fits`).
+    crate::array::Promoted::fits([left, right])?;
     let (left, right) = Primitive::Ravel.weakened(Some(left), right, |left, right| {
         let left = promoted(left.expect("catenation is dyadic"), right, rank, axis)?;
         let right = promoted(right, &left, rank, axis)?;

@@ -7,7 +7,7 @@ s←v-0.5
 m←[side side]⍴v
 jv←¿n⍴1000ₓ
 kv←¿n⍴1000000000000ₓ
-b←0=¿n⍴3ₓ
+b←0ₓ=¿n⍴3ₓ
 i←¿n⍴⌊ₓn
 cnt←¿n⍴3ₓ
 c←n⍴"the quick brown fox jumps over the lazy dog"
@@ -119,7 +119,7 @@ n⍴0
 ⍝⍝: 1	1	1
 
 ⍝ Reading two arguments and writing each item once.
-⍝ Expected: `v+w`, `kv+kv` and `v⌊w` 1.5 copies: two 8-byte reads and one write per item; `jv+jv` and `jv∧ᵇjv` 0.38 copies: 2-byte reads and writes; `v×2` 1 copy: one read and one write per item; `jv×2` 0.63 copies: `2` is an approximate literal, so its products are floats, with 2-byte reads and 8-byte writes; `jv=jv` 0.31 copies: two 2-byte reads and a 1-byte write; `b×jv` 0.31 copies: 1- and 2-byte reads, 2-byte writes; `b×kv` 1.1 copies: 1- and 8-byte reads, 8-byte writes; `b∧b` 0.19 copies: 1-byte reads and writes; `c=c` 0.56 copies: two 4-byte reads and a 1-byte write; `(⍳√n)×⊗⍳√n` 0.5 copies: writes 8 bytes an item.
+⍝ Expected: `v+w`, `kv+kv` and `v⌊w` 1.5 copies: two 8-byte reads and one write per item; `jv+jv` and `jv∧ᵇjv` 0.38 copies: 2-byte reads and writes; `v×2` 1 copy: one read and one write per item; `jv×2.5` 0.63 copies: its products are floats, with 2-byte reads and 8-byte writes; `jv=jv` 0.31 copies: two 2-byte reads and a 1-byte write; `b×jv` 0.31 copies: 1- and 2-byte reads, 2-byte writes; `b×kv` 1.1 copies: 1- and 8-byte reads, 8-byte writes; `b∧b` 0.19 copies: 1-byte reads and writes; `c=c` 0.56 copies: two 4-byte reads and a 1-byte write; `(⍳√n)×⊗⍳√n` 0.5 copies: writes 8 bytes an item.
 v+w
 ⍝⍝: 3	3	3
 
@@ -132,7 +132,7 @@ kv+kv
 v×2
 ⍝⍝: 2	2	2
 
-jv×2
+jv×2.5
 ⍝⍝: 1.3	1.3	1.3
 
 jv=jv
@@ -199,14 +199,14 @@ cnt#v
 ⍝⍝: 1	2.3	2.4
 
 ⍝ Comparing within tolerance takes a subtraction, the magnitudes, a scale and a comparison for each item. Tolerant floor raises each item by its scaled magnitude, capped below a half, before it floors.
-⍝ Expected: `⌊v` 2.75 copies: about 11 vector operations an item, 6 for the tolerance and 5 for the conversion to a 64-bit integer, its range check, and the select and flag for an item that doesn't fit; `v<w` 3 copies: about 12 vector operations an item: 10 for tolerant equality (an exact comparison, a subtraction, three magnitudes, the larger magnitude, a scale, a comparison and an OR), then an exact comparison and an AND-NOT; `jv<500` 0.19 copies: a 2-byte read and a 1-byte write. `⌊v` and `v<w` were 1.5 copies, from a count of the tolerance's operations alone.
+⍝ Expected: `⌊v` 2.75 copies: about 11 vector operations an item, 6 for the tolerance and 5 for the conversion to a 64-bit integer, its range check, and the select and flag for an item that doesn't fit; `v<w` 3 copies: about 12 vector operations an item: 10 for tolerant equality (an exact comparison, a subtraction, three magnitudes, the larger magnitude, a scale, a comparison and an OR), then an exact comparison and an AND-NOT; `jv<500ₓ` 0.19 copies: a 2-byte read and a 1-byte write. `⌊v` and `v<w` were 1.5 copies, from a count of the tolerance's operations alone.
 ⌊v
 ⍝⍝: 5.5	5.5	5.5
 
 v<w
 ⍝⍝: 6	6	6
 
-jv<500
+jv<500ₓ
 ⍝⍝: 0.5	0.5	0.76
 
 ⍝ Writing twice as many items, or writing in a different order from reading.
@@ -330,7 +330,7 @@ i (+/⊢)⌸ v
 ⍝⍝: 17	24	49
 
 ⍝ After a lane's first result, a comparison scan's totals are 0 or 1. The kernel computes each item's result at both, and rustymath picks between them 64 at a time.
-⍝ Expected: `<\v` and `=⍀m` 3 copies: two tolerant comparisons an item, picked 64 at a time; `≠\jv` and `0=\jv` 1 copy: an exact comparison an item, picked 64 at a time. That misses half the work of `≠\jv` and `0=\jv`: each item is compared at both totals, into two vectors of Booleans, which `chosen` packs into words, composes and unpacks. On x86-64 the pack's 64-bit multiplies become sequences of `vpmuludq`, because AVX2 has no 64-bit multiply in its lanes.
+⍝ Expected: `<\v` and `=⍀m` 3 copies: two tolerant comparisons an item, picked 64 at a time; `≠\jv` and `0ₓ=\jv` 1 copy: an exact comparison an item, picked 64 at a time. That misses half the work of `≠\jv` and `0ₓ=\jv`: each item is compared at both totals, into two vectors of Booleans, which `chosen` packs into words, composes and unpacks. On x86-64 the pack's 64-bit multiplies become sequences of `vpmuludq`, because AVX2 has no 64-bit multiply in its lanes.
 <\v
 ⍝⍝: 6	6	12
 
@@ -340,7 +340,7 @@ i (+/⊢)⌸ v
 ≠\jv
 ⍝⍝: 2	2	4
 
-0=\jv
+0ₓ=\jv
 ⍝⍝: 2	2	4
 
 ⍝ Scans along short lanes make no call for each lane. Comparison and Boolean scans restart lanes inside each 64-bit word of results. Other scans run lanes under 64 items eight side by side, so eight chains of additions are always in flight. Run one lane at a time, as before 21 October 2026, their cost moved with where the code sat: `+\X` cost 1.8 copies in the test binary against 0.9 through `bpl`, and `+\[16384 4]⍴v` 3.4 against 2. Scans along a leading axis make no call for each row: `+⍀[16384 4]⍴v` cost 28 copies while each row of 4 items made two calls that stayed out of line.
@@ -363,9 +363,9 @@ i (+/⊢)⌸ v
 +⍀[16384 4]⍴v
 ⍝⍝: 6	6	6
 
-⍝ A residue scan waits on the result before each item. From a whole float seed on integers it runs as integers.
+⍝ A residue scan waits on the result before each item. Its exact seed keeps it in integers.
 ⍝ Expected: 16 copies: each item waits for an integer division of about 8 cycles.
-7|\jv
+7ₓ|\jv
 ⍝⍝: 32	32	32
 
 ⍝ An inverse scan by `+`, `-`, `=` or `≠` combines each item with the item before it, in one pass.
@@ -466,7 +466,7 @@ cnt⍚[- ⊢ 10×] v
 
 ⍝ An approximate divisor reads the integers as floats. Each item then needs a float division and a floor within tolerance.
 ⍝ Expected: 3.5 copies: a conversion, a float division of about 1 cycle an item, and a tolerant floor.
-3|jv
+2.5|jv
 ⍝⍝: 7	7	7
 
 ⍝ rustymath's `exp` evaluates a polynomial of 10 terms for each item, and `ln` one of 7 terms and a division.

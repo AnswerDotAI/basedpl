@@ -18,7 +18,7 @@ fn mathish_arithmetic() {
     equiv_in(&s, "[0ₚ÷0ₚ;≠⍨0ₓ₄÷0ₓ₄;≠⍨0ₓ₈÷0ₓ₈]", "[0;$t;$t]");
     equiv_in(&s, "n←[0ₛ÷0ₛ;0ₓ₂÷0ₓ₂] ⋄ [≠⍨¨n;{(•storage ⍵).kind}¨n]", r#"[$t $t;"float32" "float32"]"#);
     equiv_in(&s, "[÷¯0÷0;÷¯0 ¯0÷0 0;÷¯0÷¨0 0]", "[¯∞;¯∞ ¯∞;¯∞ ¯∞]");
-    equiv_in(&s, r#"•prefs ["kinds":"static"] ⋄ n←[0÷0;0ₓ÷0ₓ;0j0ₚ÷0j0ₚ;1j0ₚ⍟1j0ₚ] ⋄ [≠⍨¨n;0.3=0.1+0.2]"#, "[$t $t $t $t;$f]");
+    equiv_in(&s, r#"•prefs ["kinds":"static"] ⋄ n←[0÷0;0ₓ÷0ₓ;0j0ₚ÷0j0ₚ;1j0ₚ⍟1j0ₚ] ⋄ [≠⍨¨n;0.7=0.1+0.6]"#, "[$t $t $t $t;$f]");
     equiv_in(&s, r#"•prefs ["float":32] ⋄ [≠⍨0ₓ÷0ₓ;≠⍨[0 0]ₓ÷[0 0]ₓ;≠⍨0ₓ÷¨[0 0]ₓ]"#, "[$t;$t $t;$t $t]");
     equiv_in(&s, r#"•prefs ["kinds":"dynamic"] ⋄ n←1ₓ⍟1ₓ ⋄ p←1ₚ⍟1ₚ ⋄ [≠⍨n;(•storage n).kind;p;(•storage p).kind;0.3ₚ=0.1ₚ+0.2ₚ]"#, r#"[$t;"float32";0ₚ;"float64";$t]"#);
 }

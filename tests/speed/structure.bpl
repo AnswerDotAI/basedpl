@@ -115,15 +115,15 @@ ism,sm
 +/⍉cimg
 ⍝⍝: 2.2	2.1	1
 
-⍝ A fold of windows slides over its source and never builds the windows. Windows of up to 8 rows fold directly. Wider windows take van Herk-Gil-Werman, at a cost that doesn't grow with the width. Windows of a matrix fold in two separable passes.
+⍝ A fold of windows slides over its source and never builds the windows. Windows of up to 8 rows fold directly, finishing each block of a lane while it is in cache. Wider windows take van Herk-Gil-Werman, at a cost that doesn't grow with the width. Windows of a matrix fold in two separable passes.
 ⍝ Expected: `+/3↕sv` and `⌈/3↕sv` 1 copy: one read and one write per window, sliding; `+/50↕sv` 1 copy: a running sum, with one addition and one subtraction per window; `⌈/50↕sv` 2 copies: van Herk-Gil-Werman, with two passes of running maxima and a combine; `+/+/3 3↕sq` 2 copies: two separable sliding passes.
-⍝ Held until studied: `+/3↕sv` measures 3.74 on macOS and has old Linux and wasm budgets that suggest about 5.5 and 4.2, more than twice its expected cost. On 22 October 2026 CI measured 5.09 on Linux and 3.41 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
+⍝ On 25 October 2026 `+/3↕sv` measured 3.66 on macOS, for the reason `⌈/3↕sv`'s comment gives, and it measures 1.45 after the same change. Its macOS budget is twice its expected cost. Its Linux and wasm budgets, from CI's 5.09 and 3.41 of 22 October 2026, stay until CI measures the change.
 +/3↕sv
-⍝⍝: 7.7	11	8.4
+⍝⍝: 2	11	8.4
 
-⍝ Held until studied: `⌈/3↕sv` measures 4.01 on macOS and has old Linux and wasm budgets that suggest about 7.5 and 4.55, more than twice its expected cost. On 23 October 2026 CI measured 5.85 on Linux and 2.6 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
+⍝ On 25 October 2026 `⌈/3↕sv` measured 3.66 on macOS, because the direct folds took one pass over the whole lane for each row of a window, which reads and writes `sv`'s 8 MB three times. Direct folds now finish each block of a lane in cache, with a window's first three rows in one pass, and `⌈/3↕sv` measures 1.55 on macOS. Its macOS budget is twice its expected cost. Its Linux and wasm budgets, from CI's 5.85 and 2.6 of 23 October 2026, stay until CI measures the change.
 ⌈/3↕sv
-⍝⍝: 8.3	15	9.1
+⍝⍝: 2	15	9.1
 
 ⍝ Held until studied: `+/50↕sv` measures 6.97 on macOS and has old Linux and wasm budgets that suggest about 24.5 and 14, more than twice its expected cost. On 22 October 2026 CI measured 9.32 on Linux and 6.43 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 +/50↕sv

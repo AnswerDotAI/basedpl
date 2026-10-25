@@ -6,12 +6,12 @@
 //!
 //! A graph is data. Each node names its primitive and its operands. An operand is an input array, a scalar, or the results of an earlier node. The last node gives the graph's result. A graph's arrays have plain layouts and one float width, 32 or 64 bits. Arrays of different shapes broadcast as they do in an unfused call. Each array reads its items through the `Mapping` that `Agreement` gives it against the graph's result. Reads of one array through one map share an input. A scalar operand is a float of at most the graph's width. A primitive fuses where its float kernel keeps its arguments' type or gives Booleans, and can't fail (`pervasive::fuses`). The `fusion` entry of `nbs/system/prefs.qmd` lists those primitives. A comparison gives Booleans where it ends its graph. Before the last node it writes 1 and 0 as floats, which later nodes read as a call reads Booleans beside floats. It joins the graph of a call that reads it only where nothing outside that call holds it, so a graph never reads stored Booleans, which it would have to convert to floats. A call that reads a comparison computed outside the graph runs on whole arrays (`Pending::unfused`). A select, the masked lowering of `⍚` and `@[p]` (`select`), reads a comparison's 1s and 0s as its mask and takes each item from one of two operands. A function that `pervasive::keeps_exact` takes no exact argument, a comparison included, because a graph reads exact arguments as floats. Each node takes the kernel that `pervasive::map` takes for the same arguments. A graph therefore gives the result that its calls give.
 //!
-//! A structural glyph that copies one source through rustymath `Steps` (`remapped`) gives a pending copy (`copy`) where its result has at least `MIN_ITEMS` items, for a source of any compact kind. Forcing composes a read of a copy with the copy's map, and moves a read with no repeat or fill under each pending pervasive call it reaches that only it holds (`Pending::resolved`). `2×⌽v+1` then runs as one graph that reads `v` backwards. A read that copies (`Mapping::copies`), such as a reversal's, moves only under a call that reads one array, so `2×⌽y×x+0.5` computes `y×x+0.5` first and then reads it backwards. A call whose two array arguments copy arrays of one layout through one map that gives no fill runs on those arrays instead, and the map copies its result once (`copied_once`): `(3↕x)×3↕y` runs as `3↕x×y`. A copy of floats that no call reads through, and a copy of any other kind, walks its source as `remapped` does. A fold of a copy of windows along its own axis runs sliding folds over the source (`slide`), at a cost for each item that doesn't grow with the window's width.
+//! A structural glyph that copies one source through rustymath `Steps` (`remapped`) gives a pending copy (`copy`) where its result has at least `MIN_ITEMS` items, for a source of any compact kind. Forcing composes a read of a copy with the copy's map, and moves a read with no repeat or fill under each pending pervasive call it reaches that only it holds (`Pending::resolved`). `2×⌽v+1` then runs as one graph that reads `v` backwards. A read that copies (`Mapping::copies`), such as a reversal's, moves only under a call that reads one array, so `2×⌽y×x+0.5` computes `y×x+0.5` first and then reads it backwards. A call whose two array arguments copy arrays of one layout through one map that gives no fill runs on those arrays instead, and the map copies its result once (`copied_once`): `(3↕x)×3↕y` runs as `3↕x×y`. A copy of floats that no call reads through, and a copy of any other kind, walks its source as `remapped` does. A fold of a copy of windows along its own axis runs sliding folds over the source (`slide`), at a cost for each item that doesn't grow with the window's width. A fold along two axes of windows, as `⌈/⍠2 3` pools, folds both axes in one pass over the source (`fold_windows`).
 use crate::{
     agreement::Agreement, array::{Items, Lanes, Layout, Storage}, element::{read_as, Stored, Float}, explain::{Live, Counted, Tally}, number::Numeric,
     pervasive::{self, with_float_reduction, with_truth_reduction, Kernels}, primitive::{FoldKind, Operation, Primitive}, Number, Value
 };
-use rustymath::{agreement::{expanded, in_place, Mapping}, buffer::{DType, FloatWidth, View}, with_float_width, gather::Steps, structure::Walk, layout::strides, reduce::{self, Reduction}, Arg, Native};
+use rustymath::{agreement::{expanded, in_place, Mapping}, buffer::{Buffer, DType, FloatWidth, View}, with_float_width, gather::Steps, structure::Walk, layout::strides, reduce::{self, Reduction}, Arg, Native};
 use rustymath::hashing::{HashMap, HashMapExt};
 use crate::array::{Footprint, Seen};
 use std::{ops::Range, sync::{Arc, Mutex, OnceLock, PoisonError}};
@@ -468,17 +468,18 @@ impl Windows {
         let [outer, len, inner] = self.rows;
         Some(if outer == 1 { view.slice(self.lo * inner..(self.lo + len) * inner) } else { view })
     }
-    /// The source's shape with axis `q` holding one item for each fold's start along it, and the tables that read each of the copy's axes but `k` from a buffer of that shape. Each table moves by its axis's moves, in starts along `q`, and the first of them along each source axis starts where the copy does.
-    fn folded(&self, shape: &[usize], k: usize, width: usize) -> (Vec<usize>, Vec<Steps>) {
-        let mut folded = self.source.shape().to_vec();
-        folded[self.q] = (self.rows[1] - width) / self.every + 1;
+    /// The source's shape with each fold's axis `q` holding one item for each start of its windows, and the tables that read each of the copy's axes but the folded ones from a buffer of that shape. `folds` holds each fold's windows, its axis of the copy and its width, and every one reads the same copy. Each table moves by its axis's moves, in starts along a folded axis, and the first of them along each source axis starts where the copy does.
+    fn folded(folds: &[(&Windows, usize, usize)], shape: &[usize]) -> (Vec<usize>, Vec<Steps>) {
+        let w = folds[0].0;
+        let mut folded = w.source.shape().to_vec();
+        for &(f, _, width) in folds { folded[f.q] = (f.rows[1] - width) / f.every + 1; }
         let folded_strides = strides(&folded);
         let mut started = vec![false; folded.len()];
-        let tables = (0..shape.len()).filter(|&r| r != k).map(|r| match self.along[r] {
+        let tables = (0..shape.len()).filter(|&r| folds.iter().all(|f| f.1 != r)).map(|r| match w.along[r] {
             Some(a) => {
-                let (every, lo) = if a == self.q { (self.every, self.lo) } else { (1, 0) };
-                let start = if std::mem::replace(&mut started[a], true) { 0 } else { (self.first[a] - lo) / every };
-                Steps::Stride { start: start * folded_strides[a], len: shape[r], step: (self.moves[r] / every * folded_strides[a]) as isize }
+                let (every, lo) = folds.iter().find(|f| f.0.q == a).map_or((1, 0), |f| (f.0.every, f.0.lo));
+                let start = if std::mem::replace(&mut started[a], true) { 0 } else { (w.first[a] - lo) / every };
+                Steps::Stride { start: start * folded_strides[a], len: shape[r], step: (w.moves[r] / every * folded_strides[a]) as isize }
             }
             None => Steps::Stride { start: 0, len: shape[r], step: 0 },
         }).collect();
@@ -505,9 +506,34 @@ fn slide(value: &Value, p: Primitive, kind: FoldKind, k: usize) -> Option<Value>
     let buffer = pervasive::sliding(p, w.region()?, rows, width, numeric)?;
     crate::explain::fast("sliding fold", Operation::Fold(p, kind).glyph());
     let layout = Layout::from((0..shape.len()).filter(|&r| r != k).map(|r| shape[r]).collect::<Vec<_>>());
-    let (folded, tables) = w.folded(shape, k, width);
-    if Steps::in_order(&tables) { return Value::from_numeric_buffer(layout.shape().to_vec(), buffer, numeric).ok(); }
-    let partial = Value::from_numeric_buffer(folded, buffer, numeric).ok()?;
+    let (folded, tables) = Windows::folded(&[(&w, k, width)], shape);
+    laid_out(buffer, folded, layout, tables, numeric)
+}
+
+/// The fold along two axes of a pending copy of windows, where each axis's windows slide or tile along a source axis of their own, as `⌈/⍠2 3` pools 2 by 2 windows. One pass over the source folds both (`pervasive::sliding_2d`), where folding one axis at a time would build the first fold's result. The result has the fold's shape, without the copy's names and keys. `None` wherever `slide` would give `None` for either axis, for two axes along one source axis, for windows that don't read the whole of their source axis, for one item at each window position, where folding one axis at a time folds neighbouring windows side by side and costs less, and for windows wider than rustymath folds directly.
+pub(crate) fn fold_windows(value: &Value, p: Primitive, kind: FoldKind, axes: [usize; 2]) -> Option<Value> {
+    let ((a, wa), (b, wb)) = (windowed(value, kind, axes[0])?, windowed(value, kind, axes[1])?);
+    let dims = a.source.shape().to_vec();
+    let whole = |w: &Windows| w.lo == 0 && w.rows[1] == dims[w.q];
+    if a.q == b.q || !whole(&a) || !whole(&b) { return None; }
+    let [(x, k1, w1), (y, k2, w2)] = if a.q < b.q { [(a, axes[0], wa), (b, axes[1], wb)] } else { [(b, axes[1], wb), (a, axes[0], wa)] };
+    let (q1, q2) = (x.q, y.q);
+    let dims5 = [dims[..q1].iter().product(), dims[q1], dims[q1 + 1..q2].iter().product(), dims[q2], dims[q2 + 1..].iter().product()];
+    if dims5[4] < 2 { return None; }
+    let numeric = Numeric::current();
+    let numeric = value.fixed_width().map_or(numeric, |w| numeric.with_fixed(w));
+    let buffer = pervasive::sliding_2d(p, x.region()?, dims5, [w1, w2], [x.every, y.every], numeric)?;
+    crate::explain::fast("sliding fold", Operation::Fold(p, kind).glyph());
+    let shape = value.shape();
+    let layout = Layout::from((0..shape.len()).filter(|&r| r != k1 && r != k2).map(|r| shape[r]).collect::<Vec<_>>());
+    let (folded, tables) = Windows::folded(&[(&x, k1, w1), (&y, k2, w2)], shape);
+    laid_out(buffer, folded, layout, tables, numeric)
+}
+
+/// Folds that `buffer` holds by the shape `folded`, laid out as `tables` read them into a result of `layout`: the buffer itself where the tables read it in order, and otherwise a copy of it, pending where it's large.
+fn laid_out(buffer: Buffer, folded: Vec<usize>, layout: Layout, tables: Vec<Steps>, numeric: Numeric) -> Option<Value> {
+    if Steps::in_order(&tables) { return Value::from_buffer_at(layout.shape().to_vec(), buffer, numeric.fixed).ok(); }
+    let partial = Value::from_buffer_at(folded, buffer, numeric.fixed).ok()?;
     if layout.shape().iter().product::<usize>() >= crate::settings::sizes().min_items { return deferred_copy(&partial, &layout, Mapping::Steps { base: 0, steps: tables }); }
     crate::primitive::copied(&partial, layout, &tables).ok()
 }
@@ -517,7 +543,7 @@ pub(crate) fn picks(value: &Value, p: Primitive, kind: FoldKind) -> Option<Vec<i
     let k = kind.default_axis(value.shape().len());
     let (w, width) = windowed(value, kind, k)?;
     let shape = value.shape();
-    let (_, tables) = w.folded(shape, k, width);
+    let (_, tables) = Windows::folded(&[(&w, k, width)], shape);
     if w.every != 1 || !Steps::in_order(&tables) { return None; }
     let rows = pervasive::picks(p, w.region()?, w.rows, rustymath::reduce::Picks::Windows(width))?;
     // Each window starts at the position along `q` that the copy's other axes along `q` reach. Its pick lies that many rows before.

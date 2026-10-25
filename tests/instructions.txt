@@ -2,7 +2,7 @@
 # Instruction counts don't change with load or code layout. The cases that make one call per step repeat within about 0.2%, and those that map over 64 cells within about 1%. They show changes of a few percent per call or per cell, which costs in copies can't.
 # A case fails when it retires more than 3% more, or more than 3% fewer, instructions than its count. The change that makes a call cheaper also lowers each count it moves. A new compiler version can inline differently and move the counts. After one, set them again from `bpl-tests instruction_budgets`.
 [setup]
-fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ g←{⍵<2?⍵;(g ⍵-1)+g ⍵-2} ⋄ k←0 ⋄ t←64⍴"ab" "cde" ⋄ m←[0 1⋄¯1 0] ⋄ s←[64 2 2]⍴1 0 0 1 1 1 0 1=1
+fib←{⍵<2ₓ?⍵;(∇⍵-1ₓ)+∇⍵-2ₓ} ⋄ g←{⍵<2ₓ?⍵;(g ⍵-1ₓ)+g ⍵-2ₓ} ⋄ k←0 ⋄ t←64⍴"ab" "cde" ⋄ m←[0 1⋄¯1 0] ⋄ s←[64 2 2]⍴$t $f $f $t $t $t $f $t
 [calls]
 # A primitive call.
 +⍣N⊢0	456
@@ -14,12 +14,12 @@ fib←{⍵<2?⍵;(∇⍵-1)+∇⍵-2} ⋄ g←{⍵<2?⍵;(g ⍵-1)+g ⍵-2} ⋄ 
 {x←⍵+1 ⋄ x}⍣N⊢0	3190
 # A spaced run that builds a train and applies it at once.
 {(⍵)+⊢ ⍵}⍣N⊢0	4386
-# A bracket literal.
-{↑[⍵ 1]}⍣N⊢0	5671
-# `fib 10` makes 177 calls, which read `⍵` and `∇`.
-{fib 10}⍣N⊢0	873342
-# `g 10` makes 177 calls of a dfn that calls itself by name, with spaces that split its statement into runs.
-{g 10}⍣N⊢0	1002600
+# A bracket literal. It counted 5,620 on 24 October 2026. Joining its items' kinds, fixedness and weakness in `Promoted::join` added about 125 instructions. The memory guard's check on each allocation and the later promotion refactor added about 95 more.
+{↑[⍵ 1]}⍣N⊢0	5841
+# `fib 10ₓ` makes 177 calls, which read `⍵` and `∇`.
+{fib 10ₓ}⍣N⊢0	860107
+# `g 10ₓ` makes 177 calls of a dfn that calls itself by name, with spaces that split its statement into runs.
+{g 10ₓ}⍣N⊢0	1014697
 # Each over a nested vector, which can't batch, calls `⌽` once for each of the 64 strings in `t`.
 ⌽¨⍣N⊢t	290267
 # Rank's general path calls a dfn once for each of the same 64 cells.

@@ -192,11 +192,12 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value) -> Result<Value
     matrix_result(x, layout, scalar, width)
 }
 
-/// Monadic `-.×` on the `n`×`n` matrix `a`: its determinant. Exact numbers stay exact, through row reduction. Floats and complex numbers take the LU determinant of rustymath's [`Stacked`](linalg::Stacked), as `⌹` reads them. `None` where an item isn't a number.
+/// Monadic `-.×` on the `n`×`n` matrix `a`: its determinant. Exact numbers stay exact, through row reduction, and an integer determinant wraps where the call wraps (`Number::wrapped`). Floats and complex numbers take the LU determinant of rustymath's [`Stacked`](linalg::Stacked), as `⌹` reads them. `None` where an item isn't a number.
 pub(crate) fn determinant(a: &Value, n: usize) -> Result<Option<Value>, Error> {
     let Some((domain, width)) = Domain::of_arrays(&[a]) else { return Ok(None) };
     if domain == Domain::Exact {
-        return Ok(Some(Value::Number(linalg::exact::determinant(&read::<BigRational>(a)?, n)?.number(width))));
+        let settings = Numeric::current().for_values([a]).map_err(Error::domain)?;
+        return Ok(Some(Value::Number(linalg::exact::determinant(&read::<BigRational>(a)?, n)?.number(width).wrapped(settings))));
     }
     let d = inexact(&[(a, Layout::from([n, n]))], (domain, width), |s, v| s.det(v[0])).map_err(|s| s.raised())?;
     Ok(Some(value(d.into_compact().1, Layout::default())?.at(0)))
@@ -498,10 +499,11 @@ pub(crate) fn decode_length(xlen: usize, ylen: usize) -> Result<usize, Error> {
     if xlen != ylen && xlen != 1 && ylen != 1 { return Err(Error::new(Kind::Length, "decode axes do not agree")); }
     Ok(if xlen == 1 { ylen } else { xlen })
 }
-/// Bases are vectors along the last axis of `left`. Its leading axes form a frame that agrees with the values' frame, as with J's ranks: 1 0 to encode and 1 1 to decode.
+/// Bases are vectors along the last axis of `left`. Its leading axes form a frame that agrees with the values' frame, as with J's ranks: 1 0 to encode and 1 1 to decode. Integer results take the width that fixed arguments give (`Numeric::for_values`), and a decoded value wraps there, as repeated `+` and `×` would wrap it. Static kinds wrap them at the `int` width.
 pub(super) fn radix(left: &Value, right: &Value, encode: bool) -> Result<Value, Error> {
     let numbers = |a: &Value| a.elements().map(|e| numeric(&e).cloned()).collect::<Result<Vec<_>, _>>();
     let zero = numeric(&right.prototype())?.result_zero(Some(numeric(&left.prototype())?));
+    let settings = Numeric::current().for_values([left, right]).map_err(Error::domain)?;
     let error = |m| Error::domain(m);
     let leading = |a: &Value| a.layout().axes(0..a.shape().len().saturating_sub(1));
     let xlen = left.shape().last().copied().unwrap_or(1);
@@ -514,7 +516,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool) -> Result<Value, 
         let layout = agreement.layout.concat(&digits);
         let len = generated_len(layout.shape())?;
         if let (Mapping::Single, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
-            if let Some(result) = encode_whole(left.as_items(), right.as_items(), &layout) { return Ok(result); }
+            if let Some(result) = encode_whole(left.as_items(), right.as_items(), &layout) { return result.wrapped(settings).described("invalid encode result"); }
         }
         let (xs, ys) = (numbers(left)?, numbers(right)?);
         let t = Numeric::current();
@@ -531,7 +533,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool) -> Result<Value, 
                 let items: Vec<T> = items.iter().map(T::of).collect();
                 rustymath::polynomial::encode(&items[..xlen], &items[xlen..], |b, v| b.residue(v, t, w)).into_iter().map(|d| d.number(w)).collect::<Vec<_>>()
             });
-            for d in digits { data.push(Value::Number(if inexact { d.to_float_width(width).map_err(error)? } else { d })); }
+            for d in digits { data.push(Value::Number(if inexact { d.to_float_width(width).map_err(error)? } else { d.wrapped(settings) })); }
         }
         if left.is_atom() && right.is_atom() { return Ok(data.remove(0)); }
         return layout.collect(data, Value::Number(zero)).described("invalid encode result");
@@ -542,7 +544,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool) -> Result<Value, 
     // The general path gives a cell of one digit that digit unchanged, exact or not.
     if let (Mapping::Single, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
         if len > 1 && !agreement.layout.shape().is_empty() && (0..ylen).all(|k| positions.index(k) == k) {
-            if let Some(result) = decode_compact(left, right, xlen, ylen, len, &agreement.layout) { return Ok(result); }
+            if let Some(result) = decode_compact(left, right, xlen, ylen, len, &agreement.layout) { return result.wrapped(settings).described("invalid decode result"); }
         }
     }
     let (xs, ys) = (numbers(left)?, numbers(right)?);
@@ -561,7 +563,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool) -> Result<Value, 
                 let bases: Vec<T> = std::iter::once(ds[0]).chain(bases.iter().copied()).map(T::of).collect();
                 rustymath::polynomial::decode(&bases, &ds.iter().map(|&n| T::of(n)).collect::<Vec<_>>()).remove(0).number(width)
             }),
-        }));
+        }.wrapped(settings)));
     }
     if agreement.layout.shape().is_empty() { return Ok(data.remove(0)); }
     agreement.layout.collect(data, Value::Number(zero)).described("invalid decode result")
@@ -602,24 +604,26 @@ pub(crate) fn roll_array<R: rand::Rng + ?Sized>(right: &Value, rng: &mut R, span
 }
 
 /// One number below `n`, as `generated` gives it, or a float of width `unit` between 0 and 1 when `n` is 0.
-fn draw<R: rand::Rng + ?Sized>(n: u64, float: Option<FloatWidth>, unit: FloatWidth, rng: &mut R) -> Value {
-    if n == 0 { Value::Number(Number::float(rustymath::random::unit(rng.next_u64()), unit)) } else { generated(rustymath::random::below(n, rng), float) }
+fn draw<R: rand::Rng + ?Sized>(n: u64, mark: Mark, unit: FloatWidth, rng: &mut R) -> Value {
+    if n == 0 { Value::Number(Number::float(rustymath::random::unit(rng.next_u64()), unit)) } else { generated(rustymath::random::below(n, rng), mark) }
 }
 
 fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Span, fill: bool, rng: &mut R) -> Result<Value, Error> {
     let fill = fill || right.is_empty();
     let item = |e: Value, rng: &mut R| {
         if let a @ Value::Array(_) = e { return roll(&a, span, fill, rng); }
-        let float = counted_width(&e);
-        if fill { return Ok(generated(0, float)); }
-        Ok(draw(
-            numeric(&e)?.nonnegative_integer::<u64>().described("roll needs a nonnegative integer")?, float, float.unwrap_or(Numeric::current().width),
-            rng))
+        let mark = counted(&e);
+        if fill { return Ok(generated(0, mark)); }
+        let unit = if let Mark::Width(width) = mark { width } else { Numeric::current().width };
+        Ok(draw(numeric(&e)?.nonnegative_integer::<u64>().described("roll needs a nonnegative integer")?, mark, unit, rng))
     };
     if right.is_atom() { return item(right.clone(), rng); }
     let prototype = if right.is_empty() { item(right.prototype(), rng)? } else { Value::integer(0) };
-    let float = match right.as_items() { Items::Compact(View::Integers(_)) => None, Items::Compact(View::Floats(f)) => Some(f.tag()), _ => Some(Numeric::current().width) };
-    let unit = float.unwrap_or(Numeric::current().width);
+    let mark = match right.as_items() {
+        Items::Compact(View::Integers(_)) => Mark::Exact, Items::Fixed(ints) => Mark::Fixed(ints.tag()),
+        Items::Compact(View::Floats(f)) => Mark::Width(f.tag()), _ => Mark::Width(Numeric::current().width),
+    };
+    let unit = if let Mark::Width(width) = mark { width } else { Numeric::current().width };
     let mut data = Gather::items(right.len());
     match right.as_items() {
         Items::Values(items) => { for e in items { data.add(item(e.clone(), rng)?); } }
@@ -629,7 +633,7 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Span, fill: bool, rng: &mut
             if !bounds.contains(&0) {
                 let mut draws = Vec::with_capacity(bounds.len());
                 rustymath::random::roll(rustymath::Arg::Many(&bounds), bounds.len(), rng, &mut draws);
-                return generated_items(right.shape().to_vec(), draws, float).and_then(|v| v.with_layout(right.layout().clone()))
+                return generated_items(right.shape().to_vec(), draws, mark).and_then(|v| v.with_layout(right.layout().clone()))
                     .described("invalid roll result");
             }
             if bounds.iter().all(|&n| n == 0) {
@@ -637,9 +641,9 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Span, fill: bool, rng: &mut
                 rustymath::random::units(bounds.len(), rng, &mut draws);
                 return right.layout().floats(unit, draws).described("invalid roll result");
             }
-            for n in bounds { data.add(draw(n, float, unit, rng)); }
+            for n in bounds { data.add(draw(n, mark, unit, rng)); }
         }
-        _ => data.fill(&generated(0, float), right.len()),
+        _ => data.fill(&generated(0, mark), right.len()),
     }
     data.finish(right.layout().clone(), prototype).described("invalid roll result")
 }
@@ -650,13 +654,18 @@ pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut
         if !a.is_singleton() { return Err(Error::new(Kind::Length, "deal needs one count per argument")); }
         let item = a.at(0);
         let n = numeric(&item)?;
-        Ok((n.nonnegative_integer().described("deal needs nonnegative integer counts")?, counted_width(&item)))
+        Ok((n.nonnegative_integer().described("deal needs nonnegative integer counts")?, counted(&item)))
     };
-    let ((n, count_float), (total, total_float)) = (count(left)?, count(right)?);
+    let ((n, count_mark), (total, total_mark)) = (count(left)?, count(right)?);
     if n > total { return Err(Error::domain("cannot deal more items than the population")); }
     generated_len(&[n])?;
-    let float = count_float.max(total_float);
+    // The draws are below the total, so they take its type, unless either argument is a float.
+    let mark = match (count_mark, total_mark) {
+        (Mark::Width(a), Mark::Width(b)) => Mark::Width(a.max(b)),
+        (Mark::Width(width), _) | (_, Mark::Width(width)) => Mark::Width(width),
+        (_, total) => total,
+    };
     let mut draws = Vec::new();
     rustymath::random::deal(n as u64, total as u64, rng, &mut draws);
-    generated_items(vec![n], draws, float).described("invalid deal result")
+    generated_items(vec![n], draws, mark).described("invalid deal result")
 }

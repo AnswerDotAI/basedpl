@@ -1,7 +1,7 @@
 "Persistent JSON-lines worker with cooperative interruption and a hard timeout fallback."
 import json, math, os, queue, subprocess, sysconfig, threading
 from pathlib import Path
-from collections import deque
+from collections import deque, namedtuple
 from decimal import Decimal
 from . import BplError, _output_text, _written
 from fastcore.meta import delegates
@@ -111,13 +111,33 @@ class Worker:
     def __enter__(self): return self
     def __exit__(self, *args): self.close()
 
+Output = namedtuple('Output', 'code output error')
+
+class Outputs(list):
+    "Each expression's printed text and error, as `Output` rows with fields `code`, `output` and `error`, where `error` is the `BplError` or `TimeoutError` it raised, or `None`. Each row displays as BPL, with its output or error after `⍝`."
+    def __repr__(self):
+        def row(code, output, error):
+            lines = '\n'.join(filter(None, [output, error and str(error)])).split('\n')
+            return code + '  ⍝ ' + f'\n{" "*(len(code)+2)}⍝ '.join(lines)
+        return '\n'.join(row(*r) for r in self)
+
+def _outcome(code, timeout, prefs, kwargs):
+    "What `code` prints in a fresh worker after `prefs` runs, and the `BplError` or `TimeoutError` it raised, or `None`. An error in `prefs` raises."
+    with Worker(**kwargs) as w:
+        if prefs and (r := w.eval(prefs, timeout))['error']: raise BplError(r['error'], r['output'])
+        try: r = w.eval(code, timeout)
+        except TimeoutError as e: return '', e
+    return _written(r['output']).removesuffix('\n'), r['error'] and BplError(r['error'], r['output'])
+
 @delegates(Worker)
 def fresh(
-    code, # BPL source
-    timeout=60, # Seconds before the evaluation is interrupted; None: no limit
+    code, # BPL source, or a list of expressions to run each in its own fresh worker
+    timeout=60, # Seconds before each evaluation is interrupted, and a second more before an unresponsive worker is killed; None: no limit
+    prefs='', # BPL that runs before `code` in each worker, such as `•prefs ["kinds":"static"]`
     **kwargs
 ):
-    "Return what `code` prints in a fresh worker process. A BPL error raises `BplError`."
-    with Worker(**kwargs) as w: r = w.eval(code, timeout)
-    if r['error']: raise BplError(r['error'], r['output'])
-    return _written(r['output']).removesuffix('\n')
+    "Return what `code` prints in a fresh worker process. A BPL error raises `BplError`. A worker that doesn't reply within `timeout` plus a second is killed, and `TimeoutError` raises. A list of expressions gives `Outputs`, with each one's output or error, timeouts included."
+    if not isinstance(code, str): return Outputs(Output(c, *_outcome(c, timeout, prefs, kwargs)) for c in code)
+    output, error = _outcome(code, timeout, prefs, kwargs)
+    if error: raise error
+    return output

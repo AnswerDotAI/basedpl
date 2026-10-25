@@ -16,11 +16,11 @@ use crate::{
     array::Items, element::read_as, Span,
     Error, ErrorKind, Value
 };
-use rustymath::hashing::Hashing;
+use rustymath::hashing::{Hashing, HashMap, HashMapExt};
 use rustymath::{
     buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains}, tolerant::{self, Near, Tolerance}, with_float_width
 };
-use std::{borrow::Cow, hash::{BuildHasher, Hash, Hasher}};
+use std::{borrow::Cow, hash::{BuildHasher, Hash, Hasher}, sync::Arc};
 
 /// The cells a search compares. The cells of rank 0 are an array's items.
 pub(crate) enum Cells<'a> { Items(&'a Value), Arrays(Vec<Value>) }
@@ -85,8 +85,9 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &crate::Spa
     }).collect()
 }
 
-/// The representative of each cell's class. Compact cells take rustymath's classes. With a tolerance, a class of real atoms is a run that `tolerant::runs` gives, or the reals equal to one whole number when every real equals one below `tolerant::whole_limit`, and the class's earliest position represents it. Two reals in one class therefore needn't match each other. Other cells are compared only with earlier representatives. A cell that matches none represents a new class.
+/// The representative of each cell's class. Compact cells take rustymath's classes. With a tolerance, a class of real atoms is a run that `tolerant::runs` gives, or the reals equal to one whole number when every real equals one below `tolerant::whole_limit`, and the class's earliest position represents it. Two reals in one class therefore needn't match each other. Other cells are compared only with earlier representatives. A cell that matches none represents a new class. Cells that share their arrays, as a selection shares a few strings among many cells, class by array before any array is read (`shared_classes`).
 pub(crate) fn classify(cells: &Cells, span: &Span) -> Result<Vec<u32>, Error> {
+    if let Some(classes) = shared_classes(cells) { return Ok(classes); }
     let (width, t) = compared_at(cells.float_width());
     if let Some(classes) = compact_view(cells).and_then(|x| search::view_classes(x, t)) { return classes.map_err(Error::from); }
     let compact = with_float_width!(width, F => match cells {
@@ -249,6 +250,33 @@ fn exact_cells<'a>(cells: &'a Cells) -> Option<Vec<Exact<'a>>> {
         Cells::Items(_) => None,
         Cells::Arrays(cells) => cells.iter().map(Exact::of).collect(),
     }
+}
+
+/// `shared_classes` gives up where more than one in this many of the items it has read hold arrays of their own: too few items then share an array to save reading.
+const SHARED: usize = 4;
+/// The items that `shared_classes` reads before it can give up. Items that hold arrays of their own give up after reading this many.
+const SHARED_FROM: usize = 1024;
+
+/// The class of each item, where items share their arrays, as the copies of a few strings that a selection makes do. Items that share one array are one class without reading it, and only the first item of each array becomes an `Exact` key. `None` where an item isn't an array, where more than one in `SHARED` of the items read so far hold arrays of their own, or where a shared array isn't an exact key.
+fn shared_classes(cells: &Cells) -> Option<Vec<u32>> {
+    let Cells::Items(a) = cells else { return None };
+    if a.carrier().is_some() { return None; }
+    let Items::Values(items) = a.as_items() else { return None };
+    let mut first = HashMap::new();
+    let mut classes = Vec::with_capacity(items.len());
+    for (i, v) in items.iter().enumerate() {
+        let Value::Array(array) = v else { return None };
+        classes.push(*first.entry(Arc::as_ptr(array)).or_insert(i as u32));
+        if i >= SHARED_FROM && first.len() * SHARED > i + 1 { return None; }
+    }
+    let mut owners: Vec<u32> = first.into_values().collect();
+    owners.sort_unstable();
+    let keys = owners.iter().map(|&i| Exact::of(&items[i as usize])).collect::<Option<Vec<_>>>()?;
+    // Each array's first item takes the class of the earliest array with equal items.
+    let mut class = vec![0; items.len()];
+    for (&owner, &k) in owners.iter().zip(&search::first_classes(&keys, |k| k)) { class[owner as usize] = owners[k as usize]; }
+    for c in &mut classes { *c = class[*c as usize]; }
+    Some(classes)
 }
 
 fn hashed_first(haystack: &Cells, x: &[u64], needles: &Cells, y: &[u64], span: &crate::Span) -> Result<Vec<u32>, Error> {

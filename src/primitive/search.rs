@@ -39,9 +39,9 @@ impl Value {
 
 pub(super) fn unique(right: &Value, span: &Span) -> Result<Value, Error> { replicate(&unique_mask(right, span)?, right, None, false) }
 
-/// `left` with the cells of `right` that it lacks. A weak `right` takes the width that `left` gives it first, as `catenate` weakens its arguments, because `without` makes it an array.
+/// `left` with the cells of `right` that it lacks. A weak `right` takes the width that `left` gives it first, as `catenate` weakens its arguments, because `without` makes it an array. A weak integer must fit fixed integers beside it, as in catenation (`Primitive::joined_weak`).
 pub(super) fn union(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
-    let weak = Primitive::Union.weaken_value(right, left);
+    let weak = Primitive::Union.joined_weak(right, left)?;
     catenate(left, &without(weak.as_ref().unwrap_or(right), left, span)?, None, true)
 }
 
@@ -113,7 +113,7 @@ pub(super) fn runs(right: &Value, span: &Span) -> Result<Value, Error> {
         if start { lengths.push(0); }
         *lengths.last_mut().expect("the first cell starts a run") += 1;
     }
-    let lengths = generated_items(vec![lengths.len()], lengths, None).described("invalid run lengths")?;
+    let lengths = generated_items(vec![lengths.len()], lengths, Mark::Exact).described("invalid run lengths")?;
     let values = replicate(&axis.booleans(starts).described("invalid run starts")?, right, None, false)?;
     if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).described("invalid runs"); }
     let layout = values.layout().clone().without_keys(0);
@@ -141,10 +141,10 @@ fn positions(right: &Value, indices: Vec<u32>) -> Result<Value, ErrorKind> {
 }
 
 /// The coordinates of flat position `flat`. An axis with a negative length counts down.
-fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, float: Option<FloatWidth>) -> Value {
+fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, mark: Mark) -> Value {
     let mut data = vec![0; lengths.len()];
     for (axis, c) in rustymath::layout::coordinates(flat, shape) { data[axis] = (if lengths[axis] < 0 { shape[axis] - 1 - c } else { c }) as u64; }
-    generated_items(vec![data.len()], data, float).unwrap()
+    generated_items(vec![data.len()], data, mark).unwrap()
 }
 
 /// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`. A keyed shape names the result's axes, as it does for reshape: `⍳["i":3]` is `0 1 2` along an axis named `i`.
@@ -153,26 +153,32 @@ pub(super) fn iota(right: &Value) -> Result<Value, Error> {
     let lengths = right.as_items().integers().described("invalid iota dimension")?;
     let shape: Vec<usize> = lengths.iter().map(|n| saturated(n.unsigned_abs())).collect();
     let len = generated_len(&shape)?;
-    let float = counted_width(right);
+    let mark = counted(right);
     let indices = if right.is_singleton() {
         let down = lengths[0] < 0;
-        if let Some(width) = float {
-            let start = if down { len as i64 - 1 } else { 0 };
-            rustymath::with_float_width!(width, F => {
-                let mut data: Vec<F> = Vec::new();
-                rustymath::convert::count(&mut data, start, down, len);
-                <F as crate::element::Stored>::build(shape, data).ok_or_else(|| Kind::Length.into())
-            })
-        } else if down { Value::positions(shape, len, (0..len).rev()) } else { Value::positions(shape, len, 0..len) }
+        match mark {
+            Mark::Width(width) => {
+                let start = if down { len as i64 - 1 } else { 0 };
+                rustymath::with_float_width!(width, F => {
+                    let mut data: Vec<F> = Vec::new();
+                    rustymath::convert::count(&mut data, start, down, len);
+                    <F as crate::element::Stored>::build(shape, data).ok_or_else(|| Kind::Length.into())
+                })
+            }
+            Mark::Fixed(width) if down => Value::fixed_integers(shape, width, (0..len).rev()),
+            Mark::Fixed(width) => Value::fixed_integers(shape, width, 0..len),
+            Mark::Exact if down => Value::positions(shape, len, (0..len).rev()),
+            Mark::Exact => Value::positions(shape, len, 0..len),
+        }
     } else {
-        let prototype = generated_items(vec![shape.len()], vec![0; shape.len()], float).unwrap();
-        let data = (0..len).map(|i| coordinates(&lengths, &shape, i, float)).collect();
+        let prototype = generated_items(vec![shape.len()], vec![0; shape.len()], mark).unwrap();
+        let data = (0..len).map(|i| coordinates(&lengths, &shape, i, mark)).collect();
         Value::from_parts(shape, data, prototype)
     };
     indices.and_then(|a| a.with_axis_names(super::structural::shape_names(right))).described("invalid iota")
 }
 
-/// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within comparison tolerance. Each item is `a+i` or `a-i` for an exact count `i`, so the result's type follows `a`. The distance is `b-a`, so two characters count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the type of `n`.
+/// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within comparison tolerance. Each item is `a+i` or `a-i` for a count `i`, which is exact, or a fixed integer of the width that fixed arguments give (`Numeric::for_values`), so the result's type follows `a`'s, or that fixed type. The distance is `b-a` between ordinary values, so it can't wrap, and two characters count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the type of `n`.
 pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let real = |v: Value| match v {
         Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(Error::domain("range needs real numbers or two characters"))
@@ -181,8 +187,12 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span) -> Result<
         let whole = distance.math_monad(Math::Magnitude)?.floor(Numeric::current())?;
         whole.nonnegative_integer().described("range needs a finite length")
     };
+    let fixed = Numeric::current().for_values(left.into_iter().chain([right])).map_err(Error::domain)?.fixed;
     let counts = |items: std::ops::Range<usize>| {
-        generated_len(&[items.len()]).map_err(ErrorKind::from).and_then(|len| Value::positions([len], items.end, items)).described("range exceeds array limits")
+        generated_len(&[items.len()]).map_err(ErrorKind::from).and_then(|len| match fixed {
+            Some(width) => Value::fixed_integers([len], width, items),
+            None => Value::positions([len], items.end, items),
+        }).described("range exceeds array limits")
     };
     let Some(left) = left else {
         let n = real(right.at(0))?;
@@ -190,7 +200,7 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span) -> Result<
         return Primitive::Arithmetic(Arithmetic::Times).call(Some(&sign), &counts(1..steps(&n)?.saturating_add(1))?, span);
     };
     let start = left.at(0);
-    let distance = real(Primitive::Arithmetic(Arithmetic::Minus).call(Some(&right.at(0)), &start, span)?)?;
+    let distance = real(Primitive::Arithmetic(Arithmetic::Minus).call(Some(&right.at(0).ordinary()), &start.ordinary(), span)?)?;
     let op = if distance.grade_order(&distance.zero()).is_lt() { Arithmetic::Minus } else { Arithmetic::Plus };
     Primitive::Arithmetic(op).call(Some(&start), &counts(0..steps(&distance)?.saturating_add(1))?, span)
 }
@@ -291,7 +301,7 @@ pub(super) fn index_of(left: &Value, right: &Value, span: &Span) -> Result<Value
 
 fn position_value(array: &Value, axis: usize, position: usize) -> Value {
     if let Some(key) = array.keys(axis).and_then(|k| k.names().get(position)?.clone()) { return crate::keyed::text(&key); }
-    generated(position as u64, None)
+    generated(position as u64, Mark::Exact)
 }
 
 /// The order of two items. `None` when the comparison reaches a function, which has no ordering. A carried item orders as the value that a reader outside every call sees (`Carrier::observed`): a dual as its primal. A batch stops its map's run, because no one value stands for all its cells.
@@ -378,7 +388,7 @@ pub(super) fn sort(right: &Value, down: bool, span: &Span) -> Result<Value, Erro
     if right.is_unit() { return Ok(right.clone()); }
     if right.shape().len() == 1 && right.keys(0).is_none() {
         if let Some(sorted) = compact_view(&Cells::Items(right)).map(|v| rustymath::search::view_sort(v, down)).transpose()?.flatten() {
-            return Value::from_buffer(right.shape(), sorted).and_then(|v| v.with_layout(right.layout().clone())).described("invalid sort");
+            return Value::from_buffer_at(right.shape(), sorted, right.fixed_width()).and_then(|v| v.with_layout(right.layout().clone())).described("invalid sort");
         }
     }
     let order = Value::new(vec![1], vec![grade(None, right, down)?]).described("invalid sort")?;
@@ -395,7 +405,7 @@ pub(crate) fn ordered_cells(p: Primitive, y: &Value, k: usize) -> Option<Result<
     let (n, width) = (y.shape()[frame], y.shape()[frame + 1..].iter().product::<usize>());
     let dims = [y.len() / width / n, n, 1];
     if !grade && k == 1 {
-        return rustymath::search::view_sort_along(view, dims, down).transpose().map(|sorted| Value::from_buffer(y.shape(), sorted?).and_then(|v| v.with_layout(y.layout().clone())).described("invalid sort"));
+        return rustymath::search::view_sort_along(view, dims, down).transpose().map(|sorted| Value::from_buffer_at(y.shape(), sorted?, y.fixed_width()).and_then(|v| v.with_layout(y.layout().clone())).described("invalid sort"));
     }
     if width > 16 { return None; }
     let columns: Vec<_> = (0..width).map(|j| (view, j, width)).collect();

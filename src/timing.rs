@@ -43,18 +43,19 @@ pub const WASM_COLUMN: usize = 2;
 /// One measured record. `label` is single-line; `code` retains its original layout.
 pub struct Case { pub file: String, pub section: String, pub code: String, pub label: String, pub budgets: Vec<String>, pub cost: f64, pub seconds: f64, pub copy: Option<CopyTime> }
 impl Case {
-    pub fn line(&self, column: usize) -> String { rustymath::timing::line(&self.section, &self.label, self.cost, self.budgets.get(column).map_or("-", String::as_str), self.seconds) }
+    pub fn line(&self, column: Option<usize>) -> String { rustymath::timing::line(&self.section, &self.label, self.cost, column.and_then(|i| self.budgets.get(i)).map_or("-", String::as_str), self.seconds) }
     pub fn copy_line(&self) -> Option<String> { self.copy.as_ref().map(rustymath::timing::copy_line) }
 }
 
-pub fn rows(cases: &[Case], column: usize) -> JsonValue {
+pub fn rows(cases: &[Case], column: Option<usize>) -> JsonValue {
     cases.iter().map(|c| json!({"file":c.file, "section":c.section, "code":c.code, "label":c.label, "line":c.line(column), "copy":c.copy_line(), "budgets":c.budgets, "cost":c.cost, "seconds":c.seconds})).collect()
 }
 
+/// A case's label in logs: `file:id` for a case with an ID, or else its code on one line. A multi-line case's lines join with `⋄`, as comments write a dfn, so its label stays the same when lines above it move: `{x←v ⋄ x.[i]←w ⋄ x}0`.
 fn label(file: &File, case: &JsonValue) -> String {
     let (id, code) = (case["id"].as_str().unwrap_or_default(), case["code"].as_str().unwrap());
     if !id.is_empty() { format!("{}:{id}", file.name) }
-    else if code.contains('\n') { format!("{}:{}", file.name, case["line"]) }
+    else if code.contains('\n') { code.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ⋄ ").replace("{ ⋄ ", "{").replace(" ⋄ }", "}") }
     else { code.into() }
 }
 
@@ -143,7 +144,7 @@ pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle
 pub fn measured(files: &[File], all: bool, mut print: impl FnMut(&str)) -> Result<Vec<String>, String> {
     use rustymath::timing::retried;
     let line = |c: &Case| c.line(NATIVE_COLUMN);
-    let over = |c: &Case| c.budgets.get(NATIVE_COLUMN).and_then(|b| b.parse::<f64>().ok()).is_some_and(|b| c.cost > b);
+    let over = |c: &Case| NATIVE_COLUMN.and_then(|i| c.budgets.get(i)).and_then(|b| b.parse::<f64>().ok()).is_some_and(|b| c.cost > b);
     let interrupt = InterruptHandle::default();
     let mut first = costs(files, None, "", &interrupt)?;
     if all {

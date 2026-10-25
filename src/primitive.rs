@@ -4,7 +4,7 @@ use crate::session;
 use crate::{
     agreement::{Agree, Agreement},
     array::{generated_len, or_and_sum, saturated, Frame, Gather, Items, Lanes, Layout, Steps, Storage, Widening},
-    keyed::Selector, number::{int::Int, Arithmetic, Math, Numeric}, search::{classify, first_matches, firsts, grouped, Cells},
+    keyed::Selector, number::{int::Int, Arithmetic, Mark, Math, Numeric}, search::{classify, first_matches, firsts, grouped, Cells},
     Error, Described, ErrorKind, Number, Span, Value
 };
 use rustymath::hashing::{HashMap, HashMapExt};
@@ -467,20 +467,28 @@ pub(crate) fn real(value: &Value) -> Result<f64, Error> {
 }
 /// The float `n` at the float width of `like`, as a constant that a function combines with `like` takes. It doesn't widen `like`. Beside an exact `like`, it takes the default width.
 pub(crate) fn float_like(n: f64, like: &Value) -> Value { Value::Number(Number::float(n, Numeric::current().width_of([like.float_width()]))) }
-/// The width of the floats that a count or bound such as `value` gives. `None` when `value` is exact. Otherwise it's the float width of `value`, or the default width when `value` has none.
-pub(crate) fn counted_width(value: &Value) -> Option<FloatWidth> {
-    (!value.is_exact()).then(|| Numeric::current().width_of([value.float_width()]))
+/// The type of the counts, positions or draws that a count or bound such as `value` gives. They're fixed integers of `value`'s width where it's fixed, floats where it's approximate, at its width or the default width, and exact integers otherwise.
+pub(crate) fn counted(value: &Value) -> Mark {
+    if let Some(width) = value.fixed_width() { Mark::Fixed(width) }
+    else if value.is_exact() { Mark::Exact }
+    else { Mark::Width(Numeric::current().width_of([value.float_width()])) }
 }
-/// The count `n` as a float of width `float`, or as an exact integer when `float` is `None`. An exact value beyond `i64` is a big integer.
-fn generated(n: u64, float: Option<FloatWidth>) -> Value {
-    if let Some(width) = float { return Value::Number(Number::float(n as f64, width)); }
-    match i64::try_from(n) { Ok(n) => Value::integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) }
+/// The count `n` as `mark`'s type. An exact value beyond `i64` is a big integer.
+fn generated(n: u64, mark: Mark) -> Value {
+    match mark {
+        Mark::Width(width) => Value::Number(Number::float(n as f64, width)),
+        Mark::Fixed(width) => Value::Number(Number::fixed(n as i64, width)),
+        Mark::Exact => match i64::try_from(n) { Ok(n) => Value::integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) },
+    }
 }
-/// Counts or positions in `shape`, as `generated` gives each one. A value beyond `i64` makes the array mixed.
-fn generated_items(shape: Vec<usize>, values: Vec<u64>, float: Option<FloatWidth>) -> Result<Value, ErrorKind> {
-    if let Some(width) = float { return Value::floats(shape, width, values.into_iter().map(|n| rustymath::convert::float(n as i64))); }
-    if values.iter().all(|&n| i64::try_from(n).is_ok()) { return Value::integers(shape, values.into_iter().map(|n| n as i64).collect()); }
-    Value::new(shape, values.into_iter().map(|n| generated(n, None)).collect())
+/// Counts or positions in `shape`, as `generated` gives each one. An exact value beyond `i64` makes the array mixed.
+fn generated_items(shape: Vec<usize>, values: Vec<u64>, mark: Mark) -> Result<Value, ErrorKind> {
+    match mark {
+        Mark::Width(width) => Value::floats(shape, width, values.into_iter().map(|n| rustymath::convert::float(n as i64))),
+        Mark::Fixed(width) => Value::fixed_integers(shape, width, values.into_iter()),
+        Mark::Exact if values.iter().all(|&n| i64::try_from(n).is_ok()) => Value::integers(shape, values.into_iter().map(|n| n as i64).collect()),
+        Mark::Exact => Value::new(shape, values.into_iter().map(|n| generated(n, mark)).collect()),
+    }
 }
 fn selected(a: &Value, i: usize) -> Value { a.at(if a.is_singleton() { 0 } else { i }) }
 
@@ -769,7 +777,7 @@ impl Primitive {
             (Self::Depth, Some(x)) => Ok(Value::Number(Number::from_bool(x.matches(right, span)?))),
             (Self::Depth, None) => Ok(Value::integer(depth(right) as i64)),
             (Self::Tally, Some(x)) => Ok(Value::Number(Number::from_bool(!x.matches(right, span)?))),
-            (Self::Tally, None) => { let n = right.shape().first().copied().unwrap_or(1); fits_int(n)?; Ok(generated(n as u64, None)) }
+            (Self::Tally, None) => { let n = right.shape().first().copied().unwrap_or(1); fits_int(n)?; Ok(generated(n as u64, Mark::Exact)) }
             (Self::Iota, Some(x)) => index_of(x, right, span),
             (Self::Iota, None) => iota(right).and_then(|r| { fits_int(r.shape().iter().copied().max().unwrap_or(1).saturating_sub(1))?; Ok(r) }),
             (Self::Range, _) => range(left, right, span),
@@ -798,7 +806,7 @@ impl Primitive {
             (Self::Shape, Some(x)) => reshape(x, right),
             (Self::Shape, None) => {
                 fits_int(right.shape().iter().copied().max().unwrap_or(0))?;
-                let dimensions = right.shape().iter().map(|&n| generated(n as u64, None)).collect();
+                let dimensions = right.shape().iter().map(|&n| generated(n as u64, Mark::Exact)).collect();
                 let shape = if !right.layout().has_names() { Value::from_parts(vec![right.shape().len()], dimensions, Value::integer(0)) }
                 else { crate::keyed::partial_vector(right.axis_names().to_vec(), dimensions) };
                 shape.described("invalid shape")
@@ -853,9 +861,7 @@ impl Primitive {
     }
     /// The function applied to the items that `agreement` pairs, laid out as `agreement` lays out the result.
     fn pervasive_mapped(self, left: Option<&Value>, right: &Value, span: &Span, fill: bool, agreement: Agreement) -> Result<Value, Error> {
-        let fixed = right.fixed_width().is_some() || left.is_some_and(|v| v.fixed_width().is_some());
-        let numeric = Numeric::current();
-        let numeric = if fixed { crate::pervasive::promoted(self, left, right, numeric).map_err(Error::domain)? } else { numeric };
+        let numeric = crate::pervasive::promoted(self, left, right, Numeric::current()).map_err(Error::domain)?;
         // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
         let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(self, left, right, agreement.len) {
             match crate::fusion::defer(self, left, right, agreement) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }
@@ -931,22 +937,7 @@ impl Primitive {
             let (x, y) = (x.map(Number::ordinary), y.ordinary());
             return e.number(x.as_ref(), &y, t);
         }
-        if fixed {
-            if let Some(width) = Number::fixed_promotion(x, y).map_err(Domain)? {
-                let t = t.with_fixed(width);
-                let constants = [x.and_then(|x| x.to_float().ok()), y.to_float().ok()];
-                match crate::pervasive::computes(self, x.is_some(), constants, rustymath::buffer::DType::Integer(width), t) {
-                    Some(rustymath::buffer::DType::Boolean | rustymath::buffer::DType::Integer(_)) => {
-                        return crate::pervasive::scalar(self, x, y, t).ok_or(Domain("function has no fixed-width integer kernel"))?.map_err(Domain);
-                    }
-                    Some(rustymath::buffer::DType::Float(w)) => {
-                        let (x, y) = (x.map(|x| x.to_float_width(w)).transpose().map_err(Domain)?, y.to_float_width(w).map_err(Domain)?);
-                        return self.number(x.as_ref(), &y, t);
-                    }
-                    _ => return Err(Domain("function has no fixed-width integer kernel")),
-                }
-            }
-        }
+        if fixed && let Some(width) = Number::fixed_promotion(x, y).map_err(Domain)? { return self.fixed_number(x, y, t.with_fixed(width), width); }
         if let Self::Bitwise(table) = self { return y.bitwise(x, table).map_err(Domain); }
         // A weak operand beside a strong number takes the width that NEP 50 gives it.
         if let Some(x) = x {
@@ -971,7 +962,26 @@ impl Primitive {
         Ok(n)
     }
 
-    /// The result of this function on numbers under static kinds, from `n`, the result that dynamic kinds give, as `meta/kinds.md` describes. Its kind follows the operands' kinds alone. A complex operand gives a complex result, except in a magnitude. Real operands give a real result, with NaN where dynamic kinds give a complex number, except in cis. A float operand gives a float. Integer operands give integers wrapped to the `int` width, except where the call computes in floats (`pervasive::computes`), as `÷` and the approximate functions do, and an integer power with a negative exponent is a DOMAIN error. Exact fractions stay exact.
+    /// The result on numbers `x` and `y`, of which some are fixed, at the fixed width `width` that `t` carries. A function with an integer kernel at that width runs it, and one whose kernels compute in floats runs at their float width. Any other function gives what static kinds give at that width: the exact result wrapped, or a float of the width that floats from these integers take.
+    #[inline(never)]
+    fn fixed_number(self, x: Option<&Number>, y: &Number, t: Numeric, width: Width) -> Result<Number, crate::number::Failure> {
+        use crate::number::Failure::Domain;
+        use rustymath::buffer::DType;
+        let constants = [x.and_then(|x| x.to_float().ok()), y.to_float().ok()];
+        match crate::pervasive::computes(self, x.is_some(), constants, DType::Integer(width), t) {
+            Some(DType::Boolean | DType::Integer(_)) => if let Some(result) = crate::pervasive::scalar(self, x, y, t) { return result.map_err(Domain); },
+            Some(DType::Float(w)) => {
+                let (x, y) = (x.map(|x| x.to_float_width(w)).transpose().map_err(Domain)?, y.to_float_width(w).map_err(Domain)?);
+                return self.number(x.as_ref(), &y, t);
+            }
+            _ => (),
+        }
+        let (x, y) = (x.map(Number::ordinary), y.ordinary());
+        let exact = Numeric { mathish: false, kinds: crate::number::Kinds::Dynamic, fixed: None, width: t.exact_width(DType::Integer(width)), ..t };
+        self.statically(x.as_ref(), &y, self.number(x.as_ref(), &y, exact)?, t).map_err(Domain)
+    }
+
+    /// The result of this function on numbers under static kinds, from `n`, the result that dynamic kinds give, as `meta/kinds.md` describes. Its kind follows the operands' kinds alone. A complex operand gives a complex result, except in a magnitude. Real operands give a real result, with NaN where dynamic kinds give a complex number, except in cis. A float operand gives a float. Integer operands give integers wrapped to the integer width (`Number::wrapped`), which is the fixed width for a call on fixed integers that has no kernel of its own, except where the call computes in floats (`pervasive::computes`), as `÷` and the approximate functions do, and an integer power with a negative exponent is a DOMAIN error. Exact fractions stay exact.
     fn statically(self, x: Option<&Number>, y: &Number, n: Number, t: Numeric) -> Result<Number, &'static str> {
         use rustymath::buffer::DType;
         let operands = || x.into_iter().chain([y]);
@@ -984,13 +994,13 @@ impl Primitive {
         if n.as_complex().is_some() { return Ok(if matches!((self, x), (Self::Math(Math::Circle), None)) { n } else { Number::float(f64::NAN, width) }); }
         if let Some(w) = operands().filter_map(Number::float_width).max() { return Ok(if n.is_exact() { Number::float(n.to_float().map_err(<&str>::from)?, w) } else { n }); }
         if !operands().all(|o| o.as_integer().is_some()) { return Ok(n); }
-        let kind = if operands().all(|o| o.as_bool().is_some()) { DType::Boolean } else { DType::Integer(t.int) };
+        let kind = if operands().all(|o| o.as_bool().is_some()) { DType::Boolean } else { DType::Integer(t.integer_width()) };
         let w = t.exact_width(kind);
         let constants = [x.and_then(|x| x.to_float().ok()), y.to_float().ok()];
         if let Some(DType::Float(w)) = crate::pervasive::computes(self, x.is_some(), constants, kind, t) { return Ok(Number::float(n.to_float().map_err(<&str>::from)?, w)); }
-        if let Some(i) = n.as_integer() { return Ok(if t.fits(i) { n } else { Number::from_integer(t.wrap(&i.into())) }); }
+        if n.as_integer().is_some() { return Ok(n.wrapped(t)); }
         Ok(match n.as_exact() {
-            Some(r) if r.is_integer() => Number::from_integer(t.wrap(r.numer())),
+            Some(r) if r.is_integer() => n.wrapped(t),
             Some(_) if matches!(self, Self::Math(Math::Power)) => return Err("an integer power with a negative exponent isn't an integer"),
             Some(_) => n,
             None => n.at_width(w),
@@ -1034,13 +1044,21 @@ impl Primitive {
         if n.is_exact() && crate::pervasive::keeps_exact(self, numeric) { None } else { n.weak_width(strong) }
     }
 
-    /// A weak `value` at the width that this function gives it beside `other`.
+    /// A weak `value` at the width that this function gives it beside `other`: the float width of strong floats, or the width of fixed integers where a weak integer fits it. A weak integer that doesn't fit stays weak, for the call's promotion to report (`Promoted::fixed`).
     #[inline]
     pub(crate) fn weaken_value(self, value: &Value, other: &Value) -> Option<Value> {
         let Value::Number(n) = value else { return None };
         if !n.is_weak() || matches!(other, Value::Number(o) if o.is_weak()) { return None; }
         if matches!(self, Self::Ravel | Self::CatenateFirst | Self::Union) && other.is_empty() { return None; }
+        if let (Some(width), Some(i), None) = (other.fixed_width(), n.as_integer(), n.as_bool()) {
+            return (Width::narrowest(i, i).join(width) == width).then(|| Value::Number(Number::fixed(i, width)));
+        }
         value.to_float_width(self.weak_width(n, other.dtype()?, Numeric::current())?).ok()
+    }
+    /// A weak `value` at the width that it takes when this function joins it with `other` into one array, as `weaken_value` gives it. DOMAIN for a weak integer that doesn't fit the fixed integers of `other` (`Promoted::fits`).
+    pub(crate) fn joined_weak(self, value: &Value, other: &Value) -> Result<Option<Value>, Error> {
+        crate::array::Promoted::fits([value, other])?;
+        Ok(self.weaken_value(value, other))
     }
 
     /// `f` with weak numeric operands converted before array mapping or scalar calls.

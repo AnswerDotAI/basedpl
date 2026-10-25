@@ -31,7 +31,7 @@ Display shows part of an array of more than `limit` items: the first and last `e
 
 Static calculations ignore `mathish`. `•prefs ⍬` still reports its configured value.
 
-`float` sets the default width of floats, in bits: the width of bare numbers in code parsed after the change, of numbers that `•csv`, `•json`, `•vfi` and `•image` read, of random numbers, and of floats that a function gives from exact arguments. Code already parsed keeps its numbers. A change partway through some code therefore applies from the next input, or from text that [`⍎`](../glyphs/hydrant.qmd) parses later. Leading `•prefs` calls on a literal record are the exception. They run before the rest of their code is parsed, as in the examples below. A script, a notebook cell, a line typed at the REPL, a module that [`•load`](load.qmd) runs and text that `⍎` runs can each set its own width this way. See [Numbers](../numbers.qmd#float-widths).
+`float` sets the default width of floats, in bits: the width of bare numbers in code parsed after the change, of numbers that `•csv`, `•json`, `•vfi` and `•image` read, of random numbers, and of floats that a function gives from exact arguments. Until `float` is set, that width follows `kinds`: 64 bits under dynamic kinds and 32 under static kinds. Once set, it holds under both. Code already parsed keeps its numbers. A change partway through some code therefore applies from the next input, or from text that [`⍎`](../glyphs/hydrant.qmd) parses later. Leading `•prefs` calls on a literal record are the exception. They run before the rest of their code is parsed, as in the examples below. A script, a notebook cell, a line typed at the REPL, a module that [`•load`](load.qmd) runs and text that `⍎` runs can each set its own width this way. See [Numbers](../numbers.qmd#float-widths).
 
 `kinds` sets whether a result's kind can depend on its arguments' values. Under the default, `"dynamic"`, `√¯4` gives `0ⱼ2`, `1j0` reads as the float `1`, `⌊2.5` gives the exact integer `2`, `7ₓ÷2ₓ` gives `7ᵣ2`, and exact integers grow without limit. Under `"static"`, each result's kind follows from the function, its arguments' kinds and these settings. Real arguments give real results, with NaN outside a function's domain. Complex results stay complex. `⌊`, `⌈` and monadic `×` of floats give floats, and integer `÷` gives floats, where `⌊ₓ`, `⌈ₓ`, `×ₓ` and `÷ₓ` give integers, converting as Rust's `as` does. Integers compute at the `int` width, or at a wider integer's width, and wrap where a result doesn't fit. Exact fractions stay exact. An integer beside a float takes the float's width. An atom promotes as an array does. Fused computations and a GPU need each result's kind before they run, and under static kinds more calls fuse, as the examples under `fusion` show. A literal reads under the settings in force when its code is parsed, as with `float`. See [Numbers](../numbers.qmd#static-kinds).
 
@@ -55,7 +55,7 @@ A call fuses when its result is floats of its arguments' width, or Booleans, and
 
 ```bpl
 y←0.5×¿200000⍴100
-fuses←{0<≢(•explain ⍵).fused.glyphs}
+fuses←{0ₓ<≢(•explain ⍵).fused.glyphs}
 monads←"+-×÷|⌈⌊*⍟√!○π⊼⊽≤≥"
 dyads←"+-×÷|⌈⌊*⍟√!π∨∧=≠<≤>≥"
 ({fuses "+/",⍵,"y"}¨monads)#monads      ⍝ "+-÷|*π⊼⊽≤≥"
@@ -68,6 +68,7 @@ dyads←"+-×÷|⌈⌊*⍟√!π∨∧=≠<≤>≥"
 •prefs ["mathish":$f] ⋄ 0.3=0.1+0.2    ⍝ $f
 •prefs ["mathish":$t] ⋄ 0.3=0.1+0.2    ⍝ $t
 1ₛ=1.0000001ₛ                        ⍝ $f
+•prefs ["kinds":"static"] ⋄ (•storage 1.5).kind    ⍝ "float32"
 •prefs ["float":32] ⋄ (•storage 1.5).kind    ⍝ "float32"
 •prefs ["float":64] ⋄ (•storage 1.5).kind    ⍝ "float64"
 •prefs ["threads":1] ⋄ "threads"⊃•prefs ⍬    ⍝ 1ₓ

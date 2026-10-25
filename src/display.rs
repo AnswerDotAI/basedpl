@@ -195,15 +195,16 @@ impl Settings {
     }
 }
 
-/// `•prefs Y` applies the settings in the record `Y`, and returns all of them. Settings hold for the whole process (`settings`). The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `tolerance` is the comparison tolerance of 64-bit floats, a number from 0 to `1E¯14`. Narrower floats compare exactly. `float` is the width of new floats in bits, 16, 32 or 64. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `fusion` makes each call that computes a pending argument report it. `threads` is the number of threads that large calls split across, from then on. 0 gives the default. 1 runs them on the calling thread alone. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::tried`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. `batch` starts on.
+/// `•prefs Y` applies the settings in the record `Y`, and returns all of them. Settings hold for the whole process (`settings`). The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `mathish`, on by default, makes 64-bit floats compare with a tolerance and zero divided by zero give zero, under dynamic kinds. `float` is the width of new floats in bits, 16, 32 or 64. Until it's set, new floats take 64 bits under dynamic kinds and 32 under static kinds. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `fusion` makes each call that computes a pending argument report it. `threads` is the number of threads that large calls split across, from then on. 0 gives the default. 1 runs them on the calling thread alone. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::tried`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. `batch` starts on.
 pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, bool), crate::Error> {
     let (mut display, mut numeric, mut threads, mut seed) = (settings::display(), settings::numeric(), None, None);
+    let mut float_set = settings::float_set();
     let (mut hanzi_aliases, mut batch, mut fusion) = (settings::hanzi_aliases(), settings::batch(), settings::reports_fusion());
     let pairs = keyed::pairs(right).described("•prefs takes a record of settings")?;
     let shy = !pairs.is_empty();
     if shy { crate::transform::acts()?; }
     for (key, value) in pairs {
-        if numeric.set(&key, &value).map_err(|message| Error::domain(message))? { continue; }
+        if numeric.set(&key, &value, &mut float_set).map_err(|message| Error::domain(message))? { continue; }
         match &*key {
             "hanzi_aliases" => {
                 if !session.prefacing.get() { return Err(Error::domain("hanzi_aliases needs a leading •prefs declaration on a literal record")); }
@@ -226,6 +227,7 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
     }
     settings::set_display(display);
     settings::set_numeric(numeric);
+    settings::set_float_set(float_set);
     settings::set_hanzi_aliases(hanzi_aliases);
     settings::set_batch(batch);
     settings::set_reports_fusion(fusion);

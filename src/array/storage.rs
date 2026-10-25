@@ -117,6 +117,10 @@ impl Promoted {
         if !fits || required.is_some_and(|w| w.join(width) != width) { return Err("integer scalar doesn't fit the fixed width"); }
         Ok(Some(width))
     }
+    /// The DOMAIN error that `fixed` gives where a weak integer among `values` doesn't fit the width of the fixed integers beside it, for a function that joins `values` into one array.
+    pub(crate) fn fits(values: [&Value; 2]) -> Result<(), crate::Error> {
+        Self::fixed(values.map(Self::value)).map(drop).map_err(crate::Error::domain)
+    }
     pub(crate) fn join(parts: impl IntoIterator<Item = Self, IntoIter: Clone>, widening: Widening) -> Result<Self, &'static str> {
         let mut parts = parts.into_iter();
         if let Some(width) = Self::fixed(parts.clone())? { return Ok(Self::stored(Some(DType::Integer(width)), Some(width), false)); }

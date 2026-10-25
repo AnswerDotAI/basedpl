@@ -1,6 +1,6 @@
 # Numbers
 
-A bare number such as `0.5` is approximate: a float of the default width, 64 bits unless [`•prefs`](system/prefs.qmd) sets 16 or 32. A number marked with `ₓ`, such as `3ₓ`, is an ordinary integer, exact under the default dynamic kinds. `1r3` is an exact rational. A byte-count suffix such as `ₓ₄` selects a fixed-width integer. Comparisons give Booleans, written `$t` and `$f`.
+A bare number such as `0.5` is approximate: a float of the default width: 64 bits under dynamic kinds and 32 under static kinds, unless [`•prefs`](system/prefs.qmd) sets a width. A number marked with `ₓ`, such as `3ₓ`, is an ordinary integer, exact under the default dynamic kinds. `1r3` is an exact rational. A byte-count suffix such as `ₓ₄` selects a fixed-width integer. Comparisons give Booleans, written `$t` and `$f`.
 
 ## Writing numbers
 
@@ -147,7 +147,18 @@ The suffix gives a number of bytes. `ₓ₁` selects unsigned `u8`; `ₓ₂`, `�
 [200 100]ₓ₁<300ₓ     ⍝ $t $t
 ```
 
-Two fixed integers compute at the wider type. In arithmetic, a [weak ordinary integer](#weak-and-strong-numbers) takes the fixed type if it fits, and raises otherwise. A strong ordinary integer makes the result ordinary, under the current `kinds` setting. Booleans take the fixed type too. Floats follow their existing promotion rules. True division gives 32-bit floats for `u8` and `i16`, and 64-bit floats for `i32` and `i64`, whatever the `float` preference. Comparisons give Booleans without requiring a weak argument to fit the fixed type.
+Two fixed integers compute at the wider type. In arithmetic, catenation, union and writes, a [weak ordinary integer](#weak-and-strong-numbers) takes the fixed type if it fits, and raises otherwise. A strong ordinary integer makes the result ordinary, under the current `kinds` setting. Booleans take the fixed type too. Floats follow their existing promotion rules. True division gives 32-bit floats for `u8` and `i16`, and 64-bit floats for `i32` and `i64`, whatever the `float` preference. Comparisons give Booleans without requiring a weak argument to fit the fixed type.
+
+Functions that rearrange or select items keep the fixed type, as sort and `↑` do. So do functions whose results can't exceed a fixed argument: `⍳`, `↦`, roll, deal, `⊤` and monadic `⨸`. Functions built from `+`, `-` and `×` compute at the fixed type and wrap, as `+/` does. These are `⊥`, polynomial evaluation with `⌻`, `!`, the determinant `-.×` and the permanent `+.×`. Positions, counts and values that can exceed the argument's range are ordinary integers, such as the results of `⍸`, `⍋`, `≢` and `⍭`. A function with no kernel at the fixed width gives what static kinds give at that width: `○` on `u8` gives complex numbers with 32-bit parts.
+
+```bpl
+⍳3ₓ₁            ⍝ [0 1 2]ₓ₁
+2ₓ⊥(9⍴1ₓ)ₓ₁     ⍝ 255ₓ₁
+[0 1]ₓ₁,9ₓ      ⍝ [0 1 9]ₓ₁
+⍸[0 1 1]ₓ₁      ⍝ [1 2]ₓ
+```
+
+`⍳256ₓ₁` fails, because the literal `256ₓ₁` doesn't fit `u8`. `⍳ₓ₁ 256ₓ` gives 0 to 255 as `u8`.
 
 Fixed integer literals must fit their type. After a value, a sized suffix converts to that type. Integer narrowing wraps. Float and rational conversion floors, then clamps to the target range. NaN converts to zero; infinities convert to the range's bounds. Typed empty vectors use the same suffix, as in `⍬ₓ₁`.
 
@@ -159,7 +170,7 @@ Reductions retain the promoted fixed type. A suffix on a function converts its r
 
 Floats come in three widths: 64, 32 and 16 bits. `•storage` gives their kind as `"float64"`, `"float32"` and `"float16"`. [`•float`](system/float.qmd) converts an array to any of them. A 64-bit float holds about 16 significant digits, a 32-bit float about 7 and a 16-bit float about 3. They take 8, 4 and 2 bytes. The largest finite 16-bit float is 65504.
 
-Bare numbers are floats of the default width: 64 bits, or 16 or 32 after [`•prefs`](system/prefs.qmd) `["float":16]` or `["float":32]`. Code parsed after the change reads its numbers at the new width. In a REPL or a notebook, that is the next input. Leading `•prefs` calls on a literal record run before the rest of their code is parsed. A script, a notebook cell, a module or `⍎` text that starts with `•prefs ["float":32]` therefore reads its own numbers at 32 bits. Numbers that `•csv`, `•json` and `•vfi` read also take the default width. So do random numbers, the numbers that `•image` reads, and floats that a function gives from exact arguments, such as `√2ₓ`. Times from `•time` and `•date` are always 64-bit, because a 32-bit float holds seconds since 1970 only to within about two minutes. `ₕ` marks a 16-bit float, `ₛ` a 32-bit float and `ₚ` a 64-bit float, whatever the default. Display marks floats of the other widths, once after an array's notation. `•literal⁻¹` marks every float. Its text therefore reads back the same at any default.
+Bare numbers are floats of the default width: 64 bits under dynamic kinds and 32 under [static kinds](#static-kinds), until [`•prefs`](system/prefs.qmd) `["float":16]`, `["float":32]` or `["float":64]` sets one width for both. Code parsed after the change reads its numbers at the new width. In a REPL or a notebook, that is the next input. Leading `•prefs` calls on a literal record run before the rest of their code is parsed. A script, a notebook cell, a module or `⍎` text that starts with `•prefs ["float":32]` therefore reads its own numbers at 32 bits. Numbers that `•csv`, `•json` and `•vfi` read also take the default width. So do random numbers, the numbers that `•image` reads, and floats that a function gives from exact arguments, such as `√2ₓ`. Times from `•time` and `•date` are always 64-bit, because a 32-bit float holds seconds since 1970 only to within about two minutes. `ₕ` marks a 16-bit float, `ₛ` a 32-bit float and `ₚ` a 64-bit float, whatever the default. Display marks floats of the other widths, once after an array's notation. `•literal⁻¹` marks every float. Its text therefore reads back the same at any default.
 
 ```bpl
 {(•storage ⍵).kind}¨[1.5ₕ 1.5ₛ [1.5 2.5]ₚ ⍬ₛ]   ⍝ "float16" "float32" "float64" "float32"
@@ -253,11 +264,11 @@ Some functions choose a result's kind from their arguments' values. `√¯4` is 
 7ₓ÷ₓ2ₓ               ⍝ 3ₓ
 ⌊ₓ $n ∞              ⍝ [0 9223372036854775807]ₓ
 0÷0                  ⍝ $n
-0.3=0.1+0.2          ⍝ $f
+0.7=0.1+0.6          ⍝ $f
 •prefs ["kinds":"dynamic"]
 ```
 
-Ordinary integers compute at the width that the `int` pref sets, 64 bits by default, or at a wider integer's width, and wrap where a result doesn't fit. Fixed integers retain their explicit type. An integer beside a float takes the float's width. A weak number beside floats takes their width, as under dynamic kinds. Exact fractions stay exact. Floating comparisons are exact. Under `•prefs ["int":32]`, an ordinary integer literal that doesn't fit 32 bits is a LIMIT error:
+Ordinary integers compute at the width that the `int` pref sets, 64 bits by default, or at a wider integer's width, and wrap where a result doesn't fit. New floats take 32 bits, unless the `float` pref sets a width. Fixed integers retain their explicit type. An integer beside a float takes the float's width. A weak number beside floats takes their width, as under dynamic kinds. Exact fractions stay exact. Floating comparisons are exact. Under `•prefs ["int":32]`, an ordinary integer literal that doesn't fit 32 bits is a LIMIT error:
 
 ```bpl
 •prefs ["kinds":"static"]

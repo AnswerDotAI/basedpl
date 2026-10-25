@@ -9,3 +9,7 @@
 ⍝ — Under static kinds with the int pref at 32, folds, scans and inner products wrap at 32 bits, as arithmetic does. ⌈.+ wraps each sum before comparing it
 a←[2147483647 5]ₓ ⋄ [+/a +\a -/[¯2147483648 1]ₓ ×/a,2ₓ a+.×[1 1]ₓ a⌈.+[1 1]ₓ (•storage +\a).kind]
 [¯2147483644ₓ [2147483647 ¯2147483644]ₓ 2147483647ₓ ¯10ₓ ¯2147483644ₓ 6ₓ "int32"]
+
+⍝ — Decode, polynomial evaluation, the determinant and the permanent of integers wrap at 32 bits, as repeated + and × do
+m←2 2⍴[100000 0 0 100000]ₓ ⋄ [2ₓ⊥40⍴1ₓ [0 100000]ₓ⌻100000ₓ -.×m +.×m]
+[¯1 1410065408 1410065408 1410065408]ₓ

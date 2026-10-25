@@ -464,6 +464,10 @@ impl Value {
     pub(crate) fn positions<P: num_traits::AsPrimitive<i64>>(shape: impl Into<Shape>, bound: usize, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
         with_width!(Width::below(bound), T => T::build(shape, items.map(|i| T::from_i64(i.as_())).collect())).ok_or_else(|| Kind::Length.into())
     }
+    /// Fixed integers of `width`, written straight from `items`. An item that `width` doesn't hold wraps to its low bits.
+    pub(crate) fn fixed_integers<P: num_traits::AsPrimitive<i64>>(shape: impl Into<Shape>, width: Width, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
+        Self::from_storage(shape, Storage::Compact(with_width!(width, T => T::buffer(items.map(|i| T::from_i64(i.as_())).collect()))).fixed(true))
+    }
     /// `positions` from a buffer of them. As 32-bit integers they keep the buffer, with no pass over it.
     pub(crate) fn positions_u32(shape: impl Into<Shape>, bound: usize, data: Vec<u32>) -> Result<Self, ErrorKind> {
         match Width::below(bound) {
@@ -496,8 +500,9 @@ impl Value {
         };
         Self::from_storage(shape, storage)
     }
-    pub(crate) fn from_numeric_buffer(shape: impl Into<Shape>, buffer: Buffer, numeric: Numeric) -> Result<Self, ErrorKind> {
-        if let Some(width) = numeric.fixed { Self::from_storage(shape, Storage::fixed_at(buffer, width)) } else { Self::from_buffer(shape, buffer) }
+    /// An array of `buffer`, as fixed integers of width `fixed` where that's given, and otherwise as `from_buffer` gives it.
+    pub(crate) fn from_buffer_at(shape: impl Into<Shape>, buffer: Buffer, fixed: Option<Width>) -> Result<Self, ErrorKind> {
+        if let Some(width) = fixed { Self::from_storage(shape, Storage::fixed_at(buffer, width)) } else { Self::from_buffer(shape, buffer) }
     }
     /// A frontend buffer imported at its supplied dtype, without integer narrowing.
     pub fn imported_buffer(shape: impl Into<Shape>, buffer: Buffer) -> Result<Self, ErrorKind> {
@@ -668,6 +673,17 @@ impl Value {
             },
         };
         Self::from_storage(self.shape(), Storage::Compact(buffer).fixed(true)).and_then(|v| v.with_layout(self.layout().clone()))
+    }
+    /// `self` as a call under `t` gives it: compact integers wrapped as `Number::wrapped` wraps each one. Other items are unchanged.
+    pub(crate) fn wrapped(self, t: Numeric) -> Result<Self, ErrorKind> {
+        let width = t.integer_width();
+        match self.dtype() {
+            Some(DType::Integer(w)) if t.wrapping() && (t.fixed.is_some() || w.join(width) != width) => {
+                let wrapped = self.to_fixed(width)?;
+                Ok(if t.fixed.is_some() { wrapped } else { wrapped.ordinary() })
+            }
+            _ => Ok(self),
+        }
     }
     /// The width of the floats that hold the items, or of the parts of the complex numbers that do, when compact storage holds them or the value is such an atom.
     pub(crate) fn float_width(&self) -> Option<FloatWidth> { float_width_of(self.dtype()?) }

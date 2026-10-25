@@ -127,25 +127,30 @@ impl Kinds {
     pub(crate) fn name(self) -> &'static str { match self { Self::Dynamic => "dynamic", Self::Static => "static" } }
     /// The kinds that the `kinds` pref calls `name`.
     pub(crate) fn named(name: &str) -> Option<Self> { [Self::Dynamic, Self::Static].into_iter().find(|k| k.name() == name) }
+    /// The width of new floats under these kinds until the `float` pref sets one: 64 bits under dynamic kinds and 32 under static kinds.
+    pub(crate) const fn float_width(self) -> FloatWidth { match self { Self::Dynamic => FloatWidth::F64, Self::Static => FloatWidth::F32 } }
 }
 impl Default for Numeric { fn default() -> Self { Self::DEFAULT } }
 impl Numeric {
     /// Exact comparison at every width, for kernels that compare no floats.
-    pub(crate) const EXACT: Self = Self { mathish: false, tolerance: Tolerance::EXACT, units: 0.0, width: FloatWidth::F64, kinds: Kinds::Dynamic, int: Width::I64, fixed: None };
+    pub(crate) const EXACT: Self = Self { mathish: false, tolerance: Tolerance::EXACT, units: 0.0, width: Kinds::Dynamic.float_width(), kinds: Kinds::Dynamic, int: Width::I64, fixed: None };
     /// The default settings.
     pub(crate) const DEFAULT: Self = Self { mathish: true, tolerance: Tolerance::DEFAULT, ..Self::EXACT };
     /// The settings in force (`settings`).
     #[inline]
     pub(crate) fn current() -> Self { crate::settings::numeric() }
-    /// Applies the `•prefs` setting `key` with `value`. Gives whether `key` is a numeric setting, or why `value` is invalid for it. `•prefs` and a leading header's lexing both apply settings through it.
-    pub(crate) fn set(&mut self, key: &str, value: &Value) -> Result<bool, &'static str> {
+    /// Applies the `•prefs` setting `key` with `value`. Gives whether `key` is a numeric setting, or why `value` is invalid for it. `•prefs` and a leading header's lexing both apply settings through it. `float_set` is whether the `float` pref has set the width (`settings::float_set`). Until it has, `kinds` moves the width to the one it gives new floats (`Kinds::float_width`).
+    pub(crate) fn set(&mut self, key: &str, value: &Value, float_set: &mut bool) -> Result<bool, &'static str> {
         let integer = || value.as_number().and_then(|n| n.integer().ok());
         match key {
             "mathish" => {
                 self.mathish = value.as_number().and_then(|n| n.as_bool()).ok_or("mathish must be Boolean")?;
             }
-            "float" => self.width = integer().and_then(FloatWidth::of_bits).ok_or("float must be 16, 32 or 64")?,
-            "kinds" => self.kinds = crate::keyed::name(value).as_deref().and_then(Kinds::named).ok_or("kinds must be \"dynamic\" or \"static\"")?,
+            "float" => { self.width = integer().and_then(FloatWidth::of_bits).ok_or("float must be 16, 32 or 64")?; *float_set = true; }
+            "kinds" => {
+                self.kinds = crate::keyed::name(value).as_deref().and_then(Kinds::named).ok_or("kinds must be \"dynamic\" or \"static\"")?;
+                if !*float_set { self.width = self.kinds.float_width(); }
+            }
             "int" => self.int = match integer() { Some(32) => Width::I32, Some(64) => Width::I64, _ => return Err("int must be 32 or 64") },
             _ => return Ok(false),
         }
@@ -193,6 +198,12 @@ impl Numeric {
     pub(crate) fn wrapping(self) -> bool { self.fixed.is_some() || self.is_static() }
     pub(crate) fn integer_width(self) -> Width { self.fixed.unwrap_or(self.int) }
     pub(crate) fn with_fixed(self, width: Width) -> Self { Self { fixed: Some(width), ..self } }
+    /// These settings for a call on `values`, with the fixed width that their fixed integers give them (`Promoted::fixed`), and its error for a weak integer that doesn't fit that width.
+    pub(crate) fn for_values<'a>(self, values: impl IntoIterator<Item = &'a Value, IntoIter: Clone>) -> Result<Self, &'static str> {
+        let values = values.into_iter();
+        if !values.clone().any(|v| v.fixed_width().is_some()) { return Ok(self); }
+        Ok(crate::array::Promoted::fixed(values.map(crate::array::Promoted::value))?.map_or(self, |w| self.with_fixed(w)))
+    }
     /// Exact comparison, as `EXACT` gives, under these kinds settings. Integer and Boolean kernels take it.
     pub(crate) fn exact(self) -> Self { Self { mathish: self.mathish, kinds: self.kinds, int: self.int, fixed: self.fixed, ..Self::EXACT } }
     /// The kind that an array of `dtype` computes in. Under static kinds, integers compute at least at the `int` width, whatever width their storage takes, except in a call whose results are the same at every width that holds its arguments (`pervasive::first_kind`). Other dtypes, and every dtype under dynamic kinds, are their own.
@@ -603,6 +614,16 @@ impl Number {
             }
         } else { return Err(Kind::Domain.into()); };
         Ok(Self::fixed(n, width))
+    }
+    /// This exact result of a call under `t`, wrapped where `t` wraps (`Numeric::wrapping`): an integer becomes its low bits at the integer width, as two's complement, and a fixed integer of that width where `t` has one. Booleans, fractions and approximate numbers are unchanged, and so is everything where `t` doesn't wrap.
+    pub(crate) fn wrapped(self, t: Numeric) -> Self {
+        if !t.wrapping() || self.as_bool().is_some() { return self; }
+        let n = match (self.as_integer(), &self.0) {
+            (Some(i), _) => FixedInt::new(i, t.integer_width()).value(),
+            (None, Exact(q, _)) if q.is_integer() => t.wrap(q.numer()),
+            _ => return self,
+        };
+        match t.fixed { Some(width) => Self::fixed(n, width), None if self.as_integer() == Some(n) => self, None => Self::from_integer(n) }
     }
     pub fn from_bool(b: bool) -> Self { Self(Boolean(b, false)) }
     /// Whether this is zero. Exact fractions are normalised, so none is zero.

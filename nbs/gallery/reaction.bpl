@@ -16,7 +16,7 @@ step←{
 ab←[1-0.5×seed;(0.25×seed)+0.02×¿[n n]⍴0]
 [dark light]←[0.02 0.03 0.1⋄1 0.75 0.35]
 frame←{
-  ⍵≥400?;
+  ⍵≥400ₓ?;
   ab⊢←step⍣60 ab
   t←0⌈1⌊3×1⊃ab
   picture←2⍉[1-t⋄t] +.× [dark⋄light]

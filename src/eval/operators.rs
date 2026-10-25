@@ -1568,6 +1568,14 @@ pub(crate) fn in_turn(operand: &Function, kind: FoldKind, axis: Option<&Value>, 
     if axes.is_singleton() { return Ok(None); }
     let mut axes = crate::primitive::axes(&axes, right.shape().len())?;
     axes.sort_unstable_by(|a, b| b.cmp(a));
+    // Two axes of a pending copy of windows fold in one pass over its source, where folding one at a time would build the first fold's result. A batch's whole folds the same way.
+    if let ([a, b], Some(p)) = (axes.as_slice(), operand.dyadic_primitive()) {
+        if let Some(folded) = crate::batch::fold_windows(right, p, kind, [*b, *a]) { return folded.map(Some); }
+        if let Some(folded) = crate::fusion::fold_windows(right, p, kind, [*b, *a]) {
+            let others = (0..right.shape().len()).filter(|i| i != a && i != b);
+            return Ok(Some(folded.with_layout(right.layout().axes(others)).described("invalid fold keys")?));
+        }
+    }
     let mut folded = right.clone();
     for a in axes { folded = fold(operand, kind, Some(&Value::integer(a as i64)), None, &folded, span)?; }
     Ok(Some(folded))

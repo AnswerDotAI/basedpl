@@ -5,7 +5,7 @@ Comment. Keys: `Alt-o c`. Hanzi: `注`
 `⍝` comments to end of line.
 
 ```text
-v←⍳10     ⍝ first ten integers
+v←⍳10ₓ    ⍝ first ten integers
 +/v       ⍝ sum
 ```
 

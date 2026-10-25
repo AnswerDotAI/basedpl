@@ -2,7 +2,7 @@ use crate::execution::check;
 use rustymath::{buffer::FloatWidth, error::Kind, with_float_width};
 use crate::{
     agreement::{Agree, Agreement}, array::{generated_len, Cells, Layout}, element::{read_as, Float}, 
-    number::{with_field, Arithmetic, Field, Math}, Error, Described, Number, Value
+    number::{with_field, Arithmetic, Field, Math, Numeric}, Error, Described, Number, Value
 };
 
 fn int(n: usize) -> Number { Number::from_integer(n as i64) }
@@ -189,12 +189,13 @@ fn evaluated(left: &Value, right: &Value) -> Result<Option<Value>, Error> {
     })
 }
 
-/// `⌻Y` finds the roots of each polynomial in `Y`, and `C⌻X` evaluates each polynomial in `C` at `X`.
+/// `⌻Y` finds the roots of each polynomial in `Y`, and `C⌻X` evaluates each polynomial in `C` at `X`. An integer value wraps where the call wraps (`Number::wrapped`), as repeated `+` and `×` would wrap it.
 pub(crate) fn call(left: Option<&Value>, right: &Value) -> Result<Value, Error> {
     let Some(left) = left else { return each(right, |p| p.roots()) };
     if let Some(y) = evaluated(left, right)? { return Ok(y); }
     let (cells, agreement) = polynomial_cells(left, right.layout())?;
     let polynomials = parsed(&cells)?;
+    let settings = Numeric::current().for_values([left, right]).map_err(Error::domain)?;
     let mut results = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
         check()?;
@@ -206,7 +207,7 @@ pub(crate) fn call(left: Option<&Value>, right: &Value) -> Result<Value, Error> 
         else { right.prototype() };
         let missing;
         let polynomial = if let Some(j) = index { &polynomials[j] } else { missing = Polynomial::parse(&point.fill())?; &missing };
-        results.push(Value::number(polynomial.evaluate(&coordinates(&point)?)?).unwrap());
+        results.push(Value::number(polynomial.evaluate(&coordinates(&point)?)?.wrapped(settings)).unwrap());
     }
     if agreement.layout.shape().is_empty() { return Ok(results.remove(0)); }
     agreement.layout.assemble(&results[..agreement.len], &results[0]).described("polynomial result exceeds array limits")

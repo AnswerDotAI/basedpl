@@ -140,7 +140,7 @@ fn determinant(right: &Value) -> Option<Result<Bound, Error>> {
     crate::primitive::determinant(right, n).transpose().map(|d| d.map(Bound::from))
 }
 
-/// Monadic `+.×` of a square matrix of fewer than 64 rows of numbers, by rustymath's `permanent_with` at the matrix's own field, which `primitive::determinant` also reads.
+/// Monadic `+.×` of a square matrix of fewer than 64 rows of numbers, by rustymath's `permanent_with` at the matrix's own field, which `primitive::determinant` also reads. An integer permanent wraps where the call wraps (`Number::wrapped`).
 fn permanent(right: &Value) -> Option<Result<Bound, Error>> {
     use crate::number::{read, with_field, Domain, Field};
     if crate::transform::carried(None, right) { return None; }
@@ -148,7 +148,8 @@ fn permanent(right: &Value) -> Option<Result<Bound, Error>> {
     if m != n || n >= 64 { return None; }
     let (domain, width) = Domain::of_arrays(&[right])?;
     Some((|| {
-        let p = with_field!(domain, [Exact, Single, Double, Complex], T => rustymath::linalg::exact::permanent(&read::<T>(right)?, n)?.number(width));
+        let settings = crate::number::Numeric::current().for_values([right]).map_err(Error::domain)?;
+        let p = with_field!(domain, [Exact, Single, Double, Complex], T => rustymath::linalg::exact::permanent(&read::<T>(right)?, n)?.number(width).wrapped(settings));
         Ok(Bound::from(Value::Number(p)))
     })())
 }

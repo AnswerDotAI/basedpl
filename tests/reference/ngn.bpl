@@ -2262,7 +2262,7 @@ S5
 ["#                               "⋄"##                              "⋄"# #                             "⋄"####                            "⋄"#   #                           "⋄"##  ##                          "⋄"# # # #                         "⋄"########                        "⋄"#       #                       "⋄"##      ##                      "⋄"# #     # #                     "⋄"####    ####                    "⋄"#   #   #   #                   "⋄"##  ##  ##  ##                  "⋄"# # # # # # # #                 "⋄"################                "⋄"#               #               "⋄"##              ##              "⋄"# #             # #             "⋄"####            ####            "⋄"#   #           #   #           "⋄"##  ##          ##  ##          "⋄"# # # #         # # # #         "⋄"########        ########        "⋄"#       #       #       #       "⋄"##      ##      ##      ##      "⋄"# #     # #     # #     # #     "⋄"####    ####    ####    ####    "⋄"#   #   #   #   #   #   #   #   "⋄"##  ##  ##  ##  ##  ##  ##  ##  "⋄"# # # # # # # # # # # # # # # # "⋄"################################"]
 
 ⍝ ngn/examples/3-primes:1 —
-(1=+⌿0=a|⊗a)#a←2↓⍳100ₓ
+(1ₓ=+⌿0ₓ=a|⊗a)#a←2↓⍳100ₓ
 [2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97]ₓ
 
 ⍝ ngn/examples/4-life:1 — Conway's game of life This example was inspired by the impressive demo at https://www.youtube.com/watch?v=a9xAKttWgP4 0 1 1 1 1 0 0 1 0; Pure glyph program with explicit-output wrapper removed; Dyalog and Rust agree; Remove shebang/comments and return the final value; Translate character subscripts and Life seed positions to origin 0; Insert spaces before negative vector items
@@ -2284,7 +2284,7 @@ t←⌽r⊤⍨8⍴2
 ["        #        "⋄"       ###       "⋄"      ##  #      "⋄"     ## ####     "⋄"    ##  #   #    "⋄"   ## #### ###   "⋄"  ##  #    #  #  "⋄" ## ####  ###### "⋄"##  #   ###     #"]
 
 ⍝ ngn/examples/6-queens:1 — Rotate and reflect the accumulator in basedpl's left scan
-queens←{ search←{ (⊂⍬)∊⍵?0⍴⊂⍬;0=⍴⍵?rmdups ⍺;[hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺↣,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←↦⍵ × ⊂¯1 0 1 ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares }
+queens←{ search←{ (⊂⍬)∊⍵?0⍴⊂⍬;0ₓ=⍴⍵?rmdups ⍺;[hd tl]←[↑⍵ 1↓⍵] ⋄ next←⍺↣,¨hd ⋄ rems←hd free¨ ⊂tl ⋄ ,/ next ∇¨ rems } ⋄ cvex←↦⍵ × ⊂[¯1 0 1]ₓ ⋄ free←{⍵~¨⍺+(⍴⍵)↑cvex} ⋄ rmdups←{ rots←{{⍒⍺}\4#⊂⍵} ⋄ refs←{{⍋⍺}\2#⊂⍵} ⋄ best←{↑⍋⊃⍵ ⊃ ⍵} ⋄ syms←, ⊃ refs¨ rots ⍵ ⋄ (⍵≡best syms)⊃[⍬ ,⊂⍵] } ⋄ fmt←{ chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟" ⋄ expd←1↓,⊃⍺⍴⊂0 1 ⋄ ⊃¨↓↓expd#⁻¹⍠¯1chars } ⋄ squares←⊂⍳⌈⍵÷2 , 1↓⍵⍴⊂⍳⍵ ⋄ ⍵ fmt ⍬ search squares }
 queens5
 ⍝ =>
 [["⍟ · · · ·"⋄"· · ⍟ · ·"⋄"· · · · ⍟"⋄"· ⍟ · · ·"⋄"· · · ⍟ ·"] ["· ⍟ · · ·"⋄"· · · · ⍟"⋄"· · ⍟ · ·"⋄"⍟ · · · ·"⋄"· · · ⍟ ·"]]

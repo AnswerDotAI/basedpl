@@ -439,7 +439,7 @@ impl Selection {
         self.write_into(&mut array, values, span)?;
         Ok(array)
     }
-    /// Replaces each target of `array` with its value, in place. A target at a fill writes nothing. Every check comes before the first write, so an error leaves `array` unchanged. A later target at the same position wins. Compact storage widens for wider numbers. Exact and approximate numbers stay apart, and so do Booleans and other numbers, as in a literal (`Widening::Items`), so writing one kind among another leaves the array mixed. Mixed storage stays mixed. While `•explain` records, a write that leaves compact storage mixed records the call (`explain::mixed`).
+    /// Replaces each target of `array` with its value, in place. A target at a fill writes nothing. Every check comes before the first write, so an error leaves `array` unchanged. A later target at the same position wins. Compact storage widens for wider numbers, but a weak integer that doesn't fit fixed integers is DOMAIN, as in arithmetic (`Promoted::fits`). Exact and approximate numbers stay apart, and so do Booleans and other numbers, as in a literal (`Widening::Items`), so writing one kind among another leaves the array mixed. Mixed storage stays mixed. While `•explain` records, a write that leaves compact storage mixed records the call (`explain::mixed`).
     pub(crate) fn write_into(&self, array: &mut Value, values: &Value, span: &Span) -> Result<(), Error> {
         if !crate::explain::recording() { return self.write_targets(array, values, span); }
         let numeric = crate::number::Numeric::current();
@@ -450,6 +450,7 @@ impl Selection {
     }
     fn write_targets(&self, array: &mut Value, values: &Value, span: &Span) -> Result<(), Error> {
         let values = self.checked(values)?;
+        crate::array::Promoted::fits([array, &values])?;
         // The scatter skips a fill offset itself. Paths, and the targets of an atom, drop theirs here.
         if array.is_atom() || matches!(self.targets, Targets::Paths(_)) {
             if let Some((kept, values)) = self.without_fills(&values, span)? { return kept.write_targets(array, &values, span); }

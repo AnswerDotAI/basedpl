@@ -182,6 +182,7 @@ The map calls its operand once for each cell instead where the operand:
 - calls a primitive that can't run on all the cells at once
 - has a guard on a cell's value whose two sides give results of different kinds or shapes, write to a name outside the dfn, or call the dfn again
 - combines each cell with an array that every cell shares, where repeating that array for every cell would hold more than about 2 million items and 4 times the items of the call's arguments, and the array alone holds more than about a million items
+- has an argument whose copy for every cell would pass the size limit for one array
 
 Where such a shared array is smaller, the map calls its operand once on each chunk of cells instead, so that each call repeats the array into at most about 2 million items, and joins the chunks' results.
 

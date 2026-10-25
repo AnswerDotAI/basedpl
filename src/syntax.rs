@@ -441,13 +441,14 @@ fn header(tokens: &[Token], aliases: &mut bool) -> bool {
     let [nodes] = statements.as_slice() else { return false };
     let Some(record) = prefs_record(nodes) else { return false };
     let NodeKind::ArrayLiteral { cells, .. } = &record.kind else { unreachable!() };
-    let mut numeric = Numeric::current();
+    let (mut numeric, mut float_set) = (Numeric::current(), crate::settings::float_set());
     for nodes in cells {
         let [Node { kind: NodeKind::Literal(key), .. }, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Keys)), .. }, Node { kind: NodeKind::Literal(value), .. }] = nodes.as_slice() else { continue };
         let Some(key) = crate::keyed::name(key) else { continue };
-        if &*key == "hanzi_aliases" { if let Ok(on) = value.boolean() { *aliases = on; } } else { let _ = numeric.set(&key, value); }
+        if &*key == "hanzi_aliases" { if let Ok(on) = value.boolean() { *aliases = on; } } else { let _ = numeric.set(&key, value, &mut float_set); }
     }
     crate::settings::set_numeric(numeric);
+    crate::settings::set_float_set(float_set);
     true
 }
 

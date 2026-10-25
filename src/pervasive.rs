@@ -1259,8 +1259,8 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
         let (buffer, order) = mapped_fold(p, v, axis, numeric).or_else(|| Some((native_fold(p, v.view()?, lanes.dims(), None, lanes.len, numeric)?, None)))?;
         // A large copy through `order` stays pending, for the next fold to read through.
         let result = match order {
-            None => settled(Value::from_numeric_buffer(shape, buffer, numeric).ok()?, v.dtype(), numeric),
-            Some(tables) => crate::primitive::copied(&settled(Value::from_numeric_buffer(vec![buffer.len()], buffer, numeric).ok()?, v.dtype(), numeric), crate::array::Layout::from(shape), &tables).ok()?,
+            None => settled(Value::from_buffer_at(shape, buffer, numeric.fixed).ok()?, v.dtype(), numeric),
+            Some(tables) => crate::primitive::copied(&settled(Value::from_buffer_at(vec![buffer.len()], buffer, numeric.fixed).ok()?, v.dtype(), numeric), crate::array::Layout::from(shape), &tables).ok()?,
         };
         if let Some(seed) = seed {
             let agreement = Agreement::new(result.layout(), seed.layout()).ok()?;
@@ -1270,8 +1270,7 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
 }
 pub(crate) fn promoted(p: Primitive, left: Option<&Value>, right: &Value, numeric: Numeric) -> Result<Numeric, &'static str> {
     if matches!(p, Primitive::Exact(_) | Primitive::Compare(_)) { return Ok(numeric); }
-    if left.is_none_or(|x| x.fixed_width().is_none()) && right.fixed_width().is_none() { return Ok(numeric); }
-    crate::array::Promoted::fixed(left.into_iter().chain([right]).map(crate::array::Promoted::value)).map(|fixed| fixed.map_or(numeric, |w| numeric.with_fixed(w)))
+    numeric.for_values(left.into_iter().chain([right]))
 }
 
 /// The shortest run of consecutive items that `mapped_fold` reads through a pending copy's map. Reading runs in place ties with gathering them at 64 items and wins from 256 (`rw_`'s timings), and a stencil's 3-item rows folded about 20% slower read in place than from a stored copy.
@@ -1865,6 +1864,11 @@ fn native_fold(p: Primitive, data: View<'_>, dims: [usize; 3], tail: Option<View
 /// The folds by `p` of each window of `width` rows along the middle axis of `data`, an array of shape `dims`, by the reductions of `with_reduction!`. `None` for any other function or storage, or where a total doesn't fit.
 pub(crate) fn sliding(p: Primitive, data: View<'_>, dims: [usize; 3], width: usize, numeric: Numeric) -> Option<Buffer> {
     with_reduction!(p, data, width, numeric.wrapping(), |data, R, kept| fitting(reduce::sliding::<_, R>(data, dims, width), kept))
+}
+
+/// The folds by `p` of each window along axes 1 and 3 of `data`, an array of shape `dims`, as rustymath's `sliding_2d` folds them, with each axis's window width and the positions between windows' starts. `None` for any other function or storage, for a window wider than rustymath folds directly, or where a total doesn't fit.
+pub(crate) fn sliding_2d(p: Primitive, data: View<'_>, dims: [usize; 5], widths: [usize; 2], every: [usize; 2], numeric: Numeric) -> Option<Buffer> {
+    with_reduction!(p, data, widths[0] * widths[1], numeric.wrapping(), |data, R, kept| reduce::sliding_2d::<_, R>(data, dims, widths, every).and_then(|folds| fitting(folds, kept)))
 }
 
 /// The row of the first item that gives the maximum, for `⌈`, or the minimum, for `⌊`, of each of the folds that `of` chooses along the middle axis of `data`, an array of shape `dims`. Each row counts from the start of its lane. `None` for any other function, and for storage other than Booleans, integers and 32- and 64-bit floats.

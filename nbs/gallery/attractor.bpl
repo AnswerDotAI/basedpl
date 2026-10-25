@@ -16,7 +16,7 @@ scale←460÷⌈/hi-lo
 centre←lo+hi ÷ 2
 glow←2⍴0.012×(≢∪⍉⌊scale×xy÷10)÷830
 frame←{
-  ⍵≥1200?;
+  ⍵≥1200ₓ?;
   new←params map xy
   hue←⊢/∧∨⁻¹⍉new-xy
   colour←0.55+0.45×2○hue+⊗0 2.1 4.2 ,⍤1 glow

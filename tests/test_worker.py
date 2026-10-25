@@ -36,6 +36,8 @@ def test_worker_bindings_calls_and_echo():
     assert fresh('⎕←1 ⋄ 2') == '1\n2'
     with pytest.raises(BplError) as e: fresh('1÷"a"')
     assert e.value.kind == 'DOMAIN'
+    rows = fresh(['(•prefs ⍬).kinds', '1÷"a"'], prefs='•prefs ["kinds":"static"]')
+    assert rows[0].output == 'static' and rows[0].error is None and rows[1].error.kind == 'DOMAIN'
 
 def test_worker_keyed_arrays():
     with Worker() as w:

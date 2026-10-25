@@ -290,6 +290,16 @@ fn along(p: Primitive, axis: usize, x: Option<Arg<'_>>, y: Arg<'_>, level: u64, 
     Some(p.call_axis(x.map(Arg::all), &b.whole, Some(axis + b.frame), span).and_then(|whole| result(level, whole, b.frame, || true, Stop::refusing(level, p))))
 }
 
+/// The fold of each cell along two of its axes, where the batch's whole is a pending copy of windows: one fold of the whole along those axes past its frame, in one pass over the windows' source (`fusion::fold_windows`). `None` where `value` isn't a batch of the running level, or where the whole doesn't take that route.
+pub(crate) fn fold_windows(value: &Value, p: Primitive, kind: crate::primitive::FoldKind, axes: [usize; 2]) -> Option<Result<Value, Error>> {
+    let level = session().batch_level()?;
+    let Arg::Batched(b) = arg(value, level) else { return None };
+    let axes = axes.map(|a| a + b.frame);
+    let whole = crate::fusion::fold_windows(&b.whole, p, kind, axes)?;
+    let kept = (0..b.whole.shape().len()).filter(|a| !axes.contains(a));
+    Some(whole.with_layout(b.whole.layout().axes(kept)).described("invalid fold keys").and_then(|whole| result(level, whole, b.frame, || true, Stop::new(level, Cause::Rule))))
+}
+
 /// The call of system function `f`, or of its inverse, `function`, as batched run `level` handles it. A random draw runs its own code, which draws for each cell as `¿` does (`distribution::drawn_cells`). Any other system function runs once for each cell, on that cell's arguments, as it runs once for each item of an argument that holds several (`system::Item`), and the cells' results join into one batch (`each_cell`). Code in it that acts stops the run where it acts (`Context::acts`). So does an argument that holds the run's batches inside a nested array, because a cell's call would read them whole.
 fn system(function: &Function, f: &crate::system::SystemFunction, left: Option<&Value>, right: &Value, level: u64, span: &Span) -> Option<Result<Value, Error>> {
     if f.call.draws() { return None; }

@@ -79,12 +79,14 @@ fn prime(selector: &Number, n: BigInt) -> Result<Value, Error> {
     }
 }
 
+/// `⍭` and `⨸`, as `factor` selects. Monadic `⨸` of fixed integers gives fixed integers of their width, which holds each factor.
 pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value) -> Result<Value, Error> {
     if !factor && left.is_none() { return nth_primes(right); }
-    each_cell(left, right, |x, n| match factor {
+    let result = each_cell(left, right, |x, n| match factor {
         true => factor_result(x, n.to_biguint().ok_or_else(|| Error::domain("factorisation requires positive integers"))?),
         false => prime(x.unwrap(), n),
-    })
+    })?;
+    match right.fixed_width() { Some(width) if factor && left.is_none() => result.to_fixed(width).described("invalid factors"), _ => Ok(result) }
 }
 
 /// `⍭⁻¹`: the number of primes below each item, which is a prime's index.

@@ -68,10 +68,10 @@ avg 1 2 3 4
 
     2.5
 
-To see how these ideas express an algorithm, start from “a prime has exactly two positive divisors”. Form all remainders of 1 to 50 (`|⊗⍨↦50`), count the zeros down each column (`+⌿0=`), and find the positions (`⍸`) whose count is two. Positions count from 0. `≥` increments each position to recover its number:
+To see how these ideas express an algorithm, start from “a prime has exactly two positive divisors”. Form all remainders of 1 to 50 (`|⊗⍨↦50ₓ`), count the zeros down each column (`+⌿0ₓ=`), and find the positions (`⍸`) whose count is two. Positions count from 0. `≥` increments each position to recover its number:
 
 ``` bpl
-≥⍸2=+⌿0=|⊗⍨↦50
+≥⍸2ₓ=+⌿0ₓ=|⊗⍨↦50ₓ
 ```
 
     [2 3 5 7 11 13 17 19 23 29 31 37 41 43 47]ₓ
@@ -155,7 +155,7 @@ A vector of counts keeps the history: one state for each count, where count 0 is
 Under (`@`) transforms the argument, applies a function, then reverses the transformation. Scale by ten, floor, and scale back to round down to tenths:
 
 ``` bpl
-⌊@ 10× 1.25 2.78
+⌊@(10×)1.25 2.78
 ```
 
     1.2 2.7

@@ -25,12 +25,12 @@ hvw←{+/vv×lossw∂ ⍵}
 ⍝ One Game of Life update from a 3 by 3 neighbourhood.
 life←{
   s←+/,⍵
-  (s=3)∨(1 1⌷⍵)∧s=4
+  (s=3ₓ)∨(1 1⌷⍵)∧s=4ₓ
 }
 ⍝ One Game of Life update over the whole grid.
 lifew←{
   s←+/+/¯3 ¯3↕⍵
-  (s=3)∨⍵∧s=4
+  (s=3ₓ)∨⍵∧s=4ₓ
 }
 sq←{⍵×⍵}
 sq∂←{⍺×3×⍵}

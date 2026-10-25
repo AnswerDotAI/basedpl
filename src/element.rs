@@ -13,7 +13,7 @@ pub(crate) trait Stored: Element {
     fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Compact(Self::buffer(data))).ok() }
     /// An array of `data` under `numeric`'s kinds. Only complex numbers build differently: dynamic kinds narrow them to floats where no item has an imaginary part, and static kinds keep them complex.
     fn build_at(shape: impl Into<crate::Shape>, data: Vec<Self>, numeric: Numeric) -> Option<Value> {
-        if numeric.fixed.is_some() { Value::from_numeric_buffer(shape, Self::buffer(data), numeric).ok() } else { Self::build(shape, data) }
+        if numeric.fixed.is_some() { Value::from_buffer_at(shape, Self::buffer(data), numeric.fixed).ok() } else { Self::build(shape, data) }
     }
     /// An array of `data`, with integers moved to the narrowest width that holds them, in a pass over them. Other element types are stored as `build` stores them.
     fn build_narrowed(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Self::build(shape, data) }

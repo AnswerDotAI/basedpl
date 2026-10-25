@@ -239,9 +239,10 @@ _SPEED = _ROOT/'tests'/'speed'
 _BUDGETS = ('macos', 'linux', 'wasm')
 
 def _platform():
-    "This machine's platform, whose native budget column it checks, as `rustymath::timing::NATIVE_COLUMN` picks it."
+    "This machine's platform, whose native budget column it checks, as `rustymath::timing::NATIVE_COLUMN` picks it, or `None` on a machine with no budgets, such as Linux on Arm."
     import rustymath
-    return _BUDGETS[rustymath.timing().column]
+    column = rustymath.timing().column
+    return None if column is None else _BUDGETS[column]
 
 _PKG = _SPEED.parent/'wasm-pkg.mjs'
 
@@ -315,7 +316,7 @@ def _program(code, n, setup):
     "BPL that runs `setup`, then `code` once with `N` set to `n`, on one thread, and ends without displaying its result. `setup` comes first so that a `•prefs` call at its start still applies before the program is parsed, which fixes each literal's float width."
     return f'•prefs ["threads":1]\n{setup}\nN←{n}\nr←{code}\n0'
 
-# The instructions that a case retires before the lowest value of `N` that `instructions` picks, and between successive values. A case that allocates an array at each step retires a few tens of millions more instructions over its first steps, while the allocator settles. `{↑[⍵ 1]}⍣N⊢0` counts the same from 3×10⁴ steps on, about 2×10⁸ instructions, and `{fib 10}⍣N⊢0` from 30 steps on. Each process pays a different warm-up, up to about 5×10⁶ instructions, which moves a slope over 5×10⁸ instructions by under 1%. Some cases also pay a one-off cost once `N` passes a size: `≢•ucs N⍴"ab" "cde"` retires about 5×10⁶ more instructions from about 131,350 items on.
+# The instructions that a case retires before the lowest value of `N` that `instructions` picks, and between successive values. A case that allocates an array at each step retires a few tens of millions more instructions over its first steps, while the allocator settles. `{↑[⍵ 1]}⍣N⊢0` counts the same from 3×10⁴ steps on, about 2×10⁸ instructions, and `{fib 10ₓ}⍣N⊢0` from 30 steps on. Each process pays a different warm-up, up to about 5×10⁶ instructions, which moves a slope over 5×10⁸ instructions by under 1%. Some cases also pay a one-off cost once `N` passes a size: `≢•ucs N⍴"ab" "cde"` retires about 5×10⁶ more instructions from about 131,350 items on.
 _SETTLE, _SPAN = 5e8, 5e8
 
 # A case that names `N` outside its strings says itself how it repeats. `_stepped` runs any other case once per step.
@@ -508,7 +509,7 @@ def _or_dash(x, spec): return '-' if x is None else format(x, spec)
 def _over(cost, budget): return budget is not None and cost > budget
 
 class SpeedCosts(list):
-    "Each case's cost and the budget that limits it, as `(section, code, cost, budget, ns)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. `ns` is the case's time for each item in nanoseconds, or `None` where the timing doesn't give it. Times compare across a change to `rustymath::timing::COPIES`, where costs don't. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build. `copies` holds the copy lines that a log gives, as `(items, bytes, ns per item, stored)` rows, which say whether `rustymath::timing::COPIES` held that machine's copy time or the test measured it."
+    "Each case's cost and the budget that limits it, as `(section, code, cost, budget, ns)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. `ns` is the case's time for each item in nanoseconds, or `None` where the timing doesn't give it. Times compare across a change to `rustymath::timing::COPIES`, where costs don't. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build or a machine with no budgets. `copies` holds the copy lines that a log gives, as `(items, bytes, ns per item, stored)` rows, which say whether `rustymath::timing::COPIES` held that machine's copy time or the test measured it."
     def __init__(self, rows=(), cpu=None, platform=None, copies=()):
         super().__init__(rows)
         self.cpu, self.platform, self.copies = cpu, platform, list(copies)
@@ -540,17 +541,17 @@ def speed_costs(
         if p.stderr: sys.stderr.write(p.stderr)
         rows = json.loads(p.stdout)
     build = _platform() if wasm is None else 'wasm'
-    i = _BUDGETS.index(build)
-    rows = ((c['section'], c['label'], c['cost'], float(c['budgets'][i]) if len(c['budgets']) > i else None, c['seconds']*1e9) for c in rows)
+    i = None if build is None else _BUDGETS.index(build)
+    rows = ((c['section'], c['label'], c['cost'], float(c['budgets'][i]) if i is not None and len(c['budgets']) > i else None, c['seconds']*1e9) for c in rows)
     return SpeedCosts(rows, platform=None if wasm else build)
 
 
-_LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+)(?:, (?P<ns>[\d.]+) ns)?$')
+_LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+|-)(?:, (?P<ns>[\d.]+) ns)?$')
 _COPY = re.compile(r'^(?:\S*Z )?(?:# )?copy of (?P<items>\d+) (?P<bytes>\d+)-byte items: (?P<ns>[\d.]+) ns an item, (?P<source>stored for|measured on) (?P<cpu>[^\r\n]+?)(?:: add it to rustymath::timing::COPIES)?[ \t]*$', re.M)
 
 def logged_costs(
     log, # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Test` or `Speed` workflow, or the path of a file that holds it
-    platform='linux' # The platform whose native budgets the log's costs were checked against: 'linux' for CI's runner, or 'macos' for a Mac
+    platform='linux' # The platform whose native budgets the log's costs were checked against: 'linux' for CI's runner, 'macos' for a Mac, or `None` for a machine with no budgets, such as Linux on Arm, whose log's budgets don't apply
 ):
     "The rows that `speed_costs` gives, read from `log`, with the CPU that its copy lines name as their `cpu`, `platform`, and the log's copy lines as `copies`. A case that the log times more than once, as after a retry, gives its lowest cost, with that timing's time for each item where the log prints one."
     if isinstance(log, Path): log = log.read_text()
@@ -559,14 +560,14 @@ def logged_costs(
     rows = {}
     for m in filter(None, map(_LOGGED.match, log.splitlines())):
         code = re.sub(r'\\([\\#])', r'\1', m['code']) if m['tap'] else m['code'] # Node's TAP diagnostics escape `\` and `#`
-        row = (m['section'], code, float(m['cost']), float(m['budget']), m['ns'] and float(m['ns']))
+        row = (m['section'], code, float(m['cost']), None if platform is None or m['budget'] == '-' else float(m['budget']), m['ns'] and float(m['ns']))
         if row[:2] not in rows or row[2] < rows[row[:2]][2]: rows[row[:2]] = row
     copies = list(dict.fromkeys((int(m['items']), int(m['bytes']), float(m['ns']), m['source'] == 'stored for') for m in found))
     return SpeedCosts(rows.values(), cpu, platform, copies)
 
 CHANGE = 0.2
 class CostChanges(list):
-    "The cases that `compare_costs` reports, as `(section, code, before, after, budget, change)` rows. `before` and `after` are costs, or `None` for a case that `time_cases` found too quick to time. `change` is the fractional change in the case's time for each item where both runs give one, and in its cost otherwise, so it holds across a change to `rustymath::timing::COPIES`. Cases over their budget in `after` come first, then cases whose change is more than `CHANGE`, largest first. `before` and `change` are `None` for a case that the earlier run didn't time, and `budget` is `None` for a case with no budget."
+    "The cases that `compare_costs` reports, as `(section, code, before, after, budget, change)` rows. `before` and `after` are costs, or `None` for a case that `time_cases` found too quick to time. `change` is the fractional change in the case's time for each item where both runs give one, and in its cost otherwise, so it holds across a change to `rustymath::timing::COPIES`. Cases over their budget in `after` come first, then cases whose change is more than `CHANGE`, largest first, then cases that only one run timed, as when a case's code changed between the runs. `before` is `None` for a case that only the later run timed, and `after` for one that only the earlier run timed, and `change` is `None` for both. `budget` is `None` for a case with no budget."
     def __repr__(self): return '\n'.join(f'{_or_dash(b, ".2f"):>9} {_or_dash(a, ".2f"):>9} {_or_dash(d, "+.0%"):>6} {_or_dash(budget, "g"):>9} {"over" if _over(a, budget) else "":4}  {s + " " if s else ""}{c}' for s, c, b, a, budget, d in self)
 
 def _comparable(x, platform):
@@ -579,15 +580,19 @@ def compare_costs(
     after:Annotated[SpeedCosts|Costs|str|Path, {'type':Path}], # The later run, in any of `before`'s forms
     platform='linux' # The platform whose native budgets a log's costs were checked against, as `logged_costs` takes it
 ):
-    "Each case over its budget in `after`, and each case whose time for each item moved by more than `CHANGE` from `before` in either direction, or whose cost did where either run doesn't give the time."
+    "Each case over its budget in `after`, each case whose time for each item moved by more than `CHANGE` from `before` in either direction, or whose cost did where either run doesn't give the time, and each case that only one of the runs timed."
     before, after = (_comparable(x, platform) for x in (before, after))
     old = {(s, c): (cost, ns) for s, c, cost, _, ns in before}
-    rows = []
+    rows, only = [], []
     for s, c, cost, budget, ns in after:
-        cost0, ns0 = old.get((s, c), (None, None))
+        if (s, c) not in old: only.append((s, c, None, cost, budget, None)); continue
+        cost0, ns0 = old.pop((s, c))
         rows.append((s, c, cost0, cost, budget, ns/ns0 - 1 if ns and ns0 else cost/cost0 - 1 if cost0 else None))
+    only += [(s, c, cost0, None, None, None) for (s, c), (cost0, _) in old.items()]
     def moved(row): return abs(row[5] or 0)
-    return CostChanges(sorted((r for r in rows if _over(r[3], r[4]) or moved(r) > CHANGE), key=lambda r: (not _over(r[3], r[4]), -moved(r))))
+    def over(row): return _over(row[3], row[4])
+    changed = [r for r in rows if over(r) or moved(r) > CHANGE] + [r for r in only if over(r)]
+    return CostChanges(sorted(changed, key=lambda r: (not over(r), -moved(r))) + [r for r in only if not over(r)])
 
 def _run_costs(cmd, path, timeout, native=False, env=None):
     "The rows that `logged_costs` reads from what `cmd` prints, run in the package at `path` with `<NAME>_COSTS` set. A case over its budget still gives its row."

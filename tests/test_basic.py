@@ -21,8 +21,8 @@ def test_static_kinds_read_under_the_session_settings():
     try:
         z = bpl('•prefs ["kinds":"static"] ⋄ 0j1 1j0×1')
         assert isinstance(z.py[1], np.complexfloating) and z.py[1] == 1
-        assert z.bpl == '0ⱼ1 1ⱼ0'
-        assert bpl('(•storage x).kind', x=1+0j).py == 'complex128'
+        assert z.bpl == '[0ⱼ1 1ⱼ0]ₛ'
+        assert bpl('(•storage x).kind', x=1+0j).py == 'complex64'
         ints = bpl('•prefs ["int":32] ⋄ ⍳5ₓ')
         assert ints.np.dtype == np.int32 and ints.own().dtype == np.int32
     finally: bpl('•prefs ["kinds":"dynamic" "int":64]')

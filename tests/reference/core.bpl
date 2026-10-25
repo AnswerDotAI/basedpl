@@ -628,7 +628,7 @@ f←{⍺←0 ⋄ ⍺=1?"DOMAIN"::0 ⋄ 0?⍬ ; ⍵≤0?0 ; 0 f ⍵-1} ⋄ [1 f 1
 ∨1r3   ⍝ 1r3 0ₓ
 
 ⍝ — A Boolean's parts stay Boolean, with `$f` imaginary parts
-∨ 1 0=1   ⍝ [$t $f⋄$f $f]
+∨ $t $f   ⍝ [$t $f⋄$f $f]
 
 ⍝ — Magnitude and phase, in radians
 ∧3j4 0j1   ⍝ [5 0.9272952180016122⋄1 1.5707963267948966]
@@ -1242,13 +1242,13 @@ r←["a":1 "b":2 "c":3]
 0 1 2⍚[⊢ {[⍵⋄]} 0] [r⋄r⋄r]
 
 ⍝ — The selector's axes pair with the argument's by name, and cells of the argument's rank return to its axes
-m←["i":2 "j":3]⍴⍳6ₓ ⋄ {4<+⌿⍵}⍚[⊢ -] m   ⍝ ["i":2 "j":3]⍴[0 ¯1 ¯2 3 ¯4 ¯5]ₓ
+m←["i":2 "j":3]⍴⍳6ₓ ⋄ {4ₓ<+⌿⍵}⍚[⊢ -] m   ⍝ ["i":2 "j":3]⍴[0 ¯1 ¯2 3 ¯4 ¯5]ₓ
 
 ⍝ — Cells of another rank keep the selector's axes first
-m←["i":2 "j":3]⍴⍳6ₓ ⋄ {4<+⌿⍵}⍚[+/ ⌈/] m   ⍝ (["j":3]⍴3 4 5)ₓ
+m←["i":2 "j":3]⍴⍳6ₓ ⋄ {4ₓ<+⌿⍵}⍚[+/ ⌈/] m   ⍝ (["j":3]⍴3 4 5)ₓ
 
 ⍝ — An empty frame along a named axis keeps the argument's axes in their places
-⍴{4<+⌿⍵}⍚[⊢ -] ["i":2 "j":0]⍴0   ⍝ ["i":2 "j":0]ₓ
+⍴{4ₓ<+⌿⍵}⍚[⊢ -] ["i":2 "j":0]⍴0   ⍝ ["i":2 "j":0]ₓ
 
 ⍝ — A keyed selector lines up with the argument by key
 k←["a":1 "b":0] ⋄ k⍚[- ⊢] ["b":4 "a":5]   ⍝ ["b":¯4 "a":5]
@@ -1890,7 +1890,7 @@ z,a   ⍝ 4 5 4 5
 ⍝ — Modified selective assignment writes as plain assignment does: a float leaves the exact integers beside it exact, and a number written into Booleans leaves them mixed
 x←[1 2 3]ₓ
 x₀+←0.5
-b←1 0 1=1
+b←$t $f $t
 b₀+←1
 [x b]   ⍝ [1.5 2ₓ 3ₓ;2 $f $t]
 
@@ -3429,6 +3429,9 @@ $t $f $t
 ⍝ — A fold along a vector's or matrix's windows slides over the source, directly for narrow windows and by van Herk-Gil-Werman for wide ones, and matches folding each window alone, NaN included
 v←¿3000⍴0 ⋄ i←17 1000 ⋄ v.[i]←$n ⋄ w←¿45000⍴0 ⋄ m←¿[130 130]⍴0 ⋄ j←¿3000⍴100ₓ ⋄ b←0=¿3000⍴3ₓ ⋄ ∧/[(+/50↕v)≡{+/⍵}⍤1⊢50↕v;(⌈/50↕w)≡{⌈/⍵}⍤1⊢50↕w;(⌊/3↕w)≡{⌊/⍵}⍤1⊢3↕w;(+/+/3 3↕m)≡{+/,⍵}⍤2⊢3 3↕m;(+/50↕j)≡{+/⍵}⍤1⊢50↕j;(∨/50↕b)≡{∨/⍵}⍤1⊢50↕b;(⌈⌿3↕w)≡{⌈/⍵}⍤1⊢⍉3↕w;["sliding fold"]≡(•explain "+/50↕v").fast.combination]   ⍝ $t
 
+⍝ — A fold along two axes of windows whose positions each hold several items, as pooling over channels has them, folds both axes in one pass over the source, for windows that tile or slide, under Rank too, and matches folding one axis at a time
+a←¿[256 256 4]⍴0 ⋄ j←(¿[130 130 2]⍴100)ₓ ⋄ r←¿[16 64 64 4]⍴0 ⋄ ∧/[(⌈/⍠2 3⊢[[2 2]⋄[2 2]]↕a)≡⌈/⍠2⌈/⍠2⊢[[2 2]⋄[2 2]]↕a;(+/⍠2 3⊢3 3↕j)≡+/⍠2+/⍠2⊢3 3↕j;({⌈/⍠2 3 [[2 2]⋄[2 2]]↕⍵}⍤3 r)≡{⌈/⍠2⌈/⍠2 [[2 2]⋄[2 2]]↕⍵}⍤3 r;["sliding fold"]≡(•explain "⌈/⍠2 3⊢[[2 2]⋄[2 2]]↕a").fast.combination]   ⍝ $t
+
 ⍝ — Under `∂`, a maximum or minimum of windows takes each window's first extreme from the source, as the fold of built windows does
 w←¿45000⍴0 ⋄ t←⌊10×w ⋄ ∧/[({+/,⌈/50↕⍵}∂ w)≡{+/,⌈/1×50↕⍵}∂ w;({+/,⌊/50↕⍵}∂ t)≡{+/,⌊/1×50↕⍵}∂ t;({+/,⌈/3↕⍵}∂ t)≡{+/,⌈/1×3↕⍵}∂ t]   ⍝ $t
 
@@ -4252,7 +4255,7 @@ k←["a":1 "b":1] ⋄ ["a":20] +@[k⍨] ["a":1 "b":2]   ⍝ ["a":21 "b":2]
 ["b":10 "a":20 "c":30] +@[0 1] ["a":1 "b":2]   ⍝ ["a":21 "b":12]
 
 ⍝ — `[p]` lines up with the argument by axis names
-m←["i":2 "j":3]⍴⍳6ₓ ⋄ -@[{4<+⌿⍵}] m
+m←["i":2 "j":3]⍴⍳6ₓ ⋄ -@[{4ₓ<+⌿⍵}] m
 (["i":2 "j":3]⍴0 ¯1 ¯2 3 ¯4 ¯5)ₓ
 
 ⍝ — A mask from `[p]` must have the argument's length
@@ -4752,7 +4755,7 @@ c←{(⍵×2)<⍵+0.5}
 d←{a←⍵-0.5 ⋄ a×a+1}
 e←{t←⍵×0.5 ⋄ t×1-t}
 v←{b←⍵ ⋄ a←b+1 ⋄ b←0 ⋄ a}
-near←{((⍺≠⍺)≡⍵≠⍵)∧0=+/,(|⍺-⍵)>1e¯5×1⌈|⍺}
+near←{((⍺≠⍺)≡⍵≠⍵)∧0ₓ=+/,(|⍺-⍵)>1e¯5×1⌈|⍺}
 [(f m)≡ f⍤1 m;(m g n)≡ m g⍤1 n;(0.5<m)≡ {0.5<⍵}⍤1 m;(h s) near h⍤1 s;(k m)≡ k⍤1 m;(p m)≡ p⍤1 m;(q m)≡ q⍤1 m]
 [(+/0.5<m)≡{+/⍵}0.5<m (+⌿0.5<m)≡{+⌿⍵}0.5<m (∨/m>0.999)≡{∨/⍵}m>0.999 (+/0⌈1⌊0.5+1.2×m-0.5)≡{+/⍵}0⌈1⌊0.5+1.2×m-0.5 (⌈⌿m-0.5)≡{⌈⌿⍵}m-0.5 (+/0.5ₛ<s)≡{+/⍵}0.5ₛ<s (+/y×2)≡{+/⍵}y×2 ((+⌿s×2) near {+⌿⍵}s×2)]
 [(j m)≡ j⍤1 m;(u m)≡ u⍤1 m;(r m)≡ r⍤1 m;(s w m)≡ s w⍤1 m;(+/(m-0.5)×m+0.5)≡{+/⍵}(m-0.5)×m+0.5;(c m)≡ c⍤1 m;(+/(m×2)<m+0.5)≡{+/⍵}(m×2)<m+0.5]
@@ -4794,7 +4797,7 @@ N←131072 ⋄ r←{⍵+¿N⍴0}⍣40⊢N⍴0.0 ⋄ x←¿N⍴0 ⋄ s←{⍵+x}�
 $t $t $t
 
 ⍝ fusion:comparison-operand — A call reads a pending comparison inside its graph, as 1s and 0s, on either side of the call and in a dfn's recorded statement
-v←(⍳262144ₓ)÷262144 ⋄ m←+/(v>0.5)#v ⋄ e←•explain "+/v×v>0.5" ⋄ f←{+/⍵×⍵>0.5} ⋄ [e.value=m; 0=≢e.forced.function; (+/(v>0.5)×v)=m; (f v)=m; (f v)=m]
+v←(⍳262144ₓ)÷262144 ⋄ m←+/(v>0.5)#v ⋄ e←•explain "+/v×v>0.5" ⋄ f←{+/⍵×⍵>0.5} ⋄ [e.value=m; 0ₓ=≢e.forced.function; (+/(v>0.5)×v)=m; (f v)=m; (f v)=m]
 $t $t $t $t $t
 
 ⍝⍝ Numeric storage
@@ -4818,7 +4821,7 @@ check←{
   v←⍵•float⍳262144
   r←⌽v ⋄ z←⌊r
   reversed←(•storage r).pending∧z≡⌽⌊v
-  ordinary←0=≢(•explain "⌊⌽v").fused.glyphs
+  ordinary←0ₓ=≢(•explain "⌊⌽v").fused.glyphs
   z←√r
   roots←(•storage r).pending∧z≡⌽√v
   z←2○r ⋄ deferred←(•storage z).pending
@@ -4847,7 +4850,7 @@ v←⍳262144ₓ ⋄ s←1+v ⋄ [5↑1+v;3⊃2×v+1;5↑s]   ⍝ [1 2 3 4 5;8;1
 v←⍳262144 ⋄ s←1+v ⋄ items←{(•explain ⍵).forced.items} ⋄ [(items "5↑1+v")≡[5]ₓ;(items "3⊃2×v+1")≡[1]ₓ;(items "5↑s")≡[262144]ₓ]   ⍝ $t $t $t
 
 ⍝ — Rank leaves a pending argument pending where its operand isn't one that runs on whole stacks of matrices, so the call fuses as it would without Rank
-x←[4 256 256]⍴0.5 ⋄ e←•explain "(-⍤2) x+1" ⋄ [0=≢e.forced.function;e.value≡-x+1]   ⍝ $t $t
+x←[4 256 256]⍴0.5 ⋄ e←•explain "(-⍤2) x+1" ⋄ [0ₓ=≢e.forced.function;e.value≡-x+1]   ⍝ $t $t
 
 ⍝ — `+.×` on a pending copy of windows, and its gradients, give what they give on a stored copy, and the copy stays pending
 conv←{
@@ -4864,7 +4867,7 @@ conv←{
   img←¿64 64 16⍴0 ⋄ k←¿144 8⍴0
   w←[3844 144]⍴3 3↕img
   e←•explain "{+/,w+.×⍵}∂k" ⋄ ei←•explain "{+/,([3844 144]⍴3 3↕⍵)+.×k}∂img"
-  [0=≢e.forced.function 0=≢ei.forced.function 0=≢ei.accumulations.items]
+  [0ₓ=≢e.forced.function 0ₓ=≢ei.forced.function 0ₓ=≢ei.accumulations.items]
 }
 conv 0   ⍝ 3⍴$t
 
@@ -4918,7 +4921,7 @@ r←["a":2ₓ "b":3ₓ] ⋄ j←•json "{""a"":2,""b"":3}" ⋄ r.b←2.5 ⋄ j.
 r←["a":2ₓ] ⋄ r.c←2.5 ⋄ r   ⍝ ["a":2ₓ "c":2.5]
 
 ⍝ — A modified write through a selection follows the same rule in place: +← and ×← leave exact integers exact beside a float, keep one kind where the results share it, and leave a Boolean target mixed beside the number
-x←[1 2 3]ₓ ⋄ y←[1 2 3]ₓ ⋄ z←[1 2 3]ₓ ⋄ b←1 0 1=1 ⋄ x.[[0 1]]+←0.5 ⋄ y.[[0]]×←0.5 ⋄ z.[[0]]+←1ₓ ⋄ b.[[0]]+←1 ⋄ [x y z b]   ⍝ [1.5 2.5 3ₓ;0.5 2ₓ 3ₓ;[2 2 3]ₓ;2 $f $t]
+x←[1 2 3]ₓ ⋄ y←[1 2 3]ₓ ⋄ z←[1 2 3]ₓ ⋄ b←$t $f $t ⋄ x.[[0 1]]+←0.5 ⋄ y.[[0]]×←0.5 ⋄ z.[[0]]+←1ₓ ⋄ b.[[0]]+←1 ⋄ [x y z b]   ⍝ [1.5 2.5 3ₓ;0.5 2ₓ 3ₓ;[2 2 3]ₓ;2 $f $t]
 
 ⍝ — A write keeps a Boolean apart from other numbers, as a literal does, so either written among the other leaves the array mixed
 m←3⍴$f ⋄ m.[[1]]←1 ⋄ p←[1 2 0]ₓ ⋄ p.[[1]]←$t ⋄ [m p]   ⍝ [$f 1 $f;1ₓ $t 0ₓ]
@@ -5175,7 +5178,7 @@ y←¿1000000⍴0 ⋄ •prefs ["kinds":"static"] ⋄ r←[(•explain "+/√y-0
 ("-√+/"⋄0.25 $n (÷6))
 
 ⍝ — A root of degree 0 or ±∞ is a DOMAIN error under dynamic kinds and NaN under static kinds, on scalars and arrays alike. A negative degree gives the reciprocal of the root
-c←"0√8" "↑0√8 8" "∞√8" "↑∞ 2√8 8" "¯2√8" "↑¯2 2√8 8" "¯3√¯8" "↑¯3 3√¯8 ¯8" ⋄ g←{"DOMAIN"::'D' ⋄ ⍎⍵} ⋄ d←g¨c ⋄ •prefs ["kinds":"static"] ⋄ s←g¨c ⋄ •prefs ["kinds":"dynamic"] ⋄ [d s]
+c←"0√8" "↑0√8 8" "∞√8" "↑∞ 2√8 8" "¯2√8" "↑¯2 2√8 8" "¯3√¯8" "↑¯3 3√¯8 ¯8" ⋄ g←{"DOMAIN"::'D' ⋄ ⍎⍵} ⋄ d←g¨c ⋄ •prefs ["kinds":"static" "float":64] ⋄ s←g¨c ⋄ •prefs ["kinds":"dynamic"] ⋄ [d s]
 ('D' 'D' 'D' 'D' (÷√8) (÷√8) ¯0.5 ¯0.5⋄$n $n $n $n (÷√8) (÷√8) ¯0.5 ¯0.5)
 
 ⍝⍝ Unicode conversion
@@ -6189,6 +6192,9 @@ s←["ab";"cd";"ef";"gh";"ij";"kl";"mn";"op"] ⋄ t←32⍴s,⊂"zz"
 ⍝ =>
 [$t;$t;$t;$t;[1 8 2 3 4 5 0 8 6 7]ₓ;[7 7]ₓ]
 
+⍝ shared-classes — Items that share a few strings, as a selection makes them, class as the same strings held as arrays of their own do, for `=`, `∪`, `≠` and Key, beyond the items read before a search of arrays of their own gives up
+s←{"S",⍕⍵}¨⍳7ₓ ⋄ k←[2000⍴[3 1 4 1 5 6 2 0]ₓ]⌷s ⋄ d←{⍵,""}¨k ⋄ ∧/[(=k)≡=d ; (∪k)≡∪d ; (≠k)≡≠d ; (k{≢⍵}⌸⍳≢k)≡d{≢⍵}⌸⍳≢d ; (∪k)≡[[3 1 4 5 6 2 0]]⌷s]   ⍝ $t
+
 ⍝ native-row-ranks — Narrow row keys grade stably and ordinal ranks invert that grade
 m←[3 0⋄1 2⋄3 0⋄2 1]ₓ
 [⍋m ⍋⍋m]   ⍝ [[1 3 0 2]ₓ [2 0 3 1]ₓ]
@@ -6478,7 +6484,7 @@ V←"aa" "bb" "cc":1 2 3 ⋄ (•explain "{x←•time 0 ⋄ +/⍵}⌺3 V").fall
 (•explain "{n←0 ⋄ g←{⍵>2?n+←1;0} ⋄ r←g ⍵ ⋄ n}¨⍳5ₓ").fallbacks.reason   ⍝ ["a write"]
 
 ⍝ — A random draw in a side draws for the cells that take it [batched]
-e←•explain "{⍵>0?¿⍵;0}¨0 3 0 5" ⋄ [0=≢e.fallbacks.reason;∧/e.value<1⌈0 3 0 5]   ⍝ $t $t
+e←•explain "{⍵>0?¿⍵;0}¨0 3 0 5" ⋄ [0ₓ=≢e.fallbacks.reason;∧/e.value<1⌈0 3 0 5]   ⍝ $t $t
 
 ⍝ — A dfn whose batched run stopped on a count from its cell skips the batched try on later calls [batched]
 f←{2×⍣⍵⊢1} ⋄ r←f¨⍳5ₓ
@@ -6511,7 +6517,7 @@ v←⍳4
 ⍝ — A map inside a batched run widens the run: its operand runs once on the cells of both maps, and reads the outer operand's bindings at those cells [batched]
 s←2 3 4⍴⍳24 ⋄ img←3 6 6⍴⍳108 ⋄ w←3 3⍴1
 unbatched←{•prefs ["batch":$f] ⋄ r←⍎⍵ ⋄ •prefs ["batch":$t] ⋄ r}
-widens←{e←•explain ⍵ ⋄ ∧/[e.value≡unbatched ⍵ ; 0=≢e.fallbacks.reason ; ~(⊂"batching")∊e.declined.route]}
+widens←{e←•explain ⍵ ⋄ ∧/[e.value≡unbatched ⍵ ; 0ₓ=≢e.fallbacks.reason ; ~(⊂"batching")∊e.declined.route]}
 widens¨"{{+/⍵×⍵}⍤1⊢⍵}⍤2⊢s" "{k←+/⍵ ⋄ {⍵<5?k;⍵}¨⍵}⍤1⊢s" "{{+/,⍵×w}⌺[3 3] ⍵}⍤2⊢img" "{{{⍵+1}¨⍵}⍤1⊢⍵}⍤2⊢s"   ⍝ $t $t $t $t
 
 ⍝ — A write from the inner operand to a binding of the outer operand stops the widening, and the inner map calls its operand once for each of its cells inside the outer run [batched]
@@ -6647,7 +6653,7 @@ n←0
 {⍵+.×⍵}⍤2⊢2 2 2⍴1 2 3 4 5 6 7 8   ⍝ [[7 10⋄15 22]⋄[67 78⋄91 106]]
 
 ⍝ — Rank applies or-and to each pair of a stack's Boolean matrices
-b←[2 2 2]⍴1 0 0 1 1 1 0 1=1 ⋄ b∨.∧⍤2 b   ⍝ [[$t $f⋄$f $t]⋄[$t $t⋄$f $t]]
+b←[2 2 2]⍴$t $f $f $t $t $t $f $t ⋄ b∨.∧⍤2 b   ⍝ [[$t $f⋄$f $t]⋄[$t $t⋄$f $t]]
 
 ⍝ — Rank counts equal items for each pair of a stack's exact matrices
 k←[2 2 3]⍴3 1 4 1 5 9 2 6 5 3 5 8ₓ ⋄ k+.=⍤2⍉⍤2 k   ⍝ [[3 0⋄0 3]⋄[3 0⋄0 3]]ₓ
@@ -6852,11 +6858,11 @@ hvw←{+/1 2×lossw∂ ⍵}
 (hv∂ 0.5 ¯0.25)≡hvw∂ 0.5 ¯0.25   ⍝ $t
 
 ⍝ — A stencil steps a Game of Life glider
-life←{s←+/,⍵ ⋄ (s=3)∨(1 1⌷⍵)∧s=4}
-g←[0 1 0 0⋄0 0 1 0⋄1 1 1 0⋄0 0 0 0]=1
+life←{s←+/,⍵ ⋄ (s=3ₓ)∨(1 1⌷⍵)∧s=4ₓ}
+g←[$f $t $f $f⋄$f $f $t $f⋄$t $t $t $f⋄$f $f $f $f]
 life⌺3 3⊢g
 ⍝ =>
-[0 0 0 0⋄1 0 1 0⋄0 1 1 0⋄0 1 0 0]=1
+[$f $f $f $f⋄$t $f $t $f⋄$f $t $t $f⋄$f $t $f $f]
 
 ⍝ — An outer product's result has the left argument's axes, then the right's
 [1 2⋄3 4] {⍺×⍵}⊗ 10 100   ⍝ 2 2 2⍴10 100 20 200 30 300 40 400
@@ -8499,6 +8505,29 @@ a←255ₓ₁ ⋄ b←[1 256]ₓ ⋄ [(a+b)≡a+¨b;(a+b)≡a(+⍤0)b;(•storag
 
 ⍝ sized-domain — Nonnumeric atoms cannot be converted to fixed integers
 'a'ₓ₁
+⍝ error: DOMAIN ERROR
+
+⍝ sized-bounded — Results that can't exceed a fixed argument keep its width
+[⍳3ₓ₁;↦3ₓ₁;5ₓ₁↦2ₓ₁;⨸12ₓ₁;<[3 1 2]ₓ₁;(2 2ₓ)ₓ₁⊤3ₓ₁]   ⍝ [[0 1 2]ₓ₁;[1 2 3]ₓ₁;[5 4 3 2]ₓ₁;[2 2 3]ₓ₁;[1 2 3]ₓ₁;[1 1]ₓ₁]
+
+⍝ sized-random — Roll and deal draw fixed integers below a fixed bound
+[(•storage ¿[3 3]ₓ₁).kind;(•storage 2ₓ¿5ₓ₁).kind]   ⍝ ["uint8";"uint8"]
+
+⍝ sized-ring — Decode, polynomial evaluation, the determinant and the permanent wrap at the fixed width, as repeated + and × do
+b←(9⍴1ₓ)ₓ₁ ⋄ m←(2 2⍴[16 0 0 16]ₓ)ₓ₁ ⋄ [2ₓ⊥b;([0 0 1]ₓ)ₓ₁⌻16ₓ₁;-.×m;+.×m]   ⍝ [255 0 0 0]ₓ₁
+
+⍝ sized-no-kernel — A function with no kernel at the fixed width gives what static kinds give at that width
+[(•storage ○[1]ₓ₁).kind;!6ₓ₁]   ⍝ ["complex64";208ₓ₁]
+
+⍝ sized-join — Catenation, union and appends give a weak integer the fixed width, while an item of a bracket literal is strong
+u←[0 1]ₓ₁ ⋄ x←u ⋄ x,←9ₓ ⋄ [u,9ₓ;9ₓ⍪u;u∪9ₓ;x;(•storage ⊃[u;9ₓ]).kind]   ⍝ [[0 1 9]ₓ₁;[9 0 1]ₓ₁;[0 1 9]ₓ₁;[0 1 9]ₓ₁;"integer"]
+
+⍝ sized-join-weak — Joining requires a weak integer to fit its fixed partner
+[0 1]ₓ₁,¯1ₓ
+⍝ error: DOMAIN ERROR
+
+⍝ sized-write-weak — A write requires a weak integer to fit the fixed array
+x←[0 1]ₓ₁ ⋄ x.[0]←300ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝⍝ Axis-key dictionaries and assignment

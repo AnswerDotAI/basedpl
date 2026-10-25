@@ -12,7 +12,7 @@ p←place n
 angle←{[x y]←⍉∨⍵ ⋄ [u v w]←phases+[x y x+y]÷waves ⋄ π 1○u + 2○v + 1○w}
 style←0.6 0.1 0.15 0.3 0.12
 frame←{
-  ⍵≥900?;
+  ⍵≥900ₓ?;
   q←p+0.8×○ angle p
   lines←∨p , ∨q ,⍤1 style
   outside←∨/c≠0⌈500⌊c←∨q

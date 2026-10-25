@@ -6,7 +6,7 @@
 ⍝ From http://dfns.dyalog.com/c_for.htm
 
 for ← {  ⍝ Multiple selection of function list.
-  (¯1↓⍺)⍶{1≠⍴⍺?⍺ ⍶ ⍵;
+  (¯1↓⍺)⍶{1ₓ≠⍴⍺?⍺ ⍶ ⍵;
     ⍶⍣ ↑⍺ ⍵
   }⍹⍣ ↑⌽⍺ ⍵
 }
@@ -55,9 +55,9 @@ ArcTan ← {
 
 ⍝ From http://dfns.dyalog.com/s_pow.htm
 
-rl   ← {(≤2*31)|⍵×7*5}  ⍝ next random link  LCG(7*5, ¯1+2*31)
+rl   ← {(≤2ₓ*31ₓ)|⍵×7ₓ*5ₓ}  ⍝ next random link  LCG(7*5, ¯1+2*31)
 
-roll ← {⌊⍵×⍺÷≤2*31}  ⍝ roll ⍵ with random link ⍺.
+roll ← {⌊⍵×⍺÷≤2ₓ*31ₓ}  ⍝ roll ⍵ with random link ⍺.
 
 ⍝ From http://dfns.dyalog.com/c_traj.htm
 

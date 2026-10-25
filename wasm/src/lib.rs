@@ -56,7 +56,7 @@ pub fn costs(files: JsValue, cases: Option<Vec<String>>, prefs: Option<String>) 
     let files = serde_json::from_str(&js_sys::JSON::stringify(&files)?.as_string().unwrap()).map_err(|e| fail(e.to_string()))?;
     let files = basedpl::reference::sources(&files).map_err(fail)?;
     let cases = basedpl::timing::costs(&files, only.as_deref(), prefs.as_deref().unwrap_or_default(), &Default::default()).map_err(fail)?;
-    Ok(js_sys::JSON::parse(&basedpl::timing::rows(&cases, basedpl::timing::WASM_COLUMN).to_string())?)
+    Ok(js_sys::JSON::parse(&basedpl::timing::rows(&cases, Some(basedpl::timing::WASM_COLUMN)).to_string())?)
 }
 
 #[wasm_bindgen]

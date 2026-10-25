@@ -49,7 +49,7 @@ N←"  ab  " " c  d "
 [1 26 27 52]ₓ
 
 ⍝ — dec reads an empty string as 0 and ignores trailing blanks
-[dec:]←•load "lib/numeric.bpl" ⋄ dec "" "ff "   ⍝ 0 255
+[dec:]←•load "lib/numeric.bpl" ⋄ dec "" "ff "   ⍝ [0 255]ₓ
 
 ⍝ — The determinant of a 0×0 matrix is 1
 [alt:]←•load "lib/numeric.bpl" ⋄ -alt× 0 0⍴0   ⍝ 1
@@ -89,7 +89,7 @@ t←0↣(put foldl) 64ₓ|7ₓ×⍳64ₓ
 u←t↣(rem foldl) 48↑64ₓ|13ₓ×⍳64ₓ
 [↑chk u;vec u]
 ⍝ =>
-[1ₓ [10 11 12 23 24 25 36 37 38 48 49 50 51 61 62 63]ₓ]
+[$t [10 11 12 23 24 25 36 37 38 48 49 50 51 61 62 63]ₓ]
 
 ⍝ — A simple binary search tree reads a missing key as '?', is unchanged by removing one, and can remove a leaf
 [foldl:]←•load "lib/array.bpl"
@@ -162,7 +162,7 @@ M←["abc"⋄"def"]
 ¯2.5 0.4 2ₓ 2.5 ¯2.5
 
 ⍝ — cmat finds no ⍺-combinations of fewer than ⍺ items
-[cmat:]←•load "lib/dyalog.bpl" ⋄ 3 cmat 2   ⍝ 0 3⍴0
+[cmat:]←•load "lib/dyalog.bpl" ⋄ 3 cmat 2   ⍝ 0 3⍴0ₓ
 
 ⍝ — Cut follows J: 1 and 2 cut at copies of the first or last item, ¯1 drops the frets, and 0 reverses
 [Cut:]←•load "lib/dyalog.bpl"
