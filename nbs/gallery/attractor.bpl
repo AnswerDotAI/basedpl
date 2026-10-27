@@ -14,7 +14,7 @@ xy←params map⍣100 start 3000
 [lo hi]←[⌊/xy⋄⌈/xy]
 scale←460÷⌈/hi-lo
 centre←lo+hi ÷ 2
-glow←2⍴0.012×(≢∪⍉⌊scale×xy÷10)÷830
+glow←2⍴0.012× ≢∪⍉⌊scale×xy÷10 ÷ 830
 frame←{
   ⍵≥1200ₓ?;
   new←params map xy

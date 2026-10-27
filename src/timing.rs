@@ -1,7 +1,7 @@
 //! BPL measurements share reference records and setups. Numerical timing, copy units and retries live in Rustymath.
 use crate::{host::timing_lock, protocol::response, reference::{self, File}, EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn};
 use rustymath::timing::{copy_time, CopyTime, NATIVE_COLUMN};
-pub use rustymath::timing::name_cpu;
+pub use rustymath::timing::{name_cpu, RETRY_PAUSES};
 use serde_json::{json, Value as JsonValue};
 use rustymath::hashing::HashMap;
 
@@ -13,16 +13,16 @@ fn fastest(mut f: impl FnMut()) -> f64 { f(); rustymath::timing::fastest(|_| f()
 
 fn single_threaded_defaults() { crate::settings::reset(); rustymath::parallel::set_threads(1); }
 
-/// A fresh session which runs preferences before setup, on one thread.
+/// A fresh session which runs preferences before setup, on one thread, with its random generator seeded at 0. Every timing of a case then draws the same data, in each process and on each build.
 pub fn session(prefs: &str, setup: &str) -> Result<Turn, Evaluation> {
     single_threaded_defaults();
     let session = Session::new();
-    let result = session.eval(&format!("{prefs}\n{setup}"));
+    let result = session.eval(&format!("•prefs [\"seed\":0]\n{prefs}\n{setup}"));
     if result.error.is_some() { Err(result) } else { Ok(session) }
 }
 
 pub fn items(session: &Session) -> Option<usize> {
-    let n = session.eval("n").value?.as_number()?.to_float().ok()?;
+    let n = session.eval("n").value?.as_real()?;
     (n >= 0.0 && n.fract() == 0.0).then_some(n as usize)
 }
 

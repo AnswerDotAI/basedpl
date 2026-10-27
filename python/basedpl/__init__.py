@@ -230,6 +230,11 @@ class Array(_Operators):
     def __getitem__(self, index):
         "Select by positions, keys, slices or per-axis masks. `None` inserts an axis and `...` keeps omitted axes."
         return _result(self._inner.select(index, _array)).value
+    def __getattr__(self, name):
+        "Read keyed fields when no Python attribute has that name."
+        keys = self._inner.keys if name != '_inner' else ()
+        if keys and keys[0] and name in keys[0]: return self[name]
+        raise AttributeError(name)
     def __setitem__(self, index, value):
         self._inner = self._inner.assign(index, _array(value), _array)
         self._classify()

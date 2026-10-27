@@ -1,4 +1,4 @@
-//! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, the accumulations, which add items at scattered positions, with the path each took, the places where a batched run's calls fell back to slower code, the writes that left a compact array in mixed storage, the routes that handled an array's items one at a time, and the faster routes that code considered and declined. Events are recorded only while `•explain` runs. Code on every thread records them into the run's store, which `rustymath::events` holds for the whole process while the run lasts. rustymath's declines go into the same store. The store belongs to the process, not to a session, because fusion runs its graphs without one. A process supports one `•explain` at a time.
+//! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, the accumulations, which add items at scattered positions, with the path each took, the places where a batched run's calls fell back to slower code, the writes that left a compact array in mixed storage, the routes that handled an array's items one at a time, the faster routes that code considered and declined, and the compiles of block stages' kernels. Events are recorded only while `•explain` runs. Code on every thread records them into the run's store, which `rustymath::events` holds for the whole process while the run lasts. rustymath's declines go into the same store. The store belongs to the process, not to a session, because fusion runs its programs without one. A process supports one `•explain` at a time.
 //!
 //! The module also counts the live nodes that `•memory` reports: the record nodes of `∂` and the pending arrays. A node counts for the thread that made it, even when another thread drops it.
 use crate::{keyed, Error, Described, Value};
@@ -11,14 +11,14 @@ static COMPUTED: AtomicUsize = AtomicUsize::new(0);
 
 /// A cell in an event's row.
 #[derive(Clone)]
-enum Field { Text(String), Count(usize) }
+enum Field { Text(String), Count(usize), Truth(bool) }
 
 /// What a column holds.
 #[derive(Clone, Copy)]
-enum Column { Text, Count }
+enum Column { Text, Count, Truth }
 
 /// Each kind of event, in the order `•explain` reports them, with its columns:
-/// - `fused`: each fused group that ran, with the glyphs of its calls in the order they ran, its item count, and the blocks, runs and copied items that its `Tally` counted.
+/// - `fused`: each fused group that ran, with the glyphs of its calls in the order they ran, its item count, the blocks, runs and copied items that its `Tally` counted, and whether its stage ran compiled code.
 /// - `stored`: each pending array that a fused group read as an input, computed on its own first, with the glyphs of its call, its item count, and why the group couldn't compute it.
 /// - `forced`: each call that computed pending arrays' items, with the function, its line and column, and the number of items computed.
 /// - `fast`: each fast combination taken, with its name and the function that computed it.
@@ -27,10 +27,12 @@ enum Column { Text, Count }
 /// - `mixed`: each write that left a compact array in mixed storage, with the code of the call that wrote, its line and column, the array's kind before the write, the kind written, and the array's item count.
 /// - `itemwise`: each route that handled an array's items one at a time where whole-array code covers most calls, with the innermost call that ran it, that call's line and column, the route, and the items it handled. A route outside any call counts for the `•explain` call itself.
 /// - `declined`: each faster route that code considered and didn't take, with the route, the reason and the items that its declines concerned, summed by route and reason (`rustymath::events`).
-const KINDS: [(&str, &[(&str, Column)]); 9] = {
+/// - `programs`: each `∂` of a dfn that ran from a program, with `built` where its trace built the program first or `replayed` where it found one, the program's steps, how many of its block stages have compiled parts after the call (`compiled`), its block stages (`blocks`), and the program's listing, one line for each value (`program::call`).
+/// - `compiles`: each compile of a block stage's kernel, with the glyphs of the stage's calls and the compile's time in microseconds (`program::blocks`).
+const KINDS: [(&str, &[(&str, Column)]); 11] = {
     use Column::*;
     [
-        ("fused", &[("glyphs", Text), ("items", Count), ("blocks", Count), ("runs", Count), ("copied", Count)]),
+        ("fused", &[("glyphs", Text), ("items", Count), ("blocks", Count), ("runs", Count), ("copied", Count), ("compiled", Truth)]),
         ("stored", &[("glyphs", Text), ("items", Count), ("reason", Text)]),
         ("forced", &[("function", Text), ("line", Count), ("column", Count), ("items", Count)]),
         ("fast", &[("combination", Text), ("function", Text)]),
@@ -39,12 +41,14 @@ const KINDS: [(&str, &[(&str, Column)]); 9] = {
         ("mixed", &[("code", Text), ("line", Count), ("column", Count), ("target", Text), ("written", Text), ("items", Count)]),
         ("itemwise", &[("function", Text), ("line", Count), ("column", Count), ("route", Text), ("items", Count)]),
         ("declined", &[("route", Text), ("reason", Text), ("items", Count)]),
+        ("programs", &[("event", Text), ("steps", Count), ("compiled", Count), ("blocks", Count), ("listing", Text)]),
+        ("compiles", &[("glyphs", Text), ("microseconds", Count)]),
     ]
 };
 
 /// A kind of event, by its position in `KINDS`.
 #[derive(Clone, Copy)]
-enum Kind { Fused, Stored, Forced, Fast, Accumulations, Fallbacks, Mixed, Itemwise, Declined }
+enum Kind { Fused, Stored, Forced, Fast, Accumulations, Fallbacks, Mixed, Itemwise, Declined, Programs, #[cfg_attr(web, allow(dead_code))] Compiles }
 
 /// The kinds whose events mark a slow path, each with the column that names its event: a pending array that a fused group computed on its own (its reason), a call that computed pending arrays' items (its function), a batched map's fallback (its reason), a write that left a compact array mixed (its code), and a route that handled items one at a time (its route).
 const SLOW: [(Kind, usize); 5] = [(Kind::Stored, 2), (Kind::Forced, 0), (Kind::Fallbacks, 0), (Kind::Mixed, 0), (Kind::Itemwise, 3)];
@@ -87,11 +91,11 @@ fn record(kind: Kind, row: impl FnOnce() -> Vec<Field>) {
     if recording() { let row = row(); store(|events| events.rows[kind as usize].push(row)); }
 }
 
-/// Records a fused group of `items` items, whose calls have the glyphs `glyphs`, in the order they ran, with what `tally` counted while it ran.
-pub(crate) fn fused(glyphs: impl FnOnce() -> String, items: usize, tally: &Tally) {
+/// Records a fused group of `items` items, whose calls have the glyphs `glyphs`, in the order they ran, with what `tally` counted while it ran and whether its stage ran compiled code.
+pub(crate) fn fused(glyphs: impl FnOnce() -> String, items: usize, compiled: bool, tally: &Tally) {
     let Some(c) = &tally.0 else { return };
     let count = |n: &AtomicUsize| Field::Count(n.load(Ordering::Relaxed));
-    record(Kind::Fused, || vec![Field::Text(glyphs()), Field::Count(items), count(&c.blocks), count(&c.runs), count(&c.copied)])
+    record(Kind::Fused, || vec![Field::Text(glyphs()), Field::Count(items), count(&c.blocks), count(&c.runs), count(&c.copied), Field::Truth(compiled)])
 }
 
 /// Records a pending array that a fused group read as an input, computed on its own first. `event` gives the glyphs of its call, its item count and the reason the group couldn't compute it as one of its calls.
@@ -147,6 +151,14 @@ pub(crate) fn accumulated(items: usize, size: usize, path: &'static str) { recor
 
 /// Records that a batched run's calls fell back to slower code, with `reason` and the number of `items` it concerns. The reason becomes text only while `•explain` records. A stop gives its cause (`transform::Stop`).
 pub(crate) fn fallback(reason: impl std::fmt::Display, items: usize) { record(Kind::Fallbacks, || vec![Field::Text(reason.to_string()), Field::Count(items)]) }
+/// Records a dfn call that ran from a program: `"built"` where its trace built the program first, and `"replayed"` where it found one, with the program's `steps`, its block stages (`blocks`), how many of them have compiled bodies after the call (`compiled`), and the program's `listing`, which is built only while `•explain` records.
+pub(crate) fn program(event: &'static str, steps: usize, compiled: usize, blocks: usize, listing: impl FnOnce() -> String) {
+    record(Kind::Programs, || vec![Field::Text(event.into()), Field::Count(steps), Field::Count(compiled), Field::Count(blocks), Field::Text(listing())])
+}
+
+/// Records the compile of a block stage's kernel, with the glyphs of the stage's calls that `glyphs` gives and the compile's `time`.
+#[cfg(not(web))]
+pub(crate) fn compiled(glyphs: impl FnOnce() -> String, time: std::time::Duration) { record(Kind::Compiles, || vec![Field::Text(glyphs()), Field::Count(time.as_micros() as usize)]) }
 
 /// Records a write by the call at `span` that left a compact array of `items` items in mixed storage, with the array's kind before the write and the kind written, as `•storage` names them.
 pub(crate) fn mixed(span: &crate::Span, target: &'static str, written: &'static str, items: usize) {
@@ -189,6 +201,7 @@ impl Events {
             let values = columns.iter().enumerate().map(|(c, &(_, column))| match column {
                 Column::Text => keyed::texts(&[n], rows.iter().map(|row| keyed::text(row[c].text())).collect()).described("invalid explain texts"),
                 Column::Count => Value::integers(vec![n], rows.iter().map(|row| row[c].count() as i64).collect()).described("invalid explain counts"),
+                Column::Truth => Value::booleans(vec![n], rows.iter().map(|row| row[c].truth()).collect()).described("invalid explain truth values"),
             }).collect::<Result<_, _>>()?;
             tables.push(record(columns.iter().map(|&(name, _)| name).collect(), values)?);
         }
@@ -218,7 +231,7 @@ impl Events {
 
     /// The rows of the records that mark a slow path (`SLOW`), each as its record's name, the text of the column that names the event, and all its fields, with the routes that no call claimed as `itemwise` rows. The speed check expects none for a case beyond the events its `# allows` and `# gap` lines name. Each `declined` row follows, named by its route and reason, as in `"fusion: an exact argument"`. A case needn't name a decline, because each one explains another event, but a line that names one must still find it.
     pub(crate) fn slow(&self) -> Vec<(&'static str, String, String)> {
-        let fields = |row: &[Field]| row.iter().map(|f| match f { Field::Text(t) => t.clone(), Field::Count(n) => n.to_string() }).collect::<Vec<_>>().join(" ");
+        let fields = |row: &[Field]| row.iter().map(|f| match f { Field::Text(t) => t.clone(), Field::Count(n) => n.to_string(), Field::Truth(t) => t.to_string() }).collect::<Vec<_>>().join(" ");
         let mut rows: Vec<_> = SLOW.iter().flat_map(|&(kind, key)| self.rows[kind as usize].iter().map(move |row| (KINDS[kind as usize].0, row[key].text().to_owned(), fields(row)))).collect();
         rows.extend(by_route(self.unclaimed.iter().copied()).into_iter().map(|(route, items)| ("itemwise", route.to_owned(), format!("{route} {items}"))));
         rows.extend(self.rows[Kind::Declined as usize].iter().map(|row| ("declined", format!("{}: {}", row[0].text(), row[1].text()), fields(row))));
@@ -228,9 +241,11 @@ impl Events {
 
 impl Field {
     /// The text in a text column's cell.
-    fn text(&self) -> &str { match self { Field::Text(t) => t, Field::Count(_) => unreachable!("a text column holds text") } }
+    fn text(&self) -> &str { match self { Field::Text(t) => t, _ => unreachable!("a text column holds text") } }
     /// The count in a count column's cell.
-    fn count(&self) -> usize { match *self { Field::Count(n) => n, Field::Text(_) => unreachable!("a count column holds counts") } }
+    fn count(&self) -> usize { match *self { Field::Count(n) => n, _ => unreachable!("a count column holds counts") } }
+    /// The truth value in a truth column's cell.
+    fn truth(&self) -> bool { match *self { Field::Truth(t) => t, _ => unreachable!("a truth column holds truth values") } }
 }
 
 /// The kinds of node that `•memory` counts.

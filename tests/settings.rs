@@ -186,6 +186,7 @@ fn hanzi_spellings_and_language() {
         "mean是加总除数句mean 2 4 9" => "5", "加累 2 3 4" => "2 5 9", "乘表己至3" => "[1 2 3⋄2 4 6⋄3 6 9]", "加總 1 2 3" => "6",
         "負3减负1" => "¯2", "1e负3加1r负4" => "1e¯3+1r¯4", "[负3 负1]ₓ" => "[¯3 ¯1]ₓ", "[空]ₛ" => "[⍬]ₛ", "负永" => "¯∞",
         "{甲是2句甲加乙}3" => "5", "{永键键7句除'a'}0" => "7", "op是{丙乙}句加op 3" => "3", "r是[\"a1\":7]句r内a1" => "7",
+        "f是{乙加1}句f次3隔5" => "8",
         "\"加总 注 负永\"" => "\"加总 注 负永\"", "'加'" => "'加'", "加总 1 2 3 注 汉字注释" => "6",
         "系prefs [\"float\":32]句(系storage 1).kind" => "\"float32\"",
         "語←1 ⋄ 𠀀←2 ⋄ 語+𠀀" => "3",
@@ -209,7 +210,7 @@ fn leading_prefs_set_how_their_code_reads() {
     let s = Session::new();
     s.eval(r#"•prefs ["kinds":"static" "int":32]"#);
     equiv_in(&s, r#"•prefs ["kinds":"dynamic" "int":64] ⋄ 2147483648ₓ"#, "2147483648ₓ");
-    equiv_in(&s, r#"a←3000000000ₓ ⋄ •prefs ["kinds":"static" "int":32] ⋄ aₓ≡a"#, "$t");
+    equiv_in(&s, r#"a←3000000000ₓ ⋄ •prefs ["kinds":"static" "int":32] ⋄ aₓ≡¯1294967296ₓ"#, "$t");
     equiv_in(&s, r#"•prefs ["kinds":"static" "int":32] ⋄ 0ₓ₈+/[2000000000 2000000000]ₓ₄"#, "4000000000ₓ₈");
     equiv_in(&s, r#"⍎"•prefs [""float"":32] ⋄ (•storage 1.5).kind""#, r#""float32""#);
 }

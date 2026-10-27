@@ -29,7 +29,7 @@ Where many least-squares solutions exist, as for a singular or wide matrix, `⌹
 ⌹[1 2⋄2 4]                 ⍝ [0.04 0.08⋄0.08 0.16]
 ```
 
-Exact arguments stay exact, through row reduction. Approximate real and complex arguments take LU with partial pivoting where a square matrix isn't singular. Other matrices take the SVD. The LU result applies no cutoff: `⌹[1 1e8⋄0 1]` gives the exact inverse `[1 ¯1e8⋄0 1]`, though the SVD's cutoff would count its smaller singular value as zero.
+Exact arguments stay exact, through row reduction. Integers are the exception where integers wrap, under static kinds or at a fixed width: they compute as floats of the width that `÷` gives them. Approximate real and complex arguments take LU with partial pivoting where a square matrix isn't singular. Other matrices take the SVD. The LU result applies no cutoff: `⌹[1 1e8⋄0 1]` gives the exact inverse `[1 ¯1e8⋄0 1]`, though the SVD's cutoff would count its smaller singular value as zero.
 
 ## Inverse
 

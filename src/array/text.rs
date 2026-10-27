@@ -150,16 +150,16 @@ impl Value {
             Plain::Character(c) if c.is_control() => format!("•ucs {}", c as u32),
             Plain::Character(c) => format!("'{c}'"),
             Plain::Function(f) => {
-                let text = f.text(el.notation, &mut 1000);
+                let text = f.text(el, &mut 1000);
                 // A native that a factory made, such as a generator's `roll` or a `•canvas` drawing function, has no spelling that reads back.
                 if f.system_function().is_some_and(|s| s.entry.is_none()) { return format!("⟨{text}⟩"); }
                 if text.contains(' ') { format!("({text})") } else { text }
             }
-            Plain::Operator(op) => { let text = op.text(el.notation); if text.contains(' ') { format!("({text})") } else { text } }
+            Plain::Operator(op) => { let text = op.text(el); if text.contains(' ') { format!("({text})") } else { text } }
             Plain::Array(_) => {
                 if self.shows_names(el) { return self.named_literal(el); }
                 let edges = if self.shape().len() == 1 { el.last(self.shape()) } else { el.edges(self.shape()) };
-                if self.string_literal().is_some() { return quoted(&self.elided_text(edges)); }
+                if self.string_literal().is_some() { return quoted(&self.elided_text(el)); }
                 if let Some(s) = crate::keyed::name(self) {
                     return format!(",•ucs {}", s.chars().map(|c| (c as u32).to_string()).collect::<Vec<_>>().join(" "));
                 }
@@ -179,9 +179,14 @@ impl Value {
     /// The items display shows of a vector, with `None` for the gap that `edges` leaves.
     fn shown(&self, edges: Option<usize>) -> impl Iterator<Item = Option<Value>> + '_ { positions(self.len(), edges).map(|i| i.map(|i| self.at(i))) }
 
-    /// A character vector's characters, with `…` for the gap that `edges` leaves.
-    pub(crate) fn elided_text(&self, edges: Option<usize>) -> String {
-        self.shown(edges).map(|c| match c { Some(Self::Character(c)) => c, _ => '…' }).collect()
+    /// A character vector's characters as display shows them. Text with line breaks counts its lines against `limit`, and past it keeps the first and last `edges` lines, with `⋮` on a line between. Other text counts its characters, and keeps as many at each end as a last axis keeps, with `…` between.
+    pub(crate) fn elided_text(&self, el: Elide) -> String {
+        if let Some(text) = crate::keyed::name(self) && text.contains('\n') {
+            let Some(e) = el.edges(&[text.split('\n').count()]) else { return text.to_string() };
+            let lines: Vec<&str> = text.split('\n').collect();
+            return positions(lines.len(), Some(e)).map(|i| i.map_or("⋮", |i| lines[i])).collect::<Vec<_>>().join("\n");
+        }
+        self.shown(el.last(self.shape())).map(|c| match c { Some(Self::Character(c)) => c, _ => '…' }).collect()
     }
 
     /// Text for each shown item of a vector, written by `item`, with `…` for the gap that `edges` leaves.
@@ -221,14 +226,14 @@ impl Value {
     /// The value as one item inside brackets. Text with a space between its runs, or with a `:` that would read as a key, needs parentheses.
     pub(crate) fn item(&self, el: Elide) -> String { let text = self.source(el); if needs_group(&text) { format!("({text})") } else { text } }
     /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in `⊂3` or `0 3⍴0`, needs parentheses.
-    pub(crate) fn operand(&self, notation: crate::symbols::Notation) -> String {
-        let text = self.source(Elide { notation, ..Elide::NONE });
+    pub(crate) fn operand(&self, el: Elide) -> String {
+        let text = self.source(el);
         if outside(&text, |c| !(c.is_ascii_digit() || " ¯.∞⍬".contains(c) || crate::number::subscript(c))) { format!("({text})") } else { text }
     }
 
     /// Source text for a scalar holding `content`: `ᵘ` after a function, and `⊂` before anything else.
     fn enclosed_literal(content: &Value, el: Elide) -> String {
-        match content { Self::Function(f) => f.superscripted("ᵘ", el.notation, &mut 1000), _ => format!("{}{}", el.notation.glyph("⊂"), content.item(el)) }
+        match content { Self::Function(f) => f.superscripted("ᵘ", el, &mut 1000), _ => format!("{}{}", el.notation.glyph("⊂"), content.item(el)) }
     }
 
     /// Whether text shows any of the value's axis names.

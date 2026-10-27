@@ -2,7 +2,7 @@
 //!
 //! Two cells match when `Value::matches` says they do, within the session's tolerance. Compact cells take rustymath's searches, which choose between scanning once for each of up to 16 needles and building an index:
 //! - Booleans, integers and characters of one kind search their values with `search`. A character's value is its code point. Characters match only characters.
-//! - Integers searched for 64-bit floats that all equal whole numbers below `tolerant::whole_limit` search for those whole numbers at the integers' own width.
+//! - Integers searched for 64-bit floats that all stand for integers (`tolerant::integer_of`) search for those integers at the integers' own width.
 //! - Other Booleans, integers and floats read as floats of the search's float width, as an operand converts, and take `tolerant`'s searches. Only 64-bit floats compare within a tolerance. Floats that all equal whole numbers below `tolerant::whole_limit` search those whole numbers.
 //!
 //! Other cells build an index when a search is large enough, and always for a classification:
@@ -13,7 +13,7 @@
 //! Other data takes the pairwise comparison.
 use crate::execution::check;
 use crate::{
-    array::Items, element::read_as, Span,
+    array::Items, element::read_as, number::Numeric, Span,
     Error, ErrorKind, Value
 };
 use rustymath::hashing::{Hashing, HashMap, HashMapExt};
@@ -45,18 +45,18 @@ impl<'a> Cells<'a> {
 /// The items of `cells` when they're one array's compact items, which rustymath's searches of views take.
 pub(crate) fn compact_view<'a>(cells: &Cells<'a>) -> Option<View<'a>> { cells.items()?.view() }
 
-/// The float width that a search compares at, the widest among its cells or f64 without floats, and that width's tolerance.
-fn compared_at(width: Option<FloatWidth>) -> (FloatWidth, Tolerance) {
+/// The float width that items compare at, the widest among them or f64 without floats, and that width's tolerance under `numeric`.
+pub(crate) fn compared_at(width: Option<FloatWidth>, numeric: Numeric) -> (FloatWidth, Tolerance) {
     let width = width.unwrap_or(FloatWidth::F64);
-    (width, crate::number::Numeric::current().tolerance_at(width))
+    (width, numeric.tolerance_at(width))
 }
 
 /// The items of `cells` when they're one array's compact items, with the tolerance they compare at. Reading the width of compact items costs nothing, where cells of mixed storage take a pass over every cell.
-fn compact_at<'a>(cells: &Cells<'a>) -> Option<(View<'a>, Tolerance)> { compact_view(cells).map(|x| (x, compared_at(cells.float_width()).1)) }
+fn compact_at<'a>(cells: &Cells<'a>) -> Option<(View<'a>, Tolerance)> { compact_view(cells).map(|x| (x, compared_at(cells.float_width(), Numeric::current()).1)) }
 
 /// For each needle, the position of the first haystack cell that matches it, or the number of haystack cells when none does.
 pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &crate::Span) -> Result<Vec<u32>, Error> {
-    let (width, t) = compared_at(haystack.float_width().max(needles.float_width()));
+    let (width, t) = compared_at(haystack.float_width().max(needles.float_width()), Numeric::current());
     if let Some(found) = compact_view(haystack).zip(compact_view(needles)).and_then(|(x, y)| search::view_index_of(x, y, t)) { return found.map_err(Error::from); }
     let compact = with_float_width!(width, F => match (haystack, needles) {
         (Cells::Items(x), Cells::Items(y)) => read_as::<F>(x).zip(read_as::<F>(y)).map(|(x, y)| tolerant::index_of(t, &x, &y)),
@@ -88,7 +88,7 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &crate::Spa
 /// The representative of each cell's class. Compact cells take rustymath's classes. With a tolerance, a class of real atoms is a run that `tolerant::runs` gives, or the reals equal to one whole number when every real equals one below `tolerant::whole_limit`, and the class's earliest position represents it. Two reals in one class therefore needn't match each other. Other cells are compared only with earlier representatives. A cell that matches none represents a new class. Cells that share their arrays, as a selection shares a few strings among many cells, class by array before any array is read (`shared_classes`).
 pub(crate) fn classify(cells: &Cells, span: &Span) -> Result<Vec<u32>, Error> {
     if let Some(classes) = shared_classes(cells) { return Ok(classes); }
-    let (width, t) = compared_at(cells.float_width());
+    let (width, t) = compared_at(cells.float_width(), Numeric::current());
     if let Some(classes) = compact_view(cells).and_then(|x| search::view_classes(x, t)) { return classes.map_err(Error::from); }
     let compact = with_float_width!(width, F => match cells {
         Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::classes(t, &x)), Cells::Arrays(_) => None,
@@ -163,7 +163,7 @@ fn earliest(cells: &Cells, positions: impl IntoIterator<Item = usize>, classes: 
 
 /// Whether each cell is the first of its class.
 pub(crate) fn firsts(cells: &Cells, span: &Span) -> Result<Vec<bool>, Error> {
-    let (width, t) = compared_at(cells.float_width());
+    let (width, t) = compared_at(cells.float_width(), Numeric::current());
     if let Some(mask) = compact_view(cells).and_then(|x| search::view_firsts(x, t)) { return mask.map_err(Error::from); }
     let compact = with_float_width!(width, F => match cells {
         Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::firsts(t, &x)), Cells::Arrays(_) => None,
@@ -254,14 +254,15 @@ fn exact_cells<'a>(cells: &'a Cells) -> Option<Vec<Exact<'a>>> {
 
 /// `shared_classes` gives up where more than one in this many of the items it has read hold arrays of their own: too few items then share an array to save reading.
 const SHARED: usize = 4;
-/// The items that `shared_classes` reads before it can give up. Items that hold arrays of their own give up after reading this many.
+/// The fewest items that `shared_classes` classifies, and the items it reads before it can give up. On fewer items, the check costs separately held strings more than it saves shared ones.
 const SHARED_FROM: usize = 1024;
 
-/// The class of each item, where items share their arrays, as the copies of a few strings that a selection makes do. Items that share one array are one class without reading it, and only the first item of each array becomes an `Exact` key. `None` where an item isn't an array, where more than one in `SHARED` of the items read so far hold arrays of their own, or where a shared array isn't an exact key.
+/// The class of each item, where items share their arrays, as the copies of a few strings that a selection makes do. Items that share one array are one class without reading it, and only the first item of each array becomes an `Exact` key. `None` for fewer than `SHARED_FROM` items, where an item isn't an array, where more than one in `SHARED` of the items read so far hold arrays of their own, or where a shared array isn't an exact key.
 fn shared_classes(cells: &Cells) -> Option<Vec<u32>> {
     let Cells::Items(a) = cells else { return None };
     if a.carrier().is_some() { return None; }
     let Items::Values(items) = a.as_items() else { return None };
+    if items.len() < SHARED_FROM { return None; }
     let mut first = HashMap::new();
     let mut classes = Vec::with_capacity(items.len());
     for (i, v) in items.iter().enumerate() {

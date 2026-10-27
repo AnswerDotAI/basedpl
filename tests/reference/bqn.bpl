@@ -34,7 +34,7 @@ a←[0 1 2⋄3 4 5⋄6 7 8⋄9 10 11] ⋄ (1⌽)@(↑⍤1) a
 ⌽@ (2÷⍨≢)↑⊢ "abcdef"   ⍝ "cbadef"
 
 ⍝ bqn:under:73 — Add 10 to the elements below 5, with the mask computed from the argument
-{10+@((⍵<5)#)⍵} 3 8 2 2 6   ⍝ 13 8 12 12 6
+10+@[5>] 3 8 2 2 6   ⍝ 13 8 12 12 6
 
 ⍝ bqn:under:81 — Scan from the end
 ∧\@⌽ 1 0 1 0 1 1 1   ⍝ 0 0 0 0 1 1 1
@@ -296,5 +296,5 @@ a←1 ⋄ ~a ⍚[- ⊢] 5   ⍝ ¯5
 ⌽@ [[0 ¯1]]⌷ 1 2 3 4   ⍝ 4 2 3 1
 
 ⍝ bqncrate/table.tsv:1191 — Replace all spaces with dashes
-{('-'⍨)¨@((' '=⍵)#)⍵} "a b c"   ⍝ "a-b-c"
+'-'@[' '=]"a b c"   ⍝ "a-b-c"
 

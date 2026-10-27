@@ -10,10 +10,10 @@ x←2 4 9
 f←- ⋄ (f)3         ⍝ ¯3
 ```
 
-Parentheses separate a numeric argument from a numeric operand, as in `f⍣2(3)`. Without a separator, `f⍣2 3` takes `2 3` as the operand. `⊢` also works: `f⍣2⊢3`.
+Parentheses show a derived function between its arguments, as in `2(+⍣3)1`. Without them, `2+⍣3 1` takes `3 1` as the operand. With only a right argument, the [separator `⁝`](tricolon.qmd) keeps the literals apart without grouping: `≥⍣3⁝5`.
 
 ```bpl
-≥⍣3(5)            ⍝ 8
+2(+⍣3)1           ⍝ 7
 ```
 
 `(A⋄B)` is a vector of the rows `A` and `B`. Each row is a vector, even a row with one item, and rows can differ in length. `(A⋄)` is a one-item vector holding the row `A`. In `(…)ₓ`, every number is exact, and each item must be a whole-number literal.

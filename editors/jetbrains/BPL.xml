@@ -1199,7 +1199,17 @@
       <option name="OTHER" value="true" />
     </context>
   </template>
+  <template name="token-separator" value="⁝" description="⁝" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
   <template name="transpose" value="⍉" description="⍉" shortcut="TAB">
+    <context>
+      <option name="OTHER" value="true" />
+    </context>
+  </template>
+  <template name="tricolon" value="⁝" description="⁝" shortcut="TAB">
     <context>
       <option name="OTHER" value="true" />
     </context>

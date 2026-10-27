@@ -1,4 +1,4 @@
-use basedpl::{buffer::{Buffer, DType, FloatWidth, IntBuf, View}, EvalOptions, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value};
+use basedpl::{buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}, EvalOptions, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
@@ -13,14 +13,14 @@ use std::{ffi::c_int, sync::{atomic::{AtomicPtr, Ordering}, Arc, Mutex}};
 #[global_allocator]
 static GUARD: rustymath::memory::Guard = rustymath::memory::Guard::new();
 
-/// The collector for Python data that becomes BPL values: each item converts on its own, and a level whose items differ in shape nests them, with Python floats at `width`.
-struct Items { width: FloatWidth }
+/// The collector for Python data that becomes BPL values: each item converts on its own, and a level whose items differ in shape nests them, with Python floats at `width`. One collector serves a whole conversion. Every `str` in it that repeats a text shares the one character vector that `texts` holds for the text.
+struct Items { width: FloatWidth, texts: Texts }
 
 impl Collect for Items {
     type Piece = Value;
     fn int(&mut self, n: i128) -> Value { Value::Number(Number::from(BigInt::from(n)).marked(true)) }
-    fn piece(&mut self, obj: &Bound<'_, PyAny>) -> PyResult<Option<(Value, Vec<usize>)>> { Ok(Some((element(obj, self.width)?, vec![]))) }
-    fn element(&mut self, obj: &Bound<'_, PyAny>) -> PyResult<Value> { element(obj, self.width) }
+    fn piece(&mut self, obj: &Bound<'_, PyAny>) -> PyResult<Option<(Value, Vec<usize>)>> { Ok(Some((element(obj, self)?, vec![]))) }
+    fn element(&mut self, obj: &Bound<'_, PyAny>) -> PyResult<Value> { element(obj, self) }
 }
 
 fn value_error(e: impl ToString) -> PyErr { PyValueError::new_err(e.to_string()) }
@@ -28,24 +28,19 @@ fn value_error(e: impl ToString) -> PyErr { PyValueError::new_err(e.to_string())
 /// A float zero at `width`, as the prototype of imported numbers.
 fn zero(width: FloatWidth) -> Value { Value::Number(Number::float(0.0, width).marked(true)) }
 
-/// The array that the Python data `obj` gives, with Python floats at `width`. Nested lists, tuples and ranges give axes, a `str` gives a character vector, and any other object gives the value it gives as an item. Numbers take the import rules: they become floats only when every number converts exactly.
-fn import(obj: &Bound<'_, PyAny>, width: FloatWidth) -> PyResult<Value> {
-    if let Ok(s) = obj.cast::<PyString>() { return characters(s); }
-    let (layout, mut items) = walked(obj, &mut Items { width })?;
-    if layout.shape().is_empty() { return Ok(items.pop().expect("a unit holds one item")); }
-    Value::imported(layout.shape().to_vec(), items, zero(width)).map_err(value_error)
+/// The array that the Python data `obj` gives, converted by `items`. Nested lists, tuples and ranges give axes, a `str` gives a character vector, and any other object gives the value it gives as an item. Numbers take the import rules: they become floats only when every number converts exactly.
+fn import(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Value> {
+    if let Ok(s) = obj.cast::<PyString>() { return Ok(keyed::text(s.to_str()?)); }
+    let (layout, mut values) = walked(obj, items)?;
+    if layout.shape().is_empty() { return Ok(values.pop().expect("a unit holds one item")); }
+    Value::imported(layout.shape().to_vec(), values, zero(items.width)).map_err(value_error)
 }
 
-/// The characters of `s`, as a character vector.
-fn characters(s: &Bound<'_, PyString>) -> PyResult<Value> {
-    let chars: Vec<Value> = s.to_str()?.chars().map(Value::Character).collect();
-    Value::imported(vec![chars.len()], chars, Value::Character(' ')).map_err(value_error)
-}
-
-/// The item that the `str` `s` gives: one character, or a character vector.
-fn text(s: &Bound<'_, PyString>) -> PyResult<Value> {
-    let mut chars = s.to_str()?.chars();
-    match (chars.next(), chars.next()) { (Some(c), None) => Ok(Value::Character(c)), _ => characters(s) }
+/// The item that the `str` `s` gives: one character, or the character vector that `texts` holds for it.
+fn text(s: &Bound<'_, PyString>, texts: &mut Texts) -> PyResult<Value> {
+    let s = s.to_str()?;
+    let mut chars = s.chars();
+    Ok(match (chars.next(), chars.next()) { (Some(c), None) => Value::Character(c), _ => texts.text(s) })
 }
 
 /// A keyed vector of `data`, as a dict's values or a frame's columns give, with its axis keyed by `keys` and named `name`. It reads as a literal of its items reads, so exact and approximate numbers stay apart, as in a JSON object.
@@ -75,11 +70,11 @@ fn numpy_types(py: Python<'_>) -> PyResult<Option<&'static (Py<PyType>, Py<PyTyp
 }
 
 /// The value of a NumPy scalar or array, or `None` for any other object. A scalar of a numeric dtype keeps its dtype. Arrays of `str` or objects convert item by item, as do unsigned 64-bit values beyond `int64`, which stay exact.
-fn numpy(obj: &Bound<'_, PyAny>, width: FloatWidth) -> PyResult<Option<Value>> {
+fn numpy(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Option<Value>> {
     let Some((generic, ndarray)) = numpy_types(obj.py())? else { return Ok(None) };
     let dtype = |o: &Bound<'_, PyAny>| -> PyResult<(char, usize)> { let d = o.getattr("dtype")?; Ok((d.getattr("kind")?.extract()?, d.getattr("itemsize")?.extract()?)) };
     if obj.is_instance(generic.bind(obj.py()))? {
-        if !"biufc".contains(dtype(obj)?.0) { return element(&obj.call_method0("item")?, width).map(Some); }
+        if !"biufc".contains(dtype(obj)?.0) { return element(&obj.call_method0("item")?, items).map(Some); }
         let value = numeric(&obj.call_method0("__array__")?)?.ok_or_else(|| PyTypeError::new_err("unsupported NumPy dtype"))?;
         return Ok(Some(value.at(0)));
     }
@@ -89,8 +84,8 @@ fn numpy(obj: &Bound<'_, PyAny>, width: FloatWidth) -> PyResult<Option<Value>> {
     let mut obj = obj.clone();
     if kind == 'u' && size == 8 && obj.getattr("size")?.extract::<usize>()? > 0 && obj.call_method0("max")?.ge(1u64 << 63)? { (obj, kind) = (obj.call_method1("astype", ("O",))?, 'O'); }
     if !"UO".contains(kind) { return numeric(&obj); }
-    let data = obj.call_method0("ravel")?.call_method0("tolist")?.try_iter()?.map(|o| element(&o?, width)).collect::<PyResult<Vec<_>>>()?;
-    let prototype = if kind == 'U' { Value::Character(' ') } else { zero(width) };
+    let data = obj.call_method0("ravel")?.call_method0("tolist")?.try_iter()?.map(|o| element(&o?, items)).collect::<PyResult<Vec<_>>>()?;
+    let prototype = if kind == 'U' { Value::Character(' ') } else { zero(items.width) };
     Value::imported(obj.getattr("shape")?.extract()?, data, prototype).map(Some).map_err(value_error)
 }
 
@@ -100,8 +95,9 @@ fn fraction(py: Python<'_>) -> PyResult<&Bound<'_, PyType>> {
     FRACTION.import(py, "fractions", "Fraction")
 }
 
-/// The BPL value of `obj` as an item of an array, with Python floats at `width`. A Python float or complex number is weak, a complex number follows the current settings' kinds, and `None` reads as NaN. A `dict` and a data frame give keyed vectors, and a list gives a nested array.
-fn element(obj: &Bound<'_, PyAny>, width: FloatWidth) -> PyResult<Value> {
+/// The BPL value of `obj` as an item of an array, converted by `items`. A Python float or complex number is weak, a complex number follows the current settings' kinds, and `None` reads as NaN. A `dict` and a data frame give keyed vectors, and a list gives a nested array.
+fn element(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Value> {
+    let width = items.width;
     if let Ok(b) = obj.cast_exact::<PyBool>() { return Ok(Value::Number(Number::from_bool(b.is_true()))); }
     if obj.is_exact_instance_of::<PyInt>() { return Ok(Value::Number(Number::from(obj.extract::<BigInt>()?).marked(true))); }
     if obj.is_exact_instance_of::<PyFloat>() { return Ok(Value::Number(Number::float(obj.extract()?, width).marked(true))); }
@@ -109,7 +105,7 @@ fn element(obj: &Bound<'_, PyAny>, width: FloatWidth) -> PyResult<Value> {
         return Ok(Value::Number(Number::complex_in_session(num_complex::Complex64::new(z.real(), z.imag()), width).marked(true)));
     }
     if obj.is_none() { return Ok(Value::Number(Number::float(f64::NAN, width))); }
-    if let Ok(s) = obj.cast::<PyString>() { return text(s); }
+    if let Ok(s) = obj.cast::<PyString>() { return text(s, &mut items.texts); }
     // A native value, or Python's `Array`, `Function` or `Operator` around one.
     for o in [Some(obj.clone()), obj.getattr_opt("_inner")?].into_iter().flatten() {
         if let Ok(a) = o.extract::<PyRef<'_, PyArray>>() { return a.value().cloned(); }
@@ -118,22 +114,22 @@ fn element(obj: &Bound<'_, PyAny>, width: FloatWidth) -> PyResult<Value> {
     }
     if let Ok(d) = obj.cast::<PyDict>() {
         let keys = Keys::partial(rustymath_buffer::labels(&d.keys())?).map_err(rustymath_buffer::py_err)?;
-        let data = within(obj, || d.values().iter().map(|v| element(&v, width)).collect::<PyResult<Vec<_>>>())?;
+        let data = within(obj, || d.values().iter().map(|v| element(&v, items)).collect::<PyResult<Vec<_>>>())?;
         return record(keys, data, None, width);
     }
-    if obj.is_instance_of::<PyList>() || obj.is_instance_of::<PyTuple>() || obj.is_instance_of::<PyRange>() { return import(obj, width); }
+    if obj.is_instance_of::<PyList>() || obj.is_instance_of::<PyTuple>() || obj.is_instance_of::<PyRange>() { return import(obj, items); }
     if obj.is_instance(fraction(obj.py())?)? {
         let rational = BigRational::new_raw(obj.getattr("numerator")?.extract()?, obj.getattr("denominator")?.extract()?);
         return Number::try_from(rational).map(Value::Number).map_err(value_error);
     }
-    if let Some(value) = numpy(obj, width)? { return Ok(value); }
+    if let Some(value) = numpy(obj, items)? { return Ok(value); }
     if let Some(frame) = rustymath_buffer::frame::frame(obj)? {
         let ([rows, cols], [row, col]) = (frame.keys, frame.names);
-        let columns = frame.columns.iter().map(|c| labelled(import(c, width)?, vec![rows.clone()], vec![row.clone()])).collect::<PyResult<Vec<_>>>()?;
+        let columns = frame.columns.iter().map(|c| labelled(import(c, items)?, vec![rows.clone()], vec![row.clone()])).collect::<PyResult<Vec<_>>>()?;
         return record(cols.ok_or_else(|| PyValueError::new_err("a frame's columns need labels"))?, columns, col, width);
     }
     if let Some(value) = numeric(obj)? { return Ok(value); }
-    if obj.hasattr("__array__")? { return within(obj, || import(&obj.call_method0("__array__")?, width)); }
+    if obj.hasattr("__array__")? { return within(obj, || import(&obj.call_method0("__array__")?, items)); }
     Err(PyTypeError::new_err(format!("cannot convert {} to BPL", obj.get_type().name()?)))
 }
 
@@ -375,7 +371,7 @@ impl PyArray {
     fn contains(&self, py: Python<'_>, query: &Bound<'_, PyAny>) -> PyResult<bool> {
         let value = self.value()?.clone();
         let query = match query.cast::<PyString>() {
-            Ok(s) => match text(s)? {
+            Ok(s) => match text(s, &mut Texts::default())? {
                 chars @ Value::Array(_) if value.shape().len() == 1 => Value::from_parts(Vec::<usize>::new(), vec![chars], Value::Character(' ')).map_err(value_error)?,
                 item => item,
             },
@@ -502,8 +498,8 @@ impl PySession {
     }
     /// The array that the Python data `obj` gives. Python floats take the default float width.
     fn array(&self, obj: &Bound<'_, PyAny>) -> PyResult<PyArray> {
-        let width = basedpl::settings::float_width();
-        Ok(import(obj, width)?.into())
+        let mut items = Items { width: basedpl::settings::float_width(), texts: Texts::default() };
+        Ok(import(obj, &mut items)?.into())
     }
     /// Makes the display defaults of BPL's REPL and Jupyter kernel the current ones, for the BPL magics in IPython. Settings are process-wide, so this takes no lock on the session.
     fn make_interactive(&self) { Session::make_interactive() }
@@ -681,5 +677,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("_superscripts", basedpl::superscripts())?;
     m.add("_subscripts", basedpl::subscripts())?;
     m.add("_number_marks", basedpl::number_marks())?;
+    m.add("_retry_pauses", rustymath::timing::RETRY_PAUSES.to_vec())?;
     Ok(())
 }

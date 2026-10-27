@@ -1,9 +1,25 @@
 # `•csv` — CSV
 
-`•csv text` parses CSV into a vector of columns. Headers become keys. Numeric columns become numbers. Missing numeric cells become NaN. An integer column with missing cells stays exact. Missing text cells become `""`.
+`•csv text` parses CSV into a vector of columns. Headers become keys. Numeric columns become numbers. Missing numeric cells become the `fill` option's value, NaN by default. A fill takes its column's type wherever it keeps its value in that type: `["fill":0]` reads `0ₓ` at each missing cell of an integer column. A fill that doesn't keep its value, such as NaN or `0.5` in an integer column, makes the column floats. Missing text cells become `""`.
+
+Under static kinds, every integer column reads at the `int` width whatever its values, as every new integer does. A value that doesn't fit is a `DOMAIN` error that names the column.
+
+The `types` option sets the type of columns, each from a value of that type. A number, such as `0ₓ₈`, `0ₚ` or `$f`, makes a numeric column of its type. Each of the column's values, and the fill at its missing cells, must keep its value in that type, or the read is a `DOMAIN` error. A float type rounds to its width. Text, such as `""`, reads a column as written: `02134` stays `"02134"`. A record sets the columns that it names. A vector sets every column in order. It needs one value for each column, as a file with no header does:
+
+```bpl
+•prefs ["kinds":"static"]
+t←"id,price,flag,zip",(•ucs 10),"3000000000,1.5,1,02134",(•ucs 10),"7,2.25,0,10001"
+T←["types":["id":0ₓ₈ "price":0ₚ "flag":$f "zip":""]] •csv t
+T.id                       ⍝ [3000000000 7]ₓ₈
+T.flag                     ⍝ $t $f
+(•storage T.price).kind    ⍝ "float64"
+T.zip                      ⍝ "02134" "10001"
+•prefs ["kinds":"dynamic"]
+["header":$f "types":["" 0ₓ]] •csv "a,12",(•ucs 10),"b,7"   ⍝ [["a" "b"] [12 7]ₓ]
+```
 
 `•csv⁻¹ T` writes CSV text for a vector of columns. Keys supply the header. Column lengths must agree. NaN writes as an empty cell, and so does the exact value given as `fill`.
 
-Both directions take options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim` and `fill`. Reading also takes `text_columns`, `numeric_columns` and `missing`, and writing takes `forcequotes` and `lineending`. `"forcequotes":2` quotes every field. [CSV](../data.ipynb#csv) describes the options.
+Both directions take options on the left: `header`, `separator`, `quotechar`, `doublequote`, `escapechar`, `decimal`, `thousands`, `trim` and `fill`. Reading also takes `missing` and `types`, and writing takes `forcequotes` and `lineending`. `"forcequotes":2` quotes every field. [CSV](../data.ipynb#csv) describes the options.
 
-Errors: `DOMAIN` for invalid options, duplicate headers, and cells that CSV can't hold: nonintegral rationals, complex numbers, functions or nested cells; `LENGTH` for unequal record widths or columns.
+Errors: `DOMAIN` for invalid options, duplicate headers, and cells that CSV can't hold: rationals that aren't whole, complex numbers, functions or nested cells, and for a value that doesn't keep itself in its column's type; `LENGTH` for unequal record widths or columns, or a `types` vector of the wrong length.

@@ -1,4 +1,4 @@
-use crate::{array::{generated_len, Gather, Layout}, ErrorKind, Value};
+use crate::{array::{generated_len, Layout}, ErrorKind, Value};
 use rustymath::{agreement::Mapping, error::Error, gather::Steps};
 use std::borrow::Cow;
 
@@ -11,7 +11,7 @@ pub(crate) trait Agree: Sized {
     fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
     fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind>;
     fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
-    /// The positions that pair `i` reads. `None` means an argument reads its prototype, as it does for a key that it lacks. With no pairs, each argument reads its first item, or its prototype where it has none. `positions` calls `lens` for the arguments' item counts only where there are no pairs.
+    /// The positions that pair `i` reads. `None` means an argument reads its fill, as it does for a key that it lacks: its mapping's chosen fill, or its prototype. With no pairs, each argument reads its first item, or its prototype where it has none. `positions` calls `lens` for the arguments' item counts only where there are no pairs.
     fn positions(&self, i: usize, lens: impl FnOnce() -> [usize; 2]) -> [Option<usize>; 2];
     /// The pair of items that pair `i` reads (`positions`).
     #[inline]
@@ -37,8 +37,8 @@ impl Agree for Agreement {
     #[inline]
     fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>) {
         let [x, y] = self.positions(i, || [left.map_or(0, Value::len), right.len()]);
-        let item = |a: &'a Value, j: Option<usize>| j.map_or_else(|| Cow::Owned(a.prototype()), |j| a.at_ref(j));
-        (left.map(|a| item(a, x)), item(right, y))
+        let item = |a: &'a Value, j: Option<usize>, m: &Mapping| j.map_or_else(|| Cow::Owned(a.fill_item(m.chosen())), |j| a.at_ref(j));
+        (left.map(|a| item(a, x, &self.left)), item(right, y, &self.right))
     }
     fn laid(&self, left: Option<&Value>, right: &Value) -> (Option<Value>, Value) {
         let laid = |v: &Value, mapping: &Mapping| laid_cells(v, 0, mapping, &self.layout).expect("an agreement's layout fits");
@@ -57,7 +57,7 @@ pub(crate) fn expand(t: &Value, layout: &crate::array::Layout) -> Value {
 /// The tables that `primitive::copied` reads to lay an argument with cells of shape `cell` over `frame`: under each position of `frame`, the cell that `mapping` reads there. The result has shape `frame` followed by `cell`.
 pub(crate) fn broadcast_tables(mapping: &Mapping, frame: &[usize], cell: &[usize]) -> Vec<Steps> {
     let (base, steps) = mapping.entries(frame).expect("an agreement's mapping has steps");
-    let size: usize = cell.iter().product();
+    let size = crate::array::count(cell);
     let cells = cell.iter().zip(rustymath::layout::strides(cell)).map(|(&len, stride)| Steps::along(len, stride));
     Steps::with_base(base * size, steps.into_iter().map(|s| s.scaled(size)).chain(cells).collect())
 }
@@ -67,14 +67,12 @@ pub(crate) fn laid_cells(value: &Value, rank: usize, mapping: &Mapping, frame: &
     let n = value.shape().len();
     let layout = frame.concat(&value.layout().axes(n - rank..n));
     if value.is_atom() {
-        let len = generated_len(layout.shape())?;
-        let mut data = Gather::new(&[value], len);
-        data.fill(value, len);
-        return data.finish(layout, || value.prototype());
+        generated_len(layout.shape())?;
+        return Ok(layout.filled(value));
     }
     // A value whose frame is `frame` already holds each cell where the mapping reads it.
     if *value.layout().axes(0..n - rank) == **frame { return value.relaid(layout); }
-    crate::primitive::copied(value, layout, &broadcast_tables(mapping, frame.shape(), &value.shape()[n - rank..]))
+    crate::primitive::copied(value, layout, &mapping.with_steps(0, broadcast_tables(mapping, frame.shape(), &value.shape()[n - rank..])))
 }
 
 /// `value` repeated at each position of `frame`: an array with `frame`'s axes, then `value`'s. An error where the result would pass the size limit.

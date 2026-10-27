@@ -13,7 +13,7 @@ hang ← {  ⍝ node label ⍺ with formatted subtrees ⍵ hung below it.
     ⍉⌽⊃[⌽⍺,mask#'│'],↓⌽⍵ᵀ
   }¨{⊖⍵}\⍵  ⍝ formatted subtrees.
   case←~[null null]≡¨fmts  ⍝ non-null subtree cases.
-  join←(⊥case)⊃"∘┐┘┤"
+  join←⊥case ⊃ "∘┐┘┤"
   join≡'∘'?⊃,↓key_val;
   dent←' '¨key_val  ⍝ subtree padding.
   pads←{↓,/dent,⊂⍵}¨fmts
@@ -25,24 +25,24 @@ hang ← {  ⍝ node label ⍺ with formatted subtrees ⍵ hung below it.
 vec ← {  ⍝ vector of key=value pairs.
   ⍵≡0?⍬;  ⍝ null tree: null vector.
   [lft rgt]←↑⌽⍵  ⍝ subtrees.
-  ∇lft , (⊂↑⍵) , ∇rgt  ⍝ left_vec, key=val, right_vec.
+  ∇lft , ⊂↑⍵ , ∇rgt  ⍝ left_vec, key=val, right_vec.
 }  ⍝ :: ∇ t → [k v]
 
 ⍝ Helpers shared by sbst and splay.
 fmt ← {  ⍝ formatted tree ⍵.
   ⍵≡0?0 0⍴"";  ⍝ null tree: null format.
   [[key val] subs]←⍵  ⍝ node info.
-  (⊃,/(⍬↣⍕)¨[key '=' val]) hang ∇¨subs
+  ⊃,/(⍬↣⍕)¨[key '=' val] hang ∇¨subs
 }  ⍝ :: ∇ t → [-;]
 
 chk ← {  ⍝ tree stats / integrity check.
   0ₓ=≡⍵?[0≡⍵ 0ₓ 0ₓ 0ₓ ⍬];  ⍝ null: ok ht=0 sz=0 depth=0 range=⍬.
   [[key _] subs]←⍵  ⍝ node info and subtrees.
-  stats←(≥⍺)∇¨subs  ⍝ subtree stats.
+  stats←≥⍺ ∇¨ subs  ⍝ subtree stats.
   [oks szs dps hts krs]←↓⍉⊃stats
   keys←key{⍺,[⍶],⍵}/krs
   okkey←{⍵≡⍳⍴⍵}⍋⊃keys
-  okstr←[2 2]ₓ≡(⍴⍵),⍴↑⌽⍵
+  okstr←[2 2]ₓ ≡ ⍴⍵ , ⍴↑⌽⍵
   ok←okkey∧okstr∧∧/oks  ⍝ good tree.
   sz←≥+/szs  ⍝ subtree size.
   dp←⍺++/dps  ⍝ total node depth.
@@ -53,7 +53,7 @@ chk ← {  ⍝ tree stats / integrity check.
 }  ⍝ :: ∇ t → y s d h {r}
 
 ⍝ Shared by sbst, redblack and splay.
-wise ← {(⊽⍶)↑3⍴⍵}  ⍝ parameterise direction.
+wise ← {⊽⍶ ↑ 3⍴⍵}  ⍝ parameterise direction.
 
 ⍝ From http://dfns.dyalog.com/c_avl.htm
 
@@ -109,8 +109,8 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
     new←⍺+obal  ⍝ new balance.
     0ₓ∊[obal new]?[kv new subs];  ⍝ balance bits absorb moment: done.
     [[_ Bbal _] _]←obal wise subs  ⍝ otherwise:
-    Bbal≠-obal?(-obal)srot ⍵;  ⍝ single or
-    (-obal)drot ⍵  ⍝ double rotation.
+    Bbal≠-obal?-obal srot ⍵;  ⍝ single or
+    -obal drot ⍵  ⍝ double rotation.
   }  ⍝ :: m ∇ t → t
   srot←{                                     ⍝ single ⍺-rotation of tree ⍵.
     [Akv Abal [B r]]←⍺ proj ⍵                ⍝    <<A         yB>
@@ -134,7 +134,7 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
   chk←{  ⍝ tree stats / integrity check.
     0ₓ=≡⍵?[⍵≡0 0ₓ 0ₓ 0ₓ ⍬];  ⍝ null: ok maxbal=0 height=0 key-range.
     [[key _] bal subs]←⍵  ⍝ key, balance and subtrees.
-    stats←(≥⍺)∇¨subs  ⍝ subtrees stats.
+    stats←≥⍺ ∇¨ subs  ⍝ subtrees stats.
     [oks szs dps hts krs]←↓⍉⊃stats
     keys←key{⍺,[⍶],⍵}/krs
     okkey←{⍵≡⍳⍴⍵}⍋⊃keys
@@ -151,11 +151,11 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
   fmt←{  ⍝ formatted tree ⍵, its key=value after decoration ⍺.
     ⍵≡0?0 0⍴"";  ⍝ null tree: null format.
     [[key val] bal subs]←⍵  ⍝ node info.
-    deco←(≥bal)⊃"><" '─' "<>"
-    (⍺,,/(⍬↣⍕)¨[key '=' val]) hang deco∇¨subs
+    deco←≥bal ⊃ "><" '─' "<>"
+    ⍺,,/(⍬↣⍕)¨[key '=' val] hang deco∇¨subs
   }  ⍝ :: ∇ t → [-;]
-  proj←{(⍺=[0 0 ¯1]ₓ)⌽¨⍵}  ⍝ ⍺-projection of node ⍵.
-  wise←{(⍺=1ₓ)⌽⍵}  ⍝ subtrees ⍵ in -⍺, +⍺ order.
+  proj←{⍺=[0 0 ¯1]ₓ ⌽¨ ⍵}  ⍝ ⍺-projection of node ⍵.
+  wise←{⍺=1ₓ ⌽ ⍵}  ⍝ subtrees ⍵ in -⍺, +⍺ order.
   '∪'≡⍶?↑ ⍺ put ⍵;
   '⍎'≡⍶?⍺ get ⍵;  ⍝ value for key ⍺ in tree ⍵.
   '~'≡⍶?↑ ⍺ rem ⍵;
@@ -171,7 +171,7 @@ fibtree ← {  ⍝ Depth-⍵ worst-case fibonacci tree.
     ⍵=0ₓ?[0 ⍺];  ⍝ f 0 → []
     ⍵=1ₓ?[[⍺ 0ₓ [0 0]] ≥⍺];  ⍝ f 1 → ⍺ [] []
     [l m]←⍺ ∇ ⍵-2ₓ  ⍝ left subtree and next value
-    [r n]←(≥m)∇ ≤⍵  ⍝ right ..  ..  ..  ..  ..
+    [r n]←≥m ∇ ≤⍵  ⍝ right ..  ..  ..  ..  ..
     [[m 1ₓ [l r]] n]  ⍝ f ⍵+1 → ⍺ [f ⍵-2] [f ⍵-1]
   }⍵  ⍝ :: tree next ← next ∇ depth
 }
@@ -197,7 +197,7 @@ sbst ← {  ⍝ Simple Binary Search Trees.
     ~nxt≡key?⍺ ∇ search ⍵;  ⍝ natch: value.
     0 0≡subs?0 0;  ⍝ leaf: done.              X~X → Y
     0∊subs?[(subs⍳0)⊃⌽subs 0];  ⍝ one null: use other.    /       \
-    (rrot ⍺)∇ ⍵  ⍝ remove from rgt-rotn:  Y         X~X
+    rrot⍺ ∇ ⍵  ⍝ remove from rgt-rotn:  Y         X~X
   }  ⍝ :: t ∇ k _ → t _
                          ⍝    B   →   A
   rrot←{                 ⍝   / \     / \
@@ -222,7 +222,7 @@ sbst ← {  ⍝ Simple Binary Search Trees.
   cmp←{  ⍝ compress of alternate vine sections.
     ⍺=0ₓ?⍵;  ⍝ far enough: terminal leaf.
     [inf [lft rgt]]←⍵  ⍝ parts of node.
-    lev←(≤⍺)∇ lft  ⍝ leftmost vine leaf.
+    lev←≤⍺ ∇ lft  ⍝ leftmost vine leaf.
     2ₓ|⍺?[inf [lev rgt]];  ⍝ copying of alternate vine sections.
     rrot [inf [lev rgt]]  ⍝ rotation of alternate vine sections.
   }  ⍝ :: n ∇ v → t
@@ -348,13 +348,13 @@ redblack ← {  ⍝ Red-black trees.
     ⍵≡0?⊃,↓"[∘]";  ⍝ null tree: [∘].
     [[key val] red subs]←⍵  ⍝ node info.
     [l r]←red⊃"[]" "<>"
-    (⊃,/(⍬↣⍕)¨[l key '=' val r]) hang ∇¨subs
+    ⊃,/(⍬↣⍕)¨[l key '=' val r] hang ∇¨subs
   }  ⍝ :: ∇ t → [-;]
   chk←{  ⍝ tree statistics.
     0ₓ=≡⍵?[0≡⍵ 0ₓ 0ₓ 0ₓ ⍬ 1ₓ $t];  ⍝ null: ok size dep ht range blks isblk.
     [[key _] red subs]←⍵  ⍝ parts of node.
     blk←~red  ⍝ black node.
-    stats←(≥⍺)∇¨subs  ⍝ subtree stats.
+    stats←≥⍺ ∇¨ subs  ⍝ subtree stats.
     [oks ss ds hs ks bs bks]←↓⍉⊃stats
     keys←key{⍺,[⍶],⍵}/ks
     okK←{⍵≡⍳⍴⍵}⍋⊃keys
@@ -420,7 +420,7 @@ splay ← {  ⍝ Splay trees.
     [[[nxt _] subs] [key _]]←[⍺ ⍵]  ⍝ node and search key.
     ~nxt≡key?⍺ ∇ search ⍵;  ⍝ natch: remove from subtree.
     0 0≡subs?0;  ⍝ leaf: replace with null.
-    0∊subs?(subs⍳0)⊃⌽subs;  ⍝ one null: use the other.
+    0∊subs?subs⍳0 ⊃ ⌽subs;  ⍝ one null: use the other.
     (⍺ rot 1ₓ)∇ ⍵  ⍝ neither: remove from rotated tree.
   }  ⍝ :: t ∇ k → t
   search←{  ⍝ search subtree ⍺ for key ⊃⍵.
@@ -509,7 +509,7 @@ trav ← {  ⍝ Generic depth-first tree traversal.
 ⍝ From http://dfns.dyalog.com/c_ravt.htm
 
 ravt ← {  ⍝ Generic depth-first tree traversal.
-  (⍺∇⍨/⌽⍺⍹⍵)⍶⍵  ⍝ visits children before parent.
+  ⍺∇⍨/⌽⍺⍹⍵ ⍶ ⍵  ⍝ visits children before parent.
 }
 
 ⍝ From http://dfns.dyalog.com/c_tview.htm
@@ -518,6 +518,6 @@ tview ← {  ⍝ TreeView style tree from nested array.
   ⍺←0ₓ  ⍝ default depth 0.
   1ₓ=≡,⍵?⍺,⊂,⊂⍵;  ⍝ atom: leaf node depth and value.
   node←⍺,⊂1↑⍵  ⍝ tree:      node depth and value.
-  subs←(≥⍺)∇¨1↓⍵  ⍝ sub-trees.
+  subs←≥⍺ ∇¨ 1↓⍵  ⍝ sub-trees.
   ,⌿node⍪⊃subs
 }

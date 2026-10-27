@@ -55,6 +55,7 @@ Option-'	⊢
 Option-k	↑
 Option-Shift-k	↕
 Option-;	⊣
+Option-Shift-;	⁝
 Option-\	stile prefix
 Option-,	↢
 Option-Shift-,	≤

@@ -26,11 +26,18 @@ pub(crate) fn integer(n: &Number) -> Option<Json> {
     n.integer_text().map(|t| Json::Number(t.parse().expect("decimal integer")))
 }
 
-/// `•json` reads JSON5, which includes all JSON. `fill` replaces `null`.
-pub(crate) fn parse(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    let opts = Options::new("•json", left, None, &["fill"])?;
+/// `•json` reads JSON5, which includes all JSON. `fill` replaces `null`, and `types` gives the arrays that fields hold their types.
+pub(crate) fn parse(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+    let opts = Options::new("•json", left, None, &["fill", "types"])?;
     let read = json5::from_str(&text(right)?).map_err(|e| Error::domain(format!("JSON {e}")))?;
-    import(&read, &opts.fill()?, span)
+    let types = match opts.types()? {
+        crate::data::Types::Named(types) if types.values().all(|t| matches!(t, Value::Number(_))) => types,
+        _ => return Err(Error::domain("•json types must be a record from field names to numbers")),
+    };
+    let mut reading = Reading { fill: opts.fill()?, texts: keyed::Texts::default(), types, matched: Vec::new() };
+    let value = import(&read, "", &mut reading)?;
+    if let Some(k) = reading.types.keys().find(|k| !reading.matched.contains(k)) { return Err(Error::domain(format!("•json types names no field {k:?} that holds an array"))); }
+    Ok(value)
 }
 
 /// A JSON5 value as the `json5` crate reads it. Unlike `serde_json::Value`, it holds NaN.
@@ -96,21 +103,29 @@ pub(crate) fn exportable(value: &Value) -> Value {
     if keys.is_some() { keyed::partial_vector(names, data) } else { value.layout().collect(data, || value.prototype()) }.expect("subset of a valid array")
 }
 
-fn import(value: &Read, fill: &Number, span: &Span) -> Result<Value, Error> {
+/// What `import` reads with: the number that replaces `null`, the texts read so far, the `types` option, and the names in `types` that an array has matched.
+struct Reading { fill: Number, texts: keyed::Texts, types: HashMap<String, Value>, matched: Vec<String> }
+
+/// `value` as BPL reads it. An array is a column named `name`, the key of the field that holds it, or `""` where no field does (`data::typed_column`).
+fn import(value: &Read, name: &str, reading: &mut Reading) -> Result<Value, Error> {
     check()?;
     let value = match value {
-        Read::Null => Value::Number(fill.clone()),
+        Read::Null => Value::Number(reading.fill.clone()),
         Read::Bool(b) => Value::Number(Number::from_bool(*b)),
-        Read::Text(s) => keyed::text(s),
+        Read::Text(s) => reading.texts.text(s),
         Read::Integer(n) => Value::Number(exact(n.clone()).described("JSON number is outside the supported range")?),
         Read::Float(x) => Value::Number(Number::float(*x, crate::number::Numeric::current().width)),
         Read::List(items) => {
-            let data = items.iter().map(|v| import(v, fill, span)).collect::<Result<Vec<_>, _>>()?;
-            imported(vec![data.len()], data, |i| matches!(items[i], Read::Null), Value::integer(0)).described("invalid JSON array")?
+            let mut data = Vec::with_capacity(items.len());
+            for v in items { data.push(import(v, "", reading)?); }
+            let typed = reading.types.get(name).cloned();
+            if typed.is_some() { reading.matched.push(name.to_string()); }
+            let column = imported(vec![data.len()], data, |i| matches!(items[i], Read::Null), Value::integer(0)).described("invalid JSON array")?;
+            crate::data::typed_column("•json", name, column, typed.as_ref(), items.iter().any(|v| matches!(v, Read::Null)))?
         }
         Read::Record(entries) => {
             let keys = entries.iter().map(|(k, _)| k.as_str().into()).collect();
-            let data = entries.iter().map(|(_, v)| import(v, fill, span)).collect::<Result<_, _>>()?;
+            let data = entries.iter().map(|(k, v)| import(v, k, reading)).collect::<Result<_, _>>()?;
             keyed::vector(keys, data).described("invalid JSON object")?
         }
     };

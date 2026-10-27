@@ -24,7 +24,7 @@ invr ← {  ⍝ Approx inverse of real-valued function.
 
 ⍝ From http://dfns.dyalog.com/s_limit.htm
 GM ← ×/*÷∘≢  ⍝ Geometric mean.
-AGM ← {↑((+/÷≢),GM)⍣∞ ⍵}  ⍝ Arithmetic-geometric mean.
+AGM ← {↑(+/÷≢ , GM)⍣∞ ⍵}  ⍝ Arithmetic-geometric mean.
 
 ArcTan ← {
   ⍝ Inverse trigonometric tangent - gqr 19-11-2002.
@@ -48,14 +48,14 @@ ArcTan ← {
   next←{  ⍝ next term in sequence.
     (+/÷≢ ⍵),GM(+/÷≢ ⍵),1↓⍵
   }
-  start←(≥⍵²)*-÷2
+  start←≥⍵² * -÷2
   finish←↑ next⍣∞ start,1
   ⍵×start÷finish
 }
 
 ⍝ From http://dfns.dyalog.com/s_pow.htm
 
-rl   ← {(≤2ₓ*31ₓ)|⍵×7ₓ*5ₓ}  ⍝ next random link  LCG(7*5, ¯1+2*31)
+rl   ← {≤2ₓ*31ₓ | ⍵×7ₓ*5ₓ}  ⍝ next random link  LCG(7*5, ¯1+2*31)
 
 roll ← {⌊⍵×⍺÷≤2ₓ*31ₓ}  ⍝ roll ⍵ with random link ⍺.
 
@@ -63,8 +63,8 @@ roll ← {⌊⍵×⍺÷≤2ₓ*31ₓ}  ⍝ roll ⍵ with random link ⍺.
 
 traj ← {  ⍝ Function limit 'trajectory'.
   ⍺←⍬  ⍝ Initial null history.
-  (⊂⍵)∊⍺?⍺;  ⍝ Argument in history: finished.
-  (⍺,⊂⍵) ∇ ⍶ ⍵
+  ⊂⍵ ∊ ⍺?⍺;  ⍝ Argument in history: finished.
+  ⍺,⊂⍵ ∇ ⍶ ⍵
 }
 
 ⍝ From http://dfns.dyalog.com/s_traj.htm
@@ -72,7 +72,7 @@ traj ← {  ⍝ Function limit 'trajectory'.
 nr ← {  ⍝ Newton-Raphson.
   ⍺←1e¯14
   [y ∆y]←⍶¨⍵+[0 ⍺]
-  ⍵+(⍺×y)÷y-∆y  ⍝ next estimate.
+  ⍵ + ⍺×y ÷ y-∆y  ⍝ next estimate.
 }
 
 traj_2 ← {¯1↣↓ ,↢⊂↢⍶↢↑↢⌽⍨⍣(∊⍨↢⊂↢↑↢⌽⍨)∘(,⊂) ⍵}

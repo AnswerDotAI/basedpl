@@ -13,9 +13,12 @@ p_2←[n÷4;2]⍴sv
 ism←[n÷2;2]⍴⍳256ₓ
 bp_2←[n÷4;2]⍴0.5<sv
 f_2←32•float p_2
+images←["b":8 "h":224 "w":224 "c":3]⍴¿1204224⍴0
+split←{["b" "patch":["i" "j"] "pixel":["y" "x" "c"]]⍉⁻¹["b":0 "h":["i":1 ∞;"y":3 16] "w":["j":2 ∞;"x":4 16] "c":5]⍉⍵}
+rows←["b":0 "h":["i":1 ∞;"y":2 16] "w":3 "c":4]⍉
 ⍝⍝ structure
 ⍝ A structural glyph on a million floats gives a pending copy, which the call around it reads through, with no pass of its own over memory. A forward run is read in place. A reversed one is copied into a buffer for each block.
-⍝ Expected: `2×⌽sv+1` 1.25 copies: one fused pass, with an 8-byte read and write an item, and a block buffer for the reversal; `2×1⌽sv+1` and `2×(10↓sv)+1` 1 copy: one fused pass, with an 8-byte read and write an item; `+/(⌽sv)×sv` 1 copy: two 8-byte reads of `sv` an item, folded.
+⍝ Expected: `2×⌽sv+1` 1.25 copies: one fused pass, with an 8-byte read and write an item, and a block buffer for the reversal; `2×1⌽sv+1` and `2× 10↓sv + 1` 1 copy: one fused pass, with an 8-byte read and write an item; `+/ ⌽sv × sv` 1 copy: two 8-byte reads of `sv` an item, folded.
 ⍝ Held until studied: `2×⌽sv+1` has old Linux and wasm budgets that suggest about 6 and 3.65, more than twice its expected cost. On 22 October 2026 CI measured 2.81 on Linux and 4.75 in wasm. Its Linux and wasm budgets stay at the old value.
 2×⌽sv+1
 ⍝⍝: 2.5	12	7.3
@@ -25,22 +28,22 @@ f_2←32•float p_2
 ⍝⍝: 2	4.4	4.5
 
 ⍝ Held until studied: `2×(10↓sv)+1` has old Linux and wasm budgets that suggest about 3.8 and 2.4, more than twice its expected cost. On 22 October 2026 CI measured 1.9 on Linux and 1.53 in wasm. Its Linux and wasm budgets stay at the old value.
-2×(10↓sv)+1
+2× 10↓sv + 1
 ⍝⍝: 2	7.6	4.8
 
 ⍝ Held until studied: `+/(⌽sv)×sv` measures 2.74 on macOS and has old Linux and wasm budgets that suggest about 2.95 and 4.4, more than twice its expected cost. On 22 October 2026 CI measured 2.62 on Linux and 3.49 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
-+/(⌽sv)×sv
++/ ⌽sv × sv
 ⍝⍝: 5.8	5.9	8.8
 
 ⍝ A reversed read moves only under a call that reads one array. `sv×sv+0.5` reads two, so it runs forward first, and `2×` then reads its result backwards.
 ⍝ Expected: 2 copies: two passes, forward then reversed.
 ⍝ Held until studied: `2×⌽sv×sv+0.5` has old Linux and wasm budgets that suggest about 6.5 and 9, more than twice its expected cost. On 22 October 2026 CI measured 7 on Linux and 7.63 in wasm. Its Linux and wasm budgets stay at the old value.
-⍝⍝ allows stored "read out of order": `sv×sv+0.5` reads two arrays, so it runs forward first and `2×` reads its stored result backwards
 2×⌽sv×sv+0.5
 ⍝⍝: 4	13	18
 
 ⍝ A rotate of an overtake that carries only fill across the end composes with it into one padded read of the source (`Steps::read_through`).
 ⍝ Expected: 1 copy: one pass that reads `sv` through one padded map, with an 8-byte read and write an item.
+⍝ On CI's Linux it measured 0.92 copies in v0.1.73, then 1.74 and 1.46 in v0.1.74 and v0.1.75. This Mac retires the same instructions on builds from before and after. The cause is inferred, because this Mac can't run x86-64. The read runs one item behind the write. When glibc maps both 8 MB arrays at the same offset within a page, each load's address matches the low 12 bits of the store one item before it, and Zen 4 stalls on that match (4K aliasing). The allocations and frees before the case decide whether the arrays share an offset. The speed suite's move in v0.1.74 changed them.
 2×¯1⌽(n+2)↑sv
 ⍝⍝: 2.5	2	2.5
 
@@ -51,7 +54,7 @@ f_2←32•float p_2
 
 ⍝ Stride-two columns gather through the shared reader before their contiguous subtraction.
 ⍝ Expected: 1.25 copies: two strided reads of `sm`'s lines and a write of half as many items.
-([: 1]⌷sm)-([: 0]⌷sm)
+[: 1]⌷sm - [: 0]⌷sm
 ⍝⍝: 2.5	2.5	2.5
 
 ⍝ A join along the last axis writes each row whole, a lane from each argument in turn, where the lanes are short. Lanes of one length up to 8 move as blocks. `sm` has lanes of 2.
@@ -117,13 +120,13 @@ ism,sm
 
 ⍝ A fold of windows slides over its source and never builds the windows. Windows of up to 8 rows fold directly, finishing each block of a lane while it is in cache. Wider windows take van Herk-Gil-Werman, at a cost that doesn't grow with the width. Windows of a matrix fold in two separable passes.
 ⍝ Expected: `+/3↕sv` and `⌈/3↕sv` 1 copy: one read and one write per window, sliding; `+/50↕sv` 1 copy: a running sum, with one addition and one subtraction per window; `⌈/50↕sv` 2 copies: van Herk-Gil-Werman, with two passes of running maxima and a combine; `+/+/3 3↕sq` 2 copies: two separable sliding passes.
-⍝ On 25 October 2026 `+/3↕sv` measured 3.66 on macOS, for the reason `⌈/3↕sv`'s comment gives, and it measures 1.45 after the same change. Its macOS budget is twice its expected cost. Its Linux and wasm budgets, from CI's 5.09 and 3.41 of 22 October 2026, stay until CI measures the change.
+⍝ On 25 October 2026 `+/3↕sv` measured 3.66 on macOS, for the reason `⌈/3↕sv`'s comment gives, and it measures 1.45 after the same change. CI then measured 0.85 on Linux and 1.26 in wasm, against 5.09 and 3.41 on 22 October 2026. All three budgets are twice its expected cost.
 +/3↕sv
-⍝⍝: 2	11	8.4
+⍝⍝: 2	2	2
 
-⍝ On 25 October 2026 `⌈/3↕sv` measured 3.66 on macOS, because the direct folds took one pass over the whole lane for each row of a window, which reads and writes `sv`'s 8 MB three times. Direct folds now finish each block of a lane in cache, with a window's first three rows in one pass, and `⌈/3↕sv` measures 1.55 on macOS. Its macOS budget is twice its expected cost. Its Linux and wasm budgets, from CI's 5.85 and 2.6 of 23 October 2026, stay until CI measures the change.
+⍝ On 25 October 2026 `⌈/3↕sv` measured 3.66 on macOS, because the direct folds took one pass over the whole lane for each row of a window, which reads and writes `sv`'s 8 MB three times. Direct folds now finish each block of a lane in cache, with a window's first three rows in one pass, and `⌈/3↕sv` measures 1.55 on macOS. CI then measured 0.86 on Linux and 1.33 in wasm, against 5.85 and 2.6 on 23 October 2026. All three budgets are twice its expected cost.
 ⌈/3↕sv
-⍝⍝: 2	15	9.1
+⍝⍝: 2	2	2
 
 ⍝ Held until studied: `+/50↕sv` measures 6.97 on macOS and has old Linux and wasm budgets that suggest about 24.5 and 14, more than twice its expected cost. On 22 October 2026 CI measured 9.32 on Linux and 6.43 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 +/50↕sv
@@ -137,62 +140,72 @@ ism,sm
 +/+/3 3↕sq
 ⍝⍝: 14	13	15
 
-⍝ Padded windows of a vector slide over one padded copy of their source.
-⍝ Expected: 2 copies each: one padded copy, then one sliding pass.
+⍝ Padded windows of a vector fold in a block stage that reads their source in place, through the padding of each edge mode.
+⍝ Expected: about 1 copy each: one block stage reads the source once for each of a window's 3 positions, in cache, and writes the sums.
 ⍝ Held until studied: `+/¯3↕sv` measures 4.33 on macOS and has old Linux and wasm budgets that suggest about 9 and 4.7, more than twice its expected cost. On 22 October 2026 CI measured 7.97 on Linux and 6.61 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
-⍝⍝ allows forced "+/": padded windows slide over one padded copy of their source
+⍝ On CI's Linux the same code measured 7.97 copies on 22 October 2026, 4.77 on 23 October and in v0.1.73, then 6.98 and 6.75 in v0.1.74 and v0.1.75. The cause is inferred, as for `2×¯1⌽(n+2)↑sv`. The padded copy writes each item one place after where it reads it. When glibc maps the source and the copy at the same offset within a page, Zen 4 stalls on 4K aliasing.
 +/¯3↕sv
 ⍝⍝: 9.3	18	9.4
 
 ⍝ Held until studied: `+/["size":3 "edge":"wrap"]↕sv` measures 4.92 on macOS and has old Linux and wasm budgets that suggest about 11 and 11, more than twice its expected cost. On 22 October 2026 CI measured 7.24 on Linux and 6.54 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
-⍝⍝ allows forced "+/": padded windows slide over one padded copy of their source
 +/["size":3 "edge":"wrap"]↕sv
 ⍝⍝: 11	22	22
 
 ⍝ A copy's gradient reads its cotangent: a reversal's through the inverse map, windows' through a correlation that reads the cotangent's frames at each window position, and a sum of windows' through a sliding sum of the padded cotangent.
-⍝ Expected: `{+/sv×⌽⍵}∂ sv` 2 copies: the primal's pass and a reversed read of the cotangent; `{+/,(3↕sv)×3↕⍵}∂ sv` 6 copies: the primal and a correlation of the cotangent, each a few sliding passes; `{+/,+/50↕⍵}∂ sv` 3 copies: a sliding sum of the padded cotangent.
+⍝ Expected: `{+/sv×⌽⍵}∂ sv` 2 copies: the primal's pass and a reversed read of the cotangent; `{+/, 3↕sv × 3↕⍵}∂ sv` 6 copies: the primal and a correlation of the cotangent, each a few sliding passes; `{+/,+/50↕⍵}∂ sv` 3 copies: a sliding sum of the padded cotangent.
 ⍝ Held until studied: `{+/sv×⌽⍵}∂ sv` measures 5.49 on macOS and has old Linux and wasm budgets that suggest about 7 and 7.5, more than twice its expected cost. On 22 October 2026 CI measured 8.97 on Linux and 8.72 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 {+/sv×⌽⍵}∂ sv
 ⍝⍝: 9.8	14	15
 
 ⍝ Held until studied: `{+/,(3↕sv)×3↕⍵}∂ sv` measures 28.85 on macOS and has old Linux and wasm budgets that suggest about 85 and 60, more than twice its expected cost. On 22 October 2026 CI measured 95.6 on Linux and 54.7 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
-⍝⍝ gap stored "read out of order": the gradient should slide over `sv`, rather than store its 3,145,722 window items
-⍝⍝ gap forced "+/": `+/` under `∂` should fold its pending argument, rather than compute its 1,048,576 items first
-{+/,(3↕sv)×3↕⍵}∂ sv
+{+/, 3↕sv × 3↕⍵}∂ sv
 ⍝⍝: 63	170	120
 
 ⍝ Held until studied: `{+/,+/50↕⍵}∂ sv` measures 16.22 on macOS and has old Linux and wasm budgets that suggest about 42 and 29.5, more than twice its expected cost. On 22 October 2026 CI measured 26.6 on Linux and 17.2 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
-⍝⍝ gap forced "+/": `+/` under `∂` should fold its pending arguments, as the objective's sliding fold does, rather than compute 2,097,152 items first
 {+/,+/50↕⍵}∂ sv
 ⍝⍝: 34	84	59
 
 ⍝ A product of windows reads them a block of rows at a time, straight into the matrix product, and never builds the windows matrix. A product of a single-channel image's windows with one filter adds each column of the windows, read where it lies, into the result. Its gradient for the kernel reads them again in blocks. Its gradient for the image is one product of the windows of the zero-padded cotangent with the kernel reversed.
-⍝ Expected: `([64516 144]⍴3 3↕cimg)+.×ck` 28 copies on macOS, 120 on Linux and 240 in wasm: a product of 595 million flops, 567 an item, which on macOS takes 19 at Accelerate's rank-k rate, and gathering the windows a block of rows at a time, about 9; `([1044484 9]⍴3 3↕sq)+.×kq` 2.5 copies: nine multiply-adds per window, read in place; `{+/,([64516 144]⍴3 3↕cimg)+.×⍵}∂ ck` and `{+/,([64516 144]⍴3 3↕⍵)+.×ck}∂ cimg` 56 copies on macOS, 240 on Linux and 480 in wasm: two products of 595 million flops, with their gathers.
-([64516 144]⍴3 3↕cimg)+.×ck
+⍝ Expected: `[64516 144]⍴3 3↕cimg +.× ck` 28 copies on macOS, 120 on Linux and 240 in wasm: a product of 595 million flops, 567 an item, which on macOS takes 19 at Accelerate's rank-k rate, and gathering the windows a block of rows at a time, about 9; `[1044484 9]⍴3 3↕sq +.× kq` 2.5 copies: nine multiply-adds per window, read in place; `{+/, [64516 144]⍴3 3↕cimg +.× ⍵}∂ ck` and `{+/, [64516 144]⍴3 3↕⍵ +.× ck}∂ cimg` 56 copies on macOS, 240 on Linux and 480 in wasm: two products of 595 million flops, with their gathers.
+[64516 144]⍴3 3↕cimg +.× ck
 ⍝⍝: 56	240	480
 
-⍝ Held until studied: `([1044484 9]⍴3 3↕sq)+.×kq` measures 5.54 on macOS, down from 7.49 on 22 October 2026 when rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. Nine multiply-adds per window at NEON's two lanes of f64 take about twice the expected cost. Its old Linux and wasm budgets suggest about 8.5 and 10.5. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
-([1044484 9]⍴3 3↕sq)+.×kq
+⍝ Held until studied: `([1044484 9]⍴3 3↕sq)+.×kq` measured 7.49 on macOS on 22 October 2026, until rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. On 27 October 2026 `gmv_` widened the strip to 32 results (`COLUMN_STRIP`), which took it from 6.11 to 5.23 in alternating runs. Nine multiply-adds per window at NEON's two lanes of f64 take about twice the expected cost. Its old Linux and wasm budgets suggest about 8.5 and 10.5. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
+[1044484 9]⍴3 3↕sq +.× kq
 ⍝⍝: 16	17	21
 
-{+/,([64516 144]⍴3 3↕cimg)+.×⍵}∂ ck
+{+/, [64516 144]⍴3 3↕cimg +.× ⍵}∂ ck
 ⍝⍝: 120	480	960
 
-⍝⍝ gap forced "+.×": the image's gradient computes the pending cotangent's 2,064,512 items, then its zero-padded copy's 2,130,048. The padded copy should read the cotangent as it pads
-{+/,([64516 144]⍴3 3↕⍵)+.×ck}∂ cimg
+⍝⍝ gap forced "{+/, [64516 144]⍴3 3↕⍵ +.× ck}∂": `∂`'s program computes the cotangent's 2,064,512 items, a broadcast of the seed, then its zero-padded copy's 2,130,048. The padded copy should read the broadcast through its map as it pads, and the product read its windows with neither array built
+{+/, [64516 144]⍴3 3↕⍵ +.× ck}∂ cimg
 ⍝⍝: 120	480	960
 
 ⍝ A transpose of a million floats is a pending copy. A product reads it where it lies, as a transposed matrix. A fused call reads it in blocks of whole rows, as many as a cache line holds items.
-⍝ Expected: `(⍉sq)+.×vq` 0.5 copies: reads the matrix once; `2×⍉sq` 1.25 copies: one read and one write per item, through a blocked transpose.
+⍝ Expected: `⍉sq +.× vq` 0.5 copies: reads the matrix once; `2×⍉sq` 1.25 copies: one read and one write per item, through a blocked transpose.
 ⍝ Held until studied: `(⍉sq)+.×vq` has old Linux and wasm budgets that suggest about 4.35 and 5.5, more than twice its expected cost. On 22 October 2026 CI measured 5.41 on Linux and 5.39 in wasm. Its Linux and wasm budgets stay at the old value.
-(⍉sq)+.×vq
+⍉sq +.× vq
 ⍝⍝: 1	8.7	11
 
-⍝ Held until studied: `2×⍉sq` measures 3.43 on macOS and has old Linux and wasm budgets that suggest about 6 and 5.5, more than twice its expected cost. On 22 October 2026 CI measured 4.18 on Linux and 2.76 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
+⍝ On 27 October 2026 `2×⍉sq` measured 2.2 to 2.6 on macOS, with readings up to 3.5 while a video call ran. Today's route transposes into a block buffer of 128 KB, which doesn't fit in L1, and reads each source line twice, so the transpose costs about 2 copies rather than 1.25 (`ttr_`). Its fix needs a design and is under "Next release" in `meta/open.md`. Until then, the macOS budget is twice today's cost, 2.2. On 22 October 2026 CI measured 4.18 on Linux and 2.76 in wasm, and its Linux and wasm budgets stay at their old values.
 2×⍉sq
-⍝⍝: 6.8	12	11
+⍝⍝: 4.4	12	11
 
-⍝ A select by a comparison runs as one graph with the comparison and the cases: `0.5<sv` stays a lane mask, and `-` runs on every item.
+⍝ `[1 2 0]⍉cimg` moves `cimg`'s contiguous axis first, and its last two axes merge into one axis of 65,536 items a stride of 16 apart. A block stage would read each block as one strided run, so it gathers the whole copy once through the tiled transpose first (`Mapping::tiles_whole`).
+⍝ Expected: 2.25 copies: the transpose into the gathered copy, 1.25 as for `2×⍉sq`, then one fused pass over it. On 27 October 2026 it measured 3.4 to 3.6 on macOS, against 7.5 without the gathered copy, and later that day 3.6 to 4.2, with readings up to 5.2 while a video call ran. The transpose into the gathered copy costs about 2 copies rather than 1.25, for the reason `2×⍉sq`'s comment gives (`ttr_`), so today's route costs about 3. Its fix needs a design and is under "Next release" in `meta/open.md`. Until then, the macOS budget is twice today's cost, 3.6. Nearly all its cost is the same transpose as `2×⍉sq`'s, which CI measured at 4.18 on Linux and 2.76 in wasm, against 2.2 on macOS today. Scaling today's 3.6 by those ratios gives estimates of about 6.9 on Linux and 4.5 in wasm, and the Linux and wasm budgets are twice those.
+2×[1 2 0]⍉cimg
+⍝⍝: 7.3	14	9
+
+⍝ `⍉⁻¹` splits and merges axes as einops does, and the result stays a view. `split` cuts 8 images of 224×224×3, 1,204,224 items, into 196 patches of 16×16×3, which reorders them. `rows` cuts each image's rows into 14 runs of 16 without reordering (`usb_`, 26 October 2026).
+⍝ Expected: `+/,2×split⁝images` 0.9 copies: one fused pass over 1.15 times `n`, which reads each item once and writes nothing, about 0.6, and a block buffer that gathers the patches' runs of 48 items, about 0.3, at the 0.25 copies for each `n` items of `2×⌽sv+1`'s buffer; `+/,2×rows⁝images` 0.6 copies: the same pass, reading `images` in place. Wasm, twice the native cost, as `+/v`'s fold.
+⍝ On 27 October 2026, with other work running, `+/,2×split(images)` measured 2.0 copies against 1.0 for `+/,2×images`, so its buffer cost about twice what `2×⌽sv+1`'s did in the same run.
++/,2×split⁝images
+⍝⍝: 1.8	1.8	3.6
+
++/,2×rows⁝images
+⍝⍝: 1.2	1.2	2.4
+
+⍝ A select by a comparison runs as one program with the comparison and the cases: `0.5<sv` stays a lane mask, and `-` runs on every item.
 ⍝ Expected: 1.25 copies: one fused pass with a comparison, a negation and a blend.
 ⍝ Held until studied: `(0.5<)⍚[⊢ -] sv` measures 3.06 on macOS and has old Linux and wasm budgets that suggest about 3.55 and 9, more than twice its expected cost. On 22 October 2026 CI measured 3.28 on Linux and 3.16 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
 (0.5<)⍚[⊢ -] sv

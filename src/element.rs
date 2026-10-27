@@ -1,7 +1,7 @@
-//! How the element types of compact storage read their items from a `Value` and build arrays from them. Each type's fill and its conversions to other types are rustymath's `Element` and `Source`.
+//! How the element types of compact storage read their items from a `Value` and build arrays from them. Each type's fill and its conversions to other types are rustymath's `Element` and `Source`, and `Converts` for the conversions that marks make.
 use crate::{array::Storage, number::{int::Int, Numeric}, Value};
 use num_complex::{Complex32, Complex64};
-use rustymath::{buffer::{ComplexBuf, Complexes, Element, FloatWidth, IntBuf, Ints, read_all, Source, View, Width}, with_complexes, with_floats, with_ints};
+use rustymath::{buffer::{ComplexBuf, Complexes, Element, FloatWidth, IntBuf, Ints, read_all, Source, View, Width}, tolerant::{Exactly, Tolerant}, with_complexes, with_floats, with_ints};
 use std::borrow::Cow;
 
 /// An element type of compact storage, read from and built into `Value`s.
@@ -119,4 +119,52 @@ pub(crate) fn read_as<A: Stored>(value: &Value) -> Option<Cow<'_, [A]>> where bo
         View::Booleans(y) => read_all(y), View::Integers(ints) => with_ints!(ints, |y| read_all(y)), View::Floats(y) => with_floats!(y, |y| read_all(y)),
         View::Complexes(z) => A::from_complexes(z)?, View::Characters(_) => return None
     }))
+}
+
+/// An item that converts to type `T` as fixed marks, width marks and programs' conversions convert it, where `t` is the tolerance of a float's floor. A float target reads the item as `Source` reads it. An integer target takes a Boolean as 0 or 1, wraps an integer to its width, and takes the floor of a float within `t`, saturated at its range as Rust's `as` saturates. An exact fraction converts exactly: a whole one wraps as an integer does, and any other takes its floor, saturated.
+pub(crate) trait Converts<T>: Copy { fn converted(self, t: impl Tolerant) -> T; }
+
+/// Writes `Converts` into the float types from each item type listed, through `Source`.
+macro_rules! into_floats {
+    ($($s:ty),+) => {$(
+        impl Converts<f32> for $s { #[inline] fn converted(self, _: impl Tolerant) -> f32 { Source::<f32>::read(self) } }
+        impl Converts<f64> for $s { #[inline] fn converted(self, _: impl Tolerant) -> f64 { Source::<f64>::read(self) } }
+    )+};
+}
+into_floats!(bool, u8, i16, i32, i64, half::f16, f32, f64);
+
+/// Writes `Converts` into each integer type listed, from Booleans, integers, floats and exact fractions.
+macro_rules! into_wholes {
+    (@ints $t:ty: $($s:ty),+) => {$(
+        impl Converts<$t> for $s { #[inline] fn converted(self, _: impl Tolerant) -> $t { self as $t } }
+    )+};
+    (@floats $t:ty: $($s:ty),+) => {$(
+        impl Converts<$t> for $s { #[inline] fn converted(self, t: impl Tolerant) -> $t { rustymath::convert::saturated::<$t, f64>(t.floor(f64::from(self))) } }
+    )+};
+    ($($t:ty),+) => {$(
+        impl Converts<$t> for bool { #[inline] fn converted(self, _: impl Tolerant) -> $t { <$t>::from(self) } }
+        into_wholes!(@ints $t: u8, i16, i32, i64);
+        into_wholes!(@floats $t: half::f16, f32, f64);
+        impl Converts<$t> for &num_rational::BigRational {
+            fn converted(self, _: impl Tolerant) -> $t {
+                use num_traits::{Signed, ToPrimitive};
+                if self.is_integer() { return crate::number::low_bits(self.numer()) as $t; }
+                let floor = self.floor().to_integer();
+                floor.to_i64().map_or(if floor.is_negative() { <$t>::MIN } else { <$t>::MAX }, |n| n.clamp(<$t>::MIN as i64, <$t>::MAX as i64) as $t)
+            }
+        }
+    )+};
+}
+into_wholes!(u8, i16, i32, i64);
+
+/// The numbers of `view` converted to `T` (`Converts`), each float floored within the tolerance that `numeric` gives its width. `None` for complex numbers and characters.
+pub(crate) fn converted<T>(view: View<'_>, numeric: Numeric) -> Option<Vec<T>>
+where bool: Converts<T>, u8: Converts<T>, i16: Converts<T>, i32: Converts<T>, i64: Converts<T>, half::f16: Converts<T>, f32: Converts<T>, f64: Converts<T> {
+    fn each<S: Converts<T>, T>(items: &[S], t: impl Tolerant) -> Vec<T> { items.iter().map(|&x| x.converted(t)).collect() }
+    Some(match view {
+        View::Booleans(v) => each(v, Exactly),
+        View::Integers(ints) => with_ints!(ints, |v| each(v, Exactly)),
+        View::Floats(v) => rustymath::with_tolerance!(numeric.tolerance_at(v.tag()), |t| with_floats!(v, |v| each(v, t))),
+        View::Complexes(_) | View::Characters(_) => return None,
+    })
 }

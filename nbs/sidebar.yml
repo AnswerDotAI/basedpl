@@ -34,9 +34,13 @@ website:
           - bracket-types.ipynb
           - scripts.ipynb
           - assignment.ipynb
+          - composition.qmd
           - dfns.ipynb
           - modules.qmd
           - keyed.ipynb
+          - autodiff.qmd
+          - index-notation.qmd
+          - performance.qmd
       - section: Working with data
         contents:
           - data.ipynb

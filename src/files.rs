@@ -30,7 +30,7 @@ pub(crate) fn join(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, 
     let (shape, fields) = keyed::fields(right).described("•path⁻¹ needs a record of path parts that agree")?;
     let parts = keyed::slots(fields, &PARTS, 3).map_err(|name| Error::domain(format!("unknown path part: {name}")))?;
     let part = |i: usize, p: usize| -> Result<String, Error> { parts[i].as_ref().map_or(Ok(String::new()), |items| text(&items[p])) };
-    let paths = (0..shape.iter().product()).map(|p| {
+    let paths = (0..crate::array::count(&shape)).map(|p| {
         let [parent, stem, extension] = [0, 1, 2].map(|i| part(i, p));
         let mut name = stem?;
         let extension = extension?;

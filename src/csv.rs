@@ -1,6 +1,6 @@
 use crate::execution::check;
 use rustymath::error::Kind;
-use crate::{array::generated_len, data::text as string, Span, keyed, Described, Error, Number, Value};
+use crate::{array::generated_len, data::{text as string, Types}, Span, keyed, Described, Error, Number, Value};
 use num_bigint::BigInt;
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ struct Options {
 impl Options {
     fn new(left: Option<&Value>, import: bool) -> Result<Self, Error> {
         let mut allowed = vec!["separator", "quotechar", "escapechar", "doublequote", "decimal", "thousands", "trim", "header", "fill"];
-        allowed.extend(if import { &["text_columns", "numeric_columns", "missing"][..] } else { &["forcequotes", "lineending"][..] });
+        allowed.extend(if import { &["missing", "types"][..] } else { &["forcequotes", "lineending"][..] });
         let common = crate::data::Options::new(if import { "•csv" } else { "•csv⁻¹" }, left, None, &allowed)?;
         let width = crate::number::Numeric::current().width;
         let mut opts = Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None, width };
@@ -53,26 +53,6 @@ impl Options {
         let c = chars.next();
         if chars.next().is_some() { return Err(Error::new(Kind::Length, format!("CSV {key} needs one character or ''"))); }
         Ok(c)
-    }
-
-    fn columns(&self, key: &str, width: usize, headers: Option<&[Arc<str>]>) -> Result<Vec<bool>, Error> {
-        let mut selected = vec![false; width];
-        if let Some(v) = self.common.values.get(key) {
-            if v.shape().len() > 1 { return Err(Error::new(Kind::Rank, "CSV column selectors must be a vector")); }
-            let selectors = if keyed::name(v).is_some() { vec![v.clone()] } else { v.elements().collect() };
-            for v in selectors {
-                let i = if let Some(name) = keyed::name(&v) { headers.and_then(|h| h.iter().position(|s| s == &name)) } else {
-                    // Positions count from 0, and negative ones count from the end.
-                    v.as_number().and_then(|n| n.integer().ok()).and_then(|n| {
-                        let i = crate::array::saturated(n.unsigned_abs());
-                        if n < 0 { width.checked_sub(i) } else { Some(i) }
-                    })
-                };
-                let i = i.filter(|&i| i < width).ok_or_else(|| Error::new(Kind::Index, "unknown CSV column"))?;
-                selected[i] = true;
-            }
-        }
-        Ok(selected)
     }
 
     fn number(&self, field: &str) -> Option<Number> {
@@ -135,16 +115,22 @@ fn import(source: &str, opts: &Options) -> Result<Value, Error> {
         generated_len(&[columns[0].len() + 1, columns.len()])?;
         for (column, s) in columns.iter_mut().zip(record.iter()) { column.push(s.to_owned()); }
     }
-    let text_columns = opts.columns("text_columns", columns.len(), headers.as_deref())?;
-    let numeric_columns = opts.columns("numeric_columns", columns.len(), headers.as_deref())?;
+    let types: Vec<Option<Value>> = match opts.common.types()? {
+        Types::Named(named) => {
+            if let Some(k) = named.keys().find(|k| !headers.as_ref().is_some_and(|h| h.iter().any(|n| &**n == k.as_str()))) { return Err(Error::domain(format!("•csv types names no column {k:?}"))); }
+            (0..columns.len()).map(|j| headers.as_ref().and_then(|h| named.get(&*h[j]).cloned())).collect()
+        }
+        Types::Ordered(ordered) if ordered.len() == columns.len() => ordered.into_iter().map(Some).collect(),
+        Types::Ordered(ordered) => return Err(Error::new(Kind::Length, format!("•csv types gives {} types for {} columns", ordered.len(), columns.len()))),
+    };
     let mut result = Vec::with_capacity(columns.len());
-    for (j, cells) in columns.into_iter().enumerate() {
+    for (j, (cells, typed)) in columns.into_iter().zip(types).enumerate() {
         check()?;
-        if text_columns[j] && numeric_columns[j] { return Err(Error::domain("CSV column selected as both text and numeric")); }
+        let name = headers.as_ref().map_or_else(|| (j + 1).to_string(), |h| h[j].to_string());
+        let text = typed.as_ref().is_some_and(|t| keyed::name(t).is_some());
         let absent: Vec<bool> = cells.iter().map(|s| missing.contains(s)).collect();
-        let parsed: Vec<_> = cells.iter().zip(&absent).map(|(s, &a)| if text_columns[j] || a { None } else { opts.number(s) }).collect();
-        let is_numeric =
-            numeric_columns[j] || (!text_columns[j] && parsed.iter().any(Option::is_some) && parsed.iter().zip(&absent).all(|(n, &a)| n.is_some() || a));
+        let parsed: Vec<_> = cells.iter().zip(&absent).map(|(s, &a)| if text || a { None } else { opts.number(s) }).collect();
+        let is_numeric = !text && (typed.is_some() || (parsed.iter().any(Option::is_some) && parsed.iter().zip(&absent).all(|(n, &a)| n.is_some() || a)));
         let column = if is_numeric {
             let mut numbers = Vec::with_capacity(cells.len());
             for (i, (s, n)) in cells.iter().zip(parsed).enumerate() {
@@ -153,9 +139,12 @@ fn import(source: &str, opts: &Options) -> Result<Value, Error> {
                     None => return Err(Error::domain(format!("CSV row {}, column {}: invalid number {s:?}", i + 1 + usize::from(header), j + 1)))
                 }));
             }
-            crate::data::imported(vec![cells.len()], numbers, |i| absent[i], Value::integer(0))
-        } else { keyed::texts(&[cells.len()], cells.iter().zip(&absent).map(|(s, &a)| keyed::text(if a { "" } else { s })).collect()) };
-        result.push(column.described("invalid CSV column")?);
+            crate::data::typed_column("•csv", &name, crate::data::imported(vec![cells.len()], numbers, |i| absent[i], Value::integer(0)).described("invalid CSV column")?, typed.as_ref(), absent.contains(&true))?
+        } else {
+            let mut texts = keyed::Texts::default();
+            keyed::texts(&[cells.len()], cells.iter().zip(&absent).map(|(s, &a)| texts.text(if a { "" } else { s })).collect()).described("invalid CSV column")?
+        };
+        result.push(column);
     }
     match headers {
         Some(names) => keyed::vector(names, result), None => Value::from_parts(vec![result.len()], result, keyed::text(""))

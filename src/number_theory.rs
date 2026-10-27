@@ -14,7 +14,7 @@ fn array(shape: Vec<usize>, data: Vec<Value>) -> Result<Value, Error> {
 }
 /// `n`, if it's positive, as factorisation needs.
 fn positive(n: BigUint) -> Result<BigUint, Error> {
-    if n.is_zero() { Err(Error::domain("factorisation requires a positive integer")) } else { Ok(n) }
+    if n.is_zero() { Err(Error::domain("factorisation requires a positive whole number")) } else { Ok(n) }
 }
 fn beyond() -> Error { Error::new(Kind::Limit, "prime enumeration exceeds machine range") }
 
@@ -25,7 +25,7 @@ fn factor_result(selector: Option<&Number>, n: BigUint) -> Result<Value, Error> 
         return array(vec![data.len()], data);
     };
     let inf = x.as_float().filter(|x| x.is_infinite());
-    let count = if inf.is_some() { 0 } else { x.integer().described("factor count must be integral or infinite")? };
+    let count = if inf.is_some() { 0 } else { x.integer().described("factor count must be whole or infinite")? };
     if count < 0 || inf == Some(f64::NEG_INFINITY) {
         let start = if count < 0 { factors.len().saturating_sub(saturated(count.unsigned_abs())) } else { 0 };
         let factors = &factors[start..];
@@ -47,7 +47,7 @@ fn nth_primes(right: &Value) -> Result<Value, Error> {
     generated_len(right.shape())?;
     let mut requests = right.elements().enumerate().map(|(i, e)| {
             // Prime indices count from 0: `⍭ 0` is 2.
-            let n = number(&e)?.nonnegative_integer::<usize>().described("prime indices must be nonnegative integers")?;
+            let n = number(&e)?.nonnegative_integer::<usize>().described("prime indices must be nonnegative whole numbers")?;
             Ok((n, i))
         })
         .collect::<Result<Vec<_>, Error>>()?;
@@ -65,10 +65,10 @@ fn nth_primes(right: &Value) -> Result<Value, Error> {
 }
 
 fn prime(selector: &Number, n: BigInt) -> Result<Value, Error> {
-    let op = selector.integer().described("prime selector must be integral")?;
+    let op = selector.integer().described("prime selector must be whole")?;
     if op == 1 { return Ok(Value::Number(Number::from_bool(match n.to_biguint() { Some(n) => nt::is_prime(&n)?, None => false }))); }
     if op == 2 && n < BigInt::from(2) { return Ok(exact(2)); }
-    let n = n.to_biguint().ok_or_else(|| Error::domain("expected a nonnegative integer"))?;
+    let n = n.to_biguint().ok_or_else(|| Error::domain("expected a nonnegative whole number"))?;
     match op {
         2 | -2 => {
             let p = if op == 2 { nt::next_prime(&n)? } else { nt::prev_prime(&n)? };
@@ -83,10 +83,10 @@ fn prime(selector: &Number, n: BigInt) -> Result<Value, Error> {
 pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value) -> Result<Value, Error> {
     if !factor && left.is_none() { return nth_primes(right); }
     let result = each_cell(left, right, |x, n| match factor {
-        true => factor_result(x, n.to_biguint().ok_or_else(|| Error::domain("factorisation requires positive integers"))?),
+        true => factor_result(x, n.to_biguint().ok_or_else(|| Error::domain("factorisation requires positive whole numbers"))?),
         false => prime(x.unwrap(), n),
     })?;
-    match right.fixed_width() { Some(width) if factor && left.is_none() => result.to_fixed(width).described("invalid factors"), _ => Ok(result) }
+    match right.fixed_width() { Some(width) if factor && left.is_none() => result.to_fixed(width, crate::number::Numeric::current()).described("invalid factors"), _ => Ok(result) }
 }
 
 /// `⍭⁻¹`: the number of primes below each item, which is a prime's index.
@@ -105,7 +105,7 @@ fn each_cell(left: Option<&Value>, right: &Value, f: impl Fn(Option<&Number>, Bi
         check()?;
         let (x, y) = agreement.values_ref(left, right, i);
         let x = x.as_deref().map(|a| number(a)).transpose()?;
-        let n = if right.is_empty() { BigInt::one() } else { number(&y)?.big_integer().described("number theory requires integers")? };
+        let n = if right.is_empty() { BigInt::one() } else { number(&y)?.big_integer().described("number theory requires whole numbers")? };
         cells.push(f(x.as_ref(), n)?);
     }
     if right.is_atom() && left.is_none_or(Value::is_atom) { return Ok(cells.remove(0)); }
@@ -119,7 +119,7 @@ pub(crate) fn product(right: &Value) -> Result<Value, Error> {
         check()?;
         let cell = cells.get(i).described("invalid factor cell")?;
         let mut product = BigInt::one();
-        for e in cell.elements() { product *= number(&e)?.big_integer().described("factors must be integral")?; }
+        for e in cell.elements() { product *= number(&e)?.big_integer().described("factors must be whole")?; }
         data.push(exact(product));
     }
     if cells.frame().is_empty() { return Ok(data.remove(0)); }

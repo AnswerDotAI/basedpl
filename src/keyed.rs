@@ -1,6 +1,6 @@
 use rustymath::{buffer::{FloatWidth, View}, error::Kind, layout::strides};
 use crate::{array::{Items, Steps}, ErrorKind, Number, Value};
-use rustymath::hashing::{HashSet, HashSetExt};
+use rustymath::hashing::{HashMap, HashSet, HashSetExt};
 use std::sync::Arc;
 
 pub use rustymath::layout::Keys;
@@ -17,7 +17,25 @@ pub fn name(value: &Value) -> Option<Arc<str>> {
     }
 }
 
-pub(crate) fn text(name: &str) -> Value { Value::characters([name.chars().count()], name.chars().collect()).unwrap() }
+/// The character vector that holds `name`.
+pub fn text(name: &str) -> Value { Value::characters([name.chars().count()], name.chars().collect()).unwrap() }
+
+/// Character vectors for the texts that one import reads. Each distinct text is made once, and every cell that repeats it shares that one array. Only the first `SHAREABLE` distinct texts are shared. A text first read after those is made for its cell alone.
+#[derive(Default)]
+pub struct Texts(HashMap<Box<str>, Value>);
+
+/// The most distinct texts that one `Texts` shares. Sharing a text costs an allocation and a table entry, and an import with this many distinct texts, such as a column of identifiers, saves little memory by sharing the rest.
+const SHAREABLE: usize = 1 << 16;
+
+impl Texts {
+    /// The character vector that holds `s`.
+    pub fn text(&mut self, s: &str) -> Value {
+        if let Some(v) = self.0.get(s) { return v.clone(); }
+        let v = text(s);
+        if self.0.len() < SHAREABLE { self.0.insert(s.into(), v.clone()); }
+        v
+    }
+}
 /// An array of `shape` holding the text items `items`, with empty text as its prototype.
 pub(crate) fn texts(shape: &[usize], items: Vec<Value>) -> Result<Value, ErrorKind> { Value::shaped(shape, items, text("")) }
 /// The texts in `value`, the reverse of `texts`: the text itself with an empty shape, or each text in an array of them with the array's shape. `None` when an item isn't text.
@@ -50,7 +68,8 @@ pub(crate) enum Selector { One(Arc<str>), Many(Vec<usize>, Vec<Arc<str>>) }
 impl Selector {
     /// `None` when the value holds no names at all; mixed contents are a DOMAIN ERROR.
     pub fn of(value: &Value) -> Result<Option<Self>, ErrorKind> {
-        if matches!(value.as_items(), Items::Compact(View::Integers(_) | View::Floats(_))) { return Ok(None); }
+        // Only characters, alone or among mixed items, can be names (`name`), so numbers in any storage hold none.
+        if !matches!(value.as_items(), Items::Compact(View::Characters(_)) | Items::Values(_)) { return Ok(None); }
         if let Some(k) = name(value) { return Ok(Some(Self::One(k))); }
         if value.is_atom() || value.is_empty() || !value.elements().any(|e| name(&e).is_some()) { return Ok(None); }
         let names = value.elements().map(|e| name(&e).ok_or(Kind::Domain)).collect::<Result<_, _>>()?;
@@ -85,7 +104,7 @@ pub(crate) fn fields(value: &Value) -> Result<(Vec<usize>, Vec<Field>), ErrorKin
     let pairs = pairs(value)?;
     let single = |v: &Value| v.is_atom() || name(v).is_some();
     let shape = pairs.iter().find(|(_, v)| !single(v)).map_or(vec![], |(_, v)| v.shape().to_vec());
-    let len = shape.iter().product();
+    let len = crate::array::count(&shape);
     let fields = pairs.into_iter().map(|(name, v)| match single(&v) {
         true => Ok((name, vec![v; len])), false if v.shape() == shape => Ok((name, v.elements().collect())), false => Err(ErrorKind::from(Kind::Length))
     });
@@ -144,7 +163,8 @@ fn names(value: &Value) -> Result<Vec<Option<Arc<str>>>, ErrorKind> {
     value.elements().enumerate().map(entry).collect()
 }
 
-pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
+/// The key list for each axis that `keys:` labels, in order, and those axes' names where `keys` is keyed.
+fn labels(keys: &Value) -> Result<(Vec<Vec<Option<Arc<str>>>>, Option<&Arc<Keys>>), ErrorKind> {
     if keys.has_keys() && keys.shape().len() != 1 { return Err(Kind::Rank.into()); }
     let axis_names = keys.keys(0);
     let lists = if axis_names.is_some() { keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()? } else {
@@ -153,9 +173,17 @@ pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) ->
             Err(k) => return Err(k)
         }
     };
-    if let (None, None, [list]) = (axis_names, axes, &lists[..]) {
-        if let [Some(name)] = &list[..] { return vector(vec![name.clone()], vec![values.clone()]); }
-    }
+    Ok((lists, axis_names))
+}
+
+/// The key of the record of one entry that `keys:` makes without axes, where `keys` is unkeyed and holds a single key.
+fn entry<'a>(lists: &'a [Vec<Option<Arc<str>>>], axis_names: Option<&Arc<Keys>>) -> Option<&'a Arc<str>> {
+    match (axis_names, lists) { (None, [list]) => match &list[..] { [Some(name)] => Some(name), _ => None }, _ => None }
+}
+
+pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
+    let (lists, axis_names) = labels(keys)?;
+    if let (None, Some(name)) = (axes, entry(&lists, axis_names)) { return vector(vec![name.clone()], vec![values.clone()]); }
     let default: Vec<_> = (0..lists.len()).collect();
     let axes = axes.unwrap_or(&default);
     if axes.len() != lists.len() { return Err(Kind::Length.into()); }
@@ -169,11 +197,26 @@ pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) ->
     values.clone().with_keys(result)?.with_axis_names(result_names)
 }
 
+/// `value` without axis names or position keys on `axes`, or on every axis: monadic `:`.
 pub(crate) fn remove(value: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
-    let Some(axes) = axes else { return Ok(value.unkeyed()); };
+    if !matches!(value, Value::Array(_)) { return Ok(value.clone()); }
+    let Some(axes) = axes else { return value.clone().with_keys(vec![])?.with_axis_names(vec![]) };
     let mut keys = value.layout().all_keys();
-    for &axis in axes { *keys.get_mut(axis).ok_or(Kind::Rank)? = None; }
-    value.clone().with_keys(keys)
+    let mut names: Vec<_> = (0..value.shape().len()).map(|a| value.axis_name(a).cloned()).collect();
+    for &axis in axes {
+        *keys.get_mut(axis).ok_or(Kind::Rank)? = None;
+        names[axis] = None;
+    }
+    value.clone().with_keys(keys)?.with_axis_names(names)
+}
+
+/// `keys:⁻¹value`: `value` without the labels that `keys:` attaches. Those are the position keys of the leading axes that `keys` labels, and those axes' names where `keys` is keyed. Other names and keys stay. Where `keys:` makes a record of one entry, the result is that entry's value.
+pub(crate) fn deconstruct(keys: &Value, value: &Value) -> Result<Value, ErrorKind> {
+    let (lists, axis_names) = labels(keys)?;
+    if entry(&lists, axis_names).is_some() { return value.elements().next().ok_or(Kind::Length.into()); }
+    let unlabelled = remove(value, Some(&(0..lists.len()).collect::<Vec<_>>()))?;
+    // A plain list of key lists attaches no names, so every axis keeps its own.
+    if axis_names.is_some() { Ok(unlabelled) } else { unlabelled.with_axis_names(value.axis_names().to_vec()) }
 }
 
 /// The positions along each of `axes`, or the keys where the axis has them: one vector, or a vector of them for several axes.

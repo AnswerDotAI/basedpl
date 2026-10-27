@@ -19,7 +19,7 @@ const HANZI: &[(&str, &str, &str)] = &[
     ("∘", "承", ""), ("⍠", "轴", "軸"), ("⍥", "经", "經"), (".", "内", "內"), ("⊗", "表", ""), ("⌸", "组", "組"), ("⍣", "次止", ""),
     ("⇄", "优", "優"), ("⊘", "兼", ""), ("∂", "导梯", "導梯"), ("⍚", "择", "擇"), ("@", "于", "於"), ("⌺", "邻", "鄰"),
     ("←", "是", ""), ("⎕", "出入", ""), ("•", "系", ""), ("⍺", "甲", ""), ("⍵", "乙", ""), ("⍶", "丙", ""), ("⍹", "丁", ""),
-    ("∇", "递", "遞"), ("⍢", "循", ""), ("⍝", "注", ""), ("⋄", "句", ""), ("?", "若", ""), ("¯", "负", "負"), ("∞", "永", ""),
+    ("∇", "递", "遞"), ("⍢", "循", ""), ("⍝", "注", ""), ("⋄", "句", ""), ("⁝", "隔", ""), ("?", "若", ""), ("¯", "负", "負"), ("∞", "永", ""),
     ("⍬", "空", ""),
 ];
 
@@ -67,7 +67,7 @@ const SYNTAX: &[(&str, &str, &str, &str)] = &[
     ("←", "left-arrow", "syntax", "assign"), ("⎕", "quad", "syntax", "io"), ("•", "bullet", "system", "system"),
     ("⍺", "alpha", "argument", "left-argument"), ("⍵", "omega", "argument", "right-argument"), ("⍶", "alpha-underbar", "argument", "left-operand"),
     ("⍹", "omega-underbar", "argument", "right-operand"), ("∇", "del", "argument", "recursion"), ("⍢", "del-diaeresis", "argument", "operator-recursion"),
-    ("⍝", "lamp", "comment", "comment"), ("⋄", "diamond", "syntax", "separator"), ("?", "question", "syntax", "predicate"),
+    ("⍝", "lamp", "comment", "comment"), ("⋄", "diamond", "syntax", "separator"), ("⁝", "tricolon", "syntax", "token-separator"), ("?", "question", "syntax", "predicate"),
     ("¯", "overbar", "literal", "negative"), ("∞", "infinity", "literal", ""), ("⍬", "zilde", "literal", "empty"),
 ];
 

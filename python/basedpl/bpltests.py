@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import Annotated
 from fastws.cargo import timing_lock
 from fastcore.script import parse_cli
-from ._core import _captured_literal, _reference_file
+from fastcore.basics import listify
+from ._core import _captured_literal, _reference_file, _retry_pauses
 from .reference import Corpus, _dyalog_string
 from . import BplError
-from .worker import INSTALLED_BPL, NATIVE, Worker
+from .worker import NATIVE, Worker, pinned, pinned_each, resolved, _commented
+from .syntax import linear
 
 SEPARATOR = '⍝ =>'
 INPUT = '⍝ input:'
@@ -20,7 +22,7 @@ OUTPUT = '⍝ ⎕:'
 ERROR = '⍝ error: '
 
 # The header options that set a flag on a case, as Rust's `reference::FLAGS` names them.
-FLAGS = 'unfused', 'batched', 'mixed'
+FLAGS = 'unfused', 'batched', 'mixed', 'compiled'
 
 
 @dataclass
@@ -34,6 +36,7 @@ class Case:
     unfused: bool = False
     batched: bool = False
     mixed: bool = False
+    compiled: bool = False
     line: int = field(default=0, compare=False, repr=False)
     section: str = ''
     output: str | None = None
@@ -195,11 +198,11 @@ def _checked(worker, kind, spec, sentinel):
 
 
 def _failures(kind, specs, sentinel, bpl=None):
-    "The failures that `_checked` gives for each of `specs`, each in a fresh worker running `bpl`, all at once. The workers run while this holds the timing lock shared, as the reference test does. Every worker closes before this returns or raises, which ends any request still running, as after a Ctrl-C."
-    with timing_lock():
+    "The failures that `_checked` gives for each of `specs`, each in a fresh worker, all at once, every one running the same build of `bpl` (`pinned`). The workers run while this holds the timing lock shared, as the reference test does. Every worker closes before this returns or raises, which ends any request still running, as after a Ctrl-C. Each failure holds its code's linear form (`syntax.linear`) as `linear`."
+    with timing_lock(), pinned(bpl) as bpl:
         workers = [Worker(bpl) for _ in specs]
         pool = ThreadPoolExecutor(len(workers))
-        try: return [f for job in [pool.submit(_checked, w, kind, s, sentinel) for w, s in zip(workers, specs)] for f in job.result()]
+        try: return [f | {'linear': linear(f['code'])} for job in [pool.submit(_checked, w, kind, s, sentinel) for w, s in zip(workers, specs)] for f in job.result()]
         finally:
             for w in workers: w.close()
             pool.shutdown()
@@ -208,7 +211,7 @@ def _failures(kind, specs, sentinel, bpl=None):
 def check_file(
     path, # A `.bpl` reference file
     ids:Annotated[int|str, {'nargs':'*'}]=None, # Check only these cases, each named by its id or its header's line number
-    bpl:Path=None # A native `bpl` to check, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
+    bpl:Path=None # A native `bpl` to check, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one, copied as the run starts (`pinned`)
 ):
     "Check the cases in `path` as `tests/reference.rs` does, in a fresh worker for each core that takes every n-th case, and return the failures in the file's order."
     if isinstance(ids, (int, str)): ids = [ids]
@@ -225,7 +228,7 @@ def check_file(
 
 def check_page(
     path, # A `.qmd` page
-    bpl:Path=None, # A native `bpl` to check, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
+    bpl:Path=None, # A native `bpl` to check, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one, copied as the run starts (`pinned`)
     unbatched:bool=False # Run each example with the `batch` pref off
 ):
     "Run the BPL examples in `.qmd` page `path` in a fresh worker, as `tests/core.rs` does, and return the failures."
@@ -247,8 +250,18 @@ def _platform():
 _PKG = _SPEED.parent/'wasm-pkg.mjs'
 
 class Costs(list):
-    "Each case's cost, as `(code, picoseconds per item, copies)` rows. Copies is `None` where one copy of the data is too quick to time."
-    def __repr__(self): return '\n'.join(f'{ps:>10,.0f} ps {_or_dash(copies, ".2f"):>9} copies  {code}' for code, ps, copies in self)
+    "Each case's cost, as `(code, picoseconds per item, copies)` rows. Copies is `None` where one copy of the data is too quick to time. Each row displays its cost, then its code and the code's linear form (`syntax.linear`)."
+    def __repr__(self): return '\n'.join(f'{ps:>10,.0f} ps {_or_dash(copies, ".2f"):>9} copies  {_commented(code)}' for code, ps, copies in self)
+
+class ByBuild(list):
+    "Each build's rows, as `time_cases` or `instructions` gives them for one build, in the order of `builds`, where `None` is the installed `bpl`. The display shows each case's value on each build, in `unit`, and its change from the first build to the last, then the case and its linear form (`syntax.linear`). `compare_costs(*rows)` compares two builds' `Costs`."
+    def __init__(self, rows=(), builds=(), unit=''):
+        super().__init__(rows)
+        self.builds, self.unit = builds, unit
+    def __repr__(self):
+        head = ''.join(f'{Path(b).name if b else "installed":>13}' for b in self.builds) + f' {"change":>7}'
+        w = 13 - len(self.unit)
+        return '\n'.join([head, *(''.join(f'{r[1]:>{w},.0f}{self.unit}' for r in rs) + f' {rs[-1][1]/rs[0][1]-1:>+7.1%}  {_commented(rs[0][0])}' for rs in zip(*self))])
 
 def time_cases(
     cases:Annotated[str, {'nargs':'+'}], # A BPL expression to time, or a list of them
@@ -256,15 +269,24 @@ def time_cases(
     prefs='', # BPL that runs before `setup`, such as `•prefs ["float":32]`
     threads=1, # Threads that each case's rustymath calls split across, for a scaling check; 0: rustymath's default
     native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
-    bpl:Path=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
-    timeout:float=None # Seconds before the worker is closed
+    bpl:Annotated[Path, {'nargs':'+'}]=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does, or a list of builds to compare, where `None` is the installed one; None: the installed one
+    rounds=2, # With several builds, the fresh workers that each build gets, taking turns with the other builds' in alternating order
+    timeout:float=None # Seconds before each worker is closed
 ):
-    "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data."
+    "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data. Given several builds, it gives `ByBuild`, holding each case's fastest time on each build, and pins each build for the whole comparison (`pinned_each`)."
     setup = _reference_file((_SPEED/'arrays.bpl').read_text())['setup'] if setup is None else setup
-    cases = [cases] if isinstance(cases, str) else list(cases)
-    with Worker(bpl, native) as w: r = w.request(dict(timing=dict(setup=setup, prefs=prefs, cases=cases, threads=threads)), timeout)
-    if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
-    return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
+    cases = listify(cases)
+    def timed(build):
+        with Worker(build, native) as w: r = w.request(dict(timing=dict(setup=setup, prefs=prefs, cases=cases, threads=threads)), timeout)
+        if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
+        return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
+    builds = listify(bpl) or [None]
+    if len(builds) == 1: return timed(builds[0])
+    runs = [[] for _ in builds]
+    with pinned_each(builds) as paths:
+        for r in range(rounds):
+            for i in (range(len(builds)) if r % 2 == 0 else reversed(range(len(builds)))): runs[i].append(timed(paths[i]))
+    return ByBuild([Costs(min(rows, key=lambda row: row[1]) for rows in zip(*each)) for each in runs], builds, ' ps')
 
 class Scaling(list):
     "Each case's time per item in picoseconds on one thread and on `threads` threads, its speedup, and the least speedup it must reach, as `(code, one, many, speedup, least)` rows. A case whose speedup is below its least is marked `slow`."
@@ -276,23 +298,40 @@ class Scaling(list):
         return '\n'.join([f'1 thread against {self.threads}', *rows])
 
 _SCALING_SETUP = 'pm←¿[1024 1024]⍴0 ⋄ sq←¿[512 512]⍴0 ⋄ hq←sq+⍉sq ⋄ stk←¿[16384 8 8]⍴0 ⋄ big←¿4194304⍴0 ⋄ n←≢big'
-_SCALING_CASES = ['pm+.×pm', '"svd"•decompose sq', '"eigen"•decompose hq', '"qr"•decompose⍤2 stk', '*big']
-# On macOS, Accelerate computes these cases. Its GESDD and SYEVD run on one thread whatever its threading setting, as NumPy's calls into the same Accelerate show, so the SVD and Hermitian eigendecomposition expect no speedup, and fail only where threads slow them. Its 1024×1024 product gained 1.34 to 1.38 times on 8 or 18 threads of an M5 Max, where one thread already ran at about 480 GFLOP/s.
-_ACCELERATED_LEAST = {'pm+.×pm': 1.2, '"svd"•decompose sq': 0.9, '"eigen"•decompose hq': 0.9}
+_SCALING_THREADS = 4
+# Each case's serial fraction s: the share of its one-thread time that doesn't split across threads. On t threads it should then speed up 1/(s + (1 − s)/t) times, by Amdahl's law. A product, a stack's cells and an elementwise function split into independent pieces. A 512×512 SVD or Hermitian eigendecomposition spends about half its time in matrix products and half in its one-stage reduction. The products split. The reduction's matrix-vector passes over the trailing matrix are mostly too short to split.
+_SCALING = {'pm+.×pm': 0, '"svd"•decompose sq': 0.5, '"eigen"•decompose hq': 0.5, '"qr"•decompose⍤2 stk': 0, '*big': 0}
+# On macOS, Accelerate computes these cases, and their serial fractions come from measurement. Its GESDD and SYEVD run on one thread whatever its threading setting, as NumPy's calls into the same Accelerate show. Its 1024×1024 product ran at about 480 GFLOP/s on one thread of an M5 Max and gained 1.35 times on 4 threads (27 October 2026), a serial fraction of 0.65.
+_ACCELERATED = {'pm+.×pm': 0.65, '"svd"•decompose sq': 1, '"eigen"•decompose hq': 1}
+
+def _physical_cores():
+    "This machine's physical cores: the distinct sets of hardware threads that share a core, as Linux lists them, or else its logical CPUs. On Apple silicon, which runs one hardware thread on each core, the logical CPUs are the cores."
+    return len({p.read_text() for p in Path('/sys/devices/system/cpu').glob('cpu[0-9]*/topology/thread_siblings_list')}) or os.cpu_count()
 
 def thread_scaling(
-    threads:int=None, # Threads to compare with one; None: this machine's cores, at most 8
-    least:float=1.5, # The least speedup that each case must reach, apart from `_ACCELERATED_LEAST`'s on macOS
-    cases:str=None, # A case's code, or a list of them; None: a 1024×1024 product, a 512×512 SVD and Hermitian eigendecomposition, QR decompositions of a stack of 16,384 8×8 matrices, and `*` on 4,194,304 floats
+    cases:str=None, # Codes of the cases in `_SCALING` to time, or one code; None: all of them, a 1024×1024 product, a 512×512 SVD and Hermitian eigendecomposition, QR decompositions of a stack of 16,384 8×8 matrices, and `*` on 4,194,304 floats
     setup:str=_SCALING_SETUP, # BPL that defines the cases' data and its number of items `n`
     bpl:Path=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
     timeout:float=None, # Seconds before each timing stops
 ):
-    "Time each case with `time_cases` on one thread and on `threads` threads, and give its speedup. Speed budgets are single-thread measurements, so this checks multithreaded speed instead: in the manual `Speed` workflow and locally, not in the `Test` workflow, where a runner's cores and sharing make it noisy. On macOS, the cases that Accelerate computes need only the speedups in `_ACCELERATED_LEAST`. Raises `ValueError` with the table when any case's speedup is below its least."
-    threads, cases = threads or min(8, os.cpu_count() or 1), cases or _SCALING_CASES
-    one, many = (time_cases(cases, setup, threads=t, bpl=bpl, timeout=timeout) for t in (1, threads))
-    least_for = lambda code: min(least, _ACCELERATED_LEAST.get(code, least)) if sys.platform == 'darwin' else least
-    result = Scaling(((code, a, b, a / b, least_for(code)) for (code, a, _), (_, b, _) in zip(one, many)), threads)
+    "Time each case with `time_cases` on one thread and on t threads, the smaller of `_SCALING_THREADS` and this machine's physical cores (`_physical_cores`), and give its speedup, both on one pinned build (`pinned`). Speed budgets are single-thread measurements, so this checks multithreaded speed instead: in the manual `Speed` workflow and locally, not in the `Test` workflow, where a runner's cores and sharing make it noisy. Each case must reach half its expected gain, 1 + (S − 1)/2, where S = 1/(s + (1 − s)/t) for its serial fraction s in `_SCALING`, or in `_ACCELERATED` on macOS. A case expected not to split, with s of 1, must reach 0.9. As the speed tests do, it times a case below its least again after the rest, after each pause in `rustymath::timing::RETRY_PAUSES`, and prints each retry. Raises `ValueError` with the table when a case is below its least every time."
+    serial = _SCALING | (_ACCELERATED if sys.platform == 'darwin' else {})
+    threads = min(_SCALING_THREADS, _physical_cores())
+    least = lambda s: 1 + (1 / (s + (1 - s) / threads) - 1) / 2 if s < 1 else 0.9
+    with pinned(bpl) as build:
+        def timed(codes):
+            one, many = (time_cases(codes, setup, threads=t, bpl=build, timeout=timeout) for t in (1, threads))
+            return {code: (code, a, b, a / b, least(serial[code])) for (code, a, _), (_, b, _) in zip(one, many)}
+        rows = timed(listify(cases) or list(serial))
+        for pause in _retry_pauses:
+            slow = {code: speedup for code, _, _, speedup, floor in rows.values() if speedup < floor}
+            if not slow: break
+            time.sleep(pause)
+            rows |= timed(list(slow))
+            for code, before in slow.items():
+                *_, after, floor = rows[code]
+                print(f'{code}: {before:.2f}x, then {after:.2f}x after a pause of {pause} s, against {floor:g}')
+    result = Scaling(rows.values(), threads)
     if any(speedup < floor for *_, speedup, floor in result): raise ValueError(f'\n{result!r}')
     return result
 
@@ -308,65 +347,72 @@ def _retired(code, bpl):
     if sys.platform not in _RETIRED: raise ValueError(f'no instruction counter on {sys.platform}')
     with tempfile.NamedTemporaryFile('r') as report:
         counter = ['/usr/bin/time', '-l', '-o', report.name] if sys.platform == 'darwin' else ['perf', 'stat', '-x,', '-e', 'instructions:u', '-o', report.name, '--']
-        p = subprocess.run([*counter, bpl or INSTALLED_BPL, '-e', code], capture_output=True, text=True)
+        p = subprocess.run([*counter, resolved(bpl), '-e', code], capture_output=True, text=True)
         if p.returncode: raise ValueError(p.stdout + p.stderr)
         return int(_RETIRED[sys.platform].search(report.read())[1])
 
 def _program(code, n, setup):
-    "BPL that runs `setup`, then `code` once with `N` set to `n`, on one thread, and ends without displaying its result. `setup` comes first so that a `•prefs` call at its start still applies before the program is parsed, which fixes each literal's float width."
-    return f'•prefs ["threads":1]\n{setup}\nN←{n}\nr←{code}\n0'
+    "BPL that runs `setup`, then `code` once with `N` set to `n`, on one thread with the random generator seeded at 0, and ends without displaying its result. `setup` comes first so that a `•prefs` call at its start still applies before the program is parsed, which fixes each literal's float width."
+    return f'•prefs ["threads":1 "seed":0]\n{setup}\nN←{n}\nr←{code}\n0'
 
-# The instructions that a case retires before the lowest value of `N` that `instructions` picks, and between successive values. A case that allocates an array at each step retires a few tens of millions more instructions over its first steps, while the allocator settles. `{↑[⍵ 1]}⍣N⊢0` counts the same from 3×10⁴ steps on, about 2×10⁸ instructions, and `{fib 10ₓ}⍣N⊢0` from 30 steps on. Each process pays a different warm-up, up to about 5×10⁶ instructions, which moves a slope over 5×10⁸ instructions by under 1%. Some cases also pay a one-off cost once `N` passes a size: `≢•ucs N⍴"ab" "cde"` retires about 5×10⁶ more instructions from about 131,350 items on.
+# The instructions that a case retires before the lowest value of `N` that `instructions` picks, and between successive values. A case that allocates an array at each step retires a few tens of millions more instructions over its first steps, while the allocator settles. `{↑[⍵ 1]}⍣N 0` counts the same from 3×10⁴ steps on, about 2×10⁸ instructions, and `{fib 10ₓ}⍣N 0` from 30 steps on. Each process pays a different warm-up, up to about 5×10⁶ instructions, which moves a slope over 5×10⁸ instructions by under 1%. Some cases also pay a one-off cost once `N` passes a size: `≢•ucs N⍴"ab" "cde"` retires about 5×10⁶ more instructions from about 131,350 items on.
 _SETTLE, _SPAN = 5e8, 5e8
 
 # A case that names `N` outside its strings says itself how it repeats. `_stepped` runs any other case once per step.
 _NAMES_N, _QUOTED = re.compile(r'(?<!\w)N(?!\w)'), re.compile(r'"(?:[^"]|"")*"|\'.\'')
 
 def _stepped(case, force=False):
-    "BPL that makes one call of `case` per step of `N`. A case that names `N`, such as `{⍵}⍣N⊢0`, is that BPL already. Any other case runs once per step, and its result is dropped, or with `force` computed in full through an indexed write. `force` needs a result of rank 1 or more."
+    "BPL that makes one call of `case` per step of `N`. A case that names `N`, such as `{⍵}⍣N 0`, is that BPL already. Any other case runs once per step, and its result is dropped, or with `force` computed in full through an indexed write where the result is an array with a first item."
     if _NAMES_N.search(_QUOTED.sub('', case)): return case
-    return f'{{x←{case} ⋄ x.[0]←x.[0] ⋄ ⍵}}⍣N⊢0' if force else f'{{{case} ⋄ ⍵}}⍣N⊢0'
+    return f'{{x←{case} ⋄ (×≢⍴x)∧×≢x?x.[0]←x.[0] ⋄ ⍵;⍵}}⍣N 0' if force else f'{{{case} ⋄ ⍵}}⍣N 0'
 
 def instructions(
-    cases:Annotated[str, {'nargs':'+'}], # A BPL expression to run once per step, such as `k(⌈/⊢)⌸a`, or one that names `N` and makes its own call per step of it, such as `{⍵}⍣N⊢0`, or a list of them
+    cases:Annotated[str, {'nargs':'+'}], # A BPL expression to run once per step, such as `k(⌈/⊢)⌸a`, or one that names `N` and makes its own call per step of it, such as `{⍵}⍣N 0`, or a list of them
     setup='', # BPL that defines what the cases use, run before each case
     force=False, # Compute each step's result in full where it would stay pending, such as large windows or a transpose, for the cases that don't name `N`
     counts:Annotated[int, {'nargs':'+'}]=None, # Two or more values of `N`; None: four values past the allocator's warm-up, from a rough count at 1,000 steps
     runs=3, # Processes at each value of `N`, of which the lowest count is used
-    bpl:Path=None # A native `bpl` to count, such as a copy saved before a change; None: the installed one
+    bpl:Annotated[Path, {'nargs':'+'}]=None # A native `bpl` to count, such as a copy saved before a change, or a list of builds to compare, where `None` is the installed one; None: the installed one
 ):
-    "The instructions that each case retires per unit of `N`, on one thread. A case that doesn't name `N` runs once per step inside `{case ⋄ ⍵}⍣N⊢0`. That dfn's own call adds about 1,900 instructions per step. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost."
-    cases = [cases] if isinstance(cases, str) else list(cases)
-    def count(code, n, runs=runs): return min(_retired(_program(code, n, setup), bpl) for _ in range(runs))
-    def steps(code):
+    "The instructions that each case retires per unit of `N`, on one thread. A case that doesn't name `N` runs once per step inside `{case ⋄ ⍵}⍣N 0`. That dfn's own call adds about 1,900 instructions per step. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost. Given several builds, it gives `ByBuild`, counting each case at the same values of `N` on every build. Each build stays pinned for the whole count (`pinned_each`)."
+    cases = listify(cases)
+    builds = listify(bpl) or [None]
+    def count(code, n, build, runs=runs): return min(_retired(_program(code, n, setup), build) for _ in range(runs))
+    def steps(code, build):
         if counts: return counts
-        rough = max(1, (count(code, 1_000, 1) - count(code, 0, 1)) / 1_000)
+        rough = max(1, (count(code, 1_000, build, 1) - count(code, 0, build, 1)) / 1_000)
         # Each value is at least one more than the last, for a case that retires more than `_SPAN` instructions a step, whose warm-up is then a small share of a step.
         return list(accumulate((round((_SETTLE + i*_SPAN)/rough) for i in range(4)), lambda last, n: max(n, last + 1)))
-    def per_step(code):
-        ns = steps(code)
-        cs = [count(code, n) for n in ns]
+    def per_step(code, ns, build):
+        cs = [count(code, n, build) for n in ns]
         return statistics.median((c1-c0)/(n1-n0) for n0, n1, c0, c1 in zip(ns, ns[1:], cs, cs[1:]))
-    return Instructions((case, per_step(_stepped(case, force))) for case in cases)
+    stepped = [(case, _stepped(case, force)) for case in cases]
+    with pinned_each(builds) as paths:
+        ns = [steps(code, paths[0]) for _, code in stepped]
+        each = [Instructions((case, per_step(code, n, build)) for (case, code), n in zip(stepped, ns)) for build in paths]
+    return each[0] if len(builds) == 1 else ByBuild(each, builds)
 
-class ProfileDiff(list):
-    "Each function's estimated instructions per step of `N` on two builds, as `(function, before, after)` rows, largest change first, below a row of each build's total."
-    def __init__(self, rows=(), totals=(0, 0)):
+class FunctionCounts(list):
+    "Instructions by function: `(function, count)` rows for one build, largest first, or `(function, before, after)` rows for two, largest change first. The rows of `totals`, in the same form, show above them. One build's rows show each count's share of the first total."
+    def __init__(self, rows=(), totals=()):
         super().__init__(rows)
         self.totals = totals
-    def __repr__(self): return '\n'.join(f'{b:>10,.0f} {a:>10,.0f} {a-b:>+10,.0f}  {f[:150]}' for f, b, a in [('total', *self.totals), *self])
+    def __repr__(self):
+        def line(f, *ns): return (f'{ns[0]:>10,.0f} {ns[0]/self.totals[0][1]:>6.1%}' if len(ns) == 1 else f'{ns[0]:>10,.0f} {ns[1]:>10,.0f} {ns[1]-ns[0]:>+10,.0f}') + f'  {f[:150]}'
+        return '\n'.join(line(*row) for row in [*self.totals, *self])
 
 # A frame in the call graph that macOS `sample` reports: the tree's drawing characters, whose width gives the frame's depth, then its samples and its symbol.
 _FRAME, _THREAD = re.compile(r'^([ +!:|]*)(\d+) (\S.*?)  [\[(]'), re.compile(r'^\s*\d+ Thread_')
 
 def _self_samples(code, bpl, seconds):
-    "The samples at which each function was at the top of the main thread's stack while a fresh `bpl` process ran `code`, as macOS `sample` counts them over `seconds`, with demangled names, and the thread's total. `code` must run for longer than half a second plus `seconds`. The process is then killed."
-    p = subprocess.Popen([bpl or INSTALLED_BPL, '-e', code], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    "The samples at which each function was at the top of the main thread's stack while a fresh `bpl` process ran `code`, as macOS `sample` counts them over `seconds`, with demangled names, and the thread's total. `code` must run for longer than half a second plus `seconds`. The process is then killed. It raises `ValueError` when `sample` runs a minute past `seconds`, as it does while macOS waits for an answer to a Developer Tools authorization prompt."
+    p = subprocess.Popen([resolved(bpl), '-e', code], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
         time.sleep(0.5)
         if p.poll() is not None: raise ValueError(p.stderr.read())
         with tempfile.NamedTemporaryFile('r', suffix='.txt') as report:
-            s = subprocess.run(['sample', str(p.pid), str(seconds), '-file', report.name], capture_output=True, text=True)
+            try: s = subprocess.run(['sample', str(p.pid), str(seconds), '-file', report.name], capture_output=True, text=True, timeout=seconds + 60)
+            except subprocess.TimeoutExpired: raise ValueError(rf"`sample` didn't finish within a minute of its {seconds} s sampling time. macOS may be waiting for an answer to a Developer Tools authorization prompt.") from None
             if s.returncode: raise ValueError(s.stdout + s.stderr)
             lines = report.read().splitlines()
     finally: p.kill(); p.wait()
@@ -391,19 +437,13 @@ def _estimates(case, setup, bpl, seconds, force):
     "Each function's estimated instructions per step of `N` for `case` on `bpl`, and the build's instructions per step, as `profile` describes."
     if sys.platform != 'darwin': raise ValueError(f'no sampling profiler on {sys.platform}')
     stepped = _stepped(case, force)
-    [(_, per_step)] = instructions(stepped, setup, bpl=bpl)
-    samples, total = _self_samples(_program(f'{{{stepped} ⋄ ⍵}}⍣1000000000⊢0', max(1, round(1e8/per_step)), setup), bpl, seconds)
+    with pinned(bpl) as bpl:
+        [(_, per_step)] = instructions(stepped, setup, bpl=bpl)
+        samples, total = _self_samples(_program(f'({{{stepped} ⋄ ⍵}}⍣1000000000)0', max(1, round(1e8/per_step)), setup), bpl, seconds)
     return {f: per_step*n/total for f, n in samples.items()}, per_step
 
-class Profile(list):
-    "Each function's estimated instructions per step of `N` on one build, as `(function, instructions)` rows, largest first, below a row of the build's total."
-    def __init__(self, rows=(), total=0):
-        super().__init__(rows)
-        self.total = total
-    def __repr__(self): return '\n'.join(f'{n:>10,.0f} {n/self.total:>6.1%}  {f[:150]}' for f, n in [('total', self.total), *self])
-
 def profile(
-    case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N⊢0`
+    case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
     setup='', # BPL that defines what the case uses, run before it
     force=False, # Compute each step's result in full, as `instructions`' `force` does
     bpl:Path=None, # A native `bpl` to profile, such as a copy saved before a change; None: the installed one
@@ -412,10 +452,10 @@ def profile(
 ):
     "Where `case`'s instructions per step of `N` go, by function, on macOS. A fresh process repeats the case on one thread while `sample` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate."
     estimates, total = _estimates(case, setup, bpl, seconds, force)
-    return Profile(sorted(estimates.items(), key=lambda r: -r[1])[:rows], total)
+    return FunctionCounts(sorted(estimates.items(), key=lambda r: -r[1])[:rows], [('total', total)])
 
 def profile_diff(
-    case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N⊢0`
+    case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
     base:Path, # A native `bpl` to compare with, such as a copy saved before a change
     setup='', # BPL that defines what the case uses, run before it
     force=False, # Compute each step's result in full, as `instructions`' `force` does
@@ -426,7 +466,84 @@ def profile_diff(
     "Where `case`'s instructions per step of `N` moved between two builds, by function, on macOS, from `profile`'s estimates for each build. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone."
     (before, tb), (after, ta) = _estimates(case, setup, base, seconds, force), _estimates(case, setup, bpl, seconds, force)
     fs = sorted(before.keys() | after.keys(), key=lambda f: -abs(after.get(f, 0) - before.get(f, 0)))
-    return ProfileDiff([(f, before.get(f, 0), after.get(f, 0)) for f in fs[:rows]], (tb, ta))
+    return FunctionCounts([(f, before.get(f, 0), after.get(f, 0)) for f in fs[:rows]], [('total', tb, ta)])
+
+# The script that `call_profile` runs in `lldb`'s own Python, 3.9 on macOS. `run` reads its arguments from a JSON file. It launches `bpl` with `-e code` and lets `skip` calls of the function that `pattern` names run. It then single-steps the next call to its return, the first instruction where the stack pointer is back where it was and the program counter at the address in the link register. An instruction counts under its function's name, or under `caller > function` where the function's caller, read as the program counter enters the function, matches the allocator's pattern. `call_profile` then puts what the allocator calls, such as the zeroing of a freed block and a read of the clock, in the allocator's row. It writes JSON to `out`: how many instructions each function retired, or the number of calls where the process ended first, or that the call passed `limit`.
+_LLDB_STEPS = r'''
+import collections, json, lldb, re
+
+def run(path):
+    a = json.load(open(path))
+    debugger = lldb.debugger
+    debugger.SetAsync(False)
+    debugger.HandleCommand('settings set target.skip-prologue false')
+    target = debugger.CreateTarget(a['bpl'])
+    point = target.BreakpointCreateByRegex(a['pattern'])
+    process, hits, result = target.LaunchSimple(['-e', a['code']], None, None), 0, {}
+    while process.GetState() == lldb.eStateStopped:
+        thread = process.GetSelectedThread()
+        if thread.GetStopReason() == lldb.eStopReasonBreakpoint and (hits := hits + 1) > a['skip']: break
+        process.Continue()
+    else: result['hits'] = hits
+    if not result:
+        target.BreakpointDelete(point.GetID())
+        frame = thread.GetFrameAtIndex(0)
+        sp, back = frame.GetSP(), frame.FindRegister('lr').GetValueAsUnsigned()
+        allocator, counts, n, current = re.compile(a['allocator']), collections.Counter(), 0, None
+        while n < a['limit']:
+            frame = thread.GetFrameAtIndex(0)
+            if frame.GetPC() == back and frame.GetSP() == sp: break
+            symbol = frame.GetSymbol()
+            here = symbol.GetName() if symbol.IsValid() else hex(frame.GetPC())
+            if here != current:
+                current, caller = here, thread.GetFrameAtIndex(1).GetSymbol()
+                name = f'{caller.GetName()} > {here}' if caller.IsValid() and allocator.search(caller.GetName()) and not allocator.search(here) else here
+            counts[name] += 1
+            n += 1
+            thread.StepInstruction(False)
+        result = dict(counts=counts) if n < a['limit'] else dict(over=True)
+    process.Kill()
+    json.dump(result, open(a['out'], 'w'))
+'''
+
+def _counted_call(code, pattern, skip, bpl, limit=100_000):
+    "How many instructions each function retired in the call of the function that `pattern` names after `skip` earlier calls, in a fresh `bpl` process running `code`, as `_LLDB_STEPS` counts them. It raises `ValueError` when `lldb` runs ten minutes, as it does while macOS waits for an answer to a Developer Tools authorization prompt."
+    bpl = str(resolved(bpl))
+    with tempfile.TemporaryDirectory() as d:
+        steps, args, out = Path(d)/'steps.py', Path(d)/'args.json', Path(d)/'out.json'
+        steps.write_text(_LLDB_STEPS)
+        args.write_text(json.dumps(dict(bpl=bpl, code=code, pattern=pattern, skip=skip, out=str(out), limit=limit, allocator=_ALLOCATOR.pattern)))
+        try: p = subprocess.run(['lldb', '--batch', '--no-lldbinit', '-o', f'command script import {steps}', '-o', f'script steps.run({str(args)!r})'], capture_output=True, text=True, timeout=600)
+        except subprocess.TimeoutExpired: raise ValueError("`lldb` didn't finish within ten minutes. macOS may be waiting for an answer to a Developer Tools authorization prompt.") from None
+        if not out.exists(): raise ValueError(p.stdout + p.stderr)
+        result = json.loads(out.read_text())
+    if 'hits' in result: raise ValueError(f'`{pattern}` stopped {bpl} at {result["hits"]} calls, and `skip` lets {skip} run first. A function that is always inlined never stops it.')
+    if 'over' in result: raise ValueError(f'the call retired more than {limit:,} instructions, in {bpl}')
+    return result['counts']
+
+# The functions of macOS's allocator and of Rust's allocation shims. A function that one of them calls matches too, through the caller in its `caller > function` name. `call_profile` gives them one row, because the instructions they retire depend on the heap's state.
+_ALLOCATOR = re.compile(r'malloc|^_*free|mfm|xzm|szone|nanov2|__rust_(?:alloc|dealloc|realloc|no_alloc)')
+
+def call_profile(
+    case, # A BPL expression, as `instructions` takes it, such as `v_4ₓ₄` or `{⍵}⍣N 0`
+    function, # A regex that the demangled name of the function to count matches, such as `binder::derived`. A function that is always inlined has no code of its own and never stops the process
+    setup='', # BPL that defines what the case uses, run before it
+    base:Path=None, # A native `bpl` to compare with, such as a copy saved before a change; None: count one build
+    bpl:Path=None, # A native `bpl` to count; None: the installed one
+    skip=3, # Calls of `function` to let run first, while the case warms up
+    force=False, # Compute each step's result in full, as `instructions`' `force` does
+    rows=20 # How many functions to show
+):
+    "Every instruction that one call of `function` retires, with the calls it makes, counted by function, on macOS on Apple silicon. `lldb` runs `case` once per step in a fresh process, lets `skip` calls of `function` run, and single-steps the next one to its return. The counts are exact, where `profile`'s estimates come from time, but they cover one call. At the 450 or so instructions a second that `lldb` steps, the largest call it counts, 100,000 instructions, takes about four minutes. The allocator's functions, with the functions they call, share the row `allocator`, which the second total leaves out."
+    if sys.platform != 'darwin' or os.uname().machine != 'arm64': raise ValueError('`call_profile` runs only on macOS on Apple silicon')
+    code = _program(_stepped(case, force), 1000, setup)
+    merged = [defaultdict(int) for _ in range(2 if base else 1)]
+    for build, m in zip([base, bpl] if base else [bpl], merged):
+        for f, n in _counted_call(code, function, skip, build).items(): m['allocator' if _ALLOCATOR.search(f) else f] += n
+    totals = [('total', *(sum(m.values()) for m in merged)), ('outside the allocator', *(sum(m.values()) - m['allocator'] for m in merged))]
+    fs = sorted(set().union(*merged), key=lambda f: -abs(merged[-1].get(f, 0) - merged[0].get(f, 0)) if base else -merged[0].get(f, 0))
+    return FunctionCounts([(f, *(m.get(f, 0) for m in merged)) for f in fs[:rows]], totals)
+
 
 # basedpl's library and the rustymath library it links, built as CI's Linux runner compiles them. Apple's `clang` assembles the x86-64 source in basedpl's `psm` dependency, because this Mac has no `x86_64-linux-gnu-gcc`. Incremental compilation is off, as on CI, so that code splits into the same codegen units.
 _X86_BUILD = 'cargo build --lib --release --target x86_64-unknown-linux-gnu --target-dir /tmp/aai-ws-x86 -p basedpl --message-format=json-render-diagnostics'.split()
@@ -456,7 +573,7 @@ def disasm(
     bpl:Path=None # A native `bpl` to read, such as a copy saved before a change; None: the installed one. With `x86`, unused
 ):
     "The machine code of the function whose demangled name matches `pattern`, as `objdump` shows it, with names demangled. Where functions of more than one name match, it gives their names. With `x86`, it first builds basedpl's library and the rustymath library it links for Linux x86-64, as CI's runner compiles them, holding the timing lock shared. Where basedpl doesn't compile, it reads rustymath's library alone and says so first. After a change, that build takes minutes."
-    files, note = _x86_libraries() if x86 else ([Path(bpl or INSTALLED_BPL).expanduser()], '')
+    files, note = _x86_libraries() if x86 else ([resolved(bpl)], '')
     symbols = _symbols(files)
     if not symbols: raise ValueError(f'nm read no symbols from {files}')
     matched = sorted({d for t, _, d in symbols if t in 'tT' and re.search(pattern, d)})
@@ -469,6 +586,17 @@ def disasm(
     code = re.sub(rf'<(?:{"|".join(map(re.escape, wanted))})\+', '<+', '\n'.join(code))
     names = {m: d for _, m, d in symbols}
     return Report(note + _MANGLED.sub(lambda m: names.get(m[0], m[0]), code))
+
+def jit_disasm(
+    case, # BPL whose compiled kernels to show, such as `+/ux>127ₓ₁`
+    setup:str='', # BPL that defines what the case uses, run before it
+    prefs:str='', # BPL that runs first, such as `•prefs ["kinds":"static"]`
+    bpl:Path=None # A native `bpl` to run, such as a copy saved before a change; None: the installed one
+):
+    "The machine code of each kernel that the JIT compiles while `prefs`, `setup` and `case` run, after a line that describes the kernel, as `BASEDPL_JIT_DISASM` prints them. A stage compiles on its first run only from about 3 million items (`COMPILES_AT`)."
+    p = subprocess.run([resolved(bpl), '-e', '\n'.join(c for c in (prefs, setup, case) if c)], capture_output=True, text=True, env={**os.environ, 'BASEDPL_JIT_DISASM': '1'})
+    if p.returncode: raise ValueError(p.stderr)
+    return Report(p.stderr)
 
 _CALLS = _SPEED.with_name('instructions.txt')
 
@@ -526,7 +654,7 @@ def speed_costs(
 ):
     "Time the BPL speed records, with their budgets, through the shared native/browser runner."
     files = [dict(name=p.name, text=p.read_text()) for p in sorted(_SPEED.glob('*.bpl'))] if speed is None else [dict(name='<input>', text=speed)]
-    cases = [cases] if isinstance(cases, str) else cases or None
+    cases = listify(cases) or None
     if wasm is None:
         with Worker(bpl, native) as w: r = w.request(dict(costs=dict(files=files, cases=cases, prefs=prefs)), timeout)
         if e := r['error']: raise ValueError(e['message'])
@@ -643,16 +771,18 @@ class Budgets(list):
     "Each budget that `set_budgets` changed, as `(section, code, build, old, new)` rows."
     def __repr__(self): return '\n'.join(f'{old:>9} -> {new:<9} {build:6}  {s} {c}' for s, c, build, old, new in self)
 
-def _budget(section, expected):
-    "Twice the expected copy cost, rounded up to two significant figures and at least 0.5, or the widths ratio plus 0.25, rounded up to two decimal places."
+def _budget(section, expected, estimate=False):
+    "The budget for an expected cost: for copies, the cost times 2 under 50 copies or for an estimate, 1.5 from 50 to 500 copies and 1.3 over 500, rounded up to two significant figures and at least 0.5; for widths, the ratio plus 0.25, rounded up to two decimal places."
     if section == 'widths': return Decimal(repr(expected + 0.25)).quantize(Decimal('0.01'), ROUND_CEILING)
-    return Context(prec=2, rounding=ROUND_CEILING).create_decimal(repr(max(0.5, 2*expected)))
+    factor = 2 if estimate or expected < 50 else 1.5 if expected <= 500 else 1.3
+    return Context(prec=2, rounding=ROUND_CEILING).create_decimal(repr(max(0.5, factor*expected)))
 
 def set_budgets(
     expected, # Expected costs keyed by case code, in copies or, for widths, as a 32/64-bit ratio
     path=_SPEED, # A BPL file/directory, or Rustymath's speed.txt or speed_python.txt
     builds=None, # macos, linux or wasm, or a list; None: every column present
-    sections=None # Section names to update; None: all
+    sections=None, # Section names to update; None: all
+    estimate=False, # True for costs that no run has measured on the selected builds, such as estimates for Linux or wasm, which keep budgets at twice the cost
 ):
     "Replace selected budget footers, leaving source and prose unchanged; return the changed budgets."
     if isinstance(builds, str): builds = [builds]
@@ -660,7 +790,7 @@ def set_budgets(
     for code, cost in expected.items():
         if not math.isfinite(cost) or cost < 0: raise ValueError(f'{code} should cost {cost}')
     path = Path(path)
-    if path.is_dir(): return Budgets(row for p in sorted(path.glob('*.bpl')) for row in set_budgets(expected, p, builds, sections))
+    if path.is_dir(): return Budgets(row for p in sorted(path.glob('*.bpl')) for row in set_budgets(expected, p, builds, sections, estimate))
     data, records = path.read_bytes(), []
     if path.suffix == '.bpl':
         records = [(c['section'], c['code'], c['budgets'], c['budget_span']) for c in _reference_file(data.decode())['cases'] if 'budgets' in c]
@@ -680,7 +810,7 @@ def set_budgets(
     for section, code, fields, span in records:
         if (cost := expected.get(code)) is None or sections is not None and section not in sections: continue
         fields = [*fields, *['']*(width-len(fields))]
-        new = f'{_budget(section, cost).normalize():f}'
+        new = f'{_budget(section, cost, estimate).normalize():f}'
         for i in columns:
             if new != fields[i]: changes.append((section, code, _BUDGETS[i], fields[i], new))
             fields[i] = new
@@ -691,7 +821,7 @@ def set_budgets(
     return changes
 
 
-_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff disasm speed_costs thread_scaling cargo_costs pytest_costs compare_costs wasm_test'.split()
+_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs compare_costs wasm_test'.split()
 
 def main():
     "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."

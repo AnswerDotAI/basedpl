@@ -53,6 +53,7 @@ Option-Shift-=	≠
 Option-Shift-n	⊤
 Option-,	↢
 Option-Shift-,	≢
+Option-:	⁝
 Control-Option-Shift-:	¿
 Option-<	≤
 Option-Shift-<	≥

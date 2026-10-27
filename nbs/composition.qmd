@@ -1,0 +1,154 @@
+# Composing functions
+
+A tacit function combines other functions without naming its arguments. It often reads as a description of what it computes: `+/÷≢` is the sum divided by the count. Where several forms give the same function, write the one that shows its meaning most directly.
+
+The [token separator](syntax.qmd#token-separator) `⁝` keeps names and literals distinct without separating their run.
+
+## Trains
+
+A run that ends in a function is a train. A train of two functions is an atop: `f⁝g Y` is `f(g Y)`. A train of three functions is a fork: `f⁝g⁝h Y` is `(f Y)g(h Y)`. With a left argument, `X(f g)Y` is `f(X g Y)` and `X(f g h)Y` is `(X f Y)g(X h Y)`. [Trains](evaluation.qmd#trains) gives the rules for longer trains.
+
+```bpl
+mean←+/÷≢ ⋄ mean 2 4 9       ⍝ 5
+1 2 (⊣+⊢) 3 4                ⍝ 4 6
+```
+
+In a train, a [subject](terms.qmd#term-subject) becomes the left argument of the function after it. `32+1.8×` converts Celsius to Fahrenheit by multiplying by 1.8, then adding 32.
+
+```bpl
+fahrenheit←32+1.8× ⋄ fahrenheit 100     ⍝ 212
+```
+
+A space keeps a train apart from its argument. `+/÷≢ v` applies the train to `v`. Without the space, the one run `+/÷≢v` reads as `+/÷(≢v)`:
+
+```bpl
+v←2 4 9 ⋄ +/÷≢ v             ⍝ 5
+v←2 4 9 ⋄ +/÷≢v              ⍝ 1ᵣ3
+```
+
+## Identity functions
+
+In a train, `⊢` stands for the right argument and `⊣` for the left. A fork with `⊢` reads well where the argument appears once. `⊢÷+/` divides each item by the sum:
+
+```bpl
+⊢÷+/ 1 2 5                 ⍝ 0.125 0.25 0.625
+2 (⊢-⊣) 5                    ⍝ 3
+```
+
+Where a formula uses its argument more than once, each `⊢` makes the reader track the argument again. A function that removes the repeats reads better. Newton's step towards √2 adds half of `x` to the reciprocal of `x`. `⊽⁻¹`, the inverse of double, halves:
+
+```bpl
+n←⊽⁻¹+÷ ⋄ n 1.5              ⍝ 1.416666667
+```
+
+`0.5×⊢+2÷⊢` gives the same results, but its two `⊢`s hide the formula. Where no clear tacit form exists, a dfn names the argument, as in `{0.5×⍵+2÷⍵}`.
+
+## Atop and Over
+
+[Atop](glyphs/jot.qmd), `f∘g`, applies `g` and then `f`. `X f∘g Y` is `f(X g Y)`. `⌊∘÷` divides, then rounds down:
+
+```bpl
+7 ⌊∘÷ 2                      ⍝ 3ₓ
+```
+
+[Over](glyphs/circle-diaeresis.qmd), `f⍥g`, applies `g` to each argument before `f`. `X f⍥g Y` is `(g X)f(g Y)`. `=⍥≢` tests whether two lists have the same length:
+
+```bpl
+"abc" =⍥≢ "xyz"              ⍝ $t
+```
+
+## Before and After
+
+[Before](glyphs/right-tail-arrow.qmd), `A↣f`, binds `A` as the left argument of `f`. In a train, a subject binds the same way without the glyph: `2×` is `2↣×`. [After](glyphs/left-tail-arrow.qmd), `f↢A`, binds `A` as the right argument. `,↢1` appends 1 and `-↢10` subtracts 10:
+
+```bpl
+,↢1⁝2 3                     ⍝ 2 3 1
+-↢10⁝3                      ⍝ ¯7
+```
+
+Between two functions, `f↣g Y` is `(f Y)g Y` and `f↢g Y` is `Y f(g Y)`. `(3<)↣# Y` is `(3<Y)#Y`. It keeps the items of `Y` that are greater than 3:
+
+```bpl
+(3<)↣# 2 7 1 8               ⍝ 7 8
+```
+
+## Self and Commute
+
+[Self](glyphs/tilde-diaeresis.qmd), `f⍨Y`, is `Y f Y`. Commute, `X f⍨Y`, is `Y f X`:
+
+```bpl
+,⍨"ab"                       ⍝ "abab"
+2-⍨10                        ⍝ 8
+```
+
+For a power, a superscript reads more directly than Self: `x²` rather than `×⍨x`.
+
+```bpl
+x←3 ⋄ x²                     ⍝ 9
+```
+
+## Inverse
+
+`f⁻¹` is the inverse of `f`, as [Superscripts](scripts.ipynb#on-a-function) describes. BPL infers the inverses of most compositions. `fahrenheit⁻¹` converts back to Celsius:
+
+```bpl
+fahrenheit←32+1.8× ⋄ fahrenheit⁻¹ 212   ⍝ 100
+```
+
+A superscript straight after a number applies to the number. To invert a function that ends in a number, put the function in parentheses:
+
+```bpl
+(+↢3)⁻¹ 10                   ⍝ 7
+```
+
+Without the parentheses, `+↢3⁻¹ 10` reads `3⁻¹` as a third. The third strands with `10` into the bound operand. No argument remains. The result is the function `+↢[0.3333333333 10]`.
+
+## Under
+
+[Under](glyphs/at.qmd), `f@g`, applies `f` to what `g` selects and writes the result back. `(10×)@[1 3]` multiplies items 1 and 3 by 10. `⌊@(10×)` rounds down to tenths: it scales by 10, rounds down, then scales back.
+
+```bpl
+(10×)@[1 3] 1 2 3 4          ⍝ 1 20 3 40
+⌊@(10×)1.25 2.78             ⍝ 1.2 2.7
+```
+
+## Separating an operand from its argument
+
+Within a run, an operator's right operand is the one [token](terms.qmd#term-token) after it. A run that ends in a dyadic operator takes the whole next run as its right operand: in `⌊@ 10× x`, the operand of `@` is `10×`. Literals separated by spaces join into one strand before an operator takes its operand, as [Syntax](syntax.qmd#runs) describes. `≥⍣3 5` therefore takes `3 5` as its operand and returns the function `≥⍣[3 5]`.
+
+`⁝` (Alt-:) separates tokens without ending the run or continuing a literal strand. Use it between an operand and the derived function's only argument where they would otherwise merge. It works inside a longer expression too:
+
+```bpl
+≥⍣3⁝5                                       ⍝ 8
+m←["r":2 "c":3]⍴⍳6ₓ ⋄ i←"c" ⋄ +/⍠i⁝m         ⍝ ["r":2]⍴[3 12]ₓ
+m←["r":2 "c":3]⍴⍳6ₓ ⋄ i←"c" ⋄ 10÷√1++/⍠i⁝m  ⍝ ["r":2]⍴[5 2.773500981]
+(2×)⍣3⁝5                                    ⍝ 40
+(+/÷≢)⍤1⁝2 3⍴⍳6                              ⍝ 1 4
+```
+
+Add no separator where the tokens already stay distinct. A name never joins a literal strand, as in `f⍣n1`. A vector argument can touch its operand in brackets, as in `≥⍣2[1 2 3]`.
+
+With both a left and a right argument, parentheses around the derived function show it between them. Compound operands keep their own parentheses:
+
+```bpl
+w←[1 2⋄3 4⋄5 6] ⋄ 10 20(+⍤1)w                ⍝ [11 22⋄13 24⋄15 26]
+m←2 3⍴⍳6 ⋄ (+/÷≢)⍤1m                         ⍝ 1 4
+```
+
+## Forms that read worse
+
+Each pair gives the same result.
+
+| Reads worse | Reads better |
+|---|---|
+| `{(+/⍵)÷≢⍵}` | `+/÷≢` |
+| `0.5×⊢+2÷⊢` | `⊽⁻¹+÷` |
+| `{⍵÷+/⍵}` | `⊢÷+/` |
+| `{⍵×10}@[1 3]` | `(10×)@[1 3]` |
+| `{+/⍵}⍠0` | `+/⍠0` |
+| `{⍵,1}` | `,↢1` |
+| `×⍨x` | `x²` |
+| `≥⍣3⊢5` | `≥⍣3⁝5` |
+| `+/⍠i⊢m` | `+/⍠i⁝m` |
+
+A dfn still reads better where its body needs local names or guards, or where a tacit form would be longer or clearly awkward. [Style](style.qmd) covers grouping and spacing.

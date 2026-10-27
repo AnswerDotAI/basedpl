@@ -176,13 +176,13 @@ def test_regex_functions():
 def test_distribution_functions():
     distribution = bpl.fn('•distribution')
     normal, binomial = distribution([3., 2.], 'normal'), distribution([10, 0.5], 'binomial')
-    sample = normal['sample']
-    x, y = sample(10000).np, binomial['sample'](10000).np
+    sample = normal.sample
+    x, y = sample(10000).np, binomial.sample(10000).np
     assert x.dtype == np.float64 and np.issubdtype(y.dtype, np.integer)
     assert abs(x.mean()-3) < 0.15 and abs(x.std()-2) < 0.15
     assert np.all((0 <= y) & (y <= 10)) and abs(y.mean()-5) < 0.15
-    teq(binomial['quantile']([0., 1.]).np, [0, 10])
-    teq(normal['cdf'](dict(a=3., b=float('inf'))).py, dict(a=0.5, b=1.))
+    teq(binomial.quantile([0., 1.]).np, [0, 10])
+    teq(normal.cdf(dict(a=3., b=float('inf'))).py, dict(a=0.5, b=1.))
     teq(sample([2, 3]).shape, (2, 3))
 
 
@@ -332,6 +332,10 @@ def test_keyed_arrays():
     assert k['price'].py == 1 and k['price'].is_atom and k[1].py == 1
     assert list(k[['tax', 'qty']].py) == ['tax', 'qty']
     assert k.keys == (('qty', 'price', 'tax'),)
+    assert t.a.n.py == 3 and k.price.py == 1
+    collision = Array(shape=7)
+    assert collision.shape == (1,) and collision['shape'].py == 7
+    with pytest.raises(AttributeError): k.missing
     with pytest.raises(KeyError): k['missing']
     with pytest.raises(ValueError): k[['qty', 'qty']]
 
@@ -495,7 +499,8 @@ def test_names():
     teq(bpl('⍉M').names, ('month', 'city'))
     teq(bpl('2 3⍴M').names, (None, None))
     teq(bpl('(⍴M)⍴M').names, ('city', 'month'))
-    teq(bpl(':M').names, ('city', 'month'))
+    teq(bpl(':M').names, (None, None))
+    teq(bpl('(⍴M)⍴,M').names, ('city', 'month'))
     teq(bpl('+/¨⊂⍠1 M').names, ('city',))
     teq(bpl('⌽⍤1 M').names, ('city', 'month'))
     with pytest.raises(BplError, match='INDEX'): bpl('+/⍠"missing" M')
@@ -504,7 +509,7 @@ def test_names():
     teq(reshape([4], v).names, (None,))
     teq(add.scan(v).names, ('city',))
     bpl(V=v)
-    for code, names in [('2#V', ('city',)), ('1↕V', (None, None)), ('{⍵}⌺1 V', (None, None)), ('V,V', ('city',))]:
+    for code, names in [('2#V', ('city',)), ('1↕V', (None, None)), ('⊢⌺1 V', (None, None)), ('V,V', ('city',))]:
         teq(bpl(code).names, names)
     with pytest.raises(ValueError): Array(data, names=('city', 'city'))
     with pytest.raises(ValueError): Array(data, names=('city',))

@@ -8,7 +8,7 @@ Function. Hanzi: `幂` (`冪`). Ranks: `0` monadic, `0 0` dyadic
 *0                ⍝ 1
 ```
 
-`X*Y`: X<sup>Y</sup>. Integral powers of exact operands stay exact.
+`X*Y`: X<sup>Y</sup>. Whole powers of exact operands stay exact.
 
 ```bpl
 2*3               ⍝ 8

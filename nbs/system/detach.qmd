@@ -12,4 +12,12 @@ A value computed before a `∂` call is already a constant inside it. `•detach
 
 Apply `•detach` to a computation's inputs rather than to its result. `net •detach θ` runs `net` on plain values, at the cost of running it without `∂`, as PyTorch's `torch.no_grad()` does. `•detach net θ` runs `net` under `∂` first and then discards its derivative, as `.detach()` does. Only the first form saves the work.
 
+A common cut falls on a shift that keeps a result finite. Logsumexp subtracts the largest item before `*` and adds it back after `⍟`. The shift drops out of the gradient. Detaching the input of `⌈/`, as here, gives the same gradient and keeps `∂` from differentiating `⌈/`:
+
+```bpl
+lse←{m←⌈/•detach ⍵ ⋄ m+⍟+/*⍵-m}
+lse 1000 1001 1002        ⍝ 1002.407606
+lse∂ 1 2 3                ⍝ 0.09003057317 0.2447284711 0.6652409558
+```
+
 [`∂`](../glyphs/partial.qmd) differentiates a function.

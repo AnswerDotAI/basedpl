@@ -1,37 +1,42 @@
 //! Indexing primitives: `⌷`, `⊃` and bracket indexing, and the `Selection` of items that selective assignment and `@` write through.
 
-use rustymath::{buffer::View, error::Kind, structure::{IndexPart, Plan, Selector as AxisSelector}};
+use rustymath::{buffer::{Fill, View}, error::Kind, structure::{IndexPart, Plan, Selector as AxisSelector}};
 use super::*;
+use std::sync::Arc;
 
-/// `left⌷right`. With `axes`, as `⌷⍠axes`, the selectors apply to the axes that `axes` lists, one for each position or key a selector holds, so a selector of coordinates lists each axis it covers. Its result takes the place of the first of those axes in the array.
-pub(super) fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, span: &Span) -> Result<Value, Error> {
+/// `left⌷right`. With `axes`, as `⌷⍠axes`, the selectors apply to the axes that `axes` lists, one for each position or key a selector holds, so a selector of coordinates lists each axis it covers. Its result takes the place of the first of those axes in the array. A NaN position reads `fill`, or the prototype where there's none.
+pub(super) fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Arc<Fill>>, span: &Span) -> Result<Value, Error> {
     let parts = squad_parts(left)?;
-    let Some(axes) = axes else { return select(right, &parts, None, false, span) };
+    let Some(axes) = axes else { return select(right, &parts, None, false, fill, span) };
     let (order, firsts) = listed_axes(&parts, axes, right.shape().len())?;
-    let moved;
-    let right = if rustymath::gather::counts_up(&order) { right } else {
-        let mut to = vec![0; order.len()];
-        for (p, &a) in order.iter().enumerate() { to[a] = p; }
-        moved = remap(right, rustymath::structure::transpose(right.layout(), &to)?)?;
-        &moved
-    };
-    select(right, &parts, Some(&firsts), false, span)
+    select(&reorder(right, &order)?, &parts, Some(&firsts), false, fill, span)
 }
 
 /// `right.[left]`: the items that the selectors in `left` read from `right`, with index arrays paired by broadcasting.
 pub(super) fn brackets(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
-    select(right, &squad_parts(left)?, None, true, span)
+    select(right, &squad_parts(left)?, None, true, None, span)
 }
 
-/// Whether `v` holds index values that bracket indexing reads the same way in a whole array as in each of its cells: compact numbers, unnamed and carrying no running level. `⊃` reads such values as bracket indexing does.
+/// Whether `v` holds index values that bracket indexing reads the same way in a whole array as in each of its cells: compact numbers carrying no running level. `⊃` reads such values as bracket indexing does.
 fn plain_positions(v: &Value) -> bool {
-    v.carrier().is_none() && !v.layout().has_names() && v.dtype().is_some_and(|d| d.kind() <= 2)
+    v.carrier().is_none() && v.dtype().is_some_and(|d| d.kind() <= 2)
 }
 
-/// A selection plan for every cell at once. Framed parts and a framed source layout hold the frame's axes before each cell's. Constant parts gain length-one frame axes for leading-axis agreement. The result keeps the frame's metadata. An unpaired cross product needs at most one non-unit part. Other selectors or an invalid selection give `None`.
+/// `value`, or the value that the running trace holds in its place (`Carrier::held`), so that a selection plans with real positions and each replay checks that the names still hold them.
+fn held(value: Value) -> Value { value.carrier().and_then(crate::transform::Carrier::held).cloned().unwrap_or(value) }
+
+/// A selection plan for every cell at once, from `framed_selectors`. Framed parts and a framed source layout hold the frame's axes before each cell's, with no names on them. The result keeps the frame's metadata. Selectors other than plain positions, a part named for an axis of the cells, or an invalid selection, give `None`.
 pub(crate) fn framed_plan(parts: &[(Value, bool)], layout: &rustymath::layout::Layout, framed: bool, paired: bool, frame: &rustymath::layout::Layout, span: &Span) -> Option<Plan> {
-    let n = frame.shape().len();
     if !parts.iter().all(|(part, _)| plain_positions(part)) { return None; }
+    let Positions::Plan(mut plan, _) = axis_positions(layout, None, &framed_selectors(parts, layout, framed, paired, frame)?, None, true, span).ok()? else { return None };
+    plan.layout = frame.concat(&plan.layout.axes(frame.shape().len()..plan.layout.shape().len()));
+    Some(plan)
+}
+
+/// The selectors that select every cell at once (`framed_plan`) from an array with `layout`: where `framed`, an index along each frame axis, then each part, a constant one with length-one frame axes before its own, which keep its names but not its keys, as a cell's selection reads it. A part named for an axis of `layout` gives `None`. Its claim on that axis (`rustymath::structure::addressed`) could separate the selection's axes from the frame's and reorder the result's axes. An unpaired cross product needs at most one non-unit part, and otherwise gives `None`.
+fn framed_selectors(parts: &[(Value, bool)], layout: &rustymath::layout::Layout, framed: bool, paired: bool, frame: &rustymath::layout::Layout) -> Option<Vec<IndexPart<Value>>> {
+    let n = frame.shape().len();
+    if parts.iter().any(|(part, _)| rustymath::structure::sole_name(part.layout()).is_some_and(|name| layout.axis_named(name).is_some())) { return None; }
     if !paired && parts.iter().filter(|(part, with_frame)| part.shape().len() > if *with_frame { n } else { 0 }).count() > 1 { return None; }
     let mut selectors = Vec::with_capacity(parts.len() + n);
     if framed {
@@ -41,11 +46,10 @@ pub(crate) fn framed_plan(parts: &[(Value, bool)], layout: &rustymath::layout::L
     }
     for (part, with_frame) in parts {
         if *with_frame || part.is_atom() { selectors.push(IndexPart::Axis(part.clone())); continue; }
-        selectors.push(IndexPart::Axis(part.relaid(crate::array::Layout::from([vec![1; n], part.shape().to_vec()].concat())).ok()?));
+        let part = part.unkeyed();
+        selectors.push(IndexPart::Axis(part.relaid(crate::array::Layout::from(vec![1; n]).concat(part.layout())).ok()?));
     }
-    let Positions::Plan(mut plan, _) = axis_positions(layout, None, &selectors, None, true, span).ok()? else { return None };
-    plan.layout = frame.concat(&plan.layout.axes(n..plan.layout.shape().len()));
-    Some(plan)
+    Some(selectors)
 }
 
 /// `x⌷y`, `x⊃y` or `y.[x]` on each pair of cells of `x` and `y`, of ranks `xk` and `yk`, as one bracket selection of the whole (`framed_plan`), for the routes for whole arguments (`eval::whole_cells`). Each argument holds the frame's axes before its cells', or is the same in every cell. Each cell of `x` holds positions that bracket indexing pairs as `p` would: one number for each leading axis that `⌷` selects, or one number for `⊃` in a vector. The left argument of `.[]` lists index arrays that every cell shares. `None` where `y` holds arrays, for any other selector, where nothing differs by cell, and where the selection fails, so that the calls on cells give the result or the error.
@@ -57,14 +61,24 @@ pub(crate) fn paired_select(p: Primitive, x: &Value, xk: usize, y: &Value, yk: u
         Primitive::Bracket if fx == 0 && xk <= 1 => x.elements().map(|e| (e, false)).collect(),
         Primitive::Index if fx > 0 && (xk == 0 || (xk == 1 && x.shape()[fx] <= yk)) => match xk {
             0 => vec![(x.clone(), true)],
-            _ => (0..x.shape()[fx]).map(|i| squad(&Value::integer(i as i64), x, Some(&[fx]), span).ok().map(|part| (part, true))).collect::<Option<_>>()?,
+            _ => (0..x.shape()[fx]).map(|i| squad(&Value::integer(i as i64), x, Some(&[fx]), None, span).ok().map(|part| (part, true))).collect::<Option<_>>()?,
         },
         Primitive::Mix if xk == 0 && yk == 1 => vec![(x.clone(), fx > 0)],
         _ => return None,
     };
+    // A traced free name selects by the value that it holds, as in `squad_parts`. A framed part holds only the frame's axes, and selects without their names, because the caller pairs the frames by position (`frames_pair`). The result takes `frame`'s names.
+    let parts: Vec<_> = parts.into_iter().map(|(part, framed)| { let part = held(part); (if framed { part.unnamed_frame(0) } else { part }, framed) }).collect();
     if fx == 0 && fy == 0 { return None; }
     let frame = if fx > 0 { x.layout().axes(0..fx) } else { y.layout().axes(0..fy) };
-    let plan = framed_plan(&parts, y.layout(), fy > 0, matches!(p, Primitive::Bracket), &frame, span)?;
+    let paired = matches!(p, Primitive::Bracket);
+    // As in a cell's own selection, a part's name never claims a frame axis (`framed_selectors`).
+    let y = &y.clone().unnamed_frame(yk);
+    // Positions that a running trace computes select every cell at once at replay (`trace::gathered`), with the frame laid out as `framed_plan` lays it out.
+    if parts.iter().any(|(part, _)| traced_positions(part)) && parts.iter().all(|(part, _)| plain_positions(part) || traced_positions(part)) {
+        let selected = select(y, &framed_selectors(&parts, y.layout(), fy > 0, paired, &frame)?, None, true, None, span).ok()?;
+        return selected.relaid(frame.concat(&selected.layout().axes(frame.shape().len()..selected.shape().len())).into()).ok();
+    }
+    let plan = framed_plan(&parts, y.layout(), fy > 0, paired, &frame, span)?;
     y.selected(plan, false).ok()
 }
 
@@ -72,13 +86,14 @@ pub(crate) fn paired_select(p: Primitive, x: &Value, xk: usize, y: &Value, yk: u
 fn squad_parts(left: &Value) -> Result<Vec<IndexPart<Value>>, Error> {
     if left.shape().len() > 1 { return Err(Error::new(Kind::Rank, "squad indices must be a unit or vector")); }
     coordinate_fields(left).map(|value| {
-        // A batch holds each cell's positions, which `select` reads on the batch's whole.
-        if value.carrier().and_then(crate::transform::Carrier::batch).is_some() { return Ok(IndexPart::Axis(value)); }
+        // A batch holds each cell's positions, and a traced value positions that the program computes (`traced_positions`), which `select` reads on the whole.
+        if value.carrier().and_then(crate::transform::Carrier::batch).is_some() || traced_positions(&value) { return Ok(IndexPart::Axis(value)); }
         Ok(match value.observed()? {
             crate::transform::Plain::Function(f) if f.as_primitive() == Some(Primitive::Keys) => IndexPart::All,
             plain if plain.infinity() == Some(false) => IndexPart::Rest,
             plain if plain.infinity() == Some(true) => IndexPart::NewAxis,
-            _ => IndexPart::Axis(value),
+            // A traced free name selects by the value that it holds (`held`).
+            _ => IndexPart::Axis(held(value)),
         })
     }).collect()
 }
@@ -125,15 +140,16 @@ pub(crate) fn coordinate_fields(value: &Value) -> impl Iterator<Item = Value> + 
     value.elements().take(if key { 0 } else { usize::MAX }).chain(key.then(|| value.clone()))
 }
 
-/// `left⊃right`: the item or cell at the end of the path `left` into `right`. A last level that selects a cell outside its axes gives a cell of prototypes.
-pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, span: &Span) -> Result<Value, Error> {
+/// `left⊃right`: the item or cell at the end of the path `left` into `right`. A last level that selects a cell outside its axes gives a cell of `fill`'s items, or of prototypes where there's none (`Value::fill_item`).
+pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, fill: Option<&Arc<Fill>>, span: &Span) -> Result<Value, Error> {
     let (array, _, fields) = walk(left, right, prototype)?;
     if fields.is_empty() { return Ok(array.into_owned()); }
-    if fields.len() >= array.shape().len() { return Ok(array.at_or_fill(cell_offset(array.layout(), 0, &fields, prototype)?)); }
-    if cell_offset(array.layout(), 0, &fields, prototype)? != Steps::FILL { return select(&array, &fields.into_iter().map(IndexPart::Axis).collect::<Vec<_>>(), None, false, span); }
+    if fields.len() >= array.shape().len() { return Ok(array.at_or_fill(cell_offset(array.layout(), 0, &fields, prototype)?, fill)); }
+    if cell_offset(array.layout(), 0, &fields, prototype)? != Steps::FILL { return select(&array, &fields.into_iter().map(IndexPart::Axis).collect::<Vec<_>>(), None, false, None, span); }
     let cell = array.layout().axes(fields.len()..array.shape().len());
     let count = crate::array::element_count(cell.shape())?;
-    Frame::Array(cell).collect(vec![array.prototype(); count], || array.prototype()).described("invalid Pick result")
+    let item = array.fill_item(fill);
+    Frame::Array(cell).collect(vec![item.clone(); count], || item).described("invalid Pick result")
 }
 
 /// Whether the path `left` into `right` ends at one item, not at a cell. Only the nested items on the way are read.
@@ -175,7 +191,7 @@ fn pick_targets(left: &Value, right: &Value, targets: &mut Targets) -> Result<Fr
         End::Item(None) => targets.push(&steps),
         End::Item(Some(at)) | End::Cell(at @ Steps::FILL, _) => targets.push_after(&steps, at),
         End::Cell(first, cell) => {
-            for j in 0..cell.shape().iter().product::<usize>() { targets.push_after(&steps, first + j); }
+            for j in 0..cell.count() { targets.push_after(&steps, first + j); }
             return Ok(Frame::Array(cell));
         }
     }
@@ -191,7 +207,7 @@ fn walk<'a>(left: &Value, right: &'a Value, prototype: bool) -> Result<(Cow<'a, 
             let offset = cell_offset(array.layout(), 0, &fields, prototype)?;
             // An atom is its own one item, with no item inside it to write. A level that reads the fill leaves a path that writes nothing.
             if !array.is_atom() { steps.push(offset); }
-            array = Cow::Owned(array.at_or_fill(offset));
+            array = Cow::Owned(array.at_or_fill(offset, None));
         }
         fields = next_level(&mut items, array.shape().len())?;
     }
@@ -292,7 +308,7 @@ pub(crate) enum Targets { Offsets(Vec<usize>), Paths(Vec<Vec<usize>>), Walk { ba
 
 impl Targets {
     pub(crate) fn len(&self) -> usize {
-        match self { Self::Offsets(o) => o.len(), Self::Paths(p) => p.len(), Self::Walk { steps, .. } => steps.iter().map(Steps::len).product(), Self::Cells(c) => c.len() }
+        match self { Self::Offsets(o) => o.len(), Self::Paths(p) => p.len(), Self::Walk { steps, .. } => Steps::count(steps), Self::Cells(c) => c.len() }
     }
     /// Whether any target is at a fill. Cell plans with fills decline before target construction.
     pub(crate) fn at_fill(&self) -> bool {
@@ -334,9 +350,11 @@ impl Targets {
     }
 }
 
-/// The item of `array` at `path`. A path stops at an atom, so a simple item stands for the nested items below it.
-pub(crate) fn item_at(array: &Value, path: &[usize]) -> Value {
-    path.iter().fold(array.clone(), |item, &i| if item.is_atom() { item } else { item.at_or_fill(i) })
+/// The item of `array` at `path`, with `fill` where the path's last position reaches no item, or the prototype where there's none. A path stops at an atom, so a simple item stands for the nested items below it.
+pub(crate) fn item_at(array: &Value, path: &[usize], fill: Option<&Arc<Fill>>) -> Value {
+    let Some((&last, outer)) = path.split_last() else { return array.clone() };
+    let item = outer.iter().fold(array.clone(), |item, &i| if item.is_atom() { item } else { item.at_or_fill(i, None) });
+    if item.is_atom() { item } else { item.at_or_fill(last, fill) }
 }
 pub(crate) struct Selection { pub frame: Frame, pub targets: Targets }
 
@@ -386,27 +404,28 @@ impl Selection {
         for &i in &kept { targets.push(self.targets.path(i)); }
         let values = if kept.is_empty() { Value::integers(vec![0], Vec::new()).described("invalid replacement")? }
             else if values.is_singleton() { values.clone() }
-            else { Selection::offsets(kept.clone()).read(&values.clone().with_shape(vec![values.len()]).described("invalid replacement")?, span)? };
+            else { Selection::offsets(kept.clone()).read(&values.clone().with_shape(vec![values.len()]).described("invalid replacement")?, None, span)? };
         Ok(Some((Selection { frame: Frame::Array(vec![kept.len()].into()), targets }, values)))
     }
 
-    pub(crate) fn read(&self, array: &Value, span: &Span) -> Result<Value, Error> {
+    /// The items that the selection reads from `array`, with `fill` where a target reaches no item, or the prototype where there's none.
+    pub(crate) fn read(&self, array: &Value, fill: Option<&Arc<Fill>>, span: &Span) -> Result<Value, Error> {
         let invalid = |k| Error::new(k, "invalid selection");
         let layout = match (&self.targets, &self.frame) {
-            (Targets::Offsets(offsets), Frame::Direct) => return Ok(array.at_or_fill(offsets[0])),
+            (Targets::Offsets(offsets), Frame::Direct) => return Ok(array.at_or_fill(offsets[0], fill)),
             (Targets::Paths(paths), Frame::Direct) => {
-                return Frame::Direct.collect(paths.iter().map(|p| item_at(array, p)), || array.prototype()).map_err(invalid)
+                return Frame::Direct.collect(paths.iter().map(|p| item_at(array, p, fill)), || array.prototype()).map_err(invalid)
             }
-            (Targets::Walk { .. }, Frame::Direct) => return self.listed().expect("a walk lists its targets").read(array, span),
+            (Targets::Walk { .. }, Frame::Direct) => return self.listed().expect("a walk lists its targets").read(array, fill, span),
             (Targets::Cells(cells), Frame::Direct) => return cells.read(array, &Default::default()),
             (_, Frame::Array(layout)) => layout,
         };
         let data = match &self.targets {
             // A carried array reads through its carrier, as `select` reads it, where a `Gather` would hold a batch's items one at a time.
-            Targets::Offsets(offsets) if array.carrier().is_some() => return copied_at(array, offsets.clone(), layout.clone()).map_err(invalid),
+            Targets::Offsets(offsets) if array.carrier().is_some() => return copied_at(array, offsets.clone(), layout.clone(), fill).map_err(invalid),
             Targets::Offsets(offsets) => {
                 let mut data = Gather::new(&[array], offsets.len());
-                data.at(array, offsets);
+                data.at(array, offsets, fill);
                 data
             }
             // Each item comes from the array that holds it. Consecutive paths through the same items to consecutive positions read as one run, as a cell's items do. A path that reaches an atom stops there.
@@ -415,17 +434,17 @@ impl Selection {
                 let mut rest = &paths[..];
                 while let Some((path, after)) = rest.split_first() {
                     let Some((&last, outer)) = path.split_last() else { data.add(array.clone()); rest = after; continue };
-                    let item = item_at(array, outer);
+                    let item = item_at(array, outer, None);
                     let run = if item.is_atom() || last == Steps::FILL { 1 } else { 1 + after.iter().zip(last + 1..).take_while(|(p, next)| p.split_last() == Some((next, outer))).count() };
-                    if item.is_atom() { data.add(item) } else if run == 1 { data.push(&item, last) } else { data.extend(&item, last..last + run) }
+                    if item.is_atom() { data.add(item) } else if last == Steps::FILL { data.add(item.fill_item(fill)) } else if run == 1 { data.push(&item, last) } else { data.extend(&item, last..last + run) }
                     rest = &rest[run..];
                 }
                 data
             }
-            Targets::Walk { base, steps } if array.carrier().is_some() => return copied_at(array, Steps::combined(*base, steps), layout.clone()).map_err(invalid),
+            Targets::Walk { base, steps } if array.carrier().is_some() => return copied_at(array, Steps::combined(*base, steps), layout.clone(), fill).map_err(invalid),
             Targets::Walk { base, steps } => {
                 let mut data = Gather::new(&[array], self.targets.len());
-                data.walk(array, *base, steps);
+                data.walk(array, *base, steps, fill);
                 data
             }
             Targets::Cells(cells) => return cells.read(array, layout),
@@ -439,7 +458,7 @@ impl Selection {
         self.write_into(&mut array, values, span)?;
         Ok(array)
     }
-    /// Replaces each target of `array` with its value, in place. A target at a fill writes nothing. Every check comes before the first write, so an error leaves `array` unchanged. A later target at the same position wins. Compact storage widens for wider numbers, but a weak integer that doesn't fit fixed integers is DOMAIN, as in arithmetic (`Promoted::fits`). Exact and approximate numbers stay apart, and so do Booleans and other numbers, as in a literal (`Widening::Items`), so writing one kind among another leaves the array mixed. Mixed storage stays mixed. While `•explain` records, a write that leaves compact storage mixed records the call (`explain::mixed`).
+    /// Replaces each target of `array` with its value, in place. A target at a fill writes nothing. Every check comes before the first write, so an error leaves `array` unchanged. A later target at the same position wins. Compact storage widens for wider numbers, but a weak integer that doesn't fit fixed integers is DOMAIN, as in arithmetic (`plan::Kind::fits`). Exact and approximate numbers stay apart, and so do Booleans and other numbers, as in a literal (`Widening::Items`), so writing one kind among another leaves the array mixed. Mixed storage stays mixed. While `•explain` records, a write that leaves compact storage mixed records the call (`explain::mixed`).
     pub(crate) fn write_into(&self, array: &mut Value, values: &Value, span: &Span) -> Result<(), Error> {
         if !crate::explain::recording() { return self.write_targets(array, values, span); }
         let numeric = crate::number::Numeric::current();
@@ -450,7 +469,7 @@ impl Selection {
     }
     fn write_targets(&self, array: &mut Value, values: &Value, span: &Span) -> Result<(), Error> {
         let values = self.checked(values)?;
-        crate::array::Promoted::fits([array, &values])?;
+        crate::plan::Kind::fits([array, &values])?;
         // The scatter skips a fill offset itself. Paths, and the targets of an atom, drop theirs here.
         if array.is_atom() || matches!(self.targets, Targets::Paths(_)) {
             if let Some((kept, values)) = self.without_fills(&values, span)? { return kept.write_targets(array, &values, span); }
@@ -603,11 +622,11 @@ impl Value {
     }
     /// Reads written bracket selectors, preserving structural markers until their frame is known.
     pub fn select(&self, parts: &[IndexPart<Value>]) -> Result<Value, Error> {
-        select(self, parts, None, true, &INDEX)
+        select(self, parts, None, true, None, &INDEX)
     }
     /// Reads a checked structural selection. `atom` distinguishes a direct item from a rank-zero array.
     pub fn selected(&self, plan: Plan, atom: bool) -> Result<Value, Error> {
-        planned_read(self, plan, atom, |plan| remap(self, plan))
+        planned_read(self, plan, atom, None)
     }
     /// Replaces a checked structural selection without changing the original value.
     pub fn assigned(&self, plan: Plan, atom: bool, values: &Value) -> Result<Value, Error> {
@@ -618,20 +637,41 @@ impl Value {
         selection(self, parts, true, &INDEX)?.assign(self, values, &INDEX)
     }
 }
-/// The items that `parts` read from `right`, one part for each leading axis: their cross product, or where `paired`, with index arrays paired by broadcasting.
-pub(crate) fn select(right: &Value, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, span: &Span) -> Result<Value, Error> {
+/// The items that `parts` read from `right`, one part for each leading axis: their cross product, or where `paired`, with index arrays paired by broadcasting. A position that reaches no item reads `fill`, or the prototype where there's none.
+pub(crate) fn select(right: &Value, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, fill: Option<Arc<Fill>>, span: &Span) -> Result<Value, Error> {
     if parts.is_empty() { return Ok(right.clone()); }
-    if axes.is_none() && let Some(selected) = crate::batch::bracketed(parts, right, paired, span) { return selected; }
+    if axes.is_none() && let Some(selected) = crate::batch::bracketed(parts, right, paired, fill.as_ref(), span) { return selected; }
+    if parts.iter().any(|part| matches!(part, IndexPart::Axis(v) if traced_positions(v))) {
+        if axes.is_some() || fill.is_some() { return Err(crate::program::trace::stopped("a selection by computed positions along axes or with a fill")); }
+        return match right.carrier() { Some(carrier) => carrier.selected(right, parts, paired, span), None => crate::program::trace::gathered(right, parts, paired, span) };
+    }
     if axes.is_none() && let Some(offset) = item_offset(right, parts) { return Ok(crate::fusion::item(right, offset)); }
-    let (plan, direct) = match axis_positions(right.layout(), Some(right), parts, axes, paired, span)? { Positions::Plan(plan, direct) => (plan, direct), Positions::Paths(paths) => return paths.read(right, span) };
-    planned_read(right, plan, direct, |plan| remap(right, plan))
+    let (plan, direct) = match axis_positions(right.layout(), Some(right), parts, axes, paired, span)? { Positions::Plan(plan, direct) => (plan, direct), Positions::Paths(paths) => return paths.read(right, fill.as_ref(), span) };
+    planned_read(right, plan, direct, fill)
 }
 
-/// The items that a checked `plan` reads from `right`. An atom read with no steps gives the atom. A `direct` plan whose result has no axes gives one item, or its fill. Other plans go to `remapped`.
-fn planned_read(right: &Value, plan: Plan, direct: bool, remapped: impl FnOnce(Plan) -> Result<Value, Error>) -> Result<Value, Error> {
+/// The items that a checked `plan` reads from `right`, with `fill` at each position that reaches no item, or the prototype where there's none. An atom read with no steps gives the atom. A `direct` plan whose result has no axes gives one item.
+pub(crate) fn planned_read(right: &Value, plan: Plan, direct: bool, fill: Option<Arc<Fill>>) -> Result<Value, Error> {
     if right.is_atom() && plan.steps.is_empty() { return Ok(right.clone()); }
-    if direct && plan.layout.shape().is_empty() { return Ok(right.at_or_fill(Steps::combined(0, &plan.steps)[0])); }
-    remapped(plan)
+    if direct && plan.layout.shape().is_empty() { return Ok(right.at_or_fill(Steps::combined(0, &plan.steps)[0], fill.as_ref())); }
+    remap(right, plan, fill)
+}
+
+/// The plan of a selection by `parts` on an array with `layout`, and whether it reads one item, as a step that selects at replay plans it (`program::Step::Gather`, `program::Writes::By`). Without the whole array, positions never select pick paths.
+pub(crate) fn parts_plan(layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<(Plan, bool), Error> {
+    let Positions::Plan(plan, direct) = axis_positions(layout, None, parts, None, paired, span)? else { unreachable!("positions plan without the whole array") };
+    Ok((plan, direct))
+}
+
+/// Whether `part` holds positions that the running trace computes, such as an argument's, and so can't read: a traced array of integers, Booleans or floats, or a traced atom of integers or Booleans, that isn't a free name's value or computed from free names alone (`Traced::held`). An atom of floats can be `∞` or `¯∞`, which select whole axes. A step selects by such parts at replay (`trace::gathered`).
+fn traced_positions(part: &Value) -> bool {
+    part.carrier().and_then(crate::transform::Carrier::traced).is_some_and(|t| t.held().is_none() && { let desc = t.desc(); desc.kind.dtype.is_some_and(|d| d.kind() <= 1 || d.kind() == 2 && !desc.atom) })
+}
+
+/// The plan that `parts_plan` gives with zeros in place of the parts whose positions the running trace computes (`traced_positions`), for the description of a step that selects by them at replay: a selection's layout, and whether it reads one item, depend only on its parts' layouts.
+pub(crate) fn traced_plan(layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<(Plan, bool), Error> {
+    let zeroed = |v: &Value| if !traced_positions(v) { v.clone() } else if v.is_atom() { Value::integer(0) } else { v.layout().filled(&Value::integer(0)) };
+    parts_plan(layout, &parts.iter().map(|part| part.as_ref().map(zeroed)).collect::<Vec<_>>(), paired, span)
 }
 
 /// The offset of the item that one integer position on each axis of `right` selects. `None` for parts of any other kind, and for a position outside its axis, which the general path reports.
@@ -727,7 +767,7 @@ fn coordinate_parts(selector: &Value, k: usize) -> Option<Vec<Vec<Value>>> {
 fn axis_selector(value: &Value, layout: &rustymath::layout::Layout, axis: usize) -> Result<Value, Error> {
     let Some(selector) = Selector::of(value).described("invalid axis selector")? else { return Ok(value.clone()); };
     let keys = layout.keys(axis).ok_or_else(|| Error::new(Kind::Index, "axis has no keys"))?;
-    let position = |k: &str| keys.position(k).map(|i| Value::integer(i as i64)).ok_or_else(|| Error::new(Kind::Index, format!("missing key: {k}")));
+    let position = |k: &str| keys.position(k).map(|i| Value::integer(i as i64)).ok_or_else(|| Error::new(Kind::Index, format!("missing key: {}", rustymath::layout::shown(k))));
     match selector {
         Selector::One(k) => position(&k),
         Selector::Many(shape, names) => {

@@ -10,5 +10,5 @@ export const pkg = process.env.BASEDPL_WASM ? pathToFileURL(`${resolve(process.e
 const glue = await import(new URL('basedpl_wasm.js', pkg));
 await glue.default({ module_or_path: readFileSync(new URL('basedpl_wasm_bg.wasm', pkg)) });
 glue.configure('http://localhost/', message => { throw new Error(message); });
-glue.name_cpu?.(cpus()[0].model); // A build saved before 23 October 2026 has no `name_cpu`
-export const { Session, costs } = glue;
+glue.name_cpu(cpus()[0].model);
+export const { Session, costs, retry_pauses } = glue;

@@ -5,7 +5,7 @@ Dyadic operator. Keys: `Alt-o /`. Hanzi: `兼`
 `f⊘g` calls `f` when it has one argument, and `g` when it has two. Either side can be a dfn with any number of statements.
 
 ```bpl
-f←{⍵×2}⊘{⍺+⍵}
+f←(2×)⊘+
 f 5                ⍝ 10
 3 f 5              ⍝ 8
 ```

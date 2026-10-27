@@ -3304,7 +3304,7 @@
    <when state="subscript-minus" output="₋₀"/>
   </action>
   <action id="k41-m5">
-   <when state="none" output="Ú"/>
+   <when state="none" output="⁝"/>
    <when state="quad" output="⍠"/>
   </action>
   <action id="k42-m5">

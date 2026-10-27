@@ -41,7 +41,7 @@ A selector with a named axis picks cells along the argument's axis of that name.
 
 ```bpl
 m←["i":2 "j":3]⍴⍳6ₓ
-{4ₓ<+⌿⍵}⍚[⊢ -] m                   ⍝ ["i":2 "j":3]⍴[0 ¯1 ¯2 3 ¯4 ¯5]ₓ
+(4ₓ<+⌿)⍚[⊢ -] m                    ⍝ ["i":2 "j":3]⍴[0 ¯1 ¯2 3 ¯4 ¯5]ₓ
 ```
 
 A NaN in the selector picks no case, and its cell gets the result's fill. Results keep their kinds, as Each's results do. Result cells keep the keys and names they agree on and pad differing shapes, as Rank does. A single value fills every item of its cells; when every result fills, the argument gives the cell shape. An argument with no cells gives an empty result: as Each does with prototypes, the case that the selector's fill picks runs on no cells, and the result is empty, with that case's cells.
@@ -78,4 +78,4 @@ Where the selector gives a Boolean for each item of a float argument, and every 
 - `LENGTH`: a left argument doesn't line up with the right argument
 - `LENGTH`: a case's result has neither one cell for each of its cells nor exactly one item
 - `INDEX`: a selector value outside the cases
-- `DOMAIN`: a nonnumeric or nonintegral selector value
+- `DOMAIN`: a selector value that isn't a whole number

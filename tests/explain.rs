@@ -72,13 +72,14 @@ fn explain_and_memory() {
     ] {
         check(&session, &format!(r#"(•explain "{code}").accumulations.path≡["{path}"]"#), "$t");
     }
-    // A fused group counts the runs that a long cycle splits its blocks into, and the items it copies out of inputs. A pending input that a name holds is stored on its own first.
-    check(&session, r#"big←¿[256 5000]⍴0 ⋄ f←(•explain "q←2×big+⍤1⊢¿5000⍴0 ⋄ q≡q").fused ⋄ ∧/f.runs>f.blocks"#, "$t");
-    check(&session, r#"sv←¿1048576⍴0 ⋄ (•explain "q←2×⌽sv+1 ⋄ q≡q").fused.copied"#, "[1048576]ₓ");
-    check(&session, r#"x←¿1000000⍴0 ⋄ (•explain "s←x-0.25 ⋄ q←s×1-s ⋄ q≡q").stored.reason≡["held outside the graph"]"#, "$t");
-    // A faster route that code considers and doesn't take is a decline, with its reason: a fused fold of a copy that no call moves under, or of an array that a name holds, and an idiom whose arguments don't suit it.
+    // A fused group counts the runs that a long cycle splits its blocks into, and the items it copies out of inputs. A pending input that a name also holds is computed by the group as one of its outputs, with no `stored` row.
+    check(&session, r#"big←¿[256 5000]⍴0 ⋄ f←(•explain "q←2×big(+⍤1)¿5000⍴0 ⋄ q≡q").fused ⋄ ∧/f.runs>f.blocks"#, "$t");
+    check(&session, r#"sv←¿1048576⍴0 ⋄ sq←[1024 1024]⍴sv ⋄ (•explain "q←2×1+⍉sq ⋄ q≡q").fused.copied"#, "[1048576]ₓ");
+    check(&session, r#"sv←¿4194304⍴0 ⋄ (•explain "q←2×⌽sv+1 ⋄ q≡q").fused.copied"#, "[0]ₓ");
+    check(&session, r#"x←¿1000000⍴0 ⋄ e←•explain "s←x-0.25 ⋄ q←s×1-s ⋄ q≡q" ⋄ (0=≢e.stored.reason)∧e.fused.glyphs≡["--×"]"#, "$t");
+    // A faster route that code considers and doesn't take is a decline, with its reason: a fused fold of a copy that no call moves under, and an idiom whose arguments don't suit it.
     for (code, route, reason) in [
-        ("+/⌽sv", "fused fold", "a copy that no call moves under"), ("q←2×sv ⋄ +/q", "fused fold", "another array holds the array"),
+        ("+/⌽sv", "fused fold", "a copy that no call moves under"),
         ("(10↑)∘⍋ 30 4⍴⍳120", "partial grade", "arguments that don't suit it"),
     ] {
         check(&session, &format!(r#"d←(•explain "{code}").declined ⋄ (d.route≡["{route}"])∧d.reason≡["{reason}"]"#), "$t");

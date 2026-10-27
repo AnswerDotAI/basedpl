@@ -198,7 +198,7 @@ h←•rand 3
 •prefs ["seed":7]
 x←{¿6}¨⍳4
 •prefs ["seed":7]
-y←{¿6}⍤0⊢⍳4
+y←({¿6}⍤0)⍳4
 x≡y   ⍝ $t
 
 ⍝ distribution:batched-draws — A batched map and a map run cell by cell give the same seeded draws, during the map and after it, where each cell draws once
@@ -207,7 +207,7 @@ a←{⍵+¿10}¨⍳6
 b←¿10 10 10
 •prefs ["seed":7 "batch":$t]
 e←•explain "{⍵+¿10}¨⍳6"
-[a≡e.value;b≡¿10 10 10;0=≢e.fallbacks.reason]
+[a≡e.value;b≡¿10 10 10;0ₓ=≢e.fallbacks.reason]
 ⍝ =>
 $t $t $t
 
@@ -230,7 +230,7 @@ g←•rand 3
 e←•explain "{¿⍵}¨5 6 7 8"
 f←•explain "{3¿⍵}¨10 20 30"
 h←•explain "{g.roll ⍵}¨5 6 7 8"
-[a≡e.value;b≡f.value;c≡h.value;0=≢e.fallbacks.reason,f.fallbacks.reason,h.fallbacks.reason]
+[a≡e.value;b≡f.value;c≡h.value;0ₓ=≢e.fallbacks.reason,f.fallbacks.reason,h.fallbacks.reason]
 ⍝ =>
 $t $t $t $t
 
@@ -242,14 +242,14 @@ a←{⍵+(g.roll 10)+d.sample 1}¨⍳5
 •prefs ["seed":7 "batch":$t]
 g←•rand 3
 e←•explain "{⍵+(g.roll 10)+d.sample 1}¨⍳5"
-[a≡e.value;0=≢e.fallbacks.reason]   ⍝ $t $t
+[a≡e.value;0ₓ=≢e.fallbacks.reason]   ⍝ $t $t
 
 ⍝ distribution:batched-nested — A draw in a map inside a batched operand draws for every cell of both maps, taking the stream's numbers in some order
 •prefs ["seed":7 "batch":$t]
 e←•explain "{{¿10}¨⍳3}¨⍳4"
 •prefs ["seed":7]
 x←¿3 4⍴10
-[(<,x)≡<,⊃e.value;0=≢e.fallbacks.reason]
+[(<,x)≡<,⊃e.value;0ₓ=≢e.fallbacks.reason]
 ⍝ =>
 $t $t
 
@@ -275,11 +275,11 @@ e←•explain "{⍵+d.sample ⍬}¨⍳5"
 ⍝ =>
 [$t;["no batch rule"]]
 
-⍝ distribution:session-seed-domain — The seed is one nonnegative integer
+⍝ distribution:session-seed-domain — The seed is one nonnegative whole number
 •prefs ["seed":¯1]
 ⍝ error: DOMAIN ERROR
 
-⍝ distribution:generator-seed — The seed is one nonnegative integer
+⍝ distribution:generator-seed — The seed is one nonnegative whole number
 •rand ¯1
 ⍝ error: DOMAIN ERROR
 

@@ -11,7 +11,7 @@ Function. Keys: `Alt-k`. Hanzi: `取`. Ranks: `∞` monadic, `1 ∞` dyadic
 ↑0 3⍴0            ⍝ 0 0 0
 ```
 
-`N↑Y` takes leading items; negative `N` takes from the end. Overtake inserts fill.
+`N↑Y` takes leading items; negative `N` takes from the end. Overtake inserts fill. [`⍠`](quad-colon.qmd#fill) can choose the fill, for Take and for First.
 
 ```bpl
 4↑1 2              ⍝ 1 2 0 0

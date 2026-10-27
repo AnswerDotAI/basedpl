@@ -5,15 +5,15 @@
 ⍝ 60 more steps of the simulation as you watch, and the animation stops after 400 frames.
 n←250
 ⎕←"centres←",⍎⁻¹ centres←40+¿[≥¿4 2]⍴170
-seed←∨⌿{(8>|⍵₀-⍳n)∧⊗8>|⍵₁-⍳n}⍤1 centres
+seed←∨⌿{8>|⍵₀-⍳n ∧⊗ 8>|⍵₁-⍳n}⍤1 centres
 lap←{1⌽⍵ + ¯1⌽⍵ + 1⊖⍵ + ¯1⊖⍵ - 4×⍵}
 [feed kill]←0.0545 0.062
 step←{
   [a b]←⍵
   r←a×b×b
-  [a+(0.16×lap a)-r-feed×1-a;b+(0.08×lap b)+r-(feed+kill)×b]
+  [a + 0.16×lap⁝a - r-feed×1-a;b + 0.08×lap⁝b + r - feed+kill × b]
 }
-ab←[1-0.5×seed;(0.25×seed)+0.02×¿[n n]⍴0]
+ab←[1-0.5×seed;0.25×seed + 0.02×¿[n n]⍴0]
 [dark light]←[0.02 0.03 0.1⋄1 0.75 0.35]
 frame←{
   ⍵≥400ₓ?;

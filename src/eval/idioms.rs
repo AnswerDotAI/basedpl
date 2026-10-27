@@ -110,7 +110,7 @@ fn selected(grade: bool, down: bool, pick: Pick, right: &Value, span: &Span) -> 
     };
     // Large runs cost more to comparison-sort than grading the whole vector by radix/counting.
     if range.len() > n / 4 { return None; }
-    let crate::array::Items::Compact(view) = right.as_items() else { return None };
+    let Some(view) = right.view() else { return None };
     let order = rustymath::search::view_selected(view, range, down)?;
     Some((|| {
         let positions = Value::positions_u32([order.len()], n, order).and_then(|p| p.along_first_of(right)).described("invalid selected order")?;
@@ -118,7 +118,7 @@ fn selected(grade: bool, down: bool, pick: Pick, right: &Value, span: &Span) -> 
             let selector = Value::new([1], vec![positions]).described("invalid selected order")?;
             Primitive::Index.call(Some(&selector), right, span)?
         };
-        Ok(Bound::from(if item { crate::primitive::pick(&Value::integer(0), &selected, session().prototype.get(), span)? } else { selected }))
+        Ok(Bound::from(if item { crate::primitive::pick(&Value::integer(0), &selected, session().prototype.get(), None, span)? } else { selected }))
     })())
 }
 
@@ -148,7 +148,7 @@ fn permanent(right: &Value) -> Option<Result<Bound, Error>> {
     if m != n || n >= 64 { return None; }
     let (domain, width) = Domain::of_arrays(&[right])?;
     Some((|| {
-        let settings = crate::number::Numeric::current().for_values([right]).map_err(Error::domain)?;
+        let settings = crate::number::Numeric::for_values([right])?;
         let p = with_field!(domain, [Exact, Single, Double, Complex], T => rustymath::linalg::exact::permanent(&read::<T>(right)?, n)?.number(width).wrapped(settings));
         Ok(Bound::from(Value::Number(p)))
     })())

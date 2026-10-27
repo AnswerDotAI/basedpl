@@ -8,14 +8,14 @@ p←500×∨⁻¹¿[n 2]⍴0
 v←2×○ π 2×¿n⍴0
 frame←{
   r←|d←p-⊗p
-  count←+/near←(r<40)∧r>0
-  [mv mp]←⍉(near+.×⍉[v⋄p])÷1⌈count
-  v+←0.03×mv-v + 0.002×(count>0ₓ)×mp-p + 1.5×+/(r<20)×d÷1⌈r²
+  count←+/near←r<40 ∧ r>0
+  [mv mp]←⍉ near+.×⍉[v⋄p] ÷ 1⌈count
+  v+←0.03×mv-v + 0.002×(count>0ₓ)×mp-p + 1.5×+/ r<20 × d÷1⌈r²
   turn←○0.3×¯0.5+¿n⍴0
   speed←|v
-  v×←turn×(1.5⌈3⌊speed)÷speed
+  v×←turn× 1.5⌈3⌊speed ÷ speed
   p⊢←∨⁻¹ 500|∨p+v
-  corners←,⍤2 ∨p+(v÷|v)×⊗[11 5×○2.5 5×○¯2.5]
+  corners←,⍤2∨ p + v÷|v ×⊗ [11 5×○2.5 5×○¯2.5]
   heading←⊢/∧v
   colour←0.45+0.35×2○heading+⊗0 2.1 4.2
   ["triangles":corners,colour,0.9]

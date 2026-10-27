@@ -1,6 +1,6 @@
 ⍝⍝ setup
 ⍝ Fibonacci numbers by direct recursion.
-fib←{⍵<2ₓ?⍵;(∇⍵-1ₓ)+∇⍵-2ₓ}
+fib←{⍵<2ₓ?⍵;∇⍵-1ₓ + ∇⍵-2ₓ}
 n←65536
 ⍝⍝ calls
 ⍝ `fib 16ₓ` makes 3193 calls of a dfn, each with up to four primitive calls on single numbers. Its cost is mostly the evaluator's own work for each call.

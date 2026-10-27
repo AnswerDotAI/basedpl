@@ -57,5 +57,6 @@ Option-Shift--	⁻
 Option-Shift-n	⊤
 Option-m	×
 Option-.	↣
+Option-Shift-.	⁝
 Option-<	≤
 Option-Shift-<	≥

@@ -15,7 +15,7 @@ Complex floor uses APL's Gaussian-integer rule.
 ⌊1.5j0.5          ⍝ 1j1
 ```
 
-`X⌊Y` takes the real minimum, and for characters the one with the lower code point. A number is less than any character, as [`⍋`](delta-stile.qmd) orders them. Pervasive. Beside NaN it gives NaN or the other argument. Which one can vary by platform. A reduction, scan, window or inner product by `⌊`, or a write by `⌊←` to one position more than once, gives NaN or the least of the items that aren't NaN, and never another number. Empty reduction identity: `∞`.
+`X⌊Y` takes the real minimum, and for characters the one with the lower code point. A number is less than any character, as [`⍋`](delta-stile.qmd) orders them. Pervasive. Beside NaN it gives NaN or the other argument. Which one can vary by platform. A reduction, scan, window or inner product by `⌊`, or a write by `⌊←` to one position more than once, gives NaN or the least of the items that aren't NaN, `∞` where there are none, and never another number. Empty reduction identity: `∞`.
 
 ```bpl
 3⌊1 5             ⍝ 1 3

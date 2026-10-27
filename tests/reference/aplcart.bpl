@@ -700,7 +700,7 @@ mat ← 3 2⍴⍳6ₓ ⋄ (8ₓ 9ₓ@1) mat   ⍝ [0 1⋄8 9⋄4 5]ₓ
 (1↣+⍣3) 5   ⍝ 8
 
 ⍝ aplcart/table.tsv:218 — Stencil: f on padding-size and (possibly overlapping) rectangles of Y of size and (optionally step) Jm; dfns display import/wrappers omitted to test underlying arrays
-mat ← 1+4 4⍴⍳16ₓ ⋄ [{⊂⍵}⌺3 3 mat;{+/,⍵}⌺3 3 mat]
+mat ← 1+4 4⍴⍳16ₓ ⋄ [⊂⌺3 3 mat;{+/,⍵}⌺3 3 mat]
 [4 4⍴[[0 0 0⋄0 1 2⋄0 5 6] [0 0 0⋄1 2 3⋄5 6 7] [0 0 0⋄2 3 4⋄6 7 8] [0 0 0⋄3 4 0⋄7 8 0] [0 1 2⋄0 5 6⋄0 9 10] [1 2 3⋄5 6 7⋄9 10 11] [2 3 4⋄6 7 8⋄10 11 12] [3 4 0⋄7 8 0⋄11 12 0] [0 5 6⋄0 9 10⋄0 13 14] [5 6 7⋄9 10 11⋄13 14 15] [6 7 8⋄10 11 12⋄14 15 16] [7 8 0⋄11 12 0⋄15 16 0] [0 9 10⋄0 13 14⋄0 0 0] [9 10 11⋄13 14 15⋄0 0 0] [10 11 12⋄14 15 16⋄0 0 0] [11 12 0⋄15 16 0⋄0 0 0]];[14 24 30 22⋄33 54 63 45⋄57 90 99 69⋄46 72 78 54]]
 
 ⍝ aplcart/table.tsv:223 — Modified Selective Assignment: exp is an expression that selects elements of "name" (tradfns/tradops only)
@@ -1549,7 +1549,7 @@ B←1 1 0 1 0 1 0 ⋄ ≠⍀↣>B   ⍝ $f $f $f $f $t $f $f
 [2 3 4⍴0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23;[2 3 4]ₓ;[0 1 2 3⋄4 5 6 7⋄8 9 10 11⋄12 13 14 15⋄16 17 18 19⋄20 21 22 23];[6 4]ₓ]ₓ
 
 ⍝ aplcart/table.tsv:759 — Transpose matrix Ym on condition Bs
-Bs←1
+Bs←$t
 Ym←2 3⍴⍳6ₓ
 Bs⌽↢0 1↣⍉Ym   ⍝ [0 3⋄1 4⋄2 5]ₓ
 
@@ -2326,7 +2326,7 @@ X ∧\≠ Y   ⍝ $f $f $f $f
 Js←4 ⋄ +\↦ Js   ⍝ 1 3 6 10
 
 ⍝ aplcart/table.tsv:969 — Alternating series (1,-1,2,-2, …) of length Js; optional {X} instantiated as dyadic use; Reduce each prefix to preserve right association
-Js←4 ⋄ {-/¨,\↦⍵}Js   ⍝ 1 ¯1 2 ¯2
+Js←4 ⋄ -/¨,\↦Js   ⍝ 1 ¯1 2 ¯2
 
 ⍝ aplcart/table.tsv:970 — Difference of adjacent pairs with seed value; optional {X} instantiated as dyadic use
 N←4 9 16 ⋄ +\⁻¹N   ⍝ 4 5 7
@@ -2360,10 +2360,10 @@ N←4 9 16 ⋄ *↢0.5 N   ⍝ 2 3 4
 Nv←1 2 3 ⋄ ÷1⊥÷ Nv   ⍝ 0.5454545454545455
 
 ⍝ aplcart/table.tsv:979 — Count of leading ones; optional {X} instantiated as dyadic use
-Bv←1 1 1 0 0 ⋄ ⊥⍨⌽ Bv   ⍝ 3
+Bv←$t $t $t $f $f ⋄ ⊥⍨⌽ Bv   ⍝ 3ₓ
 
 ⍝ aplcart/table.tsv:980 — Count of trailing zeros; optional {X} instantiated as dyadic use
-Bv←1 1 1 0 0 ⋄ ⊥⍨~ Bv   ⍝ 2ₓ
+Bv←$t $t $t $f $f ⋄ ⊥⍨~ Bv   ⍝ 2ₓ
 
 ⍝ aplcart/table.tsv:981 — All column indices of array Y; optional {X} instantiated as dyadic use
 Y←3 1 3 2 ⋄ ⍳0ₓ⊥⍴ Y   ⍝ [0 1 2 3]ₓ
@@ -2672,7 +2672,7 @@ Mm 0 2 1 3⍉×⊗ Nm
 N←4 9 16 ⋄ ≢÷(1⊥÷) N   ⍝ 7.081967213114754
 
 ⍝ aplcart/table.tsv:1075 — Count of leading zeros
-Bv←0 0 1 1 0 ⋄ ⊥⍨0=⌽ Bv   ⍝ 2ₓ
+Bv←$f $f $t $t $f ⋄ ⊥⍨0=⌽ Bv   ⍝ 2ₓ
 
 ⍝ aplcart/table.tsv:1076 — Manhattan distance between two points in N-space
 0 0 ¯1 1 (1⊥↢|-) 0 3 0 0   ⍝ 5
@@ -2713,7 +2713,7 @@ Dv← " a b  c "  ⋄ ~↢" " Dv   ⍝ "abc"
 ⍝ aplcart/table.tsv:1090 — Two-column matrix from two vectors (pad shorter vector)
 Xv←1 2
 Yv←3 4 5
-Xv{⍉⊃[⍺ ⍵]}Yv   ⍝ [1 3⋄2 4⋄0 5]
+⍉⊃[Xv Yv]   ⍝ [1 3⋄2 4⋄0 5]
 
 ⍝ aplcart/table.tsv:1091 — Catalogue of all pairs from Xv and Yv
 Xv←1 2 3
@@ -2859,7 +2859,7 @@ Y←4 6⍴⍳24ₓ
 Iv ↑⍪-↣↑ Y   ⍝ [0 1⋄22 23]ₓ
 
 ⍝ aplcart/table.tsv:1126 — Picking one of two values according to Bs
-Bs←1
+Bs←$t
 Yv←[[1 2] [3 4 5]]
 Bs ⊢⊃⍨⊣ Yv   ⍝ 3 4 5
 
@@ -2991,7 +2991,7 @@ r←⊂∘¿⍨∘≢↣⌷Y
 Y≡[⍋r]⌷r   ⍝ $t
 
 ⍝ aplcart/table.tsv:1165 — Transitive closure
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ∨.∧⍨↣∨⍣≡Bm   ⍝ [1 1 1⋄1 1 1⋄1 1 1]
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ∨.∧⍨↣∨⍣≡Bm   ⍝ [$t $t $t⋄$t $t $t⋄$t $t $t]
 
 ⍝ aplcart/table.tsv:1166 — Rounding to nearest even integer (favouring up)
 N←¯3 ¯2.5 0 1 2.5 3 ⋄ ⌊⊢+(1≤2|⊢) N   ⍝ [¯2 ¯2 0 2 2 4]ₓ
@@ -3100,7 +3100,7 @@ Yv←3 2 1 1
 Xv ∧/∊⍨,∊ Yv   ⍝ $t
 
 ⍝ aplcart/table.tsv:1192 — Changing starting indicators Bv of subvectors to lengths
-Bv←1 0 1 0 0 ⋄ (-/∘⌽∘(2↣↕))∘⍸,↢1 Bv   ⍝ [2 3]ₓ
+Bv←$t $f $t $f $f ⋄ (-/∘⌽∘(2↣↕))∘⍸,↢1 Bv   ⍝ [2 3]ₓ
 
 ⍝ aplcart/table.tsv:1193 — Segment lengths from ending indices
 Iv←0 1 0 0 1 ⋄ (-/∘⌽∘(2↣↕))∘⍸1↣, Iv   ⍝ [2 3]ₓ
@@ -3151,7 +3151,7 @@ Y←[3 1 2⋄2 3 1] ⋄ ⊂∘⍒↣⌷⍤¯1 Y   ⍝ [3 2 1⋄3 2 1]
 
 ⍝ aplcart/table.tsv:1206 — Mask to get subvectors with indices Iv as indicated by Bv
 Iv←1 3
-Bv←1 0 1 0 1 0
+Bv←$t $f $t $f $t $f
 Iv +\∘⊢∊⊣ Bv   ⍝ $t $t $f $f $t $t
 
 ⍝ aplcart/table.tsv:1207 — Are columns of N in ascending order?
@@ -3187,7 +3187,7 @@ X ↑⍤¯1∘⍷⍳1ₓ⍨ Y   ⍝ 1ₓ
 ⍝ aplcart/table.tsv:1214 — Conway's Game of Life: next generation given Bv of 140 surviving 3-by-3 subarrays; the Game of Life recipe constructs its table of surviving neighbourhoods
 states←⊂3 3 ⍴¨ ↓(9⍴2)⊤⍳512ₓ
 Bv←states#⍨{(3ₓ=+/∊⍵)∨(1ₓ=1 1⌷⍵)∧4ₓ=+/∊⍵}¨states
-Bm←[0 0 0 0 0⋄0 0 1 0 0⋄0 0 1 0 0⋄0 0 1 0 0⋄0 0 0 0 0]
+Bm←[$f $f $f $f $f⋄$f $f $t $f $f⋄$f $f $t $f $f⋄$f $f $t $f $f⋄$f $f $f $f $f]
 Bv∊⍨⊢↢⊂⌺3 3 Bm
 ⍝ =>
 [$f $f $f $f $f⋄$f $f $f $f $f⋄$f $t $t $t $f⋄$f $f $f $f $f⋄$f $f $f $f $f]
@@ -3231,7 +3231,7 @@ D←"Abc 19 Σς!"  ⋄ ∧/127≥•ucs∘∊ D   ⍝ $f
 Is←123456 ⋄ ¯97(|-⊣)⊢ Is   ⍝ 72
 
 ⍝ aplcart/table.tsv:1231 — Vector (Jv[1]⍴1),(Jv[2]⍴0),(Jv[3]⍴1),…
-Jv←1 2 3 ⋄ {⍵#1 0⍴⍨≢⍵}Jv   ⍝ 1 0 0 1 1 1
+Jv←1 2 3 ⋄ Jv#1 0⍴⍨≢Jv   ⍝ 1 0 0 1 1 1
 
 ⍝ aplcart/table.tsv:1232 — Convert fraction to (numerator,denominator)
 Ns←0.75 ⋄ ,÷∨ ↢1 Ns   ⍝ 3 4
@@ -3443,7 +3443,7 @@ Dv← "xxabyyab"  ⋄ {[⍵⋄'¯'⍴⍨≢⍵]}Dv   ⍝ ["xxabyyab"⋄"¯¯¯¯
 ⍝ aplcart/table.tsv:1289 — Ravel order indices of elements at indices Jv in an array of dimensions Jv
 Iv←2 3
 Jv←[1 1;2 1;2 3]
-Iv{1+⍺↣⊥¨⍵-1}Jv   ⍝ 1 4 6
+1+Iv↣⊥¨Jv-1   ⍝ 1 4 6
 
 ⍝ aplcart/table.tsv:1290 — Bar chart
 (⊃⍴¨↢'⎕') 3 1 4 1 5   ⍝ ["⎕⎕⎕  "⋄"⎕    "⋄"⎕⎕⎕⎕ "⋄"⎕    "⋄"⎕⎕⎕⎕⎕"]
@@ -3468,16 +3468,16 @@ Mm←3 3⍴⍳9ₓ ⋄ ≥⊗⍨∘⍳∘≢↣×Mm   ⍝ [0 0 0⋄3 4 0⋄6 7 8
 Mm←3 3⍴⍳9ₓ ⋄ >⊗⍨∘⍳∘≢↣×Mm   ⍝ [0 0 0⋄3 0 0⋄6 7 0]ₓ
 
 ⍝ aplcart/table.tsv:1298 — Is Bm a full upper triangular matrix without diagonal?
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ <⊗⍨∘⍳∘≢↣≡Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ <⊗⍨∘⍳∘≢↣≡Bm   ⍝ $f
 
 ⍝ aplcart/table.tsv:1299 — Is Bm a full upper triangular matrix with diagonal?
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ≤⊗⍨∘⍳∘≢↣≡Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ≤⊗⍨∘⍳∘≢↣≡Bm   ⍝ $f
 
 ⍝ aplcart/table.tsv:1300 — Is Bm a full lower triangular matrix with diagonal?
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ≥⊗⍨∘⍳∘≢↣≡Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ≥⊗⍨∘⍳∘≢↣≡Bm   ⍝ $f
 
 ⍝ aplcart/table.tsv:1301 — Is Bm a full lower triangular matrix without diagonal?
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ >⊗⍨∘⍳∘≢↣≡Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ >⊗⍨∘⍳∘≢↣≡Bm   ⍝ $f
 
 ⍝ aplcart/table.tsv:1302 — Annual rate to modal rate
 M←12
@@ -3674,7 +3674,7 @@ D←["  ab"⋄" c d"]  ⋄ '-'@[=↢' ']D   ⍝ ["--ab"⋄"-c-d"]
 ⍝ aplcart/table.tsv:1354 — General comparison according to Total Array Order (¯1:X precedes Y, 0:X≡Y, 1:X succeeds Y)
 X←1 2
 Y←1 3
-X{↑(⍋-⍒)[⍺ ⍵]}Y   ⍝ ¯1ₓ
+↑(⍋-⍒)[X Y]   ⍝ ¯1ₓ
 
 ⍝ aplcart/table.tsv:1355 — Formatting with zero values replaced with blanks
 N←[0 1 2⋄3 0 4] ⋄ ⍕' '@[0↣=] N   ⍝ ["  1 2"⋄"3   4"]
@@ -3723,7 +3723,7 @@ Is ⊢⍴⍨÷⍨↢≢,⊣ Yv   ⍝ [0 1⋄2 3⋄4 5]ₓ
 ⍝ aplcart/table.tsv:1365 — Remove consecutive duplicate Xs's from vector Yv
 Xs←0
 Yv←0 0 1 1 0 0 2 0
-Xs{⍵#⍨∨/2↕1,⍺≠⍵}Yv   ⍝ 0 1 1 0 2 0
+Yv#⍨∨/2↕1,Xs≠Yv   ⍝ 0 1 1 0 2 0
 
 ⍝ aplcart/table.tsv:1366 — Arithmetic mean value of all elements
 N←2 3⍴⍳6ₓ ⋄ +/∘,÷1××/∘⍴ N   ⍝ 2.5
@@ -3887,7 +3887,7 @@ Jv←2026 9 18 ⋄ ('-'@4 7∘⍕1000⊥3↣↑)Jv   ⍝ "2026-09-18"
 ($d,$a)⌷⍨⊂ 0 9 10 35   ⍝ "09AZ"
 
 ⍝ aplcart/table.tsv:1409 — Conditional in text
-Bs←0 ⋄ "correct",⍨"in"#⍨~ Bs   ⍝ "incorrect"
+Bs←$f ⋄ "correct",⍨"in"#⍨~ Bs   ⍝ "incorrect"
 
 ⍝ aplcart/table.tsv:1410 — Replace backslashes with slashes
 '/'@['\'↣=] "path\to\file"   ⍝ "path/to/file"
@@ -4007,7 +4007,7 @@ Dv← "Hello, world! Why?"  ⋄ ~↢".,:;?!" Dv   ⍝ "Hello world Why"
 ⍝ aplcart/table.tsv:1446 — Sort A according to Ms (1: ascending, 0: unordered, ¯1: descending)
 Ms←¯1
 A←3 1 2
-Ms{⍵⌷⍨⊂⍋⍋⍺×⍋⍵}A   ⍝ 1 3 2
+A⌷⍨⊂⍋⍋Ms×⍋A   ⍝ 1 3 2
 
 ⍝ aplcart/table.tsv:1447 — Generate Roman numeral (purely additive, no refinements)
 Js←1984 ⋄ "MDCLXVI"#⍨(0,6⍴2 5)⊤⊢ Js   ⍝ "MDCCCCLXXXIIII"
@@ -4028,7 +4028,7 @@ Y←[[10 11 12 13] [20 21 22 23]]
 Iv ⍳∘≢∘⊣⌷⍤0 1⌷⍤0 99 Y   ⍝ 10 21 12 23
 
 ⍝ aplcart/table.tsv:1451 — Lengths of groups of ones in Bv
-Bv←0 1 1 0 1 0 1 1 1 0 ⋄ [0]~⍨¯1+-/⌽2↕⍸1,(~Bv),1   ⍝ 2 1 3
+Bv←$f $t $t $f $t $f $t $t $t $f ⋄ [0]~⍨¯1+-/⌽2↕⍸1,(~Bv),1   ⍝ 2 1 3
 
 ⍝ aplcart/table.tsv:1452 — Merge X and Y alternately
 X←1 2 3
@@ -4101,7 +4101,7 @@ Dv← "abc"
 Is ⊢↑⍨↢-↢⌊+↢≢÷2⍨ Dv   ⍝ "   abc"
 
 ⍝ aplcart/table.tsv:1469 — Expansion vector (left argument for #⁻¹) to insert a new element after each one in Bv
-Bv←1 0 1 0 ⋄ ⍪↣,↢1#⍥,⍪,~ Bv   ⍝ 1 0 1 1 0 1
+Bv←$t $f $t $f ⋄ ⍪↣,↢1#⍥,⍪,~ Bv   ⍝ $t $f $t $t $f $t
 
 ⍝ aplcart/table.tsv:1470 — Expansion vector for Y with zeros after indices Iv
 Iv←0 2
@@ -4147,7 +4147,7 @@ Mv ⊢(⊢+.×⌹)(1,↢⍪⊣) Nv
 1 3 5 7
 
 ⍝ aplcart/table.tsv:1480 — Conway's Game of Life: next generation
-Bm←[0 0 0 0 0⋄0 0 1 0 0⋄0 0 1 0 0⋄0 0 1 0 0⋄0 0 0 0 0]
+Bm←[$f $f $f $f $f⋄$f $f $t $f $f⋄$f $f $t $f $f⋄$f $f $t $f $f⋄$f $f $f $f $f]
 ({≢⍸⍵}⌺3 3∊¨(3+0,¨⊢))Bm
 ⍝ =>
 [$f $f $f $f $f⋄$f $f $f $f $f⋄$f $t $t $t $f⋄$f $f $f $f $f⋄$f $f $f $f $f]
@@ -4203,7 +4203,7 @@ Nv←1.2 1.23 1.234 ⋄ ⌊(10⍟⊢÷⍨↢⍎"."~⍨⍕) Nv   ⍝ [1 2 3]ₓ
 ⍝ aplcart/table.tsv:1494 — Is'th number in the Aliqout sequence for Js
 Is←2
 Js←6
-Is{+/∘∪⍳↣∨ ⍣⍺ ⍵}Js   ⍝ 28
++/∘∪⍳↣∨ ⍣Is Js   ⍝ 28
 
 ⍝ aplcart/table.tsv:1495 — Extract text (without quotes) in expression
 Dv← "a+'hello'+'world'+b"  ⋄ ~∧≠\ ∘=↢'''↣⊆Dv
@@ -4270,14 +4270,14 @@ Y←1 2 1 3 1 2 ⋄ {⍵⌷⍨⊂⍒⊢/⍵},↢≢⌸ Y   ⍝ [1 3⋄2 2⋄3 1]
 
 ⍝ aplcart/table.tsv:1511 — First one (<\) in each subvector of Bv indicated by Av (fast ∊<\¨Av⊂Bv)
 Av←1 0 0 1 0 0
-Bv←0 1 1 1 0 1
+Bv←$f $t $t $t $f $t
 Av ∧∨⊢{⍵#⁻¹ </∘ 2↣↕ 0,⍵#⍺}∨ Bv
 ⍝ =>
 0 1 0 1 0 0
 
 ⍝ aplcart/table.tsv:1512 — State of switch given Bv on and Av off spikes
 Av←0 0 1 0 0 1
-Bv←1 0 0 0 1 0
+Bv←$t $f $f $f $t $f
 Av ≠\∨{⍺#⁻¹ ≠/∘ 2↣↕ 0,⍺#⍵}⊢ Bv
 ⍝ =>
 $t $t $f $f $t $f
@@ -4300,7 +4300,7 @@ X {¯1+≢⍵}⌸⍸,⍨⍳∘(1+≢)∘⊣ Y   ⍝ 2 2 2
 
 ⍝ aplcart/table.tsv:1521 — Leading ones (∧⍀) in each subvector of Bv indicated by Av
 Av←1 0 0 1 0 0
-Bv←1 1 0 1 0 1
+Bv←$t $t $f $t $f $t
 Av ≥{~≠\⍺#⁻¹(≠/∘(2↣↕))1,⍺#⍵}⊢ Bv
 ⍝ =>
 $t $t $f $t $f $f
@@ -4344,10 +4344,10 @@ Dv ⊂⍨ 1 , 1 ↓ ≢Dv ↑ </2↕(•c Dv)∊"aeiouyäö"
 
 ⍝ aplcart/table.tsv:1532 — Groups of ones in Bv pointed to by at least one 1 in Av
 Av←0 1 0 0 0 0 0 1
-Bv←0 1 1 0 1 1 0 1
+Bv←$f $t $t $f $t $t $f $t
 Av ∧{⍵∧s∊⍺#s←+\ </∘ 2↣↕ 0,⍵}⊢ Bv
 ⍝ =>
-0 1 1 0 0 0 0 1
+$f $t $t $f $f $f $f $t
 
 ⍝ aplcart/table.tsv:1534 — Date (⎕TS format) to M/D/YY
 Jv←2026 9 18 ⋄ '/'@[' '↣=]∘⍕100|1⌽3↣↑ Jv   ⍝ "9/18/26"
@@ -4357,7 +4357,7 @@ Jv←2026 9 18 ⋄ '.'@[' '↣=]∘⍕∘⌽3↣↑ Jv   ⍝ "18.9.2026"
 
 ⍝ aplcart/table.tsv:1536 — Mask Operator: Merge X and Y using Bv (1 for X's item, 0 for Yv's item)
 X←10 20 30
-Bv←1 0 1
+Bv←$t $f $t
 Y←1 2 3
 X Bv{(⍶#⍺)@ ⍸⍶ ⍵} Y   ⍝ 10 2 30
 
@@ -4394,7 +4394,7 @@ Is ⊢↢≢÷⍨(1⊥⊣*⍨(⊢-⊢↢≢÷⍨(1⊥⊢))) Nv
 Nv←1 2 4 ⋄ (2*↢÷⍨(+⌿÷≢))(2*⍨(⊢-+⌿÷≢)) Nv   ⍝ 1.247219128924647
 
 ⍝ aplcart/table.tsv:1547 — Cumulative sum (+\) in each group of ones
-Bv←0 1 1 0 1 1 1 0 ⋄ 0{⍵×1+⍺}\Bv   ⍝ 0 1 2 0 1 2 3 0
+Bv←$f $t $t $f $t $t $t $f ⋄ 0{⍵×1+⍺}\Bv   ⍝ 0 1 2 0 1 2 3 0
 
 ⍝ aplcart/table.tsv:1548 — Shortest path length matrix from weighted adjacency matrix n2, using Floyd-Warshall
 Nm←[0 2 9⋄2 0 3⋄9 3 0] ⋄ ⍳∘≢(⊢⌊⌷⍤1+⊗⌷)/∘,⊂ Nm
@@ -4445,10 +4445,10 @@ Ord ← 0↣⍕,{2↑"thstndrd"↓⍨2×↑⍵⌽∊1 ¯1 8#⊂10↑⍳4ₓ}
 Js←3 ⋄ (⍳-↢⌈÷↢2)(⊣⊖⌽),⍨⍴↢⍳×⍨ Js   ⍝ [5 7 0⋄6 2 4⋄1 3 8]
 
 ⍝ aplcart/table.tsv:1562 — Scatter plot of two series (one per row of Jm)
-Jm←[1 2 3⋄3 1 2] ⋄ {[2⊥⍉⍵=⊗⌽↦⌈/,⍵]⌷" +○⍟"}Jm   ⍝ ["+ ○"⋄" ○+"⋄"○+ "]
+Jm←[1 2 3⋄3 1 2] ⋄ [2⊥⍉Jm=⊗⌽↦⌈/,Jm]⌷" +○⍟"   ⍝ ["+ ○"⋄" ○+"⋄"○+ "]
 
 ⍝ aplcart/table.tsv:1563 — Start and length of groups of 1s in Bv
-Bv←0 1 1 0 1 1 1 0
+Bv←$f $t $t $f $t $t $t $f
 p←⍸≠/2↕0,Bv,0
 -⍨\[(≢p)÷2 2]⍴p   ⍝ [1 2⋄4 3]ₓ
 
@@ -4728,7 +4728,7 @@ Yv←[1 2 3;["ab"⋄"cd"⋄"ef"]] ⋄ ≢∘↑Yv   ⍝ 3ₓ
 
 ⍝ aplcart/table.tsv:1680 — Ternary: if Bs then return X else return Y
 X←3 1 2 1
-Bs←0
+Bs←$f
 Y←3 1 3 2
 X⊣⍣Bs Y   ⍝ 3 1 3 2
 
@@ -4897,13 +4897,13 @@ J←¯1 0 2 ⋄ {1+⍵}J   ⍝ 0 1 3
 ⍝ aplcart/table.tsv:1772 — Ternary: if Bs then execute and return X else execute and return Y
 X←3 1 2 1
 Y←3 1 3 2
-Bs←1
+Bs←$t
 {⍵?X;Y}Bs   ⍝ 3 1 2 1
 
 ⍝ aplcart/table.tsv:1773 — Two-row matrix from two vectors (pad shorter vector)
 Xv←1 2
 Yv←3 4 5
-Xv{⊃[⍺ ⍵]}Yv   ⍝ [1 2 0⋄3 4 5]
+⊃[Xv Yv]   ⍝ [1 2 0⋄3 4 5]
 
 ⍝ aplcart/table.tsv:1774 — Integer quotient and remainder (new leading length-2 axis) of N divided by Ms
 3 {⍉[0 ⍺]⊤⍵} 10 11 12 13   ⍝ [3 3 4 4⋄1 2 0 1]
@@ -4928,7 +4928,7 @@ X M   ⍝ 0 1 0 1 0 1
 ⍝ aplcart/table.tsv:1799 — Xs-separated vector constructed from the vector of vectors Yv (which must be of depth 2)
 Xs←','
 Yv←"ab" "" "cd"
-Xs{1↓∊⍺,¨⍵}Yv   ⍝ "ab,,cd"
+1↓∊Xs,¨Yv   ⍝ "ab,,cd"
 
 ⍝ aplcart/table.tsv:1800 — Is Nm traceless?
 [A←3 3⍴⍳9ₓ;(0∧.=0 0↣⍉) A;B←3 3⍴0 1 2 3;(0∧.=0 0↣⍉) B]
@@ -4937,7 +4937,7 @@ Xs{1↓∊⍺,¨⍵}Yv   ⍝ "ab,,cd"
 ⍝ aplcart/table.tsv:1801 — Reverse Y on condition As
 As←1
 Y←2 3⍴⍳6ₓ
-As{⊖⍣⍺ ⍵}Y   ⍝ [3 4 5⋄0 1 2]ₓ
+⊖⍣As Y   ⍝ [3 4 5⋄0 1 2]ₓ
 
 ⍝ aplcart/table.tsv:1802 — Is X lexically less than or equal to Y?
 ["Anna" {</⍋[⍺ ⍵]} "Bob";"Anna" {</⍋[⍺ ⍵]} "Anna";"Bob" {</⍋[⍺ ⍵]} "Anna";"Anna " {</⍋[⍺ ⍵]} "Anna"]
@@ -4958,7 +4958,7 @@ $t $f $f $t
 ⍝ aplcart/table.tsv:1806 — Indexing two-element vector Xv with Boolean values B
 Xv←"no" "yes"
 B←0 1 1 0
-Xv{[⍵]⌷⍺}B   ⍝ "no" "yes" "yes" "no"
+[B]⌷Xv   ⍝ "no" "yes" "yes" "no"
 
 ⍝ aplcart/table.tsv:1807 — Integer quotient and remainder (new leading length-2 axis) of all combinations of an element from N divided by an element from M
 2 3 4 5 6 {⍉(0,⍤0⍺)⊤⍵} 10   ⍝ [5 3 2 2 1⋄0 1 2 0 4]
@@ -4978,29 +4978,29 @@ Yv←0 3 4 5
 Xv +/∧\∘≠ Yv   ⍝ 2ₓ
 
 ⍝ aplcart/table.tsv:1816 — Determinant of two-row matrix
-Nm←[1 2⋄3 4] ⋄ {-/×⌿0 1⌽⍵}Nm   ⍝ ¯2
+Nm←[1 2⋄3 4] ⋄ -/×⌿0 1⌽Nm   ⍝ ¯2
 
 ⍝ aplcart/table.tsv:1817 — Inverted Table Transpose (⍉Y where Y is unverted Yv)
 Yv←[1 2 3;["ab"⋄"cd"⋄"ef"]] ⋄ {⍉⊃{1ₓ=≢⍴⍵?⍵;↓⍵}¨⍵}Yv
 3 2⍴[1 "ab" 2 "cd" 3 "ef"]
 
 ⍝ aplcart/table.tsv:1818 — Bit-wise NOT for positive integers
-J←1 2 3 7 8 ⋄ {2⊥~2⊥⁻¹⍵}J   ⍝ 14 13 12 8 7
+J←1 2 3 7 8 ⋄ 2⊥~2⊥⁻¹J   ⍝ 14 13 12 8 7
 
 ⍝ aplcart/table.tsv:1820 — Locate fill elements formed by replicating Y by Iv
 Iv←2 ¯1 1
 Y←10 20 30
-Iv{~⍺#1⍨¨⍵}Y   ⍝ $f $f $t $f
+~Iv#1⍨¨Y   ⍝ $f $f $t $f
 
 ⍝ aplcart/table.tsv:1821 — First Js figurate numbers of order Is
 Is←2
 Js←5
-Is{+\⍣⍺ ↦⍵}Js   ⍝ 1 4 10 20 35
++\⍣Is ↦Js   ⍝ 1 4 10 20 35
 
 ⍝ aplcart/table.tsv:1822 — Locate fill elements formed by expanding Y by Iv
 Iv←1 0 1 0 1
 Y←10 20 30
-Iv{~⍺#⁻¹1⍨¨⍵}Y   ⍝ $f $t $f $t $f
+~Iv#⁻¹1⍨¨Y   ⍝ $f $t $f $t $f
 
 ⍝ aplcart/table.tsv:1823 — Find with wildcards; Concrete APLcart recipe; setup from april/libraries/dfns/array/demo.lisp:201; Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
 [match:]←•load "lib/array.bpl"
@@ -5020,7 +5020,7 @@ Y←2 3 4 5
 Iv{1@⍺{0}¨⍵}Y   ⍝ 1 0 1 0
 
 ⍝ aplcart/table.tsv:1832 — Sum of list of polynomials with descending coefficients
-Nv←[1 2 3;4 5;,6] ⋄ {⌽+⌿⊃⌽¨⍵}Nv   ⍝ 1 6 14
+Nv←[1 2 3;4 5;,6] ⋄ ⌽+⌿⊃⌽¨Nv   ⍝ 1 6 14
 
 ⍝ aplcart/table.tsv:1833 — Subdiagonal matrix of size Jv (n or m,n)
 {1ₓ=-/¨⍳2⍴⍵} [6 7]ₓ
@@ -5031,17 +5031,17 @@ Nv←[1 2 3;4 5;,6] ⋄ {⌽+⌿⊃⌽¨⍵}Nv   ⍝ 1 6 14
 6 7⍴[$f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t]
 
 ⍝ aplcart/table.tsv:1835 — All binary representations up to Js (truth table)
-Js←5 ⋄ {2⊥⁻¹ ⍳1ₓ+⍵}Js   ⍝ [0 0 0⋄0 0 1⋄0 1 0⋄0 1 1⋄1 0 0⋄1 0 1]
+Js←5 ⋄ 2⊥⁻¹ ⍳1ₓ+Js   ⍝ [0 0 0⋄0 0 1⋄0 1 0⋄0 1 1⋄1 0 0⋄1 0 1]
 
 ⍝ aplcart/table.tsv:1836 — Binary format of decimal number Js
-Js←13 ⋄ {∊⍕¨2⊥⁻¹⍵}Js   ⍝ "1101"
+Js←13 ⋄ ∊⍕¨2⊥⁻¹Js   ⍝ "1101"
 
 ⍝ aplcart/table.tsv:1838 — Adjacency matrix of size Iv (n or m,n) from list of (a,b) arcs Jv
 4 7 {$t@⍵ $f⍴⍨2⍴⍺} [0 5;1 6;2 0]
 [$f $f $f $f $f $t $f⋄$f $f $f $f $f $f $t⋄$t $f $f $f $f $f $f⋄$f $f $f $f $f $f $f]
 
 ⍝ aplcart/table.tsv:1839 — Remove consecutive duplicates from an ordered vector
-Yv←1 1 2 2 2 3 ⋄ {⍵#⍨1, ≢/⍠1∘ 2↣↕ ⍵}Yv   ⍝ 1 2 3
+Yv←1 1 2 2 2 3 ⋄ Yv#⍨1, ≢/⍠1∘ 2↣↕ Yv   ⍝ 1 2 3
 
 ⍝ aplcart/table.tsv:1840 — Is differences of differences of adjacents
 Is←2
@@ -5051,7 +5051,7 @@ N←1 4 9 16 25
 ⍝ aplcart/table.tsv:1841 — Inverted Table Select: records Iv from inverted table Yv ((⊂Iv)⌷Y where Y is unverted Yv)
 Iv←2 0
 Yv←[1 2 3;["ab"⋄"cd"⋄"ef"]]
-Iv{⍵⌷¨⍨⊂⊂⍺}Yv   ⍝ [3 1;["ef"⋄"ab"]]
+Yv⌷¨⍨⊂⊂Iv   ⍝ [3 1;["ef"⋄"ab"]]
 
 ⍝ aplcart/table.tsv:1844 — Execute Alternate: Execute Dv but if it errors, execute Cv; Reviewed Execute example checked through the Rust reference worker
 Cv←"42"
@@ -5071,10 +5071,10 @@ Cv{∞::⍎⍺ ⋄ ⍎⍵}Dv   ⍝ 42
 6 7⍴[$t $t $t $t $f $f $f $t $t $t $t $t $f $f $t $t $t $t $t $t $f $t $t $t $t $t $t $t $f $t $t $t $t $t $t $f $f $t $t $t $t $t]
 
 ⍝ aplcart/table.tsv:1854 — Coefficients of the binomial (approximated, fastest above 10)
-Js←5 ⋄ {1,×\⌽↣÷↦⍵}Js   ⍝ 1 5 10 10 5 1
+Js←5 ⋄ 1,×\⌽↣÷↦Js   ⍝ 1 5 10 10 5 1
 
 ⍝ aplcart/table.tsv:1855 — Derangement
-N←0 1 2 3 4 5 ⋄ {⌊0.5+⍵!↣÷*1}N   ⍝ [0 0 1 2 9 44]ₓ
+N←0 1 2 3 4 5 ⋄ ⌊0.5+N!↣÷*1   ⍝ [0 0 1 2 9 44]ₓ
 
 ⍝ aplcart/table.tsv:1856 — Convert from hexadecimal; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
 {16⊥⍵⍳⍨$d,$a}"ABCD"   ⍝ 43981
@@ -5082,12 +5082,12 @@ N←0 1 2 3 4 5 ⋄ {⌊0.5+⍵!↣÷*1}N   ⍝ [0 0 1 2 9 44]ₓ
 ⍝ aplcart/table.tsv:1857 — Sum of polynomials with descending coefficients
 Mv←1 2 3
 Nv←4 5
-Mv{⌽+⌿⊃⌽¨[⍺ ⍵]}Nv   ⍝ 1 6 8
+⌽+⌿⊃⌽¨[Mv Nv]   ⍝ 1 6 8
 
 ⍝ aplcart/table.tsv:1858 — Difference between polynomials with descending coefficients
 Mv←1 2 3
 Nv←4 5
-Mv{⌽-⌿⊃⌽¨[⍺ ⍵]}Nv   ⍝ 1 ¯2 ¯2
+⌽-⌿⊃⌽¨[Mv Nv]   ⍝ 1 ¯2 ¯2
 
 ⍝ aplcart/table.tsv:1859 — All-zero matrix of shape Jv with ones along edges
 (⌽∨⊖)0∊¨⍳ 4 5   ⍝ 4 5⍴[$t $t $t $t $t $t $f $f $f $t $t $f $f $f $t $t $t $t $t $t]
@@ -5118,17 +5118,17 @@ N←[1 1 2⋄3 4 4]
 ⍝ aplcart/table.tsv:1865 — Is N Non-increasing along axis Is?
 Is←1
 N←[3 2 2⋄6 5 4]
-Is{~0∊2≥/⍠⍺ ⍵}N   ⍝ $t
+~0∊2≥/⍠Is N   ⍝ $t
 
 ⍝ aplcart/table.tsv:1866 — Is N Strictly Decreasing along axis Is?
 Is←1
 N←[5 6⋄3 4⋄1 2]
-Is{~0∊2>/⍠⍺ ⍵}N   ⍝ $t
+~0∊2>/⍠Is N   ⍝ $t
 
 ⍝ aplcart/table.tsv:1870 — Stretch Y to length Is repeating the last major cell as necessary
 Is←5
 Y←[1 2⋄3 4]
-Is{⍺↑⍵⍪⍺#¯1↑⍵}Y
+Is↑Y⍪Is#¯1↑Y
 ⍝ =>
 [1 2⋄3 4⋄3 4⋄3 4⋄3 4]
 
@@ -5136,29 +5136,29 @@ Is{⍺↑⍵⍪⍺#¯1↑⍵}Y
 {[10⊥⁻¹⍵]⌷$d}31 0 2718   ⍝ ["0031"⋄"0000"⋄"2718"]
 
 ⍝ aplcart/table.tsv:1875 — Remove consecutive duplicate rows from ordered matrix Ym
-Ym←[1 2⋄1 2⋄3 4⋄3 4] ⋄ {⍵#⍨1,∨/ ≢/⍠1∘ 2↣↕ ⍵}Ym   ⍝ [1 2⋄3 4]
+Ym←[1 2⋄1 2⋄3 4⋄3 4] ⋄ Ym#⍨1,∨/ ≢/⍠1∘ 2↣↕ Ym   ⍝ [1 2⋄3 4]
 
 ⍝ aplcart/table.tsv:1876 — Is-diagonal matrix of size Jv (n or m,n)
 ¯2ₓ {⍺=-⍨/¨⍳2⍴⍵} [6 7]ₓ
 6 7⍴[$f $f $f $f $f $f $f $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f $f $f $f $f $t $f $f $f]
 
 ⍝ aplcart/table.tsv:1877 — Spacing out text; Double the expansion-mask length so its one-count matches the input length; upstream recipe raises LENGTH ERROR. Concrete character vector checked in Dyalog
-D←"abcd" ⋄ {⍵#⁻¹⍨1 0⍴⍨2×⊃⌽⍴⍵}D   ⍝ "a b c d "
+D←"abcd" ⋄ D#⁻¹⍨1 0⍴⍨2×⊃⌽⍴D   ⍝ "a b c d "
 
 ⍝ aplcart/table.tsv:1878 — Reversal (⊖) of each subvector of Y indicated by Av (fast ∊⌽¨Av⊂Yv)
 Av←1 0 1 0 0
 Y←1 2 3 4 5
-Av{⍵⌷⍨⊂⌽⍒+\⍺}Y   ⍝ 2 1 5 4 3
+Y⌷⍨⊂⌽⍒+\Av   ⍝ 2 1 5 4 3
 
 ⍝ aplcart/table.tsv:1880 — Taking every Is'th major cell of Y
 Is←2
 Y←5 2⍴⍳10ₓ
-Is{⍵#⍨0=⍺|↦≢⍵}Y   ⍝ [2 3⋄6 7]ₓ
+Y#⍨0=Is|↦≢Y   ⍝ [2 3⋄6 7]ₓ
 
 ⍝ aplcart/table.tsv:1881 — Remove every Is'th cell of Y
 Is←2
 Y←5 2⍴⍳10ₓ
-Is{⍵#⍨0≠⍺|↦≢⍵}Y   ⍝ [0 1⋄4 5⋄8 9]ₓ
+Y#⍨0≠Is|↦≢Y   ⍝ [0 1⋄4 5⋄8 9]ₓ
 
 ⍝ aplcart/table.tsv:1882 — Rows of non-empty matrix Y starting with an element in X
 m ← ⊃"Lorem" "ipsum" "dolor" "sit" "amet" "consectetur" "adipiscing" "elit"
@@ -5172,7 +5172,7 @@ m ← ⊃"Lorem" "ipsum" "dolor" "sit" "amet" "consectetur" "adipiscing" "elit"
 ⍝ aplcart/table.tsv:1884 — Permutation Iv to the power of Js
 Iv←1 2 0
 Js←2
-Iv{⍺⊂↣⌷⍣⍵⍳≢⍺}Js   ⍝ [2 0 1]ₓ
+Iv⊂↣⌷⍣Js⍳≢Iv   ⍝ [2 0 1]ₓ
 
 ⍝ aplcart/table.tsv:1885 — Compression vector Av for partitioned array indicated by Bv (Fast Av/⍨≢¨⊆⍨Bv)
 1 0 1 0 {≠\⍵#⁻¹⍺≠¯1↓0,⍺} 1 0 0 1 0 1 0 1 0   ⍝ $t $t $t $f $f $t $t $f $f
@@ -5181,17 +5181,17 @@ Iv{⍺⊂↣⌷⍣⍵⍳≢⍺}Js   ⍝ [2 0 1]ₓ
 1 0 0 0 1 0 0 {[⍋⍺++\⍺]⌷⍵} "abcdEFG"   ⍝ "bcdaFGE"
 
 ⍝ aplcart/table.tsv:1887 — Cantor set iteration Js
-Js←2 ⋄ {1 0 1(, ∧⊗ )⍣⍵ 1}Js   ⍝ 1 0 1 0 0 0 1 0 1
+Js←2 ⋄ 1 0 1(, ∧⊗ )⍣Js 1   ⍝ 1 0 1 0 0 0 1 0 1
 
 ⍝ aplcart/table.tsv:1888 — Remove elements in X from end of vector Yv
 X←0 9
 Yv←0 9 1 2 0 9
-X{⍵↓⍨-⊥⍨⍵∊⍺}Yv   ⍝ 0 9 1 2
+Yv↓⍨-⊥⍨Yv∊X   ⍝ 0 9 1 2
 
 ⍝ aplcart/table.tsv:1889 — Remove elements in X from beginning of vector Yv
 X←0 9
 Yv←0 9 1 2 0 9
-X{⍵↓⍨⊥⍨⌽⍵∊⍺}Yv   ⍝ 1 2 0 9
+Yv↓⍨⊥⍨⌽Yv∊X   ⍝ 1 2 0 9
 
 ⍝ aplcart/table.tsv:1890 — Cs or linefeed-delimited character vector constructed from the vector of character vectors Dv (which must be of depth 2)
 Cs←'|'
@@ -5201,13 +5201,13 @@ Cs{⍺←•ucs 10 ⋄ ∊⍺,¨⍵}Dv
 "|H|e|l|l|o|,| |w|o|r|l|d|!| |1|2|3"
 
 ⍝ aplcart/table.tsv:1892 — Interchange first and last major cells
-Y←3 2⍴⍳6ₓ ⋄ {⊖@0 ¯1 ⍵}Y   ⍝ [4 5⋄2 3⋄0 1]ₓ
+Y←3 2⍴⍳6ₓ ⋄ ⊖@0 ¯1 Y   ⍝ [4 5⋄2 3⋄0 1]ₓ
 
 ⍝ aplcart/table.tsv:1894 — Outstanding balances on rule of 78s
-Js←4 ⋄ {÷↢↑⍨⌽+\⍳1ₓ+⍵}Js   ⍝ 1 0.6 0.3 0.1 0
+Js←4 ⋄ ÷↢↑⍨⌽+\⍳1ₓ+Js   ⍝ 1 0.6 0.3 0.1 0
 
 ⍝ aplcart/table.tsv:1896 — Perfect Ripple Shuffle
-Y←1 2 3 4 5 6 ⋄ {⍵⌷⍨⊂⍋⍒1 0⍴⍨≢⍵}Y   ⍝ 1 4 2 5 3 6
+Y←1 2 3 4 5 6 ⋄ Y⌷⍨⊂⍋⍒1 0⍴⍨≢Y   ⍝ 1 4 2 5 3 6
 
 ⍝ aplcart/table.tsv:1897 — Count number of trailing major cells that match between two arrays of equal length
 X←[1 2⋄3 4⋄5 6]
@@ -5222,10 +5222,10 @@ X +/(∧\∘⌽≢⍤¯1) Y   ⍝ 1ₓ
 ⍝ aplcart/table.tsv:1899 — FIFO stock Nv decremented by Ms
 Ms←5
 Nv←3 4 2
-Ms{-/∘⌽∘ 2↣↕ 0,0⌈⍺-⍨+\⍵}Nv   ⍝ 0 2 2
+-/∘⌽∘ 2↣↕ 0,0⌈Ms-⍨+\Nv   ⍝ 0 2 2
 
 ⍝ aplcart/table.tsv:1900 — Matricise (like ⍪ but preserves trailing instead of leading shape)
-Y←2 3 4⍴⍳24ₓ ⋄ {,⍠ ¯1↓⍳≢⍴⍵ 1#⍵}Y
+Y←2 3 4⍴⍳24ₓ ⋄ ,⍠ ¯1↓⍳≢⍴Y 1#Y
 6 4⍴⍳24ₓ
 
 ⍝ aplcart/table.tsv:1901 — Non-unique major cells
@@ -5242,12 +5242,12 @@ I{p÷⍨⌊0.5+⍵×p←10*⍺}N   ⍝ 1.23 ¯2.34 0.01
 ⍝ aplcart/table.tsv:1904 — Rotate first major cells (1⊖) of each subvector of Y indicated by Av (fast ∊1⌽¨Av⊂Yv)
 Av←1 0 1 0 0
 Y←3 1 5 2 4
-Av{⍵⌷⍨⊂⍋⍺++\⍺}Y   ⍝ 1 3 2 4 5
+Y⌷⍨⊂⍋Av++\Av   ⍝ 1 3 2 4 5
 
 ⍝ aplcart/table.tsv:1905 — Sort rows of matrix Ym according to column(s) I
 I←1
 Ym←[1 30⋄2 10⋄3 20]
-I{[⍋[: ⍺]⌷⍵]⌷⍵}Ym   ⍝ [2 10⋄3 20⋄1 30]
+[⍋[: I]⌷Ym]⌷Ym   ⍝ [2 10⋄3 20⋄1 30]
 
 ⍝ aplcart/table.tsv:1906 — Deal: Is random items from ⍳Jv (without replacement); Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
 Is←4
@@ -5258,7 +5258,7 @@ Is=≢r ∧ r≡∪r ∧ ∧/r∊,⍳Jv   ⍝ $t
 ⍝ aplcart/table.tsv:1909 — Increase rank of Y to Is
 Is←4
 Y←2 3⍴⍳6ₓ
-Is{⍺-↣↑(99⍴1),⍴⍵}Y   ⍝ 1 1 2 3
+Is-↣↑(99⍴1),⍴Y   ⍝ 1 1 2 3
 
 ⍝ aplcart/table.tsv:1910 — Remove leading and multiple blanks
 ( {⍵#⍨ ∨/∘ 2↣↕ 0,' '≠⍵} "      If     only I    knew  how to   do   proper word   spacing    " ), '.'
@@ -5267,22 +5267,22 @@ Is{⍺-↣↑(99⍴1),⍴⍵}Y   ⍝ 1 1 2 3
 ⍝ aplcart/table.tsv:1911 — Intersection (∩) on major cells for any rank
 X←[1 2⋄3 4⋄5 6]
 Y←[3 4⋄9 0]
-X{⍺#⍨⍵≢↣>⍵⍳⍺}Y   ⍝ 1 2⍴3 4
+X#⍨Y≢↣>Y⍳X   ⍝ 1 2⍴3 4
 
 ⍝ aplcart/table.tsv:1912 — Remove trailing blanks
-Dv← " ab  "  ⋄ {⍵↓⍨-⊥⍨' '=⍵}Dv   ⍝ " ab"
+Dv← " ab  "  ⋄ Dv↓⍨-⊥⍨' '=Dv   ⍝ " ab"
 
 ⍝ aplcart/table.tsv:1919 — Fast: Dv without any leading blank spaces
-Dv← "  ab c "  ⋄ {(∨\' '≠⍵)#⍵}Dv   ⍝ "ab c "
+Dv← "  ab c "  ⋄ (∨\' '≠Dv)#Dv   ⍝ "ab c "
 
 ⍝ aplcart/table.tsv:1922 — Sum of digits of the first 10*Is numbers
-Is←2 ⋄ {,⊃+⊗/⍵⍴⊂⍳10ₓ}Is
+Is←2 ⋄ ,⊃+⊗/Is⍴⊂⍳10ₓ
 [0 1 2 3 4 5 6 7 8 9 1 2 3 4 5 6 7 8 9 10 2 3 4 5 6 7 8 9 10 11 3 4 5 6 7 8 9 10 11 12 4 5 6 7 8 9 10 11 12 13 5 6 7 8 9 10 11 12 13 14 6 7 8 9 10 11 12 13 14 15 7 8 9 10 11 12 13 14 15 16 8 9 10 11 12 13 14 15 16 17 9 10 11 12 13 14 15 16 17 18]ₓ
 
 ⍝ aplcart/table.tsv:1923 — Join vector of vectors Yv using separator Xv
 Xv←", "
 Yv←"ab" "" "cd"
-Xv{⍪/1↓,⍺⊂↣,⍪⍵}Yv   ⍝ "ab, , cd"
+⍪/1↓,Xv⊂↣,⍪Yv   ⍝ "ab, , cd"
 
 ⍝ aplcart/table.tsv:1924 — Caesar's cipher for uppercase D (Is:encryption, -Is:decryption); Concrete APLcart Caesar cipher; rewritten for positions from 0 as 26|⍺+$a⍳⍵, which also wraps correctly after Z; HELLO shifted by 3 is KHOOR, independently checked in Dyalog 20.0.53963.0 with IO=1 CT=1E¯14 DIV=0 ML=1
 3{[26|⍺+$a⍳⍵]⌷$a}"HELLO"   ⍝ "KHOOR"
@@ -5290,118 +5290,118 @@ Xv{⍪/1↓,⍺⊂↣,⍪⍵}Yv   ⍝ "ab, , cd"
 ⍝ aplcart/table.tsv:1925 — Are circular lists Xv and Yv identical (excluding phase)
 Xv←1 2 3
 Yv←2 3 1
-Xv{⍺⊂↣∊⌽↢⍵¨⍳≢⍵}Yv   ⍝ $t
+Xv⊂↣∊⌽↢Yv¨⍳≢Yv   ⍝ $t
 
 ⍝ aplcart/table.tsv:1926 — Adding an empty cell into Y at fractional position Ms
 Ms←2.5
 Y←3 2⍴⍳6ₓ
-Ms{⍵#⁻¹⍨⍺⌊↣≠⍳1ₓ+≢⍵}Y
+Y#⁻¹⍨Ms⌊↣≠⍳1ₓ+≢Y
 ⍝ =>
 ([0 1⋄2 3⋄0 0⋄4 5])ₓ
 
 ⍝ aplcart/table.tsv:1927 — Cut Y into partitions of length I (last partition can be shorter)
 I←2
 Y←5 2⍴⍳10ₓ
-I{⍵⊂⍠0⍨⍵≢↣⍴⍺↑1}Y
+Y⊂⍠0⍨Y≢↣⍴I↑1
 ⍝ =>
 [[0 1⋄2 3] [4 5⋄6 7] [8 9⋄]]ₓ
 
 ⍝ aplcart/table.tsv:1928 — ¯1-rotate on each subvector of Bv indicated by Av (Fast ∊¯1⌽¨Av⊂Bv)
 Av←1 0 1 0 0
-Bv←1 1 1 0 1
-Av{[⍋⍺+\↣-1⌽⍺]⌷⍵}Bv   ⍝ 1 1 1 1 0
+Bv←$t $t $t $f $t
+[⍋Av+\↣-1⌽Av]⌷Bv   ⍝ $t $t $t $t $f
 
 ⍝ aplcart/table.tsv:1929 — Value of polynomial with coefficients Nv at point Ms
 Ms←2
 Nv←1 2 3
-Ms{⍵+.×⍨⍺*⍳≢⍵}Nv   ⍝ 17
+Nv+.×⍨Ms*⍳≢Nv   ⍝ 17
 
 ⍝ aplcart/table.tsv:1931 — Remove multiple and trailing blanks
 {⍵#⍨ ∨/∘ 2↣↕ 0,⍨' '≠⍵} "      If     only I    knew  how to   do   proper word   spacing    "
 " If only I knew how to do proper word spacing"
 
 ⍝ aplcart/table.tsv:1932 — Justifying left
-D← ["  ab"⋄" c  "]  ⋄ {⍵⌽⍨+/∧\' '=⍵}D   ⍝ ["ab  "⋄"c   "]
+D← ["  ab"⋄" c  "]  ⋄ D⌽⍨+/∧\' '=D   ⍝ ["ab  "⋄"c   "]
 
 ⍝ aplcart/table.tsv:1933 — Sum (+/) of each subvector of N indicated by Av (fast +/¨Av⊂Nv)
 Av←1 0 1 0 0
 N←1 2 3 4 5
-Av{-/⍠1∘(⌽⍠1)∘ 2↣↕ 0⍪(1⌽⍺)#+⍀⍵}N   ⍝ 3 12
+-/⍠1∘(⌽⍠1)∘ 2↣↕ 0⍪(1⌽Av)#+⍀N   ⍝ 3 12
 
 ⍝ aplcart/table.tsv:1934 — Any-true or any-positive (∨/×) of each subvector of non-negative N indicated by Av (fast ∨/¨Av⊂×Nv)
 Av←1 0 1 0 0
 N←1 2 3 4 5
-Av{</⍠1∘ 2↣↕ 0⍪(1⌽⍺)#+⍀⍵}N   ⍝ $t $t
+</⍠1∘ 2↣↕ 0⍪(1⌽Av)#+⍀N   ⍝ $t $t
 
 ⍝ aplcart/table.tsv:1935 — Reverse parity (=⌿) in each subvector of B as indicated by Av (fast =/¨Av⊂Bv)
 Av←1 0 1 0 0
 B←1 0 1 1 0
-Av{=/⍠1∘ 2↣↕ 1⍪(1⌽⍺)#=⍀⍵}B   ⍝ $f $f
+=/⍠1∘ 2↣↕ 1⍪(1⌽Av)#=⍀B   ⍝ $f $f
 
 ⍝ aplcart/table.tsv:1936 — Parity (≠⌿) in each subvector of B indicated by Av (fast ≠/¨Av⊂Bv)
 Av←1 0 1 0 0
 B←1 0 1 1 0
-Av{≠/⍠1∘ 2↣↕ 0⍪(1⌽⍺)#≠⍀⍵}B   ⍝ $t $f
+≠/⍠1∘ 2↣↕ 0⍪(1⌽Av)#≠⍀B   ⍝ $t $f
 
 ⍝ aplcart/table.tsv:1937 — Scale Nv so the maximum element is Ms
 5 {⍵×⍺÷[↑⍒|⍵]⌷⍵} ¯2 ¯1   ⍝ 5 2.5
 
 ⍝ aplcart/table.tsv:1938 — Remove leading blank columns
-Dm← ["  ab"⋄"  c "]  ⋄ {⍵#⍠¯1⍨∨\' '∨.≠⍵}Dm   ⍝ ["ab"⋄"c "]
+Dm← ["  ab"⋄"  c "]  ⋄ Dm#⍠¯1⍨∨\' '∨.≠Dm   ⍝ ["ab"⋄"c "]
 
 ⍝ aplcart/table.tsv:1939 — Remove leading blank rows
-Dm← ["   "⋄"ab "⋄"c d"]  ⋄ {⍵#⍨∨\⍵∨.≠' '}Dm   ⍝ ["ab "⋄"c d"]
+Dm← ["   "⋄"ab "⋄"c d"]  ⋄ Dm#⍨∨\Dm∨.≠' '   ⍝ ["ab "⋄"c d"]
 
 ⍝ aplcart/table.tsv:1940 — Sorting words in list Dm according to word length
-Dm← ["abc"⋄"de "⋄"f  "]  ⋄ {[⍋⍵+.≠' ']⌷⍵}Dm   ⍝ ["f  "⋄"de "⋄"abc"]
+Dm← ["abc"⋄"de "⋄"f  "]  ⋄ [⍋Dm+.≠' ']⌷Dm   ⍝ ["f  "⋄"de "⋄"abc"]
 
 ⍝ aplcart/table.tsv:1941 — The Is smallest cells of Y in order of occurrence
 Is←2
 Y←3 1 5 2 4
-Is{⍵#⍨(⍋⍋⍵)∊⍳⍺}Y   ⍝ 1 2
+Y#⍨(⍋⍋Y)∊⍳Is   ⍝ 1 2
 
 ⍝ aplcart/table.tsv:1942 — The Is largest cells of Y in order of occurrence
 Is←2
 Y←3 1 5 2 4
-Is{⍵#⍨(⍋⍒⍵)∊⍳⍺}Y   ⍝ 5 4
+Y#⍨(⍋⍒Y)∊⍳Is   ⍝ 5 4
 
 ⍝ aplcart/table.tsv:1943 — Locations of texts between and including quotes
-Dv←"a+'hello'+b" ⋄ {∨/∘ 2↣↕ 0,≠\⍵='''}Dv
+Dv←"a+'hello'+b" ⋄ ∨/∘ 2↣↕ 0,≠\Dv='''
 0 0 1 1 1 1 1 1 1 0 0
 
 ⍝ aplcart/table.tsv:1944 — Locations of texts between and excluding quotes
-Dv←"a+'hello'+b" ⋄ {∧/∘ 2↣↕ 0,≠\⍵='''}Dv
+Dv←"a+'hello'+b" ⋄ ∧/∘ 2↣↕ 0,≠\Dv='''
 0 0 0 1 1 1 1 1 0 0 0
 
 ⍝ aplcart/table.tsv:1947 — Extending Y with last cell of Y to length Is
 Is←5ₓ
 Y←2 2⍴⍳4ₓ
-Is{⍵⍪(⍺-≢⍵)#¯1↑⍵}Y
+Y⍪(Is-≢Y)#¯1↑Y
 ⍝ =>
 ([0 1⋄2 3⋄2 3⋄2 3⋄2 3])ₓ
 
 ⍝ aplcart/table.tsv:1950 — Modes: most frequently occuring major cells
-Y←1 2 1 3 2 ⋄ {⍵⌷⍨⊂[0]~⍨⊢/0,⊢⌸⍵}Y   ⍝ 1 2
+Y←1 2 1 3 2 ⋄ Y⌷⍨⊂[0]~⍨⊢/0,⊢⌸Y   ⍝ 1 2
 
 ⍝ aplcart/table.tsv:1953 — Remove columns Iv from array Y
 Iv←[1]
 Y←2 3⍴⍳6ₓ
-Iv{⍵#⍠¯1⍨~⍺∊⍨⍳↑⌽⍴⍵}Y   ⍝ [0 2⋄3 5]ₓ
+Y#⍠¯1⍨~Iv∊⍨⍳↑⌽⍴Y   ⍝ [0 2⋄3 5]ₓ
 
 ⍝ aplcart/table.tsv:1954 — Cut Y into partitions of lengths Iv
 Iv←2 1 3
 Y←⍳6ₓ
-Iv{⍺-↣↑¨↑↢⍵¨+\⍺}Y   ⍝ [0 1;[2];3 4 5]ₓ
+Iv-↣↑¨↑↢Y¨+\Iv   ⍝ [0 1;[2];3 4 5]ₓ
 
 ⍝ aplcart/table.tsv:1955 — Copying each cell of Y until before next 1 in Av
 Av←1 0 1 0 0
 Y←3 1 5 2 4
-Av{⍵⌷⍨⊂⌈\⍺×⍳≢⍺}Y   ⍝ 3 3 5 5 5
+Y⌷⍨⊂⌈\Av×⍳≢Av   ⍝ 3 3 5 5 5
 
 ⍝ aplcart/table.tsv:1956 — Work done for demand N with capacity M
 Mv←3 3 3 3
 Nv←1 5 2 6
-Mv{⍺+ -/⍠1∘ 2↣↕ ⌈⍀0⍪+⍀⍺-⍵}Nv   ⍝ 1 3 3 3
+Mv+ -/⍠1∘ 2↣↕ ⌈⍀0⍪+⍀Mv-Nv   ⍝ 1 3 3 3
 
 ⍝ aplcart/table.tsv:1957 — Convert to hexadecimal; Concrete APLcart recipe using existing read-only text constants; independently captured in Dyalog 20.0.53963.0, IO=1 CT=1E¯14 DIV=0 ML=1
 {[16⊥⁻¹⍵]⌷$d,$a}65535   ⍝ "FFFF"
@@ -5414,12 +5414,12 @@ A{m+⍺⌈.×⍨⍵-m←⌊/⍵}Nv   ⍝ 4 7
 ⍝ aplcart/table.tsv:1959 — The Is'th subvector of Yv (subvectors separated by Yv[1])
 Is←2
 Yv←0 1 2 0 3 4 0 5
-Is{1↓⍵#⍨⍺=+\⍵=↑⍵}Yv   ⍝ 3 4
+1↓Yv#⍨Is=+\Yv=↑Yv   ⍝ 3 4
 
 ⍝ aplcart/table.tsv:1960 — Extracting field number Is from Dv (field separated by first element of Dv)
 Is←2
 Dv← "/ab/cde/f"
-Is{1↓⍵#⍨⍺=+\⍵=↑⍵}Dv   ⍝ "cde"
+1↓Dv#⍨Is=+\Dv=↑Dv   ⍝ "cde"
 
 ⍝ aplcart/table.tsv:1961 — Integral of polynomial Nv with descending coefficients and optional constant Ms
 Ms←7
@@ -5429,22 +5429,22 @@ Ms{⍺←0 ⋄ ⍺,⍨⍵÷⌽↦≢⍵}Nv   ⍝ 1 2 5 7
 ⍝ aplcart/table.tsv:1963 — Union (∪) on major cells of any rank
 X←[1 2⋄3 4]
 Y←[3 4⋄5 6]
-X{⍺⍪⍵#⍨⍺≢↣=⍺⍳⍵}Y   ⍝ [1 2⋄3 4⋄5 6]
+X⍪Y#⍨X≢↣=X⍳Y   ⍝ [1 2⋄3 4⋄5 6]
 
 ⍝ aplcart/table.tsv:1964 — Average (mean value) of elements of N along direction Is
 Is←1
 N←2 3⍴⍳6ₓ
-Is{+/⍠⍺÷(⍺⊃⍴) ⍵}N   ⍝ [1 4]ₓ
++/⍠Is÷(Is⊃⍴) N   ⍝ [1 4]ₓ
 
 ⍝ aplcart/table.tsv:1965 — Replacing elements of Y in set X with prototypical elements
 X←2 4
 Y←1 2 3 4 5
-X{↑0⍴⊂ @[∊↢⍺] ⍵}Y   ⍝ 1 0 3 0 5
+↑0⍴⊂ @[∊↢X] Y   ⍝ 1 0 3 0 5
 
 ⍝ aplcart/table.tsv:1966 — Ordinal numbers of words in Dv that indices I point to
 I←0 2 4 6
 Dv←"ab cd ef"
-I{[⍺]⌷+\' '=⍵}Dv   ⍝ [0 1 1 2]ₓ
+[I]⌷+\' '=Dv   ⍝ [0 1 1 2]ₓ
 
 ⍝ aplcart/table.tsv:1967 — Changing connectivity matrix Jm to a connectivity list
 Jm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ {⍵,↣#s⊤⍳×/s←⍴⍵}Jm   ⍝ [0 1⋄1 2⋄2 0]ₓ
@@ -5452,31 +5452,31 @@ Jm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ {⍵,↣#s⊤⍳×/s←⍴⍵}Jm   ⍝ [0 1⋄1
 ⍝ aplcart/table.tsv:1968 — Value of Taylor series with coefficients Nv at point Ns
 Ns←2
 Nv←1 1 1 1
-Ns{+/⍵××\1,⍺÷↦¯1+≢⍵}Nv
++/Nv××\1,Ns÷↦¯1+≢Nv
 ⍝ =>
 6.333333333333333
 
 ⍝ aplcart/table.tsv:1969 — Not leading zeroes (∨\) in each subvector of Bv indicated by Av (fast ∊∨\¨Av⊂Nv)
 Av←1 0 1 0 0
-Bv←1 1 1 0 1
+Bv←$t $t $t $f $t
 Av{≠⍀b#⁻¹ ≠/⍠1∘ 2↣↕ 0⍪⍵#⍨b←⍺∨⍵}Bv
 ⍝ =>
 $t $t $t $t $t
 
 ⍝ aplcart/table.tsv:1970 — Date (⎕TS format) to hh:mm:ss
-Jv←2026 9 18 12 34 56 0 ⋄ {1↓∊':'@0∘⍕¨100+3↑3↓⍵}Jv   ⍝ "12:34:56"
+Jv←2026 9 18 12 34 56 0 ⋄ 1↓∊':'@0∘⍕¨100+3↑3↓Jv   ⍝ "12:34:56"
 
 ⍝ aplcart/table.tsv:1971 — Sum elements of Nv marked by successive identicals in Mv
 Mv←1 1 2 2 2
 Nv←1 2 3 4 5
-Mv{-/⍠1∘(⌽⍠1)∘ 2↣↕ 0⍪(≠/∘(2↣↕) ⍺⍪0)#+⍀⍵}Nv
+-/⍠1∘(⌽⍠1)∘ 2↣↕ 0⍪(≠/∘(2↣↕) Mv⍪0)#+⍀Nv
 ⍝ =>
 3 12
 
 ⍝ aplcart/table.tsv:1972 — Sums over (+/) subvectors of N, lengths in Iv
 Iv←2 3
 N←1 2 3 4 5
-Iv{-/⍠1∘(⌽⍠1)∘ 2↣↕ 0⍪[¯1++\⍺]⌷+⍀⍵}N   ⍝ 3 12
+-/⍠1∘(⌽⍠1)∘ 2↣↕ 0⍪[¯1++\Iv]⌷+⍀N   ⍝ 3 12
 
 ⍝ aplcart/table.tsv:1973 — Remove trailing blank columns
 [(2 10⍴" 2    a       a a    "),"||" ({⍵#⍠¯1⍨⌽∨\⌽' '∨.≠⍵} 2 10⍴" 2    a       a a    "),"||"]
@@ -5513,20 +5513,20 @@ X{(l-2+⍺⊖↣⍳⍵)|⍨l←1+≢⍺}Y   ⍝ 3 4
 ⍝ aplcart/table.tsv:1980 — Increase rank of Y to rank of X
 X←2 3 4⍴0
 Y←1 2
-X{(-≢⍴⍺)↑(99⍴1),⍴⍵}Y   ⍝ 1 1 2
+(-≢⍴X)↑(99⍴1),⍴Y   ⍝ 1 1 2
 
 ⍝ aplcart/table.tsv:1981 — Replacing elements of Y not in set X with prototypical elements
 X←2 4
 Y←1 2 3 4 5
-X{↑0⍴⊂ @[~∊↢⍺] ⍵}Y   ⍝ 0 2 0 4 0
+↑0⍴⊂ @[~∊↢X] Y   ⍝ 0 2 0 4 0
 
 ⍝ aplcart/table.tsv:1982 — Without (~) on major cells for any rank
 X←[1 2⋄3 4⋄5 6]
 Y←[3 4⋄9 0]
-X{⍺#⍨~(⍳≢⍺)∊⍺⍳⍵}Y   ⍝ [1 2⋄5 6]
+X#⍨~(⍳≢X)∊X⍳Y   ⍝ [1 2⋄5 6]
 
 ⍝ aplcart/table.tsv:1984 — Extract the anti-diagonals of a matrix (without wrap-around) as vector of vectors
-Ym←2 3⍴⍳6ₓ ⋄ {⍵⊂∘⊢⌸⍥,⍨+/⊃⍳⍴⍵}Ym   ⍝ [[0] [1 3] [2 4] [5]]ₓ
+Ym←2 3⍴⍳6ₓ ⋄ Ym⊂∘⊢⌸⍥,⍨+/⊃⍳⍴Ym   ⍝ [[0] [1 3] [2 4] [5]]ₓ
 
 ⍝ aplcart/table.tsv:1985 — Powerset: All subsets of Y, excluding the empty set (0⌿Y) but including Y itself
 [{#↢⍵¨↓⌽2⊥⁻¹1+⍳¯1ₓ+2*≢⍵} "ABCD";{#↢⍵¨↓⌽2⊥⁻¹1+⍳¯1ₓ+2*≢⍵} ["Aa"⋄"Bb"⋄"Cc"]]
@@ -5543,13 +5543,13 @@ B←1 1 0 1 1
 A{⍵∧s=⌈⍀⍺×s←+⍀ </∘ 2↣↕ 0⍪⍵}B   ⍝ 0 1 0 0 1
 
 ⍝ aplcart/table.tsv:1989 — Count of occurrences of the cells of Y
-Y←1 2 1 3 1 2 ⋄ {--⌿(2,≢⍵)⍴⍋⍋⍪⍨⍵}Y   ⍝ [3 2 3 1 3 2]ₓ
+Y←1 2 1 3 1 2 ⋄ --⌿(2,≢Y)⍴⍋⍋⍪⍨Y   ⍝ [3 2 3 1 3 2]ₓ
 
 ⍝ aplcart/table.tsv:1990 — Cardinals Up (ranking, shareable)
-Y←3 1 2 1 ⋄ {⌊2÷⍨(⍋⍋⍵)+⌽⍋⍋⌽⍵}Y   ⍝ [3 0 2 0]ₓ
+Y←3 1 2 1 ⋄ ⌊2÷⍨(⍋⍋Y)+⌽⍋⍋⌽Y   ⍝ [3 0 2 0]ₓ
 
 ⍝ aplcart/table.tsv:1991 — Cardinals Down (ranking, shareable)
-Y←3 1 2 1 ⋄ {⌊2÷⍨(⍋⍒⍵)+⌽⍋⍒⌽⍵}Y   ⍝ [0 2 1 2]ₓ
+Y←3 1 2 1 ⋄ ⌊2÷⍨(⍋⍒Y)+⌽⍋⍒⌽Y   ⍝ [0 2 1 2]ₓ
 
 ⍝ aplcart/table.tsv:1992 — Levi-Civita symbol
 Jv←2 3 1 ⋄ {⍵≢∪⍵?0;¯1*1⊥∊⍵<,\⍵}Jv   ⍝ 1
@@ -5557,17 +5557,17 @@ Jv←2 3 1 ⋄ {⍵≢∪⍵?0;¯1*1⊥∊⍵<,\⍵}Jv   ⍝ 1
 ⍝ aplcart/table.tsv:1993 — Convolution
 Mv←1 2 3
 Nv←4 5 6
-Mv{⍵+.×⍨(↦≢⍺)⌽⍤0 1⌽⍺}Nv   ⍝ 31 31 28
+Nv+.×⍨(↦≢Mv)⌽⍤0 1⌽Mv   ⍝ 31 31 28
 
 ⍝ aplcart/table.tsv:1994 — Matrix power: Mm raised to the power Js (even for negative Js)
 Mm←[1 1⋄0 1]
 Js←3
-Mm{⍺+.×⍣⍵ ⍴⍴(1,0⍨¨) ⍺}Js   ⍝ [1 3⋄0 1]
+Mm+.×⍣Js ⍴⍴(1,0⍨¨) Mm   ⍝ [1 3⋄0 1]
 
 ⍝ aplcart/table.tsv:1995 — Format with leading zeroes for non-negative Jv in fields of width Is
 Is←4
 Jv←0 12 345
-Is{0 1↓(2↑1+⍺)⍕⍵+⊗,10*⍺}Jv
+0 1↓(2↑1+Is)⍕Jv+⊗,10*Is
 ⍝ =>
 ["0000"⋄"0012"⋄"0345"]
 
@@ -5592,7 +5592,7 @@ Y←42 "Pete" "Πέτρος"  ⋄ {⍵⌷⍨⊂⍋{[•c⍵ ⍵]}¨⍵}Y   ⍝ 4
 
 ⍝ aplcart/table.tsv:2006 — Cumulative all-true (∧\) in each subvectors of Bv indicated by Av (fast ∊∧\¨Av⊂Bv)
 Av←1 0 1 0 0
-Bv←1 1 1 0 1
+Bv←$t $t $t $f $t
 Av{~≠\z#⁻¹(≠/∘(2↣↕))0,~⍵#⍨z←⍺≥⍵}Bv
 ⍝ =>
 $t $t $t $f $f
@@ -5617,17 +5617,17 @@ X{[⍺⋄⍵]}Y   ⍝ [1 2 3⋄4 5 6]
 ⍝ aplcart/table.tsv:2011 — Rows of matrix Ym starting with Xv
 Xv←1 2
 Ym←[1 2 3⋄1 4 5⋄1 2 6]
-Xv{⍵#⍨⍺∧.=⍨⍵↑⍠1⍨≢⍺}Ym   ⍝ [1 2 3⋄1 2 6]
+Ym#⍨Xv∧.=⍨Ym↑⍠1⍨≢Xv   ⍝ [1 2 3⋄1 2 6]
 
 ⍝ aplcart/table.tsv:2012 — Taylor series at point Mv, coefficients Nv
 Mv←,2
 Nv←1 1 1 1
-Mv{⍵+.×(⍺↣*÷!)⍳≢⍵}Nv   ⍝ 6.333333333333333
+Nv+.×(Mv↣*÷!)⍳≢Nv   ⍝ 6.333333333333333
 
 ⍝ aplcart/table.tsv:2013 — Cross-correlation
 Mv←1 2 3
 Nv←4 5 6
-Mv{⍵+.×⍨(↦≢⍺)⌽⍤0 1+⌽⍺}Nv   ⍝ 31 31 28
+Nv+.×⍨(↦≢Mv)⌽⍤0 1+⌽Mv   ⍝ 31 31 28
 
 ⍝ aplcart/table.tsv:2014 — Auto-correlation; Use ⍵ for the length in this monadic autocorrelation; upstream ⍺ gives VALUE ERROR. Concrete vector independently checked in Dyalog
 Nv←1 2 3 ⋄ {⍵+.×⍨(↦≢⍵)⌽⍤0 1+⌽⍵}Nv   ⍝ 13 13 10
@@ -5635,18 +5635,18 @@ Nv←1 2 3 ⋄ {⍵+.×⍨(↦≢⍵)⌽⍤0 1+⌽⍵}Nv   ⍝ 13 13 10
 ⍝ aplcart/table.tsv:2016 — Surround any-rank array Y with scalar Xs
 Xs←9ₓ
 Y←2 3⍴⍳6ₓ
-Xs{⍵@ 1+⍳⍴⍵ ⍺⍴⍨2+⍴⍵}Y
+Y@ 1+⍳⍴Y Xs⍴⍨2+⍴Y
 ⍝ =>
 [9 9 9 9 9⋄9 0 1 2 9⋄9 3 4 5 9⋄9 9 9 9 9]ₓ
 
 ⍝ aplcart/table.tsv:2017 — Fast: A nested vector comprising simple character vectors constructed from the rows of Dm (which must be of depth 1) with trailing spaces removed
-Dm← ["ab "⋄"c  "⋄"def"]  ⋄ {(+/∨\' '≠⌽⍵)↑¨↓⍵}Dm
+Dm← ["ab "⋄"c  "⋄"def"]  ⋄ (+/∨\' '≠⌽Dm)↑¨↓Dm
 "ab" "c" "def"
 
 ⍝ aplcart/table.tsv:2018 — Sorting rows of Ym according to key Xv (alphabetising)
 Xv← "cba"
 Ym← ["ab"⋄"ac"⋄"ba"]
-Xv{[⍋(1+≢⍺)⊥⍺⍳⍵]⌷⍵}Ym
+[⍋(1+≢Xv)⊥Xv⍳Ym]⌷Ym
 ⍝ =>
 ["ba"⋄"ac"⋄"ab"]
 
@@ -5656,43 +5656,43 @@ Dv← "/ab/cde/f/"  ⋄ {⍺←↑⌽⍵ ⋄ 1↓¨⍺(=⊂⊢)⍵}Dv
 
 ⍝ aplcart/table.tsv:2020 — All-true (∧/) in each subvector of Bv indicated by Av (fast ∧/¨Av⊂Bv)
 Av←1 0 1 0 0
-Bv←1 1 1 0 1
+Bv←$t $t $t $f $t
 Av{(⍺#⍵)∧z#1⌽z←⍺#⍨⍺≥⍵}Bv   ⍝ 1 0
 
 ⍝ aplcart/table.tsv:2021 — All elements true (∧⌿) on each subvector of Bv partioned by Av (fast ∧⌿¨Av⊂[1]Bv)
 Av←1 0 1 0 0
-Bv←1 1 1 0 1
+Bv←$t $t $t $f $t
 Av{(⍺#⍵)∧a#1⊖a←⍺#⍨⍵≤⍺}Bv   ⍝ 1 0
 
 ⍝ aplcart/table.tsv:2022 — Any element true (∨⌿) on each subvector of Bv partitioned by Av (fast ∨⌿¨Av⊂[1]Bv)
 Av←1 0 1 0 0
-Bv←1 1 1 0 1
+Bv←$t $t $t $f $t
 Av{(⍺#⍵)≥a#1⊖a←⍺#⍨⍵∨⍺}Bv   ⍝ $t $t
 
 ⍝ aplcart/table.tsv:2023 — Generalised mean
 Ms←2
 N←1 2 3
-Ms{(+⌿(⍵*⍺)÷≢⍵)*÷⍺}N   ⍝ 2.160246899469286
+(+⌿(N*Ms)÷≢N)*÷Ms   ⍝ 2.160246899469286
 
 ⍝ aplcart/table.tsv:2024 — Powerset: All subsets of Y, including the empty set (0⌿Y) but excluding Y itself
 [{#↢⍵¨↓⌽2⊥⁻¹⍳¯1+2*≢⍵} "ABCD";{#↢⍵¨↓⌽2⊥⁻¹⍳¯1+2*≢⍵} ["Aa"⋄"Bb"⋄"Cc"]]
 [["" "A" "B" "AB" "C" "AC" "BC" "ABC" "D" "AD" "BD" "ABD" "CD" "ACD" "BCD"] [0 2⍴' ';1 2⍴"Aa";1 2⍴"Bb";["Aa"⋄"Bb"];1 2⍴"Cc";["Aa"⋄"Cc"];["Bb"⋄"Cc"]]]
 
 ⍝ aplcart/table.tsv:2025 — Centering flush left character array
-Dm← ["ab    "⋄"cde   "]  ⋄ {⍵⌽⍨-⌊2÷⍨+/∧\' '=⌽⍵}Dm
+Dm← ["ab    "⋄"cde   "]  ⋄ Dm⌽⍨-⌊2÷⍨+/∧\' '=⌽Dm
 ["  ab  "⋄" cde  "]
 
 ⍝ aplcart/table.tsv:2026 — Cumulative sum (+⍀) in each subvector of N indicated by Av (fast ∊+\¨Av⊂Nv)
 Av←1 0 1 0 0
 N←1 2 3 4 5
-Av{+⍀⍵-⍺#⁻¹ -/∘⌽∘ 2↣↕ 0⍪⍺#+⍀¯1↓0⍪⍵}N
++⍀N-Av#⁻¹ -/∘⌽∘ 2↣↕ 0⍪Av#+⍀¯1↓0⍪N
 ⍝ =>
 1 3 3 7 12
 
 ⍝ aplcart/table.tsv:2027 — Running parity (≠⍀) in each subvector of B indicated by Av (fast ∊≠\¨Av⊂Bv)
 Av←1 0 1 0 0
 B←1 0 1 1 0
-Av{≠⍀⍵≠⍺#⁻¹ ≠/∘ 2↣↕ 0⍪⍺#≠⍀¯1↓0⍪⍵}B
+≠⍀B≠Av#⁻¹ ≠/∘ 2↣↕ 0⍪Av#≠⍀¯1↓0⍪B
 ⍝ =>
 $t $t $t $f $f
 
@@ -5702,13 +5702,13 @@ Y←4 5 6
 X{[⍺⋄⍵]ᵀ}Y   ⍝ [1 4⋄2 5⋄3 6]
 
 ⍝ aplcart/table.tsv:2029 — Playing order in a cup for Js ranked players
-Js←5 ⋄ {,⍉2(⍴⍨⍴*↑↢↦⍵⍨)⌈2⍟⍵}Js   ⍝ 1 5 3 0 2 0 4 0
+Js←5 ⋄ ,⍉2(⍴⍨⍴*↑↢↦Js⍨)⌈2⍟Js   ⍝ 1 5 3 0 2 0 4 0
 
 ⍝ aplcart/table.tsv:2030 — Remove duplicate blank columns
-Dm← ["a  ba"⋄"   c "]  ⋄ {⍵#⍠¯1⍨¯1↓1,1(⊢∨⌽)' '∨.≠⍵}Dm   ⍝ ["a ba"⋄"  c "]
+Dm← ["a  ba"⋄"   c "]  ⋄ Dm#⍠¯1⍨¯1↓1,1(⊢∨⌽)' '∨.≠Dm   ⍝ ["a ba"⋄"  c "]
 
 ⍝ aplcart/table.tsv:2031 — Remove duplicate blank rows
-Dm← ["ab"⋄"  "⋄"  "⋄"cd"]  ⋄ {⍵#⍨¯1↓1,1(⊢∨⌽)⍵∨.≠' '}Dm   ⍝ ["ab"⋄"  "⋄"cd"]
+Dm← ["ab"⋄"  "⋄"  "⋄"cd"]  ⋄ Dm#⍨¯1↓1,1(⊢∨⌽)Dm∨.≠' '   ⍝ ["ab"⋄"  "⋄"cd"]
 
 ⍝ aplcart/table.tsv:2032 — Character matrix constructed from the linefeed-separated character vector Dv (which must be of depth 1) padded with trailing spaces
 Dv←"Hello, world! 123"  ⋄ {⍺←•ucs 10 ⋄ ⊃1↓¨⍺(=⊂⊢)⍺,⍵}Dv
@@ -5727,7 +5727,7 @@ Av{⍵⌷⍨⊂z⍳⌊\z←⍋⍋⍺+\↣,⍪⍵}Y   ⍝ 3 1 1 1 1
 ⍝ aplcart/table.tsv:2036 — Cumulative reverse parity (=⍀) in each subvector B as indicated by Av (fast ∊=\¨Av⊂Bv)
 Av←1 0 1 0 0
 B←1 0 1 1 0
-Av{=⍀⍵≠⍺#⁻¹ ≠/∘ 2↣↕ 0⍪~⍺#=⍀¯1↓1⍪⍵}B
+=⍀B≠Av#⁻¹ ≠/∘ 2↣↕ 0⍪~Av#=⍀¯1↓1⍪B
 ⍝ =>
 $t $f $t $t $f
 
@@ -5741,12 +5741,12 @@ I{s×⌊0.5+⍵÷s←10*⍺-⍨⌈10⍟⍵+0=⍵}N
 ⍝ aplcart/table.tsv:2038 — Area of pyramid with height and width Mv and length Ns (excluding base)
 Mv←3 4
 Ns←6
-Mv{⍵×2+.*↢÷⍨⍺²+×⍨⍵÷2}Ns   ⍝ 55.4558441227157
+Ns×2+.*↢÷⍨Mv²+×⍨Ns÷2   ⍝ 55.4558441227157
 
 ⍝ aplcart/table.tsv:2039 — Remove elements in X from beginning and end of vector Yv
 X←0 9
 Yv←0 9 1 2 0 9
-X{⊥⍨∘⌽↓(⍵↓⍨↢-⊥⍨) ⍵∊⍺}Yv   ⍝ 1 2
+⊥⍨∘⌽↓(Yv↓⍨↢-⊥⍨) Yv∊X   ⍝ 1 2
 
 ⍝ aplcart/table.tsv:2040 — Deal: Iv-shaped array of random items from ⍳Jv (without replacement); Reviewed deterministic random-operation invariant; independently checked in Dyalog and through the Rust reference worker; Assert shape, range, uniqueness, permutation preservation, rounding bounds or deterministic sorting; no sampled values or seed are compared
 Is←2 2
@@ -5762,7 +5762,7 @@ Iv{+⍀(1↑⍵),i#(-/∘⌽∘(2↣↕) ⍵)÷i←1+⍺}N
 0 2 4 6 8 10
 
 ⍝ aplcart/table.tsv:2042 — Sierpiński triangle of size Js; Pure glyph recipe; quoted quad is data or origin lookup is replaced with fixed one; Supply small operands and use fixed origin zero where the recipe reads index origin; Quoted quad remains character data; Generate each row from the scan accumulator
-Js←3 ⋄ {[⊃≠\∘⊣\↓1⍴⍨2⍴2*⍵]⌷" ⎕"}Js
+Js←3 ⋄ [⊃≠\∘⊣\↓1⍴⍨2⍴2*Js]⌷" ⎕"
 ["⎕⎕⎕⎕⎕⎕⎕⎕"⋄"⎕ ⎕ ⎕ ⎕ "⋄"⎕⎕  ⎕⎕  "⋄"⎕   ⎕   "⋄"⎕⎕⎕⎕    "⋄"⎕ ⎕     "⋄"⎕⎕      "⋄"⎕       "]
 
 ⍝ aplcart/table.tsv:2043 — Inverse of monadic ⍸ with optional result shape as left argument
@@ -5771,23 +5771,23 @@ Yv←1 3 3 4 ⋄ {⍺←0⌈1+⊃⌈/⍵ ⋄ r←⍺⍴0 ⋄ r.[⍵]+←1 ⋄ r}
 ⍝ aplcart/table.tsv:2044 — Reversal (⊖) of subvectors of Y having lengths Iv
 Iv←2 3
 Y←1 2 3 4 5
-Iv{⍵⌷⍨⊂⌽⍒+\(⍳≢⍵)∊+\0,⍺}Y   ⍝ 2 1 5 4 3
+Y⌷⍨⊂⌽⍒+\(⍳≢Y)∊+\0,Iv   ⍝ 2 1 5 4 3
 
 ⍝ aplcart/table.tsv:2045 — Number of decimals (up to Is) of elements of N
 Is←3
 N←1 1.2 1.23 1.234
-Is{0+.≠(10*⌽⍳1ₓ+⍺)|⊗⌊⍵×10*⍺}N   ⍝ [0 1 2 3]ₓ
+0+.≠(10*⌽⍳1ₓ+Is)|⊗⌊N×10*Is   ⍝ [0 1 2 3]ₓ
 
 ⍝ aplcart/table.tsv:2046 — Conversion of characters to hexadecimal byte representation
 Dv←"Hello, world! 123"
-{,(3↑⍤1)[(16 16⊤¯1+"UTF-8"•ucs ⍵)]⌷$d,$a}Dv
+,(3↑⍤1)[(16 16⊤¯1+"UTF-8"•ucs Dv)]⌷$d,$a
 ⍝ =>
 "47 64 6B 6B 6E 2B 1F 76 6E 71 6B 63 20 1F 30 31 32 "
 
 ⍝ aplcart/table.tsv:2047 — Increasing rank of Y to rank of X
 X←2 3 4⍴0
 Y←1 2
-X{⍵⍴⍨(1⍴⍨-/≢∘⍴¨[⍺ ⍵]),⍴⍵}Y   ⍝ 1 1 2⍴1 2
+Y⍴⍨(1⍴⍨-/≢∘⍴¨[X Y]),⍴Y   ⍝ 1 1 2⍴1 2
 
 ⍝ aplcart/table.tsv:2048 — Remove leading and trailing blanks
 {⍵#⍨(∨\∧↢⌽∨\∘⌽)' '≠⍵} "      If     only I    knew  how to   do   proper word   spacing    "
@@ -5795,7 +5795,7 @@ X{⍵⍴⍨(1⍴⍨-/≢∘⍴¨[⍺ ⍵]),⍴⍵}Y   ⍝ 1 1 2⍴1 2
 
 ⍝ aplcart/table.tsv:2049 — Only final one (</) in each subvector of Bv indicated by Av (fast </¨Av⊂Bv)
 Av←1 0 1 0 0
-Bv←1 1 1 0 1
+Bv←$t $t $t $f $t
 Av{(⍺#y)∧z#1⌽z←⍺#⍨⍺≥y←⍵=1⌽⍺}Bv   ⍝ 0 0
 
 ⍝ aplcart/table.tsv:2050 — Cumulative less than or equal scan on each subvector of Bv indicated by Av (Fast ∊≤\¨Av⊂Bv)
@@ -5838,7 +5838,7 @@ Y←1 2 1 3 2 1 ⋄ {m←≠⍵ ⋄ 1+o-[⍵⍳⍨⍵#⍨m]⌷m#o←⍋⍋⍵}Y 
 ⍝ aplcart/table.tsv:2063 — Adding an empty cell into Y at fractional positions Mv
 Mv←0.5 2.5
 Y←1 2 3
-Mv{⍵#⁻¹⍨~(⍳⍺+⍥≢⍵)∊⍺⌊↣+⍳≢⍺}Y   ⍝ 0 1 2 0 3
+Y#⁻¹⍨~(⍳Mv+⍥≢Y)∊Mv⌊↣+⍳≢Mv   ⍝ 0 1 2 0 3
 
 ⍝ aplcart/table.tsv:2064 — Inverted Table Grade Up (⍋Y where Y is unverted Yv)
 Yv←[2 1 2;["ba"⋄"ca"⋄"db"]] ⋄ {{[⍋[⍵]⌷⍺]⌷⍵}/⍵,⊂⍳≢↑⍵}Yv   ⍝ [1 0 2]ₓ
@@ -5853,8 +5853,8 @@ Jm←[0 1⋄1 2⋄2 0] ⋄ {s⍴1@ s₁⊥⍵ 0⍴⍨×/s←0 0+1+⌈/,⍵}Jm
 
 ⍝ aplcart/table.tsv:2067 — Expansion vector (left argument for #⁻¹) to insert Iv[i] elements after i'th subvector (subvectors indicated by Bv)
 Iv←2 1
-Bv←1 0 1 0 0
-Iv{(⍳⍵≢↣++/⍺)∊+\0,1+¯1↓⍺#⁻¹⍨1⌽⍵}Bv
+Bv←$t $f $t $f $f
+(⍳Bv≢↣++/Iv)∊+\0,1+¯1↓Iv#⁻¹⍨1⌽Bv
 ⍝ =>
 $t $t $f $f $t $t $t $f
 
@@ -5948,7 +5948,7 @@ Is{⍺>⍵?0;↑⌽⊃+\∘×/1,⍨⌽,/⍺↕↦⍵-1}Js   ⍝ 11
 ⍝ aplcart/table.tsv:2081 — Reshape (⍴) Y to shape Iv, allowing ¯1 to automatically determine missing length
 Iv←2 ¯1
 Y←⍳6ₓ
-Iv{⍵⍴⍨⍺×@[<↢0]⍨⍵×/∘⍴↣÷×/⍺~[0]}Y
+Y⍴⍨Iv×@[<↢0]⍨Y×/∘⍴↣÷×/Iv~[0]
 ⍝ =>
 [0 1 2⋄3 4 5]ₓ
 
@@ -5983,7 +5983,7 @@ Cm←["ab  "⋄"cde "]
 ⍝ aplcart/table.tsv:2095 — Vector (Iv[1]⍴1),(Jv[1]⍴0),(Iv[2]⍴1),…
 Iv←2 1 3
 Jv←1 2 0
-Iv{(⍳+/Iv,Jv)∊+\0,1+¯1↓⍵#⁻¹⍨(⍳+/Iv)∊¯1++\Iv}Jv
+(⍳+/Iv,Jv)∊+\0,1+¯1↓Jv#⁻¹⍨(⍳+/Iv)∊¯1++\Iv
 ⍝ =>
 $t $t $f $t $f $f $t $t $t
 
@@ -5999,7 +5999,7 @@ Dv← "MCMXCIV"
 
 ⍝ aplcart/table.tsv:2098 — Cumulative sum (+\) of each subvector of Bv indicated by Av (fast ∊+\¨Av⊂Nv)
 Av←1 0 1 0 0
-Bv←1 1 1 0 1
+Bv←$t $t $t $f $t
 Av{(1↓ -/∘(2↣↕) 0,z#⍳≢z←1,⍨⍺#⍨⍺∨⍵)-~⍺#⍵}Bv
 ⍝ =>
 ¯2 ¯2
@@ -6007,7 +6007,7 @@ Av{(1↓ -/∘(2↣↕) 0,z#⍳≢z←1,⍨⍺#⍨⍺∨⍵)-~⍺#⍵}Bv
 ⍝ aplcart/table.tsv:2099 — Classification of elements Nv into Is ranges of equal size
 Is←3
 Nv←1 2 4 6 7
-Is{+/((⊢×⍺÷⌈/)⍵-⌊/⍵)≥⊗⍳⍺}Nv   ⍝ [1 1 2 3 3]ₓ
++/((⊢×Is÷⌈/)Nv-⌊/Nv)≥⊗⍳Is   ⍝ [1 1 2 3 3]ₓ
 
 ⍝ aplcart/table.tsv:2103 — Grade down in each subvector of Bv indicated by Av (Fast ∊⍒¨Av⊂Nv)
 1 0 0 0 1 0 0 {(⍋⍵-⍨+\⍺#⁻¹2×⌈/|0,⍵)-⌈\⍺#⁻¹⍸⍺} 10 20 40 30 ¯5 ¯10 ¯7
@@ -6041,7 +6041,7 @@ Yv←[2 1 2;["ba"⋄"ca"⋄"db"]]
 
 ⍝ aplcart/table.tsv:2108 — Less than or equal reduction on each subvector of Bv indicated by Av (Fast ≤/¨Av⊂Bv)
 Av←1 0 1 0 0
-Bv←1 1 1 0 1
+Bv←$t $t $t $f $t
 Av{⍵×/↣≥(z#1⌽z←⍺#⍨⍺≥z)∧⍺#z←⍵∨x←1⌽⍺}Bv
 ⍝ =>
 $f $t
@@ -6069,7 +6069,7 @@ $t
 ⍝ aplcart/table.tsv:2113 — Vector (Jv[1]+⍳Iv[1]),(Jv[2]+⍳Iv[2]),(Jv[3]+⍳Iv[3]),… (≢Iv ↔ ≢Jv)
 Iv←2 3 1
 Jv←10 20 30
-Iv{+\1+((⍳+/⍺)∊+\0,⍺)#⁻¹⍵-¯1↓1,⍺+⍵}Jv
++\1+((⍳+/Iv)∊+\0,Iv)#⁻¹Jv-¯1↓1,Iv+Jv
 ⍝ =>
 10 11 20 21 22 30
 
@@ -6129,7 +6129,7 @@ X{m←(¯1+2×≢⍵)⍴1,-≢⍺ ⋄ ⍺⍴⍨↢⍴@ ⍸m|↣#m<0 (|m)#(m>0)#�
 ⍝ aplcart/table.tsv:2127 — Length of longest common substring
 Cv← "abcde"
 Dv← "abfde"
-Cv{↑⌽⊃(⊢⌈(⌈\(⍵⍨=⊣)+0⍨,¯1⍨↓⊢))/⍺⌽↣,⊂0⍨¨⍵}Dv
+↑⌽⊃(⊢⌈(⌈\(Dv⍨=⊣)+0⍨,¯1⍨↓⊢))/Cv⌽↣,⊂0⍨¨Dv
 ⍝ =>
 4
 
@@ -6152,7 +6152,7 @@ D← ["a b "⋄" cd "]
 
 ⍝ aplcart/table.tsv:2133 — ASCII frame a matrix
 Dm← ["abc"⋄"def"]
-{'+'@(⊂0 0)∘⌽∘⍉⍣4⊃(⍪↢⌽↢⍉)/"-|-|",⊂⍕⍵}Dm
+'+'@(⊂0 0)∘⌽∘⍉⍣4⊃(⍪↢⌽↢⍉)/"-|-|",⊂⍕Dm
 ⍝ =>
 ["+---+"⋄"|abc|"⋄"|def|"⋄"+---+"]
 
@@ -6162,7 +6162,7 @@ Dm← ["abc"⋄"def"]
 
 ⍝ aplcart/table.tsv:2135 — Unicode frame a matrix
 Dm← ["abc"⋄"def"]
-{⊣@(⊂0 0)↢⌽↢⍉/"┌┐┘└",⊂⍪↢⌽↢⍉/"─│─│",⊂⍕⍵}Dm
+⊣@(⊂0 0)↢⌽↢⍉/"┌┐┘└",⊂⍪↢⌽↢⍉/"─│─│",⊂⍕Dm
 ⍝ =>
 ["┌───┐"⋄"│abc│"⋄"│def│"⋄"└───┘"]
 
@@ -6271,7 +6271,7 @@ subs←{1ₓ≥≡⍵?⍬;⍵}
 0 {⍺+1}ltrav list "abc"   ⍝ 3
 
 ⍝ aplcart/table.tsv:2169 — Function power limit (fixpoint); BPL writes the limit as ⍣∞
-{1⌈⍵÷2}⍣∞⊢16
+({1⌈⍵÷2}⍣∞)16
 ⍝ =>
 1
 
@@ -6559,7 +6559,7 @@ Y←1
 X Is{⍶⊃⍸⍺≡¨⊂⍵} Y   ⍝ 2ₓ
 
 ⍝ aplcart/table.tsv:2259 — The Is'th subvector of Yv (subvectors indicated by Bv)
-Bv←1 0 1 0 0
+Bv←$t $f $t $f $f
 Is←2
 Yv←1 2 3 4 5
 Bv Is{⍵#⍨⍶=+\⍺} Yv   ⍝ 3 4 5
@@ -6743,7 +6743,7 @@ Nm Is{(⍪⍶÷⍨↦⍶)⊥⍺+.×⍵} Mv   ⍝ 2 4 6 8
 ⍝ aplcart/table.tsv:2294 — If: replace/apply if Bs
 X←2
 f←+
-Bs←1
+Bs←$t
 Y←1 2 3
 X f{⍺(⍶⊣⊢)⍣⍹ ⍵}Bs Y   ⍝ 3 4 5
 
@@ -6910,7 +6910,7 @@ Is{(⍶*¯1 1)(×⍴⊢↑⍵⍨)⍵⍴↣+⍹,⍨⍶|-≢⍵}Js Ym
 Is←2
 As←1
 Js←4
-Is(As{⍺>⍵?0;↑⌽⊃+\∘×/1,⍨⌽⊣\⍣⍶⊢,/⍺↕↦⍵-1})Js
+Is(As{⍺>⍵?0;↑⌽⊃+\∘×/1,⍨⌽(⊣\⍣⍶),/⍺↕↦⍵-1})Js
 ⍝ =>
 7
 
@@ -7081,7 +7081,7 @@ N←0j0.5 0j1 0j1.5 0j2 ⋄ *πN   ⍝ 0j1 ¯1 0j¯1 1
 Y←[1 2 3⋄4 5 6] ⋄ ↑↑⌽Y   ⍝ 3
 
 ⍝ aplcart/table.tsv:2478 — Fast: The subset of ⍳Js corresponding to the 1s in Bv; assignment recipes also read the target, and definition recipes call the defined function/operator
-Bv←1 0 1 0
+Bv←$t $f $t $f
 Js←4
 Bv#⍳Js   ⍝ 0 2
 
@@ -7416,19 +7416,19 @@ u←'-'@ 8ₓ+5ₓ×⍳4ₓ [4(8+|)@19(4@14¿36⍴16)]⌷$d,•c$a
 $t
 
 ⍝ aplcart/tt.tsv:2 — *N×0j1; Reuse concrete inputs from aplcart/table.tsv:574; execute this alternate recipe independently
-N←0 0.5 1 ⋄ {○⍵}N
+N←0 0.5 1 ⋄ ○N
 1 0.8775825618903728j0.479425538604203 0.5403023058681398j0.8414709848078965
 
 ⍝ aplcart/tt.tsv:4 — +N (complex conjugate); Reuse concrete inputs from aplcart/table.tsv:572; execute this alternate recipe independently
-N←3j4 0j2 ⋄ {+⍵}N   ⍝ 3j¯4 0j¯2
+N←3j4 0j2 ⋄ +N   ⍝ 3j¯4 0j¯2
 
 ⍝ aplcart/tt.tsv:6 — 2's-complement bit-wise NOT; Reuse concrete inputs from aplcart/table.tsv:533; execute this alternate recipe independently
-J←¯3 0 1 7 ⋄ {¯1-⍵}J   ⍝ 2 ¯1 ¯2 ¯8
+J←¯3 0 1 7 ⋄ ¯1-J   ⍝ 2 ¯1 ¯2 ¯8
 
 ⍝ aplcart/tt.tsv:8 — 2-argument arctangent (M:x, N:y); Reuse concrete inputs from aplcart/table.tsv:1098; execute this alternate recipe independently
 M←1 ¯1 ¯1 1
 N←1 1 ¯1 ¯1
-M{⊢/∧⍺+0j1×⍵}N
+⊢/∧M+0j1×N
 ⍝ =>
 0.7853981633974483 2.356194490192345 ¯2.356194490192345 ¯0.7853981633974483
 
@@ -7438,7 +7438,7 @@ Js←3 ⋄ {r⊖(r←(⍳⍵)-⌊⍵÷2)⌽[⍵ ⍵]⍴⍳⍵²}Js   ⍝ [7 0 5�
 ⍝ aplcart/tt.tsv:12 — Absolute distance between X and Y; Reuse concrete inputs from aplcart/table.tsv:778; execute this alternate recipe independently
 M←2 3 4
 N←4 9 16
-M{|⍺-⍵}N   ⍝ 2 6 12
+|M-N   ⍝ 2 6 12
 
 ⍝ aplcart/tt.tsv:16 — Add line numbers to table Xm; Reuse concrete inputs from aplcart/table.tsv:1530; execute this alternate recipe independently; Format exact counts as ordinary numbers
 Ym←1+2 3⍴⍳6ₓ ⋄ {({3⌽"]  [",⍕⍵}⍤0⍳0+≢⍵),⍕⍵}Ym
@@ -7455,122 +7455,122 @@ Is ⊢↑⍨⊢↢≢,⊣ Ym   ⍝ [1 2 3 0⋄4 5 6 0]
 ⍝ aplcart/tt.tsv:21 — Adjust Ym to width Is (positive Is to pad/chop on right, negative Is to pad/chop on left)
 Is←4
 Ym←1+2 3⍴⍳6ₓ
-Is{((≢⍵),⍺)↑⍵}Ym   ⍝ [1 2 3 0⋄4 5 6 0]
+((≢Ym),Is)↑Ym   ⍝ [1 2 3 0⋄4 5 6 0]
 
 ⍝ aplcart/tt.tsv:23 — Align the diagonals of a matrix into columns (with wrap-around); Reuse concrete inputs from aplcart/table.tsv:1256; execute this alternate recipe independently
-Ym←1+2 3⍴⍳6ₓ ⋄ {(⍳≢⍵)⌽⍵}Ym   ⍝ [1 2 3⋄5 6 4]
+Ym←1+2 3⍴⍳6ₓ ⋄ (⍳≢Ym)⌽Ym   ⍝ [1 2 3⋄5 6 4]
 
 ⍝ aplcart/tt.tsv:25 — Aliquot sum (sum of proper divisors); Reuse concrete inputs from aplcart/table.tsv:1320; execute this alternate recipe independently
-Js←12 ⋄ {+/∪⍵∨1↓⍳⍵}Js   ⍝ 16
+Js←12 ⋄ +/∪Js∨1↓⍳Js   ⍝ 16
 
 ⍝ aplcart/tt.tsv:27 — All; Reuse concrete inputs from aplcart/table.tsv:951; execute this alternate recipe independently
-B←1 1 0 1 0 1 0 ⋄ {~0∊⍵}B   ⍝ $f
+B←1 1 0 1 0 1 0 ⋄ ~0∊B   ⍝ $f
 
 ⍝ aplcart/tt.tsv:29 — All axes of array Y; Reuse concrete inputs from aplcart/table.tsv:868; execute this alternate recipe independently
-Y←3 1 3 2 ⋄ {⍳≢⍴⍵}Y   ⍝ [0]ₓ
+Y←3 1 3 2 ⋄ ⍳≢⍴Y   ⍝ [0]ₓ
 
 ⍝ aplcart/tt.tsv:31 — All binary representations with Js bits (truth table with Js variables, matrix for choosing all subsets)
-Js←3 ⋄ {(⍵⍴2)⊤⍳2ₓ*⍵}Js
+Js←3 ⋄ (Js⍴2)⊤⍳2ₓ*Js
 [0 0 0⋄0 0 1⋄0 1 0⋄0 1 1⋄1 0 0⋄1 0 1⋄1 1 0⋄1 1 1]
 
 ⍝ aplcart/tt.tsv:32 — All column indices of array Ym
 Ym←2 3⍴⍳6ₓ ⋄ ⍳0ₓ⊥⍴ Ym   ⍝ [0 1 2]ₓ
 
 ⍝ aplcart/tt.tsv:33 — All column indices of array Ym
-Ym←2 3⍴⍳6ₓ ⋄ {⍳0ₓ⊥⍴⍵}Ym   ⍝ [0 1 2]ₓ
+Ym←2 3⍴⍳6ₓ ⋄ ⍳0ₓ⊥⍴Ym   ⍝ [0 1 2]ₓ
 
 ⍝ aplcart/tt.tsv:34 — All divisors of Js; Reuse concrete inputs from aplcart/table.tsv:1058; execute this alternate recipe independently
 Js←4 ⋄ ∪⊢∨1↣+∘⍳ Js   ⍝ 1 2 4
 
 ⍝ aplcart/tt.tsv:35 — All divisors of Js; Reuse concrete inputs from aplcart/table.tsv:1058; execute this alternate recipe independently
-Js←4 ⋄ {∪⍵∨⍳⍵}Js   ⍝ 4 1 2
+Js←4 ⋄ ∪Js∨⍳Js   ⍝ 4 1 2
 
 ⍝ aplcart/tt.tsv:37 — All indices of Y; Reuse concrete inputs from aplcart/table.tsv:1048; execute this alternate recipe independently
-Y←3 1 3 2 ⋄ {,⍳⍴⍵}Y   ⍝ [0 1 2 3]ₓ
+Y←3 1 3 2 ⋄ ,⍳⍴Y   ⍝ [0 1 2 3]ₓ
 
 ⍝ aplcart/tt.tsv:39 — All indices of array Y; Reuse concrete inputs from aplcart/table.tsv:828; execute this alternate recipe independently
-Y←3 1 3 2 ⋄ {⍳⍴⍵}Y   ⍝ [0 1 2 3]ₓ
+Y←3 1 3 2 ⋄ ⍳⍴Y   ⍝ [0 1 2 3]ₓ
 
 ⍝ aplcart/tt.tsv:41 — All possible subvectors grouped by length (Yv must be simple); Reuse concrete inputs from aplcart/table.tsv:1259; execute this alternate recipe independently
-Yv←1 2 3 4 ⋄ {⍳≢,/¨⊂⍵}Yv   ⍝ [0]ₓ
+Yv←1 2 3 4 ⋄ ⍳≢,/¨⊂Yv   ⍝ [0]ₓ
 
 ⍝ aplcart/tt.tsv:44 — All row indices of matrix Ym
-Ym←2 3⍴⍳6ₓ ⋄ {⍳≢⍵}Ym   ⍝ [0 1]ₓ
+Ym←2 3⍴⍳6ₓ ⋄ ⍳≢Ym   ⍝ [0 1]ₓ
 
 ⍝ aplcart/tt.tsv:46 — All tuples of corresponding elements of ⍳¨Jv (for large Jv even above length 15); Reuse concrete inputs from aplcart/table.tsv:1387; execute this alternate recipe independently
-Jv←2 3 2 ⋄ {⍵⊤⍳×/⍵}Jv
+Jv←2 3 2 ⋄ Jv⊤⍳×/Jv
 [0 0 0⋄0 0 1⋄0 1 0⋄0 1 1⋄0 2 0⋄0 2 1⋄1 0 0⋄1 0 1⋄1 1 0⋄1 1 1⋄1 2 0⋄1 2 1]
 
 ⍝ aplcart/tt.tsv:48 — All tuples of corresponding elements of ⍳¨Jv (for small Jv of max length 15)
-Jv←2 3 ⋄ {,⍳⍵}Jv   ⍝ [0 0;0 1;0 2;1 0;1 1;1 2]
+Jv←2 3 ⋄ ,⍳Jv   ⍝ [0 0;0 1;0 2;1 0;1 1;1 2]
 
 ⍝ aplcart/tt.tsv:52 — An array that begins with 1↑N and has pair-wise sums 1↓N
-N←1 2 3 4 ⋄ {¯1⊥¨⍪⍀⍵}N   ⍝ 1 1 2 2
+N←1 2 3 4 ⋄ ¯1⊥¨⍪⍀N   ⍝ 1 1 2 2
 
 ⍝ aplcart/tt.tsv:54 — Angle of right triangle with height M and width N; Reuse concrete inputs from aplcart/table.tsv:794; execute this alternate recipe independently
 M←1
 N←1 2
-M{3○⁻¹⍺÷⍵}N
+3○⁻¹M÷N
 ⍝ =>
 0.7853981633974483 0.4636476090008061
 
 ⍝ aplcart/tt.tsv:56 — Annual rate to modal rate; Reuse concrete inputs from aplcart/table.tsv:1302; execute this alternate recipe independently
 M←12
 N←0.05
-M{¯1+(1+⍵)*÷⍺}N   ⍝ 0.004074123783648353
+¯1+(1+N)*÷M   ⍝ 0.004074123783648353
 
 ⍝ aplcart/tt.tsv:58 — Annuity coefficient: I periods at interest N; Reuse concrete inputs from aplcart/table.tsv:1456; execute this alternate recipe independently
 I←12
 N←0.05
-I{⍵÷⍉1+⍺×⊗1+⍵}N   ⍝ 0.003676470588235294
+N÷⍉1+I×⊗1+N   ⍝ 0.003676470588235294
 
 ⍝ aplcart/tt.tsv:60 — Anti-diagonal of any rank array; Reuse concrete inputs from aplcart/table.tsv:1147; execute this alternate recipe independently; Add the missing ⍵ arguments in the upstream anti-diagonal dfn
 Y←1+2 3 4⍴⍳24ₓ ⋄ {(0×⍴⍵)⍉⌽⍵}Y   ⍝ 4 19
 
 ⍝ aplcart/tt.tsv:62 — Any true?
-B←1 1 0 1 0 1 0 ⋄ {1∊⍵}B   ⍝ $t
+B←1 1 0 1 0 1 0 ⋄ 1∊B   ⍝ $t
 
 ⍝ aplcart/tt.tsv:64 — Append a column of 1s; Reuse concrete inputs from aplcart/table.tsv:810; execute this alternate recipe independently
-Y←3 1 3 2 ⋄ {⍵,1}Y   ⍝ 3 1 3 2 1
+Y←3 1 3 2 ⋄ Y,1   ⍝ 3 1 3 2 1
 
 ⍝ aplcart/tt.tsv:66 — Append a row of 1s; Reuse concrete inputs from aplcart/table.tsv:815; execute this alternate recipe independently
-Y←3 1 3 2 ⋄ {⍵⍪1}Y   ⍝ 3 1 3 2 1
+Y←3 1 3 2 ⋄ Y⍪1   ⍝ 3 1 3 2 1
 
 ⍝ aplcart/tt.tsv:68 — Appending X as additional major cell of Y, adjusting dimensions of both as necessary; Reuse concrete inputs from aplcart/table.tsv:1367; execute this alternate recipe independently
 X←1 2 3 4
 Y←1+2 3⍴⍳6ₓ
-X{⊃(⊂⍤¯1 ⍵),⊂⍺}Y
+⊃(⊂⍤¯1 Y),⊂X
 ⍝ =>
 [1 2 3 0⋄4 5 6 0⋄1 2 3 4]
 
 ⍝ aplcart/tt.tsv:70 — Arccosecant; Reuse concrete inputs from aplcart/table.tsv:795; execute this alternate recipe independently
-N←4 9 16 ⋄ {1○⁻¹÷⍵}N
+N←4 9 16 ⋄ 1○⁻¹÷N
 0.2526802551420786 0.1113410143409639 0.06254076179649139
 
 ⍝ aplcart/tt.tsv:72 — Arccosine N; Reuse concrete inputs from aplcart/table.tsv:575; execute this alternate recipe independently
-N←0.25 0.5 0.75 ⋄ {2○⁻¹⍵}N
+N←0.25 0.5 0.75 ⋄ 2○⁻¹N
 1.318116071652818 1.047197551196598 0.7227342478134157
 
 ⍝ aplcart/tt.tsv:74 — Arccotangent; Reuse concrete inputs from aplcart/table.tsv:797; execute this alternate recipe independently
-N←4 9 16 ⋄ {3○⁻¹÷⍵}N
+N←4 9 16 ⋄ 3○⁻¹÷N
 0.2449786631268641 0.1106572211738956 0.06241880999595735
 
 ⍝ aplcart/tt.tsv:76 — Arcsecant; Reuse concrete inputs from aplcart/table.tsv:796; execute this alternate recipe independently
-N←4 9 16 ⋄ {2○⁻¹÷⍵}N
+N←4 9 16 ⋄ 2○⁻¹÷N
 1.318116071652818 1.459455312453933 1.508255564998405
 
 ⍝ aplcart/tt.tsv:78 — Arcsine N; Reuse concrete inputs from aplcart/table.tsv:571; execute this alternate recipe independently
-N←0.25 0.5 0.75 ⋄ {1○⁻¹⍵}N
+N←0.25 0.5 0.75 ⋄ 1○⁻¹N
 0.2526802551420786 0.5235987755982988 0.848062078981481
 
 ⍝ aplcart/tt.tsv:80 — Arctangent N; Reuse concrete inputs from aplcart/table.tsv:576; execute this alternate recipe independently
-N←0.25 0.5 0.75 ⋄ {3○⁻¹⍵}N
+N←0.25 0.5 0.75 ⋄ 3○⁻¹N
 0.2449786631268641 0.4636476090008061 0.6435011087932844
 
 ⍝ aplcart/tt.tsv:82 — Are I and J co-prime?; Reuse concrete inputs from aplcart/table.tsv:780; execute this alternate recipe independently
 I←2 3 4
 J←4 9 16
-I{1=⍺∨⍵}J   ⍝ $f $f $f
+1=I∨J   ⍝ $f $f $f
 
 ⍝ aplcart/tt.tsv:83 — Are Is and Js amicable numbers?; Reuse concrete inputs from aplcart/table.tsv:1524; execute this alternate recipe independently
 Is←220
@@ -7595,61 +7595,61 @@ Is{∧/(⍺+⍵)=¯1+{+/∪⍵∨⍳⍵}¨⍺,⍵}Js   ⍝ $t
 ⍝ aplcart/tt.tsv:88 — Are X and Y permutations of each other?; Reuse concrete inputs from aplcart/table.tsv:1262; execute this alternate recipe independently
 X←1 2 3 1
 Y←3 1 1 2
-X{([⍋⍺]⌷⍺)≡[⍋⍵]⌷⍵}Y   ⍝ $t
+([⍋X]⌷X)≡[⍋Y]⌷Y   ⍝ $t
 
 ⍝ aplcart/tt.tsv:90 — Are all elements of simple Y equal?
-Y←2 3⍴7 ⋄ {1ₓ=≢∪,⍵}Y   ⍝ $t
+Y←2 3⍴7 ⋄ 1ₓ=≢∪,Y   ⍝ $t
 
 ⍝ aplcart/tt.tsv:92 — Are all major cells distinct?
-Y←[1 2⋄3 4⋄1 2] ⋄ {⍵≡∪⍵}Y   ⍝ $f
+Y←[1 2⋄3 4⋄1 2] ⋄ Y≡∪Y   ⍝ $f
 
 ⍝ aplcart/tt.tsv:94 — Are all major cells identical?; Reuse concrete inputs from aplcart/table.tsv:1057; execute this alternate recipe independently
-Y←3 1 3 2 ⋄ {1ₓ≥≢∪⍵}Y   ⍝ $f
+Y←3 1 3 2 ⋄ 1ₓ≥≢∪Y   ⍝ $f
 
 ⍝ aplcart/tt.tsv:96 — Are all major cells of Y identical?
-Y←3 2⍴1 2 ⋄ {1ₓ=≢∪⍵}Y   ⍝ $t
+Y←3 2⍴1 2 ⋄ 1ₓ=≢∪Y   ⍝ $t
 
 ⍝ aplcart/tt.tsv:98 — Are any major cells distinct?; Reuse concrete inputs from aplcart/table.tsv:1055; execute this alternate recipe independently
-Y←3 1 3 2 ⋄ {1ₓ<≢∪⍵}Y   ⍝ $t
+Y←3 1 3 2 ⋄ 1ₓ<≢∪Y   ⍝ $t
 
 ⍝ aplcart/tt.tsv:100 — Are any major cells identical?; Reuse concrete inputs from aplcart/table.tsv:832; execute this alternate recipe independently
-Y←3 1 3 2 ⋄ {0∊≠⍵}Y   ⍝ $t
+Y←3 1 3 2 ⋄ 0∊≠Y   ⍝ $t
 
 ⍝ aplcart/tt.tsv:102 — Are any true?; Reuse concrete inputs from aplcart/table.tsv:748; execute this alternate recipe independently
-B←[1 0 0⋄0 0 0] ⋄ {∨/,⍵}B   ⍝ 1
+B←[1 0 0⋄0 0 0] ⋄ ∨/,B   ⍝ 1
 
 ⍝ aplcart/tt.tsv:103 — Are characters of D lowercase?
 D←"Abc 19 Σς!"  ⋄ 1↣•c≠⊢ D   ⍝ $f $t $t $f $f $f $f $f $t $f
 
 ⍝ aplcart/tt.tsv:104 — Are characters of D lowercase?
-D←"Abc 19 Σς!"  ⋄ {⍵≠1•c⍵}D   ⍝ $f $t $t $f $f $f $f $f $t $f
+D←"Abc 19 Σς!"  ⋄ D≠1•c(D)   ⍝ $f $t $t $f $f $f $f $f $t $f
 
 ⍝ aplcart/tt.tsv:105 — Are characters of D titlecase?
 D←"Abc 19 Σς!"  ⋄ (¯1↣•c≠⊢)∧1↣•c≠⊢ D   ⍝ $f $f $f $f $f $f $f $f $f $f
 
 ⍝ aplcart/tt.tsv:106 — Are characters of D titlecase?
-D←"Abc 19 Σς!"  ⋄ {(⍵≠¯1•c⍵)∧⍵≠1•c⍵}D   ⍝ $f $f $f $f $f $f $f $f $f $f
+D←"Abc 19 Σς!"  ⋄ (D≠¯1•c(D))∧D≠1•c(D)   ⍝ $f $f $f $f $f $f $f $f $f $f
 
 ⍝ aplcart/tt.tsv:107 — Are characters of D uppercase?
 D←"Abc 19 Σς!"  ⋄ ¯1↣•c≠⊢ D   ⍝ $t $f $f $f $f $f $f $t $f $f
 
 ⍝ aplcart/tt.tsv:108 — Are characters of D uppercase?
-D←"Abc 19 Σς!"  ⋄ {⍵≠¯1•c⍵}D   ⍝ $t $f $f $f $f $f $f $t $f $f
+D←"Abc 19 Σς!"  ⋄ D≠¯1•c(D)   ⍝ $t $f $f $f $f $f $f $t $f $f
 
 ⍝ aplcart/tt.tsv:109 — Are columns of N in ascending order?; Reuse concrete inputs from aplcart/table.tsv:1207; execute this alternate recipe independently
 N←[1 3⋄2 2⋄3 1] ⋄ ∧⌿⊢=⌈⍀ N   ⍝ $t $f
 
 ⍝ aplcart/tt.tsv:110 — Are columns of N in ascending order?; Reuse concrete inputs from aplcart/table.tsv:1207; execute this alternate recipe independently
-N←[1 3⋄2 2⋄3 1] ⋄ {∧⌿⍵=⌈⍀⍵}N   ⍝ $t $f
+N←[1 3⋄2 2⋄3 1] ⋄ ∧⌿N=⌈⍀N   ⍝ $t $f
 
 ⍝ aplcart/tt.tsv:111 — Are columns of N in descending order?; Reuse concrete inputs from aplcart/table.tsv:1208; execute this alternate recipe independently
 N←[1 3⋄2 2⋄3 1] ⋄ ∧⌿⊢=⌊⍀ N   ⍝ $f $t
 
 ⍝ aplcart/tt.tsv:112 — Are columns of N in descending order?; Reuse concrete inputs from aplcart/table.tsv:1208; execute this alternate recipe independently
-N←[1 3⋄2 2⋄3 1] ⋄ {∧⌿⍵=⌊⍀⍵}N   ⍝ $f $t
+N←[1 3⋄2 2⋄3 1] ⋄ ∧⌿N=⌊⍀N   ⍝ $f $t
 
 ⍝ aplcart/tt.tsv:114 — Are none true?; Reuse concrete inputs from aplcart/table.tsv:1122; execute this alternate recipe independently
-B←1 1 0 1 0 1 0 ⋄ {~∨/,⍵}B   ⍝ $f
+B←1 1 0 1 0 1 0 ⋄ ~∨/,B   ⍝ $f
 
 ⍝ aplcart/tt.tsv:115 — Area of a polygon given Mv,Nv endpoints; Reuse concrete inputs from aplcart/table.tsv:1506; execute this alternate recipe independently
 Mv←0 2 2 0
@@ -7770,8 +7770,8 @@ Jv←1 3 4 ⋄ ⊢∊⍨↢⍳1ₓ↣+∘ ⌈/ Jv   ⍝ $f $t $f $t $t
 
 ⍝ aplcart/tt.tsv:320 — Convert bits Bv representing a signed integer of As-endianess (0:big, 1:little) into a number
 As←0
-Bv←1 1 1 1 1 1 0 1
-As{(¯1*↑∘,)×(2⊥↑∘,≠,) ⊖⍣⍺ (8,⍨8÷⍨≢⍵)⍴⍵}Bv
+Bv←$t $t $t $t $t $t $f $t
+(¯1*↑∘,)×(2⊥↑∘,≠,) ⊖⍣As (8,⍨8÷⍨≢Bv)⍴Bv
 ⍝ =>
 ¯2
 
@@ -7811,7 +7811,7 @@ Ym←[1 "ab"⋄2 "cd"⋄3 "ef"]  ⋄ ⊂⍠0 Ym
 Y←1+2 3⍴⍳6ₓ ⋄ ↑∘,Y   ⍝ 1
 
 ⍝ aplcart/tt.tsv:376 — Count of trailing ones
-Bv←1 0 1 1 ⋄ ⊥⍨Bv   ⍝ 2
+Bv←$t $f $t $t ⋄ ⊥⍨Bv   ⍝ 2ₓ
 
 ⍝ aplcart/tt.tsv:402 — Cumulative sum
 N←4 9 16 ⋄ +\N   ⍝ 4 13 29
@@ -7907,7 +7907,7 @@ Mv⊥⍨↢⍪Nv   ⍝ 9 18 31
 Js←4 ⋄ 2×⍳∘ 1+ Js   ⍝ 0 2 4 6 8
 
 ⍝ aplcart/tt.tsv:559 — Expansion vector (left argument for #⁻¹) to insert a new element after each one in Bv; Reuse concrete inputs from aplcart/table.tsv:1469; execute this alternate recipe independently
-Bv←1 0 1 0 ⋄ (1,⍨⍪)#⍥,⍪,~ Bv   ⍝ 1 0 1 1 0 1
+Bv←$t $f $t $f ⋄ (1,⍨⍪)#⍥,⍪,~ Bv   ⍝ $t $f $t $t $f $t
 
 ⍝ aplcart/tt.tsv:561 — Expansion vector for Y with zeros after indices Iv; Reuse concrete inputs from aplcart/table.tsv:1470; execute this alternate recipe independently
 Iv←0 2
@@ -8096,7 +8096,7 @@ X ⍸-⍳<↢≢⊣ Y   ⍝ [0 0 1 1 2]ₓ
 Js←4 ⋄ ⍴⍨0↣, Js   ⍝ 0 4⍴0
 
 ⍝ aplcart/tt.tsv:860 — Integer representation of logical vector Bv
-Bv←1 1 1 0 0 ⋄ 2↣⊥Bv   ⍝ 28
+Bv←$t $t $t $f $f ⋄ 2↣⊥Bv   ⍝ 28
 
 ⍝ aplcart/tt.tsv:866 — Integral and fractional part of positive number
 N←0 1.5 2.75 ⋄ 0 1↣⊤N   ⍝ [0 0⋄1 0.5⋄2 0.75]
@@ -8106,40 +8106,40 @@ N←0 1.5 2.75 ⋄ 0 1↣⊤N   ⍝ [0 0⋄1 0.5⋄2 0.75]
 [[1 1 1⋄1 1 1⋄1 1 1] $f [1 0 0⋄1 1 0⋄1 1 1] $t [0 0 0⋄1 0 0⋄1 1 0] $f [0 0 0⋄0 0 0⋄1 0 0] $f]
 
 ⍝ aplcart/tt.tsv:872 — Is Bm a full lower triangular matrix with diagonal?; Reuse concrete inputs from aplcart/table.tsv:1300; execute this alternate recipe independently
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ⊢≡≥⊗⍨∘⍳∘≢ Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ⊢≡≥⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:873 — Is Bm a full lower triangular matrix without diagonal?; nested displayed values saved once in evaluation order and returned together
 [r_1←[1 1 1⋄1 1 1⋄1 1 1];(⊢≡>⊗⍨∘⍳∘≢) r_1;r_3←[1 0 0⋄1 1 0⋄1 1 1];(⊢≡>⊗⍨∘⍳∘≢) r_3;r_5←[0 0 0⋄1 0 0⋄1 1 0];(⊢≡>⊗⍨∘⍳∘≢) r_5;r_7←[0 0 0⋄0 0 0⋄1 0 0];(⊢≡>⊗⍨∘⍳∘≢) r_7]
 [[1 1 1⋄1 1 1⋄1 1 1] $f [1 0 0⋄1 1 0⋄1 1 1] $f [0 0 0⋄1 0 0⋄1 1 0] $t [0 0 0⋄0 0 0⋄1 0 0] $f]
 
 ⍝ aplcart/tt.tsv:874 — Is Bm a full lower triangular matrix without diagonal?; Reuse concrete inputs from aplcart/table.tsv:1301; execute this alternate recipe independently
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ⊢≡>⊗⍨∘⍳∘≢ Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ⊢≡>⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:875 — Is Bm a full upper triangular matrix with diagonal?; nested displayed values saved once in evaluation order and returned together
 [r_1←[1 1 1⋄1 1 1⋄1 1 1];(⊢≡≤⊗⍨∘⍳∘≢) r_1;r_3←[1 1 1⋄0 1 1⋄0 0 1];(⊢≡≤⊗⍨∘⍳∘≢) r_3;r_5←[0 1 1⋄0 0 1⋄0 0 0];(⊢≡≤⊗⍨∘⍳∘≢) r_5;r_7←[0 0 1⋄0 0 0⋄0 0 0];(⊢≡≤⊗⍨∘⍳∘≢) r_7]
 [[1 1 1⋄1 1 1⋄1 1 1] $f [1 1 1⋄0 1 1⋄0 0 1] $t [0 1 1⋄0 0 1⋄0 0 0] $f [0 0 1⋄0 0 0⋄0 0 0] $f]
 
 ⍝ aplcart/tt.tsv:876 — Is Bm a full upper triangular matrix with diagonal?; Reuse concrete inputs from aplcart/table.tsv:1299; execute this alternate recipe independently
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ⊢≡≤⊗⍨∘⍳∘≢ Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ⊢≡≤⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:877 — Is Bm a full upper triangular matrix without diagonal?; nested displayed values saved once in evaluation order and returned together
 [r_1←[1 1 1⋄1 1 1⋄1 1 1];(⊢≡<⊗⍨∘⍳∘≢) r_1;r_3←[1 1 1⋄0 1 1⋄0 0 1];(⊢≡<⊗⍨∘⍳∘≢) r_3;r_5←[0 1 1⋄0 0 1⋄0 0 0];(⊢≡<⊗⍨∘⍳∘≢) r_5;r_7←[0 0 1⋄0 0 0⋄0 0 0];(⊢≡<⊗⍨∘⍳∘≢) r_7]
 [[1 1 1⋄1 1 1⋄1 1 1] $f [1 1 1⋄0 1 1⋄0 0 1] $f [0 1 1⋄0 0 1⋄0 0 0] $t [0 0 1⋄0 0 0⋄0 0 0] $f]
 
 ⍝ aplcart/tt.tsv:878 — Is Bm a full upper triangular matrix without diagonal?; Reuse concrete inputs from aplcart/table.tsv:1298; execute this alternate recipe independently
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ⊢≡<⊗⍨∘⍳∘≢ Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ⊢≡<⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:880 — Is Bm a lower triangular matrix with diagonal?
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ~0∊,∘ ×∘|≤≥⊗⍨∘⍳∘≢ Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ~0∊,∘ ×∘|≤≥⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:882 — Is Bm a lower triangular matrix without diagonal?
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ~0∊,∘ ×∘|≤>⊗⍨∘⍳∘≢ Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ~0∊,∘ ×∘|≤>⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:884 — Is Bm an upper triangular matrix with diagonal?
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ~0∊,∘ ×∘|≤≤⊗⍨∘⍳∘≢ Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ~0∊,∘ ×∘|≤≤⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:886 — Is Bm an upper triangular matrix without diagonal?
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ~0∊,∘ ×∘|≤<⊗⍨∘⍳∘≢ Bm   ⍝ $f
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ~0∊,∘ ×∘|≤<⊗⍨∘⍳∘≢ Bm   ⍝ $f
 
 ⍝ aplcart/tt.tsv:898 — Is Dv a palindrome?
 Dv←"racecar" ⋄ ⌽≡⊢ Dv   ⍝ $t
@@ -8246,7 +8246,7 @@ C∊⍨↢⊂Dv   ⍝ $t
 ⍝ aplcart/tt.tsv:1015 — Is'th number in the Aliqout sequence for Js; Reuse concrete inputs from aplcart/table.tsv:1494; execute this alternate recipe independently
 Is←2
 Js←6
-Is{+/∘∪⊢∨⍳ ⍣⍺ ⍵}Js   ⍝ 28
++/∘∪⊢∨⍳ ⍣Is Js   ⍝ 28
 
 ⍝ aplcart/tt.tsv:1018 — Is-largest (default: the largest) major cell of Y
 Is←1
@@ -8289,7 +8289,7 @@ Jv←2026 9 18 ⋄ 100↣⊥Jv   ⍝ 20260918
 ⍝ aplcart/tt.tsv:1066 — Kronecker product
 Mm←[1 2⋄3 4]
 Nm←1+2 3⍴⍳6ₓ
-Mm{,⍤2,⍠ ⍳2ₓ [0 2 1 3]⍉⍺×⊗⍵}Nm
+,⍤2,⍠ ⍳2ₓ [0 2 1 3]⍉Mm×⊗Nm
 ⍝ =>
 [1 2 3 2 4 6⋄4 5 6 8 10 12⋄3 6 9 4 8 12⋄12 15 18 16 20 24]
 
@@ -8310,7 +8310,7 @@ N←1+2 3⍴⍳6ₓ ⋄ 0↣⊥Nᵀ   ⍝ 4 5 6
 IA←1234 5678 ⋄ 1000↣|IA   ⍝ 234 678
 
 ⍝ aplcart/tt.tsv:1096 — Length of subvectors indicated by Bv (Fast ≢¨⊆⍨Bv)
-Bv←1 0 0 1 0 1 ⋄ ≢(⊢-⍨1↣↓∘(⊢,⊣))⍸ Bv   ⍝ [3 2 1]ₓ
+Bv←$t $f $f $t $f $t ⋄ ≢(⊢-⍨1↣↓∘(⊢,⊣))⍸ Bv   ⍝ [3 2 1]ₓ
 
 ⍝ aplcart/tt.tsv:1114 — Limit: apply inverse of X∘f until stable
 X←10
@@ -8376,7 +8376,7 @@ M (+⌿÷≢)2*⍨- N   ⍝ 61.33333333333334
 ⍝ aplcart/tt.tsv:1198 — Merge the leading Is axes of Y
 Is←2ₓ
 Y←2 3 2⍴⍳12ₓ
-Is{,⍠ ⍳⍺ ⍵}Y
+,⍠ ⍳Is Y
 ⍝ =>
 ([0 1⋄2 3⋄4 5⋄6 7⋄8 9⋄10 11])ₓ
 
@@ -8754,10 +8754,10 @@ Is */⍴ Ns   ⍝ 16
 Js←12 ⋄ ⍸(1=⊢∨⍳) Js   ⍝ [1 5 7 11]ₓ
 
 ⍝ aplcart/tt.tsv:1837 — Transitive closure; Reuse concrete inputs from aplcart/table.tsv:1165; execute this alternate recipe independently
-Bm←[0 1 0⋄0 0 1⋄1 0 0] ⋄ ∨.∧⍨∨⊢ ⍣≡Bm   ⍝ [1 1 1⋄1 1 1⋄1 1 1]
+Bm←[$f $t $f⋄$f $f $t⋄$t $f $f] ⋄ ∨.∧⍨∨⊢ ⍣≡Bm   ⍝ [$t $t $t⋄$t $t $t⋄$t $t $t]
 
 ⍝ aplcart/tt.tsv:1845 — Transpose matrix Ym on condition Bs; Reuse concrete inputs from aplcart/table.tsv:759; execute this alternate recipe independently
-Bs←1
+Bs←$t
 Ym←2 3⍴⍳6ₓ
 Bs ⊢⍉⍨⌽↢0 1∘⊣ Ym   ⍝ [0 3⋄1 4⋄2 5]ₓ
 
@@ -8773,7 +8773,7 @@ M (××↢⌊|)÷ N   ⍝ [¯2 2 2]ₓ
 B←1 1 0 1 0 1 0 ⋄ ∧\B   ⍝ 1 1 0 0 0 0 0
 
 ⍝ aplcart/tt.tsv:1862 — Turn off all 1s after first 1 (indicate only the first 1); First-true masks use cumulative counts under basedpl left scan
-B←1 1 0 1 0 1 0 ⋄ {⍵∧1=+\⍵}B   ⍝ 1 0 0 0 0 0 0
+B←1 1 0 1 0 1 0 ⋄ B∧1=+\B   ⍝ 1 0 0 0 0 0 0
 
 ⍝ aplcart/tt.tsv:1863 — Turn off all 1s before first 0 (remove leading 1s)
 (∧\<⊢) 1 1 0 0 1 1 1   ⍝ $f $f $f $f $t $t $t
@@ -8782,7 +8782,7 @@ B←1 1 0 1 0 1 0 ⋄ {⍵∧1=+\⍵}B   ⍝ 1 0 0 0 0 0 0
 B←1 1 0 1 0 1 0 ⋄ ∧\<⊢ B   ⍝ $f $f $f $t $f $t $f
 
 ⍝ aplcart/tt.tsv:1866 — Turn on all 0s after first 0 (indicate all elements except the first 0); First-zero mask uses cumulative counts under basedpl left scan
-B←1 1 0 1 0 1 0 ⋄ {⍵∨1≠+\~⍵}B   ⍝ 1 1 0 1 1 1 1
+B←1 1 0 1 0 1 0 ⋄ B∨1≠+\~B   ⍝ 1 1 0 1 1 1 1
 
 ⍝ aplcart/tt.tsv:1868 — Turn on all 0s after first 1 (indicate all elements except leading 0s)
 B←1 1 0 1 0 1 0 ⋄ ∨\B   ⍝ 1 1 1 1 1 1 1
@@ -8887,12 +8887,12 @@ Yv←[1 3 4;"abc"]
 ↓⍉⊃Xv ∊ ↓⍉⊃Yv   ⍝ $t $f $t $t
 
 ⍝ aplcart/table.tsv:2015 — Inverted Table Unique (∪Y where Y is unverted Yv); convert columns to rows for ordinary search and grouping
-Xv←[1 2 1 3;"abab"] ⋄ {⍵#¨⍨⊂≠↓⍉⊃⍵}Xv   ⍝ [1 2 3;"abb"]
+Xv←[1 2 1 3;"abab"] ⋄ Xv#¨⍨⊂≠↓⍉⊃Xv   ⍝ [1 2 3;"abb"]
 
 ⍝ aplcart/table.tsv:2033 — Inverted Table Without (↑X~⍥↓Y where X and Y are unverted Xv and Yv); convert columns to rows for ordinary search and grouping
 Xv←[1 2 1 3;"abab"]
 Yv←[1 3 4;"abc"]
-Xv{⍺#¨⍨⊂~(↓⍉⊃⍺)∊↓⍉⊃⍵}Yv   ⍝ [1⍴2;"b"]
+Xv#¨⍨⊂~(↓⍉⊃Xv)∊↓⍉⊃Yv   ⍝ [1⍴2;"b"]
 
 ⍝ aplcart/table.tsv:2267 — Inverted Table Dyadic Key (Xf⌸Y where X and Y are unverted Xv and Yv); convert columns to rows for ordinary search and grouping
 Xv←[1 2 1 3;"abab"]
@@ -9045,7 +9045,7 @@ box ["abc"⋄"def"]
 [packX:]←•load "lib/dyalog.bpl"
 packX "hello hello"
 ⍝ =>
-["helo " [1 11]ₓ [0 1 0 0 0 0 0 0 0 0 0 0 1 0 0 1 0 0 0 1 0 0 0 0 0 0 0 1 0 0 1 0 1 1 0 1 0]]
+["helo " [1 11]ₓ [$f $t $f $f $f $f $f $f $f $f $f $f $t $f $f $t $f $f $f $t $f $f $f $f $f $f $f $t $f $f $t $f $t $t $f $t $f]]
 
 ⍝ aplcart/table.tsv:1744 — Null packing; Ported in lib/dyalog.bpl; checked against the independent Dyalog expectation; Concrete arguments; shared 0-origin based-array port loaded from lib/dyalog.bpl
 [packN:]←•load "lib/dyalog.bpl"
@@ -9057,7 +9057,7 @@ packN0 0 3 0 0 4
 [packB:]←•load "lib/dyalog.bpl"
 packB1 0 1 1 0
 ⍝ =>
-[[1 5 1 0] [$t $t $t $f $t] [0 1 0 1]]
+[[1 5 1 0] [$t $t $t $f $t] [$f $t $f $t]]
 
 ⍝ aplcart/table.tsv:1747 — Huffman packing; Ported in lib/dyalog.bpl; checked against the independent Dyalog expectation; Concrete arguments; shared 0-origin based-array port loaded from lib/dyalog.bpl
 [packH:]←•load "lib/dyalog.bpl"
@@ -9079,7 +9079,7 @@ packR1 1 1 2 2 3   ⍝ [[6]ₓ [3 2 1]ₓ [1 2 3]]
 [packS:]←•load "lib/dyalog.bpl"
 packS "abbccc"
 ⍝ =>
-[[6]ₓ "cba" [1 2 2]ₓ [0 1 0 1 1 1 1 1 0 1 0 0 0 0]]
+[[6]ₓ "cba" [1 2 2]ₓ [$f $t $f $t $t $t $t $t $f $t $f $f $f $f]]
 
 ⍝ aplcart/table.tsv:1752 — Unique packing; Ported in lib/dyalog.bpl; checked against the independent Dyalog expectation; Concrete arguments; shared 0-origin based-array port loaded from lib/dyalog.bpl
 [packU:]←•load "lib/dyalog.bpl"
@@ -9175,7 +9175,7 @@ tokens "x←1+2"   ⍝ "x" "←" "1" "+" "2"
 [packD:]←•load "lib/dyalog.bpl"
 packD "abc"
 ⍝ =>
-0 0 0 1 0 0 0 1 0 1 1 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0 0 0 1 0 0 1 0 0 0 0 1 0 0 1 1 1 0 1 0 0 1 1 0
+$f $f $f $t $f $f $f $t $f $t $t $f $f $f $f $f $f $t $f $f $f $f $t $f $f $f $t $f $f $f $t $f $f $t $f $f $f $f $t $f $f $t $t $t $f $t $f $f $t $t $f
 
 ⍝ aplcart/table.tsv:1751 — Simple text vector packager; Ported in lib/dyalog.bpl; checked against independent Dyalog expectation; Dyalog alphabet retained as fixed data for the original wire format; windows express adjacent differences
 [packT:]←•load "lib/dyalog.bpl"
@@ -9581,7 +9581,7 @@ date(days1970 1 1)+102549888000÷5184000
 
 ⍝ aplcart/table.tsv:1895 — Column record to header matrix: axis selectors replace namespace names; monadic colon extracts values
 T←["Age":["21" "32"] "Name":["Bob" "Sally"] "Zipcode":["30102" "43001"]]
-{(⍳⍠0 ⍵)⍪⍉⊃:⍵}T
+(⍳⍠0 T)⍪⍉⊃:T
 ⍝ =>
 ["Age" "Name" "Zipcode"⋄"21" "Bob" "30102"⋄"32" "Sally" "43001"]
 
@@ -9614,11 +9614,11 @@ K⍪⊃(:¨rows)
 •ucs 97 59 98 10 99 59 100 10
 
 ⍝ aplcart/table.tsv:221 — CSV import with a separator option
-⍉⊃ ["separator":';' "header":0 "text_columns":[0 1]] •csv "a;1",(•ucs 10),"b;2"
+⍉⊃ ["separator":';' "header":0 "types":["" ""]] •csv "a;1",(•ucs 10),"b;2"
 ["a" "1"⋄"b" "2"]
 
 ⍝ aplcart/table.tsv:322 — Convert CSV data to APL matrix
-⍉⊃ ["header":0 "text_columns":[0 1]] •csv "name,score",(•ucs 10),"Ada,12",(•ucs 10),"Ben,7"
+⍉⊃ ["header":0 "types":["" ""]] •csv "name,score",(•ucs 10),"Ada,12",(•ucs 10),"Ben,7"
 ["name" "score"⋄"Ada" "12"⋄"Ben" "7"]
 
 ⍝ aplcart/table.tsv:388 — Convert CSV data from APL matrix
@@ -9626,11 +9626,11 @@ K⍪⊃(:¨rows)
 •ucs 97 44 34 98 44 99 34 10 100 44 101 10
 
 ⍝ aplcart/table.tsv:452 — Convert CSV data to APL inverted table (character data as matrices)
-⊃¨ ["header":0 "text_columns":[0 1]] •csv "a,12",(•ucs 10),"b,7"
+⊃¨ ["header":0 "types":["" ""]] •csv "a,12",(•ucs 10),"b,7"
 [2 1⍴"ab";["12"⋄"7 "]]
 
 ⍝ aplcart/table.tsv:453 — Convert CSV data to APL inverted table (character data as vectors of vectors)
-["header":0 "text_columns":[0 1]] •csv "a,12",(•ucs 10),"b,7"
+["header":0 "types":["" ""]] •csv "a,12",(•ucs 10),"b,7"
 [["a" "b"] ["12" "7"]]
 
 ⍝ aplcart/table.tsv:505 — Convert CSV data from APL inverted table (character data as matrices)
@@ -9648,7 +9648,7 @@ T←•csv "name,score",(•ucs 10),"Ada,12",(•ucs 10),"Ben,7"
 [["Ada" 12ₓ⋄"Ben" 7ₓ];"name" "score"]
 
 ⍝ aplcart/table.tsv:1770 — Numeric vector from text file with one number on each line
-∊ ["header":0 "numeric_columns":0] •csv "12",(•ucs 10),"-3",(•ucs 10),'7'
+∊ ["header":0 "types":[0ₓ]] •csv "12",(•ucs 10),"-3",(•ucs 10),'7'
 [12 ¯3 7]ₓ
 
 ⍝ aplcart/table.tsv:1837 — Validate inverted table (character data as matrices)

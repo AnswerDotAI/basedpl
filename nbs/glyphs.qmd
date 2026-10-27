@@ -129,6 +129,7 @@ A dyadic operator takes an operand on each side, as in `f⍤1`. The columns are 
 | `?` [question](glyphs/question.qmd) | | predicate | Inside dfns |
 | `::` [error-guard](glyphs/error-guard.qmd) | | | Error guard inside dfns |
 | `⋄` [diamond](glyphs/diamond.qmd) | Alt-Backtick | separator | Separates statements, rows inside brackets, and rows of a vector inside parentheses |
+| `⁝` [tricolon](glyphs/tricolon.qmd) | Alt-: | token-separator | Separates tokens without ending the run or continuing a literal strand |
 | `⍝` [lamp](glyphs/lamp.qmd) | Alt-o c | comment | |
 | `⎕←` [quad](glyphs/quad.qmd) | Alt-q | io | Explicit output. Read alone, the next line of input |
 | `•` [bullet](glyphs/bullet.qmd) | Alt-y | system | [System function](system-functions.qmd) prefix |

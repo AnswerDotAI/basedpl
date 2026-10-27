@@ -17,13 +17,13 @@ impl Session {
     pub(super) fn blank() -> Self {
         Self {
             execution: Default::default(), prefacing: Default::default(), bindings: Default::default(), loading: Default::default(), stacks: Default::default(), depth: Default::default(), prototype: Default::default(),
-            capture: Default::default(), fusion_reports: Default::default(), levels: Default::default(), transforming: Default::default(), generator: Default::default(), drawn: Default::default(), args: Default::default(),
+            capture: Default::default(), fusion_reports: Default::default(), levels: Default::default(), transforming: Default::default(), generator: Default::default(), drawn: Default::default(), args: Default::default(), tacit: Default::default(),
         }
     }
     /// Puts every field except the running evaluation's `execution` back as a new session has it, for `]clear` and a new session's turn. The destructuring names each field, so a field added later is a compile error here until it's reset too.
     pub(crate) fn clear(&self) {
         use std::sync::PoisonError;
-        let Session { execution: _, prefacing, bindings, loading, stacks, depth, prototype, capture, fusion_reports, levels, transforming, generator, drawn, args } = Session::blank();
+        let Session { execution: _, prefacing, bindings, loading, stacks, depth, prototype, capture, fusion_reports, levels, transforming, generator, drawn, args, tacit: _ } = Session::blank();
         self.prefacing.set(prefacing.get());
         self.bindings.replace(bindings);
         self.loading.replace(loading.into_inner());
@@ -37,6 +37,7 @@ impl Session {
         std::mem::swap(&mut *self.generator.lock().unwrap_or_else(PoisonError::into_inner), &mut *generator.lock().unwrap_or_else(PoisonError::into_inner));
         *self.drawn.lock().unwrap_or_else(PoisonError::into_inner) = drawn.into_inner().unwrap_or_else(PoisonError::into_inner);
         self.args.replace(args.into_inner());
+        self.tacit.clear();
     }
     /// A new session's turn for a person at a terminal, with boxed display elided to the terminal's width.
     pub fn interactive() -> Turn {
@@ -58,7 +59,7 @@ impl Session {
     pub fn names(&self) -> Vec<String> { self.bindings.names() }
     pub fn name_class(&self, name: &str) -> i64 {
         match crate::inspection::item(name, crate::settings::hanzi_aliases()) {
-            Some(NodeKind::Name(name)) => self.bindings.lookup(name).map_or(0, |(_, binding)| binding.class()),
+            Some(NodeKind::Name(name, _)) => self.bindings.lookup(name).map_or(0, |(_, binding)| binding.class()),
             Some(NodeKind::Function(_)) => FUNCTION_CLASS, Some(NodeKind::System(_)) => 0, _ => -1
         }
     }
@@ -67,7 +68,7 @@ impl Session {
     }
     pub fn inspect(&self, name: &str) -> Option<crate::Inspection> {
         let info = match crate::inspection::item(name, crate::settings::hanzi_aliases()) {
-            Some(NodeKind::Name(name)) => self.bindings.lookup(name).and_then(|(_, binding)| binding.inspection(self)),
+            Some(NodeKind::Name(name, _)) => self.bindings.lookup(name).and_then(|(_, binding)| binding.inspection(self)),
             Some(NodeKind::Function(builtin)) => Binding::Function(builtin.function()).inspection(self),
             Some(NodeKind::Operator(op)) => Some(crate::Inspection::new("operator", op.glyph().to_string())),
             _ => None,
@@ -103,6 +104,12 @@ impl Session {
     pub(super) fn record_write(&self, place: Place) -> Result<(), crate::transform::Stop> { self.levels.borrow_mut().record_write(place) }
     /// Checks `effect` against the running levels (`transform::Levels::effect`).
     pub(crate) fn effect(&self, effect: crate::transform::Effect) -> Result<(), crate::transform::Stop> { self.levels.borrow().effect(effect) }
+    /// The running trace's level and tracer, if a trace is running (`transform::Levels::tracing`).
+    pub(crate) fn tracing(&self) -> Option<(u64, std::sync::Arc<crate::program::trace::Tracer>)> { self.levels.borrow().tracing().map(|(level, t, _)| (level, t.clone())) }
+    /// Keeps a fresh name in the running trace or batched run (`transform::Levels::keep_fresh`).
+    pub(crate) fn keep_fresh(&self, name: std::sync::Arc<str>) { self.levels.borrow_mut().keep_fresh(name) }
+    /// Whether `value` holds a fresh name that the running batched run drew (`transform::Levels::holds_fresh`).
+    pub(crate) fn holds_fresh(&self, value: &Value) -> bool { self.levels.borrow().holds_fresh(value) }
     /// The id and frame of the batched map that is running, if one is (`transform::Levels::batched`).
     pub(crate) fn batched(&self) -> Option<(u64, crate::array::Layout)> { self.levels.borrow().batched().map(|(id, frame)| (id, frame.clone())) }
     /// The id of the batched run, if one is running, without the frame that `batched` clones.
@@ -112,7 +119,7 @@ impl Session {
     /// Whether a map's batched try widens the running batched run (`transform::Levels::widens`).
     pub(crate) fn widens(&self) -> bool { self.levels.borrow().widens() }
     pub fn erase(&self, name: &str) -> bool {
-        let Some(NodeKind::Name(name)) = crate::inspection::item(name, crate::settings::hanzi_aliases()) else { return false; };
+        let Some(NodeKind::Name(name, _)) = crate::inspection::item(name, crate::settings::hanzi_aliases()) else { return false; };
         if name.implicit().is_some() { return false; }
         if let Some((place, _)) = self.bindings.lookup(name) { self.bindings.remove(place); }
         true
@@ -205,7 +212,7 @@ impl Session {
     pub fn set(&self, name: &str, value: Value) -> Result<(), ErrorKind> { self.set_value(name, Binding::from_element(value)) }
     pub fn set_function(&self, name: &str, value: Function) -> Result<(), ErrorKind> { self.set_value(name, Binding::Function(value)) }
     fn set_value(&self, name: &str, value: Binding) -> Result<(), ErrorKind> {
-        let Some(NodeKind::Name(name)) = crate::inspection::item(name, crate::settings::hanzi_aliases()) else { return Err(ErrorKind::Syntax); };
+        let Some(NodeKind::Name(name, _)) = crate::inspection::item(name, crate::settings::hanzi_aliases()) else { return Err(ErrorKind::Syntax); };
         if name.implicit().is_some() { return Err(ErrorKind::Syntax); }
         let place = self.bindings.at_top_level(Some(0), || self.bindings.here(name));
         self.bindings.insert(place, value);
@@ -321,11 +328,11 @@ impl Session {
                 Ok(bound) => {
                     let dissected = if dissecting && (dissect || !bound.shy && !matches!(bound.value, Binding::NoResult | Binding::Absent)) {
                         bound.expression.map(|e| *e).or_else(|| Expression::binding(&bound.value))
-                            .map(|e| { let display = crate::settings::display(); e.display(display.trees, display.elide.notation) })
+                            .map(|e| { let display = crate::settings::display(); e.display(display.trees, display.elide) })
                     } else { None };
                     if let Some(text) = &dissected { self.execution.output(crate::OutputKind::Display, text.clone()); }
                     result.value = match bound.value {
-                        Binding::NoResult | Binding::Absent => None,
+                        Binding::NoResult | Binding::Absent | Binding::Released => None,
                         Binding::Value(a) => {
                             if diagram && i + 1 == parsed.statements.len() {
                                 self.execution.output(crate::OutputKind::Display, self.display_settings().diagram(&a));
@@ -342,7 +349,7 @@ impl Session {
                         }
                         Binding::Operator(op) => {
                             let op = Operator(Arc::new(op));
-                            if self.execution.echo.get() { self.execution.output(crate::OutputKind::Display, op.text(crate::settings::display().elide.notation)); }
+                            if self.execution.echo.get() { self.execution.output(crate::OutputKind::Display, op.text(crate::settings::display().elide)); }
                             if i + 1 == parsed.statements.len() { result.operator = Some(op); }
                             None
                         }
@@ -473,8 +480,7 @@ impl Session {
     /// Displays a function using the trees setting, unless that view has already been shown.
     fn display_function(&self, f: &Function, shown: Option<&str>) {
         let display = crate::settings::display();
-        let notation = display.elide.notation;
-        let text = if display.trees { f.tree(notation, &mut 1000).render() } else { f.text(notation, &mut 1000) };
+        let text = if display.trees { f.tree(display.elide, &mut 1000).render() } else { f.text(display.elide, &mut 1000) };
         if shown != Some(&text) { self.execution.output(crate::OutputKind::Display, text); }
     }
 
@@ -537,8 +543,9 @@ impl Session {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
             NodeKind::Function(builtin) => Binding::Function(builtin.function()),
             NodeKind::Operator(op) => Binding::Operator(OperatorNode::Primitive(*op)),
-            NodeKind::Name(name) => match self.bindings.lookup(*name) {
-                Some((_, value)) => self.read_binding(value)?,
+            NodeKind::Name(name, last) => match last.then(|| self.bindings.take(*name)).flatten().or_else(|| self.bindings.lookup(*name)) {
+                Some((_, Binding::Released)) => return Err(released(name, &node.span)),
+                Some((place, value)) => self.read_binding(value, || Some(place))?,
                 None if *name == Name::ERROR => return Err(Error::new(ErrorKind::Value, "$e is the error a handler caught, and exists only in a handler").at(&node.span)),
                 None => return Err(undefined(name, &node.span))
             },
@@ -582,7 +589,7 @@ impl Session {
             // The value and the key evaluate separately, value first. As one expression, `key:f` would be a train.
             let named = match &nodes[..colon] {
                 _ if colon + 1 < nodes.len() => None,
-                [Node { kind: NodeKind::Name(name), .. }] => Some(crate::keyed::text(name.text())),
+                [Node { kind: NodeKind::Name(name, _), .. }] => Some(crate::keyed::text(name.text())),
                 _ => return Err(Error::new(ErrorKind::Syntax, "a key with no value is a name, as in [a:]").at(&nodes[colon].span)),
             };
             let at = if named.is_some() { 0..colon } else { colon + 1..nodes.len() };
@@ -620,10 +627,10 @@ impl Session {
 
     // Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
     #[inline(never)]
-    pub(super) fn call_defined(&self, first: &Function, left: Option<&Value>, right: &Value) -> Result<Bound, Error> {
+    pub(super) fn call_defined<L: Argument, R: Argument>(&self, first: &Function, left: Option<L>, right: R) -> Result<Bound, Error> {
         let caller = self.bindings.current();
         let base = self.bindings.depth();
-        let (mut function, mut left, mut right) = (first.clone(), left.cloned(), right.clone());
+        let (mut function, mut left, mut right) = (first.clone(), left.map(L::owned), right.owned());
         let mut tail_span = None;
         let mut unshy = false;
         let mut result = loop {
@@ -775,7 +782,7 @@ impl Session {
     /// The bindings of each frame from `first` to `frame`, with each batched value of run `level` read at a guard case's cells, the cells at positions `rows` of the run's `cells` cells (`batch::read_cells`), for `Bindings::swap`. These frames are the calls that started during the run. A closure that a case calls reads its defining frame, which can be any of them, whether or not it lies on `frame`'s lexical chain. Frames before `first` started before the run and hold none of its batches. A batch made before the run widened has fewer cells than the run, one for each run of cells that the widening's inner frame repeats it over (`read_binding`), so the case reads it at the cells that hold its rows.
     fn restricted(&self, frame: usize, first: usize, level: u64, cells: usize, rows: &[u32], span: &Span) -> Result<Vec<(usize, FrameBindings)>, Error> {
         let read = |whole: &Value, axes: usize| {
-            let repeats = (cells / whole.shape()[..axes].iter().product::<usize>()) as u32;
+            let repeats = (cells / crate::array::count(&whole.shape()[..axes])) as u32;
             let rows: std::borrow::Cow<[u32]> = if repeats == 1 { rows.into() } else { rows.iter().map(|r| r / repeats).collect() };
             Ok((super::operators::cells_at(whole, axes, &rows, span)?, 1))
         };
@@ -794,14 +801,24 @@ impl Session {
         result
     }
 
-    /// `binding` as code reads it. Inside a widened batched run, each batch of the run that a binding made before the widening holds reads as laid over the widened frame (`batch::widened`). Elsewhere a binding reads as it is.
+    /// `binding` as code reads it. Inside a widened batched run, each batch of the run that a binding made before the widening holds reads as laid over the widened frame (`batch::widened`). While a trace runs, a binding at `place` from outside the traced call's frames is a free name of the call (`program::trace::read`). Elsewhere a binding reads as it is.
     #[inline]
-    pub(super) fn read_binding(&self, binding: Binding) -> Result<Binding, Error> {
+    pub(super) fn read_binding(&self, binding: Binding, place: impl FnOnce() -> Option<Place>) -> Result<Binding, Error> {
         if !self.transforming() { return Ok(binding); }
+        let tracing = self.levels.borrow().tracing().map(|(level, tracer, frames)| (level, tracer.clone(), frames));
+        if let Some((level, tracer, frames)) = tracing && let Some(place) = place() && place.frame().is_none_or(|f| f < frames) { return Ok(crate::program::trace::read(binding, place, level, &tracer)); }
         let Binding::Value(value) = &binding else { return Ok(binding) };
         let levels = self.levels.borrow();
         let Some((level, frame)) = levels.widened() else { return Ok(binding) };
         crate::batch::widened(value, level, frame).map(Binding::Value)
+    }
+    /// What the binding at `place` holds now, as a program's replay reads a free name again (`program::Found`). `None` where nothing is bound there.
+    pub(crate) fn captured(&self, place: Place) -> Option<crate::program::Found> {
+        Some(match self.bindings.get(place)? {
+            Binding::Value(Value::Function(f)) | Binding::Function(f) => crate::program::Found::Function(f),
+            Binding::Value(v) => crate::program::Found::Value(v),
+            _ => crate::program::Found::Other,
+        })
     }
 }
 

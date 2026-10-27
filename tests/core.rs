@@ -205,6 +205,15 @@ fn unicode_names() {
 }
 
 #[test]
+fn token_separator() {
+    equiv("mean←(+/÷≢)⊢ ⋄ w←1 1 2 ⋄ temps←10 20 30 ⋄ w⁝mean⌸temps", "15 30");
+    equiv("(2×)⍣3⁝5", "40");
+    equiv("(+/÷≢)⍤1⁝2 3⍴⍳6", "1 4");
+    equiv("m←[2 3]⍴⍳6 ⋄ i←1 ⋄ 10÷√1++/⍠i⁝m", "10÷√1+3 12");
+    equiv("m←2 3 4 5⍴⍳120 ⋄ +/⍠2 3⁝3 3↕m", "(+/⍠2 3)3 3↕2 3 4 5⍴⍳120");
+}
+
+#[test]
 fn highlight_classes_and_code_context() {
     let classes = |text: &'static str| basedpl::highlight(text, false).into_iter().map(|(range, class)| (&text[range], class)).collect::<Vec<_>>();
     let expected = [("⍵", "argument"), ("∘", "dyadic-operator"), ("+", "function"), ("¨", "monadic-operator"), ("\"a+b\"", "string"), ("⍝ c+d", "comment")];

@@ -1,8 +1,8 @@
 use crate::execution::check;
 use crate::session;
-use rustymath::{buffer::{Buffer, ComplexBuf, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
+use rustymath::{buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
 use crate::{
-    array::{Items, Storage}, Span, keyed, number::Numeric, primitive::{numeric, real}, Error, Described, ErrorKind, Number, Value
+    array::Storage, Span, keyed, number::Numeric, primitive::{numeric, real}, Error, Described, ErrorKind, Number, Value
 };
 use rustymath::hashing::{HashMap, HashMapExt};
 use std::io::Read;
@@ -11,11 +11,23 @@ pub(crate) fn text(value: &Value) -> Result<String, Error> {
     keyed::name(value).map(|s| s.to_string()).ok_or_else(|| Error::domain("expected text"))
 }
 
-/// Imported items, where `filled` marks missing-value fills. Approximate inputs select real or complex storage at the widest strong approximate width, or the widest weak width when none is strong. Weak approximate values may round; exact values must convert losslessly. Otherwise items keep their own kinds. A finite real fill alone never makes exact numbers approximate.
-pub(crate) fn imported(shape: Vec<usize>, items: Vec<Value>, filled: impl Fn(usize) -> bool, empty_prototype: Value) -> Result<Value, ErrorKind> {
+/// Imported items, where `filled` marks missing-value fills. Where every other number is an ordinary integer, every one is a fixed integer of one width, or every one is a Boolean, a fill takes that type wherever it keeps its value there, as a fill under `⍠` does (`Value::fill_of`): a fill of `0` beside integers gives `0ₓ`. Approximate inputs, and a fill that doesn't keep its value in that type, such as NaN or `0.5` beside integers, select real or complex storage at the widest strong approximate width, or the widest weak width when none is strong. Weak approximate values may round; exact values must convert losslessly. Otherwise items keep their own kinds.
+pub(crate) fn imported(shape: Vec<usize>, mut items: Vec<Value>, filled: impl Fn(usize) -> bool, empty_prototype: Value) -> Result<Value, ErrorKind> {
     fn number(v: &Value) -> Option<&Number> { if let Value::Number(n) = v { Some(n) } else { None } }
+    let mut widened = false;
+    if (0..items.len()).any(&filled) {
+        let mut data = items.iter().enumerate().filter(|&(i, _)| !filled(i)).map(|(_, v)| number(v));
+        let like = data.next().flatten().filter(|n| n.as_integer().is_some()).cloned().filter(|n| data.all(|d| d.is_some_and(|d| d.same_variant(n))));
+        if let Some(like) = like {
+            // An ordinary integer's view is at 64 bits, so the fill isn't limited to the narrowest width that holds `like`.
+            let (dtype, like) = (like.view().map(|v| v.dtype()), Value::Number(like));
+            for v in items.iter_mut().enumerate().filter_map(|(i, v)| filled(i).then_some(v)) {
+                match Value::fill_of(v, dtype, like.fixed_width().is_some()) { Ok((_, fill)) => *v = like.fill_item(Some(&fill)), Err(_) => widened = true }
+            }
+        }
+    }
     let numbers = || items.iter().filter_map(number);
-    if items.iter().enumerate().any(|(i, v)| number(v).is_some_and(|n| n.as_float().is_some_and(|f| !f.is_finite() || !filled(i)) || n.as_complex().is_some())) {
+    if widened || items.iter().enumerate().any(|(i, v)| number(v).is_some_and(|n| n.as_float().is_some_and(|f| !f.is_finite() || !filled(i)) || n.as_complex().is_some())) {
         let (mut width, mut strong, mut complex) = (None, None, false);
         for n in numbers() {
             let w = n.float_width();
@@ -83,6 +95,60 @@ impl Options {
             _ => Err(Error::domain(format!("{} fill must be a real number", self.name)))
         }
     }
+
+    /// The `types` option, as in `["types":["id":0ₓ₈ "zip":""]]`: a value of each column's type, from a record that names columns, or from a vector that holds one for each column in order. A number gives its type, and text, such as `""`, makes a column text.
+    pub fn types(&self) -> Result<Types, Error> {
+        let Some(types) = self.values.get("types") else { return Ok(Types::Named(HashMap::new())) };
+        let invalid = || Error::domain(format!("{} types must be a record or a vector of numbers and texts", self.name));
+        let items: Vec<Value> = types.elements().collect();
+        if types.shape().len() != 1 || keyed::name(types).is_some() || !items.iter().all(|t| matches!(t, Value::Number(_)) || keyed::name(t).is_some()) { return Err(invalid()); }
+        Ok(match types.keys(0) {
+            Some(keys) => Types::Named(keys.names().iter().zip(items).map(|(k, t)| Ok((k.as_ref().ok_or_else(invalid)?.to_string(), t))).collect::<Result<_, Error>>()?),
+            None => Types::Ordered(items),
+        })
+    }
+}
+
+/// The columns that the `types` option gives types: by name, or one for each column in order.
+pub(crate) enum Types { Named(HashMap<String, Value>), Ordered(Vec<Value>) }
+
+/// `column`, a column of numbers that `reader` read, named `name`, at the type it takes. A column that the `types` option names takes the type of `typed`, its entry there: an integer of the `int` width under static kinds where `typed` is an ordinary integer. Under static kinds, a column of integers that the option doesn't name takes the `int` width, as every new integer does, so that its type never depends on its values. A value that doesn't keep itself in that type is a DOMAIN error that names the column and the `types` option, and the fill where `missing` says that the column had missing cells. Any other column keeps the type that its numbers gave it.
+pub(crate) fn typed_column(reader: &str, name: &str, column: Value, typed: Option<&Value>, missing: bool) -> Result<Value, Error> {
+    let numeric = Numeric::current();
+    let int = if numeric.is_static() { numeric.int } else { Width::I64 };
+    let integers = || match column.dtype() {
+        Some(DType::Integer(_)) => true,
+        None => column.len() > 0 && column.elements().all(|v| matches!(&v, Value::Number(n) if n.is_integral() && n.as_bool().is_none())),
+        _ => false,
+    };
+    let target = match typed {
+        Some(Value::Number(t)) => match (t.dtype(), t.fixed_width()) {
+            (Some(DType::Integer(w)), Some(_)) => (DType::Integer(w), true),
+            (Some(DType::Integer(_)), None) => (DType::Integer(int), false),
+            (Some(dtype), _) => (dtype, false),
+            (None, _) => return Err(Error::domain(format!("{reader} types needs a number of each column's type, such as 0ₓ₈, 0ₛ or $f"))),
+        },
+        _ if numeric.is_static() && integers() => (DType::Integer(int), false),
+        _ => return Ok(column),
+    };
+    let (dtype, fixed) = target;
+    let place = if name.is_empty() { format!("{reader} array") } else { format!("{reader} column {name:?}") };
+    let value = if missing { "a value, or the fill at its missing cells," } else { "a value" };
+    let lost = || Error::domain(match typed {
+        Some(_) => format!("{place}: {value} doesn't keep itself as {}, the type that types gives it", dtype.name()),
+        None => format!("{place}: {value} doesn't fit {}. Give the column a type with the types option", dtype.name()),
+    });
+    let buffer = match column.view() {
+        Some(view) => Buffer::kept(view, dtype).ok(),
+        // Items that keep their own kinds, as a JSON array of Booleans and integers does, convert one at a time.
+        None => column.elements().try_fold(Buffer::with_capacity(dtype, column.len()), |mut b, v| {
+            let Value::Number(n) = &v else { return None };
+            b.extend_from(Buffer::kept(n.view()?, dtype).ok()?.view(), 0..1).then_some(b)
+        }),
+    }.ok_or_else(lost)?;
+    let storage = if fixed || numeric.is_static() || !matches!(dtype, DType::Integer(_)) { Storage::Compact(buffer).fixed(fixed) }
+        else { Storage::narrowed(i64::of(buffer.view()).expect("integers at 64 bits").to_vec()) };
+    Value::from_storage([column.len()], storage).described("invalid column")
 }
 
 pub(crate) fn vfi(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
@@ -118,17 +184,17 @@ fn file_options(name: &'static str, left: Option<&Value>, shorthand: Option<&str
 }
 
 /// `data` as a vector of byte values, one byte each.
-pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::from_storage([data.len()], Storage::within(data, Width::U8)) }
+pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::from_storage([data.len()], Storage::within(data, crate::array::ordinary_width(Width::U8))) }
 
 /// The bytes in an array of integers from 0 to 255, in ravel order. `None` for any other array.
 pub(crate) fn byte_items(value: &Value) -> Option<Vec<u8>> {
-    if let Items::Compact(View::Integers(Ints::U8(v))) = value.as_items() { return Some(v.to_vec()); }
+    if let Some(View::Integers(Ints::U8(v))) = value.view() { return Some(v.to_vec()); }
     value.as_items().nonnegative_integers().ok()
 }
 
 /// The bytes in an array of integers from 0 to 255, in ravel order.
 pub(crate) fn bytes(value: &Value) -> Result<Vec<u8>, Error> {
-    byte_items(value).ok_or_else(|| Error::domain("bytes must be integral numbers in 0..255"))
+    byte_items(value).ok_or_else(|| Error::domain("bytes must be whole numbers in 0..255"))
 }
 
 /// `value` as bytes, taking integers from 0 to 255 as they are and text as UTF-8.

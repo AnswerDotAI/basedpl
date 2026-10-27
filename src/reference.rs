@@ -1,5 +1,5 @@
 //! Development-only checks, shared by the tests and the worker: reference cases, `.bpl` reference files and the examples in `.qmd` pages.
-use crate::{number::Numeric, EvalOptions, InterruptHandle, Session, Value};
+use crate::{number::Numeric, settings::Compiles, EvalOptions, InterruptHandle, Session, Value};
 use serde_json::{json, Value as JsonValue};
 use std::{collections::VecDeque, sync::{Arc, Mutex}};
 
@@ -11,21 +11,28 @@ pub fn expected_array(value: &JsonValue) -> Option<Value> {
     result.prototype().same(&prototype).then_some(result)
 }
 
-/// Numbers match when they are equal: exact ones exactly, and others within the tolerances. With `exactness`, an exact number never matches an approximate one. Other atoms match when they are the same.
-fn same_atom(x: &Value, y: &Value, relative: f64, absolute: f64, exactness: bool) -> bool {
+/// The default relative and absolute tolerances for comparing numbers.
+const TOLERANCE: f64 = 1e-13;
+/// The units in the last place of a value's float width that it may differ by from what it's compared with, where a case sets no relative tolerance. Two results that each lie within rustymath's 4 units of the true value lie within 8 units of each other.
+const UNITS: f64 = 8.0;
+
+/// Numbers match when they are equal: exact ones exactly, and others within the tolerances. Without a relative tolerance, they match within `TOLERANCE`, or within `UNITS` units in the last place of the float width of `x`, the value under test, where that's greater. With `exactness`, an exact number never matches an approximate one. Other atoms match when they are the same.
+fn same_atom(x: &Value, y: &Value, relative: Option<f64>, absolute: f64, exactness: bool) -> bool {
     match (x, y) {
         (Value::Number(x), Value::Number(y)) if exactness && (x.is_exact() != y.is_exact() || x.as_bool().is_some() != y.as_bool().is_some()) => false,
         (Value::Number(x), Value::Number(y)) if x.is_nan() && y.is_nan() => true,
         (Value::Number(x), Value::Number(y)) if !x.is_exact() || !y.is_exact() => {
             let (Ok(a), Ok(b)) = (x.to_complex(), y.to_complex()) else { return false };
+            let relative = relative.unwrap_or_else(|| TOLERANCE.max(UNITS * x.float_width().map_or(f64::EPSILON, |w| w.epsilon())));
             a == b || (a.is_finite() && b.is_finite() && (a - b).norm() <= absolute.max(relative * a.norm().max(b.norm())))
         }
+        (Value::Number(x), Value::Number(y)) => x == y,
         _ => x.same(y),
     }
 }
 
-/// Locate a structural or numeric mismatch. Approximate numbers may differ by the tolerances. With `exactness`, each number's exactness must match too. Items compare before prototypes, because a nested array's prototype comes from its first item. A mismatch inside an item that is an array adds its own message, as in `data[0]: shape: [0] != [1]`.
-pub fn difference(x: &Value, y: &Value, relative: f64, absolute: f64, exactness: bool) -> Option<String> {
+/// Locate a structural or numeric mismatch of the value `x` from `y`. Approximate numbers may differ by the tolerances that `same_atom` takes. With `exactness`, each number's exactness must match too. Items compare before prototypes, because a nested array's prototype comes from its first item. A mismatch inside an item that is an array adds its own message, as in `data[0]: shape: [0] != [1]`.
+pub fn difference(x: &Value, y: &Value, relative: Option<f64>, absolute: f64, exactness: bool) -> Option<String> {
     let inner = |a: &Value, b: &Value| {
         if a.is_atom() && b.is_atom() { (!same_atom(a, b, relative, absolute, exactness)).then(String::new) }
         else { difference(a, b, relative, absolute, exactness).map(|m| format!(": {m}")) }
@@ -61,37 +68,40 @@ impl crate::Input for Lines {
     fn rest(&self) -> std::io::Result<Vec<u8>> { Ok(self.0.lock().unwrap().drain(..).map(|line| line + "\n").collect::<String>().into_bytes()) }
 }
 
-/// A run of a case: whether the `batch` pref is on, whether fusion takes its small sizes (`fusion::Sizes::SMALL`), whether the code runs as the body of a dfn called twice (`twice`), and the words that name the run in a failure.
+/// A run of a case: whether the `batch` pref is on, whether fusion takes its small sizes (`fusion::Sizes::SMALL`), when block stages compile their parts (`settings::Compiles`), whether the code runs as the body of a dfn called twice (`twice`), and the words that name the run in a failure.
 #[derive(Clone, Copy)]
-struct Run { batch: bool, fused: bool, twice: bool, words: &'static str }
-/// The runs of a case without a `batch` field: the `batch` pref off, then on, then on with fusion's small sizes, under which every fusible call waits and a graph splits even small arrays into blocks, then on with the code as a dfn's body, whose second call runs the statements that its first call recorded.
-const RUNS: [Run; 4] = [
-    Run { batch: false, fused: false, twice: false, words: "" },
-    Run { batch: true, fused: false, twice: false, words: "with the batch pref on" },
-    Run { batch: true, fused: true, twice: false, words: "with fusion at any size" },
-    Run { batch: true, fused: false, twice: true, words: "on a dfn's second call" },
+struct Run { batch: bool, fused: bool, compiles: Compiles, twice: bool, words: &'static str }
+/// The runs of a case without a `batch` field: the `batch` pref off, then on, then on with fusion's small sizes, under which every fusible call waits, a block stage splits even small arrays into blocks and every stage compiles its parts, then the same with no compiled parts, then on with the code as a dfn's body, whose second call runs the statements that its first call recorded. The run with no compiled parts takes place only where the run before it used one (`failures`).
+const RUNS: [Run; 5] = [
+    Run { batch: false, fused: false, compiles: Compiles::Policy, twice: false, words: "" },
+    Run { batch: true, fused: false, compiles: Compiles::Policy, twice: false, words: "with the batch pref on" },
+    Run { batch: true, fused: true, compiles: Compiles::Always, twice: false, words: "with fusion at any size" },
+    Run { batch: true, fused: true, compiles: Compiles::Never, twice: false, words: "with fusion at any size and no compiled parts" },
+    Run { batch: true, fused: false, compiles: Compiles::Policy, twice: true, words: "on a dfn's second call" },
 ];
 
-/// The header options that set a flag on a case, each setting the field of its own name to `true`: `unfused` leaves out the run with fusion's small sizes, `batched` leaves out the run with the `batch` pref off, and `mixed` leaves out the comparison of the result's storage with the expectation's.
-const FLAGS: [&str; 3] = ["unfused", "batched", "mixed"];
+/// The header options that set a flag on a case, each setting the field of its own name to `true`: `unfused` leaves out the runs with fusion's small sizes, `batched` leaves out the run with the `batch` pref off, `mixed` leaves out the comparison of the result's storage with the expectation's, and `compiled` leaves out the run with no compiled parts, for a case whose value says whether a stage compiled.
+const FLAGS: [&str; 4] = ["unfused", "batched", "mixed", "compiled"];
 
-/// The runs that `case` takes: the one of `RUNS` that its Boolean `batch` field picks, where it has one, and otherwise each of `RUNS` that its `unfused` and `batched` options leave in.
+/// The runs that `case` takes: the one of `RUNS` that its Boolean `batch` field picks, where it has one, and otherwise each of `RUNS` that its `unfused`, `batched` and `compiled` options leave in.
 fn runs(case: &JsonValue) -> Vec<Run> {
     match case["batch"].as_bool() {
         Some(batch) => vec![RUNS[usize::from(batch)]],
-        None => RUNS.into_iter().filter(|r| !(r.fused && case["unfused"] == true) && (r.batch || case["batched"] != true)).collect(),
+        None => RUNS.into_iter().filter(|r| !(r.fused && case["unfused"] == true) && (r.batch || case["batched"] != true) && !(r.compiles == Compiles::Never && case["compiled"] == true)).collect(),
     }
 }
 
-/// Defaults and file/section preferences, optionally overridden by a reference variant's batch and fusion settings.
+/// Defaults, with each program checked before it runs, and file/section preferences, optionally overridden by a run's batch, fusion and compile settings.
 fn enter(prefs: Option<&str>, run: Option<Run>) -> Result<(), JsonValue> {
     crate::settings::reset();
+    crate::settings::set_verifies(true);
     if let Some(prefs) = prefs && let Some(error) = Session::current().eval_apart(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() }).error {
         return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
     }
-    if let Some(Run { batch, fused, .. }) = run {
+    if let Some(Run { batch, fused, compiles, .. }) = run {
         crate::settings::set_batch(batch);
         crate::settings::set_small_sizes(fused);
+        crate::settings::set_compiles(compiles);
     }
     Ok(())
 }
@@ -99,8 +109,8 @@ fn enter(prefs: Option<&str>, run: Option<Run>) -> Result<(), JsonValue> {
 /// One run of a case: the value its code gave, the numeric settings in force after it, and the value its BPL expectation gave.
 struct Outcome { value: Option<Value>, numeric: Numeric, expected: Option<Value> }
 
-/// A case's relative and absolute tolerances for comparing numbers, `1e-13` each unless its header sets them.
-fn tolerances(case: &JsonValue) -> (f64, f64) { (case["relative_tolerance"].as_f64().unwrap_or(1e-13), case["absolute_tolerance"].as_f64().unwrap_or(1e-13)) }
+/// A case's relative tolerance for comparing numbers, where its header sets one, and its absolute tolerance, `TOLERANCE` unless its header sets it.
+fn tolerances(case: &JsonValue) -> (Option<f64>, f64) { (case["relative_tolerance"].as_f64(), case["absolute_tolerance"].as_f64().unwrap_or(TOLERANCE)) }
 
 /// `case`'s code checked against an independent captured value or BPL expectation, in `run`, under the settings in force. Each side receives a fresh session, and the expectation evaluates after the code, under the settings that the code leaves. A BPL expectation must match each number's exactness. A value captured from another interpreter carries none, so its numbers compare by value. A failure's message names its run.
 fn outcome(case: &JsonValue, setup: &str, Run { words, .. }: Run, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<Outcome, JsonValue> {
@@ -118,7 +128,7 @@ fn outcome(case: &JsonValue, setup: &str, Run { words, .. }: Run, timeout: Optio
     } else { (expected_array(&case["expected"]), case.get("expected") == Some(&JsonValue::Null)) };
     let exactness = case["expected_code"].is_string();
     let (relative, absolute) = tolerances(case);
-    if [relative, absolute].iter().any(|t| !t.is_finite() || *t < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
+    if relative.into_iter().chain([absolute]).any(|t| !t.is_finite() || t < 0.0) || (error_kind.is_none() && expected.is_none() && !no_result) {
         return Err(json!({"status":"invalid", "message":"invalid or missing independent expectation"}));
     }
     let failed = |mut failure: JsonValue| {
@@ -200,7 +210,7 @@ fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Dur
     }
 }
 
-/// Whether a case's runs agree: each later run's value must be held in the same kind of storage as the first's. Where the expectation is BPL, the first's storage must be mixed where the expectation's is, and compact where it's compact. A `mixed` case leaves this out. An in-place write keeps mixed storage mixed, and a record from JSON or Python keeps each entry's own kind.
+/// Whether a case's runs agree: each later run's value must be held in the same kind of storage as the first's. Where the expectation is BPL, the first's storage must be mixed where the expectation's is, and compact where it's compact. A `mixed` case leaves the storage checks out. An in-place write keeps mixed storage mixed, and a record from JSON or Python keeps each entry's own kind.
 fn verdict(case: &JsonValue, outcomes: &[(Run, Outcome)]) -> JsonValue {
     let Some((first_run, first)) = outcomes.first() else { return json!({"status":"pass"}) };
     let named = |run: &'static str| if run.is_empty() { "with the batch pref off" } else { run };
@@ -448,9 +458,13 @@ pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str,
     let mut failures = Vec::new();
     for case in cases {
         let mut outcomes = Vec::new();
+        let mut compiled = false;
         let result = runs(case).into_iter().try_for_each(|run| {
+            if run.compiles == Compiles::Never && !compiled { return Ok(()); }
             enter(case["prefs"].as_str(), Some(run))?;
+            let before = crate::program::blocks::compiled_runs();
             outcomes.push((run, if run.twice { twice(case, setup, run, Some(TIMEOUT), interrupt) } else { outcome(case, setup, run, Some(TIMEOUT), interrupt) }?));
+            compiled |= run.compiles == Compiles::Always && crate::program::blocks::compiled_runs() > before;
             Ok(())
         }).map_or_else(|failure| failure, |()| verdict(case, &outcomes));
         if result["status"] == "pass" { continue; }
@@ -463,10 +477,13 @@ pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str,
     failures
 }
 
-/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own, with the `batch` pref set to `batch` unless that is `None`. Each expectation runs in a module of its own after its lines (`Session::eval_apart`), under the settings they leave. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within 1e-13 with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
+/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own, with the `batch` pref set to `batch` unless that is `None`. Each expectation runs in a module of its own after its lines (`Session::eval_apart`), under the settings they leave. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within the default tolerances that `same_atom` describes, with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each page starts with no kept plans or compiled kernels, as a new process does (`program::forget_plans`, `jit::forget_kernels`), because examples that show block counts and compiles assume one. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
 pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     let options = || EvalOptions { timeout: Some(TIMEOUT), echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
     let (mut failures, mut session, mut code) = (Vec::new(), None, String::new());
+    crate::program::forget_plans();
+    #[cfg(not(web))]
+    crate::jit::forget_kernels();
     for (i, line) in text.lines().enumerate() {
         if line == "```bpl" {
             crate::settings::reset();
@@ -493,7 +510,7 @@ pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec
                 match (actual, wanted.value, wanted.error) {
                     (_, _, Some(error)) => Some(format!("expectation: {error}")),
                     (Some(actual), Some(wanted), None) if shown.explicit(&actual, false) == shown.explicit(&wanted, false) => None,
-                    (Some(actual), Some(wanted), None) => difference(&actual, &wanted, 1e-13, 1e-13, true), _ => Some("no result".into())
+                    (Some(actual), Some(wanted), None) => difference(&actual, &wanted, None, TOLERANCE, true), _ => Some("no result".into())
                 }
             }
         };

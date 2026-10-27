@@ -79,7 +79,7 @@ impl Frame {
 
     /// The text of each name that the frame binds, besides the six that a call binds itself.
     fn names<'a>(&'a self, slots: &'a [Option<Binding>]) -> impl Iterator<Item = &'a str> {
-        let locals = self.locals.iter().zip(&slots[self.base + IMPLICIT..]).filter(|(_, slot)| slot.is_some()).map(|(name, _)| name.text());
+        let locals = self.locals.iter().zip(&slots[self.base + IMPLICIT..]).filter(|(_, slot)| !matches!(slot, None | Some(Binding::Released))).map(|(name, _)| name.text());
         let keys = |record: &'a Value| record.keys(0).into_iter().flat_map(|keys| keys.names().iter().flatten().map(|key| &**key));
         locals.chain(self.unslotted.iter().flat_map(move |u| u.names.keys().map(|name| name.text()).chain(u.record.iter().flat_map(keys))))
     }
@@ -284,6 +284,34 @@ impl Bindings {
     #[inline(always)]
     pub(super) fn load(&self, address: &Address) -> Option<Binding> { self.read_at(address, Binding::clone).unwrap_or_else(|| self.unaddressed(address, Binding::clone)) }
 
+    /// The binding of `name` in the current frame's slot, taken out, with its place, for a dfn's last read of a local, `⍵` or `⍺` (`syntax::release`). `None` where that slot holds nothing.
+    pub(super) fn take(&self, name: Name) -> Option<(Place, Binding)> {
+        let s = { let stack = self.stack.borrow(); stack.frames[self.current.get()?].slot(name)? };
+        self.take_slot(s)
+    }
+
+    /// `take` for a compiled read at `address`. `None` where the address's first slot isn't in the current frame, or that slot holds nothing.
+    #[inline]
+    pub(super) fn take_at(&self, address: &Address) -> Option<Binding> {
+        let s = match address { Address::Implicit(k) => *k as u32, Address::Free(free) => match free.slots.first() { Some(&(0, s)) => s, _ => return None } };
+        self.take_slot(s).map(|(_, binding)| binding)
+    }
+
+    /// The binding in slot `s` of the current frame, taken out, leaving `Binding::Released`. Lookup then stops at the slot, so a later read by text fails there and never finds an outer binding of the name.
+    fn take_slot(&self, s: u32) -> Option<(Place, Binding)> {
+        let i = self.current.get()?;
+        let mut stack = self.stack.borrow_mut();
+        let base = stack.frames[i].base;
+        let slot = &mut stack.slots[base + s as usize];
+        if matches!(slot, None | Some(Binding::Released)) { return None; }
+        slot.replace(Binding::Released).map(|binding| (Place::Slot(i, s), binding))
+    }
+
+    /// Where the name at `address` is bound, found by name, as a trace finds a free name's place (`Session::read_binding`). `None` for a name that a call binds itself, and for a name that nothing binds.
+    pub(super) fn place_of(&self, address: &Address) -> Option<Place> {
+        match address { Address::Implicit(_) => None, Address::Free(free) => self.find(free.name, |place, _| place) }
+    }
+
     /// The category of the binding at `address`, as `category` gives it, for a recording's check of a fact.
     pub(super) fn category_at(&self, address: &Address) -> Option<Category> { self.read_at(address, Category::of).unwrap_or_else(|| self.unaddressed(address, Category::of)) }
 
@@ -356,7 +384,7 @@ impl Bindings {
     pub(super) fn depth(&self) -> usize { self.stack.borrow().frames.len() }
 
     /// Pushes `frame` and makes it current. Its first slots hold `implicit`, the bindings of the six names that a call binds itself, in slot order (`Name::implicit`), and its locals' slots are empty. Fails at the depth limit, before pushing.
-    #[inline]
+    #[inline(always)]
     pub(super) fn enter(&self, mut frame: Frame, mut implicit: [Option<Binding>; IMPLICIT], span: &Span) -> Result<(), Error> {
         let mut stack = self.stack.borrow_mut();
         if stack.frames.len() == MAX_FRAME_DEPTH { return Err(Error::new(Kind::Limit, format!("lexical frame depth exceeds {MAX_FRAME_DEPTH}")).at(span)); }

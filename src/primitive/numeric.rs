@@ -18,6 +18,10 @@ pub(super) fn complex_parts(right: &Value, polar: bool) -> Result<Value, Error> 
     fn float_parts<F: Float>(x: &[F], polar: bool, shape: Vec<usize>) -> Option<Value> where Angle: Unary<F, Out = F> {
         F::build(shape, x.iter().flat_map(|&v| if polar { [v.abs(), Angle.one(v)] } else { [v, F::zero()] }).collect())
     }
+    // Where integers wrap, under static kinds or for fixed integers, their polar parts are floats (`plan::Kind::approximate`).
+    if polar && let Some(width) = crate::plan::Kind::approximate([crate::plan::Kind::value(right)], Numeric::current()).map_err(Error::domain)? {
+        return complex_parts(&right.to_float_width(width).described("invalid decomposition")?, polar);
+    }
     let layout = right.layout().concat(&Layout::from(vec![2]));
     let shape = layout.shape().to_vec();
     // Float and complex storage give floats in one pass, at the floats' or parts' width. Integers and Booleans keep their kind in one pass, with imaginary parts of 0 or `$f`. The general loop below keeps other exact numbers exact, and gives an integer's polar parts: its exact magnitude and a float angle.
@@ -84,7 +88,7 @@ pub(super) fn format_array(left: Option<&Value>, right: &Value) -> Result<Value,
     if spec.shape().len() == 1 && spec.is_empty() { return right.formatted(Elide { marks: false, ..Elide::NONE }).described("formatted array is too large"); }
     if spec.shape().len() > 1 { return Err(Error::new(Kind::Rank, "format specification must be a unit or vector")); }
     let spec = spec.elements().map(|e| {
-        numeric(&e)?.integer().and_then(|n| isize::try_from(n).map_err(|_| Kind::Limit.into())).described("format specification must be integral")
+        numeric(&e)?.integer().and_then(|n| isize::try_from(n).map_err(|_| Kind::Limit.into())).described("format specification must be whole")
     }).collect::<Result<Vec<_>, _>>()?;
     let columns = right.shape().last().copied().unwrap_or(1);
     if !matches!(spec.len(), 1 | 2) && spec.len() != 2 * columns {
@@ -141,12 +145,17 @@ pub(crate) fn binomial_partial(k: &Value, n: &Value, wrt_n: bool, span: &Span) -
     unnamed(Some(k), n, &kernel, &|x, y| x.map_or(Err("a binomial needs two arguments"), |x| x.binomial_partial(y, wrt_n)), span)
 }
 
-/// Applies a function that no glyph names to every item of `right`, or to every pair of items of `left` and `right`, at any depth. `kernel` takes compact arrays whole where it can, and `item` takes each other item.
+/// Applies a function that no glyph names to every item of `right`, or to every pair of items of `left` and `right`, at any depth. `kernel` takes compact arrays whole where it can, and `item` takes each other item. These functions have no exact forms, so exact numbers reach `item` as floats of the width that arrays of them compute in (`Domain::approximate_numbers`).
 fn unnamed(
     left: Option<&Value>, right: &Value, kernel: &dyn Fn(Option<&Value>, &Value, &Agreement) -> Option<Value>,
     item: &dyn Fn(Option<&Number>, &Number) -> Result<Number, &'static str>, span: &Span,
 ) -> Result<Value, Error> {
-    pervade(left, right, &|x, y| item(x.map(|x| numeric(x)).transpose()?, numeric(y)?).map(Value::Number).map_err(Error::from), kernel, span)
+    pervade(left, right, &|x, y| {
+        let (x, y) = (x.map(|x| numeric(x)).transpose()?, numeric(y)?);
+        let (_, width) = Domain::approximate_numbers(x.into_iter().chain([y]));
+        let float = |n: &Number| if n.is_exact() { n.to_float_width(width) } else { Ok(n.clone()) };
+        item(x.map(float).transpose()?.as_ref(), &float(y)?).map(Value::Number).map_err(Error::from)
+    }, kernel, span)
 }
 
 /// `⌹` on a matrix, a vector or a number: the solution of `right x = left`, or `right`'s inverse without `left`. A vector is one column, and a number a 1×1 matrix. Floats and complex numbers run through rustymath's [`Stacked`](linalg::Stacked), as stacks of matrices do, where a square matrix with no negligible LU pivot solves or inverts through LU and any other gives the least-squares solution or the pseudoinverse. Exact numbers stay exact, through row reduction.
@@ -196,7 +205,7 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value) -> Result<Value
 pub(crate) fn determinant(a: &Value, n: usize) -> Result<Option<Value>, Error> {
     let Some((domain, width)) = Domain::of_arrays(&[a]) else { return Ok(None) };
     if domain == Domain::Exact {
-        let settings = Numeric::current().for_values([a]).map_err(Error::domain)?;
+        let settings = Numeric::for_values([a])?;
         return Ok(Some(Value::Number(linalg::exact::determinant(&read::<BigRational>(a)?, n)?.number(width).wrapped(settings))));
     }
     let d = inexact(&[(a, Layout::from([n, n]))], (domain, width), |s, v| s.det(v[0])).map_err(|s| s.raised())?;
@@ -250,7 +259,8 @@ pub(crate) fn stacked(op: Operation, x: Option<&Value>, y: &Value) -> Option<Res
     match x { Some(x) if matrix_size(x)?[0] != r => return None, None if !divide && r != c => return None, _ => {} }
     let args: Vec<(&Value, Layout)> = x.into_iter().chain([y]).map(|a| (a, a.layout().clone())).collect();
     if args.iter().any(|(a, _)| a.is_empty()) { return None; }
-    let (domain, width) = Domain::of_arrays(&args.iter().map(|(a, _)| *a).collect::<Vec<_>>())?;
+    let arrays: Vec<_> = args.iter().map(|(a, _)| *a).collect();
+    let (domain, width) = if divide { Domain::approximate(&arrays) } else { Domain::of_arrays(&arrays) }?;
     if domain == Domain::Exact { return None; }
     let result = inexact(&args, (domain, width), |s, v| match *v { [x, y] => s.solve(y, x), [y] if divide => s.pinv(y), [y] => s.det(y), _ => unreachable!("a view for each argument") });
     match result {
@@ -279,12 +289,13 @@ fn value(buffer: rustymath::buffer::Buffer, layout: Layout) -> Result<Value, Err
 
 /// `x f.g⍤2 y` on stacks of compact matrices with plain layouts, through rustymath's product kernel for the pair (`pervasive::inner`), which pairs the stacks' frames and splits the cells across rustymath's threads. `None` where `f.g⍤2` takes its general path, as for [`stacked`], and where the pair has no kernel for the stacks' items.
 fn stacked_product(f: Primitive, g: Primitive, x: &Value, y: &Value) -> Option<Result<Value, Error>> {
-    let plain = |a: &Value| matches!(a.as_items(), Items::Compact(_)) && a.layout().plain() && a.shape().len() >= 2;
+    let plain = |a: &Value| a.view().is_some() && a.layout().plain() && a.shape().len() >= 2;
     if !plain(x) || !plain(y) { return None; }
     let ([m, k], [r, c]) = (matrix_size(x)?, matrix_size(y)?);
     if k != r || m == 0 || k == 0 || c == 0 { return None }
     let frames = Frames::new(&[(&**x.layout(), 2), (&**y.layout(), 2)]).ok().filter(|f| f.count > 0)?;
-    crate::pervasive::inner(f, g, x, y, &frames, [m, k, c], [frames.layout.shape(), &[m, c]].concat()).map(|r| r.map_err(Error::from))
+    let plan = match crate::plan::product_on(f, g, x, y) { Ok(plan) => plan, Err(message) => return Some(Err(Error::domain(message))) };
+    crate::pervasive::inner(&plan, x, y, &frames, [m, k, c], [frames.layout.shape(), &[m, c]].concat()).map(|r| r.map_err(Error::from))
 }
 
 /// `kind •decompose m` factors the matrix `m`, and gives the factors as a record. `kind` is `"svd"`, `"qr"`, `"eigen"`, `"cholesky"` or `"lu"`, as text or in a record of options that `Decomposition` describes. A real matrix gives real factors, apart from complex eigenvalues and their eigenvectors. The matrix factors in the [`Domain`] of its items, or in floats of the default width where they are all exact.
@@ -324,7 +335,7 @@ impl Decomposition {
         if !vectors && !matches!(kind.as_str(), "svd" | "eigen") { return Err(Error::domain("only svd and eigen can leave out their vectors")); }
         if complete && kind != "qr" { return Err(Error::domain("only qr has complete factors")); }
         let rank = options.number("rank")?;
-        if rank.is_some_and(|k| !(k >= 1.0 && k.fract() == 0.0)) { return Err(Error::domain("•decompose rank must be a positive integer")); }
+        if rank.is_some_and(|k| !(k >= 1.0 && k.fract() == 0.0)) { return Err(Error::domain("•decompose rank must be a positive whole number")); }
         if rank.is_some() && kind != "svd" { return Err(Error::domain("only svd takes a rank")); }
         Ok(Self { kind, vectors, complete, rank: rank.map(|k| k as usize) })
     }
@@ -382,7 +393,7 @@ fn factors(d: &Decomposition, right: &Value, hermitian: Option<bool>, span: &Spa
     let frame = rank - 2;
     let values = arrays.into_iter().map(|a| { let (layout, buffer) = a.into_compact(); value(buffer, Layout::from(layout.shape().to_vec())) }).collect::<Result<Vec<_>, _>>()?;
     let cells = values.iter().map(|v| v.cells(v.shape().len() - frame)).collect::<Result<Vec<_>, _>>().described("invalid factors")?;
-    let count = right.shape()[..frame].iter().product();
+    let count = crate::array::count(&right.shape()[..frame]);
     let cells = (0..count).flat_map(|i| cells.iter().map(move |c| c.get(i))).collect::<Result<_, _>>().described("invalid factors")?;
     Ok((names, cells))
 }
@@ -407,9 +418,9 @@ fn record(names: Vec<&'static str>, factors: Vec<Value>) -> Result<Value, Error>
     crate::keyed::vector(names.into_iter().map(Into::into).collect(), factors).described("invalid factors")
 }
 
-/// The [`Domain`] that the items of `arrays` compute in, and the float width of the results. DOMAIN where an item isn't a number.
+/// The [`Domain`] that the items of `arrays` compute in for a matrix function, whose results are approximate (`Domain::approximate`), and the float width of the results. DOMAIN where an item isn't a number.
 fn domain_of(arrays: &[&Value]) -> Result<(Domain, FloatWidth), Error> {
-    Domain::of_arrays(arrays).ok_or_else(|| Error::domain("expected numeric elements"))
+    Domain::approximate(arrays).ok_or_else(|| Error::domain("expected numeric elements"))
 }
 
 /// The rows and columns of each matrix in `a`'s last two axes. `None` where `a` has fewer than two axes.
@@ -474,7 +485,7 @@ fn rebuild<T>(kind: &str, f: &[(Cow<'_, [T]>, (usize, usize))], width: FloatWidt
 
 pub(super) fn binary_encode(right: &Value) -> Result<Value, Error> {
     use num_traits::Signed;
-    let invalid = || Error::domain("binary encoding needs nonnegative integers");
+    let invalid = || Error::domain("binary encoding needs nonnegative whole numbers");
     let mut numbers = Vec::with_capacity(right.len());
     let mut width = 0;
     for item in right.elements() {
@@ -494,6 +505,9 @@ pub(super) fn binary_encode(right: &Value) -> Result<Value, Error> {
     layout.collect(data, prototype).described("invalid binary encoding")
 }
 
+/// The base that monadic `⊥` decodes in: binary, as a weak 2.
+pub(crate) fn binary_base() -> Value { Value::weak_integer(2) }
+
 /// The length that `⊥` decodes along: the longer of its base's and its digits' last axes, where the other has length 1. LENGTH ERROR where they differ and neither is 1.
 pub(crate) fn decode_length(xlen: usize, ylen: usize) -> Result<usize, Error> {
     if xlen != ylen && xlen != 1 && ylen != 1 { return Err(Error::new(Kind::Length, "decode axes do not agree")); }
@@ -503,7 +517,7 @@ pub(crate) fn decode_length(xlen: usize, ylen: usize) -> Result<usize, Error> {
 pub(super) fn radix(left: &Value, right: &Value, encode: bool) -> Result<Value, Error> {
     let numbers = |a: &Value| a.elements().map(|e| numeric(&e).cloned()).collect::<Result<Vec<_>, _>>();
     let zero = numeric(&right.prototype())?.result_zero(Some(numeric(&left.prototype())?));
-    let settings = Numeric::current().for_values([left, right]).map_err(Error::domain)?;
+    let settings = Numeric::for_values([left, right])?;
     let error = |m| Error::domain(m);
     let leading = |a: &Value| a.layout().axes(0..a.shape().len().saturating_sub(1));
     let xlen = left.shape().last().copied().unwrap_or(1);
@@ -544,7 +558,7 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool) -> Result<Value, 
     // The general path gives a cell of one digit that digit unchanged, exact or not.
     if let (Mapping::Single, Mapping::Linear(1)) = (&agreement.left, &agreement.right) {
         if len > 1 && !agreement.layout.shape().is_empty() && (0..ylen).all(|k| positions.index(k) == k) {
-            if let Some(result) = decode_compact(left, right, xlen, ylen, len, &agreement.layout) { return result.wrapped(settings).described("invalid decode result"); }
+            if let Some(result) = decode_compact(left, right, xlen, ylen, len, &agreement.layout, settings.wrapping()) { return result.wrapped(settings).described("invalid decode result"); }
         }
     }
     let (xs, ys) = (numbers(left)?, numbers(right)?);
@@ -579,8 +593,8 @@ fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Opt
     match float { None => layout.integers(data), Some(width) => layout.floats(width, data.into_iter().map(rustymath::convert::float)) }.ok()
 }
 
-/// `bases⊥digits` when both hold numbers in compact storage, with each cell of `len` digits together and in order. `bases` holds `xlen` bases and each cell `ylen` digits, where 1 serves every position. The value is floats when either argument holds floats, and exact when both hold integers. `None` for other arguments, or when an exact step leaves `i64`.
-fn decode_compact(bases: &Value, digits: &Value, xlen: usize, ylen: usize, len: usize, layout: &Layout) -> Option<Value> {
+/// `bases⊥digits` when both hold numbers in compact storage, with each cell of `len` digits together and in order. `bases` holds `xlen` bases and each cell `ylen` digits, where 1 serves every position. The value is floats when either argument holds floats, and exact when both hold integers. Where integers wrap, as `wraps` says, each step wraps at 64 bits, and the caller wraps the values to the call's width. `None` for other arguments, or when a step of integers that don't wrap leaves `i64`.
+fn decode_compact(bases: &Value, digits: &Value, xlen: usize, ylen: usize, len: usize, layout: &Layout, wraps: bool) -> Option<Value> {
     fn spread<T: Copy>(v: &[T], each: usize, len: usize) -> Cow<'_, [T]> {
         if each == len { Cow::Borrowed(v) } else { Cow::Owned(v.iter().flat_map(|&x| std::iter::repeat_n(x, len)).collect()) }
     }
@@ -589,7 +603,8 @@ fn decode_compact(bases: &Value, digits: &Value, xlen: usize, ylen: usize, len: 
         return layout.floats(width, rustymath::polynomial::decode(&spread(&b, xlen, len), &spread(&d, ylen, len))).ok();
     }
     let (b, d) = (bases.as_items().exact_integers()?, digits.as_items().exact_integers()?);
-    layout.integers(rustymath::integer::decode(&spread(&b, xlen, len), &spread(&d, ylen, len))?).ok()
+    let (b, d) = (spread(&b, xlen, len), spread(&d, ylen, len));
+    layout.integers(if wraps { rustymath::integer::decode_wrapped(&b, &d) } else { rustymath::integer::decode(&b, &d)? }).ok()
 }
 
 /// `¿`, drawing from `generator`, or from the session's generator where `generator` is `None`. It deals where `left` is given, and rolls each item of `right` otherwise. In a batched run, a roll draws once for every cell (`distribution::drawn_items`), and each cell deals in turn, with that cell of each batched argument (`batch::cell`).
@@ -608,6 +623,12 @@ fn draw<R: rand::Rng + ?Sized>(n: u64, mark: Mark, unit: FloatWidth, rng: &mut R
     if n == 0 { Value::Number(Number::float(rustymath::random::unit(rng.next_u64()), unit)) } else { generated(rustymath::random::below(n, rng), mark) }
 }
 
+/// DOMAIN for a bound of 0 where the roll gives integers that wrap, under static kinds or at a fixed width, as `mark` says. A bound of 0 rolls a float, which their result can't hold.
+fn zero_bound(mark: Mark) -> Result<(), Error> {
+    let wraps = matches!(mark, Mark::Fixed(_)) || mark == Mark::Exact && Numeric::current().is_static();
+    if wraps { Err(Error::domain("a bound of 0 rolls a float, which an integer result can't hold")) } else { Ok(()) }
+}
+
 fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Span, fill: bool, rng: &mut R) -> Result<Value, Error> {
     let fill = fill || right.is_empty();
     let item = |e: Value, rng: &mut R| {
@@ -615,7 +636,9 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Span, fill: bool, rng: &mut
         let mark = counted(&e);
         if fill { return Ok(generated(0, mark)); }
         let unit = if let Mark::Width(width) = mark { width } else { Numeric::current().width };
-        Ok(draw(numeric(&e)?.nonnegative_integer::<u64>().described("roll needs a nonnegative integer")?, mark, unit, rng))
+        let n = numeric(&e)?.nonnegative_integer::<u64>().described("roll needs a nonnegative whole number")?;
+        if n == 0 { zero_bound(mark)?; }
+        Ok(draw(n, mark, unit, rng))
     };
     if right.is_atom() { return item(right.clone(), rng); }
     let prototype = if right.is_empty() { item(right.prototype(), rng)? } else { Value::integer(0) };
@@ -628,14 +651,15 @@ fn roll<R: rand::Rng + ?Sized>(right: &Value, span: &Span, fill: bool, rng: &mut
     match right.as_items() {
         Items::Values(items) => { for e in items { data.add(item(e.clone(), rng)?); } }
         bounds if !fill => {
-            let bounds = bounds.nonnegative_integers::<u64>().described("roll needs a nonnegative integer")?;
-            // A bound of 0 draws a float between 0 and 1. The other draws keep their exactness beside it.
+            let bounds = bounds.nonnegative_integers::<u64>().described("roll needs a nonnegative whole number")?;
+            // A bound of 0 draws a float between 0 and 1, unless integers wrap (`zero_bound`). The other draws keep their exactness beside it.
             if !bounds.contains(&0) {
                 let mut draws = Vec::with_capacity(bounds.len());
                 rustymath::random::roll(rustymath::Arg::Many(&bounds), bounds.len(), rng, &mut draws);
-                return generated_items(right.shape().to_vec(), draws, mark).and_then(|v| v.with_layout(right.layout().clone()))
+                return generated_items(right.shape().to_vec(), draws.into_iter(), bounds.iter().copied().max().unwrap_or(1), mark).and_then(|v| v.with_layout(right.layout().clone()))
                     .described("invalid roll result");
             }
+            zero_bound(mark)?;
             if bounds.iter().all(|&n| n == 0) {
                 let mut draws = Vec::with_capacity(bounds.len());
                 rustymath::random::units(bounds.len(), rng, &mut draws);
@@ -654,7 +678,7 @@ pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut
         if !a.is_singleton() { return Err(Error::new(Kind::Length, "deal needs one count per argument")); }
         let item = a.at(0);
         let n = numeric(&item)?;
-        Ok((n.nonnegative_integer().described("deal needs nonnegative integer counts")?, counted(&item)))
+        Ok((n.nonnegative_integer().described("deal needs nonnegative whole counts")?, counted(&item)))
     };
     let ((n, count_mark), (total, total_mark)) = (count(left)?, count(right)?);
     if n > total { return Err(Error::domain("cannot deal more items than the population")); }
@@ -667,5 +691,5 @@ pub(crate) fn deal<R: rand::Rng + ?Sized>(left: &Value, right: &Value, rng: &mut
     };
     let mut draws = Vec::new();
     rustymath::random::deal(n as u64, total as u64, rng, &mut draws);
-    generated_items(vec![n], draws, mark).described("invalid deal result")
+    generated_items(vec![n], draws.into_iter(), total as u64, mark).described("invalid deal result")
 }

@@ -3,21 +3,22 @@
 use rustymath::error::Kind;
 use super::*;
 
-use rustymath::{layout::Layout as CoreLayout, structure::{self, Edge, Plan, Windows}};
+use rustymath::{buffer::Fill, layout::Layout as CoreLayout, structure::{self, Edge, Plan, Windows}};
+use std::sync::Arc;
 
-/// A window specification for the leading axes of an argument, as `↕` and `⌺` read it: sizes, movements, and an edge mode that pads every windowed axis. Without an edge mode, a size below 0 pads its axis with fill.
-pub(crate) struct WindowSpec { pub(crate) sizes: Vec<i64>, pub(crate) moves: Vec<i64>, pub(crate) edge: Option<Edge> }
+/// A window specification for the leading axes of an argument, as `↕` and `⌺` read it: sizes, movements, an edge mode that pads every windowed axis, and the item that padding with fill reads. Without an edge mode, a size below 0 pads its axis with fill.
+pub(crate) struct WindowSpec { pub(crate) sizes: Vec<i64>, pub(crate) moves: Vec<i64>, pub(crate) edge: Option<Edge>, pub(crate) fill: Option<Value> }
 
 impl WindowSpec {
-    /// The specification in `spec`: a record of `size`, `edge` and `step`, or a unit or vector of sizes, or a two-row matrix of sizes above movements.
+    /// The specification in `spec`: a record of `size`, `edge`, `step` and `fill`, or a unit or vector of sizes, or a two-row matrix of sizes above movements.
     pub(crate) fn new(spec: &Value) -> Result<Self, Error> {
-        let integers = |v: &Value| v.as_items().integers().described("window sizes and movements must be integers").map(|n| n.to_vec());
+        let integers = |v: &Value| v.as_items().integers().described("window sizes and movements must be whole numbers").map(|n| n.to_vec());
         if spec.keys(0).is_some() {
-            let options = crate::data::Options::new("window", Some(spec), None, &["size", "edge", "step"])?;
+            let options = crate::data::Options::new("window", Some(spec), None, &["size", "edge", "step", "fill"])?;
             let field = |key: &str| options.values.get(key).map(|v| if v.shape().len() > 1 { Err(Error::new(Kind::Rank, format!("window {key} must be a unit or vector"))) } else { integers(v) }).transpose();
             let sizes = field("size")?.ok_or_else(|| Error::domain("window options need size"))?;
             let edge = options.values.get("edge").map(|v| crate::system::edge_mode(v)).transpose()?;
-            return Ok(Self { sizes, moves: field("step")?.unwrap_or_default(), edge });
+            return Ok(Self { sizes, moves: field("step")?.unwrap_or_default(), edge, fill: options.values.get("fill").cloned() });
         }
         let count = match spec.shape() {
             [] | [_] => spec.len(), [2, n] => *n, [_, _] => return Err(Error::new(Kind::Length, "window matrix needs two rows")),
@@ -25,23 +26,26 @@ impl WindowSpec {
         };
         let mut sizes = integers(spec)?;
         let moves = sizes.split_off(count);
-        Ok(Self { sizes, moves, edge: None })
+        Ok(Self { sizes, moves, edge: None, fill: None })
     }
 }
 
-pub(super) fn windows(spec: &Value, right: &Value) -> Result<Value, Error> { windowed(&WindowSpec::new(spec)?, right) }
+pub(super) fn windows(spec: &Value, right: &Value, span: &Span) -> Result<Value, Error> { windowed(&WindowSpec::new(spec)?, right, span) }
 
-/// The windows that `spec` gives over the leading axes of `right`: a copy that pads each padded axis by its edge mode where any does, read by the plan of every window.
-pub(crate) fn windowed(spec: &WindowSpec, right: &Value) -> Result<Value, Error> {
+/// The windows that `spec` gives over the leading axes of `right`: a copy that pads each padded axis by its edge mode where any does, read by the plan of every window. Padding with fill reads `spec`'s fill as an item of `right`'s type (`Primitive::fill_for`), or the prototype where there's none.
+pub(crate) fn windowed(spec: &WindowSpec, right: &Value, span: &Span) -> Result<Value, Error> {
     if spec.sizes.is_empty() { return Ok(right.clone()); }
+    let (right, fill) = match &spec.fill { Some(fill) => Primitive::fill_for(fill, right, false, span)?, None => (Cow::Borrowed(right), None) };
     let windows = Windows::new(&spec.sizes, &spec.moves, |size| spec.edge.or((size < 0).then_some(Edge::Fill)), right.shape())?;
-    let padded = windows.padding().map(|p| remapped(right, p)).transpose().described("invalid windows")?;
-    let source = padded.as_ref().unwrap_or(right);
+    let padded = windows.padding().map(|p| copied(&right, p.layout.into(), &Mapping::from(p.steps).filled(fill))).transpose().described("invalid windows")?;
+    let source = padded.as_ref().unwrap_or(&right);
     let plan = windows.plan(right.layout(), source.shape())?;
     remapped(source, plan).described("invalid windows")
 }
 
 pub(super) fn enlist(right: &Value, span: &Span) -> Result<Value, Error> {
+    // A simple array's enlist is its ravel, which reads it whole.
+    if right.is_simple() { return Primitive::Ravel.call(None, right, span); }
     fn append(array: &Value, data: &mut Gather, span: &Span) -> Result<(), Error> {
         let limit = || Error::new(Kind::Limit, "enlist exceeds array limits");
         // A simple mixed array keeps its storage. A nested array's items are gathered one by one.
@@ -70,10 +74,9 @@ pub(super) fn enlist(right: &Value, span: &Span) -> Result<Value, Error> {
     data.finish(shape.into(), prototype).described("invalid enlist result")
 }
 
-pub(super) fn reorder(right: &Value, order: &[usize]) -> Result<Value, Error> {
-    let mut labels = vec![0; order.len()];
-    for (i, &axis) in order.iter().enumerate() { labels[axis] = i; }
-    transpose_axes(labels, right)
+/// `right` with its axes in `order`: axis `i` of the result is axis `order[i]` of `right`.
+pub(crate) fn reorder(right: &Value, order: &[usize]) -> Result<Value, Error> {
+    transpose_axes(rustymath::search::inverse_permutation(order.iter().copied()), right)
 }
 
 /// The cells of `right` made of `axes`, in that order, framed by its other axes.
@@ -88,22 +91,22 @@ pub(super) fn enclose_axes(right: &Value, axes: &[usize]) -> Result<Value, Error
     let tables: Vec<_> = axes.iter().map(|&a| Steps::along(shape[a], stride[a])).collect();
     let data = Steps::combined(0, &others.iter().map(|&a| Steps::along(shape[a], stride[a])).collect::<Vec<_>>()).into_iter().map(|base| {
         let mut data = Gather::new(&[right], len);
-        data.walk(right, base, &tables);
+        data.walk(right, base, &tables, None);
         data.finish(cell.clone(), || right.prototype())
     }).collect::<Result<Vec<_>, _>>().described("invalid enclosed cells")?;
     let prototype = match data.first() {
         Some(cell) => cell.prototype(),
-        None => {
-            let fill = right.prototype();
-            cell.collect(vec![fill.clone(); len], fill).described("invalid enclosed prototype")?
-        }
+        None => cell.filled(&right.prototype()),
     };
     frame.collect(data, prototype).described("invalid enclosed array")
 }
 
 pub(super) fn mix_axes(right: &Value, spec: &Value, span: &Span) -> Result<Value, Error> {
-    let mixed = Primitive::Mix.call(None, right, span)?;
-    let frame = right.shape().len();
+    placed_cells(&Primitive::Mix.call(None, right, span)?, right.shape().len(), spec)
+}
+
+/// `mixed`, the mix of an array of rank `frame`, with its cell axes at the axes that `spec` lists, as `⊃⍠spec` places them: one axis gives the first of consecutive axes, and a vector gives each axis.
+pub(super) fn placed_cells(mixed: &Value, frame: usize, spec: &Value) -> Result<Value, Error> {
     let rank = mixed.shape().len();
     let cell_rank = rank - frame;
     let positions = if spec.is_singleton() { let start = single_axis(spec, frame + 1)?; (start..start + cell_rank).collect::<Vec<_>>() }
@@ -113,13 +116,13 @@ pub(super) fn mix_axes(right: &Value, spec: &Value, span: &Span) -> Result<Value
     for (i, &a) in positions.iter().enumerate() { order[a] = frame + i; }
     let mut axes = 0..frame;
     for a in &mut order { if *a == usize::MAX { *a = axes.next().unwrap(); } }
-    reorder(&mixed, &order)
+    reorder(mixed, &order)
 }
 
 /// The axis names that the shape `dimensions` gives reshape and `⍳`: each key names its entry's axis, and an unkeyed entry leaves its axis unnamed.
 pub(super) fn shape_names(dimensions: &Value) -> Vec<Option<std::sync::Arc<str>>> { dimensions.keys(0).map_or_else(Vec::new, |k| k.names().to_vec()) }
 
-pub(super) fn reshape(dimensions: &Value, right: &Value) -> Result<Value, Error> {
+pub(super) fn reshape(dimensions: &Value, right: &Value, fill: Option<Arc<Fill>>) -> Result<Value, Error> {
     if dimensions.shape().len() > 1 { return Err(Error::new(Kind::Rank, "shape must be a unit or vector")); }
     let shape = dimensions.as_items().nonnegative_integers().described("invalid dimension")?;
     let len = generated_len(&shape)?;
@@ -129,7 +132,7 @@ pub(super) fn reshape(dimensions: &Value, right: &Value) -> Result<Value, Error>
     let n = right.len();
     let flat = right.relaid(Layout::from([n])).described("invalid reshape")?;
     let steps = if n == 0 { Steps::clipped(0, len, 0, 1) } else { Steps::padded(0, len, n, 1, Edge::Wrap) };
-    copied(&flat, Layout::from([len]), &[steps]).and_then(|a| a.relaid(Layout::from(shape))).and_then(|a| a.with_axis_names(names)).described("invalid reshape")
+    copied(&flat, Layout::from([len]), &Mapping::from(vec![steps]).filled(fill)).and_then(|a| a.relaid(Layout::from(shape))).and_then(|a| a.with_axis_names(names)).described("invalid reshape")
 }
 
 /// `right` reshaped to `shape`, through the reshape primitive's call. That call applies `∂`'s rules to duals and records.
@@ -139,36 +142,41 @@ pub(crate) fn reshape_to(shape: &[usize], right: &Value, span: &Span) -> Result<
 }
 
 /// `right` copied by `plan`, with no renderer.
-pub(crate) fn remapped(right: &Value, plan: Plan) -> Result<Value, ErrorKind> { copied(right, plan.layout.into(), &plan.steps) }
+pub(crate) fn remapped(right: &Value, plan: Plan) -> Result<Value, ErrorKind> { copied(right, plan.layout.into(), &Mapping::from(plan.steps)) }
 
-/// `right` copied by `plan`, keeping `right`'s renderer where the rank doesn't change.
-pub(super) fn remap(right: &Value, plan: Plan) -> Result<Value, Error> {
-    copied(right, Layout::rearranged(plan.layout, right), &plan.steps).described("invalid structural result")
+/// `right` copied by `plan`, keeping `right`'s renderer where the rank doesn't change. A position that reaches no item reads `fill`, or the prototype where there's none.
+pub(super) fn remap(right: &Value, plan: Plan, fill: Option<Arc<Fill>>) -> Result<Value, Error> {
+    copied(right, Layout::rearranged(plan.layout, right), &Mapping::from(plan.steps).filled(fill)).described("invalid structural result")
 }
 
-/// Items of `right` laid out by `layout`, read through one `Steps` per axis as `Gather::walk` reads them. Tables that read every item of `right` in order give `right` under `layout`, with no items copied. A carried array copies each part of a dual alike, and a record as one `Op::Copy` of these tables (`Carrier::copied`).
-pub(crate) fn copied(right: &Value, layout: Layout, tables: &[Steps]) -> Result<Value, ErrorKind> {
+/// Items of `right` laid out by `layout`, read through `map` as `Gather::walk` reads a walk's tables (`Mapping::to_walk`). A large copy of a compact array is a pending copy, which fusion computes with the calls that read it (`fusion::copy`). Otherwise the copy is computed at once (`copied_now`).
+pub(crate) fn copied(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, map, true) }
+/// `copied`, computed at once, with no pending copy: a program's copy step, whose program's plan schedules it (`program::run`).
+pub(crate) fn copied_now(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, map, false) }
+/// `copied`, which a pending copy can give where `defers` holds. A map that reads every item of `right` in order gives `right` under `layout`, with no items copied. A carried array copies each of its parts through the map that its part reads, a record as one `Op::Copy` (`Carrier::copied`). A position that reaches no item reads the map's chosen fill.
+fn copying(right: &Value, layout: Layout, map: &Mapping, defers: bool) -> Result<Value, ErrorKind> {
     let len = generated_len(layout.shape())?;
     if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }
-    if right.len() == len && Steps::in_order(tables) { return right.relaid(layout); }
-    if let Some(carrier) = right.carrier() { return carrier.copied(layout, tables); }
-    if let Some(copy) = crate::fusion::copy(right, &layout, tables) { return Ok(copy); }
-    walked(right, layout, 0, tables)
+    let (base, tables) = map.to_walk(layout.shape());
+    if right.len() == len && base == 0 && Steps::in_order(&tables) { return right.relaid(layout); }
+    if let Some(carrier) = right.carrier() { return carrier.copied(layout, map); }
+    if defers && let Some(copy) = crate::fusion::copy(right, &layout, map) { return Ok(copy); }
+    walked(right, layout, base, &tables, map.chosen())
 }
 
-/// Items of `right` at the flat `offsets`, laid out by `layout`, as `copied` reads them.
-pub(crate) fn copied_at(right: &Value, offsets: Vec<usize>, layout: Layout) -> Result<Value, ErrorKind> {
-    copied(&right.relaid(Layout::from([right.len()]))?, Layout::from([offsets.len()]), &[Steps::table(offsets)])?.relaid(layout)
+/// Items of `right` at the flat `offsets`, laid out by `layout`, as `copied` reads them, with `fill` at an offset that reaches no item, or the prototype where there's none.
+pub(crate) fn copied_at(right: &Value, offsets: Vec<usize>, layout: Layout, fill: Option<&Arc<Fill>>) -> Result<Value, ErrorKind> {
+    copied(&right.relaid(Layout::from([right.len()]))?, Layout::from([offsets.len()]), &Mapping::from(vec![Steps::table(offsets)]).filled(fill.cloned()))?.relaid(layout)
 }
 
-/// Items of `source` laid out by `layout`, copied at once through `steps` from `base` by `Gather::walk`.
-pub(crate) fn walked(source: &Value, layout: Layout, base: usize, steps: &[Steps]) -> Result<Value, ErrorKind> {
+/// Items of `source` laid out by `layout`, copied at once through `steps` from `base` by `Gather::walk`, with `fill` where they reach no item, or the prototype where there's none.
+pub(crate) fn walked(source: &Value, layout: Layout, base: usize, steps: &[Steps], fill: Option<&Arc<Fill>>) -> Result<Value, ErrorKind> {
     let mut data = Gather::new(&[source], generated_len(layout.shape())?);
-    data.walk(source, base, steps);
+    data.walk(source, base, steps, fill);
     data.finish(layout, || source.prototype())
 }
 
-pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>) -> Result<Value, Error> {
+pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Arc<Fill>>) -> Result<Value, Error> {
     if counts.shape().len() > 1 { return Err(Error::new(Kind::Rank, "take/drop counts must be a unit or vector")); }
     if axes.is_some_and(|a| a.len() != counts.len()) { return Err(Error::new(Kind::Length, "counts do not agree with axes")); }
     if counts.is_empty() { return Ok(right.clone()); }
@@ -176,16 +184,18 @@ pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<
     let counts: Vec<_> = counts.iter().enumerate().map(|(i, &count)| (axes.map_or(i, |a| a[i]), count)).collect();
     let unit = rustymath::layout::Layout::from(vec![1; counts.len()]);
     let plan = structure::take(if right.is_unit() { &unit } else { right.layout() }, &counts, take)?;
-    remap(right, plan)
+    remap(right, plan, fill)
 }
 
-/// `counts` replicates the cells of `right` along `axis`, the leading axis by default, through rustymath's `structure::repeat`, or undoes that through `structure::expand` where `inverse`. A plain vector's counts copy its items with no table of offsets: a Boolean mask compresses them, and counts that insert no fills repeat each item.
-pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool) -> Result<Value, Error> {
+/// `counts` replicates the cells of `right` along `axis`, the leading axis by default, through rustymath's `structure::repeat`, or undoes that through `structure::expand` where `inverse`. Expand's inserted items read `fill`, or the prototype where there's none. A plain vector's counts copy its items with no table of offsets: a Boolean mask compresses them, and counts that insert no fills repeat each item.
+pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, fill: Option<Arc<Fill>>) -> Result<Value, Error> {
     if counts.shape().len() > 1 { return Err(Error::new(Kind::Rank, "replication counts must be a unit or vector")); }
     let axis = axis.unwrap_or(0);
+    // `Gather` copies the items of a value that no running level carries. A carried value moves through its carrier (`remap`), which routes each level's parts, a trace's included.
+    let gathers = right.carrier().is_none();
     // A Boolean mask over an unkeyed vector copies the items it selects. The mask is read as it is, with no conversion.
     if let (Some(mask), [n], [m], false) = (counts.as_booleans(), counts.shape(), right.shape(), inverse) {
-        if n == m && right.keys(0).is_none() {
+        if n == m && right.keys(0).is_none() && gathers {
             let total = mask.iter().map(|&b| usize::from(b)).sum();
             let mut data = Gather::new(&[right], total);
             data.compress(right, mask, total);
@@ -194,11 +204,11 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
         }
     }
     // Validate even an unused singleton count (e.g. fractional count / empty vector).
-    let counts = counts.as_items().integers().described("replication count must be a representable integer")?;
+    let counts = counts.as_items().integers().described("replication count must be a representable whole number")?;
     // The or of the counts is negative when any count is, and at most 1 when they are Boolean. Each nonnegative count is at most their or, which bounds their sum by the or times the number of items. Counts whose sum could pass `i64` take the plan, which reports the overflow.
     let (any, sum) = or_and_sum(&counts);
     let len = right.len();
-    let plain = axis == 0 && match right.shape() { [] => true, [_] => right.keys(0).is_none(), _ => false };
+    let plain = gathers && axis == 0 && match right.shape() { [] => true, [_] => right.keys(0).is_none(), _ => false };
     if plain && !inverse && any >= 0 && (counts.len() == 1 || counts.len() == len) && (any as u64).checked_mul(len as u64).is_some_and(|m| m <= i64::MAX as u64) {
         let total = if counts.len() == 1 { counts[0] as usize * len } else { sum as usize };
         generated_len(&[total])?;
@@ -210,7 +220,7 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
     let unit = CoreLayout::from([1]);
     let layout = if right.is_unit() { &unit } else { right.layout() };
     let plan = if inverse { structure::expand(layout, axis, &counts) } else { structure::repeat(layout, axis, &counts) }?;
-    remap(right, plan)
+    remap(right, plan, fill)
 }
 
 pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize) -> Result<Value, Error> {
@@ -219,7 +229,7 @@ pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize) -> Resu
     // A unit rotates as a vector of one item, which leaves it as it is.
     if right.is_unit() { structure::rotate(&CoreLayout::from([1]), axis, counts)?; return Ok(right.clone()); }
     let plan = structure::rotate(right.layout(), axis, counts)?;
-    remap(right, plan)
+    remap(right, plan, None)
 }
 
 /// `a` with `rank` axes for joining along `axis` with `other`. A unit becomes one cell with `other`'s other axes. An array with one axis fewer gains `axis`, with one position.
@@ -267,8 +277,8 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let rank = left.shape().len().max(right.shape().len()).max(1);
     let axis = axis.unwrap_or(if first { 0 } else { rank - 1 });
     if axis >= rank { return Err(Error::domain("catenate axis is outside result rank")); }
-    // A weak number takes the width that the other argument gives it, as in arithmetic (`Primitive::weakened`), before `promoted` makes it an array. A weak integer beside fixed integers must fit their width (`Promoted::fits`).
-    crate::array::Promoted::fits([left, right])?;
+    // A weak number takes the width that the other argument gives it, as in arithmetic (`Primitive::weakened`), before `promoted` makes it an array. A weak integer beside fixed integers must fit their width (`plan::Kind::fits`).
+    crate::plan::Kind::fits([left, right])?;
     let (left, right) = Primitive::Ravel.weakened(Some(left), right, |left, right| {
         let left = promoted(left.expect("catenation is dyadic"), right, rank, axis)?;
         let right = promoted(right, &left, rank, axis)?;
@@ -277,7 +287,7 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let wanted = (0..rank).map(|a| if a == axis { None } else { left.keys(a).cloned() }).collect::<Vec<_>>();
     let right = crate::keyed::reorder(&right, &wanted, false).described("catenate axis keys differ")?;
     let layout = structure::catenate(left.layout(), right.layout(), axis)?;
-    let size = layout.shape().iter().product();
+    let size = layout.count();
     let traversal = Lanes::new(layout.shape(), axis)?;
     let mut data = Gather::new(&[&left, &right], size);
     let lens = [&left, &right].map(|a| a.shape()[axis] * traversal.inner);
@@ -304,9 +314,9 @@ fn transpose_groups(spec: &Value, right: &Value, inverse: bool) -> Result<Vec<Tr
         let (selectors, sizes, factor_names) = if paired {
             let sizes = item.elements().map(|pair| {
                 let size = pair.at(1);
-                let n = size.observed_number().described("split sizes must be nonnegative integers or ∞")?;
+                let n = size.observed_number().described("split sizes must be nonnegative whole numbers or ∞")?;
                 if n.as_float() == Some(f64::INFINITY) { Ok(None) }
-                else { n.nonnegative_integer().map(Some).described("split sizes must be nonnegative integers or ∞") }
+                else { n.nonnegative_integer().map(Some).described("split sizes must be nonnegative whole numbers or ∞") }
             }).collect::<Result<Vec<_>, _>>()?;
             if sizes.iter().filter(|s| s.is_none()).count() > 1 { return Err(Error::domain("a split can infer only one factor size")); }
             let selectors = Value::new(vec![item.len()], item.elements().map(|pair| pair.at(0)).collect()).described("invalid transpose group")?;
@@ -408,10 +418,10 @@ pub(super) fn inverse_transpose(spec: &Value, right: &Value) -> Result<Value, Er
     regroup(&ordered, shape, &sources, &names)
 }
 
-/// The shared data-remapping kernel: input axis `i` goes to `axes[i]`.
+/// The shared data-remapping kernel: input axis `i` goes to `axes[i]`. Where no axis moves, `right` itself.
 pub(crate) fn transpose_axes(axes: Vec<usize>, right: &Value) -> Result<Value, Error> {
-    let plan = structure::transpose(right.layout(), &axes)?;
-    remap(right, plan)
+    if rustymath::gather::counts_up(&axes) { return Ok(right.clone()); }
+    remap(right, structure::transpose(right.layout(), &axes)?, None)
 }
 
 pub(super) fn split(right: &Value, axis: Option<usize>) -> Result<Value, Error> {
@@ -431,7 +441,7 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
     let items = left.as_items();
     let counts = match items.integers() {
         Ok(d) if d.iter().all(|&n| n >= 0) => d,
-        _ => Cow::Owned(items.nonnegative_integers::<i64>().described("partition marks must be nonnegative integers")?),
+        _ => Cow::Owned(items.nonnegative_integers::<i64>().described("partition marks must be nonnegative whole numbers")?),
     };
     let extend = left.is_unit() || runs && left.is_singleton();
     if !extend && (if runs { counts.len() != traversal.len } else { counts.len() > traversal.len.saturating_add(1) }) {
@@ -458,7 +468,7 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
             Steps::along(traversal.outer, traversal.len * traversal.inner),
             Steps::Stride { start: range.start * traversal.inner, len: range.len(), step: traversal.inner as isize }, Steps::along(traversal.inner, 1),
         ];
-        remap(&right, Plan { layout, steps })
+        remap(&right, Plan { layout, steps }, None)
     };
     // A partition starts at its divider and grows as the walk extends it. The next divider completes it.
     let mut data = Vec::with_capacity(total);

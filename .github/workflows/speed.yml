@@ -7,7 +7,7 @@ permissions:
 
 jobs:
   native:
-    runs-on: ubicloud-standard-4
+    runs-on: ubicloud-standard-4-ubuntu-2604
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -17,11 +17,12 @@ jobs:
       # This job times the `bpl` that releases ship, which `cargo stage --profile dist` builds, as the `Release` workflow does. `bpl --costs` prints every case's cost and budget for `basedpl.bpltests.logged_costs`. A case over its budget doesn't fail it. The job builds without a cache. The `Test` workflow's caches hold only test-profile builds.
       - run: pip install 'fastws-cli>=0.0.25' && cargo stage --profile dist
       - run: wheel/scripts/bpl --costs tests/speed
-      # `bpl-tests thread_scaling` times a large product, a 512×512 SVD and Hermitian eigendecomposition, a stack of QR decompositions and a large elementwise function on one thread and on the runner's cores, and fails when one speeds up less than 1.5 times. Speed budgets are single-thread measurements, so this is the check of multithreaded speed. It comes last, so that a failure here still leaves every cost logged.
+      # `bpl-tests thread_scaling` times a large product, a 512×512 SVD and Hermitian eigendecomposition, a stack of QR decompositions and a large elementwise function on one thread and on as many threads as the runner has physical cores, up to 4. It fails when a case reaches less than half its expected gain. Speed budgets are single-thread measurements, so this is the check of multithreaded speed. It comes last, so that a failure here still leaves every cost logged. `lscpu` shows whether the VM reports which vCPUs share a physical core, which is how `thread_scaling` counts cores on Linux.
+      - run: lscpu
       - run: pip install -e . && bpl-tests thread_scaling --bpl wheel/scripts/bpl
 
   wasm:
-    runs-on: ubicloud-standard-4
+    runs-on: ubicloud-standard-4-ubuntu-2604
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

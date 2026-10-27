@@ -9,13 +9,13 @@ impl Session {
     fn assignment_names(&self, nodes: &[Node]) -> bool {
         let [node] = nodes else { return false };
         match &node.kind {
-            NodeKind::Name(name) => {
+            NodeKind::Name(name, _) => {
                 (self.bindings.current().is_some() && name.implicit().is_none()) || !matches!(self.bindings.category(*name), Some(Category::Function | Category::Operator | Category::DyadicOperator))
             }
             NodeKind::Group(inner) => self.assignment_names(inner),
             // Inside brackets every name is a target, whatever it holds. A pattern's cells each have a key, which `targets` checks.
             NodeKind::ArrayLiteral { cells, form: ListForm::Items | ListForm::Rows, record } => cells.iter().all(|c| {
-                if *record { crate::syntax::key_colon(c).is_some() } else { matches!(&c[..], [Node { kind: NodeKind::Name(_), .. }]) || self.assignment_names(c) }
+                if *record { crate::syntax::key_colon(c).is_some() } else { matches!(&c[..], [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(c) }
             }),
             _ => false,
         }
@@ -30,7 +30,7 @@ impl Session {
         match &node.kind {
             NodeKind::Function(_) | NodeKind::System(_) => Function,
             NodeKind::Operator(op) => Category::of_operator(&self::OperatorNode::Primitive(*op)),
-            NodeKind::Name(name) => self.path_category(*name, &[], log),
+            NodeKind::Name(name, _) => self.path_category(*name, &[], log),
             NodeKind::Dfn(d) => match d.kind {
                 DefinitionKind::Function => Function, DefinitionKind::MonadicOperator => Operator, DefinitionKind::DyadicOperator => DyadicOperator
             },
@@ -149,7 +149,7 @@ impl Session {
         let span = &target[0].span;
         if let [target] = target {
             match &target.kind {
-                NodeKind::Name(name) => { return self.store(*name, value.clone(), span); }
+                NodeKind::Name(name, _) => { return self.store(*name, value.clone(), span); }
                 // Assigning to an unknown system name gives the VALUE error that reading it gives, so `•io←0` tells an APL user that BPL has no `•io`.
                 NodeKind::System(name) => return Err(undefined(name, span)),
                 NodeKind::Output => {
@@ -182,7 +182,7 @@ impl Session {
 
     /// The name in a target that attaches a hand-written rule to the function it holds, with whether the rule is its derivative: `f∂` for the derivative, or `f⁻¹` for the inverse.
     fn rule_target(&self, nodes: &[Node]) -> Option<(Name, bool)> {
-        let [Node { kind: NodeKind::Name(name), .. }, Node { kind: NodeKind::Operator(op), .. }] = nodes else { return None };
+        let [Node { kind: NodeKind::Name(name, _), .. }, Node { kind: NodeKind::Operator(op), .. }] = nodes else { return None };
         let derivative = match op { OperatorKind::Differentiate => true, OperatorKind::Super(Superscript::Power(-1)) => false, _ => return None };
         matches!(self.bindings.category(*name), Some(Category::Function)).then_some((*name, derivative))
     }
@@ -227,7 +227,7 @@ impl Session {
         let [node] = nodes else { unreachable!() };
         match &node.kind {
             NodeKind::Group(inner) => self.modify_names(inner, right, modifier),
-            NodeKind::Name(name) => {
+            NodeKind::Name(name, _) => {
                 let binding = self.array_binding(*name, &node.span)?;
                 // Joining along the leading axis grows the array in place.
                 if let Some(p @ (Primitive::Ravel | Primitive::CatenateFirst)) = modifier.as_primitive() {
@@ -257,12 +257,12 @@ impl Session {
             let colon = crate::syntax::key_colon(cell).ok_or_else(|| Error::new(ErrorKind::Syntax, "each cell of a pattern has a key, as in [a:] or [key:a]").at(&cell[0].span))?;
             let key_error = || Error::new(ErrorKind::Syntax, "a pattern's key is a name, or a string before a target").at(&cell[0].span);
             let key: Arc<str> = match &cell[..colon] {
-                [Node { kind: NodeKind::Name(name), .. }] => name.text().into(),
+                [Node { kind: NodeKind::Name(name, _), .. }] => name.text().into(),
                 [Node { kind: NodeKind::Literal(text), .. }] if colon + 1 < cell.len() => crate::keyed::name(text).ok_or_else(key_error)?,
                 _ => return Err(key_error()),
             };
             let target = if colon + 1 == cell.len() { &cell[..colon] } else { &cell[colon + 1..] };
-            if !(matches!(target, [Node { kind: NodeKind::Name(_), .. }]) || self.assignment_names(target)) {
+            if !(matches!(target, [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(target)) {
                 return Err(Error::new(ErrorKind::Syntax, "a pattern assigns to a name or to brackets of names").at(&target[0].span));
             }
             Ok((Some(key), target))
@@ -315,7 +315,7 @@ impl Session {
         let mut container = nodes.split_off(2);
         self.extend_selected(&mut container, true)?;
         if let Some((binding, path)) = self.direct_item(&mut container)? {
-            let mut target = crate::primitive::item_at(&binding.value, &path);
+            let mut target = crate::primitive::item_at(&binding.value, &path, None);
             let lacks = extend(&mut target, false)?;
             // Holding the item would make the write copy it.
             drop(target);
@@ -403,7 +403,7 @@ impl Session {
             [left, Node { kind: NodeKind::Function(Builtin::Primitive(p @ (Primitive::Index | Primitive::Bracket | Primitive::Mix))), .. }, rest @ ..] if self.holds_array(left, &mut None) => {
                 let Some((binding, path)) = self.direct_item(rest)? else { return Ok(None) };
                 let left = self.evaluate_once(left)?;
-                let item = crate::primitive::item_at(&binding.value, &path);
+                let item = crate::primitive::item_at(&binding.value, &path, None);
                 let context = &span;
                 let selection = match p {
                     Primitive::Mix => crate::primitive::pick_selection(&left, &item)?,
@@ -418,7 +418,7 @@ impl Session {
     /// The array that `nodes` names, or the one whole item that a direct target reaches: its binding and its path.
     fn direct_item(&self, nodes: &mut [Node]) -> Result<Option<(ArrayBinding, Vec<usize>)>, Error> {
         match nodes {
-            [Node { kind: NodeKind::Name(name), span }] => Ok(Some((self.array_binding(*name, span)?, vec![]))),
+            [Node { kind: NodeKind::Name(name, _), span }] => Ok(Some((self.array_binding(*name, span)?, vec![]))),
             [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_item(inner),
             _ => Ok(self.direct_target(nodes)?.and_then(|(binding, selection)| match (selection.frame, selection.targets) {
                 (ResultFrame::Direct, Targets::Offsets(offsets)) => Some((binding, offsets)),
@@ -441,7 +441,7 @@ impl Session {
         let root = nodes.len() - 1;
         let span = &nodes[root].span;
         let (binding, labels, selected) = match &nodes[root].kind {
-            NodeKind::Name(name) => {
+            NodeKind::Name(name, _) => {
                 let binding = self.array_binding(*name, span)?;
                 let (labels, selected) = crate::selection::labelled(&binding.value, level, span)?;
                 (binding, labels, selected)
@@ -459,52 +459,16 @@ impl Session {
         Ok((binding, labels, selected))
     }
 
-    /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. A target at a fill reads the fill, and its write is dropped. An error leaves the array unchanged. When `f` is a pervasive primitive, `pervasive::scatter` combines the targets into the array in place, reading a walk's targets without listing them. Where it can't, one call covers all the targets at distinct positions, and repeated positions take rounds. Any other `f` runs once for each target. `•explain` records each path as an accumulation.
+    /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. A target at a fill reads the fill, and its write is dropped. An error leaves the array unchanged. A pervasive primitive combines at the targets' places, as accumulation does (`Primitive::at`): in place where it can, reading a walk's targets without listing them, and otherwise in one call, with repeated positions taking rounds. Any other `f` runs once for each target. `•explain` records each path as an accumulation.
     fn write_modified(&self, binding: ArrayBinding, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<(), Error> {
         let right = selection.checked(right).at(span)?;
         if let (ResultFrame::Array(_), Some(writes), Some(p)) = (&selection.frame, selection.targets.writes(), f.as_primitive()) {
-            if p.facts(true).pervasive() {
-                // A singleton goes to every target, as a unit.
-                let unit = if right.is_singleton() {
-                    let item = right.at(0);
-                    Some(if item.is_atom() { item } else { item.enclose().described("invalid modified selection").at(span)? })
-                } else { None };
-                return self.write_kept(binding, span, |z| {
-                    // In place, a walk's targets are read without being listed, and a target at a fill writes nothing.
-                    if let Some(route) = crate::pervasive::scatter(p, z, writes, unit.as_ref().unwrap_or(&right), crate::array::Widening::Items) {
-                        crate::explain::accumulated(writes.len(), z.len(), route.name());
-                        return Ok(());
-                    }
-                    // The other routes read each target's offset, and the modifier never runs for a target at a fill.
-                    let listed = selection.listed();
-                    let listed = listed.as_ref().unwrap_or(selection);
-                    let kept = listed.without_fills(&right, span).at(span)?;
-                    let (selection, right) = match &kept { Some((kept, right)) => (kept, right), None => (listed, &right) };
-                    let Targets::Offsets(offsets) = &selection.targets else { unreachable!("a flat array's listed targets are offsets") };
-                    let Some((counts, rounds)) = occurrences(offsets, z.len()) else {
-                        crate::explain::accumulated(offsets.len(), z.len(), "one call");
-                        let items = selection.read(z, span)?;
-                        let right = match &unit { Some(unit) if right.shape() != items.shape() => unit, _ => right };
-                        let values = f.call_array(Some(&items), right, span)?;
-                        return selection.write_into(z, &values, span);
-                    };
-                    crate::explain::accumulated(offsets.len(), z.len(), "rounds");
-                    // Round r holds the r-th target at each position. Its positions are distinct. One call computes the round from the values that earlier rounds wrote into a copy of the array. The copy then replaces the array.
-                    let order = crate::search::grouped_by(&counts, rounds, |c| c as usize)?;
-                    let mut current = z.clone();
-                    for targets in order.each() {
-                        let round = Selection::offsets(targets.iter().map(|&t| offsets[t as usize]).collect());
-                        let items = round.read(&current, span)?;
-                        let values = match &unit {
-                            Some(unit) => unit.clone(), None => Selection::offsets(targets.iter().map(|&t| t as usize).collect()).read(right, span)?
-                        };
-                        let results = f.call_array(Some(&items), &values, span)?;
-                        round.write_into(&mut current, &results, span)?;
-                    }
-                    *z = current;
-                    Ok(())
-                });
-            }
+            if p.facts(true).pervasive() { return self.write_kept(binding, span, |z| p.at(z, writes, &right, span)); }
+        }
+        // Each cell's own targets in a batched run combine on the batch's whole. Any other function stops the run. Its cells then run one at a time.
+        if let Targets::Cells(cells) = &selection.targets {
+            let Some(p) = f.as_primitive().filter(|p| p.facts(true).pervasive()) else { return Err(cells.stop().into()) };
+            return self.write_kept(binding, span, |z| { *z = cells.combined(z, &right, p, span)?; Ok(()) });
         }
         // Each target's path is read below, and the modifier never runs for a target at a fill.
         if let Some(listed) = selection.listed() { return self.write_modified(binding, &listed, f, &right, span); }
@@ -514,7 +478,7 @@ impl Session {
         let mut latest: HashMap<&[usize], usize> = HashMap::new();
         for i in 0..selection.targets.len() {
             let path = selection.targets.path(i);
-            let item = match latest.get(path) { Some(&j) => results[j].clone(), None => crate::primitive::item_at(original, path) };
+            let item = match latest.get(path) { Some(&j) => results[j].clone(), None => crate::primitive::item_at(original, path, None) };
             results.push(f.call_array(Some(&item), &selection.item(&right, i), span)?);
             latest.insert(path, i);
         }
@@ -537,7 +501,7 @@ fn dot_path(node: &Node) -> Option<(Name, Vec<Arc<str>>)> {
         keys.push(crate::keyed::name(key)?);
         node = root;
     }
-    let NodeKind::Name(name) = &node.kind else { return None };
+    let NodeKind::Name(name, _) = &node.kind else { return None };
     keys.reverse();
     Some((*name, keys))
 }

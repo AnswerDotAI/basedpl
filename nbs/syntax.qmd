@@ -45,6 +45,17 @@ Literals separated by spaces form a [strand](terms.qmd#term-strand), which is on
 
 `⍝` starts a comment, which ends at the end of the line.
 
+## Token separator
+
+`⁝` (Alt-:) separates tokens without ending their run. It prevents adjacent names from merging and stops a literal strand continuing. It has no value and makes no function call. `h⁝m` is `h(m)`, and `f⍣3⁝0` is `(f⍣3)0`.
+
+```bpl
+h←- ⋄ m←5 ⋄ h⁝m             ⍝ ¯5
+f←2× ⋄ f⍣3⁝1                ⍝ 8
+```
+
+A literal strand can appear on each side. In `+/⍠2 3⁝3 3↕m`, the operand of `⍠` is `2 3`, and the argument starts with the `3 3` to its right. A space in place of `⁝` would join all four numbers into one operand.
+
 ## Runs
 
 Outside brackets, spaces divide a statement into [runs](terms.qmd#term-run). A group in brackets, parentheses or braces counts as one token, even when it contains spaces. Apart from the two operator rules below, each run must give one value: a subject, a function, or a lone operator such as the `/` in `+ / x`. A run that gives anything else is a `SYNTAX` error.
@@ -139,12 +150,12 @@ The target of `←` is the run just before it. The value is everything to the ri
 - a list of names, such as `[a b]`
 - any of these followed by a function, for [modified assignment](glyphs/left-arrow.qmd)
 
-A space before `←` makes the whole run before it the target, as parentheses would: `[[0 2]]⌷v ←0` assigns to the selection. So does a space before the function of a modified assignment, as in `x +←1`. A named function goes in parentheses, because in `a f←3` the target would be `f`: `a(f)←3` is `a←a f 3`, at top level and in dfns. With nothing after the arrow, `a(f)←` is `a←f a`. A value can itself contain an assignment. In `a←1 b←2`, the value of `a` is the strand `1 b←2`, which assigns 2 to `b` and gives `1 2`. Separate independent assignments with `⋄`. [Assignment](assignment.ipynb) describes each kind of target.
+A space before `←` makes the whole run before it the target, as parentheses would: `[[0 2]]⌷v ←0` assigns to the selection. So does a space before the function of a modified assignment, as in `x +←1`. Use `⁝` to keep a named function in the target's run: `a⁝f←3` is `a←a f 3`, at top level and in dfns. In `a f←3`, the target would be `f`. With nothing after the arrow, `a⁝f←` is `a←f a`. A value can itself contain an assignment. In `a←1 b←2`, the value of `a` is the strand `1 b←2`, which assigns 2 to `b` and gives `1 2`. Separate independent assignments with `⋄`. [Assignment](assignment.ipynb) describes each kind of target.
 
 ```bpl
 v←10 20 30 ⋄ v₁←7 ⋄ v            ⍝ 10 7 30
 [a b]←3 4 ⋄ a×b                  ⍝ 12
-a←1 ⋄ f←+ ⋄ a(f)←3 ⋄ a           ⍝ 4
+a←1 ⋄ f←+ ⋄ a⁝f←3 ⋄ a           ⍝ 4
 a←1 2 3 ⋄ a⌽← ⋄ a                 ⍝ 3 2 1
 a←1 b←2 ⋄ a                      ⍝ 1 2
 ```

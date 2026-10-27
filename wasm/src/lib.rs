@@ -48,6 +48,10 @@ pub fn symbols() -> String { basedpl::symbols::rows().to_string() }
 #[wasm_bindgen]
 pub fn name_cpu(name: &str) { basedpl::timing::name_cpu(name) }
 
+/// The pauses before each retry of a timing that fails, in seconds: `rustymath::timing::RETRY_PAUSES`.
+#[wasm_bindgen]
+pub fn retry_pauses() -> Vec<f64> { basedpl::timing::RETRY_PAUSES.to_vec() }
+
 /// Time named BPL source files, supplied as `[{name, text}]`. Results retain full code and single-line log labels.
 #[wasm_bindgen]
 pub fn costs(files: JsValue, cases: Option<Vec<String>>, prefs: Option<String>) -> Result<JsValue, JsValue> {

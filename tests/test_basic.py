@@ -5,6 +5,13 @@ import numpy as np, pytest
 from basedpl import bpl, BplError, Array
 
 
+def test_token_separator_linear():
+    from basedpl.syntax import linear
+    assert linear('h⁝m') == 'h(m)'
+    assert linear('f⍣3⁝0') == 'f⍣3(0)'
+    assert linear('•prefs ["hanzi_aliases":$t]\nf次3隔5').endswith('f次3(5)')
+    for source in ('"⁝"', '_⁝', '⍝ ⁝', ')⁝'): assert linear(source) == source
+
 def test_native_calls_and_explicit_output():
     a = bpl('1r3 2ₓ')
     bpl['x'] = a
@@ -41,7 +48,7 @@ def test_bindings_functions_and_output(capsys):
     assert bpl(x=np.arange(1, 6), source=9, timeout=8) is None
     assert bpl('source+timeout').py == 17
     assert bpl('+/x').py == 15 and type(bpl('+/x')) is Array
-    mean = bpl.fn('{(+/⍵)÷≢⍵}')
+    mean = bpl.fn('+/÷≢')
     assert mean([1, 2, 3]).py == 2 and type(mean([1, 2, 3]).py) is int
     assert mean([1, 2, 4]).py == Fraction(7, 3)
     added = bpl.fn('+')([1, 2, 3], 10)

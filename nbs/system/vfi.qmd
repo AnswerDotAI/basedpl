@@ -1,6 +1,6 @@
 # `•vfi` — Numeric input
 
-`•vfi text` returns two vectors, `[valid numbers]`, for the whitespace-separated fields of `text`. An invalid field has the flag `0ₓ` and the value `0`. Fields are parsed as numbers, never executed.
+`•vfi text` returns two vectors, `[valid numbers]`, for the whitespace-separated fields of `text`. An invalid field has the flag `0ₓ` and the value zero. The zero takes the other values' type wherever it keeps its value there, as a reader's `fill` does: `•vfi "2ₓ nope"` gives `[[1 0]ₓ;[2 0]ₓ]`. Fields are parsed as numbers, never executed.
 
 Fields take BPL's written forms of numbers, with plain letters or subscripts. `•vfi` reads back the numbers that `⍕` displays:
 

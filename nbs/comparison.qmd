@@ -102,7 +102,7 @@ Source: the ngn/apl tests. The assignment `x←6¿49` moves to the right of `⌷
 ```
 
 ```bpl
-⍴<6¿49                 ⍝ [6]ₓ
+⍴[⍋x]⌷x←6¿49           ⍝ [6]ₓ
 ```
 
 ```bqn
@@ -213,7 +213,7 @@ mat←(÷⟜(𝕨‿𝕨⊑swap))⌾(𝕨⊸⊏)swap
 
 ### Assigning to a block of a matrix
 
-Source: `box` in the dfns workspace. `⌷` takes one item for each axis and selects their cross product, like APL's bracket index. Because `0,h` and `0,w` have no spaces, each is one item. The target of `←` is the selection in parentheses. BQN assigns through a selection with Under, `⌾`.
+Source: `box` in the dfns workspace. `⌷` takes one item for each axis and selects their cross product, like APL's bracket index. Because `0,h` and `0,w` have no spaces, each is one item. The space before `←` makes the whole selection its target. BQN assigns through a selection with Under, `⌾`.
 
 ```dyalog
 q[1,h;1,w]←2 2⍴ch
@@ -300,14 +300,14 @@ pic.children₀.attrs.fill   ⍝ "steelblue"
 
 ### Looking up a value in an association list
 
-Source: `lisp` in the dfns workspace. The Dyalog code keeps the list as a two-column matrix of names and values. BPL keeps it as a keyed vector, and `⍵⌷⍺` selects the value for the key `⍵`. BQN keeps the keys and the values as two lists.
+Source: `lisp` in the dfns workspace. The Dyalog code keeps the list as a two-column matrix of names and values. BPL keeps it as a keyed vector, and `⌷⍨` selects the value for the key on its right. BQN keeps the keys and the values as two lists.
 
 ```dyalog
 ⍺[⍺[;1]⍳⊂⍵;2]
 ```
 
 ```bpl
-["x":1 "y":2] {⍵⌷⍺} "y"   ⍝ 2
+["x":1 "y":2]⌷⍨"y"        ⍝ 2
 ```
 
 ```bqn
@@ -327,14 +327,14 @@ sales←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[10 20 30⋄40 50 60]
 
 ### Rank with a numeric operand
 
-An operator takes one token to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. BPL has the same problem only with literals separated by spaces: `1 2 3` is one strand. Brackets touching the operand keep a literal argument out of it. With a name as the argument, a space is enough: `+/⍤1 m`.
+An operator takes one token to its right. In APL, `⊢` separates the operand `1` from the argument, because arrays side by side strand into one operand. BPL's [separator `⁝`](glyphs/tricolon.qmd) keeps the literals apart without ending the run. The rank is `1`, and the argument is `2 3⍴⍳6ₓ`.
 
 ```dyalog
 +/⍤1⊢2 3⍴⍳6
 ```
 
 ```bpl
-+/⍤1[2 3]⍴⍳6ₓ           ⍝ [3 12]ₓ
++/⍤1⁝2 3⍴⍳6ₓ           ⍝ [3 12]ₓ
 ```
 
 ```bqn
@@ -343,7 +343,7 @@ An operator takes one token to its right. In APL, `⊢` separates the operand `1
 
 ### A named operator with a numeric operand
 
-Source: `Depth` in the dfns workspace. It applies its left operand at the depths that its right operand gives, as BQN's `⚇` does. `+Depth 0` is one function, because a run that ends in an operator takes the next run as its right operand. `1 2` is that function's left argument. `3 4` is in brackets to keep it out of the operand.
+Source: `Depth` in the dfns workspace. It applies its left operand at the depths that its right operand gives, as BQN's `⚇` does. Parentheses show the derived function `+Depth0` between its left argument `1 2` and right argument `3 4`.
 
 ```dyalog
 1 2(+Depth 0)3 4
@@ -351,7 +351,7 @@ Source: `Depth` in the dfns workspace. It applies its left operand at the depths
 
 ```bpl
 [Depth:]←•load "lib/dyalog.bpl"
-1 2 +Depth 0 [3 4]     ⍝ 4 6
+1 2(+Depth0)3 4     ⍝ 4 6
 ```
 
 ```bqn
@@ -377,14 +377,14 @@ n←2 3 4⍴⍳24ₓ
 
 ### Stencil with a numeric operand
 
-The operand ends at the space. `1 2 3 4` is in brackets to keep it out of the operand. Stencil calls its operand on each window alone, as J's `u;._3` does, so `+/` reduces each window. Dyalog passes the padding counts as a left argument, which its dfn ignores. The second line gets the same result without Stencil, because `↕` with a negative size pads the ends. BQN has no Stencil. Its line pads with zeros.
+`⁝` keeps the size `3` apart from the argument `1 2 3 4`. Stencil passes each window alone to its operand, as J's `u;._3` does. `+/` sums the window. Dyalog passes padding counts as a left argument, which its dfn ignores. The second line gets the same result without Stencil, because `↕` with a negative size pads the ends. BQN has no Stencil. Its line pads with zeros.
 
 ```dyalog
 {+/,⍵}⌺3⊢1 2 3 4
 ```
 
 ```bpl
-+/⌺3 [1 2 3 4]          ⍝ 3 6 9 7
++/⌺3⁝1 2 3 4          ⍝ 3 6 9 7
 +/¯3↕1 2 3 4           ⍝ 3 6 9 7
 ```
 
@@ -394,14 +394,14 @@ The operand ends at the space. `1 2 3 4` is in brackets to keep it out of the op
 
 ### Power with a list of counts
 
-A list of counts gives the result for each count, as BQN's Repeat does. `⍳5` is in parentheses because an operator takes one token to its right. `2` needs no Bind. Dyadic Power passes its left argument to `×` at each step. Dyalog has no list form, and its line applies Power once for each count.
+A list of counts gives the result for each count, as BQN's Repeat does. `⍳5ₓ` is in parentheses because an operator takes one token to its right. `⊽` doubles each state. Dyalog has no list form, and its line applies Power once for each count.
 
 ```dyalog
 {(2∘×⍣⍵)1}¨0,⍳4
 ```
 
 ```bpl
-⊽⍣(⍳5ₓ) 1               ⍝ [1 2 4 8 16]
+⊽⍣(⍳5ₓ)1               ⍝ [1 2 4 8 16]
 ```
 
 ```bqn
@@ -428,7 +428,7 @@ x←2 4 9
 
 ### A train that binds arrays
 
-A subject before a function binds the one part after it: `1.8×` is `1.8↣×`, and `32+` is `32↣+`. The two bound parts form an atop, which gives the same result as Dyalog's fork `32+1.8∘×`. Dyalog and BQN need `∘` and `↣` to bind `1.8`.
+A subject before a function binds the one part after it: `1.8×` is `1.8↣×`, and `32+` is `32↣+`. The two bound parts form an atop, which gives the same result as Dyalog's fork `32+1.8∘×`. Dyalog and BQN need `∘` and `⊸` to bind `1.8`.
 
 ```dyalog
 f←32+1.8∘× ⋄ f 100
@@ -461,7 +461,7 @@ a←1 ⋄ b←¯3 ⋄ c←2
 
 ### A two-number operand before a named argument
 
-Source: "Why not whitespace?" in [BQN's documentation](https://mlochbaum.github.io/BQN/doc/arrayrepr.html). Without BQN's ligature `‿`, nothing says which of `1`, `∞` and `b` belong together. In BPL, `1 ∞` is a strand, and the name `b` never joins it. BPL spells Atop `∘`, as BQN does. A rank of `∞` takes the whole argument, as in BQN.
+Source: "Why not whitespace?" in [BQN's documentation](https://mlochbaum.github.io/BQN/doc/arrayrepr.html). Without BQN's ligature `‿`, nothing says which of `1`, `∞` and `b` belong together. In BPL, `1 ∞` is a strand, and the name `b` never joins it. The two-function train `(+⌿×)` multiplies, then sums down the first axis. A rank of `∞` takes the whole argument, as in BQN.
 
 ```bqn
 a +˝∘×⎉1‿∞ b
@@ -487,8 +487,8 @@ Source: "Why not whitespace?" in BQN's documentation. BQN tells the two readings
 ```
 
 ```bpl
-3 (1↣+↣×) 5            ⍝ 20
-3 1↣+↣× 5              ⍝ 40 30
+3(1↣+↣×)5            ⍝ 20
+3 1↣+↣×5              ⍝ 40 30
 ```
 
 ## Lists
@@ -539,7 +539,7 @@ IfElse ← {c‿T‿F: c◶F‿T@}
 ```bpl
 ≢[2 + 3]               ⍝ 3ₓ
 ifelse←{[c t f]←⍵ ⋄ c⍚[f t]0}
-ifelse [1 {⍵+10} {⍵+20}]   ⍝ 10
+ifelse [1 10+ 20+]     ⍝ 10
 ```
 
 ### Long list items across lines
@@ -660,7 +660,7 @@ S←{' #'[(f⍣⍵)1 1⍴1]}
 ```
 
 ```bpl
-f←{⍵,0⍴⍨⍴⍵ ⍪ ⍵,⍵}
+f←{⍵,(⍴⍵)⍴0 ⍪ ⍵,⍵}
 S←{[f⍣⍵⍪1]⌷" #"}
 ⍴S 5                   ⍝ [32 32]ₓ
 ```
@@ -698,14 +698,14 @@ picture←[9>|{⍺+⍵²}/9⍴⊂¯3×.7j.5-⍉a+⊗0j1×a←(⍳≥n)÷n←98]�
 
 ### Value of a Roman numeral
 
-Source: APLcart. The table `×\1,6⍴5 2` is the right argument of `⌷`, where it needs no parentheses. BPL uses pairs, `</↕`, in place of `2</`.
+Source: APLcart. The table `×\1,6⍴[5 2]` is the right argument of `⌷`, where it needs no parentheses. BPL uses pairs, `</↕`, in place of `2</`.
 
 ```dyalog
 {(⊢+.×¯1*2</,∘0)(×\1,6⍴5 2)['IVXLCDM'⍳⍵]}
 ```
 
 ```bpl
-{v←["IVXLCDM"⍳⍵]⌷×\1,6⍴5 2 ⋄ v+.×¯1*</↕v,0} "MCMXCIV"   ⍝ 1994
+{v←["IVXLCDM"⍳⍵]⌷×\1,6⍴[5 2] ⋄ v+.×¯1*</↕v,0} "MCMXCIV"   ⍝ 1994
 ```
 
 ```bqn

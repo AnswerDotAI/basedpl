@@ -7,7 +7,7 @@
         <AnyChar String="⍝" attribute="Comment" context="Comment" />
         <DetectChar char="&quot;" attribute="String" context="String" />
         <RegExpr String="'.?'" attribute="Char" />
-        <RegExpr String="(?:_\d+|_\S|_|[^\s\p{Cc}0-9←⎕•⍺⍵⍶⍹∇⍢⍝⋄\?¯∞⍬\+\-×÷⌈⌊\|\*⍟○π√!∧∨⊼⊽\~=≠&lt;≤&gt;≥⍳↦:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹\#↕⍭⨸⌻⍸⍷⊢⊣¿¨ᵇ⍨↣⍤∘⍠⍥↢\.⊗⌸⍣⇄⊘@∂⍚⌺/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘₓ₀₁₂₃₄₅₆₇₈₉₋ₓ₁ₓ₂ₓ₄ₓ₈ₓₕₛₚ\(\)\[\]\{\}'&quot;;\$_ₑⱼᵣ])+" attribute="Name" />
+        <RegExpr String="(?:_\d+|_\S|_|[^\s\p{Cc}0-9←⎕•⍺⍵⍶⍹∇⍢⍝⋄⁝\?¯∞⍬\+\-×÷⌈⌊\|\*⍟○π√!∧∨⊼⊽\~=≠&lt;≤&gt;≥⍳↦:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹\#↕⍭⨸⌻⍸⍷⊢⊣¿¨ᵇ⍨↣⍤∘⍠⍥↢\.⊗⌸⍣⇄⊘@∂⍚⌺/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘₓ₀₁₂₃₄₅₆₇₈₉₋ₓ₁ₓ₂ₓ₄ₓ₈ₓₕₛₚ\(\)\[\]\{\}'&quot;;\$_ₑⱼᵣ])+" attribute="Name" />
         <RegExpr String="[•][A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*" attribute="Function" />
         <RegExpr String="(?:[¯]?[∞]|[¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?([jJⱼ][¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?|[rᵣ][¯]?\d+)?)(?:ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ)?|[ₑⱼᵣ]" attribute="Number" />
         <RegExpr String="[⍬](?:ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ)?" attribute="Number" />
@@ -19,7 +19,7 @@
         <AnyChar String="¨ᵇ⍨⊗⌸⇄∂/⌿\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘₓ" attribute="MonadicOperator" />
         <AnyChar String="↣⍤∘⍠⍥↢.⍣⊘@⍚⌺" attribute="DyadicOperator" />
         <AnyChar String="⍺⍵⍶⍹∇⍢" attribute="Argument" />
-        <AnyChar String="←⎕⋄?₀₁₂₃₄₅₆₇₈₉₋" attribute="Keyword" />
+        <AnyChar String="←⎕⋄⁝?₀₁₂₃₄₅₆₇₈₉₋" attribute="Keyword" />
       </context>
       <context name="Mark" attribute="Number" lineEndContext="#pop">
         <RegExpr String="(?:ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ)" attribute="Number" context="#pop" />

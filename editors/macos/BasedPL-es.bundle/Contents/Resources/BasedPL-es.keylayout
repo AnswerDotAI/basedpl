@@ -3330,7 +3330,7 @@
    <when state="quad" output="⍠"/>
   </action>
   <action id="k47-m5">
-   <when state="none" output="…"/>
+   <when state="none" output="⁝"/>
    <when state="quad" output="⍠"/>
   </action>
   <action id="k49-m5">

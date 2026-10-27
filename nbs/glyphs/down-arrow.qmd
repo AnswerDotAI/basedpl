@@ -18,7 +18,7 @@ Function. Keys: `Alt-j`. Hanzi: `去/拆`. Ranks: `1` monadic, `1 ∞` dyadic
 With [axes](quad-colon.qmd), `⍠K` selects the split axis or the drop axes.
 
 ```bpl
-↓⍠0 (2 3⍴⍳6ₓ)       ⍝ [[0 3] [1 4] [2 5]]ₓ
+↓⍠0⁝2 3⍴⍳6ₓ       ⍝ [[0 3] [1 4] [2 5]]ₓ
 ```
 
 Vector counts apply to successive leading axes. Overdrop gives an empty axis.

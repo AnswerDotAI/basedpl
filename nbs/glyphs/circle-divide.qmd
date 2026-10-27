@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-o u`. Hanzi: `因`. Ranks: `0` monadic, `0 0` dyadic
 
-`⨸N`: sorted prime factors, with multiplicity. J's `q:` family. Positive integral input; exact integer results.
+`⨸N`: sorted prime factors, with multiplicity. J's `q:` family. Positive whole input; exact integer results.
 
 ```bpl
 ⨸700                 ⍝ [2 2 5 5 7]ₓ
@@ -14,9 +14,9 @@ Inverse: product. `K⨸N` selects exponents or a factor table.
 
 | K | Result |
 |---|---|
-| Nonnegative integer | Exponents of the first K primes; remaining factors are omitted |
+| Nonnegative whole number | Exponents of the first K primes; remaining factors are omitted |
 | `∞` | Exponents through the largest factor |
-| Negative integer | Last `\|K` distinct factors and their exponents, in two rows |
+| Negative whole number | Last `\|K` distinct factors and their exponents, in two rows |
 | `¯∞` | Complete two-row factor/exponent table |
 
 ```bpl
@@ -32,4 +32,4 @@ Unit cells; results assemble with fill. Large factors follow [Prime's](stile-til
 
 ## Errors
 
-- `DOMAIN`: nonpositive/non-integral `N`; non-integral finite `K`
+- `DOMAIN`: an `N` that isn't positive and whole; a finite `K` that isn't whole

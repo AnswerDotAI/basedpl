@@ -11,10 +11,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
-import { costs } from './wasm-pkg.mjs';
+import { costs, retry_pauses } from './wasm-pkg.mjs';
 
-// The pauses before each retry, in seconds, as in `rustymath::timing::RETRY_PAUSES`.
-const RETRY_PAUSES = [0.1, 1];
+// The pauses before each retry, in seconds, from `rustymath::timing::RETRY_PAUSES`.
+const RETRY_PAUSES = retry_pauses();
 const ci = process.platform === 'linux' && process.arch === 'x64';
 
 assert.ok(process.execArgv.includes('--no-liftoff'), 'run with node --no-liftoff');

@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-Backslash`. Hanzi: `素`. Ranks: `0` monadic, `0 0` dyadic
 
-`⍭N`: the prime with `N` primes before it. `⍭0` is 2. Integral inputs; exact integer results, except that the primality test `1⍭` gives Booleans.
+`⍭N`: the prime with `N` primes before it. `⍭0` is 2. Whole inputs; exact integer results, except that the primality test `1⍭` gives Booleans.
 
 `⍭⁻¹N`: the number of primes below `N`, which is the index of a prime `N`.
 

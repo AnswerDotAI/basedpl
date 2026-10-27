@@ -68,7 +68,7 @@ impl Elide {
         use {crate::number::Mark, rustymath::buffer::DType};
         if !self.marks { return None; }
         match kind {
-            DType::Integer(w) => Some(if fixed { Mark::Fixed(w) } else { Mark::Exact }.marker()),
+            DType::Integer(w) => Some(Mark::integer(fixed.then_some(w)).marker()),
             DType::Float(w) => self.width_marker(w), DType::Complex(w) => self.width_marker(w.into()), _ => None
         }
     }
@@ -78,12 +78,9 @@ impl Elide {
     pub fn name(self, name: &Option<std::sync::Arc<str>>) -> Option<Cow<'_, str>> {
         name.as_deref().filter(|n| self.hidden != Hidden::Omit || !rustymath::layout::hidden(n)).map(|n| self.shown(n))
     }
-    /// `text` as display shows it: a hidden name cut after its last `system::FRESH`, as in `_b·…`, unless `hidden` is `Full`.
+    /// `text` as display shows it: shortened by `rustymath::layout::shown`, as in `_b·…`, unless `hidden` is `Full`.
     pub fn shown(self, text: &str) -> Cow<'_, str> {
-        match text.rfind(crate::system::FRESH) {
-            Some(i) if self.hidden != Hidden::Full && rustymath::layout::hidden(text) => format!("{}…", &text[..i + crate::system::FRESH.len_utf8()]).into(),
-            _ => text.into(),
-        }
+        if self.hidden == Hidden::Full { text.into() } else { rustymath::layout::shown(text) }
     }
 }
 
@@ -212,11 +209,11 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
             }
             "threads" => {
                 let n = value.as_number().and_then(|n| n.integer().ok()).and_then(|n| usize::try_from(n).ok());
-                threads = Some(n.ok_or(Kind::Domain).described("threads must be a nonnegative integer")?);
+                threads = Some(n.ok_or(Kind::Domain).described("threads must be a nonnegative whole number")?);
             }
             "seed" => {
                 let n = value.as_number().and_then(|n| n.nonnegative_integer::<u64>().ok());
-                seed = Some(n.ok_or(Kind::Domain).described("seed must be a nonnegative integer")?);
+                seed = Some(n.ok_or(Kind::Domain).described("seed must be a nonnegative whole number")?);
             }
             "batch" => batch = value.boolean().described("batch must be Boolean")?,
             "fusion" => fusion = value.boolean().described("fusion must be Boolean")?,
@@ -407,12 +404,12 @@ fn boxes(a: &Value, el: Elide) -> bool { a.shape().len() != 1 || !a.is_simple() 
 /// Display text for `a` without frames: a vector or unit as source text, a string as its characters, and higher ranks as rows.
 pub(crate) fn plain(a: &Value, el: Elide) -> String {
     match a.displayed() {
-        Plain::Number(n) => return el.number(n), Plain::Function(f) => return format!("⟨{}⟩", f.text(el.notation, &mut 1000)),
-        Plain::Operator(op) => return op.text(el.notation), Plain::Character(_) => return a.literal(), Plain::Array(_) => ()
+        Plain::Number(n) => return el.number(n), Plain::Function(f) => return format!("⟨{}⟩", f.text(el, &mut 1000)),
+        Plain::Operator(op) => return op.text(el), Plain::Character(_) => return a.literal(), Plain::Array(_) => ()
     }
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
     if a.shape().len() <= 1 {
-        return if raw_text(a, el) { a.elided_text(el.last(a.shape())) }
+        return if raw_text(a, el) { a.elided_text(el) }
         else if a.is_strand(el) && a.mark(el).is_none() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") }
         else { a.source(el) };
     }

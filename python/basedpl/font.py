@@ -1,4 +1,4 @@
-"""Build SAX2B with BPL's script glyphs and arrows. Requires fonttools and brotli."""
+"""Build BPL fonts with script glyphs, arrows and the token separator. Requires fonttools and brotli."""
 import io
 from copy import deepcopy
 from pathlib import Path
@@ -8,6 +8,7 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
 
 SAX2_URL = 'https://raw.githubusercontent.com/abrudz/SAX2/df113b78ef1c9bf49134371a54ce915f65f9f47e/'
+BQN386_URL = 'https://raw.githubusercontent.com/dzaima/BQN386/4d8b9f668ba76a15ca9cd44d9bfedaf95a4c0d96/'
 
 def add_glyph(font, char, glyph, advance):
     "Register a glyph with its character mapping and horizontal metrics."
@@ -88,21 +89,43 @@ def thicken_slashes(font, amount=0.05):
         glyph.recalcBounds(glyf)
         font['hmtx'][name] = font['hmtx'][name][0], glyph.xMin
 
-def build(dest='nbs/fonts'):
-    "Write SAX2B as TTF and WOFF2 with SAX2's licence to `dest`."
-    dest = Path(dest)
-    dest.mkdir(parents=True, exist_ok=True)
-    font = TTFont(io.BytesIO(urlread(SAX2_URL + 'SAX2.ttf', decode=False, timeout=30)))
-    add_scripts(font)
-    add_arrows(font)
-    thicken_slashes(font)
-    names = {1: 'SAX2B', 3: 'SAX2B-2.001', 4: 'SAX2B', 6: 'SAX2B'}
+def add_separator(font):
+    "Add three half-size dots in the character cell, closer together than a colon."
+    cmap, glyf = font.getBestCmap(), font['glyf']
+    source = cmap[ord('.')]
+    dot, colon = glyf[source], glyf[cmap[ord(':')]]
+    advance = font['hmtx'][source][0]
+    x = advance/2 - (dot.xMin + dot.xMax)/4
+    y = (colon.yMin + colon.yMax)/2 - (dot.yMin + dot.yMax)/4
+    gap = font['head'].unitsPerEm/8
+    pen = TTGlyphPen(font.getGlyphSet())
+    for offset in (-gap, 0, gap): pen.addComponent(source, (0.5, 0, 0, 0.5, round(x), round(y+offset)))
+    add_glyph(font, '⁝', pen.glyph(), advance)
+
+def write_font(font, name, version, dest):
+    names = {1: name, 3: f'{name}-{version}', 4: name, 5: f'Version {version}', 6: name}
     for record in font['name'].names:
         if record.nameID in names:
             font['name'].setName(names[record.nameID], record.nameID, record.platformID, record.platEncID, record.langID)
-    ttf, woff2 = dest/'SAX2B.ttf', dest/'SAX2B.woff2'
+    ttf, woff2 = dest/f'{name}.ttf', dest/f'{name}.woff2'
     font.save(ttf)
     font.flavor = 'woff2'
     font.save(woff2)
-    (dest/'LICENSE-SAX2').write_text(urlread(SAX2_URL + 'LICENSE', timeout=30))
     return ttf, woff2
+
+def build(dest='nbs/fonts'):
+    "Write SAX2B and BQN386B as TTF and WOFF2 with their upstream licences."
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    font = TTFont(io.BytesIO(urlread(SAX2_URL + 'SAX2.ttf', decode=False, timeout=30)), recalcTimestamp=False)
+    add_scripts(font)
+    add_arrows(font)
+    thicken_slashes(font)
+    add_separator(font)
+    paths = write_font(font, 'SAX2B', '2.002', dest)
+    font = TTFont(io.BytesIO(urlread(BQN386_URL + 'BQN386.ttf', decode=False, timeout=30)), recalcTimestamp=False)
+    add_separator(font)
+    paths += write_font(font, 'BQN386B', '1.001', dest)
+    for name, url in [('SAX2', SAX2_URL), ('BQN386', BQN386_URL)]:
+        (dest/f'LICENSE-{name}').write_text(urlread(url + 'LICENSE', timeout=30))
+    return paths

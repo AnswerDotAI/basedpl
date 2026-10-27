@@ -5,11 +5,12 @@ use crate::{display, fusion::Sizes, number::{Kinds, Numeric}};
 use rustymath::buffer::{FloatWidth, Width};
 use std::sync::{LazyLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU8, Ordering::Relaxed}};
 
-/// The defaults of the flags, which their statics start from and `reset` restores: whether hanzi spell glyphs, whether `batch` is on, whether calls report the pending arrays they compute, and whether fusion takes its small sizes.
+/// The defaults of the flags, which their statics start from and `reset` restores: whether hanzi spell glyphs, whether `batch` is on, whether calls report the pending arrays they compute, whether fusion takes its small sizes, and whether each program is checked before it runs.
 const HANZI: bool = false;
 const BATCH: bool = true;
 const REPORTS: bool = false;
 const SMALL: bool = false;
+const VERIFY: bool = false;
 
 static MATHISH: AtomicBool = AtomicBool::new(Numeric::DEFAULT.mathish);
 static FLOAT: AtomicU8 = AtomicU8::new(Numeric::DEFAULT.width as u8);
@@ -20,6 +21,10 @@ static HANZI_ALIASES: AtomicBool = AtomicBool::new(HANZI);
 static BATCHING: AtomicBool = AtomicBool::new(BATCH);
 static REPORTS_FUSION: AtomicBool = AtomicBool::new(REPORTS);
 static SMALL_SIZES: AtomicBool = AtomicBool::new(SMALL);
+static VERIFIES: AtomicBool = AtomicBool::new(VERIFY);
+/// When block stages compile their parts, as `Compiles` numbers its variants, or `UNSET` for the default (`compiles`).
+static COMPILES: AtomicU8 = AtomicU8::new(UNSET);
+const UNSET: u8 = u8::MAX;
 /// The display settings in force, then the ones that `reset` restores.
 static DISPLAY: LazyLock<RwLock<[display::Settings; 2]>> = LazyLock::new(|| RwLock::new([display::Settings::default(); 2]));
 
@@ -30,6 +35,9 @@ pub(crate) fn numeric() -> Numeric {
     let kinds = if STATIC_KINDS.load(Relaxed) { Kinds::Static } else { Kinds::Dynamic };
     Numeric { mathish, width: float_width(), kinds, int: if INT32.load(Relaxed) { Width::I32 } else { Width::I64 }, ..Numeric::DEFAULT }.with_public_tolerance()
 }
+/// The `int` width under static kinds, and `None` under dynamic kinds. Static kinds store every ordinary integer array at the `int` width, and dynamic kinds store each one at the narrowest width that holds its values (`array::ordinary_width`). It reads only the two settings that array construction needs.
+#[inline]
+pub(crate) fn int_storage() -> Option<Width> { STATIC_KINDS.load(Relaxed).then(|| if INT32.load(Relaxed) { Width::I32 } else { Width::I64 }) }
 /// Makes `numeric` the numeric settings in force. Only `Numeric::convergence` changes `units`, for its own comparisons, so the store leaves them out.
 pub(crate) fn set_numeric(numeric: Numeric) {
     MATHISH.store(numeric.mathish, Relaxed);
@@ -61,15 +69,40 @@ pub(crate) fn set_batch(on: bool) { BATCHING.store(on, Relaxed) }
 /// Whether hanzi spell glyphs, as a leading `•prefs ["hanzi_aliases":$t]` declares.
 pub fn hanzi_aliases() -> bool { HANZI_ALIASES.load(Relaxed) }
 pub(crate) fn set_hanzi_aliases(on: bool) { HANZI_ALIASES.store(on, Relaxed) }
-/// The sizes that decide which calls wait and how a graph splits its items: `Sizes::SMALL` while the reference harness asks for them, and the defaults otherwise.
+/// The sizes that decide which calls wait and how a block stage splits its items: `Sizes::SMALL` while the reference harness asks for them, and the defaults otherwise.
 pub(crate) fn sizes() -> Sizes { if SMALL_SIZES.load(Relaxed) { Sizes::SMALL } else { Sizes::DEFAULT } }
 pub(crate) fn set_small_sizes(on: bool) { SMALL_SIZES.store(on, Relaxed) }
+/// Whether each program is checked before it runs (`program::verify::check`). The reference harness turns it on for every case and page.
+pub(crate) fn verifies() -> bool { VERIFIES.load(Relaxed) }
+pub(crate) fn set_verifies(on: bool) { VERIFIES.store(on, Relaxed) }
+
+/// How block stages compile their parts (`blocks::Blocks::compiles`): by the compile policy, every stage on its first run, or none. The reference harness sets it for each run, and `tests/jit.rs` sets it to compare compiled stages with uncompiled ones (`compiled_runs`). Timings compare compiled stages with none through `BASEDPL_COMPILE`. The browser build compiles nothing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Compiles { Policy, Always, Never }
+
+#[cfg(not(web))]
+impl Compiles {
+    /// `always` or `never` from `BASEDPL_COMPILE`, read once for the process, and otherwise the policy.
+    fn from_env() -> Self {
+        static FROM_ENV: std::sync::OnceLock<Compiles> = std::sync::OnceLock::new();
+        *FROM_ENV.get_or_init(|| match std::env::var("BASEDPL_COMPILE").as_deref() { Ok("always") => Self::Always, Ok("never") => Self::Never, _ => Self::Policy })
+    }
+}
+
+/// When block stages compile their parts: as `set_compiles` set it, or as `Compiles::from_env` gives it until then and after each `reset`.
+#[cfg(not(web))]
+pub(crate) fn compiles() -> Compiles {
+    match COMPILES.load(Relaxed) { 0 => Compiles::Policy, 1 => Compiles::Always, 2 => Compiles::Never, _ => Compiles::from_env() }
+}
+pub fn set_compiles(compiles: Compiles) { COMPILES.store(compiles as u8, Relaxed) }
+pub use crate::program::blocks::compiled_runs;
 
 /// Restores every setting's default, with the display defaults that `set_display_defaults` gave, and rustymath's default thread count. `]clear` does this, and the test harnesses do it before each test.
 pub fn reset() {
     set_numeric(Numeric::DEFAULT);
     set_float_set(false);
-    for (flag, default) in [(&HANZI_ALIASES, HANZI), (&BATCHING, BATCH), (&REPORTS_FUSION, REPORTS), (&SMALL_SIZES, SMALL)] { flag.store(default, Relaxed); }
+    for (flag, default) in [(&HANZI_ALIASES, HANZI), (&BATCHING, BATCH), (&REPORTS_FUSION, REPORTS), (&SMALL_SIZES, SMALL), (&VERIFIES, VERIFY)] { flag.store(default, Relaxed); }
+    COMPILES.store(UNSET, Relaxed);
     let mut display = DISPLAY.write().unwrap_or_else(PoisonError::into_inner);
     display[0] = display[1];
     rustymath::parallel::set_threads(0);

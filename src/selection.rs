@@ -1,5 +1,5 @@
 use rustymath::{agreement::Mapping, buffer::View, error::Kind, gather::Steps};
-use crate::{array::{generated_len, Frame, Gather, Items, Layout, Prototype, Storage, Widening}, primitive::{Form, Origin, Primitive, Selection, Targets}, transform::Carrier, Error, Described, ErrorKind, Span, Value};
+use crate::{array::{generated_len, Frame, Gather, Items, Layout, Prototype, Storage, Widening}, primitive::{Form, Origin, Primitive, Selection, Targets}, transform::{Carrier, Part}, Error, Described, ErrorKind, Span, Value};
 use rustymath::hashing::{HashMap, HashMapExt};
 use std::sync::{Arc, OnceLock};
 use crate::array::{Footprint, Seen};
@@ -36,7 +36,7 @@ impl Labels {
         labels.nested.insert(array.storage_id(), (array.clone(), vec![]));
         Ok((labels, array))
     }
-    /// What `selected`, a selector's result at label level `level`, selects, or `None` where it holds no labels at that level. Several items whose labels map the root with no fill read as a walk over the root, with no ids. The root itself, passed through unchanged as one item, is a path that a write replaces whole.
+    /// What `selected`, a selector's result at label level `level`, selects, or `None` where it holds no labels at that level. Several items whose labels map the root by an entry for each axis (`Mapping::entries`), fills included, read as a walk over the root, with no ids. A write through that walk skips the positions that reach no item. The root itself, passed through unchanged as one item, is a path that a write replaces whole.
     pub(crate) fn read(&mut self, selected: &Value, level: u64) -> Option<Read> {
         let Some(l) = at_level(selected, level) else {
             // A map over no cells gives an empty result with no labels. It selects nothing, so its write writes nothing.
@@ -101,7 +101,7 @@ impl Labels {
     pub fn replacements(&self, read: Read, right: &Value, span: &Span) -> Result<(Selection, Value), Error> {
         let (selected, kind) = match read { Read::Walk(selection) => return Ok((selection, right.clone())), Read::Ids(ids, kind) => (ids, kind) };
         let selected = &selected;
-        if let (SelectionKind::Elements, Places::Offsets(n), Items::Compact(View::Integers(ids))) = (kind, &self.places, selected.as_items()) {
+        if let (SelectionKind::Elements, Places::Offsets(n), Some(View::Integers(ids))) = (kind, &self.places, selected.view()) {
             let offsets = offsets(&ids.widened(), *n)?;
             return Ok((Selection { frame: Frame::Array(selected.layout().clone()), targets: Targets::Offsets(offsets) }, right.clone()));
         }
@@ -137,7 +137,7 @@ impl Labels {
             values.push(right, pick(i));
             Ok(())
         };
-        if let Items::Compact(View::Integers(ids)) = selected.as_items() {
+        if let Some(View::Integers(ids)) = selected.view() {
             for (i, &id) in ids.widened().iter().enumerate() {
                 label(i, label_id(Some(id))?, targets, values)?;
             }
@@ -189,34 +189,20 @@ impl Labelled {
     fn with_kind(&self, kind: SelectionKind) -> Value {
         Self { level: self.level, kind, root: self.root.clone(), layout: self.layout.clone(), atom: self.atom, labels: self.labels.clone(), values: self.values.clone() }.value()
     }
-    /// The items, read from the root through the mapping the first time a reader needs them.
+    /// The items, read from the root through the mapping the first time a reader needs them, as `primitive::copied_now` reads any value's: a position that reaches no item reads the fill that the mapping chose, and a carried root reads through its carrier. An atom selection reads its one item.
     pub(crate) fn values(&self) -> &Value {
         self.values.get_or_init(|| {
             let Lead::Mapped(mapping) = &self.labels else { unreachable!("ids come with their values") };
-            if self.atom { return mapping.get(0).map_or_else(|| self.root.prototype(), |o| self.root.at(o)); }
-            if self.layout.shape().contains(&0) { return self.layout.collect(Vec::new(), || self.root.prototype()).expect("an empty selection has a layout"); }
-            let read = match mapping {
-                Mapping::Steps { base, steps } => crate::primitive::walked(&self.root, Layout::from(steps.iter().map(Steps::len).collect::<Vec<_>>()), *base, steps),
-                Mapping::Linear(1) => Ok(self.root.clone()),
-                _ => unreachable!("a label's mapping is its root's own order or steps over the root"),
-            };
-            read.and_then(|v| v.relaid(self.layout.clone())).expect("a label's mapping reads its root")
+            if self.atom { return mapping.get(0).map_or_else(|| self.root.fill_item(mapping.chosen()), |o| self.root.at(o)); }
+            crate::primitive::copied_now(&self.root, self.layout.clone(), mapping).expect("a label's mapping reads its root")
         })
     }
     /// The labels, as `Labels::replacements` reads them: root positions counted from 1, 0 for a fill, and `FOREIGN`.
     pub(crate) fn ids(&self) -> Value {
         let mapping = match &self.labels { Lead::Ids(ids) => return ids.clone(), Lead::Mapped(mapping) => mapping };
         if self.atom { return Value::integer(mapping.get(0).map_or(0, crate::transform::offset_id) as i64); }
-        let shape = self.layout.shape();
-        let offsets = match mapping.entries(shape) {
-            Some((base, steps)) => Steps::combined(base, &steps),
-            None => {
-                let n = shape.iter().product();
-                crate::explain::itemwise("label offsets", n);
-                (0..n).map(|k| mapping.get(k).unwrap_or(Steps::FILL)).collect()
-            }
-        };
-        self.layout.integers(offsets.into_iter().map(|o| crate::transform::offset_id(o) as i64).collect()).expect("ids fill the layout")
+        let (base, steps) = mapping.to_walk(self.layout.shape());
+        self.layout.integers(Steps::combined(base, &steps).into_iter().map(|o| crate::transform::offset_id(o) as i64).collect()).expect("ids fill the layout")
     }
     /// Whether this is the root itself, unchanged, which a write replaces whole where its kind is one item.
     fn whole(&self) -> bool { !self.atom && matches!(self.labels, Lead::Mapped(Mapping::Linear(1))) && self.layout == *self.root.layout() }
@@ -237,22 +223,17 @@ impl Labelled {
     /// Item `i`, which a write replaces as one item.
     pub(crate) fn at(&self, i: usize) -> Value {
         match &self.labels {
-            Lead::Mapped(mapping) => Self::mapped(self.level, SelectionKind::Item, self.root.clone(), Layout::default(), true, Mapping::Steps { base: 0, steps: vec![Steps::table(vec![mapping.get(i).unwrap_or(Steps::FILL)])] }),
+            Lead::Mapped(mapping) => Self::mapped(self.level, SelectionKind::Item, self.root.clone(), Layout::default(), true, mapping.with_steps(0, vec![Steps::table(vec![mapping.get(i).unwrap_or(Steps::FILL)])])),
             Lead::Ids(ids) => Self::given(self.level, SelectionKind::Item, self.root.clone(), ids.at(i), self.values().at(i)),
         }
     }
-    /// The items laid out by `layout`, read through `tables` as `primitive::copied` reads a value's. A mapping composes with the tables and reads nothing yet.
-    pub(crate) fn copied(&self, layout: Layout, tables: &[Steps]) -> Result<Value, ErrorKind> {
-        match &self.labels {
-            Lead::Mapped(mapping) => {
-                let mapping = mapping.composed(&Mapping::Steps { base: 0, steps: tables.to_vec() }, self.layout.shape(), layout.shape(), true).expect("a table composes any mapping");
-                Ok(Self::mapped(self.level, SelectionKind::Elements, self.root.clone(), layout, false, mapping))
-            }
-            Lead::Ids(ids) => {
-                let copy = |v: &Value| crate::primitive::copied(v, layout.clone(), tables);
-                Ok(Self::given(self.level, SelectionKind::Elements, self.root.clone(), copy(ids)?, copy(self.values())?))
-            }
+    /// The items laid out by `layout`, read through `map` as `primitive::copied` reads a value's. A mapping composes with `map`, with the fill that `map` chose, and reads nothing yet. Where the labels are ids, or where the mapping and `map` both read fills that they chose differently, the ids and the values each read through the map that their part reads (`Part::map`).
+    pub(crate) fn copied(&self, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> {
+        if let Lead::Mapped(mapping) = &self.labels && let Some(mapping) = mapping.composed(map, self.layout.shape(), layout.shape(), true) {
+            return Ok(Self::mapped(self.level, SelectionKind::Elements, self.root.clone(), layout, false, mapping));
         }
+        let copy = |v: &Value, part: Part| crate::primitive::copied(v, layout.clone(), &part.map(map));
+        Ok(Self::given(self.level, SelectionKind::Elements, self.root.clone(), copy(&self.ids(), Part::Derived)?, copy(self.values(), Part::Values)?))
     }
 }
 
@@ -339,18 +320,18 @@ impl Join {
         Self { level, root: root_of([source], level), values: held, ids }
     }
     pub(crate) fn len(&self) -> usize { self.values.len() }
-    pub(crate) fn each(&mut self, source: &Value, replaces: bool, op: impl Fn(&mut Gather, &Value)) {
+    pub(crate) fn each(&mut self, source: &Value, replaces: bool, op: impl Fn(&mut Gather, &Value, Part)) {
         let before = self.values.len();
         match at_level(source, self.level) {
-            Some(l) => { op(&mut self.values, l.values()); op(&mut self.ids, &l.ids()); }
+            Some(l) => { op(&mut self.values, l.values(), Part::Values); op(&mut self.ids, &l.ids(), Part::Derived); }
             None => {
-                op(&mut self.values, source);
+                op(&mut self.values, source, Part::Values);
                 let foreign = Value::integer(FOREIGN);
-                if replaces { op(&mut self.ids, &foreign) } else { self.ids.fill(&foreign, self.values.len() - before) }
+                if replaces { op(&mut self.ids, &foreign, Part::Derived) } else { self.ids.fill(&foreign, self.values.len() - before) }
             }
         }
     }
-    pub(crate) fn add(&mut self, item: Value) { self.each(&item, false, |g, s| g.add(s.clone())) }
+    pub(crate) fn add(&mut self, item: Value) { self.each(&item, false, |g, s, _| g.add(s.clone())) }
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
         let values = self.values.finish(layout.clone(), prototype)?;
         Ok(Labelled::given(self.level, SelectionKind::Elements, self.root, self.ids.finish(layout, Value::integer(0))?, values))

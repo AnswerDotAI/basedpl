@@ -58,7 +58,7 @@ impl Polynomial {
             Self::Powers { coefficients, exponents, variables } => {
                 if *variables != 1 { return Err(Error::domain("coefficient conversion requires a univariate polynomial")); }
                 let degrees = exponents.iter()
-                    .map(|e| e[0].nonnegative_integer::<usize>().described("coefficient conversion needs nonnegative integral exponents"))
+                    .map(|e| e[0].nonnegative_integer::<usize>().described("coefficient conversion needs nonnegative whole exponents"))
                     .collect::<Result<Vec<_>, _>>()?;
                 let len =
                     degrees.iter().max().copied().unwrap_or(0).checked_add(1).ok_or_else(|| Error::new(Kind::Limit, "polynomial degree is too large"))?;
@@ -195,7 +195,7 @@ pub(crate) fn call(left: Option<&Value>, right: &Value) -> Result<Value, Error> 
     if let Some(y) = evaluated(left, right)? { return Ok(y); }
     let (cells, agreement) = polynomial_cells(left, right.layout())?;
     let polynomials = parsed(&cells)?;
-    let settings = Numeric::current().for_values([left, right]).map_err(Error::domain)?;
+    let settings = Numeric::for_values([left, right])?;
     let mut results = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
         check()?;
@@ -203,10 +203,10 @@ pub(crate) fn call(left: Option<&Value>, right: &Value) -> Result<Value, Error> 
         let point_index = agreement.right.get(i);
         let point = if right.is_empty() { right.prototype() }
         else if let Some(j) = point_index { right.at(j) }
-        else if let Some(j) = index { cells.get(j).described("invalid polynomial cell")?.fill() }
+        else if let Some(j) = index { cells.get(j).described("invalid polynomial cell")?.zeroed() }
         else { right.prototype() };
         let missing;
-        let polynomial = if let Some(j) = index { &polynomials[j] } else { missing = Polynomial::parse(&point.fill())?; &missing };
+        let polynomial = if let Some(j) = index { &polynomials[j] } else { missing = Polynomial::parse(&point.zeroed())?; &missing };
         results.push(Value::number(polynomial.evaluate(&coordinates(&point)?)?.wrapped(settings)).unwrap());
     }
     if agreement.layout.shape().is_empty() { return Ok(results.remove(0)); }

@@ -7,7 +7,7 @@ impl Session {
     fn has_members(nodes: &[Node]) -> bool {
         nodes.iter().any(|n| matches!(n.kind, NodeKind::Subscript(_) | NodeKind::Joiner(_))) || nodes.windows(2).any(|w| {
             matches!(w[0].kind, NodeKind::Operator(OperatorKind::Product))
-                && matches!(w[1].kind, NodeKind::Name(_) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. })
+                && matches!(w[1].kind, NodeKind::Name(_, _) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. })
         })
     }
 
@@ -22,12 +22,12 @@ impl Session {
         while i < nodes.len() {
             if let (NodeKind::Operator(OperatorKind::Product), Some(next)) = (&nodes[i].kind, nodes.get(i + 1)) {
                 let root = out.last().filter(|root| !on_function && match &root.kind {
-                    NodeKind::Name(_) | NodeKind::Group(_) => self.holds_array(root, log),
+                    NodeKind::Name(_, _) | NodeKind::Group(_) => self.holds_array(root, log),
                     NodeKind::Literal(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Scope(..) => true, _ => false
                 });
                 // `.name` reads a field and `.[I]` selects, after an array or a function. After a function, a name that starts a dot path to a function is an inner product's operand instead, as in `+.ops.mul`.
                 let read = match &next.kind {
-                    NodeKind::Name(name) if root.is_some() || !self.path_function(&nodes[i + 1..], log) => {
+                    NodeKind::Name(name, _) if root.is_some() || !self.path_function(&nodes[i + 1..], log) => {
                         Some((Node { kind: NodeKind::Literal(crate::keyed::text(name.text())), span: next.span.clone() }, Primitive::Mix))
                     }
                     NodeKind::ArrayLiteral { form: ListForm::Items | ListForm::Cells, .. } => Some((next.clone(), Primitive::Bracket)),
@@ -118,9 +118,9 @@ impl Session {
     }
     /// Whether the dot path that starts `nodes`, such as `mul` or `ops.mul`, names a function or operator, read without evaluating anything (`path_category`).
     fn path_function(&self, nodes: &[Node], log: &mut Facts) -> bool {
-        let Some(NodeKind::Name(name)) = nodes.first().map(|n| &n.kind) else { return false };
+        let Some(NodeKind::Name(name, _)) = nodes.first().map(|n| &n.kind) else { return false };
         let keys: Vec<Arc<str>> = nodes[1..].chunks_exact(2).map_while(|pair| match pair {
-            [Node { kind: NodeKind::Operator(OperatorKind::Product), .. }, Node { kind: NodeKind::Name(key), .. }] => Some(key.text().into()),
+            [Node { kind: NodeKind::Operator(OperatorKind::Product), .. }, Node { kind: NodeKind::Name(key, _), .. }] => Some(key.text().into()),
             _ => None,
         }).collect();
         self.path_category(*name, &keys, log) != Category::Value
@@ -282,11 +282,11 @@ pub(super) fn derived(operand: Binding, operator: Binding, span: &Span) -> Resul
             // `ᵘ` makes a scalar that holds a function. `⊂` encloses a subject.
             (Superscript::Unit, Operand::Function(f)) => return Ok(Derived::Term(Binding::Value(crate::Value::Function(f).enclose().described("invalid scalar").at(span)?))),
             (Superscript::Unit, _) => return Err(Error::domain("ᵘ makes a scalar that holds a function. Enclose a subject with ⊂").at(span)),
-            (Superscript::Power(n), Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Math(crate::number::Math::Power)), Some(a), crate::Value::Number(crate::Number::from_integer(n).marked(true)))),
+            (Superscript::Power(n), Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Math(crate::number::Math::Power)), Some(a), crate::Value::weak_integer(n))),
             (Superscript::Transpose, Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Transpose), None, a)),
             (Superscript::Mark(crate::number::Mark::Exact), Operand::Value(a)) => return Ok(Derived::Call(function(Primitive::Exact(crate::primitive::Exact::Floor)), None, a)),
             (Superscript::Mark(crate::number::Mark::Fixed(w)), Operand::Value(a)) => {
-                return Ok(Derived::Term(Binding::Value(a.to_fixed(w).described("can't convert to fixed integers").at(span)?)));
+                return Ok(Derived::Term(Binding::Value(crate::derivative::converted(&a, rustymath::buffer::DType::Integer(w), span).at(span)?)));
             }
             (Superscript::Mark(crate::number::Mark::Width(w)), Operand::Value(a)) => {
                 let float = crate::primitive::Builtin::find("•float").expect("•float is a system function").function();
@@ -356,7 +356,7 @@ impl Category {
     }
     pub(super) fn of(value: &Binding) -> Self {
         match value {
-            Binding::NoResult => Self::NoResult, Binding::Absent => Self::Absent, Binding::Value(_) => Self::Value, Binding::Function(_) => Self::Function,
+            Binding::NoResult => Self::NoResult, Binding::Absent => Self::Absent, Binding::Value(_) | Binding::Released => Self::Value, Binding::Function(_) => Self::Function,
             Binding::Operator(op) => Self::of_operator(op),
         }
     }
@@ -570,7 +570,7 @@ impl Binder {
                         cursor = begin + session.assignment_start(&nodes[begin..i])?;
                         let value = session.assigned(&nodes[cursor..i], value, None, &nodes[i].span)?;
                         log(&mut rec, |rc| {
-                            let local = match &nodes[cursor..i] { [Node { kind: NodeKind::Name(name), .. }] if !monadic => match session.bindings.here(*name) { Place::Slot(_, slot) => Some(slot), _ => None }, _ => None };
+                            let local = match &nodes[cursor..i] { [Node { kind: NodeKind::Name(name, _), .. }] if !monadic => match session.bindings.here(*name) { Place::Slot(_, slot) => Some(slot), _ => None }, _ => None };
                             rc.assigned(i - begin, cursor, monadic, local, range.clone())
                         });
                         pending.push(Entity::new(Term::Binding(value), range, true, None));
@@ -589,7 +589,7 @@ impl Binder {
                             session.stacks.borrow_mut().extend([binder.stack, pending]);
                             return Ok(Reduced::Tail(call));
                         }
-                    let bound = call.function.call(call.left.as_ref(), &call.right, &call.span)?;
+                    let bound = call.function.call_with(call.left.map(Cow::Owned), Cow::Owned(call.right), &call.span)?;
                     let entity = Entity::new(Term::Binding(bound.value), narrow(&call.span.range), bound.shy, call.expression);
                     log(&mut rec, |rc| rc.called(call.span.clone(), entity.category, last));
                     binder.push(entity);

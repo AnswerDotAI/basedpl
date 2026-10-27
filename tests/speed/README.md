@@ -6,7 +6,7 @@ The three footer budgets are macOS on Apple silicon, Linux on CI's x86 runner, a
 
 A copy is one read and one write of `n` 64-bit floats. Costs normalize to the machine's stored copy time, or one measured once. The `widths` section instead compares 32-bit time with the same expression in `exact`. A `static` section repeats its file's workloads with 32-bit integers and floats, still counting 64-bit copies: each float pass moves half the bytes and has twice as many vector lanes. Its expected cost is normally half the 64-bit cost.
 
-An initial copy budget is twice a first-principles expected cost, at least 0.5. A width-ratio budget adds 0.25 to the expected fraction. A later budget needs a fuller understanding, not just a slower measurement. Preserve the comments recording each expected cost and later changes. One expected cost serves every platform until a specific platform difference is found.
+A copy budget is the expected cost times the multiplier that `set_budgets` applies, at least 0.5, as basedpl's DEV.md gives. A width-ratio budget adds 0.25 to the expected fraction. A later expected cost needs a fuller understanding, not just a slower measurement. Preserve the comments recording each expected cost and later changes. One expected cost serves every platform until a specific platform difference is found.
 
 On CI, wasm's 128-bit SIMD and lack of fused multiply-adds make vector arithmetic cost about twice its native AVX2 cost. Such wasm budgets are twice that expected cost. Scalar and memory-bound work has a smaller difference. CI's x86 runner is an AMD Ryzen 9 7950X3D. On macOS, Rustymath's `tests/speed.txt` header records Accelerate's matrix-product rates in flops per copy time; a case far from its class's rate records its own measurement.
 

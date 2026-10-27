@@ -757,7 +757,7 @@ T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⊽≠\T∊"()" # T   ⍝ "ONE BOOK"
 3↣-1   ⍝ 2
 
 ⍝ ngn:246 —
--↢2⊢9   ⍝ 7
+(-↢2)9   ⍝ 7
 
 ⍝ ngn:247 —
 1 2∪2 3   ⍝ 1 2 3
@@ -912,7 +912,7 @@ T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⊽≠\T∊"()" # T   ⍝ "ONE BOOK"
 2 3 × ⊗ 4 5   ⍝ [8 10⋄12 15]
 
 ⍝ ngn:295 —
-2 3 {⍺×⍵}⊗ 4 5   ⍝ [8 10⋄12 15]
+2 3×⊗4 5   ⍝ [8 10⋄12 15]
 
 ⍝ ngn:296 —
 1 3 5 7+.=2 3 6 7   ⍝ 2ₓ
@@ -930,7 +930,7 @@ T←"ONE(TWO) BOOK(S)"⋄(T∊"()")⊽≠\T∊"()" # T   ⍝ "ONE BOOK"
 1 3 5 7∧.=1 3 5 7   ⍝ $t
 
 ⍝ ngn:301 —
-7+.=7   ⍝ $t
+7+.=7   ⍝ 1ₓ
 
 ⍝ ngn:302 —
 [5 ¯3⋄¯2 4⋄¯1 0]+.×[6 ¯3⋄5 7]   ⍝ [15 ¯36⋄8 34⋄¯6 3]
@@ -1542,10 +1542,10 @@ $a⍳"NGN/"   ⍝ [13 6 13 26]ₓ
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:496 —
-{⍵+1}⍣5⊢3   ⍝ 8
+1(+⍣5)3   ⍝ 8
 
 ⍝ ngn:497 —
-{⍵+1}⍣0⊢3   ⍝ 3
+1(+⍣0)3   ⍝ 3
 
 ⍝ ngn:498 —
 ⍴⍣3 [2 2]⍴⍳4ₓ   ⍝ [1]ₓ
@@ -2269,7 +2269,7 @@ S5
 c←3 3⍴⍳9ₓ ∊ 1 2 3 4 7
 c←3 3⍴⍳9ₓ ∊ 1 3 6 7 8
 b←¯1⊖¯2⌽5 7↑c
-life←{[1 ⍵]∨.∧3 4=⊂+/+⌿1 0 ¯1⊖⊗1 0 ¯1⌽¨⊂⍵}
+life←{[$t ⍵]∨.∧3ₓ 4ₓ=⊂+/+⌿1 0 ¯1⊖⊗1 0 ¯1⌽¨⊂⍵}
 gen←{[(life⍣⍵)b]⌷" #"}
 gen¨↦3
 ⍝ =>
@@ -2295,7 +2295,7 @@ queens5
 
 ⍝ ngn:501 — ngn accepts count/function operands to power in either order (apl.js, voc[⍣]); port to function⍣count; Explicit modified assignment updates the outer counter under basedpl scope rules; Original expected 5 retained and checked in Dyalog 20.0.53963.0
 c←0
-{c+←1}⍣5⊢0
+({c+←1}⍣5)0
 c   ⍝ 5
 
 ⍝ ngn:421 — BasedPL port uses existing seeded folds or ordinary functions; independent upstream expectation retained; Use an explicit whole seed; a seeded wrapper leaves the unseeded function unchanged

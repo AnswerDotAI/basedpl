@@ -4,13 +4,13 @@ After [Syntax](syntax.qmd) divides a statement into runs, BPL binds the runs as 
 
 ## Binding
 
-Evaluation goes from right to left. Functions have no precedence over each other. A function's right argument is everything to its right. Its left argument is the subject directly to its left, if there is one. The value to a function's left therefore decides whether the function gets one argument or two. In `g(f)4` with `g←÷`, the function `g` stands to the left of `(f)`, which makes `f` monadic.
+Evaluation goes from right to left. Functions have no precedence over each other. A function's right argument is everything to its right. Its left argument is the subject directly to its left, if there is one. The value to a function's left therefore decides whether the function gets one argument or two. In `g⁝f4` with `g←÷`, the function `g` stands to the left of `f`, which makes `f` monadic.
 
 ```bpl
 2×3+4                ⍝ 14
 10-3-2               ⍝ 9
-f←- ⋄ 5(f)3          ⍝ 2
-f←- ⋄ g←÷ ⋄ g(f)4    ⍝ ¯0.25
+f←- ⋄ 5 f 3          ⍝ 2
+f←- ⋄ g←÷ ⋄ g⁝f4    ⍝ ¯0.25
 ```
 
 Subjects side by side form a [strand](terms.qmd#term-strand), a vector with one item for each subject. Each run is evaluated before the strand forms. A literal strand counts as one item.
@@ -35,7 +35,7 @@ fs←[+ × ÷] ⋄ 1 fs            ⍝ [1 [+ × ÷]]
 
 Operators bind before functions apply. An operator's left [operand](terms.qmd#term-operand) is the whole function to its left. Its right operand is the one [token](terms.qmd#term-token) to its right. A literal strand counts as one token: in `f⍤1 2 M`, the rank is `1 2`. Put a vector argument after a literal operand in brackets, as in `f⍤1[2 3]`. An argument that touches the operand stays out of it: `+/⍤1m` applies `+/⍤1` to `m`, and `'a',⍣3'b'` applies `'a',⍣3` to `'b'`.
 
-A numeric operand and numeric argument need an explicit separator. `f⍣¯25` has operand `¯25`, while `f⍣¯2 5` has operand `¯2 5`. Use `f⍣¯2(5)` or `f⍣¯2⊢5` to give operand `¯2` and argument `5`.
+`⁝` separates a numeric operand from a numeric argument. `f⍣¯25` has operand `¯25`, and `f⍣¯2 5` has operand `¯2 5`. `f⍣¯2⁝5` has operand `¯2` and argument `5`. With both a left and a right argument, parentheses around the derived function show its boundary. [Composing functions](composition.qmd#separating-an-operand-from-its-argument) gives the forms and where each reads well.
 
 Each run counts as one token, as a parenthesised group does. An operator at the end of a run takes the next run as its right operand, as it takes a touching token: in `⌊@ 10× x`, the right operand of `@` is the run `10×`. An operator at the start of a run takes the previous run as its left operand: in `≢⊢ ⌸x`, the left operand of `⌸` is the run `≢⊢`. Names that hold operators count in both places.
 
@@ -44,9 +44,8 @@ m←2 3⍴⍳6ₓ ⋄ +/⍤1 m               ⍝ [3 12]ₓ
 m←2 3⍴⍳6ₓ ⋄ +/⍤1m                ⍝ [3 12]ₓ
 ⌊@ 10× 1.25 2.78                 ⍝ 1.2 2.7
 x←0 1 1 0 1 1 ⋄ ≢⊢ ⌸x            ⍝ [2 4]ₓ
-x←5 ⋄ ≥⍣3 x                     ⍝ 8
-≥⍣3(5)                          ⍝ 8
-≥⍣3⊢5                           ⍝ 8
+x←5 ⋄ ≥⍣3x                      ⍝ 8
+≥⍣3⁝5                           ⍝ 8
 ```
 
 Where an operator takes only a function, an array that holds a function as an item calls each such function on the whole arguments. Each other item is its own result. The results combine as Rank combines its results, with the array's shape as their frame. Any other array acts as a constant function, like `A⍨`. An operator that takes either kind keeps every array as data. Reduce and scan need a function, or an array that holds one. `5/` is an error, and Replicate is written `#`.
@@ -63,19 +62,19 @@ A run, group or statement that ends in a function is a [train](terms.qmd#term-tr
 1. Each subject [binds](terms.qmd#term-bind) the one [part](terms.qmd#term-part) after it. `2×` is `2↣×`, and the parts of `2|#⊢` are `2|`, `#` and `⊢`. To bind a whole train, put it in parentheses, as in `2(+×-)`.
 2. BPL builds the train from its last part leftwards, as APL does. A bound part takes one argument, so it forms an [atop](terms.qmd#term-atop) with the train built so far. Any other part forms a [fork](terms.qmd#term-fork) with the part before it and the train built so far, or an atop when it comes first.
 
-A fork `f g h` gives `(f ⍵) g (h ⍵)`, and an atop `f g` gives `f (g ⍵)`. So `2|#⊢` is the fork `(2|)#⊢`, and `⊢-2×⊢` is `⊢-(2×)∘⊢`, as in APL. With two arguments, a fork gives `(⍺ f ⍵) g (⍺ h ⍵)`, and an atop gives `f (⍺ g ⍵)`. A bound function takes one argument only: `3 (2×) 4` is a `SYNTAX` error.
+A fork `f g h` gives `(f ⍵) g (h ⍵)`, and an atop `f g` gives `f (g ⍵)`. So `2|#⊢` is the fork `(2|)#⊢`, and `0.5×⊢+÷` is the atop `(0.5×)∘(⊢+÷)`, as in APL. With two arguments, a fork gives `(⍺ f ⍵) g (⍺ h ⍵)`, and an atop gives `f (⍺ g ⍵)`. A bound function takes one argument only: `3 (2×) 4` is a `SYNTAX` error.
 
 ```bpl
 f←32+1.8× ⋄ f100     ⍝ 212
-(+/÷≢) 1 2 3 6       ⍝ 3
-(0.5×⊢+÷) 2          ⍝ 1.25
-(2|#⊢) 5 6 7         ⍝ 5 7
++/÷≢ 1 2 3 6       ⍝ 3
+0.5×⊢+÷ 2          ⍝ 1.25
+2|#⊢ 5 6 7         ⍝ 5 7
 2 (1-×) 5            ⍝ ¯9
 ```
 
 A space before an argument keeps the train separate from it. `+/÷≢ x` applies the train `+/÷≢` to `x`. `+/÷≢x` is one run, which reads as `+/(÷(≢x))`. A train whose subjects and functions alternate, such as `32+1.8×`, gives the same result either way.
 
-Two names next to each other need a space between them. A literal can touch a name, as it touches a glyph: `1+⌽f5`. Inside a longer expression, put a name argument in parentheses, as in `1+⌽f(x)`. Without them, `1+⌽f x` applies the train `1+⌽f` to `x`. A run that starts with a function is a call: `×2` is the sign of 2.
+`⁝` keeps adjacent names distinct without separating their run: `1+⌽f⁝x` applies `f` to `x`. A space there changes the grouping: `1+⌽f x` applies the train `1+⌽f` to `x`. A literal can touch a name without a separator, as it touches a glyph: `1+⌽f5`. A run that starts with a function is a call: `×2` is the sign of 2.
 
 Some trains and compositions are [fast combinations](terms.qmd#term-fast-combination): BPL computes them by a faster algorithm than applying their parts in turn, with the same result. `10↑⍋ v` selects the first 10 positions of the grade without ordering the rest. The glyph pages list each combination under "Fast combinations", and [`•explain`](system/explain.qmd) reports the ones a run takes. BPL recognises a combination only where its functions form one function: a train, a composition, or an operator's operand. The expression `10↑⍋v` grades the whole of `v` before it takes 10 positions. A result that BPL defers is the exception. `+/50↕v` folds the windows that `↕` defers by sliding over `v`, without building them.
 
@@ -93,7 +92,7 @@ Pervasion repeats these rules inside nested items. Each and Rank frames also use
 
 ## Axes and indices
 
-Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be an integer, or a float within `1E¯14` of an integer, whatever the `mathish` setting.
+Positions and axes count from 0. Negative positions and axes count from the end. A count or position must be a whole number, or a float within `1E¯14` of one, whatever the `mathish` setting.
 
 [Index](glyphs/squad.qmd) `⌷` selects along leading axes. Its result has the shape of the positions, followed by the shape of each selected cell. `:` selects one whole axis; `∞` keeps the remaining axes. [Dot indexing](glyphs/dot.qmd) writes the same selection after an array: `m.[: 1]` is `[: 1]⌷m`. A [subscript](scripts.ipynb#subscripts) selects one position on the leading axis.
 
@@ -168,7 +167,7 @@ A guard's predicate that reads a cell's value splits the batched call, as [`⍚`
 
 A fold or scan by a dfn of an array with more than one lane, such as one along each row of a matrix, makes one batched call for each stage. The call at position `j` runs on item `j` of every lane. `{⍺-⍵}/m` folds every row of `m` from the right with one call for each column, rather than one for each item. In `x f.g y` with a dfn `g`, one batched call runs `g` on every pairing of a row of `x`, a position along the contraction and a column of `y`. `f` then folds along the contraction. Where its batched call stops, a fold or inner product calls its operand once for each item, for the same reasons as a map, below.
 
-`∂` in the operand differentiates with respect to all the cells in one batched call, cells that are arrays included: `{{+/⍵*2}∂⍵}⍤1⊢m` gives every row's gradient at once.
+`∂` in the operand differentiates with respect to all the cells in one batched call, cells that are arrays included: `{{+/⍵*2}∂⍵}⍤1 m` gives every row's gradient at once.
 
 The map calls its operand once for each cell instead where the operand:
 
@@ -188,7 +187,7 @@ Where such a shared array is smaller, the map calls its operand once on each chu
 
 A dfn remembers why its batched call stopped, and later maps skip the batched call while that cause would recur. After output, input, `⍕`, a system function that acts, a write to a name outside the map, a read of a cell's value or a guard in a recursive call, they skip it on every later call. After a call that can't run on all the cells at once, they skip it while the arguments keep their kinds and cell shapes. After a call that would repeat a shared array too far, they skip it while the frame also keeps its shape. A caught error isn't remembered, because whether an error arises depends on the cells' values.
 
-A map always calls its operand once for each cell where an argument that differs from cell to cell is held in mixed storage, as [`•storage`](system/storage.qmd) reports for nested arrays and exact rationals, or has named axes. A map of one cell whose arguments' cells are atoms makes no batched call either, because one plain call is faster. The `fallbacks` table of [`•explain`](system/explain.qmd) lists, with the reason, each map whose batched call fell back to one call for each cell, each map that skipped its batched call because an earlier one stopped. Its `itemwise` table lists each batched call that read its cells' items one at a time. With `batch` set to `$f` in [`•prefs`](system/prefs.qmd), every map calls its operand once for each cell.
+A map always calls its operand once for each cell where an argument that differs from cell to cell is held in mixed storage, as [`•storage`](system/storage.qmd) reports for nested arrays and exact rationals. A map of one cell whose arguments' cells are atoms makes no batched call either, because one plain call is faster. The `fallbacks` table of [`•explain`](system/explain.qmd) lists, with the reason, each map whose batched call fell back to one call for each cell, each map that skipped its batched call because an earlier one stopped. Its `itemwise` table lists each batched call that read its cells' items one at a time. With `batch` set to `$f` in [`•prefs`](system/prefs.qmd), every map calls its operand once for each cell.
 
 ## Errors
 

@@ -103,6 +103,12 @@ icu_normalizer = ">=2, <3"
 regex = "1"
 walkdir = ">=2.5.0, <3"
 globset = ">=0.4.20, <1"
+# Cranelift compiles a typed program's loops while BPL runs. The browser build has no JIT.
+cranelift-codegen = { version = "0.137", default-features = false, features = ["std", "host-arch"] }
+cranelift-frontend = "0.137"
+cranelift-jit = "0.137"
+cranelift-module = "0.137"
+cranelift-native = "0.137"
 
 # The browser build. `build.rs` sets `cfg(web)` for the same target.
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]

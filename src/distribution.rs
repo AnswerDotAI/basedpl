@@ -59,13 +59,13 @@ fn construct(constructor: &Constructor, right: &Value) -> Result<Distribution, E
         Constructor::Bernoulli => { let [p] = parameters(right)?; Distribution::binomial(1, p) }
         Constructor::Binomial => {
             let [_, p] = parameters(right)?;
-            let n = numeric(&right.at(0))?.nonnegative_integer::<u64>().described("binomial trials must be a nonnegative integer")?;
-            if n > WHOLE { return Err(Error::new(Kind::Limit, "binomial trials exceed the sampler's integer range")); }
+            let n = numeric(&right.at(0))?.nonnegative_integer::<u64>().described("binomial trials must be a nonnegative whole number")?;
+            if n > WHOLE { return Err(Error::new(Kind::Limit, "binomial trials exceed the sampler's whole-number range")); }
             Distribution::binomial(n, p)
         }
         Constructor::Poisson => {
             let [rate] = parameters(right)?;
-            if rate > WHOLE as f64 { return Err(Error::new(Kind::Limit, "Poisson rate exceeds the sampler's integer range")); }
+            if rate > WHOLE as f64 { return Err(Error::new(Kind::Limit, "Poisson rate exceeds the sampler's whole-number range")); }
             Distribution::poisson(rate)
         }
     };
@@ -229,7 +229,7 @@ pub(crate) fn generator(_: Option<&Value>, right: &Value, _: &Span) -> Result<Va
     crate::transform::acts()?;
     if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "•rand needs a unit or vector seed")); }
     if !right.is_singleton() { return Err(Error::new(Kind::Length, "•rand needs one seed")); }
-    let seed = numeric(&right.at(0))?.nonnegative_integer::<u64>().described("•rand needs a nonnegative integer seed")?;
+    let seed = numeric(&right.at(0))?.nonnegative_integer::<u64>().described("•rand needs a nonnegative whole number as its seed")?;
     let rng = Arc::new(Mutex::new(Stream::seeded(seed)));
     Ok(natives([("roll", Call::Generator(rng.clone(), Draw::Roll), Monadic), ("deal", Call::Generator(rng, Draw::Deal), Dyadic)]))
 }

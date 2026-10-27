@@ -79,9 +79,9 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
             let Some(items) = &columns[i] else { return Ok([0, 1, 1, 0, 0, 0, 0][i]) };
             match &items[p] {
                 Value::Number(n) => n.integer().ok(), _ => None
-            }.ok_or_else(|| Error::domain(format!("date field {} must be an integer", FIELDS[i])))
+            }.ok_or_else(|| Error::domain(format!("date field {} must be a whole number", FIELDS[i])))
         };
-        let moments = (0..shape.iter().product()).map(|p| {
+        let moments = (0..crate::array::count(&shape)).map(|p| {
             let values = (0..7).map(|i| field(i, p)).collect::<Result<Vec<_>, _>>()?;
             Ok(date_time(&values).and_then(|n| zone.moment(n)))
         });

@@ -9,6 +9,8 @@ Function. Keys: `Alt-0`. Hanzi: `极/且` (`極/且`). Ranks: `0` monadic, `0 0`
 ∧3j4              ⍝ 5 0.9272952180016122
 ```
 
+An exact number keeps an exact magnitude beside its float angle. Where integers wrap, under static kinds or at a fixed width, an integer's magnitude and angle are both floats, at the width that `÷` gives the integer.
+
 `X∧Y` gives LCM; on Booleans, AND. Pervasive.
 
 ```bpl

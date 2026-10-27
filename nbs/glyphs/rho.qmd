@@ -16,7 +16,7 @@ M←["city":2 "month":3]⍴⍳6ₓ
 "month"⌷⍴M         ⍝ 3ₓ
 ```
 
-`S⍴Y` reshapes, cycling or truncating the ravel of `Y`. Dimensions are nonnegative integers. Empty `Y` supplies fill.
+`S⍴Y` reshapes, cycling or truncating the ravel of `Y`. Dimensions are nonnegative whole numbers. Empty `Y` supplies fill, which [`⍠`](quad-colon.qmd#fill) can choose.
 
 ```bpl
 2 3⍴1 2            ⍝ [1 2 1⋄2 1 2]

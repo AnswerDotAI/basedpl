@@ -5,7 +5,7 @@ n←240
 t←⍳n ÷ n
 r←30+210×t
 start←π t×n×3-√5
-speed←0.06×(30÷r)*1.5
+speed←0.06× 30÷r * 1.5
 [warm cool]←[1 0.6 0.2⋄0.3 0.5 1]
 glow←0.9 0
 colour←⍉[1-t⋄t] +.× [warm⋄cool]

@@ -1,108 +1,111 @@
 # BasedPL
 
-> BPL, the Based-array Programming Language, is an array language derived from APL, with ideas from J and BQN. Assume Dyalog APL with `⎕ML≥2`, where `↑` is first and take and `⊃` is mix and pick, except where an entry below says otherwise. Most APL idioms don't apply to BPL. Write BPL, not APL.
+> BPL: Based-array Programming Language. APL-derived; J, BQN ideas. Base: Dyalog `⎕ML≥2` (`↑` first/take, `⊃` mix/pick) except below. Most APL idioms don't apply: write BPL.
 
-Each entry below names a difference from Dyalog APL, gives a short example, and links the page that defines it. The entries are not the reference. Every time you rely on anything an entry mentions, read the page it links first. Links are relative to https://answerdotai.github.io/basedpl/. In a BPL session, `]help` followed by a glyph or system function shows its page, as in `]help ⍳`.
+Entry: Dyalog diff, example, defining page. Not the reference: read the page before relying on an entry. Links relative to https://answerdotai.github.io/basedpl/. Session: `]help ⍳` shows a glyph's or system fn's page.
 
 ## Terms
 
-- [Terms](terms.html.md): ensure you've read the full Terms page before reading any reference page. It defines many terms, including these:
-  - atom: a value that isn't an array: a number, character, function or operator. `5` is an atom.
-  - scalar: an array of rank 0 holding one value. `⊂5` is a scalar, while `5` is not.
-  - run: glyphs, names, literals and groups with no spaces between them. A group is code in brackets, parentheses or braces, and may contain spaces: `+/÷≢` is one run, and so is `x.[1 2]`.
-  - key: a string that labels one position along an axis. It's unrelated to the Key operator, `⌸`.
+- [Terms](terms.html.md): read fully before reference pages. Includes:
+  - atom: non-array: number, char, fn, operator. `5`.
+  - scalar: rank-0 array, one value. `⊂5` yes; `5` no.
+  - run: glyphs, names, literals, groups, no spaces between. group: code in `[]` `()` `{}`, may hold spaces. runs: `+/÷≢`, `x.[1 2]`.
+  - key: string labelling an axis position. not Key `⌸`.
 
 ## Language
 
-- [Syntax](syntax.html.md): spaces divide a statement into runs, each read as one parenthesised group: `a+b × c+d` is `(a+b)(×)(c+d)`. A short run beside spaced runs is a group of its own: `1+k (⌈/⊢)⌸ a` is `(1+k)((⌈/⊢)⌸)(a)`. To keep code together, remove its spaces, as in `1+k(⌈/⊢)⌸a`, rather than wrapping it in parentheses. Numbers separated by spaces form one vector, even where one is an operand and the next an argument: `+/⍠2 3 3 3↕m` passes `2 3 3 3` as the operand, while `+/⍠2 3⊢3 3↕m` separates them. For items of a list, put them in brackets with `;` between them: `[+/x ; +/x ÷ ≢x]`. Digits in a name need `_`, as in `x_1`. `x1` is `x` applied to `1`.
-- [Evaluation](evaluation.html.md): a run that ends in a function is a train. `+/÷≢ x` is the mean of `x`, while `+/÷≢x` reads as `+/÷(≢x)`.
-- [Agreement](evaluation.html.md#agreement-and-pervasion): pervasive functions, Each and Rank align leading axes: `[1 2 3⋄4 5 6]+10 20` is `[11 12 13⋄24 25 26]`. An axis of length 1 expands.
-- [Maps](evaluation.html.md#functions-and-effects): Each, Rank, stencils and outer products call a dfn once on all their cells where they can: `{⍵×⍵+1}¨v` costs about what `v×v+1` costs. A predicate on a cell's value runs each body once, on the cells that take it. Output, a nested result, or a result whose shape depends on a cell's value makes them call the dfn once for each cell. A fold or scan by a dfn along each row of a matrix calls it once for each column, on every row at once. `f.g` calls a dfn `g` once, on all its pairings.
-- [Arrays](arrays.html.md): numbers, characters and functions are atoms, distinct from scalars, as in BQN. `⊂` always adds a layer: `⊂3 ≡ 3` is `$f`. An array that holds a function calls it where a subject follows: `2 [+ ×] 3` is `5 6`.
-- [Brackets](glyphs/brackets.html.md): `[a b]` is a vector, even `[a]`. Inside brackets, spaces separate items: `[+/x ÷ ≢x]` is three items, the middle one the function `÷`. Once a list contains `;`, only `;` separates items, and each item is an ordinary expression: `[+/x ; +/x ÷ ≢x]` is two items, and `[1 2;3 4]` is `[(1 2) (3 4)]`. `⋄` separates rows: `[1 2⋄3 4]` is a matrix. `"k":v` items make a record: `["a":1 "b":2]`.
-- [Characters and strings](strings.html.md): `"abc"` is a character vector. `'a'` is one character atom. A single-quoted string such as `'abc'` is an error.
-- [Indexing](indexing.html.md): `Y[I]` isn't BPL. `I⌷A` takes a cross product, while `A.[I J]` pairs its index arrays as NumPy does: with `i←⍳3ₓ`, `m.[i i]` is the diagonal. Positions count from 0. Negative positions count from the end.
-- [Numbers](numbers.html.md): a bare number is a float, as Python's `1.` is. `3ₓ` is a [weak ordinary integer](numbers.html.md#weak-and-strong-numbers), exact under default dynamic kinds. `ₓ₁ ₓ₂ ₓ₄ ₓ₈` give fixed `u8 i16 i32 i64`; arithmetic wraps. Plain `vₓ` removes fixedness without copying. Exact rationals use `1r3`. Under dynamic kinds, default Mathish mode gives `0÷0=0` for [Mathish types](terms.html.md#term-mathish-types) and tolerant f64 comparison; `•prefs ["mathish":$f]` disables both.
-- [Superscripts and subscripts](scripts.html.md): `x²` is `x*2`, `f⁻¹` is the inverse of `f`, `v₁` is `1⌷v`, and `nₓ` is `⌊ₓn`. After a function, `ₓ` floors its results to exact integers: `7÷ₓ2` is `3ₓ`. Between names, `xⱼy` is `x+y×0ⱼ1`, `xₑy` is `x×10*y` and `xᵣy` is the exact quotient of `xₓ` by `yₓ`.
-- [Keyed arrays](keyed.html.md): axes can have names and keys. `T.a` reads field `a` of a record, and `⊢.a` is `{⍵.a}`. Arithmetic pairs axes by name: with `i←⍳["i":3]` and `j←⍳["j":3]`, `i+j` is a 3×3 table.
-- [Dfns](dfns.html.md): BPL has only dfns, with no tradfns and no control structures such as `:If`. A dfn returns its last statement. A predicate picks a body, as in BQN: `{⍵<0?-⍵;⍵} ¯3` is `3`. An absent `⍺` drops out of expressions, as BQN's `𝕨` does. A dfn operator's operands are `⍶` and `⍹`, not `⍺⍺` and `⍵⍵`. `⍢` calls the operator recursively. An error guard names its kinds as text, as in `"DOMAIN"::`.
-- [Assignment](assignment.html.md): `←` is local. Modified and selective updates change the nearest binding. `[a b]←Y` destructures the items of `Y` by position. A space before `←` makes the whole run the target: `[[0 2]]⌷v ←0`.
-- [Modules and namespaces](modules.html.md): `•load "file.bpl"` runs a module and returns its public names as a record. Names that start with `_` are private.
-- [Hanzi spellings](syntax.html.md#hanzi-spellings): hanzi are ordinary name characters. A leading `•prefs ["hanzi_aliases":$t]` enables aliases such as `加总` for `+/`. Non-alias Hanzi remain names; `_` quotes any next non-whitespace character into a name, as in `_加_总`.
-- [Constants and `$` names](system/constants.html.md): `$t $f $n` are true, false and NaN. `$a` and `$d` hold the uppercase alphabet and the digits.
-- [Style](style.html.md): read before writing any BPL.
+- [Syntax](syntax.html.md): BQN stranding: mark strands with `[]` (per BQN's 5-year retrospective), except spaced literals (step 1) and subjects side by side (step 3); like BQN, a space is semantic. `⁝` (Alt-:) separates tokens and stops literal stranding without ending the run: `h⁝m`≡`h(m)`, `f⍣3⁝0`≡`(f⍣3)0`. 3 steps: 1. spaced literals join, 1 vector: `1 2`, `"ab" "cd"`; even operand+arg: `+/⍠2 3 3 3↕m` has operand `2 3 3 3`, write `+/⍠2 3⁝3 3↕m`. 2. each other run→`(run)`: `a+b × c+d`≡`(a+b)(×)(c+d)`; `1+k (⌈/⊢)⌸ a`≡`(1+k)((⌈/⊢)⌸)(a)`. 3. read as APL, right to left; subjects side by side strand: `a b`≡`(a)(b)`≡`[a b]` only if neither touches; `1+a b`≡`(1+a)(b)`→`11 20`, 1 plus both: `1+[a b]`→`11 21`; `n 2⍴0`≡`(n)(2⍴0)`→`[3 [0 0]]`, names never join literal strands: write `[n 2]⍴0`. no needless spaces; join by deleting spaces, not adding parens: `1+k(⌈/⊢)⌸a`. name fn, name arg: `h⁝m` `h[m n]`. name operand, glyph arg: `+/⍠k⍵`. list: `[+/x ; +/x ÷ ≢x]`. name digits: `x_1`; `x1`≡`x(1)`.
+- [Evaluation](evaluation.html.md): run ending in fn: train. `+/÷≢ x` mean; `+/÷≢x`≡`+/÷(≢x)`. `⁝` doesn't group a train: `+/÷≢⁝x` still means the latter. A space before an arg makes the run on its left a train: `10÷√1++/⍠i x` calls dyadic `√`, write `10÷√1++/⍠i⁝x`; `+/,m+⍤2 P` applies the train `+/,m+⍤2` to `P`, write `+/,m(+⍤2)P`.
+- [Composition](composition.html.md): read before writing tests or examples. trains: `f⁝g Y`≡`f(g Y)`, `f⁝g⁝h Y`≡`(f Y)g(h Y)`; `∘` atop, `⍥` over, `↣` `↢` bind left, right; `⍨` self, commute; `⊢` `⊣` stand for args in trains; `⁻¹` inverse; `@` under. worse→better, same results: `0.5×⊢+2÷⊢`→`⊽⁻¹+÷`; `{⍵,1}`→`,↢1`; `×⍨x`→`x²`; `≥⍣3⊢5`→`≥⍣3⁝5`; `+/⍠i⊢m`→`+/⍠i⁝m`. Prefer spaces for top-level groups/subtrains: `+/÷≢ ⊼v`, `mean_square←+/÷≢ ⊼`, `f⁝g⁝h x`. A space groups the whole left run, including any prefix. Nested `()`: try the inner pair first. With only a right arg, prefer `⁝` where a boundary is needed: `f⍣3⁝0`, `(+/÷≢)⍤1⁝2 3⍴⍳6`. With both args, group the derived fn: `10 20(+⍤1)m`. Keep compound operands grouped: `⌊@(10×)x`. Add nothing where tokens already stay distinct: `+/⍤1m`.
+- [Agreement](evaluation.html.md#agreement-and-pervasion): pervasive fns, Each, Rank align leading axes: `[1 2 3⋄4 5 6]+10 20`→`[11 12 13⋄24 25 26]`. length-1 axes expand.
+- [Maps](evaluation.html.md#functions-and-effects): Each, Rank, stencils, outer products call a dfn once on all cells where possible: `{⍵×⍵+1}¨v` costs ≈ `v×v+1`. value predicate: each body once, on its cells. output, nested result, value-dependent shape: a call per cell. dfn fold/scan along matrix rows: a call per column, on all rows. `f.g`: dfn `g` once, on all pairings.
+- [Arrays](arrays.html.md): numbers, chars, fns: atoms, not scalars (BQN). `⊂` always adds a layer: `⊂3 ≡ 3`→`$f`. array of fns applies to a following subject: `2 [+ ×] 3`→`5 6`.
+- [Brackets](glyphs/brackets.html.md): `[a b]` vector, even `[a]`. spaces separate items: `[+/x ÷ ≢x]` 3 items (fn `÷` middle). with `;`, only `;` separates; items are expressions: `[+/x ; +/x ÷ ≢x]` 2 items; `[1 2;3 4]`≡`[(1 2) (3 4)]`. `⋄` rows: `[1 2⋄3 4]` matrix. `"k":v` items: record `["a":1 "b":2]`.
+- [Strings](strings.html.md): `"abc"` char vector; `'a'` char atom; `'abc'` error.
+- [Indexing](indexing.html.md): no `Y[I]`. `I⌷A` cross product; `A.[I J]` pairs index arrays (NumPy): `i←⍳3ₓ`: `m.[i i]` diagonal. positions from 0; negative from end.
+- [Numbers](numbers.html.md): bare number: float (Python `1.`). `3ₓ` [weak](numbers.html.md#weak-and-strong-numbers) ordinary int, exact (default dynamic kinds). `ₓ₁ ₓ₂ ₓ₄ ₓ₈`: fixed `u8 i16 i32 i64`, wrap. `vₓ`: ordinary ints (dynamic: exact, shares `v`'s data; static: `int` width). `1r3` rational. dynamic default Mathish: `0÷0`→`0` for [Mathish types](terms.html.md#term-mathish-types), tolerant f64 compare; `•prefs ["mathish":$f]` disables both. pervasive float fns [≤4 ulp](numbers.html.md#accuracy) bar documented exceptions. float last bits (`+/` too) vary: platform, run, threads, size, route.
+- [Scripts](scripts.html.md): `x²`≡`x*2`; `f⁻¹` inverse; `v₁`≡`1⌷v`; `nₓ`≡`⌊ₓn`. `ₓ` after fn floors results to exact: `7÷ₓ2`→`3ₓ`. between names: `xⱼy`≡`x+y×0ⱼ1`; `xₑy`≡`x×10*y`; `xᵣy`≡`xₓ÷yₓ`, exact.
+- [Keyed](keyed.html.md): axes have names, keys. `T.a` record field; `⊢.a`≡`{⍵.a}`. arithmetic pairs axes by name: `i←⍳["i":3]`, `j←⍳["j":3]`: `i+j` 3×3.
+- [Autodiff](autodiff.html.md): how `∂` works. one number in `X`: forward mode, tagged duals. more: one run records linear steps, then reads the Jacobian by transposes or forward runs, whichever fewer: a loss's gradient is one transpose. selection transposes to accumulation. `∂` of a dfn traces a program on the first call with given types and shapes, replayed after: `(•explain t).programs`. a trace stops at effects, guards on differentiated values, result types that depend on values (dynamic kinds: `√`): `(•explain t).declined`. static kinds for speed.
+- [Index notation](index-notation.html.md): the formula for one item, run on whole arrays; tacit stays the main style. indices: `[[n i] h]←•index[⍴x ≢b]`; select: `x.[n i]`; name each fold's axis: `a←7○b.[h]++/⍠i⁝x.[n i]×w.[i h]`. same index pairs, different indices build a grid: `+/⍠k⁝x.[b k]×w.[k o]`≡`x+.×w`, run as a product. read under a new index once `:` removes names: `[q k v]←:z ⋄ k.[b u h j]`. index arithmetic reads as a map: `wo.[j+(≢j)×h d]`.
+- [Dfns](dfns.html.md): use a dfn only where a tacit form is longer or clearly awkward: `+/÷≢ v`, not `{+/⍵ ÷ ≢⍵}v`. no tradfns, no `:If` etc. last statement returns. predicate picks body (BQN): `{⍵<0?-⍵;⍵} ¯3`→`3`. absent `⍺` drops out (BQN `𝕨`). operator operands `⍶` `⍹`, not `⍺⍺` `⍵⍵`. `⍢` recursive operator call. error guard kinds as text: `"DOMAIN"::`.
+- [Assignment](assignment.html.md): `←` local. modified/selective updates: nearest binding. `[a b]←Y` destructures items by position. space before `←`: whole run is target: `[[0 2]]⌷v ←0`.
+- [Modules](modules.html.md): `•load "file.bpl"` runs module, gives record of public names. `_` names private.
+- [Hanzi](syntax.html.md#hanzi-spellings): hanzi are name chars. leading `•prefs ["hanzi_aliases":$t]` enables aliases: `加总` for `+/`. non-alias hanzi: names. `_` quotes next non-space char into name: `_加_总`.
+- [Constants](system/constants.html.md): `$` names: `$t $f $n` true false NaN; `$a` uppercase alphabet; `$d` digits.
+- [Style](style.html.md): read before writing BPL. aim: readable to non-APL readers; looking like APL has no value.
 
 ## Glyphs
 
-- [Glyph reference](glyphs.html.md): lists every glyph with its name. A glyph's page is `glyphs/<name>.html.md`. Read it before using the glyph.
-- [Removed forms](glyphs.html.md#language-wide-differences-from-dyalog-apl): Dyalog's bracket indexing `Y[I]`, bracket axes `f[A]`, outer product `∘.f`, windowed reduce and laminate aren't in BPL.
-- [`@` Under](glyphs/at.html.md): `f@g` applies `f` to what `g` selects and writes it back, as BQN's `⌾`, not Dyalog's `@`. `⌊@(10×)1.25 2.78` is `1.2 2.7`. With positions or `[p]`, a left argument lines up with the right argument by position, or by key where both have keys: `10 20 30 +@[0 2] 1 2 3` is `11 2 33`.
-- [`∘` atop](glyphs/jot.html.md): `⍺ f∘g ⍵` is `f ⍺ g ⍵`, as BQN's atop, where Dyalog's is `⍺ f g ⍵`. `10 -∘| ¯3` is `¯7`.
-- [`⍤` rank](glyphs/jot-diaeresis.html.md): rank only: `+/⍤1 m` sums each row. A function right operand computes the ranks.
-- [`⍠` axis](glyphs/quad-colon.html.md): applies a function along axes given by number or name. Both `+/⍠0 m` and `+/⍠"month" sales` sum along one axis, chosen by number in one and by name in the other.
-- [`⌺` stencil](glyphs/quad-diamond.html.md): shorthand for Rank over centred windows: `f⌺3 v` is `f⍤¯1 [¯3]↕v`, and `life⌺[3 3] g` is `life⍤¯2 [¯3 ¯3]↕g`. `f` gets each window alone, with no `⍺`, as J's `;._3` calls its operand. A function right operand computes the window from the arguments.
-- [`.` dot](glyphs/dot.html.md): after an array, `.name` reads a field and `.[I]` selects. Monadic `f.g` is J's determinant form: `-.×[1 2⋄3 4]` is `¯2`.
-- [`⍣` power](glyphs/star-diaeresis.html.md): a list of counts keeps the history: `2×⍣(⍳5) 1` is `1 2 4 8 16`. `f⍣∞` finds a fixed point.
-- [`/` reduce](glyphs/slash.html.md), [`⌿`](glyphs/slash-bar.html.md), [`\`](glyphs/backslash.html.md) and [`⍀`](glyphs/backslash-bar.html.md): only reduce and scan. A left argument is a right seed, as in BQN: `2+/1 2 3` is `8`. `0ₓ₈+/v` selects i64 accumulation for fixed bytes without a widened input array; `+/vₓ` uses ordinary integers. Scans accumulate left to right.
-- [`⍉` transpose](glyphs/circle-backslash.html.md): `A⍉Y` sends each axis of `Y` to the destination `A` gives it, as in BQN. `A⍉⁻¹Y` reorders axes as einops does: `["b" "patch":["i" "j"]]⍉⁻¹y`.
-- [`⌷` index](glyphs/squad.html.md): selects along leading axes: `[[2 0]]⌷10 20 30` is `30 10`. `:` keeps one axis, `∞` the rest; `¯∞` inserts a length-one axis. Write `[: 1]`, not `[:1]`.
-- [`⊃` pick](glyphs/right-shoe.html.md): pick follows a path, one level for each item: `[1 2]⊃v` is item 2 of item 1.
-- [`⍳` iota](glyphs/iota.html.md): positions count from 0: `⍳3` is `0 1 2`. A negative argument counts down: `⍳¯3` is `2 1 0`.
-- [`⍸` where](glyphs/iota-underbar.html.md): the dyad counts the items at or below each value, as BQN's `⍋`: `1 3 5⍸4 0 5` is `2 0 3`.
-- [`=` classify](glyphs/equals.html.md) and [`≠` unique-mask](glyphs/not-equals.html.md): monadic `=` classifies, as in J. Monadic `≠` marks the first of each value: `≠3 1 3 2` is `$t $t $f $t`.
-- [`<` sort-up](glyphs/less-than.html.md) and [`>` sort-down](glyphs/greater-than.html.md): the monads sort major cells: `<3 1 2` is `1 2 3`.
-- [`≤` decrement](glyphs/less-than-or-equal.html.md) and [`≥` increment](glyphs/greater-than-or-equal.html.md): `≥3` is `4`.
-- [`∨` real-imag](glyphs/vee.html.md) and [`∧` polar](glyphs/wedge.html.md): the monads are J's `+.` and `*.`.
-- [`⊤`](glyphs/down-tack.html.md) and [`⊥`](glyphs/up-tack.html.md): digits go on the last axis, as in J. The monads encode and decode binary: `⊤5` is `1 0 1`.
-- [`∊`](glyphs/epsilon.html.md), [`~`](glyphs/tilde.html.md), [`∪`](glyphs/down-shoe.html.md) and [`∩`](glyphs/up-shoe.html.md): compare major cells, as in BQN. Monadic `∩` gives duplicates: `∩1 2 2 3 3 3` is `2 3`.
-- [`⊂`](glyphs/left-shoe.html.md) and [`⊆`](glyphs/left-shoe-underbar.html.md): partitions split the first axis. `⊂` always encloses, atoms included.
-- [`⍷` groups](glyphs/epsilon-underbar.html.md): monadic `⍷` groups positions by value, as Dyalog's `{⊂⍵}⌸`.
-- [`≡` match](glyphs/equal-underbar.html.md): depth is unsigned. An axis with no name or no keys matches any names or keys.
-- [`+`](glyphs/plus.html.md) and [`-`](glyphs/minus.html.md): characters take offsets and differences, as in BQN: `'a'+1` is `'b'`.
-- [`○` cis](glyphs/circle.html.md): the monad is cis. Pi-times is `π`.
-- [`÷` divide](glyphs/obelus.html.md): exact numbers divide exactly, as in J: `1ₓ÷3ₓ` is `1ᵣ3`.
-- [`⌹` matrix divide](glyphs/domino.html.md): gives the least-norm solution or pseudoinverse of a singular or wide matrix, where Dyalog raises an error.
-- [`⍎` execute](glyphs/hydrant.html.md): `X⍎Y` evaluates `Y` with the keys of record `X` as names.
-- [`⎕` quad](glyphs/quad.html.md): reading `⎕` gives a line of text. `⍎⎕` evaluates it.
-- [`←` assign](glyphs/left-arrow.html.md): `a(f)←` with nothing after it sets `a` to `f a`.
-- [`⍴` reshape](glyphs/rho.html.md): `⍬⍴Y` makes a rank-0 array.
+- [Glyphs](glyphs.html.md): every glyph, name. page `glyphs/<name>.html.md`: read before use.
+- [Removed](glyphs.html.md#language-wide-differences-from-dyalog-apl): `Y[I]` indexing, `f[A]` axes, `∘.f`, windowed reduce, laminate.
+- [`@`](glyphs/at.html.md) Under: `f@g`: `f` on `g`'s selection, written back (BQN `⌾`, not Dyalog `@`): `⌊@(10×)1.25 2.78`→`1.2 2.7`. positions/`[p]`: left arg aligns with right by position, by key if both keyed: `10 20 30 +@[0 2] 1 2 3`→`11 2 33`.
+- [`∘`](glyphs/jot.html.md) atop: `⍺ f∘g ⍵`≡`f ⍺ g ⍵` (BQN; Dyalog `⍺ f g ⍵`): `10 -∘| ¯3`→`¯7`.
+- [`⍤`](glyphs/jot-diaeresis.html.md) rank, only: `+/⍤1 m` row sums. fn right operand computes ranks.
+- [`⍠`](glyphs/quad-colon.html.md) axis: along axes by number or name: `+/⍠0 m`, `+/⍠"month" sales`. options record sets fill: `5↑⍠["fill":¯1] 1 2`→`1 2 ¯1 ¯1 ¯1`.
+- [`⌺`](glyphs/quad-diamond.html.md) stencil: Rank over centred windows: `f⌺3 v`≡`f⍤¯1 [¯3]↕v`; `life⌺[3 3] g`≡`life⍤¯2 [¯3 ¯3]↕g`. `f` gets each window alone, no `⍺` (J `;._3`). fn right operand computes window from args.
+- [`.`](glyphs/dot.html.md) dot: after array: `.name` field, `.[I]` select. monadic `f.g`: J determinant: `-.×[1 2⋄3 4]`→`¯2`.
+- [`⍣`](glyphs/star-diaeresis.html.md) power: count list keeps history: `2×⍣(⍳5) 1`→`1 2 4 8 16`. `f⍣∞` fixed point.
+- [`/`](glyphs/slash.html.md) [`⌿`](glyphs/slash-bar.html.md) [`\`](glyphs/backslash.html.md) [`⍀`](glyphs/backslash-bar.html.md): reduce, scan only. left arg: right seed (BQN): `2+/1 2 3`→`8`. `0ₓ₈+/v`: i64 accumulation of fixed bytes, no widened input; `+/vₓ`: ordinary ints. scans run left to right.
+- [`⍉`](glyphs/circle-backslash.html.md) transpose: `A⍉Y` sends each axis of `Y` to its destination in `A` (BQN). `A⍉⁻¹Y` reorders as einops: `["b" "patch":["i" "j"]]⍉⁻¹y`.
+- [`⌷`](glyphs/squad.html.md) index: leading axes: `[[2 0]]⌷10 20 30`→`30 10`. `:` keeps an axis, `∞` the rest, `¯∞` inserts a length-1 axis. `[: 1]`, not `[:1]`.
+- [`⊃`](glyphs/right-shoe.html.md) pick: path, a level per item: `[1 2]⊃v` item 2 of item 1.
+- [`⍳`](glyphs/iota.html.md) iota: `⍳3`→`0 1 2`; `⍳¯3`→`2 1 0`.
+- [`⍸`](glyphs/iota-underbar.html.md) where: dyad: count of items ≤ each value (BQN `⍋`): `1 3 5⍸4 0 5`→`2 0 3`.
+- [`=`](glyphs/equals.html.md) classify, [`≠`](glyphs/not-equals.html.md) unique-mask: monadic `=` classifies (J); monadic `≠` marks first of each value: `≠3 1 3 2`→`$t $t $f $t`.
+- [`<`](glyphs/less-than.html.md) sort-up, [`>`](glyphs/greater-than.html.md) sort-down: monads sort major cells: `<3 1 2`→`1 2 3`.
+- [`≤`](glyphs/less-than-or-equal.html.md) decrement, [`≥`](glyphs/greater-than-or-equal.html.md) increment: `≥3`→`4`.
+- [`∨`](glyphs/vee.html.md) real-imag, [`∧`](glyphs/wedge.html.md) polar: monads: J `+.` `*.`.
+- [`⊤`](glyphs/down-tack.html.md) [`⊥`](glyphs/up-tack.html.md): digits on last axis (J). monads: binary encode, decode: `⊤5`→`1 0 1`.
+- [`∊`](glyphs/epsilon.html.md) [`~`](glyphs/tilde.html.md) [`∪`](glyphs/down-shoe.html.md) [`∩`](glyphs/up-shoe.html.md): compare major cells (BQN). monadic `∩` duplicates: `∩1 2 2 3 3 3`→`2 3`.
+- [`⊂`](glyphs/left-shoe.html.md) [`⊆`](glyphs/left-shoe-underbar.html.md): partitions split first axis. `⊂` always encloses, atoms too.
+- [`⍷`](glyphs/epsilon-underbar.html.md) groups: monadic: positions grouped by value, as Dyalog `{⊂⍵}⌸`.
+- [`≡`](glyphs/equal-underbar.html.md) match: depth unsigned. axis without names or keys matches any.
+- [`+`](glyphs/plus.html.md) [`-`](glyphs/minus.html.md): chars take offsets, differences (BQN): `'a'+1`→`'b'`.
+- [`○`](glyphs/circle.html.md) cis: monad cis; pi-times is `π`.
+- [`÷`](glyphs/obelus.html.md) divide: exact stays exact (J): `1ₓ÷3ₓ`→`1ᵣ3`.
+- [`⌹`](glyphs/domino.html.md) matrix divide: singular or wide matrix: least-norm solution, pseudoinverse; Dyalog errors.
+- [`⍎`](glyphs/hydrant.html.md) execute: `X⍎Y` evaluates `Y` with record `X`'s keys as names.
+- [`⎕`](glyphs/quad.html.md) quad: reading gives a text line; `⍎⎕` evaluates it.
+- [`←`](glyphs/left-arrow.html.md) assign: `a⁝f←` with nothing after ≡ `a←f a`.
+- [`⍴`](glyphs/rho.html.md) reshape: `⍬⍴Y` rank 0.
 
-## Glyphs that Dyalog lacks
+## Glyphs Dyalog lacks
 
-- [`¿` roll](glyphs/inverted-question.html.md): roll and deal, Dyalog's `?`. `•prefs ["seed":42]` seeds it, in place of Dyalog's `⎕RL`.
-- [`⊼` nand](glyphs/wedge-bar.html.md) and [`⊽` nor](glyphs/vee-bar.html.md): Dyalog's `⍲` and `⍱`. The monads square and double: `⊼3` is `9`.
-- [`π` pi-times](glyphs/pi.html.md): `π1` is `3.141592654`.
-- [`√` sqrt](glyphs/radical.html.md): square root and root, as BQN's `√`: `3√8` is `2`.
-- [`⍭` primes](glyphs/stile-tilde.html.md): like J's `p:`, with different codes. `⍭⁻¹` counts primes.
-- [`⨸` factors](glyphs/circle-divide.html.md): as J's `q:`: `⨸360ₓ` is `[2 2 2 3 3 5]ₓ`.
-- [`⌻` polynomials](glyphs/quad-jot.html.md): roots and evaluation, as J's `p.`: `[1 2 3]⌻2` is `17`. Coefficients come from `⌻⁻¹`.
-- [`↕` windows](glyphs/up-down-arrow.html.md): as BQN's `↕`: `+/3↕1 2 3 4 5` is `6 9 12`. Monadic `↕` is `2↕`. An options record pads by an edge mode: `["size":3 "edge":"wrap"]↕v`.
-- [`#` replicate](glyphs/hash.html.md): along the first axis, as Dyalog's `⌿`: `1 0 2#"abc"` is `"acc"`. Monadic `#` gives run-length encoding. Dyadic `#⁻¹` expands.
-- [`↦` range](glyphs/right-arrow-from-bar.html.md): `2↦5` counts from 2 to 5, giving `2 3 4 5`.
-- [`:` keys](glyphs/colon.html.md): `K:Y` attaches keys to `Y`. `:Y` removes them.
-- [`↣` before](glyphs/right-tail-arrow.html.md): as BQN's `⊸`. `a↣f` binds a left argument: `2↣×` doubles.
-- [`↢` after](glyphs/left-tail-arrow.html.md): as BQN's `⟜`. `f↢a` binds a right argument: `*↢2` squares.
-- [`⊗` outer product](glyphs/circle-times.html.md): as BQN's `⌜`, in place of `∘.f`: `1 2+⊗10 20` is `[11 21⋄12 22]`.
-- [`⊘` valences](glyphs/circle-slash.html.md): `f⊘g` calls `f` with one argument and `g` with two, as BQN's `⊘`.
-- [`⍚` agenda](glyphs/diamond-underbar.html.md): `selector⍚cases` calls the function that `selector` picks, as BQN's `◶`. A selector that isn't a unit picks a function for each cell: `(0≤)⍚[0 √] ¯4 9` is `0 3`.
-- [`⇄` optimize](glyphs/right-left-arrows.html.md): `cost⇄ start` finds where `cost` is least, searching from `start`. A left argument holds options.
-- [`∂` derivative](glyphs/partial.html.md): `f∂x` is the derivative, or Jacobian, of `f` at `x`: `{⍵*2}∂3` is `6`.
-- [`ᵇ` bitwise](glyphs/superscript-b.html.md): applies a Boolean function to integer bits: `6∧ᵇ3` is `2ₓ`, and `~ᵇ6` is `¯7ₓ`.
-- [`•` system](glyphs/bullet.html.md): starts a system name, as in `•json`, in place of Dyalog's `⎕NAME`.
+- [`¿`](glyphs/inverted-question.html.md) roll: roll, deal (Dyalog `?`). seed: `•prefs ["seed":42]` (Dyalog `⎕RL`).
+- [`⊼`](glyphs/wedge-bar.html.md) nand, [`⊽`](glyphs/vee-bar.html.md) nor: Dyalog `⍲` `⍱`. monads square, double: `⊼3`→`9`.
+- [`π`](glyphs/pi.html.md) pi-times: `π1`→`3.141592654`.
+- [`√`](glyphs/radical.html.md) sqrt: square root, root (BQN): `3√8`→`2`.
+- [`⍭`](glyphs/stile-tilde.html.md) primes: J `p:`, other codes. `⍭⁻¹` counts primes.
+- [`⨸`](glyphs/circle-divide.html.md) factors: J `q:`: `⨸360ₓ`→`[2 2 2 3 3 5]ₓ`.
+- [`⌻`](glyphs/quad-jot.html.md) polynomials: roots, evaluation (J `p.`): `[1 2 3]⌻2`→`17`. coefficients: `⌻⁻¹`.
+- [`↕`](glyphs/up-down-arrow.html.md) windows: BQN `↕`: `+/3↕1 2 3 4 5`→`6 9 12`. monadic `↕`≡`2↕`. options record pads by edge mode: `["size":3 "edge":"wrap"]↕v`.
+- [`#`](glyphs/hash.html.md) replicate: first axis (Dyalog `⌿`): `1 0 2#"abc"`→`"acc"`. monadic: run-length encoding. dyadic `#⁻¹` expands.
+- [`↦`](glyphs/right-arrow-from-bar.html.md) range: `2↦5`→`2 3 4 5`.
+- [`:`](glyphs/colon.html.md) keys: `K:Y` attaches keys. `:Y` removes keys, axis names; `⍴Y ⍴ ,Y` keys only.
+- [`↣`](glyphs/right-tail-arrow.html.md) before: BQN `⊸`. `a↣f` binds left arg: `2↣×` doubles.
+- [`↢`](glyphs/left-tail-arrow.html.md) after: BQN `⟜`. `f↢a` binds right arg: `*↢2` squares.
+- [`⊗`](glyphs/circle-times.html.md) outer product: BQN `⌜`, for `∘.f`: `1 2+⊗10 20`→`[11 21⋄12 22]`.
+- [`⊘`](glyphs/circle-slash.html.md) valences: `f⊘g`: `f` with one arg, `g` with two (BQN).
+- [`⍚`](glyphs/diamond-underbar.html.md) agenda: `selector⍚cases` calls the fn `selector` picks (BQN `◶`). non-unit selector picks per cell: `(0≤)⍚[0 √] ¯4 9`→`0 3`.
+- [`⇄`](glyphs/right-left-arrows.html.md) optimize: `cost⇄ start` finds where `cost` is least, searching from `start`. left arg: options.
+- [`∂`](glyphs/partial.html.md) derivative: `f∂x`: derivative or Jacobian of `f` at `x`: `⊼∂3`→`6`.
+- [`ᵇ`](glyphs/superscript-b.html.md) bitwise: Boolean fn on integer bits: `6∧ᵇ3`→`2ₓ`; `~ᵇ6`→`¯7ₓ`.
+- [`•`](glyphs/bullet.html.md) system: starts system names: `•json` (Dyalog `⎕NAME`).
 
 ## System functions
 
-- [System functions](system-functions.html.md): names ignore case. Options are generally a keyed left argument. A format's function reads that format, as `•json` reads JSON. Its inverse writes it, as `•json⁻¹` does. A function's page is `system/<name>.html.md`, without the `•`. Read it before using the function.
-- [Text](system-functions.html.md#text): `•c`, `•ucs`, `•normalize`, `•r`.
-- [Data and files](system-functions.html.md#data-and-files): `•csv`, `•json`, `•literal`, `•vfi`, `•date`, `•nget`, `•nput`, `•fetch`, `•path`, `•metadata`, `•readdir`, `•copy`, `•rename`, `•remove`, `•mkdir`, `•deflate`, `•hash`, `•uuid`.
-- [Display](system-functions.html.md#display): `•element`, `•xml`, `•svg`, `•mime`, `•plot`, `•image`, `•canvas`, `•prefs`.
+- [System functions](system-functions.html.md): names ignore case. options: usually keyed left arg. format fn reads, inverse writes: `•json` `•json⁻¹`. page `system/<name>.html.md`, no `•`: read before use.
+- [Text](system-functions.html.md#text): `•c` `•ucs` `•normalize` `•r`.
+- [Data and files](system-functions.html.md#data-and-files): `•csv` `•json` `•literal` `•vfi` `•date` `•nget` `•nput` `•fetch` `•path` `•metadata` `•readdir` `•copy` `•rename` `•remove` `•mkdir` `•deflate` `•hash` `•uuid`.
+- [Display](system-functions.html.md#display): `•element` `•xml` `•svg` `•mime` `•plot` `•image` `•canvas` `•prefs`.
 - [Linear algebra](system-functions.html.md#linear-algebra): `•decompose`.
-- [Random numbers and distributions](system-functions.html.md#random-numbers-and-distributions): `•rand`, `•distribution`.
-- [Positions](system-functions.html.md#positions): `•index`, `•edge`.
-- [Programs](system-functions.html.md#programs): `•load`, `•signal`, `•storage`, `•detach`, `•float`, `•time`, `•host`, `•delay`, and `•js` in the browser.
-- [Introspection](system-functions.html.md#introspection): `•nc`, `•nl`, `•src`, `•ex`, `•explain`, `•memory`.
+- [Random](system-functions.html.md#random-numbers-and-distributions): `•rand` `•distribution`.
+- [Positions](system-functions.html.md#positions): `•index` `•edge`.
+- [Programs](system-functions.html.md#programs): `•load` `•signal` `•storage` `•detach` `•float` `•time` `•host` `•delay`; browser: `•js`.
+- [Introspection](system-functions.html.md#introspection): `•nc` `•nl` `•src` `•ex` `•explain` `•memory`.
 
 ## Optional
 
-- [Python](python.html.md): the `basedpl` package exposes all of BPL to Python: evaluation, arrays, and every function and operator by name.
-- [BPL on the web](web.html.md): BPL running in a browser. The browser build adds `•js`.
+- [Python](python.html.md): `basedpl` package: all of BPL from Python: evaluation, arrays, every fn and operator by name.
+- [Web](web.html.md): BPL in a browser; browser build adds `•js`.

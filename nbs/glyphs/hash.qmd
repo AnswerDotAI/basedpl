@@ -24,7 +24,7 @@ A unit gives the rank-0 length 1 and the unit itself. When `Y`'s leading axis ha
 0 2#[1 2⋄3 4]         ⍝ [3 4⋄3 4]
 ```
 
-A negative count replaces its cell with that many fills. A single count applies to every cell. A single cell serves every count.
+A negative count replaces its cell with that many fills. [`⍠`](quad-colon.qmd#fill) can choose the fill, for Replicate and for its inverse. A single count applies to every cell. A single cell serves every count.
 
 ```bpl
 1 ¯2 1#10 20 30         ⍝ 10 0 0 30

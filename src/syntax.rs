@@ -10,7 +10,8 @@ pub(crate) enum NodeKind {
     Literal(Value),
     Function(Builtin),
     Operator(OperatorKind),
-    Name(Name),
+    /// A name. `true` marks a read of a dfn's local, `⍵` or `⍺` after which nothing in the dfn reads or assigns the name (`release`). That read moves the value out of the frame.
+    Name(Name, bool),
     /// A system name that the system table doesn't hold, which is a VALUE error when evaluated. A known system name is a `Function`, as a glyph is.
     System(String),
     Assign,
@@ -45,7 +46,7 @@ pub(crate) enum ListForm {
 pub(crate) enum DefinitionKind { Function, MonadicOperator, DyadicOperator }
 
 #[derive(Debug)]
-pub(crate) struct Definition { pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, locals: &'static [Name], remembered: AtomicU64 }
+pub(crate) struct Definition { pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, locals: &'static [Name], remembered: AtomicU64, programs: crate::program::Programs }
 impl Definition {
     /// The names that the definition could assign, sorted, which each of its calls keeps in slots.
     pub fn locals(&self) -> &'static [Name] { self.locals }
@@ -53,41 +54,92 @@ impl Definition {
     pub fn remembered(&self) -> u64 { self.remembered.load(Relaxed) }
     /// Records what maps remember of a stopped batched run of this definition.
     pub fn remember(&self, memory: u64) { self.remembered.store(memory, Relaxed) }
+    /// The programs that `∂` of this definition builds, and the argument signatures whose traces stopped (`program`).
+    pub(crate) fn programs(&self) -> &crate::program::Programs { &self.programs }
 }
 
-fn definition_kind(nodes: &[Node]) -> DefinitionKind {
-    nodes.iter().map(|n| match &n.kind {
-            NodeKind::Name(Name::RIGHT_OPERAND) => DefinitionKind::DyadicOperator,
-            NodeKind::Name(Name::LEFT_OPERAND) => DefinitionKind::MonadicOperator,
-            NodeKind::Group(nodes) | NodeKind::Run(nodes) => definition_kind(nodes),
-            NodeKind::ArrayLiteral { cells, .. } => cells.iter().map(|nodes| definition_kind(nodes)).max().unwrap_or(DefinitionKind::Function),
-            _ => DefinitionKind::Function, // Nested definitions classify their own bodies.
-        })
-        .max()
-        .unwrap_or(DefinitionKind::Function)
+fn definition_kind(bodies: &[Vec<Statement>]) -> DefinitionKind {
+    let mut kind = DefinitionKind::Function;
+    for statement in bodies.iter().flatten() {
+        // Nested definitions classify their own bodies.
+        visit(&statement.nodes, false, false, &mut |node, _, nested| kind = kind.max(match &node.kind {
+            NodeKind::Name(Name::RIGHT_OPERAND, _) if !nested => DefinitionKind::DyadicOperator,
+            NodeKind::Name(Name::LEFT_OPERAND, _) if !nested => DefinitionKind::MonadicOperator,
+            _ => DefinitionKind::Function,
+        }));
+    }
+    kind
 }
 
-/// The names that a definition's statements could assign, sorted: each name before an `←`, also inside a group, run or brackets there, but not inside a nested definition, which has frames of its own. A call gives each a slot. Some name a modified assignment's function, or the array that a selective assignment selects from, and their slots stay empty.
+/// The names that a definition's statements could assign, sorted: each name in a target outside nested definitions (`visit`). A call gives each a slot. Some name a modified assignment's function, or the array that a selective assignment selects from, and their slots stay empty.
 fn locals(bodies: &[Vec<Statement>]) -> &'static [Name] {
     let mut names = Vec::new();
-    for statement in bodies.iter().flatten() { assigned(&statement.nodes, false, &mut names); }
+    for statement in bodies.iter().flatten() {
+        visit(&statement.nodes, false, false, &mut |node, target, nested| if let NodeKind::Name(name, _) = &node.kind && target && !nested { names.push(*name) });
+    }
     names.retain(|name| name.implicit().is_none());
     names.sort_unstable();
     names.dedup();
     crate::name::kept(&names)
 }
 
-/// Adds to `names` each name in `nodes` that comes before an `←`, or every name where `target` says that `nodes` themselves do.
-fn assigned(nodes: &[Node], target: bool, names: &mut Vec<Name>) {
+/// Calls `f` on each node in `nodes` and on each node inside them: in groups, runs and brackets, and in nested definitions. `f` also gets whether the node is in an assignment's target, which is before an `←`, or anywhere in `nodes` where `target` says that they are one. And `f` gets whether the node is inside a nested definition, which `nested` says of `nodes` themselves.
+fn visit(nodes: &[Node], target: bool, nested: bool, f: &mut dyn FnMut(&Node, bool, bool)) {
     let end = nodes.iter().rposition(|n| matches!(n.kind, NodeKind::Assign)).unwrap_or(0);
     for (i, node) in nodes.iter().enumerate() {
         let target = target || i < end;
+        f(node, target, nested);
         match &node.kind {
-            NodeKind::Name(name) if target => names.push(*name),
-            NodeKind::Group(nodes) | NodeKind::Run(nodes) => assigned(nodes, target, names),
-            NodeKind::ArrayLiteral { cells, .. } => for nodes in cells { assigned(nodes, target, names); },
+            NodeKind::Group(nodes) | NodeKind::Run(nodes) => visit(nodes, target, nested, f),
+            NodeKind::ArrayLiteral { cells, .. } => for nodes in cells { visit(nodes, target, nested, f); },
+            NodeKind::Dfn(definition) => for statement in definition.bodies.iter().flatten() { visit(&statement.nodes, false, true, f); },
             _ => {}
         }
+    }
+}
+
+/// Marks each read of a local, `⍵` or `⍺` after which nothing in the definition reads or assigns the name. That read moves the value out of the frame (`Bindings::take`), so a pending array that only the reader then holds joins the reader's program (`fusion::Pending::gathered`). Where a statement reads the name more than once, the read that runs last is the one marked (`mark_last`). A name that a nested definition or an error handler mentions is never released. Nothing is released in a definition that reads names by text, through `⍎`, `•nc`, `•nl`, `•src`, `•ex` or `•explain`.
+fn release(bodies: &mut [Vec<Statement>], locals: &[Name]) {
+    let mut by_text = false;
+    // The names that a nested definition, an error handler or a later statement mentions.
+    let mut later = Vec::new();
+    for statement in bodies.iter().flatten() {
+        visit(&statement.nodes, false, false, &mut |node, _, nested| match &node.kind {
+            NodeKind::Function(Builtin::Primitive(Primitive::Execute)) => by_text = true,
+            NodeKind::Function(Builtin::System(entry)) => by_text |= matches!(entry.name(), "•nc" | "•nl" | "•src" | "•ex" | "•explain"),
+            NodeKind::Name(name, _) if nested => later.push(*name),
+            _ => {}
+        });
+        if let StatementKind::ErrorGuard { index } = statement.kind {
+            visit(&statement.nodes[index + 1..], false, false, &mut |node, _, _| if let NodeKind::Name(name, _) = &node.kind { later.push(*name) });
+        }
+    }
+    if by_text { return; }
+    for statement in bodies.iter_mut().flatten().rev() {
+        let (mut reads, mut targets) = (Vec::new(), Vec::new());
+        visit(&statement.nodes, false, false, &mut |node, target, nested| {
+            let NodeKind::Name(name, _) = &node.kind else { return };
+            if nested { return }
+            if target { targets.push(*name) } else if !reads.contains(name) { reads.push(*name) }
+        });
+        let releases = |name: &Name| locals.binary_search(name).is_ok() || matches!(*name, Name::OMEGA | Name::ALPHA);
+        for &name in reads.iter().filter(|&name| releases(name) && !targets.contains(name) && !later.contains(name)) { let _ = mark_last(&mut statement.nodes, name); }
+        later.extend(reads.into_iter().chain(targets));
+    }
+}
+
+/// Marks the read of `name` in `nodes` that runs last, and says whether `nodes` read it at all, or gives `Err` and marks nothing where the order isn't known. A node list runs right to left, so that read is in the leftmost node that reads the name. A bracket's items run left to right, so within a bracket it's in the rightmost item that reads the name. Within a term that a dot, a subscript or a joiner joins, the root evaluates first where it holds an array (`Binder::members`), and is an inner product's operand where it's a function. Only binding knows which, so a term that reads the name twice gives `Err`.
+fn mark_last(nodes: &mut [Node], name: Name) -> Result<bool, ()> {
+    let reads = |node: &Node| { let mut found = false; visit(std::slice::from_ref(node), false, false, &mut |n, _, _| found |= matches!(n.kind, NodeKind::Name(m, _) if m == name)); found };
+    let Some(i) = nodes.iter().position(reads) else { return Ok(false) };
+    let joins = |kind: &NodeKind| matches!(kind, NodeKind::Joiner(_) | NodeKind::Operator(OperatorKind::Product));
+    let end = (i + 1..nodes.len()).find(|&j| !matches!(nodes[j].kind, NodeKind::Subscript(_)) && !joins(&nodes[j].kind) && !joins(&nodes[j - 1].kind)).unwrap_or(nodes.len());
+    if nodes[i + 1..end].iter().any(reads) { return Err(()) }
+    match &mut nodes[i].kind {
+        NodeKind::Name(_, last) => { *last = true; Ok(true) }
+        NodeKind::Group(nodes) | NodeKind::Run(nodes) => mark_last(nodes, name),
+        NodeKind::ArrayLiteral { cells, .. } => { for cell in cells.iter_mut().rev() { if mark_last(cell, name)? { return Ok(true) } } Ok(false) }
+        _ => Ok(false),
     }
 }
 
@@ -117,7 +169,7 @@ fn statement(nodes: Vec<Node>) -> Result<Statement, ParseFailure> {
     }
     let kind = if let Some(index) = guard {
         StatementKind::ErrorGuard { index }
-    } else if matches!(nodes[0].kind, NodeKind::Name(Name::ALPHA)) && matches!(nodes.get(1).map(|n| &n.kind), Some(NodeKind::Assign)) {
+    } else if matches!(nodes[0].kind, NodeKind::Name(Name::ALPHA, _)) && matches!(nodes.get(1).map(|n| &n.kind), Some(NodeKind::Assign)) {
         StatementKind::DefaultArgument
     } else { StatementKind::Expression };
     Ok(Statement { nodes, kind, recording: Default::default() })
@@ -309,7 +361,7 @@ fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>,
                         }
                         (TokenKind::Literal(Value::Number(n)), Mark::Fixed(w)) => {
                             let n = match n.as_bool() { Some(b) => Ok(Number::fixed(i64::from(b), w)), None => Number::fixed_literal(&number_text(text), w) };
-                            Value::Number(n.described("fixed markers need integral literals within their width").at(&token.span)?)
+                            Value::Number(n.described("fixed markers need whole literals within their width").at(&token.span)?)
                         }
                         (TokenKind::Literal(Value::Number(n)), Mark::Width(w)) => {
                             let n = if text.starts_with('$') { Ok(n.clone()) } else { literal_number(text, numeric.with_width(w)) };
@@ -352,7 +404,7 @@ fn run_on(chars: &mut Characters<'_>, digit: bool) -> Option<usize> {
 /// Whether `c` can start or continue a name. Syntax, glyphs and digits end a name.
 pub(crate) fn name_char(c: char) -> bool {
     !c.is_whitespace() && !c.is_control() && !c.is_ascii_digit() && !subscript(c)
-        && !matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '\'' | '"' | ';' | ':' | '?' | '$' | '•' | '←' | '⎕' | '⍝' | '⋄'
+        && !matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '\'' | '"' | ';' | ':' | '?' | '$' | '•' | '←' | '⎕' | '⍝' | '⋄' | '⁝'
             | '⍬' | '¯' | '∞' | '⍛' | 'ᵀ' | 'ᵘ' | '⁻' | '₋')
         && !is_implicit(c)
         && script_digit(SUPERSCRIPT_DIGITS, c).is_none() && script_digit(SUBSCRIPT_DIGITS, c).is_none()
@@ -491,7 +543,7 @@ fn lexed(source: &Arc<Source>, aliases: bool, mut highlights: Option<&mut Highli
         };
         if let Some(classes) = highlights.as_deref_mut() {
             let class = match &kind {
-                Some(kind) => class(kind, &source.text[start..position(&mut chars, len)], canonical), None => (canonical(c) == '⍝').then_some("comment")
+                Some(kind) => class(kind, &source.text[start..position(&mut chars, len)], canonical), None => match canonical(c) { '⍝' => Some("comment"), '⁝' => Some("syntax"), _ => None }
             };
             if let Some(class) = class { classes.push((start..position(&mut chars, len), class)); }
             // A group's mark is part of its literal, unless `mark_literals` finds that the group holds anything else.
@@ -643,7 +695,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             c if c == '₋' || script_digit(SUBSCRIPT_DIGITS, c).is_some() => {
                 TokenKind::Subscript(script_integer(c, chars, SUBSCRIPT_DIGITS, "subscript").map_err(|(k, m)| Error::new(k, m).at(&span(position(chars, len))))?)
             }
-            c if c.is_whitespace() => return Ok(None),
+            c if c.is_whitespace() || c == '⁝' => return Ok(None),
             c => match (OperatorKind::from_glyph(c), Primitive::from_glyph(c)) {
                 (Some(op), _) => TokenKind::Operator(op), (_, Some(f)) => TokenKind::Function(f),
                 _ => return Err(Error::new(ErrorKind::Unsupported, format!("{raw:?} is not supported yet")).at(&span(start + raw.len_utf8())).into())
@@ -729,9 +781,11 @@ impl Parser<'_> {
                     let mark = match self.tokens[self.pos - 1].kind { TokenKind::Close(mark) | TokenKind::BracketClose(mark) => mark, _ => None };
                     match token.kind {
                         TokenKind::BraceOpen => {
-                            let bodies = bodies(inner, &span)?;
-                            let kind = bodies.iter().flatten().map(|s| definition_kind(&s.nodes)).max().unwrap_or(DefinitionKind::Function);
-                            NodeKind::Dfn(Arc::new(Definition { locals: locals(&bodies), bodies, span: span.clone(), kind, remembered: AtomicU64::new(0) }))
+                            let mut bodies = bodies(inner, &span)?;
+                            let kind = definition_kind(&bodies);
+                            let locals = locals(&bodies);
+                            release(&mut bodies, locals);
+                            NodeKind::Dfn(Arc::new(Definition { locals, bodies, span: span.clone(), kind, remembered: AtomicU64::new(0), programs: Default::default() }))
                         }
                         TokenKind::Open if let Some(mark) = mark => marked_literal(parenthesised(inner, &span)?, &span, mark)?,
                         TokenKind::Open => parenthesised(inner, &span)?,
@@ -744,7 +798,7 @@ impl Parser<'_> {
                 TokenKind::Operator(op) => NodeKind::Operator(*op),
                 TokenKind::Subscript(index) => NodeKind::Subscript(*index),
                 TokenKind::Joiner(joiner) => NodeKind::Joiner(*joiner),
-                TokenKind::Name(name) => NodeKind::Name(Name::new(name)),
+                TokenKind::Name(name) => NodeKind::Name(Name::new(name), false),
                 TokenKind::System(name) => Builtin::find(name).map_or_else(|| NodeKind::System(name.clone()), NodeKind::Function),
                 TokenKind::Assign => NodeKind::Assign,
                 TokenKind::Output => NodeKind::Output,
@@ -849,8 +903,8 @@ fn rows(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
     Ok(NodeKind::ArrayLiteral { cells, form: ListForm::Rows, record: false })
 }
 
-/// Whether nothing comes between two nodes in the source.
-pub(crate) fn touching(a: &Node, b: &Node) -> bool { a.span.range.end == b.span.range.start }
+/// Whether only token separators, if anything, come between two nodes in the source.
+pub(crate) fn touching(a: &Node, b: &Node) -> bool { a.span.source.text.get(a.span.range.end..b.span.range.start).is_some_and(|gap| gap.chars().all(|c| canonical(c) == '⁝')) }
 
 /// Brackets build arrays. A space separates items, `;` separates items that contain spaces, and `⋄` or a line break separates major cells. Brackets round one item make a one-item vector.
 fn brackets(pieces: Vec<Piece>, span: &Span) -> Result<NodeKind, ParseFailure> {
@@ -923,9 +977,9 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
     while let Some(mut node) = nodes.next() {
         if matches!(node.kind, NodeKind::Literal(_)) {
             // A superscript binds to the one number before it, before literals strand, so `2 3²` is `2 9`.
-            while let Some(Node { kind: NodeKind::Operator(OperatorKind::Super(power)), span }) = nodes.peek() {
+            while let Some(next @ Node { kind: NodeKind::Operator(OperatorKind::Super(power)), span }) = nodes.peek() {
                 let (power, end) = (*power, span.range.end);
-                if span.range.start != node.span.range.end { break; }
+                if !touching(&node, next) { break; }
                 let NodeKind::Literal(Value::Number(n)) = &node.kind else { break };
                 let raised = match power {
                     Superscript::Power(k) => Primitive::Math(Math::Power).number(Some(n), &Number::from_integer(k).marked(true), Numeric::current()), Superscript::Transpose => Ok(n.clone()),
@@ -1039,7 +1093,7 @@ pub(crate) fn key_colon(nodes: &[Node]) -> Option<usize> {
 }
 
 /// Whether a node can stand before `:` as a key: a literal, a name, a group or brackets.
-pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_) | NodeKind::Name(_) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. }) }
+pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_) | NodeKind::Name(..) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. }) }
 
 /// The program in `source`, with numbers that have no marker read as floats of the current settings' default width. The current settings also give literals their kinds. They're the session's within an evaluation or `Session::parse`, and the defaults elsewhere, as in a check of structure without evaluation. A complete input can still have a binding or domain error.
 pub fn parse(source: Arc<Source>) -> ParseStatus {
@@ -1078,7 +1132,7 @@ impl SyntaxNode {
     }
 }
 
-/// The parse tree of `text`. Kinds are `NodeKind` variant names, plus `Program`, `Statement`, `Body` for each dfn body, `Cell` for each array-literal cell, `Comment`, and `Error` for lines that don't parse. Separators have no nodes.
+/// The parse tree of `text`. Kinds are `NodeKind` variant names, plus `Program`, `Statement`, `Body` for each dfn body, `Cell` for each array-literal cell, `Strand` for each strand of literals, `Comment`, and `Error` for lines that don't parse. A `Strand` has a `Literal` child for each item. Separators have no nodes.
 pub fn syntax_tree(text: &str) -> SyntaxNode {
     let source = Source::new("<syntax>", text);
     let children = match parse(source.clone()) {
@@ -1121,6 +1175,7 @@ fn list_node(kind: &'static str, nodes: &[Node]) -> SyntaxNode { SyntaxNode::new
 fn statement_node(statement: &Statement) -> SyntaxNode { list_node("Statement", &statement.nodes) }
 
 fn syntax_node(node: &Node) -> SyntaxNode {
+    if let Some(strand) = strand_node(node) { return strand; }
     let children = match &node.kind {
         NodeKind::Group(nodes) | NodeKind::Run(nodes) => nodes.iter().map(syntax_node).collect(),
         NodeKind::Scope(target, body) => vec![syntax_node(target), syntax_node(body)],
@@ -1128,6 +1183,21 @@ fn syntax_node(node: &Node) -> SyntaxNode {
         NodeKind::Dfn(definition) => definition.bodies.iter().map(|body| body_node(body, &definition.span)).collect(), _ => Vec::new()
     };
     SyntaxNode::new(node.kind.name(), node.span.range.clone(), children)
+}
+
+/// The `Strand` node of a literal that joins several items, with a `Literal` child for each item, or `None` for any other node. The parser keeps no item spans, so this lexes the literal's own text. A superscript there belongs to the item before it, as `strands` folds it in.
+fn strand_node(node: &Node) -> Option<SyntaxNode> {
+    let (NodeKind::Literal(_), Span { source, range }) = (&node.kind, &node.span) else { return None };
+    let mut items: Vec<SyntaxNode> = Vec::new();
+    for token in lex(&Source::new("<syntax>", &source.text[range.clone()]), false, None).ok()? {
+        let item = range.start + token.span.range.start..range.start + token.span.range.end;
+        match token.kind {
+            TokenKind::Literal(_) => items.push(SyntaxNode::new("Literal", item, Vec::new())),
+            TokenKind::Operator(OperatorKind::Super(_)) => items.last_mut()?.range.end = item.end,
+            _ => return None
+        }
+    }
+    (items.len() > 1).then(|| SyntaxNode::new("Strand", range.clone(), items))
 }
 
 /// A dfn body. Only `{}` has an empty body, which spans the text between its braces.
@@ -1141,7 +1211,7 @@ fn body_node(body: &[Statement], dfn: &Span) -> SyntaxNode {
 impl NodeKind {
     fn name(&self) -> &'static str {
         match self {
-            Self::Literal(_) => "Literal", Self::Function(_) => "Function", Self::Operator(_) => "Operator", Self::Name(_) => "Name",
+            Self::Literal(_) => "Literal", Self::Function(_) => "Function", Self::Operator(_) => "Operator", Self::Name(..) => "Name",
             Self::System(_) => "System", Self::Assign => "Assign", Self::Output => "Output", Self::ErrorGuard => "ErrorGuard", Self::Group(_) => "Group",
             Self::Run(_) => "Run", Self::Subscript(_) => "Subscript", Self::Scope(..) => "Scope", Self::ArrayLiteral { .. } => "ArrayLiteral",
             Self::Dfn(_) => "Dfn", Self::Joiner(_) => "Joiner"

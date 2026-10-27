@@ -1,5 +1,5 @@
 use crate::execution::check;
-use rustymath::{buffer::{DType, FloatWidth, View}, error::Kind};
+use rustymath::{buffer::{DType, FloatWidth, View}, error::Kind, layout::FRESH};
 use crate::session;
 use crate::{array::generated_len, Span, number::Numeric, primitive::{numeric, Extension::{self, Items, Whole}, Item::{Number, Text, Vector}, Primitive}, Described, Error, ErrorKind, Function, Value};
 use std::borrow::Cow;
@@ -160,7 +160,7 @@ const BUILTINS: &[SystemFunction] = &[
     row("•explain", Call::Session(crate::Session::system_explain), Monadic, Items(Text), Some(record), None),
     row("•memory", Call::Active(memory), Monadic, Whole, Some(record), None),
     row("•detach", Call::Active(detach), Monadic, Whole, None, None),
-    row("•index", Call::Value(index), Ambivalent, Items(Number), Some(numbers), None),
+    row("•index", Call::Value(index), Ambivalent, Whole, None, None),
     row("•edge", Call::Value(edge), Ambivalent, Items(Text), Some(number), None),
 ];
 
@@ -297,21 +297,38 @@ fn memory(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
 /// `•detach Y`: `Y` with every `∂` tag stripped. No derivative flows back through the result. Outside `∂`, it gives `Y`.
 fn detach(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> { Ok(crate::derivative::detach(right)) }
 
-/// The separator between a fresh name's stem and its random part. Display cuts a hidden name after it.
-pub(crate) const FRESH: char = '·';
-/// `•index n` is `⍳n` along a fresh hidden axis name. The name is `_`, the left argument's text as a readable stem, `·`, and 64 random bits as 13 base-32 digits.
+/// `•index n` is `⍳n` along a fresh hidden axis name whose stem is the left argument's text (`fresh`). An array of counts gives an index for each (`indices`).
 fn index(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    const DIGITS: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
     let stem: std::sync::Arc<str> = match left {
         None => "".into(),
         Some(a) => crate::keyed::name(a).ok_or_else(|| Error::domain("•index takes text as its stem"))?,
     };
-    // The random bits come from the operating system, anew on each call.
-    crate::transform::acts()?;
+    indices(&stem, right, session().prototype.get(), span)
+}
+
+/// An index with stem `stem` for each count in `right`, nested as `right` is, in its layout with its keys: what Each would give, in one call. An empty array's fill is the result on its prototype. A call on prototypes gives `⍬` for each count and draws no name.
+fn indices(stem: &str, right: &Value, prototype: bool, span: &Span) -> Result<Value, Error> {
+    if right.is_atom() {
+        if prototype { return Ok(numbers(span)); }
+        return Primitive::Iota.call(None, right, span)?.with_axis_names(vec![Some(fresh(stem))]).described("invalid index");
+    }
+    let items = right.elements().map(|count| indices(stem, &count, prototype, span)).collect::<Result<Vec<_>, _>>()?;
+    let fill = || indices(stem, &right.prototype(), true, span).expect("a call on prototypes draws nothing").zeroed();
+    right.layout().collect(items, fill).described("invalid index")
+}
+
+/// A fresh hidden name: `_`, `stem`, `·`, and 64 random bits from the operating system as 13 base-32 digits, anew on each call. A running trace or batched run keeps it (`transform::Levels::keep_fresh`).
+pub(crate) fn fresh(stem: &str) -> std::sync::Arc<str> {
+    const DIGITS: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
     let mut bits: u64 = rand::random();
     let random: String = (0..13).map(|_| { let digit = DIGITS[(bits % 32) as usize] as char; bits /= 32; digit }).collect();
-    Primitive::Iota.call(None, right, span)?.with_axis_names(vec![Some(format!("_{stem}{FRESH}{random}").into())]).described("invalid index")
+    let name: std::sync::Arc<str> = format!("_{stem}{FRESH}{random}").into();
+    session().keep_fresh(name.clone());
+    name
 }
+
+/// A fresh name with the stem of `name`, which `fresh` drew.
+pub(crate) fn renamed(name: &str) -> std::sync::Arc<str> { fresh(&name[1..name.rfind(FRESH).expect("a fresh name holds its separator")]) }
 
 /// The edge mode that `name` names, one of rustymath's `structure::Edge::MODES`, as `•edge` and window options read it.
 pub(crate) fn edge_mode(name: &Value) -> Result<rustymath::structure::Edge, Error> {
@@ -327,18 +344,19 @@ fn edge(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let Some(n) = left else { return Ok(Value::Function(native("•edge", Call::Edge(edge_mode(right)?), Dyadic))) };
     edged(rustymath::structure::Edge::Fill, n, right)
 }
-/// The position on an axis of `n` items that each position in `p` reads under edge mode `mode`, as rustymath's `structure::Edge` gives it. Fill gives NaN for a position outside the axis, which reads the fill, so its result is 64-bit floats, whatever the float pref. The other modes give integers, unless the axis is empty. A NaN in `p` stays NaN.
+/// The position on an axis of `n` items that each position in `p` reads under edge mode `mode`, as rustymath's `structure::Edge::positions` gives it, in one pass over compact storage. Fill gives NaN for a position outside the axis, which reads the fill, so its result is 64-bit floats, whatever the float pref. The other modes give integers, unless the axis is empty. A NaN in `p` stays NaN.
 pub(crate) fn edged(mode: rustymath::structure::Edge, n: &Value, p: &Value) -> Result<Value, Error> {
+    use rustymath::structure::Edged;
     let n = n.as_number().and_then(|n| n.nonnegative_integer().ok()).ok_or_else(|| Error::domain("•edge takes a nonnegative whole length"))?;
-    let positions = p.as_items().positions().map_err(|_| Error::domain("•edge takes whole positions"))?;
-    let mapped: Vec<Option<usize>> = positions.iter().map(|q| q.and_then(|q| mode.position(q, n))).collect();
-    let result = if mode == rustymath::structure::Edge::Fill || mapped.contains(&None) {
-        let floats = mapped.iter().map(|q| q.map_or(f64::NAN, |q| q as f64));
-        if p.is_atom() { return Ok(Value::Number(crate::Number::float(floats.last().unwrap_or(f64::NAN), FloatWidth::F64))); }
-        p.layout().floats(FloatWidth::F64, floats)
-    } else {
-        if p.is_atom() { return Ok(Value::integer(mapped[0].unwrap_or(0) as i64)); }
-        p.layout().integers(mapped.iter().map(|q| q.unwrap_or(0) as i64).collect())
+    let edged = match p.as_items().view() {
+        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => mode.positions(view, n).ok(),
+        _ => p.as_items().positions().ok().map(|signed| mode.mapped(n, signed.contains(&None), signed.into_iter())),
+    };
+    let result = match edged.ok_or_else(|| Error::domain("•edge takes whole positions"))? {
+        Edged::Floats(y) if p.is_atom() => return Ok(Value::Number(crate::Number::float(y[0], FloatWidth::F64))),
+        Edged::Positions(q) if p.is_atom() => return Ok(Value::integer(q[0] as i64)),
+        Edged::Floats(y) => p.layout().floats(FloatWidth::F64, y),
+        Edged::Positions(q) => Value::positions(p.layout().shape(), n, q.into_iter()).and_then(|v| v.with_layout(p.layout().clone())),
     };
     result.described("invalid positions")
 }
@@ -349,7 +367,7 @@ fn to_float(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, E
         return Ok(Value::integer(width.bits()));
     };
     let width = w.as_number().and_then(|n| n.integer().ok()).and_then(FloatWidth::of_bits).ok_or(Kind::Domain).described("•float takes a width of 16, 32 or 64")?;
-    crate::derivative::to_float_width(right, width, span)
+    crate::derivative::converted(right, rustymath::buffer::DType::Float(width), span)
 }
 
 /// The widest float width among the numbers in `v`, nested arrays and a dual's primal included, or `None` when they're all exact. Characters and functions are DOMAIN.

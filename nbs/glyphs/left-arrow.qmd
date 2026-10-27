@@ -10,11 +10,11 @@ x←1+2 × 3 ⋄ x      ⍝ 9
 sum←+/ ⋄ sum 1 2 3 ⍝ 6
 ```
 
-`N f←Y` sets `N` to `N f Y`. A named function goes in parentheses, `N(f)←Y`, because in `N f←Y` the target would be `f`. With nothing after the arrow, `N f←` sets `N` to `f N`.
+`N+←Y` sets `N` to `N+Y`. With a named function, use the [separator `⁝`](tricolon.qmd): `N⁝f←Y` sets `N` to `N f Y`. In `N f←Y`, the target would be `f`. With nothing after the arrow, `N⌽←` sets `N` to `⌽N`.
 
 ```bpl
 x←10 ⋄ x+←3 ⋄ x    ⍝ 13
-f←× ⋄ x←3 ⋄ x(f)←4 ⋄ x ⍝ 12
+f←× ⋄ x←3 ⋄ x⁝f←4 ⋄ x ⍝ 12
 x←1 2 3 ⋄ x⌽← ⋄ x ⍝ 3 2 1
 ```
 

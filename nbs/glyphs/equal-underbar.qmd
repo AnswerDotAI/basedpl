@@ -20,9 +20,9 @@ Function. Keys: `Alt-=`. Hanzi: `同/深`. Ranks: `∞` monadic, `∞ ∞` dyadi
 Axes match as arithmetic pairs them. An axis matches another with the same name, or one with no name, but never one with a different name. When both axes have keys, they must hold the same keys in any order, and items compare by key. An axis without keys matches any keys. Search functions such as [`⍳`](iota.qmd) match cells by the same rule.
 
 ```bpl
-(⍳["i":3])≡⍳3ₓ                  ⍝ $t
-(⍳["i":3])≡⍳["j":3]            ⍝ $f
-(•index 3)≡•index 3            ⍝ $f
+⍳["i":3] ≡ ⍳3ₓ                  ⍝ $t
+⍳["i":3] ≡ ⍳["j":3]            ⍝ $f
+•index3 ≡ •index3            ⍝ $f
 ["a":1 "b":2]≡["b":2 "a":1]    ⍝ $t
 ["a":1 "b":2]≡1 2              ⍝ $t
 ```

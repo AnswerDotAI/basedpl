@@ -3053,7 +3053,7 @@
    <when state="bar" output="⍪"/>
   </action>
   <action id="k47-m4">
-   <when state="none" output="÷"/>
+   <when state="none" output="⁝"/>
    <when state="quad" output="⍠"/>
   </action>
   <action id="k49-m4">

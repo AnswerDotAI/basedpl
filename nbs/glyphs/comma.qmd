@@ -7,7 +7,7 @@ Function. Hanzi: `连` (`連`). Ranks: `∞` monadic, `∞ ∞` dyadic
 ```bpl
 ,[1 2⋄3 4]       ⍝ 1 2 3 4
 ⍴,7                ⍝ [1]ₓ
-⍴,⍠1 2 (2 3 4⍴⍳24ₓ) ⍝ [2 12]ₓ
+⍴,⍠1 2⁝2 3 4⍴⍳24ₓ ⍝ [2 12]ₓ
 ```
 
 `X,Y` joins on the last axis. `X,⍠K Y` joins on axis `K`. Other axes agree, with unit and adjacent-rank extension.

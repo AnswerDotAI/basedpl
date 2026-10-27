@@ -3,7 +3,7 @@ import pytest
 from basedpl import bpl, BplError
 from basedpl.worker import Worker, fresh
 
-def test_worker_bindings_calls_and_echo():
+def test_worker_bindings_calls_and_echo(tmp_path):
     with Worker() as w:
         a = dict(shape=[3], data=[1, 2, 3], prototype=0)
         assert w.request(dict(bindings=dict(x=a)), timeout=2) == dict(value=None, output=[], error=None)
@@ -38,6 +38,11 @@ def test_worker_bindings_calls_and_echo():
     assert e.value.kind == 'DOMAIN'
     rows = fresh(['(•prefs ⍬).kinds', '1÷"a"'], prefs='•prefs ["kinds":"static"]')
     assert rows[0].output == 'static' and rows[0].error is None and rows[1].error.kind == 'DOMAIN'
+    crash = tmp_path/'crash'
+    crash.write_text('#!/bin/sh\nread request\necho "thread main panicked" >&2\nexit 101\n')
+    crash.chmod(0o755)
+    rows = fresh(['1', '2'], bpl=crash)
+    assert all(isinstance(r.error, EOFError) and 'panicked' in str(r.error) for r in rows)
 
 def test_worker_keyed_arrays():
     with Worker() as w:

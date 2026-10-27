@@ -20,6 +20,9 @@ mod fusion;
 mod host;
 mod image;
 pub mod inspection;
+#[cfg(not(web))]
+#[doc(hidden)]
+pub mod jit;
 pub mod js;
 mod json;
 pub mod keyed;
@@ -31,7 +34,9 @@ mod optimize;
 mod pervasive;
 mod plot;
 mod polynomial;
+mod plan;
 mod primitive;
+mod program;
 pub mod protocol;
 #[doc(hidden)]
 pub mod reference;

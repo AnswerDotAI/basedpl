@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-Minus i`. Hanzi: `处/间` (`處/間`). Ranks: `∞` monadic, `∞ ∞` dyadic
 
-`⍸Y` lists exact positions, repeated according to their nonnegative integer counts. Higher-rank arguments give coordinate vectors.
+`⍸Y` lists exact positions, repeated according to their nonnegative whole counts. Higher-rank arguments give coordinate vectors.
 
 ```bpl
 ⍸0 2 0 1           ⍝ [1 1 3]ₓ

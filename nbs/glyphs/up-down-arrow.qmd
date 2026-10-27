@@ -43,12 +43,13 @@ A negative size pads its axis. Each window is centred on a position, as in [Sten
 
 An axis of length `n` has `0⌈≥⌊M÷⍨n-S` full windows, or `⌈M÷⍨0⌈n-0=2|S` padded windows. Movements default to 1.
 
-An options record gives the sizes as `size`, the movements as `step`, and an edge mode as `edge`. With an edge mode, every window is centred on a position, and a position past an end reads by that mode, one of [`•edge`](../system/edge.qmd)'s: `"fill"`, `"clamp"`, `"wrap"`, `"reflect"` or `"symmetric"`. `"fill"` pads as a negative size does. Without an edge mode, the record reads as a plain specification.
+An options record gives the sizes as `size`, the movements as `step`, an edge mode as `edge`, and a fill as `fill`. With an edge mode, every window is centred on a position, and a position past an end reads by that mode, one of [`•edge`](../system/edge.qmd)'s: `"fill"`, `"clamp"`, `"wrap"`, `"reflect"` or `"symmetric"`. `"fill"` pads as a negative size does. Without an edge mode, the record reads as a plain specification. Padding with fill reads the record's `fill` in place of the prototype's fill, as a [fill that `⍠` chooses](quad-colon.qmd#fill) does.
 
 ```bpl
 ["size":3 "edge":"wrap"]↕1 2 3 4           ⍝ [4 1 2⋄1 2 3⋄2 3 4⋄3 4 1]
 ["size":3 "edge":"clamp"]↕1 2 3 4          ⍝ [1 1 2⋄1 2 3⋄2 3 4⋄3 4 4]
 ["size":3 "step":2 "edge":"reflect"]↕⍳6ₓ   ⍝ [1 0 1⋄1 2 3⋄3 4 5]ₓ
+["size":¯3 "fill":¯1]↕1 2 3 4              ⍝ [¯1 1 2⋄1 2 3⋄2 3 4⋄3 4 ¯1]
 ```
 
 ## Folds of windows
@@ -84,4 +85,4 @@ k←¿3 4⍴0
 
 - `RANK`: sizes not a unit, vector or two-row matrix, or too many axes
 - `LENGTH`: a matrix without two rows
-- `DOMAIN`: non-integral size, nonpositive movement, a padded size of 0 or of at least twice the length of an axis that isn't empty, an options record with no size, or an unknown option or edge mode
+- `DOMAIN`: a size that isn't whole, nonpositive movement, a padded size of 0 or of at least twice the length of an axis that isn't empty, an options record with no size, an unknown option or edge mode, or a fill that doesn't keep its value as `Y`'s type

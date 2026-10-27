@@ -2,7 +2,7 @@
 
 Monadic operator. Keys: `Alt-6 b`. Hanzi: `按`
 
-`fᵇ` applies the Boolean function `f` separately to each bit of its integer arguments. Negative integers use infinite two's complement.
+`fᵇ` applies the Boolean function `f` separately to each bit of its whole arguments. Negative whole numbers use infinite two's complement.
 
 ```bpl
 6∧ᵇ3               ⍝ 2ₓ
@@ -11,7 +11,7 @@ Monadic operator. Keys: `Alt-6 b`. Hanzi: `按`
 ~ᵇ6                ⍝ ¯7ₓ
 ```
 
-Arguments follow the usual [integer conversion](../numbers.qmd#exact-and-approximate), including whole-valued floats such as bare `6`. Results are exact integers, or Booleans when every argument is Boolean. Agreement is pervasive.
+Arguments follow the usual [integer conversion](../numbers.qmd#exact-and-approximate), including whole floats such as bare `6`. Results are exact integers, or Booleans when every argument is Boolean. Agreement is pervasive.
 
 ```bpl
 6 3∧ᵇ5             ⍝ [4 1]ₓ

@@ -52,7 +52,7 @@ fn reference_format_and_comparison() {
         ("1E¯10", "0", "mismatch"), ("1E¯16", "0", "pass"), ("1+1E¯15", "1", "pass"), ("a←3", "a", "invalid"), ("1", "{}0", "mismatch"),
         ("{}0", "{}0", "pass"), ("+", "{}0", "mismatch"), ("⍬", r#""""#, "mismatch"), (",1", "1", "mismatch"), ("0⍴⊂1 2", "0⍴⊂1", "mismatch"),
         (r#""aa":1"#, r#""bb":1"#, "mismatch"), (r#""aa":1"#, ",1", "mismatch"), (r#"["row":1]⍴1"#, r#"["col":1]⍴1"#, "mismatch"),
-        ("3", "÷'a'", "invalid"),
+        ("3", "÷'a'", "invalid"), ("32•float 1+3×2*¯23", "32•float 1", "pass"), ("1+1E¯8", "32•float 1+1E¯8", "mismatch"),
     ] {
         let case = json!({"code":code, "expected_code":expect});
         assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], status, "{code} vs {expect}");
@@ -63,6 +63,8 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "pass");
     case["code"] = json!("1E¯10");
     assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "mismatch");
+    let exact = json!({"code":"32•float 1+3×2*¯23", "expected_code":"32•float 1", "relative_tolerance":0.0});
+    assert_eq!(reference::check(&exact, &InterruptHandle::default())["status"], "mismatch");
 }
 
 /// The variable that makes a run of `reference_cases` check one share of the cases: the share's number and the number of shares, as in `3 8`.
@@ -87,7 +89,7 @@ fn chosen() -> Vec<reference::File> {
     chosen
 }
 
-/// Every case, run once for each of `reference::check`'s runs: with the `batch` pref off, then on, under which maps first try one call of their operand on batches of their cells, then on with fusion's small sizes, under which every fusible call waits and a graph splits even small arrays into blocks, then on with the code as the body of a dfn called twice. Each of the first three runs must meet the case's expectation, with values held in the same kinds of storage. In the fourth, the dfn's second call, which runs the statements its first call recorded, must give the first call's result. A process evaluates one case at a time, so the test runs a child process of itself for each core. Each child checks every n-th case (`SHARD`) and prints its failures for the parent (`FAILURE`).
+/// Every case, run once for each of `reference::check`'s runs: with the `batch` pref off, then on, under which maps first try one call of their operand on batches of their cells, then on with fusion's small sizes, under which every fusible call waits, a block stage splits even small arrays into blocks and every stage compiles its parts, then the same with no compiled parts where that run used one, then on with the code as the body of a dfn called twice. Each run but the last must meet the case's expectation, with values held in the same kinds of storage. In the last, the dfn's second call, which runs the statements its first call recorded, must give the first call's result. A process evaluates one case at a time, so the test runs a child process of itself for each core. Each child checks every n-th case (`SHARD`) and prints its failures for the parent (`FAILURE`).
 #[test]
 fn reference_cases() {
     let chosen = chosen();
@@ -132,5 +134,5 @@ fn reference_cases() {
         )
     }).collect();
     assert!(failures.is_empty(), "{} of {count} reference cases failed:\n{}", failures.len(), failures.join("\n"));
-    eprintln!("{count} reference cases passed with the batch pref off, on, and on with fusion at any size");
+    eprintln!("{count} reference cases passed with the batch pref off, on, and on with fusion at any size, with compiled parts and without");
 }

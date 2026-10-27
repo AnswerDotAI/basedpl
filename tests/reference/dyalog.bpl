@@ -5,10 +5,10 @@
 +\⍣¯1 [1 3 6 10]   ⍝ 1 2 3 4
 
 ⍝ dyalog:power:inverse-decode —
-2↣⊥⍣¯1⊢9   ⍝ 1 0 0 1
+2↣⊥⍣¯1⁝9   ⍝ 1 0 0 1
 
 ⍝ dyalog:power:inverse-mixed-base —
-0 60 60↣⊥⍣¯1⊢3661   ⍝ 1 1 1
+0 60 60↣⊥⍣¯1⁝3661   ⍝ 1 1 1
 
 ⍝ dyalog:axes:laminate — Laminate is removed, so Mix adds the new leading axis
 ⊃[1 2;3 4]   ⍝ [1 2⋄3 4]
@@ -337,7 +337,7 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 {[⍺ ≢⍵]}⌸"zabayza"   ⍝ ['z' 2⋄'a' 3⋄'b' 1⋄'y' 1]ₓ
 
 ⍝ dyalog:power:successor — Inline successor definition
-1+⍣4⊢10   ⍝ 14
+1(+⍣4)10   ⍝ 14
 
 ⍝ dyalog:grade-up:vector —
 ⍋22.5 1 15 3 ¯4   ⍝ [4 1 3 2 0]ₓ
@@ -374,7 +374,7 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 {+/,⍵}⌺3 3 [3 3]⍴⍳12ₓ   ⍝ [8 15 12⋄21 36 27⋄20 33 24]ₓ
 
 ⍝ dyalog:stencil:even — Shorter input
-{⊂⍵}⌺2⍳4   ⍝ [[0 1] [1 2] [2 3]]
+⊂⌺2⍳4   ⍝ [[0 1] [1 2] [2 3]]
 
 ⍝ dyalog:matrix-inverse:1 —
 ⌹[2 ¯3⋄4 10]   ⍝ [0.3125 0.09375⋄¯0.125 0.0625]

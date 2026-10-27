@@ -6,10 +6,10 @@ use crate::transform::Pairing;
 
 /// `f`'s results converted to the marker's numeric type. Plain `ₓ` uses a primitive's `Exact` kernel where one exists.
 pub(super) fn marked(f: &Function, mark: crate::number::Mark, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    use crate::{number::Mark, primitive::Exact};
+    use {crate::{number::Mark, primitive::Exact}, rustymath::buffer::DType};
     match mark {
-        Mark::Width(w) => crate::derivative::to_float_width(&f.call(left, right, span)?.array(span)?, w, span),
-        Mark::Fixed(w) => f.call(left, right, span)?.array(span)?.to_fixed(w).described("can't convert result to fixed integers").at(span),
+        Mark::Width(w) => crate::derivative::converted(&f.call(left, right, span)?.array(span)?, DType::Float(w), span),
+        Mark::Fixed(w) => crate::derivative::converted(&f.call(left, right, span)?.array(span)?, DType::Integer(w), span).at(span),
         Mark::Exact => match f.as_primitive().and_then(|p| Exact::of(p, left.is_some())) {
             Some(e) => Primitive::Exact(e).call(left, right, span),
             None => {
@@ -149,11 +149,11 @@ fn under(operands: &[Operand; 2], left: Option<&Value>, right: &Value, text: imp
     let x = match left {
         Some(x) if !x.is_unit() => {
             let x = Laid::new(x, &right.layout().axes(0..1))?.aligned(span)?;
-            Some(crate::primitive::at_indices(&x, positions, span)?.read(&x, span)?)
+            Some(crate::primitive::at_indices(&x, positions, span)?.read(&x, None, span)?)
         }
         _ => None,
     };
-    let values = f.call_array(x.as_ref().or(left), &selection.read(right, span)?, span)?;
+    let values = f.call_array(x.as_ref().or(left), &selection.read(right, None, span)?, span)?;
     Ok(Bound::from(selection.write(right, &values, span)?))
 }
 
@@ -185,14 +185,17 @@ const FUSED: f64 = 2.1;
 /// The items of a pending mask that `selected` reads to estimate the share of items that pick each case. Fusion computes only those items (`fusion::walk_through`). The rest of the mask stays pending for the select.
 const SAMPLE: usize = 256;
 
-/// `cases[1]` on the items where the Boolean `mask` is 1 and `cases[0]` where it's 0, each run on every item of `right` and then chosen item by item (`fusion::select`), in place of gathering each case's cells (`Cells`). A case of `None` keeps `right`'s items, as `@[p]` keeps the items it doesn't select. A case then also runs on items that didn't pick it, which can't show where it never fails and gives the argument's kind (`select_cost`). `None` leaves the call to `Cells`: for a left argument, an empty argument, a mask that isn't Booleans with the argument's layout, an argument that isn't floats of 32 or 64 bits, an argument that `∂` tracks, whose gradient a select could make NaN where a case's slope is infinite on an item that didn't pick it, or a case that a select can't run. A select also has to cost less than the gather, by its cases' costs and the share of items that pick each (`GATHERED`). The share is counted from a stored mask, and estimated from a sample of a comparison that fusion runs inside the select (`share`). `•explain` reports a select as a fast combination, named by `text`.
+/// `cases[1]` on the items where the Boolean `mask` is 1 and `cases[0]` where it's 0, each run on every item of `right` and then chosen item by item (`fusion::select`), in place of gathering each case's cells (`Cells`). A case of `None` keeps `right`'s items, as `@[p]` keeps the items it doesn't select. A case then also runs on items that didn't pick it, which can't show where it never fails and gives the argument's kind (`select_cost`). `None` leaves the call to `Cells`: for a left argument, an empty argument, a mask and cases that `plan::select` refuses, such as a mask that isn't Booleans with the argument's layout, an argument that isn't floats of 32 or 64 bits, an argument that `∂` tracks, whose gradient a select could make NaN where a case's slope is infinite on an item that didn't pick it, or a case that a select can't run. A select also has to cost less than the gather, by its cases' costs and the share of items that pick each (`GATHERED`). The share is counted from a stored mask, and estimated from a sample of a comparison that fusion runs inside the select (`share`). `•explain` reports a select as a fast combination, named by `text`.
 fn selected(mask: &Value, cases: [Option<&Function>; 2], left: Option<&Value>, right: &Value, text: impl FnOnce() -> String, span: &Span) -> Result<Option<Value>, Error> {
     use rustymath::buffer::{DType, FloatWidth};
     let Some(DType::Float(width @ (FloatWidth::F32 | FloatWidth::F64))) = right.dtype() else { return Ok(None) };
-    if left.is_some() || right.is_empty() || mask.dtype() != Some(DType::Boolean) || **mask.layout() != **right.layout() || crate::transform::carried(left, right) { return Ok(None); }
+    if left.is_some() || right.is_empty() || **mask.layout() != **right.layout() || crate::transform::carried(left, right) { return Ok(None); }
     let [Some(no), Some(yes)] = cases.map(|f| f.map_or(Some(0), |f| select_cost(f, width))) else { return Ok(None) };
+    // Each case holds a constant's kind and shape, or else the argument's, which every other case keeps (`select_cost`).
+    let [no_case, yes_case] = cases.map(|f| crate::plan::Operand::Held(f.and_then(Function::as_constant).unwrap_or(right)));
+    let Ok(plan) = crate::plan::select(&crate::plan::Operand::Held(mask), &yes_case, &no_case) else { return Ok(None) };
     let keeps = |f: Option<&Function>| f.is_none_or(|f| matches!(f.as_primitive(), Some(Primitive::Identity(_))));
-    let fused = crate::fusion::defers_select(mask, width, right.layout());
+    let fused = crate::fusion::defers_select(mask, right.layout());
     let ones = share(mask, fused);
     let picked = |f: Option<&Function>, share: f64, copies: u32| if keeps(f) { 0.0 } else { share * (PICKED + f64::from(copies)) };
     // `share` counts, and so computes, a mask of at most `SAMPLE` items, which can then no longer run inside the select.
@@ -206,14 +209,14 @@ fn selected(mask: &Value, cases: [Option<&Function>; 2], left: Option<&Value>, r
     let [no, yes] = cases;
     let (y, x) = (items(no)?, items(yes)?);
     if crate::explain::recording() { crate::explain::fast("masked select", text()); }
-    Ok(Some(crate::fusion::select(mask, &x, &y, right.layout())))
+    Ok(Some(crate::fusion::select(mask, &x, &y, right.layout(), &plan)))
 }
 
 /// The share of `mask`'s items that are 1, counted, or estimated from `SAMPLE` items where `sampled`. An odd stride keeps the sample from lining up with a mask that repeats with a period of a power of two.
 fn share(mask: &Value, sampled: bool) -> f64 {
     let n = mask.len();
     let k = if sampled { SAMPLE.min(n) } else { n };
-    let sample = (k < n).then(|| crate::explain::uncounted(|| crate::primitive::walked(mask, crate::array::Layout::from(vec![k]), 0, &[rustymath::gather::Steps::along(k, (n / k - 1) | 1)])).expect("a sample fits its layout"));
+    let sample = (k < n).then(|| crate::explain::uncounted(|| crate::primitive::walked(mask, crate::array::Layout::from(vec![k]), 0, &[rustymath::gather::Steps::along(k, (n / k - 1) | 1)], None)).expect("a sample fits its layout"));
     let crate::array::Items::Compact(rustymath::buffer::View::Booleans(bits)) = sample.as_ref().unwrap_or(mask).as_items() else { unreachable!("a Boolean mask is compact") };
     bits.iter().filter(|&&b| b).count() as f64 / k as f64
 }
@@ -263,7 +266,7 @@ impl Cells {
         if axes.iter().any(|&a| a >= right.shape().len()) { return Err(Error::new(Kind::Rank, "the selector has an axis that the argument lacks")); }
         let framed = Framed::new(right.layout(), &axes)?;
         let frame = framed.frame();
-        let len = frame.shape().iter().product();
+        let len = frame.count();
         let lookup = lookup(selector.layout(), &frame, len, "the selector doesn't agree with the argument")?;
         let x = left.filter(|x| !x.is_unit()).map(|x| Laid::new(x, &frame)).transpose()?;
         Ok(Self { framed, axes, lookup, x, len })
@@ -341,7 +344,7 @@ impl Cells {
                         for (j, &i) in rows.iter().enumerate() { items[i as usize] = cells.at(j); }
                     }
                     Made::Fill(v) => {
-                        let n = shape.iter().product();
+                        let n = cell.count();
                         let mut spread = Gather::items(n);
                         spread.fill(&v.at(0), n);
                         let item = spread.finish(cell.clone(), fill.clone()).described("invalid result")?;
@@ -353,17 +356,17 @@ impl Cells {
             let result = self.framed.frame().assemble(&items, &fill).and_then(|v| v.with_layout(self.framed.frame().concat(&cell)))
                 .described("invalid result")?;
             let (_, positions) = placed(&self.framed, &self.axes, &cell)?;
-            if positions.iter().enumerate().all(|(j, &a)| j == a) { return Ok(result); }
-            return move_axes(&result, &fronted(&self.axes, self.framed.layout.shape().len()));
+            if rustymath::gather::counts_up(&positions) { return Ok(result); }
+            return crate::primitive::transpose_axes(fronted(&self.axes, self.framed.layout.shape().len()), &result);
         }
         let (layout, positions) = placed(&self.framed, &self.axes, &cell)?;
         let target = Framed::new(&layout, &positions)?;
-        let width: usize = cell.shape().iter().product();
+        let width = cell.count();
         let mut data = Gather::items(self.len * width);
         // Where every cell picks a case, the case that fills the most cells with one item fills the whole array first.
         let base = if none.is_empty() && start.is_none() { made.iter().filter(|(_, m)| matches!(m, Made::Fill(_))).max_by_key(|(k, _)| picked[*k].len()).map(|(k, _)| *k) } else { None };
         match start {
-            Some(argument) => data.walk(argument, 0, &[rustymath::gather::Steps::Stride { start: 0, len: argument.len(), step: 1 }]),
+            Some(argument) => data.walk(argument, 0, &[rustymath::gather::Steps::Stride { start: 0, len: argument.len(), step: 1 }], None),
             None => data.fill(&made.iter().find(|(k, _)| Some(*k) == base).map_or_else(|| fill.clone(), |(_, m)| m.value().at(0)), self.len * width),
         }
         let mut write = |rows: &[u32], values: &Value| data.scatter(target.targets(rows).writes().expect("cells' targets are offsets or a walk"), values);
@@ -419,7 +422,7 @@ struct Framed { layout: crate::array::Layout, rank: usize, steps: Vec<rustymath:
 
 impl Framed {
     fn new(layout: &crate::array::Layout, frame: &[usize]) -> Result<Self, Error> {
-        let plan = rustymath::structure::transpose(layout, &destination(&fronted(frame, layout.shape().len())))?;
+        let plan = rustymath::structure::transpose(layout, &rustymath::search::inverse_permutation(fronted(frame, layout.shape().len()).into_iter()))?;
         Ok(Self { layout: plan.layout.into(), rank: frame.len(), steps: plan.steps })
     }
     /// The frame's axes, with their names and keys.
@@ -452,7 +455,7 @@ impl Framed {
         Ok(Selection { frame: ResultFrame::Array(listed(&self.frame(), rows, &self.cells())?), targets: self.targets(rows) })
     }
     /// The cells at frame positions `rows` of `array`, as a list (`listed`).
-    fn read(&self, array: &Value, rows: &[u32], span: &Span) -> Result<Value, Error> { self.selection(rows)?.read(array, span) }
+    fn read(&self, array: &Value, rows: &[u32], span: &Span) -> Result<Value, Error> { self.selection(rows)?.read(array, None, span) }
 }
 
 /// The layout of the cells at positions `rows` of `frame`, as a list of cells laid out by `cell`. A frame of one axis keeps its name and the keys at `rows`.
@@ -495,7 +498,7 @@ impl Laid {
         let axes = rustymath::agreement::Agreement::paired_axes(x.layout(), frame, true);
         if axes.iter().any(|&a| a >= x.shape().len()) { return Err(Error::new(Kind::Length, MISMATCH)); }
         let framed = Framed::new(x.layout(), &axes)?;
-        let lookup = lookup(&framed.frame(), frame, frame.shape().iter().product(), MISMATCH)?;
+        let lookup = lookup(&framed.frame(), frame, frame.count(), MISMATCH)?;
         Ok(Self { value: x.clone(), framed, lookup, frame: frame.clone() })
     }
 
@@ -503,12 +506,12 @@ impl Laid {
     fn cells(&self, rows: &[u32], span: &Span) -> Result<Value, Error> {
         let starts = self.framed.starts(rows, |j| self.lookup.get(j));
         let layout = listed(&self.frame, rows, &self.framed.cells())?;
-        Selection { frame: ResultFrame::Array(layout), targets: self.framed.at_starts(starts) }.read(&self.value, span)
+        Selection { frame: ResultFrame::Array(layout), targets: self.framed.at_starts(starts) }.read(&self.value, None, span)
     }
 
     /// The argument laid over the whole frame: its cells in frame order, with the frame's axes first.
     fn aligned(&self, span: &Span) -> Result<Value, Error> {
-        let len = self.frame.shape().iter().product::<usize>();
+        let len = self.frame.count();
         self.cells(&(0..len as u32).collect::<Vec<_>>(), span)
     }
 }
@@ -535,13 +538,6 @@ fn on_prototypes(operand: &Function, left: Option<&Value>, right: &Value, span: 
 
 /// The order of the axes of an array of rank `n` with the axes `first` moved to the front, in their order, and the others after them, in theirs.
 fn fronted(first: &[usize], n: usize) -> Vec<usize> { first.iter().copied().chain((0..n).filter(|a| !first.contains(a))).collect() }
-
-/// The destination of each axis, as `⍉` takes it, that puts an array's axes in `order`.
-fn destination(order: &[usize]) -> Vec<usize> {
-    let mut destination = vec![0; order.len()];
-    for (j, &a) in order.iter().enumerate() { destination[a] = j; }
-    destination
-}
 
 /// `f@g` for a function `g`: `f⍥g`, with the result written back. A `g` that selects writes it back where it took it from. Any other `g` is undone by its inverse.
 fn under_function(f: &Function, g: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
@@ -575,7 +571,7 @@ fn stencil(f: &Function, spec: &Value, right: &Value, span: &Span) -> Result<Bou
     if spec.sizes.is_empty() { return Err(Error::domain("stencil needs at least one axis")); }
     if spec.sizes.iter().chain(&spec.moves).any(|&n| n <= 0) { return Err(Error::domain("stencil sizes and movements must be positive")); }
     spec.edge.get_or_insert(rustymath::structure::Edge::Fill);
-    let windows = crate::primitive::windowed(&spec, right)?;
+    let windows = crate::primitive::windowed(&spec, right, span)?;
     let ranks = Value::integers(vec![1], vec![-(spec.sizes.len() as i64)]).expect("one rank fills its vector");
     rank(f, &ranks, None, &windows, span)
 }
@@ -659,7 +655,7 @@ fn power(operands: &[Operand; 2], left: Option<&Value>, right: &Value, span: &Sp
 pub(super) fn power_count(e: Plain<'_>) -> Result<(bool, u64), &'static str> {
     if let Some(negative) = e.infinity() { return Ok((negative, u64::MAX)); }
     let Plain::Number(n) = e else { return Err("power counts must be numeric") };
-    n.integer().map(|n| (n < 0, n.unsigned_abs())).map_err(|_| "power counts must be integral or infinite")
+    n.integer().map(|n| (n < 0, n.unsigned_abs())).map_err(|_| "power counts must be whole or infinite")
 }
 
 /// The counts in a count array, through any nesting.
@@ -708,10 +704,9 @@ pub(super) fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value
             if matches!(g.node(), Composed(After, [Operand::Function(_), Operand::Function(_)])) { return inverse(g, None, right, span); }
             let Primitive(p) = g.node() else { return Err(Error::domain("this commute has no known inverse")); };
             match p {
-                P::Arithmetic(Arithmetic::Plus) => {
-                    P::Arithmetic(Arithmetic::Divide).call(Some(right), &Value::Number(crate::Number::from_integer(2).marked(true)), span)
-                }
-                P::Arithmetic(Arithmetic::Times) => P::Math(Math::Power).call(Some(right), &crate::primitive::float_like(0.5, right), span),
+                // With one argument, `+⍨` is monadic `⊽`, which doubles, and `×⍨` is monadic `⊼`, which squares.
+                P::Arithmetic(Arithmetic::Plus) => crate::primitive::inverse(P::Math(Math::Nor), None, right, None, span),
+                P::Arithmetic(Arithmetic::Times) => crate::primitive::inverse(P::Math(Math::Nand), None, right, None, span),
                 _ if p.info().dyad.picks => Ok(right.clone()),
                 P::Math(Math::Lcm | Math::Gcd) => {
                     if !p.call(Some(right), right, span)?.matches(right, span)? { return Err(Error::domain("no argument gives this result")); }
@@ -783,6 +778,7 @@ pub(super) fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value
 }
 
 fn inverse_outer(f: &Function, bound: &Value, first: bool, right: &Value, span: &Span) -> Result<Value, Error> {
+    crate::program::trace::per_item(Some(bound), right)?;
     let rank = bound.shape().len();
     if bound.is_empty() || right.shape().len() < rank { return Err(Error::domain("outer-product inverse needs a nonempty matching bound frame")); }
     let split = if first { rank } else { right.shape().len() - rank };
@@ -822,7 +818,8 @@ fn inverse_scan(f: &Function, h: FoldKind, axis: Option<&Value>, seed: Option<&V
     };
     let inverse = f.inverse(span)?;
     if let Some(p) = f.as_primitive() {
-        if let Some(result) = crate::pervasive::inverse_scan(p, right, seed, &axis) {
+        let seed = seed.map(|s| p.weaken_value(s, right).unwrap_or_else(|| s.clone()));
+        if let Some(result) = crate::pervasive::inverse_scan(p, right, seed.as_ref(), &axis) {
             return result.with_layout(right.layout().clone()).described("invalid inverse scan");
         }
     }
@@ -922,6 +919,7 @@ pub(super) fn outer(operand: &Function, left: Option<&Value>, right: &Value, spa
 // Out of line, as `each_items` is, so that `outer`'s frame holds only its fast paths.
 #[inline(never)]
 fn outer_items(operand: &Function, left: &Value, right: &Value, span: &Span) -> Result<Bound, Error> {
+    crate::program::trace::per_item(Some(left), right)?;
     let agreement = Agreement::outer(left.layout(), right.layout()).described("outer product is too large")?;
     // A batched try reads each argument laid over the result's frame (`batch::Arguments::laid`).
     let whole = || crate::batch::Arguments::laid(&agreement, Some((left.clone(), 0)), (right.clone(), 0));
@@ -977,7 +975,7 @@ impl Contraction {
             }
         }
         if self.layout.shape().is_empty() { return Ok(results.remove(0)); }
-        let prototype = results[0].fill();
+        let prototype = results[0].zeroed();
         if size == 0 { results.clear(); }
         self.layout.collect(results, prototype).described("invalid inner product result")
     }
@@ -1007,7 +1005,7 @@ fn by_rows(c: &Contraction, left: &Value, right: &Value, mut product: impl FnMut
         let count = per.min(rows - start);
         let x = match &flat {
             None => left.relaid(Layout::from(vec![rows, n, 1])),
-            Some(flat) => crate::primitive::copied(flat, Layout::from(vec![count * n]), &[Steps::Stride { start: start * n, len: count * n, step: 1 }]).and_then(|x| x.relaid(Layout::from(vec![count, n, 1]))),
+            Some(flat) => crate::primitive::copied(flat, Layout::from(vec![count * n]), &rustymath::agreement::Mapping::from(vec![Steps::Stride { start: start * n, len: count * n, step: 1 }])).and_then(|x| x.relaid(Layout::from(vec![count, n, 1]))),
         };
         let x = match x.described("invalid product rows") { Ok(x) => x, Err(e) => return Some(Err(e)) };
         parts.push(match product(x, y.clone())? { Ok(p) => p, Err(e) => return Some(Err(e)) });
@@ -1024,7 +1022,8 @@ fn by_rows(c: &Contraction, left: &Value, right: &Value, mut product: impl FnMut
 pub(crate) fn primitive_product(f: Primitive, g: Primitive, left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
     let c = Contraction::new(left, right)?;
     if c.ordered && !left.is_unit() && !right.is_unit() && !crate::transform::carried(Some(left), right) {
-        if let Some(result) = crate::pervasive::inner(f, g, left, right, &rustymath::agreement::Frames::one(), [c.rows, c.n, c.cols], c.layout.shape().to_vec()) {
+        let plan = crate::plan::product_on(f, g, left, right).map_err(Error::domain)?;
+        if let Some(result) = crate::pervasive::inner(&plan, left, right, &rustymath::agreement::Frames::one(), [c.rows, c.n, c.cols], c.layout.shape().to_vec()) {
             let result = result?;
             return if c.layout.shape().is_empty() { Ok(result.at(0)) } else { result.with_layout(c.layout).described("invalid inner product result") };
         }
@@ -1064,6 +1063,7 @@ fn expansion(f: &Function, g: &Function, right: &Value, span: &Span) -> Result<B
 
 /// Monadic `f.g` of `right`, as J defines it: the expansion of a matrix by minors along its first column. A vector is one column, and an atom one item. `call(x, Some(y))` is `x f.g y`, and `call(x, None)` is `g/x`. `expansion` calls it. `-.×` is the determinant and `+.×` the permanent, which `idioms` computes by faster algorithms.
 pub(crate) fn expanded(right: &Value, span: &Span, call: &mut dyn FnMut(&Value, Option<&Value>) -> Result<Value, Error>) -> Result<Value, Error> {
+    crate::program::trace::per_item(None, right)?;
     let [m, n] = matrix(right).ok_or_else(|| Error::new(Kind::Rank, "monadic f.g needs a matrix, a vector or a number"))?;
     if m > 64 { return Err(Error::new(Kind::Limit, "monadic f.g expands at most 64 rows")); }
     let items: Vec<Value> = (0..m * n).map(|i| right.at(i)).collect();
@@ -1098,7 +1098,7 @@ fn cell_ranks(ranks: &Value) -> Result<[isize; 3], Error> {
     let ranks = ranks.elements().map(|e| match e.observed().map_err(Error::from).map(|e| (e.infinity(), e))? {
             (Some(negative), _) => Ok(if negative { isize::MIN } else { isize::MAX }),
             (None, Plain::Number(n)) => {
-                n.integer().map(|n| isize::try_from(n).unwrap_or(if n < 0 { isize::MIN } else { isize::MAX })).described("cell ranks must be integers")
+                n.integer().map(|n| isize::try_from(n).unwrap_or(if n < 0 { isize::MIN } else { isize::MAX })).described("cell ranks must be whole numbers")
             }
             _ => Err(Error::domain("cell ranks must be numeric")),
         })
@@ -1144,8 +1144,8 @@ fn assembled(len: usize, layout: crate::array::Layout, mixed: Option<&'static st
         let item = call(i, empty)?;
         if empty { first = Some(item) } else { data.add(item) }
     }
-    let items = data.finish(layout, || first.expect("a call on prototypes").fill()).described("invalid result")?;
-    match mixed { Some(what) => items.mix(crate::array::Widening::Items).described(what), None => Ok(items) }
+    let items = data.finish(layout, || first.expect("a call on prototypes").zeroed()).described("invalid result")?;
+    match mixed { Some(what) => items.mix(crate::array::Widening::Items, None).described(what), None => Ok(items) }
 }
 
 /// Rank's general path: `operand` on each pair of cells of ranks `xr` and `yr`, paired by the agreement of the cells' frames (`each_pair`).
@@ -1166,7 +1166,7 @@ fn whole(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]: [usi
     // A fold with a number on its left takes the number as every lane's seed.
     if let Some(x) = left {
         let (Value::Number(_), FunctionNode::Fold(g, kind)) = (x, operand.node()) else { return None };
-        return folded_cells(pervasive_primitive(g, true)?, *kind, kind.default_axis(yr), Some(x), right, yr, span).map(|result| result.map(Bound::from));
+        return folded_cells(pervasive_primitive(g, true)?, *kind, &[kind.default_axis(yr)], Some(x), right, yr, span).map(|result| result.map(Bound::from));
     }
     cell_rule(operand, right, yr, span).map(|result| result.map(Bound::from))
 }
@@ -1200,7 +1200,7 @@ fn cell_rule(f: &Function, y: &Value, k: usize, span: &Span) -> Option<Result<Va
     use {crate::primitive::CellRule, FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::{Atop, Before}};
     match f.node() {
         N::Primitive(p) => primitive_cells(*p, None, y, k, span),
-        N::Fold(g, kind) => folded_cells(pervasive_primitive(g, true)?, *kind, kind.default_axis(k), None, y, k, span),
+        N::Fold(g, kind) => folded_cells(pervasive_primitive(g, true)?, *kind, &[kind.default_axis(k)], None, y, k, span),
         N::Composed(Before, [V(a), F(g)]) => primitive_cells(g.as_primitive()?, Some(a), y, k, span),
         N::Composed(Atop, [F(g), F(h)]) => {
             // A fold of each cell's items, joined into one axis as monadic `,` joins them (`CellRule::Every`), folds all the cell axes at once. That takes folds in turn where the primitive allows them. Folds in turn reach sliding folds over windows.
@@ -1212,6 +1212,22 @@ fn cell_rule(f: &Function, y: &Value, k: usize, span: &Span) -> Option<Result<Va
             let inner = match cell_rule(h, y, k, span)? { Ok(inner) => inner, Err(e) => return Some(Err(e)) };
             let ranks = Value::integer((inner.shape().len() - (y.shape().len() - k)) as i64);
             Some(rank(g, &ranks, None, &inner, span).and_then(|result| result.array(span)))
+        }
+        // Each cell's `(f c) g (h c)`: each tine over the whole of `y`, then `g` on each pair of the tines' cells, as one Rank call. A constant tine, as the `2` of `2×⊢`, is one cell that pairs with every cell of the other.
+        N::Fork([f, g, h]) => {
+            if f.as_constant().is_some() && h.as_constant().is_some() { return None; }
+            let frame = y.shape().len() - k;
+            let tine = |t: &Function| -> Option<Result<(Value, usize), Error>> {
+                if let Some(a) = t.as_constant() { return Some(Ok((a.clone(), a.shape().len()))); }
+                match cell_rule(t, y, k, span)? {
+                    Ok(v) => { let r = v.shape().len().checked_sub(frame)?; Some(Ok((v, r))) }
+                    Err(e) => Some(Err(e)),
+                }
+            };
+            let (right, rr) = match tine(h)? { Ok(t) => t, Err(e) => return Some(Err(e)) };
+            let (left, lr) = match tine(f)? { Ok(t) => t, Err(e) => return Some(Err(e)) };
+            let ranks = Value::integers(vec![2], vec![lr as i64, rr as i64]).expect("ranks are integers");
+            Some(rank(g, &ranks, Some(&left), &right, span).and_then(|result| result.array(span)))
         }
         _ => None,
     }
@@ -1265,13 +1281,13 @@ fn primitive_cells(p: Primitive, left: Option<&Value>, y: &Value, k: usize, span
         CellRule::Reshape if vector => {
             let shape: Vec<usize> = a.as_items().nonnegative_integers().ok()?;
             let (outer, cell) = y.shape().split_at(frame);
-            let (n, k) = (cell.iter().product::<usize>(), shape.iter().product::<usize>());
+            let (n, k) = (crate::array::count(cell), crate::array::count(&shape));
             let to = |v: Value| v.relaid(y.layout().axes(0..frame).concat(&crate::array::Layout::from(shape.clone())));
             if k == n { return Some(to(y.clone()).described("invalid cell reshape")); }
             if n == 0 { return None; }
             let flat = |m: usize| y.layout().axes(0..frame).concat(&crate::array::Layout::from([m]));
             let steps: Vec<_> = rustymath::gather::Steps::row_major(outer, n, 0).chain([rustymath::gather::Steps::padded(0, k, n, 1, rustymath::structure::Edge::Wrap)]).collect();
-            Some(y.relaid(flat(n)).and_then(|f| crate::primitive::copied(&f, flat(k), &steps)).and_then(to).described("invalid cell reshape"))
+            Some(y.relaid(flat(n)).and_then(|f| crate::primitive::copied(&f, flat(k), &rustymath::agreement::Mapping::from(steps))).and_then(to).described("invalid cell reshape"))
         }
         // The haystack on the left is the same in every cell. Each cell holds whole needles, of the haystack's major cells' rank or more, so the frame stays outside the needles.
         CellRule::Searches { haystack_left: true } if !a.is_unit() && k + 1 >= a.shape().len() => Some(p.call(Some(a), y, span)),
@@ -1285,12 +1301,13 @@ fn primitive_cells(p: Primitive, left: Option<&Value>, y: &Value, k: usize, span
 /// - A form that extends, at cell ranks of at least its own. A call on two arguments pairs their frames as Rank does, wherever the call succeeds (`declared_ranks_match_rank` in `tests/core.rs`).
 /// - `⌷`, `⊃` and bracket indexing whose positions or right argument differ by cell select as one bracket selection of the whole (`primitive::paired_select`).
 /// - `∊`, with the same haystack on the right in every cell, searches all the cells of `x` at once, where each cell holds whole needles (`CellRule::Searches`).
+/// - `⍳`, `∊` and `⍸` whose haystack differs from cell to cell search each cell's needles in its own haystack (`primitive::searched_cells`).
 /// - `≡` and `≢` compare every pair of cells at once (`CellRule::Matches`).
 ///
-/// `None` for any other form, for an argument with a named axis, which a whole call could pair by name, and where the call fails. The calls on each cell then give the result or the error.
+/// `None` for any other form, for frames whose names one whole call would pair otherwise than Rank (`frames_pair`), and where the call fails. The calls on each cell then give the result or the error. Names on cell axes pair in the whole call as calls on cells pair them.
 fn paired_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: usize, span: &Span) -> Option<Value> {
     use crate::primitive::CellRule;
-    if x.layout().has_names() || y.layout().has_names() { return None; }
+    if !frames_pair(x.layout(), x.shape().len() - xk, y.layout(), y.shape().len() - yk) { return None; }
     if let Some(selected) = crate::primitive::paired_select(p, x, xk, y, yk, span) { return Some(selected); }
     let frame = if x.shape().len() > xk { x.layout().axes(0..x.shape().len() - xk) } else { y.layout().axes(0..y.shape().len() - yk) };
     let unit = |v: &Value| v.shape().is_empty();
@@ -1310,6 +1327,8 @@ fn paired_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: usize, span: 
         }
         // The haystack on the right is the same in every cell, and each cell of `x` holds whole needles.
         CellRule::Searches { haystack_left: false } if y.shape().len() == yk && !unit(y) && xk + 1 >= yk => p.call(Some(x), y, span).ok(),
+        // Each cell holds its own haystack.
+        CellRule::Searches { haystack_left } => crate::primitive::searched_cells(p, x, xk, y, yk, &frame, haystack_left),
         CellRule::Matches { not } => crate::primitive::matched_cells(x, xk, y, yk, &frame, not),
         _ => {
             let [rx, ry] = p.info().dyad.ranks.map(usize::from);
@@ -1319,10 +1338,13 @@ fn paired_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: usize, span: 
     }
 }
 
-/// A fold or scan by `p` of each rank-`k` cell of `y` along the cell's axis `axis`, with `seed` as each lane's left argument, as one call on the whole of `y` (`Operation::call`), where `p` is a pervasive primitive and `y` is simple. A pervasive primitive's fold or scan of each cell of a simple array is simple, so Rank's mix of those results gives what the whole-array call gives. `None` otherwise. Rank (`cell_rule`) and batched maps (`batch::call`) share it.
-pub(crate) fn folded_cells(p: Primitive, kind: FoldKind, axis: usize, seed: Option<&Value>, y: &Value, k: usize, span: &Span) -> Option<Result<Value, Error>> {
+/// A fold or scan by `p` of each rank-`k` cell of `y` along the cell's axis, or a fold along several of its axes, given in `axes`, with `seed` as each lane's left argument, as one fold of the whole of `y` along those axes past its frame, where `p` is a pervasive primitive and `y` is simple. A pervasive primitive's fold or scan of each cell of a simple array is simple, so Rank's mix of those results gives what the whole-array fold gives. One axis takes the call of the operation (`Operation::call`). Several take the fold along several axes (`fold`), whose routes include one pass over windows (`folded_along`). `None` otherwise. Rank (`cell_rule`) and batched maps (`batch::call`) share it.
+pub(crate) fn folded_cells(p: Primitive, kind: FoldKind, axes: &[usize], seed: Option<&Value>, y: &Value, k: usize, span: &Span) -> Option<Result<Value, Error>> {
     if k == 0 || !y.is_simple() || !p.facts(true).pervasive() { return None; }
-    Some(Operation::Fold(p, kind).call(Pairing::Axis(Some(y.shape().len() - k + axis)), seed, y, span))
+    let frame = y.shape().len() - k;
+    if let [axis] = axes { return Some(Operation::Fold(p, kind).call(Pairing::Axis(Some(frame + axis)), seed, y, span)); }
+    let axes = Value::integers(vec![axes.len()], axes.iter().map(|&a| (frame + a) as i64).collect()).expect("axes are integers");
+    Some(fold(&Function::primitive(p), kind, Some(&axes), seed, y, span))
 }
 
 /// What `p` gives a cell laid out by `cell`, where its rule for cells says that depends only on the cell's shape: the cell's length for `≢` and its shape for monadic `⍴`. `None` for any other rule, and for the shape of a cell with named axes, which the names key. Rank lays it over the frame (`primitive_cells`), and a batched run gives it as every cell's result (`batch::call`).
@@ -1331,7 +1353,7 @@ pub(crate) fn cell_constant(p: Primitive, cell: &crate::array::Layout) -> Option
     let shape = cell.shape();
     match p.facts(false).cells {
         CellRule::Length => Some(Value::integer(shape.first().map_or(1, |&n| n as i64))),
-        CellRule::Shape if cell.names().iter().all(Option::is_none) => Value::integers(vec![shape.len()], shape.iter().map(|&n| n as i64).collect()).ok(),
+        CellRule::Shape if !cell.has_names() => Value::integers(vec![shape.len()], shape.iter().map(|&n| n as i64).collect()).ok(),
         _ => None,
     }
 }
@@ -1343,11 +1365,21 @@ fn pervasive_cells(operand: &Function, left: Option<&Value>, right: &Value, rank
     padded_call(pervasive_primitive(f, left.is_some())?, left.zip(fx.as_deref()), (right, &fy), span).map(|result| result.map(Bound::from))
 }
 
-/// The pervasive primitive `p` in one call on `left` and `right`, each with the lengths of its frame's runs of axes. A monad maps each item, whatever its cells. For a dyad, each argument gets axes of length 1 after each run, up to the length of the other argument's run, so the call pairs frames with frames and cells with cells (`agreement::padded`). Arguments with axis names take the path through cells, because separate calls never pair axes by name. So does an empty argument, because its result's shape comes from a call on prototype cells, and so do arguments whose padded layouts don't agree. That path reports the error.
+/// Whether one call on whole arguments laid out as `x` and `y`, whose frames are their first `fx` and `fy` axes, pairs their names as Rank does, frame with frame and cell with cell: each name on either frame appears in the other argument only on its frame axis at the same position, if at all. Otherwise the whole call adds a differently named frame axis after the cells, where Rank adds it to the frame, or pairs a frame axis with a cell axis of the same name.
+fn frames_pair(x: &crate::array::Layout, fx: usize, y: &crate::array::Layout, fy: usize) -> bool {
+    let fits = |a: &[Option<std::sync::Arc<str>>], fa: usize, b: &[Option<std::sync::Arc<str>>], fb: usize| a.iter().take(fa).enumerate()
+        .all(|(i, n)| n.as_ref().is_none_or(|n| b.iter().enumerate().all(|(j, m)| m.as_ref().is_none_or(|m| (m == n) == (j == i && j < fb)))));
+    fits(x.names(), fx, y.names(), fy) && fits(y.names(), fy, x.names(), fx)
+}
+
+/// The pervasive primitive `p` in one call on `left` and `right`, each with the lengths of its frame's runs of axes. A monad maps each item, whatever its cells. For a dyad, each argument gets axes of length 1 after each run, up to the length of the other argument's run, so the call pairs frames with frames and cells with cells (`agreement::padded`). Names on cell axes pair in that call as separate calls on cells pair them. Names on frame axes pair in that call as Rank pairs them where `frames_pair` allows, and other named frames take the path through cells. So does an empty argument, because its result's shape comes from a call on prototype cells, and so do arguments whose padded layouts don't agree. That path reports the error.
 fn padded_call(p: Primitive, left: Option<(&Value, &[usize])>, (y, fy): (&Value, &[usize]), span: &Span) -> Option<Result<Value, Error>> {
-    if left.iter().map(|&(x, _)| x).chain([y]).any(|a| a.is_empty() || a.layout().has_names()) { return None; }
+    if left.iter().map(|&(x, _)| x).chain([y]).any(|a| a.is_empty()) { return None; }
     let Some((x, fx)) = left else { return Some(p.call(None, y, span)) };
     let (x, y) = (crate::agreement::padded(x, fx, fy), crate::agreement::padded(y, fy, fx));
+    // Padding lines the frames up axis by axis.
+    let frame: usize = fx.iter().zip(fy).map(|(n, m)| n.max(m)).sum();
+    if !frames_pair(x.layout(), frame, y.layout(), frame) { return None; }
     // A unit agrees with any argument, and so does an argument laid out the same.
     if !(x.shape().is_empty() || y.shape().is_empty() || x.layout() == y.layout()) { Agreement::new(x.layout(), y.layout()).ok()?; }
     Some(p.call(Some(&x), &y, span))
@@ -1385,11 +1417,38 @@ fn decomposed(operand: &Function, left: Option<&Value>, right: &Value, [xr, yr]:
     Some(crate::primitive::stacked_decompositions(kind, right, span)?.map(Bound::from))
 }
 
-/// `f⍠spec`: a primitive with its own axis form, a reduce or scan along an axis, or `f` on the cells that the axes make.
+/// `f⍠spec`: a primitive with its own axis form, a reduce or scan along an axis, or `f` on the cells that the axes make. A keyed `spec` is an options record (`with_options`).
 pub(super) fn along_axes(f: &Function, spec: &Value, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+    if spec.keys(0).is_some() { return with_options(f, spec, left, right, span); }
     match f.node() {
         FunctionNode::Primitive(p) if p.facts(left.is_some()).axes => Ok(Bound::from(p.call_axes(left, right, spec, span)?)),
         FunctionNode::Fold(operand, kind) => Ok(Bound::from(fold(operand, *kind, Some(spec), left, right, span)?)), _ => cell_axes(f, spec, left, right, span)
+    }
+}
+
+/// `f⍠R` with an options record `R`, whose one option, `fill`, gives the item that `f` reads at each position that it fills (`filled`).
+fn with_options(f: &Function, spec: &Value, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+    let options = crate::data::Options::new("⍠", Some(spec), None, &["fill"])?;
+    let fill = options.values.get("fill").ok_or_else(|| Error::domain("⍠'s options record needs fill"))?;
+    filled(f, spec, fill, left, right, span)
+}
+
+/// `f` called with `fill` at each position that it fills, from the options record `spec`. The fill reaches a primitive or a primitive's inverse that fills (`Primitive::with_fill`), through an argument that `a↣f` or `f↢a` binds, and through `f⍠A`. A primitive with an axis form of its own reads `A` with the fill. Any other `f⍠A` calls `f⍠spec` on the cells that `A` makes, as `along_axes` calls `f`. `↕` and `⌺` take their fill in their own options records. Any other function reads no fill, and is a DOMAIN error.
+fn filled(f: &Function, spec: &Value, fill: &Value, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+    use {FunctionNode as N, Operand::{Function as F, Value as V}, OperatorKind::{After, Before, Stencil}};
+    let primitive = |p: Primitive, inverse: bool, axes: Option<&Value>| p.with_fill(inverse, left, right, fill, axes, span).map(Bound::from);
+    match f.node() {
+        N::Primitive(Primitive::Windows) | N::Composed(Stencil, _) => Err(Error::domain("↕ and ⌺ take their fill in their own options records")),
+        N::Primitive(p) => primitive(*p, false, None),
+        N::Inverse(g) if let N::Primitive(p) = g.node() => primitive(*p, true, None),
+        N::Composed(Before, [V(_), F(_)]) | N::Composed(After, [F(_), V(_)]) if left.is_some() => Err(Error::new(ErrorKind::Syntax, ONE_ARGUMENT)),
+        N::Composed(Before, [V(a), F(g)]) => filled(g, spec, fill, Some(a), right, span),
+        N::Composed(After, [F(g), V(a)]) => filled(g, spec, fill, Some(right), a, span),
+        N::Axis(g, axes) if axes.keys(0).is_none() => match g.node() {
+            N::Primitive(p) if p.facts(left.is_some()).axes => primitive(*p, false, Some(axes)),
+            _ => cell_axes(&Function::new(N::Axis(g.clone(), spec.clone()), span)?, axes, left, right, span),
+        },
+        _ => Err(Error::domain("this function reads no fill")),
     }
 }
 
@@ -1420,19 +1479,13 @@ pub(super) fn cell_axes(f: &Function, spec: &Value, left: Option<&Value>, right:
             if j < start { j } else if j < frame { j + cell } else { start + j - frame }
         }).collect()
     };
-    Ok(Bound::from(move_axes(&result, &destination)?))
-}
-
-/// Transpose so that axis `i` of `x` becomes axis `destination[i]`.
-fn move_axes(x: &Value, destination: &[usize]) -> Result<Value, Error> {
-    if rustymath::gather::counts_up(destination) { return Ok(x.clone()); }
-    crate::primitive::transpose_axes(destination.to_vec(), x)
+    Ok(Bound::from(crate::primitive::transpose_axes(destination, &result)?))
 }
 
 /// `x` with the `selected` axes moved to the end, in their order.
 fn moved_last(x: &Value, selected: &[usize]) -> Result<Value, Error> {
     let n = x.shape().len();
-    move_axes(x, &destination(&(0..n).filter(|i| !selected.contains(i)).chain(selected.iter().copied()).collect::<Vec<_>>()))
+    crate::primitive::reorder(x, &(0..n).filter(|i| !selected.contains(i)).chain(selected.iter().copied()).collect::<Vec<_>>())
 }
 
 /// Calls `operand` on the argument pairs `pair(0)`, `pair(1)` and so on up to `len`, and assembles the results in `layout`. They become the result's items, or with `mixed` they mix into one array whose numbers keep their kinds, as Rank mixes them. `mixed` gives the message for results that don't mix. It first tries one call on batches of all the cells, from the whole arguments that `whole` builds (`batch::tried`), except for one cell of atoms. With no pairs it calls the operand once on prototypes (`on_prototypes`), on `pair(0)`, for the result's prototype. A call that gives no result contributes `⍬`.
@@ -1484,6 +1537,7 @@ pub(super) fn each(operand: &Function, left: Option<&Value>, right: &Value, span
 // Out of line, so that `each`'s frame holds only its fast paths. Recursion through them, as in Each on a scalar, keeps that frame on the browser's stack, whose size limits the depth of recursion (`tests/wasm.mjs`).
 #[inline(never)]
 fn each_items(operand: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+    crate::program::trace::per_item(left, right)?;
     let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).described("frames do not agree")?;
     // Each passes a scalar argument's item to every cell, where Rank passes the scalar. The item is the argument's one cell, whatever its rank.
     let whole = |a: &Value| if a.shape().is_empty() && !a.is_atom() { let item = a.at(0); let rank = item.shape().len(); (item, rank) } else { (a.clone(), 0) };
@@ -1500,7 +1554,8 @@ pub(super) fn each_whole_left(operand: &Function, left: Option<&Value>, right: &
 fn identity(p: Primitive, prototype: &Value, span: &Span) -> Result<Value, Error> {
     use crate::primitive::Identity::*;
     let id = p.info().dyad.identity.ok_or_else(|| Error::domain("this function has no reduction identity"))?;
-    let number = |n: f64| Ok(crate::primitive::float_like(n, prototype));
+    // A float identity, such as the ¯∞ of `⌈`, takes the width that a weak float takes beside these items under NEP 50.
+    let number = |n: f64| Ok(Value::Number(crate::Number::float(n, Numeric::current().width_of([prototype.float_width()]))));
     match (id, prototype) {
         (Empty(first), _) => {
             let axis = (!first).then(|| prototype.shape().len().saturating_sub(1));
@@ -1546,39 +1601,53 @@ pub(crate) fn fold(
     }
     let along = kind.axis(axis.as_ref(), right)?;
     let axis = axis.is_some().then_some(along);
-    // An unseeded fold by a primitive routes as the operation that it names. A seeded one runs its own code, whose calls of `p` route.
-    match (primitive, left) {
-        (Some(p), None) => Operation::Fold(p, kind).call(Pairing::Axis(axis), None, right, span),
-        (Some(p), Some(_)) => primitive_fold(p, kind, axis, left, right, span),
-        (None, _) => fold_array(operand, kind, axis, left, right, span),
+    match primitive {
+        Some(p) => Operation::Fold(p, kind).call(Pairing::Axis(axis), left, right, span),
+        None => fold_array(operand, kind, axis, left, right, span),
     }
 }
 
 /// Whether a fold by `operand` gives a simple result for each cell of `right`: a pervasive primitive on a simple array, with no seed or an atom seed. Other folds can give arrays or nested results. Folds over several axes, and Rank's rules for whole arrays, then call the fold once for each cell.
 fn folds_whole(operand: &Function, left: Option<&Value>, right: &Value) -> bool { right.is_simple() && left.is_none_or(Value::is_atom) && pervasive_primitive(operand, true).is_some() }
 
-/// A fold by `+`, `×`, `⌈` or `⌊` along several axes, as folds along one axis at a time from the last. It serves an argument that a running level carries, whose rules fold along one axis, and any simple array, which then needs no move of the axes last, as `fold_ravels` makes. The four operands are associative and commutative. Folding one axis at a time therefore gives the fold of the ravelled cells. `None` for any other fold.
+/// A fold along several axes by a primitive that `pervasive::folds` names (`+`, `×`, `⌈`, `⌊`, or a bitwise and, or, xor or xnor), through `folded_along`. It serves an argument that a running level carries, whose rules fold along one axis, and any simple array, which then needs no move of the axes last, as `fold_ravels` makes. `None` for any other fold.
 #[cold]
 #[inline(never)]
 pub(crate) fn in_turn(operand: &Function, kind: FoldKind, axis: Option<&Value>, right: &Value, span: &Span) -> Result<Option<Value>, Error> {
-    use crate::number::{Arithmetic::*, Math::{Ceiling, Floor}};
     let Some(axis) = axis.filter(|_| !kind.scan) else { return Ok(None) };
-    if !matches!(operand.as_primitive(), Some(Primitive::Arithmetic(Plus | Times) | Primitive::Math(Ceiling | Floor))) { return Ok(None); }
+    let Some(p) = operand.as_primitive().filter(|&p| crate::pervasive::folds(p).is_some()) else { return Ok(None) };
     let axes = crate::primitive::resolve_axes(axis, right)?;
     if axes.is_singleton() { return Ok(None); }
-    let mut axes = crate::primitive::axes(&axes, right.shape().len())?;
+    folded_along(p, kind, &crate::primitive::axes(&axes, right.shape().len())?, right, span).map(Some)
+}
+
+/// The fold by `p`, a primitive that `pervasive::folds` names, of `right` along `axes`. Adjacent axes merge into one axis of a view, which moves no item, and one fold runs along it. A `+` fold of a pending or traced `×` then contracts them all as one product (`program::contraction`). Axes that aren't adjacent contract as one product too, where the `×` is traced (`trace::contracted`) or pending (`fusion::fold`). Where no product folds a pending `×`, its first axis folds as one fold would, and the others follow. Other axes, and the axes of a copy, pending or traced, such as windows, fold one at a time from the last. A batch folds instead as one fold of its whole along all the axes (`batch::folded`), which takes this function's routes for the whole. These operands are associative and commutative. Folding a merged axis, or one axis at a time, therefore gives the fold of the ravelled cells. A fold along several axes (`in_turn`) and a cotangent's sum along a broadcast's spread axes (`linear::copied_back`) both fold here.
+pub(crate) fn folded_along(p: Primitive, kind: FoldKind, axes: &[usize], right: &Value, span: &Span) -> Result<Value, Error> {
+    if let Some(folded) = crate::batch::folded(right, p, kind, axes, span) { return folded; }
+    let mut axes = axes.to_vec();
     axes.sort_unstable_by(|a, b| b.cmp(a));
-    // Two axes of a pending copy of windows fold in one pass over its source, where folding one at a time would build the first fold's result. A batch's whole folds the same way.
-    if let ([a, b], Some(p)) = (axes.as_slice(), operand.dyadic_primitive()) {
-        if let Some(folded) = crate::batch::fold_windows(right, p, kind, [*b, *a]) { return folded.map(Some); }
-        if let Some(folded) = crate::fusion::fold_windows(right, p, kind, [*b, *a]) {
-            let others = (0..right.shape().len()).filter(|i| i != a && i != b);
-            return Ok(Some(folded.with_layout(right.layout().axes(others)).described("invalid fold keys")?));
+    let without = |done: &[usize]| right.layout().axes((0..right.shape().len()).filter(|i| !done.contains(i)));
+    // Two axes of a pending copy of windows fold in one pass over its source, where folding one at a time would build the first fold's result.
+    if let [a, b] = axes[..] && let Some(folded) = crate::fusion::fold_windows(right, p, kind, [b, a]) {
+        return folded.with_layout(without(&axes)).described("invalid fold keys");
+    }
+    let along = |a: usize, v: &Value| Operation::Fold(p, kind).call(Pairing::Axis(Some(a)), None, v, span);
+    // Adjacent axes merge into one axis of a view, and one fold runs along it. A copy, pending or traced, such as windows, keeps folding one axis at a time, because a block stage takes short folds over its axes as its steps.
+    let copy = crate::fusion::source(right).is_some() || right.carrier().is_some_and(crate::transform::Carrier::copies);
+    if let (Some(&last), Some(&first)) = (axes.first(), axes.last()) && axes.len() > 1 && last + 1 - first == axes.len() && !copy {
+        let len = right.shape()[first..=last].iter().product();
+        let merged = right.relaid(right.layout().replace(first..last + 1, &crate::array::Layout::from(vec![len]))).described("invalid fold keys")?;
+        return along(first, &merged);
+    }
+    let (mut folded, mut rest) = (right.clone(), &axes[..]);
+    if p == Primitive::Arithmetic(crate::number::Arithmetic::Plus) && !kind.scan && axes.len() > 1 && !copy {
+        if let Some(product) = crate::program::trace::contracted(p, kind, &axes, right) { return product.with_layout(without(&axes)).described("invalid fold keys"); }
+        // The fold of a pending array keeps its lanes regular, as one fold's plan does where its lanes hold two or more items.
+        if axes.iter().all(|&a| right.shape()[a] > 1) && let Some((product, done)) = crate::fusion::fold(right, p, kind, &axes, None) {
+            (folded, rest) = (product.with_layout(without(&axes[..done])).described("invalid fold keys")?, &axes[done..]);
         }
     }
-    let mut folded = right.clone();
-    for a in axes { folded = fold(operand, kind, Some(&Value::integer(a as i64)), None, &folded, span)?; }
-    Ok(Some(folded))
+    rest.iter().try_fold(folded, |folded, &a| along(a, &folded))
 }
 
 /// A fold over several axes, as one fold of each cell's ravel. The selected axes move last, in their order, and merge into one axis.
@@ -1613,7 +1682,6 @@ impl FoldPlan {
         let along = axis.unwrap_or(kind.default_axis(rank));
         let whole = right.is_unit() && axis.is_none();
         if whole && !kind.scan { return Ok((along, Self::One(right.at(0)))); }
-        if !kind.scan && along >= rank { return Err(Error::domain("axis is outside array rank")); }
         let lanes = if whole { Lanes { outer: 1, len: 1, inner: 1 } } else { Lanes::new(right.shape(), along)? };
         if kind.scan {
             let plan = if right.is_atom() { Self::One(right.clone()) }
@@ -1649,7 +1717,7 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<usize>, seed: Opt
     folded(result, kind, along, right)
 }
 
-/// A fold or scan by the primitive `p` along `axis`, or by default the fold's own axis, with `seed` as each lane's left argument: by fusion and the kernels where they apply, and otherwise by `p` on each pair of items, whose calls a running level takes as it takes any primitive call. A weak seed takes the width of `right`'s floats, as `p` gives it beside each item. Under static kinds, a lane of one item gives the item at the kind that `p` computes (`pervasive::lone`). `fold` and `Operation::run` share it.
+/// A fold or scan by the primitive `p` along `axis`, or by default the fold's own axis, with `seed` as each lane's left argument: by fusion and the kernels where they apply, and otherwise by `p` on each pair of items, whose calls a running level takes as it takes any primitive call. A weak seed takes the width of `right`'s floats, as `p` gives it beside each item. Under static kinds, a lane of one item gives the item at the kind that `p` computes (`pervasive::lone`). `Operation::run` runs a fold or scan through it.
 pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, seed: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     use crate::number::Arithmetic::{Plus, Times};
     let seed = seed.map(|s| p.weaken_value(s, right).unwrap_or_else(|| s.clone()));
@@ -1659,6 +1727,7 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
     // Kernels that read numbers directly leave a value that a level carries to the path through items.
     let active = crate::transform::carried(None, right);
     let (along, plan) = FoldPlan::new(kind, axis, seed, right, || identity(p, &right.prototype(), span))?;
+    let mut last = None;
     let result = match plan {
         FoldPlan::One(item) => match seed { Some(seed) if kind.scan => scan_step(p, call)(seed, &item)?, Some(seed) => call(&item, seed)?, None => lone(item) },
         FoldPlan::Whole(items) => lone(items),
@@ -1670,15 +1739,15 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
             } else { item_lanes(true, &lanes, shape, seed, right, scan_step(p, call), active)? }
         }
         FoldPlan::Lanes { lanes, shape } => {
-            // Where `p`'s kernel folds in any order, a number seed joins each lane's result after the fold, as one more item would. The fold then takes the fusion and kernel routes of a fold with no seed. A level that carries `right` keeps the seed in its items, because its kernels don't apply there. So do Booleans under a `ᵇ` table that `sets_high_bits`: they fold by the logical function, and a number seed turns the fold to the integer function.
-            // Fixed kinds need the seed before the fold chooses its wrapping width.
+            // Where `p`'s kernel folds in any order, a number seed joins the fold's value, as one more item would. The fold then takes the fusion and kernel routes of a fold with no seed. The seed joins after `folded`, where a vector's fold is one atom, because a call on atoms costs much less than one on a rank-0 array. A level that carries `right` keeps the seed in its items, because its kernels don't apply there. So do Booleans under a `ᵇ` table that `sets_high_bits`: they fold by the logical function, and a number seed turns the fold to the integer function.
+            // Fixed kinds need the seed before the fold chooses its wrapping width, so fusion folds it in as each lane's last item.
             let fixed_seed = seed.is_some_and(|s| matches!(s, Value::Number(_)) && (right.fixed_width().is_some() || s.fixed_width().is_some()));
-            let (seed, last) = match seed {
-                Some(s @ Value::Number(_)) if !fixed_seed && !active && crate::pervasive::seed_last(p, right) => (None, Some(s)),
-                s => (s, None),
+            let seed = match seed {
+                Some(s @ Value::Number(_)) if !fixed_seed && !active && crate::pervasive::seed_last(p, right) => { last = Some(s); None }
+                s => s,
             };
-            let result = match seed.is_none().then(|| crate::fusion::fold(right, p, kind, along)).flatten() {
-                Some(fused) => fused,
+            match (seed.is_none() || fixed_seed).then(|| crate::fusion::fold(right, p, kind, &[along], seed)).flatten() {
+                Some((fused, _)) => fused,
                 None => {
                     let kernel = !active && (seed.is_none() || fixed_seed);
                     // Float sums and products take the kernel for any number of items, because they fold in any order. Reading the items to see that would compute a pending argument, which the kernel reads more cheaply, so lanes of two or more items take it without asking.
@@ -1690,23 +1759,23 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
                     };
                     if lanes.len == 1 { lone(result) } else { result }
                 }
-            };
-            match last { Some(s) => call(&result, s)?, None => result }
+            }
         },
     };
-    folded(result, kind, along, right)
+    let result = folded(result, kind, along, right)?;
+    match last { Some(s) => call(&result, s), None => Ok(result) }
 }
 
-/// The value of a fold or scan of `right` along axis `along`, from `result`, its lanes' results, where every fold route ends, fused folds included: a scan keeps every position, so it keeps `right`'s layout, a fold of a vector gives its one item, and any other fold keeps the names and keys of the axes it doesn't fold.
+/// The value of a fold or scan of `right` along axis `along`, from `result`, its lanes' results, where every fold route ends, fused folds included. A fold of a vector gives its one item, and a fold of a unit gives `result`. Any other result takes the layout that `Layout::folded` gives.
 fn folded(result: Value, kind: FoldKind, along: usize, right: &Value) -> Result<Value, Error> {
-    if kind.scan { return result.with_layout(right.layout().clone()).described("invalid scan result"); }
-    if right.shape().len() == 1 { return Ok(result.at(0)); }
-    if right.is_unit() { return Ok(result); }
-    result.with_layout(right.layout().axes((0..right.shape().len()).filter(|&a| a != along))).described("invalid fold keys")
+    if !kind.scan && right.shape().len() == 1 { return Ok(result.at(0)); }
+    if !kind.scan && right.is_unit() { return Ok(result); }
+    result.with_layout(right.layout().folded(kind.scan, along)).described("invalid fold or scan keys")
 }
 
 /// A fold or scan by `apply` on each pair of items in turn, where neither a kernel nor a batched map takes it, with `seed` as each lane's left argument, laid out by `shape`. Over a batch (`active`), each result is a batch: a fold gives one for each lane of the cells, and a scan one for each stage. They join into one batch (`batch::joined`). Where it runs on items rather than batches, it records an `itemwise` row in `•explain`.
 fn item_lanes(scan: bool, lanes: &Lanes, shape: Vec<usize>, seed: Option<&Value>, right: &Value, apply: impl FnMut(&Value, &Value) -> Result<Value, Error>, active: bool) -> Result<Value, Error> {
+    crate::program::trace::per_item(seed, right)?;
     if !active { crate::explain::itemwise("item lanes", right.len()); }
     let data = if scan { scan_items(lanes, seed.cloned(), |i| right.at(i), apply)? } else { fold_items(lanes, seed, |i| right.at(i), apply)? };
     let value = Value::new(shape, data).described(if scan { "invalid scan result" } else { "invalid fold result" })?;
@@ -1774,11 +1843,11 @@ fn by_lanes(operand: &Function, kind: FoldKind, seed: Option<&Value>, right: &Va
     if lanes.outer * lanes.inner < 2 || lanes.len <= usize::from(seed.is_none()) || !crate::batch::tries(lanes.outer * lanes.inner) { return None; }
     let rank = right.shape().len();
     let order: Vec<usize> = (0..rank).filter(|&a| a != axis).chain([axis]).collect();
-    let moved = match move_axes(right, &destination(&order)) { Ok(moved) => moved, Err(e) => return Some(Err(e)) };
+    let moved = match crate::primitive::reorder(right, &order) { Ok(moved) => moved, Err(e) => return Some(Err(e)) };
     let frame = moved.layout().axes(0..rank - 1);
     let fold = match Function::new(FunctionNode::Fold(operand.clone(), FoldKind { scan: kind.scan, first: false }), span) { Ok(fold) => fold, Err(e) => return Some(Err(e)) };
     use crate::batch::Arguments;
     let arguments = || Some(Arguments { left: seed.map(|s| (s.clone(), s.shape().len())), right: (moved, 1) });
     let result = crate::batch::tried(&fold, arguments, &frame, kind.scan, span)?;
-    Some(if kind.scan { result.and_then(|v| move_axes(&v, &order)) } else { result })
+    Some(if kind.scan { result.and_then(|v| crate::primitive::transpose_axes(order, &v)) } else { result })
 }

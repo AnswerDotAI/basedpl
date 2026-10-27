@@ -15,7 +15,7 @@ Function. Hanzi: `加`. Ranks: `0` monadic, `0 0` dyadic
 10+1 2 3          ⍝ 11 12 13
 ```
 
-Character offsets are integral Unicode code-point offsets.
+Character offsets are whole numbers of Unicode code points.
 
 ```bpl
 'a'+3             ⍝ 'd'

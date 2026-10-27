@@ -5,7 +5,7 @@
 //! Primitive dispatch sends each call with a dual argument to `call`, which reads how to run it from its form's row in `Primitive::info()` (`primitive::Facts`). Pervasive forms take their tangents from the partials table, which gives each partial derivative as primitive calls on the primals and the primal result. Rules call primitives, so partials of duals with smaller tags are themselves differentiated. Tangent rules use only `scale`, `add` and `expand`, and other rules only move a tangent's items or apply linear operations to it, so that reverse mode can supply symbolic versions of them.
 use crate::session;
 use crate::{
-    agreement::{expand, Agree, Agreement}, array::{Gather, Layout, Promotion, Prototype, Widening}, error::Described, number::{Arithmetic, Math}, primitive::{Comparison, FoldKind, Form, Operation, Origin, Primitive}, transform::{walk, Carrier, Cause, Mark, Op, Pairing, Stop}, Error, ErrorKind,
+    agreement::{expand, Agree, Agreement}, array::{Gather, Layout, Promotion, Prototype, Widening}, error::Described, number::{Arithmetic, Math}, primitive::{Comparison, FoldKind, Form, Operation, Origin, Primitive}, transform::{walk, Carrier, Cause, Mark, Op, Pairing, Part, Stop}, Error, ErrorKind,
     Function, Span, Value,
 };
 use rustymath::buffer::{DType, FloatWidth};
@@ -39,10 +39,15 @@ impl Dual {
         let Ok(item) = self.map(|part| Ok::<_, std::convert::Infallible>(part.at(i)));
         item
     }
+    /// Item `i` as bulk iteration reads it (`Carrier::element`): the dual of the parts' items, each read as bulk iteration reads it.
+    pub(crate) fn element(&self, i: usize) -> Value {
+        let Ok(item) = self.map(|part| Ok::<_, std::convert::Infallible>(part.element(i)));
+        item
+    }
     /// The items as dual atoms, built on the first read by code with no rule for duals, which records an `itemwise` row in `•explain`. Cold and out of line, so that `ArrayData::storage`'s other arms stay small.
     #[cold]
     #[inline(never)]
-    pub(crate) fn storage(&self) -> &crate::array::Storage { crate::transform::Carrier::built(&self.items, "∂ items", self.primal.len(), |i| self.at(i)) }
+    pub(crate) fn storage(&self) -> &crate::array::Storage { crate::transform::Carrier::built(&self.items, "∂ items", self.primal.len(), |i| self.element(i)) }
 }
 
 impl Footprint for Dual {
@@ -150,19 +155,26 @@ pub(crate) fn detach(value: &Value) -> Value {
     walk(value, &mut |leaf| Ok(match tag(leaf) { Some(t) => detach(&split(leaf, t).0), None => leaf.clone() })).expect("detaching can't fail")
 }
 
-/// `value` with its numbers as floats of `width`, as `width•float` gives it. A weak number becomes strong, as a literal with a width marker is. Each carrier converts through `Carrier::cast`.
-pub(crate) fn to_float_width(value: &Value, width: FloatWidth, span: &Span) -> Result<Value, Error> {
-    if !value.carried() { return value.to_float_width(width).map(Value::strong).described("•float takes numbers"); }
-    walk(value, &mut |leaf| match leaf.carrier() { Some(carrier) => carrier.cast(width, span), None => leaf.to_float_width(width).map(Value::strong).described("•float takes numbers") })
+/// `value` with its numbers converted to `to`, as `width•float` and width marks convert them to floats, and fixed marks to fixed integers (`Value::converted`). A pending array converts as one more pending call (`fusion::convert`). A weak number becomes strong, as a literal with a width marker is. Each carrier converts through `Carrier::cast`.
+pub(crate) fn converted(value: &Value, to: DType, span: &Span) -> Result<Value, Error> {
+    let numeric = crate::number::Numeric::current();
+    if !value.carried() { return plain(value, to, numeric); }
+    walk(value, &mut |leaf| match leaf.carrier() { Some(carrier) => carrier.cast(to, span), None => plain(leaf, to, numeric) })
+}
+
+/// `converted` for a value that carries no level. The conversion is one more pending call where `fusion::convert` defers it, and runs at once otherwise. It's always inlined, because the compiler otherwise calls it out of line from both of its callers, which costs a mark about 20 instructions.
+#[inline(always)]
+fn plain(v: &Value, to: DType, numeric: crate::number::Numeric) -> Result<Value, Error> {
+    match crate::fusion::convert(v, to, numeric) {
+        Some(pending) => Ok(pending),
+        None => v.converted(to, numeric).described(if matches!(to, DType::Integer(_)) { "can't convert result to fixed integers" } else { "•float takes numbers" }),
+    }
 }
 
 /// Zeros in `like`'s layout, in the kind of its plain items.
 pub(crate) fn zeros(like: &Value) -> Value {
     let zero = like.prototype();
-    if like.is_atom() { return zero; }
-    let mut data = Gather::new(&[&zero], like.len());
-    data.fill(&zero, like.len());
-    data.finish(like.layout().clone(), zero).expect("zeros fit their layout")
+    if like.is_atom() { zero } else { like.layout().filled(&zero) }
 }
 
 /// Writes `source` into `target` with `write` at level `tag`, as `transform::written` does for a dual: the primal into the primal and the tangent into the tangent. A side without the level has tangents of 0. An error from `write` leaves `target` unchanged.
@@ -197,19 +209,19 @@ impl Join {
     pub(crate) fn tag(&self) -> u64 { self.tag }
     /// The number of items copied so far.
     pub(crate) fn len(&self) -> usize { self.primal.len() }
-    /// Runs the copy `op` on the primals with `source`'s primal, and on the tangents with `source`'s tangent. An inactive source appends tangents of 0, or, for a copy that `replaces` items, writes 0 where it writes.
-    pub(crate) fn each(&mut self, source: &Value, replaces: bool, op: impl Fn(&mut Gather, &Value)) {
+    /// Runs the copy `op` on the primals with `source`'s primal, and on the tangents with `source`'s tangent, with the part that each copy writes. An inactive source appends tangents of 0, or, for a copy that `replaces` items, writes 0 where it writes.
+    pub(crate) fn each(&mut self, source: &Value, replaces: bool, op: impl Fn(&mut Gather, &Value, Part)) {
         let (primal, tangent) = split(source, self.tag);
         let before = self.primal.len();
-        op(&mut self.primal, &primal);
+        op(&mut self.primal, &primal, Part::Values);
         match tangent {
             // A buffer of record ids takes an inactive tangent as fill ids.
             Some(tangent) if crate::linear::record_of(&tangent).is_some() || self.records.is_some() => {
                 let ids = self.records.get_or_insert_with(Default::default).of(Some(&tangent), &tangent);
-                op(&mut self.tangent, &ids)
+                op(&mut self.tangent, &ids, Part::Derived)
             }
-            Some(tangent) => op(&mut self.tangent, &tangent),
-            None if replaces => op(&mut self.tangent, &Value::integer(0)),
+            Some(tangent) => op(&mut self.tangent, &tangent, Part::Derived),
+            None if replaces => op(&mut self.tangent, &Value::integer(0), Part::Derived),
             None => { let n = self.primal.len() - before; self.tangent.fill(&Value::integer(0), n) }
         }
     }
@@ -221,7 +233,7 @@ impl Join {
             self.tangent.mixed().push(kept);
             return self.primal.add(primal);
         }
-        self.each(&item, false, |g, s| g.add(s.clone()))
+        self.each(&item, false, |g, s, _| g.add(s.clone()))
     }
     /// The dual array gathered, laid out by `layout`. An empty array takes `prototype`.
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
@@ -251,10 +263,7 @@ fn numbers(leaf: &Value) -> Result<usize, Error> {
 /// The number of numbers in `value`, each of which `∂` differentiates with respect to.
 fn leaves(value: &Value) -> Result<usize, Error> {
     let mut count = 0;
-    walk(value, &mut |leaf| {
-        count += numbers(leaf)?;
-        Ok(leaf.clone())
-    })?;
+    crate::transform::visit(value, &mut |leaf| { count += numbers(leaf)?; Ok(()) })?;
     Ok(count)
 }
 
@@ -268,9 +277,9 @@ fn seed(value: &Value, tag: u64, j: usize) -> Result<Value, Error> {
     })
 }
 
-/// Zeros in `like`'s layout and kind, with a 1 at item `i`.
+/// Zeros in `like`'s layout and kind, with a 1 at item `i`. The kind is that of `like`'s prototype, or of its template where a level carries the prototype, as it carries an item that a trace read one at a time.
 fn unit(like: &Value, i: usize) -> Value {
-    let Value::Number(zero) = (if like.is_atom() { like.template() } else { like.prototype() }) else { unreachable!("a numeric value has a number prototype") };
+    let Some(zero) = (if like.is_atom() { like.template() } else { like.prototype().template() }).as_number() else { unreachable!("a numeric value has a number prototype") };
     let one = Value::Number(zero.one());
     if like.is_atom() { return one; }
     let mut e = zeros(like);
@@ -295,8 +304,19 @@ fn tangent(value: &Value, tag: u64) -> Result<Value, Error> {
     })
 }
 
-/// `f∂ right`, or `left f∂ right`: the Jacobian of `f` at `right`, with the layout of `(f right)×⊗right`. `left` passes to `f` unchanged.
+/// `f∂ right`, or `left f∂ right`: the Jacobian of `f` at `right`, with the layout of `(f right)×⊗right`. `left` passes to `f` unchanged. `f` runs on `right` with its integers that wrap, under static kinds or at a fixed width, as floats of the width that their division gives (`plan::Kind::approximate`).
 pub(crate) fn differentiate(f: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    let numeric = crate::number::Numeric::current();
+    let right = &walk(right, &mut |leaf| match crate::plan::Kind::approximate([crate::plan::Kind::value(leaf)], numeric).map_err(Error::domain)? {
+        Some(width) => converted(leaf, DType::Float(width), span),
+        None => Ok(leaf.clone()),
+    })?;
+    if let Some(result) = f.programmed(left, right, span, &|g, x, y| derived(g, x, y, span)) { return result; }
+    derived(f, left, right, span)
+}
+
+/// `differentiate`'s Jacobian once `right`'s integers that wrap are floats: by forward mode where `right` holds at most one number, and by reverse mode otherwise. A dfn's first `∂` with given argument types and layouts runs this on traced values, which builds the program that later calls replay (`program::call`).
+fn derived(f: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let n = leaves(right)?;
     if n > 1 { return reverse(f, left, right, n, span); }
     let tag = session().begin(crate::transform::Kind::Derivative);
@@ -327,7 +347,7 @@ fn along(x: &Value, v: &Value, tag: u64) -> Value {
 
 /// An error unless `primal`, a result of the function that `∂` differentiates, is a number or a simple array of numbers.
 fn numeric(primal: &Value) -> Result<(), Error> {
-    walk(primal, &mut |leaf| numbers(leaf).map(|_| leaf.clone()).map_err(|_| Error::domain("∂ needs a numeric result")))?;
+    crate::transform::visit(primal, &mut |leaf| numbers(leaf).map(drop).map_err(|_| Error::domain("∂ needs a numeric result")))?;
     if !primal.is_atom() && !primal.is_simple() { return Err(Error::domain("∂ needs a simple numeric result")); }
     Ok(())
 }
@@ -338,7 +358,7 @@ fn jacobian(right: &Value, primal: &Value, columns: Vec<Value>) -> Result<Value,
         numeric(primal)?;
         return Ok(columns.into_iter().next().expect("a number has one column"));
     }
-    laid_out(right, primal, &mut |i, j| { let c = &columns[j]; if c.is_atom() { c.clone() } else { c.at(i) } })
+    laid_out(right, primal, &mut |i, j| { let c = &columns[j]; if c.is_atom() { c.clone() } else { c.element(i) } })
 }
 
 /// The Jacobian with the layout of `primal×⊗right`. Its item for result item `i` and argument item `k` has the structure of `right`'s item `k`, and holds `entry(i, j)` for each number `j` of `right` in that item.
@@ -354,7 +374,7 @@ fn laid_out(right: &Value, primal: &Value, entry: &mut dyn FnMut(usize, usize) -
         for i in 0..rows {
             let mut j = 0;
             let mut next = || { j += 1; entry(i, j - 1) };
-            for k in 0..right.len() { items.push(rebuild(&right.at(k), &mut next)?); }
+            for k in 0..right.len() { items.push(rebuild(&right.element(k), &mut next)?); }
         }
         (layout, items)
     };
@@ -424,7 +444,7 @@ impl Linearized {
     /// The derivative along `v`, which has the argument's layout.
     pub(crate) fn jvp(&self, v: &Value, span: &Span) -> Result<Value, Error> {
         let mut seeds = Vec::with_capacity(self.parts.len());
-        walk(v, &mut |leaf| { seeds.push(leaf.clone()); Ok(leaf.clone()) })?;
+        crate::transform::visit(v, &mut |leaf| { seeds.push(leaf.clone()); Ok(()) })?;
         self.evaluated(&seeds, span)
     }
 }
@@ -477,7 +497,7 @@ fn rebuild(value: &Value, next: &mut dyn FnMut() -> Value) -> Result<Value, Erro
     })
 }
 
-/// `op` applied to arguments of which some is a dual of the running `∂` call `tag`, which `transform::call` finds, or `None` where its own code handles the duals, through the calls it makes. A primitive's form gives its rule (`primitive_rule`), except for `⌹` and `⊥`, whose rules compute through matrix products (`solve` and `decode`). A fold by `+`, `×`, `⌈` or `⌊` takes its fold rule (`fold_dual`), `+.×` with two arguments the product rule (`product_dual`), and `-.×` with one the determinant's (`determinant`). With `Pairing::Matrices`, `⌹`, `+.×` and `-.×` take each matrix of a stack, or each pair of matrices of two stacks, in one call. A rule that `f∂←g` attached applies to a call with one argument (`attached`). A system function that refuses duals, as all but `system::Call::Active` ones do, and `f.g` by functions that aren't primitives with one argument, give UNSUPPORTED ERROR. A system function's inverse runs its own code. A fold by an operand that isn't a primitive, or such an `f.g` with two arguments, runs its own code, whose calls of primitives take their rules.
+/// `op` applied to arguments of which some is a dual of the running `∂` call `tag`, which `transform::call` finds, or `None` where its own code handles the duals, through the calls it makes. A primitive's form gives its rule (`primitive_rule`), except for `⌹` and `⊥`, whose rules compute through matrix products (`solve` and `decode`). A fold by `+`, `×`, `⌈` or `⌊` with no seed takes its fold rule (`fold_dual`), `+.×` with two arguments the product rule (`product_dual`), and `-.×` with one the determinant's (`determinant`). A seeded fold runs its own code, whose calls of its primitive take their rules. With `Pairing::Matrices`, `⌹`, `+.×` and `-.×` take each matrix of a stack, or each pair of matrices of two stacks, in one call. A rule that `f∂←g` attached applies to a call with one argument (`attached`). A system function that refuses duals, as all but `system::Call::Active` ones do, and `f.g` by functions that aren't primitives with one argument, give UNSUPPORTED ERROR. A system function's inverse runs its own code. A fold by an operand that isn't a primitive, or such an `f.g` with two arguments, runs its own code, whose calls of primitives take their rules.
 #[cold]
 #[inline(never)]
 pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, span: &Span) -> Option<Result<Value, Error>> {
@@ -492,9 +512,10 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, sp
     };
     let stacked = matches!(pairing, Pairing::Matrices);
     match (op, pairing) {
-        (Operation::Fold(p, kind), Pairing::Axis(axis)) => fold_dual(p, kind, axis, right, span),
+        (Operation::Fold(p, kind), Pairing::Axis(axis)) if left.is_none() => fold_dual(p, kind, axis, right, span),
+        (Operation::Primitive(Primitive::Arithmetic(Arithmetic::Plus)), Pairing::At(writes)) => left.map(|base| accumulated(base, right, writes, tag, span)),
         // Another call along an axis runs its own code.
-        (_, Pairing::Axis(Some(_)) | Pairing::Outer(_)) | (Operation::Fold(..), _) => None,
+        (_, Pairing::Axis(Some(_)) | Pairing::Agreed(_)) | (Operation::Fold(..), _) => None,
         // A cellwise form applies to cells through Rank first, and each cell's call comes back here.
         (Operation::Primitive(p @ (Primitive::MatrixDivide | Primitive::Decode)), _) => (stacked || p.cells(left, right).is_none()).then(|| match p {
             Primitive::MatrixDivide => solve(left, right, tag, stacked, span),
@@ -513,6 +534,23 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, sp
 
 /// The UNSUPPORTED ERROR of monadic `f.g` other than `-.×`, the determinant, which is the only one that `∂` differentiates.
 fn expansion() -> Error { Error::new(ErrorKind::Unsupported, "∂ differentiates monadic f.g only as -.×") }
+
+/// `items` added into `base` at `writes` (`Primitive::at`), where either is a dual of `∂` call `tag`. Accumulation is linear in both arguments. The primals accumulate as a write does, each written item keeping its kind. The tangents sum as cotangents do (`linear::sum_at`), in the kind that both join to, as the linear record's transposes and forward runs give them. A side without a tangent adds nothing to the tangent. Where `base` has none, the tangent's sum starts from zeros of the tangent's kind.
+fn accumulated(base: &Value, items: &Value, writes: rustymath::gather::Writes<'_>, tag: u64, span: &Span) -> Result<Value, Error> {
+    let plus = Primitive::Arithmetic(Arithmetic::Plus);
+    let ((mut primal, base_tangent), (items, items_tangent)) = (split(base, tag), split(items, tag));
+    plus.at(&mut primal, writes, &items, span)?;
+    let tangent = match (base_tangent, items_tangent) {
+        (base_tangent, Some(t)) => {
+            let mut sum = base_tangent.unwrap_or_else(|| crate::linear::zeros(primal.layout(), &crate::linear::zero_of(&t)));
+            crate::linear::sum_at(&mut sum, writes, &t, span)?;
+            sum
+        }
+        (Some(b), None) => b,
+        (None, None) => unreachable!("a call that ∂ takes holds a dual"),
+    };
+    Ok(dual(tag, primal, tangent))
+}
 
 /// `p` on arguments of which some is a dual of the running `∂` call `tag`, by the rule that its form's row gives (`primitive::Facts`), or `None` where `p`'s own code handles the duals.
 fn primitive_rule(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, span: &Span) -> Option<Result<Value, Error>> {
@@ -613,7 +651,7 @@ fn pervasive(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, span: 
     }
     // A float result's partials are floats of its width, computed from arguments converted to that width. Partials of exact arguments, such as `÷y` of an exact count, would otherwise be exact fractions, computed one item at a time.
     let floats = |v: Value| match r.template_dtype() {
-        Some(DType::Float(w)) if v.template_dtype() != Some(DType::Float(w)) => to_float_width(&v, w, span),
+        Some(DType::Float(w)) if v.template_dtype() != Some(DType::Float(w)) => converted(&v, DType::Float(w), span),
         _ => Ok(v),
     };
     let (x, y) = (x.map(floats).transpose()?, floats(y)?);
@@ -688,8 +726,11 @@ fn coefficients(tc: &std::sync::Arc<crate::linear::Linear>, x: &Value, span: &Sp
     Ok(crate::linear::product(&ones, crate::linear::record_of(&scaled).expect("a scaled record is a record"), false, false, points.layout().clone()))
 }
 
-/// `x+.×y`, or, where `stacked`, the product of each pair of matrices of two stacks (`linear::plus_times`). One factor can be a record, which then records a `Product` with the other factor as its coefficient.
+/// `x+.×y`, or, where `stacked`, the product of each pair of matrices of two stacks (`linear::plus_times`). One factor can be a record, which then records a `Product` with the other factor as its coefficient. `+.×` repeats a scalar along the axis that the other factor contracts, so a record that is a scalar first broadcasts to that axis's length (`agreement::expand`), whose transpose sums it back, and the `Product` reads a child of the length it contracts.
 pub(crate) fn product(x: &Value, y: &Value, stacked: bool, span: &Span) -> Result<Value, Error> {
+    let spread = |v: &Value, len: Option<usize>| (!stacked && v.shape().is_empty() && crate::linear::record_of(v).is_some()).then_some(len).flatten().map(|n| crate::agreement::expand(v, &Layout::from([n])));
+    let (sx, sy) = (spread(x, y.shape().first().copied()), spread(y, x.shape().last().copied()));
+    let (x, y) = (sx.as_ref().unwrap_or(x), sy.as_ref().unwrap_or(y));
     let layout = || -> Result<Layout, Error> {
         if !stacked { return Ok(x.layout().contracted(y.layout())); }
         let (kx, ky) = (x.shape().len(), y.shape().len());
@@ -734,7 +775,7 @@ fn regular_inverse(a: &Value, glyph: &str, stacked: bool, span: &Span) -> Result
 
 /// `⊥`, as `d+.×⌽×\1,⌽1↓b` for digits `d` and base `b`, each taken to the length that `⊥` decodes along: the weight of each digit is the product of the bases after it. Running that on the duals differentiates with respect to both. Monadic `⊥` has base 2. A base with more than one axis gives UNSUPPORTED.
 fn decode(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    let base = left.cloned().unwrap_or_else(|| Value::integer(2));
+    let base = left.cloned().unwrap_or_else(crate::primitive::binary_base);
     let (xlen, ylen) = (base.shape().last().copied().unwrap_or(1), right.shape().last().copied().unwrap_or(1));
     let len = crate::primitive::decode_length(xlen, ylen)?;
     if base.shape().len() > 1 { return Err(Error::new(ErrorKind::Unsupported, "∂ differentiates ⊥ only with a scalar or vector base")); }
@@ -833,32 +874,21 @@ fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &
         // One pick on a batch's whole, with the frame's axes first, serves every cell.
         let batch = x.carrier().and_then(Carrier::batch);
         let all = batch.map_or(x, |b| b.whole());
-        let lanes = Lanes::new(all.shape(), batch.map_or(0, |b| b.frame) + along)?;
+        let frame = batch.map_or(0, |b| b.frame);
         // Windows that slide along the fold's axis give their extremes' positions from their source, with no windows built.
         let windows = (batch.is_none() && along == kind.default_axis(x.shape().len())).then(|| crate::fusion::picks(x, p, kind)).flatten();
-        let one_per_lane = !kind.scan && windows.is_none();
-        let offsets = match windows {
-            Some(offsets) => offsets,
-            None => {
-                let Lanes { outer, len: n, inner } = lanes;
-                let numbers = || Error::domain("∂ takes ⌈ and ⌊ of numbers");
-                // Mixed storage picks among its numbers as floats. Two different exact integers beyond 2⁵³ can round to one float. They then tie, and the earlier one is picked.
-                let floats = match all.view() { Some(_) => None, None => Some(all.to_float_width(FloatWidth::F64).map_err(|_| numbers())?) };
-                let view = floats.as_ref().unwrap_or(all).view().ok_or_else(numbers)?;
-                let of = if kind.scan { rustymath::reduce::Picks::Running } else { rustymath::reduce::Picks::Lanes };
-                let rows = crate::pervasive::picks(p, view, [outer, n, inner], of).ok_or_else(numbers)?;
-                // Each running fold's pick, or each lane's, as a position in the ravel.
-                rows.into_iter().enumerate().map(|(j, row)| lanes.offset(if kind.scan { j / (n * inner) } else { j / inner }, row, j % inner) as i64).collect()
-            }
-        };
-        // Where reverse mode records one item from each lane, or `x` is a batch, the tangent folds the tangent times a mask of the chosen items. Its transpose reads: each item takes its lane's cotangent where it was chosen, and 0 elsewhere. A gather's transpose would scatter.
-        if one_per_lane && (tx.carried() || batch.is_some()) {
-            let mut chosen = vec![false; all.len()];
-            for &at in &offsets { chosen[at as usize] = true; }
-            let mask = all.layout().booleans(chosen).described("invalid mask")?;
-            let mask = match batch { Some(b) => crate::batch::batch(b.level, mask, b.frame), None => mask };
+        let traced = x.carrier().and_then(Carrier::traced);
+        // Where reverse mode records one item from each lane, or `x` is a batch or traced, the tangent folds the tangent times a mask of the chosen items. Its transpose reads: each item takes its lane's cotangent where it was chosen, and 0 elsewhere. A gather's transpose would scatter. A trace computes the mask in its program (`Traced::picked`).
+        if !kind.scan && windows.is_none() && (tx.carried() || batch.is_some() || traced.is_some()) {
+            let mask = match (traced, batch) {
+                (Some(t), _) => t.picked(p, along).map_err(|reason| t.stop(crate::transform::Cause::Rule, reason))?,
+                (None, Some(b)) => crate::batch::batch(b.level, chosen(p, all, frame + along)?, b.frame),
+                (None, None) => chosen(p, all, along)?,
+            };
             return Ok((r, fold(plus, &call(times, &mask, tx, span)?)?));
         }
+        if let Some(t) = traced { return Err(t.stop(crate::transform::Cause::Rule, if kind.scan { "a scan by ⌈ or ⌊" } else { "picks by ⌈ or ⌊ from sliding windows" }).into()); }
+        let offsets = match windows { Some(offsets) => offsets, None => picked_offsets(p, all, Lanes::new(all.shape(), frame + along)?, kind.scan)? };
         // A batch's scan picks within each cell, at positions of the cell's own.
         let positions = match batch {
             Some(b) => {
@@ -874,7 +904,26 @@ fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &
     Ok((r, t))
 }
 
-/// The partial derivatives of `p` at `x` and `y`, whose result is `r`, with respect to each argument that `need` asks for.
+/// A mask of Booleans in `x`'s layout, true at the item of each lane along `along` that `p`, `⌈` or `⌊`, picks: the first of any ties, as dyadic `⌈` and `⌊` give a tie to their left argument. `fold_rule` and a program's picks (`Step::Picks`) both take it.
+pub(crate) fn chosen(p: Primitive, x: &Value, along: usize) -> Result<Value, Error> {
+    let mut chosen = vec![false; x.len()];
+    for at in picked_offsets(p, x, crate::array::Lanes::new(x.shape(), along)?, false)? { chosen[at as usize] = true; }
+    x.layout().booleans(chosen).described("invalid mask")
+}
+
+/// The position in the ravel of `x` of each item that `p`, `⌈` or `⌊`, picks: the first of any ties in each of `lanes`' lanes, or where `scan`, in each running fold.
+fn picked_offsets(p: Primitive, x: &Value, lanes: crate::array::Lanes, scan: bool) -> Result<Vec<i64>, Error> {
+    let crate::array::Lanes { outer, len: n, inner } = lanes;
+    let numbers = || Error::domain("∂ takes ⌈ and ⌊ of numbers");
+    // Mixed storage picks among its numbers as floats. Two different exact integers beyond 2⁵³ can round to one float. They then tie, and the earlier one is picked.
+    let floats = match x.view() { Some(_) => None, None => Some(x.to_float_width(FloatWidth::F64).map_err(|_| numbers())?) };
+    let view = floats.as_ref().unwrap_or(x).view().ok_or_else(numbers)?;
+    let of = if scan { rustymath::reduce::Picks::Running } else { rustymath::reduce::Picks::Lanes };
+    let rows = crate::pervasive::picks(p, view, [outer, n, inner], of).ok_or_else(numbers)?;
+    Ok(rows.into_iter().enumerate().map(|(j, row)| lanes.offset(if scan { j / (n * inner) } else { j / inner }, row, j % inner) as i64).collect())
+}
+
+/// The partial derivatives of `p` at `x` and `y`, whose result is `r`, with respect to each argument that `need` asks for. A float constant takes the argument's float width (`float_like`), so that it doesn't widen the argument.
 fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 2], span: &Span) -> Result<[Option<Value>; 2], Error> {
     use {Arithmetic::*, Comparison::*, Math::*, Primitive as P};
     let call = |p: Primitive, a: Option<&Value>, b: &Value| p.call(a, b, span);
@@ -899,9 +948,9 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
             P::Math(Log) => recip(y)?,
             P::Math(Root) => recip(&dyad(plus, r, r)?)?,
             P::Math(Magnitude) => monad(times, y)?,
-            P::Math(Pi) => monad(P::Math(Pi), &Value::integer(1))?,
-            // !y is Γ(y + 1).
-            P::Math(Factorial) => dyad(times, r, &psi(&dyad(plus, y, &Value::integer(1))?)?)?,
+            P::Math(Pi) => crate::primitive::float_like(std::f64::consts::PI, y),
+            // !y is Γ(y + 1). The 1 takes the float width of a constant beside `y` (`float_like`), so ψ computes at the width that the approximate rule gives `y`, and `y + 1` can't wrap at a fixed width.
+            P::Math(Factorial) => dyad(times, r, &psi(&dyad(plus, y, &crate::primitive::float_like(1.0, y))?)?)?,
             _ => unreachable!("only pervasive glyphs take partials"),
         };
         return Ok([None, Some(d)]);
