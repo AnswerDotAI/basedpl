@@ -90,7 +90,7 @@ impl Traced {
     }
     /// The items as code with no rule for traces reads them: atoms outside the program (`element`).
     pub(crate) fn storage(&self) -> &Storage {
-        crate::transform::Carrier::built(&self.items, "traced items", self.read.layout.count(), |_| self.element())
+        crate::transform::Carrier::built(&self.items, rustymath::events::Route::TracedItems, self.read.layout.count(), |_| self.element())
     }
     /// Whether code with no rule for traces has read the items (`storage`).
     pub(crate) fn items_built(&self) -> bool { self.items.get().is_some() }

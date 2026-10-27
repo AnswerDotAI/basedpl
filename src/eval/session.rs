@@ -50,6 +50,11 @@ impl Session {
     }
     /// `value` as this session's implicit display shows it, as text.
     pub fn show(&self, value: &Value) -> String { self.display_settings().array(value, false) }
+    /// The implicit MIME display of `value`, without publishing it. Rendering is interruptible; a renderer's side output is discarded.
+    pub fn render(&self, value: &Value, interrupt: crate::InterruptHandle) -> Result<crate::MimeBundle, Error> {
+        let _running = self.execution.begin(crate::EvalOptions { interrupt, echo: false, output: Some(Arc::new(|_| {})), ..crate::EvalOptions::default() });
+        self.render_value(value, &Span::whole(Source::new("<display>", "")))
+    }
     /// The display settings, with floats of the default width shown without a marker.
     pub(crate) fn display_settings(&self) -> crate::display::Settings {
         let mut settings = crate::settings::display();
@@ -74,6 +79,24 @@ impl Session {
             _ => None,
         };
         info.or_else(|| crate::inspection::documentation(name).map(|_| crate::Inspection::new("syntax", name.into())))
+    }
+    /// A bound name's native kind and short display, without evaluating it or fully formatting a large array.
+    pub fn preview(&self, name: &str) -> Option<(&'static str, String)> {
+        let NodeKind::Name(name, _) = crate::inspection::item(name, crate::settings::hanzi_aliases())? else { return None };
+        let (_, binding) = self.bindings.lookup(name)?;
+        let mut display = self.display_settings();
+        display.boxed = false;
+        display.elide = Elide { limit: 100, edges: 2, width: 80, ..display.elide };
+        let (kind, text) = match binding {
+            Binding::Value(a) => ("array", display.array(&a, false)),
+            Binding::Function(f) => ("function", f.text(display.elide, &mut 100)),
+            Binding::Operator(op) => ("operator", op.text(display.elide)),
+            _ => return None,
+        };
+        let mut chars = text.chars();
+        let mut text: String = chars.by_ref().take(200).collect();
+        if chars.next().is_some() { text.push('…'); }
+        Some((kind, text))
     }
     pub fn name_source(&self, name: &str) -> Result<String, ErrorKind> {
         match self.name_class(name) {
@@ -460,21 +483,23 @@ impl Session {
         Ok(bundle)
     }
 
-    /// A value with a renderer displays through it. Other values, and a renderer that fails, display as text.
     fn display_value(&self, value: &Value, span: &Span) -> Result<(), Error> {
+        self.execution.emit(Output { kind: crate::OutputKind::Display, data: self.render_value(value, span)? });
+        Ok(())
+    }
+
+    /// A value with a renderer formats through it. Other values, and a renderer that fails, format as text.
+    fn render_value(&self, value: &Value, span: &Span) -> Result<crate::MimeBundle, Error> {
         if value.renderer().is_some() {
             match self.mime_value(value, span) {
                 Ok(bundle) => {
-                    let data = crate::display::bundle(&bundle).expect("•mime checks its bundle");
-                    self.execution.emit(Output { kind: crate::OutputKind::Display, data });
-                    return Ok(());
+                    return Ok(crate::display::bundle(&bundle).expect("•mime checks its bundle"));
                 }
                 Err(e) if e.kind.is_control() => return Err(e),
                 Err(_) => (),
             }
         }
-        self.execution.output(crate::OutputKind::Display, self.show(value));
-        Ok(())
+        Ok([("text/plain".into(), crate::MimeData::Text(self.show(value)))].into_iter().collect())
     }
 
     /// Displays a function using the trees setting, unless that view has already been shown.

@@ -226,15 +226,31 @@ fn verdict(case: &JsonValue, outcomes: &[(Run, Outcome)]) -> JsonValue {
     json!({"status":"pass"})
 }
 
-/// `case` checked as `failures` checks the cases of a file: `{"status":"pass"}`, or the case with the `status`, `message` and `kind` of its failure.
+/// `case` checked as `failures` checks a file: `{"status":"pass"}`, or the case with its failure details and actual result, where available.
 pub fn check(case: &JsonValue, interrupt: &InterruptHandle) -> JsonValue { failures([case], "", interrupt).pop().unwrap_or_else(|| json!({"status":"pass"})) }
 
-/// A timed record's optional expectation, checked once outside timing, with fresh setup for both expressions.
+/// A timed record’s expectation and route contract, checked outside timing with fresh setup for code and expectation.
 pub fn check_once(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<(), JsonValue> {
     enter(case["prefs"].as_str(), None)?;
-    outcome(case, setup, RUNS[0], Some(TIMEOUT), interrupt).map(|_| ())
+    if checked(case) { outcome(case, setup, RUNS[0], Some(TIMEOUT), interrupt)?; }
+    route_check(case, setup, interrupt)
 }
 
+/// Warm and capture a case under its ordinary preferences and setup.
+pub fn route(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<crate::timing::Route, JsonValue> {
+    enter(case["prefs"].as_str(), None)?;
+    let session = Session::new();
+    initialized(&session, setup)?;
+    crate::timing::route(&session, case, interrupt).map_err(|message| json!({"status":"invalid", "message":message}))
+}
+
+pub fn routed(case: &JsonValue) -> bool { ["route", "allows", "gap"].iter().any(|key| case.get(key).is_some()) }
+
+fn route_check(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<(), JsonValue> {
+    if !routed(case) { return Ok(()); }
+    let wrong = route(case, setup, interrupt)?.violations();
+    if wrong.is_empty() { Ok(()) } else { Err(json!({"status":"route", "message":wrong.join("; ")})) }
+}
 fn initialized(session: &Session, setup: &str) -> Result<(), JsonValue> {
     if setup.is_empty() { return Ok(()); }
     if let Some(error) = session.eval_with(setup, EvalOptions { echo: false, timeout: Some(TIMEOUT), ..EvalOptions::default() }).error {
@@ -292,7 +308,11 @@ fn inline(line: &str) -> Option<(&str, &str)> {
     while let Some((i, c)) = chars.next() {
         match c {
             '"' => string = !string, '\'' if !string => { chars.next(); if !line[i..].starts_with("''") || line[i..].starts_with("'''") { chars.next(); } }
-            '⍝' if !string => return Some((line[..i].trim_end(), line[i + c.len_utf8()..].trim_start())), _ => ()
+            '⍝' if !string => {
+                if line[i..].contains('\n') { for (_, c) in chars.by_ref() { if c == '\n' { break; } } }
+                else { return Some((line[..i].trim_end(), line[i + c.len_utf8()..].trim_start())); }
+            }
+            _ => ()
         }
     }
     None
@@ -317,7 +337,7 @@ pub struct File { pub name: String, pub setup: String, pub cases: Vec<JsonValue>
 pub fn checked(case: &JsonValue) -> bool { ["expected", "expected_code", "expected_error"].iter().any(|key| case.get(key).is_some()) }
 
 /// A section heading, excluding the per-case route annotations.
-fn section(line: &str) -> Option<&str> { line.strip_prefix("⍝⍝ ").filter(|s| !s.starts_with("allows ") && !s.starts_with("gap ")) }
+fn section(line: &str) -> Option<&str> { line.strip_prefix("⍝⍝ ") }
 
 /// The record and event in a route annotation. Doubled quotes stand for one quote.
 fn event(rest: &str) -> JsonValue {
@@ -396,8 +416,14 @@ pub fn file(name: &str, text: &str) -> Result<File, String> {
         let mut comments = Vec::new();
         let mut leading = 0;
         for line in body {
-            if let Some((key, rest)) = line.strip_prefix("⍝⍝ allows ").map(|s| ("allows", s)).or_else(|| line.strip_prefix("⍝⍝ gap ").map(|s| ("gap", s))) {
-                case.as_object_mut().unwrap().entry(key).or_insert_with(|| json!([])).as_array_mut().unwrap().push(event(rest));
+            if let Some(directive) = line.strip_prefix("⍝⍝⍝ ") {
+                let (key, rest) = directive.split_once(' ').ok_or_else(|| fail("a route directive needs its name".into()))?;
+                let value = match key {
+                    "route" if !rest.trim().is_empty() => json!(rest.trim()),
+                    "allows" | "gap" => event(rest),
+                    _ => return Err(fail(format!("invalid route directive {directive}"))),
+                };
+                case.as_object_mut().unwrap().entry(key).or_insert_with(|| json!([])).as_array_mut().unwrap().push(value);
             }
             else if let Some(rest) = line.strip_prefix("⍝ ") { if heading.is_none() { comments.push(rest); } }
             else { break; }
@@ -414,11 +440,11 @@ pub fn file(name: &str, text: &str) -> Result<File, String> {
         if body.iter().any(|s| s.starts_with("⍝ ⎕:") || s.starts_with("⍝ input:")) { return Err(fail("input and output lines must end the case, input first".into())); }
         let splits: Vec<_> = body.iter().enumerate().filter_map(|(i, s)| (*s == "⍝ =>").then_some(i)).collect();
         let joined = body.join("\n");
-        let pair = inline(&joined).filter(|(code, expect)| !expect.contains('\n') && (body.len() == 1 || code.matches('\n').count() + 1 == body.len()));
+        let pair = inline(&joined).filter(|(code, _)| body.len() == 1 || code.matches('\n').count() + 1 == body.len());
         let (code, expect) = match (splits.as_slice(), pair) {
             ([], Some((code, expect))) => (code.to_owned(), Some(expect.to_owned())),
             ([], None) if case["budgets"].is_array() => (joined, None),
-            ([], None) if body.len() == 2 => (body[0].to_owned(), Some(body[1].to_owned())),
+            ([], None) if body.len() == 2 || heading.is_some() && body.len() == leading + 2 => (body[..body.len() - 1].join("\n"), Some(body[body.len() - 1].to_owned())),
             ([i], _) => (body[..*i].join("\n"), Some(body[i + 1..].join("\n"))),
             _ => return Err(fail("use one ⍝ => between multiline expressions, or an inline expectation on the last line".into()))
         };
@@ -459,7 +485,7 @@ pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str,
     for case in cases {
         let mut outcomes = Vec::new();
         let mut compiled = false;
-        let result = runs(case).into_iter().try_for_each(|run| {
+        let mut result = runs(case).into_iter().try_for_each(|run| {
             if run.compiles == Compiles::Never && !compiled { return Ok(()); }
             enter(case["prefs"].as_str(), Some(run))?;
             let before = crate::program::blocks::compiled_runs();
@@ -467,9 +493,9 @@ pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str,
             compiled |= run.compiles == Compiles::Always && crate::program::blocks::compiled_runs() > before;
             Ok(())
         }).map_or_else(|failure| failure, |()| verdict(case, &outcomes));
-        if result["status"] == "pass" { continue; }
+        if result["status"] == "pass" { match route_check(case, setup, interrupt) { Ok(()) => continue, Err(failure) => result = failure } }
         let mut failure = case.clone();
-        for key in ["status", "message", "kind"] { if let Some(value) = result.get(key) { failure[key] = value.clone(); } }
+        for key in ["status", "message", "kind", "actual"] { if let Some(value) = result.get(key) { failure[key] = value.clone(); } }
         failures.push(failure);
         if result["status"] == "interrupt" { break; }
     }

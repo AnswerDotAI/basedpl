@@ -56,6 +56,7 @@ cnn←{norm pool 0⌈cb+⍤1(ck conv ⍵)}
 ⍝⍝ maps
 ⍝ Each, Rank and `⌺` first try one call of their operand on batches of all their cells, and call it once for each cell where that call stops. Maps inside `∂` batch too. Each mapped case sits beside the same computation written with whole arrays, whose cost a batched map should approach.
 ⍝ Expected: `{⍵×⍵+1}¨v` 2.5 copies: as `v×v+1`; `v×v+1` 2.5 copies: two passes below the fusion threshold, one copy then two reads and a write; `{+/,⍵}⌺[3 3] sg` 2 copies: nine reads for each of 16,384 windows, and their sums; `+/+/¯3 ¯3↕sg` 0.75 copies: a padded copy and two sliding passes over 16,384 items.
+⍝⍝⍝ route batching
 {⍵×⍵+1}¨v
 ⍝⍝: 5	5	5
 
@@ -63,7 +64,7 @@ v×v+1
 ⍝⍝: 5	5	5
 
 ⍝ Held until studied: `{+/,⍵}⌺[3 3] sg` measures 5.75 on macOS and has old Linux and wasm budgets that suggest about 15 and 14.5, more than twice its expected cost. On 22 October 2026 CI measured 7.31 on Linux and 6.35 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
-⍝⍝ gap forced "+/": a stencil kernel should sum each window where it lies in the grid. Until then, `+/` stores the batch's 147,456 window items first, because 3-item runs fold more slowly through the window map
+⍝⍝⍝ gap forced "+/": a stencil kernel should sum each window where it lies in the grid. Until then, `+/` stores the batch's 147,456 window items first, because 3-item runs fold more slowly through the window map
 {+/,⍵}⌺[3 3] sg
 ⍝⍝: 15	30	29
 
@@ -74,12 +75,12 @@ v×v+1
 ⍝ The Game of Life on a 128 by 128 Boolean grid, as a stencil and with padded windows.
 ⍝ Expected: `life⌺[3 3] g` 1.5 copies: a few passes over nine 1-byte reads for each of 16,384 windows; `life⌺["size":[3 3] "edge":"wrap"] g` 1.5 copies: as the stencil with fill; `lifew g` 0.75 copies: sliding sums and comparisons over 16,384 items.
 ⍝ Held until studied: `life⌺[3 3] g` measures 5.48 on macOS and has old Linux and wasm budgets that suggest about 20 and 22, more than twice its expected cost. On 22 October 2026 CI measured 6.9 on Linux and 7.29 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
-⍝⍝ gap forced "+/": a stencil kernel should sum each window where it lies in the grid. Until then, `+/` stores the batch's 147,456 window items first, because 3-item runs fold more slowly through the window map
+⍝⍝⍝ gap forced "+/": a stencil kernel should sum each window where it lies in the grid. Until then, `+/` stores the batch's 147,456 window items first, because 3-item runs fold more slowly through the window map
 life⌺[3 3] g
 ⍝⍝: 20	40	44
 
 ⍝ Held until studied: `life⌺["size":[3 3] "edge":"wrap"] g` measures 6.31 on macOS and has old Linux and wasm budgets that suggest about 19.5 and 19.5, more than twice its expected cost. On 22 October 2026 CI measured 7.37 on Linux and 7.94 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
-⍝⍝ gap forced "+/": a stencil kernel should sum each window where it lies in the grid. Until then, `+/` stores the batch's 147,456 window items first, because 3-item runs fold more slowly through the window map
+⍝⍝⍝ gap forced "+/": a stencil kernel should sum each window where it lies in the grid. Until then, `+/` stores the batch's 147,456 window items first, because 3-item runs fold more slowly through the window map
 life⌺["size":[3 3] "edge":"wrap"] g
 ⍝⍝: 19	39	39
 
@@ -103,6 +104,7 @@ lifew g
 ⍝ The gradient of a loss mapped over the rows of `X`, whose parameter every row shares, then per-example gradients, then a Hessian–vector product through the mapped loss. Each sits beside its form with `+.×`, or its closed form.
 ⍝ Expected: `loss∂ thz` 4 copies: the primal over 32,768 items, about 1 copy, with sines of 4,096 items at 7 copies for each 65,536, about 0.45, and a transpose of about 3; `lossw∂ thz` 3 copies: a product over 32,768 items, `1○` over 4,096 items, about 0.45, and its transpose; `{f∂ ⍵}⍤1 X` 9 copies: sines and cosines of 32,768 items, half of `n`, at 7 copies each as `1○v` counts them, then the squares, the row sums and each item's product of sine and cosine, about 2; `2×(1○X)×2○X` 7.5 copies: sines and cosines of 32,768 items, half of `n`, at 7 copies each as `1○v` counts them, and two products; `hv∂ thz` 8 copies: about twice the gradient; `hvw∂ thz` 6 copies: about twice the gradient.
 ⍝ On 27 October 2026 `loss∂ thz` measured 6.02 on macOS. Its wasm budget is twice its native budget, as `1○v`'s are. On 22 October 2026 CI measured 8.09 in wasm.
+⍝⍝⍝ gap stopped "a function called on each item": the row loss should trace as one batched map
 loss∂ thz
 ⍝⍝: 8	8	16
 
@@ -119,6 +121,7 @@ lossw∂ thz
 ⍝⍝: 15	15	30
 
 ⍝ Held until studied: `hv∂ thz` has old Linux and wasm budgets that suggest about 13500 and 20000, more than twice its expected cost. On 22 October 2026 CI measured 14.5 on Linux and 16.5 in wasm. Its Linux and wasm budgets stay at the old value.
+⍝⍝⍝ gap stopped "a function called on each item": the mapped row loss should trace through its nested derivative
 hv∂ thz
 ⍝⍝: 16	27000	40000
 
@@ -129,6 +132,7 @@ hvw∂ thz
 ⍝ An attached rule inside Each, beside the same rule on the whole array.
 ⍝ Expected: `{+/sq¨⍵}∂ v` 3 copies: as `{+/sq ⍵}∂ v`; `{+/sq ⍵}∂ v` 3 copies: the primal and the attached rule over every item.
 ⍝ Held until studied: `{+/sq¨⍵}∂ v` measures 7.73 on macOS and has old Linux and wasm budgets that suggest about 35000 and 55000, more than twice its expected cost. On 22 October 2026 CI measured 7.16 on Linux and 8.18 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
+⍝⍝⍝ gap stopped "a function called on each item": Each should trace the attached derivative rule over the whole array
 {+/sq¨⍵}∂ v
 ⍝⍝: 32000	70000	110000
 
@@ -150,7 +154,7 @@ hvw∂ thz
 ⍝ Four cells of 256 by 256 floats. The batched run takes the sines of all four cells as one call, and `⍳` searches each cell's own table on slices of the batch (`searched_cells`).
 ⍝ Expected: 18 copies: sines of four cells of `n` items, about 16, and a linear search of each.
 ⍝ Held until studied: `{r←1○⍵ ⋄ (,r)⍳0.5}⍤2 big` measures 41.85 on macOS and has old Linux and wasm budgets that suggest about 150 and 290, more than twice its expected cost. On 22 October 2026 CI measured 115 on Linux and 123 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
-⍝⍝ allows forced "⍳": a search reads its table's items
+⍝⍝⍝ allows forced "⍳": a search reads its table's items
 {
   r←1○⍵
   ,r ⍳ 0.5
@@ -236,14 +240,14 @@ X,X
 ⍝ A small convolutional layer, written for one image and mapped over a batch of 64 images of 32 by 32 pixels and 3 channels: a 3 by 3 convolution to 32 channels through windows and a product, a bias and ReLU, 2 by 2 max pooling, and a normalization of each channel over the pooled image.
 ⍝ Expected: 118 copies on macOS, 257 on Linux and 474 in wasm: products of 99.5 million flops, 1,518 an item, which take 51 at Accelerate's rank-k rate, 190 at 8 in a copy's time for rustymath's own kernels and 380 at 4 in wasm; one fused pass for the bias and ReLU over 1,843,200 items, about 28; the pooling's one fold along both axes of each window, which reads those items once and writes a quarter as many, about 18; and the normalization's four passes over 460,800 items, about 21. In wasm these passes cost about 94.
 ⍝ Held until studied: on 25 October 2026 `cnn⍤3 imgs` measured 229 on macOS, about twice its expected cost. Its parts measured about 94 for the convolution, 55 for the bias and ReLU, 27 for the pooling and 51 for the normalization. On 23 October 2026 the convolution's 95 split into 49 for Accelerate's product and 45 for the windows that the product reads. The pooling, one fold along both axes of each window, reads its source once, but at about 3 instructions an item, most of them in the loop that folds a window's rows along its first axis (`reduce::started`), so it costs 1.5 times its expected 18. Written as two folds, `⌈/⍠2⌈/⍠2`, it measures about 39, because the first fold writes 921,600 items that the second reads back. The expected cost leaves out building the windows. Reading them in blocks through their map (`pervasive::mapped_product`) measured 128 against 94 for building them first, and 369 against 331 on rustymath's own kernels. Its macOS budget is twice its cost. Its Linux and wasm budgets scale the macOS budget by the ratios of the expected costs, until CI measures them.
-⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
-⍝⍝ allows forced "⌈/⍠[2 3]": a fold of windows reads its argument whole
+⍝⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
+⍝⍝⍝ allows forced "⌈/⍠[2 3]": a fold of windows reads its argument whole
 cnn⍤3 imgs
 ⍝⍝: 460	1000	1900
 
 ⍝⍝ static •prefs ["kinds":"static" "int":32 "float":32]
 ⍝ Held until studied, as at 64 bits. Expected at 32 bits: 59 copies on macOS, 129 on Linux and 237 in wasm, half its 64-bit cost. On 25 October 2026 it measured 121 on macOS, about twice that, as at 64 bits. Its macOS budget is twice its cost. Its Linux and wasm budgets scale the macOS budget by the ratios of the expected costs, until CI measures them.
-⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
-⍝⍝ allows forced "⌈/⍠[2 3]ₛ": a fold of windows reads its argument whole
+⍝⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
+⍝⍝⍝ allows forced "⌈/⍠[2 3]ₛ": a fold of windows reads its argument whole
 cnn⍤3 imgs
 ⍝⍝: 250	530	980

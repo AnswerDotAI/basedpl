@@ -12,10 +12,11 @@ use crate::{
     pervasive, primitive::{FoldKind, Operation, Primitive},
     program::{blocks::{compiles_on_first_run, readable}, run::{self, Unit}, Desc, Node, Origin, Program, Read, Step}, Source, Span, Value
 };
-use rustymath::{agreement::Mapping, buffer::{Buffer, DType, Fill, FloatWidth, View}, gather::Steps, structure::Walk, layout::{count, strides}};
+use rustymath::{agreement::Mapping, buffer::{Buffer, DType, FloatWidth, View}, gather::Steps, structure::Walk, layout::{count, strides}};
 use rustymath::hashing::{HashMap, HashMapExt};
 use crate::array::{Footprint, Seen};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
 /// The fewest result items of a call that dispatch defers. Smaller arrays stay in the cache between calls.
 const MIN_ITEMS: usize = 1 << 17;
@@ -46,6 +47,8 @@ pub(crate) struct Pending {
     /// The program that computes the items, until forcing takes it.
     work: Mutex<Option<Program>>,
     result: OnceLock<Storage>,
+    /// Whether an actual read has already planned a nonempty selective computation of this result.
+    partial_read: AtomicBool,
     /// The layout of the call's result, keys and axis names included.
     layout: Layout,
     /// The dtype of the items: the type that the call's plan gives its result, Booleans for a comparison, and the source's dtype for a copy. The prototype says whether integers are fixed.
@@ -87,26 +90,39 @@ pub(crate) fn source(value: &Value) -> Option<(Value, Mapping)> {
 /// The share of a pending array's items, 1 in `LISTED`, at or below which a read is small. A small read lists its items' offsets through any map that it doesn't compose with, and computes a pending call, or the program that a fold left, at only the positions it reads. Listing one item's offset costs about 50 times what a copy spends on each item. A larger read computes the whole array, which then keeps its items for later reads.
 const LISTED: usize = 128;
 
-/// A read of `pending` narrowed to the positions that `outer` reaches over `frame`, as an array and a map, without consuming any pending work. `outer` maps `frame`'s positions to the pending array's own. A pending copy becomes a read of its source, through both maps. A small read of a pending array that `computes` says only this read holds becomes a new pending array that computes only those positions (`Program::narrowed`), unless one of them is a fill, whose item is a prototype that the program wouldn't compute. A pending array that only that program holds narrows the same way. The new program holds any other pending array in a value of its own (`held`), which computes it whole and keeps its items. `None` where the read would compute `pending` whole, and where a map doesn't compose and the read isn't small.
-fn narrow(pending: &Arc<Pending>, outer: &Mapping, frame: &[usize], small: bool, computes: bool) -> Option<(Value, Mapping)> {
+/// A read of `pending` through `outer` over `frame`, without consuming its work. A pending copy becomes a read of its source through both maps. Its first nonempty small read computes only selected positions of an elementwise program (`Program::narrowed`), even when shared; a later read uses the normal whole-result cache. Copies, empty reads and all-missing reads don't count. Missing positions fill outside the program. Held pending inputs narrow recursively where possible, and otherwise remain shared inputs that compute and cache normally. `None` where the read isn't small, already used its partial computation, or the map or program cannot narrow.
+fn narrow(pending: &Arc<Pending>, outer: &Mapping, frame: &[usize], small: bool) -> Option<(Value, Mapping)> {
+    if frame.contains(&0) || outer.fills() && outer.as_writes().is_some_and(|w| w.only_fills()) {
+        let source = Value::from_storage(vec![0], Storage::Compact(Buffer::with_capacity(pending.dtype, 0)).fixed(pending.prototype.fixed_width().is_some())).ok()?;
+        return Some((source, outer.clone()));
+    }
     let shape = pending.layout.shape();
     let work = pending.work();
     let program = work.as_ref()?;
     if let Some((source, map)) = copied(program) {
         let mapping = map.composed(outer, shape, frame, small)?;
         let Some(p) = source.pending() else { return Some((source.clone(), mapping)) };
-        return Some(narrow(p, &mapping, frame, small, Arc::strong_count(p) == 1).unwrap_or_else(|| (Value::deferred(source.layout().clone(), p.clone()), mapping)));
+        return Some(narrow(p, &mapping, frame, small).unwrap_or_else(|| (Value::deferred(source.layout().clone(), p.clone()), mapping)));
     }
-    if !(small && computes && (0..count(frame)).all(|k| outer.get(k).is_some())) { return None; }
+    let len = count(frame);
+    if !small || len != 0 && pending.partial_read.load(Relaxed) { return None; }
+    if outer.fills() {
+        let mut selected = Vec::new();
+        let positions = (0..len).map(|k| outer.get(k).map_or(Steps::FILL, |p| { let j = selected.len(); selected.push(p); j })).collect();
+        let map = outer.with_steps(0, vec![Steps::table(positions)]);
+        let len = selected.len();
+        drop(work);
+        let (source, inner) = narrow(pending, &Mapping::from(vec![Steps::table(selected)]), &[len], true)?;
+        return Some((source, inner.composed(&map, &[len], frame, true)?));
+    }
     let narrowed = program.narrowed(outer, shape, frame, small)?;
+    if len != 0 && pending.partial_read.swap(true, Relaxed) { return None; }
     drop(work);
     if !narrowed.nodes.iter().any(|n| held_pending(n).is_some()) { return Some(pending.with_work(narrowed, frame)); }
-    // The new program's held values are the old program's, so a count of 1 still means that only the old program holds the array.
-    let only: Vec<bool> = narrowed.nodes.iter().map(|n| held_pending(n).is_some_and(|p| Arc::strong_count(p) == 1)).collect();
     let mut nodes = Vec::with_capacity(narrowed.nodes.len());
     let result = narrowed.add_to(&mut nodes, |nodes, at, _, node| match node.origin {
-        Origin::Step(Step::Copy { of, ref map }) if only[of] => {
-            let (value, mapping) = held_pending(&nodes[at[of]]).and_then(|p| narrow(p, map, node.desc.shape(), small, true))?;
+        Origin::Step(Step::Copy { of, ref map }) => {
+            let (value, mapping) = held_pending(&nodes[at[of]]).and_then(|p| narrow(p, map, node.desc.shape(), small))?;
             Some(read(nodes, &value, mapping, node.desc.shape()).of)
         }
         Origin::Held(ref value) if value.pending().is_some() => Some(held(nodes, value)),
@@ -115,12 +131,11 @@ fn narrow(pending: &Arc<Pending>, outer: &Mapping, frame: &[usize], small: bool,
     Some(pending.with_work(Program::new(nodes, result).live(), frame))
 }
 
-/// The items of `value` at the positions that `outer` reaches over `frame`, as an array and a map that read only those items, through `narrow`. Only a pending array that nothing else holds computes at just those positions, as only such an array would fold without being built. `None` where `value` isn't pending, or where the read would compute `value` whole.
+/// The items of `value` at the positions `outer` reaches over `frame`, through `narrow`. The first nonempty small read computes just those items regardless of sharing; later reads use the whole-result cache. `None` where `value` isn't pending, or the read would compute its whole program.
 fn narrowed(value: &Value, outer: Mapping, frame: &[usize]) -> Option<(Value, Mapping)> {
     let pending = value.pending()?;
     let small = count(frame).saturating_mul(LISTED) <= pending.len();
-    let computes = value.unshared_pending().is_some();
-    let (source, mapping) = narrow(pending, &outer, frame, small, computes)?;
+    let (source, mapping) = narrow(pending, &outer, frame, small)?;
     let fixed = value.fixed_width();
     let source = if source.fixed_width() == fixed { source }
         else if let Some(width) = fixed { source.as_fixed(width)? } else { source.ordinary() };
@@ -139,8 +154,8 @@ fn resolved(program: Program) -> Program {
         let through = match &node.origin {
             // A held array that only copies read stays held. Where their maps don't compose with its own, `gathered` then computes it once.
             Origin::Held(_) if readers[j] > 0 && readers[j] == copies[j] => None,
-            Origin::Held(value) => value.pending().and_then(|p| narrow(p, &Mapping::Linear(1), shape, false, false)).inspect(|_| composed = true),
-            Origin::Step(Step::Copy { of, map }) => held_pending(&nodes[at[*of]]).and_then(|p| match narrow(p, map, shape, false, false) {
+            Origin::Held(value) => value.pending().and_then(|p| narrow(p, &Mapping::Linear(1), shape, false)).inspect(|_| composed = true),
+            Origin::Step(Step::Copy { of, map }) => held_pending(&nodes[at[*of]]).and_then(|p| match narrow(p, map, shape, false) {
                 Some(read) => { composed = true; Some(read) }
                 None if readers[*of] == 1 => moved(p, map, shape),
                 None => None,
@@ -160,7 +175,7 @@ fn resolved(program: Program) -> Program {
 fn moved(pending: &Arc<Pending>, map: &Mapping, frame: &[usize]) -> Option<(Value, Mapping)> {
     let shape = pending.layout.shape();
     let Mapping::Steps { base: 0, steps: outer } = map else { return None };
-    if Arc::strong_count(pending) != 1 || !pending.runs() || map.chosen().is_some() || outer.iter().any(Steps::spreads) || Steps::rereads(outer, shape) { return None; }
+    if map.chosen().is_some() || Arc::strong_count(pending) != 1 || !pending.runs() || outer.iter().any(Steps::spreads) || Steps::rereads(outer, shape) { return None; }
     let mut work = pending.work();
     let program = work.as_ref()?;
     let arrays = program.nodes.iter().filter(|n| matches!(n.origin, Origin::Held(_)) && !n.desc.atom).count();
@@ -174,17 +189,18 @@ fn moved(pending: &Arc<Pending>, map: &Mapping, frame: &[usize]) -> Option<(Valu
 /// Item `i` of `value`. A pending array's item comes from only the work that computes it, without computing the array.
 pub(crate) fn item(value: &Value, i: usize) -> Value {
     let Some((source, mapping)) = narrowed(value, Mapping::Steps { base: i, steps: Default::default() }, &[]) else { return value.at(i) };
-    mapping.get(0).map_or_else(|| value.fill_item(mapping.chosen()), |o| source.at(o))
+    mapping.get(0).map_or_else(|| source.mapped_fill(&mapping), |o| source.at(o))
 }
 
-/// An array, a walk there that reaches the items of `value` that `steps` reach from `base`, and the fill that the walk reads where it reaches no item, for a read of fewer items than `value` holds, through `narrowed`. `fill` is the fill that the read through `steps` chose.
-pub(crate) fn walk_through(value: &Value, base: usize, steps: &[Steps], fill: Option<&Arc<Fill>>) -> Option<(Value, usize, Vec<Steps>, Option<Arc<Fill>>)> {
+/// Read a region of a pending source, retaining the native fill of the composed walk. Fills of mixed data stay eager.
+pub(crate) fn walk_through(value: &Value, base: usize, steps: &[Steps], fill: Option<&Value>) -> Option<(Value, usize, Vec<Steps>, Option<Value>)> {
+    value.pending()?;
     let frame: Vec<usize> = steps.iter().map(Steps::len).collect();
-    if count(&frame) >= value.len() { return None; }
-    let (source, mapping) = narrowed(value, Mapping::Steps { base, steps: steps.to_vec().into() }.filled(fill.cloned()), &frame)?;
-    let fill = mapping.chosen().cloned();
-    let (base, steps) = match mapping { Mapping::Steps { base, steps } => (base, steps.into()), mapping => mapping.entries(&frame)? };
-    Some((source, base, steps, fill))
+    let native = match fill { Some(fill) => Some(value.native_fill(fill)?), None => None };
+    let (source, mapping) = narrowed(value, Mapping::Steps { base, steps: steps.to_vec().into() }.filled(native), &frame)?;
+    let (base, steps, native) = mapping.to_walk(&frame);
+    let fill = native.map(|fill| Value::from_fill(fill, source.fixed_width().is_some()));
+    Some((source, base, steps.into_owned(), fill))
 }
 
 /// The array that a pending copy reads through an affine map, with the offset of the copy's first item and each axis's stride, both counted in that array's items. A buffer export lends the copy's items this way without building them. `None` where the copy's composed read isn't affine.
@@ -231,7 +247,7 @@ pub(crate) fn defer(p: Primitive, plan: &crate::plan::Pervasive, x: Option<&Valu
 
 /// `agreement` back, after `defer` declines to fuse its call for `reason` (`rustymath::events`).
 fn declined(agreement: Agreement, reason: &'static str) -> Result<Value, Agreement> {
-    rustymath::events::declined("fusion", reason, agreement.len);
+    rustymath::events::declined(rustymath::events::Route::Fusion, reason, agreement.len);
     Err(agreement)
 }
 
@@ -370,7 +386,9 @@ pub(crate) fn pending(source: &Value, layout: &Layout, map: &Mapping) -> Option<
 /// A pending copy, or a view of one, with its floats at `width`. Its source converts, and the copy reads the converted source through the same map, so a product still reads a transpose in place. `None` for any other value.
 pub(crate) fn at_width(value: &Value, width: FloatWidth) -> Option<Value> {
     let (source, mapping) = source(value)?;
-    deferred_copy(&source.to_float_width(width).ok()?, value.layout(), mapping)
+    let source = source.to_float_width(width).ok()?;
+    let mapping = mapping.cast_fill(source.dtype()?).ok()?.into_owned();
+    deferred_copy(&source, value.layout(), mapping)
 }
 
 /// A pending copy of `source` through `mapping`, for a result of `layout`, or `None` where `source` isn't compact.
@@ -405,10 +423,12 @@ struct Windows {
     every: usize,
 }
 
-/// The windows that `value` holds along axis `k`. `None` for a value that isn't a pending copy, for any other map, for windows that don't move by 1 along their own axis or whose other axes along it neither move by 1 nor tile it, and for a copy that reads a source axis that no axis of the copy walks anywhere but at position 0.
+/// The windows that `value` holds along axis `k`. `None` for a value that isn't a pending copy, for a chosen fill or any other map, for windows that don't move by 1 along their own axis or whose other axes along it neither move by 1 nor tile it, and for a copy that reads a source axis that no axis of the copy walks anywhere but at position 0.
 fn windows(value: &Value, k: usize) -> Option<Windows> {
     let shape = value.shape();
-    let (source, Mapping::Steps { base, steps }) = source(value)? else { return None };
+    let (source, mapping) = source(value)?;
+    if mapping.chosen().is_some() { return None; }
+    let Mapping::Steps { base, steps } = mapping else { return None };
     let dims = source.shape().to_vec();
     let walk = Walk::new(&Steps::with_base(base, steps.into()), shape, &dims)?;
     // An axis of the copy that walks no source axis holds one item.
@@ -478,7 +498,7 @@ fn slide(value: &Value, p: Primitive, kind: FoldKind, k: usize) -> Option<Value>
     let [outer, len, inner] = w.rows;
     let rows = if w.every == 1 { w.rows } else { [outer * len / width, width, inner] };
     let buffer = pervasive::sliding(p, w.region()?, rows, width, numeric)?;
-    crate::explain::fast("sliding fold", Operation::Fold(p, kind).glyph());
+    crate::explain::fast_detail(rustymath::events::Route::SlidingFold, Operation::Fold(p, kind).glyph());
     let layout = Layout::from((0..shape.len()).filter(|&r| r != k).map(|r| shape[r]).collect::<Vec<_>>());
     let (folded, tables) = Windows::folded(&[(&w, k, width)], shape);
     laid_out(buffer, folded, layout, tables, numeric)
@@ -496,7 +516,7 @@ pub(crate) fn fold_windows(value: &Value, p: Primitive, kind: FoldKind, axes: [u
     if dims5[4] < 2 { return None; }
     let numeric = Numeric::for_values([value]).ok()?;
     let buffer = pervasive::sliding_2d(p, x.region()?, dims5, [w1, w2], [x.every, y.every], numeric)?;
-    crate::explain::fast("sliding fold", Operation::Fold(p, kind).glyph());
+    crate::explain::fast_detail(rustymath::events::Route::SlidingFold, Operation::Fold(p, kind).glyph());
     let shape = value.shape();
     let layout = Layout::from((0..shape.len()).filter(|&r| r != k1 && r != k2).map(|r| shape[r]).collect::<Vec<_>>());
     let (folded, tables) = Windows::folded(&[(&x, k1, w1), (&y, k2, w2)], shape);
@@ -579,7 +599,7 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], 
         });
         nodes.truncate(len);
         pending.put(Program { nodes, result: root, outputs });
-        if result.is_none() { rustymath::events::declined("fused fold", "a copy that no call moves under", pending.len()); }
+        if result.is_none() { rustymath::events::declined(rustymath::events::Route::FusedFold, "a copy that no call moves under", pending.len()); }
         return result.map(|v| (v, 1));
     }
     let (Program { mut nodes, result: root, outputs }, kept) = pending.gathered(program);
@@ -612,7 +632,7 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], 
         Some(_) if stored => {}
         Some(_) => pending.put(Program::at(nodes, root)),
         None => {
-            rustymath::events::declined("fused fold", "a fold that its group can't run", pending.len());
+            rustymath::events::declined(rustymath::events::Route::FusedFold, "a fold that its group can't run", pending.len());
             pending.result.set(pending.counted(ran((Program { outputs, ..Program::at(nodes, root) }, kept)))).expect("a pending array computes its items once");
         }
     }
@@ -632,7 +652,7 @@ fn staged(pending: &Pending, p: Primitive, kind: FoldKind, axis: usize, items: &
 impl Pending {
     /// A pending array whose `work` computes items of `dtype`, laid out as `layout`.
     fn new(work: Program, layout: Layout, dtype: DType, prototype: Value, size: usize, kept: Vec<(usize, usize)>) -> Self {
-        Self { work: Mutex::new(Some(work)), result: OnceLock::new(), layout, dtype, prototype, size, kept, _live: Live::new(Counted::Pending) }
+        Self { work: Mutex::new(Some(work)), result: OnceLock::new(), partial_read: AtomicBool::new(false), layout, dtype, prototype, size, kept, _live: Live::new(Counted::Pending) }
     }
     /// A read in order of a new pending array with this one's dtype, prototype, size and kept arrays, whose `work` computes the items of `frame`.
     fn with_work(&self, work: Program, frame: &[usize]) -> (Value, Mapping) {

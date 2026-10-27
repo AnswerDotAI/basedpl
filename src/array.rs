@@ -1,7 +1,7 @@
 use crate::execution::check;
 use crate::{
     display::{positions, Elide}, element::{Stored, Whole}, fusion::Pending, keyed::Keys, number::{int::Int, real, Numeric}, transform::Carrier,
-    Error, ErrorKind, Number
+    Described, Error, ErrorKind, Number
 };
 use num_complex::{Complex, Complex32, Complex64};
 use rustymath::{
@@ -785,28 +785,32 @@ impl Value {
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Compact(View::Booleans(v)) => Some(v), _ => None } }
     pub fn at(&self, i: usize) -> Value { self.at_ref(i).into_owned() }
     /// Item `i`, or `fill` as an item of this value where `i` is `Steps::FILL` (`fill_item`). A pending array gives the item without computing the rest.
-    pub(crate) fn at_or_fill(&self, i: usize, fill: Option<&Arc<Fill>>) -> Value { if i == rustymath::gather::Steps::FILL { self.fill_item(fill) } else { crate::fusion::item(self, i) } }
-    /// The item that a read of this value gives where it reaches no item: the chosen `fill`, as an item of this value's kind, or this value's prototype where there's none.
-    pub(crate) fn fill_item(&self, fill: Option<&Arc<Fill>>) -> Value {
-        let Some(fill) = fill else { return self.prototype() };
-        match &**fill { Fill::Item(b) => Items::Compact(b.view()).fixed(self.fixed_width().is_some()).item(0), Fill::Other(v) => v.downcast_ref::<Value>().expect("a frontend fill is a value").clone() }
+    pub(crate) fn at_or_fill(&self, i: usize, fill: Option<&Value>) -> Value { if i == rustymath::gather::Steps::FILL { self.fill_item(fill) } else { crate::fusion::item(self, i) } }
+    /// The item that a read gives where it reaches no item: the validated scalar `fill`'s item, or this value's prototype.
+    pub(crate) fn fill_item(&self, fill: Option<&Value>) -> Value { fill.map_or_else(|| self.prototype(), |fill| fill.at(0)) }
+    /// A validated native fill at this source's compact dtype; mixed sources retain their BPL fill value.
+    pub(crate) fn native_fill(&self, fill: &Value) -> Option<Arc<Fill>> {
+        let dtype = self.template_dtype()?;
+        Some(Arc::new(Fill::new(fill.view()?, dtype).expect("a validated scalar fill")))
     }
-    /// `fill` as one item of `dtype` that keeps its value, with the dtype that holds it. An integer `dtype` that isn't `fixed` widens under dynamic kinds to the narrowest width that holds the fill, as ordinary integers do. Mixed storage, a `dtype` of `None`, takes any value. A DOMAIN error where no dtype holds the fill.
-    pub(crate) fn fill_of(fill: &Value, dtype: Option<DType>, fixed: bool) -> Result<(Option<DType>, Arc<Fill>), Error> {
-        let Some(mut to) = dtype else { return Ok((None, Arc::new(Fill::Other(Arc::new(fill.clone()))))) };
+    pub(crate) fn from_fill(fill: &Arc<Fill>, fixed: bool) -> Self { Self::from_storage(Shape::EMPTY, Storage::Compact(Buffer::copied(fill.view(), 0..1)).fixed(fixed)).expect("one fill item is a scalar") }
+    pub(crate) fn mapped_fill(&self, map: &Mapping) -> Self { map.chosen().map_or_else(|| self.prototype(), |fill| Items::Compact(fill.view()).fixed(self.fixed_width().is_some()).item(0)) }
+    /// `fill` held in a scalar of `dtype` that keeps its value, with the dtype that holds it. An integer `dtype` that isn't `fixed` widens under dynamic kinds to the narrowest width that holds the fill, as ordinary integers do. Mixed storage, a `dtype` of `None`, takes any value. A DOMAIN error where no dtype holds the fill.
+    pub(crate) fn fill_of(fill: &Value, dtype: Option<DType>, fixed: bool) -> Result<(Option<DType>, Value), Error> {
+        let Some(mut to) = dtype else { return Ok((None, fill.enclose().described("invalid fill")?)) };
         let lost = || Error::domain("the fill doesn't keep its value as the data's type");
         let one = Layout::from([1]).filled(fill);
         let own = one.view().ok_or_else(lost)?;
         let ordinary = !fixed && !Numeric::current().is_static();
         loop {
-            match Fill::new(own, to) {
-                Ok(item) => return Ok((Some(to), Arc::new(item))),
+            match Buffer::kept(own, to) {
+                Ok(item) => return Ok((Some(to), Self::from_storage(Shape::EMPTY, Storage::Compact(item).fixed(fixed)).described("invalid fill")?)),
                 Err(_) => match to { DType::Integer(w) if ordinary => to = DType::Integer(w.wider().ok_or_else(lost)?), _ => return Err(lost()) },
             }
         }
     }
     /// `fill` as an item of the type that mix under `widening` gives this array's items (`fill_of`), for the items that mix pads.
-    pub(crate) fn mixed_fill(&self, fill: &Value, widening: Widening) -> Result<Arc<Fill>, Error> {
+    pub(crate) fn mixed_fill(&self, fill: &Value, widening: Widening) -> Result<Value, Error> {
         let cells: Vec<_> = self.elements().collect();
         let kind = Gather::joined_kind(&cells.iter().collect::<Vec<_>>(), widening).unwrap_or_default();
         Ok(Self::fill_of(fill, kind.dtype, kind.fixed.is_some())?.1)
@@ -830,7 +834,7 @@ impl Value {
     /// The items in `range`, as an array laid out by `layout`. Compact items stay in this array's storage, as a view of their range (`ArrayData::part`). A carried array gives its carrier's copy of the range (`Carrier::copied`): one node of a record, or one step of a trace. Mixed items are copied, because a mixed array's memo answers for all its items.
     pub(crate) fn part(&self, range: std::ops::Range<usize>, layout: impl Into<Layout>) -> Result<Self, ErrorKind> {
         if let Self::Array(a) = self {
-            if let Some(carrier) = a.carrier() { return carrier.copied(layout.into(), &Mapping::Steps { base: range.start, steps: vec![Steps::along(range.len(), 1)].into() }); }
+            if let Some(carrier) = a.carrier() { return carrier.copied(layout.into(), &Mapping::Steps { base: range.start, steps: vec![Steps::along(range.len(), 1)].into() }, None); }
             if a.items().view().is_some() { return Ok(ArrayData::part(a, range, layout.into(), a.fixed_width().is_some())); }
         }
         let mut data = Gather::new(&[self], range.len());
@@ -945,12 +949,12 @@ impl Value {
         Layout::from(frame.to_vec()).assemble(cells, empty_cell)
     }
     /// The items of this array assembled into one array by trailing-axis agreement, as `assemble` does. A simple array is unchanged. `widening` says how numbers of different dtypes share compact storage: mix joins arrays, and Rank assembles the results it computed one cell at a time. An item pads with `chosen`'s item, or with its own prototype where there's none (`fill_item`).
-    pub(crate) fn mix(&self, widening: Widening, chosen: Option<&Arc<Fill>>) -> Result<Self, ErrorKind> {
+    pub(crate) fn mix(&self, widening: Widening, chosen: Option<&Value>) -> Result<Self, ErrorKind> {
         if !self.is_atom() && self.is_simple() { return Ok(self.clone()); }
         let cells: Vec<_> = self.elements().collect();
         Self::assemble_layout(self.layout(), &cells, &self.prototype(), widening, chosen)
     }
-    fn assemble_layout(frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening, chosen: Option<&Arc<Fill>>) -> Result<Self, ErrorKind> {
+    fn assemble_layout(frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening, chosen: Option<&Value>) -> Result<Self, ErrorKind> {
         if element_count(frame.shape())? != cells.len() { return Err(Kind::Length.into()); }
         if cells.is_empty() { return frame.concat(empty_cell.layout()).collect(vec![], empty_cell.prototype()); }
         let cell_layout = Layout::assembled(cells.iter().map(Value::layout))?;

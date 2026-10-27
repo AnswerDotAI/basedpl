@@ -3,8 +3,7 @@
 use rustymath::error::Kind;
 use super::*;
 
-use rustymath::{buffer::Fill, layout::Layout as CoreLayout, structure::{self, Edge, Plan, Windows}};
-use std::sync::Arc;
+use rustymath::{layout::Layout as CoreLayout, structure::{self, Edge, Plan, Windows}};
 
 /// A window specification for the leading axes of an argument, as `↕` and `⌺` read it: sizes, movements, an edge mode that pads every windowed axis, and the item that padding with fill reads. Without an edge mode, a size below 0 pads its axis with fill.
 pub(crate) struct WindowSpec { pub(crate) sizes: Vec<i64>, pub(crate) moves: Vec<i64>, pub(crate) edge: Option<Edge>, pub(crate) fill: Option<Value> }
@@ -37,7 +36,7 @@ pub(crate) fn windowed(spec: &WindowSpec, right: &Value, span: &Span) -> Result<
     if spec.sizes.is_empty() { return Ok(right.clone()); }
     let (right, fill) = match &spec.fill { Some(fill) => Primitive::fill_for(fill, right, false, span)?, None => (Cow::Borrowed(right), None) };
     let windows = Windows::new(&spec.sizes, &spec.moves, |size| spec.edge.or((size < 0).then_some(Edge::Fill)), right.shape())?;
-    let padded = windows.padding().map(|p| copied(&right, p.layout.into(), &Mapping::from(p.steps).filled(fill))).transpose().described("invalid windows")?;
+    let padded = windows.padding().map(|p| copied_fill(&right, p.layout.into(), &Mapping::from(p.steps), fill.as_ref())).transpose().described("invalid windows")?;
     let source = padded.as_ref().unwrap_or(&right);
     let plan = windows.plan(right.layout(), source.shape())?;
     remapped(source, plan).described("invalid windows")
@@ -122,7 +121,7 @@ pub(super) fn placed_cells(mixed: &Value, frame: usize, spec: &Value) -> Result<
 /// The axis names that the shape `dimensions` gives reshape and `⍳`: each key names its entry's axis, and an unkeyed entry leaves its axis unnamed.
 pub(super) fn shape_names(dimensions: &Value) -> Vec<Option<std::sync::Arc<str>>> { dimensions.keys(0).map_or_else(Vec::new, |k| k.names().to_vec()) }
 
-pub(super) fn reshape(dimensions: &Value, right: &Value, fill: Option<Arc<Fill>>) -> Result<Value, Error> {
+pub(super) fn reshape(dimensions: &Value, right: &Value, fill: Option<Value>) -> Result<Value, Error> {
     if dimensions.shape().len() > 1 { return Err(Error::new(Kind::Rank, "shape must be a unit or vector")); }
     let shape = dimensions.as_items().nonnegative_integers().described("invalid dimension")?;
     let len = generated_len(&shape)?;
@@ -132,7 +131,7 @@ pub(super) fn reshape(dimensions: &Value, right: &Value, fill: Option<Arc<Fill>>
     let n = right.len();
     let flat = right.relaid(Layout::from([n])).described("invalid reshape")?;
     let steps = if n == 0 { Steps::clipped(0, len, 0, 1) } else { Steps::padded(0, len, n, 1, Edge::Wrap) };
-    copied(&flat, Layout::from([len]), &Mapping::from(vec![steps]).filled(fill)).and_then(|a| a.relaid(Layout::from(shape))).and_then(|a| a.with_axis_names(names)).described("invalid reshape")
+    copied_fill(&flat, Layout::from([len]), &Mapping::from(vec![steps]), fill.as_ref()).and_then(|a| a.relaid(Layout::from(shape))).and_then(|a| a.with_axis_names(names)).described("invalid reshape")
 }
 
 /// `right` reshaped to `shape`, through the reshape primitive's call. That call applies `∂`'s rules to duals and records.
@@ -145,38 +144,46 @@ pub(crate) fn reshape_to(shape: &[usize], right: &Value, span: &Span) -> Result<
 pub(crate) fn remapped(right: &Value, plan: Plan) -> Result<Value, ErrorKind> { copied(right, plan.layout.into(), &Mapping::from(plan.steps)) }
 
 /// `right` copied by `plan`, keeping `right`'s renderer where the rank doesn't change. A position that reaches no item reads `fill`, or the prototype where there's none.
-pub(super) fn remap(right: &Value, plan: Plan, fill: Option<Arc<Fill>>) -> Result<Value, Error> {
-    copied(right, Layout::rearranged(plan.layout, right), &Mapping::from(plan.steps).filled(fill)).described("invalid structural result")
+pub(super) fn remap(right: &Value, plan: Plan, fill: Option<Value>) -> Result<Value, Error> {
+    copied_fill(right, Layout::rearranged(plan.layout, right), &Mapping::from(plan.steps), fill.as_ref()).described("invalid structural result")
 }
 
 /// Items of `right` laid out by `layout`, read through `map` as `Gather::walk` reads a walk's tables (`Mapping::to_walk`). A large copy of a compact array is a pending copy, which fusion computes with the calls that read it (`fusion::copy`). Otherwise the copy is computed at once (`copied_now`).
-pub(crate) fn copied(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, map, true) }
+pub(crate) fn copied(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, map, None, true) }
 /// `copied`, computed at once, with no pending copy: a program's copy step, whose program's plan schedules it (`program::run`).
-pub(crate) fn copied_now(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, map, false) }
-/// `copied`, which a pending copy can give where `defers` holds. A map that reads every item of `right` in order gives `right` under `layout`, with no items copied. A carried array copies each of its parts through the map that its part reads, a record as one `Op::Copy` (`Carrier::copied`). A position that reaches no item reads the map's chosen fill.
-fn copying(right: &Value, layout: Layout, map: &Mapping, defers: bool) -> Result<Value, ErrorKind> {
+pub(crate) fn copied_now(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, map, None, false) }
+/// `copied` with a validated scalar fill. Compact sources carry native fills on the map; fills of mixed data are consumed eagerly.
+pub(crate) fn copied_fill(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>) -> Result<Value, ErrorKind> {
+    if let Some(native) = fill.and_then(|fill| right.native_fill(fill)) { return copied(right, layout, &map.clone().filled(Some(native))); }
+    copying(right, layout, map, fill, true)
+}
+
+/// Copies items through `map`, retaining an in-order view and routing carriers through their own copies. Compact sources may defer native fills with the map; a chosen fill of mixed data makes the copy eager. `defers` permits an ordinary pending copy.
+fn copying(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>, defers: bool) -> Result<Value, ErrorKind> {
     let len = generated_len(layout.shape())?;
     if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }
-    let (base, tables) = map.to_walk(layout.shape());
+    let (base, tables, native) = map.to_walk(layout.shape());
     if right.len() == len && base == 0 && Steps::in_order(&tables) { return right.relaid(layout); }
-    if let Some(carrier) = right.carrier() { return carrier.copied(layout, map); }
-    if defers && let Some(copy) = crate::fusion::copy(right, &layout, map) { return Ok(copy); }
-    walked(right, layout, base, &tables, map.chosen())
+    let fill = fill.filter(|_| map.fills());
+    if let Some(carrier) = right.carrier() { return carrier.copied(layout, map, fill); }
+    if fill.is_none() && defers && let Some(copy) = crate::fusion::copy(right, &layout, map) { return Ok(copy); }
+    let chosen = native.map(|fill| Value::from_fill(fill, right.fixed_width().is_some()));
+    walked(right, layout, base, &tables, fill.or(chosen.as_ref()))
 }
 
 /// Items of `right` at the flat `offsets`, laid out by `layout`, as `copied` reads them, with `fill` at an offset that reaches no item, or the prototype where there's none.
-pub(crate) fn copied_at(right: &Value, offsets: Vec<usize>, layout: Layout, fill: Option<&Arc<Fill>>) -> Result<Value, ErrorKind> {
-    copied(&right.relaid(Layout::from([right.len()]))?, Layout::from([offsets.len()]), &Mapping::from(vec![Steps::table(offsets)]).filled(fill.cloned()))?.relaid(layout)
+pub(crate) fn copied_at(right: &Value, offsets: Vec<usize>, layout: Layout, fill: Option<&Value>) -> Result<Value, ErrorKind> {
+    copied_fill(&right.relaid(Layout::from([right.len()]))?, Layout::from([offsets.len()]), &Mapping::from(vec![Steps::table(offsets)]), fill)?.relaid(layout)
 }
 
 /// Items of `source` laid out by `layout`, copied at once through `steps` from `base` by `Gather::walk`, with `fill` where they reach no item, or the prototype where there's none.
-pub(crate) fn walked(source: &Value, layout: Layout, base: usize, steps: &[Steps], fill: Option<&Arc<Fill>>) -> Result<Value, ErrorKind> {
+pub(crate) fn walked(source: &Value, layout: Layout, base: usize, steps: &[Steps], fill: Option<&Value>) -> Result<Value, ErrorKind> {
     let mut data = Gather::new(&[source], generated_len(layout.shape())?);
     data.walk(source, base, steps, fill);
     data.finish(layout, || source.prototype())
 }
 
-pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Arc<Fill>>) -> Result<Value, Error> {
+pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Value>) -> Result<Value, Error> {
     if counts.shape().len() > 1 { return Err(Error::new(Kind::Rank, "take/drop counts must be a unit or vector")); }
     if axes.is_some_and(|a| a.len() != counts.len()) { return Err(Error::new(Kind::Length, "counts do not agree with axes")); }
     if counts.is_empty() { return Ok(right.clone()); }
@@ -188,7 +195,7 @@ pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<
 }
 
 /// `counts` replicates the cells of `right` along `axis`, the leading axis by default, through rustymath's `structure::repeat`, or undoes that through `structure::expand` where `inverse`. Expand's inserted items read `fill`, or the prototype where there's none. A plain vector's counts copy its items with no table of offsets: a Boolean mask compresses them, and counts that insert no fills repeat each item.
-pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, fill: Option<Arc<Fill>>) -> Result<Value, Error> {
+pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, fill: Option<Value>) -> Result<Value, Error> {
     if counts.shape().len() > 1 { return Err(Error::new(Kind::Rank, "replication counts must be a unit or vector")); }
     let axis = axis.unwrap_or(0);
     // `Gather` copies the items of a value that no running level carries. A carried value moves through its carrier (`remap`), which routes each level's parts, a trace's included.

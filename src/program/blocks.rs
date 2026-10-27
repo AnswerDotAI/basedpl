@@ -585,6 +585,7 @@ impl Blocks {
             (main, rest, compiled)
         };
         if self.steps.len() + usize::from(self.fold.is_some()) >= 2 { crate::explain::fused(|| self.glyphs.clone(), self.n, compiled, &tally); }
+        if self.fold.is_some() && !self.steps.is_empty() { rustymath::events::taken(rustymath::events::Route::FusedFold, self.n); }
         values[main.0] = Some(main.1);
         for (j, value) in rest { values[j] = Some(value); }
         Some(())

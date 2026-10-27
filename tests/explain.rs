@@ -11,43 +11,53 @@ fn check(session: &Session, code: &str, expected: &str) {
     assert!(actual.zip(wanted).is_some_and(|(a, w)| a.same(&w)), "{code} didn't give {expected}");
 }
 
-/// Every case in `speed/*.bpl` takes the routes its work needs, or names the gap. Run as `•explain` runs its text, after a warm-up run, a case records no slow-path event (`explain::Events::slow`) beyond the events that its comment lines name (`timing::Named`): `⍝⍝ allows` lines, each with the principle that allows its event, and `⍝⍝ gap` lines, each with what a faster route should do instead. A `declined` event needs no line, because it explains another event, but a line may name one. A line whose event no longer appears fails too, so the lines stay true and a fixed gap's line goes. The test prints the gaps it tolerates, which `cargo test -- --nocapture` shows. Like the speed test, it runs each case at its full size on one thread. It holds the timing lock shared, as a test run does. It runs `explain_and_memory`'s checks first, because `•explain` records what every thread in its process does, so no other test may evaluate beside it.
+/// Speed and idiom cases require their fast routes and name any accepted slow path. Captures run serially because they record all threads.
 #[test]
 fn speed_cases_take_their_routes() {
-    explain_and_memory();
     let _lock = rustymath::timing::shared().unwrap();
     rustymath::parallel::set_threads(1);
+    let mut routes = explain_and_memory();
     let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
-    let routes = timing::routes(&files, None, &InterruptHandle::default()).unwrap();
+    routes.extend(timing::routes(&files, None, &InterruptHandle::default()).unwrap());
+    for file in basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/reference")).unwrap() {
+        for case in file.cases.iter().filter(|case| basedpl::reference::routed(case)) {
+            let mut route = basedpl::reference::route(case, &file.setup, &InterruptHandle::default()).unwrap();
+            route.file = file.name.clone();
+            route.label = format!("{}:{}", file.name, route.label);
+            routes.push(route);
+        }
+    }
     let (mut wrong, mut gaps) = (Vec::new(), Vec::new());
     for r in &routes {
         let case = format!("[{}] {}", r.section, r.label);
-        let lines: Vec<(&str, &str, &str)> = r.named.allowed.iter().map(|(a, e)| ("allows", a.as_str(), e.as_str())).chain(r.named.gaps.iter().map(|(a, e)| ("gap", a.as_str(), e.as_str()))).collect();
-        for (record, event, fields) in &r.slow {
-            match lines.iter().find(|&&(_, a, e)| a == *record && e == *event) {
-                None if *record == "declined" => {}
-                None => wrong.push(format!("{case}: {record} \"{event}\" ({fields})")),
-                Some(("gap", ..)) => gaps.push(format!("{case}: {record} \"{event}\" ({fields})")),
-                Some(_) => {}
-            }
-        }
-        wrong.extend(lines.iter().filter(|&&(_, a, e)| !r.slow.iter().any(|(record, event, _)| a == *record && e == *event)).map(|(word, a, e)| format!("{case}: {word} {a} \"{e}\", which no longer appears")));
+        wrong.extend(r.violations().into_iter().map(|message| format!("{case}: {message}")));
+        gaps.extend(r.named.gaps.iter().map(|(record, event)| format!("{case}: {record} \"{event}\"")));
     }
-    println!("gaps that speed cases tolerate: {gaps:#?}");
-    assert!(wrong.is_empty(), "name an event above its case with `⍝⍝ allows RECORD \"EVENT\": principle` only where a principle allows it, or with `⍝⍝ gap RECORD \"EVENT\": what should happen` where a faster route should remove it: {wrong:#?}");
+    use rustymath::events::{EventKind, Route};
+    for &route in Route::ALL {
+        for (kind, required) in [(EventKind::Taken, route.reports_taken()), (EventKind::Declined, route.reports_decline()), (EventKind::Itemwise, route.reports_itemwise())] {
+            if !required { continue; }
+            let seen = |events: &rustymath::events::Report| events.records.iter().any(|e| e.kind == kind && e.route == route);
+            if let Some(r) = routes.iter().find(|r| seen(&r.events)).or_else(|| routes.iter().find(|r| seen(&r.warmup))) { println!("observed {kind:?} {} [{}] {} ({})", route.name(), r.section, r.label, if seen(&r.events) { "hot" } else { "warmup-only" }); }
+            else { wrong.push(format!("no case exercises {kind:?} {}", route.name())); }
+        }
+    }
+    println!("gaps that route cases tolerate: {gaps:#?}");
+    assert!(wrong.is_empty(), "route contracts: {wrong:#?}");
 }
 
-fn explain_and_memory() {
+fn explain_and_memory() -> Vec<timing::Route> {
+    let mut routes = Vec::new();
     assert!(std::mem::size_of::<basedpl::Number>() <= 32);
     let session = Session::new();
     check(&session, "v←¿1000⍴0 ⋄ k←¿1000⍴7 ⋄ b←0=¿1000⍴3 ⋄ m←[2 1 0⋄1 3 1⋄0 1 4]ₓ ⋄ $t", "$t");
     // Each documented spelling takes its fast combination once. Reference cases in `core.bpl` check that each gives what the same functions give through a dfn.
     for (spelling, combination) in [
         ("(10↑)∘⍋ v", "partial grade"), ("¯10↑< v", "partial sort"), ("↑> v", "partial sort"), ("(3⌷)∘⍒ v", "partial grade"),
-        ("⍋⍋ v", "ranks"), ("⍋⍒ v", "ranks"), ("(≢⊢)⌸ k", "group counts"), ("k (+/⊢)⌸ v", "group folds"), ("k (⌈⌿⊢)⌸ v", "group folds"),
-        ("k (⌊/⊢)⌸ b", "group folds"), ("k (+/⊢)⌸ k", "group folds"), ("-.× m", "determinant"), ("+.× m", "permanent"),
+        ("⍋⍋ v", "ranks"), ("⍋⍒ v", "ranks"), ("(≢⊢)⌸ k", "group counts"), ("k((+/⊢)⌸)v", "group folds"), ("k((⌈⌿⊢)⌸)v", "group folds"),
+        ("k((⌊/⊢)⌸)b", "group folds"), ("k((+/⊢)⌸)k", "group folds"), ("-.× m", "determinant"), ("+.× m", "permanent"),
     ] {
-        check(&session, &format!(r#"(•explain "{spelling}").fast.combination≡["{combination}"]"#), "$t");
+        routes.push(timing::route(&session, &serde_json::json!({"code":spelling, "route":[combination]}), &InterruptHandle::default()).unwrap());
     }
     // `∂` frees its record when it returns: from its result, an outer name its function wrote, a nested `∂`, an attached rule and `⇄`'s cached linearisation.
     for code in [
@@ -81,8 +91,10 @@ fn explain_and_memory() {
     for (code, route, reason) in [
         ("+/⌽sv", "fused fold", "a copy that no call moves under"),
         ("(10↑)∘⍋ 30 4⍴⍳120", "partial grade", "arguments that don't suit it"),
+        ("↑< [3 4⋄1 2]", "partial sort", "arguments that don't suit it"),
+        (r#"⍋⍋ ["a":30 "b":10 "c":20]"#, "ranks", "arguments that don't suit it"),
     ] {
-        check(&session, &format!(r#"d←(•explain "{code}").declined ⋄ (d.route≡["{route}"])∧d.reason≡["{reason}"]"#), "$t");
+        routes.push(timing::route(&session, &serde_json::json!({"code":code, "allows":[["declined",format!("{route}: {reason}")]]}), &InterruptHandle::default()).unwrap());
     }
     // `•memory` counts the pending arrays this thread made, including one dropped on another thread. `bytes` counts what a value keeps alive, a shared base once, and takes active values under `∂`.
     let held = Session::new();
@@ -97,4 +109,5 @@ fn explain_and_memory() {
     check(&held, "b←0 ⋄ g←{b+←(•memory ⍵).bytes ⋄ +/⍵×⍵}∂ 1 2 3 ⋄ b>0", "$t");
     // A branch that `•detach` cuts makes no record nodes, where the same branch without it makes one.
     check(&held, "d←0 ⋄ e←0 ⋄ g←{r←(•memory 0).records ⋄ t←(•detach ⍵)×2 ⋄ d+←(•memory 0).records-r ⋄ u←⍵×2 ⋄ e+←(•memory 0).records-r ⋄ +/⍵}∂ 1 2 3 ⋄ (d=0)∧e=1", "$t");
+    routes
 }

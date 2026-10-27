@@ -53,7 +53,7 @@ impl Labels {
     }
     fn len(&self) -> usize { match &self.places { Places::Offsets(n) => *n, Places::Paths(paths) => paths.len() } }
     fn build(&mut self, a: &Value, path: &mut Vec<usize>, span: &Span) -> Result<Value, Error> {
-        crate::explain::itemwise("nested labels", a.len());
+        crate::explain::itemwise(rustymath::events::Route::NestedLabels, a.len());
         let mut items = Vec::new();
         for (i, e) in a.elements().enumerate() {
             generated_len(&[self.len() + self.nested.len() + 1])?;
@@ -122,7 +122,7 @@ impl Labels {
         Ok((Selection { frame: Frame::Array(shape.into()), targets }, values))
     }
     fn collect(&self, selected: &Value, right: &Value, span: &Span, targets: &mut Targets, values: &mut Gather) -> Result<(), Error> {
-        crate::explain::itemwise("label ids", selected.len());
+        crate::explain::itemwise(rustymath::events::Route::LabelIds, selected.len());
         let aligned;
         let right = if right.has_keys() && selected.has_keys() {
             aligned = crate::keyed::reorder(right, &selected.layout().all_keys(), true).described("replacement does not supply selected keys")?;
@@ -193,7 +193,7 @@ impl Labelled {
     pub(crate) fn values(&self) -> &Value {
         self.values.get_or_init(|| {
             let Lead::Mapped(mapping) = &self.labels else { unreachable!("ids come with their values") };
-            if self.atom { return mapping.get(0).map_or_else(|| self.root.fill_item(mapping.chosen()), |o| self.root.at(o)); }
+            if self.atom { return mapping.get(0).map_or_else(|| self.root.mapped_fill(mapping), |o| self.root.at(o)); }
             crate::primitive::copied_now(&self.root, self.layout.clone(), mapping).expect("a label's mapping reads its root")
         })
     }
@@ -201,7 +201,7 @@ impl Labelled {
     pub(crate) fn ids(&self) -> Value {
         let mapping = match &self.labels { Lead::Ids(ids) => return ids.clone(), Lead::Mapped(mapping) => mapping };
         if self.atom { return Value::integer(mapping.get(0).map_or(0, crate::transform::offset_id) as i64); }
-        let (base, steps) = mapping.to_walk(self.layout.shape());
+        let (base, steps, _) = mapping.to_walk(self.layout.shape());
         self.layout.integers(Steps::combined(base, &steps).into_iter().map(|o| crate::transform::offset_id(o) as i64).collect()).expect("ids fill the layout")
     }
     /// Whether this is the root itself, unchanged, which a write replaces whole where its kind is one item.
@@ -227,13 +227,12 @@ impl Labelled {
             Lead::Ids(ids) => Self::given(self.level, SelectionKind::Item, self.root.clone(), ids.at(i), self.values().at(i)),
         }
     }
-    /// The items laid out by `layout`, read through `map` as `primitive::copied` reads a value's. A mapping composes with `map`, with the fill that `map` chose, and reads nothing yet. Where the labels are ids, or where the mapping and `map` both read fills that they chose differently, the ids and the values each read through the map that their part reads (`Part::map`).
-    pub(crate) fn copied(&self, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> {
-        if let Lead::Mapped(mapping) = &self.labels && let Some(mapping) = mapping.composed(map, self.layout.shape(), layout.shape(), true) {
+    /// Copies the selection's values and positions. Native fills remain on the values' map; fills of mixed data are copied eagerly. Missing positions have no label.
+    pub(crate) fn copied(&self, layout: Layout, map: &Mapping, fill: Option<&Value>) -> Result<Value, ErrorKind> {
+        if fill.is_none() && let Lead::Mapped(mapping) = &self.labels && let Some(mapping) = mapping.composed(map, self.layout.shape(), layout.shape(), true) {
             return Ok(Self::mapped(self.level, SelectionKind::Elements, self.root.clone(), layout, false, mapping));
         }
-        let copy = |v: &Value, part: Part| crate::primitive::copied(v, layout.clone(), &part.map(map));
-        Ok(Self::given(self.level, SelectionKind::Elements, self.root.clone(), copy(&self.ids(), Part::Derived)?, copy(self.values(), Part::Values)?))
+        Ok(Self::given(self.level, SelectionKind::Elements, self.root.clone(), crate::primitive::copied(&self.ids(), layout.clone(), &Part::Derived.map(map))?, crate::primitive::copied_fill(self.values(), layout, map, fill)?))
     }
 }
 

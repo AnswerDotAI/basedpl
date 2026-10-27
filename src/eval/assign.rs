@@ -483,7 +483,7 @@ impl Session {
             latest.insert(path, i);
         }
         crate::explain::accumulated(selection.targets.len(), original.len(), "item by item");
-        crate::explain::itemwise("accumulation", selection.targets.len());
+        crate::explain::itemwise(rustymath::events::Route::Accumulation, selection.targets.len());
         let values = match &selection.frame {
             ResultFrame::Direct => results.pop().unwrap_or(right),
             ResultFrame::Array(layout) if !results.is_empty() => Value::new(layout.shape().to_vec(), results).described("invalid modified selection").at(span)?,

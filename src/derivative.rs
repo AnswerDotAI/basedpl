@@ -47,7 +47,7 @@ impl Dual {
     /// The items as dual atoms, built on the first read by code with no rule for duals, which records an `itemwise` row in `•explain`. Cold and out of line, so that `ArrayData::storage`'s other arms stay small.
     #[cold]
     #[inline(never)]
-    pub(crate) fn storage(&self) -> &crate::array::Storage { crate::transform::Carrier::built(&self.items, "∂ items", self.primal.len(), |i| self.element(i)) }
+    pub(crate) fn storage(&self) -> &crate::array::Storage { crate::transform::Carrier::built(&self.items, rustymath::events::Route::DerivativeItems, self.primal.len(), |i| self.element(i)) }
 }
 
 impl Footprint for Dual {

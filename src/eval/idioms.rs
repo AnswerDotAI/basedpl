@@ -65,17 +65,18 @@ pub(super) fn recognise(node: &FunctionNode) -> Option<Idiom> {
 }
 
 impl Idiom {
-    /// The combination's name, as `•explain` reports it.
-    fn name(&self) -> &'static str {
+    /// The diagnostic route for this combination.
+    fn route(&self) -> rustymath::events::Route {
+        use rustymath::events::Route;
         match self {
-            Idiom::Selected { grade: true, .. } => "partial grade", Idiom::Selected { grade: false, .. } => "partial sort", Idiom::Ranks { .. } => "ranks",
-            Idiom::Counts => "group counts", Idiom::Folds(_) => "group folds", Idiom::Determinant => "determinant", Idiom::Permanent => "permanent",
+            Idiom::Selected { grade: true, .. } => Route::PartialGrade, Idiom::Selected { grade: false, .. } => Route::PartialSort, Idiom::Ranks { .. } => Route::Ranks,
+            Idiom::Counts => Route::GroupCounts, Idiom::Folds(_) => Route::GroupFolds, Idiom::Determinant => Route::Determinant, Idiom::Permanent => Route::Permanent,
         }
     }
     /// Records the combination for `•explain`, where it's on. `f` is the function that the combination computes.
-    pub(super) fn taken(&self, f: &Function) { if crate::explain::recording() { crate::explain::fast(self.name(), f.bpl()); } }
+    pub(super) fn taken(&self, f: &Function) { if rustymath::events::running() { crate::explain::fast(self.route(), f.bpl()); } }
     /// Records that the combination declined arguments of `items` items that don't suit it, and that the general path runs instead (`rustymath::events`).
-    pub(super) fn declined(&self, items: usize) { rustymath::events::declined(self.name(), "arguments that don't suit it", items) }
+    pub(super) fn declined(&self, items: usize) { rustymath::events::declined(self.route(), "arguments that don't suit it", items) }
     /// The idiom's result for these arguments, or `None` where they don't suit it. `f` is the function that the idiom computes. Each of these idioms takes one argument. A call with two takes the general path, with no decline recorded.
     #[inline(never)]
     pub(super) fn call(&self, f: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Bound, Error>> {
@@ -88,7 +89,7 @@ impl Idiom {
             Idiom::Determinant => determinant(right),
             Idiom::Permanent => permanent(right),
         };
-        if result.is_some() { self.taken(f); } else { self.declined(right.len()); }
+        if matches!(&result, Some(Ok(_))) { self.taken(f); } else if result.is_none() { self.declined(right.len()); }
         result
     }
 }

@@ -175,6 +175,47 @@ x←10 20 30 40 ⋄ i←⍳4ₓ ⋄ [[(4•edge i-1)]⌷⍠["fill":¯1] x ; [[[0
 ⍝ =>
 [¯1 10 20 30 ; 2 ¯1 ; 2 ¯1 ; 2 0 ; ¯1 10 30]
 
+⍝ fill-option-boundary — A missing item in the source keeps its default fill when an outer selection chooses another fill
+v←100001↑⍳100000 ⋄ [[99999 100000 $n]]⌷⍠["fill":9]v   ⍝ 99999 0 9
+
+⍝ fill-option-all-missing — An all-missing selection leaves a shared pending source unevaluated
+e←•explain "v←1+1 2 ⋄ w←v ⋄ [[$n $n $n]]⌷⍠[""fill"":9]v" ⋄ [e.value;+/e.forced.items]   ⍝ [9 9 9;0ₓ]
+
+⍝ fill-option-trace — A chosen fill on computed data stays in the differentiated program
+⍝⍝⍝ route trace
+{+/5↑⍠["fill":9]1+⍵}∂1 2   ⍝ 1 1
+
+⍝ fill-option-selective — A shared computed source is selected once, then cached on reuse [unfused]
+⍝⍝⍝ route fusion
+⍝⍝⍝ allows forced "⌷⍠[""fill"":9]": first read computes selected items; repeated reads cache the source
+n←1000000 ⋄ v←⍳n ⋄ w←2×1+v
+e←•explain "[[0 $n 999999 0]]⌷⍠[""fill"":9]w"
+s←•explain "[[1]]⌷⍠[""fill"":9]w"
+t←•explain "[[500000]]⌷⍠[""fill"":9]w"
+[e.value;3≥+/e.forced.items;(n-3)≤+/s.forced.items;1≥+/t.forced.items]
+⍝ =>
+[2 9 2000000 2;$t;$t;$t]
+
+⍝ fill-option-mapped — Keyed arithmetic reads through the alignment maps without copying its operands first
+⍝⍝⍝ route mapped kernel
+a←"a" "b":1 2 ⋄ b←"b" "c":3 4 ⋄ a+⍠["fill":9]b   ⍝ ["a":10 "b":5 "c":13]
+
+⍝ fill-option-half-mapped — A native fill follows half-precision operands through their working-precision kernel
+⍝⍝⍝ route mapped kernel
+a←"a" "b":16•float1 2 ⋄ b←"b" "c":16•float3 4 ⋄ a+⍠["fill":9]b   ⍝ 16•float["a":10 "b":5 "c":13]
+
+⍝ fill-option-complex — A fill follows keyed operands when a real power needs complex arithmetic
+⍝⍝⍝ route mapped kernel
+["a":¯1 "b":4]*⍠["fill":1]["a":0.5 "c":2]   ⍝ ["a":0j1 "b":4 "c":1]
+
+⍝ fill-option-mixed-atom — A mixed copy preserves the exact width of its chosen fill
+v←2⊃3↑⍠["fill":9ₓ₂][1 'a'] ⋄ [v ; (•storage v).kind]   ⍝ [9ₓ₂ "int16"]
+
+⍝ trace-stop-gap — A guard on differentiated data stops its trace, including the cached attempt
+⍝⍝⍝ route vector kernel
+⍝⍝⍝ gap stopped "a read of a traced value": tracing needs branches for predicates on differentiated data
+{0<+/⍵?+/⍵×⍵;0}∂1 2   ⍝ 2 4
+
 ⍝ fill-option-through — A fill reaches its primitive through a bound argument and through `f⍠A`. A primitive's own axis form reads the axes with the fill, and any other function takes the fill on each cell. Arguments with no keyed axis fill nothing, and give the plain call's result
 [(3↑⍠1)⍠["fill":¯1] [1 2⋄3 4] ; (3↑)⍠["fill":¯1] 1 2 ; (-↢1)⍠["fill":0] 5 ; 1 ¯2 (#⍠1)⍠["fill":9] [1 2⋄3 4] ; (⊃⍠0)⍠["fill":¯1] (1 2)(,3) ; [[$n 1]]⌷⍠1⍠["fill":¯1] [1 2⋄3 4] ; ("p" "q":[1 2⋄3 4])+⍠0⍠["fill":0] "q" "r":10 20 ; (1 0 1 #⁻¹⍠1)⍠["fill":9] [1 2⋄3 4] ; [2 3] (⍴⍠1)⍠["fill":7] 2 0⍴0]
 ⍝ =>
@@ -200,8 +241,10 @@ m←1000 2⍴⍳2000 ⋄ w←1000 3↑⍠["fill":¯1] m ⋄ t←2×⍉w ⋄ [⍴
 ⍝ =>
 [[3 1000]ₓ ; $t ; $t ; ¯2000]
 
-⍝ fill-option-product — A matrix-vector product reads the chosen fill both where its matrix stays a mapped selection, as a large selection does, and where a small selection's items are read first
-m←⍉[0 $n ; :]⌷⍠["fill":2]3 100000⍴1 ⋄ s←⍉[0 $n ; :]⌷⍠["fill":2]3 100⍴1 ⋄ [↑m+.×1 1 ; (+/m+.×1 1)=300000 ; ↑s+.×1 1]
+⍝ fill-option-product — A matrix-vector product widens a large mapped matrix's fill with its data. A small selection's fill is read after its items are copied
+m←⍉[0 $n ; :]⌷⍠["fill":2]32•float3 100000⍴1
+s←⍉[0 $n ; :]⌷⍠["fill":2]3 100⍴1
+[↑m+.×64•float1 1 ; (+/m+.×64•float1 1)=300000 ; ↑s+.×1 1]
 ⍝ =>
 [3 ; $t ; 3]
 
@@ -363,19 +406,19 @@ x←0.001×[70000 2]⍴⍳140000 ⋄ s←{(+/,⍵),5⌷⍵} ⋄ [s {+/,⍵.[[5]�
 y←1 4 9 16 25 ⋄ p←⍳["p":4] ⋄ n←3 ⋄ f←{(+/⍵.[p+1]-⍵.[p])++/n↑⍵} ⋄ e←•explain "[f∂y ; f∂y]" ⋄ [(1↓e.programs.event)≡,⊂"replayed" ; ↑e.value]   ⍝ [$t ; 0 1 1 0 1]
 
 ⍝ program-counts — `∂` of a dfn that replicates by counts that a free name holds, or by a mask computed from one, runs from a program, which its second call replays. New counts trace again
-x←1 2 3 4 5 ⋄ k←1 0 2 1 0 ⋄ f←{+/⊼k#⍵} ⋄ g←{+/⊼(x>2)#⍵} ⋄ e←•explain "[f∂x ; f∂x ; g∂x]" ⋄ k←0 1 0 0 3 ⋄ [1⌷e.programs.event ; ≢e.programs.event ; +/e.declined.route≡¨⊂"program" ; e.value ; f∂x]   ⍝ ["replayed" 3ₓ 0ₓ (2 0 12 8 0⋄2 0 12 8 0⋄0 0 6 8 10) [0 4 0 0 30]]
+x←1 2 3 4 5 ⋄ k←1 0 2 1 0 ⋄ f←{+/⊼k#⍵} ⋄ g←{+/⊼(x>2)#⍵} ⋄ e←•explain "[f∂x ; f∂x ; g∂x]" ⋄ k←0 1 0 0 3 ⋄ [1⌷e.programs.event ; ≢e.programs.event ; ≢e.stopped.reason ; e.value ; f∂x]   ⍝ ["replayed" 3ₓ 0ₓ (2 0 12 8 0⋄2 0 12 8 0⋄0 0 6 8 10) [0 4 0 0 30]]
 
 ⍝ program-atom — `∂` runs from a program where a traced atom, such as `+/⍵`, scales or divides an array. No trace stops
-v←1 1 2 ⋄ f←{+/(+/⍵)×⍵} ⋄ g←{+/⍵×⍵÷+/⍵} ⋄ e←•explain "[f∂v ; g∂v]" ⋄ e.value,(≢e.programs.event),+/e.declined.route≡¨⊂"program"   ⍝ [[8 8 8] [0.125 0.125 0.625] 2ₓ 0ₓ]
+v←1 1 2 ⋄ f←{+/(+/⍵)×⍵} ⋄ g←{+/⍵×⍵÷+/⍵} ⋄ e←•explain "[f∂v ; g∂v]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[8 8 8] [0.125 0.125 0.625] 2ₓ 0ₓ]
 
 ⍝ program-picks — `∂` of a dfn that folds by `⌈` or `⌊` runs from a program, which picks the item of each lane that gives the extreme, the first of any ties. No trace stops
-m←[3 1 2⋄0 5 5] ⋄ f←{+/⌈/⍵} ⋄ g←{+/⌊⌿⍵} ⋄ e←•explain "[f∂m ; g∂m]" ⋄ e.value,(≢e.programs.event),+/e.declined.route≡¨⊂"program"   ⍝ [[1 0 0⋄0 1 0] [0 1 1⋄1 0 0] 2ₓ 0ₓ]
+m←[3 1 2⋄0 5 5] ⋄ f←{+/⌈/⍵} ⋄ g←{+/⌊⌿⍵} ⋄ e←•explain "[f∂m ; g∂m]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[1 0 0⋄0 1 0] [0 1 1⋄1 0 0] 2ₓ 0ₓ]
 
 ⍝ program-item — `∂` runs from a program where a dfn reads one item of a traced array, as `↑`, `⊃`, subscripts and selection do. No trace stops
-v←1 2 3 4 ⋄ f←{(↑⍵)×+/⍵} ⋄ g←{(1⊃⍵)+⍵₃} ⋄ h←{+/⍵×⍵.[2]} ⋄ e←•explain "[f∂v ; g∂v ; h∂v]" ⋄ e.value,(≢e.programs.event),+/e.declined.route≡¨⊂"program"   ⍝ [[11 1 1 1] [0 1 0 1] [3 3 13 3] 3ₓ 0ₓ]
+v←1 2 3 4 ⋄ f←{(↑⍵)×+/⍵} ⋄ g←{(1⊃⍵)+⍵₃} ⋄ h←{+/⍵×⍵.[2]} ⋄ e←•explain "[f∂v ; g∂v ; h∂v]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[11 1 1 1] [0 1 0 1] [3 3 13 3] 3ₓ 0ₓ]
 
 ⍝ program-per-item — `∂` of a dfn that calls a function once for each item of a traced array, as a fold by a dfn or Each through a guard does, runs without a program, with the reason "a function called on each item"
-v←1 2 3 4 ⋄ f←{{⍺×⍵}/⍵} ⋄ g←{+/{⍵>2?⍵×2;⍵}¨⍵} ⋄ e←•explain "[f∂v ; g∂v]" ⋄ e.value,(≢e.programs.event),(e.declined.route≡¨⊂"program")#e.declined.reason   ⍝ [[24 12 8 6] [1 1 2 2] 0ₓ "a function called on each item"]
+v←1 2 3 4 ⋄ f←{{⍺×⍵}/⍵} ⋄ g←{+/{⍵>2?⍵×2;⍵}¨⍵} ⋄ e←•explain "[f∂v ; g∂v]" ⋄ e.value,(≢e.programs.event),e.stopped.reason   ⍝ [[24 12 8 6] [1 1 2 2] 0ₓ "a function called on each item"]
 
 ⍝ program-tacit — `∂` of a function other than a dfn, such as a train or an inverse, runs from a program, which later calls replay. Programs are kept by the function's structure for the session. Its gradient is the dfn form's
 v←1 2 3 ⋄ f←+/×⍨ ⋄ g←+/(2×)⁻¹ ⋄ ef←•explain "[f∂v ; f∂v ; f∂v]" ⋄ eg←•explain "[g∂v ; g∂v ; g∂v]" ⋄ [(↑⌽ef.programs.event)≡"replayed" ; (↑⌽eg.programs.event)≡"replayed" ; ↑ef.value ; ↑eg.value]   ⍝ [$t $t [2 4 6] [0.5 0.5 0.5]]
@@ -384,23 +427,23 @@ v←1 2 3 ⋄ f←+/×⍨ ⋄ g←+/(2×)⁻¹ ⋄ ef←•explain "[f∂v ; f�
 v←1 2 3 ⋄ g←{w←⍺ ⋄ (+/w×⊢)∂⍵} ⋄ e←•explain "[4 5 6 g v ; 7 8 9 g v ; 1 1 1 g v]" ⋄ [(↑⌽e.programs.event)≡"replayed" ; e.value]   ⍝ [$t (4 5 6⋄7 8 9⋄1 1 1)]
 
 ⍝ program-positions — `∂` of a dfn that selects at positions from its left argument runs from a program, which reads the positions again at each replay. A pick from each row, as `⌷⍤[0 1]` makes it, selects every row at once. No trace stops
-v←0.5×⍳10 ⋄ m←0.1×3 4⍴⍳12 ⋄ p←[3 5 3]ₓ ⋄ q←[1 2 2]ₓ ⋄ r←[0 3 1]ₓ ⋄ s←[2 2 0]ₓ ⋄ f←{+/(⍵.[⍺])*2} ⋄ g←{+/(⍺⌷⍤[0 1]⍵)*2} ⋄ e←•explain "[p f∂ v ; q f∂ v ; r g∂ m ; s g∂ m]" ⋄ e.value,(≢e.programs.event),+/e.declined.route≡¨⊂"program"   ⍝ [[0 0 0 6 0 5 0 0 0 0] [0 1 4 0 0 0 0 0 0 0] [0 0 0 0⋄0 0 0 1.4⋄0 1.8 0 0] [0 0 0.4 0⋄0 0 1.2 0⋄1.6 0 0 0] 4ₓ 0ₓ]
+v←0.5×⍳10 ⋄ m←0.1×3 4⍴⍳12 ⋄ p←[3 5 3]ₓ ⋄ q←[1 2 2]ₓ ⋄ r←[0 3 1]ₓ ⋄ s←[2 2 0]ₓ ⋄ f←{+/(⍵.[⍺])*2} ⋄ g←{+/(⍺⌷⍤[0 1]⍵)*2} ⋄ e←•explain "[p f∂ v ; q f∂ v ; r g∂ m ; s g∂ m]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[0 0 0 6 0 5 0 0 0 0] [0 1 4 0 0 0 0 0 0 0] [0 0 0 0⋄0 0 0 1.4⋄0 1.8 0 0] [0 0 0.4 0⋄0 0 1.2 0⋄1.6 0 0 0] 4ₓ 0ₓ]
 
 ⍝ program-positions-range — A replay checks positions from the left argument as selection does
 v←0.5×⍳10 ⋄ f←{+/(⍵.[⍺])*2} ⋄ p←[3 5 3]ₓ ⋄ q←[3 50 3]ₓ ⋄ a←p f∂ v ⋄ q f∂ v
 ⍝ error: INDEX ERROR
 
 ⍝ program-rank-fork — `∂` of a dfn that applies a fork by Rank or along a named axis, as a layer norm's mean `(+/÷≢)⍤1` does, runs from a program, and so does a pick from each row at positions that a free name holds. A replay after the name changes picks the new positions
-m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ t←[2 0 3]ₓ ⋄ f←{+/,⊼⍵-(+/÷≢)⍤1⍵} ⋄ g←{+/,⊼⍵-(+/÷≢)⍠d⍵} ⋄ h←{+/t⌷⍤[0 1]⍵×⍵} ⋄ e←•explain "[f∂m ; ,g∂x ; h∂m]" ⋄ t←[1 1 1]ₓ ⋄ [(≢e.programs.event),+/e.declined.route≡¨⊂"program" ; e.value ; h∂m]   ⍝ [[3 0]ₓ [[¯3 ¯1 1 3⋄¯3 ¯1 1 3⋄¯3 ¯1 1 3] [¯3 ¯1 1 3 ¯3 ¯1 1 3 ¯3 ¯1 1 3] [0 0 4 0⋄8 0 0 0⋄0 0 0 22]] [0 2 0 0⋄0 10 0 0⋄0 18 0 0]]
+m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ t←[2 0 3]ₓ ⋄ f←{+/,⊼⍵-(+/÷≢)⍤1⍵} ⋄ g←{+/,⊼⍵-(+/÷≢)⍠d⍵} ⋄ h←{+/t⌷⍤[0 1]⍵×⍵} ⋄ e←•explain "[f∂m ; ,g∂x ; h∂m]" ⋄ t←[1 1 1]ₓ ⋄ [(≢e.programs.event),≢e.stopped.reason ; e.value ; h∂m]   ⍝ [[3 0]ₓ [[¯3 ¯1 1 3⋄¯3 ¯1 1 3⋄¯3 ¯1 1 3] [¯3 ¯1 1 3 ¯3 ¯1 1 3 ¯3 ¯1 1 3] [0 0 4 0⋄8 0 0 0⋄0 0 0 22]] [0 2 0 0⋄0 10 0 0⋄0 18 0 0]]
 
 ⍝ program-rank-named — `∂` of a dfn that applies a pervasive function by Rank to arguments whose frames have the same names runs from a program, and gives the gradient of the same dfn without names
-m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ f←{c←+/⍠d ⍵ ⋄ +/,⊼⍵-⍤[1 0]c} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),+/e.declined.route≡¨⊂"program" ; ,e.value ; ,{c←+/⍤1⍵ ⋄ +/,⊼⍵-⍤[1 0]c}∂m]   ⍝ (1ₓ 0ₓ⋄24 26 28 30 96 98 100 102 168 170 172 174⋄24 26 28 30 96 98 100 102 168 170 172 174)
+m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ f←{c←+/⍠d ⍵ ⋄ +/,⊼⍵-⍤[1 0]c} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),≢e.stopped.reason ; ,e.value ; ,{c←+/⍤1⍵ ⋄ +/,⊼⍵-⍤[1 0]c}∂m]   ⍝ (1ₓ 0ₓ⋄24 26 28 30 96 98 100 102 168 170 172 174⋄24 26 28 30 96 98 100 102 168 170 172 174)
 
 ⍝ program-rank-pick-named — `∂` of a dfn that picks from each row by Rank, with positions on the same named frame as the rows, runs from a program, and gives the gradient of the same dfn without names
-m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ u←[2 0 3]ₓ ⋄ p←u.[n] ⋄ f←{+/,⊼p⌷⍤[0 1]⍵} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),+/e.declined.route≡¨⊂"program" ; ,e.value ; ,{+/,⊼u⌷⍤[0 1]⍵}∂m]   ⍝ (1ₓ 0ₓ⋄0 0 4 0 8 0 0 0 0 0 0 22⋄0 0 4 0 8 0 0 0 0 0 0 22)
+m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ u←[2 0 3]ₓ ⋄ p←u.[n] ⋄ f←{+/,⊼p⌷⍤[0 1]⍵} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),≢e.stopped.reason ; ,e.value ; ,{+/,⊼u⌷⍤[0 1]⍵}∂m]   ⍝ (1ₓ 0ₓ⋄0 0 4 0 8 0 0 0 0 0 0 22⋄0 0 4 0 8 0 0 0 0 0 0 22)
 
 ⍝ program-fold-ravel-windows — `∂` of a dfn that sums windows of a ravel down their starts, each window longer than the source's last axis, runs from a program and gives the gradient of the windows' sums
-x←1×2 3 4⍴⍳24 ⋄ f←{+/,⊼+⌿["size":13 "step":4]↕,⍵} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),+/e.declined.route≡¨⊂"program" ; ,e.value]   ⍝ (1ₓ 0ₓ⋄24 30 36 42 72 84 96 108 144 162 180 198 216 132 144 156 168 78 84 90 96 0 0 0)
+x←1×2 3 4⍴⍳24 ⋄ f←{+/,⊼+⌿["size":13 "step":4]↕,⍵} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),≢e.stopped.reason ; ,e.value]   ⍝ (1ₓ 0ₓ⋄24 30 36 42 72 84 96 108 144 162 180 198 216 132 144 156 168 78 84 90 96 0 0 0)
 
 ⍝ match-names — Match pairs axes as arithmetic does: the same name or no name matches, different names don't, and keyed axes match by key in any order, or match an unkeyed axis. Search matches cells by the same rule
 m←["r":2 "c":3]⍴⍳6ₓ ⋄ [(⍳["i":3])≡⍳3ₓ;(⍳["i":3])≡⍳["j":3];["a":1 "b":2]≡["b":2 "a":1];["a":1 "b":2]≡1 2;m⍳⍳3ₓ;m⍳⍳["d":3]]   ⍝ [$t $f $t $t 0ₓ 2ₓ]
@@ -827,6 +870,7 @@ f←{⍺←0 ⋄ ⍺=1?"DOMAIN"::0 ⋄ 0?⍬ ; ⍵≤0?0 ; 0 f ⍵-1} ⋄ [1 f 1
 ∨3j4 5 0j¯2   ⍝ [3 4⋄5 0⋄0 ¯2]
 
 ⍝ — Exact real parts stay exact
+⍝⍝⍝ allows itemwise "number parts": rational parts retain arbitrary-precision exact values
 ∨1r3   ⍝ 1r3 0ₓ
 
 ⍝ — A Boolean's parts stay Boolean, with `$f` imaginary parts
@@ -1562,8 +1606,8 @@ x←(⍳200000ₓ)÷200000 ⋄ (•explain "*@[0.99<]x").fast.combination   ⍝ 
 ⍝ agenda:masked-derivative — Under ∂, each case still runs only on the items that pick it, so `÷`'s infinite slope at 0 can't make the gradient NaN
 {+/(⍵>0)⍚[0 ÷] ⍵}∂ 0 1 4   ⍝ 0 ¯1 ¯0.0625
 
-⍝ agenda:masked-fused — On a large array, the comparison, the cases, the select and a fold of its result run as one fused group
-x←¯0.5+(⍳200000)÷200000 ⋄ (•explain "+/(0>)⍚[⊢ -] x").fused.glyphs   ⍝ "÷+" ">-⍚+/"
+⍝ agenda:masked-fused — After sampling the mask, the input arithmetic, comparison, cases, select and fold run as one fused group
+x←¯0.5+(⍳200000)÷200000 ⋄ (•explain "+/(0>)⍚[⊢ -] x").fused.glyphs   ⍝ "÷+>" "÷+>-⍚+/"
 
 ⍝⍝ Leading unit axis broadcasting
 
@@ -1809,6 +1853,8 @@ m←3 3⍴⍳9ₓ
 ,m   ⍝ [0 1 2 3 0 5 6 7 0]ₓ
 
 ⍝ — Selection through enlist updates characters inside nested vectors
+⍝⍝⍝ allows itemwise "nested labels": nested selection records each leaf's path
+⍝⍝⍝ allows itemwise "label ids": nested writeback follows the selected paths
 a←"Andy" "Karen" "Liam"
 (('a'=∊a)#∊a)←'*'
 a   ⍝ "Andy" "K*ren" "Li*m"
@@ -2097,6 +2143,7 @@ b₀+←1
 [x b]   ⍝ [1.5 2ₓ 3ₓ;2 $f $t]
 
 ⍝ — Repeated positions accumulate, with a primitive or a dfn
+⍝⍝⍝ allows itemwise "accumulation": arbitrary updates to repeated positions keep their order
 x←0 0 0
 y←x
 x.[[1 1]]+←1
@@ -3358,6 +3405,8 @@ c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0
 [{∩3 1 3 2 3+⍵×10 20 30 40 50}∂ 0; {+/1×∩⍵}∂ 3.5 1.5 3.5 2.5 3.5]   ⍝ [[10];1 0 0 0 0]
 
 ⍝ derivative-orders-runs — runs (`#`) orders a tangent with its primal, in forward mode and in reverse mode
+⍝⍝⍝ gap stopped "a read of a traced value": runs should remain in the differentiated program
+⍝⍝⍝ gap itemwise "∂ items": runs should select carried values without building individual dual items
 [{1⊃#3 3 1+⍵×10 20 30}∂ 0; {+/1 2×1⊃#⍵}∂ 3.5 3.5 1.5]   ⍝ [10 30;1 0 2]
 
 ⍝ derivative-orders-union — union (`∪`) orders a tangent with its primal, in forward mode and in reverse mode
@@ -4081,6 +4130,7 @@ v←0.5+\⁻¹1.5 3.5 6.5ₛ ⋄ [(•storage v).kind;v]   ⍝ ["float32";1 2 3]
 10↣(+\)⁻¹11 13 16   ⍝ 1 2 3
 
 ⍝ — Scan inversion calls the composed operand's inverse
+⍝⍝⍝ gap itemwise "inverse scan": a composed scan inverse should use whole-array adjacent pairs
 (-↢-)\⁻¹1 3 6   ⍝ 1 2 3
 
 ⍝ — Inverting seeded division scan retains exact fractions
@@ -4179,6 +4229,10 @@ v←0.5+\⁻¹1.5 3.5 6.5ₛ ⋄ [(•storage v).kind;v]   ⍝ ["float32";1 2 3]
 
 ⍝ — A distribution's cdf and quantile invert each other
 d←•distribution "normal" ⋄ [d.cdf⁻¹ 0.5;d.quantile⁻¹ 0]   ⍝ 0 0.5
+
+⍝ route-batched-sample-shape — Each requested sample shape contributes one cell
+⍝⍝⍝ gap fallbacks "an earlier stop: a cell's value": sampling should accept batched shape vectors
+d←•distribution "normal" ⋄ ⍴{d.sample ⍵}⍤1[1 2⋄1 2]   ⍝ [2 1 2]ₓ
 
 ⍝ — Inverse •decompose multiplies SVD factors back into the matrix
 "svd" •decompose⁻¹ "svd" •decompose 3 2⍴1 2 3 4 5 6
@@ -4423,9 +4477,11 @@ a←1○(1+⍳64)×⊗1+⍳16
 [¯3ₓ 10ₓ ¯2j4]
 
 ⍝ — Monadic f.g follows J's expansion on vectors, numbers, empty and tall matrices
-[-.×[1 2 3];-.×5;-.×0 0⍴0;-.×[1 2⋄3 4⋄5 6]]
+⍝⍝⍝ allows declined "determinant: arguments that don't suit it": non-square arguments use the general expansion
+⍝⍝⍝ allows declined "permanent: arguments that don't suit it": a non-square vector uses the general expansion
+[-.×[1 2 3];+.×[1 2 3];-.×5;-.×0 0⍴0;-.×[1 2⋄3 4⋄5 6]]
 ⍝ =>
-[2 5 1 0]
+[2 6 5 1 0]
 
 ⍝ — Monadic f.g needs a matrix
 -.×2 2 2⍴⍳8ₓ
@@ -5187,8 +5243,8 @@ sel 0   ⍝ 4⍴$t
 ⍝ — A read of a few items from a pending array gives the items that computing it whole gives
 v←⍳262144ₓ ⋄ s←1+v ⋄ [5↑1+v;3⊃2×v+1;5↑s]   ⍝ [1 2 3 4 5;8;1 2 3 4 5]
 
-⍝ — A read of a few items from a pending array that nothing else holds computes only those items, as `•explain` counts them. A pending array that a name holds is computed whole on its first read [unfused]
-v←⍳262144 ⋄ s←1+v ⋄ items←{(•explain ⍵).forced.items} ⋄ [(items "5↑1+v")≡[5]ₓ;(items "3⊃2×v+1")≡[1]ₓ;(items "5↑s")≡[262144]ₓ]   ⍝ $t $t $t
+⍝ — A first read of a few items from a computed pending array is selective, even when a name holds it [unfused]
+v←⍳262144 ⋄ s←1+v ⋄ items←{(•explain ⍵).forced.items} ⋄ [(items "5↑1+v")≡[5]ₓ;(items "3⊃2×v+1")≡[1]ₓ;(items "5↑s")≡[5]ₓ]   ⍝ $t $t $t
 
 ⍝ — Rank leaves a pending argument pending where its operand isn't one that runs on whole stacks of matrices, so the call fuses as it would without Rank
 x←[4 256 256]⍴0.5 ⋄ e←•explain "(-⍤2) x+1" ⋄ [0ₓ=≢e.forced.function;e.value≡-x+1]   ⍝ $t $t
@@ -5497,6 +5553,7 @@ v←32•float 1.5 2.5 ⋄ w←1.5 2.5 ⋄ {(•storage ⍵).kind}¨[v×2.5;v×2
 "float32" "float64" "float64" "float32" "complex64" "float64"
 
 ⍝ — Each gives the same kinds whether it calls its function once on all cells or once for each cell, where weak and strong numbers meet
+⍝⍝⍝ allows declined "batching: the batch pref is off": this case deliberately compares batched and separate calls
 v←32•float 1.5 2.5 ⋄ w←1.5 2.5 ⋄ k←{(•storage ⍵).kind} ⋄ a←[k {⍵×2.5}¨v;k {+/⍵×v}¨w] ⋄ •prefs ["batch":$f] ⋄ b←[k {⍵×2.5}¨v;k {+/⍵×v}¨w] ⋄ •prefs ["batch":$t] ⋄ [(a≡b) a]
 [$t ["float32" "float64"]]
 
@@ -6002,6 +6059,7 @@ v←1+⍳20 ⋄ m←[4 20]⍴v ⋄ z←v+0j1×v ⋄ [(-\v)≡{⍺-⍵}\v;(5-\v)�
 10 20 ({⍺+⍵}\⍠0⍤0 1) 2 3⍴⍳6ₓ   ⍝ [10 11 13⋄23 27 32]
 
 ⍝ — Growing scan accumulators remain nested, without mix-style padding
+⍝⍝⍝ allows itemwise "item lanes": a scan with growing nested results builds each prefix in order
 {⍺,⍵}\1 2 3   ⍝ [1 [1 2] [1 2 3]]
 
 ⍝ — A seed participates in every growing accumulator
@@ -6908,6 +6966,8 @@ same¨"{⍵ +.{⍺×⍵} ⍉⍵}⍤2 s" "{⍵ {⍺+⍵}.× m}⍤2 s" "{1 +.{⍺�
 (•explain "{x←•time 0 ⋄ ⍵}¨⍳3ₓ").fallbacks.reason   ⍝ ["an effect"]
 
 ⍝ — A system function that doesn't act runs once for each cell inside a batched run [batched]
+⍝⍝⍝ route batching
+⍝⍝⍝ gap itemwise "batch cells": character conversion should process the batch together
 (•explain "{•ucs ⍵}¨""abc""").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — So does one on a constant inside the operand [batched]
@@ -7361,6 +7421,12 @@ f←{⎕←⍵ ⋄ ⍵} ⋄ 2 +⍥f 3
 
 ⍝ — Key groups right-hand values using the left-hand labels
 1 1 2{+/⍵}⌸10 20 30   ⍝ 30 30
+
+⍝ route-rational-groups — Grouped sums retain exact rational values
+⍝⍝⍝ allows declined "group folds: arguments that don't suit it": rational groups keep arbitrary-precision arithmetic
+⍝⍝⍝ allows itemwise "key groups": each exact group runs one fold
+⍝⍝⍝ allows itemwise "item lanes": rational folds use exact arithmetic
+[1 1 2]((+/⊢)⌸)1ᵣ2 1ᵣ3 1ᵣ4   ⍝ 5ᵣ6 1ᵣ4
 
 ⍝ — Empty Key retains the operand's result-cell shape
 {⍳3ₓ}⌸⍬   ⍝ (0 3⍴0)ₓ

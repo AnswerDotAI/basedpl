@@ -25,7 +25,7 @@ v_4ₓ₄	3825
 # `fib 10ₓ` under static kinds, whose integer scalar calls run their integer kernel at the `int` width (`Primitive::integer_kernel`).
 •prefs ["kinds":"static"] ⋄ {fib 10ₓ}⍣N 0	870789
 # Each over a nested vector, which can't batch, calls `⌽` once for each of the 64 strings in `t`. It counted 290,267 on 25 October 2026. Later that day a longer zero-axis scan in rustymath's `element_count` and stage 3's single map type, where `remap` builds a `Mapping` that `copying` reads back, made each string's reversed copy about 150 instructions dearer. Other changes recovered that rise, among them scanning only where a shape's product overflows, inlining `Mapping::from` and `Mapping::to_walk`, and the inline tests in `Value::carried`. On 26 October 2026, with this file's setup, the 02:01 build of 25 October counted 290,445 and a build of 26 October 291,153. Reading each part once in `plan::Kind::join`, which joins each copy's kind, then saved about 8,700. Later that day it rose to about 290,400, from `Route`'s drop and the fill option's pass through `Mapping::filled`. On 27 October 2026 four changes brought it to 278,025, about 180 instructions fewer for each string: `Mapping::filled` returns a mapping that keeps no fill without moving it, `plan::Kind::value` asks only integer arrays for a fixed width, `Kind::join` returns a lone part as it is, and `Storage::dtype` reads the buffer's dtype with no view. The count moves by up to about 2,400 with the setup alone.
-⌽¨⍣N t	278025
+⌽¨⍣N t	261119
 # Rank's general path calls a dfn once for each of the same 64 cells.
 {⌽⍵}⍤0⍣N t	316700
 # A system function maps itself over the same 64 cells.

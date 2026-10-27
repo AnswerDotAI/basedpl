@@ -135,6 +135,7 @@ n⍴0
 
 ⍝ Reading two arguments and writing each item once.
 ⍝ Expected: `v+w`, `kv+kv` and `v⌊w` 1.5 copies: two 8-byte reads and one write per item; `jv+jv` and `jv∧ᵇjv` 0.38 copies: 2-byte reads and writes; `v×2` 1 copy: one read and one write per item; `jv×2.5` 0.63 copies: its products are floats, with 2-byte reads and 8-byte writes; `jv=jv` 0.31 copies: two 2-byte reads and a 1-byte write; `b×jv` 0.31 copies: 1- and 2-byte reads, 2-byte writes; `b×kv` 1.1 copies: 1- and 8-byte reads, 8-byte writes; `b∧b` 0.19 copies: 1-byte reads and writes; `c=c` 0.56 copies: two 4-byte reads and a 1-byte write; `⍳√n ×⊗ ⍳√n` 0.5 copies: writes 8 bytes an item.
+⍝⍝⍝ route vector kernel
 v+w
 ⍝⍝: 3	3	3
 
@@ -274,7 +275,7 @@ c⍳c
 
 ⍝ Key classifies the keys, then counts and places each group's positions. With `(≢⊢)` it only counts the classes.
 ⍝ Expected: `{≢⍵}⌸b` 2 copies: classifying, then writing each group's positions; `(≢⊢)⌸b` 0.13 copies: reads 1 byte an item and counts.
-⍝⍝ gap itemwise "key groups": the dfn should run once on all the groups, as a batched map runs once on all its cells
+⍝⍝⍝ gap itemwise "key groups": the dfn should run once on all the groups, as a batched map runs once on all its cells
 {≢⍵}⌸b
 ⍝⍝: 4	4	4
 
@@ -701,6 +702,7 @@ v⍳w
 ⍝ Sorting under `∂` grades the primal once, then reads the primal and the tangent at the positions the grade gives.
 ⍝ Expected: 30 copies: a grade, about 20, and reads of the primal and the tangent at its positions, about 3 each.
 ⍝ Held until studied: `{+/(⍳≢⍵)×<⍵}∂ v` measures 92.93 on macOS and has old Linux and wasm budgets that suggest about 135 and 245, more than twice its expected cost. On 22 October 2026 CI measured 125 on Linux and 104 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
+⍝⍝⍝ gap stopped "a read of a traced value": sorting should retain its primal grade in the differentiated program
 {+/ ⍳≢⍵ × <⍵}∂ v
 ⍝⍝: 220	270	490
 

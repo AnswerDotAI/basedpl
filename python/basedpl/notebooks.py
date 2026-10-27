@@ -46,7 +46,7 @@ def _load(self:BPLMagic):
     if self._loaded: return
     js = files('basedpl')
     layout = (files('basedpl')/'layout.json').read_text()
-    display(Javascript(f"{(js/'lb.js').read_text()}({json.dumps(symbols)}, {(js/'input.js').read_text()}, {layout})"))
+    display(Javascript(f"{(js/'lb.js').read_text()}({json.dumps(symbols)}, {(js/'input.js').read_text()}, {layout}).page(window.monaco)"))
     display(HTML(f"<style>{(js/'fonts.css').read_text()}</style>"))
     self._loaded = True
 

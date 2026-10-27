@@ -83,7 +83,8 @@ fn run(step: &Step, values: &[Option<Value>], owned: Option<Value>, desc: &Desc,
             crate::primitive::planned_read(&source, plan, direct, None)
         }
         Step::Fold { p, kind, axis, seed, of } => Operation::Fold(*p, *kind).call(Pairing::Axis(Some(*axis)), seed.as_ref().map(value).as_deref(), &value(of), span),
-        Step::Product { f, g, left, right, stacked } => Operation::Product(*f, *g).call(Pairing::stacked(*stacked), Some(&value(left)), &value(right), span),
+        Step::Product { f, g, left, right, stacked } => Operation::Product(*f, *g).call(Pairing::stacked(*stacked), Some(&value(left)), &value(right), span)
+            .inspect(|_| if rustymath::events::running() { crate::explain::fast(rustymath::events::Route::Contraction, step.glyph()); }),
         Step::At { p, base, items, writes } => {
             let mut base = owned.unwrap_or_else(|| value(base).into_owned());
             let planned;

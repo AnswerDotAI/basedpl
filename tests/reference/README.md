@@ -85,7 +85,7 @@ v←¿n⍴0
 
 A trailing `⍝⍝:` footer identifies a timed case. All preceding body lines are its code, which can span multiple lines. A check uses inline `⍝ expected` or the existing explicit `⍝ =>` marker. Headers and IDs are optional. An absent expectation means unchecked, not no result. The timing runner checks a supplied expectation once, outside timing, in independently initialized sessions. The reference runner checks it with the usual batch, fusion and repeated-call variants. A record must check a result or supply a budget.
 
-`⍝⍝ allows RECORD "EVENT": principle` and `⍝⍝ gap RECORD "EVENT": what should happen` before the code name permitted slow-path events, with doubled `"` inside an event. The route test rejects unlisted events and annotations whose events no longer appear.
+Both reference and timed cases accept `⍝⍝⍝ route NAME` before their code to require a fast route. `⍝⍝⍝ allows RECORD "EVENT": principle` and `⍝⍝⍝ gap RECORD "EVENT": what should happen` name permitted slow events, with doubled `"` inside an event. A stopped trace requires a `gap`. The shared checker rejects unexpected slow events, missing required routes and annotations whose events no longer appear. Ordinary comments have no effect on route checks. See [DEV.md](../../DEV.md) for event names and capture rules.
 
 Budgets count copies of the setup's `n` items, except in `widths`: there they limit the time as a fraction of the same code's time under `exact`. The runner applies section preferences before setup, parses each case once, warms it once, and takes the fastest of five runs, forcing the returned value each time. It preserves the section's session between cases and repeats. Do not put one-off setup inside timed code.
 

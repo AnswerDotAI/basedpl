@@ -338,7 +338,7 @@ fn newest(left: Option<&Value>, right: &Value, within: bool) -> Option<Mark> {
     Some(newest)
 }
 
-/// How a call pairs its arguments: along an axis, if it has one, through the agreement that lays out its pairs, as an outer product's or a call with a chosen fill's does, matrix by matrix, as `f⍤2` pairs the matrices of one stack or of two, or at the places that `Writes` gives. `At` combines each item of the right argument, in turn, into the left argument's item at its place. A repeated place combines with the result of the one before. A write at a fill is dropped. A right argument of one item goes to every place. `+` paired this way is accumulation, as a gather's transpose makes it (`Primitive::at`).
+/// How a call pairs its arguments: along an axis, if it has one, through the agreement that lays out its pairs, as an outer product's does, matrix by matrix, as `f⍤2` pairs the matrices of one stack or of two, or at the places that `Writes` gives. `At` combines each item of the right argument, in turn, into the left argument's item at its place. A repeated place combines with the result of the one before. A write at a fill is dropped. A right argument of one item goes to every place. `+` paired this way is accumulation, as a gather's transpose makes it (`Primitive::at`).
 #[derive(Clone, Copy)]
 pub(crate) enum Pairing<'a> { Axis(Option<usize>), Agreed(&'a Agreement), Matrices, At(rustymath::gather::Writes<'a>) }
 
@@ -431,7 +431,7 @@ impl Carrier {
     /// The items as `ArrayData::items` reads them: a labelled value's values, which can be a range of their base's (`Value::part`), the value that a trace holds in a traced value's place (`held`), or else the items of `storage`.
     pub(crate) fn items(&self) -> crate::array::Items<'_> { match self { Carrier::Labelled(l) => l.values().as_items(), carrier => carrier.held().map_or_else(|| carrier.storage().items(), Value::as_items) } }
     /// The items of a dual or a batch for `storage`, built once into `cell` as `n` items from `at`. Building them records an `itemwise` row in `•explain` under `route`.
-    pub(crate) fn built<'a>(cell: &'a std::sync::OnceLock<crate::array::Storage>, route: &'static str, n: usize, at: impl Fn(usize) -> Value) -> &'a crate::array::Storage {
+    pub(crate) fn built<'a>(cell: &'a std::sync::OnceLock<crate::array::Storage>, route: rustymath::events::Route, n: usize, at: impl Fn(usize) -> Value) -> &'a crate::array::Storage {
         cell.get_or_init(|| { crate::explain::itemwise(route, n); crate::array::Storage::mixed((0..n).map(|i| at(i).strong()).collect()) })
     }
     /// This carrier under `layout`, which has as many items: each part as a view under `layout`, with no items copied. A dual's tangent goes under it expanded to the primal's layout, and a batch's cells each go under it.
@@ -499,12 +499,14 @@ impl Carrier {
     pub(crate) fn at(&self, i: usize) -> Value { match self { Carrier::Dual(dual) => dual.at(i), Carrier::Record(t) => crate::linear::item(t, i), Carrier::Batch(b) => b.at(i), Carrier::Labelled(l) => l.at(i), Carrier::Traced(t) => t.item(i) } }
     /// Item `i` as bulk iteration reads it (`Value::element`): `at`'s item, except a traced value's and a dual's. A traced value gives the item of the value that the trace holds in its place (`held`), or else an atom outside its program (`Traced::element`). A dual's parts are read the same way. A call on an atom outside the program stops the trace, so a primitive that reads every item stops at its first call, with no step for each item.
     pub(crate) fn element(&self, i: usize) -> Value { match self { Carrier::Traced(t) => t.held().map_or_else(|| t.element(), |v| v.element(i)), Carrier::Dual(dual) => dual.element(i), carrier => carrier.at(i) } }
-    /// The items laid out by `layout`, read through `map` as `primitive::copied` reads a value's: each part of a dual through the map its part reads (`Part::map`), a record as one copy node (`linear::copy`), or each cell of a batch alike.
-    pub(crate) fn copied(&self, layout: crate::array::Layout, map: &rustymath::agreement::Mapping) -> Result<Value, crate::ErrorKind> {
+    /// Copies values and derived parts through their maps: a record adds one linear copy node, and a batch copies its whole frame. Only values retain a chosen fill. A trace records native fills; a chosen fill of mixed data stops it.
+    pub(crate) fn copied(&self, layout: crate::array::Layout, map: &rustymath::agreement::Mapping, fill: Option<&Value>) -> Result<Value, crate::ErrorKind> {
         match self {
-            Carrier::Dual(dual) => Ok(crate::derivative::dual(dual.tag, crate::primitive::copied(&dual.primal, layout.clone(), &Part::Values.map(map))?, crate::primitive::copied(dual.full_tangent(), layout, &Part::Derived.map(map))?)),
+            Carrier::Dual(dual) => Ok(crate::derivative::dual(dual.tag, crate::primitive::copied_fill(&dual.primal, layout.clone(), map, fill)?, crate::primitive::copied(dual.full_tangent(), layout, &Part::Derived.map(map))?)),
             Carrier::Record(t) => Ok(crate::linear::copy(t, layout, &Part::Derived.map(map))),
-            Carrier::Batch(b) => b.copied(layout, map), Carrier::Labelled(l) => l.copied(layout, map), Carrier::Traced(t) => Ok(t.copied(layout, map)),
+            Carrier::Batch(b) => b.copied(layout, map, fill), Carrier::Labelled(l) => l.copied(layout, map, fill),
+            Carrier::Traced(t) if fill.is_some() => crate::primitive::copied_fill(t.observed("a copy with a chosen fill")?, layout, map, fill),
+            Carrier::Traced(t) => Ok(t.copied(layout, map)),
         }
     }
     /// The items that `parts` select from `value`, this carrier's value, where a part holds positions that the running trace computes (`primitive::select`): each part of a dual alike, a record as one gather that adds its cotangent back at the same places (`linear::selected`), or a traced value as one step that selects at replay (`trace::gathered`). A batch or a labelled value stops the trace.
@@ -526,8 +528,7 @@ pub(crate) enum Part { Values, Derived }
 impl Part {
     /// The fill that this part reads where a copy chose `fill`.
     #[inline]
-    pub(crate) fn fill(self, fill: Option<&std::sync::Arc<rustymath::buffer::Fill>>) -> Option<&std::sync::Arc<rustymath::buffer::Fill>> { match self { Part::Values => fill, Part::Derived => None } }
-    /// The mapping through which this part reads a copy through `map`: `map` itself for the values, and `map` without its chosen fill for a derived part.
+    pub(crate) fn fill(self, fill: Option<&Value>) -> Option<&Value> { match self { Part::Values => fill, Part::Derived => None } }
     pub(crate) fn map(self, map: &rustymath::agreement::Mapping) -> std::borrow::Cow<'_, rustymath::agreement::Mapping> {
         match (self, map.chosen()) { (Part::Derived, Some(_)) => std::borrow::Cow::Owned(map.clone().filled(None)), _ => std::borrow::Cow::Borrowed(map) }
     }

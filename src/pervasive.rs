@@ -19,9 +19,27 @@ use rustymath::{
     agreement::{block, blocks, map1, map2, read_runs, Mapping, Read, Side}, buffer::{Buffer, ComplexWidth, Complexes, DType, Element, FloatWidth, Floats, Ints, Source, View, Width},
     linalg::{Inner, Mapped, Orientation, PlusTimes, Product}, pairs, reduce::{self, Reduction}, search::Numbered,
     tolerant::Tolerant, with_complex_width, with_complexes, with_float_width, with_floats, with_ints, with_tolerance, with_width,
-    Arg, Native, Right, gather::Writes, parallel::Slots
+    Arg, Forms, KernelItem, Native, gather::Writes, parallel::Slots
 };
-use std::borrow::Cow;
+use std::{borrow::Cow, mem::MaybeUninit};
+
+/// A unary kernel used for a dyadic call whose constant left argument selects that kernel.
+#[derive(Clone, Copy, Debug)]
+struct Right<K>(K);
+
+// SAFETY: K initializes every output slot.
+unsafe impl<E: KernelItem, K: Forms<E, 1>> Forms<E, 2> for Right<K> {
+    type Out = K::Out;
+    const TOTAL: bool = K::TOTAL;
+    const WRAPS: bool = K::WRAPS;
+    const INLINE: bool = K::INLINE;
+    #[inline]
+    fn scalar(&self, [_, y]: [E; 2]) -> K::Out { self.0.scalar([y]) }
+    #[inline]
+    fn judged_scalar(&self, [_, y]: [E; 2]) -> (K::Out, bool) { self.0.judged_scalar([y]) }
+    #[inline]
+    fn slice(&self, [_, y]: [Arg<'_, E>; 2], n: usize, out: &mut [MaybeUninit<K::Out>]) -> bool { self.0.slice([y], n, out) }
+}
 
 /// A loop that applies a dyadic kernel, a rustymath function object. A kernel keeps its argument type, or gives integers or Booleans.
 pub(crate) trait Dyad<A> {
@@ -1860,6 +1878,7 @@ fn mapped_product(plan: &plan::Product, x: &Value, y: &Value, size: [usize; 3], 
     let (((xs, xm), ox), ((ys, ym), oy)) = (read(mx, x, [rows, n]), read(my, y, [n, cols]));
     macro_rules! product { ($t:ty) => {{
         let (a, b) = (read_as::<$t>(&xs)?, read_as::<$t>(&ys)?);
+        let (xm, ym) = (xm.cast_fill(<$t>::DTYPE).ok()?, ym.cast_fill(<$t>::DTYPE).ok()?);
         <$t>::build(shape.to_vec(), PlusTimes.inner_mapped(Mapped { data: &a, mapping: &xm }, Mapped { data: &b, mapping: &ym }, [ox, oy], size))
     }} }
     match kind {

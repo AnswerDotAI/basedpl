@@ -7,7 +7,7 @@ use crate::{
     transform::{Carrier, Cause, Ended, Kept, Op, Pairing, Stop},
     Error, Described, ErrorKind, Function, Span, Value,
 };
-use rustymath::{agreement::Mapping, buffer::{DType, Fill}, gather::{Steps, Writes}, structure::IndexPart};
+use rustymath::{agreement::Mapping, buffer::DType, gather::{Steps, Writes}, structure::IndexPart};
 use std::borrow::Cow;
 use std::sync::{Arc, OnceLock};
 use crate::array::{Footprint, Seen};
@@ -54,15 +54,15 @@ impl Batch {
     /// The items, for code with no rule for batches (`ArrayData::storage`). Item `i` is item `i` of every cell, as a batch of atoms. A kernel that reads a number from such an item gets an error (`Value::computed`). An observing read of it stops the run (`Value::observed`). Either way the map falls back to one call for each cell. Building the items records an `itemwise` row in `•explain`.
     #[cold]
     #[inline(never)]
-    pub(crate) fn storage(&self) -> &Storage { crate::transform::Carrier::built(&self.items, "batched items", self.template().len(), |i| self.at(i)) }
+    pub(crate) fn storage(&self) -> &Storage { crate::transform::Carrier::built(&self.items, rustymath::events::Route::BatchedItems, self.template().len(), |i| self.at(i)) }
     /// This batch with each cell laid out by `layout`, as a view of the whole with no items copied. `layout` has as many items as a cell.
     pub(crate) fn view(&self, layout: Layout) -> Value {
         batch(self.level, self.whole.relaid(self.frame_layout().concat(&layout)).expect("a view has as many items as its base"), self.frame)
     }
     /// Each cell's items read through `map` and laid out by `layout`, as `primitive::copied` reads a value's items. The frame's axes are read in front of the map's tables.
-    pub(crate) fn copied(&self, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> {
+    pub(crate) fn copied(&self, layout: Layout, map: &Mapping, fill: Option<&Value>) -> Result<Value, ErrorKind> {
         let steps: Vec<Steps> = self.frame_steps(0).into_iter().chain(map.tables(layout.shape())).collect();
-        Ok(batch(self.level, crate::primitive::copied(&self.whole, self.frame_layout().concat(&layout), &map.with_steps(0, steps))?, self.frame))
+        Ok(batch(self.level, crate::primitive::copied_fill(&self.whole, self.frame_layout().concat(&layout), &map.with_steps(0, steps), fill)?, self.frame))
     }
     /// Whether code with no rule for batches has read the items one at a time (`Batch::storage`).
     pub(crate) fn items_built(&self) -> bool { self.items.get().is_some() }
@@ -175,7 +175,7 @@ pub(crate) fn from_cells(level: u64, frame: &Layout, cells: Vec<Value>) -> Optio
 /// `f` for each cell of batched run `level`, whose frame is `frame`, in cell order, with the cells' values joined into one batch (`from_cells`). Where the values don't stack, as values of different shapes or kinds don't, the run stops for a call with no rule for these arguments (`Cause::Rule`). `•explain` counts the cells as the `itemwise` route `batch cells`.
 pub(crate) fn each_cell(level: u64, frame: &Layout, f: impl FnMut(usize) -> Result<Value, Error>) -> Result<Value, Error> {
     let count = frame.count();
-    crate::explain::itemwise("batch cells", count);
+    crate::explain::itemwise(rustymath::events::Route::BatchCells, count);
     let cells = (0..count).map(f).collect::<Result<Vec<_>, _>>()?;
     from_cells(level, frame, cells).ok_or_else(|| Stop::new(level, Cause::Rule).into())
 }
@@ -491,7 +491,7 @@ fn framed_parts(parts: &[IndexPart<Value>]) -> Option<(u64, Option<&Batch>, Vec<
 }
 
 /// `⌷`, or bracket indexing where `paired`, of each cell of the running batched run where some selector in `parts` is a batch of the run (`indexing::select`): one selection of the whole (`primitive::framed_plan`) by the selectors that `framed_parts` lays out. `right` can be a batch too. `None` where `framed_parts` or `framed_plan` gives none, so that the call reads each cell, which stops the run.
-pub(crate) fn bracketed(parts: &[IndexPart<Value>], right: &Value, paired: bool, fill: Option<&Arc<Fill>>, span: &Span) -> Option<Result<Value, Error>> {
+pub(crate) fn bracketed(parts: &[IndexPart<Value>], right: &Value, paired: bool, fill: Option<&Value>, span: &Span) -> Option<Result<Value, Error>> {
     let (level, first, laid) = framed_parts(parts)?;
     let (right, framed, b) = match arg(right, level) { Arg::Batched(b) => (&b.whole, true, first.unwrap_or(b)), Arg::Constant(c) => (c, false, first?) };
     let plan = crate::primitive::framed_plan(&laid, right.layout(), framed, paired, &b.frame_layout(), span)?;
@@ -631,7 +631,7 @@ pub(crate) fn tried(operand: &Function, arguments: impl FnOnce() -> Option<Argum
     let frame = layout.shape();
     if frame.is_empty() || frame.contains(&0) { return None; }
     let cells = layout.count();
-    let declined = |reason: &'static str| -> Option<Result<Value, Error>> { rustymath::events::declined("batching", reason, cells); None };
+    let declined = |reason: &'static str| -> Option<Result<Value, Error>> { rustymath::events::declined(rustymath::events::Route::Batching, reason, cells); None };
     if !tries(cells) { return None; }
     let memory = operand.remembers().map_or(NOTHING, |d| d.remembered());
     if memory & !CAUSE == ALWAYS { return fell_back(Earlier::of(memory), cells); }
@@ -675,13 +675,14 @@ pub(crate) fn tried(operand: &Function, arguments: impl FnOnce() -> Option<Argum
         Entry::Widen { .. } if !one_array => return fell_back("the result", cells),
         Entry::Widen { level, outer } => whole.relaid(outer.concat(layout).concat(&cell)).map(|whole| batch(level, whole, outer.shape().len())),
     };
+    if assembled.is_ok() { rustymath::events::taken(rustymath::events::Route::Batching, cells); }
     Some(assembled.described("invalid result"))
 }
 
 /// Whether a map of `cells` cells may try a batched call: the `batch` pref is on, and the running levels admit a batched run (`transform::Levels::admits_batch`), or let the map widen the running one (`transform::Levels::widens`). Where it may not, the refusal is a decline (`rustymath::events`). `tried` checks it first. A caller checks it before building arguments that only a try reads.
 pub(crate) fn tries(cells: usize) -> bool {
     let reason = if !crate::settings::batch() { "the batch pref is off" } else if !session().admits_batch() && !session().widens() { "a label level, or a ∂ call inside a batched run" } else { return true };
-    rustymath::events::declined("batching", reason, cells);
+    rustymath::events::declined(rustymath::events::Route::Batching, reason, cells);
     false
 }
 

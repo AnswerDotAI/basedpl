@@ -208,7 +208,7 @@ fn selected(mask: &Value, cases: [Option<&Function>; 2], left: Option<&Value>, r
     };
     let [no, yes] = cases;
     let (y, x) = (items(no)?, items(yes)?);
-    if crate::explain::recording() { crate::explain::fast("masked select", text()); }
+    if rustymath::events::running() { crate::explain::fast(rustymath::events::Route::MaskedSelect, text()); }
     Ok(Some(crate::fusion::select(mask, &x, &y, right.layout(), &plan)))
 }
 
@@ -823,7 +823,7 @@ fn inverse_scan(f: &Function, h: FoldKind, axis: Option<&Value>, seed: Option<&V
             return result.with_layout(right.layout().clone()).described("invalid inverse scan");
         }
     }
-    crate::explain::itemwise("inverse scan", right.len());
+    crate::explain::itemwise(rustymath::events::Route::InverseScan, right.len());
     let mut data: Vec<_> = right.elements().collect();
     for i in 0..axis.outer {
         for j in usize::from(seed.is_none())..axis.len {
@@ -848,8 +848,9 @@ pub(super) fn key(derived: &Function, left: Option<&Value>, right: &Value, span:
     let idiom = derived.node.idiom.as_ref();
     if let Some(counts @ Idiom::Counts) = idiom.filter(|_| keys.shape()[0] > 0) {
         let sizes = crate::search::class_counts(&key_cells, span)?;
+        let value = Value::positions(vec![sizes.len()], keys.shape()[0] + 1, sizes.into_iter()).described("invalid key result")?;
         counts.taken(derived);
-        return Ok(Bound::from(Value::positions(vec![sizes.len()], keys.shape()[0] + 1, sizes.into_iter()).described("invalid key result")?));
+        return Ok(Bound::from(value));
     }
     // A fold idiom reads each key's class number. A fold that `fold_groups` can't compute groups the positions from those numbers.
     let numbered = match idiom {
@@ -886,7 +887,7 @@ pub(super) fn key(derived: &Function, left: Option<&Value>, right: &Value, span:
         return Ok(Bound::from(Value::assemble(&[0], &[], &result).described("invalid key result")?));
     }
     let firsts = &classes.firsts;
-    crate::explain::itemwise("key groups", count);
+    crate::explain::itemwise(rustymath::events::Route::KeyGroups, count);
     let mut results = Vec::with_capacity(count);
     let mut apply = |g: usize, y: Value, span: &Span| -> Result<(), Error> {
         results.push(f.call_array(Some(&*key_cells.get(firsts[g])), &y, span)?);
@@ -1776,7 +1777,7 @@ fn folded(result: Value, kind: FoldKind, along: usize, right: &Value) -> Result<
 /// A fold or scan by `apply` on each pair of items in turn, where neither a kernel nor a batched map takes it, with `seed` as each lane's left argument, laid out by `shape`. Over a batch (`active`), each result is a batch: a fold gives one for each lane of the cells, and a scan one for each stage. They join into one batch (`batch::joined`). Where it runs on items rather than batches, it records an `itemwise` row in `•explain`.
 fn item_lanes(scan: bool, lanes: &Lanes, shape: Vec<usize>, seed: Option<&Value>, right: &Value, apply: impl FnMut(&Value, &Value) -> Result<Value, Error>, active: bool) -> Result<Value, Error> {
     crate::program::trace::per_item(seed, right)?;
-    if !active { crate::explain::itemwise("item lanes", right.len()); }
+    if !active { crate::explain::itemwise(rustymath::events::Route::ItemLanes, right.len()); }
     let data = if scan { scan_items(lanes, seed.cloned(), |i| right.at(i), apply)? } else { fold_items(lanes, seed, |i| right.at(i), apply)? };
     let value = Value::new(shape, data).described(if scan { "invalid scan result" } else { "invalid fold result" })?;
     Ok(if active { crate::batch::joined(&value).unwrap_or(value) } else { value })
@@ -1785,7 +1786,7 @@ fn item_lanes(scan: bool, lanes: &Lanes, shape: Vec<usize>, seed: Option<&Value>
 /// A fold or scan by `op` of plain numbers, with an optional `seed`: the general path for an arithmetic primitive when every item is a number.
 fn number_lanes(
     op: crate::number::Arithmetic, scan: bool, right: &Value, seed: Option<&Value>, axis: &Lanes, shape: Vec<usize>) -> Result<Value, Error> {
-    crate::explain::itemwise("item lanes", right.len());
+    crate::explain::itemwise(rustymath::events::Route::ItemLanes, right.len());
     let number = |e: Value| { let Value::Number(n) = e else { unreachable!() }; n };
     let (item, seed) = (|i| number(right.at(i)), seed.cloned().map(number));
     let (p, t) = (Primitive::Arithmetic(op), Numeric::current());

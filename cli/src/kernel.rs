@@ -15,6 +15,38 @@ fn language_error(error: basedpl::Error) -> LanguageError {
         evalue: error.message.clone(), traceback: vec![error.to_string()] }
 }
 
+/// Reader-facing expression results, shared by Jupyter user expressions and the gateway's eval operation.
+fn expression(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<Value, basedpl::Error> {
+    let result = session.eval_with(code,
+        EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() });
+    if let Some(error) = result.error { return Err(error); }
+    let (kind, data) = if let Some(value) = result.value {
+        let data = if let Some(text) = basedpl::keyed::name(&value) { json!({"text/plain": text.as_ref()}) }
+            else { json!(session.render(&value, interrupt.clone())?) };
+        (Some("array"), data)
+    } else if let Some(f) = result.function { (Some("function"), json!({"text/plain": f.bpl()})) }
+    else if let Some(op) = result.operator { (Some("operator"), json!({"text/plain": op.to_string()})) }
+    else { (None, json!({})) };
+    Ok(json!({"status": "ok", "data": data, "metadata": kind.map_or(json!({}), |kind| json!({"type": kind}))}))
+}
+
+fn expressions<'a>(session: &Session, items: impl IntoIterator<Item = (&'a str, &'a str)>, interrupt: &InterruptHandle) -> (Value, Option<LanguageError>) {
+    let mut values = serde_json::Map::new();
+    for (name, code) in items {
+        let value = match expression(session, code, interrupt) {
+            Ok(value) => value,
+            Err(error) => {
+                let cancelled = matches!(error.kind, basedpl::ErrorKind::Interrupt);
+                let error = language_error(error);
+                if cancelled { return (Value::Object(values), Some(error)); }
+                json!({"status": "error", "ename": error.ename, "evalue": error.evalue, "traceback": error.traceback})
+            }
+        };
+        values.insert(name.into(), value);
+    }
+    (Value::Object(values), None)
+}
+
 /// Standard input in a notebook. Each line is an `input_request` to the frontend, which shows the prompt beside its input box. The input never ends, so `rest` is an error.
 struct NotebookInput(ExecutionContext);
 impl Input for NotebookInput {
@@ -29,6 +61,8 @@ impl Input for NotebookInput {
 
 #[async_trait::async_trait]
 impl LanguageSession for BplSession {
+    fn supported_features(&self) -> Vec<String> { vec!["eval".into()] }
+
     fn kernel_info(&self) -> kernmini::Result<KernelInfo> {
         Ok(KernelInfo { implementation: "basedpl".into(), implementation_version: env!("CARGO_PKG_VERSION").into(),
             banner: "BasedPL — an APL-derived array language".into(),
@@ -38,10 +72,15 @@ impl LanguageSession for BplSession {
 
     async fn execute(&self, request: ExecuteRequest, context: ExecutionContext) -> kernmini::Result<ExecuteOutcome> {
         let count = context.execution_count();
+        let eval = context.parent()["metadata"]["eval"].as_array().cloned();
         let interrupt = InterruptHandle::default();
         let cancel = interrupt.clone();
         context.set_interrupt_handler(Arc::new(move || { cancel.interrupt(); Ok(()) }))?;
         self.worker.call(move |session| {
+            if let Some(items) = eval {
+                let (values, error) = expressions(session, items.iter().filter_map(|v| v.as_str().map(|s| (s, s))), &interrupt);
+                return Ok(ExecuteOutcome { result: Some(json!({"application/json": values})), error, ..Default::default() });
+            }
             let cancel = interrupt.clone();
             let failure = Arc::new(Mutex::new(None));
             let output_failure = failure.clone();
@@ -60,29 +99,14 @@ impl LanguageSession for BplSession {
             let result = session.eval_with(
                 &request.code, EvalOptions { interrupt: interrupt.clone(), echo: !request.silent, output: Some(output), input, ..EvalOptions::default() });
             let mut error = result.error.map(language_error);
-            let mut expressions = serde_json::Map::new();
-            if error.is_none() {
-                if let Some(items) = request.user_expressions.as_object() {
-                    for (name, code) in items {
-                        let Some(code) = code.as_str() else { continue; };
-                        let result = session.eval_with(
-                            code, EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() });
-                        let value = if let Some(e) = result.error {
-                            let cancelled = matches!(e.kind, basedpl::ErrorKind::Interrupt);
-                            let e = language_error(e);
-                            let value = json!({"status": "error", "ename": e.ename, "evalue": e.evalue, "traceback": e.traceback});
-                            if cancelled { error = Some(e); break; }
-                            value
-                        } else {
-                            let text = result.value.map(|a| session.show(&a)).or_else(|| result.function.map(|f| f.bpl()));
-                            json!({"status": "ok", "data": text.map_or(json!({}), |text| json!({"text/plain": text})), "metadata": {}})
-                        };
-                        expressions.insert(name.clone(), value);
-                    }
-                }
-            }
+            let user_expressions = if error.is_none() {
+                let (values, failure) = expressions(session,
+                    request.user_expressions.as_object().into_iter().flatten().filter_map(|(name, code)| Some((name.as_str(), code.as_str()?))), &interrupt);
+                error = failure;
+                values
+            } else { json!({}) };
             if let Some(error) = failure.lock().unwrap().take() { return Err(error); }
-            Ok(ExecuteOutcome { error, user_expressions: Value::Object(expressions), ..Default::default() })
+            Ok(ExecuteOutcome { error, user_expressions, ..Default::default() })
         }).await?
     }
 
@@ -106,6 +130,20 @@ impl LanguageSession for BplSession {
             let info = basedpl::inspection::at_cursor(&request.code, cursor(request.cursor_pos), basedpl::settings::hanzi_aliases()).and_then(|name| session.inspect(name));
             let data = info.as_ref().map(|i| json!({"text/plain":i.text(request.detail_level>0), "text/markdown":i.markdown(request.detail_level>0)}));
             json!({"status":"ok", "found":info.is_some(), "data":data.unwrap_or(json!({})), "metadata":{}})
+        }).await
+    }
+
+    async fn debug(&self, request: Value) -> kernmini::Result<Value> {
+        if request["command"] != "inspectVariables" { return Ok(kernmini::reply_defaults::debug()); }
+        self.worker.call(move |session| {
+            let variables: Vec<_> = session.names().into_iter().filter_map(|name| {
+                let (kind, value) = session.preview(&name)?;
+                let mut record = json!({"name": name, "value": value, "type": kind, "evaluateName": name, "variablesReference": 0});
+                if matches!(kind, "function" | "operator") { record["presentationHint"] = json!({"kind": "method"}); }
+                Some(record)
+            }).collect();
+            json!({"response": {"type": "response", "request_seq": request["seq"], "command": "inspectVariables", "success": true,
+                "body": {"variables": variables}}, "events": []})
         }).await
     }
 

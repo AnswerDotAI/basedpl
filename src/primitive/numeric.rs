@@ -34,7 +34,7 @@ pub(super) fn complex_parts(right: &Value, polar: bool) -> Result<Value, Error> 
         _ => None
     };
     if let Some(parts) = parts { return parts.with_layout(layout).described("invalid decomposition"); }
-    crate::explain::itemwise("number parts", right.len());
+    crate::explain::itemwise(rustymath::events::Route::NumberParts, right.len());
     let mut data = Vec::with_capacity(generated_len(layout.shape())?);
     for item in right.elements() {
         check()?;

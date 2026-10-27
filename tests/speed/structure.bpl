@@ -28,6 +28,7 @@ rows←["b":0 "h":["i":1 ∞;"y":2 16] "w":3 "c":4]⍉
 ⍝⍝: 2	4.4	4.5
 
 ⍝ Held until studied: `2×(10↓sv)+1` has old Linux and wasm budgets that suggest about 3.8 and 2.4, more than twice its expected cost. On 22 October 2026 CI measured 1.9 on Linux and 1.53 in wasm. Its Linux and wasm budgets stay at the old value.
+⍝⍝⍝ route fusion
 2× 10↓sv + 1
 ⍝⍝: 2	7.6	4.8
 
@@ -101,6 +102,7 @@ ism,sm
 ⍝ A fold by a reduction reads a pending copy through its map. A copy that reads a contiguous block of its source with its axes in another order, such as a transpose, a reversal, or 2 by 2 windows that don't overlap, folds that block in its own order, at the cost of folding the source. Totals that come out in another order stay a pending copy, which the next fold reads the same way.
 ⍝ Expected: 0.5 copies each: reads 8 bytes an item and writes nothing.
 ⍝ Wasm on CI's x86 runner: 1 copy each, twice native, as `+/v`'s comment gives for wasm's fold. In seven CI runs from 22 October 2026, `+/⍉sq` and `+⌿⊖sq` measured 0.69 to 1.38 copies and `+/⌽sv` 1.13 to 1.43. `+/⌽sv` runs `+/v`'s f64 sum, which since 22 October costs about 1.4 times what it did before on CI's V8, though not on this Mac's. The sum's wasm loop changed that day: under thin LTO, LLVM runtime-unrolls the strict sum's 16-result loop twice. Turning that unrolling off in browser builds didn't change the sum's cost on CI's V8. The slowdown's cause is not known yet.
+⍝⍝⍝ route mapped fold
 +/⍉sq
 ⍝⍝: 1	1	2
 
@@ -121,6 +123,7 @@ ism,sm
 ⍝ A fold of windows slides over its source and never builds the windows. Windows of up to 8 rows fold directly, finishing each block of a lane while it is in cache. Wider windows take van Herk-Gil-Werman, at a cost that doesn't grow with the width. Windows of a matrix fold in two separable passes.
 ⍝ Expected: `+/3↕sv` and `⌈/3↕sv` 1 copy: one read and one write per window, sliding; `+/50↕sv` 1 copy: a running sum, with one addition and one subtraction per window; `⌈/50↕sv` 2 copies: van Herk-Gil-Werman, with two passes of running maxima and a combine; `+/+/3 3↕sq` 2 copies: two separable sliding passes.
 ⍝ On 25 October 2026 `+/3↕sv` measured 3.66 on macOS, for the reason `⌈/3↕sv`'s comment gives, and it measures 1.45 after the same change. CI then measured 0.85 on Linux and 1.26 in wasm, against 5.09 and 3.41 on 22 October 2026. All three budgets are twice its expected cost.
+⍝⍝⍝ route sliding fold
 +/3↕sv
 ⍝⍝: 2	2	2
 
@@ -154,6 +157,7 @@ ism,sm
 ⍝ A copy's gradient reads its cotangent: a reversal's through the inverse map, windows' through a correlation that reads the cotangent's frames at each window position, and a sum of windows' through a sliding sum of the padded cotangent.
 ⍝ Expected: `{+/sv×⌽⍵}∂ sv` 2 copies: the primal's pass and a reversed read of the cotangent; `{+/, 3↕sv × 3↕⍵}∂ sv` 6 copies: the primal and a correlation of the cotangent, each a few sliding passes; `{+/,+/50↕⍵}∂ sv` 3 copies: a sliding sum of the padded cotangent.
 ⍝ Held until studied: `{+/sv×⌽⍵}∂ sv` measures 5.49 on macOS and has old Linux and wasm budgets that suggest about 7 and 7.5, more than twice its expected cost. On 22 October 2026 CI measured 8.97 on Linux and 8.72 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
+⍝⍝⍝ route trace
 {+/sv×⌽⍵}∂ sv
 ⍝⍝: 9.8	14	15
 
@@ -177,7 +181,7 @@ ism,sm
 {+/, [64516 144]⍴3 3↕cimg +.× ⍵}∂ ck
 ⍝⍝: 120	480	960
 
-⍝⍝ gap forced "{+/, [64516 144]⍴3 3↕⍵ +.× ck}∂": `∂`'s program computes the cotangent's 2,064,512 items, a broadcast of the seed, then its zero-padded copy's 2,130,048. The padded copy should read the broadcast through its map as it pads, and the product read its windows with neither array built
+⍝⍝⍝ gap forced "{+/, [64516 144]⍴3 3↕⍵ +.× ck}∂": `∂`'s program computes the cotangent's 2,064,512 items, a broadcast of the seed, then its zero-padded copy's 2,130,048. The padded copy should read the broadcast through its map as it pads, and the product read its windows with neither array built
 {+/, [64516 144]⍴3 3↕⍵ +.× ck}∂ cimg
 ⍝⍝: 120	480	960
 

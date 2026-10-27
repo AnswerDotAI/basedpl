@@ -11,7 +11,7 @@ pub(crate) fn contracted(nodes: &mut Vec<Node>, p: Primitive, kind: FoldKind, of
     let (x, y, numeric, items) = (x.clone(), y.clone(), plan.numeric, nodes[of.of].desc.layout.count());
     let layout = of.layout.axes((0..of.layout.shape().len()).filter(|a| !axes.contains(a)));
     let result = Desc { atom: layout.shape().is_empty(), layout, ..one.clone() };
-    product(nodes, &x, &y, numeric, kind, of, axes, &result).inspect_err(|reason| rustymath::events::declined("contraction", reason, items)).ok()
+    product(nodes, &x, &y, numeric, kind, of, axes, &result).inspect_err(|reason| rustymath::events::declined(rustymath::events::Route::Contraction, reason, items)).ok()
 }
 
 /// The read of new nodes in `nodes` that compute a `+` fold along `axes` of `of`, which reads `x×y` planned under `numeric`, as one product, or the reason that no product computes it. The fold runs along the axes of the `×`'s frame that step within `axes` (`within`): each is one axis of the frame, or where `of` is a view, a run of adjacent axes that it merges, as a fold along several adjacent axes reads them (`eval::folded_along`). The view merges no other axes. Both operands' sources must step along each folded axis through affine maps, except that an operand that holds one item along each folded axis factors out of the fold (`factored`). Each other axis of the frame is a batch axis where both operands step along it, a row where only the left one does, and a column where only the right one does. An axis of one item is a row. The rows or the columns must hold more than one item, because a product reuses items only along them: a fused multiply and fold, which reads each item once, costs less for `+/a×b` on arrays of one shape. A copy lays out the left operand's source as batch, row and folded axes, and the right operand's as batch, folded and column axes, or a view does where the map reads the source in order. A product contracts them (`Step::Product`), stacked where batch axes remain, with the rows as one axis, the folded axes as one and the columns as one, and `•explain` lists it as a fast combination. A copy lays the product out as `result`, the fold's description, whose type the product's must be.
@@ -64,7 +64,6 @@ fn product(nodes: &mut Vec<Node>, x: &Read, y: &Read, numeric: Numeric, kind: Fo
     } else { None };
     let (xn, yn) = (xl.added(nodes, left.of), yl.added(nodes, right.of));
     let step = Step::Product { f: plus, g: times, left: Read::new(xn, Layout::from(xr)), right: Read::new(yn, Layout::from(yr)), stacked };
-    if crate::explain::recording() { crate::explain::fast("contraction", step.glyph()); }
     let mut at = add(nodes, Node { desc, origin: Origin::Step(step) });
     if let Some((map, desc)) = moved { at = add(nodes, Node { desc, origin: Origin::Step(Step::Copy { of: at, map }) }); }
     Ok(Read::new(at, result.layout.clone()))

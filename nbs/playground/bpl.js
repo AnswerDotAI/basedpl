@@ -39,7 +39,7 @@ export function highlight(text) {
         code(node) { this.addClassToHast(node, 'sourceCode bpl'); }
     }]});
 }
-// `lb.js` finds the page's Monaco editors through `window.monaco`.
+// The page input controller and external notebook integrations share this Monaco instance.
 window.monaco = monaco;
 window.MonacoEnvironment = {getWorker: () => new Worker(new URL('monaco-worker.js', import.meta.url), {type: 'module'})};
 monaco.languages.register({id: 'bpl'});
@@ -106,7 +106,7 @@ let bar;
 // The language bar from `lb.js`, which needs the glyph rows, `input.js` and the key layout.
 async function addBar(symbols) {
     const [lb, input, layout] = await Promise.all([script('lb.js'), script('input.js'), text('layout.json')]);
-    lb(symbols, input, JSON.parse(layout));
+    lb(symbols, input, JSON.parse(layout)).page(monaco);
 }
 
 // Runs BPL in a worker, which holds one session. `run(code)` runs code, and `on` gets each message about it: `output`, then `reply` with

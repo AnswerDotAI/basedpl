@@ -148,7 +148,7 @@ pub(crate) fn along(shape: &[usize], axes: &[usize]) -> Mapping {
 /// Node `of`'s items as `map` reads them, laid out as `layout`: a copy's description and map, or no map for a view of `of`, where `map` reads it in order.
 pub(crate) fn laid_out(nodes: &[Node], of: usize, map: Mapping, layout: &Layout) -> Option<Laid> {
     let desc = crate::plan::copy(&nodes[of].desc, layout).ok()?;
-    let (base, tables) = map.to_walk(layout.shape());
+    let (base, tables, _) = map.to_walk(layout.shape());
     let in_order = nodes[of].desc.layout.count() == desc.layout.count() && base == 0 && Steps::in_order(&tables);
     Some(Laid { desc, map: (!in_order).then_some(map) })
 }
@@ -598,7 +598,7 @@ pub(crate) fn tacit(f: &Function, left: Option<&Value>, right: &Value, span: &Sp
 #[inline(never)]
 pub(crate) fn call(programs: &Programs, environment: Option<usize>, left: Option<&Value>, right: &Value, span: &Span, data: &[Value], traced: &dyn Fn(&[Value], Option<&Value>, &Value) -> Result<Value, Error>) -> Option<Result<Value, Error>> {
     let numeric = Numeric::current();
-    let declined = |reason| { rustymath::events::declined("program", reason, right.len()); None };
+    let declined = |reason| { rustymath::events::declined(rustymath::events::Route::Program, reason, right.len()); None };
     if session().transforming() { return declined("a call under another level"); }
     let described = |v: &Value| Descs::of(v, &mut Desc::of).ok_or("an argument that programs can't hold");
     let key = match (left.map(described).transpose(), described(right)) {
@@ -610,7 +610,8 @@ pub(crate) fn call(programs: &Programs, environment: Option<usize>, left: Option
         Lookup::Changing => {
             let reason = "a free value that changes on every call";
             programs.add(Entry { key, captured: Vec::new(), outcome: Outcome::Stopped { reason, any_key: false }, changes: CHANGES, served: AtomicBool::new(false) });
-            return declined(reason);
+            rustymath::events::stopped(reason, right.len());
+            return None;
         }
         Lookup::Trace(changes) => {
             let (built, captured) = trace::build(left, right, data, traced);
@@ -626,7 +627,7 @@ pub(crate) fn call(programs: &Programs, environment: Option<usize>, left: Option
             (outcome, names, "built")
         }
     };
-    let recording = match outcome { Outcome::Built(recording) => recording, Outcome::Stopped { reason, .. } => return declined(reason) };
+    let recording = match outcome { Outcome::Built(recording) => recording, Outcome::Stopped { reason, .. } => { rustymath::events::stopped(reason, right.len()); return None; } };
     let names = names?;
     let program = &recording.program;
     let plan = recording.plan.get_or_init(|| blocks::plan(program));
@@ -653,6 +654,7 @@ pub(crate) fn call(programs: &Programs, environment: Option<usize>, left: Option
         run::Unit::Node(_) | run::Unit::Pending(_) => (c, b),
         run::Unit::Blocks(stage) => (c + usize::from(stage.compiled()), b + 1),
     });
+    if result.is_ok() { rustymath::events::taken(rustymath::events::Route::Trace, right.len()); }
     crate::explain::program(event, program.nodes.iter().filter(|n| matches!(n.origin, Origin::Step(_))).count(), compiled, blocks, || recording.listing(&key));
     Some(result)
 }

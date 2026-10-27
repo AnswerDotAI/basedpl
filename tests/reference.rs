@@ -48,6 +48,15 @@ fn reference_format_and_comparison() {
     assert_eq!(&text[span[0].as_u64().unwrap() as usize..span[1].as_u64().unwrap() as usize], "⍝⍝: 2 3 4");
     assert!(reference::failures(file.cases.iter().filter(|c| reference::checked(c)), &file.setup, &InterruptHandle::default()).is_empty());
     reference::check_once(&file.cases[0], &file.setup, &InterruptHandle::default()).unwrap();
+    let text = "⍝ route-format —\n⍝⍝⍝ route vector kernel\n⍝⍝⍝ gap stopped \"a read of a traced value\": guard on differentiated data\n{0<+/⍵?+/⍵×⍵;0}∂1 2";
+    for ending in ["   ⍝ 2 4", "\n2 4"] {
+        let mut routed = cases(&format!("{text}{ending}")).remove(0);
+        assert_eq!(routed["route"], json!(["vector kernel"]));
+        assert_eq!(routed["gap"][0], json!(["stopped", "a read of a traced value"]));
+        assert_eq!(reference::check(&routed, &InterruptHandle::default())["status"], "pass");
+        routed["route"] = json!(["missing route"]);
+        assert_eq!(reference::check(&routed, &InterruptHandle::default())["status"], "route");
+    }
     for (code, expect, status) in [
         ("1E¯10", "0", "mismatch"), ("1E¯16", "0", "pass"), ("1+1E¯15", "1", "pass"), ("a←3", "a", "invalid"), ("1", "{}0", "mismatch"),
         ("{}0", "{}0", "pass"), ("+", "{}0", "mismatch"), ("⍬", r#""""#, "mismatch"), (",1", "1", "mismatch"), ("0⍴⊂1 2", "0⍴⊂1", "mismatch"),
@@ -115,10 +124,10 @@ fn reference_cases() {
     let children: Vec<_> = (0..shards).map(|k| std::process::Command::new(&exe)
         .args(["reference_cases", "--exact", "--nocapture"]).env(SHARD, format!("{k} {shards}"))
         .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap()).collect();
-    let mut failures: Vec<Value> = children.into_iter().flat_map(|child| {
+    let mut failures: Vec<Value> = children.into_iter().enumerate().flat_map(|(k, child)| {
         let output = child.wait_with_output().unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-        assert!(output.status.success(), "a share of the reference cases stopped:\n{stdout}{}", String::from_utf8_lossy(&output.stderr));
+        assert!(output.status.success(), "share {k}/{shards} of the reference cases stopped:\n{stdout}{}", String::from_utf8_lossy(&output.stderr));
         stdout.lines().filter_map(|line| line.strip_prefix(FAILURE)).map(|line| serde_json::from_str(line).unwrap()).collect::<Vec<Value>>()
     }).collect();
     failures.sort_by(|a, b| (a["file"].as_str(), a["line"].as_u64()).cmp(&(b["file"].as_str(), b["line"].as_u64())));

@@ -124,28 +124,28 @@ f←{+/⍵×+/(5↑⍠["fill":z] ⍵)} ⋄ z←10 ⋄ r_1←f∂1 2 3 ⋄ z←20
 g←{⍵+1} ⋄ f←{+/⍵×(g ⍵×m)} ⋄ m←2 ⋄ a←f∂1.5 2.5 ⋄ m←3 ⋄ b←f∂1.5 2.5 ⋄ m←[1 2]ₓ ⋄ c←f∂1.5 2.5 ⋄ g←{⍵+10} ⋄ [a;b;c;f∂1.5 2.5]
 [7 11 ; 10 16 ; 4 11 ; 13 20]
 
-⍝ — A free name that a dfn reads as positions holds its value in the program: every call after the first, while the name holds the same value, replays. A new value, even of the same type and shape, makes a new trace. After three new traces in a row that never replayed, the argument signature runs without a program, declined as "a free value that changes on every call"
-x←0.5×[3 2]⍴⍳6 ⋄ r←[0 0 1]ₓ ⋄ f←{+/,⍵.[r]} ⋄ e←•explain "[f∂x ; f∂x]" ⋄ c←{+/+/⍵.[r]} ⋄ r←[2 2 2]ₓ ⋄ g←c∂x ⋄ r←[1 1 1]ₓ ⋄ h←c∂x ⋄ r←[0 1 2]ₓ ⋄ i←c∂x ⋄ r←[2 1 0]ₓ ⋄ k←•explain "c∂x" ⋄ [e.value ; (≢e.programs.event),∧/1↓e.programs.event≡¨⊂"replayed" ; g ; h ; i ; k.value ; (k.declined.route≡¨⊂"program")#k.declined.reason]
+⍝ — A free name that a dfn reads as positions holds its value in the program: every call after the first, while the name holds the same value, replays. A new value, even of the same type and shape, makes a new trace. After three new traces in a row that never replayed, the argument signature runs without a program, with the stopped-trace reason "a free value that changes on every call"
+x←0.5×[3 2]⍴⍳6 ⋄ r←[0 0 1]ₓ ⋄ f←{+/,⍵.[r]} ⋄ e←•explain "[f∂x ; f∂x]" ⋄ c←{+/+/⍵.[r]} ⋄ r←[2 2 2]ₓ ⋄ g←c∂x ⋄ r←[1 1 1]ₓ ⋄ h←c∂x ⋄ r←[0 1 2]ₓ ⋄ i←c∂x ⋄ r←[2 1 0]ₓ ⋄ k←•explain "c∂x" ⋄ [e.value ; (≢e.programs.event),∧/1↓e.programs.event≡¨⊂"replayed" ; g ; h ; i ; k.value ; k.stopped.reason]
 [[[2 2⋄1 1⋄0 0] [2 2⋄1 1⋄0 0]] [2 1]ₓ [0 0⋄0 0⋄3 3] [0 0⋄3 3⋄0 0] [1 1⋄1 1⋄1 1] [1 1⋄1 1⋄1 1] ["a free value that changes on every call"]]
 
 ⍝ — A free name that a program holds as it was, such as a nested array, must hold an identical value at a replay. A value that `=` calls equal but that differs in sign, such as `¯0` for `0`, makes a new trace
 n←[(1 2) 0] ⋄ f←{+/⍵÷1⊃n} ⋄ a←f∂1 2 ⋄ n←[(1 2) ¯0] ⋄ [a ; f∂1 2]
 [∞ ∞ ; ¯∞ ¯∞]
 
-⍝ — A trace stops at what a program can't hold, such as an effect, and `∂` runs without a program. `•explain` gives the stop a `declined` row for the route `"program"`
-f←{+/⍵×≢(•storage ⍵).kind} ⋄ e←•explain "f∂1.5 2.5" ⋄ e.value ((e.declined.route≡¨⊂"program")#e.declined.reason)
+⍝ — A trace stops at what a program can't hold, such as an effect, and `∂` runs without a program. `•explain` gives the stop a `stopped` row
+f←{+/⍵×≢(•storage ⍵).kind} ⋄ e←•explain "f∂1.5 2.5" ⋄ e.value (e.stopped.reason)
 [[7 7] ; ,⊂"an effect"]
 
 ⍝ — In a training step, `loss∂⍵` builds its program on the first call, which holds the loss and its gradient, and every later call replays it, with no trace stopped. It gives the gradient's closed form to within the last bits that a fold's order can change
-X←0.1×[6 3]⍴⍳18 ⋄ y←0.5×⍳6 ⋄ loss←{e←(X+.×⍵)-y ⋄ (+/e×e)÷≢y} ⋄ step←{⍵-0.01×loss∂⍵} ⋄ e←•explain "(step⍣10)3⍴0" ⋄ by←{e←(X+.×⍵)-y ⋄ ⍵-0.01×(2×(⍉X)+.×e)÷≢y} ⋄ w←(by⍣10)3⍴0 ⋄ ((⌈/|e.value-w)≤1e¯5×⌈/|w),(∧/1↓e.programs.event≡¨⊂"replayed"),(≢e.programs.event),+/e.declined.route≡¨⊂"program"
+X←0.1×[6 3]⍴⍳18 ⋄ y←0.5×⍳6 ⋄ loss←{e←(X+.×⍵)-y ⋄ (+/e×e)÷≢y} ⋄ step←{⍵-0.01×loss∂⍵} ⋄ e←•explain "(step⍣10)3⍴0" ⋄ by←{e←(X+.×⍵)-y ⋄ ⍵-0.01×(2×(⍉X)+.×e)÷≢y} ⋄ w←(by⍣10)3⍴0 ⋄ ((⌈/|e.value-w)≤1e¯5×⌈/|w),(∧/1↓e.programs.event≡¨⊂"replayed"),(≢e.programs.event),≢e.stopped.reason
 [1 1 10 0]ₓ
 
 ⍝ — A gradient that reads its argument at repeated positions adds the cotangent back at them in one accumulation step of its program, into zeros that the replay makes. Both calls run from programs, and no trace stops
-v←0.5×⍳10 ⋄ g←{+/(⍵.[[3 5 3]])*2} ⋄ e←•explain "[g∂v ; g∂v]" ⋄ e.value,(≢e.programs.event),+/e.declined.route≡¨⊂"program"
+v←0.5×⍳10 ⋄ g←{+/(⍵.[[3 5 3]])*2} ⋄ e←•explain "[g∂v ; g∂v]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason
 [[0 0 0 6 0 5 0 0 0 0] [0 0 0 6 0 5 0 0 0 0] 2ₓ 0ₓ]
 
 ⍝ — `+.×⍤2` on stacks of matrices runs in the program as a stacked product, and so does each product that its derivative's transpose makes. Both calls run from programs, no trace stops, and both give the closed form to within the last bits that a product's order can change
-x←0.1×2 5 3⍴⍳30 ⋄ w←0.01×2 3 4⍴⍳24 ⋄ f←{+/,(⍵(+.×⍤2)w)*2} ⋄ e←•explain "[f∂x ; f∂x]" ⋄ c←2×(x(+.×⍤2)w)(+.×⍤2)0 2 1⍉w ⋄ (∧/{(⌈/,|⍵-c)≤1e¯5×⌈/,|c}¨e.value),(≢e.programs.event),+/e.declined.route≡¨⊂"program"
+x←0.1×2 5 3⍴⍳30 ⋄ w←0.01×2 3 4⍴⍳24 ⋄ f←{+/,(⍵(+.×⍤2)w)*2} ⋄ e←•explain "[f∂x ; f∂x]" ⋄ c←2×(x(+.×⍤2)w)(+.×⍤2)0 2 1⍉w ⋄ (∧/{(⌈/,|⍵-c)≤1e¯5×⌈/,|c}¨e.value),(≢e.programs.event),≢e.stopped.reason
 [1 2 0]ₓ
 
 ⍝ — A program's first reuse compiles each block stage of elementwise steps on arrays of one shape, and later calls run its compiled parts. A compiled part gives the values that its steps give one at a time. This case and the block-stage cases after it run a body on a free name in the program that `∂` builds: the gradient of `{+/⍵×(f v)}` is `f v` [compiled]

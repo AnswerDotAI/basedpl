@@ -87,7 +87,7 @@ heat←{
 ⍝ Models and stencils, timed without `∂`. For each function that `[derivatives]` differentiates, this is the cost that its gradient's cost is measured against.
 ⍝ The mean squared error of a network with one hidden layer of 256 tanh units, over 1024 inputs of 64 values. Its parameters are in a record.
 ⍝ Expected: 61 copies on macOS, 108 on Linux and 214 in wasm: a product of 33.5 million flops, 512 an item, which takes 17 at Accelerate's rank-k rate, 64 at 8 in a copy's time for rustymath's own kernels and 128 at 4 in wasm; `7○` on 262,144 items, 40 natively, at the 10 copies for each 65,536 items that rustymath's speed test expects of `Tanh`, and 80 in wasm, where vector arithmetic costs about twice; and the other passes, about 4 natively and 6 in wasm.
-⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
+⍝⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
 [mx my] mlp mp
 ⍝⍝: 130	220	430
 
@@ -156,8 +156,9 @@ dx-0.5 × dx+0.5
 
 ⍝ A JVP of the MLP's loss in `[objectives]` along a fixed direction `dp`, which takes one pass through `+.×`, Rank, `7○` and `+/`.
 ⍝ Expected: 122 copies on macOS, 216 on Linux and 428 in wasm: the primal and one tangent pass of the same size.
-⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
-⍝⍝ allows itemwise "item pairs": `mp+⍵×dp` pairs the parameter record's few arrays one at a time, each by a whole-array call
+⍝⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
+⍝⍝⍝ allows itemwise "item pairs": `mp+⍵×dp` pairs the parameter record's few arrays one at a time, each by a whole-array call
+⍝⍝⍝ gap stopped "a value that programs can't hold": the MLP JVP should trace record-valued parameter arithmetic
 {[mx my] mlp mp+⍵×dp}∂0
 ⍝⍝: 250	440	860
 
@@ -168,7 +169,8 @@ dx-0.5 × dx+0.5
 
 ⍝ The tacit form that this index form replaced measured up to 932 on Linux on CI on 22 and 23 October 2026, more than twice its expected cost. CI hasn't timed the index form. Its Linux and wasm budgets are twice estimates of today's cost there: the tacit form's cost, plus up to 140 for the index form's eager gather, which costs 110 to 140 more than the tacit form on macOS. On Linux that's the tacit form's CI figure of 932 plus 140, about 1,070. In wasm, where no CI figure is recorded, it's the expected 741 plus 140, about 880.
 ⍝ On 27 October 2026 the index form measured 345 to 375 on macOS during a video call, against 239 for the tacit form earlier that day. Under dynamic kinds, `⍟` stops both forms' traces, so `∂` runs both without a program. The index form's eager gradient gathers repeated items for its `sq` line, 825,600 items at about 1.7 ns each. Traced, under static kinds, the index form's gradient is the faster (`ixg_`). A fix for the eager gather needs a design and is under "Next release" in `meta/open.md`. Until then, the macOS budget is 1.5 times today's cost, 345.
-⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
+⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
+⍝⍝⍝ gap stopped "a result whose type depends on values": positive likelihood sums should keep a guarded real logarithm trace
 gx gmm∂ gp
 ⍝⍝: 520	2200	1800
 
@@ -179,20 +181,21 @@ kx kmeans∂ kc
 ⍝ The gradient of the index form of the k-means cost in `[objectives]`.
 ⍝ Expected: 624 copies natively and 1,230 in wasm: about three times the objective.
 ⍝ On 27 October 2026 it measured 2,113 to 2,312 on macOS, and 2,116 later that day. Its gradient stores the 268 MB difference grid. Rewriting the contraction over the subtraction would avoid that, but changes rounding, and Jeremy put that choice after the release, under "Next release" in `meta/open.md` (`ixg_`'s mechanism 4). Until then, the macOS budget is 1.3 times today's cost, 2,116. The Linux and wasm budgets stay at twice estimates of the earlier cost, 2,312 on Linux and twice that in wasm.
-⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
+⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
 kx kmeansi∂ kc
 ⍝⍝: 2800	4700	9400
 
 ⍝ The gradient of the decoder block in `[objectives]`, from one run that records its linear calls and one transpose of the record.
 ⍝ Expected: 465 copies on macOS, 1060 on Linux and 2050 in wasm: about three times the objective.
 ⍝ On 27 October 2026 the index form measured 810 to 864 on macOS, with other work running, against 432 for the tacit form it replaced. Under dynamic kinds, `√` and `⍟` stop both forms' traces, so `∂` runs both without a program, and the index form's run is the slower. Since a cotangent's sum along adjacent axes runs as one fold, which a product takes (`eval::folded_along`), it measures 630 to 649. Part of the rest is the copies from agreement by name's axis order that the objective's comment describes. Until option (a) for that order removes them, the macOS budget is 1.3 times today's cost, 630. CI hasn't timed the index form, and no CI figure is recorded for the tacit form. The Linux and wasm budgets are twice estimates of today's cost there: the expected 1,060 and 2,050, plus the 198 by which the index form exceeds the tacit form on macOS, about 1,260 and 2,250.
+⍝⍝⍝ gap stopped "a result whose type depends on values": normalization should keep guarded real traces through square root and logarithm
 [tid ttg] dec∂ tp
 ⍝⍝: 820	2600	4500
 
 ⍝ The gradient of the convolutional layer's loss in `[objectives]`, with respect to its kernel.
 ⍝ Expected: 87 copies on macOS, 117 on Linux and 234 in wasm: about three times the objective.
 ⍝ On 27 October 2026 it measured 112 to 122 on macOS. It runs the objective, whose gap isn't placed, as the objective's comment says. Until that gap is placed and fixed, the macOS budget is 1.5 times today's cost, 112. The Linux and wasm budgets stay at twice their estimates.
-⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
+⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
 cx closs∂ ck
 ⍝⍝: 170	235	470
 
@@ -208,6 +211,6 @@ cx closs∂ ck
 gx gmm gp
 ⍝⍝: 64	140	250
 
-⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
+⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
 gx gmm∂ gp
 ⍝⍝: 150	410	750

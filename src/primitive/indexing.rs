@@ -1,11 +1,10 @@
 //! Indexing primitives: `⌷`, `⊃` and bracket indexing, and the `Selection` of items that selective assignment and `@` write through.
 
-use rustymath::{buffer::{Fill, View}, error::Kind, structure::{IndexPart, Plan, Selector as AxisSelector}};
+use rustymath::{buffer::View, error::Kind, structure::{IndexPart, Plan, Selector as AxisSelector}};
 use super::*;
-use std::sync::Arc;
 
 /// `left⌷right`. With `axes`, as `⌷⍠axes`, the selectors apply to the axes that `axes` lists, one for each position or key a selector holds, so a selector of coordinates lists each axis it covers. Its result takes the place of the first of those axes in the array. A NaN position reads `fill`, or the prototype where there's none.
-pub(super) fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Arc<Fill>>, span: &Span) -> Result<Value, Error> {
+pub(super) fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Value>, span: &Span) -> Result<Value, Error> {
     let parts = squad_parts(left)?;
     let Some(axes) = axes else { return select(right, &parts, None, false, fill, span) };
     let (order, firsts) = listed_axes(&parts, axes, right.shape().len())?;
@@ -141,7 +140,7 @@ pub(crate) fn coordinate_fields(value: &Value) -> impl Iterator<Item = Value> + 
 }
 
 /// `left⊃right`: the item or cell at the end of the path `left` into `right`. A last level that selects a cell outside its axes gives a cell of `fill`'s items, or of prototypes where there's none (`Value::fill_item`).
-pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, fill: Option<&Arc<Fill>>, span: &Span) -> Result<Value, Error> {
+pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, fill: Option<&Value>, span: &Span) -> Result<Value, Error> {
     let (array, _, fields) = walk(left, right, prototype)?;
     if fields.is_empty() { return Ok(array.into_owned()); }
     if fields.len() >= array.shape().len() { return Ok(array.at_or_fill(cell_offset(array.layout(), 0, &fields, prototype)?, fill)); }
@@ -351,7 +350,7 @@ impl Targets {
 }
 
 /// The item of `array` at `path`, with `fill` where the path's last position reaches no item, or the prototype where there's none. A path stops at an atom, so a simple item stands for the nested items below it.
-pub(crate) fn item_at(array: &Value, path: &[usize], fill: Option<&Arc<Fill>>) -> Value {
+pub(crate) fn item_at(array: &Value, path: &[usize], fill: Option<&Value>) -> Value {
     let Some((&last, outer)) = path.split_last() else { return array.clone() };
     let item = outer.iter().fold(array.clone(), |item, &i| if item.is_atom() { item } else { item.at_or_fill(i, None) });
     if item.is_atom() { item } else { item.at_or_fill(last, fill) }
@@ -409,7 +408,7 @@ impl Selection {
     }
 
     /// The items that the selection reads from `array`, with `fill` where a target reaches no item, or the prototype where there's none.
-    pub(crate) fn read(&self, array: &Value, fill: Option<&Arc<Fill>>, span: &Span) -> Result<Value, Error> {
+    pub(crate) fn read(&self, array: &Value, fill: Option<&Value>, span: &Span) -> Result<Value, Error> {
         let invalid = |k| Error::new(k, "invalid selection");
         let layout = match (&self.targets, &self.frame) {
             (Targets::Offsets(offsets), Frame::Direct) => return Ok(array.at_or_fill(offsets[0], fill)),
@@ -638,7 +637,7 @@ impl Value {
     }
 }
 /// The items that `parts` read from `right`, one part for each leading axis: their cross product, or where `paired`, with index arrays paired by broadcasting. A position that reaches no item reads `fill`, or the prototype where there's none.
-pub(crate) fn select(right: &Value, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, fill: Option<Arc<Fill>>, span: &Span) -> Result<Value, Error> {
+pub(crate) fn select(right: &Value, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, fill: Option<Value>, span: &Span) -> Result<Value, Error> {
     if parts.is_empty() { return Ok(right.clone()); }
     if axes.is_none() && let Some(selected) = crate::batch::bracketed(parts, right, paired, fill.as_ref(), span) { return selected; }
     if parts.iter().any(|part| matches!(part, IndexPart::Axis(v) if traced_positions(v))) {
@@ -651,7 +650,7 @@ pub(crate) fn select(right: &Value, parts: &[IndexPart<Value>], axes: Option<&[u
 }
 
 /// The items that a checked `plan` reads from `right`, with `fill` at each position that reaches no item, or the prototype where there's none. An atom read with no steps gives the atom. A `direct` plan whose result has no axes gives one item.
-pub(crate) fn planned_read(right: &Value, plan: Plan, direct: bool, fill: Option<Arc<Fill>>) -> Result<Value, Error> {
+pub(crate) fn planned_read(right: &Value, plan: Plan, direct: bool, fill: Option<Value>) -> Result<Value, Error> {
     if right.is_atom() && plan.steps.is_empty() { return Ok(right.clone()); }
     if direct && plan.layout.shape().is_empty() { return Ok(right.at_or_fill(Steps::combined(0, &plan.steps)[0], fill.as_ref())); }
     remap(right, plan, fill)

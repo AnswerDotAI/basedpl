@@ -13,7 +13,7 @@ use crate::{
 use rustymath::hashing::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::borrow::Cow;
 use crate::array::{Footprint, Seen};
-use rustymath::{agreement::Mapping, buffer::{Buffer, DType, FloatBuf, FloatWidth, Floats, View, Width}, gather::{Steps, Writes, counts_up}, structure::{IndexPart, Plan, Walk}};
+use rustymath::{agreement::Mapping, buffer::{Buffer, DType, FloatBuf, FloatWidth, Floats, View, Width}, gather::{Steps, Writes, counts_up}, structure::{Edge, IndexPart, Plan, Walk}};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, OnceLock,
@@ -474,18 +474,73 @@ fn read_back(v: &Value, plan: Plan) -> Result<Value, Error> {
 /// The cotangent `u` laid out as `layout` by `agreement::expand`, except that a `u` already laid out that way comes back unchanged, an atom included.
 fn laid_out(u: &Value, layout: &Layout) -> Value { if u.layout() == layout { u.clone() } else { crate::agreement::expand(u, layout) } }
 
-/// The record that a copy of shape `shape` reads through `map` from `child`, composed through each child that is itself a copy, while the composed copy still transposes by reads alone (`Steps::transposed`). The maps compose through `Mapping::through`, as a pending read of a copy and a traced copy of a copy compose. A chain of copies then sends its cotangent back in one read. A copy that a fold or product reads is recognised as windows before this, with its own shape.
+/// For a copy of `shape` that `tables` read from a source of shape `source`: an order to move the copy's axes into, and the reads of the moved copy whose sum sends each item back to the source position it was read from. Each read gives the source's shape, through one table for each source axis after a table of length 1 for any offset, with a fill where it reads nothing. A copy that reads each item at most once needs one read, and keeps its order. Overlapping windows that move by 1 along an axis need one read for each position in a window, each of which reads the frames back: a correlation. The order moves each window's axis first, so that each read walks the moved copy's last axis forwards. `None` for any other copy, such as a spread, a selection that repeats items or windows that move further, and where the copy or its source is empty.
+fn transposed(tables: &[Steps], shape: &[usize], source: &[usize]) -> Option<(Vec<usize>, Vec<Vec<Steps>>)> {
+    if shape.contains(&0) || source.contains(&0) { return None; }
+    let walk = Walk::new(tables, shape, source)?;
+    let (base, steps, from) = (walk.base, &walk.steps, &walk.strides);
+    if walk.along.iter().zip(steps).any(|(a, s)| a.is_none() && s.len() > 1) { return None; }
+    // The axes of the copy that walk each source axis.
+    let walks: Vec<Vec<usize>> = (0..source.len()).map(|a| walk.walking(a).collect()).collect();
+    // Of each pair of axes that walk one source axis, the shorter plays the window, which gives fewer reads. Moving the windows' axes first lets each read walk the copy's last axis forwards.
+    let cells: Vec<usize> = walks.iter().filter_map(|w| match *w.as_slice() { [f, c] => Some(if steps[f].len() >= steps[c].len() { c } else { f }), _ => None }).collect();
+    let order: Vec<usize> = cells.iter().copied().chain((0..shape.len()).filter(|r| !cells.contains(r))).collect();
+    let moved = rustymath::layout::strides(&order.iter().map(|&r| shape[r]).collect::<Vec<_>>());
+    let mut to = vec![0; shape.len()];
+    for (&r, &stride) in order.iter().zip(&moved) { to[r] = stride; }
+    // Each source axis gives its entries, each with an offset into the moved copy. A source axis that no axis of the copy walks gives the copy one position, which `base` holds.
+    let axes = walks.iter().enumerate().map(|(a, w)| match *w.as_slice() {
+        [] => Some(vec![(0, Steps::clipped(-((base / from[a] % source[a]) as i128), source[a], 1, 0))]),
+        [r] => Some(vec![(0, inverted(&steps[r], from[a], source[a], to[r])?)]),
+        [f, c] => {
+            let (f, c) = if cells.contains(&c) { (f, c) } else { (c, f) };
+            Some(correlated(&steps[f], &steps[c], walk.range(a, source[a])?.start, source[a], to[f], to[c]))
+        }
+        _ => None,
+    }).collect::<Option<Vec<_>>>()?;
+    let terms = axes.iter().fold(vec![(0, vec![])], |terms, entries| {
+        terms.iter().flat_map(|(offset, t)| entries.iter().map(move |(o, e)| (offset + o, [t.as_slice(), std::slice::from_ref(e)].concat()))).collect()
+    });
+    Some((order, terms.into_iter().map(|(offset, t)| Steps::with_base(offset, t)).collect()))
+}
+
+/// The entries that read back the windows that this entry's frames and `cell`'s positions read along an axis of `n` items, where the windows start at position `first`: one for each position in a window, each with that position's offset in the copy. `frames` and `cells` are the copy's strides along the two entries. Each entry reads the frames at a negated offset from `first`.
+fn correlated(step: &Steps, cell: &Steps, first: usize, n: usize, frames: usize, cells: usize) -> Vec<(usize, Steps)> {
+    (0..cell.len()).map(|c| (c * cells, Steps::clipped(-((first + c) as i128), n, step.len(), frames))).collect()
+}
+
+/// The entry that reads this entry's items back, for an entry along an axis of `n` items whose stride is `unit`, from a copy whose stride along this entry's own axis is `stride`. `None` where the entry reads a position twice.
+fn inverted(step: &Steps, unit: usize, n: usize, stride: usize) -> Option<Steps> {
+    let (m, forwards) = (step.len(), unit as isize);
+    match *step {
+        Steps::Stride { start: 0, step, .. } if step == forwards && m == n => return Some(Steps::along(n, stride)),
+        Steps::Stride { start, step, .. } if step == -forwards && start == (n - 1) * unit && m == n => {
+            return Some(Steps::Stride { start: (n - 1) * stride, len: n, step: -(stride as isize) });
+        }
+        Steps::Stride { start, step, .. } if step == forwards => return Some(Steps::clipped(-((start / unit) as i128), n, m, stride)),
+        Steps::Padded { start, size, edge: Edge::Fill, .. } if size == n => return Some(Steps::clipped(-start, n, m, stride)),
+        Steps::Rotated { shift, len, .. } if len == n => return Some(Steps::rotated(n - shift % n, n, stride)),
+        _ => {}
+    }
+    let mut back = vec![Steps::FILL; n];
+    let mut unique = true;
+    step.for_each(|j, o| if unique && let Some(o) = o { unique = std::mem::replace(&mut back[o / unit], j * stride) == Steps::FILL });
+    if !unique { return None; }
+    Some(Steps::table(back))
+}
+
+/// The record that a copy of shape `shape` reads through `map` from `child`, composed through each child that is itself a copy, while the composed copy still transposes by reads alone (`transposed`). The maps compose through `Mapping::through`, as a pending read of a copy and a traced copy of a copy compose. A chain of copies then sends its cotangent back in one read. A copy that a fold or product reads is recognised as windows before this, with its own shape.
 fn composed<'a>(mut child: &'a Arc<Linear>, map: &'a Mapping, shape: &[usize]) -> (&'a Arc<Linear>, Cow<'a, Mapping>) {
     let mut map = Cow::Borrowed(map);
     while let Op::Copy { child: source, map: inner } = &child.op {
         let Some(next) = inner.through(&map.tables(shape), child.layout.shape()) else { break };
-        if Steps::transposed(&next.tables(shape), shape, source.layout.shape()).is_none() { break; }
+        if transposed(&next.tables(shape), shape, source.layout.shape()).is_none() { break; }
         (child, map) = (source, Cow::Owned(next));
     }
     (child, map)
 }
 
-/// The cotangent of `child` from the cotangent `u` of a copy of `child` through `tables`, laid out as `layout`. A spread axis, along which every position reads one item, sums `u` along it first. A broadcast's axes are spread axes. Where rustymath's `Steps::transposed` then finds reads that send each item of `u` back where the copy read it, their sum is the cotangent: one read for a copy that reads each item at most once, and a correlation for overlapping windows that move by 1. The reads give 0 where the copy read nothing, and the correlation's reads fuse into one program. Any other copy adds each item of `u` where the copy read it.
+/// The cotangent of `child` from the cotangent `u` of a copy of `child` through `tables`, laid out as `layout`. A spread axis, along which every position reads one item, sums `u` along it first. A broadcast's axes are spread axes. Where `transposed` then finds reads that send each item of `u` back where the copy read it, their sum is the cotangent: one read for a copy that reads each item at most once, and a correlation for overlapping windows that move by 1. The reads give 0 where the copy read nothing, and the correlation's reads fuse into one program. Any other copy adds each item of `u` where the copy read it.
 fn copied_back(u: &Value, tables: &[Steps], layout: &Layout, child: &Linear, span: &Span) -> Result<Value, Error> {
     let mut u = laid_out(u, layout);
     let mut tables = Cow::Borrowed(tables);
@@ -498,7 +553,7 @@ fn copied_back(u: &Value, tables: &[Steps], layout: &Layout, child: &Linear, spa
             tables = Cow::Owned(Steps::with_base(base, steps.into_iter().enumerate().filter(|(a, _)| !spread.contains(a)).map(|(_, s)| s).collect()));
         }
     }
-    if let Some((order, terms)) = Steps::transposed(&tables, u.shape(), child.layout.shape()) {
+    if let Some((order, terms)) = transposed(&tables, u.shape(), child.layout.shape()) {
         u = crate::primitive::reorder(&u, &order)?;
         let mut reads = terms.into_iter().map(|t| crate::primitive::copied(&u, child.layout.clone(), &Mapping::from(t)).described("a cotangent copies back"));
         let first = reads.next().expect("a transpose reads at least once")?;

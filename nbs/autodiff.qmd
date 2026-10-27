@@ -139,11 +139,11 @@ w←1 2 3 ⋄ g←(+/w×⊢)∂ 4 5 6
 w←7 8 9 ⋄ (•explain "(+/w×⊢)∂ 4 5 6").programs.event   ⍝ ["replayed"]
 ```
 
-A trace stops at anything that a program can't hold: output or another effect, a read of a differentiated value, as a guard on one makes, or a call that no plan covers. `∂` then runs the call through duals and records. `∂` keeps the stop for those argument types and shapes. `•explain` gives the reason in its `declined` rows:
+A trace stops at anything that a program can't hold: output or another effect, a read of a differentiated value, as a guard on one makes, or a call that no plan covers. `∂` then runs the call through duals and records. `∂` keeps the stop for those argument types and shapes. `•explain` gives the reason in its `stopped` rows:
 
 ```bpl
 pos←{+/⍵ > 0 ? +/⊼⍵ ; 0}
-(•explain "pos∂ 1 2 3").declined.reason    ⍝ ["a read of a traced value"]
+(•explain "pos∂ 1 2 3").stopped.reason    ⍝ ["a read of a traced value"]
 ```
 
 Each replay reads the current value of every name that the function reads from outside its body, and of every array that a function other than a dfn binds. A name or an array read as positions, a count or a guard's condition is part of the program itself. A replay checks its value. A new value traces the function again.
@@ -152,7 +152,7 @@ A program fixes every type before it runs. Under the default dynamic kinds, a re
 
 ```bpl
 roots←{+/√⍵}
-(•explain "roots∂ 1 2 3").declined.reason  ⍝ ["a result whose type depends on values"]
+(•explain "roots∂ 1 2 3").stopped.reason  ⍝ ["a result whose type depends on values"]
 ```
 
 ## Index notation

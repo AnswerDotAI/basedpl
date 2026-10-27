@@ -12,6 +12,7 @@ async def kernel_story():
     async with run_kernel('bpl') as (_, kc):
         info = await kc.shell_request('kernel_info_request')
         assert info['content']['implementation'] == 'basedpl' and info['content']['language_info']['name'] == 'bpl'
+        assert 'eval' in info['content']['supported_features']
         await kc.exec_ok('•prefs ["box":$f]', silent=True)
         for code, expected in [
             ('v←⍳3 ⋄ mean←+/÷≢', []),
@@ -120,6 +121,22 @@ async def kernel_story():
         await kc.interrupt()
         reply = next(m for m in [m async for m in running] if m['msg_type']=='execute_reply')
         assert reply['content']['ename'] == 'KeyboardInterrupt'
+
+        # Native namespace inspection and expression MIME share the real session, without a Python-style function catalog.
+        await kc.exec_ok('huge←⍳1000000 ⋄ reduce←/', silent=True)
+        reply = await kc.control_request('debug_request', type='request', seq=1, command='inspectVariables', arguments={})
+        variables = {v['name']: v for v in reply['content']['body']['variables']}
+        assert variables['v']['value'] == '4 5' and len(variables['huge']['value']) <= 201
+        for name, kind in [('mean', 'function'), ('reduce', 'operator')]:
+            assert variables[name]['type'] == kind and variables[name]['presentationHint']['kind'] == 'method'
+        exprs = ['+/v', 'mean', 'reduce', '"Hello"', '1÷"a"', '•svg ⍬', '1 ⋄ assigned←2']
+        _, messages = await kc.exec_ok('', metadata={'eval': exprs}, store_history=False, stop_on_error=False)
+        values = next(m['content']['data']['application/json'] for m in messages if m['msg_type']=='execute_result')
+        assert values['+/v']['data']['text/plain'] == '9' and values['"Hello"']['data']['text/plain'] == 'Hello'
+        assert values['1 ⋄ assigned←2']['data']['text/plain'] == '2'
+        assert values['1÷"a"']['ename'] == 'DOMAIN ERROR' and 'image/svg+xml' in values['•svg ⍬']['data']
+        for name, kind in [('mean', 'function'), ('reduce', 'operator')]:
+            assert values[name]['metadata']['type'] == kind and values[name]['data']['text/plain']
 
 
 def test_jupyter_kernel(): asyncio.run(kernel_story())

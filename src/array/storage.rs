@@ -1,10 +1,10 @@
 //! Array storage: rustymath's compact buffers or mixed values, the borrowed `Items` view, BPL's promotion rules for compact dtypes, and `Gather`, which builds new storage from the items of existing arrays. `Gather::walk` reads them through rustymath's `gather::Steps`.
 
 use super::*;
-use std::sync::{Arc, atomic::{AtomicU32, AtomicU8, Ordering::Relaxed}, OnceLock};
+use std::sync::{atomic::{AtomicU32, AtomicU8, Ordering::Relaxed}, OnceLock};
 pub(crate) use rustymath::gather::Steps;
 use rustymath::{
-    buffer::{Buffer, ComplexBuf, Complexes, DType, Element, Fill, FloatBuf, Floats, IntBuf, Ints, Source, View, Width}, error::Kind, with_complexes,
+    buffer::{Buffer, ComplexBuf, Complexes, DType, Element, FloatBuf, Floats, IntBuf, Ints, Source, View, Width}, error::Kind, with_complexes,
     with_floats, with_ints, with_width
 };
 
@@ -545,7 +545,7 @@ impl Gather {
         for &r in rows { d.extend(source.items(r.as_()..r.as_() + 1)) }
     }
     /// Copies the items of `source` at `offsets`. A `Steps::FILL` offset gives `fill`, or the prototype of `source` where there's none, as `walk` does.
-    pub(crate) fn at(&mut self, source: &Value, offsets: &[usize], fill: Option<&Arc<Fill>>) {
+    pub(crate) fn at(&mut self, source: &Value, offsets: &[usize], fill: Option<&Value>) {
         if offsets.contains(&Steps::FILL) { self.walk(source, 0, &[Steps::table(offsets.to_vec())], fill) } else { self.rows(source, offsets, 1) }
     }
     /// Appends `n` copies of `item`.
@@ -604,12 +604,12 @@ impl Gather {
         true
     }
     /// Copies the items of `source` that `steps` reach from `base`, through rustymath's `gather::walk`: one `Steps` for each axis, with the last varying fastest. An offset that reaches no item gives `fill`, or the prototype of `source` where there's none, and through a join only the values read `fill` (`transform::Part`). Compact storage is copied in one typed loop. A pending copy that the walk reads fewer items of is read through its map, without building it (`fusion::walk_through`).
-    pub(crate) fn walk(&mut self, source: &Value, base: usize, steps: &[Steps], fill: Option<&Arc<Fill>>) {
+    pub(crate) fn walk(&mut self, source: &Value, base: usize, steps: &[Steps], fill: Option<&Value>) {
         if self.leveled(source) { return self.join.as_mut().expect("a joined buffer").each(source, false, |g, s, part| g.walk(s, base, steps, part.fill(fill))); }
         if let Some((inner, base, steps, fill)) = crate::fusion::walk_through(source, base, steps, fill) { return self.walk(&inner, base, &steps, fill.as_ref()); }
         self.follow(source);
-        if copy_into!(&mut self.data, source.as_items(), |d, s| rustymath::gather::walk(d, s, base, steps, Fill::item(fill), rustymath::gather::Same)) { return; }
-        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(d, s, base, steps, Fill::item(fill), f)) { return; }
+        if copy_into!(&mut self.data, source.as_items(), |d, s| rustymath::gather::walk(d, s, base, steps, native_fill(fill), rustymath::gather::Same)) { return; }
+        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(d, s, base, steps, native_fill(fill), f)) { return; }
         let chosen = fill.map_or_else(std::cell::OnceCell::new, |_| std::cell::OnceCell::from(source.fill_item(fill)));
         walk_values(self.mixed(), source, &chosen, base, steps);
     }
@@ -626,6 +626,10 @@ impl Gather {
     }
 }
 
+/// The validated scalar fill as an item of the compact source's type.
+fn native_fill<T: Element>(fill: Option<&Value>) -> T {
+    fill.map_or(T::FILL, |fill| T::of(fill.view().expect("a compact fill")).expect("a fill has its source's dtype")[0])
+}
 /// `rustymath::gather::walk` for mixed storage, which reads each item as a value. `fill` gives the item at a missing offset: a walk with no chosen fill builds `source`'s prototype at the first missing offset only. A prototype is the recursive fill of the first item, as large as that item.
 fn walk_values(d: &mut Vec<Value>, source: &Value, fill: &std::cell::OnceCell<Value>, base: usize, steps: &[Steps]) {
     let Some((axis, rest)) = steps.split_first() else { return d.push(source.at(base)) };

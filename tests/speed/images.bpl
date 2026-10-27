@@ -52,7 +52,7 @@ img-0.5 × img+0.5
 
 ⍝ A select by a comparison that a program would run reads a sample of the comparison's items to choose between a select and a gather. A sparse mask gathers the few items it picks. A dense one runs as one fused select.
 ⍝ Expected: `-@[0.99<]flat` 2.3 copies: a fused comparison reading `flat`, about 0.9, then a copy of `flat` with the picked items negated, about 1.4 with its pass over each block; `*@[0.3<]flat` 3.8 copies: one pass over memory, a comparison and a blend over each block, and exponentials of every item, whatever share picks `*`, about 2 copies.
-⍝⍝ allows forced "-@[0.99↣<]": a sparse mask computes its comparison to find the items it picks, then gathers them
+⍝⍝⍝ allows forced "-@[0.99↣<]": a sparse mask computes its comparison to find the items it picks, then gathers them
 -@[0.99<]flat
 ⍝⍝: 4.6	4.6	4.6
 

@@ -11,7 +11,7 @@ pub(crate) trait Agree: Sized {
     fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
     fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind>;
     fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
-    /// The positions that pair `i` reads. `None` means an argument reads its fill, as it does for a key that it lacks: its mapping's chosen fill, or its prototype. With no pairs, each argument reads its first item, or its prototype where it has none. `positions` calls `lens` for the arguments' item counts only where there are no pairs.
+    /// The positions that pair `i` reads. `None` means an argument reads its fill, as it does for a key that it lacks: its chosen fill or prototype. With no pairs, each argument reads its first item, or its prototype where it has none. `positions` calls `lens` for the arguments' item counts only where there are no pairs.
     fn positions(&self, i: usize, lens: impl FnOnce() -> [usize; 2]) -> [Option<usize>; 2];
     /// The pair of items that pair `i` reads (`positions`).
     #[inline]
@@ -37,7 +37,7 @@ impl Agree for Agreement {
     #[inline]
     fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>) {
         let [x, y] = self.positions(i, || [left.map_or(0, Value::len), right.len()]);
-        let item = |a: &'a Value, j: Option<usize>, m: &Mapping| j.map_or_else(|| Cow::Owned(a.fill_item(m.chosen())), |j| a.at_ref(j));
+        let item = |a: &'a Value, j: Option<usize>, map: &Mapping| j.map_or_else(|| Cow::Owned(a.mapped_fill(map)), |j| a.at_ref(j));
         (left.map(|a| item(a, x, &self.left)), item(right, y, &self.right))
     }
     fn laid(&self, left: Option<&Value>, right: &Value) -> (Option<Value>, Value) {

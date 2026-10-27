@@ -890,10 +890,17 @@ impl Primitive {
             (_, false, Some(l)) if self.facts(true).pervasive() => {
                 let ((left, x), (right, y)) = (Self::fill_for(fill, l, true, span)?, Self::fill_for(fill, right, true, span)?);
                 if x.is_none() && y.is_none() { return match &spec { Some(s) => self.call_axes(Some(l), &right, s, span), None => self.call(Some(l), &right, span) }; }
-                self.agreed(&left, &right, |a, b| {
-                    let mut agreement = match &spec { Some(s) => axis_agreement(a, b, s)?, None => Agreement::new(a.layout(), b.layout()).described("array shapes do not agree")? };
-                    agreement.left = agreement.left.filled(x);
-                    agreement.right = agreement.right.filled(y);
+                let (mx, my) = (x.as_ref().and_then(|fill| left.native_fill(fill)), y.as_ref().and_then(|fill| right.native_fill(fill)));
+                if x.is_some() && mx.is_none() || y.is_some() && my.is_none() {
+                    let agreement = match &spec { Some(s) => axis_agreement(&left, &right, s)?, None => Agreement::new(left.layout(), right.layout()).described("array shapes do not agree")? };
+                    let left = copied_fill(&left, agreement.layout.clone(), &agreement.left, x.as_ref()).described("invalid keyed argument")?;
+                    let right = copied_fill(&right, agreement.layout, &agreement.right, y.as_ref()).described("invalid keyed argument")?;
+                    return self.call(Some(&left), &right, span);
+                }
+                self.agreed(&left, &right, |left, right| {
+                    let mut agreement = match &spec { Some(s) => axis_agreement(left, right, s)?, None => Agreement::new(left.layout(), right.layout()).described("array shapes do not agree")? };
+                    agreement.left = agreement.left.filled(mx);
+                    agreement.right = agreement.right.filled(my);
                     Ok(agreement)
                 }, span)
             }
@@ -923,7 +930,7 @@ impl Primitive {
         })
     }
     /// `fill` as the fill of `data`'s reads, or `None` where `keyed` holds and `data` has no keyed axis, as for an argument that a pervasive call pairs by position. Compact data, which a carrier's template gives for a carried value (`Value::template`), takes an item of its own type that keeps the fill's value, and mixed storage takes any value (`Value::fill_of`). Under dynamic kinds, ordinary integers whose storage can't hold the fill move to wider storage that can, through a conversion (`derivative::converted`). A DOMAIN error where the fill doesn't keep its value.
-    fn fill_for<'a>(fill: &Value, data: &'a Value, keyed: bool, span: &Span) -> Result<(Cow<'a, Value>, Option<std::sync::Arc<rustymath::buffer::Fill>>), Error> {
+    fn fill_for<'a>(fill: &Value, data: &'a Value, keyed: bool, span: &Span) -> Result<(Cow<'a, Value>, Option<Value>), Error> {
         if keyed && !(0..data.shape().len()).any(|a| data.keys(a).is_some()) { return Ok((Cow::Borrowed(data), None)); }
         let typed = data.template();
         let (to, item) = Value::fill_of(fill, typed.dtype(), typed.fixed_width().is_some())?;
@@ -1164,7 +1171,7 @@ impl Primitive {
 
 /// `f` on each pair of items that `agreement` pairs from `left` and `right`, gathered as items and laid out as `agreement` lays out the result.
 fn pairwise(left: Option<&Value>, right: &Value, agreement: Agreement, f: &dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>) -> Result<Value, Error> {
-    crate::explain::itemwise("item pairs", agreement.len);
+    crate::explain::itemwise(rustymath::events::Route::ItemPairs, agreement.len);
     let mut data = Gather::items(agreement.len);
     for i in 0..agreement.len {
         let (x, y) = agreement.values_ref(left, right, i);
