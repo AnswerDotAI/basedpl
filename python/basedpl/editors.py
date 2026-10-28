@@ -244,11 +244,16 @@ def browser():
         *(f'export const {name} = {json.dumps(value, ensure_ascii=False)};' for name, value in data.items()),
         f'const bar = {TEXTMATE.joinpath("lb.js").read_text()}({json.dumps(symbols, ensure_ascii=False)}, '
         f'{TEXTMATE.joinpath("input.js").read_text()}, {TEXTMATE.joinpath("layout.json").read_text()});',
-        'const font = new URL("SAX2B.woff2", import.meta.url);', r'''export function attach(monaco, container) {
-    const input = bar.attach(monaco, container), style = container.ownerDocument.createElement('style');
+        'const font = new URL("SAX2B.woff2", import.meta.url);', r'''export function installFont(doc = document) {
+    if (doc.getElementById('bpl-font')) return;
+    const style = doc.createElement('style');
+    style.id = 'bpl-font';
     style.textContent = `@font-face{font-family:SAX2B;src:url("${font}") format("woff2")}`;
-    container.append(style);
-    return {dispose() { input.dispose(); style.remove(); }};
+    doc.head.append(style);
+}
+export function attach(monaco, container) {
+    installFont(container.ownerDocument);
+    return bar.attach(monaco, container);
 }''']
     keyboards.write_changed(Path('wasm/bpl-editor.js'), '\n'.join(rows) + '\n')
 

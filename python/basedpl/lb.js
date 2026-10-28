@@ -86,7 +86,7 @@
         }
 
         const host = d.createElement('div');
-        host.innerHTML = `<div class="ngn_lb" aria-label="BPL symbols"></div>
+        host.innerHTML = `<div class="ngn_lb" aria-label="BPL symbols"><button type="button" class="ngn_x" style="float:right" title="Close symbol bar">×</button></div>
             <div class="bpl_choices" role="group" aria-label="BPL symbol completions" hidden></div>
             <style>
             .ngn_lb,.bpl_choices{background:var(--bpl-bar-background,#eee);color:var(--bpl-bar-color,#111);font:15px var(--bpl-font,SAX2B),monospace}
@@ -102,6 +102,7 @@
             </style>`;
         container.append(host);
         const bar = host.querySelector('.ngn_lb'), tip = host.querySelector('.bpl_choices');
+        bar.querySelector('.ngn_x').onclick = () => { bar.hidden = true; };
         let active, lastEditor, choice, keyInput = false;
         const names = new Map(symbols.map(({glyph, name, monad, dyad}) =>
             [glyph, [name, monad, dyad].filter(Boolean).join(' ')]));
@@ -247,15 +248,14 @@
         container.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647';
         d.body.append(container);
         const input = attach(monaco, container, true), bar = container.querySelector('.ngn_lb');
-        bar.insertAdjacentHTML('afterbegin', '<button class="ngn_x" style="float:right" title="Close symbol bar">×</button><button class="ngn_o" style="float:right" title="Toggle overlay/push-down"></button>');
+        bar.insertAdjacentHTML('afterbegin', '<button class="ngn_o" style="float:right" title="Toggle overlay/push-down"></button>');
         let overlay = false;
         const padding = d.body.style.paddingTop, toggle = bar.querySelector('.ngn_o');
         try { overlay = localStorage.getItem('ngn_lb_overlay') === '1'; } catch {}
         function reflow() {
             toggle.textContent = overlay ? '▼' : '▲';
-            d.body.style.paddingTop = overlay || container.hidden ? padding : `${bar.offsetHeight}px`;
+            d.body.style.paddingTop = overlay || bar.hidden ? padding : `${bar.offsetHeight}px`;
         }
-        bar.querySelector('.ngn_x').onclick = () => { container.hidden = true; reflow(); };
         toggle.onclick = () => {
             overlay = !overlay;
             try { localStorage.setItem('ngn_lb_overlay', overlay ? '1' : '0'); } catch {}
