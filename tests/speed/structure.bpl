@@ -182,10 +182,10 @@ ism,sm
 [64516 144]⍴3 3↕cimg +.× ck
 ⍝⍝: 56	240	480
 
-⍝ Held until studied: `([1044484 9]⍴3 3↕sq)+.×kq` measured 7.49 on macOS on 22 October 2026, until rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. On 27 October 2026 `gmv_` widened the strip to 32 results (`COLUMN_STRIP`), which took it from 6.11 to 5.23 in alternating runs. Nine multiply-adds per window at NEON's two lanes of f64 take about twice the expected cost. Its old Linux and wasm budgets suggest about 8.5 and 10.5. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
+⍝ 3.25 copies, for 9 multiply-adds per window (2.25), one read and one write. On macOS, 5.5 copies, because NEON's two lanes of f64 take twice the multiply-adds' time (4.5). `([1044484 9]⍴3 3↕sq)+.×kq` measured 7.49 on macOS on 22 October 2026, until rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. On 27 October 2026 `gmv_` widened the strip to 32 results (`COLUMN_STRIP`), which took it from 6.11 to 5.23 in alternating runs. Strips of 8 for the 30 results that strips of 32 leave in each 1,022-wide row, with each result written rather than added to the zeroed output, brought it to 4.35 to 4.49 on 28 October 2026. Its old Linux and wasm budgets suggest about 8.5 and 10.5. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. Its Linux and wasm budgets stay at the old values until CI measures this build.
 ⍝⍝⍝ route mapped product
 [1044484 9]⍴3 3↕sq +.× kq
-⍝⍝: 16	17	21
+⍝⍝: 11	17	21
 
 ⍝⍝⍝ route mapped product
 {+/, [64516 144]⍴3 3↕cimg +.× ⍵}∂ ck

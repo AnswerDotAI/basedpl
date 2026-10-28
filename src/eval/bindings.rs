@@ -384,7 +384,9 @@ impl Bindings {
     pub(super) fn depth(&self) -> usize { self.stack.borrow().frames.len() }
 
     /// Pushes `frame` and makes it current. Its first slots hold `implicit`, the bindings of the six names that a call binds itself, in slot order (`Name::implicit`), and its locals' slots are empty. Fails at the depth limit, before pushing.
-    #[inline(always)]
+    // Out of line in the browser, to keep its locals out of the frame that `Session::call_defined` keeps on the stack at every level of recursion, as `Binder::reduce`'s comment explains.
+    #[cfg_attr(target_arch = "wasm32", inline(never))]
+    #[cfg_attr(not(target_arch = "wasm32"), inline(always))]
     pub(super) fn enter(&self, mut frame: Frame, mut implicit: [Option<Binding>; IMPLICIT], span: &Span) -> Result<(), Error> {
         let mut stack = self.stack.borrow_mut();
         if stack.frames.len() == MAX_FRAME_DEPTH { return Err(Error::new(Kind::Limit, format!("lexical frame depth exceeds {MAX_FRAME_DEPTH}")).at(span)); }

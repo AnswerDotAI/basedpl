@@ -180,4 +180,4 @@ Spaces change grouping only at the first two levels.
 
 ## Syntax highlighting
 
-Use `bpl` code fences for ordinary names and `hpl` for Hanzi glyph spellings. The [BPL TextMate grammar](https://cdn.jsdelivr.net/npm/basedpl/bpl.tmLanguage.json) and its [BPL (Hanzi) overlay](https://cdn.jsdelivr.net/npm/basedpl/hpl.tmLanguage.json) work with TextMate-compatible editors and Shiki. `scripts/prep.py` generates both from the Quarto XML and shared glyph table. The Python and npm packages include `bpl.tmLanguage.json` and `hpl.tmLanguage.json`. Load both grammars to use `hpl`.
+Use `bpl` code fences for ordinary names and `hpl` for Hanzi glyph spellings. The [BPL TextMate grammar](https://cdn.jsdelivr.net/npm/basedpl/bpl.tmLanguage.json) and its [BPL (Hanzi) overlay](https://cdn.jsdelivr.net/npm/basedpl/hpl.tmLanguage.json) work with TextMate-compatible editors and Shiki. `basedpl.editors.write()` generates both from the Quarto XML and shared glyph table. The Python and npm packages include `bpl.tmLanguage.json` and `hpl.tmLanguage.json`. Load both grammars to use `hpl`.

@@ -17,6 +17,10 @@ native = ["basedpl/native"]
 
 [dependencies]
 basedpl = { path = "..", default-features = false }
+# Match the CLI's shared dependency features so wheel builds reuse its compiled core.
+ctrlc.workspace = true
+kernmini.workspace = true
+rustyline.workspace = true
 num-bigint = ">=0.4.6, <0.5"
 num-complex = ">=0.4.6, <1"
 num-rational = ">=0.4.2, <1"

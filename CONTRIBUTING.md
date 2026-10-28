@@ -27,7 +27,7 @@ ship-rs-build
 
 After Rust changes, run `cargo test` for the Rust tests, then `cargo develop` to install what `cargo test` built: the extension, and the native `bpl` command in your environment. Both use one compilation of each crate. `cargo develop` comes from `fastws-cli`, one of the development tools. Run `pip install -e '.[dev]'` again only when the package metadata changes. Use `cargo fastfmt`, not `cargo fmt`.
 
-Before a release, run `python scripts/prep.py` from the repository root. It writes the syntax highlighters' glyph lists and the macOS keyboard layout bundle. It then runs nbdev's `prepare` to export, test and clean the notebooks and render this README.
+Before a release, run `bpl-tests prerelease` from the repository root. Among its steps, it writes the syntax highlighters' glyph lists and the macOS keyboard layout bundle, saves the notebooks' outputs, and runs nbdev's `prepare` to export, test and clean the notebooks and render the README. DEV.md's "Release" section lists every step.
 
 ## Did you find a bug?
 

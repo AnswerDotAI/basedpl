@@ -1,4 +1,4 @@
-//! `cargo wasm` builds the browser module and writes the npm package `basedpl` into `wasm/pkg/`. The package holds the module, its JavaScript glue, the language bar (`lb.js`, `input.js` and `layout.json`), the TextMate grammar, `canvas.js`, which draws `•canvas` outputs, `package.json` and `README.md`. It also copies everything but `package.json` and `README.md` into `nbs/playground/`, where the docs playground loads them on `localhost`. It builds with the incremental `release` profile.
+//! `cargo wasm` builds the browser module and writes the npm package `basedpl` into `wasm/pkg/`. The package holds the module, its JavaScript glue, the language bar (`lb.js`, `input.js` and `layout.json`), the TextMate grammars, `canvas.js`, which draws `•canvas` outputs, the Monaco editor module `bpl-editor.js` with its font `SAX2B.woff2`, `package.json` and `README.md`. It also copies everything but `package.json` and `README.md` into `nbs/playground/`, where the docs playground loads them on `localhost`. It builds with the incremental `release` profile.
 //!
 //! `cargo wasm --strip` also drops the module's name section, which holds every function's name. CI publishes that module to npm.
 //!
@@ -46,10 +46,8 @@ fn main() -> anyhow::Result<()> {
     });
     fs::write(pkg.join("package.json"), serde_json::to_string_pretty(&package)?)?;
     fs::copy(root.join("wasm/README.md"), pkg.join("README.md"))?;
-    let editor = format!("python/basedpl/bpl-editor-{}.js", env!("CARGO_PKG_VERSION"));
-    let font = format!("python/basedpl/SAX2B-{}.woff2", env!("CARGO_PKG_VERSION"));
     let assets = ["python/basedpl/lb.js", "python/basedpl/input.js", "python/basedpl/layout.json", "python/basedpl/bpl.tmLanguage.json",
-        "python/basedpl/hpl.tmLanguage.json", "src/canvas.js", &editor, &font]
+        "python/basedpl/hpl.tmLanguage.json", "src/canvas.js", "wasm/bpl-editor.js", "nbs/fonts/SAX2B.woff2"]
         .map(|a| root.join(a));
     for asset in &assets { fs::copy(asset, pkg.join(asset.file_name().expect("an asset is a file")))?; }
     if out.is_none() {

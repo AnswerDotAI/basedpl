@@ -606,6 +606,8 @@ impl Binder {
         session.stacks.borrow_mut().extend([binder.stack, pending]);
         Ok(Reduced::Entity(entity))
     }
+    // A browser worker's small stack limits recursion. In wasm, inlining this into `reduced` would put its locals in the frame that `reduced` keeps across each call, at every level of recursion. V8's Liftoff gives each local a slot, whether or not its path runs.
+    #[cfg_attr(target_arch = "wasm32", inline(never))]
     fn reduce(&mut self, capture: bool, source: &Arc<Source>, mut rec: Option<&mut Recorder>) -> Result<Option<Application>, Error> {
         let mut left = self.stack.pop().unwrap();
         let mut right = self.stack.pop().unwrap();

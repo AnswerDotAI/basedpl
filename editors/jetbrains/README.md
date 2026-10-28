@@ -40,4 +40,4 @@ The XML uses JetBrains' `OTHER` (Everywhere) context. To limit applicability, re
 
 ## Generation
 
-`basedpl.editors.write()`, called by `scripts/prep.py`, generates the templates from BPL's shared glyph names and aliases and copies the shared grammar into the bundle. Edit the generators or source metadata, not the generated files.
+`basedpl.editors.write()`, which `bpl-tests prerelease` runs, generates the templates from BPL's shared glyph names and aliases and copies the shared grammar into the bundle. Edit the generators or source metadata, not the generated files.

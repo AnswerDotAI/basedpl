@@ -1,5 +1,5 @@
-// Checks the browser module, built by `cargo wasm`, in Node. The depth checks run in a worker with a stack about the size of a Chrome
-// worker's, once with each of V8's compilers. The depth limit allows 171 levels of recursion that counts two a level, and 113 of
+// Checks the browser module, built by `cargo wasm`, in Node. The depth checks run in a worker with 80% of a Chrome worker's stack,
+// once with each of V8's compilers. The depth limit allows 171 levels of recursion that counts two a level, and 113 of
 // recursion that counts three. Each shape must reach its depth, and recursion to 300 levels must stop with a LIMIT error before the
 // stack runs out.
 import assert from 'node:assert/strict';
@@ -90,8 +90,10 @@ if (isMainThread && process.argv[2] !== 'depths') {
         }
     });
 } else if (isMainThread) {
-    // Node keeps 192 KB of a worker's stack in reserve. The rest, about 470 KB, is what a Chrome worker gives.
-    new Worker(new URL(import.meta.url), { resourceLimits: { stackSizeMb: 0.65 } }).on('message', results => console.log(JSON.stringify(results)));
+    // Node keeps 192 KB of a worker's stack in reserve. `chromeMb` is that reserve plus the stack a Chrome worker gives, about 470 KB. This
+    // worker gets the reserve and 80% of Chrome's part. The other 20% is a margin for frames that grow between V8 versions and builds.
+    const reserveMb = 0.1875, chromeMb = 0.65;
+    new Worker(new URL(import.meta.url), { resourceLimits: { stackSizeMb: reserveMb + 0.8 * (chromeMb - reserveMb) } }).on('message', results => console.log(JSON.stringify(results)));
 } else {
     const depth = (shape, n) => { const { outputs, error } = run(`m←{⍶ ⍵} ⋄ f←${shape} ⋄ f ${n}`); return error ?? Number(outputs.at(-1)); };
     const results = {};

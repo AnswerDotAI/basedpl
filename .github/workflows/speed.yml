@@ -14,8 +14,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      # This job times the `bpl` that releases ship, which `cargo stage --profile dist` builds, as the `Release` workflow does. `bpl --costs` prints every case's cost and budget for `basedpl.bpltests.logged_costs`. A case over its budget doesn't fail it. The job builds without a cache. The `Test` workflow's caches hold only test-profile builds.
-      - run: pip install 'fastws-cli>=0.0.25' && cargo stage --profile dist
+      # This job times the `bpl` that releases ship, which `cargo stage --profile dist --no-default-features` builds, as the `Release` workflow does. `bpl --costs` prints every case's cost and budget for `basedpl.bpltests.logged_costs`. A case over its budget doesn't fail it. The job builds without a cache. The `Test` workflow's caches hold only test-profile builds.
+      - run: pip install 'fastws-cli>=0.0.29' && cargo stage --profile dist --no-default-features
       - run: wheel/scripts/bpl --costs tests/speed
       # `bpl-tests thread_scaling` times a large product, a 512×512 SVD and Hermitian eigendecomposition, a stack of QR decompositions and a large elementwise function on one thread and on as many threads as the runner has physical cores, up to 4. It fails when a case reaches less than half its expected gain. Speed budgets are single-thread measurements, so this is the check of multithreaded speed. It comes last, so that a failure here still leaves every cost logged. `lscpu` shows whether the VM reports which vCPUs share a physical core, which is how `thread_scaling` counts cores on Linux.
       - run: lscpu
@@ -28,6 +28,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      # These wasm costs come from the V8 of the Node that `.node-version` pins, as in the `Test` workflow's `wasm` job.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
       - run: cargo generate-lockfile
       - uses: Swatinem/rust-cache@v2
         with:
