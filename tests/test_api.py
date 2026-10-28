@@ -171,6 +171,11 @@ def test_regex_functions():
     teq(replace('$2:$1', 'ab12 cd3').py, '12:ab 3:cd')
     teq(bpl('(p.matches s).position', p=p, s='é ab12').py, [2])
     teq(matches('x9')['groups'].py, [['x', '9']])
+    repeated = bpl.fn('•r')(r'(?<= )([a-z]+)\1(?![a-z])')
+    teq(repeated.matches('z abab xx').text.py, ['abab', 'xx'])
+    teq(repeated.replace('$1', 'z abab xx').py, 'z ab x')
+    with pytest.raises(BplError, match='backtrack'):
+        bpl.fn('•r')(r'(?i)(a|b|ab)*(?>c)').matches('ab'*64+'!c')
 
 
 def test_distribution_functions():
@@ -585,6 +590,7 @@ def test_retained_and_late_bound_functions(capsys):
 
 
 def test_function_inspection():
+    def help_text(command): return '\n'.join(bpl(command, 'explicit').output)
     source = '{⍝ Mean of a vector\n(+/⍵)÷≢⍵}'
     bpl('mean←'+source)
     mean = bpl.fn('mean')
@@ -598,9 +604,16 @@ def test_function_inspection():
     assert source in '\n'.join(bpl(']help mean -source', 'explicit').output)
     bpl('llms←1')
     assert '# BasedPL' in '\n'.join(bpl(']help llms', 'explicit').output)
-    for command in [']help', ']help mean -other', ']help mean -source extra']:
+    assert ']help indexing' in help_text(']help')
+    assert '# Indexing' in help_text(']help indexing')
+    assert ']help indexing' in help_text(']help indexi')
+    assert ']help indexing' in help_text(r']help? ^INDEXING$')
+    results = help_text(r']help? INDEX(?!ing[0-9])')
+    assert results.index(']help indexing') < results.index(']help arrays')
+    with pytest.raises(BplError, match='DOMAIN'): help_text(']help? (?')
+    for command in [']help?', ']help ? indexing', ']help mean -other', ']help mean -source extra']:
         with pytest.raises(BplError, match='SYNTAX'): bpl(command, 'explicit')
-    with pytest.raises(BplError, match='VALUE'): bpl(']help absent', 'explicit')
+    assert 'No matching topics' in help_text(']help nonexistent_topic_xyz')
     bpl('changed←0 ⋄ danger←{changed+←1 ⋄ ⍵}')
     assert bpl.inspect('danger')['source'].startswith('{')
     teq(bpl('changed').py, 0)

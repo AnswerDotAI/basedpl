@@ -99,8 +99,8 @@ fn programs_read_standard_input() {
         let output = child.wait_with_output().unwrap();
         (String::from_utf8(output.stdout).unwrap(), String::from_utf8(output.stderr).unwrap())
     };
-    assert_eq!(run(&["-e", "⎕ ⋄ ⍴⎕ ⋄ ⎕ ⋄ ⍬≡⎕"], "first\n\nlast"), ("first\n[0]ₓ\nlast\n$t\n".into(), String::new()));
-    assert_eq!(run(&["-e", "⎕ ⋄ ≢•nget \"-\""], "head\nab\ncd\n"), ("head\n6ₓ\n".into(), String::new()));
+    assert_eq!(run(&["-e", "⎕ ⋄ ⍴⎕ ⋄ ⎕ ⋄ ⍬≡⎕"], "first\n\nlast"), ("\"first\"\n[0]ₓ\n\"last\"\n$t\n".into(), String::new()));
+    assert_eq!(run(&["-e", "⎕ ⋄ ≢•nget \"-\""], "head\nab\ncd\n"), ("\"head\"\n6ₓ\n".into(), String::new()));
     // Standard input holds the program itself here.
     for args in [&["-"][..], &[]] { assert!(run(args, "⎕\n").1.contains("IO ERROR: standard input is unavailable here")); }
 }

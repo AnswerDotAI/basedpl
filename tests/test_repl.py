@@ -46,21 +46,21 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         enter('•prefs ["box":$f]\r', '\r\n')
         os.write(master, b'"\x1b\\')
         read_until('⍭:7g'.encode())
-        enter('7"\r', '\r\n⍋\r\n')
-        enter('"\x1b\\g"\r', '\r\n⍒\r\n')
-        enter('"£\x1b£"\r', '\r\n£#\r\n')
-        enter('"\x1b\\\x1b\\ \x1b6\x1b66"\r', '\r\n⍭ ⁶6\r\n')
-        enter('"\x1boo \x1b5\x1bx\x1b5\x1b1"\r', '\r\n○ ₓ₁\r\n')
+        enter('7"\r', '\r\n"⍋"\r\n')
+        enter('"\x1b\\g"\r', '\r\n"⍒"\r\n')
+        enter('"£\x1b£"\r', '\r\n"£#"\r\n')
+        enter('"\x1b\\\x1b\\ \x1b6\x1b66"\r', '\r\n"⍭ ⁶6"\r\n')
+        enter('"\x1boo \x1b5\x1bx\x1b5\x1b1"\r', '\r\n"○ ₓ₁"\r\n')
         layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
         typed = {k: v for k, v in layout['option'].items() if isinstance(v, str)}
-        enter('"' + ''.join('\x1b'+k for k in typed) + '"\r', '\r\n' + ''.join(typed.values()) + '\r\n')
+        enter('"' + ''.join('\x1b'+k for k in typed) + '"\r', '\r\n"' + ''.join(typed.values()) + '"\r\n')
         enter('r\x1bh2\x1b.× +/1\x1bl2\r', '\r\n')  # r←2↣× +/1↦2
         enter('\x1bq \x1bhr\r', '\r\n6\r\n')  # explicit output: Alt-q, then Space, types ⎕
         enter('3\x1b62\r', '\r\n9\r\n')  # Alt-6, then 2, types ²
-        enter('"a^b"\r', '\r\na^b\r\n')  # in a string, ^ types itself
+        enter('"a^b"\r', '\r\n"a^b"\r\n')  # in a string, ^ types itself
         enter('\x1b-i1 0 1\r', '\r\n[0 2]ₓ\r\n')  # Alt-Minus, then i, types ⍸
         # Dead keys: Backspace cancels, a plain key types both, Alt-q starts its own, - then 1 types ⁻¹, and Space types ⁶
-        enter('"\x1bo\x7fx\x1box\x1bo\x1bqt\x1boc\x1bob\x1bon\x1b6-1\x1b6 "\r', '\r\nx○x○⌻⍝⍎⍕⁻¹⁶\r\n')
+        enter('"\x1bo\x7fx\x1box\x1bo\x1bqt\x1boc\x1bob\x1bon\x1b6-1\x1b6 "\r', '\r\n"x○x○⌻⍝⍎⍕⁻¹⁶"\r\n')
         enter('+/1\x1bl3\r', '\r\n6\r\n')
         enter('한`assign `iot\t4\r', '\r\n')  # space, Tab, Unicode byte offsets
         enter('+/한\r', '\r\n6\r\n')
@@ -85,11 +85,11 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         enter('h\r', '\r\n3 4\r\n')
         enter('2+3\r', '\r\n5\r\n')
         os.write(master, '⎕←"go" ⋄ •delay ∞\r'.encode())
-        read_until(b'go\r\n')  # the evaluation is running
+        read_until(b'"go"\r\n')  # the evaluation is running
         enter('\x03', 'INTERRUPT')  # Ctrl-C interrupts the running evaluation, and the session continues
         os.write(master, '⌽⎕\r'.encode())
         read_until(b'\x1b[?2004l')  # readline has returned the terminal to line mode
-        enter('ab\r', 'ba\r\n')  # ⎕ reads a line typed at the terminal
+        enter('ab\r', '"ba"\r\n')  # ⎕ reads a line typed at the terminal
         os.write(master, b'\x04')
         tail = read_until(b'\r\n')
         assert child.wait(timeout=5) == 0

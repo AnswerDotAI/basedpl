@@ -11,6 +11,7 @@ def test_ipython_inspection_and_completion():
     bpl('twice←'+source)
     f = fn('twice')
     shell.user_ns.update(bpl=bpl, f=f, fn=fn)
+    for magic in ('pinfo', 'pinfo2'): shell.run_line_magic(magic, 'f')
     help = shell.inspector._get_info(f, detail_level=0)
     assert 'Double the argument' in help['text/plain']
     assert 'Calls:' in help['text/plain']

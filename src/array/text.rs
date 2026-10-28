@@ -7,6 +7,12 @@ use crate::transform::Plain;
 /// Text as a double-quoted string literal.
 pub(crate) fn quoted(text: &str) -> String { format!("\"{}\"", text.replace('"', "\"\"")) }
 
+fn excerpt(len: usize, limit: usize, edges: usize) -> impl Iterator<Item = Option<usize>> {
+    let tail = edges.min(limit / 2);
+    let (head, end) = if len > limit { (limit - tail, len - tail) } else { (len, len) };
+    (0..head).map(Some).chain((head < end).then_some(None)).chain((end..len).map(Some))
+}
+
 /// Whether `test` holds for a character of source text outside brackets, parentheses, braces and quotes.
 fn outside(text: &str, test: impl Fn(char) -> bool) -> bool {
     let (mut depth, mut chars) = (0, text.chars());
@@ -159,7 +165,7 @@ impl Value {
             Plain::Array(_) => {
                 if self.shows_names(el) { return self.named_literal(el); }
                 let edges = if self.shape().len() == 1 { el.last(self.shape()) } else { el.edges(self.shape()) };
-                if self.string_literal().is_some() { return quoted(&self.elided_text(el)); }
+                if self.string_literal(el.display).is_some() { return quoted(&self.elided_text(el)); }
                 if let Some(s) = crate::keyed::name(self) {
                     return format!(",•ucs {}", s.chars().map(|c| (c as u32).to_string()).collect::<Vec<_>>().join(" "));
                 }
@@ -179,14 +185,20 @@ impl Value {
     /// The items display shows of a vector, with `None` for the gap that `edges` leaves.
     fn shown(&self, edges: Option<usize>) -> impl Iterator<Item = Option<Value>> + '_ { positions(self.len(), edges).map(|i| i.map(|i| self.at(i))) }
 
-    /// A character vector's characters as display shows them. Text with line breaks counts its lines against `limit`, and past it keeps the first and last `edges` lines, with `⋮` on a line between. Other text counts its characters, and keeps as many at each end as a last axis keeps, with `…` between.
+    /// A string preview, counting multiline text in lines and each shown line in characters.
     pub(crate) fn elided_text(&self, el: Elide) -> String {
-        if let Some(text) = crate::keyed::name(self) && text.contains('\n') {
-            let Some(e) = el.edges(&[text.split('\n').count()]) else { return text.to_string() };
-            let lines: Vec<&str> = text.split('\n').collect();
-            return positions(lines.len(), Some(e)).map(|i| i.map_or("⋮", |i| lines[i])).collect::<Vec<_>>().join("\n");
-        }
-        self.shown(el.last(self.shape())).map(|c| match c { Some(Self::Character(c)) => c, _ => '…' }).collect()
+        let text = crate::keyed::name(self).expect("a character vector");
+        let lines: Vec<_> = text.split('\n').collect();
+        let multiline = lines.len() > 1;
+        let columns = el.columns.min(if multiline { usize::MAX } else { el.limit });
+        excerpt(lines.len(), if multiline { el.limit } else { usize::MAX }, el.edges).map(|line| {
+            let Some(line) = line else { return "⋮".to_string() };
+            let chars: Vec<_> = lines[line].chars().collect();
+            excerpt(chars.len(), columns, el.edges).map(|i| match i {
+                Some(i) if chars[i].is_control() => chars[i].escape_default().to_string(),
+                Some(i) => chars[i].to_string(), None => "…".to_string(),
+            }).collect::<String>()
+        }).collect::<Vec<_>>().join("\n")
     }
 
     /// Text for each shown item of a vector, written by `item`, with `…` for the gap that `edges` leaves.
@@ -263,9 +275,9 @@ impl Value {
     /// Whether plain display shows the vector as a strand: a vector of two or more numbers, characters or strings. Exact integers show in brackets instead.
     pub(crate) fn is_strand(&self, el: Elide) -> bool {
         matches!(self, Self::Array(_)) && self.shape().len() == 1 && self.len() >= 2 && !self.has_keys() && !self.shows_names(el)
-            && self.string_literal().is_none() && !matches!(self.shown_kind(), Some((rustymath::buffer::DType::Integer(_), _))) && match self.as_items() {
+            && self.string_literal(el.display).is_none() && !matches!(self.shown_kind(), Some((rustymath::buffer::DType::Integer(_), _))) && match self.as_items() {
                 Items::Values(items) => {
-                    items.iter().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal().is_some())
+                    items.iter().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal(el.display).is_some())
                 }
                 Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()),
                 _ => true,
@@ -315,15 +327,15 @@ impl Value {
 
     /// A major cell as one part of array notation: a vector's items side by side, a higher rank in its own notation, or one item. A row with one item needs its own brackets, because a single item would be a cell by itself. `edges` elides the whole array's positions.
     fn row(&self, item: fn(&Self, Elide) -> String, el: Elide, edges: Option<usize>) -> String {
-        if self.shape().len() == 1 && !self.has_keys() && self.string_literal().is_none() {
+        if self.shape().len() == 1 && !self.has_keys() && self.string_literal(el.display).is_none() {
             if self.len() == 1 { return format!("[{}]", item(&self.at(0), el)); }
             self.shown_items(edges, |e| item(&e, el)).join(" ")
         } else if self.shape().len() > 1 && !self.has_keys() { self.block_literal(item, el, edges) }
         else { item(self, el) }
     }
 
-    /// A character vector as a double-quoted literal, or `None` when it holds a control character other than a newline.
-    fn string_literal(&self) -> Option<String> {
-        if let Self::Array(_) = self { crate::keyed::name(self).filter(|s| !s.chars().any(|c| c.is_control() && c != '\n')).map(|s| quoted(&s)) } else { None }
+    /// A quoted character vector. Source excludes control characters other than a newline.
+    fn string_literal(&self, display: bool) -> Option<String> {
+        if let Self::Array(_) = self { crate::keyed::name(self).filter(|s| display || !s.chars().any(|c| c.is_control() && c != '\n')).map(|s| quoted(&s)) } else { None }
     }
 }

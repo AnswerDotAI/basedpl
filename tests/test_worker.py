@@ -32,12 +32,12 @@ def test_worker_bindings_calls_and_echo(tmp_path):
             with pytest.raises(ValueError): w.request(dict(bindings=dict(x=dict(shape=[], data=[value], prototype=0))))
         assert w.eval('x', timeout=2)['value'] == a
         w.eval('•prefs ["kinds":"static"]')
-        assert w.request(dict(bindings=dict(z={'complex': [1, 0]}), code='⎕←(•storage z).kind'))['output'][0]['data']['text/plain'] == 'complex128'
+        assert w.request(dict(bindings=dict(z={'complex': [1, 0]}), code='⎕←(•storage z).kind'))['output'][0]['data']['text/plain'] == '"complex128"'
     assert fresh('⎕←1 ⋄ 2') == '1\n2'
     with pytest.raises(BplError) as e: fresh('1÷"a"')
     assert e.value.kind == 'DOMAIN'
     rows = fresh(['(•prefs ⍬).kinds', '1÷"a"'], prefs='•prefs ["kinds":"static"]')
-    assert rows[0].output == 'static' and rows[0].error is None and rows[1].error.kind == 'DOMAIN'
+    assert rows[0].output == '"static"' and rows[0].error is None and rows[1].error.kind == 'DOMAIN'
     crash = tmp_path/'crash'
     crash.write_text('#!/bin/sh\nread request\necho "thread main panicked" >&2\nexit 101\n')
     crash.chmod(0o755)

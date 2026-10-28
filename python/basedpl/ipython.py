@@ -1,5 +1,6 @@
 "IPython help and completion for BPL functions and sessions."
 import re
+from html import escape
 from IPython.core.completer import context_matcher, SimpleCompletion
 from . import Function, _Workspace
 
@@ -7,7 +8,8 @@ from . import Function, _Workspace
 def inspection_mime(info, detail=False):
     "Render structured BPL inspection as an IPython MIME bundle."
     text = info['source' if detail else 'help']
-    return {'text/plain':text, 'text/markdown':f'```apl\n{text}\n```' if detail else text}
+    return {'text/plain':text, 'text/markdown':f'```apl\n{text}\n```' if detail else text,
+        'text/html':f'<pre>{escape(text)}</pre>'}
 
 
 

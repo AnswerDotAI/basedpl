@@ -27,7 +27,7 @@ m←p.matches "abc"
 ⍝ =>
 [0⍴⊂"" ⍬ₓ 0⍴⊂,⊂"" "abc"]
 
-⍝ regex:replacement — The regex crate's capture expansion and literal dollar
+⍝ regex:replacement — Capture expansion and literal dollar
 p←•r "(?P<word>[a-z]+)([0-9]+)"
 "${word}:$2:$$" p.replace "ab12 cd3"
 ⍝ =>
@@ -42,9 +42,9 @@ f¨"Cat cat" "dog"   ⍝ [2 0]ₓ
 •r "a(b"
 ⍝ error: DOMAIN ERROR
 
-⍝ regex:lookaround — Rust regex syntax
-•r "(?=a)"
-⍝ error: DOMAIN ERROR
+⍝ regex:lookaround — Lookahead finds positions without consuming text
+p←•r "(?=a)"
+(p.matches "banana").position   ⍝ [1 3 5]ₓ
 
 ⍝ regex:input — Text required
 p←•r 'a' ⋄ p.matches 1 2

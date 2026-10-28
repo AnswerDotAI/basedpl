@@ -1,5 +1,7 @@
 use crate::{syntax::NodeKind, ParseStatus, Source};
 
+struct Page { name: &'static str, title: &'static str, aliases: &'static [&'static str], text: &'static str }
+
 include!(concat!(env!("OUT_DIR"), "/help.rs"));
 
 /// The index of BPL's documentation for LLMs, `nbs/llms.txt`, which `]help llms` shows.
@@ -36,8 +38,47 @@ pub(crate) fn documentation(symbol: &str) -> Option<&'static str> {
     })
 }
 
-/// The glyph page `name` from `nbs/glyphs`, or the system page for name `name` from `nbs/system`.
-pub(crate) fn page(name: &str) -> Option<&'static str> { HELP.iter().find(|(page, _)| *page == name).map(|(_, text)| *text) }
+/// A reference page or guide by its topic name or one of its aliases.
+pub(crate) fn page(name: &str) -> Option<&'static str> {
+    HELP.iter().find(|p| p.name.eq_ignore_ascii_case(name) || p.aliases.iter().any(|a| a.eq_ignore_ascii_case(name))).map(|p| p.text)
+}
+
+pub(crate) fn topics() -> String { HELP.iter().map(|p| format!("- `]help {}`: {}", p.name, p.title)).collect::<Vec<_>>().join("\n") }
+
+/// Matches a literal topic name/title, or a regex over names, headings and page text, in that order.
+pub(crate) fn search(pattern: &str, regex: bool) -> Result<String, crate::Error> {
+    let compiled = regex.then(|| crate::host::Regex::new(pattern, true)).transpose()?;
+    let query = pattern.to_lowercase();
+    let mut found = Vec::new();
+    for page in HELP {
+        let names = [page.name, page.title].into_iter().chain(page.aliases.iter().copied());
+        let Some(regex) = &compiled else {
+            if names.clone().any(|name| name.to_lowercase().contains(&query)) { found.push((0, page, String::new())); }
+            continue;
+        };
+        let mut named = false;
+        for name in names { if regex.find(name)?.is_some() { named = true; break; } }
+        if named { found.push((0, page, String::new())); continue; }
+        let (mut heading, mut fenced) = (None, false);
+        for line in page.text.lines() {
+            fenced ^= line.starts_with("```");
+            if !fenced && line.starts_with('#') && regex.find(line)?.is_some() { heading = Some(line); break; }
+        }
+        if let Some(line) = heading { found.push((1, page, excerpt(line, 0))); }
+        else if let Some(at) = regex.find(page.text)? { found.push((2, page, excerpt(page.text, at))); }
+    }
+    found.sort_by_key(|(rank, p, _)| (*rank, p.name));
+    if found.is_empty() { return Ok(format!("No matching topics for {pattern:?}")); }
+    Ok(found.iter().map(|(_, p, text)| {
+        let title = format!("- `]help {}`: {}", p.name, p.title);
+        if text.is_empty() { title } else { format!("{title}\n  {text}") }
+    }).collect::<Vec<_>>().join("\n"))
+}
+
+fn excerpt(text: &str, at: usize) -> String {
+    let start = text[..at].char_indices().rev().nth(40).map_or(0, |(i, _)| i);
+    text[start..].chars().take(180).collect::<String>().replace('\n', " ")
+}
 
 pub(crate) fn item(text: &str, aliases: bool) -> Option<NodeKind> {
     let ParseStatus::Complete(parsed) = crate::syntax::parse_with_aliases(Source::new("<inspect>", text), aliases) else { return None; };
@@ -46,12 +87,16 @@ pub(crate) fn item(text: &str, aliases: bool) -> Option<NodeKind> {
     (node.span.range == (0..text.len())).then(|| node.kind.clone())
 }
 
-pub(crate) fn help_command(code: &str) -> Option<(&str, bool)> {
-    let mut words = code.split_whitespace();
-    if !words.next()?.eq_ignore_ascii_case("]help") { return None; }
+pub(crate) enum Help<'a> { Topics, Search(&'a str), Topic(&'a str, bool) }
+
+pub(crate) fn help_command(args: &str, search: bool) -> Option<Help<'_>> {
+    let args = args.trim();
+    if search { return (!args.is_empty()).then_some(Help::Search(args)); }
+    if args.is_empty() { return Some(Help::Topics); }
+    let mut words = args.split_whitespace();
     let name = words.next()?;
     let detail = match words.next() { None => false, Some("-source") => true, _ => return None };
-    words.next().is_none().then_some((name, detail))
+    words.next().is_none().then_some(Help::Topic(name, detail))
 }
 
 pub fn word_char(c: char, aliases: bool) -> bool {

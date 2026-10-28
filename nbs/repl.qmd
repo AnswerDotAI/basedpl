@@ -86,11 +86,26 @@ An unclosed delimiter gives a continuation prompt. Closing it evaluates the comp
 
 Inside brackets and parentheses, a line break means `⋄`, so each line of a bracket list is a row of the array.
 
+## Help
+
+`]help` lists the topics available offline. Open a topic by name, as in `]help indexing`, or enter part of its name or title to find matching topics. Names and glyphs work too:
+
+| Command | Effect |
+|---|---|
+| `]help indexing` | The indexing guide |
+| `]help +` | Help for a name or glyph |
+| `]help mean -source` | Definition source |
+| `]help llms` | The concise language reference |
+| `]help ?` | Help for the guard glyph |
+| `]help? index(?!ing)` | Regex search over all help text |
+
+Everything after `]help?` is the pattern, without quotes. Search ignores case by default. Results put name/title matches before headings, then body text, and show the command to open each topic. Search uses the same platform-specific regex syntax as [`•r`](system/r.qmd). For example, `]help? index|select` finds both terms. Natively, `(?-i)` makes the pattern case-sensitive.
+
 ## Array and function display
 
 Interactive sessions draw arrays in boxes, show functions as trees, and box output made inside functions. [`•prefs`](system/prefs.qmd) reads and changes these settings: `•prefs ["box":$f]` turns boxes off, and `•prefs ⍬` shows every setting. Batch and JSON sessions start without boxes, and so does Python until IPython loads BPL's magics.
 
-Matrices, nested arrays and strings have boxes, axis arrows and a type marker on the bottom edge. Other vectors stay plain. Their plain form shows their kind, keys and axis name, as in `[2 3 5]ₓ`, `[1.5 2.5]ₛ` and `$t $f`. The marker names the storage: `ₓ` for exact integers, `~` for floats, `j` for complex numbers, `─` for characters, `∊` for nested arrays and `+` for mixed storage, whose items keep their own kinds. Numbers inside an `ₓ` box carry no mark of their own. Without boxes, a matrix whose numbers share a marked kind shows as its literal laid out in rows, with one mark after the brackets. A keyed matrix shows that mark in its corner. Enter a function name to see its tree.
+Matrices and nested arrays have boxes, axis arrows and a type marker on the bottom edge. Other vectors stay plain. Character vectors display as quoted strings, including inside arrays. Their plain form shows their kind, keys and axis name, as in `[2 3 5]ₓ`, `[1.5 2.5]ₛ` and `$t $f`. The marker names the storage: `ₓ` for exact integers, `~` for floats, `j` for complex numbers, `─` for characters, `∊` for nested arrays and `+` for mixed storage, whose items keep their own kinds. Numbers inside an `ₓ` box carry no mark of their own. Without boxes, a matrix whose numbers share a marked kind shows as its literal laid out in rows, with one mark after the brackets. A keyed matrix shows that mark in its corner. Enter a function name to see its tree.
 
 An array of more than 1000 items shows only the first and last 3 positions of each long axis. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. The `limit` and `edges` settings of `•prefs` change these numbers. `⎕←` prints every item.
 
@@ -109,9 +124,6 @@ An array of more than 1000 items shows only the first and last 3 positions of ea
 
 | Command | Effect |
 |---|---|
-| `]help +` | Help for a name or glyph |
-| `]help mean -source` | Definition source |
-| `]help llms` | The index of BPL's documentation for LLMs, [llms.txt](llms.txt) |
 | `]Display [[1 2] [3 4]]` | Draw one array in a box, whatever the settings |
 | `]dissect expression` | Show the bound expression before its result |
 | `]clear` | Remove every name and restore the starting display settings |

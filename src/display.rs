@@ -33,6 +33,8 @@ pub(crate) struct Elide {
     /// Whether numbers show their kind: `ₓ` after an exact integer, and the marker of a float width that isn't `plain`. `⍬⍕` and `''⍕` leave both out.
     pub marks: bool,
     pub notation: Notation,
+    /// Display may escape control characters in quoted strings. Source text must read back.
+    pub display: bool,
     /// How text shows hidden names, which start with `_`. Source text shows them in full. Box mode shortens them. Plain display leaves hidden axis names out and shortens hidden keys.
     pub hidden: Hidden,
 }
@@ -43,7 +45,7 @@ impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, pr
 impl Elide {
     /// Shows every item and every digit, as source text and `⍕` do, with 64-bit floats plain.
     pub const NONE: Self =
-        Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), marks: true, notation: Notation::Apl, hidden: Hidden::Full };
+        Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), marks: true, notation: Notation::Apl, display: false, hidden: Hidden::Full };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
     pub fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
@@ -136,8 +138,8 @@ impl Settings {
     /// Display text for `a`, boxed where `boxes` says, unless boxing is off, or `inside` a function while boxing there is off. A line wider than `width` elides columns, keeping as many at each end of the last axes as fit.
     pub fn array(&self, a: &Value, inside: bool) -> String {
         let text = |columns| {
-            let elide = Elide { columns, hidden: if self.boxed { Hidden::Short } else { Hidden::Omit }, ..self.elide };
-            if self.boxed && (!inside || self.functions) && boxes(a, elide) { array(a, elide).text() } else { plain(a, elide) }
+            let elide = Elide { columns, display: true, hidden: if self.boxed { Hidden::Short } else { Hidden::Omit }, ..self.elide };
+            if self.boxed && (!inside || self.functions) && boxes(a) { array(a, elide).text() } else { plain(a, elide) }
         };
         let fits = |t: &str| t.lines().all(|line| line.width() <= self.elide.width);
         let full = text(usize::MAX);
@@ -147,7 +149,7 @@ impl Settings {
         while over - fit > 1 { let mid = (fit + over) / 2; if fits(&text(mid)) { fit = mid } else { over = mid } }
         text(fit)
     }
-    pub fn diagram(&self, a: &Value) -> String { array(a, self.elide).text() }
+    pub fn diagram(&self, a: &Value) -> String { array(a, Elide { display: true, ..self.elide }).text() }
     /// Text for `⎕←`: the display text, with every item, and floats rounded to `prec` as display rounds them and with its float width plain.
     pub fn explicit(&self, a: &Value, inside: bool) -> String {
         Self { elide: Elide { prec: self.elide.prec, plain: self.elide.plain, notation: self.elide.notation, ..Elide::NONE }, ..*self }.array(a, inside)
@@ -356,7 +358,7 @@ fn marker(a: &Value, el: Elide) -> &'static str {
 
 /// A boxed diagram of `a`: its items in a frame that marks its shape and storage, with nested arrays boxed in turn.
 fn array(a: &Value, el: Elide) -> Block {
-    if a.is_unit() || (a.has_keys() && a.shape() == [0]) { return Block::new(plain(a, el)); }
+    if a.is_unit() || is_text(a, el) || (a.has_keys() && a.shape() == [0]) { return Block::new(plain(a, el)); }
     if a.has_keys() && a.shape().len() > 1 {
         // The table inside leaves out the kind that the frame's corner shows.
         let inner = if a.mark(el).is_some() { Elide { marks: false, ..el } } else { el };
@@ -393,15 +395,16 @@ fn array(a: &Value, el: Elide) -> Block {
     Block::measured(lines.concat(), UnicodeWidthStr::width).framed(a.shape(), kind, nested)
 }
 
-/// Whether plain display shows `a` as its raw text, as it shows a string: an unkeyed nonempty vector of characters that shows no axis name. The text alone doesn't show that its items are characters.
-fn raw_text(a: &Value, el: Elide) -> bool {
-    a.shape().len() == 1 && !a.has_keys() && !a.shows_names(el) && !a.is_empty() && a.elements().all(|e| matches!(e, Value::Character(_)))
+/// Whether `a` displays as a string without keys or a visible axis name.
+fn is_text(a: &Value, el: Elide) -> bool {
+    a.shape().len() == 1 && !a.has_keys() && !a.shows_names(el)
+        && (!a.is_empty() || matches!(a.prototype(), Value::Character(_))) && a.elements().all(|e| matches!(e, Value::Character(_)))
 }
 
-/// Whether box mode draws `a` in a box. Every simple vector but a string keeps its plain form, which shows its kind, keys and axis name. A string's plain form is its raw text, and it keeps its box.
-fn boxes(a: &Value, el: Elide) -> bool { a.shape().len() != 1 || !a.is_simple() || raw_text(a, el) }
+/// Whether box mode draws `a` in a box.
+fn boxes(a: &Value) -> bool { a.shape().len() != 1 || !a.is_simple() }
 
-/// Display text for `a` without frames: a vector or unit as source text, a string as its characters, and higher ranks as rows.
+/// Display text for `a` without frames: a vector or unit as source text, and higher ranks as rows.
 pub(crate) fn plain(a: &Value, el: Elide) -> String {
     match a.displayed() {
         Plain::Number(n) => return el.number(n), Plain::Function(f) => return format!("⟨{}⟩", f.text(el, &mut 1000)),
@@ -409,7 +412,7 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
     }
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
     if a.shape().len() <= 1 {
-        return if raw_text(a, el) { a.elided_text(el) }
+        return if is_text(a, el) { crate::array::quoted(&a.elided_text(el)) }
         else if a.is_strand(el) && a.mark(el).is_none() { a.shown_items(el.last(a.shape()), |e| e.source(el)).join(" ") }
         else { a.source(el) };
     }

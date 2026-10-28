@@ -66,18 +66,23 @@ fn curl(args: &[String], body: Option<Vec<u8>>, url: &str) -> Result<Vec<u8>, Er
     Err(Error::io(url, message.trim().trim_start_matches("curl: ")))
 }
 
-/// A compiled `•r` pattern, in the regex crate's syntax.
+/// A compiled pattern for `•r` and help search, in fancy-regex's syntax.
 #[derive(Debug)]
-pub(crate) struct Regex(regex::Regex);
+pub(crate) struct Regex(fancy_regex::Regex);
+fn regex_error(error: fancy_regex::Error) -> Error { Error::domain(error.to_string()) }
 impl Regex {
-    pub(crate) fn new(pattern: &str) -> Result<Self, String> { regex::Regex::new(pattern).map(Self).map_err(|e| e.to_string()) }
+    pub(crate) fn new(pattern: &str, insensitive: bool) -> Result<Self, Error> {
+        fancy_regex::RegexBuilder::new(pattern).case_insensitive(insensitive).build().map(Self).map_err(regex_error)
+    }
     pub(crate) fn as_str(&self) -> &str { self.0.as_str() }
+    pub(crate) fn find(&self, text: &str) -> Result<Option<usize>, Error> { self.0.find(text).map(|m| m.map(|m| m.start())).map_err(regex_error) }
     /// The number of groups, not counting the whole match.
     pub(crate) fn groups(&self) -> usize { self.0.captures_len() - 1 }
     /// Calls `f` with each match in `text`, and stops at its first error.
-    pub(crate) fn each<E>(&self, text: &str, mut f: impl FnMut(Match) -> Result<(), E>) -> Result<(), E> {
+    pub(crate) fn each(&self, text: &str, mut f: impl FnMut(Match) -> Result<(), Error>) -> Result<(), Error> {
         let (mut previous, mut position) = (0, 0);
         for found in self.0.captures_iter(text) {
+            let found = found.map_err(regex_error)?;
             let whole = found.get(0).expect("a match includes its whole match");
             position += text[previous..whole.start()].chars().count();
             previous = whole.start();
@@ -86,10 +91,11 @@ impl Regex {
         }
         Ok(())
     }
-    /// `text` with each match replaced by `template`, which the regex crate expands: `$1`, `${name}` and `$$`.
+    /// `text` with each match replaced by `template`: `$1`, `${name}` and `$$`.
     pub(crate) fn replace(&self, template: &str, text: &str) -> Result<String, Error> {
         let (mut result, mut end) = (String::new(), 0);
         for found in self.0.captures_iter(text) {
+            let found = found.map_err(regex_error)?;
             check()?;
             let whole = found.get(0).expect("a match includes its whole match");
             result.push_str(&text[end..whole.start()]);

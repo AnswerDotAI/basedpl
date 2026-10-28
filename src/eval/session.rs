@@ -392,13 +392,28 @@ impl Session {
         let failed = |kind, message: String| Evaluation::failed(Error::new(kind, message).at(&span));
         let code = span.source.text.trim();
         let (command, args) = code.split_once(char::is_whitespace).unwrap_or((code, ""));
-        if command.eq_ignore_ascii_case("]help") {
-            let usage = "usage: ]help name [-source], or ]help llms for the documentation index for LLMs";
-            let Some((name, detail)) = crate::inspection::help_command(code) else { return failed(ErrorKind::Syntax, usage.into()) };
-            // `llms` is a topic, not a name. A variable called `llms` can't hide the reference.
-            let (text, markdown) = if name == "llms" { (crate::inspection::LLMS.to_owned(), crate::inspection::LLMS.to_owned()) } else {
-                let Some(info) = self.inspect(name) else { return failed(ErrorKind::Value, format!("name not found: {name}")) };
-                (info.text(detail), info.markdown(detail))
+        let searching = command.eq_ignore_ascii_case("]help?");
+        if searching || command.eq_ignore_ascii_case("]help") {
+            use crate::inspection::{self, Help};
+            let usage = "usage: ]help, ]help topic [-source], or ]help? regex";
+            let Some(request) = inspection::help_command(args, searching) else { return failed(ErrorKind::Syntax, usage.into()) };
+            let result = (|| -> Result<_, Error> {
+                let markdown = match request {
+                    Help::Topics => inspection::topics(),
+                    Help::Search(pattern) => inspection::search(pattern, true)?,
+                    Help::Topic("llms", _) => inspection::LLMS.to_owned(),
+                    Help::Topic(name, detail) => {
+                        if !detail && let Some(page) = inspection::page(name) { page.to_owned() }
+                        else if let Some(info) = self.inspect(name) { return Ok((info.text(detail), info.markdown(detail))); }
+                        else if !detail { inspection::search(name, false)? }
+                        else { return Err(Error::new(ErrorKind::Value, format!("name not found: {name}"))); }
+                    }
+                };
+                Ok((markdown.clone(), markdown))
+            })();
+            let (text, markdown) = match result {
+                Ok(output) => output,
+                Err(error) => return Evaluation::failed(error.at(&span)),
             };
             let data = [("text/plain", text), ("text/markdown", markdown)].map(|(kind, text)| (kind.to_string(), crate::MimeData::Text(text))).into();
             self.execution.emit(crate::Output { kind: crate::OutputKind::Display, data });

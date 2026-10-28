@@ -1,4 +1,4 @@
-//! `•r pattern` compiles a regular expression into a record of two functions: `matches`, which gives a table of the matches in a text, and `replace`. The host compiles, matches and replaces, each with its own syntax for patterns and replacement templates: natively the regex crate's, and in the browser JavaScript's.
+//! `•r pattern` compiles a regular expression into a record of two functions: `matches`, which gives a table of the matches in a text, and `replace`. The host owns pattern syntax and matching for this API and help search: fancy-regex natively, JavaScript in the browser.
 use crate::execution::check;
 use crate::{
     array::generated_len, data::text, Span, host::Regex, keyed, system::{natives, Call, Valence::{Dyadic, Monadic}}, Described, Error, Value
@@ -13,7 +13,7 @@ pub(crate) struct Match { pub text: String, pub position: usize, pub groups: Vec
 
 pub(crate) fn compile(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let pattern = text(right)?;
-    let regex = Arc::new(Regex::new(&pattern).map_err(|e| Error::domain(e))?);
+    let regex = Arc::new(Regex::new(&pattern, false)?);
     Ok(natives([("matches", Call::Regex(regex.clone(), Operation::Matches), Monadic), ("replace", Call::Regex(regex, Operation::Replace), Dyadic)]))
 }
 

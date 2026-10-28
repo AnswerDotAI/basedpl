@@ -10588,7 +10588,7 @@ x←⍎⎕ ⋄ x
 ⍝ aplcart/table.tsv:2594 — Output x to session without trailing newline via stderr (without trailing line break); `"-" •nput` writes to standard output with no line ending added
 "-" •nput "ab" ⋄ ⎕←"c"
 "c"
-⍝ ⎕: abc
+⍝ ⎕: ab"c"
 
 ⍝ aplcart/table.tsv:2595 — Return one line of user input from stdin; Ported with an input fixture: `⎕` reads each line
 charvec←⎕ ⋄ charvec

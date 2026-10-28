@@ -100,12 +100,27 @@ async def kernel_story():
         assert reply['content']['ename'] == 'KeyboardInterrupt'
         _, messages = await kc.exec_ok('mean v')
         assert displayed(messages) == [('execute_result', '4.5')]
+        lines = '\n'.join(map(str, range(12)))
+        for box in ('$t', '$f'):
+            await kc.exec_ok(f'•prefs ["box":{box} "limit":8 "edges":2 "width":∞]', silent=True)
+            source = f'text←"abcdefghijklmnop" ⋄ lines←"{lines}" ⋄ text ⋄ ["short" text] ⋄ lines ⋄ [lines "a\tb"]'
+            _, messages = await kc.exec_ok(source)
+            text, nested, multiline, nested_lines = [text for _, text in displayed(messages)]
+            assert text.startswith('"abcd') and text.endswith('op"') and '…' in text
+            assert '"short"' in nested and text in nested
+            assert multiline.startswith('"0\n1\n2\n3') and multiline.endswith('\n10\n11"') and '\n⋮\n' in multiline
+            assert r'"a\tb"' in nested_lines and '"0' in nested_lines and '⋮' in nested_lines
+            reply, _ = await kc.exec_ok('', user_expressions={'preview': 'text'}, silent=True)
+            assert reply['content']['user_expressions']['preview']['data']['text/plain'] == text
+        _, messages = await kc.exec_ok('⎕←text ⋄ "-"•nput text')
+        assert displayed(messages) == [('stream', '"abcdefghijklmnop"\n'), ('stream', 'abcdefghijklmnop')]
+        await kc.exec_ok('•prefs ["limit":1000 "edges":3]', silent=True)
         _, messages = await kc.exec_ok('⎕←"SVG" ⋄ •svg ⍬')
         rich = [m['content']['data'] for m in messages if m['msg_type']=='execute_result']
         assert 'http://www.w3.org/2000/svg' in rich[0]['image/svg+xml']
-        assert displayed(messages)[0] == ('stream', 'SVG\n')
+        assert displayed(messages)[0] == ('stream', '"SVG"\n')
         messages = [m async for m in kc.run('⎕←"Name?" ⋄ ⌽⎕', on_stdin=lambda msg: 'Jo', timeout=10)]
-        assert displayed(messages) == [('stream', 'Name?\n'), ('execute_result', 'oJ')]
+        assert displayed(messages) == [('stream', '"Name?"\n'), ('execute_result', '"oJ"')]
         reply, _ = await kc.exec_drain('⎕', allow_stdin=False)
         assert reply['content']['ename'] == 'IO ERROR'
         reply, _ = await kc.exec_drain('•nget "-"', allow_stdin=True)
@@ -132,7 +147,7 @@ async def kernel_story():
         exprs = ['+/v', 'mean', 'reduce', '"Hello"', '1÷"a"', '•svg ⍬', '1 ⋄ assigned←2']
         _, messages = await kc.exec_ok('', metadata={'eval': exprs}, store_history=False, stop_on_error=False)
         values = next(m['content']['data']['application/json'] for m in messages if m['msg_type']=='execute_result')
-        assert values['+/v']['data']['text/plain'] == '9' and values['"Hello"']['data']['text/plain'] == 'Hello'
+        assert values['+/v']['data']['text/plain'] == '9' and values['"Hello"']['data']['text/plain'] == '"Hello"'
         assert values['1 ⋄ assigned←2']['data']['text/plain'] == '2'
         assert values['1÷"a"']['ename'] == 'DOMAIN ERROR' and 'image/svg+xml' in values['•svg ⍬']['data']
         for name, kind in [('mean', 'function'), ('reduce', 'operator')]:

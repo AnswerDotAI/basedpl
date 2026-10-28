@@ -4,7 +4,7 @@
 
 | Setting | Holds | Default |
 |---|---|---|
-| `box` | `$t` draws matrices, nested arrays and strings in boxes, and leaves other vectors plain | `$t` in the REPL, the BPL Jupyter kernel and IPython once it loads BPL's magics, `$f` elsewhere |
+| `box` | `$t` draws matrices and nested arrays in boxes. Simple vectors and strings stay plain | `$t` in the REPL, the BPL Jupyter kernel and IPython once it loads BPL's magics, `$f` elsewhere |
 | `trees` | `$t` shows functions and dissected expressions as trees; `$f` uses linear notation. Independent of `box` | as `box` |
 | `fns` | `$f` leaves output made inside functions unboxed | as `box` |
 | `dissect` | `$t` shows the bound expression before each normal result, using `trees` | `$f` |
@@ -23,7 +23,11 @@
 | `batch` | `$t` lets each [map](../terms.qmd#term-map) call its operand once on all its cells together, as described below | `$t` |
 | `seed` | A nonnegative whole number that seeds the session's random numbers | A seed from the operating system |
 
-Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces the hidden columns, `⋮` the hidden rows, and `⋱` sits where they cross. Text with line breaks counts its lines, not its characters. Text of more than `limit` lines shows its first and last `edges` lines, with `⋮` on a line between. A nested array follows the same rule on its own. So does an array that a function holds, such as `⍳10000` in `(⍳10000)↣+`. A line wider than `width` hides columns in the same way, keeping as many at each end as fit. `⎕←` always shows every item, and rounds floats to `prec` as display does. [`⍕`](../glyphs/thorn.qmd) and source text always hold every item and every digit.
+Display shows part of an array of more than `limit` items: the first and last `edges` positions of each axis longer than twice `edges`. `…` replaces hidden columns, `⋮` hidden rows, and `⋱` sits where they cross. A nested array follows the same rule on its own. So does an array that a function holds, such as `⍳10000` in `(⍳10000)↣+`. A line wider than `width` keeps as many positions at each end as fit.
+
+Character vectors display as quoted strings, including inside arrays and with `box` on. Embedded quotes are doubled and line breaks stay as line breaks. Other control characters display as escapes such as `\t`. `limit` counts characters in a single-line string and lines in a multiline string. A preview keeps a prefix and up to `edges` trailing characters or lines, with `…` or a `⋮` line between. At least half the budget goes to the prefix. Long lines use the same prefix-and-tail rule to fit `width`.
+
+`⎕←` always shows every item and rounds floats to `prec` as display does. [`⍕`](../glyphs/thorn.qmd) and source text always hold every item and every digit. `"-" •nput text` writes raw text without quotes or truncation.
 
 `notation` changes generated function and operator displays, including trees and dissected expressions. Dfn source, strings, record keys and field separators stay unchanged. Generated source and structural APIs keep canonical APL spellings.
 

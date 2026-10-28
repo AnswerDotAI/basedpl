@@ -56,21 +56,26 @@ pub(crate) fn normalize(form: &str, text: &str) -> String { js_sys::JsString::fr
 
 /// A compiled `•r` pattern, in JavaScript's `RegExp` syntax. It holds text, because a BPL value must be `Send + Sync` and a `RegExp` isn't: each call compiles the pattern again.
 #[derive(Debug)]
-pub(crate) struct Regex { pattern: String, groups: usize }
+pub(crate) struct Regex { pattern: String, groups: usize, insensitive: bool }
 impl Regex {
-    pub(crate) fn new(pattern: &str) -> Result<Self, String> {
+    pub(crate) fn new(pattern: &str, insensitive: bool) -> Result<Self, Error> {
         // An empty alternative matches at once, and the match has one item for each group.
-        let groups = regexp(&format!("(?:{pattern})|"))?.exec("").map_or(0, |m| m.length() as usize - 1);
-        Ok(Self { pattern: pattern.into(), groups })
+        let groups = regexp(&format!("(?:{pattern})|"), insensitive).map_err(Error::domain)?.exec("").map_or(0, |m| m.length() as usize - 1);
+        Ok(Self { pattern: pattern.into(), groups, insensitive })
     }
     pub(crate) fn as_str(&self) -> &str { &self.pattern }
+    pub(crate) fn find(&self, text: &str) -> Result<Option<usize>, Error> {
+        let text = js_sys::JsString::from(text);
+        let at = text.search(&regexp(&self.pattern, self.insensitive).map_err(Error::domain)?);
+        Ok((at >= 0).then(|| String::from(text.substring(0, at as u32)).len()))
+    }
     /// The number of groups, not counting the whole match.
     pub(crate) fn groups(&self) -> usize { self.groups }
     /// Calls `f` with each match in `text`, and stops at its first error.
-    pub(crate) fn each<E>(&self, text: &str, mut f: impl FnMut(Match) -> Result<(), E>) -> Result<(), E> {
+    pub(crate) fn each(&self, text: &str, mut f: impl FnMut(Match) -> Result<(), Error>) -> Result<(), Error> {
         use js_sys::{Array, Reflect};
         use wasm_bindgen::JsCast;
-        let regexp = regexp(&self.pattern).expect("the pattern compiled when •r made it");
+        let regexp = regexp(&self.pattern, self.insensitive).expect("the pattern compiled when •r made it");
         // JavaScript gives each match's position in UTF-16 units, which become characters.
         let (mut chars, mut units, mut position) = (text.chars(), 0, 0);
         for found in js_sys::JsString::from(text).match_all(&regexp).into_iter().flatten() {
@@ -87,14 +92,15 @@ impl Regex {
     }
     /// `text` with each match replaced by `template`, which `String.prototype.replace` expands: `$1`, `$<name>` and `$$`.
     pub(crate) fn replace(&self, template: &str, text: &str) -> Result<String, Error> {
-        let regexp = regexp(&self.pattern).expect("the pattern compiled when •r made it");
+        let regexp = regexp(&self.pattern, self.insensitive).expect("the pattern compiled when •r made it");
         Ok(js_sys::JsString::from(text).replace_by_pattern(&regexp, template).into())
     }
 }
-/// `new RegExp(source, "gu")`, or the message of the error it throws.
-fn regexp(source: &str) -> Result<js_sys::RegExp, String> {
+/// `new RegExp` with Unicode, global and optional ignore-case flags, or the error it throws.
+fn regexp(source: &str, insensitive: bool) -> Result<js_sys::RegExp, String> {
     use js_sys::{Array, Function, Reflect};
     use wasm_bindgen::JsCast;
     let constructor: Function = Reflect::get(&js_sys::global(), &"RegExp".into()).ok().and_then(|c| c.dyn_into().ok()).ok_or("this host has no RegExp")?;
-    Reflect::construct(&constructor, &Array::of2(&source.into(), &"gu".into())).map(JsCast::unchecked_into).map_err(|e| crate::js::message(&e))
+    let flags = if insensitive { "giu" } else { "gu" };
+    Reflect::construct(&constructor, &Array::of2(&source.into(), &flags.into())).map(JsCast::unchecked_into).map_err(|e| crate::js::message(&e))
 }

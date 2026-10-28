@@ -77,8 +77,8 @@ fn codegen_units_stay_small() {
 }
 
 /// The regex in the environment variable `var`, or `None` where it isn't set.
-fn env_pattern(var: &str) -> Option<regex::Regex> {
-    std::env::var_os(var).map(|p| regex::Regex::new(&p.to_string_lossy()).unwrap_or_else(|e| panic!("`{var}` must be a regex: {e}")))
+fn env_pattern(var: &str) -> Option<fancy_regex::Regex> {
+    std::env::var_os(var).map(|p| fancy_regex::Regex::new(&p.to_string_lossy()).unwrap_or_else(|e| panic!("`{var}` must be a regex: {e}")))
 }
 
 /// The machine code of the newest build's functions whose demangled names match the regex in `BASEDPL_SIZES`. Without it, this test does nothing.
@@ -86,7 +86,7 @@ fn env_pattern(var: &str) -> Option<regex::Regex> {
 fn machine_code_by_name() {
     let Some(pattern) = env_pattern("BASEDPL_SIZES") else { return };
     let all: Vec<_> = newest_build().iter().flat_map(|p| functions(p)).collect();
-    let matched: Vec<_> = all.iter().filter(|(_, name)| pattern.is_match(name)).cloned().collect();
+    let matched: Vec<_> = all.iter().filter(|(_, name)| pattern.is_match(name).unwrap()).cloned().collect();
     let (count, bytes) = (matched.len(), matched.iter().map(|(size, _)| size).sum::<u64>());
     let total: u64 = all.iter().map(|(size, _)| size).sum();
     println!("{count} functions matching `{pattern}` hold {bytes} of the build's {total} bytes of machine code. The biggest:\n{}", biggest(matched, 20));
@@ -100,7 +100,7 @@ fn machine_code_growth() {
     let (old, new) = paths.split_once(':').expect("`BASEDPL_SIZES_DIFF` must be `old:new`");
     let only = env_pattern("BASEDPL_SIZES");
     let by_name = |path: &str| {
-        let kept = functions(Path::new(path)).into_iter().filter(|(_, name)| only.as_ref().is_none_or(|p| p.is_match(name)));
+        let kept = functions(Path::new(path)).into_iter().filter(|(_, name)| only.as_ref().is_none_or(|p| p.is_match(name).unwrap()));
         kept.fold(HashMap::<String, i64>::new(), |mut sizes, (size, name)| {
             *sizes.entry(generic(&name)).or_default() += size as i64;
             sizes
@@ -155,7 +155,7 @@ fn calls_between_units() {
     let Some(pattern) = env_pattern("BASEDPL_CALLS") else { return };
     let mut units: Vec<_> = newest_build().into_iter().map(|p| (format!("basedpl {}", p.file_stem().unwrap().to_string_lossy()), fs::read(&p).unwrap())).collect();
     units.extend(rustymath_units());
-    let mut calls: Vec<_> = calls_between(&units).into_iter().filter(|(caller, ..)| pattern.is_match(caller)).collect();
+    let mut calls: Vec<_> = calls_between(&units).into_iter().filter(|(caller, ..)| pattern.is_match(caller).unwrap()).collect();
     calls.sort();
     calls.dedup();
     let rows: Vec<_> = calls.iter().map(|(caller, from, callee, to)| format!("{}\n    in {from}, calls into {to}:\n    {}", shortened(caller), shortened(callee))).collect();
@@ -175,7 +175,7 @@ fn recompiled_units() {
     let seconds = modified(&session).duration_since(began).map_or(0.0, |d| d.as_secs_f64());
     println!("The newest build compiled {} of its {} codegen units again, {bytes} bytes, over {seconds:.1} s:", fresh.len(), all.len());
     for (size, path) in fresh {
-        let matched: Vec<_> = functions(path).into_iter().filter(|(_, name)| pattern.is_match(name)).collect();
+        let matched: Vec<_> = functions(path).into_iter().filter(|(_, name)| pattern.is_match(name).unwrap()).collect();
         println!("{size:>9} {}, with {} functions matching `{pattern}`:\n{}", path.file_stem().unwrap().to_string_lossy(), matched.len(), biggest(matched, 5));
     }
 }

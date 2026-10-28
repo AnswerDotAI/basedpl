@@ -65,8 +65,8 @@ fn boxed_display_and_function_trees() {
     assert_eq!(s.eval("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂¨[0 1]ₓ").output_text(), ["⊂4ₓ", "⊂⊂4ₓ", "┌→────────┐\n│ ⊂0ₓ ⊂1ₓ │\n└∊────────┘"]);
     let r = s.eval(r#"A←2 3 4⍴"DUCKSWANBIRDWORMCAKESEED" ⋄ ⊂⍠2 A"#);
     assert!(r.error.is_none(), "{:?}", r.error);
-    assert_eq!(r.output_text(), ["┌→─────────────────────┐\n↓ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │DUCK│ │SWAN│ │BIRD│ │\n│ └────┘ └────┘ └────┘ │\n│ ┌→───┐ ┌→───┐ ┌→───┐ │\n│ │WORM│ │CAKE│ │SEED│ │\n│ └────┘ └────┘ └────┘ │\n└∊─────────────────────┘"]);
-    assert_eq!(s.eval(r#"⍬ ⋄ "abc" ⋄ ["i":2]⍴1 2"#).output_text(), ["⍬", "┌→──┐\n│abc│\n└───┘", r#"["i":2]⍴[1 2]"#]);
+    assert_eq!(r.output_text(), ["┌→─────────────────────┐\n↓ \"DUCK\" \"SWAN\" \"BIRD\" │\n│ \"WORM\" \"CAKE\" \"SEED\" │\n└∊─────────────────────┘"]);
+    assert_eq!(s.eval(r#"⍬ ⋄ "" ⋄ "a""bc" ⋄ ["i":2]⍴1 2"#).output_text(), ["⍬", r#""""#, r#""a""bc""#, r#"["i":2]⍴[1 2]"#]);
     assert_eq!(s.eval("0 3⍴0").output_text(), ["┌→────┐\n⌽0 0 0│\n└~────┘"]);
     assert_eq!(s.eval("1 2⍴1ₓ 0.5").output_text(), ["┌→─────┐\n↓1ₓ 0.5│\n└+─────┘"]);
     assert_eq!(s.eval("2 2⍴⍳4ₓ").output_text(), ["┌→──┐\n↓0 1│\n│2 3│\n└ₓ──┘"]);
@@ -86,7 +86,16 @@ fn boxed_display_and_function_trees() {
     assert_eq!(s.eval("1 2").output_text(), ["1 2"]);
     assert!(s.eval(r#"•prefs ["boks":$t]"#).error.is_some());
     assert!(s.eval(r#"p←•prefs ["limit":4 "edges":1]"#).error.is_none());
-    assert_eq!(s.eval(r#"3 3⍴⍳9 ⋄ ⍳9 ⋄ ⎕←⍳9 ⋄ "abcdefghi" ⋄ ≢⍕⍳9"#).output_text(), ["0 … 2\n⋮ ⋱ ⋮\n6 … 8", "0 … 8", "0 1 2 3 4 5 6 7 8", "a…i", "17ₓ"]);
+    assert_eq!(s.eval(r#"3 3⍴⍳9 ⋄ ⍳9 ⋄ ⎕←⍳9 ⋄ "abcdefghi" ⋄ ≢⍕⍳9"#).output_text(), ["0 … 2\n⋮ ⋱ ⋮\n6 … 8", "0 … 8", "0 1 2 3 4 5 6 7 8", "\"abc…i\"", "17ₓ"]);
+    assert_eq!(s.eval("\"a\nb\nc\nd\ne\"").output_text(), ["\"a\nb\nc\n⋮\ne\""]);
+    s.eval(r#"•prefs ["limit":∞ "width":10]"#);
+    let narrow = s.eval(r#""abcd界efghijk""#).output_text().join("\n");
+    assert!(narrow.starts_with("\"abcd") && narrow.ends_with("k\"") && narrow.contains('…'));
+    assert!(unicode_width::UnicodeWidthStr::width(narrow.as_str()) <= 10);
+    s.eval(r#"•prefs ["width":∞]"#);
+    let controls = s.eval(",•ucs97 9 98").value.unwrap();
+    assert_same(s.eval(&controls.literal()).value, &controls);
+    equiv_in(&s, "⍕,•ucs97 9 98", ",•ucs97 9 98");
     assert_eq!(s.eval("1 2").output_text(), ["1 2"]);
     let wide = s.eval("]Display '界' 'a'").output_text().join("\n");
     assert!(wide.contains("界"));

@@ -847,7 +847,7 @@ r←["k":5] ⋄ f←{r.({⍵+k} ⍵)} ⋄ (f 1),(f 2)   ⍝ 6 7
 
 ⍝ — A group's train calls its tines in place on later calls, in the order its function would call them: right tine, left tine, then the middle tine
 a←{⎕←"a" ⋄ ⍵} ⋄ b←{⎕←"b" ⋄ ⍺+⍵} ⋄ c←{⎕←"c" ⋄ ⍵×2} ⋄ f←{(a b c) ⍵} ⋄ (f 1),(f 2)   ⍝ 3 6
-⍝ ⎕: c\na\nb\nc\na\nb
+⍝ ⎕: "c"\n"a"\n"b"\n"c"\n"a"\n"b"
 
 ⍝ — A group's train called with a left argument, whose array tine binds the function after it
 f←{⍺ (⍵-+) 10} ⋄ (3 f 1),(5 f 2)   ⍝ ¯12 ¯13

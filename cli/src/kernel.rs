@@ -21,9 +21,7 @@ fn expression(session: &Session, code: &str, interrupt: &InterruptHandle) -> Res
         EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() });
     if let Some(error) = result.error { return Err(error); }
     let (kind, data) = if let Some(value) = result.value {
-        let data = if let Some(text) = basedpl::keyed::name(&value) { json!({"text/plain": text.as_ref()}) }
-            else { json!(session.render(&value, interrupt.clone())?) };
-        (Some("array"), data)
+        (Some("array"), json!(session.render(&value, interrupt.clone())?))
     } else if let Some(f) = result.function { (Some("function"), json!({"text/plain": f.bpl()})) }
     else if let Some(op) = result.operator { (Some("operator"), json!({"text/plain": op.to_string()})) }
     else { (None, json!({})) };
