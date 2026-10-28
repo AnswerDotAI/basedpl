@@ -3,7 +3,6 @@ mod editor;
 mod kernel;
 mod worker;
 
-/// The memory guard stops a runaway computation at half of physical memory.
 #[global_allocator]
 static GUARD: rustymath::memory::Guard = rustymath::memory::Guard::new();
 

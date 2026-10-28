@@ -1,6 +1,6 @@
+use crate::{Described, Error, Span, Value, data::Options, display, keyed, primitive::real};
+use plotters::{coord::{Shift, ranged1d::{DefaultFormatting, KeyPointHint, Ranged}}, prelude::*};
 use rustymath::error::Kind;
-use crate::{data::Options, display, Span, keyed, primitive::real, Error, Described, Value};
-use plotters::{coord::{ranged1d::{DefaultFormatting, KeyPointHint, Ranged}, Shift}, prelude::*};
 
 type Area<'a> = DrawingArea<SVGBackend<'a>, Shift>;
 
@@ -14,9 +14,7 @@ const COLORS: [(&str, RGBColor); 10] = [
     ("olive", RGBColor(188, 189, 34)), ("cyan", RGBColor(23, 190, 207)),
 ];
 
-fn drawn<T, E: std::fmt::Display>(result: Result<T, E>) -> Result<T, Error> {
-    result.map_err(|e| Error::domain(format!("plot drawing failed: {e}")))
-}
+fn drawn<T, E: std::fmt::Display>(result: Result<T, E>) -> Result<T, Error> { result.map_err(|e| Error::domain(format!("plot drawing failed: {e}"))) }
 
 /// `X •plot Y` returns a spec holding the data `Y`, the settings in `X` and a renderer. Plain text `X` is shorthand for `mark`.
 pub(crate) fn plot(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
@@ -43,9 +41,7 @@ fn render(_: Option<&Value>, spec: &Value, span: &Span) -> Result<Value, Error> 
     display::mime("image/svg+xml", keyed::text(&svg)).described("invalid plot MIME bundle")
 }
 
-fn record(opts: &Options, key: &str, allowed: &[&str]) -> Result<Options, Error> {
-    Options::new("•plot", opts.values.get(key), None, allowed)
-}
+fn record(opts: &Options, key: &str, allowed: &[&str]) -> Result<Options, Error> { Options::new("•plot", opts.values.get(key), None, allowed) }
 
 fn titled<'a>(area: &Area<'a>, title: &str) -> Result<Area<'a>, Error> {
     if title.is_empty() { Ok(area.clone()) } else { drawn(area.titled(title, ("sans-serif", 18))) }
@@ -246,8 +242,8 @@ impl Chart {
         let cells = series.iter().any(|s| s.mark == Mark::Cell);
         if cells && series.iter().any(|s| s.mark != Mark::Cell) { return Err(Error::domain("•plot can't mix cells with other marks")); }
         let rows = if cells { series.iter().map(|s| s.name.clone()).collect::<Option<Vec<_>>>().unwrap_or_default() } else { vec![] };
-        let mut y = Axis::new(
-            &record(opts, "y", &["title", "scale", "ticks", "axis"])?, if cells { data.legend_title.clone() } else { String::new() }, rows, axes)?;
+        let mut y =
+            Axis::new(&record(opts, "y", &["title", "scale", "ticks", "axis"])?, if cells { data.legend_title.clone() } else { String::new() }, rows, axes)?;
         for (r, s) in series.iter_mut().enumerate() {
             s.y = if cells { vec![r as f64; s.raw.len()] } else { s.raw.iter().map(|&v| y.map(v)).collect::<Result<_, _>>()? };
         }

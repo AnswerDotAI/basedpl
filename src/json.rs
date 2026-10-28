@@ -1,9 +1,9 @@
 use crate::execution::check;
-use rustymath::error::Kind;
-use crate::{array::Items, data::{imported, text, Options}, Span, keyed, Described, Error, ErrorKind, Number, Value};
-use rustymath::hashing::{HashMap, HashMapExt};
+use crate::{Described, Error, ErrorKind, Number, Span, Value, array::Items, data::{Options, imported, text}, keyed};
 use num_bigint::BigInt;
 use num_rational::BigRational;
+use rustymath::error::Kind;
+use rustymath::hashing::{HashMap, HashMapExt};
 use serde_json::Value as Json;
 
 /// A JSON number, exact when written without a point or exponent and otherwise a float of `width`. A float too large for `f64` is a DOMAIN error.
@@ -36,7 +36,9 @@ pub(crate) fn parse(left: Option<&Value>, right: &Value, _: &Span) -> Result<Val
     };
     let mut reading = Reading { fill: opts.fill()?, texts: keyed::Texts::default(), types, matched: Vec::new() };
     let value = import(&read, "", &mut reading)?;
-    if let Some(k) = reading.types.keys().find(|k| !reading.matched.contains(k)) { return Err(Error::domain(format!("•json types names no field {k:?} that holds an array"))); }
+    if let Some(k) = reading.types.keys().find(|k| !reading.matched.contains(k)) {
+        return Err(Error::domain(format!("•json types names no field {k:?} that holds an array")));
+    }
     Ok(value)
 }
 
@@ -144,7 +146,10 @@ fn export(value: &Value, fill: Option<&Number>, span: &Span) -> Result<Json, Err
         }
         Value::Function(_) | Value::Operator(_) => Err(Error::domain("JSON cannot encode functions or operators")),
         // A value that `∂` carries writes as its plain value, as `⍕` writes it (`Carrier::observed`). A batch stops its run.
-        Value::Carried(carrier) => match carrier.observed()? { Some(plain) => export(plain, fill, span), None => Err(Error::from(carrier.computed().err().expect("only a record observes no value, and a record refuses a direct read"))) },
+        Value::Carried(carrier) => match carrier.observed()? {
+            Some(plain) => export(plain, fill, span),
+            None => Err(Error::from(carrier.computed().err().expect("only a record observes no value, and a record refuses a direct read"))),
+        },
         _ if value.keys(0).is_none() && keyed::name(value).is_some() => Ok(Json::String(text(value)?)),
         _ if value.shape().is_empty() => export(&value.at(0), fill, span),
         _ => {

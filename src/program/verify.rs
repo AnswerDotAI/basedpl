@@ -16,9 +16,8 @@ fn broken(program: &Program) -> Option<String> {
         if let Some(i) = step.reads().find(|&i| i >= j) { return Some(format!("v{j} reads v{i}")); }
         if let Some(read) = step.operands().find(|r| !counted(nodes, r)) { return Some(format!("v{j} reads v{} under a layout of another size", read.of)); }
         match planned(nodes, node, step) {
-            Ok(desc) if desc == node.desc => {}
-            Ok(desc) => return Some(format!("v{j} is {:?}, where its step plans {desc:?}", node.desc)),
-            Err(reason) => return Some(format!("v{j}'s step doesn't plan: {reason}")),
+            Ok(desc) if desc == node.desc => {} Ok(desc) => return Some(format!("v{j} is {:?}, where its step plans {desc:?}", node.desc)),
+            Err(reason) => return Some(format!("v{j}'s step doesn't plan: {reason}"))
         }
     }
     if program.result.of >= nodes.len() || !counted(nodes, &program.result) { return Some("the result reads no node under a layout of its size".into()); }
@@ -52,7 +51,8 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
         Step::Gather { of, .. } => plan::copy(&desc(of), &node.desc.layout),
         Step::Fold { p, kind, axis, seed, of } => {
             let (seed, items) = (seed.as_ref().map(desc), desc(of));
-            let (planned, along) = plan::fold(*p, *kind, seed.as_ref().map(|s| s.kind), items.kind, Numeric::current())?.desc(Some(*axis), seed.as_ref(), &items)?;
+            let (planned, along) =
+                plan::fold(*p, *kind, seed.as_ref().map(|s| s.kind), items.kind, Numeric::current())?.desc(Some(*axis), seed.as_ref(), &items)?;
             if along == *axis { Ok(planned) } else { Err("an axis other than the one that planning gives") }
         }
         Step::Product { f, g, left, right, stacked } => {

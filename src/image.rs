@@ -1,4 +1,4 @@
-use crate::{data, display, element::read_as, Span, keyed, number::Numeric, Error, Described, Value};
+use crate::{Described, Error, Span, Value, data, display, element::read_as, keyed, number::Numeric};
 use rustymath::{buffer::DType, error::Kind};
 
 /// Decoding and encoding of image files: ImageIO on Apple platforms, and the `image` and `png` crates elsewhere.
@@ -26,7 +26,8 @@ pub(crate) fn image(left: Option<&Value>, right: &Value, span: &Span) -> Result<
     let options = data::Options::new("•image", left, None, &["fps", "delay"])?;
     let delays = timing(&options, "•image")?;
     let picture = match keyed::name(right) {
-        Some(path) => { crate::transform::acts()?; decoded(&span.read(&path)?)? } None if right.shape().len() == 1 => decoded(&data::bytes(right)?)?, None => right.clone()
+        Some(path) => { crate::transform::acts()?; decoded(&span.read(&path)?)? } None if right.shape().len() == 1 => decoded(&data::bytes(right)?)?,
+        None => right.clone()
     };
     layout(&picture, delays.clone())?;
     let renderer = display::renderer("image-renderer", render);
@@ -54,8 +55,7 @@ fn timing(options: &data::Options, name: &str) -> Result<Option<Vec<f64>>, Error
         None => match options.number("fps")? { Some(fps) => ("fps", Some(vec![1. / fps])), None => return Ok(None) },
     };
     match delays {
-        Some(d) if !d.is_empty() && d.iter().all(|s| *s > 0. && s.is_finite()) => Ok(Some(d)),
-        _ => Err(Error::domain(format!("{name} {key} must be positive"))),
+        Some(d) if !d.is_empty() && d.iter().all(|s| *s > 0. && s.is_finite()) => Ok(Some(d)), _ => Err(Error::domain(format!("{name} {key} must be positive")))
     }
 }
 
@@ -120,9 +120,7 @@ fn layout(picture: &Value, delays: Option<Vec<f64>>) -> Result<([usize; 4], Opti
         [height, width] => (height, width, 1), [height, width, channels @ 1..=4] => (height, width, channels),
         _ => return Err(Error::new(Kind::Rank, "a picture has axes for rows, columns and up to four channels"))
     };
-    let real = match picture.dtype() {
-        Some(DType::Complex(_)) => read_as::<f64>(picture).is_some(), Some(DType::Character) | None => false, Some(_) => true
-    };
+    let real = match picture.dtype() { Some(DType::Complex(_)) => read_as::<f64>(picture).is_some(), Some(DType::Character) | None => false, Some(_) => true };
     if !real { return Err(Error::domain("a picture holds real numbers")); }
     Ok(([count, height, width, channels], delays))
 }

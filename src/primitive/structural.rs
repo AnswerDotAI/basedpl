@@ -1,7 +1,7 @@
 //! Structural primitives, which rearrange or select items without computing new ones: reshape, take, drop, replicate, rotate, catenate, transpose, split, partition, windows and enlist.
 
-use rustymath::error::Kind;
 use super::*;
+use rustymath::error::Kind;
 
 use rustymath::{layout::Layout as CoreLayout, structure::{self, Edge, Plan, Windows}};
 
@@ -14,7 +14,11 @@ impl WindowSpec {
         let integers = |v: &Value| v.as_items().integers().described("window sizes and movements must be whole numbers").map(|n| n.to_vec());
         if spec.keys(0).is_some() {
             let options = crate::data::Options::new("window", Some(spec), None, &["size", "edge", "step", "fill"])?;
-            let field = |key: &str| options.values.get(key).map(|v| if v.shape().len() > 1 { Err(Error::new(Kind::Rank, format!("window {key} must be a unit or vector"))) } else { integers(v) }).transpose();
+            let field = |key: &str| {
+                options.values.get(key)
+                    .map(|v| if v.shape().len() > 1 { Err(Error::new(Kind::Rank, format!("window {key} must be a unit or vector"))) } else { integers(v) })
+                    .transpose()
+            };
             let sizes = field("size")?.ok_or_else(|| Error::domain("window options need size"))?;
             let edge = options.values.get("edge").map(|v| crate::system::edge_mode(v)).transpose()?;
             return Ok(Self { sizes, moves: field("step")?.unwrap_or_default(), edge, fill: options.values.get("fill").cloned() });
@@ -36,7 +40,8 @@ pub(crate) fn windowed(spec: &WindowSpec, right: &Value, span: &Span) -> Result<
     if spec.sizes.is_empty() { return Ok(right.clone()); }
     let (right, fill) = match &spec.fill { Some(fill) => Primitive::fill_for(fill, right, false, span)?, None => (Cow::Borrowed(right), None) };
     let windows = Windows::new(&spec.sizes, &spec.moves, |size| spec.edge.or((size < 0).then_some(Edge::Fill)), right.shape())?;
-    let padded = windows.padding().map(|p| copied_fill(&right, p.layout.into(), &Mapping::from(p.steps), fill.as_ref())).transpose().described("invalid windows")?;
+    let padded =
+        windows.padding().map(|p| copied_fill(&right, p.layout.into(), &Mapping::from(p.steps), fill.as_ref())).transpose().described("invalid windows")?;
     let source = padded.as_ref().unwrap_or(&right);
     let plan = windows.plan(right.layout(), source.shape())?;
     remapped(source, plan).described("invalid windows")
@@ -86,17 +91,16 @@ pub(super) fn enclose_axes(right: &Value, axes: &[usize]) -> Result<Value, Error
     generated_len(frame.shape())?;
     let len = generated_len(cell.shape())?;
     // Cells made of the trailing axes, in order, are consecutive items, which `Cells` lends as views of `right`'s storage.
-    if !axes.is_empty() && axes.iter().copied().eq(shape.len() - axes.len()..shape.len()) { return right.cells(axes.len()).and_then(|cells| cells.framed()).described("invalid enclosed cells"); }
+    if !axes.is_empty() && axes.iter().copied().eq(shape.len() - axes.len()..shape.len()) {
+        return right.cells(axes.len()).and_then(|cells| cells.framed()).described("invalid enclosed cells");
+    }
     let tables: Vec<_> = axes.iter().map(|&a| Steps::along(shape[a], stride[a])).collect();
     let data = Steps::combined(0, &others.iter().map(|&a| Steps::along(shape[a], stride[a])).collect::<Vec<_>>()).into_iter().map(|base| {
         let mut data = Gather::new(&[right], len);
         data.walk(right, base, &tables, None);
         data.finish(cell.clone(), || right.prototype())
     }).collect::<Result<Vec<_>, _>>().described("invalid enclosed cells")?;
-    let prototype = match data.first() {
-        Some(cell) => cell.prototype(),
-        None => cell.filled(&right.prototype()),
-    };
+    let prototype = match data.first() { Some(cell) => cell.prototype(), None => cell.filled(&right.prototype()) };
     frame.collect(data, prototype).described("invalid enclosed array")
 }
 
@@ -131,7 +135,8 @@ pub(super) fn reshape(dimensions: &Value, right: &Value, fill: Option<Value>) ->
     let n = right.len();
     let flat = right.relaid(Layout::from([n])).described("invalid reshape")?;
     let steps = if n == 0 { Steps::clipped(0, len, 0, 1) } else { Steps::padded(0, len, n, 1, Edge::Wrap) };
-    copied_fill(&flat, Layout::from([len]), &Mapping::from(vec![steps]), fill.as_ref()).and_then(|a| a.relaid(Layout::from(shape))).and_then(|a| a.with_axis_names(names)).described("invalid reshape")
+    copied_fill(&flat, Layout::from([len]), &Mapping::from(vec![steps]), fill.as_ref()).and_then(|a| a.relaid(Layout::from(shape)))
+        .and_then(|a| a.with_axis_names(names)).described("invalid reshape")
 }
 
 /// `right` reshaped to `shape`, through the reshape primitive's call. That call applies `∂`'s rules to duals and records.
@@ -216,11 +221,13 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
     let (any, sum) = or_and_sum(&counts);
     let len = right.len();
     let plain = gathers && axis == 0 && match right.shape() { [] => true, [_] => right.keys(0).is_none(), _ => false };
-    if plain && !inverse && any >= 0 && (counts.len() == 1 || counts.len() == len) && (any as u64).checked_mul(len as u64).is_some_and(|m| m <= i64::MAX as u64) {
+    if plain && !inverse && any >= 0 && (counts.len() == 1 || counts.len() == len) && (any as u64).checked_mul(len as u64).is_some_and(|m| m <= i64::MAX as u64)
+    {
         let total = if counts.len() == 1 { counts[0] as usize * len } else { sum as usize };
         generated_len(&[total])?;
         let mut data = Gather::new(&[right], total);
-        if counts.len() > 1 && any <= 1 { data.compress(right, &counts, total) } else { data.replicate(right, &counts, total) }
+        if counts.len() > 1 && any <= 1 { data.compress(right, &counts, total) }
+        else { data.replicate(right, &counts, total) }
         return data.finish(Layout::rearranged(CoreLayout::from(vec![total]).inherit_names(right.axis_names().to_vec()), right), || right.prototype())
             .described("invalid replication");
     }
@@ -275,8 +282,7 @@ pub(crate) fn append_plan(left: &Value, right: &Value, first: bool) -> Result<Op
     shape[0] = shape[0].checked_add(right.shape()[0]).ok_or_else(|| Error::new(Kind::Limit, "catenate axis overflow"))?;
     generated_len(&shape)?;
     let names = match (left.keys(0), right.keys(0)) {
-        (None, None) => None,
-        (_, added) => Some(added.map_or_else(|| vec![None; right.shape()[0]], |k| k.names().to_vec())),
+        (None, None) => None, (_, added) => Some(added.map_or_else(|| vec![None; right.shape()[0]], |k| k.names().to_vec()))
     };
     Ok(Some((right, names)))
 }
@@ -465,11 +471,16 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
         previous = count;
     }
     let cell_layout = |range: std::ops::Range<usize>| CoreLayout::select(right.layout(), axis, range.map(Some));
-    let prototype = cell_layout(0..0).map_err(ErrorKind::from).and_then(|layout| Layout::rearranged(layout, &right).collect(vec![], right.prototype())).described("invalid partition prototype")?;
+    let prototype = cell_layout(0..0).map_err(ErrorKind::from).and_then(|layout| Layout::rearranged(layout, &right).collect(vec![], right.prototype()))
+        .described("invalid partition prototype")?;
     // A partition of a plain array along its leading axis, or along an axis below axes of length 1, is a range of its items, which `part` lends as a view.
     let leading = traversal.outer == 1 && right.layout().plain();
     let part = |range: std::ops::Range<usize>| -> Result<Value, Error> {
-        if leading { let mut shape = right.shape().to_vec(); shape[axis] = range.len(); return right.part(range.start * traversal.inner..range.end * traversal.inner, shape).described("invalid partition"); }
+        if leading {
+            let mut shape = right.shape().to_vec();
+            shape[axis] = range.len();
+            return right.part(range.start * traversal.inner..range.end * traversal.inner, shape).described("invalid partition");
+        }
         let layout = cell_layout(range.clone())?;
         let steps = vec![
             Steps::along(traversal.outer, traversal.len * traversal.inner),

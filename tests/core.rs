@@ -1,6 +1,7 @@
-use basedpl::{parse, ErrorKind::*, EvalOptions, ParseStatus, Session, Source, Value as AplValue, Value::Character};
+use basedpl::{ErrorKind::*, EvalOptions, ParseStatus, Session, Source, Value as AplValue, Value::Character, parse};
 use std::sync::Arc;
-#[macro_use] mod common;
+#[macro_use]
+mod common;
 use common::*;
 
 #[track_caller]
@@ -222,7 +223,10 @@ fn highlight_classes_and_code_context() {
     // An unclosed string, as while typing, runs to the end of the text.
     assert_eq!(classes("x←1+\"a+"), [("x", "name"), ("←", "syntax"), ("1", "literal"), ("+", "function"), ("\"a+", "string")]);
     // A group's `ₓ` is part of its literal, or `⌊` after a group that holds anything else. `ⱼ` between two items joins them into a number.
-    let expected = [("1", "literal"), ("2", "literal"), ("ₓ", "literal"), ("+", "function"), ("x", "name"), ("+", "function"), ("1", "literal"), ("ₓ", "monadic-operator"), ("+", "function"), ("x", "name"), ("ⱼ", "literal"), ("y", "name")];
+    let expected = [
+        ("1", "literal"), ("2", "literal"), ("ₓ", "literal"), ("+", "function"), ("x", "name"), ("+", "function"), ("1", "literal"),
+        ("ₓ", "monadic-operator"), ("+", "function"), ("x", "name"), ("ⱼ", "literal"), ("y", "name"),
+    ];
     assert_eq!(classes("[1 2]ₓ+(x+1)ₓ+xⱼy"), expected);
     // The end of the text is in code unless it is inside a comment or an unclosed literal.
     assert!(basedpl::in_code("\"a\"+", false) && basedpl::in_code("1 ⍝ c\n", false));

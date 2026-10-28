@@ -1,6 +1,6 @@
-use crate::{host::Instant, Error, ErrorKind, Span};
+use crate::{Error, ErrorKind, Span, host::Instant};
 use rustymath::error::Kind;
-use std::{cell::{Cell, RefCell}, io, sync::{atomic::{AtomicBool, AtomicU32, Ordering}, Arc, Mutex, MutexGuard, PoisonError}, time::Duration};
+use std::{cell::{Cell, RefCell}, io, sync::{Arc, Mutex, MutexGuard, PoisonError, atomic::{AtomicBool, AtomicU32, Ordering}}, time::Duration};
 
 /// Cancellation for one evaluation; may be sent to another thread.
 #[derive(Clone, Default)]
@@ -25,7 +25,9 @@ pub struct EvalOptions {
 /// `Explicit` output and `Display` results each end a line. `Text` is written as it is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OutputKind { Explicit, Display, Text }
-impl OutputKind { pub fn name(self) -> &'static str { match self { Self::Explicit => "explicit", Self::Display => "display", Self::Text => "text" } } }
+impl OutputKind {
+    pub fn name(self) -> &'static str { match self { Self::Explicit => "explicit", Self::Display => "display", Self::Text => "text" } }
+}
 /// One entry of a MIME bundle: text, or bytes for a binary type such as `image/png`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MimeData { Text(String), Bytes(Vec<u8>) }
@@ -86,7 +88,10 @@ fn stopped() -> Result<(), rustymath::error::Error> {
     let (interrupt, poll, late) = {
         let mut stops = stops();
         let Some(Stops { interrupt, timeout, poll }) = &mut *stops else { return Ok(()) };
-        let poll = poll.as_mut().filter(|(_, last)| now - *last >= POLL_INTERVAL).map(|(poll, last)| { *last = now; poll.clone() });
+        let poll = poll.as_mut().filter(|(_, last)| now - *last >= POLL_INTERVAL).map(|(poll, last)| {
+            *last = now;
+            poll.clone()
+        });
         (interrupt.clone(), poll, matches!(timeout, Some((start, limit)) if now - *start >= *limit))
     };
     if poll.is_some_and(|poll| poll()) { interrupt.interrupt(); }
@@ -122,7 +127,9 @@ impl Execution {
     pub(crate) fn begin(&self, options: EvalOptions) -> Running<'_> {
         rustymath::interrupt::install(stopped);
         let now = Instant::now();
-        let outer = std::mem::replace(&mut *stops(), Some(Stops { interrupt: options.interrupt, timeout: options.timeout.map(|d| (now, d)), poll: options.poll.map(|poll| (poll, now)) }));
+        let outer = std::mem::replace(
+            &mut *stops(), Some(Stops { interrupt: options.interrupt, timeout: options.timeout.map(|d| (now, d)), poll: options.poll.map(|poll| (poll, now)) })
+        );
         let run = self.run.replace(Run { output: options.output, input: options.input, ..Run::default() });
         Running { execution: self, outer: (run, self.echo.replace(options.echo), COUNTDOWN.swap(0, Ordering::Relaxed), outer) }
     }
@@ -133,7 +140,10 @@ impl Execution {
         self.send(output);
     }
     /// Sends `output` to the sink, or keeps it for the evaluation's result when there is none.
-    fn send(&self, output: Output) { let sink = self.run.borrow().output.clone(); if let Some(sink) = sink { sink(&output); } else { self.run.borrow_mut().captured.push(output); } }
+    fn send(&self, output: Output) {
+        let sink = self.run.borrow().output.clone();
+        if let Some(sink) = sink { sink(&output); } else { self.run.borrow_mut().captured.push(output); }
+    }
     /// Writes `text` with no line ending added. Text after the last line ending waits, so that a read of `⎕` can show it as its prompt.
     pub(crate) fn write(&self, text: &str) {
         let mut run = self.run.borrow_mut();
@@ -144,20 +154,27 @@ impl Execution {
         self.send(Output::plain(OutputKind::Text, lines));
     }
     /// Sends the text that waits for a line ending.
-    pub(crate) fn flush(&self) { let text = std::mem::take(&mut self.run.borrow_mut().pending); if !text.is_empty() { self.send(Output::plain(OutputKind::Text, text)); } }
+    pub(crate) fn flush(&self) {
+        let text = std::mem::take(&mut self.run.borrow_mut().pending);
+        if !text.is_empty() { self.send(Output::plain(OutputKind::Text, text)); }
+    }
     /// The output kept since the last call.
     pub(crate) fn take_output(&self) -> Vec<Output> { std::mem::take(&mut self.run.borrow_mut().captured) }
     /// The next line of input, shown with the pending text as its prompt. `None` at the end of the input.
-    pub(crate) fn line(&self, span: &Span) -> Result<Option<String>, Error> { self.read(span, |input| { let prompt = std::mem::take(&mut self.run.borrow_mut().pending); input.line(&prompt) }) }
+    pub(crate) fn line(&self, span: &Span) -> Result<Option<String>, Error> {
+        self.read(span, |input| {
+            let prompt = std::mem::take(&mut self.run.borrow_mut().pending);
+            input.line(&prompt)
+        })
+    }
     /// The rest of the input, read after the pending text is sent.
     pub(crate) fn rest(&self, span: &Span) -> Result<Vec<u8>, Error> { self.flush(); self.read(span, |input| input.rest()) }
     /// The result of `read` on the frontend's input. A frontend with no input, or a read that fails, is an IO error. A read that fails as interrupted, or during an interrupt, is an interrupt.
     fn read<T>(&self, span: &Span, read: impl FnOnce(&dyn Input) -> io::Result<T>) -> Result<T, Error> {
         let input = self.run.borrow().input.clone().ok_or_else(|| Error::new(ErrorKind::Io, "standard input is unavailable here").at(span))?;
         read(&*input).map_err(|e| {
-            if e.kind() == io::ErrorKind::Interrupted || interrupted() {
-                Error::new(ErrorKind::Interrupt, "").at(span)
-            } else { Error::io("standard input", e).at(span) }
+            if e.kind() == io::ErrorKind::Interrupted || interrupted() { Error::new(ErrorKind::Interrupt, "").at(span) }
+            else { Error::io("standard input", e).at(span) }
         })
     }
 }
@@ -170,10 +187,7 @@ pub(crate) fn check() -> Result<(), Error> {
 /// Runs [`stopped`] at once and restarts the countdown. Callers whose checks are too far apart for `check`'s countdown call this directly.
 #[cold]
 #[inline(never)]
-pub(crate) fn check_now() -> Result<(), Error> {
-    COUNTDOWN.store(CHECKS_PER_CLOCK - 1, Ordering::Relaxed);
-    Ok(stopped()?)
-}
+pub(crate) fn check_now() -> Result<(), Error> { COUNTDOWN.store(CHECKS_PER_CLOCK - 1, Ordering::Relaxed); Ok(stopped()?) }
 /// One step of waiting: a full check, then a sleep of `limit` or `POLL_INTERVAL`, whichever is shorter. A loop of these notices an interrupt or a passed deadline within one interval.
 #[cfg(not(web))]
 pub(crate) fn pause(limit: Duration) -> Result<(), Error> {
@@ -181,4 +195,3 @@ pub(crate) fn pause(limit: Duration) -> Result<(), Error> {
     std::thread::sleep(limit.min(POLL_INTERVAL));
     Ok(())
 }
-

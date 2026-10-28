@@ -1,7 +1,7 @@
 //! `•date` reads a moment, in seconds since the Unix epoch, from text or from a record of fields. `•date⁻¹` writes a moment as a record, or as text with a pattern. Patterns, field names and ISO 8601 text follow chrono.
-use crate::{data::{text, Options}, Span, keyed, primitive::real, Error, Described, Number, Value};
-use rustymath::buffer::FloatWidth;
+use crate::{Described, Error, Number, Span, Value, data::{Options, text}, keyed, primitive::real};
 use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Utc};
+use rustymath::buffer::FloatWidth;
 use std::fmt::Write;
 
 /// Seconds since the Unix epoch, from the system clock.

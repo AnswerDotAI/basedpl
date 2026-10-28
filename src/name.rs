@@ -30,7 +30,11 @@ static LOCALS: LazyLock<RwLock<HashSet<&'static [Name]>>> = LazyLock::new(|| RwL
 /// The kept copy of `names`, a definition's locals, which a frame can hold without counting references.
 pub(crate) fn kept(names: &[Name]) -> &'static [Name] {
     if names.is_empty() { return &[]; }
-    interned(&LOCALS, |locals| locals.get(names).copied(), |locals| { let kept: &'static [Name] = Box::leak(names.into()); locals.insert(kept); kept })
+    interned(&LOCALS, |locals| locals.get(names).copied(), |locals| {
+        let kept: &'static [Name] = Box::leak(names.into());
+        locals.insert(kept);
+        kept
+    })
 }
 
 /// What `find` gives from the table that `lock` guards, or else what `add` gives after it adds the entry. Only an add takes the write lock, and `find` looks again under it, because another thread can add the same entry in between.

@@ -1,11 +1,10 @@
 //! `⇄`, the operator that minimizes its operand, or solves for where its operand is zero, through `rustymath::optimize`.
-use rustymath::{buffer::FloatWidth, error::Kind};
 use crate::{
-    array::Layout, data::Options, derivative::Linearized, element::Float, Span, keyed, primitive::{real},
-    Error, Described, ErrorKind, Function, Number, Value
+    Described, Error, ErrorKind, Function, Number, Span, Value, array::Layout, data::Options, derivative::Linearized, element::Float, keyed, primitive::real,
 };
 use num_traits::ToPrimitive;
-use rustymath::{linalg::Factor, optimize::{self, Bounds, Mapping, Method, Objective, Task}, Native};
+use rustymath::{Native, linalg::Factor, optimize::{self, Bounds, Mapping, Method, Objective, Task}};
+use rustymath::{buffer::FloatWidth, error::Kind};
 use std::borrow::Cow;
 
 /// The options that `options f⇄ start` takes.
@@ -39,12 +38,10 @@ fn run<F: Native + Float + Factor>(f: &Function, options: &Options, start: &Valu
             (None, None) => None, (lower, upper) => Some((lower.unwrap_or_else(|| vec![F::neg_infinity(); n]), upper.unwrap_or_else(|| vec![F::infinity(); n])))
         },
     };
-    let method =
-        options.values.contains_key("method").then(|| options.text("method", None)?.parse::<Method>().map_err(Error::from)).transpose()?;
+    let method = options.values.contains_key("method").then(|| options.text("method", None)?.parse::<Method>().map_err(Error::from)).transpose()?;
     let tolerance = options.number("tolerance")?;
     let settings = optimize::Options { method, bounds: bounds.as_ref().map(|(lower, upper)| Bounds { lower, upper }), tolerance: tolerance.map(F::narrow),
-        evaluations: count(options, "evaluations", 1)?, population: count(options, "population", 1)?,
-        seed: count(options, "seed", 0)?.unwrap_or(0) as u64 };
+        evaluations: count(options, "evaluations", 1)?, population: count(options, "population", 1)?, seed: count(options, "seed", 0)?.unwrap_or(0) as u64 };
     let report = options.boolean("report", false)?;
     let check = |task| settings.check(task, n).map_err(Error::from);
     let start = point.value(&x)?;
@@ -52,9 +49,7 @@ fn run<F: Native + Float + Factor>(f: &Function, options: &Options, start: &Valu
     let derivatives = matches!(settings.method, None | Some(Method::Lbfgs | Method::LevenbergMarquardt | Method::Cg | Method::Minres));
     let last = if !derivatives { None } else {
         match crate::derivative::linearized(f, None, &start, span) {
-            Ok(lin) => Some((point_key(&x), lin)),
-            Err(e) if matches!(e.kind, ErrorKind::Unsupported) => None,
-            Err(e) => return Err(e),
+            Ok(lin) => Some((point_key(&x), lin)), Err(e) if matches!(e.kind, ErrorKind::Unsupported) => None, Err(e) => return Err(e)
         }
     };
     let differentiable = last.is_some();
@@ -118,8 +113,7 @@ impl<'a> Point<'a> {
 
 /// The linearisation of `f` at `x`, from `last` where it was made at `x`, or at any point where `affine`, because an affine map's derivative is the same everywhere. A value, a gradient and products at one point then run `f` once.
 fn linearized_at<'a, F: Native>(
-    last: &'a mut Option<(Vec<f64>, Linearized)>, f: &Function, point: &Point<'_>, x: &[F], affine: bool, span: &Span,
-) -> Result<&'a Linearized, Error> {
+    last: &'a mut Option<(Vec<f64>, Linearized)>, f: &Function, point: &Point<'_>, x: &[F], affine: bool, span: &Span) -> Result<&'a Linearized, Error> {
     let key = point_key(x);
     if !matches!(last, Some((k, _)) if affine || *k == key) { *last = Some((key, crate::derivative::linearized(f, None, &point.value(x)?, span)?)); }
     Ok(&last.as_ref().expect("a linearisation was just made").1)
@@ -192,7 +186,10 @@ impl<F: Native + Float> Mapping<F> for Residual<'_> {
     fn jvp(&mut self, v: &[F], x: &[F], out: &mut [F]) -> Result<bool, Error> {
         let direction = self.point.value(v)?;
         match linearized_at(&mut self.last, self.f, &self.point, x, self.affine, self.span) {
-            Ok(lin) => { fill(out, &lin.jvp(&direction, self.span)?, "⇄ needs its function to give the same number of residuals at every point")?; Ok(true) }
+            Ok(lin) => {
+                fill(out, &lin.jvp(&direction, self.span)?, "⇄ needs its function to give the same number of residuals at every point")?;
+                Ok(true)
+            }
             Err(e) if matches!(e.kind, ErrorKind::Unsupported) => { self.products = false; Ok(false) }
             Err(e) => Err(e),
         }

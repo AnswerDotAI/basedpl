@@ -1,5 +1,5 @@
-use basedpl::{reference, InterruptHandle};
-use serde_json::{json, Value};
+use basedpl::{InterruptHandle, reference};
+use serde_json::{Value, json};
 
 const SOURCES: &[(&str, &str)] = &[
     ("core", include_str!("reference/core.bpl")), ("graphics", include_str!("reference/graphics.bpl")), ("ngn", include_str!("reference/ngn.bpl")),
@@ -32,15 +32,20 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&output_error, &InterruptHandle::default())["status"], "mismatch");
     let exactness = json!({"code":"1", "expected_code":"1ₓ"});
     assert_eq!(reference::check(&exactness, &InterruptHandle::default())["status"], "mismatch");
-    let kinds = reference::check(&json!({"code":r#"{⍵?1;$t}"batch"⊃•prefs ⍬"#, "expected":{"shape":[], "data":[1], "prototype":0}}), &InterruptHandle::default());
-    assert_eq!((kinds["status"].as_str(), kinds["message"].as_str()), (Some("mismatch"), Some("storage kind: float64 with the batch pref on, bool with the batch pref off")));
+    let kinds =
+        reference::check(&json!({"code":r#"{⍵?1;$t}"batch"⊃•prefs ⍬"#, "expected":{"shape":[], "data":[1], "prototype":0}}), &InterruptHandle::default());
+    assert_eq!(
+        (kinds["status"].as_str(), kinds["message"].as_str()),
+        (Some("mismatch"), Some("storage kind: float64 with the batch pref on, bool with the batch pref off"))
+    );
     let captured = json!({"code":"1ₓ", "expected":{"shape":[], "data":[1], "prototype":0}});
     assert_eq!(reference::check(&captured, &InterruptHandle::default())["status"], "pass");
     let parsed = cases("⍝  — [rtol=1e-14 atol=1e-15]\nf←{\n\n⍵+1\n}\nf 2\n⍝ =>\n3\n\n⍝  —\n\"unfinished\n⍝ error: SYNTAX ERROR\n\n");
     assert_eq!(parsed[0]["code"], "f←{\n\n⍵+1\n}\nf 2");
     assert_eq!(parsed[1]["line"], 10);
     for case in parsed { assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "pass"); }
-    let text = "⍝⍝ setup\nv←1 2 3\n\n⍝⍝ copies •prefs [\"float\":32]\n⍝ mutate — expectation gets its own setup\nv←v+1 ⋄ v\n⍝ =>\nv+1\n⍝⍝: 2 3 4\n\n-v\n⍝⍝: 1 1 1\n";
+    let text =
+        "⍝⍝ setup\nv←1 2 3\n\n⍝⍝ copies •prefs [\"float\":32]\n⍝ mutate — expectation gets its own setup\nv←v+1 ⋄ v\n⍝ =>\nv+1\n⍝⍝: 2 3 4\n\n-v\n⍝⍝: 1 1 1\n";
     let file = reference::file("sample.bpl", text).unwrap();
     assert_eq!(file.cases.len(), 2);
     assert_eq!(file.cases[0]["prefs"], "•prefs [\"float\":32]");
@@ -107,10 +112,11 @@ fn chosen() -> Vec<reference::File> {
 fn reference_cases() {
     let chosen = chosen();
     if let Ok(shard) = std::env::var(SHARD) {
-        let (k, n): (usize, usize) = shard.split_once(' ').and_then(|(k, n)| Some((k.parse().ok()?, n.parse().ok()?))).expect("BASEDPL_SHARD holds a share and a count");
+        let (k, n): (usize, usize) =
+            shard.split_once(' ').and_then(|(k, n)| Some((k.parse().ok()?, n.parse().ok()?))).expect("BASEDPL_SHARD holds a share and a count");
         let mut offset = 0;
         for file in &chosen {
-            for (_, case) in file.cases.iter().enumerate().filter(|(i, _)| (offset+i)%n == k) {
+            for (_, case) in file.cases.iter().enumerate().filter(|(i, _)| (offset + i) % n == k) {
                 let start = std::time::Instant::now();
                 for failure in reference::failures([case], &file.setup, &InterruptHandle::default()) { println!("{FAILURE}{failure}"); }
                 println!("{TIME}{} {}.bpl:{}", start.elapsed().as_secs_f64(), case["file"].as_str().unwrap(), case["line"]);
@@ -128,9 +134,10 @@ fn reference_cases() {
     let dir = tempfile::tempdir().unwrap();
     let exe = dir.path().join("reference");
     std::fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
-    let children: Vec<_> = (0..shards).map(|k| std::process::Command::new(&exe)
-        .args(["reference_cases", "--exact", "--nocapture"]).env(SHARD, format!("{k} {shards}"))
-        .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap()).collect();
+    let children: Vec<_> = (0..shards).map(|k| {
+        std::process::Command::new(&exe).args(["reference_cases", "--exact", "--nocapture"]).env(SHARD, format!("{k} {shards}"))
+            .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap()
+    }).collect();
     let lines: Vec<String> = children.into_iter().enumerate().flat_map(|(k, child)| {
         let output = child.wait_with_output().unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -138,7 +145,8 @@ fn reference_cases() {
         stdout.lines().map(String::from).collect::<Vec<_>>()
     }).collect();
     if let Ok(slowest) = std::env::var(TIMES) {
-        let mut times: Vec<(f64, &str)> = lines.iter().filter_map(|line| line.strip_prefix(TIME)?.split_once(' ')).map(|(s, case)| (s.parse().unwrap(), case)).collect();
+        let mut times: Vec<(f64, &str)> =
+            lines.iter().filter_map(|line| line.strip_prefix(TIME)?.split_once(' ')).map(|(s, case)| (s.parse().unwrap(), case)).collect();
         times.sort_by(|a, b| b.0.total_cmp(&a.0));
         for (seconds, case) in times.iter().take(slowest.parse().expect("BASEDPL_TIMES holds a count")) { eprintln!("{seconds:6.3} s  {case}"); }
     }
@@ -146,12 +154,7 @@ fn reference_cases() {
     failures.sort_by(|a, b| (a["file"].as_str(), a["line"].as_u64()).cmp(&(b["file"].as_str(), b["line"].as_u64())));
     let failures: Vec<String> = failures.iter().map(|f| {
         format!(
-            "{}.bpl:{} [{}] {}: {} ({})",
-            f["file"].as_str().unwrap(),
-            f["line"],
-            f["section"].as_str().unwrap(),
-            f["id"].as_str().unwrap(),
-            f["message"],
+            "{}.bpl:{} [{}] {}: {} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"],
             f["kind"]
         )
     }).collect();

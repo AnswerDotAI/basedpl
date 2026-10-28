@@ -1,14 +1,13 @@
 use crate::execution::check;
-use rustymath::{buffer::FloatWidth, error::Kind, with_float_width, Float as _};
 use crate::session;
 use crate::{
-    array::generated_len, element::{read_as, Stored}, Span, keyed, number::Numeric, primitive::{numeric, pervade, real}, system::{
-        natives, Call, Valence::{Ambivalent, Dyadic, Monadic}
-    }, transform::{Cause, Stop}, Described, Error, Number, Value
+    Described, Error, Number, Span, Value, array::generated_len, element::{Stored, read_as}, keyed, number::Numeric, primitive::{numeric, pervade, real},
+    system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}, transform::{Cause, Stop}
 };
-use rand::{rngs::ChaCha8Rng, SeedableRng};
+use rand::{SeedableRng, rngs::ChaCha8Rng};
 pub(crate) use rustymath::distribution::Distribution;
-use rustymath::{distribution::{standard, Cdf, Invalid, Pdf, Quantile}, Arg, Unary as _};
+use rustymath::{Arg, Unary as _, distribution::{Cdf, Invalid, Pdf, Quantile, standard}};
+use rustymath::{Float as _, buffer::FloatWidth, error::Kind, with_float_width};
 use std::sync::{Arc, Mutex, PoisonError};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -77,9 +76,8 @@ pub(crate) fn distribution(left: Option<&Value>, right: &Value, _: &Span) -> Res
     let name = keyed::name(right).ok_or_else(|| Error::domain("a distribution name must be a string"))?;
     let Some((_, standard, constructor)) = DISTRIBUTIONS.iter().find(|(n, ..)| **n == *name) else { return Err(Error::domain("unknown distribution")) };
     let params = match left {
-        Some(params) => params.clone(),
-        None if standard.is_empty() => return Err(Error::domain(format!("the {name} distribution has no standard parameters"))),
-        None => Value::floats(vec![standard.len()], FloatWidth::F64, standard.iter().copied()).described("invalid standard parameters")?,
+        Some(params) => params.clone(), None if standard.is_empty() => return Err(Error::domain(format!("the {name} distribution has no standard parameters"))),
+        None => Value::floats(vec![standard.len()], FloatWidth::F64, standard.iter().copied()).described("invalid standard parameters")?
     };
     Ok(bundle(construct(constructor, &params)?))
 }
@@ -102,8 +100,8 @@ fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: &[usize], len: usize,
         check()?;
         d.samples(rng, block);
     }
-    let made =
-        if d.is_discrete() { Value::integers(shape.to_vec(), out.into_iter().map(|k| k as i64).collect()) } else { Value::floats(shape.to_vec(), Numeric::current().width, out) };
+    let made = if d.is_discrete() { Value::integers(shape.to_vec(), out.into_iter().map(|k| k as i64).collect()) }
+    else { Value::floats(shape.to_vec(), Numeric::current().width, out) };
     made.described("invalid distribution sample")
 }
 
@@ -130,7 +128,10 @@ fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Span) -> Resu
 fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Result<Value, Error> {
     let quantile = op == Operation::Quantile;
     if quantile && !(0.0..=1.0).contains(&x) { return Err(Error::domain("probability must be in [0,1]")); }
-    if quantile && d.is_discrete() { let y = d.quantile(x); return Ok(if y.is_finite() { exact(y as u64) } else { Value::Number(Number::float(y, width)) }); }
+    if quantile && d.is_discrete() {
+        let y = d.quantile(x);
+        return Ok(if y.is_finite() { exact(y as u64) } else { Value::Number(Number::float(y, width)) });
+    }
     let y = with_float_width!(width, F => { let x = F::narrow(x); match op { Operation::Density => Pdf(*d).one(x), Operation::Cdf => Cdf(*d).one(x), _ => Quantile(*d).one(x) }.wide() });
     Ok(Value::Number(Number::float(y, width)))
 }
@@ -185,7 +186,8 @@ pub(crate) fn settle(drawn: &Drawn, fell_back: bool) {
 fn locked(generator: &Generator) -> std::sync::MutexGuard<'_, Stream> { generator.lock().unwrap_or_else(PoisonError::into_inner) }
 
 /// `draw` drawing from `generator`, or from the session's generator where it's `None`, given the id and frame of the batched run where one is running. In a batched run, it first records the generator's state, once for each try (`Drawn`).
-fn drawing(generator: Option<&Generator>, draw: impl FnOnce(Option<(u64, &crate::array::Layout)>, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
+fn drawing(
+    generator: Option<&Generator>, draw: impl FnOnce(Option<(u64, &crate::array::Layout)>, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
     let generator = generator.unwrap_or(&session().generator);
     let mut stream = locked(generator);
     let batched = session().batched();
@@ -203,10 +205,7 @@ pub(crate) fn drawn(generator: Option<&Generator>, f: impl Fn(&mut ChaCha8Rng) -
 
 /// `f` drawing from `generator`, or from the session's generator where it's `None`, where `f` also takes the cell it draws for. Outside a batched run, `f` draws once, for cell 0. In a batched run, `f` draws for each cell of the run in turn (`batch::each_cell`). `primitive::drawn_value` uses the cell to give each draw that cell of each batched argument (`batch::cell`).
 pub(crate) fn drawn_cells(generator: Option<&Generator>, f: impl Fn(usize, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
-    drawing(generator, |batched, rng| match batched {
-        Some((level, frame)) => crate::batch::each_cell(level, frame, |c| f(c, rng)),
-        None => f(0, rng),
-    })
+    drawing(generator, |batched, rng| match batched { Some((level, frame)) => crate::batch::each_cell(level, frame, |c| f(c, rng)), None => f(0, rng) })
 }
 
 /// `f` drawing from `generator` on `value`, where `f` draws for each item of `value` in turn and keeps its layout, as a roll does. In a batched run, `f` draws once, on `value` laid over the run's frame (`batch::whole_over`). That gives each cell the numbers it gets when the cells draw in turn. A value that can't be laid over the frame draws cell by cell (`batch::each_cell`).

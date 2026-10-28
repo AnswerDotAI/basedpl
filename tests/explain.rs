@@ -1,5 +1,5 @@
 //! `•explain` and `•memory`, which report what a run did, what the thread that runs a session holds, and what a value keeps alive.
-use basedpl::{settings::{set_sizes, Sizes}, timing, InterruptHandle, Session};
+use basedpl::{InterruptHandle, Session, settings::{Sizes, set_sizes}, timing};
 
 /// Checks that `code` gives the value that `expected` gives, both run in `session`.
 fn check(session: &Session, code: &str, expected: &str) {
@@ -56,15 +56,17 @@ fn explain_and_memory() -> Vec<timing::Capture> {
     // Each documented spelling takes its fast combination once. Reference cases in `core.bpl` check that each gives what the same functions give through a dfn.
     for (spelling, combination) in [
         ("(10↑)∘⍋ v", "partial grade"), ("¯10↑< v", "partial sort"), ("↑> v", "partial sort"), ("(3⌷)∘⍒ v", "partial grade"),
-        ("⍋⍋ v", "ranks"), ("⍋⍒ v", "ranks"), ("(≢⊢)⌸ k", "group counts"), ("k((+/⊢)⌸)v", "group folds"), ("k((⌈⌿⊢)⌸)v", "group folds"),
-        ("k((⌊/⊢)⌸)b", "group folds"), ("k((+/⊢)⌸)k", "group folds"), ("-.× m", "determinant"), ("+.× m", "permanent"),
+        ("⍋⍋ v", "ranks"), ("⍋⍒ v", "ranks"), ("(≢⊢)⌸ k", "group counts"), ("k((+/⊢)⌸)v", "group folds"),
+        ("k((⌈⌿⊢)⌸)v", "group folds"), ("k((⌊/⊢)⌸)b", "group folds"), ("k((+/⊢)⌸)k", "group folds"), ("-.× m", "determinant"),
+        ("+.× m", "permanent"),
     ] {
         routes.push(timing::route(&session, &serde_json::json!({"code":spelling, "route":[combination]}), &InterruptHandle::default()).unwrap());
     }
     // `∂` frees its record when it returns: from its result, an outer name its function wrote, a nested `∂`, an attached rule and `⇄`'s cached linearisation.
     for code in [
-        "{+/⍵×⍵}∂ 1 2 3", "{+/,⍵+.×⍵}∂ [1 2⋄3 4]", "x←0.5×⍳300000 ⋄ ≢{+/⊼1○⍵}∂ x", "s←0 ⋄ g←{s+←⍵×2 ⋄ +/⍵×⍵}∂ 1 2 ⋄ s",
-        "{+/,{+/⍵×⍵×⍵}∂ ⍵}∂ 1 2", "r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ {+/r ⍵}∂ 1 2", "{+/⊼⍵-2}⇄ 0 0",
+        "{+/⍵×⍵}∂ 1 2 3", "{+/,⍵+.×⍵}∂ [1 2⋄3 4]", "x←0.5×⍳300000 ⋄ ≢{+/⊼1○⍵}∂ x",
+        "s←0 ⋄ g←{s+←⍵×2 ⋄ +/⍵×⍵}∂ 1 2 ⋄ s", "{+/,{+/⍵×⍵×⍵}∂ ⍵}∂ 1 2",
+        "r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ {+/r ⍵}∂ 1 2", "{+/⊼⍵-2}⇄ 0 0",
     ] {
         assert!(session.eval(code).error.is_none(), "{code}");
         check(&session, "(•memory 0).records", "0ₓ");
@@ -72,18 +74,15 @@ fn explain_and_memory() -> Vec<timing::Capture> {
     // Gradients through reversal, transpose, windows, a sum of windows, a broadcast, a maximum along an axis and windows that move by 2 make no accumulation. A selection that repeats positions makes one.
     for (code, scatters) in [
         ("{+/v×⌽⍵}∂ v", 0), ("{+/,(10 10⍴v)×⍉10 10⍴⍵}∂ 100↑v", 0), ("{+/,(998 3⍴v)×3↕⍵}∂ v", 0), ("{+/+/3↕⍵}∂ v", 0),
-        ("{+/,(1000 2⍴v)×⍵+⊗0 0}∂ v", 0), ("{+/⌈⌿⍵}∂ 10 100⍴v", 0), ("{+/,(499 3⍴v)×[[3]⋄[2]]↕⍵}∂ v", 0), ("{+/⍵.[2|⍳≢⍵]}∂ v", 1),
-    ] {
-        check(&session, &format!(r#"≢(•explain "{code}").accumulations.items"#), &format!("{scatters}ₓ"));
-    }
+        ("{+/,(1000 2⍴v)×⍵+⊗0 0}∂ v", 0), ("{+/⌈⌿⍵}∂ 10 100⍴v", 0), ("{+/,(499 3⍴v)×[[3]⋄[2]]↕⍵}∂ v", 0),
+        ("{+/⍵.[2|⍳≢⍵]}∂ v", 1),
+    ] { check(&session, &format!(r#"≢(•explain "{code}").accumulations.items"#), &format!("{scatters}ₓ")); }
     // Each path that adds a selection's items has a name: in place, logged for exact integers whose sums can overflow, on a converted copy, in rounds for repeated positions, in one call for distinct ones, and item by item for a dfn.
     check(&session, "i←¿1000⍴1000 ⋄ z←1000⍴0 ⋄ zx←1000⍴0ₓ ⋄ zh←16 •float 1000⍴0 ⋄ zr←1000⍴1ᵣ2 ⋄ $t", "$t");
     for (code, path) in [
-        ("z.[i]+←1", "in place"), ("zx.[i]+←1ₓ", "logged"), ("zh.[i]+←1", "on a copy"),
-        ("zr.[i]+←1ᵣ3", "rounds"), ("zr.[⍳10]+←1ᵣ3", "one call"), ("z.[i] {⍺+⍵}←1", "item by item"),
-    ] {
-        check(&session, &format!(r#"(•explain "{code}").accumulations.path≡["{path}"]"#), "$t");
-    }
+        ("z.[i]+←1", "in place"), ("zx.[i]+←1ₓ", "logged"), ("zh.[i]+←1", "on a copy"), ("zr.[i]+←1ᵣ3", "rounds"),
+        ("zr.[⍳10]+←1ᵣ3", "one call"), ("z.[i] {⍺+⍵}←1", "item by item"),
+    ] { check(&session, &format!(r#"(•explain "{code}").accumulations.path≡["{path}"]"#), "$t"); }
     // A fused group counts the runs that a long cycle splits its blocks into, and the items it copies out of inputs. A pending input that a name also holds is computed by the group as one of its outputs, with no `stored` row.
     check(&session, r#"big←¿[256 5000]⍴0 ⋄ f←(•explain "q←2×big(+⍤1)¿5000⍴0 ⋄ q≡q").fused ⋄ ∧/f.runs>f.blocks"#, "$t");
     // With every call waiting, small arrays take the routes that these checks count. The reversed copy needs a run that compiles on its first run (`COMPILES_AT`).
@@ -94,12 +93,12 @@ fn explain_and_memory() -> Vec<timing::Capture> {
     set_sizes(Sizes::DEFAULT);
     // A faster route that code considers and doesn't take is a decline, with its reason: a fused fold of a copy that no call moves under, and an idiom whose arguments don't suit it.
     for (code, route, reason) in [
-        ("+/⌽sv", "fused fold", "a copy that no call moves under"),
-        ("(10↑)∘⍋ 30 4⍴⍳120", "partial grade", "arguments that don't suit it"),
-        ("↑< [3 4⋄1 2]", "partial sort", "arguments that don't suit it"),
-        (r#"⍋⍋ ["a":30 "b":10 "c":20]"#, "ranks", "arguments that don't suit it"),
+        ("+/⌽sv", "fused fold", "a copy that no call moves under"), ("(10↑)∘⍋ 30 4⍴⍳120", "partial grade", "arguments that don't suit it"),
+        ("↑< [3 4⋄1 2]", "partial sort", "arguments that don't suit it"), (r#"⍋⍋ ["a":30 "b":10 "c":20]"#, "ranks", "arguments that don't suit it"),
     ] {
-        routes.push(timing::route(&session, &serde_json::json!({"code":code, "allows":[["declined",format!("{route}: {reason}")]]}), &InterruptHandle::default()).unwrap());
+        routes.push(
+            timing::route(&session, &serde_json::json!({"code":code, "allows":[["declined",format!("{route}: {reason}")]]}), &InterruptHandle::default())
+                .unwrap());
     }
     // `•memory` counts the pending arrays this thread made, including one dropped on another thread. `bytes` counts what a value keeps alive, a shared base once, and takes active values under `∂`.
     let held = Session::new();
@@ -115,6 +114,9 @@ fn explain_and_memory() -> Vec<timing::Capture> {
     check(&held, "((•memory [r v]).bytes<2×(•memory v).bytes)∧(•memory ⌽w).bytes=(•memory w).bytes", "$t");
     check(&held, "b←0 ⋄ g←{b+←(•memory ⍵).bytes ⋄ +/⍵×⍵}∂ 1 2 3 ⋄ b>0", "$t");
     // A branch that `•detach` cuts makes no record nodes, where the same branch without it makes one.
-    check(&held, "d←0 ⋄ e←0 ⋄ g←{r←(•memory 0).records ⋄ t←(•detach ⍵)×2 ⋄ d+←(•memory 0).records-r ⋄ u←⍵×2 ⋄ e+←(•memory 0).records-r ⋄ +/⍵}∂ 1 2 3 ⋄ (d=0)∧e=1", "$t");
+    check(
+        &held,
+        "d←0 ⋄ e←0 ⋄ g←{r←(•memory 0).records ⋄ t←(•detach ⍵)×2 ⋄ d+←(•memory 0).records-r ⋄ u←⍵×2 ⋄ e+←(•memory 0).records-r ⋄ +/⍵}∂ 1 2 3 ⋄ (d=0)∧e=1",
+        "$t");
     routes
 }

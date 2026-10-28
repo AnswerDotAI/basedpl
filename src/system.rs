@@ -1,7 +1,11 @@
 use crate::execution::check;
-use rustymath::{buffer::{DType, FloatWidth, View}, error::Kind, layout::FRESH};
 use crate::session;
-use crate::{array::generated_len, Span, number::Numeric, primitive::{numeric, Extension::{self, Items, Whole}, Item::{Number, Text, Vector}, Primitive}, Described, Error, ErrorKind, Function, Value};
+use crate::{
+    Described, Error, ErrorKind, Function, Span, Value, array::generated_len, number::Numeric, primitive::{
+        Extension::{self, Items, Whole}, Item::{Number, Text, Vector}, Primitive, numeric
+    }
+};
+use rustymath::{buffer::{DType, FloatWidth, View}, error::Kind, layout::FRESH};
 use std::borrow::Cow;
 
 /// A system function implemented natively, taking an optional left argument and a right argument.
@@ -43,7 +47,8 @@ use Valence::{Ambivalent, Dyadic, Monadic};
 /// A system function: its name, call, valence, extension and result prototype, and its inverse with the inverse's valence. In prototype mode, a function with a prototype returns it instead of running. An empty mapped argument gives an empty result with that prototype. A format function reads its format, and its inverse writes it. `entry` is the function's row in the system table, which `Entry::function` sets. It's `None` in the table itself, and for a function that a factory made, as `•element` makes one from a tag, even though such a function shares its factory's name.
 #[derive(Clone, Debug)]
 pub(crate) struct SystemFunction {
-    pub name: &'static str, pub call: Call, pub valence: Valence, pub extension: Extension, pub prototype: Option<fn(&Span) -> Value>, pub inverse: Option<(Native, Valence)>, pub entry: Option<Entry>
+    pub name: &'static str, pub call: Call, pub valence: Valence, pub extension: Extension, pub prototype: Option<fn(&Span) -> Value>,
+    pub inverse: Option<(Native, Valence)>, pub entry: Option<Entry>
 }
 /// System functions match when they share a name and their data matches. A generator matches only its own stream.
 impl PartialEq for SystemFunction {
@@ -51,9 +56,9 @@ impl PartialEq for SystemFunction {
         self.name == other.name && match (&self.call, &other.call) {
             (Call::Regex(x, a), Call::Regex(y, b)) => (x.as_str(), a) == (y.as_str(), b),
             (Call::Distribution(x, a), Call::Distribution(y, b)) => (x, a) == (y, b),
-            (Call::Generator(x, a), Call::Generator(y, b)) => std::sync::Arc::ptr_eq(x, y) && a == b, (Call::Element(x), Call::Element(y)) => x == y, (Call::Edge(x), Call::Edge(y)) => x == y,
-            (Call::Canvas(x), Call::Canvas(y)) => x == y, #[cfg(web)] (Call::Js(x), Call::Js(y)) => std::sync::Arc::ptr_eq(x, y),
-            (x, y) => std::mem::discriminant(x) == std::mem::discriminant(y)
+            (Call::Generator(x, a), Call::Generator(y, b)) => std::sync::Arc::ptr_eq(x, y) && a == b, (Call::Element(x), Call::Element(y)) => x == y,
+            (Call::Edge(x), Call::Edge(y)) => x == y, (Call::Canvas(x), Call::Canvas(y)) => x == y, #[cfg(web)]
+            (Call::Js(x), Call::Js(y)) => std::sync::Arc::ptr_eq(x, y), (x, y) => std::mem::discriminant(x) == std::mem::discriminant(y)
         }
     }
 }
@@ -105,7 +110,9 @@ fn valid_numbers(span: &Span) -> Value { Value::new(vec![2], vec![numbers(span),
 fn record(_: &Span) -> Value { crate::keyed::empty_record() }
 
 /// A row of the table. A system function that maps over several items has a result prototype, which an empty mapped argument gives.
-const fn row(name: &'static str, call: Call, valence: Valence, extension: Extension, prototype: Option<fn(&Span) -> Value>, inverse: Option<(Native, Valence)>) -> SystemFunction {
+const fn row(
+    name: &'static str, call: Call, valence: Valence, extension: Extension, prototype: Option<fn(&Span) -> Value>, inverse: Option<(Native, Valence)>
+) -> SystemFunction {
     assert!(matches!(extension, Whole) || prototype.is_some(), "a system function that maps over items needs a result prototype");
     SystemFunction { name, call, valence, extension, prototype, inverse, entry: None }
 }
@@ -121,8 +128,8 @@ const BUILTINS: &[SystemFunction] = &[
     row("•svg", Call::Value(crate::xml::svg), Ambivalent, Whole, Some(record), None),
     row("•plot", Call::Value(crate::plot::plot), Ambivalent, Whole, Some(record), None),
     row("•image", Call::Value(crate::image::image), Ambivalent, Items(Vector), Some(float), Some((crate::image::encode, Ambivalent))),
-    row("•canvas", Call::Value(crate::canvas::factory), Monadic, Items(Text), Some(canvas), None),
-    #[cfg(web)] row("•js", Call::Value(crate::js::function), Monadic, Items(Text), Some(crate::js::prototype), None),
+    row("•canvas", Call::Value(crate::canvas::factory), Monadic, Items(Text), Some(canvas), None), #[cfg(web)]
+    row("•js", Call::Value(crate::js::function), Monadic, Items(Text), Some(crate::js::prototype), None),
     row("•vfi", Call::Value(crate::data::vfi), Ambivalent, Items(Text), Some(valid_numbers), None),
     row("•r", Call::Value(crate::regex::compile), Monadic, Items(Text), Some(record), None),
     row("•distribution", Call::Value(crate::distribution::distribution), Ambivalent, Items(Text), Some(record), None),
@@ -136,21 +143,18 @@ const BUILTINS: &[SystemFunction] = &[
     row("•normalize", Call::Value(normalize), Ambivalent, Items(Text), Some(text), None),
     row("•decompose", Call::Value(crate::primitive::decompose), Dyadic, Whole, Some(record), Some((crate::primitive::recompose, Dyadic))),
     row("•ucs", Call::Value(unicode_convert), Ambivalent, Items(Vector), Some(numbers), Some((unicode_convert, Ambivalent))),
-    row("•load", Call::Load, Monadic, Items(Text), Some(record), None),
-    row("•signal", Call::Value(signal), Ambivalent, Whole, Some(number), None),
-    row("•storage", Call::Active(storage), Monadic, Whole, Some(record), None),
-    row("•float", Call::Active(to_float), Ambivalent, Whole, None, None),
-    row("•time", Call::Time, Ambivalent, Whole, Some(seconds), None),
-    row("•host", Call::Value(host), Monadic, Items(Text), Some(text), None),
+    row("•load", Call::Load, Monadic, Items(Text), Some(record), None), row("•signal", Call::Value(signal), Ambivalent, Whole, Some(number), None),
+    row("•storage", Call::Active(storage), Monadic, Whole, Some(record), None), row("•float", Call::Active(to_float), Ambivalent, Whole, None, None),
+    row("•time", Call::Time, Ambivalent, Whole, Some(seconds), None), row("•host", Call::Value(host), Monadic, Items(Text), Some(text), None),
     #[cfg(not(web))] row("•delay", Call::Effect(delay), Monadic, Whole, Some(seconds), None),
-    row("•date", Call::Value(crate::date::read), Ambivalent, Whole, Some(seconds), Some((crate::date::write, Ambivalent))),
-    #[cfg(not(web))] row("•path", Call::Value(crate::files::path), Ambivalent, Whole, Some(record), Some((crate::files::join, Monadic))),
-    #[cfg(not(web))] row("•metadata", Call::Value(crate::files::metadata), Monadic, Whole, Some(record), None),
-    #[cfg(not(web))] row("•readdir", Call::Value(crate::files::readdir), Ambivalent, Items(Text), Some(record), None),
-    #[cfg(not(web))] row("•copy", Call::Effect(crate::files::copy), Dyadic, Whole, Some(text), None),
-    #[cfg(not(web))] row("•rename", Call::Effect(crate::files::rename), Dyadic, Whole, Some(text), None),
-    #[cfg(not(web))] row("•remove", Call::Effect(crate::files::remove), Ambivalent, Items(Text), Some(text), None),
-    #[cfg(not(web))] row("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent, Items(Text), Some(text), None),
+    row("•date", Call::Value(crate::date::read), Ambivalent, Whole, Some(seconds), Some((crate::date::write, Ambivalent))), #[cfg(not(web))]
+    row("•path", Call::Value(crate::files::path), Ambivalent, Whole, Some(record), Some((crate::files::join, Monadic))), #[cfg(not(web))]
+    row("•metadata", Call::Value(crate::files::metadata), Monadic, Whole, Some(record), None), #[cfg(not(web))]
+    row("•readdir", Call::Value(crate::files::readdir), Ambivalent, Items(Text), Some(record), None), #[cfg(not(web))]
+    row("•copy", Call::Effect(crate::files::copy), Dyadic, Whole, Some(text), None), #[cfg(not(web))]
+    row("•rename", Call::Effect(crate::files::rename), Dyadic, Whole, Some(text), None), #[cfg(not(web))]
+    row("•remove", Call::Effect(crate::files::remove), Ambivalent, Items(Text), Some(text), None), #[cfg(not(web))]
+    row("•mkdir", Call::Effect(crate::files::mkdir), Ambivalent, Items(Text), Some(text), None),
     row("•prefs", Call::Prefs, Monadic, Whole, Some(record), None),
     row("•nc", Call::Session(crate::Session::system_nc), Monadic, Items(Text), Some(number), None),
     row("•nl", Call::Session(crate::Session::system_nl), Ambivalent, Whole, Some(texts), None),
@@ -158,10 +162,8 @@ const BUILTINS: &[SystemFunction] = &[
     row("•ex", Call::Session(crate::Session::system_ex), Monadic, Items(Text), Some(number), None),
     row("•literal", Call::Session(crate::Session::system_literal), Monadic, Items(Text), Some(number), Some((write_literal, Monadic))),
     row("•explain", Call::Session(crate::Session::system_explain), Monadic, Items(Text), Some(record), None),
-    row("•memory", Call::Active(memory), Monadic, Whole, Some(record), None),
-    row("•detach", Call::Active(detach), Monadic, Whole, None, None),
-    row("•index", Call::Value(index), Ambivalent, Whole, None, None),
-    row("•edge", Call::Value(edge), Ambivalent, Items(Text), Some(number), None),
+    row("•memory", Call::Active(memory), Monadic, Whole, Some(record), None), row("•detach", Call::Active(detach), Monadic, Whole, None, None),
+    row("•index", Call::Value(index), Ambivalent, Whole, None, None), row("•edge", Call::Value(edge), Ambivalent, Items(Text), Some(number), None),
 ];
 
 /// A system function's entry in the table, which the parser resolves a system name to.
@@ -170,9 +172,7 @@ pub(crate) struct Entry(u8);
 
 const _: () = assert!(BUILTINS.len() <= u8::MAX as usize, "an `Entry` holds a table position in a `u8`");
 
-impl std::fmt::Debug for Entry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.name()) }
-}
+impl std::fmt::Debug for Entry { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.name()) } }
 
 impl Entry {
     /// `•ucs`, which `•literal` writes a control character with.
@@ -281,7 +281,10 @@ fn storage(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     crate::transform::acts()?;
     let flag = |b: bool| Value::Number(crate::Number::from_bool(b));
     let kind = right.storage_kind(Numeric::current());
-    let values = vec![crate::keyed::text(kind), flag(right.template().pending().is_some()), flag(right.template().is_view()), Value::integer(crate::derivative::levels(right) as i64)];
+    let values = vec![
+        crate::keyed::text(kind), flag(right.template().pending().is_some()), flag(right.template().is_view()),
+        Value::integer(crate::derivative::levels(right) as i64),
+    ];
     crate::keyed::vector(["kind", "pending", "view", "active"].map(Into::into).to_vec(), values).described("invalid storage record")
 }
 
@@ -289,7 +292,7 @@ fn storage(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
 fn memory(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     // A batched run keeps alive what a run cell by cell doesn't.
     crate::transform::acts()?;
-    use crate::explain::{live, Counted};
+    use crate::explain::{Counted, live};
     let counts = [live(Counted::Record), live(Counted::Pending), right.footprint()].map(|n| Value::integer(n as i64)).to_vec();
     crate::keyed::vector(["records", "pending", "bytes"].map(Into::into).to_vec(), counts).described("invalid memory record")
 }
@@ -300,8 +303,7 @@ fn detach(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> { 
 /// `•index n` is `⍳n` along a fresh hidden axis name whose stem is the left argument's text (`fresh`). An array of counts gives an index for each (`indices`).
 fn index(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let stem: std::sync::Arc<str> = match left {
-        None => "".into(),
-        Some(a) => crate::keyed::name(a).ok_or_else(|| Error::domain("•index takes text as its stem"))?,
+        None => "".into(), Some(a) => crate::keyed::name(a).ok_or_else(|| Error::domain("•index takes text as its stem"))?
     };
     indices(&stem, right, session().prototype.get(), span)
 }
@@ -321,7 +323,11 @@ fn indices(stem: &str, right: &Value, prototype: bool, span: &Span) -> Result<Va
 pub(crate) fn fresh(stem: &str) -> std::sync::Arc<str> {
     const DIGITS: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
     let mut bits: u64 = rand::random();
-    let random: String = (0..13).map(|_| { let digit = DIGITS[(bits % 32) as usize] as char; bits /= 32; digit }).collect();
+    let random: String = (0..13).map(|_| {
+        let digit = DIGITS[(bits % 32) as usize] as char;
+        bits /= 32;
+        digit
+    }).collect();
     let name: std::sync::Arc<str> = format!("_{stem}{FRESH}{random}").into();
     session().keep_fresh(name.clone());
     name
@@ -354,9 +360,8 @@ pub(crate) fn edged(mode: rustymath::structure::Edge, n: &Value, p: &Value) -> R
     };
     let result = match edged.ok_or_else(|| Error::domain("•edge takes whole positions"))? {
         Edged::Floats(y) if p.is_atom() => return Ok(Value::Number(crate::Number::float(y[0], FloatWidth::F64))),
-        Edged::Positions(q) if p.is_atom() => return Ok(Value::integer(q[0] as i64)),
-        Edged::Floats(y) => p.layout().floats(FloatWidth::F64, y),
-        Edged::Positions(q) => Value::positions(p.layout().shape(), n, q.into_iter()).and_then(|v| v.with_layout(p.layout().clone())),
+        Edged::Positions(q) if p.is_atom() => return Ok(Value::integer(q[0] as i64)), Edged::Floats(y) => p.layout().floats(FloatWidth::F64, y),
+        Edged::Positions(q) => Value::positions(p.layout().shape(), n, q.into_iter()).and_then(|v| v.with_layout(p.layout().clone()))
     };
     result.described("invalid positions")
 }
@@ -366,7 +371,8 @@ fn to_float(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, E
         let width = widest(right).described("•float takes numbers")?.unwrap_or(Numeric::current().width);
         return Ok(Value::integer(width.bits()));
     };
-    let width = w.as_number().and_then(|n| n.integer().ok()).and_then(FloatWidth::of_bits).ok_or(Kind::Domain).described("•float takes a width of 16, 32 or 64")?;
+    let width =
+        w.as_number().and_then(|n| n.integer().ok()).and_then(FloatWidth::of_bits).ok_or(Kind::Domain).described("•float takes a width of 16, 32 or 64")?;
     crate::derivative::converted(right, rustymath::buffer::DType::Float(width), span)
 }
 

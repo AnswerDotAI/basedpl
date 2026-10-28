@@ -82,7 +82,7 @@ ism,sm
 ⍝⍝: 7.5	7.5	7.5
 
 ⍝ A write of two columns goes through the same loop. It overwrites `w_4` in place.
-⍝ Expected: 1 copy: each 64-byte line of `w_4` holds two rows, and the write replaces half of each row, so it reads and writes every line of `w_4` once (`bw_`, 21 October 2026).
+⍝ Expected: 1 copy: each 64-byte line of `w_4` holds two rows, and the write replaces half of each row, so it reads and writes every line of `w_4` once.
 ⍝ The wasm budget stays at its old value, which suggests about 2.
 [:;0 1]⌷w_4 ←p_2
 ⍝⍝: 2	2	4
@@ -182,7 +182,7 @@ ism,sm
 [64516 144]⍴3 3↕cimg +.× ck
 ⍝⍝: 56	240	480
 
-⍝ 3.25 copies, for 9 multiply-adds per window (2.25), one read and one write. On macOS, 5.5 copies, because NEON's two lanes of f64 take twice the multiply-adds' time (4.5). `([1044484 9]⍴3 3↕sq)+.×kq` measured 7.49 on macOS on 22 October 2026, until rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. On 27 October 2026 `gmv_` widened the strip to 32 results (`COLUMN_STRIP`), which took it from 6.11 to 5.23 in alternating runs. Strips of 8 for the 30 results that strips of 32 leave in each 1,022-wide row, with each result written rather than added to the zeroed output, brought it to 4.35 to 4.49 on 28 October 2026. Its old Linux and wasm budgets suggest about 8.5 and 10.5. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. Its Linux and wasm budgets stay at the old values until CI measures this build.
+⍝ 3.25 copies, for 9 multiply-adds per window (2.25), one read and one write. On macOS, 5.5 copies, because NEON's two lanes of f64 take twice the multiply-adds' time (4.5). `([1044484 9]⍴3 3↕sq)+.×kq` measured 7.49 on macOS on 22 October 2026, until rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. On 27 October 2026 rustymath widened the strip to 32 results (`COLUMN_STRIP`), which took it from 6.11 to 5.23 in alternating runs. Strips of 8 for the 30 results that strips of 32 leave in each 1,022-wide row, with each result written rather than added to the zeroed output, brought it to 4.35 to 4.49 on 28 October 2026. Its old Linux and wasm budgets suggest about 8.5 and 10.5. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. Its Linux and wasm budgets stay at the old values until CI measures this build.
 ⍝⍝⍝ route mapped product
 [1044484 9]⍴3 3↕sq +.× kq
 ⍝⍝: 11	17	21
@@ -201,16 +201,16 @@ ism,sm
 ⍉sq +.× vq
 ⍝⍝: 1	8.7	11
 
-⍝ On 27 October 2026 `2×⍉sq` measured 2.2 to 2.6 on macOS, with readings up to 3.5 while a video call ran. Today's route transposes into a block buffer of 128 KB, which doesn't fit in L1, and reads each source line twice, so the transpose costs about 2 copies rather than 1.25 (`ttr_`). Its fix needs a design and is under "Next release" in `meta/open.md`. Until then, the macOS budget is twice today's cost, 2.2. On 22 October 2026 CI measured 4.18 on Linux and 2.76 in wasm, and its Linux and wasm budgets stay at their old values.
+⍝ On 27 October 2026 `2×⍉sq` measured 2.2 to 2.6 on macOS, with readings up to 3.5 while a video call ran. Today's route transposes into a block buffer of 128 KB, which doesn't fit in L1, and reads each source line twice, so the transpose costs about 2 copies rather than 1.25. Its fix needs a design, listed in `meta/open.md`. Until then, the macOS budget is twice today's cost, 2.2. On 22 October 2026 CI measured 4.18 on Linux and 2.76 in wasm, and its Linux and wasm budgets stay at their old values.
 2×⍉sq
 ⍝⍝: 4.4	12	11
 
 ⍝ `[1 2 0]⍉cimg` moves `cimg`'s contiguous axis first, and its last two axes merge into one axis of 65,536 items a stride of 16 apart. A block stage would read each block as one strided run, so it gathers the whole copy once through the tiled transpose first (`Mapping::tiles_whole`).
-⍝ Expected: 2.25 copies: the transpose into the gathered copy, 1.25 as for `2×⍉sq`, then one fused pass over it. On 27 October 2026 it measured 3.4 to 3.6 on macOS, against 7.5 without the gathered copy, and later that day 3.6 to 4.2, with readings up to 5.2 while a video call ran. The transpose into the gathered copy costs about 2 copies rather than 1.25, for the reason `2×⍉sq`'s comment gives (`ttr_`), so today's route costs about 3. Its fix needs a design and is under "Next release" in `meta/open.md`. Until then, the macOS budget is twice today's cost, 3.6. Nearly all its cost is the same transpose as `2×⍉sq`'s, which CI measured at 4.18 on Linux and 2.76 in wasm, against 2.2 on macOS today. Scaling today's 3.6 by those ratios gives estimates of about 6.9 on Linux and 4.5 in wasm, and the Linux and wasm budgets are twice those.
+⍝ Expected: 2.25 copies: the transpose into the gathered copy, 1.25 as for `2×⍉sq`, then one fused pass over it. On 27 October 2026 it measured 3.4 to 3.6 on macOS, against 7.5 without the gathered copy, and later that day 3.6 to 4.2, with readings up to 5.2 while a video call ran. The transpose into the gathered copy costs about 2 copies rather than 1.25, for the reason `2×⍉sq`'s comment gives, so today's route costs about 3. Its fix needs a design, listed in `meta/open.md`. Until then, the macOS budget is twice today's cost, 3.6. Nearly all its cost is the same transpose as `2×⍉sq`'s, which CI measured at 4.18 on Linux and 2.76 in wasm, against 2.2 on macOS today. Scaling today's 3.6 by those ratios gives estimates of about 6.9 on Linux and 4.5 in wasm, and the Linux and wasm budgets are twice those.
 2×[1 2 0]⍉cimg
 ⍝⍝: 7.3	14	9
 
-⍝ `⍉⁻¹` splits and merges axes as einops does, and the result stays a view. `split` cuts 8 images of 224×224×3, 1,204,224 items, into 196 patches of 16×16×3, which reorders them. `rows` cuts each image's rows into 14 runs of 16 without reordering (`usb_`, 26 October 2026).
+⍝ `⍉⁻¹` splits and merges axes as einops does, and the result stays a view. `split` cuts 8 images of 224×224×3, 1,204,224 items, into 196 patches of 16×16×3, which reorders them. `rows` cuts each image's rows into 14 runs of 16 without reordering.
 ⍝ Expected: `+/,2×split⁝images` 0.9 copies: one fused pass over 1.15 times `n`, which reads each item once and writes nothing, about 0.6, and a block buffer that gathers the patches' runs of 48 items, about 0.3, at the 0.25 copies for each `n` items of `2×⌽sv+1`'s buffer; `+/,2×rows⁝images` 0.6 copies: the same pass, reading `images` in place. Wasm, twice the native cost, as `+/v`'s fold.
 ⍝ On 27 October 2026, with other work running, `+/,2×split(images)` measured 2.0 copies against 1.0 for `+/,2×images`, so its buffer cost about twice what `2×⌽sv+1`'s did in the same run.
 +/,2×split⁝images

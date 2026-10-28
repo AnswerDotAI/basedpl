@@ -6,16 +6,16 @@
 // over every time, as in `tests/speed.rs`. With `BASEDPL_COSTS` set, it also prints every case's cost. The `Test` workflow's
 // `wasm` job sets it. Node can't lock a file. `basedpl.bpltests.wasm_test` holds the machine's timing lock around this test.
 // Run directly, as CI runs it, the test takes no lock.
-// The wasm budgets serve CI's x86 runner, as `speed/README.md` describes. On any other host, the test prints every cost, then
-// each case still over its budget after the retries, marked `over`, and fails on none, as `bpl --costs` does.
+// The test fails on a wasm budget only on the CPU that the budgets were set for, CI's runner, as `checks_budgets` decides. On any
+// other CPU, it prints every cost, then each case still over its budget after the retries, marked `over`, and fails on none.
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
-import { costs, retry_pauses } from './wasm-pkg.mjs';
+import { checks_budgets, costs, retry_pauses } from './wasm-pkg.mjs';
 
 // The pauses before each retry, in seconds, from `rustymath::timing::RETRY_PAUSES`.
 const RETRY_PAUSES = retry_pauses();
-const ci = process.platform === 'linux' && process.arch === 'x64';
+const checks = checks_budgets();
 
 assert.ok(process.execArgv.includes('--no-liftoff'), 'run with node --no-liftoff');
 test('each BPL speed case takes no longer than its wasm budget on CI\'s runner', async () => {
@@ -25,7 +25,7 @@ test('each BPL speed case takes no longer than its wasm budget on CI\'s runner',
     const line = c => c.line;
     const over = ({ budgets: [, , budget], cost }) => cost > Number(budget);
     const all = costs(speed);
-    if (process.env.BASEDPL_COSTS || !ci) {
+    if (process.env.BASEDPL_COSTS || !checks) {
         for (const copy of new Set(all.map(c => c.copy).filter(Boolean))) console.log(copy);
         for (const c of all) console.log(line(c));
     }
@@ -38,6 +38,6 @@ test('each BPL speed case takes no longer than its wasm budget on CI\'s runner',
         for (const c of retried) console.log(line(c));
         failures = retried.filter(over);
     }
-    if (ci) assert.deepEqual(failures.map(line), []);
+    if (checks) assert.deepEqual(failures.map(line), []);
     else for (const c of failures) console.log(`${line(c)}: over`);
 });

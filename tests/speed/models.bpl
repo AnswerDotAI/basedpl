@@ -94,7 +94,7 @@ heat←{
 ⍝ ADBench's Gaussian mixture objective, for 1000 points in 32 dimensions and 25 components, without its constant terms and with its Wishart prior at gamma 1 and m 0. It's written in index notation. Each component's precision factor has the exponentials of `q` on its diagonal and `l` below it.
 ⍝ Expected: 63 copies on macOS, 135 on Linux and 247 in wasm: 25 products of 1000×32 by 32×32, 781 flops an item in all, which take 26 at Accelerate's rank-k rate, 98 at 8 in a copy's time for rustymath's own kernels and 195 at 4 in wasm; and three passes over 800,000 items, about 12 copies each, 37 natively and 52 in wasm.
 ⍝ On 22 and 23 October 2026 CI measured up to 244 on Linux for the tacit form that this index form replaced, about twice its Linux expected cost. CI hasn't timed the index form.
-⍝ On 27 October 2026, after `per_`'s period step, the index form measured 72.5 on macOS, against 72 for the tacit form earlier that day, and up to 99 during a video call. Its macOS budget follows its expected cost. Since the index form now costs what the tacit form costs, the Linux and wasm budgets are twice the tacit form's cost there: its CI figure of 244 on Linux, and its expected 247 in wasm, where no CI figure is recorded.
+⍝ On 27 October 2026, after a change to its period step, the index form measured 72.5 on macOS, against 72 for the tacit form earlier that day, and up to 99 during a video call. Its macOS budget follows its expected cost. Since the index form now costs what the tacit form costs, the Linux and wasm budgets are twice the tacit form's cost there: its CI figure of 244 on Linux, and its expected 247 in wasm, where no CI figure is recorded.
 gx gmm gp
 ⍝⍝: 95	490	500
 
@@ -106,13 +106,13 @@ kx kmeans kc
 
 ⍝ The same cost in index notation. Both forms are kept because they trade speed for accuracy. The tacit form expands each squared distance as |x|²+|c|²−2x·c, which runs as one matrix product and stays faster, but loses accuracy where a point is near a centre, because the terms nearly cancel. The index form subtracts first, so its error stays proportional to the distance.
 ⍝ Expected: 208 copies natively and 410 in wasm: 33.5 million differences, each squared and summed, 1,536 flops an item, at 8 in a copy's time for rustymath's own kernels and 4 in wasm; and the million distances, written and then read by the `⌊` fold, about 16 natively and 24 in wasm.
-⍝ On 27 October 2026 it measured 1,089 on macOS, while its fold copied `x.[n d]` across all 33,554,432 items of the grid ("repeats of each item"). Since `fax_` let that fold read the repeats in place, it measures 832 to 853. The fold over the grid still runs at about 0.2 ns an item, where a fold that kept its sums in registers would come near the expected cost (`ixg_`). That fold needs a design and is under "Next release" in `meta/open.md`. Until then, the macOS budget is 1.3 times today's cost, 832, and the Linux and wasm budgets stay at twice estimates of the earlier cost, 1,089 on Linux, because the fold runs no product, and twice that in wasm.
+⍝ On 27 October 2026 it measured 1,089 on macOS, while its fold copied `x.[n d]` across all 33,554,432 items of the grid ("repeats of each item"). Since that fold reads the repeats in place, it measures 832 to 853. The fold over the grid still runs at about 0.2 ns an item, where a fold that kept its sums in registers would come near the expected cost. That fold needs a design, listed in `meta/open.md`. Until then, the macOS budget is 1.3 times today's cost, 832, and the Linux and wasm budgets stay at twice estimates of the earlier cost, 1,089 on Linux, because the fold runs no product, and twice that in wasm.
 kx kmeansi kc
 ⍝⍝: 1100	2200	4400
 
 ⍝ A pre-norm transformer decoder block over 4 sequences of 64 tokens: width 128, 4 heads of width 32, an MLP of width 512 with GELU in its tanh form, and a cross-entropy loss over 512 tokens. Its parameters are in a record. `dec` gives the mean loss, and is written in index notation.
 ⍝ Expected: 155 copies on macOS, 354 on Linux and 684 in wasm: products of 142.6 million flops, 2,176 an item, which take 72.5 at Accelerate's rank-k rate, 272 at 8 in a copy's time for rustymath's own kernels and 544 at 4 in wasm; and the elementwise passes, about 82 natively and 140 in wasm. Those are GELU's `7○` and its polynomial on 131,072 items, about 30; the cross-entropy's exponentials on 131,072 items, about 18; the attention's scaling, mask and softmax on 65,536 items, about 13; three layer norms, about 11; and the bias adds and residuals, about 10.
-⍝ On 27 October 2026 it measured 173 to 202 on macOS, the higher figure during a video call. `ixg_` placed about half the gap: agreement by name puts the left operand's axes first, so lines such as `g.[d]×z` and `cu.[f]+…` lay their results out transposed, and later reads copy them back. Option (a) for that order, under "Next release" in `meta/open.md`, removes those copies. Until then, the macOS budget is 1.5 times today's cost, 173. The Linux and wasm budgets stay at twice their estimates.
+⍝ On 27 October 2026 it measured 173 to 202 on macOS, the higher figure during a video call. About half the gap comes from layout: agreement by name puts the left operand's axes first, so lines such as `g.[d]×z` and `cu.[f]+…` lay their results out transposed, and later reads copy them back. A change to that order, listed in `meta/open.md`, would remove those copies. Until then, the macOS budget is 1.5 times today's cost, 173. The Linux and wasm budgets stay at twice their estimates.
 [tid ttg] dec tp
 ⍝⍝: 260	710	1400
 
@@ -124,7 +124,7 @@ kx kmeansi kc
 
 ⍝ One step of heat diffusion on a 512 by 512 grid, 4 times `n`, reading each cell's four neighbours through `•edge`'s clamped positions.
 ⍝ Expected: 9 copies: one fused pass of seven calls over 262,144 items, which reads each neighbour from forward runs, as `hu+0.2×(hu+hu+hu+hu)-4×hu` measures it. Wasm, twice that.
-⍝ On 27 October 2026 it measured 26 to 31 on macOS. Its two column-shifted reads through `•edge`'s clamped positions copy their whole input, because a run of positions doesn't end at a row's edge, and ending runs there costs more than the copy saves (`hcr_`). A fix needs a design and is under "Next release" in `meta/open.md`. Until then, the macOS budget is twice today's cost, 26, and the Linux and wasm budgets stay at twice estimates of 31 on Linux and 62 in wasm.
+⍝ On 27 October 2026 it measured 26 to 31 on macOS. Its two column-shifted reads through `•edge`'s clamped positions copy their whole input, because a run of positions doesn't end at a row's edge, and ending runs there costs more than the copy saves. A fix needs a design, listed in `meta/open.md`. Until then, the macOS budget is twice today's cost, 26, and the Linux and wasm budgets stay at twice estimates of 31 on Linux and 62 in wasm.
 heat hu
 ⍝⍝: 53	62	124
 
@@ -168,7 +168,7 @@ dx-0.5 × dx+0.5
 ⍝⍝: 240	530	1100
 
 ⍝ The tacit form that this index form replaced measured up to 932 on Linux on CI on 22 and 23 October 2026, more than twice its expected cost. CI hasn't timed the index form. Its Linux and wasm budgets are twice estimates of today's cost there: the tacit form's cost, plus up to 140 for the index form's eager gather, which costs 110 to 140 more than the tacit form on macOS. On Linux that's the tacit form's CI figure of 932 plus 140, about 1,070. In wasm, where no CI figure is recorded, it's the expected 741 plus 140, about 880.
-⍝ On 27 October 2026 the index form measured 345 to 375 on macOS during a video call, against 239 for the tacit form earlier that day. Under dynamic kinds, `⍟` stops both forms' traces, so `∂` runs both without a program. The index form's eager gradient gathers repeated items for its `sq` line, 825,600 items at about 1.7 ns each. Traced, under static kinds, the index form's gradient is the faster (`ixg_`). A fix for the eager gather needs a design and is under "Next release" in `meta/open.md`. Until then, the macOS budget is 1.5 times today's cost, 345.
+⍝ On 27 October 2026 the index form measured 345 to 375 on macOS during a video call, against 239 for the tacit form earlier that day. Under dynamic kinds, `⍟` stops both forms' traces, so `∂` runs both without a program. The index form's eager gradient gathers repeated items for its `sq` line, 825,600 items at about 1.7 ns each. Traced, under static kinds, the index form's gradient is the faster. A fix for the eager gather needs a design, listed in `meta/open.md`. Until then, the macOS budget is 1.5 times today's cost, 345.
 ⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
 ⍝⍝⍝ gap stopped "a result whose type depends on values": positive likelihood sums should keep a guarded real logarithm trace
 gx gmm∂ gp
@@ -180,10 +180,10 @@ kx kmeans∂ kc
 
 ⍝ The gradient of the index form of the k-means cost in `[objectives]`.
 ⍝ Expected: 624 copies natively and 1,230 in wasm: about three times the objective.
-⍝ On 27 October 2026 it measured 2,113 to 2,312 on macOS, and 2,116 later that day. Its gradient stores the 268 MB difference grid. Rewriting the contraction over the subtraction would avoid that, but changes rounding, and Jeremy put that choice after the release, under "Next release" in `meta/open.md` (`ixg_`'s mechanism 4). Until then, the macOS budget is 1.3 times today's cost, 2,116. The Linux and wasm budgets stay at twice estimates of the earlier cost, 2,312 on Linux and twice that in wasm.
+⍝ On 27 October 2026 it measured 2,113 to 2,312 on macOS, and 2,116 later that day. Its gradient stores the 268 MB difference grid. Rewriting the contraction over the subtraction would avoid that, but changes rounding, and Jeremy put that choice after the release, as `meta/open.md` records. Until then, the macOS budget is 1.3 times today's cost, 2,116. In CI's first four Linux runs, on 28 October 2026, each run's lowest cost after its retries was 10,728 to 12,682 copies, about 1,900 ns an item. Single timings within a run ranged from 10,728 to 18,156. On macOS with rustymath's own linear algebra, which Linux runs, it measures 285 ns an item, 22% more than with Accelerate. Most of the rest comes from the grid. On CI's runner, passes over it run at memory speed, and each grid-sized array that a call writes fresh pays first-touch page faults of about 2.3 ns an item. Until the grid goes, the Linux budget is 1.3 times the highest of those lowest costs, 12,682. The test fails a case only when every retry is over its budget. The wasm budget stays at twice its estimate of 4,624, which is twice macOS's earlier 2,312.
 ⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
 kx kmeansi∂ kc
-⍝⍝: 2800	4700	9400
+⍝⍝: 2800	16500	9400
 
 ⍝ The gradient of the decoder block in `[objectives]`, from one run that records its linear calls and one transpose of the record.
 ⍝ Expected: 465 copies on macOS, 1060 on Linux and 2050 in wasm: about three times the objective.

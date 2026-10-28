@@ -1,8 +1,8 @@
 //! The session's evaluation API, names, display, file loading and name lookup, and calls of dfns with their error guards.
 
-use rustymath::{buffer::FloatWidth, error::Kind};
-use crate::syntax::Statement;
 use super::*;
+use crate::syntax::Statement;
+use rustymath::{buffer::FloatWidth, error::Kind};
 
 impl Session {
     /// A turn at the process's one session, cleared to how a new session starts. It waits while another thread holds a turn.
@@ -15,15 +15,31 @@ impl Session {
     pub fn current() -> Turn { Turn::take() }
     /// A session's fields as a new session has them, for the process's slot and for `clear`. `Session` has no public constructor, so no code builds a second session outside the slot.
     pub(super) fn blank() -> Self {
-        Self {
-            execution: Default::default(), prefacing: Default::default(), bindings: Default::default(), loading: Default::default(), stacks: Default::default(), depth: Default::default(), prototype: Default::default(),
-            capture: Default::default(), fusion_reports: Default::default(), levels: Default::default(), transforming: Default::default(), generator: Default::default(), drawn: Default::default(), args: Default::default(), tacit: Default::default(),
-        }
+        Self { execution: Default::default(), prefacing: Default::default(), bindings: Default::default(), loading: Default::default(),
+            stacks: Default::default(), depth: Default::default(), prototype: Default::default(), capture: Default::default(),
+            fusion_reports: Default::default(), levels: Default::default(), transforming: Default::default(), generator: Default::default(),
+            drawn: Default::default(), args: Default::default(), tacit: Default::default() }
     }
     /// Puts every field except the running evaluation's `execution` back as a new session has it, for `]clear` and a new session's turn. The destructuring names each field, so a field added later is a compile error here until it's reset too.
     pub(crate) fn clear(&self) {
         use std::sync::PoisonError;
-        let Session { execution: _, prefacing, bindings, loading, stacks, depth, prototype, capture, fusion_reports, levels, transforming, generator, drawn, args, tacit: _ } = Session::blank();
+        let Session {
+            execution: _,
+            prefacing,
+            bindings,
+            loading,
+            stacks,
+            depth,
+            prototype,
+            capture,
+            fusion_reports,
+            levels,
+            transforming,
+            generator,
+            drawn,
+            args,
+            tacit: _,
+        } = Session::blank();
         self.prefacing.set(prefacing.get());
         self.bindings.replace(bindings);
         self.loading.replace(loading.into_inner());
@@ -40,14 +56,9 @@ impl Session {
         self.tacit.clear();
     }
     /// A new session's turn for a person at a terminal, with boxed display elided to the terminal's width.
-    pub fn interactive() -> Turn {
-        Self::make_interactive();
-        Self::new()
-    }
+    pub fn interactive() -> Turn { Self::make_interactive(); Self::new() }
     /// Makes the interactive display settings the current ones and the ones that `]clear` restores. Settings are process-wide, so this needs no session. Python's BPL magics use it on the workspace they share with the Python API.
-    pub fn make_interactive() {
-        crate::settings::set_display_defaults(crate::display::Settings::interactive());
-    }
+    pub fn make_interactive() { crate::settings::set_display_defaults(crate::display::Settings::interactive()); }
     /// `value` as this session's implicit display shows it, as text.
     pub fn show(&self, value: &Value) -> String { self.display_settings().array(value, false) }
     /// The implicit MIME display of `value`, without publishing it. Rendering is interruptible; a renderer's side output is discarded.
@@ -75,8 +86,7 @@ impl Session {
         let info = match crate::inspection::item(name, crate::settings::hanzi_aliases()) {
             Some(NodeKind::Name(name, _)) => self.bindings.lookup(name).and_then(|(_, binding)| binding.inspection(self)),
             Some(NodeKind::Function(builtin)) => Binding::Function(builtin.function()).inspection(self),
-            Some(NodeKind::Operator(op)) => Some(crate::Inspection::new("operator", op.glyph().to_string())),
-            _ => None,
+            Some(NodeKind::Operator(op)) => Some(crate::Inspection::new("operator", op.glyph().to_string())), _ => None
         };
         info.or_else(|| crate::inspection::documentation(name).map(|_| crate::Inspection::new("syntax", name.into())))
     }
@@ -88,10 +98,8 @@ impl Session {
         display.boxed = false;
         display.elide = Elide { limit: 100, edges: 2, width: 80, ..display.elide };
         let (kind, text) = match binding {
-            Binding::Value(a) => ("array", display.array(&a, false)),
-            Binding::Function(f) => ("function", f.text(display.elide, &mut 100)),
-            Binding::Operator(op) => ("operator", op.text(display.elide)),
-            _ => return None,
+            Binding::Value(a) => ("array", display.array(&a, false)), Binding::Function(f) => ("function", f.text(display.elide, &mut 100)),
+            Binding::Operator(op) => ("operator", op.text(display.elide)), _ => return None
         };
         let mut chars = text.chars();
         let mut text: String = chars.by_ref().take(200).collect();
@@ -128,7 +136,9 @@ impl Session {
     /// Checks `effect` against the running levels (`transform::Levels::effect`).
     pub(crate) fn effect(&self, effect: crate::transform::Effect) -> Result<(), crate::transform::Stop> { self.levels.borrow().effect(effect) }
     /// The running trace's level and tracer, if a trace is running (`transform::Levels::tracing`).
-    pub(crate) fn tracing(&self) -> Option<(u64, std::sync::Arc<crate::program::trace::Tracer>)> { self.levels.borrow().tracing().map(|(level, t, _)| (level, t.clone())) }
+    pub(crate) fn tracing(&self) -> Option<(u64, std::sync::Arc<crate::program::trace::Tracer>)> {
+        self.levels.borrow().tracing().map(|(level, t, _)| (level, t.clone()))
+    }
     /// Keeps a fresh name in the running trace or batched run (`transform::Levels::keep_fresh`).
     pub(crate) fn keep_fresh(&self, name: std::sync::Arc<str>) { self.levels.borrow_mut().keep_fresh(name) }
     /// Whether `value` holds a fresh name that the running batched run drew (`transform::Levels::holds_fresh`).
@@ -184,8 +194,7 @@ impl Session {
         let [statement] = parsed.statements.as_slice() else { return Err(Error::domain("•literal reads one value").at(span)) };
         let written = |kind: &NodeKind| match kind {
             NodeKind::Function(Builtin::Primitive(p)) => matches!(p, Primitive::Shape | Primitive::Enclose | Primitive::Ravel),
-            NodeKind::Function(Builtin::System(crate::system::Entry::UCS)) => true,
-            _ => false,
+            NodeKind::Function(Builtin::System(crate::system::Entry::UCS)) => true, _ => false
         };
         if let Some(node) = crate::syntax::non_literal(&statement.nodes, &written) {
             return Err(Error::domain(format!("•literal reads data, not code: {}", node.span.text())).at(span));
@@ -305,12 +314,12 @@ impl Session {
         let (mut parts, mut start, mut offset) = (Vec::new(), 0, 0);
         for line in source.text.split_inclusive('\n') {
             let pending = &source.text[start..offset];
-            if line.trim_start().starts_with(']')
-                && (pending.trim().is_empty() || !matches!(self.parse(Source::new("", pending)), ParseStatus::Incomplete(_))) {
-                    if !pending.trim().is_empty() { parts.push(start..offset); }
-                    parts.push(offset..offset + line.len());
-                    start = offset + line.len();
-                }
+            if line.trim_start().starts_with(']') && (pending.trim().is_empty() || !matches!(self.parse(Source::new("", pending)), ParseStatus::Incomplete(_)))
+            {
+                if !pending.trim().is_empty() { parts.push(start..offset); }
+                parts.push(offset..offset + line.len());
+                start = offset + line.len();
+            }
             offset += line.len();
         }
         if parts.is_empty() { return self.evaluate_code(source); }
@@ -332,9 +341,7 @@ impl Session {
     }
     /// The program in `source`, with numbers that have no marker read as floats of the default width, or of the width that a leading `•prefs` statement on a literal record sets.
     pub fn parse(&self, source: Arc<Source>) -> crate::ParseStatus { crate::syntax::parse_with_aliases(source, crate::settings::hanzi_aliases()) }
-    pub fn eval_parsed(&self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation {
-        self.evaluation(options, |s| s.eval_display(parsed, false, false))
-    }
+    pub fn eval_parsed(&self, parsed: &Parsed, options: crate::EvalOptions) -> Evaluation { self.evaluation(options, |s| s.eval_display(parsed, false, false)) }
     fn eval_display(&self, parsed: &Parsed, diagram: bool, dissect: bool) -> Evaluation {
         let mut result = Evaluation::default();
         let mut leading = true;
@@ -350,8 +357,10 @@ impl Session {
             match bound {
                 Ok(bound) => {
                     let dissected = if dissecting && (dissect || !bound.shy && !matches!(bound.value, Binding::NoResult | Binding::Absent)) {
-                        bound.expression.map(|e| *e).or_else(|| Expression::binding(&bound.value))
-                            .map(|e| { let display = crate::settings::display(); e.display(display.trees, display.elide) })
+                        bound.expression.map(|e| *e).or_else(|| Expression::binding(&bound.value)).map(|e| {
+                            let display = crate::settings::display();
+                            e.display(display.trees, display.elide)
+                        })
                     } else { None };
                     if let Some(text) = &dissected { self.execution.output(crate::OutputKind::Display, text.clone()); }
                     result.value = match bound.value {
@@ -411,10 +420,7 @@ impl Session {
                 };
                 Ok((markdown.clone(), markdown))
             })();
-            let (text, markdown) = match result {
-                Ok(output) => output,
-                Err(error) => return Evaluation::failed(error.at(&span)),
-            };
+            let (text, markdown) = match result { Ok(output) => output, Err(error) => return Evaluation::failed(error.at(&span)) };
             let data = [("text/plain", text), ("text/markdown", markdown)].map(|(kind, text)| (kind.to_string(), crate::MimeData::Text(text))).into();
             self.execution.emit(crate::Output { kind: crate::OutputKind::Display, data });
             return Evaluation::default();
@@ -441,7 +447,10 @@ impl Session {
     pub(super) fn bind(&self, nodes: &[Node]) -> Result<Bound, Error> { self.bound(nodes, None) }
     /// `nodes` evaluated as one statement through `slot`, as `statement_step` uses it, one level deeper. A compiled statement runs at once: one loop runs its steps, so it needs only the depth count. The binder evaluates any other statement with an interrupt check and a stack that grows as needed (`nested`).
     pub(super) fn bound(&self, nodes: &[Node], slot: Option<&std::sync::OnceLock<Option<super::Recording>>>) -> Result<Bound, Error> {
-        let done = |step: Step| { let Step::Done(result) = step else { unreachable!("a statement that isn't a dfn's last gives its value") }; result };
+        let done = |step: Step| {
+            let Step::Done(result) = step else { unreachable!("a statement that isn't a dfn's last gives its value") };
+            result
+        };
         match super::tree::compiled(slot) {
             Some(recording) => {
                 self.descend(&nodes[0].span)?;
@@ -507,11 +516,8 @@ impl Session {
     fn render_value(&self, value: &Value, span: &Span) -> Result<crate::MimeBundle, Error> {
         if value.renderer().is_some() {
             match self.mime_value(value, span) {
-                Ok(bundle) => {
-                    return Ok(crate::display::bundle(&bundle).expect("•mime checks its bundle"));
-                }
-                Err(e) if e.kind.is_control() => return Err(e),
-                Err(_) => (),
+                Ok(bundle) => { return Ok(crate::display::bundle(&bundle).expect("•mime checks its bundle")); }
+                Err(e) if e.kind.is_control() => return Err(e), Err(_) => ()
             }
         }
         Ok([("text/plain".into(), crate::MimeData::Text(self.show(value)))].into_iter().collect())
@@ -542,7 +548,8 @@ impl Session {
         crate::transform::acts().at(span)?;
         let text = Self::source_text(right, span)?;
         let path = span.path(&text);
-        let code = crate::host::read(&path).and_then(|bytes| String::from_utf8(bytes).map_err(std::io::Error::other)).map_err(|e| Error::io(&text, e).at(span))?;
+        let code =
+            crate::host::read(&path).and_then(|bytes| String::from_utf8(bytes).map_err(std::io::Error::other)).map_err(|e| Error::io(&text, e).at(span))?;
         let file = crate::host::canonical(&path);
         if self.loading.borrow().contains(&file) { return Err(Error::domain(format!("load cycle: {text} is already loading")).at(span)); }
         let module = self.bindings.new_module();
@@ -586,8 +593,10 @@ impl Session {
             NodeKind::Name(name, last) => match last.then(|| self.bindings.take(*name)).flatten().or_else(|| self.bindings.lookup(*name)) {
                 Some((_, Binding::Released)) => return Err(released(name, &node.span)),
                 Some((place, value)) => self.read_binding(value, || Some(place))?,
-                None if *name == Name::ERROR => return Err(Error::new(ErrorKind::Value, "$e is the error a handler caught, and exists only in a handler").at(&node.span)),
-                None => return Err(undefined(name, &node.span))
+                None if *name == Name::ERROR => {
+                    return Err(Error::new(ErrorKind::Value, "$e is the error a handler caught, and exists only in a handler").at(&node.span));
+                }
+                None => return Err(undefined(name, &node.span)),
             },
             NodeKind::System(name) => return Err(undefined(name, &node.span)),
             NodeKind::Group(_) | NodeKind::Run(_) => return Binder::nested(node, self),
@@ -595,7 +604,9 @@ impl Session {
                 let record = self.resolve(root)?.array(&root.span)?;
                 return self.scoped(&record, &node.span, |session| session.resolve(body));
             }
-            NodeKind::ArrayLiteral { .. } => self.bracket(node, |nodes, _, _, within| match within { Within::Key => self.array_result(nodes).map(Some), _ => self.item_result(nodes) })?,
+            NodeKind::ArrayLiteral { .. } => self.bracket(node, |nodes, _, _, within| match within {
+                Within::Key => self.array_result(nodes).map(Some), _ => self.item_result(nodes)
+            })?,
             NodeKind::Dfn(definition) => {
                 let closure = Closure { definition: definition.clone(), environment: self.bindings.current(), module: self.bindings.module() };
                 match definition.kind {
@@ -616,7 +627,8 @@ impl Session {
     }
 
     /// The bracket literal `node`, built from what `part` gives for each of its items and keys. `part` gets them in the order that they evaluate: left to right, with an item's value before its key. It gets a part's nodes, the cell that holds them, their range in that cell and what they are (`Within`), and gives `None` for an absent `⍺`, which drops out. A keyed item's key applies as soon as the key is ready (`Session::keyed`), before the next item evaluates. The key of an item whose value is absent isn't evaluated. A key with no value is a name, which gives both: `[a:]` is `["a":a]`.
-    pub(super) fn bracket(&self, node: &Node, mut part: impl FnMut(&[Node], usize, std::ops::Range<usize>, Within) -> Result<Option<Value>, Error>) -> Result<Binding, Error> {
+    pub(super) fn bracket(
+        &self, node: &Node, mut part: impl FnMut(&[Node], usize, std::ops::Range<usize>, Within) -> Result<Option<Value>, Error>) -> Result<Binding, Error> {
         let NodeKind::ArrayLiteral { cells, record, .. } = &node.kind else { unreachable!("a bracket literal") };
         if !*record {
             let mut arrays = Vec::with_capacity(cells.len());
@@ -625,12 +637,14 @@ impl Session {
         }
         let mut entries = Vec::new();
         for (k, nodes) in cells.iter().enumerate() {
-            let Some(colon) = crate::syntax::key_colon(nodes) else { entries.extend(part(nodes, k, 0..nodes.len(), Within::Item)?.map(|item| (None, item))); continue; };
+            let Some(colon) = crate::syntax::key_colon(nodes) else {
+                entries.extend(part(nodes, k, 0..nodes.len(), Within::Item)?.map(|item| (None, item)));
+                continue;
+            };
             // The value and the key evaluate separately, value first. As one expression, `key:f` would be a train.
             let named = match &nodes[..colon] {
-                _ if colon + 1 < nodes.len() => None,
-                [Node { kind: NodeKind::Name(name, _), .. }] => Some(crate::keyed::text(name.text())),
-                _ => return Err(Error::new(ErrorKind::Syntax, "a key with no value is a name, as in [a:]").at(&nodes[colon].span)),
+                _ if colon + 1 < nodes.len() => None, [Node { kind: NodeKind::Name(name, _), .. }] => Some(crate::keyed::text(name.text())),
+                _ => return Err(Error::new(ErrorKind::Syntax, "a key with no value is a name, as in [a:]").at(&nodes[colon].span))
             };
             let at = if named.is_some() { 0..colon } else { colon + 1..nodes.len() };
             let Some(value) = part(&nodes[at.clone()], k, at, Within::Value { colon, named: named.clone() })? else { continue };
@@ -643,7 +657,9 @@ impl Session {
     /// The entries of the keyed item in cell `cell` of the bracket literal `node`, whose `:` is at `colon`: `Keys` applies `key` to `value`, which must give a keyed vector. A name with a batch of atoms gives one entry that holds the batch, as `Keys` gives one entry in each cell, so a record built in a batched run holds batches as a list literal does. `bracket` and a compiled item's end both call it as soon as the item's value is ready, so an item that fails stops the items after it.
     pub(super) fn keyed(&self, node: &Node, cell: usize, colon: usize, key: &Value, value: &Value) -> Result<Vec<crate::keyed::Entry>, Error> {
         let NodeKind::ArrayLiteral { cells, .. } = &node.kind else { unreachable!("a bracket literal") };
-        if let Some(name) = crate::keyed::name(key) && value.carrier().and_then(crate::transform::Carrier::batch).is_some_and(|b| b.rank() == 0) { return Ok(vec![(Some(name), value.clone())]); }
+        if let Some(name) = crate::keyed::name(key) && value.carrier().and_then(crate::transform::Carrier::batch).is_some_and(|b| b.rank() == 0) {
+            return Ok(vec![(Some(name), value.clone())]);
+        }
         let item = Function::primitive(Primitive::Keys).call(Some(key), value, &cells[cell][colon].span)?.array(&node.span)?;
         crate::keyed::entries(&item).described("key:value items must give keyed vectors").at(&node.span)
     }
@@ -708,7 +724,8 @@ impl Session {
     /// Drops the frames from `base` on, makes `caller` current and gives back `result`. A result that refers to a dropped frame is an error.
     fn leave(&self, base: usize, caller: Option<usize>, result: Result<Bound, Error>, span: &Span) -> Result<Bound, Error> {
         let result = match result {
-            Ok(bound) if bound.value.environment().is_some_and(|i| i >= base) => Err(Error::domain("result would return a local closure").at(span)), result => result
+            Ok(bound) if bound.value.environment().is_some_and(|i| i >= base) => Err(Error::domain("result would return a local closure").at(span)),
+            result => result,
         };
         self.bindings.leave(base, caller);
         result
@@ -771,10 +788,11 @@ impl Session {
                             let level = if self.transforming() { self.batch_level() } else { None };
                             let holds = match level.and_then(|level| crate::batch::truths(&value, level).map(|truths| (level, truths))) {
                                 None => value.boolean().described(PREDICATE).at(&span)?,
-                                Some((level, truths)) => match self.guard(definition, frame, (b, position), &truths.described(PREDICATE).at(&span)?, level, &span)? {
-                                    Guarded::Unanimous(holds) => holds,
-                                    Guarded::Joined(value) => return Ok(Step::Done(Bound::from(value))),
-                                },
+                                Some((level, truths)) => {
+                                    match self.guard(definition, frame, (b, position), &truths.described(PREDICATE).at(&span)?, level, &span)? {
+                                        Guarded::Unanimous(holds) => holds, Guarded::Joined(value) => return Ok(Step::Done(Bound::from(value)))
+                                    }
+                                }
                             };
                             if !holds { continue 'bodies; }
                         }
@@ -846,7 +864,9 @@ impl Session {
     pub(super) fn read_binding(&self, binding: Binding, place: impl FnOnce() -> Option<Place>) -> Result<Binding, Error> {
         if !self.transforming() { return Ok(binding); }
         let tracing = self.levels.borrow().tracing().map(|(level, tracer, frames)| (level, tracer.clone(), frames));
-        if let Some((level, tracer, frames)) = tracing && let Some(place) = place() && place.frame().is_none_or(|f| f < frames) { return Ok(crate::program::trace::read(binding, place, level, &tracer)); }
+        if let Some((level, tracer, frames)) = tracing && let Some(place) = place() && place.frame().is_none_or(|f| f < frames) {
+            return Ok(crate::program::trace::read(binding, place, level, &tracer));
+        }
         let Binding::Value(value) = &binding else { return Ok(binding) };
         let levels = self.levels.borrow();
         let Some((level, frame)) = levels.widened() else { return Ok(binding) };
@@ -856,8 +876,7 @@ impl Session {
     pub(crate) fn captured(&self, place: Place) -> Option<crate::program::Found> {
         Some(match self.bindings.get(place)? {
             Binding::Value(Value::Function(f)) | Binding::Function(f) => crate::program::Found::Function(f),
-            Binding::Value(v) => crate::program::Found::Value(v),
-            _ => crate::program::Found::Other,
+            Binding::Value(v) => crate::program::Found::Value(v), _ => crate::program::Found::Other
         })
     }
 }
@@ -876,7 +895,8 @@ impl Catch {
     }
     pub(super) fn catches(&self, kind: &ErrorKind) -> bool {
         match self {
-            Self::All => !kind.is_control() && !matches!(kind, ErrorKind::Unsupported), Self::Kinds(kinds) => !matches!(kind, ErrorKind::Stop { .. }) && kinds.iter().any(|k| k.name() == kind.name())
+            Self::All => !kind.is_control() && !matches!(kind, ErrorKind::Unsupported),
+            Self::Kinds(kinds) => !matches!(kind, ErrorKind::Stop { .. }) && kinds.iter().any(|k| k.name() == kind.name()),
         }
     }
 }

@@ -3,9 +3,9 @@
 //! - A number is a JavaScript number, and a Boolean is `true` or `false`. A string is a JavaScript string, and a record is an object.
 //! - Any other array is `{shape, data}`. `data` is a typed array when every item is a number: `Float32Array` for 32-bit floats, `Float64Array` for other approximate and fractional numbers, and for integers the width BPL stores them at, `Uint8Array`, `Int16Array`, `Int32Array` or `BigInt64Array`, as Python's `.np` does. Complex numbers are their real and imaginary parts in turn, with a last axis of length 2. Otherwise `data` is an `Array` of items. Axis names and keys, when an array has them, are `axis_names` and `axis_keys`, as in `protocol.rs`.
 //! - A JavaScript number becomes a float of the session's default width, a `BigInt` an exact one, an `Array` a vector and a function a BPL function. An object with `shape` and `data` becomes an array, and any other object a record. `undefined` and `null` give no value.
+use crate::{ErrorKind, Number, Value, array::Items, element::read_as, keyed};
 use rustymath::{buffer::{Buffer, Complexes, FloatBuf, FloatWidth, Floats, Ints, View}, error::Kind};
-use crate::{array::Items, element::read_as, keyed, ErrorKind, Number, Value};
-use serde_json::{json, Value as Json};
+use serde_json::{Value as Json, json};
 
 /// A JavaScript value.
 #[derive(Debug)]
@@ -225,18 +225,18 @@ pub(crate) fn serialize(js: &Js) -> (Json, Vec<u8>) {
 }
 
 #[cfg(web)]
-pub(crate) use web::{call, function, message, prototype};
+pub use web::{JsFunction, from_js, to_js};
 #[cfg(web)]
-pub use web::{from_js, to_js, JsFunction};
+pub(crate) use web::{call, function, message, prototype};
 
 /// The browser build's side: JavaScript values, and the JavaScript functions that BPL calls.
 #[cfg(web)]
 mod web {
-    use super::{export, imported, Js, Typed};
-    use crate::{Span, Error, Value};
+    use super::{Js, Typed, export, imported};
+    use crate::{Error, Span, Value};
     use js_sys::{
-        Array, BigInt64Array, Float32Array, Float64Array, Function, Int16Array, Int32Array, Int8Array, Object, Reflect, Uint16Array, Uint32Array, Uint8Array,
-        Uint8ClampedArray,
+        Array, BigInt64Array, Float32Array, Float64Array, Function, Int8Array, Int16Array, Int32Array, Object, Reflect, Uint8Array, Uint8ClampedArray,
+        Uint16Array, Uint32Array,
     };
     use std::{cell::RefCell, sync::Arc};
     use wasm_bindgen::{JsCast, JsValue};

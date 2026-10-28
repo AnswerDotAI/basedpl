@@ -1,8 +1,8 @@
 use crate::execution::check;
-use rustymath::error::Kind;
-use crate::{agreement::{Agree, Agreement}, array::{generated_len, saturated, Frame}, Error, Described, Number, Value};
+use crate::{Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Frame, generated_len, saturated}};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, ToPrimitive, Zero};
+use rustymath::error::Kind;
 use rustymath::number_theory as nt;
 
 fn number(e: &Value) -> Result<Number, Error> {
@@ -13,9 +13,7 @@ fn array(shape: Vec<usize>, data: Vec<Value>) -> Result<Value, Error> {
     Value::from_parts(shape, data, exact(0)).described("number theory result exceeds array limits")
 }
 /// `n`, if it's positive, as factorisation needs.
-fn positive(n: BigUint) -> Result<BigUint, Error> {
-    if n.is_zero() { Err(Error::domain("factorisation requires a positive whole number")) } else { Ok(n) }
-}
+fn positive(n: BigUint) -> Result<BigUint, Error> { if n.is_zero() { Err(Error::domain("factorisation requires a positive whole number")) } else { Ok(n) } }
 fn beyond() -> Error { Error::new(Kind::Limit, "prime enumeration exceeds machine range") }
 
 fn factor_result(selector: Option<&Number>, n: BigUint) -> Result<Value, Error> {
@@ -83,10 +81,11 @@ fn prime(selector: &Number, n: BigInt) -> Result<Value, Error> {
 pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value) -> Result<Value, Error> {
     if !factor && left.is_none() { return nth_primes(right); }
     let result = each_cell(left, right, |x, n| match factor {
-        true => factor_result(x, n.to_biguint().ok_or_else(|| Error::domain("factorisation requires positive whole numbers"))?),
-        false => prime(x.unwrap(), n),
+        true => factor_result(x, n.to_biguint().ok_or_else(|| Error::domain("factorisation requires positive whole numbers"))?), false => prime(x.unwrap(), n)
     })?;
-    match right.fixed_width() { Some(width) if factor && left.is_none() => result.to_fixed(width, crate::number::Numeric::current()).described("invalid factors"), _ => Ok(result) }
+    match right.fixed_width() {
+        Some(width) if factor && left.is_none() => result.to_fixed(width, crate::number::Numeric::current()).described("invalid factors"), _ => Ok(result)
+    }
 }
 
 /// `⍭⁻¹`: the number of primes below each item, which is a prime's index.

@@ -1,6 +1,6 @@
 //! What the native build takes from its operating system and crates: the clock, files, the environment, Unicode normalization, `•fetch`'s transport and `•r`'s regular expressions. `host_web.rs` gives the browser's versions of the same functions. Each passes straight through to its host, and keeps the host's own behaviour and syntax.
 use crate::execution::check;
-use crate::{array::generated_len, data::{Request, Response}, regex::Match, Error};
+use crate::{Error, array::generated_len, data::{Request, Response}, regex::Match};
 use std::{io, path::{Path, PathBuf}, time::Duration};
 
 pub(crate) use std::time::Instant;

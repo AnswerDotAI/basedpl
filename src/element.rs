@@ -1,7 +1,10 @@
 //! How the element types of compact storage read their items from a `Value` and build arrays from them. Each type's fill and its conversions to other types are rustymath's `Element` and `Source`, and `Converts` for the conversions that marks make.
-use crate::{array::Storage, number::{int::Int, Numeric}, Value};
+use crate::{Value, array::Storage, number::{Numeric, int::Int}};
 use num_complex::{Complex32, Complex64};
-use rustymath::{buffer::{ComplexBuf, Complexes, Element, FloatWidth, IntBuf, Ints, read_all, Source, View, Width}, tolerant::{Exactly, Tolerant}, with_complexes, with_floats, with_ints};
+use rustymath::{
+    buffer::{ComplexBuf, Complexes, Element, FloatWidth, IntBuf, Ints, Source, View, Width, read_all}, tolerant::{Exactly, Tolerant},
+    with_complexes, with_floats, with_ints
+};
 use std::borrow::Cow;
 
 /// An element type of compact storage, read from and built into `Value`s.
@@ -48,9 +51,7 @@ complex_elements!(Complex32: F32, Complex64: F64);
 impl Stored for char {}
 
 /// An integer width of compact storage.
-pub(crate) trait Whole: Stored + Int + rustymath::convert::Int + rustymath::reduce::Term + bytemuck::Pod {
-    const WIDTH: Width;
-}
+pub(crate) trait Whole: Stored + Int + rustymath::convert::Int + rustymath::reduce::Term + bytemuck::Pod { const WIDTH: Width; }
 macro_rules! whole {
     ($($t:ty: $width:ident),+) => {$(
         impl Stored for $t {
@@ -158,13 +159,12 @@ macro_rules! into_wholes {
 into_wholes!(u8, i16, i32, i64);
 
 /// The numbers of `view` converted to `T` (`Converts`), each float floored within the tolerance that `numeric` gives its width. `None` for complex numbers and characters.
-pub(crate) fn converted<T>(view: View<'_>, numeric: Numeric) -> Option<Vec<T>>
-where bool: Converts<T>, u8: Converts<T>, i16: Converts<T>, i32: Converts<T>, i64: Converts<T>, half::f16: Converts<T>, f32: Converts<T>, f64: Converts<T> {
+pub(crate) fn converted<T>(view: View<'_>, numeric: Numeric) -> Option<Vec<T>> where bool: Converts<T>, u8: Converts<T>, i16: Converts<T>, i32: Converts<T>,
+    i64: Converts<T>, half::f16: Converts<T>, f32: Converts<T>, f64: Converts<T> {
     fn each<S: Converts<T>, T>(items: &[S], t: impl Tolerant) -> Vec<T> { items.iter().map(|&x| x.converted(t)).collect() }
     Some(match view {
-        View::Booleans(v) => each(v, Exactly),
-        View::Integers(ints) => with_ints!(ints, |v| each(v, Exactly)),
+        View::Booleans(v) => each(v, Exactly), View::Integers(ints) => with_ints!(ints, |v| each(v, Exactly)),
         View::Floats(v) => rustymath::with_tolerance!(numeric.tolerance_at(v.tag()), |t| with_floats!(v, |v| each(v, t))),
-        View::Complexes(_) | View::Characters(_) => return None,
+        View::Complexes(_) | View::Characters(_) => return None
     })
 }

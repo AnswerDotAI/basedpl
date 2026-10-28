@@ -1,9 +1,9 @@
 //! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, the accumulations, which add items at scattered positions, with the path each took, the places where a batched run's calls fell back to slower code, the writes that left a compact array in mixed storage, the routes that handled an array's items one at a time, the faster routes that code considered and declined, the routes taken, the traces that stopped, and the compiles of block stages' kernels. Events are recorded only while a capture runs, as `•explain` and the route checks run one. Code on every thread records them into the run's store, which `rustymath::events` holds for the whole process while the run lasts. Routes taken, declines and stopped traces go into the same store, as the aggregate report that BPL and rustymath's Python API share. The store belongs to the process, not to a session, because fusion runs its programs without one. A process supports one capture at a time, apart from captures nested on one thread.
 //!
 //! The module also counts the live nodes that `•memory` reports: the record nodes of `∂` and the pending arrays. A node counts for the thread that made it, even when another thread drops it.
-use crate::{keyed, Error, Described, Value};
+use crate::{Described, Error, Value, keyed};
 use rustymath::events::{EventKind, Record, Report, Route};
-use std::{any::Any, sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex, MutexGuard, PoisonError}};
+use std::{any::Any, sync::{Arc, Mutex, MutexGuard, PoisonError, atomic::{AtomicUsize, Ordering}}};
 
 /// The live nodes of each kind.
 static MADE: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
@@ -37,23 +37,22 @@ const KINDS: [(&str, &[(&str, Column)]); 13] = {
     [
         ("fused", &[("glyphs", Text), ("items", Count), ("blocks", Count), ("runs", Count), ("copied", Count), ("compiled", Truth)]),
         ("stored", &[("glyphs", Text), ("items", Count), ("reason", Text)]),
-        ("forced", &[("function", Text), ("line", Count), ("column", Count), ("items", Count)]),
-        ("fast", &[("combination", Text), ("function", Text)]),
-        ("accumulations", &[("items", Count), ("size", Count), ("path", Text)]),
-        ("fallbacks", &[("reason", Text), ("items", Count)]),
+        ("forced", &[("function", Text), ("line", Count), ("column", Count), ("items", Count)]), ("fast", &[("combination", Text), ("function", Text)]),
+        ("accumulations", &[("items", Count), ("size", Count), ("path", Text)]), ("fallbacks", &[("reason", Text), ("items", Count)]),
         ("mixed", &[("code", Text), ("line", Count), ("column", Count), ("target", Text), ("written", Text), ("items", Count)]),
         ("itemwise", &[("function", Text), ("line", Count), ("column", Count), ("route", Text), ("items", Count)]),
         ("declined", &[("route", Text), ("reason", Text), ("items", Count)]),
         ("programs", &[("event", Text), ("steps", Count), ("compiled", Count), ("blocks", Count), ("listing", Text)]),
-        ("compiles", &[("glyphs", Text), ("microseconds", Count)]),
-        ("routes", &[("route", Text), ("calls", Count), ("items", Count)]),
+        ("compiles", &[("glyphs", Text), ("microseconds", Count)]), ("routes", &[("route", Text), ("calls", Count), ("items", Count)]),
         ("stopped", &[("reason", Text), ("calls", Count), ("items", Count)]),
     ]
 };
 
 /// A kind of event, by its position in `KINDS`.
 #[derive(Clone, Copy)]
-enum Kind { Fused, Stored, Forced, Fast, Accumulations, Fallbacks, Mixed, Itemwise, Declined, Programs, #[cfg_attr(web, allow(dead_code))] Compiles, Routes, Stopped }
+enum Kind {
+    Fused, Stored, Forced, Fast, Accumulations, Fallbacks, Mixed, Itemwise, Declined, Programs, #[cfg_attr(web, allow(dead_code))] Compiles, Routes, Stopped
+}
 
 /// The kinds whose events mark a slow path, each with the column that names its event: a pending array that a fused group computed on its own (its reason), a call that computed pending arrays' items (its function), a batched map's fallback (its reason), a write that left a compact array mixed (its code), and a route that handled items one at a time (its route).
 const SLOW: [(Kind, usize); 5] = [(Kind::Stored, 2), (Kind::Forced, 0), (Kind::Fallbacks, 0), (Kind::Mixed, 0), (Kind::Itemwise, 3)];
@@ -71,8 +70,7 @@ pub(crate) fn explained<T>(run: impl FnOnce() -> T) -> (T, Events) {
     drop(under_way);
     let events = std::mem::take(&mut *sink.lock());
     if let Some(outer) = outer {
-        if let Some(store) = Store::of(&*outer) { store.lock().extend(&events); }
-        else { for event in &events.native.records { outer.record(event.clone()); } }
+        if let Some(store) = Store::of(&*outer) { store.lock().extend(&events); } else { for event in &events.native.records { outer.record(event.clone()); } }
     }
     (result, events)
 }
@@ -87,16 +85,17 @@ impl Store {
     fn lock(&self) -> MutexGuard<'_, Events> { self.0.lock().unwrap_or_else(PoisonError::into_inner) }
 }
 
-impl rustymath::events::Sink for Store {
-    fn record(&self, event: Record) { self.lock().native.record(event) }
-}
+impl rustymath::events::Sink for Store { fn record(&self, event: Record) { self.lock().native.record(event) } }
 
 /// `f` on the events of the `•explain` under way, or `None` when none is.
 fn store<T>(f: impl FnOnce(&mut Events) -> T) -> Option<T> { rustymath::events::with(|sink| Store::of(&**sink).map(|s| f(&mut s.lock()))).flatten() }
 
 /// Adds the row that `row` gives to the events of `kind`, while an `•explain` records. `row` runs before the store's lock is taken.
 fn record(kind: Kind, row: impl FnOnce() -> Vec<Field>) {
-    if recording() { let row = row(); store(|events| events.rows[kind as usize].push(row)); }
+    if recording() {
+        let row = row();
+        store(|events| events.rows[kind as usize].push(row));
+    }
 }
 
 /// Records a fused group of `items` items, whose calls have the glyphs `glyphs`, in the order they ran, with what `tally` counted while it ran and whether its stage ran compiled code.
@@ -109,7 +108,10 @@ pub(crate) fn fused(glyphs: impl FnOnce() -> String, items: usize, compiled: boo
 
 /// Records a pending array that a fused group read as an input, computed on its own first. `event` gives the glyphs of its call, its item count and the reason the group couldn't compute it as one of its calls.
 pub(crate) fn stored(event: impl FnOnce() -> (String, usize, &'static str)) {
-    record(Kind::Stored, || { let (glyphs, items, reason) = event(); vec![Field::Text(glyphs), Field::Count(items), Field::Text(reason.into())] })
+    record(Kind::Stored, || {
+        let (glyphs, items, reason) = event();
+        vec![Field::Text(glyphs), Field::Count(items), Field::Text(reason.into())]
+    })
 }
 
 /// Whether an `•explain` is recording.
@@ -153,15 +155,14 @@ pub(crate) fn uncounted<T>(f: impl FnOnce() -> T) -> T {
 }
 
 /// Records that `function` computed the fast combination named `name`.
-pub(crate) fn fast(route: Route, function: String) {
-    rustymath::events::taken(route, 0);
-    fast_detail(route, function)
-}
+pub(crate) fn fast(route: Route, function: String) { rustymath::events::taken(route, 0); fast_detail(route, function) }
 /// Adds function details for a route already counted by its numerical implementation.
 pub(crate) fn fast_detail(route: Route, function: String) { record(Kind::Fast, || vec![Field::Text(route.name().into()), Field::Text(function)]) }
 
 /// Records an accumulation that added `items` items into a result of `size` items, each at a position that a table of offsets or ids gives, as scattering adds them. `path` names how it added them, as `pervasive::Route` names a scatter's paths, or `"rounds"`, `"one call"` or `"item by item"` for the general paths.
-pub(crate) fn accumulated(items: usize, size: usize, path: &'static str) { record(Kind::Accumulations, || vec![Field::Count(items), Field::Count(size), Field::Text(path.into())]) }
+pub(crate) fn accumulated(items: usize, size: usize, path: &'static str) {
+    record(Kind::Accumulations, || vec![Field::Count(items), Field::Count(size), Field::Text(path.into())])
+}
 
 /// Records that a batched run's calls fell back to slower code, with `reason` and the number of `items` it concerns. The reason becomes text only while `•explain` records. A stop gives its cause (`transform::Stop`).
 pub(crate) fn fallback(reason: impl std::fmt::Display, items: usize) { record(Kind::Fallbacks, || vec![Field::Text(reason.to_string()), Field::Count(items)]) }
@@ -172,13 +173,18 @@ pub(crate) fn program(event: &'static str, steps: usize, compiled: usize, blocks
 
 /// Records the compile of a block stage's kernel, with the glyphs of the stage's calls that `glyphs` gives and the compile's `time`.
 #[cfg(not(web))]
-pub(crate) fn compiled(glyphs: impl FnOnce() -> String, time: std::time::Duration) { record(Kind::Compiles, || vec![Field::Text(glyphs()), Field::Count(time.as_micros() as usize)]) }
+pub(crate) fn compiled(glyphs: impl FnOnce() -> String, time: std::time::Duration) {
+    record(Kind::Compiles, || vec![Field::Text(glyphs()), Field::Count(time.as_micros() as usize)])
+}
 
 /// Records a write by the call at `span` that left a compact array of `items` items in mixed storage, with the array's kind before the write and the kind written, as `•storage` names them.
 pub(crate) fn mixed(span: &crate::Span, target: &'static str, written: &'static str, items: usize) {
     record(Kind::Mixed, || {
         let (line, column) = span.position();
-        vec![Field::Text(span.text().into()), Field::Count(line), Field::Count(column), Field::Text(target.into()), Field::Text(written.into()), Field::Count(items)]
+        vec![
+            Field::Text(span.text().into()), Field::Count(line), Field::Count(column), Field::Text(target.into()), Field::Text(written.into()),
+            Field::Count(items),
+        ]
     })
 }
 
@@ -190,16 +196,20 @@ pub(crate) fn itemwise_mark() -> Option<usize> { store(|events| events.unclaimed
 
 /// Records the `itemwise` counts made since `mark`, as `itemwise_mark` gave it, as rows for the call at `span`, whose code `function` gives.
 pub(crate) fn claim_itemwise(mark: usize, function: impl FnOnce() -> String, span: &crate::Span) {
-    store(|events| if events.unclaimed.len() > mark {
-        let entries = events.unclaimed.drain(mark..).collect();
-        events.claimed(entries, function(), span);
+    store(|events| {
+        if events.unclaimed.len() > mark {
+            let entries = events.unclaimed.drain(mark..).collect();
+            events.claimed(entries, function(), span);
+        }
     });
 }
 
 /// `entries` with each route's items summed, in the order of each route's first entry.
 fn by_route(entries: impl IntoIterator<Item = (&'static str, usize)>) -> Vec<(&'static str, usize)> {
     let mut routes: Vec<(&'static str, usize)> = Vec::new();
-    for (route, items) in entries { match routes.iter_mut().find(|(r, _)| *r == route) { Some((_, n)) => *n += items, None => routes.push((route, items)) } }
+    for (route, items) in entries {
+        match routes.iter_mut().find(|(r, _)| *r == route) { Some((_, n)) => *n += items, None => routes.push((route, items)) }
+    }
     routes
 }
 
@@ -209,14 +219,17 @@ impl Events {
         for event in &self.native.records {
             let (kind, row) = match event.kind {
                 EventKind::Taken => (Kind::Routes, vec![Field::Text(event.route.name().into()), Field::Count(event.calls), Field::Count(event.items)]),
-                EventKind::Declined => (Kind::Declined, vec![Field::Text(event.route.name().into()), Field::Text(event.reason.into()), Field::Count(event.items)]),
+                EventKind::Declined => {
+                    (Kind::Declined, vec![Field::Text(event.route.name().into()), Field::Text(event.reason.into()), Field::Count(event.items)])
+                }
                 EventKind::Stopped => (Kind::Stopped, vec![Field::Text(event.reason.into()), Field::Count(event.calls), Field::Count(event.items)]),
             };
             self.rows[kind as usize].push(row);
         }
         let unclaimed = std::mem::take(&mut self.unclaimed);
         self.claimed(unclaimed, span.text().into(), span);
-        let record = |names: Vec<&str>, values: Vec<Value>| keyed::vector(names.into_iter().map(Arc::from).collect(), values).described("invalid explain record");
+        let record =
+            |names: Vec<&str>, values: Vec<Value>| keyed::vector(names.into_iter().map(Arc::from).collect(), values).described("invalid explain record");
         let mut tables = vec![value];
         for (&(_, columns), rows) in KINDS.iter().zip(&self.rows) {
             let n = rows.len();
@@ -240,20 +253,29 @@ impl Events {
     /// Adds an `itemwise` row for each route in `entries`, with its items summed, for the call at `span` whose code is `function`.
     fn claimed(&mut self, entries: Vec<(&'static str, usize)>, function: String, span: &crate::Span) {
         let (line, column) = span.position();
-        for (route, items) in by_route(entries) { self.rows[Kind::Itemwise as usize].push(vec![Field::Text(function.clone()), Field::Count(line), Field::Count(column), Field::Text(route.into()), Field::Count(items)]) }
+        for (route, items) in by_route(entries) {
+            self.rows[Kind::Itemwise as usize].push(vec![
+                Field::Text(function.clone()), Field::Count(line), Field::Count(column), Field::Text(route.into()), Field::Count(items),
+            ])
+        }
     }
 
     pub(crate) fn observed(&self) -> &Report { &self.native }
 
     /// The rows of the records that mark a slow path (`SLOW`), each as its record's name, the text of the column that names the event, and all its fields, with the routes that no call claimed as `itemwise` rows, and each stopped trace, named by its reason. The route check expects none for a case beyond the events its `⍝⍝⍝ allows` and `⍝⍝⍝ gap` lines name, and a stopped trace needs a `gap` line. Each decline follows, named by its route and reason, as in `"fusion: an exact argument"`. A case needn't name a decline, because each one explains another event, but a line that names one must still find it.
     pub(crate) fn slow(&self) -> Vec<(&'static str, String, String)> {
-        let fields = |row: &[Field]| row.iter().map(|f| match f { Field::Text(t) => t.clone(), Field::Count(n) => n.to_string(), Field::Truth(t) => t.to_string() }).collect::<Vec<_>>().join(" ");
-        let mut rows: Vec<_> = SLOW.iter().flat_map(|&(kind, key)| self.rows[kind as usize].iter().map(move |row| (KINDS[kind as usize].0, row[key].text().to_owned(), fields(row)))).collect();
+        let fields = |row: &[Field]| {
+            row.iter().map(|f| match f {
+                Field::Text(t) => t.clone(), Field::Count(n) => n.to_string(), Field::Truth(t) => t.to_string()
+            }).collect::<Vec<_>>().join(" ")
+        };
+        let mut rows: Vec<_> = SLOW.iter()
+            .flat_map(|&(kind, key)| self.rows[kind as usize].iter().map(move |row| (KINDS[kind as usize].0, row[key].text().to_owned(), fields(row))))
+            .collect();
         rows.extend(by_route(self.unclaimed.iter().copied()).into_iter().map(|(route, items)| ("itemwise", route.to_owned(), format!("{route} {items}"))));
         rows.extend(self.native.records.iter().filter_map(|r| match r.kind {
             EventKind::Declined => Some(("declined", format!("{}: {}", r.route.name(), r.reason), format!("{} {} {}", r.route.name(), r.reason, r.items))),
-            EventKind::Stopped => Some(("stopped", r.reason.into(), format!("{} {}", r.reason, r.items))),
-            EventKind::Taken => None,
+            EventKind::Stopped => Some(("stopped", r.reason.into(), format!("{} {}", r.reason, r.items))), EventKind::Taken => None
         }));
         rows
     }
@@ -275,13 +297,9 @@ pub(crate) enum Counted { Record, Pending }
 /// One live node, counted until it's dropped.
 pub(crate) struct Live(Counted);
 
-impl Live {
-    pub(crate) fn new(kind: Counted) -> Self { MADE[kind as usize].fetch_add(1, Ordering::Relaxed); Self(kind) }
-}
+impl Live { pub(crate) fn new(kind: Counted) -> Self { MADE[kind as usize].fetch_add(1, Ordering::Relaxed); Self(kind) } }
 
-impl Drop for Live {
-    fn drop(&mut self) { MADE[self.0 as usize].fetch_sub(1, Ordering::Relaxed); }
-}
+impl Drop for Live { fn drop(&mut self) { MADE[self.0 as usize].fetch_sub(1, Ordering::Relaxed); } }
 
 /// The live nodes of `kind` in the process.
 pub(crate) fn live(kind: Counted) -> usize { MADE[kind as usize].load(Ordering::Relaxed) }

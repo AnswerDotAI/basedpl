@@ -1,5 +1,5 @@
 use crate::execution::check;
-use crate::{display, Span, keyed, system::{native, Call, Valence::Ambivalent}, Described, Error, Value};
+use crate::{Described, Error, Span, Value, display, keyed, system::{Call, Valence::Ambivalent, native}};
 fn valid_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_alphabetic() || c == '_') && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
 }

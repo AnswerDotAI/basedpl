@@ -1,9 +1,9 @@
 //! Search and ordering primitives: index of, membership, without, union, intersection, unique, duplicates, find, classification, run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
-use crate::execution::check;
-use rustymath::{buffer::View, error::Kind};
-use crate::search::compact_view;
 use super::*;
+use crate::execution::check;
+use crate::search::compact_view;
+use rustymath::{buffer::View, error::Kind};
 
 /// A mask over the major cells of `x`. With `found`, it marks the cells among the major cells of `y`, and otherwise the cells that aren't.
 pub(super) fn found_mask(x: &Value, y: &Value, found: bool, span: &Span) -> Result<Value, Error> {
@@ -53,13 +53,10 @@ pub(super) fn find(left: &Value, right: &Value, span: &Span) -> Result<Value, Er
     let shape = right.shape();
     let (x, y) = (left.as_items(), right.as_items());
     let compact = match (x, y) {
-        (Items::Compact(x), Items::Compact(y)) => rustymath::search::view_find(x, left.shape(), y, shape, crate::search::compared_at(left.float_width().max(right.float_width()), Numeric::current()).1),
-        _ => None,
+        (Items::Compact(x), Items::Compact(y)) => rustymath::search::view_find(
+            x, left.shape(), y, shape, crate::search::compared_at(left.float_width().max(right.float_width()), Numeric::current()).1), _ => None
     };
-    let data = match compact {
-        Some(data) => data,
-        None => rustymath::search::find_with(left.shape(), shape, |i, o| left.at(i).matches(&right.at(o), span))?,
-    };
+    let data = match compact { Some(data) => data, None => rustymath::search::find_with(left.shape(), shape, |i, o| left.at(i).matches(&right.at(o), span))? };
     if right.is_atom() { return Ok(Value::Number(Number::from_bool(data[0]))); }
     Value::booleans(shape.to_vec(), data).and_then(|v| v.with_layout(right.layout().clone())).described("invalid find result")
 }
@@ -174,9 +171,7 @@ pub(super) fn iota(right: &Value) -> Result<Value, Error> {
 
 /// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within comparison tolerance. Each item is `a+i` or `a-i` for a count `i`, which is exact, or a fixed integer of the width that fixed arguments give (`Numeric::for_values`), so the result's type follows `a`'s, or that fixed type. The distance is `b-a` between ordinary values, so it can't wrap, and two characters count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the type of `n`.
 pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    let real = |v: Value| match v {
-        Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(Error::domain("range needs real numbers or two characters"))
-    };
+    let real = |v: Value| match v { Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(Error::domain("range needs real numbers or two characters")) };
     let steps = |distance: &Number| -> Result<usize, Error> {
         let whole = distance.math_monad(Math::Magnitude)?.floor(Numeric::current())?;
         whole.nonnegative_integer().described("range needs a finite length")
@@ -184,7 +179,8 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span) -> Result<
     let mark = Numeric::for_values(left.into_iter().chain([right]))?.fixed.map_or(Mark::Exact, Mark::Fixed);
     let counts = |items: std::ops::Range<usize>| {
         let bound = items.end as u64;
-        generated_len(&[items.len()]).map_err(ErrorKind::from).and_then(|len| generated_items(vec![len], items.map(|i| i as u64), bound, mark)).described("range exceeds array limits")
+        generated_len(&[items.len()]).map_err(ErrorKind::from).and_then(|len| generated_items(vec![len], items.map(|i| i as u64), bound, mark))
+            .described("range exceeds array limits")
     };
     let Some(left) = left else {
         let n = real(right.at(0))?;
@@ -232,7 +228,9 @@ pub(super) fn where_indices(right: &Value) -> Result<Value, Error> {
             return built.described("invalid where result");
         }
     }
-    if let (Items::Compact(View::Integers(counts)), [_]) = (right.as_items(), right.shape()) { if right.keys(0).is_none() { return where_vector(&counts.widened()); } }
+    if let (Items::Compact(View::Integers(counts)), [_]) = (right.as_items(), right.shape()) {
+        if right.keys(0).is_none() { return where_vector(&counts.widened()); }
+    }
     let counts = right.as_items().nonnegative_integers().described("where needs nonnegative whole counts")?;
     let total = generated_len(&[counts.iter().fold(0usize, |total, &n| total.saturating_add(n))])?;
     if right.shape().len() == 1 && right.keys(0).is_none() {
@@ -249,7 +247,8 @@ pub(super) fn where_indices(right: &Value) -> Result<Value, Error> {
         };
         data.extend(std::iter::repeat_n(index, n));
     }
-    let prototype = if right.shape().len() == 1 { Value::integer(0) } else { Value::integers(vec![right.shape().len()], vec![0; right.shape().len()]).unwrap() };
+    let prototype =
+        if right.shape().len() == 1 { Value::integer(0) } else { Value::integers(vec![right.shape().len()], vec![0; right.shape().len()]).unwrap() };
     Value::from_parts(vec![data.len()], data, prototype).described("invalid where result")
 }
 
@@ -262,9 +261,7 @@ fn search_frame(haystack: &Value, needles: &Value) -> Result<(usize, Frame), Err
     Ok((rank, if split == 0 { Frame::Direct } else { Frame::Array(needles.layout().axes(0..split)) }))
 }
 
-fn search_cells<'a>(array: &'a Value, rank: usize) -> Result<Cells<'a>, Error> {
-    Cells::of(array, rank).described("invalid search cells")
-}
+fn search_cells<'a>(array: &'a Value, rank: usize) -> Result<Cells<'a>, Error> { Cells::of(array, rank).described("invalid search cells") }
 
 /// Where each cell of `needles` first matches a major cell of `haystack`, or the number of major cells when none does, and the frame that the needles form around those cells.
 fn search(haystack: &Value, needles: &Value, span: &Span) -> Result<(Vec<u32>, Frame), Error> {
@@ -302,10 +299,14 @@ fn element_order(left: &Value, right: &Value) -> Result<Option<Ordering>, crate:
         (Value::Carried(x), y) => return x.observed()?.map_or(Ok(None), |x| element_order(x, y)),
         (x, Value::Carried(y)) => return y.observed()?.map_or(Ok(None), |y| element_order(x, y)),
         (Value::Function(_) | Value::Operator(_), _) | (_, Value::Function(_) | Value::Operator(_)) => return Ok(None),
-        (Value::Number(x), Value::Number(y)) => x.grade_order(y), (Value::Character(x), Value::Character(y)) => x.cmp(y),
-        (Value::Number(_), Value::Character(_)) | (Value::Character(_), Value::Number(_)) => rustymath::characters::order_of_kinds(matches!(left, Value::Character(_)), matches!(right, Value::Character(_))),
-        (x @ Value::Array(_), y @ Value::Array(_)) => return array_order(x, y), (Value::Array(_), _) => Ordering::Greater,
-        (_, Value::Array(_)) => Ordering::Less
+        (Value::Number(x), Value::Number(y)) => x.grade_order(y),
+        (Value::Character(x), Value::Character(y)) => x.cmp(y),
+        (Value::Number(_), Value::Character(_)) | (Value::Character(_), Value::Number(_)) => {
+            rustymath::characters::order_of_kinds(matches!(left, Value::Character(_)), matches!(right, Value::Character(_)))
+        }
+        (x @ Value::Array(_), y @ Value::Array(_)) => return array_order(x, y),
+        (Value::Array(_), _) => Ordering::Greater,
+        (_, Value::Array(_)) => Ordering::Less,
     }))
 }
 
@@ -365,9 +366,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool) -> Result<V
         let (mut unordered, mut stopped) = (false, None);
         indices = (0..count as u32).collect();
         indices.sort_by(|&a, &b| match array_order(&cells[a as usize], &cells[b as usize]) {
-            Ok(Some(order)) => direction(order),
-            Ok(None) => { unordered = true; Ordering::Equal }
-            Err(stop) => { stopped = Some(stop); Ordering::Equal }
+            Ok(Some(order)) => direction(order), Ok(None) => { unordered = true; Ordering::Equal } Err(stop) => { stopped = Some(stop); Ordering::Equal }
         });
         if let Some(stop) = stopped { return Err(stop).map_err(Error::from); }
         if unordered { return Err(Error::domain("functions have no ordering")); }
@@ -380,7 +379,8 @@ pub(super) fn sort(right: &Value, down: bool, span: &Span) -> Result<Value, Erro
     if right.is_unit() { return Ok(right.clone()); }
     if right.shape().len() == 1 && right.keys(0).is_none() {
         if let Some(sorted) = compact_view(&Cells::Items(right)).map(|v| rustymath::search::view_sort(v, down)).transpose()?.flatten() {
-            return Value::from_buffer_at(right.shape(), sorted, right.fixed_width()).and_then(|v| v.with_layout(right.layout().clone())).described("invalid sort");
+            return Value::from_buffer_at(right.shape(), sorted, right.fixed_width()).and_then(|v| v.with_layout(right.layout().clone()))
+                .described("invalid sort");
         }
     }
     let order = Value::new(vec![1], vec![grade(None, right, down)?]).described("invalid sort")?;
@@ -397,7 +397,9 @@ pub(crate) fn ordered_cells(p: Primitive, y: &Value, k: usize) -> Option<Result<
     let (n, width) = (y.shape()[frame], crate::array::count(&y.shape()[frame + 1..]));
     let dims = [y.len() / width / n, n, 1];
     if !grade && k == 1 {
-        return rustymath::search::view_sort_along(view, dims, down).transpose().map(|sorted| Value::from_buffer_at(y.shape(), sorted?, y.fixed_width()).and_then(|v| v.with_layout(y.layout().clone())).described("invalid sort"));
+        return rustymath::search::view_sort_along(view, dims, down).transpose().map(|sorted| {
+            Value::from_buffer_at(y.shape(), sorted?, y.fixed_width()).and_then(|v| v.with_layout(y.layout().clone())).described("invalid sort")
+        });
     }
     if width > 16 { return None; }
     let columns: Vec<_> = (0..width).map(|j| (view, j, width)).collect();
@@ -450,7 +452,8 @@ pub(crate) fn searched_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: 
 }
 
 /// The items of each pair of cells, for the `cells` positions of a frame, from views of two arguments' compact items, each with its argument's shape and its cells' rank. An argument with no axes besides its cell's is the same in every cell, and gives its whole.
-fn cell_items<'a>((xs, x, xk): (View<'a>, &[usize], usize), (ys, y, yk): (View<'a>, &[usize], usize), cells: usize) -> impl Iterator<Item = (View<'a>, View<'a>)> {
+fn cell_items<'a>(
+    (xs, x, xk): (View<'a>, &[usize], usize), (ys, y, yk): (View<'a>, &[usize], usize), cells: usize) -> impl Iterator<Item = (View<'a>, View<'a>)> {
     let cell = |items: View<'a>, shape: &[usize], k: usize| {
         let (framed, n) = (shape.len() > k, crate::array::count(&shape[shape.len() - k..]));
         move |c: usize| if framed { items.slice(c * n..(c + 1) * n) } else { items }
@@ -466,7 +469,9 @@ pub(super) fn interval_index(left: &Value, right: &Value) -> Result<Value, Error
     let data = match compact_view(&boundaries).zip(compact_view(&values)).and_then(|(x, y)| rustymath::search::view_bins(x, y)) {
         Some(data) => data,
         None => {
-            let order = |x: &Value, y: &Value| match array_order(x, y) { Ok(Some(order)) => Ok(order), Ok(None) => Err(Error::domain("functions have no ordering")), Err(stop) => Err(stop).map_err(Error::from) };
+            let order = |x: &Value, y: &Value| match array_order(x, y) {
+                Ok(Some(order)) => Ok(order), Ok(None) => Err(Error::domain("functions have no ordering")), Err(stop) => Err(stop).map_err(Error::from)
+            };
             let mut data = Vec::with_capacity(values.len());
             for value in (0..values.len()).map(|i| values.get(i)) {
                 let (mut lo, mut hi) = (0, boundaries.len());

@@ -1,5 +1,5 @@
 //! `•image`'s decoding and encoding through the `image` and `png` crates, on platforms without ImageIO.
-use super::{ratio, rechannel_into, Format, Raster};
+use super::{Format, Raster, ratio, rechannel_into};
 use ::image::codecs::{jpeg::JpegEncoder, png::PngDecoder};
 use ::image::{AnimationDecoder, ExtendedColorType, ImageDecoder, ImageEncoder, ImageError};
 use std::io::Cursor;

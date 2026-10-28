@@ -1,9 +1,11 @@
 //! Compiled statements, stage 3 of `meta/calls.md`. On a dfn statement's first evaluation, the binder's recorder (`Recorder`) watches each decision the binder makes: each node it resolves, each move between its stack and its pending stack, and each reduction. The recorder follows the two stacks over what each item is read from, a register or a constant, and compiles an instruction for each node that needs evaluating and each reduction (`Op`). A move between the stacks compiles to nothing, and an instruction reads a constant where the recording keeps it. Each group or run in the statement is a level (`Level`), whose instructions sit inline between an `Enter` and an `Exit`, so one loop runs the whole statement. Later evaluations run the instructions (`Recording::evaluate`), which make the same calls in the same order with no category decisions, dot-access scans or node dispatch. A recording keeps each fact about what names hold that a level's binding read (`Fact`), and runs a level's instructions only while every fact still holds. A level that dot access, a subscript, a joiner or a run that starts with an operator rewrites also keeps the nodes that the binder walked. The binder's decisions depend only on categories, so a recording checks the category of each name, group and call result against the recorded one. Where one differs, the binder of the level that holds the instruction carries on from the state that the instruction's template records (`Template`, `Binder::resumed`).
-use super::*;
-use super::binder::{array_of, attached, bound_right, derived, function_of, narrow, split_call, strand, tails, train, Binder, Category, Derived, Entity, Resume, Term};
+use super::binder::{
+    Binder, Category, Derived, Entity, Resume, Term, array_of, attached, bound_right, derived, function_of, narrow, split_call, strand, tails, train,
+};
 use super::bindings::Address;
-use super::session::Within;
 use super::operators::train_call;
+use super::session::Within;
+use super::*;
 use std::{borrow::Cow, ops::Range, sync::OnceLock};
 
 /// The registers that a recording holds inline while it evaluates. A recording that needs more holds them on the heap.
@@ -11,7 +13,9 @@ const INLINE: usize = 8;
 
 /// A statement's compiled binder steps (`Op`), the constants they read, how many registers they use and where the result is, with the facts about what names hold that its binding read, the nodes that the binder walked where `Session::joined` or `Session::members` rewrote the statement, and its groups and runs (`Level`), whose steps sit inline.
 #[derive(Clone, Debug)]
-pub(crate) struct Recording { ops: Vec<Op>, constants: Vec<Entity>, registers: usize, result: Read, facts: Vec<Fact>, rewrite: Option<Box<[Node]>>, levels: Vec<Level> }
+pub(crate) struct Recording {
+    ops: Vec<Op>, constants: Vec<Entity>, registers: usize, result: Read, facts: Vec<Fact>, rewrite: Option<Box<[Node]>>, levels: Vec<Level>
+}
 
 /// What a statement's binding read about what a name holds (`Session::path_category`): the category of the binding at the name's address (`Bindings::address`), or of the field that `keys` reach from the array it holds, as it was when the statement recorded. Dot access, joiners, and runs that start with an operator or end in a dyadic one rewrite a statement by what names hold. A recording runs a level's instructions only while each of the level's facts still holds.
 #[derive(Clone, Debug, PartialEq)]
@@ -24,7 +28,8 @@ impl Fact {
     /// Whether what the name holds has a different category now.
     fn changed(&self, session: &Session) -> bool {
         let bindings = &session.bindings;
-        let now = if self.keys.is_empty() { Category::named(bindings.category_at(&self.address)) } else { Category::field(bindings.load(&self.address), &self.keys) };
+        let now =
+            if self.keys.is_empty() { Category::named(bindings.category_at(&self.address)) } else { Category::field(bindings.load(&self.address), &self.keys) };
         now != self.category
     }
 }
@@ -35,7 +40,10 @@ enum Read { Register(u32), Constant(u32) }
 
 /// A group or run inside a statement, whose instructions sit between an `Enter` and an `Exit`. Levels are numbered from 1 in the order of their `Enter`s, and 0 is the statement. `node` is the group's position among the nodes of the level that holds it, `parent`, and `exit` is the position of its `Exit`. `facts` and `rewrite` are the group's own, as a statement's are. Its value goes to register `to`, with the text `range`, checked against `check`. Where its category differs, `parent` resumes from `resume`. `kind` says how the binder evaluates it.
 #[derive(Clone, Debug)]
-struct Level { node: u32, parent: u32, exit: u32, facts: Vec<Fact>, rewrite: Option<Box<[Node]>>, to: u32, range: Range<u32>, check: Category, resume: Box<Template>, kind: Kind }
+struct Level {
+    node: u32, parent: u32, exit: u32, facts: Vec<Fact>, rewrite: Option<Box<[Node]>>, to: u32, range: Range<u32>, check: Category, resume: Box<Template>,
+    kind: Kind
+}
 
 impl Level {
     /// The nodes that the level's binder walks before any rewrite: its group's or run's, or its item's, found among `parent`, the nodes of the level that holds it.
@@ -78,9 +86,14 @@ enum Op {
     /// The end of a bracket item's level, whose value `from` holds. The value goes into its literal whatever its category.
     ExitItem { level: u32, from: Read },
     /// A call made at the function's text `span`: `function` on `argument`, with `left` bound as its left argument where one is given. `last` marks the statement's last reduction, made with nothing left to resolve or on either stack and no assignment in progress, which returns a call of a dfn or a derived function to the caller's loop in a dfn's last statement.
-    Call { level: u32, left: Option<Read>, function: Read, argument: Read, to: u32, span: Span, range: Range<u32>, result: Category, last: bool, resume: Box<Template> },
+    Call {
+        level: u32, left: Option<Read>, function: Read, argument: Read, to: u32, span: Span, range: Range<u32>, result: Category, last: bool,
+        resume: Box<Template>
+    },
     /// A call, as `Call` makes it, of a group's train, whose register `function` holds its tines (`Recording::call_tines`). A train's call is never a tail call.
-    CallTines { level: u32, left: Option<Read>, function: Read, argument: Read, to: u32, span: Span, range: Range<u32>, result: Category, resume: Box<Template> },
+    CallTines {
+        level: u32, left: Option<Read>, function: Read, argument: Read, to: u32, span: Span, range: Range<u32>, result: Category, resume: Box<Template>
+    },
     /// An operator applied to its operand at `span`: a derived function, or the call that a power, `ᵀ` or `ₓ` on an array stands for.
     Derive { level: u32, operand: Read, operator: Read, to: u32, span: Span, range: Range<u32>, result: Category, resume: Box<Template> },
     /// An assignment through `Session::assign` to the target before `←`, the node at `node` among `level`'s nodes: of `value`, or with no value, `a(f)←`'s update (`Session::modify_monadic`). A target that is a plain name stores in the frame's slot for it, `local`, where it has one. `run` counts the nodes from the start of the assignment's run to `←`, and `target` those of its target. A target of more than one node must start where it started when recorded, and `level`'s binder resumes from `resume` where it doesn't. The value goes to register `to`, shy, with the text `range`, which is `←`'s.
@@ -97,7 +110,11 @@ enum Op {
 
 impl Op {
     /// Whether the step evaluates a node or makes a call, so that its result can differ between evaluations. Facts concern names and groups, and a name, or a group that holds one, compiles to an instruction that evaluates it.
-    fn computes(&self) -> bool { matches!(self, Op::Resolve { .. } | Op::Array { .. } | Op::Enter { .. } | Op::Call { .. } | Op::CallTines { .. } | Op::Derive { .. } | Op::Assign { .. }) }
+    fn computes(&self) -> bool {
+        matches!(
+            self, Op::Resolve { .. } | Op::Array { .. } | Op::Enter { .. } | Op::Call { .. } | Op::CallTines { .. } | Op::Derive { .. } | Op::Assign { .. }
+        )
+    }
 }
 
 /// A reduction that the binder reports to its recorder. A call reports once the binder has made it (`Recorder::called`).
@@ -126,7 +143,9 @@ struct Mark { ops: usize, constants: usize, levels: usize, registers: u32, free:
 
 /// What the recorder keeps for one level as the binder walks it: the level's number, what the binder's two stacks hold, the binder's cursor, the `←` of an assignment it is making, whether a step was outside the subset that recordings cover, the facts about what names hold that its binding reads, and the nodes it walks where `Session::joined` or `Session::members` rewrote them.
 #[derive(Default)]
-struct Walk { level: u32, stack: Vec<Read>, pending: Vec<Read>, cursor: u32, assignment: Option<u32>, failed: bool, facts: Vec<Fact>, rewrite: Option<Box<[Node]>> }
+struct Walk {
+    level: u32, stack: Vec<Read>, pending: Vec<Read>, cursor: u32, assignment: Option<u32>, failed: bool, facts: Vec<Fact>, rewrite: Option<Box<[Node]>>
+}
 
 /// A level that the recorder has entered: what it evaluates, its node's position among the nodes of the level that holds it, and how far the recording had got before it.
 struct Open { kind: Kind, node: u32, start: Mark }
@@ -144,10 +163,19 @@ struct Unkeyed { walk: Walk, open: Open, from: Read, constant: Option<Value>, co
 /// What the binder's recorder keeps while the binder evaluates a statement: the instructions, constants and levels so far, the registers in use and free, the leaf just resolved until the binder shifts or holds it, the level being recorded (`Walk`), each level that holds it, with how the level it holds opened, and each bracket literal whose pieces it is recording, innermost last. Each level's instructions go straight into the statement's, between the level's `Enter` and its `Exit`, as the binder evaluates the level. `call` marks a call that `reduce` has returned and not yet made, with `derive` where a superscript on an array gave it.
 #[derive(Default)]
 pub(super) struct Recorder {
-    ops: Vec<Op>, constants: Vec<Entity>, levels: Vec<Option<Level>>, registers: u32, free: Vec<u32>,
+    ops: Vec<Op>,
+    constants: Vec<Entity>,
+    levels: Vec<Option<Level>>,
+    registers: u32,
+    free: Vec<u32>,
     /// The registers that hold a group's train as its tines (`Term::Tines`), until a register is given out again.
     trains: Vec<u32>,
-    held: Option<(Leaf, Range<u32>)>, pub(super) call: bool, pub(super) derive: bool, walk: Walk, outer: Vec<(Walk, Open)>, literals: Vec<Literal>,
+    held: Option<(Leaf, Range<u32>)>,
+    pub(super) call: bool,
+    pub(super) derive: bool,
+    walk: Walk,
+    outer: Vec<(Walk, Open)>,
+    literals: Vec<Literal>,
 }
 
 impl Recorder {
@@ -182,7 +210,7 @@ impl Recorder {
     /// Holds the leaf for the group or run `node`, which gave `bound`, once its level ends. A constant group or run holds the array or function it gave, and its instructions go. Any other level's `Exit` places its value in a register.
     pub(super) fn group(&mut self, node: &Node, bound: &Bound) {
         let (walk, open, from) = self.exit();
-        let Some(from) = from else { self.walk.failed = true; return };
+        let Some(from) = from else { self.walk.failed = true; return; };
         let range = narrow(&node.span.range);
         // A run that ends in a dyadic operator also reads its right operand, which must be a constant too.
         let constant = !matches!(open.kind, Kind::Seeded(Read::Register(_))) && !self.computes(&open);
@@ -217,10 +245,17 @@ impl Recorder {
         match from {
             Some(from) if !literal.failed && in_order => match within {
                 Within::Item if constant => match value {
-                    Some(v) => { self.truncate(open.start); let read = self.constant(Term::Binding(Binding::Value(v)), text); literal.members.push(Member::Read(read)) }
+                    Some(v) => {
+                        self.truncate(open.start);
+                        let read = self.constant(Term::Binding(Binding::Value(v)), text);
+                        literal.members.push(Member::Read(read))
+                    }
                     None => literal.failed = true,
                 },
-                Within::Item => { let to = self.close(walk, &open, from, text, Category::Value); literal.members.push(Member::Read(Read::Register(to))) }
+                Within::Item => {
+                    let to = self.close(walk, &open, from, text, Category::Value);
+                    literal.members.push(Member::Read(Read::Register(to)))
+                }
                 Within::Value { colon, named } => {
                     let unkeyed = Unkeyed { walk, open, from, constant: value.filter(|_| constant), colon, text };
                     match named { Some(key) => self.keyed(&mut literal, unkeyed, key), None => literal.unkeyed = Some(unkeyed) }
@@ -241,7 +276,11 @@ impl Recorder {
         let Unkeyed { walk, mut open, from, constant, colon, text } = unkeyed;
         let Kind::Item { cell, key: slot, .. } = &mut open.kind else { unreachable!("a piece's level is an item") };
         let member = match constant {
-            Some(value) => { let cell = *cell as usize; self.truncate(open.start); Member::Keyed { cell, colon, key, value, text } }
+            Some(value) => {
+                let cell = *cell as usize;
+                self.truncate(open.start);
+                Member::Keyed { cell, colon, key, value, text }
+            }
             None => {
                 self.constants.push(Entity::new(Term::Binding(Binding::Value(key)), text.clone(), false, None));
                 *slot = Some(Keyed { constant: self.constants.len() as u32 - 1, colon: colon as u32 });
@@ -256,7 +295,10 @@ impl Recorder {
         let check = Category::bound(value);
         let leaf = match value {
             _ if literal.failed || literal.unkeyed.is_some() => { self.truncate(literal.start); Leaf::Resolve(check, None, false) }
-            Binding::Value(v) if literal.members.iter().all(|member| !matches!(member, Member::Read(Read::Register(_)))) => { self.truncate(literal.start); Leaf::Constant(Term::Binding(Binding::Value(v.clone()))) }
+            Binding::Value(v) if literal.members.iter().all(|member| !matches!(member, Member::Read(Read::Register(_)))) => {
+                self.truncate(literal.start);
+                Leaf::Constant(Term::Binding(Binding::Value(v.clone())))
+            }
             _ => {
                 let mut pieces = Vec::with_capacity(literal.members.len());
                 for member in literal.members {
@@ -273,7 +315,7 @@ impl Recorder {
     }
     /// Compiles the held leaf, which the binder shifted onto its stack, or held on its pending stack when `shift` is false.
     pub(super) fn next(&mut self, shift: bool) {
-        let Some((leaf, range)) = self.held.take() else { self.walk.failed = true; return };
+        let Some((leaf, range)) = self.held.take() else { self.walk.failed = true; return; };
         let read = match leaf {
             Leaf::Constant(constant) => self.constant(constant, range),
             Leaf::Resolve(check, address, take) => {
@@ -298,13 +340,16 @@ impl Recorder {
     /// Notes that the top of the stack goes back to the pending stack.
     pub(super) fn pend(&mut self) { match self.walk.stack.pop() { Some(read) => self.walk.pending.push(read), None => self.walk.failed = true } }
     /// Notes that the binder reads `←`, at `cursor` among the level's nodes, which starts an assignment.
-    pub(super) fn assigning(&mut self, cursor: usize) { self.walk.cursor = cursor as u32; self.walk.assignment = Some(self.walk.cursor); }
+    pub(super) fn assigning(&mut self, cursor: usize) {
+        self.walk.cursor = cursor as u32;
+        self.walk.assignment = Some(self.walk.cursor);
+    }
     /// Compiles the assignment that the binder made: of the value on top of the stack, or with `monadic`, `a(f)←`'s update. `run` counts the nodes from the start of the assignment's run to `←`, and the binder carries on from `cursor`, where its target starts. `local` is the slot of a target that is a plain local name. The value goes to the pending stack, shy, with the text `range`.
     pub(super) fn assigned(&mut self, run: usize, cursor: usize, monadic: bool, local: Option<u32>, range: Range<u32>) {
         let resume = self.template(None);
-        let Some(node) = self.walk.assignment.take() else { self.walk.failed = true; return };
+        let Some(node) = self.walk.assignment.take() else { self.walk.failed = true; return; };
         let value = if monadic { None } else {
-            let Some(value) = self.walk.stack.pop() else { self.walk.failed = true; return };
+            let Some(value) = self.walk.stack.pop() else { self.walk.failed = true; return; };
             self.release(value);
             Some(value)
         };
@@ -316,7 +361,7 @@ impl Recorder {
     }
     /// Compiles `reduction` of the top two items of the stack. A drop compiles to nothing, and a derive or a bind on constants to a constant.
     pub(super) fn reduce(&mut self, reduction: Reduction) {
-        let (Some(left), Some(right)) = (self.walk.stack.pop(), self.walk.stack.pop()) else { self.walk.failed = true; return };
+        let (Some(left), Some(right)) = (self.walk.stack.pop(), self.walk.stack.pop()) else { self.walk.failed = true; return; };
         let read = match reduction {
             Reduction::Drop => { self.release(left); right }
             Reduction::DropRight => { self.release(right); left }
@@ -324,7 +369,10 @@ impl Recorder {
             Reduction::Attach => self.op(left, right, |left, right, to| Op::Attach { left, right, to }),
             Reduction::Train => self.op(left, right, |left, right, to| Op::Train { left, right, to }),
             Reduction::BindRight(bound) => match (left, right) {
-                (Read::Constant(c), Read::Constant(_)) => { let range = self.constants[c as usize].range.clone(); self.constant(Term::Binding(Binding::Operator(bound)), range) }
+                (Read::Constant(c), Read::Constant(_)) => {
+                    let range = self.constants[c as usize].range.clone();
+                    self.constant(Term::Binding(Binding::Operator(bound)), range)
+                }
                 _ => self.op(left, right, |operator, operand, to| Op::BindRight { operator, operand, to }),
             },
             Reduction::Derive { span, range, result, value } => match (left, right, value) {
@@ -338,11 +386,10 @@ impl Recorder {
     pub(super) fn called(&mut self, span: Span, result: Category, last: bool) {
         if !std::mem::take(&mut self.call) { self.walk.failed = true; return; }
         let range = narrow(&span.range);
-        let (Some(left), Some(right)) = (self.walk.stack.pop(), self.walk.stack.pop()) else { self.walk.failed = true; return };
+        let (Some(left), Some(right)) = (self.walk.stack.pop(), self.walk.stack.pop()) else { self.walk.failed = true; return; };
         let read = if std::mem::take(&mut self.derive) { self.derive(left, right, span, range, result) } else {
             let (bound, function) = match self.ops.last() {
-                Some(&Op::Attach { left: x, right: f, to }) if left == Read::Register(to) => { self.ops.pop(); (Some(x), f) }
-                _ => (None, left),
+                Some(&Op::Attach { left: x, right: f, to }) if left == Read::Register(to) => { self.ops.pop(); (Some(x), f) } _ => (None, left)
             };
             self.release(left);
             self.release(right);
@@ -362,11 +409,12 @@ impl Recorder {
     pub(super) fn finish(self) -> Option<Recording> {
         let result = self.result(&self.walk)?;
         let levels = self.levels.into_iter().collect::<Option<Vec<_>>>()?;
-        Some(Recording { ops: self.ops, constants: self.constants, registers: self.registers as usize, result, facts: self.walk.facts, rewrite: self.walk.rewrite, levels })
+        Some(Recording { ops: self.ops, constants: self.constants, registers: self.registers as usize, result, facts: self.walk.facts,
+            rewrite: self.walk.rewrite, levels })
     }
     /// Where the level that `walk` recorded has its value, unless a step was outside the subset that recordings cover, or the binder left something unfinished.
     fn result(&self, walk: &Walk) -> Option<Read> {
-        if walk.failed || self.held.is_some() || self.call || walk.assignment.is_some() || !walk.pending.is_empty() { return None }
+        if walk.failed || self.held.is_some() || self.call || walk.assignment.is_some() || !walk.pending.is_empty() { return None; }
         match walk.stack[..] { [result] => Some(result), _ => None }
     }
     /// Starts recording a level of kind `kind`, for the node at the cursor of the level being recorded, whose binder starts with `stack` on its stack. The level's instructions follow its `Enter`.
@@ -395,10 +443,13 @@ impl Recorder {
         self.release(from);
         // An item's value goes into its literal whatever its category, so an item's level resumes nothing around it.
         let resume = self.template((!item).then_some(Read::Register(to)));
-        self.levels[level as usize - 1] = Some(Level { node: open.node, parent: self.walk.level, exit: self.ops.len() as u32 - 1, facts: walk.facts, rewrite: walk.rewrite, to, range, check, resume, kind: open.kind });
+        self.levels[level as usize - 1] = Some(Level { node: open.node, parent: self.walk.level, exit: self.ops.len() as u32 - 1, facts: walk.facts,
+            rewrite: walk.rewrite, to, range, check, resume, kind: open.kind });
         to
     }
-    fn mark(&self) -> Mark { Mark { ops: self.ops.len(), constants: self.constants.len(), levels: self.levels.len(), registers: self.registers, free: self.free.clone() } }
+    fn mark(&self) -> Mark {
+        Mark { ops: self.ops.len(), constants: self.constants.len(), levels: self.levels.len(), registers: self.registers, free: self.free.clone() }
+    }
     /// Drops the instructions, constants, levels and registers that the recording gained after `mark`: a constant group's, or those of a literal that falls back.
     fn truncate(&mut self, mark: Mark) {
         self.ops.truncate(mark.ops);
@@ -441,7 +492,8 @@ impl Recorder {
     /// The binder's state now, with `next` just resolved, or with no new leaf, as where it makes an assignment.
     fn template(&self, next: Option<Read>) -> Box<Template> {
         let walk = &self.walk;
-        Box::new(Template { stack: walk.stack.as_slice().into(), pending: walk.pending.as_slice().into(), cursor: walk.cursor, next, after_call: false, assignment: walk.assignment })
+        Box::new(Template { stack: walk.stack.as_slice().into(), pending: walk.pending.as_slice().into(), cursor: walk.cursor, next, after_call: false,
+            assignment: walk.assignment })
     }
     /// The binder's state once it has pushed the result in register `to`.
     fn pushed(&self, to: u32) -> Box<Template> {
@@ -456,14 +508,15 @@ fn settled(entity: Entity, source: &Arc<Source>) -> Result<Entity, Error> {
     let (range, shy) = (entity.range.clone(), entity.shy);
     Ok(match entity.term {
         Term::Train(tines) => Entity::new(Term::Tines(tines), range, shy, None),
-        Term::Strand(_) | Term::Left(..) => Entity::of(entity.value(source)?, range, shy),
-        _ => entity,
+        Term::Strand(_) | Term::Left(..) => Entity::of(entity.value(source)?, range, shy), _ => entity
     })
 }
 
 /// The entity in register `r`, which the read empties.
 #[inline(always)]
-fn taken(registers: &mut [Option<Entity>], r: u32) -> Entity { registers[r as usize].take().expect("an instruction reads a register that an earlier one wrote") }
+fn taken(registers: &mut [Option<Entity>], r: u32) -> Entity {
+    registers[r as usize].take().expect("an instruction reads a register that an earlier one wrote")
+}
 
 /// Writes `entity` to register `to`, and gives whether its category differs from the recorded `check`.
 #[inline(always)]
@@ -487,11 +540,9 @@ impl Recording {
         crate::execution::check().at(&nodes[0].span)?;
         let mut inline: [Option<Entity>; INLINE];
         let mut heap: Vec<Option<Entity>>;
-        let registers: &mut [Option<Entity>] = if self.registers <= INLINE { inline = Default::default(); &mut inline } else {
-            heap = std::iter::repeat_with(|| None).take(self.registers).collect();
-            &mut heap
-        };
-        if self.levels.is_empty() { return self.execute(session, tail, registers, nodes) }
+        let registers: &mut [Option<Entity>] = if self.registers <= INLINE { inline = Default::default(); &mut inline }
+        else { heap = std::iter::repeat_with(|| None).take(self.registers).collect(); &mut heap };
+        if self.levels.is_empty() { return self.execute(session, tail, registers, nodes); }
         // An error inside a level leaves the counts of its open levels behind, so the depth goes back to what it was.
         let depth = session.depth.get();
         let result = self.execute(session, tail, registers, nodes);
@@ -501,7 +552,7 @@ impl Recording {
 
     /// The nodes of level `level`: the statement's, or a nested level's, found from the statement through the levels that hold it. A level that a rewrite changed has the rewrite's nodes.
     fn nodes<'p>(&'p self, level: u32, statement: &'p [Node]) -> &'p [Node] {
-        if level == 0 { return statement }
+        if level == 0 { return statement; }
         let held = &self.levels[level as usize - 1];
         held.rewrite.as_deref().unwrap_or_else(|| held.inner(self.nodes(held.parent, statement)))
     }
@@ -514,20 +565,25 @@ impl Recording {
             // A step that passes its check carries on with the next. Otherwise the binder takes its level over.
             let (level, over) = match op {
                 Op::Resolve { level, node, address, take, to, range, check, resume } => {
-                    let found = address.as_ref().and_then(|address| if *take { session.bindings.take_at(address).or_else(|| session.bindings.load(address)) } else { session.bindings.load(address) });
-                    let value = match found { Some(value) => session.read_binding(value, || address.as_ref().and_then(|a| session.bindings.place_of(a)))?, None => session.resolve(&self.nodes(*level, statement)[*node as usize])?.value };
-                    if !put(registers, *to, Entity::of(value, range.clone(), false), *check) { continue }
+                    let found = address.as_ref().and_then(|address| {
+                        if *take { session.bindings.take_at(address).or_else(|| session.bindings.load(address)) } else { session.bindings.load(address) }
+                    });
+                    let value = match found {
+                        Some(value) => session.read_binding(value, || address.as_ref().and_then(|a| session.bindings.place_of(a)))?,
+                        None => session.resolve(&self.nodes(*level, statement)[*node as usize])?.value,
+                    };
+                    if !put(registers, *to, Entity::of(value, range.clone(), false), *check) { continue; }
                     (*level, Over::Failed(resume))
                 }
                 Op::Array { level, node, pieces, to, range, check, resume } => {
-                    if !self.array(registers, &self.nodes(*level, statement)[*node as usize], pieces, *to, range, *check)? { continue }
+                    if !self.array(registers, &self.nodes(*level, statement)[*node as usize], pieces, *to, range, *check)? { continue; }
                     (*level, Over::Failed(resume))
                 }
                 Op::Enter { level } => {
                     let held = &self.levels[*level as usize - 1];
                     // A level counts toward the depth limit until it exits, as `Session::nested` counts what the binder evaluates.
-                    if !session.deeper() { return Err(depth_error(&held.inner(self.nodes(held.parent, statement))[0].span)) }
-                    if !held.facts.iter().any(|fact| fact.changed(session)) { continue }
+                    if !session.deeper() { return Err(depth_error(&held.inner(self.nodes(held.parent, statement))[0].span)); }
+                    if !held.facts.iter().any(|fact| fact.changed(session)) { continue; }
                     (*level, Over::Changed)
                 }
                 Op::Exit { level, from } => {
@@ -535,13 +591,17 @@ impl Recording {
                     let mut entity = settled(self.owned(registers, *from), source)?;
                     (entity.range, entity.shy) = (held.range.clone(), false);
                     // A value of the recorded category passes `Binder::group_bound`'s check, as it did when recorded: the level's facts hold, so its members are the same.
-                    if entity.category() == held.check { registers[held.to as usize] = Some(entity); session.ascend(); continue }
+                    if entity.category() == held.check {
+                        registers[held.to as usize] = Some(entity);
+                        session.ascend();
+                        continue;
+                    }
                     (*level, Over::Exited(entity))
                 }
                 Op::ExitItem { level, from } => {
                     let held = &self.levels[*level as usize - 1];
                     self.item_exit(session, registers, held, *from, self.nodes(held.parent, statement), source)?;
-                    continue
+                    continue;
                 }
                 Op::Call { level, left, function, argument, to, span, range, result, last, resume } => {
                     let (x, f) = match left {
@@ -550,15 +610,16 @@ impl Recording {
                     };
                     let y = self.argument(registers, *argument, source)?;
                     if tail && *last && tails(&f) {
-                        return Ok(Step::Tail(Application { function: f.into_owned(), left: x.map(Cow::into_owned), right: y.into_owned(), span: span.clone(), unshy: false, expression: None }));
+                        return Ok(Step::Tail(Application { function: f.into_owned(), left: x.map(Cow::into_owned), right: y.into_owned(), span: span.clone(),
+                            unshy: false, expression: None }));
                     }
                     let bound = f.call_with(x, y, span)?;
-                    if !put(registers, *to, Entity::of(bound.value, range.clone(), bound.shy), *result) { continue }
+                    if !put(registers, *to, Entity::of(bound.value, range.clone(), bound.shy), *result) { continue; }
                     (*level, Over::Failed(resume))
                 }
                 Op::CallTines { level, left, function, argument, to, span, range, result, resume } => {
                     let bound = self.call_tines(registers, *left, *function, *argument, span, source)?;
-                    if !put(registers, *to, Entity::of(bound.value, range.clone(), bound.shy), *result) { continue }
+                    if !put(registers, *to, Entity::of(bound.value, range.clone(), bound.shy), *result) { continue; }
                     (*level, Over::Failed(resume))
                 }
                 Op::Derive { level, operand, operator, to, span, range, result, resume } => {
@@ -567,7 +628,7 @@ impl Recording {
                         Derived::Term(binding) => Entity::of(binding, range.clone(), false),
                         Derived::Call(f, x, y) => { let bound = f.call(x.as_ref(), &y, span)?; Entity::of(bound.value, range.clone(), bound.shy) }
                     };
-                    if !put(registers, *to, entity, *result) { continue }
+                    if !put(registers, *to, entity, *result) { continue; }
                     (*level, Over::Failed(resume))
                 }
                 Op::Assign { level, value, local, node, run, target, to, range, resume } => {
@@ -580,33 +641,36 @@ impl Recording {
                         let value = value.map(|value| self.value(registers, value, source)).transpose()?;
                         let value = session.assigned(&nodes[cursor..i], value, *local, &nodes[i].span)?;
                         registers[*to as usize] = Some(Entity::of(value, range.clone(), true));
-                        continue
+                        continue;
                     }
                 }
                 Op::BindRight { operator, operand, to } => {
                     let operator = self.owned(registers, *operator);
                     let range = operator.range.clone();
-                    registers[*to as usize] = Some(Entity::of(Binding::Operator(bound_right(operator.value(source)?, self.value(registers, *operand, source)?)), range, false));
-                    continue
+                    registers[*to as usize] =
+                        Some(Entity::of(Binding::Operator(bound_right(operator.value(source)?, self.value(registers, *operand, source)?)), range, false));
+                    continue;
                 }
                 Op::Strand { left, right, to } => {
                     let (items, _, range) = strand(self.owned(registers, *left), self.owned(registers, *right), source)?;
                     registers[*to as usize] = Some(Entity::new(Term::Strand(items), range, false, None));
-                    continue
+                    continue;
                 }
                 Op::Attach { left, right, to } => {
                     let (x, f, range) = attached(self.read(registers, *left), self.read(registers, *right), source)?;
                     registers[*to as usize] = Some(Entity::new(Term::Left(x.into_owned(), f.into_owned()), range, false, None));
-                    continue
+                    continue;
                 }
                 Op::Train { left, right, to } => {
                     let (left, right) = (self.read(registers, *left), self.read(registers, *right));
                     let range = left.range.clone();
                     registers[*to as usize] = Some(Entity::new(Term::Train(train(left, right, source)?), range, false, None));
-                    continue
+                    continue;
                 }
             };
-            match self.taken_over(level, over, session, tail, registers, statement)? { Resumed::Continue(next) => ops = self.ops[next..].iter(), Resumed::Done(step) => return Ok(step) }
+            match self.taken_over(level, over, session, tail, registers, statement)? {
+                Resumed::Continue(next) => ops = self.ops[next..].iter(), Resumed::Done(step) => return Ok(step)
+            }
         }
         let shy = match self.result { Read::Register(r) => registers[r as usize].as_ref().is_some_and(|entity| entity.shy), Read::Constant(_) => false };
         Ok(Step::Done(Bound { value: self.value(registers, self.result, source)?, shy, expression: None }))
@@ -623,8 +687,7 @@ impl Recording {
                     Cow::Owned(Entity { term: Term::Entries(more), .. }) => entries.extend(more),
                     Cow::Borrowed(Entity { term: Term::Entries(more), .. }) => entries.extend_from_slice(more),
                     Cow::Owned(Entity { term: Term::Binding(Binding::Value(value)), .. }) => entries.push((None, value)),
-                    Cow::Borrowed(Entity { term: Term::Binding(Binding::Value(value)), .. }) => entries.push((None, value.clone())),
-                    _ => {}
+                    Cow::Borrowed(Entity { term: Term::Binding(Binding::Value(value)), .. }) => entries.push((None, value.clone())), _ => {}
                 }
             }
             Session::record_literal(node, entries)?
@@ -638,7 +701,8 @@ impl Recording {
 
     /// Ends the level of a bracket item, `held`, whose value `from` holds: the value goes into register `held.to` at once, prepared for its literal (`Recording::prepared`), so the items act and fail in order. `parent` holds the nodes of the level that holds the literal.
     #[inline(never)]
-    fn item_exit(&self, session: &Session, registers: &mut [Option<Entity>], held: &Level, from: Read, parent: &[Node], source: &Arc<Source>) -> Result<(), Error> {
+    fn item_exit(
+        &self, session: &Session, registers: &mut [Option<Entity>], held: &Level, from: Read, parent: &[Node], source: &Arc<Source>) -> Result<(), Error> {
         let value = self.value(registers, from, source)?;
         registers[held.to as usize] = Some(self.prepared(session, held, parent, value)?);
         session.ascend();
@@ -661,7 +725,9 @@ impl Recording {
 
     /// The call of a group's train, which register `function` holds as its tines: by its tines where `train_call` can call them in place, and otherwise as its function. A level that the binder took over holds its train as a function, which calls as any function does. A train's call is never a tail call.
     #[inline(never)]
-    fn call_tines(&self, registers: &mut [Option<Entity>], left: Option<Read>, function: Read, argument: Read, span: &Span, source: &Arc<Source>) -> Result<Bound, Error> {
+    fn call_tines(
+        &self, registers: &mut [Option<Entity>], left: Option<Read>, function: Read, argument: Read, span: &Span, source: &Arc<Source>
+    ) -> Result<Bound, Error> {
         let x = match left { Some(x) => Some(self.argument(registers, x, source)?), None => None };
         let f = self.read(registers, function);
         let y = self.argument(registers, argument, source)?;
@@ -673,22 +739,25 @@ impl Recording {
     /// The entity that `read` gives: a register's, which it takes, or a constant, which it borrows.
     #[inline(always)]
     fn read<'p>(&'p self, registers: &mut [Option<Entity>], read: Read) -> Cow<'p, Entity> {
-        match read {
-            Read::Register(r) => Cow::Owned(taken(registers, r)),
-            Read::Constant(c) => Cow::Borrowed(&self.constants[c as usize]),
-        }
+        match read { Read::Register(r) => Cow::Owned(taken(registers, r)), Read::Constant(c) => Cow::Borrowed(&self.constants[c as usize]) }
     }
 
     /// `read`'s entity as an argument, as `array_of` gives it, with a register's entity taken without a `Cow` around it.
     #[inline(always)]
     fn argument<'p>(&'p self, registers: &mut [Option<Entity>], read: Read, source: &Arc<Source>) -> Result<Cow<'p, Value>, Error> {
-        match read { Read::Register(r) => taken(registers, r).array(source).map(Cow::Owned), Read::Constant(c) => array_of(Cow::Borrowed(&self.constants[c as usize]), source) }
+        match read {
+            Read::Register(r) => taken(registers, r).array(source).map(Cow::Owned),
+            Read::Constant(c) => array_of(Cow::Borrowed(&self.constants[c as usize]), source),
+        }
     }
 
     /// `read`'s entity as a called function, as `function_of` gives it, with a register's entity taken without a `Cow` around it.
     #[inline(always)]
     fn called<'p>(&'p self, registers: &mut [Option<Entity>], read: Read, source: &Arc<Source>) -> Result<Cow<'p, Function>, Error> {
-        match read { Read::Register(r) => taken(registers, r).function(source).map(Cow::Owned), Read::Constant(c) => function_of(Cow::Borrowed(&self.constants[c as usize]), source) }
+        match read {
+            Read::Register(r) => taken(registers, r).function(source).map(Cow::Owned),
+            Read::Constant(c) => function_of(Cow::Borrowed(&self.constants[c as usize]), source),
+        }
     }
 
     /// The entity that `read` gives, owned: a register's, which the read empties, or a copy of a constant.
@@ -702,7 +771,9 @@ impl Recording {
     fn value(&self, registers: &mut [Option<Entity>], read: Read, source: &Arc<Source>) -> Result<Binding, Error> {
         match read {
             Read::Register(r) => taken(registers, r).value(source),
-            Read::Constant(c) => match &self.constants[c as usize] { Entity { term: Term::Binding(value), .. } => Ok(value.clone()), constant => constant.clone().value(source) },
+            Read::Constant(c) => match &self.constants[c as usize] {
+                Entity { term: Term::Binding(value), .. } => Ok(value.clone()), constant => constant.clone().value(source)
+            },
         }
     }
 
@@ -713,13 +784,17 @@ impl Recording {
         let stack = template.stack.iter().map(&mut entity).collect();
         let pending = template.pending.iter().map(&mut entity).collect();
         let next = template.next.as_ref().map(&mut entity);
-        Binder::resumed(nodes, session, tail, Resume { stack, pending, cursor: template.cursor as usize, next, after_call: template.after_call, assignment: template.assignment.map(|at| at as usize) })
+        Binder::resumed(
+            nodes, session, tail, Resume { stack, pending, cursor: template.cursor as usize, next, after_call: template.after_call,
+                assignment: template.assignment.map(|at| at as usize) })
     }
 
     /// Carries on once the binder takes level `level` over, as `over` says why: from a failed step's template, from the group's start where a fact no longer holds, or with the group's value where its category differs. Where the group's value has the recorded category, it goes to the level's register, and the steps after its `Exit` carry on. Otherwise the level that holds it resumes from its template, and so on out to the statement, whose step ends the evaluation.
     #[cold]
     #[inline(never)]
-    fn taken_over<'p>(&'p self, mut level: u32, over: Over<'_>, session: &Session, tail: bool, registers: &mut [Option<Entity>], statement: &'p [Node]) -> Result<Resumed, Error> {
+    fn taken_over<'p>(
+        &'p self, mut level: u32, over: Over<'_>, session: &Session, tail: bool, registers: &mut [Option<Entity>], statement: &'p [Node]
+    ) -> Result<Resumed, Error> {
         let mut step = match over {
             Over::Failed(template) => self.resumed(template, self.nodes(level, statement), session, tail && level == 0, registers)?,
             Over::Changed => {
@@ -764,7 +839,11 @@ impl Session {
     pub(super) fn statement_step(&self, slot: Option<&OnceLock<Option<Recording>>>, nodes: &[Node], tail: bool) -> Result<Step, Error> {
         if let Some(recording) = compiled(slot) { return recording.evaluate(nodes, self, tail); }
         match slot {
-            Some(slot) if slot.get().is_none() => { let (step, recorded) = Binder::recorded(nodes, self, tail)?; let _ = slot.set(recorded); Ok(step) }
+            Some(slot) if slot.get().is_none() => {
+                let (step, recorded) = Binder::recorded(nodes, self, tail)?;
+                let _ = slot.set(recorded);
+                Ok(step)
+            }
             _ => Binder::evaluate(nodes, self, tail),
         }
     }

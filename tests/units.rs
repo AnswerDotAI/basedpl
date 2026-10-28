@@ -37,11 +37,17 @@ fn modified(path: &Path) -> SystemTime { fs::metadata(path).and_then(|m| m.modif
 /// The object files of the newest rustymath rlib in this test's target directory, which basedpl's library links, each with its name.
 fn rustymath_units() -> Vec<(String, Vec<u8>)> {
     let deps = std::env::current_exe().unwrap().parent().unwrap().to_path_buf();
-    let rlib = |p: &PathBuf| p.file_name().is_some_and(|n| { let n = n.to_string_lossy(); n.starts_with("librustymath-") && n.ends_with(".rlib") });
+    let rlib = |p: &PathBuf| {
+        p.file_name().is_some_and(|n| {
+            let n = n.to_string_lossy();
+            n.starts_with("librustymath-") && n.ends_with(".rlib")
+        })
+    };
     let Some(path) = fs::read_dir(deps).into_iter().flatten().flatten().map(|e| e.path()).filter(rlib).max_by_key(|p| modified(p)) else { return Vec::new() };
     let data = fs::read(path).unwrap();
     let archive = object::read::archive::ArchiveFile::parse(&*data).unwrap();
-    archive.members().flatten().filter(|m| m.name().ends_with(b".o")).map(|m| (format!("rustymath {}", String::from_utf8_lossy(m.name()).split('.').nth(1).unwrap_or_default()), m.data(&*data).unwrap().to_vec())).collect()
+    archive.members().flatten().filter(|m| m.name().ends_with(b".o"))
+        .map(|m| (format!("rustymath {}", String::from_utf8_lossy(m.name()).split('.').nth(1).unwrap_or_default()), m.data(&*data).unwrap().to_vec())).collect()
 }
 
 /// Each function in the object file at `path`, as its size in bytes and its demangled name. A function's size is the distance to the next symbol in its section, because Mach-O records no sizes.
@@ -123,7 +129,8 @@ fn shortened(name: &str) -> String { name.chars().take(240).collect() }
 
 /// Each function that `file` defines, as its section's index, its address and its mangled name.
 fn defined<'a>(file: &object::File<'a>) -> Vec<(usize, u64, &'a str)> {
-    file.symbols().filter(|s| s.kind() == SymbolKind::Text && s.is_definition()).filter_map(|s| Some((s.section_index()?.0, s.address(), s.name().ok()?))).collect()
+    file.symbols().filter(|s| s.kind() == SymbolKind::Text && s.is_definition()).filter_map(|s| Some((s.section_index()?.0, s.address(), s.name().ok()?)))
+        .collect()
 }
 
 /// Each call from a function in one of `units` to a function that another of `units` defines, as the caller, the caller's unit, the callee and the callee's unit. A call into code that none of `units` defines, such as the standard library's own build, isn't listed.
@@ -153,12 +160,14 @@ fn calls_between(units: &[(String, Vec<u8>)]) -> Vec<(String, String, String, St
 #[test]
 fn calls_between_units() {
     let Some(pattern) = env_pattern("BASEDPL_CALLS") else { return };
-    let mut units: Vec<_> = newest_build().into_iter().map(|p| (format!("basedpl {}", p.file_stem().unwrap().to_string_lossy()), fs::read(&p).unwrap())).collect();
+    let mut units: Vec<_> =
+        newest_build().into_iter().map(|p| (format!("basedpl {}", p.file_stem().unwrap().to_string_lossy()), fs::read(&p).unwrap())).collect();
     units.extend(rustymath_units());
     let mut calls: Vec<_> = calls_between(&units).into_iter().filter(|(caller, ..)| pattern.is_match(caller).unwrap()).collect();
     calls.sort();
     calls.dedup();
-    let rows: Vec<_> = calls.iter().map(|(caller, from, callee, to)| format!("{}\n    in {from}, calls into {to}:\n    {}", shortened(caller), shortened(callee))).collect();
+    let rows: Vec<_> =
+        calls.iter().map(|(caller, from, callee, to)| format!("{}\n    in {from}, calls into {to}:\n    {}", shortened(caller), shortened(callee))).collect();
     println!("{} calls from functions matching `{pattern}` go to other codegen units:\n{}", calls.len(), rows.join("\n"));
 }
 

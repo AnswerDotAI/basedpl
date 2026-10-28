@@ -1,13 +1,19 @@
 //! Checks that change settings. The settings are one store for the whole process, so these checks run in turn, in one test, each from the defaults.
-#[macro_use] mod common;
+#[macro_use]
+mod common;
 use basedpl::{EvalOptions, Session, Value as AplValue};
 use common::*;
 
 #[test]
 fn checks_that_change_settings() {
-    let checks: [fn(); 8] = [language_examples, mathish_arithmetic, boxed_display_and_function_trees, expression_dissection, threads_give_the_same_results,
-        hanzi_spellings_and_language, leading_prefs_set_how_their_code_reads, highlight_after_a_prefs_header];
-    for check in checks { basedpl::settings::reset(); check(); }
+    let checks: [fn(); 8] = [
+        language_examples, mathish_arithmetic, boxed_display_and_function_trees, expression_dissection, threads_give_the_same_results,
+        hanzi_spellings_and_language, leading_prefs_set_how_their_code_reads, highlight_after_a_prefs_header,
+    ];
+    for check in checks {
+        basedpl::settings::reset();
+        check();
+    }
 }
 
 fn mathish_arithmetic() {
@@ -20,7 +26,10 @@ fn mathish_arithmetic() {
     equiv_in(&s, "[÷¯0÷0;÷¯0 ¯0÷0 0;÷¯0÷¨0 0]", "[¯∞;¯∞ ¯∞;¯∞ ¯∞]");
     equiv_in(&s, r#"•prefs ["kinds":"static"] ⋄ n←[0÷0;0ₓ÷0ₓ;0j0ₚ÷0j0ₚ;1j0ₚ⍟1j0ₚ] ⋄ [≠⍨¨n;0.7=0.1+0.6]"#, "[$t $t $t $t;$f]");
     equiv_in(&s, r#"•prefs ["float":32] ⋄ [≠⍨0ₓ÷0ₓ;≠⍨[0 0]ₓ÷[0 0]ₓ;≠⍨0ₓ÷¨[0 0]ₓ]"#, "[$t;$t $t;$t $t]");
-    equiv_in(&s, r#"•prefs ["kinds":"dynamic"] ⋄ n←1ₓ⍟1ₓ ⋄ p←1ₚ⍟1ₚ ⋄ [≠⍨n;(•storage n).kind;p;(•storage p).kind;0.3ₚ=0.1ₚ+0.2ₚ]"#, r#"[$t;"float32";0ₚ;"float64";$t]"#);
+    equiv_in(
+        &s,
+        r#"•prefs ["kinds":"dynamic"] ⋄ n←1ₓ⍟1ₓ ⋄ p←1ₚ⍟1ₚ ⋄ [≠⍨n;(•storage n).kind;p;(•storage p).kind;0.3ₚ=0.1ₚ+0.2ₚ]"#,
+        r#"[$t;"float32";0ₚ;"float64";$t]"#);
 }
 
 fn language_examples() {
@@ -174,7 +183,7 @@ fn threads_give_the_same_results() {
 }
 
 fn hanzi_spellings_and_language() {
-    use basedpl::symbols::{canonical, symbols, Notation};
+    use basedpl::symbols::{Notation, canonical, symbols};
     let mut seen = std::collections::HashMap::new();
     let s = Session::new();
     equiv_in(&s, r#"•prefs ["hanzi_aliases":$t] ⋄ mean是加总除数句mean 2 4 9"#, "5");
@@ -195,10 +204,8 @@ fn hanzi_spellings_and_language() {
         "mean是加总除数句mean 2 4 9" => "5", "加累 2 3 4" => "2 5 9", "乘表己至3" => "[1 2 3⋄2 4 6⋄3 6 9]", "加總 1 2 3" => "6",
         "負3减负1" => "¯2", "1e负3加1r负4" => "1e¯3+1r¯4", "[负3 负1]ₓ" => "[¯3 ¯1]ₓ", "[空]ₛ" => "[⍬]ₛ", "负永" => "¯∞",
         "{甲是2句甲加乙}3" => "5", "{永键键7句除'a'}0" => "7", "op是{丙乙}句加op 3" => "3", "r是[\"a1\":7]句r内a1" => "7",
-        "f是{乙加1}句f次3隔5" => "8",
-        "\"加总 注 负永\"" => "\"加总 注 负永\"", "'加'" => "'加'", "加总 1 2 3 注 汉字注释" => "6",
-        "系prefs [\"float\":32]句(系storage 1).kind" => "\"float32\"",
-        "語←1 ⋄ 𠀀←2 ⋄ 語+𠀀" => "3",
+        "f是{乙加1}句f次3隔5" => "8", "\"加总 注 负永\"" => "\"加总 注 负永\"", "'加'" => "'加'", "加总 1 2 3 注 汉字注释" => "6",
+        "系prefs [\"float\":32]句(系storage 1).kind" => "\"float32\"", "語←1 ⋄ 𠀀←2 ⋄ 語+𠀀" => "3",
         "_加←1 ⋄ _+←2 ⋄ _加_总←3 ⋄ x_語←4 ⋄ [_加 _+ _加_总 x_語]" => "1 2 3 4",
     );
     assert_eq!(s.name_class("系time"), 3);

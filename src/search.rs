@@ -12,14 +12,9 @@
 //!
 //! Other data takes the pairwise comparison.
 use crate::execution::check;
-use crate::{
-    array::Items, element::read_as, number::Numeric, Span,
-    Error, ErrorKind, Value
-};
-use rustymath::hashing::{Hashing, HashMap, HashMapExt};
-use rustymath::{
-    buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains}, tolerant::{self, Near, Tolerance}, with_float_width
-};
+use crate::{Error, ErrorKind, Span, Value, array::Items, element::read_as, number::Numeric};
+use rustymath::hashing::{HashMap, HashMapExt, Hashing};
+use rustymath::{buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains}, tolerant::{self, Near, Tolerance}, with_float_width};
 use std::{borrow::Cow, hash::{BuildHasher, Hash, Hasher}, sync::Arc};
 
 /// The cells a search compares. The cells of rank 0 are an array's items.
@@ -52,12 +47,16 @@ pub(crate) fn compared_at(width: Option<FloatWidth>, numeric: Numeric) -> (Float
 }
 
 /// The items of `cells` when they're one array's compact items, with the tolerance they compare at. Reading the width of compact items costs nothing, where cells of mixed storage take a pass over every cell.
-fn compact_at<'a>(cells: &Cells<'a>) -> Option<(View<'a>, Tolerance)> { compact_view(cells).map(|x| (x, compared_at(cells.float_width(), Numeric::current()).1)) }
+fn compact_at<'a>(cells: &Cells<'a>) -> Option<(View<'a>, Tolerance)> {
+    compact_view(cells).map(|x| (x, compared_at(cells.float_width(), Numeric::current()).1))
+}
 
 /// For each needle, the position of the first haystack cell that matches it, or the number of haystack cells when none does.
 pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &crate::Span) -> Result<Vec<u32>, Error> {
     let (width, t) = compared_at(haystack.float_width().max(needles.float_width()), Numeric::current());
-    if let Some(found) = compact_view(haystack).zip(compact_view(needles)).and_then(|(x, y)| search::view_index_of(x, y, t)) { return found.map_err(Error::from); }
+    if let Some(found) = compact_view(haystack).zip(compact_view(needles)).and_then(|(x, y)| search::view_index_of(x, y, t)) {
+        return found.map_err(Error::from);
+    }
     let compact = with_float_width!(width, F => match (haystack, needles) {
         (Cells::Items(x), Cells::Items(y)) => read_as::<F>(x).zip(read_as::<F>(y)).map(|(x, y)| tolerant::index_of(t, &x, &y)),
         _ => None,
@@ -183,11 +182,13 @@ fn hashes(cells: &Cells, seed: &Hashing) -> Option<Vec<u64>> {
                 if value.has_keys() || value.carrier().is_some() { return None; }
                 (3u8, value.shape()).hash(state);
                 match value.as_items() {
-                    Items::Values(items) => for item in items { feed(item, state)?; },
+                    Items::Values(items) => { for item in items { feed(item, state)?; } }
                     items => match items.view()? {
-                        View::Booleans(x) => for &b in x { (0u8, i64::from(b)).hash(state) },
-                        View::Integers(x) => rustymath::with_ints!(x, |x| for &i in x { (0u8, i64::from(i)).hash(state) }),
-                        View::Characters(x) => for &c in x { state.write_u32(c.into()) },
+                        View::Booleans(x) => { for &b in x { (0u8, i64::from(b)).hash(state) } }
+                        View::Integers(x) => rustymath::with_ints!(x, |x| for &i in x {
+                            (0u8, i64::from(i)).hash(state)
+                        }),
+                        View::Characters(x) => { for &c in x { state.write_u32(c.into()) } }
                         View::Floats(_) | View::Complexes(_) => return None,
                     },
                 }
@@ -209,9 +210,8 @@ struct Exact<'a> { shape: Option<&'a [usize]>, items: View<'a> }
 impl<'a> Exact<'a> {
     fn of(value: &'a Value) -> Option<Self> {
         let shape = match value {
-            Value::Number(_) | Value::Character(_) => None,
-            Value::Array(_) if value.carrier().is_none() && value.layout().plain() => Some(value.shape()),
-            _ => return None,
+            Value::Number(_) | Value::Character(_) => None, Value::Array(_) if value.carrier().is_none() && value.layout().plain() => Some(value.shape()),
+            _ => return None
         };
         match value.view()? { items @ (View::Booleans(_) | View::Integers(_) | View::Characters(_)) => Some(Self { shape, items }), _ => None }
     }
@@ -223,8 +223,7 @@ impl PartialEq for Exact<'_> {
         fn equal<T: PartialEq>(x: &[T], y: &[T]) -> bool { x.len() == y.len() && x.iter().zip(y).all(|(a, b)| a == b) }
         let shapes = match (self.shape, other.shape) { (Some(x), Some(y)) => equal(x, y), (x, y) => x.is_none() && y.is_none() };
         shapes && match (self.items, other.items) {
-            (View::Characters(x), View::Characters(y)) => equal(x, y),
-            (x, y) => search::view_matches(x, y, Tolerance::EXACT) == Some(true),
+            (View::Characters(x), View::Characters(y)) => equal(x, y), (x, y) => search::view_matches(x, y, Tolerance::EXACT) == Some(true)
         }
     }
 }
@@ -236,8 +235,10 @@ impl Hash for Exact<'_> {
         match self.items {
             // SAFETY: a `char` is a valid `u32`, of the same size and alignment.
             View::Characters(x) => unsafe { std::slice::from_raw_parts(x.as_ptr().cast::<u32>(), x.len()) }.hash(state),
-            View::Booleans(x) => for &b in x { state.write_i64(b.into()) },
-            View::Integers(x) => rustymath::with_ints!(x, |x| for &i in x { state.write_i64(i.into()) }),
+            View::Booleans(x) => { for &b in x { state.write_i64(b.into()) } }
+            View::Integers(x) => rustymath::with_ints!(x, |x| for &i in x {
+                state.write_i64(i.into())
+            }),
             View::Floats(_) | View::Complexes(_) => unreachable!("an exact key holds no floats"),
         }
     }
@@ -247,8 +248,7 @@ impl Hash for Exact<'_> {
 fn exact_cells<'a>(cells: &'a Cells) -> Option<Vec<Exact<'a>>> {
     match cells {
         Cells::Items(a) if a.carrier().is_none() => match a.as_items() { Items::Values(items) => items.iter().map(Exact::of).collect(), _ => None },
-        Cells::Items(_) => None,
-        Cells::Arrays(cells) => cells.iter().map(Exact::of).collect(),
+        Cells::Items(_) => None, Cells::Arrays(cells) => cells.iter().map(Exact::of).collect()
     }
 }
 

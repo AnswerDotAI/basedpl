@@ -1,6 +1,6 @@
-use rustymath::{buffer::{FloatWidth, View}, error::Kind, layout::strides};
-use crate::{array::{Items, Steps}, ErrorKind, Number, Value};
+use crate::{ErrorKind, Number, Value, array::{Items, Steps}};
 use rustymath::hashing::{HashMap, HashSet, HashSetExt};
+use rustymath::{buffer::{FloatWidth, View}, error::Kind, layout::strides};
 use std::sync::Arc;
 
 pub use rustymath::layout::Keys;
@@ -248,7 +248,9 @@ pub(crate) fn missing<'a>(target: &Value, selectors: impl IntoIterator<Item = (u
         if axis >= rank { return Err(Kind::Rank.into()); }
         let wanted = match selector { Selector::One(k) => vec![k], Selector::Many(_, names) => names };
         let mut seen = HashSet::new();
-        for name in wanted { if target.keys(axis).is_none_or(|k| k.position(&name).is_none()) && seen.insert(name.clone()) { added[axis].push(name); } }
+        for name in wanted {
+            if target.keys(axis).is_none_or(|k| k.position(&name).is_none()) && seen.insert(name.clone()) { added[axis].push(name); }
+        }
     }
     Ok(added)
 }

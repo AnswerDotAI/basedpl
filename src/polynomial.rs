@@ -1,9 +1,9 @@
 use crate::execution::check;
-use rustymath::{buffer::FloatWidth, error::Kind, with_float_width};
 use crate::{
-    agreement::{Agree, Agreement}, array::{generated_len, Cells, Layout}, element::{read_as, Float}, 
-    number::{with_field, Arithmetic, Field, Math, Numeric}, Error, Described, Number, Value
+    Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Cells, Layout, generated_len}, element::{Float, read_as},
+    number::{Arithmetic, Field, Math, Numeric, with_field}
 };
+use rustymath::{buffer::FloatWidth, error::Kind, with_float_width};
 
 fn int(n: usize) -> Number { Number::from_integer(n as i64) }
 fn numbers(a: &Value) -> Result<Vec<Number>, Error> {
@@ -22,9 +22,7 @@ impl Polynomial {
         if a.len() == 1 {
             let boxed = a.at(0).clone();
             if boxed.shape().len() < 2 { return Ok(Self::Factored(int(1), numbers(&boxed)?)); }
-            if boxed.shape().len() != 2 || boxed.shape()[1] < 2 {
-                return Err(Error::new(Kind::Rank, "power table rows need a coefficient and exponents"));
-            }
+            if boxed.shape().len() != 2 || boxed.shape()[1] < 2 { return Err(Error::new(Kind::Rank, "power table rows need a coefficient and exponents")); }
             let width = boxed.shape()[1];
             let mut coefficients = Vec::new();
             let mut exponents = Vec::new();
@@ -60,8 +58,7 @@ impl Polynomial {
                 let degrees = exponents.iter()
                     .map(|e| e[0].nonnegative_integer::<usize>().described("coefficient conversion needs nonnegative whole exponents"))
                     .collect::<Result<Vec<_>, _>>()?;
-                let len =
-                    degrees.iter().max().copied().unwrap_or(0).checked_add(1).ok_or_else(|| Error::new(Kind::Limit, "polynomial degree is too large"))?;
+                let len = degrees.iter().max().copied().unwrap_or(0).checked_add(1).ok_or_else(|| Error::new(Kind::Limit, "polynomial degree is too large"))?;
                 generated_len(&[len])?;
                 let mut c = vec![int(0); len];
                 for (a, &i) in coefficients.iter().zip(&degrees) { c[i] = c[i].dyad(Arithmetic::Plus, a)?; }
@@ -144,7 +141,8 @@ impl Polynomial {
     fn value(&self) -> Result<Value, Error> {
         let Self::Powers { coefficients, exponents, variables } = self else { return vector(self.coefficients()?) };
         let rows = coefficients.iter().zip(exponents).flat_map(|(c, e)| std::iter::once(c).chain(e)).map(|n| Value::Number(n.clone())).collect();
-        Ok(Value::from_parts(vec![coefficients.len(), variables + 1], rows, Value::Number(int(0))).described("invalid exponent table")?.enclose().expect("a table encloses"))
+        Ok(Value::from_parts(vec![coefficients.len(), variables + 1], rows, Value::Number(int(0))).described("invalid exponent table")?.enclose()
+            .expect("a table encloses"))
     }
 }
 fn coordinates(a: &Value) -> Result<Vec<Number>, Error> {
@@ -218,8 +216,8 @@ pub(crate) fn coefficients(right: &Value) -> Result<Value, Error> { each(right, 
 
 /// Each cell as a polynomial, or the prototype's when there are no cells.
 fn parsed(cells: &Cells<'_>) -> Result<Vec<Polynomial>, Error> {
-    (0..cells.len().max(1))
-        .map(|i| Polynomial::parse(&if cells.len() == 0 { cells.prototype() } else { cells.get(i) }.described("invalid polynomial cell")?)).collect()
+    (0..cells.len().max(1)).map(|i| Polynomial::parse(&if cells.len() == 0 { cells.prototype() } else { cells.get(i) }.described("invalid polynomial cell")?))
+        .collect()
 }
 /// `f` applied to each polynomial in `source`, with each result as a cell.
 fn each(source: &Value, f: impl Fn(&Polynomial) -> Result<Value, Error>) -> Result<Value, Error> {

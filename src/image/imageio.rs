@@ -1,7 +1,7 @@
 //! `•image`'s decoding and encoding through ImageIO. Decoding accepts every format that ImageIO reads. Reads return the sample values that ImageIO stores for each image, with no colour conversion and with alpha not premultiplied. Drawing converts colours and premultiplies alpha. The module draws only an opaque image whose samples it can't read directly, such as CMYK, into 8-bit RGB. Encoding uses device grey or device RGB. In a PNG, ImageIO writes no colour chunk for device grey. It tags device RGB as sRGB.
-use super::{ratio, rechannel_into, rechannelled, Format, Raster};
-use std::ffi::{c_char, c_void, CStr};
-use std::ptr::{null, NonNull};
+use super::{Format, Raster, ratio, rechannel_into, rechannelled};
+use std::ffi::{CStr, c_char, c_void};
+use std::ptr::{NonNull, null};
 
 /// A borrowed Core Foundation object.
 type Ref = *const c_void;
@@ -189,9 +189,8 @@ pub(super) fn encode(frames: &Raster<u8>, delays: Option<&[f64]>, format: Format
     let out = Cf::new(unsafe { CFDataCreateMutable(null(), 0) }).expect("CFDataCreateMutable");
     let destination =
         Cf::new(unsafe { CGImageDestinationCreateWithData(out.get(), cf_string(uti(format)).get(), frames.count, null()) }).ok_or("ImageIO has no encoder")?;
-    let space = Cf::new(unsafe {
-        if frames.channels < 3 { CGColorSpaceCreateDeviceGray() } else { CGColorSpaceCreateDeviceRGB() }
-    }).expect("device colour space");
+    let space =
+        Cf::new(unsafe { if frames.channels < 3 { CGColorSpaceCreateDeviceGray() } else { CGColorSpaceCreateDeviceRGB() } }).expect("device colour space");
     let layout = if frames.channels % 2 == 0 { ALPHA_LAST } else { ALPHA_NONE };
     let c = frames.channels;
     for i in 0..frames.count {

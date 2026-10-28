@@ -44,9 +44,7 @@ pub(super) fn recognise(node: &FunctionNode) -> Option<Idiom> {
             Some(Idiom::Selected { grade, down, pick })
         }
         FunctionNode::Composed(OperatorKind::Product, _) => match node.operation()? {
-            Operation::MINUS_TIMES => Some(Idiom::Determinant),
-            Operation::PLUS_TIMES => Some(Idiom::Permanent),
-            _ => None,
+            Operation::MINUS_TIMES => Some(Idiom::Determinant), Operation::PLUS_TIMES => Some(Idiom::Permanent), _ => None
         },
         FunctionNode::Modified(OperatorKind::Key, Operand::Function(f)) => {
             let FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(r), Operand::Function(i)]) = f.node() else { return None };
@@ -54,8 +52,7 @@ pub(super) fn recognise(node: &FunctionNode) -> Option<Idiom> {
             match r.node() {
                 FunctionNode::Primitive(Primitive::Tally) => Some(Idiom::Counts),
                 FunctionNode::Fold(g, kind) if !kind.scan => match g.as_primitive()? {
-                    p if crate::pervasive::folds(p).is_some() => Some(Idiom::Folds(p)),
-                    _ => None,
+                    p if crate::pervasive::folds(p).is_some() => Some(Idiom::Folds(p)), _ => None
                 },
                 _ => None,
             }
@@ -69,8 +66,9 @@ impl Idiom {
     fn route(&self) -> rustymath::events::Route {
         use rustymath::events::Route;
         match self {
-            Idiom::Selected { grade: true, .. } => Route::PartialGrade, Idiom::Selected { grade: false, .. } => Route::PartialSort, Idiom::Ranks { .. } => Route::Ranks,
-            Idiom::Counts => Route::GroupCounts, Idiom::Folds(_) => Route::GroupFolds, Idiom::Determinant => Route::Determinant, Idiom::Permanent => Route::Permanent,
+            Idiom::Selected { grade: true, .. } => Route::PartialGrade, Idiom::Selected { grade: false, .. } => Route::PartialSort,
+            Idiom::Ranks { .. } => Route::Ranks, Idiom::Counts => Route::GroupCounts, Idiom::Folds(_) => Route::GroupFolds,
+            Idiom::Determinant => Route::Determinant, Idiom::Permanent => Route::Permanent
         }
     }
     /// Records the combination for `•explain`, where it's on. `f` is the function that the combination computes.
@@ -89,7 +87,8 @@ impl Idiom {
             Idiom::Determinant => determinant(right),
             Idiom::Permanent => permanent(right),
         };
-        if matches!(&result, Some(Ok(_))) { self.taken(f); } else if result.is_none() { self.declined(right.len()); }
+        if matches!(&result, Some(Ok(_))) { self.taken(f); }
+        else if result.is_none() { self.declined(right.len()); }
         result
     }
 }
@@ -99,15 +98,8 @@ fn selected(grade: bool, down: bool, pick: Pick, right: &Value, span: &Span) -> 
     if right.shape().len() != 1 || right.keys(0).is_some() || crate::transform::carried(None, right) { return None; }
     let n = right.len();
     let (range, item) = match pick {
-        Pick::Take(k) if k.unsigned_abs() <= n as u64 => {
-            let m = k.unsigned_abs() as usize;
-            (if k < 0 { n - m..n } else { 0..m }, false)
-        }
-        Pick::Item(i) => {
-            let i = rustymath::layout::position(i, n)?;
-            (i..i + 1, true)
-        }
-        Pick::Take(_) => return None,
+        Pick::Take(k) if k.unsigned_abs() <= n as u64 => { let m = k.unsigned_abs() as usize; (if k < 0 { n - m..n } else { 0..m }, false) }
+        Pick::Item(i) => { let i = rustymath::layout::position(i, n)?; (i..i + 1, true) } Pick::Take(_) => return None
     };
     // Large runs cost more to comparison-sort than grading the whole vector by radix/counting.
     if range.len() > n / 4 { return None; }
@@ -143,7 +135,7 @@ fn determinant(right: &Value) -> Option<Result<Bound, Error>> {
 
 /// Monadic `+.×` of a square matrix of fewer than 64 rows of numbers, by rustymath's `permanent_with` at the matrix's own field, which `primitive::determinant` also reads. An integer permanent wraps where the call wraps (`Number::wrapped`).
 fn permanent(right: &Value) -> Option<Result<Bound, Error>> {
-    use crate::number::{read, with_field, Domain, Field};
+    use crate::number::{Domain, Field, read, with_field};
     if crate::transform::carried(None, right) { return None; }
     let [m, n] = matrix(right)?;
     if m != n || n >= 64 { return None; }

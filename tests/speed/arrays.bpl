@@ -196,7 +196,7 @@ b#v
 ⍸b
 ⍝⍝: 4	4	4
 
-⍝ Replicating by counts of 0 to 2 writes four copies of each item where its run starts. The next item overwrites the copies past its count. A group of 4 items whose counts are all at most 4 writes after one check for the group (`gather::repeat`). With a check and a taken branch for each item, the loop cost about a third more in the speed test's binary than through `bpl`: `cnt#v` measured 7.1 copies there against 5.3, and `(0+cnt)#v` 9.7 against 8.1 (`cp_`, 21 October 2026).
+⍝ Replicating by counts of 0 to 2 writes four copies of each item where its run starts. The next item overwrites the copies past its count. A group of 4 items whose counts are all at most 4 writes after one check for the group (`gather::repeat`). With a check and a taken branch for each item, the loop cost about a third more in the speed test's binary than through `bpl`: `cnt#v` measured 7.1 copies there against 5.3, and `(0+cnt)#v` 9.7 against 8.1.
 ⍝ Expected: 4 copies: about 2 cycles an item for four stores, which the next item overwrites past its count.
 cnt#v
 ⍝⍝: 8	8	8
@@ -464,8 +464,8 @@ lut.[ux]
 ⍝⍝: 6	6	6
 
 ⍝ Few distinct indices take the same loop. `10ₓ|jv` gives integer positions, which a table reads in place (`structure::index_table`).
-⍝ Expected: `{h←10⍴0 ⋄ h.[10ₓ|jv]+←1 ⋄ h}0` 4 copies: the integer residue, about 2 copies, and about 1 cycle an item for the 10 counters; `{h←10⍴0ₓ ⋄ h.[10ₓ|jv]+←1ₓ ⋄ h}0` 4 copies: as the float counters.
-⍝ Held until studied: `{h←10⍴0 ⋄ h.[10ₓ|jv]+←1 ⋄ h}0` measures about 9.2 on macOS. About 2 copies go to the residue and the rest to the modified write, which combines its offsets a run at a time, as the comment on `{x←v ⋄ x.[i]+←w ⋄ x}0` describes. Until 24 October 2026 the case read `10|jv`, a float residue that gave float positions, and measured about 12 on macOS, 15.6 on Linux and 18.9 in wasm. Its budgets keep the values from that form until CI measures this one.
+⍝ Expected: `{h←10⍴0 ⋄ h.[10ₓ|jv]+←1 ⋄ h}0` 3 copies: the integer residue, about 1 copy, and about 1 cycle an item for the 10 counters; `{h←10⍴0ₓ ⋄ h.[10ₓ|jv]+←1ₓ ⋄ h}0` 3 copies: as the float counters.
+⍝ Held until studied: `{h←10⍴0 ⋄ h.[10ₓ|jv]+←1 ⋄ h}0` measures about 7.3 on macOS. About 1 copy goes to the residue and the rest to the modified write, which combines its offsets a run at a time, as the comment on `{x←v ⋄ x.[i]+←w ⋄ x}0` describes. Until 24 October 2026 the case read `10|jv`, a float residue that gave float positions, and measured about 12 on macOS, 15.6 on Linux and 18.9 in wasm. Its budgets keep the values from that form until CI measures this one.
 {
   h←10⍴0
   h.[10ₓ|jv]+←1
@@ -473,7 +473,7 @@ lut.[ux]
 }0
 ⍝⍝: 36	58	47
 
-⍝ Held until studied: `{h←10⍴0ₓ ⋄ h.[10ₓ|jv]+←1ₓ ⋄ h}0` measures about 9.3 on macOS. A write that fails restores from a copy of the 10 counters rather than from a record of every write (`gather::Writes::try_combine`), and its offsets combine a run at a time without a list. Until 24 October 2026 the case read `10|jv`, and measured about 10.7 on macOS, 18 on Linux and 26.1 in wasm. Its budgets keep the values from that form until CI measures this one.
+⍝ Held until studied: `{h←10⍴0ₓ ⋄ h.[10ₓ|jv]+←1ₓ ⋄ h}0` measures about 6.9 on macOS. A write that fails restores from a copy of the 10 counters rather than from a record of every write (`gather::Writes::try_combine`), and its offsets combine a run at a time without a list. Until 24 October 2026 the case read `10|jv`, and measured about 10.7 on macOS, 18 on Linux and 26.1 in wasm. Its budgets keep the values from that form until CI measures this one.
 {
   h←10⍴0ₓ
   h.[10ₓ|jv]+←1ₓ
@@ -517,7 +517,7 @@ cnt⍚[- ⊢ 10×] v
 ⍝⍝: 7	7	7
 
 ⍝ A whole divisor that stands for an integer divides the integers as that integer, with multiplications, and the residues become 8-byte floats.
-⍝ Expected: 2.5 copies: the integer residue, about 2 copies, as the histograms' `10ₓ|jv` counts it, and writing 8-byte floats in place of 2-byte integers.
+⍝ Expected: 2.5 copies: the integer residue, and the writes of 8-byte floats in place of 2-byte integers. On macOS the residue, which divides in 16-bit lanes (`integer::Short`), measures about 0.9 copies, and the second pass that converts the residues to floats about 0.6.
 3|jv
 ⍝⍝: 5	5	5
 
@@ -570,8 +570,9 @@ cnt⍚[- ⊢ 10×] v
 
 ⍝ Monadic `○`, cis, runs rustymath's `Cis` on the reals at their own width: through vForce's `vvcosisin` on macOS, and through the slice forms of `Cos` and `Sin` elsewhere.
 ⍝ Expected: 14 copies: sine's 26 and cosine's 28 vector operations, as rustymath's speed test counts them for `Sin` and `Cos`, and 16-byte writes. It was 6 copies, from a shared reduction that rustymath doesn't have, which would save only the reduction's few operations.
+⍝ In wasm, CI's runner gave 47 under Node 22's V8 on 25 October 2026, and 55 to 58 under Node 26's from 28 October 2026. V8's newer x86-64 code caused the rise: under Node 26 on Apple silicon, the 0.1.75 release and a build of 29 October 2026 cost the same. Its wasm budget is set from Node 26's 57.
 ○v
-⍝⍝: 28	28	56
+⍝⍝: 28	28	86
 
 ⍝ An exponent of 2 squares each item, in a loop of its own. Another exponent calls rustymath's `pow` for each item, which at f64 reads tables that NEON and wasm can't vectorize.
 ⍝ Expected: `v*2` 1 copy: one read and one write per item; `v*w` 15 copies: a vectorised `pow` in extra precision, about twice `⍟` and `*` together.
@@ -814,7 +815,7 @@ side↑w ⌹ m
 (n÷16 ↑ w)⌹t
 ⍝⍝: 28	87	110
 
-⍝ Held until studied: `⌹t` measures 40 on macOS, 2.5 times its expected cost, because it forms U from the tall QR's factors and then multiplies it out. Taking the pseudoinverse as R's pseudoinverse times Q's transpose would save about 10 copies (`lx_`, 22 October 2026). On the earlier route it measured 85 on CI and 72 in wasm. Its budgets stay at the old value.
+⍝ Held until studied: `⌹t` measures 40 on macOS, 2.5 times its expected cost, because it forms U from the tall QR's factors and then multiplies it out. Taking the pseudoinverse as R's pseudoinverse times Q's transpose would save about 10 copies. On the earlier route it measured 85 on CI and 72 in wasm. Its budgets stay at the old value.
 ⌹t
 ⍝⍝: 120	150	240
 
@@ -872,14 +873,15 @@ side↑w ⌹ m
 ⍝⍝ exact •prefs ["mathish":$f]
 ⍝ Plain IEEE comparisons and `floor`, with nothing to scale by a tolerance.
 ⍝ Expected: `⌊v` 1.5 copies: a floor, a conversion to a 64-bit integer, a range check, and a select and a success flag for an item that doesn't fit, about 6 vector operations an item, with an 8-byte write; `v<w` and `v=w` 1.1 copies: two 8-byte reads and a 1-byte write; `3|v` 2.5 copies: a float division of about 1 cycle an item and a floor. `⌊v` was 0.75 copies, from a narrow write and no conversion.
+⍝ In wasm, CI's runner gave `⌊v` 2.34, `v<w` 1.87 and `v=w` 1.85 under Node 22's V8 on 25 October 2026, and 3.29 to 3.48, 2.43 to 2.49 and 2.43 to 2.47 under Node 26's from 28 October 2026. V8's newer x86-64 code caused the rise: under Node 26 on Apple silicon, the 0.1.75 release and a build of 29 October 2026 cost the same. Their wasm budgets are set from Node 26's costs.
 ⌊v
-⍝⍝: 3	3	3
+⍝⍝: 3	3	7
 
 v<w
-⍝⍝: 2.2	2.2	2.2
+⍝⍝: 2.2	2.2	4.9
 
 v=w
-⍝⍝: 2.2	2.2	2.2
+⍝⍝: 2.2	2.2	4.9
 
 3|v
 ⍝⍝: 5	5	5
@@ -970,8 +972,9 @@ m+.×m
 v*2
 ⍝⍝: 0.75	0.75	0.75
 
+⍝ In wasm, CI's runner gave `v*w` 0.62 under Node 22's V8 on 25 October 2026, and 0.82 to 0.84 under Node 26's from 28 October 2026. V8's newer x86-64 code caused the rise: under Node 26 on Apple silicon, the 0.1.75 release and a build of 29 October 2026 give the same ratio. Its wasm budget is set from Node 26's 0.83.
 v*w
-⍝⍝: 0.75	0.75	0.75
+⍝⍝: 0.75	0.75	1.08
 
 ⍝ Grade sorts keys and positions of half the bytes.
 ⍝ Expected: 0.5 of the 64-bit time: half the bytes, and twice the lanes.

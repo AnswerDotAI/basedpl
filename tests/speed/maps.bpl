@@ -182,7 +182,7 @@ X - +/X ÷ 8
 ⍝⍝: 1	2.3	6
 
 ⍝ A roll in a batched call draws once, on the whole frame, from the stream that a call for each cell would draw from in turn.
-⍝ Expected: 28 copies each: about 13 for ChaCha8's words, about 11 for `rand`'s mapping of each word into the range, one draw at a time, and about 4 for the addition and the result (`rl_`, 21 October 2026). They measure about 31 on macOS. `rustymath::random::roll` draws every word first, then maps the words into their ranges by Lemire's method in a separate pass, and the bounds convert to integers in one fold (`wq_`, 22 October 2026). Drawing each word through `next_u64` still costs about 15 instructions. `rand`'s `fill` draws the same words, but copies each 4-byte word through a call to `memmove`, which costs several times as much.
+⍝ Expected: 28 copies each: about 13 for ChaCha8's words, about 11 for `rand`'s mapping of each word into the range, one draw at a time, and about 4 for the addition and the result. They measure about 31 on macOS. `rustymath::random::roll` draws every word first, then maps the words into their ranges by Lemire's method in a separate pass, and the bounds convert to integers in one fold. Drawing each word through `next_u64` still costs about 15 instructions. `rand`'s `fill` draws the same words, but copies each 4-byte word through a call to `memmove`, which costs several times as much.
 ⍝ CI measured 23.6 and 23.5 on Linux on 22 October 2026, and their Linux budgets follow their expected cost. Held until studied: in wasm they measured 61 to 75 in seven CI runs from 22 October 2026, 2.2 to 2.7 times their expected cost, so their wasm budgets stay at the old values.
 {⍵+¿10}¨v
 ⍝⍝: 56	56	550

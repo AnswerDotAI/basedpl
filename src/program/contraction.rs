@@ -1,6 +1,6 @@
 //! Folds that read their argument's sources instead of computing it. A `+` fold of a `×` whose operands read their sources through affine maps runs as one product, which never computes the grid of products (`contracted`): index notation's level 3. A fold of a copy that repeats items, as a broadcast does, folds the copy's source, which never computes the copy (`fold_of_copy`). Fusion's pending programs and the trace both call each, so the two routes find the same folds.
 
-use super::{add, along, laid_out, stepped, Desc, Laid, Node, Origin, Read, Step};
+use super::{Desc, Laid, Node, Origin, Read, Step, add, along, laid_out, stepped};
 use crate::{agreement::{Agree, Agreement}, array::Layout, number::{Arithmetic, Numeric}, plan::Operand, primitive::{FoldKind, Primitive}};
 use rustymath::{agreement::Mapping, gather::Steps, layout::{count, strides}};
 
@@ -11,11 +11,13 @@ pub(crate) fn contracted(nodes: &mut Vec<Node>, p: Primitive, kind: FoldKind, of
     let (x, y, numeric, items) = (x.clone(), y.clone(), plan.numeric, nodes[of.of].desc.layout.count());
     let layout = of.layout.axes((0..of.layout.shape().len()).filter(|a| !axes.contains(a)));
     let result = Desc { atom: layout.shape().is_empty(), layout, ..one.clone() };
-    product(nodes, &x, &y, numeric, kind, of, axes, &result).inspect_err(|reason| rustymath::events::declined(rustymath::events::Route::Contraction, reason, items)).ok()
+    product(nodes, &x, &y, numeric, kind, of, axes, &result)
+        .inspect_err(|reason| rustymath::events::declined(rustymath::events::Route::Contraction, reason, items)).ok()
 }
 
 /// The read of new nodes in `nodes` that compute a `+` fold along `axes` of `of`, which reads `x×y` planned under `numeric`, as one product, or the reason that no product computes it. The fold runs along the axes of the `×`'s frame that step within `axes` (`within`): each is one axis of the frame, or where `of` is a view, a run of adjacent axes that it merges, as a fold along several adjacent axes reads them (`eval::folded_along`). The view merges no other axes. Both operands' sources must step along each folded axis through affine maps, except that an operand that holds one item along each folded axis factors out of the fold (`factored`). Each other axis of the frame is a batch axis where both operands step along it, a row where only the left one does, and a column where only the right one does. An axis of one item is a row. The rows or the columns must hold more than one item, because a product reuses items only along them: a fused multiply and fold, which reads each item once, costs less for `+/a×b` on arrays of one shape. A copy lays out the left operand's source as batch, row and folded axes, and the right operand's as batch, folded and column axes, or a view does where the map reads the source in order. A product contracts them (`Step::Product`), stacked where batch axes remain, with the rows as one axis, the folded axes as one and the columns as one, and `•explain` lists it as a fast combination. A copy lays the product out as `result`, the fold's description, whose type the product's must be.
-fn product(nodes: &mut Vec<Node>, x: &Read, y: &Read, numeric: Numeric, kind: FoldKind, of: &Read, axes: &[usize], result: &Desc) -> Result<Read, &'static str> {
+fn product(
+    nodes: &mut Vec<Node>, x: &Read, y: &Read, numeric: Numeric, kind: FoldKind, of: &Read, axes: &[usize], result: &Desc) -> Result<Read, &'static str> {
     let (plus, times) = (Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times));
     let frame = nodes[of.of].desc.shape().to_vec();
     let lens = |axes: &[usize]| axes.iter().map(|&a| frame[a]).collect::<Vec<_>>();
@@ -25,32 +27,30 @@ fn product(nodes: &mut Vec<Node>, x: &Read, y: &Read, numeric: Numeric, kind: Fo
     // A view merges only folded axes, so that the fold's result keeps the frame's other axes as they are.
     let kept: Vec<usize> = (0..frame.len()).filter(|a| !folded.contains(a)).collect();
     if result.layout.shape() != lens(&kept).as_slice() { return Err("a view of the products"); }
-    let agreement = Agreement::new(&x.layout, &y.layout).ok().filter(|a| a.layout.shape() == frame.as_slice()).ok_or("operands that don't pair as the products do")?;
+    let agreement =
+        Agreement::new(&x.layout, &y.layout).ok().filter(|a| a.layout.shape() == frame.as_slice()).ok_or("operands that don't pair as the products do")?;
     let (left, right) = Source::of(nodes, x, &agreement.left, &frame).zip(Source::of(nodes, y, &agreement.right, &frame)).ok_or("a read that isn't affine")?;
     // An operand that holds one item along each folded axis factors out of the fold (`factored`).
     let constant = |s: &Source| folded.iter().all(|&a| frame[a] == 1 || s.strides[a] == 0);
     match (constant(&left), constant(&right)) {
         (true, false) => return factored(nodes, &right, &left, numeric, kind, &frame, &folded, result),
-        (false, true) => return factored(nodes, &left, &right, numeric, kind, &frame, &folded, result),
-        _ => {}
+        (false, true) => return factored(nodes, &left, &right, numeric, kind, &frame, &folded, result), _ => {}
     }
     if folded.iter().any(|&a| frame[a] > 1 && (left.strides[a] == 0 || right.strides[a] == 0)) { return Err("an operand that doesn't step along the fold"); }
     let (mut batch, mut rows, mut columns) = (vec![], vec![], vec![]);
     for a in (0..frame.len()).filter(|a| !folded.contains(a)) {
         match (frame[a] > 1 && left.strides[a] != 0, frame[a] > 1 && right.strides[a] != 0) {
-            (true, true) => batch.push(a),
-            (false, true) => columns.push(a),
-            (true, false) => rows.push(a),
-            (false, false) if frame[a] == 1 => rows.push(a),
-            (false, false) => return Err("an axis that neither operand reads"),
+            (true, true) => batch.push(a), (false, true) => columns.push(a), (true, false) => rows.push(a), (false, false) if frame[a] == 1 => rows.push(a),
+            (false, false) => return Err("an axis that neither operand reads")
         }
     }
     if size(&rows) < 2 && size(&columns) < 2 { return Err("no rows or columns"); }
     let stacked = !batch.is_empty();
     let (xs, ys) = ([&batch[..], &rows, &folded].concat(), [&batch[..], &folded, &columns].concat());
     // A product reads the folded axes as one axis. A stacked product also reads the rows as one axis and the columns as another.
-    let (xr, yr) = if stacked { ([lens(&batch), vec![size(&rows), size(&folded)]].concat(), [lens(&batch), vec![size(&folded), size(&columns)]].concat()) }
-        else { ([lens(&rows), vec![size(&folded)]].concat(), [vec![size(&folded)], lens(&columns)].concat()) };
+    let (xr, yr) = if stacked {
+        ([lens(&batch), vec![size(&rows), size(&folded)]].concat(), [lens(&batch), vec![size(&folded), size(&columns)]].concat())
+    } else { ([lens(&rows), vec![size(&folded)]].concat(), [vec![size(&folded)], lens(&columns)].concat()) };
     let (xl, yl) = left.laid(nodes, &frame, &xs).zip(right.laid(nodes, &frame, &ys)).ok_or("a read that isn't affine")?;
     let product = crate::plan::product(plus, times, nodes[left.of].desc.kind, nodes[right.of].desc.kind, numeric)?;
     let (xd, yd) = (Desc { layout: Layout::from(xr.clone()), ..xl.desc.clone() }, Desc { layout: Layout::from(yr.clone()), ..yl.desc.clone() });
@@ -81,7 +81,9 @@ fn within(view: &[usize], frame: &[usize], axes: &[usize]) -> Option<Vec<usize>>
 }
 
 /// The read of new nodes in `nodes` that compute a `+` fold along `folded`, axes of `frame`, of the products of `stepping` and `constant`, where `constant` holds one item along each folded axis: `constant` times the fold of `stepping`, with no product computed before the fold. A copy lays out `stepping` along the frame's kept axes that it reads, then the folded axes, and a fold (`Step::Fold`) sums along the folded axes as one. The sum and `constant` spread over the kept axes (`spread`) for the `×`, whose description must give the type of `result`, the fold's description.
-fn factored(nodes: &mut Vec<Node>, stepping: &Source, constant: &Source, numeric: Numeric, kind: FoldKind, frame: &[usize], folded: &[usize], result: &Desc) -> Result<Read, &'static str> {
+fn factored(
+    nodes: &mut Vec<Node>, stepping: &Source, constant: &Source, numeric: Numeric, kind: FoldKind, frame: &[usize], folded: &[usize], result: &Desc
+) -> Result<Read, &'static str> {
     let lens = |axes: &[usize]| axes.iter().map(|&a| frame[a]).collect::<Vec<_>>();
     let kept: Vec<usize> = (0..frame.len()).filter(|a| !folded.contains(a)).collect();
     // The kept axes that a source reads, and for an array laid out in some of them, the axis that holds each kept axis.
@@ -144,7 +146,8 @@ struct Source { of: usize, map: Mapping, strides: Vec<isize> }
 impl Source {
     /// The source of `read`, which `map`, the agreement's, lays out over `frame`: the read's node, or where it's a copy read under its own shape, what the copy reads, through each copy whose map composes (`copy_of_copy`). The contraction then reads a broadcast copy's source without making the copy. `None` where the composed read isn't affine.
     fn of(nodes: &[Node], read: &Read, map: &Mapping, frame: &[usize]) -> Option<Self> {
-        let (of, map) = if nodes[read.of].desc.shape() == read.layout.shape() { super::through_copies(nodes, read.of, map, frame) } else { (read.of, map.clone()) };
+        let (of, map) =
+            if nodes[read.of].desc.shape() == read.layout.shape() { super::through_copies(nodes, read.of, map, frame) } else { (read.of, map.clone()) };
         let (_, strides) = map.affine(frame)?;
         Some(Self { of, map, strides })
     }
@@ -154,4 +157,3 @@ impl Source {
         laid_out(nodes, self.of, self.map.compose(&along(frame, axes), frame, &shape)?, &Layout::from(shape))
     }
 }
-

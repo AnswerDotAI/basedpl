@@ -9,12 +9,13 @@ permissions:
   contents: read
 
 # In each job, every test step after the first runs even when an earlier step fails, to report every test's result in one run.
-# A build step that runs past 10 minutes has stalled. These builds normally take about 3.
 jobs:
   test:
     runs-on: ubicloud-standard-4-ubuntu-2604
     steps:
       - uses: actions/checkout@v7
+      # The speed tests' costs for large new arrays depend on whether the kernel gives them transparent huge pages.
+      - run: cat /sys/kernel/mm/transparent_hugepage/enabled
       # `tests/highlighting.mjs` reads the TextMate grammar through `shiki`, which `package.json` pins.
       - run: npm ci
       - uses: dtolnay/rust-toolchain@stable

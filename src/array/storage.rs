@@ -1,12 +1,12 @@
 //! Array storage: rustymath's compact buffers or mixed values, the borrowed `Items` view, BPL's promotion rules for compact dtypes, and `Gather`, which builds new storage from the items of existing arrays. `Gather::walk` reads them through rustymath's `gather::Steps`.
 
 use super::*;
-use std::sync::{atomic::{AtomicU32, AtomicU8, Ordering::Relaxed}, OnceLock};
 pub(crate) use rustymath::gather::Steps;
 use rustymath::{
-    buffer::{Buffer, ComplexBuf, Complexes, DType, Element, FloatBuf, Floats, IntBuf, Ints, Source, View, Width}, error::Kind, with_complexes,
-    with_floats, with_ints, with_width
+    buffer::{Buffer, ComplexBuf, Complexes, DType, Element, FloatBuf, Floats, IntBuf, Ints, Source, View, Width}, error::Kind,
+    with_complexes, with_floats, with_ints, with_width
 };
+use std::sync::{OnceLock, atomic::{AtomicU8, AtomicU32, Ordering::Relaxed}};
 
 /// An array's items: a rustymath buffer, whose items share one dtype, or mixed values. Mixed storage keeps each item's dtype. It also remembers what it works out about its items.
 #[derive(Clone, Debug)]
@@ -24,7 +24,8 @@ pub(crate) struct Memo {
 
 impl Clone for Memo {
     fn clone(&self) -> Self {
-        Self { prototype: self.prototype.clone(), environment: AtomicU32::new(self.environment.load(Relaxed)), functions: AtomicU8::new(self.functions.load(Relaxed)) }
+        Self { prototype: self.prototype.clone(), environment: AtomicU32::new(self.environment.load(Relaxed)),
+            functions: AtomicU8::new(self.functions.load(Relaxed)) }
     }
 }
 
@@ -44,9 +45,7 @@ pub(super) fn same_items(x: Items, y: Items, prototypes: impl FnOnce() -> (Value
     match (x, y) {
         (x, y) if let (Some(a), Some(b)) = (x.view(), y.view()) => x.fixed_width() == y.fixed_width() && a.identical(b),
         (Items::Values(a), Items::Values(b)) if !a.is_empty() => a.len() == b.len() && a.iter().zip(b).all(|(p, q)| p.same(q)),
-        _ if x.len() != y.len() => false,
-        _ if x.len() == 0 => { let (p, q) = prototypes(); p.same(&q) }
-        _ => (0..x.len()).all(|i| x.item(i).same(&y.item(i))),
+        _ if x.len() != y.len() => false, _ if x.len() == 0 => { let (p, q) = prototypes(); p.same(&q) } _ => (0..x.len()).all(|i| x.item(i).same(&y.item(i)))
     }
 }
 
@@ -70,18 +69,13 @@ pub(crate) trait Promotion: Sized {
 }
 impl Promotion for DType {
     #[inline]
-    fn exact(self) -> Option<bool> {
-        (self != Self::Character).then_some(self.is_integral())
-    }
+    fn exact(self) -> Option<bool> { (self != Self::Character).then_some(self.is_integral()) }
     fn join(self, other: Self, widening: Widening) -> Option<Self> {
         use DType::*;
         if self == other { return Some(self); }
         match (self, other) { (Character, _) | (_, Character) => return None, (Integer(a), Integer(b)) => return Some(Integer(a.join(b))), _ => () }
         // Joined compact arrays read Booleans as the narrowest integers. Items gathered one at a time keep a Boolean apart from other numbers.
-        if self == Boolean || other == Boolean {
-            if widening == Widening::Items { return None; }
-            return Some(if self == Boolean { other } else { self });
-        }
+        if self == Boolean || other == Boolean { if widening == Widening::Items { return None; } return Some(if self == Boolean { other } else { self }); }
         if widening == Widening::Items && (self.exact() == Some(true) || other.exact() == Some(true)) { return None; }
         self.common(other)
     }
@@ -115,7 +109,8 @@ pub(super) fn items_kind(data: &[Value], widening: Widening) -> Option<(DType, b
     let run = data.iter().position(|v| !same_variant(v, first)).unwrap_or(data.len());
     let head = match first_dtype {
         DType::Integer(_) if first.fixed_width().is_none() => {
-            let (lo, hi) = data[..run].iter().filter_map(|v| if let Value::Number(n) = v { n.as_integer() } else { None }).fold((i64::MAX, i64::MIN), |(lo, hi), i| (lo.min(i), hi.max(i)));
+            let (lo, hi) = data[..run].iter().filter_map(|v| if let Value::Number(n) = v { n.as_integer() } else { None })
+                .fold((i64::MAX, i64::MIN), |(lo, hi), i| (lo.min(i), hi.max(i)));
             DType::Integer(ordinary_width(Width::narrowest(lo, hi)))
         }
         dtype => dtype,
@@ -182,16 +177,20 @@ impl Storage {
     pub(crate) fn mixed(data: Vec<Value>) -> Self { Self::Mixed(data, Memo::default()) }
     pub(crate) fn fixed_width(&self) -> Option<Width> { match self { Self::Fixed(v) => Some(v.view().tag()), _ => None } }
     /// The items' dtype, read from the buffer with no view of the items. `None` for mixed storage.
-    pub(crate) fn dtype(&self) -> Option<DType> { match self { Self::Compact(b) => Some(b.dtype()), Self::Fixed(v) => Some(DType::Integer(v.view().tag())), Self::Mixed(..) => None } }
+    pub(crate) fn dtype(&self) -> Option<DType> {
+        match self { Self::Compact(b) => Some(b.dtype()), Self::Fixed(v) => Some(DType::Integer(v.view().tag())), Self::Mixed(..) => None }
+    }
     pub(crate) fn fixed(self, fixed: bool) -> Self {
         match (self, fixed) {
-            (Self::Compact(Buffer::Integers(v)), true) => Self::Fixed(v), (Self::Fixed(v), false) => Self::Compact(Buffer::Integers(v)), (storage, _) => storage,
+            (Self::Compact(Buffer::Integers(v)), true) => Self::Fixed(v), (Self::Fixed(v), false) => Self::Compact(Buffer::Integers(v)), (storage, _) => storage
         }
     }
     pub(crate) fn fixed_at(buffer: Buffer, width: Width) -> Self {
         match buffer {
             Buffer::Integers(v) if v.view().tag() == width => Self::Fixed(v),
-            Buffer::Integers(v) => Self::Compact(with_width!(width, T => with_ints!(v.view(), |v| T::buffer(v.iter().map(|&n| T::from_i64(n.into())).collect())))).fixed(true),
+            Buffer::Integers(v) => {
+                Self::Compact(with_width!(width, T => with_ints!(v.view(), |v| T::buffer(v.iter().map(|&n| T::from_i64(n.into())).collect())))).fixed(true)
+            }
             buffer => Self::Compact(buffer),
         }
     }
@@ -211,13 +210,13 @@ impl Storage {
     }
     /// The integers `data` at `width`, which holds them all. Integers that have the width already keep their buffer.
     pub(crate) fn within<T: Whole>(data: Vec<T>, width: Width) -> Self {
-        Self::Compact(if width == T::WIDTH { T::buffer(data) } else { with_width!(width, U => U::buffer(data.iter().map(|&n| U::from_i64(n.to_i64())).collect())) })
+        Self::Compact(if width == T::WIDTH { T::buffer(data) }
+        else { with_width!(width, U => U::buffer(data.iter().map(|&n| U::from_i64(n.to_i64())).collect())) })
     }
     /// Copies `range` of `source` when it has this storage's dtype, and gives whether it could.
     fn copy_slice(&mut self, source: Items, range: std::ops::Range<usize>) -> bool {
         match (self, source.view()) {
-            (Self::Compact(d), Some(s)) => d.extend_from(s, range),
-            (Self::Fixed(d), Some(View::Integers(s))) => d.extend_from(s, range), _ => false,
+            (Self::Compact(d), Some(s)) => d.extend_from(s, range), (Self::Fixed(d), Some(View::Integers(s))) => d.extend_from(s, range), _ => false
         }
     }
     pub(super) fn with_capacity(dtype: Option<DType>, capacity: usize) -> Self {
@@ -229,11 +228,12 @@ impl Storage {
     pub(super) fn len(&self) -> usize { self.items().len() }
     /// A copy of `items`.
     pub(super) fn copy_of(items: Items) -> Self {
-        match items { Items::Values(v) => Self::mixed(v.to_vec()), items => Self::Compact(Buffer::copied(items.view().unwrap(), 0..items.len())).fixed(items.fixed_width().is_some()) }
+        match items {
+            Items::Values(v) => Self::mixed(v.to_vec()),
+            items => Self::Compact(Buffer::copied(items.view().unwrap(), 0..items.len())).fixed(items.fixed_width().is_some()),
+        }
     }
-    fn capacity(&self) -> usize {
-        match self { Self::Compact(b) => b.capacity(), Self::Fixed(b) => b.capacity(), Self::Mixed(v, _) => v.capacity() }
-    }
+    fn capacity(&self) -> usize { match self { Self::Compact(b) => b.capacity(), Self::Fixed(b) => b.capacity(), Self::Mixed(v, _) => v.capacity() } }
     pub(super) fn item(&self, i: usize) -> Value { self.items().item(i) }
     /// Compact storage gives its dtype's zero. An empty mixed array keeps a stored prototype. A nonempty one fills its first item on first request and keeps the result.
     pub(super) fn prototype(&self) -> Value {
@@ -244,7 +244,7 @@ impl Storage {
     pub(super) fn exact(&self) -> Option<bool> {
         match self.items() {
             Items::Values([]) => self.prototype().exact_domain(), Items::Values(d) => d.iter().filter_map(Value::exact_domain).reduce(|a, b| a && b),
-            items => items.dtype().and_then(DType::exact),
+            items => items.dtype().and_then(DType::exact)
         }
     }
     /// The innermost frame that any item depends on. Mixed storage works it out on first request. An empty array answers for its prototype.
@@ -284,8 +284,7 @@ impl Storage {
         let fixed = item.fixed_width().is_some();
         match item_dtype(item) {
             Some(DType::Integer(width)) if !fixed => Self::of_dtype(DType::Integer(ordinary_width(width)), std::slice::from_ref(item), false),
-            Some(dtype) => Self::of_dtype(dtype, std::slice::from_ref(item), fixed),
-            None => Self::mixed(vec![item.clone().strong()]),
+            Some(dtype) => Self::of_dtype(dtype, std::slice::from_ref(item), fixed), None => Self::mixed(vec![item.clone().strong()])
         }
     }
     /// Compact storage of `dtype` for `data`, whose items all have that dtype or one it holds.
@@ -307,7 +306,8 @@ impl Footprint for Storage {
     /// The bytes of these items: a compact buffer's allocation, or a mixed array's values with what each one keeps alive.
     fn footprint_in(&self, seen: &mut Seen) -> usize {
         match self {
-            Self::Compact(buffer) => buffer.capacity() * buffer.dtype().bytes(), Self::Fixed(buffer) => buffer.capacity() * DType::Integer(buffer.view().tag()).bytes(),
+            Self::Compact(buffer) => buffer.capacity() * buffer.dtype().bytes(),
+            Self::Fixed(buffer) => buffer.capacity() * DType::Integer(buffer.view().tag()).bytes(),
             Self::Mixed(values, _) => values.capacity() * size_of::<Value>() + values.iter().map(|v| v.footprint_in(seen)).sum::<usize>(),
         }
     }
@@ -321,17 +321,21 @@ pub(crate) enum Items<'a> { Compact(View<'a>), Fixed(Ints<'a>), Values(&'a [Valu
 fn real_part<R: Copy + Into<f64>>(z: &Complex<R>) -> Result<f64, ErrorKind> { if z.im.into() == 0.0 { Ok(z.re.into()) } else { Err(Kind::Domain.into()) } }
 
 impl<'a> Items<'a> {
-    pub(crate) fn view(self) -> Option<View<'a>> { match self { Self::Compact(v) => Some(v), Self::Fixed(v) => Some(View::Integers(v)), Self::Values(_) => None } }
+    pub(crate) fn view(self) -> Option<View<'a>> {
+        match self { Self::Compact(v) => Some(v), Self::Fixed(v) => Some(View::Integers(v)), Self::Values(_) => None }
+    }
     pub(crate) fn fixed_width(self) -> Option<Width> { match self { Self::Fixed(v) => Some(v.tag()), _ => None } }
     pub(crate) fn fixed(self, fixed: bool) -> Self {
-        match (self, fixed) { (Self::Compact(View::Integers(v)), true) => Self::Fixed(v), (Self::Fixed(v), false) => Self::Compact(View::Integers(v)), (items, _) => items }
+        match (self, fixed) {
+            (Self::Compact(View::Integers(v)), true) => Self::Fixed(v), (Self::Fixed(v), false) => Self::Compact(View::Integers(v)), (items, _) => items
+        }
     }
     pub(crate) fn prototype(self) -> Option<Value> {
         Some(match self {
-            Self::Fixed(v) => Value::Number(Number::fixed(0, v.tag())),
-            Self::Compact(View::Booleans(_)) => Value::Number(Number::from_bool(false)), Self::Compact(View::Integers(_)) => Value::integer(0),
-            Self::Compact(View::Floats(v)) => Value::Number(Number::float(0.0, v.tag())), Self::Compact(View::Complexes(v)) => Value::Number(Number::float(0.0, v.tag().into())),
-            Self::Compact(View::Characters(_)) => Value::Character(' '), Self::Values(_) => return None,
+            Self::Fixed(v) => Value::Number(Number::fixed(0, v.tag())), Self::Compact(View::Booleans(_)) => Value::Number(Number::from_bool(false)),
+            Self::Compact(View::Integers(_)) => Value::integer(0), Self::Compact(View::Floats(v)) => Value::Number(Number::float(0.0, v.tag())),
+            Self::Compact(View::Complexes(v)) => Value::Number(Number::float(0.0, v.tag().into())), Self::Compact(View::Characters(_)) => Value::Character(' '),
+            Self::Values(_) => return None
         })
     }
     /// The dtype of these items, or `None` for mixed ones.
@@ -339,7 +343,9 @@ impl<'a> Items<'a> {
     pub(crate) fn len(&self) -> usize { match self { Self::Compact(v) => v.len(), Self::Fixed(v) => v.len(), Self::Values(v) => v.len() } }
     /// The items in `range`, borrowed with no copy.
     pub(crate) fn slice(self, range: std::ops::Range<usize>) -> Self {
-        match self { Self::Values(v) => Self::Values(&v[range]), items => Self::Compact(items.view().unwrap().slice(range)).fixed(items.fixed_width().is_some()) }
+        match self {
+            Self::Values(v) => Self::Values(&v[range]), items => Self::Compact(items.view().unwrap().slice(range)).fixed(items.fixed_width().is_some())
+        }
     }
     #[inline]
     pub(crate) fn item(self, i: usize) -> Value {
@@ -349,7 +355,9 @@ impl<'a> Items<'a> {
             Self::Compact(View::Integers(v)) => Value::integer(v.get(i)),
             Self::Compact(View::Floats(v)) => Value::Number(Number::float(with_floats!(v, |x| f64::from(x[i])), v.tag())),
             // An item with no imaginary part is a widened real, except under static kinds.
-            Self::Compact(View::Complexes(v)) => Value::Number(Number::complex_in_session(with_complexes!(v, |x| Complex64::new(x[i].re.into(), x[i].im.into())), v.tag().into())),
+            Self::Compact(View::Complexes(v)) => {
+                Value::Number(Number::complex_in_session(with_complexes!(v, |x| Complex64::new(x[i].re.into(), x[i].im.into())), v.tag().into()))
+            }
             Self::Compact(View::Characters(v)) => Value::Character(v[i]),
             Self::Values(v) => v[i].clone(),
         }
@@ -365,31 +373,35 @@ impl<'a> Items<'a> {
             Self::Compact(View::Booleans(d)) => d.iter().map(|&b| int(b.into())).collect(),
             Self::Compact(View::Integers(ints)) | Self::Fixed(ints) => with_ints!(ints, |d| d.iter().map(|&n| int(n.to_i64())).collect()),
             Self::Compact(View::Floats(d)) => with_floats!(d, |d| d.iter().map(|&n| real(n.into())).collect()),
-            Self::Compact(View::Complexes(d)) => with_complexes!(d, |d| d.iter().map(|z| real_part(z).and_then(&real)).collect()), Self::Compact(View::Characters(_)) => Err(Kind::Domain.into()),
-            Self::Values(d) => d.iter().map(|v| other(v.observed_number()?)).collect()
+            Self::Compact(View::Complexes(d)) => with_complexes!(d, |d| d.iter().map(|z| real_part(z).and_then(&real)).collect()),
+            Self::Compact(View::Characters(_)) => Err(Kind::Domain.into()), Self::Values(d) => d.iter().map(|v| other(v.observed_number()?)).collect()
         }
     }
     /// Each item as an integer. 64-bit integer storage is borrowed. A fraction, an infinity or a non-number is DOMAIN, and a value outside `i64` is LIMIT.
     pub(crate) fn integers(&self) -> Result<Cow<'a, [i64]>, ErrorKind> {
-        use rustymath::tolerant::{wholes, Tolerance};
+        use rustymath::tolerant::{Tolerance, wholes};
         if let Some(ints) = self.ints() { return Ok(ints.widened()); }
         // Floats that all stand for integers inside `i64` convert in one pass. Others go item by item, which gives the error.
         const LIMIT: f64 = 9_223_372_036_854_775_808.0;
         let converted = match *self {
-            Self::Compact(View::Floats(Floats::F64(d))) => wholes(Tolerance::DEFAULT, d, LIMIT), Self::Compact(View::Floats(Floats::F32(d))) => wholes(Tolerance::DEFAULT, d, LIMIT),
-            _ => None
+            Self::Compact(View::Floats(Floats::F64(d))) => wholes(Tolerance::DEFAULT, d, LIMIT),
+            Self::Compact(View::Floats(Floats::F32(d))) => wholes(Tolerance::DEFAULT, d, LIMIT), _ => None
         };
         if let Some((n, _)) = converted { return Ok(Cow::Owned(n)); }
         self.each(Ok, real::integer, Number::integer).map(Cow::Owned)
     }
     /// Each item as a signed position: an integer, or `None` for NaN, which reads a fill. Compact storage decodes through rustymath's `structure::signed_positions`, and every float as `structure::float_position` reads it. A fraction, an infinity or a non-number is DOMAIN.
     pub(crate) fn positions(&self) -> Result<Vec<Option<i64>>, ErrorKind> {
-        if let Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) = self.view() { return rustymath::structure::signed_positions(view).map_err(|_| Kind::Domain.into()); }
+        if let Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) = self.view() {
+            return rustymath::structure::signed_positions(view).map_err(|_| Kind::Domain.into());
+        }
         let real = |y: f64| -> Result<Option<i64>, ErrorKind> { rustymath::structure::float_position(y).map_err(|_| Kind::Domain.into()) };
         self.each(|n| Ok(Some(n)), real, |n| match n.as_float() { Some(y) => real(y), None => n.integer().map(Some) })
     }
     /// The items of Boolean or integer storage as integers. `None` for any other storage.
-    pub(crate) fn exact_integers(&self) -> Option<Cow<'a, [i64]>> { match self.view() { Some(View::Booleans(_) | View::Integers(_)) => self.integers().ok(), _ => None } }
+    pub(crate) fn exact_integers(&self) -> Option<Cow<'a, [i64]>> {
+        match self.view() { Some(View::Booleans(_) | View::Integers(_)) => self.integers().ok(), _ => None }
+    }
     /// The integers of integer storage of any width.
     pub(crate) fn ints(self) -> Option<Ints<'a>> { match self { Self::Compact(View::Integers(ints)) | Self::Fixed(ints) => Some(ints), _ => None } }
     /// Each item as a count of type `T`. A negative item is also DOMAIN. Compact numbers that `integers` converts in one pass and that are all nonnegative take that path. Others go item by item, which gives the error and reads counts beyond `i64`.
@@ -403,7 +415,8 @@ impl<'a> Items<'a> {
                 return Ok(n.into_owned().into_iter().map(|n| T::try_from(n as u64).ok().expect("each count is at most the largest")).collect());
             }
         }
-        self.each(|n| u64::try_from(n).map_err(|_| Kind::Domain.into()).and_then(crate::number::count_as), real::nonnegative_integer, Number::nonnegative_integer)
+        self.each(
+            |n| u64::try_from(n).map_err(|_| Kind::Domain.into()).and_then(crate::number::count_as), real::nonnegative_integer, Number::nonnegative_integer)
     }
 }
 
@@ -411,7 +424,9 @@ fn number(value: &Value) -> Result<&Number, ErrorKind> { match value { Value::Nu
 /// Items copied from source arrays into a new array. The buffer takes the compact dtype that its `widening` gives the nonempty sources, and widens for wider items. A weak number beside strong floats or complex numbers takes their width, wherever it comes among the items (`plan::Kind::join`), so `weak` records whether only weak numbers gave the buffer's dtype. A mixed source, or an item that no compact dtype holds, makes the buffer mixed, and it stays mixed.
 ///
 /// A source that carries a dual or a labelled value starts a join (`transform::Join`): the buffer then copies what each source holds and that level's data into buffers of their own, and `finish` gives an array that carries the data again. Number duals that `add` takes are repacked this way into an array dual.
-pub(crate) struct Gather { pub(super) data: Storage, dtype: Option<DType>, open: bool, weak: bool, widening: Widening, join: Option<Box<crate::transform::Join>> }
+pub(crate) struct Gather {
+    pub(super) data: Storage, dtype: Option<DType>, open: bool, weak: bool, widening: Widening, join: Option<Box<crate::transform::Join>>
+}
 
 impl Gather {
     /// A buffer for an operation's result, joining compact arrays.
@@ -424,7 +439,8 @@ impl Gather {
     pub(crate) fn with_widening(sources: &[&Value], capacity: usize, widening: Widening) -> Self {
         if let Some(join) = crate::transform::Join::of(sources, capacity, widening) { return Self::joined(join); }
         let Some(joined) = Self::joined_kind(sources, widening) else { return Self { widening, ..Self::items(capacity) } };
-        Self { data: Storage::with_capacity(joined.dtype, capacity).fixed(joined.fixed.is_some()), dtype: joined.dtype, open: false, weak: joined.weak, widening, join: None }
+        Self { data: Storage::with_capacity(joined.dtype, capacity).fixed(joined.fixed.is_some()), dtype: joined.dtype, open: false, weak: joined.weak,
+            widening, join: None }
     }
     /// The kind of the items that a buffer joining `sources` under `widening` holds, or `None` where no source holds any. An empty compact source holds no items that could change it.
     pub(crate) fn joined_kind(sources: &[&Value], widening: Widening) -> Option<crate::plan::Kind> {
@@ -435,15 +451,15 @@ impl Gather {
     pub(crate) fn len(&self) -> usize { match &self.join { Some(join) => join.len(), None => self.data.len() } }
     /// An empty buffer for an operation's items, added one at a time. It takes the dtype of its first items. Each number keeps its exactness.
     pub(crate) fn items(capacity: usize) -> Self {
-        Self { data: Storage::Compact(Buffer::Integers(IntBuf::I64(Vec::with_capacity(capacity)))), dtype: Some(DType::Integer(Width::I64)), open: true, weak: false, widening: Widening::Items, join: None }
+        Self { data: Storage::Compact(Buffer::Integers(IntBuf::I64(Vec::with_capacity(capacity)))), dtype: Some(DType::Integer(Width::I64)), open: true,
+            weak: false, widening: Widening::Items, join: None }
     }
     /// Whether a copy from `source` goes through a join: the buffer has one, or `source` starts one (`transform::Join::enter`).
-    fn leveled(&mut self, source: &Value) -> bool {
-        crate::transform::Join::enter(self, source);
-        self.join.is_some()
-    }
+    fn leveled(&mut self, source: &Value) -> bool { crate::transform::Join::enter(self, source); self.join.is_some() }
     /// Runs the copy `op` on each part of the join (`transform::Join::each`).
-    fn each(&mut self, source: &Value, replaces: bool, op: impl Fn(&mut Self, &Value)) { self.join.as_mut().expect("a joined buffer").each(source, replaces, |g, s, _| op(g, s)) }
+    fn each(&mut self, source: &Value, replaces: bool, op: impl Fn(&mut Self, &Value)) {
+        self.join.as_mut().expect("a joined buffer").each(source, replaces, |g, s, _| op(g, s))
+    }
     /// A buffer that copies through `join`.
     pub(crate) fn joined(join: crate::transform::Join) -> Self { Self { join: Some(Box::new(join)), ..Self::items(0) } }
     /// The join that this buffer copies through, if it has one.
@@ -473,8 +489,8 @@ impl Gather {
         if self.dtype == source.dtype && self.data.fixed_width() == source.fixed && self.weak == source.weak { return; }
         if self.dtype.is_none() { return; }
         let current = crate::plan::Kind::stored(self.dtype, self.data.fixed_width(), self.weak);
-        let Ok(joined) = crate::plan::Kind::join([current, source], self.widening) else { self.mixed(); return };
-        let Some(dtype) = joined.dtype else { self.mixed(); return };
+        let Ok(joined) = crate::plan::Kind::join([current, source], self.widening) else { self.mixed(); return; };
+        let Some(dtype) = joined.dtype else { self.mixed(); return; };
         if self.dtype != Some(dtype) {
             let capacity = self.data.capacity();
             let old = std::mem::replace(&mut self.data, Storage::with_capacity(Some(dtype), capacity));
@@ -538,7 +554,9 @@ impl Gather {
     pub(crate) fn rows<R: num_traits::AsPrimitive<usize>>(&mut self, source: &Value, rows: &[R], width: usize) {
         if rows.is_empty() || width == 0 { return; }
         if self.leveled(source) { return self.each(source, false, |g, s| g.rows(s, rows, width)); }
-        if width > 1 || source.pending().is_some() { return self.walk(source, 0, &[Steps::table(rows.iter().map(|&r| r.as_() * width).collect()), Steps::along(width, 1)], None); }
+        if width > 1 || source.pending().is_some() {
+            return self.walk(source, 0, &[Steps::table(rows.iter().map(|&r| r.as_() * width).collect()), Steps::along(width, 1)], None);
+        }
         self.follow(source);
         if copy_into!(&mut self.data, source.as_items(), |d, s, f| d.extend(rows.iter().map(|&r| f(s[r.as_()])))) { return; }
         let d = self.mixed();
@@ -605,12 +623,20 @@ impl Gather {
     }
     /// Copies the items of `source` that `steps` reach from `base`, through rustymath's `gather::walk`: one `Steps` for each axis, with the last varying fastest. An offset that reaches no item gives `fill`, or the prototype of `source` where there's none, and through a join only the values read `fill` (`transform::Part`). Compact storage is copied in one typed loop. A pending copy that the walk reads fewer items of is read through its map, without building it (`fusion::walk_through`).
     pub(crate) fn walk(&mut self, source: &Value, base: usize, steps: &[Steps], fill: Option<&Value>) {
-        if self.leveled(source) { return self.join.as_mut().expect("a joined buffer").each(source, false, |g, s, part| g.walk(s, base, steps, part.fill(fill))); }
-        if let Some((inner, base, steps, fill)) = crate::fusion::walk_through(source, base, steps, fill) { return self.walk(&inner, base, &steps, fill.as_ref()); }
+        if self.leveled(source) {
+            return self.join.as_mut().expect("a joined buffer").each(source, false, |g, s, part| g.walk(s, base, steps, part.fill(fill)));
+        }
+        if let Some((inner, base, steps, fill)) = crate::fusion::walk_through(source, base, steps, fill) {
+            return self.walk(&inner, base, &steps, fill.as_ref());
+        }
         self.follow(source);
         let native = fill.and_then(|fill| source.native_fill(fill));
-        if copy_into!(&mut self.data, source.as_items(), |d, s| rustymath::gather::walk(d, s, base, steps, rustymath::buffer::Fill::item(native.as_ref()), rustymath::gather::Same)) { return; }
-        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(d, s, base, steps, rustymath::buffer::Fill::item(native.as_ref()), f)) { return; }
+        if copy_into!(&mut self.data, source.as_items(), |d, s| rustymath::gather::walk(
+            d, s, base, steps, rustymath::buffer::Fill::item(native.as_ref()), rustymath::gather::Same
+        )) { return; }
+        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(
+            d, s, base, steps, rustymath::buffer::Fill::item(native.as_ref()), f
+        )) { return; }
         let chosen = fill.map_or_else(std::cell::OnceCell::new, |_| std::cell::OnceCell::from(source.fill_item(fill)));
         walk_values(self.mixed(), source, &chosen, base, steps);
     }
@@ -620,8 +646,7 @@ impl Gather {
         let shape = crate::Shape::from(layout.shape());
         let value = match self.data {
             data if data.len() == 0 => Value::empty(shape, prototype.value())?,
-            Storage::Mixed(items, _) => Value::from_storage(shape, Storage::compact(items, Widening::Items))?,
-            data => Value::from_storage(shape, data)?
+            Storage::Mixed(items, _) => Value::from_storage(shape, Storage::compact(items, Widening::Items))?, data => Value::from_storage(shape, data)?
         };
         value.with_layout(layout)
     }
@@ -632,8 +657,7 @@ fn walk_values(d: &mut Vec<Value>, source: &Value, fill: &std::cell::OnceCell<Va
     let Some((axis, rest)) = steps.split_first() else { return d.push(source.at(base)) };
     let width = Steps::count(rest);
     axis.for_each(|_, o| match o {
-        Some(o) => walk_values(d, source, fill, base + o, rest),
-        None => d.extend(std::iter::repeat_n(fill.get_or_init(|| source.prototype()).clone(), width)),
+        Some(o) => walk_values(d, source, fill, base + o, rest), None => d.extend(std::iter::repeat_n(fill.get_or_init(|| source.prototype()).clone(), width))
     });
 }
 

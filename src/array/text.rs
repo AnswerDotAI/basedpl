@@ -1,8 +1,8 @@
 //! Text forms of values: `⍕` formatting, and source text that reads back.
 
 use super::*;
-use rustymath::buffer::View;
 use crate::transform::Plain;
+use rustymath::buffer::View;
 
 /// Text as a double-quoted string literal.
 pub(crate) fn quoted(text: &str) -> String { format!("\"{}\"", text.replace('"', "\"\"")) }
@@ -56,8 +56,7 @@ impl Value {
             let rank = self.shape().len();
             let (width, rows) = crate::display::table(self, el, false);
             let lines = match self.mark(el) {
-                Some(m) => crate::display::bracketed(rows, &self.shape()[..rank - 1], 1, m),
-                None => rows.into_iter().flat_map(|(_, lines)| lines).collect(),
+                Some(m) => crate::display::bracketed(rows, &self.shape()[..rank - 1], 1, m), None => rows.into_iter().flat_map(|(_, lines)| lines).collect()
             };
             let width = lines.iter().map(|line| line.chars().count()).max().unwrap_or(width);
             let mut shape = self.shape().to_vec();
@@ -93,7 +92,7 @@ impl Value {
     }
 
     fn formatted_cells(&self, el: Elide) -> Result<Self, ErrorKind> {
-        use crate::display::{grid, Cell, Style};
+        use crate::display::{Cell, Style, grid};
         if self.is_empty() { return Self::empty([0], Value::Character(' ')); }
         let rank = self.shape().len();
         let columns = self.shape().last().copied().unwrap_or(1);
@@ -195,8 +194,7 @@ impl Value {
             let Some(line) = line else { return "⋮".to_string() };
             let chars: Vec<_> = lines[line].chars().collect();
             excerpt(chars.len(), columns, el.edges).map(|i| match i {
-                Some(i) if chars[i].is_control() => chars[i].escape_default().to_string(),
-                Some(i) => chars[i].to_string(), None => "…".to_string(),
+                Some(i) if chars[i].is_control() => chars[i].escape_default().to_string(), Some(i) => chars[i].to_string(), None => "…".to_string()
             }).collect::<String>()
         }).collect::<Vec<_>>().join("\n")
     }
@@ -251,12 +249,14 @@ impl Value {
     /// Whether text shows any of the value's axis names.
     pub(crate) fn shows_names(&self, el: Elide) -> bool { self.axis_names().iter().any(|n| el.name(n).is_some()) }
     /// Key `i` of `axis` as display text shows it, with a hidden name shortened as `Elide::shown` shortens it.
-    pub(crate) fn shown_key(&self, axis: usize, i: usize, el: Elide) -> Option<String> { self.keys(axis)?.names().get(i)?.as_deref().map(|k| el.shown(k).into_owned()) }
+    pub(crate) fn shown_key(&self, axis: usize, i: usize, el: Elide) -> Option<String> {
+        self.keys(axis)?.names().get(i)?.as_deref().map(|k| el.shown(k).into_owned())
+    }
 
     /// An array with named axes: its keyed shape reshapes the array without names. Reshape keeps position keys.
     fn named_literal(&self, el: Elide) -> String {
-        let shape: Vec<_> =
-            self.axis_names().iter().zip(self.shape()).map(|(n, len)| el.name(n).map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(&n)))).collect();
+        let shape: Vec<_> = self.axis_names().iter().zip(self.shape())
+            .map(|(n, len)| el.name(n).map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(&n)))).collect();
         format!("[{}]⍴{}", shape.join(" "), self.clone().with_axis_names(vec![]).unwrap().source(el))
     }
 
@@ -265,8 +265,7 @@ impl Value {
         let edges = el.edges(self.shape());
         let lists: Vec<_> = self.shape().iter().enumerate().map(|(axis, &len)| {
             let keys: Vec<_> = positions(len, edges)
-                .map(|i| i.map_or_else(|| "…".into(), |i| self.shown_key(axis, i, el).map_or_else(|| i.to_string(), |k| quoted(&k))))
-                .collect();
+                .map(|i| i.map_or_else(|| "…".into(), |i| self.shown_key(axis, i, el).map_or_else(|| i.to_string(), |k| quoted(&k)))).collect();
             match keys.len() { 0 => "⍬".into(), 1 => format!("[{}]", keys[0]), _ => keys.join(" ") }
         }).collect();
         format!("[{}]:{}", lists.join(";"), self.unkeyed().source(el))
@@ -275,12 +274,11 @@ impl Value {
     /// Whether plain display shows the vector as a strand: a vector of two or more numbers, characters or strings. Exact integers show in brackets instead.
     pub(crate) fn is_strand(&self, el: Elide) -> bool {
         matches!(self, Self::Array(_)) && self.shape().len() == 1 && self.len() >= 2 && !self.has_keys() && !self.shows_names(el)
-            && self.string_literal(el.display).is_none() && !matches!(self.shown_kind(), Some((rustymath::buffer::DType::Integer(_), _))) && match self.as_items() {
-                Items::Values(items) => {
-                    items.iter().all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal(el.display).is_some())
-                }
-                Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()),
-                _ => true,
+            && self.string_literal(el.display).is_none() && !matches!(self.shown_kind(), Some((rustymath::buffer::DType::Integer(_), _)))
+            && match self.as_items() {
+                Items::Values(items) => items.iter()
+                    .all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal(el.display).is_some()),
+                Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()), _ => true
             }
     }
 
@@ -313,16 +311,16 @@ impl Value {
 
     /// A vector's items as they appear between brackets, each written by `item`, with `…` for the gap that `edges` leaves.
     fn bracket_items(&self, item: fn(&Self, Elide) -> String, el: Elide, edges: Option<usize>) -> String {
-        let items: Vec<_> = positions(self.len(), edges)
-            .map(|i| i.map_or_else(|| "…".into(), |i| self.shown_key(0, i, el).map_or_else(|| item(&self.at(i), el), |k| format!("{}:{}", quoted(&k), item(&self.at(i), el)))))
-            .collect();
+        let items: Vec<_> = positions(self.len(), edges).map(|i| {
+            i.map_or_else(
+                || "…".into(), |i| self.shown_key(0, i, el).map_or_else(|| item(&self.at(i), el), |k| format!("{}:{}", quoted(&k), item(&self.at(i), el))))
+        }).collect();
         items.join(" ")
     }
 
     /// Whether the value prints as one row of `(a⋄b)`: a vector with items, other than a string.
     fn is_row(&self, el: Elide) -> bool {
-        matches!(self, Self::Array(_)) && self.shape().len() == 1 && !self.is_empty() && crate::keyed::name(self).is_none()
-            && !self.shows_names(el)
+        matches!(self, Self::Array(_)) && self.shape().len() == 1 && !self.is_empty() && crate::keyed::name(self).is_none() && !self.shows_names(el)
     }
 
     /// A major cell as one part of array notation: a vector's items side by side, a higher rank in its own notation, or one item. A row with one item needs its own brackets, because a single item would be a cell by itself. `edges` elides the whole array's positions.
@@ -336,6 +334,8 @@ impl Value {
 
     /// A quoted character vector. Source excludes control characters other than a newline.
     fn string_literal(&self, display: bool) -> Option<String> {
-        if let Self::Array(_) = self { crate::keyed::name(self).filter(|s| display || !s.chars().any(|c| c.is_control() && c != '\n')).map(|s| quoted(&s)) } else { None }
+        if let Self::Array(_) = self {
+            crate::keyed::name(self).filter(|s| display || !s.chars().any(|c| c.is_control() && c != '\n')).map(|s| quoted(&s))
+        } else { None }
     }
 }

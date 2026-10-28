@@ -1,8 +1,8 @@
 //! Assignment: plain, destructuring, modified and selective.
 
-use rustymath::error::Kind;
-use super::*;
 use super::tree::{Fact, Facts};
+use super::*;
+use rustymath::error::Kind;
 
 impl Session {
     /// Whether `nodes` is one name that can hold an array, or brackets of such names, as in `[a b]←`.
@@ -10,12 +10,14 @@ impl Session {
         let [node] = nodes else { return false };
         match &node.kind {
             NodeKind::Name(name, _) => {
-                (self.bindings.current().is_some() && name.implicit().is_none()) || !matches!(self.bindings.category(*name), Some(Category::Function | Category::Operator | Category::DyadicOperator))
+                (self.bindings.current().is_some() && name.implicit().is_none())
+                    || !matches!(self.bindings.category(*name), Some(Category::Function | Category::Operator | Category::DyadicOperator))
             }
             NodeKind::Group(inner) => self.assignment_names(inner),
             // Inside brackets every name is a target, whatever it holds. A pattern's cells each have a key, which `targets` checks.
             NodeKind::ArrayLiteral { cells, form: ListForm::Items | ListForm::Rows, record } => cells.iter().all(|c| {
-                if *record { crate::syntax::key_colon(c).is_some() } else { matches!(&c[..], [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(c) }
+                if *record { crate::syntax::key_colon(c).is_some() }
+                else { matches!(&c[..], [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(c) }
             }),
             _ => false,
         }
@@ -41,7 +43,8 @@ impl Session {
 
     /// The category of `name`'s binding, or of the field that `keys` reach from the array it holds (`Category::field`), read without evaluating anything. While a statement records, `log` keeps what it read (`tree::Fact`).
     pub(super) fn path_category(&self, name: Name, keys: &[Arc<str>], log: &mut Facts) -> Category {
-        let category = if keys.is_empty() { Category::named(self.bindings.category(name)) } else { Category::field(self.bindings.lookup(name).map(|(_, b)| b), keys) };
+        let category =
+            if keys.is_empty() { Category::named(self.bindings.category(name)) } else { Category::field(self.bindings.lookup(name).map(|(_, b)| b), keys) };
         if let Some(log) = log {
             let fact = Fact { address: self.bindings.address(name), keys: keys.into(), category };
             if !log.contains(&fact) { log.push(fact); }
@@ -86,8 +89,8 @@ impl Session {
         let end = nodes.len();
         let (operand, category) = self.assignment_operand(nodes, end, &mut None)?;
         // Inside a dfn a name before `←` is a target, unless an array comes directly before it. Then the name's value decides, as at top level: a function makes a modified assignment, as in `a(f)←3` and `(a)f←3`.
-        let modified =
-            operand > 0 && matches!(category, Category::Function) && (self.holds_array(&nodes[operand - 1], &mut None) || !self.assignment_names(&nodes[operand..]));
+        let modified = operand > 0 && matches!(category, Category::Function)
+            && (self.holds_array(&nodes[operand - 1], &mut None) || !self.assignment_names(&nodes[operand..]));
         let start = if modified { operand - 1 } else { end - 1 };
         if start > 0 && self.holds_array(&nodes[start], &mut None) && self.holds_array(&nodes[start - 1], &mut None) {
             let span = Span { source: nodes[start].span.source.clone(), range: nodes[start - 1].span.range.start..nodes[start].span.range.end };
@@ -122,8 +125,13 @@ impl Session {
     /// The step after the binder, or a recording, finds where an assignment's target starts: `value` assigned to `target`, or with no value, `a(f)←`'s update (`modify_monadic`). A target that is a plain name with slot `local` in the current frame stores there, because storing a name computes nothing for `assign` to report. Gives the assignment's value, which is no result for an update. `span` is `←`'s.
     #[inline]
     pub(super) fn assigned(&self, target: &[Node], value: Option<Binding>, local: Option<u32>, span: &Span) -> Result<Binding, Error> {
-        let Some(value) = value else { return if self.modify_monadic(target)? { Ok(Binding::NoResult) } else { Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(span)) } };
-        match local { Some(k) => self.bindings.insert(Place::Slot(self.bindings.current().expect("a compiled statement runs in its dfn's frame"), k), value.clone()), None => self.assign(target, &value)? }
+        let Some(value) = value else {
+            return if self.modify_monadic(target)? { Ok(Binding::NoResult) } else { Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(span)) };
+        };
+        match local {
+            Some(k) => self.bindings.insert(Place::Slot(self.bindings.current().expect("a compiled statement runs in its dfn's frame"), k), value.clone()),
+            None => self.assign(target, &value)?,
+        }
         Ok(value)
     }
 
@@ -160,7 +168,7 @@ impl Session {
                             Ok(())
                         }
                         _ => return Err(Error::domain("output requires a subject").at(&target.span)),
-                    }
+                    };
                 }
                 NodeKind::Group(nodes) => {
                     if self.assignment_names(nodes) { return self.assign_to(nodes, value); }
@@ -176,7 +184,9 @@ impl Session {
             }
         }
         if let Some((name, derivative)) = self.rule_target(target) { return self.attach_rule(name, derivative, value, span); }
-        let Some((array, modifier)) = self.modified_target(target)? else { return Err(Error::new(ErrorKind::Syntax, "assignment needs a name or selection").at(span)); };
+        let Some((array, modifier)) = self.modified_target(target)? else {
+            return Err(Error::new(ErrorKind::Syntax, "assignment needs a name or selection").at(span));
+        };
         self.modify(array, modifier, value)
     }
 
@@ -254,7 +264,8 @@ impl Session {
     fn targets<'a>(&self, cells: &'a [Vec<Node>], record: bool) -> Result<Vec<(Option<Arc<str>>, &'a [Node])>, Error> {
         if !record { return Ok(cells.iter().map(|cell| (None, &cell[..])).collect()); }
         cells.iter().map(|cell| {
-            let colon = crate::syntax::key_colon(cell).ok_or_else(|| Error::new(ErrorKind::Syntax, "each cell of a pattern has a key, as in [a:] or [key:a]").at(&cell[0].span))?;
+            let colon = crate::syntax::key_colon(cell)
+                .ok_or_else(|| Error::new(ErrorKind::Syntax, "each cell of a pattern has a key, as in [a:] or [key:a]").at(&cell[0].span))?;
             let key_error = || Error::new(ErrorKind::Syntax, "a pattern's key is a name, or a string before a target").at(&cell[0].span);
             let key: Arc<str> = match &cell[..colon] {
                 [Node { kind: NodeKind::Name(name, _), .. }] => name.text().into(),
@@ -299,16 +310,19 @@ impl Session {
     fn extend_selected(&self, nodes: &mut Vec<Node>, descend: bool) -> Result<(), Error> {
         if let [Node { kind: NodeKind::Group(inner), .. }] = nodes.as_mut_slice() { return self.extend_selected(inner, descend); }
         // A key before `⊃`, `⌷` or `.[]` may name an entry that the container lacks. It can be a list of keys.
-        let Some(i) = nodes.iter().position(|n| matches!(n.kind.primitive(), Some(Primitive::Mix | Primitive::Index | Primitive::Bracket))) else { return Ok(()) };
+        let Some(i) = nodes.iter().position(|n| matches!(n.kind.primitive(), Some(Primitive::Mix | Primitive::Index | Primitive::Bracket))) else {
+            return Ok(());
+        };
         if i == 0 || i + 1 == nodes.len() || !nodes[..i].iter().all(crate::syntax::key_node) { return Ok(()); }
         let span = nodes[0].span.clone();
         let value = self.array_result(&nodes[..i])?;
         // `⌷` and `.[]` select in one level. A path's items go down level by level.
         let pick = nodes[i].kind.primitive() == Some(Primitive::Mix);
         let items = if pick { crate::primitive::coordinate_fields(&value).collect() } else { vec![value.clone()] };
-        let extend = |target: &mut Value, write| if pick {
-            crate::primitive::extend_path(&items, target, descend, write)
-        } else { crate::primitive::extend_indices(&items[0], target, descend, write) };
+        let extend = |target: &mut Value, write| {
+            if pick { crate::primitive::extend_path(&items, target, descend, write) }
+            else { crate::primitive::extend_indices(&items[0], target, descend, write) }
+        };
         // Replace the keys with their value, so that they are evaluated once.
         nodes.splice(..i, [Node { kind: NodeKind::Literal(value), span: span.clone() }]);
         if !items.iter().flat_map(crate::primitive::coordinate_fields).any(|s| matches!(crate::keyed::Selector::of(&s), Ok(Some(_)))) { return Ok(()); }
@@ -319,14 +333,10 @@ impl Session {
             let lacks = extend(&mut target, false)?;
             // Holding the item would make the write copy it.
             drop(target);
-            if lacks {
-                self.write_kept(binding, &span, |value| extend(value.item_mut(&path, false), true).map(drop))?;
-            }
+            if lacks { self.write_kept(binding, &span, |value| extend(value.item_mut(&path, false), true).map(drop))?; }
         } else {
             let mut target = self.array_result(&container)?;
-            if extend(&mut target, true)? {
-                self.assign_selected(&container, None, &Binding::Value(target))?;
-            }
+            if extend(&mut target, true)? { self.assign_selected(&container, None, &Binding::Value(target))?; }
         }
         nodes.extend(container);
         Ok(())
@@ -376,9 +386,7 @@ impl Session {
     }
 
     /// Runs `write` on the array that `binding` kept, then stores it under the name. The name's current binding goes first, so the write happens in place unless something else holds the array. Running levels record the write first (`Session::record_write`), so a batched map stops before it. `write` makes every check before it changes anything, so an error or a stop leaves the name as it was. `fusion_report` reports a write that computes a pending array, as `←`.
-    fn write_kept(
-        &self, binding: ArrayBinding, span: &Span, write: impl FnOnce(&mut Value) -> Result<(), Error>
-    ) -> Result<(), Error> {
+    fn write_kept(&self, binding: ArrayBinding, span: &Span, write: impl FnOnce(&mut Value) -> Result<(), Error>) -> Result<(), Error> {
         let ArrayBinding { place, mut value } = binding;
         if self.transforming() { self.record_write(place).at(span)?; }
         let watch = self.watch(&value);
@@ -400,7 +408,9 @@ impl Session {
         let span = nodes[0].span.clone();
         match nodes {
             [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_target(inner),
-            [left, Node { kind: NodeKind::Function(Builtin::Primitive(p @ (Primitive::Index | Primitive::Bracket | Primitive::Mix))), .. }, rest @ ..] if self.holds_array(left, &mut None) => {
+            [left, Node { kind: NodeKind::Function(Builtin::Primitive(p @ (Primitive::Index | Primitive::Bracket | Primitive::Mix))), .. }, rest @ ..]
+                if self.holds_array(left, &mut None) =>
+            {
                 let Some((binding, path)) = self.direct_item(rest)? else { return Ok(None) };
                 let left = self.evaluate_once(left)?;
                 let item = crate::primitive::item_at(&binding.value, &path, None);
@@ -486,7 +496,9 @@ impl Session {
         crate::explain::itemwise(rustymath::events::Route::Accumulation, selection.targets.len());
         let values = match &selection.frame {
             ResultFrame::Direct => results.pop().unwrap_or(right),
-            ResultFrame::Array(layout) if !results.is_empty() => Value::new(layout.shape().to_vec(), results).described("invalid modified selection").at(span)?,
+            ResultFrame::Array(layout) if !results.is_empty() => {
+                Value::new(layout.shape().to_vec(), results).described("invalid modified selection").at(span)?
+            }
             ResultFrame::Array(_) => right,
         };
         self.write_selection(binding, selection, &values, span)
@@ -497,7 +509,9 @@ impl Session {
 fn dot_path(node: &Node) -> Option<(Name, Vec<Arc<str>>)> {
     let (mut node, mut keys) = (node, Vec::new());
     while let NodeKind::Group(inner) = &node.kind {
-        let [Node { kind: NodeKind::Literal(key), .. }, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Mix)), .. }, root] = &inner[..] else { return None };
+        let [Node { kind: NodeKind::Literal(key), .. }, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Mix)), .. }, root] = &inner[..] else {
+            return None;
+        };
         keys.push(crate::keyed::name(key)?);
         node = root;
     }

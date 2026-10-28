@@ -1,15 +1,16 @@
-use basedpl::{buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}, EvalOptions, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value};
+use basedpl::{
+    EvalOptions, Evaluation, Function, InterruptHandle, Number, Operand, Session, Value, buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}
+};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use pyo3::{
-    exceptions::{PyBufferError, PyKeyError, PyTypeError, PyValueError}, ffi, prelude::*, sync::PyOnceLock,
-    types::{PyBool, PyBoolMethods, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyRange, PySlice, PyString, PyTuple, PyType}, IntoPyObjectExt
+    IntoPyObjectExt, exceptions::{PyBufferError, PyKeyError, PyTypeError, PyValueError}, ffi, prelude::*, sync::PyOnceLock,
+    types::{PyBool, PyBoolMethods, PyComplex, PyComplexMethods, PyDict, PyFloat, PyInt, PyList, PyRange, PySlice, PyString, PyTuple, PyType}
 };
 use rustymath::{layout::Keys, structure::IndexPart};
 use rustymath_buffer::walk::{Collect, walked, within};
-use std::{ffi::c_int, sync::{atomic::{AtomicPtr, Ordering}, Arc, Mutex}};
+use std::{ffi::c_int, sync::{Arc, Mutex, atomic::{AtomicPtr, Ordering}}};
 
-/// The memory guard stops a runaway computation at half of physical memory.
 #[global_allocator]
 static GUARD: rustymath::memory::Guard = rustymath::memory::Guard::new();
 
@@ -72,7 +73,10 @@ fn numpy_types(py: Python<'_>) -> PyResult<Option<&'static (Py<PyType>, Py<PyTyp
 /// The value of a NumPy scalar or array, or `None` for any other object. A scalar of a numeric dtype keeps its dtype. Arrays of `str` or objects convert item by item, as do unsigned 64-bit values beyond `int64`, which stay exact.
 fn numpy(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Option<Value>> {
     let Some((generic, ndarray)) = numpy_types(obj.py())? else { return Ok(None) };
-    let dtype = |o: &Bound<'_, PyAny>| -> PyResult<(char, usize)> { let d = o.getattr("dtype")?; Ok((d.getattr("kind")?.extract()?, d.getattr("itemsize")?.extract()?)) };
+    let dtype = |o: &Bound<'_, PyAny>| -> PyResult<(char, usize)> {
+        let d = o.getattr("dtype")?;
+        Ok((d.getattr("kind")?.extract()?, d.getattr("itemsize")?.extract()?))
+    };
     if obj.is_instance(generic.bind(obj.py()))? {
         if !"biufc".contains(dtype(obj)?.0) { return element(&obj.call_method0("item")?, items).map(Some); }
         let value = numeric(&obj.call_method0("__array__")?)?.ok_or_else(|| PyTypeError::new_err("unsupported NumPy dtype"))?;
@@ -82,7 +86,9 @@ fn numpy(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Option<Value>> {
     let (mut kind, size) = dtype(obj)?;
     if !"biufcUO".contains(kind) || kind == 'f' && size > 8 || kind == 'c' && size > 16 { return Err(PyTypeError::new_err("unsupported NumPy dtype")); }
     let mut obj = obj.clone();
-    if kind == 'u' && size == 8 && obj.getattr("size")?.extract::<usize>()? > 0 && obj.call_method0("max")?.ge(1u64 << 63)? { (obj, kind) = (obj.call_method1("astype", ("O",))?, 'O'); }
+    if kind == 'u' && size == 8 && obj.getattr("size")?.extract::<usize>()? > 0 && obj.call_method0("max")?.ge(1u64 << 63)? {
+        (obj, kind) = (obj.call_method1("astype", ("O",))?, 'O');
+    }
     if !"UO".contains(kind) { return numeric(&obj); }
     let data = obj.call_method0("ravel")?.call_method0("tolist")?.try_iter()?.map(|o| element(&o?, items)).collect::<PyResult<Vec<_>>>()?;
     let prototype = if kind == 'U' { Value::Character(' ') } else { zero(items.width) };
@@ -170,9 +176,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyAny>> {
 #[pyclass(name = "_Array")]
 struct PyArray { inner: Option<Value> }
 
-impl From<Value> for PyArray {
-    fn from(inner: Value) -> Self { Self { inner: Some(inner) } }
-}
+impl From<Value> for PyArray { fn from(inner: Value) -> Self { Self { inner: Some(inner) } } }
 
 impl PyArray {
     /// The value, or an error once `own` has moved its items.
@@ -193,22 +197,27 @@ fn index_error(error: basedpl::Error) -> PyErr {
 fn selection(value: &Value, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<IndexSelection> {
     let converted = |obj: &Bound<'_, PyAny>| -> PyResult<Value> { Ok(convert.call1((obj,))?.extract::<PyRef<'_, PyArray>>()?.value()?.clone()) };
     let parts = rustymath_buffer::selection::parts(index)?;
-    let values = parts.iter().map(|p| p.as_ref().try_map(|p| if rustymath_buffer::selection::native(p) { Ok(None) } else { converted(p).map(Some) })).collect::<PyResult<Vec<_>>>()?;
-    if let Some(IndexPart::Axis(Some(first))) = values.iter().find(|p| matches!(p, IndexPart::Axis(_) | IndexPart::All)) && value.picks_paths(first).map_err(index_error)? {
-        let paths = parts.iter().zip(values).map(|(p, v)| v.try_map(|v| match (p.axis(), v) {
-            (_, Some(v)) if !matches!(v.view(), Some(View::Booleans(_))) => Ok(v),
-            (Some(p), None) if !p.is_instance_of::<PySlice>() => converted(p),
-            _ => Err(PyTypeError::new_err("an index with pick paths takes positions, keys, full slices, None and ..., not partial slices or masks")),
-        })).collect::<PyResult<Vec<_>>>()?;
-        return Ok(IndexSelection::Rich(paths));
-    }
+    let values = parts.iter().map(|p| p.as_ref().try_map(|p| if rustymath_buffer::selection::native(p) { Ok(None) } else { converted(p).map(Some) }))
+        .collect::<PyResult<Vec<_>>>()?;
+    if let Some(IndexPart::Axis(Some(first))) = values.iter().find(|p| matches!(p, IndexPart::Axis(_) | IndexPart::All))
+        && value.picks_paths(first).map_err(index_error)? {
+            let paths = parts.iter().zip(values).map(|(p, v)| {
+                v.try_map(|v| match (p.axis(), v) {
+                    (_, Some(v)) if !matches!(v.view(), Some(View::Booleans(_))) => Ok(v), (Some(p), None) if !p.is_instance_of::<PySlice>() => converted(p),
+                    _ => Err(PyTypeError::new_err("an index with pick paths takes positions, keys, full slices, None and ..., not partial slices or masks"))
+                })
+            }).collect::<PyResult<Vec<_>>>()?;
+            return Ok(IndexSelection::Rich(paths));
+        }
     let layout = value.core_layout();
     value.planned(&values, |i, axis| {
         let (IndexPart::Axis(p), IndexPart::Axis(v)) = (&parts[i], &values[i]) else { unreachable!("planned decodes axis parts") };
         match v {
             None => Some(rustymath_buffer::selection::selector(layout, axis, p, || unreachable!("a native selector decodes without converting"))),
             Some(v) => match v.view() {
-                Some(View::Booleans(_)) => Some(rustymath_buffer::selection::array_selector(layout, axis, v.core_layout().clone(), std::sync::Arc::new(v.clone()))),
+                Some(View::Booleans(_)) => {
+                    Some(rustymath_buffer::selection::array_selector(layout, axis, v.core_layout().clone(), std::sync::Arc::new(v.clone())))
+                }
                 _ => None,
             },
         }
@@ -231,8 +240,7 @@ impl Owned {
         // SAFETY: `bool` and `u8`, and `char` and `i32`, have the same size and alignment, and every `bool` is a valid `u8` and every `char` a valid `i32`.
         let mut items = match items {
             Buffer::Booleans(v) => Buffer::Integers(IntBuf::U8(unsafe { retyped(v) })),
-            Buffer::Characters(v) => Buffer::Integers(IntBuf::I32(unsafe { retyped(v) })),
-            items => items,
+            Buffer::Characters(v) => Buffer::Integers(IntBuf::I32(unsafe { retyped(v) })), items => items
         };
         let data = AtomicPtr::new(items.as_mut_ptr());
         let (shape, strides) = rustymath_buffer::geometry(dtype, shape);
@@ -256,7 +264,10 @@ impl Owned {
     unsafe fn __getbuffer__(slf: Bound<'_, Self>, view: *mut ffi::Py_buffer, flags: c_int) -> PyResult<()> {
         let this = slf.get();
         // SAFETY: `data` addresses `items`, which the object owns with the shape and strides and never changes, and the export holds the object.
-        unsafe { rustymath_buffer::export(view, flags, slf.as_any(), this.dtype, this.data.load(Ordering::Relaxed), this.items.len(), &this.shape, &this.strides, false) }
+        unsafe {
+            rustymath_buffer::export(
+                view, flags, slf.as_any(), this.dtype, this.data.load(Ordering::Relaxed), this.items.len(), &this.shape, &this.strides, false)
+        }
     }
 }
 
@@ -272,7 +283,8 @@ impl PyArray {
     }
     fn with_names(&self, names: Option<Vec<Option<String>>>) -> PyResult<Self> {
         let value = self.value()?;
-        let layout = value.core_layout().clone().with_names(names.unwrap_or_default().into_iter().map(|n| n.map(Arc::from)).collect()).map_err(rustymath_buffer::py_err)?;
+        let layout = value.core_layout().clone().with_names(names.unwrap_or_default().into_iter().map(|n| n.map(Arc::from)).collect())
+            .map_err(rustymath_buffer::py_err)?;
         Ok(value.clone().with_core_layout(layout).map_err(|k| PyValueError::new_err(k.to_string()))?.into())
     }
     #[getter]
@@ -284,10 +296,12 @@ impl PyArray {
         Ok(value.clone().with_core_layout(layout).map_err(|k| PyValueError::new_err(k.to_string()))?.into())
     }
     fn __rustymath_array__(&self, py: Python<'_>) -> PyResult<(Py<PyAny>, Py<PyAny>, Vec<Option<String>>)> {
-        if !self.exports()? { return Err(PyTypeError::new_err("only ordinary compact values can cross to Rustymath; convert exact or mixed values explicitly")); }
+        if !self.exports()? {
+            return Err(PyTypeError::new_err("only ordinary compact values can cross to Rustymath; convert exact or mixed values explicitly"));
+        }
         let value = self.value()?;
         let owner = match value.widened_for_export() {
-            Some(items) => Owned::new(items, value.shape()).into_py_any(py)?, None => self.copy()?.into_py_any(py)?,
+            Some(items) => Owned::new(items, value.shape()).into_py_any(py)?, None => self.copy()?.into_py_any(py)?
         };
         Ok((owner, self.keys()?.into_py_any(py)?, self.names()?))
     }
@@ -324,7 +338,11 @@ impl PyArray {
         let (items, offset, strides) = lendable(&value).ok_or_else(|| PyBufferError::new_err("an array of mixed or exact items has no buffer"))?;
         let dtype = items.view().expect("lendable items are compact").dtype();
         // SAFETY: the offset and strides reach only items of `items`, as the copy's map does. An atom holds its items inline, so the pointer comes from the copy that the export holds.
-        unsafe { rustymath_buffer::lend(view, flags, slf.py(), items, |v| v.view().expect("the items are compact").as_ptr().add(offset * dtype.bytes()), dtype, value.shape(), strides.as_deref()) }
+        unsafe {
+            rustymath_buffer::lend(
+                view, flags, slf.py(), items, |v| v.view().expect("the items are compact").as_ptr().add(offset * dtype.bytes()), dtype, value.shape(),
+                strides.as_deref())
+        }
     }
     /// The items for NumPy to view writably: moved with no copy where nothing else holds them, and copied otherwise. Integers that static kinds store narrower than their kind come widened to it (`Value::widened_for_export`). For items it can't move, such as exact numbers, it still empties the array and returns `None`, so the caller copies them first.
     fn own(&mut self) -> PyResult<Option<Owned>> {
@@ -364,7 +382,9 @@ impl PyArray {
         let (value, values, selection) = (self.value()?.clone(), values.value()?.clone(), selection(self.value()?, index, convert)?);
         py.detach(move || {
             let _turn = Session::current();
-            match selection { IndexSelection::Planned(plan, atom) => value.assigned(plan, atom, &values), IndexSelection::Rich(parts) => value.assigned_parts(&parts, &values) }
+            match selection {
+                IndexSelection::Planned(plan, atom) => value.assigned(plan, atom, &values), IndexSelection::Rich(parts) => value.assigned_parts(&parts, &values)
+            }
         }).map(Self::from).map_err(index_error)
     }
     /// Whether this array holds `query`, a native array or a `str`. A one-character string is an atom. A longer one is one item where the major cells are items, as a list of strings holds them, and otherwise a character vector, which matches a row of characters.
@@ -372,12 +392,17 @@ impl PyArray {
         let value = self.value()?.clone();
         let query = match query.cast::<PyString>() {
             Ok(s) => match text(s, &mut Texts::default())? {
-                chars @ Value::Array(_) if value.shape().len() == 1 => Value::from_parts(Vec::<usize>::new(), vec![chars], Value::Character(' ')).map_err(value_error)?,
+                chars @ Value::Array(_) if value.shape().len() == 1 => {
+                    Value::from_parts(Vec::<usize>::new(), vec![chars], Value::Character(' ')).map_err(value_error)?
+                }
                 item => item,
             },
             Err(_) => query.extract::<PyRef<'_, PyArray>>()?.value()?.clone(),
         };
-        py.detach(move || { let _turn = Session::current(); value.contains(&query) }).map_err(|e| match &e.kind {
+        py.detach(move || {
+            let _turn = Session::current();
+            value.contains(&query)
+        }).map_err(|e| match &e.kind {
             basedpl::ErrorKind::Array(e) if e.kind == rustymath::error::Kind::Rank => PyTypeError::new_err(e.message.to_string()),
             _ => PyValueError::new_err(e.to_string()),
         })
@@ -505,7 +530,10 @@ impl PySession {
     fn make_interactive(&self) { Session::make_interactive() }
     #[pyo3(signature = (prefix="", classes=vec![2, 3, 4], complete=false))]
     fn names(&self, py: Python<'_>, prefix: &str, classes: Vec<i64>, complete: bool) -> Vec<String> {
-        py.detach(|| { let session = Session::current(); if complete { session.complete(prefix) } else { session.name_list(&classes, prefix) } })
+        py.detach(|| {
+            let session = Session::current();
+            if complete { session.complete(prefix) } else { session.name_list(&classes, prefix) }
+        })
     }
     fn interrupt(&self) { if let Some(active) = &*self.active.lock().unwrap() { active.interrupt(); } }
 }

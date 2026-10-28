@@ -1,23 +1,19 @@
 //! A record of linear calls, for `∂` in reverse mode. Reverse mode pushes a record level just before its `∂` call, and seeds each part of the argument it differentiates with a record at that level (`seed`) in place of a tangent. Every node of a record belongs to one record level. The tangent rules then run as in forward mode, but their linear calls on records add nodes to the record instead of computing values. Routing (`transform`) sends a call whose newest level is a record level to `call` or `route`, and folds, inner products, structural copies, views and writes record their own nodes. `transpose` runs the record backwards from a cotangent of the result, which gives the vector–Jacobian product. `evaluate` runs it forwards from seed values, which gives a Jacobian–vector product without running the function again.
 //!
 //! A record is never computed, so reading its items is a bug: `ArrayData::storage` panics on one. Records live only in the tangents of duals, and only the code that handles tangents meets them.
+use crate::array::{Footprint, Seen};
 use crate::execution::check;
 use crate::{
-    agreement::{Agree, Agreement},
-    array::{Gather, Items, Layout, Storage},
-    error::Described,
-    Span,
-    number::Arithmetic,
-    primitive::{FoldKind, Form, LinearMap, Operation, Primitive}, transform::Pairing,
-    explain::{Live, Counted}, Error, ErrorKind, Number, Value};
-use rustymath::hashing::{HashMap, HashMapExt, HashSet, HashSetExt};
-use std::borrow::Cow;
-use crate::array::{Footprint, Seen};
-use rustymath::{agreement::Mapping, buffer::{Buffer, DType, FloatBuf, FloatWidth, Floats, View, Width}, gather::{Steps, Writes, counts_up}, structure::{Edge, IndexPart, Plan, Walk}};
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc, OnceLock,
+    Error, ErrorKind, Number, Span, Value, agreement::{Agree, Agreement}, array::{Gather, Items, Layout, Storage}, error::Described, explain::{Counted, Live},
+    number::Arithmetic, primitive::{FoldKind, Form, LinearMap, Operation, Primitive}, transform::Pairing
 };
+use rustymath::hashing::{HashMap, HashMapExt, HashSet, HashSetExt};
+use rustymath::{
+    agreement::Mapping, buffer::{Buffer, DType, FloatBuf, FloatWidth, Floats, View, Width}, gather::{Steps, Writes, counts_up},
+    structure::{Edge, IndexPart, Plan, Walk}
+};
+use std::borrow::Cow;
+use std::sync::{Arc, OnceLock, atomic::{AtomicU64, Ordering}};
 
 /// The next sequence number. A node's children always have smaller numbers, so visiting nodes by decreasing number visits each one after every node that reads it.
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -56,14 +52,22 @@ pub(crate) enum Offsets { Shared(Vec<usize>), Cells(crate::batch::Cells), Select
 
 impl Offsets {
     /// The bytes that the offsets hold.
-    fn footprint(&self) -> usize { match self { Offsets::Shared(o) => o.capacity() * size_of::<usize>(), Offsets::Cells(c) => c.footprint(), Offsets::Selected { .. } => 0 } }
+    fn footprint(&self) -> usize {
+        match self { Offsets::Shared(o) => o.capacity() * size_of::<usize>(), Offsets::Cells(c) => c.footprint(), Offsets::Selected { .. } => 0 }
+    }
     /// The items of `sources`, joined end to end, at these offsets, laid out as `layout` (`read_at`), or each cell's items at its own offsets, which read one source, or the items that the parts select from the one source (`primitive::select`).
     fn read(&self, sources: &[Value], layout: &Layout, zero: &Value, span: &Span) -> Result<Value, Error> {
-        match self { Offsets::Shared(o) => read_at(sources, o, layout, zero, span), Offsets::Cells(c) => c.read(&sources[0], layout), Offsets::Selected { parts, paired } => crate::primitive::select(&sources[0], parts, None, *paired, None, span) }
+        match self {
+            Offsets::Shared(o) => read_at(sources, o, layout, zero, span), Offsets::Cells(c) => c.read(&sources[0], layout),
+            Offsets::Selected { parts, paired } => crate::primitive::select(&sources[0], parts, None, *paired, None, span)
+        }
     }
     /// Zeros of `layout`, with each item of `items` added at its offset (`scatter_add`), or each cell's items added at its own offsets, or the items added at the places that the parts select (`trace::added`).
     fn added(&self, items: &Value, layout: &Layout, zero: &Value, span: &Span) -> Result<Value, Error> {
-        match self { Offsets::Shared(o) => scatter_add(items, o, layout, zero, span), Offsets::Cells(c) => c.added(items, layout, zero, span), Offsets::Selected { parts, paired } => crate::program::trace::added(PLUS, &layout.filled(zero), items, parts, *paired) }
+        match self {
+            Offsets::Shared(o) => scatter_add(items, o, layout, zero, span), Offsets::Cells(c) => c.added(items, layout, zero, span),
+            Offsets::Selected { parts, paired } => crate::program::trace::added(PLUS, &layout.filled(zero), items, parts, *paired)
+        }
     }
 }
 
@@ -71,25 +75,23 @@ impl Op {
     /// The value that this call holds, a coefficient, and the nodes that it reads.
     fn parts(&self) -> (Option<&Value>, Vec<&Arc<Linear>>) {
         match self {
-            Op::Seed(_) => (None, vec![]),
-            Op::Scale(c, t, _) | Op::Product { coefficient: c, child: t, .. } => (Some(c), vec![t]),
+            Op::Seed(_) => (None, vec![]), Op::Scale(c, t, _) | Op::Product { coefficient: c, child: t, .. } => (Some(c), vec![t]),
             Op::View(t) | Op::Cast(t, _) | Op::Copy { child: t, .. } | Op::ScatterAdd { child: t, .. } | Op::Fold { child: t, .. } => (None, vec![t]),
-            Op::Add(a, b) => (None, vec![a, b]),
-            Op::Gather { sources, .. } => (None, sources.iter().collect()),
+            Op::Add(a, b) => (None, vec![a, b]), Op::Gather { sources, .. } => (None, sources.iter().collect())
         }
     }
 }
 
 /// A record holds every node it reads, so dropping a long one by recursion could overflow the stack. `drop_chain` unlinks the children that nothing else holds in a loop instead.
-impl Drop for Linear {
-    fn drop(&mut self) { crate::array::drop_chain(self, |node, chain| chain.extend(take(&mut node.op))); }
-}
+impl Drop for Linear { fn drop(&mut self) { crate::array::drop_chain(self, |node, chain| chain.extend(take(&mut node.op))); } }
 
 /// The nodes that `op` reads, taken out of it.
 fn take(op: &mut Op) -> Vec<Arc<Linear>> { std::mem::replace(op, Op::Seed(0)).parts().1.into_iter().cloned().collect() }
 
 impl std::fmt::Debug for Linear {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("Linear").field("shape", &self.layout.shape()).field("seq", &self.seq).finish() }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Linear").field("shape", &self.layout.shape()).field("seq", &self.seq).finish()
+    }
 }
 
 impl Footprint for Linear {
@@ -98,7 +100,9 @@ impl Footprint for Linear {
         let (mut stack, mut bytes, mut node) = (Vec::new(), 0, self);
         loop {
             let (held, children) = node.op.parts();
-            let maps = match &node.op { Op::Copy { map, .. } => map.footprint(), Op::Gather { offsets, .. } | Op::ScatterAdd { offsets, .. } => offsets.footprint(), _ => 0 };
+            let maps = match &node.op {
+                Op::Copy { map, .. } => map.footprint(), Op::Gather { offsets, .. } | Op::ScatterAdd { offsets, .. } => offsets.footprint(), _ => 0
+            };
             bytes += size_of::<Linear>() + node.zero.footprint_in(seen) + held.map_or(0, |v| v.footprint_in(seen)) + maps + node.ids.footprint_in(seen);
             stack.extend(children.into_iter().filter(|c| crate::array::unseen(*c, seen)).map(|c| &**c));
             let Some(next) = stack.pop() else { return bytes };
@@ -109,8 +113,11 @@ impl Footprint for Linear {
 
 /// A record node as a value, at record level `level`. A coefficient that the call holds carries only older levels' data, as a dual's parts do (`derivative::Dual::new`).
 fn node(op: Op, layout: Layout, zero: Value, level: u64) -> Value {
-    if let Op::Scale(c, ..) | Op::Product { coefficient: c, .. } = &op { assert!(c.older_than(level), "a record's coefficient carries only older levels' data"); }
-    Value::from_linear(Arc::new(Linear { op, level, layout, zero, ids: OnceLock::new(), seq: NEXT.fetch_add(1, Ordering::Relaxed), _live: Live::new(Counted::Record) }))
+    if let Op::Scale(c, ..) | Op::Product { coefficient: c, .. } = &op {
+        assert!(c.older_than(level), "a record's coefficient carries only older levels' data");
+    }
+    Value::from_linear(Arc::new(Linear { op, level, layout, zero, ids: OnceLock::new(), seq: NEXT.fetch_add(1, Ordering::Relaxed),
+        _live: Live::new(Counted::Record) }))
 }
 
 /// The record level of `nodes`, which the nodes that one node reads all share.
@@ -133,10 +140,7 @@ pub(crate) fn record_of(value: &Value) -> Option<&Arc<Linear>> { value.carrier()
 
 /// A zero of the kind of the numbers in `like`.
 pub(crate) fn zero_of(like: &Value) -> Value {
-    match if like.is_atom() { like.template() } else { like.prototype() } {
-        Value::Number(n) => Value::Number(n.zero()),
-        _ => Value::integer(0),
-    }
+    match if like.is_atom() { like.template() } else { like.prototype() } { Value::Number(n) => Value::Number(n.zero()), _ => Value::integer(0) }
 }
 
 /// The seed for the `k`th part of the argument, `like`, at record level `level`.
@@ -173,10 +177,7 @@ impl Sources {
         match tangent.and_then(record_of) { Some(t) => self.ids(t), None => fill_ids(like) }
     }
     /// `t` as one item that a join keeps whole, in its own layout (`derivative::Join::add`). It gets no ids. `assembled` keeps it as it is.
-    pub(crate) fn retained(&mut self, t: &Arc<Linear>) -> Value {
-        self.first.get_or_insert_with(|| t.clone());
-        Value::from_linear(t.clone())
-    }
+    pub(crate) fn retained(&mut self, t: &Arc<Linear>) -> Value { self.first.get_or_insert_with(|| t.clone()); Value::from_linear(t.clone()) }
     /// The tangent that `ids` give once they hold these sources' ids in place of their records: records that read the sources, nested as `ids` is, with each retained record kept whole (`assemble`). Ids that read no source read fill, zeros of `zero`'s kind. A write passes its target's kind. With `None`, the zeros take the first record's kind. Where no record got ids, as where a join kept every record whole, the ids read fill from the first record met, which gives them its record level: reverse mode needs a record in every active result.
     pub(crate) fn assembled(self, ids: Value, zero: Option<Value>) -> Value {
         let zero = zero.or_else(|| self.first.as_ref().map(|r| r.zero.clone())).unwrap_or_else(|| Value::integer(0));
@@ -227,11 +228,14 @@ pub(crate) fn selected(t: &Arc<Linear>, parts: &[IndexPart<Value>], paired: bool
 }
 
 /// Item `i` of the record `t`, as a record of one number.
-pub(crate) fn item(t: &Arc<Linear>, i: usize) -> Value { node(Op::Gather { sources: vec![t.clone()], offsets: Offsets::Shared(vec![i]) }, Layout::default(), t.zero.clone(), t.level) }
+pub(crate) fn item(t: &Arc<Linear>, i: usize) -> Value {
+    node(Op::Gather { sources: vec![t.clone()], offsets: Offsets::Shared(vec![i]) }, Layout::default(), t.zero.clone(), t.level)
+}
 
 /// The offsets that `ids` give, an atom or an array of exact integers (`transform::id_offset`). A join builds ids as exact integers, and the primitives that move them keep them exact.
 fn offsets(ids: &Value) -> Vec<usize> {
-    let ids = if ids.is_atom() { Cow::Owned(vec![ids.as_number().and_then(|m| m.as_integer()).expect("an id is an exact integer")]) } else { ids.as_items().integers().expect("ids are exact integers") };
+    let ids = if ids.is_atom() { Cow::Owned(vec![ids.as_number().and_then(|m| m.as_integer()).expect("an id is an exact integer")]) }
+    else { ids.as_items().integers().expect("ids are exact integers") };
     ids.iter().map(|&id| usize::try_from(id).map_or(Steps::FILL, crate::transform::id_offset)).collect()
 }
 
@@ -242,7 +246,8 @@ fn gather(sources: Vec<Arc<Linear>>, ids: Value, zero: Value) -> Value {
             Ok([source]) => source,
             Err(sources) => {
                 let total = sources.iter().map(|s| s.layout.count()).sum::<usize>();
-                record_of(&gather(sources, laid(&Layout::from([total]), (1..=total as i64).collect()), zero.clone())).expect("joined records are a record").clone()
+                record_of(&gather(sources, laid(&Layout::from([total]), (1..=total as i64).collect()), zero.clone())).expect("joined records are a record")
+                    .clone()
             }
         };
         let (layout, level) = (b.whole().layout().axes(b.frame..b.whole().shape().len()), source.level);
@@ -250,9 +255,7 @@ fn gather(sources: Vec<Arc<Linear>>, ids: Value, zero: Value) -> Value {
     }
     let layout = ids.layout().clone();
     let offsets = offsets(&ids);
-    if let [source] = sources.as_slice() {
-        if !ids.is_atom() && offsets.len() == source.layout.count() && counts_up(&offsets) { return view(source, layout); }
-    }
+    if let [source] = sources.as_slice() { if !ids.is_atom() && offsets.len() == source.layout.count() && counts_up(&offsets) { return view(source, layout); } }
     let level = shared_level(&sources);
     node(Op::Gather { sources, offsets: Offsets::Shared(offsets) }, layout, zero, level)
 }
@@ -297,10 +300,11 @@ pub(crate) fn call(op: crate::transform::Op<'_>, left: Option<&Value>, right: &V
     use crate::transform::Op as Routed;
     match op {
         Routed::Operation(Operation::Primitive(p), Pairing::Axis(axis)) => Some(primitive_call(p, left, right, axis, span)),
-        Routed::Operation(operation @ Operation::Fold(_, kind), Pairing::Axis(axis)) => match operation.facts(false).and_then(|r| r.linear).filter(|_| left.is_none()) {
-            Some(LinearMap::Sum) => Some(fold(kind, axis, record_of(right)?)),
-            _ => Some(Err(untransposable("this fold"))),
-        },
+        Routed::Operation(operation @ Operation::Fold(_, kind), Pairing::Axis(axis)) => {
+            match operation.facts(false).and_then(|r| r.linear).filter(|_| left.is_none()) {
+                Some(LinearMap::Sum) => Some(fold(kind, axis, record_of(right)?)), _ => Some(Err(untransposable("this fold")))
+            }
+        }
         Routed::Fold(..) => Some(Err(untransposable("this fold"))),
         Routed::Operation(Operation::Product(..), _) | Routed::Product => Some(Err(untransposable("this product"))),
         Routed::Operation(Operation::Primitive(Primitive::Arithmetic(Arithmetic::Plus)), Pairing::At(writes)) => Some(accumulated(left?, right, writes)),
@@ -336,7 +340,9 @@ pub(crate) fn primitive_call(p: Primitive, left: Option<&Value>, right: &Value, 
 }
 
 /// `x+.×y`, or, where `stacked`, `x+.×⍤2 y`: the product of each pair of matrices of two stacks whose frames agree, which `primitive::stacked`'s kernels compute where they can.
-pub(crate) fn plus_times(x: &Value, y: &Value, stacked: bool, span: &Span) -> Result<Value, Error> { Operation::PLUS_TIMES.call(Pairing::stacked(stacked), Some(x), y, span) }
+pub(crate) fn plus_times(x: &Value, y: &Value, stacked: bool, span: &Span) -> Result<Value, Error> {
+    Operation::PLUS_TIMES.call(Pairing::stacked(stacked), Some(x), y, span)
+}
 
 /// `c` with each of its matrices transposed: its last two axes swapped.
 pub(crate) fn swapped(c: &Value) -> Result<Value, Error> {
@@ -345,7 +351,9 @@ pub(crate) fn swapped(c: &Value) -> Result<Value, Error> {
 }
 
 /// `+` folded by `kind` along `axis`, or by default the fold's own axis, of `v`.
-fn plus_fold(kind: FoldKind, axis: Option<usize>, v: &Value, span: &Span) -> Result<Value, Error> { Operation::Fold(Primitive::Arithmetic(Arithmetic::Plus), kind).call(Pairing::Axis(axis), None, v, span) }
+fn plus_fold(kind: FoldKind, axis: Option<usize>, v: &Value, span: &Span) -> Result<Value, Error> {
+    Operation::Fold(Primitive::Arithmetic(Arithmetic::Plus), kind).call(Pairing::Axis(axis), None, v, span)
+}
 
 /// `c+.×t`, or `t+.×c` where `left` is false, where `t` is a record, with the primal product's `layout`. The product contracts the last axis of its left argument with the first of its right, or, where `stacked`, multiplies each pair of matrices (`plus_times`).
 pub(crate) fn product(c: &Value, t: &Arc<Linear>, left: bool, stacked: bool, layout: Layout) -> Value {
@@ -379,18 +387,16 @@ pub(crate) fn sum_at(sum: &mut Value, writes: Writes<'_>, items: &Value, span: &
 /// `items` added into `base` at `writes` where either is a record (`call`): a `ScatterAdd` node of `items`' record, added to `base`'s record where it has one. A side that isn't a record is a constant whose tangent is zero, as a tangent's zeros are.
 fn accumulated(base: &Value, items: &Value, writes: Writes<'_>) -> Result<Value, Error> {
     let offsets = writes.listed().into_owned();
-    let scattered = record_of(items).map(|r| node(Op::ScatterAdd { child: r.clone(), offsets: Offsets::Shared(offsets) }, base.layout().clone(), r.zero.clone(), r.level));
+    let scattered =
+        record_of(items).map(|r| node(Op::ScatterAdd { child: r.clone(), offsets: Offsets::Shared(offsets) }, base.layout().clone(), r.zero.clone(), r.level));
     match (record_of(base), scattered) {
-        (Some(b), Some(s)) => add(b, record_of(&s).expect("a node holds a record")),
-        (Some(_), None) => Ok(base.clone()),
-        (None, Some(s)) => Ok(s),
-        (None, None) => unreachable!("a record level's call carries a record"),
+        (Some(b), Some(s)) => add(b, record_of(&s).expect("a node holds a record")), (Some(_), None) => Ok(base.clone()), (None, Some(s)) => Ok(s),
+        (None, None) => unreachable!("a record level's call carries a record")
     }
 }
 
 /// Zeros of `layout`, of `zero`'s kind. An empty shape gives `zero` itself.
 pub(crate) fn zeros(layout: &Layout, zero: &Value) -> Value { if layout.shape().is_empty() { zero.clone() } else { layout.filled(zero) } }
-
 
 /// Where each of `sizes` starts among them all joined end to end, with the total last.
 fn starts(sizes: impl Iterator<Item = usize>) -> Vec<usize> {
@@ -401,7 +407,9 @@ fn starts(sizes: impl Iterator<Item = usize>) -> Vec<usize> {
 }
 
 /// The source that holds item `o` of the joined sources whose `starts` are given, checking `s`, the previous item's source, first.
-fn source_at(starts: &[usize], o: usize, s: usize) -> usize { if starts[s] <= o && o < starts[s + 1] { s } else { starts.partition_point(|&first| first <= o) - 1 } }
+fn source_at(starts: &[usize], o: usize, s: usize) -> usize {
+    if starts[s] <= o && o < starts[s + 1] { s } else { starts.partition_point(|&first| first <= o) - 1 }
+}
 
 /// The items of `sources`, joined end to end, at `offsets`, laid out as `layout`. A `Steps::FILL` offset reads `zero`.
 fn read_at(sources: &[Value], offsets: &[usize], layout: &Layout, zero: &Value, span: &Span) -> Result<Value, Error> {
@@ -409,7 +417,8 @@ fn read_at(sources: &[Value], offsets: &[usize], layout: &Layout, zero: &Value, 
     if sources.iter().any(Value::carries_here) && !offsets.contains(&Steps::FILL) {
         let mut joined = flat(&sources[0], span)?;
         for source in &sources[1..] { joined = Primitive::Ravel.call(Some(&joined), &flat(source, span)?, span)?; }
-        let read = crate::primitive::copied(&joined, Layout::from([offsets.len()]), &Mapping::from(vec![Steps::table(offsets.to_vec())])).described("invalid read")?;
+        let read =
+            crate::primitive::copied(&joined, Layout::from([offsets.len()]), &Mapping::from(vec![Steps::table(offsets.to_vec())])).described("invalid read")?;
         return relay(&read, layout, span);
     }
     let mut data = Gather::new(&sources.iter().collect::<Vec<_>>(), offsets.len());
@@ -437,7 +446,8 @@ fn read_at(sources: &[Value], offsets: &[usize], layout: &Layout, zero: &Value, 
 
 /// The window sizes of a copy whose frames move by 1 and cover each of the source's first axes (rustymath's `Walk::windows`). `None` for any other copy.
 fn whole_windows(tables: &[Steps], shape: &[usize], source: &[usize]) -> Option<Vec<usize>> {
-    Walk::new(tables, shape, source)?.windows(source).filter(|w| w.iter().zip(source).all(|(&[n, w, step], &len)| step == 1 && n + w - 1 == len)).map(|w| w.iter().map(|&[_, w, _]| w).collect())
+    Walk::new(tables, shape, source)?.windows(source).filter(|w| w.iter().zip(source).all(|(&[n, w, step], &len)| step == 1 && n + w - 1 == len))
+        .map(|w| w.iter().map(|&[_, w, _]| w).collect())
 }
 
 /// The cotangent of a copy's source, for a product `child+.×c` whose `child` is that copy, or views of it, holding every window that moves by 1 (`whole_windows`). `u` is the product's cotangent, laid out as `layout`. The cotangent is the full convolution of `u`, as frames then filters, with `c`, as windows, filters, then the source's other axes. It's one product through the reads that `rustymath::signal::correlation` gives, which builds neither the windows' cotangent nor the padded windows. `None` for any other `child`.
@@ -467,9 +477,7 @@ fn convolved_back<'a>(c: &Value, u: &Value, child: &'a Arc<Linear>, layout: &Lay
 }
 
 /// `v` copied through `plan`, as a transpose reads a cotangent back to where a copy read it.
-fn read_back(v: &Value, plan: Plan) -> Result<Value, Error> {
-    crate::primitive::remapped(v, plan).described("a cotangent copies back")
-}
+fn read_back(v: &Value, plan: Plan) -> Result<Value, Error> { crate::primitive::remapped(v, plan).described("a cotangent copies back") }
 
 /// The cotangent `u` laid out as `layout` by `agreement::expand`, except that a `u` already laid out that way comes back unchanged, an atom included.
 fn laid_out(u: &Value, layout: &Layout) -> Value { if u.layout() == layout { u.clone() } else { crate::agreement::expand(u, layout) } }
@@ -483,7 +491,9 @@ fn transposed(tables: &[Steps], shape: &[usize], source: &[usize]) -> Option<(Ve
     // The axes of the copy that walk each source axis.
     let walks: Vec<Vec<usize>> = (0..source.len()).map(|a| walk.walking(a).collect()).collect();
     // Of each pair of axes that walk one source axis, the shorter plays the window, which gives fewer reads. Moving the windows' axes first lets each read walk the copy's last axis forwards.
-    let cells: Vec<usize> = walks.iter().filter_map(|w| match *w.as_slice() { [f, c] => Some(if steps[f].len() >= steps[c].len() { c } else { f }), _ => None }).collect();
+    let cells: Vec<usize> = walks.iter().filter_map(|w| match *w.as_slice() {
+        [f, c] => Some(if steps[f].len() >= steps[c].len() { c } else { f }), _ => None
+    }).collect();
     let order: Vec<usize> = cells.iter().copied().chain((0..shape.len()).filter(|r| !cells.contains(r))).collect();
     let moved = rustymath::layout::strides(&order.iter().map(|&r| shape[r]).collect::<Vec<_>>());
     let mut to = vec![0; shape.len()];
@@ -524,7 +534,9 @@ fn inverted(step: &Steps, unit: usize, n: usize, stride: usize) -> Option<Steps>
     }
     let mut back = vec![Steps::FILL; n];
     let mut unique = true;
-    step.for_each(|j, o| if unique && let Some(o) = o { unique = std::mem::replace(&mut back[o / unit], j * stride) == Steps::FILL });
+    step.for_each(|j, o| {
+        if unique && let Some(o) = o { unique = std::mem::replace(&mut back[o / unit], j * stride) == Steps::FILL }
+    });
     if !unique { return None; }
     Some(Steps::table(back))
 }
@@ -569,8 +581,7 @@ fn strided_back(u: &Value, tables: &[Steps], child: &Linear) -> Result<Option<Va
     let Some(windows) = Walk::new(tables, u.shape(), source).and_then(|w| w.windows(source)) else { return Ok(None) };
     if windows.iter().all(|&[_, _, step]| step == 1) { return Ok(None); }
     match u.carrier() {
-        None => overlap_added(u, &windows, &child.layout),
-        Some(carrier) => Ok(carrier.traced().and_then(|t| t.overlap_added(windows, &child.layout))),
+        None => overlap_added(u, &windows, &child.layout), Some(carrier) => Ok(carrier.traced().and_then(|t| t.overlap_added(windows, &child.layout)))
     }
 }
 
@@ -621,8 +632,10 @@ fn slide(tables: &[Steps], shape: &[usize], source: &[usize], axis: usize) -> Op
     windows.push(w);
     let mut rest_shape = summed;
     rest_shape[at] = n;
-    let rest: Vec<Steps> = walk.steps.into_iter().enumerate().filter(|&(r, _)| r != axis).map(|(r, e)| if r == frames { Steps::Stride { start: read.start * unit, len: n, step: unit as isize } } else { e }).collect();
-    Some(Slide { padded, windows: Plan { layout: windows.into(), steps: reads }, rest: Plan { layout: rest_shape.into(), steps: Steps::with_base(walk.base, rest) } })
+    let rest: Vec<Steps> = walk.steps.into_iter().enumerate().filter(|&(r, _)| r != axis)
+        .map(|(r, e)| if r == frames { Steps::Stride { start: read.start * unit, len: n, step: unit as isize } } else { e }).collect();
+    Some(Slide { padded, windows: Plan { layout: windows.into(), steps: reads },
+        rest: Plan { layout: rest_shape.into(), steps: Steps::with_base(walk.base, rest) } })
 }
 
 /// The cotangent of `source` from the cotangent `u` of a sum along a window's axis of a copy of `source`, which `slide` describes: a sliding sum of `u` padded with zeros, sent back through the rest of the copy. The sliding sum folds a copy of the padded `u`'s windows, which fusion runs as a sliding fold without building them.
@@ -712,7 +725,9 @@ fn product_transpose(c: &Value, u: &Value, t: &Linear, left: bool, span: &Span) 
     let transposed = |[rows, cols]: [usize; 2], span: &Span| -> Result<Value, Error> {
         let matrix = crate::primitive::reshape_to(&[cols, rows], c, span)?;
         let plan = rustymath::structure::transpose(matrix.layout(), &[1, 0])?;
-        match crate::fusion::pending(&matrix, &plan.layout.into(), &Mapping::from(plan.steps)) { Some(t) => Ok(t), None => Primitive::Transpose.call(None, &matrix, span) }
+        match crate::fusion::pending(&matrix, &plan.layout.into(), &Mapping::from(plan.steps)) {
+            Some(t) => Ok(t), None => Primitive::Transpose.call(None, &matrix, span)
+        }
     };
     let matrix = |shape: [usize; 2], span: &Span| crate::primitive::reshape_to(&shape, u, span);
     let result = if left {
@@ -829,9 +844,7 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, span: &Sp
                         continue;
                     }
                 }
-                let v = if kind.scan {
-                    scan(*kind, *axis, *along, !reversed, &u, span)?
-                } else {
+                let v = if kind.scan { scan(*kind, *axis, *along, !reversed, &u, span)? } else {
                     // The cotangent of a sum goes to every item it summed: a length-1 axis where the fold removed one, broadcast back.
                     let mut shape = n.layout.shape().to_vec();
                     shape.insert(*along, 1);
@@ -868,10 +881,7 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, span: &Sp
                             continue;
                         }
                         Run::Ordered { at, from, len } => match slice(&u, from, len, &src.layout).filter(|_| at == 0 && len == src.layout.count()) {
-                            Some(v) => {
-                                push(&mut cotangents, src, v, span)?;
-                                continue;
-                            }
+                            Some(v) => { push(&mut cotangents, src, v, span)?; continue; }
                             None => Part { at: (at..at + len).collect(), from: (from..from + len).collect(), items: u.clone() },
                         },
                         Run::Scattered(at, from) => Part { at, from, items: u.clone() },
@@ -881,7 +891,9 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, span: &Sp
             }
             Op::ScatterAdd { child, offsets } => push(&mut cotangents, child, offsets.read(&[u], &child.layout, &child.zero, span)?, span)?,
             Op::View(t) => push(&mut cotangents, t, relay(&u, &t.layout, span)?, span)?,
-            Op::Cast(t, _) => push(&mut cotangents, t, match t.zero.float_width() { Some(w) => u.to_float_width(w).described("a cotangent converts to floats")?, None => u }, span)?,
+            Op::Cast(t, _) => push(&mut cotangents, t, match t.zero.float_width() {
+                Some(w) => u.to_float_width(w).described("a cotangent converts to floats")?, None => u
+            }, span)?,
             Op::Copy { child, map } => {
                 let (source, map) = composed(child, map, n.layout.shape());
                 push(&mut cotangents, source, copied_back(&u, &map.tables(n.layout.shape()), &n.layout, source, span)?, span)?
@@ -893,7 +905,8 @@ pub(crate) fn transpose(nodes: &[Arc<Linear>], u: Value, seeds: usize, span: &Sp
                         continue;
                     }
                 }
-                let back = if *stacked { stacked_transpose(coefficient, &u, child, *left, span)? } else { product_transpose(coefficient, &u, child, *left, span)? };
+                let back =
+                    if *stacked { stacked_transpose(coefficient, &u, child, *left, span)? } else { product_transpose(coefficient, &u, child, *left, span)? };
                 push(&mut cotangents, child, back, span)?
             }
         }

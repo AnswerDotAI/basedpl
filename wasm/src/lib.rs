@@ -1,6 +1,6 @@
 //! The browser's interface to BPL. A `Session` runs code and passes each output to a JavaScript function as the program produces it, gives the value of code as a JavaScript value, and binds JavaScript values and functions as BPL names. `nbs/playground/worker.js` loads the module and runs it in a Web Worker.
 #![cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-use basedpl::{js, protocol, EvalOptions, MimeData, Output, OutputSink};
+use basedpl::{EvalOptions, MimeData, Output, OutputSink, js, protocol};
 use js_sys::{Function, Object, Reflect, Uint8Array};
 use std::{cell::RefCell, sync::Arc};
 use wasm_bindgen::prelude::*;
@@ -51,6 +51,10 @@ pub fn name_cpu(name: &str) { basedpl::timing::name_cpu(name) }
 /// The pauses before each retry of a timing that fails, in seconds: `rustymath::timing::RETRY_PAUSES`.
 #[wasm_bindgen]
 pub fn retry_pauses() -> Vec<f64> { basedpl::timing::RETRY_PAUSES.to_vec() }
+
+/// Whether the speed test fails on a case still over its wasm budget, as `rustymath::timing::checks_budgets` decides from the CPU that `name_cpu` named.
+#[wasm_bindgen]
+pub fn checks_budgets() -> bool { basedpl::timing::checks_budgets() }
 
 /// Time named BPL source files, supplied as `[{name, text}]`. Results retain full code and single-line log labels.
 #[wasm_bindgen]

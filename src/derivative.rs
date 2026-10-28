@@ -3,13 +3,14 @@
 //! A value that `∂` is differentiating is a dual: a tag, a primal and a tangent of the primal's shape. A dual of a number is a carried atom (`Value::Carried`). Each `∂` call takes a fresh tag, larger than the tags of the calls it runs inside, so a value active at two levels is a dual whose primal is a dual with a smaller tag. A rule applies at the largest tag among its arguments, where an argument without that tag is a constant.
 //!
 //! Primitive dispatch sends each call with a dual argument to `call`, which reads how to run it from its form's row in `Primitive::info()` (`primitive::Facts`). Pervasive forms take their tangents from the partials table, which gives each partial derivative as primitive calls on the primals and the primal result. Rules call primitives, so partials of duals with smaller tags are themselves differentiated. Tangent rules use only `scale`, `add` and `expand`, and other rules only move a tangent's items or apply linear operations to it, so that reverse mode can supply symbolic versions of them.
+use crate::array::{Footprint, Seen};
 use crate::session;
 use crate::{
-    agreement::{expand, Agree, Agreement}, array::{Gather, Layout, Promotion, Prototype, Widening}, error::Described, number::{Arithmetic, Math}, primitive::{Comparison, FoldKind, Form, Operation, Origin, Primitive}, transform::{walk, Carrier, Cause, Mark, Op, Pairing, Part, Stop}, Error, ErrorKind,
-    Function, Span, Value,
+    Error, ErrorKind, Function, Span, Value, agreement::{Agree, Agreement, expand}, array::{Gather, Layout, Promotion, Prototype, Widening}, error::Described,
+    number::{Arithmetic, Math}, primitive::{Comparison, FoldKind, Form, Operation, Origin, Primitive},
+    transform::{Carrier, Cause, Mark, Op, Pairing, Part, Stop, walk}
 };
 use rustymath::buffer::{DType, FloatWidth};
-use crate::array::{Footprint, Seen};
 
 /// A value, atom or array, that `∂` is differentiating: the tag of the `∂` call, the primal, and the tangent, which agrees with the primal's layout. Either part can be pending. `items` holds an array's items as dual atoms, built on the first read by code with no rule for duals (`Dual::storage`).
 pub struct Dual {
@@ -33,41 +34,39 @@ impl Dual {
         self.full.get_or_init(|| expand(&self.tangent, self.primal.layout()))
     }
     /// This dual with `f` applied to its primal and to its tangent in the primal's layout, rebuilt at the same level.
-    pub(crate) fn map<E>(&self, mut f: impl FnMut(&Value) -> Result<Value, E>) -> Result<Value, E> { Ok(dual(self.tag, f(&self.primal)?, f(self.full_tangent())?)) }
+    pub(crate) fn map<E>(&self, mut f: impl FnMut(&Value) -> Result<Value, E>) -> Result<Value, E> {
+        Ok(dual(self.tag, f(&self.primal)?, f(self.full_tangent())?))
+    }
     /// Item `i`: the dual of the parts' items.
-    pub(crate) fn at(&self, i: usize) -> Value {
-        let Ok(item) = self.map(|part| Ok::<_, std::convert::Infallible>(part.at(i)));
-        item
-    }
+    pub(crate) fn at(&self, i: usize) -> Value { let Ok(item) = self.map(|part| Ok::<_, std::convert::Infallible>(part.at(i))); item }
     /// Item `i` as bulk iteration reads it (`Carrier::element`): the dual of the parts' items, each read as bulk iteration reads it.
-    pub(crate) fn element(&self, i: usize) -> Value {
-        let Ok(item) = self.map(|part| Ok::<_, std::convert::Infallible>(part.element(i)));
-        item
-    }
+    pub(crate) fn element(&self, i: usize) -> Value { let Ok(item) = self.map(|part| Ok::<_, std::convert::Infallible>(part.element(i))); item }
     /// The items as dual atoms, built on the first read by code with no rule for duals, which records an `itemwise` row in `•explain`. Cold and out of line, so that `ArrayData::storage`'s other arms stay small.
     #[cold]
     #[inline(never)]
-    pub(crate) fn storage(&self) -> &crate::array::Storage { crate::transform::Carrier::built(&self.items, rustymath::events::Route::DerivativeItems, self.primal.len(), |i| self.element(i)) }
+    pub(crate) fn storage(&self) -> &crate::array::Storage {
+        crate::transform::Carrier::built(&self.items, rustymath::events::Route::DerivativeItems, self.primal.len(), |i| self.element(i))
+    }
 }
 
 impl Footprint for Dual {
     /// The bytes of the primal, the tangent and the items built from them.
-    fn footprint_in(&self, seen: &mut Seen) -> usize { self.primal.footprint_in(seen) + self.tangent.footprint_in(seen) + self.items.footprint_in(seen) + self.full.footprint_in(seen) }
+    fn footprint_in(&self, seen: &mut Seen) -> usize {
+        self.primal.footprint_in(seen) + self.tangent.footprint_in(seen) + self.items.footprint_in(seen) + self.full.footprint_in(seen)
+    }
 }
 
 impl std::fmt::Debug for Dual {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("Dual").field("tag", &self.tag).field("shape", &self.primal.shape()).finish() }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Dual").field("tag", &self.tag).field("shape", &self.primal.shape()).finish()
+    }
 }
 
 /// The tag of `value`'s outermost dual, or `None` for a value that isn't a dual. An array whose items are dual atoms isn't a dual itself.
-pub(crate) fn tag(value: &Value) -> Option<u64> {
-    dual_of(value).map(|dual| dual.tag)
-}
+pub(crate) fn tag(value: &Value) -> Option<u64> { dual_of(value).map(|dual| dual.tag) }
 
 /// `value`'s outermost dual, atom or array, or `None` for a value that isn't a dual.
-pub(crate) fn dual_of(value: &Value) -> Option<&Dual> {
-    value.carrier().and_then(Carrier::dual).map(std::sync::Arc::as_ref)
-}
+pub(crate) fn dual_of(value: &Value) -> Option<&Dual> { value.carrier().and_then(Carrier::dual).map(std::sync::Arc::as_ref) }
 
 /// `value` at level `tag`: its primal, and its tangent in the primal's layout. A value without that tag is a constant at this level, with no tangent.
 pub(crate) fn split(value: &Value, tag: u64) -> (Value, Option<Value>) { parts(value, tag, true) }
@@ -93,9 +92,7 @@ pub(crate) fn levels(value: &Value) -> usize {
             if !tags.contains(&tag) { tags.push(tag); }
             collect(&primal, tags);
             collect(&tangent, tags);
-        } else if value.holds_values() {
-            value.elements().for_each(|e| collect(&e, tags));
-        }
+        } else if value.holds_values() { value.elements().for_each(|e| collect(&e, tags)); }
     }
     let mut tags = Vec::new();
     collect(value, &mut tags);
@@ -117,11 +114,7 @@ pub(crate) fn two_arguments() -> Error {
 /// Whether `value`'s numbers are complex, which `∂` doesn't differentiate. A carried value answers from the value its carrier holds (`Carrier::template`): a dual's primal, or a batch's first cell, which has the kind of every cell.
 fn complex(value: &Value) -> bool {
     if let Some(carrier) = value.carrier() { return complex(carrier.template()); }
-    match value {
-        Value::Number(n) => n.as_complex().is_some(),
-        Value::Array(_) => matches!(value.dtype(), Some(DType::Complex(_))),
-        _ => false,
-    }
+    match value { Value::Number(n) => n.as_complex().is_some(), Value::Array(_) => matches!(value.dtype(), Some(DType::Complex(_))), _ => false }
 }
 
 /// `split`, looking inside nested arrays: the primal and the tangent keep `value`'s structure, with tangents of 0 for the parts without the tag.
@@ -141,9 +134,10 @@ pub(crate) fn split_deep(value: &Value, tag: u64) -> (Value, Option<Value>) {
 pub(crate) fn dual(tag: u64, primal: Value, tangent: Value) -> Value {
     // A part that is a batch newer than `tag`, as an attached rule in a batched run gives it, makes a batch of duals.
     if let Some(batched) = crate::batch::dual_of_wholes(tag, &primal, &tangent) { return batched; }
-    if matches!(primal, Value::Number(_) | Value::Carried(_)) && (tangent.is_atom() || crate::linear::record_of(&tangent).is_some_and(|r| r.layout.shape().is_empty())) {
-        return Value::Carried(Carrier::Dual(std::sync::Arc::new(Dual::new(tag, primal, tangent))));
-    }
+    if matches!(primal, Value::Number(_) | Value::Carried(_))
+        && (tangent.is_atom() || crate::linear::record_of(&tangent).is_some_and(|r| r.layout.shape().is_empty())) {
+            return Value::Carried(Carrier::Dual(std::sync::Arc::new(Dual::new(tag, primal, tangent))));
+        }
     Value::from_dual(tag, primal, tangent)
 }
 
@@ -152,7 +146,9 @@ pub(crate) fn strip(value: &Value, tag: u64) -> Value { walk(value, &mut |leaf| 
 
 /// `value` with each dual replaced by its primal, at every tag, as `•detach` gives it.
 pub(crate) fn detach(value: &Value) -> Value {
-    walk(value, &mut |leaf| Ok(match tag(leaf) { Some(t) => detach(&split(leaf, t).0), None => leaf.clone() })).expect("detaching can't fail")
+    walk(value, &mut |leaf| {
+        Ok(match tag(leaf) { Some(t) => detach(&split(leaf, t).0), None => leaf.clone() })
+    }).expect("detaching can't fail")
 }
 
 /// `value` with its numbers converted to `to`, as `width•float` and width marks convert them to floats, and fixed marks to fixed integers (`Value::converted`). A pending array converts as one more pending call (`fusion::convert`). A weak number becomes strong, as a literal with a width marker is. Each carrier converts through `Carrier::cast`.
@@ -167,15 +163,13 @@ pub(crate) fn converted(value: &Value, to: DType, span: &Span) -> Result<Value, 
 fn plain(v: &Value, to: DType, numeric: crate::number::Numeric) -> Result<Value, Error> {
     match crate::fusion::convert(v, to, numeric) {
         Some(pending) => Ok(pending),
-        None => v.converted(to, numeric).described(if matches!(to, DType::Integer(_)) { "can't convert result to fixed integers" } else { "•float takes numbers" }),
+        None => v.converted(to, numeric).described(if matches!(to, DType::Integer(_)) { "can't convert result to fixed integers" }
+        else { "•float takes numbers" }),
     }
 }
 
 /// Zeros in `like`'s layout, in the kind of its plain items.
-pub(crate) fn zeros(like: &Value) -> Value {
-    let zero = like.prototype();
-    if like.is_atom() { zero } else { like.layout().filled(&zero) }
-}
+pub(crate) fn zeros(like: &Value) -> Value { let zero = like.prototype(); if like.is_atom() { zero } else { like.layout().filled(&zero) } }
 
 /// Writes `source` into `target` with `write` at level `tag`, as `transform::written` does for a dual: the primal into the primal and the tangent into the tangent. A side without the level has tangents of 0. An error from `write` leaves `target` unchanged.
 pub(crate) fn written<E>(target: &mut Value, source: &Value, tag: u64, write: impl Fn(&mut Value, &Value) -> Result<(), E>) -> Result<(), E> {
@@ -279,7 +273,9 @@ fn seed(value: &Value, tag: u64, j: usize) -> Result<Value, Error> {
 
 /// Zeros in `like`'s layout and kind, with a 1 at item `i`. The kind is that of `like`'s prototype, or of its template where a level carries the prototype, as it carries an item that a trace read one at a time.
 fn unit(like: &Value, i: usize) -> Value {
-    let Some(zero) = (if like.is_atom() { like.template() } else { like.prototype().template() }).as_number() else { unreachable!("a numeric value has a number prototype") };
+    let Some(zero) = (if like.is_atom() { like.template() } else { like.prototype().template() }).as_number() else {
+        unreachable!("a numeric value has a number prototype")
+    };
     let one = Value::Number(zero.one());
     if like.is_atom() { return one; }
     let mut e = zeros(like);
@@ -297,10 +293,8 @@ fn direction(leaf: &Value, n: usize, k: &mut usize, j: usize) -> Value {
 /// The tangent of `value` at level `tag`, in `value`'s structure: 0 for a number without that tag.
 fn tangent(value: &Value, tag: u64) -> Result<Value, Error> {
     walk(value, &mut |leaf| match (leaf, dual_of(leaf)) {
-        (_, Some(dual)) if dual.tag == tag => Ok(dual.full_tangent().clone()),
-        (Value::Number(_) | Value::Carried(_), _) => Ok(crate::linear::zero_of(leaf)),
-        (Value::Array(_), _) => Ok(zeros(leaf)),
-        _ => Err(Error::domain("∂ needs a numeric result")),
+        (_, Some(dual)) if dual.tag == tag => Ok(dual.full_tangent().clone()), (Value::Number(_) | Value::Carried(_), _) => Ok(crate::linear::zero_of(leaf)),
+        (Value::Array(_), _) => Ok(zeros(leaf)), _ => Err(Error::domain("∂ needs a numeric result"))
     })
 }
 
@@ -308,8 +302,7 @@ fn tangent(value: &Value, tag: u64) -> Result<Value, Error> {
 pub(crate) fn differentiate(f: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let numeric = crate::number::Numeric::current();
     let right = &walk(right, &mut |leaf| match crate::plan::Kind::approximate([crate::plan::Kind::value(leaf)], numeric).map_err(Error::domain)? {
-        Some(width) => converted(leaf, DType::Float(width), span),
-        None => Ok(leaf.clone()),
+        Some(width) => converted(leaf, DType::Float(width), span), None => Ok(leaf.clone())
     })?;
     if let Some(result) = f.programmed(left, right, span, &|g, x, y| derived(g, x, y, span)) { return result; }
     derived(f, left, right, span)
@@ -333,7 +326,6 @@ fn pass(f: &Function, left: Option<&Value>, right: &Value, tag: u64, n: usize, s
     Ok((strip(&result, tag), vec![tangent(&result, tag)?]))
 }
 
-
 /// `x` made a dual at level `tag` with tangent `v`, item by item through nested arrays.
 fn along(x: &Value, v: &Value, tag: u64) -> Value {
     match x {
@@ -354,10 +346,7 @@ fn numeric(primal: &Value) -> Result<(), Error> {
 
 /// The Jacobian with the layout of `primal×⊗right`, from the tangents of passes that each seeded one number of `right`.
 fn jacobian(right: &Value, primal: &Value, columns: Vec<Value>) -> Result<Value, Error> {
-    if right.is_atom() && columns.len() == 1 {
-        numeric(primal)?;
-        return Ok(columns.into_iter().next().expect("a number has one column"));
-    }
+    if right.is_atom() && columns.len() == 1 { numeric(primal)?; return Ok(columns.into_iter().next().expect("a number has one column")); }
     laid_out(right, primal, &mut |i, j| { let c = &columns[j]; if c.is_atom() { c.clone() } else { c.element(i) } })
 }
 
@@ -453,7 +442,9 @@ impl Linearized {
 fn numbers_of(v: &Value) -> Vec<Value> { if v.is_atom() { vec![v.clone()] } else { v.elements().collect() } }
 
 /// Runs `f` once, with each part of `right` that `∂` differentiates seeded with a record at record level `record`, as the tangent of a dual at level `tag`. Gives those parts, the result without tangents, and the record of the result's tangent, laid out as the result. The record is `None` where the result doesn't depend on `right`.
-fn linearize(f: &Function, left: Option<&Value>, right: &Value, tag: u64, record: u64, span: &Span) -> Result<(Vec<Value>, Value, Option<std::sync::Arc<crate::linear::Linear>>), Error> {
+fn linearize(
+    f: &Function, left: Option<&Value>, right: &Value, tag: u64, record: u64, span: &Span
+) -> Result<(Vec<Value>, Value, Option<std::sync::Arc<crate::linear::Linear>>), Error> {
     let mut parts = Vec::new();
     let seeded = walk(right, &mut |leaf| {
         numbers(leaf)?;
@@ -518,15 +509,12 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, sp
         (_, Pairing::Axis(Some(_)) | Pairing::Agreed(_)) | (Operation::Fold(..), _) => None,
         // A cellwise form applies to cells through Rank first, and each cell's call comes back here.
         (Operation::Primitive(p @ (Primitive::MatrixDivide | Primitive::Decode)), _) => (stacked || p.cells(left, right).is_none()).then(|| match p {
-            Primitive::MatrixDivide => solve(left, right, tag, stacked, span),
-            _ => decode(left, right, span),
+            Primitive::MatrixDivide => solve(left, right, tag, stacked, span), _ => decode(left, right, span)
         }),
         (Operation::Primitive(p), Pairing::Axis(None)) => primitive_rule(p, left, right, tag, span),
         (Operation::Product(..), _) => match left {
             Some(x) if op == Operation::PLUS_TIMES => Some(product_dual(x, right, tag, stacked, span)),
-            None if op == Operation::MINUS_TIMES => Some(determinant(right, tag, stacked, span)),
-            None => Some(Err(expansion())),
-            Some(_) => None,
+            None if op == Operation::MINUS_TIMES => Some(determinant(right, tag, stacked, span)), None => Some(Err(expansion())), Some(_) => None
         },
         _ => None,
     }
@@ -586,19 +574,24 @@ fn range(left: &Value, right: &Value, tag: u64, span: &Span) -> Result<Value, Er
 
 /// Whether `value` is a batch, or a dual whose primal, through every dual inside it, is one.
 fn batched_primal(value: &Value) -> bool {
-    match value.carrier() {
-        Some(Carrier::Batch(_)) => true,
-        Some(Carrier::Dual(dual)) => batched_primal(&dual.primal),
-        _ => false,
-    }
+    match value.carrier() { Some(Carrier::Batch(_)) => true, Some(Carrier::Dual(dual)) => batched_primal(&dual.primal), _ => false }
 }
 
 /// `p`, a move, applied to its arguments' primals and then to their tangents. An argument without a dual at level `tag` has zeros as its tangent, which a record's ids read as fill. A left argument that chooses items, as a shape or counts do (`Primitive::discards`), passes its primal to both calls. Parts that hold records as items move through their ids (`linear::primitive_call`).
 fn apart(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, span: &Span) -> Result<Value, Error> {
-    let part = |v: &Value| { let (primal, tangent) = split(v, tag); let tangent = tangent.unwrap_or_else(|| zeros(&primal)); (primal, tangent) };
-    let call = |x: Option<&Value>, y: &Value| if [x, Some(y)].into_iter().flatten().any(crate::linear::holds_records) { crate::linear::primitive_call(p, x, y, None, span) } else { p.call(x, y, span) };
+    let part = |v: &Value| {
+        let (primal, tangent) = split(v, tag);
+        let tangent = tangent.unwrap_or_else(|| zeros(&primal));
+        (primal, tangent)
+    };
+    let call = |x: Option<&Value>, y: &Value| {
+        if [x, Some(y)].into_iter().flatten().any(crate::linear::holds_records) { crate::linear::primitive_call(p, x, y, None, span) }
+        else { p.call(x, y, span) }
+    };
     let (y, ty) = part(right);
-    let (x, tx) = left.map(|l| if p.discards(true) { let x = split(l, tag).0; (x.clone(), x) } else { part(l) }).unzip();
+    let (x, tx) = left.map(|l| {
+        if p.discards(true) { let x = split(l, tag).0; (x.clone(), x) } else { part(l) }
+    }).unzip();
     let primal = call(x.as_ref(), &y)?;
     let tangent = call(tx.as_ref(), &ty)?;
     Ok(dual(tag, primal, tangent))
@@ -607,7 +600,9 @@ fn apart(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, span: &Spa
 /// Monadic `∨` or `∧` of real numbers under `∂`. Each gives a number's two parts along a new last axis: `∨` its real and imaginary parts, and `∧` its magnitude and angle. For a real number the second part is constant, and the first is the number, or for `∧` its magnitude, whose derivative is the number's sign. So the tangent is `y`'s tangent, times its sign for `∧`, beside a 0.
 fn real_parts(p: Primitive, right: &Value, tag: u64, span: &Span) -> Result<Value, Error> {
     let (y, ty) = split(right, tag);
-    if complex(&y) { return Err(Error::new(ErrorKind::Unsupported, format!("∂ can't differentiate {} on complex numbers", p.info().glyph))); }
+    if complex(&y) {
+        return Err(Error::new(ErrorKind::Unsupported, format!("∂ can't differentiate {} on complex numbers", p.info().glyph)));
+    }
     let r = p.call(None, &y, span)?;
     let Some(t) = ty else { return Ok(r) };
     let times = Primitive::Arithmetic(Arithmetic::Times);
@@ -651,8 +646,7 @@ fn pervasive(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, span: 
     }
     // A float result's partials are floats of its width, computed from arguments converted to that width. Partials of exact arguments, such as `÷y` of an exact count, would otherwise be exact fractions, computed one item at a time.
     let floats = |v: Value| match r.template_dtype() {
-        Some(DType::Float(w)) if v.template_dtype() != Some(DType::Float(w)) => converted(&v, DType::Float(w), span),
-        _ => Ok(v),
+        Some(DType::Float(w)) if v.template_dtype() != Some(DType::Float(w)) => converted(&v, DType::Float(w), span), _ => Ok(v)
     };
     let (x, y) = (x.map(floats).transpose()?, floats(y)?);
     let [dx, dy] = partials(p, x.as_ref(), &y, &r, [tx.is_some(), ty.is_some()], span)?;
@@ -670,16 +664,12 @@ fn pervasive(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, span: 
 fn scale(coefficient: &Value, t: &Value, span: &Span) -> Result<Value, Error> {
     let unit = |v: &Value, other: &Value| match v {
         Value::Number(n) if n.as_integer().is_some_and(|i| i.abs() == 1) => n.as_integer(),
-        Value::Number(n) if n.as_float().is_some_and(|f| f.abs() == 1.0) && other.float_width() >= n.float_width() => n.as_float().map(|f| f as i64),
-        _ => None,
+        Value::Number(n) if n.as_float().is_some_and(|f| f.abs() == 1.0) && other.float_width() >= n.float_width() => n.as_float().map(|f| f as i64), _ => None
     };
     let negate = |v: &Value| Primitive::Arithmetic(Arithmetic::Minus).call(None, v, span);
     match (unit(coefficient, t), unit(t, coefficient)) {
-        (Some(1), _) => Ok(t.clone()),
-        (Some(_), _) => negate(t),
-        (_, Some(1)) => Ok(coefficient.clone()),
-        (_, Some(_)) => negate(coefficient),
-        _ => Primitive::Arithmetic(Arithmetic::Times).call(Some(coefficient), t, span),
+        (Some(1), _) => Ok(t.clone()), (Some(_), _) => negate(t), (_, Some(1)) => Ok(coefficient.clone()), (_, Some(_)) => negate(coefficient),
+        _ => Primitive::Arithmetic(Arithmetic::Times).call(Some(coefficient), t, span)
     }
 }
 
@@ -720,7 +710,8 @@ fn coefficients(tc: &std::sync::Arc<crate::linear::Linear>, x: &Value, span: &Sp
     column.push(1);
     row.push(n);
     let exponents = Value::integers(vec![n], (0..n as i64).collect()).described("invalid powers")?;
-    let powers = Primitive::Math(Math::Power).call(Some(&crate::primitive::reshape_to(&column, &points, span)?), &crate::primitive::reshape_to(&row, &exponents, span)?, span)?;
+    let powers = Primitive::Math(Math::Power).call(
+        Some(&crate::primitive::reshape_to(&column, &points, span)?), &crate::primitive::reshape_to(&row, &exponents, span)?, span)?;
     let ones = Value::integers(vec![n], vec![1; n]).described("invalid ones")?;
     let scaled = scale(&powers, &coefficients, span)?;
     Ok(crate::linear::product(&ones, crate::linear::record_of(&scaled).expect("a scaled record is a record"), false, false, points.layout().clone()))
@@ -728,7 +719,10 @@ fn coefficients(tc: &std::sync::Arc<crate::linear::Linear>, x: &Value, span: &Sp
 
 /// `x+.×y`, or, where `stacked`, the product of each pair of matrices of two stacks (`linear::plus_times`). One factor can be a record, which then records a `Product` with the other factor as its coefficient. `+.×` repeats a scalar along the axis that the other factor contracts, so a record that is a scalar first broadcasts to that axis's length (`agreement::expand`), whose transpose sums it back, and the `Product` reads a child of the length it contracts.
 pub(crate) fn product(x: &Value, y: &Value, stacked: bool, span: &Span) -> Result<Value, Error> {
-    let spread = |v: &Value, len: Option<usize>| (!stacked && v.shape().is_empty() && crate::linear::record_of(v).is_some()).then_some(len).flatten().map(|n| crate::agreement::expand(v, &Layout::from([n])));
+    let spread = |v: &Value, len: Option<usize>| {
+        (!stacked && v.shape().is_empty() && crate::linear::record_of(v).is_some()).then_some(len).flatten()
+            .map(|n| crate::agreement::expand(v, &Layout::from([n])))
+    };
     let (sx, sy) = (spread(x, y.shape().first().copied()), spread(y, x.shape().last().copied()));
     let (x, y) = (sx.as_ref().unwrap_or(x), sy.as_ref().unwrap_or(y));
     let layout = || -> Result<Layout, Error> {
@@ -739,8 +733,7 @@ pub(crate) fn product(x: &Value, y: &Value, stacked: bool, span: &Span) -> Resul
     };
     match (crate::linear::record_of(x), crate::linear::record_of(y)) {
         (Some(t), None) => Ok(crate::linear::product(y, t, false, stacked, layout()?)),
-        (None, Some(t)) => Ok(crate::linear::product(x, t, true, stacked, layout()?)),
-        _ => crate::linear::plus_times(x, y, stacked, span),
+        (None, Some(t)) => Ok(crate::linear::product(x, t, true, stacked, layout()?)), _ => crate::linear::plus_times(x, y, stacked, span)
     }
 }
 
@@ -760,8 +753,7 @@ fn solve(left: Option<&Value>, right: &Value, tag: u64, stacked: bool, span: &Sp
     let r = match ta { Some(_) => regular_inverse(&a, "⌹", stacked, span)?.0, None => divide(None, &a)? };
     let t = match (tb, ta) {
         (Some(tb), Some(ta)) => minus.call(Some(&tb), &product(&ta, &x, stacked, span)?, span)?,
-        (None, Some(ta)) => minus.call(None, &product(&ta, &x, stacked, span)?, span)?,
-        (tb, None) => tb.expect("an active argument has a tangent"),
+        (None, Some(ta)) => minus.call(None, &product(&ta, &x, stacked, span)?, span)?, (tb, None) => tb.expect("an active argument has a tangent")
     };
     Ok(dual(tag, x, product(&r, &t, stacked, span)?))
 }
@@ -769,7 +761,8 @@ fn solve(left: Option<&Value>, right: &Value, tag: u64, stacked: bool, span: &Sp
 /// `⌹a` and the determinant of `a`, from one factorization, for an `a` that `∂` differentiates with respect to, or each matrix's inverse and determinant where `stacked`. A matrix that `⌹` gives the pseudoinverse of, as [`matrix_inverse`](crate::primitive::matrix_inverse) finds by rustymath's pivot test, gives UNSUPPORTED, naming `glyph`, because the pseudoinverse's derivative differs. An `a` active at an outer `∂` takes its inverse through `⌹`'s call, so that the outer `∂` differentiates it, and gives no determinant.
 fn regular_inverse(a: &Value, glyph: &str, stacked: bool, span: &Span) -> Result<(Value, Option<Value>), Error> {
     if a.carried() { return Ok((Operation::Primitive(Primitive::MatrixDivide).call(Pairing::stacked(stacked), None, a, span)?, None)); }
-    let (r, d) = crate::primitive::matrix_inverse(a, stacked)?.ok_or_else(|| Error::new(ErrorKind::Unsupported, format!("∂ differentiates {glyph} only at an invertible matrix")))?;
+    let (r, d) = crate::primitive::matrix_inverse(a, stacked)?
+        .ok_or_else(|| Error::new(ErrorKind::Unsupported, format!("∂ differentiates {glyph} only at an invertible matrix")))?;
     Ok((r, Some(d)))
 }
 
@@ -806,7 +799,7 @@ fn determinant(right: &Value, tag: u64, stacked: bool, span: &Span) -> Result<Va
 
 /// Coordinate `k` of each point's tangent in `t`. A number stands for every coordinate, and a vector gives its `k`th item.
 fn coordinate(t: &Value, k: usize) -> Value {
-    let pick = |e: Value| if e.is_atom() { e } else if e.len() == 1 { e.at(0) } else { e.at(k) };
+    let pick = |e: Value| { if e.is_atom() { e } else if e.len() == 1 { e.at(0) } else { e.at(k) } };
     match t {
         Value::Array(_) if t.shape().is_empty() => pick(t.at(0)),
         Value::Array(_) if t.holds_values() => {
@@ -882,12 +875,14 @@ fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &
         if !kind.scan && windows.is_none() && (tx.carried() || batch.is_some() || traced.is_some()) {
             let mask = match (traced, batch) {
                 (Some(t), _) => t.picked(p, along).map_err(|reason| t.stop(crate::transform::Cause::Rule, reason))?,
-                (None, Some(b)) => crate::batch::batch(b.level, chosen(p, all, frame + along)?, b.frame),
-                (None, None) => chosen(p, all, along)?,
+                (None, Some(b)) => crate::batch::batch(b.level, chosen(p, all, frame + along)?, b.frame), (None, None) => chosen(p, all, along)?
             };
             return Ok((r, fold(plus, &call(times, &mask, tx, span)?)?));
         }
-        if let Some(t) = traced { return Err(t.stop(crate::transform::Cause::Rule, if kind.scan { "a scan by ⌈ or ⌊" } else { "picks by ⌈ or ⌊ from sliding windows" }).into()); }
+        if let Some(t) = traced {
+            return Err(t.stop(crate::transform::Cause::Rule, if kind.scan { "a scan by ⌈ or ⌊" }
+            else { "picks by ⌈ or ⌊ from sliding windows" }).into());
+        }
         let offsets = match windows { Some(offsets) => offsets, None => picked_offsets(p, all, Lanes::new(all.shape(), frame + along)?, kind.scan)? };
         // A batch's scan picks within each cell, at positions of the cell's own.
         let positions = match batch {
@@ -972,14 +967,8 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
             // 0 where x isn't positive: there x stands in as 1, whose logarithm is 0.
             lazy(ny, &|| dyad(times, r, &ln(&dyad(P::Math(Ceiling), x, &compare(LessEqual, x, &Value::integer(0))?)?)?))?,
         ],
-        P::Math(Log) => [
-            lazy(nx, &|| neg(&dyad(divide, r, &dyad(times, x, &ln(x)?)?)?))?,
-            lazy(ny, &|| recip(&dyad(times, y, &ln(x)?)?))?,
-        ],
-        P::Math(Root) => [
-            lazy(nx, &|| neg(&dyad(divide, &dyad(times, r, &ln(y)?)?, &square(x)?)?))?,
-            lazy(ny, &|| dyad(divide, r, &dyad(times, x, y)?))?,
-        ],
+        P::Math(Log) => [lazy(nx, &|| neg(&dyad(divide, r, &dyad(times, x, &ln(x)?)?)?))?, lazy(ny, &|| recip(&dyad(times, y, &ln(x)?)?))?],
+        P::Math(Root) => [lazy(nx, &|| neg(&dyad(divide, &dyad(times, r, &ln(y)?)?, &square(x)?)?))?, lazy(ny, &|| dyad(divide, r, &dyad(times, x, y)?))?],
         P::Math(Magnitude) => [
             // 0 where x is 0, where the residue is y itself.
             lazy(nx, &|| {
@@ -1002,21 +991,13 @@ fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 
             // A circle code reads its plain value, as a count does, so its own derivative is 0.
             let code = match x { Value::Number(n) => n.integer().ok(), _ => None };
             let d = match (op, code) {
-                (_, Some(0)) => neg(&dyad(divide, y, r)?)?,
-                (Circle, Some(1)) => circle(2, y)?,
-                (Circle, Some(2)) => neg(&circle(1, y)?)?,
-                (Circle, Some(3)) => dyad(plus, &Value::integer(1), &square(r)?)?,
-                (Circle | Arc, Some(4)) => dyad(divide, y, r)?,
-                (Circle, Some(5)) => circle(6, y)?,
-                (Circle, Some(6)) => circle(5, y)?,
-                (Circle, Some(7)) => dyad(minus, &Value::integer(1), &square(r)?)?,
-                (_, Some(1)) => recip(&circle(0, y)?)?,
-                (_, Some(2)) => neg(&recip(&circle(0, y)?)?)?,
-                (_, Some(3)) => recip(&dyad(plus, &Value::integer(1), &square(y)?)?)?,
-                (_, Some(5)) => recip(&circle(4, y)?)?,
-                (_, Some(6)) => recip(&circle(5, r)?)?,
-                (_, Some(7)) => recip(&dyad(minus, &Value::integer(1), &square(y)?)?)?,
-                _ => return Err(Error::domain("∂ can't differentiate this circle code")),
+                (_, Some(0)) => neg(&dyad(divide, y, r)?)?, (Circle, Some(1)) => circle(2, y)?, (Circle, Some(2)) => neg(&circle(1, y)?)?,
+                (Circle, Some(3)) => dyad(plus, &Value::integer(1), &square(r)?)?, (Circle | Arc, Some(4)) => dyad(divide, y, r)?,
+                (Circle, Some(5)) => circle(6, y)?, (Circle, Some(6)) => circle(5, y)?, (Circle, Some(7)) => dyad(minus, &Value::integer(1), &square(r)?)?,
+                (_, Some(1)) => recip(&circle(0, y)?)?, (_, Some(2)) => neg(&recip(&circle(0, y)?)?)?,
+                (_, Some(3)) => recip(&dyad(plus, &Value::integer(1), &square(y)?)?)?, (_, Some(5)) => recip(&circle(4, y)?)?,
+                (_, Some(6)) => recip(&circle(5, r)?)?, (_, Some(7)) => recip(&dyad(minus, &Value::integer(1), &square(y)?)?)?,
+                _ => return Err(Error::domain("∂ can't differentiate this circle code"))
             };
             [nx.then(|| Value::integer(0)), Some(d)]
         }

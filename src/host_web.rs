@@ -1,5 +1,5 @@
 //! What the browser build takes from the page: the clock, file reads, Unicode normalization, `•fetch`'s transport and `•r`'s regular expressions. `host.rs` gives the native versions.
-use crate::{data::{Request, Response}, regex::Match, Error};
+use crate::{Error, data::{Request, Response}, regex::Match};
 use js_sys::Uint8Array;
 use std::{cell::RefCell, io, path::{Path, PathBuf}};
 use web_sys::{Url, XmlHttpRequest, XmlHttpRequestResponseType};

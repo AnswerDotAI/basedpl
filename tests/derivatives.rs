@@ -146,14 +146,21 @@ fn derivatives_match_numerical_ones() {
                 if column.len() != m { failures.push(format!("{} at {x:?}, direction {j}: {m} items against {}", c.f, column.len())); continue; }
                 for i in 0..m {
                     let (got, want) = (jacobian[i * n + j], column[i]);
-                    if (got - want).abs() > tolerance * (1.0 + want.abs()) { failures.push(format!("{} at {x:?}, item {i}, direction {j}: {got} against {want}", c.f)); }
+                    if (got - want).abs() > tolerance * (1.0 + want.abs()) {
+                        failures.push(format!("{} at {x:?}, item {i}, direction {j}: {got} against {want}", c.f));
+                    }
                 }
                 // A forward pass along `e` gives the same column, whichever mode built the Jacobian.
                 let forward = floats(&s, "{f x+⍵×e}∂0");
-                if forward.len() != m { failures.push(format!("{} at {x:?}, direction {j}: a forward pass gave {} items against {m}", c.f, forward.len())); continue; }
+                if forward.len() != m {
+                    failures.push(format!("{} at {x:?}, direction {j}: a forward pass gave {} items against {m}", c.f, forward.len()));
+                    continue;
+                }
                 for (i, &want) in forward.iter().enumerate() {
                     let got = jacobian[i * n + j];
-                    if (got - want).abs() > 1e-9 * (1.0 + want.abs()) { failures.push(format!("{} at {x:?}, item {i}, direction {j}: {got} against a forward pass's {want}", c.f)); }
+                    if (got - want).abs() > 1e-9 * (1.0 + want.abs()) {
+                        failures.push(format!("{} at {x:?}, item {i}, direction {j}: {got} against a forward pass's {want}", c.f));
+                    }
                 }
             }
             let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * (1.0 + a.abs().max(b.abs()));

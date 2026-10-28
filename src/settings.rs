@@ -95,7 +95,9 @@ impl Compiles {
     /// `always` or `never` from `BASEDPL_COMPILE`, read once for the process, and otherwise the policy.
     fn from_env() -> Self {
         static FROM_ENV: std::sync::OnceLock<Compiles> = std::sync::OnceLock::new();
-        *FROM_ENV.get_or_init(|| match std::env::var("BASEDPL_COMPILE").as_deref() { Ok("always") => Self::Always, Ok("never") => Self::Never, _ => Self::Policy })
+        *FROM_ENV.get_or_init(|| match std::env::var("BASEDPL_COMPILE").as_deref() {
+            Ok("always") => Self::Always, Ok("never") => Self::Never, _ => Self::Policy
+        })
     }
 }
 

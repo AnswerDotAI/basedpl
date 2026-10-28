@@ -1,15 +1,11 @@
 use crate::execution::check;
 use crate::session;
-use rustymath::{buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
-use crate::{
-    array::Storage, Span, keyed, number::Numeric, primitive::{numeric, real}, Error, Described, ErrorKind, Number, Value
-};
+use crate::{Described, Error, ErrorKind, Number, Span, Value, array::Storage, keyed, number::Numeric, primitive::{numeric, real}};
 use rustymath::hashing::{HashMap, HashMapExt};
+use rustymath::{buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
 use std::io::Read;
 
-pub(crate) fn text(value: &Value) -> Result<String, Error> {
-    keyed::name(value).map(|s| s.to_string()).ok_or_else(|| Error::domain("expected text"))
-}
+pub(crate) fn text(value: &Value) -> Result<String, Error> { keyed::name(value).map(|s| s.to_string()).ok_or_else(|| Error::domain("expected text")) }
 
 /// Imported items, where `filled` marks missing-value fills. Where every other number is an ordinary integer, every one is a fixed integer of one width, or every one is a Boolean, a fill takes that type wherever it keeps its value there, as a fill under `⍠` does (`Value::fill_of`): a fill of `0` beside integers gives `0ₓ`. Approximate inputs, and a fill that doesn't keep its value in that type, such as NaN or `0.5` beside integers, select real or complex storage at the widest strong approximate width, or the widest weak width when none is strong. Weak approximate values may round; exact values must convert losslessly. Otherwise items keep their own kinds.
 pub(crate) fn imported(shape: Vec<usize>, mut items: Vec<Value>, filled: impl Fn(usize) -> bool, empty_prototype: Value) -> Result<Value, ErrorKind> {
@@ -27,29 +23,30 @@ pub(crate) fn imported(shape: Vec<usize>, mut items: Vec<Value>, filled: impl Fn
         }
     }
     let numbers = || items.iter().filter_map(number);
-    if widened || items.iter().enumerate().any(|(i, v)| number(v).is_some_and(|n| n.as_float().is_some_and(|f| !f.is_finite() || !filled(i)) || n.as_complex().is_some())) {
-        let (mut width, mut strong, mut complex) = (None, None, false);
-        for n in numbers() {
-            let w = n.float_width();
-            width = width.max(w);
-            complex |= n.as_complex().is_some();
-            if !n.is_weak() { strong = strong.max(w); }
-        }
-        let width = strong.or(width).unwrap_or(FloatWidth::F64);
-        let width = if complex { width.max(FloatWidth::F32) } else { width };
-        let fits = |n: &Number, f: f64| n.is_weak() && !n.is_exact() || f.is_nan() || Number::float(f, width).as_float() == Some(f);
-        let exactly = |n: &Number| n.lossless_float().filter(|&f| fits(n, f));
-        if complex {
-            let values = items.iter().map(|v| {
-                let n = number(v)?;
-                let z = n.as_complex().or_else(|| exactly(n).map(|re| num_complex::Complex64::new(re, 0.0)))?;
-                (fits(n, z.re) && fits(n, z.im)).then_some(z)
-            }).collect::<Option<Vec<_>>>();
-            if let Some(values) = values { return Value::complex(shape, ComplexBuf::collect(width.into(), values.into_iter())); }
-        } else if let Some(floats) = items.iter().map(|v| number(v).and_then(exactly)).collect::<Option<Vec<_>>>() {
-            return Value::from_storage(shape, Storage::Compact(Buffer::Floats(FloatBuf::collect(width, floats.into_iter()))));
-        }
-    }
+    if widened || items.iter().enumerate()
+            .any(|(i, v)| number(v).is_some_and(|n| n.as_float().is_some_and(|f| !f.is_finite() || !filled(i)) || n.as_complex().is_some())) {
+                let (mut width, mut strong, mut complex) = (None, None, false);
+                for n in numbers() {
+                    let w = n.float_width();
+                    width = width.max(w);
+                    complex |= n.as_complex().is_some();
+                    if !n.is_weak() { strong = strong.max(w); }
+                }
+                let width = strong.or(width).unwrap_or(FloatWidth::F64);
+                let width = if complex { width.max(FloatWidth::F32) } else { width };
+                let fits = |n: &Number, f: f64| n.is_weak() && !n.is_exact() || f.is_nan() || Number::float(f, width).as_float() == Some(f);
+                let exactly = |n: &Number| n.lossless_float().filter(|&f| fits(n, f));
+                if complex {
+                    let values = items.iter().map(|v| {
+                        let n = number(v)?;
+                        let z = n.as_complex().or_else(|| exactly(n).map(|re| num_complex::Complex64::new(re, 0.0)))?;
+                        (fits(n, z.re) && fits(n, z.im)).then_some(z)
+                    }).collect::<Option<Vec<_>>>();
+                    if let Some(values) = values { return Value::complex(shape, ComplexBuf::collect(width.into(), values.into_iter())); }
+                } else if let Some(floats) = items.iter().map(|v| number(v).and_then(exactly)).collect::<Option<Vec<_>>>() {
+                    return Value::from_storage(shape, Storage::Compact(Buffer::Floats(FloatBuf::collect(width, floats.into_iter()))));
+                }
+            }
     Value::from_parts(shape, items, empty_prototype)
 }
 
@@ -101,9 +98,13 @@ impl Options {
         let Some(types) = self.values.get("types") else { return Ok(Types::Named(HashMap::new())) };
         let invalid = || Error::domain(format!("{} types must be a record or a vector of numbers and texts", self.name));
         let items: Vec<Value> = types.elements().collect();
-        if types.shape().len() != 1 || keyed::name(types).is_some() || !items.iter().all(|t| matches!(t, Value::Number(_)) || keyed::name(t).is_some()) { return Err(invalid()); }
+        if types.shape().len() != 1 || keyed::name(types).is_some() || !items.iter().all(|t| matches!(t, Value::Number(_)) || keyed::name(t).is_some()) {
+            return Err(invalid());
+        }
         Ok(match types.keys(0) {
-            Some(keys) => Types::Named(keys.names().iter().zip(items).map(|(k, t)| Ok((k.as_ref().ok_or_else(invalid)?.to_string(), t))).collect::<Result<_, Error>>()?),
+            Some(keys) => {
+                Types::Named(keys.names().iter().zip(items).map(|(k, t)| Ok((k.as_ref().ok_or_else(invalid)?.to_string(), t))).collect::<Result<_, Error>>()?)
+            }
             None => Types::Ordered(items),
         })
     }
@@ -118,15 +119,13 @@ pub(crate) fn typed_column(reader: &str, name: &str, column: Value, typed: Optio
     let int = if numeric.is_static() { numeric.int } else { Width::I64 };
     let integers = || match column.dtype() {
         Some(DType::Integer(_)) => true,
-        None => column.len() > 0 && column.elements().all(|v| matches!(&v, Value::Number(n) if n.is_integral() && n.as_bool().is_none())),
-        _ => false,
+        None => column.len() > 0 && column.elements().all(|v| matches!(&v, Value::Number(n) if n.is_integral() && n.as_bool().is_none())), _ => false
     };
     let target = match typed {
         Some(Value::Number(t)) => match (t.dtype(), t.fixed_width()) {
-            (Some(DType::Integer(w)), Some(_)) => (DType::Integer(w), true),
-            (Some(DType::Integer(_)), None) => (DType::Integer(int), false),
+            (Some(DType::Integer(w)), Some(_)) => (DType::Integer(w), true), (Some(DType::Integer(_)), None) => (DType::Integer(int), false),
             (Some(dtype), _) => (dtype, false),
-            (None, _) => return Err(Error::domain(format!("{reader} types needs a number of each column's type, such as 0ₓ₈, 0ₛ or $f"))),
+            (None, _) => return Err(Error::domain(format!("{reader} types needs a number of each column's type, such as 0ₓ₈, 0ₛ or $f")))
         },
         _ if numeric.is_static() && integers() => (DType::Integer(int), false),
         _ => return Ok(column),
@@ -134,10 +133,12 @@ pub(crate) fn typed_column(reader: &str, name: &str, column: Value, typed: Optio
     let (dtype, fixed) = target;
     let place = if name.is_empty() { format!("{reader} array") } else { format!("{reader} column {name:?}") };
     let value = if missing { "a value, or the fill at its missing cells," } else { "a value" };
-    let lost = || Error::domain(match typed {
-        Some(_) => format!("{place}: {value} doesn't keep itself as {}, the type that types gives it", dtype.name()),
-        None => format!("{place}: {value} doesn't fit {}. Give the column a type with the types option", dtype.name()),
-    });
+    let lost = || {
+        Error::domain(match typed {
+            Some(_) => format!("{place}: {value} doesn't keep itself as {}, the type that types gives it", dtype.name()),
+            None => format!("{place}: {value} doesn't fit {}. Give the column a type with the types option", dtype.name()),
+        })
+    };
     let buffer = match column.view() {
         Some(view) => Buffer::kept(view, dtype).ok(),
         // Items that keep their own kinds, as a JSON array of Booleans and integers does, convert one at a time.
@@ -147,7 +148,7 @@ pub(crate) fn typed_column(reader: &str, name: &str, column: Value, typed: Optio
         }),
     }.ok_or_else(lost)?;
     let storage = if fixed || numeric.is_static() || !matches!(dtype, DType::Integer(_)) { Storage::Compact(buffer).fixed(fixed) }
-        else { Storage::narrowed(i64::of(buffer.view()).expect("integers at 64 bits").to_vec()) };
+    else { Storage::narrowed(i64::of(buffer.view()).expect("integers at 64 bits").to_vec()) };
     Value::from_storage([column.len()], storage).described("invalid column")
 }
 
@@ -184,7 +185,9 @@ fn file_options(name: &'static str, left: Option<&Value>, shorthand: Option<&str
 }
 
 /// `data` as a vector of byte values, one byte each.
-pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::from_storage([data.len()], Storage::within(data, crate::array::ordinary_width(Width::U8))) }
+pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> {
+    Value::from_storage([data.len()], Storage::within(data, crate::array::ordinary_width(Width::U8)))
+}
 
 /// The bytes in an array of integers from 0 to 255, in ravel order. `None` for any other array.
 pub(crate) fn byte_items(value: &Value) -> Option<Vec<u8>> {
@@ -193,9 +196,7 @@ pub(crate) fn byte_items(value: &Value) -> Option<Vec<u8>> {
 }
 
 /// The bytes in an array of integers from 0 to 255, in ravel order.
-pub(crate) fn bytes(value: &Value) -> Result<Vec<u8>, Error> {
-    byte_items(value).ok_or_else(|| Error::domain("bytes must be whole numbers in 0..255"))
-}
+pub(crate) fn bytes(value: &Value) -> Result<Vec<u8>, Error> { byte_items(value).ok_or_else(|| Error::domain("bytes must be whole numbers in 0..255")) }
 
 /// `value` as bytes, taking integers from 0 to 255 as they are and text as UTF-8.
 pub(crate) fn payload(value: &Value) -> Result<Vec<u8>, Error> {
@@ -209,7 +210,7 @@ pub(crate) fn algorithm(left: Option<&Value>, default: &str) -> Result<String, E
 
 /// `•deflate` decompresses bytes in the format `"gzip"`, `"zlib"` or `"deflate"`, gzip by default. `•deflate⁻¹` compresses bytes or text. Both give bytes.
 fn flate(left: Option<&Value>, right: &Value, compress: bool) -> Result<Value, Error> {
-    use flate2::{read, Compression};
+    use flate2::{Compression, read};
     let (data, level) = (payload(right)?, Compression::default());
     let mut reader: Box<dyn Read + '_> = match (algorithm(left, "gzip")?.as_str(), compress) {
         ("gzip", true) => Box::new(read::GzEncoder::new(&data[..], level)), ("gzip", false) => Box::new(read::GzDecoder::new(&data[..])),
@@ -319,9 +320,7 @@ fn write_file(opts: &Options, path: &str, data: &[u8], count: Value, span: &Span
 
 /// The browser can't write files.
 #[cfg(web)]
-fn write_file(_: &Options, path: &str, _: &[u8], _: Value, _: &Span) -> Result<(Value, bool), Error> {
-    Err(Error::io(path, "the browser can't write files"))
-}
+fn write_file(_: &Options, path: &str, _: &[u8], _: Value, _: &Span) -> Result<(Value, bool), Error> { Err(Error::io(path, "the browser can't write files")) }
 
 /// A request for `•fetch`'s host: no `method` means GET, or POST with a `body`.
 pub(crate) struct Request { pub url: String, pub method: Option<String>, pub headers: Vec<(String, String)>, pub body: Option<Vec<u8>> }
@@ -334,8 +333,8 @@ pub(crate) fn fetch(left: Option<&Value>, right: &Value, _: &Span) -> Result<Val
     let url = text(right)?;
     let method = opts.values.get("method").map(|m| text(m)).transpose()?;
     let headers = match opts.values.get("headers") {
-        Some(h) => keyed::pairs(h).map_err(|_| Error::domain("•fetch headers must be a record"))?.into_iter()
-            .map(|(n, v)| Ok((n.to_string(), text(&v)?))).collect::<Result<_, Error>>()?, None => Vec::new()
+        Some(h) => keyed::pairs(h).map_err(|_| Error::domain("•fetch headers must be a record"))?.into_iter().map(|(n, v)| Ok((n.to_string(), text(&v)?)))
+            .collect::<Result<_, Error>>()?, None => Vec::new()
     };
     let body = opts.values.get("body").map(|b| payload(b)).transpose()?;
     crate::transform::acts()?;
@@ -345,6 +344,5 @@ pub(crate) fn fetch(left: Option<&Value>, right: &Value, _: &Span) -> Result<Val
     else { keyed::text(&String::from_utf8(body).map_err(|e| Error::io(&url, e))?) };
     let (names, values) = response.headers.into_iter().map(|(n, v)| (n.into(), keyed::text(&v))).unzip();
     let headers = keyed::vector(names, values).described("invalid headers")?;
-    keyed::vector(vec!["status".into(), "headers".into(), "body".into()], vec![Value::integer(response.status), headers, body])
-        .described("invalid response")
+    keyed::vector(vec!["status".into(), "headers".into(), "body".into()], vec![Value::integer(response.status), headers, body]).described("invalid response")
 }

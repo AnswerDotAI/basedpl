@@ -1,6 +1,6 @@
 //! Paths and the filesystem, named after Rust's `std::path` and `std::fs`. `•path` reads a path into its parts and `•path⁻¹` joins them. `•metadata` and `•readdir` give tables of entries, and `•copy`, `•rename`, `•remove` and `•mkdir` change the filesystem.
 use crate::execution::check;
-use crate::{data::{text, Options}, Span, keyed, Error, Described, Number, Value};
+use crate::{Described, Error, Number, Span, Value, data::{Options, text}, keyed};
 use std::{fs, path::Path};
 
 /// The parts of a path that `•path` gives. `•path⁻¹` joins `parent`, `stem` and `extension`. `name` follows from the last two, and `•path⁻¹` ignores it.
@@ -76,10 +76,7 @@ fn row(path: &Path, shown: &str) -> Vec<Value> {
         use std::os::unix::fs::MetadataExt;
         let uid = meta.as_ref().map(MetadataExt::uid);
         let owner = uid.and_then(|u| nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(u)).ok().flatten()).map_or(String::new(), |u| u.name);
-        row.extend([
-            Value::integer(uid.map_or(0, i64::from)),
-            Value::integer(meta.as_ref().map_or(0, |m| i64::from(m.mode()))), keyed::text(&owner),
-        ]);
+        row.extend([Value::integer(uid.map_or(0, i64::from)), Value::integer(meta.as_ref().map_or(0, |m| i64::from(m.mode()))), keyed::text(&owner)]);
     }
     row
 }
@@ -87,7 +84,7 @@ fn row(path: &Path, shown: &str) -> Vec<Value> {
 /// Whether this process may read, write and execute `path`.
 #[cfg(unix)]
 fn access(path: &Path) -> [bool; 3] {
-    use rustix::fs::{access, Access};
+    use rustix::fs::{Access, access};
     [Access::READ_OK, Access::WRITE_OK, Access::EXEC_OK].map(|a| access(path, a).is_ok())
 }
 /// Whether this process may read, write and execute `path`: readable when it exists, and writable unless it is read-only.
@@ -118,8 +115,7 @@ pub(crate) fn readdir(left: Option<&Value>, right: &Value, span: &Span) -> Resul
     let glob = match opts.values.get("glob") {
         // As in a shell, `*` stays within one directory and `**` crosses them.
         Some(g) => Some(
-            globset::GlobBuilder::new(&text(g)?).literal_separator(true).build().map_err(|e| Error::domain(format!("invalid glob: {e}")))?
-                .compile_matcher()),
+            globset::GlobBuilder::new(&text(g)?).literal_separator(true).build().map_err(|e| Error::domain(format!("invalid glob: {e}")))?.compile_matcher()),
         None => None,
     };
     let depth = if opts.boolean("recurse", false)? { usize::MAX } else { 1 };
@@ -199,8 +195,7 @@ impl Unique {
     }
     /// Makes the entry in the directory `dir` names through `make`, and gives the entry's path: `dir` joined to its new name.
     pub(crate) fn make(
-        &self, dir: &str, span: &Span, make: impl FnOnce(&tempfile::Builder<'_, '_>, &Path) -> std::io::Result<std::path::PathBuf>
-    ) -> Result<Value, Error> {
+        &self, dir: &str, span: &Span, make: impl FnOnce(&tempfile::Builder<'_, '_>, &Path) -> std::io::Result<std::path::PathBuf>) -> Result<Value, Error> {
         let mut builder = tempfile::Builder::new();
         if let Some(prefix) = &self.prefix { builder.prefix(prefix); }
         let made = make(&builder, &span.path(dir)).map_err(|e| Error::io(dir, e))?;

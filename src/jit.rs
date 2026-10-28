@@ -2,14 +2,14 @@
 //!
 //! A [`Kernel`] describes one loop over `n` items: its inputs, which are arrays that it reads item by item, forward from a pointer or run by run, each run forward, backward or at a stride ([`Read`]), and scalars that every item pairs with, the elementwise steps it computes, the steps' results it stores, and the folds that give its totals. [`Kernel::compiled`] gives its native code, compiled the first time and kept for the process. The loop runs over its items in blocks of a size that its caller gives, and within a block, in one segment for each run that the block reaches, or one for the whole block where it reads no runs. A group is the items that one 128-bit vector of the kernel's narrowest type holds, and a value of a wider type takes several vectors for those items. Conversions between widths split and join vectors (`widen`, `narrow`), so a kernel that mixes widths runs on vectors too. Each iteration of the main loop handles `UNROLL` groups, or as many as a float fold's running results take ([`Fold`]). A loop over single groups follows, then a loop over the segment's items left over, one at a time, each in the first lane of the same vector code. In registers a Boolean is a mask, all ones or all zeros. In memory it's a byte holding 0 or 1, as rustymath stores Booleans. Every vector operation here is one that Cranelift lowers for x86-64 with SSE4.1, as for Wasm's SIMD. A conversion that has no such form converts lane by lane. The browser build has no JIT.
 
-use cranelift_codegen::ir::{types, AbiParam, ConstantData, Endianness, InstBuilder, MemFlagsData, Type, Value as Ir, condcodes::{FloatCC, IntCC}};
+use cranelift_codegen::ir::{AbiParam, ConstantData, Endianness, InstBuilder, MemFlagsData, Type, Value as Ir, condcodes::{FloatCC, IntCC}, types};
 use cranelift_codegen::settings::{self, Configurable};
-use cranelift_codegen::{isa::{OwnedTargetIsa, TargetFrontendConfig}, Context};
+use cranelift_codegen::{Context, isa::{OwnedTargetIsa, TargetFrontendConfig}};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{default_libcall_names, Linkage, Module};
-use std::{sync::{Arc, Mutex, OnceLock, PoisonError}, time::{Duration, Instant}};
+use cranelift_module::{Linkage, Module, default_libcall_names};
 use rustymath::{buffer::{DType, FloatWidth, Width}, hashing::HashMap, reduce::running};
+use std::{sync::{Arc, Mutex, OnceLock, PoisonError}, time::{Duration, Instant}};
 
 /// A value's type: a Boolean, an integer that wraps at its width, unsigned at 8 bits and signed at 16, 32 and 64, or a float.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -18,14 +18,20 @@ pub enum Ty { Bool, U8, I16, I32, I64, F32, F64 }
 impl Ty {
     /// The item type that holds values of this type.
     pub(crate) fn dtype(self) -> DType {
-        match self { Ty::Bool => DType::Boolean, Ty::U8 => DType::Integer(Width::U8), Ty::I16 => DType::Integer(Width::I16), Ty::I32 => DType::Integer(Width::I32),
-            Ty::I64 => DType::Integer(Width::I64), Ty::F32 => DType::Float(FloatWidth::F32), Ty::F64 => DType::Float(FloatWidth::F64) }
+        match self {
+            Ty::Bool => DType::Boolean, Ty::U8 => DType::Integer(Width::U8), Ty::I16 => DType::Integer(Width::I16), Ty::I32 => DType::Integer(Width::I32),
+            Ty::I64 => DType::Integer(Width::I64), Ty::F32 => DType::Float(FloatWidth::F32), Ty::F64 => DType::Float(FloatWidth::F64)
+        }
     }
     /// The type of a compiled kernel's values for items of `dtype`, or `None` for a type that a stage doesn't hold (`program::blocks::readable`).
     pub(crate) fn of(dtype: DType) -> Option<Self> { [Ty::Bool, Ty::U8, Ty::I16, Ty::I32, Ty::I64, Ty::F32, Ty::F64].into_iter().find(|t| t.dtype() == dtype) }
     fn bytes(self) -> i64 { self.dtype().bytes() as i64 }
     /// The type of one item in registers. A Boolean is a byte, all ones or all zeros.
-    fn ir(self) -> Type { match self { Ty::Bool | Ty::U8 => types::I8, Ty::I16 => types::I16, Ty::I32 => types::I32, Ty::I64 => types::I64, Ty::F32 => types::F32, Ty::F64 => types::F64 } }
+    fn ir(self) -> Type {
+        match self {
+            Ty::Bool | Ty::U8 => types::I8, Ty::I16 => types::I16, Ty::I32 => types::I32, Ty::I64 => types::I64, Ty::F32 => types::F32, Ty::F64 => types::F64
+        }
+    }
     /// A 128-bit vector of this type's items.
     fn vector(self) -> Type { self.ir().by(16 / self.bytes() as u32).expect("a 128-bit vector") }
     fn float(self) -> bool { matches!(self, Ty::F32 | Ty::F64) }
@@ -48,9 +54,7 @@ impl Read {
     fn within(self) -> Within { match self { Read::Forward => Within::Forward, Read::Runs(within) => within } }
 }
 
-impl Input {
-    fn ty(self) -> Ty { match self { Input::Array(t, _) | Input::Scalar(t) => t } }
-}
+impl Input { fn ty(self) -> Ty { match self { Input::Array(t, _) | Input::Scalar(t) => t } } }
 
 /// A value that a step reads: the input of that number, or the result of the earlier step of that number. A constant is a scalar input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -64,9 +68,7 @@ pub enum Op { Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitu
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cmp { Eq, Ne, Lt, Le, Gt, Ge }
 
-impl Op {
-    fn dyadic(self) -> bool { !matches!(self, Op::Negate | Op::Magnitude | Op::Sqrt | Op::Convert | Op::Not) }
-}
+impl Op { fn dyadic(self) -> bool { !matches!(self, Op::Negate | Op::Magnitude | Op::Sqrt | Op::Convert | Op::Not) } }
 
 /// One step: an operation on one or two values, with a result of type `ty`. The arguments of every operation but `Convert` and `Compare` have type `ty` too, and `Compare`'s two arguments have one type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -83,8 +85,7 @@ pub struct Kernel { pub inputs: Vec<Input>, pub steps: Vec<Step>, pub stores: Ve
 /// The generated function: the number of items, the items in each block, the arrays' pointers, the scalar slots, the stored results' pointers and the totals. The array slots hold each array's pointer, with a run-by-run array's table after it (`Read`). The scalar slots hold each scalar input and each strided array's stride in items, in the order of the kernel's inputs, then, where the kernel reads runs, their length and the items left in the call's first run. Scalar slots and totals take 8 bytes: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1.
 type Entry = unsafe extern "C" fn(usize, usize, *const *const u8, *const u64, *const *mut u8, *mut u64);
 
-/// A compiled kernel, which owns its machine code. `most` is the most items in a block that it takes (`takes`).
-/// The module only keeps the code's memory. `JITModule` isn't `Sync`, and the mutex makes `Compiled` `Sync` without code that locks it.
+/// A compiled kernel, which owns its machine code. `most` is the most items in a block that it takes (`takes`). The module only keeps the code's memory. `JITModule` isn't `Sync`, and the mutex makes `Compiled` `Sync` without code that locks it.
 pub struct Compiled { _module: Mutex<JITModule>, entry: Entry, counts: [usize; 4], most: usize }
 
 /// The groups that each iteration of the main loop handles in a kernel with no float fold.
@@ -106,7 +107,9 @@ fn isa() -> Result<OwnedTargetIsa, String> {
 static KERNELS: OnceLock<Mutex<HashMap<Kernel, Option<Arc<Compiled>>>>> = OnceLock::new();
 
 /// The table of kernels, locked.
-fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compiled>>>> { KERNELS.get_or_init(Default::default).lock().unwrap_or_else(PoisonError::into_inner) }
+fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compiled>>>> {
+    KERNELS.get_or_init(Default::default).lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// Forgets every kernel and its code, as a new process has none.
 pub(crate) fn forget_kernels() { kernels().clear() }
@@ -167,12 +170,10 @@ impl Kernel {
         let tys = &tys[..n];
         let (x, y, same) = (tys[0], tys.get(1).copied(), tys.get(1).is_none_or(|&y| y == tys[0]));
         let fits = match s.op {
-            Op::Convert => true,
-            Op::Compare(c) => s.ty == Ty::Bool && same && (x != Ty::Bool || matches!(c, Cmp::Eq | Cmp::Ne)),
+            Op::Convert => true, Op::Compare(c) => s.ty == Ty::Bool && same && (x != Ty::Bool || matches!(c, Cmp::Eq | Cmp::Ne)),
             Op::And | Op::Or | Op::Xor | Op::Not => s.ty == Ty::Bool && x == Ty::Bool && same,
-            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool,
-            Op::Divide | Op::Sqrt => s.ty.float() && x == s.ty && same,
-            _ => s.ty != Ty::Bool && x == s.ty && same,
+            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::Divide | Op::Sqrt => s.ty.float() && x == s.ty && same,
+            _ => s.ty != Ty::Bool && x == s.ty && same
         };
         if fits { Ok(()) } else { Err(format!("step {k}: {:?} doesn't take {tys:?} for a {:?} result", s.op, s.ty)) }
     }
@@ -187,7 +188,9 @@ impl Kernel {
             let ty = self.steps[k].ty;
             let has = if ty == Ty::Bool { fold == Fold::Sum && self.folds.len() == 1 } else { fold != Fold::Product || ty.float() };
             if !has { return Err(format!("a fold by {fold:?} of {ty:?} items")); }
-            if ty.float() && running(ty.bytes() as usize) % lanes != 0 { return Err(format!("a fold of {ty:?} items whose running results don't split into groups of {lanes}")); }
+            if ty.float() && running(ty.bytes() as usize) % lanes != 0 {
+                return Err(format!("a fold of {ty:?} items whose running results don't split into groups of {lanes}"));
+            }
         }
         let mut floats = self.folds.iter().map(|&(_, k)| self.steps[k].ty).filter(|t| t.float()).map(|t| running(t.bytes() as usize));
         if let Some(r) = floats.next() && floats.any(|s| s != r) { return Err("float folds that keep different numbers of running results".into()); }
@@ -208,7 +211,23 @@ impl Kernel {
         let ptr = config.pointer_type();
         let mut fctx = FunctionBuilderContext::new();
         let mut b = FunctionBuilder::new(&mut ctx.func, &mut fctx);
-        let [entry, block_head, block_body, seg_head, seg_body, seg_go, group_head, group_body, single_head, single_body, scalar_head, scalar_body, reduce, block_end, exit] = [(); 15].map(|_| b.create_block());
+        let [
+            entry,
+            block_head,
+            block_body,
+            seg_head,
+            seg_body,
+            seg_go,
+            group_head,
+            group_body,
+            single_head,
+            single_body,
+            scalar_head,
+            scalar_body,
+            reduce,
+            block_end,
+            exit,
+        ] = [(); 15].map(|_| b.create_block());
         b.append_block_params_for_function_params(entry);
         b.switch_to_block(entry);
         let [n, block, arrays, scalars, outs, totals] = b.block_params(entry).try_into().expect("six parameters");
@@ -218,42 +237,56 @@ impl Kernel {
         // Each run-by-run array, by its input's number, with its item 0, its table of runs' first items and its step within a run in bytes.
         let mut tabled: Vec<(usize, Ir, Ir, Ir)> = Vec::new();
         let inputs: Vec<(Ir, Option<Ir>)> = self.inputs.iter().enumerate().map(|(k, &input)| match input {
-            Input::Array(t, read) => {
-                a += 1;
-                let at = b.ins().load(ptr, FLAGS, arrays, (a - 1) * 8);
-                // A strided array's stride, in items, takes the next scalar slot.
-                let stride = (read.within() == Within::Strided).then(|| { s += 1; let x = b.ins().load(ptr, FLAGS, scalars, (s - 1) * 8); b.ins().imul_imm_s(x, t.bytes()) });
-                if let Read::Runs(within) = read {
+                Input::Array(t, read) => {
                     a += 1;
-                    let table = b.ins().load(ptr, FLAGS, arrays, (a - 1) * 8);
-                    let step = match (within, stride) { (_, Some(stride)) => stride, (Within::Backward, _) => b.ins().iconst(ptr, -t.bytes()), (Within::Repeated, _) => b.ins().iconst(ptr, 0), _ => b.ins().iconst(ptr, t.bytes()) };
-                    tabled.push((k, at, table, step));
+                    let at = b.ins().load(ptr, FLAGS, arrays, (a - 1) * 8);
+                    // A strided array's stride, in items, takes the next scalar slot.
+                    let stride = (read.within() == Within::Strided).then(|| {
+                        s += 1;
+                        let x = b.ins().load(ptr, FLAGS, scalars, (s - 1) * 8);
+                        b.ins().imul_imm_s(x, t.bytes())
+                    });
+                    if let Read::Runs(within) = read {
+                        a += 1;
+                        let table = b.ins().load(ptr, FLAGS, arrays, (a - 1) * 8);
+                        let step = match (within, stride) {
+                            (_, Some(stride)) => stride, (Within::Backward, _) => b.ins().iconst(ptr, -t.bytes()),
+                            (Within::Repeated, _) => b.ins().iconst(ptr, 0), _ => b.ins().iconst(ptr, t.bytes())
+                        };
+                        tabled.push((k, at, table, step));
+                    }
+                    (at, stride)
                 }
-                (at, stride)
-            }
-            Input::Scalar(t) => {
-                s += 1;
-                let x = slot(&mut b, t, scalars, (s - 1) * 8);
-                (b.ins().splat(t.vector(), x), None)
-            }
-        }).collect();
+                Input::Scalar(t) => {
+                    s += 1;
+                    let x = slot(&mut b, t, scalars, (s - 1) * 8);
+                    (b.ins().splat(t.vector(), x), None)
+                }
+            })
+            .collect();
         // A kernel that reads runs takes their length and the items left in the call's first run in its last two scalar slots.
         let len = (!tabled.is_empty()).then(|| b.ins().load(ptr, FLAGS, scalars, s * 8));
         let (run, run_end) = (b.declare_var(ptr), b.declare_var(ptr));
         let bases: Vec<Variable> = tabled.iter().map(|_| b.declare_var(ptr)).collect();
         // Each run-by-run array's base for run `r`, whose first position is `from`: its item 0, plus the run's first item's offset, less `from` steps, so that `load` reads position `p` at the base plus `p` steps.
-        let rebased = |b: &mut FunctionBuilder, r: Ir, from: Ir| for (&(k, at, table, step), &v) in tabled.iter().zip(&bases) {
-            let entry = b.ins().imul_imm_s(r, 8);
-            let entry = b.ins().iadd(table, entry);
-            let offset = b.ins().load(ptr, FLAGS, entry, 0);
-            let offset = b.ins().imul_imm_s(offset, self.inputs[k].ty().bytes());
-            let back = b.ins().imul(from, step);
-            let base = b.ins().iadd(at, offset);
-            let base = b.ins().isub(base, back);
-            b.def_var(v, base);
+        let rebased = |b: &mut FunctionBuilder, r: Ir, from: Ir| {
+            for (&(k, at, table, step), &v) in tabled.iter().zip(&bases) {
+                let entry = b.ins().imul_imm_s(r, 8);
+                let entry = b.ins().iadd(table, entry);
+                let offset = b.ins().load(ptr, FLAGS, entry, 0);
+                let offset = b.ins().imul_imm_s(offset, self.inputs[k].ty().bytes());
+                let back = b.ins().imul(from, step);
+                let base = b.ins().iadd(at, offset);
+                let base = b.ins().isub(base, back);
+                b.def_var(v, base);
+            }
         };
         // The inputs as each iteration reads them: a run-by-run array from its current run's base.
-        let current = |b: &mut FunctionBuilder| { let mut now = inputs.clone(); for (&(k, ..), &v) in tabled.iter().zip(&bases) { now[k].0 = b.use_var(v); } now };
+        let current = |b: &mut FunctionBuilder| {
+            let mut now = inputs.clone();
+            for (&(k, ..), &v) in tabled.iter().zip(&bases) { now[k].0 = b.use_var(v); }
+            now
+        };
         if let Some(len) = len {
             let first = b.ins().load(ptr, FLAGS, scalars, (s + 1) * 8);
             let zero = b.ins().iconst(ptr, 0);
@@ -402,7 +435,9 @@ impl Kernel {
                     Value::Step(k) => results[k].clone(),
                     Value::Input(k) => match self.inputs[k] {
                         Input::Scalar(t) => vec![inputs[k].0; (t.bytes() / width) as usize],
-                        Input::Array(t, read) => loaded[k].get_or_insert_with(|| load(b, t, read.within(), inputs[k], i, skip, t.bytes() / width, single)).clone(),
+                        Input::Array(t, read) => {
+                            loaded[k].get_or_insert_with(|| load(b, t, read.within(), inputs[k], i, skip, t.bytes() / width, single)).clone()
+                        }
                     },
                 }
             };
@@ -410,10 +445,9 @@ impl Kernel {
             let y = step.y.map(|y| read(b, y));
             let mask = if let Op::Select(m) = step.op { Some(read(b, m)) } else { None };
             let result = match (step.op, y, mask) {
-                (Op::Convert, _, _) => convert(b, x, self.ty(step.x), step.ty),
-                (Op::Compare(c), Some(y), _) => compare(b, c, self.ty(step.x), &x, &y),
+                (Op::Convert, _, _) => convert(b, x, self.ty(step.x), step.ty), (Op::Compare(c), Some(y), _) => compare(b, c, self.ty(step.x), &x, &y),
                 (Op::Select(_), Some(y), Some(m)) => select(b, &m, &x, &y, step.ty),
-                (op, y, _) => x.iter().enumerate().map(|(j, &x)| arith(b, op, step.ty, x, y.as_ref().map(|y| y[j]))).collect(),
+                (op, y, _) => x.iter().enumerate().map(|(j, &x)| arith(b, op, step.ty, x, y.as_ref().map(|y| y[j]))).collect()
             };
             results.push(result);
         }
@@ -428,7 +462,11 @@ impl Kernel {
             let at = b.ins().iadd(base, at);
             for (u, results) in groups.iter().enumerate() {
                 for (j, &x) in results[k].iter().enumerate().take(if single { 1 } else { usize::MAX }) {
-                    let x = if ty != Ty::Bool { x } else { let one = b.ins().iconst(types::I8, 1); let one = b.ins().splat(types::I8X16, one); b.ins().band(x, one) };
+                    let x = if ty != Ty::Bool { x } else {
+                        let one = b.ins().iconst(types::I8, 1);
+                        let one = b.ins().splat(types::I8X16, one);
+                        b.ins().band(x, one)
+                    };
                     let x = if single { b.ins().extractlane(x, 0) } else { x };
                     b.ins().store(FLAGS, x, at, (u as i64 * lanes * ty.bytes() + j as i64 * 16) as i32);
                 }
@@ -474,12 +512,12 @@ impl Acc {
             match ty { Ty::F32 => b.ins().f32const(<R as Reduction<f32>>::identity()), _ => b.ins().f64const(<R as Reduction<f64>>::identity()) }
         }
         let lane = vector.map_or(self.total(), |v| v.lane_type());
-        let (least, greatest) = match self.ty { Ty::U8 => (0, 255), Ty::I16 => (i16::MIN.into(), i16::MAX.into()), Ty::I32 => (i32::MIN.into(), i32::MAX.into()), _ => (i64::MIN, i64::MAX) };
+        let (least, greatest) = match self.ty {
+            Ty::U8 => (0, 255), Ty::I16 => (i16::MIN.into(), i16::MAX.into()), Ty::I32 => (i32::MIN.into(), i32::MAX.into()), _ => (i64::MIN, i64::MAX)
+        };
         let c = match (self.ty, self.fold) {
             (t, f) if t.float() => (match f { Fold::Sum => at::<Sum>, Fold::Product => at::<Product>, Fold::Max => at::<Max>, Fold::Min => at::<Min> })(b, t),
-            (_, Fold::Max) => int(b, lane, least),
-            (_, Fold::Min) => int(b, lane, greatest),
-            _ => int(b, lane, 0),
+            (_, Fold::Max) => int(b, lane, least), (_, Fold::Min) => int(b, lane, greatest), _ => int(b, lane, 0)
         };
         match vector { Some(v) => b.ins().splat(v, c), None => c }
     }
@@ -487,12 +525,9 @@ impl Acc {
     /// `total` stepped by `x`, a vector of a group's items or one of its lanes. A maximum or minimum compares `x` first, so that a float total stays as it is beside a NaN item: no running result is NaN, as rustymath's `Folds` asks. A count of Booleans subtracts each item's mask, all ones where true.
     fn step(self, b: &mut FunctionBuilder, total: Ir, x: Ir) -> Ir {
         match (self.fold, self.ty.float()) {
-            _ if self.ty == Ty::Bool => b.ins().isub(total, x),
-            (Fold::Sum, true) => b.ins().fadd(total, x),
-            (Fold::Sum, false) => b.ins().iadd(total, x),
-            (Fold::Product, _) => b.ins().fmul(total, x),
-            (Fold::Max, _) => extreme(b, self.ty, true, x, total),
-            (Fold::Min, _) => extreme(b, self.ty, false, x, total),
+            _ if self.ty == Ty::Bool => b.ins().isub(total, x), (Fold::Sum, true) => b.ins().fadd(total, x), (Fold::Sum, false) => b.ins().iadd(total, x),
+            (Fold::Product, _) => b.ins().fmul(total, x), (Fold::Max, _) => extreme(b, self.ty, true, x, total),
+            (Fold::Min, _) => extreme(b, self.ty, false, x, total)
         }
     }
 
@@ -503,15 +538,16 @@ impl Acc {
     fn total(self) -> Type { if self.ty == Ty::Bool { types::I32 } else { self.ty.ir() } }
 
     /// Lane `l` of `v`, merged accumulators, at the type of a block's total.
-    fn lane(self, b: &mut FunctionBuilder, v: Ir, l: u8) -> Ir { let x = b.ins().extractlane(v, l); if self.ty == Ty::Bool { b.ins().uextend(types::I32, x) } else { x } }
+    fn lane(self, b: &mut FunctionBuilder, v: Ir, l: u8) -> Ir {
+        let x = b.ins().extractlane(v, l);
+        if self.ty == Ty::Bool { b.ins().uextend(types::I32, x) } else { x }
+    }
 
     /// `total` as its 8-byte slot holds it.
     fn slot(self, b: &mut FunctionBuilder, total: Ir) -> Ir {
         match self.ty {
-            Ty::F32 => b.ins().fpromote(types::F64, total),
-            Ty::F64 | Ty::I64 => total,
-            Ty::U8 => b.ins().uextend(types::I64, total),
-            _ => b.ins().sextend(types::I64, total),
+            Ty::F32 => b.ins().fpromote(types::F64, total), Ty::F64 | Ty::I64 => total, Ty::U8 => b.ins().uextend(types::I64, total),
+            _ => b.ins().sextend(types::I64, total)
         }
     }
 }
@@ -520,10 +556,7 @@ impl Acc {
 const FLAGS: MemFlagsData = MemFlagsData::new().with_notrap();
 
 /// The integer `v` of scalar type `ty`, as an immediate of `ty`'s width.
-fn int(b: &mut FunctionBuilder, ty: Type, v: i64) -> Ir {
-    let bits = ty.bits();
-    b.ins().iconst(ty, if bits < 64 { v & ((1 << bits) - 1) } else { v })
-}
+fn int(b: &mut FunctionBuilder, ty: Type, v: i64) -> Ir { let bits = ty.bits(); b.ins().iconst(ty, if bits < 64 { v & ((1 << bits) - 1) } else { v }) }
 
 /// `v`'s bits as type `ty`.
 fn cast(b: &mut FunctionBuilder, ty: Type, v: Ir) -> Ir {
@@ -531,10 +564,7 @@ fn cast(b: &mut FunctionBuilder, ty: Type, v: Ir) -> Ir {
 }
 
 /// A vector of zeros of type `ty`, as a constant, which the narrowing pattern in `convert` needs on x86-64.
-fn zeros(b: &mut FunctionBuilder, ty: Type) -> Ir {
-    let zeros = b.func.dfg.constants.insert(ConstantData::from(vec![0u8; 16]));
-    b.ins().vconst(ty, zeros)
-}
+fn zeros(b: &mut FunctionBuilder, ty: Type) -> Ir { let zeros = b.func.dfg.constants.insert(ConstantData::from(vec![0u8; 16])); b.ins().vconst(ty, zeros) }
 
 /// The scalar input of type `t` in its 8-byte slot at offset `at` of `scalars`. A Boolean becomes a mask.
 fn slot(b: &mut FunctionBuilder, t: Ty, scalars: Ir, at: i32) -> Ir {
@@ -549,26 +579,42 @@ fn slot(b: &mut FunctionBuilder, t: Ty, scalars: Ir, at: i32) -> Ir {
 /// Items of type `t` from the array at `base`, from item `i + skip`, read as `within` says: the `vectors` vectors that hold a group's items, or where `single` holds, the one item in the first lane and zeros elsewhere. A backward array's items run down from `base`, a strided array's lie `stride` bytes apart, and a repeated array's one item fills every lane. A Boolean's bytes become masks.
 fn load(b: &mut FunctionBuilder, t: Ty, within: Within, (base, stride): (Ir, Option<Ir>), i: Ir, skip: i64, vectors: i64, single: bool) -> Vec<Ir> {
     let (bytes, per) = (t.bytes(), 16 / t.bytes());
-    let at = match stride { Some(stride) => b.ins().imul(i, stride), None => b.ins().imul_imm_s(i, match within { Within::Backward => -bytes, Within::Repeated => 0, _ => bytes }) };
+    let at = match stride {
+        Some(stride) => b.ins().imul(i, stride), None => b.ins().imul_imm_s(i, match within { Within::Backward => -bytes, Within::Repeated => 0, _ => bytes })
+    };
     let at = b.ins().iadd(base, at);
     // The address of item `i + k`, as a pointer and an offset.
     let item = |b: &mut FunctionBuilder, k: i64| match (within, stride) {
-        (_, Some(stride)) => { let off = b.ins().imul_imm_s(stride, k); (b.ins().iadd(at, off), 0) }
-        (Within::Repeated, _) => (at, 0),
-        (Within::Backward, _) => (at, (-k * bytes) as i32),
-        _ => (at, (k * bytes) as i32),
+        (_, Some(stride)) => { let off = b.ins().imul_imm_s(stride, k); (b.ins().iadd(at, off), 0) } (Within::Repeated, _) => (at, 0),
+        (Within::Backward, _) => (at, (-k * bytes) as i32), _ => (at, (k * bytes) as i32)
     };
     (0..vectors).map(|j| {
         let first = skip + j * per;
         let x = match (single, j, within) {
-            (true, 0, _) => { let (p, o) = item(b, skip); let x = b.ins().load(t.ir(), FLAGS, p, o); b.ins().scalar_to_vector(t.vector(), x) }
+            (true, 0, _) => {
+                let (p, o) = item(b, skip);
+                let x = b.ins().load(t.ir(), FLAGS, p, o);
+                b.ins().scalar_to_vector(t.vector(), x)
+            }
             (true, ..) => zeros(b, t.vector()),
             (false, _, Within::Forward) => { let (p, o) = item(b, first); b.ins().load(t.vector(), FLAGS, p, o) }
-            (false, _, Within::Backward) => { let (p, o) = item(b, first + per - 1); let x = b.ins().load(t.vector(), FLAGS, p, o); reversed(b, x) }
-            (false, _, Within::Strided) => (0..per).fold(zeros(b, t.vector()), |x, l| { let (p, o) = item(b, first + l); let y = b.ins().load(t.ir(), FLAGS, p, o); b.ins().insertlane(x, y, l as u8) }),
-            (false, _, Within::Repeated) => { let (p, o) = item(b, first); let x = b.ins().load(t.ir(), FLAGS, p, o); b.ins().splat(t.vector(), x) }
+            (false, _, Within::Backward) => {
+                let (p, o) = item(b, first + per - 1);
+                let x = b.ins().load(t.vector(), FLAGS, p, o);
+                reversed(b, x)
+            }
+            (false, _, Within::Strided) => (0..per).fold(zeros(b, t.vector()), |x, l| {
+                let (p, o) = item(b, first + l);
+                let y = b.ins().load(t.ir(), FLAGS, p, o);
+                b.ins().insertlane(x, y, l as u8)
+            }),
+            (false, _, Within::Repeated) => {
+                let (p, o) = item(b, first);
+                let x = b.ins().load(t.ir(), FLAGS, p, o);
+                b.ins().splat(t.vector(), x)
+            }
         };
-        if t != Ty::Bool { return x }
+        if t != Ty::Bool { return x; }
         let zero = zeros(b, types::I8X16);
         b.ins().icmp(IntCC::NotEqual, x, zero)
     }).collect()
@@ -577,33 +623,29 @@ fn load(b: &mut FunctionBuilder, t: Ty, within: Within, (base, stride): (Ir, Opt
 /// `op` on `x`, one vector of type `ty`, and `y` where it takes two.
 fn arith(b: &mut FunctionBuilder, op: Op, ty: Ty, x: Ir, y: Option<Ir>) -> Ir {
     match (op, y) {
-        (Op::And, Some(y)) => b.ins().band(x, y),
-        (Op::Or, Some(y)) => b.ins().bor(x, y),
-        (Op::Xor, Some(y)) => b.ins().bxor(x, y),
-        (Op::Not, _) => b.ins().bnot(x),
-        (Op::Add, Some(y)) => if ty.float() { b.ins().fadd(x, y) } else { b.ins().iadd(x, y) },
-        (Op::Subtract, Some(y)) => if ty.float() { b.ins().fsub(x, y) } else { b.ins().isub(x, y) },
-        (Op::Multiply, Some(y)) => multiply(b, ty, x, y),
-        (Op::Divide, Some(y)) => b.ins().fdiv(x, y),
-        (Op::Maximum, Some(y)) => extreme(b, ty, true, x, y),
-        (Op::Minimum, Some(y)) => extreme(b, ty, false, x, y),
-        (Op::Negate, _) => if ty.float() { b.ins().fneg(x) } else { b.ins().ineg(x) },
-        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => b.ins().fabs(x), _ => b.ins().iabs(x) },
-        (Op::Sqrt, _) => b.ins().sqrt(x),
-        _ => unreachable!("`check` gives each operation its arguments"),
+        (Op::And, Some(y)) => b.ins().band(x, y), (Op::Or, Some(y)) => b.ins().bor(x, y), (Op::Xor, Some(y)) => b.ins().bxor(x, y),
+        (Op::Not, _) => b.ins().bnot(x), (Op::Add, Some(y)) => { if ty.float() { b.ins().fadd(x, y) } else { b.ins().iadd(x, y) } }
+        (Op::Subtract, Some(y)) => { if ty.float() { b.ins().fsub(x, y) } else { b.ins().isub(x, y) } } (Op::Multiply, Some(y)) => multiply(b, ty, x, y),
+        (Op::Divide, Some(y)) => b.ins().fdiv(x, y), (Op::Maximum, Some(y)) => extreme(b, ty, true, x, y),
+        (Op::Minimum, Some(y)) => extreme(b, ty, false, x, y), (Op::Negate, _) => { if ty.float() { b.ins().fneg(x) } else { b.ins().ineg(x) } }
+        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => b.ins().fabs(x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x),
+        _ => unreachable!("`check` gives each operation its arguments")
     }
 }
 
 /// `x × y`, wrapping for integers. A vector of bytes multiplies at 16 bits, because x86-64 has no vector multiply of bytes.
 fn multiply(b: &mut FunctionBuilder, ty: Ty, x: Ir, y: Ir) -> Ir {
-    if ty.float() { return b.ins().fmul(x, y) }
+    if ty.float() { return b.ins().fmul(x, y); }
     if ty == Ty::I64 && b.func.dfg.value_type(x).is_vector() {
         // Neither NEON nor SSE4.1 multiplies 64-bit lanes, and Cranelift's emulation of it costs more than two scalar multiplies.
-        let products: Vec<Ir> = (0..2).map(|l| { let (p, q) = (b.ins().extractlane(x, l), b.ins().extractlane(y, l)); b.ins().imul(p, q) }).collect();
+        let products: Vec<Ir> = (0..2).map(|l| {
+            let (p, q) = (b.ins().extractlane(x, l), b.ins().extractlane(y, l));
+            b.ins().imul(p, q)
+        }).collect();
         let v = b.ins().splat(types::I64X2, products[0]);
         return b.ins().insertlane(v, products[1], 1);
     }
-    if ty.bytes() > 1 || !b.func.dfg.value_type(x).is_vector() { return b.ins().imul(x, y) }
+    if ty.bytes() > 1 || !b.func.dfg.value_type(x).is_vector() { return b.ins().imul(x, y); }
     let (x, y) = (widen(b, &[x], true), widen(b, &[y], true));
     let products: Vec<Ir> = x.iter().zip(&y).map(|(&x, &y)| b.ins().imul(x, y)).collect();
     narrow(b, &products)[0]
@@ -615,7 +657,7 @@ fn extreme(b: &mut FunctionBuilder, ty: Ty, greater: bool, x: Ir, y: Ir) -> Ir {
         (t, _) if t.float() => {
             let test = if greater { b.ins().fcmp(FloatCC::LessThan, y, x) } else { b.ins().fcmp(FloatCC::LessThan, x, y) };
             let vector = b.func.dfg.value_type(x);
-            if !vector.is_vector() { return b.ins().select(test, x, y) }
+            if !vector.is_vector() { return b.ins().select(test, x, y); }
             let mask = cast(b, vector, test);
             b.ins().bitselect(mask, x, y)
         }
@@ -629,12 +671,9 @@ fn extreme(b: &mut FunctionBuilder, ty: Ty, greater: bool, x: Ir, y: Ir) -> Ir {
 /// `x` and `y`, a group's vectors of type `t`, compared by `cmp`: masks narrowed to bytes.
 fn compare(b: &mut FunctionBuilder, cmp: Cmp, t: Ty, x: &[Ir], y: &[Ir]) -> Vec<Ir> {
     let (float, int) = match cmp {
-        Cmp::Eq => (FloatCC::Equal, IntCC::Equal),
-        Cmp::Ne => (FloatCC::NotEqual, IntCC::NotEqual),
-        Cmp::Lt => (FloatCC::LessThan, IntCC::SignedLessThan),
-        Cmp::Le => (FloatCC::LessThanOrEqual, IntCC::SignedLessThanOrEqual),
-        Cmp::Gt => (FloatCC::GreaterThan, IntCC::SignedGreaterThan),
-        Cmp::Ge => (FloatCC::GreaterThanOrEqual, IntCC::SignedGreaterThanOrEqual),
+        Cmp::Eq => (FloatCC::Equal, IntCC::Equal), Cmp::Ne => (FloatCC::NotEqual, IntCC::NotEqual), Cmp::Lt => (FloatCC::LessThan, IntCC::SignedLessThan),
+        Cmp::Le => (FloatCC::LessThanOrEqual, IntCC::SignedLessThanOrEqual), Cmp::Gt => (FloatCC::GreaterThan, IntCC::SignedGreaterThan),
+        Cmp::Ge => (FloatCC::GreaterThanOrEqual, IntCC::SignedGreaterThanOrEqual)
     };
     let int = if t == Ty::U8 { int.unsigned() } else { int };
     let masks: Vec<Ir> = x.iter().zip(y).map(|(&x, &y)| if t.float() { b.ins().fcmp(float, x, y) } else { b.ins().icmp(int, x, y) }).collect();
@@ -644,7 +683,10 @@ fn compare(b: &mut FunctionBuilder, cmp: Cmp, t: Ty, x: &[Ir], y: &[Ir]) -> Vec<
 /// `x` where `mask` is true and `y` where it's false, a group's vectors of type `t`. The mask widens to `t`'s width.
 fn select(b: &mut FunctionBuilder, mask: &[Ir], x: &[Ir], y: &[Ir], t: Ty) -> Vec<Ir> {
     let masks = resize(b, mask.to_vec(), Ty::Bool, t);
-    masks.iter().zip(x.iter().zip(y)).map(|(&m, (&x, &y))| { let m = cast(b, t.vector(), m); b.ins().bitselect(m, x, y) }).collect()
+    masks.iter().zip(x.iter().zip(y)).map(|(&m, (&x, &y))| {
+        let m = cast(b, t.vector(), m);
+        b.ins().bitselect(m, x, y)
+    }).collect()
 }
 
 /// `x`'s items at twice their width, in twice as many vectors: integers and masks extended by their sign, or by zeros where `unsigned` holds, and f32 floats promoted to f64.
@@ -654,11 +696,8 @@ fn widen(b: &mut FunctionBuilder, x: &[Ir], unsigned: bool) -> Vec<Ir> {
         if b.func.dfg.value_type(v) == types::F32X4 {
             let high = high_half(b, v);
             wide.extend([b.ins().fvpromote_low(v), b.ins().fvpromote_low(high)]);
-        } else if unsigned {
-            wide.extend([b.ins().uwiden_low(v), b.ins().uwiden_high(v)]);
-        } else {
-            wide.extend([b.ins().swiden_low(v), b.ins().swiden_high(v)]);
-        }
+        } else if unsigned { wide.extend([b.ins().uwiden_low(v), b.ins().uwiden_high(v)]); }
+        else { wide.extend([b.ins().swiden_low(v), b.ins().swiden_high(v)]); }
     }
     wide
 }
@@ -688,7 +727,11 @@ fn joined(b: &mut FunctionBuilder, p: Ir, q: Ir) -> Ir { let ty = b.func.dfg.val
 fn high_half(b: &mut FunctionBuilder, v: Ir) -> Ir { let ty = b.func.dfg.value_type(v); shuffled(b, v, v, (8..16).chain(8..16).collect(), ty) }
 
 /// `v` with its lanes in reverse order.
-fn reversed(b: &mut FunctionBuilder, v: Ir) -> Ir { let ty = b.func.dfg.value_type(v); let size = (ty.lane_bits() / 8) as u8; shuffled(b, v, v, (0..16 / size).rev().flat_map(|l| l * size..(l + 1) * size).collect(), ty) }
+fn reversed(b: &mut FunctionBuilder, v: Ir) -> Ir {
+    let ty = b.func.dfg.value_type(v);
+    let size = (ty.lane_bits() / 8) as u8;
+    shuffled(b, v, v, (0..16 / size).rev().flat_map(|l| l * size..(l + 1) * size).collect(), ty)
+}
 
 /// `x`'s items converted one at a time by `f` and packed in vectors of type `out`, for conversions that have no vector form on x86-64.
 fn lanewise(b: &mut FunctionBuilder, x: &[Ir], out: Type, f: impl Fn(&mut FunctionBuilder, Ir) -> Ir) -> Vec<Ir> {
@@ -715,7 +758,7 @@ fn resize(b: &mut FunctionBuilder, mut x: Vec<Ir>, from: Ty, to: Ty) -> Vec<Ir> 
 
 /// `x`, a group's vectors of type `from`, converted to type `to` as `Op::Convert` says.
 fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty) -> Vec<Ir> {
-    if from == to { return x }
+    if from == to { return x; }
     match (from, to) {
         (Ty::Bool, _) => {
             let masks = resize(b, x, Ty::Bool, to);
@@ -725,16 +768,22 @@ fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty) -> Vec<Ir> {
         }
         _ if !from.float() && !to.float() => resize(b, x, from, to),
         (Ty::F32, Ty::F64) => widen(b, &x, false),
-        (Ty::F64, Ty::F32) => x.chunks(2).map(|p| { let (lo, hi) = (b.ins().fvdemote(p[0]), b.ins().fvdemote(p[1])); joined(b, lo, hi) }).collect(),
+        (Ty::F64, Ty::F32) => x.chunks(2).map(|p| {
+            let (lo, hi) = (b.ins().fvdemote(p[0]), b.ins().fvdemote(p[1]));
+            joined(b, lo, hi)
+        }).collect(),
         (Ty::I64, Ty::F64) => x.iter().map(|&v| b.ins().fcvt_from_sint(types::F64X2, v)).collect(),
         (Ty::I64, _) => lanewise(b, &x, types::F32X4, |b, v| b.ins().fcvt_from_sint(types::F32, v)),
         _ if !from.float() => {
             let x = resize(b, x, from, Ty::I32);
-            if to == Ty::F32 { return x.iter().map(|&v| b.ins().fcvt_from_sint(types::F32X4, v)).collect() }
+            if to == Ty::F32 { return x.iter().map(|&v| b.ins().fcvt_from_sint(types::F32X4, v)).collect(); }
             let mut wide = Vec::with_capacity(2 * x.len());
             for v in x {
                 let high = high_half(b, v);
-                for v in [v, high] { let w = b.ins().swiden_low(v); wide.push(b.ins().fcvt_from_sint(types::F64X2, w)); }
+                for v in [v, high] {
+                    let w = b.ins().swiden_low(v);
+                    wide.push(b.ins().fcvt_from_sint(types::F64X2, w));
+                }
             }
             wide
         }
@@ -746,7 +795,11 @@ fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty) -> Vec<Ir> {
             }
             let mut ints: Vec<Ir> = if from == Ty::F32 { x.iter().map(|&v| b.ins().fcvt_to_sint_sat(types::I32X4, v)).collect() } else {
                 // The form that x86-64 lowers for Wasm's `i32x4.trunc_sat_f64x2_s_zero`: two `i32`s in each vector's low half.
-                let halves: Vec<Ir> = x.iter().map(|&v| { let w = b.ins().fcvt_to_sint_sat(types::I64X2, v); let z = zeros(b, types::I64X2); b.ins().snarrow(w, z) }).collect();
+                let halves: Vec<Ir> = x.iter().map(|&v| {
+                    let w = b.ins().fcvt_to_sint_sat(types::I64X2, v);
+                    let z = zeros(b, types::I64X2);
+                    b.ins().snarrow(w, z)
+                }).collect();
                 halves.chunks(2).map(|p| joined(b, p[0], p[1])).collect()
             };
             if to.bytes() < 4 { ints = ints.chunks(2).map(|p| b.ins().snarrow(p[0], p[1])).collect(); }
@@ -765,12 +818,13 @@ impl Compiled {
         assert!(block > 0 || n == 0, "a kernel runs in blocks of at least one item");
         assert!(self.takes(block), "a kernel that counts Booleans takes blocks of at most {COUNTED} items");
         let [a, s, o, folds] = self.counts;
-        assert_eq!([arrays.len(), scalars.len(), outs.len(), totals.len()], [a, s, o, folds * n.div_ceil(block.max(1))], "arrays, scalars, results and totals for the kernel");
+        assert_eq!(
+            [arrays.len(), scalars.len(), outs.len(), totals.len()], [a, s, o, folds * n.div_ceil(block.max(1))],
+            "arrays, scalars, results and totals for the kernel"
+        );
         unsafe { (self.entry)(n, block, arrays.as_ptr(), scalars.as_ptr(), outs.as_ptr(), totals.as_mut_ptr()) };
     }
 
     /// Whether the kernel takes blocks of `block` items: any block, except that a kernel that counts Booleans takes at most `COUNTED` items.
     pub fn takes(&self, block: usize) -> bool { block <= self.most }
 }
-
-

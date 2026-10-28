@@ -1,7 +1,7 @@
 use basedpl::{EvalOptions, InterruptHandle, Session};
-use std::collections::HashMap;
 use serde_json::Value;
-use std::{io::{self, BufRead, Write}, sync::{mpsc, Arc, Mutex}};
+use std::collections::HashMap;
+use std::{io::{self, BufRead, Write}, sync::{Arc, Mutex, mpsc}};
 
 pub(crate) fn run(output: &mut impl Write) -> io::Result<()> {
     let active = Arc::new(Mutex::new(HashMap::<u64, InterruptHandle>::new()));

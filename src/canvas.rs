@@ -1,6 +1,6 @@
 //! `•canvas`: drawing functions written in JavaScript. `•canvas Y` makes a drawing function from the JavaScript source `Y`. `X draw Y` gives a record of the source, the options `X` and the data `Y`, which displays as a canvas. Displaying it calls the JavaScript function with the canvas's 2D context, the data and the options, which `js.rs` converts to JavaScript values.
-use crate::{data, display, Span, js, keyed, system::{native, Call, Valence::Ambivalent}, Error, Described, Value};
-use base64::{engine::general_purpose::STANDARD, Engine};
+use crate::{Described, Error, Span, Value, data, display, js, keyed, system::{Call, Valence::Ambivalent, native}};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use std::sync::Arc;
 
 /// The script that draws a canvas output, a function of the canvas, the JSON and the bytes that `render` writes.
@@ -35,7 +35,9 @@ fn render(_: Option<&Value>, canvas: &Value, _: &Span) -> Result<Value, Error> {
         // A JSON string is a JavaScript string literal. Escaping `<` keeps `</script>` out of the script.
         let json = serde_json::to_string(&json).expect("a string serializes").replace('<', "\\u003c");
         let bytes = STANDARD.encode(bytes);
-        let html = format!("<canvas></canvas><script>({SCRIPT})(document.currentScript.previousElementSibling, {json}, Uint8Array.from(atob('{bytes}'), c => c.charCodeAt(0)))</script>");
+        let html = format!(
+            "<canvas></canvas><script>({SCRIPT})(document.currentScript.previousElementSibling, {json}, Uint8Array.from(atob('{bytes}'), c => c.charCodeAt(0)))</script>"
+        );
         keyed::vector(vec!["text/plain".into(), "text/html".into()], vec![text, keyed::text(&html)])
     };
     bundle.described("invalid canvas MIME bundle")

@@ -92,10 +92,7 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
                 Err(e) => return Err(io::Error::other(e)),
             }
         } else { io::stdin().read_line(&mut code)? != 0 };
-        if !read {
-            if let Some(e) = incomplete { writeln!(err, "{e}")?; return Ok(1); }
-            return Ok(i32::from(failed && !interactive));
-        }
+        if !read { if let Some(e) = incomplete { writeln!(err, "{e}")?; return Ok(1); } return Ok(i32::from(failed && !interactive)); }
         if code.trim_start().starts_with(']') { failed |= !printer.finish(session.eval_with(&code, printer.options()), err)?; } else {
             match session.parse(Source::new("<repl>", code.as_str())) {
                 ParseStatus::Incomplete(e) => { incomplete = Some(e); continue; }
@@ -115,8 +112,9 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
 /// Times a BPL speed file or directory, reporting budgets without failing on them.
 fn costs(path: &str, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
     let mut written = Ok(());
-    let measured = basedpl::reference::load(std::path::Path::new(path)).and_then(|files|
-        basedpl::timing::measured(&files, true, |line| if written.is_ok() { written = writeln!(out, "{line}"); }));
+    let measured = basedpl::reference::load(std::path::Path::new(path)).and_then(|files| {
+        basedpl::timing::measured(&files, true, |line| { if written.is_ok() { written = writeln!(out, "{line}"); } })
+    });
     written?;
     match measured { Ok(_) => Ok(0), Err(e) => writeln!(err, "{e}").map(|_| 1) }
 }

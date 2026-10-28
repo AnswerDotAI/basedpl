@@ -35,7 +35,7 @@ fn repl_continuation_recovery_and_eof() {
 
 #[test]
 fn worker_flushes_before_eof_and_recovers() {
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::{io::{BufRead, BufReader}, sync::mpsc, thread, time::Duration};
     let mut child =
         Command::new(env!("CARGO_BIN_EXE_bpl")).arg("--worker").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();

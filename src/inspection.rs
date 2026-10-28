@@ -1,4 +1,4 @@
-use crate::{syntax::NodeKind, ParseStatus, Source};
+use crate::{ParseStatus, Source, syntax::NodeKind};
 
 struct Page { name: &'static str, title: &'static str, aliases: &'static [&'static str], text: &'static str }
 

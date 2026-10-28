@@ -242,7 +242,7 @@ _SPEED = _ROOT/'tests'/'speed'
 _BUDGETS = ('macos', 'linux', 'wasm')
 
 def _platform():
-    "This machine's platform, whose native budget column it checks, as `rustymath::timing::NATIVE_COLUMN` picks it, or `None` on a machine with no budgets, such as Linux on Arm."
+    "This machine's platform, whose native budget column its speed tests compare costs with, as `rustymath::timing::NATIVE_COLUMN` picks it, or `None` on a machine with no budgets, such as Linux on Arm."
     import rustymath
     column = rustymath.timing().column
     return None if column is None else _BUDGETS[column]
@@ -657,6 +657,10 @@ def _node():
         if not ran.returncode and want in (None, ran.stdout.lstrip('v').split('.')[0]): return node
     raise ValueError(f'`.node-version` names Node {want}, which this machine lacks: `brew install node@{want}` installs it' if want else "`node` on `PATH` doesn't run")
 
+def _wasm_env(wasm):
+    "The environment in which `tests/wasm-pkg.mjs` loads the browser build that `cargo wasm --out` wrote to `wasm`."
+    return os.environ | dict(BASEDPL_WASM=str(Path(wasm).expanduser()))
+
 def speed_costs(
     wasm:Path=None, # A directory that `cargo wasm --out` wrote; None: a fresh native worker
     native=False, # Time Rustymath's own linear algebra instead of Accelerate
@@ -678,7 +682,7 @@ def speed_costs(
                   f'process.stdout.write(JSON.stringify(costs(JSON.parse(readFileSync(0, "utf8")), {json.dumps(cases)}, {json.dumps(prefs)})))')
         with timing_lock(exclusive=True):
             p = subprocess.run([_node(), '--no-liftoff', '--input-type=module', '-e', script], input=json.dumps(files), capture_output=True,
-                               text=True, timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(wasm)))
+                               text=True, timeout=timeout, env=_wasm_env(wasm))
         if p.returncode: raise ValueError(p.stderr)
         if p.stderr: sys.stderr.write(p.stderr)
         rows = json.loads(p.stdout)
@@ -789,10 +793,41 @@ def wasm_test(
     test = _SPEED.with_name('wasm-speed.mjs' if speed else 'wasm.mjs')
     with timing_lock(exclusive=speed):
         p = subprocess.run([_node(), *(['--no-liftoff'] if speed else []), '--test', str(test)], cwd=_ROOT, capture_output=True,
-                           text=True, timeout=timeout, env=os.environ | dict(BASEDPL_WASM=str(Path(wasm).expanduser())) | (dict(BASEDPL_COSTS='1') if speed else {}))
+                           text=True, timeout=timeout, env=_wasm_env(wasm) | (dict(BASEDPL_COSTS='1') if speed else {}))
     report = Report(p.stdout + p.stderr)
     if p.returncode: raise ValueError(f'\n{report}')
     return report
+
+class StackUse(list):
+    "Each recursion shape's worker stack per level and below its first level, in KB, as `(shape, per_level, base)` rows."
+    def __repr__(self): return '\n'.join(f'{per:6.2f} KB a level {base:7.1f} KB base  {shape}' for shape, per, base in self)
+
+def wasm_stack(
+    wasm, # A directory that `cargo wasm --out` wrote
+):
+    "The worker stack, in KB, that each recursion shape of `tests/wasm.mjs` takes per level and below its first level, under V8's TurboFan alone (`--no-liftoff`). The browser's depth limit, `MAX_CALL_DEPTH` in `src/eval.rs`, is set from these. For each shape, it bisects to 1 KB the least stack at which the shape's recursion reaches the test's depth, and half that depth. Each trial runs `tests/wasm.mjs depths` in a fresh `node` process. Its worker compiles the module, as the test's worker does. The bisections run at once, one for each core, with the machine's timing lock held shared."
+    node, test, env, most = _node(), _SPEED.with_name('wasm.mjs'), _wasm_env(wasm), 2048
+    def depths(kb, *shape):
+        "What `tests/wasm.mjs depths` gives with `kb` KB of worker stack, for every shape or for `shape`, a name and a depth: each shape's depth, the depth it reached, and what deeper recursion gave. `None` where the stack is too small for the worker to load the module."
+        p = subprocess.run([node, '--no-liftoff', test, 'depths', str(kb), *map(str, shape)], cwd=_ROOT, capture_output=True, text=True, env=env)
+        if p.returncode and 'RangeError: Maximum call stack size exceeded' in p.stderr: return None
+        if p.returncode: raise ValueError(p.stderr)
+        return json.loads(p.stdout)
+    def least(job):
+        "The least worker stack, in KB, at which shape `name` reaches depth `n`, searched from the 192 KB that Node keeps in reserve."
+        (name, n), lo, hi = job, 192, most
+        while hi - lo > 1:
+            mid = (lo+hi)//2
+            if (got := depths(mid, name, n)) and got[name][1] == n: hi = mid
+            else: lo = mid
+        return hi
+    with timing_lock():
+        full = depths(most)
+        if short := [name for name, (n, reached, *_) in full.items() if reached != n]: raise ValueError(f'With {most} KB of stack, {", ".join(short)} fall short of their depths')
+        jobs = [(name, d) for name, (n, *_) in full.items() for d in (n//2, n)]
+        with ThreadPoolExecutor(os.cpu_count()) as pool: kb = dict(zip(jobs, pool.map(least, jobs)))
+    per = {name: (kb[name, n] - kb[name, n//2])/(n - n//2) for name, (n, *_) in full.items()}
+    return StackUse((name, per[name], kb[name, n] - per[name]*n) for name, (n, *_) in full.items())
 
 def _timed_build(name, cmd, env):
     "The seconds that the build `cmd` takes in basedpl's root with `env` added, holding the timing lock shared. A failed build raises `ValueError` with its output."
@@ -984,7 +1019,7 @@ def prerelease(
     return result
 
 
-_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs run_pytest compare_costs wasm_test target_builds prerelease'.split()
+_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs run_pytest compare_costs wasm_test wasm_stack target_builds prerelease'.split()
 
 def main():
     "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."

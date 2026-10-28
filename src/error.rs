@@ -1,5 +1,5 @@
-use std::{fmt, ops::Range, path::PathBuf, sync::Arc};
 use rustymath::error::Kind;
+use std::{fmt, ops::Range, path::PathBuf, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
 /// Shared source identity and text. Syntax and errors retain only the sources they use.
@@ -43,9 +43,18 @@ impl ErrorKind {
     /// The name that guards and `•signal` use, such as `DOMAIN`. Rustymath's Overflow is LIMIT, because BPL's exact integers grow and BPL has no overflow kind.
     pub fn name(&self) -> &str {
         match self {
-            Self::Syntax => "SYNTAX", Self::Value => "VALUE", Self::Io => "IO", Self::Unsupported => "UNSUPPORTED", Self::Interrupt => "INTERRUPT", Self::Timeout => "TIMEOUT", Self::Stop { .. } => "STOP",
-            Self::Array(e) => match e.kind { Kind::Domain => "DOMAIN", Kind::Length => "LENGTH", Kind::Limit | Kind::Overflow => "LIMIT", Kind::Rank => "RANK", Kind::Index => "INDEX", Kind::Interrupt => "INTERRUPT", Kind::Timeout => "TIMEOUT" },
-            Self::Custom(name) => name
+            Self::Syntax => "SYNTAX",
+            Self::Value => "VALUE",
+            Self::Io => "IO",
+            Self::Unsupported => "UNSUPPORTED",
+            Self::Interrupt => "INTERRUPT",
+            Self::Timeout => "TIMEOUT",
+            Self::Stop { .. } => "STOP",
+            Self::Array(e) => match e.kind {
+                Kind::Domain => "DOMAIN", Kind::Length => "LENGTH", Kind::Limit | Kind::Overflow => "LIMIT", Kind::Rank => "RANK", Kind::Index => "INDEX",
+                Kind::Interrupt => "INTERRUPT", Kind::Timeout => "TIMEOUT"
+            },
+            Self::Custom(name) => name,
         }
     }
     /// The kind that `name` names, in any case. A name that isn't BPL's is a custom kind. `None` unless `name` is one word of letters, digits and underscores.
@@ -58,18 +67,16 @@ impl ErrorKind {
     pub(crate) fn is_control(&self) -> bool { matches!(self, Self::Interrupt | Self::Timeout | Self::Stop { .. }) }
 }
 
-impl From<rustymath::error::Error> for ErrorKind {
-    fn from(e: rustymath::error::Error) -> Self { Self::Array(e) }
-}
+impl From<rustymath::error::Error> for ErrorKind { fn from(e: rustymath::error::Error) -> Self { Self::Array(e) } }
 /// A kind with no message, for `Error::new` or `described` to supply one.
-impl From<Kind> for ErrorKind {
-    fn from(kind: Kind) -> Self { Self::Array(rustymath::error::Error::new(kind, "")) }
-}
+impl From<Kind> for ErrorKind { fn from(kind: Kind) -> Self { Self::Array(rustymath::error::Error::new(kind, "")) } }
 
 /// `DOMAIN ERROR` and so on. Interrupts, timeouts, stops and unsupported features show their names alone.
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self { Self::Unsupported | Self::Interrupt | Self::Timeout | Self::Stop { .. } => f.write_str(self.name()), _ => write!(f, "{} ERROR", self.name()) }
+        match self {
+            Self::Unsupported | Self::Interrupt | Self::Timeout | Self::Stop { .. } => f.write_str(self.name()), _ => write!(f, "{} ERROR", self.name())
+        }
     }
 }
 
@@ -81,7 +88,10 @@ pub struct Error(Box<ErrorData>);
 #[derive(Clone, Debug)]
 pub struct ErrorData { pub kind: ErrorKind, pub message: String, pub span: Option<Span>, pub calls: Vec<Span> }
 
-impl std::ops::Deref for Error { type Target = ErrorData; fn deref(&self) -> &ErrorData { &self.0 } }
+impl std::ops::Deref for Error {
+    type Target = ErrorData;
+    fn deref(&self) -> &ErrorData { &self.0 }
+}
 impl std::ops::DerefMut for Error { fn deref_mut(&mut self) -> &mut ErrorData { &mut self.0 } }
 
 impl Error {
@@ -90,8 +100,14 @@ impl Error {
         let mut kind = kind.into();
         let message = match &mut kind { ErrorKind::Array(e) if !e.message.is_empty() => std::mem::take(&mut e.message).into_owned(), _ => message.into() };
         // A stop from rustymath's interrupt check is BPL's own interrupt or timeout.
-        let kind = match kind { ErrorKind::Array(e) if e.kind == Kind::Interrupt => ErrorKind::Interrupt, ErrorKind::Array(e) if e.kind == Kind::Timeout => ErrorKind::Timeout, kind => kind };
-        let message = match &kind { ErrorKind::Interrupt if message.is_empty() => "evaluation interrupted".into(), ErrorKind::Timeout if message.is_empty() => "evaluation deadline exceeded".into(), _ => message };
+        let kind = match kind {
+            ErrorKind::Array(e) if e.kind == Kind::Interrupt => ErrorKind::Interrupt, ErrorKind::Array(e) if e.kind == Kind::Timeout => ErrorKind::Timeout,
+            kind => kind
+        };
+        let message = match &kind {
+            ErrorKind::Interrupt if message.is_empty() => "evaluation interrupted".into(),
+            ErrorKind::Timeout if message.is_empty() => "evaluation deadline exceeded".into(), _ => message
+        };
         Self(Box::new(ErrorData { kind, message, span: None, calls: Vec::new() }))
     }
     pub(crate) fn domain(message: impl Into<String>) -> Self { Self::new(Kind::Domain, message) }
@@ -100,10 +116,7 @@ impl Error {
     /// This error, placed at `span` if it has no span yet.
     #[cold]
     #[inline(never)]
-    pub(crate) fn at(mut self, span: &Span) -> Self {
-        if self.span.is_none() { self.span = Some(span.clone()); }
-        self
-    }
+    pub(crate) fn at(mut self, span: &Span) -> Self { if self.span.is_none() { self.span = Some(span.clone()); } self }
 }
 
 impl From<rustymath::error::Error> for Error { fn from(e: rustymath::error::Error) -> Self { Self::new(e, "") } }
@@ -160,11 +173,7 @@ impl Span {
         let (line, column) = self.position();
         let end = display_text(&text[line_start..self.range.end.min(line_end)]).width();
         write!(
-            f,
-            " {label} {}:{line}:{column}\n{}\n{}{}",
-            display_text(&self.source.name),
-            display_text(&text[line_start..line_end]),
-            " ".repeat(column - 1),
+            f, " {label} {}:{line}:{column}\n{}\n{}{}", display_text(&self.source.name), display_text(&text[line_start..line_end]), " ".repeat(column - 1),
             "^".repeat((end + 1).saturating_sub(column).max(1))
         )
     }

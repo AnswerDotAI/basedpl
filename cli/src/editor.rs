@@ -1,9 +1,9 @@
 //! Glyph completion and terminal input. Source execution never rewrites aliases.
-use basedpl::{in_code, symbols::{chord, entry, find, layout, matches, symbols, Action}};
+use basedpl::{in_code, symbols::{Action, chord, entry, find, layout, matches, symbols}};
 use rustyline::{
+    Cmd, CompletionType, ConditionalEventHandler, Config, Context, Editor, Event, EventContext, EventHandler, Helper, KeyCode, KeyEvent, Modifiers, RepeatCount,
     completion::{Completer, Pair}, highlight::{CmdKind, Highlighter}, hint::{Hint, Hinter}, history::DefaultHistory,
-    validate::{ValidationContext, ValidationResult, Validator},
-    Cmd, CompletionType, ConditionalEventHandler, Config, Context, Editor, Event, EventContext, EventHandler, Helper, KeyCode, KeyEvent, Modifiers, RepeatCount
+    validate::{ValidationContext, ValidationResult, Validator}
 };
 use std::{borrow::Cow, ops::Range, sync::{Arc, Mutex}};
 
@@ -150,8 +150,8 @@ fn styled(entry: &str) -> String {
 /// The ANSI colour of each highlight class the REPL colours. Numbers and syntax keep the terminal's colour.
 fn colour(class: &str) -> Option<&'static str> {
     Some(match class {
-        "function" => "38;2;17;57;249", "monadic-operator" | "dyadic-operator" => "38;2;223;0;244",
-        "argument" => "34", "string" => "36", "comment" => "38;2;0;175;147", "name" => "38;2;255;107;1", _ => return None
+        "function" => "38;2;17;57;249", "monadic-operator" | "dyadic-operator" => "38;2;223;0;244", "argument" => "34", "string" => "36",
+        "comment" => "38;2;0;175;147", "name" => "38;2;255;107;1", _ => return None
     })
 }
 

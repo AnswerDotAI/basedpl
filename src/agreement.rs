@@ -1,4 +1,4 @@
-use crate::{array::{generated_len, Layout}, ErrorKind, Value};
+use crate::{ErrorKind, Value, array::{Layout, generated_len}};
 use rustymath::{agreement::Mapping, error::Error, gather::Steps};
 use std::borrow::Cow;
 
@@ -47,7 +47,9 @@ impl Agree for Agreement {
 }
 
 /// `core`, the pairing of `left` and `right`, with the renderer their layouts agree on.
-fn with_renderer(core: Result<Core, Error>, left: &Layout, right: &Layout) -> Result<Agreement, ErrorKind> { Ok(core?.map_layout(|core| Layout::paired(core, left, right))) }
+fn with_renderer(core: Result<Core, Error>, left: &Layout, right: &Layout) -> Result<Agreement, ErrorKind> {
+    Ok(core?.map_layout(|core| Layout::paired(core, left, right)))
+}
 
 /// The tangent `t` laid out as `layout`, its primal's: repeated where it was smaller, as broadcasting repeats it. A linear operation, whose transpose sums back. A dual keeps the smaller tangent that a pervasive rule gives, which later calls broadcast as they go, and only code that copies items expands it (`Dual::full_tangent`).
 pub(crate) fn expand(t: &Value, layout: &crate::array::Layout) -> Value {
@@ -66,10 +68,7 @@ pub(crate) fn broadcast_tables(mapping: &Mapping, frame: &[usize], cell: &[usize
 pub(crate) fn laid_cells(value: &Value, rank: usize, mapping: &Mapping, frame: &Layout) -> Result<Value, ErrorKind> {
     let n = value.shape().len();
     let layout = frame.concat(&value.layout().axes(n - rank..n));
-    if value.is_atom() {
-        generated_len(layout.shape())?;
-        return Ok(layout.filled(value));
-    }
+    if value.is_atom() { generated_len(layout.shape())?; return Ok(layout.filled(value)); }
     // A value whose frame is `frame` already holds each cell where the mapping reads it.
     if *value.layout().axes(0..n - rank) == **frame { return value.relaid(layout); }
     crate::primitive::copied(value, layout, &mapping.with_steps(0, broadcast_tables(mapping, frame.shape(), &value.shape()[n - rank..])))

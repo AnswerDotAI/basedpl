@@ -1,6 +1,6 @@
+use crate::{Described, Error, Number, Value, keyed, settings, symbols::Notation, transform::Plain};
 use rustymath::{buffer::FloatWidth, error::Kind};
 use std::borrow::Cow;
-use crate::{keyed, settings, symbols::Notation, transform::Plain, Described, Number, Value, Error};
 use unicode_width::UnicodeWidthStr;
 
 /// A column of numbers aligned on their decimal points: its widest text before the point, and its widest from the point on.
@@ -44,8 +44,8 @@ pub(crate) enum Hidden { Full, Short, Omit }
 impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, prec: 10, ..Self::NONE } } }
 impl Elide {
     /// Shows every item and every digit, as source text and `⍕` do, with 64-bit floats plain.
-    pub const NONE: Self =
-        Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64), marks: true, notation: Notation::Apl, display: false, hidden: Hidden::Full };
+    pub const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64),
+        marks: true, notation: Notation::Apl, display: false, hidden: Hidden::Full };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
     pub fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
@@ -64,14 +64,16 @@ impl Elide {
     /// The text of `n` rounded as `number` rounds it, without a marker, for an array that writes one marker for all its numbers.
     pub fn unmarked(self, n: &Number) -> String { format!("{:#}", n.rounded(self.prec)) }
     /// The marker of a float of `width`, when markers show and the width isn't `plain`.
-    pub fn width_marker(self, width: FloatWidth) -> Option<&'static str> { (self.marks && Some(width) != self.plain).then(|| crate::number::Mark::Width(width).marker()) }
+    pub fn width_marker(self, width: FloatWidth) -> Option<&'static str> {
+        (self.marks && Some(width) != self.plain).then(|| crate::number::Mark::Width(width).marker())
+    }
     /// The marker for a numeric dtype and its fixedness under these display settings.
     pub fn kind_marker(self, kind: rustymath::buffer::DType, fixed: bool) -> Option<&'static str> {
         use {crate::number::Mark, rustymath::buffer::DType};
         if !self.marks { return None; }
         match kind {
-            DType::Integer(w) => Some(Mark::integer(fixed.then_some(w)).marker()),
-            DType::Float(w) => self.width_marker(w), DType::Complex(w) => self.width_marker(w.into()), _ => None
+            DType::Integer(w) => Some(Mark::integer(fixed.then_some(w)).marker()), DType::Float(w) => self.width_marker(w),
+            DType::Complex(w) => self.width_marker(w.into()), _ => None
         }
     }
     /// The numeric marker that `n` writes under these display settings.
@@ -81,9 +83,7 @@ impl Elide {
         name.as_deref().filter(|n| self.hidden != Hidden::Omit || !rustymath::layout::hidden(n)).map(|n| self.shown(n))
     }
     /// `text` as display shows it: shortened by `rustymath::layout::shown`, as in `_b·…`, unless `hidden` is `Full`.
-    pub fn shown(self, text: &str) -> Cow<'_, str> {
-        if self.hidden == Hidden::Full { text.into() } else { rustymath::layout::shown(text) }
-    }
+    pub fn shown(self, text: &str) -> Cow<'_, str> { if self.hidden == Hidden::Full { text.into() } else { rustymath::layout::shown(text) } }
 }
 
 /// The positions display shows along an axis of `len` items: all of them, or the first and last `edges` with `None` for the gap between.
@@ -219,9 +219,7 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
             }
             "batch" => batch = value.boolean().described("batch must be Boolean")?,
             "fusion" => fusion = value.boolean().described("fusion must be Boolean")?,
-            key => {
-                if !display.set(key, &value).described("invalid display setting")? { return Err(Error::domain("unknown setting")); }
-            }
+            key => { if !display.set(key, &value).described("invalid display setting")? { return Err(Error::domain("unknown setting")); } }
         }
     }
     settings::set_display(display);
@@ -231,10 +229,13 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
     settings::set_batch(batch);
     settings::set_reports_fusion(fusion);
     if let Some(n) = threads { rustymath::parallel::set_threads(n); }
-    if let Some(seed) = seed { *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Stream::seeded(seed); }
+    if let Some(seed) = seed {
+        *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Stream::seeded(seed);
+    }
     let flag = |b| Value::Number(Number::from_bool(b));
     let entries = display.entries(numeric.width).into_iter().chain(numeric.entries()).chain([
-        ("fusion", flag(fusion)), ("threads", Value::integer(rustymath::parallel::thread_setting() as i64)), ("hanzi_aliases", flag(hanzi_aliases)), ("batch", flag(batch)),
+        ("fusion", flag(fusion)), ("threads", Value::integer(rustymath::parallel::thread_setting() as i64)), ("hanzi_aliases", flag(hanzi_aliases)),
+        ("batch", flag(batch)),
     ]);
     let (keys, values): (Vec<std::sync::Arc<str>>, Vec<Value>) = entries.map(|(k, v)| (k.into(), v)).unzip();
     Ok((keyed::vector(keys, values).described("invalid settings record")?, shy))
@@ -349,10 +350,8 @@ pub(crate) fn grid(columns: usize, rows: Vec<(usize, Vec<Cell>)>, style: Style) 
 fn marker(a: &Value, el: Elide) -> &'static str {
     use rustymath::buffer::DType;
     match a.shown_kind() {
-        Some((DType::Boolean, _)) => "$",
-        Some((kind @ DType::Integer(_), fixed)) => Elide::NONE.kind_marker(kind, fixed).unwrap(),
-        Some((DType::Float(w), _)) => el.width_marker(w).unwrap_or("~"),
-        Some((DType::Complex(_), _)) => "j", Some((DType::Character, _)) => "─", None => "+"
+        Some((DType::Boolean, _)) => "$", Some((kind @ DType::Integer(_), fixed)) => Elide::NONE.kind_marker(kind, fixed).unwrap(),
+        Some((DType::Float(w), _)) => el.width_marker(w).unwrap_or("~"), Some((DType::Complex(_), _)) => "j", Some((DType::Character, _)) => "─", None => "+"
     }
 }
 
@@ -397,8 +396,8 @@ fn array(a: &Value, el: Elide) -> Block {
 
 /// Whether `a` displays as a string without keys or a visible axis name.
 fn is_text(a: &Value, el: Elide) -> bool {
-    a.shape().len() == 1 && !a.has_keys() && !a.shows_names(el)
-        && (!a.is_empty() || matches!(a.prototype(), Value::Character(_))) && a.elements().all(|e| matches!(e, Value::Character(_)))
+    a.shape().len() == 1 && !a.has_keys() && !a.shows_names(el) && (!a.is_empty() || matches!(a.prototype(), Value::Character(_)))
+        && a.elements().all(|e| matches!(e, Value::Character(_)))
 }
 
 /// Whether box mode draws `a` in a box.
@@ -421,8 +420,7 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
     let mark = a.mark(el);
     let (_, rows) = table(a, el, mark.is_none());
     match mark {
-        Some(m) => bracketed(rows, &a.shape()[..a.shape().len() - 1], a.shape().len() - 1, m),
-        None => rows.into_iter().flat_map(|(_, lines)| lines).collect(),
+        Some(m) => bracketed(rows, &a.shape()[..a.shape().len() - 1], a.shape().len() - 1, m), None => rows.into_iter().flat_map(|(_, lines)| lines).collect()
     }.join("\n")
 }
 
@@ -438,9 +436,8 @@ pub(crate) fn table(a: &Value, el: Elide, breaks: bool) -> (usize, Vec<(Option<V
                 item => {
                     spaced = true;
                     match item.displayed() {
-                        Plain::Number(n) if mark.is_some() => Cell::number(el.unmarked(n)),
-                        Plain::Number(n) => Cell::number(el.number(n)), Plain::Function(_) | Plain::Operator(_) => Cell::text(plain(&item, el)),
-                        _ => Cell::text(item.item(el))
+                        Plain::Number(n) if mark.is_some() => Cell::number(el.unmarked(n)), Plain::Number(n) => Cell::number(el.number(n)),
+                        Plain::Function(_) | Plain::Operator(_) => Cell::text(plain(&item, el)), _ => Cell::text(item.item(el))
                     }
                 }
             })
@@ -480,13 +477,16 @@ fn labelled(a: &Value, el: Elide) -> String {
         let start = index.iter().zip(a.shape()).fold(0, |n, (&i, &len)| n * len + i) * table;
         let mut grid_rows: Vec<(usize, Vec<Cell>)> = Vec::new();
         if header {
-            let labels = positions(a.shape()[rank - 1], el.last(a.shape())).map(|j| Cell::text(if !columns_keyed { String::new() } else {
-                j.map_or_else(|| "…".into(), |j| label(rank - 1, j).map_or_else(|| j.to_string(), |k| k.to_string()))
-            }));
+            let labels = positions(a.shape()[rank - 1], el.last(a.shape())).map(|j| {
+                Cell::text(if !columns_keyed { String::new() }
+                else { j.map_or_else(|| "…".into(), |j| label(rank - 1, j).map_or_else(|| j.to_string(), |k| k.to_string())) })
+            });
             grid_rows.push((0, names.then(|| Cell::text(mark.map_or_else(String::new, String::from))).into_iter().chain(labels).collect()));
         }
         for (_, row, spots) in rows(&a.shape()[rank - 2..], edges, el.last(a.shape())) {
-            let name = if !rows_keyed { String::new() } else { row.map_or_else(|| "⋮".into(), |row| label(rank - 2, row[0]).map_or_else(|| row[0].to_string(), |k| k.to_string())) };
+            let name = if !rows_keyed { String::new() } else {
+                row.map_or_else(|| "⋮".into(), |row| label(rank - 2, row[0]).map_or_else(|| row[0].to_string(), |k| k.to_string()))
+            };
             let cells = spots.iter().map(|spot| Cell::spot(spot, |i| Cell::text(plain(&a.at(start + i), items))));
             grid_rows.push((0, names.then(|| Cell::text(name)).into_iter().chain(cells).collect()));
         }

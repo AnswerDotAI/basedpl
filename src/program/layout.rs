@@ -1,6 +1,6 @@
 //! A traced program's maps in the storage order that their operands and readers need (`ordered`).
 
-use super::{add, along, copy_of_copy, laid_out, stepped, through_copies, Desc, Node, Origin, Program, Read, Step};
+use super::{Desc, Node, Origin, Program, Read, Step, add, along, copy_of_copy, laid_out, stepped, through_copies};
 use crate::{array::Layout, number::Numeric};
 use rustymath::{agreement::{Agreement, Mapping}, gather::counts_up, layout::count, search::inverse_permutation};
 
@@ -57,13 +57,16 @@ fn reads(program: &Program) -> (Vec<Link>, Vec<Want>) {
                 if nodes[read.of].desc.shape() != read.layout.shape() { continue; }
                 let (of, through) = through_copies(nodes, read.of, through, node.desc.shape());
                 let Some(axes) = permutation(&through, node.desc.shape(), nodes[of].desc.shape()) else { continue };
-                if map(program, of).is_some() { links.push(Link { reader: j, of, axes }); } else { wants.push(Want { of: j, order: inverse_permutation(axes.iter().copied()) }); }
+                if map(program, of).is_some() { links.push(Link { reader: j, of, axes }); }
+                else { wants.push(Want { of: j, order: inverse_permutation(axes.iter().copied()) }); }
             }
         }
         let Origin::Step(step) = &node.origin else { continue };
         for of in step.reads().filter(|&of| map(program, of).is_some()) {
             match step {
-                Step::Copy { map: through, .. } => if let Some(order) = permutation(through, node.desc.shape(), nodes[of].desc.shape()) { wants.push(Want { of, order }); },
+                Step::Copy { map: through, .. } => {
+                    if let Some(order) = permutation(through, node.desc.shape(), nodes[of].desc.shape()) { wants.push(Want { of, order }); }
+                }
                 Step::Fold { of: read, .. } if read.layout == nodes[of].desc.layout => {}
                 Step::Product { stacked: false, .. } => {}
                 Step::Map { .. } if links.iter().any(|l| l.reader == j && l.of == of) => {}
@@ -89,10 +92,16 @@ fn groups(program: &Program, links: &[Link]) -> Vec<Group> {
         while let Some(j) = queue.pop() {
             let tj = group.turn(j).cloned().unwrap_or_default();
             for link in links {
-                let (o, axes) = if link.reader == j { (link.of, link.axes.clone()) } else if link.of == j { (link.reader, inverse_permutation(link.axes.iter().copied())) } else { continue };
+                let (o, axes) = if link.reader == j { (link.of, link.axes.clone()) }
+                else if link.of == j { (link.reader, inverse_permutation(link.axes.iter().copied())) }
+                else { continue; };
                 let t: Vec<usize> = tj.iter().map(|&x| axes[x]).collect();
                 match group.turn(o) {
-                    None => { seen[o] = true; group.members.push((o, t)); queue.push(o); }
+                    None => {
+                        seen[o] = true;
+                        group.members.push((o, t));
+                        queue.push(o);
+                    }
                     Some(u) => consistent &= *u == t,
                 }
             }
@@ -104,7 +113,12 @@ fn groups(program: &Program, links: &[Link]) -> Vec<Group> {
 
 /// The order of `group`'s first member's axes in which the group stores, where its maps move: the order that the most anchors want, where that meets more of them than the maps' own orders do, less the links that read out of order now.
 fn chosen(group: &Group, links: &[Link], wants: &[Want]) -> Option<Vec<usize>> {
-    let votes: Vec<Vec<usize>> = wants.iter().filter_map(|w| group.turn(w.of).map(|t| { let back = inverse_permutation(t.iter().copied()); w.order.iter().map(|&a| back[a]).collect() })).collect();
+    let votes: Vec<Vec<usize>> = wants.iter().filter_map(|w| {
+        group.turn(w.of).map(|t| {
+            let back = inverse_permutation(t.iter().copied());
+            w.order.iter().map(|&a| back[a]).collect()
+        })
+    }).collect();
     let met = |o: &Vec<usize>| votes.iter().filter(|v| *v == o).count();
     let best = votes.iter().max_by_key(|o| met(o))?;
     let now = wants.iter().filter(|w| group.turn(w.of).is_some() && counts_up(&w.order)).count();
@@ -125,10 +139,9 @@ fn reordered(program: &Program, order: &[Option<Vec<usize>>]) -> Option<Program>
     let mut r = Reordering { nodes: &program.nodes, order, out: Vec::new(), at: Vec::new(), back: vec![None; program.nodes.len()] };
     for (j, node) in program.nodes.iter().enumerate() {
         let at = match &node.origin {
-            Origin::Step(Step::Map { .. }) if order[j].is_some() => r.map(node, order[j].as_ref()?)?,
-            Origin::Step(Step::Fold { kind, seed, of, .. }) if !kind.scan && of.layout == r.nodes[of.of].desc.layout && r.moves(of.of).is_some() && seed.as_ref().is_none_or(|s| r.moves(s.of).is_none()) => r.fold(node)?,
-            Origin::Step(Step::Copy { of, map }) if r.moves(*of).is_some() => r.lay(*of, map.clone(), &node.desc.layout)?,
-            _ => r.again(node)?,
+            Origin::Step(Step::Map { .. }) if order[j].is_some() => r.map(node, order[j].as_ref()?)?, Origin::Step(Step::Fold { kind, seed, of, .. })
+                if !kind.scan && of.layout == r.nodes[of.of].desc.layout && r.moves(of.of).is_some() && seed.as_ref().is_none_or(|s| r.moves(s.of).is_none()) =>
+            { r.fold(node)? } Origin::Step(Step::Copy { of, map }) if r.moves(*of).is_some() => r.lay(*of, map.clone(), &node.desc.layout)?, _ => r.again(node)?
         };
         r.at.push(at);
     }
@@ -142,19 +155,14 @@ struct Reordering<'a> { nodes: &'a [Node], order: &'a [Option<Vec<usize>>], out:
 
 impl<'a> Reordering<'a> {
     /// The new order of map `m`, where it moves.
-    fn moves(&self, m: usize) -> Option<&'a Vec<usize>> {
-        let order: &'a [Option<Vec<usize>>] = self.order;
-        order[m].as_ref().filter(|o| !counts_up(o))
-    }
+    fn moves(&self, m: usize) -> Option<&'a Vec<usize>> { let order: &'a [Option<Vec<usize>>] = self.order; order[m].as_ref().filter(|o| !counts_up(o)) }
     /// The new node that reads old node `of`'s items as `map` reads them over its old layout, laid out as `layout`: a view where that reads them in order, or else a copy, through a moved map's new order, or through the copy that `of` is.
     fn lay(&mut self, of: usize, map: Mapping, layout: &Layout) -> Option<usize> {
         let (mut source, mut map) = (self.at[of], map);
         if let Some(o) = self.moves(of) {
             let old = self.nodes[of].desc.shape();
             map = along(&o.iter().map(|&a| old[a]).collect::<Vec<_>>(), &inverse_permutation(o.iter().copied())).compose(&map, old, layout.shape())?;
-        } else if let Some(Step::Copy { of: s, map: m }) = copy_of_copy(&self.out, source, &map, layout.shape()) {
-            (source, map) = (s, m);
-        }
+        } else if let Some(Step::Copy { of: s, map: m }) = copy_of_copy(&self.out, source, &map, layout.shape()) { (source, map) = (s, m); }
         Some(laid_out(&self.out, source, map, layout)?.added(&mut self.out, source))
     }
     /// The new node that holds moved map `m`'s items in its old layout.
@@ -187,7 +195,8 @@ impl<'a> Reordering<'a> {
         let seed = seed.as_ref().map(|s| Read::new(self.at[s.of], s.layout.clone()));
         let (y, s) = (read.desc(&self.out), seed.as_ref().map(|s| s.desc(&self.out)));
         let at = o.iter().position(|a| a == axis)?;
-        let (desc, at) = crate::plan::fold(*p, *kind, s.as_ref().map(|s| s.kind), y.kind, Numeric::current()).and_then(|f| f.desc(Some(at), s.as_ref(), &y)).ok()?;
+        let (desc, at) =
+            crate::plan::fold(*p, *kind, s.as_ref().map(|s| s.kind), y.kind, Numeric::current()).and_then(|f| f.desc(Some(at), s.as_ref(), &y)).ok()?;
         let folded = add(&mut self.out, Node { desc, origin: Origin::Step(Step::Fold { p: *p, kind: *kind, axis: at, seed, of: read }) });
         let kept: Vec<usize> = o.iter().copied().filter(|a| a != axis).collect();
         let axes = (0..o.len()).filter(|a| a != axis).map(|a| kept.iter().position(|&k| k == a)).collect::<Option<Vec<_>>>()?;
@@ -202,9 +211,7 @@ impl<'a> Reordering<'a> {
                     let mut to = self.at.clone();
                     for m in step.reads().collect::<Vec<_>>() { if self.moves(m).is_some() { to[m] = self.back(m)?; } }
                     step.remap(&to);
-                } else {
-                    step.remap(&self.at);
-                }
+                } else { step.remap(&self.at); }
                 Origin::Step(step)
             }
             origin => origin.clone(),
@@ -212,4 +219,3 @@ impl<'a> Reordering<'a> {
         Some(add(&mut self.out, Node { desc: node.desc.clone(), origin }))
     }
 }
-

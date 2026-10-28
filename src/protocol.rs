@@ -1,8 +1,8 @@
-use rustymath::{buffer::FloatWidth, error::Kind};
-use crate::{keyed, Error, EvalOptions, Evaluation, Number, Session, Value};
+use crate::{Error, EvalOptions, Evaluation, Number, Session, Value, keyed};
 use num_bigint::BigInt;
 use num_rational::BigRational;
-use serde_json::{json, Value as JsonValue};
+use rustymath::{buffer::FloatWidth, error::Kind};
+use serde_json::{Value as JsonValue, json};
 
 /// A value as the process interface's JSON, serialized as it's written. An item is a JSON scalar, or an object for a number JSON can't hold. An array is an object of its shape, items and prototype, with its axis names and keys where it has them. The value holds no function, as `Value::holds_function` checks.
 struct Json<'a>(&'a Value);
@@ -78,8 +78,9 @@ fn import_element(value: &JsonValue, approximate: bool) -> Result<Value, String>
         }
         JsonValue::Object(o) if o.contains_key("complex") => {
             let parts = o["complex"].as_array().filter(|a| a.len() == 2).ok_or("expected real and imaginary components")?;
-            Ok(Number::complex_in_session(num_complex::Complex64::new(
-                parts[0].as_f64().ok_or("invalid real component")?, parts[1].as_f64().ok_or("invalid imaginary component")?), FloatWidth::F64))
+            Ok(Number::complex_in_session(
+                num_complex::Complex64::new(parts[0].as_f64().ok_or("invalid real component")?, parts[1].as_f64().ok_or("invalid imaginary component")?),
+                FloatWidth::F64))
         }
         JsonValue::Object(o) if o.contains_key("shape") => return import_array(value, approximate),
         _ => return Err("invalid BPL element".into()),
@@ -144,7 +145,7 @@ pub fn error(e: &Error) -> JsonValue {
 /// JSON carries bytes as base64 text, as Jupyter messages do.
 impl serde::Serialize for crate::MimeData {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use base64::{engine::general_purpose::STANDARD, Engine};
+        use base64::{Engine, engine::general_purpose::STANDARD};
         match self { Self::Text(text) => s.serialize_str(text), Self::Bytes(bytes) => s.serialize_str(&STANDARD.encode(bytes)) }
     }
 }

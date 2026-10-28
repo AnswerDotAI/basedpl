@@ -8,13 +8,10 @@ fn page_text(path: &Path) -> String {
     let mut text = String::new();
     for cell in notebook["cells"].as_array().unwrap() {
         let source = match &cell["source"] {
-            serde_json::Value::String(s) => s.clone(),
-            lines => lines.as_array().unwrap().iter().map(|s| s.as_str().unwrap()).collect(),
+            serde_json::Value::String(s) => s.clone(), lines => lines.as_array().unwrap().iter().map(|s| s.as_str().unwrap()).collect()
         };
         match cell["cell_type"].as_str().unwrap() {
-            "markdown" => text.push_str(&source),
-            "code" => text.push_str(&format!("```{language}\n{source}\n```")),
-            _ => continue,
+            "markdown" => text.push_str(&source), "code" => text.push_str(&format!("```{language}\n{source}\n```")), _ => continue
         }
         text.push_str("\n\n");
     }
@@ -46,10 +43,13 @@ fn main() {
                 help = help.replace("](../", "](");
             }
             let title = help.lines().find_map(|l| l.strip_prefix("# ")).unwrap_or(stem);
-            let aliases: Vec<&str> = if dir == "glyphs" { vec![stem] } else if dir == "system" {
+            let aliases: Vec<&str> = if dir == "glyphs" { vec![stem] }
+            else if dir == "system" {
                 let mut fenced = false;
-                help.lines().filter(|line| { fenced ^= line.starts_with("```"); !fenced && line.starts_with('#') })
-                    .flat_map(|line| line.split('`').skip(1).step_by(2)).filter(|name| name.starts_with(['•', '$'])).collect()
+                help.lines().filter(|line| {
+                    fenced ^= line.starts_with("```");
+                    !fenced && line.starts_with('#')
+                }).flat_map(|line| line.split('`').skip(1).step_by(2)).filter(|name| name.starts_with(['•', '$'])).collect()
             } else { Vec::new() };
             entries.push(format!("Page {{ name: {name:?}, title: {title:?}, aliases: &{aliases:?}, text: {help:?} }}"));
         }

@@ -2,7 +2,7 @@ use basedpl::{EvalOptions, Input, InterruptHandle, OutputKind, ParseStatus, Sess
 use kernmini::{
     CompleteRequest, ExecuteOutcome, ExecuteRequest, ExecutionContext, InspectRequest, KernelInfo, LanguageError, LanguageEvent, LanguageSession, ThreadWorker,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -17,8 +17,7 @@ fn language_error(error: basedpl::Error) -> LanguageError {
 
 /// Reader-facing expression results, shared by Jupyter user expressions and the gateway's eval operation.
 fn expression(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<Value, basedpl::Error> {
-    let result = session.eval_with(code,
-        EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() });
+    let result = session.eval_with(code, EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() });
     if let Some(error) = result.error { return Err(error); }
     let (kind, data) = if let Some(value) = result.value {
         (Some("array"), json!(session.render(&value, interrupt.clone())?))
@@ -98,8 +97,9 @@ impl LanguageSession for BplSession {
                 &request.code, EvalOptions { interrupt: interrupt.clone(), echo: !request.silent, output: Some(output), input, ..EvalOptions::default() });
             let mut error = result.error.map(language_error);
             let user_expressions = if error.is_none() {
-                let (values, failure) = expressions(session,
-                    request.user_expressions.as_object().into_iter().flatten().filter_map(|(name, code)| Some((name.as_str(), code.as_str()?))), &interrupt);
+                let (values, failure) = expressions(
+                    session, request.user_expressions.as_object().into_iter().flatten().filter_map(|(name, code)| Some((name.as_str(), code.as_str()?))),
+                    &interrupt);
                 error = failure;
                 values
             } else { json!({}) };
@@ -125,7 +125,8 @@ impl LanguageSession for BplSession {
 
     async fn inspect(&self, request: InspectRequest) -> kernmini::Result<Value> {
         self.worker.call(move |session| {
-            let info = basedpl::inspection::at_cursor(&request.code, cursor(request.cursor_pos), basedpl::settings::hanzi_aliases()).and_then(|name| session.inspect(name));
+            let info = basedpl::inspection::at_cursor(&request.code, cursor(request.cursor_pos), basedpl::settings::hanzi_aliases())
+                .and_then(|name| session.inspect(name));
             let data = info.as_ref().map(|i| json!({"text/plain":i.text(request.detail_level>0), "text/markdown":i.markdown(request.detail_level>0)}));
             json!({"status":"ok", "found":info.is_some(), "data":data.unwrap_or(json!({})), "metadata":{}})
         }).await
@@ -141,7 +142,7 @@ impl LanguageSession for BplSession {
                 Some(record)
             }).collect();
             json!({"response": {"type": "response", "request_seq": request["seq"], "command": "inspectVariables", "success": true,
-                "body": {"variables": variables}}, "events": []})
+            "body": {"variables": variables}}, "events": []})
         }).await
     }
 
