@@ -6,6 +6,7 @@ from fastcore.net import urlread
 from fontTools.ttLib import TTFont
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
+from .assets import GENERATED
 
 SAX2_URL = 'https://raw.githubusercontent.com/abrudz/SAX2/df113b78ef1c9bf49134371a54ce915f65f9f47e/'
 BQN386_URL = 'https://raw.githubusercontent.com/dzaima/BQN386/4d8b9f668ba76a15ca9cd44d9bfedaf95a4c0d96/'
@@ -102,30 +103,31 @@ def add_separator(font):
     for offset in (-gap, 0, gap): pen.addComponent(source, (0.5, 0, 0, 0.5, round(x), round(y+offset)))
     add_glyph(font, '⁝', pen.glyph(), advance)
 
-def write_font(font, name, version, dest):
+def write_font(font, name, version, web_dest):
     names = {1: name, 3: f'{name}-{version}', 4: name, 5: f'Version {version}', 6: name}
     for record in font['name'].names:
         if record.nameID in names:
             font['name'].setName(names[record.nameID], record.nameID, record.platformID, record.platEncID, record.langID)
-    ttf, woff2 = dest/f'{name}.ttf', dest/f'{name}.woff2'
+    ttf, woff2 = GENERATED/f'fonts/{name}.ttf', web_dest/f'{name}.woff2'
     font.save(ttf)
     font.flavor = 'woff2'
     font.save(woff2)
     return ttf, woff2
 
-def build(dest='nbs/fonts'):
-    "Write SAX2B and BQN386B as TTF and WOFF2 with their upstream licences."
-    dest = Path(dest)
-    dest.mkdir(parents=True, exist_ok=True)
+def build():
+    "Write installable fonts and licences to the package source, and webfonts to the docs."
+    web_dest = Path('nbs/fonts')
+    web_dest.mkdir(parents=True, exist_ok=True)
+    (GENERATED/'fonts').mkdir(parents=True, exist_ok=True)
     font = TTFont(io.BytesIO(urlread(SAX2_URL + 'SAX2.ttf', decode=False, timeout=30)), recalcTimestamp=False)
     add_scripts(font)
     add_arrows(font)
     thicken_slashes(font)
     add_separator(font)
-    paths = write_font(font, 'SAX2B', '2.002', dest)
+    paths = write_font(font, 'SAX2B', '2.002', web_dest)
     font = TTFont(io.BytesIO(urlread(BQN386_URL + 'BQN386.ttf', decode=False, timeout=30)), recalcTimestamp=False)
     add_separator(font)
-    paths += write_font(font, 'BQN386B', '1.001', dest)
+    paths += write_font(font, 'BQN386B', '1.001', web_dest)
     for name, url in [('SAX2', SAX2_URL), ('BQN386', BQN386_URL)]:
-        (dest/f'LICENSE-{name}').write_text(urlread(url + 'LICENSE', timeout=30))
+        (GENERATED/f'fonts/LICENSE-{name}').write_text(urlread(url + 'LICENSE', timeout=30))
     return paths

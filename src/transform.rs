@@ -338,7 +338,7 @@ fn newest(left: Option<&Value>, right: &Value, within: bool) -> Option<Mark> {
     Some(newest)
 }
 
-/// How a call pairs its arguments: along an axis, if it has one, through the agreement that lays out its pairs, as an outer product's does, matrix by matrix, as `f⍤2` pairs the matrices of one stack or of two, or at the places that `Writes` gives. `At` combines each item of the right argument, in turn, into the left argument's item at its place. A repeated place combines with the result of the one before. A write at a fill is dropped. A right argument of one item goes to every place. `+` paired this way is accumulation, as a gather's transpose makes it (`Primitive::at`).
+/// How a call pairs its arguments: along an axis, if it has one, through the agreement that lays out its pairs, as an outer product's or a call with a chosen fill's does, matrix by matrix, as `f⍤2` pairs the matrices of one stack or of two, or at the places that `Writes` gives. `At` combines each item of the right argument, in turn, into the left argument's item at its place. A repeated place combines with the result of the one before. A write at a fill is dropped. A right argument of one item goes to every place. `+` paired this way is accumulation, as a gather's transpose makes it (`Primitive::at`).
 #[derive(Clone, Copy)]
 pub(crate) enum Pairing<'a> { Axis(Option<usize>), Agreed(&'a Agreement), Matrices, At(rustymath::gather::Writes<'a>) }
 
@@ -499,7 +499,7 @@ impl Carrier {
     pub(crate) fn at(&self, i: usize) -> Value { match self { Carrier::Dual(dual) => dual.at(i), Carrier::Record(t) => crate::linear::item(t, i), Carrier::Batch(b) => b.at(i), Carrier::Labelled(l) => l.at(i), Carrier::Traced(t) => t.item(i) } }
     /// Item `i` as bulk iteration reads it (`Value::element`): `at`'s item, except a traced value's and a dual's. A traced value gives the item of the value that the trace holds in its place (`held`), or else an atom outside its program (`Traced::element`). A dual's parts are read the same way. A call on an atom outside the program stops the trace, so a primitive that reads every item stops at its first call, with no step for each item.
     pub(crate) fn element(&self, i: usize) -> Value { match self { Carrier::Traced(t) => t.held().map_or_else(|| t.element(), |v| v.element(i)), Carrier::Dual(dual) => dual.element(i), carrier => carrier.at(i) } }
-    /// Copies values and derived parts through their maps: a record adds one linear copy node, and a batch copies its whole frame. Only values retain a chosen fill. A trace records native fills; a chosen fill of mixed data stops it.
+    /// The items laid out by `layout`, read through `map` as `primitive::copied` reads a value's: each part of a dual through the map its part reads (`Part::map`), with only the primal reading `fill`, a record as one copy node (`linear::copy`), each cell of a batch alike, through one copy of its whole frame, and a labelled value through `Labelled::copied`. A trace records a copy with a native fill. A fill of mixed data stops it.
     pub(crate) fn copied(&self, layout: crate::array::Layout, map: &rustymath::agreement::Mapping, fill: Option<&Value>) -> Result<Value, crate::ErrorKind> {
         match self {
             Carrier::Dual(dual) => Ok(crate::derivative::dual(dual.tag, crate::primitive::copied_fill(&dual.primal, layout.clone(), map, fill)?, crate::primitive::copied(dual.full_tangent(), layout, &Part::Derived.map(map))?)),
@@ -529,6 +529,7 @@ impl Part {
     /// The fill that this part reads where a copy chose `fill`.
     #[inline]
     pub(crate) fn fill(self, fill: Option<&Value>) -> Option<&Value> { match self { Part::Values => fill, Part::Derived => None } }
+    /// The mapping through which this part reads a copy through `map`: `map` itself for the values, and `map` without its chosen fill for a derived part.
     pub(crate) fn map(self, map: &rustymath::agreement::Mapping) -> std::borrow::Cow<'_, rustymath::agreement::Mapping> {
         match (self, map.chosen()) { (Part::Derived, Some(_)) => std::borrow::Cow::Owned(map.clone().filled(None)), _ => std::borrow::Cow::Borrowed(map) }
     }

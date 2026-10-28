@@ -226,18 +226,19 @@ fn verdict(case: &JsonValue, outcomes: &[(Run, Outcome)]) -> JsonValue {
     json!({"status":"pass"})
 }
 
-/// `case` checked as `failures` checks a file: `{"status":"pass"}`, or the case with its failure details and actual result, where available.
-pub fn check(case: &JsonValue, interrupt: &InterruptHandle) -> JsonValue { failures([case], "", interrupt).pop().unwrap_or_else(|| json!({"status":"pass"})) }
+/// `case` checked as `failures` checks the cases of a file, then against its route directives (`route_check`): `{"status":"pass"}`, or the case with the `status`, `message` and `kind` of its failure, and its `actual` result where there is one. Python's `check_file` checks each case this way. Within `cargo test`, only the explain test checks route directives.
+pub fn check(case: &JsonValue, interrupt: &InterruptHandle) -> JsonValue {
+    failures([case], "", interrupt).pop().or_else(|| route_check(case, "", interrupt).err().map(|result| failed(case, &result))).unwrap_or_else(|| json!({"status":"pass"}))
+}
 
-/// A timed record’s expectation and route contract, checked outside timing with fresh setup for code and expectation.
+/// A timed record's expectation, checked once outside timing, with fresh setup for both expressions.
 pub fn check_once(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<(), JsonValue> {
     enter(case["prefs"].as_str(), None)?;
-    if checked(case) { outcome(case, setup, RUNS[0], Some(TIMEOUT), interrupt)?; }
-    route_check(case, setup, interrupt)
+    outcome(case, setup, RUNS[0], Some(TIMEOUT), interrupt).map(drop)
 }
 
 /// Warm and capture a case under its ordinary preferences and setup.
-pub fn route(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<crate::timing::Route, JsonValue> {
+pub fn route(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<crate::timing::Capture, JsonValue> {
     enter(case["prefs"].as_str(), None)?;
     let session = Session::new();
     initialized(&session, setup)?;
@@ -250,6 +251,12 @@ fn route_check(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Re
     if !routed(case) { return Ok(()); }
     let wrong = route(case, setup, interrupt)?.violations();
     if wrong.is_empty() { Ok(()) } else { Err(json!({"status":"route", "message":wrong.join("; ")})) }
+}
+/// `case` with the `status`, `message` and `kind` of the failure `result`, and its `actual` result where there is one.
+fn failed(case: &JsonValue, result: &JsonValue) -> JsonValue {
+    let mut failure = case.clone();
+    for key in ["status", "message", "kind", "actual"] { if let Some(value) = result.get(key) { failure[key] = value.clone(); } }
+    failure
 }
 fn initialized(session: &Session, setup: &str) -> Result<(), JsonValue> {
     if setup.is_empty() { return Ok(()); }
@@ -479,13 +486,13 @@ pub fn load(path: &std::path::Path) -> Result<Vec<File>, String> {
 }
 
 
-/// The cases of `cases` that fail `check`, in their order. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Each case takes its runs (`runs`) one after another, each under its file's leading `•prefs` header and the run's settings (`enter`), and each run has `TIMEOUT`. Callers that check cases in parallel split them across processes, as `tests/reference.rs` and Python's `check_file` do, because a process evaluates one case at a time. After an interrupt, no case starts. The settings are reset at the end.
+/// The cases of `cases` whose runs fail their expectations, in their order. Route directives aren't checked here: `check` and the explain test check them. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Each case takes its runs (`runs`) one after another, each under its file's leading `•prefs` header and the run's settings (`enter`), and each run has `TIMEOUT`. Callers that check cases in parallel split them across processes, as `tests/reference.rs` and Python's `check_file` do, because a process evaluates one case at a time. After an interrupt, no case starts. The settings are reset at the end.
 pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     let mut failures = Vec::new();
     for case in cases {
         let mut outcomes = Vec::new();
         let mut compiled = false;
-        let mut result = runs(case).into_iter().try_for_each(|run| {
+        let result = runs(case).into_iter().try_for_each(|run| {
             if run.compiles == Compiles::Never && !compiled { return Ok(()); }
             enter(case["prefs"].as_str(), Some(run))?;
             let before = crate::program::blocks::compiled_runs();
@@ -493,10 +500,8 @@ pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str,
             compiled |= run.compiles == Compiles::Always && crate::program::blocks::compiled_runs() > before;
             Ok(())
         }).map_or_else(|failure| failure, |()| verdict(case, &outcomes));
-        if result["status"] == "pass" { match route_check(case, setup, interrupt) { Ok(()) => continue, Err(failure) => result = failure } }
-        let mut failure = case.clone();
-        for key in ["status", "message", "kind", "actual"] { if let Some(value) = result.get(key) { failure[key] = value.clone(); } }
-        failures.push(failure);
+        if result["status"] == "pass" { continue; }
+        failures.push(failed(case, &result));
         if result["status"] == "interrupt" { break; }
     }
     crate::settings::reset();

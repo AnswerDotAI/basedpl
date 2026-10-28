@@ -99,7 +99,7 @@ pub fn costs(files: &[File], only: Option<&[&str]>, prefs: &str, interrupt: &Int
     let mut result = Vec::new();
     each_case(files, only, prefs, |group, file, case| {
         let (section, code) = (case["section"].as_str().unwrap(), case["code"].as_str().unwrap());
-        if reference::checked(case) || reference::routed(case) {
+        if reference::checked(case) {
             let mut checked = case.clone();
             checked["prefs"] = json!(group.prefs[section]);
             reference::check_once(&checked, &file.setup, interrupt).map_err(|e| format!("{}: {}", label(file, case), e["message"]))?;
@@ -115,27 +115,40 @@ pub fn costs(files: &[File], only: Option<&[&str]>, prefs: &str, interrupt: &Int
     Ok(result)
 }
 
-pub struct Route { pub file: String, pub section: String, pub code: String, pub label: String, pub slow: Vec<(&'static str, String, String)>, pub events: rustymath::events::Report, pub warmup: rustymath::events::Report, pub named: Named }
+/// What one run of a case recorded: its slow-path events (`explain::Events::slow`), and rustymath's aggregate records of it (`events::Report`).
+pub struct Observed { pub slow: Vec<(&'static str, String, String)>, pub report: rustymath::events::Report }
 
-impl Route {
+impl Observed {
+    /// What `events` holds of one run.
+    fn of(events: &crate::explain::Events) -> Self { Self { slow: events.slow(), report: events.observed().clone() } }
+    /// Whether this run recorded `route` as an event of `kind`: "taken", "declined" or "itemwise". An itemwise route appears in `slow`, as `•explain`'s own rows hold it.
+    pub fn exercised(&self, kind: &str, route: rustymath::events::Route) -> bool {
+        self.report.records.iter().any(|e| e.kind.name() == kind && e.route == route) || self.slow.iter().any(|(record, event, _)| *record == kind && event == route.name())
+    }
+}
+
+/// A case run once as `•explain` runs its text (`run`), after a warm-up run (`warmup`), with the routes, `allows` lines and `gap` lines that the case names.
+pub struct Capture { pub file: String, pub section: String, pub code: String, pub label: String, pub run: Observed, pub warmup: Observed, pub named: Named }
+
+impl Capture {
     /// Missing required routes, unexpected slow events, and annotations whose events disappeared.
     pub fn violations(&self) -> Vec<String> {
         let mut wrong = Vec::new();
         for required in &self.named.routes {
-            if !self.events.records.iter().any(|r| r.kind == rustymath::events::EventKind::Taken && r.route.name() == required.as_str()) { wrong.push(format!("required route {required} was not taken")); }
+            if !self.run.report.records.iter().any(|r| r.kind == rustymath::events::EventKind::Taken && r.route.name() == required.as_str()) { wrong.push(format!("required route {required} was not taken")); }
         }
         let named: Vec<_> = self.named.allowed.iter().chain(&self.named.gaps).collect();
-        for (record, event, fields) in &self.slow {
+        for (record, event, fields) in &self.run.slow {
             let permitted = self.named.gaps.iter().chain(self.named.allowed.iter().filter(|_| *record != "stopped")).any(|(a, e)| a.as_str() == *record && e == event);
             if *record != "declined" && !permitted { wrong.push(format!("{record} \"{event}\" ({fields})")); }
         }
-        wrong.extend(named.iter().filter(|(a, e)| !self.slow.iter().any(|(record, event, _)| a.as_str() == *record && e == event)).map(|(a, e)| format!("{a} \"{e}\" no longer appears")));
+        wrong.extend(named.iter().filter(|(a, e)| !self.run.slow.iter().any(|(record, event, _)| a.as_str() == *record && e == event)).map(|(a, e)| format!("{a} \"{e}\" no longer appears")));
         wrong
     }
 }
 
 /// Warm one case, then capture a forced evaluation in the same session.
-pub fn route(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -> Result<Route, String> {
+pub fn route(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -> Result<Capture, String> {
     let code = case["code"].as_str().unwrap();
     let parsed = session.parse(Source::new("<input>", code)).complete().map_err(|e| failure(code, Evaluation::failed(e)))?;
     let run = || {
@@ -148,11 +161,11 @@ pub fn route(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -
     let (evaluation, events) = crate::explain::explained(run);
     if evaluation.error.is_some() { return Err(failure(code, evaluation)); }
     let named = |key: &str| case[key].as_array().into_iter().flatten().map(|v| (v[0].as_str().unwrap().into(), v[1].as_str().unwrap().into())).collect();
-    Ok(Route { file:String::new(), section:case["section"].as_str().unwrap_or_default().into(), code:code.into(), label:case["id"].as_str().unwrap_or(code).into(), slow:events.slow(), events:events.observed().clone(), warmup:warmup.observed().clone(), named:Named { routes:case["route"].as_array().into_iter().flatten().map(|s| s.as_str().unwrap().into()).collect(), allowed:named("allows"), gaps:named("gap") } })
+    Ok(Capture { file:String::new(), section:case["section"].as_str().unwrap_or_default().into(), code:code.into(), label:case["id"].as_str().unwrap_or(code).into(), run:Observed::of(&events), warmup:Observed::of(&warmup), named:Named { routes:case["route"].as_array().into_iter().flatten().map(|s| s.as_str().unwrap().into()).collect(), allowed:named("allows"), gaps:named("gap") } })
 }
 
 /// Capture every timed case outside its timed loop, with its ordinary setup and size.
-pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Route>, String> {
+pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Capture>, String> {
     let mut result = Vec::new();
     each_case(files, only, "", |group, file, case| {
         let mut route = route(group.session(case["section"].as_str().unwrap())?, case, interrupt)?;

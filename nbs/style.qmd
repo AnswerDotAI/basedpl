@@ -4,6 +4,8 @@ These forms make BPL easy to read for someone who doesn't know APL. How a line r
 
 Use spaces to show the top-level structure of an expression. Keep parentheses where they make nested scope easier to see, as in `⍺,(↓key_val,join),⍵`. Keep connected tokens in one run. Use `⁝` (Alt-:) where tokens must stay distinct without ending the run: `h⁝m`, `+/⍠i⁝m`. Two names that touch merge, as `ix` does in `+/⍠ix`. A name followed by a literal stays separate: `f1` is `f(1)`. [Syntax](syntax.qmd#runs) gives the grouping rules.
 
+A function between two runs takes a space on each side, as in `a×b + c`. A space on one side only changes the grouping: `a×b +c` is the strand `[a×b ; +c]`, and `a×b+ c` applies the train `a×b+` to `c`.
+
 For a derived function with only a right argument, `⁝` separates the operand from the argument where a boundary is needed: `f⍣3⁝0`, `10÷√1++/⍠i⁝m`, `(+/÷≢)⍤1⁝2 3⍴⍳6`. It stops literal stranding without grouping the expression before it. A vector argument can touch the operand in brackets: `≥⍣2[1 2 3]`. Add nothing where tokens already stay distinct, as in `+/⍤1m` or `(+/÷≢)⍠d⊼n`.
 
 With both a left and a right argument, parentheses around the derived function show it between them: `10 20(+⍤1)m`. Keep parentheses where a compound operand or nested train needs grouping, as in `⌊@(10×)x`.

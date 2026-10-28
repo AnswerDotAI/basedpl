@@ -1,5 +1,10 @@
 {
-  "argv": ["bpl", "--kernel", "-f", "{connection_file}"],
+  "argv": [
+    "{resource_dir}/../../../../bin/bpl",
+    "--kernel",
+    "-f",
+    "{connection_file}"
+  ],
   "display_name": "BasedPL",
   "language": "bpl",
   "interrupt_mode": "message"

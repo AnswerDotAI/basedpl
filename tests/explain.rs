@@ -11,7 +11,7 @@ fn check(session: &Session, code: &str, expected: &str) {
     assert!(actual.zip(wanted).is_some_and(|(a, w)| a.same(&w)), "{code} didn't give {expected}");
 }
 
-/// Speed and idiom cases require their fast routes and name any accepted slow path. Captures run serially because they record all threads.
+/// Every speed case in `speed/*.bpl`, every idiom case below and every reference case with a route directive takes the routes its work needs, or names the gap. Run as `•explain` runs its text, after a warm-up run, a case takes each route that its `⍝⍝⍝ route` lines require, and records no slow-path event (`explain::Events::slow`) beyond the events that its directives name (`timing::Named`): `⍝⍝⍝ allows` lines, each with the principle that allows its event, and `⍝⍝⍝ gap` lines, each with what a faster route should do instead. A stopped trace needs a `gap` line. A `declined` event needs no line, because it explains another event, but a line may name one. A line whose event no longer appears fails too, so the lines stay true and a fixed gap's line goes. The test then fails for each route and kind of event in rustymath's inventory (`events::Route`) that no case exercises. It prints the gaps it tolerates and the case that exercised each event, which `cargo test -- --nocapture` shows. Like the speed test, it runs each case at its full size on one thread. It holds the timing lock shared, as a test run does. It runs `explain_and_memory`'s checks first, because a capture records what every thread in its process does, so no other test may evaluate beside it.
 #[test]
 fn speed_cases_take_their_routes() {
     let _lock = rustymath::timing::shared().unwrap();
@@ -33,20 +33,22 @@ fn speed_cases_take_their_routes() {
         wrong.extend(r.violations().into_iter().map(|message| format!("{case}: {message}")));
         gaps.extend(r.named.gaps.iter().map(|(record, event)| format!("{case}: {record} \"{event}\"")));
     }
-    use rustymath::events::{EventKind, Route};
+    use rustymath::events::Route;
     for &route in Route::ALL {
-        for (kind, required) in [(EventKind::Taken, route.reports_taken()), (EventKind::Declined, route.reports_decline()), (EventKind::Itemwise, route.reports_itemwise())] {
+        for (kind, required) in [("taken", route.reports_taken()), ("declined", route.reports_decline()), ("itemwise", route.reports_itemwise())] {
             if !required { continue; }
-            let seen = |events: &rustymath::events::Report| events.records.iter().any(|e| e.kind == kind && e.route == route);
-            if let Some(r) = routes.iter().find(|r| seen(&r.events)).or_else(|| routes.iter().find(|r| seen(&r.warmup))) { println!("observed {kind:?} {} [{}] {} ({})", route.name(), r.section, r.label, if seen(&r.events) { "hot" } else { "warmup-only" }); }
-            else { wrong.push(format!("no case exercises {kind:?} {}", route.name())); }
+            let hot = routes.iter().find(|r| r.run.exercised(kind, route)).map(|r| (r, "hot"));
+            match hot.or_else(|| routes.iter().find(|r| r.warmup.exercised(kind, route)).map(|r| (r, "warmup-only"))) {
+                Some((r, when)) => println!("observed {kind} {} [{}] {} ({when})", route.name(), r.section, r.label),
+                None => wrong.push(format!("no case exercises {kind} {}", route.name())),
+            }
         }
     }
     println!("gaps that route cases tolerate: {gaps:#?}");
     assert!(wrong.is_empty(), "route contracts: {wrong:#?}");
 }
 
-fn explain_and_memory() -> Vec<timing::Route> {
+fn explain_and_memory() -> Vec<timing::Capture> {
     let mut routes = Vec::new();
     assert!(std::mem::size_of::<basedpl::Number>() <= 32);
     let session = Session::new();

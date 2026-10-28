@@ -611,7 +611,7 @@ fn slide(tables: &[Steps], shape: &[usize], source: &[usize], axis: usize) -> Op
     let summed: Vec<usize> = (0..shape.len()).filter(|&r| r != axis).map(|r| shape[r]).collect();
     let at = frames - usize::from(axis < frames);
     let widths: Vec<(usize, usize)> = (0..summed.len()).map(|r| if r == at { (w - 1, w - 1) } else { (0, 0) }).collect();
-    let padded = rustymath::structure::pad(&Layout::from(summed.clone()), &widths).ok()?;
+    let padded = rustymath::structure::pad(&Layout::from(summed.clone()), &widths, rustymath::structure::Edge::Fill).ok()?;
     let strides = rustymath::layout::strides(padded.layout.shape());
     let mut reads: Vec<Steps> = padded.layout.shape().iter().zip(&strides).map(|(&len, &stride)| Steps::along(len, stride)).collect();
     reads[at] = Steps::along(n, strides[at]);

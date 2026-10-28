@@ -608,8 +608,9 @@ impl Gather {
         if self.leveled(source) { return self.join.as_mut().expect("a joined buffer").each(source, false, |g, s, part| g.walk(s, base, steps, part.fill(fill))); }
         if let Some((inner, base, steps, fill)) = crate::fusion::walk_through(source, base, steps, fill) { return self.walk(&inner, base, &steps, fill.as_ref()); }
         self.follow(source);
-        if copy_into!(&mut self.data, source.as_items(), |d, s| rustymath::gather::walk(d, s, base, steps, native_fill(fill), rustymath::gather::Same)) { return; }
-        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(d, s, base, steps, native_fill(fill), f)) { return; }
+        let native = fill.and_then(|fill| source.native_fill(fill));
+        if copy_into!(&mut self.data, source.as_items(), |d, s| rustymath::gather::walk(d, s, base, steps, rustymath::buffer::Fill::item(native.as_ref()), rustymath::gather::Same)) { return; }
+        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::walk(d, s, base, steps, rustymath::buffer::Fill::item(native.as_ref()), f)) { return; }
         let chosen = fill.map_or_else(std::cell::OnceCell::new, |_| std::cell::OnceCell::from(source.fill_item(fill)));
         walk_values(self.mixed(), source, &chosen, base, steps);
     }
@@ -626,10 +627,6 @@ impl Gather {
     }
 }
 
-/// The validated scalar fill as an item of the compact source's type.
-fn native_fill<T: Element>(fill: Option<&Value>) -> T {
-    fill.map_or(T::FILL, |fill| T::of(fill.view().expect("a compact fill")).expect("a fill has its source's dtype")[0])
-}
 /// `rustymath::gather::walk` for mixed storage, which reads each item as a value. `fill` gives the item at a missing offset: a walk with no chosen fill builds `source`'s prototype at the first missing offset only. A prototype is the recursive fill of the first item, as large as that item.
 fn walk_values(d: &mut Vec<Value>, source: &Value, fill: &std::cell::OnceCell<Value>, base: usize, steps: &[Steps]) {
     let Some((axis, rest)) = steps.split_first() else { return d.push(source.at(base)) };

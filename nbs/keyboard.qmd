@@ -31,6 +31,6 @@ This is the US-based map used in the browser and REPL, and by the native BasedPL
 
 ## macOS installation
 
-From a BasedPL repository checkout, run `scripts/install-macos.sh` to install SAX2B and the US keyboard layout. Pass `uk`, `de`, `fr` or `es` for British, German QWERTZ, French AZERTY or Spanish: for example, `scripts/install-macos.sh de`.
+After `pip install basedpl`, run `basedpl-install` to install the Jupyter kernel, SAX2B and BQN386B fonts, and the US keyboard layout for your user. Pass `uk`, `de`, `fr` or `es` for British, German QWERTZ, French AZERTY or Spanish: for example, `basedpl-install de`.
 
-In System Settings, open Keyboard → Text Input → Edit, add `BasedPL-us` (or your chosen code), then select it from the input menu. If the layout isn't listed, log out and back in. `editors/macos/BasedPL-{code}.txt` lists each native layout's shortcuts.
+In System Settings, open Keyboard → Text Input → Edit, add `BasedPL-us` (or your chosen code), then select it from the input menu. If the layout isn't listed, log out and back in. `editors/macos/BasedPL-{code}.txt` lists each native layout's shortcuts. On Linux, `basedpl-install` installs the kernel and fonts without a native keyboard layout.

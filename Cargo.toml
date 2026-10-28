@@ -13,7 +13,7 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 rustymath = { version = ">=0.1.51, <1", default-features = false }
-rustymath-buffer = ">=0.1.50, <1"
+rustymath-buffer = ">=0.1.51, <1"
 pyo3 = ">=0.29.2, <1"
 pyo3-build-config = ">=0.29.2, <1"
 

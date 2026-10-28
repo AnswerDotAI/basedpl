@@ -65,7 +65,7 @@ pub(super) fn recognise(node: &FunctionNode) -> Option<Idiom> {
 }
 
 impl Idiom {
-    /// The diagnostic route for this combination.
+    /// The combination's route, whose name `•explain` reports.
     fn route(&self) -> rustymath::events::Route {
         use rustymath::events::Route;
         match self {

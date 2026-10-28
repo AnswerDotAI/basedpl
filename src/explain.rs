@@ -1,4 +1,4 @@
-//! Execution diagnostics for `•explain`: fused groups, forced arrays, fast combinations, accumulations, slow paths and compilation. Successful routes, optional optimization declines and stopped traces share rustymath's aggregate event report. Every thread records into the process's active capture. A process supports one capture at a time except for nesting on one thread.
+//! The events that `•explain` reports about a run: the fused groups that ran, with the blocks, runs and copies they made, the pending arrays that fused groups read only after computing them on their own, the pending arrays that calls forced, the fast combinations taken, the accumulations, which add items at scattered positions, with the path each took, the places where a batched run's calls fell back to slower code, the writes that left a compact array in mixed storage, the routes that handled an array's items one at a time, the faster routes that code considered and declined, the routes taken, the traces that stopped, and the compiles of block stages' kernels. Events are recorded only while a capture runs, as `•explain` and the route checks run one. Code on every thread records them into the run's store, which `rustymath::events` holds for the whole process while the run lasts. Routes taken, declines and stopped traces go into the same store, as the aggregate report that BPL and rustymath's Python API share. The store belongs to the process, not to a session, because fusion runs its programs without one. A process supports one capture at a time, apart from captures nested on one thread.
 //!
 //! The module also counts the live nodes that `•memory` reports: the record nodes of `∂` and the pending arrays. A node counts for the thread that made it, even when another thread drops it.
 use crate::{keyed, Error, Described, Value};
@@ -27,7 +27,7 @@ enum Column { Text, Count, Truth }
 /// - `fallbacks`: each batched map that fell back to calling its operand once for each cell, with the reason and the number of cells it concerns.
 /// - `mixed`: each write that left a compact array in mixed storage, with the code of the call that wrote, its line and column, the array's kind before the write, the kind written, and the array's item count.
 /// - `itemwise`: each route that handled an array's items one at a time where whole-array code covers most calls, with the innermost call that ran it, that call's line and column, the route, and the items it handled. A route outside any call counts for the `•explain` call itself.
-/// - `declined`: optional optimizations not taken, grouped by route and reason, with their total item counts.
+/// - `declined`: each faster route that code considered and didn't take, with the route, the reason and the items that its declines concerned, summed by route and reason (`rustymath::events`).
 /// - `programs`: each `∂` of a dfn that ran from a program, with `built` where its trace built the program first or `replayed` where it found one, the program's steps, how many of its block stages have compiled parts after the call (`compiled`), its block stages (`blocks`), and the program's listing, one line for each value (`program::call`).
 /// - `compiles`: each compile of a block stage's kernel, with the glyphs of the stage's calls and the compile's time in microseconds (`program::blocks`).
 /// - `routes`: successful fast paths, grouped by route, with call and item counts.
@@ -183,10 +183,7 @@ pub(crate) fn mixed(span: &crate::Span, target: &'static str, written: &'static 
 }
 
 /// Counts `items` items that `route` handled one at a time, where whole-array code covers most calls, while an `•explain` records. The innermost call that reports claims the count (`claim_itemwise`).
-pub(crate) fn itemwise(route: Route, items: usize) {
-    rustymath::events::itemwise(route, items);
-    store(|events| events.unclaimed.push((route.name(), items)));
-}
+pub(crate) fn itemwise(route: Route, items: usize) { store(|events| events.unclaimed.push((route.name(), items))); }
 
 /// Where a call's `itemwise` counts begin, while an `•explain` records.
 pub(crate) fn itemwise_mark() -> Option<usize> { store(|events| events.unclaimed.len()) }
@@ -214,7 +211,6 @@ impl Events {
                 EventKind::Taken => (Kind::Routes, vec![Field::Text(event.route.name().into()), Field::Count(event.calls), Field::Count(event.items)]),
                 EventKind::Declined => (Kind::Declined, vec![Field::Text(event.route.name().into()), Field::Text(event.reason.into()), Field::Count(event.items)]),
                 EventKind::Stopped => (Kind::Stopped, vec![Field::Text(event.reason.into()), Field::Count(event.calls), Field::Count(event.items)]),
-                EventKind::Itemwise => continue,
             };
             self.rows[kind as usize].push(row);
         }
@@ -249,7 +245,7 @@ impl Events {
 
     pub(crate) fn observed(&self) -> &Report { &self.native }
 
-    /// Slow-path rows and optional declines, as kind, event name and details. Stopped traces count as slow paths. Test contracts can name a decline without requiring every declined optimization to succeed.
+    /// The rows of the records that mark a slow path (`SLOW`), each as its record's name, the text of the column that names the event, and all its fields, with the routes that no call claimed as `itemwise` rows, and each stopped trace, named by its reason. The route check expects none for a case beyond the events its `⍝⍝⍝ allows` and `⍝⍝⍝ gap` lines name, and a stopped trace needs a `gap` line. Each decline follows, named by its route and reason, as in `"fusion: an exact argument"`. A case needn't name a decline, because each one explains another event, but a line that names one must still find it.
     pub(crate) fn slow(&self) -> Vec<(&'static str, String, String)> {
         let fields = |row: &[Field]| row.iter().map(|f| match f { Field::Text(t) => t.clone(), Field::Count(n) => n.to_string(), Field::Truth(t) => t.to_string() }).collect::<Vec<_>>().join(" ");
         let mut rows: Vec<_> = SLOW.iter().flat_map(|&(kind, key)| self.rows[kind as usize].iter().map(move |row| (KINDS[kind as usize].0, row[key].text().to_owned(), fields(row)))).collect();
@@ -257,7 +253,7 @@ impl Events {
         rows.extend(self.native.records.iter().filter_map(|r| match r.kind {
             EventKind::Declined => Some(("declined", format!("{}: {}", r.route.name(), r.reason), format!("{} {} {}", r.route.name(), r.reason, r.items))),
             EventKind::Stopped => Some(("stopped", r.reason.into(), format!("{} {}", r.reason, r.items))),
-            EventKind::Taken | EventKind::Itemwise => None,
+            EventKind::Taken => None,
         }));
         rows
     }

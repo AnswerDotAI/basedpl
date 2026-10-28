@@ -50,7 +50,7 @@ Expansion applies only to typed REPL input, outside strings and comments. Pasted
 
 ### Other editors
 
-The shared table is `python/basedpl/layout.json`, shipped in the Python package and embedded in the Rust REPL. `option` gives what each Alt key types: a glyph, or a dead-key state that the next key completes. Each state in `states` lists its keys, and the terminator that Space or an unlisted key types. Follow-up matching ignores Alt. Repeating the prefix key types its terminator and ends the sequence. Keys are US characters after Shift. `alt_aliases` maps actual Alt characters such as `£` to text for the REPL and notebook keyboard. Native macOS layouts ignore these aliases. `basedpl.editors.write()` builds the regional macOS layout bundles in `editors/macos` from the same file and the native maps in `keyboards.json`.
+The shared table is `python/basedpl/layout.json`, shipped in the Python package and embedded in the Rust REPL. `option` gives what each Alt key types: a glyph, or a dead-key state that the next key completes. Each state in `states` lists its keys, and the terminator that Space or an unlisted key types. Follow-up matching ignores Alt. Repeating the prefix key types its terminator and ends the sequence. Keys are US characters after Shift. `alt_aliases` maps actual Alt characters such as `£` to text for the REPL and notebook keyboard. Native macOS layouts ignore these aliases. `basedpl.editors.write()` builds the regional macOS layout bundles in `python/basedpl/assets/macos` from the same file and the native maps in `keyboards.json`.
 
 ```python
 import json

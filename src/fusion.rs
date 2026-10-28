@@ -12,7 +12,7 @@ use crate::{
     pervasive, primitive::{FoldKind, Operation, Primitive},
     program::{blocks::{compiles_on_first_run, readable}, run::{self, Unit}, Desc, Node, Origin, Program, Read, Step}, Source, Span, Value
 };
-use rustymath::{agreement::Mapping, buffer::{Buffer, DType, FloatWidth, View}, gather::Steps, structure::Walk, layout::{count, strides}};
+use rustymath::{agreement::Mapping, buffer::{Buffer, DType, FloatWidth, View}, gather::Steps, structure::Slide, layout::{count, strides}};
 use rustymath::hashing::{HashMap, HashMapExt};
 use crate::array::{Footprint, Seen};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError};
@@ -87,10 +87,15 @@ pub(crate) fn source(value: &Value) -> Option<(Value, Mapping)> {
     narrowed(value, Mapping::Linear(1), &shape)
 }
 
-/// The share of a pending array's items, 1 in `LISTED`, at or below which a read is small. A small read lists its items' offsets through any map that it doesn't compose with, and computes a pending call, or the program that a fold left, at only the positions it reads. Listing one item's offset costs about 50 times what a copy spends on each item. A larger read computes the whole array, which then keeps its items for later reads.
-const LISTED: usize = 128;
+/// Whether something besides its reader holds `value`'s pending array, or a pending copy that `value` reads as a copy of a copy, as `source` reads through them. Such an array will plausibly be read again. A program holds each pending array that it reads, so the array of a copy that a name also holds counts as held. A view of part of a pending array counts as held.
+pub(crate) fn held_copy(value: &Value) -> bool {
+    let Some(pending) = value.pending() else { return false };
+    if value.folded().is_none_or(|(_, shared)| shared) { return true; }
+    let work = pending.work();
+    work.as_ref().and_then(copied).is_some_and(|(source, _)| held_copy(source))
+}
 
-/// A read of `pending` through `outer` over `frame`, without consuming its work. A pending copy becomes a read of its source through both maps. Its first nonempty small read computes only selected positions of an elementwise program (`Program::narrowed`), even when shared; a later read uses the normal whole-result cache. Copies, empty reads and all-missing reads don't count. Missing positions fill outside the program. Held pending inputs narrow recursively where possible, and otherwise remain shared inputs that compute and cache normally. `None` where the read isn't small, already used its partial computation, or the map or program cannot narrow.
+/// A read of `pending` narrowed to the positions that `outer` reaches over `frame`, as an array and a map, without consuming any pending work. `outer` maps `frame`'s positions to the pending array's own. A pending copy becomes a read of its source, through both maps. A pending array's first nonempty small read becomes a new pending array that computes only those positions of its elementwise program (`Program::narrowed`), even where something else holds it. A later read computes the whole array and keeps its items. Copies, empty reads and reads of fills alone don't count as that first read. Missing positions fill outside the new program, after it computes only the selected items. A pending array that the new program holds narrows the same way where it can. The new program holds any other pending array in a value of its own (`held`), which computes it whole and keeps its items. `None` where the read would compute `pending` whole: where the read isn't small, where its first read already narrowed, and where a map doesn't compose or the program can't narrow.
 fn narrow(pending: &Arc<Pending>, outer: &Mapping, frame: &[usize], small: bool) -> Option<(Value, Mapping)> {
     if frame.contains(&0) || outer.fills() && outer.as_writes().is_some_and(|w| w.only_fills()) {
         let source = Value::from_storage(vec![0], Storage::Compact(Buffer::with_capacity(pending.dtype, 0)).fixed(pending.prototype.fixed_width().is_some())).ok()?;
@@ -131,10 +136,10 @@ fn narrow(pending: &Arc<Pending>, outer: &Mapping, frame: &[usize], small: bool)
     Some(pending.with_work(Program::new(nodes, result).live(), frame))
 }
 
-/// The items of `value` at the positions `outer` reaches over `frame`, through `narrow`. The first nonempty small read computes just those items regardless of sharing; later reads use the whole-result cache. `None` where `value` isn't pending, or the read would compute its whole program.
+/// The items of `value` at the positions that `outer` reaches over `frame`, as an array and a map that read only those items, through `narrow`. The first nonempty small read computes just those items, whatever else holds `value`, and later reads use the whole result, computed once. `None` where `value` isn't pending, or where the read would compute `value` whole.
 fn narrowed(value: &Value, outer: Mapping, frame: &[usize]) -> Option<(Value, Mapping)> {
     let pending = value.pending()?;
-    let small = count(frame).saturating_mul(LISTED) <= pending.len();
+    let small = rustymath::agreement::small_read(count(frame), pending.len());
     let (source, mapping) = narrow(pending, &outer, frame, small)?;
     let fixed = value.fixed_width();
     let source = if source.fixed_width() == fixed { source }
@@ -192,7 +197,7 @@ pub(crate) fn item(value: &Value, i: usize) -> Value {
     mapping.get(0).map_or_else(|| source.mapped_fill(&mapping), |o| source.at(o))
 }
 
-/// Read a region of a pending source, retaining the native fill of the composed walk. Fills of mixed data stay eager.
+/// An array, a walk there that reaches the items of `value` that `steps` reach from `base`, and the fill that the walk reads where it reaches no item, through `narrowed`, for a pending `value`. `fill` is the fill that the read through `steps` chose, which the composed walk keeps as a native fill. `None` for a fill of mixed data, whose read stays eager.
 pub(crate) fn walk_through(value: &Value, base: usize, steps: &[Steps], fill: Option<&Value>) -> Option<(Value, usize, Vec<Steps>, Option<Value>)> {
     value.pending()?;
     let frame: Vec<usize> = steps.iter().map(Steps::len).collect();
@@ -387,7 +392,7 @@ pub(crate) fn pending(source: &Value, layout: &Layout, map: &Mapping) -> Option<
 pub(crate) fn at_width(value: &Value, width: FloatWidth) -> Option<Value> {
     let (source, mapping) = source(value)?;
     let source = source.to_float_width(width).ok()?;
-    let mapping = mapping.cast_fill(source.dtype()?).ok()?.into_owned();
+    let mapping = mapping.cast_fill(source.dtype()?).ok()?.unwrap_or(mapping);
     deferred_copy(&source, value.layout(), mapping)
 }
 
@@ -405,122 +410,39 @@ fn deferred_copy(source: &Value, layout: &Layout, mapping: Mapping) -> Option<Va
     Some(Value::deferred(layout.clone(), Arc::new(pending)))
 }
 
-/// A pending copy of windows along its axis `k`: that axis steps by 1 along one axis of the copy's source, and at least one other axis steps along it too. `slide` and `picks` read the source in place of the copy.
-struct Windows {
-    source: Value,
-    /// The source axis that each axis of the copy steps along, or `None` for an axis of one item.
-    along: Vec<Option<usize>>,
-    /// The positions that each axis of the copy moves by along its source axis, and 0 for an axis of one item.
-    moves: Vec<usize>,
-    /// The first position that the copy reads along each source axis.
-    first: Vec<usize>,
-    /// The source axis that holds the windows.
-    q: usize,
-    /// The part of the source that the copy reads, as `[outer, len, inner]` rows along `q` from row `lo`.
-    rows: [usize; 3],
-    lo: usize,
-    /// The positions between the starts of the folds along `q`: 1 for windows that slide, or the windows' width for windows that tile `q`.
-    every: usize,
-}
-
-/// The windows that `value` holds along axis `k`. `None` for a value that isn't a pending copy, for a chosen fill or any other map, for windows that don't move by 1 along their own axis or whose other axes along it neither move by 1 nor tile it, and for a copy that reads a source axis that no axis of the copy walks anywhere but at position 0.
-fn windows(value: &Value, k: usize) -> Option<Windows> {
-    let shape = value.shape();
+/// The sliding folds along `axes` of `value`, one axis or two, as rustymath's `Slide` classifies a copy of windows, with the copy's source. `slide`, `fold_windows` and `picks` read the source in place of the copy. `None` for a scan, for a value that isn't a pending copy, and for any copy that `Slide::new` doesn't classify, including every map that reads fills.
+fn windows(value: &Value, kind: FoldKind, axes: &[usize]) -> Option<(Value, Slide)> {
+    if kind.scan { return None; }
     let (source, mapping) = source(value)?;
-    if mapping.chosen().is_some() { return None; }
-    let Mapping::Steps { base, steps } = mapping else { return None };
-    let dims = source.shape().to_vec();
-    let walk = Walk::new(&Steps::with_base(base, steps.into()), shape, &dims)?;
-    // An axis of the copy that walks no source axis holds one item.
-    if walk.base != 0 || walk.steps.iter().zip(&walk.along).any(|(s, a)| a.is_none() && s.len() != 1) { return None; }
-    let q = walk.along[k]?;
-    if walk.walking(q).count() < 2 { return None; }
-    // Where the copy starts along each source axis, and the positions that its last item along each one reaches (`Walk::read`).
-    let reads = (0..dims.len()).map(|a| walk.read(a, dims[a])).collect::<Option<Vec<_>>>()?;
-    let moves: Vec<usize> = walk.steps.iter().zip(&walk.along).map(|(s, a)| match (s, a) {
-        (Steps::Stride { step, .. }, Some(a)) => *step as usize / walk.strides[*a],
-        _ => 0,
-    }).collect();
-    let width = shape[k];
-    if moves[k] != 1 { return None; }
-    // The folds start at every position along `q`, sliding a window along it, or every `width` positions where the copy's windows tile `q`, as pooling's do.
-    let others: Vec<usize> = walk.walking(q).filter(|&r| r != k).map(|r| moves[r]).collect();
-    let every = if others.iter().all(|&m| m == 1) { 1 } else if others.iter().all(|&m| m % width == 0) { width } else { return None };
-    let (first, read) = &reads[q];
-    let len = 1 + read.iter().map(|&[n, m]| (n - 1) * m).sum::<usize>();
-    let outer = count(&dims[..q]);
-    // A source axis before `q` means the folds run over the whole source, and every row along `q`.
-    let (lo, len) = if outer == 1 { (*first, len) } else { (0, dims[q]) };
-    if (first - lo) % every != 0 || len % every != 0 { return None; }
-    Some(Windows { rows: [outer, len, walk.strides[q]], lo, every, first: reads.iter().map(|r| r.0).collect(), source, moves, along: walk.along, q })
+    let slide = Slide::new(&mapping.tables(value.shape()), value.shape(), source.shape(), axes)?;
+    Some((source, slide))
 }
 
-impl Windows {
-    /// The items of the source that the copy reads, as `rows` lays them out. A source axis before `q` means the copy reads the whole source.
-    fn region(&self) -> Option<View<'_>> {
-        self.source.force();
-        let view = self.source.view()?;
-        let [outer, len, inner] = self.rows;
-        Some(if outer == 1 { view.slice(self.lo * inner..(self.lo + len) * inner) } else { view })
-    }
-    /// The source's shape with each fold's axis `q` holding one item for each start of its windows, and the tables that read each of the copy's axes but the folded ones from a buffer of that shape. `folds` holds each fold's windows, its axis of the copy and its width, and every one reads the same copy. Each table moves by its axis's moves, in starts along a folded axis, and the first of them along each source axis starts where the copy does.
-    fn folded(folds: &[(&Windows, usize, usize)], shape: &[usize]) -> (Vec<usize>, Vec<Steps>) {
-        let w = folds[0].0;
-        let mut folded = w.source.shape().to_vec();
-        for &(f, _, width) in folds { folded[f.q] = (f.rows[1] - width) / f.every + 1; }
-        let folded_strides = strides(&folded);
-        let mut started = vec![false; folded.len()];
-        let tables = (0..shape.len()).filter(|&r| folds.iter().all(|f| f.1 != r)).map(|r| match w.along[r] {
-            Some(a) => {
-                let (every, lo) = folds.iter().find(|f| f.0.q == a).map_or((1, 0), |f| (f.0.every, f.0.lo));
-                let start = if std::mem::replace(&mut started[a], true) { 0 } else { (w.first[a] - lo) / every };
-                Steps::Stride { start: start * folded_strides[a], len: shape[r], step: (w.moves[r] / every * folded_strides[a]) as isize }
-            }
-            None => Steps::Stride { start: 0, len: shape[r], step: 0 },
-        }).collect();
-        (folded, tables)
-    }
+/// The items of `source` that `slide`'s folds read, computing `source` first where it's pending.
+fn region<'a>(source: &'a Value, slide: &Slide) -> Option<View<'a>> {
+    source.force();
+    Some(source.view()?.slice(slide.region.clone()))
 }
 
-/// The windows that a fold by `kind` along axis `k` slides along in `value`, with the windows' width. `None` for a scan, for windows of one item, and for a value that `windows` doesn't read.
-fn windowed(value: &Value, kind: FoldKind, k: usize) -> Option<(Windows, usize)> {
-    let width = value.shape()[k];
-    if kind.scan || width < 2 { return None; }
-    Some((windows(value, k)?, width))
-}
+/// The layout of `shape` without the axes `axes`.
+fn without(shape: &[usize], axes: &[usize]) -> Layout { Layout::from((0..shape.len()).filter(|r| !axes.contains(r)).map(|r| shape[r]).collect::<Vec<_>>()) }
 
 /// The fold along axis `k` of a pending copy of windows along that axis. It runs sliding folds over the copy's source (`pervasive::sliding`) and never builds the windows. Where windows remain along another source axis, as after the first fold of `+/+/3 3↕m`, or start every few positions, as pooling's do, the result is a copy of the sliding folds. The next fold reads that copy the same way. The result has the fold's shape, without the copy's names and keys, which `folded` in `eval::operators` gives it. `None` for windows of one item, for a value that `windows` doesn't read, and for a function or kind that `pervasive::sliding` doesn't fold.
 fn slide(value: &Value, p: Primitive, kind: FoldKind, k: usize) -> Option<Value> {
-    let (w, width) = windowed(value, kind, k)?;
+    let (source, s) = windows(value, kind, &[k])?;
     let numeric = Numeric::for_values([value]).ok()?;
-    let shape = value.shape();
-    // Windows that tile `q` fold one tile to a lane.
-    let [outer, len, inner] = w.rows;
-    let rows = if w.every == 1 { w.rows } else { [outer * len / width, width, inner] };
-    let buffer = pervasive::sliding(p, w.region()?, rows, width, numeric)?;
+    let buffer = pervasive::sliding(p, region(&source, &s)?, s.dims[..].try_into().ok()?, s.widths[0], numeric)?;
     crate::explain::fast_detail(rustymath::events::Route::SlidingFold, Operation::Fold(p, kind).glyph());
-    let layout = Layout::from((0..shape.len()).filter(|&r| r != k).map(|r| shape[r]).collect::<Vec<_>>());
-    let (folded, tables) = Windows::folded(&[(&w, k, width)], shape);
-    laid_out(buffer, folded, layout, tables, numeric)
+    laid_out(buffer, s.folded, without(value.shape(), &[k]), s.tables, numeric)
 }
 
 /// The fold along two axes of a pending copy of windows, where each axis's windows slide or tile along a source axis of their own, as `⌈/⍠2 3` pools 2 by 2 windows. One pass over the source folds both (`pervasive::sliding_2d`), where folding one axis at a time would build the first fold's result. The result has the fold's shape, without the copy's names and keys. `None` wherever `slide` would give `None` for either axis, for two axes along one source axis, for windows that don't read the whole of their source axis, for one item at each window position, where folding one axis at a time folds neighbouring windows side by side and costs less, and for windows wider than rustymath folds directly.
 pub(crate) fn fold_windows(value: &Value, p: Primitive, kind: FoldKind, axes: [usize; 2]) -> Option<Value> {
-    let ((a, wa), (b, wb)) = (windowed(value, kind, axes[0])?, windowed(value, kind, axes[1])?);
-    let dims = a.source.shape().to_vec();
-    let whole = |w: &Windows| w.lo == 0 && w.rows[1] == dims[w.q];
-    if a.q == b.q || !whole(&a) || !whole(&b) { return None; }
-    let [(x, k1, w1), (y, k2, w2)] = if a.q < b.q { [(a, axes[0], wa), (b, axes[1], wb)] } else { [(b, axes[1], wb), (a, axes[0], wa)] };
-    let (q1, q2) = (x.q, y.q);
-    let dims5 = [count(&dims[..q1]), dims[q1], count(&dims[q1 + 1..q2]), dims[q2], count(&dims[q2 + 1..])];
-    if dims5[4] < 2 { return None; }
+    let (source, s) = windows(value, kind, &axes)?;
     let numeric = Numeric::for_values([value]).ok()?;
-    let buffer = pervasive::sliding_2d(p, x.region()?, dims5, [w1, w2], [x.every, y.every], numeric)?;
+    let buffer = pervasive::sliding_2d(p, region(&source, &s)?, s.dims[..].try_into().ok()?, s.widths[..].try_into().ok()?, s.every[..].try_into().ok()?, numeric)?;
     crate::explain::fast_detail(rustymath::events::Route::SlidingFold, Operation::Fold(p, kind).glyph());
-    let shape = value.shape();
-    let layout = Layout::from((0..shape.len()).filter(|&r| r != k1 && r != k2).map(|r| shape[r]).collect::<Vec<_>>());
-    let (folded, tables) = Windows::folded(&[(&x, k1, w1), (&y, k2, w2)], shape);
-    laid_out(buffer, folded, layout, tables, numeric)
+    laid_out(buffer, s.folded, without(value.shape(), &axes), s.tables, numeric)
 }
 
 /// Folds that `buffer` holds by the shape `folded`, laid out as `tables` read them into a result of `layout`: the buffer itself where the tables read it in order, and otherwise a copy of it, pending where it's large.
@@ -534,17 +456,16 @@ fn laid_out(buffer: Buffer, folded: Vec<usize>, layout: Layout, tables: Vec<Step
 /// For a maximum or minimum along the default axis of a pending copy of windows, the position in the copy's ravel of the first item of each window that gives its fold, or of the window's first item where none does, as for NaN. The positions come from the source (`pervasive::picks`), with no windows built. `None` where windows remain along another source axis, and wherever `slide` would give `None`.
 pub(crate) fn picks(value: &Value, p: Primitive, kind: FoldKind) -> Option<Vec<i64>> {
     let k = kind.default_axis(value.shape().len());
-    let (w, width) = windowed(value, kind, k)?;
+    let (source, s) = windows(value, kind, &[k])?;
+    if s.every[0] != 1 || !Steps::in_order(&s.tables) { return None; }
+    let rows = pervasive::picks(p, region(&source, &s)?, s.dims[..].try_into().ok()?, rustymath::reduce::Picks::Windows(s.widths[0]))?;
+    // Each window starts at the position along its source axis that the copy's other axes along that axis reach. Its pick lies that many rows before.
     let shape = value.shape();
-    let (_, tables) = Windows::folded(&[(&w, k, width)], shape);
-    if w.every != 1 || !Steps::in_order(&tables) { return None; }
-    let rows = pervasive::picks(p, w.region()?, w.rows, rustymath::reduce::Picks::Windows(width))?;
-    // Each window starts at the position along `q` that the copy's other axes along `q` reach. Its pick lies that many rows before.
-    let strides = strides(shape);
+    let (strides, along) = (strides(shape), &s.walk.along);
     let rest: Vec<usize> = (0..shape.len()).filter(|&r| r != k).collect();
     let mut index = vec![0; rest.len()];
     Some(rows.into_iter().map(|row| {
-        let start: usize = rest.iter().zip(&index).filter(|&(&r, _)| w.along[r] == Some(w.q)).map(|(_, &i)| i).sum();
+        let start: usize = rest.iter().zip(&index).filter(|&(&r, _)| along[r] == along[k]).map(|(_, &i)| i).sum();
         let at = rest.iter().zip(&index).map(|(&r, &i)| i * strides[r]).sum::<usize>() + (row - start) * strides[k];
         for (j, &r) in rest.iter().enumerate().rev() { index[j] += 1; if index[j] < shape[r] { break; } index[j] = 0; }
         at as i64

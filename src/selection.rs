@@ -227,7 +227,7 @@ impl Labelled {
             Lead::Ids(ids) => Self::given(self.level, SelectionKind::Item, self.root.clone(), ids.at(i), self.values().at(i)),
         }
     }
-    /// Copies the selection's values and positions. Native fills remain on the values' map; fills of mixed data are copied eagerly. Missing positions have no label.
+    /// The items laid out by `layout`, read through `map` as `primitive::copied` reads a value's. Without a fill of mixed data, a mapping composes with `map`, with the native fill that `map` chose, and reads nothing yet. Where the labels are ids, where a fill of mixed data is given, or where the mapping and `map` both read fills that they chose differently, the ids read through `map` without its fill (`Part::map`), and the values read through `map` with the fill (`primitive::copied_fill`). A position that reaches no item has no label.
     pub(crate) fn copied(&self, layout: Layout, map: &Mapping, fill: Option<&Value>) -> Result<Value, ErrorKind> {
         if fill.is_none() && let Lead::Mapped(mapping) = &self.labels && let Some(mapping) = mapping.composed(map, self.layout.shape(), layout.shape(), true) {
             return Ok(Self::mapped(self.level, SelectionKind::Elements, self.root.clone(), layout, false, mapping));

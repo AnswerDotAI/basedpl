@@ -11,6 +11,6 @@ from basedpl.font import build
 build()
 ```
 
-This writes TTF and WOFF2 files for both fonts, with `LICENSE-SAX2` and `LICENSE-BQN386`. The source versions are pinned in `basedpl.font`. BQN386B has its own family name to distinguish it from an installed upstream BQN386.
+This writes installable TTF files and licences into `python/basedpl/assets/fonts`, and WOFF2 files into `nbs/fonts`. Run `basedpl-install` to install both fonts for your user. The source versions are pinned in `basedpl.font`. BQN386B has its own family name to distinguish it from an installed upstream BQN386.
 
 The BPL symbols `⇄`, `∂`, and `⨸` are still missing from SAX2B.

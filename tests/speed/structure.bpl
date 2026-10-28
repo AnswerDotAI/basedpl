@@ -112,6 +112,13 @@ ism,sm
 +/⌽sv
 ⍝⍝: 1	1	2
 
+⍝ A copy whose runs hold at least 128 items, rustymath's `reduce::RUN`, folds each run where it lies, with no copy. Half the columns of `sq` give runs of 512.
+⍝ Expected: 0.5 copies: reads 8 bytes for each of half the items, and the call into the fold for each run costs about what reading its items costs.
+⍝ Wasm on CI's x86 runner: 1 copy, twice native, as for the folds above.
+⍝⍝⍝ route in place
++/,[:;⍳512ₓ]⌷sq
+⍝⍝: 1	1	2
+
 ⍝ Held until studied: `⌈/⌈/[[2 2]⋄[2 2]]↕sq` measures 1.7 on macOS and has an old Linux budget that suggests about 2.3, more than twice its expected cost. On 23 October 2026 CI measured 1.64 on Linux. Its macOS and Linux budgets stay at the old value.
 ⌈/⌈/[[2 2]⋄[2 2]]↕sq
 ⍝⍝: 3.4	4.6	2
@@ -171,13 +178,16 @@ ism,sm
 
 ⍝ A product of windows reads them a block of rows at a time, straight into the matrix product, and never builds the windows matrix. A product of a single-channel image's windows with one filter adds each column of the windows, read where it lies, into the result. Its gradient for the kernel reads them again in blocks. Its gradient for the image is one product of the windows of the zero-padded cotangent with the kernel reversed.
 ⍝ Expected: `[64516 144]⍴3 3↕cimg +.× ck` 28 copies on macOS, 120 on Linux and 240 in wasm: a product of 595 million flops, 567 an item, which on macOS takes 19 at Accelerate's rank-k rate, and gathering the windows a block of rows at a time, about 9; `[1044484 9]⍴3 3↕sq +.× kq` 2.5 copies: nine multiply-adds per window, read in place; `{+/, [64516 144]⍴3 3↕cimg +.× ⍵}∂ ck` and `{+/, [64516 144]⍴3 3↕⍵ +.× ck}∂ cimg` 56 copies on macOS, 240 on Linux and 480 in wasm: two products of 595 million flops, with their gathers.
+⍝⍝⍝ route mapped product
 [64516 144]⍴3 3↕cimg +.× ck
 ⍝⍝: 56	240	480
 
 ⍝ Held until studied: `([1044484 9]⍴3 3↕sq)+.×kq` measured 7.49 on macOS on 22 October 2026, until rustymath's `by_columns` kept a strip of 8 results in registers while all nine columns add into it. On 27 October 2026 `gmv_` widened the strip to 32 results (`COLUMN_STRIP`), which took it from 6.11 to 5.23 in alternating runs. Nine multiply-adds per window at NEON's two lanes of f64 take about twice the expected cost. Its old Linux and wasm budgets suggest about 8.5 and 10.5. On 22 October 2026 CI measured 5.36 on Linux and 5.85 in wasm. Its macOS, Linux and wasm budgets stay at the old value.
+⍝⍝⍝ route mapped product
 [1044484 9]⍴3 3↕sq +.× kq
 ⍝⍝: 16	17	21
 
+⍝⍝⍝ route mapped product
 {+/, [64516 144]⍴3 3↕cimg +.× ⍵}∂ ck
 ⍝⍝: 120	480	960
 

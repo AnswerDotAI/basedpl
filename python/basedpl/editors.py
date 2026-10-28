@@ -8,6 +8,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 from . import symbols, keyboards, windows_keyboard, __version__
 from ._core import _superscripts, _subscripts, _number_marks
+from .assets import kernel_spec
 
 VIM = Path('editors/vim/syntax/bpl.vim')
 JETBRAINS = Path('editors/jetbrains')
@@ -257,6 +258,7 @@ def browser():
 
 def write():
     "Write highlighters, glyph-entry templates, regional keyboard bundles, and glyph-page kinds, keys, hanzi and ranks."
+    keyboards.write_changed(Path('wheel/data/share/jupyter/kernels/bpl/kernel.json'), json.dumps(kernel_spec(), indent=2) + '\n')
     for path, glyphs in HIGHLIGHTERS.items(): keyboards.write_changed(path, quarto(path.read_text(), glyphs))
     base = Path('nbs/bpl.xml').read_text()
     hanzi = hanzi_grammar(base)

@@ -297,19 +297,19 @@ class Scaling(list):
         rows = (f'{one:>11,.0f} ps {many:>11,.0f} ps {speedup:>6.2f}x of {least:<4g} {"slow" if speedup < least else "":4}  {code}' for code, one, many, speedup, least in self)
         return '\n'.join([f'1 thread against {self.threads}', *rows])
 
-_SCALING_SETUP = 'pm←¿[1024 1024]⍴0 ⋄ sq←¿[512 512]⍴0 ⋄ hq←sq+⍉sq ⋄ stk←¿[16384 8 8]⍴0 ⋄ big←¿4194304⍴0 ⋄ n←≢big'
+_SCALING_SETUP = 'pm←¿[1024 1024]⍴0 ⋄ sq←¿[512 512]⍴0 ⋄ hq←sq+⍉sq ⋄ stk←¿[16384 8 8]⍴0 ⋄ img←¿[256 256 16]⍴0 ⋄ cw←[64516 144]⍴3 3↕img ⋄ ck←¿[144 32]⍴0 ⋄ big←¿4194304⍴0 ⋄ n←≢big'
 _SCALING_THREADS = 4
-# Each case's serial fraction s: the share of its one-thread time that doesn't split across threads. On t threads it should then speed up 1/(s + (1 − s)/t) times, by Amdahl's law. A product, a stack's cells and an elementwise function split into independent pieces. A 512×512 SVD or Hermitian eigendecomposition spends about half its time in matrix products and half in its one-stage reduction. The products split. The reduction's matrix-vector passes over the trailing matrix are mostly too short to split.
-_SCALING = {'pm+.×pm': 0, '"svd"•decompose sq': 0.5, '"eigen"•decompose hq': 0.5, '"qr"•decompose⍤2 stk': 0, '*big': 0}
-# On macOS, Accelerate computes these cases, and their serial fractions come from measurement. Its GESDD and SYEVD run on one thread whatever its threading setting, as NumPy's calls into the same Accelerate show. Its 1024×1024 product ran at about 480 GFLOP/s on one thread of an M5 Max and gained 1.35 times on 4 threads (27 October 2026), a serial fraction of 0.65.
-_ACCELERATED = {'pm+.×pm': 0.65, '"svd"•decompose sq': 1, '"eigen"•decompose hq': 1}
+# Each case's serial fraction s: the share of its one-thread time that doesn't split across threads. On t threads it should then speed up 1/(s + (1 − s)/t) times, by Amdahl's law. A product, a stack's cells and an elementwise function split into independent pieces. A product of windows splits its rows into one piece for each thread, which gathers its own windows a block at a time. A copy of a view splits its items across threads, but memory bandwidth limits its gain. Its serial fraction comes from measurement: a copy of a convolution's windows gained 1.6 to 1.9 times on 4 threads of an M5 Max (28 October 2026). A serial fraction of 0.5 matches the lower gain. A 512×512 SVD or Hermitian eigendecomposition spends about half its time in matrix products and half in its one-stage reduction. The products split. The reduction's matrix-vector passes over the trailing matrix are mostly too short to split.
+_SCALING = {'pm+.×pm': 0, '"svd"•decompose sq': 0.5, '"eigen"•decompose hq': 0.5, '"qr"•decompose⍤2 stk': 0, 'cw+.×ck': 0, '3 3↕img': 0.5, '*big': 0}
+# On macOS, Accelerate computes these cases, and their serial fractions come from measurement. Its GESDD and SYEVD run on one thread whatever its threading setting, as NumPy's calls into the same Accelerate show. Its 1024×1024 product ran at about 480 GFLOP/s on one thread of an M5 Max and gained 1.35 times on 4 threads (27 October 2026), a serial fraction of 0.65. The product of windows gained 1.88 times on 4 threads (28 October 2026), a serial fraction of 0.38.
+_ACCELERATED = {'pm+.×pm': 0.65, '"svd"•decompose sq': 1, '"eigen"•decompose hq': 1, 'cw+.×ck': 0.38}
 
 def _physical_cores():
     "This machine's physical cores: the distinct sets of hardware threads that share a core, as Linux lists them, or else its logical CPUs. On Apple silicon, which runs one hardware thread on each core, the logical CPUs are the cores."
     return len({p.read_text() for p in Path('/sys/devices/system/cpu').glob('cpu[0-9]*/topology/thread_siblings_list')}) or os.cpu_count()
 
 def thread_scaling(
-    cases:str=None, # Codes of the cases in `_SCALING` to time, or one code; None: all of them, a 1024×1024 product, a 512×512 SVD and Hermitian eigendecomposition, QR decompositions of a stack of 16,384 8×8 matrices, and `*` on 4,194,304 floats
+    cases:str=None, # Codes of the cases in `_SCALING` to time, or one code; None: all of them, a 1024×1024 product, a 512×512 SVD and Hermitian eigendecomposition, QR decompositions of a stack of 16,384 8×8 matrices, a product of a 3 by 3 convolution's windows, a copy of those windows, and `*` on 4,194,304 floats
     setup:str=_SCALING_SETUP, # BPL that defines the cases' data and its number of items `n`
     bpl:Path=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
     timeout:float=None, # Seconds before each timing stops
@@ -739,6 +739,10 @@ def cargo_costs(
     "The rows that `logged_costs` reads from what the speed test of the package at `path` prints, run as `cargo test` runs it. A case over its budget still gives its row."
     return _run_costs(['cargo', 'test', '--test', 'speed'], path, timeout, native)
 
+def _saved(saved):
+    "The environment variables that put `saved`, a directory that holds a copy of a package's Python package, before the installed one on `PYTHONPATH`, or none where `saved` is None."
+    return dict(PYTHONPATH=os.pathsep.join(filter(None, [str(Path(saved).expanduser()), os.environ.get('PYTHONPATH')]))) if saved else {}
+
 def pytest_costs(
     path='.', # A package, such as rustymath, whose `tests/test_speed.py` prints every cost when `<NAME>_COSTS` is set
     saved:Path=None, # A directory that holds a copy of the package's Python package, saved before a change, to time in place of the installed one
@@ -746,8 +750,17 @@ def pytest_costs(
     timeout:float=None # Seconds before the run stops
 ):
     "The rows that `logged_costs` reads from what the Python speed test of the package at `path` prints, run with `pytest`. A case over its budget still gives its row."
-    env = dict(PYTHONPATH=os.pathsep.join(filter(None, [str(Path(saved).expanduser()), os.environ.get('PYTHONPATH')]))) if saved else {}
-    return _run_costs([sys.executable, '-m', 'pytest', '-q', 'tests/test_speed.py'], path, timeout, native, env)
+    return _run_costs([sys.executable, '-m', 'pytest', '-q', 'tests/test_speed.py'], path, timeout, native, _saved(saved))
+
+def run_pytest(
+    tests:Annotated[str, {'nargs':'+'}], # A test's `pytest` node ID, such as `tests/test_structure.py::test_edge_modes_pad_take_and_windows`, or a list of them
+    path='.', # A package, such as rustymath, whose tests the node IDs name
+    saved:Path=None, # A directory that holds a copy of the package's Python package, saved before a change, to test in place of the installed one
+    timeout:float=None # Seconds before the run stops
+):
+    "What `pytest -q` prints for `tests`, run in the package at `path`."
+    p = subprocess.run([sys.executable, '-m', 'pytest', '-q', *listify(tests)], cwd=Path(path).expanduser(), capture_output=True, text=True, timeout=timeout, env=os.environ | _saved(saved))
+    return Report(p.stdout + p.stderr)
 
 class Report(str):
     "Text displayed as it is, such as a test runner's report or a function's machine code."
@@ -821,7 +834,7 @@ def set_budgets(
     return changes
 
 
-_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs compare_costs wasm_test'.split()
+_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs run_pytest compare_costs wasm_test'.split()
 
 def main():
     "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."

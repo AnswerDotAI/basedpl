@@ -23,7 +23,7 @@ use rustymath::{
 };
 use std::{borrow::Cow, mem::MaybeUninit};
 
-/// A unary kernel used for a dyadic call whose constant left argument selects that kernel.
+/// `K` as a two-argument object that ignores its left argument, as a `Binary` at each item type where `K` is a `Unary`: `Right(k).one(x, y)` is `k.one(y)`. A call uses one where a constant left argument names the function, as `2√y` runs `Sqrt`.
 #[derive(Clone, Copy, Debug)]
 struct Right<K>(K);
 
@@ -1305,15 +1305,11 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
     })
 }
 
-/// The shortest run of consecutive items that `mapped_fold` reads through a pending copy's map. Reading runs in place ties with gathering them at 64 items and wins from 256 (`rw_`'s timings), and a stencil's 3-item rows folded about 20% slower read in place than from a stored copy.
-const MAPPED_RUN: usize = 128;
-
-/// The fold of a pending copy along `axis` by the reductions of `with_reduction!`, read from the copy's source through its map with rustymath's `along_mapped`, without building the copy: its totals, and the tables that read them in the result's order where they come in another order. `None` for a value that isn't a pending copy, for another function, or where a total doesn't fit.
+/// The fold of a pending copy along `axis` by the reductions of `with_reduction!`, read from the copy's source through its map with rustymath's `along_mapped`, without building the copy: its totals, and the tables that read them in the result's order where they come in another order. `None` for a value that isn't a pending copy, for another function, where a total doesn't fit, and for a copy that a name or another array holds where `along_mapped` would copy the source's items on every read (`reduce::rereads_cheaply`), as for a stencil's windows. `native_fold` then computes that copy, which keeps its items for later reads.
 fn mapped_fold(p: Primitive, value: &Value, axis: usize, numeric: Numeric) -> Option<(Buffer, Option<Vec<rustymath::gather::Steps>>)> {
     let (source, mapping) = crate::fusion::source(value)?;
     let shape = value.shape();
-    // A map of short runs, such as a stencil's windows, folds faster from the stored copy that `native_fold` reads.
-    if let Mapping::Steps { steps, .. } = &mapping && mapping.block(shape).is_none() && rustymath::gather::Steps::contiguous(steps) < MAPPED_RUN { return None; }
+    if crate::fusion::held_copy(value) && !reduce::rereads_cheaply(&mapping, shape) { return None; }
     with_reduction!(p, source.view()?, shape[axis], numeric.wrapping(), |data, R, kept| {
         let (totals, fits, order) = reduce::along_mapped::<_, R>(data, &mapping, shape, axis);
         fitting((totals, fits), kept).map(|buffer| (buffer, order))
@@ -1863,7 +1859,7 @@ fn kernel_product<T: Element>(pair: Product, x: &[T], y: &[T], frames: &rustymat
     pair.run([T::view(x), T::view(y)], frames, size)?.map(|(data, fits)| if fits { Value::from_buffer(shape, data).ok() } else { None }).transpose()
 }
 
-/// `x+.×y` where `x` or `y` is a pending copy, or a view of one, and both hold 32- or 64-bit floats, or either holds complex numbers, as `plan` plans it. Rustymath reads the copy through its map one block at a time and never builds it. `None` for any other product. It decides from the plan's kinds, which a pending copy gives without being forced. An operand that transposes a matrix reads that matrix with its orientation flipped (`untransposed`).
+/// `x+.×y` where `x` or `y` is a pending copy, or a view of one, and both hold 32- or 64-bit floats, or either holds complex numbers, as `plan` plans it. Rustymath reads a copy no larger than the result whole. It reads a larger one through its map a block at a time, without building it (`linalg::blocked`). `None` for any other product. It decides from the plan's kinds, which a pending copy gives without being forced. An operand that transposes a matrix reads that matrix with its orientation flipped (`untransposed`).
 fn mapped_product(plan: &plan::Product, x: &Value, y: &Value, size: [usize; 3], shape: &[usize]) -> Option<Value> {
     if plan.kernel != Some(Product::PlusTimes) { return None; }
     let (mx, my) = (crate::fusion::source(x), crate::fusion::source(y));
@@ -1878,8 +1874,8 @@ fn mapped_product(plan: &plan::Product, x: &Value, y: &Value, size: [usize; 3], 
     let (((xs, xm), ox), ((ys, ym), oy)) = (read(mx, x, [rows, n]), read(my, y, [n, cols]));
     macro_rules! product { ($t:ty) => {{
         let (a, b) = (read_as::<$t>(&xs)?, read_as::<$t>(&ys)?);
-        let (xm, ym) = (xm.cast_fill(<$t>::DTYPE).ok()?, ym.cast_fill(<$t>::DTYPE).ok()?);
-        <$t>::build(shape.to_vec(), PlusTimes.inner_mapped(Mapped { data: &a, mapping: &xm }, Mapped { data: &b, mapping: &ym }, [ox, oy], size))
+        let (xc, yc) = (xm.cast_fill(<$t>::DTYPE).ok()?, ym.cast_fill(<$t>::DTYPE).ok()?);
+        <$t>::build(shape.to_vec(), PlusTimes.inner_mapped(Mapped { data: &a, mapping: xc.as_ref().unwrap_or(&xm) }, Mapped { data: &b, mapping: yc.as_ref().unwrap_or(&ym) }, [ox, oy], size))
     }} }
     match kind {
         DType::Float(width) => with_float_width!(kernel width, F => product!(F)),

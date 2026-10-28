@@ -9,7 +9,7 @@ description = "BasedPL, the Based-array Programming Language, is an APL-derived 
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
-    "fastcore"
+    "fastcore", "jupyter_core"
 ]
 readme = "README.md"
 authors = [{name = "Jeremy Howard", email = "github@jhoward.fastmail.fm"}]
@@ -22,6 +22,7 @@ classifiers = [
 dev = ["fastship>=0.0.11", "fastws-cli>=0.0.26", "maturin>=1.9.4,<2.0", "pytest", "pytest-timeout", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "pillow", "rustymath>=0.1.49"]
 
 [project.scripts]
+basedpl-install = "basedpl.install:main"
 bpl-nb = "basedpl.notebook_runner:main"
 bpl-install-magic = "basedpl.notebooks:create_ipython_config"
 bpl-tests = "basedpl.bpltests:main"

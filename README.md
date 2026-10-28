@@ -11,8 +11,11 @@ LLMs: read [llms.txt](https://answerdotai.github.io/basedpl/llms.txt) first. It 
 
 ``` sh
 pip install basedpl
+basedpl-install
 bpl
 ```
+
+The setup command installs the Jupyter kernel and BPL fonts for your user. On macOS it also installs a native [keyboard layout](https://answerdotai.github.io/basedpl/keyboard.html#macos-installation).
 
 Each release also has a standalone `bpl` that needs no Python, for macOS on Apple silicon and for Linux on x86-64 and arm64. On a Mac:
 

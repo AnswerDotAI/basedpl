@@ -32,5 +32,5 @@ foreach ($target in @('amd64', 'arm64')) {
 }
 Copy-Item "$PSScriptRoot\layout.h", "$PSScriptRoot\keyboard.c", "$PSScriptRoot\keyboard.rc", "$PSScriptRoot\keyboard.def",
     "$PSScriptRoot\install.ps1", "$PSScriptRoot\README.md" $output
-Copy-Item "$root\nbs\fonts\SAX2B.ttf", "$root\nbs\fonts\LICENSE-SAX2", "$root\LICENSE" $output
+Copy-Item "$root\python\basedpl\assets\fonts\SAX2B.ttf", "$root\python\basedpl\assets\fonts\LICENSE-SAX2", "$root\LICENSE" $output
 Compress-Archive -Path "$output\*" -DestinationPath "$output.zip" -Force

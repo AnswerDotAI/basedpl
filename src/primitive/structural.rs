@@ -158,7 +158,7 @@ pub(crate) fn copied_fill(right: &Value, layout: Layout, map: &Mapping, fill: Op
     copying(right, layout, map, fill, true)
 }
 
-/// Copies items through `map`, retaining an in-order view and routing carriers through their own copies. Compact sources may defer native fills with the map; a chosen fill of mixed data makes the copy eager. `defers` permits an ordinary pending copy.
+/// `copied`, which a pending copy can give where `defers` holds. A map that reads every item of `right` in order gives `right` under `layout`, with no items copied. A carried array copies each of its parts through the map that its part reads, a record as one `Op::Copy` (`Carrier::copied`). A position that reaches no item reads `fill`, the chosen fill of mixed data, or else the map's native fill, or else the prototype. A native fill can stay on a pending copy's map, and a fill of mixed data makes the copy eager.
 fn copying(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>, defers: bool) -> Result<Value, ErrorKind> {
     let len = generated_len(layout.shape())?;
     if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }

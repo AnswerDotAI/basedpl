@@ -786,15 +786,17 @@ impl Value {
     pub fn at(&self, i: usize) -> Value { self.at_ref(i).into_owned() }
     /// Item `i`, or `fill` as an item of this value where `i` is `Steps::FILL` (`fill_item`). A pending array gives the item without computing the rest.
     pub(crate) fn at_or_fill(&self, i: usize, fill: Option<&Value>) -> Value { if i == rustymath::gather::Steps::FILL { self.fill_item(fill) } else { crate::fusion::item(self, i) } }
-    /// The item that a read gives where it reaches no item: the validated scalar `fill`'s item, or this value's prototype.
+    /// The item that a read of this value gives where it reaches no item: the validated scalar `fill`'s item, as an item of this value's kind, or this value's prototype where there's none.
     pub(crate) fn fill_item(&self, fill: Option<&Value>) -> Value { fill.map_or_else(|| self.prototype(), |fill| fill.at(0)) }
-    /// A validated native fill at this source's compact dtype; mixed sources retain their BPL fill value.
+    /// The native fill that `fill`, a validated scalar, gives at this value's compact dtype. `None` for mixed storage, which reads `fill` itself.
     pub(crate) fn native_fill(&self, fill: &Value) -> Option<Arc<Fill>> {
         let dtype = self.template_dtype()?;
         Some(Arc::new(Fill::new(fill.view()?, dtype).expect("a validated scalar fill")))
     }
+    /// The scalar that holds the native `fill`, the inverse of `native_fill`. `fixed` marks integers of a fixed width.
     pub(crate) fn from_fill(fill: &Arc<Fill>, fixed: bool) -> Self { Self::from_storage(Shape::EMPTY, Storage::Compact(Buffer::copied(fill.view(), 0..1)).fixed(fixed)).expect("one fill item is a scalar") }
-    pub(crate) fn mapped_fill(&self, map: &Mapping) -> Self { map.chosen().map_or_else(|| self.prototype(), |fill| Items::Compact(fill.view()).fixed(self.fixed_width().is_some()).item(0)) }
+    /// The item that a read through `map` gives where it reaches no item: the native fill that `map` chose, or else this value's prototype (`fill_item`).
+    pub(crate) fn mapped_fill(&self, map: &Mapping) -> Self { self.fill_item(map.chosen().map(|fill| Self::from_fill(fill, self.fixed_width().is_some())).as_ref()) }
     /// `fill` held in a scalar of `dtype` that keeps its value, with the dtype that holds it. An integer `dtype` that isn't `fixed` widens under dynamic kinds to the narrowest width that holds the fill, as ordinary integers do. Mixed storage, a `dtype` of `None`, takes any value. A DOMAIN error where no dtype holds the fill.
     pub(crate) fn fill_of(fill: &Value, dtype: Option<DType>, fixed: bool) -> Result<(Option<DType>, Value), Error> {
         let Some(mut to) = dtype else { return Ok((None, fill.enclose().described("invalid fill")?)) };
