@@ -2,7 +2,7 @@
 
 Dyadic operator. Keys: `Alt-,`. Hanzi: `后` (`後`)
 
-`f↢g Y` is `Y f(g Y)`. The left argument of `f` is `Y` itself. For `f(g Y)`, use [Atop](jot.qmd), `f∘g`.
+The monadic hook `f↢g Y` is `Y f(g Y)`. The left argument of `f` is `Y` itself. For `f(g Y)`, use [Atop](jot.qmd), `f∘g`.
 
 ```bpl
 ×↢- 5              ⍝ ¯25
