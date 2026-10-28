@@ -227,9 +227,9 @@ f←+⍠⍬ ⋄ g←×⍠1 ⋄ m←3 2⍴⍳6 ⋄ [(•storage [1 2]ₛ f 1.5).k
 ["float32" ; [1 2⋄1 2⋄1 2] ; 24 48 33]
 
 ⍝ fill-option-routes — A filled position reads the chosen fill through `∂`, whose tangent there is 0, a batched map, a pending keyed call and a fold of padded windows
-a←"p" "q":1 2 ⋄ b←"q" "r":3 4 ⋄ n←200000 ⋄ c←(⍕¨⍳n):⍳n ⋄ d←(⍕¨(n÷2)+⍳n):1000+⍳n ⋄ r←c+⍠["fill":¯1] d ⋄ v←⍳100000 ⋄ [:{⍵+⍠["fill":10] b}∂a ; {5↑⍠["fill":9] ⍵}∂1 2 ; ({5↑⍠["fill":¯1] ⍵}⍤1)2 3⍴⍳6 ; (•storage r).pending ; :r.[[0 100000 299999]] ; (+/["size":¯3 "fill":100]↕v).[[0 1 99999]]]
+a←"p" "q":1 2 ⋄ b←"q" "r":3 4 ⋄ c←["k":["p" "q"]]:2 44000⍴⍳88000 ⋄ d←["k":["q" "r"]]:2 44000⍴1000+⍳88000 ⋄ r←c+⍠["fill":¯1] d ⋄ v←⍳1000 ⋄ [:{⍵+⍠["fill":10] b}∂a ; {5↑⍠["fill":9] ⍵}∂1 2 ; ({5↑⍠["fill":¯1] ⍵}⍤1)2 3⍴⍳6 ; (•storage r).pending ; :r.[[0 1 2] [0 0 43999]] ; (+/["size":¯3 "fill":100]↕v).[[0 1 999]]]
 ⍝ =>
-[[1 0⋄0 1⋄0 0] ; [1 0⋄0 1⋄0 0⋄0 0⋄0 0] ; [0 1 2 ¯1 ¯1⋄3 4 5 ¯1 ¯1] ; $t ; ¯1 101000 200998 ; 101 3 200097]
+[[1 0⋄0 1⋄0 0] ; [1 0⋄0 1⋄0 0⋄0 0⋄0 0] ; [0 1 2 ¯1 ¯1⋄3 4 5 ¯1 ¯1] ; $t ; ¯1 45000 88998 ; 101 3 2097]
 
 ⍝ fill-option-reversed — A reversed read of a take's fills reads the chosen fill
 v←⍳1000 ⋄ w←1005↑⍠["fill":¯1] v ⋄ r←2×⌽w ⋄ [5↑r ; (+/r)=998990 ; 5↑5↓r ; 5↑¯10↑r]
@@ -862,7 +862,7 @@ s←- ⋄ t←{+ s⍵} ⋄ a←t 1 2 3 ⋄ s←{⍶/⍵} ⋄ b←t 1 2 3 ⋄ s�
 f←{(+/⍤ 1) ⍵} ⋄ (f [2 2]⍴⍳4),(f [2 2]⍴4+⍳4)   ⍝ 1 5 9 13
 
 ⍝ — A last statement first recorded while an error guard stops its tail call returns its call to the caller's loop on later calls
-f←{⍺←0 ⋄ ⍺=1?"DOMAIN"::0 ⋄ 0?⍬ ; ⍵≤0?0 ; 0 f ⍵-1} ⋄ [1 f 1;0 f 100000]   ⍝ 0 0
+f←{⍺←0 ⋄ ⍺=1?"DOMAIN"::0 ⋄ 0?⍬ ; ⍵≤0?0 ; 0 f ⍵-1} ⋄ [1 f 1;0 f 25000]   ⍝ 0 0
 
 ⍝⍝ Mathematical monads
 
@@ -3733,7 +3733,7 @@ v←¿3000⍴0 ⋄ i←17 1000 ⋄ v.[i]←$n ⋄ w←¿45000⍴0 ⋄ m←¿[130
 a←¿[256 256 4]⍴0 ⋄ j←(¿[130 130 2]⍴100)ₓ ⋄ r←¿[16 64 64 4]⍴0 ⋄ ∧/[((⌈/⍠2 3)[[2 2]⋄[2 2]]↕a)≡(⌈/⍠2)(⌈/⍠2)[[2 2]⋄[2 2]]↕a;((+/⍠2 3)3 3↕j)≡(+/⍠2)(+/⍠2)3 3↕j;({⌈/⍠2 3 [[2 2]⋄[2 2]]↕⍵}⍤3 r)≡{⌈/⍠2⌈/⍠2 [[2 2]⋄[2 2]]↕⍵}⍤3 r;["sliding fold"]≡(•explain "(⌈/⍠2 3)[[2 2]⋄[2 2]]↕a").fast.combination]   ⍝ $t
 
 ⍝ — Under `∂`, a maximum or minimum of windows takes each window's first extreme from the source, as the fold of built windows does
-w←¿45000⍴0 ⋄ t←⌊10×w ⋄ ∧/[({+/,⌈/50↕⍵}∂ w)≡{+/,⌈/1×50↕⍵}∂ w;({+/,⌊/50↕⍵}∂ t)≡{+/,⌊/1×50↕⍵}∂ t;({+/,⌈/3↕⍵}∂ t)≡{+/,⌈/1×3↕⍵}∂ t]   ⍝ $t
+w←¿1000⍴0 ⋄ t←⌊10×w ⋄ ∧/[({+/,⌈/50↕⍵}∂ w)≡{+/,⌈/1×50↕⍵}∂ w;({+/,⌊/50↕⍵}∂ t)≡{+/,⌊/1×50↕⍵}∂ t;({+/,⌈/3↕⍵}∂ t)≡{+/,⌈/1×3↕⍵}∂ t]   ⍝ $t
 
 ⍝ — With an edge mode in an options record, every windowed axis is centred, and its edges read by that mode
 ["size":3 "edge":"wrap"]↕1 2 3 4   ⍝ [4 1 2⋄1 2 3⋄2 3 4⋄3 4 1]
@@ -5047,45 +5047,48 @@ v←⍳1000ₓ ⋄ +/v+v   ⍝ 999000ₓ
 ⍝ — Structure keeps float storage, and an empty array takes its prototype's storage
 {(•storage ⍵).kind}¨[⌽⍳3;2 3⍴⍳6;0 3⍴0;0⍴1ₓ]   ⍝ "float64" "float64" "float64" "integer"
 
-⍝ — Fused calls on a large array, across runs and parentheses, where one call joins two fused groups, across assignments, through a shared intermediate, through a long iteration, and through both tines of a fork, give the result that each row gives, and their fold gives the fold of that result. `≡` compares exactly. The last bits of 32-bit floats, and of two folds of one array, can differ between routes, so `near` compares those within a tolerance
-•prefs ["seed":7] ⋄ x←¿1000000⍴0
-x.[[0 1 2 3]]←[∞ ¯∞ $n 0]
-m←[1000 1000]⍴x
-n←⌽m
-s←32•float m
-y←4↓x
-f←{0⌈1⌊0.5+1.2×⍵-0.5}
+⍝ — Fused calls across runs and parentheses, where one call joins two fused groups, across assignments, through a shared intermediate and through a long iteration, give the exact result. Under fusion's small sizes every call here fuses. The items are odd multiples of 1/32, so every result is exact. `t` sums a result scaled to integers and weighted by position, which a wrong or misplaced item changes. The last line reads ∞, ¯∞ and NaN through fused groups
+key←997|(7×i×i)+3×i←⍳256ₓ ⋄ y←(1+2×16|⍋key)÷32 ⋄ x←(4↑y),y
+m←16 16⍴x ⋄ n←⌽m ⋄ s←32•float m
+t←{v←4096×64•float,⍵ ⋄ +/(1ₓ+⍳≢v)×⌊ₓv}
+f←{0⌈1⌊0.5+1.25×⍵-0.5}
 g←{⍺×1-0.5×⍵}
-h←{0ₛ⌈1ₛ⌊0.5ₛ+1.2ₛ×⍵-0.5ₛ}
-k←{0⌈ 1⌊ 0.5+ 1.2× ⍵-0.5}
-p←{((⍵-0.5)×1.2)⌈0}
+h←{0ₛ⌈1ₛ⌊0.5ₛ+1.25ₛ×⍵-0.5ₛ}
+k←{0⌈ 1⌊ 0.5+ 1.25× ⍵-0.5}
+p←{((⍵-0.5)×1.25)⌈0}
 q←{(⍵-0.5)×⍵}
 j←{(⍵-0.5)×⍵+0.5}
-u←{(⍵-0.5)×(⍵+0.5)×⍵×2}
 r←{(⍵>0.5)+⍵×2}
 w←{(⍺-0.5ₛ)×⍵+0.5}
 c←{(⍵×2)<⍵+0.5}
 d←{a←⍵-0.5 ⋄ a×a+1}
 e←{t←⍵×0.5 ⋄ t×1-t}
 v←{b←⍵ ⋄ a←b+1 ⋄ b←0 ⋄ a}
-near←{((⍺≠⍺)≡⍵≠⍵)∧0ₓ=+/,(|⍺-⍵)>1e¯5×1⌈|⍺}
-[(f m)≡ f⍤1 m;(m g n)≡ m g⍤1 n;(0.5<m)≡ {0.5<⍵}⍤1 m;(h s) near h⍤1 s;(k m)≡ k⍤1 m;(p m)≡ p⍤1 m;(q m)≡ q⍤1 m]
-[(+/0.5<m)≡{+/⍵}0.5<m (+⌿0.5<m)≡{+⌿⍵}0.5<m (∨/m>0.999)≡{∨/⍵}m>0.999 (+/0⌈1⌊0.5+1.2×m-0.5)≡{+/⍵}0⌈1⌊0.5+1.2×m-0.5 (⌈⌿m-0.5)≡{⌈⌿⍵}m-0.5 (+/0.5ₛ<s)≡{+/⍵}0.5ₛ<s (+/y×2)≡{+/⍵}y×2 ((+⌿s×2) near {+⌿⍵}s×2)]
-[(j m)≡ j⍤1 m;(u m)≡ u⍤1 m;(r m)≡ r⍤1 m;(s w m)≡ s w⍤1 m;(+/(m-0.5)×m+0.5)≡{+/⍵}(m-0.5)×m+0.5;(c m)≡ c⍤1 m;(+/(m×2)<m+0.5)≡{+/⍵}(m×2)<m+0.5]
-[(d m)≡ d⍤1 m;(e m)≡ e⍤1 m;(v m)≡ v⍤1 m;({⍵+0.5}⍣100 m)≡({⍵+0.5}⍣100⍤1)m]
-[((⊢÷+/) 0.5×y)≡{⍵÷+/⍵}0.5×y;((⊢-+/) 0.5×y)≡{⍵-+/⍵}0.5×y;((⌈/-+/) 0.5×y)≡{(⌈/⍵)-+/⍵}0.5×y;((+/-+/) 0.5×y) near {(+/⍵)-+/⍵}0.5×y;((+/) near (+/)) 0.5×y]
+[t f m;t m g n;t h s;t k m;t p m;t q m]
+[t j m;t r m;t s w m;t c m]
+[t d m;t e m;t v m;t {⍵+0.5}⍣100 m]
+sp←∞ ¯∞ $n 0.25 ⋄ [j sp;r sp;c sp]
 ⍝ =>
-$t $t $t $t $t $t $t
-$t $t $t $t $t $t $t $t
-$t $t $t $t $t $t $t
-$t $t $t $t
-$t $t $t $t $t
+[69625984 52478248 69625984 69625984 21641760 11645312]ₓ
+[12677504 208482304 12677504 65130496]ₓ
+[12677504 23126944 204177408 6806536192]ₓ
+(∞ ∞ $n ¯0.1875⋄∞ ¯∞ $n 0.5⋄$f $f $f $t)
+
+⍝ — Folds of fused calls, and both tines of a fork that fold one pending array, give the exact totals. Under fusion's small sizes every call here fuses. The items are odd multiples of 1/32, and the items of `y` sum to 128, so every fold is exact in any order. `t` sums a result scaled to integers and weighted by position
+key←997|(7×i×i)+3×i←⍳256ₓ ⋄ y←(1+2×16|⍋key)÷32 ⋄ x←(4↑y),y
+m←16 16⍴x ⋄ s←32•float m
+t←{v←4096×64•float,⍵ ⋄ +/(1ₓ+⍳≢v)×⌊ₓv}
+[t +/0.5<m;t +⌿0.5<m;t ∨/m>0.95;t +/0⌈1⌊0.5+1.25×m-0.5;t ⌈⌿m-0.5;t +/0.5ₛ<s;t +/y×2;t +⌿s×2;t +/(m-0.5)×m+0.5]
+[t (⊢÷+/) 0.5×y;t (⌈/-+/) 0.5×y;t (+/-+/) 0.5×y]
+⍝ =>
+[4608000 4272128 446464 4600800 252160 4608000 1048576 8830976 836000]ₓ
+[541400 ¯260160 0]ₓ
 
 ⍝ — A fold leaves its program in a pending array, so a fork's other tine computes the array's items again. Each tine's total, and two separate folds of one expression, agree within the default tolerance
 •prefs ["seed":7] ⋄ y←¿1000000⍴0 ⋄ [(+/÷+/) 0.5×y ; (+/÷+/) 0.5×y ; (+/0.5×y)÷+/0.5×y]   ⍝ 1 1 1
 
 ⍝ — Under dynamic kinds, ⌊ and ⌈ keep an exact number exact beside an infinity, and give their right argument beside NaN, as a float. On a large array they don't fuse beside an exact number or a comparison, because a fused group reads them as floats
-x←¿1000000⍴0 ⋄ x.[[0 1 2 3]]←[∞ ¯∞ $n 0] ⋄ [4↑x⌊0ₓ ⋄ 4↑x⌈0ₓ ⋄ 4↑x⌊x>0 ⋄ 4↑x⌈$t]
+x←¿160000⍴0 ⋄ x.[[0 1 2 3]]←[∞ ¯∞ $n 0] ⋄ [4↑x⌊0ₓ ⋄ 4↑x⌈0ₓ ⋄ 4↑x⌊x>0 ⋄ 4↑x⌈$t]
 [0ₓ ¯∞ 0 0⋄∞ 0ₓ 0 0⋄1ₓ ¯∞ 0 0⋄∞ 1ₓ 1 1]
 
 ⍝ max-min-nan — Beside NaN, ⌈ and ⌊ give NaN or the other argument, which can vary by platform. A fold, scan, window, product, Key fold or repeated write gives NaN or the greatest or least of the items that aren't NaN, and never another number. `ok` takes a result and that result with each NaN left out. The items cover dyadic calls in either order, short and long folds and scans, a NaN at each place in a scan's group of four among rising items, columns, Key, seeded folds and scans, windows, rows, products, exact and mixed numbers, a place written more than once, and the long fold split into pieces that once gave 671743.5
@@ -5093,12 +5096,12 @@ ok←{∧/,(⍺≠⍺)∨⍺=⍵} ⋄ m←64 64⍴0.5+⍳4096 ⋄ mx←m ⋄ mn�
 $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t
 
 ⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position
-x←1.5+¿1000000⍴0 ⋄ •prefs ["fusion":$t] ⋄ r←⍴⍋x ⋄ •prefs ["fusion":$f] ⋄ r
-[1000000]ₓ
-⍝ ⎕: fusion ends at ⍋ (<input>:1:46)
+x←1.5+¿160000⍴0 ⋄ •prefs ["fusion":$t] ⋄ r←⍴⍋x ⋄ •prefs ["fusion":$f] ⋄ r
+[160000]ₓ
+⍝ ⎕: fusion ends at ⍋ (<input>:1:45)
 
 ⍝ — A structural glyph on a large array gives a pending copy, which later calls and folds read through, with a fill that no call computes
-v←1.0×¿1000000⍴1000 ⋄ mm←1000000 2⍴v ⋄ iv←¿1000000⍴100 ⋄ cv←1000000⍴"abc" ⋄ s←{s←⍵+1 ⋄ (2×⌽s)+s} ⋄ [(2×⌽v+1)≡⌽2×v+1; (2×1⌽v+1)≡1⌽2×v+1; (2×(10↓v)+1)≡10↓2×v+1; (2×⌽(v×2)+1)≡⌽2×(v×2)+1; (s v)≡(2×⌽v+1)+v+1; (2×1⌽⌽v+1)≡1⌽⌽2×v+1; ((⌽v)+mm)≡⌽⍠0 v+⌽⍠0 mm; (¯5↑2×1000005↑v+1)≡5⍴0; (+/⌽v+1)=+/v+1; (+/(⌽v)×v)=+/v×⌽v; (+/,3↕v)=+/(¯2↓v)+(1↓¯1↓v)+2↓v; ((⌽iv)₀=iv₋₁)∧(⌽cv)₀=cv₋₁; ({+/⌽v×⍵}∂1)=+/v]
+v←1.0×¿160000⍴1000 ⋄ mm←160000 2⍴v ⋄ iv←¿160000⍴100 ⋄ cv←160000⍴"abc" ⋄ s←{s←⍵+1 ⋄ (2×⌽s)+s} ⋄ [(2×⌽v+1)≡⌽2×v+1; (2×1⌽v+1)≡1⌽2×v+1; (2×(10↓v)+1)≡10↓2×v+1; (2×⌽(v×2)+1)≡⌽2×(v×2)+1; (s v)≡(2×⌽v+1)+v+1; (2×1⌽⌽v+1)≡1⌽⌽2×v+1; ((⌽v)+mm)≡⌽⍠0 v+⌽⍠0 mm; (¯5↑2×160005↑v+1)≡5⍴0; (+/⌽v+1)=+/v+1; (+/(⌽v)×v)=+/v×⌽v; (+/,3↕v)=+/(¯2↓v)+(1↓¯1↓v)+2↓v; ((⌽iv)₀=iv₋₁)∧(⌽cv)₀=cv₋₁; ({+/⌽v×⍵}∂1)=+/v]
 $t $t $t $t $t $t $t $t $t $t $t $t $t
 
 ⍝ — Structural reads of a pending matrix copy compose with it on both axes, and read what reading a stored copy reads
@@ -5109,7 +5112,7 @@ $t $t $t $t $t
 ≢+/⍉2 30000 3↑2 0 3⍴0   ⍝ 3ₓ
 
 ⍝ — A chain of pending calls that reads a fresh array with each call computes its earlier calls once it would keep alive more than 8 times its largest array, while a chain that reads one named array again and again keeps it once and stays pending
-N←131072 ⋄ r←{⍵+¿N⍴0}⍣40N⍴0.0 ⋄ x←¿N⍴0 ⋄ s←{⍵+x}⍣40x ⋄ [((•memory r).bytes≤8×8×N) ((•memory s).bytes=8×N) (•storage s).pending]
+N←131072 ⋄ r←{⍵+¿N⍴0}⍣16N⍴0.0 ⋄ x←¿N⍴0 ⋄ s←{⍵+x}⍣16x ⋄ [((•memory r).bytes≤8×8×N) ((•memory s).bytes=8×N) (•storage s).pending]
 $t $t $t
 
 ⍝ fusion:plan-cache — Forcing plans each structure of program once and replays that plan on later forces' data. Each call gives its own result: the same program on new data, new positions through a copy, as strides and as a table, a new seed, and a new constant where a constant chooses the kernel
@@ -5169,7 +5172,7 @@ x←¿300000⍴0 ⋄ e←•explain "~(x>0.5)∧x<0.7" ⋄ [e.fused.glyphs ; e.v
 [["<>∧~"] $t "bool"]
 
 ⍝ fusion:labelled — A call on arrays with keys or axis names joins a group, as a call on plain arrays does. The group reads each array through the map that agreement gives, a missing key read as a fill, and the result keeps the agreement's keys and names
-d←¿300000 2⍴0 ⋄ k←"a" "b":⍠1 d ⋄ q←"a" "c":⍠1 d ⋄ n←["row":300000 "col":2]⍴d ⋄ e←•explain "(k+q)×2" ⋄ f←•explain "+⌿n×n" ⋄ r←e.value ⋄ [e.fused.glyphs ; f.fused.glyphs ; ⍳⍠1 r ; ([: "c"]⌷r)≡2×[: 1]⌷d ; ([: "b"]⌷r)≡2×[: 1]⌷d ; (⍴f.value)≡["col":2] ; f.value≡["col":2]⍴+⌿d×d]
+d←¿80000 2⍴0 ⋄ k←"a" "b":⍠1 d ⋄ q←"a" "c":⍠1 d ⋄ n←["row":80000 "col":2]⍴d ⋄ e←•explain "(k+q)×2" ⋄ f←•explain "+⌿n×n" ⋄ r←e.value ⋄ [e.fused.glyphs ; f.fused.glyphs ; ⍳⍠1 r ; ([: "c"]⌷r)≡2×[: 1]⌷d ; ([: "b"]⌷r)≡2×[: 1]⌷d ; (⍴f.value)≡["col":2] ; f.value≡["col":2]⍴+⌿d×d]
 [["+×"] ["×+⌿"] ["a" "b" "c"] $t $t $t $t]
 
 ⍝ fusion:contraction — A `+` fold along a named axis of a pending `×`, whose operands read their arrays through affine maps, runs as one product: `•explain` lists it as the combination `+.×`, and no group computes the grid of products. Axes that both operands read are batch axes, and a reversed index reads its rows through a negative stride. A fold along several adjacent axes contracts them all as one product
@@ -5215,7 +5218,7 @@ y←1.5+¿200000⍴0 ⋄ z←y ⋄ _←[≢y ≢⍴z] ⋄ (•storage y).pending
 
 ⍝ — Ordinary kernels and fused calls read pending copies at both float widths without forcing them; a dense reader fills their cache
 check←{
-  v←⍵•float⍳262144
+  v←⍵•float⍳131072
   r←⌽v ⋄ z←⌊r
   reversed←(•storage r).pending∧z≡⌽⌊v
   ordinary←0ₓ=≢(•explain "⌊⌽v").fused.glyphs
@@ -5223,7 +5226,7 @@ check←{
   roots←(•storage r).pending∧z≡⌽√v
   z←2○r ⋄ deferred←(•storage z).pending
   fused←deferred∧(•storage r).pending∧z≡⌽2○v
-  m←512 512⍴v ⋄ r←⊖m ⋄ z←⌊r
+  m←256 512⍴v ⋄ r←⊖m ⋄ z←⌊r
   rows←(•storage r).pending∧z≡⊖⌊m
   q←⌽r ⋄ z←⌊q
   composed←(•storage r).pending∧(•storage q).pending∧z≡⌽⊖⌊m
@@ -7101,19 +7104,19 @@ j←[2 2 2]⍴(2*40)ₓ ⋄ j+.×⍤2 j   ⍝ [2 2 2]⍴(2*81)ₓ
 {⍵⌹2 2⍴2 0 0 2}⍤2⁝2 2 2⍴2 4 6 8 2 2 2 2   ⍝ [[1 2⋄3 4]⋄[1 1⋄1 1]]
 
 ⍝ — A batched run stops where one cell's share of a large constant alone would hold too many items [batched]
-x←2000000⍴0.5
-(•explain "{+/x×⍵}¨1 2 3 4 5 6 7 8 9 10").fallbacks.reason   ⍝ ["too many items"]
+x←1100000⍴0.5
+(•explain "{+/x×⍵}¨1 2 3 4 5").fallbacks.reason   ⍝ ["too many items"]
 
 ⍝ — A batched run whose constants, repeated for every cell, would hold too many items runs on chunks of cells instead [batched]
-x←⍳16384ₓ ⋄ c←⍳2048ₓ
+x←⍳4096ₓ ⋄ c←⍳1024ₓ
 (•explain "{+/(x-⍵)×x-⍵}¨c").fallbacks.reason   ⍝ 0⍴⊂""
 
 ⍝ — Chunks of cells give what the run over cells gives, cell by cell
-x←⍳16384ₓ ⋄ c←⍳2048ₓ ⋄ f←{+/(x-⍵)×x-⍵} ⋄ a←f¨c
+x←⍳4096ₓ ⋄ c←⍳1024ₓ ⋄ f←{+/(x-⍵)×x-⍵} ⋄ a←f¨c
 •prefs ["batch":$f] ⋄ a≡f¨c   ⍝ $t
 
 ⍝ — A chunk whose later call repeats a larger constant starts the chunks over, with smaller chunks
-x←⍳1024ₓ ⋄ y←⍳4096ₓ ⋄ c←⍳4096ₓ ⋄ f←{(+/y×⍵)++/x-⍵} ⋄ a←f¨c
+x←⍳1024ₓ ⋄ y←⍳2048ₓ ⋄ c←⍳4096ₓ ⋄ f←{(+/y×⍵)++/x-⍵} ⋄ a←f¨c
 •prefs ["batch":$f] ⋄ a≡f¨c   ⍝ $t
 
 ⍝ — Chunks draw the numbers that the run over cells draws
@@ -9687,11 +9690,11 @@ x←1 ⋄ •src "x"
 ⍝ — •time t gives the seconds since t, for each item
 t←•time 0 ⋄ [0≤•time t;⍴•time 2 3⍴t;(•storage •time t).kind]   ⍝ [$t;[2 3]ₓ;"float64"]
 
-⍝ — F •time x gives each function's fastest time per call, in the shape and keys of F
+⍝ — F •time x gives each function's fastest time per call, in the shape and keys of F [unfused]
 T←["sum":+/] •time ⍳10ₓ
-[0≤T.sum;(•storage T).kind;⍴ ([1 1]⍴[+/]) •time ⍳10ₓ;⍴ ⍬ •time 1]
+[0≤T.sum;(•storage T).kind;⍴ ([1 0]⍴[+/]) •time ⍳10ₓ;⍴ ⍬ •time 1]
 ⍝ =>
-[$t "float64" [1 1]ₓ [0]ₓ]
+[$t "float64" [1 0]ₓ [0]ₓ]
 
 ⍝ — The left argument holds functions
 1 2 •time 3

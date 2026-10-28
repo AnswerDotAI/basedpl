@@ -1,15 +1,15 @@
 //! The settings that `•prefs` changes, held once for the whole process. Code on any thread reads them, and a computation reads the settings in force when it runs. `•prefs` writes them, the lexer writes the settings in a source's leading `•prefs` header as it reads them, and `reset` restores the defaults, as `]clear` does. Nothing keeps a setting to put back later. Rustymath holds the thread count, the one setting that it reads itself (`rustymath::parallel::set_threads`).
 //!
 //! Each setting that calls and scalar operations read is an atomic, read with a relaxed load. A read of several settings can see some of them from before a concurrent write and some from after it. The display settings, which only display reads, sit behind a lock.
-use crate::{display, fusion::Sizes, number::{Kinds, Numeric}};
+pub use crate::fusion::Sizes;
+use crate::{display, number::{Kinds, Numeric}};
 use rustymath::buffer::{FloatWidth, Width};
-use std::sync::{LazyLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU8, Ordering::Relaxed}};
+use std::sync::{LazyLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering::Relaxed}};
 
-/// The defaults of the flags, which their statics start from and `reset` restores: whether hanzi spell glyphs, whether `batch` is on, whether calls report the pending arrays they compute, whether fusion takes its small sizes, and whether each program is checked before it runs.
+/// The defaults of the flags, which their statics start from and `reset` restores: whether hanzi spell glyphs, whether `batch` is on, whether calls report the pending arrays they compute, and whether each program is checked before it runs.
 const HANZI: bool = false;
 const BATCH: bool = true;
 const REPORTS: bool = false;
-const SMALL: bool = false;
 const VERIFY: bool = false;
 
 static MATHISH: AtomicBool = AtomicBool::new(Numeric::DEFAULT.mathish);
@@ -20,7 +20,10 @@ static INT32: AtomicBool = AtomicBool::new(matches!(Numeric::DEFAULT.int, Width:
 static HANZI_ALIASES: AtomicBool = AtomicBool::new(HANZI);
 static BATCHING: AtomicBool = AtomicBool::new(BATCH);
 static REPORTS_FUSION: AtomicBool = AtomicBool::new(REPORTS);
-static SMALL_SIZES: AtomicBool = AtomicBool::new(SMALL);
+/// Fusion's sizes, one atomic for each field of `Sizes` (`sizes`).
+static MIN_ITEMS: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.min_items);
+static BLOCK: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.block);
+static RUN: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.run);
 static VERIFIES: AtomicBool = AtomicBool::new(VERIFY);
 /// When block stages compile their parts, as `Compiles` numbers its variants, or `UNSET` for the default (`compiles`).
 static COMPILES: AtomicU8 = AtomicU8::new(UNSET);
@@ -69,9 +72,16 @@ pub(crate) fn set_batch(on: bool) { BATCHING.store(on, Relaxed) }
 /// Whether hanzi spell glyphs, as a leading `•prefs ["hanzi_aliases":$t]` declares.
 pub fn hanzi_aliases() -> bool { HANZI_ALIASES.load(Relaxed) }
 pub(crate) fn set_hanzi_aliases(on: bool) { HANZI_ALIASES.store(on, Relaxed) }
-/// The sizes that decide which calls wait and how a block stage splits its items: `Sizes::SMALL` while the reference harness asks for them, and the defaults otherwise.
-pub(crate) fn sizes() -> Sizes { if SMALL_SIZES.load(Relaxed) { Sizes::SMALL } else { Sizes::DEFAULT } }
-pub(crate) fn set_small_sizes(on: bool) { SMALL_SIZES.store(on, Relaxed) }
+/// Fusion's sizes in force, as `set_sizes` set them.
+pub(crate) fn sizes() -> Sizes { Sizes { min_items: MIN_ITEMS.load(Relaxed), block: BLOCK.load(Relaxed), run: RUN.load(Relaxed) } }
+/// Sets the sizes that decide which calls fusion defers and how a block stage splits its items, for the whole process. `reset` restores `Sizes::DEFAULT`.
+pub fn set_sizes(sizes: Sizes) {
+    MIN_ITEMS.store(sizes.min_items, Relaxed);
+    BLOCK.store(sizes.block, Relaxed);
+    RUN.store(sizes.run, Relaxed);
+}
+/// `set_sizes` with `Sizes::SMALL`, or with `Sizes::DEFAULT` where `on` is false. The reference harness runs each case under the small sizes too.
+pub fn set_small_sizes(on: bool) { set_sizes(if on { Sizes::SMALL } else { Sizes::DEFAULT }) }
 /// Whether each program is checked before it runs (`program::verify::check`). The reference harness turns it on for every case and page.
 pub(crate) fn verifies() -> bool { VERIFIES.load(Relaxed) }
 pub(crate) fn set_verifies(on: bool) { VERIFIES.store(on, Relaxed) }
@@ -101,7 +111,8 @@ pub use crate::program::blocks::compiled_runs;
 pub fn reset() {
     set_numeric(Numeric::DEFAULT);
     set_float_set(false);
-    for (flag, default) in [(&HANZI_ALIASES, HANZI), (&BATCHING, BATCH), (&REPORTS_FUSION, REPORTS), (&SMALL_SIZES, SMALL), (&VERIFIES, VERIFY)] { flag.store(default, Relaxed); }
+    for (flag, default) in [(&HANZI_ALIASES, HANZI), (&BATCHING, BATCH), (&REPORTS_FUSION, REPORTS), (&VERIFIES, VERIFY)] { flag.store(default, Relaxed); }
+    set_sizes(Sizes::DEFAULT);
     COMPILES.store(UNSET, Relaxed);
     let mut display = DISPLAY.write().unwrap_or_else(PoisonError::into_inner);
     display[0] = display[1];

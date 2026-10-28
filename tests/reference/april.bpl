@@ -5002,7 +5002,7 @@ dec'f'   ⍝ 15ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:128 —
 [nicediv:]←•load "lib/numeric.bpl"
-{∧/⍵∧.= ⍵ {+/ ⍺ nicediv ⍵}⊗ ⍵} ↦50ₓ   ⍝ $t
+{∧/⍵∧.= ⍵ {+/ ⍺ nicediv ⍵}⊗ ⍵} ↦20ₓ   ⍝ $t
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:129 —
 [osc:]←•load "lib/numeric.bpl"

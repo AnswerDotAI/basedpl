@@ -150,7 +150,7 @@ def test_fetch():
             body = self.rfile.read(int(self.headers['Content-Length']))
             self.reply(201, body + b' ' + self.headers['X-Sent'].encode())
     server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
     url = f'http://127.0.0.1:{server.server_address[1]}'
     try:
         r = bpl.fetch(url + '/old').py

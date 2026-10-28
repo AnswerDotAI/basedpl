@@ -80,6 +80,10 @@ fn reference_format_and_comparison() {
 const SHARD: &str = "BASEDPL_SHARD";
 /// The start of each line on which a share prints one of its failures, as JSON.
 const FAILURE: &str = "reference failure: ";
+/// The variable that makes `reference_cases` print its slowest cases: how many to print, each with the seconds that all its runs took together.
+const TIMES: &str = "BASEDPL_TIMES";
+/// The start of each line on which a share prints how long one case took: its seconds, then its file and line.
+const TIME: &str = "reference time: ";
 
 /// The cases that `BASEDPL_SOURCE` and `BASEDPL_CASE` select, in `SOURCES`' order, each with its file's name as `file`. Panics on an id that two cases share.
 fn chosen() -> Vec<reference::File> {
@@ -98,7 +102,7 @@ fn chosen() -> Vec<reference::File> {
     chosen
 }
 
-/// Every case, run once for each of `reference::check`'s runs: with the `batch` pref off, then on, under which maps first try one call of their operand on batches of their cells, then on with fusion's small sizes, under which every fusible call waits, a block stage splits even small arrays into blocks and every stage compiles its parts, then the same with no compiled parts where that run used one, then on with the code as the body of a dfn called twice. Each run but the last must meet the case's expectation, with values held in the same kinds of storage. In the last, the dfn's second call, which runs the statements its first call recorded, must give the first call's result. A process evaluates one case at a time, so the test runs a child process of itself for each core. Each child checks every n-th case (`SHARD`) and prints its failures for the parent (`FAILURE`).
+/// Every case, run once for each of `reference::check`'s runs: with the `batch` pref off, then on, under which maps first try one call of their operand on batches of their cells, then on with fusion's small sizes, under which every fusible call waits, a block stage splits even small arrays into blocks and every stage compiles its parts, then the same with no compiled parts where that run used one, then on with the code as the body of a dfn called twice. Each run but the last must meet the case's expectation, with values held in the same kinds of storage. In the last, the dfn's second call, which runs the statements its first call recorded, must give the first call's result. A process evaluates one case at a time, so the test runs a child process of itself for each core. Each child checks every n-th case (`SHARD`). It prints its failures (`FAILURE`) and each case's time (`TIME`) for the parent.
 #[test]
 fn reference_cases() {
     let chosen = chosen();
@@ -106,8 +110,11 @@ fn reference_cases() {
         let (k, n): (usize, usize) = shard.split_once(' ').and_then(|(k, n)| Some((k.parse().ok()?, n.parse().ok()?))).expect("BASEDPL_SHARD holds a share and a count");
         let mut offset = 0;
         for file in &chosen {
-            let cases = file.cases.iter().enumerate().filter(|(i, _)| (offset+i)%n == k).map(|(_, c)| c);
-            for failure in reference::failures(cases, &file.setup, &InterruptHandle::default()) { println!("{FAILURE}{failure}"); }
+            for (_, case) in file.cases.iter().enumerate().filter(|(i, _)| (offset+i)%n == k) {
+                let start = std::time::Instant::now();
+                for failure in reference::failures([case], &file.setup, &InterruptHandle::default()) { println!("{FAILURE}{failure}"); }
+                println!("{TIME}{} {}.bpl:{}", start.elapsed().as_secs_f64(), case["file"].as_str().unwrap(), case["line"]);
+            }
             offset += file.cases.len();
         }
         return;
@@ -124,12 +131,18 @@ fn reference_cases() {
     let children: Vec<_> = (0..shards).map(|k| std::process::Command::new(&exe)
         .args(["reference_cases", "--exact", "--nocapture"]).env(SHARD, format!("{k} {shards}"))
         .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap()).collect();
-    let mut failures: Vec<Value> = children.into_iter().enumerate().flat_map(|(k, child)| {
+    let lines: Vec<String> = children.into_iter().enumerate().flat_map(|(k, child)| {
         let output = child.wait_with_output().unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         assert!(output.status.success(), "share {k}/{shards} of the reference cases stopped:\n{stdout}{}", String::from_utf8_lossy(&output.stderr));
-        stdout.lines().filter_map(|line| line.strip_prefix(FAILURE)).map(|line| serde_json::from_str(line).unwrap()).collect::<Vec<Value>>()
+        stdout.lines().map(String::from).collect::<Vec<_>>()
     }).collect();
+    if let Ok(slowest) = std::env::var(TIMES) {
+        let mut times: Vec<(f64, &str)> = lines.iter().filter_map(|line| line.strip_prefix(TIME)?.split_once(' ')).map(|(s, case)| (s.parse().unwrap(), case)).collect();
+        times.sort_by(|a, b| b.0.total_cmp(&a.0));
+        for (seconds, case) in times.iter().take(slowest.parse().expect("BASEDPL_TIMES holds a count")) { eprintln!("{seconds:6.3} s  {case}"); }
+    }
+    let mut failures: Vec<Value> = lines.iter().filter_map(|line| line.strip_prefix(FAILURE)).map(|line| serde_json::from_str(line).unwrap()).collect();
     failures.sort_by(|a, b| (a["file"].as_str(), a["line"].as_u64()).cmp(&(b["file"].as_str(), b["line"].as_u64())));
     let failures: Vec<String> = failures.iter().map(|f| {
         format!(

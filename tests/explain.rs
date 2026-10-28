@@ -1,5 +1,5 @@
 //! `•explain` and `•memory`, which report what a run did, what the thread that runs a session holds, and what a value keeps alive.
-use basedpl::{timing, InterruptHandle, Session};
+use basedpl::{settings::{set_sizes, Sizes}, timing, InterruptHandle, Session};
 
 /// Checks that `code` gives the value that `expected` gives, both run in `session`.
 fn check(session: &Session, code: &str, expected: &str) {
@@ -86,9 +86,12 @@ fn explain_and_memory() -> Vec<timing::Capture> {
     }
     // A fused group counts the runs that a long cycle splits its blocks into, and the items it copies out of inputs. A pending input that a name also holds is computed by the group as one of its outputs, with no `stored` row.
     check(&session, r#"big←¿[256 5000]⍴0 ⋄ f←(•explain "q←2×big(+⍤1)¿5000⍴0 ⋄ q≡q").fused ⋄ ∧/f.runs>f.blocks"#, "$t");
-    check(&session, r#"sv←¿1048576⍴0 ⋄ sq←[1024 1024]⍴sv ⋄ (•explain "q←2×1+⍉sq ⋄ q≡q").fused.copied"#, "[1048576]ₓ");
+    // With every call waiting, small arrays take the routes that these checks count. The reversed copy needs a run that compiles on its first run (`COMPILES_AT`).
+    set_sizes(Sizes { min_items: 1, ..Sizes::DEFAULT });
+    check(&session, r#"sv←¿65536⍴0 ⋄ sq←[256 256]⍴sv ⋄ (•explain "q←2×1+⍉sq ⋄ q≡q").fused.copied"#, "[65536]ₓ");
     check(&session, r#"sv←¿4194304⍴0 ⋄ (•explain "q←2×⌽sv+1 ⋄ q≡q").fused.copied"#, "[0]ₓ");
-    check(&session, r#"x←¿1000000⍴0 ⋄ e←•explain "s←x-0.25 ⋄ q←s×1-s ⋄ q≡q" ⋄ (0=≢e.stored.reason)∧e.fused.glyphs≡["--×"]"#, "$t");
+    check(&session, r#"x←¿1000⍴0 ⋄ e←•explain "s←x-0.25 ⋄ q←s×1-s ⋄ q≡q" ⋄ (0=≢e.stored.reason)∧e.fused.glyphs≡["--×"]"#, "$t");
+    set_sizes(Sizes::DEFAULT);
     // A faster route that code considers and doesn't take is a decline, with its reason: a fused fold of a copy that no call moves under, and an idiom whose arguments don't suit it.
     for (code, route, reason) in [
         ("+/⌽sv", "fused fold", "a copy that no call moves under"),
@@ -100,12 +103,14 @@ fn explain_and_memory() -> Vec<timing::Capture> {
     }
     // `•memory` counts the pending arrays this thread made, including one dropped on another thread. `bytes` counts what a value keeps alive, a shared base once, and takes active values under `∂`.
     let held = Session::new();
-    check(&held, "w←⍳262144 ⋄ n←(•memory 0).pending ⋄ p←⌽w ⋄ (•memory 0).pending-n", "1ₓ");
+    set_sizes(Sizes { min_items: 1, ..Sizes::DEFAULT });
+    check(&held, "w←⍳1000 ⋄ n←(•memory 0).pending ⋄ p←⌽w ⋄ (•memory 0).pending-n", "1ₓ");
     check(&held, "p←0 ⋄ (•memory 0).pending-n", "0ₓ");
     let copy = held.eval("⌽w").value.expect("a pending copy");
     check(&held, "(•memory 0).pending-n", "1ₓ");
     std::thread::spawn(move || drop(copy)).join().expect("another thread drops the copy");
     check(&held, "(•memory 0).pending-n", "0ₓ");
+    set_sizes(Sizes::DEFAULT);
     check(&held, "v←⍳1000 ⋄ r←2 500⍴v ⋄ (•storage r).view∧(•memory r).bytes=(•memory v).bytes", "$t");
     check(&held, "((•memory [r v]).bytes<2×(•memory v).bytes)∧(•memory ⌽w).bytes=(•memory w).bytes", "$t");
     check(&held, "b←0 ⋄ g←{b+←(•memory ⍵).bytes ⋄ +/⍵×⍵}∂ 1 2 3 ⋄ b>0", "$t");

@@ -267,7 +267,7 @@ bt←"T01"ratsum
 3 4 5 2 8 6 1 7 9
 ]ₓ]
 
-⍝ — sudoku guesses and backtracks to solve Arto Inkala's 2010 puzzle, whose solution Peter Norvig's sudoku essay publishes
+⍝ — sudoku guesses and backtracks to solve Arto Inkala's 2010 puzzle with its bottom-right cell given, whose solution Peter Norvig's sudoku essay publishes
 [sudoku:]←•load "lib/dyalog.bpl" ⋄ sudoku [
 0 0 5 3 0 0 0 0 0
 8 0 0 0 0 0 0 2 0
@@ -277,7 +277,7 @@ bt←"T01"ratsum
 0 0 3 2 0 0 0 8 0
 0 6 0 5 0 0 0 0 9
 0 0 4 0 0 0 0 3 0
-0 0 0 0 0 9 7 0 0
+0 0 0 0 0 9 7 0 4
 ]
 ⍝ =>
 [[

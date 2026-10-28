@@ -374,22 +374,26 @@ def instructions(
     runs=3, # Processes at each value of `N`, of which the lowest count is used
     bpl:Annotated[Path, {'nargs':'+'}]=None # A native `bpl` to count, such as a copy saved before a change, or a list of builds to compare, where `None` is the installed one; None: the installed one
 ):
-    "The instructions that each case retires per unit of `N`, on one thread. A case that doesn't name `N` runs once per step inside `{case ⋄ ⍵}⍣N 0`. That dfn's own call adds about 1,900 instructions per step. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost. Given several builds, it gives `ByBuild`, counting each case at the same values of `N` on every build. Each build stays pinned for the whole count (`pinned_each`)."
+    "The instructions that each case retires per unit of `N`, on one thread. A case that doesn't name `N` runs once per step inside `{case ⋄ ⍵}⍣N 0`. That dfn's own call adds about 1,900 instructions per step. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent, and its processes run at once, one for each core. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost. Given several builds, it gives `ByBuild`, counting each case at the same values of `N` on every build. Each build stays pinned for the whole count (`pinned_each`)."
     cases = listify(cases)
     builds = listify(bpl) or [None]
-    def count(code, n, build, runs=runs): return min(_retired(_program(code, n, setup), build) for _ in range(runs))
-    def steps(code, build):
-        if counts: return counts
-        rough = max(1, (count(code, 1_000, build, 1) - count(code, 0, build, 1)) / 1_000)
-        # Each value is at least one more than the last, for a case that retires more than `_SPAN` instructions a step, whose warm-up is then a small share of a step.
-        return list(accumulate((round((_SETTLE + i*_SPAN)/rough) for i in range(4)), lambda last, n: max(n, last + 1)))
-    def per_step(code, ns, build):
-        cs = [count(code, n, build) for n in ns]
-        return statistics.median((c1-c0)/(n1-n0) for n0, n1, c0, c1 in zip(ns, ns[1:], cs, cs[1:]))
-    stepped = [(case, _stepped(case, force)) for case in cases]
-    with pinned_each(builds) as paths:
-        ns = [steps(code, paths[0]) for _, code in stepped]
-        each = [Instructions((case, per_step(code, n, build)) for (case, code), n in zip(stepped, ns)) for build in paths]
+    stepped = [_stepped(case, force) for case in cases]
+    def slope(ns, cs): return statistics.median((c1-c0)/(n1-n0) for n0, n1, c0, c1 in zip(ns, ns[1:], cs, cs[1:]))
+    with pinned_each(builds) as paths, ThreadPoolExecutor(os.cpu_count()) as pool:
+        def lowest(jobs, runs=runs):
+            "The lowest count of `runs` processes for each `(code, n, build)` in `jobs`, from processes that run at once."
+            got = list(pool.map(lambda job: _retired(_program(job[0], job[1], setup), job[2]), [job for job in jobs for _ in range(runs)]))
+            return [min(got[i:i+runs]) for i in range(0, len(got), runs)]
+        if counts: ns = [counts]*len(cases)
+        else:
+            rough = lowest([(code, n, paths[0]) for code in stepped for n in (1_000, 0)])
+            # Each value is at least one more than the last, for a case that retires more than `_SPAN` instructions a step, whose warm-up is then a small share of a step.
+            ns = [list(accumulate((round((_SETTLE + i*_SPAN)/max(1, (c1-c0)/1_000)) for i in range(4)), lambda last, n: max(n, last + 1)))
+                  for c1, c0 in zip(rough[::2], rough[1::2])]
+        each = []
+        for build in paths:
+            cs = iter(lowest([(code, n, build) for code, steps in zip(stepped, ns) for n in steps]))
+            each.append(Instructions((case, slope(steps, [next(cs) for _ in steps])) for case, steps in zip(cases, ns)))
     return each[0] if len(builds) == 1 else ByBuild(each, builds)
 
 class FunctionCounts(list):

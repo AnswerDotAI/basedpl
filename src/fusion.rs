@@ -27,13 +27,21 @@ pub(crate) const BUFFERED: usize = 3 << 15;
 /// The shortest repeat of an input that splits a block into runs. Within a run, the input reads its one item in place. A shorter repeat copies into a buffer for each block. A cycle shorter than a block never splits it: a block stage repeats its period once, then reads each run from that buffer in place. A longer cycle splits a block into runs.
 const RUN: usize = 256;
 
-/// The sizes that decide which calls wait and how a block stage splits its items: `MIN_ITEMS`, `BLOCK` and `RUN`, or `SMALL` while the reference harness asks for them (`settings::sizes`). A block stage reads them when it runs.
+/// The sizes that decide which calls wait and how a block stage splits its items. `settings::set_sizes` sets them for the whole process, and a block stage reads them when it runs.
 #[derive(Clone, Copy, PartialEq)]
-pub(crate) struct Sizes { min_items: usize, pub(crate) block: usize, pub(crate) run: usize }
+pub struct Sizes {
+    /// The fewest result items of a call that dispatch defers. A call with a smaller result runs at once.
+    pub min_items: usize,
+    /// The items in a block, which a block stage computes step by step while their buffers stay in the cache.
+    pub block: usize,
+    /// The shortest repeat of an input that splits a block into runs, each read in place.
+    pub run: usize,
+}
 impl Sizes {
-    pub(crate) const DEFAULT: Self = Self { min_items: MIN_ITEMS, block: BLOCK, run: RUN };
+    /// `MIN_ITEMS`, `BLOCK` and `RUN`, the sizes that `reset` restores.
+    pub const DEFAULT: Self = Self { min_items: MIN_ITEMS, block: BLOCK, run: RUN };
     /// Sizes under which every fusible call that gives items waits, and a block stage splits its items into blocks of 7 and reads repeats of 3 or more in place. The reference suite runs each case under them too, so that small arrays take the paths that large ones take.
-    pub(crate) const SMALL: Self = Self { min_items: 1, block: 7, run: 3 };
+    pub const SMALL: Self = Self { min_items: 1, block: 7, run: 3 };
 }
 
 /// The most calls that forcing one pending array gathers. Making a call that would pass it forces the pending arrays it reads first, so forcing never gathers more calls than this, or recurses deeper. On the Mac, `{⍵+0.5}⍣200` on 4 million floats cost 104, 96 and 93 copies with limits of 16, 64 and 256. A larger limit gains little, and keeps more inputs alive.
