@@ -8,16 +8,14 @@ Docs: https://answerdotai.github.io/basedpl/magics.html.md"""
 __all__ = ['AplOut', 'display_event', 'BPLMagic', 'create_magic', 'load_ipython_extension', 'create_ipython_config']
 
 # %% ../../nbs/magics.ipynb #fe6dcafd
-import html, json, re, basedpl
-from importlib.resources import files
+import html, re, basedpl
 from fastcore.utils import *
 from . import symbols
 from .ipython import load_ipython_extension as _load_help
 from IPython.core.completer import context_matcher, SimpleCompletion
 from IPython import get_ipython
-from IPython.display import display, Javascript, HTML
+from IPython.display import display, Javascript
 from IPython.paths import get_ipython_dir
-
 
 # %% ../../nbs/magics.ipynb #07eae6b5
 class AplOut(str):
@@ -37,24 +35,13 @@ def display_event(e):
 # %% ../../nbs/magics.ipynb #04f56c87
 class BPLMagic:
     "IPython BPL magics that evaluate in the workspace `basedpl.bpl`."
-    def __init__(self): self._loaded = False
-
-
-# %% ../../nbs/magics.ipynb #940136d6
-@patch
-def _load(self:BPLMagic):
-    if self._loaded: return
-    js = files('basedpl')
-    layout = (files('basedpl')/'layout.json').read_text()
-    display(Javascript(f"{(js/'lb.js').read_text()}({json.dumps(symbols)}, {(js/'input.js').read_text()}, {layout}).page(window.monaco)"))
-    display(HTML(f"<style>{(js/'fonts.css').read_text()}</style>"))
-    self._loaded = True
 
 # %% ../../nbs/magics.ipynb #0b57e64c
 @patch
 def bpl(self:BPLMagic, line, cell=None):
     "Evaluate a line as a native value or display a cell as a BPL session."
-    self._load()
+    display(Javascript(r'''if (window.loadBplInput) window.loadBplInput();
+else import('https://cdn.jsdelivr.net/npm/basedpl/browser/bpl-editor.js').then(m => m.install());'''))
     code = line if cell is None else cell.rstrip()
     show = not (cell is not None and code.endswith(';'))
     if not show: code = code[:-1]

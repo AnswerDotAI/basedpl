@@ -115,7 +115,7 @@ def write_font(font, name, version, web_dest):
     return ttf, woff2
 
 def build():
-    "Write installable fonts and licences to the package source, and webfonts to the docs."
+    "Write installable fonts and licences to the package source, and webfonts to the browser assets and docs."
     web_dest = Path('nbs/fonts')
     web_dest.mkdir(parents=True, exist_ok=True)
     (GENERATED/'fonts').mkdir(parents=True, exist_ok=True)
@@ -124,7 +124,7 @@ def build():
     add_arrows(font)
     thicken_slashes(font)
     add_separator(font)
-    paths = write_font(font, 'SAX2B', '2.002', web_dest)
+    paths = write_font(font, 'SAX2B', '2.002', Path(__file__).with_name('browser'))
     font = TTFont(io.BytesIO(urlread(BQN386_URL + 'BQN386.ttf', decode=False, timeout=30)), recalcTimestamp=False)
     add_separator(font)
     paths += write_font(font, 'BQN386B', '1.001', web_dest)

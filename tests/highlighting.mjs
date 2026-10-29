@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHighlighterCore} from 'shiki/core';
 import {createJavaScriptRegexEngine} from 'shiki/engine/javascript';
-const grammar = JSON.parse(readFileSync(new URL('../python/basedpl/bpl.tmLanguage.json', import.meta.url), 'utf8'));
+import {grammar} from '../python/basedpl/browser/bpl-editor.js';
 const hanzi = JSON.parse(readFileSync(new URL('../python/basedpl/hpl.tmLanguage.json', import.meta.url), 'utf8'));
 const theme = {name: 'test', settings: [
     {scope: 'keyword.operator.monadic', settings: {foreground: 'var(--quarto-hl-op-color)'}},

@@ -23,7 +23,8 @@ const css = getComputedStyle(document.documentElement), color = cls => {
     const value = css.getPropertyValue(`--quarto-hl-${cls}-color`).trim();
     return value === 'inherit' ? color('kw') : value;
 };
-const grammar = JSON.parse(await text('bpl.tmLanguage.json'));
+const bplEditor = await import(new URL('browser/bpl-editor.js', pkg).href);
+const {grammar} = bplEditor;
 const classes = [['comment', 'co'], ['string.quoted.double', 'st'], ['string.quoted.single', 'ch'], ['constant.numeric', 'dv'],
     ['support.function', 'fu'], ['keyword.operator.monadic', 'op'],
     ['keyword.operator.dyadic', 'ex'], ['variable.parameter', 'va'], ['keyword.control', 'kw']];
@@ -103,11 +104,8 @@ export function display(out, data) {
 }
 
 let bar;
-// The language bar from `lb.js`, which needs the glyph rows, `input.js` and the key layout.
-async function addBar(symbols) {
-    const [lb, input, layout] = await Promise.all([script('lb.js'), script('input.js'), text('layout.json')]);
-    lb(symbols, input, JSON.parse(layout)).page(monaco);
-}
+// The same standalone input component used by notebooks and other hosts.
+function addBar() { return bplEditor.install(); }
 
 // Runs BPL in a worker, which holds one session. `run(code)` runs code, and `on` gets each message about it: `output`, then `reply` with
 // the error or `null`. `eval(code)` returns a promise of the code's value, which rejects with the BPL error. `on` also gets `panic` and
@@ -121,7 +119,7 @@ export function interpreter(on) {
         worker = new Worker(new URL(`worker.js?pkg=${encodeURIComponent(pkg)}`, import.meta.url), { type: 'module' });
         worker.onmessage = ({ data }) => {
             if (data.type === 'ready') {
-                bar ??= addBar(data.symbols);
+                bar ??= addBar();
                 ready = true;
                 for (const message of waiting) worker.postMessage(message);
                 return;

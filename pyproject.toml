@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.13,<2.0", "fastws-cli>=0.0.29"]
+requires = ["maturin>=1.13,<2.0", "fastws-cli>=0.0.32"]
 build-backend = "fastws.build_backend"
 
 [project]
@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["fastship>=0.0.11", "fastws-cli>=0.0.29", "maturin>=1.13,<2.0", "pytest", "pytest-timeout", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "pillow", "rustymath>=0.1.49"]
+dev = ["fastship>=0.0.11", "fastws-cli>=0.0.32", "maturin>=1.13,<2.0", "pytest", "pytest-timeout", "numpy", "pandas", "ipython>=9.17.1", "nbdev>=3.3.24", "conkernelclient>=0.0.23", "pillow", "rustymath>=0.1.49"]
 
 [project.scripts]
 basedpl-install = "basedpl.install:main"
@@ -48,6 +48,7 @@ cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "cl
 
 [tool.fastws]
 native-binaries = true
+post-develop-module = "basedpl.editors"
 
 [tool.fastship]
 branch = "main"

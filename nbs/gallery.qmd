@@ -9,6 +9,7 @@ Choose a demo to run it. The **Code** tab holds its BPL, which you can edit and 
 
 ::: {.column-screen-inset-right}
 ```{=html}
+<div id="bpl-toolbar"></div>
 <div id="gallery">
 <nav id="demos" class="nav nav-pills flex-column">
 <a class="nav-link" href="#attractor"></a>

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-const root = new URL('../python/basedpl/', import.meta.url);
+import input from '../python/basedpl/browser/input.js';
+const root = new URL('../python/basedpl/browser/', import.meta.url);
 const layout = JSON.parse(readFileSync(new URL('layout.json', root), 'utf8'));
-const {press, inCode, entry} = eval(readFileSync(new URL('input.js', root), 'utf8'))(
+const {press, inCode, entry} = input(
     [{glyph: '⍝', kind: 'comment', hanzi: ['注', '注']}], layout);
 for (const text of ["''", "'''"]) assert.equal(inCode(text), true);
 for (const marker of ['⍝', '注']) {

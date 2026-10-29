@@ -9,8 +9,8 @@ from html import escape
 from pathlib import Path
 from .assets import GENERATED
 
-LAYOUT = Path(__file__).with_name('layout.json')
-DATA = LAYOUT.with_name('keyboards.json')
+LAYOUT = Path(__file__).with_name('browser')/'layout.json'
+DATA = Path(__file__).with_name('keyboards.json')
 OUTPUT = Path('editors/macos')
 ICON = GENERATED/'macos/BasedPL-us.bundle/Contents/Resources/BasedPL-us.icns'
 SOURCES = {'us': 'US', 'uk': 'British', 'de': 'German', 'fr': 'French', 'es': 'Spanish-ISO'}

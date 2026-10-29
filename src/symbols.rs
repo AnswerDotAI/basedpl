@@ -102,7 +102,7 @@ pub enum Action { Text(String), State(String) }
 /// A dead-key state: what each listed key does next, and the terminator an unlisted key types first.
 pub struct DeadState { pub terminator: String, pub keys: Vec<(char, Action)> }
 
-/// The shared key mapping in `python/basedpl/layout.json`, which the macOS layout and the browser also read. Keys are US characters after Shift. `option` holds unshifted keys typed with Option.
+/// The shared key mapping in `python/basedpl/browser/layout.json`, which the macOS layout and the browser also read. Keys are US characters after Shift. `option` holds unshifted keys typed with Option.
 pub struct KeyLayout {
     pub option: Vec<(char, Action)>, pub alt_aliases: Vec<(char, Action)>, pub states: HashMap<String, DeadState>, pub unshifted: HashMap<char, char>
 }
@@ -120,7 +120,7 @@ pub fn find(keys: &[(char, Action)], key: char) -> Option<&Action> { keys.iter()
 pub fn layout() -> &'static KeyLayout {
     static LAYOUT: OnceLock<KeyLayout> = OnceLock::new();
     LAYOUT.get_or_init(|| {
-        let json: serde_json::Value = serde_json::from_str(include_str!("../python/basedpl/layout.json")).expect("valid key layout");
+        let json: serde_json::Value = serde_json::from_str(include_str!("../python/basedpl/browser/layout.json")).expect("valid key layout");
         let action = |a: &serde_json::Value| match a.as_str() {
             Some(text) => Action::Text(text.into()), None => Action::State(a["state"].as_str().expect("a state name").into())
         };

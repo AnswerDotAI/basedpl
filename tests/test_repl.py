@@ -51,7 +51,7 @@ def test_terminal_symbol_entry_and_exit(tmp_path):
         enter('"£\x1b£"\r', '\r\n"£#"\r\n')
         enter('"\x1b\\\x1b\\ \x1b6\x1b66"\r', '\r\n"⍭ ⁶6"\r\n')
         enter('"\x1boo \x1b5\x1bx\x1b5\x1b1"\r', '\r\n"○ ₓ₁"\r\n')
-        layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
+        layout = json.loads(files('basedpl').joinpath('browser/layout.json').read_text())
         typed = {k: v for k, v in layout['option'].items() if isinstance(v, str)}
         enter('"' + ''.join('\x1b'+k for k in typed) + '"\r', '\r\n"' + ''.join(typed.values()) + '"\r\n')
         enter('r\x1bh2\x1b.× +/1\x1bl2\r', '\r\n')  # r←2↣× +/1↦2

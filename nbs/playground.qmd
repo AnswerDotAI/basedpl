@@ -9,6 +9,7 @@ Press **▶ Run**, or Ctrl-Enter (Cmd-Enter on a Mac), to run the code. Type a b
 The interpreter runs in your browser. It is the latest release of the npm package [`basedpl`](https://www.npmjs.com/package/basedpl). Names you create are persistent between runs. **⏹ Stop** ends the session and starts a new one.
 
 ```{=html}
+<div id="bpl-toolbar"></div>
 <div id="playground">
 <div id="history"></div>
 <div class="playground-editor">

@@ -922,19 +922,18 @@ def _cargo_test(root, *args):
 def _steps(out, node):
     "The steps of `prerelease`. Its browser package goes in `out/'wasm'`. `node` is the Node binary that the editor tests run under (`_node`)."
     B, R, wasm = _ROOT, _RUSTYMATH, str(out/'wasm')
-    dev, rdev, gen = 'basedpl: cargo develop', 'rustymath: cargo develop', 'basedpl: editors'
+    dev, rdev = 'basedpl: cargo develop', 'rustymath: cargo develop'
     return [
         _Step(dev, ['cargo', 'develop'], B, timeout=1200),
         _Step(rdev, ['cargo', 'develop'], R, timeout=1200),
-        _Step(gen, [sys.executable, '-m', 'basedpl.editors'], B, (dev,), timeout=600),
         *(_Step(f'{r.name}: checked tests', _cargo_test(r, '--profile', 'checked', '--target-dir', str(r/'target'/'prerelease')), r, timeout=3600) for r in (B, R)),
-        _Step('target builds', ['bpl-tests', 'target_builds', wasm], B),
-        _Step('basedpl: pytest', ['pytest', '-q'], B, (gen,), timeout=1200),
+        _Step('target builds', ['bpl-tests', 'target_builds', wasm], B, (dev,)),
+        _Step('basedpl: pytest', ['pytest', '-q'], B, (dev,), timeout=1200),
         _Step('rustymath: pytest', ['pytest', '-q', '--ignore', 'tests/test_speed.py'], R, (rdev,), timeout=1200),
-        *(_Step(f'basedpl: {t} test', [node, f'tests/{t}.mjs'], B, (gen,), timeout=300) for t in ('input', 'highlighting')),
+        *(_Step(f'basedpl: {t} test', [node, f'tests/{t}.mjs'], B, (dev,), timeout=300) for t in ('input', 'highlighting')),
         _Step('basedpl: browser tests', ['bpl-tests', 'wasm_test', wasm], B, ('target builds',), timeout=900),
         _Step('basedpl: BPL notebooks', ['bpl-nb', '--save'], B, (dev,)),
-        _Step('basedpl: nbdev', ['nbdev-prepare'], B, (gen, 'basedpl: BPL notebooks')),
+        _Step('basedpl: nbdev', ['nbdev-prepare'], B, (dev, 'basedpl: BPL notebooks')),
         _Step('rustymath: nbdev', ['nbdev-prepare'], R, (rdev,)),
         _Step('basedpl: cargo test', _cargo_test(B), B, (dev,), dict(BASEDPL_COSTS='1'), 3600, True),
         _Step('rustymath: cargo test', _cargo_test(R), R, (rdev,), dict(RUSTYMATH_COSTS='1'), 3600, True),

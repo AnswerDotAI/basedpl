@@ -1,4 +1,4 @@
-((symbols, layout) => {
+export default (symbols, layout) => {
     const comments = new Set(symbols.filter(s => s.kind === 'comment').flatMap(s => [...s.glyph, ...s.hanzi.join('')]));
     // US physical keys, before macOS Option or another layout transforms event.key.
     const punctuation = {Backquote: '`~', Minus: '-_', Equal: '=+', BracketLeft: '[{', BracketRight: ']}',
@@ -107,4 +107,4 @@
     }
 
     return {matches, inCode, bplStart, entry, press, reset};
-})
+};

@@ -1,13 +1,20 @@
 // Based on Adám Brudzewsky's APL language bar: https://abrudz.github.io/lb
 // MIT License, Copyright (c) 2011-2020 Nikolay G. Nikolov and Adam Brudzevski.
-// BPL name completion, editor adapters, dark mode and overlay layout by Jeremy Howard.
-((symbols, input, layout) => {
-    function attach(monaco, container, magics = false) {
+// BPL name completion, editor adapters and page toolbar by Jeremy Howard.
+export default (symbols, input, layout, editorOptions) => {
+    function mount(container) {
         const d = container.ownerDocument, w = d.defaultView, events = new AbortController();
         const on = (target, name, fn, capture = false) => target.addEventListener(name, fn, {capture, signal: events.signal});
         const {inCode, bplStart, entry, press, reset} = input(symbols, layout);
         const shortcuts = new Map(symbols.map(({glyph, shortcut}) => [glyph, shortcut]));
         let leftAlt = false, rightAlt = false;
+        let editorFonts;
+        function fonts() {
+            if (!w.monaco || editorFonts) return;
+            editorFonts = w.monaco.editor.onDidCreateEditor(e => e.updateOptions(editorOptions));
+            w.monaco.editor.getEditors().forEach(e => e.updateOptions(editorOptions));
+        }
+        fonts();
 
         function textareaRect(t) {
             const mirror = d.createElement('div'), caret = d.createElement('span'), css = getComputedStyle(t), rect = t.getBoundingClientRect();
@@ -25,12 +32,13 @@
 
         function editor(target) {
             if (target.closest?.('.text_cell, .jp-MarkdownCell')) return;
+            const monaco = w.monaco;
             const m = monaco?.editor.getEditors().find(e => e.hasTextFocus());
             if (m) {
                 const model = m.getModel(), p = m.getPosition(), selection = m.getSelection();
                 if (!model || !p || !selection) return;
                 const valid = () => m.getDomNode()?.isConnected && m.getModel() === model && !m.getOption(monaco.editor.EditorOption.readOnly)
-                    && (model.getLanguageId() === 'bpl' || magics && bplStart({text: model.getValue(), pos: model.getOffsetAt(m.getPosition())}) >= 0);
+                    && bplStart({bpl: model.getLanguageId() === 'bpl', text: model.getValue(), pos: model.getOffsetAt(m.getPosition())}) >= 0;
                 if (!valid()) return;
                 const e = {id: model, valid, text: model.getValue(), pos: model.getOffsetAt(p), empty: selection.isEmpty(), bpl: model.getLanguageId() === 'bpl',
                     rect: () => {
@@ -53,7 +61,6 @@
                     }};
                 return bplStart(e) >= 0 ? e : undefined;
             }
-            if (!magics) return;
             const view = target.closest?.('.cm-editor')?.querySelector('.cm-content')?.cmTile?.view;
             if (view) {
                 if (view.state.readOnly) return;
@@ -86,13 +93,18 @@
         }
 
         const host = d.createElement('div');
-        host.innerHTML = `<div class="ngn_lb" aria-label="BPL symbols"><button type="button" class="ngn_x" style="float:right" title="Close symbol bar">×</button></div>
+        host.className = 'bpl_tools';
+        host.innerHTML = `<button type="button" class="bpl_toggle"></button><div class="ngn_lb" aria-label="BPL symbols"></div>
             <div class="bpl_choices" role="group" aria-label="BPL symbol completions" hidden></div>
             <style>
-            .ngn_lb,.bpl_choices{background:var(--bpl-bar-background,#eee);color:var(--bpl-bar-color,#111);font:15px var(--bpl-font,SAX2B),monospace}
-            .ngn_lb{border-bottom:1px solid #999;padding:2px}
-            .ngn_lb button,.bpl_choices button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:2px 4px}
-            .ngn_lb button:hover,.bpl_choices button:hover{background:#777;color:white}
+            pre,code{font-family:var(--bpl-font,SAX2B),monospace}
+            .bpl_out{line-height:1.05!important}
+            .bpl_tools{position:relative}
+            .ngn_lb,.bpl_choices,.bpl_toggle{background:var(--bpl-bar-background,light-dark(#eee,#222));color:var(--bpl-bar-color,light-dark(#111,#ddd));font:15px var(--bpl-font,SAX2B),monospace}
+            .ngn_lb{border-bottom:1px solid #999;padding:2px 26px 2px 2px;white-space:nowrap;overflow-x:auto}
+            .bpl_tools button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:2px 4px}
+            .bpl_tools .bpl_toggle{position:absolute;right:0;top:0;z-index:1;background:var(--bpl-bar-background,light-dark(#eee,#222))}
+            .bpl_tools button:hover{background:#777;color:white}
             .bpl_choices{position:fixed;z-index:2147483647;max-height:240px;max-width:calc(100vw - 16px);overflow:auto;border:1px solid #888;border-radius:4px;box-shadow:0 3px 12px #0003;padding:4px}
             .bpl_choices button{display:block;width:100%;text-align:left;white-space:nowrap}
             .bpl_choices small{display:block;padding:4px}
@@ -101,8 +113,22 @@
             .bpl_menu button{display:inline-block;width:auto;min-width:28px;text-align:center}
             </style>`;
         container.append(host);
-        const bar = host.querySelector('.ngn_lb'), tip = host.querySelector('.bpl_choices');
-        bar.querySelector('.ngn_x').onclick = () => { bar.hidden = true; };
+        const bar = host.querySelector('.ngn_lb'), tip = host.querySelector('.bpl_choices'), toggle = host.querySelector('.bpl_toggle');
+        let collapsed = false;
+        try { collapsed = localStorage.getItem('bpl-bar-collapsed') === '1'; } catch {}
+        function collapse() {
+            bar.hidden = collapsed;
+            toggle.textContent = collapsed ? '▼' : '▲';
+            toggle.title = collapsed ? 'Expand BPL symbols' : 'Collapse BPL symbols';
+            toggle.setAttribute('aria-label', toggle.title);
+            toggle.setAttribute('aria-expanded', String(!collapsed));
+        }
+        toggle.onmousedown = ev => ev.preventDefault();
+        toggle.onclick = () => {
+            collapsed = !collapsed; cancel(); collapse();
+            try { localStorage.setItem('bpl-bar-collapsed', collapsed ? '1' : '0'); } catch {}
+        };
+        collapse();
         let active, lastEditor, choice, keyInput = false;
         const names = new Map(symbols.map(({glyph, name, monad, dyad}) =>
             [glyph, [name, monad, dyad].filter(Boolean).join(' ')]));
@@ -182,7 +208,7 @@
             if (b && choice?.e.valid()) choice.e.insert(b.dataset.glyph, choice.item.start);
             cancel();
         });
-        on(d, 'focusin', ev => { if (!host.contains(ev.target)) lastEditor = editor(ev.target); cancel(); });
+        on(d, 'focusin', ev => { fonts(); if (!host.contains(ev.target)) lastEditor = editor(ev.target); cancel(); });
         on(d, 'pointerdown', ev => { if (!host.contains(ev.target)) cancel(); }, true);
         on(d, 'pointerup', ev => { if (!host.contains(ev.target)) lastEditor = editor(ev.target); });
         for (const event of ['paste', 'cut', 'compositionstart', 'focusout']) on(d, event, cancel, true);
@@ -237,33 +263,8 @@
             } else if (!(typed && plain && (/^[a-z]$/i.test(ev.key) || ev.key === 'Backspace'))) cancel();
             keyInput = plain && (ev.key.length === 1 || ev.key === 'Backspace');
         }, true);
-        return {dispose() { events.abort(); reset(); lastEditor = undefined; cancel(); host.remove(); }};
+        return {element: host, fonts, dispose() { events.abort(); editorFonts?.dispose(); reset(); lastEditor = undefined; cancel(); host.remove(); }};
     }
 
-    function page(monaco) {
-        const d = document;
-        if (d.querySelector('.bpl_page_bar') || d.querySelector('meta[name=generator][content^=quarto]') && !d.querySelector('[data-bpl]')) return;
-        const container = d.createElement('div');
-        container.className = 'bpl_page_bar';
-        container.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647';
-        d.body.append(container);
-        const input = attach(monaco, container, true), bar = container.querySelector('.ngn_lb');
-        bar.insertAdjacentHTML('afterbegin', '<button class="ngn_o" style="float:right" title="Toggle overlay/push-down"></button>');
-        let overlay = false;
-        const padding = d.body.style.paddingTop, toggle = bar.querySelector('.ngn_o');
-        try { overlay = localStorage.getItem('ngn_lb_overlay') === '1'; } catch {}
-        function reflow() {
-            toggle.textContent = overlay ? '▼' : '▲';
-            d.body.style.paddingTop = overlay || bar.hidden ? padding : `${bar.offsetHeight}px`;
-        }
-        toggle.onclick = () => {
-            overlay = !overlay;
-            try { localStorage.setItem('ngn_lb_overlay', overlay ? '1' : '0'); } catch {}
-            reflow();
-        };
-        const observer = new ResizeObserver(reflow);
-        observer.observe(bar); reflow();
-        return {dispose() { input.dispose(); observer.disconnect(); container.remove(); d.body.style.paddingTop = padding; }};
-    }
-    return {attach, page};
-})
+    return mount;
+};

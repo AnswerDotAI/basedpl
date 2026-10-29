@@ -22,7 +22,7 @@ Remove the layout from your keyboard list before updating it. If Windows reports
 
 ## Build
 
-`basedpl.editors.write()` generates `layout.h` from `python/basedpl/layout.json` during `bpl-tests prerelease`. `keyboard.c` supplies the standard US scan-code and modifier tables.
+`basedpl.editors.write()` generates `layout.h` from `python/basedpl/browser/layout.json` during `cargo develop`. `keyboard.c` supplies the standard US scan-code and modifier tables.
 
 Install Microsoft's [C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with **C++ core build tools**, **MSVC x64/x86**, **MSVC ARM64**, **MSVC ARM64EC** and a **Windows SDK**. From the repository, run:
 
