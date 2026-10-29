@@ -182,8 +182,9 @@ class Array(_Operators):
         if names is not None: self.names = names
         self._classify()
     def _classify(self):
-        "Make this a `FunctionArray` exactly when a direct item is a function."
-        self.__class__ = FunctionArray if self._inner.holds_functions else Array
+        "Classify built-in array wrappers without changing user-defined subclasses."
+        if type(self) in (Array, FunctionArray):
+            self.__class__ = FunctionArray if self._inner.holds_functions else Array
     @property
     def shape(self): return tuple(self._inner.shape)
     @property

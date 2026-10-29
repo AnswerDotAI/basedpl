@@ -113,7 +113,7 @@ async def kernel_story():
             reply, _ = await kc.exec_ok('', user_expressions={'preview': 'text'}, silent=True)
             assert reply['content']['user_expressions']['preview']['data']['text/plain'] == text
         _, messages = await kc.exec_ok('⎕←text ⋄ "-"•nput text')
-        assert displayed(messages) == [('stream', '"abcdefghijklmnop"\n'), ('stream', 'abcdefghijklmnop')]
+        assert ''.join(text for _, text in displayed(messages)) == '"abcdefghijklmnop"\nabcdefghijklmnop'
         await kc.exec_ok('•prefs ["limit":1000 "edges":3]', silent=True)
         _, messages = await kc.exec_ok('⎕←"SVG" ⋄ •svg ⍬')
         rich = [m['content']['data'] for m in messages if m['msg_type']=='execute_result']

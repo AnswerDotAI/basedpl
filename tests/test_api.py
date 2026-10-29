@@ -547,6 +547,10 @@ def test_function_arrays():
     np.testing.assert_array_equal(v(3, 4), [7, 2])
     v[0] = 0
     assert not callable(v)
+    class CustomArray(Array): pass
+    custom = CustomArray([1, 2])
+    custom[0] = add
+    assert type(custom) is CustomArray
     bpl('aggs←[+ -]')
     np.testing.assert_array_equal(bpl.fn('aggs')(3), [3, -3])
 
