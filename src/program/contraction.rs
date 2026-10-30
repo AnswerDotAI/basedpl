@@ -108,7 +108,7 @@ fn factored(
     let (xd, yd) = (x.desc(nodes), y.desc(nodes));
     let held = match &nodes[y.of].origin { Origin::Held(v) if yd.atom => Some(v.clone()), _ => None };
     let yo = match &held { Some(v) => Operand::Held(v), None => Operand::Traced(&yd) };
-    let mapped = crate::plan::map(Primitive::Arithmetic(Arithmetic::Times), Some(&Operand::Traced(&xd)), &yo, numeric)?;
+    let mapped = crate::plan::map(Primitive::Arithmetic(Arithmetic::Times), Some(&Operand::Traced(&xd)), &yo, false, numeric)?;
     if mapped.desc.dtype() != result.dtype() || mapped.desc.kind.fixed != result.kind.fixed { return Err("a product of another type than the fold's"); }
     let at = add(nodes, Node { desc: mapped.desc, origin: Origin::Step(Step::Map { left: Some(x), right: y, plan: mapped.plan }) });
     Ok(Read::new(at, result.layout.clone()))

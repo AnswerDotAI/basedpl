@@ -135,20 +135,6 @@ pub(crate) fn lambert_w(right: &Value, span: &Span) -> Result<Value, Error> {
     unnamed(None, right, &|_, r, a| crate::pervasive::object(rustymath::LambertW, r, a), &|_, y| y.lambert_w(), span)
 }
 
-/// ψ of every item, which the derivative of monadic `!` needs. A compact array runs through `Digamma`'s slice form, and other items through `Number`.
-pub(crate) fn digamma(right: &Value, span: &Span) -> Result<Value, Error> {
-    unnamed(None, right, &|_, r, a| crate::pervasive::real_object(rustymath::Digamma, r, a), &|_, y| y.digamma(), span)
-}
-
-/// The partial derivative of `k!n`, C(n, k), with respect to `n`, or else to `k`, at each pair of items. Compact arrays run through rustymath's `BinomDn` or `BinomDk`, flipped as `!` flips `Binom`, and other items through `Number`.
-pub(crate) fn binomial_partial(k: &Value, n: &Value, wrt_n: bool, span: &Span) -> Result<Value, Error> {
-    use rustymath::{BinomDk, BinomDn, Flipped};
-    let kernel = |x: Option<&Value>, y: &Value, a: &Agreement| {
-        if wrt_n { crate::pervasive::binary_object(Flipped(BinomDn), x?, y, a) } else { crate::pervasive::binary_object(Flipped(BinomDk), x?, y, a) }
-    };
-    unnamed(Some(k), n, &kernel, &|x, y| x.map_or(Err("a binomial needs two arguments"), |x| x.binomial_partial(y, wrt_n)), span)
-}
-
 /// Applies a function that no glyph names to every item of `right`, or to every pair of items of `left` and `right`, at any depth. `kernel` takes compact arrays whole where it can, and `item` takes each other item. These functions have no exact forms, so exact numbers reach `item` as floats of the width that arrays of them compute in (`Domain::approximate_numbers`).
 fn unnamed(
     left: Option<&Value>, right: &Value, kernel: &dyn Fn(Option<&Value>, &Value, &Agreement) -> Option<Value>,

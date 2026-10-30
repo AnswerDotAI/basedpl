@@ -11,15 +11,52 @@ impl Session {
         })
     }
 
-    // After a value, `.name` is `'name'⊃value` and `.[I]` is bracket indexing, which pairs index arrays by broadcasting. `.(expr)` evaluates `expr` with the value's keys as names. Between functions the dot stays inner product. A subscript then selects from the item before it, so `T.a₁` is `1⌷'a'⊃T`.
-    pub(super) fn members<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> { self.members_with(nodes, &mut None) }
-    /// `members`, logging in `log` what the rewrite read about what names hold (`tree::Fact`).
+    /// Rewrite a writable target's dot reads and numeric subscripts to selection calls.
+    pub(super) fn selection_members<'a>(&self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
+        let members = self.members_with(nodes, &mut None);
+        let Some(last) = members.last() else { return members };
+        match &last.kind {
+            NodeKind::Group(inner) | NodeKind::Run(inner) => {
+                let inner = self.selection_members(inner);
+                if matches!(inner, Cow::Borrowed(_)) { return members; }
+                let kind = if matches!(last.kind, NodeKind::Run(_)) { NodeKind::Run(inner.into_owned()) } else { NodeKind::Group(inner.into_owned()) };
+                let mut out = members.into_owned();
+                out.last_mut().unwrap().kind = kind;
+                Cow::Owned(out)
+            }
+            NodeKind::Subscript(index) => {
+                let index = Node { kind: NodeKind::Literal(index.clone()), span: last.span.clone() };
+                let Ok((start, _)) = self.trailing_operand(&members, members.len() - 1, &mut None) else { return members };
+                let mut out = members.into_owned();
+                let subscript = out.pop().unwrap();
+                let inner = out.split_off(start);
+                let span = crate::syntax::cover(&inner);
+                let inner = self.selection_members(&inner).into_owned();
+                let item = if inner.len() == 1 { inner.into_iter().next().unwrap() } else { Node { kind: NodeKind::Group(inner), span } };
+                let span = Span { source: item.span.source.clone(), range: item.span.range.start..subscript.span.range.end };
+                out.push(Node { kind: NodeKind::Group(vec![
+                    index, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Index)), span: subscript.span }, item,
+                ]), span });
+                Cow::Owned(out)
+            }
+            _ => members,
+        }
+    }
+    /// Rewrite dot reads, logging in `log` what names hold (`tree::Fact`).
     pub(super) fn members_with<'a>(&self, nodes: &'a [Node], log: &mut Facts) -> Cow<'a, [Node]> {
         if !Self::has_members(nodes) { return Cow::Borrowed(nodes); }
         let mut out: Vec<Node> = Vec::with_capacity(nodes.len());
         // Whether the last node in `out` is the right operand of a `.` after a function.
         let (mut i, mut on_function) = (0, false);
         while i < nodes.len() {
+            if (matches!(nodes[i].kind, NodeKind::Subscript(_)) && on_function
+                || matches!(nodes[i].kind, NodeKind::Operator(OperatorKind::Product)) && matches!(out.last().map(|n| &n.kind), Some(NodeKind::Subscript(_))))
+                && let Ok((start, _)) = self.trailing_operand(&out, out.len(), log) {
+                let inner = out.split_off(start);
+                let span = crate::syntax::cover(&inner);
+                out.push(Node { kind: NodeKind::Group(inner), span });
+                on_function = false;
+            }
             if let (NodeKind::Operator(OperatorKind::Product), Some(next)) = (&nodes[i].kind, nodes.get(i + 1)) {
                 let root = out.last().filter(|root| {
                     !on_function && match &root.kind {
@@ -59,16 +96,6 @@ impl Session {
                 }
             }
             on_function = false;
-            if let NodeKind::Subscript(index) = nodes[i].kind {
-                let item = out.pop().expect("the parser puts an item before each subscript");
-                let span = Span { source: item.span.source.clone(), range: item.span.range.start..nodes[i].span.range.end };
-                let index = Node { kind: NodeKind::Literal(Value::Number(crate::number::Number::from_integer(index))), span: nodes[i].span.clone() };
-                out.push(Node { kind: NodeKind::Group(vec![
-                    index, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Index)), span: nodes[i].span.clone() }, item,
-                ]), span });
-                i += 1;
-                continue;
-            }
             out.push(nodes[i].clone());
             i += 1;
         }
@@ -79,7 +106,7 @@ impl Session {
             while i + 1 < out.len() {
                 let NodeKind::Joiner(joiner) = out[i].kind else { i += 1; continue; };
                 let mut start = i - 1;
-                while start > 0 && matches!(out[start].kind, NodeKind::Operator(OperatorKind::Super(_))) && touching(&out[start - 1], &out[start]) {
+                while start > 0 && matches!(out[start].kind, NodeKind::Operator(OperatorKind::Super(_)) | NodeKind::Subscript(_)) && touching(&out[start - 1], &out[start]) {
                     start -= 1;
                 }
                 let left =
@@ -303,6 +330,9 @@ pub(super) fn derived(operand: Binding, operator: Binding, span: &Span) -> Resul
     let operand = Operand::from_value(operand);
     let Binding::Operator(operator) = operator else { unreachable!("a derive's right item is an operator") };
     let function = |p| self::Function::primitive(p);
+    if let (self::OperatorNode::Subscript(index), Operand::Value(a)) = (&operator, &operand) {
+        return Ok(Derived::Call(function(Primitive::Index), Some(index.clone()), a.clone()));
+    }
     if let self::OperatorNode::Primitive(OperatorKind::Super(s)) = &operator {
         match (*s, operand) {
             // `ᵘ` makes a scalar that holds a function. `⊂` encloses a subject.
@@ -480,7 +510,7 @@ impl Binder {
     pub(super) fn group_bound(node: &Node, session: &Session, bound: Bound) -> Result<Bound, Error> {
         let (NodeKind::Group(nodes) | NodeKind::Run(nodes)) = &node.kind else { unreachable!() };
         if matches!(node.kind, NodeKind::Run(_)) && matches!(bound.value, Binding::Operator(_))
-            && !matches!(&session.members(nodes)[..], [Node { kind: NodeKind::Group(_), .. }]) {
+            && !matches!(&session.members_with(nodes, &mut None)[..], [Node { kind: NodeKind::Group(_), .. }]) {
                 return Err(Error::new(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph").at(&node.span));
             }
         Ok(bound)
@@ -519,8 +549,10 @@ impl Binder {
         match Rule::get(top.role, below.role) {
             // An operator still awaiting its operand cannot reduce with its right neighbour.
             Rule::Wait(_) => true,
-            // A superscript waits for its operand. On an array it gives an array, which can be the left argument of the function to its right.
-            _ if matches!(&left.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_))))) => true,
+            // Postfix operators bind an array before its neighbours use it as an argument or operand.
+            _ if matches!(&left.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Subscript(_)))) => true,
+            _ if top.role == Category::Value && matches!(&below.term, Term::Binding(Binding::Operator(
+                self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Subscript(_)))) => false,
             old => match Rule::get(left.category.before(Some(top.role)), top.role) {
                 // Adjacent arrays group from the right: `v w i` is `v (w i)`.
                 Rule::Adjacent if matches!(old, Rule::Adjacent) => false,
@@ -534,9 +566,11 @@ impl Binder {
         let rewriting = resume.is_none();
         let joined = if rewriting { session.joined(nodes, &mut rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(nodes) };
         let members = if rewriting { session.members_with(&joined, &mut rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(&joined[..]) };
-        let nodes = &members[..];
+        // Fast combinations replace their spellings before the binder walks the nodes (`rewrite::expression`).
+        let combined = if rewriting { super::rewrite::expression(session, &members, &mut rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(&members[..]) };
+        let nodes = &combined[..];
         let source = &nodes[0].span.source;
-        if matches!(joined, Cow::Owned(_)) || matches!(members, Cow::Owned(_)) { log(&mut rec, |rc| rc.rewritten(nodes.to_vec())); }
+        if matches!(joined, Cow::Owned(_)) || matches!(members, Cow::Owned(_)) || matches!(combined, Cow::Owned(_)) { log(&mut rec, |rc| rc.rewritten(nodes.to_vec())); }
         let (mut binder, mut pending, mut cursor, mut held, mut after_call, mut assignment) = match resume {
             Some(r) => (Self::restacked(r.stack), r.pending, r.cursor, r.next, r.after_call, r.assignment),
             None => {

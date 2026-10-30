@@ -16,7 +16,7 @@ just ← {  ⍝ Justify text array.
 
 ⍝ From http://dfns.dyalog.com/n_mtrim.htm
 
-mtrim ← {⌽∨\⌽∨⌿⍵≠' ' #⍠¯1 ⍵}  ⍝ Trim trailing blank cols from simple character matrix.
+mtrim ← {⌽∨\⌽∨⌿⍵≠' ' #₋₁ ⍵}  ⍝ Trim trailing blank cols from simple character matrix.
 
 ⍝ From http://dfns.dyalog.com/c_ss.htm
 
@@ -232,14 +232,14 @@ deblank ← {
 
 dlb ← {  ⍝ Drop Leading Blanks.
   1ₓ≥⍴⍴⍵?+/∧\⍵∊⍺ ↓ ⍵;  ⍝ vector
-  ∨\∨⌿~⍵∊⍺ #⍠¯1 ⍵  ⍝ matrix
+  ∨\∨⌿~⍵∊⍺ #₋₁ ⍵  ⍝ matrix
 }deblank
 
 ⍝ From http://dfns.dyalog.com/c_dtb.htm
 
 dtb ← {  ⍝ Drop Trailing Blanks.
   1ₓ≥⍴⍴⍵?-+/∧\⌽⍵∊⍺ ↓ ⍵;  ⍝ vector
-  ~⌽∧\⌽∧⌿⍵∊⍺ #⍠¯1 ⍵  ⍝ matrix
+  ~⌽∧\⌽∧⌿⍵∊⍺ #₋₁ ⍵  ⍝ matrix
 }deblank
 
 ⍝ From http://dfns.dyalog.com/c_deb.htm
@@ -247,14 +247,14 @@ dtb ← {  ⍝ Drop Trailing Blanks.
 deb ← {  ⍝ Drop Ending Blanks.
   b←⍵∊⍺  ⍝ mask
   1ₓ≥⍴⍴⍵?(∧\b ⊽ ⌽∧\⌽b)#⍵;  ⍝ vector
-  b∧⌿← ⋄ (∧\b ⊽ ⌽∧\⌽b)#⍠¯1 ⍵  ⍝ matrix
+  b∧⌿← ⋄ (∧\b ⊽ ⌽∧\⌽b)#₋₁ ⍵  ⍝ matrix
 }deblank
 
 ⍝ From http://dfns.dyalog.com/c_dmb.htm
 
 dmb ← {  ⍝ Drop Multiple Blanks.
   2ₓ>⍴⍴⍵?∨/↕$t,⍨~⍵∊⍺ # ⍵;
-  ∨/↕$t,⍨,∨⌿~⍵∊⍺ #⍠¯1 ⍵
+  ∨/↕$t,⍨,∨⌿~⍵∊⍺ #₋₁ ⍵
 }deblank
 
 ⍝ From http://dfns.dyalog.com/c_dxb.htm
@@ -262,7 +262,7 @@ dmb ← {  ⍝ Drop Multiple Blanks.
 dxb ← {  ⍝ Drop eXtraneous Blanks.
   b←⍵∊⍺  ⍝ mask
   1ₓ≥⍴⍴⍵?1↑b ↓ b⊼1↓b,$t # ⍵;  ⍝ vector
-  b∧⌿← ⋄ 0,1↑b ↓ b⊼1↓b,$t #⍠¯1 ⍵  ⍝ matrix
+  b∧⌿← ⋄ 0,1↑b ↓ b⊼1↓b,$t #₋₁ ⍵  ⍝ matrix
 }deblank
 
 ⍝ From http://dfns.dyalog.com/c_dab.htm

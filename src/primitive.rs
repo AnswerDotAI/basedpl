@@ -74,7 +74,7 @@ impl Operation {
             Self::Product(f, g) => [f.glyph(), OperatorKind::Product.glyph(), g.glyph()].concat(), Self::Select => OperatorKind::Agenda.glyph().into()
         }
     }
-    /// This operation's row for a call with `dyadic` arguments, where `∂` has a rule for it beyond calling its operands. A fold by `+` is a sum along an axis. Folds by `×`, `⌈` and `⌊`, `+.×` with two arguments and `-.×` with one have rules of their own. A primitive's row is `Primitive::facts`.
+    /// This operation's row for a call with `dyadic` arguments, where `∂` has a rule for it beyond calling its operands. A fold by `+` is a sum along an axis. Folds by `×`, `⌈` and `⌊`, `+.×` with two arguments and `-.×` with one have rules of their own. Folds by `-` and `÷`, and by primitives whose form is constant, have rules in `derivative::fold_dual` without a row. A primitive's row is `Primitive::facts`.
     pub(crate) fn facts(self, dyadic: bool) -> Option<&'static Facts> {
         use {Arithmetic::{Plus, Times}, Math::{Ceiling, Floor}};
         const SUM: Facts = of(Form::Own).linear(LinearMap::Sum);
@@ -192,7 +192,7 @@ impl Comparison {
 pub(crate) enum Primitive {
     Arithmetic(Arithmetic), Math(Math), Bitwise(u8), Random, Identity(bool), Compare(Comparison), Iota, Range, Keys, Depth, Where, Member, Union, Intersection,
     Find, Grade(bool), Index, Bracket, Encode, Decode, MatrixDivide, Execute, Format, Shape, Tally, Ravel, Enclose, Nest, Mix, Take, Drop, Replicate,
-    CatenateFirst, Reverse(bool), Transpose, Windows, Prime, Factor, Polynomial, Exact(Exact)
+    CatenateFirst, Reverse(bool), Transpose, Windows, Prime, Factor, Polynomial, Exact(Exact), Special(Special)
 }
 
 /// A function with exact results under either kinds, which `ₓ` after a primitive or `xᵣy` reaches, as `Math::Arc` is the inverse that `○⁻¹` reaches. `⌊ₓ`, `⌈ₓ` and dyadic `÷ₓ` give integers, each through one kernel. `Ratio` is the quotient that `xᵣy` writes: `÷` of exact numbers as dynamic kinds compute it. Each shares the row of the primitive it modifies, as `Bracket` shares `⌷`'s.
@@ -228,6 +228,53 @@ impl Exact {
         };
         n.whole(t)
     }
+}
+
+/// A function without a glyph. `•special` makes the ones in `ALL`, named as SciPy names them. `∂` records `Sign`, `|`'s slope in floats, and `BinomDn` and `BinomDk`, the slopes of `!`'s binomial in n and in k. The form rewriter puts the rest in place of the combinations they compute by an algorithm of their own (`eval/rewrite.rs`): `Log1p` and `Expm1` for `⍟1+⍵` and `¯1+*⍵`, `Selected` for a selection from an order, `Ranks` for a grade of a grade, `GroupCounts` and `GroupFolds` for Key's count and fold of each group, and `Determinant` and `Permanent` for monadic `-.×` and `+.×`. `Polygamma`, `Beta`, `Gammainc`, `Betainc`, the binomial's slopes and `GroupFolds` take two arguments, `Selected` and `GroupCounts` one or two, and the others one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Special {
+    Gammaln, Digamma, Polygamma, Erf, Erfc, Erfinv, Beta, Gammainc, Betainc, BetaincAt([u64; 2]), Sign, BinomDn, BinomDk,
+    Log1p, Expm1, Selected(Order, Pick), Ranks(bool), GroupCounts, GroupFolds(Folding, bool), Determinant, Permanent,
+}
+/// The order that `Special::Selected` selects from: a grade, `⍋` or `⍒` where `true`, or a sort, `<` or `>` where `true`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Order { Grade(bool), Sort(bool) }
+/// What `Special::Selected` takes from its order, as the primitive it stands for does: `k↑` (`Take`), monadic `↑` (`First`), `i⌷` (`Index`) or `i⊃` (`Mix`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Pick { Take, First, Index, Mix }
+/// The function that `Special::GroupFolds` folds each group by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Folding { Plus, Max, Min, Times }
+impl Order {
+    pub(crate) fn primitive(self) -> Primitive {
+        match self { Self::Grade(down) => Primitive::Grade(down), Self::Sort(down) => Primitive::Compare(if down { Comparison::Greater } else { Comparison::Less }) }
+    }
+}
+impl Pick {
+    pub(crate) fn primitive(self) -> Primitive { match self { Self::Take | Self::First => Primitive::Take, Self::Index => Primitive::Index, Self::Mix => Primitive::Mix } }
+}
+impl Folding {
+    pub(crate) fn primitive(self) -> Primitive {
+        match self {
+            Self::Plus => Primitive::Arithmetic(Arithmetic::Plus), Self::Max => Primitive::Math(Math::Ceiling), Self::Min => Primitive::Math(Math::Floor),
+            Self::Times => Primitive::Arithmetic(Arithmetic::Times)
+        }
+    }
+}
+impl Special {
+    /// Every function that `•special` makes, for the table of functions (`Builtin::function`).
+    pub(crate) const ALL: [Self; 9] = [Self::Gammaln, Self::Digamma, Self::Polygamma, Self::Erf, Self::Erfc, Self::Erfinv, Self::Beta, Self::Gammainc, Self::Betainc];
+    fn dyadic(self) -> bool { matches!(self, Self::Gammainc | Self::Polygamma | Self::Beta | Self::Betainc | Self::BinomDn | Self::BinomDk) }
+    fn valence(self) -> crate::system::Valence { if self.dyadic() { crate::system::Valence::Dyadic } else { crate::system::Valence::Monadic } }
+    /// Whether this function computes a fast combination that isn't elementwise, which `eval::combined` runs.
+    pub(crate) fn combines(self) -> bool { matches!(self, Self::Selected(..) | Self::Ranks(_) | Self::GroupCounts | Self::GroupFolds(..) | Self::Determinant | Self::Permanent) }
+}
+
+/// `•special name`: the function that `name` names, as SciPy names it, such as `erf`.
+pub(crate) fn special(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+    let name = crate::keyed::name(right).ok_or_else(|| Error::domain("a special function's name must be a string"))?;
+    let s = Special::ALL.into_iter().find(|&s| Primitive::Special(s).info().name == &*name).ok_or_else(|| Error::domain("unknown special function"))?;
+    Ok(Value::Function(Builtin::Primitive(Primitive::Special(s)).function()))
 }
 
 fn number_quotient(x: &Number, y: &Number, t: Numeric, floor: bool) -> Result<Number, crate::number::Failure> {
@@ -520,13 +567,15 @@ pub(crate) fn axis_value(axis: usize) -> Value { Value::integer(axis as i64) }
 pub(crate) fn named_axis(v: &Value) -> Option<std::sync::Arc<str>> {
     crate::keyed::name(v).or_else(|| match v.shape() { [_] => v.axis_name(0).cloned(), _ => None })
 }
+/// Whether the axis operand `spec` names an axis, as a whole or in one of its items.
+pub(crate) fn names_axes(spec: &Value) -> bool { named_axis(spec).is_some() || spec.elements().any(|e| named_axis(&e).is_some()) }
 pub(crate) fn resolve_axes(spec: &Value, target: &Value) -> Result<Value, Error> {
     let resolve = |value: Value| match named_axis(&value) {
         None => Ok(value),
         Some(name) => target.layout().axis_named(&name).map(axis_value).ok_or_else(|| Error::new(Kind::Index, format!("unknown axis: {}", shown(&name)))),
     };
     if named_axis(spec).is_some() { return resolve(spec.clone()); }
-    if !spec.elements().any(|e| named_axis(&e).is_some()) { return Ok(spec.clone()); }
+    if !names_axes(spec) { return Ok(spec.clone()); }
     Value::from_parts(spec.shape().to_vec(), spec.elements().map(resolve).collect::<Result<_, _>>()?, Value::integer(0)).described("invalid axes")
 }
 
@@ -569,6 +618,9 @@ impl Primitive {
         // `⌷`'s forms, which bracket indexing (`A.[I J]`) shares. Rank runs only `⌷` along leading cell axes, because bracket indexing pairs its index arrays.
         const MATERIALISE: Monad = monad("materialise", W, MOVES.axes().selects(Whole));
         const INDEX: Dyad = dyad("index", [1, W], MOVES.cellwise().axes().selects(Part));
+        // The other valence of a function that `•special` makes, which `run_axis` refuses before any form runs.
+        const NO_MONAD: Monad = monad("", 0, of(Unsupported));
+        const NO_DYAD: Dyad = dyad("", [0, 0], of(Unsupported));
         match self {
             Self::Arithmetic(Plus) => {
                 &const {
@@ -820,6 +872,35 @@ impl Primitive {
             Self::Format => &const { row("⍕", "thorn", monad("format", W, of(Constant)), dyad("format-spec", [1, W], of(Constant).cellwise())) },
             Self::Index => &const { row("⌷", "squad", MATERIALISE, Dyad { facts: INDEX.facts.cells(CellRule::Leading), ..INDEX }) },
             Self::Bracket => &const { row("⌷", "squad", MATERIALISE, INDEX) },
+            // The functions that `•special` makes. Each displays as the call that makes it, and its other valence has no form.
+            Self::Special(Special::Gammaln) => &const { row("•special\"gammaln\"", "gammaln", monad("gammaln", 0, PERVASIVE.cost(100).approximate()), NO_DYAD) },
+            Self::Special(Special::Digamma) => &const { row("•special\"digamma\"", "digamma", monad("digamma", 0, PERVASIVE.cost(100).approximate()), NO_DYAD) },
+            Self::Special(Special::Erf) => &const { row("•special\"erf\"", "erf", monad("erf", 0, PERVASIVE.cost(25).approximate()), NO_DYAD) },
+            Self::Special(Special::Erfc) => &const { row("•special\"erfc\"", "erfc", monad("erfc", 0, PERVASIVE.cost(25).approximate()), NO_DYAD) },
+            Self::Special(Special::Erfinv) => &const { row("•special\"erfinv\"", "erfinv", monad("erfinv", 0, PERVASIVE.cost(60).approximate()), NO_DYAD) },
+            Self::Special(Special::Gammainc) => {
+                &const { row("•special\"gammainc\"", "gammainc", NO_MONAD, dyad("gammainc", [0, 0], PERVASIVE.axes().cost(400).approximate())) }
+            }
+            Self::Special(Special::Polygamma) => {
+                &const { row("•special\"polygamma\"", "polygamma", NO_MONAD, dyad("polygamma", [0, 0], PERVASIVE.axes().cost(200).approximate())) }
+            }
+            Self::Special(Special::Beta) => &const { row("•special\"beta\"", "beta", NO_MONAD, dyad("beta", [0, 0], PERVASIVE.axes().cost(300).approximate())) },
+            // Slopes that `∂` records and `•special` doesn't name: `|`'s sign in floats, and `!`'s binomial's in n and in k.
+            Self::Special(Special::Sign) => &const { row("∂|", "sign", monad("sign", 0, PERVASIVE.form(Constant).approximate()), NO_DYAD) },
+            Self::Special(Special::BinomDn) => &const { row("∂!n", "binom_dn", NO_MONAD, dyad("binom_dn", [0, 0], PERVASIVE.axes().cost(900).approximate())) },
+            Self::Special(Special::BinomDk) => &const { row("∂!k", "binom_dk", NO_MONAD, dyad("binom_dk", [0, 0], PERVASIVE.axes().cost(900).approximate())) },
+            // Fast combinations, which the form rewriter puts in place of their spellings. `log1p` and `expm1` map their argument. `eval::combined` runs the others, before any running level, which then sees the functions they combine.
+            Self::Special(Special::Log1p) => &const { row("⍟1+", "log1p", monad("log1p", 0, PERVASIVE.cost(12).approximate()), NO_DYAD) },
+            Self::Special(Special::Expm1) => &const { row("¯1+*", "expm1", monad("expm1", 0, PERVASIVE.cost(7).approximate()), NO_DYAD) },
+            Self::Special(Special::Selected(..)) => &const { row("↑⍋", "selected", monad("selected", W, of(Own)), dyad("selected", [W, W], of(Own))) },
+            Self::Special(Special::Ranks(_)) => &const { row("⍋⍋", "ranks", monad("ranks", W, of(Own)), NO_DYAD) },
+            Self::Special(Special::GroupCounts) => &const { row("≢⊢⌸", "group_counts", monad("group_counts", W, of(Own)), dyad("group_counts", [W, W], of(Own))) },
+            Self::Special(Special::GroupFolds(..)) => &const { row("f/⊢⌸", "group_folds", NO_MONAD, dyad("group_folds", [W, W], of(Own))) },
+            Self::Special(Special::Determinant) => &const { row("-.×", "determinant", monad("determinant", W, of(Own)), NO_DYAD) },
+            Self::Special(Special::Permanent) => &const { row("+.×", "permanent", monad("permanent", W, of(Own)), NO_DYAD) },
+            // `[a b] betainc x` reads its pair, then calls `BetaincAt` with it on x, which maps x as any function of one argument does.
+            Self::Special(Special::Betainc) => &const { row("•special\"betainc\"", "betainc", NO_MONAD, dyad("betainc", [1, 0], of(Own))) },
+            Self::Special(Special::BetaincAt(_)) => &const { row("•special\"betainc\"", "betainc", monad("betainc", 0, PERVASIVE.cost(600).approximate()), NO_DYAD) },
             Self::Exact(e) => e.primitive().info(),
             Self::MatrixDivide => {
                 &const { row("⌹", "domino", monad("matrix-inverse", 2, of(Own).cellwise()), dyad("matrix-divide", [W, 2], of(Own).cellwise())) }
@@ -893,12 +974,13 @@ impl Primitive {
             Some(x) => (dyad.facts.extension == Extension::Rank && (above(x, dyad.ranks[0]) || above(right, dyad.ranks[1]))).then(|| dyad.ranks.to_vec()),
         }
     }
-    /// Whether this form, called with `dyadic` arguments, applies a kernel to each pair of items (`pervasive_apply`). Arithmetic, math functions, the `Exact` functions and dyadic comparisons do, except the forms that `run_axis` gives code of their own: monadic `⊼`, `⊽`, `∨` and `∧`, and dyadic `~`. `run_axis` and `scalar_call` both decide by it.
+    /// Whether this form, called with `dyadic` arguments, applies a kernel to each pair of items (`pervasive_apply`). Arithmetic, math functions, the `Exact` functions, dyadic comparisons and the functions that `•special` makes, called with their valence, do, except the forms that `run_axis` gives code of their own: monadic `⊼`, `⊽`, `∨` and `∧`, and dyadic `~`. `run_axis` and `scalar_call` both decide by it.
     #[inline]
     pub(crate) fn scalar(self, dyadic: bool) -> bool {
         match self {
             Self::Arithmetic(_) | Self::Exact(_) => true, Self::Math(Math::Nand | Math::Nor | Math::Gcd | Math::Lcm) => dyadic,
-            Self::Math(Math::Not) => !dyadic, Self::Math(_) => true, Self::Compare(_) => dyadic, _ => false
+            Self::Math(Math::Not) => !dyadic, Self::Math(_) => true, Self::Compare(_) => dyadic, Self::Special(Special::Betainc) => false,
+            Self::Special(s) => !s.combines() && s.dyadic() == dyadic, _ => false
         }
     }
     /// Whether this form only selects or rearranges the items of its right argument. Under and selective assignment write back through such a form.
@@ -960,6 +1042,8 @@ impl Primitive {
     }
     pub(crate) fn call_axis(self, left: Option<&Value>, right: &Value, axis: Option<usize>, span: &Span) -> Result<Value, Error> {
         check()?;
+        // A fast combination that isn't elementwise runs before any running level, which then sees the functions it combines.
+        if let Self::Special(s) = self && s.combines() { return crate::eval::combined(s, left, right, span); }
         if session().transforming() {
             if let Some(result) =
                 crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Axis(axis)), left, right, span) {
@@ -971,13 +1055,22 @@ impl Primitive {
     /// `call_axis` without routing to a running level: the primitive's own code, which a level's rule runs on a value that the level carries (`selection::call`).
     pub(crate) fn run_axis(self, left: Option<&Value>, right: &Value, axis: Option<usize>, span: &Span) -> Result<Value, Error> {
         use Comparison::{Equal, Greater, GreaterEqual, Less, LessEqual, NotEqual};
+        if let Self::Special(s) = self { s.valence().check(self.glyph(), left)?; }
         if axis.is_some() && !self.facts(left.is_some()).axes { return Err(Error::new(ErrorKind::Syntax, "axis is not supported by this primitive")); }
         match (self, left) {
+            // A complex array computes as the combination that these functions replace, on the whole array, where a real array takes their kernels.
+            (Self::Special(Special::Log1p), None) if crate::derivative::complex(right) => Self::Math(Math::Log).call(None, &Self::Arithmetic(Arithmetic::Plus).call(Some(&Value::weak_integer(1)), right, span)?, span),
+            (Self::Special(Special::Expm1), None) if crate::derivative::complex(right) => Self::Arithmetic(Arithmetic::Minus).call(Some(&Self::Math(Math::Power).call(None, right, span)?), &Value::weak_integer(1), span),
             _ if self.scalar(left.is_some()) => self.pervasive_apply(None, left, right, span, false),
             (Self::Keys, None) => crate::keyed::remove(right, None).described("invalid axis keys"),
             (Self::Keys, Some(x)) => crate::keyed::construct(x, right, None).described("invalid axis keys"),
             (Self::Identity(true), Some(x)) => Ok(x.clone()),
             (Self::Identity(_), _) => Ok(right.clone()),
+            (Self::Special(Special::Betainc), Some(x)) => {
+                if x.shape() != [2] { return Err(Error::new(Kind::Length, "betainc's left argument is one pair of shape parameters: for an array of pairs, use ⍤1 0")); }
+                let (a, b) = (real(&x.at(0))?, real(&x.at(1))?);
+                Self::Special(Special::BetaincAt([a.to_bits(), b.to_bits()])).call(None, right, span)
+            }
             (Self::Math(Math::Nand), None) => Self::Arithmetic(Arithmetic::Times).call(Some(right), right, span),
             (Self::Math(Math::Nor), None) => Self::Arithmetic(Arithmetic::Plus).call(Some(right), right, span),
             (Self::Math(Math::Gcd | Math::Lcm), None) => complex_parts(right, matches!(self, Self::Math(Math::Lcm))),
@@ -1190,7 +1283,7 @@ impl Primitive {
     /// The function applied to the items that `agreement` pairs, laid out as `agreement` lays out the result, as the call's plan plans it (`plan::Pervasive`).
     fn pervasive_mapped(self, left: Option<&Value>, right: &Value, span: &Span, fill: bool, agreement: Agreement) -> Result<Value, Error> {
         let plan = crate::plan::pervasive_on(self, left, right, Numeric::current()).map_err(Error::domain)?;
-        if plan.keeps_operand() { return Ok(right.clone()); }
+        if let Some(kept) = crate::pervasive::unchanged(&plan, left, right) { return Ok(kept.clone()); }
         // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
         let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(&plan, agreement.len) {
             match crate::fusion::defer(self, &plan, left, right, agreement) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }
@@ -1198,7 +1291,7 @@ impl Primitive {
         Self::planned(&plan, left, right, span, fill, agreement)
     }
     /// The items that `agreement` pairs from `left` and `right`, computed as `plan` plans their call: through its kernel where the kernel takes the items, and otherwise item by item.
-    fn planned(plan: &crate::plan::Pervasive, left: Option<&Value>, right: &Value, span: &Span, fill: bool, agreement: Agreement) -> Result<Value, Error> {
+    pub(crate) fn planned(plan: &crate::plan::Pervasive, left: Option<&Value>, right: &Value, span: &Span, fill: bool, agreement: Agreement) -> Result<Value, Error> {
         if !fill || agreement.len == 0 {
             if let Some(result) = crate::pervasive::map(plan, left, right, &agreement) {
                 return result.with_layout(agreement.layout).described("invalid keyed result");
@@ -1269,11 +1362,11 @@ impl Primitive {
     #[inline(always)]
     fn number_value(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> {
         use crate::number::Failure::Domain;
-        // A weak operand beside a strong number takes the width that NEP 50 gives it (`weak_beside`), before any function decides. Every call on numbers meets this point: scalar calls, the superscript power of a literal, folds of numbers and items that mixed storage holds.
+        // A weak operand beside a strong number takes the width that NEP 50 gives it (`weak_beside`), before any function decides. Every call on numbers meets this point: scalar calls, the superscript power of a literal, folds of numbers and items that mixed storage holds. Beside a fixed operand, the call settles at the fixed width below instead, as `weak_beside` expects.
         if let Some(x) = x && x.is_weak() != y.is_weak() {
             if x.is_weak() {
-                if let Some(x) = self.weak_beside(x, y.dtype(), t) { return self.number(Some(&x.map_err(Domain)?), y, t); }
-            } else if let Some(y) = self.weak_beside(y, x.dtype(), t) { return self.number(Some(x), &y.map_err(Domain)?, t); }
+                if y.fixed_width().is_none() && let Some(x) = self.weak_beside(x, y.dtype(), t) { return self.number(Some(&x.map_err(Domain)?), y, t); }
+            } else if x.fixed_width().is_none() && let Some(y) = self.weak_beside(y, x.dtype(), t) { return self.number(Some(x), &y.map_err(Domain)?, t); }
         }
         if let Self::Compare(op) = self {
             let x = x.expect("a dyadic comparison");
@@ -1301,6 +1394,8 @@ impl Primitive {
             (Self::Math(Math::Magnitude), Some(x)) => x.residue(y, t).map_err(Domain)?, (Self::Math(Math::Gcd), Some(x)) => x.gcd(y, t).map_err(Domain)?,
             (Self::Math(Math::Lcm), Some(x)) => x.lcm(y, t).map_err(Domain)?, (Self::Math(op), Some(x)) => x.math_dyad(op, y)?,
             (Self::Math(op), None) => y.math_monad(op)?, (Self::Arithmetic(op), Some(x)) => x.dyad(op, y)?, (Self::Arithmetic(op), None) => y.monad(op)?,
+            (Self::Special(Special::Log1p), None) => y.log1p()?, (Self::Special(Special::Expm1), None) => y.expm1()?,
+            (Self::Special(_), _) => crate::pervasive::real(self, x, y, t).map_err(Domain)?.ok_or(Domain("this special function has no kernel for these numbers"))?,
             _ => unreachable!("only arithmetic and math functions take numbers here")
         };
         let exact = y.is_exact() && (self.info().dyad.code || x.is_none_or(Number::is_exact));

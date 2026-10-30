@@ -140,7 +140,7 @@ A dyadic operator takes an operand on each side, as in `f⍤1`. The columns are 
 | `$t` `$f` `$n` [constants](system/constants.qmd) | | | True, false and NaN |
 | `$e` [caught error](system/constants.qmd) | | | The error a guard's handler caught |
 | `²` `⁻¹` `ᵀ` `ᵘ` [superscript](scripts.ipynb#superscripts) | Alt-6 | | Postfix on the token before it, or after a space on the run before it: `x²` is `x*2`, `f²` is `f⍣2`, `f⁻¹` is the inverse of `f`, `mᵀ` is `⍉m`, and `fᵘ` is a scalar holding `f` |
-| `₁` `₋₁` [subscript](scripts.ipynb#subscripts) | Alt-5 | | Postfix on the array before it, or after a space on the run before it: `v₁` is `1⌷v`, `v₋₁` is the last major cell, and `v₁←5` assigns to that cell |
+| `₁` `₋₁` [subscript](scripts.ipynb#subscripts) | Alt-5 | | Array positions: `v₁` is `1⌷v`, `v₋₁` is the last major cell, `m₁ ₂` is `m.[1 2]`, and `v₁←5` assigns to that cell. Function axes: `+/₀` is `+/⍠0`, and `+/₁ ₂` is `+/⍠[1 2]` |
 
 [Numbers](numbers.qmd) covers numeric notation, such as `ₓ`, `r`, `j` and `e`.
 
@@ -160,4 +160,4 @@ System names start with `•`. [System functions](system-functions.qmd) lists th
 - [System names](system-functions.qmd): written `•name`, as BQN, not `⎕NAME`. Most Dyalog system functions and variables are not included.
 - [Axis keys](keyed.ipynb) name data. `K:Y` evaluates its keys. `T.a` is `"a"⊃T`. `T.(expr)` and `T⍎Y` evaluate with the keys of `T` as names.
 - [Dfns](dfns.ipynb): BPL has dfns, with no tradfns and no colon control structures such as `:If`.
-- Removed forms: Dyalog's bracket axes `f[A]`, outer product `∘.f`, windowed reduce and laminate are not in BPL. Use [`⍠`](glyphs/quad-colon.qmd) for axes, [`⊗`](glyphs/circle-times.qmd) for outer products, [`↕`](glyphs/up-down-arrow.qmd) for windows, as in `+/3↕v`, and `[x⋄y]` for rows. `/ ⌿ \ ⍀` are only reduce and scan. A left argument to them is a seed, as in BQN: `2+/1 2 3` is `8`. Replicate and expand are [`#`](glyphs/hash.qmd) and `#⁻¹`.
+- Removed forms: Dyalog's bracket axes `f[A]`, outer product `∘.f`, windowed reduce and laminate are not in BPL. Use numeric subscripts or [`⍠`](glyphs/quad-colon.qmd) for axes, [`⊗`](glyphs/circle-times.qmd) for outer products, [`↕`](glyphs/up-down-arrow.qmd) for windows, as in `+/3↕v`, and `[x⋄y]` for rows. `/ ⌿ \ ⍀` are only reduce and scan. A left argument to them is a seed, as in BQN: `2+/1 2 3` is `8`. Replicate and expand are [`#`](glyphs/hash.qmd) and `#⁻¹`.

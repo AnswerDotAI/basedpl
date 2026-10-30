@@ -315,22 +315,24 @@ fn arrays(n: usize) -> Vec<(&'static str, basedpl::Value)> {
     ]
 }
 
-/// Each compiled operation, in a stage of two or more steps, gives what the same stage gives with no compiled parts (`settings::Compiles`), under dynamic and static kinds. The lengths reach each loop of a kernel: fusion defers calls on 2¹⁷ items, which a stage splits into blocks of a power of two items, at most 4,096 (`blocks::Blocks::block`), and 1, 7 or 37 items more make a last block of their own. Floats compare within the accuracy rule, as the reference harness compares them, and Booleans and integers exactly.
+/// Each compiled operation, in a stage of two or more steps, gives what the same stage gives with no compiled parts (`settings::Compiles`), under dynamic and static kinds. The lengths reach each loop of a kernel: fusion defers calls of `Sizes::DEFAULT.min_items` items, which a stage splits into blocks of a power of two items, at most 4,096 (`blocks::Blocks::block`), and 1, 7 or 37 items more make a last block of their own. Floats compare within the accuracy rule, as the reference harness compares them, and Booleans and integers exactly.
 #[test]
 fn compiled_stages_match_interpreted() {
     use basedpl::settings::{self, Compiles};
     const SETUP: &str = "u←iuₓ₁ ⋄ v←juₓ₁ ⋄ h←ihₓ₂ ⋄ k←jhₓ₂ ⋄ w←iwₓ₄ ⋄ z←jwₓ₄ ⋄ l←ilₓ₈ ⋄ m←jlₓ₈";
     let (mut dynamic, mut fixed): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
-    dynamic.extend(["+", "-", "×", "⌈", "⌊"].map(|g| format!("--x{g}y")));
+    dynamic.extend(["+", "-", "×", "÷", "π", "⌈", "⌊"].map(|g| format!("--x{g}y")));
     fixed.extend(["+", "-", "×", "÷", "⌈", "⌊"].map(|g| format!("--xf{g}yf")));
     for g in ["=", "≠", "<", "≤", ">", "≥"] { fixed.extend([format!("~x{g}y"), format!("~xf{g}yf"), format!("~yf{g}0.75"), format!("~0.75{g}yf")]); }
-    dynamic.extend(["-|x", "~p∧q", "~p∨q", "--xf+x", "+/b-1", "⌈/b-1"].map(String::from));
+    // Dynamic kinds compare within the default tolerance: `x×1+1E¯15` lies within it of `x`.
+    for g in ["=", "≠", "<", "≤", ">", "≥"] { dynamic.extend([format!("~x{g}y"), format!("~y{g}0.75"), format!("~0.75{g}y"), format!("~x{g}x×1+1E¯15")]); }
+    dynamic.extend(["-|x", "~p∧q", "~p∨q", "--xf+x", "+/b-1", "⌈/b-1", "--x÷0", "--÷x", "--πx", "--x*¯1", "+/(x<y)×x", "+/x≤x", "+/(x<y)∧b<y", "--y|x", "--0.75|x", "--x|0.75"].map(String::from));
     fixed.extend([
-        "--x÷y", "(0.75≤)⍚[- ⊢]xf", "+/yf>0.75", "0ₓ₄+/xf<yf", "-|xf", "√|xf", "√|x", "--u+v", "--h×k", "--w-z", "--l⌈m", "~u<v", "~l≥m",
-        "-|h", "--u+h", "+/h×k", "⌈/u+v", "+/u>v", "+/bf-1", "⌈/bf-1",
+        "--x÷y", "+/x=x", "+/(x<y)∧b<y", "+/h≤k", "+/w≠z", "+/l≤m", "(0.75≤)⍚[- ⊢]xf", "+/yf>0.75", "0ₓ₄+/xf<yf", "+/(xf<yf)×x", "-|xf", "√|xf", "√|x", "--u+v", "--h×k", "--w-z", "--l⌈m", "~u<v", "~l≥m",
+        "-|h", "--u+h", "+/h×k", "⌈/u+v", "+/u>v", "+/bf-1", "⌈/bf-1", "--×x", "--×xf", "--⌊x", "--⌈xf", "--⌊(x÷3)×3", "--⌈(xf÷3)×3", "--÷xf", "--πxf", "--xfπyf", "--x*¯1", "--xf*0.5", "--x*1.5", "--xf*¯0.5", "--1ₓ|l", "--2ₓ|l", "--4ₓ|w", "--256ₓ|h", "--2ₓ|u",
     ].map(String::from));
     let options = || basedpl::EvalOptions { echo: false, ..Default::default() };
-    for n in [0, 1, 7, 37].map(|more| (1 << 17) + more) {
+    for n in [0, 1, 7, 37].map(|more| settings::Sizes::DEFAULT.min_items + more) {
         for (prefs, cases) in [("", &dynamic), (r#"•prefs ["kinds":"static"]"#, &fixed)] {
             settings::reset();
             // Static kinds make ordinary integers at the `int` width, so the arrays are made under the kinds that read them.

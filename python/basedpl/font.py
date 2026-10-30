@@ -4,12 +4,14 @@ from copy import deepcopy
 from pathlib import Path
 from fastcore.net import urlread
 from fontTools.ttLib import TTFont
+from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
 from .assets import GENERATED
 
 SAX2_URL = 'https://raw.githubusercontent.com/abrudz/SAX2/df113b78ef1c9bf49134371a54ce915f65f9f47e/'
 BQN386_URL = 'https://raw.githubusercontent.com/dzaima/BQN386/4d8b9f668ba76a15ca9cd44d9bfedaf95a4c0d96/'
+SUBSCRIPT_SPACING = 0.5  # Fraction of the normal inter-subscript gap and space width retained by ss01.
 
 def add_glyph(font, char, glyph, advance):
     "Register a glyph with its character mapping and horizontal metrics."
@@ -38,6 +40,25 @@ def add_scripts(font):
         name = cmap[ord(char)]
         # Subscript letters occupy a full box-drawing cell.
         font['hmtx'][name] = font['hmtx'][cmap[ord(source)]][0], glyf[name].xMin
+
+def compact_subscripts(font):
+    "Add optional ss01 spacing for numeric subscripts without changing character-cell metrics."
+    cmap, glyf, metrics = font.getBestCmap(), font['glyf'], font['hmtx']
+    scripts = [cmap[ord(char)] for char in '₀₁₂₃₄₅₆₇₈₉₋']
+    rules = []
+    for left in scripts:
+        for right in scripts:
+            gap = metrics[left][0] - glyf[left].xMax + glyf[right].xMin
+            rules.append(f'pos {left} {right} {round(gap*(SUBSCRIPT_SPACING-1))};')
+    space = cmap[ord(' ')]
+    adjustment = round(metrics[space][0]*(SUBSCRIPT_SPACING-1))
+    features = rf'''languagesystem DFLT dflt;
+        @subscripts = [{' '.join(scripts)}];
+        feature ss01 {{
+            {' '.join(rules)}
+            pos @subscripts {space}' <0 0 {adjustment} 0> @subscripts;
+        }} ss01;'''
+    addOpenTypeFeaturesFromString(font, features, tables=['GPOS'])
 
 def add_arrows(font):
     "Add tailed arrows and a right arrow from bar using SAX2's right-arrow outline."
@@ -124,10 +145,12 @@ def build():
     add_arrows(font)
     thicken_slashes(font)
     add_separator(font)
-    paths = write_font(font, 'SAX2B', '2.002', Path(__file__).with_name('browser'))
+    compact_subscripts(font)
+    paths = write_font(font, 'SAX2B', '2.003', Path(__file__).with_name('browser'))
     font = TTFont(io.BytesIO(urlread(BQN386_URL + 'BQN386.ttf', decode=False, timeout=30)), recalcTimestamp=False)
     add_separator(font)
-    paths += write_font(font, 'BQN386B', '1.001', web_dest)
+    compact_subscripts(font)
+    paths += write_font(font, 'BQN386B', '1.002', web_dest)
     for name, url in [('SAX2', SAX2_URL), ('BQN386', BQN386_URL)]:
         (GENERATED/f'fonts/LICENSE-{name}').write_text(urlread(url + 'LICENSE', timeout=30))
     return paths

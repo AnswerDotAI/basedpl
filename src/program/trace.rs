@@ -166,6 +166,12 @@ pub(crate) fn per_item(left: Option<&Value>, right: &Value) -> Result<(), Error>
     Err(stopped("a function called on each item"))
 }
 
+/// Stops the running trace before a random draw or `⍎`. A replay of the trace's program would run neither, though each must run on every call. `Ok` where no trace runs.
+pub(crate) fn each_call(reason: &'static str) -> Result<(), Error> {
+    if session().tracing().is_none() { return Ok(()); }
+    Err(stopped(reason))
+}
+
 /// The stop of the running trace, after noting `reason` for `•explain`, for code that meets what a program can't hold.
 pub(crate) fn stopped(reason: &'static str) -> Error {
     let (level, tracer) = session().tracing().expect("a trace runs");
@@ -275,7 +281,7 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) 
     let desc = |arg: &Arg| match arg { Arg::Traced(_, d) | Arg::Held(_, d) => d.clone() };
     let numeric = crate::number::Numeric::current();
     let planned = match (operation, pairing, &args.0) {
-        (Operation::Primitive(p), Pairing::Axis(None), x) => plan::map(p, x.as_ref().map(Arg::operand).as_ref(), &args.1.operand(), numeric).map(Planned::Map),
+        (Operation::Primitive(p), Pairing::Axis(None), x) => plan::map(p, x.as_ref().map(Arg::operand).as_ref(), &args.1.operand(), left.is_some_and(|l| std::ptr::eq(l, right)), numeric).map(Planned::Map),
         (Operation::Fold(p, kind), Pairing::Axis(axis), x) => {
             let (seed, y) = (x.as_ref().map(desc), desc(&args.1));
             plan::fold(p, kind, seed.as_ref().map(|s| s.kind), y.kind, numeric).and_then(|plan| plan.desc(axis, seed.as_ref(), &y))
@@ -292,7 +298,7 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) 
         _ => Err("a call that programs don't take yet"),
     };
     let planned = match planned { Ok(planned) => planned, Err(reason) => return stop(reason) };
-    if let Planned::Map(m) = &planned && m.plan.keeps_operand() { return Some(Ok(right.clone())); }
+    if let Planned::Map(m) = &planned && let Some(kept) = crate::pervasive::unchanged(&m.plan, left, right) { return Some(Ok(kept.clone())); }
     // An unseeded `+` fold of a traced `×` runs as one product where its operands allow (`contraction`), and an unseeded fold of a copy that repeats items folds the copy's source (`fold_of_copy`).
     if let (Planned::Fold(p, kind, d, axis), None, Arg::Traced(read, _)) = (&planned, &args.0, &args.1) {
         let mut builder = tracer.builder();

@@ -360,7 +360,7 @@ Source: `Depth` in the dfns workspace. It applies its left operand at the depths
 
 ### Reducing several axes
 
-`⍠` applies a function along the axes its operand lists. The operand `1 2` is a strand, and the name `n` doesn't join it. Dyalog and BQN ravel each cell first.
+Numeric subscripts choose the axes to reduce. Dyalog and BQN ravel each cell first.
 
 ```dyalog
 +/,⍤2⊢n
@@ -368,7 +368,7 @@ Source: `Depth` in the dfns workspace. It applies its left operand at the depths
 
 ```bpl
 n←2 3 4⍴⍳24ₓ
-+/⍠1 2 n               ⍝ [66 210]ₓ
++/₁ ₂n                 ⍝ [66 210]ₓ
 ```
 
 ```bqn

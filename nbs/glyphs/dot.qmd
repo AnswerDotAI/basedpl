@@ -15,6 +15,13 @@ Float and complex `+.×` read a large operand that is a transpose, or windows of
 
 Where `g` is a dfn, `X f.g Y` calls it once on all the pairings together, in a [batched call](../evaluation.qmd#functions-and-effects). The result is the same as from one call for each pairing.
 
+[Rank](jot-diaeresis.qmd) and [Axis](quad-colon.qmd) can give `f.g` cells of rank 1. Where `g` is pervasive, `g` pairs the cells' items in one call and `f` folds along them. `X+.×⍤1Y` gives the dot product of each pair of rows at the cost of `+/X×Y`. Axis selects an axis that [`•index`](../system/index.qmd) names wherever each argument holds it. The other named axes pair by name. `xu.[b k]+.×⍠k⁝wu.[k o]` is then the matrix product in [index notation](../index-notation.qmd). A large one runs as one product.
+
+```bpl
+X←[1 2 3⋄4 5 6] ⋄ X+.×⍤1X             ⍝ 14 77
+xu←[2 3]⍴⍳6ₓ ⋄ wu←[3 4]⍴⍳12ₓ ⋄ [b o k]←•index 2 4 3 ⋄ ∧/,(xu.[b k]+.×⍠k⁝wu.[k o])=xu+.×wu   ⍝ $t
+```
+
 `f.g Y`, with no left argument, expands the matrix `Y` by minors along its first column, as J's `u .v` does. `-.×` gives the determinant, and `+.×` the permanent.
 
 ```bpl
@@ -81,7 +88,7 @@ v.[[2 0]]←7 8 ⋄ v  ⍝ 8 20 7
 
 ## Fast combinations
 
-These combinations give the result of the expansion, faster.
+BPL computes each of these combinations by an algorithm of its own, in any spelling, instead of the expansion.
 
 | Combination | Applies to | Benefit |
 |---|---|---|

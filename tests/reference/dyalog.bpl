@@ -355,7 +355,7 @@ N←3 2 5 4 6 1 3 ⋄ N#⍨2|N   ⍝ 3 5 1 3
 1 1 1 2 2 3 3 3⊆"NOWISTHE"   ⍝ "NOW" "IS" "THE"
 
 ⍝ dyalog:partitioned-enclose:axis —
-1 0 1⊂⍠0 (3 4⍴⍳12ₓ)   ⍝ [[0 1 2 3⋄4 5 6 7] [8 9 10 11⋄]]ₓ
+1 0 1⊂₀(3 4⍴⍳12ₓ)   ⍝ [[0 1 2 3⋄4 5 6 7] [8 9 10 11⋄]]ₓ
 
 ⍝ dyalog:pick:path — Inline G definition
 1⊃0⊃1 0⊃[["ABC" 1] ["DEF" 2] ["GHI" 3]⋄["JKL" 4] ["MNO" 5] ["PQR" 6]]

@@ -27,12 +27,12 @@ m←[1 2 3⋄4 5 6⋄7 8 9]
 +/m.[i i]            ⍝ 15
 ```
 
-Indices name the axes of a formula, as einsum's letters do. In this product, `k` pairs by name and [`+/⍠k`](../glyphs/quad-colon.qmd) sums along it. `b` and `o` build the result's grid. [`⍉⁻¹`](../glyphs/circle-backslash.qmd) reorders its axes by name:
+Indices name the axes of a formula, as einsum's letters do. In this product, [`+.×⍠k`](../glyphs/dot.qmd) sums along `k`, the index that both operands share. `b` and `o` build the result's grid. [`⍉⁻¹`](../glyphs/circle-backslash.qmd) reorders its axes by name:
 
 ```bpl
 xu←[2 3]⍴⍳6ₓ ⋄ wu←[3 4]⍴⍳12ₓ
 [b o k]←•index 2 4 3
-y←+/⍠k⁝xu.[b k]×wu.[k o]
+y←xu.[b k]+.×⍠k⁝wu.[k o]
 ∧/,y=xu+.×wu                 ⍝ $t
 ∧/, [o b]⍉⁻¹y = ⍉xu+.×wu     ⍝ $t
 ```

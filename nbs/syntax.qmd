@@ -133,7 +133,9 @@ Outside brackets, parentheses and braces, `⋄` separates statements. A `;` outs
 
 A [superscript or subscript](scripts.ipynb) written straight after a [token](terms.qmd#term-token) applies to that token. After a subject, a superscript binds more tightly than anything else. After a function, a superscript takes the whole function to its left, as a monadic operator does. A superscript or subscript that stands alone after a space applies to the run before it.
 
-A subscript selects one position on the leading axis: `x₁` is `(1⌷x)`.
+On an array, a subscript selects one position on the leading axis: `x₁` is `(1⌷x)`. Numeric subscripts separated by spaces form one coordinate: `x₁ ₂` is `x.[1 2]`. Touching digits form one position: `x₁₂` selects position 12. Parentheses keep sequential selections separate: `(x₁)₂` selects item 2 of item 1.
+
+On a function, numeric subscripts choose axes: `f₁ ₂` is `f⍠[1 2]`. Group a call to select from its result: `(f⁝x)₁`. In `f⁝x₁`, the subscript selects from `x` before the call.
 
 ```bpl
 2 3²                 ⍝ 2 9
@@ -144,6 +146,7 @@ x←2 ⋄ y←3 ⋄ x y ²    ⍝ 2 9
 +\⁻¹ 1 3 6           ⍝ 1 2 3
 v←10 20 30 ⋄ v₋₁     ⍝ 30
 2 3 ₁                ⍝ 3
+m←2 3⍴⍳6ₓ ⋄ +/₀m    ⍝ [3 5 7]ₓ
 ```
 
 ## Assignment
@@ -151,7 +154,7 @@ v←10 20 30 ⋄ v₋₁     ⍝ 30
 The target of `←` is the run just before it. The value is everything to the right of `←`, up to the end of the statement or group. A target is one of these:
 
 - a name
-- a selection, such as `(1⌷v)`, `v₁`, `v.[1]` or `T.x`
+- a selection, such as `(1⌷v)`, `v₁`, `m₁ ₂` or `T.x`
 - a list of names, such as `[a b]`
 - any of these followed by a function, for [modified assignment](glyphs/left-arrow.qmd)
 

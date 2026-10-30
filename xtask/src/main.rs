@@ -4,8 +4,6 @@
 //!
 //! `cargo wasm --out DIR` writes the package into `DIR` instead and leaves `nbs/playground/` alone. Builds that run at the same time then don't overwrite each other's modules. `BASEDPL_WASM=DIR` points the Node tests at that directory.
 //!
-//! `cargo wasm` holds the machine's timing lock shared while it runs, as `rustymath::timing::shared` describes.
-//!
 //! The glue comes from `wasm-bindgen-cli-support`, wasm-bindgen's generator as a library. It and the `wasm-bindgen` crate each pin an exact version of `wasm-bindgen-shared`, and the workspace lock holds one version of that crate. The generator therefore always matches the crate.
 //!
 //! `package.json` takes its version from the workspace. Its name, description, licence and repository come from `pyproject.toml`'s `[project]` table, which PyPI also reads. The package's `README.md` is a copy of `wasm/README.md`.
@@ -24,7 +22,6 @@ fn main() -> anyhow::Result<()> {
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("xtask is a workspace member");
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let _lock = rustymath::timing::shared()?;
     let built = Command::new(cargo).current_dir(root).args(["build", "-p", "basedpl-wasm", "--target", TARGET, "--release"]).status()?;
     anyhow::ensure!(built.success(), "the wasm build failed");
     let targets = env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), Into::into);

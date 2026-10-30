@@ -814,7 +814,10 @@ impl Value {
     /// Whether the array reads another array's items, as a view.
     pub(crate) fn is_view(&self) -> bool { matches!(self, Self::Array(a) if a.is_view()) }
     /// The bytes of the allocations that this value keeps alive: its items, a view's base, the arrays that a pending array reads, a dual's parts and a record's nodes. A shared allocation counts once. An atom that holds no array gives 0.
-    pub(crate) fn footprint(&self) -> usize { self.footprint_in(&mut Seen::default()) }
+    pub(crate) fn footprint(&self) -> usize {
+        // A value never reaches its own allocation again, so an array's count starts below it, and a plain array records nothing.
+        match self { Self::Array(a) => a.as_ref().footprint_in(&mut Seen::default()), _ => self.footprint_in(&mut Seen::default()) }
+    }
     pub fn as_floats(&self) -> Option<&[f64]> { match self.as_items() { Items::Compact(View::Floats(Floats::F64(v))) => Some(v), _ => None } }
     pub fn as_integers(&self) -> Option<&[i64]> { match self.as_items().ints() { Some(Ints::I64(v)) => Some(v), _ => None } }
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.as_items() { Items::Compact(View::Booleans(v)) => Some(v), _ => None } }

@@ -214,7 +214,7 @@ xTo ← {  ⍝ Sequence ⍺ .. ⍵
 
 rg ← {⍺₀⍶⍵ ∧ ⍺₁⍹⍵}  ⍝ Range operator
 
-xr ← {d←⍉⊃+/×⍵,.-⍺ᵀ ⋄ (2ₓ∨.=|d #⍠¯1 d)←2ₓ ⋄ 3ₓ⊥dᵀ}  ⍝ Outside location
+xr ← {d←⍉⊃+/×⍵,.-⍺ᵀ ⋄ (2ₓ∨.=|d #₋₁ d)←2ₓ ⋄ 3ₓ⊥dᵀ}  ⍝ Outside location
 
 ⍝ From http://dfns.dyalog.com/c_alt.htm
 
@@ -223,7 +223,7 @@ alt ← {  ⍝ Alternant.
   0ₓ=r?⍹⌿,⍵;
   1ₓ≥c?⍶⌿,⍵;
   M←(⍳r)~⍤1⍪⍳r  ⍝ minors
-  ⍵.[: 0]⍶.⍹∇¨⊂⍠[1 2][M 1↓⍳c]⌷⍵
+  ⍵.[: 0]⍶.⍹∇¨⊂₁ ₂[M 1↓⍳c]⌷⍵
 }
 
 bayes ← {⍺ ×÷+.× ⍵}  ⍝ Bayes' formula. (implemented as a fork)
@@ -274,7 +274,7 @@ hil ← {÷1ₓ+ +⊗⍨⍳⍵}  ⍝ order ⍵ Hilbert matrix.
 ⍝ From http://dfns.dyalog.com/c_kcell.htm
 
 kcell ← {  ⍝ Relationship between point and k-cell.
-  ⍺←≢⍵ #⍠¯1 [2 1]⍴0 1  ⍝ Default is unit k-cell.
+  ⍺←≢⍵ #₋₁ [2 1]⍴0 1  ⍝ Default is unit k-cell.
   b←,⍠(2ₓ=⍴⍴⍺ # 0)⍺
   p←(2⌊⍴⍴⍺ ↓ 1 1,⍴⍵)⍴⍵  ⍝ Points to evaluate.
   d←,⍶⌿ ⍤1 ⍉×-b,.-p
@@ -286,7 +286,7 @@ kcell ← {  ⍝ Relationship between point and k-cell.
 kball ← { ⍺←1  ⍝ Relationship between point and k-ball.
   r←↑⍺ ⋄ p←1#⍵
   c←≢p ↑ 1↓⍺  ⍝ Remaining coordinates are center.
-  ×-/[⍉p-⍠0 c;r]+.*¨2ₓ
+  ×-/[⍉p-₀c;r]+.*¨2ₓ
 }
 
 ⍝ ⍝ From http://dfns.dyalog.com/c_ksphere.htm

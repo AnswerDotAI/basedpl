@@ -60,5 +60,5 @@ s←{+/⍵×⍵} ⋄ s∂←{+/⍺×2×⍵} ⋄ s∂ 1 2 3   ⍝ 2 4 6
 ## Errors
 
 - `DOMAIN`: an argument or a result that isn't numeric, a nested result for an array argument, or a call with two arguments of a function that has an attached derivative
-- `UNSUPPORTED`: a glyph or system function that `∂` can't differentiate, such as cis, a second derivative of `!`, a derivative of `⌹` or `-.×` with respect to a matrix that [`⌹`](domino.qmd) counts as singular, in a stack or alone, or a complex argument
+- `UNSUPPORTED`: a glyph or system function that `∂` can't differentiate, such as cis, a derivative of `⌹` or `-.×` with respect to a matrix that [`⌹`](domino.qmd) counts as singular, in a stack or alone, or a complex argument
 - `SYNTAX`: a left argument for a function that takes only one argument, such as `C↣⌻`

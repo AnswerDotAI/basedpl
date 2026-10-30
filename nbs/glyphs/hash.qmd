@@ -33,10 +33,10 @@ A negative count replaces its cell with that many fills. [`⍠`](quad-colon.qmd#
 1 0 2#5                 ⍝ 5 5 5
 ```
 
-With [Axis](quad-colon.qmd), `#⍠¯1` replicates along the last axis.
+`#₋₁` replicates along the last axis. [Axis](quad-colon.qmd) gives the rules for choosing axes.
 
 ```bpl
-1 0 1#⍠¯1 [1 2 3⋄4 5 6]   ⍝ [1 3⋄4 6]
+1 0 1#₋₁[1 2 3⋄4 5 6]     ⍝ [1 3⋄4 6]
 ```
 
 ## Expand
@@ -45,7 +45,7 @@ With `N` fixed, [`⁻¹`](../scripts.ipynb#superscripts) inverts `N#`. The inver
 
 ```bpl
 1 0 1#⁻¹10 20           ⍝ 10 0 20
-1 0 1 #⁻¹⍠¯1 [1 2⋄3 4]      ⍝ [1 0 2⋄3 0 4]
+1 0 1#⁻¹₋₁[1 2⋄3 4]       ⍝ [1 0 2⋄3 0 4]
 2 1#⁻¹10 10 20          ⍝ 10 20
 1 ¯2 1#⁻¹10 0 0 30      ⍝ 10 0 30
 ```

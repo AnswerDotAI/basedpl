@@ -2,11 +2,11 @@
 
 Function. Keys: `Alt-K`. Hanzi: `窗`. Ranks: `∞` monadic, `∞ ∞` dyadic
 
-`↕Y` gives the adjacent pairs of major cells, as `2↕Y` does. `-/⍠1` then subtracts within each pair.
+`↕Y` gives the adjacent pairs of major cells, as `2↕Y` does. `-/₁` then subtracts within each pair.
 
 ```bpl
 ↕1 4 9 16            ⍝ [1 4⋄4 9⋄9 16]
--/⍠1 ↕1 4 9 16       ⍝ ¯3 ¯5 ¯7
+-/₁↕1 4 9 16         ⍝ ¯3 ¯5 ¯7
 ```
 
 `S↕Y`: windows of sizes `S` on leading axes. Trailing axes stay inside each window.

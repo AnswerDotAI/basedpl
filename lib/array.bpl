@@ -41,7 +41,7 @@ axes ← {-2⌈⍴⍴⍵ ↑ ≥×⍴⍵}  ⍝ Array axis types.
 char ← {⍬≡⍴⍵?'─';↑⍵∊'¯',$d ⊃ "#~"}∘⍕  ⍝ Type character of an atom.
 type ← {{1ₓ=⍴⍵ ⊃ ['+' ⍵]}∪,char¨⍵}  ⍝ Type characters of an array.
 deco ← {⍺←type open ⍵ ⋄ ⍺,axes ⍵}  ⍝ Type and axes vector.
-trim ← {~$t $t⍷∧⌿⍵=' ' #⍠¯1 ⍵}  ⍝ Removal of extra blank columns.
+trim ← {~$t $t⍷∧⌿⍵=' ' #₋₁ ⍵}  ⍝ Removal of extra blank columns.
 
 ⍝ From http://dfns.dyalog.com/c_disp.htm
 
@@ -52,7 +52,7 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
     1ₓ=≡,⍵?dec open format dec open ⍵;
     mat←matr 1# dec open ⍵  ⍝ matrix of opened subarrays.
     [r c]←×⍴mat  ⍝ non-null rows/cols.
-    dec<0ₓ∊[r c]?c#⍠¯1 r# ∇ 1 open mat;  ⍝ undecorated null: empty result.
+    dec<0ₓ∊[r c]?c#₋₁ r# ∇ 1 open mat;  ⍝ undecorated null: empty result.
     subs←aligned ∇¨mat  ⍝ aligned boxed subarrays.
     ≢⍴⍵ gaps ⍵ plane subs  ⍝ collection into single plane.
   }
@@ -78,7 +78,7 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
   }
   join←{  ⍝ Join of gap-separated sub-planes.
     sep←≢⍵ ÷ 1ₓ⌈≢⍺  ⍝ sub plane separation.
-    split←0ₓ=sep|⍳≢⍵ ⊂⍠0 ⍵
+    split←0ₓ=sep|⍳≢⍵ ⊂₀ ⍵
     ⊂⍤¯1⍺ plane¨ split  ⍝ sub-plane join.
   }
   outer←{  ⍝ Outer decoration.
@@ -126,7 +126,7 @@ disp ← { ⍺←⍬  ⍝ Boxed sketch of nested array.
     [rows cols]  ⍝ shape decorators.
   }
   matr←{⊃,↓⍵}
-  sepr←{+/¨1⊂⍠¯1 ⊃⍵}
+  sepr←{+/¨1⊂₋₁⊃⍵}
   open←{⍺⌈⍴⍵ ↑ ⍵}
   isor←{1ₓ ⍬≡[≡⍵ ⍴⍵]}  ⍝ is ⎕or of object?
   glue←{0ₓ=⍴⍵?⍵;⍺{⍺,⍶,⍵}/⍵}
@@ -169,7 +169,7 @@ displays ← {  ⍝ Boxed display of array.
     lft←⍉'┌',(⊃lax),'└'
     lft,(top⍪w⍪bot),rgt  ⍝ Fully boxed array.
   }
-  trim←{[⍵₀ (~$t $t⍷∧⌿' '=⍵₁)#⍠¯1⍵₁]}
+  trim←{[⍵₀ (~$t $t⍷∧⌿' '=⍵₁)#₋₁⍵₁]}
   qfmt←{[⍬⍕⍴⍺;format open ⍵]}
   0ₓ=≡⍵?' ' ⍪ format⍵ ⍪ ' '≡↑0⍴⍵ ⊃ " -";
   1ₓ ⍬≡[≡⍵ ⍴⍵]?'∇' 0 0 box ["─";format ⍵];
@@ -219,7 +219,7 @@ dsp ← {  ⍝ Reduced version of disp.
     0 ¯1↓join top¨join¨↓⍉[⍵⋄bars]
   } 1 ∇¨ ⍵;  ⍝ vector: formatted items
   subs←⍺ ∇¨ ⍵  ⍝ higher rank: formatted items
-  [rs cs]←+/¨1⊂⍠¯1 ⊃⍴¨subs
+  [rs cs]←+/¨1⊂₋₁⊃⍴¨subs
   dims←(mrs←⌈/rs) ,⊗ mcs←⌈/⍪csᵀ
   join←{⍺{⍺,⍶,⍵}/⍵}
   rows←mrs#¨'│' join¨ ↓dims↑¨subs  ⍝ complete rows with '│'-separated items

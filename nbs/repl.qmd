@@ -56,7 +56,7 @@ The shared table is `python/basedpl/browser/layout.json`, shipped in the Python 
 import json
 from importlib.resources import files
 
-layout = json.loads(files('basedpl').joinpath('layout.json').read_text())
+layout = json.loads(files('basedpl').joinpath('browser/layout.json').read_text())
 assert layout['option']['h'] == '←' and layout['option']['a'] == '⍺'
 assert layout['states']['bar']['keys']['a'] == '⍶'
 ```

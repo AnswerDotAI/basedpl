@@ -10,12 +10,13 @@ A formula in index notation takes three steps:
 2. Select with them. `x.[n i]` holds the items of `x` along axes named by `n` and `i`.
 3. Name the axis that each fold removes, as in `+/⍠i`.
 
-Indices pair by name. The same index pairs with itself. Different indices build a grid. A matrix product sums along the index that its two operands share. Here `k` pairs the columns of `xu` with the rows of `wu`, and `+/⍠k` sums along it. `b` and `o` build the result's grid:
+Indices pair by name. The same index pairs with itself. Different indices build a grid. A matrix product sums along the index that its two operands share. Here `k` pairs the columns of `xu` with the rows of `wu`, and `+/⍠k` sums along it. `b` and `o` build the result's grid. The [inner product](glyphs/dot.qmd) along `k`, `+.×⍠k`, writes the same contraction. The examples below use it:
 
 ```bpl
 xu←[2 3]⍴⍳6ₓ ⋄ wu←[3 4]⍴⍳12ₓ ⋄ [b o k]←•index 2 4 3
 y←+/⍠k⁝xu.[b k]×wu.[k o]
 ∧/,y=xu+.×wu                   ⍝ $t
+∧/,y=xu.[b k]+.×⍠k⁝wu.[k o]     ⍝ $t
 ```
 
 Each index has its length from the start. BPL doesn't infer a range from the reads that use it.
@@ -37,15 +38,15 @@ mlp←{
 mlpi←{
   [x y]←⍺ ⋄ [w b v c]←⍵
   [[n i] h]←•index[⍴x ≢b]
-  a←7○b.[h]++/⍠i⁝x.[n i]×w.[i h]
-  +/÷≢ ⊼y.[n]-c++/⍠h⁝a×v.[h]
+  a←7○b.[h]+x.[n i]+.×⍠i⁝w.[i h]
+  +/÷≢ ⊼y.[n]-c+a+.×⍠h⁝v.[h]
 }
 [x y]mlpi p                    ⍝ 0.3179859389
 g←[x y]mlp∂ p ⋄ gi←[x y]mlpi∂ p
 1E¯12>⌈/,|g.w-gi.w             ⍝ $t
 ```
 
-The index form runs at about the tacit form's speed, forward and under `∂`. BPL reads `x.[n i]` through its indices as a map, without copying `x`. A `+` fold along a named axis of a product, as in `+/⍠i⁝x.[n i]×w.[i h]`, runs as the matrix product `x+.×w`. It never builds the grid of products. The folds in the gradient run as products too. A traced program also stores each map in the order of axes that most of its readers need.
+The index form runs at about the tacit form's speed, forward and under `∂`. BPL reads `x.[n i]` through its indices as a map, without copying `x`. An inner product along a named axis, as in `x.[n i]+.×⍠i⁝w.[i h]`, runs as the matrix product `x+.×w`. So does a `+` fold along a named axis of a product, as in `+/⍠i⁝x.[n i]×w.[i h]`. Neither builds the grid of products. The folds in the gradient run as products too. A traced program also stores each map in the order of axes that most of its readers need.
 
 ## Attention
 
@@ -67,10 +68,10 @@ attn←{
 attni←{
   [wqkv wo]←⍺
   [[b t d] u [r h j]]←•index[⍴⍵ (⍴⍵)₁ 1↓⍴wqkv]
-  [q k v]←:[r b t h j]⍉⁻¹+/⍠d⍵.[b t d]×wqkv.[d r h j]
-  s←mask.[t u] + +/⍠j⁝q.[b t h j]×k.[b u h j] ÷ √≢j
+  [q k v]←:[r b t h j]⍉⁻¹⍵.[b t d]+.×⍠d⁝wqkv.[d r h j]
+  s←mask.[t u] + q.[b t h j]+.×⍠j⁝k.[b u h j] ÷ √≢j
   e←*s-⌈/⍠u⁝s
-  o←+/⍠u e÷+/⍠u⁝e × v.[b u h j]
+  o←(e÷+/⍠u⁝e)+.×⍠u⁝v.[b u h j]
   :[b t d]⍉⁻¹+/⍠[h j]o×wo.[j+(≢j)×h d]
 }
 a←[wqkv wo]attn x ⋄ ai←[wqkv wo]attni x

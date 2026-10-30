@@ -1,21 +1,20 @@
 "Persistent JSON-lines worker with cooperative interruption and a hard timeout fallback."
-import json, math, os, queue, shutil, subprocess, sysconfig, tempfile, threading
+import json, math, os, queue, subprocess, sysconfig, threading
 from pathlib import Path
-from contextlib import ExitStack, contextmanager
 from collections import deque, namedtuple
 from decimal import Decimal
 from . import BplError, _output_text, _written
 from .syntax import linear
 from fastcore.meta import delegates
 
-INSTALLED_BPL = Path(sysconfig.get_path('scripts'))/'bpl' # The `bpl` that `cargo develop` installs and replaces
+INSTALLED_BPL = Path(sysconfig.get_path('scripts'))/'bpl' # The `bpl` that `cargo develop` installs, a link through its installed build (`fastws.store`)
 NATIVE = {'RUSTYMATH_NATIVE': '1'} # The environment that runs rustymath's own linear algebra in place of Accelerate, in a macOS build with rustymath's `native` feature
 
 class Worker:
     "One request at a time. Interrupt from another thread; never retry a request automatically."
     def __init__(
         self,
-        bpl=None, # A native `bpl` to run, such as a copy of `INSTALLED_BPL` saved before a change; None: `INSTALLED_BPL`
+        bpl=None, # The native `bpl` to run (`resolved`); None: the installed build
         native=False # Run rustymath's own linear algebra in place of Accelerate, through `RUSTYMATH_NATIVE=1`, in a macOS build with rustymath's `native` feature
     ):
         env = os.environ | NATIVE if native else None
@@ -114,22 +113,12 @@ class Worker:
     def __enter__(self): return self
     def __exit__(self, *args): self.close()
 
-def resolved(bpl=None):
-    "The native `bpl` that `bpl` names: its path, with `~` expanded, or `INSTALLED_BPL` where it's None."
-    return Path(bpl).expanduser() if bpl else INSTALLED_BPL
-
-@contextmanager
-def pinned(bpl=None):
-    "The `bpl` that every process of one run starts: the build that `bpl` names (`resolved`), or in place of the installed one, a private copy of `INSTALLED_BPL` taken as the run starts, which no `cargo develop` during the run replaces. The copy goes when the run ends."
-    if bpl:
-        yield resolved(bpl)
-        return
-    with tempfile.TemporaryDirectory(prefix='bpl-run-') as d: yield Path(shutil.copy2(INSTALLED_BPL, Path(d)/'bpl'))
-
-@contextmanager
-def pinned_each(builds):
-    "Each of `builds`, where `None` is the installed build, pinned for one run that compares them (`pinned`)."
-    with ExitStack() as stack: yield [stack.enter_context(pinned(b)) for b in builds]
+def resolved(build=None):
+    "The native `bpl` of `build`, resolved now, so that no later `cargo develop` changes it: a path to a `bpl` (`~` expands), a prefix of the id of a build that `cargo develop` kept (`fastws.store`), or None for the installed build."
+    if build is None: return Path(os.path.realpath(INSTALLED_BPL))
+    if (path := Path(build).expanduser()).exists(): return path
+    from fastws.store import resolve
+    return resolve(Path(__file__).resolve().parents[2], str(build))/'bin'/'bpl'
 
 Output = namedtuple('Output', 'code output error')
 
@@ -162,16 +151,17 @@ def _outcome(code, timeout, prefs, kwargs):
         except (TimeoutError, EOFError) as e: return '', e
     return _written(r['output']).removesuffix('\n'), r['error'] and BplError(r['error'], r['output'])
 
-@delegates(Worker)
+@delegates(Worker, but=['bpl'])
 def fresh(
     code, # BPL source, or a list of expressions to run each in its own fresh worker
     timeout=60, # Seconds before each evaluation is interrupted, and a second more before an unresponsive worker is killed; None: no limit
     prefs='', # BPL that runs before `code` in each worker, such as `•prefs ["kinds":"static"]`
+    build=None, # The build to run (`resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build
     **kwargs
 ):
-    "Return what `code` prints in a fresh worker process, as `Printed`. Its display shows the code's linear form (`syntax.linear`) before the text. A BPL error raises `BplError`, with the code and its linear form as a note. A worker that doesn't reply within `timeout` plus a second is killed, and `TimeoutError` raises. A worker that exits, as a crash ends it, raises `EOFError` with its last lines of stderr. A list of expressions gives `Outputs`, with each one's output or error, timeouts and exits included, and runs every one on the same build (`pinned`)."
-    if not isinstance(code, str):
-        with pinned(kwargs.pop('bpl', None)) as bpl: return Outputs(Output(c, *_outcome(c, timeout, prefs, kwargs | dict(bpl=bpl))) for c in code)
+    "Return what `code` prints in a fresh worker process, as `Printed`. Its display shows the code's linear form (`syntax.linear`) before the text. A BPL error raises `BplError`, with the code and its linear form as a note. A worker that doesn't reply within `timeout` plus a second is killed, and `TimeoutError` raises. A worker that exits, as a crash ends it, raises `EOFError` with its last lines of stderr. A list of expressions gives `Outputs`, with each one's output or error, timeouts and exits included, and runs every one on the same build."
+    kwargs |= dict(bpl=resolved(build))
+    if not isinstance(code, str): return Outputs(Output(c, *_outcome(c, timeout, prefs, kwargs)) for c in code)
     output, error = _outcome(code, timeout, prefs, kwargs)
     if error:
         error.add_note(_commented(code))

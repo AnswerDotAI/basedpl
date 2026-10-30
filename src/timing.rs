@@ -1,15 +1,13 @@
-//! BPL measurements share reference records and setups. Numerical timing, copy units and retries live in Rustymath.
+//! BPL measurements share reference records and setups. Numerical timing, copy units, footprint copies and retries live in Rustymath.
 use crate::{EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn, host::timing_lock, protocol::response, reference::{self, File}};
 use rustymath::hashing::HashMap;
-use rustymath::timing::{CopyTime, NATIVE_COLUMN, copy_time};
+use rustymath::timing::{Budget, CopyTime, Footprint, Cause, Held, NATIVE_COLUMN, copy_time, footprint};
 pub use rustymath::timing::{RETRY_PAUSES, checks_budgets, name_cpu};
 use serde_json::{Value as JsonValue, json};
 
 /// The record and event named by each permitted or pending slow-path annotation.
 #[derive(Default)]
 pub struct Named { pub routes: Vec<String>, pub allowed: Vec<(String, String)>, pub gaps: Vec<(String, String)> }
-
-fn fastest(mut f: impl FnMut()) -> f64 { f(); rustymath::timing::fastest(|_| f()) }
 
 fn single_threaded_defaults() {
     crate::settings::reset();
@@ -26,35 +24,48 @@ pub fn session(prefs: &str, setup: &str) -> Result<Turn, Evaluation> {
 
 pub fn items(session: &Session) -> Option<usize> { let n = session.eval("n").value?.as_real()?; (n >= 0.0 && n.fract() == 0.0).then_some(n as usize) }
 
-/// Parse once, warm once, then take the fastest of five evaluations, forcing the result each time.
-pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<f64, Evaluation> {
+/// Parse once, warm once, then take the fastest of five evaluations, forcing the result each time. Gives that time, the most bytes that the five evaluations held at once, as `rustymath::memory::peak_held` counts them, and the bytes that they left held in large allocations beyond what the first evaluation left.
+pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize), Evaluation> {
     let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
     let mut failed = None;
-    let seconds = fastest(|| {
+    let mut run = || {
         let result = session.eval_parsed(&parsed, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
         if let Some(value) = &result.value { value.force(); }
         if result.error.is_some() { failed.get_or_insert(result); }
-    });
-    failed.map_or(Ok(seconds), Err)
+    };
+    run();
+    let start = rustymath::memory::held();
+    let (seconds, held) = rustymath::memory::peak_held(|| rustymath::timing::fastest(|_| run()));
+    let left = rustymath::memory::held().saturating_sub(start);
+    failed.map_or(Ok((seconds, held, left)), Err)
 }
 
 /// The browser build's budget column: a case's third budget, after its macOS and Linux budgets.
 pub const WASM_COLUMN: usize = 2;
 
-/// One measured record. `label` is single-line; `code` retains its original layout.
+/// One measured record. `label` is single-line; `code` retains its original layout. `holds` are the columns that the case's `held` and `busy` lines hold. `footprint` is the case's footprint, where it passes one core's cache, with a copy of it measured beside the case.
 pub struct Case {
-    pub file: String, pub section: String, pub code: String, pub label: String, pub budgets: Vec<String>, pub cost: f64, pub seconds: f64,
-    pub copy: Option<CopyTime>
+    pub file: String, pub section: String, pub code: String, pub label: String, pub budgets: Vec<String>, pub holds: Vec<Held>, pub cost: f64, pub seconds: f64,
+    pub copy: Option<CopyTime>, pub footprint: Option<Footprint>
 }
 impl Case {
+    /// The budget that the case meets in `column`, with any hold, as `rustymath::timing::Budget::of` gives it.
+    pub fn budget(&self, column: Option<usize>) -> Option<Budget> { Budget::of(&self.section, &self.budgets, &self.holds, column) }
     pub fn line(&self, column: Option<usize>) -> String {
-        rustymath::timing::line(&self.section, &self.label, self.cost, column.and_then(|i| self.budgets.get(i)).map_or("-", String::as_str), self.seconds)
+        rustymath::timing::line(&self.section, &self.label, self.cost, &self.budget(column).map_or("-".into(), |b| b.to_string()), self.seconds, self.footprint)
     }
     pub fn copy_line(&self) -> Option<String> { self.copy.as_ref().map(rustymath::timing::copy_line) }
 }
 
+/// Each case as JSON, with its budget in `column`: its `budget`, its `rule` budget and its `hold`, `held` or `busy`, where a line holds that column, and whether its cost is `over` the budget or its hold is `stale`, as `rustymath::timing::Budget` decides.
 pub fn rows(cases: &[Case], column: Option<usize>) -> JsonValue {
-    cases.iter().map(|c| json!({"file":c.file, "section":c.section, "code":c.code, "label":c.label, "line":c.line(column), "copy":c.copy_line(), "budgets":c.budgets, "cost":c.cost, "seconds":c.seconds})).collect()
+    cases.iter().map(|c| {
+        let b = c.budget(column);
+        json!({"file":c.file, "section":c.section, "code":c.code, "label":c.label, "line":c.line(column), "copy":c.copy_line(), "budgets":c.budgets,
+            "budget":b.map(|b| b.value), "rule":b.map(|b| b.rule), "hold":b.and_then(|b| b.cause).map(Cause::name),
+            "over":b.is_some_and(|b| b.over(c.cost)), "stale":b.is_some_and(|b| b.stale(c.cost)),
+            "cost":c.cost, "seconds":c.seconds, "footprint":c.footprint.map(|f| json!({"bytes":f.bytes, "seconds":f.seconds}))})
+    }).collect()
 }
 
 /// A case's label in logs: `file:id` for a case with an ID, or else its code on one line. A multi-line case's lines join with `⋄`, as comments write a dfn, so its label stays the same when lines above it move: `{x←v ⋄ x.[i]←w ⋄ x}0`.
@@ -121,10 +132,18 @@ pub fn costs(files: &[File], only: Option<&[&str]>, prefs: &str, interrupt: &Int
         let n = group.n;
         let copy = (section != "widths").then(|| copy_time::<f64>(n));
         let mut timed = |name| time(group.session(name)?, code, interrupt).map_err(|failed| failure(code, failed));
-        let total = timed(section)?;
-        let cost = match copy { Some(copy) => total / n as f64 / copy.seconds, None => total / timed("exact")? };
+        let (total, held, left) = timed(section)?;
+        if rustymath::memory::checks() && left > 0 {
+            return Err(format!("{}: the timed runs left {left} more bytes held in large allocations than the first run", label(file, case)));
+        }
+        let (cost, footprint) = match copy {
+            Some(copy) => (total / n as f64 / copy.seconds, footprint::<f64>(n, held)),
+            None => (total / timed("exact")?.0, None),
+        };
+        let mut holds = Vec::new();
+        for held in case["held"].as_array().into_iter().flatten() { rustymath::timing::hold(held.as_str().unwrap(), &mut holds).expect("`reference::file` checks each line"); }
         result.push(Case { file: file.name.clone(), section: section.into(), code: code.into(), label: label(file, case),
-            budgets: case["budgets"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().into()).collect(), cost, seconds: total / n as f64, copy });
+            budgets: case["budgets"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().into()).collect(), holds, cost, seconds: total / n as f64, copy, footprint });
         Ok(())
     })?;
     Ok(result)
@@ -147,18 +166,21 @@ impl Observed {
 pub struct Capture { pub file: String, pub section: String, pub code: String, pub label: String, pub run: Observed, pub warmup: Observed, pub named: Named }
 
 impl Capture {
-    /// Missing required routes, unexpected slow events, and annotations whose events disappeared.
+    /// Missing required routes, each with the run's declines, unexpected slow events, and annotations whose events disappeared.
     pub fn violations(&self) -> Vec<String> {
         let mut wrong = Vec::new();
         for required in &self.named.routes {
-            if !self.run.report.records.iter().any(|r| r.kind == rustymath::events::EventKind::Taken && r.route.name() == required.as_str()) {
-                wrong.push(format!("required route {required} was not taken"));
+            use rustymath::events::EventKind::{Declined, Taken};
+            let records = self.run.report.records.iter();
+            if !records.clone().any(|r| r.kind == Taken && r.route.name() == required.as_str()) {
+                let declines: Vec<_> = records.filter(|r| r.kind == Declined).map(|r| format!("{}: {}", r.route.name(), r.reason)).collect();
+                wrong.push(if declines.is_empty() { format!("required route {required} was not taken") }
+                    else { format!("required route {required} was not taken, with declines {}", declines.join("; ")) });
             }
         }
         let named: Vec<_> = self.named.allowed.iter().chain(&self.named.gaps).collect();
         for (record, event, fields) in &self.run.slow {
-            let permitted =
-                self.named.gaps.iter().chain(self.named.allowed.iter().filter(|_| *record != "stopped")).any(|(a, e)| a.as_str() == *record && e == event);
+            let permitted = named.iter().any(|(a, e)| a.as_str() == *record && e == event);
             if *record != "declined" && !permitted { wrong.push(format!("{record} \"{event}\" ({fields})")); }
         }
         wrong.extend(
@@ -201,12 +223,12 @@ pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle
     Ok(result)
 }
 
-/// Times the cases in `files`, retimes each one over its native budget after each pause in `RETRY_PAUSES`, and gives the lines of those still over it. `print` gets the copy lines and every cost where `all` is set, each retry's lines, and last each case still over its budget, marked `over`.
+/// Times the cases in `files`, retimes each one over its native budget after each pause in `RETRY_PAUSES`, and gives the lines of those still over it. `print` gets the copy lines and every cost where `all` is set, each retry's lines, then each case still over its budget, marked `over`, and last each case whose gap's hold has outlived the gap, as `rustymath::timing::Budget::stale` decides from its first cost, marked `stale`.
 #[cfg(not(web))]
 pub fn measured(files: &[File], all: bool, mut print: impl FnMut(&str)) -> Result<Vec<String>, String> {
     use rustymath::timing::retried;
     let line = |c: &Case| c.line(NATIVE_COLUMN);
-    let over = |c: &Case| NATIVE_COLUMN.and_then(|i| c.budgets.get(i)).and_then(|b| b.parse::<f64>().ok()).is_some_and(|b| c.cost > b);
+    let over = |c: &Case| c.budget(NATIVE_COLUMN).is_some_and(|b| b.over(c.cost));
     let interrupt = InterruptHandle::default();
     let mut first = costs(files, None, "", &interrupt)?;
     if all {
@@ -219,6 +241,7 @@ pub fn measured(files: &[File], all: bool, mut print: impl FnMut(&str)) -> Resul
         }
         for c in &first { print(&line(c)); }
     }
+    let stale: Vec<String> = first.iter().filter(|c| c.budget(NATIVE_COLUMN).is_some_and(|b| b.stale(c.cost))).map(line).collect();
     first.retain(over);
     let mut failed = Ok(());
     let over_budget = retried(first, |cases, pause| {
@@ -238,6 +261,7 @@ pub fn measured(files: &[File], all: bool, mut print: impl FnMut(&str)) -> Resul
     failed?;
     let over: Vec<String> = over_budget.iter().map(line).collect();
     for l in &over { print(&format!("{l}: over")); }
+    for l in &stale { print(&format!("{l}: stale")); }
     Ok(over)
 }
 
@@ -254,7 +278,7 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValu
     for code in cases {
         let code = code.as_str().ok_or("each case must be a string")?;
         match time(&session, code, interrupt) {
-            Ok(seconds) => costs.push(json!({"code":code, "seconds":seconds, "copies":seconds / n as f64 / copy.seconds})),
+            Ok((seconds, ..)) => costs.push(json!({"code":code, "seconds":seconds, "copies":seconds / n as f64 / copy.seconds})),
             Err(failed) => return Ok(response(failed)),
         }
     }

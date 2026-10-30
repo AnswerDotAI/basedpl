@@ -31,3 +31,17 @@ See also function [power `⍣`](star-diaeresis.qmd).
 2*⁻¹8      ⍝ 3
 (*↢2)⁻¹9   ⍝ 3
 ```
+
+## Fast combinations
+
+BPL computes this combination by an algorithm of its own, in any spelling. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
+
+| Combination | Applies to | Benefit |
+|---|---|---|
+| `¯1+*Y` or `(*Y)-1` | real `Y` | expm1 keeps the digits of a small `Y` that subtracting 1 from `*Y` cancels |
+
+On complex numbers, `¯1+*Y` computes `*Y`, then subtracts 1.
+
+```bpl
+¯1+*1E¯17         ⍝ 1ₑ¯17
+```

@@ -1,0 +1,45 @@
+# `•special` — Special functions
+
+`•special name` returns the special function called `name`, as SciPy names it, with SciPy's order of arguments. A list of names gives a list of functions.
+
+```bpl
+[erf gammaln]←•special "erf" "gammaln"
+erf 0.5                ⍝ 0.5204998778
+gammaln 5              ⍝ 3.17805383
+```
+
+Each function works item by item on real numbers and gives floats, as `⍟` does. Exact numbers and integers convert to floats. A value that a function leaves undefined, such as digamma at a negative whole number, is NaN.
+
+| Name | Call | Result |
+|---|---|---|
+| `"gammaln"` | `gammaln x` | ln \|Γ(x)\| |
+| `"digamma"` | `digamma x` | ψ(x), the derivative of ln Γ(x) |
+| `"polygamma"` | `n polygamma x` | ψ⁽ⁿ⁾(x), the nth derivative of ψ, for a whole n |
+| `"erf"` | `erf x` | the error function |
+| `"erfc"` | `erfc x` | 1 − erf x, without the loss of digits for large x |
+| `"erfinv"` | `erfinv p` | the x with erf x = p |
+| `"beta"` | `a beta b` | B(a, b) = Γ(a) Γ(b) ÷ Γ(a + b) |
+| `"gammainc"` | `a gammainc x` | the regularized lower incomplete gamma function P(a, x) |
+| `"betainc"` | `[a b] betainc x` | the regularized incomplete beta function Iₓ(a, b) |
+
+`betainc` takes its shape parameters a and b as one pair on the left. For arrays of pairs, apply it with Rank, which pairs each row of the left argument with an item of the right.
+
+```bpl
+[pg bi]←•special "polygamma" "betainc"
+1 pg 1                          ⍝ 1.644934067
+[2 3] bi 0.5                    ⍝ 0.6875
+[2 3⋄4 5] (bi⍤1 0) 0.5 0.25     ⍝ 0.6875 0.1138153076
+```
+
+`∂` differentiates each function in its last argument. The slope of `gammaln` is digamma, digamma's is `1 polygamma`, and each polygamma's is the next order's. `beta` also differentiates in a. The order of `polygamma`, the a of `gammainc` and the pair of `betainc` have no slope, and `∂` gives `UNSUPPORTED` for them:
+
+```bpl
+[erf bi]←•special "erf" "betainc"
+erf∂ 0.5                ⍝ 0.8787825789
+{[2 3] bi ⍵}∂ 0.5       ⍝ 1.5
+```
+
+For an order n from 1, `polygamma` gives NaN for an x from 0 down and for an n above 170.
+
+Errors: `DOMAIN` for an unknown name, a name that isn't a string, or a complex argument; `SYNTAX` for a call with the wrong number of arguments; `LENGTH` for a left argument of `betainc` that isn't one pair.
+

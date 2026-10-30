@@ -13,6 +13,9 @@ kind←{(•storage ⍵).kind} ⋄ replayed←{∧/(0<⍶ ⍵.programs)≥⍵.pr
 [√¯4 9;⌊2.5 ∞;7ₓ÷2ₓ;2147483647ₓ+1ₓ;2ₓ*100ₓ;1r3+1r6]
 [[$n 3] [2 ∞] 3.5 ¯2147483648ₓ 0ₓ 1ᵣ2]
 
+⍝ — Under static kinds, `⍟1+x` computes log1p, and gives NaN below ¯1, as `⍟` does outside the real domain
+⍟1+1E¯17 ¯3   ⍝ 1ₑ¯17 $n
+
 ⍝ — Under static kinds with 64-bit floats, a weak atom takes the width of the floats beside it, as under dynamic kinds. An integer beside a float takes the float's width. Booleans add as integers
 •prefs ["float":64] ⋄ {(•storage ⍵).kind}¨[(32•float 1 2)×2;(32•float 1 2)+0j1;[1 2]ₓ+0.5;[1 2]ₓ+32•float 0.5;$t $f+$t $t]
 "float32" "complex64" "float64" "float32" "int32"
@@ -71,6 +74,10 @@ j←[¯3 0 3 1000]ₓ ⋄ j=3   ⍝ $f $f $t $f
 ⍝ — Under static kinds, `∂` computes an integer argument as floats of the width `÷` gives it: the derivative of `-⍵` at `3ₓ` is the float ¯1
 [{-⍵}∂3ₓ ; {+/-⍵}∂[2 3]ₓ ; {⍵*3ₓ}∂2ₓ ; •float {⍵}∂3ₓ ; •float {⍵}∂$t]
 [¯1 ; ¯1 ¯1 ; 12 ; 32ₓ ; 32ₓ]
+
+⍝ — Under static kinds, folds by - and ÷ trace too, a lane with a zero item included, and give what ∂ gives by calling - or ÷ on each item. A fold by a comparison or by ∨ has no tangent. No trace stops
+x←1 2 3 4.5 ⋄ y←0 4 1 8 ⋄ stops←{≢(•explain ⍵).stopped.reason}¨"{-/⍵}∂x" "{÷/⍵}∂y" "{</⍵}∂x" "{∨/⍵}∂x" ⋄ [{-/⍵}∂x ; {÷/⍵}∂2 4 1 8 ; {÷/⍵}∂y ; {</⍵}∂1 2 3 ; {∨/⍵}∂1 2 3.5 ; stops]
+[1 ¯1 1 ¯1 ; 0.03125 ¯0.015625 0.0625 ¯0.0078125 ; 0.03125 0 0 0 ; 0 0 0 ; 0 0 0 ; [0 0 0 0]ₓ]
 
 ⍝ — Under static kinds, roll gives integers for integer bounds, so a bound of 0, which rolls a float, is a DOMAIN error
 ¿[0 3]ₓ
@@ -181,19 +188,19 @@ f←{(⍵ₓ₄)+.×⍵ₓ₄} ⋄ u←(30 30⍴37ₓ×⍳900ₓ)ₓ₁ ⋄ F←
 [1 3]ₓ
 
 ⍝ — In a compiled part, as in the interpreter, `x⌈y` and `x⌊y` give NaN or the other argument beside NaN, and a zero of either sign for two zeros [compiled]
-v←$n 0 ¯0,997⍴1 ⋄ hi←{(⍵×1)⌈¯0} ⋄ lo←{(⍵×1)⌊0} ⋄ H←{+/⍵×(hi v)} ⋄ L←{+/⍵×(lo v)} ⋄ o←1000⍴0 ⋄ e←•explain "[H∂o ; H∂o ; L∂o ; L∂o]" ⋄ ((⊃3↑¨e.value) ok 0),compiled e
+v←$n 0 ¯0,997⍴1 ⋄ hi←{(--⍵)⌈¯0} ⋄ lo←{(--⍵)⌊0} ⋄ H←{+/⍵×(hi v)} ⋄ L←{+/⍵×(lo v)} ⋄ o←1000⍴0 ⋄ e←•explain "[H∂o ; H∂o ; L∂o ; L∂o]" ⋄ ((⊃3↑¨e.value) ok 0),compiled e
 $t $t
 
-⍝ — A compiled part's sum starts at `¯0`, the identity of `+`, so a sum of negative zeros is `¯0`, as the interpreter's is [compiled]
-z←-1000⍴0 ⋄ s←{÷+/⍵×1} ⋄ S←{⍵×(s z)} ⋄ e←•explain "[S∂0 ; S∂0 ; S∂0]" ⋄ e.value,compiled e
-¯∞ ¯∞ ¯∞ 1
+⍝ — A compiled part folds negative zeros [compiled]
+z←-1000⍴0 ⋄ s←{+/--⍵} ⋄ S←{⍵×(s z)} ⋄ e←•explain "[S∂0 ; S∂0 ; S∂0]" ⋄ e.value,compiled e
+0 0 0 1
 
 ⍝ — A compiled part folds sums and products of f32 and f64 in registers, within 10⁻⁴ of the interpreter's totals, relative. The later calls of each program run compiled [compiled]
 f←{+/(⍵-0.5)×⍵-0.5} ⋄ p←{×/1+1e¯4×⍵-0.5} ⋄ v←0.001×⍳5000 ⋄ w←64•float v ⋄ Fw←{⍵×(f w)} ⋄ Pv←{⍵×(p v)} ⋄ Pw←{⍵×(p w)} ⋄ e←•explain "[Fw∂0 ; Fw∂0 ; Fw∂0 ; Pv∂0 ; Pv∂0 ; Pv∂0 ; Pw∂0 ; Pw∂0 ; Pw∂0]" ⋄ x←[f w ; f w ; f w ; p v ; p v ; p v ; p w ; p w ; p w] ⋄ (∧/(|e.value-x)≤1e¯4×|x),compiled e
 $t $t
 
 ⍝ — A compiled part folds floats by ⌈ and ⌊ in registers, from ¯∞ and ∞, with the greatest and least items. Beside NaN it gives NaN or the greatest or least of the other items: here the greatest item comes first and NaNs follow it [compiled]
-h←{⌈/⍵×1} ⋄ l←{⌊/⍵×1} ⋄ v←-0.5+⍳5000 ⋄ n←v ⋄ n.[[32 4000]]←$n ⋄ Hv←{⍵×(h v)} ⋄ Lv←{⍵×(l v)} ⋄ Hn←{⍵×(h n)} ⋄ Ln←{⍵×(l n)} ⋄ e←•explain "[Hv∂0 ; Hv∂0 ; Hv∂0 ; Lv∂0 ; Lv∂0 ; Lv∂0 ; Hn∂0 ; Hn∂0 ; Ln∂0 ; Ln∂0]" ⋄ r←e.value ⋄ (∧/(6↑r)=¯0.5 ¯0.5 ¯0.5 ¯4999.5 ¯4999.5 ¯4999.5),(∧/((6↓r)≠6↓r)∨(6↓r)=¯0.5 ¯0.5 ¯4999.5 ¯4999.5),compiled e
+h←{⌈/--⍵} ⋄ l←{⌊/--⍵} ⋄ v←-0.5+⍳5000 ⋄ n←v ⋄ n.[[32 4000]]←$n ⋄ Hv←{⍵×(h v)} ⋄ Lv←{⍵×(l v)} ⋄ Hn←{⍵×(h n)} ⋄ Ln←{⍵×(l n)} ⋄ e←•explain "[Hv∂0 ; Hv∂0 ; Hv∂0 ; Lv∂0 ; Lv∂0 ; Lv∂0 ; Hn∂0 ; Hn∂0 ; Ln∂0 ; Ln∂0]" ⋄ r←e.value ⋄ (∧/(6↑r)=¯0.5 ¯0.5 ¯0.5 ¯4999.5 ¯4999.5 ¯4999.5),(∧/((6↓r)≠6↓r)∨(6↓r)=¯0.5 ¯0.5 ¯4999.5 ¯4999.5),compiled e
 $t $t $t
 
 ⍝ — A block stage folds fixed integers as the interpreter does: `+` wraps at the items' width, and `⌈` and `⌊` give the greatest and least items. Each fold joins its stage, as a count of a comparison's Booleans does, and gives the interpreter's values, compiled or not [compiled]
@@ -239,7 +246,7 @@ d←[3 4]⍴0.1×⍳12 ⋄ dk←["a" "b" "c" "d"]:⍤1 d ⋄ dp←["d" "c" "b" "
 $t $t $t $t
 
 ⍝ — A fold along a window axis of at most 8 positions runs as steps of a block stage, which read the windows' source once for each position: through padding by any edge mode, along two window axes, and from a value that an earlier stage stores. Maxima and minima pass over NaN as the interpreter's folds do
-f←{+/¯3↕⍵} ⋄ g←{⌈/["size":3 "edge":"wrap"]↕⍵} ⋄ h←{⌊/⌊/3 3↕⍵} ⋄ k←{2×+/3↕⍵+1} ⋄ p←{(⌈/⍠2 3)[[2 2]⋄[2 2]]↕⍵} ⋄ v←0.25×⍳12 ⋄ w←1.5 $n 2 0.5 $n $n 3 4 2.5 $n 1 6 ⋄ m←[3 4]⍴w ⋄ F←{+/,⍵×(f v)} ⋄ G←{+/,⍵×(g w)} ⋄ H←{+/,⍵×(h m)} ⋄ K←{+/,⍵×(k v)} ⋄ P←{+/,⍵×(p m)} ⋄ zf←0×(f v) ⋄ zg←0×(g w) ⋄ zh←0×(h m) ⋄ zk←0×(k v) ⋄ zp←0×(p m) ⋄ e←•explain "[F∂zf ; F∂zf ; G∂zg ; G∂zg ; H∂zh ; H∂zh ; K∂zk ; K∂zk ; P∂zp ; P∂zp]" ⋄ (e.value≡[f v ; f v ; g w ; g w ; h m ; h m ; k v ; k v ; p m ; p m]),staged e
+f←{+/¯3↕⍵} ⋄ g←{⌈/["size":3 "edge":"wrap"]↕⍵} ⋄ h←{⌊/⌊/3 3↕⍵} ⋄ k←{2×+/3↕⍵+1} ⋄ p←{⌈/₂ ₃[[2 2]⋄[2 2]]↕⍵} ⋄ v←0.25×⍳12 ⋄ w←1.5 $n 2 0.5 $n $n 3 4 2.5 $n 1 6 ⋄ m←[3 4]⍴w ⋄ F←{+/,⍵×(f v)} ⋄ G←{+/,⍵×(g w)} ⋄ H←{+/,⍵×(h m)} ⋄ K←{+/,⍵×(k v)} ⋄ P←{+/,⍵×(p m)} ⋄ zf←0×(f v) ⋄ zg←0×(g w) ⋄ zh←0×(h m) ⋄ zk←0×(k v) ⋄ zp←0×(p m) ⋄ e←•explain "[F∂zf ; F∂zf ; G∂zg ; G∂zg ; H∂zh ; H∂zh ; K∂zk ; K∂zk ; P∂zp ; P∂zp]" ⋄ (e.value≡[f v ; f v ; g w ; g w ; h m ; h m ; k v ; k v ; p m ; p m]),staged e
 $t $t
 
 ⍝ — A program's key holds its arguments' labels, so arguments with other keys run from another program, with their own keys in the result

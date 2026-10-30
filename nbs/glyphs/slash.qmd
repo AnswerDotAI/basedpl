@@ -63,22 +63,22 @@ Several axes form one reduction cell. `f/⍠A Y` ravels each selected cell befor
 
 ```bpl
 n←2 2 3⍴⍳6ₓ
-+/⍠1 2 n             ⍝ [15 15]ₓ
-+/⍠0 2 n             ⍝ [6 24]ₓ
++/₁ ₂n               ⍝ [15 15]ₓ
++/₀ ₂n               ⍝ [6 24]ₓ
 ```
 
 Axis order determines the ravel order. Unselected axes retain their order and keys. Selecting every axis gives the reduced value itself, as a dfn along the same axes does.
 
 ```bpl
--/⍠0 1⁝2 2⍴⍳4ₓ      ⍝ ¯2ₓ
--/⍠1 0⁝2 2⍴⍳4ₓ      ⍝ ¯4ₓ
+-/₀ ₁ 2 2⍴⍳4ₓ         ⍝ ¯2ₓ
+-/₁ ₀ 2 2⍴⍳4ₓ         ⍝ ¯4ₓ
 ```
 
 An empty axis vector makes singleton cells. A seed is passed whole to each cell.
 
 ```bpl
 +/⍠⍬ [1 2 3]          ⍝ 1 2 3
-10+/⍠1 2 (2 2 3⍴⍳6ₓ)   ⍝ [25 25]
+10+/₁ ₂ 2 2 3⍴⍳6ₓ      ⍝ [25 25]
 ```
 
 Float sum and product reductions can reassociate their operands. Other reductions keep operand order.

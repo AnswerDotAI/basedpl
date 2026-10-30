@@ -40,6 +40,17 @@ pub(crate) fn values(program: &Program, plan: &Plan, inputs: &[&Value], span: &S
     Ok(r.values)
 }
 
+/// The value of `program`'s result where its only step gives it and it has no outputs, computed by that step on the program's held values, as a plan of each node on its own computes it (`blocks::plan`), without making the plan. `None` for any other program.
+pub(crate) fn lone(program: &Program, span: &Span) -> Option<Result<Value, Error>> {
+    let j = program.result.of;
+    let alone = program.outputs.is_empty() && matches!(program.nodes[j].origin, Origin::Step(_));
+    if !alone || !program.nodes.iter().enumerate().all(|(i, n)| i == j || matches!(n.origin, Origin::Held(_))) { return None; }
+    if crate::settings::verifies() { super::verify::check(program); }
+    let values = program.nodes.iter().map(|n| match &n.origin { Origin::Held(v) => Some(v.clone()), _ => None }).collect();
+    let mut r = Replay { program, values, inputs: &[] };
+    Some(r.node(j, &[], span).map(|()| taken(&mut r.values, &program.result)))
+}
+
 impl Replay<'_> {
     /// Computes node `j`, checking a step's value against its description. The program's key and `Recording::reread` have already checked the inputs. A held value is the value its description came from. An accumulation takes its base's value where no later unit reads it (`drops`).
     fn node(&mut self, j: usize, drops: &[usize], span: &Span) -> Result<(), Error> {

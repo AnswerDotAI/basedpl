@@ -14,7 +14,7 @@ Keys match with [tolerance](../evaluation.qmd#equality-and-ordering), as in `≠
 
 ## Fast combinations
 
-These trains and compositions give the result of applying their parts in turn, faster. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
+BPL computes each of these combinations by an algorithm of its own, in any spelling. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
 
 | Combination | Applies to | Benefit |
 |---|---|---|

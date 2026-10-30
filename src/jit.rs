@@ -37,9 +37,9 @@ impl Ty {
     fn float(self) -> bool { matches!(self, Ty::F32 | Ty::F64) }
 }
 
-/// An input: an array that the loop reads item by item, as its `Read` says, or a scalar that every item pairs with.
+/// An input: an array that the loop reads item by item, as its `Read` says, a scalar that every item pairs with, or a constant: a number fixed when the kernel is built, such as a reciprocal's 1, held as its bits at its type (`Input::constant`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Input { Array(Ty, Read), Scalar(Ty) }
+pub enum Input { Array(Ty, Read), Scalar(Ty), Constant(Ty, u64) }
 
 /// How the loop reads an array: forward from the item at its pointer, or run by run. A run-by-run array takes two array slots: its item 0, then a table of the item offset of each run's first item, from the run that holds the call's first item. A kernel's runs share one length (`Entry`). Within a run, the items lie as `Within` says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -54,21 +54,31 @@ impl Read {
     fn within(self) -> Within { match self { Read::Forward => Within::Forward, Read::Runs(within) => within } }
 }
 
-impl Input { fn ty(self) -> Ty { match self { Input::Array(t, _) | Input::Scalar(t) => t } } }
+impl Input {
+    fn ty(self) -> Ty { match self { Input::Array(t, _) | Input::Scalar(t) | Input::Constant(t, _) => t } }
+    /// The constant `x` at float or integer type `t`, as `x` converts to it.
+    pub fn constant(t: Ty, x: f64) -> Self {
+        Input::Constant(t, match t { Ty::F32 => (x as f32).to_bits().into(), Ty::F64 => x.to_bits(), _ => x as i64 as u64 })
+    }
+}
 
-/// A value that a step reads: the input of that number, or the result of the earlier step of that number. A constant is a scalar input.
+/// A value that a step reads: the input of that number, or the result of the earlier step of that number. A program's constant is a scalar input, and a number fixed when the kernel is built is a constant input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Value { Input(usize), Step(usize) }
 
-/// An elementwise operation. Integers wrap at their width, and bytes compare and order as unsigned. `Maximum` and `Minimum` give `y` where floats `x` and `y` are equal or either is NaN, as rustymath's `maximum` and `minimum` do. `Compare` gives a Boolean: floats compare exactly, NaN equal to nothing, and Booleans only by `Eq` and `Ne`. `And`, `Or`, `Xor` and `Not` take Booleans. `Select(m)` gives `x` where the Boolean `m` is true and `y` where it's false. `Convert` converts its argument to the step's type as `element::Converts` does with no tolerance: a float to an integer by its floor, saturating at the integer's range, and 0 for NaN; an integer to a narrower one by wrapping; a Boolean to 1 or 0.
+/// An elementwise operation. Integers wrap at their width, and bytes compare and order as unsigned. `Maximum` and `Minimum` give `y` where floats `x` and `y` are equal or either is NaN, as rustymath's `maximum` and `minimum` do. `Floor` rounds a float down to a whole number, keeping `-0`. `MultiplyAdd(z)` gives `x × y + z` for floats, rounded once. `Compare` gives a Boolean: floats compare exactly, NaN equal to nothing, and Booleans only by `Eq` and `Ne`. `And`, `Or` and `Xor` take Booleans or integers, bit by bit, and `Not` takes Booleans. `Select(m)` gives `x` where the Boolean `m` is true and `y` where it's false. `Convert` converts its argument to the step's type as `element::Converts` does with no tolerance: a float to an integer by its floor, saturating at the integer's range, and 0 for NaN; an integer to a narrower one by wrapping; a Boolean to 1 or 0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Op { Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Convert, Compare(Cmp), And, Or, Xor, Not, Select(Value) }
+pub enum Op { Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Compare(Cmp), And, Or, Xor, Not, Select(Value), MultiplyAdd(Value) }
 
 /// A comparison.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cmp { Eq, Ne, Lt, Le, Gt, Ge }
 
-impl Op { fn dyadic(self) -> bool { !matches!(self, Op::Negate | Op::Magnitude | Op::Sqrt | Op::Convert | Op::Not) } }
+impl Op {
+    fn dyadic(self) -> bool { !matches!(self, Op::Negate | Op::Magnitude | Op::Sqrt | Op::Floor | Op::Convert | Op::Not) }
+    /// The value that a step of this operation reads besides `x` and `y`: `Select`'s mask and `MultiplyAdd`'s addend.
+    fn third(self) -> Option<Value> { match self { Op::Select(v) | Op::MultiplyAdd(v) => Some(v), _ => None } }
+}
 
 /// One step: an operation on one or two values, with a result of type `ty`. The arguments of every operation but `Convert` and `Compare` have type `ty` too, and `Compare`'s two arguments have one type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -90,7 +100,7 @@ pub struct Compiled { _module: Mutex<JITModule>, entry: Entry, counts: [usize; 4
 
 /// The groups that each iteration of the main loop handles in a kernel with no float fold.
 const UNROLL: i64 = 4;
-/// The most items in a block of a kernel that counts Booleans. Each byte lane of its accumulators counts at most 255 items in a block: one in each iteration of the main loop, and up to `UNROLL - 1` more in the first set after the last iteration.
+/// The most items in a block of a kernel that counts Booleans. A byte lane of a count's accumulators counts at most 255 items in a block: one in each iteration of the main loop, and up to `UNROLL - 1` more in the first set after the last iteration. A count keeps byte lanes only for a mask that lies in byte lanes. Counts in wider lanes take the same limit.
 const COUNTED: usize = 16 * UNROLL as usize * (255 - UNROLL as usize);
 
 /// The host's code generator, made once for the process.
@@ -130,7 +140,7 @@ impl Kernel {
     /// This kernel compiled afresh.
     pub fn compile(&self) -> Result<Compiled, String> {
         let (module, entry) = self.defined()?;
-        let arrays = self.inputs.iter().map(|i| match i { Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) => 0 }).sum();
+        let arrays = self.inputs.iter().map(|i| match i { Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) | Input::Constant(..) => 0 }).sum();
         let scalars = self.inputs.iter().filter(|i| matches!(i, Input::Scalar(_) | Input::Array(_, Read::Runs(Within::Strided)))).count();
         let runs = if self.inputs.iter().any(|i| matches!(i, Input::Array(_, Read::Runs(_)))) { 2 } else { 0 };
         let most = if self.folds.iter().any(|&(_, k)| self.steps[k].ty == Ty::Bool) { COUNTED } else { usize::MAX };
@@ -160,9 +170,9 @@ impl Kernel {
     pub fn check_step(&self, k: usize) -> Result<(), String> {
         let s = &self.steps[k];
         if s.y.is_some() != s.op.dyadic() { return Err(format!("step {k}: {:?} takes {} arguments", s.op, 1 + usize::from(s.op.dyadic()))); }
-        let mask = if let Op::Select(m) = s.op { Some(m) } else { None };
+        let third = s.op.third();
         let (mut tys, mut n) = ([Ty::Bool; 3], 0);
-        for v in [Some(s.x), s.y, mask].into_iter().flatten() {
+        for v in [Some(s.x), s.y, third].into_iter().flatten() {
             let ty = match v { Value::Input(j) => self.inputs.get(j).map(|i| i.ty()), Value::Step(j) => self.steps.get(j).filter(|_| j < k).map(|t| t.ty) };
             tys[n] = ty.ok_or_else(|| format!("step {k} reads {v:?}, which comes before no step"))?;
             n += 1;
@@ -171,8 +181,9 @@ impl Kernel {
         let (x, y, same) = (tys[0], tys.get(1).copied(), tys.get(1).is_none_or(|&y| y == tys[0]));
         let fits = match s.op {
             Op::Convert => true, Op::Compare(c) => s.ty == Ty::Bool && same && (x != Ty::Bool || matches!(c, Cmp::Eq | Cmp::Ne)),
-            Op::And | Op::Or | Op::Xor | Op::Not => s.ty == Ty::Bool && x == Ty::Bool && same,
-            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::Divide | Op::Sqrt => s.ty.float() && x == s.ty && same,
+            Op::And | Op::Or | Op::Xor => !s.ty.float() && x == s.ty && same, Op::Not => s.ty == Ty::Bool && x == Ty::Bool,
+            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::MultiplyAdd(_) => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == s.ty,
+            Op::Divide | Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same,
             _ => s.ty != Ty::Bool && x == s.ty && same
         };
         if fits { Ok(()) } else { Err(format!("step {k}: {:?} doesn't take {tys:?} for a {:?} result", s.op, s.ty)) }
@@ -197,8 +208,30 @@ impl Kernel {
         Ok(())
     }
 
-    /// The bytes of the kernel's narrowest type, whose 128-bit vector holds a group's items.
-    fn narrowest(&self) -> i64 { self.inputs.iter().map(|i| i.ty().bytes()).chain(self.steps.iter().map(|s| s.ty.bytes())).min().unwrap_or(8) }
+    /// The bytes of the kernel's narrowest lane, whose 128-bit vector holds a group's items: its narrowest input or step (`widths`).
+    fn narrowest(&self) -> i64 { self.inputs.iter().map(|i| i.ty().bytes()).chain(self.widths()).min().unwrap_or(8) }
+
+    /// The bytes of each step's lanes in registers. A mask lies at the narrower of two widths: the width it's made at, its compared items' or its operands', and the widest width that its readers take it at. A select reads a mask at its operands' width and a conversion at its result's. A store and a count read a mask at whatever width it lies at.
+    fn widths(&self) -> Vec<i64> {
+        let reads = |s: &Step| [Some(s.x), s.y, s.op.third()].into_iter().flatten();
+        // The widest lane that a mask's readers take it at, or 0 where nothing reads it.
+        let mut wanted = vec![0; self.steps.len()];
+        for (k, s) in self.steps.iter().enumerate().rev() {
+            let want = if s.ty == Ty::Bool { wanted[k] } else { s.ty.bytes() };
+            for v in reads(s) { if let Value::Step(j) = v && self.steps[j].ty == Ty::Bool { wanted[j] = wanted[j].max(want); } }
+        }
+        let mut widths: Vec<i64> = Vec::with_capacity(self.steps.len());
+        for (k, s) in self.steps.iter().enumerate() {
+            let width = if s.ty != Ty::Bool { s.ty.bytes() } else {
+                let made = if matches!(s.op, Op::Convert) && self.ty(s.x) != Ty::Bool { 1 } else {
+                    [Some(s.x), s.y].into_iter().flatten().map(|v| match v { Value::Input(j) => self.inputs[j].ty().bytes(), Value::Step(j) => widths[j] }).max().unwrap_or(1)
+                };
+                if wanted[k] == 0 { made } else { made.min(wanted[k]) }
+            };
+            widths.push(width);
+        }
+        widths
+    }
 
     /// The running totals of the kernel's float fold (`running`), where it has one. Each pass of the main loop steps every total once, one vector of totals for each vector of items, and the loops over single vectors and items step one vector of them.
     pub fn totals(&self) -> Option<usize> { self.folds.iter().map(|&(_, k)| self.steps[k].ty).find(|t| t.float()).map(|t| running(t.bytes() as usize)) }
@@ -262,6 +295,10 @@ impl Kernel {
                     let x = slot(&mut b, t, scalars, (s - 1) * 8);
                     (b.ins().splat(t.vector(), x), None)
                 }
+                Input::Constant(t, bits) => {
+                    let x = constant(&mut b, t, bits);
+                    (b.ins().splat(t.vector(), x), None)
+                }
             })
             .collect();
         // A kernel that reads runs takes their length and the items left in the call's first run in its last two scalar slots.
@@ -296,9 +333,10 @@ impl Kernel {
             rebased(&mut b, zero, from);
         }
         let outs: Vec<Ir> = (0..self.stores.len()).map(|k| b.ins().load(ptr, FLAGS, outs, k as i32 * 8)).collect();
-        let accs: Vec<Acc> = self.folds.iter().map(|&(fold, k)| Acc::new(fold, self.steps[k].ty, width)).collect();
+        let widths = self.widths();
+        let accs: Vec<Acc> = self.folds.iter().map(|&(fold, k)| Acc::new(fold, self.steps[k].ty, widths[k], width)).collect();
         let group = self.totals().map_or(UNROLL, |r| r as i64 / lanes);
-        let vector_totals: Vec<Vec<Variable>> = accs.iter().map(|acc| (0..acc.vectors()).map(|_| b.declare_var(acc.ty.vector())).collect()).collect();
+        let vector_totals: Vec<Vec<Variable>> = accs.iter().map(|acc| (0..acc.vectors()).map(|_| b.declare_var(acc.vector())).collect()).collect();
         let scalar_totals: Vec<Variable> = accs.iter().map(|acc| b.declare_var(acc.total())).collect();
         let (i, t) = (b.declare_var(ptr), b.declare_var(ptr));
         let zero = b.ins().iconst(ptr, 0);
@@ -317,7 +355,7 @@ impl Kernel {
         let limit = b.ins().iadd(start, block);
         let end = b.ins().umin(limit, n);
         for ((acc, vars), &total) in accs.iter().zip(&vector_totals).zip(&scalar_totals) {
-            let x = acc.identity(&mut b, Some(acc.ty.vector()));
+            let x = acc.identity(&mut b, Some(acc.vector()));
             for &v in vars { b.def_var(v, x); }
             let x = acc.identity(&mut b, None);
             b.def_var(total, x);
@@ -380,9 +418,8 @@ impl Kernel {
             let results = [self.items(b, iv, 0, true, &now)];
             self.store(b, &results, iv, 1, true, &outs);
             for ((acc, &(_, k)), &total) in accs.iter().zip(&self.folds).zip(&scalar_totals) {
-                let item = results[0][k][0];
-                let item = b.ins().extractlane(item, 0);
-                let item = if acc.ty == Ty::Bool { b.ins().sextend(types::I32, item) } else { item };
+                let item = b.ins().extractlane(results[0][k][0], 0);
+                let item = if acc.ty == Ty::Bool && b.func.dfg.value_type(item) != types::I64 { b.ins().sextend(types::I64, item) } else { item };
                 let x = b.use_var(total);
                 let x = acc.step(b, x, item);
                 b.def_var(total, x);
@@ -393,7 +430,7 @@ impl Kernel {
         b.switch_to_block(reduce);
         for ((acc, vars), &total) in accs.iter().zip(&vector_totals).zip(&scalar_totals) {
             let mut v: Vec<Ir> = vars.iter().map(|&v| b.use_var(v)).collect();
-            if acc.ty == Ty::Bool { v = widen(&mut b, &v, true); }
+            if acc.ty == Ty::Bool && acc.lane == 1 { v = widen(&mut b, &v, true); }
             while v.len() > 1 { v = v.chunks(2).map(|p| if let &[x, y] = p { acc.merged(&mut b, x, y) } else { p[0] }).collect(); }
             let mut x = acc.lane(&mut b, v[0], 0);
             for l in 1..b.func.dfg.value_type(v[0]).lane_count() as u8 {
@@ -424,17 +461,17 @@ impl Kernel {
         b.finalize(config);
     }
 
-    /// Each step's results for a group's items from item `i + skip`, as a list of vectors, each type taking as many vectors as its width needs. Where `single` holds, the lists hold the one item `i + skip`, in the first lane of their first vector. `inputs` holds each array's pointer, with a strided array's stride in bytes, and each scalar's vector.
+    /// Each step's results for a group's items from item `i + skip`, as a list of vectors, each type taking as many vectors as its width needs, and each mask lying at its width from `widths`. Where `single` holds, the lists hold the one item `i + skip`, in the first lane of their first vector. `inputs` holds each array's pointer, with a strided array's stride in bytes, and each scalar's vector.
     fn items(&self, b: &mut FunctionBuilder, i: Ir, skip: i64, single: bool, inputs: &[(Ir, Option<Ir>)]) -> Vec<Vec<Ir>> {
-        let width = self.narrowest();
+        let (width, widths) = (self.narrowest(), self.widths());
         let mut results: Vec<Vec<Ir>> = Vec::with_capacity(self.steps.len());
         let mut loaded: Vec<Option<Vec<Ir>>> = vec![None; self.inputs.len()];
-        for step in &self.steps {
+        for (s, step) in self.steps.iter().enumerate() {
             let mut read = |b: &mut FunctionBuilder, v: Value| -> Vec<Ir> {
                 match v {
                     Value::Step(k) => results[k].clone(),
                     Value::Input(k) => match self.inputs[k] {
-                        Input::Scalar(t) => vec![inputs[k].0; (t.bytes() / width) as usize],
+                        Input::Scalar(t) | Input::Constant(t, _) => vec![inputs[k].0; (t.bytes() / width) as usize],
                         Input::Array(t, read) => {
                             loaded[k].get_or_insert_with(|| load(b, t, read.within(), inputs[k], i, skip, t.bytes() / width, single)).clone()
                         }
@@ -443,30 +480,50 @@ impl Kernel {
             };
             let x = read(b, step.x);
             let y = step.y.map(|y| read(b, y));
-            let mask = if let Op::Select(m) = step.op { Some(read(b, m)) } else { None };
-            let result = match (step.op, y, mask) {
+            // A step on masks reads them at its own width.
+            let (x, y) = if step.ty == Ty::Bool && self.ty(step.x) == Ty::Bool && !matches!(step.op, Op::Convert) {
+                (resize(b, x, false, widths[s]), y.map(|y| resize(b, y, false, widths[s])))
+            } else { (x, y) };
+            let third = step.op.third().map(|v| read(b, v));
+            let result = match (step.op, y, third) {
                 (Op::Convert, _, _) => convert(b, x, self.ty(step.x), step.ty), (Op::Compare(c), Some(y), _) => compare(b, c, self.ty(step.x), &x, &y),
-                (Op::Select(_), Some(y), Some(m)) => select(b, &m, &x, &y, step.ty),
+                (Op::Select(_), Some(y), Some(m)) => select(b, &m, &x, &y),
+                (Op::MultiplyAdd(_), Some(y), Some(z)) => x.iter().zip(&y).zip(&z).map(|((&x, &y), &z)| b.ins().fma(x, y, z)).collect(),
                 (op, y, _) => x.iter().enumerate().map(|(j, &x)| arith(b, op, step.ty, x, y.as_ref().map(|y| y[j]))).collect()
             };
-            results.push(result);
+            results.push(if step.ty == Ty::Bool { resize(b, result, false, widths[s]) } else { result });
         }
         results
     }
 
-    /// Stores the results for an iteration's groups of items, group `u` holding the items from item `i + u × lanes`: each vector of each stored step's lists, or its first item where `single` holds. Each step's stores for every group come together, because stores that alternate between two arrays at one offset stall this Mac's cores: a stage that stored an output beside its result ran 2.4 times slower that way. A Boolean is stored as 0 or 1.
+    /// Stores the results for an iteration's groups of items, group `u` holding the items from item `i + u × lanes`: each vector of each stored step's lists, or its first item where `single` holds. Each step's stores for every group come together, because stores that alternate between two arrays at one offset stall this Mac's cores: a stage that stored an output beside its result ran 2.4 times slower that way. A stored mask's vectors for every group narrow together to one byte an item (`in_bytes`), stored as 0 or 1: as whole vectors, or as one integer for an iteration of fewer than 16 items.
     fn store(&self, b: &mut FunctionBuilder, groups: &[Vec<Vec<Ir>>], i: Ir, lanes: i64, single: bool, outs: &[Ir]) {
         for (&k, &base) in self.stores.iter().zip(outs) {
             let ty = self.steps[k].ty;
             let at = b.ins().imul_imm_s(i, ty.bytes());
             let at = b.ins().iadd(base, at);
+            if ty == Ty::Bool {
+                let items = if single { 1 } else { groups.len() as i64 * lanes };
+                let masks = if single { vec![groups[0][k][0]] } else { groups.iter().flat_map(|r| r[k].iter().copied()).collect() };
+                for (j, x) in in_bytes(b, masks).into_iter().enumerate() {
+                    let one = b.ins().iconst(types::I8, 1);
+                    let one = b.ins().splat(types::I8X16, one);
+                    let x = b.ins().band(x, one);
+                    let x = match items {
+                        16.. => x,
+                        1 => b.ins().extractlane(x, 0),
+                        n => {
+                            let lanes = match n { 2 => types::I16X8, 4 => types::I32X4, _ => types::I64X2 };
+                            let x = cast(b, lanes, x);
+                            b.ins().extractlane(x, 0)
+                        }
+                    };
+                    b.ins().store(FLAGS, x, at, j as i32 * 16);
+                }
+                continue;
+            }
             for (u, results) in groups.iter().enumerate() {
                 for (j, &x) in results[k].iter().enumerate().take(if single { 1 } else { usize::MAX }) {
-                    let x = if ty != Ty::Bool { x } else {
-                        let one = b.ins().iconst(types::I8, 1);
-                        let one = b.ins().splat(types::I8X16, one);
-                        b.ins().band(x, one)
-                    };
                     let x = if single { b.ins().extractlane(x, 0) } else { x };
                     b.ins().store(FLAGS, x, at, (u as i64 * lanes * ty.bytes() + j as i64 * 16) as i32);
                 }
@@ -491,19 +548,25 @@ impl Kernel {
     }
 }
 
-/// A fold's accumulators, in vectors of type `ty`: `sets` sets of one vector for each vector of a group's items, of which unrolled group `u` steps set `u` modulo `sets`. A float fold keeps as many running results as rustymath's folds keep, one set for each group of an iteration. An integer sum keeps enough sets that up to `UNROLL` groups step separate vectors, so that its adds don't wait on each other. `width` is the bytes of the kernel's narrowest type. A count of Booleans keeps its counts in byte lanes, at most 255 to a lane in a block (`COUNTED`).
+/// A fold's accumulators, in vectors of `lane`-byte lanes: `sets` sets of one vector for each vector of a group's items, of which unrolled group `u` steps set `u` modulo `sets`. A float fold keeps as many running results as rustymath's folds keep, one set for each group of an iteration. An integer sum and a count of Booleans keep enough sets that up to `UNROLL` groups step separate vectors, so that their adds don't wait on each other. A count keeps its counts in integer lanes as wide as the lanes its mask lies at (`Kernel::widths`). Byte lanes count at most 255 items in a block (`COUNTED`). `width` is the bytes of the kernel's narrowest type.
 #[derive(Clone, Copy)]
-struct Acc { fold: Fold, ty: Ty, width: i64, sets: usize }
+struct Acc { fold: Fold, ty: Ty, lane: i64, width: i64, sets: usize }
 
 impl Acc {
-    fn new(fold: Fold, ty: Ty, width: i64) -> Self {
-        let (bytes, per) = (ty.bytes() as usize, (ty.bytes() / width) as usize);
+    fn new(fold: Fold, ty: Ty, lane: i64, width: i64) -> Self {
+        let (bytes, per) = (lane as usize, (lane / width) as usize);
         let sets = if ty.float() { running(bytes) / (16 / bytes) / per } else { (UNROLL as usize / per).max(1) };
-        Acc { fold, ty, width, sets }
+        Acc { fold, ty, lane, width, sets }
     }
 
     /// The number of accumulator vectors.
-    fn vectors(self) -> usize { self.sets * (self.ty.bytes() / self.width) as usize }
+    fn vectors(self) -> usize { self.sets * (self.lane / self.width) as usize }
+
+    /// The type of an accumulator vector: the items' vector, or for a count of Booleans, integer lanes as wide as its mask's.
+    fn vector(self) -> Type {
+        if self.ty != Ty::Bool { return self.ty.vector(); }
+        match self.lane { 1 => types::I8X16, 2 => types::I16X8, 4 => types::I32X4, _ => types::I64X2 }
+    }
 
     /// The fold's identity, splatted to `vector` where one is given, or else at the total's type: rustymath's for a float fold, and otherwise the value that leaves a total as it is.
     fn identity(self, b: &mut FunctionBuilder, vector: Option<Type>) -> Ir {
@@ -534,19 +597,19 @@ impl Acc {
     /// `x` and `y`, totals of parts of the same items, merged: by `step`, or added for a count of Booleans.
     fn merged(self, b: &mut FunctionBuilder, x: Ir, y: Ir) -> Ir { if self.ty == Ty::Bool { b.ins().iadd(x, y) } else { self.step(b, x, y) } }
 
-    /// The type of a block's total: the items' type, or `i32` for a count of Booleans.
-    fn total(self) -> Type { if self.ty == Ty::Bool { types::I32 } else { self.ty.ir() } }
+    /// The type of a block's total: the items' type, or `i64` for a count of Booleans.
+    fn total(self) -> Type { if self.ty == Ty::Bool { types::I64 } else { self.ty.ir() } }
 
     /// Lane `l` of `v`, merged accumulators, at the type of a block's total.
     fn lane(self, b: &mut FunctionBuilder, v: Ir, l: u8) -> Ir {
         let x = b.ins().extractlane(v, l);
-        if self.ty == Ty::Bool { b.ins().uextend(types::I32, x) } else { x }
+        if self.ty == Ty::Bool && b.func.dfg.value_type(x) != types::I64 { b.ins().uextend(types::I64, x) } else { x }
     }
 
     /// `total` as its 8-byte slot holds it.
     fn slot(self, b: &mut FunctionBuilder, total: Ir) -> Ir {
         match self.ty {
-            Ty::F32 => b.ins().fpromote(types::F64, total), Ty::F64 | Ty::I64 => total, Ty::U8 => b.ins().uextend(types::I64, total),
+            Ty::F32 => b.ins().fpromote(types::F64, total), Ty::F64 | Ty::I64 | Ty::Bool => total, Ty::U8 => b.ins().uextend(types::I64, total),
             _ => b.ins().sextend(types::I64, total)
         }
     }
@@ -557,6 +620,11 @@ const FLAGS: MemFlagsData = MemFlagsData::new().with_notrap();
 
 /// The integer `v` of scalar type `ty`, as an immediate of `ty`'s width.
 fn int(b: &mut FunctionBuilder, ty: Type, v: i64) -> Ir { let bits = ty.bits(); b.ins().iconst(ty, if bits < 64 { v & ((1 << bits) - 1) } else { v }) }
+
+/// The constant `bits`, as `Input::Constant` holds them, at scalar type `t`.
+fn constant(b: &mut FunctionBuilder, t: Ty, bits: u64) -> Ir {
+    match t { Ty::F32 => b.ins().f32const(f32::from_bits(bits as u32)), Ty::F64 => b.ins().f64const(f64::from_bits(bits)), _ => int(b, t.ir(), bits as i64) }
+}
 
 /// `v`'s bits as type `ty`.
 fn cast(b: &mut FunctionBuilder, ty: Type, v: Ir) -> Ir {
@@ -628,7 +696,7 @@ fn arith(b: &mut FunctionBuilder, op: Op, ty: Ty, x: Ir, y: Option<Ir>) -> Ir {
         (Op::Subtract, Some(y)) => { if ty.float() { b.ins().fsub(x, y) } else { b.ins().isub(x, y) } } (Op::Multiply, Some(y)) => multiply(b, ty, x, y),
         (Op::Divide, Some(y)) => b.ins().fdiv(x, y), (Op::Maximum, Some(y)) => extreme(b, ty, true, x, y),
         (Op::Minimum, Some(y)) => extreme(b, ty, false, x, y), (Op::Negate, _) => { if ty.float() { b.ins().fneg(x) } else { b.ins().ineg(x) } }
-        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => b.ins().fabs(x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x),
+        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => b.ins().fabs(x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x), (Op::Floor, _) => b.ins().floor(x),
         _ => unreachable!("`check` gives each operation its arguments")
     }
 }
@@ -668,7 +736,7 @@ fn extreme(b: &mut FunctionBuilder, ty: Ty, greater: bool, x: Ir, y: Ir) -> Ir {
     }
 }
 
-/// `x` and `y`, a group's vectors of type `t`, compared by `cmp`: masks narrowed to bytes.
+/// `x` and `y`, a group's vectors of type `t`, compared by `cmp`: masks at `t`'s lane width.
 fn compare(b: &mut FunctionBuilder, cmp: Cmp, t: Ty, x: &[Ir], y: &[Ir]) -> Vec<Ir> {
     let (float, int) = match cmp {
         Cmp::Eq => (FloatCC::Equal, IntCC::Equal), Cmp::Ne => (FloatCC::NotEqual, IntCC::NotEqual), Cmp::Lt => (FloatCC::LessThan, IntCC::SignedLessThan),
@@ -676,15 +744,15 @@ fn compare(b: &mut FunctionBuilder, cmp: Cmp, t: Ty, x: &[Ir], y: &[Ir]) -> Vec<
         Cmp::Ge => (FloatCC::GreaterThanOrEqual, IntCC::SignedGreaterThanOrEqual)
     };
     let int = if t == Ty::U8 { int.unsigned() } else { int };
-    let masks: Vec<Ir> = x.iter().zip(y).map(|(&x, &y)| if t.float() { b.ins().fcmp(float, x, y) } else { b.ins().icmp(int, x, y) }).collect();
-    resize(b, masks, Ty::Bool, Ty::Bool)
+    x.iter().zip(y).map(|(&x, &y)| if t.float() { b.ins().fcmp(float, x, y) } else { b.ins().icmp(int, x, y) }).collect()
 }
 
-/// `x` where `mask` is true and `y` where it's false, a group's vectors of type `t`. The mask widens to `t`'s width.
-fn select(b: &mut FunctionBuilder, mask: &[Ir], x: &[Ir], y: &[Ir], t: Ty) -> Vec<Ir> {
-    let masks = resize(b, mask.to_vec(), Ty::Bool, t);
+/// `x` where `mask` is true and `y` where it's false, a group's vectors of one type. The mask takes their lane width.
+fn select(b: &mut FunctionBuilder, mask: &[Ir], x: &[Ir], y: &[Ir]) -> Vec<Ir> {
+    let ty = b.func.dfg.value_type(x[0]);
+    let masks = resize(b, mask.to_vec(), false, ty.lane_bits() as i64 / 8);
     masks.iter().zip(x.iter().zip(y)).map(|(&m, (&x, &y))| {
-        let m = cast(b, t.vector(), m);
+        let m = cast(b, ty, m);
         b.ins().bitselect(m, x, y)
     }).collect()
 }
@@ -749,10 +817,19 @@ fn lanewise(b: &mut FunctionBuilder, x: &[Ir], out: Type, f: impl Fn(&mut Functi
     }).collect()
 }
 
-/// `x`, integers or masks of type `from`, at the lane width of type `to`: extended, by zeros from bytes and by the sign otherwise, or narrowed to each lane's low bits. Masks stay masks either way.
-fn resize(b: &mut FunctionBuilder, mut x: Vec<Ir>, from: Ty, to: Ty) -> Vec<Ir> {
-    while (b.func.dfg.value_type(x[0]).lane_bits() as i64) < to.bytes() * 8 { x = widen(b, &x, from == Ty::U8); }
-    while (b.func.dfg.value_type(x[0]).lane_bits() as i64) > to.bytes() * 8 { x = narrow(b, &x); }
+/// `x`, integers or masks, at lanes of `bytes` bytes: extended, by zeros where `unsigned` holds and by the sign otherwise, or narrowed to each lane's low bits. Masks stay masks either way.
+fn resize(b: &mut FunctionBuilder, mut x: Vec<Ir>, unsigned: bool, bytes: i64) -> Vec<Ir> {
+    while (b.func.dfg.value_type(x[0]).lane_bits() as i64) < bytes * 8 { x = widen(b, &x, unsigned); }
+    while (b.func.dfg.value_type(x[0]).lane_bits() as i64) > bytes * 8 { x = narrow(b, &x); }
+    x
+}
+
+/// Masks `x`, in order, narrowed to one byte a lane, as `narrow` narrows pairs. A lone vector narrows beside itself, so the bytes of `x`'s items lie first.
+fn in_bytes(b: &mut FunctionBuilder, mut x: Vec<Ir>) -> Vec<Ir> {
+    while b.func.dfg.value_type(x[0]).lane_bits() > 8 {
+        if x.len() % 2 == 1 { x.push(x[x.len() - 1]); }
+        x = narrow(b, &x);
+    }
     x
 }
 
@@ -761,12 +838,12 @@ fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty) -> Vec<Ir> {
     if from == to { return x; }
     match (from, to) {
         (Ty::Bool, _) => {
-            let masks = resize(b, x, Ty::Bool, to);
+            let masks = resize(b, x, false, to.bytes());
             let one = match to { Ty::F32 => b.ins().f32const(1.0), Ty::F64 => b.ins().f64const(1.0), _ => b.ins().iconst(to.ir(), 1) };
             let ones = b.ins().splat(to.vector(), one);
             masks.iter().map(|&m| { let m = cast(b, to.vector(), m); b.ins().band(m, ones) }).collect()
         }
-        _ if !from.float() && !to.float() => resize(b, x, from, to),
+        _ if !from.float() && !to.float() => resize(b, x, from == Ty::U8, to.bytes()),
         (Ty::F32, Ty::F64) => widen(b, &x, false),
         (Ty::F64, Ty::F32) => x.chunks(2).map(|p| {
             let (lo, hi) = (b.ins().fvdemote(p[0]), b.ins().fvdemote(p[1]));
@@ -775,7 +852,7 @@ fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty) -> Vec<Ir> {
         (Ty::I64, Ty::F64) => x.iter().map(|&v| b.ins().fcvt_from_sint(types::F64X2, v)).collect(),
         (Ty::I64, _) => lanewise(b, &x, types::F32X4, |b, v| b.ins().fcvt_from_sint(types::F32, v)),
         _ if !from.float() => {
-            let x = resize(b, x, from, Ty::I32);
+            let x = resize(b, x, from == Ty::U8, 4);
             if to == Ty::F32 { return x.iter().map(|&v| b.ins().fcvt_from_sint(types::F32X4, v)).collect(); }
             let mut wide = Vec::with_capacity(2 * x.len());
             for v in x {

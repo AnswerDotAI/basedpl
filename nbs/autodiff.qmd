@@ -139,7 +139,7 @@ w←1 2 3 ⋄ g←(+/w×⊢)∂ 4 5 6
 w←7 8 9 ⋄ (•explain "(+/w×⊢)∂ 4 5 6").programs.event   ⍝ ["replayed"]
 ```
 
-A trace stops at anything that a program can't hold: output or another effect, a read of a differentiated value, as a guard on one makes, or a call that no plan covers. `∂` then runs the call through duals and records. `∂` keeps the stop for those argument types and shapes. `•explain` gives the reason in its `stopped` rows:
+A trace stops at anything that a program can't hold: output or another effect, a random draw, `⍎`, a read of a differentiated value, as a guard on one makes, or a call that no plan covers. `∂` then runs the call through duals and records. `∂` keeps the stop for those argument types and shapes. `•explain` gives the reason in its `stopped` rows:
 
 ```bpl
 pos←{+/⍵ > 0 ? +/⊼⍵ ; 0}
@@ -155,13 +155,15 @@ roots←{+/√⍵}
 (•explain "roots∂ 1 2 3").stopped.reason  ⍝ ["a result whose type depends on values"]
 ```
 
+Write a function for `∂` under static kinds, with each branch as Agenda (`⍚`) or Under at positions (`f@[p]`) rather than a guard. A guard reads a differentiated value to pick one body for the whole call, which a program can't hold. `⍚` and `@` pick items within whole arrays. Today they also stop a trace where their choice or their values come from differentiated values. `∂` still gives the right result there, more slowly. Tracing them is planned, as "Not built yet" describes.
+
 ## Index notation
 
 Index notation writes the formula for one element with named indices. BPL runs the formula once, on whole arrays. [Indexing](indexing.ipynb#named-and-fresh-indices) and [`•index`](system/index.qmd) describe it. `∂` differentiates index notation as it differentiates any other code. This matrix product, written with indices, has the same gradient as `+.×`:
 
 ```bpl
 xu←[2 3]⍴⍳6 ⋄ wu←[3 4]⍴⍳12 ⋄ [b o k]←•index 2 4 3
-{+/,⊼+/⍠k⍵.[b k]×wu.[k o]}∂ xu    ⍝ [324 1108 1892⋄1008 3376 5744]
+{+/,⊼⍵.[b k]+.×⍠k⁝wu.[k o]}∂ xu    ⍝ [324 1108 1892⋄1008 3376 5744]
 {+/,⊼⍵+.×wu}∂ xu                     ⍝ [324 1108 1892⋄1008 3376 5744]
 ```
 

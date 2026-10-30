@@ -2,7 +2,7 @@
 //!
 //! A value that `∂` is differentiating is a dual: a tag, a primal and a tangent of the primal's shape. A dual of a number is a carried atom (`Value::Carried`). Each `∂` call takes a fresh tag, larger than the tags of the calls it runs inside, so a value active at two levels is a dual whose primal is a dual with a smaller tag. A rule applies at the largest tag among its arguments, where an argument without that tag is a constant.
 //!
-//! Primitive dispatch sends each call with a dual argument to `call`, which reads how to run it from its form's row in `Primitive::info()` (`primitive::Facts`). Pervasive forms take their tangents from the partials table, which gives each partial derivative as primitive calls on the primals and the primal result. Rules call primitives, so partials of duals with smaller tags are themselves differentiated. Tangent rules use only `scale`, `add` and `expand`, and other rules only move a tangent's items or apply linear operations to it, so that reverse mode can supply symbolic versions of them.
+//! Primitive dispatch sends each call with a dual argument to `call`, which reads how to run it from its form's row in `Primitive::info()` (`primitive::Facts`). Pervasive forms take their tangents from rustymath's partial derivatives (`rustymath::derivative`): the function object that the kernel table chooses for a call gives its recipe, which `partials` runs as primitive calls on the primals and the primal result. A running trace records each call as a step. Rules call primitives, so partials of duals with smaller tags are themselves differentiated. Tangent rules use only `scale`, `add` and `expand`, and other rules only move a tangent's items or apply linear operations to it, so that reverse mode can supply symbolic versions of them.
 use crate::array::{Footprint, Seen};
 use crate::session;
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
     number::{Arithmetic, Math}, primitive::{Comparison, FoldKind, Form, Operation, Origin, Primitive},
     transform::{Carrier, Cause, Mark, Op, Pairing, Part, Stop, walk}
 };
-use rustymath::buffer::{DType, FloatWidth};
+use rustymath::{buffer::{DType, FloatWidth}, recipe::{Binary, Cmp, Unary}};
 
 /// A value, atom or array, that `∂` is differentiating: the tag of the `∂` call, the primal, and the tangent, which agrees with the primal's layout. Either part can be pending. `items` holds an array's items as dual atoms, built on the first read by code with no rule for duals (`Dual::storage`).
 pub struct Dual {
@@ -112,7 +112,7 @@ pub(crate) fn two_arguments() -> Error {
 }
 
 /// Whether `value`'s numbers are complex, which `∂` doesn't differentiate. A carried value answers from the value its carrier holds (`Carrier::template`): a dual's primal, or a batch's first cell, which has the kind of every cell.
-fn complex(value: &Value) -> bool {
+pub(crate) fn complex(value: &Value) -> bool {
     if let Some(carrier) = value.carrier() { return complex(carrier.template()); }
     match value { Value::Number(n) => n.as_complex().is_some(), Value::Array(_) => matches!(value.dtype(), Some(DType::Complex(_))), _ => false }
 }
@@ -379,6 +379,8 @@ fn reverse(f: &Function, left: Option<&Value>, right: &Value, n: usize, span: &S
     // A unit result's Jacobian is its gradient, which has the argument's structure, with no axis for the result.
     if primal.is_atom() { return lin.gradient(span); }
     let m = primal.len();
+    // A Jacobian too large to hold fails here, before the loops below build and keep its rows or columns.
+    crate::array::generated_len(&[m, n])?;
     if m <= n {
         let mut rows = Vec::with_capacity(m);
         for i in 0..m { rows.push(lin.transposed(unit(primal, i), span)?.iter().flat_map(numbers_of).collect::<Vec<_>>()); }
@@ -488,7 +490,7 @@ fn rebuild(value: &Value, next: &mut dyn FnMut() -> Value) -> Result<Value, Erro
     })
 }
 
-/// `op` applied to arguments of which some is a dual of the running `∂` call `tag`, which `transform::call` finds, or `None` where its own code handles the duals, through the calls it makes. A primitive's form gives its rule (`primitive_rule`), except for `⌹` and `⊥`, whose rules compute through matrix products (`solve` and `decode`). A fold by `+`, `×`, `⌈` or `⌊` with no seed takes its fold rule (`fold_dual`), `+.×` with two arguments the product rule (`product_dual`), and `-.×` with one the determinant's (`determinant`). A seeded fold runs its own code, whose calls of its primitive take their rules. With `Pairing::Matrices`, `⌹`, `+.×` and `-.×` take each matrix of a stack, or each pair of matrices of two stacks, in one call. A rule that `f∂←g` attached applies to a call with one argument (`attached`). A system function that refuses duals, as all but `system::Call::Active` ones do, and `f.g` by functions that aren't primitives with one argument, give UNSUPPORTED ERROR. A system function's inverse runs its own code. A fold by an operand that isn't a primitive, or such an `f.g` with two arguments, runs its own code, whose calls of primitives take their rules.
+/// `op` applied to arguments of which some is a dual of the running `∂` call `tag`, which `transform::call` finds, or `None` where its own code handles the duals, through the calls it makes. A primitive's form gives its rule (`primitive_rule`), except for `⌹` and `⊥`, whose rules compute through matrix products (`solve` and `decode`). A fold with no seed takes its rule where it has one (`fold_dual`), `+.×` with two arguments the product rule (`product_dual`), and `-.×` with one the determinant's (`determinant`). A seeded fold runs its own code, whose calls of its primitive take their rules. With `Pairing::Matrices`, `⌹`, `+.×` and `-.×` take each matrix of a stack, or each pair of matrices of two stacks, in one call. A rule that `f∂←g` attached applies to a call with one argument (`attached`). A system function that refuses duals, as all but `system::Call::Active` ones do, and `f.g` by functions that aren't primitives with one argument, give UNSUPPORTED ERROR. A system function's inverse runs its own code. A fold by an operand that isn't a primitive, or such an `f.g` with two arguments, runs its own code, whose calls of primitives take their rules.
 #[cold]
 #[inline(never)]
 pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, tag: u64, span: &Span) -> Option<Result<Value, Error>> {
@@ -561,6 +563,11 @@ fn primitive_rule(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, s
         Form::Own if matches!(p, Primitive::Range) => range(left.expect("only dyadic ↦ has its own rule"), right, tag, span),
         // Monadic `∨` and `∧` give each real number's two parts along a new last axis (`real_parts`).
         Form::Own if matches!(p, Primitive::Math(Math::Gcd | Math::Lcm)) => real_parts(p, right, tag, span),
+        // `[a b] betainc x` calls `BetaincAt` with its pair on x, a pervasive function of x that has slopes. It has none in a or b.
+        Form::Own if matches!(p, Primitive::Special(crate::primitive::Special::Betainc)) => match left.and_then(|x| split(x, tag).1) {
+            Some(_) => Err(Error::new(ErrorKind::Unsupported, format!("∂ can't differentiate {} in its left argument", p.info().glyph))),
+            None => return None,
+        },
         Form::Own | Form::Unsupported => Err(Error::new(ErrorKind::Unsupported, format!("∂ can't differentiate {}", p.info().glyph))),
     })
 }
@@ -822,13 +829,41 @@ pub(crate) fn attached(f: &Function, g: &Function, right: &Value, tag: u64, span
     Ok(along(&r, &t, tag))
 }
 
-/// A fold of a dual by `p`, where the fold has a row (`Operation::facts`). A linear fold, by `+`, folds the primal and the tangent alike. Folds by `×`, `⌈` and `⌊` have rules of whole-array calls (`fold_rule`). `None` leaves the fold to its own code, which calls `p` on the dual's items.
+/// A fold of a dual by `p`, where `∂` has a rule for it. A linear fold, by `+`, folds the primal and the tangent alike. Folds by `×`, `⌈` and `⌊` have rules of whole-array calls (`fold_rule`), and folds by `-` and `÷` reduce to folds by `+` and `×` (`alternated`). A fold or scan by a primitive whose form is constant, such as a comparison, is constant too, as `primitive_rule` treats the primitive. `None` leaves the fold to its own code, which calls `p` on the dual's items.
 fn fold_dual(p: Primitive, kind: FoldKind, axis: Option<usize>, right: &Value, span: &Span) -> Option<Result<Value, Error>> {
-    let row = Operation::Fold(p, kind).facts(false)?;
     let d = dual_of(right).filter(|_| !right.is_atom())?;
-    if row.linear.is_some() { return Some(d.map(|part| Operation::Fold(p, kind).call(Pairing::Axis(axis), None, part, span))); }
+    let fold = |v: &Value| Operation::Fold(p, kind).call(Pairing::Axis(axis), None, v, span);
+    if matches!(p.facts(true).form, Form::Constant) { return Some(fold(&d.primal)); }
+    if let Some(result) = alternated(p, kind, axis, right, d, span) { return Some(result); }
+    let row = Operation::Fold(p, kind).facts(false)?;
+    if row.linear.is_some() { return Some(d.map(fold)); }
     let (tag, x, tx) = (d.tag, d.primal.clone(), d.full_tangent().clone());
     (!x.shape().is_empty()).then(|| fold_rule(p, kind, axis, &x, &tx, span).map(|(r, t)| dual(tag, r, t)))
+}
+
+/// The fold by `p`, `-` or `÷`, of `right`, a dual whose primal is `d.primal`, along `axis` or the fold's own axis. A fold from the right alternates: `-/x` is `x₀-x₁+x₂-…`, which is `(+/e#x)-+/o#x`, and `÷/x` is `(×/e#x)÷×/o#x`, where `e` and `o` select the items at even and odd positions along the axis. The tangent is that expression's, through the rules of folds by `+` and `×`. The primal is the fold by `p`, so its results where items are zero stay `÷`'s. `None` for another primitive, a scan, and a lane of fewer than two items.
+fn alternated(p: Primitive, kind: FoldKind, axis: Option<usize>, right: &Value, d: &Dual, span: &Span) -> Option<Result<Value, Error>> {
+    let q = match p { Primitive::Arithmetic(Arithmetic::Minus) => Arithmetic::Plus, Primitive::Arithmetic(Arithmetic::Divide) => Arithmetic::Times, _ => return None };
+    let x = &d.primal;
+    let rank = x.shape().len();
+    let along = axis.unwrap_or(kind.default_axis(rank));
+    let n = x.shape().get(along).copied().filter(|&n| n > 1 && !kind.scan)?;
+    Some((|| {
+        let r = Operation::Fold(p, kind).call(Pairing::Axis(axis), None, x, span)?;
+        // The halves are selected and folded along the first axis, where a trace selects whole items, so another axis moves to the front first.
+        let front = if along == 0 { right.clone() } else {
+            let to = (0..rank).map(|j| if j < along { j as i64 + 1 } else if j == along { 0 } else { j as i64 }).collect();
+            Primitive::Transpose.call(Some(&Value::integers(vec![rank], to).described("invalid axes")?), right, span)?
+        };
+        let half = |odd: usize| -> Result<Value, Error> {
+            let mask = Value::integers(vec![n], (0..n).map(|i| (i % 2 == odd) as i64).collect()).described("invalid mask")?;
+            let items = Primitive::Replicate.call_axis(Some(&mask), &front, Some(0), span)?;
+            Operation::Fold(Primitive::Arithmetic(q), kind).call(Pairing::Axis(Some(0)), None, &items, span)
+        };
+        let (_, t) = split(&p.call(Some(&half(0)?), &half(1)?, span)?, d.tag);
+        let t = t.unwrap_or_else(|| zeros(&r));
+        Ok(dual(d.tag, r, t))
+    })())
 }
 
 /// `A+.×B` where an argument is a dual of the running `∂` call `tag`, or `A+.×⍤2 B` on stacks of matrices where `stacked`: the product of the primals, with the tangent `(tA+.×B)+A+.×tB` through the same product kernels.
@@ -918,89 +953,144 @@ fn picked_offsets(p: Primitive, x: &Value, lanes: crate::array::Lanes, scan: boo
     Ok(rows.into_iter().enumerate().map(|(j, row)| lanes.offset(if scan { j / (n * inner) } else { j / inner }, row, j % inner) as i64).collect())
 }
 
-/// The partial derivatives of `p` at `x` and `y`, whose result is `r`, with respect to each argument that `need` asks for. A float constant takes the argument's float width (`float_like`), so that it doesn't widen the argument.
+/// The partial derivatives of `p` at `x` and `y`, whose result is `r`, with respect to each argument that `need` asks for, as primitive calls on the values (`Recorder`). The function object that the kernel table of `f64` chooses for the call (`pervasive::Kernels`) gives them by its recipe (`rustymath::derivative::Partials`). The calls differentiate duals of earlier levels again and keep the partials of exact arguments exact. A running trace records each call as a step. A choice without partials gives UNSUPPORTED ERROR.
 fn partials(p: Primitive, x: Option<&Value>, y: &Value, r: &Value, need: [bool; 2], span: &Span) -> Result<[Option<Value>; 2], Error> {
-    use {Arithmetic::*, Comparison::*, Math::*, Primitive as P};
-    let call = |p: Primitive, a: Option<&Value>, b: &Value| p.call(a, b, span);
-    let dyad = |p: Primitive, a: &Value, b: &Value| call(p, Some(a), b);
-    let monad = |p: Primitive, b: &Value| call(p, None, b);
-    let (times, divide, plus, minus) = (P::Arithmetic(Times), P::Arithmetic(Divide), P::Arithmetic(Plus), P::Arithmetic(Minus));
-    let neg = |v: &Value| monad(minus, v);
-    let recip = |v: &Value| monad(divide, v);
-    let square = |v: &Value| dyad(times, v, v);
-    let ln = |v: &Value| monad(P::Math(Log), v);
-    let circle = |k: i64, v: &Value| dyad(P::Math(Circle), &Value::integer(k), v);
-    let compare = |op: Comparison, a: &Value, b: &Value| dyad(P::Compare(op), a, b);
-    let psi = |v: &Value| crate::primitive::digamma(v, span);
-    let [nx, ny] = need;
-    let lazy = |need: bool, f: &dyn Fn() -> Result<Value, Error>| need.then(f).transpose();
-    let Some(x) = x else {
-        let d = match p {
-            P::Arithmetic(Plus) => Value::integer(1),
-            P::Arithmetic(Minus) => Value::integer(-1),
-            P::Arithmetic(Divide) => neg(&square(r)?)?,
-            P::Math(Power) => r.clone(),
-            P::Math(Log) => recip(y)?,
-            P::Math(Root) => recip(&dyad(plus, r, r)?)?,
-            P::Math(Magnitude) => monad(times, y)?,
-            P::Math(Pi) => crate::primitive::float_like(std::f64::consts::PI, y),
-            // !y is Γ(y + 1). The 1 takes the float width of a constant beside `y` (`float_like`), so ψ computes at the width that the approximate rule gives `y`, and `y + 1` can't wrap at a fixed width.
-            P::Math(Factorial) => dyad(times, r, &psi(&dyad(plus, y, &crate::primitive::float_like(1.0, y))?)?)?,
-            _ => unreachable!("only pervasive glyphs take partials"),
-        };
-        return Ok([None, Some(d)]);
+    use crate::pervasive::Kernels;
+    let recorder = Recorder { values: std::cell::RefCell::new(Vec::with_capacity(16)), error: std::cell::RefCell::new(None), like: r, span };
+    let (yi, ri) = (recorder.held(y.clone()), recorder.held(r.clone()));
+    let chosen = match x {
+        None => <f64 as Kernels>::monad(p, Recorded { recorder: &recorder, args: [yi], r: ri, need: [need[1]], constants: [None; 2] })
+            .flatten().map(|[d]| [None, d]),
+        Some(x) => {
+            let xi = recorder.held(x.clone());
+            let constants = [x.as_real(), y.as_real()];
+            <f64 as Kernels>::dyad(p, Recorded { recorder: &recorder, args: [xi, yi], r: ri, need, constants }).flatten()
+        }
     };
-    Ok(match p {
-        P::Arithmetic(Plus) => [nx.then(|| Value::integer(1)), ny.then(|| Value::integer(1))],
-        P::Arithmetic(Minus) => [nx.then(|| Value::integer(1)), ny.then(|| Value::integer(-1))],
-        P::Arithmetic(Times) => [nx.then(|| y.clone()), ny.then(|| x.clone())],
-        P::Arithmetic(Divide) => [lazy(nx, &|| recip(y))?, lazy(ny, &|| neg(&dyad(divide, r, y)?))?],
-        P::Math(Power) => [
-            // 0 where x is 0 and y is less than 1, as Futhark gives: there x stands in as 1, and the mask clears the result. A singleton y of at least 1, such as the 3 of `⍵*3`, needs no mask, so the partial stays a fusible call on floats.
-            lazy(nx, &|| {
-                let small = compare(Less, y, &Value::integer(1))?;
-                let power = |base: &Value| dyad(times, y, &dyad(P::Math(Power), base, &dyad(minus, y, &Value::integer(1))?)?);
-                if matches!(small.boolean(), Ok(false)) { return power(x); }
-                let keep = dyad(P::Math(Nand), &compare(Equal, x, &Value::integer(0))?, &small)?;
-                dyad(times, &keep, &power(&dyad(plus, x, &monad(P::Math(Not), &keep)?)?)?)
-            })?,
-            // 0 where x isn't positive: there x stands in as 1, whose logarithm is 0.
-            lazy(ny, &|| dyad(times, r, &ln(&dyad(P::Math(Ceiling), x, &compare(LessEqual, x, &Value::integer(0))?)?)?))?,
-        ],
-        P::Math(Log) => [lazy(nx, &|| neg(&dyad(divide, r, &dyad(times, x, &ln(x)?)?)?))?, lazy(ny, &|| recip(&dyad(times, y, &ln(x)?)?))?],
-        P::Math(Root) => [lazy(nx, &|| neg(&dyad(divide, &dyad(times, r, &ln(y)?)?, &square(x)?)?))?, lazy(ny, &|| dyad(divide, r, &dyad(times, x, y)?))?],
-        P::Math(Magnitude) => [
-            // 0 where x is 0, where the residue is y itself.
-            lazy(nx, &|| {
-                let zero = compare(Equal, x, &Value::integer(0))?;
-                let quotient = monad(P::Math(Floor), &dyad(divide, y, &dyad(plus, x, &zero)?)?)?;
-                neg(&dyad(times, &monad(P::Math(Not), &zero)?, &quotient)?)
-            })?,
-            ny.then(|| Value::integer(1)),
-        ],
-        P::Math(Pi) => [lazy(nx, &|| dyad(P::Math(Pi), &Value::integer(1), y))?, lazy(ny, &|| neg(&dyad(divide, r, y)?))?],
-        // x!y is C(y, x), whose partials come from rustymath's `binom_dn` and `binom_dk`.
-        P::Math(Factorial) => {
-            let partial = |wrt_y: bool| crate::primitive::binomial_partial(x, y, wrt_y, span);
-            [nx.then(|| partial(false)).transpose()?, ny.then(|| partial(true)).transpose()?]
+    let chosen = chosen.ok_or_else(|| Error::new(ErrorKind::Unsupported, format!("∂ can't differentiate {} here", p.info().glyph)))?;
+    let slopes = recorder.finish(chosen)?;
+    // A recipe gives no slope in an argument that has none, such as `gammainc`'s shape a.
+    if let Some(side) = (0..2).find(|&s| need[s] && slopes[s].is_none()) {
+        return Err(Error::new(ErrorKind::Unsupported, format!("∂ can't differentiate {} in its {} argument", p.info().glyph, ["left", "right"][side])));
+    }
+    Ok(slopes)
+}
+
+/// The chosen object's recipe as primitive calls through `recorder`, on the values that it holds at `args` and `r`, for the slopes that `need` asks for (`partials`). It is the kernel table's loop for `∂`: the object that the table passes to `differentiable` or `extremum` gives the slopes, and any other choice, which has no partials, gives `None`.
+struct Recorded<'a, 'b, const N: usize> { recorder: &'a Recorder<'b>, args: [usize; N], r: usize, need: [bool; N], constants: [Option<f64>; 2] }
+
+impl crate::pervasive::Dyad<f64> for Recorded<'_, '_, 2> {
+    type Output = Option<[Option<usize>; 2]>;
+    fn numeric(&self) -> crate::number::Numeric { crate::number::Numeric::current() }
+    fn many(self, _: impl rustymath::Binary<f64, Out = f64> + Copy + Sync) -> Self::Output { None }
+    fn booleans(self, _: impl rustymath::Binary<f64, Out = bool> + Copy + Sync) -> Self::Output { None }
+    fn integer(self, _: rustymath::buffer::Width, _: impl rustymath::Binary<f64, Out = f64> + Copy + Sync) -> Self::Output { None }
+    fn differentiable(self, f: impl rustymath::Binary<f64, Out = f64> + rustymath::derivative::Partials<2> + Copy + Sync) -> Self::Output {
+        Some(f.partials(self.recorder, self.args, self.r, self.need))
+    }
+    fn extremum<M: rustymath::reduce::Reduction<f64, Total = f64>>(
+        self, f: impl rustymath::Binary<f64, Out = f64> + rustymath::derivative::Partials<2> + Copy + Sync, _: M
+    ) -> Self::Output { Some(f.partials(self.recorder, self.args, self.r, self.need)) }
+    fn constants(&self) -> (Option<f64>, Option<f64>) { (self.constants[0], self.constants[1]) }
+}
+
+impl crate::pervasive::Monad<f64> for Recorded<'_, '_, 1> {
+    type Output = Option<[Option<usize>; 1]>;
+    fn numeric(&self) -> crate::number::Numeric { crate::number::Numeric::current() }
+    fn integer(self, _: rustymath::buffer::Width, _: impl rustymath::Unary<f64, Out = f64> + Copy + Sync) -> Self::Output { None }
+    fn others<B: crate::element::Stored>(self, _: impl rustymath::Unary<f64, Out = B> + Copy + Sync) -> Self::Output { None }
+    fn differentiable(self, f: impl rustymath::Unary<f64, Out = f64> + rustymath::derivative::Partials<1> + Copy + Sync) -> Self::Output {
+        Some(f.partials(self.recorder, self.args, self.r, self.need))
+    }
+}
+
+/// Calls of BPL's primitives on whole values, which run a recipe of `rustymath::derivative` on them, one call for each operation. A running trace records each call as a step, so partials of duals with smaller tags are themselves differentiated. A value is its index in `values`. After the first error, an operation makes no call and gives index 0, and `finish` gives the error. `like` is the result whose partials the recipe gives.
+struct Recorder<'a> { values: std::cell::RefCell<Vec<Value>>, error: std::cell::RefCell<Option<Error>>, like: &'a Value, span: &'a Span }
+
+impl Recorder<'_> {
+    /// `value`'s index.
+    fn held(&self, value: Value) -> usize {
+        let mut values = self.values.borrow_mut();
+        values.push(value);
+        values.len() - 1
+    }
+    /// The index of `f`'s value, which reads the values.
+    fn with(&self, f: impl FnOnce(&[Value], &Span) -> Result<Value, Error>) -> usize {
+        if self.error.borrow().is_some() { return 0; }
+        let made = f(&self.values.borrow(), self.span);
+        match made {
+            Ok(v) => self.held(v),
+            Err(e) => { *self.error.borrow_mut() = Some(e); 0 }
         }
-        // A tie goes to the left argument, as in Futhark.
-        P::Math(Ceiling) => [lazy(nx, &|| compare(GreaterEqual, x, y))?, lazy(ny, &|| compare(Less, x, y))?],
-        P::Math(Floor) => [lazy(nx, &|| compare(LessEqual, x, y))?, lazy(ny, &|| compare(Greater, x, y))?],
-        P::Math(op @ (Circle | Arc)) => {
-            // A circle code reads its plain value, as a count does, so its own derivative is 0.
-            let code = match x { Value::Number(n) => n.integer().ok(), _ => None };
-            let d = match (op, code) {
-                (_, Some(0)) => neg(&dyad(divide, y, r)?)?, (Circle, Some(1)) => circle(2, y)?, (Circle, Some(2)) => neg(&circle(1, y)?)?,
-                (Circle, Some(3)) => dyad(plus, &Value::integer(1), &square(r)?)?, (Circle | Arc, Some(4)) => dyad(divide, y, r)?,
-                (Circle, Some(5)) => circle(6, y)?, (Circle, Some(6)) => circle(5, y)?, (Circle, Some(7)) => dyad(minus, &Value::integer(1), &square(r)?)?,
-                (_, Some(1)) => recip(&circle(0, y)?)?, (_, Some(2)) => neg(&recip(&circle(0, y)?)?)?,
-                (_, Some(3)) => recip(&dyad(plus, &Value::integer(1), &square(y)?)?)?, (_, Some(5)) => recip(&circle(4, y)?)?,
-                (_, Some(6)) => recip(&circle(5, r)?)?, (_, Some(7)) => recip(&dyad(minus, &Value::integer(1), &square(y)?)?)?,
-                _ => return Err(Error::domain("∂ can't differentiate this circle code"))
-            };
-            [nx.then(|| Value::integer(0)), Some(d)]
+    }
+    /// The index of `p` on the values at `x` and `y`.
+    fn call(&self, p: Primitive, x: Option<usize>, y: usize) -> usize { self.with(|values, span| p.call(x.map(|i| &values[i]), &values[y], span)) }
+    /// The index of the circle function of `code` on the value at `y`.
+    fn circle(&self, code: i64, y: usize) -> usize {
+        let code = self.held(Value::integer(code));
+        self.call(Primitive::Math(Math::Circle), Some(code), y)
+    }
+    /// The values at the indices, or the first error.
+    fn finish<const N: usize>(self, at: [Option<usize>; N]) -> Result<[Option<Value>; N], Error> {
+        if let Some(e) = self.error.into_inner() { return Err(e); }
+        let values = self.values.into_inner();
+        Ok(at.map(|i| i.map(|i| values[i].clone())))
+    }
+}
+
+impl rustymath::recipe::Ops<f64> for Recorder<'_> {
+    type V = usize;
+    type B = usize;
+    /// A whole `x` is an exact integer, which keeps exact arguments' partials exact, and any other a float of the width that a constant beside the result takes (`primitive::float_like`).
+    fn number(&self, x: f64) -> usize {
+        let whole = x.fract() == 0.0 && x.abs() < 2f64.powi(53);
+        self.held(if whole { Value::integer(x as i64) } else { crate::primitive::float_like(x, self.like) })
+    }
+    fn unary(&self, op: Unary, x: usize) -> usize {
+        let call = |p| self.call(p, None, x);
+        match op {
+            Unary::Negate => call(Primitive::Arithmetic(Arithmetic::Minus)), Unary::Magnitude => call(Primitive::Math(Math::Magnitude)),
+            Unary::Sqrt => call(Primitive::Math(Math::Root)), Unary::Floor => call(Primitive::Math(Math::Floor)), Unary::Ln => call(Primitive::Math(Math::Log)),
+            Unary::Sin => self.circle(1, x), Unary::Cos => self.circle(2, x), Unary::Sinh => self.circle(5, x), Unary::Cosh => self.circle(6, x),
+            Unary::Sqrt1mx2 => self.circle(0, x), Unary::Sqrt1px2 => self.circle(4, x),
+            Unary::Digamma => call(Primitive::Special(crate::primitive::Special::Digamma)), Unary::Exp => call(Primitive::Math(Math::Power)),
+            Unary::Lgamma => call(Primitive::Special(crate::primitive::Special::Gammaln)),
         }
-        _ => unreachable!("only pervasive glyphs take partials"),
-    })
+    }
+    fn binary(&self, op: Binary, x: usize, y: usize) -> usize {
+        let call = |p| self.call(p, Some(x), y);
+        match op {
+            Binary::Add => call(Primitive::Arithmetic(Arithmetic::Plus)), Binary::Subtract => call(Primitive::Arithmetic(Arithmetic::Minus)),
+            Binary::Multiply => call(Primitive::Arithmetic(Arithmetic::Times)), Binary::Divide => call(Primitive::Arithmetic(Arithmetic::Divide)),
+            Binary::Larger => call(Primitive::Math(Math::Ceiling)), Binary::Smaller => call(Primitive::Math(Math::Floor)),
+            Binary::BinomDn => call(Primitive::Special(crate::primitive::Special::BinomDn)),
+            Binary::BinomDk => call(Primitive::Special(crate::primitive::Special::BinomDk)),
+            Binary::Polygamma => call(Primitive::Special(crate::primitive::Special::Polygamma)),
+        }
+    }
+    fn compare(&self, c: Cmp, x: usize, y: usize) -> usize {
+        let c = match c { Cmp::Less => Comparison::Less, Cmp::LessEqual => Comparison::LessEqual, Cmp::Equal => Comparison::Equal };
+        self.call(Primitive::Compare(c), Some(x), y)
+    }
+    fn multiply_add(&self, x: usize, y: usize, z: usize) -> usize { self.add(self.multiply(x, y), z) }
+    fn and(&self, x: usize, y: usize) -> usize { self.call(Primitive::Math(Math::Lcm), Some(x), y) }
+    fn or(&self, x: usize, y: usize) -> usize { self.call(Primitive::Math(Math::Gcd), Some(x), y) }
+    fn not(&self, x: usize) -> usize { self.call(Primitive::Math(Math::Not), None, x) }
+    /// UNSUPPORTED ERROR: BPL has no select that a trace records, so the recipes of `rustymath::derivative` mask with `one_where` instead.
+    fn select(&self, _: usize, _: usize, _: usize) -> usize {
+        self.error.borrow_mut().get_or_insert_with(|| Error::new(ErrorKind::Unsupported, "∂ can't record a select"));
+        0
+    }
+    /// A Boolean is already the number 1 or 0.
+    fn one_where(&self, m: usize) -> usize { m }
+    fn constant(&self, v: usize) -> Option<f64> { self.values.borrow()[v].as_real() }
+    /// The sign of `x`. Where the result holds floats, `∂|` gives it in floats of `x`'s width: a trace can't record monadic `×` on floats under dynamic kinds, whose result's type depends on values. Elsewhere, monadic `×`.
+    fn sign(&self, x: usize) -> usize {
+        let floats = matches!(self.like.template_dtype(), Some(DType::Float(_)));
+        self.call(if floats { Primitive::Special(crate::primitive::Special::Sign) } else { Primitive::Arithmetic(Arithmetic::Times) }, None, x)
+    }
+    /// Monadic `÷`.
+    fn reciprocal(&self, x: usize) -> usize { self.call(Primitive::Arithmetic(Arithmetic::Divide), None, x) }
+    /// One call of `*`, whose kernel takes the route that `rustymath::Exponent` gives `k`.
+    fn power(&self, k: f64, x: usize) -> usize { self.call(Primitive::Math(Math::Power), Some(x), self.number(k)) }
 }

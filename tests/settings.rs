@@ -72,7 +72,7 @@ fn boxed_display_and_function_trees() {
     let s = Session::new();
     assert!(s.eval(r#"•prefs ["box":$t "trees":$t "fns":$t]"#).error.is_none());
     assert_eq!(s.eval("⊂4ₓ ⋄ ⊂⊂4ₓ ⋄ ⊂¨[0 1]ₓ").output_text(), ["⊂4ₓ", "⊂⊂4ₓ", "┌→────────┐\n│ ⊂0ₓ ⊂1ₓ │\n└∊────────┘"]);
-    let r = s.eval(r#"A←2 3 4⍴"DUCKSWANBIRDWORMCAKESEED" ⋄ ⊂⍠2 A"#);
+    let r = s.eval(r#"A←2 3 4⍴"DUCKSWANBIRDWORMCAKESEED" ⋄ ⊂₂A"#);
     assert!(r.error.is_none(), "{:?}", r.error);
     assert_eq!(r.output_text(), ["┌→─────────────────────┐\n↓ \"DUCK\" \"SWAN\" \"BIRD\" │\n│ \"WORM\" \"CAKE\" \"SEED\" │\n└∊─────────────────────┘"]);
     assert_eq!(s.eval(r#"⍬ ⋄ "" ⋄ "a""bc" ⋄ ["i":2]⍴1 2"#).output_text(), ["⍬", r#""""#, r#""a""bc""#, r#"["i":2]⍴[1 2]"#]);

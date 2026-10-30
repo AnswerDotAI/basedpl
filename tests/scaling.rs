@@ -129,7 +129,7 @@ fn costs_grow_as_expected() {
     let mut failures = growth_failures(
         &["v+w", "+/v", "v,w", "[i]⌷v", "v⍳w", "{≢⍵}⌸b", "b⊂iv", "⍕v", "{⍵+1}¨iv", "⍋v", "x←0×iv ⋄ {x.[⍵]←1}¨iv", "r←⍬ ⋄ {r,←⍵}¨iv"],
         PEAK_PER_ITEM);
-    failures.extend(growth_failures(&["{y←{⍵×⍵}¨↓⍵ ⋄ z←⊃⍠0 y ⋄ +/,z}∂ m"], RECORD_PEAK_PER_ITEM));
+    failures.extend(growth_failures(&["{y←{⍵×⍵}¨↓⍵ ⋄ z←⊃₀y ⋄ +/,z}∂ m"], RECORD_PEAK_PER_ITEM));
     failures.extend(allocation_failures());
     assert!(failures.is_empty(), "{failures:#?}");
 }

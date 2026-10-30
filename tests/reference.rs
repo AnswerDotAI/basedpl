@@ -1,6 +1,10 @@
 use basedpl::{InterruptHandle, reference};
 use serde_json::{Value, json};
 
+/// The memory guard, as `bpl` registers it, so that `reference::failures` can check that each case gives back the large allocations it makes.
+#[global_allocator]
+static GUARD: rustymath::memory::Guard = rustymath::memory::Guard::new();
+
 const SOURCES: &[(&str, &str)] = &[
     ("core", include_str!("reference/core.bpl")), ("graphics", include_str!("reference/graphics.bpl")), ("ngn", include_str!("reference/ngn.bpl")),
     ("april", include_str!("reference/april.bpl")), ("aplcart", include_str!("reference/aplcart.bpl")), ("dyalog", include_str!("reference/dyalog.bpl")),
@@ -51,7 +55,7 @@ fn reference_format_and_comparison() {
     assert_eq!(file.cases[0]["prefs"], "•prefs [\"float\":32]");
     let span = file.cases[0]["budget_span"].as_array().unwrap();
     assert_eq!(&text[span[0].as_u64().unwrap() as usize..span[1].as_u64().unwrap() as usize], "⍝⍝: 2 3 4");
-    assert!(reference::failures(file.cases.iter().filter(|c| reference::checked(c)), &file.setup, &InterruptHandle::default()).is_empty());
+    assert!(reference::failures(file.cases.iter().filter(|c| reference::checked(c)), &file.setup, false, &InterruptHandle::default()).is_empty());
     reference::check_once(&file.cases[0], &file.setup, &InterruptHandle::default()).unwrap();
     let text = "⍝ route-format —\n⍝⍝⍝ route vector kernel\n⍝⍝⍝ gap stopped \"a read of a traced value\": guard on differentiated data\n{0<+/⍵?+/⍵×⍵;0}∂1 2";
     for ending in ["   ⍝ 2 4", "\n2 4"] {
@@ -112,13 +116,15 @@ fn chosen() -> Vec<reference::File> {
 fn reference_cases() {
     let chosen = chosen();
     if let Ok(shard) = std::env::var(SHARD) {
+        // Each share runs in a process of its own, where no other test allocates, so the guard's count belongs to its cases alone.
+        rustymath::memory::set_checks(true);
         let (k, n): (usize, usize) =
             shard.split_once(' ').and_then(|(k, n)| Some((k.parse().ok()?, n.parse().ok()?))).expect("BASEDPL_SHARD holds a share and a count");
         let mut offset = 0;
         for file in &chosen {
             for (_, case) in file.cases.iter().enumerate().filter(|(i, _)| (offset + i) % n == k) {
                 let start = std::time::Instant::now();
-                for failure in reference::failures([case], &file.setup, &InterruptHandle::default()) { println!("{FAILURE}{failure}"); }
+                for failure in reference::failures([case], &file.setup, false, &InterruptHandle::default()) { println!("{FAILURE}{failure}"); }
                 println!("{TIME}{} {}.bpl:{}", start.elapsed().as_secs_f64(), case["file"].as_str().unwrap(), case["line"]);
             }
             offset += file.cases.len();

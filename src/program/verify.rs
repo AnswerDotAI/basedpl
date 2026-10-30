@@ -40,7 +40,7 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
             let (x, y) = (left.as_ref().map(desc), desc(right));
             let x = left.as_ref().zip(x.as_ref()).map(|(read, d)| operand(nodes, read, d));
             let y = operand(nodes, right, &y);
-            let mapped = plan::map(plan.p, x.as_ref(), &y, plan.numeric)?;
+            let mapped = plan::map(plan.p, x.as_ref(), &y, plan.same, plan.numeric)?;
             let held = [x.as_ref().is_some_and(|o| matches!(o, Operand::Held(_))), matches!(y, Operand::Held(_))];
             if same(&mapped.plan, plan, held) { Ok(mapped.desc) } else { Err("a plan other than the one that its operands give") }
         }

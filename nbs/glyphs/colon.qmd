@@ -33,9 +33,9 @@ M←axes:[1 2 3⋄4 5 6]
 ```bpl
 M←["city":"NY" "LA";"month":"Jan" "Feb" "Mar"]:[1 2 3⋄4 5 6]
 ⍴:M                 ⍝ [2 3]ₓ
-⍴:⍠0 M              ⍝ [2 "month":3]ₓ
-⍳⍠0 ⍴M ⍴ ,M         ⍝ ["city":2]⍴[0 1]ₓ
-⍳⍠0 :⍴M ⍴ M         ⍝ "NY" "LA"
+⍴:₀M                ⍝ [2 "month":3]ₓ
+⍳₀ ⍴M ⍴ ,M          ⍝ ["city":2]⍴[0 1]ₓ
+⍳₀ :⍴M ⍴ M          ⍝ "NY" "LA"
 ```
 
 ## Inverse

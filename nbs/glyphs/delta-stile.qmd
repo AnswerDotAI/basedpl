@@ -27,13 +27,13 @@ See [`⍒`](del-stile.qmd), and [`<`](less-than.qmd) to sort.
 
 ## Fast combinations
 
-These trains and compositions give the result of applying their parts in turn, faster. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
+BPL computes each of these combinations by an algorithm of its own, in any spelling. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
 
 | Combination | Applies to | Benefit |
 |---|---|---|
-| `k↑⍋ Y` or `(k↑)∘⍋` | a vector of reals or characters without keys, with the count at most a quarter of its length | selects the first `k` positions of the grade, or the last `-k`, without ordering the rest |
-| `↑⍋ Y`, `i⌷⍋ Y` or `i⊃⍋ Y` | the same vectors | selects one position without ordering the rest |
-| `⍋⍋ Y` or `⍋∘⍋` | any `Y` without keys on its first axis | gives each major cell's rank by inverting the first grade, without grading it again |
+| `k↑⍋Y`, `k↑⍋ Y` or `(k↑)∘⍋` | a vector of reals or characters without keys, with the count at most a quarter of its length | selects the first `k` positions of the grade, or the last `-k`, without ordering the rest |
+| `↑⍋Y`, `i⌷⍋Y` or `i⊃⍋Y` | the same vectors | selects one position without ordering the rest |
+| `⍋⍋Y`, `⍋⍋ Y` or `⍋∘⍋` | any `Y` without keys on its first axis | gives each major cell's rank by inverting the first grade, without grading it again |
 
 ```bpl
 v←30 10 20 50 40 60 70 80 90 0

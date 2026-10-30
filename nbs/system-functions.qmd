@@ -57,6 +57,12 @@ In Python, the workspace object `bpl` has each system function under its name wi
 |---|---|
 | [`•decompose`](system/decompose.qmd) | Matrix decompositions |
 
+## Special functions
+
+| Name | Description |
+|---|---|
+| [`•special`](system/special.qmd) | Gamma, error and beta functions |
+
 ## Random numbers and distributions
 
 | Name | Description |

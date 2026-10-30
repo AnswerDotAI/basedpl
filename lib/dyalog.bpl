@@ -37,7 +37,7 @@ lsys←{  ⍝ Lindenmayer L-system expansion.
 ⍝ From https://dfns.dyalog.com/c_rr.htm
 rr←{  ⍝ Round-robin tournament.
   v←⍳n←0ₓ⌈≤⍵
-  ≥(⍵÷2)↑⍠¯1 m{[⍺⋄⍵]}⍤1⌽m←0ₓ,v⌽≥[n n]⍴v
+  ≥(⍵÷2)↑₋₁m{[⍺⋄⍵]}⍤1⌽m←0ₓ,v⌽≥[n n]⍴v
 }
 
 ⍝ From https://dfns.dyalog.com/c_easter.htm
@@ -106,7 +106,7 @@ date←{  ⍝ Timestamp from day number (Meeus).
   mm←E-1ₓ+12ₓ×E≥14ₓ
   yyyy←C-4715ₓ+mm>2ₓ
   part←[60 60 1000]ₓ qr ⌊0.5+df×86400000ₓ
-  ⊃⍠0 [yyyy mm dd],part
+  ⊃₀[yyyy mm dd],part
 }
 
 ⍝ From https://dfns.dyalog.com/c_days.htm
@@ -488,9 +488,9 @@ box←{  ⍝ Frame a text array, with optional internal row and column borders.
   [r c]←rh{∪⍺{⍵∊⍳≥⍺ # ⍵}⍵,(~¯1ₓ∊⍵)#0ₓ,⍺}¨,¨2↑ar
   [rw cl]←rh{<⍵∪0ₓ,⍺}¨[r c]
   (~ 0ₓ,rh₁ ∊ c){
-    (↑⍺)↓⍠1(-⍺₁)↓⍠1[: ⍋(≥⍳rh₁),cl]⌷⍵
+    (↑⍺)↓₁(-⍺₁)↓₁[: ⍋(≥⍳rh₁),cl]⌷⍵
   }(~ 0ₓ,rh₀ ∊ r){
-    (↑⍺)↓⍠0(-⍺₁)↓⍠0[⍋(≥⍳rh₀),rw]⌷⍵
+    (↑⍺)↓₀(-⍺₁)↓₀[⍋(≥⍳rh₀),rw]⌷⍵
   }{
     [h w]←≢rw , ≢cl ⋄ q←[h w]⍴ch₁₀
     hz←h,rh₁ ⍴ ch₈
@@ -577,7 +577,7 @@ queens←{  ⍝ N-queens solutions up to rotation and reflection.
   fmt←{
     chars←[(⊃⍵)=⊗⍳⍺]⌷"·⍟"
     expd←1↓,⊃⍺⍴⊂0 1
-    ⊂⍤2 expd#⁻¹⍠¯1chars
+    ⊂⍤2 expd#⁻¹₋₁chars
   }
   squares←[⍳⌈⍵÷2],1↓⍵⍴⊂⍳⍵
   ⍵ fmt ⍬ search squares
@@ -862,8 +862,8 @@ packH←{                      ⍝ Huffman packing.
          2ₓ=|⍹ ∧ ⍬≡⍺ ∨ 1ₓ≠≡⍺?⊃⍶¨(⊂ 0ₓ>⍹ × -×≢¨⍺)↓¨⍺(0 Blk_2)⊂⍵;
 
          0ₓ=⍹?⍺(⍶ ci⌷⊢)⍵;
-         1ₓ=⍹?⊃⍺(⍶¨⊂⍠0)⍵;
-         ¯1ₓ=⍹?⊃ ⍺ ⍶∘(1↣↓)¨⊂⍠0 ⍵;
+         1ₓ=⍹?⊃⍺(⍶¨⊂₀)⍵;
+         ¯1ₓ=⍹?⊃ ⍺ ⍶∘(1↣↓)¨⊂₀ ⍵;
          2ₓ=⍹?⍺ (⍶∘⊖⍢1)Under⊖ ⍵;
          ¯2ₓ=⍹?⍺ ⍶∘(¯1↣↓)⍢2 ⍵;
          3ₓ=⍹?⍺ti⍵ (⍶⍢0)⍤2 ∞ ⍵;
@@ -1047,7 +1047,7 @@ eis←{{⊂1#⍵}⍣ 1ₓ=≡,⍵ ⍵}⊘{eis⍺ , eis⍵}  ⍝ Enclose if simpl
          dist←{,,⊗/2↑⍵ ,¨ ↑⌽⍵}                 ⍝ distribution of productions
          lmat←dist∘defn¨¨¨defs                   ⍝ loading matrix
          bftz←,/bonds,¨¨(,/)²¨lmat           ⍝ bond-from-to-rslt tuples
-         [cats reps bkts blabs],⊂⍠[0 1]⊃{        ⍝ binding structure.
+         [cats reps bkts blabs],⊂₀ ₁⊃{        ⍝ binding structure.
              [bond fm to rslt]←⍺                 ⍝ binding and resulting cats.
              (⊂[bond rslt])@ ⊂≤[fm to] ⍵       ⍝ populate cell
          }/bftz,⊂bmat                            ⍝ loaded binding matrix.
@@ -1072,7 +1072,7 @@ eis←{{⊂1#⍵}⍣ 1ₓ=≡,⍵ ⍵}⊘{eis⍺ , eis⍵}  ⍝ Enclose if simpl
          ⍵=0?[cats reps bkts blabs bmat zmat];    ⍝ raw binding struct.
          trim←{                                  ⍝ without empty rows and cols.
              [r c]←$t,¨1 0{∨/⍠⍺ ⍵}¨⊂1 1↓~⍵∊[""]   ⍝ occupied rows and cols.
-             r#c#⍠¯1 ⍵                               ⍝ masked out empties.
+             r#c#₋₁⍵                               ⍝ masked out empties.
          }                                       ⍝ :: ∇ cells → cells
          snip←{                                  ⍝ snip out top corner.
              t←≥ ,⍵ ⍳ '┬'                        ⍝ width up to the uppermost, leftmost ┬
@@ -1108,7 +1108,7 @@ eis←{{⊂1#⍵}⍣ 1ₓ=≡,⍵ ⍵}⊘{eis⍺ , eis⍵}  ⍝ Enclose if simpl
 
      tfmt←{                                      ⍝ tree-formatted.
          0ₓ=≡⍵?1 1⍴⍵;                             ⍝ atom: char matrix single.
-         subs←⍉⊃{⍺,' ',⍵}/(↓⍠0∇)¨⍵                ⍝ formatted sub-expressions.
+         subs←⍉⊃{⍺,' ',⍵}/(↓₀∇)¨⍵                ⍝ formatted sub-expressions.
          mask←~(↑↓subs)∊"┌─┐ "                   ⍝ sub-exprs connection points.
          mid←⍳⍴mask = ⌊ +/⍸mask ÷ 2               ⍝ mid-point for '┴' char.
          inx←mask+⊽+\mask                       ⍝ indices for box-draw chars.

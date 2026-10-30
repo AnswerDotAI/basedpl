@@ -199,7 +199,7 @@ def test_array_surface():
     with pytest.raises(TypeError): add(a, None)
     with pytest.raises(BplError, match='LENGTH'): a + [1, 2, 3]
     assert (Array(np.ones(2, np.float32)) + .5).np.dtype == np.float32
-    np.testing.assert_array_equal(bpl('m.[0 0]←0 ⋄ m', m=a), [[0, 2, 3], [4, 5, 6]])
+    np.testing.assert_array_equal(bpl('m₀ ₀←0 ⋄ m', m=a), [[0, 2, 3], [4, 5, 6]])
     np.testing.assert_array_equal(a, [[1, 2, 3], [4, 5, 6]])
     assert len(a) == 2
     np.testing.assert_array_equal(a + [10, 20], [[11, 12, 13], [24, 25, 26]])
@@ -329,7 +329,7 @@ def test_keyed_arrays():
     np.testing.assert_array_equal(t.py['b'], [1, 2])
     assert repr(t).startswith("{'b': ")
     d = dict(z=1, y=dict(k=[1, 2, 3]), e={})
-    assert list(bpl('⍳⍠0 t', t=d).py) == ['z', 'y', 'e'] and bpl('t.y.k₁+t.e≡⍬:⍬', t=d).py == 3
+    assert list(bpl('⍳₀t', t=d).py) == ['z', 'y', 'e'] and bpl('t.y.k₁+t.e≡⍬:⍬', t=d).py == 3
     assert (Array(dict(a=1, b=2)) + Array(dict(b=10))).py == dict(a=1, b=12)
     assert Array({'a': 1, 1: 5}).py == {'a': 1, 1: 5}
     with pytest.raises(TypeError): Array({2: 5})
@@ -506,7 +506,7 @@ def test_names():
     teq(bpl('(⍴M)⍴M').names, ('city', 'month'))
     teq(bpl(':M').names, (None, None))
     teq(bpl('(⍴M)⍴,M').names, ('city', 'month'))
-    teq(bpl('+/¨⊂⍠1 M').names, ('city',))
+    teq(bpl('+/¨⊂₁M').names, ('city',))
     teq(bpl('⌽⍤1 M').names, ('city', 'month'))
     with pytest.raises(BplError, match='INDEX'): bpl('+/⍠"missing" M')
     v = Array([1, 2], names=('city',))

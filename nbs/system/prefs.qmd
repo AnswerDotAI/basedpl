@@ -45,14 +45,15 @@ With `batch` on, a map calls its operand once on all its cells together where it
 
 `seed` restarts the session's random numbers from the seed given, so the same seed gives the same draws of [`¿`](../glyphs/inverted-question.qmd) and of a distribution's `sample`. The settings that `•prefs` returns leave `seed` out, because the stream moves on with each draw. Restoring saved settings therefore never reseeds it.
 
-`fusion` shows where large computations stop waiting. Calls of these glyphs on arrays of 131,072 numbers or more run together, block by block, reading each array once: monadic `+ - ÷ | * π ⊼ ⊽ ≤ ≥`, and dyadic `+ - × ÷ | ⌈ ⌊ π` and the comparisons. So do calls on Booleans, such as `∧` and `~`, and calls on integers where integers wrap: under static kinds, and at a fixed width under either kinds. A width or fixed mark, or `•float`, on a waiting result runs with its calls, and stores only the converted items. A comparison runs with a later call that reads it, as in `y×x>0`, unless a name also holds it. Structural functions such as `⌽`, `⍉`, `↑`, `↓` and `↕` wait too on arrays of that size and of any kind, holding only where each item of their result comes from in their argument. Each call waits until something reads its result. A call that would make a chain of waiting calls hold more than 64 calls, or keep alive more than 8 times its largest array, first computes the waiting results it reads. Fused calls, reductions, other pervasive calls and `+.×` read a waiting structural result from its argument, without building it. A read of a few items computes only those items. Any other reader computes the whole result first, such as `⍋`, display, and Python conversions other than NumPy views of structural results. With `fusion` set to `$t`, the innermost call that computes items of a waiting result writes a line naming its function and position, such as `fusion ends at ⍋ (<input>:1:46)`. A reduction such as `+/` of a waiting result runs with the calls and writes nothing. [Performance](../performance.qmd) explains how waiting calls, compiling and static kinds make code fast.
+`fusion` shows where large computations stop waiting. Calls of these glyphs on arrays of 65,536 numbers or more run together, block by block, reading each array once: monadic `+ - ÷ | * π ⊼ ⊽ ≤ ≥`, and dyadic `+ - × ÷ | ⌈ ⌊ π` and the comparisons. Under dynamic kinds, `√` and `⍟` join them where earlier calls keep their argument from being negative or ¯0, as in `√|y` and `⍟1+*y`, and so do dyadic `*` on such a base, as in `0.5*y`, and dyadic `⍟` on two such arguments. So do calls on Booleans, such as `∧` and `~`, and calls on integers where integers wrap: under static kinds, and at a fixed width under either kinds. A width or fixed mark, or `•float`, on a waiting result runs with its calls, and stores only the converted items. A comparison runs with a later call that reads it, as in `y×x>0`, unless a name also holds it. Structural functions such as `⌽`, `⍉`, `↑`, `↓` and `↕` wait too on arrays of that size and of any kind, holding only where each item of their result comes from in their argument. Each call waits until something reads its result. A call that would make a chain of waiting calls hold more than 64 calls, or keep alive more than 8 times its largest array, first computes the waiting results it reads. Fused calls, reductions, other pervasive calls and `+.×` read a waiting structural result from its argument, without building it. A read of a few items computes only those items. Any other reader computes the whole result first, such as `⍋`, display, and Python conversions other than NumPy views of structural results. With `fusion` set to `$t`, the innermost call that computes items of a waiting result writes a line naming its function and position, such as `fusion ends at ⍋ (<input>:1:46)`. A reduction such as `+/` of a waiting result runs with the calls and writes nothing. [Performance](../performance.qmd) explains how waiting calls, compiling and static kinds make code fast.
 
-[`•explain`](explain.qmd) records the same events. In the first example, the comparison runs with the arithmetic and `+/`. In the second, monadic `⌊` ends the fusion of `y×2`:
+[`•explain`](explain.qmd) records the same events. In the first example, the comparison runs with the arithmetic and `+/`. In the second, monadic `⌊` ends the fusion of `y×2`. In the third, `|` keeps the argument of `√` from being negative, so `√` runs with the other calls:
 
 ```bpl
 y←¿1000000⍴0
 (•explain "+/ y+1 < |y-0.5").fused.glyphs    ⍝ ["-|+<+/"]
 (•explain "+/⌊y×2").forced.function         ⍝ ["⌊"]
+(•explain "+/√|y-0.5").fused.glyphs       ⍝ ["-|√+/"]
 ```
 
 A waiting call keeps the settings in force when it was called. Here a comparison waits under Mathish mode's tolerance, and still uses it after the setting changes:
@@ -66,7 +67,7 @@ c←y=y+1E¯15
 •prefs ["mathish":$t]
 ```
 
-A call fuses when it can't fail and its kernel gives the type that the call computes at, or Booleans, so that its result's type doesn't depend on its items. This example checks the list above against the monadic and dyadic forms of each numeric glyph. Halves of small integers keep `∨` and `∧` quick. Under static kinds, every monadic glyph in the list fuses except `○`, whose results are complex. There, the kernels give NaN or floats where dynamic kinds would rerun a call on complex numbers or give integers, so they can't fail:
+A call fuses when it can't fail and its kernel gives the type that the call computes at, or Booleans, so that its result's type doesn't depend on its items. This example checks the list above against the monadic and dyadic forms of each numeric glyph. Halves of small integers keep `∨` and `∧` quick. Under static kinds, every monadic glyph in the list fuses except `○`, whose results are complex, and `+`, which gives floats back unchanged, so there's no call to fuse. There, the kernels give NaN or floats where dynamic kinds would rerun a call on complex numbers or give integers, so they can't fail:
 
 ```bpl
 y←0.5×¿200000⍴100
@@ -74,8 +75,8 @@ fuses←{0ₓ<≢(•explain ⍵).fused.glyphs}
 monads←"+-×÷|⌈⌊*⍟√!○π⊼⊽≤≥"
 dyads←"+-×÷|⌈⌊*⍟√!π∨∧=≠<≤>≥"
 {fuses "+/",⍵,"y"}¨monads # monads      ⍝ "+-÷|*π⊼⊽≤≥"
-{fuses "+/0.5",⍵,"y"}¨dyads # dyads     ⍝ "+-×÷|⌈⌊π=≠<≤>≥"
-•prefs ["kinds":"static"] ⋄ {fuses "+/",⍵,"y"}¨monads # monads    ⍝ "+-×÷|⌈⌊*⍟√!π⊼⊽≤≥"
+{fuses "+/0.5",⍵,"y"}¨dyads # dyads     ⍝ "+-×÷|⌈⌊*π=≠<≤>≥"
+•prefs ["kinds":"static"] ⋄ {fuses "+/",⍵,"y"}¨monads # monads    ⍝ "-×÷|⌈⌊*⍟√!π⊼⊽≤≥"
 •prefs ["kinds":"dynamic"]
 ```
 

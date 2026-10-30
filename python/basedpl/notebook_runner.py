@@ -33,7 +33,7 @@ def main(
     save:bool=False, # Save outputs in the notebook
 ):
     "Run BPL notebooks without starting Jupyter, holding the timing lock shared."
-    try: from fastws.cargo import timing_lock
+    try: from fastws.timelock import timing_lock
     except ImportError: raise SystemExit("bpl-nb runs basedpl's own notebooks and needs the dev extras: pip install 'basedpl[dev]'")
     with timing_lock():
         paths = sorted(path.rglob('*.ipynb')) if path.is_dir() else [path]

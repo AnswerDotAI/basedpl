@@ -235,10 +235,9 @@ fn verdict(case: &JsonValue, outcomes: &[(Run, Outcome)]) -> JsonValue {
     json!({"status":"pass"})
 }
 
-/// `case` checked as `failures` checks the cases of a file, then against its route directives (`route_check`): `{"status":"pass"}`, or the case with the `status`, `message` and `kind` of its failure, and its `actual` result where there is one. Python's `check_file` checks each case this way. Within `cargo test`, only the explain test checks route directives.
+/// `case` checked as `failures` checks it with its route directives, and no setup: `{"status":"pass"}`, or the case with the `status`, `message` and `kind` of its failure, and its `actual` result where there is one.
 pub fn check(case: &JsonValue, interrupt: &InterruptHandle) -> JsonValue {
-    failures([case], "", interrupt).pop().or_else(|| route_check(case, "", interrupt).err().map(|result| failed(case, &result)))
-        .unwrap_or_else(|| json!({"status":"pass"}))
+    failures([case], "", true, interrupt).pop().unwrap_or_else(|| json!({"status":"pass"}))
 }
 
 /// A timed record's expectation, checked once outside timing, with fresh setup for both expressions.
@@ -247,15 +246,88 @@ pub fn check_once(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) ->
     outcome(case, setup, RUNS[0], Some(TIMEOUT), interrupt).map(drop)
 }
 
-/// Warm and capture a case under its ordinary preferences and setup.
+/// Warm and capture a case under its ordinary preferences and setup, on one thread, as the route test runs it.
 pub fn route(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<crate::timing::Capture, JsonValue> {
     enter(case["prefs"].as_str(), None)?;
     let session = Session::new();
     initialized(&session, setup)?;
-    crate::timing::route(&session, case, interrupt).map_err(|message| json!({"status":"invalid", "message":message}))
+    let threads = rustymath::parallel::set_threads(1);
+    let capture = crate::timing::route(&session, case, interrupt);
+    rustymath::parallel::set_threads(threads);
+    capture.map_err(|message| json!({"status":"invalid", "message":message}))
 }
 
 pub fn routed(case: &JsonValue) -> bool { ["route", "allows", "gap"].iter().any(|key| case.get(key).is_some()) }
+
+/// The data that `coverage`'s cases read, with a matrix for its inner products.
+const COVERAGE_SETUP: &str = "x←0.25+¿4096⍴0 ⋄ y←0.25+¿4096⍴0 ⋄ m←0.25+¿[64 64]⍴0 ⋄ k←0.25+¿[64 64]⍴0";
+/// `coverage`'s sections, with the preferences each runs under.
+const COVERAGE_SECTIONS: [(&str, &str); 2] = [("dynamic", ""), ("static", r#"•prefs ["kinds":"static"]"#)];
+/// The constants that `coverage` puts on the right of each dyadic form, and those it puts on the left.
+const COVERAGE_RIGHT: [&str; 5] = ["0", "1", "2", "0.5", "¯1"];
+const COVERAGE_LEFT: [&str; 2] = ["1", "2"];
+
+/// The coverage matrix of the pervasive primitives against the executors, as the route test checks it. Each pervasive form in the facts table, apart from `ᵇ`'s, monadic `+`'s and those that no kind runs on carried values (`Form::Unsupported`), gives cases in a section under dynamic kinds and one under static kinds, all on floats. Each case that maps a form puts it between two other steps of one block stage: it reads `1+x` and its result is doubled. A lone call forced at once runs eagerly, outside any stage, and a form that `Pervasive::kept` removes leaves two steps, which compile. A form that doesn't lower leaves no compiled part, because a part of one step after it doesn't compile. A monadic form gives `2×f 1+x` and its gradient, `{+/f⍵}∂ x`. So does each monadic rule of the form rewriter whose function maps its argument, spelled as the rule writes it with `1+x` for `⍵`, as in `2×⍟1+1+x`, where the rewriter puts the rule's function. A form's own case that a rule would rewrite reads `2+x` in place of `1+x`, as `2×⍟2+x` does, and tests the form itself. A dyadic form gives `2×(1+x)g y`, `2×(1+x)g c` for each constant of `COVERAGE_RIGHT`, `2×c g 1+x` for each of `COVERAGE_LEFT`, the fold `g/2×x`, the inner product `m+.g k` and the gradients `{+/⍵ g y}∂ x`, `{g/⍵}∂ x` and `{+/,m+.g ⍵}∂ k`. A form whose left argument chooses a function, as `○`'s circle code does, takes the codes 0 to 8 on the left instead. Each case runs as the run with fusion at any size runs it, which compiles every stage (`RUNS[2]`), and must take the `compiled` route, or the `fused fold` route for a fold, or the `trace` route for a gradient. An inner product must only record no slow event. `gaps` lists the ways the matrix accepts a case falling short, one line each: the section, a tab, the case's code, a tab, then a `⍝⍝⍝ gap` or `⍝⍝⍝ allows` line as a reference case writes it. A case that `gaps` lists needn't take its route, because each of its lines names the event that stands in the route's way. The captures check those lines as a reference case's are checked, so a line whose event has gone fails. Gives the captures and, for each case whose evaluation fails, such as `~` on floats, its section, code and error. A line of `gaps` that names no case is an error.
+pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(Vec<crate::timing::Capture>, Vec<String>), String> {
+    use crate::primitive::{Extension, Form, Primitive};
+    let text = std::fs::read_to_string(gaps).map_err(|e| format!("{}: {e}", gaps.display()))?;
+    let mut listed = Vec::new();
+    for (n, line) in text.lines().enumerate().filter(|(_, l)| !l.is_empty()) {
+        let fail = || format!("{} line {}: expected a section, a case's code and a gap or allows line, separated by tabs", gaps.display(), n + 1);
+        let [section, code, directive] = line.splitn(3, '\t').collect::<Vec<_>>()[..] else { return Err(fail()) };
+        let (key, rest) = directive.strip_prefix("⍝⍝⍝ ").and_then(|d| d.split_once(' ')).filter(|(k, _)| matches!(*k, "gap" | "allows")).ok_or_else(fail)?;
+        listed.push((section, code, key, event(rest), false));
+    }
+    let pervasive = |p: Primitive, dyadic: bool| { let f = p.facts(dyadic); f.extension == Extension::Pervasive && f.form != Form::Unsupported };
+    let mut cases: Vec<(String, &str)> = Vec::new();
+    for p in Primitive::all().filter(|p| !matches!(p, Primitive::Bitwise(_))) {
+        let g = p.glyph();
+        // Monadic `+` keeps a real operand (`Pervasive::kept`), so its case would compute nothing to compile.
+        if pervasive(p, false) && p.facts(false).linear != Some(crate::primitive::LinearMap::Same) {
+            cases.extend([(format!("2×{g}1+x"), "compiled"), (format!("{{+/{g}⍵}}∂ x"), "trace")]);
+        }
+        if !pervasive(p, true) { continue; }
+        if p.info().dyad.code {
+            for c in 0..=8 {
+                cases.extend([(format!("2×{c}{g}1+x"), "compiled"), (format!("{{+/{c}{g}⍵}}∂ x"), "trace")]);
+            }
+            continue;
+        }
+        cases.push((format!("2×(1+x){g}y"), "compiled"));
+        cases.extend(COVERAGE_RIGHT.iter().map(|c| (format!("2×(1+x){g}{c}"), "compiled")));
+        cases.extend(COVERAGE_LEFT.iter().map(|c| (format!("2×{c}{g}1+x"), "compiled")));
+        cases.extend([(format!("{g}/2×x"), "fused fold"), (format!("m+.{g}k"), ""), (format!("{{+/⍵{g}y}}∂ x"), "trace")]);
+        cases.extend([(format!("{{{g}/⍵}}∂ x"), "trace"), (format!("{{+/,m+.{g}⍵}}∂ k"), "trace")]);
+    }
+    let session = Session::new();
+    initialized(&session, COVERAGE_SETUP).map_err(|e| e.to_string())?;
+    for (code, _) in &mut cases {
+        if !crate::eval::rewrites(&session, code) { continue; }
+        *code = code.replace("1+x", "2+x");
+        if crate::eval::rewrites(&session, code) { return Err(format!("a rule rewrites coverage case {code} in both of its spellings")); }
+    }
+    for pattern in crate::eval::mapping_patterns() {
+        cases.extend([(format!("2×{}", pattern.replace('⍵', "1+x")), "compiled"), (format!("{{+/{pattern}}}∂ x"), "trace")]);
+    }
+    let (mut captures, mut failed) = (Vec::new(), Vec::new());
+    for (section, prefs) in COVERAGE_SECTIONS {
+        for (code, route) in &cases {
+            let mut case = json!({"code":code, "section":section, "id":code});
+            for entry in listed.iter_mut().filter(|e| e.0 == section && e.1 == code.as_str()) {
+                case.as_object_mut().unwrap().entry(entry.2).or_insert_with(|| json!([])).as_array_mut().unwrap().push(entry.3.clone());
+                entry.4 = true;
+            }
+            if !route.is_empty() && case.get("gap").is_none() && case.get("allows").is_none() { case["route"] = json!([route]); }
+            enter(Some(prefs).filter(|p| !p.is_empty()), Some(RUNS[2])).map_err(|e| e.to_string())?;
+            let session = Session::new();
+            initialized(&session, COVERAGE_SETUP).map_err(|e| e.to_string())?;
+            match crate::timing::route(&session, &case, interrupt) { Ok(capture) => captures.push(capture), Err(message) => failed.push(format!("[{section}] {code}: {message}")) }
+        }
+    }
+    let unused: Vec<_> = listed.iter().filter(|e| !e.4).map(|e| format!("{}\t{}", e.0, e.1)).collect();
+    if !unused.is_empty() { return Err(format!("{} names no case: {unused:?}", gaps.display())); }
+    Ok((captures, failed))
+}
 
 fn route_check(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<(), JsonValue> {
     if !routed(case) { return Ok(()); }
@@ -444,13 +516,14 @@ pub fn file(name: &str, text: &str) -> Result<File, String> {
         } else if heading.is_none() { return Err(fail("expected a case header or a timing footer".into())); }
         else if i < lines.len() && end == i { return Err(fail("missing blank record separator".into())); }
         let mut comments = Vec::new();
-        let mut leading = 0;
+        let (mut leading, mut holds) = (0, Vec::new());
         for line in body {
             if let Some(directive) = line.strip_prefix("⍝⍝⍝ ") {
-                let (key, rest) = directive.split_once(' ').ok_or_else(|| fail("a route directive needs its name".into()))?;
-                let value = match key {
-                    "route" if !rest.trim().is_empty() => json!(rest.trim()), "allows" | "gap" => event(rest),
-                    _ => return Err(fail(format!("invalid route directive {directive}")))
+                let (key, rest) = directive.split_once(' ').ok_or_else(|| fail("a directive needs its name".into()))?;
+                let (key, value) = match key {
+                    "route" if !rest.trim().is_empty() => (key, json!(rest.trim())), "allows" | "gap" => (key, event(rest)),
+                    _ if rustymath::timing::hold(directive, &mut holds).map_err(&fail)? => ("held", json!(directive)),
+                    _ => return Err(fail(format!("invalid directive {directive}")))
                 };
                 case.as_object_mut().unwrap().entry(key).or_insert_with(|| json!([])).as_array_mut().unwrap().push(value);
             } else if let Some(rest) = line.strip_prefix("⍝ ") { if heading.is_none() { comments.push(rest); } }
@@ -508,27 +581,46 @@ pub fn load(path: &std::path::Path) -> Result<Vec<File>, String> {
     paths.into_iter().map(|p| file(&p.file_name().unwrap().to_string_lossy(), &std::fs::read_to_string(&p).map_err(|e| e.to_string())?)).collect()
 }
 
-/// The cases of `cases` whose runs fail their expectations, in their order. Route directives aren't checked here: `check` and the explain test check them. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Each case takes its runs (`runs`) one after another, each under its file's leading `•prefs` header and the run's settings (`enter`), and each run has `TIMEOUT`. Callers that check cases in parallel split them across processes, as `tests/reference.rs` and Python's `check_file` do, because a process evaluates one case at a time. After an interrupt, no case starts. The settings are reset at the end.
-pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
+/// The cases of `cases` whose runs fail their expectations, in their order. Where `routes` is set, each case that meets its expectations is then checked against its route directives (`route_check`), as the route test checks them: `check` and Python's `check_file` set it. `tests/reference.rs` doesn't, because within `cargo test` only the explain test checks route directives. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Each case takes its runs (`runs`) one after another, each under its file's leading `•prefs` header and the run's settings (`enter`), and each run has `TIMEOUT`. Callers that check cases in parallel split them across processes, as `tests/reference.rs` and Python's `check_file` do, because a process evaluates one case at a time. After an interrupt, no case starts. The settings are reset at the end.
+pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str, routes: bool, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     let mut failures = Vec::new();
     for case in cases {
-        let mut outcomes = Vec::new();
-        let mut compiled = false;
-        let result = runs(case).into_iter().try_for_each(|run| {
-            if run.compiles == Compiles::Never && !compiled { return Ok(()); }
-            enter(case["prefs"].as_str(), Some(run))?;
-            let before = crate::program::blocks::compiled_runs();
-            outcomes.push((run, if run.twice { twice(case, setup, run, Some(TIMEOUT), interrupt) } else { outcome(case, setup, run, Some(TIMEOUT), interrupt) }?
-            ));
-            compiled |= run.compiles == Compiles::Always && crate::program::blocks::compiled_runs() > before;
-            Ok(())
-        }).map_or_else(|failure| failure, |()| verdict(case, &outcomes));
+        let result = held_back(|| case_result(case, setup, routes, interrupt));
         if result["status"] == "pass" { continue; }
         failures.push(failed(case, &result));
         if result["status"] == "interrupt" { break; }
     }
     crate::settings::reset();
     failures
+}
+
+/// The verdict on `case` over each of its runs, and on its routes where `routes` asks.
+fn case_result(case: &JsonValue, setup: &str, routes: bool, interrupt: &InterruptHandle) -> JsonValue {
+    let mut outcomes = Vec::new();
+    let mut compiled = false;
+    let result = runs(case).into_iter().try_for_each(|run| {
+        if run.compiles == Compiles::Never && !compiled { return Ok(()); }
+        enter(case["prefs"].as_str(), Some(run))?;
+        let before = crate::program::blocks::compiled_runs();
+        outcomes.push((run, if run.twice { twice(case, setup, run, Some(TIMEOUT), interrupt) } else { outcome(case, setup, run, Some(TIMEOUT), interrupt) }?
+        ));
+        compiled |= run.compiles == Compiles::Always && crate::program::blocks::compiled_runs() > before;
+        Ok(())
+    }).map_or_else(|failure| failure, |()| verdict(case, &outcomes));
+    if routes && result["status"] == "pass" { route_check(case, setup, interrupt).err().unwrap_or(result) } else { result }
+}
+
+/// What `check` gives, or a leak where `rustymath::memory::set_checks` is on and a case that passes leaves the guard's count higher than it found it on each of two runs. One run that leaves it higher can be filling a cache that lasts.
+fn held_back(check: impl Fn() -> JsonValue) -> JsonValue {
+    use rustymath::memory::{checks, held};
+    let start = held();
+    let result = check();
+    if !checks() || result["status"] != "pass" || held() <= start { return result; }
+    let again = held();
+    let result = check();
+    let left = held().saturating_sub(again);
+    if result["status"] != "pass" || left == 0 { return result; }
+    json!({"status":"leak", "message":format!("each of two runs left {left} or more bytes held in large allocations")})
 }
 
 /// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own, with the `batch` pref set to `batch` unless that is `None`. Each expectation runs in a module of its own after its lines (`Session::eval_apart`), under the settings they leave. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within the default tolerances that `same_atom` describes, with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each page starts with no kept plans or compiled kernels, as a new process does (`program::forget_plans`, `jit::forget_kernels`), because examples that show block counts and compiles assume one. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
@@ -575,7 +667,7 @@ pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec
     failures
 }
 
-/// The reply to the worker's `reference` request. It gives `text` in a `.bpl` reference file's format and, optionally, a list of the `ids` to check, each a case's id or its header's line number. An id that matches no case is an error. The reply gives the cases that fail, as `failures` gives them.
+/// The reply to the worker's `reference` request. It gives `text` in a `.bpl` reference file's format and, optionally, a list of the `ids` to check, each a case's id or its header's line number. An id that matches no case is an error. The reply gives the cases that fail, with their route directives, as `failures` gives them.
 pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
     let file = file(spec["name"].as_str().unwrap_or_default(), spec["text"].as_str().ok_or("reference needs text as a string")?)?;
     let cases = &file.cases;
@@ -586,7 +678,7 @@ pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Jso
     let unknown: Vec<_> = ids.into_iter().flatten().filter(|id| !cases.iter().any(|case| matches(id, case))).map(JsonValue::to_string).collect();
     if !unknown.is_empty() { return Err(format!("{} match no case. Each id is a case's id or its header's line number.", unknown.join(", "))); }
     let selected = cases.iter().filter(|case| checked(case) && ids.is_none_or(|ids| ids.iter().any(|id| matches(id, case))));
-    Ok(json!({"failures": failures(selected, &file.setup, interrupt), "error": null}))
+    Ok(json!({"failures": failures(selected, &file.setup, true, interrupt), "error": null}))
 }
 
 /// The reply to the worker's `page` request, which gives the `text` of a `.qmd` page and, optionally, a Boolean `batch` that sets the `batch` pref for its examples. The reply gives the examples that fail, as `page` gives them.

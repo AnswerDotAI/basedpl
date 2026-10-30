@@ -41,7 +41,7 @@ def test_worker_bindings_calls_and_echo(tmp_path):
     crash = tmp_path/'crash'
     crash.write_text('#!/bin/sh\nread request\necho "thread main panicked" >&2\nexit 101\n')
     crash.chmod(0o755)
-    rows = fresh(['1', '2'], bpl=crash)
+    rows = fresh(['1', '2'], build=crash)
     assert all(isinstance(r.error, EOFError) and 'panicked' in str(r.error) for r in rows)
 
 def test_worker_keyed_arrays():

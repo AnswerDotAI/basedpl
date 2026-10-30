@@ -26,3 +26,18 @@ Uses complex logarithms where needed. `⍟0` is `¯∞`. `1⍟1` gives zero when
 2⍟⁻¹3      ⍝ 8
 (⍟↢8)⁻¹3   ⍝ 2
 ```
+
+## Fast combinations
+
+BPL computes this combination by an algorithm of its own, in any spelling. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
+
+| Combination | Applies to | Benefit |
+|---|---|---|
+| `⍟1+Y`, `⍟Y+1` or `⍟∘(1+)` | real `Y` | log1p keeps the digits of a small `Y` that `1+Y` rounds away |
+
+At an item below ¯1 under dynamic kinds, and on complex numbers, `⍟1+Y` computes `⍟` of `1+Y`. Softplus, `⍟1+*Y`, stays accurate for a very negative `Y`:
+
+```bpl
+⍟1+1E¯17          ⍝ 1ₑ¯17
+⍟1+*¯40           ⍝ 4.248354255ₑ¯18
+```

@@ -4,6 +4,8 @@ SAX2B extends SAX2 with BPL's missing superscripts, subscripts and arrows. BQN38
 
 SAX2B's subscript letters `ₓ ᵣ ₑ ⱼ` have full character-cell advances for box borders. Its arrows `↣ ↢ ↦` reuse SAX2's right-arrow outline. The diagonals of `/ ⌿` are 5% thicker.
 
+Both fonts offer compact numeric subscripts through the OpenType feature `ss01`. `SUBSCRIPT_SPACING` in `basedpl.font` sets the fraction of each inter-subscript gap and intervening space retained, currently `0.5`. Rebuild after changing it. The shared CSS enables the feature in rendered source code. Character-cell metrics and array-output spacing stay unchanged. Fixed-cell terminals do not use the compact spacing.
+
 Rebuild from the repository root in a Python kernel with `fonttools` and `brotli` installed:
 
 ```python

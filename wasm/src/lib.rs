@@ -12,9 +12,9 @@ thread_local! {
     static PANIC: RefCell<Option<Function>> = const { RefCell::new(None) };
 }
 
-/// The global allocator. `talc` aligns every block to 16 bytes on wasm32, where std's `dlmalloc` aligns only to 8. Elementwise passes that read a large complex array and write complex items ran two to four times slower when the result started at 8 mod 16 and the argument at 0 mod 16.
+/// The global allocator: rustymath's memory guard, which counts large allocations for the speed tests' footprints, over `talc`. `talc` aligns every block to 16 bytes on wasm32, where std's `dlmalloc` aligns only to 8. Elementwise passes that read a large complex array and write complex items ran two to four times slower when the result started at 8 mod 16 and the argument at 0 mod 16.
 #[global_allocator]
-static ALLOCATOR: talc::wasm::WasmDynamicTalc = talc::wasm::new_wasm_dynamic_allocator();
+static GUARD: rustymath::memory::Guard<talc::wasm::WasmDynamicTalc> = rustymath::memory::Guard::over(talc::wasm::new_wasm_dynamic_allocator());
 
 /// Calls `f`, if there is one, with `value`.
 fn send(f: &RefCell<Option<Function>>, value: &JsValue) { if let Some(f) = &*f.borrow() { _ = f.call1(&JsValue::NULL, value); } }
@@ -51,6 +51,10 @@ pub fn name_cpu(name: &str) { basedpl::timing::name_cpu(name) }
 /// The pauses before each retry of a timing that fails, in seconds: `rustymath::timing::RETRY_PAUSES`.
 #[wasm_bindgen]
 pub fn retry_pauses() -> Vec<f64> { basedpl::timing::RETRY_PAUSES.to_vec() }
+
+/// Keeps the calling thread busy for 0.1 s after a retry's pause: `rustymath::timing::warm`.
+#[wasm_bindgen]
+pub fn warm() { rustymath::timing::warm() }
 
 /// Whether the speed test fails on a case still over its wasm budget, as `rustymath::timing::checks_budgets` decides from the CPU that `name_cpu` named.
 #[wasm_bindgen]

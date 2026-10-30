@@ -14,22 +14,23 @@ mod assign;
 mod binder;
 mod bindings;
 mod dissect;
-mod idioms;
+mod rewrite;
 mod operators;
 mod session;
 mod tree;
 pub(crate) use binder::before;
 pub(crate) use bindings::Place;
 pub(crate) use operators::{cell_constant, fold, folded_along, folded_cells, matrices, primitive_expansion, primitive_fold, primitive_product, whole_cells};
+pub(crate) use rewrite::{combined, mapping_patterns, rewrites};
 pub(crate) use tree::Recording;
 use {binder::*, bindings::{Bindings, Frame, FrameBindings}, dissect::*, operators::*};
 
 #[derive(Clone, Debug)]
 pub struct Function { node: Arc<FunctionData> }
 
-/// A function's node with the facts derived from it when the function is built.
 #[derive(Debug)]
-struct FunctionData { kind: FunctionNode, environment: Option<usize>, late: bool, idiom: Option<idioms::Idiom> }
+/// A function's node, with what `Function::new` works out from it once. `rewritten` holds the functions that compute its monadic and dyadic calls through a fast combination (`rewrite`), and `needs` the mask of the primitives and operators it's built from (`rewrite::built_from`).
+struct FunctionData { kind: FunctionNode, environment: Option<usize>, late: bool, rewritten: [Option<Function>; 2], needs: u64, owns: bool }
 
 /// Compares the values held in functions and operators: exactly for `==`, or by `≡`'s rule for `matches`. Its flag marks a datum, an operator's array operand (`is_data`), as against an array that acts as a function.
 type ValueRule<'a, E> = dyn FnMut(&Value, &Value, bool) -> Result<bool, E> + 'a;
@@ -94,12 +95,23 @@ impl Function {
 impl PartialEq for Function { fn eq(&self, other: &Self) -> bool { let Ok(equal) = self.equal_by(other, &mut same_values); equal } }
 
 const MAX_RESOLUTION_DEPTH: usize = 128;
-/// The depth of evaluation allowed, counting each call of a function other than a primitive, each statement of a dfn other than its last, and each group. In the browser the engine's stack is the limit. Plain recursion counts two a level and gets 120 levels from 244. Recursion through an outer product counts three, for 79. Under Node 26's TurboFan on Apple silicon, a level takes 1.75 KB of stack for plain recursion and through an operator's operand, 1.90 KB for recursion that assigns, 1.97 KB through Rank, 2.07 KB through Each and 2.68 KB through an outer product (29 October 2026). x86-64's V8 takes more for the same calls, by an amount no one has measured. The limit fits the deepest of these recursions into `tests/wasm.mjs`'s 80% of a Chrome worker's stack where a level takes up to 1.48 times its stack on Apple silicon.
+/// The depth of evaluation allowed, counting each call of a function other than a primitive, each statement of a dfn other than its last, and each group. In the browser the engine's stack is the limit. Plain recursion counts two a level and gets 120 levels from 244. Recursion through an outer product counts three, for 79. Under Node 26's TurboFan on Apple silicon, a level takes 1.78 KB of stack for plain recursion and through an operator's operand, 1.95 KB for recursion that assigns, 2.00 KB through Rank, 2.20 KB through Each and 2.75 KB through an outer product (29 October 2026). x86-64's V8 takes more for the same calls, by an amount no one has measured. The limit fits the deepest of these recursions into `tests/wasm.mjs`'s 80% of a Chrome worker's stack where a level takes up to 1.39 times its stack on Apple silicon.
 const MAX_CALL_DEPTH: usize = if cfg!(web) { 244 } else { 20_000 };
 /// Lexical frames allowed. They live on the heap, so the browser allows as many as native builds.
 const MAX_FRAME_DEPTH: usize = 20_000;
 const STACK_RED_ZONE: usize = 1 << 20;
 const STACK_SEGMENT: usize = 16 << 20;
+/// Whether a call can run without growing the stack: whether at least `STACK_RED_ZONE` bytes are left below the current frame. stacker knows the limit natively and inside a segment that it grew. In the browser it reports none for the main stack. There the linker marks the stack's bottom with `__stack_low`. The browser build links a main stack of 4 MiB (`.cargo/config.toml`), and an evaluation grows a segment only once it has used 3 MiB of it.
+#[inline(always)]
+fn room() -> bool {
+    #[cfg(web)]
+    unsafe extern "C" { safe static __stack_low: u8; }
+    #[cfg(web)]
+    let left = stacker::remaining_stack().or_else(|| Some((psm::stack_pointer() as usize).saturating_sub(&raw const __stack_low as usize)));
+    #[cfg(not(web))]
+    let left = stacker::remaining_stack();
+    left.is_some_and(|r| r >= STACK_RED_ZONE)
+}
 /// The LIMIT error for evaluation deeper than `MAX_CALL_DEPTH`.
 #[cold]
 fn depth_error(span: &Span) -> Error { Error::new(Kind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}")).at(span) }
@@ -151,6 +163,12 @@ impl Argument for Cow<'_, Value> {
     fn value(&self) -> &Value { self }
     #[inline(always)]
     fn owned(self) -> Value { self.into_owned() }
+}
+impl Argument for Value {
+    #[inline(always)]
+    fn value(&self) -> &Value { self }
+    #[inline(always)]
+    fn owned(self) -> Value { self }
 }
 /// The error for a selection target that does something other than select from its array, such as assigning the selection.
 const INVALID_SELECTION: &str = "invalid selective-assignment expression";
@@ -235,14 +253,16 @@ impl FunctionNode {
 }
 
 impl Builtin {
-    /// This built-in function's `Function`, from one table that every session and thread shares. The table is built on the first read. It holds each system function, each primitive that `Primitive::all` lists, and the primitives without a glyph: `Bracket`, and the `Exact` functions that `xₓ` and `xᵣy` call. `Arc`, the form that `○⁻¹` calls, and `ᵇ`'s tables never become functions.
+    /// This built-in function's `Function`, from one table that every session and thread shares. The table is built on the first read. It holds each system function, each primitive that `Primitive::all` lists, and the primitives without a glyph: `Bracket`, the `Exact` functions that `xₓ` and `xᵣy` call, and the functions that `•special` makes. `Arc`, the form that `○⁻¹` calls, and `ᵇ`'s tables never become functions. A fast combination's function (`Special`) has no entry, and becomes a function of its own on each read.
     pub(crate) fn function(self) -> Function {
         static TABLE: std::sync::LazyLock<HashMap<Builtin, Function>> = std::sync::LazyLock::new(|| {
             let primitives = Primitive::all().chain([Primitive::Bracket]).chain(crate::primitive::Exact::ALL.map(Primitive::Exact))
+                .chain(crate::primitive::Special::ALL.map(Primitive::Special))
                 .map(|p| (Builtin::Primitive(p), Function::plain(FunctionNode::Primitive(p))));
             primitives.chain(crate::system::Entry::all().map(|entry| (Builtin::System(entry), entry.built()))).collect()
         });
-        TABLE[&self].clone()
+        let Builtin::Primitive(p) = self else { return TABLE[&self].clone() };
+        TABLE.get(&self).cloned().unwrap_or_else(|| Function::plain(FunctionNode::Primitive(p)))
     }
 }
 
@@ -285,6 +305,8 @@ impl Function {
     }
     pub(crate) fn environment(&self) -> Option<usize> { self.node.environment }
     fn late(&self) -> bool { self.node.late }
+    /// Whether the function can use arguments it owns: a dfn, or a composition or fork with such an operand. `dispatch` lends its arguments to any other composition or fork, which would only drop them.
+    fn owns(&self) -> bool { self.node.owns }
     /// The function that `value` gives where a call needs one: a function, or the callable node of an array that holds a function (`from_array`).
     fn from_value(value: Binding, span: &Span) -> Result<Self, Error> {
         match value {
@@ -390,7 +412,7 @@ impl Function {
     /// A train. Each subject first binds the part after it, so `2×` is `2↣×` (`train_parts`). The train then builds from its last part leftwards (`train_shape`). So `32+1.8×` is `(32↣+)∘(1.8↣×)`, `⊢-2×⊢` is `⊢-(2↣×)∘⊢`, and `2|#⊢` is `(2↣|)#⊢`.
     fn train(tines: Vec<Tine>, span: &Span) -> Result<Self, Error> {
         let parts = Self::train_parts(&tines, |f| Ok(f.clone()), |a, f: Result<Self, Error>| before(a.clone(), f?, span));
-        Self::train_shape(parts, |f| f, |g, f, result| Self::new(FunctionNode::Fork([g?, f?, result]), span), |f, result| atop(f?, result, span))
+        Self::train_shape(parts, &mut (), |_, f| f, |_, g, f, result| Self::new(FunctionNode::Fork([g?, f?, result]), span), |_, f, result| atop(f?, result, span))
     }
     /// A train's parts, last part first, each with whether it's bound. Each function tine makes a part (`function`), and each subject binds the part after it as its left argument (`bind`). `train` builds a train's function from these parts, and `operators::train_call` calls them.
     fn train_parts<'t, P>(tines: &'t [Tine], function: impl Fn(&'t Function) -> P, bind: impl Fn(&'t Value, P) -> P) -> impl Iterator<Item = (P, bool)> {
@@ -406,15 +428,15 @@ impl Function {
             Some(part)
         })
     }
-    /// A train's structure, from its parts, last part first, each with whether it's bound, as `2↣×` is. A bound part takes one argument, so it makes an atop with what's built (`atop(f, result)`). Any other part makes a fork with the part before it (`fork(g, f, result)`), or an atop when it comes first. `train` builds a train's function by this structure, and `operators::train_call` calls a train's tines by it.
-    fn train_shape<P, R>(
-        parts: impl Iterator<Item = (P, bool)>, last: impl FnOnce(P) -> Result<R, Error>, mut fork: impl FnMut(P, P, R) -> Result<R, Error>,
-        mut atop: impl FnMut(P, R) -> Result<R, Error>) -> Result<R, Error> {
-        let mut parts = parts.peekable();
+    /// A train's structure, from its parts, last part first, each with whether it's bound, as `2↣×` is. A bound part takes one argument, so it makes an atop with what's built (`atop(f, result)`). Any other part makes a fork with the part before it (`fork(g, f, result)`), or an atop when it comes first. Each call gets `context`, which `train_call` uses for the train's arguments. `train` builds a train's function by this structure, and `operators::train_call` calls a train's tines by it.
+    fn train_shape<C, P, R>(
+        mut parts: impl Iterator<Item = (P, bool)>, context: &mut C, last: impl FnOnce(&mut C, P) -> Result<R, Error>,
+        mut fork: impl FnMut(&mut C, P, P, R) -> Result<R, Error>, mut atop: impl FnMut(&mut C, P, R) -> Result<R, Error>) -> Result<R, Error> {
         let (part, _) = parts.next().expect("a train ends in a function");
-        let mut result = last(part)?;
+        let mut result = last(context, part)?;
         while let Some((f, bound)) = parts.next() {
-            result = match parts.next_if(|_| !bound) { Some((g, _)) => fork(g, f, result)?, None => atop(f, result)? };
+            let g = if bound { None } else { parts.next() };
+            result = match g { Some((g, _)) => fork(context, g, f, result)?, None => atop(context, f, result)? };
         }
         Ok(result)
     }
@@ -427,8 +449,11 @@ impl Function {
     /// The array that a function from `constant` returns, or `None` for any other function.
     fn as_constant(&self) -> Option<&Value> { match self.node() { FunctionNode::Modified(OperatorKind::Commute, Operand::Value(a)) => Some(a), _ => None } }
     pub(crate) fn system(f: crate::system::SystemFunction) -> Self { Self::plain(FunctionNode::System(f)) }
-    /// A function of `kind`, a primitive's or a system function's node. Neither holds an environment or an idiom.
-    fn plain(kind: FunctionNode) -> Self { Self { node: Arc::new(FunctionData { kind, environment: None, late: false, idiom: None }) } }
+    /// A function of `kind`, a primitive's or a system function's node. Neither holds an environment or a rewrite. A primitive keeps its needs mask (`rewrite::glyph`).
+    fn plain(kind: FunctionNode) -> Self {
+        let needs = if let FunctionNode::Primitive(p) = &kind { rewrite::glyph(*p) } else { 0 };
+        Self { node: Arc::new(FunctionData { kind, environment: None, late: false, rewritten: [None, None], needs, owns: false }) }
+    }
     fn new(node: FunctionNode, span: &Span) -> Result<Self, Error> {
         use OperatorKind::*;
         let node = match node {
@@ -484,8 +509,16 @@ impl Function {
             FunctionNode::LateBound(..) => (environment, true),
             FunctionNode::Defined(c) | FunctionNode::Derived(c, ..) => (environment.max(c.environment), late), _ => (environment, late)
         };
-        let idiom = idioms::recognise(&node);
-        Ok(Self { node: Arc::new(FunctionData { kind: node, environment, late, idiom }) })
+        let owns = match &node {
+            FunctionNode::Defined(_) | FunctionNode::Derived(..) | FunctionNode::LateBound(..) => true,
+            FunctionNode::Composed(_, operands) => operands.iter().any(|o| matches!(o, Operand::Function(f) if f.owns())),
+            FunctionNode::Fork(fns) => fns.iter().any(Function::owns), _ => false
+        };
+        let needs = rewrite::built_from(&node);
+        let mut f = Self { node: Arc::new(FunctionData { kind: node, environment, late, rewritten: [None, None], needs, owns }) };
+        let rewritten = rewrite::function(&f, span);
+        if rewritten.iter().any(Option::is_some) && let Some(data) = Arc::get_mut(&mut f.node) { data.rewritten = rewritten; }
+        Ok(f)
     }
     /// `call_with` on borrowed arguments.
     #[inline(always)]
@@ -502,8 +535,8 @@ impl Function {
         }
         session().descend(span)?;
         let capture = session().capture.replace(false);
-        // This is `stacker::maybe_grow`, without its closure's frame. An unknown stack limit grows the stack, as there.
-        let room = stacker::remaining_stack().is_some_and(|r| r >= STACK_RED_ZONE);
+        // This is `stacker::maybe_grow`, without its closure's frame, judging the room left as `room` does.
+        let room = room();
         let result = if crate::explain::reporting() { self.reported(left, right, room, span) }
         else if room { self.dispatch(left, right, span) }
         else { self.grown(left, right, span) };
@@ -517,16 +550,17 @@ impl Function {
         let scalar = if session().transforming() { None } else { p.scalar_call(left, right) };
         scalar.map_or_else(|| self.dispatch(left, right, span), |result| result.map(Bound::from)).map_err(|e| e.at(span))
     }
-    /// `dispatch` under `•prefs ["fusion":$t]` or `•explain`. Where no call inside it reported, it reports the items of pending arrays that this call computed, and each dual argument whose items it read one by one (`derivative`), with the function and its position. It claims the routes that ran item by item inside it and that no call inside it claimed (`explain::claim_itemwise`). `watched` makes each report. Out of line, so that `call` pays one branch.
+    /// `dispatch` under `•prefs ["fusion":$t]` or `•explain`. Where no call inside it reported, it reports the items of pending arrays that this call computed, with the function and its position. Under the `fusion` pref it also reports each argument that `∂` carries, a dual or a traced value, whose items the call read one by one (`derivative`), keeping that argument's carrier through the call to see. It keeps nothing else, so the call holds its arguments as an unreported call does: a kept argument would keep the arrays it holds alive, which changes the routes that ask whether something else holds an array (`Value::folded`). It claims the routes that ran item by item inside it and that no call inside it claimed (`explain::claim_itemwise`). `watched` makes each report. Out of line, so that `call` pays one branch.
     #[cold]
     #[inline(never)]
     fn reported<L: Argument, R: Argument>(&self, left: Option<L>, right: R, room: bool, span: &Span) -> Result<Bound, Error> {
-        let built = |v: Option<&Value>| v.and_then(Value::carrier).map(crate::transform::Carrier::items_built);
-        // Each dual argument whose items weren't built, kept to see whether the call builds them.
-        let duals = [left.as_ref().map(L::value), Some(right.value())].map(|v| v.filter(|v| built(Some(v)) == Some(false)).cloned());
+        use crate::transform::Carrier;
+        // Each carrier of `∂` whose items weren't built, kept to see whether the call builds them.
+        let carried = |v: &Value| v.carrier().filter(|c| matches!(**c, Carrier::Dual(_) | Carrier::Traced(_)) && !c.items_built()).cloned();
+        let carriers = if crate::settings::reports_fusion() { [left.as_ref().map(L::value).and_then(carried), carried(right.value())] } else { [None, None] };
         let mark = crate::explain::itemwise_mark();
         let run = move || if room { self.dispatch(left, right, span) } else { self.grown(left, right, span) };
-        let unbuilt = || duals.iter().any(|v| v.is_some() && built(v.as_ref()) == Some(true)).then_some("∂ runs item by item");
+        let unbuilt = || carriers.iter().flatten().any(Carrier::items_built).then_some("∂ runs item by item");
         let result = watched(span, || self.bpl(), run, unbuilt);
         if let Some(mark) = mark { crate::explain::claim_itemwise(mark, || self.bpl(), span); }
         result
@@ -550,7 +584,7 @@ impl Function {
             _ => crate::program::tacit(self, left, right, span, traced),
         }
     }
-    /// Tries the function's idiom (`idioms`), then sends compositions and dfns straight to their handlers, and other functions to `apply`.
+    /// Calls the function that computes this call through a fast combination, where the form rewriter gave one (`rewrite`) and no running level carries an argument. Otherwise it sends compositions, forks and dfns straight to their handlers, with the arguments as the caller gave them, and other functions to `apply`.
     #[inline(always)]
     fn dispatch<L: Argument, R: Argument>(&self, left: Option<L>, right: R, span: &Span) -> Result<Bound, Error> {
         let resolved;
@@ -558,10 +592,14 @@ impl Function {
         let (x, y) = (left.as_ref().map(L::value), right.value());
         if session().transforming() {
             if let Some(result) = f.op(x).and_then(|op| crate::transform::call(op, x, y, span)) { return result.map(Bound::from); }
+        } else if let Some(rewritten) = &f.node.rewritten[usize::from(x.is_some())] {
+            return Self::through(rewritten, left, right, span);
         }
-        if let Some(idiom) = &f.node.idiom { if let Some(result) = idiom.call(f, x, y, span) { return result; } }
         match f.node() {
+            FunctionNode::Composed(..) if f.owns() => composition(f, left, right, span),
             FunctionNode::Composed(..) => composition(f, x, y, span),
+            FunctionNode::Fork(tines) if f.owns() => fork_call(tines, left, right, span),
+            FunctionNode::Fork(tines) => fork_call(tines, x, y, span),
             FunctionNode::Ruled(f, _) => f.ruled(x, y, span),
             FunctionNode::Defined(_) | FunctionNode::Derived(..) => session().call_defined(f, left, right).map_err(|mut e| {
                 e.calls.push(span.clone());
@@ -569,6 +607,13 @@ impl Function {
             }),
             _ => f.apply(x, y, span),
         }
+    }
+    /// The call through `rewritten`, the function that the form rewriter gave for this call: a structural combination's own code (`rewrite::direct`), or `rewritten`'s dispatch. Out of line, since `dispatch` is inlined at every call site and few calls come here.
+    #[inline(never)]
+    fn through<L: Argument, R: Argument>(rewritten: &Function, left: Option<L>, right: R, span: &Span) -> Result<Bound, Error> {
+        let (x, y) = (left.as_ref().map(L::value), right.value());
+        if let Some((s, bound)) = rewrite::direct(rewritten) { check()?; return combined(s, bound.or(x), y, span).map(Bound::from); }
+        rewritten.dispatch(left, right, span)
     }
     /// The function's result on these arguments, as an array.
     #[inline(always)]
@@ -665,7 +710,7 @@ impl Function {
         }
         let array = match self.node() {
             // `dispatch` calls these itself.
-            FunctionNode::LateBound(..) | FunctionNode::Composed(..) | FunctionNode::Ruled(..) | Defined(_) | Derived(..) => unreachable!(),
+            FunctionNode::LateBound(..) | FunctionNode::Composed(..) | FunctionNode::Ruled(..) | Defined(_) | Derived(..) | Fork(_) => unreachable!(),
             FunctionNode::Primitive(Primitive::Execute) => return session().execute(left, right, span),
             FunctionNode::Inverse(f) => return inverse(f, left.map(|a| (a, true)), right, span),
             FunctionNode::Modified(OperatorKind::Each, Operand::Function(f)) => return each(f, left, right, span),
@@ -702,7 +747,6 @@ impl Function {
                     crate::system::Call::Load => return session().load(right, span),
                 }
             }
-            Fork(fns) => return forked(|| fns[2].call_array(left, right, span), || fns[0].call_array(left, right, span), |x, y| fns[1].call(Some(x), y, span)),
             Fold(operand, kind) => fold(operand, *kind, None, left, right, span),
             FunctionNode::Axis(f, spec) => return along_axes(f, spec, left, right, span),
             FunctionNode::Array(items) => return function_array(items, left, right, span),
@@ -794,11 +838,12 @@ impl OperandRef<'_> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum OperatorNode { Defined(Closure), Primitive(OperatorKind), Bound(Arc<OperatorNode>, Operand) }
+pub(crate) enum OperatorNode { Defined(Closure), Primitive(OperatorKind), Subscript(Value), Bound(Arc<OperatorNode>, Operand) }
 impl OperatorNode {
     fn equal_by<E>(&self, other: &Self, values: &mut ValueRule<'_, E>) -> Result<bool, E> {
         Ok(match (self, other) {
             (Self::Defined(x), Self::Defined(y)) => x == y, (Self::Primitive(x), Self::Primitive(y)) => x == y,
+            (Self::Subscript(x), Self::Subscript(y)) => values(x, y, true)?,
             (Self::Bound(n, a), Self::Bound(m, b)) => n.equal_by(m, values)? && a.equal_by(b, values)?, _ => false
         })
     }
@@ -847,12 +892,13 @@ impl OperatorNode {
     fn text(&self, el: Elide) -> String {
         match self {
             Self::Defined(c) => c.text().into(), Self::Primitive(op) => el.notation.glyph(op.glyph()).into(),
+            Self::Subscript(index) => format!("{}({})", el.notation.glyph(OperatorKind::Axis.glyph()), Operand::Value(index.clone()).text(el, &mut 1000)),
             Self::Bound(op, right) => format!("{}({})", op.text(el), right.text(el, &mut 1000))
         }
     }
     fn is_dyadic(&self) -> bool {
         match self {
-            Self::Defined(c) => c.definition.kind == DefinitionKind::DyadicOperator, Self::Primitive(op) => op.info().dyadic(), Self::Bound(..) => false
+            Self::Defined(c) => c.definition.kind == DefinitionKind::DyadicOperator, Self::Primitive(op) => op.info().dyadic(), Self::Subscript(_) | Self::Bound(..) => false
         }
     }
 
@@ -860,9 +906,10 @@ impl OperatorNode {
         let node = match self {
             Self::Defined(c) => FunctionNode::Derived(c, operand, None),
             Self::Primitive(op) => FunctionNode::Modified(op, operand),
+            Self::Subscript(index) => FunctionNode::Composed(OperatorKind::Axis, [operand, Operand::Value(index)]),
             Self::Bound(op, right) => match Arc::unwrap_or_clone(op) {
                 Self::Defined(c) => FunctionNode::Derived(c, operand, Some(right)), Self::Primitive(op) => FunctionNode::Composed(op, [operand, right]),
-                Self::Bound(..) => unreachable!()
+                Self::Subscript(_) | Self::Bound(..) => unreachable!()
             },
         };
         Function::new(node, span).map(Binding::Function)
@@ -870,7 +917,8 @@ impl OperatorNode {
     /// The innermost frame the operator depends on: its dfn's, or that of an operand bound to it.
     fn environment(&self) -> Option<usize> {
         match self {
-            Self::Defined(c) => c.environment, Self::Primitive(_) => None, Self::Bound(op, right) => op.environment().max(OperandRef::from(right).environment())
+            Self::Defined(c) => c.environment, Self::Primitive(_) | Self::Subscript(_) => None,
+            Self::Bound(op, right) => op.environment().max(OperandRef::from(right).environment())
         }
     }
 }

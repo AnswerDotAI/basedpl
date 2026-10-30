@@ -249,13 +249,13 @@ X ← {  ⍝ Exact cover: Knuth's Algorithm X.
     [r c]←⍴⍵  ⍝ number of rows and columns.
     c=0ₓ?r⍴$f;  ⍝ empty matrix: success.
     n←+⌿⍵  ⍝ number of covers per column.
-    f←{⍵∧1ₓ=+\⍵}n=⌊/n #⍠¯1 ⍵
+    f←{⍵∧1ₓ=+\⍵}n=⌊/n #₋₁ ⍵
     ⍵ ∇{  ⍝ ⍺ is constraint matrix.
       ~$t∊⍵?$f;  ⍝ no rows: failure.
       f←{⍵∧1ₓ=+\⍵}⍵
       c←,f#⍺  ⍝ cols selected by first row.
-      r←∨/c#⍠¯1 ⍺  ⍝ rows covered by selected cols.
-      s←⍶(~c)#⍠¯1 (~r)#⍺
+      r←∨/c#₋₁⍺  ⍝ rows covered by selected cols.
+      s←⍶(~c)#₋₁(~r)#⍺
       s≡$f?⍺ ∇ f<⍵;  ⍝ failure: try a different row.
       f ∨ ~r #⁻¹ s  ⍝ success: row f included.
     } ,f  ⍝ ⍵ is vector of marked rows.
@@ -268,10 +268,10 @@ X ← {  ⍝ Exact cover: Knuth's Algorithm X.
 
 sudokuMatrix ← {  ⍝ Matrix for ⍵ ⍵-Sudoku puzzle.
   z←,⍠(⍳6ₓ) ,⍠(6ₓ+⍳4ₓ)⍳10⍴⌊√⍵  ⍝ cell coordinate properties.
-  row←↓1 1 0 0 1 1 1 1 1 1#⍠¯1⊃z
-  col←↓0 0 1 1 1 1 1 1 1 1#⍠¯1⊃z
-  box←↓1 0 1 0 1 1 1 1 1 1#⍠¯1⊃z
-  all←↓1 1 1 1 0 0 1 1 1 1#⍠¯1⊃z
+  row←↓1 1 0 0 1 1 1 1 1 1#₋₁⊃z
+  col←↓0 0 1 1 1 1 1 1 1 1#₋₁⊃z
+  box←↓1 0 1 0 1 1 1 1 1 1#₋₁⊃z
+  all←↓1 1 1 1 0 0 1 1 1 1#₋₁⊃z
   same←≡/∘ 1 0 0 0 1 0 0 0⊂  ⍝ matching pairs.
   same¨row,col,box,all  ⍝ constraints matrix for ⍵ ⍵-puzzle.
 }
@@ -293,7 +293,7 @@ queensX ← {  ⍝ Exact cover N-Queens.
   du←<∪,dm  ⍝ unique diagonals.
   x←dm =⊗ du
   y←⊖dm =⊗ du
-  m←,⍠0 1 x,y,r,f  ⍝ constraints matrix.
+  m←,₀ ₁x,y,r,f  ⍝ constraints matrix.
   d←~ ⍳1↓⍴m ∊ ⍳⊽⍴du  ⍝ mask of required cols.
   [⍵ ⍵]⍴ d X m  ⍝ exact cover - matrix of queens.
 }

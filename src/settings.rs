@@ -20,8 +20,11 @@ static INT32: AtomicBool = AtomicBool::new(matches!(Numeric::DEFAULT.int, Width:
 static HANZI_ALIASES: AtomicBool = AtomicBool::new(HANZI);
 static BATCHING: AtomicBool = AtomicBool::new(BATCH);
 static REPORTS_FUSION: AtomicBool = AtomicBool::new(REPORTS);
-/// Fusion's sizes, one atomic for each field of `Sizes` (`sizes`).
-static MIN_ITEMS: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.min_items);
+/// Fusion's sizes, one atomic for each field of `Sizes` (`sizes`). `MIN_ITEMS` holds `UNSET_ITEMS` for its default, which `sizes` reads from the environment.
+static MIN_ITEMS: AtomicUsize = AtomicUsize::new(UNSET_ITEMS);
+const UNSET_ITEMS: usize = usize::MAX;
+/// The sizes that `reset` restores: `Sizes::DEFAULT`, with the fewest items that wait left to `sizes`.
+const UNSET_SIZES: Sizes = Sizes { min_items: UNSET_ITEMS, ..Sizes::DEFAULT };
 static BLOCK: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.block);
 static RUN: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.run);
 static VERIFIES: AtomicBool = AtomicBool::new(VERIFY);
@@ -72,16 +75,23 @@ pub(crate) fn set_batch(on: bool) { BATCHING.store(on, Relaxed) }
 /// Whether hanzi spell glyphs, as a leading `•prefs ["hanzi_aliases":$t]` declares.
 pub fn hanzi_aliases() -> bool { HANZI_ALIASES.load(Relaxed) }
 pub(crate) fn set_hanzi_aliases(on: bool) { HANZI_ALIASES.store(on, Relaxed) }
-/// Fusion's sizes in force, as `set_sizes` set them.
-pub(crate) fn sizes() -> Sizes { Sizes { min_items: MIN_ITEMS.load(Relaxed), block: BLOCK.load(Relaxed), run: RUN.load(Relaxed) } }
-/// Sets the sizes that decide which calls fusion defers and how a block stage splits its items, for the whole process. `reset` restores `Sizes::DEFAULT`.
+/// Fusion's sizes in force, as `set_sizes` set them. Until then, and after each `reset`, the fewest items of a call that waits come from `BASEDPL_MIN_ITEMS`, read once for the process, or else from `Sizes::DEFAULT`, so that timings can defer calls smaller than the default.
+pub(crate) fn sizes() -> Sizes {
+    static FROM_ENV: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    let min_items = match MIN_ITEMS.load(Relaxed) {
+        UNSET_ITEMS => *FROM_ENV.get_or_init(|| std::env::var("BASEDPL_MIN_ITEMS").ok().and_then(|n| n.parse().ok()).unwrap_or(Sizes::DEFAULT.min_items)),
+        n => n,
+    };
+    Sizes { min_items, block: BLOCK.load(Relaxed), run: RUN.load(Relaxed) }
+}
+/// Sets the sizes that decide which calls fusion defers and how a block stage splits its items, for the whole process. `reset` restores the defaults (`sizes`).
 pub fn set_sizes(sizes: Sizes) {
     MIN_ITEMS.store(sizes.min_items, Relaxed);
     BLOCK.store(sizes.block, Relaxed);
     RUN.store(sizes.run, Relaxed);
 }
-/// `set_sizes` with `Sizes::SMALL`, or with `Sizes::DEFAULT` where `on` is false. The reference harness runs each case under the small sizes too.
-pub fn set_small_sizes(on: bool) { set_sizes(if on { Sizes::SMALL } else { Sizes::DEFAULT }) }
+/// `set_sizes` with `Sizes::SMALL`, or with the defaults that `reset` restores where `on` is false. The reference harness runs each case under the small sizes too.
+pub fn set_small_sizes(on: bool) { set_sizes(if on { Sizes::SMALL } else { UNSET_SIZES }) }
 /// Whether each program is checked before it runs (`program::verify::check`). The reference harness turns it on for every case and page.
 pub(crate) fn verifies() -> bool { VERIFIES.load(Relaxed) }
 pub(crate) fn set_verifies(on: bool) { VERIFIES.store(on, Relaxed) }
@@ -114,7 +124,7 @@ pub fn reset() {
     set_numeric(Numeric::DEFAULT);
     set_float_set(false);
     for (flag, default) in [(&HANZI_ALIASES, HANZI), (&BATCHING, BATCH), (&REPORTS_FUSION, REPORTS), (&VERIFIES, VERIFY)] { flag.store(default, Relaxed); }
-    set_sizes(Sizes::DEFAULT);
+    set_sizes(UNSET_SIZES);
     COMPILES.store(UNSET, Relaxed);
     let mut display = DISPLAY.write().unwrap_or_else(PoisonError::into_inner);
     display[0] = display[1];

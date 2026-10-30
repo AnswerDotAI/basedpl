@@ -10,7 +10,7 @@
   - `"kept by a fold"`: a fold left its calls in it, to compute later.
   - `"a kind that the group doesn't hold"`: its items are of a type that a group doesn't hold, such as complex numbers.
 - `forced` has a row for each call or assignment that computed items of pending arrays. Computing a pending array in full ends its fusion. `function` is the call's function, or `←` for an assignment that computed one by writing into it, displaying it with `⎕←` or destructuring it. `line` and `column` give its position in `text`, and `items` counts the items computed. A small selection from a pending copy reads its source without storing the copy. The first small read of a pending elementwise result calculates only the selected items, even if a name holds it. The next read that needs source items computes and caches the whole result. Empty or all-fill selections do not count as reads. Small reads of pending copies remain selective on repeated reads.
-- `fast` has a row for each [fast combination](../terms.qmd#term-fast-combination) taken, for each fold of [windows](../glyphs/up-down-arrow.qmd) that slides over their source without building them, and for a contraction that executed as a matrix product. `combination` names it, and `function` is the function that took it. The names are `"partial grade"`, `"partial sort"`, `"ranks"`, `"group counts"`, `"group folds"`, `"determinant"`, `"permanent"`, `"masked select"`, `"sliding fold"` and `"contraction"`.
+- `fast` has a row for each [fast combination](../terms.qmd#term-fast-combination) taken, for each fold of [windows](../glyphs/up-down-arrow.qmd) that slides over their source without building them, and for a contraction that executed as a matrix product. `combination` names it, and `function` is the function that took it. For a combination that the form rewriter puts in place, `function` is one glyph for each kind: `"↑⍋"` for every selection, and `"f/⊢⌸"` for every group fold. The names are `"partial grade"`, `"partial sort"`, `"ranks"`, `"group counts"`, `"group folds"`, `"determinant"`, `"permanent"`, `"masked select"`, `"sliding fold"` and `"contraction"`.
 - `accumulations` has a row for each sum that added items at positions an index gave them, as the gradient of a selection that repeats positions does under [`∂`](../glyphs/partial.qmd), and for each modified assignment to a selection, as `z.[p]+←1` makes. Positions in one ascending run add a block and make no row. `items` is how many items it added, and `size` is its result's item count. The gradients of reversal, rotation, take, drop, transpose, windows that move by 1, and `⌈` and `⌊` folds read the cotangent instead, and make no row. `path` names how the items were added:
   - `"in place"` adds into the array, with nothing to undo.
   - `"logged"` keeps each target's old item, to restore the array if a target fails. Exact integers take this path, because a sum can overflow.
@@ -69,7 +69,7 @@ q←1000005↑1⌽y ⋄ (•explain "+/q+1").stored    ⍝ ["glyphs":[""] "items
 s←2×y+1 ⋄ (•explain "5↑s").forced.items      ⍝ [5]ₓ
 (•explain "5↑s").forced.items                ⍝ [1000000]ₓ
 (•explain "5↑s").forced.items                ⍝ ⍬ₓ
-r←⌽y ⋄ (•explain "r.[0]←0").forced.function   ⍝ ["←"]
+r←⌽y ⋄ (•explain "r₀←0").forced.function   ⍝ ["←"]
 (•explain "(10↑)∘⍋ y").fast.combination     ⍝ ["partial grade"]
 x←¿1000⍴0 ⋄ p←¿1000⍴1000
 (•explain "{+/, 3↕⍵ (×⍤1) 1 2 1}∂ x").accumulations  ⍝ ["items":⍬ₓ "size":⍬ₓ "path":0⍴⊂""]

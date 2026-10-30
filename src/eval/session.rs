@@ -217,14 +217,14 @@ impl Session {
         Value::floats(functions.shape().to_vec(), FloatWidth::F64, times).and_then(|t| t.with_layout(functions.layout().clone()))
             .described("invalid •time result").at(span)
     }
-    /// The fastest time per call of `f` on `x`, in seconds. Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
+    /// The fastest time per call of `f` on `x`, in seconds, including the computation of any items that the result defers (`Value::force`). Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
     fn fastest(&self, f: &Function, x: &Value, span: &Span) -> Result<f64, Error> {
         use {crate::host::Instant, std::time::Duration};
         let start = Instant::now();
         let (mut batch, mut best) = (1u32, f64::INFINITY);
         loop {
             let begun = Instant::now();
-            for _ in 0..batch { f.call(None, x, span)?; }
+            for _ in 0..batch { if let Binding::Value(v) = &f.call(None, x, span)?.value { v.force(); } }
             let taken = begun.elapsed();
             best = best.min(taken.as_secs_f64() / f64::from(batch));
             if start.elapsed() >= Duration::from_millis(100) { return Ok(best); }
@@ -465,7 +465,7 @@ impl Session {
     pub(super) fn nested<T>(&self, nodes: &[Node], f: impl FnOnce(&Self) -> Result<T, Error>) -> Result<T, Error> {
         crate::execution::check().at(&nodes[0].span)?;
         self.descend(&nodes[0].span)?;
-        let result = stacker::maybe_grow(STACK_RED_ZONE, STACK_SEGMENT, || f(self));
+        let result = if room() { f(self) } else { stacker::grow(STACK_SEGMENT, || f(self)) };
         self.ascend();
         result
     }
@@ -530,7 +530,9 @@ impl Session {
         if shown != Some(&text) { self.execution.output(crate::OutputKind::Display, text); }
     }
 
+    /// Runs the text that `right` holds, as `⍎` does, with `left`'s keys as names where it's given. Under a trace, it stops the trace first (`program::trace::each_call`).
     pub(super) fn execute(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+        crate::program::trace::each_call("text that ⍎ runs")?;
         let source = Source::new("<execute>", Self::source_text(right, span)?);
         match left { Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)), None => self.execute_source(source, span) }
     }
@@ -588,6 +590,7 @@ impl Session {
     pub(super) fn resolve(&self, node: &Node) -> Result<Bound, Error> {
         Ok(Bound::new(match &node.kind {
             NodeKind::Literal(a) => Binding::Value(a.clone()),
+            NodeKind::Subscript(index) => Binding::Operator(self::OperatorNode::Subscript(index.clone())),
             NodeKind::Function(builtin) => Binding::Function(builtin.function()),
             NodeKind::Operator(op) => Binding::Operator(OperatorNode::Primitive(*op)),
             NodeKind::Name(name, last) => match last.then(|| self.bindings.take(*name)).flatten().or_else(|| self.bindings.lookup(*name)) {

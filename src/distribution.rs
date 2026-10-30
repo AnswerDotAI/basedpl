@@ -185,9 +185,10 @@ pub(crate) fn settle(drawn: &Drawn, fell_back: bool) {
 
 fn locked(generator: &Generator) -> std::sync::MutexGuard<'_, Stream> { generator.lock().unwrap_or_else(PoisonError::into_inner) }
 
-/// `draw` drawing from `generator`, or from the session's generator where it's `None`, given the id and frame of the batched run where one is running. In a batched run, it first records the generator's state, once for each try (`Drawn`).
+/// `draw` drawing from `generator`, or from the session's generator where it's `None`, given the id and frame of the batched run where one is running. In a batched run, it first records the generator's state, once for each try (`Drawn`). Under a trace, it stops the trace first (`program::trace::each_call`).
 fn drawing(
     generator: Option<&Generator>, draw: impl FnOnce(Option<(u64, &crate::array::Layout)>, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
+    crate::program::trace::each_call("a random draw")?;
     let generator = generator.unwrap_or(&session().generator);
     let mut stream = locked(generator);
     let batched = session().batched();

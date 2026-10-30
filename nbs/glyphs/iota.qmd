@@ -41,15 +41,15 @@ On a matrix, `⍳` applies to each row, as [Rank](jot-diaeresis.qmd) does. Fill 
 `⍳⍠A Y` returns the keys of axis `A`, or `0…length-1` on an unkeyed axis. The result lies along an axis with the name of the axis it selects. It pairs with that axis by name in arithmetic and indexing. Indexing by it keeps the keys at the positions it selects. Several axes return a vector of selector vectors.
 
 ```bpl
-⍳⍠0 ["price":1 "qty":2] ⍝ "price" "qty"
-⍳⍠1 (2 3⍴0)         ⍝ [0 1 2]ₓ
+⍳₀["price":1 "qty":2]   ⍝ "price" "qty"
+⍳₁2 3⍴0              ⍝ [0 1 2]ₓ
 ⍴⍳⍠"j" ["i":2 "j":3]⍴0 ⍝ ["j":3]ₓ
 ```
 
 On an axis where only some positions have keys, `⍳⍠A Y` gives the keys where present and positions elsewhere.
 
 ```bpl
-⍳⍠0 ["aa":10 20]    ⍝ "aa" 1ₓ
+⍳₀["aa":10 20]      ⍝ "aa" 1ₓ
 ```
 
 `X⍳Y` finds the first matching major cell in `X` for each cell of `Y`. Not found: `≢X`. Uses tolerant matching and returns exact positions.

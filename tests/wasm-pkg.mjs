@@ -11,4 +11,4 @@ const glue = await import(new URL('basedpl_wasm.js', pkg));
 await glue.default({ module_or_path: readFileSync(new URL('basedpl_wasm_bg.wasm', pkg)) });
 glue.configure('http://localhost/', message => { throw new Error(message); });
 glue.name_cpu(cpus()[0].model);
-export const { Session, checks_budgets, costs, retry_pauses } = glue;
+export const { Session, checks_budgets, costs, retry_pauses, warm } = glue;

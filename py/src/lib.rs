@@ -659,6 +659,18 @@ fn _reference_file(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
     python(py, &serde_json::json!({"setup":file.setup, "cases":file.cases}))
 }
 
+/// A case's budget for `cost` in `section`, as a footer or budget line writes it, by the rule that `rustymath::timing::budget` holds.
+#[pyfunction]
+#[pyo3(signature = (section, cost, estimate=false))]
+fn _budget(section: &str, cost: f64, estimate: bool) -> String { rustymath::timing::budget(section, cost, estimate).to_string() }
+
+/// Each case of a budget file, such as rustymath's `tests/speed.txt`, as `(section, code, budgets, span)`, where `span` holds the byte offsets of its line, as `rustymath::timing::cases` reads it.
+#[pyfunction]
+fn _budget_lines(text: &str) -> PyResult<Vec<(String, String, Vec<String>, (usize, usize))>> {
+    let cases = rustymath::timing::cases(text).map_err(PyValueError::new_err)?;
+    Ok(cases.into_iter().map(|c| (c.section.into(), c.code.into(), c.budgets.into_iter().map(Into::into).collect(), c.span)).collect())
+}
+
 /// The character offset of each byte offset in `text` that starts a character or ends the text. Python indexes strings by character.
 fn char_offsets(text: &str) -> Vec<usize> {
     let mut chars = vec![0; text.len() + 1];
@@ -706,5 +718,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("_subscripts", basedpl::subscripts())?;
     m.add("_number_marks", basedpl::number_marks())?;
     m.add("_retry_pauses", rustymath::timing::RETRY_PAUSES.to_vec())?;
+    m.add("_budget_columns", rustymath::timing::COLUMNS.to_vec())?;
+    m.add_function(wrap_pyfunction!(_budget, m)?)?;
+    m.add_function(wrap_pyfunction!(_budget_lines, m)?)?;
     Ok(())
 }

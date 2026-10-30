@@ -3,17 +3,17 @@ import json, math, os, re, statistics, subprocess, sys, tempfile, time, tomllib
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from itertools import accumulate
-from decimal import Context, Decimal, ROUND_CEILING
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Annotated
-from fastws.cargo import timing_lock
+from fastws import store
+from fastws.timelock import timing_lock
 from fastcore.script import parse_cli
 from fastcore.basics import listify
-from ._core import _captured_literal, _reference_file, _retry_pauses
+from ._core import _captured_literal, _reference_file, _retry_pauses, _budget, _budget_lines, _budget_columns as _BUDGETS
 from .reference import Corpus, _dyalog_string
 from . import BplError
-from .worker import NATIVE, Worker, pinned, pinned_each, resolved, _commented
+from .worker import NATIVE, Worker, resolved, _commented
 from .syntax import linear
 
 SEPARATOR = '⍝ =>'
@@ -197,9 +197,10 @@ def _checked(worker, kind, spec, sentinel):
     return [f for f in r['failures'] if not sentinel(f)]
 
 
-def _failures(kind, specs, sentinel, bpl=None):
-    "The failures that `_checked` gives for each of `specs`, each in a fresh worker, all at once, every one running the same build of `bpl` (`pinned`). The workers run while this holds the timing lock shared, as the reference test does. Every worker closes before this returns or raises, which ends any request still running, as after a Ctrl-C. Each failure holds its code's linear form (`syntax.linear`) as `linear`."
-    with timing_lock(), pinned(bpl) as bpl:
+def _failures(kind, specs, sentinel, build=None):
+    "The failures that `_checked` gives for each of `specs`, each in a fresh worker, all at once, every one running the same build, resolved once. The workers run while this holds the timing lock shared, as the reference test does. Every worker closes before this returns or raises, which ends any request still running, as after a Ctrl-C. Each failure holds its code's linear form (`syntax.linear`) as `linear`."
+    bpl = resolved(build)
+    with timing_lock():
         workers = [Worker(bpl) for _ in specs]
         pool = ThreadPoolExecutor(len(workers))
         try: return [f | {'linear': linear(f['code'])} for job in [pool.submit(_checked, w, kind, s, sentinel) for w, s in zip(workers, specs)] for f in job.result()]
@@ -211,9 +212,9 @@ def _failures(kind, specs, sentinel, bpl=None):
 def check_file(
     path, # A `.bpl` reference file
     ids:Annotated[int|str, {'nargs':'*'}]=None, # Check only these cases, each named by its id or its header's line number
-    bpl:Path=None # A native `bpl` to check, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one, copied as the run starts (`pinned`)
+    build:str=None, # The build to check, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build
 ):
-    "Check the cases in `path` as `tests/reference.rs` does, in a fresh worker for each core that takes every n-th case, and return the failures in the file's order."
+    "Check the cases in `path` as `tests/reference.rs` does, and their route directives as the route test does, in a fresh worker for each core that takes every n-th case, and return the failures in the file's order."
     if isinstance(ids, (int, str)): ids = [ids]
     source = Path(path).read_text()
     cases = _reference_file(source)['cases']
@@ -223,23 +224,21 @@ def check_file(
     text = source.rstrip('\n') + '\n\n⍝ bpltests-sentinel — The checker must report this case\n0   ⍝ 1\n'
     n = max(1, min(os.cpu_count(), len(lines)))
     specs = [dict(text=text, ids=[*lines[k::n], *unknown, 'bpltests-sentinel']) for k in range(n)]
-    return sorted(_failures('reference', specs, lambda f: f.get('id') == 'bpltests-sentinel', bpl), key=lambda f: f['line'])
+    return sorted(_failures('reference', specs, lambda f: f.get('id') == 'bpltests-sentinel', build), key=lambda f: f['line'])
 
 
 def check_page(
     path, # A `.qmd` page
-    bpl:Path=None, # A native `bpl` to check, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one, copied as the run starts (`pinned`)
+    build:str=None, # The build to check, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build,
     unbatched:bool=False # Run each example with the `batch` pref off
 ):
     "Run the BPL examples in `.qmd` page `path` in a fresh worker, as `tests/core.rs` does, and return the failures."
     text = Path(path).read_text().rstrip('\n') + '\n\n```bpl\n0 ⍝ 1\n```\n'
     line = text.count('\n') - 1
-    return _failures('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, bpl)
+    return _failures('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, build)
 
 _ROOT = Path(__file__).parents[2]
 _SPEED = _ROOT/'tests'/'speed'
-# The budgets on each case line of a budget file, after its code, in order: macOS on Apple silicon, Linux on CI's x86 runner, then the browser build where the file has one.
-_BUDGETS = ('macos', 'linux', 'wasm')
 
 def _platform():
     "This machine's platform, whose native budget column its speed tests compare costs with, as `rustymath::timing::NATIVE_COLUMN` picks it, or `None` on a machine with no budgets, such as Linux on Arm."
@@ -269,23 +268,23 @@ def time_cases(
     prefs='', # BPL that runs before `setup`, such as `•prefs ["float":32]`
     threads=1, # Threads that each case's rustymath calls split across, for a scaling check; 0: rustymath's default
     native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
-    bpl:Annotated[Path, {'nargs':'+'}]=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does, or a list of builds to compare, where `None` is the installed one; None: the installed one
+    build:Annotated[str, {'nargs':'+'}]=None, # The build to time, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build; or a list of builds to compare
     rounds=2, # With several builds, the fresh workers that each build gets, taking turns with the other builds' in alternating order
     timeout:float=None # Seconds before each worker is closed
 ):
-    "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data. Given several builds, it gives `ByBuild`, holding each case's fastest time on each build, and pins each build for the whole comparison (`pinned_each`)."
+    "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data. Given several builds, it gives `ByBuild`, holding each case's fastest time on each build, and resolves each build once, as the comparison starts."
     setup = _reference_file((_SPEED/'arrays.bpl').read_text())['setup'] if setup is None else setup
     cases = listify(cases)
     def timed(build):
         with Worker(build, native) as w: r = w.request(dict(timing=dict(setup=setup, prefs=prefs, cases=cases, threads=threads)), timeout)
         if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
         return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
-    builds = listify(bpl) or [None]
+    builds = listify(build) or [None]
     if len(builds) == 1: return timed(builds[0])
     runs = [[] for _ in builds]
-    with pinned_each(builds) as paths:
-        for r in range(rounds):
-            for i in (range(len(builds)) if r % 2 == 0 else reversed(range(len(builds)))): runs[i].append(timed(paths[i]))
+    paths = [resolved(b) for b in builds]
+    for r in range(rounds):
+        for i in (range(len(builds)) if r % 2 == 0 else reversed(range(len(builds)))): runs[i].append(timed(paths[i]))
     return ByBuild([Costs(min(rows, key=lambda row: row[1]) for rows in zip(*each)) for each in runs], builds, ' ps')
 
 class Scaling(list):
@@ -311,26 +310,26 @@ def _physical_cores():
 def thread_scaling(
     cases:str=None, # Codes of the cases in `_SCALING` to time, or one code; None: all of them, a 1024×1024 product, a 512×512 SVD and Hermitian eigendecomposition, QR decompositions of a stack of 16,384 8×8 matrices, a product of a 3 by 3 convolution's windows, a copy of those windows, and `*` on 4,194,304 floats
     setup:str=_SCALING_SETUP, # BPL that defines the cases' data and its number of items `n`
-    bpl:Path=None, # A native `bpl` to time, such as a copy saved before a change, as `Worker`'s `bpl` does; None: the installed one
+    build:str=None, # The build to time, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build
     timeout:float=None, # Seconds before each timing stops
 ):
-    "Time each case with `time_cases` on one thread and on t threads, the smaller of `_SCALING_THREADS` and this machine's physical cores (`_physical_cores`), and give its speedup, both on one pinned build (`pinned`). Speed budgets are single-thread measurements, so this checks multithreaded speed instead: in the manual `Speed` workflow and locally, not in the `Test` workflow, where a runner's cores and sharing make it noisy. Each case must reach half its expected gain, 1 + (S − 1)/2, where S = 1/(s + (1 − s)/t) for its serial fraction s in `_SCALING`, or in `_ACCELERATED` on macOS. A case expected not to split, with s of 1, must reach 0.9. As the speed tests do, it times a case below its least again after the rest, after each pause in `rustymath::timing::RETRY_PAUSES`, and prints each retry. Raises `ValueError` with the table when a case is below its least every time."
+    "Time each case with `time_cases` on one thread and on t threads, the smaller of `_SCALING_THREADS` and this machine's physical cores (`_physical_cores`), and give its speedup, both on one build. Speed budgets are single-thread measurements, so this checks multithreaded speed instead: in the manual `Speed` workflow and locally, not in the `Test` workflow, where a runner's cores and sharing make it noisy. Each case must reach half its expected gain, 1 + (S − 1)/2, where S = 1/(s + (1 − s)/t) for its serial fraction s in `_SCALING`, or in `_ACCELERATED` on macOS. A case expected not to split, with s of 1, must reach 0.9. As the speed tests do, it times a case below its least again after the rest, after each pause in `rustymath::timing::RETRY_PAUSES`, and prints each retry. Raises `ValueError` with the table when a case is below its least every time."
     serial = _SCALING | (_ACCELERATED if sys.platform == 'darwin' else {})
     threads = min(_SCALING_THREADS, _physical_cores())
     least = lambda s: 1 + (1 / (s + (1 - s) / threads) - 1) / 2 if s < 1 else 0.9
-    with pinned(bpl) as build:
-        def timed(codes):
-            one, many = (time_cases(codes, setup, threads=t, bpl=build, timeout=timeout) for t in (1, threads))
-            return {code: (code, a, b, a / b, least(serial[code])) for (code, a, _), (_, b, _) in zip(one, many)}
-        rows = timed(listify(cases) or list(serial))
-        for pause in _retry_pauses:
-            slow = {code: speedup for code, _, _, speedup, floor in rows.values() if speedup < floor}
-            if not slow: break
-            time.sleep(pause)
-            rows |= timed(list(slow))
-            for code, before in slow.items():
-                *_, after, floor = rows[code]
-                print(f'{code}: {before:.2f}x, then {after:.2f}x after a pause of {pause} s, against {floor:g}')
+    build = resolved(build)
+    def timed(codes):
+        one, many = (time_cases(codes, setup, threads=t, build=build, timeout=timeout) for t in (1, threads))
+        return {code: (code, a, b, a / b, least(serial[code])) for (code, a, _), (_, b, _) in zip(one, many)}
+    rows = timed(listify(cases) or list(serial))
+    for pause in _retry_pauses:
+        slow = {code: speedup for code, _, _, speedup, floor in rows.values() if speedup < floor}
+        if not slow: break
+        time.sleep(pause)
+        rows |= timed(list(slow))
+        for code, before in slow.items():
+            *_, after, floor = rows[code]
+            print(f'{code}: {before:.2f}x, then {after:.2f}x after a pause of {pause} s, against {floor:g}')
     result = Scaling(rows.values(), threads)
     if any(speedup < floor for *_, speedup, floor in result): raise ValueError(f'\n{result!r}')
     return result
@@ -372,14 +371,15 @@ def instructions(
     force=False, # Compute each step's result in full where it would stay pending, such as large windows or a transpose, for the cases that don't name `N`
     counts:Annotated[int, {'nargs':'+'}]=None, # Two or more values of `N`; None: four values past the allocator's warm-up, from a rough count at 1,000 steps
     runs=3, # Processes at each value of `N`, of which the lowest count is used
-    bpl:Annotated[Path, {'nargs':'+'}]=None # A native `bpl` to count, such as a copy saved before a change, or a list of builds to compare, where `None` is the installed one; None: the installed one
+    build:Annotated[str, {'nargs':'+'}]=None # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build; or a list of builds to compare
 ):
-    "The instructions that each case retires per unit of `N`, on one thread. A case that doesn't name `N` runs once per step inside `{case ⋄ ⍵}⍣N 0`. That dfn's own call adds about 1,900 instructions per step. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent, and its processes run at once, one for each core. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost. Given several builds, it gives `ByBuild`, counting each case at the same values of `N` on every build. Each build stays pinned for the whole count (`pinned_each`)."
+    "The instructions that each case retires per unit of `N`, on one thread. A case that doesn't name `N` runs once per step inside `{case ⋄ ⍵}⍣N 0`. That dfn's own call adds about 1,900 instructions per step. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent, and its processes run at once, one for each core. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost. Given several builds, it gives `ByBuild`, counting each case at the same values of `N` on every build. Each build is resolved once, as the count starts."
     cases = listify(cases)
-    builds = listify(bpl) or [None]
+    builds = listify(build) or [None]
     stepped = [_stepped(case, force) for case in cases]
     def slope(ns, cs): return statistics.median((c1-c0)/(n1-n0) for n0, n1, c0, c1 in zip(ns, ns[1:], cs, cs[1:]))
-    with pinned_each(builds) as paths, ThreadPoolExecutor(os.cpu_count()) as pool:
+    paths = [resolved(b) for b in builds]
+    with timing_lock(), ThreadPoolExecutor(os.cpu_count()) as pool:
         def lowest(jobs, runs=runs):
             "The lowest count of `runs` processes for each `(code, n, build)` in `jobs`, from processes that run at once."
             got = list(pool.map(lambda job: _retired(_program(job[0], job[1], setup), job[2]), [job for job in jobs for _ in range(runs)]))
@@ -437,12 +437,13 @@ def _self_samples(code, bpl, seconds):
     for name, n in zip(subprocess.run(['c++filt'], input='\n'.join(selfs), capture_output=True, text=True).stdout.splitlines(), selfs.values()): named[name] += n
     return named, total
 
-def _estimates(case, setup, bpl, seconds, force):
-    "Each function's estimated instructions per step of `N` for `case` on `bpl`, and the build's instructions per step, as `profile` describes."
+def _estimates(case, setup, build, seconds, force):
+    "Each function's estimated instructions per step of `N` for `case` on `build`, and the build's instructions per step, as `profile` describes."
     if sys.platform != 'darwin': raise ValueError(f'no sampling profiler on {sys.platform}')
     stepped = _stepped(case, force)
-    with pinned(bpl) as bpl:
-        [(_, per_step)] = instructions(stepped, setup, bpl=bpl)
+    bpl = resolved(build)
+    with timing_lock():
+        [(_, per_step)] = instructions(stepped, setup, build=bpl)
         samples, total = _self_samples(_program(f'({{{stepped} ⋄ ⍵}}⍣1000000000)0', max(1, round(1e8/per_step)), setup), bpl, seconds)
     return {f: per_step*n/total for f, n in samples.items()}, per_step
 
@@ -450,25 +451,25 @@ def profile(
     case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
     setup='', # BPL that defines what the case uses, run before it
     force=False, # Compute each step's result in full, as `instructions`' `force` does
-    bpl:Path=None, # A native `bpl` to profile, such as a copy saved before a change; None: the installed one
+    build:str=None, # The build to profile, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build,
     seconds=3, # How long macOS `sample` watches the build
     rows=20 # How many functions to show
 ):
     "Where `case`'s instructions per step of `N` go, by function, on macOS. A fresh process repeats the case on one thread while `sample` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate."
-    estimates, total = _estimates(case, setup, bpl, seconds, force)
+    estimates, total = _estimates(case, setup, build, seconds, force)
     return FunctionCounts(sorted(estimates.items(), key=lambda r: -r[1])[:rows], [('total', total)])
 
 def profile_diff(
     case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
-    base:Path, # A native `bpl` to compare with, such as a copy saved before a change
+    base:str, # The build to compare with, resolved as `build` is, such as the one installed before a change
     setup='', # BPL that defines what the case uses, run before it
     force=False, # Compute each step's result in full, as `instructions`' `force` does
-    bpl:Path=None, # A native `bpl` to compare with `base`; None: the installed one
+    build:str=None, # The build to compare with `base`, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build,
     seconds=3, # How long macOS `sample` watches each build
     rows=20 # How many functions to show
 ):
     "Where `case`'s instructions per step of `N` moved between two builds, by function, on macOS, from `profile`'s estimates for each build. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone."
-    (before, tb), (after, ta) = _estimates(case, setup, base, seconds, force), _estimates(case, setup, bpl, seconds, force)
+    (before, tb), (after, ta) = _estimates(case, setup, base, seconds, force), _estimates(case, setup, build, seconds, force)
     fs = sorted(before.keys() | after.keys(), key=lambda f: -abs(after.get(f, 0) - before.get(f, 0)))
     return FunctionCounts([(f, before.get(f, 0), after.get(f, 0)) for f in fs[:rows]], [('total', tb, ta)])
 
@@ -510,9 +511,9 @@ def run(path):
     json.dump(result, open(a['out'], 'w'))
 '''
 
-def _counted_call(code, pattern, skip, bpl, limit=100_000):
+def _counted_call(code, pattern, skip, build, limit=100_000):
     "How many instructions each function retired in the call of the function that `pattern` names after `skip` earlier calls, in a fresh `bpl` process running `code`, as `_LLDB_STEPS` counts them. It raises `ValueError` when `lldb` runs ten minutes, as it does while macOS waits for an answer to a Developer Tools authorization prompt."
-    bpl = str(resolved(bpl))
+    bpl = str(resolved(build))
     with tempfile.TemporaryDirectory() as d:
         steps, args, out = Path(d)/'steps.py', Path(d)/'args.json', Path(d)/'out.json'
         steps.write_text(_LLDB_STEPS)
@@ -532,8 +533,8 @@ def call_profile(
     case, # A BPL expression, as `instructions` takes it, such as `v_4ₓ₄` or `{⍵}⍣N 0`
     function, # A regex that the demangled name of the function to count matches, such as `binder::derived`. A function that is always inlined has no code of its own and never stops the process
     setup='', # BPL that defines what the case uses, run before it
-    base:Path=None, # A native `bpl` to compare with, such as a copy saved before a change; None: count one build
-    bpl:Path=None, # A native `bpl` to count; None: the installed one
+    base:str=None, # The build to compare with, resolved as `build` is, such as the one installed before a change; None: count one build
+    build:str=None, # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build,
     skip=3, # Calls of `function` to let run first, while the case warms up
     force=False, # Compute each step's result in full, as `instructions`' `force` does
     rows=20 # How many functions to show
@@ -542,8 +543,8 @@ def call_profile(
     if sys.platform != 'darwin' or os.uname().machine != 'arm64': raise ValueError('`call_profile` runs only on macOS on Apple silicon')
     code = _program(_stepped(case, force), 1000, setup)
     merged = [defaultdict(int) for _ in range(2 if base else 1)]
-    for build, m in zip([base, bpl] if base else [bpl], merged):
-        for f, n in _counted_call(code, function, skip, build).items(): m['allocator' if _ALLOCATOR.search(f) else f] += n
+    for b, m in zip([base, build] if base else [build], merged):
+        for f, n in _counted_call(code, function, skip, b).items(): m['allocator' if _ALLOCATOR.search(f) else f] += n
     totals = [('total', *(sum(m.values()) for m in merged)), ('outside the allocator', *(sum(m.values()) - m['allocator'] for m in merged))]
     fs = sorted(set().union(*merged), key=lambda f: -abs(merged[-1].get(f, 0) - merged[0].get(f, 0)) if base else -merged[0].get(f, 0))
     return FunctionCounts([(f, *(m.get(f, 0) for m in merged)) for f in fs[:rows]], totals)
@@ -558,9 +559,8 @@ _NM_LINE = re.compile(r'^(?:[0-9a-f]+| +) (\S) (.+)$')
 _MANGLED = re.compile(r'(?<![\w$.])_?(?:_R|_ZN)[\w$.]+')
 
 def _x86_libraries():
-    "The libraries that `_X86_BUILD` makes, after running it with the timing lock held shared, and a note that's empty unless basedpl failed to compile. Cargo builds rustymath first, so a failed build still gives rustymath's library."
-    with timing_lock():
-        p = subprocess.run([*_X86_BUILD, '--message-format=json-render-diagnostics'], cwd=_ROOT, capture_output=True, text=True, env=os.environ | _X86_ENV)
+    "The libraries that `_X86_BUILD` makes, and a note that's empty unless basedpl failed to compile. Cargo builds rustymath first, so a failed build still gives rustymath's library."
+    p = subprocess.run([*_X86_BUILD, '--message-format=json-render-diagnostics'], cwd=_ROOT, capture_output=True, text=True, env=os.environ | _X86_ENV)
     built = map(json.loads, p.stdout.splitlines())
     files = [f for m in built if m['reason'] == 'compiler-artifact' and m['target']['name'] in ('basedpl', 'rustymath') for f in m['filenames'] if f.endswith('.rlib')]
     if p.returncode and not files: raise ValueError(p.stderr)
@@ -574,10 +574,10 @@ def _symbols(files):
 def disasm(
     pattern, # A regex that the function's demangled name matches, such as `reduce::sliding::<f64, rustymath::reduce::Max>`
     x86=False, # Read the x86-64 code that CI and Linux run, in place of this Mac's
-    bpl:Path=None # A native `bpl` to read, such as a copy saved before a change; None: the installed one. With `x86`, unused
+    build:str=None, # The build to read, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build. With `x86`, unused
 ):
     "The machine code of the function whose demangled name matches `pattern`, as `objdump` shows it, with names demangled. Where functions of more than one name match, it gives their names. With `x86`, it first builds basedpl's library and the rustymath library it links for Linux x86-64, as CI's runner compiles them, holding the timing lock shared. Where basedpl doesn't compile, it reads rustymath's library alone and says so first. After a change, that build takes minutes."
-    files, note = _x86_libraries() if x86 else ([resolved(bpl)], '')
+    files, note = _x86_libraries() if x86 else ([resolved(build)], '')
     symbols = _symbols(files)
     if not symbols: raise ValueError(f'nm read no symbols from {files}')
     matched = sorted({d for t, _, d in symbols if t in 'tT' and re.search(pattern, d)})
@@ -595,10 +595,10 @@ def jit_disasm(
     case, # BPL whose compiled kernels to show, such as `+/ux>127ₓ₁`
     setup:str='', # BPL that defines what the case uses, run before it
     prefs:str='', # BPL that runs first, such as `•prefs ["kinds":"static"]`
-    bpl:Path=None # A native `bpl` to run, such as a copy saved before a change; None: the installed one
+    build:str=None, # The build to run, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build
 ):
     "The machine code of each kernel that the JIT compiles while `prefs`, `setup` and `case` run, after a line that describes the kernel, as `BASEDPL_JIT_DISASM` prints them. A stage compiles on its first run only from about 3 million items (`COMPILES_AT`)."
-    p = subprocess.run([resolved(bpl), '-e', '\n'.join(c for c in (prefs, setup, case) if c)], capture_output=True, text=True, env={**os.environ, 'BASEDPL_JIT_DISASM': '1'})
+    p = subprocess.run([resolved(build), '-e', '\n'.join(c for c in (prefs, setup, case) if c)], capture_output=True, text=True, env={**os.environ, 'BASEDPL_JIT_DISASM': '1'})
     if p.returncode: raise ValueError(p.stderr)
     return Report(p.stderr)
 
@@ -630,22 +630,28 @@ class InstructionBudgets(list):
 
 def instruction_budgets(
     calls:str=None, # Text in `instructions.txt`'s format; None: `tests/instructions.txt`
-    bpl:Path=None # A native `bpl` to count, such as a copy saved before a change; None: the installed one
+    build:str=None, # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build
 ):
     "Count each case in `calls` with `instructions`, beside its count."
     setup, cases = _calls(_CALLS.read_text() if calls is None else calls)
-    counted = instructions([code for code, _ in cases], setup, bpl=bpl)
+    counted = instructions([code for code, _ in cases], setup, build=build)
     return InstructionBudgets((code, n, count) for (code, n), (_, count) in zip(counted, cases))
 
 def _or_dash(x, spec): return '-' if x is None else format(x, spec)
 def _over(cost, budget): return budget is not None and cost > budget
 
 class SpeedCosts(list):
-    "Each case's cost and the budget that limits it, as `(section, code, cost, budget, ns)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. `ns` is the case's time for each item in nanoseconds, or `None` where the timing doesn't give it. Times compare across a change to `rustymath::timing::COPIES`, where costs don't. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build or a machine with no budgets. `copies` holds the copy lines that a log gives, as `(items, bytes, ns per item, stored)` rows, which say whether `rustymath::timing::COPIES` held that machine's copy time or the test measured it."
-    def __init__(self, rows=(), cpu=None, platform=None, copies=()):
+    "Each case's cost and the budget that limits it, as `(section, code, cost, budget, ns)` rows. A cost is in copies, except in `[widths]`, where it is the 32-bit time as a fraction of the 64-bit time. A case with no budget has `None`. `ns` is the case's time for each item in nanoseconds, or `None` where the timing doesn't give it. Times compare across a change to `rustymath::timing::COPIES`, where costs don't. A case over its budget needs study, which finds either a speed bug or something its expected cost missed. `cpu` is the CPU model that a CI log reports, or `None`. `platform` is the platform whose native budgets the costs were checked against, 'macos' or 'linux', or `None` for a browser build or a machine with no budgets. `copies` holds the copy lines that a log gives, as `(items, bytes, ns per item, stored)` rows, which say whether `rustymath::timing::COPIES` held that machine's copy time or the test measured it. `footprints` maps the `(section, code)` of each case whose footprint passes one core's cache (`rustymath::timing::footprint`) to that footprint in bytes and the time for each item, in nanoseconds, of a copy of it measured beside the case. A case's `ns` divided by that time is its cost in copies of its footprint. `holds` maps the `(section, code)` of each case whose budget a `held` or `busy` line raises to `(hold, rule, stale)`: `'held'` for a gap in the code or `'busy'` for CI's busy hosts, the rule budget that its footer gives, and whether a gap's hold has outlived the gap, as `rustymath::timing::Budget::stale` decides. The display marks each case `over`, `stale`, `held` or `busy`, in that order of precedence."
+    def __init__(self, rows=(), cpu=None, platform=None, copies=(), footprints=None, holds=None):
         super().__init__(rows)
-        self.cpu, self.platform, self.copies = cpu, platform, list(copies)
-    def __repr__(self): return '\n'.join(f'{cost:>9.2f} {_or_dash(b, "g"):>9} {_or_dash(ns, ".3f"):>9} {"over" if _over(cost, b) else "":4}  {s} {c}' for s, c, cost, b, ns in self)
+        self.cpu, self.platform, self.copies, self.footprints, self.holds = cpu, platform, list(copies), dict(footprints or {}), dict(holds or {})
+    def __repr__(self):
+        fp = {k: f' {b/2**20:8.1f} MiB {ns:6.3f} ns' for k, (b, ns) in self.footprints.items()}
+        pad = ' ' * max(map(len, fp.values()), default=0)
+        def mark(s, c, cost, b):
+            hold, _, stale = self.holds.get((s, c), ('', None, False))
+            return 'over' if _over(cost, b) else 'stale' if stale else hold
+        return '\n'.join(f'{cost:>9.2f} {_or_dash(b, "g"):>9} {_or_dash(ns, ".3f"):>9} {mark(s, c, cost, b):5}{fp.get((s, c), pad)}  {s} {c}' for s, c, cost, b, ns in self)
 
 def _node():
     "The Node binary for basedpl's browser and editor tests, of the major version that `.node-version` names for CI: `node` on `PATH` where it has that version or where there's no `.node-version`, else Homebrew's `node@N`. Raises `ValueError` where neither runs."
@@ -664,7 +670,7 @@ def _wasm_env(wasm):
 def speed_costs(
     wasm:Path=None, # A directory that `cargo wasm --out` wrote; None: a fresh native worker
     native=False, # Time Rustymath's own linear algebra instead of Accelerate
-    bpl:Path=None, # A native bpl to time; None: the installed one
+    build:str=None, # The build to time, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build,
     speed:str=None, # One BPL speed file's text; None: tests/speed/*.bpl
     prefs='', # BPL run before each section's preferences and setup
     timeout:float=None, # Seconds before timing stops
@@ -674,7 +680,7 @@ def speed_costs(
     files = [dict(name=p.name, text=p.read_text()) for p in sorted(_SPEED.glob('*.bpl'))] if speed is None else [dict(name='<input>', text=speed)]
     cases = listify(cases) or None
     if wasm is None:
-        with Worker(bpl, native) as w: r = w.request(dict(costs=dict(files=files, cases=cases, prefs=prefs)), timeout)
+        with Worker(build, native) as w: r = w.request(dict(costs=dict(files=files, cases=cases, prefs=prefs)), timeout)
         if e := r['error']: raise ValueError(e['message'])
         rows = r['costs']
     else:
@@ -686,30 +692,35 @@ def speed_costs(
         if p.returncode: raise ValueError(p.stderr)
         if p.stderr: sys.stderr.write(p.stderr)
         rows = json.loads(p.stdout)
-    build = _platform() if wasm is None else 'wasm'
-    i = None if build is None else _BUDGETS.index(build)
-    rows = ((c['section'], c['label'], c['cost'], float(c['budgets'][i]) if i is not None and len(c['budgets']) > i else None, c['seconds']*1e9) for c in rows)
-    return SpeedCosts(rows, platform=None if wasm else build)
+    footprints = {(c['section'], c['label']): (f['bytes'], f['seconds']*1e9) for c in rows if (f := c.get('footprint'))}
+    holds = {(c['section'], c['label']): (c['hold'], c['rule'], c['stale']) for c in rows if c['hold']}
+    rows = ((c['section'], c['label'], c['cost'], c['budget'], c['seconds']*1e9) for c in rows)
+    return SpeedCosts(rows, platform=None if wasm else _platform(), footprints=footprints, holds=holds)
 
 
-_LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+|-)(?:, (?P<ns>[\d.]+) ns)?$')
+_LOGGED = re.compile(r'^(?:\S*Z )?(?P<tap># )?(?P<section>\w+) (?P<code>\S.*): (?P<cost>[\d.]+|inf|NaN|Infinity), budget (?P<budget>[\d.]+|-)(?: (?P<hold>held|busy) from (?P<rule>[\d.]+))?(?:, (?P<ns>[\d.]+) ns(?:, footprint (?P<mib>[\d.]+) MiB copied at (?P<copy>[\d.]+) ns)?)?(?P<stale>: stale)?$')
 _COPY = re.compile(r'^(?:\S*Z )?(?:# )?copy of (?P<items>\d+) (?P<bytes>\d+)-byte items: (?P<ns>[\d.]+) ns an item, (?P<source>stored for|measured on) (?P<cpu>[^\r\n]+?)(?:: add it to rustymath::timing::COPIES)?[ \t]*$', re.M)
 
 def logged_costs(
-    log, # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Test` or `Speed` workflow, or the path of a file that holds it
+    log, # What a speed test prints with `<NAME>_COSTS` set, such as the log of a job in the `Test` or `Speed` workflow, or the path of a file that holds it, as a `Path` or a one-line str
     platform='linux' # The platform whose native budgets the log's costs were checked against: 'linux' for CI's runner, 'macos' for a Mac, or `None` for a machine with no budgets, such as Linux on Arm, whose log's budgets don't apply
 ):
-    "The rows that `speed_costs` gives, read from `log`, with the CPU that its copy lines name as their `cpu`, `platform`, and the log's copy lines as `copies`. A case that the log times more than once, as after a retry, gives its lowest cost, with that timing's time for each item where the log prints one."
-    if isinstance(log, Path): log = log.read_text()
+    "The rows that `speed_costs` gives, read from `log`, with the CPU that its copy lines name as their `cpu`, `platform`, the log's copy lines as `copies`, the footprints that its case lines give as `footprints`, and the holds that they give as `holds`, where a hold is stale if the log marks the case `stale`. A case that the log times more than once, as after a retry, gives its lowest cost, with that timing's time for each item and footprint where the log prints them."
+    if isinstance(log, Path) or '\n' not in log: log = Path(log).expanduser().read_text()
     found = list(_COPY.finditer(log))
     cpu = next((m['cpu'] for m in found if m['cpu'] != 'a CPU with no name'), None)
-    rows = {}
+    rows, footprints, held, stale = {}, {}, {}, set()
     for m in filter(None, map(_LOGGED.match, log.splitlines())):
         code = re.sub(r'\\([\\#])', r'\1', m['code']) if m['tap'] else m['code'] # Node's TAP diagnostics escape `\` and `#`
         row = (m['section'], code, float(m['cost']), None if platform is None or m['budget'] == '-' else float(m['budget']), m['ns'] and float(m['ns']))
-        if row[:2] not in rows or row[2] < rows[row[:2]][2]: rows[row[:2]] = row
+        if platform is not None and m['hold']: held[row[:2]] = (m['hold'], float(m['rule']))
+        if m['stale']: stale.add(row[:2])
+        if row[:2] not in rows or row[2] < rows[row[:2]][2]:
+            rows[row[:2]] = row
+            if m['mib']: footprints[row[:2]] = (round(float(m['mib']) * 2**20), float(m['copy']))
+            else: footprints.pop(row[:2], None)
     copies = list(dict.fromkeys((int(m['items']), int(m['bytes']), float(m['ns']), m['source'] == 'stored for') for m in found))
-    return SpeedCosts(rows.values(), cpu, platform, copies)
+    return SpeedCosts(rows.values(), cpu, platform, copies, footprints, {k: (*hold, k in stale) for k, hold in held.items()})
 
 CHANGE = 0.2
 class CostChanges(list):
@@ -751,33 +762,37 @@ def _run_costs(cmd, path, timeout, native=False, env=None):
 
 def cargo_costs(
     path='.', # A Cargo package, such as basedpl or rustymath, whose `tests/speed.rs` prints every cost when `<NAME>_COSTS` is set
+    build:str=None, # A copy of the speed test's executable to run in place of the one that `cargo test` builds, such as one saved before a change
     native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
     timeout:float=None # Seconds before the run stops
 ):
     "The rows that `logged_costs` reads from what the speed test of the package at `path` prints, run as `cargo test` runs it. A case over its budget still gives its row."
-    return _run_costs(['cargo', 'test', '--test', 'speed'], path, timeout, native)
+    return _run_costs([Path(build).expanduser()] if build else ['cargo', 'test', '--test', 'speed'], path, timeout, native)
 
-def _saved(saved):
-    "The environment variables that put `saved`, a directory that holds a copy of a package's Python package, before the installed one on `PYTHONPATH`, or none where `saved` is None."
-    return dict(PYTHONPATH=os.pathsep.join(filter(None, [str(Path(saved).expanduser()), os.environ.get('PYTHONPATH')]))) if saved else {}
+def _python_path(path, build):
+    "The environment variables that put `build`'s Python package before the installed one on `PYTHONPATH`, for the package at `path`, or none where `build` is None. `build` is a directory that holds a copy of the package, or a prefix of the id of a build that `cargo develop` kept (`fastws.store`)."
+    if build is None: return {}
+    d = Path(build).expanduser()
+    if not d.exists(): d = store.resolve(Path(path).expanduser(), str(build))/'python'
+    return dict(PYTHONPATH=os.pathsep.join(filter(None, [str(d), os.environ.get('PYTHONPATH')])))
 
 def pytest_costs(
     path='.', # A package, such as rustymath, whose `tests/test_speed.py` prints every cost when `<NAME>_COSTS` is set
-    saved:Path=None, # A directory that holds a copy of the package's Python package, saved before a change, to time in place of the installed one
+    build:str=None, # The build of the package to time: a prefix of the id of a build that `cargo develop` kept (`fastws.store`), or a directory that holds a copy of its Python package; None: the installed one
     native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
     timeout:float=None # Seconds before the run stops
 ):
     "The rows that `logged_costs` reads from what the Python speed test of the package at `path` prints, run with `pytest`. A case over its budget still gives its row."
-    return _run_costs([sys.executable, '-m', 'pytest', '-q', 'tests/test_speed.py'], path, timeout, native, _saved(saved))
+    return _run_costs([sys.executable, '-m', 'pytest', '-q', 'tests/test_speed.py'], path, timeout, native, _python_path(path, build))
 
 def run_pytest(
     tests:Annotated[str, {'nargs':'+'}], # A test's `pytest` node ID, such as `tests/test_structure.py::test_edge_modes_pad_take_and_windows`, or a list of them
     path='.', # A package, such as rustymath, whose tests the node IDs name
-    saved:Path=None, # A directory that holds a copy of the package's Python package, saved before a change, to test in place of the installed one
+    build:str=None, # The build of the package to test: a prefix of the id of a build that `cargo develop` kept (`fastws.store`), or a directory that holds a copy of its Python package; None: the installed one
     timeout:float=None # Seconds before the run stops
 ):
     "What `pytest -q` prints for `tests`, run in the package at `path`."
-    p = subprocess.run([sys.executable, '-m', 'pytest', '-q', *listify(tests)], cwd=Path(path).expanduser(), capture_output=True, text=True, timeout=timeout, env=os.environ | _saved(saved))
+    p = subprocess.run([sys.executable, '-m', 'pytest', '-q', *listify(tests)], cwd=Path(path).expanduser(), capture_output=True, text=True, timeout=timeout, env=os.environ | _python_path(path, build))
     return Report(p.stdout + p.stderr)
 
 class Report(str):
@@ -830,9 +845,9 @@ def wasm_stack(
     return StackUse((name, per[name], kb[name, n] - per[name]*n) for name, (n, *_) in full.items())
 
 def _timed_build(name, cmd, env):
-    "The seconds that the build `cmd` takes in basedpl's root with `env` added, holding the timing lock shared. A failed build raises `ValueError` with its output."
+    "The seconds that the build `cmd` takes in basedpl's root with `env` added. A failed build raises `ValueError` with its output."
     start = time.monotonic()
-    with timing_lock(): p = subprocess.run(cmd, cwd=_ROOT, env=os.environ | env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    p = subprocess.run(cmd, cwd=_ROOT, env=os.environ | env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if p.returncode: raise ValueError(f'{name} failed:\n{p.stdout}')
     return time.monotonic() - start
 
@@ -853,12 +868,6 @@ class Budgets(list):
     "Each budget that `set_budgets` changed, as `(section, code, build, old, new)` rows."
     def __repr__(self): return '\n'.join(f'{old:>9} -> {new:<9} {build:6}  {s} {c}' for s, c, build, old, new in self)
 
-def _budget(section, expected, estimate=False):
-    "The budget for an expected cost: for copies, the cost times 2 under 50 copies or for an estimate, 1.5 from 50 to 500 copies and 1.3 over 500, rounded up to two significant figures and at least 0.5; for widths, the ratio plus 0.25, rounded up to two decimal places."
-    if section == 'widths': return Decimal(repr(expected + 0.25)).quantize(Decimal('0.01'), ROUND_CEILING)
-    factor = 2 if estimate or expected < 50 else 1.5 if expected <= 500 else 1.3
-    return Context(prec=2, rounding=ROUND_CEILING).create_decimal(repr(max(0.5, factor*expected)))
-
 def set_budgets(
     expected, # Expected costs keyed by case code, in copies or, for widths, as a 32/64-bit ratio
     path=_SPEED, # A BPL file/directory, or Rustymath's speed.txt or speed_python.txt
@@ -866,7 +875,7 @@ def set_budgets(
     sections=None, # Section names to update; None: all
     estimate=False, # True for costs that no run has measured on the selected builds, such as estimates for Linux or wasm, which keep budgets at twice the cost
 ):
-    "Replace selected budget footers, leaving source and prose unchanged; return the changed budgets."
+    "Replace selected budget footers with the budget for each expected cost, by the rule that `rustymath::timing::budget` holds, leaving source, prose and `held` and `busy` lines unchanged; return the changed budgets. A held column's footer keeps this rule budget, and its line gives the cost it is held at."
     if isinstance(builds, str): builds = [builds]
     if isinstance(sections, str): sections = [sections]
     for code, cost in expected.items():
@@ -876,15 +885,7 @@ def set_budgets(
     data, records = path.read_bytes(), []
     if path.suffix == '.bpl':
         records = [(c['section'], c['code'], c['budgets'], c['budget_span']) for c in _reference_file(data.decode())['cases'] if 'budgets' in c]
-    else:
-        section, offset = None, 0
-        for line in data.splitlines(keepends=True):
-            text = line.decode().rstrip('\r\n')
-            if m := re.fullmatch(r'\[([^\] ]+)\](?: .*)?', text): section = m[1]
-            elif text and not text.startswith('#') and section != 'setup':
-                code, *budgets = text.split('\t')
-                if budgets: records.append((section, code, budgets, (offset, offset+len(text.encode()))))
-            offset += len(line)
+    else: records = [case for case in _budget_lines(data.decode()) if case[2]]
     width = min(len(_BUDGETS), max((len(row[2]) for row in records), default=0))
     if builds and (unknown := set(builds) - set(_BUDGETS[:width])): raise ValueError(f'{path.name} has no budget column {", ".join(sorted(unknown))}')
     columns = [i for i, build in enumerate(_BUDGETS[:width]) if builds is None or build in builds]
@@ -892,7 +893,7 @@ def set_budgets(
     for section, code, fields, span in records:
         if (cost := expected.get(code)) is None or sections is not None and section not in sections: continue
         fields = [*fields, *['']*(width-len(fields))]
-        new = f'{_budget(section, cost, estimate).normalize():f}'
+        new = _budget(section, cost, estimate)
         for i in columns:
             if new != fields[i]: changes.append((section, code, _BUDGETS[i], fields[i], new))
             fields[i] = new

@@ -13,8 +13,9 @@ MACOSX_DEPLOYMENT_TARGET = "15.0"
 rustflags = ["-C", "target-cpu=x86-64-v3", "-C", "passes=loop-vectorize,slp-vectorizer"]
 
 # The browser build uses wasm's 128-bit SIMD, which current browsers all support.
+# Its main stack is 4 MiB, against rustc's default of 1 MiB. An evaluation then keeps `eval::room`'s 1 MiB red zone on it and grows no 16 MiB segment.
 [target.wasm32-unknown-unknown]
-rustflags = ["-C", "target-feature=+simd128", "-C", "passes=loop-vectorize,slp-vectorizer"]
+rustflags = ["-C", "target-feature=+simd128", "-C", "passes=loop-vectorize,slp-vectorizer", "-C", "link-arg=-zstack-size=4194304"]
 
 [alias]
 # Builds the npm package into `wasm/pkg/`. `xtask` builds optimised, because its wasm-bindgen pass runs on every call.

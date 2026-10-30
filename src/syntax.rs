@@ -22,8 +22,8 @@ pub(crate) enum NodeKind {
     Group(Vec<Node>),
     /// A run of nodes with no spaces between them, evaluated before its neighbours.
     Run(Vec<Node>),
-    /// A subscript, as in `v₁`: `(1⌷v)` for the item just before it, which binding finds after dot access.
-    Subscript(i64),
+    /// Numeric subscripts select from an array or set a function's axes, after dot access.
+    Subscript(Value),
     /// `ⱼ`, `ₑ` or `ᵣ` between two items, as in `xⱼy`, which binding joins into one term once dot access and subscripts are bound.
     Joiner(Joiner),
     /// `T.(expr)`, which dot access builds: the second node evaluated with the keys of the first as names.
@@ -815,7 +815,21 @@ impl Parser<'_> {
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
                 TokenKind::Function(f) => NodeKind::Function(Builtin::Primitive(*f)),
                 TokenKind::Operator(op) => NodeKind::Operator(*op),
-                TokenKind::Subscript(index) => NodeKind::Subscript(*index),
+                TokenKind::Subscript(index) => {
+                    let first = Value::Number(Number::from_integer(*index));
+                    let mut indices = Vec::new();
+                    while let Some(Token { kind: TokenKind::Subscript(index), span: next }) = self.tokens.get(self.pos) {
+                        let gap = &span.source.text[span.range.end..next.range.start];
+                        if gap.is_empty() || !gap.chars().all(char::is_whitespace) { break; }
+                        if indices.is_empty() { indices.push(first.clone()); }
+                        indices.push(Value::Number(Number::from_integer(*index)));
+                        span.range.end = next.range.end;
+                        self.pos += 1;
+                    }
+                    NodeKind::Subscript(if indices.is_empty() { first } else {
+                        Value::new([indices.len()], indices).described("invalid subscript list").at(&span)?
+                    })
+                }
                 TokenKind::Joiner(joiner) => NodeKind::Joiner(*joiner),
                 TokenKind::Name(name) => NodeKind::Name(Name::new(name), false),
                 TokenKind::System(name) => Builtin::find(name).map_or_else(|| NodeKind::System(name.clone()), NodeKind::Function),

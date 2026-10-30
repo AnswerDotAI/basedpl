@@ -14,15 +14,15 @@ use crate::{
 use rustymath::{agreement::Mapping, buffer::DType, gather::Steps, layout::strides, structure::IndexPart};
 use std::sync::{Arc, Mutex, PoisonError, atomic::{AtomicBool, Ordering}};
 
-/// What a program knows of a value without its items: its kind (`plan::Kind`), whether it's an atom, and its layout: its shape, keys and axis names. A description's kind leaves out the narrowest width that holds a number's value. Two atoms of one type therefore share a program's key, whatever their magnitudes.
+/// What a program knows of a value without its items: its kind (`plan::Kind`), whether it's an atom, its layout (its shape, keys and axis names), and whether no item is negative or ¯0, as the steps that made it show (`rustymath::facts`). A description's kind leaves out the narrowest width that holds a number's value. Two atoms of one type therefore share a program's key, whatever their magnitudes. `of`, which describes a program's arguments, gives the range fact by type alone (`Kind::unsigned`), so that no key depends on an argument's sign.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Desc { pub(crate) kind: Kind, pub(crate) atom: bool, pub(crate) layout: Layout }
+pub(crate) struct Desc { pub(crate) kind: Kind, pub(crate) atom: bool, pub(crate) layout: Layout, pub(crate) nonnegative: bool }
 
 impl Desc {
     /// The description of `value`, or `None` for a value that a program can't hold (`describes`).
     pub(crate) fn of(value: &Value) -> Option<Self> {
         let kind = Self::kind_of(value)?;
-        Some(Self { kind, atom: value.is_atom(), layout: value.layout().clone() })
+        Some(Self { kind, atom: value.is_atom(), layout: value.layout().clone(), nonnegative: kind.unsigned() })
     }
     /// Whether a program can hold `value`: numbers in compact storage that carry no running level's data and whose layout has no renderer.
     pub(crate) fn describes(value: &Value) -> bool { Self::kind_of(value).is_some() }
@@ -466,15 +466,25 @@ impl Recording {
             Input::Left(k) => leaf("⍺", key.left.as_ref(), k), Input::Right(k) => leaf("⍵", Some(&key.right), k), Input::Name(j) => format!("free {j}")
         })
     }
-    /// `value` with each axis name that `•index` drew during the trace replaced by a fresh name with the same stem (`system::renamed`), so that each call's result has new names, as an untraced call's does.
+    /// `value` with each name that `•index` drew during the trace replaced, as an axis name or as a key, by a fresh name with the same stem (`system::renamed`), as an untraced call draws new names. One replay gives each drawn name one replacement.
     fn renamed(&self, value: Value) -> Result<Value, Error> {
         if self.named.is_empty() { return Ok(value); }
+        let mut fresh: Vec<(Arc<str>, Arc<str>)> = Vec::new();
         crate::transform::walk(&value, &mut |leaf| {
-            if !leaf.axis_names().iter().flatten().any(|n| self.named.contains(n)) { return Ok(leaf.clone()); }
-            let names = leaf.axis_names().iter().map(|n| match n {
-                Some(n) if self.named.contains(n) => Some(crate::system::renamed(n)), n => n.clone()
-            }).collect();
-            leaf.clone().with_axis_names(names).described("invalid result")
+            let keys: Vec<_> = (0..leaf.shape().len()).map(|a| leaf.keys(a)).collect();
+            let drawn = |n: &Option<Arc<str>>| n.as_ref().is_some_and(|n| self.named.contains(n));
+            if !leaf.axis_names().iter().chain(keys.iter().flatten().flat_map(|k| k.names())).any(drawn) { return Ok(leaf.clone()); }
+            let mut new = |n: &Option<Arc<str>>| match n {
+                Some(n) if self.named.contains(n) => Some(match fresh.iter().find(|(old, _)| old == n) {
+                    Some((_, f)) => f.clone(),
+                    None => { let f = crate::system::renamed(n); fresh.push((n.clone(), f.clone())); f }
+                }),
+                n => n.clone(),
+            };
+            let names = leaf.axis_names().iter().map(&mut new).collect();
+            let keys = keys.iter().map(|k| k.map(|k| rustymath::layout::Keys::partial(k.names().iter().map(&mut new).collect())).transpose())
+                .collect::<Result<_, _>>().map_err(crate::ErrorKind::from).described("invalid result")?;
+            leaf.clone().with_axis_names(names).and_then(|v| v.with_keys(keys)).described("invalid result")
         })
     }
 }

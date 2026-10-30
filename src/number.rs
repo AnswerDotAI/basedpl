@@ -303,9 +303,6 @@ pub(crate) mod real {
     pub(crate) fn arithmetic<F: Float>(op: Arithmetic, x: F, y: F) -> F {
         match op { Arithmetic::Plus => x + y, Arithmetic::Minus => x - y, Arithmetic::Times => x * y, Arithmetic::Divide => x / y }
     }
-    /// The sign of `y`: 0 for either zero, and NaN for NaN.
-    #[inline]
-    pub(crate) fn signum(y: f64) -> f64 { if y == 0.0 { 0.0 } else { y.signum() } }
     /// The order of `x` and `y` for grading: `¯0` equals `0`, and NaN equals itself and follows everything else.
     pub(crate) fn grade(x: f64, y: f64) -> Ordering { x.partial_cmp(&y).unwrap_or_else(|| x.is_nan().cmp(&y.is_nan())) }
 }
@@ -628,7 +625,8 @@ impl Number {
     }
     pub(crate) fn fixed_promotion(left: Option<&Self>, right: &Self) -> Result<Option<Width>, &'static str> {
         if left.is_none_or(|n| n.fixed_width().is_none()) && right.fixed_width().is_none() { return Ok(None); }
-        crate::plan::Kind::fixed(left.into_iter().chain([right]).map(crate::plan::Kind::number))
+        let right = crate::plan::Kind::number(right);
+        match left { Some(left) => crate::plan::Kind::fixed([crate::plan::Kind::number(left), right]), None => crate::plan::Kind::fixed([right]) }
     }
     /// This number as a fixed integer of `width`, converted as `element::Converts` converts it, with a float floored within the tolerance that `numeric` gives its width. A complex number is DOMAIN.
     pub(crate) fn to_fixed(&self, width: Width, numeric: Numeric) -> Result<Self, ErrorKind> {
@@ -940,17 +938,6 @@ impl Number {
         if w.re.is_nan() || w.im.is_nan() { Err("Lambert W did not converge") } else { Ok(Self::complex(w, self.width_with(None))) }
     }
 
-    pub(crate) fn digamma(&self) -> Result<Self, &'static str> {
-        if self.as_complex().is_some() { return Err("digamma needs a real argument"); }
-        Ok(reals!(self => |y: F| Self::from_float(rustymath::Digamma.one(y))))
-    }
-
-    /// C(n, k)'s slope in n, for `self` as k, or else its slope in k.
-    pub(crate) fn binomial_partial(&self, n: &Self, wrt_n: bool) -> Result<Self, &'static str> {
-        if self.as_complex().is_some() || n.as_complex().is_some() { return Err("∂ of ! needs real arguments"); }
-        Ok(reals!(self, n => |k, n: F| Self::from_float(if wrt_n { rustymath::BinomDn.one(n, k) } else { rustymath::BinomDk.one(n, k) })))
-    }
-
     /// The math functions of one number that need no tolerance. `⌊` and `⌈` take one, through `floor` and `ceiling`.
     pub(crate) fn math_monad(&self, op: Math) -> Result<Self, Failure> {
         use Math::*;
@@ -985,6 +972,18 @@ impl Number {
             Power => exp(y), Log => rustymath::Ln.one(y), Pi => y * std::f64::consts::PI, Circle => exp(Complex64::new(-y.im, y.re)), _ => unreachable!()
         };
         Ok(Self::complex(result, width))
+    }
+
+    /// `⍟1+y`, with log1p's accuracy where `y` is real and at least ¯1, and otherwise `⍟` of `1+y`, which is complex below ¯1.
+    pub(crate) fn log1p(&self) -> Result<Self, Failure> {
+        if self.as_complex().is_none() && let Some(r) = reals!(self => |y: F| rustymath::Log1p.checked(y).map(Self::from_float)) { return Ok(r); }
+        self.dyad(Arithmetic::Plus, &Self::from_integer(1))?.math_monad(Math::Log)
+    }
+
+    /// `¯1+*y`, with expm1's accuracy where `y` is real, and otherwise `*y` less 1.
+    pub(crate) fn expm1(&self) -> Result<Self, Failure> {
+        if self.as_complex().is_none() && let Some(r) = reals!(self => |y: F| Some(Self::from_float(rustymath::Expm1.one(y)))) { return Ok(r); }
+        self.math_monad(Math::Power)?.dyad(Arithmetic::Minus, &Self::from_integer(1))
     }
 
     /// `⌊y`, within the tolerance of its float width. An exact number floors exactly. A real result is a whole number, so it becomes exact. An infinity or NaN stays as it is.
@@ -1185,6 +1184,7 @@ impl Number {
         if self.as_complex().is_some() || right.as_complex().is_some() { return Err("expected real numbers"); }
         if self.is_nonfinite() || right.is_nonfinite() { return Ok(self.grade_order(right)); }
         if let (Integer(x, _), Integer(y, _)) = (&self.0, &right.0) { return Ok(x.cmp(y)); }
+        if let (Some(x), Some(y)) = (self.0.integer(), right.0.integer()) { return Ok(x.cmp(&y)); }
         if let (Some(x), Some(y)) = (self.exact_ref(), right.exact_ref()) { return Ok(x.cmp(&y)); }
         Ok(self.to_float()?.partial_cmp(&right.to_float()?).unwrap())
     }
@@ -1282,7 +1282,7 @@ impl Number {
                 Plus => Self::from_float(y),
                 Minus => Self::from_float(-y),
                 Times if y.is_nan() => Self::from_float(y),
-                Times => Self::from_integer(real::signum(y.into()) as i64),
+                Times => Self::from_integer(f64::from(rustymath::recipe::sign(&rustymath::recipe::Floats, y)) as i64),
                 Divide => Self::from_float(F::narrow(1.0) / y),
             })),
             repr => {

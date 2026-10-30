@@ -5,27 +5,29 @@
 fib←{⍵<2ₓ?⍵;(∇⍵-1ₓ)+∇⍵-2ₓ} ⋄ g←{⍵<2ₓ?⍵;(g ⍵-1ₓ)+g ⍵-2ₓ} ⋄ k←0 ⋄ t←64⍴"ab" "cde" ⋄ m←[0 1⋄¯1 0] ⋄ s←[64 2 2]⍴$t $f $f $t $t $t $f $t ⋄ v_4←1.5 2.5 3.5 4.5
 [calls]
 # A primitive call.
-+⍣N 0	395
++⍣N 0	392
 # A dfn call that returns its argument.
-{⍵}⍣N 0	1452
+{⍵}⍣N 0	1418
 # A dfn that reads a global.
-{⍵+k}⍣N 0	2593
+{⍵+k}⍣N 0	2499
 # A local assignment and read.
-{x←⍵+1 ⋄ x}⍣N 0	3003
+{x←⍵+1 ⋄ x}⍣N 0	2970
 # A spaced run that builds a train and applies it at once.
-{(⍵)+⊢ ⍵}⍣N 0	4309
+{(⍵)+⊢ ⍵}⍣N 0	4233
 # A bracket literal. It counted 5,620 on 24 October 2026. Joining its items' kinds, fixedness and weakness in `Promoted::join` added about 125 instructions. The memory guard's check on each allocation and the later promotion refactor added about 95 more.
-{↑[⍵ 1]}⍣N 0	5841
+{↑[⍵ 1]}⍣N 0	5717
 # A fixed mark on a 4-item float vector, which floors each item to `i32` through `derivative::converted`, the entry point that marks on values and on functions share. Stage 3's step 6 sent value marks there, which cost about 215 instructions. The inline size test in `fusion::convert` and the inline tests of `Value::carried` and `Value::holds_values` recover about 100 of them. On 26 October 2026, single-stepping `binder::derived` under lldb counted every instruction that it and its calls retire. Outside `malloc`, the other 115 lay in four functions: 130 in `derivative::converted`, 17 in an out-of-line `product` for its size test's length, 15 in `Value::converted`'s dispatch, and 47 fewer in `binder::derived`, which no longer reads the settings itself. Of the 130, about 45 read the settings, 25 test for carriers and 12 make the size test. The inline `rustymath::layout::count` and an always-inlined `derivative::plain` then saved 19.
-v_4ₓ₄	3825
+v_4ₓ₄	3733
 # `fib 10ₓ` makes 177 calls, which read `⍵` and `∇`.
 {fib 10ₓ}⍣N 0	824136
 # `g 10ₓ` makes 177 calls of a dfn that calls itself by name, with spaces that split its statement into runs.
 {g 10ₓ}⍣N 0	978171
 # `fib 10ₓ` under static kinds, whose integer scalar calls run their integer kernel at the `int` width (`Primitive::integer_kernel`).
 •prefs ["kinds":"static"] ⋄ {fib 10ₓ}⍣N 0	870789
-# Each over a nested vector, which can't batch, calls `⌽` once for each of the 64 strings in `t`. It counted 290,267 on 25 October 2026. Later that day a longer zero-axis scan in rustymath's `element_count` and stage 3's single map type, where `remap` builds a `Mapping` that `copying` reads back, made each string's reversed copy about 150 instructions dearer. Other changes recovered that rise, among them scanning only where a shape's product overflows, inlining `Mapping::from` and `Mapping::to_walk`, and the inline tests in `Value::carried`. On 26 October 2026, with this file's setup, the 02:01 build of 25 October counted 290,445 and a build of 26 October 291,153. Reading each part once in `plan::Kind::join`, which joins each copy's kind, then saved about 8,700. Later that day it rose to about 290,400, from `Route`'s drop and the fill option's pass through `Mapping::filled`. On 27 October 2026 four changes brought it to 278,025, about 180 instructions fewer for each string: `Mapping::filled` returns a mapping that keeps no fill without moving it, `plan::Kind::value` asks only integer arrays for a fixed width, `Kind::join` returns a lone part as it is, and `Storage::dtype` reads the buffer's dtype with no view. The count moves by up to about 2,400 with the setup alone.
-⌽¨⍣N t	261119
+# `fib 10ₓ₂` on 16-bit fixed integers, whose scalar calls run their integer kernel at that width (`Primitive::fixed_number`), and whose comparisons compare the integers directly (`Number::order`).
+{fib 10ₓ₂}⍣N 0	905540
+# Each over a nested vector, which can't batch, calls `⌽` once for each of the 64 strings in `t`. It counted 290,267 on 25 October 2026. Later that day a longer zero-axis scan in rustymath's `element_count` and stage 3's single map type, where `remap` builds a `Mapping` that `copying` reads back, made each string's reversed copy about 150 instructions dearer. Other changes recovered that rise, among them scanning only where a shape's product overflows, inlining `Mapping::from` and `Mapping::to_walk`, and the inline tests in `Value::carried`. On 26 October 2026, with this file's setup, the 02:01 build of 25 October counted 290,445 and a build of 26 October 291,153. Reading each part once in `plan::Kind::join`, which joins each copy's kind, then saved about 8,700. Later that day it rose to about 290,400, from `Route`'s drop and the fill option's pass through `Mapping::filled`. On 27 October 2026 four changes brought it to 278,025, about 180 instructions fewer for each string: `Mapping::filled` returns a mapping that keeps no fill without moving it, `plan::Kind::value` asks only integer arrays for a fixed width, `Kind::join` returns a lone part as it is, and `Storage::dtype` reads the buffer's dtype with no view. The count moves by up to about 2,400 with the setup alone. On 30 October 2026 it counted 269,374, 3.2% above its earlier count of 261,119. Of that 3.2%, about 2.4% came before that day's 12:43 build, `a8986b13`. The other 0.8% is one more call frame on each array primitive call, from the form rewriter's checks in `call_axis` and `run_axis`. The program-layer redesign in `meta/program-layer-2026-10-30.md` removes those checks, and the count is measured again then.
+⌽¨⍣N t	269374
 # Rank's general path calls a dfn once for each of the same 64 cells.
 {⌽⍵}⍤0⍣N t	316700
 # A system function maps itself over the same 64 cells.

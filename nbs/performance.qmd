@@ -18,7 +18,7 @@ Code meant for static kinds gives each integer the width that its values need an
 
 ## Calls that wait
 
-An elementwise call on 131,072 numbers or more doesn't compute at once. It waits, and the calls that read its result join it. When something needs the items, the whole chain runs together, block by block. It reads each input array once and writes only what it must keep. A chain of arithmetic that ends in a reduction runs in about the time that one copy of its data takes. [`•explain`](system/explain.qmd) lists the calls of each group that ran together:
+An elementwise call on 65,536 numbers or more doesn't compute at once. It waits, and the calls that read its result join it. When something needs the items, the whole chain runs together, block by block. It reads each input array once and writes only what it must keep. A chain of arithmetic that ends in a reduction runs in about the time that one copy of its data takes. [`•explain`](system/explain.qmd) lists the calls of each group that ran together:
 
 ```bpl
 y←¿1000000⍴0

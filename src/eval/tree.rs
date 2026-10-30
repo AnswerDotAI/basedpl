@@ -3,7 +3,7 @@ use super::binder::{
     Binder, Category, Derived, Entity, Resume, Term, array_of, attached, bound_right, derived, function_of, narrow, split_call, strand, tails, train,
 };
 use super::bindings::Address;
-use super::operators::train_call;
+use super::operators::{calls_tines, train_call, train_readers};
 use super::session::Within;
 use super::*;
 use std::{borrow::Cow, ops::Range, sync::OnceLock};
@@ -90,9 +90,10 @@ enum Op {
         level: u32, left: Option<Read>, function: Read, argument: Read, to: u32, span: Span, range: Range<u32>, result: Category, last: bool,
         resume: Box<Template>
     },
-    /// A call, as `Call` makes it, of a group's train, whose register `function` holds its tines (`Recording::call_tines`). A train's call is never a tail call.
+    /// A call, as `Call` makes it, of a group's train, whose register `function` holds its tines (`Recording::call_tines`). A train's call is never a tail call. `readers` keeps how many of the train's tines read its arguments, found on the first call: a recording fixes whether each tine is an array or a function, because each register's category is checked.
     CallTines {
-        level: u32, left: Option<Read>, function: Read, argument: Read, to: u32, span: Span, range: Range<u32>, result: Category, resume: Box<Template>
+        level: u32, left: Option<Read>, function: Read, argument: Read, to: u32, span: Span, range: Range<u32>, result: Category, resume: Box<Template>,
+        readers: OnceLock<usize>
     },
     /// An operator applied to its operand at `span`: a derived function, or the call that a power, `ᵀ` or `ₓ` on an array stands for.
     Derive { level: u32, operand: Read, operator: Read, to: u32, span: Span, range: Range<u32>, result: Category, resume: Box<Template> },
@@ -187,7 +188,7 @@ impl Recorder {
     /// Holds the leaf for `node`, at `cursor` among the level's nodes, which resolved to `binding`.
     pub(super) fn leaf(&mut self, node: &Node, cursor: usize, binding: &Binding, session: &Session) {
         let leaf = match (&node.kind, binding) {
-            (NodeKind::Literal(_) | NodeKind::Function(_) | NodeKind::Operator(_), _) => Leaf::Constant(Term::Binding(binding.clone())),
+            (NodeKind::Literal(_) | NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::Subscript(_), _) => Leaf::Constant(Term::Binding(binding.clone())),
             (NodeKind::Name(name, last), _) => Leaf::Resolve(Category::bound(binding), Some(session.bindings.address(*name)), *last),
             _ => Leaf::Resolve(Category::bound(binding), None, false),
         };
@@ -397,7 +398,7 @@ impl Recorder {
             let resume = self.pushed(to);
             let level = self.walk.level;
             if matches!(function, Read::Register(r) if self.trains.contains(&r)) {
-                self.ops.push(Op::CallTines { level, left: bound, function, argument: right, to, span, range, result, resume });
+                self.ops.push(Op::CallTines { level, left: bound, function, argument: right, to, span, range, result, resume, readers: OnceLock::new() });
             } else {
                 self.ops.push(Op::Call { level, left: bound, function, argument: right, to, span, range, result, last: last && level == 0, resume });
             }
@@ -617,8 +618,8 @@ impl Recording {
                     if !put(registers, *to, Entity::of(bound.value, range.clone(), bound.shy), *result) { continue; }
                     (*level, Over::Failed(resume))
                 }
-                Op::CallTines { level, left, function, argument, to, span, range, result, resume } => {
-                    let bound = self.call_tines(registers, *left, *function, *argument, span, source)?;
+                Op::CallTines { level, left, function, argument, to, span, range, result, resume, readers } => {
+                    let bound = self.call_tines(registers, *left, *function, *argument, readers, span, source)?;
                     if !put(registers, *to, Entity::of(bound.value, range.clone(), bound.shy), *result) { continue; }
                     (*level, Over::Failed(resume))
                 }
@@ -723,15 +724,15 @@ impl Recording {
         Ok(Entity::new(term, held.range.clone(), false, None))
     }
 
-    /// The call of a group's train, which register `function` holds as its tines: by its tines where `train_call` can call them in place, and otherwise as its function. A level that the binder took over holds its train as a function, which calls as any function does. A train's call is never a tail call.
+    /// The call of a group's train, which register `function` holds as its tines: by its tines where `calls_tines` accepts them, giving `train_call` the arguments that the statement holds and the train's readers (`train_readers`), which `readers` keeps from the first call, and otherwise as its function. A level that the binder took over holds its train as a function, which calls as any function does. A train's call is never a tail call.
     #[inline(never)]
     fn call_tines(
-        &self, registers: &mut [Option<Entity>], left: Option<Read>, function: Read, argument: Read, span: &Span, source: &Arc<Source>
+        &self, registers: &mut [Option<Entity>], left: Option<Read>, function: Read, argument: Read, readers: &OnceLock<usize>, span: &Span, source: &Arc<Source>
     ) -> Result<Bound, Error> {
         let x = match left { Some(x) => Some(self.argument(registers, x, source)?), None => None };
         let f = self.read(registers, function);
         let y = self.argument(registers, argument, source)?;
-        if let Term::Tines(tines) = &f.term && let Some(bound) = train_call(tines, x.as_deref(), &y, span) { return bound; }
+        if let Term::Tines(tines) = &f.term && calls_tines(tines) { return train_call(tines, *readers.get_or_init(|| train_readers(tines)), x, y, span); }
         let (x, f) = match x { Some(x) => (Some(x), function_of(f, source)?), None => split_call(f, source)? };
         f.call_with(x, y, span)
     }

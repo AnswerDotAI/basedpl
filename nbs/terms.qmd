@@ -59,4 +59,4 @@ Every [value](#term-value) is an [atom](#term-atom) or an [array](#term-array): 
 | [tine]{#term-tine} | one of the two outer parts of a fork |
 | [atop]{#term-atop} | two parts of a train, `f g`, giving `f (g ⍵)` |
 | [bind]{#term-bind} | a subject directly before a part, fixing that part's left argument: `2×` is `2↣×`, and in `2\|#⊢` the `2` binds `\|` |
-| [fast combination]{#term-fast-combination} | a train, composition or operator application that BPL computes by a faster algorithm than applying its parts in turn, with the same result: `10↑⍋ v` |
+| [fast combination]{#term-fast-combination} | a combination of functions that BPL computes by an algorithm of its own, in any spelling: `10↑⍋v`, `⍟1+x` |

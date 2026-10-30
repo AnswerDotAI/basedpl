@@ -108,6 +108,7 @@ fn element(_: &Span) -> Value { crate::xml::element_function("".into()) }
 fn canvas(_: &Span) -> Value { crate::canvas::function("".into()) }
 fn valid_numbers(span: &Span) -> Value { Value::new(vec![2], vec![numbers(span), numbers(span)]).expect("a pair") }
 fn record(_: &Span) -> Value { crate::keyed::empty_record() }
+fn special(_: &Span) -> Value { Value::Function(crate::primitive::Builtin::Primitive(Primitive::Special(crate::primitive::Special::Erf)).function()) }
 
 /// A row of the table. A system function that maps over several items has a result prototype, which an empty mapped argument gives.
 const fn row(
@@ -133,6 +134,7 @@ const BUILTINS: &[SystemFunction] = &[
     row("•vfi", Call::Value(crate::data::vfi), Ambivalent, Items(Text), Some(valid_numbers), None),
     row("•r", Call::Value(crate::regex::compile), Monadic, Items(Text), Some(record), None),
     row("•distribution", Call::Value(crate::distribution::distribution), Ambivalent, Items(Text), Some(record), None),
+    row("•special", Call::Value(crate::primitive::special), Monadic, Items(Text), Some(special), None),
     row("•rand", Call::Value(crate::distribution::generator), Monadic, Whole, Some(record), None),
     row("•nget", Call::Value(crate::data::read), Ambivalent, Items(Text), Some(text), None),
     row("•nput", Call::Effect(crate::data::write), Dyadic, Whole, Some(number), None),

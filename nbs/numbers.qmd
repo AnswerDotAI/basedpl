@@ -179,7 +179,7 @@ Bare numbers are floats of the default width: 64 bits under dynamic kinds and 32
 •literal⁻¹ 0.5                     ⍝ "0.5ₚ"
 ```
 
-An operation on floats computes at their width. An exact operand rounds to the width that the operation computes at. Floats of two widths compute at the wider, except that a [weak number](#weak-and-strong-numbers) takes the width of the floats beside it. Writes, catenation and arrays built from items follow the same rule: `v,2.5`, `v.[0]←2.5` and `[v₀ 2.5]` keep a 32-bit `v`'s width. No operation widens floats on its own.
+An operation on floats computes at their width. An exact operand rounds to the width that the operation computes at. Floats of two widths compute at the wider, except that a [weak number](#weak-and-strong-numbers) takes the width of the floats beside it. Writes, catenation and arrays built from items follow the same rule: `v,2.5`, `v₀←2.5` and `[v₀ 2.5]` keep a 32-bit `v`'s width. No operation widens floats on its own.
 
 ```bpl
 v←32 •float 1.5 2.5
@@ -225,7 +225,9 @@ Some results are exact. Powers, roots and cube roots whose exact result is a flo
 •prefs ["mathish":$t]
 ```
 
-Last bits aren't reproducible. A calculation can give results that differ in their last bits on another platform or build, in another run, with another number of threads, at another array size, or by another route, such as one fused loop in place of separate calls. `+/` adds in an order that depends on the array's size, the number of threads and the route. `⌈` and `⌊` can give either argument where one is NaN or both are zeros of opposite signs. Compare floats from different routes within a tolerance, as Mathish mode's `=` does.
+Last bits aren't reproducible. A calculation can give results that differ in their last bits on another platform or build, in another run, with another number of threads, at another array size, or by another route, such as one fused loop in place of separate calls. `+/` adds in an order that depends on the array's size, the number of threads and the route. The result at a NaN argument, which NaN it is and the sign of a zero result can differ in the same ways, as rustymath's [Accuracy page](https://answerdotai.github.io/rustymath/accuracy.html) describes. `⌈` and `⌊`, for example, can give either argument where one is NaN or both are zeros of opposite signs. Compare floats from different routes within a tolerance, as Mathish mode's `=` does.
+
+A form that BPL doesn't recognise as a [fast combination](terms.qmd#term-fast-combination), such as one that names a constant, can give different digits, beyond the last bits where the combination is more accurate. `⍟1+x` computes through `log1p` and keeps the digits of a tiny `x`. `one←1 ⋄ ⍟one+x` computes `⍟` of `1+x`, which loses them.
 
 ## Mathish mode
 
