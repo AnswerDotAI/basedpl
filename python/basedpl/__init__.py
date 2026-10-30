@@ -184,7 +184,7 @@ class Array(_Operators):
     def _classify(self):
         "Classify built-in array wrappers without changing user-defined subclasses."
         if type(self) in (Array, FunctionArray):
-            self.__class__ = FunctionArray if self._inner.holds_functions else Array
+            self.__class__ = FunctionArray if self._inner.holds_functions else type(self)
     @property
     def shape(self): return tuple(self._inner.shape)
     @property
