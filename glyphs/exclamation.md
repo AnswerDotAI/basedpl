@@ -1,0 +1,26 @@
+
+
+# `!` — Factorial / Binomial
+
+Function. Hanzi: `阶/拣` (`階/揀`). Ranks: `0` monadic, `0 0` dyadic
+
+`!Y`: Y!. Pervasive.
+
+``` bpl
+!5                ⍝ 120
+!5ₓ               ⍝ 120ₓ
+```
+
+`X!Y`: binomial coefficient, Y choose X. Pervasive.
+
+``` bpl
+2!5               ⍝ 10
+2ₓ!5ₓ             ⍝ 10ₓ
+```
+
+Extends through Gamma to complex arguments and to real arguments that
+aren’t whole. At a pole, a negative whole number, the result is an
+infinity or NaN, as the gamma function gives it.
+
+For nonnegative exact integers, factorial is limited to 100000.
+Exceeding the limit gives `DOMAIN`.

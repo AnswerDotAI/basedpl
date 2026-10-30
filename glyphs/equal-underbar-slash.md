@@ -1,0 +1,20 @@
+
+
+# `≢` — Tally / Not match
+
+Function. Keys: `Alt-?`. Hanzi: `数/异` (`數/異`). Ranks: `∞` monadic,
+`∞ ∞` dyadic
+
+`≢Y` counts major cells: first-axis length, or 1 for a unit.
+
+``` bpl
+≢2 3⍴0             ⍝ 2ₓ
+≢42                ⍝ 1ₓ
+≢⍬                 ⍝ 0ₓ
+```
+
+`X≢Y` negates [match](equal-underbar.qmd).
+
+``` bpl
+1≢,1               ⍝ $t
+```

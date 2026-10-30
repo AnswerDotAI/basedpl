@@ -1,0 +1,45 @@
+
+
+# `⊥` — Binary decode / Decode
+
+Function. Keys: `Alt-b`. Hanzi: `译` (`譯`). Ranks: `1` monadic, `1 1`
+dyadic
+
+`⊥Y` decodes binary digits along the last axis.
+
+``` bpl
+⊥1 0 1 0          ⍝ 10
+```
+
+`B⊥Y` evaluates digits `Y` in base(s) `B`. A unit base extends to every
+digit. The first entry of a mixed base is unused.
+
+``` bpl
+2⊥1 0 1 0          ⍝ 10
+[0 60 60]ₓ⊥[1 1 1]ₓ ⍝ 3661ₓ
+```
+
+For coefficient vector `C`, `X⊥C` evaluates the polynomial in descending
+powers.
+
+``` bpl
+3⊥2 4 5            ⍝ 35
+```
+
+Each row of `Y` holds the digits of one number, as
+[Encode](down-tack.qmd) writes them. `B⊥B⊤N` gives back `N` when `B` has
+enough digits.
+
+``` bpl
+2⊥[1 0 1⋄0 1 1]   ⍝ 5 3
+2 2 2⊥2 2 2⊤3 5     ⍝ 3 5
+```
+
+## Inverse
+
+`⊥⁻¹` is `⊤`.
+
+``` bpl
+⊥⁻¹5         ⍝ 1 0 1
+24 60⊥⁻¹90   ⍝ 1 30
+```

@@ -1,0 +1,38 @@
+
+
+# `÷` — Reciprocal / Divide
+
+Function. Keys: `Alt-u`. Hanzi: `除`. Ranks: `0` monadic, `0 0` dyadic
+
+`÷Y`: 1/Y. Pervasive.
+
+``` bpl
+÷4                ⍝ 0.25
+```
+
+`X÷Y`: X/Y. Pervasive. A nonzero real `X` divided by zero gives an
+infinity. Zero divided by zero gives zero for [Mathish
+types](../terms.qmd#term-mathish-types) with [Mathish
+mode](../numbers.qmd#mathish-mode) enabled. Other floating zero divided
+by zero cases give NaN.
+
+``` bpl
+1ₓ÷3ₓ             ⍝ 1r3
+¯1÷0              ⍝ ¯∞
+0÷0               ⍝ 0
+0ₓ÷0ₓ             ⍝ 0ₓ
+0÷ₓ0              ⍝ 0ₓ
+```
+
+## Inverse
+
+`÷⁻¹` is `÷`. With the right argument fixed, `(÷↢X)⁻¹Y` is `Y×X`.
+
+``` bpl
+12÷⁻¹4     ⍝ 3
+(÷↢4)⁻¹3   ⍝ 12
+```
+
+## Errors
+
+- `DOMAIN`: a character argument

@@ -1,0 +1,26 @@
+
+
+# `⊽` — Double / NOR
+
+Function. Keys: `Alt-Minus 9`. Hanzi: `双/莫` (`雙/莫`). Ranks: `0`
+monadic, `0 0` dyadic
+
+`⊽Y`: 2Y. Pervasive.
+
+``` bpl
+⊽1r3              ⍝ 2r3
+```
+
+`X⊽Y` is Boolean NOR. Pervasive.
+
+``` bpl
+0 0 1 1⊽0 1 0 1   ⍝ $t $f $f $f
+```
+
+## Inverse
+
+`⊽⁻¹Y` halves `Y`.
+
+``` bpl
+⊽⁻¹8   ⍝ 4
+```

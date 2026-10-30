@@ -1,0 +1,124 @@
+
+
+# `↕` — Pairs / Windows
+
+Function. Keys: `Alt-K`. Hanzi: `窗`. Ranks: `∞` monadic, `∞ ∞` dyadic
+
+`↕Y` gives the adjacent pairs of major cells, as `2↕Y` does. `-/₁` then
+subtracts within each pair.
+
+``` bpl
+↕1 4 9 16            ⍝ [1 4⋄4 9⋄9 16]
+-/₁↕1 4 9 16         ⍝ ¯3 ¯5 ¯7
+```
+
+`S↕Y`: windows of sizes `S` on leading axes. Trailing axes stay inside
+each window.
+
+``` bpl
+3↕⍳5ₓ                ⍝ [0 1 2⋄1 2 3⋄2 3 4]ₓ
+2 2↕2 3⍴⍳6ₓ          ⍝ 1 2 2 2⍴[0 1 3 4 1 2 4 5]ₓ
+2↕3 2⍴⍳6ₓ            ⍝ 2 2 2⍴[0 1 2 3 2 3 4 5]ₓ
+```
+
+Shape: position frame, window sizes, trailing axes.
+
+``` bpl
+4↕"ab"               ⍝ 0 4⍴' '
+0↕"ab"               ⍝ 3 0⍴' '
+⍬↕2 3⍴⍳6ₓ            ⍝ 2 3⍴⍳6ₓ
+```
+
+Oversized full windows give empty frames. Zero sizes give `n+1` empty
+windows. `⍬↕Y` is `Y`.
+
+A two-row left argument gives sizes, then movements. A window starts
+every `M` positions.
+
+``` bpl
+[[3]⋄[2]]↕⍳8ₓ       ⍝ [0 1 2⋄2 3 4⋄4 5 6]ₓ
+```
+
+A negative size pads its axis. Each window is centred on a position, as
+in [Stencil](quad-diamond.qmd), with prototype fill beyond the edges.
+Each axis follows the sign of its own size.
+
+``` bpl
+¯3↕1 2 3 4           ⍝ [0 1 2⋄1 2 3⋄2 3 4⋄3 4 0]
+[[¯3]⋄[2]]↕↦8       ⍝ [0 1 2⋄2 3 4⋄4 5 6⋄6 7 8]
+⍴¯3 2↕3 4⍴⍳12ₓ        ⍝ [3 3 3 2]ₓ
+```
+
+An axis of length `n` has `0⌈≥⌊M÷⍨n-S` full windows, or `⌈M÷⍨0⌈n-0=2|S`
+padded windows. Movements default to 1.
+
+An options record gives the sizes as `size`, the movements as `step`, an
+edge mode as `edge`, and a fill as `fill`. With an edge mode, every
+window is centred on a position, and a position past an end reads by
+that mode, one of [`•edge`](../system/edge.qmd)’s: `"fill"`, `"clamp"`,
+`"wrap"`, `"reflect"` or `"symmetric"`. `"fill"` pads as a negative size
+does. Without an edge mode, the record reads as a plain specification.
+Padding with fill reads the record’s `fill` in place of the prototype’s
+fill, as a [fill that `⍠` chooses](quad-colon.qmd#fill) does.
+
+``` bpl
+["size":3 "edge":"wrap"]↕1 2 3 4           ⍝ [4 1 2⋄1 2 3⋄2 3 4⋄3 4 1]
+["size":3 "edge":"clamp"]↕1 2 3 4          ⍝ [1 1 2⋄1 2 3⋄2 3 4⋄3 4 4]
+["size":3 "step":2 "edge":"reflect"]↕⍳6ₓ   ⍝ [1 0 1⋄1 2 3⋄3 4 5]ₓ
+["size":¯3 "fill":¯1]↕1 2 3 4              ⍝ [¯1 1 2⋄1 2 3⋄2 3 4⋄3 4 ¯1]
+```
+
+## Folds of windows
+
+`↕` defers large windows. A fold along the windows’ own axis then slides
+over the argument and never builds them. Windows of up to 8 items fold
+directly. Wider windows take van Herk-Gil-Werman’s method, at a cost for
+each item that doesn’t grow with the width. This covers `+ × ⌈ ⌊` of
+floats, `+ ⌈ ⌊` of integers, and the Boolean folds. Windows of a matrix,
+as in `+/+/3 3↕m`, fold in one pass along each axis. A fold of windows
+that don’t overlap, as in 2 by 2 pooling, `⌈/⌈/[[2 2]⋄[2 2]]↕m`, reads
+the argument in place and costs what the same fold of a reshape costs.
+Padded windows slide over one copy of the argument with its edges added,
+whatever their edge mode. Under [`∂`](partial.qmd), a maximum or minimum
+of windows also takes each window’s first extreme from the argument.
+[`•explain`](../system/explain.qmd) reports each sliding fold.
+
+``` bpl
+v←¿100000⍴0
+(•explain "+/50↕v").fast.combination      ⍝ ["sliding fold"]
+```
+
+## Products of windows
+
+A matrix product of windows, as in a convolution written
+`([f c]⍴3 3↕img)+.×k`, reads the windows a block of rows at a time and
+never builds them. Under [`∂`](partial.qmd), the kernel’s gradient reads
+the windows again in blocks. The image’s gradient is one product: the
+windows of the gradient with zeros around it, times the kernel reversed
+along its window axes.
+
+``` bpl
+w←[99998 3]⍴3↕¿100000⍴0
+k←¿3 4⍴0
+(•explain "w+.×k").forced.function   ⍝ 0⍴⊂""
+(•storage w).pending                 ⍝ $t
+```
+
+## Inverse
+
+`↕⁻¹Y` rebuilds an array from its pairs `Y`. `N↕⁻¹Y` rebuilds it from
+its windows of size `N`.
+
+``` bpl
+↕⁻¹↕1 4 9       ⍝ 1 4 9
+3↕⁻¹3↕"abcde"   ⍝ "abcde"
+```
+
+## Errors
+
+- `RANK`: sizes not a unit, vector or two-row matrix, or too many axes
+- `LENGTH`: a matrix without two rows
+- `DOMAIN`: a size that isn’t whole, nonpositive movement, a padded size
+  of 0 or of at least twice the length of an axis that isn’t empty, an
+  options record with no size, an unknown option or edge mode, or a fill
+  that doesn’t keep its value as `Y`’s type

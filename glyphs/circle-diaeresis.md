@@ -1,0 +1,29 @@
+
+
+# `⍥` — Over
+
+Dyadic operator. Keys: `Alt-1 o`. Hanzi: `经` (`經`)
+
+`f⍥g Y` is `f(g Y)`.
+
+``` bpl
++/⍥, [1 2⋄3 4]   ⍝ 10
+```
+
+`X f⍥g Y` is `(g X)f(g Y)`.
+
+``` bpl
+1 2 +⍥≢ 3 4 5      ⍝ 5ₓ
+```
+
+Compare [After](left-tail-arrow.qmd), which transforms only the right
+argument.
+
+## Inverse
+
+With an argument fixed, `X(f⍥g)⁻¹Y` inverts `f` with `g X` fixed, then
+applies `g⁻¹`.
+
+``` bpl
+1(+⍥⊽)⁻¹8   ⍝ 3
+```

@@ -1,0 +1,128 @@
+
+
+# `⍚` — Agenda
+
+Dyadic operator. Keys: `Alt-Minus Backtick`. Hanzi: `择` (`擇`)
+
+`selector⍚cases` derives a function that runs one of `cases` on the
+whole argument, or picks one for each cell. `cases` is a nonempty vector
+of functions, and an array among them acts as a constant function. The
+selector is an array, or a function that runs once on the original
+arguments. Its values pick cases as positions pick items: whole numbers
+that count from 0, where a negative value counts back from the end. A
+Boolean selector picks case 0 for `$f` and case 1 for `$t`.
+
+## One case
+
+A unit selector picks one case, which runs on the whole arguments.
+
+``` bpl
+cases←[- ⊢] ⋄ abs←(0≤)⍚cases ⋄ abs¯3          ⍝ 3
+cases←[- ⊢] ⋄ abs←(0≤)⍚cases ⋄ abs3           ⍝ 3
+mul←1⍚[+ ×] ⋄ 2 mul 3                         ⍝ 6
+mul←¯1⍚[+ ×] ⋄ 2 mul 3                        ⍝ 6
+choose←>⍚[- ÷] ⋄ 12 choose 3                  ⍝ 4
+```
+
+## A case for each cell
+
+Any other selector picks a case for each cell of the argument. Unnamed
+axes of the selector take the argument’s leading axes, and a named axis
+takes the argument’s axis with that name. The argument’s other axes form
+its cells. Each case runs once, on the list of all the cells that pick
+it. It gives one result for each of those cells, paired by key where
+both lists have keys, or a result with exactly one item, which fills
+them all, as `@` fills its selection. That item can be a single value or
+a list of one, such as `[¯2]`. A case that no cell picks doesn’t run.
+Below, `√` never sees a negative number.
+
+``` bpl
+(0≤)⍚[0 √] ¯4 9 16                 ⍝ 0 3 4
+0 2 1 2⍚[- ⊢ 10×] 1 2 3 4          ⍝ ¯1 20 3 40
+(0≤)⍚[+/ ⊢] ¯1 4 ¯2                ⍝ ¯3 4 ¯3
+(0>)⍚[⊢ 1↓] ¯1 4 ¯2                ⍝ ¯2 4 ¯2
+(0<⊣/)⍚[0 ⊢] [¯1 2⋄3 4]             ⍝ [0 0⋄3 4]
+```
+
+A left argument lines up with the right argument by position, or by key
+where both have keys: each case gets the left argument’s cells at the
+positions of its right argument’s cells. A key that the left argument
+lacks reads the fill. A key that only the left argument has is ignored.
+A unit left argument goes whole to every case. A left argument’s axis of
+length 1 stretches to match, as agreement stretches it. With `⊣` and `⊢`
+as the cases, the selector picks each item from one argument or the
+other.
+
+``` bpl
+10 (0≤⊢)⍚[- +] ¯1 2                 ⍝ 11 12
+3 1 4 <⍚[⊣ ⊢] 2 5 1                 ⍝ 3 5 4
+x←1 2 3 ⋄ y←10 20 30 ⋄ x 0 1 0⍚[⊣ ⊢] y   ⍝ 1 20 3
+[100 200 300⋄] 1 0 1⍚[⊢ +] [1 2 3⋄4 5 6⋄7 8 9]   ⍝ [101 202 303⋄4 5 6⋄107 208 309]
+```
+
+A selector with a named axis picks cells along the argument’s axis of
+that name. Here the selector’s axis is `"j"`, so each column picks a
+case. Where a case’s cells have the rank of the argument’s cells, the
+selector’s axes keep their places in the result. Otherwise they come
+first, as a frame does in Rank.
+
+``` bpl
+m←["i":2 "j":3]⍴⍳6ₓ
+(4ₓ<+⌿)⍚[⊢ -] m                    ⍝ ["i":2 "j":3]⍴[0 ¯1 ¯2 3 ¯4 ¯5]ₓ
+```
+
+A NaN in the selector picks no case, and its cell gets the result’s
+fill. Results keep their kinds, as Each’s results do. Result cells keep
+the keys and names they agree on and pad differing shapes, as Rank does.
+A single value fills every item of its cells; when every result fills,
+the argument gives the cell shape. An argument with no cells gives an
+empty result: as Each does with prototypes, the case that the selector’s
+fill picks runs on no cells, and the result is empty, with that case’s
+cells.
+
+``` bpl
+0 1 2⍚[5 (1↓)⍤1 ⊢] [1 2 3⋄4 5 6⋄7 8 9]   ⍝ [5 5 5⋄5 6 0⋄7 8 9]
+```
+
+A selector with keys pairs with the argument by key, as arithmetic does.
+A cell whose key the selector lacks gets the fill, as a NaN’s cell does.
+A key that only the selector has is ignored.
+
+``` bpl
+k←["a":1] ⋄ k⍚[- 10×] ["b":4 "a":5]      ⍝ ["b":0 "a":50]
+["a":1 "c":0]⍚[- 10×] ["b":4 "a":5]      ⍝ ["b":0 "a":50]
+```
+
+A cell’s derivative comes only from the case that the cell picks. Below,
+the cell at 0 picks the constant case. Its derivative is 0, not the
+infinite slope that `√` has at 0:
+
+``` bpl
+{+/(⍵>0)⍚[0 √]⍵}∂ 0 1 4            ⍝ 0 0.5 0.25
+```
+
+`f@[p] Y` is `p⍚[⊢ f] Y`, with two differences. [Under](at.qmd) converts
+its result to one kind, as assignment does. Under also leaves a cell
+that picks no case unchanged, where `⍚` gives it the fill.
+
+Where the selector gives a Boolean for each item of a float argument,
+and every case is a function that can’t fail, such as `⊢`, `-`, `2×` or
+a constant, `⍚` and `@[p]` can run each case on the whole argument, then
+keep for each item the result of the case it picks. That gives the same
+result faster. On a large argument, the selector’s comparison, the cases
+and the pick then run as one [fused](../system/prefs.qmd) group.
+`•explain` names this `"masked select"`:
+
+``` bpl
+(•explain "(0>)⍚[⊢ -] ¯1 4 ¯2").fast.combination   ⍝ ["masked select"]
+```
+
+## Errors
+
+- `RANK`: the selector has an axis that the argument lacks
+- `LENGTH`: the selector’s axes don’t agree with the argument’s
+- `LENGTH`: a left argument doesn’t line up with the right argument
+- `LENGTH`: a case’s result has neither one cell for each of its cells
+  nor exactly one item
+- `INDEX`: a selector value outside the cases
+- `DOMAIN`: a selector value that isn’t a whole number

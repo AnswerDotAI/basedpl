@@ -1,0 +1,298 @@
+
+
+# Syntax
+
+BPL divides each statement into runs and [tokens](terms.qmd#term-token)
+before it evaluates anything. The rules on this page don’t depend on
+what any name holds. [Evaluation](evaluation.qmd) covers how the runs
+then bind. [Types of brackets](bracket-types.ipynb) and the [Language
+overview](overview.ipynb) explain the same rules with more examples.
+
+## Hanzi spellings
+
+Hanzi are ordinary name characters by default. Enable their glyph
+spellings with a leading declaration:
+
+``` bpl
+•prefs ["hanzi_aliases":$t]
+```
+
+The setting persists across inputs and loaded files. When enabled,
+simplified, traditional and APL spellings can be mixed. `+/`, `加总`,
+`加總` and `加/` all name the same function. Each alias retains the
+whole glyph’s meaning in both valences. The [notation
+preference](system/prefs.qmd) changes printed functions, not accepted
+input.
+
+`是` names assignment `←`: `mean是加总除数` defines the mean without
+spaces. `内` (`內`) names the inner-product operator `.`. Ordinary `.`
+remains the usual spelling for fields and indexing, as in `record.field`
+and `a.[i]`. Hanzi inside strings and comments remain ordinary text.
+[Hanzi as notation](hanzi-notation.ipynb) and [汉字
+BPL](hanzi-notation-zh.ipynb) introduce the notation through examples.
+
+## Names
+
+A name accepts characters not reserved for syntax, glyphs, numbers or
+whitespace, including hanzi and emoji. A digit ends a name, as it ends a
+glyph. `f2` therefore applies `f` to 2, the same way `⍳2` applies `⍳` to
+2.
+
+`_` adds the next non-whitespace character to a name, including glyphs
+and Hanzi aliases: `_+` and `_加_总` are names. Hanzi that aren’t
+aliases remain name characters when aliases are enabled. Digits straight
+after `_` all stay in the name. A name can’t end in `_`, except the lone
+name `_`. A lone `_` is a name when a space, `]`, `)`, `←`, `;`, `⋄` or
+the end of the line follows it. Assign to `_` a value that nothing
+reads.
+
+After a dot, digits stay in the key: `T.q1` is the entry with key `q1`.
+
+``` bpl
+f←- ⋄ f2                       ⍝ ¯2
+x_1←10 ⋄ x_12←20 ⋄ x_1+x_12   ⍝ 30
+x_+←3 ⋄ x_+                    ⍝ 3
+[k _ v]←1 2 3 ⋄ k+v            ⍝ 4
+T←["q1":5] ⋄ T.q1             ⍝ 5
+😎←2 ⋄ 中文←3 ⋄ 😎+中文         ⍝ 5
+```
+
+## Literals and strands
+
+Numbers, `∞`, `¯∞`, `⍬`, characters, strings and the constants `$t`,
+`$f`, `$n`, `$a` and `$d` are [literals](terms.qmd#term-literal). A
+constant is `$` followed by one lowercase letter. `$a` is the uppercase
+Latin alphabet and `$d` the digits. `$e` names the error that an [error
+guard](glyphs/error-guard.qmd)’s handler caught. [Numbers](numbers.qmd)
+and [Characters and strings](strings.ipynb) give the written forms of
+numbers and text.
+
+`''` and `""` are the same empty character vector. A double-quoted
+string can span lines. Every line ending inside it reads as one newline,
+and its indentation stays as written.
+
+`ₓ` straight after a number, `⍬`, or a `]` or `)` that closes literals
+makes every number it covers exact, as in `5ₓ`, `[1 2]ₓ` and
+`(0 1⋄2 3)ₓ`. After anything else, `ₓ` floors to exact integers: `nₓ` is
+`⌊ₓn`, and `÷ₓ` divides and floors, as [Superscripts and
+subscripts](scripts.ipynb) describes.
+
+After a number, `e`, `j` or `r`, or its subscript `ₑ`, `ⱼ` or `ᵣ`,
+continues the number only when the rest of a number follows it, as in
+`1e5`, `2ⱼ3` and `1r3`. Otherwise a plain letter starts a name: `2edges`
+is `2` beside the name `edges`. A subscript there, or between any two
+items, joins the items on each side into one term, as
+[Numbers](numbers.qmd#writing-numbers) describes: `2ₑn` is `2×10*n`.
+
+Literals separated by spaces form a [strand](terms.qmd#term-strand),
+which is one vector. Literals that touch stay separate, as `3` and `'b'`
+do in `'a',⍣3'b'`. Names never join a literal strand. Inside brackets
+without `;`, a space separates items and forms no strand.
+
+`⍝` starts a comment, which ends at the end of the line.
+
+## Token separator
+
+`⁝` (Alt-:) separates tokens without ending their run. It prevents
+adjacent names from merging and stops a literal strand continuing. It
+has no value and makes no function call. `h⁝m` is `h(m)`, and `f⍣3⁝0` is
+`(f⍣3)0`.
+
+``` bpl
+h←- ⋄ m←5 ⋄ h⁝m             ⍝ ¯5
+f←2× ⋄ f⍣3⁝1                ⍝ 8
+```
+
+A literal strand can appear on each side. In `+/⍠2 3⁝3 3↕m`, the operand
+of `⍠` is `2 3`, and the argument starts with the `3 3` to its right. A
+space in place of `⁝` would join all four numbers into one operand.
+
+## Runs
+
+Outside brackets, spaces divide a statement into
+[runs](terms.qmd#term-run). A group in brackets, parentheses or braces
+counts as one token, even when it contains spaces. Apart from the two
+operator rules below, each run must give one value: a subject, a
+function, or a lone operator such as the `/` in `+ / x`. A run that
+gives anything else is a `SYNTAX` error.
+
+BPL reads a statement in three steps:
+
+1.  Literals separated by spaces join into strands, such as `1 2` or
+    `"ab" "cd"`.
+2.  Each remaining run is wrapped in parentheses.
+3.  The result reads as ordinary APL, right to left.
+
+So `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`, not
+`(1)(2+3)`. Spaces around a function between two runs decide the
+grouping. `a×b + c` is `(a×b)(+)(c)`, the sum of `a×b` and `c`. `a×b +c`
+is `(a×b)(+c)`, a strand of two subjects. `a×b+ c` is `(a×b+)(c)`, the
+train `a×b+` applied to `c`.
+
+A run that ends in a dyadic operator takes the next run as its right
+operand: `⌊@ 10× x` is `(⌊@)(10×)(x)`, where `10×` is the operand of
+`@`. A run that starts with an operator takes the previous run as its
+left operand: `≢⊢ ⌸x` is `(≢⊢)(⌸x)`, where `≢⊢` is the operand of `⌸`.
+[Evaluation](evaluation.qmd) explains operands.
+
+``` bpl
+a←1 ⋄ b←2 ⋄ c←3 ⋄ d←4 ⋄ a+b × c+d   ⍝ 21
+(1)(+)(1)                            ⍝ 2
+1 2+3                                ⍝ 4 5
+2×1 + 1                              ⍝ 3
+a←2 ⋄ b←3 ⋄ c←4 ⋄ a×b + c            ⍝ 10
+a×b +c                               ⍝ 6 4
+a×b+ c                               ⍝ 14
+x←3 ⋄ x+1 ÷ 2                        ⍝ 2
++ / 1 2 3                            ⍝ 6
+x←0 1 1 0 1 1 ⋄ ≢⊢ ⌸x                ⍝ [2 4]ₓ
+```
+
+## Brackets, parentheses and braces
+
+A [bracket list](glyphs/brackets.qmd) is a vector, whatever the number
+of items. Inside brackets, spaces separate items, not runs:
+
+1.  Without `;`, each space separates two items, and each item is one
+    run.
+2.  With `;`, only `;` separates items. Within each item, spaces divide
+    runs as they do outside brackets.
+3.  `⋄` stacks rows into an array of higher rank, with each row as one
+    major cell. Each row follows the first two rules. A row of one
+    number has rank 0. Write a column with a one-item vector in each
+    row.
+4.  Each item stays one item of the vector, whatever it holds, including
+    an array or a function. Items evaluate left to right.
+5.  Items written `"key":value` make a record. An item written `name:`,
+    with no value, is `"name":name`.
+
+``` bpl
+⍴[5]                 ⍝ [1]ₓ
+≢[1 + 1]             ⍝ 3ₓ
+[1+2;3 4]            ⍝ [3 [3 4]]
+[1 + 1;2]            ⍝ 2 2
+⍴[1⋄2]             ⍝ [2]ₓ
+⍴[[1]⋄[2]]         ⍝ [2 1]ₓ
+≢[+ - ×]             ⍝ 3ₓ
+["a":1 "b":2].b      ⍝ 2
+a←1 ⋄ [a:].a         ⍝ 1
+```
+
+A line break means `⋄`, inside every kind of bracket and at the top
+level. A line break just after `[`, `(` or `{`, just before `]`, `)` or
+`}`, or next to `;`, `⋄` or `?` separates nothing.
+
+``` bpl
+m←[
+  1 2 3
+  4 5 6
+]
+⍴m                   ⍝ [2 3]ₓ
+```
+
+[Parentheses](glyphs/parentheses.qmd) group, whatever they hold. With
+`⋄` inside, parentheses are used to write a vector of rows instead. Each
+row is a bracket list, even a row with one item. A trailing `⋄` gives a
+vector that holds one row. Rows in brackets form a flat array. Rows in
+parentheses form a nested vector.
+
+``` bpl
+(1 2)≡[1 2]                     ⍝ $t
+(1+2)×3                         ⍝ 9
+(-)3                            ⍝ ¯3
+(4⋄4 5)≡[[4] [4 5]]           ⍝ $t
+(1 2⋄)≡[[1 2]]                 ⍝ $t
+```
+
+[Braces](glyphs/braces.qmd) define a function. Inside braces, `⋄`
+separates statements. `;` separates bodies. `?` ends a body’s predicate.
+[Dfns](dfns.ipynb) describes what each part means.
+
+Outside brackets, parentheses and braces, `⋄` separates statements. A
+`;` outside brackets and braces is a `SYNTAX` error.
+
+## Superscripts and subscripts
+
+A [superscript or subscript](scripts.ipynb) written straight after a
+[token](terms.qmd#term-token) applies to that token. After a subject, a
+superscript binds more tightly than anything else. After a function, a
+superscript takes the whole function to its left, as a monadic operator
+does. A superscript or subscript that stands alone after a space applies
+to the run before it.
+
+On an array, a subscript selects one position on the leading axis: `x₁`
+is `(1⌷x)`. Numeric subscripts separated by spaces form one coordinate:
+`x₁ ₂` is `x.[1 2]`. Touching digits form one position: `x₁₂` selects
+position 12. Parentheses keep sequential selections separate: `(x₁)₂`
+selects item 2 of item 1.
+
+On a function, numeric subscripts choose axes: `f₁ ₂` is `f⍠[1 2]`.
+Group a call to select from its result: `(f⁝x)₁`. In `f⁝x₁`, the
+subscript selects from `x` before the call.
+
+``` bpl
+2 3²                 ⍝ 2 9
+2 3 ²                ⍝ 4 9
+x←2 ⋄ y←3 ⋄ x y ²    ⍝ 2 9
++↢3 ⁻¹ 10            ⍝ 7
+[2 3]²               ⍝ 4 9
++\⁻¹ 1 3 6           ⍝ 1 2 3
+v←10 20 30 ⋄ v₋₁     ⍝ 30
+2 3 ₁                ⍝ 3
+m←2 3⍴⍳6ₓ ⋄ +/₀m    ⍝ [3 5 7]ₓ
+```
+
+## Assignment
+
+The target of `←` is the run just before it. The value is everything to
+the right of `←`, up to the end of the statement or group. A target is
+one of these:
+
+- a name
+- a selection, such as `(1⌷v)`, `v₁`, `m₁ ₂` or `T.x`
+- a list of names, such as `[a b]`
+- any of these followed by a function, for [modified
+  assignment](glyphs/left-arrow.qmd)
+
+A space before `←` makes the whole run before it the target, as
+parentheses would: `[[0 2]]⌷v ←0` assigns to the selection. So does a
+space before the function of a modified assignment, as in `x +←1`. Use
+`⁝` to keep a named function in the target’s run: `a⁝f←3` is `a←a f 3`,
+at top level and in dfns. In `a f←3`, the target would be `f`. With
+nothing after the arrow, `a⁝f←` is `a←f a`. A value can itself contain
+an assignment. In `a←1 b←2`, the value of `a` is the strand `1 b←2`,
+which assigns 2 to `b` and gives `1 2`. Separate independent assignments
+with `⋄`. [Assignment](assignment.ipynb) describes each kind of target.
+
+``` bpl
+v←10 20 30 ⋄ v₁←7 ⋄ v            ⍝ 10 7 30
+[a b]←3 4 ⋄ a×b                  ⍝ 12
+a←1 ⋄ f←+ ⋄ a⁝f←3 ⋄ a           ⍝ 4
+a←1 2 3 ⋄ a⌽← ⋄ a                 ⍝ 3 2 1
+a←1 b←2 ⋄ a                      ⍝ 1 2
+```
+
+## Precedence
+
+From tightest to loosest:
+
+1.  within a run, right to left
+2.  across runs, right to left
+3.  assignment `←`
+4.  the error guard `::`
+5.  `⋄`, which separates statements, and `?`, which ends a predicate
+6.  `;`, which separates a dfn’s bodies
+
+Spaces change grouping only at the first two levels.
+
+## Syntax highlighting
+
+Use `bpl` code fences for ordinary names and `hpl` for Hanzi glyph
+spellings. The [BPL TextMate
+grammar](https://cdn.jsdelivr.net/npm/basedpl/bpl.tmLanguage.json) and
+its [BPL (Hanzi)
+overlay](https://cdn.jsdelivr.net/npm/basedpl/hpl.tmLanguage.json) work
+with TextMate-compatible editors and Shiki. `basedpl.editors.write()`
+generates both from the Quarto XML and shared glyph table. The Python
+and npm packages include `bpl.tmLanguage.json` and
+`hpl.tmLanguage.json`. Load both grammars to use `hpl`.

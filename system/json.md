@@ -1,0 +1,40 @@
+
+
+# `•json` — JSON
+
+`•json text` reads JSON5, which includes all JSON. JSON5 adds comments,
+trailing commas, single-quoted strings, unquoted keys, hexadecimal
+numbers, `Infinity` and `NaN`. Objects become keyed vectors. Arrays
+become vectors. Strings become character vectors. Integers of up to 128
+bits stay exact. `true` and `false` become `$t` and `$f`.
+
+`•json⁻¹ Y` writes JSON text. Keyed axes become objects. Unkeyed axes
+become arrays. Character vectors become strings. Keyed entries that hold
+functions are left out. NaN writes as `null`.
+
+`["fill":v] •json text` reads `null` as `v`. The fill takes its array’s
+type wherever it keeps its value in that type:
+`["fill":0] •json "[1,null,3]"` gives `[1 0 3]ₓ`, and
+`["fill":0] •json "[true,null]"` gives `$t $f`. A fill that doesn’t keep
+its value, such as the default NaN beside integers, makes the array
+floats. `["fill":v] •json⁻¹ Y` writes `v` as `null`.
+[JSON](../data.ipynb#json) covers the conversions.
+
+Under static kinds, an array of integers reads at the `int` width, and a
+value that doesn’t fit is a `DOMAIN` error. `["types":R] •json text`
+gives the arrays that fields hold a type: `R` maps a field’s name to a
+number of that type, as `•csv`’s `types` option does, and every array
+that a field of that name holds takes it:
+
+``` bpl
+•prefs ["kinds":"static"]
+(["types":["id":0ₓ₈]] •json "{""id"":[3000000000,7],""n"":[1,2]}").id    ⍝ [3000000000 7]ₓ₈
+•prefs ["kinds":"dynamic"]
+```
+
+Errors: `DOMAIN` for malformed JSON, with its line and column, and for
+values that JSON can’t hold: an infinity that isn’t `fill`, out-of-range
+floats, rationals that aren’t whole, complex numbers and other
+functions. Also `DOMAIN` for a value that doesn’t keep itself in its
+array’s type, and for a `types` entry that names no field holding an
+array.

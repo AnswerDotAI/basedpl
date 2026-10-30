@@ -1,0 +1,50 @@
+
+
+# `←` — Assign
+
+Syntax. Keys: `Alt-h`. Hanzi: `是`
+
+`N←Y` binds the name `N` to `Y`, an array, function or operator, and
+returns `Y` without displaying it. The target is the run just before
+`←`, and the value is everything to its right. Independent assignments
+need `⋄`, as in `a←1 ⋄ b←2`.
+
+``` bpl
+x←3 ⋄ x+2          ⍝ 5
+x←1+2 × 3 ⋄ x      ⍝ 9
+sum←+/ ⋄ sum 1 2 3 ⍝ 6
+```
+
+`N+←Y` sets `N` to `N+Y`. With a named function, use the [separator
+`⁝`](tricolon.qmd): `N⁝f←Y` sets `N` to `N f Y`. In `N f←Y`, the target
+would be `f`. With nothing after the arrow, `N⌽←` sets `N` to `⌽N`.
+
+``` bpl
+x←10 ⋄ x+←3 ⋄ x    ⍝ 13
+f←× ⋄ x←3 ⋄ x⁝f←4 ⋄ x ⍝ 12
+x←1 2 3 ⋄ x⌽← ⋄ x ⍝ 3 2 1
+```
+
+A target can also be a [subscript](../scripts.ipynb#subscripts) such as
+`x₁`, a [dot](dot.qmd) path such as `T.a` or `x.[i]`, or a selection,
+`(f N)`, where `f` only selects or rearranges, as for structural
+[Under](at.qmd). A space before `←` makes the whole run before it the
+target, as parentheses would, so `2↑x ←8 9` is `(2↑x)←8 9`. Modified
+assignment applies its function to each selected item. To apply a
+function to a selection as a whole, use Under, as in `m(⌽@ 1⌷)←` or
+`m←⌽@ 1⌷ m`. `[a b]←Y` destructures by position: each name gets the
+matching item. A pattern takes items by key: in `[top: k:b]←Y`, `top`
+gets the item with key `"top"` and `b` the item with key `"k"`.
+
+``` bpl
+x←1 2 3 ⋄ x₁←9 ⋄ x ⍝ 1 9 3
+x←1 2 3 ⋄ x.[[0 2]]+←10 ⋄ x ⍝ 11 2 13
+x←1 2 3 ⋄ (2↑x)←8 9 ⋄ x ⍝ 8 9 3
+x←1 2 3 ⋄ 2↑x ←8 9 ⋄ x ⍝ 8 9 3
+[a b]←10 20 ⋄ a+b  ⍝ 30
+[top: k:b]←["top":1 "k":2] ⋄ top b ⍝ 1 2
+```
+
+Inside a dfn, plain assignment is local. Modified and selective
+assignment update the nearest existing binding.
+[Assignment](../assignment.ipynb) covers every form.

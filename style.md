@@ -1,0 +1,98 @@
+
+
+# Style
+
+These forms make BPL easy to read for someone who doesn’t know APL. How
+a line reads decides between them. Resemblance to APL counts for
+nothing.
+
+Use spaces to show the top-level structure of an expression. Keep
+parentheses where they make nested scope easier to see, as in
+`⍺,(↓key_val,join),⍵`. Keep connected tokens in one run. Use `⁝` (Alt-:)
+where tokens must stay distinct without ending the run: `h⁝m`, `+/⍠i⁝m`.
+Two names that touch merge, as `ix` does in `+/⍠ix`. A name followed by
+a literal stays separate: `f1` is `f(1)`. [Syntax](syntax.qmd#runs)
+gives the grouping rules.
+
+A function between two runs takes a space on each side, as in `a×b + c`.
+A space on one side only changes the grouping: `a×b +c` is the strand
+`[a×b ; +c]`, and `a×b+ c` applies the train `a×b+` to `c`.
+
+`⁝` separates a derived function’s operand from its right argument where
+a boundary is needed: `f⍣3⁝0`, `10÷√1++/⍠i⁝m`, `(+/÷≢)⍤1⁝2 3⍴⍳6`. It
+stops literal stranding without grouping the expression before it. A
+vector argument can touch the operand in brackets: `≥⍣2[1 2 3]`. Add
+nothing where tokens already stay distinct, as in `+/⍤1m` or
+`(+/÷≢)⍠d⊼n`.
+
+With a left argument as well, `⁝` works the same way, as in `Q+.×⍠e⁝r`.
+Parentheses around the derived function also show it between its
+arguments: `10 20(+⍤1)m`. Use whichever reads better. Keep parentheses
+where a compound operand or nested train needs grouping, as in
+`⌊@(10×)x`.
+
+A space groups the whole run before it, including any prefix.
+`+/÷≢ ⊼y-c+h+.×v` applies the mean train to its complete argument.
+`mean_square←+/÷≢ ⊼` separates an atop’s subtrains. `f⁝g⁝h x` keeps
+three named functions in one run. `+/÷≢⁝v` doesn’t group the mean train.
+For nested parentheses, try removing the inner pair first:
+`(+⌿ N*Ms ÷ ≢N)*÷Ms`. Naming a train that a line uses twice can read
+better: `mean⍤1m`.
+
+Lowercase `j` reads most clearly in complex literals, as in `3j4`.
+Uppercase `J` is an input alias, and only its own tests need it.
+Archived upstream source keeps its original form. Array notation shows a
+literal matrix’s rows directly, as in `[10 20 30⋄40 50 60]`, where a
+reshape hides them. A reshape still suits an example about reshape. A
+`⋄` between rows reads best with no spaces around it. A `⋄` between
+statements reads best with a space on each side.
+
+Brackets build a list from names or expressions. A bare literal list,
+such as `1 2 3`, is a shorthand. In brackets, a list of names reads as a
+list at a glance, as in `[a b]`, even where `a b` would also work.
+`[n 2]⍴0`, `[x],y`, `[a⋄b]` and `f⍤1 m` read more directly than APL’s
+`(n,2)⍴0`, `(⊂x),y`, `⊃[a b]` and `⊃f¨↓m`. Where no item of a bracket
+list contains a space, spaces separate the items more lightly than `;`:
+`[i j]` rather than `[i;j]`.
+
+An operand often reads best touching its operator, with parentheses
+around a compound operand, as in `⌊@(10×)x` and `(≢⊢)⌸x`. Spacing also
+makes a run into an operand: after a dyadic operator and a space, the
+whole next run is the operand, as in `⌊@ 10× x`. When both operands are
+compound, parentheses around each show the grouping:
+`(•ucs 9)@(⍸tabs)⍵`. An operand keeps its parentheses when a left
+argument comes before it, as in `tree (⍺⍢)/ next`. Report any case where
+none of these forms reads well.
+
+A train reads more directly than naming an argument twice: `+/÷≢ v`
+rather than `+/v ÷ ≢v`. A tacit form usually reads more directly than a
+dfn. A dfn reads better where the tacit form would be longer or clearly
+awkward.
+
+`fib10` means `fib 10`, not an identifier, which would be `fib_10`. That
+form reads well where it’s shorter and needs no new parentheses.
+`32•float∞` converts `∞` to a 32-bit float, as `32 •float ∞` does with
+spaces it doesn’t need. `32 •float∞` gives the two items `32 64ₓ`
+instead: the runs `32` and `•float∞` strand, and `•float∞` alone gives
+∞’s width. When spaces separate names in a dyadic call, keep both:
+`x f 5` rather than `x f5`.
+
+`⌷` reads clearly for a selection, as in `[⍋v]⌷v`. Use numeric
+subscripts for literal positions, as in `v₁`, `m₁ ₂` and `v₁←0`, and for
+literal axes, as in `+/₁` and `+/₂ ₃`. Keep `⍠` for named or computed
+axes and options records. `.` suits other assignment targets, such as
+`v.[i]←0`, record fields, such as `T.name`, and places where `⌷` would
+be longer. A target that is a cross product of positions takes `⌷` with
+a spaced `←`, as in `[1 3;0 5]⌷a +←10`. `.` pairs its index arrays
+instead: `a.[1 3;0 5]` selects only the items at positions 1 0 and 3 5.
+
+Positions and counts are exact, while bare numbers are floats.
+Arithmetic that mixes the two gives floats. Under dynamic kinds, a write
+that mixes them leaves the array in mixed storage. `⍳10ₓ` and `⍳≢x` give
+exact positions, where `⍳10` gives floats. An array that will hold
+positions or counts stays exact when it starts from exact numbers, as in
+`n⍴¯1ₓ`, with a counter starting at `0ₓ`. On positions, `≥i`, `i+1ₓ` and
+`2ₓ×i` stay exact, where `i+1` and `2×i` give floats. For an exact `v`,
+`+/÷≢ v` gives an exact rational. `+/÷1×≢ v` gives a float. Where a
+map’s branches give Booleans and numbers, converting the Boolean gives
+one type: `+b` gives exact integers, and `1×b` gives floats.

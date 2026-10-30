@@ -1,0 +1,9 @@
+/* Code fonts for the magics and the docs. The docs load this file through the symlink nbs/fonts.css. */
+:root { --bpl-font: SAX2B; --apl-font: BQN386B; }
+@font-face { font-family: SAX2B; src: url("https://cdn.jsdelivr.net/gh/AnswerDotAI/basedpl@main/python/basedpl/browser/SAX2B.woff2") format("woff2"); }
+@font-face { font-family: BQN386B; src: local("BQN386B"), url("https://cdn.jsdelivr.net/gh/AnswerDotAI/basedpl@main/nbs/fonts/BQN386B.woff2") format("woff2"); }
+:is(pre.bpl, pre.hpl, pre.apl, pre.dyalog, pre.bqn, .bpl code, .hpl code) { font-feature-settings: "ss01"; }
+.cell-output :is(pre, code), .bpl_out, .bpl_out :is(pre, code) { font-feature-settings: normal; }
+.bpl_out { font-family: var(--bpl-font), monospace !important; line-height: 1.05 !important; }
+.bpl_page_bar { --bpl-bar-background: #eee; --bpl-bar-color: #111; }
+@media(prefers-color-scheme:dark) { .bpl_page_bar { --bpl-bar-background: #222; --bpl-bar-color: #ddd; } }

@@ -1,0 +1,161 @@
+
+
+# `@` — Under
+
+Dyadic operator. Hanzi: `于` (`於`)
+
+`f@g Y` applies `f` to the [selection](../terms.qmd#term-selection) of
+`Y` that `g` makes, and writes the result back in its place. The rest of
+`Y` is unchanged. An array `f` that holds no function is a constant
+function, so it replaces the selection. Under follows BQN’s
+[specification of inferred
+properties](https://mlochbaum.github.io/BQN/spec/inferred.html).
+
+## Positions
+
+An array `g` lists positions or keys along the leading axis, as `[g]⌷Y`
+reads them. Where its items are vectors, each one is a path, as the left
+argument of [Pick](right-shoe.qmd) is, and selects the item or cell at
+its end. Negative positions count from the end. The shape of `g` comes
+before the axes of each cell. A keyed replacement aligns by key with the
+selected positions, as it does in assignment. When `g` lists no
+positions, `f` doesn’t run.
+
+``` bpl
+-@[0 2] 1 2 3                                          ⍝ ¯1 2 ¯3
+⌽@1 3 ⍳5ₓ                                               ⍝ [0 3 2 1 4]ₓ
+0@[[1 2]] [1 2 3] [4 5 6]                              ⍝ (1 2 3⋄4 5 0)
+v←10 20 30 40 ⋄ i←[0 3⋄1 2] ⋄ ([100 200⋄300 400]+)@i v    ⍝ 110 320 430 240
+x←["a":1 "b":2 "c":3] ⋄ ["b":20 "a":10]@0 1 x         ⍝ ["a":10 "b":20 "c":3]
+-@["a" "c"] ["b":4 "a":5 "c":6]                        ⍝ ["b":4 "a":¯5 "c":¯6]
+(1 2 3+)@⍬[¯1 ¯2]                                      ⍝ ¯1 ¯2
+```
+
+`f@[p] Y` applies `f` to the cells where `p Y` is 1, and keeps the cells
+where it’s 0. The mask `p Y` picks a case for each cell, as the selector
+of [Agenda](diamond-underbar.qmd) does. `f@[p] Y` is `p⍚[⊢ f] Y`, with
+two differences. `@` converts its result to one kind, as assignment
+does. A cell that picks no case keeps its value, where Agenda gives it
+the fill. The mask’s unnamed axes take the leading axes of `Y`, and a
+named axis takes the axis of `Y` with that name. A mask with keys pairs
+with `Y` by key. A cell picks no case where its mask value is NaN, or
+where the mask lacks its key. A key that only the mask has is ignored.
+`f` runs once, on the list of the cells where the mask is 1, and doesn’t
+run when there are none. A mask array `m` works through a constant
+function, as in `f@[m⍨]`, because `@` reads an array as positions.
+
+``` bpl
+0ₓ@[2|] ⍳5ₓ                  ⍝ [0 0 2 0 4]ₓ
+x←3 8 2 ⋄ 10+@[5>] x       ⍝ 13 8 12
+'x'@[∊↢"AEIOU"] "HELLO"    ⍝ "HxLLx"
+m←["i":2 "j":3]⍴⍳6ₓ ⋄ -@[4ₓ<+⌿] m      ⍝ ["i":2 "j":3]⍴[0 ¯1 ¯2 3 ¯4 ¯5]ₓ
+k←["a":1] ⋄ -@[k⍨] ["b":4 "a":5]       ⍝ ["b":4 "a":¯5]
+m←1 $n 0 ⋄ -@[m⍨] 4 5 6                ⍝ ¯4 5 6
+```
+
+## Selecting functions
+
+When a function `g` returns items of `Y` that selecting primitives took,
+`f@g Y` writes the result of `f(g Y)` back where they came from. That
+holds in Under and in [selective assignment](left-arrow.qmd) targets
+alike. These primitives select:
+
+- Take, First, Drop, Replicate, Expand, Reshape, Reverse, Rotate,
+  Transpose, Ravel, Table, Enlist, Pick, Partition, Windows and `⌷`
+- Sort up `<`, sort down `>`, unique `∪` and duplicates `∩`, whose items
+  come from their argument
+
+`g` can be any function, a dfn or a train included. Other work in `g`
+can read the values of `Y`, as `⍵>15` does in `{⍵>15 # ⍵}`.
+
+``` bpl
+-@ 1 0 1# 1 2 3            ⍝ ¯1 2 ¯3
++\@∊ [3 1 0] [2 5]         ⍝ [[3 4 4] [6 11]]
+9@↑ 1 2 3                  ⍝ 9 2 3
+-@ 1↓⍣2 [1 2 3 4]          ⍝ 1 2 ¯3 ¯4
+(⍳≢)@< 30 10 20            ⍝ [2 0 1]ₓ
+(1+)@{⍵>15 # ⍵} 10 20 30   ⍝ 10 21 31
+```
+
+When `g` selects a position more than once, the last value wins. A value
+at a fill, such as overtaking `↑` adds, is dropped.
+
+``` bpl
+≥@↕ 1 2 3                  ⍝ 2 3 4
+(10 20+)@[0 0] 1 2 3       ⍝ 21 2 3
+-@ 5↑ 1 2 3                ⍝ ¯1 ¯2 ¯3
+```
+
+## Other functions
+
+For any other `g`, `f@g Y` is `g⁻¹(f(g Y))`, and `X f@g Y` is
+`g⁻¹((g X)f(g Y))`. The inverse can’t restore items that `g` drops, so
+Under uses it only for a `g` that keeps every item.
+
+``` bpl
+3+@ 2× 4                   ⍝ 7
+⌽@≥ 1 2 3                  ⍝ 3 2 1
+⌊@ 10× 1.25                ⍝ 1.2
+```
+
+## Left argument
+
+With a function `g`, `X` goes through `g`, as it does for
+[Over](circle-diaeresis.qmd) and in BQN. With positions or `[p]`, `X`
+lines up with `Y` by position, or by key where both have keys: `f` gets
+the cells of `X` at the positions of the cells it gets from `Y`. A key
+that `X` lacks reads the fill. A key that only `X` has is ignored. A
+unit `X` goes to `f` whole. An axis of length 1 in `X` stretches to
+match `Y`, as agreement stretches it.
+
+``` bpl
+10 +@[0] 1 2 3                         ⍝ 11 2 3
+10 20 30 +@[0 2] 1 2 3                 ⍝ 11 2 33
+10 20 30 +@[0>] ¯1 2 ¯3                ⍝ 9 2 27
+k←["a":1 "b":1] ⋄ ["b":10 "a":20] +@[k⍨] ["a":1 "b":2]   ⍝ ["a":21 "b":12]
+k←["a":1 "b":1] ⋄ ["a":20] +@[k⍨] ["a":1 "b":2]           ⍝ ["a":21 "b":2]
+[100 200 300⋄] +@[{1 0 1}] [1 2 3⋄4 5 6⋄7 8 9]           ⍝ [101 202 303⋄4 5 6⋄107 208 309]
+10 ⌽@[0 1 3] 1 2 3 4                   ⍝ 2 4 3 1
+10 20 30 +@(0⌷) 1 2 3                  ⍝ 11 2 3
+["ab" "cde" "fg"] ⊣@∊ ["---" "----"]   ⍝ "abc" "defg"
+```
+
+Dyalog’s `@` gives `X` to `f` whole, and reads a function right operand
+as a mask. Under’s function right operand makes the selection. Selective
+assignment pairs values with the selected items, as Dyalog’s `@` does:
+
+``` bpl
+y←¯1 2 ¯3 ⋄ m←y<0 ⋄ (m#y)+←10 20 ⋄ y   ⍝ 9 2 17
+```
+
+Call order: `g Y`, `g X`, `f`, then the inverse of `g` where `g` doesn’t
+select. With `[p]`, `p Y` comes first.
+
+See [assigning an
+inverse](../assignment.ipynb#inverses-and-derivatives).
+
+## Inverse
+
+`(f@g)⁻¹` is `f⁻¹@g`.
+
+``` bpl
+(⊽@⌽)⁻¹2 4 6   ⍝ 1 2 3
+```
+
+## Errors
+
+- `DOMAIN`: `g` neither selects nor has a known inverse
+- `DOMAIN`: `g` can drop items but doesn’t only select, as in
+  `-@(+/1 0 1#)`
+- `DOMAIN`: a write reaches an item of `g`’s result that didn’t come
+  from `Y`, as `5` does in `(1+)@{[⍵₀ 5]}`
+- `INDEX`: a position is outside `Y`
+- `LENGTH`: the result of `f` doesn’t fit the selection
+- `LENGTH`: paths in `g` end at cells of different shapes, or some at
+  items and some at cells
+- `LENGTH`: with positions or `[p]`, a left argument doesn’t line up
+  with `Y`
+- `LENGTH`: the mask from `[p]` doesn’t agree with the axes of `Y`
+- `INDEX`: a value of the mask from `[p]` is outside the two cases, 0
+  and 1
+- `DOMAIN`: a value of the mask from `[p]` isn’t a whole number

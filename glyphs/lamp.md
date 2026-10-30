@@ -1,0 +1,18 @@
+
+
+# `⍝` — Comment
+
+Comment. Keys: `Alt-o c`. Hanzi: `注`
+
+`⍝` comments to end of line.
+
+``` text
+v←⍳10ₓ    ⍝ first ten integers
++/v       ⍝ sum
+```
+
+Inside character and string literals it is an ordinary character.
+
+``` bpl
+≢"a⍝b"             ⍝ 3ₓ
+```

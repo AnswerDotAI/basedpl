@@ -1,0 +1,76 @@
+
+
+# `•index` — Fresh indices
+
+`•index n` gives `⍳n` along an axis with a fresh name. `stem •index n`
+starts the name with the text `stem`. The name is `_`, the stem, `·` and
+a random part of 64 bits written as 13 digits, as in `_b·k3f9q2m7x1c0p`.
+Two calls give different names, except with a chance of about one in
+10¹⁹. `•index` maps over an array of numbers, with the same stem for
+each. It also maps over a nested array: one call can make every index
+that a formula needs. A keyed shape gives a record of indices with the
+shape’s keys. Plain `•index⍴x`, with no stem, is the usual form:
+
+``` bpl
+x←2 3⍴⍳6 ⋄ [[n i] h]←•index[⍴x 4]
+⍴:x.[n i]×h                ⍝ [2 3 4]ₓ
+k←["n":2 "i":3]⍴⍳6
+•index⍴k                   ⍝ ["n":[0 1]ₓ "i":[0 1 2]ₓ]
+```
+
+A name that starts with `_` is hidden. Plain display leaves hidden axis
+names out. Any key or name that starts with `_` and contains `·`
+displays up to its last `·`, then `…`. Box mode, `⍴` and error messages
+show a fresh name as `_b·…`. To keep a long key or name of your own
+short on screen, start it with `_` and put a `·` before the part to
+leave out: `["_note·long description":3]` displays as `["_note·…":3]`.
+`•literal⁻¹` writes every name in full. A hidden name meets a visible
+one as if that axis had no name, and the result keeps the visible name:
+
+``` bpl
+i←•index 3 ⋄ v←⍳["v":3]
+i          ⍝ 0 1 2
+⍴i         ⍝ ["_·…":3]ₓ
+⍴i+v       ⍝ ["v":3]ₓ
+```
+
+Indices with different names build a grid, in arithmetic and in
+selection. An index used twice pairs with itself. Here `x.[i]-x.[j]`
+holds the difference between every pair of items of `x`, and `m.[i i]`
+is the diagonal of `m`:
+
+``` bpl
+x←10 20 40 ⋄ [i j]←•index 3 3
+⌈/,|x.[i]-x.[j]      ⍝ 30
+m←[1 2 3⋄4 5 6⋄7 8 9]
++/m.[i i]            ⍝ 15
+```
+
+Indices name the axes of a formula, as einsum’s letters do. In this
+product, [`+.×⍠k`](../glyphs/dot.qmd) sums along `k`, the index that
+both operands share. `b` and `o` build the result’s grid.
+[`⍉⁻¹`](../glyphs/circle-backslash.qmd) reorders its axes by name:
+
+``` bpl
+xu←[2 3]⍴⍳6ₓ ⋄ wu←[3 4]⍴⍳12ₓ
+[b o k]←•index 2 4 3
+y←xu.[b k]+.×⍠k⁝wu.[k o]
+∧/,y=xu+.×wu                 ⍝ $t
+∧/, [o b]⍉⁻¹y = ⍉xu+.×wu     ⍝ $t
+```
+
+[Models in index notation](../index-notation.qmd) builds a neural
+network and a transformer’s attention with indices.
+
+Names from `•index` can’t collide with the names on a caller’s data.
+[`⍳["i":n]`](../glyphs/iota.qmd) gives a name that the caller chooses.
+
+[`∂`](../glyphs/partial.qmd) of a dfn that uses `•index` runs from a
+program, as `∂` of any other dfn does. Each call’s result still has new
+names. A map calls such a dfn once on all its cells, as
+[Evaluation](../evaluation.qmd#functions-and-effects) describes for any
+dfn. The cells share each name that the dfn draws. Where the dfn’s
+result holds one of those names, the map calls the dfn once for each
+cell instead. Each cell’s result then has names of its own.
+
+Errors: `DOMAIN` for a stem that isn’t text.

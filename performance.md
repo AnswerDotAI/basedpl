@@ -1,0 +1,177 @@
+
+
+# Performance
+
+BPL interprets each function call once, then runs it on the whole array
+in compiled Rust. Interpreting a call costs about the same whatever the
+size of its arguments. On large arrays, the time goes into the data. BPL
+also runs chains of calls on large arrays together, in one pass over
+memory, and compiles that pass into machine code. Static kinds let more
+calls take these routes.
+
+## Static kinds
+
+Dynamic kinds, the default, suit interactive analysis. Integers are
+exact and never wrap, and some results take their kind from their
+values, as `√¯4` gives a complex number. Static kinds, which
+`•prefs ["kinds":"static"]` sets, are the setting for performance work.
+Each result’s kind follows from its arguments’ kinds. BPL then knows the
+type of every result before a computation runs. More calls can run
+together. Under dynamic kinds, `⌊` gives exact integers and runs on its
+own. Under static kinds, it gives floats and runs with the
+multiplication and the sum:
+
+``` bpl
+y←¿200000⍴0
+(•explain "+/⌊10×y").fused.glyphs      ⍝ 0⍴⊂""
+•prefs ["kinds":"static"]
+(•explain "+/⌊10×y").fused.glyphs      ⍝ ["×⌊+/"]
+•prefs ["kinds":"dynamic"]
+```
+
+Code meant for static kinds gives each integer the width that its values
+need and gives `•csv` and `•json` a `types` record for their columns.
+[Numbers](numbers.qmd#static-kinds) shows how code written for dynamic
+kinds can give other results under static kinds.
+
+## Calls that wait
+
+An elementwise call on 65,536 numbers or more doesn’t compute at once.
+It waits, and the calls that read its result join it. When something
+needs the items, the whole chain runs together, block by block. It reads
+each input array once and writes only what it must keep. A chain of
+arithmetic that ends in a reduction runs in about the time that one copy
+of its data takes. [`•explain`](system/explain.qmd) lists the calls of
+each group that ran together:
+
+``` bpl
+y←¿1000000⍴0
+(•explain "+/ 2×y+1.5 - 1").fused.glyphs    ⍝ ["+×-+/"]
+```
+
+Waiting costs a fixed amount of planning on each call. It pays only on
+large arrays.
+
+Structural functions such as `⌽`, `⍉`, `↑`, `↓` and `↕` wait too, on
+large arrays of any kind. They hold only where each item of their result
+comes from. Such a view stays a view until a call needs its items in
+memory. Calls that run together read through it without building it:
+
+``` bpl
+w←1000↕¿1000000⍴0
+(•storage w).pending     ⍝ $t
+```
+
+[`•prefs`](system/prefs.qmd) lists the glyphs whose calls run together,
+under `fusion`. Any other call, such as `⍋`, computes the waiting items
+it reads first. So does display. The `fusion` setting writes a line
+where each group ends. A waiting call keeps the settings in force when
+it was called.
+
+## Compiled loops
+
+A group of 3,145,728 items or more compiles its loop into machine code.
+The compiled loop keeps intermediate values in registers. A smaller
+group compiles too where the process has already compiled its loop. A
+compile takes about a millisecond. `•explain` records whether each group
+compiled:
+
+``` bpl
+y←¿3145728⍴0
+(•explain "+/ 2×y+1.5 - 1").fused.compiled    ⍝ [$t]
+```
+
+The browser build compiles nothing at run time. Its groups run on
+kernels built into the module, as [BPL on the
+web](web.ipynb#differences-from-native-bpl) describes.
+
+## Maps
+
+Each, Rank, stencils and outer products call a dfn once, on all their
+cells together, where they can. `{⍵×⍵+1}¨v` then costs about what
+`v×v+1` costs. [Evaluation](evaluation.qmd#functions-and-effects) gives
+the rules. With the `batch` setting at `$f`, a map calls its operand
+once for each cell.
+
+## The cost of a call
+
+Each call pays a fixed cost to interpret it, whatever the size of its
+arguments. A call of `{⍵}` costs about 1,500 machine instructions. Each
+call of a recursive Fibonacci function costs about 4,600. A loop over
+the items of a million-item array pays that cost a million times. Code
+that works on whole arrays pays it once for each call. Compiling doesn’t
+remove this cost. Only the loops inside a group compile.
+
+## Names and writes
+
+A dfn releases each local name after the last statement that reads it. A
+waiting computation that only the name held then runs with the calls
+that read it. In `f`, the arithmetic and the sum run as one group, and
+nothing is stored on the way:
+
+``` bpl
+big←¿1000000⍴0
+f←{a←⍵×2 ⋄ b←a+1 ⋄ +/a×b}
+(•explain "f big").fused.glyphs       ⍝ ["×+×+/"]
+≢(•explain "f big").stored.glyphs     ⍝ 0ₓ
+```
+
+[Dfns](dfns.ipynb#scope) describes what a released name means for `⍎`.
+
+A write to part of an array that nothing else holds changes the array in
+place. `x,←v` and `x⍪←v` add to the end of the array’s storage. `x←x,v`
+copies the whole array, because `x` still holds the old array while
+`x,v` is computed. [Assignment](assignment.ipynb) describes each form of
+write.
+
+## Threads
+
+Large calls split across the machine’s cores. A call splits only when it
+has enough work to repay the extra threads. The `threads` setting sets
+how many threads a call can use. Several BPL processes running at once
+compete for the cores unless each sets `threads` to 1. The browser build
+runs every call on one thread.
+
+## Seeing what happened
+
+[`•explain`](system/explain.qmd) runs code and records each route it
+took: groups that ran together, compiles, calls that computed waiting
+items, and maps that fell back to a call for each cell.
+[`•memory`](system/memory.qmd) counts the waiting arrays and other
+values that a thread holds, and the bytes that a value keeps alive.
+[`•storage`](system/storage.qmd) shows how an array is held, and whether
+it’s still waiting.
+
+## Derivatives
+
+[`∂`](glyphs/partial.qmd) traces the function it differentiates into a
+program of typed steps. The program runs through the same groups and
+compiled loops. Later calls replay it while their arguments and free
+names still fit it. Under dynamic kinds, a call whose result type can
+depend on its values stops a trace. On reals, those calls are `√` and
+every root but the cube root `3√`, `⍟`, `!`, `0○`, and `*` whose
+exponent isn’t a whole number or is the value being differentiated. `∂`
+then runs without a program:
+
+``` bpl
+(•explain "{+/√⍵}∂1 2 3").programs.event      ⍝ 0⍴⊂""
+•prefs ["kinds":"static"]
+(•explain "{+/√⍵}∂1 2 3").programs.event      ⍝ ["built"]
+•prefs ["kinds":"dynamic"]
+```
+
+[Automatic differentiation](autodiff.qmd) describes how `∂` works.
+
+## Not built yet
+
+The plan includes:
+
+- One pass for several reductions of the same data. Today each
+  reduction, as in `+/v ÷ ⌈/v`, makes its own pass.
+- A tracing point for whole training steps, such as `⍣`. A repeated
+  step’s forward pass, gradient and update would then run as one
+  program.
+- Programs for maps whose cells take different branches, so that `∂` can
+  trace them.
+- The GPU, through WebGPU, with 16-bit brain floats (bf16), and compiled
+  code in the browser.

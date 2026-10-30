@@ -1,0 +1,45 @@
+
+
+# `::` — Error guard
+
+`kinds::handler` catches later errors of the named kinds in a dfn,
+including errors in its later bodies, and gives the handler’s value as
+the dfn’s result. A kind’s name is text in any case, such as `"DOMAIN"`.
+A vector of names catches each of those kinds. `∞::` catches every kind
+except INTERRUPT, TIMEOUT and UNSUPPORTED.
+
+``` bpl
+{∞::42 ⋄ 1÷⍵}'a'          ⍝ 42
+{"DOMAIN"::0 ⋄ ÷⍵}'a'     ⍝ 0
+```
+
+BPL raises the kinds SYNTAX, DOMAIN, LENGTH, LIMIT, RANK, INDEX, VALUE,
+IO, INTERRUPT, TIMEOUT and UNSUPPORTED. A program can raise a kind of
+its own with [`•signal`](../system/signal.qmd), and a guard catches it
+by name.
+
+In the handler, `$e` is the caught error: a record with `kind`,
+`message`, and the `source`, `line` and `column` where the error
+happened.
+
+``` bpl
+{∞::$e.kind ⋄ ÷⍵}'a'      ⍝ "DOMAIN"
+```
+
+`•signal $e` raises the caught error’s kind and message again at the
+`•signal` call. `$e.line` and `$e.column` still give the position where
+the error first happened.
+
+The handler sees local bindings as they were when the error happened.
+Nothing is rolled back, including outer writes and output. The selected
+guard is inactive in its handler.
+
+``` bpl
+{x←1 ⋄ ∞::x ⋄ x←2 ⋄ 1÷⍵}'a' ⍝ 2
+```
+
+A guard that names INTERRUPT ends the interrupt, and its handler runs
+until another interrupt. A guard can name TIMEOUT, but the deadline has
+still passed, and the handler stops at its next check.
+
+APL difference: Dyalog’s guards take error numbers. BPL’s take names.

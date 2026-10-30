@@ -1,0 +1,101 @@
+
+
+# `⍳` — Indices / Index of
+
+Function. Keys: `Alt-i`. Hanzi: `位`. Ranks: `1` monadic, `∞ ∞` dyadic
+
+`⍳N` generates `0…N-1`. A negative `N` counts down, as J’s `i.` does.
+Exact input gives exact coordinates.
+
+``` bpl
+⍳4ₓ                 ⍝ [0 1 2 3]ₓ
+⍳3ₓ                ⍝ [0 1 2]ₓ
+⍳¯3                ⍝ 2 1 0
+```
+
+[Range](right-arrow-from-bar.qmd), `↦`, counts from 1 instead, or
+between any two ends.
+
+``` bpl
+↦4                 ⍝ 1 2 3 4
+3↦6                ⍝ 3 4 5 6
+```
+
+A shape vector generates an array of coordinate vectors. A negative
+length reverses its axis.
+
+``` bpl
+⍳2ₓ 2               ⍝ [[0 0] [0 1]⋄[1 0] [1 1]]
+⍳2ₓ ¯2              ⍝ [[0 1] [0 0]⋄[1 1] [1 0]]
+```
+
+A keyed shape names the result’s axes, as it does for
+[reshape](rho.qmd). The result is a named index, which pairs by name
+with axes of the same name. [Indexing](squad.qmd) by a named index gives
+the result its name. [`•index`](../system/index.qmd) gives an index
+whose name can’t collide with a caller’s names:
+
+``` bpl
+⍴⍳["i":3]          ⍝ ["i":3]ₓ
+x←10×⍳5ₓ ⋄ i←⍳["i":5]
+x.[5|i+1]          ⍝ ["i":5]⍴[10 20 30 40 0]
+```
+
+On a matrix, `⍳` applies to each row, as [Rank](jot-diaeresis.qmd) does.
+Fill pads the results to a common shape.
+
+``` bpl
+⍴⍳[2 3⋄1 1]       ⍝ [2 2 3]ₓ
+```
+
+`⍳⍠A Y` returns the keys of axis `A`, or `0…length-1` on an unkeyed
+axis. The result lies along an axis with the name of the axis it
+selects. It pairs with that axis by name in arithmetic and indexing.
+Indexing by it keeps the keys at the positions it selects. Several axes
+return a vector of selector vectors.
+
+``` bpl
+⍳₀["price":1 "qty":2]   ⍝ "price" "qty"
+⍳₁2 3⍴0              ⍝ [0 1 2]ₓ
+⍴⍳⍠"j" ["i":2 "j":3]⍴0 ⍝ ["j":3]ₓ
+```
+
+On an axis where only some positions have keys, `⍳⍠A Y` gives the keys
+where present and positions elsewhere.
+
+``` bpl
+⍳₀["aa":10 20]      ⍝ "aa" 1ₓ
+```
+
+`X⍳Y` finds the first matching major cell in `X` for each cell of `Y`.
+Not found: `≢X`. Uses tolerant matching and returns exact positions.
+
+``` bpl
+"abc"⍳"cabz"        ⍝ [2 0 1 3]ₓ
+"abc"⍳'b'           ⍝ 1ₓ
+"abc"⍳⊂'b'          ⍝ 1ₓ
+```
+
+A single query returns an atom. Batch axes supply the result shape. To
+search for an array as one item, enclose it with `⊂`.
+
+``` bpl
+C←"cat" "dog"
+C⍳⊂"dog"           ⍝ 1ₓ
+C⍳["dog"]          ⍝ [1]ₓ
+m←[10 20⋄30 40⋄50 60]
+m⍳30 40            ⍝ 1ₓ
+m⍳[30 40⋄]        ⍝ [1]ₓ
+m⍳[30 40⋄10 20]  ⍝ [1 0]ₓ
+```
+
+## Inverse
+
+`⍳⁻¹Y` gives the argument that generates `Y`: the count for a vector of
+positions, otherwise the shape. `X⍳⁻¹Y` gives the items of `X` at the
+positions `Y`. A position that wasn’t found is a `DOMAIN` error.
+
+``` bpl
+⍳⁻¹⍳5         ⍝ [5]ₓ
+"abc"⍳⁻¹2 0   ⍝ "ca"
+```
