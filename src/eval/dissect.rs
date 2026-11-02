@@ -3,11 +3,11 @@ use super::*;
 #[derive(Clone, Debug)]
 pub(super) enum Expression { Atom(Value), Call { function: Function, left: Option<Box<Self>>, right: Box<Self> }, Strand(Vec<Self>) }
 impl Expression {
-    pub(super) fn binding(binding: &Binding) -> Option<Self> {
-        Some(Self::Atom(match binding {
-            Binding::Value(value) => value.clone(), Binding::Function(function) => Value::Function(function.function().ok()?),
-            Binding::Operator(operator) => Value::Operator(operator.clone()), _ => return None,
-        }))
+    pub(super) fn binding(binding: &Binding) -> Result<Option<Self>, Error> {
+        Ok(Some(Self::Atom(match binding {
+            Binding::Value(value) => value.clone(), Binding::Function(function) => Value::Function(function.function()?),
+            Binding::Operator(operator) => Value::Operator(operator.clone()), _ => return Ok(None),
+        })))
     }
     pub(super) fn array(value: &Value) -> Self { Self::Atom(value.clone()) }
     pub(super) fn call(function: &Function, left: Option<Self>, right: Self) -> Self {

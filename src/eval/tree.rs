@@ -67,11 +67,11 @@ pub(super) type Facts<'r> = Option<&'r mut Vec<Fact>>;
 
 impl Fact {
     pub(super) fn new(address: Address, keys: Box<[Arc<str>]>, role: (Category, bool)) -> Self { Self { address, keys, role } }
-    fn changed(&self, session: &Session) -> bool {
+    fn changed(&self, session: &Session) -> Result<bool, Error> {
         let bindings = &session.bindings;
-        let current = if self.keys.is_empty() { bindings.role_at(&self.address).unwrap_or(super::binder::UNBOUND) }
-            else { super::binder::field_role(bindings.load(&self.address), &self.keys) };
-        current != self.role
+        let current = if self.keys.is_empty() { bindings.role_at(&self.address)?.unwrap_or(super::binder::UNBOUND) }
+            else { super::binder::field_role(bindings.load(&self.address)?, &self.keys) };
+        Ok(current != self.role)
     }
 }
 
@@ -575,7 +575,10 @@ pub(super) fn postfixed(postfix: &Postfix, operand: Binding, span: &Span) -> Res
 impl StatementCode {
     /// Whether every fact that the statement's binding read still holds, which the statement checks as it starts (target part 18: roles are read again at each statement's start).
     #[inline(always)]
-    fn holds(&self, session: &Session) -> bool { !self.facts.iter().any(|fact| fact.changed(session)) }
+    fn holds(&self, session: &Session) -> Result<bool, Error> {
+        for fact in &self.facts { if fact.changed(session)? { return Ok(false); } }
+        Ok(true)
+    }
 
     /// The statement evaluated by its compiled steps (`StatementCode::run_with`).
     #[inline(always)]
@@ -589,7 +592,7 @@ impl StatementCode {
     /// The statement evaluated by its compiled steps, once `prepare` has set what registers hold at the start. It checks for an interrupt once, when it starts, and calls check for themselves. The run gets the statement's own slots, `registers` of them, inline up to `INLINE` and otherwise on the heap. Only those slots can hold anything when it ends. Emptying them and forgetting the inline array saves dropping all `INLINE` slots on every statement. Its end is a checkpoint (target, "Measures"): an error that forcing recorded in the session's slot raises there (`Session::raise`).
     #[inline(always)]
     fn run_with(&self, session: &Session, tail: bool, prepare: impl FnOnce(&mut [Option<Entity>])) -> Result<Step, Error> {
-        if !self.holds(session) { return Err(role_changed(&self.span)); }
+        if !self.holds(session)? { return Err(role_changed(&self.span)); }
         crate::execution::check().at(&self.span)?;
         let n = self.registers;
         let step = if n > INLINE { self.run_in(&mut std::iter::repeat_with(|| None).take(n).collect::<Vec<_>>(), session, tail, prepare) } else {
@@ -624,7 +627,8 @@ impl StatementCode {
         for op in &self.ops {
             match op {
                 Op::Load { name, address, take, to, range, check, on } => {
-                    let found = if *take { session.bindings.take_at(address).or_else(|| session.bindings.load(address)) } else { session.bindings.load(address) };
+                    let taken = if *take { session.bindings.take_at(address) } else { None };
+                    let found = match taken { Some(value) => Some(value), None => session.bindings.load(address)? };
                     let value = match found {
                         Some(value) if !matches!(value, Binding::Released) => value,
                         found => return Err(unbound(*name, found, &span_of(source, range))),

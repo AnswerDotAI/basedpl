@@ -1,6 +1,6 @@
 //! One key policy: structural facts, 0/1/more lengths, and parameters by read purpose.
 use super::{Desc, Key, Length, Live, Mode, ProgramKey};
-use crate::{Function, Number, Value, array::{Layout, Trees}, error::Result, eval::OperatorKind, primitive::{Operation, Primitive, Roles}};
+use crate::{Function, Number, Value, array::{Layout, Renderer, Trees}, error::Result, eval::OperatorKind, primitive::{Operation, Primitive, Roles}};
 use crate::program::trace::ReadKind;
 use rustymath::{buffer::DType, layout::Keys};
 use std::{hash::{Hash, Hasher}, sync::Arc};
@@ -41,7 +41,7 @@ pub(crate) enum Count { Finite(Length, bool), Infinite(bool) }
 
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) struct LayoutKey { axes: Vec<Axis>, renderer: Option<usize> }
+pub(crate) struct LayoutKey { axes: Vec<Axis>, renderer: Option<Renderer> }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Parameter {
@@ -53,7 +53,7 @@ pub(crate) enum Parameter {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum KeyPart {
     Graph, Call, Node(usize), Output(Option<u32>), Source(usize), Operation(Operation), Mode(Mode), Roles(Roles), Literal(u64),
-    Arguments(usize, usize), Trees(Option<Arc<Trees>>), Captures(CaptureKey), Description { kind: crate::number::Kind, atom: bool, layout: LayoutKey, segments: Vec<(u8, bool)> },
+    Arguments(usize, usize), Trees(Option<Arc<Trees>>), Captures(CaptureKey), Description { kind: crate::number::Kind, atom: bool, layout: LayoutKey, segments: Option<(u8, bool)> },
     Physical(Vec<(u8, usize)>), Parameter(ReadKind, Parameter), Missing,
     SourceBase(bool, Option<Arc<str>>),
     Count(usize, Vec<KeyPart>), Primitive(Primitive), Operator(OperatorKind), Definition(DefinitionKey), System(Arc<str>),
@@ -99,22 +99,20 @@ impl Encoder {
                     keys.names().iter().map(|name| name.as_ref().map(|name| self.name(name))).collect()) };
             self.lengths.push(length); key
         }).collect();
-        LayoutKey { axes, renderer: layout.renderer().map(Function::address) }
+        LayoutKey { axes, renderer: layout.renderer_metadata().cloned() }
     }
 
     pub(crate) fn description(&mut self, desc: &Desc) {
         let layout = self.layout(&desc.layout);
-        let mut segments = Vec::new();
-        let mut leaf = desc.segments.as_deref();
-        while let Some(segment) = leaf { segments.push((segment.rank, segment.stacked)); leaf = segment.leaf.as_deref(); }
+        let segments = desc.segments.as_ref().map(|segment| (segment.rank, segment.stacked));
         self.push(KeyPart::Description { kind: desc.kind, atom: desc.atom, layout, segments });
-        let mut leaf = desc.segments.as_deref();
-        while let Some(segment) = leaf { self.description(&segment.prototype); leaf = segment.leaf.as_deref(); }
+        if let Some(segment) = &desc.segments { self.description(&segment.leaf); self.description(&segment.prototype); }
         self.push(KeyPart::End);
     }
 
     pub(crate) fn value(&mut self, value: &Value, purpose: ReadKind) -> Result<()> {
         let parameter = match purpose {
+            ReadKind::Description | ReadKind::RuntimeOnly => return Err(crate::Error::planning()),
             ReadKind::Kind if value.kind().is_some() => Parameter::Kind(value.kind().unwrap()),
             ReadKind::Count => {
                 let layout = self.layout(value.layout());
@@ -160,20 +158,19 @@ impl Encoder {
 pub(crate) fn call_key(function: &Function, call: &crate::primitive::CallView<'_>) -> Result<Key> {
     let mut key = Encoder::default();
     key.push(KeyPart::Call); function.key_parts(&mut key)?;
-    key.push(KeyPart::Operation(call.operation.clone())); key.push(KeyPart::Mode(call.mode)); key.push(KeyPart::Roles(call.roles));
+    key.push(KeyPart::Operation(call.operation.clone())); key.push(KeyPart::Mode(call.mode)); key.push(KeyPart::Roles(call.roles.clone()));
     key.push(KeyPart::Arguments(call.explicit, call.explicit_roots)); key.push(KeyPart::Literal(call.literals)); key.push(KeyPart::Trees(call.trees.cloned()));
     key.push(KeyPart::Captures(CaptureKey::of(call.captures)));
     key.context(call.operation, call.site);
     for position in 0..call.len() {
         let value = call.input(position).ok_or_else(crate::Error::planning)?.value;
-        let read = if position >= call.explicit && position < call.explicit + call.operation.settings().len() { Some(ReadKind::Value) }
-            else { position.checked_sub(call.operation.functions()).and_then(|i| call.roles.read(i)) };
+        let read = super::read_kind(call.operation, call.explicit, call.roles, call.captures, position);
         match value {
             Value::Function(function) => function.key_parts(&mut key)?,
             value if position < 64 && call.literals & (1 << position) != 0 => key.value(value, ReadKind::Value)?,
             value => {
-                if read.is_none() || read == Some(ReadKind::Kind) { key.data(value); }
-                if let Some(read) = read { key.value(value, read)?; }
+                if read.is_none() || matches!(read, Some(ReadKind::Kind | ReadKind::Description)) { key.data(value); }
+                if let Some(read) = read.filter(|read| *read != ReadKind::Description) { key.value(value, read)?; }
             }
         }
     }
@@ -199,28 +196,40 @@ pub(crate) fn graph_key(live: &Live) -> ProgramKey {
         node.with_state(|state| match state {
             crate::graph::State::Step { origin, .. } => {
                 key.push(KeyPart::Operation(origin.operation.clone())); key.push(KeyPart::Mode(origin.mode));
-                key.push(KeyPart::Arguments(origin.explicit as usize, origin.explicit_roots as usize)); key.push(KeyPart::Roles(origin.roles)); key.push(KeyPart::Literal(origin.literals)); key.push(KeyPart::Trees(origin.trees.clone()));
+                key.push(KeyPart::Arguments(origin.explicit as usize, origin.explicit_roots as usize)); key.push(KeyPart::Roles(origin.roles.clone())); key.push(KeyPart::Literal(origin.literals)); key.push(KeyPart::Trees(origin.trees.clone()));
                 key.push(KeyPart::Captures(CaptureKey::of(&origin.bindings)));
                 key.context(&origin.operation, origin.site.as_ref());
                 for (i, read) in origin.list.iter().enumerate() {
                     match &read.operand {
                         Value::Pending(pending) => { key.push(KeyPart::Node(nodes[&pending.node])); key.push(KeyPart::Output(pending.output)); }
-                        Value::Function(function) => { function.key_parts(&mut key).expect("a callable has a structural key"); }
                         value if i < 64 && origin.literals & (1 << i) != 0 => { key.value(value, ReadKind::Value).expect("a literal is stored"); }
                         value => {
-                            let read = i.checked_sub(origin.operation.functions()).and_then(|i| origin.roles.read(i));
-                            if let Some(read) = read { key.value(value, read).expect("resolved call parameters"); } else { key.data(value); }
+                            key.push(KeyPart::Source(live.values[&super::Identity::of(value)]));
+                            if let Value::Function(function) = value { function.key_parts(&mut key).expect("a callable has a structural key"); }
+                            else if let Some(read) = origin.read_kind(i).filter(|read| *read != ReadKind::Description) { key.value(value, read).expect("resolved call parameters"); }
+                            else { key.data(value); }
                         }
                     }
                 }
             }
-            crate::graph::State::Input { value, .. } => {
+            crate::graph::State::Input { value, role, .. } => {
+                let pending = if node.descs().is_empty() { Pending::control(node.clone()) } else { Pending::data(node.clone(), 0) };
+                if *role == super::trace::Role::Seed || !matches!(value, Some(Value::Pending(_))) {
+                    key.push(KeyPart::Source(live.input_position(&pending, value)));
+                }
                 match value {
                     Some(Value::Pending(pending)) => { key.push(KeyPart::Node(nodes[&pending.node])); key.push(KeyPart::Output(pending.output)); }
-                    Some(value) => key.data(value), None => key.description(node.desc(0)),
+                    Some(value) => key.data(value), None => match node.desc(0) { Some(desc) => key.description(desc), None => key.push(KeyPart::Missing) },
                 }
             }
-            crate::graph::State::Done(values) => { for value in values.as_ref() { key.data(value); } }
+            crate::graph::State::Done(values) => {
+                for (i, value) in values.as_ref().iter().enumerate() {
+                    if node.is_literal() { key.value(value, ReadKind::Value).expect("a source literal is stored"); }
+                    else { key.push(KeyPart::Source(live.input_position(&Pending::data(node.clone(), i as u32), Some(value)))); key.data(value); }
+                }
+                if !node.is_literal() { key.push(KeyPart::Source(live.input_position(&Pending::control(node.clone()), None))); }
+                key.push(KeyPart::Output(None));
+            }
         });
         key.push(KeyPart::End);
     }

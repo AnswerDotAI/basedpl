@@ -11,8 +11,11 @@ pub(crate) fn contract(program: &mut Program, running: &mut Running, node: usize
     if !matches!(origin.operation, Operation::Fold { primitive: PLUS, scan: false, .. }) { return Ok(false); }
     let input = program.reads[origin.list.start as usize + *arg as usize].clone();
     if !matches!(input.map, Mapping::Linear(1)) { return Ok(false); }
-    let Node::Step { step: Step::Map { left: Some(left), right, .. }, origin: multiply, .. } = &program.nodes[input.operand.node] else { return Ok(false); };
-    if multiply.operation.primitive() != Some(TIMES) { return Ok(false); }
+    let Node::Step { step: Step::Map { left: Some(left), right, variant }, origin: multiply, .. } = &program.nodes[input.operand.node] else { return Ok(false); };
+    if multiply.operation.primitive() != Some(TIMES) || multiply.mode != origin.mode { return Ok(false); }
+    let bound = super::BoundCall { program, running, reads: multiply.list.clone() };
+    let Some(mapper) = multiply.call_view(&bound).kernel(*variant)? else { return Ok(false); };
+    if mapper.result_dtype() != running.desc(program, input.operand).unwrap().dtype() { return Ok(false); }
     let source = [program.reads[multiply.list.start as usize + *left as usize].clone(), program.reads[multiply.list.start as usize + *right as usize].clone()];
     let grid = running.desc(program, input.operand).unwrap().layout.clone();
     let axis = *axis;
@@ -37,10 +40,10 @@ pub(crate) fn contract(program: &mut Program, running: &mut Running, node: usize
         let destinations = destinations[which].iter().map(|axis| order.iter().position(|other| other == axis).unwrap()).collect();
         let operation = Operation::Read(ReadOp::Axes { axes, destinations });
         let reads = vec![source[which].clone(), source[1 - which].clone()];
-        let output = super::rules::append(program, running, origin.with_list(reads), operation, level)?;
+        let output = super::rules::append(program, running, &origin, operation, reads, 2, None, level)?;
         views.push(Read { operand: output, map: Mapping::Linear(1) });
     }
-    let replaced = super::rules::replace(program, running, node, Operation::Product { fold: PLUS, map: TIMES, contracted: 1, pairing: Pairing::Axes }, views)?;
+    let replaced = super::rules::replace(program, running, node, &origin, Operation::Product { fold: PLUS, map: TIMES, contracted: 1, pairing: Pairing::Axes }, views, 2, None)?;
     if !replaced {
         program.nodes.truncate(saved.0); program.reads.truncate(saved.1); program.descs.truncate(saved.2);
         running.values.truncate(saved.0); running.geometry.maps.truncate(saved.1); running.geometry.descs.truncate(saved.2);
@@ -53,14 +56,17 @@ fn destinations(program: &Program, running: &Running, sources: &[Read; 2], grid:
     let mut destinations = [Vec::new(), Vec::new()];
     for (input, read) in sources.iter().enumerate() {
         let desc = running.desc(program, read.operand)?;
-        let (_, steps) = read.map.affine(grid.shape())?;
+        let (base, steps) = read.map.affine(grid.shape())?;
+        if base != 0 { return None; }
         let source_steps = strides(desc.shape());
         for (axis, (&length, &stride)) in desc.shape().iter().zip(&source_steps).enumerate() {
+            let matches = |a: usize| !destinations[input].contains(&a)
+                && if length == 1 { steps[a] == 0 } else { grid.shape()[a] == length && steps[a] == stride as isize };
             let named = desc.layout.name(axis).and_then(|name| (0..grid.shape().len()).find(|&a| grid.name(a) == Some(name)));
-            let found = named.or_else(|| (0..grid.shape().len()).find(|&a| !destinations[input].contains(&a)
-                && if length == 1 { steps[a] == 0 } else { grid.shape()[a] == length && steps[a] == stride as isize }))?;
+            let found = match named { Some(a) => matches(a).then_some(a), None => (0..grid.shape().len()).find(|&a| matches(a)) }?;
             destinations[input].push(found);
         }
+        if steps.iter().enumerate().any(|(axis, &stride)| stride != 0 && !destinations[input].contains(&axis)) { return None; }
     }
     Some(destinations)
 }

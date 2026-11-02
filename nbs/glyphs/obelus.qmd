@@ -2,25 +2,27 @@
 
 Function. Keys: `Alt-u`. Hanzi: `除`. Ranks: `0` monadic, `0 0` dyadic
 
-`÷Y`: 1/Y. Pervasive.
+`÷Y`: 1/Y. Pervasive. `X÷Y`: X/Y. Pervasive. Machine integers use floor division. Float arguments use floating division, and `ᵣ` arguments use exact rational division. Select float or rational division explicitly with `÷ₐ` or `÷ᵣ`:
 
 ```bpl
 ÷4                ⍝ 0.25
+1ₓ÷3ₓ             ⍝ 0ₓ
+¯3ₓ÷2ₓ            ⍝ ¯2ₓ
+1ₓ÷ₐ3ₓ            ⍝ 0.3333333333333333
+1ᵣ÷3ᵣ             ⍝ 1ᵣ3
+1ₓ÷ᵣ3ₓ            ⍝ 1ᵣ3
 ```
 
-`X÷Y`: X/Y. Pervasive. A nonzero real `X` divided by zero gives an infinity. Zero divided by zero gives zero for [Mathish types](../terms.qmd#term-mathish-types) with [Mathish mode](../numbers.qmd#mathish-mode) enabled. Other floating zero divided by zero cases give NaN.
+A nonzero float divided by zero gives an infinity. Floating zero divided by zero gives zero for [Mathish types](../terms.qmd#term-mathish-types) with [Mathish mode](../numbers.qmd#mathish-mode) enabled, and NaN otherwise:
 
 ```bpl
-1ₓ÷3ₓ             ⍝ 1r3
 ¯1÷0              ⍝ ¯∞
 0÷0               ⍝ 0
-0ₓ÷0ₓ             ⍝ 0ₓ
-0÷ₓ0              ⍝ 0ₓ
 ```
 
 ## Inverse
 
-`÷⁻¹` is `÷`. With the right argument fixed, `(÷↢X)⁻¹Y` is `Y×X`.
+`÷⁻¹` is `÷`. With the right argument fixed, `(÷↢X)⁻¹Y` is `Y×X`. These recover the original value for nonzero floating or rational division; integer floor division loses the remainder.
 
 ```bpl
 12÷⁻¹4     ⍝ 3

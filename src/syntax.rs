@@ -1,7 +1,7 @@
 use crate::name::{Name, is_implicit};
 use crate::{
     At, Described, Error, ErrorKind, Number, Source, Span, Value,
-    number::{Arithmetic, DENOMINATOR, EXPONENT, IMAGINARY, MARKS, Mark, Math, Numbers, SUFFIXES, Suffix, subscript},
+    number::{Arithmetic, DENOMINATOR, EXPONENT, IMAGINARY, MARKS, Mark, Math, SUFFIXES, Suffix, subscript},
     primitive::{Builtin, Exact, Primitive}, eval::OperatorKind, symbols::canonical
 };
 use rustymath::{buffer::{DType, FloatWidth}, error::Kind};
@@ -343,19 +343,21 @@ fn real_literal(chars: &mut Characters<'_>) -> Result<(), &'static str> {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Joiner { Imaginary, Exponent, Denominator }
 
-/// The group that `left`, `joiner` at `at` and `right` stand for: `xⱼy` is `x+y×0ⱼ1`, `xₑy` is `x×10*y` and `xᵣy` is the exact quotient of `xₓ` by `yₓ`, under either kinds (`Exact::Ratio`).
+/// The group that `left`, `joiner` at `at` and `right` stand for: `xⱼy` is `x+y×0ⱼ1`, `xₑy` is `x×10*y` and `xᵣy` forms a fraction from `⌊xᵣ` and `⌊yᵣ` with a nonzero denominator.
 pub(crate) fn joined_term(left: Node, joiner: Joiner, at: &Span, right: Node) -> Node {
     let span = Span { source: at.source.clone(), range: left.span.range.start..right.span.range.end };
     let node = |kind| Node { kind, span: at.clone() };
     let number = |text| node(NodeKind::Number { text: Some(text), mark: None });
     let function = |p| node(NodeKind::Function(Builtin::Primitive(p)));
-    let mark = || node(NodeKind::Operator(OperatorKind::Mark(Mark::Numbers(Numbers::Exact))));
     let nodes = match joiner {
         Joiner::Imaginary => {
             vec![left, function(Primitive::Arithmetic(Arithmetic::Plus)), right, function(Primitive::Arithmetic(Arithmetic::Times)), number("0j1")]
         }
         Joiner::Exponent => vec![left, function(Primitive::Arithmetic(Arithmetic::Times)), number("10"), function(Primitive::Math(Math::Power)), right],
-        Joiner::Denominator => vec![left, mark(), function(Primitive::Exact(Exact::Ratio)), right, mark()],
+        Joiner::Denominator => {
+            let floor = |value| node(NodeKind::Group(vec![function(Primitive::Math(Math::Floor)), value, node(NodeKind::Operator(OperatorKind::Mark(Mark::Rational)))]));
+            vec![floor(left), function(Primitive::Exact(Exact::Ratio)), floor(right)]
+        },
     };
     Node { kind: NodeKind::Group(nodes), span }
 }
@@ -366,24 +368,24 @@ fn mark_head(chars: &mut Characters<'_>) -> Option<Mark> { let &(_, c) = chars.p
 fn mark(chars: &mut Characters<'_>) -> Result<Option<Mark>, (ErrorKind, String)> {
     let Some(mark) = mark_head(chars) else { return Ok(None) };
     chars.next();
-    if mark != Mark::Numbers(Numbers::Exact) { return Ok(Some(mark)); }
+    if mark != Mark::Exact { return Ok(Some(mark)); }
     let Some(&(_, c)) = chars.peek().filter(|(_, c)| *c == '₋' || script_digit(SUBSCRIPT_DIGITS, *c).is_some()) else { return Ok(Some(mark)) };
     chars.next();
     let bytes = script_integer(c, chars, SUBSCRIPT_DIGITS, "integer width")?;
     MARKS.iter().find_map(|&(spelling, m)| match m {
-        Mark::Numbers(Numbers::Fixed(w)) if spelling.ends_with(c) && DType::Integer(w).bytes() as i64 == bytes => Some(Some(m)), _ => None
+        Mark::Type { dtype: DType::Integer(w), fixed: true } if spelling.ends_with(c) && DType::Integer(w).bytes() as i64 == bytes => Some(Some(m)), _ => None
     }).ok_or_else(|| (ErrorKind::Syntax, "fixed integer width must be 1, 2, 4 or 8 bytes".into()))
 }
 
 /// Consumes a float width's marker when one comes next, and gives the width.
 fn width_mark(chars: &mut Characters<'_>) -> Option<FloatWidth> {
-    let Mark::Numbers(Numbers::Float(width)) = mark_head(chars)? else { return None };
+    let Mark::Type { dtype: DType::Float(width), .. } = mark_head(chars)? else { return None };
     chars.next();
     Some(width)
 }
 
 /// Consumes `ₐ` when it comes next. A rational or complex literal can end in it, which `Number::parse` reads as a conversion to a real float.
-fn approximate_mark(chars: &mut Characters<'_>) { if mark_head(chars) == Some(Mark::Approximate) { chars.next(); } }
+fn approximate_mark(chars: &mut Characters<'_>) { if mark_head(chars) == Some(Mark::Real) { chars.next(); } }
 
 /// Whether `chars` starts a part of a number: a digit, `¯`, `∞`, or a point before a digit.
 fn number_part(mut chars: Characters<'_>) -> bool {
@@ -478,14 +480,14 @@ pub(crate) fn name_char_in(c: char, aliases: bool) -> bool { name_char(if aliase
 const SUPERSCRIPT_DIGITS: &str = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 const SUBSCRIPT_DIGITS: &str = "₀₁₂₃₄₅₆₇₈₉";
 /// The characters that write a superscript operator, `ₓ` and `ₐ` among them, for the editors' glyph lists.
-pub fn superscripts() -> String { [SUPERSCRIPT_DIGITS, "⁻ᵀᵘₓₐ"].concat() }
+pub fn superscripts() -> String { [SUPERSCRIPT_DIGITS, "⁻ᵀᵘₓₐᵣ"].concat() }
 /// The characters that write a subscript, for the editors' glyph lists.
 pub fn subscripts() -> String { [SUBSCRIPT_DIGITS, "₋"].concat() }
 
 /// Number markers and their word names, for Python properties and editor generation.
 pub fn number_marks() -> Vec<(&'static str, &'static str)> {
     MARKS.iter().map(|&(text, mark)| {
-        (text, match mark { Mark::Numbers(Numbers::Exact) => "exact", Mark::Numbers(Numbers::Float(w)) => DType::Float(w).name(), Mark::Numbers(Numbers::Fixed(w)) => DType::Integer(w).name(), Mark::Approximate => "approximate" })
+        (text, match mark { Mark::Exact => "exact", Mark::Rational => "rational", Mark::Type { dtype, .. } => dtype.name(), Mark::Real => "approximate" })
     }).collect()
 }
 
@@ -662,6 +664,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
         let key = source.text[..start].chars().next_back().is_some_and(|c| canonical(c) == '.');
         name(chars, key).map_err(|(end, message)| Error::new(ErrorKind::Syntax, message).at(&span(end)))?;
         TokenKind::Name(source.text[start..position(chars, len)].to_owned())
+    } else if c == 'ᵣ' { chars.next(); TokenKind::Joiner(Joiner::Denominator)
     } else if let Some(mark) = marked(chars)? { TokenKind::Operator(OperatorKind::Mark(mark)) } else {
         chars.next();
         match c {
@@ -743,7 +746,6 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             // A literal number takes `ⱼ`, `ₑ` or `ᵣ` only before a number part (`suffix_follows`). One that reaches here joins two items, as in `xⱼy`.
             'ⱼ' => TokenKind::Joiner(Joiner::Imaginary),
             'ₑ' => TokenKind::Joiner(Joiner::Exponent),
-            'ᵣ' => TokenKind::Joiner(Joiner::Denominator),
             c if c == '⁻' || script_digit(SUPERSCRIPT_DIGITS, c).is_some() => {
                 let power = script_integer(c, chars, SUPERSCRIPT_DIGITS, "superscript").map_err(|(k, m)| Error::new(k, m).at(&span(position(chars, len))))?;
                 TokenKind::Power(power)

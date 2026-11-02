@@ -12,7 +12,7 @@ enum Pattern { Any(u8), Whole(i64), Call(Primitive, Option<&'static Pattern>, &'
 
 struct Rule { key: RootKey, name: &'static str, pattern: Option<Pattern>, replace: Replacement }
 #[derive(Clone, Copy)]
-enum Replacement { Primitive(Primitive), Contract }
+enum Replacement { Primitive(Primitive), Contract, Selective }
 
 pub(crate) struct Bound { reads: Vec<Option<Read>>, inner: Vec<usize> }
 impl Bound {
@@ -60,6 +60,7 @@ fn table() -> &'static HashMap<RootKey, Vec<Rule>> {
             }
         }
         add(StepKind::Fold, Some(PLUS), "contraction", None, Replacement::Contract);
+        add(StepKind::Copy, None, "selective map", None, Replacement::Selective);
         rules
     })
 }
@@ -73,14 +74,11 @@ fn args(program: &Program, node: usize) -> Option<(Primitive, Option<Read>, Read
     let Node::Step { step, origin, .. } = &program.nodes[node] else { return None; };
     let primitive = origin.operation.primitive()?;
     let reads = program.reads(&origin.list);
-    let (left, right) = match step {
-        Step::Map { left, right, .. } | Step::Call { left, right } => (left.map(|at| reads[at as usize].clone()), reads[*right as usize].clone()),
-        Step::Copy { .. } | Step::Gather { .. } => {
-            let start = origin.operation.functions();
-            match &reads[start..origin.explicit as usize] { [right] => (None, right.clone()), [left, right] => (Some(left.clone()), right.clone()), _ => return None }
-        }
-        _ => return None,
-    };
+    if !matches!(step, Step::Map { .. } | Step::Call | Step::Copy { .. } | Step::Gather { .. }) { return None; }
+    let [left, right] = crate::Function::argument_ranges(origin).ok()?;
+    let leaf = |range: std::ops::Range<usize>| (range.len() == 1).then(|| reads[range.start].clone());
+    let left = match left { Some(range) => Some(leaf(range)?), None => None };
+    let right = leaf(right?)?;
     let (left, right) = match (primitive, left, right) {
         (PLUS | TIMES, Some(left), right) if whole(program, right.operand).is_some() && whole(program, left.operand).is_none() => (Some(right), left),
         (_, left, right) => (left, right),
@@ -116,12 +114,13 @@ fn matched(rule: &Rule, program: &Program, node: usize) -> Option<Bound> {
     } else { Some(bound) }
 }
 
-pub(crate) fn rewrite(program: &mut Program, running: &mut Running, from: usize) -> Result<()> {
+pub(crate) fn rewrite(program: &mut Program, running: &mut Running, from: usize, until: usize) -> Result<Box<[Option<usize>]>> {
     let mut replaced = false;
+    let originals = program.nodes.len();
     let mut users = vec![0; program.nodes.len()];
-    for node in 0..program.nodes.len() { for read in program.dependencies(node) { users[read.operand.node] += 1; } }
+    for node in 0..program.nodes.len() { for read in program.execution_dependencies(node) { users[read.operand.node] += 1; } }
     for root in program.live_roots() { users[root.node] += 1; }
-    for node in from..program.nodes.len() {
+    for node in from..until {
         let Some(key) = key(program, node) else { continue; };
         for root in [key, RootKey { root: None, ..key }] {
             for rule in table().get(&root).into_iter().flatten() {
@@ -129,70 +128,109 @@ pub(crate) fn rewrite(program: &mut Program, running: &mut Running, from: usize)
                 if bound.inner.iter().any(|&inner| inner != node && users[inner] > 1) && !matches!(rule.replace, Replacement::Primitive(Primitive::Log1p | Primitive::Expm1)) { continue; }
                 let changed = match rule.replace {
                     Replacement::Primitive(primitive) => {
-                        let reads = [bound.reads[1].clone(), bound.reads[0].clone()].into_iter().flatten().collect();
-                        replace(program, running, node, Operation::Primitive { primitive, pairing: Pairing::Axes }, reads)?
+                        let reads: Vec<_> = [bound.reads[1].clone(), bound.reads[0].clone()].into_iter().flatten().collect();
+                        let Node::Step { origin, .. } = &program.nodes[node] else { unreachable!() };
+                        let source = origin.clone(); let roots = reads.len() as u32;
+                        replace(program, running, node, &source, Operation::Primitive { primitive, pairing: Pairing::Axes }, reads, roots, None)?
                     }
+                    Replacement::Selective => selective(program, running, node, &users)?,
                     Replacement::Contract => super::contraction::contract(program, running, node)?,
                 };
                 if changed { replaced = true; crate::explain::fast(rule.name, || rule.key.root.map_or_else(String::new, |p| p.glyph().into())); break; }
             }
         }
     }
-    if replaced { ordered(program, running, from)?; }
-    Ok(())
+    if !replaced { return Ok((0..originals).map(Some).collect()); }
+    let mut mapped = ordered(program, running, from)?;
+    mapped.truncate(originals);
+    Ok(mapped.into())
 }
 
-pub(crate) fn replace(program: &mut Program, running: &mut Running, node: usize, operation: Operation, reads: Vec<Read>) -> Result<bool> {
-    let Node::Step { origin, descs, level, trees, shy, .. } = &program.nodes[node] else { return Ok(false); };
-    let mut origin = origin.with_list(0..0);
-    let descs = descs.clone();
-    let level = *level;
-    let (trees, shy) = (trees.clone(), *shy);
-    origin.operation = operation;
-    origin.explicit = reads.len() as u32;
-    origin.trees = None;
-    origin.literals = reads.iter().enumerate().take(64).fold(0, |mask, (slot, read)| mask | if matches!(program.nodes[read.operand.node], Node::Literal { .. }) { 1 << slot } else { 0 });
-    let start = program.reads.len();
-    program.reads.extend(reads);
-    running.geometry.maps.extend(program.reads[start..].iter().map(|read| read.map.clone()));
-    origin.list = start as u32..program.reads.len() as u32;
-    let mut mapped = program.reads(&origin.list).to_vec();
-    let row = {
-        let bound = BoundCall { program, running, reads: origin.list.clone() };
-        crate::fusion::row(&origin.call_view(&bound), None, &mut mapped)?
-    };
-    let Some((step, outputs, plan)) = row else { program.reads.truncate(start); running.geometry.maps.truncate(start); return Ok(false); };
-    if outputs.as_ref().len() != descs.len() || outputs.as_ref().iter().zip(program.descs[descs.start as usize..descs.end as usize].iter())
-        .any(|(new, old)| old.as_ref().is_some_and(|old| !super::verify::compatible(old, new) || old.shape() != new.shape())) {
-        program.reads.truncate(start); running.geometry.maps.truncate(start); return Ok(false);
+fn explicit_trees(source: &super::Origin<std::ops::Range<u32>>) -> Option<std::sync::Arc<crate::array::Trees>> {
+    source.trees.as_ref().map(|trees| std::sync::Arc::new(trees.project_roots(&trees.roots().take(source.explicit_roots as usize).collect::<Vec<_>>())))
+}
+
+fn selective(program: &mut Program, running: &mut Running, node: usize, users: &[usize]) -> Result<bool> {
+    let Node::Step { step: Step::Copy { source }, origin: copy, level, .. } = &program.nodes[node] else { return Ok(false); };
+    let source = *source as usize;
+    let output = program.reads[copy.list.start as usize + source].operand;
+    if output.output != Some(0) || users.get(output.node) != Some(&1) || running.value(program, output).is_some() { return Ok(false); }
+    let Node::Step { step: Step::Map { left, right, .. }, origin: map, .. } = &program.nodes[output.node] else { return Ok(false); };
+    let Some(result) = running.desc(program, Out::data(node, 0)) else { return Ok(false); };
+    if running.read_plan(node).and_then(|plan| plan.affine(result.shape())).is_none_or(|(source, _, _)| source != program.desc_index(output)) { return Ok(false); }
+    let (copy, map, level) = (copy.clone(), map.clone(), *level);
+    let positions = left.iter().copied().chain(std::iter::once(*right)).collect::<Vec<_>>();
+    let map_args = program.reads(&map.list)[..map.explicit as usize].to_vec();
+    let mut args = map_args.clone();
+    let copy_args = program.reads(&copy.list)[..copy.explicit as usize].to_vec();
+    let saved = (program.nodes.len(), program.reads.len(), program.descs.len());
+    for input in positions {
+        let argument = &map_args[input as usize];
+        let desc = running.desc(program, argument.operand).ok_or_else(crate::Error::planning)?;
+        if desc.atom { continue; }
+        let aligned = if argument.map == Mapping::Linear(1) && desc.layout == running.desc(program, output).unwrap().layout { argument.operand } else {
+            append(program, running, &map, Operation::ReadRelation { operation: Box::new(map.operation.clone()),
+                relation: crate::primitive::Relation::Input(input), arguments: map.explicit as usize - map.operation.functions() },
+                map_args.clone(), map.explicit_roots, explicit_trees(&map), level)?
+        };
+        let mut selected = copy_args.clone(); selected[source] = Read { operand: aligned, map: Mapping::Linear(1) };
+        let selected = append(program, running, &copy, copy.operation.clone(), selected, copy.explicit_roots, explicit_trees(&copy), level)?;
+        selective(program, running, selected.node, users)?;
+        args[input as usize] = Read { operand: selected, map: Mapping::Linear(1) };
     }
-    for (slot, read) in origin.list.clone().zip(mapped) { program.reads[slot as usize] = read.clone(); running.geometry.maps[slot as usize] = read.map; }
+    let changed = replace(program, running, node, &map, map.operation.clone(), args, map.explicit_roots, explicit_trees(&map))?;
+    if !changed {
+        program.nodes.truncate(saved.0); program.reads.truncate(saved.1); program.descs.truncate(saved.2);
+        running.values.truncate(saved.0); running.geometry.maps.truncate(saved.1); running.geometry.descs.truncate(saved.2);
+        running.geometry.read_plans.truncate(saved.0); running.geometry.reads.truncate(saved.1);
+    }
+    Ok(changed)
+}
+fn prepare_row(program: &mut Program, running: &mut Running, source: &super::Origin<std::ops::Range<u32>>, operation: Operation,
+    reads: Vec<Read>, roots: u32, trees: Option<std::sync::Arc<crate::array::Trees>>) -> Result<(Step, super::Origin<Vec<Read>>, super::Description, Option<rustymath::agreement::ReadPlan>)> {
+    let old = program.reads(&source.list);
+    let from = reads.iter().map(|read| old.iter().position(|old| old.operand == read.operand && old.map == read.map)).collect::<Vec<_>>();
+    let (mut draft, from) = source.projected(operation, reads, &from, roots, trees, |position| old[position].clone(), old.len())?;
+    let mut reads = std::mem::take(&mut draft.list);
+    let first = program.reads.len();
+    program.reads.extend(reads.iter().cloned());
+    running.geometry.maps.extend(reads.iter().map(|read| read.map.clone()));
+    let prepared = (|| {
+        let bound = BoundCall { program, running, reads: first as u32..program.reads.len() as u32 };
+        let classified = source.rebuilt(draft.operation, bound, &from, draft.explicit, draft.explicit_roots, draft.trees)?;
+        let (step, outputs, plan) = crate::fusion::row(&classified.call_view(&classified.list), None, &mut reads)?;
+        Ok((step, classified.with_list(reads), outputs, plan))
+    })();
+    program.reads.truncate(first); running.geometry.maps.truncate(first);
+    prepared
+}
+
+pub(crate) fn replace(program: &mut Program, running: &mut Running, node: usize, source: &super::Origin<std::ops::Range<u32>>,
+    operation: Operation, reads: Vec<Read>, roots: u32, input_trees: Option<std::sync::Arc<crate::array::Trees>>) -> Result<bool> {
+    let Node::Step { descs, level, trees, shy, .. } = &program.nodes[node] else { return Ok(false); };
+    let (descs, level, trees, shy) = (descs.clone(), *level, trees.clone(), *shy);
+    let (step, origin, outputs, plan) = prepare_row(program, running, source, operation, reads, roots, input_trees)?;
+    if outputs.as_ref().len() != descs.len() || outputs.trees() != trees.as_ref() || outputs.as_ref().iter()
+        .zip(program.descs[descs.start as usize..descs.end as usize].iter())
+        .any(|(new, old)| old.as_ref().is_some_and(|old| !super::verify::compatible(old, new) || old.shape() != new.shape())) { return Ok(false); }
+    let first = program.reads.len();
+    program.reads.extend(origin.list.iter().cloned());
+    running.geometry.maps.extend(origin.list.iter().map(|read| read.map.clone()));
     for (slot, desc) in descs.clone().zip(outputs.into_vec()) { program.descs[slot as usize] = Some(desc.clone()); running.geometry.descs[slot as usize] = Some(desc); }
-    program.nodes[node] = Node::Step { step, origin, descs, trees, shy, level };
+    program.nodes[node] = Node::Step { step, origin: origin.with_list(first as u32..program.reads.len() as u32), descs, trees, shy, level };
+    running.geometry.reads.resize_with(program.reads.len(), || None);
     running.prepare_read_plan(program, node, plan)?;
+    super::run::prepare_reads(program, running, node)?;
     Ok(true)
 }
 
-pub(crate) fn append(program: &mut Program, running: &mut Running, origin: super::Origin<Vec<Read>>, operation: Operation, level: Option<usize>) -> Result<Out> {
+pub(crate) fn append(program: &mut Program, running: &mut Running, source: &super::Origin<std::ops::Range<u32>>, operation: Operation,
+    reads: Vec<Read>, roots: u32, trees: Option<std::sync::Arc<crate::array::Trees>>, level: Option<usize>) -> Result<Out> {
     let first = program.reads.len();
-    let mut origin = origin;
-    origin.operation = operation;
-    origin.explicit = origin.list.len() as u32;
-    origin.trees = None;
-    let mut reads = origin.list.clone();
-    program.reads.extend(reads.iter().cloned());
-    running.geometry.maps.extend(reads.iter().map(|read| read.map.clone()));
-    let located = origin.with_list(first as u32..program.reads.len() as u32);
-    let row = {
-        let bound = BoundCall { program, running, reads: located.list.clone() };
-        crate::fusion::row(&located.call_view(&bound), None, &mut reads)
-    };
-    program.reads.truncate(first);
-    running.geometry.maps.truncate(first);
-    let (step, outputs, plan) = row?.ok_or_else(|| crate::Error::domain("a rule's view has no graph description"))?;
+    let (step, origin, outputs, plan) = prepare_row(program, running, source, operation, reads, roots, trees)?;
     let mut builder = super::Builder::new();
     std::mem::swap(program, &mut builder.program);
-    let output = builder.step(step, origin.with_list(reads), &outputs, level);
+    let output = builder.step(step, origin, &outputs, level);
     *program = builder.program;
     running.values.resize_with(program.nodes.len(), || None);
     let previous = running.geometry.descs.len();
@@ -201,13 +239,15 @@ pub(crate) fn append(program: &mut Program, running: &mut Running, origin: super
     running.geometry.read_plans.resize_with(program.nodes.len(), || None);
     running.geometry.reads.resize_with(program.reads.len(), || None);
     running.prepare_read_plan(program, output.node, plan)?;
+    super::run::prepare_reads(program, running, output.node)?;
     Ok(output)
 }
 
-fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<()> {
+fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<Vec<Option<usize>>> {
     let mut state = vec![0u8; program.nodes.len()];
     let mut order = Vec::new();
-    for root in program.live_roots() {
+    let counts = program.parameters.iter().filter_map(|parameter| match parameter { super::Parameter::Count { output, .. } => Some(*output), _ => None });
+    for root in counts.chain(program.roots.iter().copied()).chain(program.token) {
         let mut stack = vec![(root.node, false)];
         while let Some((node, finish)) = stack.pop() {
             if node < from || state[node] == 2 { continue; }
@@ -265,5 +305,5 @@ fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<
     running.values = values;
     *program = builder.program;
     running.bind(program, geometry);
-    Ok(())
+    Ok(mapped.into_iter().map(|at| at.map(|at| at.node)).collect())
 }

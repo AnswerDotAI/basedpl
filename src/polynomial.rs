@@ -1,9 +1,9 @@
 use crate::execution::check;
 use crate::{
-    Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Cells, Layout, generated_len}, element::{Float, read_as},
-    number::{Arithmetic, Field, Math, Numeric, with_field}
+    Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Cells, Layout, generated_len},
+    number::{Arithmetic, Field, Math, Numeric, read_as, with_field}, primitive::{Primitive, scalar}
 };
-use rustymath::{buffer::FloatWidth, error::Kind, with_float_width};
+use rustymath::{buffer::{Element, FloatWidth}, scalar::Float, error::Kind, with_float_width};
 
 fn int(n: usize) -> Number { Number::from_integer(n as i64) }
 fn numbers(a: &Value) -> Result<Vec<Number>, Error> {
@@ -15,7 +15,6 @@ fn vector(data: Vec<Number>) -> Result<Value, Error> {
 
 enum Polynomial {
     Coefficients(Vec<Number>), Factored(Number, Vec<Number>), Powers { coefficients: Vec<Number>, exponents: Vec<Vec<Number>>, variables: usize }
-}
 impl Polynomial {
     fn parse(a: &Value) -> Result<Self, Error> {
         if a.all_numbers() { return Ok(Self::Coefficients(numbers(a)?)); }
@@ -43,12 +42,12 @@ impl Polynomial {
 
     fn variables(&self) -> usize { match self { Self::Powers { variables, .. } => *variables, _ => 1 } }
 
-    fn coefficients(&self) -> Result<Vec<Number>, Error> {
+    fn coefficients(&self, numeric: Numeric) -> Result<Vec<Number>, Error> {
         match self {
             Self::Coefficients(c) => Ok(c.clone()),
             Self::Factored(m, roots) => {
                 generated_len(&[roots.len() + 1])?;
-                Ok(with_field!(std::iter::once(m).chain(roots), T, width => {
+                Ok(with_field!(numeric; std::iter::once(m).chain(roots), T, width => {
                     let roots: Vec<T> = roots.iter().map(T::of).collect();
                     rustymath::polynomial::from_roots(T::of(m), &roots)?.into_iter().map(|c| c.number(width)).collect()
                 }))
@@ -61,27 +60,27 @@ impl Polynomial {
                 let len = degrees.iter().max().copied().unwrap_or(0).checked_add(1).ok_or_else(|| Error::new(Kind::Limit, "polynomial degree is too large"))?;
                 generated_len(&[len])?;
                 let mut c = vec![int(0); len];
-                for (a, &i) in coefficients.iter().zip(&degrees) { c[i] = c[i].dyad(Arithmetic::Plus, a)?; }
+                for (a, &i) in coefficients.iter().zip(&degrees) { c[i] = scalar(Primitive::Arithmetic(Arithmetic::Plus), Some(&c[i]), a, numeric)?; }
                 Ok(c)
             }
         }
     }
 
-    fn terms(&self) -> Result<(Vec<Number>, Vec<Vec<Number>>), Error> {
+    fn terms(&self, numeric: Numeric) -> Result<(Vec<Number>, Vec<Vec<Number>>), Error> {
         if let Self::Powers { coefficients, exponents, .. } = self { return Ok((coefficients.clone(), exponents.clone())); }
-        let c = self.coefficients()?;
+        let c = self.coefficients(numeric)?;
         let e = (0..c.len()).map(|i| vec![int(i)]).collect();
         Ok((c, e))
     }
 
-    fn evaluate(&self, x: &[Number]) -> Result<Number, Error> {
+    fn evaluate(&self, x: &[Number], numeric: Numeric) -> Result<Number, Error> {
         if x.len() != 1 && x.len() != self.variables() { return Err(Error::new(Kind::Length, "coordinates must match polynomial variables")); }
         if x.is_empty() { return Err(Error::new(Kind::Length, "polynomial needs coordinates")); }
         match self {
-            Self::Coefficients(c) => Ok(with_field!(c.iter().chain(x), T, width => {
+            Self::Coefficients(c) => Ok(with_field!(numeric; c.iter().chain(x), T, width => {
                 let c: Vec<T> = c.iter().map(T::of).collect(); rustymath::polynomial::value(&c, &T::of(&x[0]))?.number(width)
             })),
-            Self::Factored(m, roots) => Ok(with_field!(std::iter::once(m).chain(roots).chain(x), T, width => {
+            Self::Factored(m, roots) => Ok(with_field!(numeric; std::iter::once(m).chain(roots).chain(x), T, width => {
                 let roots: Vec<T> = roots.iter().map(T::of).collect();
                 rustymath::polynomial::factored(&T::of(m), &roots, &T::of(&x[0]))?.number(width)
             })),
@@ -92,20 +91,20 @@ impl Polynomial {
                     if c.is_zero() { continue; }
                     let mut term = c.clone();
                     for (j, e) in powers.iter().enumerate() {
-                        let power = x[if x.len() == 1 { 0 } else { j }].math_dyad(Math::Power, e)?;
-                        term = term.dyad(Arithmetic::Times, &power)?;
+                        let power = scalar(Primitive::Math(Math::Power), Some(&x[if x.len() == 1 { 0 } else { j }]), e, numeric)?;
+                        term = scalar(Primitive::Arithmetic(Arithmetic::Times), Some(&term), &power, numeric)?;
                     }
-                    y = y.dyad(Arithmetic::Plus, &term)?;
+                    y = scalar(Primitive::Arithmetic(Arithmetic::Plus), Some(&y), &term, numeric)?;
                 }
                 Ok(y)
             }
         }
     }
 
-    fn roots(&self) -> Result<Value, Error> {
-        let mut c = self.coefficients()?;
+    fn roots(&self, numeric: Numeric) -> Result<Value, Error> {
+        let mut c = self.coefficients(numeric)?;
         // Real roots take the coefficients' float width, or the default width when the coefficients are exact.
-        let width = crate::number::Numeric::current().width_of(c.iter().map(Number::float_width));
+        let width = numeric.width_of(c.iter().map(Number::float_width));
         while c.last().is_some_and(Number::is_zero) { c.pop(); }
         let m = c.last().cloned().unwrap_or_else(|| int(0));
         let degree = c.len().saturating_sub(1);
@@ -118,28 +117,28 @@ impl Polynomial {
         Value::new(vec![2], vec![Value::Number(m), roots]).described("invalid polynomial roots")
     }
 
-    fn partial(&self, axis: usize, order: usize) -> Result<Self, Error> {
+    fn partial(&self, axis: usize, order: usize, numeric: Numeric) -> Result<Self, Error> {
         if !matches!(self, Self::Powers { .. }) {
-            let c = self.coefficients()?;
-            return Ok(Self::Coefficients(with_field!(c.iter(), T, width => {
+            let c = self.coefficients(numeric)?;
+            return Ok(Self::Coefficients(with_field!(numeric; c.iter(), T, width => {
                 let mut c: Vec<T> = c.iter().map(T::of).collect(); for _ in 0..order { c = rustymath::polynomial::derivative(&c)? }
                 c.into_iter().map(|c| c.number(width)).collect()
             })));
         }
-        let (mut coefficients, mut exponents) = self.terms()?;
+        let (mut coefficients, mut exponents) = self.terms(numeric)?;
         for (c, e) in coefficients.iter_mut().zip(&mut exponents) {
             for _ in 0..order {
                 if c.is_zero() || e[axis].is_zero() { *c = int(0); break; }
-                *c = c.dyad(Arithmetic::Times, &e[axis])?;
-                e[axis] = e[axis].dyad(Arithmetic::Minus, &int(1))?;
+                *c = scalar(Primitive::Arithmetic(Arithmetic::Times), Some(c), &e[axis], numeric)?;
+                e[axis] = scalar(Primitive::Arithmetic(Arithmetic::Minus), Some(&e[axis]), &int(1), numeric)?;
             }
         }
         Ok(Self::Powers { coefficients, exponents, variables: self.variables() })
     }
 
     /// This polynomial as the coefficients that `⌻` takes: a vector, or an enclosed exponent table for one in several variables.
-    fn value(&self) -> Result<Value, Error> {
-        let Self::Powers { coefficients, exponents, variables } = self else { return vector(self.coefficients()?) };
+    fn value(&self, numeric: Numeric) -> Result<Value, Error> {
+        let Self::Powers { coefficients, exponents, variables } = self else { return vector(self.coefficients(numeric)?) };
         let rows = coefficients.iter().zip(exponents).flat_map(|(c, e)| std::iter::once(c).chain(e)).map(|n| Value::Number(n.clone())).collect();
         Ok(Value::from_parts(vec![coefficients.len(), variables + 1], rows, Value::Number(int(0))).described("invalid exponent table")?.enclose()
             .expect("a table encloses"))
@@ -171,10 +170,10 @@ fn float_polynomial(c: &Value, point: &Value) -> Result<Option<(Vec<Number>, Flo
 fn floats<F: Float>(c: &[Number]) -> Result<Vec<F>, Error> { c.iter().map(Number::to_real).collect::<Result<_, _>>().map_err(Error::from) }
 
 /// The float results `y` at the points `x`, with `x`'s shape and layout.
-fn shaped<F: Float>(x: &Value, y: Vec<F>, width: FloatWidth) -> Result<Value, Error> {
+fn shaped<F: Float + Element>(x: &Value, y: Vec<F>, width: FloatWidth) -> Result<Value, Error> {
     if x.is_unit() { return Ok(Value::Number(Number::float(y[0].wide(), width))); }
-    let y = F::build(x.shape(), y).ok_or(Kind::Limit).described("polynomial result exceeds array limits")?;
-    y.with_layout(x.layout().clone()).described("invalid polynomial result")
+    Value::stored_buffer(x.layout().clone(), F::buffer(y), crate::number::Kind::stored(F::DTYPE, false, false), None)
+        .described("polynomial result exceeds array limits")
 }
 
 /// `C⌻X` for one polynomial of real coefficients at the compact real points `X`, when the result is a float. rustymath evaluates it over the points' slice.
@@ -188,12 +187,12 @@ fn evaluated(left: &Value, right: &Value) -> Result<Option<Value>, Error> {
 }
 
 /// `⌻Y` finds the roots of each polynomial in `Y`, and `C⌻X` evaluates each polynomial in `C` at `X`. An integer value wraps where the call wraps (`Number::wrapped`), as repeated `+` and `×` would wrap it.
-pub(crate) fn call(left: Option<&Value>, right: &Value) -> Result<Value, Error> {
-    let Some(left) = left else { return each(right, |p| p.roots()) };
+pub(crate) fn call(left: Option<&Value>, right: &Value, numeric: Numeric) -> Result<Value, Error> {
+    let Some(left) = left else { return each(right, numeric, |p| p.roots(numeric)) };
     if let Some(y) = evaluated(left, right)? { return Ok(y); }
     let (cells, agreement) = polynomial_cells(left, right.layout())?;
     let polynomials = parsed(&cells)?;
-    let settings = Numeric::for_values([left, right])?;
+    let settings = numeric.for_values([left, right])?;
     let mut results = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
         check()?;
@@ -205,14 +204,14 @@ pub(crate) fn call(left: Option<&Value>, right: &Value) -> Result<Value, Error> 
         else { right.prototype() };
         let missing;
         let polynomial = if let Some(j) = index { &polynomials[j] } else { missing = Polynomial::parse(&point.zeroed())?; &missing };
-        results.push(Value::number(polynomial.evaluate(&coordinates(&point)?)?.wrapped(settings)).unwrap());
+        results.push(Value::number(polynomial.evaluate(&coordinates(&point)?, settings)?.wrapped(settings)).unwrap());
     }
     if agreement.layout.shape().is_empty() { return Ok(results.remove(0)); }
-    agreement.layout.assemble(&results[..agreement.len], &results[0], crate::array::Widening::Items).described("polynomial result exceeds array limits")
+    crate::array::assemble_stored(&agreement.layout, &results[..agreement.len], &results[0], crate::array::Widening::Items, None, numeric).described("polynomial result exceeds array limits")
 }
 
 /// `⌻⁻¹Y`: the coefficients of each polynomial in `Y`, given by its multiplier and roots or by its terms.
-pub(crate) fn coefficients(right: &Value) -> Result<Value, Error> { each(right, |p| vector(p.coefficients()?)) }
+pub(crate) fn coefficients(right: &Value, numeric: Numeric) -> Result<Value, Error> { each(right, numeric, |p| vector(p.coefficients(numeric)?)) }
 
 /// Each cell as a polynomial, or the prototype's when there are no cells.
 fn parsed(cells: &Cells<'_>) -> Result<Vec<Polynomial>, Error> {
@@ -220,17 +219,17 @@ fn parsed(cells: &Cells<'_>) -> Result<Vec<Polynomial>, Error> {
         .collect()
 }
 /// `f` applied to each polynomial in `source`, with each result as a cell.
-fn each(source: &Value, f: impl Fn(&Polynomial) -> Result<Value, Error>) -> Result<Value, Error> {
+fn each(source: &Value, numeric: Numeric, f: impl Fn(&Polynomial) -> Result<Value, Error>) -> Result<Value, Error> {
     let cells = source.cells(source.shape().len().min(1)).described("invalid polynomial cells")?;
     let mut results = parsed(&cells)?.iter().map(f).collect::<Result<Vec<_>, _>>()?;
     let layout = cells.frame_layout();
     if layout.shape().is_empty() { return Ok(results.remove(0)); }
-    layout.assemble(&results[..cells.len()], &results[0], crate::array::Widening::Items).described("polynomial result exceeds array limits")
+    crate::array::assemble_stored(&layout, &results[..cells.len()], &results[0], crate::array::Widening::Items, None, numeric).described("polynomial result exceeds array limits")
 }
 
 /// The partial derivative of each polynomial in `c` with respect to each variable, as coefficients that `⌻` evaluates: a vector for a polynomial in one variable, and an exponent table for one in several. `∂` evaluates them at a point to differentiate `C⌻x`.
-pub(crate) fn partials(c: &Value) -> Result<Vec<Value>, Error> {
+pub(crate) fn partials(c: &Value, numeric: Numeric) -> Result<Vec<Value>, Error> {
     let cells = c.cells(c.shape().len().min(1)).described("invalid polynomial cells")?;
     let variables = parsed(&cells)?.first().map_or(1, Polynomial::variables);
-    (0..variables).map(|k| each(c, |p| p.partial(k, 1)?.value())).collect()
+    (0..variables).map(|k| each(c, numeric, |p| p.partial(k, 1, numeric)?.value(numeric))).collect()
 }

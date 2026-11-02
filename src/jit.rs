@@ -89,7 +89,11 @@ pub use rustymath::reduce::Reduce as Fold;
 
 /// One loop over `n` items: its inputs, its steps, the steps whose results it stores, each into an array of `n` items, and the steps whose results it folds.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Kernel { pub inputs: Vec<Input>, pub steps: Vec<Step>, pub stores: Vec<usize>, pub folds: Vec<(Fold, usize)> }
+pub struct Kernel { pub inputs: Vec<Input>, pub steps: Vec<Step>, pub stores: Vec<usize>, pub folds: Vec<(Fold, usize)>, pub iteration: Option<Iteration> }
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Iteration { pub carries: Vec<(usize, Value)>, pub exit: Exit, pub items: Vec<(usize, usize, usize)> }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Exit { Count { input: usize, limit: Option<usize> }, Converged(usize) }
 
 impl Kernel {
     pub(crate) fn input(&mut self, input: Input) -> Value {
@@ -103,8 +107,53 @@ impl Kernel {
         Value::Step(at)
     }
 
+    fn accepts_carries(&self, carries: &[(usize, Value)]) -> bool {
+        self.folds.is_empty() && carries.iter().all(|&(input, result)| {
+            self.inputs.get(input).is_some_and(|input| matches!(input, Input::Scalar(_) | Input::Array(_, _)))
+                && match result { Value::Input(at) => self.inputs.get(at).map(|input| input.ty()), Value::Step(at) => self.steps.get(at).map(|step| step.ty) }
+                    == Some(self.inputs[input].ty())
+        })
+    }
+    pub(crate) fn repeat(&mut self, carries: Vec<(usize, Value)>, count: Option<usize>, tolerance: Option<[Value; 2]>, items: Vec<usize>, reverse: bool) -> bool {
+        if (carries.is_empty() && items.is_empty()) || !self.accepts_carries(&carries) { return false; }
+        let exit = if let Some(input) = count {
+            if !matches!(self.inputs.get(input), Some(Input::Scalar(Ty::I64) | Input::Array(Ty::I64, _))) { return false; }
+            let limit = if reverse && matches!(self.inputs[input], Input::Array(..)) {
+                let Value::Input(slot) = self.input(Input::Scalar(Ty::I64)) else { unreachable!() }; Some(slot)
+            } else { None };
+            Exit::Count { input, limit }
+        } else {
+            if carries.is_empty() { return false; }
+            let Some(tolerance) = tolerance else { return false; };
+            let mut done = None;
+            for &(input, result) in &carries {
+                let ty = self.inputs[input].ty();
+                let tolerance = tolerance[usize::from(ty.bytes() > 4)];
+                let tolerance = if self.ty(tolerance) == ty { tolerance } else { self.step(Op::Convert, ty, tolerance, None) };
+                let value = {
+                    let ops = Recording { kernel: std::cell::RefCell::new(&mut *self), ty,
+                        variant: rustymath::facts::Variant::checked(ty.dtype()), tolerance: None, declined: std::cell::Cell::new(false) };
+                    let (old, new) = (encoded(Value::Input(input)), encoded(result));
+                    decoded(rustymath::recipe::equal::<f64, _>(&ops, old, new, |ops| rustymath::recipe::close(ops, encoded(tolerance), old, new)))
+                };
+                done = Some(match done { None => value, Some(old) => self.step(Op::And, Ty::Bool, old, Some(value)) });
+            }
+            let Value::Step(test) = done.unwrap() else { unreachable!() };
+            Exit::Converged(test)
+        };
+        let mut iterated = Vec::with_capacity(items.len());
+        for input in items {
+            if !matches!(self.inputs.get(input), Some(Input::Array(..))) { return false; }
+            let Value::Input(first) = self.input(Input::Scalar(Ty::I64)) else { unreachable!() };
+            let Value::Input(step) = self.input(Input::Scalar(Ty::I64)) else { unreachable!() };
+            iterated.push((input, first, step));
+        }
+        self.iteration = Some(Iteration { carries, exit, items: iterated });
+        true
+    }
     pub(crate) fn conversion(&mut self, conversion: rustymath::convert::Conversion, x: Value, checked: bool) -> Option<Value> {
         use rustymath::convert::ConversionKind;
+        if conversion.kind == ConversionKind::Keep { return None; }
         let from = self.ty(x);
         let to = Ty::of(conversion.output)?;
         let value = match conversion.kind {
@@ -135,6 +184,36 @@ impl Kernel {
         Some(match valid { Some((kind, valid)) => self.step(Op::Check { reporter: kind.reporter() as usize }, to, value, Some(valid)), None => value })
     }
 
+    pub(crate) fn position(&mut self, input: Value, size: usize, checked: bool) -> Value {
+        use rustymath::{recipe::Ops, tolerant::{Tolerance, Tolerant}};
+        let ty = self.ty(input);
+        let (signed, whole, nan) = if ty.float() {
+            let ops = Recording { kernel: std::cell::RefCell::new(&mut *self), ty,
+                variant: rustymath::facts::Variant::checked(ty.dtype()), tolerance: None, declined: std::cell::Cell::new(false) };
+            let tolerance = if checked { Tolerance::DEFAULT } else { Tolerance::EXACT };
+            let (rounded, whole) = tolerance.nearest_whole_in::<f64, _>(&ops, encoded(input));
+            (decoded(rounded), Some(decoded(whole)), Some(decoded(ops.not(ops.equal(encoded(input), encoded(input))))))
+        } else { (input, None, None) };
+        let signed = if self.ty(signed) == Ty::I64 { signed } else { self.step(Op::Convert, Ty::I64, signed, None) };
+        let (position, valid) = {
+            let ops = Recording { kernel: std::cell::RefCell::new(&mut *self), ty: Ty::I64,
+                variant: rustymath::facts::Variant::checked(DType::Integer(Width::I64)), tolerance: None, declined: std::cell::Cell::new(false) };
+            rustymath::structure::position_recipe::<f64, _>(&ops, encoded(signed), size as i64)
+        };
+        let (mut position, mut valid) = (decoded(position), decoded(valid));
+        if let (Some(whole), Some(nan)) = (whole, nan) {
+            if checked {
+                let whole_or_nan = self.step(Op::Or, Ty::Bool, whole, Some(nan));
+                position = self.step(Op::Check { reporter: rustymath::error::Kind::Domain.reporter() as usize }, Ty::I64, position, Some(whole_or_nan));
+            }
+            valid = self.step(Op::And, Ty::Bool, valid, Some(whole));
+            let missing = self.input(Input::Constant(Ty::I64, u64::MAX));
+            position = self.step(Op::Select(valid), Ty::I64, position, Some(missing));
+            valid = self.step(Op::Or, Ty::Bool, valid, Some(nan));
+        }
+        if checked { self.step(Op::Check { reporter: rustymath::error::Kind::Index.reporter() as usize }, Ty::I64, position, Some(valid)) }
+        else { position }
+    }
     pub(crate) fn formula(&mut self, object: &rustymath::operation::Kernel, ty: Ty, x: &[Value], test: bool, tolerance: Option<Value>) -> Option<Value> {
         let before = (self.inputs.len(), self.steps.len());
         let (result, predicate, validity, declined) = {
@@ -175,7 +254,7 @@ impl Recording<'_> {
         encoded(self.kernel.borrow_mut().step(op, ty, decoded(x), y.map(decoded)))
     }
     fn numeric(&self, op: Op, x: rustymath::facts::Slot, y: Option<rustymath::facts::Slot>) -> rustymath::facts::Slot { self.emit(op, self.ty, x, y) }
-    fn integer_ty(&self) -> Ty { if self.ty.bytes() <= 4 { Ty::I32 } else { Ty::I64 } }
+    fn integer_ty(&self) -> Ty { match self.ty { Ty::F32 | Ty::Bool => Ty::I32, Ty::F64 => Ty::I64, ty => ty } }
     fn declined(&self, x: rustymath::facts::Slot) -> rustymath::facts::Slot { self.declined.set(true); x }
     fn formula<K: rustymath::facts::Formula<1>>(&self, object: K, x: rustymath::facts::Slot) -> rustymath::facts::Slot {
         let object = rustymath::operation::Kernel::new(object, self.variant);
@@ -203,15 +282,15 @@ impl rustymath::recipe::Ops<f64> for Recording<'_> {
     fn integer(&self, x: i64) -> Self::I { encoded(self.kernel.borrow_mut().input(Input::Constant(self.integer_ty(), x as u64))) }
     fn integer_op(&self, op: rustymath::recipe::Integer, x: Self::I, y: Self::I) -> Self::I {
         use rustymath::recipe::Integer::*;
-        let op = match op { Add => Op::Add, Subtract => Op::Subtract, And => Op::And, Or => Op::Or, Xor => Op::Xor, ShiftLeft => Op::ShiftLeft, ShiftRight => Op::ShiftRight(false), SignedShiftRight => Op::ShiftRight(true) };
+        let op = match op { Add => Op::Add, Subtract => Op::Subtract, And => Op::And, Or => Op::Or, Xor => Op::Xor, ShiftLeft => Op::ShiftLeft, ShiftRight => Op::ShiftRight(false), SignedShiftRight => Op::ShiftRight(self.ty != Ty::U8) };
         self.emit(op, self.integer_ty(), x, Some(y))
     }
     fn integer_compare(&self, op: rustymath::recipe::Cmp, x: Self::I, y: Self::I) -> Self::B { self.compare(op, x, y) }
     fn integer_select(&self, m: Self::B, x: Self::I, y: Self::I) -> Self::I { self.emit(Op::Select(decoded(m)), self.integer_ty(), x, Some(y)) }
     fn to_integer(&self, x: Self::V) -> Self::I { self.emit(Op::Convert, self.integer_ty(), x, None) }
     fn from_integer(&self, x: Self::I) -> Self::V { self.numeric(Op::Convert, x, None) }
-    fn to_bits(&self, x: Self::V) -> Self::I { self.emit(Op::Bitcast, self.integer_ty(), x, None) }
-    fn from_bits(&self, x: Self::I) -> Self::V { self.numeric(Op::Bitcast, x, None) }
+    fn to_bits(&self, x: Self::V) -> Self::I { self.emit(if self.ty.float() { Op::Bitcast } else { Op::Convert }, self.integer_ty(), x, None) }
+    fn from_bits(&self, x: Self::I) -> Self::V { self.numeric(if self.ty.float() { Op::Bitcast } else { Op::Convert }, x, None) }
     fn constant(&self, x: Self::V) -> Option<f64> {
         let Value::Input(k) = decoded(x) else { return None };
         match self.kernel.borrow().inputs[k] {
@@ -350,7 +429,7 @@ impl Kernel {
             Op::Check { .. } => x == s.ty && y == Some(Ty::Bool),
             Op::Overflows(operation) => operation < 3 && !x.float() && x != Ty::Bool && same && s.ty == Ty::Bool,
             Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::MultiplyAdd(_) => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == s.ty,
-            Op::Divide | Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same,
+            Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same,
             _ => s.ty != Ty::Bool && x == s.ty && same
         };
         if fits { Ok(()) } else { Err(format!("step {k}: {:?} doesn't take {tys:?} for a {:?} result", s.op, s.ty)) }
@@ -361,6 +440,16 @@ impl Kernel {
         for k in 0..self.steps.len() { self.check_step(k)?; }
         if let Some(k) = self.stores.iter().chain(self.folds.iter().map(|f| &f.1)).find(|&&k| k >= self.steps.len()) {
             return Err(format!("a store or fold reads step {k}, which isn't in the kernel"));
+        }
+        if let Some(iteration) = &self.iteration {
+            if (iteration.carries.is_empty() && iteration.items.is_empty()) || !self.accepts_carries(&iteration.carries) { return Err("an iteration must return its same-typed carries".into()); }
+            if iteration.items.iter().any(|&(input, first, step)| !matches!(self.inputs.get(input), Some(Input::Array(..)))
+                || [first, step].iter().any(|&slot| self.inputs.get(slot) != Some(&Input::Scalar(Ty::I64)))) { return Err("an iterated input needs its start and stride".into()); }
+            match iteration.exit {
+                Exit::Count { input, limit } if matches!(self.inputs.get(input), Some(Input::Scalar(Ty::I64) | Input::Array(Ty::I64, _))) && limit.is_none_or(|slot| self.inputs.get(slot) == Some(&Input::Scalar(Ty::I64))) => (),
+                Exit::Converged(test) if self.steps.get(test).is_some_and(|step| step.ty == Ty::Bool) => (),
+                _ => return Err("an iteration needs a count or a convergence test".into()),
+            }
         }
         let lanes = 16 / self.narrowest() as usize;
         for &(fold, k) in &self.folds {
@@ -429,6 +518,7 @@ impl Kernel {
             block_end,
             exit,
         ] = [(); 15].map(|_| b.create_block());
+        let cancelled = b.create_block();
         b.append_block_params_for_function_params(entry);
         b.switch_to_block(entry);
         let [n, block, arrays, scalars, outs, totals] = b.block_params(entry).try_into().expect("six parameters");
@@ -574,17 +664,17 @@ impl Kernel {
         };
         looped(&mut b, group_head, group_body, groups, single_head, group * lanes, &mut |b, iv| {
             let now = current(b);
-            let results: Vec<_> = (0..group).map(|u| self.items(b, iv, u * lanes, false, &now, config)).collect();
+            let results: Vec<_> = (0..group).map(|u| self.items(b, iv, u * lanes, false, &now, config, cancelled)).collect();
             self.finish(b, &results, iv, lanes, &outs, &accs, &vector_totals);
         });
         looped(&mut b, single_head, single_body, singles, scalar_head, lanes, &mut |b, iv| {
             let now = current(b);
-            let results = [self.items(b, iv, 0, false, &now, config)];
+            let results = [self.items(b, iv, 0, false, &now, config, cancelled)];
             self.finish(b, &results, iv, lanes, &outs, &accs, &vector_totals);
         });
         looped(&mut b, scalar_head, scalar_body, stop, seg_head, 1, &mut |b, iv| {
             let now = current(b);
-            let results = [self.items(b, iv, 0, true, &now, config)];
+            let results = [self.items(b, iv, 0, true, &now, config, cancelled)];
             self.store(b, &results, iv, 1, true, &outs);
             for ((acc, &(_, k)), &total) in accs.iter().zip(&self.folds).zip(&scalar_totals) {
                 let item = b.ins().extractlane(results[0][k][0], 0);
@@ -626,26 +716,154 @@ impl Kernel {
 
         b.switch_to_block(exit);
         b.ins().return_(&[]);
+        b.switch_to_block(cancelled);
+        b.ins().return_(&[]);
         b.seal_all_blocks();
         b.finalize(config);
     }
 
+    fn input_items(&self, b: &mut FunctionBuilder, k: usize, i: Ir, skip: i64, single: bool, inputs: &[(Ir, Option<Ir>)]) -> Vec<Ir> {
+        let width = self.narrowest();
+        match self.inputs[k] {
+            Input::Scalar(ty) | Input::Constant(ty, _) => vec![inputs[k].0; (ty.bytes() / width) as usize],
+            Input::Index(ty) => indices(b, ty, i, skip, width),
+            Input::Array(ty, read) => load(b, ty, read.within(), inputs[k], i, skip, ty.bytes() / width, single),
+        }
+    }
+    fn items(&self, b: &mut FunctionBuilder, i: Ir, skip: i64, single: bool, inputs: &[(Ir, Option<Ir>)], config: TargetFrontendConfig, cancelled: cranelift_codegen::ir::Block) -> Vec<Vec<Ir>> {
+        let Some(iteration) = &self.iteration else { return self.step_items(b, i, skip, single, inputs, &[], config); };
+        let masked = match iteration.exit { Exit::Count { input, .. } => matches!(self.inputs[input], Input::Array(..)), Exit::Converged(_) => true };
+        let width = self.narrowest();
+        let initial: Vec<_> = (0..self.inputs.len()).map(|k| self.input_items(b, k, i, skip, single, inputs)).collect();
+        let mut carries: Vec<Option<Vec<Variable>>> = vec![None; self.inputs.len()];
+        for &(input, _) in &iteration.carries {
+            if carries[input].is_some() { continue; }
+            carries[input] = Some(initial[input].iter().map(|&value| {
+                let variable = b.declare_var(b.func.dfg.value_type(value)); b.def_var(variable, value); variable
+            }).collect());
+        }
+        let widths = self.widths();
+        let last: Vec<_> = self.stores.iter().copied().filter(|&result| !iteration.carries.iter().any(|&(_, value)| value == Value::Step(result)))
+            .map(|result| {
+                let ty = if self.steps[result].ty == Ty::Bool {
+                    Type::int((widths[result] * 8) as u16).unwrap().by((16 / widths[result]) as u32).unwrap()
+                } else { self.steps[result].ty.vector() };
+                let variables = (0..widths[result] / width).map(|_| {
+                    let variable = b.declare_var(ty); let zero = zeros(b, ty); b.def_var(variable, zero); variable
+                }).collect::<Vec<_>>();
+                (result, variables)
+            }).collect();
+        let counter = b.declare_var(types::I64);
+        let zero = b.ins().iconst(types::I64, 0); b.def_var(counter, zero);
+        let mask_type = Type::int((width * 8) as u16).unwrap().by((16 / width) as u32).unwrap();
+        let finished = b.declare_var(mask_type);
+        let none = zeros(b, mask_type); b.def_var(finished, none);
+        let [head, body, done] = [(); 3].map(|_| b.create_block());
+        b.ins().jump(head, &[]);
+        b.switch_to_block(head);
+        if let Exit::Count { input, limit } = iteration.exit && matches!(self.inputs[input], Input::Array(..)) {
+            let mut at = b.use_var(counter);
+            if let Some(limit) = limit {
+                let end = b.ins().extractlane(initial[limit][0], 0);
+                let end = b.ins().iadd_imm_s(end, -1);
+                at = b.ins().isub(end, at);
+            }
+            let live = limit.map(|_| b.ins().icmp_imm_s(IntCC::SignedGreaterThanOrEqual, at, 0));
+            let at = b.ins().splat(Ty::I64.vector(), at);
+            let at = vec![at; initial[input].len()];
+            let mut passed = compare(b, Cmp::Ge, Ty::I64, &at, &initial[input]);
+            if let Some(live) = live {
+                let ones = b.ins().iconst(types::I64, -1);
+                let ones = b.ins().splat(Ty::I64.vector(), ones);
+                for value in &mut passed { *value = b.ins().select(live, *value, ones); }
+            }
+            let passed = resize(b, passed, false, width);
+            b.def_var(finished, passed[0]);
+        }
+        let more = match iteration.exit {
+            Exit::Count { input, .. } if !matches!(self.inputs[input], Input::Array(..)) => {
+                let count = b.ins().extractlane(initial[input][0], 0);
+                let at = b.use_var(counter); b.ins().icmp(IntCC::UnsignedLessThan, at, count)
+            }
+            _ => {
+                let finished = b.use_var(finished);
+                if single { let first = b.ins().extractlane(finished, 0); b.ins().icmp_imm_s(IntCC::Equal, first, 0) }
+                else { let active = b.ins().bnot(finished); b.ins().vany_true(active) }
+            }
+        };
+        b.ins().brif(more, body, &[], done, &[]);
+        b.switch_to_block(body);
+        let poll = b.create_block();
+        let step = b.create_block();
+        let at = b.use_var(counter);
+        let interval = b.ins().band_imm_s(at, rustymath::BETWEEN_CHECKS as i64 - 1);
+        let due = b.ins().icmp_imm_s(IntCC::Equal, interval, 0);
+        b.ins().brif(due, poll, &[], step, &[]);
+        b.switch_to_block(poll);
+        let mut signature = cranelift_codegen::ir::Signature::new(config.default_call_conv);
+        signature.returns.push(cranelift_codegen::ir::AbiParam::new(types::I8));
+        let signature = b.func.import_signature(signature);
+        let function = b.ins().iconst(config.pointer_type(), poll_iteration as usize as i64);
+        let called = b.ins().call_indirect(signature, function, &[]);
+        let continuing = b.inst_results(called)[0];
+        b.ins().brif(continuing, step, &[], cancelled, &[]);
+        b.switch_to_block(step);
+        let mut bound: Vec<_> = initial.iter().enumerate().map(|(k, value)| Some(match &carries[k] {
+            Some(variables) => variables.iter().map(|&variable| b.use_var(variable)).collect(), None => value.clone(),
+        })).collect();
+        for &(input, first, step) in &iteration.items {
+            let at = b.use_var(counter);
+            let first = b.ins().extractlane(initial[first][0], 0);
+            let step = b.ins().extractlane(initial[step][0], 0);
+            let at = b.ins().imul(at, step);
+            let at = b.ins().iadd(first, at);
+            let ty = self.inputs[input].ty();
+            let bytes = b.ins().imul_imm_s(at, ty.bytes());
+            let base = b.ins().iadd(inputs[input].0, bytes);
+            bound[input] = Some(load(b, ty, Within::Forward, (base, None), i, skip, ty.bytes() / width, single));
+        }
+        let results = self.step_items(b, i, skip, single, inputs, &bound, config);
+        let finished_before = b.use_var(finished);
+        for &(input, result) in &iteration.carries {
+            let values = match result { Value::Input(input) => bound[input].as_ref().unwrap().clone(), Value::Step(result) => results[result].clone() };
+            let values = if self.inputs[input].ty() == Ty::Bool { resize(b, values, false, 1) } else { values };
+            let values = if masked { select(b, &[finished_before], bound[input].as_ref().unwrap(), &values) } else { values };
+            for (&variable, value) in carries[input].as_ref().unwrap().iter().zip(values) { b.def_var(variable, value); }
+        }
+        for (result, variables) in &last {
+            let values = if masked {
+                let previous: Vec<_> = variables.iter().map(|&variable| b.use_var(variable)).collect();
+                select(b, &[finished_before], &previous, &results[*result])
+            } else { results[*result].clone() };
+            for (&variable, value) in variables.iter().zip(values) { b.def_var(variable, value); }
+        }
+        if let Exit::Converged(test) = iteration.exit {
+            let passed = resize(b, results[test].clone(), false, width);
+            let finished_now = b.ins().bor(finished_before, passed[0]); b.def_var(finished, finished_now);
+        }
+        let at = b.use_var(counter); let next = b.ins().iadd_imm_s(at, 1); b.def_var(counter, next);
+        b.ins().jump(head, &[]);
+        b.switch_to_block(done);
+        let mut results = vec![Vec::new(); self.steps.len()];
+        for &(input, result) in &iteration.carries {
+            if let Value::Step(result) = result { results[result] = carries[input].as_ref().unwrap().iter().map(|&variable| b.use_var(variable)).collect(); }
+        }
+        for (result, variables) in last { results[result] = variables.iter().map(|&variable| b.use_var(variable)).collect(); }
+        results
+    }
     /// Each step's results for a group's items from item `i + skip`, as a list of vectors, each type taking as many vectors as its width needs, and each mask lying at its width from `widths`. Where `single` holds, the lists hold the one item `i + skip`, in the first lane of their first vector. `inputs` holds each array's pointer, with a strided array's stride in bytes, and each scalar's vector.
-    fn items(&self, b: &mut FunctionBuilder, i: Ir, skip: i64, single: bool, inputs: &[(Ir, Option<Ir>)], config: TargetFrontendConfig) -> Vec<Vec<Ir>> {
-        let (width, widths) = (self.narrowest(), self.widths());
+    fn step_items(&self, b: &mut FunctionBuilder, i: Ir, skip: i64, single: bool, inputs: &[(Ir, Option<Ir>)],
+        overrides: &[Option<Vec<Ir>>], config: TargetFrontendConfig) -> Vec<Vec<Ir>> {
+        let widths = self.widths();
         let mut results: Vec<Vec<Ir>> = Vec::with_capacity(self.steps.len());
         let mut loaded: Vec<Option<Vec<Ir>>> = vec![None; self.inputs.len()];
         for (s, step) in self.steps.iter().enumerate() {
             let mut read = |b: &mut FunctionBuilder, v: Value| -> Vec<Ir> {
                 match v {
                     Value::Step(k) => results[k].clone(),
-                    Value::Input(k) => match self.inputs[k] {
-                        Input::Scalar(t) | Input::Constant(t, _) => vec![inputs[k].0; (t.bytes() / width) as usize],
-                        Input::Index(t) => indices(b, t, i, skip, width),
-                        Input::Array(t, read) => {
-                            loaded[k].get_or_insert_with(|| load(b, t, read.within(), inputs[k], i, skip, t.bytes() / width, single)).clone()
-                        }
-                    },
+                    Value::Input(k) => overrides.get(k).and_then(Clone::clone).unwrap_or_else(|| {
+                        loaded[k].get_or_insert_with(|| self.input_items(b, k, i, skip, single, inputs)).clone()
+                    }),
                 }
             };
             let x = read(b, step.x);
@@ -662,6 +880,7 @@ impl Kernel {
                     let uniform = matches!(step.y, Some(Value::Input(k)) if matches!(self.inputs[k], Input::Scalar(_) | Input::Constant(..)));
                     shifted(b, op, &x, &y, uniform)
                 }
+                (Op::Divide, Some(y), _) if !step.ty.float() => x.iter().zip(&y).map(|(&x, &y)| divided(b, step.ty, x, y)).collect(),
                 (Op::Compare(c), Some(y), _) => compare(b, c, self.ty(step.x), &x, &y),
                 (Op::Overflows(operation), Some(y), _) => x.iter().zip(&y).map(|(&x, &y)| overflows(b, operation, self.ty(step.x), x, y)).collect(),
                 (Op::Select(_), Some(y), Some(m)) => select(b, &m, &x, &y),
@@ -888,8 +1107,45 @@ fn arith(b: &mut FunctionBuilder, op: Op, ty: Ty, x: Ir, y: Option<Ir>) -> Ir {
     }
 }
 
+fn divided(b: &mut FunctionBuilder, ty: Ty, x: Ir, y: Ir) -> Ir {
+    let machine = b.func.dfg.value_type(x);
+    if machine.is_vector() {
+        let mut result = zeros(b, machine);
+        for lane in 0..machine.lane_count() as u8 {
+            let (x, y) = (b.ins().extractlane(x, lane), b.ins().extractlane(y, lane));
+            let value = divided(b, ty, x, y);
+            result = b.ins().insertlane(result, value, lane);
+        }
+        return result;
+    }
+    let extend = |b: &mut FunctionBuilder, value| if machine == types::I64 { value }
+        else if ty == Ty::U8 { b.ins().uextend(types::I64, value) } else { b.ins().sextend(types::I64, value) };
+    let (x, y) = (extend(b, x), extend(b, y));
+    let zero = b.ins().icmp_imm(IntCC::Equal, y, 0);
+    let minimum = b.ins().icmp_imm(IntCC::Equal, x, i64::MIN);
+    let minus = b.ins().icmp_imm(IntCC::Equal, y, -1);
+    let overflow = b.ins().band(minimum, minus);
+    let invalid = b.ins().bor(zero, overflow);
+    let one = b.ins().iconst(types::I64, 1);
+    let divisor = b.ins().select(invalid, one, y);
+    let q = b.ins().sdiv(x, divisor);
+    let q = b.ins().select(overflow, x, q);
+    let fallback = b.ins().iconst(types::I64, 0);
+    let q = b.ins().select(zero, fallback, q);
+    if machine == types::I64 { q } else { b.ins().ireduce(machine, q) }
+}
+
 fn shifted(b: &mut FunctionBuilder, op: Op, x: &[Ir], y: &[Ir], uniform: bool) -> Vec<Ir> {
-    let shift = |b: &mut FunctionBuilder, x, y| match op { Op::ShiftLeft => b.ins().ishl(x, y), Op::ShiftRight(true) => b.ins().sshr(x, y), _ => b.ins().ushr(x, y) };
+    let shift = |b: &mut FunctionBuilder, x, y| {
+        let ty = b.func.dfg.value_type(x);
+        let bits = ty.lane_bits();
+        let valid = b.ins().icmp_imm(IntCC::UnsignedLessThan, y, bits as i64);
+        let value = match op { Op::ShiftLeft => b.ins().ishl(x, y), Op::ShiftRight(true) => b.ins().sshr(x, y), _ => b.ins().ushr(x, y) };
+        let fallback = if matches!(op, Op::ShiftRight(true)) { b.ins().sshr_imm(x, bits as i64 - 1) }
+            else if ty.is_vector() { zeros(b, ty) } else { b.ins().iconst(ty, 0) };
+        b.ins().select(valid, value, fallback)
+    };
+    if !b.func.dfg.value_type(x[0]).is_vector() { return x.iter().zip(y).map(|(&x, &y)| shift(b, x, y)).collect(); }
     if uniform { let count = b.ins().extractlane(y[0], 0); return x.iter().map(|&x| shift(b, x, count)).collect(); }
     x.iter().zip(y).map(|(&x, &y)| {
         let ty = b.func.dfg.value_type(x);
@@ -1104,6 +1360,7 @@ impl Compiled {
 
     /// Whether the kernel takes blocks of `block` items: any block, except that a kernel that counts Booleans takes at most `COUNTED` items.
     pub fn takes(&self, block: usize) -> bool { block <= self.most }
+    pub(crate) fn block_limit(&self) -> usize { self.most }
 }
 
 fn repaired(b: &mut FunctionBuilder, ty: Ty, value: Ir, input: Ir, mask: Ir, routine: usize, single: bool, config: TargetFrontendConfig) -> Ir {
@@ -1200,4 +1457,12 @@ fn overflows(b: &mut FunctionBuilder, operation: u8, ty: Ty, x: Ir, y: Ir) -> Ir
         flags = b.ins().insertlane(flags, flag, lane);
     }
     flags
+}
+
+extern "C" fn poll_iteration() -> u8 {
+    if rustymath::error::ErrorSlot::current().is_some_and(|slot| slot.pending()) { return 0; }
+    match rustymath::interrupt::check() {
+        Ok(()) => 1,
+        Err(error) => { rustymath::error::record(error); 0 }
+    }
 }

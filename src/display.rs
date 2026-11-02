@@ -1,5 +1,5 @@
-use crate::{Described, Error, Number, Value, keyed, settings, symbols::Notation};
-use rustymath::{buffer::FloatWidth, error::Kind};
+use crate::{Described, Error, Number, Value, keyed, number::Mark, settings, symbols::Notation};
+use rustymath::{buffer::{DType, FloatWidth}, error::Kind};
 use std::borrow::Cow;
 use unicode_width::UnicodeWidthStr;
 
@@ -65,11 +65,10 @@ impl Elide {
     pub fn unmarked(self, n: &Number) -> String { format!("{:#}", n.rounded(self.prec)) }
     /// The marker of a float of `width`, when markers show and the width isn't `plain`.
     pub fn width_marker(self, width: FloatWidth) -> Option<&'static str> {
-        (self.marks && Some(width) != self.plain).then(|| crate::number::Mark::Numbers(crate::number::Numbers::Float(width)).marker())
+        (self.marks && Some(width) != self.plain).then(|| Mark::Type { dtype: DType::Float(width), fixed: false }.marker())
     }
     /// The marker for a numeric dtype and its fixedness under these display settings.
-    pub fn kind_marker(self, kind: rustymath::buffer::DType, fixed: bool) -> Option<&'static str> {
-        use {crate::number::Mark, rustymath::buffer::DType};
+    pub fn kind_marker(self, kind: DType, fixed: bool) -> Option<&'static str> {
         if !self.marks { return None; }
         match kind {
             DType::Integer(w) => Some(Mark::integer(fixed.then_some(w)).marker()), DType::Float(w) => self.width_marker(w),

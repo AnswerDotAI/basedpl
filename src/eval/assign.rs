@@ -8,22 +8,22 @@ struct ArrayBinding { place: Place, value: Value }
 
 impl Session {
     /// Whether `nodes` is one name that can hold an array, or brackets of such names, as in `[a b]←`. `log` keeps what it reads about what names hold (`tree::Fact`).
-    pub(super) fn assignment_names(&self, nodes: &[Node], log: &mut Facts) -> bool {
-        let [node] = nodes else { return false };
-        match &node.kind {
+    pub(super) fn assignment_names(&self, nodes: &[Node], log: &mut Facts) -> Result<bool, Error> {
+        let [node] = nodes else { return Ok(false) };
+        Ok(match &node.kind {
             NodeKind::Name(name, _) => {
                 (self.bindings.current().is_some() && name.implicit().is_none())
-                    || !matches!(self.path_category(*name, &[], log), Category::Function | Category::Operator | Category::DyadicOperator)
+                    || !matches!(self.path_category(*name, &[], log)?, Category::Function | Category::Operator | Category::DyadicOperator)
             }
-            NodeKind::Group(inner) => self.assignment_names(inner, log),
+            NodeKind::Group(inner) => self.assignment_names(inner, log)?,
             _ => crate::syntax::plain_target(nodes),
-        }
+        })
     }
 
     /// The category of `name`'s binding, or of the field that `keys` reach from the array it holds, as its role gives it (`Session::path_role`, which logs the fact), read without evaluating anything. An array that holds a function, an unbound name and an absent `⍺` count as arrays.
-    pub(super) fn path_category(&self, name: Name, keys: &[Arc<str>], log: &mut Facts) -> Category {
-        let role = self.path_role(name, keys, log);
-        match role.0 { Category::Callable | Category::Absent => Category::Value, category => category }
+    pub(super) fn path_category(&self, name: Name, keys: &[Arc<str>], log: &mut Facts) -> Result<Category, Error> {
+        let role = self.path_role(name, keys, log)?;
+        Ok(match role.0 { Category::Callable | Category::Absent => Category::Value, category => category })
     }
 
     /// Inside a dfn, `⍵` is a local name bound to the argument. The other argument and operand names can't be assigned.
@@ -35,7 +35,7 @@ impl Session {
 
     fn array_binding(&self, name: Name, span: &Span) -> Result<ArrayBinding, Error> {
         if !self.assignable(name) { return Err(Error::new(ErrorKind::Syntax, "arguments and operands cannot be assigned here").at(span)); }
-        let Some((place, Binding::Value(value))) = self.bindings.lookup(name) else {
+        let Some((place, Binding::Value(value))) = self.bindings.lookup(name)? else {
             return Err(Error::new(ErrorKind::Value, "assignment target must be an existing array").at(span));
         };
         Ok(ArrayBinding { place, value })
@@ -49,7 +49,7 @@ impl Session {
         };
         if value.environment() > place.frame() { return Err(Error::domain("value would export a local closure").at(span)); }
         if place.frame() != self.bindings.current() {
-            if self.bindings.get(place).is_some_and(|old| Category::bound(&old) != Category::bound(&value)) {
+            if self.bindings.get(place)?.is_some_and(|old| Category::bound(&old) != Category::bound(&value)) {
                 return Err(Error::new(ErrorKind::Syntax, "an assignment can't change a name outside its function between an array, a function and an operator").at(span));
             }
         }
@@ -109,17 +109,17 @@ impl Session {
     }
 
     /// The name in a target that attaches a hand-written rule to the function it holds, with whether the rule is its derivative: `f∂` for the derivative, or `f⁻¹` for the inverse.
-    pub(super) fn rule_target(&self, nodes: &[Node], log: &mut Facts) -> Option<(Name, bool)> {
-        let [Node { kind: NodeKind::Name(name, _), .. }, Node { kind: NodeKind::Operator(op), .. }] = nodes else { return None };
-        let derivative = match op { OperatorKind::Derivative => true, OperatorKind::Inverse => false, _ => return None };
-        (self.path_category(*name, &[], log) == Category::Function).then_some((*name, derivative))
+    pub(super) fn rule_target(&self, nodes: &[Node], log: &mut Facts) -> Result<Option<(Name, bool)>, Error> {
+        let [Node { kind: NodeKind::Name(name, _), .. }, Node { kind: NodeKind::Operator(op), .. }] = nodes else { return Ok(None) };
+        let derivative = match op { OperatorKind::Derivative => true, OperatorKind::Inverse => false, _ => return Ok(None) };
+        Ok((self.path_category(*name, &[], log)? == Category::Function).then_some((*name, derivative)))
     }
 
     /// `f⁻¹←g` or `f∂←g`: the nearest binding of `f` gets `g` attached as its inverse or derivative.
     fn attach_rule(&self, name: Name, derivative: bool, value: &Binding, span: &Span) -> Result<(), Error> {
         if !self.assignable(name) { return Err(Error::new(ErrorKind::Syntax, "arguments and operands cannot be assigned here").at(span)); }
         let g = Function::from_value(value.clone(), span)?;
-        let (place, binding) = self.bindings.lookup(name).expect("rule_target checked the binding");
+        let (place, binding) = self.bindings.lookup(name)?.expect("rule_target checked the binding");
         let f = Function::from_value(binding, span)?;
         let f = if derivative { f.with_derivative(g) } else { f.with_inverse(g) };
         self.store_at(place, f.into(), span)
@@ -158,7 +158,7 @@ impl Session {
                 _ => return Err(key_error()),
             };
             let target = if colon + 1 == cell.len() { &cell[..colon] } else { &cell[colon + 1..] };
-            if !(matches!(target, [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(target, log)) {
+            if !(matches!(target, [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(target, log)?) {
                 return Err(Error::new(ErrorKind::Syntax, "a pattern assigns to a name or to brackets of names").at(&target[0].span));
             }
             Ok((Some(key), target))

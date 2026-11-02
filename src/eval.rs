@@ -1,8 +1,8 @@
 use crate::execution::check;
 use crate::{
-    At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value,
+    At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, ReadKind, Source, Span, Value,
     display::Elide, graph::Pending, number::{Mark, Numeric},
-    primitive::{Builtin, Exit, LoopResult, Operation, Order, Primitive, Superscript}, program::Origin, symbols::Notation,
+    primitive::{Builtin, Exit, LoopResult, Operation, Order, Primitive, Superscript}, program::{BindingContext, Origin}, symbols::Notation,
     syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind}, system::SystemFunction
 };
 use crate::{array::TreeRoot, name::Name};
@@ -46,7 +46,7 @@ impl FunctionOperand {
     pub(crate) fn value(value: Value, literal: bool) -> Self { Self::Value { value, literal } }
     pub(crate) fn literal(&self) -> bool { match self { Self::Value { literal, .. } | Self::Input { literal, .. } => *literal } }
     pub(crate) fn stored(&self) -> Option<&Value> { match self { Self::Value { value, .. } => Some(value), Self::Input { .. } => None } }
-    fn observed(&self, read: crate::ReadKind) -> Result<Self, Error> {
+    fn observed(&self, read: ReadKind) -> Result<Self, Error> {
         match self { Self::Value { value, literal } => Ok(Self::value(value.read(read)?, *literal)),
             Self::Input { .. } => Err(Error::domain("a callable template must be bound before observation")) }
     }
@@ -55,10 +55,10 @@ impl FunctionOperand {
         match (self.stored(), other.stored()) { (Some(x), Some(y)) => x.matches_within(y, numeric),
             _ => Err(Error::domain("a callable template must be bound before comparison")) }
     }
-    pub(crate) fn resolve<'a>(&'a self, origin: &'a crate::program::Origin<&'a [Value]>) -> Cow<'a, Value> {
-        match self { Self::Value { value, .. } => Cow::Borrowed(value), Self::Input { position, .. } => Function::capture_at(origin, position) }
+    pub(crate) fn resolve<'a>(&'a self, origin: &'a crate::program::Origin<&'a [Value]>) -> Result<Cow<'a, Value>, Error> {
+        match self { Self::Value { value, .. } => Ok(Cow::Borrowed(value)), Self::Input { position, .. } => Function::capture_at(origin, position) }
     }
-    pub(crate) fn resolve_in_call<'a>(&'a self, call: &'a crate::primitive::CallView<'_>, read: crate::ReadKind) -> Result<Cow<'a, Value>, Error> {
+    pub(crate) fn resolve_in_call<'a>(&'a self, call: &'a crate::primitive::CallView<'_>, read: ReadKind) -> Result<Cow<'a, Value>, Error> {
         match self { Self::Value { value, .. } => value.read_borrowed(read),
             Self::Input { position, .. } => Function::capture_value(call, position, read) }
     }
@@ -67,12 +67,12 @@ impl From<Value> for FunctionOperand { fn from(value: Value) -> Self { Self::val
 
 impl Function {
     /// The original argument roots, excluding functions, parameters and captures.
-    pub(crate) fn argument_roots(origin: &crate::program::Origin<&[Value]>) -> crate::error::Result<[Option<TreeRoot>; 2]> {
+    pub(crate) fn argument_roots<L: ?Sized>(origin: &crate::program::Origin<L>) -> crate::error::Result<[Option<TreeRoot>; 2]> {
         if matches!(origin.operation, Operation::Loop { .. }) {
-            let inputs = crate::program::LoopInputs::of(origin, origin.list.len())?;
+            let inputs = crate::program::LoopInputs::of(origin, origin.capture_start())?;
             return Ok([inputs.data_root, Some(inputs.carry_root)]);
         }
-        let positions = origin.call_view(&origin.list).explicit_argument_roots();
+        let positions = origin.operation.explicit_argument_roots(origin.explicit_roots as usize);
         let roots: Vec<_> = origin.trees.as_ref().map_or_else(
             || positions.clone().map(|index| TreeRoot { index, leaves: index..index + 1 }).collect(),
             |trees| trees.roots().skip(positions.start).take(positions.len()).collect());
@@ -82,7 +82,7 @@ impl Function {
             _ => Err(Error::domain("a function needs one or two arguments")),
         }
     }
-    pub(crate) fn argument_ranges(origin: &crate::program::Origin<&[Value]>) -> crate::error::Result<[Option<std::ops::Range<usize>>; 2]> {
+    pub(crate) fn argument_ranges<L: ?Sized>(origin: &crate::program::Origin<L>) -> crate::error::Result<[Option<std::ops::Range<usize>>; 2]> {
         Ok(Self::argument_roots(origin)?.map(|root| root.map(|root| root.leaves)))
     }
 
@@ -91,15 +91,15 @@ impl Function {
         let right = roots[1].as_ref().expect("a call has a right argument");
         let first = roots[0].as_ref().map_or(right.leaves.start, |left| left.leaves.start);
         let Some(trees) = &origin.trees else { return Ok(Cow::Borrowed(&origin.list[first..right.leaves.end])); };
-        Ok(Cow::Owned(roots.into_iter().flatten().map(|root| trees.at_root(&root, origin.list).into_owned()).collect()))
+        Ok(Cow::Owned(roots.into_iter().flatten().map(|root| trees.at_root(&root, origin.list).map(Cow::into_owned)).collect::<Result<Vec<_>, Error>>()?))
     }
 
     pub(crate) fn captures<'a>(origin: &crate::program::Origin<&'a [Value]>) -> &'a [Value] { &origin.list[origin.capture_start()..] }
-    pub(crate) fn capture_at<'a>(origin: &crate::program::Origin<&'a [Value]>, root: &TreeRoot) -> Cow<'a, Value> {
+    pub(crate) fn capture_at<'a>(origin: &crate::program::Origin<&'a [Value]>, root: &TreeRoot) -> Result<Cow<'a, Value>, Error> {
         let root = root.shifted(origin.capture_root_start(), origin.capture_start());
-        origin.trees.as_ref().map_or_else(|| Cow::Borrowed(&origin.list[root.leaves.start]), |trees| trees.at_root(&root, origin.list))
+        origin.trees.as_ref().map_or_else(|| Ok(Cow::Borrowed(&origin.list[root.leaves.start])), |trees| trees.at_root(&root, origin.list))
     }
-    pub(crate) fn capture_value<'a>(call: &'a crate::primitive::CallView<'_>, root: &TreeRoot, read: crate::ReadKind) -> Result<Cow<'a, Value>, Error> {
+    pub(crate) fn capture_value<'a>(call: &'a crate::primitive::CallView<'_>, root: &TreeRoot, read: ReadKind) -> Result<Cow<'a, Value>, Error> {
         let root = root.shifted(call.capture_root_start(), call.capture_start());
         match call.trees {
             None => call.value(root.leaves.start, read),
@@ -132,6 +132,37 @@ impl Function {
         let sources: Vec<_> = std::iter::once(None).chain(from.iter().copied()).collect();
         call_projection(parent, Operation::Loop { exit: Exit::Once, order: Order::Forward, body_result: LoopResult::Carry, batch_axes: 0 }, &roots, &sources)
     }
+    /// Binds existing caller roots without rebuilding and re-flattening their logical values.
+    pub(crate) fn bound_roots(&self, parent: &Origin<&[Value]>, roots: &[TreeRoot]) -> Result<(Origin<Vec<Value>>, Vec<Option<usize>>), Error> {
+        let active = session().bindings.active_origin(parent)?;
+        let inherited = active.as_ref().map(|origin| origin.reborrow());
+        let parent = inherited.as_ref().unwrap_or(parent);
+        let roots = roots.iter().map(|root| match &parent.trees {
+            Some(trees) => trees.roots().nth(root.index).ok_or_else(Error::planning),
+            None => Ok(TreeRoot { index: root.index, leaves: root.index..root.index + 1 }),
+        }).collect::<Result<Vec<_>, Error>>()?;
+        let function = Value::Function(self.clone());
+        let mut list = vec![function.clone()]; let mut sources = vec![None];
+        let mut trees = crate::array::Trees::leaves(1);
+        for root in &roots {
+            list.extend_from_slice(&parent.list[root.leaves.clone()]); sources.extend(root.leaves.clone().map(Some));
+            if let Some(original) = &parent.trees { trees.append_root(original, root); } else { trees.push_leaf(); }
+        }
+        let values = std::iter::once(&function).chain(roots.iter().flat_map(|root| parent.list[root.leaves.clone()].iter()));
+        project_origin(parent, Operation::Loop { exit: Exit::Once, order: Order::Forward, body_result: LoopResult::Carry, batch_axes: 0 },
+            list, parent.trees.is_some().then(|| Arc::new(trees)), 1 + roots.len() as u32, sources, values)
+    }
+    /// The same prepared body and positional substitution serve framed rules and control inlining.
+    pub(crate) fn framed_projection<'a>(&'a self, parent: &Origin<&[Value]>)
+        -> Result<Option<(usize, &'a [Option<bool>], Origin<Vec<Value>>, Vec<Option<usize>>)>, Error> {
+        let FunctionNode::Applied { op: Operator::Kind(OperatorKind::Framed { axes, atoms }), .. } = self.node() else { return Ok(None); };
+        let inner = self.operand(parent, 0)?;
+        let Value::Function(inner) = inner.as_ref() else { return Err(Error::planning()); };
+        let roots = Self::argument_roots(parent)?.into_iter().flatten().collect::<Vec<_>>();
+        let (origin, projection) = inner.bound_roots(parent, &roots)?;
+        if atoms.len() != origin.list.len() { return Err(Error::planning()); }
+        Ok(Some((*axes, atoms, origin, projection)))
+    }
     pub(crate) fn prototype_bound(&self, parent: &crate::program::Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<Value, Error> {
         session().prototype_mode(true, || { let origin = self.bound(parent, arguments, from)?; self.run(origin.reborrow()) })
     }
@@ -139,6 +170,37 @@ impl Function {
     pub(crate) fn call_bound(&self, parent: &crate::program::Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<Value, Error> {
         let origin = self.call_origin(parent, arguments, from)?;
         Operation::dispatch(origin.reborrow())?.assemble()
+    }
+    pub(crate) fn recorded(mut code: RecordedCode, context: BindingContext, mut captures: Vec<Value>, mut input: impl FnMut(usize) -> Result<Value, Error>) -> Result<Self, Error> {
+        let mut bindings = code.inputs.into_vec();
+        for (position, read) in code.program.input_reads() {
+            if bindings.iter().any(|binding| binding.target as usize == position) { continue; }
+            let source = RecordedSource::Operand(captures.len() as u32);
+            captures.push(input(position)?);
+            bindings.push(RecordedInput { source, target: position as u32, read });
+        }
+        code.inputs = bindings.into();
+        Ok(Self::of(FunctionNode::Recorded { code: Arc::new(code), context: Arc::new(context),
+            operands: captures.into_iter().map(FunctionOperand::from).collect() }, None))
+    }
+    fn run_recorded(&self, origin: Origin<&[Value]>) -> Result<Value, Error> {
+        let FunctionNode::Recorded { code, context, .. } = self.node() else { unreachable!() };
+        let arguments = Self::argument_ranges(&origin)?;
+        let first = arguments.iter().flatten().next().ok_or_else(Error::planning)?.start;
+        let end = arguments[1].as_ref().ok_or_else(Error::planning)?.end;
+        let arguments = &origin.list[first..end];
+        let resolve = |input| -> Result<Option<(ReadKind, Cow<'_, Value>)>, Error> {
+            let Some(binding) = code.inputs.iter().find(|binding| binding.target as usize == input) else { return Ok(None) };
+            let value = match binding.source {
+                RecordedSource::Argument(position) => Cow::Borrowed(arguments.get(position as usize).ok_or_else(Error::planning)?),
+                RecordedSource::Operand(position) => self.operand(&origin, position as usize)?,
+            };
+            Ok(Some((binding.read, value)))
+        };
+        let outputs = code.program.bound(context,
+            |input| resolve(input)?.and_then(|(read, value)| (read != ReadKind::Description).then(|| value.into_owned())).ok_or_else(Error::planning),
+            |input| { let (_, value) = resolve(input)?.ok_or_else(Error::planning)?; Ok(crate::program::Desc::of(&value).map(Cow::into_owned)) })?.values;
+        outputs.with_trees(code.trees.clone()).assemble()
     }
 }
 
@@ -155,20 +217,22 @@ pub(crate) struct FunctionData {
 
 impl Function {
     /// Appends a live call's captures in the one canonical order; absence is metadata, not a value.
-    pub(crate) fn captured(&self, bindings: &mut CaptureBindings, emit: &mut dyn FnMut(Capture) -> TreeRoot) -> Result<(), Error> {
+    pub(crate) fn captured(&self, bindings: &mut CaptureBindings, emit: &mut dyn FnMut(Capture) -> Result<TreeRoot, Error>) -> Result<(), Error> {
         if bindings.scope(self).is_some() { return Ok(()); }
         let index = bindings.scopes.len();
         bindings.scopes.push(CaptureScope { source: self.address(), parent: self.0.environment.parent, module: self.0.environment.module,
             provenance: Some(ScopeSource::Input(bindings.order.len() as u32)), names: Box::new([]), operands: Box::new([]) });
         bindings.order.push(index as u32);
         bindings.implicit_generator |= self.implicit_generator(); bindings.acts |= self.acts(); bindings.draws |= self.draws();
+        bindings.needs_binding |= self.needs_binding();
         let reads: &[Name] = match self.node() { FunctionNode::Defined(d) => d.reads(), FunctionNode::LateBound(name) => std::slice::from_ref(name), _ => &[] };
         let mut names = Vec::with_capacity(reads.len());
         for &name in reads {
             let (place, position) = match session().capture_binding(self.0.environment.parent, self.0.environment.module, name)? {
                 Some((place, value)) => {
+                    let position = emit(Capture { name: Some(name), place: Some(place), value: value.clone(), literal: false })?;
                     Self::capture_functions(&value, bindings, emit)?;
-                    (Some(place), Some(emit(Capture { name: Some(name), place: Some(place), value, literal: false })))
+                    (Some(place), Some(position))
                 }
                 None => (None, None),
             };
@@ -177,11 +241,12 @@ impl Function {
         if let FunctionNode::Applied { op: Operator::Closure(f), .. } = self.node() { f.captured(bindings, emit)?; }
         let mut operands = Vec::with_capacity(self.operands().len());
         for (i, operand) in self.operands().iter().enumerate() {
-            let FunctionOperand::Value { value, .. } = operand else { panic!("a template's captures are already bound by its origin"); };
+            let FunctionOperand::Value { value, .. } = operand else { return Err(Error::planning()); };
             let kind = self.node().operand_kind(i);
+            let position = (kind == OperandKind::Opaque || kind == OperandKind::Data && !matches!(value, Value::Function(_)))
+                .then(|| emit(Capture { name: None, place: None, value: value.clone(), literal: operand.literal() })).transpose()?;
+            operands.push(CapturedOperand { position, description: self.node().operand_description(i) });
             if kind != OperandKind::Opaque { Self::capture_functions(value, bindings, emit)?; }
-            operands.push((kind == OperandKind::Opaque || kind == OperandKind::Data && !matches!(value, Value::Function(_)))
-                .then(|| emit(Capture { name: None, place: None, value: value.clone(), literal: operand.literal() })));
         }
         for rule in self.rules().into_iter().flat_map(|rules| rules.inverse.iter().chain(&rules.derivative)) { rule.captured(bindings, emit)?; }
         bindings.scopes[index].names = names.into();
@@ -189,8 +254,22 @@ impl Function {
         Ok(())
     }
 
-    pub(crate) fn capture_functions(value: &Value, bindings: &mut CaptureBindings, emit: &mut dyn FnMut(Capture) -> TreeRoot) -> Result<(), Error> {
+    pub(crate) fn capture_functions(value: &Value, bindings: &mut CaptureBindings, emit: &mut dyn FnMut(Capture) -> Result<TreeRoot, Error>) -> Result<(), Error> {
         visit_functions(value, &mut |function| function.captured(bindings, emit))
+    }
+
+    fn needs_binding(&self) -> bool {
+        self.0.environment.closed.is_some() || matches!(self.node(), FunctionNode::Recorded { .. })
+            || self.operands().iter().any(|operand| matches!(operand, FunctionOperand::Input { .. }))
+    }
+
+    /// A cached metadata callback must be executable without any live binding or data.
+    pub(crate) fn data_free_template(&self) -> Option<Self> {
+        let mut bindings = CaptureBindings::default();
+        self.captured(&mut bindings, &mut |_| Err(Error::planning())).ok()?;
+        if bindings.needs_binding || bindings.implicit_generator || bindings.acts || bindings.draws
+            || bindings.scopes.iter().any(|scope| !scope.names.is_empty()) { return None; }
+        self.template(&CaptureBindings::default()).ok()
     }
 
     /// Closure conversion uses the already-snapshotted scope, never live name lookup.
@@ -210,7 +289,7 @@ impl Function {
         active.push(self.address());
         let scope = bindings.scope(self);
         let operands = self.operands().iter().enumerate().map(|(i, operand)| {
-            if let Some(position) = scope.and_then(|(_, scope)| scope.operands[i].clone()) { return Ok(FunctionOperand::Input { position, literal: operand.literal() }); }
+            if let Some(position) = scope.and_then(|(_, scope)| scope.operands[i].position.clone()) { return Ok(FunctionOperand::Input { position, literal: operand.literal() }); }
             Ok(match operand {
                 FunctionOperand::Value { value: Value::Function(f), .. } => FunctionOperand::value(Value::Function(f.template_in(bindings, active)?), operand.literal()),
                 operand => operand.clone(),
@@ -225,33 +304,36 @@ impl Function {
         active.pop();
         let node = match self.node().with_operands(operands, operator) {
             FunctionNode::System { function, made } => FunctionNode::System { function: function.native_tag(), made },
+            FunctionNode::Recorded { code, context, operands } => FunctionNode::Recorded { code, context: Arc::new(context.stripped()), operands },
             node => node,
         };
         Ok(Self(Arc::new(FunctionData { node, environment, rules })))
     }
 
     /// Rebuilds only a function value actually produced by the current run.
-    pub(crate) fn rebuilt(&self, values: &[Value], trees: Option<&crate::array::Trees>, bindings: &CaptureBindings) -> Result<Self, Error> {
-        let value = |position: &TreeRoot| trees.map_or_else(|| values[position.leaves.start].clone(), |trees| trees.at_root(position, values).into_owned());
+    pub(crate) fn rebuilt(&self, values: &[Value], trees: Option<&crate::array::Trees>, bindings: &CaptureBindings, construction: &BindingContext) -> Result<Self, Error> {
+        let value = |position: &TreeRoot| -> Result<Value, Error> { trees.map_or_else(|| Ok(values[position.leaves.start].clone()), |trees| trees.at_root(position, values).map(Cow::into_owned)) };
         let scope = bindings.scope(self).map(|(_, scope)| scope);
         let operands = self.operands().iter().enumerate().map(|(i, operand)| {
-            if let Some(position) = scope.and_then(|scope| scope.operands[i].as_ref()) { return Ok(FunctionOperand::value(value(position), operand.literal())); }
+            if let Some(position) = scope.and_then(|scope| scope.operands[i].position.as_ref()) { return Ok(FunctionOperand::value(value(position)?, operand.literal())); }
             Ok(match operand {
-                FunctionOperand::Input { position, .. } => FunctionOperand::value(value(position), operand.literal()),
+                FunctionOperand::Input { position, .. } => FunctionOperand::value(value(position)?, operand.literal()),
                 FunctionOperand::Value { value: Value::Function(f), .. } if self.node().operand_kind(i) != OperandKind::Opaque =>
-                    FunctionOperand::value(Value::Function(f.rebuilt(values, trees, bindings)?), operand.literal()),
+                    FunctionOperand::value(Value::Function(f.rebuilt(values, trees, bindings, construction)?), operand.literal()),
                 operand => operand.clone(),
             })
         }).collect::<Result<Box<[_]>, Error>>()?;
-        let operator = match self.node() { FunctionNode::Applied { op: Operator::Closure(f), .. } => Some(Operator::Closure(f.rebuilt(values, trees, bindings)?)), _ => None };
-        let rules = self.rules().map(|rules| Ok::<_, Error>(Rules { inverse: rules.inverse.as_ref().map(|f| f.rebuilt(values, trees, bindings)).transpose()?,
-            derivative: rules.derivative.as_ref().map(|f| f.rebuilt(values, trees, bindings)).transpose()? })).transpose()?;
+        let operator = match self.node() { FunctionNode::Applied { op: Operator::Closure(f), .. } => Some(Operator::Closure(f.rebuilt(values, trees, bindings, construction)?)), _ => None };
+        let rules = self.rules().map(|rules| Ok::<_, Error>(Rules { inverse: rules.inverse.as_ref().map(|f| f.rebuilt(values, trees, bindings, construction)).transpose()?,
+            derivative: rules.derivative.as_ref().map(|f| f.rebuilt(values, trees, bindings, construction)).transpose()? })).transpose()?;
         let environment = scope.map_or_else(|| self.0.environment.clone(), |scope| Environment { parent: scope.parent, module: scope.module, closed: None });
         let node = match self.node() {
             FunctionNode::System { function, .. } if function.native_opaque() => {
                 let data = operands.first().and_then(FunctionOperand::stored).ok_or_else(Error::planning)?;
                 FunctionNode::System { function: function.rebuild_native(data)?, made: None }
             }
+            FunctionNode::Recorded { code, .. } => FunctionNode::Recorded { code: code.clone(),
+                context: Arc::new(construction.clone()), operands },
             node => node.with_operands(operands, operator),
         };
         Ok(Self(Arc::new(FunctionData { node, environment, rules })))
@@ -268,6 +350,8 @@ impl Function {
             (N::Primitive(a), N::Primitive(b)) => a == b,
             (N::System { function: a, .. }, N::System { function: b, .. }) => if structure { a.native_tag() == b.native_tag() } else { a == b },
             (N::Defined(a), N::Defined(b)) => Arc::ptr_eq(a, b), (N::LateBound(a), N::LateBound(b)) => a == b,
+            (N::Recorded { code: a, context: ac, .. }, N::Recorded { code: b, context: bc, .. }) =>
+                Arc::ptr_eq(a, b) && (structure || ac == bc),
             (N::Applied { op: a, .. }, N::Applied { op: b, .. }) => match (a, b) {
                 (Operator::Kind(a), Operator::Kind(b)) => a == b,
                 (Operator::Closure(a), Operator::Closure(b)) => a.equal_by(b, structure, values)?, _ => false,
@@ -301,6 +385,7 @@ impl Function {
         std::mem::discriminant(self.node()).hash(state);
         match self.node() {
             FunctionNode::Primitive(p) => p.hash(state), FunctionNode::System { function, .. } => function.name.hash(state),
+            FunctionNode::Recorded { code, .. } => (Arc::as_ptr(code) as usize).hash(state),
             FunctionNode::Defined(d) => (Arc::as_ptr(d) as usize).hash(state), FunctionNode::LateBound(name) => name.hash(state),
             FunctionNode::Applied { op: Operator::Kind(kind), .. } => kind.hash(state),
             FunctionNode::Applied { op: Operator::Closure(f), .. } => f.structure_hash(state), _ => {}
@@ -318,7 +403,7 @@ impl Function {
         for rule in self.rules().into_iter().flat_map(|rules| rules.inverse.iter().chain(&rules.derivative)) { rule.structure_hash(state); }
     }
 
-    pub(crate) fn observed(&self, read: crate::ReadKind) -> Result<Self, Error> {
+    pub(crate) fn observed(&self, read: ReadKind) -> Result<Self, Error> {
         let operands = self.node().operands().iter().map(|operand| operand.observed(read)).collect::<Result<Box<[_]>, _>>()?;
         let operator = match self.node() { FunctionNode::Applied { op: Operator::Closure(f), .. } => Some(Operator::Closure(f.observed(read)?)), _ => None };
         let rules = self.rules().map(|rules| Ok::<_, Error>(Rules { inverse: rules.inverse.as_ref().map(|f| f.observed(read)).transpose()?,
@@ -431,12 +516,25 @@ impl Argument for Value {
 /// The error for a selection target that does something other than select from its array, such as assigning the selection.
 const INVALID_SELECTION: &str = "invalid selective-assignment expression";
 
+/// A data-free body; varying data and metadata use the call's ordinary argument/capture slots.
+#[derive(Clone)]
+pub(crate) struct RecordedCode {
+    pub(crate) program: Arc<crate::program::Program>,
+    pub(crate) inputs: Box<[RecordedInput]>,
+    pub(crate) trees: Option<Arc<crate::array::Trees>>,
+}
+/// One current source may supply data at one program position and metadata at another.
+#[derive(Clone)]
+pub(crate) struct RecordedInput { pub(crate) source: RecordedSource, pub(crate) target: u32, pub(crate) read: ReadKind }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RecordedSource { Argument(u32), Operand(u32) }
 /// The same node represents a real function and a data-free template.
 #[derive(Clone)]
 pub(crate) enum FunctionNode {
     Primitive(Primitive),
     System { function: SystemFunction, made: Option<FunctionOperand> },
     Defined(Arc<Definition>),
+    Recorded { code: Arc<RecordedCode>, context: Arc<BindingContext>, operands: Box<[FunctionOperand]> },
     LateBound(Name),
     Applied { op: Operator, operands: Box<[FunctionOperand]> },
     Train(Box<[FunctionOperand]>),
@@ -456,7 +554,10 @@ pub(crate) struct Environment {
 
 /// Positional capture metadata. Runtime locations are rebound from each current call.
 #[derive(Clone, Default, PartialEq, Eq, Hash)]
-pub(crate) struct CaptureBindings { pub(crate) scopes: Vec<CaptureScope>, pub(crate) order: Vec<u32>, pub(crate) implicit_generator: bool, pub(crate) acts: bool, pub(crate) draws: bool }
+pub(crate) struct CaptureBindings {
+    pub(crate) scopes: Vec<CaptureScope>, pub(crate) order: Vec<u32>,
+    pub(crate) implicit_generator: bool, pub(crate) acts: bool, pub(crate) draws: bool, needs_binding: bool,
+}
 
 #[derive(Clone, Default, PartialEq, Eq, Hash)]
 pub(crate) struct CaptureScope {
@@ -464,7 +565,7 @@ pub(crate) struct CaptureScope {
     pub(crate) parent: Option<usize>,
     pub(crate) module: usize,
     pub(crate) names: Box<[CapturedName]>,
-    pub(crate) operands: Box<[Option<TreeRoot>]>,
+    pub(crate) operands: Box<[CapturedOperand]>,
     pub(crate) provenance: Option<ScopeSource>,
 }
 
@@ -474,7 +575,24 @@ pub(crate) enum ScopeSource { Input(u32), Made { context: u32, aliases: Box<[Opt
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct CapturedName { pub(crate) name: Name, pub(crate) position: Option<TreeRoot>, pub(crate) place: Option<Place> }
 
+#[derive(Clone, Default, PartialEq, Eq, Hash)]
+pub(crate) struct CapturedOperand { pub(crate) position: Option<TreeRoot>, pub(crate) description: bool }
+
 impl CaptureBindings {
+    /// Metadata-only operand captures in this snapshot; another data use of the slot wins.
+    pub(crate) fn description_inputs(&self, first: usize, mut visit: impl FnMut(usize)) {
+        let data = |position| self.order.iter().any(|&index| {
+            let scope = &self.scopes[index as usize];
+            scope.names.iter().filter_map(|name| name.position.as_ref()).any(|root| root.leaves.contains(&position))
+                || scope.operands.iter().filter(|operand| !operand.description).filter_map(|operand| operand.position.as_ref())
+                    .any(|root| root.leaves.contains(&position))
+        });
+        for &index in &self.order {
+            for root in self.scopes[index as usize].operands.iter().filter(|operand| operand.description).filter_map(|operand| operand.position.as_ref()) {
+                for position in root.leaves.clone() { if !data(position) { visit(first + position); } }
+            }
+        }
+    }
     pub(crate) fn empty() -> Arc<Self> {
         static EMPTY: std::sync::LazyLock<Arc<CaptureBindings>> = std::sync::LazyLock::new(|| Arc::new(CaptureBindings::default()));
         EMPTY.clone()
@@ -485,7 +603,7 @@ impl CaptureBindings {
         for &index in &self.order {
             let scope = &mut result.scopes[index as usize];
             for name in &mut scope.names { if let Some(old) = name.position.as_ref() { name.position = Some(position(old)?); } }
-            for operand in &mut scope.operands { if let Some(old) = operand.as_ref() { *operand = Some(position(old)?); } }
+            for operand in &mut scope.operands { if let Some(old) = operand.position.as_ref() { operand.position = Some(position(old)?); } }
         }
         Some(result)
     }
@@ -543,21 +661,22 @@ impl CaptureBindings {
                 None if scope.names.is_empty() => {}
                 None => return None,
             }
-            if scope.names.iter().filter_map(|name| name.position.as_ref()).chain(scope.operands.iter().flatten())
+            if scope.names.iter().filter_map(|name| name.position.as_ref()).chain(scope.operands.iter().filter_map(|operand| operand.position.as_ref()))
                 .any(|position| position.leaves.end > capture_leaf_count) { return None; }
         }
         Some(result)
     }
 
     pub(crate) fn structure_eq(&self, other: &Self) -> bool {
-        self.acts == other.acts && self.draws == other.draws && self.implicit_generator == other.implicit_generator && self.order.len() == other.order.len() && self.order.iter().zip(&other.order).all(|(&a, &b)| {
+        self.acts == other.acts && self.draws == other.draws && self.implicit_generator == other.implicit_generator && self.needs_binding == other.needs_binding
+            && self.order.len() == other.order.len() && self.order.iter().zip(&other.order).all(|(&a, &b)| {
             let (a, b) = (&self.scopes[a as usize], &other.scopes[b as usize]);
             a.provenance == b.provenance && a.operands == b.operands && a.names.len() == b.names.len() && a.names.iter().zip(&b.names).all(|(a, b)| (a.name, &a.position) == (b.name, &b.position))
         })
     }
     pub(crate) fn structure_hash<H: Hasher>(&self, state: &mut H) {
         use std::hash::Hash;
-        self.order.len().hash(state); self.implicit_generator.hash(state); self.acts.hash(state); self.draws.hash(state);
+        self.order.len().hash(state); self.implicit_generator.hash(state); self.acts.hash(state); self.draws.hash(state); self.needs_binding.hash(state);
         for &index in &self.order {
             let scope = &self.scopes[index as usize];
             scope.operands.hash(state); scope.provenance.hash(state);
@@ -566,11 +685,11 @@ impl CaptureBindings {
     }
 
     /// Appends only these callables' captured leaves to an origin under construction.
-    pub(crate) fn project(&self, values: &[Value], parent: &crate::program::Origin<&[Value]>,
+    pub(crate) fn project<'v>(&self, values: impl IntoIterator<Item = &'v Value>, parent: &crate::program::Origin<&[Value]>,
         list: &mut Vec<Value>, from: &mut Vec<Option<usize>>) -> Result<(Arc<Self>, Option<Arc<crate::array::Trees>>, u64), Error> {
         let start = list.len();
         let mut projection = CaptureProjection { source: self, parent, list, from, start,
-            bindings: Self { scopes: vec![CaptureScope::default(); self.scopes.len()], order: Vec::new(), implicit_generator: false, acts: false, draws: false },
+            bindings: Self { scopes: vec![CaptureScope::default(); self.scopes.len()], order: Vec::new(), ..Self::default() },
             trees: crate::array::Trees::leaves(0), has_trees: false, positions: HashMap::new(), literals: 0 };
         for value in values { projection.value_functions(value)?; }
         let trees = projection.has_trees.then(|| Arc::new(projection.trees));
@@ -593,29 +712,29 @@ struct CaptureProjection<'a, 'v> {
 }
 
 impl CaptureProjection<'_, '_> {
-    fn root(&mut self, root: &TreeRoot) -> TreeRoot {
-        if let Some(position) = self.positions.get(root) { return position.clone(); }
+    fn root(&mut self, root: &TreeRoot) -> Result<TreeRoot, Error> {
+        if let Some(position) = self.positions.get(root) { return Ok(position.clone()); }
         let source = root.shifted(self.parent.capture_root_start(), self.parent.capture_start());
         let first = self.list.len() - self.start;
-        let index = self.trees.roots().count();
+        let index = self.trees.root_count();
         if let Some(trees) = &self.parent.trees {
             self.trees.append_root(trees, &source); self.has_trees = true;
             self.list.extend_from_slice(&self.parent.list[source.leaves.clone()]);
-        } else { self.trees.push(&self.parent.list[source.leaves.start], self.list); }
+        } else { self.trees.push_leaf(); self.list.push(self.parent.list[source.leaves.start].clone()); }
         self.from.extend(source.leaves.map(Some));
         let position = TreeRoot { index, leaves: first..self.list.len() - self.start };
         self.positions.insert(root.clone(), position.clone());
-        position
+        Ok(position)
     }
-    fn fresh_root(&mut self, value: &Value, literal: bool) -> TreeRoot {
+    fn fresh_root(&mut self, value: &Value, literal: bool) -> Result<TreeRoot, Error> {
         let first = self.list.len() - self.start;
-        let index = self.trees.roots().count();
-        self.has_trees |= value.holds_mixed();
-        self.trees.push(value, self.list);
+        let index = self.trees.root_count();
+        let tree = crate::array::Tree::of(value, self.list)?;
+        self.has_trees |= !matches!(tree, crate::array::Tree::Leaf); self.trees.push_tree(tree);
         let end = self.list.len() - self.start;
         if literal { for leaf in first..end.min(64) { self.literals |= 1 << leaf; } }
         self.from.resize(self.list.len(), None);
-        TreeRoot { index, leaves: first..end }
+        Ok(TreeRoot { index, leaves: first..end })
     }
     fn root_functions(&mut self, root: &TreeRoot) -> Result<(), Error> {
         let values = self.parent.list;
@@ -635,18 +754,24 @@ impl CaptureProjection<'_, '_> {
         if self.bindings.order.contains(&index) { return Ok(()); }
         self.bindings.order.push(index);
         self.bindings.implicit_generator |= function.implicit_generator(); self.bindings.acts |= function.acts(); self.bindings.draws |= function.draws();
+        self.bindings.needs_binding |= function.needs_binding();
         let mut projected = existing.map_or_else(|| CaptureScope { source: function.address(), parent: function.0.environment.parent,
-            module: function.0.environment.module, provenance: None, names: Box::new([]), operands: vec![None; function.operands().len()].into() }, |(_, scope)| scope.clone());
+            module: function.0.environment.module, provenance: None, names: Box::new([]), operands: vec![CapturedOperand::default(); function.operands().len()].into() }, |(_, scope)| scope.clone());
         if existing.is_some() {
             for name in &mut projected.names {
-                if let Some(position) = name.position.as_ref() { self.root_functions(position)?; name.position = Some(self.root(position)); }
+                if let Some(position) = name.position.as_ref() {
+                    let projected = self.root(position)?; self.root_functions(position)?; name.position = Some(projected);
+                }
             }
         } else {
             let reads: &[Name] = match function.node() { FunctionNode::Defined(d) => d.reads(), FunctionNode::LateBound(name) => std::slice::from_ref(name), _ => &[] };
             let mut names = Vec::with_capacity(reads.len());
             for &name in reads {
                 let entry = match session().capture_binding(projected.parent, projected.module, name)? {
-                    Some((place, value)) => { self.value_functions(&value)?; CapturedName { name, position: Some(self.fresh_root(&value, false)), place: Some(place) } }
+                    Some((place, value)) => {
+                        let position = self.fresh_root(&value, false)?; self.value_functions(&value)?;
+                        CapturedName { name, position: Some(position), place: Some(place) }
+                    }
                     None => CapturedName { name, position: None, place: None },
                 };
                 names.push(entry);
@@ -666,14 +791,15 @@ impl CaptureProjection<'_, '_> {
         if let FunctionNode::Applied { op: Operator::Closure(function), .. } = function.node() { self.function(function)?; }
         for (i, operand) in function.operands().iter().enumerate() {
             let kind = function.node().operand_kind(i);
-            if let Some(position) = existing.and_then(|(_, scope)| scope.operands[i].as_ref()) {
+            projected.operands[i].description = function.node().operand_description(i);
+            if let Some(position) = existing.and_then(|(_, scope)| scope.operands[i].position.as_ref()) {
+                projected.operands[i].position = Some(self.root(position)?);
                 if kind != OperandKind::Opaque { self.root_functions(position)?; }
-                projected.operands[i] = Some(self.root(position));
             } else if let FunctionOperand::Value { value, .. } = operand {
-                if kind != OperandKind::Opaque { self.value_functions(value)?; }
                 if existing.is_none() && (kind == OperandKind::Opaque || kind == OperandKind::Data && !matches!(value, Value::Function(_))) {
-                    projected.operands[i] = Some(self.fresh_root(value, operand.literal()));
+                    projected.operands[i].position = Some(self.fresh_root(value, operand.literal())?);
                 }
+                if kind != OperandKind::Opaque { self.value_functions(value)?; }
             }
         }
         for rule in function.rules().into_iter().flat_map(|rules| rules.inverse.iter().chain(&rules.derivative)) { self.function(rule)?; }
@@ -688,18 +814,18 @@ pub enum Operator { Kind(OperatorKind), Closure(Function) }
 #[derive(Clone, Debug)]
 pub enum OperatorValue { Operator(Operator), Bound { op: Operator, right: FunctionOperand } }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum JvpResult { Joint, Capture, Linearized }
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum OperatorKind {
     Reduce, ReduceFirst, Scan, ScanFirst, Each, Commute, Inverse, Outer, Key, Derivative, Optimize, Bitwise,
     Mark(Mark), Under, Atop, Over, Rank, Axis, Stencil, Dot, Power, Before, After, Valences, Agenda,
     Field(Name), Index,
     Framed { axes: usize, atoms: Box<[Option<bool>]> },
-    JvpStep { packing: Box<[bool]> },
-    VjpStep { direction: Direction },
+    JvpStep { packing: Box<[bool]>, result: JvpResult },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Direction { Forward, Backward }
 
 pub(crate) struct OperatorInfo {
     pub(crate) call: fn(&Function, crate::program::Origin<&[Value]>) -> crate::error::Result<Value>,
@@ -747,20 +873,31 @@ impl OperatorValue {
 
 impl FunctionNode {
     fn operands(&self) -> &[FunctionOperand] {
-        match self { Self::Applied { operands, .. } | Self::Train(operands) => operands,
+        match self { Self::Applied { operands, .. } | Self::Recorded { operands, .. } | Self::Train(operands) => operands,
             Self::Array(value) => std::slice::from_ref(value), Self::System { made, .. } => made.as_slice(), _ => &[] }
     }
     fn operand_kind(&self, position: usize) -> OperandKind {
         match self { Self::Applied { op: Operator::Kind(kind), operands } => (kind.info().operands)(kind, position, &operands[position]),
             Self::System { function, .. } if function.native_opaque() => OperandKind::Opaque,
-            Self::Applied { op: Operator::Closure(_), .. } | Self::Train(_) | Self::Array(_) | Self::System { .. } => OperandKind::Data,
+            Self::Applied { op: Operator::Closure(_), .. } | Self::Train(_) | Self::Array(_) | Self::System { .. } | Self::Recorded { .. } => OperandKind::Data,
             _ => OperandKind::Structure }
+    }
+    fn operand_description(&self, position: usize) -> bool {
+        let Self::Recorded { code, .. } = self else { return false };
+        let mut used = false;
+        for input in &code.inputs {
+            if input.source != RecordedSource::Operand(position as u32) { continue; }
+            if input.read != ReadKind::Description { return false; }
+            used = true;
+        }
+        used
     }
     fn with_operands(&self, operands: Box<[FunctionOperand]>, operator: Option<Operator>) -> Self {
         match self {
             Self::Applied { op, .. } => Self::Applied { op: operator.unwrap_or_else(|| op.clone()), operands },
             Self::Train(_) => Self::Train(operands), Self::Array(_) => Self::Array(operands.into_vec().pop().unwrap()),
             Self::System { function, .. } => Self::System { function: function.clone(), made: operands.into_vec().pop() },
+            Self::Recorded { code, context, .. } => Self::Recorded { code: code.clone(), context: context.clone(), operands },
             node => node.clone(),
         }
     }
@@ -796,8 +933,8 @@ impl Function {
         match self.node() { FunctionNode::Defined(d) => Some(d), FunctionNode::Applied { op: Operator::Closure(f), .. } => f.definition(), _ => None }
     }
     pub(crate) fn system_function(&self) -> Option<&SystemFunction> { match self.node() { FunctionNode::System { function, .. } => Some(function), _ => None } }
-    fn operand_slot(&self, bindings: &CaptureBindings, position: usize) -> Option<TreeRoot> {
-        bindings.scope(self).and_then(|(_, scope)| scope.operands.get(position).cloned().flatten())
+    pub(crate) fn operand_slot(&self, bindings: &CaptureBindings, position: usize) -> Option<TreeRoot> {
+        bindings.scope(self).and_then(|(_, scope)| scope.operands.get(position).and_then(|operand| operand.position.clone()))
     }
     pub(crate) fn made_source<'a>(&'a self, bindings: &CaptureBindings) -> Option<Cow<'a, FunctionOperand>> {
         let FunctionNode::System { function, made } = self.node() else { return None; };
@@ -817,8 +954,8 @@ impl Function {
                     Some(Operation::Fold { primitive: f.dyadic_primitive()?, first: matches!(kind, OperatorKind::ReduceFirst | OperatorKind::ScanFirst),
                         scan: matches!(kind, OperatorKind::Scan | OperatorKind::ScanFirst), pairing: Pairing::Axes })
                 }
-                (OperatorKind::Dot, [FunctionOperand::Value { value: Value::Function(f), .. }, FunctionOperand::Value { value: Value::Function(g), .. }]) => {
-                    Some(Operation::Product { fold: f.dyadic_primitive()?, map: g.dyadic_primitive()?, contracted: 1, pairing: Pairing::Matrices { frame: 0 } })
+                (OperatorKind::Dot, [FunctionOperand::Value { value: Value::Function(_), .. }, FunctionOperand::Value { value: Value::Function(_), .. }]) => {
+                    Some(Operation::Product { contracted: 1, pairing: Pairing::Matrices { frame: 0 } })
                 }
                 _ => None,
             },
@@ -846,7 +983,7 @@ impl Function {
     pub(crate) fn primitive(p: Primitive) -> Self { Self::of(FunctionNode::Primitive(p), None) }
     pub(crate) fn system(function: SystemFunction) -> Self { Self::of(FunctionNode::System { function, made: None }, None) }
     pub(crate) fn made(function: SystemFunction, made: Value) -> Self { Self::of(FunctionNode::System { function, made: Some(FunctionOperand::from(made)) }, None) }
-    fn from_array(value: Value, span: &Span) -> Result<Self, Error> { Self::new(FunctionNode::Array(FunctionOperand::from(value)), span) }
+    pub(crate) fn array(value: Value) -> Self { Self::of(FunctionNode::Array(FunctionOperand::from(value)), None) }
     fn constant(value: Value, _: &Span) -> Result<Self, Error> { Operator::Kind(OperatorKind::Commute).derive(value, None) }
     pub(crate) fn commuted(&self, _: &Span) -> Result<Self, Error> { Operator::Kind(OperatorKind::Commute).derive(Value::Function(self.clone()), None) }
     fn as_constant(&self) -> Option<&Value> {
@@ -866,7 +1003,7 @@ impl Function {
         if let Some(inverse) = self.rules().and_then(|rules| rules.inverse.clone()) { return Ok(inverse); }
         Operator::Kind(OperatorKind::Inverse).derive(Value::Function(self.clone()), None)
     }
-    pub(crate) fn operand<'a>(&'a self, origin: &'a crate::program::Origin<&'a [Value]>, position: usize) -> Cow<'a, Value> {
+    pub(crate) fn operand<'a>(&'a self, origin: &'a crate::program::Origin<&'a [Value]>, position: usize) -> Result<Cow<'a, Value>, Error> {
         if let Some(slot) = self.operand_slot(&origin.bindings, position) { return Self::capture_at(origin, &slot); }
         self.node().operands()[position].resolve(origin)
     }
@@ -875,9 +1012,12 @@ impl Function {
         self.call(left.as_ref().map(Argument::value), right.value(), span)
     }
     fn call_shape<'a>(&self, arguments: &'a [Value]) -> (Operation, Cow<'a, [Value]>) {
-        let operation = self.operation().unwrap_or(Operation::Loop { exit: Exit::Once, order: Order::Forward, body_result: LoopResult::Carry, batch_axes: 0 });
-        let values = if operation.functions() == 0 { Cow::Borrowed(arguments) }
-            else { Cow::Owned(std::iter::once(Value::Function(self.clone())).chain(arguments.iter().cloned()).collect()) };
+        let operation = self.operation().filter(|operation| !matches!(operation, Operation::Product { .. }) || arguments.len() == 2)
+            .unwrap_or(Operation::Loop { exit: Exit::Once, order: Order::Forward, body_result: LoopResult::Carry, batch_axes: 0 });
+        let values = if matches!(operation, Operation::Product { .. }) {
+            Cow::Owned(self.operands().iter().map(|operand| operand.stored().expect("identified product function").clone()).chain(arguments.iter().cloned()).collect())
+        } else if operation.functions() == 0 { Cow::Borrowed(arguments) }
+        else { Cow::Owned(std::iter::once(Value::Function(self.clone())).chain(arguments.iter().cloned()).collect()) };
         (operation, values)
     }
     pub(crate) fn origin(&self, arguments: &[Value], literals: u64) -> Result<crate::program::Origin<Vec<Value>>, Error> {
@@ -903,6 +1043,7 @@ impl Function {
             FunctionNode::Train(_) => operators::train_call(self, origin),
             FunctionNode::Array(_) => operators::function_array(self, origin),
             FunctionNode::LateBound(_) => session().call_named(self, origin),
+            FunctionNode::Recorded { .. } => self.run_recorded(origin),
             FunctionNode::Primitive(_) | FunctionNode::System { .. } => {
                 let args = Self::body_arguments(&origin)?;
                 let ranges = Self::argument_ranges(&origin)?;
@@ -932,7 +1073,8 @@ impl Function {
         }
     }
     pub(crate) fn draws(&self) -> bool {
-        self.implicit_generator() || matches!(self.node(), FunctionNode::System { function, .. } if function.call.draws())
+        self.implicit_generator() || match self.node() { FunctionNode::System { function, .. } => function.call.draws(),
+            FunctionNode::Recorded { code, .. } => code.program.draws(), _ => false }
     }
     pub(crate) fn acts(&self) -> bool {
         self.acting(&mut rustymath::hashing::HashSet::default())
@@ -942,6 +1084,7 @@ impl Function {
         match self.node() {
             FunctionNode::Primitive(Primitive::Execute) => true,
             FunctionNode::System { function, .. } => function.acts(),
+            FunctionNode::Recorded { code, .. } => code.program.acts(),
             FunctionNode::Defined(d) => d.acts(),
             FunctionNode::Applied { op: Operator::Closure(f), .. } if f.acting(seen) => true,
             _ => self.operands().iter().any(|operand| matches!(operand, FunctionOperand::Value { value: Value::Function(f), .. } if f.acting(seen))),
@@ -957,6 +1100,7 @@ impl Function {
         match self.node() {
             FunctionNode::Primitive(p) => el.notation.glyph(p.glyph()).into(),
             FunctionNode::System { function, .. } => system_name(function.name, el.notation),
+            FunctionNode::Recorded { .. } => "<recorded>".into(),
             FunctionNode::Defined(d) => d.span.text().into(), FunctionNode::LateBound(name) => name.text().into(),
             FunctionNode::Array(value) => text(value, false, budget),
             FunctionNode::Applied { op, operands } => {
@@ -1003,7 +1147,7 @@ impl Function {
     pub fn build(name: &str, operands: Vec<Value>) -> Result<Self, Error> {
         if operands.is_empty() { return Self::builtin(name).ok_or_else(|| Error::domain("unknown function")); }
         if name == "train" { return Self::train_operands(operands.into_iter().map(FunctionOperand::from).collect(), &Span::whole(Source::new("<train>", ""))); }
-        if name == "fn" && operands.len() == 1 { return Self::from_array(operands.into_iter().next().unwrap(), &Span::whole(Source::new("<function array>", ""))); }
+        if name == "fn" && operands.len() == 1 { return Ok(Self::array(operands.into_iter().next().unwrap())); }
         let kind = OperatorKind::all().find(|kind| kind.info().python == name).ok_or_else(|| Error::domain("unknown operator"))?;
         let mut operands = operands.into_iter(); Operator::Kind(kind).derive(operands.next().ok_or_else(|| Error::domain("missing operator operand"))?, operands.next())
     }
@@ -1012,7 +1156,9 @@ impl Function {
 fn system_name(name: &str, notation: Notation) -> String { name.strip_prefix('•').map_or_else(|| name.into(), |name| format!("{}{name}", notation.glyph("•"))) }
 
 pub(super) fn operation_call(operation: Operation, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    let args: Vec<_> = left.into_iter().chain([right]).cloned().collect(); operation.call(&args, 0).map_err(|error| error.at(span))
+    let args: Vec<_> = left.into_iter().chain([right]).cloned().collect();
+    let mut origin = operation.origin(&args, 0)?; origin.site = Some(span.clone());
+    Operation::dispatch(origin.reborrow())?.assemble().map_err(|error| error.at(span))
 }
 #[derive(Clone, Debug)]
 pub(crate) enum Binding {
@@ -1028,12 +1174,12 @@ impl Binding {
     fn class(&self) -> i64 {
         match self { Self::Value(_) => SUBJECT_CLASS, Self::Function(_) => FUNCTION_CLASS, Self::Operator(_) => OPERATOR_CLASS, _ => 0 }
     }
-    fn inspection(&self, session: &Session) -> Option<crate::Inspection> {
-        Some(match self {
-            Self::Function(_) => Function::from_value(self.clone(), &Span::whole(Source::new("<inspect>", ""))).ok()?.inspect(session),
+    fn inspection(&self, session: &Session) -> Result<Option<crate::Inspection>, Error> {
+        Ok(Some(match self {
+            Self::Function(_) => Function::from_value(self.clone(), &Span::whole(Source::new("<inspect>", "")))?.inspect(session),
             Self::Operator(op) => crate::Inspection::new("operator", op.bpl()),
-            Self::Value(value) => crate::Inspection::new("array", session.show(value).ok()?), _ => return None,
-        })
+            Self::Value(value) => crate::Inspection::new("array", session.show(value)?), _ => return Ok(None),
+        }))
     }
     fn from_element(element: Value) -> Self {
         match element { Value::Function(function) => function.into(), Value::Operator(operator) => Self::Operator((*operator).clone()), value => Self::Value(value) }
@@ -1059,7 +1205,7 @@ impl Function {
         match binding {
             Binding::Function(FunctionBinding::Input(function)) | Binding::Value(Value::Function(function)) => Ok(function),
             Binding::Function(FunctionBinding::Rebuild { template, dependencies }) => dependencies.rebuild(&template).map_err(|error| error.at(span)),
-            Binding::Value(value) if value.holds_functions() => Self::from_array(value, span),
+            Binding::Value(value) if value.holds_functions() => Ok(Self::array(value)),
             _ => Err(Error::new(ErrorKind::Syntax, "call requires a function expression").at(span)),
         }
     }
@@ -1078,7 +1224,7 @@ impl Bound {
     fn new(value: Binding) -> Self { Self { value, shy: false, expression: None } }
     pub(super) fn from_outputs(outputs: crate::program::Outputs<Value>, span: &Span) -> Result<Self, Error> {
         let shy = outputs.shy;
-        let value = if outputs.as_ref().is_empty() { Binding::NoResult } else { Binding::from_element(outputs.assemble().at(span)?) };
+        let value = if !outputs.has_result() { Binding::NoResult } else { Binding::from_element(outputs.assemble().at(span)?) };
         Ok(Self { value, shy, expression: None })
     }
     #[inline]
@@ -1207,10 +1353,7 @@ fn call_projection(parent: &Origin<&[Value]>, operation: Operation, args: &[Valu
     let inherited = active.as_ref().map(|origin| origin.reborrow());
     let parent = inherited.as_ref().unwrap_or(parent);
     assert_eq!(args.len(), from.len());
-    let functions = operation.functions();
-    let (trees, mut list) = if functions == 0 { (None, args.to_vec()) } else {
-        match crate::array::flatten(args) { Some((trees, leaves)) => (Some(trees), leaves), None => (None, args.to_vec()) }
-    };
+    let (trees, list) = match crate::array::flatten(args)? { Some((trees, leaves)) => (Some(trees), leaves), None => (None, args.to_vec()) };
     let explicit = list.len();
     let mut sources = vec![None; explicit];
     if let Some(trees) = &trees {
@@ -1218,6 +1361,12 @@ fn call_projection(parent: &Origin<&[Value]>, operation: Operation, args: &[Valu
             for (offset, position) in range.enumerate() { sources[position] = source.map(|start| start + offset); }
         }
     } else { sources.copy_from_slice(from); }
+    project_origin(parent, operation, list, trees, args.len() as u32, sources, args.iter())
+}
+pub(crate) fn project_origin<'v>(parent: &Origin<&[Value]>, operation: Operation, mut list: Vec<Value>, trees: Option<Arc<crate::array::Trees>>,
+    explicit_roots: u32, mut sources: Vec<Option<usize>>, values: impl IntoIterator<Item = &'v Value>) -> Result<(Origin<Vec<Value>>, Vec<Option<usize>>), Error> {
+    let explicit = list.len();
+    let mut functions = values.into_iter().filter(|value| value.holds_functions()).peekable();
     for setting in operation.settings() {
         let old = parent.operation.settings().iter().position(|s| s == setting)
             .ok_or_else(|| Error::domain("a delegated operation is missing its captured numeric setting"))?;
@@ -1225,8 +1374,8 @@ fn call_projection(parent: &Origin<&[Value]>, operation: Operation, args: &[Valu
         list.push(parent.list[at].clone()); sources.push(Some(at));
     }
     let capture_start = list.len();
-    let (bindings, captured_trees, capture_literals) = if !args.iter().any(Value::holds_functions) { (CaptureBindings::empty(), None, 0) } else {
-        parent.bindings.project(args, parent, &mut list, &mut sources)?
+    let (bindings, captured_trees, capture_literals) = if functions.peek().is_none() { (CaptureBindings::empty(), None, 0) } else {
+        parent.bindings.project(functions, parent, &mut list, &mut sources)?
     };
     let result_trees = match (trees, captured_trees) {
         (None, None) => None,
@@ -1235,8 +1384,13 @@ fn call_projection(parent: &Origin<&[Value]>, operation: Operation, args: &[Valu
             .concat(&captures.as_deref().cloned().unwrap_or_else(|| crate::array::Trees::leaves(list.len() - capture_start))))),
     };
     let mut context = parent.with_list(()); context.bindings = bindings;
-    let mut origin = context.rebuilt(operation, list, &sources, explicit as u32, args.len() as u32, result_trees)?;
-    origin.literals |= capture_literals.checked_shl(capture_start as u32).unwrap_or(0);
+    let mut draft = context.with_list(list);
+    draft.operation = operation; draft.explicit = explicit as u32; draft.explicit_roots = explicit_roots;
+    draft.trees = result_trees; draft.roles = crate::primitive::Roles::default();
+    draft.literals = capture_literals.checked_shl(capture_start as u32).unwrap_or(0);
+    let draft = draft.capture_implicit(Some(parent), |at, source| sources.insert(at, source))?;
+    let mut origin = context.rebuilt(draft.operation, draft.list, &sources, draft.explicit, draft.explicit_roots, draft.trees)?;
+    origin.literals |= draft.literals;
     Ok((origin, sources))
 }
 
@@ -1269,15 +1423,27 @@ pub(crate) fn visit_functions<E>(value: &Value, visit: &mut dyn FnMut(&Function)
 }
 
 
-pub(crate) fn map_roots(origin: &crate::program::Origin<&[Value]>, mut replace: impl FnMut(&TreeRoot) -> Result<Option<(Value, Option<Vec<Option<usize>>>)>, Error>) -> Result<crate::program::Origin<Vec<Value>>, Error> {
+pub(crate) struct RootReplacement {
+    pub tree: crate::array::Tree,
+    pub leaves: Vec<Value>,
+    pub from: Option<Vec<Option<usize>>>,
+}
+impl RootReplacement {
+    pub(crate) fn value(value: &Value, from: Option<Vec<Option<usize>>>) -> Result<Self, Error> {
+        let mut leaves = Vec::new();
+        let tree = crate::array::Tree::of(value, &mut leaves)?;
+        Ok(Self { tree, leaves, from })
+    }
+}
+pub(crate) fn map_roots(origin: &crate::program::Origin<&[Value]>, mut replace: impl FnMut(&TreeRoot) -> Result<Option<RootReplacement>, Error>) -> Result<crate::program::Origin<Vec<Value>>, Error> {
     let roots: Vec<_> = origin.trees.as_ref().map_or_else(
         || (0..origin.list.len()).map(|index| TreeRoot { index, leaves: index..index + 1 }).collect(), |trees| trees.roots().collect());
     let (mut values, mut trees, mut sources, mut mapped) = (Vec::new(), crate::array::Trees::leaves(0), Vec::new(), Vec::with_capacity(roots.len()));
     let mut has_trees = origin.trees.is_some();
     for root in roots {
         let first = values.len();
-        if let Some((value, from)) = replace(&root)? {
-            has_trees |= value.holds_mixed(); trees.push(&value, &mut values);
+        if let Some(RootReplacement { tree, leaves, from }) = replace(&root)? {
+            has_trees |= !matches!(tree, crate::array::Tree::Leaf); trees.push_tree(tree); values.extend(leaves);
             if let Some(from) = from { assert_eq!(values.len() - first, from.len()); sources.extend(from); }
             else { sources.extend(std::iter::repeat_n(None, values.len() - first)); }
         } else {

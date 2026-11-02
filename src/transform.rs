@@ -1,24 +1,30 @@
 //! Nested Derivative/Batched levels. Dispatch invokes rules; Value::read owns observation.
 
-use crate::{array::Carried, error::Result, program::{Origin, Outputs}, session, Value};
+use crate::{array::{Carried, Layout}, error::Result, primitive::{Operation, ReadOp, ViewAxis}, program::{Origin, Outputs}, session, Value};
 use std::{cell::{Cell, RefCell}, sync::Arc};
 
 #[derive(Default)]
 pub(crate) struct Levels { stack: RefCell<Vec<Level>>, last: Cell<usize> }
 
 #[derive(Clone)]
-pub(crate) struct Level { pub(crate) id: usize, pub(crate) kind: LevelKind, depth: usize }
+pub(crate) struct Level { pub(crate) id: usize, pub(crate) kind: LevelKind, depth: usize, handling: bool }
 
+pub(crate) struct FrameSource { references: Box<[Value]>, axes: Box<[ViewAxis]> }
 #[derive(Clone)]
 pub(crate) enum LevelKind {
     Derivative,
-    Batched { frame: crate::array::Layout },
+    Batched { frame: Layout, source: Arc<FrameSource> },
 }
 
+impl LevelKind {
+    pub(crate) fn batched(frame: Layout, references: Box<[Value]>, axes: Box<[ViewAxis]>) -> Self {
+        Self::Batched { frame, source: Arc::new(FrameSource { references, axes }) }
+    }
+}
 impl Levels {
     pub(crate) fn begin(&self, kind: LevelKind) -> Level {
         self.last.set(self.last.get() + 1);
-        let level = Level { id: self.last.get(), kind, depth: session().frame_depth() };
+        let level = Level { id: self.last.get(), kind, depth: session().frame_depth(), handling: false };
         self.stack.borrow_mut().push(level.clone());
         level
     }
@@ -42,10 +48,16 @@ impl Levels {
     }
 
     pub(crate) fn find(&self, id: usize) -> Option<Level> { self.stack.borrow().iter().rev().find(|level| level.id == id).cloned() }
-
-    pub(crate) fn innermost_batched(&self) -> Option<Level> {
-        self.stack.borrow().iter().rev().find(|level| matches!(&level.kind, LevelKind::Batched { .. })).cloned()
+    fn set_handling(&self, id: usize, handling: bool) -> bool {
+        self.stack.borrow_mut().iter_mut().find(|level| level.id == id)
+            .is_some_and(|level| std::mem::replace(&mut level.handling, handling))
     }
+
+    fn batched(&self, handling: bool) -> Option<Level> {
+        self.stack.borrow().iter().rev().find(|level| level.handling == handling && matches!(&level.kind, LevelKind::Batched { .. })).cloned()
+    }
+    pub(crate) fn innermost_batched(&self) -> Option<Level> { self.batched(false) }
+    pub(crate) fn current_batch_rule(&self) -> Option<Level> { self.batched(true) }
 }
 
 impl Level {
@@ -53,12 +65,21 @@ impl Level {
     pub(crate) fn end(self) { session().levels.end(self.id); }
     pub(crate) fn find(id: usize) -> Option<Self> { session().levels.find(id) }
     pub(crate) fn innermost_batched() -> Option<Self> { session().levels.innermost_batched() }
+    pub(crate) fn current_batch_rule() -> Option<Self> { session().levels.current_batch_rule() }
+
+    pub(crate) fn frame_reference(&self) -> Result<Value> {
+        let LevelKind::Batched { source, .. } = &self.kind else { return Err(crate::Error::planning()); };
+        frame_reference(&source.references, &source.axes)
+    }
 
     pub(crate) fn rule(&self, origin: Origin<&[Value]>) -> Result<Outputs<Value>> {
-        match &self.kind {
+        let previous = session().levels.set_handling(self.id, true);
+        let result = match &self.kind {
             LevelKind::Derivative => crate::derivative::rule(self, origin),
             LevelKind::Batched { .. } => crate::batch::rule(self, origin),
-        }
+        };
+        session().levels.set_handling(self.id, previous);
+        result
     }
 }
 
@@ -72,6 +93,11 @@ impl Drop for Scope {
     fn drop(&mut self) { session().levels.end(self.level.id); }
 }
 
+/// A frame from actual runtime sources; all references are description-only inputs.
+pub(crate) fn frame_reference(references: &[Value], axes: &[ViewAxis]) -> Result<Value> {
+    let arguments = std::iter::once(Value::integer(0)).chain(references.iter().cloned()).collect::<Vec<_>>();
+    Operation::Read(ReadOp::Axes { axes: axes.into(), destinations: Box::new([]) }).call(&arguments, 1)
+}
 pub(crate) fn carried(level: usize, carried: Carried) -> Value { Value::Carried { level, carried: Arc::new(carried) } }
 
 pub(crate) fn at_level(value: &Value, id: usize) -> Option<&Carried> {

@@ -1,12 +1,9 @@
 use crate::execution::check;
 use crate::session;
-use crate::{
-    Described, Error, ErrorKind, Function, Span, Value, program::Outputs, array::generated_len, number::Numeric, primitive::{
-        Primitive, Row, numeric
-    }
-};
-use rustymath::{buffer::{DType, FloatWidth, View}, error::Kind, layout::FRESH};
-use std::borrow::Cow;
+use crate::{Described, Error, ErrorKind, Function, Span, Value, ReadKind, program::{Desc, Description, Origin, Outputs, Step},
+    array::generated_len, number::Numeric, eval::OperatorKind, primitive::{Act, CallView, Operation, Primitive, Roles, Row, numeric}};
+use rustymath::{agreement::{Mapping, ReadPlan}, buffer::{DType, FloatWidth, View}, error::Kind, facts::Variant, layout::FRESH, operation::Kernel};
+use std::{borrow::Cow, sync::Arc};
 
 #[derive(Clone, Copy)]
 pub(crate) struct HostCall<'a> {
@@ -58,7 +55,7 @@ pub(crate) struct SystemFunction {
 
 /// How a system function runs on a batched run's cells (`batch::system`): `Each` once for each cell; `Elements` once on all the cells' items, for a function whose monadic form converts each item on its own, as `•ucs` converts characters and code points; `Stacked` by its kernel for a whole stack of matrices, whose results are the cells' records, as `•decompose`'s is (`primitive::stacked_decompositions`).
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Cells { Each, Elements, Stacked(fn(&Value, &Value, &Span) -> Option<Result<Value, Error>>) }
+pub(crate) enum Cells { Each, Elements, Stacked(fn(&Value, &Value, &Span, Numeric) -> Option<Result<Value, Error>>) }
 
 /// Whether and how a call of a system function acts (target part 17), its 1 home: never; as an effect that a recording keeps (output, files, the network, the clock, the terminal, or something new on each call); as an effect that ends a recording, since it changes bindings or settings or gives a value read as structure (records, tables, functions); or as its arguments decide (`When`).
 #[derive(Clone, Copy, Debug)]
@@ -119,10 +116,79 @@ impl SystemFunction {
         if current.native_tag() != self.native_tag() { return Err(Error::planning()); }
         Ok(current.clone())
     }
-    pub(crate) fn row(&self) -> &'static Row {
-        &const { Row { math: native_kernel, describe, plan, maps, code, inverse,
-            ..Row::new("•", "system", ["", ""], [crate::primitive::WHOLE; 3]) } }
+    pub(crate) fn row(&self) -> &'static Row { native_row() }
+}
+
+pub(crate) fn native_row() -> &'static Row {
+    &const { Row { math: native_kernel, roles, form, describe, plan, maps, code, inverse, cells: crate::distribution::cells,
+        ..Row::new("•", "system", ["", ""], [crate::primitive::WHOLE; 3]) } }
+}
+
+fn native_kernel(_: &CallView<'_>, _: Variant) -> Result<Option<Kernel>, Error> { Ok(None) }
+fn roles(call: &CallView<'_>) -> Result<Roles, Error> {
+    if matches!(call.operation, Operation::Draw { .. }) { return crate::distribution::roles(call); }
+    Ok(Roles::default())
+}
+fn describe(call: &CallView<'_>) -> Result<Option<Description>, Error> {
+    if matches!(call.operation, Operation::Draw { .. }) { return crate::distribution::describe(call); }
+    if matches!(call.operation, Operation::Effect(Act::Output)) {
+        let root = call.root(0);
+        let descs = root.leaves.clone().map(|position| call.desc(position).map(Cow::into_owned)).collect::<Vec<_>>();
+        let trees = call.trees.map(|trees| Arc::new(trees.project_roots(&[root])));
+        return Ok(Some(Outputs::from(descs).with_trees(trees).with_shy(true)));
     }
+    Ok(None)
+}
+fn plan(call: &CallView<'_>, _: &[Option<Desc>]) -> Result<Step, Error> {
+    Ok(match call.operation {
+        Operation::Draw { .. } => return crate::distribution::plan(call),
+        Operation::Effect(_) => Step::Effect { token: Some(call.implicit_range().start as u32) },
+        _ => Step::Call,
+    })
+}
+fn maps(_: &CallView<'_>, _: &Step, _: &[Option<Desc>], _: &mut dyn FnMut(usize, Mapping)) -> Result<Option<ReadPlan>, Error> { Ok(None) }
+fn code(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
+    match call.operation {
+        Operation::Draw { .. } => crate::distribution::code(call),
+        Operation::Effect(Act::Input) => crate::session().line(call.site.ok_or_else(Error::planning)?).map(Outputs::one),
+        Operation::Effect(Act::Output) => {
+            let value = call.root_value(0, ReadKind::Value)?;
+            crate::session().explicit_output(&value, false);
+            Ok(Outputs::one(value.into_owned()).with_shy(true))
+        }
+        _ => with_host(call, invoke),
+    }
+}
+
+fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
+    if !matches!(origin.operation, Operation::System) { return Ok(None); }
+    let call = origin.call_view(&origin.list);
+    let function = call.function(0).ok_or_else(Error::planning)?;
+    let system = function.system_function().ok_or_else(Error::planning)?;
+    let roots = call.explicit_argument_roots();
+    let (left, right) = match roots.len() { 1 => (None, roots.start), 2 => (Some(roots.start), roots.start + 1), _ => return Err(Error::planning()) };
+    let left_value = left.map(|root| call.root_input(root)).transpose()?;
+    let right_value = call.root_input(right)?;
+    system.check(left_value.as_deref())?;
+    let host = HostCall { left: left_value.as_deref(), right: &right_value, site: call.site.ok_or_else(Error::planning)?, numeric: call.numeric()? };
+    if let Call::Active(active) = system.call { return active(host).map(|value| Some(Outputs::one(value))); }
+    if session().prototype.get() && let Some(prototype) = system.prototype { return Ok(Some(Outputs::one(prototype(host)))); }
+    if let Some(item) = system.item && (item.maps(&right_value) || item.rows(&right_value)) {
+        let mut mapped = function.clone();
+        if let Some(left) = &left_value { mapped = Function::applied_kind(OperatorKind::Before, vec![left.clone().into_owned(), Value::Function(mapped)])?; }
+        mapped = if item.rows(&right_value) { Function::applied_kind(OperatorKind::Rank, vec![Value::Function(mapped), Value::integer(1)])? }
+            else { Function::applied_kind(OperatorKind::Each, vec![Value::Function(mapped)])? };
+        return mapped.call_bound(&origin, &[right_value.into_owned()], &[Some(call.root(right).leaves.start)]).map(|value| Some(Outputs::one(value)));
+    }
+    if system.call.draws() { return crate::distribution::draw_origin(origin).map(Some); }
+    let acts = system.acting(left_value.as_deref(), &right_value);
+    if matches!(acts, Acts::Never) { return Ok(None); }
+    let operation = Operation::Effect(Act::Call);
+    if matches!(acts, Acts::Ends) { crate::program::trace::Tracing::stop(crate::program::Reason::Effect, origin.site.clone()); }
+    let arguments = (0..origin.explicit_roots as usize).map(|root| call.root_input(root).map(Cow::into_owned)).collect::<Result<Vec<_>, _>>()?;
+    let from: Vec<_> = (0..origin.explicit_roots as usize).map(|root| Some(call.root(root).leaves.start)).collect();
+    let lowered = crate::eval::projected_call(&origin, operation, &arguments, &from)?;
+    Operation::dispatch(lowered.reborrow()).map(Some)
 }
 
 impl Call {
@@ -131,10 +197,10 @@ impl Call {
 }
 
 /// A function that calls `call` natively, taking its right argument whole. A generator's draw and a distribution's sample have a result prototype. In prototype mode they return it without drawing. A JavaScript function's call ends a recording (`Acts::Ends`): it runs the browser's code, which may act, and gives any value.
-pub(crate) fn native(name: &'static str, call: Call, valence: Valence) -> Function { Function::system(native_row(name, call, valence)) }
-pub(crate) fn made(name: &'static str, call: Call, valence: Valence, data: Value) -> Function { Function::made(native_row(name, call, valence), data) }
+pub(crate) fn native(name: &'static str, call: Call, valence: Valence) -> Function { Function::system(system_function(name, call, valence)) }
+pub(crate) fn made(name: &'static str, call: Call, valence: Valence, data: Value) -> Function { Function::made(system_function(name, call, valence), data) }
 
-fn native_row(name: &'static str, call: Call, valence: Valence) -> SystemFunction {
+fn system_function(name: &'static str, call: Call, valence: Valence) -> SystemFunction {
     let draws = call.draws();
     let acts = match &call { #[cfg(web)] Call::Js(_) => Acts::Ends, _ => Acts::Never };
     SystemFunction { name, call, valence, item: None, prototype: draws.then_some(float), inverse: None, cells: Cells::Each, acts, entry: None }
@@ -271,14 +337,22 @@ const fn same(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// `f⁻¹` for a system function `f` that has an inverse.
-pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+pub(crate) fn inverse(function: &Function, origin: Origin<&[Value]>, _: bool) -> Result<Value, Error> {
     use crate::distribution::Operation::{Cdf, Quantile};
-    if let Call::Distribution(d, op @ (Cdf | Quantile)) = &f.call {
-        return crate::distribution::call(d, if matches!(op, Cdf) { Quantile } else { Cdf }, left, right, span);
+    let system = function.system_function().ok_or_else(Error::planning)?;
+    let call = origin.call_view(&origin.list);
+    let roots = Function::argument_roots(&origin)?;
+    let left = roots[0].as_ref().map(|root| call.root_value(root.index, ReadKind::Value)).transpose()?;
+    let right = call.root_value(roots[1].as_ref().ok_or_else(Error::planning)?.index, ReadKind::Value)?;
+    let host = HostCall { left: left.as_deref(), right: &right, site: call.site.ok_or_else(Error::planning)?, numeric: call.numeric()? };
+    if let Call::Distribution(kind, operation @ (Cdf | Quantile)) = system.call {
+        let source = function.made_source(call.captures).ok_or_else(Error::planning)?;
+        let parameters = source.resolve_in_call(&call, ReadKind::Value)?;
+        return crate::distribution::call(kind, if operation == Cdf { Quantile } else { Cdf }, &parameters, host);
     }
-    let (call, valence) = f.inverse.ok_or_else(|| Error::domain("this function has no known inverse"))?;
-    valence.check(&format!("{}⁻¹", f.name), left)?;
-    call(left, right, span)
+    let (inverse, valence) = system.inverse.ok_or_else(|| Error::domain("this function has no known inverse"))?;
+    valence.check(system.name, host.left)?;
+    inverse(host)
 }
 
 const HOST_FACTS: &[&str] = &["args", "version", "env", "width", "height", #[cfg(not(web))] "cwd", #[cfg(not(web))] "temp",];
@@ -358,21 +432,21 @@ fn memory(HostCall { right, .. }: HostCall<'_>) -> Result<Value, Error> {
 fn detach(HostCall { right, .. }: HostCall<'_>) -> Result<Value, Error> { Ok(crate::derivative::detach(right)) }
 
 /// `•index n` is `⍳n` along a fresh hidden axis name whose stem is the left argument's text (`fresh`). An array of counts gives an index for each (`indices`).
-fn index(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Result<Value, Error> {
+fn index(HostCall { left, right, site: span, numeric }: HostCall<'_>) -> Result<Value, Error> {
     let stem: std::sync::Arc<str> = match left {
         None => "".into(), Some(a) => crate::keyed::name(a).ok_or_else(|| Error::domain("•index takes text as its stem"))?
     };
-    indices(&stem, right, session().prototype.get(), span)
+    indices(&stem, right, session().prototype.get(), span, numeric)
 }
 
 /// An index with stem `stem` for each count in `right`, nested as `right` is, in its layout with its keys: what Each would give, in one call. An empty array's fill is the result on its prototype. A call on prototypes gives `⍬` for each count and draws no name.
-fn indices(stem: &str, right: &Value, prototype: bool, span: &Span) -> Result<Value, Error> {
+fn indices(stem: &str, right: &Value, prototype: bool, span: &Span, numeric: Numeric) -> Result<Value, Error> {
     if right.is_atom() {
-        if prototype { return Ok(numbers(span)); }
-        return Primitive::Iota.call(None, right, span)?.with_axis_names(vec![Some(fresh(stem))]).described("invalid index");
+        if prototype { return Primitive::Iota.call(None, &right.prototype(), span, numeric); }
+        return Primitive::Iota.call(None, right, span, numeric)?.with_axis_names(vec![Some(fresh(stem))]).described("invalid index");
     }
-    let items = right.elements().map(|count| indices(stem, &count, prototype, span)).collect::<Result<Vec<_>, _>>()?;
-    let fill = || indices(stem, &right.prototype(), true, span).expect("a call on prototypes draws nothing").zeroed();
+    let items = right.elements().map(|count| indices(stem, &count, prototype, span, numeric)).collect::<Result<Vec<_>, _>>()?;
+    let fill = || indices(stem, &right.prototype(), true, span, numeric).expect("a call on prototypes draws nothing").zeroed();
     right.layout().collect(items, fill).described("invalid index")
 }
 
@@ -573,12 +647,12 @@ pub(crate) fn native_parts<'a>(call: &'a crate::primitive::CallView<'_>) -> Resu
     Ok((system, data))
 }
 
-fn with_host<T>(call: &crate::primitive::CallView<'_>, run: impl FnOnce(&SystemFunction, Option<&Value>, HostCall<'_>) -> Result<T, Error>) -> Result<T, Error> {
+fn with_host<T>(call: &CallView<'_>, run: impl FnOnce(&SystemFunction, Option<&Value>, HostCall<'_>) -> Result<T, Error>) -> Result<T, Error> {
     let (system, data) = native_parts(call)?;
-    let positions: Vec<_> = call.explicit_arguments().collect();
-    let (left, right) = match positions.as_slice() { [right] => (None, *right), [left, right] => (Some(*left), *right), _ => return Err(Error::planning()) };
-    let left = left.map(|position| call.value(position, crate::ReadKind::Value)).transpose()?;
-    let right = call.value(right, if matches!(system.call, Call::Active(_)) { crate::ReadKind::Description } else { crate::ReadKind::Value })?;
+    let roots = call.explicit_argument_roots();
+    let (left, right) = match roots.len() { 1 => (None, roots.start), 2 => (Some(roots.start), roots.start + 1), _ => return Err(Error::planning()) };
+    let left = left.map(|root| call.root_value(root, ReadKind::Value)).transpose()?;
+    let right = call.root_value(right, ReadKind::Value)?;
     let site = call.site.ok_or_else(Error::planning)?;
     run(&system, data.as_ref(), HostCall { left: left.as_deref(), right: &right, site, numeric: call.numeric()? })
 }
@@ -611,7 +685,7 @@ fn invoke(function: &SystemFunction, data: Option<&Value>, call: HostCall<'_>) -
         #[cfg(web)] Call::Js(Some(function)) => return crate::js::call(function, call).map(|value| value.map_or_else(Outputs::empty, Outputs::one)),
         #[cfg(web)] Call::Js(None) => return Err(Error::planning()),
         Call::Mime => crate::session().mime(call.left, call.right, call.site),
-        Call::Time => crate::session().system_time(call.left, call.right, call.site),
+        Call::Time => crate::session().system_time(call.left, call.right, call.site, call.numeric),
         Call::Prefs => return crate::display::prefs(crate::session(), call.right).map(|(value, shy)| Outputs::one(value).with_shy(shy)),
     };
     result.map(Outputs::one)

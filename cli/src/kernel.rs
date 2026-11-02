@@ -117,41 +117,42 @@ impl LanguageSession for BplSession {
     }
 
     async fn complete(&self, request: CompleteRequest) -> kernmini::Result<Value> {
-        self.worker.call(move |session| {
+        self.worker.call(move |session| -> Result<Value, basedpl::Error> {
             let end = request.code.char_indices().nth(cursor(request.cursor_pos)).map_or(request.code.len(), |(i, _)| i);
             let before = &request.code[..end];
             let (start, mut matches) = if let Some((start, query)) = basedpl::symbols::entry(before, end, basedpl::settings::hanzi_aliases()) {
                 (start, basedpl::symbols::matches(query).into_iter().map(|(glyph, _)| glyph.to_owned()).collect::<Vec<_>>())
             } else if basedpl::in_code(before, basedpl::settings::hanzi_aliases()) {
                 let start = before.char_indices().rev().find(|(_, c)| !basedpl::inspection::word_char(*c, basedpl::settings::hanzi_aliases())).map_or(0, |(i, c)| i + c.len_utf8());
-                (start, session.complete(&before[start..]))
+                (start, session.complete(&before[start..])?)
             } else { (end, vec![]) };
             matches.sort();
-            json!({"status": "ok", "matches": matches, "cursor_start": request.code[..start].chars().count(), "cursor_end": before.chars().count(), "metadata": {}})
-        }).await
+            Ok(json!({"status": "ok", "matches": matches, "cursor_start": request.code[..start].chars().count(), "cursor_end": before.chars().count(), "metadata": {}}))
+        }).await?.map_err(kernmini::Error::adapter)
     }
 
     async fn inspect(&self, request: InspectRequest) -> kernmini::Result<Value> {
-        self.worker.call(move |session| {
+        self.worker.call(move |session| -> Result<Value, basedpl::Error> {
             let info = basedpl::inspection::at_cursor(&request.code, cursor(request.cursor_pos), basedpl::settings::hanzi_aliases())
-                .and_then(|name| session.inspect(name));
+                .map(|name| session.inspect(name)).transpose()?.flatten();
             let data = info.as_ref().map(|i| json!({"text/plain":i.text(request.detail_level>0), "text/markdown":i.markdown(request.detail_level>0)}));
-            json!({"status":"ok", "found":info.is_some(), "data":data.unwrap_or(json!({})), "metadata":{}})
-        }).await
+            Ok(json!({"status":"ok", "found":info.is_some(), "data":data.unwrap_or(json!({})), "metadata":{}}))
+        }).await?.map_err(kernmini::Error::adapter)
     }
 
     async fn debug(&self, request: Value) -> kernmini::Result<Value> {
         if request["command"] != "inspectVariables" { return Ok(kernmini::reply_defaults::debug()); }
-        self.worker.call(move |session| {
-            let variables: Vec<_> = session.names().into_iter().filter_map(|name| {
-                let (kind, value) = session.preview(&name)?;
+        self.worker.call(move |session| -> Result<Value, basedpl::Error> {
+            let mut variables = Vec::new();
+            for name in session.names() {
+                let Some((kind, value)) = session.preview(&name)? else { continue; };
                 let mut record = json!({"name": name, "value": value, "type": kind, "evaluateName": name, "variablesReference": 0});
                 if matches!(kind, "function" | "operator") { record["presentationHint"] = json!({"kind": "method"}); }
-                Some(record)
-            }).collect();
-            json!({"response": {"type": "response", "request_seq": request["seq"], "command": "inspectVariables", "success": true,
-            "body": {"variables": variables}}, "events": []})
-        }).await
+                variables.push(record);
+            }
+            Ok(json!({"response": {"type": "response", "request_seq": request["seq"], "command": "inspectVariables", "success": true,
+            "body": {"variables": variables}}, "events": []}))
+        }).await?.map_err(kernmini::Error::adapter)
     }
 
     async fn is_complete(&self, code: String) -> kernmini::Result<Value> {

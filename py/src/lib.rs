@@ -505,8 +505,8 @@ impl PySession {
     fn inspect(&self, py: Python<'_>, name: Option<String>, function: Option<PyRef<'_, PyFunction>>) -> PyResult<Option<Py<PyDict>>> {
         let function = function.map(|f| f.inner.clone());
         let info = py.detach(move || Session::current(|session| {
-            match (name, function) { (Some(name), _) => session.inspect(&name), (_, Some(function)) => Some(function.inspect(session)), _ => None }
-        }));
+            match (name, function) { (Some(name), _) => session.inspect(&name), (_, Some(function)) => Ok(Some(function.inspect(session))), _ => Ok(None) }
+        })).map_err(value_error)?;
         info.map(|i| {
             let d = PyDict::new(py);
             d.set_item("kind", i.kind)?;
@@ -531,8 +531,8 @@ impl PySession {
     /// Makes the display defaults of BPL's REPL and Jupyter kernel the current ones, for the BPL magics in IPython. Settings are process-wide, so this takes no lock on the session.
     fn make_interactive(&self) { Session::make_interactive() }
     #[pyo3(signature = (prefix="", classes=vec![2, 3, 4], complete=false))]
-    fn names(&self, py: Python<'_>, prefix: &str, classes: Vec<i64>, complete: bool) -> Vec<String> {
-        py.detach(|| Session::current(|session| if complete { session.complete(prefix) } else { session.name_list(&classes, prefix) }))
+    fn names(&self, py: Python<'_>, prefix: &str, classes: Vec<i64>, complete: bool) -> PyResult<Vec<String>> {
+        py.detach(|| Session::current(|session| if complete { session.complete(prefix) } else { session.name_list(&classes, prefix) })).map_err(value_error)
     }
     fn interrupt(&self) { if let Some(active) = &*self.active.lock().unwrap() { active.interrupt(); } }
 }

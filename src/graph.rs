@@ -6,7 +6,7 @@ use crate::{
 use rustymath::hashing::HashMap;
 use std::{
     hash::{BuildHasher, Hash, Hasher},
-    sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError, Weak},
+    sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError, Weak},
 };
 
 #[derive(Clone)]
@@ -14,6 +14,8 @@ pub(crate) struct Node(pub(crate) Arc<NodeData>);
 
 pub(crate) struct NodeData {
     description: crate::program::Description,
+    actual: OnceLock<crate::program::Description>,
+    literal: bool,
     level: Option<usize>,
     reach: Option<Reach>,
     kept: Kept,
@@ -38,8 +40,18 @@ pub(crate) struct Pending { pub(crate) node: Node, pub(crate) output: Option<u32
 impl Pending {
     pub(crate) fn data(node: Node, output: u32) -> Self { Self { node, output: Some(output) } }
     pub(crate) fn control(node: Node) -> Self { Self { node, output: None } }
-    pub(crate) fn description(&self) -> Option<&Desc> { self.output.map(|output| self.node.desc(output)) }
-    pub(crate) fn desc(&self) -> &Desc { self.description().expect("control completion has no data description") }
+    pub(crate) fn description(&self) -> Option<&Desc> { self.output.and_then(|output| self.node.desc(output)) }
+    pub(crate) fn desc(&self) -> &Desc { self.description().expect("numeric description is unresolved or absent") }
+    pub(crate) fn unresolved_description(&self) -> bool {
+        self.output.is_some() && self.description().is_none() && self.node.0.actual.get().is_none() && self.node.0.description.count().is_some()
+    }
+    pub(crate) fn resolve_description(&self) -> Result<()> {
+        if !self.unresolved_description() { return Ok(()); }
+        let count = self.node.0.description.count().expect("a counted result has its count port");
+        self.node.clone().into_storage(count, ReadKind::Count)?;
+        if self.node.0.actual.get().is_none() { return Err(Error::planning()); }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -89,7 +101,7 @@ fn origin_hash(origin: &Origin<Vec<Read<Value>>>, hasher: &impl BuildHasher) -> 
 
 impl Node {
     pub(crate) fn build(step: Step, origin: Origin<Vec<Read<Value>>>, description: crate::program::Description, level: Option<usize>) -> Self {
-        let reach = origin.list.iter().filter_map(|read| read.operand.pending().and_then(|p| p.node.reach()))
+        let reach = origin.list.iter().enumerate().filter(|(position, _)| origin.executes(*position)).filter_map(|(_, read)| read.operand.pending().and_then(|p| p.node.reach()))
             .reduce(Reach::join);
         let mut intern = lock(&INTERN);
         intern.reclaim();
@@ -100,7 +112,10 @@ impl Node {
             if let Some(node) = bucket.iter().filter_map(Weak::upgrade).find(|node| {
                 if node.level != level { return false; }
                 match &*lock(&node.state) { OwnedState::Step { origin: own, .. } => same_origin(own, &origin), _ => false }
-            }) { return Self(node); }
+            }) {
+                drop(intern);
+                let node = Self(node); Tracing::recorded(&node); return node;
+            }
             Some(hash)
         };
         let mut kept = Kept { nodes: 1, graph: std::mem::size_of::<NodeData>() + origin.list.capacity() * std::mem::size_of::<Read<Value>>() + description.heap_bytes(), bytes: 0, largest: 0 };
@@ -115,7 +130,7 @@ impl Node {
                 kept.bytes += bytes; kept.largest = kept.largest.max(bytes);
             }
         }
-        let node = Self(Arc::new(NodeData { description, level, reach, kept, state: Mutex::new(OwnedState::Step { step, origin }) }));
+        let node = Self(Arc::new(NodeData { description, actual: OnceLock::new(), literal: false, level, reach, kept, state: Mutex::new(OwnedState::Step { step, origin }) }));
         if let Some(hash) = hash { intern.nodes.get_mut(&hash).unwrap().push(Arc::downgrade(&node.0)); }
         drop(intern);
         Tracing::recorded(&node);
@@ -123,24 +138,34 @@ impl Node {
         node
     }
 
-    pub(crate) fn input(position: usize, value: Option<Value>, desc: Desc, role: Role, level: Option<usize>, trace: Option<u32>) -> Self {
-        Self::leaf(position, value, Outputs::one(desc), role, level, trace)
+    pub(crate) fn literal(value: Value) -> Self {
+        debug_assert!(!matches!(value, Value::Pending(_) | Value::Carried { .. }));
+        let description = Outputs::one(Desc::leaf(&value));
+        let bytes = value.footprint();
+        let kept = Kept { nodes: 1, graph: std::mem::size_of::<NodeData>(), bytes, largest: bytes };
+        Self(Arc::new(NodeData { description, actual: OnceLock::new(), literal: true, level: None, reach: None,
+            kept, state: Mutex::new(OwnedState::Done(Outputs::one(value))) }))
+    }
+    pub(crate) fn is_literal(&self) -> bool { self.0.literal }
+
+    pub(crate) fn input(position: usize, value: Option<Value>, desc: Option<Desc>, role: Role, level: Option<usize>, trace: Option<u32>) -> Self {
+        Self::leaf(position, value, Outputs::one(desc.map(Desc::opaque)), role, level, trace)
     }
     pub(crate) fn control_input(position: usize, value: Option<Value>, role: Role, trace: Option<u32>) -> Self {
         Self::leaf(position, value, Outputs::empty(), role, None, trace)
     }
-    fn leaf(position: usize, value: Option<Value>, description: Outputs<Desc>, role: Role, level: Option<usize>, trace: Option<u32>) -> Self {
+    fn leaf(position: usize, value: Option<Value>, description: crate::program::Description, role: Role, level: Option<usize>, trace: Option<u32>) -> Self {
         let reach = trace.map(|trace| Reach::input(trace, position, role));
         let reach = match (reach, value.as_ref().and_then(Value::pending).and_then(|pending| pending.node.reach())) {
             (Some(own), Some(parent)) => Some(own.join(parent)), (own, None) => own, (None, parent) => parent,
         };
-        Self(Arc::new(NodeData { description, level, reach, kept: Kept::default(),
+        Self(Arc::new(NodeData { description, actual: OnceLock::new(), literal: false, level, reach, kept: Kept::default(),
             state: Mutex::new(OwnedState::Input { position, role, value }) }))
     }
 
-    pub(crate) fn description(&self) -> &crate::program::Description { &self.0.description }
-    pub(crate) fn descs(&self) -> &[Desc] { self.0.description.as_ref() }
-    pub(crate) fn desc(&self, output: u32) -> &Desc { &self.descs()[output as usize] }
+    pub(crate) fn description(&self) -> &crate::program::Description { self.0.actual.get().unwrap_or(&self.0.description) }
+    pub(crate) fn descs(&self) -> &[Option<Desc>] { self.description().as_ref() }
+    pub(crate) fn desc(&self, output: u32) -> Option<&Desc> { self.descs().get(output as usize)?.as_ref() }
     pub(crate) fn level(&self) -> Option<usize> { self.0.level }
     pub(crate) fn reach(&self) -> Option<Reach> { self.0.reach.clone() }
     pub(crate) fn kept(&self) -> Kept { self.0.kept }
@@ -183,9 +208,20 @@ impl Node {
         self.with_state(|state| match state { State::Step { step, origin } => Some((step.clone(), origin.clone())), _ => None })
     }
 
+    fn publish_description(&self, values: &Outputs<Value>) {
+        let initial = &self.0.description;
+        let descriptions = values.as_ref().iter().enumerate().map(|(i, value)| {
+            initial.as_ref().get(i).cloned().flatten().or_else(|| Desc::of(value).map(std::borrow::Cow::into_owned))
+        }).collect::<Vec<_>>();
+        let actual = Outputs::from(descriptions).with_trees(values.trees().cloned().or_else(|| initial.trees().cloned()))
+            .with_shy(values.shy).with_count(initial.count());
+        let _ = self.0.actual.set(actual);
+    }
     pub(crate) fn finish(&self, results: Outputs<Value>) {
         debug_assert!(self.descs().is_empty() || results.as_ref().len() == self.descs().len());
-        *lock(&self.0.state) = OwnedState::Done(results);
+        let mut state = lock(&self.0.state);
+        if !self.0.description.as_ref().is_empty() && self.0.description.as_ref().iter().any(Option::is_none) { self.publish_description(&results); }
+        *state = OwnedState::Done(results);
     }
 
     pub(crate) fn stored(&self, output: u32) -> Option<Value> {
@@ -198,30 +234,38 @@ impl Node {
     pub(crate) fn completed(&self) -> Option<Outputs<Value>> {
         self.with_state(|state| match state { State::Done(values) => Some(values.clone()), _ => None })
     }
-    pub(crate) fn ready_control() -> Pending {
-        static READY: LazyLock<Node> = LazyLock::new(|| Node(Arc::new(NodeData {
-            description: crate::program::Description::empty(), level: None, reach: None, kept: Kept::default(),
-            state: Mutex::new(OwnedState::Done(Outputs::empty())),
-        })));
-        Pending::control(READY.clone())
+    pub(crate) fn observe(&self) -> Result<Outputs<Value>> {
+        let actual = self.completed().ok_or_else(Error::planning)?.flatten()?;
+        self.publish_description(&actual);
+        self.finish(actual.clone());
+        Ok(actual)
     }
+    pub(crate) fn ready_value() -> &'static Value {
+        static READY: LazyLock<Value> = LazyLock::new(|| Value::Pending(Pending::control(Node(Arc::new(NodeData {
+            description: crate::program::Description::empty(), actual: OnceLock::new(), literal: false, level: None, reach: None, kept: Kept::default(),
+            state: Mutex::new(OwnedState::Done(Outputs::empty())),
+        })))));
+        &READY
+    }
+    pub(crate) fn ready_control() -> Pending { Self::ready_value().pending().expect("a completion token").clone() }
 
     pub(crate) fn is_stored(&self) -> bool { self.with_state(|state| !matches!(state, State::Step { .. })) }
     pub(crate) fn is_complete(&self) -> bool {
         self.with_state(|state| match state {
             State::Done(_) => true,
-            State::Input { value: Some(Value::Pending(input)), .. } if input.output.is_none() => input.node.is_complete(),
+            State::Input { value: Some(Value::Pending(input)), .. } => input.node.is_complete(),
             State::Input { value, .. } => value.is_some(),
             State::Step { .. } => false,
         })
     }
 
     pub(crate) fn into_storage(self, output: u32, read: ReadKind) -> Result<Value> {
+        if read == ReadKind::Description { return Err(Error::planning()); }
         if self.level().is_some() {
             return Err(Error::domain("cannot read an unbound linear value"));
         }
         let pending = Pending::data(self.clone(), output);
-        Tracing::judge(&pending, read)?;
+        if read != ReadKind::RuntimeOnly { Tracing::judge(&pending, read)?; }
         let value = if let Some(value) = self.stored(output) { value.read(read)? } else {
             if self.with_state(|state| matches!(state, State::Input { value: None, .. })) { return Err(Error::planning()); }
             crate::program::execute(std::slice::from_ref(&pending))?;

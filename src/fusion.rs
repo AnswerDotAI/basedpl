@@ -1,29 +1,54 @@
 //! The row builder shared by dispatch, rewriting and concrete refill.
-use crate::{Value, error::Result, graph::{Node, Pending}, primitive::{CallView, Operation}, program::{Desc, Origin, Outputs, Read, Step}};
+use crate::{Value, Error, error::Result, graph::{Node, Pending}, primitive::{CallView, Operation},
+    program::{Description, Origin, Outputs, Read, Step, trace::Tracing, Reason}};
 use rustymath::agreement::{Mapping, ReadPlan};
 
 pub(crate) const BUFFERED: usize = 3 << 15;
 
 pub(crate) fn row<O>(call: &CallView<'_>, previous: Option<&Step>, reads: &mut [Read<O>])
-    -> Result<Option<(Step, crate::program::Description, Option<ReadPlan>)>> {
-    let Some(descs) = Operation::describe(call)? else { return Ok(None) };
+    -> Result<(Step, Option<Description>, Option<ReadPlan>)> {
+    let Some(descs) = Operation::describe(call)? else {
+        let token = crate::program::implicit_position(call.operation, call.explicit, call.captures, crate::program::ImplicitInput::Token);
+        let step = token.map_or(Step::Call, |position| Step::Effect { token: Some(position as u32) });
+        return Ok((step, None, None));
+    };
     let step = match previous { Some(step) => step.clone(), None => Operation::plan(call, descs.as_ref())? };
     let routed = Operation::maps(call, &step, descs.as_ref(), reads)?;
-    Ok(Some((step, descs, routed)))
+    Ok((step, Some(descs), routed))
 }
 
-pub(crate) fn built(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>> {
+pub(crate) fn built(origin: Origin<&[Value]>, observed: &[Value]) -> Result<Outputs<Value>> {
     let mut reads: Vec<_> = origin.list.iter().map(|value| Read { operand: value.clone(), map: Mapping::Linear(1) }).collect();
-    let Some((step, descs, _)) = row(&origin.call_view(&origin.list), None, &mut reads)? else { return Ok(None) };
-    let level = origin.list.iter().filter_map(Value::level).max();
+    let (step, descs, _) = row(&origin.call_view(&observed), None, &mut reads)?;
+    if !origin.cacheable_metadata(origin.list.iter()) || !descs.as_ref().is_none_or(Description::cacheable_metadata) {
+        Tracing::stop(Reason::Renderer, origin.site.clone());
+        if Tracing::planning() { return Err(Error::planning()); }
+    }
+    let level = origin.list.iter().enumerate().filter(|(position, _)| origin.executes(*position)).filter_map(|(_, value)| value.level()).max();
+    let (observing, acts) = (descs.is_none(), origin.acts());
+    let site = origin.site.clone();
+    let descs = descs.unwrap_or_else(Outputs::empty);
     let count = descs.as_ref().len();
+    if observing {
+        Tracing::stop(Reason::HostKind, site.clone());
+        if Tracing::planning() { return Err(Error::planning()); }
+    }
     let node = Node::build(step, origin.with_list(reads), descs, level);
+    if observing || acts {
+        if Tracing::planning() { Tracing::stop(Reason::Effect, site); return Err(Error::planning()); }
+        let completion = Pending::control(node.clone());
+        crate::program::execute(std::slice::from_ref(&completion))?;
+        crate::session().raise()?;
+        if acts { Tracing::acted(&Value::Pending(completion)); }
+        if observing { return node.observe(); }
+    }
     let values = (if count == 1 { Outputs::one(Value::Pending(Pending::data(node.clone(), 0))) }
         else { Outputs::many((0..count).map(|output| Value::Pending(Pending::data(node.clone(), output as u32))).collect()) }
         ).with_trees(node.description().trees().cloned()).with_shy(node.description().shy);
-    if level.is_none() && node.over_budget() {
+    if !acts && level.is_none() && node.over_budget() {
+        if Tracing::planning() { Tracing::stop(Reason::Execute, site.clone()); return Err(Error::planning()); }
         let roots: Vec<_> = values.as_ref().iter().filter_map(Value::pending).cloned().collect();
         crate::program::execute(&roots)?;
     }
-    Ok(Some(values))
+    Ok(values)
 }

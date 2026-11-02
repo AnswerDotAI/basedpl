@@ -22,14 +22,15 @@ static BLOCK: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.block);
 static RUN: AtomicUsize = AtomicUsize::new(Sizes::DEFAULT.run);
 static COMPILES: AtomicU8 = AtomicU8::new(UNSET);
 static DISPLAY: LazyLock<RwLock<[display::Settings; 2]>> = LazyLock::new(|| RwLock::new([display::Settings::default(); 2]));
-thread_local! { static NUMERIC: RefCell<Vec<Numeric>> = const { RefCell::new(Vec::new()) }; }
+struct ActiveNumeric { numeric: Numeric, operands: [Value; Setting::BODY.len()] }
+thread_local! { static NUMERIC: RefCell<Vec<ActiveNumeric>> = const { RefCell::new(Vec::new()) }; }
 
 fn width(value: u8) -> FloatWidth {
     match value { n if n == FloatWidth::F16 as u8 => FloatWidth::F16, n if n == FloatWidth::F32 as u8 => FloatWidth::F32, _ => FloatWidth::F64 }
 }
 
 pub(crate) fn numeric() -> Numeric {
-    NUMERIC.with(|stack| stack.borrow().last().copied()).unwrap_or_else(|| Numeric {
+    NUMERIC.with(|stack| stack.borrow().last().map(|active| active.numeric)).unwrap_or_else(|| Numeric {
         mathish: MATHISH.load(Relaxed), width: width(FLOAT.load(Relaxed)),
         kinds: if STATIC_KINDS.load(Relaxed) { Kinds::Static } else { Kinds::Dynamic },
         int: if INT32.load(Relaxed) { Width::I32 } else { Width::I64 }, ..Numeric::DEFAULT
@@ -46,7 +47,10 @@ pub(crate) fn set_numeric(numeric: Numeric) {
     FLOAT.store(numeric.width as u8, Relaxed);
     STATIC_KINDS.store(numeric.kinds == Kinds::Static, Relaxed);
     INT32.store(numeric.int == Width::I32, Relaxed);
-    NUMERIC.with(|stack| stack.borrow_mut().fill(numeric));
+    NUMERIC.with(|stack| for active in stack.borrow_mut().iter_mut() {
+        active.numeric = numeric;
+        active.operands = std::array::from_fn(|i| capture(Setting::BODY[i], numeric));
+    });
 }
 
 pub(crate) fn capture(setting: Setting, n: Numeric) -> Value {
@@ -54,12 +58,17 @@ pub(crate) fn capture(setting: Setting, n: Numeric) -> Value {
         Setting::Width => Value::integer(n.width as i64), Setting::IntegerWidth => Value::integer(n.int as i64),
         Setting::Tolerance => Value::Number(crate::Number::float(n.tolerance.value(), FloatWidth::F64)),
         Setting::Units => Value::Number(crate::Number::float(n.units, FloatWidth::F64)),
-        Setting::Convergence => capture(Setting::Tolerance, n.convergence()),
     }
+}
+pub(crate) fn capture_current(setting: Setting, snapshot: Numeric) -> Value {
+    NUMERIC.with(|stack| stack.borrow().last().map(|active| {
+        active.operands[Setting::BODY.iter().position(|&name| name == setting).expect("every setting belongs to BODY")].clone()
+    })).unwrap_or_else(|| capture(setting, snapshot))
 }
 
 fn setting(call: &CallView<'_>, name: Setting) -> Result<crate::Number> {
-    call.setting(name).and_then(|(_, value)| value.as_number()).ok_or_else(|| Error::domain("missing numeric call context"))
+    let (position, _) = call.setting(name).ok_or_else(|| Error::domain("missing numeric call context"))?;
+    call.value(position, crate::ReadKind::Structure)?.as_number().ok_or_else(|| Error::domain("invalid numeric call context"))
 }
 
 pub(crate) fn captured(call: &CallView<'_>) -> Result<Numeric> {
@@ -72,12 +81,7 @@ pub(crate) fn captured(call: &CallView<'_>) -> Result<Numeric> {
         tolerance: Tolerance::new(tolerance).ok_or_else(|| Error::domain("invalid tolerance call context"))?, units, fixed: None })
 }
 
-pub(crate) fn convergence(call: &CallView<'_>) -> Result<Numeric> {
-    let mut numeric = captured(call)?.convergence();
-    numeric.tolerance = Tolerance::new(setting(call, Setting::Convergence)?.to_float()?)
-        .ok_or_else(|| Error::domain("invalid convergence call context"))?;
-    Ok(numeric)
-}
+pub(crate) fn convergence(call: &CallView<'_>) -> Result<Numeric> { Ok(captured(call)?.convergence()) }
 
 pub(crate) fn converged(call: &CallView<'_>, left: &Value, right: &Value) -> Result<bool> {
     left.matches_within(right, convergence(call)?)
@@ -87,8 +91,10 @@ pub(crate) struct NumericScope { depth: usize, thread: std::marker::PhantomData<
 impl Drop for NumericScope { fn drop(&mut self) { NUMERIC.with(|stack| stack.borrow_mut().truncate(self.depth)); } }
 
 pub(crate) fn activate(origin: &Origin<&[Value]>) -> Result<NumericScope> {
-    let numeric = captured(&origin.call_view(&origin.list))?;
-    let depth = NUMERIC.with(|stack| { let mut stack = stack.borrow_mut(); let depth = stack.len(); stack.push(numeric); depth });
+    let call = origin.call_view(&origin.list);
+    let numeric = captured(&call)?;
+    let operands = std::array::from_fn(|i| call.setting(Setting::BODY[i]).expect("captured BODY context").1.clone());
+    let depth = NUMERIC.with(|stack| { let mut stack = stack.borrow_mut(); let depth = stack.len(); stack.push(ActiveNumeric { numeric, operands }); depth });
     Ok(NumericScope { depth, thread: std::marker::PhantomData })
 }
 

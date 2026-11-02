@@ -6,12 +6,12 @@ use super::*;
 
 impl Session {
     /// Whether the dot path that starts `nodes`, such as `mul` or `ops.mul`, names a function or operator, read without evaluating anything (`path_category`).
-    fn path_function(&self, nodes: &[Node], log: &mut Facts) -> bool {
-        let Some(NodeKind::Name(name, _)) = nodes.first().map(|n| &n.kind) else { return false };
+    fn path_function(&self, nodes: &[Node], log: &mut Facts) -> Result<bool, Error> {
+        let Some(NodeKind::Name(name, _)) = nodes.first().map(|n| &n.kind) else { return Ok(false) };
         let keys: Vec<Arc<str>> = nodes[1..].chunks_exact(2).map_while(|pair| match pair {
             [Node { kind: NodeKind::Operator(OperatorKind::Dot), .. }, Node { kind: NodeKind::Name(key, _), .. }] => Some(key.text().into()), _ => None
         }).collect();
-        self.path_category(*name, &keys, log) != Category::Value
+        Ok(self.path_category(*name, &keys, log)? != Category::Value)
     }
 }
 
@@ -25,31 +25,35 @@ impl Compiler<'_> {
     }
 
     /// `nodes` with their dot reads and their joined items grouped, as their categories decide (`category`).
-    fn members<'a>(&mut self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
-        if !Self::has_members(nodes) { return Cow::Borrowed(nodes); }
+    fn members<'a>(&mut self, nodes: &'a [Node]) -> Result<Cow<'a, [Node]>, Error> {
+        if !Self::has_members(nodes) { return Ok(Cow::Borrowed(nodes)); }
         let mut out: Vec<Node> = Vec::with_capacity(nodes.len());
         // Whether the last node in `out` is the right operand of a `.` after a function.
         let (mut i, mut on_function) = (0, false);
         while i < nodes.len() {
             if (matches!(nodes[i].kind, NodeKind::Subscript(_)) && on_function
                 || matches!(nodes[i].kind, NodeKind::Operator(OperatorKind::Dot)) && matches!(out.last().map(|n| &n.kind), Some(NodeKind::Subscript(_))))
-                && let Some(start) = self.operand_start(&out, 0, out.len()) {
+                && let Some(start) = self.operand_start(&out, 0, out.len())? {
                 let inner = out.split_off(start);
                 let span = crate::syntax::cover(&inner);
                 out.push(Node { kind: NodeKind::Group(inner), span });
                 on_function = false;
             }
             if let (NodeKind::Operator(OperatorKind::Dot), Some(next)) = (&nodes[i].kind, nodes.get(i + 1)) {
-                let root = out.last().filter(|root| {
-                    !on_function && match &root.kind {
-                        NodeKind::Name(_, _) | NodeKind::Group(_) => self.category(root) == Category::Value,
-                        NodeKind::Literal(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Scope(..) => true, _ => false
+                let root = if on_function { None } else { match out.last() {
+                    Some(root) => {
+                        let array = match &root.kind {
+                            NodeKind::Name(_, _) | NodeKind::Group(_) => self.category(root)? == Category::Value,
+                            NodeKind::Literal(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Scope(..) => true, _ => false,
+                        };
+                        array.then_some(root)
                     }
-                });
+                    None => None,
+                }};
                 // `.name` reads a field and `.[I]` selects, after an array or a function. After a function, a name that starts a dot path to a function is an inner product's operand instead, as in `+.ops.mul`.
                 let field = match (&next.kind, root.is_some()) { (NodeKind::Name(key, _), true) => Some(key.text()), _ => None };
                 let read = match &next.kind {
-                    NodeKind::Name(name, _) if root.is_some() || !self.session.path_function(&nodes[i + 1..], &mut Some(&mut self.facts)) => {
+                    NodeKind::Name(name, _) if root.is_some() || !self.session.path_function(&nodes[i + 1..], &mut Some(&mut self.facts))? => {
                         Some((Node { kind: NodeKind::Literal(crate::keyed::text(name.text())), span: next.span.clone() }, Primitive::Mix))
                     }
                     NodeKind::ArrayLiteral { form: ListForm::Items | ListForm::Cells, .. } => Some((next.clone(), Primitive::Bracket)),
@@ -85,7 +89,7 @@ impl Compiler<'_> {
             out.push(nodes[i].clone());
             i += 1;
         }
-        // `ⱼ`, `ₑ` or `ᵣ` joins the items it touches once they're bound, as one group (`syntax::joined_term`): `v₁ⱼT.b` joins `1⌷v` and `'b'⊃T`. The left item takes the superscripts it touches, as a literal does, so `x²ⱼy` joins `x²` and `y`. `ₑ` joins first, as in the literal `1ⱼ2ₑ3`, which is `1ⱼ2000`. One beside a function, or apart from an item, stays for `resolve` to reject.
+        // `ⱼ`, `ₑ` or `ᵣ` joins the items it touches once they're bound, as one group (`syntax::joined_term`): `v₁ⱼT.b` joins `1⌷v` and `'b'⊃T`. The left item takes the superscripts it touches, as a literal does, so `x²ⱼy` joins `x²` and `y`. `ₑ` joins first, as in the literal `1ⱼ2ₑ3`, which is `1ⱼ2000`. An unjoined `ᵣ` is a rational conversion; other joiners without both items are invalid.
         use crate::syntax::{Joiner, cover, joined_term, touching};
         for exponent in [true, false] {
             let mut i = 1;
@@ -98,29 +102,36 @@ impl Compiler<'_> {
                 let left =
                     if start + 1 == i { out[start].clone() } else { Node { kind: NodeKind::Group(out[start..i].to_vec()), span: cover(&out[start..i]) } };
                 if matches!(joiner, Joiner::Exponent) != exponent || !touching(&left, &out[i]) || !touching(&out[i], &out[i + 1])
-                    || self.category(&left) != Category::Value || self.category(&out[i + 1]) != Category::Value { i += 1; continue; }
+                    || self.category(&left)? != Category::Value || self.category(&out[i + 1])? != Category::Value { i += 1; continue; }
                 let joined = joined_term(left, joiner, &out[i].span, out[i + 1].clone());
                 out.splice(start..i + 2, [joined]);
                 i = start + 1;
             }
         }
-        Cow::Owned(out)
+        for node in &mut out {
+            if matches!(node.kind, NodeKind::Joiner(Joiner::Denominator)) { node.kind = NodeKind::Operator(OperatorKind::Mark(crate::number::Mark::Rational)); }
+        }
+        Ok(Cow::Owned(out))
     }
 
     /// Whether a run ends in a dyadic operator, which then takes the next run as its right operand.
-    fn ends_in_dyadic_operator(&mut self, nodes: &[Node]) -> bool { self.members(nodes).last().is_some_and(|n| self.category(n).valence() == Some(true)) }
+    fn ends_in_dyadic_operator(&mut self, nodes: &[Node]) -> Result<bool, Error> {
+        match self.members(nodes)?.last() { Some(node) => Ok(self.category(node)?.valence() == Some(true)), None => Ok(false) }
+    }
 
     /// Whether a run starts with an operator, which then takes the whole run before it as its left operand.
-    fn starts_with_operator(&mut self, nodes: &[Node]) -> bool { self.members(nodes).first().is_some_and(|n| self.category(n).valence().is_some()) }
+    fn starts_with_operator(&mut self, nodes: &[Node]) -> Result<bool, Error> {
+        match self.members(nodes)?.first() { Some(node) => Ok(self.category(node)?.valence().is_some()), None => Ok(false) }
+    }
 
     /// Join each run that starts with an operator to the node before it, as the run's first token: `≢⊢ ⌸x` reads as `(≢⊢)⌸x`. A run before it joins as a group. A joined run that still starts with an operator joins again: `+ / ¨x` reads as `+/¨x`. No join reaches across `←`.
-    fn joined<'a>(&mut self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
+    fn joined<'a>(&mut self, nodes: &'a [Node]) -> Result<Cow<'a, [Node]>, Error> {
         // Every run but the first is tested, so that the facts keep what each test read.
-        if !nodes.iter().skip(1).fold(false, |any, node| self.starts(node) || any) { return Cow::Borrowed(nodes); }
+        if !nodes.iter().skip(1).try_fold(false, |any, node| self.starts(node).map(|starts| starts || any))? { return Ok(Cow::Borrowed(nodes)); }
         let mut out: Vec<Node> = Vec::with_capacity(nodes.len());
         for node in nodes {
             let mut node = node.clone();
-            while out.last().is_some_and(|before| !matches!(before.kind, NodeKind::Assign)) && self.starts(&node) {
+            while out.last().is_some_and(|before| !matches!(before.kind, NodeKind::Assign)) && self.starts(&node)? {
                 let before = out.pop().expect("a node is before this run");
                 let span = Span { source: before.span.source.clone(), range: before.span.range.start..node.span.range.end };
                 let before = match before.kind { NodeKind::Run(run) => Node { kind: NodeKind::Group(run), span: before.span }, _ => before };
@@ -129,11 +140,11 @@ impl Compiler<'_> {
             }
             out.push(node);
         }
-        Cow::Owned(crate::syntax::unwrapped(out))
+        Ok(Cow::Owned(crate::syntax::unwrapped(out)))
     }
 
     /// Whether `node` is a run that starts with an operator, which `joined` joins to the node before it.
-    fn starts(&mut self, node: &Node) -> bool { matches!(&node.kind, NodeKind::Run(inner) if self.starts_with_operator(inner)) }
+    fn starts(&mut self, node: &Node) -> Result<bool, Error> { match &node.kind { NodeKind::Run(inner) => self.starts_with_operator(inner), _ => Ok(false) } }
 
     /// Keeps the dot path of the field read at `range`, which reads `key` from `root`, where `root` is a name or a field read of one, so that `group` binds the read with the field's role (`Session::path_role`).
     fn dot_path(&mut self, root: &Node, key: &str, range: std::ops::Range<u32>) {
@@ -145,30 +156,30 @@ impl Compiler<'_> {
     }
 
     /// Where the operand that ends at `end` in `nodes` starts, no further left than `begin` (`trailing`), compiling nothing.
-    fn operand_start(&mut self, nodes: &[Node], begin: usize, end: usize) -> Option<usize> {
+    fn operand_start(&mut self, nodes: &[Node], begin: usize, end: usize) -> Result<Option<usize>, Error> {
         let mark = self.mark();
-        let start = self.trailing(nodes, begin, end).ok().map(|(start, _)| start);
+        let start = self.trailing(nodes, begin, end).map(|(start, _)| start);
         self.truncate(mark);
-        start
+        probe(start)
     }
 
     /// Fails where `node` is a run whose value is an operator, as `operator` says, unless the run is one parenthesised group. A run reduces to one value: an array, a function, or an operator that a dot path such as `m.op` names.
     fn one_value(&mut self, node: &Node, operator: bool) -> Result<(), Error> {
         let NodeKind::Run(nodes) = &node.kind else { return Ok(()) };
-        if operator && !matches!(&self.members(nodes)[..], [Node { kind: NodeKind::Group(_), .. }]) {
+        if operator && !matches!(&self.members(nodes)?[..], [Node { kind: NodeKind::Group(_), .. }]) {
             return Err(Error::new(ErrorKind::Syntax, "a run must reduce to one value: an array, a function or an operator glyph").at(&node.span));
         }
         Ok(())
     }
 
     /// `nodes`, a target of selective assignment, with its dot reads and numeric subscripts made selection calls (`members`), in the group or run that ends it too: `v₁` reads as `1⌷v`.
-    fn selection<'a>(&mut self, nodes: &'a [Node]) -> Cow<'a, [Node]> {
-        let members = self.members(nodes);
-        let Some(last) = members.last() else { return members };
-        match &last.kind {
+    fn selection<'a>(&mut self, nodes: &'a [Node]) -> Result<Cow<'a, [Node]>, Error> {
+        let members = self.members(nodes)?;
+        let Some(last) = members.last() else { return Ok(members) };
+        Ok(match &last.kind {
             NodeKind::Group(inner) | NodeKind::Run(inner) => {
-                let inner = self.selection(inner);
-                if matches!(inner, Cow::Borrowed(_)) { return members; }
+                let inner = self.selection(inner)?;
+                if matches!(inner, Cow::Borrowed(_)) { return Ok(members); }
                 let kind = if matches!(last.kind, NodeKind::Run(_)) { NodeKind::Run(inner.into_owned()) } else { NodeKind::Group(inner.into_owned()) };
                 let mut out = members.into_owned();
                 out.last_mut().unwrap().kind = kind;
@@ -176,12 +187,12 @@ impl Compiler<'_> {
             }
             NodeKind::Subscript(index) => {
                 let index = Node { kind: NodeKind::Literal(index.clone()), span: last.span.clone() };
-                let Some(start) = self.operand_start(&members, 0, members.len() - 1) else { return members };
+                let Some(start) = self.operand_start(&members, 0, members.len() - 1)? else { return Ok(members) };
                 let mut out = members.into_owned();
                 let subscript = out.pop().unwrap();
                 let inner = out.split_off(start);
                 let span = crate::syntax::cover(&inner);
-                let inner = self.selection(&inner).into_owned();
+                let inner = self.selection(&inner)?.into_owned();
                 let item = if inner.len() == 1 { inner.into_iter().next().unwrap() } else { Node { kind: NodeKind::Group(inner), span } };
                 let span = Span { source: item.span.source.clone(), range: item.span.range.start..subscript.span.range.end };
                 out.push(Node { kind: NodeKind::Group(vec![
@@ -190,60 +201,60 @@ impl Compiler<'_> {
                 Cow::Owned(out)
             }
             _ => members,
-        }
+        })
     }
 
     /// The target `nodes` as its assignment runs it (`Target`), whose last `count` nodes are a modified assignment's function: the nodes before them, with dot reads and numeric subscripts made selection calls (`selection`), compiled as what they assign to. A plain assignment's target is read by `plain`; a modified one's is names where `assignment_names` admits them and otherwise a selection. Its readings add facts to the statement's, but no assigned names.
-    fn assigned_target(&mut self, nodes: &[Node], count: usize) -> Target {
+    fn assigned_target(&mut self, nodes: &[Node], count: usize) -> Result<Target, Error> {
         let assigned = self.assigned.len();
-        let selection = self.selection(&nodes[..nodes.len() - count]);
+        let selection = self.selection(&nodes[..nodes.len() - count])?;
         let mut slots = 0;
-        let to = if count == 0 { self.plain(&selection, &mut slots) }
-            else if self.session.assignment_names(&selection, &mut Some(&mut self.facts)) { self.names(&selection) }
-            else { self.selected(&selection, &mut slots) };
+        let to = if count == 0 { self.plain(&selection, &mut slots)? }
+            else if self.session.assignment_names(&selection, &mut Some(&mut self.facts))? { self.names(&selection)? }
+            else { self.selected(&selection, &mut slots)? };
         self.assigned.truncate(assigned);
-        Target { to, slots, span: crate::syntax::cover(nodes), at: nodes[0].span.clone() }
+        Ok(Target { to, slots, span: crate::syntax::cover(nodes), at: nodes[0].span.clone() })
     }
 
     /// What a plain assignment's target `nodes` assigns to: a name, whatever it holds, `⎕`, an unknown system name's error, names (`names`), a function's rule (`Session::rule_target`), or a selection (`selected`). A group holds names or a selection.
-    fn plain(&mut self, nodes: &[Node], slots: &mut usize) -> To {
+    fn plain(&mut self, nodes: &[Node], slots: &mut usize) -> Result<To, Error> {
         let session = self.session;
-        match nodes {
+        Ok(match nodes {
             [Node { kind: NodeKind::Name(name, _), span }] => To::Name(*name, span.clone()),
             [Node { kind: NodeKind::System(name), span }] => To::Invalid(undefined(name, span)),
             [Node { kind: NodeKind::Output, span }] => To::Output(span.clone()),
-            _ if session.assignment_names(nodes, &mut Some(&mut self.facts)) => self.names(nodes),
-            [Node { kind: NodeKind::Group(inner), .. }] => self.selected(inner, slots),
-            _ => match session.rule_target(nodes, &mut Some(&mut self.facts)) {
+            _ if session.assignment_names(nodes, &mut Some(&mut self.facts))? => self.names(nodes)?,
+            [Node { kind: NodeKind::Group(inner), .. }] => self.selected(inner, slots)?,
+            _ => match session.rule_target(nodes, &mut Some(&mut self.facts))? {
                 Some((name, derivative)) => To::Rule(name, derivative, nodes[0].span.clone()),
-                None => self.selected(nodes, slots),
+                None => self.selected(nodes, slots)?,
             },
-        }
+        })
     }
 
     /// The names that the target `nodes` assigns, which `assignment_names` admits: a name, or brackets of names whose cells each have the key that a pattern reads (`Session::targets`). A pattern whose cells don't fit gives its error.
-    fn names(&mut self, nodes: &[Node]) -> To {
-        match nodes {
+    fn names(&mut self, nodes: &[Node]) -> Result<To, Error> {
+        Ok(match nodes {
             [Node { kind: NodeKind::Name(name, _), span }] => To::Name(*name, span.clone()),
-            [Node { kind: NodeKind::Group(inner), .. }] => self.names(inner),
-            [Node { kind: NodeKind::ArrayLiteral { cells, record, .. }, span }] => match self.session.targets(cells, *record, &mut Some(&mut self.facts)) {
-                Ok(cells) => To::Names(cells.into_iter().map(|(key, cell)| (key, self.names(cell), cell[0].span.clone())).collect(), span.clone()),
+            [Node { kind: NodeKind::Group(inner), .. }] => self.names(inner)?,
+            [Node { kind: NodeKind::ArrayLiteral { cells, record, .. }, span }] => match deferred(self.session.targets(cells, *record, &mut Some(&mut self.facts)))? {
+                Ok(cells) => To::Names(cells.into_iter().map(|(key, cell)| self.names(cell).map(|to| (key, to, cell[0].span.clone()))).collect::<Result<_, _>>()?, span.clone()),
                 Err(e) => To::Invalid(e),
             },
             _ => unreachable!("`assignment_names` admits names, groups and brackets"),
-        }
+        })
     }
 
     /// The selection target `nodes`, as layers (`layer`), or the error of one that assigns on its way to its root array.
-    fn selected(&mut self, nodes: &[Node], slots: &mut usize) -> To {
-        match Session::root_assignment(nodes) {
+    fn selected(&mut self, nodes: &[Node], slots: &mut usize) -> Result<To, Error> {
+        Ok(match Session::root_assignment(nodes) {
             Some(span) => To::Invalid(Error::new(ErrorKind::Syntax, INVALID_SELECTION).at(&span)),
-            None => To::Selected(self.layer(nodes, slots)),
-        }
+            None => To::Selected(self.layer(nodes, slots)?),
+        })
     }
 
     /// The layer of a selection target that `nodes` hold, inside the groups and runs that hold them alone (`tree::Layer`). The split is at the first selecting primitive where the nodes before it can all be keys, and the extension of missing keys reaches the level through groups but not through a run (`Split::keyed`); otherwise it's after the first node where that's an array and a selecting primitive and more nodes follow (`Split::simple`). A strand of two arrays, or any last node but a name, a group or a run, can't end a selection.
-    fn layer(&mut self, nodes: &[Node], slots: &mut usize) -> Layer {
+    fn layer(&mut self, nodes: &[Node], slots: &mut usize) -> Result<Layer, Error> {
         let (span, at) = (crate::syntax::cover(nodes), nodes[0].span.clone());
         let (mut nodes, mut keys) = (nodes, true);
         loop {
@@ -256,35 +267,36 @@ impl Compiler<'_> {
         let selects = |node: &Node| matches!(node.kind.primitive(), Some(Primitive::Index | Primitive::Bracket | Primitive::Mix));
         let first = nodes.iter().position(selects);
         let keyed = keys && first.is_some_and(|i| i > 0 && i + 1 < nodes.len() && nodes[..i].iter().all(crate::syntax::key_node));
-        let simple = nodes.len() > 2 && selects(&nodes[1]) && self.is_array(&nodes[0]);
+        let simple = nodes.len() > 2 && selects(&nodes[1]) && self.is_array(&nodes[0])?;
         let at_split = if keyed { first } else { simple.then_some(1) };
         let last_at = nodes.len() - 1;
-        let split = at_split.map(|i| {
-            let index = self.part(&nodes[..i], None);
-            let slot = *slots;
-            *slots += 1;
-            let unit = self.category(&nodes[i + 1]).valence().is_none();
-            let container = Box::new(self.layer(&nodes[i + 1..], slots));
+        let split = at_split.map(|i| -> Result<Split, Error> {
+            let index = deferred(self.part(&nodes[..i], None))?;
+            let slot = *slots; *slots += 1;
+            let unit = self.category(&nodes[i + 1])?.valence().is_none();
+            let container = Box::new(self.layer(&nodes[i + 1..], slots)?);
             let p = nodes[i].kind.primitive().expect("a selecting primitive");
-            Split { p, index, slot, keyed, simple, unit, container, at: nodes[0].span.clone(), p_at: nodes[i].span.clone() }
-        });
-        let prefix = (last_at > 0 && !split.as_ref().is_some_and(|split| split.simple && split.unit)).then(|| self.part(&nodes[..last_at], Some(Category::Value)));
+            Ok(Split { p, index, slot, keyed, simple, unit, container, at: nodes[0].span.clone(), p_at: nodes[i].span.clone() })
+        }).transpose()?;
+        let prefix = if last_at > 0 && !split.as_ref().is_some_and(|split| split.simple && split.unit) {
+            Some(deferred(self.part(&nodes[..last_at], Some(Category::Value)))?)
+        } else { None };
         let node = &nodes[last_at];
         let last = match &node.kind {
             NodeKind::Name(name, _) => Last::Name(*name, node.span.clone()),
             NodeKind::Group(_) | NodeKind::Run(_) if at_split == Some(last_at - 1) => Last::Container,
-            NodeKind::Group(_) | NodeKind::Run(_) => Last::Layer(Box::new(self.layer(std::slice::from_ref(node), slots))),
-            _ if last_at > 0 && self.is_array(&nodes[last_at - 1]) && self.is_array(node) => {
+            NodeKind::Group(_) | NodeKind::Run(_) => Last::Layer(Box::new(self.layer(std::slice::from_ref(node), slots)?)),
+            _ if last_at > 0 && self.is_array(&nodes[last_at - 1])? && self.is_array(node)? => {
                 let span = Span { source: node.span.source.clone(), range: nodes[last_at - 1].span.range.start..node.span.range.end };
                 Last::Invalid(Error::new(ErrorKind::Syntax, STRAND_TARGET).at(&span))
             }
             _ => Last::Invalid(Error::new(ErrorKind::Syntax, "selection must end in an array name").at(&node.span)),
         };
-        Layer { split, prefix, last, last_at: node.span.clone(), span, at }
+        Ok(Layer { split, prefix, last, last_at: node.span.clone(), span, at })
     }
 
     /// Whether this compiler reads `node` as an array: a literal, or a node whose category is an array's.
-    fn is_array(&mut self, node: &Node) -> bool { matches!(node.kind, NodeKind::Literal(_)) || self.category(node) == Category::Value }
+    fn is_array(&mut self, node: &Node) -> Result<bool, Error> { Ok(matches!(node.kind, NodeKind::Literal(_)) || self.category(node)? == Category::Value) }
 
     /// `nodes`, a part of an assignment's target, compiled as a statement of its own, with an item of category `seed` to their right where one is given, for the assignment to run, or the error that compiling it gives, which the assignment raises where it runs the part. Its facts join this statement's, which checks them as it starts.
     fn part(&mut self, nodes: &[Node], seed: Option<Category>) -> Result<StatementCode, Error> {
@@ -473,8 +485,8 @@ impl<'s> Compiler<'s> {
     /// Compiles `nodes` as level `level`, with `seed` on the stack. Gives the item that holds the level's value.
     fn level(&mut self, nodes: &[Node], level: u32, seed: Option<Item>) -> Result<Item, Error> {
         // Joined runs, dot reads and joined items group the nodes before the walk reads them. The groupings read categories through this compiler, which gives the categories the walk will compile with. Each instruction holds the nodes it reads, so nothing keeps the groups.
-        let joined = self.joined(nodes);
-        let members = self.members(&joined);
+        let joined = self.joined(nodes)?;
+        let members = self.members(&joined)?;
         let nodes = &members[..];
         let source = &nodes[0].span.source;
         let (mut stack, mut pending) = (Vec::new(), Vec::new());
@@ -518,7 +530,7 @@ impl<'s> Compiler<'s> {
     fn leaf(&mut self, node: &Node, stack: &mut Vec<Item>) -> Result<Item, Error> {
         let range = narrow(&node.span.range);
         Ok(match &node.kind {
-            NodeKind::Run(inner) if self.ends_in_dyadic_operator(inner) => {
+            NodeKind::Run(inner) if self.ends_in_dyadic_operator(inner)? => {
                 // A run that ends in a dyadic operator takes the next run as its right operand, because each run acts as one token.
                 let Some(right) = stack.pop() else {
                     return Err(Error::new(ErrorKind::Syntax, "an operator at the end of a run needs a right operand after it").at(&node.span));
@@ -527,7 +539,7 @@ impl<'s> Compiler<'s> {
             }
             NodeKind::Group(inner) | NodeKind::Run(inner) => self.group(node, inner, None)?,
             NodeKind::ArrayLiteral { .. } => self.literal(node)?,
-            NodeKind::Name(name, take) => self.name(*name, *take, range),
+            NodeKind::Name(name, take) => self.name(*name, *take, range)?,
             NodeKind::Subscript(index) => self.postfix_item(Postfix::Index(index.clone()), range),
             NodeKind::Letter(letter) => self.postfix_item(lettered(*letter), range),
             NodeKind::BoundOperator(OperatorKind::Power, count) => self.postfix_item(Postfix::Power(count.as_number().expect("a superscript count").integer().expect("an integer superscript")), range),
@@ -588,19 +600,19 @@ impl<'s> Compiler<'s> {
     }
 
     /// A read of `name`, which takes the binding out of its frame where `take` marks the dfn's last read of it. A name that an assignment earlier in the statement binds binds as what it assigned. Any other binds with the role of what it holds now (`Session::path_role`), which the statement's facts keep, and its read fails if that role changed while the statement ran (`role_changed`); an unbound name binds as an array. An absent `⍺` drops out, so it compiles to a constant.
-    fn name(&mut self, name: Name, take: bool, range: std::ops::Range<u32>) -> Item {
+    fn name(&mut self, name: Name, take: bool, range: std::ops::Range<u32>) -> Result<Item, Error> {
         let session = self.session;
         let (category, postfix, on) = match self.assigned.iter().rev().find(|(assigned, _)| *assigned == name) {
             Some(&(_, category)) => (category, false, Mismatch::Fit),
             None => {
-                let (category, postfix) = session.path_role(name, &[], &mut Some(&mut self.facts));
-                if category == Category::Absent { return self.constant(Term::Binding(Binding::Absent), range); }
+                let (category, postfix) = session.path_role(name, &[], &mut Some(&mut self.facts))?;
+                if category == Category::Absent { return Ok(self.constant(Term::Binding(Binding::Absent), range)); }
                 (category, postfix, Mismatch::Fail)
             }
         };
         let to = self.register();
         self.ops.push(Op::Load { name, address: session.bindings.address(name), take, to, range: range.clone(), check: category, on });
-        Item { postfix, ..Item::new(Read::Register(to), category, range) }
+        Ok(Item { postfix, ..Item::new(Read::Register(to), category, range) })
     }
 
     /// The item for the group or run `node`, whose nodes are `inner`, compiled as a level of its own, with `seed` on its stack where it's a run that ends in a dyadic operator. A group with a constant value compiles to that constant. A field read that `members` formed binds with the field's role (`dot_path`, `Session::path_role`), which the statement's facts keep. Any other group binds as its value does, where a train or a bound left argument becomes a function.
@@ -615,7 +627,7 @@ impl<'s> Compiler<'s> {
         self.one_value(node, value.category.valence().is_some())?;
         let path = self.fields.iter().find(|(at, ..)| *at == range).map(|(_, name, keys)| (*name, keys.clone()));
         let (category, postfix) = match path {
-            Some((name, keys)) => session.path_role(name, &keys, &mut Some(&mut self.facts)),
+            Some((name, keys)) => session.path_role(name, &keys, &mut Some(&mut self.facts))?,
             None => (value.category.settled(), value.postfix),
         };
         if let Read::Constant(c) = value.read && self.ops.len() == start.ops + 1 {
@@ -744,7 +756,7 @@ impl<'s> Compiler<'s> {
         }
         // A one-node target starts where it is, whatever its name holds, so only a longer one reads the roles of what its names hold.
         let (start, modifier) = if i - begin == 1 { (begin, None) } else { self.target(nodes, begin, i)? };
-        let target = self.assigned_target(&nodes[start..i], modifier.as_ref().map_or(0, |(count, _)| *count as usize));
+        let target = self.assigned_target(&nodes[start..i], modifier.as_ref().map_or(0, |(count, _)| *count as usize))?;
         let category = value.as_ref().map_or(Category::NoResult, |value| value.category.settled());
         let local = match (&nodes[start..i], &value) {
             ([Node { kind: NodeKind::Name(name, _), .. }], Some(_)) => {
@@ -765,14 +777,14 @@ impl<'s> Compiler<'s> {
     /// Where the target of the assignment whose `←` is at `i` starts, no further left than `begin`, with a modified assignment's function: its count of nodes, and its item, which compiles here as any function does. The target is the operand before `←` (`trailing`). Where that operand is a function with an array before it, the function modifies, and the target is the operand before the function. In a dfn a name before `←` is the target unless an array comes directly before it. Then the name's value decides, as at top level, and a function makes a modified assignment, as in `a(f)←3` and `(a)f←3`.
     fn target(&mut self, nodes: &[Node], begin: usize, i: usize) -> Result<(usize, Option<(u32, Item)>), Error> {
         let session = self.session;
-        if session.rule_target(&nodes[begin..i], &mut Some(&mut self.facts)).is_some() { return Ok((begin, None)); }
+        if session.rule_target(&nodes[begin..i], &mut Some(&mut self.facts))?.is_some() { return Ok((begin, None)); }
         let mark = self.mark();
         let (operand, item) = self.trailing(nodes, begin, i)?;
         if item.category.valence().is_some() {
             return Err(Error::new(ErrorKind::Syntax, "missing assignment operand").at(&span_of(&nodes[0].span.source, &item.range)));
         }
         let modified = operand > begin && item.category.before(None).settled() == Category::Function
-            && (self.category(&nodes[operand - 1]) == Category::Value || !session.assignment_names(&nodes[operand..i], &mut Some(&mut self.facts)));
+            && (self.category(&nodes[operand - 1])? == Category::Value || !session.assignment_names(&nodes[operand..i], &mut Some(&mut self.facts))?);
         let start = if modified {
             let read = self.mark();
             let start = self.trailing(nodes, begin, operand).map(|(start, _)| start);
@@ -782,7 +794,7 @@ impl<'s> Compiler<'s> {
             self.truncate(mark);
             operand
         };
-        if start > begin && self.category(&nodes[start]) == Category::Value && self.category(&nodes[start - 1]) == Category::Value {
+        if start > begin && self.category(&nodes[start])? == Category::Value && self.category(&nodes[start - 1])? == Category::Value {
             let span = Span { source: nodes[start].span.source.clone(), range: nodes[start - 1].span.range.start..nodes[start].span.range.end };
             return Err(Error::new(ErrorKind::Syntax, STRAND_TARGET).at(&span));
         }
@@ -790,12 +802,12 @@ impl<'s> Compiler<'s> {
     }
 
     /// The category that this compiler gives `node` read alone, compiling nothing: a group's or a run's is its value's, a dot path's is its field's, and a run that ends in a dyadic operator is a dyadic operator, as `leaf` reads it. An absent `⍺` counts as an array, as an unbound name does, and a node that can't compile has no result.
-    fn category(&mut self, node: &Node) -> Category {
-        if let NodeKind::Run(inner) = &node.kind && self.ends_in_dyadic_operator(inner) { return Category::DyadicOperator; }
+    fn category(&mut self, node: &Node) -> Result<Category, Error> {
+        if let NodeKind::Run(inner) = &node.kind && self.ends_in_dyadic_operator(inner)? { return Ok(Category::DyadicOperator); }
         let mark = self.mark();
         let read = self.leaf(node, &mut Vec::new()).map(|item| item.category.before(None).settled());
         self.truncate(mark);
-        match read { Ok(Category::Absent) => Category::Value, Ok(category) => category, Err(_) => Category::NoResult }
+        Ok(match probe(read)? { Some(Category::Absent) => Category::Value, Some(category) => category, None => Category::NoResult })
     }
 
     /// Compiles the reduction of the top two items of `stack`, by the rule that their roles give. `last` marks the statement's last reduction on its own level.
@@ -963,4 +975,11 @@ impl<'s> Compiler<'s> {
         self.levels.truncate(mark.levels);
         (self.registers, self.free) = (mark.registers, mark.free);
     }
+}
+
+fn probe<T>(value: Result<T, Error>) -> Result<Option<T>, Error> {
+    match value { Ok(value) => Ok(Some(value)), Err(error) if matches!(error.kind, ErrorKind::Syntax) => Ok(None), Err(error) => Err(error) }
+}
+fn deferred<T>(value: Result<T, Error>) -> Result<Result<T, Error>, Error> {
+    match value { Err(error) if error.kind.is_control() => Err(error), value => Ok(value) }
 }

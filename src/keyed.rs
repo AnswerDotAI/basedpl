@@ -1,4 +1,4 @@
-use crate::{ErrorKind, Number, Value, array::{Items, Segments}};
+use crate::{ErrorKind, Number, Value, array::{Items, Layout, Segments}};
 use rustymath::hashing::{HashMap, HashSet, HashSetExt};
 use rustymath::{buffer::{FloatWidth, View}, error::Kind};
 use std::sync::Arc;
@@ -73,7 +73,7 @@ pub(crate) fn text_column(shape: &[usize], column: &[&str]) -> Result<Value, Err
         lengths.push(len);
     }
     let Value::Array(leaf) = Value::characters([leaf.len()], leaf)? else { unreachable!("characters make an array") };
-    Ok(Value::Array(Arc::new(crate::array::ArrayData::Segmented { layout: crate::array::Layout::from(shape), segments: Segments::new(leaf, offsets, lengths, 1, text("")) })))
+    Ok(Value::Array(Arc::new(crate::array::ArrayData::Segmented { layout: Layout::from(shape), segments: Segments::new(leaf, offsets, lengths, 1, text("")) })))
 }
 /// The texts in `value`, the reverse of `texts`: the text itself with an empty shape, or each text in an array of them with the array's shape. `None` when an item isn't text.
 pub(crate) fn text_items(value: &Value) -> Option<(Vec<usize>, Vec<Arc<str>>)> {
@@ -118,11 +118,14 @@ pub(crate) fn vector(names: Vec<Arc<str>>, values: Vec<Value>) -> Result<Value, 
 /// A record with no entries.
 pub(crate) fn empty_record() -> Value { vector(Vec::new(), Vec::new()).expect("an empty record") }
 
+pub(crate) fn partial_layout(names: Vec<Option<Arc<str>>>) -> Result<Layout, ErrorKind> {
+    Layout::from([names.len()]).with_keys(vec![Some(Keys::partial(names)?)])
+}
 /// A vector whose entries with a name are keyed by it. Each entry keeps its kind, as items written in brackets do.
 pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
     let vector =
         if values.is_empty() { Value::empty(vec![0], Value::Number(Number::float(0.0, FloatWidth::F64)))? } else { Value::new(vec![values.len()], values)? };
-    vector.with_keys(vec![Some(Keys::partial(names)?)])
+    vector.with_keys(vec![partial_layout(names)?.keys(0).cloned()])
 }
 
 /// A record of columns: the field `names[j]` holds item `j` of each row, as an array of `shape`, or as that row's item when `shape` is empty. Without rows, each field is an empty array of `empty[j]`.

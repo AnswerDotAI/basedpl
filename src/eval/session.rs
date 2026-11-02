@@ -50,48 +50,51 @@ impl Session {
     }
     pub fn names(&self) -> Vec<String> { self.bindings.names() }
     pub(crate) fn capture_binding(&self, parent: Option<usize>, module: usize, name: Name) -> Result<Option<(Place, Value)>, Error> {
-        let Some((place, binding)) = self.bindings.capture(parent, module, name) else { return Ok(None) };
+        let Some((place, binding)) = self.bindings.capture(parent, module, name)? else { return Ok(None) };
         if matches!(binding, Binding::NoResult | Binding::Absent | Binding::Released) { return Ok(None); }
         let span = Span::whole(Source::new("<capture>", name.text()));
         Ok(Some((place, binding.into_value(&span)?)))
     }
-    pub fn name_class(&self, name: &str) -> i64 {
-        match crate::inspection::item(name, crate::settings::hanzi_aliases()) {
-            Some(NodeKind::Name(name, _)) => self.bindings.lookup(name).map_or(0, |(_, binding)| binding.class()),
+    pub fn name_class(&self, name: &str) -> Result<i64, Error> {
+        Ok(match crate::inspection::item(name, crate::settings::hanzi_aliases()) {
+            Some(NodeKind::Name(name, _)) => self.bindings.lookup(name)?.map_or(0, |(_, binding)| binding.class()),
             Some(NodeKind::Function(_)) => FUNCTION_CLASS, Some(NodeKind::System(_)) => 0, _ => -1
-        }
+        })
     }
-    pub fn name_list(&self, classes: &[i64], prefix: &str) -> Vec<String> {
-        self.names().into_iter().filter(|name| name.starts_with(prefix) && classes.contains(&self.name_class(name))).collect()
+    pub fn name_list(&self, classes: &[i64], prefix: &str) -> Result<Vec<String>, Error> {
+        let mut names = Vec::new();
+        for name in self.names() { if name.starts_with(prefix) && classes.contains(&self.name_class(&name)?) { names.push(name); } }
+        Ok(names)
     }
-    pub fn inspect(&self, name: &str) -> Option<crate::Inspection> {
+    pub fn inspect(&self, name: &str) -> Result<Option<crate::Inspection>, Error> {
         let info = match crate::inspection::item(name, crate::settings::hanzi_aliases()) {
-            Some(NodeKind::Name(name, _)) => self.bindings.lookup(name).and_then(|(_, binding)| binding.inspection(self)),
-            Some(NodeKind::Function(builtin)) => Binding::from(builtin.function()).inspection(self),
+            Some(NodeKind::Name(name, _)) => self.bindings.lookup(name)?.map(|(_, binding)| binding.inspection(self)).transpose()?.flatten(),
+            Some(NodeKind::Function(builtin)) => Binding::from(builtin.function()).inspection(self)?,
             Some(NodeKind::Operator(op)) => Some(crate::Inspection::new("operator", op.glyph().to_string())), _ => None
         };
-        info.or_else(|| crate::inspection::documentation(name).map(|_| crate::Inspection::new("syntax", name.into())))
+        Ok(info.or_else(|| crate::inspection::documentation(name).map(|_| crate::Inspection::new("syntax", name.into()))))
     }
     /// A bound name's native kind and short display, without evaluating it or fully formatting a large array.
-    pub fn preview(&self, name: &str) -> Option<(&'static str, String)> {
-        let NodeKind::Name(name, _) = crate::inspection::item(name, crate::settings::hanzi_aliases())? else { return None };
-        let (_, binding) = self.bindings.lookup(name)?;
+    pub fn preview(&self, name: &str) -> Result<Option<(&'static str, String)>, Error> {
+        let Some(NodeKind::Name(name, _)) = crate::inspection::item(name, crate::settings::hanzi_aliases()) else { return Ok(None) };
+        let Some((_, binding)) = self.bindings.lookup(name)? else { return Ok(None) };
         let mut display = self.display_settings();
         display.boxed = false;
         display.elide = Elide { limit: 100, edges: 2, width: 80, ..display.elide };
         let (kind, text) = match binding {
             Binding::Value(a) => ("array", display.array(&a, false)), binding @ Binding::Function(_) =>
-                ("function", Function::from_value(binding, &Span::whole(Source::new("<inspect>", name.text()))).ok()?.text(display.elide, &mut 100)),
-            Binding::Operator(op) => ("operator", op.text(display.elide)), _ => return None
+                ("function", Function::from_value(binding, &Span::whole(Source::new("<inspect>", name.text())))?.text(display.elide, &mut 100)),
+            Binding::Operator(op) => ("operator", op.text(display.elide)), _ => return Ok(None)
         };
         let mut chars = text.chars();
         let mut text: String = chars.by_ref().take(200).collect();
         if chars.next().is_some() { text.push('…'); }
-        Some((kind, text))
+        Ok(Some((kind, text)))
     }
-    pub fn name_source(&self, name: &str) -> Result<String, ErrorKind> {
-        match self.name_class(name) {
-            FUNCTION_CLASS | OPERATOR_CLASS => Ok(self.inspect(name).unwrap().source), SUBJECT_CLASS => Err(Kind::Domain.into()), _ => Err(ErrorKind::Value)
+    pub fn name_source(&self, name: &str) -> Result<String, Error> {
+        match self.name_class(name)? {
+            FUNCTION_CLASS | OPERATOR_CLASS => self.inspect(name)?.map(|info| info.source).ok_or_else(|| Error::new(ErrorKind::Value, "name not found")),
+            SUBJECT_CLASS => Err(Error::new(Kind::Domain, "a subject has no function source")), _ => Err(Error::new(ErrorKind::Value, "name not found"))
         }
     }
     pub(crate) fn guard_node(&self, node: &crate::graph::Node) {
@@ -111,31 +114,35 @@ impl Session {
         self.raise()
     }
     pub(super) fn writing(&self, place: Place, span: &Span) -> Result<(), Error> {
-        if place.frame() != self.bindings.current() { crate::program::trace::Tracing::stop(crate::program::Reason::OuterWrite, Some(span.clone())); }
+        if place.frame() != self.bindings.current() {
+            let planning = crate::program::trace::Tracing::planning();
+            crate::program::trace::Tracing::stop(crate::program::Reason::OuterWrite, Some(span.clone()));
+            if planning { return Err(Error::planning()); }
+        }
         self.levels.writing(place).map_err(|error| error.at(span))
     }
     pub fn erase(&self, name: &str) -> Result<bool, Error> {
         let Some(NodeKind::Name(name, _)) = crate::inspection::item(name, crate::settings::hanzi_aliases()) else { return Ok(false); };
         if name.implicit().is_some() { return Ok(false); }
-        if let Some((place, _)) = self.bindings.lookup(name) {
+        if let Some((place, _)) = self.bindings.lookup(name)? {
             self.writing(place, &Span::whole(Source::new("<erase>", name.text())))?;
             self.bindings.remove(place);
         }
         Ok(true)
     }
-    pub fn complete(&self, prefix: &str) -> Vec<String> {
-        let mut names = self.name_list(&[2, 3, 4], prefix);
+    pub fn complete(&self, prefix: &str) -> Result<Vec<String>, Error> {
+        let mut names = self.name_list(&[2, 3, 4], prefix)?;
         names.extend(crate::system::Entry::all().map(crate::system::Entry::name).filter(|name| name.starts_with(&prefix.to_lowercase())).map(str::to_owned));
         names.sort_unstable();
-        names
+        Ok(names)
     }
     /// `f` applied to the name that `right` holds. The system table maps `•nc`, `•ex` and `•src` over an array of names.
-    fn named(&self, right: &Value, span: &Span, f: impl FnOnce(&Self, &str) -> Result<Value, ErrorKind>) -> Result<Value, Error> {
+    fn named(&self, right: &Value, span: &Span, f: impl FnOnce(&Self, &str) -> Result<Value, Error>) -> Result<Value, Error> {
         let name = crate::keyed::name(right).ok_or_else(|| Error::domain("expected a name string").at(span))?;
-        f(self, &name).map_err(|kind| Error::new(kind, format!("cannot inspect name: {name}")).at(span))
+        f(self, &name).map_err(|error| error.at(span))
     }
     pub(crate) fn system_nc(&self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-        self.named(right, span, |s, name| Ok(Value::integer(s.name_class(name))))
+        self.named(right, span, |s, name| Ok(Value::integer(s.name_class(name)?)))
     }
     pub(crate) fn system_ex(&self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         self.named(right, span, |s, name| Ok(Value::integer(s.erase(name)? as i64)))
@@ -167,12 +174,12 @@ impl Session {
         self.bind(&statement.nodes)?.array(span)
     }
     /// `•time t` gives the seconds since `t`, counting from the Unix epoch. `F •time x` gives each function's fastest time per call on `x`, in the layout of `F`.
-    pub(crate) fn system_time(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    pub(crate) fn system_time(&self, left: Option<&Value>, right: &Value, span: &Span, numeric: Numeric) -> Result<Value, Error> {
         // Times stay 64-bit, as `•date` gives them, because a 32-bit float holds seconds since 1970 only to within about two minutes.
         let second = |s| Value::Number(crate::Number::float(s, FloatWidth::F64));
         let Some(functions) = left else {
             let now = second(crate::date::now());
-            return Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(Some(&now), right, span);
+            return Primitive::Arithmetic(crate::number::Arithmetic::Minus).call(Some(&now), right, span, numeric);
         };
         let times = functions.elements().map(|f| match f {
             Value::Function(f) => self.fastest(&f, right, span), _ => Err(Error::domain("•time needs functions on its left").at(span))
@@ -202,7 +209,7 @@ impl Session {
         if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "•nl needs a class or class vector").at(span)); }
         let classes = right.as_items().integers().described("invalid name class").at(span)?;
         if classes.iter().any(|n| !(SUBJECT_CLASS..=OPERATOR_CLASS).contains(n)) { return Err(Error::domain("name classes are 2, 3 and 4").at(span)); }
-        let values = self.name_list(&classes, &prefix).iter().map(|n| crate::keyed::text(n)).collect::<Vec<_>>();
+        let values = self.name_list(&classes, &prefix)?.iter().map(|n| crate::keyed::text(n)).collect::<Vec<_>>();
         crate::keyed::texts(&[values.len()], values).described("invalid name list").at(span)
     }
     pub fn set(&self, name: &str, value: Value) -> Result<(), ErrorKind> { self.set_value(name, Binding::from_element(value)) }
@@ -320,7 +327,10 @@ impl Session {
             match bound {
                 Ok(bound) => {
                     let dissected = if dissecting && (dissect || !bound.shy && !matches!(bound.value, Binding::NoResult | Binding::Absent)) {
-                        bound.expression.map(|e| *e).or_else(|| Expression::binding(&bound.value)).map(|e| {
+                        let expression = match bound.expression { Some(expression) => Some(*expression), None => match Expression::binding(&bound.value) {
+                            Ok(expression) => expression, Err(error) => { result.error = Some(error); return result; }
+                        }};
+                        expression.map(|e| {
                             let display = crate::settings::display();
                             e.display(display.trees, display.elide)
                         })
@@ -376,7 +386,7 @@ impl Session {
                     Help::Topic("llms", _) => inspection::LLMS.to_owned(),
                     Help::Topic(name, detail) => {
                         if !detail && let Some(page) = inspection::page(name) { page.to_owned() }
-                        else if let Some(info) = self.inspect(name) { return Ok((info.text(detail), info.markdown(detail))); }
+                        else if let Some(info) = self.inspect(name)? { return Ok((info.text(detail), info.markdown(detail))); }
                         else if !detail { inspection::search(name, false)? }
                         else { return Err(Error::new(ErrorKind::Value, format!("name not found: {name}"))); }
                     }
@@ -553,14 +563,14 @@ impl Session {
     }
 
     /// The role (`binder::role`) of `name`'s binding, or of the field that `keys` reach from the array it holds (`binder::field_role`), as the compiler binds it, read without evaluating anything; an unbound name binds as an array. While a statement compiles, `log` keeps the fact that it read (`tree::Fact`), except for a name whose role no assignment can change (`Name::fixed`). The 1 home of a compile-time role read: the compiler's names and dot reads, and `path_category`.
-    pub(super) fn path_role(&self, name: Name, keys: &[Arc<str>], log: &mut super::tree::Facts) -> (Category, bool) {
-        let role = if keys.is_empty() { self.bindings.role(name).unwrap_or(super::binder::UNBOUND) }
-            else { super::binder::field_role(self.bindings.lookup(name).map(|(_, b)| b), keys) };
+    pub(super) fn path_role(&self, name: Name, keys: &[Arc<str>], log: &mut super::tree::Facts) -> Result<(Category, bool), Error> {
+        let role = if keys.is_empty() { self.bindings.role(name)?.unwrap_or(super::binder::UNBOUND) }
+            else { super::binder::field_role(self.bindings.lookup(name)?.map(|(_, b)| b), keys) };
         if let Some(log) = log && !(keys.is_empty() && name.fixed()) {
             let fact = super::tree::Fact::new(self.bindings.address(name), keys.into(), role);
             if !log.contains(&fact) { log.push(fact); }
         }
-        role
+        Ok(role)
     }
 
     /// The entries of the keyed item in cell `cell` of the bracket literal `node`, whose `:` is at `colon`: `Keys` applies `key` to `value`, which must give a keyed vector. A name with a batch of atoms gives one entry that holds the batch, as `Keys` gives one entry in each cell, so a record built in a batched run holds batches as a list literal does. The level that finishes a compiled keyed item calls it as soon as the item's value and key are both ready (`tree::Keyed`). An item that fails there stops the items after it.
@@ -595,7 +605,7 @@ impl Session {
         let span = Span::whole(Source::new("<call>", name.text()));
         let position = origin.bindings.scope(function).and_then(|(_, scope)| scope.names.iter().find(|entry| entry.name == *name)).and_then(|entry| entry.position.as_ref())
             .ok_or_else(|| undefined(*name, &span))?;
-        let function = Function::from_value(Binding::from_element(Function::capture_at(&origin, position).into_owned()), &span)?;
+        let function = Function::from_value(Binding::from_element(Function::capture_at(&origin, position)?.into_owned()), &span)?;
         let arguments = Function::body_arguments(&origin)?;
         let from: Vec<_> = Function::argument_ranges(&origin)?.into_iter().flatten().map(|range| Some(range.start)).collect();
         function.call_bound(&origin, &arguments, &from)
@@ -618,8 +628,8 @@ impl Session {
         let args = Function::body_arguments(&origin)?;
         let (left, right) = (if args.len() == 2 { Some(args[0].clone()) } else { None }, args.last().expect("a function has an argument").clone());
         let operands = function.node().operands();
-        let operand = |i| (i < operands.len()).then(|| Binding::from_element(function.operand(&origin, i).into_owned()));
-        let implicit = [Some(left.map_or(Binding::Absent, Binding::Value)), Some(Binding::Value(right)), operand(0), operand(1),
+        let operand = |i| (i < operands.len()).then(|| function.operand(&origin, i).map(|value| Binding::from_element(value.into_owned()))).transpose();
+        let implicit = [Some(left.map_or(Binding::Absent, Binding::Value)), Some(Binding::Value(right)), operand(0)?, operand(1)?,
             Some(function.clone().into()), matches!(function.node(), FunctionNode::Applied { op: Operator::Closure(_), .. })
                 .then(|| Binding::Operator(OperatorValue::Operator(Operator::Closure(defined.clone()))))];
         let (base, caller) = (self.bindings.depth(), self.bindings.current());
@@ -683,7 +693,7 @@ impl Session {
                     match statement.kind {
                         StatementKind::DefaultArgument => {
                             if nodes.len() == 2 { return Err(Error::new(ErrorKind::Syntax, "default argument needs a value").at(&nodes[1].span)); }
-                            if self.bindings.category(Name::ALPHA) == Some(Category::Absent) {
+                            if self.bindings.category(Name::ALPHA)? == Some(Category::Absent) {
                                 let value = self.bound(&nodes[2..])?.value;
                                 if matches!(value, Binding::NoResult | Binding::Absent) {
                                     return Err(Error::new(ErrorKind::Value, "default argument requires a value").at(&nodes[0].span));

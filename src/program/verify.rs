@@ -28,7 +28,7 @@ fn broken(program: &Program) -> Option<String> {
             }
             Node::Step { origin, descs, .. } => {
                 if !reads_valid(&origin.list) { return Some(format!("v{position} has invalid reads")); }
-                if descs.end as usize > program.descs.len() || descs.is_empty() { return Some(format!("v{position} has invalid outputs")); }
+                if descs.start > descs.end || descs.end as usize > program.descs.len() { return Some(format!("v{position} has invalid outputs")); }
                 if origin.explicit as usize > origin.list.len() { return Some(format!("v{position} has an invalid explicit boundary")); }
             }
             _ => {}
@@ -38,7 +38,7 @@ fn broken(program: &Program) -> Option<String> {
             if read.operand.node >= position { return Some(format!("v{position} reads v{} before it is defined", read.operand.node)); }
         }
     }
-    program.roots.iter().find(|&&output| !valid(output)).map(|_| "a root names a missing output".into())
+    program.live_roots().find(|&output| !valid(output)).map(|_| "a root names a missing output".into())
 }
 
 pub(crate) fn compatible(recorded: &Desc, current: &Desc) -> bool {

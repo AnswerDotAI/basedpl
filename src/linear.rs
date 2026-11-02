@@ -1,34 +1,14 @@
-//! Linear seeds, their substitution, and the transpose of the canonical graph.
+//! Linear seeds and the transpose of the canonical graph.
 use crate::{
-    array::{self, map_leaves}, derivative, error::Result, graph::{Node, Pending}, number::{Arithmetic, Mark},
+    array, derivative, error::Result, graph::{Node, Pending}, number::{Arithmetic, Mark},
     primitive::{Operation, Pairing, Primitive}, program::{trace::Role, Desc, Live, Origin, Read, Step}, Error, Value,
 };
 use rustymath::{buffer::DType, hashing::{HashMap, HashMapExt}};
 
-pub(crate) fn zeros_like(like: &Value) -> Value {
-    map_leaves(like, |leaf| Ok(match leaf.dtype() {
-        Some(rustymath::buffer::DType::Float(_) | rustymath::buffer::DType::Complex(_) | rustymath::buffer::DType::Integer(_) | rustymath::buffer::DType::Boolean) =>
-            Desc::of(leaf).expect("a numeric leaf has a description").zeros(),
-        _ => leaf.clone(),
-    })).expect("zero construction reads no data")
-}
-
-/// An absent input is the unbound seed; its level mark forbids observation.
-pub(crate) fn seed(like: &Value, level: usize, position: usize) -> Pending {
+/// A linear input. A direction binds it; reverse mode leaves the seed unbound.
+pub(crate) fn seed(like: &Value, level: usize, position: usize, value: Option<Value>) -> Pending {
     let desc = Desc::of(like).expect("a differentiated leaf has a description").into_owned();
-    Pending::data(Node::input(position, None, desc, Role::Seed, Some(level), None), 0)
-}
-
-/// Rebind all leaves together through the graph's shared redispatch pass.
-pub(crate) fn substituted(root: &Value, seeds: &[Pending], values: &[Value]) -> Result<Value> {
-    debug_assert_eq!(seeds.len(), values.len());
-    let (trees, mut leaves) = match array::flatten(std::slice::from_ref(root)) {
-        Some((trees, leaves)) => (Some(trees), leaves), None => (None, vec![root.clone()]),
-    };
-    let roots: Vec<_> = leaves.iter().filter_map(Value::pending).cloned().collect();
-    let mut outputs = Live::of(&roots).substituted(|pending| seeds.iter().position(|seed| seed == pending).map(|i| values[i].clone()))?.into_vec().into_iter();
-    for leaf in &mut leaves { if leaf.pending().is_some() { *leaf = outputs.next().expect("one substituted value per root"); } }
-    Ok(match trees { Some(trees) => trees.build(&leaves).pop().expect("one input tree"), None => leaves.pop().expect("one input leaf") })
+    Pending::data(Node::input(position, value, desc, Role::Seed, Some(level), None), 0)
 }
 
 pub(crate) fn read_back(origin: &crate::program::Origin<&[crate::program::Read<Value>]>, cotangent: &Value, needed: &[bool]) -> Result<Vec<Option<Value>>> {
@@ -49,8 +29,8 @@ pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value]
     let mut cotangents = HashMap::default();
     let mut pending = Vec::new();
     for (root, direction) in roots.iter().zip(directions) {
-        let leaves = array::flatten(std::slice::from_ref(root)).map_or_else(|| vec![root.clone()], |(_, leaves)| leaves);
-        let directions = array::flatten(std::slice::from_ref(direction)).map_or_else(|| vec![direction.clone()], |(_, leaves)| leaves);
+        let leaves = array::flatten(std::slice::from_ref(root))?.map_or_else(|| vec![root.clone()], |(_, leaves)| leaves);
+        let directions = array::flatten(std::slice::from_ref(direction))?.map_or_else(|| vec![direction.clone()], |(_, leaves)| leaves);
         if leaves.len() != directions.len() { return Err(Error::domain("a cotangent must match its result's structure")); }
         for (leaf, direction) in leaves.into_iter().zip(directions) {
             if let Value::Pending(source) = leaf { pending.push(source.clone()); add(&mut cotangents, source, direction)?; }
@@ -66,7 +46,7 @@ pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value]
         let origin = origin.with_list(origin.list.as_slice());
         let contributions = match step {
             Step::Select { .. } | Step::Loop { .. } => derivative::transpose_control(node, &origin, &output, &needed, level)?,
-            Step::Map { .. } | Step::Product { .. } | Step::Call { .. } => {
+            Step::Map { .. } | Step::Product { .. } | Step::Call => {
                 if output.len() != 1 { return Err(Error::planning()); }
                 let direction = output[0].as_ref().ok_or_else(Error::planning)?;
                 let result = Value::Pending(Pending::data(node.clone(), 0));
@@ -83,15 +63,19 @@ pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value]
                 let direction = Operation::Convert(Mark::Type { dtype, fixed: false }).call(std::slice::from_ref(direction), 0)?;
                 read_back(&origin, &direction, &needed)?
             }
-            Step::Copy { .. } | Step::Gather { .. } | Step::Join { .. } | Step::Picks { .. } | Step::At { .. } | Step::Fold { .. } => {
+            Step::Fold { axis, .. } => {
                 let direction = output[0].as_ref().ok_or_else(Error::planning)?;
-                derivative::transpose_read(&origin, direction, &needed)?
+                derivative::transpose_fold(&origin, direction, &needed, axis)?
             }
-            Step::Draw { .. } | Step::Effect { .. } | Step::Index { .. } => vec![None; origin.list.len()],
+            Step::Copy { .. } | Step::Gather { .. } | Step::Join { .. } | Step::Picks { .. } | Step::At { .. } => {
+                let direction = output[0].as_ref().ok_or_else(Error::planning)?;
+                read_back(&origin, direction, &needed)?
+            }
+            Step::Draw | Step::Effect { .. } | Step::Index { .. } => vec![None; origin.list.len()],
         };
         for (read, contribution) in origin.list.iter().zip(contributions) {
             if let (Some(source), Some(contribution)) = (read.operand.pending(), contribution) { add(&mut cotangents, source.clone(), contribution)?; }
         }
     }
-    Ok(seeds.iter().map(|seed| cotangents.remove(seed).unwrap_or_else(|| zeros_like(&Value::Pending(seed.clone())))).collect())
+    seeds.iter().map(|seed| match cotangents.remove(seed) { Some(value) => Ok(value), None => Value::Pending(seed.clone()).zeros_like() }).collect()
 }

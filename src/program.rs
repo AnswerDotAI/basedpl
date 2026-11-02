@@ -10,10 +10,10 @@ pub(crate) mod trace;
 pub(crate) mod verify;
 
 use crate::{
-    Error, Function, Number, Span, Value, array::{Layout, TreeRoot, Trees}, graph::Pending, number::{Kind, Numeric},
-    eval::{CaptureBindings, FunctionBinding}, primitive::{CallBindings, Input, Operation, Roles},
+    Error, Function, Number, Span, Value, array::{Layout, SegmentPart, Tree, TreeRoot, Trees}, graph::Pending, number::{Kind, Numeric},
+    eval::{CaptureBindings, FunctionBinding}, settings::Compiles, transform::Level, primitive::{CallBindings, Input, Operation, ReadOp, Roles, ViewAxis},
 };
-use rustymath::{agreement::Mapping, buffer::{DType, Width, FloatWidth}, convert::Conversion, facts::{Range, Variant}, hashing::HashMap};
+use rustymath::{agreement::{Mapping, ReadPlan}, buffer::{DType, Width, FloatWidth, View}, convert::Conversion, facts::{Range, Variant}, hashing::HashMap};
 use std::{borrow::Cow, hash::{Hash, Hasher}, sync::{Arc, Mutex, Weak, atomic::{AtomicUsize, Ordering}}};
 
 // Descriptions (part 2)
@@ -34,28 +34,65 @@ pub(crate) struct Desc {
 }
 
 impl Desc {
+    pub(crate) fn cacheable(&self) -> bool {
+        self.layout.cacheable() && self.segments.as_ref().is_none_or(|segment| segment.leaf.cacheable() && segment.prototype.cacheable())
+    }
     pub(crate) fn of(value: &Value) -> Option<Cow<'_, Desc>> {
         match value {
-            Value::Pending(pending) => pending.description().map(Cow::Borrowed),
+            Value::Pending(pending) => pending.description().map(Cow::Borrowed).or_else(|| {
+                Self::of(&pending.node.stored(pending.output?)?).map(Cow::into_owned).map(Cow::Owned)
+            }),
             Value::Carried { carried, .. } => match &**carried {
                 crate::array::Carried::Batch { cell, .. } => Some(Cow::Borrowed(cell)),
                 crate::array::Carried::Dual { primal, .. } => Self::of(primal),
             },
-            value => Self::leaf(value).map(Cow::Owned),
+            value => Self::leaf(value).map(Self::opaque).map(Cow::Owned),
         }
     }
     /// Part 2: the 1 place a stored value's description is made, when it enters the graph as a leaf: its kind, atom flag, layout and segments, and the range its data carries from when it was made (`ArrayData`), or unknown. Host values (part 5) have none: describe and the builder see only graph values' descriptions.
     pub(crate) fn leaf(value: &Value) -> Option<Desc> {
+        if matches!(value, Value::Pending(_) | Value::Carried { .. }) { return None; }
         let segments = if let Value::Array(array) = value && let Some(segments) = array.segments() {
             let rank = segments.rank();
-            let stacked = rank == 0 || segments.shapes().chunks(rank).all(|shape| shape == segments.shape(0));
+            let stacked = segments.is_stacked();
             Some(Box::new(Segmented { rank: rank.try_into().ok()?, stacked,
-                leaf: Self::leaf(&Value::Array(match &**array { crate::array::ArrayData::Segmented { segments, .. } => segments.leaf.clone(), _ => unreachable!() }))?.segments,
+                leaf: Box::new(Self::leaf(&value.stored_segment_part(SegmentPart::Leaf).ok()?)?),
                 prototype: Box::new(Self::leaf(segments.prototype())?) }))
         } else { None };
         Some(Self { kind: value.kind()?, atom: value.is_atom(), layout: value.layout().clone(), range: value.range(), segments })
     }
     pub(crate) fn new(kind: Kind, atom: bool, layout: Layout) -> Self { Self { kind, atom, layout, range: None, segments: None } }
+    pub(crate) fn packed_segments(layout: Layout, rank: u8, stacked: bool, leaf: &Desc, prototype: &Desc) -> crate::error::Result<Self> {
+        if prototype.atom || prototype.shape().len() != usize::from(rank) || prototype.kind != leaf.kind { return Err(Error::domain("invalid segmented prototype")); }
+        Ok(Self { kind: leaf.kind, atom: false, layout, range: leaf.range,
+            segments: Some(Box::new(Segmented { rank, stacked, leaf: Box::new(leaf.clone()), prototype: Box::new(prototype.clone()) })) })
+    }
+    pub(crate) fn segment_part(&self, part: SegmentPart) -> Option<Desc> {
+        let segment = self.segments.as_ref()?;
+        Some(match part {
+            SegmentPart::Leaf => (*segment.leaf).clone(), SegmentPart::Prototype => (*segment.prototype).clone(),
+            SegmentPart::Entries | SegmentPart::Shapes => Desc::new(Kind::stored(DType::Integer(Width::I64), false, false), false,
+                part.layout(self.layout.count(), usize::from(segment.rank), segment.stacked)?),
+        })
+    }
+    pub(crate) fn bounds(&self) -> Range { self.range.unwrap_or_else(|| self.kind.range()) }
+    pub(crate) fn opaque(mut self) -> Self {
+        fn clear(desc: &mut Desc) {
+            desc.range = None;
+            if let Some(segment) = desc.segments.as_deref_mut() { clear(&mut segment.leaf); clear(&mut segment.prototype); }
+        }
+        clear(&mut self); self
+    }
+    fn metadata_eq(&self, other: &Self) -> bool {
+        fn segments(a: Option<&Segmented>, b: Option<&Segmented>) -> bool {
+            match (a, b) {
+                (None, None) => true,
+                (Some(a), Some(b)) => a.rank == b.rank && a.stacked == b.stacked && a.prototype.metadata_eq(&b.prototype) && a.leaf.metadata_eq(&b.leaf),
+                _ => false,
+            }
+        }
+        self.kind == other.kind && self.atom == other.atom && self.layout == other.layout && segments(self.segments.as_deref(), other.segments.as_deref())
+    }
     pub(crate) fn dtype(&self) -> DType { self.kind.dtype() }
     pub(crate) fn shape(&self) -> &[usize] { self.layout.shape() }
     pub(crate) fn zero(&self) -> Value {
@@ -66,7 +103,7 @@ impl Desc {
             DType::Integer(_) => Number::from_integer(0), DType::Float(width) => Number::float(0.0, width),
             DType::Complex(width) => Number::complex_kept(num_complex::Complex64::new(0.0, 0.0), width.into()),
             DType::Character => return Value::Character(' '),
-        }.marked(self.kind.weak))
+        }.stored(self.kind))
     }
     pub(crate) fn zeros(&self) -> Value { if self.atom { self.zero() } else { self.layout.filled(&self.zero()) } }
     pub(crate) fn admits(&self, value: &Value) -> bool {
@@ -84,17 +121,17 @@ pub(crate) struct Segmented {
     pub(crate) rank: u8,
     /// Part 1: its items share 1 shape (stacked, no entries).
     pub(crate) stacked: bool,
-    /// Part 1: its leaf's own segments, where the leaf is segmented too.
-    pub(crate) leaf: Option<Box<Segmented>>,
+    /// Part 1: its complete leaf description, including length and nested segments.
+    pub(crate) leaf: Box<Desc>,
     pub(crate) prototype: Box<Desc>,
 }
 
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) struct Outputs<T> { values: OutputValues<T>, trees: Option<Arc<Trees>>, pub(crate) shy: bool }
+pub(crate) struct Outputs<T> { values: OutputValues<T>, trees: Option<Arc<Trees>>, pub(crate) shy: bool, count: Option<u32> }
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum OutputValues<T> { One(T), Many(Box<[T]>) }
-pub(crate) type Description = Outputs<Desc>;
+pub(crate) type Description = Outputs<Option<Desc>>;
 
 impl<T> AsRef<[T]> for Outputs<T> {
     fn as_ref(&self) -> &[T] { match &self.values { OutputValues::One(value) => std::slice::from_ref(value), OutputValues::Many(values) => values } }
@@ -104,20 +141,40 @@ impl<T> AsMut<[T]> for Outputs<T> {
 }
 impl<T> From<Vec<T>> for Outputs<T> {
     fn from(mut values: Vec<T>) -> Self {
-        Self { values: if values.len() == 1 { OutputValues::One(values.pop().unwrap()) } else { OutputValues::Many(values.into()) }, trees: None, shy: false }
+        Self { values: if values.len() == 1 { OutputValues::One(values.pop().unwrap()) } else { OutputValues::Many(values.into()) }, trees: None, shy: false, count: None }
     }
 }
 impl<T> Outputs<T> {
-    pub(crate) fn one(value: T) -> Self { Self { values: OutputValues::One(value), trees: None, shy: false } }
-    pub(crate) fn many(values: Box<[T]>) -> Self { Self { values: OutputValues::Many(values), trees: None, shy: false } }
+    pub(crate) fn one(value: T) -> Self { Self { values: OutputValues::One(value), trees: None, shy: false, count: None } }
+    pub(crate) fn many(values: Box<[T]>) -> Self { Self { values: OutputValues::Many(values), trees: None, shy: false, count: None } }
     pub(crate) fn with_trees(mut self, trees: Option<Arc<Trees>>) -> Self { self.trees = trees; self }
     pub(crate) fn empty() -> Self { Self::many(Box::new([])) }
+    pub(crate) fn has_result(&self) -> bool { !self.as_ref().is_empty() || self.trees.as_ref().is_some_and(|trees| trees.root_count() != 0) }
     pub(crate) fn with_shy(mut self, shy: bool) -> Self { self.shy = shy; self }
+    pub(crate) fn with_count(mut self, count: Option<u32>) -> Self { self.count = count; self }
+    pub(crate) fn count(&self) -> Option<u32> { self.count }
     pub(crate) fn trees(&self) -> Option<&Arc<Trees>> { self.trees.as_ref() }
+    pub(crate) fn tuple(parts: impl IntoIterator<Item = Self>) -> Self {
+        let mut values = Vec::new(); let mut items = Vec::new(); let mut count = None;
+        for part in parts {
+            let children = match part.trees() {
+                Some(trees) => trees.roots().map(|root| trees.root_at(&root).clone()).collect::<Vec<_>>(),
+                None => vec![Tree::Leaf; part.as_ref().len()],
+            };
+            items.push(if children.len() == 1 { children.into_iter().next().unwrap() }
+                else { Tree::Array { layout: Layout::from([children.len()]), items: children, prototype: None } });
+            if count.is_none() { count = part.count.map(|output| values.len() as u32 + output); }
+            values.extend(part.into_vec());
+        }
+        let mut trees = Trees::default();
+        trees.push_tree(Tree::Array { layout: Layout::from([items.len()]), items, prototype: None });
+        Self::from(values).with_trees(Some(Arc::new(trees))).with_count(count)
+    }
+
     pub(crate) fn map<U>(self, mut f: impl FnMut(T) -> U) -> Outputs<U> {
         let values = match self.values { OutputValues::One(value) => OutputValues::One(f(value)),
             OutputValues::Many(values) => OutputValues::Many(values.into_vec().into_iter().map(f).collect()) };
-        Outputs { values, trees: self.trees, shy: self.shy }
+        Outputs { values, trees: self.trees, shy: self.shy, count: self.count }
     }
     pub(crate) fn into_vec(self) -> Vec<T> { match self.values { OutputValues::One(value) => vec![value], OutputValues::Many(values) => values.into_vec() } }
     pub(crate) fn into_item(self, output: usize) -> Option<T> {
@@ -125,11 +182,20 @@ impl<T> Outputs<T> {
     }
     pub(crate) fn heap_bytes(&self) -> usize { match &self.values { OutputValues::Many(values) => std::mem::size_of_val(&**values), _ => 0 } }
 }
+impl Outputs<Option<Desc>> {
+    pub(crate) fn cacheable_metadata(&self) -> bool { self.as_ref().iter().flatten().all(Desc::cacheable) && self.trees.as_ref().is_none_or(|trees| trees.cacheable()) }
+}
 impl Outputs<Value> {
+    pub(crate) fn flatten(self) -> crate::error::Result<Self> {
+        if self.trees.is_some() { return Ok(self); }
+        Ok(if let Some((trees, leaves)) = crate::array::flatten(self.as_ref())? {
+            Self::from(leaves).with_trees(Some(trees)).with_shy(self.shy).with_count(self.count)
+        } else { self })
+    }
     pub(crate) fn assemble(self) -> crate::error::Result<Value> {
-        if self.as_ref().is_empty() { return Err(crate::Error::new(crate::ErrorKind::Value, "expression produced no value")); }
+        if self.as_ref().is_empty() && self.trees.is_none() { return Err(crate::Error::new(crate::ErrorKind::Value, "expression produced no value")); }
         if let Some(trees) = &self.trees {
-            let mut values = trees.build(self.as_ref());
+            let mut values = trees.build(self.as_ref())?;
             if values.len() != 1 { return Err(crate::Error::planning()); }
             Ok(values.pop().unwrap())
         } else if self.as_ref().len() == 1 { Ok(self.into_item(0).unwrap()) }
@@ -164,7 +230,7 @@ pub(crate) struct Read<O = Out> {
 
 
 /// A complete call. Inputs are ordered as explicit arguments, settings, state and captures; each step names them by position. Live nodes own their values and read maps. Programs retain read positions and structure-only capture bindings, then rebind runtime metadata from the current call.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Origin<L: ?Sized> {
     /// Parts 4, 5: the operation dispatch was called with, or the one a rule or select lowering builds the step as.
     pub(crate) operation: Operation,
@@ -188,6 +254,39 @@ pub(crate) struct Origin<L: ?Sized> {
 impl<L: AsRef<[Value]>> Origin<L> {
     pub(crate) fn reborrow(&self) -> Origin<&[Value]> { self.with_list(self.list.as_ref()) }
 }
+impl Origin<Vec<Value>> {
+    pub(crate) fn capture_implicit(mut self, parent: Option<&Origin<&[Value]>>, mut inserted: impl FnMut(usize, Option<usize>)) -> crate::error::Result<Self> {
+        let schema = self.operation.implicit_inputs(&self.bindings);
+        if schema.is_empty() { return Ok(self); }
+        let mut states = Vec::with_capacity(schema.len());
+        for &state in schema {
+            let inherited = parent.filter(|parent| parent.operation == self.operation)
+                .and_then(|parent| implicit_position(&parent.operation, parent.explicit as usize, &parent.bindings, state).map(|position| (parent.list[position].clone(), Some(position))));
+            states.push(match inherited {
+                Some(value) => value,
+                None => match state {
+                    ImplicitInput::Token => (trace::Tracing::token().unwrap_or_else(|| Value::Pending(crate::graph::Node::ready_control())), None),
+                    ImplicitInput::Generator => crate::distribution::generator_input(&self.reborrow(), parent)?,
+                    ImplicitInput::Frame => {
+                        let frame = Level::current_batch_rule().ok_or_else(crate::Error::planning)?.frame_reference()?;
+                        let previous = parent.and_then(|parent| implicit_position(&parent.operation, parent.explicit as usize, &parent.bindings, ImplicitInput::Frame).map(|position| parent.list[position].clone()));
+                        let value = if let Some(previous) = previous {
+                            let axes = (0..frame.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) })
+                                .chain((0..previous.rank()).map(|axis| ViewAxis { input: 2, axis: Some(axis) })).collect();
+                            Operation::Read(ReadOp::Axes { axes, destinations: Box::new([]) }).call(&[Value::integer(0), frame, previous], 1)?
+                        } else { frame };
+                        (value, None)
+                    },
+                },
+            });
+        }
+        let count = states.len(); let first = self.explicit as usize + self.operation.settings().len();
+        self.list.splice(first..first, states.into_iter().enumerate().map(|(offset, (value, source))| { inserted(first + offset, source); value }));
+        if first < 64 { let before = (1u64 << first).wrapping_sub(1); self.literals = (self.literals & before) | (self.literals & !before).checked_shl(count as u32).unwrap_or(0); }
+        if let Some(trees) = &mut self.trees { Arc::make_mut(trees).insert_leaves(self.explicit_roots as usize + self.operation.settings().len(), count); }
+        Ok(self)
+    }
+}
 
 impl<L: AsRef<[Value]>> CallBindings for L {
     fn len(&self) -> usize { self.as_ref().len() }
@@ -207,35 +306,93 @@ impl<L: AsRef<[Value]>> CallBindings for L {
 }
 
 
-pub(crate) fn state_range(operation: &Operation, explicit: usize) -> std::ops::Range<usize> {
-    let first = explicit + operation.settings().len(); first..first + operation.states().len()
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ImplicitInput { Token, Generator, Frame }
+impl ImplicitInput {
+    pub(crate) fn read(self) -> Option<ReadKind> { (self == Self::Frame).then_some(ReadKind::Description) }
+}
+
+pub(crate) fn implicit_range(operation: &Operation, explicit: usize, captures: &CaptureBindings) -> std::ops::Range<usize> {
+    let first = explicit + operation.settings().len(); first..first + operation.implicit_inputs(captures).len()
+}
+pub(crate) fn implicit_position(operation: &Operation, explicit: usize, captures: &CaptureBindings, state: ImplicitInput) -> Option<usize> {
+    operation.implicit_inputs(captures).iter().position(|input| *input == state).map(|index| implicit_range(operation, explicit, captures).start + index)
+}
+pub(crate) fn read_kind(operation: &Operation, explicit: usize, roles: &Roles, captures: &CaptureBindings, position: usize) -> Option<ReadKind> {
+    if (explicit..explicit + operation.settings().len()).contains(&position) { return Some(ReadKind::Value); }
+    let implicit = implicit_range(operation, explicit, captures);
+    if implicit.contains(&position) { return operation.implicit_inputs(captures)[position - implicit.start].read(); }
+    let kind = position.checked_sub(operation.functions()).and_then(|operand| roles.kind(operand));
+    if kind == Some(ReadKind::Description) || position < explicit { kind } else { None }
 }
 impl<L: ?Sized> Origin<L> {
-    pub(crate) fn state_range(&self) -> std::ops::Range<usize> { state_range(&self.operation, self.explicit as usize) }
-    pub(crate) fn capture_start(&self) -> usize { self.state_range().end }
-    pub(crate) fn capture_root_start(&self) -> usize { state_range(&self.operation, self.explicit_roots as usize).end }
+    pub(crate) fn cacheable_metadata<'a>(&self, values: impl IntoIterator<Item = &'a Value>) -> bool {
+        self.trees.as_ref().is_none_or(|trees| trees.cacheable()) && values.into_iter().all(Value::cacheable_metadata)
+    }
+    pub(crate) fn implicit_range(&self) -> std::ops::Range<usize> { implicit_range(&self.operation, self.explicit as usize, &self.bindings) }
+    pub(crate) fn capture_start(&self) -> usize { self.implicit_range().end }
+    pub(crate) fn capture_root_start(&self) -> usize { implicit_range(&self.operation, self.explicit_roots as usize, &self.bindings).end }
     pub(crate) fn nonrepeatable(&self) -> bool {
         matches!(self.operation, Operation::Draw { .. } | Operation::Effect(_)) || self.bindings.acts || self.bindings.draws
     }
+    pub(crate) fn read_kind(&self, position: usize) -> Option<ReadKind> { read_kind(&self.operation, self.explicit as usize, &self.roles, &self.bindings, position) }
+    pub(crate) fn executes(&self, position: usize) -> bool { self.read_kind(position) != Some(ReadKind::Description) }
+    pub(crate) fn acts(&self) -> bool { matches!(self.operation, Operation::Effect(_)) || self.bindings.acts }
     pub(crate) fn invocation(mut self) -> Self where L: Sized {
         self.bindings = self.bindings.in_context(); self.context = None; self
     }
     pub(crate) fn call_view<'a>(&'a self, bindings: &'a dyn crate::primitive::CallBindings) -> crate::primitive::CallView<'a> {
         crate::primitive::CallView { operation: &self.operation, mode: self.mode, literals: self.literals,
-            site: self.site.as_ref(), context: self.context, roles: self.roles, explicit: self.explicit as usize, explicit_roots: self.explicit_roots as usize, trees: self.trees.as_ref(), captures: &self.bindings, bindings }
+            site: self.site.as_ref(), context: self.context, roles: &self.roles, explicit: self.explicit as usize, explicit_roots: self.explicit_roots as usize, trees: self.trees.as_ref(), captures: &self.bindings, bindings }
     }
     pub(crate) fn with_list<M>(&self, list: M) -> Origin<M> {
-        Origin { operation: self.operation.clone(), trees: self.trees.clone(), site: self.site.clone(), context: self.context, bindings: self.bindings.clone(), mode: self.mode, literals: self.literals, roles: self.roles, explicit: self.explicit, explicit_roots: self.explicit_roots, list }
+        Origin { operation: self.operation.clone(), trees: self.trees.clone(), site: self.site.clone(), context: self.context, bindings: self.bindings.clone(), mode: self.mode, literals: self.literals, roles: self.roles.clone(), explicit: self.explicit, explicit_roots: self.explicit_roots, list }
     }
     pub(crate) fn rebuilt<M: CallBindings>(&self, operation: Operation, list: M, from: &[Option<usize>], explicit: u32, explicit_roots: u32, trees: Option<Arc<Trees>>) -> crate::error::Result<Origin<M>> {
         debug_assert_eq!(list.len(), from.len());
-        let literals = from.iter().take(64).enumerate().fold(0, |bits, (to, source)| {
-            bits | if source.is_some_and(|source| source < 64 && self.literals & (1 << source) != 0) { 1 << to } else { 0 }
-        });
+        let literals = self.literals_from(from);
         let mut origin = Origin { operation, trees, site: self.site.clone(), context: self.context, bindings: self.bindings.clone(), mode: self.mode,
-            literals, roles: Roles(0), explicit, explicit_roots, list };
+            literals, roles: Roles::default(), explicit, explicit_roots, list };
         origin.roles = Operation::roles(&origin.call_view(&origin.list))?;
         Ok(origin)
+    }
+    /// Splice a rewrite's explicit inputs onto this call's captured tail. `from` addresses this source call.
+    /// The draft must be located and passed through `rebuilt` with positional bindings before any row uses it.
+    pub(crate) fn projected<T: Clone>(&self, operation: Operation, mut explicit: Vec<T>, from: &[Option<usize>], explicit_roots: u32,
+        trees: Option<Arc<Trees>>, mut old: impl FnMut(usize) -> T, old_len: usize) -> crate::error::Result<(Origin<Vec<T>>, Vec<Option<usize>>)> {
+        if explicit.len() != from.len() || old_len < self.capture_start()
+            || trees.as_ref().map_or(explicit_roots as usize != explicit.len(), |trees| trees.root_count() != explicit_roots as usize
+                || trees.roots().last().map_or(0, |root| root.leaves.end) != explicit.len()) { return Err(Error::planning()); }
+        let boundary = explicit.len();
+        let mut sources = from.to_vec();
+        for setting in operation.settings() {
+            let position = self.operation.settings().iter().position(|old| old == setting).ok_or_else(Error::planning)?;
+            let position = self.explicit as usize + position;
+            explicit.push(old(position)); sources.push(Some(position));
+        }
+        let prior = self.operation.implicit_inputs(&self.bindings);
+        let start = self.implicit_range().start;
+        for input in operation.implicit_inputs(&self.bindings) {
+            let position = start + prior.iter().position(|old| old == input).ok_or_else(Error::planning)?;
+            explicit.push(old(position)); sources.push(Some(position));
+        }
+        let tail = explicit.len() - boundary;
+        for position in self.capture_start()..old_len { explicit.push(old(position)); sources.push(Some(position)); }
+        let trees = if trees.is_some() || self.trees.is_some() {
+            let captures = self.trees.as_ref().map_or_else(|| Trees::leaves(old_len - self.capture_start()), |trees| {
+                trees.project_roots(&trees.roots().skip(self.capture_root_start()).collect::<Vec<_>>())
+            });
+            Some(Arc::new(trees.as_deref().cloned().unwrap_or_else(|| Trees::leaves(boundary)).concat(&Trees::leaves(tail)).concat(&captures)))
+        } else { None };
+        let mut draft = self.with_list(explicit);
+        draft.operation = operation; draft.explicit = boundary as u32; draft.explicit_roots = explicit_roots;
+        draft.trees = trees; draft.roles = Roles::default(); draft.literals = self.literals_from(&sources);
+        Ok((draft, sources))
+    }
+    fn literals_from(&self, from: &[Option<usize>]) -> u64 {
+        from.iter().take(64).enumerate().fold(0, |bits, (to, source)| {
+            bits | if source.is_some_and(|source| source < 64 && self.literals & (1 << source) != 0) { 1 << to } else { 0 }
+        })
     }
 }
 
@@ -275,7 +432,7 @@ impl LoopInputs {
             |trees| trees.roots().take(roots).collect());
         let predicate = matches!(exit, crate::primitive::Exit::Predicate).then_some(1);
         let functions = origin.operation.functions();
-        let parameter = matches!(exit, crate::primitive::Exit::Power).then_some(functions);
+        let parameter = origin.operation.counted_loop().then_some(functions);
         let first = functions + usize::from(parameter.is_some());
         if !(first + 1..=first + 2).contains(&groups.len()) { return Err(crate::Error::domain("a loop needs one or two arguments")); }
         let carry_root = groups.last().unwrap().clone();
@@ -298,6 +455,9 @@ pub(crate) struct Mode {
     /// Part 4, llms.txt "Numbers": Mathish: `0÷0`→`0` for Mathish types and tolerant f64 comparison (its tolerance a `Setting` parameter).
     pub(crate) mathish: bool,
 }
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct GatherIndex { pub(crate) input: u32, pub(crate) item: Option<usize> }
 
 /// Part 4: the IR, plain data: each variant holds its resolved fields and names its operands by position in its origin's list (function values first, so a position counts them), never a 2nd list; the origin sits beside it, in a live node's 1 allocation or a program node. The builder chooses the variant and resolves its fields from the origin, the operands' descriptions and the parameters' values (`Operation::plan`); refill keeps both and re-derives only descriptions and maps. No `Eq` or `Hash`: interning compares origins.
 #[derive(Clone)]
@@ -326,11 +486,9 @@ pub(crate) enum Step {
     Gather {
         /// Part 20: the source.
         source: u32,
-        /// Part 20: the index arrays (positions from 0, negative from the end), whose maps give a cross product.
-        indices: std::ops::Range<u32>,
-        /// Part 20: the source axes they select, in order: bit a set where one selects axis a.
-        axes: u64,
-        /// Part 2: false where each index's range lies inside its axis, a fact its plan keeps as a box (`RangeBox::Inside`), so refill never re-derives it.
+        /// Input leaf and optional scalar position within a compact coordinate vector.
+        indices: Box<[GatherIndex]>,
+        /// False only where the operation's retained intrinsic or in-graph bounds prove every index valid.
         checked: bool,
         /// Parts 4, 20: the fill a NaN position reads (`⌷⍠["fill":v]`), a parameter, at this position in the origin's list, since its kernel reads it at run; none: its kind's own.
         fill: Option<u32>,
@@ -388,29 +546,13 @@ pub(crate) enum Step {
         ids: u32,
     },
     /// Part 4: a planned primitive that no block stage runs (a sort, a grade, a search, `⌹`), on forced operands, in a stage of its own.
-    Call {
-        /// Part 4: the left argument, if dyadic.
-        left: Option<u32>,
-        /// Part 4: the right argument.
-        right: u32,
-    },
-    /// Part 17: a draw at stream number base + k, base from `generator`, k its origin's place (`Operation::Draw.place`); keys and interning never see a stream position, and no 2 draws read the same stream.
-    Draw {
-        /// Part 17: the generator's state, an input bound at the run: its key and base (its count at the call outside a recorded body, which the draw moves on by 1; the body's count at its entry inside one), never structure.
-        generator: u32,
-        /// Part 17: the left argument, if dyadic.
-        left: Option<u32>,
-        /// Part 17: the right argument.
-        right: u32,
-    },
+    Call,
+    /// A whole draw reserves one stream from its captured generator when it executes.
+    Draw,
     /// Parts 4, 17: an effect that acts, ordered among effects.
     Effect {
         /// Part 17: the effect before it, whose token it takes; none for the 1st.
         token: Option<u32>,
-        /// Part 17: its left operand, if any.
-        left: Option<u32>,
-        /// Part 17: its right operand, if any.
-        right: Option<u32>,
     },
     /// A body invocation, power, fold or scan. Its complete Origin binds one cached Recording through the same scheduler as a graph read.
     Loop {
@@ -425,7 +567,7 @@ pub(crate) enum Step {
     },
     /// Part 4: an affine index step from `⍳` or `•index`, generated, never stored, along its 1 axis: item i is i, or n−1−i where descending, n its length at the run; a chain of `+ -`, negation and `×` by a constant over such steps stays affine, and selection plans its `Steps` from the coefficients.
     Index {
-        /// Part 4: from the sign of `⍳`'s count; where the count comes from a leaf, the plan keeps the sign as a box (part 2: a leaf range fact), so refill never changes it.
+        /// From the count's sign, a Count observation checked by the same chronological parameter ledger.
         descending: bool,
     },
 }
@@ -435,13 +577,14 @@ impl Step {
         matches!(self, Self::Map { .. } | Self::Convert { .. } | Self::Copy { .. } | Self::Gather { .. }
             | Self::Fold { .. } | Self::Product { .. } | Self::At { .. } | Self::Picks { .. } | Self::Join { .. } | Self::Index { .. })
     }
+    pub(crate) fn is_view(&self) -> bool { matches!(self, Self::Copy { .. } | Self::Join { .. } | Self::Index { .. }) }
     /// Interfaces "Rules": the step's kind, the 1st half of its root key.
     pub(crate) fn kind(&self) -> StepKind {
         match self {
             Self::Map { .. } => StepKind::Map, Self::Convert { .. } => StepKind::Convert, Self::Copy { .. } => StepKind::Copy,
             Self::Gather { .. } => StepKind::Gather, Self::Fold { .. } => StepKind::Fold, Self::Product { .. } => StepKind::Product,
             Self::Select { .. } => StepKind::Select, Self::At { .. } => StepKind::At, Self::Picks { .. } => StepKind::Picks,
-            Self::Join { .. } => StepKind::Join, Self::Call { .. } => StepKind::Call, Self::Draw { .. } => StepKind::Draw,
+            Self::Join { .. } => StepKind::Join, Self::Call => StepKind::Call, Self::Draw => StepKind::Draw,
             Self::Effect { .. } => StepKind::Effect, Self::Loop { .. } => StepKind::Loop, Self::Index { .. } => StepKind::Index,
         }
     }
@@ -451,6 +594,8 @@ impl Step {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum StepKind { Map, Convert, Copy, Gather, Fold, Product, Select, At, Picks, Join, Call, Draw, Effect, Loop, Index }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ItemSource { Array, Leaves }
 /// Interfaces "Loop", part 13: a loop's exit, its form only: the runner reads its counts and tolerance from their operands at run, so refill changes nothing here; no variant allocates. Dispatch has sent a negative count or `¯∞` to `substituted`, so every count is positive.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Until {
@@ -462,30 +607,10 @@ pub(crate) enum Until {
     /// Part 13: a predicate graph on the new and old states; the predicate stays in the origin, its 2nd function value.
     Predicate,
     /// Part 13: 1 iteration per item of the items in `data`, along this axis, in the loop's order (`Operation::Loop.order`).
-    Items(usize),
+    Items { axis: usize, source: ItemSource },
 }
 
 
-/// Parts 2, 10; Measures: a range box: a leaf range fact a plan assumes beyond its key, checked on every hit.
-#[derive(Clone)]
-pub(crate) enum RangeBox {
-    /// Part 2: a leaf's range lies inside `range` (a sign, an integer width).
-    Range {
-        /// Part 2: the leaf's input position.
-        leaf: usize,
-        /// Part 2: the range assumed.
-        range: Range,
-    },
-    /// Part 2: a leaf's range lies inside an axis (an index inside its axis), checked against the run's lengths.
-    Inside {
-        /// Part 2: the leaf's input position.
-        leaf: usize,
-        /// Part 2: the position of the node whose axis it indexes.
-        node: usize,
-        /// Part 2: that axis.
-        axis: usize,
-    },
-}
 
 // Programs (parts 3, 8)
 
@@ -495,7 +620,7 @@ pub(crate) enum Node {
     Input { position: usize, desc: u32, level: Option<usize>, control: bool },
     Literal { value: Value, desc: u32 },
     Function { binding: FunctionBinding<usize, (std::ops::Range<u32>, Option<Arc<Trees>>, Arc<crate::eval::CaptureBindings>)>, desc: u32, context: Option<u32> },
-    Step { step: Step, origin: Origin<std::ops::Range<u32>>, descs: std::ops::Range<u32>, trees: Option<Arc<Trees>>, shy: bool, level: Option<usize> },
+    Step { step: Step, origin: Origin<std::ops::Range<u32>>, descs: std::ops::Range<u32>, trees: Option<Arc<Trees>>, shy: bool, count: Option<u32>, level: Option<usize> },
 }
 impl Node {
     pub(crate) fn input_position(&self) -> Option<usize> {
@@ -505,18 +630,32 @@ impl Node {
 
 
 #[derive(Clone)]
+pub(crate) struct Source {
+    pub(crate) original: u32,
+    pub(crate) completion: Out,
+    pub(crate) outputs: Box<[Out]>,
+    pub(crate) publish: bool,
+}
+#[derive(Clone)]
 pub(crate) struct Program {
     pub(crate) nodes: Vec<Node>,
     pub(crate) reads: Vec<Read>,
     pub(crate) descs: Vec<Option<Desc>>,
     pub(crate) roots: Vec<Out>,
     /// Original live node ordinals and their logical outputs. These associations do not keep outputs live.
-    pub(crate) sources: Vec<(u32, Out, Box<[Out]>)>,
+    pub(crate) sources: Vec<Source>,
     pub(crate) token: Option<Out>,
     pub(crate) parameters: Arc<[Parameter]>,
 }
 
 impl Program {
+    pub(crate) fn cacheable_metadata(&self) -> bool {
+        self.descs.iter().flatten().all(Desc::cacheable) && self.nodes.iter().all(|node| match node {
+            Node::Step { origin, trees, .. } => origin.trees.as_ref().is_none_or(|trees| trees.cacheable()) && trees.as_ref().is_none_or(|trees| trees.cacheable()),
+            Node::Literal { value, .. } => value.cacheable_metadata(),
+            _ => true,
+        })
+    }
     pub(crate) fn live_roots(&self) -> impl Iterator<Item = Out> + '_ {
         self.roots.iter().copied().chain(self.token).chain(self.parameters.iter().filter_map(|parameter|
             if let Parameter::Count { output, .. } = parameter { Some(*output) } else { None }))
@@ -537,13 +676,13 @@ impl Program {
             Parameter::Count { output, expected } => Parameter::Count { output: resolve(*output), expected: expected.clone() },
         }).collect()
     }
-    pub(crate) fn remap_sources(&self, mut resolve: impl FnMut(Out) -> Option<Out>) -> crate::error::Result<Vec<(u32, Out, Box<[Out]>)>> {
-        self.sources.iter().filter_map(|(source, completion, outputs)| {
-            let completion = resolve(*completion);
-            let outputs: Vec<_> = outputs.iter().copied().map(&mut resolve).collect();
+    pub(crate) fn remap_sources(&self, mut resolve: impl FnMut(Out) -> Option<Out>) -> crate::error::Result<Vec<Source>> {
+        self.sources.iter().filter_map(|source| {
+            let completion = resolve(source.completion);
+            let outputs: Vec<_> = source.outputs.iter().copied().map(&mut resolve).collect();
             (completion.is_some() || outputs.iter().any(Option::is_some)).then(|| {
-                Ok((*source, completion.ok_or_else(crate::Error::planning)?,
-                    outputs.into_iter().collect::<Option<Box<[_]>>>().ok_or_else(crate::Error::planning)?))
+                Ok(Source { original: source.original, completion: completion.ok_or_else(Error::planning)?,
+                    outputs: outputs.into_iter().collect::<Option<Box<[_]>>>().ok_or_else(Error::planning)?, publish: source.publish })
             })
         }).collect()
     }
@@ -583,14 +722,14 @@ impl Program {
                     let output = builder.step(step.clone(), origin, node.description(), node.level());
                     for i in 0..node.descs().len() { mapped.insert(Pending::data(node.clone(), i as u32), Out::data(output.node, i as u32)); }
                     mapped.insert(Pending::control(node.clone()), Out::control(output.node));
-                    if publishing { builder.program.sources.push((context as u32, Out::control(output.node), (0..node.descs().len()).map(|i| Out::data(output.node, i as u32)).collect())); }
+                    builder.program.sources.push(Source { original: context as u32, completion: Out::control(output.node), outputs: (0..node.descs().len()).map(|i| Out::data(output.node, i as u32)).collect(), publish: publishing });
                 }
-                crate::graph::State::Input { value, .. } => {
+                crate::graph::State::Input { value, role, .. } => {
                     let control = node.descs().is_empty();
                     let pending = if control { Pending::control(node.clone()) } else { Pending::data(node.clone(), 0) };
-                    let output = if let Some(Value::Pending(source)) = value { mapped[source] } else {
+                    let output = if let Some(Value::Pending(source)) = value && *role != trace::Role::Seed { mapped[source] } else {
                         let position = live.input_position(&pending, value);
-                        if control { builder.control_input(position) } else { builder.input(position, Some(node.desc(0).clone()), node.level()) }
+                        if control { builder.control_input(position) } else { builder.input(position, node.desc(0).cloned(), node.level()) }
                     };
                     mapped.insert(pending, output);
                     mapped.insert(Pending::control(node.clone()), Out::control(output.node));
@@ -598,12 +737,15 @@ impl Program {
                 crate::graph::State::Done(values) => {
                     for (i, value) in values.as_ref().iter().enumerate() {
                         let pending = Pending::data(node.clone(), i as u32);
-                        let position = live.input_position(&pending, Some(value));
-                        let output = builder.input(position, Desc::of(value).map(Cow::into_owned), None);
+                        let output = if node.is_literal() { builder.literal(value.clone()) } else {
+                            let position = live.input_position(&pending, Some(value));
+                            builder.input(position, Desc::of(value).map(Cow::into_owned), None)
+                        };
                         mapped.insert(pending, output);
                     }
                     let control = Pending::control(node.clone());
-                    let output = builder.control_input(live.input_position(&control, Some(&Value::Pending(control.clone()))));
+                    let output = if node.is_literal() { Out::control(mapped[&Pending::data(node.clone(), 0)].node) }
+                        else { builder.control_input(live.input_position(&control, Some(&Value::Pending(control.clone())))) };
                     mapped.insert(control, output);
                 }
             });
@@ -614,10 +756,25 @@ impl Program {
 }
 
 #[derive(Clone)]
-struct Identity(Value);
-impl PartialEq for Identity { fn eq(&self, other: &Self) -> bool { self.0.identical(&other.0) } }
+enum Identity { Scalar(usize), Shared(Value) }
+impl Identity {
+    fn of(value: &Value) -> Self {
+        // Scalar identities borrow stable immutable node/input cells for this traversal; never temporary Values.
+        match value { Value::Number(_) | Value::Character(_) => Self::Scalar(value as *const Value as usize), _ => Self::Shared(value.clone()) }
+    }
+}
+impl PartialEq for Identity {
+    fn eq(&self, other: &Self) -> bool { match (self, other) {
+        (Self::Scalar(a), Self::Scalar(b)) => a == b, (Self::Shared(a), Self::Shared(b)) => a.identical(b), _ => false,
+    }}
+}
 impl Eq for Identity {}
-impl Hash for Identity { fn hash<H: Hasher>(&self, state: &mut H) { self.0.identity_hash(state); } }
+impl Hash for Identity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self { Self::Scalar(address) => address.hash(state), Self::Shared(value) => value.identity_hash(state) }
+    }
+}
 
 /// An identity walk, not another program. Cache hits never build flat SSA.
 pub(crate) struct Live {
@@ -644,6 +801,10 @@ impl Live {
                             if !matches!(read.operand, Value::Pending(_)) { live.add_value(&read.operand); }
                         }
                     }
+                    crate::graph::State::Input { value, role: trace::Role::Seed, .. } => {
+                        let position = live.inputs.len(); live.inputs.push(value.cloned());
+                        live.pending.insert(Pending::data(node.clone(), 0), position);
+                    }
                     crate::graph::State::Input { value: Some(Value::Pending(_)), .. } => {},
                     crate::graph::State::Input { value, .. } => {
                         let pending = if node.descs().is_empty() { Pending::control(node.clone()) } else { Pending::data(node.clone(), 0) };
@@ -651,7 +812,7 @@ impl Live {
                         else { let position = live.inputs.len(); live.inputs.push(None); position };
                         live.pending.insert(pending, position);
                     }
-                    crate::graph::State::Done(outputs) => {
+                    crate::graph::State::Done(outputs) => if !node.is_literal() {
                         for (i, value) in outputs.as_ref().iter().enumerate() {
                             let position = live.add_value(value);
                             live.pending.insert(Pending::data(node.clone(), i as u32), position);
@@ -682,17 +843,28 @@ impl Live {
     }
 
     fn add_value(&mut self, value: &Value) -> usize {
-        let identity = Identity(value.clone());
+        let identity = Identity::of(value);
         if let Some(&position) = self.values.get(&identity) { return position; }
         let position = self.inputs.len(); self.inputs.push(Some(value.clone())); self.values.insert(identity, position); position
     }
-    fn input_position(&self, pending: &Pending, value: Option<&Value>) -> usize {
-        self.pending.get(pending).copied().or_else(|| value.and_then(|value| self.values.get(&Identity(value.clone())).copied()))
+    pub(crate) fn input_position(&self, pending: &Pending, value: Option<&Value>) -> usize {
+        self.pending.get(pending).copied().or_else(|| value.and_then(|value| self.values.get(&Identity::of(value)).copied()))
             .expect("a real input is bound by the identity walk")
     }
     pub(crate) fn key(&self) -> &ProgramKey { &self.key }
     pub(crate) fn nodes(&self) -> &[crate::graph::Node] { &self.nodes }
     pub(crate) fn inputs(&self) -> &[Option<Value>] { &self.inputs }
+    pub(crate) fn input_value(&self, position: usize) -> crate::error::Result<Value> {
+        self.inputs.get(position).and_then(Option::as_ref).cloned().or_else(|| self.pending.iter()
+            .find_map(|(pending, &source)| (source == position).then(|| Value::Pending(pending.clone())))).ok_or_else(Error::planning)
+    }
+    pub(crate) fn cacheable_metadata(&self) -> bool {
+        self.nodes.iter().all(|node| node.descs().iter().flatten().all(Desc::cacheable) && node.with_state(|state| match state {
+            crate::graph::State::Step { origin, .. } => origin.cacheable_metadata(origin.list.iter().map(|read| &read.operand)),
+            crate::graph::State::Input { value, .. } => value.is_none_or(Value::cacheable_metadata),
+            crate::graph::State::Done(values) => values.as_ref().iter().all(Value::cacheable_metadata),
+        }))
+    }
     fn contexts(&self) -> Vec<Option<Origin<()>>> {
         self.nodes.iter().map(|node| node.with_state(|state| match state {
             crate::graph::State::Step { origin, .. } => Some(origin.with_list(())), _ => None,
@@ -721,7 +893,7 @@ impl Live {
             } else { node.with_state(|state| {
                 if let crate::graph::State::Input { position, role, value: Some(Value::Pending(source)) } = state
                     && let Some(value) = values.get(source) && !matches!(value, Value::Pending(prior) if prior == source) {
-                    let desc = Desc::of(value).ok_or_else(crate::Error::planning)?.into_owned();
+                    let desc = Desc::of(value).map(Cow::into_owned);
                     let alias = crate::graph::Node::input(position, Some(value.clone()), desc, role, value.level(), None);
                     Ok(Some(Outputs::one(Value::Pending(Pending::data(alias, 0)))))
                 } else { Ok::<_, crate::Error>(None) }
@@ -737,29 +909,29 @@ impl Live {
 }
 
 /// Dispatch, trace capture, rewrite and lowering all append through this builder.
-pub(crate) struct Builder { pub(crate) program: Program, bound: HashMap<usize, Out> }
+pub(crate) struct Builder { pub(crate) program: Program, bound: HashMap<(usize, Option<usize>, Option<u32>), Out> }
 
 impl Builder {
     pub(crate) fn new() -> Self { Self { program: Program { nodes: Vec::new(), reads: Vec::new(), descs: Vec::new(), roots: Vec::new(), sources: Vec::new(), token: None, parameters: Arc::from([]) }, bound: HashMap::default() } }
     fn description(&mut self, desc: Option<Desc>) -> u32 { let at = self.program.descs.len() as u32; self.program.descs.push(desc); at }
     pub(crate) fn input(&mut self, position: usize, desc: Option<Desc>, level: Option<usize>) -> Out {
-        self.input_port(position, desc, level, Some(0))
+        self.input_port(position, desc.map(Desc::opaque), level, Some(0))
     }
     pub(crate) fn control_input(&mut self, position: usize) -> Out { self.input_port(position, None, None, None) }
     fn input_port(&mut self, position: usize, desc: Option<Desc>, level: Option<usize>, port: Option<u32>) -> Out {
-        if let Some(output) = self.bound.get(&position) { return *output; }
+        if let Some(output) = self.bound.get(&(position, level, port)) { return *output; }
         let at = self.program.nodes.len(); let desc = self.description(desc);
         self.program.nodes.push(Node::Input { position, desc, level, control: port.is_none() });
-        let output = Out { node: at, output: port }; self.bound.insert(position, output); output
+        let output = Out { node: at, output: port }; self.bound.insert((position, level, port), output); output
     }
     fn input_of(&mut self, live: &Live, value: &Value, literal: bool) -> Out {
-        if literal && matches!(value, Value::Number(_) | Value::Character(_)) { return self.literal(value.clone()); }
-        let position = live.values[&Identity(value.clone())];
+        if literal && Desc::leaf(value).is_some() { return self.literal(value.clone()); }
+        let position = live.values[&Identity::of(value)];
         if matches!(value, Value::Function(_)) {
-            if let Some(output) = self.bound.get(&position) { return *output; }
+            if let Some(output) = self.bound.get(&(position, None, Some(0))) { return *output; }
             let desc = self.description(None); let at = self.program.nodes.len();
             self.program.nodes.push(Node::Function { binding: FunctionBinding::Input(position), desc, context: None });
-            let output = Out::data(at, 0); self.bound.insert(position, output); output
+            let output = Out::data(at, 0); self.bound.insert((position, None, Some(0)), output); output
         } else { self.input(position, Desc::leaf(value), None) }
     }
     pub(crate) fn function(&mut self, template: Function, dependencies: impl IntoIterator<Item = Out>, trees: Option<Arc<Trees>>, bindings: Arc<crate::eval::CaptureBindings>, context: Option<u32>) -> Out {
@@ -772,11 +944,11 @@ impl Builder {
     }
     pub(crate) fn step(&mut self, step: Step, origin: Origin<Vec<Read>>, description: &Description, level: Option<usize>) -> Out {
         let start = self.program.reads.len() as u32; self.program.reads.extend(origin.list);
-        let desc = self.program.descs.len() as u32; self.program.descs.extend(description.as_ref().iter().cloned().map(Some));
+        let desc = self.program.descs.len() as u32; self.program.descs.extend(description.as_ref().iter().cloned());
         let at = self.program.nodes.len();
         self.program.nodes.push(Node::Step { step, origin: Origin { operation: origin.operation, mode: origin.mode, literals: origin.literals,
             site: origin.site.filter(|_| origin.context.is_none()), context: origin.context, bindings: Arc::new(origin.bindings.stripped()), roles: origin.roles, trees: origin.trees, explicit: origin.explicit, explicit_roots: origin.explicit_roots, list: start..self.program.reads.len() as u32 },
-            trees: description.trees.clone(), shy: description.shy, descs: desc..self.program.descs.len() as u32, level });
+            trees: description.trees.clone(), shy: description.shy, count: description.count, descs: desc..self.program.descs.len() as u32, level });
         if description.as_ref().is_empty() { Out::control(at) } else { Out::data(at, 0) }
     }
 }
@@ -790,14 +962,47 @@ pub(crate) struct Geometry {
     pub(crate) reads: Vec<Option<Routed>>,
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct BindingContext {
+    pub(crate) root: Option<Origin<()>>,
+    contexts: Vec<Option<Origin<()>>>,
+    sources: Vec<Weak<crate::graph::NodeData>>,
+    input_descs: Vec<Option<Desc>>,
+}
+pub(crate) struct BoundOutputs { pub(crate) values: Outputs<Value>, pub(crate) context: BindingContext }
+impl BindingContext {
+    pub(crate) fn from_live(live: &Live) -> Self {
+        let mut input_descs = live.inputs.iter().map(|value| value.as_ref().and_then(Desc::of).map(|desc| desc.into_owned().opaque())).collect::<Vec<_>>();
+        for (pending, &position) in &live.pending {
+            if input_descs[position].is_none() { input_descs[position] = pending.description().cloned().map(Desc::opaque); }
+        }
+        Self { root: None, contexts: live.contexts(), sources: live.nodes.iter().map(|node| Arc::downgrade(&node.0)).collect(), input_descs }
+    }
+    pub(crate) fn from_origin<L: AsRef<[Value]>>(origin: &Origin<L>) -> Self {
+        Self { root: Some(origin.with_list(())), input_descs: origin.list.as_ref().iter().map(|value| Desc::of(value).map(|desc| desc.into_owned().opaque())).collect(), ..Self::default() }
+    }
+    pub(crate) fn stripped(&self) -> Self { Self::default() }
+    pub(crate) fn input_desc(&self, position: usize) -> Option<&Desc> { self.input_descs.get(position)?.as_ref() }
+    pub(crate) fn context(&self, position: Option<u32>) -> Option<&Origin<()>> {
+        match position { Some(position) => self.contexts.get(position as usize)?.as_ref(), None => self.root.as_ref() }
+    }
+}
+impl PartialEq for BindingContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root && self.contexts == other.contexts
+            && self.sources.len() == other.sources.len() && self.sources.iter().zip(&other.sources).all(|(a, b)| a.ptr_eq(b))
+            && self.input_descs.len() == other.input_descs.len() && self.input_descs.iter().zip(&other.input_descs).all(|(a, b)| match (a, b) {
+                (None, None) => true, (Some(a), Some(b)) => a.metadata_eq(b), _ => false,
+            })
+    }
+}
+impl Eq for BindingContext {}
 pub(crate) struct Running {
     pub(crate) inputs: Vec<Option<Value>>,
     pub(crate) values: Vec<Option<Outputs<Value>>>,
     pub(crate) geometry: Geometry,
     pub(crate) next: usize,
-    pub(crate) root: Option<Origin<()>>,
-    contexts: Vec<Option<Origin<()>>>,
-    sources: Vec<Weak<crate::graph::NodeData>>,
+    pub(crate) binding: BindingContext,
     counts: layout::Encoder,
     pub(crate) observed: usize,
 }
@@ -805,17 +1010,28 @@ pub(crate) struct Running {
 impl Running {
     pub(crate) fn new(inputs: Vec<Value>) -> Self {
         let counts = layout::Encoder::inputs(&inputs);
-        Self { inputs: inputs.into_iter().map(Some).collect(), root: None, contexts: Vec::new(), sources: Vec::new(),
+        let input_descs = inputs.iter().map(|value| Desc::of(value).map(|desc| desc.into_owned().opaque())).collect();
+        Self { inputs: inputs.into_iter().map(Some).collect(), binding: BindingContext { input_descs, ..BindingContext::default() },
             values: Vec::new(), geometry: Geometry::default(), next: 0, counts, observed: 0 }
     }
+    pub(crate) fn from_live(live: &Live) -> Self {
+        let mut running = Self::new(Vec::new());
+        running.inputs.clone_from(&live.inputs); running.binding = BindingContext::from_live(live);
+        for desc in running.binding.input_descs.iter().flatten() { running.counts.description(desc); }
+        running.counts.parts.clear(); running
+    }
     pub(crate) fn count_key(&mut self, stored: &Value) -> crate::error::Result<Key> { self.counts.count(stored) }
-    pub(crate) fn set_live(&mut self, live: &Live) {
-        self.contexts = live.contexts();
-        self.sources = live.nodes.iter().map(|node| Arc::downgrade(&node.0)).collect();
+    /// Execution-only observation of one original argument, including arguments absent from the recorded body.
+    pub(crate) fn prepare_input(&mut self, position: usize) -> crate::error::Result<()> {
+        let input = self.inputs.get(position).and_then(Option::as_ref).ok_or_else(Error::planning)?;
+        let value = input.read(ReadKind::RuntimeOnly)?;
+        self.inputs[position] = Some(value); Ok(())
     }
-    pub(crate) fn context(&self, position: Option<u32>) -> Option<&Origin<()>> {
-        match position { Some(position) => self.contexts.get(position as usize)?.as_ref(), None => self.root.as_ref() }
+    pub(crate) fn input_read(&self, position: usize) -> Option<(View<'_>, ReadPlan)> {
+        self.inputs.get(position)?.as_ref()?.physical_read(0)
     }
+    pub(crate) fn binding_context(&self) -> &BindingContext { &self.binding }
+    pub(crate) fn context(&self, position: Option<u32>) -> Option<&Origin<()>> { self.binding.context(position) }
     pub(crate) fn bind_origin<L: AsRef<[Value]>>(&self, source: &Origin<std::ops::Range<u32>>, values: L) -> crate::error::Result<Origin<L>> {
         let mut call = source.with_list(values);
         if let Some(context) = self.context(source.context) {
@@ -841,8 +1057,19 @@ impl Running {
         if let Some(position) = node.input_position() { self.inputs.get(position)?.as_ref() }
         else if let Node::Literal { value, .. } = node { Some(value) } else { None }
     }
+    pub(crate) fn argument<'a>(&'a self, program: &'a Program, output: Out) -> Option<&'a Value> {
+        if output.output.is_some() { return self.value(program, output); }
+        if let Node::Input { position, control: true, .. } = &program.nodes[output.node] {
+            return self.inputs.get(*position)?.as_ref();
+        }
+        self.is_complete(program, output).then(crate::graph::Node::ready_value)
+    }
     pub(crate) fn desc<'a>(&'a self, program: &Program, output: Out) -> Option<&'a Desc> {
         output.output?; self.geometry.descs.get(program.desc_index(output))?.as_ref()
+    }
+    pub(crate) fn metadata_value(&self, program: &Program, output: Out) -> crate::error::Result<Value> {
+        if let Some(value) = self.argument(program, output) { return Ok(value.clone()); }
+        Ok(Value::metadata(self.desc(program, output).cloned()))
     }
     pub(crate) fn read_plan(&self, node: usize) -> Option<&rustymath::agreement::ReadPlan> { self.geometry.read_plans.get(node)?.as_ref() }
     pub(crate) fn store(&mut self, node: usize, values: Outputs<Value>) { self.values[node] = Some(values); }
@@ -852,20 +1079,31 @@ impl Running {
         let node = &program.nodes[completion.node];
         if let Some(position) = node.input_position() {
             match self.inputs.get(position).and_then(Option::as_ref) {
-                Some(Value::Pending(input)) if input.output.is_none() => input.node.is_complete(),
+                Some(Value::Pending(input)) => input.node.is_complete(),
                 value => value.is_some(),
             }
         } else { matches!(node, Node::Literal { .. }) }
     }
     pub(crate) fn binding_value(&self, program: &Program, output: Out) -> crate::error::Result<Value> {
-        if output.output.is_some() { self.value(program, output).cloned().ok_or_else(crate::Error::planning) }
-        else if self.is_complete(program, output) { Ok(Value::Pending(crate::graph::Node::ready_control())) }
-        else { Err(crate::Error::planning()) }
+        if output.output.is_some() { return self.value(program, output).cloned().ok_or_else(crate::Error::planning); }
+        if let Some(values) = self.values.get(output.node).and_then(Option::as_ref) {
+            let mut pending = values.as_ref().iter().filter_map(Value::pending);
+            if let Some(first) = pending.next() {
+                if pending.any(|other| other.node != first.node) { return Err(crate::Error::planning()); }
+                return Ok(Value::Pending(Pending::control(first.node.clone())));
+            }
+        }
+        if let Some(position) = program.nodes[output.node].input_position()
+            && let Some(Value::Pending(input)) = self.inputs.get(position).and_then(Option::as_ref) {
+            return Ok(Value::Pending(Pending::control(input.node.clone())));
+        }
+        if self.is_complete(program, output) { Ok(Value::Pending(crate::graph::Node::ready_control())) } else { Err(crate::Error::planning()) }
     }
     /// Publish one complete source bundle after its final producing stage succeeds.
     pub(crate) fn publish(&self, program: &Program, source: usize) -> crate::error::Result<()> {
-        let (original, completion, outputs) = program.sources.get(source).ok_or_else(crate::Error::planning)?;
-        let Some(node) = self.sources.get(*original as usize).and_then(Weak::upgrade).map(crate::graph::Node) else { return Ok(()) };
+        let Source { original, completion, outputs, publish } = program.sources.get(source).ok_or_else(Error::planning)?;
+        if !publish { return Ok(()); }
+        let Some(node) = self.binding.sources.get(*original as usize).and_then(Weak::upgrade).map(crate::graph::Node) else { return Ok(()) };
         if node.is_stored() { return Ok(()); }
         if node.descs().is_empty() {
             node.finish(self.values.get(completion.node).and_then(Option::as_ref).cloned().ok_or_else(crate::Error::planning)?);
@@ -907,18 +1145,23 @@ impl Running {
     pub(crate) fn binding<'a>(&'a self, program: &'a Program, source: Out) -> Option<rustymath::agreement::Binding<'a>> {
         self.value(program, source)?.physical().map(|(storage, _)| rustymath::agreement::Binding::full(storage))
     }
-    fn route(&self, program: &Program, output: Out) -> crate::error::Result<rustymath::agreement::ReadPlan> {
-        if self.value(program, output).is_none() && output.output == 0 && let Some(plan) = self.read_plan(output.node) { return Ok(plan.clone()); }
+    fn route(&self, program: &Program, output: Out) -> crate::error::Result<ReadPlan> {
+        if self.value(program, output).is_none() && output.output == Some(0)
+            && matches!(&program.nodes[output.node], Node::Step { step, .. } if step.is_view())
+            && let Some(plan) = self.read_plan(output.node) { return Ok(plan.clone()); }
         let items = self.desc(program, output).ok_or_else(crate::Error::planning)?.layout.count();
         let source = program.desc_index(output);
         Ok(self.value(program, output).and_then(|value| value.physical_read(source)).map_or_else(
-            || rustymath::agreement::ReadPlan::input(source, items), |(_, plan)| plan))
+            || ReadPlan::input(source, items), |(_, plan)| plan))
     }
-    pub(crate) fn prepare_read_plan(&mut self, program: &Program, node: usize,
-        plan: Option<rustymath::agreement::ReadPlan>) -> crate::error::Result<()> {
+    pub(crate) fn prepare_read_plan(&mut self, program: &Program, node: usize, plan: Option<ReadPlan>) -> crate::error::Result<()> {
         let resolved = if let Some(plan) = plan {
-            let Node::Step { origin, .. } = &program.nodes[node] else { return Err(crate::Error::planning()); };
-            Some(plan.compose_inputs(&mut |source, _| self.route(program, program.reads[origin.list.start as usize + source].operand))?)
+            let Node::Step { step, origin, .. } = &program.nodes[node] else { return Err(crate::Error::planning()); };
+            let addresses = matches!(step, Step::At { ids: None, .. });
+            Some(plan.compose_inputs(&mut |source, items| {
+                let output = program.reads[origin.list.start as usize + source].operand;
+                if addresses { Ok(ReadPlan::input(program.desc_index(output), items)) } else { self.route(program, output) }
+            })?)
         } else { None };
         self.geometry.read_plans[node] = resolved; Ok(())
     }
@@ -941,6 +1184,17 @@ impl Running {
         Ok(())
     }
     pub(crate) fn read(&self, position: usize) -> Option<&Routed> { self.geometry.reads.get(position)?.as_ref() }
+    pub(crate) fn logical_value<'a>(&'a self, program: &'a Program, output: Out, purpose: ReadKind) -> crate::error::Result<Cow<'a, Value>> {
+        if purpose == ReadKind::Description { return Err(Error::planning()); }
+        if let Some(value) = self.value(program, output) { return value.read_borrowed(purpose); }
+        if self.read_plan(output.node).is_none() { return Err(Error::planning()); }
+        let desc = self.desc(program, output).ok_or_else(Error::planning)?;
+        let routed = self.output_read(program, output)?;
+        let sources = routed.bind(program, self, |_| None)?;
+        let checked = matches!(&program.nodes[output.node], Node::Step { origin, .. } if origin.mode.dynamic);
+        let value = crate::array::read_value(desc, &rustymath::agreement::Read { plan: &routed.plan, sources: &sources }, checked)?;
+        Ok(Cow::Owned(value.read(purpose)?))
+    }
 }
 
 
@@ -956,7 +1210,7 @@ impl crate::primitive::CallBindings for BoundCall<'_> {
     fn input(&self, position: usize) -> Option<crate::primitive::Input<'_>> {
         let at = self.reads.start as usize + position;
         let read = self.program.reads.get(at)?;
-        Some(crate::primitive::Input { value: self.running.value(self.program, read.operand)?, map: &self.running.geometry.maps[at] })
+        Some(crate::primitive::Input { value: self.running.argument(self.program, read.operand)?, map: &self.running.geometry.maps[at] })
     }
     fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> {
         let read = self.program.reads.get(self.reads.start as usize + position)?;
@@ -964,14 +1218,7 @@ impl crate::primitive::CallBindings for BoundCall<'_> {
     }
     fn value(&self, position: usize, purpose: trace::ReadKind) -> crate::error::Result<Cow<'_, Value>> {
         let output = self.program.reads.get(self.reads.start as usize + position).ok_or_else(crate::Error::planning)?.operand;
-        if let Some(value) = self.running.value(self.program, output) { return value.read_borrowed(purpose); }
-        if self.running.read_plan(output.node).is_none() { return Err(crate::Error::planning()); }
-        let desc = self.running.desc(self.program, output).ok_or_else(crate::Error::planning)?;
-        let routed = self.running.output_read(self.program, output)?;
-        let sources = routed.bind(self.program, self.running, |_| None)?;
-        let checked = matches!(&self.program.nodes[output.node], Node::Step { origin, .. } if origin.mode.dynamic);
-        let value = crate::array::read_value(desc, &rustymath::agreement::Read { plan: &routed.plan, sources: &sources }, checked)?;
-        Ok(Cow::Owned(value.read(purpose)?))
+        self.running.logical_value(self.program, output, purpose)
     }
     fn function(&self, position: usize) -> Option<&Function> {
         let output = self.program.reads.get(self.reads.start as usize + position)?.operand;
@@ -993,9 +1240,10 @@ pub(crate) struct Schedule {
     pub(crate) releases: Box<[Box<[usize]>]>,
     pub(crate) publications: Box<[Box<[usize]>]>,
     pub(crate) program: Arc<Program>,
+    pub(crate) original: Arc<Program>,
+    pub(crate) originals: Box<[Option<usize>]>,
     pub(crate) order: Box<[usize]>,
     pub(crate) stages: Box<[Stage]>,
-    pub(crate) boxes: Box<[RangeBox]>,
 }
 pub(crate) struct Plan {
     pub(crate) schedule: Arc<Schedule>,
@@ -1004,12 +1252,13 @@ pub(crate) struct Plan {
     pub(crate) stamp: Option<u64>,
     pub(crate) from: usize,
     pub(crate) runs: u64,
+    repeated: [Option<blocks::PreparedLoop>; 2],
 }
 impl std::ops::Deref for Plan { type Target = Schedule; fn deref(&self) -> &Schedule { &self.schedule } }
 impl Plan {
     pub(crate) fn new(schedule: Arc<Schedule>, from: usize, runs: u64) -> Self {
         let prepared = (0..schedule.stages.len()).map(|_| None).collect();
-        Self { schedule, prepared, geometry: Geometry::default(), stamp: None, from, runs }
+        Self { schedule, prepared, geometry: Geometry::default(), stamp: None, from, runs, repeated: [None, None] }
     }
 }
 
@@ -1018,11 +1267,11 @@ impl Plan {
     pub(crate) fn run(&mut self, running: &mut Running) -> crate::error::Result<Ran> { run::run(self, running) }
 }
 
-pub(crate) fn schedule(program: &Program, running: &mut Running, from: usize, runs: u64) -> crate::error::Result<Plan> {
+pub(crate) fn schedule(program: Arc<Program>, running: &mut Running, from: usize, runs: u64) -> crate::error::Result<Plan> {
     run::schedule(program, running, from, runs)
 }
 
-pub(crate) enum Ran { Done(Outputs<Value>), Failed, Refill(usize), Rest { node: usize, count: Key } }
+pub(crate) enum Ran { Done(Outputs<Value>), Failed, Rest { node: usize, count: Key } }
 
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 pub(crate) struct Key(pub(crate) Vec<layout::KeyPart>);
@@ -1051,7 +1300,7 @@ impl ProgramKey { pub(crate) fn extended(&self, node: usize, count: Key) -> Self
 pub(crate) struct Effects { pub(crate) acts: bool, pub(crate) catches: bool, pub(crate) writes: bool }
 
 #[derive(Clone, Copy)]
-pub(crate) enum Reason { Read, Execute, Guard, Recursion, OuterWrite, HostKind, Effect, DrawnName, Retraces }
+pub(crate) enum Reason { Read, Execute, Guard, Batch, Recursion, OuterWrite, HostKind, Renderer, Effect, DrawnName, Retraces }
 #[derive(Clone)]
 pub(crate) struct Stop { pub(crate) reason: Reason, pub(crate) site: Option<Span> }
 
@@ -1062,14 +1311,12 @@ pub(crate) struct Recording {
     pub(crate) effects: Effects,
     pub(crate) program: Arc<Program>,
     pub(crate) description: Description,
-    pub(crate) may_raise: bool,
-    pub(crate) itemwise: bool,
     pub(crate) failures: AtomicUsize,
 }
 impl Recording {
     fn observed(&self, event: &'static str, function: &Function) {
         if !rustymath::events::running() { return; }
-        let items = self.description.as_ref().iter().map(|desc| desc.layout.count()).sum();
+        let items = self.description.as_ref().iter().flatten().map(|desc| desc.layout.count()).sum();
         rustymath::events::taken(rustymath::events::Route::Trace, items);
         let steps = self.program.nodes.iter().filter(|node| matches!(node, Node::Step { .. })).count();
         crate::explain::program(event, steps, 0, 0, || function.bpl());
@@ -1088,16 +1335,22 @@ pub(crate) struct CacheEntry {
     pub(crate) age: usize,
 }
 
-pub(crate) struct Held { pub(crate) key: Key, pub(crate) guard: Key, pub(crate) plan: Option<Plan>, store: &'static Programs }
+pub(crate) struct Held { pub(crate) key: Key, pub(crate) guard: Key, pub(crate) plan: Option<Plan>, store: Option<&'static Programs> }
 
 impl std::ops::Deref for Held { type Target = Plan; fn deref(&self) -> &Plan { self.plan.as_ref().expect("a held plan") } }
 impl std::ops::DerefMut for Held { fn deref_mut(&mut self) -> &mut Plan { self.plan.as_mut().expect("a held plan") } }
+impl Held {
+    fn take(store: Option<&'static Programs>, key: Key, guard: Key, build: impl FnOnce() -> crate::error::Result<Plan>) -> crate::error::Result<Self> {
+        match store { Some(store) => store.take(key, guard, build), None => Ok(Self { key, guard, plan: Some(build()?), store: None }) }
+    }
+}
 
 
 pub(crate) struct Partial {
     pub(crate) primal: Program,
     pub(crate) linear: Program,
     pub(crate) seeds: Vec<usize>,
+    pub(crate) residual_start: usize,
     pub(crate) residuals: Vec<Out>,
     pub(crate) roots: Vec<PartialOut>,
 }
@@ -1112,38 +1365,89 @@ impl Program {
         }
     }
     pub(crate) fn dependencies(&self, node: usize) -> &[Read] { self.reads(&self.dependency_range(node)) }
-    pub(crate) fn partial(&self, level: usize) -> Partial {
+    fn dependency_read(&self, node: usize, position: usize) -> Option<ReadKind> {
+        match &self.nodes[node] {
+            Node::Step { origin, .. } => origin.read_kind(position),
+            Node::Function { binding: FunctionBinding::Rebuild { dependencies: (_, trees, bindings), .. }, .. } => {
+                let mut description = trees.as_ref().is_some_and(|trees| trees.input_use(position) == Some(crate::array::TreeInput::Description));
+                bindings.description_inputs(0, |at| description |= at == position);
+                description.then_some(ReadKind::Description)
+            }
+            _ => None,
+        }
+    }
+    fn dependency_executes(&self, node: usize, position: usize) -> bool { self.dependency_read(node, position) != Some(ReadKind::Description) }
+    pub(crate) fn execution_dependencies(&self, node: usize) -> impl Iterator<Item = &Read> {
+        self.dependencies(node).iter().enumerate().filter(move |(position, _)| self.dependency_executes(node, *position)).map(|(_, read)| read)
+    }
+    fn metadata_dependencies(&self, node: usize) -> impl Iterator<Item = &Read> {
+        self.dependencies(node).iter().enumerate().filter(move |(position, _)| self.dependency_read(node, *position) == Some(ReadKind::Description)).map(|(_, read)| read)
+    }
+    fn observed_dependencies(&self, node: usize) -> impl Iterator<Item = &Read> {
+        self.dependencies(node).iter().enumerate().filter(move |(position, _)| {
+            self.dependency_executes(node, *position) && (matches!(self.nodes[node], Node::Function { .. }) || self.dependency_read(node, *position).is_some())
+        }).map(|(_, read)| read)
+    }
+    pub(crate) fn execution_order(&self, from: usize) -> Vec<usize> {
+        let mut needed = vec![false; self.nodes.len()];
+        let mut stack: Vec<_> = self.live_roots().map(|output| output.node).collect();
+        while let Some(node) = stack.pop() {
+            if needed[node] { continue; }
+            needed[node] = true;
+            stack.extend(self.execution_dependencies(node).map(|read| read.operand.node));
+        }
+        needed.into_iter().enumerate().filter_map(|(node, needed)| (needed && node >= from).then_some(node)).collect()
+    }
+    pub(crate) fn partial(&self, directions: &[Out]) -> Partial {
+        fn import(source: &Program, output: Out, into: &mut Builder, mapped: &mut HashMap<Out, Out>) -> Out {
+            if let Some(&output) = mapped.get(&output) { return output; }
+            for read in source.dependencies(output.node) { import(source, read.operand, into, mapped); }
+            let copied = into.copy_node(source, output.node, |output| mapped[&output], false);
+            for leaf in 0..source.outputs(output.node) { mapped.insert(Out::data(output.node, leaf as u32), Out::data(copied.node, leaf as u32)); }
+            mapped.insert(Out::control(output.node), Out::control(copied.node));
+            mapped[&output]
+        }
         let mut marked = Vec::with_capacity(self.nodes.len());
         let mut seeds = Vec::new();
         for (i, node) in self.nodes.iter().enumerate() {
-            let own = match node {
-                Node::Input { level: input, position, .. } if *input == Some(level) => { seeds.push(*position); true },
-                Node::Step { level: step, .. } => *step == Some(level),
-                _ => false,
-            };
-            marked.push(own || self.dependencies(i).iter().any(|read| marked[read.operand.node]));
+            let own = directions.iter().any(|output| output.node == i);
+            if own && let Some(position) = node.input_position() { seeds.push(position); }
+            marked.push(own || self.execution_dependencies(i).any(|read| read.operand.output.is_some() && marked[read.operand.node]));
         }
         let mut residuals = Vec::new();
         for (i, &linear) in marked.iter().enumerate() {
-            if linear { for read in self.dependencies(i) {
-                if !marked[read.operand.node] && !residuals.contains(&read.operand) { residuals.push(read.operand); }
+            if linear { for read in self.execution_dependencies(i) {
+                if !marked[read.operand.node] && !matches!(self.nodes[read.operand.node], Node::Literal { .. }) && !residuals.contains(&read.operand) { residuals.push(read.operand); }
             }}
+        }
+        let mut shapes: Vec<_> = marked.iter().enumerate().filter(|(_, linear)| **linear)
+            .flat_map(|(node, _)| self.metadata_dependencies(node).map(|read| read.operand)).collect();
+        let mut seen = vec![false; self.nodes.len()];
+        while let Some(output) = shapes.pop() {
+            if std::mem::replace(&mut seen[output.node], true) { continue; }
+            let opaque_host = matches!(self.nodes[output.node], Node::Input { .. } | Node::Function { binding: FunctionBinding::Input(_), .. }) && self.desc(output).is_none();
+            if opaque_host && !marked[output.node] && !residuals.contains(&output) { residuals.push(output); }
+            for read in self.observed_dependencies(output.node) {
+                if !marked[read.operand.node] && !matches!(self.nodes[read.operand.node], Node::Literal { .. }) && !residuals.contains(&read.operand) { residuals.push(read.operand); }
+            }
+            shapes.extend(self.dependencies(output.node).iter().map(|read| read.operand));
         }
         let (mut primal, mut linear) = (Builder::new(), Builder::new());
         let (mut primal_map, mut linear_map) = (HashMap::default(), HashMap::default());
+        let residual_start = self.nodes.iter().filter_map(Node::input_position).max().map_or(0, |position| position + 1);
         for (i, &source) in residuals.iter().enumerate() {
-            linear_map.insert(source, linear.input(seeds.len() + i, self.desc(source).cloned(), None));
+            let input = if source.output.is_none() { linear.control_input(residual_start + i) }
+                else { linear.input(residual_start + i, self.desc(source).cloned(), None) };
+            linear_map.insert(source, input);
         }
-        for (i, node) in self.nodes.iter().enumerate() {
-            let output = if marked[i] {
-                match node {
-                    Node::Input { position, desc, .. } =>
-                        linear.input(seeds.iter().position(|seed| seed == position).unwrap(), self.descs[*desc as usize].clone(), None),
-                    _ => linear.copy_node(self, i, |output| linear_map[&output], false),
-                }
-            } else { primal.copy_node(self, i, |output| primal_map[&output], true) };
-            let map = if marked[i] { &mut linear_map } else { &mut primal_map };
-            for part in 0..self.outputs(i) { map.insert(Out::data(i, part as u32), Out::data(output.node, part as u32)); }
+        for (i, &is_linear) in marked.iter().enumerate() {
+            let (receiving, map) = if is_linear { (&mut linear, &mut linear_map) } else { (&mut primal, &mut primal_map) };
+            for read in self.dependencies(i) {
+                if !map.contains_key(&read.operand) { import(self, read.operand, receiving, map); }
+            }
+            let output = receiving.copy_node(self, i, |output| map[&output], !is_linear);
+            for leaf in 0..self.outputs(i) { map.insert(Out::data(i, leaf as u32), Out::data(output.node, leaf as u32)); }
+            map.insert(Out::control(i), Out::control(output.node));
         }
         let roots = self.roots.iter().map(|&root| {
             let (builder, map) = if marked[root.node] { (&mut linear, &linear_map) } else { (&mut primal, &primal_map) };
@@ -1151,9 +1455,9 @@ impl Program {
             if marked[root.node] { PartialOut::Linear(index) } else { PartialOut::Primal(index) }
         }).collect();
         primal.program.roots.extend(residuals.iter().map(|root| primal_map[root]));
-        primal.program.token = self.token.map(|token| primal_map[&token]);
-        primal.program.parameters = self.remap_parameters(|output| primal_map[&output]);
-        Partial { primal: primal.program, linear: linear.program, seeds, residuals, roots }
+        primal.program.token = self.token.map(|token| import(self, token, &mut primal, &mut primal_map));
+        primal.program.parameters = self.remap_parameters(|output| import(self, output, &mut primal, &mut primal_map));
+        Partial { primal: primal.program, linear: linear.program, seeds, residual_start, residuals, roots }
     }
 }
 impl Builder {
@@ -1171,10 +1475,10 @@ impl Builder {
                     self.program.nodes.push(Node::Function { binding: FunctionBinding::Input(*position), desc, context: *context }); Out::data(at, 0)
                 }
             },
-            Node::Step { step, origin, descs, trees, shy, level } => {
+            Node::Step { step, origin, descs, trees, shy, count, level } => {
                 let reads = source.reads(&origin.list).iter().map(|read| Read { operand: resolve(read.operand), map: read.map.clone() }).collect();
-                let outputs: Vec<_> = source.descs[descs.start as usize..descs.end as usize].iter().map(|desc| desc.clone().unwrap()).collect();
-                self.step(step.clone(), origin.with_list(reads), &Outputs::from(outputs).with_trees(trees.clone()).with_shy(*shy), if levels { *level } else { None })
+                let outputs = source.descs[descs.start as usize..descs.end as usize].to_vec();
+                self.step(step.clone(), origin.with_list(reads), &Outputs::from(outputs).with_trees(trees.clone()).with_shy(*shy).with_count(*count), if levels { *level } else { None })
             }
         }
     }
@@ -1191,13 +1495,13 @@ impl Reason {
         match self {
             Self::Read => "observing argument data", Self::Execute => "execute", Self::Guard => "error guard",
             Self::Recursion => "recursion", Self::OuterWrite => "outer binding write", Self::HostKind => "host-kind data",
-            Self::Effect => "binding or setting effect", Self::DrawnName => "drawn name as text", Self::Retraces => "retrace limit",
+            Self::Renderer => "runtime renderer metadata", Self::Batch => "itemwise batch fallback", Self::Effect => "binding or setting effect", Self::DrawnName => "drawn name as text", Self::Retraces => "retrace limit",
         }
     }
 }
 impl Builder {
     pub(crate) fn literal(&mut self, value: Value) -> Out {
-        debug_assert!(matches!(value, Value::Number(_) | Value::Character(_)));
+        debug_assert!(!matches!(value, Value::Pending(_) | Value::Carried { .. }));
         let desc = self.description(Desc::leaf(&value)); let node = self.program.nodes.len();
         self.program.nodes.push(Node::Literal { value, desc }); Out::data(node, 0)
     }
@@ -1265,8 +1569,8 @@ impl Programs {
             let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(entry) = entries.get_mut(&key).and_then(|family| family.iter_mut().find(|entry| entry.guard == guard)) {
                 entry.age = self.age();
-                if let Some(plan) = entry.plan.take() { return Ok(Held { key, guard, plan: Some(plan), store: self }); }
-                if let Some(schedule) = &entry.schedule { return Ok(Held { key, guard, plan: Some(Plan::new(schedule.clone(), 0, 1)), store: self }); }
+                if let Some(plan) = entry.plan.take() { return Ok(Held { key, guard, plan: Some(plan), store: Some(self) }); }
+                if let Some(schedule) = &entry.schedule { return Ok(Held { key, guard, plan: Some(Plan::new(schedule.clone(), 0, 1)), store: Some(self) }); }
             }
         }
         let plan = build()?;
@@ -1276,7 +1580,7 @@ impl Programs {
             family.push(CacheEntry { guard: guard.clone(), reads: Arc::from([]), outcome: Outcome::Miss, plan: None, schedule: None, age: 0 }); family.len() - 1
         });
         family[at].schedule = Some(plan.schedule.clone()); family[at].age = self.age(); self.prune(&mut entries);
-        Ok(Held { key, guard, plan: Some(plan), store: self })
+        Ok(Held { key, guard, plan: Some(plan), store: Some(self) })
     }
     pub(crate) fn forget_plan(&self, key: &Key, guard: &Key) {
         let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1285,163 +1589,338 @@ impl Programs {
 }
 impl Drop for Held {
     fn drop(&mut self) {
-        let Some(mut plan) = self.plan.take() else { return };
-        plan.runs = plan.runs.saturating_add(1);
-        let mut entries = self.store.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(plan) = self.plan.take() else { return };
+        let Some(store) = self.store else { return };
+        let mut entries = store.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(entry) = entries.get_mut(&self.key).and_then(|family| family.iter_mut().find(|entry| entry.guard == self.guard)) {
             if entry.schedule.as_ref().is_some_and(|schedule| Arc::ptr_eq(schedule, &plan.schedule)) { entry.plan = Some(plan); }
         }
     }
 }
 
-fn cached(key: Key, guard: Key, running: &mut Running, expected_runs: u64, mut source: impl FnMut() -> Program)
-    -> crate::error::Result<Option<(Arc<Program>, Outputs<Value>)>> {
-    let mut held = programs().take(key.clone(), guard.clone(), || schedule(&source(), running, 0, expected_runs))?;
-    let mut misses = 0;
+fn refilled(mut held: Held, running: &mut Running, expected_runs: u64) -> crate::error::Result<Held> {
+    let mut replanned = false;
     loop {
         held.runs = held.runs.max(expected_runs);
-        let program = held.program.clone();
-        let geometry = std::mem::take(&mut held.geometry); running.bind(&program, geometry);
-        let from = held.from;
-        if !held.refill(from, running)? {
-            misses += 1;
-            if misses > 1 { return Err(crate::Error::domain("the current graph does not satisfy its descriptions")); }
-            programs().forget_plan(&held.key, &held.guard); drop(held);
-            held = programs().take(key.clone(), guard.clone(), || schedule(&source(), running, 0, expected_runs))?;
-            continue;
-        }
-        let outcome = held.run(running)?;
+        let program = held.program.clone(); let from = held.from;
+        running.bind(&program, std::mem::take(&mut held.geometry));
+        if held.refill(from, running)? { return Ok(held); }
+        let (original, from) = run::restore_original(&held, running);
         held.geometry = std::mem::take(&mut running.geometry);
-        match outcome {
-            Ran::Failed => return Ok(None),
-            Ran::Done(values) => return Ok(Some((program, values))),
-            Ran::Refill(from) => held.from = from,
-            Ran::Rest { node, count } => {
-                let key = held.key.extended(node, count); let runs = held.runs;
+        if replanned { return Err(Error::domain("a fresh graph plan does not satisfy its descriptions")); }
+        let key = held.key.clone(); let guard = held.guard.clone(); let runs = held.runs; let store = held.store;
+        held.plan.take(); if let Some(store) = store { store.forget_plan(&key, &guard); } drop(held);
+        held = Held::take(store, key, guard, || schedule(original, running, from, runs))?;
+        replanned = true;
+    }
+}
+fn prepared_plan(store: Option<&'static Programs>, key: Key, guard: Key, running: &mut Running, expected_runs: u64,
+    source: impl FnOnce() -> Arc<Program>) -> crate::error::Result<Held> {
+    let held = Held::take(store, key, guard, || schedule(source(), running, 0, expected_runs))?;
+    refilled(held, running, expected_runs)
+}
+fn run_refilled(mut held: Held, running: &mut Running, expected_runs: u64) -> crate::error::Result<Option<(Arc<Program>, Outputs<Value>)>> {
+    loop {
+        let program = held.program.clone();
+        held.runs = held.runs.saturating_add(1);
+        match held.run(running)? {
+            Ran::Failed => { held.geometry = std::mem::take(&mut running.geometry); return Ok(None); }
+            Ran::Done(values) => { held.geometry = std::mem::take(&mut running.geometry); return Ok(Some((program, values))); }
+            Ran::Rest { count, .. } => {
+                let (original, from) = run::restore_original(&held, running);
+                let key = held.key.extended(from, count); let guard = held.guard.clone(); let runs = held.runs; let store = held.store;
                 drop(held);
-                held = programs().take(key, guard.clone(), || schedule(&program, running, node, runs))?;
+                held = Held::take(store, key, guard, || schedule(original, running, from, runs))?;
             }
         }
+        held = refilled(held, running, expected_runs)?;
     }
+}
+fn cached(store: Option<&'static Programs>, key: Key, guard: Key, running: &mut Running, expected_runs: u64, source: impl FnOnce() -> Arc<Program>)
+    -> crate::error::Result<Option<(Arc<Program>, Outputs<Value>)>> {
+    let held = prepared_plan(store, key, guard, running, expected_runs, source)?;
+    run_refilled(held, running, expected_runs)
 }
 
 pub(crate) fn execute(roots: &[Pending]) -> crate::error::Result<()> {
     let mut live = Live::of(roots);
-    let inputs = live.inputs().iter().cloned().collect::<Option<Vec<_>>>().ok_or_else(crate::Error::planning)?;
-    let mut running = Running::new(inputs);
-    running.set_live(&live);
-    let Some((program, values)) = cached(std::mem::take(&mut live.key.0), Key::default(), &mut running, 1, || Program::of(&live))? else { return Ok(()) };
-    for (i, root) in roots.iter().enumerate() {
-        let description = root.node.description();
-        let result = if root.node.descs().len() == 1 { Outputs::one(values.as_ref()[i].clone()) } else {
-            running.values[program.roots[i].node].as_ref().ok_or_else(crate::Error::planning)?.clone()
-        };
-        root.node.finish(result.with_trees(description.trees().cloned()).with_shy(description.shy));
+    if trace::Tracing::planning() && live.nodes.iter().any(|node| node.with_state(|state| matches!(state, crate::graph::State::Step { origin, .. } if origin.nonrepeatable()))) {
+        trace::Tracing::stop(Reason::Effect, None); return Err(Error::planning());
     }
+    let mut running = Running::from_live(&live);
+    let store = live.cacheable_metadata().then_some(programs());
+    if store.is_none() { trace::Tracing::stop(Reason::Renderer, None); }
+    if cached(store, std::mem::take(&mut live.key.0), Key::default(), &mut running, 1, || Arc::new(Program::of(&live)))?.is_none() { return Ok(()); }
+    if roots.iter().any(|root| !root.node.is_complete()) { return Err(Error::planning()); }
     Ok(())
 }
 
 
-pub(crate) fn invoke(function: &Function, origin: Origin<Vec<Value>>, expected_runs: u64) -> crate::error::Result<Option<Value>> {
-    let origin = origin.invocation();
-    let current = origin.reborrow();
-    let key = Key::of(function, &current.call_view(&current.list))?;
-    let (guard, outcome) = programs().serve(&key, &current)?;
-    if let Outcome::Recording(recording) = outcome {
+pub(crate) enum Preparation {
+    Ready(PreparedCall),
+    Record { key: Key, origin: Origin<Vec<Value>> },
+    Direct { reason: Option<Reason>, origin: Origin<Vec<Value>> },
+}
+
+pub(crate) struct PreparedCall {
+    held: Option<Held>,
+    running: Running,
+    recording: Arc<Recording>,
+    expected_runs: u64,
+}
+impl PreparedCall {
+    pub(crate) fn new(key: Key, guard: Key, recording: Arc<Recording>, origin: Origin<Vec<Value>>, expected_runs: u64) -> crate::error::Result<Self> {
         let context = origin.with_list(());
-        let mut running = Running::new(origin.list); running.root = Some(context);
-        let Some((_, values)) = cached(key, guard, &mut running, expected_runs, || (*recording.program).clone())? else { return Ok(None) };
-        let value = values.with_trees(recording.description.trees().cloned()).assemble()?;
-        recording.observed("replay", function); return Ok(Some(value));
+        let mut running = Running::new(origin.list); running.binding.root = Some(context);
+        let held = prepared_plan(Some(programs()), key, guard, &mut running, expected_runs, || recording.program.clone())?;
+        Ok(Self { held: Some(held), running, recording, expected_runs })
     }
-    let value = match outcome {
-        Outcome::Miss => {
-            let [left, right] = Function::argument_ranges(&current)?;
-            let right = right.ok_or_else(crate::Error::planning)?;
-            let arguments = left.map_or(right.start, |left| left.start)..right.end;
-            if programs().reserve(&key) {
-                let traced = trace::record(function, current, arguments, false);
-                programs().unreserve(&key);
-                let guard = layout::guard_key(&origin.reborrow(), &traced.reads)?;
-                let outcome = match traced.recording {
-                    Ok(recording) => { recording.observed("record", function); Outcome::Recording(Arc::new(recording)) }
-                    Err(stop) => Outcome::Stop(stop),
-                };
-                programs().put(key, guard, traced.reads, outcome);
-                traced.result?.assemble()?
-            } else {
-                trace::Tracing::stop(Reason::Recursion, origin.site.clone());
-                function.run(origin.reborrow())?
+    pub(crate) fn plan(&self) -> &Plan { self.held.as_ref().expect("a prepared call owns its loan") }
+    pub(crate) fn running(&self) -> &Running { &self.running }
+    pub(crate) fn recording(&self) -> &Arc<Recording> { &self.recording }
+    pub(crate) fn may_raise(&self) -> crate::error::Result<bool> { self.plan().program.may_raise(&self.running) }
+    pub(crate) fn description(&self) -> crate::error::Result<Description> {
+        let program = &self.plan().program;
+        let descs = program.roots.iter().map(|&output| self.running.desc(program, output).cloned()).collect::<Vec<_>>();
+        Ok(Outputs::from(descs).with_trees(self.recording.description.trees().cloned()).with_shy(self.recording.description.shy))
+    }
+    pub(crate) fn repeat(&mut self, inputs: &blocks::RepeatInputs<'_>, policy: Compiles, numeric: Numeric)
+        -> crate::error::Result<Option<Outputs<Value>>> {
+        if policy == Compiles::Never || trace::Tracing::planning() || self.recording.effects.writes || self.recording.effects.catches { return Ok(None); }
+        let plan = &mut **self.held.as_mut().expect("a prepared call owns its loan");
+        let form = usize::from(inputs.count.is_none());
+        let prior = plan.repeated[form].take().filter(|code| code.accepts(plan, &self.running, inputs));
+        let code = match prior { Some(code) => Some(code), None => blocks::PreparedLoop::prepare(plan, &self.running, inputs, policy, self.expected_runs)? };
+        let Some(code) = code else { return Ok(None); };
+        let result = code.run(plan, &mut self.running, inputs, numeric);
+        plan.repeated[form] = Some(code);
+        result.map(Some)
+    }
+    pub(crate) fn run(mut self, function: &Function) -> crate::error::Result<Option<Value>> {
+        if trace::Tracing::planning() { return self.bound().map(|bound| Some(bound.value)); }
+        let held = self.held.take().expect("a prepared call runs once");
+        let Some((_, values)) = run_refilled(held, &mut self.running, self.expected_runs)? else { return Ok(None) };
+        self.finish(function, values)
+    }
+    fn bound(self) -> crate::error::Result<BoundRecording> {
+        let context = self.running.binding_context().clone();
+        let values = self.recording.program.bound(&context,
+            |position| self.running.inputs.get(position).and_then(Option::as_ref).cloned().ok_or_else(Error::planning),
+            |position| Ok(context.input_desc(position).cloned()))?;
+        let value = values.values.with_trees(self.recording.description.trees().cloned()).with_shy(self.recording.description.shy).assemble()?;
+        Ok(BoundRecording { recording: Some(self.recording.clone()), context: values.context, value })
+    }
+    pub(crate) fn finish(mut self, function: &Function, values: Outputs<Value>) -> crate::error::Result<Option<Value>> {
+        if let Some(held) = &mut self.held { held.runs = held.runs.saturating_add(1); }
+        if crate::session().error.pending() { return Ok(None); }
+        let value = values.with_trees(self.recording.description.trees().cloned()).assemble()?;
+        self.recording.observed("replay", function); Ok(Some(value))
+    }
+}
+impl Drop for PreparedCall {
+    fn drop(&mut self) { if let Some(held) = &mut self.held { held.geometry = std::mem::take(&mut self.running.geometry); } }
+}
+
+pub(crate) fn prepare(function: &Function, origin: Origin<Vec<Value>>, expected_runs: u64) -> crate::error::Result<Preparation> {
+    let origin = origin.invocation();
+    if origin.list.iter().any(|value| value.carried_level().is_some()) { return Ok(Preparation::Direct { reason: None, origin }); }
+    if !origin.cacheable_metadata(origin.list.iter()) { return Ok(Preparation::Direct { reason: Some(Reason::Renderer), origin }); }
+    let key = Key::of(function, &origin.call_view(&origin.list))?;
+    let (guard, outcome) = programs().serve(&key, &origin.reborrow())?;
+    Ok(match outcome {
+        Outcome::Recording(recording) => Preparation::Ready(PreparedCall::new(key, guard, recording, origin, expected_runs)?),
+        Outcome::Miss => Preparation::Record { key, origin },
+        Outcome::Busy => Preparation::Direct { reason: Some(Reason::Recursion), origin },
+        Outcome::Stop(_) => Preparation::Direct { reason: None, origin },
+    })
+}
+pub(crate) struct BoundRecording {
+    pub(crate) recording: Option<Arc<Recording>>,
+    pub(crate) context: BindingContext,
+    pub(crate) value: Value,
+}
+struct RecordAttempt { guard: Key, recording: Option<Arc<Recording>>, result: crate::error::Result<Outputs<Value>>, current: BindingContext }
+fn record_attempt(function: &Function, key: Key, origin: &Origin<Vec<Value>>, planning: bool) -> crate::error::Result<Option<RecordAttempt>> {
+    let current = origin.reborrow();
+    let [left, right] = Function::argument_ranges(&current)?;
+    let right = right.ok_or_else(Error::planning)?;
+    let arguments = left.map_or(right.start, |left| left.start)..right.end;
+    if !programs().reserve(&key) { return Ok(None); }
+    let traced = trace::record(function, current, arguments, planning);
+    programs().unreserve(&key);
+    let guard = layout::guard_key(&origin.reborrow(), &traced.reads)?;
+    let (recording, outcome) = match traced.recording {
+        Ok(recording) => {
+            if !planning { recording.observed("record", function); }
+            let recording = Arc::new(recording); (Some(recording.clone()), Outcome::Recording(recording))
+        }
+        Err(stop) => (None, Outcome::Stop(stop)),
+    };
+    if !planning || recording.is_some() { programs().put(key, guard.clone(), traced.reads, outcome); }
+    Ok(Some(RecordAttempt { guard, recording, result: traced.result, current: traced.current }))
+}
+impl Preparation {
+    pub(crate) fn run(self, function: &Function) -> crate::error::Result<Option<Value>> {
+        match self {
+            Self::Ready(call) => call.run(function),
+            other => { let value = other.bound(function)?.value; Ok((!crate::session().error.pending()).then_some(value)) }
+        }
+    }
+    pub(crate) fn bound(self, function: &Function) -> crate::error::Result<BoundRecording> {
+        match self {
+            Self::Ready(call) => call.bound(),
+            Self::Record { key, origin } => {
+                let context = BindingContext::from_origin(&origin);
+                match record_attempt(function, key, &origin, false)? {
+                    Some(attempt) => Ok(BoundRecording { recording: attempt.recording, context: attempt.current, value: attempt.result?.assemble()? }),
+                    None => {
+                        trace::Tracing::stop(Reason::Recursion, origin.site.clone());
+                        Ok(BoundRecording { recording: None, context, value: function.run(origin.reborrow())? })
+                    }
+                }
+            }
+            Self::Direct { reason, origin } => {
+                let context = BindingContext::from_origin(&origin);
+                if let Some(reason) = reason { trace::Tracing::stop(reason, origin.site.clone()); }
+                Ok(BoundRecording { recording: None, context, value: function.run(origin.reborrow())? })
             }
         }
-        Outcome::Busy => {
-            trace::Tracing::stop(Reason::Recursion, origin.site.clone());
-            function.run(origin.reborrow())?
-        }
-        Outcome::Stop(_) => function.run(origin.reborrow())?,
-        Outcome::Recording(_) => unreachable!(),
-    };
-    Ok((!crate::session().error.pending()).then_some(value))
+    }
+}
+
+pub(crate) fn invoke(function: &Function, origin: Origin<Vec<Value>>, expected_runs: u64) -> crate::error::Result<Option<Value>> {
+    prepare(function, origin, expected_runs)?.run(function)
 }
 
 impl Program {
+    fn rebuilt_function(&self, node: usize, current: &BindingContext, mut resolve: impl FnMut(usize, Out) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
+        let Node::Function { binding: FunctionBinding::Rebuild { template, dependencies: (reads, trees, bindings) }, context, .. } = &self.nodes[node] else { return Err(Error::planning()); };
+        let leaves = self.reads(reads).iter().enumerate().map(|(position, read)| resolve(position, read.operand)).collect::<crate::error::Result<Vec<_>>>()?;
+        let origin = current.context(*context).ok_or_else(Error::planning)?;
+        let bindings = bindings.rebind(leaves.len(), origin).ok_or_else(Error::planning)?;
+        let mut construction = current.clone(); construction.root = Some(origin.clone());
+        Ok(Value::Function(template.rebuilt(&leaves, trees.as_deref(), &bindings, &construction)?))
+    }
     pub(crate) fn bind_function(&self, node: usize, running: &Running) -> crate::error::Result<Value> {
-        let Node::Function { binding, context, .. } = &self.nodes[node] else { return Err(crate::Error::planning()); };
-        Ok(match binding {
-            FunctionBinding::Input(position) => running.inputs[*position].clone().ok_or_else(crate::Error::planning)?,
-            FunctionBinding::Rebuild { template, dependencies: (reads, trees, bindings) } => {
-                let leaves = self.reads(reads).iter().map(|read| running.value(self, read.operand).cloned()
-                    .ok_or_else(crate::Error::planning)).collect::<crate::error::Result<Vec<_>>>()?;
-                let current = running.context(*context).ok_or_else(crate::Error::planning)?;
-                let bindings = bindings.rebind(leaves.len(), current).ok_or_else(crate::Error::planning)?;
-                Value::Function(template.rebuilt(&leaves, trees.as_deref(), &bindings)?)
-            }
-        })
+        match &self.nodes[node] {
+            Node::Function { binding: FunctionBinding::Input(position), .. } => running.inputs[*position].clone().ok_or_else(Error::planning),
+            Node::Function { .. } => self.rebuilt_function(node, &running.binding, |position, output| {
+                if self.dependency_read(node, position) == Some(ReadKind::Description) { return running.metadata_value(self, output); }
+                match running.value(self, output) {
+                    Some(value) => Ok(value.clone()), None => running.logical_value(self, output, ReadKind::Value).map(Cow::into_owned),
+                }
+            }),
+            _ => Err(Error::planning()),
+        }
+    }
+    /// The original graph value, before execution. Never realizes a residual or reconstructs a primal graph.
+    pub(crate) fn source_value(&self, current: &BindingContext, output: Out, mut input: impl FnMut(usize) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
+        fn source(program: &Program, current: &BindingContext, output: Out, input: &mut impl FnMut(usize) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
+            let value = match &program.nodes[output.node] {
+                Node::Input { position, .. } | Node::Function { binding: FunctionBinding::Input(position), .. } => input(*position)?,
+                Node::Literal { value, .. } => trace::Tracing::literal(value.clone())?,
+                Node::Function { .. } => program.rebuilt_function(output.node, current, |_, output| source(program, current, output, input))?,
+                Node::Step { origin, .. } => {
+                    let producer = program.sources.iter().find_map(|Source { original: ordinal, completion, outputs, .. }| {
+                        if output == *completion { Some((*ordinal, None)) }
+                        else { outputs.iter().position(|source| *source == output).map(|leaf| (*ordinal, Some(leaf as u32))) }
+                    }).or_else(|| origin.context.map(|ordinal| (ordinal, output.output))).ok_or_else(Error::planning)?;
+                    let node = current.sources.get(producer.0 as usize).and_then(Weak::upgrade).map(crate::graph::Node).ok_or_else(Error::planning)?;
+                    return Ok(Value::Pending(Pending { node, output: producer.1 }));
+                }
+            };
+            Ok(if output.output.is_some() { value } else { match value {
+                Value::Pending(pending) => Value::Pending(Pending::control(pending.node)),
+                _ => Value::Pending(crate::graph::Node::ready_control()),
+            }})
+        }
+        source(self, current, output, &mut input)
     }
 
-    pub(crate) fn bound(&self, current: &Running, mut resolve: impl FnMut(usize) -> crate::error::Result<Value>) -> crate::error::Result<Outputs<Value>> {
+    fn binding_uses(&self) -> (Vec<usize>, Vec<bool>) {
+        let order = self.order(0);
+        let mut executed = vec![false; self.nodes.len()];
+        let mut needed = self.execution_order(0);
+        for &at in &order { needed.extend(self.observed_dependencies(at).map(|read| read.operand.node)); }
+        while let Some(at) = needed.pop() {
+            if std::mem::replace(&mut executed[at], true) { continue; }
+            needed.extend(self.execution_dependencies(at).map(|read| read.operand.node));
+        }
+        (order, executed)
+    }
+    pub(crate) fn input_reads(&self) -> Vec<(usize, ReadKind)> {
+        let (order, executes) = self.binding_uses(); let mut reads: Vec<(usize, ReadKind)> = Vec::new();
+        for node in order {
+            let Some(position) = self.nodes[node].input_position() else { continue; };
+            let read = if executes[node] { ReadKind::Value } else { ReadKind::Description };
+            if let Some((_, prior)) = reads.iter_mut().find(|(at, _)| *at == position) { if read == ReadKind::Value { *prior = read; } }
+            else { reads.push((position, read)); }
+        }
+        reads.sort_unstable_by_key(|(position, _)| *position); reads
+    }
+    pub(crate) fn bound(&self, current: &BindingContext, mut value: impl FnMut(usize) -> crate::error::Result<Value>,
+        mut description: impl FnMut(usize) -> crate::error::Result<Option<Desc>>) -> crate::error::Result<BoundOutputs> {
         let mut running = Running::new(Vec::new());
-        running.root = current.root.clone(); running.contexts.clone_from(&current.contexts);
-        running.inputs.resize_with(self.nodes.iter().filter_map(Node::input_position).max().map_or(0, |position| position + 1), || None);
+        running.binding = current.clone(); running.geometry.descs.clone_from(&self.descs);
+        let inputs = self.nodes.iter().filter_map(Node::input_position).max().map_or(0, |position| position + 1);
+        running.inputs.resize_with(inputs, || None); running.binding.input_descs.resize_with(inputs, || None);
         running.values.resize_with(self.nodes.len(), || None);
-        for at in self.order(0) {
+        let (order, executed) = self.binding_uses();
+        for at in order {
             let node = &self.nodes[at];
             let outputs = if let Some(position) = node.input_position() {
-                if running.inputs[position].is_none() { running.inputs[position] = Some(resolve(position)?); }
-                Outputs::one(running.inputs[position].as_ref().unwrap().clone())
+                let desc = description(position)?.map(Desc::opaque);
+                let input = if executed[at] { value(position)? } else { Value::metadata(desc.clone()) };
+                running.binding.input_descs[position] = desc;
+                running.inputs[position] = Some(input.clone()); Outputs::one(input)
             } else { match node {
                 Node::Function { .. } => Outputs::one(self.bind_function(at, &running)?),
-                Node::Literal { value, .. } => Outputs::one(value.clone()),
+                Node::Literal { value, .. } => Outputs::one(trace::Tracing::literal(value.clone())?),
                 Node::Step { origin, .. } => {
-                    let args = self.reads(&origin.list).iter().map(|read| running.value(self, read.operand).cloned()
-                        .ok_or_else(crate::Error::planning)).collect::<crate::error::Result<Vec<_>>>()?;
+                    let args = self.reads(&origin.list).iter().map(|read| running.binding_value(self, read.operand)).collect::<crate::error::Result<Vec<_>>>()?;
                     let call = running.bind_origin(origin, args.as_slice())?;
-                    Operation::dispatch(call)?
+                    if executed[at] { Operation::dispatch(call)?.flatten()? } else {
+                        Operation::describe(&call.call_view(&args))?.ok_or_else(Error::planning)?.map(Value::metadata)
+                    }
                 }
                 Node::Input { .. } => unreachable!(),
             }};
+            let start = self.desc_index(Out::data(at, 0));
+            for (leaf, value) in outputs.as_ref().iter().enumerate() {
+                running.geometry.descs[start + leaf] = Desc::of(value).map(Cow::into_owned);
+            }
             running.values[at] = Some(outputs);
         }
-        self.roots.iter().map(|output| running.value(self, *output).cloned().ok_or_else(crate::Error::planning))
-            .collect::<crate::error::Result<Vec<_>>>().map(Into::into)
+        let values = self.roots.iter().map(|output| running.binding_value(self, *output)).collect::<crate::error::Result<Vec<_>>>()?;
+        for source in &self.sources {
+            let Some(outputs) = running.values.get(source.completion.node).and_then(Option::as_ref) else { continue; };
+            let Some(first) = outputs.as_ref().first().and_then(Value::pending) else { continue; };
+            if outputs.as_ref().iter().enumerate().any(|(leaf, value)| !value.pending().is_some_and(|pending| pending.node == first.node && pending.output == Some(leaf as u32))) { continue; }
+            running.binding.sources.resize_with((source.original as usize + 1).max(running.binding.sources.len()), Weak::new);
+            running.binding.sources[source.original as usize] = Arc::downgrade(&first.node.0);
+        }
+        Ok(BoundOutputs { values: Outputs::from(values), context: running.binding })
     }
 }
 
 impl Program {
-    pub(crate) fn may_raise(&self) -> bool {
-        self.nodes.iter().any(|node| match node {
-            Node::Step { step, origin, .. } if origin.mode.dynamic => match step {
-                Step::Map { variant, .. } | Step::Fold { variant, .. } => variant.checked,
+    pub(crate) fn may_raise(&self, running: &Running) -> crate::error::Result<bool> {
+        for (node, operation) in self.nodes.iter().enumerate() {
+            let Node::Step { step, origin, .. } = operation else { continue; };
+            if let Step::Convert { conversion, .. } = step { if conversion.may_raise(origin.mode.dynamic) { return Ok(true); } continue; }
+            if !origin.mode.dynamic { continue; }
+            let bindings = BoundCall { program: self, running, reads: origin.list.clone() };
+            let call = origin.call_view(&bindings);
+            let raises = match step {
+                Step::Map { variant, .. } | Step::Fold { variant, .. } => call.kernel(*variant)?.is_none_or(|kernel| kernel.may_raise()),
+                Step::Product { .. } => crate::primitive::product_kernels(&call, running.desc(self, Out::data(node, 0)).map(Desc::dtype))?
+                    .is_none_or(|(map, fold)| map.may_raise() || fold.is_some_and(|fold| fold.may_raise())),
                 Step::Gather { checked, .. } => *checked, Step::At { checks, .. } => *checks,
-                Step::Copy { .. } | Step::Product { .. } | Step::Call { .. } | Step::Loop { .. } | Step::Select { .. } => true,
+                Step::Copy { .. } | Step::Call | Step::Loop { .. } | Step::Select { .. } => true,
                 _ => false,
-            },
-            _ => false,
-        })
-    }
-    pub(crate) fn itemwise(&self) -> bool {
-        self.nodes.iter().all(|node| match node {
-            Node::Step { step, .. } => matches!(step, Step::Map { .. } | Step::Convert { .. } | Step::Picks { .. }), _ => true,
-        })
+            };
+            if raises { return Ok(true); }
+        }
+        Ok(false)
     }
 }

@@ -12,10 +12,11 @@
 //!
 //! Other data takes the pairwise comparison.
 use crate::execution::check;
-use crate::{Error, ErrorKind, error::Described, Span, Value, array::Items, element::read_as, number::Numeric};
+use crate::{Error, ErrorKind, error::Described, Span, Value, ReadKind, array::{ArrayData, Classes, Items, Layout, Segments, Widening}, primitive::Primitive, number::{Numeric, read_as}};
 use rustymath::hashing::{HashMap, HashMapExt, Hashing};
 use rustymath::{buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains}, tolerant::{self, Near, Tolerance}, with_float_width};
 use std::{borrow::Cow, hash::{BuildHasher, Hash, Hasher}, sync::Arc};
+use num_traits::ToPrimitive;
 
 /// The cells a search compares. The cells of rank 0 are an array's items.
 pub(crate) enum Cells<'a> { Items(&'a Value), Arrays(Vec<Value>) }
@@ -47,13 +48,13 @@ pub(crate) fn compared_at(width: Option<FloatWidth>, numeric: Numeric) -> (Float
 }
 
 /// The items of `cells` when they're one array's compact items, with the tolerance they compare at. Reading the width of compact items costs nothing, where cells of mixed storage take a pass over every cell.
-fn compact_at<'a>(cells: &Cells<'a>) -> Option<(View<'a>, Tolerance)> {
-    compact_view(cells).map(|x| (x, compared_at(cells.float_width(), Numeric::current()).1))
+fn compact_at<'a>(cells: &Cells<'a>, numeric: Numeric) -> Option<(View<'a>, Tolerance)> {
+    compact_view(cells).map(|x| (x, compared_at(cells.float_width(), numeric).1))
 }
 
 /// For each needle, the position of the first haystack cell that matches it, or the number of haystack cells when none does.
-pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &crate::Span) -> Result<Vec<u32>, Error> {
-    let (width, t) = compared_at(haystack.float_width().max(needles.float_width()), Numeric::current());
+pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, numeric: Numeric) -> Result<Vec<u32>, Error> {
+    let (width, t) = compared_at(haystack.float_width().max(needles.float_width()), numeric);
     if let Some(found) = compact_view(haystack).zip(compact_view(needles)).and_then(|(x, y)| search::view_index_of(x, y, t)) {
         return found.map_err(Error::from);
     }
@@ -65,49 +66,49 @@ pub(crate) fn first_matches(haystack: &Cells, needles: &Cells, span: &crate::Spa
     if needles.len() > 1 && haystack.len() >= 8 && haystack.len().saturating_mul(needles.len()) >= 256 {
         let seed = Hashing::default();
         if let (Some(x), Some(y)) = (exact_cells(haystack), exact_cells(needles)) { return Ok(search::first_matches(&x, &y)); }
-        if let Some(x) = hashes(haystack, &seed) { if let Some(y) = hashes(needles, &seed) { return hashed_first(haystack, &x, needles, &y, span); } }
+        if let Some(x) = hashes(haystack, &seed) { if let Some(y) = hashes(needles, &seed) { return hashed_first(haystack, &x, needles, &y, numeric); } }
         if let (Some(x), Some(y)) = (reals(haystack, width), reals(needles, width)) { return tolerant::index_of(t, &*x, &*y).map_err(Error::from); }
         if let (Some(x), Some(y)) = (leading_reals(haystack, width), leading_reals(needles, width)) {
             let near = Near::new(t, &x, |j, i| haystack.get(j).same(&haystack.get(i)));
             return y.iter().enumerate().map(|(j, &v)| {
                 check()?;
                 let (needle, mut first) = (needles.get(j), x.len());
-                for i in near.near(v) { if i < first && haystack.get(i).matches(&needle, span)? { first = i; } }
+                for i in near.near(v) { if i < first && haystack.get(i).matches_within(&needle, numeric)? { first = i; } }
                 Ok(first as u32)
             }).collect();
         }
     }
     (0..needles.len()).map(|j| {
         let y = needles.get(j);
-        for i in 0..haystack.len() { if haystack.get(i).matches(&y, span)? { return Ok(i as u32); } }
+        for i in 0..haystack.len() { if haystack.get(i).matches_within(&y, numeric)? { return Ok(i as u32); } }
         Ok(haystack.len() as u32)
     }).collect()
 }
 
 /// The representative of each cell's class. Compact cells take rustymath's classes. With a tolerance, a class of real atoms is a run that `tolerant::runs` gives, or the reals equal to one whole number when every real equals one below `tolerant::whole_limit`, and the class's earliest position represents it. Two reals in one class therefore needn't match each other. Other cells are compared only with earlier representatives. A cell that matches none represents a new class. Cells that share their arrays, as a selection shares a few strings among many cells, class by array before any array is read (`shared_classes`).
-pub(crate) fn classify(cells: &Cells, span: &Span) -> Result<Vec<u32>, Error> {
+pub(crate) fn classify(cells: &Cells, numeric: Numeric) -> Result<Vec<u32>, Error> {
     if let Some(classes) = shared_classes(cells) { return Ok(classes); }
-    let (width, t) = compared_at(cells.float_width(), Numeric::current());
+    let (width, t) = compared_at(cells.float_width(), numeric);
     if let Some(classes) = compact_view(cells).and_then(|x| search::view_classes(x, t)) { return classes.map_err(Error::from); }
     let compact = with_float_width!(width, F => match cells {
         Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::classes(t, &x)), Cells::Arrays(_) => None,
     });
     if let Some(classes) = compact { return classes.map_err(Error::from); }
     if let Some(x) = exact_cells(cells) { return Ok(search::first_classes(&x, |k| k)); }
-    if let Some(x) = hashes(cells, &Hashing::default()) { return hashed_classes(cells, &x, span); }
+    if let Some(x) = hashes(cells, &Hashing::default()) { return hashed_classes(cells, &x, numeric); }
     if let Some(x) = reals(cells, width) { return tolerant::classes(t, &*x).map_err(Error::from); }
     let mut classes = vec![0; cells.len()];
     if let Some(x) = leading_reals(cells, width) {
-        tolerant::runs(t, &x, |run| { check()?; earliest(cells, run.iter().copied(), &mut classes, span) })?;
-    } else { earliest(cells, 0..cells.len(), &mut classes, span)?; }
+        tolerant::runs(t, &x, |run| { check()?; earliest(cells, run.iter().copied(), &mut classes, numeric) })?;
+    } else { earliest(cells, 0..cells.len(), &mut classes, numeric)?; }
     Ok(classes)
 }
 
 /// The classes of `cells`, numbered from 0 in order of first appearance: each class's first position and count, and each cell's class number, which a fold of each class reads in one pass (`search::Numbered`). Booleans, characters and integers whose values span a table number straight from those values. Other cells number the representatives that `classify` gives them.
-pub(crate) fn numbered(cells: &Cells, span: &Span) -> Result<search::Numbered, Error> {
+pub(crate) fn numbered(cells: &Cells, numeric: Numeric) -> Result<search::Numbered, Error> {
     groupable(cells.len())?;
-    if let Some(numbered) = compact_at(cells).and_then(|(x, t)| search::view_numbered(x, t)) { return numbered.map_err(Error::from); }
-    Ok(search::numbered(&classify(cells, span)?))
+    if let Some(numbered) = compact_at(cells, numeric).and_then(|(x, t)| search::view_numbered(x, t)) { return numbered.map_err(Error::from); }
+    Ok(search::numbered(&classify(cells, numeric)?))
 }
 
 /// The positions of `items` grouped by the group that `group` gives each item, as rustymath's `search::grouped_by` gives them. More than `u32::MAX` items, which 32-bit positions can't hold, raises LIMIT ERROR.
@@ -123,7 +124,7 @@ fn groupable(len: usize) -> Result<(), Error> {
 }
 
 /// Whether segments can hold `values`' major cells in one leaf: compact items on axes with no keys or names, carrying no running level's data.
-fn segmentable(values: &Value) -> bool { !values.carried() && !values.holds_values() && values.template_dtype().is_some() && values.layout().plain() }
+fn segmentable(values: &Value) -> bool { values.level().is_none() && !values.holds_values() && values.view().is_some() && values.layout().plain() }
 
 /// `values`' major cells at `positions`, in order, by the one selection that `⌷` makes (`primitive::select`), or where `values` is `None` the positions themselves.
 pub(crate) fn rows_of(values: Option<&Value>, positions: Value, span: &Span) -> Result<Value, Error> {
@@ -134,38 +135,40 @@ pub(crate) fn rows_of(values: Option<&Value>, positions: Value, span: &Span) -> 
 }
 
 /// The classes that `numbered` gives, as one nested vector whose item `g` holds class `g`'s values in their order: `values`' major cells, or where `values` is `None` their positions among `n`, as Key and monadic `⍷` group them. The class order is the grade of the class numbers (`⍋`). Where segments can hold the values (`segmentable`), the groups lie in one leaf in class order (`Segments::packed`): the order itself, or the values selected by it. A vector of values keeps its class numbers beside the leaf (`Segments::with_classes`), so that a fold or scan of each class reads the values in their own order, and neither the order nor the leaf need be computed. Other values, and a single class, give each group as an array of its own.
-pub(crate) fn class_groups(values: Option<&Value>, n: usize, numbered: search::Numbered, span: &Span) -> Result<Value, Error> {
+pub(crate) fn class_groups(values: Option<&Value>, n: usize, numbered: search::Numbered, span: &Span, numeric: Numeric) -> Result<Value, Error> {
     let count = numbered.firsts.len();
     let search::Numbered { numbers, counts: sizes, .. } = numbered;
     let numbers = Value::positions_buffer([n], count, numbers).described("invalid classes")?;
-    let order = crate::primitive::Primitive::Grade(false).call(None, &numbers, span)?;
+    let order = Primitive::Grade(false).call(None, &numbers, span, numeric)?.read(ReadKind::Value)?;
     if count < 2 || values.is_some_and(|v| !segmentable(v)) {
         let starts = rustymath::layout::exclusive_sums(sizes.iter().copied());
         let groups = starts.into_iter().zip(&sizes).map(|(start, &size)| {
-            let rows = order.part(start..start + size, crate::array::Layout::from(vec![size])).described("invalid group")?;
-            rows_of(values, rows, span)
+            let rows = order.part(start..start + size, Layout::from(vec![size])).described("invalid group")?;
+            rows_of(values, rows, span)?.read(ReadKind::Value)
         }).collect::<Result<Vec<_>, _>>()?;
-        return Value::from_storage(vec![count], crate::array::Storage::mixed(groups)).described("invalid group");
+        return Value::stored_values(Layout::from([count]), groups, None, Widening::Items).described("invalid group");
     }
     let cell = values.map_or(&[][..], |v| &v.shape()[1..]);
-    let Value::Array(leaf) = rows_of(values, order, span)? else { unreachable!("the order and a selection of rows are arrays") };
+    let Value::Array(leaf) = rows_of(values, order, span)?.read(ReadKind::Value)? else { unreachable!("the order and a selection of rows are arrays") };
     let shapes = if cell.is_empty() { sizes } else { sizes.iter().flat_map(|&size| std::iter::once(size).chain(cell.iter().copied())).collect() };
-    let segments = crate::array::Segments::packed(leaf, shapes, 1 + cell.len());
+    let layout = Layout::from(&shapes[..1 + cell.len()]);
+    let prototype = Value::stored_part(&leaf, 0..layout.count(), layout)?.zeroed();
+    let segments = Segments::packed(leaf, shapes, 1 + cell.len(), prototype);
     let segments = match values {
-        Some(v) if v.shape().len() == 1 => segments.with_classes(crate::array::Classes { values: v.clone(), numbers, count }),
+        Some(v) if v.shape().len() == 1 => segments.with_classes(Classes { values: v.clone(), numbers, count }),
         _ => segments,
     };
-    Value::from_storage(vec![count], crate::array::Storage::Segmented(segments)).described("invalid group")
+    Ok(Value::Array(Arc::new(ArrayData::Segmented { layout: Layout::from([count]), segments })))
 }
 
 /// Gives each cell at `positions`, which ascend, the earliest representative among them that matches it. A cell that matches none represents a new class.
-fn earliest(cells: &Cells, positions: impl IntoIterator<Item = usize>, classes: &mut [u32], span: &Span) -> Result<(), Error> {
+fn earliest(cells: &Cells, positions: impl IntoIterator<Item = usize>, classes: &mut [u32], numeric: Numeric) -> Result<(), Error> {
     let mut representatives = Vec::new();
     for i in positions {
         check()?;
         let cell = cells.get(i);
         let mut class = i;
-        for &r in &representatives { if cells.get(r).matches(&cell, span)? { class = r; break; } }
+        for &r in &representatives { if cells.get(r).matches_within(&cell, numeric)? { class = r; break; } }
         if class == i { representatives.push(i); }
         classes[i] = class as u32;
     }
@@ -173,26 +176,33 @@ fn earliest(cells: &Cells, positions: impl IntoIterator<Item = usize>, classes: 
 }
 
 /// Whether each cell is the first of its class.
-pub(crate) fn firsts(cells: &Cells, span: &Span) -> Result<Vec<bool>, Error> {
-    let (width, t) = compared_at(cells.float_width(), Numeric::current());
+pub(crate) fn firsts(cells: &Cells, numeric: Numeric) -> Result<Vec<bool>, Error> {
+    let (width, t) = compared_at(cells.float_width(), numeric);
     if let Some(mask) = compact_view(cells).and_then(|x| search::view_firsts(x, t)) { return mask.map_err(Error::from); }
     let compact = with_float_width!(width, F => match cells {
         Cells::Items(x) => read_as::<F>(x).map(|x| tolerant::firsts(t, &x)), Cells::Arrays(_) => None,
     });
     if let Some(mask) = compact { return mask.map_err(Error::from); }
-    Ok(classify(cells, span)?.into_iter().enumerate().map(|(i, f)| f as usize == i).collect())
+    Ok(classify(cells, numeric)?.into_iter().enumerate().map(|(i, f)| f as usize == i).collect())
 }
 
 /// A hash of each cell by `seed`, when every cell holds only exact numbers, characters and unkeyed arrays of these. A search hashes both its arguments with the same seed. An array's compact items feed the hasher as the same items held as values would, so storage never changes a hash.
 fn hashes(cells: &Cells, seed: &Hashing) -> Option<Vec<u64>> {
     fn feed(value: &Value, state: &mut impl Hasher) -> Option<()> {
         match value {
-            Value::Number(n) => match n.as_integer() { Some(i) => (0u8, i).hash(state), None => (1u8, n.exact_ref()?).hash(state) },
+            Value::Number(n) => match n.as_integer() {
+                Some(i) => (0u8, i).hash(state),
+                None => {
+                    let rational = n.exact_ref()?;
+                    if rational.is_integer() && let Some(integer) = rational.numer().to_i64() { (0u8, integer).hash(state); }
+                    else { (1u8, rational).hash(state); }
+                }
+            },
             Value::Character(c) => state.write_u32((*c).into()),
-            Value::Pending(p) => return feed(p.value(), state),
-            Value::Function(_) | Value::Operator(_) | Value::Carried(_) => return None,
+            Value::Pending(_) => return None,
+            Value::Function(_) | Value::Operator(_) | Value::Carried { .. } => return None,
             Value::Array(_) => {
-                if value.has_keys() || value.carrier().is_some() { return None; }
+                if value.has_keys() || value.level().is_some() { return None; }
                 (3u8, value.shape()).hash(state);
                 match value.as_items() {
                     items if items.nested() => { for item in items.values() { feed(&item, state)?; } }
@@ -219,7 +229,7 @@ fn hashes(cells: &Cells, seed: &Hashing) -> Option<Vec<u64>> {
 /// `value` as an exact key (`search::Exact`): an integer or character atom, or an array with no keys, names or renderer whose items are compact Booleans, integers or characters. Equal keys are matching cells, so a search by these keys needs no confirmation by `Value::matches`.
 fn exact(value: &Value) -> Option<search::Exact<'_>> {
     let shape = match value {
-        Value::Number(_) | Value::Character(_) => None, Value::Array(_) if value.carrier().is_none() && value.layout().plain() => Some(value.shape()),
+        Value::Number(_) | Value::Character(_) => None, Value::Array(_) if value.level().is_none() && value.layout().plain() => Some(value.shape()),
         _ => return None
     };
     search::Exact::new(shape, value.view()?)
@@ -228,7 +238,7 @@ fn exact(value: &Value) -> Option<search::Exact<'_>> {
 /// Each cell as an exact key, when every cell is one. A segmented array's cells are slices of its leaf.
 pub(crate) fn exact_cells<'a>(cells: &'a Cells) -> Option<Vec<search::Exact<'a>>> {
     match cells {
-        Cells::Items(a) if a.carrier().is_none() => match a.as_items() {
+        Cells::Items(a) if a.level().is_none() => match a.as_items() {
             Items::Values(items) => items.iter().map(exact).collect(),
             Items::Segmented(s) => {
                 let leaf = s.leaf_items().view()?;
@@ -248,7 +258,7 @@ const SHARED_FROM: usize = 1024;
 /// The class of each item, where items share their arrays, as the copies of a few strings that a selection or a text column makes do: mixed items that share one array, or segmented items that share one entry, an offset and shape, in their leaf. Items that share one are one class without reading it, and only the first item of each becomes an `Exact` key. `None` for fewer than `SHARED_FROM` items, where an item isn't an array, where more than one in `SHARED` of the items read so far hold arrays of their own, or where a shared array isn't an exact key.
 fn shared_classes(cells: &Cells) -> Option<Vec<u32>> {
     let Cells::Items(a) = cells else { return None };
-    if a.carrier().is_some() { return None; }
+    if a.level().is_some() { return None; }
     match a.as_items() {
         Items::Values(items) => shared(items.len(), items.iter().map(|v| match v { Value::Array(array) => Some(Arc::as_ptr(array)), _ => None }), |i| exact(&items[i])),
         Items::Segmented(s) => {
@@ -281,24 +291,24 @@ fn shared<'a, K: std::hash::Hash + Eq>(len: usize, ids: impl Iterator<Item = Opt
     Some(classes)
 }
 
-fn hashed_first(haystack: &Cells, x: &[u64], needles: &Cells, y: &[u64], span: &crate::Span) -> Result<Vec<u32>, Error> {
+fn hashed_first(haystack: &Cells, x: &[u64], needles: &Cells, y: &[u64], numeric: Numeric) -> Result<Vec<u32>, Error> {
     let mut chains = Chains::new(x.len());
     for (i, &hash) in x.iter().enumerate() { chains.push(hash, i); }
     y.iter().enumerate().map(|(j, &hash)| {
         let needle = needles.get(j);
-        for i in chains.chain(hash) { if haystack.get(i).matches(&needle, span)? { return Ok(i as u32); } }
+        for i in chains.chain(hash) { if haystack.get(i).matches_within(&needle, numeric)? { return Ok(i as u32); } }
         Ok(x.len() as u32)
     }).collect()
 }
 
 /// Exact cells match only their own class, so at most one representative matches each cell.
-fn hashed_classes(cells: &Cells, x: &[u64], span: &Span) -> Result<Vec<u32>, Error> {
+fn hashed_classes(cells: &Cells, x: &[u64], numeric: Numeric) -> Result<Vec<u32>, Error> {
     let mut representatives = Chains::new(x.len());
     let mut classes = Vec::with_capacity(x.len());
     for (i, &hash) in x.iter().enumerate() {
         let cell = cells.get(i);
         let mut class = None;
-        for r in representatives.chain(hash) { if cells.get(r).matches(&cell, span)? { class = Some(r); break; } }
+        for r in representatives.chain(hash) { if cells.get(r).matches_within(&cell, numeric)? { class = Some(r); break; } }
         classes.push(class.unwrap_or_else(|| { representatives.push(hash, i); i }) as u32);
     }
     Ok(classes)
