@@ -54,7 +54,7 @@ pub(crate) fn environment() -> Vec<(String, String)> { Vec::new() }
 /// `text` in the Unicode normalization form `form`, through `String.prototype.normalize`.
 pub(crate) fn normalize(form: &str, text: &str) -> String { js_sys::JsString::from(text).normalize(form).into() }
 
-/// A compiled `•r` pattern, in JavaScript's `RegExp` syntax. It holds text, because a BPL value must be `Send + Sync` and a `RegExp` isn't: each call compiles the pattern again.
+/// A `•r` pattern, in JavaScript's `RegExp` syntax. It holds the pattern's text and compiles it again for each call.
 #[derive(Debug)]
 pub(crate) struct Regex { pattern: String, groups: usize, insensitive: bool }
 impl Regex {
@@ -63,7 +63,6 @@ impl Regex {
         let groups = regexp(&format!("(?:{pattern})|"), insensitive).map_err(Error::domain)?.exec("").map_or(0, |m| m.length() as usize - 1);
         Ok(Self { pattern: pattern.into(), groups, insensitive })
     }
-    pub(crate) fn as_str(&self) -> &str { &self.pattern }
     pub(crate) fn find(&self, text: &str) -> Result<Option<usize>, Error> {
         let text = js_sys::JsString::from(text);
         let at = text.search(&regexp(&self.pattern, self.insensitive).map_err(Error::domain)?);

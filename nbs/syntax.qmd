@@ -68,6 +68,8 @@ BPL reads a statement in three steps:
 
 So `a+b × c+d` is `(a+b)(×)(c+d)`, and `1 2+3` is `(1 2)+3`, not `(1)(2+3)`. Spaces around a function between two runs decide the grouping. `a×b + c` is `(a×b)(+)(c)`, the sum of `a×b` and `c`. `a×b +c` is `(a×b)(+c)`, a strand of two subjects. `a×b+ c` is `(a×b+)(c)`, the train `a×b+` applied to `c`.
 
+A call's result binds where a subject would, whatever it returns, and so do a field read from a call's result, a subscript's selection and a scope's result: `(f 0) 1 2` is a strand even where `f 0` returns a function. [Evaluation](evaluation.qmd#binding) shows how to call a function that a call returns.
+
 A run that ends in a dyadic operator takes the next run as its right operand: `⌊@ 10× x` is `(⌊@)(10×)(x)`, where `10×` is the operand of `@`. A run that starts with an operator takes the previous run as its left operand: `≢⊢ ⌸x` is `(≢⊢)(⌸x)`, where `≢⊢` is the operand of `⌸`. [Evaluation](evaluation.qmd) explains operands.
 
 ```bpl

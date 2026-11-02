@@ -61,7 +61,7 @@ Functions that move items, such as reshape, transpose, take and windows, move ea
 
 Forward mode takes one pass for each number in `X`. A network with a million parameters would take a million passes. Where `X` holds more than one number, `∂` instead runs `f` once with a record in place of each derivative. A record's items are never computed. Each call on a record adds a linear step to it, built from the same partial derivatives that forward mode uses. The steps are few: scaling by a coefficient, adding, copying from positions, broadcasting, folding by `+`, and matrix products with a constant. When `f` returns, the record holds the linearisation of `f` at `X`. That's the linear map from a small change in `X` to the change it causes in `f X`.
 
-`∂` then reads the Jacobian from the record. A run through the record backwards, through each step's transpose in reverse order, gives one row of the Jacobian. A run forwards gives one column. `∂` takes whichever direction needs fewer runs. A function that gives a number, such as a loss, needs one backward run. Its gradient costs a small multiple of one run of `f`, however many numbers `X` holds. Dex and JAX also build reverse mode as the transpose of a linearisation. One set of tangent rules then serves both modes.
+`∂` then reads the Jacobian from the record. A run through the record backwards, through each step's transpose in reverse order, gives one row of the Jacobian. A run forwards gives one column. `∂` takes the direction that needs fewer runs. It makes them as one batched run, whose inputs are the rows or columns of an identity matrix, as JAX's `jacrev` maps `vjp` over a basis. A function that gives a number, such as a loss, needs one backward run. Its gradient costs a small multiple of one run of `f`, however many numbers `X` holds. Dex and JAX also build reverse mode as the transpose of a linearisation. One set of tangent rules then serves both modes.
 
 Each linear step has one transpose:
 
@@ -139,23 +139,38 @@ w←1 2 3 ⋄ g←(+/w×⊢)∂ 4 5 6
 w←7 8 9 ⋄ (•explain "(+/w×⊢)∂ 4 5 6").programs.event   ⍝ ["replayed"]
 ```
 
-A trace stops at anything that a program can't hold: output or another effect, a random draw, `⍎`, a read of a differentiated value, as a guard on one makes, or a call that no plan covers. `∂` then runs the call through duals and records. `∂` keeps the stop for those argument types and shapes. `•explain` gives the reason in its `stopped` rows:
+### What stops a trace
+
+A trace stops where its program can't hold what the function does. `∂` then runs that call through duals and records, more slowly. It keeps the stop for those argument types and shapes. `•explain` gives the reason in its `stopped` rows. A trace stops at:
+
+- an effect that a program can't hold (`"an effect"`): an effect on a nested or differentiated value; a system function that acts and gives text, a record or a table, such as `•host`, `•nget` or `•remove`; `•prefs`, `•load`, `•ex`, `•explain` and `•rand`, which change the session; input through `⎕`; and `⍕` of a differentiated value. Output (`⎕←`), `•time`, `•delay` and `•nput` don't stop a trace: each replay runs them in order, after the work before them. A number that one gives is new on each call, so a guard on it stops the trace;
+- a write to a name outside the function (`"a write"`);
+- an error that an error guard catches (`"a caught error"`);
+- a random draw that no program step holds (`"a random draw"`): a draw inside a map, a deal, a discrete distribution's samples, and a roll whose bounds the trace can't show to be all 0, or all whole numbers of at least 1;
+- text that `⍎` runs (`"text that ⍎ runs"`);
+- a read of a differentiated value's items (`"a read of a traced value"`): a guard's predicate, a count or positions computed from one, or Agenda's (`⍚`) selector computed from one where a case can't run on every item, as a dfn case can't;
+- a function called on each item of a differentiated value (`"a function called on each item"`): a map that calls its function once for each cell, as where its batched call falls back; a fold by a primitive that `∂` has no rule for, such as `!/`; and a fold or scan by a dfn whose body no loop node holds, as where the body itself stops a trace;
+- a call whose result type depends on its values, under dynamic kinds, where the first run's items give the other type or the call is `!` (`"a result whose type depends on values"`), described below;
+- a call that programs don't hold yet, such as a selection by computed positions along axes or with a fill (its reason names the call);
+- a definition traced 9 times in a row with no replay between, as when a free value or an argument's lengths change on every call (`"the retrace limit"`).
+
+A guard on a differentiated value stops a trace:
 
 ```bpl
 pos←{+/⍵ > 0 ? +/⊼⍵ ; 0}
 (•explain "pos∂ 1 2 3").stopped.reason    ⍝ ["a read of a traced value"]
 ```
 
-Each replay reads the current value of every name that the function reads from outside its body, and of every array that a function other than a dfn binds. A name or an array read as positions, a count or a guard's condition is part of the program itself. A replay checks its value. A new value traces the function again.
+Reading a type or a shape never stops a trace. A guard on `≢⍵`, or a value computed from a length such as the divisor in `÷≢⍵`, holds for every call with the argument types and shapes that the program holds. Each replay reads the current value of every name that the function reads from outside its body, and of every array that a function other than a dfn binds. A name or an array read as a count or a guard's condition is part of the program itself. A replay checks its value. A new value traces the function again. A name read as positions isn't: each replay selects at its current positions, and raises INDEX ERROR at one outside its axis.
 
-A program fixes every type before it runs. Under the default dynamic kinds, a result's type can depend on its values: `√` of a negative number gives a complex number. A trace stops at such a call. Under static kinds, which `•prefs ["kinds":"static"]` sets, every type follows from the argument types. The same call then traces. Static kinds are the setting for work where speed matters.
+A program fixes every type before it runs. Under the default dynamic kinds, a result's type can depend on its values: `√` of a negative number gives a complex number. On reals, the calls that can do this are `√` and every root but the cube root `3√`, `⍟`, `!`, `0○`, and `*` whose exponent isn't a whole number or is the value being differentiated. For each of these but `!`, a trace assumes the type that its first run's items give, together with the range of values on which that type always results, such as from 0 up for `√`. Each replay checks that its items stay in that range. A replay whose items leave it traces the function again. That trace counts toward the retrace limit. A trace stops at `!`. It also stops where its first run's items give the other type, as `√` of a negative number does. Under static kinds, which `•prefs ["kinds":"static"]` sets, every type follows from the argument types, and replays check nothing. Static kinds are the setting for work where speed matters. `√ₐ`, `⍟ₐ` and `*ₐ` give real results whatever the values, under either setting. Their traces neither stop nor check a range ([Numbers](numbers.qmd#approximate)).
 
 ```bpl
 roots←{+/√⍵}
-(•explain "roots∂ 1 2 3").stopped.reason  ⍝ ["a result whose type depends on values"]
+(•explain "roots∂ 1 2 3").programs.event  ⍝ ["built"]
 ```
 
-Write a function for `∂` under static kinds, with each branch as Agenda (`⍚`) or Under at positions (`f@[p]`) rather than a guard. A guard reads a differentiated value to pick one body for the whole call, which a program can't hold. `⍚` and `@` pick items within whole arrays. Today they also stop a trace where their choice or their values come from differentiated values. `∂` still gives the right result there, more slowly. Tracing them is planned, as "Not built yet" describes.
+Write a function for `∂` under static kinds, with each branch as Agenda (`⍚`) or Under at positions (`f@[p]`) rather than a guard. A guard reads a differentiated value to pick one body for the whole call, which a program can't hold. `⍚` and `@` pick items within whole arrays. A program holds such a branch as a masked select where every case can run on every item, as pervasive primitives and constants can. Each case then reads the differentiated value with a zero tangent at the items that picked another case, so a case's infinite slope there can't make the gradient NaN. A branch with any other case, such as a dfn, runs each case on its own items instead. That stops the trace, and `∂` still gives the right result, more slowly.
 
 ## Index notation
 
@@ -202,9 +217,8 @@ BPL also differs from all of them. `∂` strips its tags from values that escape
 
 These are planned:
 
-- Branches in programs. Agenda (`⍚`) with a selector computed from differentiated values stops a trace, as a guard on them does. The plan is to trace such a selector as a masked select, as JAX traces `select`.
 - Programs inside maps. `∂` inside a map, as in `{f∂⍵}¨x`, runs without a program. `•explain` gives the reason "a call under another level". Batching inside traces is planned.
-- Joins. `,`, `⍪` and `@` with differentiated values stop a trace. `∂` still gives the right result, more slowly. A program step for them is designed.
+- Joins. A program step is designed for `,`, `⍪` and `@` with differentiated values.
 - Whole training steps. A program holds one call of `∂`. The update, and the loop around it, run outside the program. A tracing point for whole training steps, such as `⍣`, would run a step's forward pass, gradient and update as one program.
 - Deferred Jacobians. `f∂ x` builds every item of the Jacobian. The plan holds a large Jacobian as its linearisation, and builds its items only when something reads them. `J+.×v` would then run as a JVP, `u+.×J` as a vector–Jacobian product, and `b⌹J` as an iterative solve, as in the Gauss–Newton step `x - r⁝x ⌹ r∂x`.
 - The GPU. Programs run on the CPU. A later stage adds a WebGPU back end, with arrays kept on the device.

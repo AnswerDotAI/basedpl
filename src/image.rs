@@ -1,4 +1,5 @@
-use crate::{Described, Error, Span, Value, data, display, element::read_as, keyed, number::Numeric};
+use crate::{Described, Error, Value, data, display, keyed};
+use crate::system::HostCall;
 use rustymath::{buffer::DType, error::Kind};
 
 /// Decoding and encoding of image files: ImageIO on Apple platforms, and the `image` and `png` crates elsewhere.
@@ -21,25 +22,30 @@ impl<T> Raster<T> {
     fn frame(&self, i: usize) -> &[T] { let size = self.height * self.width * self.channels; &self.data[i * size..(i + 1) * size] }
 }
 
+/// How `•image` acts (`system::Acts`): reading the file that `Y` names is an effect that a recording keeps; decoding bytes or reading numbers isn't.
+pub(crate) fn acts(_: Option<&Value>, right: &Value) -> crate::system::Acts {
+    if right.rank() == 1 && right.dtype() == Some(DType::Character) { crate::system::Acts::Records } else { crate::system::Acts::Never }
+}
+
 /// `X •image Y` returns a picture: the image file that `Y` names, the bytes of one, or the numbers in `Y`. Files are PNG or JPEG. Apple platforms also read the other formats that ImageIO reads. A picture is numbers from 0 to 1 with axes for rows, columns and up to four channels, displayed as an image. An animation has frames along a first axis: a rank-4 array, or any array of pictures with the option `fps`, the frame rate, or `delay`, the seconds each frame stays on screen.
-pub(crate) fn image(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+pub(crate) fn image(HostCall { left, right, site: span, numeric }: HostCall<'_>) -> Result<Value, Error> {
     let options = data::Options::new("•image", left, None, &["fps", "delay"])?;
     let delays = timing(&options, "•image")?;
     let picture = match keyed::name(right) {
-        Some(path) => { crate::transform::acts()?; decoded(&span.read(&path)?)? } None if right.shape().len() == 1 => decoded(&data::bytes(right)?)?,
+        Some(path) => decoded(&span.read(&path)?, numeric.width)?, None if right.shape().len() == 1 => decoded(&data::bytes(right)?, numeric.width)?,
         None => right.clone()
     };
     layout(&picture, delays.clone())?;
     let renderer = display::renderer("image-renderer", render);
     let renderer = match delays {
-        Some(d) => crate::eval::before(Value::floats(vec![d.len()], Numeric::current().width, d).described("invalid delays")?, renderer, span)?,
+        Some(d) => crate::Function::build("train", vec![Value::floats(vec![d.len()], numeric.width, d).described("invalid delays")?, Value::Function(renderer)])?,
         None => renderer,
     };
     picture.with_renderer(renderer).described("invalid image")
 }
 
 /// `options •image⁻¹ Y` encodes the picture `Y` as bytes. The option `format` is `"png"`, the default, or `"jpeg"`. Plain text on the left gives the format alone. With the option `fps` or `delay`, or with four axes, `Y` is an animation, which becomes an animated PNG.
-pub(crate) fn encode(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+pub(crate) fn encode(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> {
     let options = data::Options::new("•image⁻¹", left, Some("format"), &["format", "fps", "delay"])?;
     let format = match options.text("format", Some("png"))?.to_lowercase().as_str() {
         "png" => Format::Png, "jpeg" => Format::Jpeg, _ => return Err(Error::domain("•image⁻¹ encodes \"png\" or \"jpeg\""))
@@ -51,7 +57,7 @@ pub(crate) fn encode(left: Option<&Value>, right: &Value, _: &Span) -> Result<Va
 /// The seconds each frame stays on screen, from the option `delay` of `name`, or from `fps`. Either makes the first axis of a picture time. `delay` is one number for every frame, or one per frame, and sets the timing when both are given.
 fn timing(options: &data::Options, name: &str) -> Result<Option<Vec<f64>>, Error> {
     let (key, delays) = match options.values.get("delay") {
-        Some(d) => ("delay", (d.shape().len() <= 1).then(|| read_as::<f64>(d)).flatten().map(|d| d.into_owned())),
+        Some(d) => ("delay", (d.shape().len() <= 1).then(|| data::real_items(d).ok()).flatten()),
         None => match options.number("fps")? { Some(fps) => ("fps", Some(vec![1. / fps])), None => return Ok(None) },
     };
     match delays {
@@ -60,8 +66,8 @@ fn timing(options: &data::Options, name: &str) -> Result<Option<Vec<f64>>, Error
 }
 
 /// Native builds send a PNG, animated for an animation. The browser build sends an animation the same way, and a still picture as `image/x-rgba` bytes, with the width as a parameter, for its page to draw on a canvas. `delays` are the seconds per frame that `•image`'s options set.
-fn render(delays: Option<&Value>, picture: &Value, _: &Span) -> Result<Value, Error> {
-    let delays = delays.map(|d| read_as::<f64>(d).expect("•image keeps its delays as numbers").into_owned());
+fn render(HostCall { left: delays, right: picture, .. }: HostCall<'_>) -> Result<Value, Error> {
+    let delays = delays.map(data::real_items).transpose()?;
     let (frames, delays) = frames(picture, delays)?;
     let (kind, bytes) = match delays {
         None if cfg!(web) => (format!("image/x-rgba;width={}", frames.width), rechannelled(&frames.data, frames.channels, 4, u8::MAX)),
@@ -72,10 +78,10 @@ fn render(delays: Option<&Value>, picture: &Value, _: &Span) -> Result<Value, Er
 }
 
 /// The picture in the encoded image `bytes`. An animated PNG with more than one frame gives its frames along a first axis, as a rank-4 array with a channel axis even for grey frames, so `•image⁻¹` encodes it back.
-fn decoded(bytes: &[u8]) -> Result<Value, Error> {
+fn decoded(bytes: &[u8], width: rustymath::buffer::FloatWidth) -> Result<Value, Error> {
     let Raster { count, height, width, channels, data } = codec::decode(bytes).map_err(|e| Error::domain(format!("invalid image: {e}")))?;
     let shape = match count { 1 if channels == 1 => vec![height, width], 1 => vec![height, width, channels], n => vec![n, height, width, channels] };
-    Value::floats(shape, Numeric::current().width, data.into_iter().map(|v| f64::from(v) / 65535.)).described("image exceeds array limits")
+    Value::floats(shape, width, data.into_iter().map(|v| f64::from(v) / 65535.)).described("image exceeds array limits")
 }
 
 /// `frames` encoded in `format`, as an animation with `delays`. Only PNG holds an animation. JPEG drops alpha.
@@ -120,7 +126,7 @@ fn layout(picture: &Value, delays: Option<Vec<f64>>) -> Result<([usize; 4], Opti
         [height, width] => (height, width, 1), [height, width, channels @ 1..=4] => (height, width, channels),
         _ => return Err(Error::new(Kind::Rank, "a picture has axes for rows, columns and up to four channels"))
     };
-    let real = match picture.dtype() { Some(DType::Complex(_)) => read_as::<f64>(picture).is_some(), Some(DType::Character) | None => false, Some(_) => true };
+    let real = match picture.dtype() { Some(DType::Complex(_)) => picture.elements().all(|v| crate::primitive::real(&v).is_ok()), Some(DType::Character) | None => false, Some(_) => true };
     if !real { return Err(Error::domain("a picture holds real numbers")); }
     Ok(([count, height, width, channels], delays))
 }
@@ -128,7 +134,7 @@ fn layout(picture: &Value, delays: Option<Vec<f64>>) -> Result<([usize; 4], Opti
 /// The frames that the numbers in `picture` describe, as 8-bit samples of values clamped to 0..1, with the delays that `layout` gives.
 fn frames(picture: &Value, delays: Option<Vec<f64>>) -> Result<(Raster<u8>, Option<Vec<f64>>), Error> {
     let ([count, height, width, channels], delays) = layout(picture, delays)?;
-    let values = read_as::<f64>(picture).expect("`layout` checked that the picture holds real numbers");
+    let values = data::real_items(picture)?;
     let data = values.iter().map(|v| (v.clamp(0., 1.) * 255.).round() as u8).collect();
     Ok((Raster { count, height, width, channels, data }, delays))
 }

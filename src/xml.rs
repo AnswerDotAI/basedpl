@@ -1,5 +1,5 @@
 use crate::execution::check;
-use crate::{Described, Error, Span, Value, display, keyed, system::{Call, Valence::Ambivalent, native}};
+use crate::{Described, Error, Span, Value, display, keyed, system::{Call, HostCall, Valence::Ambivalent, native}};
 fn valid_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_alphabetic() || c == '_') && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
 }
@@ -7,7 +7,7 @@ fn valid_name(name: &str) -> bool {
 /// The function that builds elements tagged `tag`, as `•element` returns it.
 pub(crate) fn element_function(tag: std::sync::Arc<str>) -> Value { Value::Function(native("•element", Call::Element(tag), Ambivalent)) }
 
-pub(crate) fn factory(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+pub(crate) fn factory(HostCall { right, .. }: HostCall<'_>) -> Result<Value, Error> {
     let tag = keyed::name(right).filter(|s| valid_name(s)).ok_or_else(|| Error::domain("invalid XML element name"))?;
     Ok(element_function(tag))
 }
@@ -81,7 +81,7 @@ fn write(value: &Value, output: &mut String, mode: Markup, span: &Span) -> Resul
     Ok(())
 }
 
-pub(crate) fn serialize(_: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> { text(right, Markup::Xml, span) }
+pub(crate) fn serialize(HostCall { right, site: span, .. }: HostCall<'_>) -> Result<Value, Error> { text(right, Markup::Xml, span) }
 
 fn text(tree: &Value, mode: Markup, span: &Span) -> Result<Value, Error> {
     let mut output = String::new();
@@ -90,7 +90,7 @@ fn text(tree: &Value, mode: Markup, span: &Span) -> Result<Value, Error> {
 }
 
 /// `•xml text` reads XML into the elements that `•xml⁻¹` writes, with the same meaning. Comments, processing instructions and text that is only whitespace are dropped.
-pub(crate) fn parse(_: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+pub(crate) fn parse(HostCall { right, site: span, .. }: HostCall<'_>) -> Result<Value, Error> {
     let text = crate::data::text(right)?;
     let document = roxmltree::Document::parse(&text).map_err(|e| Error::domain(format!("XML {e}")))?;
     read(document.root_element(), span)
@@ -115,14 +115,14 @@ fn read(node: roxmltree::Node<'_, '_>, span: &Span) -> Result<Value, Error> {
     element(&named(node.tag_name().namespace(), node.tag_name().name()), Some(&attrs), &children)
 }
 
-pub(crate) fn svg(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+pub(crate) fn svg(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> {
     let defaults = keyed::vector(vec!["xmlns".into(), "viewBox".into()], vec![keyed::text("http://www.w3.org/2000/svg"), keyed::text("0 0 100 100")]).unwrap();
     let attrs = left.map_or(Ok(defaults.clone()), |a| keyed::merge(&defaults, a)).described("invalid SVG attributes")?;
     element("svg", Some(&attrs), right)?.with_renderer(display::renderer("svg-renderer", render_svg)).described("SVG exceeds array limits")
 }
 
-fn render_html(_: Option<&Value>, tree: &Value, span: &Span) -> Result<Value, Error> { markup("text/html", tree, Markup::Html, span) }
-fn render_svg(_: Option<&Value>, tree: &Value, span: &Span) -> Result<Value, Error> { markup("image/svg+xml", tree, Markup::Xml, span) }
+fn render_html(HostCall { right: tree, site: span, .. }: HostCall<'_>) -> Result<Value, Error> { markup("text/html", tree, Markup::Html, span) }
+fn render_svg(HostCall { right: tree, site: span, .. }: HostCall<'_>) -> Result<Value, Error> { markup("image/svg+xml", tree, Markup::Xml, span) }
 /// The markup of `tree` as a MIME bundle of type `kind`.
 fn markup(kind: &str, tree: &Value, mode: Markup, span: &Span) -> Result<Value, Error> {
     display::mime(kind, text(tree, mode, span)?).described("invalid XML MIME bundle")

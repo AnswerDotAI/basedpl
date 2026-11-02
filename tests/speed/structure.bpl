@@ -196,7 +196,7 @@ ism,sm
 
 ⍝ On 29 October 2026 this case cost 10.2 on macOS, spelled then with `⊼`. Since 30 October, `²` under `∂` costs what `⊼` does. CI hasn't timed it. Its Linux and wasm estimates scale its macOS cost by `+/50↕sv`'s highest ratios to macOS in runs 56 to 62, 3.6 on Linux and 4.9 in wasm.
 ⍝⍝⍝ held macos 10.2 linux ~37.1 wasm ~49.8: its window sums, forward and transposed, run at the cost of `+/50↕sv`, which open.md lists among wide window folds
-⍝⍝⍝ gap forced "+/": the transpose's sliding sum should read the padded cotangent in place, as a fold of padded windows does
+⍝⍝⍝ gap forced "{+/(+/50↕⍵)²}∂": the transpose's sliding sum should read the padded cotangent in place, as a fold of padded windows does. The sum waits and runs when `∂`'s code reads it, so this call computes the padded cotangent
 ⍝⍝⍝ route trace
 {+/(+/50↕⍵)²}∂ sv
 ⍝⍝: 11	11	11
@@ -222,9 +222,8 @@ ism,sm
 {+/, [64516 144]⍴3 3↕cimg +.× ⍵}∂ ck
 ⍝⍝: 38	110	220
 
-⍝ On 30 October 2026 it cost 48.9 on macOS and 125 with rustymath's own kernels, against 27 and 106 for its product from a stored matrix, while its program built the 144 MiB windows matrix of the padded cotangent whole. CI measured 190 on Linux in run 61. Before run 61, whose speed test first asked for huge pages through the memory guard, it measured 443 to 470 there. In wasm it measured 204 to 276 in runs 56 to 62. Later on 30 October 2026, with the program's copy of those windows left pending and read through their map, it cost about 41.3 on macOS (6,173 to 5,218 ps an item).
-⍝⍝⍝ held linux 298: the product computes the arrays that the `gap` line below names before it reads their windows; busy hosts reach 298 on Linux
-⍝⍝⍝ gap forced "+.×": the product computes the cotangent's 2,064,512 items, a broadcast of the seed, then its zero-padded copy's 2,130,048, before it reads the padded copy's windows through their map. The transposed product should run as nine shifted products of the cotangent with the kernel's slices, each added into the output at its offset, reading the cotangent where it lies (open.md, "The image gradient")
+⍝ On 30 October 2026 it cost 48.9 on macOS and 125 with rustymath's own kernels, against 27 and 106 for its product from a stored matrix, while its program built the 144 MiB windows matrix of the padded cotangent whole. CI measured 190 on Linux in run 61. Before run 61, whose speed test first asked for huge pages through the memory guard, it measured 443 to 470 there. In wasm it measured 204 to 276 in runs 56 to 62. Later on 30 October 2026, with the program's copy of those windows left pending and read through their map, it cost about 41.3 on macOS (6,173 to 5,218 ps an item). On 1 November 2026 the backward product's cotangent, a broadcast of 1, sums `ck`'s rows once and repeats the result instead of making a [64516 144] product (plan, gs13_'s entry): 7,246 → 5,914 ps an item.
+⍝⍝⍝ held linux 298: its nine padded read-back copies each write a million items, because a stage doesn't read through a padded map in place; busy hosts reach 298 on Linux
 {+/, [64516 144]⍴3 3↕⍵ +.× ck}∂ cimg
 ⍝⍝: 54	160	320
 

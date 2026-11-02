@@ -6530,7 +6530,7 @@ tt↣get¨ "two" "four" "six"   ⍝ 22 4 6
 [chk: put:]←•load "tests/reference/support/avl.bpl"
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 tt←tt put foldl [["one" 11] ["two" 22] ["three" 33]]
-chk tt   ⍝ [$t 7 2 4]ₓ
+chk tt   ⍝ [$t 7ₓ 2ₓ 4ₓ]
 
 ⍝ april/libraries/dfns/tree/demo.lisp:213 — Embedded display helper uses existing glyphs: 0-origin offsets, character-prototype test instead of April ⎕TY, matrix ⍕ instead of ⎕FMT. Full example/setup retained
 [display:]←•load "lib/array.bpl"
@@ -6629,7 +6629,7 @@ tt←tt rem "four"
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 tt(bal)←
 tt←tt rem "four"
-chk tt   ⍝ [$t 6 1 3]ₓ
+chk tt   ⍝ [$t 6ₓ 1ₓ 3ₓ]
 
 ⍝ april/libraries/dfns/tree/demo.lisp:518 — Self-contained red-black tree library with 0-origin offsets and full setup; original independent April expectations; Random construction cases assert lookup/order properties, not a sampled tree shape
 [fmt: tree:]←•load "tests/reference/support/redblack.bpl"
@@ -6778,7 +6778,7 @@ tt←tree pairs
 
 ⍝ april/libraries/dfns/tree/demo.lisp:893 — Upstream splay-tree demo setup; original expected result
 [chk: tree:]←•load "tests/reference/support/splay.bpl"
-chk tree ⍳7ₓ   ⍝ [$t 7 3 7]ₓ
+chk tree ⍳7ₓ   ⍝ [$t 7ₓ 3ₓ 7ₓ]
 
 ⍝ april/libraries/dfns/tree/demo.lisp:899 — Splay tree validity after searches
 [foldl:]←•load "lib/array.bpl"

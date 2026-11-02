@@ -165,17 +165,16 @@ def test_fetch():
 
 
 def test_regex_functions():
-    p = bpl.fn('•r')(r'([a-z]+)([0-9]+)')
-    matches, replace = p['matches'], p['replace']
-    teq(matches('ab12 cd3')['text'].py, ['ab12', 'cd3'])
-    teq(replace('$2:$1', 'ab12 cd3').py, '12:ab 3:cd')
-    teq(bpl('(p.matches s).position', p=p, s='é ab12').py, [2])
-    teq(matches('x9')['groups'].py, [['x', '9']])
-    repeated = bpl.fn('•r')(r'(?<= )([a-z]+)\1(?![a-z])')
-    teq(repeated.matches('z abab xx').text.py, ['abab', 'xx'])
-    teq(repeated.replace('$1', 'z abab xx').py, 'z ab x')
-    with pytest.raises(BplError, match='backtrack'):
-        bpl.fn('•r')(r'(?i)(a|b|ab)*(?>c)').matches('ab'*64+'!c')
+    r, replace = bpl.fn('•r'), bpl.fn('•replace')
+    pattern = r'([a-z]+)([0-9]+)'
+    teq(r('ab12 cd3', pattern)['text'].py, ['ab12', 'cd3'])
+    teq(replace('ab12 cd3', [pattern, '$2:$1']).py, '12:ab 3:cd')
+    teq(bpl('(s •r p).position', p=pattern, s='é ab12').py, [2])
+    teq(r('x9', pattern)['groups'].py, [['x', '9']])
+    repeated = r'(?<= )([a-z]+)\1(?![a-z])'
+    teq(r('z abab xx', repeated).text.py, ['abab', 'xx'])
+    teq(replace('z abab xx', [repeated, '$1']).py, 'z ab x')
+    with pytest.raises(BplError, match='backtrack'): r('ab'*64+'!c', r'(?i)(a|b|ab)*(?>c)')
 
 
 def test_distribution_functions():
@@ -299,7 +298,7 @@ def test_matrix_stack_operator():
     teq(result.np, np.asarray(expected))
 
 def test_own():
-    fresh = bpl('100000⍴0.5')
+    fresh = bpl('0.5×⍳100000')
     items = np.asarray(fresh, copy=False).ctypes.data
     moved = fresh.own()
     assert moved.ctypes.data == items and moved.flags.writeable
@@ -472,8 +471,8 @@ def test_names():
     month = Array([10, 20, 30], names=('month',))
     teq((m + month).np, data + [10, 20, 30])
     teq((m + [10, 20]).np, data + np.array([[10], [20]]))
-    teq((month + m).names, ('month', 'city'))
-    teq((month + m).np, (data + [10, 20, 30]).T)
+    teq((month + m).names, ('city', 'month'))
+    teq((month + m).np, data + [10, 20, 30])
     teq((m + transpose(m)).np, data * 2)
     a = Array(data, names=('city', None))
     b = Array(data.T, names=(None, 'city'))

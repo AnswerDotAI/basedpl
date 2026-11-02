@@ -19,11 +19,19 @@ fn language_error(error: basedpl::Error) -> LanguageError {
 fn expression(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<Value, basedpl::Error> {
     let result = session.eval_with(code, EvalOptions { interrupt: interrupt.clone(), echo: false, output: Some(Arc::new(|_| {})), ..EvalOptions::default() });
     if let Some(error) = result.error { return Err(error); }
-    let (kind, data) = if let Some(value) = result.value {
-        (Some("array"), json!(session.render(&value, interrupt.clone())?))
-    } else if let Some(f) = result.function { (Some("function"), json!({"text/plain": f.bpl()})) }
-    else if let Some(op) = result.operator { (Some("operator"), json!({"text/plain": op.to_string()})) }
-    else { (None, json!({})) };
+    let item = if let Some(value) = result.value { Some(("array", value)) }
+    else if let Some(f) = result.function { Some(("function", basedpl::Value::Function(f))) }
+    else { result.operator.map(|op| ("operator", basedpl::Value::Operator(op))) };
+    let (kind, data) = if let Some((kind, value)) = item {
+        let value = value.read(basedpl::ReadKind::Value)?;
+        session.raise()?;
+        let data = match value {
+            basedpl::Value::Function(f) => json!({"text/plain": f.bpl()}),
+            basedpl::Value::Operator(op) => json!({"text/plain": op.bpl()}),
+            value => json!(session.render(&value, interrupt.clone())?),
+        };
+        (Some(kind), data)
+    } else { (None, json!({})) };
     Ok(json!({"status": "ok", "data": data, "metadata": kind.map_or(json!({}), |kind| json!({"type": kind}))}))
 }
 

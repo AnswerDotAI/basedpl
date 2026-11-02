@@ -208,7 +208,7 @@ pub(crate) fn call(left: Option<&Value>, right: &Value) -> Result<Value, Error> 
         results.push(Value::number(polynomial.evaluate(&coordinates(&point)?)?.wrapped(settings)).unwrap());
     }
     if agreement.layout.shape().is_empty() { return Ok(results.remove(0)); }
-    agreement.layout.assemble(&results[..agreement.len], &results[0]).described("polynomial result exceeds array limits")
+    agreement.layout.assemble(&results[..agreement.len], &results[0], crate::array::Widening::Items).described("polynomial result exceeds array limits")
 }
 
 /// `⌻⁻¹Y`: the coefficients of each polynomial in `Y`, given by its multiplier and roots or by its terms.
@@ -225,7 +225,7 @@ fn each(source: &Value, f: impl Fn(&Polynomial) -> Result<Value, Error>) -> Resu
     let mut results = parsed(&cells)?.iter().map(f).collect::<Result<Vec<_>, _>>()?;
     let layout = cells.frame_layout();
     if layout.shape().is_empty() { return Ok(results.remove(0)); }
-    layout.assemble(&results[..cells.len()], &results[0]).described("polynomial result exceeds array limits")
+    layout.assemble(&results[..cells.len()], &results[0], crate::array::Widening::Items).described("polynomial result exceeds array limits")
 }
 
 /// The partial derivative of each polynomial in `c` with respect to each variable, as coefficients that `⌻` evaluates: a vector for a polynomial in one variable, and an exponent table for one in several. `∂` evaluates them at a point to differentiate `C⌻x`.

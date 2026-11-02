@@ -754,11 +754,11 @@ r←¿⍨Js
 
 ⍝ aplcart/table.tsv:530 — Ones, same shape and structure
 [3 3⍴⍳9ₓ;"";=⍨ 3 3⍴⍳9ₓ]
-[[0 1 2⋄3 4 5⋄6 7 8] "" [$t $t $t⋄$t $t $t⋄$t $t $t]]ₓ
+[[0 1 2⋄3 4 5⋄6 7 8]ₓ "" [$t $t $t⋄$t $t $t⋄$t $t $t]]
 
 ⍝ aplcart/table.tsv:531 — Zeros, same shape and structure
 [3 3⍴⍳9ₓ;"";≠⍨ 3 3⍴⍳9ₓ]
-[[0 1 2⋄3 4 5⋄6 7 8] "" [$f $f $f⋄$f $f $f⋄$f $f $f]]ₓ
+[[0 1 2⋄3 4 5⋄6 7 8]ₓ "" [$f $f $f⋄$f $f $f⋄$f $f $f]]
 
 ⍝ aplcart/table.tsv:532 — Increment: N+1
 [1↣+ 10 20 30;1↣+ ¯10 ¯20 ¯30;3 3⍴4;1↣+ 3 3⍴4]
@@ -6303,12 +6303,12 @@ vex←[["one" "two" "three"] ["alpha" "beta" "gamma"] ["red" "blue" "green"]]
 ⍝ aplcart/table.tsv:2190 — Simple Binary Search Trees; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:285
 [sbst:]←•load "lib/tree.bpl"
 [tree:]←•load "tests/reference/support/sbst.bpl"
-'?' sbst tree ⍳7ₓ   ⍝ [$t 7 3 7]ₓ
+'?' sbst tree ⍳7ₓ   ⍝ [$t 7ₓ 3ₓ 7ₓ]
 
 ⍝ aplcart/table.tsv:2191 — Splay trees; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:893
 [splay:]←•load "lib/tree.bpl"
 [tree:]←•load "tests/reference/support/splay.bpl"
-'?' splay tree ⍳7ₓ   ⍝ [$t 7 3 7]ₓ
+'?' splay tree ⍳7ₓ   ⍝ [$t 7ₓ 3ₓ 7ₓ]
 
 ⍝ aplcart/table.tsv:2192 — Red-black trees; Concrete APLcart library call; setup from april/libraries/dfns/tree/demo.lisp:518
 [redblack:]←•load "lib/tree.bpl"
@@ -6323,7 +6323,7 @@ tt←tree pairs
 [put: tree:]←•load "tests/reference/support/avl.bpl"
 tt←0 put foldl [["one" 1] ["two" 2] ["three" 3] ["four" 4] ["five" 5] ["six" 6] ["seven" 7]]
 tt←tt put foldl [["one" 11] ["two" 22] ["three" 33]]
-'?' avl tree ⍳7ₓ   ⍝ [$t 7 1 3]ₓ
+'?' avl tree ⍳7ₓ   ⍝ [$t 7ₓ 1ₓ 3ₓ]
 
 ⍝ aplcart/table.tsv:2201 — Apply monadic function taking two-element argument as a dyadic function
 Sum ← +/ ⋄ [Sum 3 4;3 Sum{⍶[⍺ ⍵]} 4]   ⍝ 7 7
@@ -8937,7 +8937,7 @@ cfract1.5   ⍝ [1 2]ₓ
 rational1.5   ⍝ 3 2
 
 ⍝ aplcart/table.tsv:2175 — Array of functions; Concrete native equivalent; independent Dyalog dfns expectation; Store and retrieve native function values
-v←[+ ×] ⋄ 2(0⊃v)3 , 2(1⊃v)3   ⍝ 5 6
+v←[+ ×] ⋄ 2(0⍚v)3 , 2(1⍚v)3   ⍝ 5 6
 
 ⍝ aplcart/table.tsv:2208 — Apply arrayified function Xs on Y (optionally with left argument Y); Concrete native equivalent; independent Dyalog dfns expectation; Apply a native stored function
 f←0⊃[+ ×] ⋄ 2 f 3   ⍝ 5
@@ -8949,10 +8949,10 @@ f←0⊃[+ ×] ⋄ 2 f 3   ⍝ 5
 10 +@1 3 [1 2 3 4]   ⍝ 1 12 3 14
 
 ⍝ aplcart/table.tsv:2229 — List of functions; Concrete native equivalent; independent Dyalog dfns expectation; Apply a native function vector to one argument
-[+ -]{(↑⍺)⍵}¨3   ⍝ 3 ¯3
+[+ -] 3   ⍝ 3 ¯3
 
 ⍝ aplcart/table.tsv:2239 — Vector of functions; Concrete native equivalent; independent Dyalog dfns expectation; Pair each native function with its argument
-[+ -]{(↑⍺)⍵}¨3 4   ⍝ 3 ¯4
+0 1⍚[+ -] 3 4   ⍝ 3 ¯4
 
 ⍝ aplcart/table.tsv:2173 — Apply no-result function “en passant”; Concrete no-result side effect and pass-through result; independently checked in Dyalog; Retain Execute-based sequencing; name the operand in the operator body
 seen←0
@@ -9877,59 +9877,57 @@ encode (3ₓ⊥[1 0]ₓ)+3ₓ⊥,1ₓ   ⍝ [1 1]ₓ
 le←{0=↑⍋[⍺ ⍵]} ⋄ 1 2 le 1 3   ⍝ $t
 
 ⍝ aplcart/table.tsv:461 — Replace matches
-p←•r "[0-9]+" ⋄ '#' p.replace "a12 b3"   ⍝ "a# b#"
+"a12 b3" •replace ["[0-9]+" "#"]   ⍝ "a# b#"
 
 ⍝ aplcart/table.tsv:462 — Matched strings
-p←•r "[0-9]+" ⋄ (p.matches "a12 b3").text   ⍝ "12" "3"
+("a12 b3" •r "[0-9]+").text   ⍝ "12" "3"
 
 ⍝ aplcart/table.tsv:507 — Case-insensitive replacement
-p←•r "(?i)cat" ⋄ "dog" p.replace "Cat cat"   ⍝ "dog dog"
+"Cat cat" •replace ["(?i)cat" "dog"]   ⍝ "dog dog"
 
 ⍝ aplcart/table.tsv:508 — Case-insensitive search
-p←•r "(?i)cat" ⋄ (p.matches "Cat cat").text   ⍝ "Cat" "cat"
+("Cat cat" •r "(?i)cat").text   ⍝ "Cat" "cat"
 
 ⍝ aplcart/table.tsv:1464 — Capture groups
-p←•r "([a-z]+)([0-9]+)" ⋄ (p.matches "ab12 cd3").groups
+("ab12 cd3" •r "([a-z]+)([0-9]+)").groups
 [["ab" "12"] ["cd" "3"]]
 
 ⍝ aplcart/table.tsv:1513 — Escape transformation punctuation
-p←•r "[%&\\]" ⋄ "\$0" p.replace "a&b%c\d"   ⍝ "a\&b\%c\\d"
+"a&b%c\d" •replace ["[%&\\]" "\$0"]   ⍝ "a\&b\%c\\d"
 
 ⍝ aplcart/table.tsv:1579 — APL identifiers
-p←•r "[\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ&&\D][\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ]*"
-(p.matches "x←3 ⋄ y2←x+1").text
+p←"[\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ&&\D][\wÀ-ÖØ-Ýßà-öø-üþ∆⍙Ⓐ-Ⓩ]*"
+("x←3 ⋄ y2←x+1" •r p).text
 ⍝ =>
 "x" "y2" "x"
 
 ⍝ aplcart/table.tsv:1808 — Count matches
-p←•r "[0-9]+" ⋄ ≢(p.matches "a12 b3").text   ⍝ 2ₓ
+≢("a12 b3" •r "[0-9]+").text   ⍝ 2ₓ
 
 ⍝ aplcart/table.tsv:1871 — Any match
-p←•r "[0-9]+" ⋄ 0ₓ<≢(p.matches "a12 b3").text   ⍝ $t
+0ₓ<≢("a12 b3" •r "[0-9]+").text   ⍝ $t
 
 ⍝ aplcart/table.tsv:1921 — Select matching text
-p←•r "[0-9]+" ⋄ (0ₓ<≢(p.matches "a12 b3").text) # ,⊂"a12 b3"   ⍝ ["a12 b3"]
+(0ₓ<≢("a12 b3" •r "[0-9]+").text) # ,⊂"a12 b3"   ⍝ ["a12 b3"]
 
 ⍝ aplcart/table.tsv:1949 — Matching lines
-p←•r "[0-9]+" ⋄ {0ₓ<≢(p.matches ⍵).text}¨"abc" "a12"   ⍝ $f $t
+{0ₓ<≢(⍵ •r "[0-9]+").text}¨"abc" "a12"   ⍝ $f $t
 
 ⍝ aplcart/table.tsv:2118 — Unicode character properties
-p←•r "\p{L}" ⋄ {0ₓ<≢(p.matches ⍵).text}¨"Ab2!"   ⍝ $t $t $f $f
+{0ₓ<≢(⍵ •r "\p{L}").text}¨"Ab2!"   ⍝ $t $t $f $f
 
 ⍝ aplcart/table.tsv:1576 — Glob to regex
-p←•r "\W"
-glob←{⍵='*'?".*";⍵='?'?'.';"\$0" p.replace ,⍵}
+glob←{⍵='*'?".*";⍵='?'?'.';(,⍵) •replace ["\W" "\$0"]}
 '^' , ∊glob¨"ab*.txt" , '$'
 ⍝ =>
 "^ab.*\.txt$"
 
 ⍝ aplcart/table.tsv:1920 — Overlapping literal matches via suffixes
-p←•r "^ana" ⋄ ,/{(p.matches ⍵).text}¨{⍵↓"banana"}¨⍳6ₓ   ⍝ "ana" "ana"
+,/{(⍵ •r "^ana").text}¨{⍵↓"banana"}¨⍳6ₓ   ⍝ "ana" "ana"
 
 ⍝ aplcart/table.tsv:2121 — Split, retaining empty segments
-p←•r "[,;]"
 s←"a,,b;c"
-m←p.matches s
+m←s •r "[,;]"
 b←0,m.position+≢¨m.text
 e←m.position,≢s
 b{(⍵-⍺)↑⍺↓s}¨e   ⍝ "a" "" "b" "c"

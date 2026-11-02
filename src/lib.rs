@@ -8,7 +8,6 @@ mod date;
 mod derivative;
 mod display;
 mod distribution;
-mod element;
 mod error;
 mod eval;
 mod execution;
@@ -16,6 +15,7 @@ mod explain;
 #[cfg(not(web))]
 mod files;
 mod fusion;
+mod graph;
 #[cfg_attr(web, path = "host_web.rs")]
 mod host;
 mod image;
@@ -31,7 +31,6 @@ mod name;
 mod number;
 mod number_theory;
 mod optimize;
-mod pervasive;
 mod plan;
 mod plot;
 mod polynomial;
@@ -58,6 +57,7 @@ pub use error::{Error, ErrorKind, Source, Span};
 pub(crate) use eval::session;
 pub use eval::{Evaluation, Function, Operand, Operator, Session, Turn};
 pub use execution::{EvalOptions, Input, InterruptHandle, MimeBundle, MimeData, Output, OutputKind, OutputSink, Poll};
+pub use graph::forced;
 #[cfg(web)]
 pub use host::configure_browser;
 pub use inspection::Inspection;
@@ -65,3 +65,4 @@ pub use keyed::Keys;
 pub use number::Number;
 pub use rustymath::buffer;
 pub use syntax::{ParseStatus, Parsed, SyntaxNode, highlight, in_code, number_marks, parse, subscripts, superscripts, syntax_tree};
+pub use program::trace::ReadKind;

@@ -74,7 +74,6 @@ impl Regex {
     pub(crate) fn new(pattern: &str, insensitive: bool) -> Result<Self, Error> {
         fancy_regex::RegexBuilder::new(pattern).case_insensitive(insensitive).build().map(Self).map_err(regex_error)
     }
-    pub(crate) fn as_str(&self) -> &str { self.0.as_str() }
     pub(crate) fn find(&self, text: &str) -> Result<Option<usize>, Error> { self.0.find(text).map(|m| m.map(|m| m.start())).map_err(regex_error) }
     /// The number of groups, not counting the whole match.
     pub(crate) fn groups(&self) -> usize { self.0.captures_len() - 1 }

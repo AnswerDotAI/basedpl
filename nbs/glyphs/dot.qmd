@@ -68,7 +68,7 @@ T←["a":1 "x":[10 20 30]]
 ⊢.x.[[2 0]] T           ⍝ 30 10
 ```
 
-After a keyed vector `T`, `T.(expr)` evaluates `expr` with each key of `T` as a name for its item. After a matrix, or any array with keys on its first axis, each key names its major cell. Names that aren't keys resolve in the current scope, and a key hides a name it shares. A key that holds a function binds as a function. Assignments inside the parentheses stay there, and leave `T` and the current scope unchanged. [Execute](hydrant.qmd) does the same for code in text: `T⍎"price×qty"` is `T.(price×qty)`. A scope doesn't map over an array of records. Write `{⍵.(expr)}¨recs` for that.
+After a keyed vector `T`, `T.(expr)` evaluates `expr` with each key of `T` as a name for its item. After a matrix, or any array with keys on its first axis, each key names its major cell. Names that aren't keys resolve in the current scope, and a key hides a name it shares. A key that holds a function binds as a function. The scope's own result binds where a subject would, whatever it holds, as a call's result does: `T.f 3` calls the function that field `f` holds, where `T.(f) 3` is a strand of that function and 3. Assignments inside the parentheses stay there, and leave `T` and the current scope unchanged. [Execute](hydrant.qmd) does the same for code in text: `T⍎"price×qty"` is `T.(price×qty)`. A scope doesn't map over an array of records. Write `{⍵.(expr)}¨recs` for that.
 
 ```bpl
 T←["price":2 3;"qty":10 20]
@@ -77,6 +77,7 @@ rate←0.5 ⋄ T.(price×rate)  ⍝ 1 1.5
 r←T.(price←0) ⋄ T.price    ⍝ 2 3
 M←"price" "qty":[2 3⋄10 20]
 M.(price×qty)              ⍝ 20 60
+T←["f":-] ⋄ (T.f 3) (T.(f) 3)   ⍝ [¯3 [- 3]]
 ```
 
 A dot followed by a digit is a decimal point: `.2` is a number. To index position 2, write `v.[2]` or the [subscript](../scripts.ipynb#subscripts) `v₂`. Assignment through a dot path writes the items it reads, and adds missing keys.

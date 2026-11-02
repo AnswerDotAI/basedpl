@@ -1,6 +1,6 @@
-use crate::{ErrorKind, Number, Value, array::{Items, Steps}};
+use crate::{ErrorKind, Number, Value, array::{Items, Segments}};
 use rustymath::hashing::{HashMap, HashSet, HashSetExt};
-use rustymath::{buffer::{FloatWidth, View}, error::Kind, layout::strides};
+use rustymath::{buffer::{FloatWidth, View}, error::Kind};
 use std::sync::Arc;
 
 pub use rustymath::layout::Keys;
@@ -20,6 +20,24 @@ pub fn name(value: &Value) -> Option<Arc<str>> {
 /// The character vector that holds `name`.
 pub fn text(name: &str) -> Value { Value::characters([name.chars().count()], name.chars().collect()).unwrap() }
 
+/// The observing read that a host format writes.
+pub fn exported(value: &Value) -> Result<Value, crate::Error> { value.read(crate::ReadKind::Value) }
+
+/// How a host format with strings and objects, such as JSON or JavaScript, writes an array.
+pub enum Form<'a> {
+    /// A string: the array is text, with no keys on its first axis.
+    Text(Arc<str>),
+    /// An object of the array's major cells, under its first axis's keys.
+    Object(&'a Keys),
+    /// An array of its major cells.
+    Array,
+}
+
+/// The form that a host format with strings and objects gives array `a` (`Form`).
+pub fn form(a: &Value) -> Form<'_> {
+    match a.keys(0) { Some(keys) => Form::Object(keys), None => name(a).map_or(Form::Array, Form::Text) }
+}
+
 /// Character vectors for the texts that one import reads. Each distinct text is made once, and every cell that repeats it shares that one array. Only the first `SHAREABLE` distinct texts are shared. A text first read after those is made for its cell alone.
 #[derive(Default)]
 pub struct Texts(HashMap<Box<str>, Value>);
@@ -38,6 +56,25 @@ impl Texts {
 }
 /// An array of `shape` holding the text items `items`, with empty text as its prototype.
 pub(crate) fn texts(shape: &[usize], items: Vec<Value>) -> Result<Value, ErrorKind> { Value::shaped(shape, items, text("")) }
+/// A column of texts with `shape`, as one segmented array whose leaf holds each distinct text once, up to `SHAREABLE` distinct texts, and each later text where it occurs. Fewer than two texts take mixed storage, as `texts` gives them.
+pub(crate) fn text_column(shape: &[usize], column: &[&str]) -> Result<Value, ErrorKind> {
+    if column.len() < 2 { return texts(shape, column.iter().map(|s| text(s)).collect()); }
+    let (mut leaf, mut offsets, mut lengths, mut starts) = (Vec::new(), Vec::with_capacity(column.len()), Vec::with_capacity(column.len()), HashMap::default());
+    for &s in column {
+        let found = starts.get(s).copied();
+        let (start, len) = found.unwrap_or_else(|| {
+            let start = leaf.len();
+            leaf.extend(s.chars());
+            let entry = (start, leaf.len() - start);
+            if starts.len() < SHAREABLE { starts.insert(s, entry); }
+            entry
+        });
+        offsets.push(start);
+        lengths.push(len);
+    }
+    let Value::Array(leaf) = Value::characters([leaf.len()], leaf)? else { unreachable!("characters make an array") };
+    Ok(Value::Array(Arc::new(crate::array::ArrayData::Segmented { layout: crate::array::Layout::from(shape), segments: Segments::new(leaf, offsets, lengths, 1, text("")) })))
+}
 /// The texts in `value`, the reverse of `texts`: the text itself with an empty shape, or each text in an array of them with the array's shape. `None` when an item isn't text.
 pub(crate) fn text_items(value: &Value) -> Option<(Vec<usize>, Vec<Arc<str>>)> {
     if let Some(t) = name(value) { return Some((vec![], vec![t])); }
@@ -69,7 +106,7 @@ impl Selector {
     /// `None` when the value holds no names at all; mixed contents are a DOMAIN ERROR.
     pub fn of(value: &Value) -> Result<Option<Self>, ErrorKind> {
         // Only characters, alone or among mixed items, can be names (`name`), so numbers in any storage hold none.
-        if !matches!(value.as_items(), Items::Compact(View::Characters(_)) | Items::Values(_)) { return Ok(None); }
+        if value.dtype() != Some(rustymath::buffer::DType::Character) && !value.holds_mixed() && value.leaf_dtype() != Some(rustymath::buffer::DType::Character) { return Ok(None); }
         if let Some(k) = name(value) { return Ok(Some(Self::One(k))); }
         if value.is_atom() || value.is_empty() || !value.elements().any(|e| name(&e).is_some()) { return Ok(None); }
         let names = value.elements().map(|e| name(&e).ok_or(Kind::Domain)).collect::<Result<_, _>>()?;
@@ -256,7 +293,7 @@ pub(crate) fn missing<'a>(target: &Value, selectors: impl IntoIterator<Item = (u
 }
 
 /// Adds an entry to `target` for each key in `added`, which `missing` gives for each axis. A new vector entry that a longer path descends into starts as a record. Otherwise a new entry starts as the prototype, which the assignment replaces. Mixed storage stays mixed. New keys on the leading axis alone append in place. New keys on another axis rebuild the array.
-pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: bool) -> Result<(), ErrorKind> {
+pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: bool) -> crate::error::Result<()> {
     let rank = target.shape().len();
     let fill = if descend && rank == 1 { empty_record() } else { target.prototype() };
     let mut shape = target.shape().to_vec();
@@ -266,8 +303,12 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
         shape[0] = added[0].len();
         let len = crate::array::generated_len(&shape)?;
         if len > 0 {
-            let cells = Value::from_parts(shape, vec![fill.clone(); len], fill)?;
-            return target.append(&cells, Some(&added[0].iter().cloned().map(Some).collect::<Vec<_>>()));
+            let mut keys = target.layout().all_keys();
+            keys[0] = Some(Keys::partial(added[0].iter().cloned().map(Some).collect())?);
+            let cells = Value::from_parts(shape, vec![fill.clone(); len], fill)?.with_keys(keys)?.with_axis_names(target.axis_names().to_vec())?;
+            *target = crate::primitive::Operation::Primitive { primitive: crate::primitive::Primitive::CatenateFirst, pairing: crate::primitive::Pairing::Axes }
+                .call(&[target.clone(), cells], 0)?;
+            return Ok(());
         }
         shape = target.shape().to_vec();
     }
@@ -279,31 +320,24 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
         shape[axis] = all.len();
         keys[axis] = Some(Keys::partial(all)?);
     }
-    let stride = strides(target.shape());
-    let tables: Vec<_> = shape.iter().zip(target.shape()).zip(stride).map(|((&len, &size), stride)| Steps::clipped(0, len, size, stride)).collect();
     let names = target.axis_names().to_vec();
-    *target = crate::primitive::remapped(target, rustymath::structure::Plan { layout: shape.into(), steps: tables })?.with_keys(keys)?.with_axis_names(names)?;
+    let count = Value::integers([shape.len()], shape.iter().map(|&n| n as i64).collect())?;
+    *target = crate::primitive::Operation::Primitive { primitive: crate::primitive::Primitive::Take, pairing: crate::primitive::Pairing::Axes }
+        .call(&[count, target.clone()], 0)?.with_keys(keys)?.with_axis_names(names)?;
     Ok(())
 }
 
 /// `value` with each keyed axis in the order of its keys in `wanted`. Other axes keep their order. With `subset`, `wanted` may leave out keys of `value`. Otherwise both need the same keys (`Keys::positions`).
-pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool) -> Result<Value, ErrorKind> {
-    let target = |axis| match (value.keys(axis), wanted.get(axis).and_then(Option::as_ref)) {
-        (Some(src), Some(dst)) if src != dst => Some((src, dst)), _ => None
-    };
-    let shape = value.shape();
-    if (0..shape.len()).all(|a| target(a).is_none()) { return Ok(value.clone()); }
-    let stride = strides(shape);
-    let mut keys = vec![None; shape.len()];
-    let tables = (0..shape.len()).map(|axis| {
-        Ok(match target(axis) {
-            Some((src, dst)) => {
-                keys[axis] = Some(dst.clone());
-                Steps::table(src.positions(dst, subset)?.into_iter().map(|p| p * stride[axis]).collect())
-            }
-            None => { keys[axis] = value.keys(axis).cloned(); Steps::along(shape[axis], stride[axis]) }
-        })
-    }).collect::<Result<Vec<_>, ErrorKind>>()?;
-    let layout = rustymath::layout::Layout::from(tables.iter().map(Steps::len).collect::<Vec<_>>()).with_keys(keys)?.inherit_names(value.axis_names().to_vec());
-    crate::primitive::remapped(value, rustymath::structure::Plan { layout, steps: tables })
+pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool) -> crate::error::Result<Value> {
+    use crate::primitive::{Operation, Pairing, Primitive};
+    let mut result = value.clone();
+    for axis in 0..value.rank() {
+        let (Some(source), Some(target)) = (value.keys(axis), wanted.get(axis).and_then(Option::as_ref)) else { continue };
+        if source == target { continue; }
+        let positions = source.positions(target, subset)?;
+        let indices = Value::positions([positions.len()], value.shape()[axis], positions.into_iter())?;
+        result = Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Explicit }
+            .call(&[Value::integer(axis as i64), indices, result], 0)?;
+    }
+    Ok(result)
 }

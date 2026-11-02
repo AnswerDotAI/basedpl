@@ -1,4 +1,4 @@
-use crate::{ErrorKind, Value, array::{Layout, generated_len}};
+use crate::{ErrorKind, Value, array::{Layout, generated_len}, program::Extents};
 use rustymath::{agreement::Mapping, error::Error, gather::Steps};
 use std::borrow::Cow;
 
@@ -21,8 +21,8 @@ pub(crate) trait Agree: Sized {
     }
     /// `values`, borrowing each item that its argument holds as a value.
     fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>);
-    /// `left` and `right` laid out as the result, each repeated over the axes and positions it lacks, as broadcasting repeats it.
-    fn laid(&self, left: Option<&Value>, right: &Value) -> (Option<Value>, Value);
+    /// `left` and `right` laid out as the result, each repeated over the axes and positions it lacks, as broadcasting repeats it. An atom stays as it stands, since the call reads it at every position (main's decision 23). `Err` where an argument can't be laid, as a ragged batch stops its run.
+    fn laid(&self, left: Option<&Value>, right: &Value) -> Result<(Option<Value>, Value), ErrorKind>;
 }
 
 impl Agree for Agreement {
@@ -40,9 +40,9 @@ impl Agree for Agreement {
         let item = |a: &'a Value, j: Option<usize>, map: &Mapping| j.map_or_else(|| Cow::Owned(a.mapped_fill(map)), |j| a.at_ref(j));
         (left.map(|a| item(a, x, &self.left)), item(right, y, &self.right))
     }
-    fn laid(&self, left: Option<&Value>, right: &Value) -> (Option<Value>, Value) {
-        let laid = |v: &Value, mapping: &Mapping| laid_cells(v, 0, mapping, &self.layout).expect("an agreement's layout fits");
-        (left.map(|x| laid(x, &self.left)), laid(right, &self.right))
+    fn laid(&self, left: Option<&Value>, right: &Value) -> Result<(Option<Value>, Value), ErrorKind> {
+        let laid = |v: &Value, mapping: &Mapping| if v.is_atom() { Ok(v.clone()) } else { laid_cells(v, 0, mapping, &self.layout, &Extents::EXACT) };
+        Ok((left.map(|x| laid(x, &self.left)).transpose()?, laid(right, &self.right)?))
     }
 }
 
@@ -51,9 +51,10 @@ fn with_renderer(core: Result<Core, Error>, left: &Layout, right: &Layout) -> Re
     Ok(core?.map_layout(|core| Layout::paired(core, left, right)))
 }
 
-/// The tangent `t` laid out as `layout`, its primal's: repeated where it was smaller, as broadcasting repeats it. A linear operation, whose transpose sums back. A dual keeps the smaller tangent that a pervasive rule gives, which later calls broadcast as they go, and only code that copies items expands it (`Dual::full_tangent`).
-pub(crate) fn expand(t: &Value, layout: &crate::array::Layout) -> Value {
-    Agreement::new(layout, t.layout()).expect("a tangent agrees with its primal").laid(None, t).1
+/// The tangent `t` laid out as `layout`, its primal's, whose lengths follow a running trace's extents where `extents` sets them (`Extents::of` of the primal): repeated where it was smaller, as broadcasting repeats it. A linear operation, whose transpose sums back. A dual keeps the smaller tangent that a pervasive rule gives, which later calls broadcast as they go, and only code that copies items expands it (`Dual::full_tangent`).
+pub(crate) fn expand(t: &Value, layout: &crate::array::Layout, extents: &Extents) -> Value {
+    let agreement = Agreement::new(layout, t.layout()).expect("a tangent agrees with its primal");
+    laid_cells(t, 0, &agreement.right, &agreement.layout, extents).expect("an agreement's layout fits")
 }
 
 /// The tables that `primitive::copied` reads to lay an argument with cells of shape `cell` over `frame`: under each position of `frame`, the cell that `mapping` reads there. The result has shape `frame` followed by `cell`.
@@ -64,18 +65,39 @@ pub(crate) fn broadcast_tables(mapping: &Mapping, frame: &[usize], cell: &[usize
     Steps::with_base(base * size, steps.into_iter().map(|s| s.scaled(size)).chain(cells).collect())
 }
 
-/// `value`, whose cells have rank `rank`, laid out as `frame` followed by its cells' axes: at each position of `frame`, the cell that `mapping` reads there, as broadcasting reads it. Where `mapping` gives a fill, as for a key that `value` lacks, the cell holds fills. An array copies as a structural glyph copies, through `primitive::copied`, which moves a dual's primal and tangent together and copies a record as one `Op::Copy`. An atom fills the frame. An error where the result would pass the size limit.
-pub(crate) fn laid_cells(value: &Value, rank: usize, mapping: &Mapping, frame: &Layout) -> Result<Value, ErrorKind> {
+/// `value`, whose cells have rank `rank`, laid out as `frame` followed by its cells' axes: at each position of `frame`, the cell that `mapping` reads there, as broadcasting reads it. Where `mapping` gives a fill, as for a key that `value` lacks, the cell holds fills. An array copies as a structural glyph copies, through `primitive::copied`, which moves a dual's primal and tangent together and copies a record as one `Op::Copy`. An atom fills the frame where a call of its size computes at once (`fusion::waits`), and otherwise lays as a scalar that holds it, whose copy at stride 0 waits as any large copy does and stores no items. `extents` sets the lengths of `frame` that follow a running trace's extents, as a frame sized from a traced value carries them (`Extents::of`). An error where the result would pass the size limit.
+pub(crate) fn laid_cells(value: &Value, rank: usize, mapping: &Mapping, frame: &Layout, extents: &Extents) -> Result<Value, ErrorKind> {
+    let scalar;
+    let value = if value.is_atom() {
+        generated_len(frame.shape())?;
+        if !crate::fusion::waits(frame.count(), || value.dtype().map_or(8, rustymath::buffer::DType::bytes)) { return Ok(frame.filled(value)); }
+        scalar = Layout::default().filled(value);
+        &scalar
+    } else { value };
     let n = value.shape().len();
     let layout = frame.concat(&value.layout().axes(n - rank..n));
-    if value.is_atom() { generated_len(layout.shape())?; return Ok(layout.filled(value)); }
     // A value whose frame is `frame` already holds each cell where the mapping reads it.
     if *value.layout().axes(0..n - rank) == **frame { return value.relaid(layout); }
-    crate::primitive::copied(value, layout, &mapping.with_steps(0, broadcast_tables(mapping, frame.shape(), &value.shape()[n - rank..])))
+    let extents = extents.padded(layout.shape().len());
+    crate::primitive::copied_to(value, layout, &extents, &mapping.with_steps(0, broadcast_tables(mapping, frame.shape(), &value.shape()[n - rank..])))
+}
+
+/// `value` laid over `frame` through `mapping`, as `laid_cells` lays it, keeping length 1 along each axis of `frame` where `mapping` reads one cell at every position: the form a framed value takes in a map's run, where readers expand it as broadcasting does (main's decision 23). An axis kept at length 1 drops its keys. A view where the kept axes read `value`'s items in order. `laid_cells` where `mapping` reads no axis that way, or has no entry for each axis.
+pub(crate) fn kept_cells(value: &Value, rank: usize, mapping: &Mapping, frame: &Layout) -> Result<Value, ErrorKind> {
+    if value.shape()[..value.shape().len() - rank] == *frame.shape() { return laid_cells(value, rank, mapping, frame, &Extents::EXACT); }
+    let repeats = |s: &Steps| matches!(*s, Steps::Stride { step: 0, len, .. } if len > 1);
+    let Some((base, steps)) = mapping.entries(frame.shape()).filter(|(_, steps)| steps.iter().any(repeats)) else { return laid_cells(value, rank, mapping, frame, &Extents::EXACT) };
+    let kept: Vec<bool> = steps.iter().map(|s| !repeats(s)).collect();
+    let shape = frame.shape().iter().zip(&kept).map(|(&len, &k)| if k { len } else { 1 }).collect::<Vec<_>>();
+    let keys = (0..kept.len()).map(|a| frame.keys(a).filter(|_| kept[a]).cloned()).collect();
+    let names = (0..kept.len()).map(|a| frame.name(a).cloned()).collect();
+    let layout = Layout::from(shape).with_keys(keys).expect("each kept axis keeps its keys").inherit_names(names);
+    let steps = steps.into_iter().map(|s| match s { Steps::Stride { start, step: 0, .. } => Steps::Stride { start, len: 1, step: 0 }, s => s }).collect();
+    laid_cells(value, rank, &mapping.with_steps(base, steps), &layout, &Extents::EXACT)
 }
 
 /// `value` repeated at each position of `frame`: an array with `frame`'s axes, then `value`'s. An error where the result would pass the size limit.
-pub(crate) fn spread(value: &Value, frame: &Layout) -> Result<Value, ErrorKind> { laid_cells(value, value.shape().len(), &Mapping::Single, frame) }
+pub(crate) fn spread(value: &Value, frame: &Layout) -> Result<Value, ErrorKind> { laid_cells(value, value.shape().len(), &Mapping::Single, frame, &Extents::EXACT) }
 
 /// A view of `a` with axes of length 1 after each run of its leading axes, up to the length of the matching run in the other argument. `frame` holds the lengths of `a`'s runs and `other` the other argument's. Agreement extends an axis of length 1 over the other argument's axis, so each run of `a`'s axes pairs with the matching run of the other's. No axes of length 1 follow `a`'s last axis, because leading-axis agreement already extends `a` over trailing axes. Each axis keeps its keys and name.
 pub(crate) fn padded(a: &Value, frame: &[usize], other: &[usize]) -> Value {

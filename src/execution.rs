@@ -1,14 +1,24 @@
 use crate::{Error, ErrorKind, Span, host::Instant};
 use rustymath::error::Kind;
-use std::{cell::{Cell, RefCell}, io, sync::{Arc, Mutex, MutexGuard, PoisonError, atomic::{AtomicBool, AtomicU32, Ordering}}, time::Duration};
+use std::{cell::{Cell, RefCell}, io, sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, atomic::{AtomicBool, AtomicU32, Ordering}}, time::Duration};
 
-/// Cancellation for one evaluation; may be sent to another thread.
+/// Cancellation for one evaluation, or for every evaluation of one request; may be sent to another thread. Once the deadline that `expire_after` sets passes, each evaluation under the handle stops, as `EvalOptions::timeout` stops one evaluation.
 #[derive(Clone, Default)]
-pub struct InterruptHandle(Arc<AtomicBool>);
+pub struct InterruptHandle { flag: Arc<AtomicBool>, deadline: Arc<OnceLock<Instant>> }
 impl InterruptHandle {
-    pub fn interrupt(&self) { self.0.store(true, Ordering::Relaxed); }
-    fn is_set(&self) -> bool { self.0.load(Ordering::Relaxed) }
+    pub fn interrupt(&self) { self.flag.store(true, Ordering::Relaxed); }
+    fn is_set(&self) -> bool { self.flag.load(Ordering::Relaxed) }
+    /// Sets the deadline `limit` from now. Only the first call sets it.
+    pub fn expire_after(&self, limit: Duration) { let _ = self.deadline.set(Instant::now() + limit); }
+    /// Whether the deadline has passed.
+    pub fn expired(&self) -> bool { self.expired_at(Instant::now()) }
+    fn expired_at(&self, now: Instant) -> bool { self.deadline.get().is_some_and(|&deadline| now >= deadline) }
+    /// Why evaluations under this handle stop now, as a noun phrase: `an interrupt`, or `its time limit` once the deadline has passed. `None` while neither holds.
+    pub fn stop(&self) -> Option<&'static str> { if self.is_set() { Some("an interrupt") } else if self.expired() { Some("its time limit") } else { None } }
 }
+
+/// The message of the timeout error that a passed request deadline gives.
+const TIME_LIMIT: &str = "the request reached its time limit";
 
 pub struct EvalOptions {
     pub interrupt: InterruptHandle,
@@ -97,6 +107,7 @@ fn stopped() -> Result<(), rustymath::error::Error> {
     if poll.is_some_and(|poll| poll()) { interrupt.interrupt(); }
     if interrupt.is_set() { return Err(rustymath::error::Error::new(Kind::Interrupt, "")); }
     if late { return Err(rustymath::error::Error::new(Kind::Timeout, "")); }
+    if interrupt.expired_at(now) { return Err(rustymath::error::Error::new(Kind::Timeout, TIME_LIMIT)); }
     Ok(())
 }
 
@@ -104,7 +115,7 @@ fn stopped() -> Result<(), rustymath::error::Error> {
 fn interrupted() -> bool { stops().as_ref().is_some_and(|s| s.interrupt.is_set()) }
 
 /// Ends an interrupt that a guard caught, so that its handler runs. Another interrupt stops the handler.
-pub(crate) fn clear_interrupt() { if let Some(s) = &*stops() { s.interrupt.0.store(false, Ordering::Relaxed) } }
+pub(crate) fn clear_interrupt() { if let Some(s) = &*stops() { s.interrupt.flag.store(false, Ordering::Relaxed) } }
 
 #[derive(Default)]
 pub(crate) struct Execution {

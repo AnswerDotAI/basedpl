@@ -3,7 +3,7 @@
 use super::*;
 use rustymath::error::Kind;
 
-use rustymath::{layout::Layout as CoreLayout, structure::{self, Edge, Plan, Windows}};
+use rustymath::{layout::Layout as CoreLayout, structure::{self, Edge, Lengths, Plan, Windows}};
 
 /// A window specification for the leading axes of an argument, as `↕` and `⌺` read it: sizes, movements, an edge mode that pads every windowed axis, and the item that padding with fill reads. Without an edge mode, a size below 0 pads its axis with fill.
 pub(crate) struct WindowSpec { pub(crate) sizes: Vec<i64>, pub(crate) moves: Vec<i64>, pub(crate) edge: Option<Edge>, pub(crate) fill: Option<Value> }
@@ -39,7 +39,7 @@ pub(super) fn windows(spec: &Value, right: &Value, span: &Span) -> Result<Value,
 pub(crate) fn windowed(spec: &WindowSpec, right: &Value, span: &Span) -> Result<Value, Error> {
     if spec.sizes.is_empty() { return Ok(right.clone()); }
     let (right, fill) = match &spec.fill { Some(fill) => Primitive::fill_for(fill, right, false, span)?, None => (Cow::Borrowed(right), None) };
-    let windows = Windows::new(&spec.sizes, &spec.moves, |size| spec.edge.or((size < 0).then_some(Edge::Fill)), right.shape())?;
+    let windows = Windows::new(&spec.sizes, &spec.moves, |size| spec.edge.or(size.negative.then_some(Edge::Fill)), right.shape())?;
     let padded =
         windows.padding().map(|p| copied_fill(&right, p.layout.into(), &Mapping::from(p.steps), fill.as_ref())).transpose().described("invalid windows")?;
     let source = padded.as_ref().unwrap_or(&right);
@@ -50,32 +50,25 @@ pub(crate) fn windowed(spec: &WindowSpec, right: &Value, span: &Span) -> Result<
 pub(super) fn enlist(right: &Value, span: &Span) -> Result<Value, Error> {
     // A simple array's enlist is its ravel, which reads it whole.
     if right.is_simple() { return Primitive::Ravel.call(None, right, span); }
-    fn append(array: &Value, data: &mut Gather, span: &Span) -> Result<(), Error> {
-        let limit = || Error::new(Kind::Limit, "enlist exceeds array limits");
-        // A simple mixed array keeps its storage. A nested array's items are gathered one by one.
-        if array.is_simple() {
-            generated_len(&[data.len() + array.len()]).map_err(|_| limit())?;
-            data.extend(array, 0..array.len());
-            return Ok(());
-        }
-        let Items::Values(items) = array.as_items() else { unreachable!() };
-        for item in items {
-            if let a @ Value::Array(_) = item { append(a, data, span)?; } else {
-                generated_len(&[data.len() + 1]).map_err(|_| limit())?;
-                data.add(item.clone());
-            }
-        }
-        Ok(())
+    // Segmented items are simple arrays, so their enlist is the leaf item after item, a view where they lie in order (`Segs::packed_leaf`).
+    if let crate::array::Items::Segmented(segs) = right.as_items() && let Some(leaf) = segs.packed_leaf() { return Ok(leaf); }
+    // Each simple array or atom that `array` holds, at any depth, in order: the parts that the enlist lays end to end.
+    fn parts(array: &Value, each: &mut impl FnMut(&Value)) {
+        for item in array.as_items().values() { if item.is_atom() || item.is_simple() { each(&item) } else { parts(&item, each) } }
     }
-    let mut data = Gather::items(right.len());
-    append(right, &mut data, span)?;
-    let shape = vec![data.len()];
-    let prototype = || {
-        let mut prototype = right.prototype();
-        while let a @ Value::Array(_) = prototype { prototype = a.prototype(); }
-        prototype
-    };
-    data.finish(shape.into(), prototype).described("invalid enlist result")
+    let (mut total, mut pending) = (0usize, false);
+    parts(right, &mut |p| { total = total.saturating_add(if p.is_atom() { 1 } else { p.len() }); pending |= p.node().is_some(); });
+    let len = generated_len(&[total]).map_err(|_| Error::new(Kind::Limit, "enlist exceeds array limits"))?;
+    let layout = Layout::from(vec![len]);
+    // Parts that nodes hold join as one node, as Mix joins its cells (`Value::joined_cells`), so that a trace reads none of their items.
+    if pending {
+        let mut held = Vec::new();
+        parts(right, &mut |p| held.push(p.clone()));
+        if let Some(joined) = crate::fusion::joined(&layout, &held) { return Ok(joined); }
+    }
+    let mut data = Gather::items(len);
+    parts(right, &mut |p| if p.is_atom() { data.add(p.clone()) } else { data.extend(p, 0..p.len()) });
+    data.finish(layout, || right.innermost_prototype()).described("invalid enlist result")
 }
 
 /// `right` with its axes in `order`: axis `i` of the result is axis `order[i]` of `right`.
@@ -153,25 +146,38 @@ pub(super) fn remap(right: &Value, plan: Plan, fill: Option<Value>) -> Result<Va
     copied_fill(right, Layout::rearranged(plan.layout, right), &Mapping::from(plan.steps), fill.as_ref()).described("invalid structural result")
 }
 
+/// `right` copied by `plan`, as `remap` copies it, or where a running trace's extents set an axis of `right`, through the template that `steps` gives over the trace's lengths (`trace::templated`), so that a replay at other lengths fills the copy's map from its extents. Where no template applies, such as for a fill or a vector of rotate counts, the plan reads `right`'s lengths, which the trace's recording then fixes (`trace::pin`). The rows of the forms that copy through here are `bounded`, so dispatch doesn't pin them first.
+fn remap_traced(right: &Value, plan: Plan, fill: Option<Value>, steps: impl FnOnce(&structure::Bounded, &[structure::Traced]) -> Option<Vec<rustymath::gather::Steps<structure::Traced>>>) -> Result<Value, Error> {
+    if fill.is_none() && let Some((map, extents)) = crate::program::trace::templated(right, |o, shape| Some((o.number(0), steps(o, shape)?)))
+        && let Some(copy) = crate::fusion::copy(right, &Layout::rearranged(plan.layout.clone(), right), &extents, || map) {
+        return Ok(copy);
+    }
+    crate::program::trace::pin(None, right);
+    remap(right, plan, fill)
+}
+
 /// Items of `right` laid out by `layout`, read through `map` as `Gather::walk` reads a walk's tables (`Mapping::to_walk`). A large copy of a compact array is a pending copy, which fusion computes with the calls that read it (`fusion::copy`). Otherwise the copy is computed at once (`copied_now`).
-pub(crate) fn copied(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, map, None, true) }
+pub(crate) fn copied(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copied_to(right, layout, &crate::program::Extents::EXACT, map) }
+/// `copied` into a frame sized from a value of the running trace, whose lengths follow the trace's extents where `extents` sets them (`Extents::of`), as `∂` lays a tangent over its primal (`agreement::expand`).
+pub(crate) fn copied_to(right: &Value, layout: Layout, extents: &crate::program::Extents, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, extents, map, None, true) }
 /// `copied`, computed at once, with no pending copy: a program's copy step, whose program's plan schedules it (`program::run`).
-pub(crate) fn copied_now(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, map, None, false) }
+pub(crate) fn copied_now(right: &Value, layout: Layout, map: &Mapping) -> Result<Value, ErrorKind> { copying(right, layout, &crate::program::Extents::EXACT, map, None, false) }
 /// `copied` with a validated scalar fill. Compact sources carry native fills on the map; fills of mixed data are consumed eagerly.
 pub(crate) fn copied_fill(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>) -> Result<Value, ErrorKind> {
     if let Some(native) = fill.and_then(|fill| right.native_fill(fill)) { return copied(right, layout, &map.clone().filled(Some(native))); }
-    copying(right, layout, map, fill, true)
+    copying(right, layout, &crate::program::Extents::EXACT, map, fill, true)
 }
 
-/// `copied`, which a pending copy can give where `defers` holds. A map that reads every item of `right` in order gives `right` under `layout`, with no items copied. A carried array copies each of its parts through the map that its part reads, a record as one `Op::Copy` (`Carrier::copied`). A position that reaches no item reads `fill`, the chosen fill of mixed data, or else the map's native fill, or else the prototype. A native fill can stay on a pending copy's map, and a fill of mixed data makes the copy eager.
-fn copying(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>, defers: bool) -> Result<Value, ErrorKind> {
-    let len = generated_len(layout.shape())?;
+/// `copied`, which a pending copy can give where `defers` holds, its lengths following `extents` where a running trace's extents set them (`copied_to`). A map that reads every item of `right` in order gives `right` under `layout`, with no items copied. A carried array copies each of its parts through the map that its part reads, a record as one `Op::Copy` (`Carrier::copied`). A position that reaches no item reads `fill`, the chosen fill of mixed data, or else the map's native fill, or else the prototype. A native fill can stay on a pending copy's map, and a fill of mixed data makes the copy eager.
+fn copying(right: &Value, layout: Layout, extents: &crate::program::Extents, map: &Mapping, fill: Option<&Value>, defers: bool) -> Result<Value, ErrorKind> {
+    generated_len(layout.shape())?;
     if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }
+    if let Value::Pending(_) = right { return copying(&right.relaid(Layout::default())?, layout, extents, map, fill, defers); }
+    if map.in_order(right.len(), layout.shape()) { return right.relaid(layout); }
     let (base, tables, native) = map.to_walk(layout.shape());
-    if right.len() == len && base == 0 && Steps::in_order(&tables) { return right.relaid(layout); }
     let fill = fill.filter(|_| map.fills());
     if let Some(carrier) = right.carrier() { return carrier.copied(layout, map, fill); }
-    if fill.is_none() && defers && let Some(copy) = crate::fusion::copy(right, &layout, map) { return Ok(copy); }
+    if fill.is_none() && defers && let Some(copy) = crate::fusion::copy(right, &layout, extents, || map.clone()) { return Ok(copy); }
     let chosen = native.map(|fill| Value::from_fill(fill, right.fixed_width().is_some()));
     walked(right, layout, base, &tables, fill.or(chosen.as_ref()))
 }
@@ -188,23 +194,31 @@ pub(crate) fn walked(source: &Value, layout: Layout, base: usize, steps: &[Steps
     data.finish(layout, || source.prototype())
 }
 
-pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Value>) -> Result<Value, Error> {
+/// The counts of `↑` or `↓`, each with the axis it applies along: `axes` where given, else the leading axes in order. `None` for no counts, which leave an argument as it is.
+fn take_counts(counts: &Value, axes: Option<&[usize]>) -> Result<Option<Vec<(usize, structure::Count<usize>)>>, Error> {
     if counts.shape().len() > 1 { return Err(Error::new(Kind::Rank, "take/drop counts must be a unit or vector")); }
     if axes.is_some_and(|a| a.len() != counts.len()) { return Err(Error::new(Kind::Length, "counts do not agree with axes")); }
-    if counts.is_empty() { return Ok(right.clone()); }
+    if counts.is_empty() { return Ok(None); }
     let counts = counts.as_items().integers().described("invalid take/drop count")?;
-    let counts: Vec<_> = counts.iter().enumerate().map(|(i, &count)| (axes.map_or(i, |a| a[i]), count)).collect();
+    Ok(Some(counts.iter().enumerate().map(|(i, &count)| (axes.map_or(i, |a| a[i]), structure::Count::of(count))).collect()))
+}
+
+pub(super) fn take_drop(take: bool, counts: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Value>) -> Result<Value, Error> {
+    let Some(counts) = take_counts(counts, axes)? else { return Ok(right.clone()) };
     let unit = rustymath::layout::Layout::from(vec![1; counts.len()]);
     let plan = structure::take(if right.is_unit() { &unit } else { right.layout() }, &counts, take)?;
-    remap(right, plan, fill)
+    remap_traced(right, plan, fill, |o, shape| {
+        let counts: Vec<_> = counts.iter().map(|&(a, c)| (a, structure::Count { negative: c.negative, magnitude: o.number(c.magnitude) })).collect();
+        structure::take_steps(o, shape, &counts, take).ok()
+    })
 }
 
 /// `counts` replicates the cells of `right` along `axis`, the leading axis by default, through rustymath's `structure::repeat`, or undoes that through `structure::expand` where `inverse`. Expand's inserted items read `fill`, or the prototype where there's none. A plain vector's counts copy its items with no table of offsets: a Boolean mask compresses them, and counts that insert no fills repeat each item.
 pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inverse: bool, fill: Option<Value>) -> Result<Value, Error> {
     if counts.shape().len() > 1 { return Err(Error::new(Kind::Rank, "replication counts must be a unit or vector")); }
     let axis = axis.unwrap_or(0);
-    // `Gather` copies the items of a value that no running level carries. A carried value moves through its carrier (`remap`), which routes each level's parts, a trace's included.
-    let gathers = right.carrier().is_none();
+    // `Gather` copies the items of a value that `copies_through` doesn't move through a copy (`remap`): a carrier routes each level's parts, and a node builds a copy node.
+    let gathers = !super::indexing::copies_through(right);
     // A Boolean mask over an unkeyed vector copies the items it selects. The mask is read as it is, with no conversion.
     if let (Some(mask), [n], [m], false) = (counts.as_booleans(), counts.shape(), right.shape(), inverse) {
         if n == m && right.keys(0).is_none() && gathers {
@@ -238,30 +252,61 @@ pub(super) fn replicate(counts: &Value, right: &Value, axis: Option<usize>, inve
 }
 
 pub(super) fn rotate(counts: Option<&Value>, right: &Value, axis: usize) -> Result<Value, Error> {
-    let numbers = counts.map(|a| a.as_items().integers().described("invalid rotation count")).transpose()?;
+    let numbers = rotation(counts)?;
     let counts = counts.zip(numbers.as_deref()).map(|(a, ns)| (a.shape(), ns));
     // A unit rotates as a vector of one item, which leaves it as it is.
     if right.is_unit() { structure::rotate(&CoreLayout::from([1]), axis, counts)?; return Ok(right.clone()); }
     let plan = structure::rotate(right.layout(), axis, counts)?;
-    remap(right, plan, None)
+    let count = |o: &structure::Bounded, n: i64| structure::Count { negative: n < 0, magnitude: o.number(n.unsigned_abs() as usize) };
+    remap_traced(right, plan, None, |o, shape| match numbers.as_deref() {
+        None => Some(structure::rotate_steps(o, shape, axis, None)),
+        Some(&[n]) => Some(structure::rotate_steps(o, shape, axis, Some(count(o, n)))),
+        Some(_) => None,
+    })
 }
 
-/// `a` with `rank` axes for joining along `axis` with `other`. A unit becomes one cell with `other`'s other axes. An array with one axis fewer gains `axis`, with one position.
+/// The integer counts of a rotation, where it has any.
+fn rotation(counts: Option<&Value>) -> Result<Option<Cow<'_, [i64]>>, Error> { counts.map(|a| a.as_items().integers().described("invalid rotation count")).transpose() }
+
+/// Whether `plan_of` plans `p` with a left argument where `left`: `⌽` and `⊖` either way, and `↑` and `↓` with one.
+pub(crate) fn remaps(p: Primitive, left: bool) -> bool { matches!(p, Primitive::Reverse(_)) || left && matches!(p, Primitive::Take | Primitive::Drop) }
+
+/// The plan that copies an argument laid out as `layout` into `p`'s result with left argument `left`, for a form that `remaps` names: `⌽` and `⊖` along the last or first axis, and `↑` and `↓` with counts along the leading axes, as their calls on a value plan them (`rotate`, `take_drop`). A batched run walks each ragged cell's own plan into one leaf (`batch::segment_remap`). `None` for any other form, and for no take or drop counts.
+pub(crate) fn plan_of(p: Primitive, left: Option<&Value>, layout: &CoreLayout) -> Option<Result<Plan, Error>> {
+    let planned = match (p, left) {
+        (Primitive::Reverse(first), _) => rotation(left).and_then(|numbers| {
+            let axis = if first { 0 } else { layout.shape().len().saturating_sub(1) };
+            Ok(structure::rotate(layout, axis, left.zip(numbers.as_deref()).map(|(a, ns)| (a.shape(), ns)))?)
+        }),
+        (Primitive::Take | Primitive::Drop, Some(counts)) => match take_counts(counts, None) {
+            Ok(Some(counts)) => structure::take(layout, &counts, p == Primitive::Take).map_err(Error::from),
+            Ok(None) => return None,
+            Err(e) => Err(e),
+        },
+        _ => return None,
+    };
+    Some(planned)
+}
+
+/// `a` with `rank` axes for joining along `axis` with `other`, at the lengths that `plan::promoted` gives it. A unit becomes one cell with `other`'s other axes, a copy of its item over them (`copied`), which a call that builds nodes makes as a node. An array with one axis fewer gains `axis`, with one position.
 fn promoted(a: &Value, other: &Value, rank: usize, axis: usize) -> Result<Value, Error> {
     if a.shape().len() == rank { return Ok(a.clone()); }
-    if a.is_unit() {
-        let mut shape: crate::Shape = if other.is_unit() { [1].into() } else { other.shape().into() };
-        shape[axis] = 1;
-        let len = generated_len(&shape)?;
-        // `Gather` makes a dual atom an array dual, not an item of a mixed array (`derivative`).
-        let mut data = Gather::items(len);
-        data.fill(&a.at(0), len);
-        return data.finish(Layout::from(shape), || a.prototype()).described("invalid unit extension");
-    }
-    if a.shape().len() + 1 != rank { return Err(Error::new(Kind::Rank, "catenate ranks differ by more than one")); }
-    let shape: crate::Shape = a.shape()[..axis].iter().chain(&[1]).chain(&a.shape()[axis..]).copied().collect();
-    let layout = a.layout().replace(axis..axis, &Layout::from([1]));
-    a.with_shape(shape).and_then(|v| v.with_layout(layout)).described("invalid catenate shape")
+    let shape = crate::plan::promoted(&structure::Known, a.shape(), other.shape(), rank, axis)?;
+    if !a.is_unit() { return a.relaid(a.layout().merged(axis..axis, shape[axis]).into()).described("invalid catenate shape"); }
+    copied(a, Layout::from(shape), &Mapping::Single).described("invalid unit extension")
+}
+
+/// `left` and `right` ready for joining along `axis` into a result of `rank` axes. A weak number takes the width that the other argument gives it, as in arithmetic (`Primitive::weakened`), before `promoted` makes it an array, and a weak integer beside fixed integers must fit their width (`plan::Kind::fits`). `right` then takes `left`'s keys on every other axis.
+fn joining(left: &Value, right: &Value, rank: usize, axis: usize) -> Result<(Value, Value), Error> {
+    crate::plan::Kind::fits([left, right])?;
+    let (left, right) = Primitive::Ravel.weakened(Some(left), right, |left, right| {
+        let left = promoted(left.expect("catenation is dyadic"), right, rank, axis)?;
+        let right = promoted(right, &left, rank, axis)?;
+        Ok::<_, Error>((left, right))
+    })?;
+    let wanted = (0..rank).map(|a| if a == axis { None } else { left.keys(a).cloned() }).collect::<Vec<_>>();
+    let right = crate::keyed::reorder(&right, &wanted, false).described("catenate axis keys differ")?;
+    Ok((left, right))
 }
 
 /// What `append_plan` gives.
@@ -271,34 +316,23 @@ type AppendPlan = (Value, Option<Vec<Option<std::sync::Arc<str>>>>);
 pub(crate) fn append_plan(left: &Value, right: &Value, first: bool) -> Result<Option<AppendPlan>, Error> {
     let rank = left.shape().len();
     if rank == 0 || (!first && rank != 1) || right.shape().len() > rank || (left.is_empty() && right.is_empty()) { return Ok(None); }
-    let weak = Primitive::Ravel.joined_weak(right, left)?;
-    let right = promoted(weak.as_ref().unwrap_or(right), left, rank, 0)?;
-    let wanted: Vec<_> = (0..rank).map(|a| if a == 0 { None } else { left.keys(a).cloned() }).collect();
-    let right = crate::keyed::reorder(&right, &wanted, false).described("catenate axis keys differ")?;
-    if left.shape()[1..] != right.shape()[1..] { return Err(Error::new(Kind::Length, "catenate frames differ")); }
-    if (1..rank).any(|a| left.keys(a).is_none() && right.keys(a).is_some()) { return Ok(None); }
-    if (0..rank).any(|a| right.axis_name(a).is_some_and(|y| left.axis_name(a) != Some(y))) { return Ok(None); }
-    let mut shape: crate::Shape = left.shape().into();
-    shape[0] = shape[0].checked_add(right.shape()[0]).ok_or_else(|| Error::new(Kind::Limit, "catenate axis overflow"))?;
-    generated_len(&shape)?;
+    let (_, right) = joining(left, right, rank, 0)?;
+    generated_len(&structure::catenated(&structure::Known, left.shape(), right.shape(), 0)?)?;
+    if (1..rank).any(|a| left.keys(a).is_none() && right.keys(a).is_some()) || (0..rank).any(|a| right.axis_name(a).is_some_and(|y| left.axis_name(a) != Some(y))) {
+        return Ok(None);
+    }
     let names = match (left.keys(0), right.keys(0)) {
         (None, None) => None, (_, added) => Some(added.map_or_else(|| vec![None; right.shape()[0]], |k| k.names().to_vec()))
     };
     Ok(Some((right, names)))
 }
+
 pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: bool) -> Result<Value, Error> {
     let rank = left.shape().len().max(right.shape().len()).max(1);
     let axis = axis.unwrap_or(if first { 0 } else { rank - 1 });
     if axis >= rank { return Err(Error::domain("catenate axis is outside result rank")); }
-    // A weak number takes the width that the other argument gives it, as in arithmetic (`Primitive::weakened`), before `promoted` makes it an array. A weak integer beside fixed integers must fit their width (`plan::Kind::fits`).
-    crate::plan::Kind::fits([left, right])?;
-    let (left, right) = Primitive::Ravel.weakened(Some(left), right, |left, right| {
-        let left = promoted(left.expect("catenation is dyadic"), right, rank, axis)?;
-        let right = promoted(right, &left, rank, axis)?;
-        Ok::<_, Error>((left, right))
-    })?;
-    let wanted = (0..rank).map(|a| if a == axis { None } else { left.keys(a).cloned() }).collect::<Vec<_>>();
-    let right = crate::keyed::reorder(&right, &wanted, false).described("catenate axis keys differ")?;
+    if let Some(joined) = joined_along(left, right, rank, axis) { return Ok(joined); }
+    let (left, right) = joining(left, right, rank, axis)?;
     let layout = structure::catenate(left.layout(), right.layout(), axis)?;
     let size = layout.count();
     let traversal = Lanes::new(layout.shape(), axis)?;
@@ -306,6 +340,22 @@ pub(super) fn catenate(left: &Value, right: &Value, axis: Option<usize>, first: 
     let lens = [&left, &right].map(|a| a.shape()[axis] * traversal.inner);
     data.lanes([&left, &right], lens, if size == 0 { 0 } else { traversal.outer });
     data.finish(Layout::paired(layout, left.layout(), right.layout()), || left.prototype()).described("invalid catenate result")
+}
+
+/// `left` and `right` joined along `axis` into a result of `rank` axes as one node (`fusion::joined_at`), where the deferral rule builds one and either is a node: arrays and atoms that carry no level's data and have no axis names or keys. Each part is ready for joining as `catenate`'s are (`joining`): a weak number at its partner's width, at the lengths that `promoted` gives it. Each then converts to the kind that catenate's eager join gives them (`Gather::new`'s `Widening::Arrays`), as a node where it is one (`fusion::convert`), so a linear tangent of another type joins too. It writes its lanes along `axis`, into the layout that `catenate` gives, its parts' renderer included. `None` otherwise, for the join that `catenate` computes at once.
+fn joined_along(left: &Value, right: &Value, rank: usize, axis: usize) -> Option<Value> {
+    let parts = [left, right];
+    if parts.iter().all(|v| v.node().is_none()) || parts.iter().any(|v| v.carried() || v.layout().has_names() || v.layout().has_keys()) { return None; }
+    let (left, right) = joining(left, right, rank, axis).ok()?;
+    let kind = Gather::joined_kind(&[&left, &right], crate::array::Widening::Arrays)?;
+    let (to, fixed, numeric) = (kind.dtype?, kind.fixed.is_some(), crate::number::Numeric::current());
+    let converted = |v: Value| if v.dtype() == Some(to) { Some(v) } else { crate::fusion::convert(&v, to, numeric, fixed).or_else(|| v.converted(to, numeric, fixed).ok()) };
+    let (left, right) = (converted(left)?, converted(right)?);
+    let layout = Layout::paired(structure::catenate(left.layout(), right.layout(), axis).ok()?, left.layout(), right.layout());
+    let strides = rustymath::layout::strides(layout.shape());
+    let place = |a: &Value, base: usize| Mapping::Steps { base, steps: a.shape().iter().zip(&strides).map(|(&len, &stride)| Steps::along(len, stride)).collect::<Vec<_>>().into() };
+    let places = vec![place(&left, 0), place(&right, left.shape()[axis] * strides[axis])];
+    crate::fusion::joined_at(&layout, &[&left, &right], places)
 }
 
 /// One source-axis route in `⍉`, or a group of source axes to merge in `⍉⁻¹`. Keys declare names on the unsplit and split sides.
@@ -351,6 +401,8 @@ fn transpose_groups(spec: &Value, right: &Value, inverse: bool) -> Result<Vec<Tr
 /// Change shape without copying, keeping metadata only on axes that were not split or merged.
 fn regroup(right: &Value, shape: Vec<usize>, sources: &[Vec<usize>], names: &[Option<std::sync::Arc<str>>]) -> Result<Value, Error> {
     if right.is_atom() && shape.is_empty() { return Ok(right.clone()); }
+    // Splitting or merging axes reads their lengths, which a running trace's recording then fixes (`trace::pin`).
+    if shape != right.shape() { crate::program::trace::pin(None, right); }
     let layout = structure::regrouped(right.layout(), shape.clone(), sources, names)?;
     right.with_shape(shape).and_then(|a| a.with_layout(Layout::rearranged(layout, right))).described("invalid transpose shape")
 }
@@ -433,8 +485,8 @@ pub(super) fn inverse_transpose(spec: &Value, right: &Value) -> Result<Value, Er
 
 /// The shared data-remapping kernel: input axis `i` goes to `axes[i]`. Where no axis moves, `right` itself.
 pub(crate) fn transpose_axes(axes: Vec<usize>, right: &Value) -> Result<Value, Error> {
-    if rustymath::gather::counts_up(&axes) { return Ok(right.clone()); }
-    remap(right, structure::transpose(right.layout(), &axes)?, None)
+    if rustymath::gather::counts_up(&axes) { return every_item(right); }
+    remap_traced(right, structure::transpose(right.layout(), &axes)?, None, |o, shape| structure::transpose_steps(o, shape, &axes).ok())
 }
 
 pub(super) fn split(right: &Value, axis: Option<usize>) -> Result<Value, Error> {
@@ -503,4 +555,91 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
         data.push(part(range)?);
     }
     Value::from_parts(vec![data.len()], data, prototype).described("invalid partition result")
+}
+
+pub(super) fn roles(operation: &Operation, _: Mode, operands: &[Value]) -> Roles {
+    let Operation::Primitive { primitive, pairing } = operation else { return Roles(0) };
+    let dyadic = operands.len() - usize::from(*pairing == Pairing::Explicit) == 2;
+    if !dyadic { return Roles(0); }
+    let read = match primitive {
+        Primitive::Shape | Primitive::Take | Primitive::Drop | Primitive::Replicate | Primitive::Reverse(_) | Primitive::Enclose | Primitive::Nest => ReadKind::Count,
+        Primitive::Transpose | Primitive::Windows | Primitive::Keys => ReadKind::Structure,
+        _ => return Roles(0),
+    };
+    Roles(0).with(0, read)
+}
+
+struct CopyGeometry { source: usize, desc: Desc, map: Mapping }
+
+fn copy_geometry(call: &CallView<'_>) -> Result<Option<CopyGeometry>, Error> {
+    use Primitive::*;
+    let Operation::Primitive { primitive, pairing } = call.operation else { unreachable!("a structural row") };
+    let positions: Vec<_> = call.explicit_arguments().collect();
+    let right = *positions.last().ok_or_else(|| Error::domain("a function needs an argument"))?;
+    let left = (positions.len() == 2).then(|| positions[0]);
+    let source = if *primitive == Identity(true) { left.unwrap_or(right) } else { right };
+    let Some(desc) = call.desc(source) else { return Ok(None) };
+    if desc.segments.is_some() { return Ok(None); }
+    let rank = desc.shape().len();
+    let axis = if *pairing == Pairing::Explicit {
+        let spec = call.value(call.explicit - 1, ReadKind::Structure)?;
+        Some(axes(&resolve_axes(&spec, &desc.layout)?, rank)?)
+    } else { None };
+    let parameter = left.map(|position| call.value(position, ReadKind::Structure)).transpose()?;
+    let (layout, atom, map) = match (*primitive, parameter.as_deref()) {
+        (Identity(_), _) | (Index | Bracket, None) => (desc.layout.clone(), desc.atom, Mapping::Linear(1)),
+        (Ravel, None) if axis.is_none() => (Layout::from([desc.layout.count()]), false, Mapping::Linear(1)),
+        (CatenateFirst, None) => {
+            let rows = desc.shape().first().copied().unwrap_or(1);
+            let columns = rustymath::layout::element_count(desc.shape().get(1..).unwrap_or(&[]))?;
+            let names = vec![desc.layout.name(0).cloned(), if rank == 2 { desc.layout.name(1).cloned() } else { None }];
+            let keys = vec![desc.layout.keys(0).cloned(), if rank == 2 { desc.layout.keys(1).cloned() } else { None }];
+            (Layout::from([rows, columns]).with_keys(keys)?.inherit_names(names), false, Mapping::Linear(1))
+        }
+        (Shape, Some(dimensions)) => {
+            if dimensions.rank() > 1 { return Err(Error::new(Kind::Rank, "shape must be a unit or vector")); }
+            let shape = dimensions.as_items().nonnegative_integers::<usize>().described("invalid dimension")?;
+            rustymath::layout::element_count(&shape)?;
+            let layout = Layout::from(shape.into_owned()).with_names(shape_names(dimensions))?;
+            let map = if layout.count() == desc.layout.count() { Mapping::Linear(1) } else { Mapping::Tiled(desc.layout.count()) };
+            (layout, false, map)
+        }
+        (Take, None) => (desc.layout.axes(usize::from(rank != 0)..rank), rank <= 1, Mapping::Linear(1)),
+        (Take | Drop, Some(counts)) => {
+            let Some(counts) = take_counts(counts, axis.as_deref())? else { return Ok(Some(CopyGeometry { source, desc: desc.into_owned(), map: Mapping::Linear(1) })); };
+            let unit = CoreLayout::from(vec![1; counts.len()]);
+            let plan = structure::take(if desc.atom { &unit } else { &desc.layout }, &counts, *primitive == Take)?;
+            (Layout::rearranged(plan.layout, call.input(source).ok_or_else(Error::planning)?.value), false, Mapping::from(plan.steps))
+        }
+        (Reverse(first), counts) => {
+            if rank == 0 { (desc.layout.clone(), desc.atom, Mapping::Linear(1)) }
+            else {
+                let axis = match axis.as_deref() { Some([axis]) => *axis, Some(_) => return Err(Error::new(Kind::Rank, "one axis is required")), None => if first { 0 } else { rank - 1 } };
+                let numbers = rotation(counts)?;
+                let plan = structure::rotate(&desc.layout, axis, counts.zip(numbers.as_deref()).map(|(counts, numbers)| (counts.shape(), numbers)))?;
+                (desc.layout.clone(), desc.atom, Mapping::from(plan.steps))
+            }
+        }
+        (Transpose, None) => {
+            let plan = structure::transpose(&desc.layout, &(0..rank).rev().collect::<Vec<_>>())?;
+            (Layout::rearranged(plan.layout, call.input(source).ok_or_else(Error::planning)?.value), desc.atom, Mapping::from(plan.steps))
+        }
+        _ => return Ok(None),
+    };
+    let kind = crate::number::Kind { weak: atom && desc.kind.weak, ..desc.kind };
+    Ok(Some(CopyGeometry { source, desc: Desc { layout, atom, kind, range: desc.range, segments: None }, map }))
+}
+
+pub(super) fn describe(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
+    Ok(copy_geometry(call)?.map(|copy| Outputs::one(copy.desc)))
+}
+pub(super) fn plan(call: &CallView<'_>, _: &[Desc]) -> Result<Step, Error> {
+    let copy = copy_geometry(call)?.ok_or_else(Error::planning)?;
+    Ok(Step::Copy { source: copy.source as u32 })
+}
+pub(super) fn maps(call: &CallView<'_>, _: &Step, _: &[Desc], set: &mut dyn FnMut(usize, Mapping)) -> Result<Option<rustymath::agreement::ReadPlan>, Error> {
+    let copy = copy_geometry(call)?.ok_or_else(Error::planning)?;
+    let items = call.desc(copy.source).ok_or_else(Error::planning)?.layout.count();
+    set(copy.source, copy.map.clone());
+    Ok(Some(rustymath::agreement::ReadPlan::copy(copy.source, items, copy.map, copy.desc.layout.count(), rustymath::agreement::Missing::Default)))
 }

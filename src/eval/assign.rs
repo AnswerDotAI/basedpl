@@ -1,115 +1,36 @@
 //! Assignment: plain, destructuring, modified and selective.
 
-use super::tree::{Fact, Facts};
+use super::tree::{Facts, Last, Layer, Split, Target, To};
 use super::*;
 use rustymath::error::Kind;
 
+struct ArrayBinding { place: Place, value: Value }
+
 impl Session {
-    /// Whether `nodes` is one name that can hold an array, or brackets of such names, as in `[a b]←`.
-    fn assignment_names(&self, nodes: &[Node]) -> bool {
+    /// Whether `nodes` is one name that can hold an array, or brackets of such names, as in `[a b]←`. `log` keeps what it reads about what names hold (`tree::Fact`).
+    pub(super) fn assignment_names(&self, nodes: &[Node], log: &mut Facts) -> bool {
         let [node] = nodes else { return false };
         match &node.kind {
             NodeKind::Name(name, _) => {
                 (self.bindings.current().is_some() && name.implicit().is_none())
-                    || !matches!(self.bindings.category(*name), Some(Category::Function | Category::Operator | Category::DyadicOperator))
+                    || !matches!(self.path_category(*name, &[], log), Category::Function | Category::Operator | Category::DyadicOperator)
             }
-            NodeKind::Group(inner) => self.assignment_names(inner),
-            // Inside brackets every name is a target, whatever it holds. A pattern's cells each have a key, which `targets` checks.
-            NodeKind::ArrayLiteral { cells, form: ListForm::Items | ListForm::Rows, record } => cells.iter().all(|c| {
-                if *record { crate::syntax::key_colon(c).is_some() }
-                else { matches!(&c[..], [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(c) }
-            }),
-            _ => false,
+            NodeKind::Group(inner) => self.assignment_names(inner, log),
+            _ => crate::syntax::plain_target(nodes),
         }
     }
 
-    /// Whether `node` holds an array (`static_category`).
-    pub(super) fn holds_array(&self, node: &Node, log: &mut Facts) -> bool { self.static_category(node, log) == Category::Value }
-
-    /// The category of what `node` holds, read without evaluating anything. A name has its binding's category, and a dot path such as `m.f` has its field's (`path_category`). Any other group or run has its expression's category, as the operand grammar reads it (`trailing_operand`): `(M←-)` and `(⌽@ 1⌷)` are functions. While a statement records, `log` keeps each name and dot path read (`tree::Fact`).
-    pub(super) fn static_category(&self, node: &Node, log: &mut Facts) -> Category {
-        use Category::*;
-        match &node.kind {
-            NodeKind::Function(_) | NodeKind::System(_) => Function,
-            NodeKind::Operator(op) => Category::of_operator(&self::OperatorNode::Primitive(*op)),
-            NodeKind::Subscript(_) => Operator,
-            NodeKind::Name(name, _) => self.path_category(*name, &[], log),
-            NodeKind::Dfn(d) => match d.kind {
-                DefinitionKind::Function => Function, DefinitionKind::MonadicOperator => Operator, DefinitionKind::DyadicOperator => DyadicOperator
-            },
-            NodeKind::Group(_) | NodeKind::Run(_) => self.trailing_operand(std::slice::from_ref(node), 1, log).map_or(NoResult, |(_, c)| c),
-            _ => Value,
-        }
-    }
-
-    /// The category of `name`'s binding, or of the field that `keys` reach from the array it holds (`Category::field`), read without evaluating anything. While a statement records, `log` keeps what it read (`tree::Fact`).
+    /// The category of `name`'s binding, or of the field that `keys` reach from the array it holds, as its role gives it (`Session::path_role`, which logs the fact), read without evaluating anything. An array that holds a function, an unbound name and an absent `⍺` count as arrays.
     pub(super) fn path_category(&self, name: Name, keys: &[Arc<str>], log: &mut Facts) -> Category {
-        let category =
-            if keys.is_empty() { Category::named(self.bindings.category(name)) } else { Category::field(self.bindings.lookup(name).map(|(_, b)| b), keys) };
-        if let Some(log) = log {
-            let fact = Fact { address: self.bindings.address(name), keys: keys.into(), category };
-            if !log.contains(&fact) { log.push(fact); }
-        }
-        category
-    }
-
-    pub(super) fn trailing_operand(&self, nodes: &[Node], end: usize, log: &mut Facts) -> Result<(usize, Category), Error> {
-        use Category::*;
-        if end == 0 { return Err(Error::new(ErrorKind::Syntax, "missing assignment operand").at(&nodes[0].span)); }
-        let mut start = end - 1;
-        let mut category = match &nodes[start].kind {
-            NodeKind::Group(inner) | NodeKind::Run(inner) => match dot_path(&nodes[start]) {
-                Some((name, keys)) => self.path_category(name, &keys, log),
-                None if inner.is_empty() => return Err(Error::new(ErrorKind::Syntax, "empty assignment operand").at(&nodes[start].span)),
-                // Rewrite the group's own dot access first, so that `(x.a).b` reads `(x.a)` as the field it names.
-                None => { let inner = self.members_with(inner, log); self.trailing_operand(&inner, inner.len(), log)?.1 }
-            },
-            _ => self.static_category(&nodes[start], log),
-        };
-        if matches!(category, Operator) && start > 0 {
-            let superscript = match &nodes[start].kind { NodeKind::Operator(OperatorKind::Super(s)) => Some(*s), _ => None };
-            let (operand, operand_category) = self.trailing_operand(nodes, start, log)?;
-            start = operand;
-            // `ᵘ` always gives an array, and the other superscripts give one on an array.
-            category = match superscript {
-                Some(Superscript::Unit) => Value,
-                _ if matches!(operand_category, Value) && (superscript.is_some() || matches!(nodes[end - 1].kind, NodeKind::Subscript(_))) => Value,
-                _ => Function,
-            };
-        }
-        if start > 0 && matches!(&nodes[start - 1].kind, NodeKind::Run(inner) if self.ends_in_dyadic_operator(inner, log)) {
-            // A run that ends in a dyadic operator holds its left operand, and takes this operand as its right one, as in `(⌽@ 1⌷)`.
-            start -= 1;
-            category = Function;
-        } else if start > 0 && matches!(Rule::get(self.static_category(&nodes[start - 1], log), category), Rule::BindRight) {
-            start = self.trailing_operand(nodes, start - 1, log)?.0;
-            category = Function;
-        }
-        Ok((start, category))
-    }
-
-    /// The target of `←` is the run before it: an array, followed by the function of a modified assignment such as `x+←1`.
-    pub(super) fn assignment_start(&self, nodes: &[Node]) -> Result<usize, Error> {
-        if self.rule_target(nodes).is_some() { return Ok(0); }
-        let end = nodes.len();
-        let (operand, category) = self.trailing_operand(nodes, end, &mut None)?;
-        // Inside a dfn a name before `←` is a target, unless an array comes directly before it. Then the name's value decides, as at top level: a function makes a modified assignment, as in `a(f)←3` and `(a)f←3`.
-        let modified = operand > 0 && matches!(category, Category::Function)
-            && (self.holds_array(&nodes[operand - 1], &mut None) || !self.assignment_names(&nodes[operand..]));
-        let start = if modified { self.trailing_operand(nodes, operand, &mut None)?.0 } else { operand };
-        if start > 0 && self.holds_array(&nodes[start], &mut None) && self.holds_array(&nodes[start - 1], &mut None) {
-            let span = Span { source: nodes[start].span.source.clone(), range: nodes[start - 1].span.range.start..nodes[start].span.range.end };
-            return Err(Error::new(ErrorKind::Syntax, STRAND_TARGET).at(&span));
-        }
-        Ok(start)
+        let role = self.path_role(name, keys, log);
+        match role.0 { Category::Callable | Category::Absent => Category::Value, category => category }
     }
 
     /// Inside a dfn, `⍵` is a local name bound to the argument. The other argument and operand names can't be assigned.
     fn assignable(&self, name: Name) -> bool { name.implicit().is_none() || name == Name::OMEGA && self.bindings.current().is_some() }
     fn store(&self, name: Name, value: Binding, span: &Span) -> Result<(), Error> {
         if !self.assignable(name) { return Err(Error::new(ErrorKind::Syntax, "arguments and operands cannot be assigned here").at(span)); }
-        self.bindings.insert(self.bindings.here(name), value);
-        Ok(())
+        self.store_at(self.bindings.here(name), value, span)
     }
 
     fn array_binding(&self, name: Name, span: &Span) -> Result<ArrayBinding, Error> {
@@ -120,150 +41,112 @@ impl Session {
         Ok(ArrayBinding { place, value })
     }
 
-    fn update_array(&self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> {
-        if value.environment() > binding.place.frame() { return Err(Error::domain("array would export a local closure").at(span)); }
-        if self.transforming() { self.record_write(binding.place).at(span)?; }
-        self.bindings.insert(binding.place, Binding::from_element(value));
+    fn update_array(&self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> { self.store_at(binding.place, Binding::from_element(value), span) }
+    pub(super) fn store_at(&self, place: Place, value: Binding, span: &Span) -> Result<(), Error> {
+        let value = match value {
+            Binding::Function(FunctionBinding::Rebuild { .. }) => Function::from_value(value, span)?.into(),
+            value => value,
+        };
+        if value.environment() > place.frame() { return Err(Error::domain("value would export a local closure").at(span)); }
+        if place.frame() != self.bindings.current() {
+            if self.bindings.get(place).is_some_and(|old| Category::bound(&old) != Category::bound(&value)) {
+                return Err(Error::new(ErrorKind::Syntax, "an assignment can't change a name outside its function between an array, a function and an operator").at(span));
+            }
+        }
+        self.writing(place, span)?;
+        self.bindings.insert(place, value);
         Ok(())
     }
 
-    /// The step after the binder, or a recording, finds where an assignment's target starts: `value` assigned to `target`, or with no value, `a(f)←`'s update (`modify_monadic`). A target that is a plain name with slot `local` in the current frame stores there, because storing a name computes nothing for `assign` to report. Gives the assignment's value, which is no result for an update. `span` is `←`'s.
+    /// Stores a plain assignment and returns its right argument.
     #[inline]
-    pub(super) fn assigned(&self, target: &[Node], value: Option<Binding>, local: Option<u32>, span: &Span) -> Result<Binding, Error> {
-        let Some(value) = value else {
-            return if self.modify_monadic(target)? { Ok(Binding::NoResult) } else { Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(span)) };
-        };
+    pub(super) fn assigned(&self, target: &Target, value: Option<Binding>, local: Option<u32>, span: &Span) -> Result<Binding, Error> {
+        let Some(value) = value else { return Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(span)) };
         match local {
-            Some(k) => self.bindings.insert(Place::Slot(self.bindings.current().expect("a compiled statement runs in its dfn's frame"), k), value.clone()),
-            None => self.assign(target, &value)?,
+            Some(slot) => self.store_at(self.bindings.local(slot), value.clone(), span)?,
+            None => self.assign(target, None, &value)?,
         }
         Ok(value)
     }
 
-    /// Assigns `value` to `target`. `fusion_report` reports an assignment that computed a pending value, as display and destructuring do, as `←`.
-    pub(super) fn assign(&self, target: &[Node], value: &Binding) -> Result<(), Error> {
-        let watch = match value { Binding::Value(v) => self.watch(v), _ => None };
-        self.assign_to(target, value).map_err(|e| e.at(&crate::syntax::cover(target)))?;
-        self.report_assigned(&target[0].span, watch);
-        Ok(())
+    /// A modified assignment, kept apart from `assigned` so that a plain assignment passes no function: `f` updates the target with `value` as its right argument, or with no value, as `a(f)←` does, sets `a` to `f a`. Gives the assignment's value, which is no result for an update.
+    pub(super) fn modified(&self, target: &Target, f: Function, value: Option<Binding>) -> Result<Binding, Error> {
+        let Some(value) = value else {
+            // The update runs as the dyadic form with `f∘⊣`, which ignores its right argument of 0.
+            let f = atop(f, Function::primitive(Primitive::Identity(true)), &target.at)?;
+            self.modify(target, &target.to, f, &Binding::Value(Value::integer(0)))?;
+            return Ok(Binding::NoResult);
+        };
+        self.assign(target, Some(f), &value)?;
+        Ok(value)
     }
 
-    /// The count of items that pending arrays have computed, taken before an assignment that would compute `value`, a pending array, where `fusion_report` would report it.
-    fn watch(&self, value: &Value) -> Option<usize> { (crate::explain::reporting() && value.pending().is_some()).then(crate::explain::computed_so_far) }
-
-    /// Reports, as `←`, the items that pending arrays computed since `watch` counted them.
-    fn report_assigned(&self, span: &Span, watch: Option<usize>) {
-        let Some(before) = watch else { return };
-        let items = crate::explain::computed_so_far() - before;
-        if items > 0 { fusion_report(span, "fusion ends", "←", items); }
+    /// Applies the compiled target, with a modified assignment's function where supplied.
+    pub(super) fn assign(&self, target: &Target, modifier: Option<Function>, value: &Binding) -> Result<(), Error> {
+        match modifier { Some(f) => self.modify(target, &target.to, f, value), None => self.assign_to(target, &target.to, value) }.map_err(|error| error.at(&target.span))
     }
 
-    fn assign_to(&self, target: &[Node], value: &Binding) -> Result<(), Error> {
-        let span = &target[0].span;
-        if let [target] = target {
-            match &target.kind {
-                NodeKind::Name(name, _) => { return self.store(*name, value.clone(), span); }
-                // Assigning to an unknown system name gives the VALUE error that reading it gives, so `•io←0` tells an APL user that BPL has no `•io`.
-                NodeKind::System(name) => return Err(undefined(name, span)),
-                NodeKind::Output => {
-                    return match value {
-                        Binding::Value(a) => {
-                            self.effect(crate::transform::Effect::Acts).at(span)?;
-                            self.execution.output(crate::OutputKind::Explicit, self.display_settings().explicit(a, self.bindings.current().is_some()));
-                            Ok(())
-                        }
-                        _ => return Err(Error::domain("output requires a subject").at(&target.span)),
-                    };
-                }
-                NodeKind::Group(nodes) => {
-                    if self.assignment_names(nodes) { return self.assign_to(nodes, value); }
-                    return self.assign_selected(nodes, None, value);
-                }
-                NodeKind::ArrayLiteral { cells, record, .. } if self.assignment_names(std::slice::from_ref(target)) => {
-                    let right = value.clone().into_value(span)?;
-                    let pairs = Self::destructure(self.targets(cells, *record)?, &right, span)?;
-                    for (cell, item) in pairs.into_iter().rev() { self.assign_to(cell, &Binding::from_element(item))?; }
-                    return Ok(());
-                }
-                _ => (),
+
+    /// Shows `value` as explicit output (`⎕←`), laid out as output inside a function is where `function` holds. A replay of an output effect shows it so too (`program::Act::run`).
+    pub(crate) fn explicit_output(&self, value: &crate::Value, function: bool) { self.execution.output(crate::OutputKind::Explicit, self.display_settings().explicit(value, function)); }
+
+    fn assign_to(&self, target: &Target, to: &To, value: &Binding) -> Result<(), Error> {
+        match to {
+            To::Name(name, span) => self.store(*name, value.clone(), span),
+            To::Output(span) => match value {
+                Binding::Value(a) => Operation::Effect(crate::primitive::Act::Output).call(&[a.clone()], 0).map(|_| ()).map_err(|error| error.at(span)),
+                _ => Err(Error::domain("output requires a subject").at(span)),
+            },
+            To::Names(cells, span) => {
+                let right = value.clone().into_value(span)?;
+                for (cell, item) in Self::destructure(cells, &right, span)?.into_iter().rev() { self.assign_to(target, cell, &Binding::from_element(item))?; }
+                Ok(())
             }
-        }
-        if let Some((name, derivative)) = self.rule_target(target) { return self.attach_rule(name, derivative, value, span); }
-        match self.modified_target(target)? {
-            Some((array, modifier)) => self.modify(array, modifier, value),
-            None => self.assign_selected(target, None, value),
+            To::Rule(name, derivative, span) => self.attach_rule(*name, *derivative, value, span),
+            To::Selected(layer) => self.selected(layer, &mut vec![None; target.slots], None, value),
+            To::Invalid(e) => Err(e.clone()),
         }
     }
 
     /// The name in a target that attaches a hand-written rule to the function it holds, with whether the rule is its derivative: `f∂` for the derivative, or `f⁻¹` for the inverse.
-    fn rule_target(&self, nodes: &[Node]) -> Option<(Name, bool)> {
+    pub(super) fn rule_target(&self, nodes: &[Node], log: &mut Facts) -> Option<(Name, bool)> {
         let [Node { kind: NodeKind::Name(name, _), .. }, Node { kind: NodeKind::Operator(op), .. }] = nodes else { return None };
-        let derivative = match op { OperatorKind::Differentiate => true, OperatorKind::Super(Superscript::Power(-1)) => false, _ => return None };
-        matches!(self.bindings.category(*name), Some(Category::Function)).then_some((*name, derivative))
+        let derivative = match op { OperatorKind::Derivative => true, OperatorKind::Inverse => false, _ => return None };
+        (self.path_category(*name, &[], log) == Category::Function).then_some((*name, derivative))
     }
 
     /// `f⁻¹←g` or `f∂←g`: the nearest binding of `f` gets `g` attached as its inverse or derivative.
     fn attach_rule(&self, name: Name, derivative: bool, value: &Binding, span: &Span) -> Result<(), Error> {
         if !self.assignable(name) { return Err(Error::new(ErrorKind::Syntax, "arguments and operands cannot be assigned here").at(span)); }
-        let Binding::Function(g) = value else { return Err(Error::domain("an inverse or derivative must be a function").at(span)) };
-        let Some((place, Binding::Function(f))) = self.bindings.lookup(name) else { unreachable!("`rule_target` checked the binding") };
-        if g.environment() > place.frame() { return Err(Error::domain("function would export a local closure").at(span)); }
-        let f = if derivative { f.with_derivative(g.clone()) } else { f.with_inverse(g.clone()) };
-        self.bindings.insert(place, Binding::Function(f));
-        Ok(())
+        let g = Function::from_value(value.clone(), span)?;
+        let (place, binding) = self.bindings.lookup(name).expect("rule_target checked the binding");
+        let f = Function::from_value(binding, span)?;
+        let f = if derivative { f.with_derivative(g) } else { f.with_inverse(g) };
+        self.store_at(place, f.into(), span)
     }
 
-    /// Splits a modified assignment's target into its array part and its function, as `a` and `f` in `a(f)←`.
-    fn modified_target<'a>(&self, target: &'a [Node]) -> Result<Option<(&'a [Node], Function)>, Error> {
-        let (operand, category) = self.trailing_operand(target, target.len(), &mut None)?;
-        if operand == 0 || !matches!(category, Category::Function) { return Ok(None); }
-        Ok(self.modifier(&target[operand..])?.map(|f| (&target[..operand], f)))
+    /// Updates a modified assignment's target `to` with `modifier`, taking `value` as its right argument: names update the arrays they hold, and a selection writes through `write_modified`.
+    fn modify(&self, target: &Target, to: &To, modifier: Function, value: &Binding) -> Result<(), Error> {
+        match to {
+            To::Selected(layer) => self.selected(layer, &mut vec![None; target.slots], Some(modifier), value),
+            To::Invalid(e) => Err(e.clone()),
+            names => self.modify_names(names, &value.clone().into_value(&target.at)?, &modifier),
+        }
     }
 
-    /// Updates the array part of a modified assignment's target with `modifier`, taking `value` as its right argument.
-    fn modify(&self, array: &[Node], modifier: Function, value: &Binding) -> Result<(), Error> {
-        let span = &array[0].span;
-        if self.assignment_names(array) { return self.modify_names(array, &value.clone().into_value(span)?, &modifier); }
-        self.assign_selected(array, Some(modifier), value)
-    }
-
-    /// `a(f)←` with no value sets `a` to `f a`, and gives whether `target` has that form. It runs as the dyadic form with `f∘⊣`, which ignores its right argument of 0.
-    pub(super) fn modify_monadic(&self, target: &[Node]) -> Result<bool, Error> {
-        let Some((array, f)) = self.modified_target(target)? else { return Ok(false) };
-        let f = atop(f, Function::primitive(Primitive::Identity(true)), &target[0].span)?;
-        self.modify(array, f, &Binding::Value(Value::integer(0)))?;
-        Ok(true)
-    }
-
-    fn modify_names(&self, nodes: &[Node], right: &Value, modifier: &Function) -> Result<(), Error> {
-        let [node] = nodes else { unreachable!() };
-        match &node.kind {
-            NodeKind::Group(inner) => self.modify_names(inner, right, modifier),
-            NodeKind::Name(name, _) => {
-                let binding = self.array_binding(*name, &node.span)?;
-                // Joining along the leading axis grows the array in place.
-                if let Some(p @ (Primitive::Ravel | Primitive::CatenateFirst)) = modifier.as_primitive() {
-                    let first = matches!(p, Primitive::CatenateFirst);
-                    if let Some((cells, names)) = crate::primitive::append_plan(&binding.value, right, first)? {
-                        if cells.environment() > binding.place.frame() { return Err(Error::domain("array would export a local closure").at(&node.span)); }
-                        return self.write_kept(binding, &node.span, |value| {
-                            value.append(&cells, names.as_deref()).described("catenate has duplicate axis keys").at(&node.span)
-                        });
-                    }
-                }
-                let updated = modifier.call_array(Some(&binding.value), right, &node.span)?;
-                self.update_array(&binding, updated, &node.span)
+    fn modify_names(&self, to: &To, right: &Value, modifier: &Function) -> Result<(), Error> {
+        match to {
+            To::Name(name, span) => {
+                let binding = self.array_binding(*name, span)?;
+                self.update_array(&binding, modifier.call_array(Some(&binding.value), right, span)?, span)
             }
-            NodeKind::ArrayLiteral { cells, record, .. } => {
-                for (cell, item) in Self::destructure(self.targets(cells, *record)?, right, &node.span)? { self.modify_names(cell, &item, modifier)?; }
-                Ok(())
-            }
-            _ => unreachable!(),
+            To::Names(cells, span) => { for (cell, item) in Self::destructure(cells, right, span)? { self.modify_names(cell, &item, modifier)?; } Ok(()) }
+            To::Invalid(error) => Err(error.clone()), _ => unreachable!("a modified target is a name or a destructuring pattern"),
         }
     }
 
     /// The cells of a destructuring target, each with the nodes it assigns and, in a pattern, the key it reads. A pattern cell `key:target` reads the item with that key, spelled: a name stands for itself and a string literal for its text, never for a value. `key:` assigns the name `key`.
-    fn targets<'a>(&self, cells: &'a [Vec<Node>], record: bool) -> Result<Vec<(Option<Arc<str>>, &'a [Node])>, Error> {
+    pub(super) fn targets<'a>(&self, cells: &'a [Vec<Node>], record: bool, log: &mut Facts) -> Result<Vec<(Option<Arc<str>>, &'a [Node])>, Error> {
         if !record { return Ok(cells.iter().map(|cell| (None, &cell[..])).collect()); }
         cells.iter().map(|cell| {
             let colon = crate::syntax::key_colon(cell)
@@ -275,249 +158,124 @@ impl Session {
                 _ => return Err(key_error()),
             };
             let target = if colon + 1 == cell.len() { &cell[..colon] } else { &cell[colon + 1..] };
-            if !(matches!(target, [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(target)) {
+            if !(matches!(target, [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(target, log)) {
                 return Err(Error::new(ErrorKind::Syntax, "a pattern assigns to a name or to brackets of names").at(&target[0].span));
             }
             Ok((Some(key), target))
         }).collect()
     }
 
-    /// The item of `right` that each target takes: by key in a pattern, and otherwise by position, whatever keys `right` has. One item fills every positional target.
-    fn destructure<'a>(targets: Vec<(Option<Arc<str>>, &'a [Node])>, right: &Value, span: &Span) -> Result<Vec<(&'a [Node], Value)>, Error> {
-        let parts = || -> Result<Vec<Value>, Error> {
-            if right.shape().len() == 1 { Ok(right.elements().collect()) } else { right.major_cells().described("array exceeds limits").at(span) }
-        };
-        if targets.iter().all(|(key, _)| key.is_none()) {
-            if right.is_singleton() { return Ok(targets.into_iter().map(|(_, target)| (target, right.at(0))).collect()); }
-            let parts = parts()?;
-            if parts.len() != targets.len() { return Err(Error::new(Kind::Length, "destructuring needs one item for each name").at(span)); }
-            return Ok(targets.into_iter().zip(parts).map(|((_, target), part)| (target, part)).collect());
-        }
-        let keys = right.keys(0).ok_or_else(|| Error::domain("a pattern reads items by key, and these items have none").at(span))?;
-        let parts = parts()?;
-        targets.into_iter().map(|(key, target)| {
-            let key = key.expect("every cell of a pattern has a key");
-            let i = keys.position(&key).ok_or_else(|| Error::new(ErrorKind::Value, format!("no item has the key {key}")).at(&target[0].span))?;
-            Ok((target, parts[i].clone()))
+    /// The item of `right` that each target in `cells` takes: by key in a pattern, and otherwise by position, whatever keys `right` has. One item fills every positional target. A vector's part is its item, and any other array's part is a major cell (`Cells::get`).
+    fn destructure<'a>(cells: &'a [(Option<Arc<str>>, To, Span)], right: &Value, span: &Span) -> Result<Vec<(&'a To, Value)>, Error> {
+        let positional = cells.iter().all(|(key, ..)| key.is_none());
+        if positional && right.is_singleton() { return Ok(cells.iter().map(|(_, target, _)| (target, right.at(0))).collect()); }
+        let keys = if positional { None } else { Some(right.keys(0).ok_or_else(|| Error::domain("a pattern reads items by key, and these items have none").at(span))?) };
+        let items = right.cells(right.shape().len().saturating_sub(1)).described("array exceeds limits").at(span)?;
+        if positional && items.len() != cells.len() { return Err(Error::new(Kind::Length, "destructuring needs one item for each name").at(span)); }
+        cells.iter().enumerate().map(|(i, (key, target, at))| {
+            let i = match keys {
+                Some(keys) => {
+                    let key = key.as_ref().expect("every cell of a pattern has a key");
+                    keys.position(key).ok_or_else(|| Error::new(ErrorKind::Value, format!("no item has the key {key}")).at(at))?
+                }
+                None => i,
+            };
+            let part = if items.shape().is_empty() { Ok(right.element(i)) } else { items.get(i) };
+            Ok((target, part.described("array exceeds limits").at(span)?))
         }).collect()
     }
 
-    fn modifier(&self, nodes: &[Node]) -> Result<Option<Function>, Error> {
-        if nodes.is_empty() { return Ok(None); }
-        match self.bind(nodes)?.value {
-            Binding::Function(f) => Ok(Some(f)), _ => Err(Error::new(ErrorKind::Syntax, "modified assignment needs a function").at(&nodes[0].span))
-        }
-    }
-
-    fn extend_selected(&self, nodes: &mut Vec<Node>, descend: bool) -> Result<(), Error> {
-        if let [Node { kind: NodeKind::Group(inner), .. }] = nodes.as_mut_slice() { return self.extend_selected(inner, descend); }
-        // A key before `⊃`, `⌷` or `.[]` may name an entry that the container lacks. It can be a list of keys.
-        let Some(i) = nodes.iter().position(|n| matches!(n.kind.primitive(), Some(Primitive::Mix | Primitive::Index | Primitive::Bracket))) else {
-            return Ok(());
-        };
-        if i == 0 || i + 1 == nodes.len() || !nodes[..i].iter().all(crate::syntax::key_node) { return Ok(()); }
-        let span = nodes[0].span.clone();
-        let value = self.array_result(&nodes[..i])?;
-        // `⌷` and `.[]` select in one level. A path's items go down level by level.
-        let pick = nodes[i].kind.primitive() == Some(Primitive::Mix);
+    /// Builds missing keyed containers. Each index expression runs once.
+    fn extend(&self, layer: &Layer, run: &mut [Option<Value>], descend: bool) -> Result<(), Error> {
+        let Some(split) = layer.split.as_ref().filter(|split| split.keyed) else { return Ok(()) };
+        let value = self.index(split, run)?;
+        let pick = split.p == Primitive::Mix;
         let items = if pick { crate::primitive::coordinate_fields(&value).collect() } else { vec![value.clone()] };
-        let extend = |target: &mut Value, write| {
-            if pick { crate::primitive::extend_path(&items, target, descend, write) }
-            else { crate::primitive::extend_indices(&items[0], target, descend, write) }
-        };
-        // Replace the keys with their value, so that they are evaluated once.
-        nodes.splice(..i, [Node { kind: NodeKind::Literal(value), span: span.clone() }]);
         if !items.iter().flat_map(crate::primitive::coordinate_fields).any(|s| matches!(crate::keyed::Selector::of(&s), Ok(Some(_)))) { return Ok(()); }
-        let mut container = nodes.split_off(2);
-        self.extend_selected(&mut container, true)?;
-        if let Some((binding, path)) = self.direct_item(&mut container)? {
-            let mut target = crate::primitive::item_at(&binding.value, &path, None);
-            let lacks = extend(&mut target, false)?;
-            // Holding the item would make the write copy it.
-            drop(target);
-            if lacks { self.write_kept(binding, &span, |value| extend(value.item_mut(&path, false), true).map(drop))?; }
-        } else {
-            let mut target = self.array_result(&container)?;
-            if extend(&mut target, true)? { self.assign_selected(&container, None, &Binding::Value(target))?; }
-        }
-        nodes.extend(container);
+        let container = &split.container;
+        self.extend(container, run, true)?;
+        let mut target = self.read(container, run)?;
+        let changed = if pick { crate::primitive::extend_path(&items, &mut target, descend, true)? }
+            else { crate::primitive::extend_indices(&items[0], &mut target, descend, true)? };
+        if changed { self.selected(container, run, None, &Binding::Value(target))?; }
         Ok(())
     }
 
     /// The `←` of an assignment on the path from a selection target to its root array, as in `(U←T).[k]←v`. The root is the last node at each level.
-    fn root_assignment(&self, nodes: &[Node]) -> Option<Span> {
-        let nodes = self.selection_members(nodes);
+    pub(super) fn root_assignment(nodes: &[Node]) -> Option<Span> {
         if let Some(node) = nodes.iter().find(|n| matches!(n.kind, NodeKind::Assign)) { return Some(node.span.clone()); }
-        match &nodes.last()?.kind { NodeKind::Group(inner) | NodeKind::Run(inner) => self.root_assignment(inner), _ => None }
+        match &nodes.last()?.kind { NodeKind::Group(inner) | NodeKind::Run(inner) => Self::root_assignment(inner), _ => None }
     }
 
-    fn assign_selected(&self, nodes: &[Node], modifier: Option<Function>, value: &Binding) -> Result<(), Error> {
-        if let Some(span) = self.root_assignment(nodes) { return Err(Error::new(ErrorKind::Syntax, INVALID_SELECTION).at(&span)); }
-        let right = &value.clone().into_value(&nodes[0].span)?;
-        let span = crate::syntax::cover(nodes);
-        let mark = crate::explain::itemwise_mark();
-        let mut nodes = self.selection_members(nodes).into_owned();
-        if modifier.is_none() { self.extend_selected(&mut nodes, false)?; }
-        let (binding, selection, values) = match self.direct_target(&mut nodes)? {
-            Some((binding, selection)) => (binding, selection, right.clone()),
-            None => {
-                let level = self.begin(crate::transform::Kind::Label);
-                let selected = self.selection_expression(&nodes, level);
-                self.end();
-                let (binding, mut labels, selected) = selected?;
-                let read = labels.read(&selected, level);
-                // The labelled value holds the array too, so dropping it lets the write change the array in place.
-                drop(selected);
-                let read = read.ok_or_else(|| Error::domain("function is not valid for selective assignment").at(&span))?;
-                let (selection, values) = labels.replacements(read, right, &span).at(&span)?;
-                (binding, selection, values)
+    /// Walks the selected graph back to the root and builds its At update.
+    fn selected(&self, layer: &Layer, run: &mut [Option<Value>], modifier: Option<Function>, value: &Binding) -> Result<(), Error> {
+        let right = value.clone().into_value(&layer.at)?;
+        if modifier.is_none() { self.extend(layer, run, false)?; }
+        let binding = self.root(layer)?;
+        let root = crate::selection::rooted(&binding.value)?;
+        let target = self.fold(layer, run, root.clone())?;
+        let walk = crate::selection::selecting(&target, &root)?
+            .ok_or_else(|| Error::domain("cannot assign to an item that isn't from the original").at(&layer.span))?;
+        let updated = match modifier {
+            None => walk.write(right, None)?,
+            Some(f) => match f.as_primitive() {
+                Some(primitive) => walk.write(right, Some(primitive))?,
+                None => {
+                    let each = Operator::Kind(OperatorKind::Each).derive(Value::Function(f), None)?;
+                    walk.write(each.call_array(Some(&target), &right, &layer.span)?, None)?
+                }
             }
         };
-        let result = match modifier {
-            Some(f) => self.write_modified(binding, &selection, &f, &values, &span), None => self.write_selection(binding, &selection, &values, &span)
+        self.update_array(&binding, updated, &layer.span)
+    }
+
+
+    /// The binding of the array that `layer` ends in, its root.
+    fn root(&self, layer: &Layer) -> Result<ArrayBinding, Error> {
+        match &layer.last {
+            Last::Name(name, span) => self.array_binding(*name, span),
+            Last::Container => self.root(&layer.split.as_ref().expect("a split holds the container").container),
+            Last::Layer(inner) => self.root(inner),
+            Last::Invalid(e) => Err(e.clone()),
+        }
+    }
+
+    /// What `layer`'s code gives from `root`, the root array's value: through a split that the run takes, where `p` with the index value applies to the container's value (`Split::unit`), and otherwise the code before its last node, run on what the last node gives.
+    fn fold(&self, layer: &Layer, run: &mut [Option<Value>], root: Value) -> Result<Value, Error> {
+        if let Some(split) = layer.split.as_ref().filter(|split| split.unit && split.taken(run)) {
+            let value = self.fold(&split.container, run, root)?;
+            let index = self.index(split, run)?;
+            return Function::primitive(split.p).call_array(Some(&index), &value, &split.p_at);
+        }
+        let value = match &layer.last {
+            Last::Name(..) => root,
+            Last::Container => self.fold(&layer.split.as_ref().expect("a split holds the container").container, run, root)?,
+            Last::Layer(inner) => self.fold(inner, run, root)?,
+            Last::Invalid(_) => unreachable!("`root` raises the error before the walk"),
         };
-        if let Some(mark) = mark { crate::explain::claim_itemwise(mark, || span.text().into(), &span); }
-        result
+        let Some(prefix) = &layer.prefix else { return Ok(value) };
+        let seed = Entity::new(Term::Binding(Binding::Value(value)), narrow(&layer.last_at.range), false, None);
+        let Step::Done(bound) = prefix.as_ref().map_err(Clone::clone)?.run_seeded(self, seed)? else { unreachable!("a target's code isn't in tail position") };
+        bound.value.into_value(&layer.last_at)
     }
 
-    /// Writes `values` at `selection` into the array that `binding` kept, then stores it under the name.
-    fn write_selection(&self, binding: ArrayBinding, selection: &Selection, values: &Value, span: &Span) -> Result<(), Error> {
-        // The items already in the array passed this check when they were stored.
-        if values.environment() > binding.place.frame() { return Err(Error::domain("array would export a local closure").at(span)); }
-        self.write_kept(binding, span, |value| selection.write_into(value, values, span))
+    /// What `layer` gives as an expression: its code run on its root array's value.
+    fn read(&self, layer: &Layer, run: &mut [Option<Value>]) -> Result<Value, Error> {
+        let root = self.root(layer)?.value;
+        self.fold(layer, run, root)
     }
 
-    /// Runs `write` on the array that `binding` kept, then stores it under the name. The name's current binding goes first, so the write happens in place unless something else holds the array. Running levels record the write first (`Session::record_write`), so a batched map stops before it. `write` makes every check before it changes anything, so an error or a stop leaves the name as it was. `fusion_report` reports a write that computes a pending array, as `←`.
-    fn write_kept(&self, binding: ArrayBinding, span: &Span, write: impl FnOnce(&mut Value) -> Result<(), Error>) -> Result<(), Error> {
-        let ArrayBinding { place, mut value } = binding;
-        if self.transforming() { self.record_write(place).at(span)?; }
-        let watch = self.watch(&value);
-        // The kept array can be written in place only when the name no longer holds it too.
-        let current = self.bindings.remove(place);
-        let same = matches!(&current, Some(Binding::Value(v)) if v.storage_id() == value.storage_id());
-        let current = current.filter(|_| !same);
-        if let Err(e) = write(&mut value) {
-            if let Some(restored) = if same { Some(Binding::Value(value)) } else { current } { self.bindings.insert(place, restored); }
-            return Err(e.at(span));
-        }
-        self.report_assigned(span, watch);
-        self.bindings.insert(place, Binding::from_element(value));
-        Ok(())
-    }
-
-    /// A target whose text gives its positions: `I⌷`, `.[I]` or a path `L⊃` of a name or of such a target, as dot access writes them. It gives the binding and the selection without the labels that other targets need. Each index is evaluated once and its node becomes its value, so a target that needs labels after all evaluates nothing twice.
-    fn direct_target(&self, nodes: &mut [Node]) -> Result<Option<(ArrayBinding, Selection)>, Error> {
-        let span = nodes[0].span.clone();
-        match nodes {
-            [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_target(inner),
-            [left, Node { kind: NodeKind::Function(Builtin::Primitive(p @ (Primitive::Index | Primitive::Bracket | Primitive::Mix))), .. }, rest @ ..]
-                if self.holds_array(left, &mut None) =>
-            {
-                let Some((binding, path)) = self.direct_item(rest)? else { return Ok(None) };
-                let left = self.evaluate_once(left)?;
-                let item = crate::primitive::item_at(&binding.value, &path, None);
-                let context = &span;
-                let selection = match p {
-                    Primitive::Mix => crate::primitive::pick_selection(&left, &item)?,
-                    _ => crate::primitive::squad_selection(&left, &item, matches!(p, Primitive::Bracket), &context)?,
-                };
-                Ok(Some((binding, selection.within(&path)?)))
-            }
-            _ => Ok(None),
-        }
-    }
-
-    /// The array that `nodes` names, or the one whole item that a direct target reaches: its binding and its path.
-    fn direct_item(&self, nodes: &mut [Node]) -> Result<Option<(ArrayBinding, Vec<usize>)>, Error> {
-        match nodes {
-            [Node { kind: NodeKind::Name(name, _), span }] => Ok(Some((self.array_binding(*name, span)?, vec![]))),
-            [Node { kind: NodeKind::Group(inner) | NodeKind::Run(inner), .. }] => self.direct_item(inner),
-            _ => Ok(self.direct_target(nodes)?.and_then(|(binding, selection)| match (selection.frame, selection.targets) {
-                (ResultFrame::Direct, Targets::Offsets(offsets)) => Some((binding, offsets)),
-                (ResultFrame::Direct, Targets::Paths(mut paths)) if paths.len() == 1 => Some((binding, paths.remove(0))), _ => None
-            })),
-        }
-    }
-
-    /// The value of `node`, which then becomes a literal, so that nothing evaluates it again.
-    fn evaluate_once(&self, node: &mut Node) -> Result<Value, Error> {
-        let value = self.array_result(std::slice::from_ref(node))?;
-        node.kind = NodeKind::Literal(value.clone());
+    /// The value of `split`'s index, evaluated once in a run, one level deeper, and kept at its slot.
+    fn index(&self, split: &Split, run: &mut [Option<Value>]) -> Result<Value, Error> {
+        if let Some(value) = &run[split.slot] { return Ok(value.clone()); }
+        let index = split.index.as_ref().map_err(Clone::clone)?;
+        self.descend(&split.at)?;
+        let ran = index.run(self, false);
+        self.ascend();
+        let Step::Done(bound) = ran? else { unreachable!("an index isn't in tail position") };
+        let value = bound.array(&split.at)?;
+        run[split.slot] = Some(value.clone());
         Ok(value)
     }
 
-    /// The target `nodes` evaluated on its root name's array, labelled at label level `level` (`selection::labelled`), with the binding the name kept and the labels that turn the result's labels back into places. A group or run that ends the target is the root of the nodes before it.
-    fn selection_expression(&self, nodes: &[Node], level: u64) -> Result<(ArrayBinding, crate::selection::Labels, Value), Error> {
-        let members = self.selection_members(nodes);
-        let nodes = &members[..];
-        let root = nodes.len() - 1;
-        let span = &nodes[root].span;
-        let (binding, labels, selected) = match &nodes[root].kind {
-            NodeKind::Name(name, _) => {
-                let binding = self.array_binding(*name, span)?;
-                let (labels, selected) = crate::selection::labelled(&binding.value, level, span)?;
-                (binding, labels, selected)
-            }
-            NodeKind::Group(inner) | NodeKind::Run(inner) => self.selection_expression(inner, level)?,
-            _ if root > 0 && self.holds_array(&nodes[root - 1], &mut None) && self.holds_array(&nodes[root], &mut None) => {
-                let span = Span { source: span.source.clone(), range: nodes[root - 1].span.range.start..span.range.end };
-                return Err(Error::new(ErrorKind::Syntax, STRAND_TARGET).at(&span));
-            }
-            _ => return Err(Error::new(ErrorKind::Syntax, "selection must end in an array name").at(span)),
-        };
-        if root == 0 { return Ok((binding, labels, selected)); }
-        let seed = Entity::new(Term::Binding(Binding::Value(selected)), narrow(&span.range), false, None);
-        let selected = Binder::evaluate_seeded(&nodes[..root], self, seed)?.value.into_value(span)?;
-        Ok((binding, labels, selected))
-    }
-
-    /// Writes the new value of each target of `selection` into `binding`. `f` takes the target's item on its left and its value from `right` on its right. A target that repeats a position reads the result of the earlier one, so repeats accumulate. A target at a fill reads the fill, and its write is dropped. An error leaves the array unchanged. A pervasive primitive combines at the targets' places, as accumulation does (`Primitive::at`): in place where it can, reading a walk's targets without listing them, and otherwise in one call, with repeated positions taking rounds. Any other `f` runs once for each target. `•explain` records each path as an accumulation.
-    fn write_modified(&self, binding: ArrayBinding, selection: &Selection, f: &Function, right: &Value, span: &Span) -> Result<(), Error> {
-        let right = selection.checked(right).at(span)?;
-        if let (ResultFrame::Array(_), Some(writes), Some(p)) = (&selection.frame, selection.targets.writes(), f.as_primitive()) {
-            if p.facts(true).pervasive() { return self.write_kept(binding, span, |z| p.at(z, writes, &right, span)); }
-        }
-        // Each cell's own targets in a batched run combine on the batch's whole. Any other function stops the run. Its cells then run one at a time.
-        if let Targets::Cells(cells) = &selection.targets {
-            let Some(p) = f.as_primitive().filter(|p| p.facts(true).pervasive()) else { return Err(cells.stop().into()) };
-            return self.write_kept(binding, span, |z| { *z = cells.combined(z, &right, p, span)?; Ok(()) });
-        }
-        // Each target's path is read below, and the modifier never runs for a target at a fill.
-        if let Some(listed) = selection.listed() { return self.write_modified(binding, &listed, f, &right, span); }
-        if let Some((kept, right)) = selection.without_fills(&right, span).at(span)? { return self.write_modified(binding, &kept, f, &right, span); }
-        let original = &binding.value;
-        let mut results: Vec<Value> = Vec::with_capacity(selection.targets.len());
-        let mut latest: HashMap<&[usize], usize> = HashMap::new();
-        for i in 0..selection.targets.len() {
-            let path = selection.targets.path(i);
-            let item = match latest.get(path) { Some(&j) => results[j].clone(), None => crate::primitive::item_at(original, path, None) };
-            results.push(f.call_array(Some(&item), &selection.item(&right, i), span)?);
-            latest.insert(path, i);
-        }
-        crate::explain::accumulated(selection.targets.len(), original.len(), "item by item");
-        crate::explain::itemwise(rustymath::events::Route::Accumulation, selection.targets.len());
-        let values = match &selection.frame {
-            ResultFrame::Direct => results.pop().unwrap_or(right),
-            ResultFrame::Array(layout) if !results.is_empty() => {
-                Value::new(layout.shape().to_vec(), results).described("invalid modified selection").at(span)?
-            }
-            ResultFrame::Array(_) => right,
-        };
-        self.write_selection(binding, selection, &values, span)
-    }
-}
-
-/// The name and keys of the dot path that the group `node` is, such as `m.a.f`, which dot access writes as `"f"⊃"a"⊃m`. `None` for any other group.
-fn dot_path(node: &Node) -> Option<(Name, Vec<Arc<str>>)> {
-    let (mut node, mut keys) = (node, Vec::new());
-    while let NodeKind::Group(inner) = &node.kind {
-        let [Node { kind: NodeKind::Literal(key), .. }, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Mix)), .. }, root] = &inner[..] else {
-            return None;
-        };
-        keys.push(crate::keyed::name(key)?);
-        node = root;
-    }
-    let NodeKind::Name(name, _) = &node.kind else { return None };
-    keys.reverse();
-    Some((*name, keys))
 }

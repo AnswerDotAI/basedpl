@@ -1,9 +1,10 @@
 use crate::execution::check;
-use crate::{Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Frame, generated_len, saturated}};
+use crate::{Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Frame, generated_len}};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, ToPrimitive, Zero};
 use rustymath::error::Kind;
 use rustymath::number_theory as nt;
+use rustymath::structure::Count;
 
 fn number(e: &Value) -> Result<Number, Error> {
     match e { Value::Number(n) => Ok(n.clone()), _ => Err(Error::domain("number theory requires numeric arguments")) }
@@ -23,16 +24,16 @@ fn factor_result(selector: Option<&Number>, n: BigUint) -> Result<Value, Error> 
         return array(vec![data.len()], data);
     };
     let inf = x.as_float().filter(|x| x.is_infinite());
-    let count = if inf.is_some() { 0 } else { x.integer().described("factor count must be whole or infinite")? };
-    if count < 0 || inf == Some(f64::NEG_INFINITY) {
-        let start = if count < 0 { factors.len().saturating_sub(saturated(count.unsigned_abs())) } else { 0 };
+    let count = Count::of(if inf.is_some() { 0 } else { x.integer().described("factor count must be whole or infinite")? });
+    if count.negative || inf == Some(f64::NEG_INFINITY) {
+        let start = if count.negative { factors.len().saturating_sub(count.magnitude) } else { 0 };
         let factors = &factors[start..];
         let data = factors.iter().map(|(p, _)| exact(p.clone())).chain(factors.iter().map(|(_, n)| exact(*n))).collect();
         return array(vec![2, factors.len()], data);
     }
     let mut primes = nt::Primes::new(0);
     let (mut data, mut i) = (Vec::new(), 0);
-    while if inf.is_some() { i < factors.len() } else { data.len() < saturated(count.unsigned_abs()) } {
+    while if inf.is_some() { i < factors.len() } else { data.len() < count.magnitude } {
         generated_len(&[data.len() + 1])?;
         let p = BigUint::from(primes.next().transpose()?.ok_or_else(beyond)?);
         let e = if factors.get(i).is_some_and(|(f, _)| *f == p) { i += 1; factors[i - 1].1 } else { 0 };
@@ -108,7 +109,7 @@ fn each_cell(left: Option<&Value>, right: &Value, f: impl Fn(Option<&Number>, Bi
         cells.push(f(x.as_ref(), n)?);
     }
     if right.is_atom() && left.is_none_or(Value::is_atom) { return Ok(cells.remove(0)); }
-    agreement.layout.assemble(&cells[..agreement.len], &cells[0]).described("number theory result exceeds array limits")
+    agreement.layout.assemble(&cells[..agreement.len], &cells[0], crate::array::Widening::Items).described("number theory result exceeds array limits")
 }
 
 pub(crate) fn product(right: &Value) -> Result<Value, Error> {
@@ -122,5 +123,5 @@ pub(crate) fn product(right: &Value) -> Result<Value, Error> {
         data.push(exact(product));
     }
     if cells.frame().is_empty() { return Ok(data.remove(0)); }
-    cells.frame_layout().collect(data, exact(BigInt::zero())).described("invalid factor product")
+    cells.frame_layout().collect(data, exact(0)).described("invalid factor product")
 }

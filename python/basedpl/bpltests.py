@@ -1,5 +1,5 @@
 "Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set the budgets of basedpl's and rustymath's speed tests."
-import json, math, os, re, statistics, subprocess, sys, tempfile, time, tomllib
+import difflib, json, math, os, re, statistics, subprocess, sys, tempfile, time, tomllib
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from itertools import accumulate
@@ -7,13 +7,16 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Annotated
 from fastws import store
+from fastws.cargo import run_tests
 from fastws.timelock import timing_lock
+from fastws.procs import JOB_ENV, bounded, kill_group
 from fastcore.script import parse_cli
 from fastcore.basics import listify
+from fastcore.meta import delegates
 from ._core import _captured_literal, _reference_file, _retry_pauses, _budget, _budget_lines, _budget_columns as _BUDGETS
 from .reference import Corpus, _dyalog_string
-from . import BplError
-from .worker import NATIVE, Worker, resolved, _commented
+from . import BplError, _value
+from .worker import LIMIT, Limit, Worker, environment, fresh, resolved, _commented, _installed
 from .syntax import linear
 
 SEPARATOR = '⍝ =>'
@@ -189,21 +192,36 @@ def add(ids, output='tests/reference', directory='provenance'):
     return list(rows)
 
 
-def _checked(worker, kind, spec, sentinel):
-    "The failures that `worker` gives for a `kind` request, `reference` or `page`, with `spec`, without the case that `sentinel` picks. A reply that doesn't report that case raises `ValueError`, so a worker that checked nothing, or passed everything, never reads as a pass."
-    r = worker.request({kind: spec})
+_STALL = 60 # Seconds that a check's worker may start no case or example before it counts as stuck, as a deadlock leaves it: a case runs at most a few evaluations of `reference::TIMEOUT`, 2 s each
+
+def _checked(worker, kind, spec, sentinel, bpl, limit):
+    "The failures that `worker` gives for a `kind` request, `reference` or `page`, with `spec`, without the case that `sentinel` picks. A reply that doesn't report that case raises `ValueError`, so a worker that checked nothing, or passed everything, never reads as a pass. A reference worker notes each case on stderr as it starts it (`case LINE`), and a page worker each example (`example LINE`). Where an abort, such as a stack overflow, ends the worker, or the worker starts nothing for `_STALL` seconds, the last noted case fails as `crashed` or `timeout`, and the cases after it run in a fresh worker of `bpl` while `limit` has time left. A stuck worker is closed, so no worker outlives the timing lock's hold (`_failures`). Each request gets what's left of `limit`: where it runs out, the worker stops and gives the next case or example as `unchecked`, and the sentinel goes unchecked too."
+    try: r = worker.request({kind: spec}, timeout=limit.left(), stall=_STALL)
+    except (EOFError, TimeoutError) as e:
+        started = re.findall(r'^case (\d+)$', worker.diagnostics, re.M)
+        if kind != 'reference' or not started: raise
+        line, stuck = int(started[-1]), isinstance(e, TimeoutError)
+        tail = worker.diagnostics.rsplit(f'case {line}\n', 1)[-1].strip()
+        rest = [i for i in spec['ids'] if not isinstance(i, int) or i > line]
+        try: limit.left()
+        except TimeoutError: rest = None
+        message = (str(e) if stuck else 'the worker aborted') + (f': {tail}' if tail else '') + ('; the call reached its limit, so the cases after it are unchecked' if rest is None else '')
+        failed = dict(id='', line=line, section='', comment='', code='', expected_code='', status='timeout' if stuck else 'crashed', message=message, actual=None)
+        if rest is None: return [failed]
+        with Worker(bpl) as w: return [failed, *_checked(w, kind, dict(spec, ids=rest), sentinel, bpl, limit)]
     if e := r['error']: raise ValueError(e['message'])
-    if sum(map(sentinel, r['failures'])) != 1: raise ValueError("the worker didn't report the case that must fail, so its result can't be trusted")
+    stopped = any(f.get('status') == 'unchecked' for f in r['failures'])
+    if not stopped and sum(map(sentinel, r['failures'])) != 1: raise ValueError("the worker didn't report the case that must fail, so its result can't be trusted")
     return [f for f in r['failures'] if not sentinel(f)]
 
 
-def _failures(kind, specs, sentinel, build=None):
-    "The failures that `_checked` gives for each of `specs`, each in a fresh worker, all at once, every one running the same build, resolved once. The workers run while this holds the timing lock shared, as the reference test does. Every worker closes before this returns or raises, which ends any request still running, as after a Ctrl-C. Each failure holds its code's linear form (`syntax.linear`) as `linear`."
-    bpl = resolved(build)
-    with timing_lock():
+def _failures(kind, specs, sentinel, build=None, timeout=LIMIT):
+    "The failures that `_checked` gives for each of `specs`, each in a fresh worker, all at once, every one running the same build, resolved once. The workers run while this holds the timing lock shared, as the reference test does, and share `timeout`'s limit (`worker.Limit`), counted while this holds the lock. Every worker closes before this returns or raises, which ends any request still running, as after a Ctrl-C. Each failure holds its code's linear form (`syntax.linear`) as `linear`."
+    bpl, limit = resolved(build), Limit.of(timeout)
+    with timing_lock(), limit.running():
         workers = [Worker(bpl) for _ in specs]
         pool = ThreadPoolExecutor(len(workers))
-        try: return [f | {'linear': linear(f['code'])} for job in [pool.submit(_checked, w, kind, s, sentinel) for w, s in zip(workers, specs)] for f in job.result()]
+        try: return [f | {'linear': linear(f['code'])} for job in [pool.submit(_checked, w, kind, s, sentinel, bpl, limit) for w, s in zip(workers, specs)] for f in job.result()]
         finally:
             for w in workers: w.close()
             pool.shutdown()
@@ -211,11 +229,12 @@ def _failures(kind, specs, sentinel, build=None):
 
 def check_file(
     path, # A `.bpl` reference file
-    ids:Annotated[int|str, {'nargs':'*'}]=None, # Check only these cases, each named by its id or its header's line number
-    build:str=None, # The build to check, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build
+    ids:Annotated[int|str, {'nargs':'*'}]=None, # Check only these cases: one, or a list, each named by its id or by its header's line number, as an `int` or a string of digits
+    build:str=None, # The build to check, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build
+    timeout:float=LIMIT, # Seconds of work that the check gets, or a `Limit` to share (`worker.Limit`); None: no limit
 ):
     "Check the cases in `path` as `tests/reference.rs` does, and their route directives as the route test does, in a fresh worker for each core that takes every n-th case, and return the failures in the file's order."
-    if isinstance(ids, (int, str)): ids = [ids]
+    ids = None if ids is None else [int(i) if isinstance(i, str) and i.isdigit() else i for i in ([ids] if isinstance(ids, (int, str)) else ids)]
     source = Path(path).read_text()
     cases = _reference_file(source)['cases']
     lines = [c['line'] for c in cases if ids is None or c['id'] in ids or c['line'] in ids]
@@ -224,18 +243,19 @@ def check_file(
     text = source.rstrip('\n') + '\n\n⍝ bpltests-sentinel — The checker must report this case\n0   ⍝ 1\n'
     n = max(1, min(os.cpu_count(), len(lines)))
     specs = [dict(text=text, ids=[*lines[k::n], *unknown, 'bpltests-sentinel']) for k in range(n)]
-    return sorted(_failures('reference', specs, lambda f: f.get('id') == 'bpltests-sentinel', build), key=lambda f: f['line'])
+    return sorted(_failures('reference', specs, lambda f: f.get('id') == 'bpltests-sentinel', build, timeout), key=lambda f: f['line'])
 
 
 def check_page(
     path, # A `.qmd` page
-    build:str=None, # The build to check, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build,
-    unbatched:bool=False # Run each example with the `batch` pref off
+    build:str=None, # The build to check, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
+    unbatched:bool=False, # Run each example with the `batch` pref off
+    timeout:float=LIMIT # Seconds of work that the check gets, or a `Limit` to share (`worker.Limit`); None: no limit
 ):
     "Run the BPL examples in `.qmd` page `path` in a fresh worker, as `tests/core.rs` does, and return the failures."
     text = Path(path).read_text().rstrip('\n') + '\n\n```bpl\n0 ⍝ 1\n```\n'
     line = text.count('\n') - 1
-    return _failures('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, build)
+    return _failures('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, build, timeout)
 
 _ROOT = Path(__file__).parents[2]
 _SPEED = _ROOT/'tests'/'speed'
@@ -262,30 +282,42 @@ class ByBuild(list):
         w = 13 - len(self.unit)
         return '\n'.join([head, *(''.join(f'{r[1]:>{w},.0f}{self.unit}' for r in rs) + f' {rs[-1][1]/rs[0][1]-1:>+7.1%}  {_commented(rs[0][0])}' for rs in zip(*self))])
 
+@delegates(environment)
 def time_cases(
     cases:Annotated[str, {'nargs':'+'}], # A BPL expression to time, or a list of them
     setup:str=None, # BPL that defines the data and its number of items `n`; None: the setup in tests/speed/arrays.bpl
     prefs='', # BPL that runs before `setup`, such as `•prefs ["float":32]`
+    section:str=None, # A speed file's section, as `file:section` such as `models.bpl:static`: the file's setup in place of `setup`, and the section's preferences after `prefs`, as the speed test runs them
     threads=1, # Threads that each case's rustymath calls split across, for a scaling check; 0: rustymath's default
-    native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
-    build:Annotated[str, {'nargs':'+'}]=None, # The build to time, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build; or a list of builds to compare
-    rounds=2, # With several builds, the fresh workers that each build gets, taking turns with the other builds' in alternating order
-    timeout:float=None # Seconds before each worker is closed
+    build:Annotated[str, {'nargs':'+'}]=None, # The build to time, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build; or a list of builds to compare
+    rounds=2, # The fresh workers that each build gets, taking turns with any other builds' in alternating order
+    timeout:float=LIMIT, # Seconds of work that the call gets across its builds and rounds, or a `Limit` to share (`worker.Limit`), counted from when each worker holds the timing lock; None: no limit
+    **kwargs
 ):
-    "Time `cases` in a fresh worker, as `tests/speed.rs` does: the fastest of five runs, per item and in copies of the data. Given several builds, it gives `ByBuild`, holding each case's fastest time on each build, and resolves each build once, as the comparison starts."
+    "Time `cases` in fresh workers, as `tests/speed.rs` does: in each worker the fastest of five runs, per item and in copies of the data, and of those the fastest over `rounds` workers, since a large case's time varies between processes by more than within one. Given several builds, it gives `ByBuild`, holding each case's fastest time on each build, and resolves each build once, as the comparison starts."
+    if section:
+        name, _, part = section.partition(':')
+        speed = _reference_file((_SPEED/name).read_text())
+        header = next((c.get('prefs', '') for c in speed['cases'] if c['section'] == part), None)
+        if header is None: raise ValueError(f'tests/speed/{name} has no section {part!r}')
+        setup, prefs = speed['setup'], '\n'.join([prefs, header])
     setup = _reference_file((_SPEED/'arrays.bpl').read_text())['setup'] if setup is None else setup
     cases = listify(cases)
+    limit = Limit.of(timeout)
     def timed(build):
-        with Worker(build, native) as w: r = w.request(dict(timing=dict(setup=setup, prefs=prefs, cases=cases, threads=threads)), timeout)
-        if e := r['error']: raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
+        with Worker(build, **kwargs) as w:
+            r = w.request(dict(timing=dict(setup=setup, prefs=prefs, cases=cases, threads=threads)), limit.left())
+            limit.spend(w.ran)
+        if e := r['error']:
+            limit.reached(e)
+            raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
         return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
     builds = listify(build) or [None]
-    if len(builds) == 1: return timed(builds[0])
-    runs = [[] for _ in builds]
-    paths = [resolved(b) for b in builds]
+    runs, paths = [[] for _ in builds], [resolved(b) for b in builds]
     for r in range(rounds):
         for i in (range(len(builds)) if r % 2 == 0 else reversed(range(len(builds)))): runs[i].append(timed(paths[i]))
-    return ByBuild([Costs(min(rows, key=lambda row: row[1]) for rows in zip(*each)) for each in runs], builds, ' ps')
+    fastest = [Costs(min(rows, key=lambda row: row[1]) for rows in zip(*each)) for each in runs]
+    return fastest[0] if len(builds) == 1 else ByBuild(fastest, builds, ' ps')
 
 class Scaling(list):
     "Each case's time per item in picoseconds on one thread and on `threads` threads, its speedup, and the least speedup it must reach, as `(code, one, many, speedup, least)` rows. A case whose speedup is below its least is marked `slow`."
@@ -310,14 +342,14 @@ def _physical_cores():
 def thread_scaling(
     cases:str=None, # Codes of the cases in `_SCALING` to time, or one code; None: all of them, a 1024×1024 product, a 512×512 SVD and Hermitian eigendecomposition, QR decompositions of a stack of 16,384 8×8 matrices, a product of a 3 by 3 convolution's windows, a copy of those windows, and `*` on 4,194,304 floats
     setup:str=_SCALING_SETUP, # BPL that defines the cases' data and its number of items `n`
-    build:str=None, # The build to time, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build
-    timeout:float=None, # Seconds before each timing stops
+    build:str=None, # The build to time, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build
+    timeout:float=LIMIT, # Seconds of work that the check gets across its timings and retries, or a `Limit` to share (`worker.Limit`); None: no limit
 ):
     "Time each case with `time_cases` on one thread and on t threads, the smaller of `_SCALING_THREADS` and this machine's physical cores (`_physical_cores`), and give its speedup, both on one build. Speed budgets are single-thread measurements, so this checks multithreaded speed instead: in the manual `Speed` workflow and locally, not in the `Test` workflow, where a runner's cores and sharing make it noisy. Each case must reach half its expected gain, 1 + (S − 1)/2, where S = 1/(s + (1 − s)/t) for its serial fraction s in `_SCALING`, or in `_ACCELERATED` on macOS. A case expected not to split, with s of 1, must reach 0.9. As the speed tests do, it times a case below its least again after the rest, after each pause in `rustymath::timing::RETRY_PAUSES`, and prints each retry. Raises `ValueError` with the table when a case is below its least every time."
     serial = _SCALING | (_ACCELERATED if sys.platform == 'darwin' else {})
     threads = min(_SCALING_THREADS, _physical_cores())
     least = lambda s: 1 + (1 / (s + (1 - s) / threads) - 1) / 2 if s < 1 else 0.9
-    build = resolved(build)
+    build, timeout = resolved(build), Limit.of(timeout)
     def timed(codes):
         one, many = (time_cases(codes, setup, threads=t, build=build, timeout=timeout) for t in (1, threads))
         return {code: (code, a, b, a / b, least(serial[code])) for (code, a, _), (_, b, _) in zip(one, many)}
@@ -341,12 +373,15 @@ class Instructions(list):
 # The line of each platform's counter that gives the instructions a process retired: `/usr/bin/time -l`'s on macOS, `perf stat -x,`'s on Linux.
 _RETIRED = dict(darwin=re.compile(r'^\s*(\d+)\s+instructions retired$', re.M), linux=re.compile(r'^(\d+),[^,]*,instructions', re.M))
 
-def _retired(code, bpl):
-    "The instructions that a fresh `bpl` process retires running `code`."
+# The environment of the processes that count a case's instructions or profile its functions, with the settings that `worker.environment` takes. Loops run their steps as ordinary code (`settings::Loops`), so that a count measures a call's interpretation, as `tests/instructions.txt` records it. With `replays`, loops replay their recordings, as real runs do.
+def _counting(replays=False, **kwargs): return environment(**kwargs) | ({} if replays else dict(BASEDPL_LOOPS='ordinary'))
+
+def _retired(code, bpl, replays, settings, limit):
+    "The instructions that a fresh `bpl` process retires running `code`, in the environment that `_counting` gives for `replays` and `settings`, killed once `limit` (`worker.Limit`) runs out."
     if sys.platform not in _RETIRED: raise ValueError(f'no instruction counter on {sys.platform}')
     with tempfile.NamedTemporaryFile('r') as report:
         counter = ['/usr/bin/time', '-l', '-o', report.name] if sys.platform == 'darwin' else ['perf', 'stat', '-x,', '-e', 'instructions:u', '-o', report.name, '--']
-        p = subprocess.run([*counter, resolved(bpl), '-e', code], capture_output=True, text=True)
+        p = bounded([*counter, resolved(bpl), '-e', code], limit.left(), env=_counting(replays, **settings))
         if p.returncode: raise ValueError(p.stdout + p.stderr)
         return int(_RETIRED[sys.platform].search(report.read())[1])
 
@@ -365,24 +400,37 @@ def _stepped(case, force=False):
     if _NAMES_N.search(_QUOTED.sub('', case)): return case
     return f'{{x←{case} ⋄ (×≢⍴x)∧×≢x?x.[0]←x.[0] ⋄ ⍵;⍵}}⍣N 0' if force else f'{{{case} ⋄ ⍵}}⍣N 0'
 
+def _locked(pool, calls, limit=None):
+    "The results of `calls`, each a function and its arguments, run at once on `pool` as one batch, holding the machine's timing lock shared for that batch alone, and spending `limit` (`worker.Limit`) while it runs. A timing that waits for the lock runs between batches. An interrupt or error cancels the calls that haven't started; those running end within `limit` (`fastws.procs.bounded`)."
+    with timing_lock(), (limit or Limit(None)).running():
+        futures = [pool.submit(*call) for call in calls]
+        try: return [f.result() for f in futures]
+        except BaseException:
+            for f in futures: f.cancel()
+            raise
+
+@delegates(environment)
 def instructions(
     cases:Annotated[str, {'nargs':'+'}], # A BPL expression to run once per step, such as `k(⌈/⊢)⌸a`, or one that names `N` and makes its own call per step of it, such as `{⍵}⍣N 0`, or a list of them
     setup='', # BPL that defines what the cases use, run before each case
     force=False, # Compute each step's result in full where it would stay pending, such as large windows or a transpose, for the cases that don't name `N`
     counts:Annotated[int, {'nargs':'+'}]=None, # Two or more values of `N`; None: four values past the allocator's warm-up, from a rough count at 1,000 steps
     runs=3, # Processes at each value of `N`, of which the lowest count is used
-    build:Annotated[str, {'nargs':'+'}]=None # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build; or a list of builds to compare
+    replays=False, # Count loops as real runs make them, replaying their recordings, in place of running every step as ordinary code
+    build:Annotated[str, {'nargs':'+'}]=None, # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build; or a list of builds to compare
+    timeout:float=LIMIT, # Seconds of work that the count gets, or a `Limit` to share (`worker.Limit`), spent while its processes run; None: no limit
+    **kwargs
 ):
     "The instructions that each case retires per unit of `N`, on one thread. A case that doesn't name `N` runs once per step inside `{case ⋄ ⍵}⍣N 0`. That dfn's own call adds about 1,900 instructions per step. For each pair of successive values of `N`, the difference between fresh `bpl` processes, divided by the difference in `N`, cancels startup and `setup`. The result is the median of those slopes. The median drops a one-off cost that starts once `N` passes some size, because such a cost falls between only one pair. Unlike timings, instruction counts don't vary with load or code layout, so they show per-call changes of a few percent, and its processes run at once, one for each core. A case that names `N` must make one call per step of `N`, as `⍣` does: a map such as `f¨N⍴0` calls a dfn once on all its cells, so it gives no per-call cost. Given several builds, it gives `ByBuild`, counting each case at the same values of `N` on every build. Each build is resolved once, as the count starts."
     cases = listify(cases)
     builds = listify(build) or [None]
     stepped = [_stepped(case, force) for case in cases]
     def slope(ns, cs): return statistics.median((c1-c0)/(n1-n0) for n0, n1, c0, c1 in zip(ns, ns[1:], cs, cs[1:]))
-    paths = [resolved(b) for b in builds]
-    with timing_lock(), ThreadPoolExecutor(os.cpu_count()) as pool:
+    paths, limit = [resolved(b) for b in builds], Limit.of(timeout)
+    with ThreadPoolExecutor(os.cpu_count()) as pool:
         def lowest(jobs, runs=runs):
-            "The lowest count of `runs` processes for each `(code, n, build)` in `jobs`, from processes that run at once."
-            got = list(pool.map(lambda job: _retired(_program(job[0], job[1], setup), job[2]), [job for job in jobs for _ in range(runs)]))
+            "The lowest count of `runs` processes for each `(code, n, build)` in `jobs`, from processes that run at once as one batch (`_locked`)."
+            got = _locked(pool, [(_retired, _program(code, n, setup), build, replays, kwargs, limit) for code, n, build in jobs for _ in range(runs)], limit)
             return [min(got[i:i+runs]) for i in range(0, len(got), runs)]
         if counts: ns = [counts]*len(cases)
         else:
@@ -408,15 +456,15 @@ class FunctionCounts(list):
 # A frame in the call graph that macOS `sample` reports: the tree's drawing characters, whose width gives the frame's depth, then its samples and its symbol.
 _FRAME, _THREAD = re.compile(r'^([ +!:|]*)(\d+) (\S.*?)  [\[(]'), re.compile(r'^\s*\d+ Thread_')
 
-def _self_samples(code, bpl, seconds):
-    "The samples at which each function was at the top of the main thread's stack while a fresh `bpl` process ran `code`, as macOS `sample` counts them over `seconds`, with demangled names, and the thread's total. `code` must run for longer than half a second plus `seconds`. The process is then killed. It raises `ValueError` when `sample` runs a minute past `seconds`, as it does while macOS waits for an answer to a Developer Tools authorization prompt."
-    p = subprocess.Popen([resolved(bpl), '-e', code], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+def _self_samples(code, bpl, seconds, replays, within, settings):
+    "The samples at which each function was at the top of the main thread's stack while a fresh `bpl` process ran `code` in the environment that `_counting` gives for `replays` and `settings`, as macOS `sample` counts them over `seconds`, with demangled names, and the thread's total. `code` must run for longer than half a second plus `seconds`. The process is then killed. It raises `TimeoutError` when `sample` runs past `within` seconds, as it does while macOS waits for an answer to a Developer Tools authorization prompt."
+    p = subprocess.Popen([resolved(bpl), '-e', code], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, env=_counting(replays, **settings))
     try:
         time.sleep(0.5)
         if p.poll() is not None: raise ValueError(p.stderr.read())
         with tempfile.NamedTemporaryFile('r', suffix='.txt') as report:
-            try: s = subprocess.run(['sample', str(p.pid), str(seconds), '-file', report.name], capture_output=True, text=True, timeout=seconds + 60)
-            except subprocess.TimeoutExpired: raise ValueError(rf"`sample` didn't finish within a minute of its {seconds} s sampling time. macOS may be waiting for an answer to a Developer Tools authorization prompt.") from None
+            try: s = subprocess.run(['sample', str(p.pid), str(seconds), '-file', report.name], capture_output=True, text=True, timeout=within)
+            except subprocess.TimeoutExpired: raise TimeoutError(rf"`sample` didn't finish in the {within:.1f} s left of the call's limit. macOS may be waiting for an answer to a Developer Tools authorization prompt.") from None
             if s.returncode: raise ValueError(s.stdout + s.stderr)
             lines = report.read().splitlines()
     finally: p.kill(); p.wait()
@@ -437,43 +485,51 @@ def _self_samples(code, bpl, seconds):
     for name, n in zip(subprocess.run(['c++filt'], input='\n'.join(selfs), capture_output=True, text=True).stdout.splitlines(), selfs.values()): named[name] += n
     return named, total
 
-def _estimates(case, setup, build, seconds, force):
-    "Each function's estimated instructions per step of `N` for `case` on `build`, and the build's instructions per step, as `profile` describes."
+def _estimates(case, setup, build, seconds, force, replays, limit, settings):
+    "Each function's estimated instructions per step of `N` for `case` on `build`, and the build's instructions per step, as `profile` describes, under the settings that `worker.environment` takes."
     if sys.platform != 'darwin': raise ValueError(f'no sampling profiler on {sys.platform}')
     stepped = _stepped(case, force)
     bpl = resolved(build)
-    with timing_lock():
-        [(_, per_step)] = instructions(stepped, setup, build=bpl)
-        samples, total = _self_samples(_program(f'({{{stepped} ⋄ ⍵}}⍣1000000000)0', max(1, round(1e8/per_step)), setup), bpl, seconds)
+    [(_, per_step)] = instructions(stepped, setup, build=bpl, replays=replays, timeout=limit, **settings)
+    with timing_lock(), limit.running(): samples, total = _self_samples(_program(f'({{{stepped} ⋄ ⍵}}⍣1000000000)0', max(1, round(1e8/per_step)), setup), bpl, seconds, replays, limit.left(), settings)
     return {f: per_step*n/total for f, n in samples.items()}, per_step
 
+@delegates(environment)
 def profile(
     case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
     setup='', # BPL that defines what the case uses, run before it
     force=False, # Compute each step's result in full, as `instructions`' `force` does
-    build:str=None, # The build to profile, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build,
+    replays=False, # Count loops as real runs make them, as `instructions`' `replays` does
+    build:str=None, # The build to profile, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
     seconds=3, # How long macOS `sample` watches the build
-    rows=20 # How many functions to show
+    timeout:float=LIMIT, # Seconds of work that the count and sampling get, or a `Limit` to share (`worker.Limit`); None: no limit
+    rows=20, # How many functions to show
+    **kwargs
 ):
     "Where `case`'s instructions per step of `N` go, by function, on macOS. A fresh process repeats the case on one thread while `sample` counts how often each function is at the top of the main thread's stack. A function's estimate is its share of those samples times the build's instructions per step from `instructions`. The shares come from time, so the estimates assume every function retires instructions at the same rate."
-    estimates, total = _estimates(case, setup, build, seconds, force)
+    estimates, total = _estimates(case, setup, build, seconds, force, replays, Limit.of(timeout), kwargs)
     return FunctionCounts(sorted(estimates.items(), key=lambda r: -r[1])[:rows], [('total', total)])
 
+@delegates(environment)
 def profile_diff(
     case, # A BPL expression, as `instructions` takes it, such as `k(⌈/⊢)⌸a` or `{⍵}⍣N 0`
     base:str, # The build to compare with, resolved as `build` is, such as the one installed before a change
     setup='', # BPL that defines what the case uses, run before it
     force=False, # Compute each step's result in full, as `instructions`' `force` does
-    build:str=None, # The build to compare with `base`, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build,
+    replays=False, # Count loops as real runs make them, as `instructions`' `replays` does
+    build:str=None, # The build to compare with `base`, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
     seconds=3, # How long macOS `sample` watches each build
-    rows=20 # How many functions to show
+    timeout:float=LIMIT, # Seconds of work that both builds' counts and sampling get, or a `Limit` to share (`worker.Limit`); None: no limit
+    rows=20, # How many functions to show
+    **kwargs
 ):
     "Where `case`'s instructions per step of `N` moved between two builds, by function, on macOS, from `profile`'s estimates for each build. A function that only one build calls out of line, such as one that stopped being inlined, appears in that build alone."
-    (before, tb), (after, ta) = _estimates(case, setup, base, seconds, force), _estimates(case, setup, build, seconds, force)
+    limit = Limit.of(timeout)
+    (before, tb), (after, ta) = _estimates(case, setup, base, seconds, force, replays, limit, kwargs), _estimates(case, setup, build, seconds, force, replays, limit, kwargs)
     fs = sorted(before.keys() | after.keys(), key=lambda f: -abs(after.get(f, 0) - before.get(f, 0)))
     return FunctionCounts([(f, before.get(f, 0), after.get(f, 0)) for f in fs[:rows]], [('total', tb, ta)])
 
-# The script that `call_profile` runs in `lldb`'s own Python, 3.9 on macOS. `run` reads its arguments from a JSON file. It launches `bpl` with `-e code` and lets `skip` calls of the function that `pattern` names run. It then single-steps the next call to its return, the first instruction where the stack pointer is back where it was and the program counter at the address in the link register. An instruction counts under its function's name, or under `caller > function` where the function's caller, read as the program counter enters the function, matches the allocator's pattern. `call_profile` then puts what the allocator calls, such as the zeroing of a freed block and a read of the clock, in the allocator's row. It writes JSON to `out`: how many instructions each function retired, or the number of calls where the process ended first, or that the call passed `limit`.
+# The script that `call_profile` runs in `lldb`'s own Python, 3.9 on macOS. `run` reads its arguments from a JSON file. It launches `bpl` with `-e code` and lets `skip` calls of the function that `pattern` names run. It then single-steps the next call to its return, the first instruction where the stack pointer is back where it was and the program counter at the address in the link register. An instruction counts under its function's name, or under `caller > function` where the function's caller, read as the program counter enters the function, matches the allocator's pattern. An instruction in the allocator also names, after a tab, the first function on the stack outside the allocator and Rust's standard library, the one whose code allocated. `call_profile` then puts what the allocator calls, such as the zeroing of a freed block and a read of the clock, in the allocator's row. It writes JSON to `out`: how many instructions each function retired, or the number of calls where the process ended first, or that the call passed `limit`.
 _LLDB_STEPS = r'''
 import collections, json, lldb, re
 
@@ -503,6 +559,9 @@ def run(path):
             if here != current:
                 current, caller = here, thread.GetFrameAtIndex(1).GetSymbol()
                 name = f'{caller.GetName()} > {here}' if caller.IsValid() and allocator.search(caller.GetName()) and not allocator.search(here) else here
+                if allocator.search(name):
+                    frames = (thread.GetFrameAtIndex(i).GetFunctionName() or '' for i in range(1, thread.GetNumFrames()))
+                    name += '\t' + next((f for f in frames if f and not allocator.search(f) and not re.match(r'<?(?:alloc|core|std)::', f)), '?')
             counts[name] += 1
             n += 1
             thread.StepInstruction(False)
@@ -511,15 +570,18 @@ def run(path):
     json.dump(result, open(a['out'], 'w'))
 '''
 
-def _counted_call(code, pattern, skip, build, limit=100_000):
-    "How many instructions each function retired in the call of the function that `pattern` names after `skip` earlier calls, in a fresh `bpl` process running `code`, as `_LLDB_STEPS` counts them. It raises `ValueError` when `lldb` runs ten minutes, as it does while macOS waits for an answer to a Developer Tools authorization prompt."
+def _counted_call(code, pattern, skip, build, within, settings, limit=100_000, replays=False):
+    "How many instructions each function retired in the call of the function that `pattern` names after `skip` earlier calls, in a fresh `bpl` process running `code` in the environment that `_counting` gives for `replays` and `settings`, as `_LLDB_STEPS` counts them. `lldb` spends `within` (`worker.Limit`) while it runs, and raises `TimeoutError` once it's spent, as it is while macOS waits for an answer to a Developer Tools authorization prompt."
     bpl = str(resolved(build))
     with tempfile.TemporaryDirectory() as d:
         steps, args, out = Path(d)/'steps.py', Path(d)/'args.json', Path(d)/'out.json'
         steps.write_text(_LLDB_STEPS)
         args.write_text(json.dumps(dict(bpl=bpl, code=code, pattern=pattern, skip=skip, out=str(out), limit=limit, allocator=_ALLOCATOR.pattern)))
-        try: p = subprocess.run(['lldb', '--batch', '--no-lldbinit', '-o', f'command script import {steps}', '-o', f'script steps.run({str(args)!r})'], capture_output=True, text=True, timeout=600)
-        except subprocess.TimeoutExpired: raise ValueError("`lldb` didn't finish within ten minutes. macOS may be waiting for an answer to a Developer Tools authorization prompt.") from None
+        try:
+            with within.running(): p = bounded(['lldb', '--batch', '--no-lldbinit', '-o', f'command script import {steps}', '-o', f'script steps.run({str(args)!r})'], within.left(), env=_counting(replays, **settings))
+        except TimeoutError as e:
+            e.add_note('macOS may be waiting for an answer to a Developer Tools authorization prompt.')
+            raise
         if not out.exists(): raise ValueError(p.stdout + p.stderr)
         result = json.loads(out.read_text())
     if 'hits' in result: raise ValueError(f'`{pattern}` stopped {bpl} at {result["hits"]} calls, and `skip` lets {skip} run first. A function that is always inlined never stops it.')
@@ -529,23 +591,31 @@ def _counted_call(code, pattern, skip, build, limit=100_000):
 # The functions of macOS's allocator and of Rust's allocation shims. A function that one of them calls matches too, through the caller in its `caller > function` name. `call_profile` gives them one row, because the instructions they retire depend on the heap's state.
 _ALLOCATOR = re.compile(r'malloc|^_*free|mfm|xzm|szone|nanov2|__rust_(?:alloc|dealloc|realloc|no_alloc)')
 
+@delegates(environment)
 def call_profile(
     case, # A BPL expression, as `instructions` takes it, such as `v_4ₓ₄` or `{⍵}⍣N 0`
     function, # A regex that the demangled name of the function to count matches, such as `binder::derived`. A function that is always inlined has no code of its own and never stops the process
     setup='', # BPL that defines what the case uses, run before it
     base:str=None, # The build to compare with, resolved as `build` is, such as the one installed before a change; None: count one build
-    build:str=None, # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build,
+    build:str=None, # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
     skip=3, # Calls of `function` to let run first, while the case warms up
     force=False, # Compute each step's result in full, as `instructions`' `force` does
-    rows=20 # How many functions to show
+    timeout:float=LIMIT, # Seconds of work that the counts get, or a `Limit` to share (`worker.Limit`). `lldb` steps about 450 instructions a second, so a call of more than about 13,000 needs a larger one; None: no limit
+    replays=False, # Count loops as real runs make them, as `instructions`' `replays` does
+    allocations=False, # Split the allocator's row by the first function outside the allocator and Rust's standard library that called it
+    rows=20, # How many functions to show
+    **kwargs
 ):
-    "Every instruction that one call of `function` retires, with the calls it makes, counted by function, on macOS on Apple silicon. `lldb` runs `case` once per step in a fresh process, lets `skip` calls of `function` run, and single-steps the next one to its return. The counts are exact, where `profile`'s estimates come from time, but they cover one call. At the 450 or so instructions a second that `lldb` steps, the largest call it counts, 100,000 instructions, takes about four minutes. The allocator's functions, with the functions they call, share the row `allocator`, which the second total leaves out."
+    "Every instruction that one call of `function` retires, with the calls it makes, counted by function, on macOS on Apple silicon. `lldb` runs `case` once per step in a fresh process, lets `skip` calls of `function` run, and single-steps the next one to its return. The counts are exact, where `profile`'s estimates come from time, but they cover one call. At the 450 or so instructions a second that `lldb` steps, the largest call it counts, 100,000 instructions, takes about four minutes. The allocator's functions, with the functions they call, share the row `allocator`, which the second total leaves out. With `allocations`, they have a row for each function that called the allocator, named `allocator ← function`."
     if sys.platform != 'darwin' or os.uname().machine != 'arm64': raise ValueError('`call_profile` runs only on macOS on Apple silicon')
-    code = _program(_stepped(case, force), 1000, setup)
-    merged = [defaultdict(int) for _ in range(2 if base else 1)]
-    for b, m in zip([base, build] if base else [build], merged):
-        for f, n in _counted_call(code, function, skip, b).items(): m['allocator' if _ALLOCATOR.search(f) else f] += n
-    totals = [('total', *(sum(m.values()) for m in merged)), ('outside the allocator', *(sum(m.values()) - m['allocator'] for m in merged))]
+    code, timeout = _program(_stepped(case, force), 1000, setup), Limit.of(timeout)
+    merged, allocated = [defaultdict(int) for _ in range(2 if base else 1)], [0, 0]
+    for k, (b, m) in enumerate(zip([base, build] if base else [build], merged)):
+        for f, n in _counted_call(code, function, skip, b, timeout, kwargs, replays=replays).items():
+            name, _, site = f.partition('\t')
+            if _ALLOCATOR.search(name): allocated[k], name = allocated[k] + n, f'allocator ← {site}' if allocations else 'allocator'
+            m[name] += n
+    totals = [('total', *(sum(m.values()) for m in merged)), ('outside the allocator', *(sum(m.values()) - a for m, a in zip(merged, allocated)))]
     fs = sorted(set().union(*merged), key=lambda f: -abs(merged[-1].get(f, 0) - merged[0].get(f, 0)) if base else -merged[0].get(f, 0))
     return FunctionCounts([(f, *(m.get(f, 0) for m in merged)) for f in fs[:rows]], totals)
 
@@ -574,7 +644,7 @@ def _symbols(files):
 def disasm(
     pattern, # A regex that the function's demangled name matches, such as `reduce::sliding::<f64, rustymath::reduce::Max>`
     x86=False, # Read the x86-64 code that CI and Linux run, in place of this Mac's
-    build:str=None, # The build to read, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build. With `x86`, unused
+    build:str=None, # The build to read, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build. With `x86`, unused
 ):
     "The machine code of the function whose demangled name matches `pattern`, as `objdump` shows it, with names demangled. Where functions of more than one name match, it gives their names. With `x86`, it first builds basedpl's library and the rustymath library it links for Linux x86-64, as CI's runner compiles them, holding the timing lock shared. Where basedpl doesn't compile, it reads rustymath's library alone and says so first. After a change, that build takes minutes."
     files, note = _x86_libraries() if x86 else ([resolved(build)], '')
@@ -595,10 +665,11 @@ def jit_disasm(
     case, # BPL whose compiled kernels to show, such as `+/ux>127ₓ₁`
     setup:str='', # BPL that defines what the case uses, run before it
     prefs:str='', # BPL that runs first, such as `•prefs ["kinds":"static"]`
-    build:str=None, # The build to run, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build
+    build:str=None, # The build to run, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build
+    timeout:float=LIMIT, # Seconds that the run gets, or a `Limit` to share (`worker.Limit`); None: no limit
 ):
-    "The machine code of each kernel that the JIT compiles while `prefs`, `setup` and `case` run, after a line that describes the kernel, as `BASEDPL_JIT_DISASM` prints them. A stage compiles on its first run only from about 3 million items (`COMPILES_AT`)."
-    p = subprocess.run([resolved(build), '-e', '\n'.join(c for c in (prefs, setup, case) if c)], capture_output=True, text=True, env={**os.environ, 'BASEDPL_JIT_DISASM': '1'})
+    "The machine code of each kernel that the JIT compiles while `prefs`, `setup` and `case` run, after a line that describes the kernel, as `BASEDPL_JIT_DISASM` prints them. A stage compiles on its first run where that run repays the compile (`Blocks::repays`), from about 2.7 million items for two elementwise steps, and a recording's stages compile when it's reused."
+    p = bounded([resolved(build), '-e', '\n'.join(c for c in (prefs, setup, case) if c)], Limit.of(timeout).left(), env={**os.environ, 'BASEDPL_JIT_DISASM': '1'})
     if p.returncode: raise ValueError(p.stderr)
     return Report(p.stderr)
 
@@ -630,11 +701,12 @@ class InstructionBudgets(list):
 
 def instruction_budgets(
     calls:str=None, # Text in `instructions.txt`'s format; None: `tests/instructions.txt`
-    build:str=None, # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build
+    build:str=None, # The build to count, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build
+    timeout:float=LIMIT, # Seconds of work that the counts get, or a `Limit` to share (`worker.Limit`); None: no limit
 ):
     "Count each case in `calls` with `instructions`, beside its count."
     setup, cases = _calls(_CALLS.read_text() if calls is None else calls)
-    counted = instructions([code for code, _ in cases], setup, build=build)
+    counted = instructions([code for code, _ in cases], setup, build=build, timeout=timeout)
     return InstructionBudgets((code, n, count) for (code, n), (_, count) in zip(counted, cases))
 
 def _or_dash(x, spec): return '-' if x is None else format(x, spec)
@@ -667,28 +739,32 @@ def _wasm_env(wasm):
     "The environment in which `tests/wasm-pkg.mjs` loads the browser build that `cargo wasm --out` wrote to `wasm`."
     return os.environ | dict(BASEDPL_WASM=str(Path(wasm).expanduser()))
 
+@delegates(environment)
 def speed_costs(
     wasm:Path=None, # A directory that `cargo wasm --out` wrote; None: a fresh native worker
-    native=False, # Time Rustymath's own linear algebra instead of Accelerate
-    build:str=None, # The build to time, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None for the installed build,
+    build:str=None, # The build to time, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build,
     speed:str=None, # One BPL speed file's text; None: tests/speed/*.bpl
     prefs='', # BPL run before each section's preferences and setup
-    timeout:float=None, # Seconds before timing stops
-    cases:Annotated[str, {'nargs':'*', 'opt':False}]=None # Codes or file-qualified labels to time; None: all
+    timeout:float=LIMIT, # Seconds of work that the timing gets, or a `Limit` to share (`worker.Limit`), counted from when it holds the timing lock; None: no limit
+    cases:Annotated[str, {'nargs':'*', 'opt':False}]=None, # Codes or file-qualified labels to time; None: all
+    **kwargs
 ):
     "Time the BPL speed records, with their budgets, through the shared native/browser runner."
     files = [dict(name=p.name, text=p.read_text()) for p in sorted(_SPEED.glob('*.bpl'))] if speed is None else [dict(name='<input>', text=speed)]
-    cases = listify(cases) or None
+    cases, limit = listify(cases) or None, Limit.of(timeout)
     if wasm is None:
-        with Worker(build, native) as w: r = w.request(dict(costs=dict(files=files, cases=cases, prefs=prefs)), timeout)
-        if e := r['error']: raise ValueError(e['message'])
+        with Worker(build, **kwargs) as w:
+            r = w.request(dict(costs=dict(files=files, cases=cases, prefs=prefs)), limit.left())
+            limit.spend(w.ran)
+        if e := r['error']:
+            limit.reached(e)
+            raise ValueError(e['message'])
         rows = r['costs']
     else:
         script = (f'import {{ costs }} from {json.dumps(_PKG.as_uri())}; import {{ readFileSync }} from "node:fs"; '
                   f'process.stdout.write(JSON.stringify(costs(JSON.parse(readFileSync(0, "utf8")), {json.dumps(cases)}, {json.dumps(prefs)})))')
-        with timing_lock(exclusive=True):
-            p = subprocess.run([_node(), '--no-liftoff', '--input-type=module', '-e', script], input=json.dumps(files), capture_output=True,
-                               text=True, timeout=timeout, env=_wasm_env(wasm))
+        with timing_lock(exclusive=True), limit.running():
+            p = bounded([_node(), '--no-liftoff', '--input-type=module', '-e', script], limit.left(), input=json.dumps(files), env=_wasm_env(wasm))
         if p.returncode: raise ValueError(p.stderr)
         if p.stderr: sys.stderr.write(p.stderr)
         rows = json.loads(p.stdout)
@@ -751,48 +827,194 @@ def compare_costs(
     changed = [r for r in rows if over(r) or moved(r) > CHANGE] + [r for r in only if over(r)]
     return CostChanges(sorted(changed, key=lambda r: (not over(r), -moved(r))) + [r for r in only if not over(r)])
 
-def _run_costs(cmd, path, timeout, native=False, env=None):
-    "The rows that `logged_costs` reads from what `cmd` prints, run in the package at `path` with `<NAME>_COSTS` set. A case over its budget still gives its row."
-    path = Path(path).expanduser()
-    name = tomllib.loads((path/'Cargo.toml').read_text())['package']['name']
-    p = subprocess.run(cmd, cwd=path, capture_output=True, text=True, timeout=timeout, env=os.environ | {f'{name.upper()}_COSTS': '1'} | (NATIVE if native else {}) | (env or {}))
-    costs = logged_costs(p.stdout + p.stderr, _platform())
-    if p.returncode and not costs: raise ValueError(p.stdout + p.stderr)
+class Bisection(list):
+    "The builds that `bisect` measured, oldest first, as `(build, verdict, measure)` rows, where `build` is a `store.builds` record and `verdict` is `good` or `bad`. `before` and `after` are the adjacent builds where the verdict changes, or None where the endpoints don't differ. `edits` holds the journal's records of edits to `after`'s input files, from the build before `before` up to `after`, or None where the process has no journal (`EXHASH_JOURNAL`), as a shell has none."
+    def __init__(self, rows=(), before=None, after=None, edits=()):
+        super().__init__(rows)
+        self.before, self.after, self.edits = before, after, edits
+    def __repr__(self):
+        def at(t, spec='%m-%d %H:%M:%S'): return time.strftime(spec, time.localtime(t))
+        def names(files): return ', '.join(sorted(Path(f).name for f in files)) or 'none'
+        def shown(m): return f'{m:,.0f}' if isinstance(m, float) else str(m).replace('\n', ' ¶ ')[:120]
+        verdict = {b['id']: v for b, v, _ in self}
+        rows = [f"    {b['id'][:8]}  {at(b['time'])}  {v:4}  {shown(m)}" for b, v, m in self]
+        if self.after is None: return '\n'.join(['no change between the endpoints:', *rows])
+        b, a = self.before, self.after
+        lines = [f"first {verdict[a['id']]} build {a['id'][:8]} ({at(a['time'])}), after {verdict[b['id']]} build {b['id'][:8]} ({at(b['time'])})",
+                 f"  inputs changed: {names(a['changes'] or [])}"]
+        lines += [f"  {x['id'][:8]} inputs possibly modified since build started: {names(x['edited'])}" for x in (b, a) if x['edited']]
+        lines.append('  no journal in this process: EXHASH_JOURNAL is unset' if self.edits is None else '  journal edits to its inputs:' if self.edits else '  no journal edits to its inputs')
+        lines += [f"    {at(e['time'], '%H:%M:%S')}  {(e['author'] or '-')[:8]:8}  {os.path.relpath(e['path'], _ROOT.parent)}  +{e['added']} -{e['removed']}" for e in self.edits or ()]
+        return '\n'.join([*lines, '  measured:', *rows])
+
+def bisect(
+    case, # What to measure on each build: a BPL expression, or for `by='check'` a reference case's id or header line in `path`
+    good:str, # A kept build where `case` passes: a prefix of its id, as `store.builds` lists them
+    bad:str=None, # A kept build where it fails, older or newer than `good`: a prefix of its id; None or `installed`: the installed build
+    by:Annotated[str, {'choices':['check', 'value', 'instructions', 'time']}]='value', # How a build is judged: `check` (the reference case passes), `value` (the expression prints what it prints on `good`), `instructions` or `time` (its cost is nearer `good`'s than `bad`'s)
+    setup:str='', # BPL that defines what `case` uses, run before it, for `value`, `instructions` and `time`
+    prefs:str='', # BPL that runs first in each worker, such as `•prefs ["kinds":"static"]`, for `value` and `time`
+    path:Path=_ROOT/'tests'/'reference'/'core.bpl', # The reference file, for `check`
+    timeout:float=LIMIT, # Seconds of work that every measurement together gets, or a `Limit` to share (`worker.Limit`); None: no limit
+):
+    "Find the adjacent kept builds between `good` and `bad` where `case`'s verdict changes. Each step measures, in fresh workers, the build halfway between the nearest good and bad builds so far. The result names both builds, the input files that changed between them, the edits to those files that every session's journal recorded (the directories beside `EXHASH_JOURNAL`) and each measurement."
+    kept = store.builds(_ROOT, None)
+    def index(prefix):
+        found = [i for i, b in enumerate(kept) if b['id'].startswith(prefix)]
+        if len(found) != 1: raise ValueError(f'{len(found)} kept builds have ids starting {prefix!r}')
+        return found[0]
+    limit = Limit.of(timeout)
+    def printed(b):
+        try: return fresh(f'{setup} ⋄ {case}' if setup else case, prefs=prefs, build=b, timeout=limit)
+        except (BplError, EOFError, TimeoutError) as e:
+            limit.left()
+            return f'{type(e).__name__}: {e}'
+    measure = dict(check=lambda b: '; '.join(f"{f['status']}: {f['message']}" for f in check_file(path, [case], build=b, timeout=limit)),
+                   value=printed,
+                   instructions=lambda b: instructions(case, setup, build=b, timeout=limit)[0][1],
+                   time=lambda b: time_cases(case, setup or None, prefs, build=b, timeout=limit)[0][1])[by]
+    g, b = index(good), index(kept.installed if bad in (None, 'installed') else bad)
+    measured = {g: measure(kept[g]['id']), b: measure(kept[b]['id'])}
+    is_bad = dict(check=bool, value=lambda m: m != measured[g]).get(by, lambda m: abs(m - measured[b]) < abs(m - measured[g]))
+    lo, hi = sorted((g, b))
+    found = not is_bad(measured[g]) and is_bad(measured[b])
+    while found and hi - lo > 1:
+        mid = (lo + hi) // 2
+        measured[mid] = measure(kept[mid]['id'])
+        if is_bad(measured[mid]) == is_bad(measured[max(g, b)]): hi = mid
+        else: lo = mid
+    edits = None
+    if found and (log := os.environ.get('EXHASH_JOURNAL')):
+        from exhash import journal
+        sessions = [d for d in Path(log).parent.iterdir() if d.is_dir()]
+        edits = sorted((e for d in sessions for e in journal(d, since=kept[max(lo-1, 0)]['time']) if e['time'] <= kept[hi]['time'] and e['path'] in kept[hi]['inputs']), key=lambda e: e['time'])
+    rows = [(kept[i], 'bad' if is_bad(m) else 'good', m) for i, m in sorted(measured.items())]
+    return Bisection(rows, kept[lo] if found else None, kept[hi] if found else None, edits)
+
+_LONG = ('listing', 'site') # Columns that `ExplainDiff` shows on lines of their own and never pairs rows by
+_VARIES = ('site', 'microseconds') # Columns that vary between runs of one build, which a `~` row never reports
+
+class ExplainDiff(list):
+    "The rows that `explain_diff` reports, as `(record, sign, row, moved)` rows in `•explain`'s order of records. `sign` is `-` for a row that only `base` gave, `+` for a row that only `build` gave, and `~` for a row that both gave with different counts or listings. `row` maps each column to the row's value, from `build` except in a `-` row. `moved` maps each column that differs in a `~` row to its values in `base` and `build`. A row's `site`, where `•explain` filled it, and the `listing` of a program that only one build gave show on lines below the row; a moved listing shows as a diff."
+    def __repr__(self):
+        def cell(k, v): return f'{k} {v!r}' if isinstance(v, str) else f'{k} {v}'
+        lines = []
+        for record, sign, row, moved in self:
+            cells = [f'{k} {moved[k][0]!r}→{moved[k][1]!r}' if k in moved else cell(k, v) for k, v in row.items() if k not in _LONG and (v != '' or k in moved)]
+            lines.append(f'{sign} {record:13} {", ".join(cells)}')
+            if 'listing' in moved: lines += ['    ' + l for l in list(difflib.unified_diff(*(m.splitlines() for m in moved['listing']), lineterm='', n=1))[2:]]
+            elif sign != '~' and row.get('listing'): lines += ['    ' + l for l in row['listing'].splitlines()]
+            if row.get('site'): lines.append(f'    site {row["site"]}')
+        return '\n'.join(lines) or 'no difference'
+
+def _explained(case, setup, prefs, build, sites, limit):
+    "`•explain`'s records of `case` on `build`, as a route check captures them (the worker's `route` request), spending `limit`: each record's name to its rows, each row a dict from column to value. A build older than that request runs `case` as `•explain` text instead (`_explained_by_text`)."
+    with Worker(resolved(build)) as w:
+        r = w.request(dict(route=dict(code=case, setup=setup, prefs=prefs, sites=sites)), limit.left())
+        limit.spend(w.ran)
+        if (r['error'] or {}).get('kind') == 'REQUEST': r = _explained_by_text(w, case, setup, prefs, sites, limit)
+    limit.reached(r['error'])
+    if r['error']: raise BplError(r['error'], r['output'])
+    return {name: [{k: v.item() if hasattr(v, 'item') else v for k, v in zip(t, vals)} for vals in zip(*t.values())] for name, t in _value(r['value']).items()}
+
+def _explained_by_text(w, case, setup, prefs, sites, limit):
+    "The reply of `w`, a build older than the worker's `route` request, to `•explain` of a second run of `case`, after `prefs`, `setup` and an explained first run, each evaluation spending `limit`. A build older than `•explain`'s options runs without `sites`."
+    def run(code):
+        r = w.eval(code, limit.left())
+        limit.spend(w.ran)
+        return r
+    text, opts = '"' + case.replace('"', '""') + '"', '["sites":$t]' if sites else ''
+    for code in filter(None, [prefs, setup, f'(•explain {text}) ⋄ 0']):
+        if (r := run(code))['error']: return r
+    r = run(f'1↓{opts}•explain {text}')
+    return run(f'1↓•explain {text}') if r['error'] and opts else r
+
+def _paired(old, new):
+    "One record's `ExplainDiff` rows, as `(sign, row, moved)`: rows of `old` and `new` paired first by every column but `_LONG`'s, then by their text columns alone."
+    out, old, new = [], list(old), list(new)
+    cols = [k for k in new[0] if k in old[0]] if old and new else []
+    for text_only in (False, True):
+        def key(r): return [(k, r[k]) for k in cols if k not in _LONG and (isinstance(r[k], str) or not text_only)]
+        for b in list(new):
+            a = next((a for a in old if key(a) == key(b)), None)
+            if a is None: continue
+            old.remove(a); new.remove(b)
+            if moved := {k: (a[k], b[k]) for k in cols if k not in _VARIES and a[k] != b[k]}: out.append(('~', b, moved))
+    return [('-', a, {}) for a in old] + [('+', b, {}) for b in new] + out
+
+def explain_diff(
+    case, # BPL code that `•explain` runs, such as `{+/⍵×⍵}∂ v`
+    base:str, # The build to compare with, resolved as `build` is, such as the one installed before a change
+    setup='', # BPL that defines what the case uses, run first in each worker
+    prefs='', # BPL that runs before `setup`, such as `•prefs ["kinds":"static"]`
+    build:str=None, # The build to compare with `base`, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build
+    sites=False, # Fill each `forced` and `stopped` row's `site` column, as `•explain`'s `"sites"` option does, on builds that have the option
+    timeout:float=LIMIT # Seconds of work that both captures get, or a `Limit` to share (`worker.Limit`); None: no limit
+):
+    "How `•explain`'s records of `case` differ between two builds: each row that only one build gave, and each row that both gave whose counts or program listing moved. Each build captures `case` as the route test does (the worker's `route` request), in a fresh worker: `prefs` and `setup` run, then an explained warm-up run, then the run whose records it compares."
+    limit = Limit.of(timeout)
+    old, new = (_explained(case, setup, prefs, b, sites, limit) for b in (base, build))
+    return ExplainDiff((name, *r) for name in [*new, *(n for n in old if n not in new)] for r in _paired(old.get(name, []), new.get(name, [])))
+
+def _cost_env(path, **kwargs):
+    name = tomllib.loads((Path(path).expanduser()/'Cargo.toml').read_text())['package']['name']
+    return environment(**kwargs) | {f'{name.upper()}_COSTS': '1'}
+
+def _cost_rows(text, returncode):
+    costs = logged_costs(text, _platform())
+    if returncode and not costs: raise ValueError(text)
     return costs
 
+def _run_costs(cmd, path, timeout, env=None, **kwargs):
+    "The rows that `logged_costs` reads from what `cmd` prints, run in the package at `path` with `<NAME>_COSTS` set, `env`'s variables and the settings that `worker.environment` takes. A case over its budget still gives its row."
+    path = Path(path).expanduser()
+    limit = Limit.of(timeout)
+    with limit.running(): p = bounded(cmd, limit.left(), cwd=path, env=_cost_env(path, **kwargs) | (env or {}))
+    return _cost_rows(p.stdout + p.stderr, p.returncode)
+
+@delegates(environment)
 def cargo_costs(
     path='.', # A Cargo package, such as basedpl or rustymath, whose `tests/speed.rs` prints every cost when `<NAME>_COSTS` is set
     build:str=None, # A copy of the speed test's executable to run in place of the one that `cargo test` builds, such as one saved before a change
-    native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
-    timeout:float=None # Seconds before the run stops
+    timeout:float=LIMIT, # Seconds of work that the run gets, or a `Limit` to share (`worker.Limit`); None: no limit
+    **kwargs
 ):
-    "The rows that `logged_costs` reads from what the speed test of the package at `path` prints, run as `cargo test` runs it. A case over its budget still gives its row."
-    return _run_costs([Path(build).expanduser()] if build else ['cargo', 'test', '--test', 'speed'], path, timeout, native)
+    "The speed test's logged cost rows. Build once outside the execution budget, then run that binary directly; `build` runs a saved executable instead. Time inside the binary, including lock waits, spends `timeout`. A case over its budget still gives its row."
+    if build: return _run_costs([Path(build).expanduser()], path, timeout, **kwargs)
+    limit = Limit.of(timeout)
+    left = limit.left()
+    try: result = run_tests(path, '--test', 'speed', timeout=left, env=_cost_env(path, **kwargs))
+    except TimeoutError:
+        limit.spend(left)
+        raise
+    limit.spend(result.seconds)
+    return _cost_rows(result.text, result.returncode)
 
 def _python_path(path, build):
     "The environment variables that put `build`'s Python package before the installed one on `PYTHONPATH`, for the package at `path`, or none where `build` is None. `build` is a directory that holds a copy of the package, or a prefix of the id of a build that `cargo develop` kept (`fastws.store`)."
-    if build is None: return {}
+    if _installed(build): return {}
     d = Path(build).expanduser()
     if not d.exists(): d = store.resolve(Path(path).expanduser(), str(build))/'python'
     return dict(PYTHONPATH=os.pathsep.join(filter(None, [str(d), os.environ.get('PYTHONPATH')])))
 
 def pytest_costs(
     path='.', # A package, such as rustymath, whose `tests/test_speed.py` prints every cost when `<NAME>_COSTS` is set
-    build:str=None, # The build of the package to time: a prefix of the id of a build that `cargo develop` kept (`fastws.store`), or a directory that holds a copy of its Python package; None: the installed one
+    build:str=None, # The build of the package to time: a prefix of the id of a build that `cargo develop` kept (`fastws.store`), or a directory that holds a copy of its Python package; None or `installed`: the installed one
     native=False, # Time rustymath's own linear algebra in place of Accelerate, as `Worker`'s `native` does
-    timeout:float=None # Seconds before the run stops
+    timeout:float=LIMIT # Seconds of work that the run gets, or a `Limit` to share (`worker.Limit`); None: no limit
 ):
     "The rows that `logged_costs` reads from what the Python speed test of the package at `path` prints, run with `pytest`. A case over its budget still gives its row."
-    return _run_costs([sys.executable, '-m', 'pytest', '-q', 'tests/test_speed.py'], path, timeout, native, _python_path(path, build))
+    return _run_costs([sys.executable, '-m', 'pytest', '-q', 'tests/test_speed.py'], path, timeout, env=_python_path(path, build), native=native)
 
 def run_pytest(
     tests:Annotated[str, {'nargs':'+'}], # A test's `pytest` node ID, such as `tests/test_structure.py::test_edge_modes_pad_take_and_windows`, or a list of them
     path='.', # A package, such as rustymath, whose tests the node IDs name
-    build:str=None, # The build of the package to test: a prefix of the id of a build that `cargo develop` kept (`fastws.store`), or a directory that holds a copy of its Python package; None: the installed one
-    timeout:float=None # Seconds before the run stops
+    build:str=None, # The build of the package to test: a prefix of the id of a build that `cargo develop` kept (`fastws.store`), or a directory that holds a copy of its Python package; None or `installed`: the installed one
+    timeout:float=LIMIT # Seconds of work that the run gets, or a `Limit` to share (`worker.Limit`); None: no limit
 ):
     "What `pytest -q` prints for `tests`, run in the package at `path`."
-    p = subprocess.run([sys.executable, '-m', 'pytest', '-q', *listify(tests)], cwd=Path(path).expanduser(), capture_output=True, text=True, timeout=timeout, env=os.environ | _python_path(path, build))
+    limit = Limit.of(timeout)
+    with limit.running(): p = bounded([sys.executable, '-m', 'pytest', '-q', *listify(tests)], limit.left(), cwd=Path(path).expanduser(), env=os.environ | _python_path(path, build))
     return Report(p.stdout + p.stderr)
 
 class Report(str):
@@ -802,13 +1024,12 @@ class Report(str):
 def wasm_test(
     wasm, # A directory that `cargo wasm --out` wrote
     speed=False, # Run `tests/wasm-speed.mjs`, with V8's `--no-liftoff` and `BASEDPL_COSTS` as CI runs it, in place of `tests/wasm.mjs`? Its report then lists every case's cost, which `logged_costs` reads
-    timeout:float=None # Seconds before the run stops
+    timeout:float=LIMIT # Seconds of work that the run gets, or a `Limit` to share (`worker.Limit`), counted while it holds the timing lock; None: no limit
 ):
     "Run `tests/wasm.mjs` or `tests/wasm-speed.mjs` under `node --test` against the browser build in `wasm`, as CI runs them, and give the runner's report. Only the `node` process gets `BASEDPL_WASM` and `BASEDPL_COSTS`. It holds the machine's timing lock, exclusively for the speed test and shared for the others. A failing test raises `ValueError` with the report, starting on a line of its own so that `logged_costs` reads every row of it."
-    test = _SPEED.with_name('wasm-speed.mjs' if speed else 'wasm.mjs')
-    with timing_lock(exclusive=speed):
-        p = subprocess.run([_node(), *(['--no-liftoff'] if speed else []), '--test', str(test)], cwd=_ROOT, capture_output=True,
-                           text=True, timeout=timeout, env=_wasm_env(wasm) | (dict(BASEDPL_COSTS='1') if speed else {}))
+    test, limit = _SPEED.with_name('wasm-speed.mjs' if speed else 'wasm.mjs'), Limit.of(timeout)
+    with timing_lock(exclusive=speed), limit.running():
+        p = bounded([_node(), *(['--no-liftoff'] if speed else []), '--test', str(test)], limit.left(), cwd=_ROOT, env=_wasm_env(wasm) | (dict(BASEDPL_COSTS='1') if speed else {}))
     report = Report(p.stdout + p.stderr)
     if p.returncode: raise ValueError(f'\n{report}')
     return report
@@ -819,28 +1040,28 @@ class StackUse(list):
 
 def wasm_stack(
     wasm, # A directory that `cargo wasm --out` wrote
+    timeout:float=LIMIT, # Seconds of work that every trial together gets, or a `Limit` to share (`worker.Limit`), counted while the trials run; None: no limit
 ):
-    "The worker stack, in KB, that each recursion shape of `tests/wasm.mjs` takes per level and below its first level, under V8's TurboFan alone (`--no-liftoff`). The browser's depth limit, `MAX_CALL_DEPTH` in `src/eval.rs`, is set from these. For each shape, it bisects to 1 KB the least stack at which the shape's recursion reaches the test's depth, and half that depth. Each trial runs `tests/wasm.mjs depths` in a fresh `node` process. Its worker compiles the module, as the test's worker does. The bisections run at once, one for each core, with the machine's timing lock held shared."
-    node, test, env, most = _node(), _SPEED.with_name('wasm.mjs'), _wasm_env(wasm), 2048
+    "The worker stack, in KB, that each recursion shape of `tests/wasm.mjs` takes per level and below its first level, under V8's TurboFan alone (`--no-liftoff`). The browser's depth limit, `MAX_CALL_DEPTH` in `src/eval.rs`, is set from these. For each shape, it bisects to 1 KB the least stack at which the shape's recursion reaches the test's depth, and half that depth. Each trial runs `tests/wasm.mjs depths` in a fresh `node` process. Its worker compiles the module, as the test's worker does. The bisections run at once, one for each core, in rounds that each run one trial for every unfinished bisection as one batch (`_locked`)."
+    node, test, env, most, limit = _node(), _SPEED.with_name('wasm.mjs'), _wasm_env(wasm), 2048, Limit.of(timeout)
     def depths(kb, *shape):
         "What `tests/wasm.mjs depths` gives with `kb` KB of worker stack, for every shape or for `shape`, a name and a depth: each shape's depth, the depth it reached, and what deeper recursion gave. `None` where the stack is too small for the worker to load the module."
-        p = subprocess.run([node, '--no-liftoff', test, 'depths', str(kb), *map(str, shape)], cwd=_ROOT, capture_output=True, text=True, env=env)
-        if p.returncode and 'RangeError: Maximum call stack size exceeded' in p.stderr: return None
+        p = bounded([node, '--no-liftoff', test, 'depths', str(kb), *map(str, shape)], limit.left(), cwd=_ROOT, env=env)
+        # A worker whose stack is too small to load the module overflows before it posts results. Node then exits with a RangeError, printed as `RangeError [Error]` where an internal module overflowed, or exits 0 with no output.
+        if 'Maximum call stack size exceeded' in p.stderr or not (p.returncode or p.stdout.strip()): return None
         if p.returncode: raise ValueError(p.stderr)
         return json.loads(p.stdout)
-    def least(job):
-        "The least worker stack, in KB, at which shape `name` reaches depth `n`, searched from the 192 KB that Node keeps in reserve."
-        (name, n), lo, hi = job, 192, most
-        while hi - lo > 1:
-            mid = (lo+hi)//2
-            if (got := depths(mid, name, n)) and got[name][1] == n: hi = mid
-            else: lo = mid
-        return hi
-    with timing_lock():
-        full = depths(most)
-        if short := [name for name, (n, reached, *_) in full.items() if reached != n]: raise ValueError(f'With {most} KB of stack, {", ".join(short)} fall short of their depths')
-        jobs = [(name, d) for name, (n, *_) in full.items() for d in (n//2, n)]
-        with ThreadPoolExecutor(os.cpu_count()) as pool: kb = dict(zip(jobs, pool.map(least, jobs)))
+    with timing_lock(), limit.running(): full = depths(most)
+    if short := [name for name, (n, reached, *_) in full.items() if reached != n]: raise ValueError(f'With {most} KB of stack, {", ".join(short)} fall short of their depths')
+    jobs = [(name, d) for name, (n, *_) in full.items() for d in (n//2, n)]
+    # Each bisection searches for the least worker stack at which its shape reaches its depth, from the 192 KB that Node keeps in reserve.
+    bounds = {job: (192, most) for job in jobs}
+    with ThreadPoolExecutor(os.cpu_count()) as pool:
+        while trials := {job: (lo+hi)//2 for job, (lo, hi) in bounds.items() if hi - lo > 1}:
+            for (job, mid), got in zip(trials.items(), _locked(pool, [(depths, mid, *job) for job, mid in trials.items()], limit)):
+                lo, hi = bounds[job]
+                bounds[job] = (lo, mid) if got and got[job[0]][1] == job[1] else (mid, hi)
+    kb = {job: hi for job, (lo, hi) in bounds.items()}
     per = {name: (kb[name, n] - kb[name, n//2])/(n - n//2) for name, (n, *_) in full.items()}
     return StackUse((name, per[name], kb[name, n] - per[name]*n) for name, (n, *_) in full.items())
 
@@ -956,35 +1177,39 @@ def _preflight():
     return notes, problems, node
 
 def _run(steps, logs, jobs, keep_going):
-    "Run `steps`, each once the steps it reads have passed, writing each step's output to a log in `logs`. At most `jobs` steps run at once, or any number for `None`, and each timing step runs alone after the rest. Gives each step's `(name, status, seconds, log)` row. Unless `keep_going`, a failure ends the running steps and starts no more."
+    "Run `steps`, each once its inputs passed, logging output in `logs`. At most `jobs` run at once (None: no limit); timing steps run alone after the rest. Give `(name, status, seconds, log)` rows. Own each step's process group unless already in a managed job. Clean owned groups on every exit, even after a leader exits. A nested failure ends the containing job; otherwise `keep_going` permits independent steps after a failure."
     if unknown := {a for s in steps for a in s.after} - {s.name for s in steps}: raise ValueError(f'No step is named {", ".join(sorted(unknown))}')
     rows, running, pending = {}, {}, list(steps)
+    owner = not os.environ.get(JOB_ENV)
     def end(name, status):
         p, f, start, _ = running.pop(name)
-        if p.poll() is None:
-            os.killpg(p.pid, signal.SIGTERM)
-            try: p.wait(10)
-            except subprocess.TimeoutExpired: os.killpg(p.pid, signal.SIGKILL); p.wait()
+        if owner: kill_group(p)
+        elif p.poll() is None: p.kill(); p.wait()
         f.close()
         rows[name] = (name, status, time.monotonic()-start, f.name)
-    while pending or running:
-        for name, (p, _, start, s) in list(running.items()):
-            if p.poll() is not None: end(name, 'failed' if p.returncode else 'ok')
-            elif time.monotonic()-start > s.timeout: end(name, 'timed out')
-        if not keep_going and any(r[1] != 'ok' for r in rows.values()):
-            for name in list(running): end(name, 'stopped')
-            break
-        for s in [s for s in pending if any(rows[a][1] != 'ok' for a in s.after if a in rows)]:
-            rows[s.name] = (s.name, 'not run', 0, '')
-            pending.remove(s)
-        for s in list(pending):
-            if not all(a in rows for a in s.after) or (s.timing and (running or any(not t.timing for t in pending))): continue
-            if not s.timing and jobs and len(running) >= jobs: continue
-            f = open(logs/f"{re.sub(r'\W+', '-', s.name).strip('-')}.log", 'w')
-            running[s.name] = (subprocess.Popen(s.cmd, cwd=s.cwd, env=os.environ | s.env, stdout=f, stderr=subprocess.STDOUT, start_new_session=True), f, time.monotonic(), s)
-            pending.remove(s)
-        if not running: break
-        time.sleep(0.5)
+    try:
+        while pending or running:
+            for name, (p, _, start, s) in list(running.items()):
+                if p.poll() is not None: end(name, 'failed' if p.returncode else 'ok')
+                elif time.monotonic()-start > s.timeout: end(name, 'timed out')
+            failed = [r for r in rows.values() if r[1] != 'ok']
+            if failed and not owner: raise RuntimeError(f'{failed[0][0]} {failed[0][1]}; stopping the containing job')
+            if failed and not keep_going: break
+            for s in [s for s in pending if any(rows[a][1] != 'ok' for a in s.after if a in rows)]:
+                rows[s.name] = (s.name, 'not run', 0, '')
+                pending.remove(s)
+            for s in list(pending):
+                if not all(a in rows for a in s.after) or (s.timing and (running or any(not t.timing for t in pending))): continue
+                if not s.timing and jobs and len(running) >= jobs: continue
+                f = open(logs/f"{re.sub(r'\W+', '-', s.name).strip('-')}.log", 'w')
+                try: p = subprocess.Popen(s.cmd, cwd=s.cwd, env=os.environ | s.env | {JOB_ENV: '1'}, stdout=f, stderr=subprocess.STDOUT, start_new_session=owner)
+                except BaseException: f.close(); raise
+                running[s.name] = (p, f, time.monotonic(), s)
+                pending.remove(s)
+            if not running: break
+            time.sleep(0.5)
+    finally:
+        for name in list(running): end(name, 'stopped')
     rows |= {s.name: (s.name, 'not run', 0, '') for s in pending}
     return [rows[s.name] for s in steps]
 
@@ -1018,8 +1243,145 @@ def prerelease(
         raise ValueError(f'\n{result!r}' + (f'\n\nThe end of the log of {name}, {log}:\n' + '\n'.join(Path(log).read_text().splitlines()[-40:]) if log else ''))
     return result
 
+_ENGINE = 'graph fusion plan pervasive agreement program jit array number element error settings explain keyed'.split()
+_USE = re.compile(r'\buse\s+(crate::|super::)?([^;]*);')
+_RUST_PATH = re.compile(r'\b(crate|super)::((?:\w+::)*\w+)')
 
-_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs run_pytest compare_costs wasm_test wasm_stack target_builds prerelease'.split()
+def _use_paths(tree, prefix=()):
+    "The paths that a Rust `use` tree names, each a tuple of segments, without aliases."
+    tree = tree.strip()
+    if tree.startswith('{'):
+        paths, depth, start = [], 0, 1
+        for i, ch in enumerate(tree):
+            depth += (ch == '{') - (ch == '}')
+            if (depth == 1 and ch == ',') or depth == 0:
+                if tree[start:i].strip(): paths += _use_paths(tree[start:i], prefix)
+                start = i + 1
+        return paths
+    head, brace, rest = tree.partition('::{')
+    if brace: return _use_paths('{' + rest, prefix + tuple(head.split('::')))
+    return [prefix + tuple(re.sub(r'\s+as\s+\w+$', '', tree).split('::'))]
+
+def module_edges(
+    engine:Annotated[str, {'nargs':'+'}]=None, # Top-level modules that count as the engine; None: those of meta/crate-split-2026-10-31.md
+    root:Path=_ROOT, # The crate whose `src` to scan
+):
+    "Count the references from the engine's modules into the crate's other modules, and find the largest cycle of references between top-level modules. A text scan of `crate::` and `super::` paths and `use` trees, with `lib.rs`'s re-exports resolved: it counts paths, not distinct items."
+    engine, src = set(engine or _ENGINE), Path(root).expanduser()/'src'
+    texts = {'::'.join(p.relative_to(src).with_suffix('').parts): re.sub(r'(?m)//.*$', '', p.read_text()) for p in src.rglob('*.rs')}
+    lib = texts.pop('lib')
+    tops = {m.split('::')[0] for m in texts}
+    def module(path): return None if not path or path[0] not in tops else '::'.join(path[:2]) if '::'.join(path[:2]) in texts else path[0]
+    reexported = {p[-1]: m for _, tree in _USE.findall(lib) for p in _use_paths(tree) if (m := module(p))}
+    refs = defaultdict(lambda: defaultdict(int))
+    for m, text in texts.items():
+        paths = [(kind, p) for kind, tree in _USE.findall(text) if kind for p in _use_paths(tree)]
+        paths += [(kind, tuple(path.split('::'))) for kind, path in _RUST_PATH.findall(_USE.sub('', text))]
+        for kind, path in paths:
+            if kind.startswith('super'): path = tuple(m.split('::')[:-1]) + path
+            target = reexported.get(path[0]) or module(path)
+            if target and target != m: refs[m][target] += 1
+    top = lambda m: m.split('::')[0]
+    graph, lines = defaultdict(set), defaultdict(int)
+    for m, targets in refs.items(): graph[top(m)] |= {top(t) for t in targets} - {top(m)}
+    for m, text in texts.items(): lines[top(m)] += len(text.splitlines())
+    index, low, stack, cycles = {}, {}, [], []
+    def visit(v):
+        index[v] = low[v] = len(index); stack.append(v)
+        for w in graph[v]:
+            if w not in index: visit(w); low[v] = min(low[v], low[w])
+            elif w in stack: low[v] = min(low[v], index[w])
+        if low[v] == index[v]:
+            cycle = [stack.pop()]
+            while cycle[-1] != v: cycle.append(stack.pop())
+            cycles.append(cycle)
+    for v in sorted(tops - index.keys()): visit(v)
+    cycle = max(cycles, key=len)
+    into = defaultdict(lambda: defaultdict(int))
+    for m, targets in refs.items():
+        for t, n in targets.items():
+            if top(m) in engine and top(t) not in engine: into[t][m] += n
+    rows = [f"{sum(n for c in into.values() for n in c.values())} references from {len({m for c in into.values() for m in c})} of the engine's modules into others:"]
+    for t, c in sorted(into.items(), key=lambda tc: -sum(tc[1].values())):
+        rows.append(f'{sum(c.values()):5} {t}: ' + ', '.join(f'{m} {n}' for m, n in sorted(c.items(), key=lambda mn: -mn[1])))
+    rows.append(f'Largest cycle: {len(cycle)} of {len(tops)} top-level modules, {sum(lines[m] for m in cycle):,} of {sum(lines.values()):,} lines: {" ".join(sorted(cycle))}')
+    return Report('\n'.join(rows))
+
+_CRATES = {'basedpl': ('src', 'py', 'cli', 'wasm', 'xtask'), 'rustymath': ('src', 'py', 'buffer')}
+_SKIPPED_DIRS = ['target', 'links', 'node_modules', '_proc', '_docs', 'meta']
+_FN = re.compile(r'^(\s*)(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?(?:extern\s+"[^"]*"\s+)?fn\s+(\w+)')
+_IMPL = re.compile(r'^(\s*)(?:unsafe\s+)?(impl|trait|pub(?:\([^)]*\))?\s+trait)\b')
+# Attributes through which a test runner, Python or JavaScript reaches a function by another route than its name.
+_REACHED = re.compile(r'#\[(?:test|bench|pyfunction|pymethods|pymodule|pyclass|wasm_bindgen|no_mangle|export_name|unsafe\((?:no_mangle|export_name))')
+
+def _sources(base):
+    "The Rust, Python, JavaScript and TOML files under `base`, outside build output, linked checkouts, notebooks' copies and notes."
+    for top, dirs, files in os.walk(base):
+        dirs[:] = [d for d in dirs if d not in _SKIPPED_DIRS and not d.startswith('.')]
+        yield from (Path(top)/f for f in files if Path(f).suffix in ('.rs', '.py', '.js', '.mjs', '.toml'))
+
+def _code(line):
+    "`line` without a trailing `//` comment outside a string."
+    i = line.find('//')
+    while i >= 0 and line[:i].count('"') % 2: i = line.find('//', i + 2)
+    return line if i < 0 else line[:i]
+
+def _test_lines(lines):
+    "The numbers, from 1, of `lines` inside an item marked `#[test]` or `#[cfg(test)]`, its attributes included."
+    marked, marking, inside, depth, opened = set(), False, False, 0, False
+    for n, line in enumerate(lines, 1):
+        s, code = line.lstrip(), _code(line)
+        if not inside:
+            if s.startswith('#[') and (marking or re.match(r'#\[(?:cfg\()?test\)?\]', s)): marked.add(n); marking = True; continue
+            if not marking or not s: continue
+            inside, depth, opened, marking = True, 0, False, False
+        marked.add(n)
+        depth += code.count('{') - code.count('}')
+        opened = opened or '{' in code
+        if (opened and depth <= 0) or (not opened and code.rstrip().endswith(';')): inside = False
+    return marked
+
+def _is_test(path):
+    "Whether `path` is a test file: under a `tests` directory, or a Python file named `test_*.py`."
+    return 'tests' in path.parts or path.name.startswith('test_')
+
+def dead_functions(
+    root:Path=_ROOT, # basedpl's checkout, with rustymath's beside it
+    tested:bool=False, # Also report functions that only tests name: references from test files, `#[test]` functions and `#[cfg(test)]` modules don't count
+):
+    "Functions whose name appears nowhere else: each `fn` in basedpl's and rustymath's crates whose name no other place in either repository's Rust, Python, JavaScript or TOML files uses. A text scan by name, so a name shared with anything else counts as used. It leaves out `main`, tests and their helpers, Python's dunder methods, a trait implementation's methods, and functions that Python, JavaScript or the linker reach through an attribute."
+    roots = {'basedpl': Path(root).expanduser(), 'rustymath': Path(root).expanduser().parent/'rustymath'}
+    defs, words = [], defaultdict(int)
+    for repo, base in roots.items():
+        for path in _sources(base):
+            if tested and _is_test(path.relative_to(base)): continue
+            lines = path.read_text().splitlines()
+            tests = _test_lines(lines) if path.suffix == '.rs' else set()
+            counted = [_code(l) for n, l in enumerate(lines, 1) if not (tested and n in tests)] if path.suffix == '.rs' else lines
+            for w in re.findall(r'\b[A-Za-z_]\w*\b', '\n'.join(counted)): words[w] += 1
+            if path.suffix != '.rs' or path.relative_to(base).parts[0] not in _CRATES[repo]: continue
+            blocks, attrs = [], ''
+            for n, line in enumerate(lines, 1):
+                if not line.strip() or n in tests: continue
+                indent = len(line) - len(line.lstrip())
+                while blocks and blocks[-1][0] >= indent and not line.lstrip().startswith(('#', 'where', '+', ')')): blocks.pop()
+                if line.lstrip().startswith('#['): attrs += line; continue
+                if m := _IMPL.match(line):
+                    header = ' '.join(lines[n-1:n+4]).split('{')[0]
+                    reached = m[2] == 'impl' and (re.search(r'\sfor\s', header) or _REACHED.search(attrs))
+                    blocks.append((indent, bool(reached)))
+                elif (m := _FN.match(line)) and m[2] != 'main' and not m[2].startswith('__') and not _REACHED.search(attrs) and not (blocks and blocks[-1][1]):
+                    defs.append((path.relative_to(base.parent), n, m[2]))
+                attrs = ''
+    counts = defaultdict(int)
+    for _, _, name in defs: counts[name] += 1
+    dead = [(p, n, name) for p, n, name in defs if words[name] <= counts[name]]
+    reach = 'nothing outside tests names' if tested else 'nothing else names'
+    return Report('\n'.join([f'{len(dead)} function{"s" * (len(dead) != 1)} that {reach}:'] + [f'{p}:{n} {name}' for p, n, name in sorted(dead)]))
+
+
+
+_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs run_pytest compare_costs bisect explain_diff wasm_test wasm_stack target_builds prerelease module_edges dead_functions'.split()
 
 def main():
     "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."

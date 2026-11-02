@@ -15,7 +15,7 @@ leaf←•element "x:leaf"
 "<x:root xmlns:x=""urn:example""><x:leaf>Hi</x:leaf></x:root>"
 
 ⍝ xml-numeric — Numeric attributes use XML rather than APL spelling
-•xml⁻¹ ["points":[¯2ₓ 1r2 1E3]] (•element "path") ⍬
+path←•element "path" ⋄ •xml⁻¹ ["points":[¯2ₓ 1r2 1E3]] path ⍬
 "<path points=""-2 0.5 1000""/>"
 
 ⍝ xml-roundtrip — Writing what •xml read gives back the same text
@@ -49,6 +49,10 @@ im←•image 0.5×[0 1⋄1 0]
 ≢¨•mime¨[1-im ⍉im im,im +/im ⍴im]
 ⍝ =>
 [2 2 2 1 1]ₓ
+
+⍝ mime-trace — A gradient at an array with a renderer runs from a program, as at any array
+⍝⍝⍝ route trace
+im←•image 0.5×[0 1⋄1 0] ⋄ {+/,⍵×⍵}∂im   ⍝ [0 1⋄1 0]
 
 ⍝ image-png — PNG bytes decode to the picture they encode
 •image "png" •image⁻¹ 0.2×[0 1⋄2 3⋄4 5]

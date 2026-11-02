@@ -1,5 +1,6 @@
 //! `•date` reads a moment, in seconds since the Unix epoch, from text or from a record of fields. `•date⁻¹` writes a moment as a record, or as text with a pattern. Patterns, field names and ISO 8601 text follow chrono.
-use crate::{Described, Error, Number, Span, Value, data::{Options, text}, keyed, primitive::real};
+use crate::system::HostCall;
+use crate::{Described, Error, Number, Value, data::{Options, text}, keyed, primitive::real};
 use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Utc};
 use rustymath::buffer::FloatWidth;
 use std::fmt::Write;
@@ -65,7 +66,7 @@ fn date_time(fields: &[i64]) -> Option<NaiveDateTime> {
 }
 
 /// `•date Y`: the moment that the text `Y` names, or one for each text in `Y`, or one for each position of a record of fields. A pattern, or the `pattern` and `zone` options, go on the left.
-pub(crate) fn read(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+pub(crate) fn read(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> {
     let opts = Options::new("•date", left, Some("pattern"), &["pattern", "zone"])?;
     let zone = Zone::new(&opts)?;
     let pattern = opts.values.get("pattern").map(|p| text(p)).transpose()?;
@@ -100,7 +101,7 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
 const WRITE_OPTIONS: &[&str] = if cfg!(web) { &["pattern", "zone"] } else { &["pattern", "zone", "locale"] };
 
 /// `•date⁻¹ T`: a record of the fields of each moment in `T`. With a pattern, the text of each moment. The `zone` option gives the time zone, and the `locale` option the language of names in the text.
-pub(crate) fn write(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+pub(crate) fn write(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> {
     let opts = Options::new("•date⁻¹", left, Some("pattern"), WRITE_OPTIONS)?;
     let zone = Zone::new(&opts)?;
     #[cfg(not(web))]

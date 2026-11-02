@@ -9,10 +9,11 @@ dynamic	2×(1+x)!y	⍝⍝⍝ allows forced "!": `!` doesn't fuse here, so it com
 dynamic	2×(1+x)*0	⍝⍝⍝ gap declined "compiled: exponent": the JIT lowers x*0 as the constant 1
 dynamic	2×(1+x)*0.5	⍝⍝⍝ allows forced "*": `*` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×(1+x)*y	⍝⍝⍝ allows forced "*": `*` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
-dynamic	2×(1+x)√0	⍝⍝⍝ allows declined "compiled: root": a root runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
-dynamic	2×(1+x)√0.5	⍝⍝⍝ allows declined "compiled: root": a root runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
-dynamic	2×(1+x)√1	⍝⍝⍝ gap declined "compiled: root": the JIT lowers a root of 1 as the constant 1
-dynamic	2×(1+x)√2	⍝⍝⍝ allows declined "compiled: root": a root runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
+dynamic	2×(1+x)*ₐy	⍝⍝⍝ allows declined "compiled: real_pow": a real power off the routed exponents runs on rustymath's kernel between compiled parts, as the general power does; compiled calls into it gained at most 7%
+dynamic	2×(1+x)√0	⍝⍝⍝ allows forced "√": `√` doesn't fuse here, so it computes its pending argument by itself: under dynamic kinds a root of degree 0 or ±∞ fails, and ranges can't rule either out of the degree `1+x`
+dynamic	2×(1+x)√0.5	⍝⍝⍝ allows forced "√": `√` doesn't fuse here, so it computes its pending argument by itself: under dynamic kinds a root of degree 0 or ±∞ fails, and ranges can't rule either out of the degree `1+x`
+dynamic	2×(1+x)√1	⍝⍝⍝ allows forced "√": `√` doesn't fuse here, so it computes its pending argument by itself: under dynamic kinds a root of degree 0 or ±∞ fails, and ranges can't rule either out of the degree `1+x`
+dynamic	2×(1+x)√2	⍝⍝⍝ allows forced "√": `√` doesn't fuse here, so it computes its pending argument by itself: under dynamic kinds a root of degree 0 or ±∞ fails, and ranges can't rule either out of the degree `1+x`
 dynamic	2×(1+x)√y	⍝⍝⍝ allows forced "√": `√` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×(1+x)√¯1	⍝⍝⍝ allows forced "√": `√` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×(1+x)∧0	⍝⍝⍝ allows forced "∧": `∧` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
@@ -62,11 +63,11 @@ dynamic	2×√1+x	⍝⍝⍝ allows forced "√": `√` doesn't fuse here, so it 
 dynamic	2×⌈1+x	⍝⍝⍝ allows forced "⌈": `⌈` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×⌊1+x	⍝⍝⍝ allows forced "⌊": `⌊` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×⍟2+x	⍝⍝⍝ allows forced "⍟": `⍟` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
-dynamic	2×⍟1+1+x	⍝⍝⍝ allows forced "⍟1+": `log1p`, which the form rewriter puts in place of `⍟1+⍵`, doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
+dynamic	2×⍟ₐ1+x	⍝⍝⍝ allows declined "compiled: real_ln": `⍟ₐ`'s logarithm runs on rustymath's kernel between compiled parts, as `⍟`'s does; compiled calls into it gained at most 7%
+dynamic	{+/1○⁻¹ₐ⍵}∂ x	⍝⍝⍝ allows forced "○⁻¹ₐ": the slope 1÷√(1-x²) records `0○`, which doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
+dynamic	{+/2○⁻¹ₐ⍵}∂ x	⍝⍝⍝ allows forced "○⁻¹ₐ": the slope 1÷√(1-x²) records `0○`, which doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
+dynamic	2×⍟1+1+x	⍝⍝⍝ allows forced "⍟1+": `log1p`, which the rule table puts in place of `⍟1+⍵`, doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	{+/⍟1+⍵}∂ x	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
-dynamic	</2×x	⍝⍝⍝ gap forced "</": the fold reads its pending argument inside the group
-dynamic	=/2×x	⍝⍝⍝ gap forced "=/": the fold reads its pending argument inside the group
-dynamic	>/2×x	⍝⍝⍝ gap forced ">/": the fold reads its pending argument inside the group
 dynamic	{!/⍵}∂ x	⍝⍝⍝ allows stopped "a function called on each item": ∂ has no rule for a fold by this function, by Jeremy's decision of 30 October 2026 (decision 4): the rule needed a scan from the right for these rare folds, whose gradients run untraced
 dynamic	{*/⍵}∂ x	⍝⍝⍝ allows stopped "a function called on each item": ∂ has no rule for a fold by this function, by Jeremy's decision of 30 October 2026 (decision 4): the rule needed a scan from the right for these rare folds, whose gradients run untraced
 dynamic	{+/!⍵}∂ x	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
@@ -103,18 +104,11 @@ dynamic	{π/⍵}∂ x	⍝⍝⍝ allows stopped "a function called on each item":
 dynamic	{√/⍵}∂ x	⍝⍝⍝ allows stopped "a function called on each item": ∂ has no rule for a fold by this function, by Jeremy's decision of 30 October 2026 (decision 4): the rule needed a scan from the right for these rare folds, whose gradients run untraced
 dynamic	{∧/⍵}∂ x	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
 dynamic	{∨/⍵}∂ x	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
-dynamic	|/2×x	⍝⍝⍝ gap forced "|/": the fold reads its pending argument inside the group
-dynamic	π/2×x	⍝⍝⍝ gap forced "π/": the fold reads its pending argument inside the group
 dynamic	√/2×x	⍝⍝⍝ gap forced "√/": the fold reads its pending argument inside the group
 dynamic	∧/2×x	⍝⍝⍝ gap forced "∧/": the fold reads its pending argument inside the group
 dynamic	∨/2×x	⍝⍝⍝ gap forced "∨/": the fold reads its pending argument inside the group
-dynamic	≠/2×x	⍝⍝⍝ gap forced "≠/": the fold reads its pending argument inside the group
-dynamic	≤/2×x	⍝⍝⍝ gap forced "≤/": the fold reads its pending argument inside the group
-dynamic	≥/2×x	⍝⍝⍝ gap forced "≥/": the fold reads its pending argument inside the group
 dynamic	⍟/2×x	⍝⍝⍝ gap forced "⍟/": the fold reads its pending argument inside the group
 dynamic	⍟/2×x	⍝⍝⍝ gap itemwise "item lanes": a kernel folds the whole array
-static	!/2×x	⍝⍝⍝ gap forced "!/": the fold reads its pending argument inside the group
-static	*/2×x	⍝⍝⍝ gap forced "*/": the fold reads its pending argument inside the group
 static	2×!1+x	⍝⍝⍝ allows declined "compiled: factorial": the gamma function runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×(1+x)!0	⍝⍝⍝ allows declined "compiled: binomial": the binomial runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×(1+x)!0.5	⍝⍝⍝ allows declined "compiled: binomial": the binomial runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
@@ -124,6 +118,7 @@ static	2×(1+x)!y	⍝⍝⍝ allows declined "compiled: binomial": the binomial r
 static	2×(1+x)!¯1	⍝⍝⍝ allows declined "compiled: binomial": the binomial runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×(1+x)*0	⍝⍝⍝ gap declined "compiled: exponent": the JIT lowers x*0 as the constant 1
 static	2×(1+x)*y	⍝⍝⍝ allows declined "compiled: exponent": a power off the routed exponents runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
+static	2×(1+x)*ₐy	⍝⍝⍝ allows declined "compiled: real_pow": a real power off the routed exponents runs on rustymath's kernel between compiled parts, as the general power does; compiled calls into it gained at most 7%
 static	2×(1+x)|0	⍝⍝⍝ gap declined "compiled: residue": the JIT lowers the exact residue, which rustymath recomputes in a second pass where a quotient passes the float's precision
 static	2×(1+x)|0.5	⍝⍝⍝ gap declined "compiled: residue": the JIT lowers the exact residue, which rustymath recomputes in a second pass where a quotient passes the float's precision
 static	2×(1+x)|1	⍝⍝⍝ gap declined "compiled: residue": the JIT lowers the exact residue, which rustymath recomputes in a second pass where a quotient passes the float's precision
@@ -182,9 +177,7 @@ static	2×8○1+x	⍝⍝⍝ gap itemwise "item pairs": a kernel computes the who
 static	2×¯1+*1+x	⍝⍝⍝ allows declined "compiled: expm1": expm1 runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×⍟1+1+x	⍝⍝⍝ allows declined "compiled: log1p": log1p runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×⍟2+x	⍝⍝⍝ allows declined "compiled: natural-log": the logarithm runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
-static	</2×x	⍝⍝⍝ gap forced "</": the fold reads its pending argument inside the group
-static	=/2×x	⍝⍝⍝ gap forced "=/": the fold reads its pending argument inside the group
-static	>/2×x	⍝⍝⍝ gap forced ">/": the fold reads its pending argument inside the group
+static	2×⍟ₐ1+x	⍝⍝⍝ allows declined "compiled: real_ln": `⍟ₐ`'s logarithm runs on rustymath's kernel between compiled parts, as `⍟`'s does; compiled calls into it gained at most 7%
 static	{!/⍵}∂ x	⍝⍝⍝ allows stopped "a function called on each item": ∂ has no rule for a fold by this function, by Jeremy's decision of 30 October 2026 (decision 4): the rule needed a scan from the right for these rare folds, whose gradients run untraced
 static	{*/⍵}∂ x	⍝⍝⍝ allows stopped "a function called on each item": ∂ has no rule for a fold by this function, by Jeremy's decision of 30 October 2026 (decision 4): the rule needed a scan from the right for these rare folds, whose gradients run untraced
 static	{|/⍵}∂ x	⍝⍝⍝ allows stopped "a function called on each item": ∂ has no rule for a fold by this function, by Jeremy's decision of 30 October 2026 (decision 4): the rule needed a scan from the right for these rare folds, whose gradients run untraced
@@ -192,12 +185,25 @@ static	{÷/⍵}∂ x	⍝⍝⍝ gap forced "{÷/⍵}∂": ∂'s rule for `÷/` se
 static	{π/⍵}∂ x	⍝⍝⍝ allows stopped "a function called on each item": ∂ has no rule for a fold by this function, by Jeremy's decision of 30 October 2026 (decision 4): the rule needed a scan from the right for these rare folds, whose gradients run untraced
 static	{√/⍵}∂ x	⍝⍝⍝ allows stopped "a function called on each item": ∂ has no rule for a fold by this function, by Jeremy's decision of 30 October 2026 (decision 4): the rule needed a scan from the right for these rare folds, whose gradients run untraced
 static	{⍟/⍵}∂ x	⍝⍝⍝ allows stopped "a function called on each item": ∂ has no rule for a fold by this function, by Jeremy's decision of 30 October 2026 (decision 4): the rule needed a scan from the right for these rare folds, whose gradients run untraced
-static	|/2×x	⍝⍝⍝ gap forced "|/": the fold reads its pending argument inside the group
-static	π/2×x	⍝⍝⍝ gap forced "π/": the fold reads its pending argument inside the group
-static	√/2×x	⍝⍝⍝ gap forced "√/": the fold reads its pending argument inside the group
-static	∧/2×x	⍝⍝⍝ gap forced "∧/": the fold reads its pending argument inside the group
-static	∨/2×x	⍝⍝⍝ gap forced "∨/": the fold reads its pending argument inside the group
-static	≠/2×x	⍝⍝⍝ gap forced "≠/": the fold reads its pending argument inside the group
-static	≤/2×x	⍝⍝⍝ gap forced "≤/": the fold reads its pending argument inside the group
-static	≥/2×x	⍝⍝⍝ gap forced "≥/": the fold reads its pending argument inside the group
-static	⍟/2×x	⍝⍝⍝ gap forced "⍟/": the fold reads its pending argument inside the group
+dynamic	|/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+dynamic	π/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+dynamic	=/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+dynamic	≠/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+dynamic	</2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+dynamic	≤/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+dynamic	>/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+dynamic	≥/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	|/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	*/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	⍟/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	π/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	√/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	!/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	∧/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	∨/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	=/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	≠/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	</2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	≤/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	>/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
+static	≥/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group

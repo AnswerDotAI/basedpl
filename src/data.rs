@@ -1,11 +1,12 @@
 use crate::execution::check;
 use crate::session;
-use crate::{Described, Error, ErrorKind, Number, Span, Value, array::Storage, keyed, number::Numeric, primitive::{numeric, real}};
+use crate::{Described, Error, ErrorKind, Number, Span, Value, keyed, number::Numeric, system::HostCall, primitive::{numeric, real}};
 use rustymath::hashing::{HashMap, HashMapExt};
 use rustymath::{buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
 use std::io::Read;
 
 pub(crate) fn text(value: &Value) -> Result<String, Error> { keyed::name(value).map(|s| s.to_string()).ok_or_else(|| Error::domain("expected text")) }
+pub(crate) fn real_items(value: &Value) -> Result<Vec<f64>, Error> { value.elements().map(|item| real(&item)).collect() }
 
 /// Imported items, where `filled` marks missing-value fills. Where every other number is an ordinary integer, every one is a fixed integer of one width, or every one is a Boolean, a fill takes that type wherever it keeps its value there, as a fill under `⍠` does (`Value::fill_of`): a fill of `0` beside integers gives `0ₓ`. Approximate inputs, and a fill that doesn't keep its value in that type, such as NaN or `0.5` beside integers, select real or complex storage at the widest strong approximate width, or the widest weak width when none is strong. Weak approximate values may round; exact values must convert losslessly. Otherwise items keep their own kinds.
 pub(crate) fn imported(shape: Vec<usize>, mut items: Vec<Value>, filled: impl Fn(usize) -> bool, empty_prototype: Value) -> Result<Value, ErrorKind> {
@@ -44,7 +45,7 @@ pub(crate) fn imported(shape: Vec<usize>, mut items: Vec<Value>, filled: impl Fn
                     }).collect::<Option<Vec<_>>>();
                     if let Some(values) = values { return Value::complex(shape, ComplexBuf::collect(width.into(), values.into_iter())); }
                 } else if let Some(floats) = items.iter().map(|v| number(v).and_then(exactly)).collect::<Option<Vec<_>>>() {
-                    return Value::from_storage(shape, Storage::Compact(Buffer::Floats(FloatBuf::collect(width, floats.into_iter()))));
+                    return Value::from_buffer(shape, Buffer::Floats(FloatBuf::collect(width, floats.into_iter())));
                 }
             }
     Value::from_parts(shape, items, empty_prototype)
@@ -86,9 +87,9 @@ impl Options {
         }
     }
 
-    pub fn fill(&self) -> Result<Number, Error> {
+    pub fn fill(&self, numeric: Numeric) -> Result<Number, Error> {
         match self.values.get("fill") {
-            None => Ok(Numeric::current().float(f64::NAN)), Some(Value::Number(n)) if n.as_complex().is_none() => Ok(n.clone()),
+            None => Ok(numeric.float(f64::NAN)), Some(Value::Number(n)) if n.as_complex().is_none() => Ok(n.clone()),
             _ => Err(Error::domain(format!("{} fill must be a real number", self.name)))
         }
     }
@@ -114,8 +115,7 @@ impl Options {
 pub(crate) enum Types { Named(HashMap<String, Value>), Ordered(Vec<Value>) }
 
 /// `column`, a column of numbers that `reader` read, named `name`, at the type it takes. A column that the `types` option names takes the type of `typed`, its entry there: an integer of the `int` width under static kinds where `typed` is an ordinary integer. Under static kinds, a column of integers that the option doesn't name takes the `int` width, as every new integer does, so that its type never depends on its values. A value that doesn't keep itself in that type is a DOMAIN error that names the column and the `types` option, and the fill where `missing` says that the column had missing cells. Any other column keeps the type that its numbers gave it.
-pub(crate) fn typed_column(reader: &str, name: &str, column: Value, typed: Option<&Value>, missing: bool) -> Result<Value, Error> {
-    let numeric = Numeric::current();
+pub(crate) fn typed_column(reader: &str, name: &str, column: Value, typed: Option<&Value>, missing: bool, numeric: Numeric) -> Result<Value, Error> {
     let int = if numeric.is_static() { numeric.int } else { Width::I64 };
     let integers = || match column.dtype() {
         Some(DType::Integer(_)) => true,
@@ -147,17 +147,15 @@ pub(crate) fn typed_column(reader: &str, name: &str, column: Value, typed: Optio
             b.extend_from(Buffer::kept(n.view()?, dtype).ok()?.view(), 0..1).then_some(b)
         }),
     }.ok_or_else(lost)?;
-    let storage = if fixed || numeric.is_static() || !matches!(dtype, DType::Integer(_)) { Storage::Compact(buffer).fixed(fixed) }
-    else { Storage::narrowed(i64::of(buffer.view()).expect("integers at 64 bits").to_vec()) };
-    Value::from_storage([column.len()], storage).described("invalid column")
+    let width = match (fixed, dtype) { (true, DType::Integer(width)) => Some(width), _ => None };
+    Value::from_buffer_at([column.len()], buffer, width).described("invalid column")
 }
 
-pub(crate) fn vfi(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+pub(crate) fn vfi(HostCall { left, right, numeric, .. }: HostCall<'_>) -> Result<Value, Error> {
     let input = text(right)?;
     let separators = left.map(|a| text(a)).transpose()?;
     let mut valid = Vec::new();
     let mut numbers = Vec::new();
-    let numeric = Numeric::current();
     let zero = numeric.float(0.0);
     let mut field = |s: &str| -> Result<(), Error> {
         check()?;
@@ -186,7 +184,7 @@ fn file_options(name: &'static str, left: Option<&Value>, shorthand: Option<&str
 
 /// `data` as a vector of byte values, one byte each.
 pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> {
-    Value::from_storage([data.len()], Storage::within(data, crate::array::ordinary_width(Width::U8)))
+    Value::from_buffer([data.len()], Buffer::Integers(rustymath::buffer::IntBuf::U8(data)))
 }
 
 /// The bytes in an array of integers from 0 to 255, in ravel order. `None` for any other array.
@@ -222,11 +220,11 @@ fn flate(left: Option<&Value>, right: &Value, compress: bool) -> Result<Value, E
     reader.read_to_end(&mut out).map_err(|e| Error::domain(format!("invalid compressed data: {e}")))?;
     byte_vector(out).described("invalid byte vector")
 }
-pub(crate) fn inflate(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> { flate(left, right, false) }
-pub(crate) fn deflate(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> { flate(left, right, true) }
+pub(crate) fn inflate(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> { flate(left, right, false) }
+pub(crate) fn deflate(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> { flate(left, right, true) }
 
 /// `•hash` gives the SHA-2 digest of bytes or text in hex, by `"sha224"`, `"sha256"`, `"sha384"` or `"sha512"`, SHA-256 by default.
-pub(crate) fn hash(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+pub(crate) fn hash(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> {
     use sha2::{Digest, Sha224, Sha256, Sha384, Sha512};
     let data = payload(right)?;
     let digest = match algorithm(left, "sha256")?.as_str() {
@@ -237,7 +235,7 @@ pub(crate) fn hash(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
 }
 
 /// `•uuid v` gives a new UUID of version `v` as text. Versions 1, 4, 6 and 7 take no left argument. Versions 3 and 5 take a namespace and a name on the left, and version 8 takes 16 bytes.
-pub(crate) fn uuid(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+pub(crate) fn uuid(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> {
     use uuid::Uuid;
     // The standard allows a random node in place of a MAC address, with the multicast bit set.
     let node = || {
@@ -246,8 +244,6 @@ pub(crate) fn uuid(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
         node
     };
     let version = numeric(right)?.integer().described("•uuid needs a version number")?;
-    // These versions read the clock or random bits.
-    if matches!((version, left), (1 | 4 | 6 | 7, None)) { crate::transform::acts()?; }
     let id = match (version, left) {
         (0, None) => Uuid::nil(),
         (1, None) => Uuid::now_v1(&node()),
@@ -269,13 +265,12 @@ pub(crate) fn uuid(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
     Ok(keyed::text(&id.hyphenated().to_string()))
 }
 
-pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+pub(crate) fn read(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Result<Value, Error> {
     let opts = file_options("•nget", left, None, &["encoding", "binary"])?;
     let binary = opts.boolean("binary", false)?;
     if binary && opts.values.contains_key("encoding") { return Err(Error::domain("binary files do not take an encoding")); }
     let path = text(right)?;
     check()?;
-    crate::transform::acts()?;
     let data = if path == "-" { session().execution.rest(span)? } else { span.read(&path)? };
     check()?;
     if binary { return byte_vector(data).described("invalid byte vector"); }
@@ -284,7 +279,7 @@ pub(crate) fn read(left: Option<&Value>, right: &Value, span: &Span) -> Result<V
 }
 
 /// `path •nput data` writes `data` to a new file, or to standard output with no line ending added when `path` is `"-"`. With the `unique` option, `path` names a directory, and `•nput` writes a new file with a unique name inside it and gives its path, which is displayed. Otherwise the byte count it gives isn't displayed.
-pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Span) -> Result<(Value, bool), Error> {
+pub(crate) fn write(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Result<(Value, bool), Error> {
     let opts = file_options("•nput", left, Some("path"), &["path", "encoding", "overwrite", "unique", "prefix"])?;
     let path = opts.text("path", None)?;
     let data = payload(right)?;
@@ -328,7 +323,7 @@ pub(crate) struct Request { pub url: String, pub method: Option<String>, pub hea
 pub(crate) struct Response { pub status: i64, pub headers: Vec<(String, String)>, pub body: Vec<u8> }
 
 /// `X •fetch url` requests `url` and returns a record of the response's `status`, `headers` and `body`. Any response is a result, whatever its status. Getting no response is an IO error.
-pub(crate) fn fetch(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+pub(crate) fn fetch(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> {
     let opts = Options::new("•fetch", left, None, &["method", "headers", "body", "binary"])?;
     let url = text(right)?;
     let method = opts.values.get("method").map(|m| text(m)).transpose()?;
@@ -337,7 +332,6 @@ pub(crate) fn fetch(left: Option<&Value>, right: &Value, _: &Span) -> Result<Val
             .collect::<Result<_, Error>>()?, None => Vec::new()
     };
     let body = opts.values.get("body").map(|b| payload(b)).transpose()?;
-    crate::transform::acts()?;
     let response = crate::host::fetch(Request { url: url.clone(), method, headers, body })?;
     let body = response.body;
     let body = if opts.boolean("binary", false)? { byte_vector(body).described("invalid byte vector")? }

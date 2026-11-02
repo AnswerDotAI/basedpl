@@ -1,13 +1,14 @@
 use crate::execution::check;
+use crate::system::HostCall;
 use crate::session;
 use crate::{
-    Described, Error, Number, Span, Value, array::generated_len, element::{Stored, read_as}, keyed, number::Numeric, primitive::{numeric, pervade, real},
-    system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}, transform::{Cause, Stop}
+    Described, Error, Number, Span, Value, array::generated_len, keyed, primitive::{numeric, pervade, real},
+    system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
 };
-use rand::{SeedableRng, rngs::ChaCha8Rng};
+use rustymath::random::{Items, Key, Stream};
 pub(crate) use rustymath::distribution::Distribution;
-use rustymath::{Arg, Unary as _, distribution::{Cdf, Invalid, Pdf, Quantile, standard}};
-use rustymath::{Float as _, buffer::FloatWidth, error::Kind, with_float_width};
+use rustymath::{distribution::{Cdf, Invalid, Pdf, Quantile, standard}};
+use rustymath::{buffer::FloatWidth, error::Kind as ErrorKind};
 use std::sync::{Arc, Mutex, PoisonError};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,8 +41,8 @@ const DISTRIBUTIONS: &[(&str, &[f64], Constructor)] = &[
 const WHOLE: u64 = 1 << 53;
 
 fn parameters<const N: usize>(right: &Value) -> Result<[f64; N], Error> {
-    if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "parameters must be a unit or vector")); }
-    if right.len() != N { return Err(Error::new(Kind::Length, format!("expected {N} distribution parameters"))); }
+    if right.shape().len() > 1 { return Err(Error::new(ErrorKind::Rank, "parameters must be a unit or vector")); }
+    if right.len() != N { return Err(Error::new(ErrorKind::Length, format!("expected {N} distribution parameters"))); }
     let mut result = [0.0; N];
     for (item, n) in right.elements().zip(&mut result) {
         *n = real(&item)?;
@@ -59,183 +60,172 @@ fn construct(constructor: &Constructor, right: &Value) -> Result<Distribution, E
         Constructor::Binomial => {
             let [_, p] = parameters(right)?;
             let n = numeric(&right.at(0))?.nonnegative_integer::<u64>().described("binomial trials must be a nonnegative whole number")?;
-            if n > WHOLE { return Err(Error::new(Kind::Limit, "binomial trials exceed the sampler's whole-number range")); }
+            if n > WHOLE { return Err(Error::new(ErrorKind::Limit, "binomial trials exceed the sampler's whole-number range")); }
             Distribution::binomial(n, p)
         }
         Constructor::Poisson => {
             let [rate] = parameters(right)?;
-            if rate > WHOLE as f64 { return Err(Error::new(Kind::Limit, "Poisson rate exceeds the sampler's whole-number range")); }
+            if rate > WHOLE as f64 { return Err(Error::new(ErrorKind::Limit, "Poisson rate exceeds the sampler's whole-number range")); }
             Distribution::poisson(rate)
         }
     };
     made.map_err(|e| Error::domain(e.to_string()))
 }
 
-/// `params •distribution name`: the distribution called `name`, with `params`. Without `params`, a distribution takes its standard parameters, and one without standard parameters is DOMAIN.
-pub(crate) fn distribution(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct Kind(u8);
+
+impl Kind {
+    fn named(name: &str) -> Option<Self> { DISTRIBUTIONS.iter().position(|(n, ..)| *n == name).map(|i| Self(i as u8)) }
+    pub(crate) fn make(self, parameters: &Value) -> Result<Distribution, Error> { construct(&DISTRIBUTIONS[self.0 as usize].2, parameters) }
+    pub(crate) fn discrete(self) -> bool { matches!(DISTRIBUTIONS[self.0 as usize].2, Constructor::Bernoulli | Constructor::Binomial | Constructor::Poisson) }
+}
+
+/// `params •distribution name`, or the named distribution's standard parameters.
+pub(crate) fn distribution(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> {
     let name = keyed::name(right).ok_or_else(|| Error::domain("a distribution name must be a string"))?;
-    let Some((_, standard, constructor)) = DISTRIBUTIONS.iter().find(|(n, ..)| **n == *name) else { return Err(Error::domain("unknown distribution")) };
+    let kind = Kind::named(&name).ok_or_else(|| Error::domain("unknown distribution"))?;
+    let standard = DISTRIBUTIONS[kind.0 as usize].1;
     let params = match left {
         Some(params) => params.clone(), None if standard.is_empty() => return Err(Error::domain(format!("the {name} distribution has no standard parameters"))),
         None => Value::floats(vec![standard.len()], FloatWidth::F64, standard.iter().copied()).described("invalid standard parameters")?
     };
-    Ok(bundle(construct(constructor, &params)?))
+    kind.make(&params)?;
+    let method = |name, op, valence| Value::Function(crate::system::made(name, Call::Distribution(kind, op), valence, params.clone()));
+    keyed::vector(vec!["sample".into(), "density".into(), "cdf".into(), "quantile".into()], vec![
+        method("sample", Operation::Sample, Ambivalent), method("density", Operation::Density, Monadic),
+        method("cdf", Operation::Cdf, Monadic), method("quantile", Operation::Quantile, Monadic),
+    ]).described("invalid distribution")
 }
 
-fn bundle(d: Distribution) -> Value {
-    let d = Arc::new(d);
-    let method = |name, op, valence| (name, Call::Distribution(d.clone(), op), valence);
-    natives([
-        method("sample", Operation::Sample, Ambivalent), method("density", Operation::Density, Monadic), method("cdf", Operation::Cdf, Monadic),
-        method("quantile", Operation::Quantile, Monadic),
-    ])
-}
-
-fn exact(n: u64) -> Value { match i64::try_from(n) { Ok(n) => Value::integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) } }
-
-/// `len` draws from `d`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of the session's width otherwise. Draws come in blocks, with an interrupt check before each.
-fn samples<R: rand::Rng + ?Sized>(d: &Distribution, shape: &[usize], len: usize, rng: &mut R) -> Result<Value, Error> {
+/// `len` draws from `d` by `items`, as an array of `shape`: whole numbers in integer storage for a discrete distribution, and floats of `width` otherwise. Draws come in blocks, with an interrupt check before each.
+fn samples(d: &Distribution, shape: &[usize], len: usize, width: FloatWidth, items: &mut Items) -> Result<Value, Error> {
     let mut out = vec![0.0; len];
     for block in out.chunks_mut(1 << 14) {
         check()?;
-        d.samples(rng, block);
+        d.samples(items, block);
     }
     let made = if d.is_discrete() { Value::integers(shape.to_vec(), out.into_iter().map(|k| k as i64).collect()) }
-    else { Value::floats(shape.to_vec(), Numeric::current().width, out) };
+    else { Value::floats(shape.to_vec(), width, out) };
     made.described("invalid distribution sample")
 }
 
-/// The density, cdf or quantile of `d` at each number in `right`, computed at the width of `right`'s floats, or the session's float width for other numbers. An array of compact numbers goes to rustymath as one slice, and its result keeps the array's layout. A discrete quantile is an exact integer, so it goes one number at a time, as atoms and nested arrays do.
-fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Span) -> Result<Value, Error> {
-    let quantile = op == Operation::Quantile;
-    if !right.is_atom() && !(quantile && d.is_discrete()) {
-        let width = right.float_width().unwrap_or(Numeric::current().width);
-        let computed = with_float_width!(width, F => read_as::<F>(right).map(|x| {
-            if quantile && !x.iter().fold(true, |ok, p| ok & (0.0..=1.0).contains(&p.wide())) { return Err(Error::domain("probability must be in [0,1]")); }
-            let mut out = Vec::with_capacity(x.len());
-            match op {
-                Operation::Density => Pdf(*d).many(Arg::Many(&x), x.len(), &mut out), Operation::Cdf => Cdf(*d).many(Arg::Many(&x), x.len(), &mut out),
-                _ => Quantile(*d).many(Arg::Many(&x), x.len(), &mut out)
-            };
-            F::build(right.shape(), out).ok_or(Kind::Limit).described("distribution result exceeds array limits")?.with_layout(right.layout().clone()).described("invalid distribution result")
-        }));
-        if let Some(result) = computed { return result; }
-    }
-    pervade(None, right, &|_, e| point(d, op, real(e)?, e.float_width().unwrap_or(Numeric::current().width)), &|_, _, _| None, span)
-}
-
-/// The density, cdf or quantile of `d` at one number x, computed at `width` as an array's items are, as a float of `width`. A discrete quantile is computed in `f64` and gives an exact integer where it's finite, because its integers can pass the largest that narrower floats hold exactly.
-fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Result<Value, Error> {
-    let quantile = op == Operation::Quantile;
-    if quantile && !(0.0..=1.0).contains(&x) { return Err(Error::domain("probability must be in [0,1]")); }
-    if quantile && d.is_discrete() {
-        let y = d.quantile(x);
-        return Ok(if y.is_finite() { exact(y as u64) } else { Value::Number(Number::float(y, width)) });
-    }
-    let y = with_float_width!(width, F => { let x = F::narrow(x); match op { Operation::Density => Pdf(*d).one(x), Operation::Cdf => Cdf(*d).one(x), _ => Quantile(*d).one(x) }.wide() });
-    Ok(Value::Number(Number::float(y, width)))
-}
-
-pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    if op != Operation::Sample { return evaluate(d, op, right, span); }
-    if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "sample shape must be a unit or vector")); }
-    let shape = right.as_items().nonnegative_integers().described("invalid sample dimension")?;
-    let len = generated_len(&shape)?;
-    let Some(left) = left else { return drawn(None, |rng| samples(d, &shape, len, rng)); };
-    let generator = generator_of(left).ok_or_else(|| Error::domain("sample takes a •rand generator on the left"))?;
-    drawn(Some(&generator), |rng| samples(d, &shape, len, rng))
-}
-
-/// A stream of random numbers: the session's, which `¿` and a distribution's `sample` draw, or one that `•rand` makes. Every copy of a `•rand` record draws from the same stream.
-pub(crate) type Generator = Arc<Mutex<Stream>>;
-
-/// A generator's state. Draws take its numbers in the order they run. A map's cells draw in turn, and a batched run takes every cell's numbers for one draw at once, in cell order. A draw that each cell makes once gives the same numbers whether or not the map batches, except under a guard that splits the cells, where each side draws for its own cells in turn.
-#[derive(Debug)]
-pub(crate) struct Stream { rng: ChaCha8Rng }
-
-impl Default for Stream {
-    /// The session's stream until a program sets a seed, seeded by the operating system.
-    fn default() -> Self { Self { rng: rand::make_rng() } }
-}
-
-impl Stream {
-    /// A stream seeded by `seed`.
-    pub(crate) fn seeded(seed: u64) -> Self { Self { rng: ChaCha8Rng::seed_from_u64(seed) } }
-    /// The stream's state: its seed, its stream number and how far its draws have reached.
-    fn state(&self) -> State { (self.rng.get_seed(), self.rng.get_stream(), self.rng.get_word_pos()) }
-    /// Puts the stream back in `state`.
-    fn restore(&mut self, (seed, stream, position): State) {
-        self.rng = ChaCha8Rng::from_seed(seed);
-        self.rng.set_stream(stream);
-        self.rng.set_word_pos(position);
-    }
-}
-
-/// A stream's state (`Stream::state`).
-type State = ([u8; 32], u64, u128);
-
-/// Each generator that the running batched try has drawn from, with its state before the try first drew from it (`Session::drawn`). Where the try falls back, `settle` puts each state back, so the run over cells draws the numbers it would draw had no try run.
-pub(crate) type Drawn = Mutex<Vec<(Generator, State)>>;
-
-/// Ends a batched try's record of its draws, putting each generator's state back where the try fell back (`batch::tried`).
-pub(crate) fn settle(drawn: &Drawn, fell_back: bool) {
-    let drawn = std::mem::take(&mut *drawn.lock().unwrap_or_else(PoisonError::into_inner));
-    if fell_back { for (generator, state) in drawn { locked(&generator).restore(state); } }
-}
-
-fn locked(generator: &Generator) -> std::sync::MutexGuard<'_, Stream> { generator.lock().unwrap_or_else(PoisonError::into_inner) }
-
-/// `draw` drawing from `generator`, or from the session's generator where it's `None`, given the id and frame of the batched run where one is running. In a batched run, it first records the generator's state, once for each try (`Drawn`). Under a trace, it stops the trace first (`program::trace::each_call`).
-fn drawing(
-    generator: Option<&Generator>, draw: impl FnOnce(Option<(u64, &crate::array::Layout)>, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
-    crate::program::trace::each_call("a random draw")?;
-    let generator = generator.unwrap_or(&session().generator);
-    let mut stream = locked(generator);
-    let batched = session().batched();
-    if batched.is_some() {
-        let mut drawn = session().drawn.lock().unwrap_or_else(PoisonError::into_inner);
-        if !drawn.iter().any(|(g, _)| Arc::ptr_eq(g, generator)) { drawn.push((generator.clone(), stream.state())); }
-    }
-    draw(batched.as_ref().map(|(level, frame)| (*level, frame)), &mut stream.rng)
-}
-
-/// `f` drawing from `generator`, as `drawn_cells` does, where `f` doesn't depend on the cell.
-pub(crate) fn drawn(generator: Option<&Generator>, f: impl Fn(&mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
-    drawn_cells(generator, |_, rng| f(rng))
-}
-
-/// `f` drawing from `generator`, or from the session's generator where it's `None`, where `f` also takes the cell it draws for. Outside a batched run, `f` draws once, for cell 0. In a batched run, `f` draws for each cell of the run in turn (`batch::each_cell`). `primitive::drawn_value` uses the cell to give each draw that cell of each batched argument (`batch::cell`).
-pub(crate) fn drawn_cells(generator: Option<&Generator>, f: impl Fn(usize, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
-    drawing(generator, |batched, rng| match batched { Some((level, frame)) => crate::batch::each_cell(level, frame, |c| f(c, rng)), None => f(0, rng) })
-}
-
-/// `f` drawing from `generator` on `value`, where `f` draws for each item of `value` in turn and keeps its layout, as a roll does. In a batched run, `f` draws once, on `value` laid over the run's frame (`batch::whole_over`). That gives each cell the numbers it gets when the cells draw in turn. A value that can't be laid over the frame draws cell by cell (`batch::each_cell`).
-pub(crate) fn drawn_items(generator: Option<&Generator>, value: &Value, f: impl Fn(&Value, &mut ChaCha8Rng) -> Result<Value, Error>) -> Result<Value, Error> {
-    drawing(generator, |batched, rng| {
-        let Some((level, frame)) = batched else { return f(value, rng) };
-        match crate::batch::whole_over(value.clone(), level, frame) {
-            Some(whole) => crate::batch::result(level, f(&whole, rng)?, frame.shape().len(), || true, Stop::new(level, Cause::Rule)),
-            None => crate::batch::each_cell(level, frame, |c| f(&crate::batch::cell(value, c)?, rng)),
-        }
+fn kernel(d: Distribution, op: Operation, width: FloatWidth, input: rustymath::buffer::DType) -> Result<rustymath::operation::Kernel, Error> {
+    use rustymath::facts::Formula;
+    let variant = rustymath::facts::Variant { dtype: rustymath::buffer::DType::Float(width), checked: true, mathish: false, wrapping: false };
+    Ok(match op {
+        Operation::Density => Pdf(d).resolve(variant, [input])?, Operation::Cdf => Cdf(d).resolve(variant, [input])?,
+        Operation::Quantile => Quantile(d).resolve(variant, [input])?, Operation::Sample => return Err(Error::planning()),
     })
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Draw { Roll, Deal }
+fn evaluate(d: &Distribution, op: Operation, call: HostCall<'_>) -> Result<Value, Error> {
+    use rustymath::{agreement::{Binding, Mapping, Missing, Read, ReadPlan}, buffer::{Buffer, DType, FloatBuf, Floats, View}};
+    crate::array::map_leaves(call.right, |leaf| {
+        let width = leaf.float_width().unwrap_or(call.numeric.width);
+        if leaf.is_atom() { return point(d, op, real(leaf)?, width); }
+        let exact = op == Operation::Quantile && d.is_discrete();
+        let computing = if exact { FloatWidth::F64 } else { width };
+        let copied = if leaf.physical().is_none() { Some(Buffer::Floats(FloatBuf::F64(crate::data::real_items(leaf)?))) } else { None };
+        let (storage, map) = match &copied { Some(buffer) => (buffer.view(), None), None => leaf.physical().expect("a compact source or a converted source") };
+        let plan = ReadPlan::copy(0, storage.len(), map.cloned().unwrap_or(Mapping::Linear(1)), leaf.len(), Missing::Default);
+        let sources = [Binding::full(storage)];
+        let mut output = Buffer::with_capacity(DType::Float(computing), leaf.len());
+        kernel(*d, op, computing, storage.dtype())?.map(&[Read { sources: &sources, plan: &plan }], 0..leaf.len(), Default::default(), &mut output)?;
+        if exact {
+            let View::Floats(Floats::F64(items)) = output.view() else { unreachable!("discrete quantiles compute in f64") };
+            return crate::array::Frame::of(leaf).collect(items.iter().map(|&n| whole(n, width)), Value::integer(0)).map_err(Error::from);
+        }
+        Value::from_buffer(leaf.shape(), output)?.with_layout(leaf.layout().clone()).described("invalid distribution result")
+    })
+}
 
-/// `•rand seed` returns a record of `roll` and `deal`, which draw from one stream seeded by `seed`.
-pub(crate) fn generator(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+fn whole(n: f64, width: FloatWidth) -> Value {
+    if n.is_finite() { Value::Number(Number::from(i128::from(n as u64))) } else { Value::Number(Number::float(n, width)) }
+}
+
+fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Result<Value, Error> {
+    let exact = op == Operation::Quantile && d.is_discrete();
+    let computing = if exact { FloatWidth::F64 } else { width };
+    let y = kernel(*d, op, computing, rustymath::buffer::DType::Float(computing))?.real(&[x], Default::default())?;
+    Ok(if exact { whole(y, width) } else { Value::Number(Number::float(y, width)) })
+}
+
+pub(crate) fn call(kind: Kind, op: Operation, parameters: &Value, call: HostCall<'_>) -> Result<Value, Error> {
+    if op == Operation::Sample { return Err(Error::planning()); }
+    evaluate(&kind.make(parameters)?, op, call)
+}
+
+#[derive(Debug)]
+pub(crate) struct Generating { counter: Mutex<Counter> }
+
+impl Generating {
+    /// The generator's counter, locked: its key and count.
+    pub(crate) fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, Counter>> { self.counter.lock() }
+}
+
+/// A shared generator: the session's, which `¿` and a distribution's `sample` draw from, or one that `•rand` makes.
+pub(crate) type Generator = Arc<Generating>;
+
+pub(crate) use rustymath::random::Counter;
+
+/// The session's generator until a program sets a seed, keyed by the operating system.
+pub(crate) fn fresh() -> Generator { Arc::new(Generating { counter: Mutex::new(Counter { key: Key(rand::random()), count: 0 }) }) }
+
+fn locked(generator: &Generator) -> std::sync::MutexGuard<'_, Counter> { generator.lock().unwrap_or_else(PoisonError::into_inner) }
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Law { Roll, Deal }
+
+
+pub(crate) fn counter(generator: &Generator) -> Counter { *locked(generator) }
+
+pub(crate) fn set_count(generator: &Generator, count: u64) { locked(generator).count = count; }
+
+pub(crate) fn generator(HostCall { right, .. }: HostCall<'_>) -> Result<Value, Error> {
     // Each call makes a new stream, as each cell of a run cell by cell makes its own.
-    crate::transform::acts()?;
-    if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "•rand needs a unit or vector seed")); }
-    if !right.is_singleton() { return Err(Error::new(Kind::Length, "•rand needs one seed")); }
+    if right.shape().len() > 1 { return Err(Error::new(ErrorKind::Rank, "•rand needs a unit or vector seed")); }
+    if !right.is_singleton() { return Err(Error::new(ErrorKind::Length, "•rand needs one seed")); }
     let seed = numeric(&right.at(0))?.nonnegative_integer::<u64>().described("•rand needs a nonnegative whole number as its seed")?;
-    let rng = Arc::new(Mutex::new(Stream::seeded(seed)));
-    Ok(natives([("roll", Call::Generator(rng.clone(), Draw::Roll), Monadic), ("deal", Call::Generator(rng, Draw::Deal), Dyadic)]))
+    let generator = Arc::new(Generating { counter: Mutex::new(Counter::seeded(seed)) });
+    Ok(natives([("roll", Call::Generator(Some(generator.clone()), Law::Roll), Monadic), ("deal", Call::Generator(Some(generator), Law::Deal), Dyadic)]))
 }
 
 /// The stream behind a record from `•rand`.
 fn generator_of(value: &Value) -> Option<Generator> {
     let Value::Function(f) = keyed::field(value, "roll")? else { return None; };
-    match &f.system_function()?.call { Call::Generator(generator, _) => Some(generator.clone()), _ => None }
+    match &f.system_function()?.call { Call::Generator(generator, _) => generator.clone(), _ => None }
+}
+
+pub(crate) fn snapshot(operation: &crate::primitive::Operation, arguments: &[Value]) -> Result<Option<[Value; 2]>, Error> {
+    if !matches!(operation, crate::primitive::Operation::Draw { .. }) { return Ok(None); }
+    let Some(Value::Function(function)) = arguments.first() else { return Err(Error::planning()); };
+    let generator = match function.system_function().map(|f| &f.call) {
+        Some(Call::Generator(Some(generator), _)) => generator.clone(),
+        Some(Call::Generator(None, _)) => return Err(Error::planning()),
+        Some(Call::Distribution(_, Operation::Sample)) => match arguments.len() {
+            2 => session().generator.clone(),
+            3 => generator_of(&arguments[1]).ok_or_else(|| Error::domain("sample takes a •rand generator on the left"))?,
+            _ => return Err(Error::planning()),
+        },
+        None if function.as_primitive() == Some(crate::primitive::Primitive::Random) => session().generator.clone(),
+        _ => return Err(Error::planning()),
+    };
+    reserve(&generator, 1).map(Some)
+}
+pub(crate) fn reserve(generator: &Generator, draws: u64) -> Result<[Value; 2], Error> {
+    let mut counter = locked(generator);
+    let count = counter.count; counter.count = counter.count.wrapping_add(draws);
+    let key = counter.key.0.chunks_exact(8).map(|word| i64::from_le_bytes(word.try_into().unwrap())).collect();
+    Ok([Value::integers([4], key)?, Value::integer(count as i64)])
+}
+
+pub(crate) fn stream(key: &Value, count: &Value, place: u64) -> Result<Stream, Error> {
+    if key.len() != 4 { return Err(Error::planning()); }
+    let mut bytes = [0; 32];
+    for (word, value) in bytes.chunks_exact_mut(8).zip(key.elements()) {
+        word.copy_from_slice(&value.as_number().ok_or_else(Error::planning)?.integer()?.to_le_bytes());
+    }
+    let count = count.as_number().ok_or_else(Error::planning)?.integer()? as u64;
+    Ok(Key(bytes).stream(count.wrapping_add(place)))
 }

@@ -177,14 +177,15 @@ b∧b
 c=c
 ⍝⍝: 1.2	1.2	1.2
 
-⍝⍝⍝ held linux 0.92 wasm 1.06: the cause isn't known yet
+⍝ Expected: 0.73 copies: 0.5 for writing 8 bytes an item, and one node, about 0.23 copies of 65,536 floats (`fusion::MAC_NODE_NS`, 1,800 ns), because the call waits under the cost rule and nothing fuses with it (decision 13). Jeremy accepted a lone 65,536-item call's node on 30 October 2026, as for `c=c`. Main set this expected cost on 31 October 2026, for Jeremy's review. In the browser the call runs at once, because the cost rule's limit there, from the browser's node estimate of 4 × `MAC_NODE_NS`, is about 830 KB, above the call's 512 KB. CI measured it there at 1.06 copies.
+⍝⍝⍝ held linux ~1.26: the call waits on Linux too and pays a node at x86's estimate of 2 × `MAC_NODE_NS`, 0.34 copies at CI's stored copy time. The estimate is CI's 0.92 copies at once plus that node.
 ⍳√n ×⊗ ⍳√n
-⍝⍝: 1	1	1
+⍝⍝: 1.5	1.5	1.5
 
 ⍝ Arithmetic on two keyed vectors whose keys are equal but were built separately, as the same 65,536 texts made twice.
 ⍝ Expected: 1.5 copies: as `v+w`, once the call knows that the two key vectors are equal.
 ⍝ On 30 October 2026 `ra+2×ra`, whose operands share one key object, cost 1.62 on macOS.
-⍝⍝⍝ held macos 14.7 linux ~25 wasm ~20.6: each call compares the keys again (open.md, "Alignment cache"); Linux and wasm hold estimates of 1.7 and 1.4 times the macOS cost
+⍝ On 31 October 2026 `ra+rb` cost about 1.7 on macOS: every call after the first finds its union of keys among the latest that rustymath keeps for each thread (`layout::recalled`).
 ra+rb
 ⍝⍝: 3	3	3
 
@@ -288,9 +289,8 @@ c⍳c
 ∪c
 ⍝⍝: 4	4	4
 
-⍝ Key classifies the keys, then counts and places each group's positions. With `(≢⊢)` it only counts the classes.
+⍝ Key classifies the keys, places each group's positions in one leaf and counts each group from its size, whatever the operand's spelling. `(≢⊢)⌸b` counted the classes alone before Key ran as a map; that needs classification as a node (plan, maps State item 19 (3)).
 ⍝ Expected: `{≢⍵}⌸b` 2 copies: classifying, then writing each group's positions; `(≢⊢)⌸b` 0.13 copies: reads 1 byte an item and counts.
-⍝⍝⍝ gap itemwise "key groups": the dfn should run once on all the groups, as a batched map runs once on all its cells
 {≢⍵}⌸b
 ⍝⍝: 4	4	4
 
@@ -502,12 +502,10 @@ lut.[ux]
 ⍝ `@` with a mask changes the items or rows that the mask picks. `⍚` with a selector for each cell runs each case once, on the cells that pick it.
 ⍝ Expected: `√@[0≤]s` 4 copies: a tolerant comparison, about 1.5 copies, and square roots of about 2; `(0≤)⍚[0 √] s` 4 copies: as `√@[0≤]s`; `cnt⍚[- ⊢ 10×] v` 4 copies: each case on every item, about 1 copy each, and one pick; `-@[{side↑b}] m` 1.5 copies: one copy of `m`, and half its rows negated; `(side↑b)⍚[⊢ -] m` 1.5 copies: as `-@[{side↑b}] m`.
 ⍝⍝⍝ held macos 7.77 linux 8.58 wasm 9.77: open.md lists the masked selects among the speed audit's outliers
-⍝⍝⍝ gap forced "√@[0↣≤]": the select should run in its mask's fused pass, which `√` blocks because it can't run on every item under dynamic kinds (open.md, "Masked selects and `⍚`")
 √@[0≤]s
 ⍝⍝: 8	8	8
 
 ⍝⍝⍝ held macos 7.92 linux 8.67 wasm 10.3: open.md lists the masked selects among the speed audit's outliers
-⍝⍝⍝ gap forced "0↣≤⍚[0⍨ √]": the select should run in its mask's fused pass, which `√` blocks because it can't run on every item under dynamic kinds (open.md, "Masked selects and `⍚`")
 (0≤)⍚[0 √] s
 ⍝⍝: 8	8	8
 
@@ -730,9 +728,6 @@ v⍳w
 
 ⍝ Sorting under `∂` grades the primal once, then reads the primal and the tangent at the positions the grade gives.
 ⍝ Expected: 56 copies: a grade, about 50, and reads of the primal and the tangent at its positions, about 3 each.
-⍝⍝⍝ held macos 92 linux 137 wasm 107: its trace stops at the sort's read of a traced value, as the `gap` line below says, and the untraced derivative costs the rest
-⍝⍝⍝ gap stopped "a read of a traced value": sorting should retain its primal grade in the differentiated program
-⍝⍝⍝ allows forced "<": a sort reads its argument whole
 {+/ ⍳≢⍵ × <⍵}∂ v
 ⍝⍝: 84	84	84
 

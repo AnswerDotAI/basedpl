@@ -15,6 +15,11 @@ def test_notebook_execution_and_optional_save(tmp_path):
     assert saved[0]['outputs'] == []
     assert saved[1]['outputs'][0]['data']['text/plain'] == ['42']
     assert saved[1]['execution_count'] == 7
+    assert run_notebook(path, compare=True) == []
+    nb = json.loads(path.read_text())
+    nb['cells'][1]['source'] = 'x×3'
+    path.write_text(json.dumps(nb))
+    assert run_notebook(path, compare=True) == [(2, '1', '42', '63')]
     cells[0]['source'] = 'x'
     path.write_text(json.dumps(dict(metadata=dict(kernelspec=dict(language='bpl')), cells=cells)))
     with pytest.raises(RuntimeError, match=r'cell 1.*VALUE ERROR'): run_notebook(path)

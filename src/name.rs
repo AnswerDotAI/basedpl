@@ -70,6 +70,10 @@ impl Name {
     /// The slot in a frame of one of the six names that a call binds itself, or `None` for any other name.
     #[inline]
     pub(crate) fn implicit(self) -> Option<usize> { (self.0 < 6).then_some(self.0 as usize) }
+
+    /// Whether this is `∇` or `⍢`, which a call binds from its definition alone: the function that runs, and the operator that a dfn operator is. A name that refers to either always has the same role, and no assignment can change it.
+    #[inline]
+    pub(crate) fn fixed(self) -> bool { matches!(self.0, 4 | 5) }
 }
 
 impl fmt::Display for Name { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(self.text()) } }

@@ -2343,18 +2343,17 @@ H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ +H÷2   ⍝ 2.5
 H←{⍺←⍵ ⋄ ⍺ ⍶ ⍹ ⍵} ⋄ 7+H÷2   ⍝ 7.5
 
 ⍝ ngn:504 — Zero-origin offset, match and capture
-p←•r "b(c+)d"
-m←p.matches "abcd"
+m←"abcd" •r "b(c+)d"
 (↑m.position),(m.text),(↑m.groups)
 ⍝ =>
 1ₓ "bcd" "c"
 
 ⍝ ngn:505 — No match
-p←•r "B(c+)d" ⋄ (p.matches "abcd").position
+("abcd" •r "B(c+)d").position
 ⍬ₓ
 
 ⍝ ngn:506 — Malformed regex
-•r "a(b"
+"abcd" •r "a(b"
 ⍝ error: DOMAIN ERROR
 
 ⍝ ngn:119 — BPL gives `¯∞` for `⍟0`, as ngn expects

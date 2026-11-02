@@ -13,6 +13,26 @@ kind←{(•storage ⍵).kind} ⋄ replayed←{∧/(0<⍶ ⍵.programs)≥⍵.pr
 [√¯4 9;⌊2.5 ∞;7ₓ÷2ₓ;2147483647ₓ+1ₓ;2ₓ*100ₓ;1r3+1r6]
 [[$n 3] [2 ∞] 3.5 ¯2147483648ₓ 0ₓ 1ᵣ2]
 
+⍝ — `√ₐ` and `⍟ₐ` give the real part where `√` and `⍟` give NaN, as floats of the arguments' width
+[√ₐ¯4 9;⍟ₐ¯1 ¯2;kind √ₐ¯4 9]
+[[0 3] [0 0.6931472] "float32"]
+
+⍝ — `*ₐ` gives the real part of the principal power where `*` gives NaN. ÷3 rounds up at 32 bits, so `¯8*ₐ÷3` lies just below 1
+[¯8*÷3;¯8 ¯4*ₐ[÷3;0.5];kind ¯8*ₐ÷3]
+[$n [0.99999994 0] "float32"]
+
+⍝ — `○ₐ` and `○⁻¹ₐ` give the real part where `○` and `○⁻¹` give NaN, as floats of the arguments' width
+[2○⁻¹ₐ2;1○⁻¹ₐ¯2 2;7○⁻¹ₐ 2;8○ₐ 2;kind 2○⁻¹ₐ2]
+[0 [¯1.5707964 1.5707964] 0.54930615 0 "float32"]
+
+⍝ — A count or position that doesn't fit the int width is a LIMIT error, as an ordinary integer literal that doesn't fit is. An empty array can have an axis that long
+≢[3000000000 0]⍴0
+⍝ error: LIMIT ERROR
+
+⍝ — So is a length that monadic ⍴ gives
+⍴[3000000000 0]⍴0
+⍝ error: LIMIT ERROR
+
 ⍝ — Under static kinds, `⍟1+x` computes log1p, and gives NaN below ¯1, as `⍟` does outside the real domain
 ⍟1+1E¯17 ¯3   ⍝ 1ₑ¯17 $n
 
@@ -46,6 +66,9 @@ e.[[0]]←'a'
 [a b c d ; kind¨[a;b;c;d;e]]
 ⍝ =>
 [[0 200 2 0] [3.5 200 253 255] [0 200.5 253 255] [1 200 253 255]ₓ₁ ; "float32" "float32" "float32" "uint8" "mixed"]
+
+⍝ — Results computed apart join to one compact kind, as a write's items do: the cells of a map, through Each batched or one cell at a time, the states that `⍣` keeps for a list of counts, and the cases of a compacting select, through `⍚` and a guard. Characters among numbers leave the result mixed
+[{(0<⍵)⍚[(1<) (2×)]⍵}¨¯1.5 2 3 ; (0<)⍚[(1<) (2×)] ¯1.5 2 3 ; {⍵>0?⍵;$f}¨¯1.5 2 3 ; {⍵×0.5}⍣(⍳3) 1ₓ ; kind {⍵>0?⍵;'a'}¨¯1 2]   ⍝ [[0 4 6] [0 4 6] [0 2 3] [1 0.5 0.25] "mixed"]
 
 ⍝ — A function gives an atom the kind that it gives a one-item array, under both kinds settings. Each arithmetic function and comparison, with one argument or two, takes fixed integers, floats, Booleans and a weak number beside each. The first seven results come from static kinds, the last seven from dynamic kinds
 kd←{(•storage ⍵).kind} ⋄ sd←{((kd ⍺ ⍶ ⍵) ≡ kd ⍺ ⍶ [⍵]) ∧ (kd ⍵ ⍶ ⍺) ≡ kd [⍵] ⍶ ⍺} ⋄ md←{(kd ⍶ ⍵) ≡ kd ⍶ [⍵]} ⋄ same←{∧/[⍺ +sd ⍵ ; ⍺ -sd ⍵ ; ⍺ ×sd ⍵ ; ⍺ ÷sd ⍵ ; ⍺ *sd ⍵ ; ⍺ ⍟sd ⍵ ; ⍺ |sd ⍵ ; ⍺ ⌈sd ⍵ ; ⍺ ⌊sd ⍵ ; ⍺ !sd ⍵ ; ⍺ ∧sd ⍵ ; ⍺ ∨sd ⍵ ; ⍺ =sd ⍵ ; ⍺ ≠sd ⍵ ; ⍺ <sd ⍵ ; ⍺ ≤sd ⍵ ; ⍺ >sd ⍵ ; ⍺ ≥sd ⍵ ; ⍺ √sd ⍵ ; -md ⍵ ; ×md ⍵ ; ÷md ⍵ ; *md ⍵ ; ⍟md ⍵ ; |md ⍵ ; ⌈md ⍵ ; ⌊md ⍵ ; !md ⍵ ; ○md ⍵ ; √md ⍵ ; ⊼md ⍵ ; ⊽md ⍵ ; ≤md ⍵ ; ≥md ⍵]} ⋄ sk←[3ₓ₂ same 4ₓ₂ ; 3ₓ₂ same 4ₓ₄ ; 3ₓ same 4ₓ₁ ; 1.5 same 4ₓ₂ ; $t same $t ; 1.5 same (32•float 2.5) ; 3ₓ₂ same (32•float 2.5)] ⋄ •prefs ["kinds":"dynamic"] ⋄ dk←[3ₓ₂ same 4ₓ₂ ; 3ₓ₂ same 4ₓ₄ ; 3ₓ same 4ₓ₁ ; 1.5 same 4ₓ₂ ; $t same $t ; 1.5 same (32•float 2.5) ; 3ₓ₂ same (32•float 2.5)] ⋄ •prefs ["kinds":"static"] ⋄ sk,dk
@@ -87,12 +110,12 @@ x←1 2 3 4.5 ⋄ y←0 4 1 8 ⋄ stops←{≢(•explain ⍵).stopped.reason}¨
 (•storage ¿0 0).kind
 "float32"
 
-⍝ — Under static kinds with the int pref at 64, a call on ordinary integers defers, because its kind follows from its arguments' kinds. Its group wraps at the `int` width, as the interpreter does
-•prefs ["int":64] ⋄ jv←4611686018427387900ₓ+⍳300000ₓ ⋄ r←jv+jv×2ₓ ⋄ e←•explain "jv+jv×2ₓ" ⋄ [(•storage r).pending ; (•storage r).kind ; (1000↑r)≡(1000↑jv)+(1000↑jv)×2ₓ ; e.fused.glyphs ; ∧/0>1000↑r]
+⍝ — Under static kinds with the int pref at 64, a call on ordinary integers defers, because its kind follows from its arguments' kinds. Its group wraps at the `int` width, as the interpreter does. `r`'s state is read before `•explain` runs the same expression, which shares `r`'s node and computes it
+•prefs ["int":64] ⋄ jv←4611686018427387900ₓ+⍳300000ₓ ⋄ r←jv+jv×2ₓ ⋄ state←[(•storage r).pending ; (•storage r).kind] ⋄ e←•explain "jv+jv×2ₓ" ⋄ state,[(1000↑r)≡(1000↑jv)+(1000↑jv)×2ₓ ; e.fused.glyphs ; ∧/0>1000↑r]
 [$t "int64" $t ["+×+"] $t]
 
-⍝ — Under static kinds, a fixed mark after a pending float chain joins the chain's group as one more call. The group stores the narrow result alone, with the interpreter's values
-x←¿300000⍴0 ⋄ y←⌊ₓ₁ x×255 ⋄ e←•explain "⌊ₓ₁ x×255" ⋄ [(•storage y).pending ; (1000↑y)≡⌊ₓ₁ (1000↑x)×255 ; e.fused.glyphs ; (•storage e.value).kind]
+⍝ — Under static kinds, a fixed mark after a pending float chain joins the chain's group as one more call. The group stores the narrow result alone, with the interpreter's values. `y`'s state is read before `•explain` runs the same expression, which shares `y`'s node and computes it
+x←¿300000⍴0 ⋄ y←⌊ₓ₁ x×255 ⋄ pending←(•storage y).pending ⋄ e←•explain "⌊ₓ₁ x×255" ⋄ [pending ; (1000↑y)≡⌊ₓ₁ (1000↑x)×255 ; e.fused.glyphs ; (•storage e.value).kind]
 [$t $t ["×⌊"] "uint8"]
 
 ⍝ — Under static kinds, floor and ceiling give integers at a fixed width or at the `int` width unchanged. No group computes them
@@ -131,9 +154,13 @@ f←{+/⍵×+/(5↑⍠["fill":z] ⍵)} ⋄ z←10 ⋄ r_1←f∂1 2 3 ⋄ z←20
 g←{⍵+1} ⋄ f←{+/⍵×(g ⍵×m)} ⋄ m←2 ⋄ a←f∂1.5 2.5 ⋄ m←3 ⋄ b←f∂1.5 2.5 ⋄ m←[1 2]ₓ ⋄ c←f∂1.5 2.5 ⋄ g←{⍵+10} ⋄ [a;b;c;f∂1.5 2.5]
 [7 11 ; 10 16 ; 4 11 ; 13 20]
 
-⍝ — A free name that a dfn reads as positions holds its value in the program: every call after the first, while the name holds the same value, replays. A new value, even of the same type and shape, makes a new trace. After three new traces in a row that never replayed, the argument signature runs without a program, with the stopped-trace reason "a free value that changes on every call"
-x←0.5×[3 2]⍴⍳6 ⋄ r←[0 0 1]ₓ ⋄ f←{+/,⍵.[r]} ⋄ e←•explain "[f∂x ; f∂x]" ⋄ c←{+/+/⍵.[r]} ⋄ r←[2 2 2]ₓ ⋄ g←c∂x ⋄ r←[1 1 1]ₓ ⋄ h←c∂x ⋄ r←[0 1 2]ₓ ⋄ i←c∂x ⋄ r←[2 1 0]ₓ ⋄ k←•explain "c∂x" ⋄ [e.value ; (≢e.programs.event),∧/1↓e.programs.event≡¨⊂"replayed" ; g ; h ; i ; k.value ; k.stopped.reason]
-[[[2 2⋄1 1⋄0 0] [2 2⋄1 1⋄0 0]] [2 1]ₓ [0 0⋄0 0⋄3 3] [0 0⋄3 3⋄0 0] [1 1⋄1 1⋄1 1] [1 1⋄1 1⋄1 1] ["a free value that changes on every call"]]
+⍝ — A free name that a dfn reads as positions is data, as gather indices are: a replay selects at the name's current positions, so new positions replay rather than trace, and each gives its own values
+x←0.5×[3 2]⍴⍳6 ⋄ c←{+/+/⍵.[r]} ⋄ r←[2 2 2]ₓ ⋄ g←c∂x ⋄ r←[1 1 1]ₓ ⋄ h←c∂x ⋄ r←[0 1 2]ₓ ⋄ e←•explain "c∂x" ⋄ [g ; h ; e.value ; e.programs.event]
+[[0 0⋄0 0⋄3 3] [0 0⋄3 3⋄0 0] [1 1⋄1 1⋄1 1] ["replayed"]]
+
+⍝ — A free name that a dfn reads as a count holds its value in the program: every call after the first, while the name holds the same value, replays, and a new value makes a new trace. After nine traces in a row that never replayed, the definition traces no more: a call that no program fits runs without one, with the stopped-trace reason "the retrace limit". Its kept programs go on serving, so a second run of this code replays the first nine counts and needs nine new ones after them, which the eighteen counts give
+x←0.5×⍳20 ⋄ n←0 ⋄ f←{+/n↑⍵} ⋄ t←{n⊢←⍵ ⋄ f∂x} ⋄ j←t¨1↦18 ⋄ n←19 ⋄ k←•explain "f∂x" ⋄ [k.value ; k.stopped.reason]
+[1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0 ; ["the retrace limit"]]
 
 ⍝ — A free name that a program holds as it was, such as a nested array, must hold an identical value at a replay. A value that `=` calls equal but that differs in sign, such as `¯0` for `0`, makes a new trace
 n←[(1 2) 0] ⋄ f←{+/⍵÷1⊃n} ⋄ a←f∂1 2 ⋄ n←[(1 2) ¯0] ⋄ [a ; f∂1 2]
@@ -144,7 +171,7 @@ f←{+/⍵×≢(•storage ⍵).kind} ⋄ e←•explain "f∂1.5 2.5" ⋄ e.val
 [[7 7] ; ,⊂"an effect"]
 
 ⍝ — In a training step, `loss∂⍵` builds its program on the first call, which holds the loss and its gradient, and every later call replays it, with no trace stopped. It gives the gradient's closed form to within the last bits that a fold's order can change
-X←0.1×[6 3]⍴⍳18 ⋄ y←0.5×⍳6 ⋄ loss←{e←(X+.×⍵)-y ⋄ (+/e×e)÷≢y} ⋄ step←{⍵-0.01×loss∂⍵} ⋄ e←•explain "(step⍣10)3⍴0" ⋄ by←{e←(X+.×⍵)-y ⋄ ⍵-0.01×(2×(⍉X)+.×e)÷≢y} ⋄ w←(by⍣10)3⍴0 ⋄ ((⌈/|e.value-w)≤1e¯5×⌈/|w),(∧/1↓e.programs.event≡¨⊂"replayed"),(≢e.programs.event),≢e.stopped.reason
+X←0.1×[6 3]⍴⍳18 ⋄ y←0.5×⍳6 ⋄ loss←{e←(X+.×⍵)-y ⋄ (+/e×e)÷≢y} ⋄ step←{⍵-0.01×loss∂⍵} ⋄ e←•explain "(step⍣10)3⍴0" ⋄ by←{e←(X+.×⍵)-y ⋄ ⍵-0.01×(2×(⍉X)+.×e)÷≢y} ⋄ w←(by⍣10)3⍴0 ⋄ ((⌈/|e.value-w)≤1e¯5×⌈/|w),(e.loops.way≡,⊂"replay"),(⊃e.loops.iterations),≢e.stopped.reason
 [1 1 10 0]ₓ
 
 ⍝ — A gradient that reads its argument at repeated positions adds the cotangent back at them in one accumulation step of its program, into zeros that the replay makes. Both calls run from programs, and no trace stops

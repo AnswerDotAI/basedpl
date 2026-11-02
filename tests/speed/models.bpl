@@ -26,6 +26,17 @@ gmm←{
   am←⌈/•detach alpha
   +/m+⍟+/⍠k*t-m + (0.5× +/,⊼*q + +/,⊼L) - ≢⍺ × am+⍟+/*alpha-am
 }
+⍝ The same objective in rank notation, with the index form's detached shifts. `⍉⍤2` transposes each component's matrix. The two spellings compute one objective and share each case's expected cost.
+gmmr←{
+  [alpha mu q l]←⍵
+  L←l×⍤2 glow
+  Q←L+(*q)×⍤[1 2]gi
+  sq←+/⊼(⍺(-⍤1)⍤[2 1]mu)+.×⍤2⍉⍤2⁝Q
+  t←(alpha++/q)-0.5×sq
+  m←⌈⌿•detach t
+  am←⌈/•detach alpha
+  (+/m+⍟+⌿*t-⍤1m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢⍺)×am+⍟+/*alpha-am
+}
 kx←¿[16384 32]⍴0
 kc←¿[64 32]⍴0
 ⍝ Sum of squared distances to the nearest cluster centres.
@@ -100,6 +111,13 @@ heat←{
 gx gmm gp
 ⍝⍝: 95	210	380
 
+⍝ The same objective in rank notation (`gmmr`).
+⍝ Expected: 63 copies on macOS, 135 on Linux and 247 in wasm, as in index notation. On 1 November 2026 it measured 77.5 to 82.1 on macOS, against 74.6 to 82.6 for the index form. Its `+.×⍤2` computes the 800,000-item difference once, as the index form's contraction writes its laid-out copy of it once.
+⍝⍝⍝ held linux 432: as for the index form, part of the gap is work that costs the same at both widths; busy hosts reach 432
+⍝⍝⍝ allows forced "+.×⍤2": a product reads its arguments whole
+gx gmmr gp
+⍝⍝: 95	210	380
+
 ⍝ The k-means cost sums the squared distance from each of 16384 points to the nearest of 64 centres, in 32 dimensions.
 ⍝ Expected: 84 copies on macOS, 178 on Linux and 326 in wasm: a product of 64×32 by 32×16384, 67 million flops, 1,024 an item, which takes 34 at Accelerate's rank-k rate, 128 at 8 in a copy's time for rustymath's own kernels and 256 at 4 in wasm; and passes over a million distances, about 50 natively and 70 in wasm.
 ⍝ CI measured 247 to 267 on Linux in runs 56 and 59-61, and 311 to 338 in wasm in most runs from 56 to 62.
@@ -120,7 +138,6 @@ kx kmeansi kc
 ⍝ CI measured 390 to 448 on Linux in runs 56-61, and 639 to 667 in wasm in runs 57-59 and 61.
 ⍝⍝⍝ busy linux 652 wasm 1066: its data passes CI's L2 (open.md, "Footprint copies")
 ⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
-⍝⍝⍝ gap forced "←": destructuring should keep each cell a copy of its source, which the later products read through its map (open.md, "Destructured cells as copies")
 [tid ttg] dec tp
 ⍝⍝: 240	540	890
 
@@ -178,15 +195,21 @@ dx-0.5 × dx+0.5
 {+/√⍵}∂ dv
 ⍝⍝: 6	6	6
 
-⍝⍝⍝ held linux ~3.15 wasm ~3.15: the block stage runs its two steps, the sign and the product, as two passes over each block, since it compiles only from `COMPILES_AT` and never in the browser (open.md, "A per-stage compile estimate")
+⍝⍝⍝ held wasm ~3.15: the browser build compiles nothing, so the block stage runs its two steps, the sign and the product, as two passes over each block
 {+/|⍵}∂ dw
 ⍝⍝: 2.4	2.4	2.4
+
+⍝ `√ₐ` gives a real result whatever the values, so its gradient keeps its trace under dynamic kinds and replays as one compiled stage with its two recorded selects. Expected: `{+/√ₐ⍵}∂ dv` 3 copies, as `{+/√⍵}∂ dv` expects: a square root and a division of each item, in one pass. `+/√ₐdv` costs what `+/√dv` costs: 3.14 and 3.04 copies on 1 November 2026.
+{+/√ₐ⍵}∂ dv
+⍝⍝: 6	6	6
++/√ₐdv
+⍝⍝: 6	6	6
 
 ⍝ A JVP of the MLP's loss in `[objectives]` along a fixed direction `dp`, which takes one pass through `+.×`, Rank, `7○` and `+/`.
 ⍝ Expected: 122 copies on macOS, 216 on Linux and 428 in wasm: the primal and one tangent pass of the same size.
 ⍝⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
 ⍝⍝⍝ allows itemwise "item pairs": `mp+⍵×dp` pairs the parameter record's few arrays one at a time, each by a whole-array call
-⍝⍝⍝ gap stopped "a value that programs can't hold": the MLP JVP should trace record-valued parameter arithmetic
+⍝⍝⍝ gap stopped "a result whose type depends on values": the MLP JVP should trace record-valued parameter arithmetic; a pervasive call on one item inside `∂`'s rule for `mp+⍵×dp` plans no settled type, under static kinds too
 {[mx my] mlp mp+⍵×dp}∂0
 ⍝⍝: 190	330	650
 
@@ -200,6 +223,13 @@ dx-0.5 × dx+0.5
 ⍝⍝⍝ busy linux 1254: its data passes CI's L2 (open.md, "Footprint copies")
 ⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
 gx gmm∂ gp
+⍝⍝: 290	610	970
+
+⍝ The gradient of the rank spelling.
+⍝ Expected: 189 copies on macOS, 405 on Linux and 741 in wasm, as in index notation. On 1 November 2026 it measured 173 to 179 on macOS, against 152 to 158 for the index form, with one more contraction; once a fold of a product sums out the points first, 153.0 against 148.4 (plan, gs13_'s entry).
+⍝⍝⍝ busy linux 1254: its data passes CI's L2 (open.md, "Footprint copies")
+⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
+gx gmmr∂ gp
 ⍝⍝: 290	610	970
 
 ⍝ CI measured 459 to 489 on Linux in most runs from 56 to 62.
@@ -240,7 +270,6 @@ cx closs∂ ck
 ⍝⍝⍝ held linux 284: the cause isn't known yet
 ⍝⍝⍝ busy wasm 478: its data passes CI's L2 (open.md, "Footprint copies")
 ⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
-⍝⍝⍝ gap forced "←": destructuring should keep each cell a copy of its source, which the later products read through its map (open.md, "Destructured cells as copies")
 [tid ttg] dec tp
 ⍝⍝: 120	270	520
 
@@ -255,8 +284,22 @@ cx closs∂ ck
 gx gmm gp
 ⍝⍝: 68	120	230
 
+⍝ The same objective in rank notation, at 32 bits.
+⍝ Expected: 34 copies on macOS, 80 on Linux and 148 in wasm, as in index notation. On 1 November 2026 it measured 40.6 on macOS, against 40.5 for the index form. Its `+.×⍤2ₛ` computes the 800,000-item difference here too.
+⍝⍝⍝ held linux 142: as for the index form, CI builds the published rustymath, which lacks `linalg::product`'s whole-row tile copy
+⍝⍝⍝ allows forced "+.×⍤2ₛ": a product reads its arguments whole
+gx gmmr gp
+⍝⍝: 68	120	230
+
 ⍝ Expected at 32 bits: the gradient 95 copies on macOS, 203 on Linux and 371 in wasm, half its 64-bit costs. It runs from a program here, where `⍟` stops the 64-bit section's trace under dynamic kinds. On 29 October 2026 it measured 77 on macOS. CI measured 249 to 298 on Linux in runs 56 to 62.
 ⍝⍝⍝ held linux 298: the cause isn't known yet
 ⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
 gx gmm∂ gp
+⍝⍝: 150	310	560
+
+⍝ The gradient of the rank spelling, at 32 bits.
+⍝ Expected: 95 copies on macOS, 203 on Linux and 371 in wasm, as in index notation. On 1 November 2026 it measured 83.3 on macOS, against 78.0 for the index form, and 78.0 once a fold of a product sums out the points first (plan, gs13_'s entry).
+⍝⍝⍝ held linux 298: as for the index form, the cause isn't known yet
+⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
+gx gmmr∂ gp
 ⍝⍝: 150	310	560

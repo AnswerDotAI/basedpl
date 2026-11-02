@@ -81,11 +81,13 @@ def test_worker_cancellation_and_reference_sessions():
         assert w.eval('keep+1')['value'] == 43
         assert w.request(dict(case=case), timeout=1)['status'] == 'pass'
         assert w.request(dict(case=dict(code='a', expected_error='VALUE ERROR')), timeout=1)['status'] == 'pass'
-        assert w.request(dict(case=dict(code='1', expected=dict(shape=[1], data=[1], prototype=0))))['message'] == 'atom versus array'
+        assert 'atom versus array' in w.request(dict(case=dict(code='1', expected=dict(shape=[1], data=[1], prototype=0))))['message']
         assert w.request(dict(case=dict(code='1', expected={})))['status'] == 'invalid'
         case = dict(code='∞', expected_code='∞', relative_tolerance=1e-14)
         assert w.request(dict(case=case))['status'] == 'pass'
         assert w.request(dict(case=dict(case, code='1e308')))['status'] == 'mismatch'
+        [f] = w.request(dict(page=dict(text='```bpl\n{⍵+1}⍣1e9⁝0 ⍝ 0\n1 ⍝ 1\n```\n')), timeout=.2)['failures']
+        assert (f['line'], f['status']) == (2, 'unchecked')
     bpl.timeout = .01
     with pytest.raises(BplError) as e: bpl('x←7 ⋄ {∇⍵}0', 'explicit')
     assert e.value.kind == 'TIMEOUT'

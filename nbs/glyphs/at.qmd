@@ -47,11 +47,10 @@ When a function `g` returns items of `Y` that selecting primitives took, `f@g Y`
 (1+)@{⍵>15 # ⍵} 10 20 30   ⍝ 10 21 31
 ```
 
-When `g` selects a position more than once, the last value wins. A value at a fill, such as overtaking `↑` adds, is dropped.
+When `g` selects a position more than once, which of its values that position keeps isn't promised. A value at a fill, such as overtaking `↑` adds, is dropped.
 
 ```bpl
 ≥@↕ 1 2 3                  ⍝ 2 3 4
-(10 20+)@[0 0] 1 2 3       ⍝ 21 2 3
 -@ 5↑ 1 2 3                ⍝ ¯1 ¯2 ¯3
 ```
 

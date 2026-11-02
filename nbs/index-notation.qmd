@@ -34,14 +34,14 @@ mlp←{
   h←7○b(+⍤1)x+.×w
   +/÷≢ ⊼y-c+h+.×v
 }
-[x y]mlp p                     ⍝ 0.3179859389
+[x y]mlp p                     ⍝ 0.3262591588
 mlpi←{
   [x y]←⍺ ⋄ [w b v c]←⍵
   [[n i] h]←•index[⍴x ≢b]
   a←7○b.[h]+x.[n i]+.×⍠i⁝w.[i h]
   +/÷≢ ⊼y.[n]-c+a+.×⍠h⁝v.[h]
 }
-[x y]mlpi p                    ⍝ 0.3179859389
+[x y]mlpi p                    ⍝ 0.3262591588
 g←[x y]mlp∂ p ⋄ gi←[x y]mlpi∂ p
 1E¯12>⌈/,|g.w-gi.w             ⍝ $t
 ```
@@ -61,7 +61,7 @@ heads←{h←0 2 1 3⍉⍵ ⋄ (¯2↓⍴h , ×/¯2↑⍴h)⍴h}
 attn←{
   [wqkv wo]←⍺
   [q k v]←1 3 0 2 4⍉⍵+.×wqkv
-  s←mask(+⍤2) q+.×⍤2[0 1 3 2]⍉k ÷ √⊢/⍴q
+  s←mask(+⍤2) q+.×⍤2⍉⍤2⁝k ÷ √⊢/⍴q
   e←*s-⌈/s
   (heads e÷+/e +.×⍤2 v)+.×wo
 }
@@ -88,6 +88,45 @@ Line by line, in `attni`:
 - `e÷+/⍠u⁝e` is the softmax over `u`. `o` sums the values over `u`, each weighted by its share.
 - `wo.[j+(≢j)×h d]` reads the row of `wo` for head `h` and feature `j`. BPL reads through positions computed from indices as a map. The fold over `[h j]` merges the heads. `:[b t d]⍉⁻¹` orders the result's axes and removes their names, to give `attn`'s plain shape.
 
+## A Gaussian mixture
+
+This objective scores how well a mixture of Gaussian components fits a set of points, with a prior on each component's precision. `gp` holds each component's log weight `alpha` and mean `mu`. Its precision factor has the exponentials of `q` on its diagonal and `l` below it. `low` masks `l` to the part below the diagonal. `eye` is the identity matrix. `•detach` makes the log-sum-exp shifts constants to `∂`.
+
+`gmm` is the rank form. `l×⍤2 low` masks each component's matrix, `(*q)×⍤[1 2]eye` puts each component's row of `*q` on a diagonal, `⍉⍤2` transposes each component's factor, and `⌿` folds along the first axis, the components. In the index form, `gmmi`, `n` names the points, `k` the components, and `d` and `e` the dimensions. Both forms give the same objective and the same gradient:
+
+```bpl
+•prefs ["seed":42]
+gx←¿[50 4]⍴0 ⋄ eye←=⊗⍨⍳4 ⋄ low←>⊗⍨⍳4
+gp←["alpha":¿3⍴0 "mu":¿[3 4]⍴0 "q":0.1×¿[3 4]⍴0 "l":0.1×¿[3 4 4]⍴0]
+gmm←{
+  [alpha mu q l]←⍵
+  L←l×⍤2 low
+  Q←L+(*q)×⍤[1 2]eye
+  sq←+/⊼(⍺(-⍤1)⍤[2 1]mu)+.×⍤2⍉⍤2⁝Q
+  t←(alpha++/q)-0.5×sq
+  m←⌈⌿•detach t
+  am←⌈/•detach alpha
+  (+/m+⍟+⌿*t-⍤1m) + (0.5×(+/,⊼*q)++/,⊼L) - (≢⍺)×am+⍟+/*alpha-am
+}
+gx gmm gp                      ⍝ ¯0.8795002466
+gmmi←{
+  [alpha mu q l]←⍵
+  [[n d] [k e]]←•index[⍴⍺ ⍴mu]
+  L←l.[k d e]×low.[d e]
+  Q←L + *q.[k d] × eye.[d e]
+  sq←+/⍠d⊼Q+.×⍠e⁝⍺.[n e]-mu.[k e]
+  t←alpha.[k]++/⍠d⁝q.[k d] - 0.5×sq
+  m←⌈/⍠k•detach t
+  am←⌈/•detach alpha
+  +/m+⍟+/⍠k*t-m + (0.5× +/,⊼*q + +/,⊼L) - ≢⍺ × am+⍟+/*alpha-am
+}
+gx gmmi gp                     ⍝ ¯0.8795002466
+g←gx gmm∂ gp ⋄ h←gx gmmi∂ gp
+1E¯12>⌈/,|g.l-h.l              ⍝ $t
+```
+
+Each form reads better in different lines. Rank suits the lines that work on whole components: `⍤2` and `⍤[1 2]` pair each component's matrix and row, and `⌿` folds along the components. Index notation suits `sq`. There `⍺.[n e]-mu.[k e]` pairs every point with every mean by name, where the rank form needs the nested Rank `⍺(-⍤1)⍤[2 1]mu`. `+.×⍠e` also names the axis that the product sums along.
+
 ## Why it works this way
 
 No feature of BPL requires names or keys. A function uses them where they express something. Code written for plain data can give other values on named or keyed data, because there the names say which axes align.
@@ -98,4 +137,4 @@ Each, Rank and Stencil (`⌺`) need no new syntax. They suit a function written 
 
 ## Not built yet
 
-[Automatic differentiation](autodiff.qmd#not-built-yet) lists what traced programs don't cover yet. Two of its items apply to models like these. A program holds one call of `∂`: a training step's update and the loop around it run outside the program. A per-item branch, such as a selector that Agenda (`⍚`) computes from differentiated values, stops a trace.
+[Automatic differentiation](autodiff.qmd#not-built-yet) lists what traced programs don't cover yet. Two of its items apply to models like these. A program holds one call of `∂`: a training step's update and the loop around it run outside the program. The other is branches in programs, such as Agenda (`⍚`) with a selector computed from differentiated values (see [What stops a trace](autodiff.qmd#what-stops-a-trace)).

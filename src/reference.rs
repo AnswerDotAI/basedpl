@@ -45,12 +45,13 @@ pub fn difference(x: &Value, y: &Value, relative: Option<f64>, absolute: f64, ex
     items.or_else(|| inner(&x.prototype(), &y.prototype()).map(|m| format!("prototype{m}")))
 }
 
-/// The kinds of storage, as `•storage` names them under `numeric`, at the first place where `x` and `y` are held differently. It walks into the items of arrays that both hold as mixed storage. With `compact_alike`, every compact kind counts as one, so only mixed storage against compact storage differs.
+/// The kinds of storage, as `•storage` names them under `numeric`, at the first place where `x` and `y` are held differently. Mixed and segmented storage count as one nested kind: a partition or a text column holds as segmented the items that a literal holds as mixed. It walks into the items of arrays that both hold as nested storage. With `compact_alike`, every compact kind counts as one, so only nested storage against compact storage differs.
 fn kind_difference(x: &Value, y: &Value, numeric: Numeric, compact_alike: bool) -> Option<(&'static str, &'static str)> {
+    let nested = |kind: &str| kind == "mixed" || kind == "segmented";
     let (a, b) = (x.storage_kind(numeric), y.storage_kind(numeric));
-    let differ = if compact_alike { (a == "mixed") != (b == "mixed") } else { a != b };
+    let differ = if compact_alike || nested(a) && nested(b) { nested(a) != nested(b) } else { a != b };
     if differ { return Some((a, b)); }
-    if a != "mixed" || x.is_atom() || y.is_atom() || x.len() != y.len() { return None; }
+    if !nested(a) || x.is_atom() || y.is_atom() || x.len() != y.len() { return None; }
     x.elements().zip(y.elements()).find_map(|(p, q)| kind_difference(&p, &q, numeric, compact_alike))
 }
 
@@ -68,44 +69,29 @@ impl crate::Input for Lines {
     fn rest(&self) -> std::io::Result<Vec<u8>> { Ok(self.0.lock().unwrap().drain(..).map(|line| line + "\n").collect::<String>().into_bytes()) }
 }
 
-/// A run of a case: whether the `batch` pref is on, whether fusion takes its small sizes (`fusion::Sizes::SMALL`), when block stages compile their parts (`settings::Compiles`), whether the code runs as the body of a dfn called twice (`twice`), and the words that name the run in a failure.
+/// One scheduler under its compile policy, plus a second-call replay check.
 #[derive(Clone, Copy)]
-struct Run { batch: bool, fused: bool, compiles: Compiles, twice: bool, words: &'static str }
-/// The runs of a case without a `batch` field: the `batch` pref off, then on, then on with fusion's small sizes, under which every fusible call waits, a block stage splits even small arrays into blocks and every stage compiles its parts, then the same with no compiled parts, then on with the code as a dfn's body, whose second call runs the statements that its first call recorded. The run with no compiled parts takes place only where the run before it used one (`failures`).
-const RUNS: [Run; 5] = [
-    Run { batch: false, fused: false, compiles: Compiles::Policy, twice: false, words: "" },
-    Run { batch: true, fused: false, compiles: Compiles::Policy, twice: false, words: "with the batch pref on" },
-    Run { batch: true, fused: true, compiles: Compiles::Always, twice: false, words: "with fusion at any size" },
-    Run { batch: true, fused: true, compiles: Compiles::Never, twice: false, words: "with fusion at any size and no compiled parts" },
-    Run { batch: true, fused: false, compiles: Compiles::Policy, twice: true, words: "on a dfn's second call" },
+struct Run { compiles: Compiles, twice: bool, words: &'static str }
+const RUNS: [Run; 4] = [
+    Run { compiles: Compiles::Policy, twice: false, words: "with normal compilation" },
+    Run { compiles: Compiles::Always, twice: false, words: "with compiled stages" },
+    Run { compiles: Compiles::Never, twice: false, words: "with uncompiled stages" },
+    Run { compiles: Compiles::Policy, twice: true, words: "on a dfn's second call" },
 ];
 
-/// The header options that set a flag on a case, each setting the field of its own name to `true`: `unfused` leaves out the runs with fusion's small sizes, `batched` leaves out the run with the `batch` pref off, `mixed` leaves out the comparison of the result's storage with the expectation's, and `compiled` leaves out the run with no compiled parts, for a case whose value says whether a stage compiled.
-const FLAGS: [&str; 4] = ["unfused", "batched", "mixed", "compiled"];
+/// `mixed` permits another storage kind; `compiled` skips the uncompiled run when the result reports compilation.
+const FLAGS: [&str; 2] = ["mixed", "compiled"];
+fn runs(case: &JsonValue) -> Vec<Run> { RUNS.into_iter().filter(|r| !(r.compiles == Compiles::Never && case["compiled"] == true)).collect() }
 
-/// The runs that `case` takes: the one of `RUNS` that its Boolean `batch` field picks, where it has one, and otherwise each of `RUNS` that its `unfused`, `batched` and `compiled` options leave in.
-fn runs(case: &JsonValue) -> Vec<Run> {
-    match case["batch"].as_bool() {
-        Some(batch) => vec![RUNS[usize::from(batch)]],
-        None => RUNS.into_iter().filter(|r| {
-            !(r.fused && case["unfused"] == true) && (r.batch || case["batched"] != true) && !(r.compiles == Compiles::Never && case["compiled"] == true)
-        }).collect(),
-    }
-}
-
-/// Defaults, with each program checked before it runs, and file/section preferences, optionally overridden by a run's batch, fusion and compile settings.
+/// Defaults and file preferences, with the run's compile setting.
 fn enter(prefs: Option<&str>, run: Option<Run>) -> Result<(), JsonValue> {
     crate::settings::reset();
     crate::settings::set_verifies(true);
     if let Some(prefs) = prefs
-        && let Some(error) = Session::current().eval_apart(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() }).error {
+        && let Some(error) = Session::current(|session| session.eval_apart(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() })).error {
             return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
         }
-    if let Some(Run { batch, fused, compiles, .. }) = run {
-        crate::settings::set_batch(batch);
-        crate::settings::set_small_sizes(fused);
-        crate::settings::set_compiles(compiles);
-    }
+    if let Some(run) = run { crate::settings::set_compiles(run.compiles); }
     Ok(())
 }
 
@@ -125,7 +111,7 @@ fn outcome(
     let (expected, no_result) = if let Some(source) = case["expected_code"].as_str() {
         let expected = evaluated(source, setup, None, timeout, interrupt)?;
         if expected.error.is_some() || expected.function.is_some() || expected.operator.is_some() {
-            return Err(json!({"status":"invalid", "message":"expectation must produce a value or no result", "actual":crate::protocol::response(expected)}));
+            return Err(json!({"status":"invalid", "message":"expectation must produce a value or no result", "actual":crate::protocol::response(expected).map_err(unreadable)?}));
         }
         let no_result = expected.value.is_none();
         (expected.value, no_result)
@@ -136,7 +122,7 @@ fn outcome(
         return Err(json!({"status":"invalid", "message":"invalid or missing independent expectation"}));
     }
     let failed = |mut failure: JsonValue| {
-        if !words.is_empty() { failure["message"] = json!(format!("{words}: {}", failure["message"].as_str().unwrap_or_default())); }
+        failure["message"] = json!(format!("{words}: {}", failure["message"].as_str().unwrap_or_default()));
         Err(failure)
     };
     if let Some(error) = &result.error {
@@ -145,7 +131,7 @@ fn outcome(
             return failed(json!({"status": kind.to_lowercase(), "message":message}));
         }
         if error_kind != Some(kind.as_str()) {
-            return failed(json!({"status":"error", "kind":kind, "message":message, "actual":crate::protocol::response(result)}));
+            return failed(json!({"status":"error", "kind":kind, "message":message, "actual":crate::protocol::response(result).map_err(unreadable)?}));
         }
     }
     let mismatch = if result.error.is_some() { None }
@@ -164,7 +150,7 @@ fn outcome(
         })
     });
     match mismatch {
-        Some(message) => failed(json!({"status":"mismatch", "message":message, "actual":crate::protocol::response(result)})),
+        Some(message) => failed(json!({"status":"mismatch", "message":message, "actual":crate::protocol::response(result).map_err(unreadable)?})),
         None => Ok(Outcome { value: result.value, numeric: crate::settings::numeric(), expected }),
     }
 }
@@ -185,8 +171,8 @@ fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Dur
         for call in 0..2 {
             if call == 1 { enter(case["prefs"].as_str(), Some(run))?; }
             if call == 1 && let Some(dir) = &files { emptied(dir.path())?; }
-            *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Stream::seeded(0);
-            calls.push(session.eval_with(&format!("{TWICE} 0"), EvalOptions { input: lines(input), ..options() }));
+            *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Counter::seeded(0);
+            calls.push(observed_result(session.eval_with(&format!("{TWICE} 0"), EvalOptions { input: lines(input), ..options() }), &session)?);
         }
     }
     let numeric = crate::settings::numeric();
@@ -213,7 +199,7 @@ fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Dur
         }
     };
     match mismatch {
-        Some(message) => Err(json!({"status":"mismatch", "message":format!("{words}: {message}"), "actual":crate::protocol::response(second)})),
+        Some(message) => Err(json!({"status":"mismatch", "message":format!("{words}: {message}"), "actual":crate::protocol::response(second).map_err(unreadable)?})),
         None => Ok(Outcome { value: None, numeric, expected: None }),
     }
 }
@@ -221,11 +207,10 @@ fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Dur
 /// Whether a case's runs agree: each later run's value must be held in the same kind of storage as the first's. Where the expectation is BPL, the first's storage must be mixed where the expectation's is, and compact where it's compact. A `mixed` case leaves the storage checks out. An in-place write keeps mixed storage mixed, and a record from JSON or Python keeps each entry's own kind.
 fn verdict(case: &JsonValue, outcomes: &[(Run, Outcome)]) -> JsonValue {
     let Some((first_run, first)) = outcomes.first() else { return json!({"status":"pass"}) };
-    let named = |run: &'static str| if run.is_empty() { "with the batch pref off" } else { run };
     for (run, outcome) in &outcomes[1..] {
         if let (Some(value), Some(first)) = (&outcome.value, &first.value)
             && let Some((kind, first_kind)) = kind_difference(value, first, outcome.numeric, false) {
-                return json!({"status":"mismatch", "message":format!("storage kind: {kind} {}, {first_kind} {}", named(run.words), named(first_run.words))});
+                return json!({"status":"mismatch", "message":format!("storage kind: {kind} {}, {first_kind} {}", run.words, first_run.words)});
             }
     }
     if case["expected_code"].is_string() && case["mixed"] != true && let (Some(value), Some(expected)) = (&first.value, &first.expected)
@@ -246,15 +231,21 @@ pub fn check_once(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) ->
     outcome(case, setup, RUNS[0], Some(TIMEOUT), interrupt).map(drop)
 }
 
-/// Warm and capture a case under its ordinary preferences and setup, on one thread, as the route test runs it.
-pub fn route(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<crate::timing::Capture, JsonValue> {
+/// Warm and capture a case under its ordinary preferences and setup, on one thread, as route checks run it.
+fn capture(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<crate::timing::Capture, JsonValue> {
     enter(case["prefs"].as_str(), None)?;
     let session = Session::new();
     initialized(&session, setup)?;
     let threads = rustymath::parallel::set_threads(1);
-    let capture = crate::timing::route(&session, case, interrupt);
+    let captured = crate::timing::route(&session, case, interrupt);
     rustymath::parallel::set_threads(threads);
-    capture.map_err(|message| json!({"status":"invalid", "message":message}))
+    captured.map_err(|message| json!({"status":"invalid", "message":message}))
+}
+
+/// `capture` of `file`'s `case` with the file's setup, named as the route test reports it (`timing::named`).
+pub fn route(file: &File, case: &JsonValue, interrupt: &InterruptHandle) -> Result<crate::timing::Capture, String> {
+    let message = |failed: JsonValue| failed["message"].as_str().map_or_else(|| failed.to_string(), str::to_owned);
+    crate::timing::named(capture(case, &file.setup, interrupt).map_err(message), file, case)
 }
 
 pub fn routed(case: &JsonValue) -> bool { ["route", "allows", "gap"].iter().any(|key| case.get(key).is_some()) }
@@ -267,7 +258,7 @@ const COVERAGE_SECTIONS: [(&str, &str); 2] = [("dynamic", ""), ("static", r#"•
 const COVERAGE_RIGHT: [&str; 5] = ["0", "1", "2", "0.5", "¯1"];
 const COVERAGE_LEFT: [&str; 2] = ["1", "2"];
 
-/// The coverage matrix of the pervasive primitives against the executors, as the route test checks it. Each pervasive form in the facts table, apart from `ᵇ`'s, monadic `+`'s and those that no kind runs on carried values (`Form::Unsupported`), gives cases in a section under dynamic kinds and one under static kinds, all on floats. Each case that maps a form puts it between two other steps of one block stage: it reads `1+x` and its result is doubled. A lone call forced at once runs eagerly, outside any stage, and a form that `Pervasive::kept` removes leaves two steps, which compile. A form that doesn't lower leaves no compiled part, because a part of one step after it doesn't compile. A monadic form gives `2×f 1+x` and its gradient, `{+/f⍵}∂ x`. So does each monadic rule of the form rewriter whose function maps its argument, spelled as the rule writes it with `1+x` for `⍵`, as in `2×⍟1+1+x`, where the rewriter puts the rule's function. A form's own case that a rule would rewrite reads `2+x` in place of `1+x`, as `2×⍟2+x` does, and tests the form itself. A dyadic form gives `2×(1+x)g y`, `2×(1+x)g c` for each constant of `COVERAGE_RIGHT`, `2×c g 1+x` for each of `COVERAGE_LEFT`, the fold `g/2×x`, the inner product `m+.g k` and the gradients `{+/⍵ g y}∂ x`, `{g/⍵}∂ x` and `{+/,m+.g ⍵}∂ k`. A form whose left argument chooses a function, as `○`'s circle code does, takes the codes 0 to 8 on the left instead. Each case runs as the run with fusion at any size runs it, which compiles every stage (`RUNS[2]`), and must take the `compiled` route, or the `fused fold` route for a fold, or the `trace` route for a gradient. An inner product must only record no slow event. `gaps` lists the ways the matrix accepts a case falling short, one line each: the section, a tab, the case's code, a tab, then a `⍝⍝⍝ gap` or `⍝⍝⍝ allows` line as a reference case writes it. A case that `gaps` lists needn't take its route, because each of its lines names the event that stands in the route's way. The captures check those lines as a reference case's are checked, so a line whose event has gone fails. Gives the captures and, for each case whose evaluation fails, such as `~` on floats, its section, code and error. A line of `gaps` that names no case is an error.
+/// The coverage matrix of the pervasive primitives against the executors, as the route test checks it. Each pervasive form in the facts table, apart from `ᵇ`'s, monadic `+`'s and those that no kind runs on carried values (`Form::Unsupported`), gives cases in a section under dynamic kinds and one under static kinds, all on floats. Each case that maps a form puts it between two other steps of one block stage: it reads `1+x` and its result is doubled. A lone call forced at once runs eagerly, outside any stage, and a form that `Pervasive::kept` removes leaves two steps, which compile. A form that doesn't lower leaves no compiled part, because a part of one step after it doesn't compile. A monadic form gives `2×f 1+x` and its gradient, `{+/f⍵}∂ x`. So does each monadic rule of the form rewriter whose function maps its argument, spelled as the rule writes it with `1+x` for `⍵`, as in `2×⍟1+1+x`, where the rewriter puts the rule's function. Each row of the mark `ₐ` gives its marked function's cases as code writes them: a monadic one `2×√ₐ1+x` and `{+/√ₐ⍵}∂ x`, a dyadic one `2×(1+x)*ₐy` and both gradients, `{+/⍵*ₐy}∂ x` and `{+/y*ₐ⍵}∂ x`. A form's own case that a rule would rewrite reads `2+x` in place of `1+x`, as `2×⍟2+x` does, and tests the form itself. A dyadic form gives `2×(1+x)g y`, `2×(1+x)g c` for each constant of `COVERAGE_RIGHT`, `2×c g 1+x` for each of `COVERAGE_LEFT`, the fold `g/2×x`, the inner product `m+.g k` and the gradients `{+/⍵ g y}∂ x`, `{g/⍵}∂ x` and `{+/,m+.g ⍵}∂ k`. A form whose left argument chooses a function, as `○`'s circle code does, takes the codes 0 to 8 on the left instead. Each case runs as the run with fusion at any size runs it, which compiles every stage (`RUNS[2]`), and must take the `compiled` route, or the `fused fold` route for a fold, or the `trace` route for a gradient. An inner product must only record no slow event. `gaps` lists the ways the matrix accepts a case falling short, one line each: the section, a tab, the case's code, a tab, then a `⍝⍝⍝ gap` or `⍝⍝⍝ allows` line as a reference case writes it. A case that `gaps` lists needn't take its route, because each of its lines names the event that stands in the route's way. The captures check those lines as a reference case's are checked, so a line whose event has gone fails. Gives the captures and, for each case whose evaluation fails, such as `~` on floats, its section, code and error. A line of `gaps` that names no case is an error.
 pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(Vec<crate::timing::Capture>, Vec<String>), String> {
     use crate::primitive::{Extension, Form, Primitive};
     let text = std::fs::read_to_string(gaps).map_err(|e| format!("{}: {e}", gaps.display()))?;
@@ -280,34 +271,25 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
     }
     let pervasive = |p: Primitive, dyadic: bool| { let f = p.facts(dyadic); f.extension == Extension::Pervasive && f.form != Form::Unsupported };
     let mut cases: Vec<(String, &str)> = Vec::new();
+    // A function's cases with one argument, and with each circle code as its left argument.
+    let monadic = |g: &str| [(format!("2×{g}2+x"), "compiled"), (format!("{{+/{g}⍵}}∂ x"), "trace")];
+    let coded = |g: &str| (0..=8).flat_map(|c| [(format!("2×{c}{g}2+x"), "compiled"), (format!("{{+/{c}{g}⍵}}∂ x"), "trace")]).collect::<Vec<_>>();
     for p in Primitive::all().filter(|p| !matches!(p, Primitive::Bitwise(_))) {
         let g = p.glyph();
         // Monadic `+` keeps a real operand (`Pervasive::kept`), so its case would compute nothing to compile.
         if pervasive(p, false) && p.facts(false).linear != Some(crate::primitive::LinearMap::Same) {
-            cases.extend([(format!("2×{g}1+x"), "compiled"), (format!("{{+/{g}⍵}}∂ x"), "trace")]);
+            cases.extend(monadic(&g));
         }
         if !pervasive(p, true) { continue; }
         if p.info().dyad.code {
-            for c in 0..=8 {
-                cases.extend([(format!("2×{c}{g}1+x"), "compiled"), (format!("{{+/{c}{g}⍵}}∂ x"), "trace")]);
-            }
+            cases.extend(coded(&g));
             continue;
         }
-        cases.push((format!("2×(1+x){g}y"), "compiled"));
-        cases.extend(COVERAGE_RIGHT.iter().map(|c| (format!("2×(1+x){g}{c}"), "compiled")));
-        cases.extend(COVERAGE_LEFT.iter().map(|c| (format!("2×{c}{g}1+x"), "compiled")));
+        cases.push((format!("2×(2+x){g}y"), "compiled"));
+        cases.extend(COVERAGE_RIGHT.iter().map(|c| (format!("2×(2+x){g}{c}"), "compiled")));
+        cases.extend(COVERAGE_LEFT.iter().map(|c| (format!("2×{c}{g}2+x"), "compiled")));
         cases.extend([(format!("{g}/2×x"), "fused fold"), (format!("m+.{g}k"), ""), (format!("{{+/⍵{g}y}}∂ x"), "trace")]);
         cases.extend([(format!("{{{g}/⍵}}∂ x"), "trace"), (format!("{{+/,m+.{g}⍵}}∂ k"), "trace")]);
-    }
-    let session = Session::new();
-    initialized(&session, COVERAGE_SETUP).map_err(|e| e.to_string())?;
-    for (code, _) in &mut cases {
-        if !crate::eval::rewrites(&session, code) { continue; }
-        *code = code.replace("1+x", "2+x");
-        if crate::eval::rewrites(&session, code) { return Err(format!("a rule rewrites coverage case {code} in both of its spellings")); }
-    }
-    for pattern in crate::eval::mapping_patterns() {
-        cases.extend([(format!("2×{}", pattern.replace('⍵', "1+x")), "compiled"), (format!("{{+/{pattern}}}∂ x"), "trace")]);
     }
     let (mut captures, mut failed) = (Vec::new(), Vec::new());
     for (section, prefs) in COVERAGE_SECTIONS {
@@ -318,7 +300,7 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
                 entry.4 = true;
             }
             if !route.is_empty() && case.get("gap").is_none() && case.get("allows").is_none() { case["route"] = json!([route]); }
-            enter(Some(prefs).filter(|p| !p.is_empty()), Some(RUNS[2])).map_err(|e| e.to_string())?;
+            enter(Some(prefs).filter(|p| !p.is_empty()), Some(RUNS[1])).map_err(|e| e.to_string())?;
             let session = Session::new();
             initialized(&session, COVERAGE_SETUP).map_err(|e| e.to_string())?;
             match crate::timing::route(&session, &case, interrupt) { Ok(capture) => captures.push(capture), Err(message) => failed.push(format!("[{section}] {code}: {message}")) }
@@ -331,7 +313,7 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
 
 fn route_check(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<(), JsonValue> {
     if !routed(case) { return Ok(()); }
-    let wrong = route(case, setup, interrupt)?.violations();
+    let wrong = capture(case, setup, interrupt)?.violations();
     if wrong.is_empty() { Ok(()) } else { Err(json!({"status":"route", "message":wrong.join("; ")})) }
 }
 /// `case` with the `status`, `message` and `kind` of the failure `result`, and its `actual` result where there is one.
@@ -354,8 +336,20 @@ fn evaluated(
     let session = Session::new();
     initialized(&session, setup)?;
     let _files = fixture(&session, code)?;
-    Ok(session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input: lines(input), ..EvalOptions::default() }))
+    observed_result(session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input: lines(input), ..EvalOptions::default() }), &session)
 }
+
+fn observed_result(mut result: crate::Evaluation, session: &Session) -> Result<crate::Evaluation, JsonValue> {
+    if result.error.is_none() && let Some(value) = result.value.take() {
+        match value.read(crate::ReadKind::Value).and_then(|value| { session.raise()?; Ok(value) }) {
+            Ok(value) => result.value = Some(value),
+            Err(error) if error.is_control() => return Err(unreadable(error)),
+            Err(error) => result.error = Some(error),
+        }
+    }
+    Ok(result)
+}
+fn unreadable(error: crate::Error) -> JsonValue { json!({"status":"error", "message":error.to_string()}) }
 
 /// A new temporary directory for the `testpath` fixture, where `code` names one, with `testpath` in `session` naming a path inside it. The directory lasts as long as the returned guard.
 fn fixture(session: &Session, code: &str) -> Result<Option<tempfile::TempDir>, JsonValue> {
@@ -581,33 +575,67 @@ pub fn load(path: &std::path::Path) -> Result<Vec<File>, String> {
     paths.into_iter().map(|p| file(&p.file_name().unwrap().to_string_lossy(), &std::fs::read_to_string(&p).map_err(|e| e.to_string())?)).collect()
 }
 
-/// The cases of `cases` whose runs fail their expectations, in their order. Where `routes` is set, each case that meets its expectations is then checked against its route directives (`route_check`), as the route test checks them: `check` and Python's `check_file` set it. `tests/reference.rs` doesn't, because within `cargo test` only the explain test checks route directives. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Each case takes its runs (`runs`) one after another, each under its file's leading `•prefs` header and the run's settings (`enter`), and each run has `TIMEOUT`. Callers that check cases in parallel split them across processes, as `tests/reference.rs` and Python's `check_file` do, because a process evaluates one case at a time. After an interrupt, no case starts. The settings are reset at the end.
+/// The cases of `cases` whose runs fail their expectations, in their order. Where `routes` is set, each case that meets its expectations is then checked against its route directives (`route_check`), as the route test checks them: `check` and Python's `check_file` set it. `tests/reference.rs` doesn't, because within `cargo test` only the explain test checks route directives. Each failure adds the case's `status` and `message`, and the `kind` of the error that the case gave. Each case takes its runs (`runs`) one after another, each under its file's leading `•prefs` header and the run's settings (`enter`), and each run has `TIMEOUT`. Callers that check cases in parallel split them across processes, as `tests/reference.rs` and Python's `check_file` do, because a process evaluates one case at a time. An interrupt, or the deadline of `interrupt` passing, fails the case that it stops as `unchecked`, and no case after it runs. The settings are reset at the end.
 pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str, routes: bool, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     let mut failures = Vec::new();
     for case in cases {
         let result = held_back(|| case_result(case, setup, routes, interrupt));
+        if let Some(why) = interrupt.stop() {
+            failures.push(failed(case, &json!({"status": "unchecked", "message": format!("the check stopped at {why} before this case finished, so it and the cases after it are unchecked")})));
+            break;
+        }
         if result["status"] == "pass" { continue; }
         failures.push(failed(case, &result));
-        if result["status"] == "interrupt" { break; }
     }
     crate::settings::reset();
     failures
 }
 
-/// The verdict on `case` over each of its runs, and on its routes where `routes` asks.
+/// Clears the program store before an independent case or page. Repeated calls within that case share the store.
+fn forget_compiled() { crate::program::programs().entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear(); }
+
+/// The verdict on `case` over each of its runs, and on its routes where `routes` asks. Each run's settings (`enter`), the run and the reset after it run under `unwound`. A panic in any of them, the reset's barrier over the pending work that the run left included, fails this case. A failing run doesn't stop the runs after it, except one that panicked, timed out or was interrupted: after a panic the case's settings can't be trusted, and more runs would only spend more time. The failure names each failing run (`combined`). Each case starts with no kept plans or compiled kernels (`forget_compiled`), so its result doesn't depend on the cases before it.
 fn case_result(case: &JsonValue, setup: &str, routes: bool, interrupt: &InterruptHandle) -> JsonValue {
-    let mut outcomes = Vec::new();
-    let mut compiled = false;
-    let result = runs(case).into_iter().try_for_each(|run| {
-        if run.compiles == Compiles::Never && !compiled { return Ok(()); }
-        enter(case["prefs"].as_str(), Some(run))?;
-        let before = crate::program::blocks::compiled_runs();
-        outcomes.push((run, if run.twice { twice(case, setup, run, Some(TIMEOUT), interrupt) } else { outcome(case, setup, run, Some(TIMEOUT), interrupt) }?
-        ));
-        compiled |= run.compiles == Compiles::Always && crate::program::blocks::compiled_runs() > before;
-        Ok(())
-    }).map_or_else(|failure| failure, |()| verdict(case, &outcomes));
-    if routes && result["status"] == "pass" { route_check(case, setup, interrupt).err().unwrap_or(result) } else { result }
+    forget_compiled();
+    let (mut outcomes, mut failures, mut stopped) = (Vec::new(), Vec::new(), false);
+    for run in runs(case) {
+        let ran = unwound(run.words, || {
+            enter(case["prefs"].as_str(), Some(run))?;
+            let ran = if run.twice { twice(case, setup, run, Some(TIMEOUT), interrupt) } else { outcome(case, setup, run, Some(TIMEOUT), interrupt) };
+            crate::settings::reset();
+            ran
+        });
+        match ran {
+            Ok(outcome) => outcomes.push((run, outcome)),
+            Err(failure) => {
+                stopped = matches!(failure["status"].as_str(), Some("panic" | "timeout" | "interrupt"));
+                failures.push((run, failure));
+                if stopped { break; }
+            }
+        }
+    }
+    let result = if failures.is_empty() { verdict(case, &outcomes) } else { combined(&failures, outcomes.is_empty() && !stopped) };
+    if routes && result["status"] == "pass" { unwound("in the route check", || route_check(case, setup, interrupt)).err().unwrap_or(result) } else { result }
+}
+
+/// A case's failing runs as one failure. It takes the status, kind and result of the first, or of an interrupt, which stops its caller (`failures`). Its message names each failing run, since each run's message starts with the run's words (`outcome`, `unwound`), or says "every run" where `every` run failed with one message.
+fn combined(failures: &[(Run, JsonValue)], every: bool) -> JsonValue {
+    let message = |f: &JsonValue| f["message"].as_str().unwrap_or_default().to_owned();
+    let body = |(run, f): &(Run, JsonValue)| { let m = message(f); m.strip_prefix(run.words).and_then(|m| m.strip_prefix(": ")).map_or(m.clone(), str::to_owned) };
+    let first = body(&failures[0]);
+    let lead = failures.iter().find(|(_, f)| f["status"] == "interrupt").unwrap_or(&failures[0]);
+    let mut failure = lead.1.clone();
+    failure["message"] = json!(if every && failures.len() > 1 && failures.iter().all(|f| body(f) == first) { format!("every run: {first}") }
+        else { failures.iter().map(|(_, f)| message(f)).collect::<Vec<_>>().join("; ") });
+    failure
+}
+
+/// What `check` gives, or, where it panics, a failure of status `panic` whose message names `words`, the run, and the panic's message. The cases after it still run, in Python's `check_file` and in `cargo test` alike.
+fn unwound<T>(words: &str, check: impl FnOnce() -> Result<T, JsonValue>) -> Result<T, JsonValue> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(check)).unwrap_or_else(|panic| {
+        let message = panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_default();
+        Err(json!({"status":"panic", "message":format!("{words}: panicked: {message}")}))
+    })
 }
 
 /// What `check` gives, or a leak where `rustymath::memory::set_checks` is on and a case that passes leaves the guard's count higher than it found it on each of two runs. One run that leaves it higher can be filling a cache that lasts.
@@ -623,17 +651,14 @@ fn held_back(check: impl Fn() -> JsonValue) -> JsonValue {
     json!({"status":"leak", "message":format!("each of two runs left {left} or more bytes held in large allocations")})
 }
 
-/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own, with the `batch` pref set to `batch` unless that is `None`. Each expectation runs in a module of its own after its lines (`Session::eval_apart`), under the settings they leave. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within the default tolerances that `same_atom` describes, with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each page starts with no kept plans or compiled kernels, as a new process does (`program::forget_plans`, `jit::forget_kernels`), because examples that show block counts and compiles assume one. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
-pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec<JsonValue> {
+/// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own. Each expectation runs in a module of its own after its lines (`Session::eval_apart`), under the settings they leave. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within the default tolerances that `same_atom` describes, with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each page starts with no kept plans or compiled kernels (`forget_compiled`). Each evaluation notes its line on stderr as it starts (`example LINE`), which a check reads as progress (`bpltests._checked`). An interrupt, or the deadline of `interrupt` passing, fails the example that it stops as `unchecked`, and no example after it runs. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
+pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
     let options = || EvalOptions { timeout: Some(TIMEOUT), echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
     let (mut failures, mut session, mut code) = (Vec::new(), None, String::new());
-    crate::program::forget_plans();
-    #[cfg(not(web))]
-    crate::jit::forget_kernels();
+    forget_compiled();
     for (i, line) in text.lines().enumerate() {
         if line == "```bpl" {
             crate::settings::reset();
-            if let Some(batch) = batch { crate::settings::set_batch(batch); }
             session = Some(Session::new());
             continue;
         }
@@ -645,9 +670,14 @@ pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec
             code.push('\n');
         }
         if expected.is_none() && !closing { continue; }
+        eprintln!("example {}", i + 1);
         let result = bpl.eval_with(&code, options());
         // The expectation evaluates after the code, under the settings that the code leaves.
         let wanted = expected.map(|e| bpl.eval_apart(e, options()));
+        if let Some(why) = interrupt.stop() {
+            failures.push(json!({"line": i + 1, "status": "unchecked", "code": code.trim_end(), "expected": expected, "message": format!("the check stopped at {why} before this example finished, so it and the examples after it are unchecked")}));
+            break;
+        }
         let message = match (result.error, result.value, wanted) {
             (Some(error), _, _) => Some(error.to_string()),
             (None, _, None) => None,
@@ -667,7 +697,7 @@ pub fn page(text: &str, batch: Option<bool>, interrupt: &InterruptHandle) -> Vec
     failures
 }
 
-/// The reply to the worker's `reference` request. It gives `text` in a `.bpl` reference file's format and, optionally, a list of the `ids` to check, each a case's id or its header's line number. An id that matches no case is an error. The reply gives the cases that fail, with their route directives, as `failures` gives them.
+/// The reply to the worker's `reference` request. It gives `text` in a `.bpl` reference file's format and, optionally, a list of the `ids` to check, each a case's id or its header's line number. An id that matches no case is an error. The reply gives the cases that fail, with their route directives, as `failures` gives them. As it starts each case, the worker notes `case LINE` on stderr, which names the case where an abort ends it (`bpltests._checked`).
 pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
     let file = file(spec["name"].as_str().unwrap_or_default(), spec["text"].as_str().ok_or("reference needs text as a string")?)?;
     let cases = &file.cases;
@@ -677,11 +707,11 @@ pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Jso
     let matches = |id: &JsonValue, case: &JsonValue| *id == case["id"] || *id == case["line"];
     let unknown: Vec<_> = ids.into_iter().flatten().filter(|id| !cases.iter().any(|case| matches(id, case))).map(JsonValue::to_string).collect();
     if !unknown.is_empty() { return Err(format!("{} match no case. Each id is a case's id or its header's line number.", unknown.join(", "))); }
-    let selected = cases.iter().filter(|case| checked(case) && ids.is_none_or(|ids| ids.iter().any(|id| matches(id, case))));
+    let selected = cases.iter().filter(|case| checked(case) && ids.is_none_or(|ids| ids.iter().any(|id| matches(id, case)))).inspect(|case| eprintln!("case {}", case["line"]));
     Ok(json!({"failures": failures(selected, &file.setup, true, interrupt), "error": null}))
 }
 
-/// The reply to the worker's `page` request, which gives the `text` of a `.qmd` page and, optionally, a Boolean `batch` that sets the `batch` pref for its examples. The reply gives the examples that fail, as `page` gives them.
+/// The reply to the worker's `page` request, which gives the `text` of a `.qmd` page. The reply gives the examples that fail, as `page` gives them.
 pub fn page_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
-    Ok(json!({"failures": page(spec["text"].as_str().ok_or("page needs text as a string")?, spec["batch"].as_bool(), interrupt), "error": null}))
+    Ok(json!({"failures": page(spec["text"].as_str().ok_or("page needs text as a string")?, interrupt), "error": null}))
 }

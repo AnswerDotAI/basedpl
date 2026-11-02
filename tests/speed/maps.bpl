@@ -11,6 +11,7 @@ big←¿[4 256 256]⍴0
 st←¿[4096 4 4]⍴0
 irow←(¿[10000 8]⍴100)ₓ
 nest←⊂⍤1⁝irow
+rag←{¿[2 ⍵]⍴0}¨1+15|⍳4096
 ⍝ Sum of squared sines.
 f←{+/⊼1○⍵}
 ⍝ Sum of squared sines of linear projections over rows of X.
@@ -24,6 +25,8 @@ lossw←{+/⊼1○X+.×⍵}
 hv←{+/vv×loss∂⍵}
 ⍝ Directional derivative of lossw along vv.
 hvw←{+/vv×lossw∂⍵}
+⍝ One step of gradient descent on lossw.
+descend←{⍵-0.01×lossw∂⍵}
 ⍝ One Game of Life update from a 3 by 3 neighbourhood.
 life←{
   s←+/,⍵
@@ -79,8 +82,14 @@ v×v+1
 {+/⍵}¨nest
 ⍝⍝: 5	5	5
 
+⍝ Each over a nested array whose 4,096 items are matrices of 2 rows and 1 to 15 columns, ragged cells in mixed storage, with a constant vector added along each item's rows. The first batched map gathers the cells into one leaf, which the array's storage keeps for every later map (main's decision 52), and runs the pervasive call once on it: each item of the constant repeats over its cell's row through one `#`, as leading-axis agreement pairs a lower-rank argument (`batch::leaf_call`).
+⍝ Expected: 10 copies. About 5 go to the batched map over the kept leaf, as `{⍵+⍵}¨rag` costs 4.6 (1 November 2026). About 5 go to the pairing, mostly per-cell work over the 4,096 cells, then one `#` of the constant's 8,192 cell items and the add. Before decision 52 each call gathered the cells again, at 19.9; before the pairing it ran once for each cell, at 276.
+⍝⍝⍝ route batching
+{⍵+10 20}¨rag
+⍝⍝: 20	20	20
+
 ⍝⍝⍝ held macos 5.37 linux 7.02 wasm 7.04: open.md lists the stencils among the speed audit's outliers that compiling didn't fix
-⍝⍝⍝ gap forced "+/": a stencil kernel should sum each window where it lies in the grid. Until then, `+/` stores the batch's 147,456 window items first, because 3-item runs fold more slowly through the window map
+⍝⍝⍝ gap forced "{+/,⍵}⌺[3 3]": a dfn operand's fold over windows should slide over the source
 {+/,⍵}⌺[3 3] sg
 ⍝⍝: 4	4	4
 
@@ -91,12 +100,10 @@ v×v+1
 ⍝ The Game of Life on a 128 by 128 Boolean grid, as a stencil and with padded windows.
 ⍝ Expected: `life⌺[3 3] g` 1.5 copies: a few passes over nine 1-byte reads for each of 16,384 windows; `life⌺["size":[3 3] "edge":"wrap"] g` 1.5 copies: as the stencil with fill; `lifew g` 0.75 copies: sliding sums and comparisons over 16,384 items.
 ⍝⍝⍝ held macos 4.54 linux 7.19 wasm 7.25: open.md lists the stencils among the speed audit's outliers that compiling didn't fix
-⍝⍝⍝ gap forced "+/": a stencil kernel should sum each window where it lies in the grid. Until then, `+/` stores the batch's 147,456 window items first, because 3-item runs fold more slowly through the window map
 life⌺[3 3] g
 ⍝⍝: 3	3	3
 
 ⍝⍝⍝ held macos 4.8 linux 7.47 wasm 8.26: open.md lists the stencils among the speed audit's outliers that compiling didn't fix
-⍝⍝⍝ gap forced "+/": a stencil kernel should sum each window where it lies in the grid. Until then, `+/` stores the batch's 147,456 window items first, because 3-item runs fold more slowly through the window map
 life⌺["size":[3 3] "edge":"wrap"] g
 ⍝⍝: 3	3	3
 
@@ -110,20 +117,18 @@ lifew g
 {⍵<0?0;⍵}¨v
 ⍝⍝: 3	3	6
 
-⍝⍝⍝ held wasm 11.6: the cause isn't known yet
+⍝⍝⍝ held wasm 11.6: the guard's split and join take about 70% of its instructions: each side's cells gathered item by item through position lists (`Gather::at`), each cell's start (`Framed::starts`) and the results scattered back (`gather::Writes::write`), against 9% for `√`; it costs about as much natively, 9.9 copies against wasm's 10.8 on this Mac (cf2_, 31 October 2026); stage 6's selects (open.md, masked selects)
 ⍝⍝⍝ allows forced "{⍵<0.5?0;√⍵}": a guard reads its predicate's items to split the cells
 {⍵<0.5?0;√⍵}¨v
 ⍝⍝: 12	12	12
 
 ⍝⍝⍝ held macos 7.66 linux 8.62 wasm 10.1: open.md lists the masked selects among the speed audit's outliers
-⍝⍝⍝ gap forced "0.5↣≤⍚[0⍨ √]": the select should run in its mask's fused pass, which `√` blocks because it can't run on every item under dynamic kinds (open.md, "Masked selects and `⍚`")
 (0.5≤)⍚[0 √] v
 ⍝⍝: 8	8	8
 
 ⍝ The gradient of a loss mapped over the rows of `X`, whose parameter every row shares, then per-example gradients, then a Hessian–vector product through the mapped loss. Each sits beside its form with `+.×`, or its closed form.
 ⍝ Expected: `loss∂ thz` 4 copies: the primal over 32,768 items, about 1 copy, with sines of 4,096 items at 7 copies for each 65,536, about 0.45, and a transpose of about 3; `lossw∂ thz` 3 copies: a product over 32,768 items, `1○` over 4,096 items, about 0.45, and its transpose; `{f∂ ⍵}⍤1 X` 9 copies: sines and cosines of 32,768 items, half of `n`, at 7 copies each as `1○v` counts them, then the squares, the row sums and each item's product of sine and cosine, about 2; `2×(1○X)×2○X` 7.5 copies: sines and cosines of 32,768 items, half of `n`, at 7 copies each as `1○v` counts them, and two products; `hv∂ thz` 8 copies: about twice the gradient; `hvw∂ thz` 6 copies: about twice the gradient.
 ⍝ On 27 October 2026 `loss∂ thz` measured 6.02 on macOS. Its wasm budget is twice its native budget, as `1○v`'s are. On 22 October 2026 CI measured 8.09 in wasm.
-⍝⍝⍝ gap stopped "a function called on each item": the row loss should trace as one batched map
 loss∂ thz
 ⍝⍝: 8	8	16
 
@@ -140,8 +145,7 @@ lossw∂ thz
 2× 1○X × 2○X
 ⍝⍝: 15	15	30
 
-⍝⍝⍝ held linux 15.6 wasm 18.9: the cause isn't known yet
-⍝⍝⍝ gap stopped "a function called on each item": the mapped row loss should trace through its nested derivative
+⍝⍝⍝ held linux 15.6 wasm 18.9: 41% of its instructions go to `program::add`'s scan for an equal earlier step (`Step::eq`), on every call, because the nested derivative's trace stops and records again; the kernels take about 20% (build 92f04cce); wasm 18.1 copies against 11.7 natively on this Mac (cf2_, 31 October 2026); stage 3's step 4 deletes the scan
 hv∂ thz
 ⍝⍝: 16	16	16
 
@@ -150,8 +154,8 @@ hvw∂ thz
 
 ⍝ An attached rule inside Each, beside the same rule on the whole array.
 ⍝ Expected: `{+/sq¨⍵}∂ v` 3 copies: as `{+/sq ⍵}∂ v`; `{+/sq ⍵}∂ v` 3 copies: the primal and the attached rule over every item.
-⍝⍝⍝ held linux 7.83 wasm 7.19: the cause isn't known yet
-⍝⍝⍝ gap stopped "a function called on each item": Each should trace the attached derivative rule over the whole array
+⍝⍝⍝ held linux 7.83 wasm 7.19: the trace stops at the Each, and the gradient runs through reverse mode's records one pass at a time, with a separate pass adding `⍵×⍵`'s two cotangents: 890,000 instructions a step against 304,000 for `{+/sq ⍵}∂ v` and 306,000 for the forward `+/sq¨v`, with the attached rule costing nothing (build 92f04cce); wasm 9.25 copies against 3.64 natively on this Mac (cf2_, 31 October 2026); stage 3's step 4 traces maps, and stage 7 puts the transposes on the graph
+⍝⍝⍝ gap stopped "a read of a traced value": Each should trace the attached derivative rule over the whole array
 {+/sq¨⍵}∂ v
 ⍝⍝: 6	6	6
 
@@ -164,6 +168,21 @@ hvw∂ thz
 {⍵+1}¨⍣1000,0
 ⍝⍝: 54	92	54
 
+⍝ 16 steps of an elementwise body. After its first step, a loop runs such a body as ordinary code, so each step's add waits and all 16 run as one block stage, as the chain written out does (`v+v+v` and so on).
+⍝ Expected: 8.4 copies: one interpreted block stage of 16 adds over `v`, about half a copy for each add. On this Mac on 1 November 2026 the chain written out measured 8.39.
+{⍵+v}⍣16 v
+⍝⍝: 17	17	17
+
+⍝ 100 steps of gradient descent on `lossw`. Each step after the first replays the recording of `descend`'s body, the gradient and the update, as one program.
+⍝ Expected: 300 copies: 100 gradients at `lossw∂ thz`'s 3 copies each. On this Mac on 1 November 2026 it measured 217, 2.17 a step, against 2.40 for one call of `lossw∂ thz`.
+(descend⍣100)thz
+⍝⍝: 450	600	600
+
+⍝ The gradient of a sum through a loop with a predicate, which halves `v` until every item is under 1e¯3: 10 steps, a number the data decide. `∂` gives two loop nodes: the forward loop, and one that reruns it from its first carry, keeping the carries, then folds the body's VJP back over them.
+⍝ Expected: 26 copies: the rerun's 10 steps at about 1.5 copies each (each halving writes `v` once, and the predicate's `⌈/|⍺` reads it once), then the backward pass's 10 halvings of the cotangent at about 1 copy each. A replay runs no forward loop of its own: only the loss's value reads it, and the gradient doesn't. On this Mac on 1 November 2026 it measured 28.5, against 30.4 for the gradient through 10 counted steps, `{+/{⍵×0.5}⍣10⁝⍵}∂ v`, whose forward loop keeps a stack.
+{+/{⍵×0.5}⍣{1e¯3>⌈/|⍺}⁝⍵}∂ v
+⍝⍝: 52	52	52
+
 ⍝ A map of 400 scalars against `v`. Repeated for each cell, `v` would hold 26 million items, past the memory limit of a batched run. The map then calls its operand once for each cell, holding one copy of `v` at a time.
 ⍝ Expected: 1000 copies: 400 cells, each about 2.5 copies in chunks.
 ⍝ CI measured 812 to 852 on Linux in most runs from 56 to 62, and up to 1,232 in runs whose hosts were busy.
@@ -172,44 +191,44 @@ hvw∂ thz
 ⍝⍝: 1300	1300	2600
 
 ⍝ Four cells of 256 by 256 floats. The batched run takes the sines of all four cells as one call, and `⍳` searches each cell's own table on slices of the batch (`searched_cells`).
-⍝ Expected: 18 copies: sines of four cells of `n` items, about 16, and a linear search of each.
-⍝⍝⍝ held macos 35.3 linux 144 wasm 169: the cause isn't known yet
+⍝ Expected: 30 copies: sines of four cells of `n` items at `1○v`'s 7 copies each, 28, and one read of each cell's table for the search, 2. In wasm 58: sines at twice their native cost, as `1○v` expects. The expected cost was 18 until 31 October 2026, when cf2_ measured the sines at 73% of the case's instructions; 18 had counted about 4 copies a cell for them.
+⍝⍝⍝ held linux 144 wasm 169: the one-needle search scans each table with rustymath's `tolerant::scan`, a scalar early-exit loop at about 7 instructions an item, about 8.7 copies on this Mac against the expected 2, and wasm runs it about 6.6 times slower: `(,1○big)⍳0.5` costs 70.4 copies in wasm against 10.7 natively, where `(,1○big)=0.5` costs 5.1 against 5.7 (cf2_, 31 October 2026); a fix in rustymath compares a chunk of items at once (open.md, Kernels). Linux's cost, about 4 times this Mac's, isn't placed yet
 ⍝⍝⍝ allows forced "⍳": a search reads its table's items
 {
   r←1○⍵
   ,r ⍳ 0.5
 }⍤2 big
-⍝⍝: 36	36	36
+⍝⍝: 60	60	87
 
 ⍝ Rank of a dfn on each row of `X` makes one batched call. The subtraction pads each row's mean, `+/÷≢ ⍵`, over the row.
 ⍝ Expected: 1 copy each: row sums of 32,768 items and one padded subtraction.
-⍝⍝⍝ held macos 1.85 linux 2.83 wasm 3.03: the cause isn't known yet
+⍝⍝⍝ held macos 1.85 linux 2.83 wasm 3.03: as `X - +/X ÷ 8`, the subtraction broadcasts each row's mean over its 8 items, one `pairs` call per row (open.md, row means, centring)
 {⍵ - +/÷≢ ⍵}⍤1 X
 ⍝⍝: 2	2	2
 
-⍝⍝⍝ held linux 2.57 wasm 2.81: the cause isn't known yet
+⍝⍝⍝ held linux 2.57 wasm 2.81: the subtraction broadcasts each row's mean over its 8 items, one `pairs` call per row in rustymath's `agreement::blocks` (open.md, row means, centring)
 X - +/X ÷ 8
 ⍝⍝: 2	2	2
 
 ⍝ An outer product of a dfn makes one batched call, with both arguments laid over the result's frame.
-⍝ Expected: `(⍳256){⍺×⍵+1}⊗⍳256` 1 copy: the operand on views laid over the frame, and one write of `n` items; `(⍳256)×⊗1+⍳256` 0.5 copies: one write of `n` items.
-⍝⍝⍝ held macos 4.54 linux 4.29 wasm 4.15: the cause isn't known yet
+⍝ Expected: 1 copy: the operand on views laid over the frame, and one write of `n` items.
+⍝⍝⍝ held macos 4.54 linux 4.29 wasm 4.15: both arguments are laid over the 65,536-item frame, so `⍵+1` runs at every frame position (open.md, dfn operands of scans, folds, outer products); stage 6 keeps each framed value to its own frame axes (main's decision 23)
 ⍳256 {⍺×⍵+1}⊗ ⍳256
 ⍝⍝: 2	2	2
 
-⍝⍝⍝ held macos 0.914 linux 1.02 wasm 1.17: the cause isn't known yet
+⍝ Expected: 0.73 copies: 0.5 for writing 8 bytes an item, and one node, about 0.23 copies of 65,536 floats (`fusion::MAC_NODE_NS`, 1,800 ns), because the lone outer product waits under the cost rule and nothing fuses with it (decision 13), as for its twin `⍳√n ×⊗ ⍳√n` in arrays.bpl. In the browser the call runs at once, because the cost rule's limit there is about 830 KB, above the call's 512 KB. The expected cost was 0.5 until 31 October 2026, when cf2_ found that the two cases time alike (1.31 and 1.27 copies under load).
 ⍳256 ×⊗ 1+⍳256
-⍝⍝: 1	1	1
+⍝⍝: 1.5	1.5	1.5
 
-⍝ A roll in a batched call draws once, on the whole frame, from the stream that a call for each cell would draw from in turn.
+⍝ A roll in a batched map draws once, on the whole frame. Each cell's item reads the word at its place in one stream that the map's cells share, the word that the cell reads when drawn alone (`rustymath::random::Items::cells`), so the map costs what one roll on its frame costs.
 ⍝ Expected: 28 copies each: about 13 for ChaCha8's words, about 11 for `rand`'s mapping of each word into the range, one draw at a time, and about 4 for the addition and the result. They measure about 31 on macOS. `rustymath::random::roll` draws every word first, then maps the words into their ranges by Lemire's method in a separate pass, and the bounds convert to integers in one fold. Drawing each word through `next_u64` still costs about 15 instructions. `rand`'s `fill` draws the same words, but copies each 4-byte word through a call to `memmove`, which costs several times as much.
 ⍝ CI measured 23.6 and 23.5 on Linux on 22 October 2026, and their Linux budgets follow their expected cost.
-⍝⍝⍝ held wasm 75.3: the cause isn't known yet
+⍝⍝⍝ held wasm 75.3: the draws: `¿n⍴10` alone costs 69.7 copies in wasm against 26.4 natively on this Mac (cf2_, 31 October 2026); ChaCha8 runs `ppv-lite86`'s portable code on every target but x86-64, which wasm runs about 2.2 times slower (`¿n⍴0` 47.4 against 21.8), and Lemire's 128-bit product (`rustymath::random::product`), one `umulh` on Apple silicon and emulated in wasm32, adds 22.3 copies against 4.6; stage 10's draw kernels (open.md, browser only)
+⍝⍝⍝ route batching
 {⍵+¿10}¨v
 ⍝⍝: 56	56	56
 
-⍝⍝⍝ held wasm 76.2: the cause isn't known yet
-⍝⍝⍝ allows forced "¿": a roll reads its argument whole
+⍝⍝⍝ held wasm 76.2: the draws, as `{⍵+¿10}¨v`'s held line says
 v+¿n⍴10
 ⍝⍝: 56	56	56
 
@@ -237,16 +256,16 @@ X,X
 
 ⍝ A fold or scan by a dfn along the rows of `X` runs as one batched map over the rows. Each stage is one call, on every row at once. Each sits beside its primitive form.
 ⍝ Expected: `{⍺+⍵}/X` 1.5 copies: seven batched calls over 4,096 rows, about a microsecond each; `+/X` 0.25 copies: reads 32,768 items; `{⍺+0.9×⍵}\X` 2 copies: seven batched calls over 4,096 rows, and the scan's writes; `+\X` 0.75 copies: reads and writes 32,768 items, with lanes of 8 waiting on additions.
-⍝⍝⍝ held macos 3.71 linux 3.2: the cause isn't known yet
+⍝⍝⍝ held macos 3.71 linux 3.2: each batched step first copies a column of `X`, read at stride 8, out contiguously (open.md, dfn operands of scans, folds, outer products); stage 6's loop nodes
 ⍝⍝⍝ held wasm 1.65: margin against noise for a case within 10% of its budget (30 October 2026)
 {⍺+⍵}/X
 ⍝⍝: 3	3	3
 
-⍝⍝⍝ held linux 0.48: the cause isn't known yet
+⍝⍝⍝ held linux 0.48: rows of 8 are summed one row at a time (`reduce::Sum::rows`, 81% of its instructions), 86,000 instructions a step against 43,000 for `+/,X` (build 92f04cce); wasm 0.50 copies against 0.37 natively on this Mac (cf2_, 31 October 2026); a fix in rustymath sums several short rows at once (open.md, Kernels)
 +/X
 ⍝⍝: 0.5	0.5	0.5
 
-⍝⍝⍝ held macos 5.92 linux 5.99 wasm 5.21: the cause isn't known yet
+⍝⍝⍝ held macos 5.92 linux 5.99 wasm 5.21: as `{⍺+⍵}/X`, plus a `memmove` that places each step's column in the result (open.md, dfn operands of scans, folds, outer products); stage 6's loop nodes
 {⍺+0.9×⍵}\X
 ⍝⍝: 4	4	4
 
@@ -255,24 +274,23 @@ X,X
 
 ⍝ A dfn under `⍠` along the first axis of `X`, beside the primitive form.
 ⍝ Expected: `{+/⍵}⍠0 X` 0.5 copies: as `+/⍠0 X`, which reads 32,768 items and measured 0.32 on 30 October 2026.
-⍝⍝⍝ held macos 1.91 linux ~1.91 wasm ~1.91: the dfn form pays a transpose of `X` that `+/⍠0` avoids; Linux and wasm hold the macOS cost as an estimate
+⍝⍝⍝ held macos 1.91 linux ~1.91 wasm ~1.91: the dfn's `+/` folds the transposed view of `X` in place along strided lanes, where `+/⍠0` runs column totals (open.md, dfn operand under `⍠`); Linux and wasm hold the macOS cost as an estimate
 {+/⍵}⍠0 X
 ⍝⍝: 1	1	1
 
 ⍝ Row-wise dot products. `+.×` under Rank pairs each pair of rows' items in one call and folds along them, as `+/X×Y` does.
-⍝ Expected: `X+.×⍤1Y` 1 copy: as `+/X×Y`, two passes below fusion's `MIN_ITEMS`. The product reads 65,536 items and writes 32,768, then the fold reads them. On 30 October 2026 it measured 1.71 on macOS, and `+/X×Y` 1.5.
-⍝⍝⍝ held macos 1.1: margin against noise for a case within 10% of its budget (30 October 2026)
+⍝ Expected: `X+.×⍤1Y` 1 copy: as `+/X×Y`, two passes below the size at which fusion waits (`fusion::waits`). The product reads 65,536 items and writes 32,768, then the fold reads them. On 30 October 2026 it measured 1.71 on macOS, and `+/X×Y` 1.5.
 X+.×⍤1Y
 ⍝⍝: 2	2	2
 
 ⍝ An inner product with a dfn `g` calls `g` once, on every triple of a row, a position along the contraction and a column. `f` then folds along the contraction.
-⍝ Expected: `(⍉X) +.{⍺×⍵} X` 3 copies: the operand on 262,144 triples, about 2 copies, and a fold along the contraction; `(⍉X)+.×X` 1.5 copies: `⍉X` is eager below fusion's `MIN_ITEMS` and writes a copy of `X`, about 0.5 copies, then the product reads `X` and the copy, and its 524,288 flops are few.
-⍝⍝⍝ held linux 6.09 wasm 5.71: the cause isn't known yet
+⍝ Expected: `(⍉X) +.{⍺×⍵} X` 3 copies: the operand on 262,144 triples, about 2 copies, and a fold along the contraction; `(⍉X)+.×X` 1.5 copies: on Linux and in wasm `⍉X` computes at once below the size at which fusion waits there (`fusion::waits`) and writes a copy of `X`, about 0.5 copies, then the product reads `X` and the copy; on macOS `⍉X` waits and the product reads it through its map, and its 524,288 flops are few.
+⍝⍝⍝ held linux 6.09 wasm 5.71: as `⍉X +.× X`'s held line below says, Linux and wasm store `⍉X` and run rustymath's own product kernel (3.38 copies natively on a stored transpose against Accelerate's 1.09); the batched dfn adds about 2 copies on every route: 5.70 copies on rustymath's kernels, 3.86 on Accelerate, 8.35 in wasm (this Mac, cf2_, 31 October 2026)
 ⍉X +.{⍺×⍵} X
 ⍝⍝: 6	6	6
 
-⍝ The product on a stored transpose costs about 1 copy. `⍉X` costs about 2.9 copies of its own 32,768 items on macOS, because its eight result rows lie exactly 32 KB apart and writing them in turn stalls (22 October 2026).
-⍝⍝⍝ held macos 2.9 linux 4.71 wasm 3.94: `⍉X` writes its eight result rows 32 KB apart
+⍝ The product on a stored transpose costs about 1 copy. `⍉X` costs about 2.9 copies of its own 32,768 items on macOS, because its eight result rows lie exactly 32 KB apart and writing them in turn stalls (22 October 2026). On 31 October 2026 the case measured 1.11 to 1.16 on macOS, within its rule budget.
+⍝⍝⍝ held linux 4.71 wasm 3.94: Linux and wasm compute `⍉X` at once, since their node costs put the cost rule's limit above its 32,768 floats, and store it with its eight rows 32 KB apart (2.2 to 2.3 copies when forced, this Mac and wasm); rustymath's own product kernel, which they run, then costs 3.38 copies natively on the stored transpose (`native=True`) and 3.80 in wasm, against 1.09 on Accelerate (cf2_, 31 October 2026)
 ⍉X +.× X
 ⍝⍝: 3	3	3
 

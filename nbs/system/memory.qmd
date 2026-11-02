@@ -2,7 +2,7 @@
 
 `•memory x` gives a record of what this thread holds, and of what `x` keeps alive. `•memory 0` is the usual spelling for the counts alone.
 
-- `records` counts the live record nodes: the linear calls that reverse mode records while `∂` runs. Each `∂` frees its record when it returns, so the count is 0 between programs.
+- `records` counts the live linear nodes: the tangent calls that reverse mode builds while `∂` runs. Each `∂` frees them when it returns, so the count is 0 between programs.
 - `pending` counts the live pending arrays, whose items wait for their first read.
 - `bytes` counts the bytes that `x` keeps alive: its items, the base of a view, the arrays that a pending array reads, the parts of a value that `∂` is differentiating, and the nodes of a record. An allocation that `x` reaches twice counts once.
 

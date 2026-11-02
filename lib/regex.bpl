@@ -1,6 +1,6 @@
 ⍝ pattern (f regex_replace) text — transform each match, retaining intervening text.
 regex_replace←{
-    s←⍵ ⋄ p←•r ⍺ ⋄ m←p.matches s
+    s←⍵ ⋄ m←s •r ⍺
     starts←m.position
     0ₓ=≢starts?s;
     ends←starts+≢¨m.text
