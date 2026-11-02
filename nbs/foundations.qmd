@@ -1,0 +1,102 @@
+---
+title: "Computational foundations"
+description: "What BPL borrows from tinygrad, JAX, Dex and Futhark, and what owning the language makes possible"
+---
+
+BPL can control the whole path from an array expression to the machine code that computes it. Its functions, numerical rules, transformations and execution belong to one runtime. That gives us an opportunity to make small interactive calls cheap while compiling larger compositions into bulk array work, without maintaining a separate execution system for each.
+
+This page explains the new core under construction and the reasons for its design. These are opportunities and design commitments, not measured speedups or a description of everything in the released implementation. [The target](target.qmd) specifies the required behaviour and costs.
+
+## Why owning the language helps
+
+Python array libraries already run numerical kernels in native code. BPL's opportunity is in the work around those kernels. A BPL call needs no Python operator overload, array-object protocol or Python-to-native crossing in its core. We can give dispatch one entry, make its inputs small and measure the cost of every step. This matters most for short expressions, loops and the many small calls used to construct a larger calculation.
+
+BPL also knows how a function was made. A primitive, a train and an operator applied to its operands have structural representations. We can reuse a recorded calculation for closures of the same definition while passing their different captured arrays as inputs. The cache need not depend on the identity of a newly allocated callable. Captured data are snapshots from the current call, never stale data kept inside compiled code. JAX documents the recompilation cost of repeatedly constructing temporary functions. [JAX's function caching](https://github.com/jax-ml/jax/blob/main/docs/jit-compilation.md#jit-and-caching).
+
+Code written for static kinds uses explicit widths and guaranteed fast forms such as `√ₐ`, `*ₐ`, `⍟ₐ`, `○ₐ` and `÷ₓ` where needed. Their result kinds follow from the arguments without inspecting array items. Dynamic kinds preserve interactive behaviour when values decide a result's kind. A necessary read of those values is an explicit boundary. Differentiation uses real floats, promoting exact differentiated inputs through BPL's normal float-width rules.
+
+Lazy arrays preserve the calculation that produces them across function calls. A transpose, a selection or a window can remain a description of reads until its consumer needs items. Both the BPL frontend and rustymath's numerical kernels can use that description. A single runtime can then coordinate graph construction, transformations, planning and code reuse instead of translating between independently maintained execution routes.
+
+## Calls build a graph; reads compute
+
+A graph records operations and their dependencies. A pending array holds its producer node instead of an intermediate buffer. For example, suppose `x` is a real float vector:
+
+```bpl
+loss←+/⊼
+y←loss x
+```
+
+[`⊼`](glyphs/wedge-bar.qmd) squares each item. [`+/`](glyphs/slash.qmd) sums the squares. Calling `loss` builds those operations without first storing a vector of squares. Displaying `y` reads its value. The runtime then plans the reachable graph and computes the total, with the square inside the reduction where the execution rules support it.
+
+We borrow lazy graph construction and node interning from tinygrad. Interning gives structurally identical live nodes one representation. tinygrad separates Tensor construction, scheduling and `realize`, and replaces realized producers with storage. Its compiler caches generated programs by a structural key. BPL uses the same separation to retain producer information before a read and release it after storing the result. [tinygrad's `UOpMetaClass`](https://github.com/tinygrad/tinygrad/blob/master/tinygrad/uop/ops.py), [Tensor realization](https://github.com/tinygrad/tinygrad/blob/master/tinygrad/tensor.py), [compilation and execution](https://github.com/tinygrad/tinygrad/blob/master/tinygrad/engine/realize.py).
+
+A plan decides operation order, which intermediate results need storage and which operations run together. Fusion means computing a producer's items inside its consumer rather than storing and rereading an array between them. Futhark performs producer-consumer and shared-input fusion over a dependency graph, even when the source expressions are separated by names or functions. BPL's graph gives its rewrite rules that same view. [Futhark's fusion and views](https://github.com/diku-dk/futhark/blob/master/docs/performance.rst).
+
+A trace records the graph built by an actual run. A replay binds new inputs to the recorded calculation and runs its plan. tinygrad's TinyJit demonstrates recording executed work and replaying it without rerunning the Python function. BPL records the graph that ordinary calls already build. A trace is therefore a way to reuse construction work, not another interpretation of numerical operations. Ordinary graph reads and recorded calls use the same planning pipeline. [TinyJit capture and replay](https://github.com/tinygrad/tinygrad/blob/master/tinygrad/engine/jit.py).
+
+## Transformations keep whole-array work
+
+Batching applies one function to many cells by transforming its operations into array operations. A cell is the part of an array that the function receives at each position. BPL's Each, Rank and related operators use one batching mechanism instead of separate evaluators for each operator.
+
+JAX's Autodidax tutorial supplies the model for composing these transformations. In that presentation every primitive call goes through `bind`, which selects the relevant transformation interpreter from its arguments. A transformation can call primitives through the same entry. Older transformed values can be lifted into a newer transformation without losing their earlier meaning. BPL calls these nested interpreters levels. Its derivative and batching levels follow those data dependencies. [JAX's interpreter stack, lifting and batching](https://github.com/jax-ml/jax/blob/main/docs/autodidax.md#part-1-transformations-as-interpreters-standard-evaluation-jvp-and-vmap).
+
+For the example above:
+
+```bpl
+grad←loss∂
+grad x
+```
+
+[`∂`](glyphs/partial.qmd) gives the gradient of a function with one number as its result. Here the gradient is twice each item of `x`. The original calculation is the primal computation. Forward differentiation propagates a tangent, the change in a result along a chosen input direction. Linearization separates the original calculation from a calculation linear in that tangent. Reverse differentiation transposes the linear calculation to propagate result sensitivities back to the inputs. We borrow this construction from JAX rather than writing independent forward and reverse derivative formulas. [JAX's linearization and transposition](https://github.com/jax-ml/jax/blob/main/docs/autodidax.md#part-4-linearize-and-vjp-and-grad).
+
+Dex and Futhark show why preserving array structure through differentiation matters. Dex linearizes `for` bodies and transposes their structured loops. Its transpose uses indexed accumulations to send sensitivities back to selected array positions. Futhark differentiates maps, reductions and scans as bulk array operations, then allows fusion to run again. BPL follows that principle. The reverse of a repeated read accumulates at the source positions, without constructing a one-hot array or invoking an interpreter for every item. [Dex linearization](https://github.com/google-research/dex-lang/blob/main/src/lib/Linearize.hs), [Dex transposition](https://github.com/google-research/dex-lang/blob/main/src/lib/Transpose.hs), [Futhark's array differentiation](https://github.com/diku-dk/futhark/blob/master/src/Futhark/AD/Rev/SOAC.hs).
+
+Dex also shows the value of writing a formula for one item while retaining its array structure. BPL's [index notation](index-notation.qmd) follows that idea through named axes. Index formulas and whole-array spellings build operations that the same contraction and read-mapping rules can recognize. BPL uses arrays of named indices rather than Dex's statically typed index sets. [Dex's table comprehensions and typed indexing](https://github.com/google-research/dex-lang/blob/main/examples/tutorial.dx).
+
+The reverse derivative of a structural operation can often read from the sensitivity array instead of scattering into a new one. tinygrad's gradient rules reverse padding with a shrink and a shrink with padding. BPL similarly prefers read-based transposes when the mapping permits them, retaining accumulation where positions repeat. [tinygrad's movement gradients](https://github.com/tinygrad/tinygrad/blob/master/tinygrad/mixin/gradient.py).
+
+The transformed operations still enter the ordinary graph. Rewrite rules and fusion therefore apply to the gradient as well as the original function. Scalar mathematical facts have one home, including formulas, partial derivatives and range information. A rule can recognize a contraction or a stable mathematical form after batching and differentiation have exposed it.
+
+## Loops stay loops
+
+BPL's iteration operators already identify a loop's body and the values carried between iterations. Expanding that body for every iteration would make graph size grow with the iteration count. BPL keeps a loop node and records its body once. Batching and differentiation transform the body, then construct another loop through normal dispatch. JAX's `scan` rules use this pattern with transformed body programs. BPL reruns transformed function values to build their graphs. [JAX's loop transformations](https://github.com/jax-ml/jax/blob/main/jax/_src/lax/control_flow/loops.py).
+
+Reverse differentiation needs some intermediate values from the forward run. These saved values are residuals. BPL splits a reverse-mode loop into a primal loop that produces the result and residuals, and a linear loop that uses them. Both use the normal runner. Dex's linearization explicitly separates primal computation, residuals and a linear function. [Dex's residual handling](https://github.com/google-research/dex-lang/blob/main/src/lib/Linearize.hs).
+
+Saving every intermediate is often unnecessary. Cheap expressions can be recomputed instead of stored. When loop residuals exceed the memory budget, checkpointing saves selected loop states and reruns sections to recover the intervening residuals. Futhark's reverse-loop implementation and stripmining provide the model for this memory/work tradeoff. BPL supports a host residual stack for a loop whose final iteration count is not known in advance. It does not inherit JAX's restriction against reverse differentiation of a dynamic `while_loop`. [Futhark's reverse loops](https://github.com/diku-dk/futhark/blob/master/src/Futhark/AD/Rev/Loop.hs), [JAX's dynamic-loop restriction](https://github.com/jax-ml/jax/blob/main/jax/_src/lax/control_flow/loops.py).
+
+## Reuse structure as lengths change
+
+An array's exact length often changes the amount of work without changing the computation. A kernel can take that length as a runtime argument. Futhark's compiled libraries accept array dimensions at runtime. tinygrad also represents bounded symbolic sizes separately from their current values. BPL's kernels use runtime counts without requiring a symbolic shape language throughout the runtime. [Futhark's array API](https://github.com/diku-dk/futhark/blob/master/docs/c-api.rst), [tinygrad's variables](https://github.com/tinygrad/tinygrad/blob/master/tinygrad/uop/ops.py).
+
+BPL keys reusable plans by structure and the facts their validity needs. The length component distinguishes empty, unit and longer axes. Unit axes change broadcasting. Ranks, kinds, axis equalities, structural parameters and assumed numerical ranges also matter. Two longer vectors of different lengths can reuse a plan when those other facts agree.
+
+Refill updates concrete result descriptions and read mappings for the new lengths. It preserves the plan's rewrites, operation order and stage structure. Preparation uses actual counts for the few choices where size changes the preferred execution, including whether compiling is worthwhile, which direction to read a contraction and whether to recompute an intermediate.
+
+Futhark demonstrates choosing implementations at runtime from size checks. Its multicore scheduler selects between parallel and sequential nested work, and its GPU compiler generates versions for different amounts of parallelism. BPL borrows size-sensitive choice without adopting an ahead-of-time catalogue of versions. A just-in-time compiler emits a worthwhile structural version when execution first needs it and keeps that code in one cache. A new length does not automatically require another compilation. BPL uses no size buckets or padding to a bucket. [Futhark's runtime selection](https://github.com/diku-dk/futhark/blob/master/docs/performance.rst).
+
+Filtering and finding unique items determine a result's length from data. BPL reads that count, then refills the downstream plan when its assumptions still hold. A changed structural fact uses the normal cache-miss path. The read is an execution boundary, not a reason to reject the expression. JAX's jitted `unique` instead requires a static output size, with truncation or padding to that size. This distinction matters for interactive data analysis. [JAX's data-dependent output sizes](https://github.com/jax-ml/jax/blob/main/jax/_src/numpy/setops.py).
+
+## Effects and errors belong in the model
+
+Lazy execution must preserve visible actions. BPL represents output and other effects as ordered nodes. A token is a dependency with no numerical meaning that keeps one effect after the previous effect. This follows JAX's ordered-effects design. An effect reads only its own operands, rather than forcing every pending array in the session. [JAX's effect sequencing](https://github.com/jax-ml/jax/blob/main/docs/jep/10657-sequencing-effects.md).
+
+Random draws also have graph inputs for their generator state. Replaying a program advances that state instead of repeating capture-time samples. JAX's counter-based random design explains how independent draws can be assigned stable positions without making array execution sequential. BPL manages the streams inside its runtime rather than requiring JAX's explicit user-level key splitting. [JAX's PRNG design](https://github.com/jax-ml/jax/blob/main/docs/jep/263-prng.md).
+
+Static graph-numeric execution has a non-raising policy for data errors. An invalid numeric index reads the fill, including on an empty axis, and an invalid numeric write skips that position. Dynamic execution retains checked behaviour. A potentially fallible dynamic branch or batched loop gathers only its live cells before running them, a process called compaction. There is no speculative whole-read retry. Shape, kind, name and host errors remain checked. These choices avoid maintaining error-replay machinery alongside the graph executor.
+
+## Share numerical algorithms at the right size
+
+An elementary operation normally has one width-specific formula over a small set of arithmetic operations, called `Ops`. Native kernels and generated code instantiate that same formula. Partial derivatives and range rules belong beside the mathematical object. A substantial algorithm, such as incomplete gamma's convergence calculation, can instead run as one whole-array `Call` through the common graph runner. One algorithm does not require every function to have the same granularity.
+
+The recommended native backend implements actual SIMD lanes and masks through rustymath's existing abstractions, with explicit tails, widths and bounded mixed-width operations. Scalar per-item callbacks are not a substitute. The preferred mixed-width support preserves f32 trig's existing f64 reduction on non-FMA targets. A table read is added only where a retained algorithm needs one after Pow simplification; a machine without gather instructions can require one scalar load per lane.
+
+The recommended numerical design composes general positive floating Pow/Root from shared Exp/Ln and keeps short ordinary trig formulas with rare object-owned scalar repair. Native SIMD repairs flagged items after its first pass. Generated code calls the same repair only for flagged lanes, before fused consumers use them. Compact Cbrt and genuine iterative specials keep their existing algorithmic roles. Gamma and compensated-constant-power simplification are later opportunities, not blockers for the basic build.
+
+Shared formulas and one home per mathematical fact are agreed principles. The numerical changes above are concrete recommendations awaiting approval, not an undecided choice between tables and a larger compiler. We still need to validate and agree any function-specific float-error scope, verify native/wasm repair providers and implement the SIMD/repair interfaces. GPU repair is a later device choice. No new accuracy exception is approved or published. [The target](target.qmd#numerical-implementation-choices) records the designs and their status.
+
+## One home for each decision
+
+BPL supplies language rules and function structure. rustymath supplies numerical operations and shared array-reading machinery. Transforms rebuild operations through the same dispatch entry. A mathematical fact, read mapping, loop rule or cache policy should not acquire another implementation because it is used from a different frontend or under a derivative.
+
+The same graph should remain usable by a later GPU or external backend without adding a second account of what a BPL expression means.
