@@ -11,7 +11,7 @@ pub(crate) mod verify;
 
 use crate::{
     Error, Function, Number, Span, Value, array::{Layout, TreeRoot, Trees}, graph::Pending, number::{Kind, Numeric},
-    eval::FunctionBinding, primitive::{Operation, Roles},
+    eval::{CaptureBindings, FunctionBinding}, primitive::{CallBindings, Input, Operation, Roles},
 };
 use rustymath::{agreement::Mapping, buffer::{DType, Width, FloatWidth}, convert::Conversion, facts::{Range, Variant}, hashing::HashMap};
 use std::{borrow::Cow, hash::{Hash, Hasher}, sync::{Arc, Mutex, Weak, atomic::{AtomicUsize, Ordering}}};
@@ -36,7 +36,7 @@ pub(crate) struct Desc {
 impl Desc {
     pub(crate) fn of(value: &Value) -> Option<Cow<'_, Desc>> {
         match value {
-            Value::Pending(pending) => Some(Cow::Borrowed(pending.desc())),
+            Value::Pending(pending) => pending.description().map(Cow::Borrowed),
             Value::Carried { carried, .. } => match &**carried {
                 crate::array::Carried::Batch { cell, .. } => Some(Cow::Borrowed(cell)),
                 crate::array::Carried::Dual { primal, .. } => Self::of(primal),
@@ -144,8 +144,13 @@ impl Outputs<Value> {
 pub(crate) struct Out {
     /// The node's position.
     pub(crate) node: usize,
-    /// Which of its outputs.
-    pub(crate) output: u32,
+    /// A data leaf, or completion of the whole node.
+    pub(crate) output: Option<u32>,
+}
+impl Out {
+    pub(crate) fn data(node: usize, output: u32) -> Self { Self { node, output: Some(output) } }
+    pub(crate) fn control(node: usize) -> Self { Self { node, output: None } }
+    pub(crate) fn with_producer(self, node: usize, first: u32) -> Self { Self { node, output: self.output.map(|output| first + output) } }
 }
 
 /// An entry of an origin's list: the operand (in a program, its node and output; in a live node, the operand value itself) and the rustymath `Mapping` its step reads it through; a function value's map, an atom's, is never read.
@@ -184,20 +189,20 @@ impl<L: AsRef<[Value]>> Origin<L> {
     pub(crate) fn reborrow(&self) -> Origin<&[Value]> { self.with_list(self.list.as_ref()) }
 }
 
-impl crate::primitive::CallBindings for &[Value] {
-    fn len(&self) -> usize { <[Value]>::len(self) }
+impl<L: AsRef<[Value]>> CallBindings for L {
+    fn len(&self) -> usize { self.as_ref().len() }
     fn input(&self, position: usize) -> Option<crate::primitive::Input<'_>> {
         static IDENTITY: Mapping = Mapping::Linear(1);
-        self.get(position).map(|value| crate::primitive::Input { value, map: &IDENTITY })
+        self.as_ref().get(position).map(|value| crate::primitive::Input { value, map: &IDENTITY })
     }
     fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> {
-        Desc::of(self.get(position)?)
+        Desc::of(self.as_ref().get(position)?)
     }
     fn value(&self, position: usize, purpose: trace::ReadKind) -> crate::error::Result<Cow<'_, Value>> {
-        self.get(position).ok_or_else(crate::Error::planning)?.read_borrowed(purpose)
+        self.as_ref().get(position).ok_or_else(crate::Error::planning)?.read_borrowed(purpose)
     }
     fn function(&self, position: usize) -> Option<&Function> {
-        match self.get(position)? { Value::Function(function) => Some(function), _ => None }
+        match self.as_ref().get(position)? { Value::Function(function) => Some(function), _ => None }
     }
 }
 
@@ -222,13 +227,15 @@ impl<L: ?Sized> Origin<L> {
     pub(crate) fn with_list<M>(&self, list: M) -> Origin<M> {
         Origin { operation: self.operation.clone(), trees: self.trees.clone(), site: self.site.clone(), context: self.context, bindings: self.bindings.clone(), mode: self.mode, literals: self.literals, roles: self.roles, explicit: self.explicit, explicit_roots: self.explicit_roots, list }
     }
-    pub(crate) fn rebuilt<M: AsRef<[Value]>>(&self, operation: Operation, list: M, from: &[Option<usize>], explicit: u32, explicit_roots: u32, trees: Option<Arc<Trees>>) -> Origin<M> {
-        debug_assert_eq!(list.as_ref().len(), from.len());
+    pub(crate) fn rebuilt<M: CallBindings>(&self, operation: Operation, list: M, from: &[Option<usize>], explicit: u32, explicit_roots: u32, trees: Option<Arc<Trees>>) -> crate::error::Result<Origin<M>> {
+        debug_assert_eq!(list.len(), from.len());
         let literals = from.iter().take(64).enumerate().fold(0, |bits, (to, source)| {
             bits | if source.is_some_and(|source| source < 64 && self.literals & (1 << source) != 0) { 1 << to } else { 0 }
         });
-        let roles = operation.roles(self.mode, &list.as_ref()[operation.functions()..explicit as usize]);
-        Origin { operation, trees, site: self.site.clone(), context: self.context, bindings: self.bindings.clone(), mode: self.mode, literals, roles, explicit, explicit_roots, list }
+        let mut origin = Origin { operation, trees, site: self.site.clone(), context: self.context, bindings: self.bindings.clone(), mode: self.mode,
+            literals, roles: Roles(0), explicit, explicit_roots, list };
+        origin.roles = Operation::roles(&origin.call_view(&origin.list))?;
+        Ok(origin)
     }
 }
 
@@ -362,7 +369,7 @@ pub(crate) enum Step {
         /// Part 16: the values written.
         values: u32,
         /// Part 16: each value item's position, from the walk; a copy's transpose reads them through the copy's map (part 15).
-        ids: u32,
+        ids: Option<u32>,
         /// Part 16: its positions depend on a running trace's arguments and stay pending, so it checks every one when it runs, before it writes; false where the walk checked them before building it.
         checks: bool,
     },
@@ -485,7 +492,7 @@ pub(crate) enum RangeBox {
 /// Flat SSA. Only Step nodes own an origin; every dependency names an earlier output.
 #[derive(Clone)]
 pub(crate) enum Node {
-    Input { position: usize, desc: u32, level: Option<usize> },
+    Input { position: usize, desc: u32, level: Option<usize>, control: bool },
     Literal { value: Value, desc: u32 },
     Function { binding: FunctionBinding<usize, (std::ops::Range<u32>, Option<Arc<Trees>>, Arc<crate::eval::CaptureBindings>)>, desc: u32, context: Option<u32> },
     Step { step: Step, origin: Origin<std::ops::Range<u32>>, descs: std::ops::Range<u32>, trees: Option<Arc<Trees>>, shy: bool, level: Option<usize> },
@@ -504,7 +511,7 @@ pub(crate) struct Program {
     pub(crate) descs: Vec<Option<Desc>>,
     pub(crate) roots: Vec<Out>,
     /// Original live node ordinals and their logical outputs. These associations do not keep outputs live.
-    pub(crate) sources: Vec<(u32, Box<[Out]>)>,
+    pub(crate) sources: Vec<(u32, Out, Box<[Out]>)>,
     pub(crate) token: Option<Out>,
     pub(crate) parameters: Arc<[Parameter]>,
 }
@@ -514,17 +521,30 @@ impl Program {
         self.roots.iter().copied().chain(self.token).chain(self.parameters.iter().filter_map(|parameter|
             if let Parameter::Count { output, .. } = parameter { Some(*output) } else { None }))
     }
+    pub(crate) fn order(&self, from: usize) -> Vec<usize> {
+        let mut needed = vec![false; self.nodes.len()];
+        let mut stack: Vec<_> = self.live_roots().map(|output| output.node).collect();
+        while let Some(node) = stack.pop() {
+            if needed[node] { continue; }
+            needed[node] = true;
+            stack.extend(self.dependencies(node).iter().map(|read| read.operand.node));
+        }
+        needed.into_iter().enumerate().filter_map(|(node, needed)| (needed && node >= from).then_some(node)).collect()
+    }
     pub(crate) fn remap_parameters(&self, mut resolve: impl FnMut(Out) -> Out) -> Arc<[Parameter]> {
         self.parameters.iter().map(|parameter| match parameter {
             Parameter::Input { .. } => parameter.clone(),
             Parameter::Count { output, expected } => Parameter::Count { output: resolve(*output), expected: expected.clone() },
         }).collect()
     }
-    pub(crate) fn remap_sources(&self, mut resolve: impl FnMut(Out) -> Option<Out>) -> crate::error::Result<Vec<(u32, Box<[Out]>)>> {
-        self.sources.iter().filter_map(|(source, outputs)| {
+    pub(crate) fn remap_sources(&self, mut resolve: impl FnMut(Out) -> Option<Out>) -> crate::error::Result<Vec<(u32, Out, Box<[Out]>)>> {
+        self.sources.iter().filter_map(|(source, completion, outputs)| {
+            let completion = resolve(*completion);
             let outputs: Vec<_> = outputs.iter().copied().map(&mut resolve).collect();
-            outputs.iter().any(Option::is_some).then(|| outputs.into_iter().collect::<Option<Box<[_]>>>()
-                .map(|outputs| (*source, outputs)).ok_or_else(crate::Error::planning))
+            (completion.is_some() || outputs.iter().any(Option::is_some)).then(|| {
+                Ok((*source, completion.ok_or_else(crate::Error::planning)?,
+                    outputs.into_iter().collect::<Option<Box<[_]>>>().ok_or_else(crate::Error::planning)?))
+            })
         }).collect()
     }
     pub(crate) fn desc_index(&self, output: Out) -> usize {
@@ -532,20 +552,20 @@ impl Program {
             Node::Input { desc, .. } | Node::Literal { desc, .. } | Node::Function { desc, .. } => *desc,
             Node::Step { descs, .. } => descs.start,
         };
-        first as usize + output.output as usize
+        first as usize + output.output.expect("control completion has no description slot") as usize
     }
-    pub(crate) fn desc(&self, output: Out) -> Option<&Desc> { self.descs[self.desc_index(output)].as_ref() }
+    pub(crate) fn desc(&self, output: Out) -> Option<&Desc> { output.output?; self.descs[self.desc_index(output)].as_ref() }
     pub(crate) fn reads(&self, range: &std::ops::Range<u32>) -> &[Read] { &self.reads[range.start as usize..range.end as usize] }
     pub(crate) fn outputs(&self, node: usize) -> usize {
-        match &self.nodes[node] { Node::Step { descs, .. } => descs.len(), _ => 1 }
+        match &self.nodes[node] { Node::Step { descs, .. } => descs.len(), Node::Input { control: true, .. } => 0, _ => 1 }
     }
     pub(crate) fn output(&self, source: usize) -> Option<Out> {
         let node = self.nodes.partition_point(|node| match node {
             Node::Input { desc, .. } | Node::Literal { desc, .. } | Node::Function { desc, .. } => *desc as usize <= source,
             Node::Step { descs, .. } => descs.start as usize <= source,
         }).checked_sub(1)?;
-        let output = source.checked_sub(self.desc_index(Out { node, output: 0 }))?;
-        (output < self.outputs(node)).then_some(Out { node, output: output as u32 })
+        let output = source.checked_sub(self.desc_index(Out::data(node, 0)))?;
+        (output < self.outputs(node)).then_some(Out::data(node, output as u32))
     }
     pub(crate) fn of(live: &Live) -> Self {
         let mut builder = Builder::new();
@@ -561,23 +581,30 @@ impl Program {
                     let publishing = origin.nonrepeatable() || live.roots.iter().any(|root| &root.node == node);
                     let mut origin = origin.with_list(reads).invocation(); origin.context = Some(context.try_into().expect("live context fits u32"));
                     let output = builder.step(step.clone(), origin, node.description(), node.level());
-                    for i in 0..node.descs().len() { mapped.insert(Pending { node: node.clone(), output: i as u32 }, Out { node: output.node, output: i as u32 }); }
-                    if publishing { builder.program.sources.push((context as u32, (0..node.descs().len()).map(|i| Out { node: output.node, output: i as u32 }).collect())); }
+                    for i in 0..node.descs().len() { mapped.insert(Pending::data(node.clone(), i as u32), Out::data(output.node, i as u32)); }
+                    mapped.insert(Pending::control(node.clone()), Out::control(output.node));
+                    if publishing { builder.program.sources.push((context as u32, Out::control(output.node), (0..node.descs().len()).map(|i| Out::data(output.node, i as u32)).collect())); }
                 }
                 crate::graph::State::Input { value, .. } => {
-                    let pending = Pending { node: node.clone(), output: 0 };
+                    let control = node.descs().is_empty();
+                    let pending = if control { Pending::control(node.clone()) } else { Pending::data(node.clone(), 0) };
                     let output = if let Some(Value::Pending(source)) = value { mapped[source] } else {
-                        builder.input(live.input_position(&pending, value), Some(node.desc(0).clone()), node.level())
+                        let position = live.input_position(&pending, value);
+                        if control { builder.control_input(position) } else { builder.input(position, Some(node.desc(0).clone()), node.level()) }
                     };
                     mapped.insert(pending, output);
+                    mapped.insert(Pending::control(node.clone()), Out::control(output.node));
                 }
                 crate::graph::State::Done(values) => {
                     for (i, value) in values.as_ref().iter().enumerate() {
-                        let pending = Pending { node: node.clone(), output: i as u32 };
+                        let pending = Pending::data(node.clone(), i as u32);
                         let position = live.input_position(&pending, Some(value));
-                        let output = builder.input(position, Some(node.desc(i as u32).clone()), None);
+                        let output = builder.input(position, Desc::of(value).map(Cow::into_owned), None);
                         mapped.insert(pending, output);
                     }
+                    let control = Pending::control(node.clone());
+                    let output = builder.control_input(live.input_position(&control, Some(&Value::Pending(control.clone()))));
+                    mapped.insert(control, output);
                 }
             });
         }
@@ -619,7 +646,7 @@ impl Live {
                     }
                     crate::graph::State::Input { value: Some(Value::Pending(_)), .. } => {},
                     crate::graph::State::Input { value, .. } => {
-                        let pending = Pending { node: node.clone(), output: 0 };
+                        let pending = if node.descs().is_empty() { Pending::control(node.clone()) } else { Pending::data(node.clone(), 0) };
                         let position = if let Some(value) = value { live.add_value(value) }
                         else { let position = live.inputs.len(); live.inputs.push(None); position };
                         live.pending.insert(pending, position);
@@ -627,14 +654,16 @@ impl Live {
                     crate::graph::State::Done(outputs) => {
                         for (i, value) in outputs.as_ref().iter().enumerate() {
                             let position = live.add_value(value);
-                            live.pending.insert(Pending { node: node.clone(), output: i as u32 }, position);
+                            live.pending.insert(Pending::data(node.clone(), i as u32), position);
                         }
+                        let control = Pending::control(node.clone());
+                        let position = live.add_value(&Value::Pending(control.clone())); live.pending.insert(control, position);
                     }
                 });
                 let at = live.nodes.len();
-                for output in 0..node.descs().len() {
-                    live.positions.insert(Pending { node: node.clone(), output: output as u32 }, Out { node: at, output: output as u32 });
-                }
+                let count = node.with_state(|state| match state { crate::graph::State::Done(outputs) => outputs.as_ref().len(), _ => node.descs().len() });
+                for output in 0..count { live.positions.insert(Pending::data(node.clone(), output as u32), Out::data(at, output as u32)); }
+                live.positions.insert(Pending::control(node.clone()), Out::control(at));
                 live.nodes.push(node);
                 continue;
             }
@@ -678,7 +707,7 @@ impl Live {
     pub(crate) fn substituted(&self, mut replace: impl FnMut(&Pending) -> Option<Value>) -> crate::error::Result<Outputs<Value>> {
         let mut values: HashMap<Pending, Value> = HashMap::default();
         for node in &self.nodes {
-            let outputs: Vec<_> = (0..node.descs().len()).map(|output| Pending { node: node.clone(), output: output as u32 }).collect();
+            let outputs: Vec<_> = (0..node.descs().len()).map(|output| Pending::data(node.clone(), output as u32)).collect();
             let replacements: Vec<_> = outputs.iter().map(&mut replace).collect();
             let call = node.recipe().map(|(_, origin)| origin);
             let result = if replacements.iter().all(Option::is_some) { None }
@@ -694,7 +723,7 @@ impl Live {
                     && let Some(value) = values.get(source) && !matches!(value, Value::Pending(prior) if prior == source) {
                     let desc = Desc::of(value).ok_or_else(crate::Error::planning)?.into_owned();
                     let alias = crate::graph::Node::input(position, Some(value.clone()), desc, role, value.level(), None);
-                    Ok(Some(Outputs::one(Value::Pending(Pending { node: alias, output: 0 }))))
+                    Ok(Some(Outputs::one(Value::Pending(Pending::data(alias, 0)))))
                 } else { Ok::<_, crate::Error>(None) }
             })? };
             for (i, (pending, replacement)) in outputs.into_iter().zip(replacements).enumerate() {
@@ -714,9 +743,14 @@ impl Builder {
     pub(crate) fn new() -> Self { Self { program: Program { nodes: Vec::new(), reads: Vec::new(), descs: Vec::new(), roots: Vec::new(), sources: Vec::new(), token: None, parameters: Arc::from([]) }, bound: HashMap::default() } }
     fn description(&mut self, desc: Option<Desc>) -> u32 { let at = self.program.descs.len() as u32; self.program.descs.push(desc); at }
     pub(crate) fn input(&mut self, position: usize, desc: Option<Desc>, level: Option<usize>) -> Out {
+        self.input_port(position, desc, level, Some(0))
+    }
+    pub(crate) fn control_input(&mut self, position: usize) -> Out { self.input_port(position, None, None, None) }
+    fn input_port(&mut self, position: usize, desc: Option<Desc>, level: Option<usize>, port: Option<u32>) -> Out {
         if let Some(output) = self.bound.get(&position) { return *output; }
         let at = self.program.nodes.len(); let desc = self.description(desc);
-        self.program.nodes.push(Node::Input { position, desc, level }); let output = Out { node: at, output: 0 }; self.bound.insert(position, output); output
+        self.program.nodes.push(Node::Input { position, desc, level, control: port.is_none() });
+        let output = Out { node: at, output: port }; self.bound.insert(position, output); output
     }
     fn input_of(&mut self, live: &Live, value: &Value, literal: bool) -> Out {
         if literal && matches!(value, Value::Number(_) | Value::Character(_)) { return self.literal(value.clone()); }
@@ -725,7 +759,7 @@ impl Builder {
             if let Some(output) = self.bound.get(&position) { return *output; }
             let desc = self.description(None); let at = self.program.nodes.len();
             self.program.nodes.push(Node::Function { binding: FunctionBinding::Input(position), desc, context: None });
-            let output = Out { node: at, output: 0 }; self.bound.insert(position, output); output
+            let output = Out::data(at, 0); self.bound.insert(position, output); output
         } else { self.input(position, Desc::leaf(value), None) }
     }
     pub(crate) fn function(&mut self, template: Function, dependencies: impl IntoIterator<Item = Out>, trees: Option<Arc<Trees>>, bindings: Arc<crate::eval::CaptureBindings>, context: Option<u32>) -> Out {
@@ -734,7 +768,7 @@ impl Builder {
         let desc = self.description(None); let node = self.program.nodes.len();
         let dependencies = (start..self.program.reads.len() as u32, trees, Arc::new(bindings.stripped()));
         self.program.nodes.push(Node::Function { binding: FunctionBinding::Rebuild { template, dependencies }, desc, context });
-        Out { node, output: 0 }
+        Out::data(node, 0)
     }
     pub(crate) fn step(&mut self, step: Step, origin: Origin<Vec<Read>>, description: &Description, level: Option<usize>) -> Out {
         let start = self.program.reads.len() as u32; self.program.reads.extend(origin.list);
@@ -743,7 +777,7 @@ impl Builder {
         self.program.nodes.push(Node::Step { step, origin: Origin { operation: origin.operation, mode: origin.mode, literals: origin.literals,
             site: origin.site.filter(|_| origin.context.is_none()), context: origin.context, bindings: Arc::new(origin.bindings.stripped()), roles: origin.roles, trees: origin.trees, explicit: origin.explicit, explicit_roots: origin.explicit_roots, list: start..self.program.reads.len() as u32 },
             trees: description.trees.clone(), shy: description.shy, descs: desc..self.program.descs.len() as u32, level });
-        Out { node: at, output: 0 }
+        if description.as_ref().is_empty() { Out::control(at) } else { Out::data(at, 0) }
     }
 }
 
@@ -775,6 +809,10 @@ impl Running {
             values: Vec::new(), geometry: Geometry::default(), next: 0, counts, observed: 0 }
     }
     pub(crate) fn count_key(&mut self, stored: &Value) -> crate::error::Result<Key> { self.counts.count(stored) }
+    pub(crate) fn set_live(&mut self, live: &Live) {
+        self.contexts = live.contexts();
+        self.sources = live.nodes.iter().map(|node| Arc::downgrade(&node.0)).collect();
+    }
     pub(crate) fn context(&self, position: Option<u32>) -> Option<&Origin<()>> {
         match position { Some(position) => self.contexts.get(position as usize)?.as_ref(), None => self.root.as_ref() }
     }
@@ -797,21 +835,42 @@ impl Running {
         self.geometry.reads.resize_with(program.reads.len(), || None);
     }
     pub(crate) fn value<'a>(&'a self, program: &'a Program, output: Out) -> Option<&'a Value> {
-        if let Some(values) = self.values.get(output.node)?.as_ref() { return values.as_ref().get(output.output as usize); }
+        let leaf = output.output?;
+        if let Some(values) = self.values.get(output.node)?.as_ref() { return values.as_ref().get(leaf as usize); }
         let node = &program.nodes[output.node];
         if let Some(position) = node.input_position() { self.inputs.get(position)?.as_ref() }
         else if let Node::Literal { value, .. } = node { Some(value) } else { None }
     }
     pub(crate) fn desc<'a>(&'a self, program: &Program, output: Out) -> Option<&'a Desc> {
-        self.geometry.descs.get(program.desc_index(output))?.as_ref()
+        output.output?; self.geometry.descs.get(program.desc_index(output))?.as_ref()
     }
     pub(crate) fn read_plan(&self, node: usize) -> Option<&rustymath::agreement::ReadPlan> { self.geometry.read_plans.get(node)?.as_ref() }
     pub(crate) fn store(&mut self, node: usize, values: Outputs<Value>) { self.values[node] = Some(values); }
+    pub(crate) fn is_complete(&self, program: &Program, completion: Out) -> bool {
+        if completion.output.is_some() { return false; }
+        if self.values.get(completion.node).is_some_and(Option::is_some) { return true; }
+        let node = &program.nodes[completion.node];
+        if let Some(position) = node.input_position() {
+            match self.inputs.get(position).and_then(Option::as_ref) {
+                Some(Value::Pending(input)) if input.output.is_none() => input.node.is_complete(),
+                value => value.is_some(),
+            }
+        } else { matches!(node, Node::Literal { .. }) }
+    }
+    pub(crate) fn binding_value(&self, program: &Program, output: Out) -> crate::error::Result<Value> {
+        if output.output.is_some() { self.value(program, output).cloned().ok_or_else(crate::Error::planning) }
+        else if self.is_complete(program, output) { Ok(Value::Pending(crate::graph::Node::ready_control())) }
+        else { Err(crate::Error::planning()) }
+    }
     /// Publish one complete source bundle after its final producing stage succeeds.
     pub(crate) fn publish(&self, program: &Program, source: usize) -> crate::error::Result<()> {
-        let (original, outputs) = program.sources.get(source).ok_or_else(crate::Error::planning)?;
+        let (original, completion, outputs) = program.sources.get(source).ok_or_else(crate::Error::planning)?;
         let Some(node) = self.sources.get(*original as usize).and_then(Weak::upgrade).map(crate::graph::Node) else { return Ok(()) };
         if node.is_stored() { return Ok(()); }
+        if node.descs().is_empty() {
+            node.finish(self.values.get(completion.node).and_then(Option::as_ref).cloned().ok_or_else(crate::Error::planning)?);
+            return Ok(());
+        }
         let values = if outputs.len() == 1 {
             Outputs::one(self.value(program, outputs[0]).cloned().ok_or_else(crate::Error::planning)?)
         } else {
@@ -1084,7 +1143,7 @@ impl Program {
                 }
             } else { primal.copy_node(self, i, |output| primal_map[&output], true) };
             let map = if marked[i] { &mut linear_map } else { &mut primal_map };
-            for part in 0..self.outputs(i) { map.insert(Out { node: i, output: part as u32 }, Out { node: output.node, output: part as u32 }); }
+            for part in 0..self.outputs(i) { map.insert(Out::data(i, part as u32), Out::data(output.node, part as u32)); }
         }
         let roots = self.roots.iter().map(|&root| {
             let (builder, map) = if marked[root.node] { (&mut linear, &linear_map) } else { (&mut primal, &primal_map) };
@@ -1100,16 +1159,16 @@ impl Program {
 impl Builder {
     pub(crate) fn copy_node(&mut self, source: &Program, node: usize, mut resolve: impl FnMut(Out) -> Out, levels: bool) -> Out {
         match &source.nodes[node] {
-            Node::Input { position, desc, level } => self.input(*position, source.descs[*desc as usize].clone(), if levels { *level } else { None }),
+            Node::Input { position, desc, level, control } => if *control { self.control_input(*position) } else { self.input(*position, source.descs[*desc as usize].clone(), if levels { *level } else { None }) },
             Node::Literal { value, desc } => {
                 let at = self.program.nodes.len(); let desc = self.description(source.descs[*desc as usize].clone());
-                self.program.nodes.push(Node::Literal { value: value.clone(), desc }); Out { node: at, output: 0 }
+                self.program.nodes.push(Node::Literal { value: value.clone(), desc }); Out::data(at, 0)
             }
             Node::Function { binding, context, .. } => match binding {
                 FunctionBinding::Rebuild { template, dependencies } => self.function(template.clone(), source.reads(&dependencies.0).iter().map(|read| resolve(read.operand)), dependencies.1.clone(), dependencies.2.clone(), *context),
                 FunctionBinding::Input(position) => {
                     let at = self.program.nodes.len(); let desc = self.description(None);
-                    self.program.nodes.push(Node::Function { binding: FunctionBinding::Input(*position), desc, context: *context }); Out { node: at, output: 0 }
+                    self.program.nodes.push(Node::Function { binding: FunctionBinding::Input(*position), desc, context: *context }); Out::data(at, 0)
                 }
             },
             Node::Step { step, origin, descs, trees, shy, level } => {
@@ -1140,7 +1199,7 @@ impl Builder {
     pub(crate) fn literal(&mut self, value: Value) -> Out {
         debug_assert!(matches!(value, Value::Number(_) | Value::Character(_)));
         let desc = self.description(Desc::leaf(&value)); let node = self.program.nodes.len();
-        self.program.nodes.push(Node::Literal { value, desc }); Out { node, output: 0 }
+        self.program.nodes.push(Node::Literal { value, desc }); Out::data(node, 0)
     }
 }
 
@@ -1270,8 +1329,7 @@ pub(crate) fn execute(roots: &[Pending]) -> crate::error::Result<()> {
     let mut live = Live::of(roots);
     let inputs = live.inputs().iter().cloned().collect::<Option<Vec<_>>>().ok_or_else(crate::Error::planning)?;
     let mut running = Running::new(inputs);
-    running.contexts = live.contexts();
-    running.sources = live.nodes.iter().map(|node| Arc::downgrade(&node.0)).collect();
+    running.set_live(&live);
     let Some((program, values)) = cached(std::mem::take(&mut live.key.0), Key::default(), &mut running, 1, || Program::of(&live))? else { return Ok(()) };
     for (i, root) in roots.iter().enumerate() {
         let description = root.node.description();
@@ -1341,12 +1399,13 @@ impl Program {
         })
     }
 
-    pub(crate) fn bound(&self, current: &Live, mut resolve: impl FnMut(usize) -> crate::error::Result<Value>) -> crate::error::Result<Outputs<Value>> {
+    pub(crate) fn bound(&self, current: &Running, mut resolve: impl FnMut(usize) -> crate::error::Result<Value>) -> crate::error::Result<Outputs<Value>> {
         let mut running = Running::new(Vec::new());
-        running.contexts = current.contexts();
+        running.root = current.root.clone(); running.contexts.clone_from(&current.contexts);
         running.inputs.resize_with(self.nodes.iter().filter_map(Node::input_position).max().map_or(0, |position| position + 1), || None);
         running.values.resize_with(self.nodes.len(), || None);
-        for (at, node) in self.nodes.iter().enumerate() {
+        for at in self.order(0) {
+            let node = &self.nodes[at];
             let outputs = if let Some(position) = node.input_position() {
                 if running.inputs[position].is_none() { running.inputs[position] = Some(resolve(position)?); }
                 Outputs::one(running.inputs[position].as_ref().unwrap().clone())

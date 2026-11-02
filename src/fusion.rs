@@ -18,8 +18,8 @@ pub(crate) fn built(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>> 
     let level = origin.list.iter().filter_map(Value::level).max();
     let count = descs.as_ref().len();
     let node = Node::build(step, origin.with_list(reads), descs, level);
-    let values = (if count == 1 { Outputs::one(Value::Pending(Pending { node: node.clone(), output: 0 })) }
-        else { Outputs::many((0..count).map(|output| Value::Pending(Pending { node: node.clone(), output: output as u32 })).collect()) }
+    let values = (if count == 1 { Outputs::one(Value::Pending(Pending::data(node.clone(), 0))) }
+        else { Outputs::many((0..count).map(|output| Value::Pending(Pending::data(node.clone(), output as u32))).collect()) }
         ).with_trees(node.description().trees().cloned()).with_shy(node.description().shy);
     if level.is_none() && node.over_budget() {
         let roots: Vec<_> = values.as_ref().iter().filter_map(Value::pending).cloned().collect();

@@ -112,8 +112,9 @@ impl Tracing {
         if matches!(origin.operation, crate::primitive::Operation::Effect(_)) { trace.effects.acts = true; }
         let output = trace.builder.step(step, origin.with_list(reads), node.description(), node.level());
         for part in 0..node.descs().len() {
-            trace.mapped.insert(Pending { node: node.clone(), output: part as u32 }, Out { node: output.node, output: part as u32 });
+            trace.mapped.insert(Pending::data(node.clone(), part as u32), Out::data(output.node, part as u32));
         }
+        trace.mapped.insert(Pending::control(node.clone()), Out::control(output.node));
     }
 }
 impl Drop for Tracing {
@@ -156,12 +157,16 @@ pub(crate) fn record(function: &crate::Function, origin: Origin<&[Value]>, argum
         let trace = traces.stack.last_mut().unwrap();
         for (position, value) in origin.list.iter().enumerate() {
             trace.inputs.insert(super::Identity(value.clone()), position);
-            let input = if let Some(mut desc) = Desc::of(value).map(std::borrow::Cow::into_owned) {
+            let input = if matches!(value, Value::Pending(input) if input.output.is_none()) {
+                let pending = Pending::control(graph::Node::control_input(position, Some(value.clone()), Role::Free(None), Some(scope.id)));
+                let output = trace.builder.control_input(position);
+                trace.mapped.insert(pending.clone(), output); Value::Pending(pending)
+            } else if let Some(mut desc) = Desc::of(value).map(std::borrow::Cow::into_owned) {
                 desc.range = None;
                 let role = if planning && arguments.contains(&position) { Role::StandIn }
                     else if arguments.contains(&position) { Role::Argument } else { Role::Free(None) };
                 let node = graph::Node::input(position, (role != Role::StandIn).then(|| value.clone()), desc.clone(), role, value.level(), Some(scope.id));
-                let pending = Pending { node, output: 0 };
+                let pending = Pending::data(node, 0);
                 let output = trace.builder.input(position, Some(desc), value.level());
                 trace.mapped.insert(pending.clone(), output); Value::Pending(pending)
             } else { trace.builder.input(position, None, None); value.clone() };

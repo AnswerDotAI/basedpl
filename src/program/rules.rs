@@ -112,7 +112,7 @@ fn matches(pattern: Pattern, program: &Program, read: &Read, bound: &mut Bound) 
 fn matched(rule: &Rule, program: &Program, node: usize) -> Option<Bound> {
     let mut bound = Bound::new();
     if let Some(pattern) = rule.pattern {
-        matches(pattern, program, &Read { operand: Out { node, output: 0 }, map: Mapping::Linear(1) }, &mut bound).then_some(bound)
+        matches(pattern, program, &Read { operand: Out::data(node, 0), map: Mapping::Linear(1) }, &mut bound).then_some(bound)
     } else { Some(bound) }
 }
 
@@ -223,18 +223,18 @@ fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<
     for node in (0..from).chain(order) {
         let output = builder.copy_node(program, node, |source| {
             let at: Out = mapped[source.node].expect("dependencies precede their reader");
-            Out { node: at.node, output: at.output + source.output }
+            source.with_producer(at.node, 0)
         }, true);
         mapped[node] = Some(output);
     }
     let resolve = |source: Out| {
         let at: Out = mapped[source.node].expect("live outputs survive ordering");
-        Out { node: at.node, output: at.output + source.output }
+        source.with_producer(at.node, 0)
     };
     builder.program.roots = program.roots.iter().copied().map(resolve).collect();
     builder.program.token = program.token.map(resolve);
     builder.program.parameters = program.remap_parameters(resolve);
-    builder.program.sources = program.remap_sources(|source| mapped[source.node].map(|at| Out { node: at.node, output: at.output + source.output }))?;
+    builder.program.sources = program.remap_sources(|source| mapped[source.node].map(|at| source.with_producer(at.node, 0)))?;
     let mut geometry = super::Geometry {
         descs: builder.program.descs.clone(),
         maps: builder.program.reads.iter().map(|read| read.map.clone()).collect(),
@@ -245,8 +245,8 @@ fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<
     for (old, new) in mapped.iter().enumerate().filter_map(|(old, new)| new.map(|new| (old, new))) {
         values[new.node] = running.values.get_mut(old).and_then(Option::take);
         for output in 0..program.outputs(old) {
-            if let Some(desc) = running.geometry.descs.get(program.desc_index(Out { node: old, output })).cloned() {
-                geometry.descs[builder.program.desc_index(Out { node: new.node, output: new.output + output })] = desc;
+            if let Some(desc) = running.geometry.descs.get(program.desc_index(Out::data(old, output as u32))).cloned() {
+                geometry.descs[builder.program.desc_index(Out::data(new.node, output as u32))] = desc;
             }
         }
         if let Some(Some(plan)) = running.geometry.read_plans.get(old) {

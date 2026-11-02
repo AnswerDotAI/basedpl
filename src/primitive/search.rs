@@ -140,6 +140,42 @@ fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, count: Numbers) ->
 }
 
 /// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`. A keyed shape names the result's axes, as it does for reshape: `⍳["i":3]` is `0 1 2` along an axis named `i`.
+pub(super) fn index_roles(call: &CallView<'_>) -> Result<Roles, Error> {
+    if call.explicit_argument_roots().len() != 1 { return Ok(Roles(0)); }
+    let root = call.root(call.explicit_argument_roots().start);
+    let first = call.root_boundary(call.operation.functions());
+    Ok(root.leaves.fold(Roles(0), |roles, position| roles.with(position - first, ReadKind::Count)))
+}
+
+pub(super) fn describe_index(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
+    if call.explicit_argument_roots().len() != 1 { return Ok(None); }
+    let right = call.root_value(call.explicit_argument_roots().start, ReadKind::Count)?;
+    if right.rank() > 1 { return Err(Error::new(Kind::Rank, "iota needs a unit or vector shape")); }
+    if right.len() != 1 { return Ok(None); }
+    let count = right.as_items().integers().described("invalid iota dimension")?[0];
+    let len = rustymath::structure::Count::of(count).magnitude;
+    generated_len(&[len])?;
+    let Some(kind) = right.kind() else { return Ok(None) };
+    let kind = match Numbers::of(kind, call.numeric()?) {
+        Numbers::Exact => crate::number::Kind::stored(DType::Integer(Width::below(len)), false, false),
+        Numbers::Fixed(width) => crate::number::Kind::stored(DType::Integer(width), true, false),
+        Numbers::Float(width) => crate::number::Kind::stored(DType::Float(width), false, false),
+    };
+    let layout = Layout::from([len]).with_names(shape_names(&right))?;
+    Ok(Some(Outputs::one(Desc { kind, atom: false, layout, range: Some(rustymath::facts::Range { lo: 0.0, hi: len.saturating_sub(1) as f64 }), segments: None })))
+}
+
+pub(super) fn plan_index(call: &CallView<'_>, _: &[Desc]) -> Result<Step, Error> {
+    let right = call.root_value(call.explicit_argument_roots().start, ReadKind::Count)?;
+    Ok(Step::Index { descending: right.as_items().integers().described("invalid iota dimension")?[0] < 0 })
+}
+
+pub(super) fn maps_index(_: &CallView<'_>, step: &Step, outputs: &[Desc], _: &mut dyn FnMut(usize, Mapping))
+    -> Result<Option<rustymath::agreement::ReadPlan>, Error> {
+    let Step::Index { descending } = step else { return Err(Error::planning()) };
+    let len = outputs[0].layout.count();
+    Ok(Some(rustymath::agreement::ReadPlan::index(if *descending { len.saturating_sub(1) as i64 } else { 0 }, if *descending { -1 } else { 1 }, len)))
+}
 pub(super) fn iota(right: &Value) -> Result<Value, Error> {
     if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "iota needs a unit or vector shape")); }
     let lengths = right.as_items().integers().described("invalid iota dimension")?;

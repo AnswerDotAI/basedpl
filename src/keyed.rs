@@ -336,8 +336,8 @@ pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool)
         if source == target { continue; }
         let positions = source.positions(target, subset)?;
         let indices = Value::positions([positions.len()], value.shape()[axis], positions.into_iter())?;
-        result = Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Explicit }
-            .call(&[Value::integer(axis as i64), indices, result], 0)?;
+        result = Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Explicit { fill: false } }
+            .call(&[indices, result, Value::integer(axis as i64)], 0)?;
     }
     Ok(result)
 }

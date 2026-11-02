@@ -419,7 +419,7 @@ pub(crate) fn read_value(desc: &crate::program::Desc, read: &rustymath::agreemen
 impl Value {
     pub fn read(&self, read: crate::program::trace::ReadKind) -> Result<Value, Error> {
         map_leaves(self, |leaf| match leaf {
-            Self::Pending(pending) => pending.node.clone().into_storage(pending.output, read),
+            Self::Pending(pending) => pending.node.clone().into_storage(pending.output.ok_or_else(|| Error::domain("control completion cannot be read as data"))?, read),
             Self::Function(function) => Ok(Self::Function(function.observed(read)?)),
             Self::Operator(operator) => Ok(Self::Operator(Arc::new(operator.observed(read)?))),
             Self::Carried { level, carried } => match &**carried {
@@ -464,7 +464,7 @@ impl Value {
     pub(crate) fn kind(&self) -> Option<crate::number::Kind> {
         match self {
             Self::Number(n) => crate::number::Kind::number(n), Self::Character(_) => Some(crate::number::Kind::stored(DType::Character, false, false)),
-            Self::Array(array) => array.kind(), Self::Pending(pending) => Some(pending.desc().kind),
+            Self::Array(array) => array.kind(), Self::Pending(pending) => pending.description().map(|desc| desc.kind),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.kind(), Carried::Batch { cell, .. } => Some(cell.kind) },
             _ => None,
         }
@@ -476,19 +476,19 @@ impl Value {
             Self::Array(array) => match &**array {
                 ArrayData::Compact { range, .. } => *range, ArrayData::Segmented { segments, .. } => Value::Array(segments.leaf.clone()).range(), _ => None,
             },
-            Self::Pending(pending) => pending.desc().range,
+            Self::Pending(pending) => pending.description().and_then(|desc| desc.range),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.range(), Carried::Batch { cell, .. } => cell.range },
             _ => None,
         }
     }
     pub fn is_atom(&self) -> bool {
-        match self { Self::Array(_) => false, Self::Pending(p) => p.desc().atom,
+        match self { Self::Array(_) => false, Self::Pending(p) => p.description().is_none_or(|desc| desc.atom),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.is_atom(), Carried::Batch { cell, .. } => cell.atom }, _ => true }
     }
     pub(crate) fn layout(&self) -> &Layout {
         static ATOM: Layout = Layout::EMPTY;
         match self {
-            Self::Array(array) => array.layout(), Self::Pending(p) => &p.desc().layout,
+            Self::Array(array) => array.layout(), Self::Pending(p) => p.description().map_or(&Layout::EMPTY, |desc| &desc.layout),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.layout(), Carried::Batch { cell, .. } => &cell.layout },
             _ => &ATOM,
         }

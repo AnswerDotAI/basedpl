@@ -8,9 +8,8 @@ use std::sync::Arc;
 pub(crate) struct Block {
     members: Arc<[usize]>,
     outputs: Arc<[Out]>,
-    kernels: Arc<[rustymath::operation::Kernel]>,
-    #[cfg(not(web))]
-    lowered: Option<Lowered>,
+    kernels: Arc<[Option<rustymath::operation::Kernel>]>,
+    sections: Arc<[Section]>
 }
 
 #[cfg(not(web))]
@@ -27,55 +26,143 @@ struct LoweredInput { slot: usize, read: usize }
 
 pub(crate) struct Prepared {
     #[cfg(not(web))]
-    code: Arc<crate::jit::Compiled>,
+    parts: Vec<Option<Code>>,
+}
+
+#[cfg(not(web))]
+struct Code { code: Arc<crate::jit::Compiled>, folded: bool }
+
+struct Section {
+    members: std::ops::Range<usize>,
+    outputs: Arc<[Out]>,
     #[cfg(not(web))]
-    folded: bool,
+    lowered: Option<Lowered>,
+}
+
+struct Geometry {
+    iterations: Vec<crate::array::Layout>,
+    folds: Vec<Option<crate::plan::Fold>>,
+    cells: Option<(usize, usize)>,
+}
+
+fn origin(program: &Program, node: usize) -> &super::Origin<std::ops::Range<u32>> {
+    let super::Node::Step { origin, .. } = &program.nodes[node] else { unreachable!("a block member is a step") }; origin
 }
 
 impl Block {
     pub(crate) fn lower(program: &Program, running: &Running, members: &[usize], outputs: &[Out]) -> Result<Option<Self>> {
         use super::{BoundCall, Node, Step};
-        if members.is_empty() { return Ok(None); }
-        if outputs.is_empty() || outputs.iter().enumerate().any(|(at, output)| output.output != 0
+        if members.is_empty() || outputs.is_empty() || outputs.iter().enumerate().any(|(at, output)| output.output != Some(0)
             || !members.contains(&output.node) || outputs[..at].contains(output))
             || members.windows(2).any(|pair| pair[0] >= pair[1]) { return Ok(None); }
         let mut kernels = Vec::new();
+        let mut sections = Vec::new();
+        let mut first = 0;
         for (position, &node) in members.iter().enumerate() {
             if program.outputs(node) != 1 { return Ok(None); }
             let Node::Step { step, origin, .. } = &program.nodes[node] else { return Ok(None); };
             if !matches!(step, Step::Map { .. } | Step::Convert { .. } | Step::Picks { .. } | Step::Fold { .. }) { return Ok(None); }
-            if matches!(step, Step::Fold { .. }) && (position + 1 != members.len()
-                || matches!(origin.operation, crate::primitive::Operation::Fold { scan: true, .. })) { return Ok(None); }
-            let Some(desc) = running.desc(program, Out { node, output: 0 }) else { return Ok(None); };
+            if matches!(origin.operation, crate::primitive::Operation::Fold { scan: true, .. }) { return Ok(None); }
+            let Some(desc) = running.desc(program, Out::data(node, 0)) else { return Ok(None); };
             if !readable(desc.kind.dtype()) { return Ok(None); }
-            let iteration = super::run::items(program, running, members[0]);
-            if !matches!(step, Step::Fold { .. }) && desc.layout.count() != iteration { return Ok(None); }
-            if let Step::Fold { seed: Some(seed), .. } = step
-                && members.contains(&program.reads[origin.list.start as usize + *seed as usize].operand.node) { return Ok(None); }
-            let binding = BoundCall { program, running, reads: origin.list.clone() };
-            let call = origin.call_view(&binding);
-            let variant = match step {
-                Step::Map { variant, .. } | Step::Fold { variant, .. } => *variant,
-                _ => call.variant(desc.dtype())?,
-            };
-            let Some(kernel) = call.kernel(variant)? else { return Ok(None); };
-            kernels.push(kernel);
+            let bindings = BoundCall { program, running, reads: origin.list.clone() };
+            let call = origin.call_view(&bindings);
+            kernels.push(match step {
+                Step::Map { variant, .. } | Step::Fold { variant, .. } => {
+                    let Some(kernel) = call.kernel(*variant)? else { return Ok(None); }; Some(kernel)
+                }
+                Step::Picks { selector, choices } => {
+                    let source = program.reads[origin.list.start as usize + *selector as usize].operand;
+                    if choices.len() != 2 || running.desc(program, source).is_none_or(|desc| desc.dtype() != DType::Boolean) { return Ok(None); }
+                    None
+                }
+                _ => None,
+            });
+            if matches!(step, Step::Fold { .. }) || position + 1 == members.len() {
+                let range = first..position + 1;
+                let mut stored = Vec::new();
+                for &producer in &members[range.clone()] {
+                    let output = Out::data(producer, 0);
+                    let later = members[range.end..].iter().any(|&consumer| {
+                        let Node::Step { origin, .. } = &program.nodes[consumer] else { return false; };
+                        origin.list.clone().any(|read| running.read(read as usize).is_some_and(|read| read.sources.contains(&output)))
+                    });
+                    if later || outputs.contains(&output) { stored.push(output); }
+                }
+                #[cfg(not(web))]
+                let lowered = Lowered::of(program, running, &members[range.clone()], &kernels[range.clone()], &stored)?;
+                sections.push(Section { members: range, outputs: stored.into(), #[cfg(not(web))] lowered });
+                first = position + 1;
+            }
         }
-        #[cfg(not(web))]
-        let lowered = Lowered::of(program, running, members, &kernels, outputs)?;
-        Ok(Some(Self { members: members.into(), outputs: outputs.into(), kernels: kernels.into(), #[cfg(not(web))] lowered }))
+        let block = Self { members: members.into(), outputs: outputs.into(), kernels: kernels.into(), sections: sections.into() };
+        if block.geometry(program, running)?.is_none() { return Ok(None); }
+        Ok(Some(block))
     }
 
     pub(crate) fn members(&self) -> &[usize] { &self.members }
     pub(crate) fn outputs(&self) -> &[Out] { &self.outputs }
+    fn kernel(&self, member: usize) -> &rustymath::operation::Kernel { self.kernels[member].as_ref().expect("a numerical member has its kernel") }
+
+    fn geometry(&self, program: &Program, running: &Running) -> Result<Option<Geometry>> {
+        use super::{BoundCall, Node, Step};
+        let mut iterations = Vec::new();
+        let mut folds = Vec::new();
+        for &node in self.members.iter() {
+            let Node::Step { step, origin, .. } = &program.nodes[node] else { unreachable!() };
+            let fold = if matches!(step, Step::Fold { .. }) {
+                let bindings = BoundCall { program, running, reads: origin.list.clone() };
+                Some(crate::plan::fold(&origin.call_view(&bindings))?)
+            } else { None };
+            iterations.push(fold.as_ref().map_or_else(|| running.desc(program, Out::data(node, 0)).unwrap().layout.clone(), |fold| fold.source.clone()));
+            folds.push(fold);
+        }
+        let continuation = folds.iter().enumerate().any(|(index, fold)| fold.is_some() && index + 1 != self.members.len());
+        if !continuation {
+            let items = iterations[0].count();
+            if iterations.iter().any(|layout| layout.count() != items) { return Ok(None); }
+            for (&node, fold) in self.members.iter().zip(&folds) {
+                if let Some(fold) = fold && let Some(seed) = fold.seed {
+                    let Node::Step { origin, .. } = &program.nodes[node] else { unreachable!() };
+                    if running.read(origin.list.start as usize + seed).is_some_and(|read| read.sources.iter().any(|source| self.members.contains(&source.node))) { return Ok(None); }
+                }
+            }
+            return Ok(Some(Geometry { iterations, folds, cells: None }));
+        }
+        let first = folds.iter().flatten().next().unwrap();
+        let frame = &first.source.shape()[..first.axis];
+        let cells = frame.iter().product();
+        let limit = crate::settings::sizes().block.max(1);
+        for (slot, &node) in self.members.iter().enumerate() {
+            let layout = &iterations[slot];
+            if !layout.shape().starts_with(frame) || layout.shape()[frame.len()..].iter().product::<usize>() > limit { return Ok(None); }
+            if folds[slot].as_ref().is_some_and(|fold| fold.axis < frame.len()) { return Ok(None); }
+            let Node::Step { origin, .. } = &program.nodes[node] else { unreachable!() };
+            for position in origin.list.clone() {
+                let Some(read) = running.read(position as usize) else { continue; };
+                if !read.sources.iter().any(|source| self.members.contains(&source.node)) { continue; }
+                let Some((source, base, strides)) = read.plan.affine(layout.shape()) else { return Ok(None); };
+                let Some(&producer) = read.sources.get(source) else { return Ok(None); };
+                let Some(desc) = running.desc(program, producer) else { return Ok(None); };
+                if !desc.shape().starts_with(frame) { return Ok(None); }
+                let width = desc.shape()[frame.len()..].iter().product::<usize>();
+                let expected = rustymath::layout::strides(frame);
+                if strides[..frame.len()].iter().zip(expected).any(|(&stride, expected)| stride != (expected * width) as isize) { return Ok(None); }
+                let (lo, hi) = strides[frame.len()..].iter().zip(&layout.shape()[frame.len()..]).fold((base as i128, base as i128), |(lo, hi), (&stride, &n)| {
+                    let end = stride as i128 * n.saturating_sub(1) as i128; (lo + end.min(0), hi + end.max(0))
+                });
+                if lo < 0 || hi >= width as i128 { return Ok(None); }
+            }
+        }
+        Ok(Some(Geometry { iterations, folds, cells: Some((cells, frame.len())) }))
+    }
 
     pub(crate) fn repays(&self, items: usize, runs: u64) -> bool {
         #[cfg(web)] { let _ = (items, runs); false }
         #[cfg(not(web))] {
-            let Some(lowered) = &self.lowered else { return false; };
-            let compile_ns = 50_000. + 8_000. * lowered.kernel.steps.len() as f64;
-            let passes_saved = 1 + 2 * self.members.len().saturating_sub(1);
-            items as f64 * passes_saved as f64 * 0.25 * runs as f64 >= compile_ns
+            let compile_ns: f64 = self.sections.iter().filter_map(|section| section.lowered.as_ref())
+                .map(|lowered| 50_000. + 8_000. * lowered.kernel.steps.len() as f64).sum();
+            compile_ns > 0. && items as f64 * (1 + 2 * self.members.len().saturating_sub(1)) as f64 * 0.25 * runs as f64 >= compile_ns
         }
     }
 
@@ -83,20 +170,18 @@ impl Block {
         #[cfg(web)] { let _ = (program, running, items, compile); None }
         #[cfg(not(web))] {
             use rustymath::events::{Route, declined};
-            if self.members.len() == 1 && matches!(program.nodes[self.members[0]], super::Node::Step { step: super::Step::Fold { .. }, .. }) { return None; }
-            let Some(lowered) = &self.lowered else { declined(Route::Compiled, "a stage without emitted code", items); return None; };
-            let folded = match &program.nodes[*self.members.last().unwrap()] {
-                super::Node::Step { step: super::Step::Fold { arg, axis, .. }, origin, .. } => {
-                    let output = program.reads[origin.list.start as usize + *arg as usize].operand;
-                    super::run::fold_dims(running.desc(program, output)?.shape(), *axis)[2] == 1 && lowered.folded.is_some()
-                }
-                _ => false,
-            };
-            let kernel = if folded { lowered.folded.as_ref().unwrap() } else { &lowered.kernel };
-            if !compile { return kernel.existing().map(|code| Prepared { code, folded }); }
-            let Ok((code, time)) = kernel.compiled() else { declined(Route::Compiled, "machine code", items); return None; };
-            if let Some(time) = time { crate::explain::compiled(|| self.glyphs(program), time); }
-            Some(Prepared { code, folded })
+            let geometry = self.geometry(program, running).ok()??;
+            let parts: Vec<_> = self.sections.iter().map(|section| {
+                if section.members.len() == 1 && geometry.folds[section.members.start].is_some() { return None; }
+                let Some(lowered) = &section.lowered else { declined(Route::Compiled, "a stage without emitted code", items); return None; };
+                let folded = geometry.folds[section.members.end - 1].as_ref().is_some_and(|fold| fold.dims()[2] == 1) && lowered.folded.is_some();
+                let kernel = if folded { lowered.folded.as_ref().unwrap() } else { &lowered.kernel };
+                if !compile { return kernel.existing().map(|code| Code { code, folded }); }
+                let Ok((code, time)) = kernel.compiled() else { declined(Route::Compiled, "machine code", items); return None; };
+                if let Some(time) = time { crate::explain::compiled(|| self.glyphs(program), time); }
+                Some(Code { code, folded })
+            }).collect();
+            parts.iter().any(Option::is_some).then_some(Prepared { parts })
         }
     }
 
@@ -107,79 +192,64 @@ impl Block {
     }
 
     pub(crate) fn run(&self, program: &Program, running: &Running, items: usize, prepared: Option<&Prepared>) -> Result<Outputs<Value>> {
-        use super::{Node, Step};
+        use super::Node;
         use rustymath::{buffer::Buffer, operation::{Direction, Seed}};
-        let last = *self.members.last().expect("a nonempty block");
-        let fold = match &program.nodes[last] {
-            Node::Step { step: Step::Fold { arg, axis, seed, .. }, origin, .. } => Some((*arg, *axis, *seed, origin)),
-            _ => None,
-        };
+        let geometry = self.geometry(program, running)?.ok_or_else(crate::Error::planning)?;
         let mut inputs = rustymath::hashing::HashMap::default();
         let mut settings = Vec::with_capacity(self.members.len());
         for &node in self.members.iter() {
-            let Node::Step { step, origin, .. } = &program.nodes[node] else { unreachable!() };
+            let Node::Step { origin, .. } = &program.nodes[node] else { unreachable!() };
             for position in origin.list.clone() {
                 if running.read(position as usize).is_some() { inputs.insert(position as usize, Input::of(self, program, running, position as usize)?); }
             }
-            let call = super::BoundCall { program, running, reads: origin.list.clone() };
-            settings.push(kernel_settings(&origin.call_view(&call))?);
+            let bindings = super::BoundCall { program, running, reads: origin.list.clone() };
+            settings.push(kernel_settings(&origin.call_view(&bindings))?);
         }
-        let mut buffers = Vec::with_capacity(self.outputs.len());
-        let mut writers = rustymath::hashing::HashMap::default();
-        for &output in self.outputs.iter() {
+        let mut buffers: Vec<_> = self.outputs.iter().map(|&output| {
             let desc = running.desc(program, output).ok_or_else(crate::Error::planning)?;
-            let buffer = Buffer::with_capacity(desc.kind.dtype(), desc.layout.count());
-            buffers.push(buffer);
-        }
-        for (&output, buffer) in self.outputs.iter().zip(&mut buffers) {
-            if fold.is_none() || output.node != last {
-                writers.insert(output.node, Output { ptr: buffer.as_mut_ptr(), items: items, dtype: buffer.dtype() });
-            }
-        }
+            Ok(Buffer::with_capacity(desc.kind.dtype(), desc.layout.count()))
+        }).collect::<Result<_>>()?;
+        let writers = self.outputs.iter().zip(&mut buffers).map(|(&output, buffer)| {
+            let items = running.desc(program, output).unwrap().layout.count();
+            (output.node, Output { ptr: buffer.as_mut_ptr(), items, dtype: buffer.dtype() })
+        }).collect();
         let tally = crate::explain::Tally::new();
         let size = crate::settings::sizes().block.max(1);
-        let folded = fold.map(|(arg, axis, _, origin)| {
-            let source = program.reads[origin.list.start as usize + arg as usize].operand;
-            let shape = running.desc(program, source).unwrap().shape();
-            let dims = super::run::fold_dims(shape, axis);
-            (dims, origin.list.start as usize + arg as usize)
-        });
-        let execution = Execution { block: self, program, running, inputs, settings, outputs: writers, prepared, tally: &tally, size, fold: folded };
-        if let Some((arg, axis, seed, origin)) = fold {
-            let (dims, _) = folded.unwrap();
-            let seed_layout = rustymath::layout::Layout::from(Vec::new());
-            let seed_sources = seed.map(|position| execution.inputs[&(origin.list.start as usize + position as usize)].bind(&[], &seed_layout, 0)).transpose()?;
-            let seed_read = seed.zip(seed_sources.as_ref()).map(|(position, sources)| rustymath::agreement::Read {
-                sources, plan: execution.inputs[&(origin.list.start as usize + position as usize)].plan,
-            });
-            let seed = seed_read.map_or(Seed::Identity, Seed::Tail);
-            let slot = self.outputs.iter().position(|output| output.node == last).expect("a fold is a stage output");
-            let kernel = self.kernels.last().unwrap();
+        let execution = Execution { block: self, program, running, inputs, settings, outputs: writers, prepared, tally: &tally, size, geometry };
+        if let Some((cells, _)) = execution.geometry.cells {
+            let results = rustymath::parallel::each::<_, Scratch>(cells, |cell, scratch| execution.cell(cell, scratch))?;
+            for result in results { result?; }
+        } else if let Some(fold) = execution.geometry.folds.last().unwrap() {
+            let last = self.members.len() - 1;
+            let section = &self.sections[0];
+            let slot = self.outputs.iter().position(|output| output.node == self.members[last]).expect("a final fold is a stage output");
+            let mut scratch = Scratch::default();
+            let seed_input = fold.seed.map(|position| &execution.inputs[&(origin(program, self.members[last]).list.start as usize + position)]);
+            let seed_sources = seed_input.map(|input| input.bind(&scratch.locals)).transpose()?;
+            let seed = seed_input.zip(seed_sources.as_ref()).map(|(input, sources)| rustymath::agreement::Read { sources, plan: input.plan }).map_or(Seed::Identity, Seed::Tail);
             if self.members.len() == 1 {
-                let input = &execution.inputs[&folded.unwrap().1];
-                let sources = input.bind(&[], &seed_layout, 0)?;
-                let read = rustymath::agreement::Read { sources: &sources, plan: input.plan };
-                let source = program.reads[origin.list.start as usize + arg as usize].operand;
-                let shape = running.desc(program, source).unwrap().shape();
-                kernel.fold_read(shape, axis, seed, Direction::Right, *execution.settings.last().unwrap(), read, &mut buffers[slot])?;
+                let origin = origin(program, self.members[last]);
+                let input = &execution.inputs[&(origin.list.start as usize + fold.arg)];
+                let sources = input.bind(&scratch.locals)?;
+                self.kernel(last).fold_read(fold.source.shape(), fold.axis, seed, Direction::Right, execution.settings[last],
+                    rustymath::agreement::Read { sources: &sources, plan: input.plan }, &mut buffers[slot])?;
             } else {
-                kernel.fold_pieces(dims, seed, Direction::Right, *execution.settings.last().unwrap(),
-                    &|range, give| execution.range(range, &mut Scratch::default(), give), &mut buffers[slot])?;
+                self.kernel(last).fold_pieces(fold.dims(), seed, Direction::Right, execution.settings[last],
+                    &|range, give| execution.range(section, range, &mut Scratch::default(), give), &mut buffers[slot])?;
             }
             rustymath::events::taken(rustymath::events::Route::FusedFold, items);
         } else {
-            let count = items.div_ceil(crate::settings::sizes().run.max(size));
-            let runs = rustymath::parallel::each::<_, Scratch>(count, |index, scratch| {
-                let start = index * crate::settings::sizes().run.max(size);
-                execution.range(start..items.min(start + crate::settings::sizes().run.max(size)), scratch, &mut |_, _| {})
+            let run = crate::settings::sizes().run.max(size);
+            let results = rustymath::parallel::each::<_, Scratch>(items.div_ceil(run), |index, scratch| {
+                let start = index * run;
+                execution.range(&self.sections[0], start..items.min(start + run), scratch, &mut |_, _| {})
             })?;
-            for result in runs { result?; }
+            for result in results { result?; }
         }
         for (&output, buffer) in self.outputs.iter().zip(&mut buffers) {
-            if fold.is_none() || output.node != last {
-                // Every disjoint piece wrote exactly its requested range before this length is published.
-                unsafe { buffer.set_len(items); }
-            }
+            let count = running.desc(program, output).unwrap().layout.count();
+            // All disjoint pieces finished before their initialized lengths are published.
+            unsafe { buffer.set_len(count); }
         }
         crate::explain::fused(|| self.glyphs(program), items, &tally);
         buffers.into_iter().zip(self.outputs.iter()).map(|(buffer, &output)| Value::stored(running.desc(program, output).unwrap(), buffer)).collect::<Result<Vec<_>>>().map(Into::into)
@@ -188,7 +258,7 @@ impl Block {
 
 #[cfg(not(web))]
 impl Lowered {
-    fn of(program: &Program, running: &Running, members: &[usize], objects: &[rustymath::operation::Kernel], outputs: &[Out]) -> Result<Option<Self>> {
+    fn of(program: &Program, running: &Running, members: &[usize], objects: &[Option<rustymath::operation::Kernel>], outputs: &[Out]) -> Result<Option<Self>> {
         use super::{BoundCall, Node, Step};
         use crate::jit::{self, Op, Ty};
         let mut kernel = jit::Kernel::default();
@@ -197,7 +267,7 @@ impl Lowered {
         let mut reduction = None;
         for (position, &node) in members.iter().enumerate() {
             let Node::Step { step, origin, .. } = &program.nodes[node] else { return Ok(None); };
-            let output = Out { node, output: 0 };
+            let output = Out::data(node, 0);
             let desc = running.desc(program, output).expect("a block member has a description");
             let Some(ty) = Ty::of(desc.kind.dtype()) else { return Ok(None); };
             let bindings = BoundCall { program, running, reads: origin.list.clone() };
@@ -207,7 +277,7 @@ impl Lowered {
             };
             let value = match step {
                 Step::Map { left, right, .. } => {
-                    let object = &objects[position];
+                    let object = objects[position].as_ref().expect("a map has a numerical object");
                     let Some(at) = Ty::of(read_as(object.variant.dtype)) else { return Ok(None); };
                     let mut arguments = Vec::new();
                     for argument in left.iter().copied().chain(std::iter::once(*right)) {
@@ -224,8 +294,10 @@ impl Lowered {
                     let Some(value) = kernel.formula(&object, at, &arguments, ty == Ty::Bool, tolerance) else { return Ok(None); };
                     if kernel.ty(value) == ty { value } else { kernel.step(Op::Convert, ty, value, None) }
                 }
-                Step::Convert { arg } => {
-                    let Some(value) = read(*arg, ty, &mut kernel) else { return Ok(None); };
+                Step::Convert { arg, conversion } => {
+                    let Some(at) = Ty::of(read_as(conversion.input)) else { return Ok(None); };
+                    let Some(value) = read(*arg, at, &mut kernel) else { return Ok(None); };
+                    let Some(value) = kernel.conversion(*conversion, value, origin.mode.dynamic) else { return Ok(None); };
                     value
                 }
                 Step::Picks { selector, choices } if choices.len() == 2 => {
@@ -237,7 +309,7 @@ impl Lowered {
                     kernel.step(Op::Select(mask), ty, yes, Some(no))
                 }
                 Step::Fold { arg, .. } if position + 1 == members.len() => {
-                    let object = &objects[position];
+                    let object = objects[position].as_ref().expect("a fold has a numerical object");
                     let Some(fold) = object.fold() else { return Ok(None); };
                     let Some(at) = Ty::of(read_as(object.variant.dtype)) else { return Ok(None); };
                     let Some(value) = read(*arg, at, &mut kernel) else { return Ok(None); };
@@ -281,7 +353,7 @@ impl Lowered {
             let stride = kernel.input(Input::Constant(Ty::I64, *step as u64));
             let offset = kernel.step(Op::Multiply, Ty::I64, index, Some(stride));
             let value = kernel.step(Op::Add, Ty::I64, base, Some(offset));
-            return Some(if at == Ty::I64 { value } else { kernel.step(Op::Truncate, at, value, None) });
+            return Some(if at == Ty::I64 { value } else { kernel.step(Op::Convert, at, value, None) });
         }
         let value = if let Some(&value) = made.get(&argument.operand) {
             if !matches!(map, Mapping::Linear(1)) { return None; }
@@ -329,7 +401,7 @@ fn arguments(step: &super::Step) -> Vec<u32> {
     use super::Step;
     match step {
         Step::Map { left, right, .. } => left.iter().copied().chain(std::iter::once(*right)).collect(),
-        Step::Convert { arg } | Step::Fold { arg, .. } => vec![*arg],
+        Step::Convert { arg, .. } | Step::Fold { arg, .. } => vec![*arg],
         Step::Picks { selector, choices } => std::iter::once(*selector).chain(choices.clone()).collect(),
         _ => Vec::new(),
     }
@@ -401,7 +473,7 @@ impl Execution<'_> {
         use rustymath::{agreement::Read, buffer::Buffer, operation::Piece};
         let members = self.block.members.len() - usize::from(self.fold.is_some());
         for &node in &self.block.members[scratch.buffers.len()..members] {
-            let dtype = self.running.desc(self.program, Out { node, output: 0 }).unwrap().kind.dtype();
+            let dtype = self.running.desc(self.program, Out::data(node, 0)).unwrap().kind.dtype();
             scratch.buffers.push(Buffer::with_capacity(dtype, self.size.min(range.len())));
         }
         let mut start = range.start;
@@ -429,7 +501,12 @@ impl Execution<'_> {
                     let reads: Vec<_> = arguments.iter().zip(&bindings).map(|(&argument, sources)| Read {
                         sources, plan: self.inputs[&(origin.list.start as usize + argument as usize)].plan,
                     }).collect();
-                    self.block.kernels[slot].map(&reads, part.clone(), self.settings[slot], &mut output)?;
+                    match step {
+                        super::Step::Map { .. } => self.block.kernel(slot).map(&reads, part.clone(), self.settings[slot], &mut output)?,
+                        super::Step::Convert { conversion, .. } => conversion.map(reads[0], part.clone(), origin.mode.dynamic, &mut output)?,
+                        super::Step::Picks { .. } => rustymath::operation::choose([reads[0], reads[1], reads[2]], part.clone(), output.dtype(), origin.mode.dynamic, &mut output)?,
+                        _ => unreachable!("a block body contains maps, conversions and Boolean choices"),
+                    }
                 }
                 if output.len() != part.len() { return Err(block_shape()); }
                 if let Some(writer) = self.outputs.get(&node) { writer.write(part.clone(), output.view())?; }
@@ -440,8 +517,8 @@ impl Execution<'_> {
                 let input = &self.inputs[&position];
                 let sources = input.bind(&scratch.buffers, &layout, start)?;
                 let read = Read { sources: &sources, plan: input.plan };
-                let mut held = Buffer::with_capacity(self.block.kernels.last().unwrap().variant.dtype, part.len());
-                let view = read.part_view(part.clone(), held.dtype(), self.block.kernels.last().unwrap().variant.checked, &mut held)?;
+                let mut held = Buffer::with_capacity(self.block.kernel(self.block.members.len() - 1).variant.dtype, part.len());
+                let view = read.part_view(part.clone(), held.dtype(), self.block.kernel(self.block.members.len() - 1).variant.checked, &mut held)?;
                 give(start, Piece::Items(view));
             }
             start = end;
@@ -485,7 +562,7 @@ impl Execution<'_> {
         let mut outs: Vec<_> = self.block.outputs.iter().filter_map(|output| self.outputs.get(&output.node))
             .map(|output| unsafe { output.ptr.add(range.start * output.dtype.bytes()) }).collect();
         if self.fold.is_some() && !prepared.folded {
-            let dtype = self.block.kernels.last().unwrap().variant.dtype;
+            let dtype = self.block.kernel(self.block.members.len() - 1).variant.dtype;
             let held = scratch.fold.get_or_insert_with(|| Buffer::with_capacity(dtype, self.size));
             held.clear();
             outs.push(held.as_mut_ptr());

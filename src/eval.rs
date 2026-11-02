@@ -2,7 +2,7 @@ use crate::execution::check;
 use crate::{
     At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value,
     display::Elide, graph::Pending, number::{Mark, Numeric},
-    primitive::{Builtin, Operation, Primitive, Superscript}, symbols::Notation,
+    primitive::{Builtin, Exit, LoopResult, Operation, Order, Primitive, Superscript}, program::Origin, symbols::Notation,
     syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind}, system::SystemFunction
 };
 use crate::{array::TreeRoot, name::Name};
@@ -124,10 +124,13 @@ impl Function {
     }
 
     /// Projects a body call without executing it. `from` names each argument's old first leaf.
-    pub(crate) fn bound(&self, parent: &crate::program::Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<crate::program::Origin<Vec<Value>>, Error> {
+    pub(crate) fn bound(&self, parent: &Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<Origin<Vec<Value>>, Error> {
+        self.bound_projection(parent, arguments, from).map(|(origin, _)| origin)
+    }
+    pub(crate) fn bound_projection(&self, parent: &Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<(Origin<Vec<Value>>, Vec<Option<usize>>), Error> {
         let roots: Vec<_> = std::iter::once(Value::Function(self.clone())).chain(arguments.iter().cloned()).collect();
         let sources: Vec<_> = std::iter::once(None).chain(from.iter().copied()).collect();
-        projected_call(parent, Operation::Loop { exit: crate::primitive::Exit::Once, order: crate::primitive::Order::Forward, body_result: crate::primitive::LoopResult::Carry }, &roots, &sources)
+        call_projection(parent, Operation::Loop { exit: Exit::Once, order: Order::Forward, body_result: LoopResult::Carry, batch_axes: 0 }, &roots, &sources)
     }
     pub(crate) fn prototype_bound(&self, parent: &crate::program::Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<Value, Error> {
         session().prototype_mode(true, || { let origin = self.bound(parent, arguments, from)?; self.run(origin.reborrow()) })
@@ -690,7 +693,7 @@ pub enum OperatorKind {
     Reduce, ReduceFirst, Scan, ScanFirst, Each, Commute, Inverse, Outer, Key, Derivative, Optimize, Bitwise,
     Mark(Mark), Under, Atop, Over, Rank, Axis, Stencil, Dot, Power, Before, After, Valences, Agenda,
     Field(Name), Index,
-    Framed { axes: usize, atoms: Box<[bool]> },
+    Framed { axes: usize, atoms: Box<[Option<bool>]> },
     JvpStep { packing: Box<[bool]> },
     VjpStep { direction: Direction },
 }
@@ -815,7 +818,7 @@ impl Function {
                         scan: matches!(kind, OperatorKind::Scan | OperatorKind::ScanFirst), pairing: Pairing::Axes })
                 }
                 (OperatorKind::Dot, [FunctionOperand::Value { value: Value::Function(f), .. }, FunctionOperand::Value { value: Value::Function(g), .. }]) => {
-                    Some(Operation::Product { fold: f.dyadic_primitive()?, map: g.dyadic_primitive()?, contracted: 1, pairing: Pairing::Axes })
+                    Some(Operation::Product { fold: f.dyadic_primitive()?, map: g.dyadic_primitive()?, contracted: 1, pairing: Pairing::Matrices { frame: 0 } })
                 }
                 _ => None,
             },
@@ -872,7 +875,7 @@ impl Function {
         self.call(left.as_ref().map(Argument::value), right.value(), span)
     }
     fn call_shape<'a>(&self, arguments: &'a [Value]) -> (Operation, Cow<'a, [Value]>) {
-        let operation = self.operation().unwrap_or(Operation::Loop { exit: crate::primitive::Exit::Once, order: crate::primitive::Order::Forward, body_result: crate::primitive::LoopResult::Carry });
+        let operation = self.operation().unwrap_or(Operation::Loop { exit: Exit::Once, order: Order::Forward, body_result: LoopResult::Carry, batch_axes: 0 });
         let values = if operation.functions() == 0 { Cow::Borrowed(arguments) }
             else { Cow::Owned(std::iter::once(Value::Function(self.clone())).chain(arguments.iter().cloned()).collect()) };
         (operation, values)
@@ -1196,7 +1199,10 @@ impl Session {
         self.error.within(run)
     }
 }
-pub(crate) fn projected_call(parent: &crate::program::Origin<&[Value]>, operation: Operation, args: &[Value], from: &[Option<usize>]) -> Result<crate::program::Origin<Vec<Value>>, Error> {
+pub(crate) fn projected_call(parent: &Origin<&[Value]>, operation: Operation, args: &[Value], from: &[Option<usize>]) -> Result<Origin<Vec<Value>>, Error> {
+    call_projection(parent, operation, args, from).map(|(origin, _)| origin)
+}
+fn call_projection(parent: &Origin<&[Value]>, operation: Operation, args: &[Value], from: &[Option<usize>]) -> Result<(Origin<Vec<Value>>, Vec<Option<usize>>), Error> {
     let active = session().bindings.active_origin(parent)?;
     let inherited = active.as_ref().map(|origin| origin.reborrow());
     let parent = inherited.as_ref().unwrap_or(parent);
@@ -1228,10 +1234,10 @@ pub(crate) fn projected_call(parent: &crate::program::Origin<&[Value]>, operatio
             .concat(&crate::array::Trees::leaves(capture_start - explicit))
             .concat(&captures.as_deref().cloned().unwrap_or_else(|| crate::array::Trees::leaves(list.len() - capture_start))))),
     };
-    let mut origin = parent.rebuilt(operation, list, &sources, explicit as u32, args.len() as u32, result_trees);
-    origin.bindings = bindings;
+    let mut context = parent.with_list(()); context.bindings = bindings;
+    let mut origin = context.rebuilt(operation, list, &sources, explicit as u32, args.len() as u32, result_trees)?;
     origin.literals |= capture_literals.checked_shl(capture_start as u32).unwrap_or(0);
-    Ok(origin)
+    Ok((origin, sources))
 }
 
 pub(crate) fn literal_leaves(trees: Option<&crate::array::Trees>, roots: u64) -> u64 {
@@ -1287,7 +1293,7 @@ pub(crate) fn map_roots(origin: &crate::program::Origin<&[Value]>, mut replace: 
     let tail = boundary(root_start).ok_or_else(Error::planning)?;
     let bindings = origin.bindings.reindexed(|root| mapped.get(root_start + root.index)
         .map(|new| TreeRoot { index: root.index, leaves: new.leaves.start - tail..new.leaves.end - tail })).ok_or_else(Error::planning)?;
-    let mut result = origin.rebuilt(origin.operation.clone(), values, &sources, explicit as u32, origin.explicit_roots, has_trees.then(|| Arc::new(trees)));
-    result.bindings = Arc::new(bindings);
+    let mut context = origin.with_list(()); context.bindings = Arc::new(bindings);
+    let result = context.rebuilt(origin.operation.clone(), values, &sources, explicit as u32, origin.explicit_roots, has_trees.then(|| Arc::new(trees)))?;
     Ok(result)
 }

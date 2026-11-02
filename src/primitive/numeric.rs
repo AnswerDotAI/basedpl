@@ -615,31 +615,37 @@ pub(crate) fn deal(left: &Value, right: &Value, stream: rustymath::random::Strea
     generated_items(vec![n], draws.into_iter(), total as u64, count).described("invalid deal result")
 }
 
-pub(crate) fn roles(operation: &Operation, mode: Mode, operands: &[Value]) -> Roles {
-    let Operation::Primitive { primitive, pairing } = operation else { return Roles(0) };
-    let count = operands.len() - usize::from(*pairing == Pairing::Explicit);
+pub(crate) fn roles(call: &CallView<'_>) -> Result<Roles, Error> {
+    let Operation::Primitive { primitive, .. } = call.operation else { return Ok(Roles(0)) };
+    let roots: Vec<_> = call.explicit_argument_roots().collect();
+    let positions: Vec<_> = roots.iter().map(|&root| call.root_boundary(root)).collect();
+    let count = positions.len();
+    if count == 0 || count > 2 { return Ok(Roles(0)); }
     let dyadic = count == 2;
     let circle = dyadic && matches!(primitive, Primitive::Math(Math::Circle | Math::Arc) | Primitive::RealCircle { .. });
-    let mut roles = if circle { Roles(0).with(0, ReadKind::Value) } else { Roles(0) };
-    if !mode.dynamic { return roles; }
+    let mut roles = if circle { Roles(0).with(positions[0], ReadKind::Value) } else { Roles(0) };
+    if !call.mode.dynamic { return Ok(roles); }
     let start = usize::from(circle);
     let mut types = [DType::Boolean; 2];
     let mut ranges = [rustymath::facts::Range::ANY; 2];
-    for (to, value) in operands[start..count].iter().enumerate() {
-        let Some(desc) = Desc::of(value) else { return roles };
-        if matches!(desc.kind.dtype(), DType::Complex(_) | DType::Character) { return roles; }
+    for (to, &position) in positions[start..].iter().enumerate() {
+        let Some(desc) = call.desc(position) else { return Ok(roles) };
+        if matches!(desc.kind.dtype(), DType::Complex(_) | DType::Character) { return Ok(roles); }
         types[to] = desc.kind.dtype(); ranges[to] = desc.range.unwrap_or(rustymath::facts::Range::ANY);
     }
     let integer_division = dyadic && matches!(primitive, Primitive::Arithmetic(Arithmetic::Divide))
         && types[..count].iter().all(|kind| kind.is_integral());
-    let code = circle.then(|| operands[0].as_number().and_then(|n| n.integer().ok())).flatten();
-    let variant = rustymath::facts::Variant { dtype: DType::Float(FloatWidth::F64), checked: true, wrapping: false, mathish: mode.mathish };
+    let code = if circle {
+        call.input(positions[0]).and_then(|input| match input.value { Value::Number(number) => number.as_integer(), _ => None })
+            .or_else(|| call.desc(positions[0])?.range?.constant().filter(|x| x.fract() == 0.0).map(|x| x as i64))
+    } else { None };
+    let variant = rustymath::facts::Variant { dtype: DType::Float(FloatWidth::F64), checked: true, wrapping: false, mathish: call.mode.mathish };
     let has_real_kind = match object_kernel(*primitive, dyadic, Numeric::EXACT, code, variant, &types[..count - start]) {
         Ok(Some(kernel)) => matches!(kernel.result_dtype(), DType::Complex(_)) || kernel.domain(&ranges[..count - start]),
         _ => !circle,
     };
-    if integer_division || !has_real_kind { for position in start..count { roles = roles.with(position, ReadKind::Kind); } }
-    roles
+    if integer_division || !has_real_kind { for &position in &positions[start..] { roles = roles.with(position, ReadKind::Kind); } }
+    Ok(roles)
 }
 
 pub(crate) fn kernel(call: &CallView<'_>, variant: rustymath::facts::Variant) -> Result<Option<rustymath::operation::Kernel>, Error> {
@@ -746,7 +752,7 @@ fn map_geometry(call: &CallView<'_>) -> Result<(Layout, bool, Option<Mapping>, M
             Agreement::with_axes(&left.layout, &right.layout, &axes)?
         }
         Pairing::Axes => Agreement::new(&left.layout, &right.layout)?,
-        Pairing::Matrices => return Err(Error::domain("elementwise calls do not use matrix pairing")),
+        Pairing::Matrices { .. } => return Err(Error::domain("elementwise calls do not use matrix pairing")),
     };
     Ok((agreement.layout, left.atom && right.atom, Some(agreement.left), agreement.right))
 }
@@ -845,4 +851,75 @@ fn code_map(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
         crate::number::calculate(&kernel, &args, numeric)
     };
     Ok(Outputs::one(pervade(left.as_deref(), &right, numeric, &|left, right| scalar(left, right, false), &|left, right| scalar(left, right, true))?))
+}
+
+pub(crate) fn product_kernels(call: &CallView<'_>) -> Result<(rustymath::operation::Kernel, rustymath::operation::Kernel), Error> {
+    let Operation::Product { map, fold, .. } = call.operation else { return Err(Error::planning()); };
+    let numeric = call.numeric()?;
+    let map = call.kernel_for(*map, true, map_variant(call)?)?.ok_or_else(|| Error::domain("product mapping has no numerical body"))?;
+    let dtype = map.result_dtype();
+    let fold = object_kernel(*fold, true, numeric, None, call.variant(dtype)?, &[dtype; 2])?
+        .ok_or_else(|| Error::domain("product reduction has no numerical body"))?;
+    Ok((map, fold))
+}
+
+pub(crate) fn describe_fold(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
+    let geometry = crate::plan::fold(call)?;
+    let source = call.desc(geometry.arg).ok_or_else(Error::planning)?;
+    if source.segments.is_some() { return Ok(None); }
+    let Some(kernel) = call.kernel(map_variant(call)?)? else { return Ok(None); };
+    let items = source.range.unwrap_or(rustymath::facts::Range::ANY);
+    let seed = geometry.seed.and_then(|seed| call.desc(seed)).and_then(|seed| seed.range);
+    let length = geometry.dims()[1];
+    let mut range = if length == 0 { rustymath::facts::Range::of(kernel.identity()) }
+        else { rustymath::facts::Range::folded(items, seed, Some(length), |args| kernel.range(&args)) };
+    if geometry.scan { range = range.join(items); }
+    let dtype = kernel.total_dtype().unwrap_or(kernel.result_dtype());
+    let numeric = call.numeric()?;
+    let kind = crate::number::Kind::stored(dtype, numeric.fixed.is_some(), false);
+    Ok(Some(Outputs::one(Desc { kind, atom: geometry.atom, layout: geometry.result, range: Some(range), segments: None })))
+}
+
+pub(crate) fn plan_fold(call: &CallView<'_>, _: &[Desc]) -> Result<Step, Error> {
+    let geometry = crate::plan::fold(call)?;
+    Ok(Step::Fold { arg: geometry.arg as u32, seed: geometry.seed.map(|seed| seed as u32), axis: geometry.axis, variant: map_variant(call)? })
+}
+
+pub(crate) fn maps_fold(call: &CallView<'_>, _: &Step, _: &[Desc], set: &mut dyn FnMut(usize, Mapping))
+    -> Result<Option<rustymath::agreement::ReadPlan>, Error> {
+    let geometry = crate::plan::fold(call)?;
+    set(geometry.arg, Mapping::Linear(1));
+    if let Some(seed) = geometry.seed {
+        let desc = call.desc(seed).ok_or_else(Error::planning)?;
+        let agreement = Agreement::new(&desc.layout, &geometry.result)?;
+        if agreement.layout != geometry.result { return Err(Error::new(Kind::Length, "fold seed does not agree with its result cells")); }
+        set(seed, agreement.left);
+    }
+    Ok(None)
+}
+
+pub(crate) fn describe_product(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
+    let geometry = crate::plan::product(call)?;
+    let (map, fold) = product_kernels(call)?;
+    let ranges = geometry.args.map(|position| call.desc(position).and_then(|desc| desc.range).unwrap_or(rustymath::facts::Range::ANY));
+    let shape = geometry.plan.iteration.shape();
+    let count = shape[shape.len() - geometry.plan.contracted..].iter().product();
+    let range = rustymath::facts::Range::folded(map.range(&ranges), None, Some(count), |args| fold.range(&args));
+    let dtype = fold.total_dtype().unwrap_or(fold.result_dtype());
+    let numeric = call.numeric()?;
+    let kind = crate::number::Kind::stored(dtype, numeric.fixed.is_some(), false);
+    let atom = geometry.plan.layout.shape().is_empty();
+    Ok(Some(Outputs::one(Desc { kind, atom, layout: geometry.plan.layout.into(), range: Some(range), segments: None })))
+}
+
+pub(crate) fn plan_product(call: &CallView<'_>, _: &[Desc]) -> Result<Step, Error> {
+    let geometry = crate::plan::product(call)?;
+    Ok(Step::Product { left: geometry.args[0] as u32, right: geometry.args[1] as u32 })
+}
+
+pub(crate) fn maps_product(call: &CallView<'_>, _: &Step, _: &[Desc], set: &mut dyn FnMut(usize, Mapping))
+    -> Result<Option<rustymath::agreement::ReadPlan>, Error> {
+    let geometry = crate::plan::product(call)?;
+    for (position, map) in geometry.args.into_iter().zip(geometry.plan.mappings) { set(position, map); }
+    Ok(None)
 }

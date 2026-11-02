@@ -52,7 +52,7 @@ pub(crate) enum Parameter {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum KeyPart {
-    Graph, Call, Node(usize), Output(u32), Source(usize), Operation(Operation), Mode(Mode), Roles(Roles), Literal(u64),
+    Graph, Call, Node(usize), Output(Option<u32>), Source(usize), Operation(Operation), Mode(Mode), Roles(Roles), Literal(u64),
     Arguments(usize, usize), Trees(Option<Arc<Trees>>), Captures(CaptureKey), Description { kind: crate::number::Kind, atom: bool, layout: LayoutKey, segments: Vec<(u8, bool)> },
     Physical(Vec<(u8, usize)>), Parameter(ReadKind, Parameter), Missing,
     SourceBase(bool, Option<Arc<str>>),

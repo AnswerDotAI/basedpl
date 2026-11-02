@@ -160,7 +160,7 @@ pub(crate) fn linearity(operation: &Operation, valence: usize) -> Linearity {
 
 fn sum(left: Option<Value>, right: Value) -> Result<Option<Value>> {
     Ok(Some(match left { None => right, Some(left) =>
-        Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Add), pairing: Pairing::Axes }.call(&[left, right], 0)?, }))
+        Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Plus), pairing: Pairing::Axes }.call(&[left, right], 0)?, }))
 }
 
 fn row_jvp(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Result<JvpOutputs> {
@@ -204,7 +204,7 @@ fn row_jvp(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Result<JvpO
                 if let Some(slope) = &slopes[position] {
                     let mut directed = reads.list.to_vec(); directed[position].operand = tangents[position].clone().unwrap();
                     let direction = Operation::read_input(&reads.with_list(directed.as_slice()), position, &primal.as_ref()[0])?;
-                    let contribution = Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Multiply), pairing: Pairing::Axes }
+                    let contribution = Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Times), pairing: Pairing::Axes }
                         .call(&[slope.clone(), direction], 0)?;
                     tangent[0] = sum(tangent[0].take(), contribution)?;
                 }
@@ -289,6 +289,21 @@ impl rustymath::recipe::Ops<f64> for GraphOps<'_, '_> {
 }
 
 pub(crate) fn partials(origin: &Origin<&[crate::program::Read<Value>]>, result: &Value, needed: &[bool]) -> Result<Vec<Option<Value>>> {
+    if let Operation::Product { fold: Primitive::Arithmetic(Arithmetic::Plus), map, .. } = &origin.operation {
+        let positions = origin.call_view(origin).data_positions().collect::<Vec<_>>();
+        let [left, right] = positions.as_slice() else { return Err(Error::planning()); };
+        let arguments = [Operation::read_input(origin, *left, result)?, Operation::read_input(origin, *right, result)?];
+        let values = origin.list.iter().map(|read| read.operand.clone()).collect::<Vec<_>>();
+        let parent = origin.with_list(values.as_slice());
+        let call = crate::eval::projected_call(&parent, Operation::Primitive { primitive: *map, pairing: Pairing::Axes }, &arguments, &[Some(*left), Some(*right)])?;
+        let mapped = Operation::dispatch(call.reborrow())?.assemble()?;
+        let reads = call.list.iter().map(|value| crate::program::Read { operand: value.clone(), map: rustymath::agreement::Mapping::Linear(1) }).collect::<Vec<_>>();
+        let mut active = vec![false; reads.len()]; active[0] = needed[*left]; active[1] = needed[*right];
+        let mut slopes = partials(&call.with_list(reads.as_slice()), &mapped, &active)?.into_iter();
+        let mut output = vec![None; origin.list.len()];
+        output[*left] = slopes.next().unwrap(); output[*right] = slopes.next().unwrap();
+        return Ok(output);
+    }
     let call = origin.call_view(origin);
     let dtype = result.dtype().ok_or_else(|| Error::domain("∂ needs numeric results"))?;
     let kernel = call.kernel(call.variant(dtype)?)?.ok_or_else(|| system(&origin.operation.glyph()))?;
@@ -296,8 +311,8 @@ pub(crate) fn partials(origin: &Origin<&[crate::program::Read<Value>]>, result: 
     if positions.len() != kernel.arity() { return Err(Error::planning()); }
     let values: Vec<_> = origin.list.iter().map(|read| read.operand.clone()).collect();
     let plain = origin.with_list(values.as_slice());
-    let numeric = call.numeric()?;
-    let graph = GraphOps { origin: &plain, values: Default::default(), width: numeric.width };
+    let DType::Float(width) = dtype else { return Err(Error::domain("∂ needs real-floating results")); };
+    let graph = GraphOps { origin: &plain, values: Default::default(), width };
     let inputs = positions.iter().map(|&i| graph.put(Operation::read_input(origin, i, result), false)).collect::<Vec<_>>();
     let result = graph.put(Ok(result.clone()), false);
     let active = positions.iter().map(|&i| needed[i]).collect::<Vec<_>>();

@@ -16,7 +16,7 @@ pub(crate) fn ranged(operation: &crate::primitive::Operation, value: &Value, des
 }
 
 fn broken(program: &Program) -> Option<String> {
-    let valid = |output: Out| output.node < program.nodes.len() && (output.output as usize) < program.outputs(output.node);
+    let valid = |output: Out| output.node < program.nodes.len() && output.output.is_none_or(|leaf| (leaf as usize) < program.outputs(output.node));
     let reads_valid = |reads: &std::ops::Range<u32>| reads.start <= reads.end && reads.end as usize <= program.reads.len();
     for (position, node) in program.nodes.iter().enumerate() {
         match node {

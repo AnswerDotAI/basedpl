@@ -104,7 +104,7 @@ impl Session {
         let scope = std::mem::take(self.guards.borrow_mut().last_mut().expect("a running error guard has a scope"));
         for node in scope.nodes.into_iter().filter_map(|node| node.upgrade()).map(crate::graph::Node) {
             for output in 0..node.descs().len() {
-                Value::Pending(Pending { node: node.clone(), output: output as u32 }).read(crate::ReadKind::Value)?;
+                Value::Pending(Pending::data(node.clone(), output as u32)).read(crate::ReadKind::Value)?;
             }
         }
         if let Some(value) = value { value.read(crate::ReadKind::Value)?; }

@@ -21,7 +21,7 @@ pub(crate) fn rooted(root: &Value) -> Result<Value> {
             }) }),
             value => Ok(if let Some(desc) = Desc::of(value) {
                 let at = *position; *position += 1;
-                Value::Pending(Pending { node: Node::input(at, Some(value.clone()), desc.into_owned(), Role::Root, value.level(), None), output: 0 })
+                Value::Pending(Pending::data(Node::input(at, Some(value.clone()), desc.into_owned(), Role::Root, value.level(), None), 0))
             } else { value.clone() }),
         })
     }
@@ -67,7 +67,7 @@ impl Walking {
         let Some((step, origin)) = pending.node.recipe() else { return Err(foreign()); };
         let mut reads: Vec<_> = origin.list.iter().map(|read| Read { operand: (), map: read.map.clone() }).collect();
         let plan = match crate::fusion::row(&origin.call_view(&origin), Some(&step), &mut reads)? {
-            Some((_, _, Some(plan))) if pending.output == 0 => self.route(&plan, &origin.list)?,
+            Some((_, _, Some(plan))) if pending.output == Some(0) => self.route(&plan, &origin.list)?,
             _ => None,
         };
         self.mapped.insert(pending.clone(), plan.clone()); Ok(plan)

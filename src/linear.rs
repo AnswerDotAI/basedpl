@@ -1,8 +1,9 @@
 //! Linear seeds, their substitution, and the transpose of the canonical graph.
 use crate::{
-    array::{self, map_leaves}, error::Result, graph::{Node, Pending},
-    program::{trace::Role, Desc, Live}, Value,
+    array::{self, map_leaves}, derivative, error::Result, graph::{Node, Pending}, number::{Arithmetic, Mark},
+    primitive::{Operation, Pairing, Primitive}, program::{trace::Role, Desc, Live, Origin, Read, Step}, Error, Value,
 };
+use rustymath::{buffer::DType, hashing::{HashMap, HashMapExt}};
 
 pub(crate) fn zeros_like(like: &Value) -> Value {
     map_leaves(like, |leaf| Ok(match leaf.dtype() {
@@ -15,7 +16,7 @@ pub(crate) fn zeros_like(like: &Value) -> Value {
 /// An absent input is the unbound seed; its level mark forbids observation.
 pub(crate) fn seed(like: &Value, level: usize, position: usize) -> Pending {
     let desc = Desc::of(like).expect("a differentiated leaf has a description").into_owned();
-    Pending { node: Node::input(position, None, desc, Role::Seed, Some(level), None), output: 0 }
+    Pending::data(Node::input(position, None, desc, Role::Seed, Some(level), None), 0)
 }
 
 /// Rebind all leaves together through the graph's shared redispatch pass.
@@ -35,4 +36,62 @@ pub(crate) fn read_back(origin: &crate::program::Origin<&[crate::program::Read<V
     needed.iter().enumerate().map(|(input, &needed)| {
         needed.then(|| crate::primitive::Operation::read_back(origin, input, cotangent)).transpose()
     }).collect()
+}
+
+fn add(cotangents: &mut HashMap<Pending, Value>, source: Pending, contribution: Value) -> Result<()> {
+    let value = match cotangents.remove(&source) { None => contribution, Some(previous) =>
+        Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Plus), pairing: Pairing::Axes }.call(&[previous, contribution], 0)?, };
+    cotangents.insert(source, value); Ok(())
+}
+
+pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value], level: usize) -> Result<Vec<Value>> {
+    if roots.len() != directions.len() { return Err(Error::planning()); }
+    let mut cotangents = HashMap::default();
+    let mut pending = Vec::new();
+    for (root, direction) in roots.iter().zip(directions) {
+        let leaves = array::flatten(std::slice::from_ref(root)).map_or_else(|| vec![root.clone()], |(_, leaves)| leaves);
+        let directions = array::flatten(std::slice::from_ref(direction)).map_or_else(|| vec![direction.clone()], |(_, leaves)| leaves);
+        if leaves.len() != directions.len() { return Err(Error::domain("a cotangent must match its result's structure")); }
+        for (leaf, direction) in leaves.into_iter().zip(directions) {
+            if let Value::Pending(source) = leaf { pending.push(source.clone()); add(&mut cotangents, source, direction)?; }
+        }
+    }
+    let live = Live::of(&pending);
+    for node in live.nodes().iter().rev() {
+        let Some((step, origin)) = node.recipe() else { continue; };
+        let output = (0..node.descs().len()).map(|i| cotangents.remove(&Pending::data(node.clone(), i as u32))).collect::<Vec<_>>();
+        if output.iter().all(Option::is_none) { continue; }
+        let needed = origin.list.iter().map(|read| read.operand.pending().is_some_and(|source| source.node.level() == Some(level))).collect::<Vec<_>>();
+        if needed.iter().all(|needed| !needed) { continue; }
+        let origin = origin.with_list(origin.list.as_slice());
+        let contributions = match step {
+            Step::Select { .. } | Step::Loop { .. } => derivative::transpose_control(node, &origin, &output, &needed, level)?,
+            Step::Map { .. } | Step::Product { .. } | Step::Call { .. } => {
+                if output.len() != 1 { return Err(Error::planning()); }
+                let direction = output[0].as_ref().ok_or_else(Error::planning)?;
+                let result = Value::Pending(Pending::data(node.clone(), 0));
+                let slopes = Operation::partials(&origin, &result, &needed)?;
+                let direction = Operation::read_result(&origin, direction)?;
+                slopes.into_iter().enumerate().map(|(input, slope)| slope.map(|slope| {
+                    let contribution = Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Times), pairing: Pairing::Axes }.call(&[slope, direction.clone()], 0)?;
+                    Operation::read_back(&origin, input, &contribution)
+                }).transpose()).collect::<Result<Vec<_>>>()?
+            }
+            Step::Convert { arg } => {
+                let dtype = origin.list[arg as usize].operand.dtype().ok_or_else(Error::planning)?;
+                let direction = output[0].as_ref().ok_or_else(Error::planning)?;
+                let direction = Operation::Convert(Mark::Type { dtype, fixed: false }).call(std::slice::from_ref(direction), 0)?;
+                read_back(&origin, &direction, &needed)?
+            }
+            Step::Copy { .. } | Step::Gather { .. } | Step::Join { .. } | Step::Picks { .. } | Step::At { .. } | Step::Fold { .. } => {
+                let direction = output[0].as_ref().ok_or_else(Error::planning)?;
+                derivative::transpose_read(&origin, direction, &needed)?
+            }
+            Step::Draw { .. } | Step::Effect { .. } | Step::Index { .. } => vec![None; origin.list.len()],
+        };
+        for (read, contribution) in origin.list.iter().zip(contributions) {
+            if let (Some(source), Some(contribution)) = (read.operand.pending(), contribution) { add(&mut cotangents, source.clone(), contribution)?; }
+        }
+    }
+    Ok(seeds.iter().map(|seed| cotangents.remove(seed).unwrap_or_else(|| zeros_like(&Value::Pending(seed.clone())))).collect())
 }

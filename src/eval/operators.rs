@@ -1,6 +1,6 @@
 //! Operator semantics build ordinary calls, maps, selects and loops; execution stays in the graph runner.
 use super::*;
-use crate::{array::Layout, error::Result, primitive::{Exit, Order, Pairing, ReadOp, ViewAxis}, program::{Origin, Outputs}};
+use crate::{array::Layout, error::Result, primitive::{Exit, LoopResult, Order, Pairing, ReadOp, ViewAxis}, program::{Origin, Outputs}};
 
 const fn entry(python: &'static str, glyph: &'static str, dyadic: bool) -> OperatorInfo {
     OperatorInfo { call: operator_call, spelling, inverse, discards, python, glyph, dyadic, operands: operand_kind }
@@ -200,7 +200,7 @@ fn loop_call(origin: &Origin<&[Value]>, body: &Function, exit: &Value, args: &[V
         (Exit::Predicate, Order::Forward, vec![Value::Function(body.clone()), Value::Function(predicate.clone())], vec![None, None])
     } else { (Exit::Power, Order::Forward, vec![Value::Function(body.clone()), exit.clone()], vec![None, None]) };
     values.extend_from_slice(args); positions.extend_from_slice(from);
-    dispatch_in(origin, Operation::Loop { exit: exit_kind, order, body_result: crate::primitive::LoopResult::Carry }, &values, &positions)
+    dispatch_in(origin, Operation::Loop { exit: exit_kind, order, body_result: LoopResult::Carry, batch_axes: 0 }, &values, &positions)
 }
 
 fn fold_call(origin: &Origin<&[Value]>, f: &Function, kind: &OperatorKind, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
@@ -249,7 +249,7 @@ fn outer_call(origin: &Origin<&[Value]>, f: &Function, args: &[Value], _: &[Opti
 fn product_call(origin: &Origin<&[Value]>, f: &Function, g: &Function, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
     let [left, right] = args else { return expansion(origin, f, g, &args[0]); };
     if let (Some(fold), Some(map)) = (f.dyadic_primitive(), g.dyadic_primitive()) {
-        return dispatch_in(origin, Operation::Product { fold, map, contracted: 1 }, args, from);
+        return dispatch_in(origin, Operation::Product { fold, map, contracted: 1, pairing: Pairing::Matrices { frame: 0 } }, args, from);
     }
     let left_rank = left.rank(); let right_rank = right.rank();
     let n = left.shape().last().copied().unwrap_or(1);
@@ -286,12 +286,26 @@ fn under_call(origin: &Origin<&[Value]>, f: &Value, g: &Value, args: &[Value], f
     inverse.call_bound(origin, &[result], &[None])
 }
 
+fn axis_arguments(origin: &Origin<&[Value]>, spec: &Value, args: &[Value], from: &[Option<usize>]) -> Result<(Pairing, Vec<Value>, Vec<Option<usize>>)> {
+    let mut values = args.to_vec(); let mut sources = from.to_vec();
+    let fill = (spec.rank() == 1).then(|| spec.keys(0).and_then(|keys| keys.position("fill"))).flatten();
+    if let Some(position) = fill {
+        let chosen = dispatch_in(origin, Operation::Primitive { primitive: Primitive::Mix, pairing: Pairing::Axes },
+            &[crate::keyed::text("fill"), spec.clone()], &[None, None])?;
+        let positions = (0..spec.len()).filter(|&i| i != position).map(|i| i as i64).collect::<Vec<_>>();
+        let options = if positions.is_empty() { crate::keyed::empty_record() } else {
+            let positions = Value::integers([positions.len()], positions)?;
+            dispatch_in(origin, Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Axes }, &[positions, spec.clone()], &[None, None])?
+        };
+        values.extend([options, chosen]); sources.extend([None, None]);
+    } else { values.push(spec.clone()); sources.push(None); }
+    Ok((Pairing::Explicit { fill: fill.is_some() }, values, sources))
+}
 fn axis_call(origin: &Origin<&[Value]>, f: &Function, spec: &Value, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
     let spec = value_call(spec, origin, args, from)?;
     if let Some(primitive) = f.as_primitive() {
-        let values: Vec<_> = std::iter::once(spec.clone()).chain(args.iter().cloned()).collect();
-        let sources: Vec<_> = std::iter::once(None).chain(from.iter().copied()).collect();
-        return dispatch_in(origin, Operation::Primitive { primitive, pairing: Pairing::Explicit }, &values, &sources);
+        let (pairing, values, sources) = axis_arguments(origin, &spec, args, from)?;
+        return dispatch_in(origin, Operation::Primitive { primitive, pairing }, &values, &sources);
     }
     if let FunctionNode::Applied { op: Operator::Kind(kind), .. } = f.node()
         && matches!(kind, OperatorKind::Reduce | OperatorKind::ReduceFirst | OperatorKind::Scan | OperatorKind::ScanFirst) {
@@ -334,10 +348,9 @@ fn stencil_call(origin: &Origin<&[Value]>, f: &Function, spec: &Value, args: &[V
 }
 fn axis_fold(origin: &Origin<&[Value]>, f: &Function, kind: &OperatorKind, axes: &Value, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
     if let Some(primitive) = f.dyadic_primitive() {
-        let values: Vec<_> = std::iter::once(axes.clone()).chain(args.iter().cloned()).collect();
-        let sources: Vec<_> = std::iter::once(None).chain(from.iter().copied()).collect();
+        let (pairing, values, sources) = axis_arguments(origin, axes, args, from)?;
         return dispatch_in(origin, Operation::Fold { primitive, first: matches!(kind, OperatorKind::ReduceFirst | OperatorKind::ScanFirst),
-            scan: matches!(kind, OperatorKind::Scan | OperatorKind::ScanFirst), pairing: Pairing::Explicit }, &values, &sources);
+            scan: matches!(kind, OperatorKind::Scan | OperatorKind::ScanFirst), pairing }, &values, &sources);
     }
     let fold = Function::applied_kind(kind.clone(), vec![Value::Function(f.clone())])?;
     let ravelled = Function::applied_kind(OperatorKind::Atop, vec![Value::Function(fold), Value::Function(Function::primitive(Primitive::Ravel))])?;
@@ -490,9 +503,8 @@ fn inverse_derived(f: &Function, origin: Origin<&[Value]>, first: bool) -> Resul
         Axis => {
             let axes = value_call(&second(), &origin, &args, &from)?;
             if let Some(primitive) = function(&g)?.as_primitive() {
-                let values: Vec<_> = std::iter::once(axes.clone()).chain(args.iter().cloned()).collect();
-                let sources: Vec<_> = std::iter::once(None).chain(from.iter().copied()).collect();
-                let call = projected_call(&origin, Operation::Primitive { primitive, pairing: Pairing::Explicit }, &values, &sources)?;
+                let (pairing, values, sources) = axis_arguments(&origin, &axes, &args, &from)?;
+                let call = projected_call(&origin, Operation::Primitive { primitive, pairing }, &values, &sources)?;
                 return (primitive.info().inverse)(function(&g)?, call.reborrow(), first);
             }
             if first && let FunctionNode::Applied { op: Operator::Kind(kind @ (Scan | ScanFirst)), .. } = function(&g)?.node() {
@@ -571,7 +583,7 @@ fn inverse_scan(origin: &Origin<&[Value]>, f: &Function, first: bool, axes: Opti
     };
     if right.shape()[axis] == 0 { return Ok(right.clone()); }
     let spec = Value::integer(axis as i64);
-    let slice = |primitive, count| dispatch_in(origin, Operation::Primitive { primitive, pairing: Pairing::Explicit },
+    let slice = |primitive, count| dispatch_in(origin, Operation::Primitive { primitive, pairing: Pairing::Explicit { fill: false } },
         &[Value::integer(count), right.clone(), spec.clone()], &[None, None, None]);
     let head = slice(Primitive::Take, 1)?;
     let head = if let Some(seed) = seed {
@@ -583,5 +595,5 @@ fn inverse_scan(origin: &Origin<&[Value]>, f: &Function, first: bool, axes: Opti
     let previous = slice(Primitive::Drop, -1)?;
     let current = slice(Primitive::Drop, 1)?;
     let tail = each_call(origin, &inverse, &[previous, current], &[None, None])?;
-    dispatch_in(origin, Operation::Primitive { primitive: Primitive::CatenateFirst, pairing: Pairing::Explicit }, &[head, tail, spec], &[None, None, None])
+    dispatch_in(origin, Operation::Primitive { primitive: Primitive::CatenateFirst, pairing: Pairing::Explicit { fill: false } }, &[head, tail, spec], &[None, None, None])
 }
