@@ -2,15 +2,15 @@ if exists('b:current_syntax')
   finish
 endif
 
-syntax match bplName /\v%(_\d+|_\S|_|[^\s\x00-\x1f\x7f-\x9f0-9←⎕•⍺⍵⍶⍹∇⍢⍝⋄⁝\?¯∞⍬\+\-×÷⌈⌊\|\*⍟○π√!∧∨⊼⊽\~=≠<≤>≥⍳↦:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹\#↕⍭⨸⌻⍸⍷⊢⊣¿¨ᵇ⍨↣⍤∘⍠⍥↢\.⊗⌸⍣⇄⊘@∂⍚⌺\/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘₓₐ₀₁₂₃₄₅₆₇₈₉₋ₓ₁ₓ₂ₓ₄ₓ₈ₓₕₛₚₐ\(\)\[\]\{\}'";\$_ₑⱼᵣ])+/
+syntax match bplName /\v%(_\d+|_\S|_|[^\s\x00-\x1f\x7f-\x9f0-9←⎕•⍺⍵⍶⍹∇⍢⍝⋄⁝\?¯∞⍬\+\-×÷⌈⌊\|\*⍟○π√!∧∨⊼⊽\~=≠<≤>≥⍳↦:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹\#↕⍭⨸⌻⍸⍷⊢⊣¿\/⌿\\⍀¨⍨⊗⌸∂⇄ᵇ@∘⍥⍤⍠⌺\.⍣↣↢⊘⍚⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘₓₐᵣ₀₁₂₃₄₅₆₇₈₉₋ₓ₁ₓ₂ₓ₄ₓ₈ₓₕₛₚₐᵣ\(\)\[\]\{\}'";\$_ₑⱼᵣ])+/
 syntax match bplSystem /\v[•][A-Za-z_∆⍙][A-Za-z0-9_∆⍙]*/
 syntax match bplString /\v\$[ad]/
 syntax match bplFunction /[+×÷⌈⌊|*⍟○π√!∧∨⊼⊽~=≠<≤>≥⍳↦:⍴≢≡,⍪⊂⊃⊆∊∪∩⍋⍒↑↓⌽⊖⍉⊤⊥⍎⍕⌷⌹#↕⍭⨸⌻⍸⍷⊢⊣¿-]/
-syntax match bplMonadicOperator #\v%(ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ)|[¨ᵇ⍨⊗⌸⇄∂/⌿\\⍀⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘₓₐ]#
-syntax match bplDyadicOperator /[↣⍤∘⍠⍥↢.⍣⊘@⍚⌺]/
+syntax match bplMonadicOperator #\v%(ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ|ᵣ)|[/⌿\\⍀¨⍨⊗⌸∂⇄ᵇ⁰¹²³⁴⁵⁶⁷⁸⁹⁻ᵀᵘₓₐᵣ]#
+syntax match bplDyadicOperator /[@∘⍥⍤⍠⌺.⍣↣↢⊘⍚]/
 syntax match bplArgument /[⍺⍵⍶⍹∇⍢]/
 syntax match bplKeyword /[←⎕⋄⁝?₀₁₂₃₄₅₆₇₈₉₋]/
-syntax match bplNumber /\v%([¯]?[∞]|[¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?([jJⱼ][¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?|[rᵣ][¯]?\d+)?)%(ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ)?|[ₑⱼᵣ]|[⍬]%(ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ)?/
+syntax match bplNumber /\v%([¯]?[∞]|[¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?([jJⱼ][¯]?(\d+([.]\d+)?|[.]\d+)([eEₑ][¯]?\d+)?|[rᵣ][¯]?\d+)?)%(ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ|ᵣ)?|[ₑⱼᵣ]|[⍬]%(ₓ₁|ₓ₂|ₓ₄|ₓ₈|ₓ|ₕ|ₛ|ₚ|ₐ|ᵣ)?/
 syntax match bplNumber /\v([\])])@<=ₓ/
 syntax match bplNumber /\v\$[tfn]/
 syntax match bplCharacter /'.\?'/

@@ -85,9 +85,9 @@ pub fn symbols() -> &'static [Symbol] {
             let (monad_rank, dyad_ranks) = (rank(info.ranks[0]), info.ranks[1..].iter().map(|&r| rank(r)).collect::<Vec<_>>().join(" "));
             Symbol { glyph: info.glyph, name: info.name, kind: "function", monad, dyad, monad_rank, dyad_ranks, hanzi: hanzi(info.glyph) }
         });
-        let operators = OperatorKind::all().map(|op| {
+        let operators = OperatorKind::all().filter(|op| op.info().glyph.chars().count() == 1).map(|op| {
             let info = op.info();
-            let (name, monad, dyad) = (info.python, info.python, "");
+            let [name, monad, dyad] = info.names;
             let kind = if info.dyadic { "dyadic-operator" } else { "monadic-operator" };
             Symbol { glyph: info.glyph, name, kind, monad, dyad, monad_rank: String::new(), dyad_ranks: String::new(), hanzi: hanzi(info.glyph) }
         });

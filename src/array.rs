@@ -242,6 +242,7 @@ impl Cells<'_> {
     pub fn get(&self, i: usize) -> crate::error::Result<Value> {
         if self.split == 0 { return Ok(self.array.clone()); }
         if let Value::Array(array) = self.array {
+            if self.cell_layout.shape().is_empty() { return self.array.at(i).unit(); }
             let size = self.cell_layout.count();
             return Ok(Value::stored_part(array, i * size..(i + 1) * size, self.cell_layout.clone())?);
         }
@@ -461,7 +462,7 @@ impl Footprint for Value {
 pub(crate) fn map_leaves(value: &Value, mut f: impl FnMut(&Value) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
     let Some((trees, leaves)) = flatten(std::slice::from_ref(value)) else { return f(value) };
     let mut preserved = vec![false; leaves.len()];
-    trees.input_uses(|position, usage| preserved[position] = usage != TreeInput::Prototype);
+    trees.input_uses(|position, usage| preserved[position] = usage == TreeInput::Prototype);
     let mapped = leaves.iter().enumerate().map(|(i, value)| if preserved[i] { Ok(value.clone()) } else { f(value) }).collect::<crate::error::Result<Vec<_>>>()?;
     if leaves.iter().zip(&mapped).all(|(old, new)| old.identical(new)) { return Ok(value.clone()); }
     trees.build(&mapped).pop().ok_or_else(|| Error::domain("missing tree root"))
@@ -523,6 +524,20 @@ impl Value {
             }
             let axes = (0..leaf.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
             Operation::Read(ReadOp::Axes { axes, destinations: Box::new([]) }).call(&[zero, leaf.clone()], 1)
+        })
+    }
+    /// Expose host containers without reading their native pending children or removing transform levels.
+    pub(crate) fn exposed(&self) -> crate::error::Result<Self> {
+        map_leaves(self, |leaf| match leaf {
+            Self::Pending(pending) if pending.description().is_none() => {
+                let output = pending.output.ok_or_else(|| Error::domain("control completion cannot be read as data"))?;
+                pending.node.clone().exposed(output, crate::ReadKind::Structure)?.exposed()
+            }
+            Self::Carried { level, carried } => Ok(Self::Carried { level: *level, carried: Arc::new(match &**carried {
+                Carried::Dual { primal, tangent } => Carried::Dual { primal: primal.exposed()?, tangent: tangent.exposed()? },
+                Carried::Batch { whole, cell } => Carried::Batch { whole: whole.exposed()?, cell: cell.clone() },
+            }) }),
+            _ => Ok(leaf.clone()),
         })
     }
     pub fn read(&self, read: crate::program::trace::ReadKind) -> Result<Value, Error> {
@@ -773,6 +788,9 @@ impl Value {
     }
     pub(crate) fn stored_values(layout: Layout, items: Vec<Value>, prototype: Option<Value>, widening: Widening) -> Result<Self, ErrorKind> {
         if element_count(layout.shape())? != items.len() { return Err(Kind::Length.into()); }
+        if items.is_empty() && let Some(kind) = prototype.as_ref().filter(|value| value.is_atom()).and_then(Value::kind) {
+            return Self::stored_buffer(layout, Buffer::with_capacity(kind.dtype(), 0), kind.strong(), Some(Range::EMPTY));
+        }
         if let Some((buffer, kind)) = packed(&items, widening) {
             return Ok(Self::Array(Arc::new(ArrayData::Compact { layout, kind, buffer: SharedBuffer::Owned(buffer), range: None })));
         }
@@ -816,9 +834,6 @@ impl Value {
     }
     pub fn empty(shape: impl Into<Shape>, prototype: Value) -> Result<Self, ErrorKind> {
         let shape = shape.into(); if element_count(&shape)? != 0 { return Err(Kind::Length.into()); }
-        if prototype.is_atom() && let Some(kind) = prototype.kind() {
-            return Self::stored_buffer(shape.into(), Buffer::with_capacity(kind.dtype(), 0), kind.strong(), Some(Range::EMPTY));
-        }
         Self::stored_values(shape.into(), Vec::new(), Some(prototype), Widening::Items)
     }
 
@@ -854,8 +869,7 @@ impl Value {
         let renderer = self.layout().renderer.clone(); self.with_layout(Layout::kept(layout, renderer))
     }
     pub fn enclose(&self) -> crate::error::Result<Self> {
-        let joined = Operation::Join(crate::primitive::Notation::Strand).call(&[self.clone()], 0)?;
-        Operation::Read(ReadOp::Reshape).call(&[Value::empty([0], Value::integer(0))?, joined], 1)
+        Ok(Self::stored_values(Layout::EMPTY, vec![self.clone()], None, Widening::Items)?)
     }
     pub(crate) fn unit(self) -> crate::error::Result<Self> { if self.is_atom() { Ok(self) } else { self.enclose() } }
 
@@ -874,8 +888,7 @@ impl Value {
         if self.is_atom() { return self.prototype(); }
         if let Some(kind) = self.kind() {
             let prototype = self.prototype(); let range = prototype.range();
-            let mut zero = Buffer::with_capacity(kind.dtype(), 1);
-            zero.extend_from(prototype.view().expect("a compact prototype"), 0..1);
+            let zero = Buffer::cast(prototype.view().expect("a compact prototype"), kind.dtype()).expect("a prototype fits its array kind");
             let base = Arc::new(ArrayData::Compact { layout: Layout::from([1]), kind, buffer: SharedBuffer::Owned(zero), range });
             return Self::Array(Arc::new(ArrayData::Compact { layout: self.layout().clone(), kind, buffer: SharedBuffer::View { base, map: Mapping::Single }, range }));
         }

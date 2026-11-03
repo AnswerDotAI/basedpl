@@ -3362,7 +3362,7 @@ r←{⍵×⍵} ⋄ r∂←{⍺×7} ⋄ {1+r ⍵}∂3   ⍝ 7
 r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ r 3   ⍝ 9
 
 ⍝ — A rule that passes its direction through gives the argument's kind, not the body's derivative of 0
-ste←{⌊⍵} ⋄ ste∂←{⍺} ⋄ {+/ste ⍵}∂ 1.5 2.5 3.5   ⍝ 1 1 1
+ste←{⌊⍵} ⋄ ste∂←{⍺} ⋄ [{+/ste ⍵}∂1.5 2.5 3.5; {×/ste¨⍵}∂2 3; {|ste ⍵}∂¯2.5; {(ste ⍵)÷2ₓ}∂5.5]   ⍝ [1 1 1;3 2;¯1;0]
 
 ⍝ — Each keeps an attached rule, whether `∂` is outside the map or inside it
 ste←{⌊⍵} ⋄ ste∂←{⍺} ⋄ v←1.5 2.5 3.5 4.5 ⋄ [{+/ste¨⍵}∂ v; {ste∂⍵}¨ v]   ⍝ [1 1 1 1; 1 1 1 1]
@@ -3765,6 +3765,16 @@ x←32 •float 1 2 5 ⋄ k←32 •float 2 ⋄ [(•storage {+/k!⍵}∂ x).kin
 ⍝ — Second and third derivatives of x!y differentiate the binomial's slopes through ψ and trigamma: C(7, k) at k = 3.5, C(n, 7) at n = 9.5, and C(n, k)'s Hessian at n = 9.5 and k = 3.5, as mpmath gives them
 [{⍵!7}∂∂ 3.5; {7!⍵}∂∂ 9.5; {7!⍵}∂∂∂ 9.5; {⍵₁!⍵₀}∂∂ 9.5 3.5]   ⍝ [¯18.530692356833047; 81.8131076388889; 67.39427083333334; [17.788834483090596 48.94944327947272⋄48.94944327947272 ¯22.746922430924926]]
 
+⍝ — Differentiating x needs no slope for polygamma's fixed order
+pg←•special "polygamma" ⋄ {1 pg ⍵}∂2   ⍝ pg←•special "polygamma" ⋄ 2 pg 2
+
+⍝ — Differentiating the order requires its unavailable partial
+pg←•special "polygamma" ⋄ {⍵ pg 2}∂1
+⍝ error: UNSUPPORTED
+
+⍝ — Incomplete gamma's x derivative includes the a=1, x=0 limit
+ig←•special "gammainc" ⋄ [{1 ig ⍵}∂0; {2 ig ⍵}∂3]   ⍝ [1;3×*¯3]
+
 ⍝ — In reverse mode, a result drawn only from constants has a gradient of zeros
 c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0
 
@@ -3781,6 +3791,9 @@ c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0
 ⍝ — A system function is outside the subset
 {•ucs ⍵}∂3
 ⍝ error: UNSUPPORTED
+
+⍝ — Division and π's ratio differentiate either argument, including the denominator
+[{⍵÷2}∂4; {2÷⍵}∂4; {⍵π2}∂4; {2π⍵}∂4]   ⍝ [0.5;¯0.125;0.5×π1;¯0.125×π1]
 
 ⍝ — ∂ needs a numeric result
 {"ab"}∂2
@@ -4639,6 +4652,9 @@ x←¯1j0.1 1j¯1
 
 ⍝⍝ Inverse combinations
 
+⍝ — An array at the start of a train binds the following function's left argument
+(3+)⁻¹8   ⍝ 5
+
 ⍝ — Right binding requires inversion with respect to the left argument of composition
 (+↢-↢2)⁻¹3   ⍝ 5
 
@@ -4821,8 +4837,8 @@ $t $t
 
 ⍝⍝ Compact integers and promotion
 
-⍝ — Exact tally keeps the mean of exact values rational
-avg←+/÷≢ ⋄ avg [1 2 4]ₓ   ⍝ 7r3
+⍝ — The mean of machine integers uses floor division
+avg←+/÷≢ ⋄ avg [1 2 4]ₓ   ⍝ 2ₓ
 
 ⍝ —
 +/⍳4ₓ   ⍝ 6ₓ
@@ -7581,6 +7597,9 @@ s←"ab" "cde" "" ⋄ w←[4 9] [¯1 16] ⋄ [{⍵,⍵}¨s ; {{0}¨⍵}¨s ; {�
 ⍝ =>
 ("abab" "cdecde" ""⋄[0 0] [0 0 0] ⍬⋄[2 3] [0ⱼ1 4])
 
+⍝ map-constant-fields — Each keeps the returned record's array-valued fields whole
+{["x":⍵ "text":"ab"]}¨1 2   ⍝ [["x":1 "text":"ab"] ["x":2 "text":"ab"]]
+
 ⍝ — An operand whose result holds ragged cells beside other values, such as a strand of a string and its length, joins its cells as nested cells, with no fallback [batched]
 ⍝⍝⍝ route batching
 s←"ab" "cde" "" ⋄ {⍵ (≢⍵)}¨s   ⍝ ("ab" 2ₓ⋄"cde" 3ₓ⋄"" 0ₓ)
@@ -8415,20 +8434,20 @@ x←1.5 ⋄ [x 2]ₓ   ⍝ [1 2]ₓ
 
 ⍝ — Exact literals and arithmetic normalise rationals
 [42ₓ 42r1 2r4 1r¯2 ¯1r¯2 ¯0ₓ 1ₓ÷3ₓ 1r3+1r6 6ₓ÷3ₓ 1r3-1r6 2r3×3r4 +2r3 -2r3 ×¯2r3 ×0ₓ ÷2r3 ÷¯2r3 2r3÷¯1r3]
-[42 42 1r2 ¯1r2 1r2 0 1r3 1r2 2 1r6 1r2 2r3 ¯2r3 ¯1 0 3r2 ¯3r2 ¯2]ₓ
+[42ₓ 42ᵣ 1ᵣ2 ¯1ᵣ2 1ᵣ2 0ₓ 0ₓ 1ᵣ2 2ₓ 1ᵣ6 1ᵣ2 2ᵣ3 ¯2ᵣ3 ¯1ᵣ 0ₓ 3ᵣ2 ¯3ᵣ2 ¯2ᵣ]
 
 ⍝ — Reductions and dfns keep exact values exact, and exact integers subtract exactly beyond 2*53
 sum←+/
 add←{⍺+⍵}
 [+/1r3 1r6;sum 1r3 1r6;add/1r3 1r6;-/[1 2 3]ₓ;9007199254740993ₓ-9007199254740992ₓ]
 ⍝ =>
-[1r2 1r2 1r2 2 1]ₓ
+[1ᵣ2 1ᵣ2 1ᵣ2 2ₓ 1ₓ]
 
 ⍝ — Display text reads back as the same exact number
 ⍎¨⍕¨[42r1 2r4 1r¯2 ¯0ₓ ÷¯2r3]   ⍝ [42 1r2 ¯1r2 0 ¯3r2]ₓ
 
-⍝ — A whole rational displays as an exact integer
-⍕42r1   ⍝ "42ₓ"
+⍝ — A whole rational omits its denominator
+⍕42r1   ⍝ "42ᵣ"
 
 ⍝ — An approximate number makes the result approximate
 {(•storage ⍵).kind}¨[1r3+1÷6 1÷6+0 1ₓ÷2 1÷2ₓ]   ⍝ "float64" "float64" "float64" "float64"
@@ -8436,7 +8455,7 @@ add←{⍺+⍵}
 ⍝⍝ Exact arrays prototypes and counts
 
 ⍝ — Empty exact sum retains an exact additive identity
-+/0#1r3   ⍝ 0ₓ
++/0#1r3   ⍝ 0ᵣ
 
 ⍝ — Empty exact product retains an exact multiplicative identity
 ×/0#1r3   ⍝ 1ₓ

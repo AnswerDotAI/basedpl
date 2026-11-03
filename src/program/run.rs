@@ -1,6 +1,6 @@
 //! One structural scheduler and one executor for forced graphs and recordings.
-use super::{BoundCall, Desc, Node, Out, Outputs, Plan, Program, Ran, Running, Schedule, Stage, Step};
-use crate::{Error, Value, error::Result, primitive::Operation};
+use super::{Desc, Node, Out, Outputs, Plan, Program, Ran, Running, Schedule, Stage, Step};
+use crate::{Error, Value, error::Result, primitive::{Notation, Operation, ReadOp}};
 use rustymath::agreement::Mapping;
 use std::{hash::{Hash, Hasher}, sync::Arc};
 
@@ -16,6 +16,7 @@ pub(crate) fn schedule(original: Arc<Program>, running: &mut Running, from: usiz
     running.bind(&program, geometry);
     let until = count_boundary(&program, running);
     let order: Vec<_> = program.order(from).into_iter().take_while(|&node| node < until).collect();
+    if !freshen(&mut program, running, &order)? { return Err(Error::planning()); }
     if crate::settings::verifies() { super::verify::check(&program); }
     let execution = program.execution_order(from);
     let readers = readers(&program, &execution);
@@ -154,8 +155,8 @@ fn completion(program: &Program, running: &Running, stages: &[Stage], until: usi
 fn stamp(program: &Program, running: &Running) -> Option<u64> {
     let mut hash = std::hash::DefaultHasher::new();
     for node in &program.nodes {
-        if let Node::Input { position, .. } = node && let Some(value) = running.inputs.get(*position).and_then(Option::as_ref) {
-            value.shape().hash(&mut hash);
+        if let Node::Input { position, control: false, .. } = node {
+            running.binding.input_desc(*position)?.shape().hash(&mut hash);
         }
     }
     for (at, parameter) in program.parameters.iter().enumerate() {
@@ -203,8 +204,8 @@ fn bind_input(program: &Program, running: &mut Running, node: usize) -> bool {
 fn bind_row(program: &Program, running: &Running, node: usize) -> Result<Option<Rebound>> {
     let Node::Step { origin, .. } = &program.nodes[node] else { return Ok(None); };
     let mut reads = program.reads(&origin.list).to_vec();
-    let bound = BoundCall { program, running, reads: origin.list.clone() };
-    let (step, outputs, plan) = crate::fusion::row(&origin.call_view(&bound), &mut reads)?;
+    let bound = running.call(program, origin)?;
+    let (step, outputs, plan) = crate::fusion::row(&bound.call_view(&bound.list), &mut reads)?;
     Ok(Some(Rebound { step, outputs: outputs.unwrap_or_else(Outputs::empty), reads, plan }))
 }
 
@@ -306,15 +307,15 @@ pub(crate) fn run(plan: &mut Plan, running: &mut Running) -> Result<Ran> {
         for &node in plan.releases[index].iter() { running.take_outputs(&program, node); }
         if let Some(outcome) = observe_counts(&program, running)? { return Ok(outcome); }
     }
-    program.outputs.clone().try_map(|output| running.value(&program, output).cloned().ok_or_else(Error::planning)).map(Ran::Done)
+    program.outputs.clone().try_map(|output| running.argument(&program, output).cloned().ok_or_else(Error::planning)).map(Ran::Done)
 }
 
 pub(crate) fn step(program: &Program, running: &mut Running, node: usize, final_uses: &[usize]) -> Result<Outputs<Value>> {
     use rustymath::{buffer::Buffer, operation::{Direction, Seed}};
     let Node::Step { step, origin, descs, .. } = &program.nodes[node] else { unreachable!("only executable nodes are scheduled") };
     if matches!(step, Step::At { .. }) { return at(program, running, node, final_uses); }
-    let bound = BoundCall { program, running, reads: origin.list.clone() };
-    let call = origin.call_view(&bound);
+    let bound = running.call(program, origin)?;
+    let call = bound.call_view(&bound.list);
     match step {
         Step::Product { left, right } => return product(program, running, node, *left, *right),
         Step::Call | Step::Draw | Step::Effect { .. } => return Operation::code(&call),
@@ -411,8 +412,8 @@ fn with_index_reads<T>(program: &Program, running: &Running, first: u32, indices
 
 fn address_route(program: &Program, running: &Running, node: usize, root: Out) -> Result<(rustymath::agreement::ReadPlan, usize)> {
     let Node::Step { origin, .. } = &program.nodes[node] else { unreachable!() };
-    let bound = BoundCall { program, running, reads: origin.list.clone() };
-    let call = origin.call_view(&bound);
+    let bound = running.call(program, origin)?;
+    let call = bound.call_view(&bound.list);
     if matches!(call.operation, Operation::ReadRelation { relation: crate::primitive::Relation::Back(_), .. }) {
         return crate::plan::with_relation(&call, |original, relation, _, removed| {
             let crate::primitive::Relation::Back(input) = relation else { unreachable!() };
@@ -435,8 +436,8 @@ fn at(program: &Program, running: &mut Running, node: usize, final_uses: &[usize
     let Node::Step { step: Step::At { root, values, ids, checks }, origin, descs, .. } = &program.nodes[node] else { unreachable!() };
     let desc = running.geometry.descs[descs.start as usize].clone().ok_or_else(Error::planning)?;
     let (kernel, settings) = {
-        let bindings = BoundCall { program, running, reads: origin.list.clone() };
-        let call = origin.call_view(&bindings);
+        let bindings = running.call(program, origin)?;
+        let call = bindings.call_view(&bindings.list);
         (call.kernel(call.variant(desc.dtype())?)?, super::blocks::kernel_settings(&call)?)
     };
     let source = program.reads[origin.list.start as usize + *root as usize].operand;
@@ -475,8 +476,8 @@ fn at(program: &Program, running: &mut Running, node: usize, final_uses: &[usize
 
 fn product(program: &Program, running: &Running, node: usize, left: u32, right: u32) -> Result<Outputs<Value>> {
     let Node::Step { origin, descs, .. } = &program.nodes[node] else { return Err(Error::planning()); };
-    let bound = BoundCall { program, running, reads: origin.list.clone() };
-    let call = origin.call_view(&bound);
+    let bound = running.call(program, origin)?;
+    let call = bound.call_view(&bound.list);
     let product = crate::plan::product(&call)?;
     let desc = running.geometry.descs[descs.start as usize].as_ref().ok_or_else(Error::planning)?;
     let Some((map, fold)) = crate::primitive::product_kernels(&call, Some(desc.dtype()))? else { return Err(Error::planning()); };
@@ -490,29 +491,37 @@ fn product(program: &Program, running: &Running, node: usize, left: u32, right: 
     Ok(numeric_output(program, node, Value::stored(desc, buffer)?))
 }
 
-pub(crate) fn framed_fallback(function: &crate::Function, axes: usize, atoms: &[Option<bool>], origin: super::Origin<&[Value]>) -> Result<Value> {
+pub(crate) fn framed_fallback(function: &crate::Function, axes: usize, atoms: &[Option<bool>], notation: Notation, origin: super::Origin<&[Value]>) -> Result<Value> {
     super::trace::Tracing::stop(super::Reason::Batch, origin.site.clone());
-    let positions: Vec<_> = atoms.iter().enumerate().filter_map(|(position, atom)| atom.map(|atom| (position, atom))).collect();
-    let ranks: Vec<_> = positions.iter().map(|&(position, _)| origin.list[position].rank().saturating_sub(axes)).collect();
-    let layouts: Vec<_> = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| (origin.list[position].core_layout(), rank)).collect();
+    let arguments = crate::Function::body_arguments(&origin)?.into_owned();
+    let positions: Vec<_> = crate::Function::argument_roots(&origin)?.into_iter().flatten().enumerate()
+        .filter_map(|(position, root)| atoms[root.leaves.start].map(|atom| (position, atom))).collect();
+    let ranks: Vec<_> = positions.iter().map(|&(position, _)| arguments[position].rank().saturating_sub(axes)).collect();
+    let layouts: Vec<_> = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| (arguments[position].core_layout(), rank)).collect();
     let frame = rustymath::agreement::Frames::new(&layouts)?;
-    let cells = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| origin.list[position].cells(rank)).collect::<std::result::Result<Vec<_>, _>>()?;
-    let at = |which: usize, value: Value| if positions[which].1 && value.is_unit() { value.at(0) } else { value };
+    let cells = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| arguments[position].cells(rank)).collect::<std::result::Result<Vec<_>, _>>()?;
+    let at = |which: usize, value: Value| if positions[which].1 && value.is_unit() { Operation::Read(ReadOp::Item).call(&[value], 0) } else { Ok(value) };
+    let from = vec![None; arguments.len()];
     let mut results = Vec::with_capacity(frame.count);
     for position in 0..frame.count {
         crate::execution::check()?;
-        let mut inputs = origin.list.to_vec();
-        for (which, &(input, _)) in positions.iter().enumerate() { inputs[input] = at(which, cells[which].get(frame.cell(which, position))?); }
-        results.push(function.run(origin.with_list(inputs.as_slice()))?);
+        let mut inputs = arguments.clone();
+        for (which, &(input, _)) in positions.iter().enumerate() { inputs[input] = at(which, cells[which].get(frame.cell(which, position))?)?; }
+        results.push(function.call_bound(&origin, &inputs, &from)?);
     }
     let prototype = if let Some(first) = results.first() { first.clone() } else {
-        let mut inputs = origin.list.to_vec();
-        for (which, &(input, _)) in positions.iter().enumerate() { inputs[input] = at(which, cells[which].prototype()?); }
-        crate::eval::session().prototype_mode(true, || function.run(origin.with_list(inputs.as_slice())))?
+        let mut inputs = arguments.clone();
+        for (which, &(input, _)) in positions.iter().enumerate() { inputs[input] = at(which, cells[which].prototype()?)?; }
+        function.prototype_bound(&origin, &inputs, &from)?
     };
     crate::explain::fallback("stopped framed body", frame.count);
-    let references = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| (origin.list[position].clone(), rank)).collect::<Vec<_>>();
+    let references = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| (arguments[position].clone(), rank)).collect::<Vec<_>>();
     let reference = super::control::frame_reference(&crate::array::Layout::from(frame.layout), &references)?;
+    if notation == Notation::Strand {
+        if results.is_empty() { return Ok(reference.layout().collect(results, prototype.zeroed())?); }
+        let call = crate::eval::projected_call(&origin, Operation::Join(notation), &results, &vec![None; results.len()])?;
+        return Operation::dispatch(call.reborrow())?.assemble()?.with_layout(reference.layout().clone());
+    }
     super::control::assemble(&reference, &results, &prototype, origin.mode)
 }
 

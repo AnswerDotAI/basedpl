@@ -4,7 +4,7 @@ use crate::{array::{Carried, Layout}, error::Result, primitive::{Operation, Read
 use std::{cell::{Cell, RefCell}, sync::Arc};
 
 #[derive(Default)]
-pub(crate) struct Levels { stack: RefCell<Vec<Level>>, last: Cell<usize> }
+pub(crate) struct Levels { stack: RefCell<Vec<Level>>, last: Cell<usize>, batch_rule: Cell<Option<usize>> }
 
 #[derive(Clone)]
 pub(crate) struct Level { pub(crate) id: usize, pub(crate) kind: LevelKind, depth: usize, handling: bool }
@@ -35,7 +35,7 @@ impl Levels {
         assert_eq!(stack.last().map(|level| level.id), Some(id), "levels end in stack order");
         stack.pop();
     }
-    pub(crate) fn clear(&self) { self.stack.borrow_mut().clear(); }
+    pub(crate) fn clear(&self) { self.stack.borrow_mut().clear(); self.batch_rule.set(None); }
     pub(crate) fn writing(&self, place: crate::eval::Place) -> Result<()> {
         for level in self.stack.borrow().iter().rev() {
             if place.frame().is_some_and(|frame| frame >= level.depth) { continue; }
@@ -53,11 +53,10 @@ impl Levels {
             .is_some_and(|level| std::mem::replace(&mut level.handling, handling))
     }
 
-    fn batched(&self, handling: bool) -> Option<Level> {
-        self.stack.borrow().iter().rev().find(|level| level.handling == handling && matches!(&level.kind, LevelKind::Batched { .. })).cloned()
+    pub(crate) fn innermost_batched(&self) -> Option<Level> {
+        self.stack.borrow().iter().rev().find(|level| !level.handling && matches!(&level.kind, LevelKind::Batched { .. })).cloned()
     }
-    pub(crate) fn innermost_batched(&self) -> Option<Level> { self.batched(false) }
-    pub(crate) fn current_batch_rule(&self) -> Option<Level> { self.batched(true) }
+    pub(crate) fn current_batch_rule(&self) -> Option<Level> { self.batch_rule.get().and_then(|id| self.find(id)) }
 }
 
 impl Level {
@@ -76,7 +75,12 @@ impl Level {
         let previous = session().levels.set_handling(self.id, true);
         let result = match &self.kind {
             LevelKind::Derivative => crate::derivative::rule(self, origin),
-            LevelKind::Batched { .. } => crate::batch::rule(self, origin),
+            LevelKind::Batched { .. } => {
+                let previous = session().levels.batch_rule.replace(Some(self.id));
+                let result = crate::batch::rule(self, origin);
+                session().levels.batch_rule.set(previous);
+                result
+            },
         };
         session().levels.set_handling(self.id, previous);
         result

@@ -14,17 +14,17 @@ impl Session {
     pub(super) fn blank() -> Self {
         Self { execution: Default::default(), prefacing: Default::default(), bindings: Default::default(), loading: Default::default(),
             depth: Default::default(), prototype: Default::default(), capture: Default::default(), levels: Default::default(), traces: Default::default(),
-            generator: crate::distribution::fresh(), args: Default::default(), error: Default::default(), token: Default::default(), guards: Default::default() }
+            generator: crate::distribution::fresh().into(), args: Default::default(), error: Default::default(), token: Default::default(), guards: Default::default() }
     }
     pub(crate) fn clear(&self) {
-        use std::sync::PoisonError;
         self.bindings.replace(Bindings::default());
         self.prefacing.set(false); self.depth.set(0); self.prototype.set(false); self.capture.set(false);
         self.loading.borrow_mut().clear(); self.args.borrow_mut().clear(); self.guards.borrow_mut().clear();
         self.levels.clear(); self.traces.replace(Default::default()); self.error.take(); self.token.take();
-        let generator = crate::distribution::fresh();
-        std::mem::swap(&mut *self.generator.lock().unwrap_or_else(PoisonError::into_inner), &mut *generator.lock().unwrap_or_else(PoisonError::into_inner));
+        self.generator.replace(crate::distribution::fresh());
     }
+    pub(crate) fn generator(&self) -> crate::distribution::Generator { self.generator.borrow().clone() }
+    pub(crate) fn seed(&self, seed: u64) { self.generator.replace(crate::distribution::seeded(seed)); }
     /// A new session's turn for a person at a terminal, with boxed display elided to the terminal's width.
     pub fn interactive() -> Turn { Self::make_interactive(); Self::new() }
     /// Makes the interactive display settings the current ones and the ones that `]clear` restores. Settings are process-wide, so this needs no session. Python's BPL magics use it on the workspace they share with the Python API.
@@ -154,7 +154,7 @@ impl Session {
     pub(crate) fn system_explain(&self, crate::system::HostCall { left, right, site: span, .. }: crate::system::HostCall<'_>) -> Result<Value, Error> {
         let sites = crate::data::Options::new("•explain", left, None, &["sites"])?.boolean("sites", false)?;
         let (result, events) = crate::explain::explained(sites, || {
-            let result = self.execute(None, right, span).and_then(|r| r.array(span));
+            let result = self.execute(None, right, span).and_then(|r| r.assemble());
             let result = result.and_then(|value| crate::graph::forced(&[&value]).map(|()| value));
             result
         });
@@ -499,11 +499,13 @@ impl Session {
         if shown != Some(&text) { self.execution.output(crate::OutputKind::Display, text); }
     }
 
-    /// Runs the text that `right` holds, as `⍎` does, with `left`'s keys as names where it's given. Under a trace, it stops the trace first (`program::trace::each_call`).
-    pub(super) fn execute(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
+    /// Runs `right` as BPL text, with `left`'s keys as names where given. Stops the current trace before execution.
+    pub(crate) fn execute(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Outputs<Value>, Error> {
         crate::program::trace::Tracing::stop(crate::program::Reason::Execute, Some(span.clone()));
         let source = Source::new("<execute>", Self::source_text(right, span)?);
-        match left { Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)), None => self.execute_source(source, span) }
+        let result = match left { Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)), None => self.execute_source(source, span) }?;
+        let outputs = match result.value { Binding::NoResult => Outputs::empty(), value => Outputs::one(value.into_value(span)?) };
+        Ok(outputs.with_shy(result.shy))
     }
 
     /// The character atom or vector that `⍎` and `•load` observe.

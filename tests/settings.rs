@@ -82,7 +82,7 @@ fn boxed_display_and_function_trees() {
     let f = s.eval("avg←+/÷≢ ⋄ avg");
     assert!(f.error.is_none() && f.value.is_none());
     assert_eq!(f.output_text(), ["fork\n├─ /\n│  └─ +\n├─ ÷\n└─ ≢"]);
-    equiv_in(&s, "avg [1 2 4]ₓ", "7r3");
+    equiv_in(&s, "avg [1 2 4]ₓ", "2ₓ");
     let r = s.eval("{⎕←⍵ ⋄ ⍵}1 2");
     assert_eq!(r.output_text().len(), 2);
     assert_eq!(r.output_text()[0], r.output_text()[1]);

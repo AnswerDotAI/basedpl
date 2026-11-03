@@ -288,7 +288,8 @@ fn host_item(array: &Value, index: usize, fill: Option<&Value>) -> Result<Value,
     if array.is_atom() { return Ok(array.clone()); }
     if matches!(array, Value::Pending(_) | Value::Carried { .. }) {
         let index = i64::try_from(index).map_err(|_| Error::new(Kind::Index, "item position is too large"))?;
-        return Operation::Read(ReadOp::Cell { rank: 0 }).call(&[Value::integer(index), array.clone()], 0);
+        let cell = Operation::Read(ReadOp::Cell { rank: 0 }).call(&[Value::integer(index), array.clone()], 0)?;
+        return Operation::Read(ReadOp::Item).call(&[cell], 0);
     }
     Ok(array.at(index))
 }
@@ -698,6 +699,7 @@ fn index_projection(origin: Origin<&[Value]>, purpose: ReadKind) -> Result<Optio
 }
 
 pub(super) fn pick_form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
+    if session().prototype.get() { return super::host_primitive(&origin.call_view(&origin.list)).map(Some); }
     if let Some(outputs) = fill_form(origin.reborrow())? { return Ok(Some(outputs)); }
     pick_projection(origin, ReadKind::Structure)
 }

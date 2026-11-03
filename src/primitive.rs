@@ -101,6 +101,8 @@ pub(crate) enum Operation {
         first: bool,
         /// A scan (`+\v`), not a fold; primitive scans run as fold steps.
         scan: bool,
+        /// Winner offsets within each cell after this many leading frame axes; none returns values.
+        positions: Option<usize>,
         pairing: Pairing,
     },
     /// A product: a mapped function, preceded by a fold function only when it contracts axes.
@@ -149,8 +151,8 @@ pub(crate) enum Pairing {
 pub(crate) struct ProductFunctions { pub(crate) fold: Option<usize>, pub(crate) map: usize }
 
 /// Part 5, llms.txt "Brackets": array notation's forms.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum Notation {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Notation {
     /// llms.txt: a strand, `a b`, `[a b]` or `[a;b]`: a vector of its items.
     Strand,
     /// llms.txt: rows, `[1 2⋄3 4]`: its items as major cells.
@@ -182,7 +184,7 @@ pub(crate) trait CallBindings {
     fn len(&self) -> usize;
     fn input(&self, position: usize) -> Option<Input<'_>>;
     fn value(&self, position: usize, read: ReadKind) -> crate::error::Result<Cow<'_, Value>>;
-    fn desc(&self, position: usize) -> Option<Cow<'_, Desc>>;
+    fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>>;
     fn function(&self, position: usize) -> Option<&Function>;
 }
 
@@ -192,7 +194,7 @@ impl CallBindings for Omitted<'_> {
     fn len(&self) -> usize { self.bindings.len() - self.range.len() }
     fn input(&self, position: usize) -> Option<Input<'_>> { self.bindings.input(self.index(position)) }
     fn value(&self, position: usize, read: ReadKind) -> crate::error::Result<Cow<'_, Value>> { self.bindings.value(self.index(position), read) }
-    fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> { self.bindings.desc(self.index(position)) }
+    fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>> { self.bindings.desc(self.index(position), literal) }
     fn function(&self, position: usize) -> Option<&Function> { self.bindings.function(self.index(position)) }
 }
 
@@ -355,7 +357,7 @@ impl CallView<'_> {
             }),
         }
     }
-    pub(crate) fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> { self.bindings.desc(position) }
+    pub(crate) fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> { self.bindings.desc(position, position < 64 && self.literals & (1 << position) != 0) }
     pub(crate) fn function(&self, position: usize) -> Option<&Function> { self.bindings.function(position) }
     pub(crate) fn product_map(&self) -> Option<&Function> { self.function(self.operation.product_functions()?.map) }
     pub(crate) fn product_fold(&self) -> Option<&Function> { self.function(self.operation.product_functions()?.fold?) }
@@ -437,7 +439,7 @@ impl Operation {
     }
     /// Batch this complete call, including non-row operations, through normal dispatch.
     pub(crate) fn cells(origin: &crate::program::Origin<&[Value]>, wholes: &[Value], frame: usize) -> crate::error::Result<crate::program::Origin<Vec<Value>>> { crate::batch::cells(origin, wholes, frame) }
-    pub(crate) fn linearity(call: &CallView<'_>, valence: usize) -> Linearity { crate::derivative::linearity(call, valence) }
+    pub(crate) fn linearity(call: &CallView<'_>) -> Linearity { crate::derivative::linearity(call) }
     /// Joint primal and tangent evaluation.
     pub(crate) fn jvp(origin: &crate::program::Origin<&[Value]>, tangents: &[Option<Value>]) -> crate::error::Result<JvpOutputs> { crate::derivative::jvp(origin, tangents) }
     pub(crate) fn partials(origin: &crate::program::Origin<&[crate::program::Read<Value>]>, result: &Value,
@@ -563,6 +565,7 @@ impl Operation {
             Self::Recipe(_) => numeric::code_recipe(call),
             Self::Join(_) => crate::array::join_code(call),
             Self::Convert(_) => numeric::code_convert(call),
+            Self::Fold { positions: Some(_), .. } => numeric::code_fold_positions(call),
             Self::Fold { .. } | Self::Product { .. } => {
                 let values = (0..call.len()).map(|position| call.input(position).map(|input| input.value.clone()).ok_or_else(Error::planning)).collect::<Result<Vec<_>, _>>()?;
                 let origin = call.origin(values);
@@ -602,8 +605,10 @@ impl Operation {
         else if let Some(row) = call.row() { (row.roles)(call)? } else { match call.operation {
             Self::Product { .. } => numeric::roles(call)?,
             Self::Join(Notation::Cells) => call.root(0).leaves.fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Description)),
+            Self::Read(ReadOp::Axes { .. }) => (call.root_boundary(1)..call.explicit)
+                .fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Description)),
             Self::Read(ReadOp::Reshape) => Roles::default().with(0, ReadKind::Structure),
-            Self::Read(ReadOp::Slice { .. }) => Roles::default().with(0, ReadKind::Value),
+            Self::Read(ReadOp::Slice { .. } | ReadOp::Cell { .. }) => Roles::default().with(0, ReadKind::Value),
             _ => Roles::default(),
         }};
         let first = call.root_boundary(call.operation.functions());
@@ -621,7 +626,7 @@ impl Operation {
             op if op.functions() != 0 => Setting::BODY,
             Self::Recipe(_) => Setting::BODY,
             Self::Primitive { primitive, .. } | Self::Fold { primitive, .. } => primitive.info().settings,
-            Self::Product { .. } | Self::Convert(_) | Self::At { combine: Some(_), .. } => Setting::BODY,
+            Self::Join(_) | Self::Product { .. } | Self::Convert(_) | Self::At { combine: Some(_), .. } => Setting::BODY,
             _ => &[],
         }
     }
@@ -682,13 +687,6 @@ impl FoldKind {
     pub(crate) const REDUCE: Self = Self { scan: false, first: false };
     pub(crate) fn glyph(self) -> &'static str {
         match (self.scan, self.first) { (false, false) => "/", (false, true) => "⌿", (true, false) => "\\", (true, true) => "⍀" }
-    }
-    /// The glyph's name, then the derived function's name, which covers both valences.
-    fn names(self) -> [&'static str; 3] {
-        match (self.scan, self.first) {
-            (false, false) => ["slash", "reduce", ""], (false, true) => ["slash-bar", "reduce-first", ""], (true, false) => ["backslash", "scan", ""],
-            (true, true) => ["backslash-bar", "scan-first", ""]
-        }
     }
     /// The axis a fold runs along: the single axis in `axis`, or by default the first or last axis.
     pub(crate) fn axis(self, axis: Option<&Value>, right: &Value) -> Result<usize, Error> {
@@ -818,7 +816,7 @@ impl Row {
         Self { linear: Linear { monadic, dyadic, zero }, ..self }
     }
     const fn moves(self) -> Self {
-        Self { form: fill_form, cells: structural::cell_read, build: structural::build,
+        Self { sources: structural::sources, form: structural::form, cells: structural::cell_read, build: structural::build,
             under: [Under::Structural; 2], linear: Linear { monadic: Linearity::Jointly(1), dyadic: Linearity::Jointly(2), zero: [false; 2] }, ..self }
     }
     pub(crate) fn identity(&self, call: &CallView<'_>, kind: crate::number::Kind) -> crate::error::Result<Option<Value>> {
@@ -1031,7 +1029,7 @@ impl Primitive {
         use {Arithmetic::*, Comparison::*, Linearity::{Each, Jointly, No}, Math::*};
         const W: Rank = WHOLE;
         macro_rules! row { ($g:expr, $n:expr, $m:expr, $d:expr, $r:expr) => { Row::new($g, $n, [$m, $d], $r) }; }
-        const DIVIDE: Row = Row::new("÷", "obelus", ["reciprocal", "divide"], [0; 3]).mapped().linear(No, Jointly(1), [false; 2]);
+        const DIVIDE: Row = Row::new("÷", "obelus", ["reciprocal", "divide"], [0; 3]).mapped();
         const FLOOR: Row = Row { integer_result: [IntegerResult::Dynamic, IntegerResult::Never], ..Row::new("⌊", "downstile", ["floor", "minimum"], [0; 3]).mapped().linear(No, No, [true, false]) };
         const CEILING: Row = Row { integer_result: [IntegerResult::Dynamic, IntegerResult::Never], ..Row::new("⌈", "upstile", ["ceiling", "maximum"], [0; 3]).mapped().linear(No, No, [true, false]) };
         match self {
@@ -1046,11 +1044,11 @@ impl Primitive {
             Self::Math(Power) => &const { Row { cost: 15.0, ..row!("*", "star", "exponential", "exponent", [0; 3]).mapped() } },
             Self::Math(Log) => &const { Row { cost: 12.0, ..row!("⍟", "circle-star", "natural-log", "logarithm", [0; 3]).mapped() } },
             Self::Math(Circle | Arc) => &const { Row { cost: 7.0, ..row!("○", "circle", "cis", "circular", [0; 3]).mapped() } },
-            Self::Math(Pi) => &const { row!("π", "pi", "pi-times", "pi-ratio", [0; 3]).mapped().linear(Jointly(1), Jointly(2), [false; 2]) },
+            Self::Math(Pi) => &const { row!("π", "pi", "pi-times", "pi-ratio", [0; 3]).mapped().linear(Jointly(1), No, [false; 2]) },
             Self::Math(Root) => &const { Row { cost: 9.25, ..row!("√", "radical", "sqrt", "root", [0; 3]).mapped() } },
             Self::Math(Factorial) => &const { Row { cost: 132.0, ..row!("!", "exclamation", "factorial", "binomial", [0; 3]).mapped() } },
-            Self::Math(Lcm) => &const { row!("∧", "wedge", "polar", "and", [0; 3]).mapped().linear(No, No, [false, true]) },
-            Self::Math(Gcd) => &const { row!("∨", "vee", "real-imag", "or", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) },
+            Self::Math(Lcm) => &const { Row { defined: [true, false], ..row!("∧", "wedge", "polar", "and", [0; 3]).mapped().linear(No, No, [false, true]) } },
+            Self::Math(Gcd) => &const { Row { defined: [true, false], ..row!("∨", "vee", "real-imag", "or", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) } },
             Self::Math(Nand) => &const { Row { defined: [true, false], ..row!("⊼", "wedge-bar", "square", "nand", [0; 3]).mapped().linear(No, No, [false, true]) } },
             Self::Math(Nor) => &const { Row { defined: [true, false], ..row!("⊽", "vee-bar", "double", "nor", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) } },
             Self::Math(Not) => &const { row!("~", "tilde", "not", "without", [0, W, W]).mapped().linear(No, No, [true, false]) },
@@ -1184,17 +1182,17 @@ fn normalize_fill(origin: Origin<&[Value]>, sources: &[TreeRoot]) -> Result<Opti
     let mut kind: Option<NumberKind> = None;
     for root in sources {
         if root.leaves.len() != 1 { return Ok(None); }
-        let Some(source) = call.desc(root.leaves.start) else { return Ok(None); };
+        let Some(source) = call.root_desc(root.index) else { return Ok(None); };
         kind = Some(match kind { None => source.kind, Some(kind) => kind.join(source.kind).ok_or_else(|| Error::domain("fill sources have incompatible types"))? });
     }
     let Some(kind) = kind else { return Ok(None); };
-    let fill_desc = (fill.leaves.len() == 1).then(|| call.desc(fill.leaves.start)).flatten();
+    let fill_desc = (fill.leaves.len() == 1).then(|| call.root_desc(fill.index)).flatten();
     let kind = fill_kind(kind, fill_desc.as_deref(), crate::settings::captured(&call)?)?;
     let mut arguments = (0..origin.explicit_roots as usize).map(|root| call.root_input(root).map(Cow::into_owned)).collect::<Result<Vec<_>, _>>()?;
     let from = (0..origin.explicit_roots as usize).map(|root| Some(call.root(root).leaves.start)).collect::<Vec<_>>();
     let mut changed = false;
     for root in sources {
-        let source = call.desc(root.leaves.start).ok_or_else(Error::planning)?;
+        let source = call.root_desc(root.index).ok_or_else(Error::planning)?;
         if source.kind.dtype() != kind.dtype() || source.kind.fixed_width() != kind.fixed_width() {
             let operation = Operation::Convert(Mark::Type { dtype: kind.dtype(), fixed: kind.fixed_width().is_some() });
             let converted = crate::eval::projected_call(&origin, operation, &[arguments[root.index].clone()], &[from[root.index]])?;
@@ -1226,7 +1224,7 @@ fn map_form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
     if call.fill_root().is_none() { return Ok(None); }
     let sources = call.source_roots()?;
     if let Some(value) = normalize_fill(origin.reborrow(), &sources)? { return Ok(Some(value)); }
-    if sources.iter().any(|root| root.leaves.len() != 1 || call.desc(root.leaves.start).is_none()) { return Ok(None); }
+    if sources.iter().any(|root| root.leaves.len() != 1 || call.root_desc(root.index).is_none()) { return Ok(None); }
     let Operation::Primitive { primitive, .. } = origin.operation else { return Err(Error::planning()); };
     let reads: Vec<_> = origin.list.iter().map(|value| crate::program::Read { operand: value.clone(), map: Mapping::Linear(1) }).collect();
     let reading = origin.with_list(reads.as_slice());
@@ -1241,7 +1239,7 @@ pub(crate) fn filled_range(call: &CallView<'_>, source: &Desc) -> Option<rustyma
     let range = source.range?;
     let fill = if let Some(root) = call.fill_root() {
         if root.leaves.len() != 1 { return None; }
-        call.desc(root.leaves.start)?.bounds()
+        call.root_desc(root.index)?.bounds()
     } else { source.zero().range()? };
     Some(rustymath::facts::Range { lo: range.lo.min(fill.lo), hi: range.hi.max(fill.hi) })
 }
@@ -1282,13 +1280,16 @@ fn host_primitive(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
     if primitive.info().names[usize::from(dyadic)].is_empty() { return Err(Error::domain("function does not have this valence")); }
     let numeric = call.numeric()?;
     let value = match (*primitive, dyadic) {
-        (Identity(left), _) => return Ok(Outputs::one(call.root_input(if left && dyadic { roots.start } else { right_root })?.into_owned())),
         (Shape | Tally | Depth, false) => code_metadata(call)?,
         (Windows, _) => structural::windowed(call)?,
         _ => {
-            let right = call.root_value(right_root, ReadKind::Value)?;
+            let sources = if primitive.selects(dyadic) { call.source_roots()? } else { Vec::new() };
+            let read = |root| if sources.iter().any(|source| source.index == root) {
+                call.root_input(root)?.exposed().map(Cow::Owned)
+            } else { call.root_value(root, ReadKind::Value) };
+            let right = read(right_root)?;
             let fill = call.fill_root().map(|root| call.root_value(root.index, ReadKind::Value)).transpose()?;
-            let left = dyadic.then(|| call.root_value(roots.start, ReadKind::Value)).transpose()?;
+            let left = dyadic.then(|| read(roots.start)).transpose()?;
             let left = left.as_deref();
             let span = call.site.cloned().unwrap_or_else(|| Span::whole(crate::Source::new("<primitive>", primitive.glyph())));
             let axis_spec = call.axis_root().map(|root| call.root_value(root.index, ReadKind::Structure)).transpose()?;
@@ -1308,6 +1309,7 @@ fn host_primitive(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
                 (Find, Some(left)) => find(left, &right, numeric)?, (Find, None) => groups(&right, &span, numeric)?,
                 (Grade(down), _) => grade(left, &right, down)?,
                 (MatrixDivide, _) => matrix_divide(left, &right, numeric)?, (Format, _) => format_array(left, &right)?,
+                (Execute, _) => return session().execute(left, &right, &span),
                 (Encode | Decode, Some(left)) => radix(left, &right, *primitive == Encode, numeric)?,
                 (Encode, None) => binary_encode(&right)?, (Decode, None) => radix(&binary_base(), &right, false, numeric)?,
                 (Index, Some(left)) => squad(left, &right, axes.as_deref(), fill.as_deref().cloned(), &span)?, (Bracket, Some(left)) => brackets(left, &right, fill.as_deref().cloned(), &span)?,
@@ -1333,9 +1335,6 @@ fn host_primitive(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
                     match axis_spec { Some(spec) => placed_cells(&mixed, right.rank(), &spec)?, None => mixed }
                 },
                 (Enclose | Nest, Some(left)) => partition(left, &right, axis()?, *primitive == Nest)?,
-                (Enclose | Nest, None) => if let Some(axes) = axes { enclose_axes(&right, &axes)? }
-                    else if *primitive == Nest && right.elements().chain([right.prototype()]).any(|value| matches!(value, Value::Array(_))) { right.into_owned() }
-                    else { right.enclose().described("invalid enclosure")? },
                 (Take, None) => pick(&Value::integer(0), &right, session().prototype.get(), fill.as_deref(), &span)?,
                 (Drop, None) => split(&right, axis()?)?, (Take | Drop, Some(left)) => take_drop(*primitive == Take, left, &right, axes.as_deref(), fill.as_deref().cloned())?,
                 (PartialSort { .. } | Ranks { .. }, _) => search::combined(*primitive, left, &right, &span, numeric)?,
@@ -1644,9 +1643,10 @@ fn inverse_catenate(a: &Value, first: bool, right: &Value, axis: Option<usize>, 
 }
 
 fn inverse_decode(base: &Value, right: &Value, settings: Numeric) -> Result<Value, Error> {
+    let (base, right) = (base.read(ReadKind::Structure)?, right.read(ReadKind::Structure)?);
     if !base.is_unit() {
         if base.shape().len() != 1 { return Err(Error::new(Kind::Rank, "inverse decode needs a unit or vector base")); }
-        return radix(base, right, true, settings);
+        return radix(&base, &right, true, settings);
     }
     let b = numeric(&base.at(0))?.clone();
     if b.order(&b.one())? != Ordering::Greater { return Err(Error::domain("inverse decode base must exceed one")); }
@@ -1665,7 +1665,7 @@ fn inverse_decode(base: &Value, right: &Value, settings: Numeric) -> Result<Valu
         digits = digits.max(count);
     }
     let bases = Value::from_parts(vec![digits], vec![Value::Number(b); digits], base.prototype().clone()).described("invalid inverse decode base")?;
-    radix(&bases, right, true, settings)
+    radix(&bases, &right, true, settings)
 }
 
 fn inverse_where(right: &Value) -> Result<Value, Error> {

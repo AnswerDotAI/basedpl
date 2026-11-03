@@ -3,7 +3,7 @@ use crate::program::layout::{Encoder, KeyPart};
 use crate::{
     At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, ReadKind, Source, Span, Value,
     display::Elide, graph::Pending, number::{Mark, Numeric},
-    primitive::{Builtin, Operation, Pairing, Primitive}, program::{BindingContext, Origin}, symbols::Notation,
+    primitive::{Builtin, Operation, Pairing, Primitive}, program::{BindingContext, Origin, Outputs}, symbols::Notation,
     syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind}, system::SystemFunction
 };
 use crate::{array::{Tree, Trees, TreeRoot}, name::Name};
@@ -163,14 +163,14 @@ impl Function {
     }
     /// The same prepared body and positional substitution serve framed rules and control inlining.
     pub(crate) fn framed_projection<'a>(&'a self, parent: &Origin<&[Value]>)
-        -> Result<Option<(usize, &'a [Option<bool>], Origin<Vec<Value>>, Vec<Option<usize>>)>, Error> {
-        let FunctionNode::Applied { op: Operator::Kind(OperatorKind::Framed { axes, atoms }), .. } = self.node() else { return Ok(None); };
+        -> Result<Option<(usize, &'a [Option<bool>], crate::primitive::Notation, Origin<Vec<Value>>)>, Error> {
+        let FunctionNode::Applied { op: Operator::Kind(OperatorKind::Framed { axes, atoms, notation }), .. } = self.node() else { return Ok(None); };
         let inner = self.operand(parent, 0)?;
         let Value::Function(inner) = inner.as_ref() else { return Err(Error::planning()); };
         let roots = Self::argument_roots(parent)?.into_iter().flatten().collect::<Vec<_>>();
-        let (origin, projection) = inner.bound_roots(parent, &roots)?;
+        let (origin, _) = inner.bound_roots(parent, &roots)?;
         if atoms.len() != origin.list.len() { return Err(Error::planning()); }
-        Ok(Some((*axes, atoms, origin, projection)))
+        Ok(Some((*axes, atoms, *notation, origin)))
     }
     pub(crate) fn prototype_bound(&self, parent: &crate::program::Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<Value, Error> {
         session().prototype_mode(true, || { let origin = self.bound(parent, arguments, from)?; self.run(origin.reborrow()) })
@@ -624,9 +624,6 @@ impl CaptureBindings {
         for (ordinal, &index) in self.order.iter().enumerate() { bindings.scopes[index as usize].provenance = Some(ScopeSource::Input(ordinal as u32)); }
         Arc::new(bindings)
     }
-    pub(crate) fn rebind_into(&self, target: &crate::program::Origin<&[Value]>, current: &crate::program::Origin<()>) -> Option<Self> {
-        self.rebind(target.list.len().checked_sub(target.capture_start())?, current)
-    }
     pub(crate) fn rebind(&self, capture_leaf_count: usize, current: &crate::program::Origin<()>) -> Option<Self> {
         let input = |ordinal: u32| current.bindings.order.get(ordinal as usize).and_then(|&index| current.bindings.scopes.get(index as usize));
         let mut result = self.stripped();
@@ -832,7 +829,7 @@ pub enum OperatorKind {
     Reduce, ReduceFirst, Scan, ScanFirst, Each, Commute, Inverse, Outer, Key, Derivative, Optimize, Bitwise,
     Mark(Mark), Under, Atop, Over, Rank, Axis, Stencil, Dot, Power, Before, After, Valences, Agenda,
     Field(Name), Index,
-    Framed { axes: usize, atoms: Box<[Option<bool>]> },
+    Framed { axes: usize, atoms: Box<[Option<bool>]>, notation: crate::primitive::Notation },
 }
 
 
@@ -842,6 +839,7 @@ pub(crate) struct OperatorInfo {
     pub(crate) inverse: fn(&Function, crate::program::Origin<&[Value]>) -> crate::error::Result<Value>,
     pub(crate) discards: fn(&OperatorKind, &[Value], bool) -> bool,
     pub(crate) python: &'static str,
+    pub(crate) names: [&'static str; 3],
     pub(crate) glyph: &'static str,
     pub(crate) dyadic: bool,
     pub(crate) operands: fn(&OperatorKind, usize, &FunctionOperand) -> OperandKind,
@@ -957,7 +955,9 @@ impl Function {
     pub(crate) fn environment(&self) -> Option<usize> {
         let mut frame = self.0.environment.parent;
         if let FunctionNode::Applied { op, .. } = self.node() { frame = frame.max(op.environment()); }
-        for operand in self.operands().iter() { if let FunctionOperand::Value { value: value, .. } = operand { frame = frame.max(value.environment()); } }
+        for (i, operand) in self.operands().iter().enumerate() {
+            if self.node().traverses_operand(i, operand) && let Some(value) = operand.stored() { frame = frame.max(value.environment()); }
+        }
         for rule in self.rules().into_iter().flat_map(|rules| rules.inverse.iter().chain(&rules.derivative)) { frame = frame.max(rule.environment()); }
         frame
     }
@@ -1269,7 +1269,7 @@ pub struct Session {
     capture: std::cell::Cell<bool>,
     pub(crate) levels: crate::transform::Levels,
     pub(crate) traces: std::cell::RefCell<crate::program::trace::Traces>,
-    pub(crate) generator: crate::distribution::Generator,
+    generator: std::cell::RefCell<crate::distribution::Generator>,
     pub(crate) args: std::cell::RefCell<Vec<String>>,
     pub(crate) error: rustymath::error::ErrorSlot,
     pub(crate) token: std::cell::RefCell<Option<Pending>>,

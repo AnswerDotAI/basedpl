@@ -13,8 +13,8 @@ pub(crate) fn contract(program: &mut Program, running: &mut Running, node: usize
     if !matches!(input.map, Mapping::Linear(1)) { return Ok(false); }
     let Node::Step { step: Step::Map { left: Some(left), right, variant }, origin: multiply, .. } = &program.nodes[input.operand.node] else { return Ok(false); };
     if multiply.operation.primitive() != Some(TIMES) || multiply.mode != origin.mode { return Ok(false); }
-    let bound = super::BoundCall { program, running, reads: multiply.list.clone() };
-    let Some(mapper) = multiply.call_view(&bound).kernel(*variant)? else { return Ok(false); };
+    let bound = running.call(program, multiply)?;
+    let Some(mapper) = bound.call_view(&bound.list).kernel(*variant)? else { return Ok(false); };
     if mapper.result_dtype() != running.desc(program, input.operand).unwrap().dtype() { return Ok(false); }
     let source = [program.reads[multiply.list.start as usize + *left as usize].clone(), program.reads[multiply.list.start as usize + *right as usize].clone()];
     let grid = running.desc(program, input.operand).unwrap().layout.clone();

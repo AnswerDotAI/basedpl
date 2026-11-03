@@ -234,9 +234,7 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
     settings::set_float_set(float_set);
     settings::set_hanzi_aliases(hanzi_aliases);
     if let Some(n) = threads { rustymath::parallel::set_threads(n); }
-    if let Some(seed) = seed {
-        *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Counter::seeded(seed);
-    }
+    if let Some(seed) = seed { session.seed(seed); }
     let entries = display.entries(numeric.width).into_iter().chain(numeric.entries()).chain([
         ("threads", Value::integer(rustymath::parallel::thread_setting() as i64)), ("hanzi_aliases", Value::Number(Number::from_bool(hanzi_aliases))),
     ]);

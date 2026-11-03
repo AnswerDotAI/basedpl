@@ -169,6 +169,9 @@ fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
     system.check(left_value.as_deref())?;
     let host = HostCall { left: left_value.as_deref(), right: &right_value, site: call.site.ok_or_else(Error::planning)?, numeric: call.numeric()? };
     if let Call::Active(active) = system.call { return active(host).map(|value| Some(Outputs::one(value))); }
+    if host.left.into_iter().chain([host.right]).any(|value| crate::derivative::tag(value).is_some()) {
+        return Err(crate::derivative::system(system.name));
+    }
     if session().prototype.get() && let Some(prototype) = system.prototype { return Ok(Some(Outputs::one(prototype(host)))); }
     if let Some(item) = system.item && (item.maps(&right_value) || item.rows(&right_value)) {
         let mut mapped = function.clone();
@@ -256,7 +259,7 @@ const BUILTINS: &[SystemFunction] = &[
     row("•replace", Call::Value(crate::regex::replace), Dyadic, None, None, None),
     row("•distribution", Call::Value(crate::distribution::distribution), Ambivalent, Some(Text), Some(record), None),
     row("•special", Call::Value(crate::primitive::special), Monadic, Some(Text), Some(special), None),
-    row("•rand", Call::Value(crate::distribution::generator), Monadic, None, Some(record), None),
+    row("•rand", Call::Value(crate::distribution::generator), Monadic, None, Some(record), None).acting_as(Acts::Records),
     row("•nget", Call::Value(crate::data::read), Ambivalent, Some(Text), Some(text), None).acting_as(Acts::Records),
     row("•nput", Call::Effect(crate::data::write), Dyadic, None, Some(number), None).acting_as(Acts::Records),
     row("•fetch", Call::Value(crate::data::fetch), Ambivalent, Some(Text), Some(record), None).acting_as(Acts::Ends),

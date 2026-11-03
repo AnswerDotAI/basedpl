@@ -99,18 +99,17 @@ pub(crate) fn reorder(right: &Value, order: &[usize]) -> Result<Value, Error> {
 
 /// The cells of `right` made of `axes`, in that order, framed by its other axes.
 pub(super) fn enclose_axes(right: &Value, axes: &[usize]) -> Result<Value, Error> {
-    let (shape, stride) = (right.shape(), strides(right.shape()));
-    let others: Vec<_> = (0..shape.len()).filter(|a| !axes.contains(a)).collect();
+    let rank = right.rank();
+    let others: Vec<_> = (0..rank).filter(|axis| !axes.contains(axis)).collect();
     let (frame, cell) = (right.layout().axes(others.iter().copied()), right.layout().axes(axes.iter().copied()));
     generated_len(frame.shape())?;
     generated_len(cell.shape())?;
-    let data = if !axes.is_empty() && axes.iter().copied().eq(shape.len() - axes.len()..shape.len()) {
-        right.cells(axes.len())?.collect().described("invalid enclosed cells")?
-    } else {
-        let tables: Vec<_> = axes.iter().map(|&a| Steps::along(shape[a], stride[a])).collect();
-        Steps::combined(0, &others.iter().map(|&a| Steps::along(shape[a], stride[a])).collect::<Vec<_>>()).into_iter()
-            .map(|base| walked(right, cell.clone(), base, &tables, None)).collect::<Result<Vec<_>, _>>().described("invalid enclosed cells")?
+    let order: Vec<_> = others.into_iter().chain(axes.iter().copied()).collect();
+    let whole = if order.iter().copied().eq(0..rank) { right.clone() } else {
+        let dimensions = order.iter().map(|&axis| ViewAxis { input: 0, axis: Some(axis) }).collect();
+        Operation::Read(ReadOp::Axes { axes: dimensions, destinations: rustymath::search::inverse_permutation(order.into_iter()).into() }).call(&[right.clone()], 0)?
     };
+    let data = whole.cells(axes.len())?.collect()?.into_iter().map(|value| if value.is_atom() { value.enclose() } else { Ok(value) }).collect::<Result<Vec<_>, Error>>()?;
     let prototype = match data.first() { Some(cell) => cell.zeroed(), None => cell.filled(&right.prototype()) };
     frame.collect(data, prototype).described("invalid enclosed array")
 }
@@ -480,6 +479,38 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
     Value::from_parts(vec![data.len()], data, prototype).described("invalid partition result")
 }
 
+pub(super) fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
+    if let Some(outputs) = fill_form(origin.reborrow())? { return Ok(Some(outputs)); }
+    let call = origin.call_view(&origin.list);
+    let roots = call.explicit_argument_roots();
+    let Operation::Primitive { primitive, .. } = call.operation else { return Err(Error::planning()); };
+    if matches!(primitive, Primitive::Identity(_)) {
+        let source = call.source_roots()?.into_iter().next().ok_or_else(Error::planning)?.index;
+        return call.root_input(source).map(|value| Some(Outputs::one(value.into_owned())));
+    }
+    if roots.len() != 1 || !matches!(primitive, Primitive::Enclose | Primitive::Nest) { return Ok(None); }
+    let right = call.root_input(roots.start)?;
+    let value = if let Some(root) = call.axis_root() {
+        let right = right.exposed()?;
+        let spec = call.root_value(root.index, ReadKind::Structure)?;
+        enclose_axes(&right, &axes(&resolve_axes(&spec, right.layout())?, right.rank())?)?
+    } else if *primitive == Primitive::Nest {
+        let right = right.exposed()?;
+        if right.holds_mixed() && right.elements().chain([right.prototype()]).any(|value| !value.is_atom()) { right }
+        else { right.enclose()? }
+    } else { right.enclose()? };
+    Ok(Some(Outputs::one(value)))
+}
+pub(super) fn sources(call: &CallView<'_>) -> Result<Vec<TreeRoot>, Error> {
+    let roots = call.explicit_argument_roots();
+    let Operation::Primitive { primitive, .. } = call.operation else { return Err(Error::planning()); };
+    let source = match primitive {
+        Primitive::Ravel | Primitive::CatenateFirst if roots.len() == 2 => return Ok(roots.map(|root| call.root(root)).collect()),
+        Primitive::Identity(true) if roots.len() == 2 => roots.start,
+        _ => roots.end.checked_sub(1).ok_or_else(Error::planning)?,
+    };
+    Ok(vec![call.root(source)])
+}
 fn parameter_read(primitive: Primitive) -> Option<ReadKind> {
     Some(match primitive {
         Primitive::Shape | Primitive::Take | Primitive::Drop | Primitive::Replicate | Primitive::Reverse(_) | Primitive::Enclose | Primitive::Nest => ReadKind::Count,
@@ -516,8 +547,8 @@ impl CallBindings for CellBindings<'_> {
     fn input(&self, position: usize) -> Option<Input<'_>> { self.bindings.input(position) }
     fn value(&self, position: usize, read: ReadKind) -> Result<Cow<'_, Value>, Error> { self.bindings.value(position, read) }
     fn function(&self, position: usize) -> Option<&Function> { self.bindings.function(position) }
-    fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> {
-        let desc = self.bindings.desc(position)?;
+    fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>> {
+        let desc = self.bindings.desc(position, literal)?;
         let Ok(input) = self.inputs.binary_search_by_key(&position, |input| input.position as usize) else { return Some(desc) };
         let mut desc = desc.into_owned();
         if self.frame > desc.shape().len() { return None; }
@@ -543,7 +574,7 @@ pub(crate) fn cell_read(origin: &Origin<&[Value]>, wholes: &[Value], frame: usiz
     let inputs = positions.into_iter().filter_map(|position| call.desc(position)
         .map(|desc| CellInput { position: position as u32, atom: desc.atom, weak: desc.kind.weak })).collect();
     let operation = Operation::Read(ReadOp::Cells { operation: Box::new(origin.operation.clone()), frame, inputs });
-    let mut normalized = origin.with_list(wholes); normalized.operation = operation.clone();
+    let mut normalized = origin.with_list(origin.list); normalized.operation = operation.clone();
     let values = crate::batch::lifted(&normalized.reborrow(), wholes, frame, level.id)?;
     let from: Vec<_> = (0..values.len()).map(Some).collect();
     origin.rebuilt(operation, values, &from, origin.explicit, origin.explicit_roots, origin.trees.clone())
@@ -558,13 +589,13 @@ fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
     let left = (roots.len() == 2).then(|| call.root(roots.start));
     let source = if *primitive == Identity(true) { left.as_ref().unwrap_or(&right) } else { &right };
     if source.leaves.len() != 1 { return Ok(None); }
+    let Some(desc) = call.root_desc(source.index) else { return Ok(None) };
     let source = source.leaves.start;
-    let Some(desc) = call.desc(source) else { return Ok(None) };
     let rank = desc.shape().len();
     if matches!(primitive, Ravel | CatenateFirst) && let Some(left) = &left {
         if left.leaves.len() != 1 { return Ok(None); }
         let left_position = left.leaves.start;
-        let Some(left) = call.desc(left_position) else { return Ok(None); };
+        let Some(left) = call.root_desc(left.index) else { return Ok(None); };
         let Some(kind) = left.kind.join(desc.kind) else { return Ok(None); };
         let rank = rank.max(left.shape().len()).max(1);
         let axis = call.axis_root().map(|root| {

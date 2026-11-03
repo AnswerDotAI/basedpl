@@ -113,6 +113,8 @@ impl Encoder {
     }
 
     pub(crate) fn value(&mut self, value: &Value, purpose: ReadKind) -> Result<()> {
+        let stored = value.read_borrowed(purpose)?;
+        let value = stored.as_ref();
         let parameter = match purpose {
             ReadKind::Description | ReadKind::RuntimeOnly => return Err(crate::Error::planning()),
             ReadKind::Kind if value.kind().is_some() => Parameter::Kind(value.kind().unwrap()),
@@ -183,8 +185,7 @@ pub(crate) fn guard_key(origin: &super::Origin<&[Value]>, reads: &[super::Parame
     let mut key = Encoder::default();
     for parameter in reads {
         if let super::Parameter::Input { position, read } = parameter {
-            let value = origin.list.get(*position).ok_or_else(crate::Error::planning)?.read(*read)?;
-            key.value(&value, *read)?;
+            key.value(origin.list.get(*position).ok_or_else(crate::Error::planning)?, *read)?;
         }
     }
     Ok(key.finish())

@@ -1,5 +1,5 @@
-use crate::{Error, Value, array::{ArrayData, Carried, Widening, map_leaves}, error::Result, graph::{Node, Pending},
-    primitive::{Operation, Primitive, SelectionProjection}, program::{Desc, Origin, Read, Step, trace::Role}};
+use crate::{Error, Value, array::{ArrayData, Carried, Frame, Widening, map_leaves}, error::Result, graph::{Node, Pending},
+    primitive::{Operation, Primitive, ReadOp, SelectionProjection}, program::{Desc, Origin, Read, Step, trace::Role}};
 use rustymath::{agreement::{ReadPlan, ReadRoute}, hashing::HashMap, error::Kind as ErrorTag};
 use std::sync::Arc;
 
@@ -30,7 +30,7 @@ pub(crate) fn rooted(root: &Value) -> Result<Value> {
             },
         })
     }
-    mark(root, &mut 0)
+    mark(&root.exposed()?, &mut 0)
 }
 
 #[derive(Clone)]
@@ -83,8 +83,8 @@ impl<'a> RootPorts<'a> {
         if !port.writable { return Ok(current); }
         replace(&current, &port.path, value)
     }
-    pub(crate) fn visit_execution(&self, target: &Value, mut visit: impl FnMut(&Value, &[usize], Destination<'_>) -> Result<()>) -> Result<bool> {
-        Walking::new(self, true).visit(target, self.root, &mut Vec::new(), &mut visit)
+    pub(crate) fn visit_execution(&self, target: &Value, values: &Value, mut visit: impl FnMut(&Value, Value, Destination<'_>) -> Result<()>) -> Result<bool> {
+        Walking::new(self, true).visit(target, self.root, values, &mut visit)
     }
 }
 
@@ -117,18 +117,11 @@ impl<'ports, 'root> Walking<'ports, 'root> {
     }
     fn validate(&mut self, target: &Value, root: &Value) -> Result<bool> {
         if whole_path(target, root).is_some() { return Ok(true); }
-        let target = subject(target);
-        if let Value::Array(array) = target && let ArrayData::Mixed { items, prototype, .. } = &**array {
-            for item in items.iter().chain(prototype.iter()) { if !self.validate(item, root)? { return Ok(false); } }
+        let exposed = subject(target).exposed()?;
+        let target = subject(&exposed);
+        if let Value::Array(array) = target && let ArrayData::Mixed { items, .. } = &**array {
+            for item in items { if !self.validate(item, root)? { return Ok(false); } }
             return Ok(true);
-        }
-        if let Some((Step::Call, origin)) = target.pending().and_then(|pending| pending.node.recipe()) {
-            let call = origin.call_view(&origin);
-            if let Operation::Primitive { primitive, .. } = call.operation
-                && primitive.selects(call.explicit_argument_roots().len() == 2) {
-                for source in call.source_roots()? { if !self.validate(call.root_input(source.index)?.as_ref(), root)? { return Ok(false); } }
-                return Ok(true);
-            }
         }
         Ok(self.value(target).map_err(Error::from)?.is_some())
     }
@@ -179,26 +172,28 @@ impl<'ports, 'root> Walking<'ports, 'root> {
             ReadRoute::Index { .. } => return Err(WalkError::Foreign),
         }))
     }
-    fn visit(&mut self, target: &Value, root: &Value, path: &mut Vec<usize>, visit: &mut impl FnMut(&Value, &[usize], Destination<'_>) -> Result<()>) -> Result<bool> {
-        if let Some(destination) = whole_path(target, root) { visit(target, path, Destination::Whole(&destination))?; return Ok(true); }
-        if let Some((projection, origin)) = self.projection(target)? {
-            return match projection {
-                SelectionProjection::Value(value) => self.visit(&value, root, path, visit),
-                SelectionProjection::Route(route) => {
-                    let Some(route) = self.route(&route, &origin.list).map_err(Error::from)? else { return Ok(false); };
-                    visit(target, path, Destination::Route(route))?; Ok(true)
-                }
-            };
-        }
-        let target = subject(target);
-        if let Value::Array(data) = target && let ArrayData::Mixed { items, .. } = &**data {
+    fn visit(&mut self, target: &Value, root: &Value, values: &Value, visit: &mut impl FnMut(&Value, Value, Destination<'_>) -> Result<()>) -> Result<bool> {
+        if let Some(destination) = whole_path(target, root) { visit(target, values.clone(), Destination::Whole(&destination))?; return Ok(true); }
+        let exposed = subject(target).exposed()?;
+        let target = subject(&exposed);
+        let route = match self.projection(target)? {
+            Some((SelectionProjection::Value(value), _)) => return self.visit(&value, root, values, visit),
+            Some((SelectionProjection::Route(route), origin)) => {
+                let Some(route) = self.route(&route, &origin.list).map_err(Error::from)? else { return Ok(false); };
+                Some(route)
+            }
+            None => None,
+        };
+        let values = Frame::of(target).replacement(values)?;
+        if let Some(route) = route { visit(target, values, Destination::Route(route))?; }
+        else if let Value::Array(data) = target && let ArrayData::Mixed { items, .. } = &**data {
             for (i, item) in items.iter().enumerate() {
-                path.push(i); let valid = self.visit(item, root, path, visit)?; path.pop();
-                if !valid { return Ok(false); }
+                let value = crate::primitive::item_at(&values, &[if values.is_singleton() { 0 } else { i }], None)?;
+                if !self.visit(item, root, &value, visit)? { return Ok(false); }
             }
         } else {
             let Some(route) = self.value(target)? else { return Ok(false); };
-            visit(target, path, Destination::Route(route))?;
+            visit(target, values, Destination::Route(route))?;
         }
         Ok(true)
     }
@@ -231,7 +226,7 @@ pub(crate) fn form(origin: Origin<&[Value]>) -> Result<Option<crate::program::Ou
 }
 
 pub(crate) fn code_at(call: &crate::primitive::CallView<'_>) -> Result<crate::program::Outputs<Value>> {
-    use crate::{array::Frame, primitive::{Notation, ReadOp, RecipeOp, Selection, Targets}, program::trace::ReadKind};
+    use crate::{primitive::{Notation, RecipeOp, Selection, Targets}, program::trace::ReadKind};
     use rustymath::agreement::ReadAt;
     let Operation::At { combine, selection } = call.operation else { return Err(Error::planning()); };
     let mut root = call.root_input(0)?.into_owned();
@@ -248,26 +243,19 @@ pub(crate) fn code_at(call: &crate::primitive::CallView<'_>) -> Result<crate::pr
         values = replacement;
         target = selected.read(&root, None, &span)?;
     }
-    values = Frame::of(&target).replacement(&values)?;
-    if !target.is_atom() && values.is_singleton() {
-        values = call.apply(Operation::Read(ReadOp::Item), &[values], &[None])?;
-    }
-    let numeric = call.numeric()?;
     let merge = |old: &Value, new: Value| -> Result<Value> {
-        match combine { Some(primitive) => primitive.call(Some(old), &new, &span, numeric), None => Ok(new) }
+        match combine { Some(primitive) => primitive.call(Some(old), &new, &span, call.numeric()?), None => Ok(new) }
     };
     let ports = RootPorts::new(&root);
     let mut current = root.clone();
     let mut writes: HashMap<usize, Vec<(usize, Value)>> = HashMap::default();
-    if !ports.visit_execution(&target, |target, path, destination| {
-        let values = crate::primitive::item_at(&values, path, None)?;
+    if !ports.visit_execution(&target, &values, |target, values, destination| {
         match destination {
             Destination::Whole(path) => {
                 let old = crate::primitive::item_at(&current, path, None)?;
                 current = replace(&current, &path.iter().copied().map(PathPart::Item).collect::<Vec<_>>(), merge(&old, values)?)?;
             }
             Destination::Route(route) => {
-                let values = Frame::of(target).replacement(&values)?;
                 for item in 0..route.len() {
                     match route.at(item) {
                         ReadAt::Input { source, position } => {
@@ -297,10 +285,12 @@ pub(crate) fn code_at(call: &crate::primitive::CallView<'_>) -> Result<crate::pr
             let positions = Value::positions([changes.len()], before.len(), changes.iter().map(|(position, _)| *position))?;
             call.apply(Operation::At { combine: *combine, selection: false }, &[before, positions, values], &[None; 3])?
         } else {
-            let before = if before.pending().is_some_and(|pending| pending.description().is_none()) { before.read(ReadKind::Structure)? } else { before };
+            let before = before.exposed()?;
             let mut items = if matches!(before, Value::Pending(_) | Value::Carried { .. }) {
-                (0..before.len()).map(|item| call.apply(Operation::Read(ReadOp::Cell { rank: 0 }),
-                    &[Value::integer(item as i64), before.clone()], &[None; 2])).collect::<Result<Vec<_>>>()?
+                (0..before.len()).map(|item| {
+                    let cell = call.apply(Operation::Read(ReadOp::Cell { rank: 0 }), &[Value::integer(item as i64), before.clone()], &[None; 2])?;
+                    call.apply(Operation::Read(ReadOp::Item), &[cell], &[None])
+                }).collect::<Result<Vec<_>>>()?
             } else { before.elements().collect() };
             for (position, value) in changes {
                 if position >= items.len() {

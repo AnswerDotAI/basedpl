@@ -60,15 +60,15 @@ pub(crate) struct Builder { members: Vec<usize>, geometry: Geometry }
 impl Builder {
     pub(crate) fn members(&self) -> &[usize] { &self.members }
     pub(crate) fn push(&mut self, program: &Program, running: &Running, node: usize) -> Result<bool> {
-        use super::{BoundCall, Node, Step};
+        use super::{Node, Step};
         if self.members.last().is_some_and(|&previous| previous >= node) || program.outputs(node) != 1 { return Ok(false); }
         let Node::Step { step, origin, .. } = &program.nodes[node] else { return Ok(false); };
         if !matches!(step, Step::Map { .. } | Step::Convert { .. } | Step::Picks { .. } | Step::Fold { .. }) { return Ok(false); }
         let Some(result) = running.desc(program, Out::data(node, 0)) else { return Ok(false); };
         if !readable(result.dtype()) { return Ok(false); }
         let fold = if matches!(step, Step::Fold { .. }) {
-            let bindings = BoundCall { program, running, reads: origin.list.clone() };
-            let fold = crate::plan::fold(&origin.call_view(&bindings))?;
+            let bindings = running.call(program, origin)?;
+            let fold = crate::plan::fold(&bindings.call_view(&bindings.list))?;
             if fold.scan { return Ok(false); }
             Some(fold)
         } else { None };
@@ -138,7 +138,7 @@ fn origin(program: &Program, node: usize) -> &super::Origin<std::ops::Range<u32>
 
 impl Block {
     fn lower(program: &Program, running: &Running, members: &[usize], outputs: &[Out]) -> Result<Option<Self>> {
-        use super::{BoundCall, Node, Step};
+        use super::{Node, Step};
         if members.is_empty() || outputs.is_empty() || outputs.iter().enumerate().any(|(at, output)| output.output != Some(0)
             || !members.contains(&output.node) || outputs[..at].contains(output))
             { return Ok(None); }
@@ -157,8 +157,8 @@ impl Block {
         }
         for (position, &node) in members.iter().enumerate() {
             let Node::Step { step, origin, .. } = &program.nodes[node] else { return Ok(None); };
-            let bindings = BoundCall { program, running, reads: origin.list.clone() };
-            let call = origin.call_view(&bindings);
+            let bindings = running.call(program, origin)?;
+            let call = bindings.call_view(&bindings.list);
             kernels.push(match step {
                 Step::Map { variant, .. } | Step::Fold { variant, .. } => {
                     let Some(kernel) = call.kernel(*variant)? else { return Ok(None); }; Some(kernel)
@@ -241,8 +241,8 @@ impl Block {
                     inputs.insert(ReadSource::Pool(position as usize), Input::of(self, program, running, Cow::Borrowed(&read.plan), &read.sources)?);
                 }
             }
-            let bindings = super::BoundCall { program, running, reads: origin.list.clone() };
-            settings.push(kernel_settings(&origin.call_view(&bindings))?);
+            let bindings = running.call(program, origin)?;
+            settings.push(kernel_settings(&bindings.call_view(&bindings.list))?);
         }
         #[cfg(not(web))]
         if let Some(prepared) = prepared {
@@ -316,7 +316,7 @@ impl Block {
 #[cfg(not(web))]
 impl Lowered {
     fn of(program: &Program, running: &Running, members: &[usize], objects: &[Option<rustymath::operation::Kernel>], outputs: &[Export]) -> Result<Option<Self>> {
-        use super::{BoundCall, Node, Step};
+        use super::{Node, Step};
         use crate::jit::{self, Op, Ty};
         let mut kernel = jit::Kernel::default();
         let mut inputs = Vec::new();
@@ -327,8 +327,8 @@ impl Lowered {
             let output = Out::data(node, 0);
             let desc = running.desc(program, output).expect("a block member has a description");
             let Some(ty) = Ty::of(desc.kind.dtype()) else { return Ok(None); };
-            let bindings = BoundCall { program, running, reads: origin.list.clone() };
-            let call = origin.call_view(&bindings);
+            let bindings = running.call(program, origin)?;
+            let call = bindings.call_view(&bindings.list);
             let mut read = |argument, at, kernel: &mut jit::Kernel| {
                 Self::argument(program, running, members, &made, &mut inputs, kernel, origin.list.start as usize + argument as usize, at)
             };

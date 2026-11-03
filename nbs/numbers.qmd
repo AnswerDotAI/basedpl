@@ -239,9 +239,9 @@ h←16 •float 100000⍴1 0
 
 ## Accuracy
 
-Pervasive functions on floats, such as `÷`, `*`, `⍟` and `○`, give results within 4 units in the last place of the correctly rounded result. Rustymath's [Accuracy page](https://answerdotai.github.io/rustymath/accuracy.html) lists the exceptions.
+BPL inherits rustymath's floating-point accuracy guarantees and [exceptions](https://answerdotai.github.io/rustymath/accuracy.html). Pervasive functions give results within 4 units in the last place of the correctly rounded result unless that page specifies otherwise. BPL-specific qualifications follow below.
 
-Some results are exact. Powers, roots and cube roots whose exact result is a float give it exactly. A logarithm to base 2 or 10 is exact at a power of its base. `○y`, and `*` of a complex number whose imaginary part is `y`, give an exact direction where `y` is the float nearest a whole number of quarter turns, up to 256 of them. `○π0.5` is then exactly `0j1`. With Mathish mode off, as in these examples, `=` is exact:
+Rustymath's Accuracy page also specifies which results are exact. With Mathish mode off, `=` compares floats exactly:
 
 ```bpl
 •prefs ["mathish":$f]

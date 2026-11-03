@@ -235,20 +235,21 @@ impl Node {
         })
     }
 
-    pub(crate) fn into_storage(self, output: u32, read: ReadKind) -> Result<Value> {
+    pub(crate) fn exposed(self, output: u32, read: ReadKind) -> Result<Value> {
         if read == ReadKind::Description { return Err(Error::planning()); }
-        if self.level().is_some() {
-            return Err(Error::domain("cannot read an unbound linear value"));
-        }
+        if self.level().is_some() { return Err(Error::domain("cannot read an unbound linear value")); }
         let pending = Pending::data(self.clone(), output);
         if read != ReadKind::RuntimeOnly { Tracing::judge(&pending, read)?; }
-        let value = if let Some(value) = self.stored(output) { value.read(read)? } else {
-            if self.with_state(|state| matches!(state, State::Input { value: None, .. })) { return Err(Error::planning()); }
-            crate::program::execute(std::slice::from_ref(&pending))?;
-            // Returning storage to host code is a checkpoint; execute itself only records numeric errors.
-            crate::session().raise()?;
-            self.stored(output).expect("a completed graph publishes its requested output")
-        };
+        if let Some(value) = self.stored(output) { return Ok(value); }
+        if self.with_state(|state| matches!(state, State::Input { value: None, .. })) { return Err(Error::planning()); }
+        crate::program::execute(std::slice::from_ref(&pending))?;
+        // Returning a host result is a checkpoint; execute itself only records numeric errors.
+        crate::session().raise()?;
+        Ok(self.stored(output).expect("a completed graph publishes its requested output"))
+    }
+    pub(crate) fn into_storage(self, output: u32, read: ReadKind) -> Result<Value> {
+        let pending = Pending::data(self.clone(), output);
+        let value = self.exposed(output, read)?.read(read)?;
         if read == ReadKind::Count { Tracing::counted(&pending, &value)?; }
         Ok(value)
     }

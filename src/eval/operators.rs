@@ -1,11 +1,11 @@
 //! Operator semantics build ordinary calls, maps and selects; host iteration unrolls actual function calls.
 use super::*;
-use crate::{array::Layout, error::Result, primitive::{FoldKind, Marked, Pairing, ReadOp, ViewAxis}, program::{control, Origin, Outputs}};
+use crate::{array::Layout, error::Result, primitive::{FoldKind, Marked, Notation, Pairing, ReadOp, ViewAxis}, program::{control, Origin, Outputs}};
 
 #[derive(Clone, Copy)]
 pub(super) enum Form { Calls, Fold(FoldKind), Product, Bitwise }
-const fn entry(python: &'static str, glyph: &'static str, dyadic: bool) -> OperatorInfo {
-    OperatorInfo { call: operator_call, spelling, inverse, discards, python, glyph, dyadic, operands: operand_kind, form: Form::Calls }
+const fn entry(python: &'static str, glyph: &'static str, names: [&'static str; 3], dyadic: bool) -> OperatorInfo {
+    OperatorInfo { call: operator_call, spelling, inverse, discards, python, names, glyph, dyadic, operands: operand_kind, form: Form::Calls }
 }
 impl OperatorInfo {
     const fn with_form(mut self, form: Form) -> Self { self.form = form; self }
@@ -16,7 +16,7 @@ impl OperatorInfo {
     pub(super) fn operation(&self, operands: &[FunctionOperand]) -> Option<Operation> {
         match (self.form, operands) {
             (Form::Fold(FoldKind { first, scan }), [FunctionOperand::Value { value: Value::Function(f), .. }]) =>
-                Some(Operation::Fold { primitive: f.dyadic_primitive()?, first, scan, pairing: Pairing::Axes }),
+                Some(Operation::Fold { primitive: f.dyadic_primitive()?, first, scan, positions: None, pairing: Pairing::Axes }),
             (Form::Product, [FunctionOperand::Value { value: Value::Function(_), .. }, FunctionOperand::Value { value: Value::Function(_), .. }]) =>
                 Some(Operation::Product { contracted: 1, pairing: Pairing::Matrices { frame: 0 } }),
             _ => None,
@@ -31,16 +31,34 @@ impl OperatorInfo {
 }
 
 static ENTRIES: [OperatorInfo; 28] = [
-    entry("reduce", "/", false).with_form(Form::Fold(FoldKind { first: false, scan: false })),
-    entry("reduce_first", "⌿", false).with_form(Form::Fold(FoldKind { first: true, scan: false })),
-    entry("scan", "\\", false).with_form(Form::Fold(FoldKind { first: false, scan: true })),
-    entry("scan_first", "⍀", false).with_form(Form::Fold(FoldKind { first: true, scan: true })),
-    entry("each", "¨", false), entry("commute", "⍨", false), entry("inverse", "⁻¹", false), entry("outer", "⊗", false),
-    entry("key", "⌸", false), entry("derivative", "∂", false), entry("optimize", "⇄", false), entry("bitwise", "ᵇ", false).with_form(Form::Bitwise),
-    entry("mark", "", false), entry("under", "@", true), entry("atop", "∘", true), entry("over", "⍥", true),
-    entry("rank", "⍤", true), entry("axis", "⍠", true), entry("stencil", "⌺", true), entry("dot", ".", true).with_form(Form::Product),
-    entry("power", "⍣", true), entry("before", "↣", true), entry("after", "↢", true), entry("valences", "⊘", true),
-    entry("agenda", "⍚", true), entry("field", ".", false), entry("index", ".", true), entry("framed", "framed", false),
+    entry("reduce", "/", ["slash", "reduce", ""], false).with_form(Form::Fold(FoldKind { first: false, scan: false })),
+    entry("reduce_first", "⌿", ["slash-bar", "reduce-first", ""], false).with_form(Form::Fold(FoldKind { first: true, scan: false })),
+    entry("scan", "\\", ["backslash", "scan", ""], false).with_form(Form::Fold(FoldKind { first: false, scan: true })),
+    entry("scan_first", "⍀", ["backslash-bar", "scan-first", ""], false).with_form(Form::Fold(FoldKind { first: true, scan: true })),
+    entry("each", "¨", ["diaeresis", "each", ""], false),
+    entry("commute", "⍨", ["tilde-diaeresis", "self", "commute"], false),
+    entry("inverse", "⁻¹", ["superscript", "inverse", ""], false),
+    entry("outer", "⊗", ["circle-times", "outer-product", ""], false),
+    entry("key", "⌸", ["quad-equal", "key", ""], false),
+    entry("derivative", "∂", ["partial", "derivative", ""], false),
+    entry("optimize", "⇄", ["right-left-arrows", "optimize", ""], false),
+    entry("bitwise", "ᵇ", ["superscript-b", "bitwise", ""], false).with_form(Form::Bitwise),
+    entry("mark", "", ["superscript", "", ""], false),
+    entry("under", "@", ["at", "under", ""], true),
+    entry("atop", "∘", ["jot", "atop", ""], true),
+    entry("over", "⍥", ["circle-diaeresis", "over", ""], true),
+    entry("rank", "⍤", ["jot-diaeresis", "rank", ""], true),
+    entry("axis", "⍠", ["quad-colon", "axis", ""], true),
+    entry("stencil", "⌺", ["quad-diamond", "stencil", ""], true),
+    entry("dot", ".", ["dot", "determinant", "inner-product"], true).with_form(Form::Product),
+    entry("power", "⍣", ["star-diaeresis", "power", ""], true),
+    entry("before", "↣", ["right-tail-arrow", "before", ""], true),
+    entry("after", "↢", ["left-tail-arrow", "after", ""], true),
+    entry("valences", "⊘", ["circle-slash", "valences", ""], true),
+    entry("agenda", "⍚", ["diamond-underbar", "agenda", ""], true),
+    entry("field", ".", ["dot", "field", ""], false),
+    entry("index", ".", ["dot", "index", ""], true),
+    entry("framed", "framed", ["", "framed", ""], false),
 ];
 
 pub(super) fn info(kind: &OperatorKind) -> &'static OperatorInfo {
@@ -93,9 +111,9 @@ fn operator_call(f: &Function, origin: Origin<&[Value]>) -> Result<Value> {
     let first = f.operand(&origin, 0)?;
     match kind {
         Framed { .. } => {
-            let Some((axes, atoms, bound, _)) = f.framed_projection(&origin)? else { return Err(Error::planning()); };
+            let Some((axes, atoms, notation, bound)) = f.framed_projection(&origin)? else { return Err(Error::planning()); };
             let Value::Function(inner) = &bound.list[0] else { return Err(Error::planning()); };
-            return crate::batch::framed(inner, axes, atoms, bound.reborrow());
+            return session().with_call_context(f, bound.reborrow(), || crate::batch::framed(inner, axes, atoms, notation, bound.reborrow()));
         }
         Derivative => return crate::derivative::differentiate(function(&first)?, origin.reborrow()),
         _ => {}
@@ -227,7 +245,7 @@ pub(super) fn function_array(f: &Function, origin: Origin<&[Value]>) -> Result<V
     let args = Function::body_arguments(&origin)?;
     let from = argument_sources(&origin)?;
     let results = items.elements().map(|item| value_call(&item, &origin, &args, &from)).collect::<Result<Vec<_>>>()?;
-    let mut result = dispatch_in(&origin, Operation::Join(crate::primitive::Notation::Strand), &results, &vec![None; results.len()])?;
+    let mut result = dispatch_in(&origin, Operation::Join(Notation::Strand), &results, &vec![None; results.len()])?;
     if items.rank() != 1 {
         let shape = dispatch_in(&origin, Operation::Primitive { primitive: Primitive::Shape, pairing: Pairing::Axes }, &[items.as_ref().clone()], &[None])?;
         result = dispatch_in(&origin, Operation::Primitive { primitive: Primitive::Shape, pairing: Pairing::Axes }, &[shape, result], &[None, None])?;
@@ -312,7 +330,7 @@ fn items_call(origin: &Origin<&[Value]>, function: &Function, scan: bool, axis: 
     let seed = (args.len() == 2).then(|| &args[0]);
     if right.rank() == 0 {
         let item = if right.is_atom() { right.clone() } else {
-            dispatch_in(origin, Operation::Read(ReadOp::Cell { rank: 0 }), &[Value::integer(0), right.clone()], &[None, *from.last().unwrap()])?
+            dispatch_in(origin, Operation::Read(ReadOp::Item), std::slice::from_ref(right), &[*from.last().unwrap()])?
         };
         return match seed {
             Some(seed) => {
@@ -340,7 +358,7 @@ fn items_call(origin: &Origin<&[Value]>, function: &Function, scan: bool, axis: 
         if let Some(seed) = seed { arguments.push(prefix_frame(origin, seed, frame)?); atoms.push(seed.is_atom()); }
         arguments.push(moved); atoms.push(false);
         let fold = Function::applied_kind(if scan { OperatorKind::Scan } else { OperatorKind::Reduce }, vec![Value::Function(function.clone())])?;
-        let result = crate::batch::map(&fold, origin, &arguments, frame, &atoms, &vec![None; arguments.len()])?;
+        let result = crate::batch::map(&fold, origin, &arguments, frame, &atoms, &vec![None; arguments.len()], Notation::Cells)?;
         if !scan || axis == frame { return Ok(result); }
         return reorder(origin, &result, &(0..right.rank()).map(|i| if i == axis { frame } else if i < axis { i } else { i - 1 }).collect::<Vec<_>>());
     }
@@ -365,7 +383,7 @@ fn items_call(origin: &Origin<&[Value]>, function: &Function, scan: bool, axis: 
     let mut values = Vec::with_capacity(count);
     if start == 1 { values.push(total.clone()); }
     for i in start..count { total = function.call_bound(origin, &[total, item(i)?], &[None, None])?; values.push(total.clone()); }
-    dispatch_in(origin, Operation::Join(crate::primitive::Notation::Strand), &values, &vec![None; values.len()])?.with_layout(right.layout().clone())
+    dispatch_in(origin, Operation::Join(Notation::Strand), &values, &vec![None; values.len()])?.with_layout(right.layout().clone())
 }
 
 pub(crate) fn fold_fallback(origin: Origin<&[Value]>) -> Result<Value> {
@@ -378,7 +396,7 @@ pub(crate) fn fold_fallback(origin: Origin<&[Value]>) -> Result<Value> {
 
 fn fold_call(origin: &Origin<&[Value]>, f: &Function, kind: &OperatorKind, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
     let FoldKind { first, scan } = kind.info().fold().expect("a fold operator");
-    if let Some(primitive) = f.dyadic_primitive() { return dispatch_in(origin, Operation::Fold { primitive, first, scan, pairing: Pairing::Axes }, args, from); }
+    if let Some(primitive) = f.dyadic_primitive() { return dispatch_in(origin, Operation::Fold { primitive, first, scan, positions: None, pairing: Pairing::Axes }, args, from); }
     items_call(origin, f, scan, if first { 0 } else { args.last().unwrap().rank().saturating_sub(1) }, args, from)
 }
 
@@ -407,13 +425,13 @@ fn rank_call(origin: &Origin<&[Value]>, f: &Function, ranks: &Value, args: &[Val
     for ((arg, &axes), &source) in args.iter().zip(&selected).zip(from) {
         values.push(insert_axes(origin, arg, axes, frame - axes, source)?); atoms.push(false);
     }
-    crate::batch::map(f, origin, &values, frame, &atoms, &vec![None; values.len()])
+    crate::batch::map(f, origin, &values, frame, &atoms, &vec![None; values.len()], Notation::Cells)
 }
 
 fn each_call(origin: &Origin<&[Value]>, f: &Function, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
     let frame = args.iter().map(Value::rank).max().unwrap_or(0);
     let atoms: Vec<_> = args.iter().map(|_| true).collect();
-    crate::batch::map(f, origin, args, frame, &atoms, from)
+    crate::batch::map(f, origin, args, frame, &atoms, from, Notation::Strand)
 }
 
 fn outer_call(origin: &Origin<&[Value]>, f: &Function, args: &[Value], _: &[Option<usize>]) -> Result<Value> {
@@ -421,7 +439,7 @@ fn outer_call(origin: &Origin<&[Value]>, f: &Function, args: &[Value], _: &[Opti
     let frame = left.rank() + right.rank();
     let mut xshape = left.shape().to_vec(); xshape.extend(std::iter::repeat_n(1, right.rank()));
     let mut yshape = vec![1; left.rank()]; yshape.extend_from_slice(right.shape());
-    crate::batch::map(f, origin, &[left.with_shape(xshape)?, right.with_shape(yshape)?], frame, &[true, true], &[None, None])
+    crate::batch::map(f, origin, &[left.with_shape(xshape)?, right.with_shape(yshape)?], frame, &[true, true], &[None, None], Notation::Strand)
 }
 
 /// Scalar cells extend along the other argument's contracted axis before matrix planning.
@@ -457,7 +475,7 @@ pub(crate) fn product_fallback(origin: Origin<&[Value]>) -> Result<Value> {
     let reads: Vec<_> = origin.list.iter().map(|operand| crate::program::Read { operand: operand.clone(), map: Mapping::Linear(1) }).collect();
     let reads = origin.with_list(reads.as_slice());
     let arguments = geometry.args.map(|input| Operation::read_input(&reads, input)).into_iter().collect::<Result<Vec<_>>>()?;
-    let pairs = crate::batch::map(map, &origin, &arguments, geometry.plan.iteration.shape().len(), &[true, true], &[None, None])?;
+    let pairs = crate::batch::map(map, &origin, &arguments, geometry.plan.iteration.shape().len(), &[true, true], &[None, None], Notation::Cells)?;
     let function = fold.clone();
     if contracted == 1 { return items_call(&origin, &function, false, pairs.rank().saturating_sub(1), &[pairs], &[None]); }
     let reduce = Function::applied_kind(OperatorKind::Reduce, vec![Value::Function(function)])?;
@@ -546,7 +564,7 @@ fn key_call(origin: &Origin<&[Value]>, f: &Function, args: &[Value], _: &[Option
         let select = Function::applied_kind(OperatorKind::After, vec![Value::Function(Function::primitive(Primitive::Index)), right.clone()])?;
         each_call(origin, &select, &[groups], &[None])?
     } else { groups };
-    crate::batch::map(f, origin, &[unique, groups], 1, &[keys.rank() == 1, true], &[None, None])
+    crate::batch::map(f, origin, &[unique, groups], 1, &[keys.rank() == 1, true], &[None, None], Notation::Cells)
 }
 fn stencil_call(origin: &Origin<&[Value]>, f: &Function, spec: &Value, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
     use crate::primitive::WindowSpec;
@@ -571,7 +589,7 @@ fn axis_fold(origin: &Origin<&[Value]>, f: &Function, kind: &OperatorKind, axes:
     if let Some(primitive) = f.dyadic_primitive() && (axes.is_singleton() || crate::primitive::named_axis(axes).is_some()) {
         let (pairing, values, sources) = axis_arguments(origin, axes, args, from)?;
         let FoldKind { first, scan } = kind.info().fold().expect("a fold operator");
-        return dispatch_in(origin, Operation::Fold { primitive, first, scan, pairing }, &values, &sources);
+        return dispatch_in(origin, Operation::Fold { primitive, first, scan, positions: None, pairing }, &values, &sources);
     }
     let fold = Function::applied_kind(kind.clone(), vec![Value::Function(f.clone())])?;
     let ravelled = Function::applied_kind(OperatorKind::Atop, vec![Value::Function(fold), Value::Function(Function::primitive(Primitive::Ravel))])?;
@@ -636,6 +654,10 @@ fn invert(origin: &Origin<&[Value]>, f: &Function, args: &[Value], from: &[Optio
             let view = bound.reborrow();
             let a = f.operand(&view, 0)?; let b = f.operand(&view, 1)?;
             let from = argument_sources(&view)?;
+            if !matches!(a.as_ref(), Value::Function(_)) {
+                let [right] = args else { return Err(Error::domain("a bound train part needs one argument")); };
+                return invert(&view, function(&b)?, &[a.into_owned(), right.clone()], &[None, from[0]], true);
+            }
             let value = invert(&view, function(&a)?, &[args.last().unwrap().clone()], &[*from.last().unwrap()], true)?;
             let mut values = args.to_vec(); *values.last_mut().unwrap() = value;
             let mut sources = from; *sources.last_mut().unwrap() = None;
@@ -773,7 +795,7 @@ fn expanded(origin: &Origin<&[Value]>, f: &Function, g: &Function, items: &[Valu
     prototype: &Value, memo: &mut HashMap<u64, Value>) -> Result<Value> {
     if let Some(value) = memo.get(&rows) { return Ok(value.clone()); }
     let vector = |items: &[Value]| if items.is_empty() { Ok(Value::empty([0], prototype.clone())?) }
-        else { dispatch_in(origin, Operation::Join(crate::primitive::Notation::Strand), items, &vec![None; items.len()]) };
+        else { dispatch_in(origin, Operation::Join(Notation::Strand), items, &vec![None; items.len()]) };
     let column = m - rows.count_ones() as usize;
     let value = if column == n {
         fold_call(origin, g, &OperatorKind::Reduce, &[vector(&[])?], &[None])?

@@ -7,7 +7,7 @@ use num_complex::Complex64;
 use num_rational::BigRational;
 use rustymath::agreement::Frames;
 use rustymath::array::ArrayView;
-use rustymath::buffer::FloatWidth;
+use rustymath::buffer::{Buffer, FloatWidth, IntBuf};
 use rustymath::linalg::{self, Factor, Inner, PlusTimes};
 use rustymath::{buffer::View, error::Kind, with_complexes};
 
@@ -951,9 +951,46 @@ pub(crate) fn product_kernels(call: &CallView<'_>, result: Option<DType>) -> Res
     Ok(Some((mapper, reducer)))
 }
 
-pub(crate) fn build_fold(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
-    if call.explicit_arguments().any(|position| call.desc(position).is_none()) { return host_build(call, set); }
+fn fold_positions(call: &CallView<'_>, geometry: &crate::plan::Fold) -> Result<(Desc, bool, usize), Error> {
+    use rustymath::reduce::Reduce;
+    let max = match call.kernel(map_variant(call)?)?.and_then(|kernel| kernel.fold()) {
+        Some(Reduce::Max) => true, Some(Reduce::Min) => false,
+        _ => return Err(Error::domain("winner positions need a minimum or maximum fold")),
+    };
+    if geometry.seed.is_some() { return Err(Error::domain("winner positions need an unseeded fold")); }
+    let Operation::Fold { positions: Some(frame), .. } = call.operation else { return Err(Error::planning()); };
+    let size = geometry.source.shape().get(*frame..).ok_or_else(Error::planning)?.iter().product::<usize>();
+    let kind = NumberKind::stored(DType::Integer(Width::I64), false, false);
+    let range = rustymath::facts::Range { lo: 0.0, hi: size.saturating_sub(1) as f64 };
+    Ok((Desc { kind, atom: geometry.atom, layout: geometry.result.clone(), range: Some(range) }, max, size))
+}
+
+pub(super) fn code_fold_positions(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
     let geometry = crate::plan::fold(call)?;
+    let (desc, max, size) = fold_positions(call, &geometry)?;
+    let value = call.value(geometry.arg, ReadKind::Value)?;
+    let dims = geometry.dims(); let [_, n, inner] = dims;
+    let of = if geometry.scan { rustymath::reduce::Picks::Running } else { rustymath::reduce::Picks::Lanes };
+    let rows = value.view().and_then(|view| rustymath::reduce::view_picks(view, dims, of, max))
+        .ok_or_else(|| Error::domain("winner positions need a real numeric array"))?;
+    let offsets = rows.into_iter().enumerate().map(|(j, row)| {
+        let outer = if geometry.scan { j / (n * inner) } else { j / inner };
+        (((outer * n + row) * inner + j % inner) % size.max(1)) as i64
+    }).collect();
+    Ok(Outputs::one(Value::stored(&desc, Buffer::Integers(IntBuf::I64(offsets)))?))
+}
+pub(crate) fn build_fold(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+    let positions = matches!(call.operation, Operation::Fold { positions: Some(_), .. });
+    if call.explicit_arguments().any(|position| call.desc(position).is_none()) {
+        if positions { return Err(Error::domain("winner positions need a real numeric array")); }
+        return host_build(call, set);
+    }
+    let geometry = crate::plan::fold(call)?;
+    if positions {
+        let (desc, _, _) = fold_positions(call, &geometry)?;
+        set(geometry.arg, geometry.input_read(call, geometry.arg)?);
+        return Ok((Step::Call, Some(Outputs::one(Some(desc))), None));
+    }
     let source = call.desc(geometry.arg).expect("a native fold has a source description");
     let variant = map_variant(call)?;
     let Some(kernel) = call.kernel(variant)? else { return host_build(call, set); };
@@ -963,7 +1000,7 @@ pub(crate) fn build_fold(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping
     let mut range = if length == 0 { seed.unwrap_or_else(|| rustymath::facts::Range::of(kernel.identity())) }
         else { rustymath::facts::Range::folded(items, seed, Some(length), |args| kernel.range(&args)) };
     if geometry.scan { range = range.join(items); }
-    let dtype = kernel.total_dtype().unwrap_or(kernel.result_dtype());
+    let dtype = if geometry.scan { kernel.scan_dtype() } else { kernel.fold_dtype(source.dtype(), length, geometry.seed.and_then(|seed| call.desc(seed)).map(|seed| seed.dtype())) };
     let (kind, range) = result_kind(call.numeric()?, dtype, range, IntegerResult::Never);
     let variant = result_variant(variant, kind.dtype())?;
     for input in geometry.seed.into_iter().chain([geometry.arg]) { set(input, geometry.input_read(call, input)?); }
@@ -981,7 +1018,7 @@ pub(crate) fn build_product(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapp
     let (range, dtype) = if let Some(fold) = &fold {
         let shape = geometry.plan.iteration.shape();
         let count = shape[shape.len() - geometry.plan.contracted..].iter().product();
-        (rustymath::facts::Range::folded(map.range(&ranges), None, Some(count), |args| fold.range(&args)), fold.total_dtype().unwrap_or(fold.result_dtype()))
+        (rustymath::facts::Range::folded(map.range(&ranges), None, Some(count), |args| fold.range(&args)), fold.fold_dtype(map.result_dtype(), count, None))
     } else { (map.range(&ranges), map.result_dtype()) };
     let (kind, range) = result_kind(call.numeric()?, dtype, range, IntegerResult::Never);
     let atom = geometry.plan.layout.shape().is_empty();

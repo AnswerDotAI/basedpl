@@ -286,27 +286,13 @@ fn placed(parent: &Origin<&[Value]>, value: Value, axes: &[usize], rank: usize) 
     call(parent, Operation::Read(ReadOp::Axes { axes: dimensions, destinations: destinations.into() }), &[value])
 }
 
-pub(super) fn assemble(frame: &Value, values: &[Value], prototype: &Value, mode: super::Mode) -> Result<Value> {
-    stack_outputs(frame, values, prototype, mode)?.assemble()
-}
-fn stack_outputs(frame: &Value, values: &[Value], prototype: &Value, mode: super::Mode) -> Result<Outputs<Value>> {
+pub(crate) fn assemble(frame: &Value, values: &[Value], prototype: &Value, mode: super::Mode) -> Result<Value> {
     let numeric = Numeric { kinds: if mode.dynamic { Kinds::Dynamic } else { Kinds::Static },
         mathish: mode.mathish, ..Numeric::current() };
-    let (trees, prototypes) = crate::array::flatten(std::slice::from_ref(prototype)).map_or_else(|| (None, vec![prototype.clone()]), |(trees, leaves)| (Some(trees), leaves));
-    let mut leaves = Vec::with_capacity(values.len());
-    for value in values {
-        let (shape, flat) = crate::array::flatten(std::slice::from_ref(value)).map_or_else(|| (None, vec![value.clone()]), |(trees, leaves)| (Some(trees), leaves));
-        if shape != trees { return crate::array::stack(frame, values, prototype, numeric).map(Outputs::one); }
-        leaves.push(flat);
-    }
-    let stacked = prototypes.iter().enumerate().map(|(position, prototype)| {
-        let cells = leaves.iter().map(|leaves| leaves[position].clone()).collect::<Vec<_>>();
-        crate::array::stack(frame, &cells, prototype, numeric)
-    }).collect::<Result<Vec<_>>>()?;
-    Ok(Outputs::from(stacked).with_trees(trees))
+    crate::array::stack(frame, values, prototype, numeric)
 }
 
-pub(super) fn frame_reference(frame: &Layout, sources: &[(Value, usize)]) -> Result<Value> {
+pub(crate) fn frame_reference(frame: &Layout, sources: &[(Value, usize)]) -> Result<Value> {
     let references = sources.iter().map(|(value, _)| value.clone()).collect::<Vec<_>>();
     let mut axes = vec![None; frame.shape().len()];
     for (input, (value, cell)) in sources.iter().enumerate() {

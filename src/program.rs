@@ -35,17 +35,19 @@ impl Desc {
     pub(crate) fn cacheable(&self) -> bool {
         self.layout.cacheable()
     }
-    pub(crate) fn of(value: &Value) -> Option<Cow<'_, Desc>> {
+    pub(crate) fn of(value: &Value) -> Option<Cow<'_, Desc>> { Self::input(value, true) }
+    /// Stored inputs use kind bounds unless keyed as literals. Graph descriptions keep their proved ranges.
+    pub(crate) fn input(value: &Value, literal: bool) -> Option<Cow<'_, Desc>> {
         match value {
-            Value::Pending(pending) => pending.description().map(Cow::Borrowed).or_else(|| Self::of(pending.completed()?)),
+            Value::Pending(pending) => pending.description().map(Cow::Borrowed).or_else(|| Self::input(pending.completed()?, literal)),
             Value::Carried { carried, .. } => match &**carried {
                 crate::array::Carried::Batch { cell, .. } => Some(Cow::Borrowed(cell)),
-                crate::array::Carried::Dual { primal, .. } => Self::of(primal),
+                crate::array::Carried::Dual { primal, .. } => Self::input(primal, literal),
             },
-            value => Self::leaf(value).map(Self::opaque).map(Cow::Owned),
+            value => Self::leaf(value).map(|desc| if literal { desc } else { desc.opaque() }).map(Cow::Owned),
         }
     }
-    /// Part 2: the 1 place a stored value's description is made, when it enters the graph as a leaf: its kind, atom flag and layout, and the range its data carries from when it was made (`ArrayData`), or unknown. Host values (part 5) have none: describe and the builder see only graph values' descriptions.
+    /// Native kind, atom flag, layout and known range of stored data. Host kinds have no native descriptor.
     pub(crate) fn leaf(value: &Value) -> Option<Desc> {
         if matches!(value, Value::Pending(_) | Value::Carried { .. }) { return None; }
         Some(Self { kind: value.kind()?, atom: value.is_atom(), layout: value.layout().clone(), range: value.range() })
@@ -103,22 +105,6 @@ impl<T> Outputs<T> {
     pub(crate) fn has_result(&self) -> bool { !self.as_ref().is_empty() || self.trees.as_ref().is_some_and(|trees| trees.root_count() != 0) }
     pub(crate) fn with_shy(mut self, shy: bool) -> Self { self.shy = shy; self }
     pub(crate) fn trees(&self) -> Option<&Arc<Trees>> { self.trees.as_ref() }
-    pub(crate) fn tuple(parts: impl IntoIterator<Item = Self>) -> Self {
-        let mut values = Vec::new(); let mut items = Vec::new();
-        for part in parts {
-            let children = match part.trees() {
-                Some(trees) => trees.roots().map(|root| trees.root_at(&root).clone()).collect::<Vec<_>>(),
-                None => vec![Tree::Leaf; part.as_ref().len()],
-            };
-            items.push(if children.len() == 1 { children.into_iter().next().unwrap() }
-                else { Tree::Array { layout: Layout::from([children.len()]), items: children, prototype: None } });
-            values.extend(part.into_vec());
-        }
-        let mut trees = Trees::leaves(0);
-        trees.push_tree(Tree::Array { layout: Layout::from([items.len()]), items, prototype: None });
-        Self::from(values).with_trees(Some(Arc::new(trees)))
-    }
-
     pub(crate) fn map<U>(self, mut f: impl FnMut(T) -> U) -> Outputs<U> {
         let values = match self.values { OutputValues::One(value) => OutputValues::One(f(value)),
             OutputValues::Many(values) => OutputValues::Many(values.into_vec().into_iter().map(f).collect()) };
@@ -249,8 +235,8 @@ impl<L: AsRef<[Value]>> CallBindings for L {
         static IDENTITY: Mapping = Mapping::Linear(1);
         self.as_ref().get(position).map(|value| crate::primitive::Input { value, map: &IDENTITY })
     }
-    fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> {
-        Desc::of(self.as_ref().get(position)?)
+    fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>> {
+        Desc::input(self.as_ref().get(position)?, literal)
     }
     fn value(&self, position: usize, purpose: trace::ReadKind) -> crate::error::Result<Cow<'_, Value>> {
         self.as_ref().get(position).ok_or_else(crate::Error::planning)?.read_borrowed(purpose)
@@ -356,9 +342,9 @@ impl<L: AsRef<[Read<Value>]>> crate::primitive::CallBindings for Origin<L> {
     fn input(&self, position: usize) -> Option<crate::primitive::Input<'_>> {
         self.list.as_ref().get(position).map(|read| crate::primitive::Input { value: &read.operand, map: &read.map })
     }
-    fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> {
+    fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>> {
         let value = &self.list.as_ref().get(position)?.operand;
-        Desc::of(value)
+        Desc::input(value, literal)
     }
     fn value(&self, position: usize, purpose: trace::ReadKind) -> crate::error::Result<Cow<'_, Value>> {
         self.list.as_ref().get(position).ok_or_else(crate::Error::planning)?.operand.read_borrowed(purpose)
@@ -912,15 +898,18 @@ impl Running {
     }
     pub(crate) fn binding_context(&self) -> &BindingContext { &self.binding }
     pub(crate) fn context(&self, position: Option<u32>) -> Option<&Origin<()>> { self.binding.context(position) }
-    pub(crate) fn bind_origin<L: AsRef<[Value]>>(&self, source: &Origin<std::ops::Range<u32>>, values: L) -> crate::error::Result<Origin<L>> {
+    pub(crate) fn bind_origin<L: CallBindings>(&self, source: &Origin<std::ops::Range<u32>>, values: L) -> crate::error::Result<Origin<L>> {
         let mut call = source.with_list(values);
         if let Some(context) = self.context(source.context) {
             if source.context.is_some() { call.site = context.site.clone(); }
             if !source.bindings.order.is_empty() {
-                call.bindings = Arc::new(source.bindings.rebind_into(&call.reborrow(), context).ok_or_else(crate::Error::planning)?);
+                call.bindings = Arc::new(source.bindings.rebind(call.list.len().checked_sub(call.capture_start()).ok_or_else(crate::Error::planning)?, context).ok_or_else(crate::Error::planning)?);
             }
         } else if !source.bindings.order.is_empty() { return Err(crate::Error::planning()); }
         Ok(call)
+    }
+    pub(crate) fn call<'a>(&'a self, program: &'a Program, origin: &Origin<std::ops::Range<u32>>) -> crate::error::Result<Origin<BoundCall<'a>>> {
+        self.bind_origin(origin, BoundCall { program, running: self, reads: origin.list.clone() })
     }
     pub(crate) fn bind(&mut self, program: &Program, geometry: Geometry) {
         self.values.resize_with(program.nodes.len(), || None);
@@ -1092,7 +1081,7 @@ impl crate::primitive::CallBindings for BoundCall<'_> {
         let read = self.program.reads.get(at)?;
         Some(crate::primitive::Input { value: self.running.argument(self.program, read.operand)?, map: &self.running.geometry.maps[at] })
     }
-    fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> {
+    fn desc(&self, position: usize, _literal: bool) -> Option<Cow<'_, Desc>> {
         let read = self.program.reads.get(self.reads.start as usize + position)?;
         self.running.desc(self.program, read.operand).map(Cow::Borrowed)
     }

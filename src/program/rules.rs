@@ -289,17 +289,8 @@ fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<
                 geometry.descs[builder.program.desc_index(Out::data(new.node, output as u32))] = desc;
             }
         }
-        if let Some(Some(plan)) = running.geometry.read_plans.get(old) {
-            geometry.read_plans[new.node] = Some(plan.compose_inputs(&mut |source, count| {
-                let output = program.output(source).ok_or_else(crate::Error::planning)?;
-                Ok::<_, crate::Error>(rustymath::agreement::ReadPlan::input(builder.program.desc_index(resolve(output)), count))
-            })?);
-        }
         for (old, new) in program.dependency_range(old).zip(builder.program.dependency_range(new.node)) {
             if let Some(map) = running.geometry.maps.get(old as usize) { geometry.maps[new as usize] = map.clone(); }
-            if let Some(Some(route)) = running.geometry.reads.get(old as usize) {
-                geometry.reads[new as usize] = Some(super::Routed { plan: route.plan.clone(), sources: route.sources.iter().copied().map(resolve).collect() });
-            }
         }
     }
     running.values = values;

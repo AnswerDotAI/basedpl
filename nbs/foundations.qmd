@@ -27,10 +27,10 @@ Lazy arrays preserve the calculation that produces them across function calls. A
 
 A graph records operations and their dependencies. A pending array holds its producer node instead of an intermediate buffer. For example, suppose `x` is a real float vector:
 
-```bpl
+````bpl
 loss←+/⊼
 y←loss x
-```
+````
 
 [`⊼`](glyphs/wedge-bar.qmd) squares each item. [`+/`](glyphs/slash.qmd) sums the squares. Calling `loss` builds those operations without first storing a vector of squares. Displaying `y` reads its value. The runtime then plans the reachable graph and computes the total, with the square inside the reduction where the execution rules support it.
 
@@ -50,10 +50,10 @@ JAX's Autodidax tutorial supplies the model for composing these transformations.
 
 For the example above:
 
-```bpl
+````bpl
 grad←loss∂
 grad x
-```
+````
 
 [`∂`](glyphs/partial.qmd) gives the gradient of a function with one number as its result. Here the gradient is twice each item of `x`. The original calculation is the primal computation. Forward differentiation propagates a tangent, the change in a result along a chosen input direction. Linearization separates that primal calculation from a calculation linear in the tangent. Reverse differentiation transposes the ordinary linear graph steps to propagate result sensitivities back to the inputs. Coefficients retain the intermediate values from the actual forward call. BPL uses one graph and one set of mathematical partials for both modes, rather than a separate AD evaluator. [JAX's linearization and transposition](https://github.com/jax-ml/jax/blob/main/docs/autodidax.md#part-4-linearize-and-vjp-and-grad).
 

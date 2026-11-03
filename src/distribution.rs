@@ -5,7 +5,7 @@ use crate::{Described, Error, Number, Value, ReadKind, array::{Layout, Widening,
     primitive::{CallView, Operation as GraphOp, Roles, RowResult, host_build, numeric as number, real, counted, generated_items}, program::{Desc, ImplicitInput, Origin, Outputs, Step, implicit_position},
     system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}};
 use rustymath::{agreement::Mapping, buffer::{Buffer, DType, Element, FloatBuf, FloatWidth, Width}, distribution::{Cdf, Invalid, Pdf, Quantile, standard},
-    error::Kind as ErrorKind, facts::Variant, operation::Kernel, random::{self, Items, Key, Stream}, with_width};
+    error::Kind as ErrorKind, facts::Variant, operation::Kernel, random::{self, Items, Stream}, with_width};
 pub(crate) use rustymath::distribution::Distribution;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -167,7 +167,8 @@ pub(crate) type Generator = Arc<Generating>;
 pub(crate) use rustymath::random::Counter;
 
 /// The session's generator until a program sets a seed, keyed by the operating system.
-pub(crate) fn fresh() -> Generator { Arc::new(Generating { counter: Mutex::new(Counter { key: Key(rand::random()), count: 0 }) }) }
+pub(crate) fn fresh() -> Generator { seeded(rand::random()) }
+pub(crate) fn seeded(seed: u64) -> Generator { Arc::new(Generating { counter: Mutex::new(Counter::seeded(seed)) }) }
 
 fn locked(generator: &Generator) -> std::sync::MutexGuard<'_, Counter> { generator.lock().unwrap_or_else(PoisonError::into_inner) }
 
@@ -184,7 +185,7 @@ pub(crate) fn generator(HostCall { right, .. }: HostCall<'_>) -> Result<Value, E
     if right.shape().len() > 1 { return Err(Error::new(ErrorKind::Rank, "•rand needs a unit or vector seed")); }
     if !right.is_singleton() { return Err(Error::new(ErrorKind::Length, "•rand needs one seed")); }
     let seed = number(&right.at(0))?.nonnegative_integer::<u64>().described("•rand needs a nonnegative whole number as its seed")?;
-    let generator = Arc::new(Generating { counter: Mutex::new(Counter::seeded(seed)) });
+    let generator = seeded(seed);
     Ok(natives([("roll", Call::Generator(Some(generator.clone()), Law::Roll), Monadic), ("deal", Call::Generator(Some(generator), Law::Deal), Dyadic)]))
 }
 
@@ -220,7 +221,7 @@ pub(crate) fn generator_input(origin: &Origin<&[Value]>, parent: Option<&Origin<
         && let Some(position) = implicit_position(&parent.operation, parent.explicit as usize, &parent.bindings, ImplicitInput::Generator) {
         return Ok((parent.list[position].clone(), Some(position)));
     }
-    Ok((Value::Function(crate::system::native("•rand", Call::Generator(Some(session().generator.clone()), Law::Roll), Ambivalent)), None))
+    Ok((Value::Function(crate::system::native("•rand", Call::Generator(Some(session().generator()), Law::Roll), Ambivalent)), None))
 }
 
 pub(crate) fn reserve(generator: &Generator) -> Stream { locked(generator).next() }

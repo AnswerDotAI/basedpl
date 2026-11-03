@@ -1,38 +1,37 @@
 //! Batched functions run on framed whole arguments through the normal dispatcher.
 use crate::{
     array::{self, Carried, Layout}, error::{Error, Result}, eval::{Function, OperatorKind},
-    primitive::{Operation, Pairing, ReadOp, ViewAxis}, program::{Desc, Origin, Outputs},
+    primitive::{Notation, Operation, Pairing, ReadOp, ViewAxis}, program::{Desc, Origin, Outputs},
     transform::{at_level, carried, Level, LevelKind, Scope}, Value,
 };
 
-pub(crate) fn map(function: &Function, parent: &Origin<&[Value]>, args: &[Value], frame: usize, atoms: &[bool], from: &[Option<usize>]) -> Result<Value> {
+pub(crate) fn map(function: &Function, parent: &Origin<&[Value]>, args: &[Value], frame: usize, atoms: &[bool], from: &[Option<usize>], notation: Notation) -> Result<Value> {
     assert_eq!(args.len(), atoms.len());
     let origin = function.bound(parent, args, from)?;
     let mut fields = vec![None; origin.list.len()];
     for (root, &atom) in Function::argument_roots(&origin.reborrow())?.into_iter().flatten().zip(atoms) {
         for leaf in root.leaves { fields[leaf] = Some(atom); }
     }
-    map_prepared(function, origin, frame, fields.into())
+    map_prepared(function, origin, frame, fields.into(), notation)
 }
 
-pub(crate) fn prepare_framed(function: &Function, mut origin: Origin<Vec<Value>>, frame: usize, atoms: Box<[Option<bool>]>) -> Result<Origin<Vec<Value>>> {
-    let body = Function::applied_kind(OperatorKind::Framed { axes: frame, atoms }, vec![Value::Function(function.clone())])?;
+pub(crate) fn map_prepared(function: &Function, mut origin: Origin<Vec<Value>>, frame: usize, atoms: Box<[Option<bool>]>, notation: Notation) -> Result<Value> {
+    let body = Function::applied_kind(OperatorKind::Framed { axes: frame, atoms, notation }, vec![Value::Function(function.clone())])?;
     origin.list[0] = Value::Function(body);
-    Ok(origin)
-}
-
-pub(crate) fn map_prepared(function: &Function, origin: Origin<Vec<Value>>, frame: usize, atoms: Box<[Option<bool>]>) -> Result<Value> {
-    let origin = prepare_framed(function, origin, frame, atoms)?;
     Operation::dispatch(origin.reborrow())?.assemble()
 }
 
-pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], origin: Origin<&[Value]>) -> Result<Value> {
-    if axes == 0 { return function.run(origin); }
+pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], notation: Notation, origin: Origin<&[Value]>) -> Result<Value> {
+    let arguments = Function::body_arguments(&origin)?;
+    if axes == 0 && (notation != Notation::Strand || arguments.iter().all(Value::is_atom)) { return function.run(origin); }
+    if arguments.iter().any(|value| Desc::of(value).is_none()) {
+        return crate::program::run::framed_fallback(function, axes, atoms, notation, origin);
+    }
     let positions: Vec<_> = atoms.iter().enumerate().filter_map(|(i, atom)| atom.is_some().then_some(i)).collect();
     assert_eq!(origin.list.len(), atoms.len(), "one framing flag per bound input leaf");
     let descriptions = positions.iter().map(|&i| Desc::of(&origin.list[i]).map(|d| d.into_owned())).collect::<Option<Vec<_>>>();
     let Some(descriptions) = descriptions.filter(|descs| !descs.is_empty() && descs.iter().all(|d| d.shape().len() >= axes)) else {
-        return crate::program::run::framed_fallback(function, axes, atoms, origin);
+        return crate::program::run::framed_fallback(function, axes, atoms, notation, origin);
     };
     let mut references = Vec::with_capacity(axes);
     let mut frame = Layout::from([]);
@@ -52,7 +51,8 @@ pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], o
         });
         ViewAxis { input: 1 + input as u32, axis: Some(axis) }
     }).collect();
-    let scope = Scope::new(LevelKind::batched(frame, frame_inputs.into(), frame_axes));
+    if frame.count() == 0 { return crate::program::run::framed_fallback(function, axes, atoms, notation, origin); }
+    let scope = Scope::new(LevelKind::batched(frame.clone(), frame_inputs.into(), frame_axes));
     let mut inputs = origin.list.to_vec();
     for (&position, mut cell) in positions.iter().zip(descriptions) {
         cell.layout = cell.layout.axes(axes..cell.shape().len());
@@ -63,13 +63,16 @@ pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], o
     let id = scope.level.id;
     drop(scope);
     let result = match result {
-        Err(error) if error.batch_level() == Some(id) => return crate::program::run::framed_fallback(function, axes, atoms, origin),
+        Err(error) if error.batch_level() == Some(id) => return crate::program::run::framed_fallback(function, axes, atoms, notation, origin),
         result => result?,
     };
-    array::map_leaves(&result, |leaf| {
-        let (whole, batched) = match at_level(leaf, id) {
-            Some(Carried::Batch { whole, .. }) => (whole, true), _ => (leaf, false),
+    let structured = array::flatten(std::slice::from_ref(&result)).is_some();
+    let framed = array::map_leaves(&result, |leaf| {
+        let (whole, cell) = match at_level(leaf, id) {
+            Some(Carried::Batch { whole, cell }) => (whole, Some(cell)), _ => (leaf, None),
         };
+        if structured && cell.is_none() { return Ok(leaf.clone()); }
+        let batched = cell.is_some();
         let cell_start = if batched { axes } else { 0 };
         let mut dimensions: Vec<_> = references.iter().enumerate().map(|(axis, &source)| ViewAxis { input: 1 + source as u32, axis: Some(axis) }).collect();
         dimensions.extend((cell_start..whole.rank()).map(|axis| ViewAxis { input: 0, axis: Some(axis) }));
@@ -79,8 +82,30 @@ pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], o
         list.push(whole.clone()); list.extend(positions.iter().map(|&i| origin.list[i].clone()));
         let from: Vec<_> = std::iter::once(None).chain(positions.iter().copied().map(Some)).collect();
         let call = crate::eval::projected_call(&origin, operation, &list, &from)?;
-        Ok(Operation::dispatch(call.reborrow())?.into_vec().pop().expect("an axis view has one output"))
-    })
+        let value = Operation::dispatch(call.reborrow())?.assemble()?;
+        if structured { return Ok(carried(id, Carried::Batch { whole: value, cell: cell.expect("only batched leaves were framed").clone() })); }
+        if notation != Notation::Strand || leaf.is_atom() { return Ok(value); }
+        let selected = Value::integers([value.rank() - axes], (axes..value.rank()).map(|axis| axis as i64).collect())?;
+        let operation = Operation::Primitive { primitive: crate::primitive::Primitive::Enclose, pairing: Pairing::Explicit { fill: false } };
+        let call = crate::eval::projected_call(&origin, operation, &[value, selected], &[None, None])?;
+        Operation::dispatch(call.reborrow())?.assemble()
+    })?;
+    if !structured { return Ok(framed); }
+    let mut values = Vec::with_capacity(frame.count());
+    for position in 0..frame.count() {
+        values.push(array::map_leaves(&framed, |leaf| {
+            let Some(Carried::Batch { whole, cell }) = at_level(leaf, id) else { return Ok(leaf.clone()); };
+            let call = crate::eval::projected_call(&origin, Operation::Read(ReadOp::Cell { rank: cell.shape().len() }),
+                &[Value::integer(position as i64), whole.clone()], &[None, None])?;
+            let value = Operation::dispatch(call.reborrow())?.assemble()?;
+            if !cell.atom && cell.shape().is_empty() { value.enclose() } else { Ok(value) }
+        })?);
+    }
+    let prototype = array::map_leaves(&result, |leaf| Ok(Desc::of(leaf).map_or_else(|| leaf.zeroed(), |cell| cell.zero())))?;
+    if notation == Notation::Strand { return Ok(frame.collect(values, prototype)?); }
+    let sources = positions.iter().map(|&position| (origin.list[position].clone(), origin.list[position].rank() - axes)).collect::<Vec<_>>();
+    let reference = crate::program::control::frame_reference(&frame, &sources)?;
+    crate::program::control::assemble(&reference, &values, &prototype, origin.mode)
 }
 
 pub(crate) fn rule(level: &Level, origin: Origin<&[Value]>) -> Result<Outputs<Value>> {
@@ -123,16 +148,19 @@ pub(crate) fn unsupported(_: &Origin<&[Value]>, _: &[Value], _: usize) -> Result
 }
 pub(crate) fn primitive_cells(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize) -> Result<Origin<Vec<Value>>> {
     let level = Level::current_batch_rule().ok_or_else(Error::planning)?;
+    let mut framed = origin.reborrow();
+    if let Operation::Fold { positions: Some(count), .. } = &mut framed.operation { *count += frame; }
+    let origin = &framed;
     let mut values = lifted(origin, wholes, frame, level.id)?;
     let pair = match &origin.operation {
         Operation::Primitive { pairing, .. } => (*pairing, true),
         Operation::Recipe(_) | Operation::System => (Pairing::Axes, true),
         Operation::Fold { first, pairing, .. } => {
             if *first && *pairing == Pairing::Axes {
-                let Operation::Fold { primitive, scan, .. } = &origin.operation else { unreachable!() };
+                let Operation::Fold { primitive, scan, positions, .. } = &origin.operation else { unreachable!() };
                 let args: Vec<_> = values[..origin.explicit as usize].iter().cloned().chain(std::iter::once(Value::integer(frame as i64))).collect();
                 let from: Vec<_> = (0..origin.explicit as usize).map(Some).chain(std::iter::once(None)).collect();
-                return crate::eval::projected_call(origin, Operation::Fold { primitive: *primitive, first: *first, scan: *scan, pairing: Pairing::Explicit { fill: false } }, &args, &from);
+                return crate::eval::projected_call(origin, Operation::Fold { primitive: *primitive, first: *first, scan: *scan, positions: *positions, pairing: Pairing::Explicit { fill: false } }, &args, &from);
             }
             (*pairing, false)
         }

@@ -171,7 +171,7 @@ fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Dur
         for call in 0..2 {
             if call == 1 { enter(case["prefs"].as_str(), Some(run))?; }
             if call == 1 && let Some(dir) = &files { emptied(dir.path())?; }
-            *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Counter::seeded(0);
+            session.seed(0);
             calls.push(observed_result(session.eval_with(&format!("{TWICE} 0"), EvalOptions { input: lines(input), ..options() }), &session)?);
         }
     }
@@ -679,22 +679,25 @@ pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
         }
         if expected.is_none() && !closing { continue; }
         eprintln!("example {}", i + 1);
-        let result = bpl.eval_with(&code, options());
+        let result = observed_result(bpl.eval_with(&code, options()), bpl);
         // The expectation evaluates after the code, under the settings that the code leaves.
-        let wanted = expected.map(|e| bpl.eval_apart(e, options()));
+        let wanted = expected.map(|e| observed_result(bpl.eval_apart(e, options()), bpl)).transpose();
         if let Some(why) = interrupt.stop() {
             failures.push(json!({"line": i + 1, "status": "unchecked", "code": code.trim_end(), "expected": expected, "message": format!("the check stopped at {why} before this example finished, so it and the examples after it are unchecked")}));
             break;
         }
-        let message = match (result.error, result.value, wanted) {
-            (Some(error), _, _) => Some(error.to_string()),
-            (None, _, None) => None,
-            (None, actual, Some(wanted)) => {
-                let shown = bpl.display_settings();
-                match (actual, wanted.value, wanted.error) {
-                    (_, _, Some(error)) => Some(format!("expectation: {error}")),
-                    (Some(actual), Some(wanted), None) if shown.explicit(&actual, false) == shown.explicit(&wanted, false) => None,
-                    (Some(actual), Some(wanted), None) => difference(&actual, &wanted, None, TOLERANCE, true), _ => Some("no result".into())
+        let message = match (result, wanted) {
+            (Err(failure), _) | (_, Err(failure)) => Some(failure["message"].as_str().unwrap().to_owned()),
+            (Ok(result), Ok(wanted)) => match (result.error, result.value, wanted) {
+                (Some(error), _, _) => Some(error.to_string()),
+                (None, _, None) => None,
+                (None, actual, Some(wanted)) => {
+                    let shown = bpl.display_settings();
+                    match (actual, wanted.value, wanted.error) {
+                        (_, _, Some(error)) => Some(format!("expectation: {error}")),
+                        (Some(actual), Some(wanted), None) if shown.explicit(&actual, false) == shown.explicit(&wanted, false) => None,
+                        (Some(actual), Some(wanted), None) => difference(&actual, &wanted, None, TOLERANCE, true), _ => Some("no result".into())
+                    }
                 }
             }
         };

@@ -256,7 +256,7 @@ pub(crate) fn assemble_stored(frame: &Layout, cells: &[Value], prototype: &Value
 pub(crate) fn join_code(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
     let Operation::Join(notation) = call.operation else { return Err(Error::planning()); };
     let roots = join_roots(call);
-    let cells = roots.clone().map(|root| call.root_value(root, ReadKind::Value).map(Cow::into_owned)).collect::<Result<Vec<_>, _>>()?;
+    let cells = roots.clone().map(|root| call.root_input(root)?.exposed()).collect::<Result<Vec<_>, _>>()?;
     if let Some(join) = call_joining(call)? { return read_joined(join, &cells).map(Outputs::one); }
     let (frame, prototype) = if *notation == Notation::Cells { (call.root_layout(0)?.into_owned(), call.root_value(1, ReadKind::Value)?.into_owned()) }
         else { (Layout::from([cells.len()]), cells.first().map_or(Value::integer(0), Value::zeroed)) };

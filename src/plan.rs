@@ -193,7 +193,7 @@ fn read_result(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<(L
 pub(crate) fn build_read(call: &CallView<'_>, kind: &ReadOp, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult> {
     let root = call.root(read_source(kind));
     if root.leaves.len() != 1 { return crate::primitive::host_build(call, set); }
-    let Some(source) = call.desc(root.leaves.start) else { return crate::primitive::host_build(call, set); };
+    let Some(source) = call.root_desc(root.index) else { return crate::primitive::host_build(call, set); };
     let (layout, atom, map, read) = read_geometry(call, kind)?;
     let range = if read.affine(layout.shape()).is_none() { crate::primitive::filled_range(call, &source) } else { source.range };
     let desc = Desc { layout, atom, kind: crate::number::Kind { weak: atom && source.kind.weak, ..source.kind }, range };
@@ -248,10 +248,10 @@ fn read_geometry(call: &CallView<'_>, kind: &ReadOp) -> Result<(Layout, bool, Ma
     Ok((layout, atom, map, read))
 }
 
-pub(crate) fn code_read(call: &CallView<'_>, kind: &ReadOp) -> Result<crate::program::Outputs<Value>> {
+pub(crate) fn code_read(call: &CallView<'_>, kind: &ReadOp) -> Result<Outputs<Value>> {
     use rustymath::agreement::ReadAt;
+    let source = call.root_input(read_source(kind))?.exposed()?;
     let (layout, atom, _, plan) = read_geometry(call, kind)?;
-    let source = call.root_value(read_source(kind), crate::ReadKind::Value)?;
     let prototype = source.prototype();
     let values: Vec<_> = (0..layout.count()).map(|position| match plan.at(position) {
         ReadAt::Input { position, .. } => Ok(source.at(position)),
@@ -259,7 +259,8 @@ pub(crate) fn code_read(call: &CallView<'_>, kind: &ReadOp) -> Result<crate::pro
         ReadAt::Invalid => Err(Error::new(ErrorTag::Index, "view position is outside the source")),
         ReadAt::Index(position) => Ok(Value::integer(position)),
     }).collect::<Result<_>>()?;
-    let value = if atom { values.into_iter().next().unwrap_or(prototype) }
+    let value = if matches!(kind, ReadOp::Cell { rank: 0 }) { values.into_iter().next().unwrap_or(prototype).unit()? }
+        else if atom { values.into_iter().next().unwrap_or(prototype) }
         else { Value::stored_values(layout, values, Some(prototype), crate::array::Widening::Arrays)? };
     Ok(crate::program::Outputs::one(value))
 }
