@@ -53,7 +53,7 @@ pub(crate) enum Parameter {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum KeyPart {
     Graph, Call, Node(usize), Output(Option<u32>), Source(usize), Operation(Operation), Mode(Mode), Roles(Roles), Literal(u64),
-    Arguments(usize, usize), Trees(Option<Arc<Trees>>), Captures(CaptureKey), Description { kind: crate::number::Kind, atom: bool, layout: LayoutKey, segments: Option<(u8, bool)> },
+    Arguments(usize, usize), Trees(Option<Arc<Trees>>), Captures(CaptureKey), Description { kind: crate::number::Kind, atom: bool, layout: LayoutKey },
     Physical(Vec<(u8, usize)>), Parameter(ReadKind, Parameter), Missing,
     SourceBase(bool, Option<Arc<str>>),
     Count(usize, Vec<KeyPart>), Primitive(Primitive), Operator(OperatorKind), Definition(DefinitionKey), System(Arc<str>),
@@ -104,9 +104,7 @@ impl Encoder {
 
     pub(crate) fn description(&mut self, desc: &Desc) {
         let layout = self.layout(&desc.layout);
-        let segments = desc.segments.as_ref().map(|segment| (segment.rank, segment.stacked));
-        self.push(KeyPart::Description { kind: desc.kind, atom: desc.atom, layout, segments });
-        if let Some(segment) = &desc.segments { self.description(&segment.leaf); self.description(&segment.prototype); }
+        self.push(KeyPart::Description { kind: desc.kind, atom: desc.atom, layout });
         self.push(KeyPart::End);
     }
 
@@ -192,6 +190,13 @@ pub(crate) fn graph_key(live: &Live) -> ProgramKey {
     let mut key = Encoder::default();
     key.push(KeyPart::Graph);
     let nodes: rustymath::hashing::HashMap<_, _> = live.nodes.iter().cloned().enumerate().map(|(i, node)| (node, i)).collect();
+    let reference = |key: &mut Encoder, value: &Value| {
+        if let Some(pending) = value.pending() && let Some(&node) = nodes.get(&pending.node) {
+            key.push(KeyPart::Node(node)); key.push(KeyPart::Output(pending.output));
+        } else {
+            key.push(KeyPart::Source(live.values[&super::Identity::of(value)])); key.data(value);
+        }
+    };
     for node in &live.nodes {
         node.with_state(|state| match state {
             crate::graph::State::Step { origin, .. } => {
@@ -201,7 +206,7 @@ pub(crate) fn graph_key(live: &Live) -> ProgramKey {
                 key.context(&origin.operation, origin.site.as_ref());
                 for (i, read) in origin.list.iter().enumerate() {
                     match &read.operand {
-                        Value::Pending(pending) => { key.push(KeyPart::Node(nodes[&pending.node])); key.push(KeyPart::Output(pending.output)); }
+                        value @ Value::Pending(_) => reference(&mut key, value),
                         value if i < 64 && origin.literals & (1 << i) != 0 => { key.value(value, ReadKind::Value).expect("a literal is stored"); }
                         value => {
                             key.push(KeyPart::Source(live.values[&super::Identity::of(value)]));
@@ -218,7 +223,7 @@ pub(crate) fn graph_key(live: &Live) -> ProgramKey {
                     key.push(KeyPart::Source(live.input_position(&pending, value)));
                 }
                 match value {
-                    Some(Value::Pending(pending)) => { key.push(KeyPart::Node(nodes[&pending.node])); key.push(KeyPart::Output(pending.output)); }
+                    Some(value @ Value::Pending(_)) => reference(&mut key, value),
                     Some(value) => key.data(value), None => match node.desc(0) { Some(desc) => key.description(desc), None => key.push(KeyPart::Missing) },
                 }
             }
@@ -233,7 +238,7 @@ pub(crate) fn graph_key(live: &Live) -> ProgramKey {
         });
         key.push(KeyPart::End);
     }
-    for root in &live.roots { key.push(KeyPart::Node(nodes[&root.node])); key.push(KeyPart::Output(root.output)); }
+    for root in &live.roots { reference(&mut key, root); }
     ProgramKey(key.finish())
 }
 

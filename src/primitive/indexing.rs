@@ -287,18 +287,30 @@ fn host_item(array: &Value, index: usize, fill: Option<&Value>) -> Result<Value,
 
 pub(crate) struct Selection { pub frame: Frame, pub targets: Targets }
 
-impl Selection {
-    fn assign(&self, array: &Value, values: &Value, span: &Span) -> Result<Value, Error> {
-        let values = match &self.frame {
+impl Frame {
+    pub(crate) fn replacement(&self, values: &Value) -> Result<Value, Error> {
+        Ok(match self {
             Frame::Direct => values.clone(),
-            Frame::Array(_) if values.is_singleton() => values.unkeyed(),
+            Frame::Array(_) if values.is_singleton() => if matches!(values, Value::Pending(_) | Value::Carried { .. }) {
+                Operation::Read(ReadOp::Item).call(std::slice::from_ref(values), 0)?
+            } else { values.unkeyed()? },
             Frame::Array(layout) => {
                 use crate::agreement::{Agree, Agreement};
                 let agreement = Agreement::new(layout, values.layout()).described("replacement does not broadcast over selection")?;
                 if agreement.layout.shape() != layout.shape() { return Err(Error::new(Kind::Length, "replacement does not broadcast over selection")); }
-                agreement.laid(None, values).described("replacement does not broadcast over selection")?.1
+                if matches!(values, Value::Pending(_) | Value::Carried { .. }) {
+                    let reference = Value::metadata(Some(Desc::new(crate::number::Kind::stored(DType::Boolean, false, false), false, layout.clone())));
+                    let axes = (0..layout.shape().len()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
+                    let [destinations, _] = rustymath::agreement::Agreement::axis_pairs(values.layout(), layout);
+                    Operation::Read(ReadOp::Axes { axes, destinations: destinations.into() }).call(&[values.clone(), reference], 0)?
+                } else { agreement.laid(None, values).described("replacement does not broadcast over selection")?.1 }
             }
-        };
+        })
+    }
+}
+impl Selection {
+    fn assign(&self, array: &Value, values: &Value, span: &Span) -> Result<Value, Error> {
+        let values = self.frame.replacement(values)?;
         self.write(array, &values, span)
     }
     /// The selection of the items at `offsets`, as a vector.
@@ -350,7 +362,7 @@ impl Selection {
     pub(crate) fn write(&self, array: &Value, values: &Value, span: &Span) -> Result<Value, Error> {
         let root = crate::selection::rooted(array)?;
         let target = self.read(&root, None, span)?;
-        Operation::At { combine: None, into_leaf: false, selection: true }.call(&[root, target, values.clone()], 0)
+        Operation::At { combine: None, selection: true }.call(&[root, target, values.clone()], 0)
     }
 
     /// This selection of the item at `path`, as a selection of the whole array. Each cell's own offsets (`batch::Cells`) can't select within an item, so the batched run stops there.
@@ -594,12 +606,11 @@ fn axis_selector(value: &Value, layout: &rustymath::layout::Layout, axis: usize)
     }
 }
 
-fn at_geometry(call: &CallView<'_>) -> Result<Option<(Desc, Mapping, Option<ReadPlan>)>, Error> {
+pub(crate) fn at_geometry(call: &CallView<'_>) -> Result<Option<(Desc, Mapping, Option<ReadPlan>)>, Error> {
     let Operation::At { selection, .. } = call.operation else { unreachable!("a write") };
     let roots = [call.root(0), call.root(1), call.root(2)];
     if roots.iter().any(|root| root.leaves.len() != 1) { return Ok(None); }
     let (Some(root), Some(target), Some(values)) = (call.root_desc(0), call.root_desc(1), call.root_desc(2)) else { return Ok(None) };
-    if root.segments.is_some() || values.segments.is_some() { return Ok(None); }
     let Some(kind) = root.kind.join(values.kind) else { return Ok(None) };
     let agreement = Agreement::new(&target.layout, &values.layout)?;
     if agreement.layout != target.layout { return Err(Error::new(Kind::Length, "write values do not match positions")); }
@@ -609,21 +620,16 @@ fn at_geometry(call: &CallView<'_>) -> Result<Option<(Desc, Mapping, Option<Read
         let Some(route) = crate::selection::positions(&target, &root)? else { return Ok(None); };
         Some(route)
     } else { None };
-    Ok(Some((Desc { kind: kind.strong(), atom: root.atom, layout: root.layout.clone(), range: None, segments: None }, agreement.right, route)))
+    Ok(Some((Desc { kind: kind.strong(), atom: root.atom, layout: root.layout.clone(), range: None }, agreement.right, route)))
 }
-pub(super) fn describe_at(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
-    Ok(at_geometry(call)?.map(|(desc, _, _)| Outputs::one(Some(desc))))
-}
-pub(super) fn plan_at(call: &CallView<'_>) -> Result<Step, Error> {
-    let Some((_, _, route)) = at_geometry(call)? else { return Ok(Step::Call); };
-    Ok(Step::At { root: call.root(0).leaves.start as u32, values: call.root(2).leaves.start as u32,
-        ids: route.is_none().then_some(call.root(1).leaves.start as u32), checks: call.mode.dynamic })
-}
-pub(super) fn maps_at(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<Option<ReadPlan>, Error> {
-    let Some((_, values, route)) = at_geometry(call)? else { return Ok(None); };
-    set(call.root(0).leaves.start, Mapping::Linear(1)); set(call.root(1).leaves.start, Mapping::Linear(1));
-    set(call.root(2).leaves.start, values);
-    Ok(route)
+pub(super) fn build_at(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+    let Some((desc, values, route)) = at_geometry(call)? else { return host_build(call, set); };
+    let roots = [call.root(0), call.root(1), call.root(2)];
+    let step = Step::At { root: roots[0].leaves.start as u32, values: roots[2].leaves.start as u32,
+        ids: route.is_none().then_some(roots[1].leaves.start as u32), checks: call.mode.dynamic };
+    set(roots[0].leaves.start, Mapping::Linear(1)); set(roots[1].leaves.start, Mapping::Linear(1));
+    set(roots[2].leaves.start, values);
+    Ok((step, Some(Outputs::one(Some(desc))), route))
 }
 
 pub(crate) struct GatherGeometry {
@@ -758,7 +764,7 @@ fn gather_part(call: &CallView<'_>, position: usize, item: Option<usize>) -> Res
         None => {},
     }
     let Some(mut desc) = call.desc(position).map(Cow::into_owned) else { return Ok(None) };
-    if desc.segments.is_some() || desc.dtype() == DType::Character { return Ok(None); }
+    if desc.dtype() == DType::Character { return Ok(None); }
     if item.is_some() { desc.layout = Layout::default(); desc.atom = true; }
     Ok(Some(IndexPart::Axis(GatherPart::Data(GatherIndex { input: position as u32, item }, desc))))
 }
@@ -798,7 +804,6 @@ pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Erro
     if root.leaves.len() != 1 { return Ok(None); }
     let source = root.leaves.start;
     let Some(desc) = call.desc(source) else { return Ok(None) };
-    if desc.segments.is_some() { return Ok(None); }
     let Some(parts) = gather_parts(call, &call.root(roots.start))? else { return Ok(None) };
     let claims: Vec<_> = parts.iter().map(|part| part.as_ref().map(|part| match part {
         GatherPart::Data(_, desc) => (structure::sole_name(&desc.layout), 1),
@@ -825,30 +830,21 @@ pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Erro
     let atom = if parts.is_empty() { desc.atom } else { routes.one };
     let fill = match call.fill_root() { Some(root) if root.leaves.len() == 1 => Some(root.leaves.start as u32), Some(_) => return Ok(None), None => None };
     let output = Desc { kind: crate::number::Kind { weak: atom && desc.kind.weak, ..desc.kind }, atom,
-        layout: Layout::rearranged(layout, &desc.layout), range: filled_range(call, &desc), segments: None };
+        layout: Layout::rearranged(layout, &desc.layout), range: filled_range(call, &desc) };
     Ok(Some(GatherGeometry { source, source_layout: desc.layout.clone(), desc: output, routes, indices, paired, fill }))
 }
 
-pub(super) fn describe_index(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
-    if call.explicit_argument_roots().len() == 1 { return structural::describe(call); }
-    Ok(gather(call)?.map(|geometry| Outputs::one(geometry.desc)))
-}
-
-pub(super) fn plan_index(call: &CallView<'_>, outputs: &[Desc]) -> Result<Step, Error> {
-    if call.explicit_argument_roots().len() == 1 { return structural::plan(call, outputs); }
-    let geometry = gather(call)?.ok_or_else(Error::planning)?;
-    if geometry.indices.is_empty() { return Ok(Step::Copy { source: geometry.source as u32 }); }
-    Ok(Step::Gather { source: geometry.source as u32, indices: geometry.indices.into_boxed_slice(), checked: call.mode.dynamic, fill: geometry.fill })
-}
-
-pub(super) fn maps_index(call: &CallView<'_>, step: &Step, outputs: &[Desc], set: &mut dyn FnMut(usize, Mapping))
-    -> Result<Option<ReadPlan>, Error> {
-    if call.explicit_argument_roots().len() == 1 { return structural::maps(call, step, outputs, set); }
-    let geometry = gather(call)?.ok_or_else(Error::planning)?;
-    if !geometry.indices.is_empty() { return Ok(None); }
-    let plan = structure::plan_routes(&geometry.source_layout, &geometry.routes, geometry.paired, false)?;
-    let map = Mapping::from(plan.steps);
-    set(geometry.source, map.clone());
-    let missing = fill_read(call, &geometry.desc)?;
-    Ok(Some(ReadPlan::copy(geometry.source, geometry.source_layout.count(), map, geometry.desc.layout.count(), missing)))
+pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+    if call.explicit_argument_roots().len() == 1 { return structural::build(call, set); }
+    let Some(geometry) = gather(call)? else { return host_build(call, set); };
+    let (step, read) = if geometry.indices.is_empty() {
+        let plan = structure::plan_routes(&geometry.source_layout, &geometry.routes, geometry.paired, false)?;
+        let map = Mapping::from(plan.steps);
+        set(geometry.source, map.clone());
+        let read = ReadPlan::copy(geometry.source, geometry.source_layout.count(), map, geometry.desc.layout.count(), fill_read(call, &geometry.desc)?);
+        (Step::Copy { source: geometry.source as u32 }, Some(read))
+    } else {
+        (Step::Gather { source: geometry.source as u32, indices: geometry.indices.into_boxed_slice(), checked: call.mode.dynamic, fill: geometry.fill }, None)
+    };
+    Ok((step, Some(Outputs::one(Some(geometry.desc))), read))
 }

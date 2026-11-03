@@ -12,7 +12,7 @@
 //!
 //! Other data takes the pairwise comparison.
 use crate::execution::check;
-use crate::{Error, ErrorKind, error::Described, Span, Value, ReadKind, array::{ArrayData, Classes, Items, Layout, Segments, Widening}, primitive::Primitive, number::{Numeric, read_as}};
+use crate::{Error, ErrorKind, error::Described, Span, Value, ReadKind, array::{ArrayData, Items, Layout, Widening}, primitive::Primitive, number::{Numeric, read_as}};
 use rustymath::hashing::{HashMap, HashMapExt, Hashing};
 use rustymath::{buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains}, tolerant::{self, Near, Tolerance}, with_float_width};
 use std::{borrow::Cow, hash::{BuildHasher, Hash, Hasher}, sync::Arc};
@@ -123,9 +123,6 @@ fn groupable(len: usize) -> Result<(), Error> {
     Ok(())
 }
 
-/// Whether segments can hold `values`' major cells in one leaf: compact items on axes with no keys or names, carrying no running level's data.
-fn segmentable(values: &Value) -> bool { values.level().is_none() && !values.holds_values() && values.view().is_some() && values.layout().plain() }
-
 /// `values`' major cells at `positions`, in order, by the one selection that `⌷` makes (`primitive::select`), or where `values` is `None` the positions themselves.
 pub(crate) fn rows_of(values: Option<&Value>, positions: Value, span: &Span) -> Result<Value, Error> {
     match values {
@@ -134,31 +131,19 @@ pub(crate) fn rows_of(values: Option<&Value>, positions: Value, span: &Span) -> 
     }
 }
 
-/// The classes that `numbered` gives, as one nested vector whose item `g` holds class `g`'s values in their order: `values`' major cells, or where `values` is `None` their positions among `n`, as Key and monadic `⍷` group them. The class order is the grade of the class numbers (`⍋`). Where segments can hold the values (`segmentable`), the groups lie in one leaf in class order (`Segments::packed`): the order itself, or the values selected by it. A vector of values keeps its class numbers beside the leaf (`Segments::with_classes`), so that a fold or scan of each class reads the values in their own order, and neither the order nor the leaf need be computed. Other values, and a single class, give each group as an array of its own.
+/// Classes in first-occurrence order, each holding its values' major cells or their positions.
 pub(crate) fn class_groups(values: Option<&Value>, n: usize, numbered: search::Numbered, span: &Span, numeric: Numeric) -> Result<Value, Error> {
     let count = numbered.firsts.len();
     let search::Numbered { numbers, counts: sizes, .. } = numbered;
     let numbers = Value::positions_buffer([n], count, numbers).described("invalid classes")?;
     let order = Primitive::Grade(false).call(None, &numbers, span, numeric)?.read(ReadKind::Value)?;
-    if count < 2 || values.is_some_and(|v| !segmentable(v)) {
-        let starts = rustymath::layout::exclusive_sums(sizes.iter().copied());
-        let groups = starts.into_iter().zip(&sizes).map(|(start, &size)| {
-            let rows = order.part(start..start + size, Layout::from(vec![size])).described("invalid group")?;
-            rows_of(values, rows, span)?.read(ReadKind::Value)
-        }).collect::<Result<Vec<_>, _>>()?;
-        return Value::stored_values(Layout::from([count]), groups, None, Widening::Items).described("invalid group");
-    }
-    let cell = values.map_or(&[][..], |v| &v.shape()[1..]);
-    let Value::Array(leaf) = rows_of(values, order, span)?.read(ReadKind::Value)? else { unreachable!("the order and a selection of rows are arrays") };
-    let shapes = if cell.is_empty() { sizes } else { sizes.iter().flat_map(|&size| std::iter::once(size).chain(cell.iter().copied())).collect() };
-    let layout = Layout::from(&shapes[..1 + cell.len()]);
-    let prototype = Value::stored_part(&leaf, 0..layout.count(), layout)?.zeroed();
-    let segments = Segments::packed(leaf, shapes, 1 + cell.len(), prototype);
-    let segments = match values {
-        Some(v) if v.shape().len() == 1 => segments.with_classes(Classes { values: v.clone(), numbers, count }),
-        _ => segments,
-    };
-    Ok(Value::Array(Arc::new(ArrayData::Segmented { layout: Layout::from([count]), segments })))
+    let starts = rustymath::layout::exclusive_sums(sizes.iter().copied());
+    let groups = starts.into_iter().zip(&sizes).map(|(start, &size)| {
+        let rows = order.part(start..start + size, Layout::from([size])).described("invalid group")?;
+        rows_of(values, rows, span)
+    }).collect::<Result<Vec<_>, _>>()?;
+    let prototype = rows_of(values, Value::integers([0], Vec::new())?, span)?;
+    Value::stored_values(Layout::from([count]), groups, Some(prototype), Widening::Items).described("invalid group")
 }
 
 /// Gives each cell at `positions`, which ascend, the earliest representative among them that matches it. A cell that matches none represents a new class.
@@ -235,15 +220,11 @@ fn exact(value: &Value) -> Option<search::Exact<'_>> {
     search::Exact::new(shape, value.view()?)
 }
 
-/// Each cell as an exact key, when every cell is one. A segmented array's cells are slices of its leaf.
+/// Each cell as an exact key, when every cell is one.
 pub(crate) fn exact_cells<'a>(cells: &'a Cells) -> Option<Vec<search::Exact<'a>>> {
     match cells {
         Cells::Items(a) if a.level().is_none() => match a.as_items() {
             Items::Values(items) => items.iter().map(exact).collect(),
-            Items::Segmented(s) => {
-                let leaf = s.leaf_items().view()?;
-                s.ranges().enumerate().map(|(i, r)| search::Exact::new(Some(s.shape(i)), leaf.slice(r))).collect()
-            }
             _ => None,
         },
         Cells::Items(_) => None, Cells::Arrays(cells) => cells.iter().map(exact).collect()
@@ -255,19 +236,12 @@ const SHARED: usize = 4;
 /// The fewest items that `shared_classes` classifies, and the items it reads before it can give up. On fewer items, the check costs separately held strings more than it saves shared ones.
 const SHARED_FROM: usize = 1024;
 
-/// The class of each item, where items share their arrays, as the copies of a few strings that a selection or a text column makes do: mixed items that share one array, or segmented items that share one entry, an offset and shape, in their leaf. Items that share one are one class without reading it, and only the first item of each becomes an `Exact` key. `None` for fewer than `SHARED_FROM` items, where an item isn't an array, where more than one in `SHARED` of the items read so far hold arrays of their own, or where a shared array isn't an exact key.
+/// The class of each item, where items share their arrays, as the copies of a few strings that a selection or a text column makes do: mixed items that share one array. Items that share one are one class without reading it, and only the first item of each becomes an `Exact` key. `None` for fewer than `SHARED_FROM` items, where an item isn't an array, where more than one in `SHARED` of the items read so far hold arrays of their own, or where a shared array isn't an exact key.
 fn shared_classes(cells: &Cells) -> Option<Vec<u32>> {
     let Cells::Items(a) = cells else { return None };
     if a.level().is_some() { return None; }
     match a.as_items() {
         Items::Values(items) => shared(items.len(), items.iter().map(|v| match v { Value::Array(array) => Some(Arc::as_ptr(array)), _ => None }), |i| exact(&items[i])),
-        Items::Segmented(s) => {
-            let leaf = s.leaf_items().view()?;
-            let key = |i: usize| search::Exact::new(Some(s.shape(i)), leaf.slice(s.range(i)));
-            // An item of rank 0 or 1 has the shape its range gives, so the range alone says which items share an entry.
-            if s.rank() <= 1 { shared(s.len(), s.ranges().map(|r| Some((r.start, r.end))), key) }
-            else { shared(s.len(), s.ranges().enumerate().map(|(i, r)| Some((r.start, s.shape(i)))), key) }
-        }
         _ => None,
     }
 }

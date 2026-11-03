@@ -147,34 +147,25 @@ pub(super) fn index_roles(call: &CallView<'_>) -> Result<Roles, Error> {
     Ok(root.leaves.fold(Roles::default(), |roles, position| roles.with(position - first, ReadKind::Count)))
 }
 
-pub(super) fn describe_index(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
-    if call.explicit_argument_roots().len() != 1 { return Ok(None); }
+pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+    if call.explicit_argument_roots().len() != 1 { return host_build(call, set); }
     let right = call.root_value(call.explicit_argument_roots().start, ReadKind::Count)?;
     if right.rank() > 1 { return Err(Error::new(Kind::Rank, "iota needs a unit or vector shape")); }
-    if right.len() != 1 { return Ok(None); }
+    if right.len() != 1 { return host_build(call, set); }
     let count = right.as_items().integers().described("invalid iota dimension")?[0];
     let len = rustymath::structure::Count::of(count).magnitude;
     generated_len(&[len])?;
-    let Some(kind) = right.kind() else { return Ok(None) };
+    let Some(kind) = right.kind() else { return host_build(call, set); };
     let kind = match Numbers::of(kind, call.numeric()?) {
         Numbers::Exact => crate::number::Kind::stored(DType::Integer(Width::below(len)), false, false),
         Numbers::Fixed(width) => crate::number::Kind::stored(DType::Integer(width), true, false),
         Numbers::Float(width) => crate::number::Kind::stored(DType::Float(width), false, false),
     };
     let layout = Layout::from([len]).with_names(shape_names(&right))?;
-    Ok(Some(Outputs::one(Some(Desc { kind, atom: false, layout, range: Some(rustymath::facts::Range { lo: 0.0, hi: len.saturating_sub(1) as f64 }), segments: None }))))
-}
-
-pub(super) fn plan_index(call: &CallView<'_>, _: &[Option<Desc>]) -> Result<Step, Error> {
-    let right = call.root_value(call.explicit_argument_roots().start, ReadKind::Count)?;
-    Ok(Step::Index { descending: right.as_items().integers().described("invalid iota dimension")?[0] < 0 })
-}
-
-pub(super) fn maps_index(_: &CallView<'_>, step: &Step, outputs: &[Option<Desc>], _: &mut dyn FnMut(usize, Mapping))
-    -> Result<Option<rustymath::agreement::ReadPlan>, Error> {
-    let Step::Index { descending } = step else { return Err(Error::planning()) };
-    let len = outputs.first().and_then(Option::as_ref).ok_or_else(Error::planning)?.layout.count();
-    Ok(Some(rustymath::agreement::ReadPlan::index(if *descending { len.saturating_sub(1) as i64 } else { 0 }, if *descending { -1 } else { 1 }, len)))
+    let desc = Desc { kind, atom: false, layout, range: Some(rustymath::facts::Range { lo: 0.0, hi: len.saturating_sub(1) as f64 }) };
+    let descending = count < 0;
+    let read = ReadPlan::index(if descending { len.saturating_sub(1) as i64 } else { 0 }, if descending { -1 } else { 1 }, len);
+    Ok((Step::Index { descending }, Some(Outputs::one(Some(desc))), Some(read)))
 }
 /// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`. A keyed shape names the result's axes, as it does for reshape: `⍳["i":3]` is `0 1 2` along an axis named `i`.
 pub(super) fn iota(right: &Value, numeric: Numeric) -> Result<Value, Error> {
@@ -340,16 +331,6 @@ fn rows_grade(view: View<'_>, start: usize, count: usize, width: usize, down: bo
 /// The grade of `right`'s `count` major cells (`rows_grade`).
 fn key_grade(right: &Value, count: usize, down: bool) -> Option<Vec<u32>> {
     rows_grade(compact_view(&Cells::Items(right))?, 0, count, right.len().checked_div(count).unwrap_or(0), down)
-}
-/// The grade of each cell of a ragged array, each given by its offset in `leaf` and its shape, each cell's major cells ordered on their own (`rows_grade`), the positions one cell after another. `None` where `rows_grade` takes some cell.
-pub(crate) fn cell_grades<'a>(leaf: &Value, cells: impl Iterator<Item = (usize, &'a [usize])>, down: bool) -> Option<Vec<u32>> {
-    let view = compact_view(&Cells::Items(leaf))?;
-    let mut grades = Vec::new();
-    for (start, shape) in cells {
-        let (count, width) = (shape.first().copied().unwrap_or(1), shape.iter().skip(1).product());
-        grades.extend(rows_grade(view, start, count, width, down)?);
-    }
-    Some(grades)
 }
 pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool) -> Result<Value, Error> {
     let (layout, _) = crate::plan::graded(right.layout())?;

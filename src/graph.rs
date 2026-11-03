@@ -14,18 +14,18 @@ pub(crate) struct Node(pub(crate) Arc<NodeData>);
 
 pub(crate) struct NodeData {
     description: crate::program::Description,
-    actual: OnceLock<crate::program::Description>,
     literal: bool,
     level: Option<usize>,
     reach: Option<Reach>,
     kept: Kept,
+    values: OnceLock<Outputs<Value>>,
     state: Mutex<OwnedState>,
 }
 
 enum OwnedState {
     Step { step: Step, origin: Origin<Vec<Read<Value>>> },
     Input { position: usize, role: Role, value: Option<Value> },
-    Done(Outputs<Value>),
+    Done,
 }
 
 pub(crate) enum State<'a> {
@@ -42,16 +42,7 @@ impl Pending {
     pub(crate) fn control(node: Node) -> Self { Self { node, output: None } }
     pub(crate) fn description(&self) -> Option<&Desc> { self.output.and_then(|output| self.node.desc(output)) }
     pub(crate) fn desc(&self) -> &Desc { self.description().expect("numeric description is unresolved or absent") }
-    pub(crate) fn unresolved_description(&self) -> bool {
-        self.output.is_some() && self.description().is_none() && self.node.0.actual.get().is_none() && self.node.0.description.count().is_some()
-    }
-    pub(crate) fn resolve_description(&self) -> Result<()> {
-        if !self.unresolved_description() { return Ok(()); }
-        let count = self.node.0.description.count().expect("a counted result has its count port");
-        self.node.clone().into_storage(count, ReadKind::Count)?;
-        if self.node.0.actual.get().is_none() { return Err(Error::planning()); }
-        Ok(())
-    }
+    pub(crate) fn completed(&self) -> Option<&Value> { self.node.completed()?.as_ref().get(self.output? as usize) }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -130,7 +121,7 @@ impl Node {
                 kept.bytes += bytes; kept.largest = kept.largest.max(bytes);
             }
         }
-        let node = Self(Arc::new(NodeData { description, actual: OnceLock::new(), literal: false, level, reach, kept, state: Mutex::new(OwnedState::Step { step, origin }) }));
+        let node = Self(Arc::new(NodeData { description, literal: false, level, reach, kept, values: OnceLock::new(), state: Mutex::new(OwnedState::Step { step, origin }) }));
         if let Some(hash) = hash { intern.nodes.get_mut(&hash).unwrap().push(Arc::downgrade(&node.0)); }
         drop(intern);
         Tracing::recorded(&node);
@@ -143,8 +134,8 @@ impl Node {
         let description = Outputs::one(Desc::leaf(&value));
         let bytes = value.footprint();
         let kept = Kept { nodes: 1, graph: std::mem::size_of::<NodeData>(), bytes, largest: bytes };
-        Self(Arc::new(NodeData { description, actual: OnceLock::new(), literal: true, level: None, reach: None,
-            kept, state: Mutex::new(OwnedState::Done(Outputs::one(value))) }))
+        Self(Arc::new(NodeData { description, literal: true, level: None, reach: None,
+            kept, values: OnceLock::from(Outputs::one(value)), state: Mutex::new(OwnedState::Done) }))
     }
     pub(crate) fn is_literal(&self) -> bool { self.0.literal }
 
@@ -159,11 +150,11 @@ impl Node {
         let reach = match (reach, value.as_ref().and_then(Value::pending).and_then(|pending| pending.node.reach())) {
             (Some(own), Some(parent)) => Some(own.join(parent)), (own, None) => own, (None, parent) => parent,
         };
-        Self(Arc::new(NodeData { description, actual: OnceLock::new(), literal: false, level, reach, kept: Kept::default(),
-            state: Mutex::new(OwnedState::Input { position, role, value }) }))
+        Self(Arc::new(NodeData { description, literal: false, level, reach, kept: Kept::default(),
+            values: OnceLock::new(), state: Mutex::new(OwnedState::Input { position, role, value }) }))
     }
 
-    pub(crate) fn description(&self) -> &crate::program::Description { self.0.actual.get().unwrap_or(&self.0.description) }
+    pub(crate) fn description(&self) -> &crate::program::Description { &self.0.description }
     pub(crate) fn descs(&self) -> &[Option<Desc>] { self.description().as_ref() }
     pub(crate) fn desc(&self, output: u32) -> Option<&Desc> { self.descs().get(output as usize)?.as_ref() }
     pub(crate) fn level(&self) -> Option<usize> { self.0.level }
@@ -201,27 +192,17 @@ impl Node {
         look(match &*state {
             OwnedState::Step { step, origin } => State::Step { step, origin },
             OwnedState::Input { position, role, value } => State::Input { position: *position, role: *role, value: value.as_ref() },
-            OwnedState::Done(values) => State::Done(values),
+            OwnedState::Done => State::Done(self.0.values.get().expect("a completed node owns its outputs")),
         })
     }
     pub(crate) fn recipe(&self) -> Option<(Step, Origin<Vec<Read<Value>>>)> {
         self.with_state(|state| match state { State::Step { step, origin } => Some((step.clone(), origin.clone())), _ => None })
     }
 
-    fn publish_description(&self, values: &Outputs<Value>) {
-        let initial = &self.0.description;
-        let descriptions = values.as_ref().iter().enumerate().map(|(i, value)| {
-            initial.as_ref().get(i).cloned().flatten().or_else(|| Desc::of(value).map(std::borrow::Cow::into_owned))
-        }).collect::<Vec<_>>();
-        let actual = Outputs::from(descriptions).with_trees(values.trees().cloned().or_else(|| initial.trees().cloned()))
-            .with_shy(values.shy).with_count(initial.count());
-        let _ = self.0.actual.set(actual);
-    }
     pub(crate) fn finish(&self, results: Outputs<Value>) {
         debug_assert!(self.descs().is_empty() || results.as_ref().len() == self.descs().len());
         let mut state = lock(&self.0.state);
-        if !self.0.description.as_ref().is_empty() && self.0.description.as_ref().iter().any(Option::is_none) { self.publish_description(&results); }
-        *state = OwnedState::Done(results);
+        let _ = self.0.values.set(results); *state = OwnedState::Done;
     }
 
     pub(crate) fn stored(&self, output: u32) -> Option<Value> {
@@ -231,19 +212,14 @@ impl Node {
             State::Step { .. } => None,
         })
     }
-    pub(crate) fn completed(&self) -> Option<Outputs<Value>> {
-        self.with_state(|state| match state { State::Done(values) => Some(values.clone()), _ => None })
-    }
+    pub(crate) fn completed(&self) -> Option<&Outputs<Value>> { self.0.values.get() }
     pub(crate) fn observe(&self) -> Result<Outputs<Value>> {
-        let actual = self.completed().ok_or_else(Error::planning)?.flatten()?;
-        self.publish_description(&actual);
-        self.finish(actual.clone());
-        Ok(actual)
+        Ok(self.completed().ok_or_else(Error::planning)?.clone().flatten())
     }
     pub(crate) fn ready_value() -> &'static Value {
         static READY: LazyLock<Value> = LazyLock::new(|| Value::Pending(Pending::control(Node(Arc::new(NodeData {
-            description: crate::program::Description::empty(), actual: OnceLock::new(), literal: false, level: None, reach: None, kept: Kept::default(),
-            state: Mutex::new(OwnedState::Done(Outputs::empty())),
+            description: crate::program::Description::empty(), literal: false, level: None, reach: None, kept: Kept::default(),
+            values: OnceLock::from(Outputs::empty()), state: Mutex::new(OwnedState::Done),
         })))));
         &READY
     }
@@ -269,6 +245,7 @@ impl Node {
         let value = if let Some(value) = self.stored(output) { value.read(read)? } else {
             if self.with_state(|state| matches!(state, State::Input { value: None, .. })) { return Err(Error::planning()); }
             crate::program::execute(std::slice::from_ref(&pending))?;
+            // Returning storage to host code is a checkpoint; execute itself only records numeric errors.
             crate::session().raise()?;
             self.stored(output).expect("a completed graph publishes its requested output")
         };
@@ -311,7 +288,7 @@ impl Drop for NodeData {
             match node.state.get_mut().unwrap_or_else(PoisonError::into_inner) {
                 OwnedState::Step { origin, .. } => for read in std::mem::take(&mut origin.list) { take(read.operand); },
                 OwnedState::Input { value, .. } => if let Some(value) = value.take() { take(value); },
-                OwnedState::Done(_) => {}
+                OwnedState::Done => {}
             }
         });
     }

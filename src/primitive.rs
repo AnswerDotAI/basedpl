@@ -3,8 +3,8 @@ use crate::session;
 use crate::transform::Plain;
 use crate::{
     Described, Error, ErrorKind, Number, Span, Value, agreement::{Agree, Agreement}, eval::Function,
-    array::{Frame, Items, Lanes, Layout, SegmentPart, Steps, Tree, TreeInput, TreeRoot, Widening, generated_len, or_and_sum, saturated}, keyed::Selector,
-    number::{Arithmetic, Kind as NumberKind, Kinds, Mark, Math, Numbers, Numeric, int::Int}, program::{control, ItemSource, Desc, Mode, Origin, Outputs, Step, trace::ReadKind}, search::{Cells, classify, first_matches, firsts}
+    array::{Frame, Items, Lanes, Layout, Steps, Tree, TreeInput, TreeRoot, Widening, generated_len, or_and_sum, saturated}, keyed::Selector,
+    number::{Arithmetic, Kind as NumberKind, Kinds, Mark, Math, Numbers, Numeric, int::Int}, program::{control, Desc, Mode, Origin, Outputs, Step, trace::ReadKind}, search::{Cells, classify, first_matches, firsts}
 };
 use rustymath::hashing::{HashMap, HashMapExt};
 use rustymath::{Binary as _, agreement::{Mapping, ReadPlan}, buffer::{DType, FloatWidth, Width}, error::Kind, layout::{shown, strides}, with_width};
@@ -27,7 +27,6 @@ pub(crate) enum ReadOp {
     Ravel, Reshape, Item, Cell { rank: usize }, Slice { axis: usize },
     Axes { axes: Box<[ViewAxis]>, destinations: Box<[usize]> },
     Cells { operation: Box<Operation>, frame: usize, inputs: Box<[CellInput]> },
-    Pack { rank: u8, stacked: bool }, Part(SegmentPart),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -116,8 +115,6 @@ pub(crate) enum Operation {
     At {
         /// Part 16: an accumulating write's primitive (`y.[dst]+←v`; a copy's transpose's `+`, part 15); none replaces.
         combine: Option<Primitive>,
-        /// Part 16: in a segmented root, its positions are leaf item offsets rather than items' entries (its 2 kinds of position).
-        into_leaf: bool,
         /// A structural target rooted in the original; otherwise the operand gives explicit positions.
         selection: bool,
     },
@@ -126,15 +123,8 @@ pub(crate) enum Operation {
         /// Part 14: how many cases, so `Operation::functions` counts them.
         cases: usize,
     },
-    /// Parts 5, 13: a loop (`⍣`, a dfn fold, a dfn scan, or a recorded body's call at a count of 1); its function values are the body `f`, then a predicate exit's `g`; its arguments are flattened, its carries and outputs being the carry's leaves.
-    Loop {
-        /// Part 13: its form of exit.
-        exit: Exit,
-        /// Parts 13, 15: its iteration order, 1 field: a fold's last to first, a scan's and `⍣`'s first to last, a transposed loop's the other way (JAX's `scan` `reverse`, which its transpose flips).
-        order: Order,
-        body_result: LoopResult,
-        batch_axes: usize,
-    },
+    /// A function boundary, expanded to its ordinary body calls before graph construction.
+    Call,
     /// Part 5: strands and array notation.
     Join(Notation),
     /// Parts 5, 21: a conversion by a mark.
@@ -146,18 +136,6 @@ pub(crate) enum Operation {
     /// Part 4: a system function that's neither an effect nor a draw (`•index`); the function is the call's function value.
     System,
 }
-
-/// Parts 13, 15: a loop's iteration order.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum Order {
-    /// Part 13: first item to last (a scan, `⍣`).
-    Forward,
-    /// Parts 13, 15: last item to first (a dfn fold; the reverse loop over a scan's items).
-    Backward,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum LoopResult { Carry, CarryAndStack }
 
 /// Part 5: how a primitive's call pairs its arguments.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -173,24 +151,6 @@ pub(crate) enum Pairing {
 
 #[derive(Clone, Copy)]
 pub(crate) struct ProductFunctions { pub(crate) fold: Option<usize>, pub(crate) map: usize }
-
-/// Part 13: a loop's form of exit; counts and `∞` are parameters.
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) enum Exit {
-    Once,
-    /// Part 13: `⍣` with a value: a count, a count array, `∞` or `¯∞`, as the parameter's value decides.
-    Power,
-    /// Part 13: `⍣` with a function: a predicate graph on the new and old states; the predicate `g`, the call's 2nd function value, stays in the origin.
-    Predicate,
-    /// Part 13: a dfn fold or a dfn scan over its items, in the loop's order (`Operation::Loop.order`); `+\v` and other primitive scans are fold steps (`Operation::Fold.scan`).
-    Items {
-        /// Part 13: a scan, not a fold.
-        scan: bool,
-        /// llms.txt `⌿ ⍀`: along the first axis (the axis, not the order).
-        first: bool,
-        source: ItemSource,
-    },
-}
 
 /// Part 5, llms.txt "Brackets": array notation's forms.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -369,25 +329,34 @@ impl CallView<'_> {
             None => input(root.leaves.start).map(Cow::Borrowed),
         }
     }
-    pub(crate) fn root_desc(&self, root: usize) -> Result<Option<Cow<'_, Desc>>, Error> {
-        let root = self.root(root);
-        match self.trees { Some(trees) => trees.describe_root(&root, |position| self.desc(position)), None => Ok(self.desc(root.leaves.start)) }
+    fn host_value(&self, position: usize) -> Result<Cow<'_, Value>, Error> {
+        let value = self.input(position).ok_or_else(Error::planning)?.value;
+        match value {
+            Value::Pending(pending) => match pending.completed() {
+                Some(value) => Ok(Cow::Borrowed(value)), None => self.value(position, ReadKind::Structure),
+            },
+            _ => Ok(Cow::Borrowed(value)),
+        }
     }
-    pub(crate) fn root_atom(&self, root: usize) -> Result<Option<bool>, Error> {
+    pub(crate) fn root_desc(&self, root: usize) -> Option<Cow<'_, Desc>> {
+        let root = self.root(root);
+        match self.trees { Some(trees) => trees.describe_root(&root, |position| self.desc(position)), None => self.desc(root.leaves.start) }
+    }
+    pub(crate) fn root_atom(&self, root: usize) -> Result<bool, Error> {
         let at = self.root(root);
-        if self.trees.is_some_and(|trees| !matches!(trees.root_at(&at), Tree::Leaf)) { return Ok(Some(false)); }
-        if let Some(desc) = self.root_desc(root)? { return Ok(Some(desc.atom)); }
-        Ok(self.input(at.leaves.start).and_then(|input| match input.value {
-            Value::Pending(_) | Value::Carried { .. } => None, value => Some(value.is_atom()),
-        }))
+        if self.trees.is_some_and(|trees| !matches!(trees.root_at(&at), Tree::Leaf)) { return Ok(false); }
+        if let Some(desc) = self.root_desc(root) { return Ok(desc.atom); }
+        Ok(self.host_value(at.leaves.start)?.is_atom())
     }
     pub(crate) fn root_layout(&self, root: usize) -> Result<Cow<'_, Layout>, Error> {
         let root = self.root(root);
         if let Some(trees) = self.trees && let Tree::Array { layout, .. } = trees.root_at(&root) { return Ok(Cow::Borrowed(layout)); }
-        match self.root_desc(root.index)? {
+        match self.root_desc(root.index) {
             Some(Cow::Borrowed(desc)) => Ok(Cow::Borrowed(&desc.layout)),
             Some(Cow::Owned(desc)) => Ok(Cow::Owned(desc.layout)),
-            None => self.input(root.leaves.start).map(|input| Cow::Borrowed(input.value.layout())).ok_or_else(Error::planning),
+            None => Ok(match self.host_value(root.leaves.start)? {
+                Cow::Borrowed(value) => Cow::Borrowed(value.layout()), Cow::Owned(value) => Cow::Owned(value.layout().clone()),
+            }),
         }
     }
     pub(crate) fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> { self.bindings.desc(position) }
@@ -398,9 +367,6 @@ impl CallView<'_> {
     pub(crate) fn mathematical_positions(&self) -> Result<Vec<usize>, Error> {
         let fill = (!matches!(self.operation, Operation::ReadRelation { .. })).then(|| self.fill_root()).flatten();
         let mut positions: Vec<_> = self.source_roots()?.into_iter().chain(fill).flat_map(|root| root.leaves).collect();
-        if let Some(trees) = self.trees {
-            trees.input_uses(|position, usage| { if matches!(usage, TreeInput::Description | TreeInput::Geometry) { positions.retain(|&p| p != position); } });
-        }
         positions.sort_unstable(); positions.dedup(); Ok(positions)
     }
     pub(crate) fn parameter(&self, operand: usize) -> Option<&Value> {
@@ -426,7 +392,6 @@ impl CallView<'_> {
 
 impl Operation {
     fn underlying(&self) -> &Self { match self { Self::ReadRelation { operation, .. } | Self::Read(ReadOp::Cells { operation, .. }) => operation.underlying(), _ => self } }
-    pub(crate) fn counted_loop(&self) -> bool { matches!(self.underlying(), Self::Loop { exit: Exit::Power | Exit::Items { source: ItemSource::Leaves, .. }, .. }) }
     pub(crate) fn product_functions(&self) -> Option<ProductFunctions> {
         match self.underlying() { Self::Product { contracted, .. } => {
             let fold = (*contracted != 0).then_some(0);
@@ -438,11 +403,9 @@ impl Operation {
         match call.operation {
             Self::Read(ReadOp::Cells { .. }) => structural::cell_sources(call),
             Self::ReadRelation { .. } => crate::plan::source_roots_relation(call),
-            Self::Read(ReadOp::Pack { .. }) => Ok(SegmentPart::ALL.into_iter()
-                .filter(|part| matches!(part.input_use(), None | Some(TreeInput::Prototype))).map(|part| call.root(part.position())).collect()),
-            Self::Read(ReadOp::Part(_)) => Ok(vec![call.root(0)]),
             Self::Read(kind) => Ok(vec![call.root(crate::plan::read_source(kind))]),
             Self::Join(Notation::Cells) => Ok((2..call.explicit_roots).map(|root| call.root(root)).collect()),
+            Self::At { .. } => Ok(vec![call.root(0), call.root(2)]),
             _ => data_roots(call),
         }
     }
@@ -460,45 +423,37 @@ impl Operation {
             _ => Ok(None),
         }
     }
-    /// Geometry rebuilt from current bindings and descriptions for Copy, Join and At.
-    pub(crate) fn maps<O>(call: &CallView<'_>, step: &Step, outputs: &[Option<Desc>], reads: &mut [crate::program::Read<O>])
-        -> crate::error::Result<Option<rustymath::agreement::ReadPlan>> {
-        if let Some(row) = call.row() { return (row.maps)(call, step, outputs, &mut |position, map| { reads[position].map = map; }); }
+    /// Build native descriptions, a Step and positional reads from the current call.
+    pub(crate) fn build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+        if let Some(row) = call.row() { return (row.build)(call, set); }
         match call.operation {
-            Self::Read(ReadOp::Cells { .. }) => structural::maps(call, step, outputs, &mut |position, map| { reads[position].map = map; }),
-            Self::Read(ReadOp::Pack { .. } | ReadOp::Part(_)) => Ok(None),
-            Self::Read(kind) => {
-                let result = outputs.first().and_then(Option::as_ref).ok_or_else(Error::planning)?;
-                let map = crate::plan::read_map(call, kind, result)?;
-                reads[crate::plan::read_source(kind)].map = map.clone();
-                crate::plan::read_plan(call, kind, result, map).map(Some)
-            }
-            Self::ReadRelation { .. } => crate::plan::maps_relation(call, &mut |position, map| { reads[position].map = map; }).map(Some),
-            Self::At { .. } => indexing::maps_at(call, &mut |position, map| { reads[position].map = map; }),
-            Self::Recipe(_) => numeric::map_maps(call, step, outputs, &mut |position, map| { reads[position].map = map; }),
-            Self::Join(_) => crate::array::join_maps(call),
-            Self::Convert(_) => Ok(None),
-            Self::Fold { .. } => numeric::maps_fold(call, step, outputs, &mut |position, map| { reads[position].map = map; }),
-            Self::Product { .. } => numeric::maps_product(call, step, outputs, &mut |position, map| { reads[position].map = map; }),
-            Self::Select { .. } | Self::Loop { .. } => control::maps(call, step, outputs, &mut |position, map| { reads[position].map = map; }),
-            _ => todo!(),
+            Self::Read(ReadOp::Cells { .. }) => structural::build(call, set),
+            Self::Read(kind) => crate::plan::build_read(call, kind, set),
+            Self::ReadRelation { .. } => crate::plan::build_relation(call, set),
+            Self::At { .. } => indexing::build_at(call, set),
+            Self::Recipe(_) => numeric::build_map(call, set),
+            Self::Join(_) => crate::array::join_build(call, set),
+            Self::Fold { .. } => numeric::build_fold(call, set),
+            Self::Product { .. } => numeric::build_product(call, set),
+            _ => host_build(call, set),
         }
     }
     /// Batch this complete call, including non-row operations, through normal dispatch.
     pub(crate) fn cells(origin: &crate::program::Origin<&[Value]>, wholes: &[Value], frame: usize) -> crate::error::Result<crate::program::Origin<Vec<Value>>> { crate::batch::cells(origin, wholes, frame) }
     pub(crate) fn linearity(call: &CallView<'_>, valence: usize) -> Linearity { crate::derivative::linearity(call, valence) }
-    /// Joint primal and tangent evaluation; Select and Loop execute their primal work once.
-    pub(crate) fn jvp(origin: &crate::program::Origin<&[Value]>, tangents: &[Option<Value>], level: usize) -> crate::error::Result<JvpOutputs> { crate::derivative::jvp(origin, tangents, level) }
+    /// Joint primal and tangent evaluation.
+    pub(crate) fn jvp(origin: &crate::program::Origin<&[Value]>, tangents: &[Option<Value>]) -> crate::error::Result<JvpOutputs> { crate::derivative::jvp(origin, tangents) }
     pub(crate) fn partials(origin: &crate::program::Origin<&[crate::program::Read<Value>]>, result: &Value,
         needed: &[bool]) -> crate::error::Result<Vec<Option<Value>>> { crate::derivative::partials(origin, result, needed) }
     /// Internal views use the same dispatch, roles and row-plan builder as glyph calls.
     pub(crate) fn reading(kind: ReadOp, args: &[Value], literals: u64) -> crate::error::Result<Value> { Self::Read(kind).call(args, literals) }
-    fn relation(origin: &Origin<&[crate::program::Read<Value>]>, relation: Relation, result: Option<&Value>) -> Result<Value, Error> {
+    pub(crate) fn relation_origin(origin: &Origin<&[crate::program::Read<Value>]>, relation: Relation,
+        result: Option<&Value>) -> Result<Origin<Vec<Value>>, Error> {
         let values: Vec<_> = origin.list.iter().map(|read| read.operand.clone()).collect();
         let parent = origin.with_list(values.as_slice());
         let trees = origin.trees.as_deref().cloned().unwrap_or_else(|| crate::array::Trees::leaves(values.len()));
         let roots: Vec<_> = trees.roots().take(origin.explicit_roots as usize).collect();
-        let mut arguments: Vec<_> = roots.iter().map(|root| trees.at_root(root, &values).map(Cow::into_owned)).collect::<Result<_, _>>()?;
+        let mut arguments: Vec<_> = roots.iter().map(|root| trees.at_root(root, &values).into_owned()).collect();
         let mut from: Vec<_> = roots.iter().map(|root| Some(root.leaves.start)).collect();
         if let Some(result) = result { arguments.push(result.clone()); from.push(None); }
         if let Relation::Back(input) = relation {
@@ -507,7 +462,10 @@ impl Operation {
         }
         let operation = Self::ReadRelation { operation: Box::new(origin.operation.clone()), relation,
             arguments: origin.explicit as usize - origin.operation.functions() };
-        let call = crate::eval::projected_call(&parent, operation, &arguments, &from)?;
+        crate::eval::projected_call(&parent, operation, &arguments, &from)
+    }
+    fn relation(origin: &Origin<&[crate::program::Read<Value>]>, relation: Relation, result: Option<&Value>) -> Result<Value, Error> {
+        let call = Self::relation_origin(origin, relation, result)?;
         Self::dispatch(call.reborrow()).and_then(Outputs::assemble)
     }
     pub(crate) fn read_input(origin: &Origin<&[crate::program::Read<Value>]>, input: usize) -> Result<Value, Error> {
@@ -531,7 +489,7 @@ impl Operation {
         use crate::{array::Trees, eval::CaptureBindings};
         let mode = Mode { dynamic: !numeric.is_static(), mathish: numeric.mathish };
         let functions = self.functions();
-        let flattened = if matches!(self, Self::Read(ReadOp::Pack { .. })) { None } else { crate::array::flatten(args)? };
+        let flattened = crate::array::flatten(args);
         let (trees, mut list) = flattened.map_or_else(|| (None, args.to_vec()), |(trees, leaves)| (Some(trees), leaves));
         let explicit = list.len();
         let mut literals = crate::eval::literal_leaves(trees.as_deref(), literals);
@@ -542,7 +500,7 @@ impl Operation {
         for function in &args[..functions] {
             Function::capture_functions(function, &mut captures, &mut |capture| {
                 let (index, position) = (captured_trees.root_count(), list.len() - tail);
-                captured_trees.push(&capture.value, &mut list)?;
+                captured_trees.push(&capture.value, &mut list);
                 if capture.literal { for leaf in tail + position..list.len().min(64) { literals |= 1 << leaf; } }
                 Ok(crate::array::TreeRoot { index, leaves: position..list.len() - tail })
             })?;
@@ -563,11 +521,16 @@ impl Operation {
     }
     /// Resolve semantic forms, then levels and parameter reads, before the one lazy builder.
     pub(crate) fn dispatch(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
-        check()?;
-        let formed = if matches!(origin.operation, Self::Convert(_)) {
+        let formed = if matches!(origin.operation, Self::Call) {
+            let Value::Function(function) = &origin.list[0] else { return Err(Error::planning()); };
+            let function = function.clone();
+            Some(crate::program::call(&function, origin.with_list(origin.list.to_vec()))?)
+        } else if matches!(origin.operation, Self::At { .. }) {
+            crate::selection::form(origin.reborrow())?
+        } else if matches!(origin.operation, Self::ReadRelation { .. }) {
+            crate::plan::form_relation(origin.reborrow())?
+        } else if matches!(origin.operation, Self::Convert(_)) {
             numeric::convert_form(origin.reborrow())?
-        } else if matches!(origin.operation, Self::Read(ReadOp::Part(_))) {
-            structural::segment_form(origin.reborrow())?
         } else if matches!(origin.operation, Self::Product { .. }) {
             crate::eval::operators::product_form(&origin)?.map(Outputs::one)
         } else {
@@ -575,6 +538,10 @@ impl Operation {
             form(origin.reborrow())?
         };
         if let Some(outputs) = formed { return Ok(outputs); }
+        Self::instantiate(origin)
+    }
+    pub(crate) fn instantiate(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
+        check()?;
         let (carried, barrier) = origin.list.iter().enumerate().filter(|(position, _)| origin.executes(*position))
             .fold((None, None), |(carried, barrier), (_, value)| (carried.max(value.carried_level()), barrier.max(value.level())));
         let resource = (!origin.operation.implicit_inputs(&origin.bindings).is_empty()).then(crate::transform::Level::innermost_batched).flatten().map(|level| level.id);
@@ -590,12 +557,11 @@ impl Operation {
         }
         crate::fusion::built(origin, values.as_ref())
     }
-    /// Runs the call on the host, on its arguments' values: every operation has host code. A primitive's is its row's code, a system function's its entry's (`SystemFunction::row`); a strand's builds the array through the evaluator's value constructors (part 18); a loop's is part 13's host runner, running the body as ordinary code each iteration; a select's calls each cell's case; a conversion's is its mark's (`Mark::conversion`, part 21); a draw's is its generator's draw; an effect's is its act (part 17).
-    pub(crate) fn code(call: &CallView<'_>, outputs: &[Option<Desc>]) -> crate::error::Result<Outputs<Value>> {
+    /// Host execution for normalized calls; primitives and system functions own their row's code.
+    pub(crate) fn code(call: &CallView<'_>) -> crate::error::Result<Outputs<Value>> {
         if let Some(row) = call.row() { return (row.code)(call); }
         match call.operation {
             Self::Read(ReadOp::Cells { .. }) => structural::code_cells(call),
-            Self::Read(ReadOp::Pack { .. } | ReadOp::Part(_)) => structural::code_segment(call),
             Self::Read(kind) => crate::plan::code_read(call, kind),
             Self::Recipe(_) => numeric::code_recipe(call),
             Self::Join(_) => crate::array::join_code(call),
@@ -607,15 +573,15 @@ impl Operation {
                     else { crate::eval::operators::product_fallback(origin.reborrow())? };
                 Ok(Outputs::one(value))
             }
-            Self::Select { .. } | Self::Loop { .. } => control::code(call),
-            _ => todo!(),
+            Self::At { .. } => crate::selection::code_at(call),
+            _ => unreachable!("semantic forms normalize before graph construction; row-owned calls use their row"),
         }
     }
-    /// How many of a call's arguments, first in call order, are function values (a loop's `f` and predicate, a select's cases, an effect's, a draw's or a system function); the operation's form gives it.
+    /// Number of callable roots at the start of the explicit input list.
     pub(crate) fn functions(&self) -> usize {
         if let Some(product) = self.product_functions() { return product.map + 1; }
-        match self.underlying() { Self::Select { cases } => *cases, Self::Loop { exit: Exit::Predicate, .. } => 2,
-            Self::Loop { .. } | Self::Draw { .. } | Self::Effect(Act::Call) | Self::System => 1, _ => 0 }
+        match self.underlying() { Self::Select { cases } => *cases,
+            Self::Call | Self::Draw { .. } | Self::Effect(Act::Call) | Self::System => 1, _ => 0 }
     }
     fn options_root(&self, roots: usize) -> Option<(usize, bool)> {
         match self {
@@ -626,7 +592,7 @@ impl Operation {
         }
     }
     pub(crate) fn explicit_argument_roots(&self, roots: usize) -> std::ops::Range<usize> {
-        (self.functions() + usize::from(matches!(self, Self::Select { .. })) + usize::from(self.counted_loop()))..self.options_root(roots).map_or(roots, |(root, _)| root)
+        (self.functions() + usize::from(matches!(self, Self::Select { .. })))..self.options_root(roots).map_or(roots, |(root, _)| root)
     }
     /// A primitive or primitive fold; callable-operand operations resolve their functions from a call.
     pub(crate) fn primitive(&self) -> Option<Primitive> {
@@ -639,13 +605,8 @@ impl Operation {
         else if let Some(row) = call.row() { (row.roles)(call)? } else { match call.operation {
             Self::Product { .. } => numeric::roles(call)?,
             Self::Join(Notation::Cells) => call.root(0).leaves.fold(Roles::default(), |roles, position| roles.with(position, ReadKind::Description)),
-            Self::Read(ReadOp::Pack { .. }) => Roles::default().with(0, ReadKind::Description),
             Self::Read(ReadOp::Reshape) => Roles::default().with(0, ReadKind::Structure),
             Self::Read(ReadOp::Slice { .. }) => Roles::default().with(0, ReadKind::Value),
-            operation if operation.counted_loop() => {
-                let root = call.root(operation.functions()); let first = root.leaves.start;
-                root.leaves.fold(Roles::default(), |roles, position| roles.with(position - first, ReadKind::Count))
-            },
             _ => Roles::default(),
         }};
         let first = call.root_boundary(call.operation.functions());
@@ -653,9 +614,6 @@ impl Operation {
             for position in call.root_boundary(root)..call.root_boundary(root + 1) {
                 if roles.kind(position - first).is_none() { roles.insert(position - first, ReadKind::Structure); }
             }
-        }
-        if let Some(trees) = call.trees {
-            trees.input_uses(|position, usage| { if usage == TreeInput::Description && position >= first { roles.insert(position - first, ReadKind::Description); } });
         }
         call.captures.description_inputs(call.capture_start(), |position| roles.insert(position - first, ReadKind::Description));
         Ok(roles)
@@ -676,46 +634,10 @@ impl Operation {
             Self::Draw { batch_axes } if *batch_axes > 0 => &[Generator, Frame],
             Self::Draw { .. } => &[Generator],
             Self::Effect(_) => &[Token],
-            Self::Loop { .. } | Self::Select { .. } => match (captures.acts, captures.implicit_generator) {
+            Self::Call | Self::Select { .. } => match (captures.acts, captures.implicit_generator) {
                 (true, true) => &[Token, Generator], (true, false) => &[Token], (false, true) => &[Generator], _ => &[],
             },
             _ => &[],
-        }
-    }
-    /// Parts 2, 5, 6: describe, the 1 producer of a step's descriptions, which the builder and refill share: from the origin (its operation, its function values `functions`, its trees, revised decisions and mode), the operands' descriptions and the parameters' values, the outputs' descriptions in 1 kind, shape and range pass. A primitive's and a system function's rules come from their rows (`Primitive::info`, `SystemFunction::row`): the kind rule's kind, the shape rule's layout, atom flag and segments, the object's interval rule's range. A strand's comes from its items', a conversion's from its mark, a draw's from its generator and distribution, an effect's from its act; `Loop` and `Select` read what the store holds for the body or case (`Programs::serve`, keyed by `Key::of`): a recording or a case plan, making one where none is kept (`trace::plan_case`; part 10: 1 route), which at dispatch may read the operands themselves, `values`, at the call (none under refill). None where the call goes to the host, the 1 form of that decision from descriptions: the kind rule gives `Kinds::Host` or the store holds a stop for the body or case; `Operation::host` then runs it.
-    pub(crate) fn describe(call: &CallView<'_>) -> crate::error::Result<Option<crate::program::Description>> {
-        if let Some(row) = call.row() { return (row.describe)(call); }
-        match call.operation {
-            Self::Read(ReadOp::Cells { .. }) => structural::describe(call),
-            Self::Read(ReadOp::Pack { .. } | ReadOp::Part(_)) => structural::describe_segment(call),
-            Self::Read(kind) => if call.desc(crate::plan::read_source(kind)).is_some() { crate::plan::describe_read(call, kind).map(Some) } else { Ok(None) },
-            Self::ReadRelation { .. } => crate::plan::describe_relation(call),
-            Self::At { .. } => indexing::describe_at(call),
-            Self::Recipe(_) => numeric::describe_map(call),
-            Self::Join(_) => crate::array::join_describe(call),
-            Self::Convert(_) => Ok(None),
-            Self::Fold { .. } => numeric::describe_fold(call),
-            Self::Product { .. } => numeric::describe_product(call),
-            Self::Select { .. } | Self::Loop { .. } => control::describe(call),
-            _ => todo!(),
-        }
-    }
-    /// Parts 5, 6: the 1 row-plan builder, which only dispatch calls, after `describe` gave descriptions: from the operands' descriptions, the parameters' values and those descriptions, the step (`Call` where the row has none) and its resolved fields, its kernel's variant among them (`Step::Map.variant`); a primitive's and a system function's from their rows. The 1 builder makes a node of it with the descriptions describe gave, deriving the maps (`Step::maps`).
-    pub(crate) fn plan(call: &CallView<'_>, descs: &[Option<Desc>]) -> crate::error::Result<Step> {
-        if let Some(row) = call.row() { return (row.plan)(call, descs); }
-        match call.operation {
-            Self::Read(ReadOp::Cells { .. }) => structural::plan(call, descs),
-            Self::Read(ReadOp::Pack { .. } | ReadOp::Part(_)) => Ok(Step::Call),
-            Self::Read(kind) => Ok(Step::Copy { source: crate::plan::read_source(kind) as u32 }),
-            Self::ReadRelation { .. } => crate::plan::plan_relation(call),
-            Self::At { .. } => indexing::plan_at(call),
-            Self::Recipe(_) => numeric::plan_map(call, descs),
-            Self::Join(_) => crate::array::join_plan(call, descs),
-            Self::Convert(_) => Ok(Step::Call),
-            Self::Fold { .. } => numeric::plan_fold(call, descs),
-            Self::Product { .. } => numeric::plan_product(call, descs),
-            Self::Select { .. } | Self::Loop { .. } => control::plan(call, descs),
-            _ => todo!(),
         }
     }
     pub(crate) fn glyph(&self) -> String {
@@ -723,7 +645,7 @@ impl Operation {
             Self::Primitive { primitive, .. } => primitive.glyph().into(),
             Self::Fold { primitive, first, scan, .. } => format!("{}{}", primitive.glyph(), FoldKind { first: *first, scan: *scan }.glyph()),
             Self::Product { .. } => ".".into(),
-            Self::Select { .. } => "⍚".into(), Self::Loop { .. } => "⍣".into(), Self::At { .. } => "@".into(),
+            Self::Select { .. } => "⍚".into(), Self::Call => "call".into(), Self::At { .. } => "@".into(),
             Self::Convert(mark) => mark.marker().into(), Self::Join(_) => "[]".into(), Self::ReadRelation { relation, .. } => if matches!(relation, Relation::Back(_)) { "read⁻" } else { "read" }.into(), Self::Read(_) => "view".into(), Self::Recipe(_) => "math".into(),
             Self::Draw { .. } => "¿".into(), Self::Effect(_) => "effect".into(), Self::System => "system".into(),
         }
@@ -851,6 +773,7 @@ pub(crate) enum IntegerResult { Never, Dynamic, Always }
 impl IntegerResult {
     pub(crate) fn applies(self, dynamic: bool) -> bool { self == Self::Always || self == Self::Dynamic && dynamic }
 }
+pub(crate) type RowResult = (Step, Option<crate::program::Description>, Option<ReadPlan>);
 /// Language rules and metadata for one primitive. Mathematical facts come from its selected rustymath Kernel.
 pub(crate) struct Row {
     pub(crate) glyph: &'static str,
@@ -865,9 +788,7 @@ pub(crate) struct Row {
     pub(crate) defined: [bool; 2],
     /// Floating results of each valence become ordinary integers.
     pub(crate) integer_result: [IntegerResult; 2],
-    pub(crate) describe: fn(&CallView<'_>) -> crate::error::Result<Option<crate::program::Description>>,
-    pub(crate) plan: fn(&CallView<'_>, &[Option<Desc>]) -> crate::error::Result<Step>,
-    pub(crate) maps: fn(&CallView<'_>, &Step, &[Option<Desc>], &mut dyn FnMut(usize, Mapping)) -> crate::error::Result<Option<rustymath::agreement::ReadPlan>>,
+    pub(crate) build: fn(&CallView<'_>, &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error>,
     pub(crate) code: fn(&CallView<'_>) -> crate::error::Result<Outputs<Value>>,
     pub(crate) inverse: fn(&Function, crate::program::Origin<&[Value]>, bool) -> crate::error::Result<Value>,
     pub(crate) cells: Batching,
@@ -888,19 +809,19 @@ impl Row {
     }
     pub(crate) const fn new(glyph: &'static str, name: &'static str, names: [&'static str; 2], ranks: [Rank; 3]) -> Self {
         Self { glyph, name, names, ranks, math: numeric::kernel, roles: no_roles, sources: data_roots, form: primitive_form, settings: Setting::BODY, defined: [false; 2], integer_result: [IntegerResult::Never; 2],
-            describe: host_description, plan: host_plan, maps: host_maps, code: host_primitive, inverse: inverse_primitive,
+            build: host_build, code: host_primitive, inverse: inverse_primitive,
             cells: crate::batch::unsupported, under: [Under::Computational; 2], discards: [false; 2],
             linear: Linear { monadic: Linearity::No, dyadic: Linearity::No, zero: [false; 2] }, own_identity: None,
             cost: 1.0, passes: 1, alternates: false, first_axis: false, implicit_generator: false }
     }
     const fn mapped(self) -> Self {
-        Self { form: map_form, cells: crate::batch::primitive_cells, roles: numeric::roles, describe: numeric::describe_map, plan: numeric::plan_map, maps: numeric::map_maps, code: numeric::code, ..self }
+        Self { form: map_form, cells: crate::batch::primitive_cells, roles: numeric::roles, build: numeric::build_map, code: numeric::code, ..self }
     }
     const fn linear(self, monadic: Linearity, dyadic: Linearity, zero: [bool; 2]) -> Self {
         Self { linear: Linear { monadic, dyadic, zero }, ..self }
     }
     const fn moves(self) -> Self {
-        Self { form: fill_form, cells: structural::cell_read, describe: structural::describe, plan: structural::plan, maps: structural::maps,
+        Self { form: fill_form, cells: structural::cell_read, build: structural::build,
             under: [Under::Structural; 2], linear: Linear { monadic: Linearity::Jointly(1), dyadic: Linearity::Jointly(2), zero: [false; 2] }, ..self }
     }
     pub(crate) fn identity(&self, call: &CallView<'_>, kind: crate::number::Kind) -> crate::error::Result<Option<Value>> {
@@ -1141,12 +1062,12 @@ impl Primitive {
             Self::Compare(Greater) => &const { row!(">", "greater-than", "sort-down", "greater", [W, 0, 0]).mapped().linear(No, No, [false, true]) },
             Self::Compare(LessEqual) => &const { Row { defined: [true, false], ..row!("≤", "less-than-or-equal", "decrement", "less-equal", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) } },
             Self::Compare(GreaterEqual) => &const { Row { defined: [true, false], ..row!("≥", "greater-than-or-equal", "increment", "greater-equal", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) } },
-            Self::Iota => &const { Row { roles: search::index_roles, describe: search::describe_index, plan: search::plan_index, maps: search::maps_index, ..row!("⍳", "iota", "indices", "index-of", [1, W, W]).linear(No, No, [true; 2]) } },
+            Self::Iota => &const { Row { roles: search::index_roles, build: search::build_index, ..row!("⍳", "iota", "indices", "index-of", [1, W, W]).linear(No, No, [true; 2]) } },
             Self::Range => &const { row!("↦", "right-arrow-from-bar", "range", "to", [0; 3]).linear(No, No, [true; 2]) },
             Self::Keys => &const { row!(":", "colon", "unkey", "keyed", [W, 1, W]).moves() },
             Self::Shape => &const { Row { roles: structural::roles, discards: [false, true], ..row!("⍴", "rho", "shape", "reshape", [W, 1, W]).moves().linear(No, Jointly(2), [true, false]) } },
-            Self::Tally => &const { Row { roles: description_roles, describe: structural::describe, plan: structural::plan, maps: structural::maps, ..row!("≢", "equal-underbar-slash", "tally", "not-match", [W; 3]).linear(No, No, [true; 2]) } },
-            Self::Depth => &const { Row { roles: description_roles, describe: structural::describe, plan: structural::plan, maps: structural::maps, ..row!("≡", "equal-underbar", "depth", "match", [W; 3]).linear(No, No, [true; 2]) } },
+            Self::Tally => &const { Row { roles: description_roles, build: structural::build, ..row!("≢", "equal-underbar-slash", "tally", "not-match", [W; 3]).linear(No, No, [true; 2]) } },
+            Self::Depth => &const { Row { roles: description_roles, build: structural::build, ..row!("≡", "equal-underbar", "depth", "match", [W; 3]).linear(No, No, [true; 2]) } },
             Self::Ravel => &const { Row { roles: structural::roles, ..row!(",", "comma", "ravel", "catenate", [W; 3]).moves().linear(Jointly(1), Jointly(3), [false; 2]) } },
             Self::CatenateFirst => &const { Row { roles: structural::roles, first_axis: true, ..row!("⍪", "comma-bar", "table", "catenate-first", [W; 3]).moves().linear(Jointly(1), Jointly(3), [false; 2]) } },
             Self::Enclose => &const { Row { roles: structural::roles, discards: [false, true], ..row!("⊂", "left-shoe", "enclose", "partitioned-enclose", [W, 1, W]).moves() } },
@@ -1166,7 +1087,7 @@ impl Primitive {
             Self::Decode => &const { row!("⊥", "up-tack", "binary-decode", "decode", [1; 3]) },
             Self::Execute => &const { row!("⍎", "hydrant", "execute", "execute-in", [1, W, W]) },
             Self::Format => &const { row!("⍕", "thorn", "format", "format-spec", [W, 1, W]).linear(No, No, [true; 2]) },
-            Self::Index | Self::Bracket => &const { Row { form: indexing::index_form, sources: indexing::source_roots, roles: indexing::index_roles, describe: indexing::describe_index, plan: indexing::plan_index, maps: indexing::maps_index, discards: [false, true], ..row!("⌷", "squad", "materialise", "index", [W, 1, W]).moves() } },
+            Self::Index | Self::Bracket => &const { Row { form: indexing::index_form, sources: indexing::source_roots, roles: indexing::index_roles, build: indexing::build_index, discards: [false, true], ..row!("⌷", "squad", "materialise", "index", [W, 1, W]).moves() } },
             Self::MatrixDivide => &const { row!("⌹", "domino", "matrix-inverse", "matrix-divide", [2, W, 2]) },
             Self::Replicate => &const { Row { roles: structural::roles, discards: [false, true], ..row!("#", "hash", "runs", "replicate", [W, 1, W]).moves() } },
             Self::Windows => &const { Row { form: structural::windows_form, roles: structural::roles, discards: [false, true], ..row!("↕", "up-down-arrow", "pairs", "windows", [W; 3]).moves() } },
@@ -1191,8 +1112,8 @@ impl Primitive {
             Self::RealLn => &const { row!("⍟", "circle-star", "natural-log", "", [0; 3]).mapped() },
             Self::RealPow => &const { row!("*", "star", "", "exponent", [0; 3]).mapped() },
             Self::RealCircle { .. } => &const { row!("○", "circle", "", "circular", [0; 3]).mapped() },
-            Self::Choice => &const { Row { describe: control::choice_describe, plan: control::choice_plan,
-                maps: control::choice_maps, code: control::choice_code, ..row!("⍚", "choice", "choice", "choice", [0; 3]) } },
+            Self::Choice => &const { Row { sources: control::choice_sources, build: control::choice_build, code: control::choice_code,
+                ..row!("⍚", "choice", "choice", "choice", [0; 3]).linear(Jointly(u8::MAX), Jointly(u8::MAX), [false; 2]) } },
         }
     }
     pub(crate) fn glyph(self) -> &'static str { self.info().glyph }
@@ -1337,9 +1258,10 @@ pub(crate) fn fill_read(call: &CallView<'_>, output: &Desc) -> Result<rustymath:
     Ok(rustymath::agreement::Missing::Input(read))
 }
 fn draw_form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> { crate::distribution::draw_origin(origin).map(Some) }
-fn host_description(_: &CallView<'_>) -> crate::error::Result<Option<crate::program::Description>> { Ok(None) }
-fn host_plan(_: &CallView<'_>, _: &[Option<Desc>]) -> crate::error::Result<Step> { Ok(Step::Call) }
-fn host_maps(_: &CallView<'_>, _: &Step, _: &[Option<Desc>], _: &mut dyn FnMut(usize, Mapping)) -> crate::error::Result<Option<rustymath::agreement::ReadPlan>> { Ok(None) }
+pub(crate) fn host_build(call: &CallView<'_>, _: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+    let token = crate::program::implicit_position(call.operation, call.explicit, call.captures, crate::program::ImplicitInput::Token);
+    Ok((token.map_or(Step::Call, |position| Step::Effect { token: Some(position as u32) }), None, None))
+}
 
 fn inverse_primitive(function: &Function, origin: crate::program::Origin<&[Value]>, bound_first: bool) -> Result<Value, Error> {
     let primitive = function.as_primitive().ok_or_else(|| Error::domain("an inverse row needs its primitive"))?;
@@ -1439,7 +1361,7 @@ fn metadata_result(primitive: Primitive, layout: &Layout, depth: Option<usize>, 
     let range = Range { lo: lengths.iter().copied().min().unwrap_or(0) as f64, hi: lengths.iter().copied().max().unwrap_or(0) as f64 };
     let (kind, range) = result_kind(numeric, DType::Integer(Width::U8), range, IntegerResult::Never);
     let read = ReadPlan::joined(lengths.into_iter().map(|length| ReadPlan::index(length, 0, 1)))?;
-    Ok((Desc { kind, atom, layout: result, range: Some(range), segments: None }, read))
+    Ok((Desc { kind, atom, layout: result, range: Some(range) }, read))
 }
 pub(super) fn metadata(call: &CallView<'_>) -> Result<Option<(Desc, ReadPlan)>, Error> {
     let Operation::Primitive { primitive: primitive @ (Primitive::Shape | Primitive::Tally | Primitive::Depth), .. } = call.operation else { return Ok(None) };
@@ -1447,7 +1369,7 @@ pub(super) fn metadata(call: &CallView<'_>) -> Result<Option<(Desc, ReadPlan)>, 
     if roots.len() != 1 { return Ok(None); }
     let root = call.root(roots.start);
     let known = root.leaves.clone().all(|position| call.desc(position).is_some());
-    let layout_known = known || call.trees.is_some_and(|trees| matches!(trees.root_at(&root), Tree::Array { .. } | Tree::Segmented { .. }));
+    let layout_known = known || call.trees.is_some_and(|trees| matches!(trees.root_at(&root), Tree::Array { .. }));
     if !layout_known || *primitive == Primitive::Depth && !known { return Ok(None); }
     let depth = (*primitive == Primitive::Depth).then(|| call_depth(call, roots.start)).transpose()?;
     metadata_result(*primitive, &call.root_layout(roots.start)?, depth, call.numeric()?).map(Some)
@@ -1465,7 +1387,7 @@ fn code_metadata(call: &CallView<'_>) -> Result<Value, Error> {
 }
 /// An atom has depth zero. An array has one more than its deepest item, or its prototype when empty.
 fn described_depth(desc: &Desc) -> usize {
-    if desc.atom { 0 } else { 1 + desc.segments.as_ref().map_or(0, |segments| described_depth(&segments.prototype)) }
+    if desc.atom { 0 } else { 1 }
 }
 
 pub(crate) fn depth(right: &Value) -> usize {
@@ -1477,7 +1399,7 @@ pub(crate) fn depth(right: &Value) -> usize {
 fn call_depth(call: &CallView<'_>, root: usize) -> Result<usize, Error> {
     fn leaf(call: &CallView<'_>, position: usize) -> Result<usize, Error> {
         call.desc(position).map(|desc| described_depth(&desc))
-            .or_else(|| call.input(position).map(|input| depth(input.value))).ok_or_else(Error::planning)
+            .map(Ok).unwrap_or_else(|| call.host_value(position).map(|value| depth(&value)))
     }
     fn node(call: &CallView<'_>, tree: &Tree, start: usize) -> Result<usize, Error> {
         match tree {
@@ -1487,10 +1409,6 @@ fn call_depth(call: &CallView<'_>, root: usize) -> Result<usize, Error> {
             } else {
                 tree.children(start).try_fold(0, |maximum: usize, (tree, leaves)| node(call, tree, leaves.start).map(|depth| maximum.max(depth)))?
             }),
-            Tree::Segmented { .. } => {
-                let (prototype, leaves) = tree.component(SegmentPart::Prototype, start).ok_or_else(Error::planning)?;
-                Ok(1 + node(call, prototype, leaves.start)?)
-            }
         }
     }
     let root = call.root(root);

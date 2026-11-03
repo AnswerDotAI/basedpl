@@ -539,7 +539,7 @@ pub(crate) fn cell_read(origin: &Origin<&[Value]>, wholes: &[Value], frame: usiz
     let positions: Vec<_> = call.data_positions().collect();
     if origin.list.iter().enumerate().any(|(position, value)| origin.executes(position)
         && value.carried_level() == Some(level.id) && !positions.contains(&position)) { return crate::batch::unsupported(origin, wholes, frame); }
-    if read_geometry(&call)?.is_none() { return crate::batch::unsupported(origin, wholes, frame); }
+    if Operation::build(&call, &mut |_, _| {})?.2.is_none() { return crate::batch::unsupported(origin, wholes, frame); }
     let inputs = positions.into_iter().filter_map(|position| call.desc(position)
         .map(|desc| CellInput { position: position as u32, atom: desc.atom, weak: desc.kind.weak })).collect();
     let operation = Operation::Read(ReadOp::Cells { operation: Box::new(origin.operation.clone()), frame, inputs });
@@ -551,21 +551,6 @@ pub(crate) fn cell_read(origin: &Origin<&[Value]>, wholes: &[Value], frame: usiz
 struct ReadGeometry { source: usize, desc: Desc, read: ReadPlan }
 
 fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
-    if matches!(call.operation, Operation::Read(ReadOp::Cells { .. })) {
-        return with_cells(call, |cell, frame| {
-            let Some(mut copy) = read_geometry(cell)? else { return Ok(None); };
-            if frame == 0 { return Ok(Some(copy)); }
-            let source = call.desc(copy.source).ok_or_else(Error::planning)?;
-            let frame = source.layout.axes(0..frame);
-            copy.read = copy.read.framed(frame.count(), &mut |source, _| {
-                let desc = call.desc(source).ok_or_else(|| rustymath::error::Error::new(Kind::Domain, "a framed read needs a native source"))?;
-                Ok(ReadPlan::input(source, desc.layout.count()))
-            })?;
-            copy.desc.layout = frame.concat(&copy.desc.layout);
-            copy.desc.atom = false; copy.desc.kind.weak = false;
-            Ok(Some(copy))
-        });
-    }
     use Primitive::*;
     let Operation::Primitive { primitive, .. } = call.operation else { unreachable!("a structural row") };
     let roots = call.explicit_argument_roots();
@@ -575,12 +560,11 @@ fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
     if source.leaves.len() != 1 { return Ok(None); }
     let source = source.leaves.start;
     let Some(desc) = call.desc(source) else { return Ok(None) };
-    if desc.segments.is_some() { return Ok(None); }
     let rank = desc.shape().len();
     if matches!(primitive, Ravel | CatenateFirst) && let Some(left) = &left {
         if left.leaves.len() != 1 { return Ok(None); }
         let left_position = left.leaves.start;
-        let Some(left) = call.desc(left_position).filter(|desc| desc.segments.is_none()) else { return Ok(None); };
+        let Some(left) = call.desc(left_position) else { return Ok(None); };
         let Some(kind) = left.kind.join(desc.kind) else { return Ok(None); };
         let rank = rank.max(left.shape().len()).max(1);
         let axis = call.axis_root().map(|root| {
@@ -589,14 +573,14 @@ fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
         }).transpose()?;
         let joined = catenation(&left.layout, &desc.layout, axis, *primitive == CatenateFirst)?;
         let read = joined.read.compose_inputs(&mut |input, items| Ok::<_, Error>(ReadPlan::input(if input == 0 { left_position } else { source }, items)))?;
-        let desc = Desc { layout: joined.layout, atom: false, kind: kind.strong(), range: Some(left.bounds().join(desc.bounds())), segments: None };
+        let desc = Desc { layout: joined.layout, atom: false, kind: kind.strong(), range: Some(left.bounds().join(desc.bounds())) };
         return Ok(Some(ReadGeometry { source, desc, read }));
     }
     if *primitive == Windows {
         let spec = WindowSpec::from_call(call)?;
         let (padding, plan) = spec.geometry(&desc.layout)?;
         let atom = spec.sizes.is_empty() && desc.atom;
-        let output = Desc { layout: plan.layout.clone().into(), atom, kind: crate::number::Kind { weak: atom && desc.kind.weak, ..desc.kind }, range: filled_range(call, &desc), segments: None };
+        let output = Desc { layout: plan.layout.clone().into(), atom, kind: crate::number::Kind { weak: atom && desc.kind.weak, ..desc.kind }, range: filled_range(call, &desc) };
         let mut read = ReadPlan::input(source, desc.layout.count());
         if let Some(padding) = padding {
             let padded = Desc { layout: padding.layout.into(), ..output.clone() };
@@ -651,59 +635,47 @@ fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
         _ => return Ok(None),
     };
     let kind = crate::number::Kind { weak: atom && desc.kind.weak, ..desc.kind };
-    let output = Desc { layout, atom, kind, range: filled_range(call, &desc), segments: None };
+    let output = Desc { layout, atom, kind, range: filled_range(call, &desc) };
     let read = ReadPlan::copy(source, desc.layout.count(), map, output.layout.count(), fill_read(call, &output)?);
     Ok(Some(ReadGeometry { source, desc: output, read }))
 }
 
-pub(super) fn describe(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
-    if let Some((desc, _)) = metadata(call)? { return Ok(Some(Outputs::one(Some(desc)))); }
-    Ok(read_geometry(call)?.map(|copy| Outputs::one(Some(copy.desc))))
-}
-pub(super) fn plan(call: &CallView<'_>, _: &[Option<Desc>]) -> Result<Step, Error> {
-    if metadata(call)?.is_some() { return Ok(Step::Index { descending: false }); }
-    let copy = read_geometry(call)?.ok_or_else(Error::planning)?;
-    Ok(Step::Copy { source: copy.source as u32 })
-}
-pub(super) fn maps(call: &CallView<'_>, _: &Step, _: &[Option<Desc>], _: &mut dyn FnMut(usize, Mapping)) -> Result<Option<ReadPlan>, Error> {
-    if let Some((_, read)) = metadata(call)? { return Ok(Some(read)); }
-    Ok(Some(read_geometry(call)?.ok_or_else(Error::planning)?.read))
-}
-pub(super) fn code_cells(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
-    let copy = read_geometry(call)?.ok_or_else(Error::planning)?;
-    let mut values: Vec<_> = (0..call.len()).map(|position| call.input(position).map(|input| input.value.clone()).ok_or_else(Error::planning)).collect::<Result<_, _>>()?;
-    let mut positions = Vec::new();
-    copy.read.try_for_each_source(&mut |source, _| { if !positions.contains(&source) { positions.push(source); } Ok::<_, Error>(()) })?;
-    for position in positions { values[position] = call.value(position, ReadKind::Value)?.into_owned(); }
-    crate::array::read_stored(&copy.desc, &copy.read, &values, call.mode.dynamic).map(Outputs::one)
+fn build_cells(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+    let Operation::Read(ReadOp::Cells { inputs, .. }) = call.operation else { unreachable!("framed cell reads") };
+    with_cells(call, |cell, axes| {
+        let (step, outputs, read) = Operation::build(cell, &mut |_, _| {})?;
+        let (Some(mut outputs), Some(mut read)) = (outputs, read) else { return host_build(call, set); };
+        if axes == 0 { return Ok((step, Some(outputs), Some(read))); }
+        let Some(source) = inputs.first().and_then(|input| call.desc(input.position as usize)) else { return host_build(call, set); };
+        let frame = source.layout.axes(0..axes);
+        if outputs.as_ref().iter().any(Option::is_none) { return host_build(call, set); }
+        read = read.framed(frame.count(), &mut |source, _| {
+            let desc = call.desc(source).ok_or_else(|| rustymath::error::Error::new(Kind::Domain, "a framed read needs a native source"))?;
+            Ok(ReadPlan::input(source, desc.layout.count()))
+        })?;
+        for desc in outputs.as_mut().iter_mut().flatten() {
+            desc.layout = frame.concat(&desc.layout); desc.atom = false; desc.kind.weak = false;
+        }
+        Ok((step, Some(outputs), Some(read)))
+    })
 }
 
-pub(super) fn segment_form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
-    let Operation::Read(ReadOp::Part(part)) = origin.operation else { return Ok(None); };
-    Ok(origin.call_view(&origin.list).root_input(0)?.segment_projection(part).map(Outputs::one))
+pub(super) fn build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+    if matches!(call.operation, Operation::Read(ReadOp::Cells { .. })) { return build_cells(call, set); }
+    if let Some((desc, read)) = metadata(call)? {
+        return Ok((Step::Index { descending: false }, Some(Outputs::one(Some(desc))), Some(read)));
+    }
+    let Some(copy) = read_geometry(call)? else { return host_build(call, set); };
+    Ok((Step::Copy { source: copy.source as u32 }, Some(Outputs::one(Some(copy.desc))), Some(copy.read)))
 }
-pub(super) fn describe_segment(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
-    let desc = match call.operation {
-        Operation::Read(ReadOp::Pack { rank, stacked }) => {
-            let (Some(leaf), Some(prototype)) = (call.root_desc(SegmentPart::Leaf.position())?, call.root_desc(SegmentPart::Prototype.position())?) else { return Ok(None); };
-            Desc::packed_segments(call.root_layout(0)?.into_owned(), *rank, *stacked, &leaf, &prototype)?
-        }
-        Operation::Read(ReadOp::Part(part)) => {
-            let Some(source) = call.root_desc(0)? else { return Ok(None); };
-            let Some(desc) = source.segment_part(*part) else { return Ok(None); }; desc
-        }
-        _ => return Err(Error::planning()),
-    };
-    Ok(Some(Outputs::one(Some(desc))))
+
+pub(super) fn code_cells(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
+    let (_, Some(outputs), Some(read)) = build_cells(call, &mut |_, _| {})? else { return Err(Error::planning()); };
+    let desc = outputs.as_ref().first().and_then(Option::as_ref).ok_or_else(Error::planning)?;
+    let mut values: Vec<_> = (0..call.len()).map(|position| call.input(position).map(|input| input.value.clone()).ok_or_else(Error::planning)).collect::<Result<_, _>>()?;
+    let mut positions = Vec::new();
+    read.try_for_each_source(&mut |source, _| { if !positions.contains(&source) { positions.push(source); } Ok::<_, Error>(()) })?;
+    for position in positions { values[position] = call.value(position, ReadKind::Value)?.into_owned(); }
+    crate::array::read_stored(desc, &read, &values, call.mode.dynamic).map(Outputs::one)
 }
-pub(super) fn code_segment(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
-    let value = match call.operation {
-        Operation::Read(ReadOp::Pack { rank, stacked }) => {
-            let [entries, shapes, leaf, prototype] = SegmentPart::ALL.map(|part| call.root_value(part.position(), ReadKind::Value).map(Cow::into_owned));
-            crate::array::Segments::assemble_parts(call.root_layout(0)?.into_owned(), *rank, *stacked, [entries?, shapes?, leaf?, prototype?])?
-        }
-        Operation::Read(ReadOp::Part(part)) => call.root_value(0, ReadKind::Value)?.stored_segment_part(*part)?,
-        _ => return Err(Error::planning()),
-    };
-    Ok(Outputs::one(value))
-}
+

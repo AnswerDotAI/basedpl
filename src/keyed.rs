@@ -1,4 +1,4 @@
-use crate::{ErrorKind, Number, Value, array::{Items, Layout, Segments}};
+use crate::{ErrorKind, Number, Value, array::{Items, Layout}};
 use rustymath::hashing::{HashMap, HashSet, HashSetExt};
 use rustymath::{buffer::{FloatWidth, View}, error::Kind};
 use std::sync::Arc;
@@ -56,24 +56,10 @@ impl Texts {
 }
 /// An array of `shape` holding the text items `items`, with empty text as its prototype.
 pub(crate) fn texts(shape: &[usize], items: Vec<Value>) -> Result<Value, ErrorKind> { Value::shaped(shape, items, text("")) }
-/// A column of texts with `shape`, as one segmented array whose leaf holds each distinct text once, up to `SHAREABLE` distinct texts, and each later text where it occurs. Fewer than two texts take mixed storage, as `texts` gives them.
+/// A text column sharing repeated texts.
 pub(crate) fn text_column(shape: &[usize], column: &[&str]) -> Result<Value, ErrorKind> {
-    if column.len() < 2 { return texts(shape, column.iter().map(|s| text(s)).collect()); }
-    let (mut leaf, mut offsets, mut lengths, mut starts) = (Vec::new(), Vec::with_capacity(column.len()), Vec::with_capacity(column.len()), HashMap::default());
-    for &s in column {
-        let found = starts.get(s).copied();
-        let (start, len) = found.unwrap_or_else(|| {
-            let start = leaf.len();
-            leaf.extend(s.chars());
-            let entry = (start, leaf.len() - start);
-            if starts.len() < SHAREABLE { starts.insert(s, entry); }
-            entry
-        });
-        offsets.push(start);
-        lengths.push(len);
-    }
-    let Value::Array(leaf) = Value::characters([leaf.len()], leaf)? else { unreachable!("characters make an array") };
-    Ok(Value::Array(Arc::new(crate::array::ArrayData::Segmented { layout: Layout::from(shape), segments: Segments::new(leaf, offsets, lengths, 1, text("")) })))
+    let mut shared = Texts::default();
+    texts(shape, column.iter().map(|s| shared.text(s)).collect())
 }
 /// The texts in `value`, the reverse of `texts`: the text itself with an empty shape, or each text in an array of them with the array's shape. `None` when an item isn't text.
 pub(crate) fn text_items(value: &Value) -> Option<(Vec<usize>, Vec<Arc<str>>)> {

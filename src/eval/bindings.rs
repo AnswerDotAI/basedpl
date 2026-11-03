@@ -88,7 +88,7 @@ impl Frame {
         if let Some(binding) = &slots[slot] { return Ok(Some(binding.clone())); }
         let Some(origin) = &self.origin else { return Ok(None) };
         let root = &self.roots[slot - self.captured()];
-        let value = origin.trees.as_ref().map_or_else(|| Ok(origin.list[root.leaves.start].clone()), |trees| trees.at_root(root, &origin.list).map(|value| value.into_owned()))?;
+        let value = origin.trees.as_ref().map_or_else(|| origin.list[root.leaves.start].clone(), |trees| trees.at_root(root, &origin.list).into_owned());
         Ok(Some(Binding::Value(value)))
     }
     fn root_binding(&self, frame: usize, slot: usize, slots: &[Option<Binding>]) -> Result<Option<Binding>, Error> {
@@ -183,7 +183,7 @@ impl Bindings {
         let mut result = super::map_roots(&source, |root| {
             let root = root.index;
             match &overrides[root] {
-                Some(Binding::Value(value)) => super::RootReplacement::value(value, None).map(Some),
+                Some(Binding::Value(value)) => Ok(Some(super::RootReplacement::value(value, None))),
                 None | Some(Binding::Absent | Binding::Released) => Ok(None),
                 _ => Err(Error::domain("a captured override must be a produced value")),
             }

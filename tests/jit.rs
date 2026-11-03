@@ -315,7 +315,7 @@ fn arrays(n: usize) -> Vec<(&'static str, basedpl::Value)> {
     ]
 }
 
-/// Each compiled operation, in a stage of two or more steps, gives what the same stage gives with no compiled parts (`settings::Compiles`), under dynamic and static kinds. The lengths reach each loop of a kernel: every call waits (`Waits::All`), on 16 blocks of items or a few more, which a stage splits into blocks of a power of two items, at most 4,096 (`blocks::Blocks::block`), and 1, 7 or 37 items more make a last block of their own. Floats compare within the accuracy rule, as the reference harness compares them, and Booleans and integers exactly.
+/// Each compiled operation, in a stage of two or more steps, gives what the same stage gives with no compiled parts (`settings::Compiles`), under dynamic and static kinds. Every result is forced through •explain, which reports whether compiled stages ran. Floats compare within the accuracy rule, as the reference harness compares them, and Booleans and integers exactly.
 #[test]
 fn compiled_stages_match_interpreted() {
     use basedpl::settings::{self, Compiles};
@@ -339,11 +339,10 @@ fn compiled_stages_match_interpreted() {
             basedpl::Session::new().eval_with(prefs, options());
             let data = arrays(n);
             for code in cases {
-                // The value of `code` under `compiles`, computed in full, and the number of stage runs that used compiled code.
+                // Compare the actual compiled route with the same graph executed natively.
                 let run = |compiles| {
                     settings::reset();
                     settings::set_compiles(compiles);
-                    settings::set_sizes(settings::Sizes { waits: settings::Waits::All, ..settings::Sizes::DEFAULT });
                     let session = basedpl::Session::new();
                     let eval = |code: &str| {
                         let e = session.eval_with(code, options());
@@ -353,14 +352,14 @@ fn compiled_stages_match_interpreted() {
                     eval(prefs);
                     for (name, value) in &data { session.set(name, value.clone()).unwrap(); }
                     eval(SETUP);
-                    let before = settings::compiled_runs();
-                    let value = eval(code).unwrap_or_else(|| panic!("{code} gave no value"));
-                    // Reading an item computes a pending result in full.
-                    value.elements().next();
-                    (value, settings::compiled_runs() - before)
+                    session.set("source", basedpl::keyed::text(code)).unwrap();
+                    eval("report←•explain source");
+                    let value = eval("report.value").unwrap_or_else(|| panic!("{code} gave no value"));
+                    let runs = eval(r#"+/report.routes.calls×("compiled"≡)¨report.routes.route"#).unwrap().as_number().unwrap().to_float().unwrap();
+                    (value, runs)
                 };
                 let (compiled, runs) = run(Compiles::Always);
-                assert!(runs > 0, "{code} on {n} items ran no compiled part");
+                assert!(runs > 0.0, "{code} on {n} items ran no compiled part");
                 let interpreted = run(Compiles::Never).0;
                 assert_eq!(basedpl::reference::difference(&compiled, &interpreted, None, 0.0, true), None, "{code} on {n} items");
             }

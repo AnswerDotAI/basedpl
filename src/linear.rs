@@ -8,7 +8,7 @@ use rustymath::{buffer::DType, hashing::{HashMap, HashMapExt}};
 /// A linear input. A direction binds it; reverse mode leaves the seed unbound.
 pub(crate) fn seed(like: &Value, level: usize, position: usize, value: Option<Value>) -> Pending {
     let desc = Desc::of(like).expect("a differentiated leaf has a description").into_owned();
-    Pending::data(Node::input(position, value, desc, Role::Seed, Some(level), None), 0)
+    Pending::data(Node::input(position, value, Some(desc), Role::Seed, Some(level), None), 0)
 }
 
 pub(crate) fn read_back(origin: &crate::program::Origin<&[crate::program::Read<Value>]>, cotangent: &Value, needed: &[bool]) -> Result<Vec<Option<Value>>> {
@@ -27,16 +27,16 @@ fn add(cotangents: &mut HashMap<Pending, Value>, source: Pending, contribution: 
 pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value], level: usize) -> Result<Vec<Value>> {
     if roots.len() != directions.len() { return Err(Error::planning()); }
     let mut cotangents = HashMap::default();
-    let mut pending = Vec::new();
+    let mut live_roots = Vec::new();
     for (root, direction) in roots.iter().zip(directions) {
-        let leaves = array::flatten(std::slice::from_ref(root))?.map_or_else(|| vec![root.clone()], |(_, leaves)| leaves);
-        let directions = array::flatten(std::slice::from_ref(direction))?.map_or_else(|| vec![direction.clone()], |(_, leaves)| leaves);
+        let leaves = array::flatten(std::slice::from_ref(root)).map_or_else(|| vec![root.clone()], |(_, leaves)| leaves);
+        let directions = array::flatten(std::slice::from_ref(direction)).map_or_else(|| vec![direction.clone()], |(_, leaves)| leaves);
         if leaves.len() != directions.len() { return Err(Error::domain("a cotangent must match its result's structure")); }
         for (leaf, direction) in leaves.into_iter().zip(directions) {
-            if let Value::Pending(source) = leaf { pending.push(source.clone()); add(&mut cotangents, source, direction)?; }
+            if let Value::Pending(source) = leaf { live_roots.push(Value::Pending(source.clone())); add(&mut cotangents, source, direction)?; }
         }
     }
-    let live = Live::of(&pending);
+    let live = Live::of(&live_roots, Some(level));
     for node in live.nodes().iter().rev() {
         let Some((step, origin)) = node.recipe() else { continue; };
         let output = (0..node.descs().len()).map(|i| cotangents.remove(&Pending::data(node.clone(), i as u32))).collect::<Vec<_>>();
@@ -45,7 +45,6 @@ pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value]
         if needed.iter().all(|needed| !needed) { continue; }
         let origin = origin.with_list(origin.list.as_slice());
         let contributions = match step {
-            Step::Select { .. } | Step::Loop { .. } => derivative::transpose_control(node, &origin, &output, &needed, level)?,
             Step::Map { .. } | Step::Product { .. } | Step::Call => {
                 if output.len() != 1 { return Err(Error::planning()); }
                 let direction = output[0].as_ref().ok_or_else(Error::planning)?;
@@ -57,7 +56,7 @@ pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value]
                     Operation::read_back(&origin, input, &contribution)
                 }).transpose()).collect::<Result<Vec<_>>>()?
             }
-            Step::Convert { arg } => {
+            Step::Convert { arg, .. } => {
                 let dtype = origin.list[arg as usize].operand.dtype().ok_or_else(Error::planning)?;
                 let direction = output[0].as_ref().ok_or_else(Error::planning)?;
                 let direction = Operation::Convert(Mark::Type { dtype, fixed: false }).call(std::slice::from_ref(direction), 0)?;

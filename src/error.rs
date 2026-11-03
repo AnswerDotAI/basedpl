@@ -47,7 +47,7 @@ impl ErrorKind {
             Self::Unsupported, Self::Interrupt, Self::Timeout,
         ]
     }
-    /// The name that guards and `•signal` use, such as `DOMAIN`. Rustymath's Overflow is LIMIT, because BPL's exact integers grow and BPL has no overflow kind.
+    /// The name that guards and `•signal` use, such as `DOMAIN`. Rustymath's Overflow is LIMIT.
     pub fn name(&self) -> &str {
         match self {
             Self::Syntax => "SYNTAX",
@@ -71,7 +71,7 @@ impl ErrorKind {
         let name = name.to_uppercase();
         Some(Self::builtin().into_iter().find(|k| k.name() == name).unwrap_or_else(|| Self::Custom(name.into())))
     }
-    /// Whether an error of this kind controls evaluation rather than reporting a failure. An interrupt or a timeout ends the evaluation. A batched run's stop sends its level back to running cell by cell. `Again` compiles its statement again, and `Retrace` traces its call again. A handler that catches every error lets these pass.
+    /// Whether an error of this kind controls evaluation rather than reporting a failure. An interrupt or a timeout ends the evaluation. A batched run's stop sends its level back to running cell by cell. A planning read stops the recording. A handler that catches every error lets these pass.
     pub(crate) fn is_control(&self) -> bool { matches!(self, Self::Interrupt | Self::Timeout | Self::BatchStop(_) | Self::Planning) }
 }
 
@@ -96,8 +96,6 @@ pub struct Error(Box<ErrorData>);
 #[derive(Clone, Debug)]
 pub struct ErrorData { pub kind: ErrorKind, pub message: String, pub span: Option<Span>, pub calls: Vec<Span> }
 
-/// The Interfaces section's one-parameter `Result`, over `Error`.
-pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 impl std::ops::Deref for Error {
     type Target = ErrorData;

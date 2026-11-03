@@ -1,4 +1,4 @@
-use crate::{Error, Value, array::{ArrayData, Carried, SegmentPart, TreeInput, Widening, map_leaves}, error::Result, graph::{Node, Pending},
+use crate::{Error, Value, array::{ArrayData, Carried, Widening, map_leaves}, error::Result, graph::{Node, Pending},
     primitive::{Operation, Primitive, SelectionProjection}, program::{Desc, Origin, Read, Step, trace::Role}};
 use rustymath::{agreement::{ReadPlan, ReadRoute}, hashing::HashMap};
 use std::sync::Arc;
@@ -34,22 +34,28 @@ pub(crate) fn rooted(root: &Value) -> Result<Value> {
 }
 
 #[derive(Clone)]
-enum PathPart { Item(usize), Prototype, Segment(SegmentPart) }
+enum PathPart { Item(usize), Prototype }
 struct RootPort { position: usize, pending: Pending, path: Vec<PathPart>, writable: bool }
 pub(crate) struct RootPorts<'a> { root: &'a Value, ports: Vec<RootPort> }
+fn replace(current: &Value, path: &[PathPart], value: Value) -> Result<Value> {
+    let Some((part, rest)) = path.split_first() else { return Ok(value); };
+    match part {
+        PathPart::Item(i) => {
+            if *i >= current.len() || current.is_atom() { return Err(foreign()); }
+            let mut items = current.elements().collect::<Vec<_>>(); items[*i] = replace(&items[*i], rest, value)?;
+            Ok(Value::stored_values(current.layout().clone(), items, Some(current.prototype()), Widening::Items)?)
+        }
+        PathPart::Prototype => {
+            let prototype = replace(&current.prototype(), rest, value)?;
+            Ok(Value::stored_values(current.layout().clone(), current.elements().collect(), Some(prototype), Widening::Items)?)
+        }
+    }
+}
 impl<'a> RootPorts<'a> {
     pub(crate) fn new(root: &'a Value) -> Self {
         fn collect(value: &Value, path: &mut Vec<PathPart>, writable: bool, ports: &mut Vec<RootPort>) {
             let value = subject(value);
-            if value.segment_projection(SegmentPart::Leaf).is_some() {
-                for part in SegmentPart::ALL {
-                    if part.input_use() == Some(TreeInput::Geometry) { continue; }
-                    path.push(PathPart::Segment(part));
-                    collect(&value.segment_projection(part).expect("a Pack has every component"), path,
-                        writable && part.input_use() != Some(TreeInput::Prototype), ports);
-                    path.pop();
-                }
-            } else if let Value::Array(data) = value && let ArrayData::Mixed { items, prototype, .. } = &**data {
+            if let Value::Array(data) = value && let ArrayData::Mixed { items, prototype, .. } = &**data {
                 for (i, item) in items.iter().enumerate() { path.push(PathPart::Item(i)); collect(item, path, writable, ports); path.pop(); }
                 if let Some(prototype) = prototype { path.push(PathPart::Prototype); collect(prototype, path, false, ports); path.pop(); }
             } else if let Value::Pending(pending) = value {
@@ -68,40 +74,11 @@ impl<'a> RootPorts<'a> {
             value = match part {
                 PathPart::Item(i) => { if *i >= value.len() || value.is_atom() { return Err(foreign()); } value.at(*i) },
                 PathPart::Prototype => value.prototype(),
-                PathPart::Segment(part) => match value.segment_projection(*part) { Some(value) => value, None => value.stored_segment_part(*part)? },
             };
         }
         Ok(value)
     }
     pub(crate) fn replace(&self, current: Value, position: usize, value: Value) -> Result<Value> {
-        fn replace(current: &Value, path: &[PathPart], value: Value) -> Result<Value> {
-            let Some((part, rest)) = path.split_first() else { return Ok(value); };
-            match part {
-                PathPart::Item(i) => {
-                    if *i >= current.len() || current.is_atom() { return Err(foreign()); }
-                    let mut items = current.elements().collect::<Vec<_>>(); items[*i] = replace(&items[*i], rest, value)?;
-                    Ok(Value::stored_values(current.layout().clone(), items, Some(current.prototype()), Widening::Items)?)
-                }
-                PathPart::Prototype => {
-                    let prototype = replace(&current.prototype(), rest, value)?;
-                    Ok(Value::stored_values(current.layout().clone(), current.elements().collect(), Some(prototype), Widening::Items)?)
-                }
-                PathPart::Segment(part) => {
-                    let Value::Array(array) = current else { return Err(Error::planning()); };
-                    let ArrayData::Segmented { layout, segments } = &**array else { return Err(Error::planning()); };
-                    let replacement = replace(&segments.part(*part)?, rest, value)?;
-                    let segments = match part {
-                        SegmentPart::Leaf => {
-                            let Value::Array(leaf) = replacement else { return Err(Error::planning()); };
-                            segments.with_parts(leaf, segments.prototype().clone())
-                        }
-                        SegmentPart::Prototype => segments.with_parts(segments.leaf.clone(), replacement),
-                        _ => return Err(Error::planning()),
-                    };
-                    Ok(Value::Array(Arc::new(ArrayData::Segmented { layout: layout.clone(), segments })))
-                }
-            }
-        }
         let port = self.port(position)?;
         if !port.writable { return Ok(current); }
         replace(&current, &port.path, value)
@@ -173,7 +150,7 @@ impl<'ports, 'root> Walking<'ports, 'root> {
         let Some((step, origin)) = pending.node.recipe() else { return Err(WalkError::Foreign); };
         let plan = if step.is_view() && pending.output == Some(0) {
             let mut reads: Vec<_> = origin.list.iter().map(|read| Read { operand: (), map: read.map.clone() }).collect();
-            match crate::fusion::row(&origin.call_view(&origin), Some(&step), &mut reads)?.2 {
+            match crate::fusion::row(&origin.call_view(&origin), &mut reads)?.2 {
                 Some(plan) => self.route(&plan, &origin.list)?, None => None,
             }
         } else { None };
@@ -237,11 +214,105 @@ pub(crate) fn positions(target: &Value, root: &Value) -> Result<Option<ReadPlan>
 pub(crate) struct Walk { root: Value, target: Value }
 impl Walk {
     pub(crate) fn write(self, values: Value, combine: Option<Primitive>) -> Result<Value> {
-        Operation::At { combine, into_leaf: false, selection: true }.call(&[self.root, self.target, values], 0)
+        Operation::At { combine, selection: true }.call(&[self.root, self.target, values], 0)
     }
 }
 
 pub(crate) fn selecting(target: &Value, root: &Value) -> Result<Option<Walk>> {
     let ports = RootPorts::new(root);
     Ok(Walking::new(&ports, false).validate(target, root)?.then(|| Walk { root: root.clone(), target: target.clone() }))
+}
+
+pub(crate) fn form(origin: Origin<&[Value]>) -> Result<Option<crate::program::Outputs<Value>>> {
+    if !matches!(origin.operation, Operation::At { .. }) { return Ok(None); }
+    let call = origin.call_view(&origin.list);
+    if crate::primitive::at_geometry(&call)?.is_some() { return Ok(None); }
+    code_at(&call).map(Some)
+}
+
+pub(crate) fn code_at(call: &crate::primitive::CallView<'_>) -> Result<crate::program::Outputs<Value>> {
+    use crate::{array::Frame, primitive::{Notation, ReadOp, RecipeOp, Selection, Targets}, program::trace::ReadKind};
+    use rustymath::agreement::ReadAt;
+    let Operation::At { combine, selection } = call.operation else { return Err(Error::planning()); };
+    let mut root = call.root_input(0)?.into_owned();
+    let mut target = call.root_input(1)?.into_owned();
+    let mut values = call.root_input(2)?.into_owned();
+    if values.pending().is_some_and(|pending| pending.description().is_none()) { values = values.read(ReadKind::Structure)?; }
+    let span = call.site.cloned().unwrap_or_else(|| crate::Span::whole(crate::Source::new("<write>", "@")));
+    if !selection {
+        root = rooted(&root)?;
+        let indices = target.read(ReadKind::Value)?;
+        let selected = Selection { frame: Frame::of(&indices), targets: Targets::Offsets(crate::primitive::positions(&indices, root.len())?) };
+        values = selected.frame.replacement(&values)?;
+        let (selected, replacement) = selected.without_fills(&values, &span)?.unwrap_or((selected, values));
+        values = replacement;
+        target = selected.read(&root, None, &span)?;
+    }
+    values = Frame::of(&target).replacement(&values)?;
+    if !target.is_atom() && values.is_singleton() {
+        values = call.apply(Operation::Read(ReadOp::Item), &[values], &[None])?;
+    }
+    let numeric = call.numeric()?;
+    let merge = |old: &Value, new: Value| -> Result<Value> {
+        match combine { Some(primitive) => primitive.call(Some(old), &new, &span, numeric), None => Ok(new) }
+    };
+    let ports = RootPorts::new(&root);
+    let mut current = root.clone();
+    let mut writes: HashMap<usize, Vec<(usize, Value)>> = HashMap::default();
+    if !ports.visit_execution(&target, |target, path, destination| {
+        let values = crate::primitive::item_at(&values, path, None)?;
+        match destination {
+            Destination::Whole(path) => {
+                let old = crate::primitive::item_at(&current, path, None)?;
+                current = replace(&current, &path.iter().copied().map(PathPart::Item).collect::<Vec<_>>(), merge(&old, values)?)?;
+            }
+            Destination::Route(route) => {
+                let values = Frame::of(target).replacement(&values)?;
+                for item in 0..route.len() {
+                    match route.at(item) {
+                        ReadAt::Input { source, position } => {
+                            let value = if target.is_atom() { values.clone() }
+                                else { crate::primitive::item_at(&values, &[if values.is_singleton() { 0 } else { item }], None)? };
+                            writes.entry(source).or_default().push((position, value));
+                        }
+                        ReadAt::Default => {},
+                        ReadAt::Invalid if !call.mode.dynamic => {},
+                        ReadAt::Invalid => return Err(Error::new(crate::ErrorKind::Index, "write position is outside the array")),
+                        ReadAt::Index(_) => return Err(foreign()),
+                    }
+                }
+            }
+        }
+        Ok(())
+    })? { return Err(foreign()); }
+    for (source, changes) in writes {
+        let before = ports.at(&current, source)?;
+        let native = Desc::of(&before).and_then(|desc| changes.iter().try_fold(desc.kind, |kind, (_, value)| {
+            let desc = Desc::of(value)?; desc.atom.then(|| kind.join(desc.kind)).flatten()
+        }));
+        let after = if let Some(kind) = native {
+            let values = changes.iter().map(|(_, value)| call.apply(Operation::Recipe(RecipeOp::Convert {
+                kind, conversion: rustymath::convert::ConversionKind::Keep }), std::slice::from_ref(value), &[None])).collect::<Result<Vec<_>>>()?;
+            let values = call.apply(Operation::Join(Notation::Strand), &values, &vec![None; values.len()])?;
+            let positions = Value::positions([changes.len()], before.len(), changes.iter().map(|(position, _)| *position))?;
+            call.apply(Operation::At { combine: *combine, selection: false }, &[before, positions, values], &[None; 3])?
+        } else {
+            let before = if before.pending().is_some_and(|pending| pending.description().is_none()) { before.read(ReadKind::Structure)? } else { before };
+            let mut items = if matches!(before, Value::Pending(_) | Value::Carried { .. }) {
+                (0..before.len()).map(|item| call.apply(Operation::Read(ReadOp::Cell { rank: 0 }),
+                    &[Value::from(item), before.clone()], &[None; 2])).collect::<Result<Vec<_>>>()?
+            } else { before.elements().collect() };
+            for (position, value) in changes {
+                if position >= items.len() {
+                    if call.mode.dynamic { return Err(Error::new(crate::ErrorKind::Index, "write position is outside the array")); }
+                    continue;
+                }
+                items[position] = merge(&items[position], value)?;
+            }
+            if before.is_atom() { items.remove(0) }
+            else { Value::stored_values(before.layout().clone(), items, Some(before.prototype()), Widening::Arrays)? }
+        };
+        current = ports.replace(current, source, after)?;
+    }
+    Ok(crate::program::Outputs::one(current).flatten())
 }

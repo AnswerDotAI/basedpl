@@ -1,25 +1,17 @@
 //! The row builder shared by dispatch, rewriting and concrete refill.
 use crate::{Value, Error, error::Result, graph::{Node, Pending}, primitive::{CallView, Operation},
-    program::{Description, Origin, Outputs, Read, Step, trace::Tracing, Reason}};
-use rustymath::agreement::{Mapping, ReadPlan};
+    program::{Description, Origin, Outputs, Read, trace::Tracing, Reason}};
+use rustymath::agreement::Mapping;
 
 pub(crate) const BUFFERED: usize = 3 << 15;
 
-pub(crate) fn row<O>(call: &CallView<'_>, previous: Option<&Step>, reads: &mut [Read<O>])
-    -> Result<(Step, Option<Description>, Option<ReadPlan>)> {
-    let Some(descs) = Operation::describe(call)? else {
-        let token = crate::program::implicit_position(call.operation, call.explicit, call.captures, crate::program::ImplicitInput::Token);
-        let step = token.map_or(Step::Call, |position| Step::Effect { token: Some(position as u32) });
-        return Ok((step, None, None));
-    };
-    let step = match previous { Some(step) => step.clone(), None => Operation::plan(call, descs.as_ref())? };
-    let routed = Operation::maps(call, &step, descs.as_ref(), reads)?;
-    Ok((step, Some(descs), routed))
+pub(crate) fn row<O>(call: &CallView<'_>, reads: &mut [Read<O>]) -> Result<crate::primitive::RowResult> {
+    Operation::build(call, &mut |position, map| { reads[position].map = map; })
 }
 
 pub(crate) fn built(origin: Origin<&[Value]>, observed: &[Value]) -> Result<Outputs<Value>> {
     let mut reads: Vec<_> = origin.list.iter().map(|value| Read { operand: value.clone(), map: Mapping::Linear(1) }).collect();
-    let (step, descs, _) = row(&origin.call_view(&observed), None, &mut reads)?;
+    let (step, descs, _) = row(&origin.call_view(&observed), &mut reads)?;
     if !origin.cacheable_metadata(origin.list.iter()) || !descs.as_ref().is_none_or(Description::cacheable_metadata) {
         Tracing::stop(Reason::Renderer, origin.site.clone());
         if Tracing::planning() { return Err(Error::planning()); }

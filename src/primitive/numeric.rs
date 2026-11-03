@@ -687,7 +687,7 @@ pub(super) fn pervade_form(origin: &Origin<&[Value]>) -> Result<Option<Outputs<V
         pervade(left.as_ref(), &right, numeric, None, fill.as_deref(), &Pervasion::atoms(&scalar, &scalar))
     };
     let leaf = |value: &Value| value.is_atom() || fill.as_deref().is_none_or(Value::is_atom)
-        && Desc::of(value).is_some_and(|desc| desc.segments.is_none());
+        && Desc::of(value).is_some();
     let item = |value: &Value, position| {
         if value.is_atom() { return Ok(value.clone()); }
         if matches!(value, Value::Array(array) if matches!(&**array, crate::array::ArrayData::Mixed { .. })) { return Ok(value.at(position)); }
@@ -742,10 +742,8 @@ pub(crate) fn result_kind(numeric: Numeric, mut dtype: DType, mut range: rustyma
     (crate::number::Kind::stored(dtype, fixed, false), range)
 }
 
-fn result_variant(call: &CallView<'_>, outputs: &[Option<Desc>]) -> Result<rustymath::facts::Variant, Error> {
-    let result = outputs.first().and_then(Option::as_ref).ok_or_else(Error::planning)?;
-    let mut variant = map_variant(call)?;
-    if variant.dtype.is_integral() && result.dtype().is_integral() { variant.dtype = variant.dtype.common(result.dtype()).ok_or_else(Error::planning)?; }
+fn result_variant(mut variant: rustymath::facts::Variant, result: DType) -> Result<rustymath::facts::Variant, Error> {
+    if variant.dtype.is_integral() && result.is_integral() { variant.dtype = variant.dtype.common(result).ok_or_else(Error::planning)?; }
     Ok(variant)
 }
 
@@ -784,47 +782,34 @@ pub(super) fn code_convert(call: &CallView<'_>) -> Result<Outputs<Value>, Error>
     let convert = |_: Option<&Value>, value: &Value| mark.number(super::numeric(value)?, numeric).map(Value::Number).map_err(Error::from);
     Ok(Outputs::one(pervade(None, &value, numeric, None, None, &Pervasion::atoms(&convert, &convert))?))
 }
-pub(super) fn describe_map(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
-    if call.row().is_some_and(|row| !row.pervasive(call.explicit_argument_roots().len())) { return Ok(None); }
+pub(super) fn build_map(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+    if call.row().is_some_and(|row| !row.pervasive(call.explicit_argument_roots().len())) { return host_build(call, set); }
     let (left, right) = map_arguments(call)?;
-    if call.desc(right).is_none() || left.is_some_and(|left| call.desc(left).is_none()) { return Ok(None); }
-    if let Operation::Recipe(operation) = call.operation && let Some((_, kind)) = operation.conversion(call.desc(right).ok_or_else(Error::planning)?.dtype()) {
-        let source = call.desc(right).ok_or_else(Error::planning)?;
-        if source.segments.is_some() { return Ok(None); }
+    if call.desc(right).is_none() || left.is_some_and(|left| call.desc(left).is_none()) { return host_build(call, set); }
+    if let Operation::Recipe(operation) = call.operation && let Some((conversion, kind)) = operation.conversion(call.desc(right).expect("a native conversion has a description").dtype()) {
+        let source = call.desc(right).expect("a native conversion has a description");
         if matches!(operation, RecipeOp::Convert { conversion: rustymath::convert::ConversionKind::Keep, .. }) && !source.atom { return Err(Error::domain("a typed array needs an atom fill")); }
-        return Ok(Some(Outputs::one(Some(Desc { kind, atom: source.atom, layout: source.layout.clone(), range: None, segments: None }))));
+        let desc = Desc { kind, atom: source.atom, layout: source.layout.clone(), range: None };
+        set(right, Mapping::Linear(1));
+        return Ok((Step::Convert { arg: right as u32, conversion }, Some(Outputs::one(Some(desc))), None));
     }
-    let Some(kernel) = call.kernel(map_variant(call)?)? else { return Ok(None) };
-    let (layout, atom, _, _) = map_geometry(call)?;
+    let variant = map_variant(call)?;
+    let Some(kernel) = call.kernel(variant)? else { return host_build(call, set); };
+    let (layout, atom, left_map, right_map) = map_geometry(call)?;
     let mut ranges = [rustymath::facts::Range::ANY; 2];
     let mut count = 0;
     for position in left.into_iter().chain([right]) {
-        let desc = call.desc(position).expect("numeric arguments have descriptions");
-        if desc.segments.is_some() { return Ok(None); }
-        ranges[count] = desc.bounds(); count += 1;
+        ranges[count] = call.desc(position).expect("numeric arguments have descriptions").bounds(); count += 1;
     }
-    if call.mode.dynamic && !kernel.domain(&ranges[..count]) { return Ok(None); }
-    let dtype = kernel.result_dtype();
+    if call.mode.dynamic && !kernel.domain(&ranges[..count]) { return host_build(call, set); }
     let integer = call.row().map_or(IntegerResult::Never, |row| row.integer_result[usize::from(left.is_some())]);
-    let (kind, range) = result_kind(call.numeric()?, dtype, kernel.range(&ranges[..count]), integer);
-    Ok(Some(Outputs::one(Some(Desc { kind, atom, layout, range: Some(range), segments: None }))))
-}
-
-pub(super) fn plan_map(call: &CallView<'_>, descs: &[Option<Desc>]) -> Result<Step, Error> {
-    let (left, right) = map_arguments(call)?;
-    if let Operation::Recipe(operation) = call.operation && let Some((conversion, _)) = operation.conversion(call.desc(right).ok_or_else(Error::planning)?.dtype()) {
-        return Ok(Step::Convert { arg: right as u32, conversion });
-    }
-    Ok(Step::Map { left: left.map(|position| position as u32), right: right as u32, variant: result_variant(call, descs)? })
-}
-
-pub(super) fn map_maps(call: &CallView<'_>, _: &Step, _: &[Option<Desc>], set: &mut dyn FnMut(usize, Mapping))
-    -> Result<Option<rustymath::agreement::ReadPlan>, Error> {
-    let (left, right) = map_arguments(call)?;
-    let (_, _, left_map, right_map) = map_geometry(call)?;
+    let (kind, range) = result_kind(call.numeric()?, kernel.result_dtype(), kernel.range(&ranges[..count]), integer);
+    let variant = result_variant(variant, kind.dtype())?;
+    let step = Step::Map { left: left.map(|position| position as u32), right: right as u32, variant };
     if let Some(left) = left { set(left, left_map.expect("a pair has two maps")); }
     set(right, right_map);
-    Ok(None)
+    let desc = Desc { kind, atom, layout, range: Some(range) };
+    Ok((step, Some(Outputs::one(Some(desc))), None))
 }
 
 pub(super) fn code_recipe(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
@@ -967,14 +952,12 @@ pub(crate) fn product_kernels(call: &CallView<'_>, result: Option<DType>) -> Res
     Ok(Some((mapper, reducer)))
 }
 
-pub(crate) fn describe_fold(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
-    if call.explicit_arguments().any(|position| call.desc(position).is_none_or(|desc| desc.segments.is_some())) { return Ok(None); }
-
+pub(crate) fn build_fold(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+    if call.explicit_arguments().any(|position| call.desc(position).is_none()) { return host_build(call, set); }
     let geometry = crate::plan::fold(call)?;
-    let source = call.desc(geometry.arg).ok_or_else(Error::planning)?;
-    if source.segments.is_some() { return Ok(None); }
-    let Some(kernel) = call.kernel(map_variant(call)?)? else { return Ok(None); };
-
+    let source = call.desc(geometry.arg).expect("a native fold has a source description");
+    let variant = map_variant(call)?;
+    let Some(kernel) = call.kernel(variant)? else { return host_build(call, set); };
     let items = source.bounds();
     let seed = geometry.seed.and_then(|seed| call.desc(seed)).map(|seed| seed.bounds());
     let length = geometry.dims()[1];
@@ -983,28 +966,19 @@ pub(crate) fn describe_fold(call: &CallView<'_>) -> Result<Option<crate::program
     if geometry.scan { range = range.join(items); }
     let dtype = kernel.total_dtype().unwrap_or(kernel.result_dtype());
     let (kind, range) = result_kind(call.numeric()?, dtype, range, IntegerResult::Never);
-    Ok(Some(Outputs::one(Some(Desc { kind, atom: geometry.atom, layout: geometry.result, range: Some(range), segments: None }))))
-}
-
-pub(crate) fn plan_fold(call: &CallView<'_>, descs: &[Option<Desc>]) -> Result<Step, Error> {
-    let geometry = crate::plan::fold(call)?;
-    Ok(Step::Fold { arg: geometry.arg as u32, seed: geometry.seed.map(|seed| seed as u32), axis: geometry.axis, variant: result_variant(call, descs)? })
-}
-
-pub(crate) fn maps_fold(call: &CallView<'_>, _: &Step, _: &[Option<Desc>], set: &mut dyn FnMut(usize, Mapping))
-    -> Result<Option<rustymath::agreement::ReadPlan>, Error> {
-    let geometry = crate::plan::fold(call)?;
+    let variant = result_variant(variant, kind.dtype())?;
     for input in geometry.seed.into_iter().chain([geometry.arg]) { set(input, geometry.input_read(call, input)?); }
-    Ok(None)
+    let step = Step::Fold { arg: geometry.arg as u32, seed: geometry.seed.map(|seed| seed as u32), axis: geometry.axis, variant };
+    let desc = Desc { kind, atom: geometry.atom, layout: geometry.result, range: Some(range) };
+    Ok((step, Some(Outputs::one(Some(desc))), None))
 }
 
-pub(crate) fn describe_product(call: &CallView<'_>) -> Result<Option<crate::program::Description>, Error> {
-    if call.explicit_arguments().any(|position| call.desc(position).is_none_or(|desc| desc.segments.is_some())) { return Ok(None); };
-
+pub(crate) fn build_product(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
+    if call.explicit_arguments().any(|position| call.desc(position).is_none()) { return host_build(call, set); }
     let geometry = crate::plan::product(call)?;
-    let Some((map, fold)) = product_kernels(call, None)? else { return Ok(None); };
-    let ranges = geometry.args.map(|position| call.desc(position).map_or(rustymath::facts::Range::ANY, |desc| desc.bounds()));
-    if call.mode.dynamic && !map.domain(&ranges) { return Ok(None); }
+    let Some((map, fold)) = product_kernels(call, None)? else { return host_build(call, set); };
+    let ranges = geometry.args.map(|position| call.desc(position).expect("a native product has input descriptions").bounds());
+    if call.mode.dynamic && !map.domain(&ranges) { return host_build(call, set); }
     let (range, dtype) = if let Some(fold) = fold {
         let shape = geometry.plan.iteration.shape();
         let count = shape[shape.len() - geometry.plan.contracted..].iter().product();
@@ -1012,17 +986,8 @@ pub(crate) fn describe_product(call: &CallView<'_>) -> Result<Option<crate::prog
     } else { (map.range(&ranges), map.result_dtype()) };
     let (kind, range) = result_kind(call.numeric()?, dtype, range, IntegerResult::Never);
     let atom = geometry.plan.layout.shape().is_empty();
-    Ok(Some(Outputs::one(Some(Desc { kind, atom, layout: geometry.plan.layout.into(), range: Some(range), segments: None }))))
-}
-
-pub(crate) fn plan_product(call: &CallView<'_>, _: &[Option<Desc>]) -> Result<Step, Error> {
-    let geometry = crate::plan::product(call)?;
-    Ok(Step::Product { left: geometry.args[0] as u32, right: geometry.args[1] as u32 })
-}
-
-pub(crate) fn maps_product(call: &CallView<'_>, _: &Step, _: &[Option<Desc>], set: &mut dyn FnMut(usize, Mapping))
-    -> Result<Option<rustymath::agreement::ReadPlan>, Error> {
-    let geometry = crate::plan::product(call)?;
+    let step = Step::Product { left: geometry.args[0] as u32, right: geometry.args[1] as u32 };
     for (position, map) in geometry.args.into_iter().zip(geometry.plan.mappings) { set(position, map); }
-    Ok(None)
+    let desc = Desc { kind, atom, layout: geometry.plan.layout.into(), range: Some(range) };
+    Ok((step, Some(Outputs::one(Some(desc))), None))
 }

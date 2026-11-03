@@ -103,7 +103,6 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
             }
             _ => Js::List(items.iter().map(exported).collect::<Result<_, _>>()?),
         },
-        items @ Items::Segmented(_) => Js::List(items.values().map(|v| exported(&v)).collect::<Result<_, _>>()?),
         items => match items.view().expect("compact items") {
             View::Booleans(b) => Js::Typed(Typed::Uint8(b.iter().map(|&b| b.into()).collect())),
             View::Integers(Ints::U8(v)) => Js::Typed(Typed::Uint8(v.to_vec())),

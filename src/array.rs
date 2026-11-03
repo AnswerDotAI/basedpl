@@ -247,7 +247,6 @@ impl Cells<'_> {
 #[derive(Clone, Debug)]
 pub enum ArrayData {
     Compact { layout: Layout, kind: crate::number::Kind, buffer: SharedBuffer, range: Option<Range> },
-    Segmented { layout: Layout, segments: Segments },
     Mixed { layout: Layout, items: Box<[Value]>, prototype: Option<Value> },
 }
 
@@ -271,43 +270,31 @@ impl TreeRoot {
 pub(crate) enum Tree {
     Leaf,
     Array { layout: Layout, items: Vec<Tree>, prototype: Option<Box<Tree>> },
-    Segmented { rank: u8, stacked: bool, parts: Box<[Tree; 5]> },
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TreeInput { Description, Geometry, Prototype }
+pub(crate) enum TreeInput { Prototype }
 
-pub(crate) fn flatten(args: &[Value]) -> Result<Option<(Arc<Trees>, Vec<Value>)>, Error> {
-    if !args.iter().any(|value| matches!(value, Value::Array(array) if matches!(&**array, ArrayData::Mixed { .. } | ArrayData::Segmented { .. }))) { return Ok(None); }
+pub(crate) fn flatten(args: &[Value]) -> Option<(Arc<Trees>, Vec<Value>)> {
+    if !args.iter().any(Value::holds_mixed) { return None; }
     let mut leaves = Vec::new();
-    let trees = args.iter().map(|value| Tree::of(value, &mut leaves)).collect::<Result<_, _>>()?;
-    Ok(Some((Arc::new(Trees(trees)), leaves)))
+    let trees = args.iter().map(|value| Tree::of(value, &mut leaves)).collect();
+    Some((Arc::new(Trees(trees)), leaves))
 }
-
 
 impl Tree {
     fn cacheable(&self) -> bool {
         match self { Self::Leaf => true, Self::Array { layout, items, prototype } =>
-            layout.cacheable() && items.iter().all(Self::cacheable) && prototype.as_deref().is_none_or(Self::cacheable),
-            Self::Segmented { parts, .. } => parts.iter().all(Self::cacheable) }
+            layout.cacheable() && items.iter().all(Self::cacheable) && prototype.as_deref().is_none_or(Self::cacheable) }
     }
-    pub(crate) fn of(value: &Value, leaves: &mut Vec<Value>) -> Result<Self, Error> {
-        if let Value::Array(array) = value { match &**array {
-            ArrayData::Mixed { layout, items, prototype } => return Ok(Self::Array { layout: layout.clone(),
-                items: items.iter().map(|value| Self::of(value, leaves)).collect::<Result<_, _>>()?,
-                prototype: prototype.as_ref().map(|value| Self::of(value, leaves).map(Box::new)).transpose()? }),
-            ArrayData::Segmented { segments, .. } => {
-                leaves.push(value.clone()); // The actual frame is metadata, never recursively flattened.
-                let mut parts = std::array::from_fn(|_| Self::Leaf);
-                for part in SegmentPart::ALL { parts[part.position()] = Self::of(&segments.part(part)?, leaves)?; }
-                return Ok(Self::Segmented { rank: segments.item_rank().try_into().map_err(|_| Kind::Rank)?,
-                    stacked: segments.is_stacked(), parts: Box::new(parts) });
-            }
-            _ => {}
+    pub(crate) fn of(value: &Value, leaves: &mut Vec<Value>) -> Self {
+        if let Value::Array(array) = value { if let ArrayData::Mixed { layout, items, prototype } = &**array {
+            return Self::Array { layout: layout.clone(), items: items.iter().map(|value| Self::of(value, leaves)).collect(),
+                prototype: prototype.as_ref().map(|value| Box::new(Self::of(value, leaves))) };
         }}
-        leaves.push(value.clone()); Ok(Self::Leaf)
+        leaves.push(value.clone()); Self::Leaf
     }
-    fn build(&self, leaves: &mut impl Iterator<Item = Value>) -> Result<Value, Error> {
-        self.read(&mut || leaves.next().ok_or_else(|| Error::domain("missing tree input")))
+    fn build(&self, leaves: &mut impl Iterator<Item = Value>) -> Value {
+        self.read(&mut || Ok(leaves.next().expect("one value per tree leaf"))).expect("structural assembly reads no data")
     }
     pub(crate) fn read(&self, leaf: &mut impl FnMut() -> Result<Value, Error>) -> Result<Value, Error> {
         match self {
@@ -316,10 +303,6 @@ impl Tree {
                 layout: layout.clone(), items: items.iter().map(|tree| tree.read(leaf)).collect::<Result<_, _>>()?,
                 prototype: prototype.as_ref().map(|tree| tree.read(leaf)).transpose()?,
             }))),
-            Self::Segmented { rank, stacked, parts } => {
-                let parts = parts.iter().map(|tree| tree.read(leaf)).collect::<Result<Vec<_>, _>>()?;
-                Operation::Read(ReadOp::Pack { rank: *rank, stacked: *stacked }).call(&parts, 0)
-            }
         }
     }
     pub(crate) fn children(&self, start: usize) -> impl Iterator<Item = (&Tree, std::ops::Range<usize>)> {
@@ -328,23 +311,8 @@ impl Tree {
             let first = *position; *position += tree.len(); Some((tree, first..*position))
         })
     }
-    pub(crate) fn component(&self, part: SegmentPart, start: usize) -> Option<(&Tree, std::ops::Range<usize>)> {
-        let Self::Segmented { parts, .. } = self else { return None; };
-        let position = part.position(); let first = start + parts[..position].iter().map(Self::len).sum::<usize>();
-        Some((&parts[position], first..first + parts[position].len()))
-    }
-    fn describe<'a>(&self, start: usize, leaf: &mut impl FnMut(usize) -> Option<Cow<'a, Desc>>) -> Result<Option<Cow<'a, Desc>>, Error> {
-        match self {
-            Self::Leaf => Ok(leaf(start)), Self::Array { .. } => Ok(None),
-            Self::Segmented { rank, stacked, parts } => {
-                let Some(frame) = parts[0].describe(start, leaf)? else { return Ok(None); };
-                let (value, range) = self.component(SegmentPart::Leaf, start).ok_or_else(|| Error::domain("missing segmented leaf"))?;
-                let Some(value) = value.describe(range.start, leaf)? else { return Ok(None); };
-                let (prototype, range) = self.component(SegmentPart::Prototype, start).ok_or_else(|| Error::domain("missing segmented prototype"))?;
-                let Some(prototype) = prototype.describe(range.start, leaf)? else { return Ok(None); };
-                Ok(Some(Cow::Owned(Desc::packed_segments(frame.layout.clone(), *rank, *stacked, &value, &prototype)?)))
-            }
-        }
+    fn describe<'a>(&self, start: usize, leaf: &mut impl FnMut(usize) -> Option<Cow<'a, Desc>>) -> Option<Cow<'a, Desc>> {
+        match self { Self::Leaf => leaf(start), Self::Array { .. } => None }
     }
     fn visit_inputs(&self, start: usize, inherited: Option<TreeInput>, visit: &mut impl FnMut(usize, Option<TreeInput>)) {
         match self {
@@ -354,20 +322,11 @@ impl Tree {
                 for tree in items { tree.visit_inputs(position, inherited, visit); position += tree.len(); }
                 if let Some(tree) = prototype { tree.visit_inputs(position, Some(TreeInput::Prototype), visit); }
             }
-            Self::Segmented { parts, .. } => {
-                parts[0].visit_inputs(start, Some(TreeInput::Description), visit);
-                let mut position = start + parts[0].len();
-                for (part, tree) in SegmentPart::ALL.into_iter().zip(parts.iter().skip(1)) {
-                    let usage = part.input_use().or(inherited);
-                    tree.visit_inputs(position, usage, visit); position += tree.len();
-                }
-            }
         }
     }
     pub(crate) fn len(&self) -> usize {
-        match self { Self::Leaf => 1, Self::Array { items, prototype, .. } =>
-            items.iter().map(Self::len).sum::<usize>() + prototype.as_ref().map_or(0, |t| t.len()),
-            Self::Segmented { parts, .. } => parts.iter().map(Self::len).sum() }
+        match self { Self::Leaf => 1, Self::Array { items, prototype, .. } => 
+            items.iter().map(Self::len).sum::<usize>() + prototype.as_ref().map_or(0, |t| t.len()) }
     }
 }
 
@@ -392,19 +351,19 @@ impl Trees {
     pub(crate) fn push_leaf(&mut self) { self.0.push(Tree::Leaf); }
     pub(crate) fn push_tree(&mut self, tree: Tree) { self.0.push(tree); }
     pub(crate) fn insert_leaves(&mut self, root: usize, count: usize) { self.0.splice(root..root, std::iter::repeat_n(Tree::Leaf, count)); }
-    pub(crate) fn push(&mut self, value: &Value, leaves: &mut Vec<Value>) -> Result<(), Error> { self.0.push(Tree::of(value, leaves)?); Ok(()) }
+    pub(crate) fn push(&mut self, value: &Value, leaves: &mut Vec<Value>) { self.0.push(Tree::of(value, leaves)); }
     pub(crate) fn append_root(&mut self, source: &Trees, root: &TreeRoot) { self.0.push(source.root_at(root).clone()); }
     pub(crate) fn root_at(&self, root: &TreeRoot) -> &Tree {
         let tree = &self.0[root.index]; debug_assert_eq!(tree.len(), root.leaves.len()); tree
     }
-    pub(crate) fn describe_root<'a>(&self, root: &TreeRoot, mut leaf: impl FnMut(usize) -> Option<Cow<'a, Desc>>) -> Result<Option<Cow<'a, Desc>>, Error> {
+    pub(crate) fn describe_root<'a>(&self, root: &TreeRoot, mut leaf: impl FnMut(usize) -> Option<Cow<'a, Desc>>) -> Option<Cow<'a, Desc>> {
         self.root_at(root).describe(root.leaves.start, &mut leaf)
     }
-    pub(crate) fn at_root<'a>(&self, root: &TreeRoot, leaves: &'a [Value]) -> Result<Cow<'a, Value>, Error> {
-        Ok(match self.root_at(root) {
+    pub(crate) fn at_root<'a>(&self, root: &TreeRoot, leaves: &'a [Value]) -> Cow<'a, Value> {
+        match self.root_at(root) {
             Tree::Leaf => Cow::Borrowed(&leaves[root.leaves.start]),
-            tree => Cow::Owned(tree.build(&mut leaves[root.leaves.clone()].iter().cloned())?),
-        })
+            tree => Cow::Owned(tree.build(&mut leaves[root.leaves.clone()].iter().cloned())),
+        }
     }
     pub(crate) fn read_root(&self, root: &TreeRoot, mut read_leaf: impl FnMut(usize) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
         let mut position = root.leaves.start;
@@ -415,7 +374,7 @@ impl Trees {
     pub(crate) fn without_root(&self, root: &TreeRoot) -> Self {
         Self(self.0[..root.index].iter().chain(&self.0[root.index + 1..]).cloned().collect())
     }
-    pub(crate) fn build(&self, leaves: &[Value]) -> Result<Vec<Value>, Error> {
+    pub(crate) fn build(&self, leaves: &[Value]) -> Vec<Value> {
         let mut leaves = leaves.iter().cloned();
         self.0.iter().map(|tree| tree.build(&mut leaves)).collect()
     }
@@ -433,37 +392,31 @@ impl ArrayData {
         self.layout().cacheable() && match self {
             Self::Compact { .. } => true,
             Self::Mixed { items, prototype, .. } => items.iter().all(Value::cacheable_metadata) && prototype.as_ref().is_none_or(Value::cacheable_metadata),
-            Self::Segmented { segments, .. } => segments.leaf.cacheable_metadata() && segments.prototype().cacheable_metadata(),
         }
     }
     pub(crate) fn layout(&self) -> &Layout {
-        match self { Self::Compact { layout, .. } | Self::Segmented { layout, .. } | Self::Mixed { layout, .. } => layout }
+        match self { Self::Compact { layout, .. } | Self::Mixed { layout, .. } => layout }
     }
     pub(crate) fn len(&self) -> usize { self.layout().count() }
     pub(crate) fn kind(&self) -> Option<crate::number::Kind> {
-        match self { Self::Compact { kind, .. } => Some(*kind), Self::Segmented { segments, .. } => segments.leaf.kind(), Self::Mixed { .. } => None }
+        match self { Self::Compact { kind, .. } => Some(*kind), Self::Mixed { .. } => None }
     }
     pub(crate) fn storage(&self) -> Items<'_> {
         match self {
             Self::Compact { buffer: SharedBuffer::Owned(buffer), kind, .. } =>
                 match (buffer.view(), kind.fixed_width()) { (View::Integers(ints), Some(_)) => Items::Fixed(ints), (view, _) => Items::Compact(view) },
             Self::Compact { buffer: SharedBuffer::View { base, map }, .. } => Items::Mapped { source: base, map, start: 0, len: self.len() },
-            Self::Segmented { segments, .. } => Items::Segmented(segments.segs()),
             Self::Mixed { items, .. } => Items::Values(items),
         }
     }
     pub(crate) fn prototype(&self) -> Value {
         match self {
             Self::Mixed { items, prototype, .. } => prototype.clone().unwrap_or_else(|| items[0].zeroed()),
-            Self::Segmented { segments, .. } => segments.prototype().clone(),
             Self::Compact { .. } => self.storage().prototype().expect("a compact kind has a prototype"),
         }
     }
     pub(crate) fn physical(this: &Arc<Self>) -> (&Arc<Self>, Option<&Mapping>) {
         match &**this { Self::Compact { buffer: SharedBuffer::View { base, map }, .. } => (base, Some(map)), _ => (this, None) }
-    }
-    pub(crate) fn segments(&self) -> Option<Segs<'_>> {
-        match self { Self::Segmented { segments, .. } => Some(segments.segs()), _ => None }
     }
 }
 
@@ -478,7 +431,6 @@ impl Footprint for ArrayData {
         std::mem::size_of::<Self>() + match self {
             Self::Compact { buffer: SharedBuffer::Owned(buffer), .. } => buffer.capacity() * buffer.dtype().bytes(),
             Self::Compact { buffer: SharedBuffer::View { base, map }, .. } => base.footprint_in(seen) + map.footprint(),
-            Self::Segmented { segments, .. } => segments.leaf.footprint_in(seen),
             Self::Mixed { items, prototype, .. } => items.iter().chain(prototype).map(|v| v.footprint_in(seen)).sum(),
         }
     }
@@ -497,12 +449,12 @@ impl Footprint for Value {
 }
 
 pub(crate) fn map_leaves(value: &Value, mut f: impl FnMut(&Value) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
-    let Some((trees, leaves)) = flatten(std::slice::from_ref(value))? else { return f(value) };
+    let Some((trees, leaves)) = flatten(std::slice::from_ref(value)) else { return f(value) };
     let mut preserved = vec![false; leaves.len()];
     trees.input_uses(|position, usage| preserved[position] = usage != TreeInput::Prototype);
     let mapped = leaves.iter().enumerate().map(|(i, value)| if preserved[i] { Ok(value.clone()) } else { f(value) }).collect::<crate::error::Result<Vec<_>>>()?;
     if leaves.iter().zip(&mapped).all(|(old, new)| old.identical(new)) { return Ok(value.clone()); }
-    trees.build(&mapped)?.pop().ok_or_else(|| Error::domain("missing tree root"))
+    trees.build(&mapped).pop().ok_or_else(|| Error::domain("missing tree root"))
 }
 
 
@@ -554,7 +506,6 @@ impl Value {
     pub(crate) fn zeros_like(&self) -> Result<Value, Error> {
         map_leaves(self, |leaf| {
             let Some(desc) = Desc::of(leaf).filter(|desc| desc.dtype() != DType::Character) else { return Ok(leaf.clone()); };
-            if desc.segments.is_some() { return Err(Error::planning()); }
             let zero = desc.zero();
             if leaf.is_atom() { return Ok(zero); }
             if leaf.rank() == 0 {
@@ -579,12 +530,6 @@ impl Value {
                 let sources = [rustymath::agreement::Binding::full(view)];
                 read_value(&crate::program::Desc::leaf(leaf).unwrap(), &rustymath::agreement::Read { plan: &plan, sources: &sources }, true)
             },
-            Self::Array(array) if let ArrayData::Segmented { layout, segments } = &**array => {
-                let Value::Array(leaf) = Value::Array(segments.leaf.clone()).read(read)? else { unreachable!("a stored segment leaf is an array") };
-                let prototype = segments.prototype().read(read)?;
-                if Arc::ptr_eq(&leaf, &segments.leaf) && prototype.identical(segments.prototype()) { return Ok(Self::Array(array.clone())); }
-                Ok(Self::Array(Arc::new(ArrayData::Segmented { layout: layout.clone(), segments: segments.with_parts(leaf, prototype) })))
-            }
             _ => Ok(leaf.clone()),
         })
     }
@@ -600,7 +545,6 @@ impl Value {
         fn array(data: &ArrayData, pending: bool) -> Option<usize> {
             match data {
                 ArrayData::Compact { .. } => None,
-                ArrayData::Segmented { segments, .. } => array(&segments.leaf, pending).max(segments.prototype().level_with_pending(pending)),
                 ArrayData::Mixed { items, prototype, .. } => items.iter().chain(prototype.iter()).filter_map(|value| value.level_with_pending(pending)).max(),
             }
         }
@@ -622,7 +566,7 @@ impl Value {
             Self::Number(n) => Some(n.lossless_float().map_or_else(|| n.dtype().map_or(Range::ANY, Range::of_dtype), |n| Range::of(Some(n)))),
             Self::Character(_) => None,
             Self::Array(array) => match &**array {
-                ArrayData::Compact { range, .. } => *range, ArrayData::Segmented { segments, .. } => Value::Array(segments.leaf.clone()).range(), _ => None,
+                ArrayData::Compact { range, .. } => *range, _ => None,
             },
             Self::Pending(pending) => pending.description().and_then(|desc| desc.range),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.range(), Carried::Batch { cell, .. } => cell.range },
@@ -631,8 +575,7 @@ impl Value {
     }
     pub fn is_atom(&self) -> bool {
         match self { Self::Array(_) => false, Self::Pending(p) => {
-                assert!(!p.unresolved_description(), "resolve counted metadata before asking if it is an atom");
-                p.description().is_none_or(|desc| desc.atom)
+                p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").is_atom(), |desc| desc.atom)
             },
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.is_atom(), Carried::Batch { cell, .. } => cell.atom }, _ => true }
     }
@@ -640,8 +583,7 @@ impl Value {
         static ATOM: Layout = Layout::EMPTY;
         match self {
             Self::Array(array) => array.layout(), Self::Pending(p) => {
-                assert!(!p.unresolved_description(), "resolve counted metadata before borrowing its layout");
-                p.description().map_or(&Layout::EMPTY, |desc| &desc.layout)
+                p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").layout(), |desc| &desc.layout)
             },
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.layout(), Carried::Batch { cell, .. } => &cell.layout },
             _ => &ATOM,
@@ -661,7 +603,6 @@ impl Value {
         fn numeric(array: &ArrayData) -> bool {
             match array {
                 ArrayData::Compact { kind, .. } => kind.dtype() != DType::Character,
-                ArrayData::Segmented { segments, .. } => numeric(&segments.leaf) && segments.prototype().is_numeric(),
                 ArrayData::Mixed { items, prototype, .. } => (!items.is_empty() || prototype.is_some())
                     && items.iter().chain(prototype).all(Value::is_numeric),
             }
@@ -683,16 +624,14 @@ impl Value {
     pub fn is_integral(&self) -> bool {
         self.dtype().is_some_and(DType::is_integral) || matches!(self, Self::Number(n) if n.is_integral())
     }
-    pub(crate) fn holds_values(&self) -> bool { matches!(self, Self::Array(a) if matches!(&**a, ArrayData::Mixed { .. } | ArrayData::Segmented { .. })) }
+    pub(crate) fn holds_values(&self) -> bool { matches!(self, Self::Array(a) if matches!(&**a, ArrayData::Mixed { .. })) }
     pub(crate) fn holds_mixed(&self) -> bool { matches!(self, Self::Array(a) if matches!(&**a, ArrayData::Mixed { .. })) }
-    pub(crate) fn is_simple(&self) -> bool { self.kind().is_some() && !matches!(self, Self::Array(a) if matches!(&**a, ArrayData::Segmented { .. })) }
-    pub(crate) fn ragged(&self) -> bool { matches!(self, Self::Array(a) if a.segments().is_some()) }
+    pub(crate) fn is_simple(&self) -> bool { self.kind().is_some() }
     pub fn holds_functions(&self) -> bool {
         match self {
             Self::Function(_) | Self::Operator(_) => true,
             Self::Array(a) => match &**a {
                 ArrayData::Mixed { items, prototype, .. } => items.iter().chain(prototype).any(Self::holds_functions),
-                ArrayData::Segmented { segments, .. } => segments.prototype().holds_functions(),
                 _ => false,
             },
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.holds_functions(), Carried::Batch { whole, .. } => whole.holds_functions() },
@@ -811,7 +750,6 @@ impl Value {
         if let Some((buffer, kind)) = packed(&items, widening) {
             return Ok(Self::Array(Arc::new(ArrayData::Compact { layout, kind, buffer: SharedBuffer::Owned(buffer), range: None })));
         }
-        if let Some(segments) = Segments::of(&items) { return Ok(Self::Array(Arc::new(ArrayData::Segmented { layout, segments }))); }
         Ok(Self::Array(Arc::new(ArrayData::Mixed { layout, prototype: items.is_empty().then(|| prototype.expect("an empty array has a prototype")), items: items.into() })))
     }
     pub(crate) fn stored_buffer(layout: Layout, buffer: Buffer, kind: crate::number::Kind, range: Option<Range>) -> Result<Self, ErrorKind> {
@@ -819,21 +757,8 @@ impl Value {
         Ok(Self::Array(Arc::new(ArrayData::Compact { layout, kind, buffer: SharedBuffer::Owned(buffer), range })))
     }
     pub(crate) fn stored(desc: &crate::program::Desc, buffer: Buffer) -> Result<Self, Error> {
-        if desc.segments.is_some() { return Err(Error::planning()); }
         let value = Self::stored_buffer(desc.layout.clone(), buffer, desc.kind, desc.range)?;
         Ok(if desc.atom { match value.at(0) { Self::Number(number) => Self::Number(number.stored(desc.kind)), value => value } } else { value })
-    }
-    pub(crate) fn segment_projection(&self, part: SegmentPart) -> Option<Value> {
-        let Self::Pending(pending) = self else { return None; };
-        pending.node.with_state(|state| match state {
-            crate::graph::State::Step { origin, .. } if matches!(origin.operation, Operation::Read(ReadOp::Pack { .. })) =>
-                origin.list.get(part.position()).map(|read| read.operand.clone()),
-            _ => None,
-        })
-    }
-    pub(crate) fn stored_segment_part(&self, part: SegmentPart) -> Result<Value, Error> {
-        match self { Self::Array(array) => match &**array { ArrayData::Segmented { segments, .. } => Ok(segments.part(part)?),
-            _ => Err(Error::domain("expected a segmented array")) }, _ => Err(Error::domain("expected a segmented array")) }
     }
     pub fn from_buffer(shape: impl Into<Shape>, buffer: Buffer) -> Result<Self, ErrorKind> {
         let kind = crate::number::Kind::stored(buffer.dtype(), false, false);
@@ -881,7 +806,6 @@ impl Value {
                 Ok(Self::Array(Arc::new(ArrayData::Compact { layout, kind: *kind, buffer: SharedBuffer::View { base: base.clone(), map }, range: *bounds })))
             }
             ArrayData::Mixed { items, prototype, .. } => Self::stored_values(layout, items[range].to_vec(), prototype.clone(), Widening::Items),
-            ArrayData::Segmented { segments, .. } => Self::stored_values(layout, segments.segs().slice(range).values().collect(), Some(segments.prototype().clone()), Widening::Items),
         }
     }
     pub(crate) fn part(&self, range: std::ops::Range<usize>, layout: impl Into<Layout>) -> crate::error::Result<Self> {
@@ -912,7 +836,7 @@ impl Value {
     pub fn prototype(&self) -> Value {
         match self {
             Self::Number(n) => Self::Number(n.zero()), Self::Character(_) => Self::Character(' '),
-            Self::Array(array) => array.prototype(), Self::Pending(p) => p.desc().zero(),
+            Self::Array(array) => array.prototype(), Self::Pending(p) => p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").prototype(), Desc::zero),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.prototype(), Carried::Batch { cell, .. } => cell.zero() },
             _ => Self::integer(0),
         }
@@ -922,10 +846,6 @@ impl Value {
     }
     pub fn zeroed(&self) -> Value {
         if self.is_atom() { return self.prototype(); }
-        if let Self::Array(array) = self && let ArrayData::Segmented { layout, segments } = &**array {
-            let Self::Array(leaf) = Self::Array(segments.leaf.clone()).zeroed() else { unreachable!("a segmented leaf remains an array"); };
-            return Self::Array(Arc::new(ArrayData::Segmented { layout: layout.clone(), segments: segments.with_parts(leaf, segments.prototype().zeroed()) }));
-        }
         if let Some(kind) = self.kind() {
             let prototype = self.prototype(); let range = prototype.range();
             let mut zero = Buffer::with_capacity(kind.dtype(), 1);

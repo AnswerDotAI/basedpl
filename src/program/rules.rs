@@ -198,8 +198,8 @@ fn prepare_row(program: &mut Program, running: &mut Running, source: &super::Ori
     let prepared = (|| {
         let bound = BoundCall { program, running, reads: first as u32..program.reads.len() as u32 };
         let classified = source.rebuilt(draft.operation, bound, &from, draft.explicit, draft.explicit_roots, draft.trees)?;
-        let (step, outputs, plan) = crate::fusion::row(&classified.call_view(&classified.list), None, &mut reads)?;
-        Ok((step, classified.with_list(reads), outputs, plan))
+        let (step, outputs, plan) = crate::fusion::row(&classified.call_view(&classified.list), &mut reads)?;
+        Ok((step, classified.with_list(reads), outputs.ok_or_else(crate::Error::planning)?, plan))
     })();
     program.reads.truncate(first); running.geometry.maps.truncate(first);
     prepared
@@ -212,11 +212,11 @@ pub(crate) fn replace(program: &mut Program, running: &mut Running, node: usize,
     let (step, origin, outputs, plan) = prepare_row(program, running, source, operation, reads, roots, input_trees)?;
     if outputs.as_ref().len() != descs.len() || outputs.trees() != trees.as_ref() || outputs.as_ref().iter()
         .zip(program.descs[descs.start as usize..descs.end as usize].iter())
-        .any(|(new, old)| old.as_ref().is_some_and(|old| !super::verify::compatible(old, new) || old.shape() != new.shape())) { return Ok(false); }
+        .any(|(new, old)| !super::verify::compatible_optional(old.as_ref(), new.as_ref()) || new.as_ref().zip(old.as_ref()).is_some_and(|(new, old)| new.shape() != old.shape())) { return Ok(false); }
     let first = program.reads.len();
     program.reads.extend(origin.list.iter().cloned());
     running.geometry.maps.extend(origin.list.iter().map(|read| read.map.clone()));
-    for (slot, desc) in descs.clone().zip(outputs.into_vec()) { program.descs[slot as usize] = Some(desc.clone()); running.geometry.descs[slot as usize] = Some(desc); }
+    for (slot, desc) in descs.clone().zip(outputs.into_vec()) { program.descs[slot as usize] = desc.clone(); running.geometry.descs[slot as usize] = desc; }
     program.nodes[node] = Node::Step { step, origin: origin.with_list(first as u32..program.reads.len() as u32), descs, trees, shy, level };
     running.geometry.reads.resize_with(program.reads.len(), || None);
     running.prepare_read_plan(program, node, plan)?;
@@ -247,7 +247,7 @@ fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<
     let mut state = vec![0u8; program.nodes.len()];
     let mut order = Vec::new();
     let counts = program.parameters.iter().filter_map(|parameter| match parameter { super::Parameter::Count { output, .. } => Some(*output), _ => None });
-    for root in counts.chain(program.roots.iter().copied()).chain(program.token) {
+    for root in counts.chain(program.outputs.as_ref().iter().copied()).chain(program.token) {
         let mut stack = vec![(root.node, false)];
         while let Some((node, finish)) = stack.pop() {
             if node < from || state[node] == 2 { continue; }
@@ -271,7 +271,7 @@ fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<
         let at: Out = mapped[source.node].expect("live outputs survive ordering");
         source.with_producer(at.node, 0)
     };
-    builder.program.roots = program.roots.iter().copied().map(resolve).collect();
+    builder.program.outputs = program.outputs.clone().map(resolve);
     builder.program.token = program.token.map(resolve);
     builder.program.parameters = program.remap_parameters(resolve);
     builder.program.sources = program.remap_sources(|source| mapped[source.node].map(|at| source.with_producer(at.node, 0)))?;

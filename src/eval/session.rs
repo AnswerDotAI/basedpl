@@ -605,7 +605,7 @@ impl Session {
         let span = Span::whole(Source::new("<call>", name.text()));
         let position = origin.bindings.scope(function).and_then(|(_, scope)| scope.names.iter().find(|entry| entry.name == *name)).and_then(|entry| entry.position.as_ref())
             .ok_or_else(|| undefined(*name, &span))?;
-        let function = Function::from_value(Binding::from_element(Function::capture_at(&origin, position)?.into_owned()), &span)?;
+        let function = Function::from_value(Binding::from_element(Function::capture_at(&origin, position).into_owned()), &span)?;
         let arguments = Function::body_arguments(&origin)?;
         let from: Vec<_> = Function::argument_ranges(&origin)?.into_iter().flatten().map(|range| Some(range.start)).collect();
         function.call_bound(&origin, &arguments, &from)

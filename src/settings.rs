@@ -136,14 +136,6 @@ pub(crate) fn compiles() -> Compiles {
     match COMPILES.load(Relaxed) { 0 => Compiles::Policy, 1 => Compiles::Always, 2 => Compiles::Never, _ => Compiles::from_env() }
 }
 pub fn set_compiles(compiles: Compiles) { COMPILES.store(compiles as u8, Relaxed) }
-pub use crate::program::blocks::compiled_runs;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Loops { Replay, Ordinary }
-pub(crate) fn loops() -> Loops {
-    static FROM_ENV: std::sync::OnceLock<Loops> = std::sync::OnceLock::new();
-    *FROM_ENV.get_or_init(|| if std::env::var("BASEDPL_LOOPS").as_deref() == Ok("ordinary") { Loops::Ordinary } else { Loops::Replay })
-}
 
 pub fn reset() {
     set_numeric(Numeric::DEFAULT);

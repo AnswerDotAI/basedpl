@@ -1,7 +1,7 @@
 //! Forward linearization under Derivative levels; reverse mode transposes the same graph.
 
 use crate::{
-    array::{self, Carried}, error::Result, eval::{JvpResult, RecordedSource, RootReplacement}, number::{Arithmetic, Mark, Math},
+    array::{self, Carried}, error::Result, eval::{RecordedSource, RootReplacement}, number::{Arithmetic, Mark, Math},
     primitive::{CallView, JvpOutputs, Linearity, Operation, Pairing, Primitive, ReadOp, RecipeOp, Setting, ViewAxis}, program::{Desc, Origin, Outputs, Read},
     transform::{carried, Level, LevelKind, Scope}, Error, ErrorKind, Function, Number, Value,
 };
@@ -11,15 +11,15 @@ pub(crate) fn dual(level: usize, primal: Value, tangent: Value) -> Value {
     carried(level, Carried::Dual { primal, tangent })
 }
 
-fn visit_duals(value: &Value, visit: &mut impl FnMut(usize)) {
+fn visit_derivatives(value: &Value, linear: bool, visit: &mut impl FnMut(usize)) {
     match value {
         Value::Carried { level, carried } => match &**carried {
-            Carried::Dual { primal, tangent } => { visit(*level); visit_duals(primal, visit); visit_duals(tangent, visit); }
-            Carried::Batch { whole, .. } => visit_duals(whole, visit),
+            Carried::Dual { primal, tangent } => { visit(*level); visit_derivatives(primal, linear, visit); visit_derivatives(tangent, linear, visit); }
+            Carried::Batch { whole, .. } => visit_derivatives(whole, linear, visit),
         },
+        Value::Pending(pending) if linear => { if let Some(level) = pending.node.level() { visit(level); } }
         Value::Array(array) => match &**array {
-            array::ArrayData::Mixed { items, prototype, .. } => for item in items.iter().chain(prototype.iter()) { visit_duals(item, visit); },
-            array::ArrayData::Segmented { segments, .. } => visit_duals(segments.prototype(), visit),
+            array::ArrayData::Mixed { items, prototype, .. } => for item in items.iter().chain(prototype.iter()) { visit_derivatives(item, linear, visit); },
             _ => {}
         },
         _ => {}
@@ -27,7 +27,7 @@ fn visit_duals(value: &Value, visit: &mut impl FnMut(usize)) {
 }
 
 pub(crate) fn tag(value: &Value) -> Option<usize> {
-    let mut latest = None; visit_duals(value, &mut |id| latest = latest.max(Some(id))); latest
+    let mut latest = None; visit_derivatives(value, false, &mut |id| latest = latest.max(Some(id))); latest
 }
 
 pub(crate) fn split(value: &Value, level: usize) -> Result<(Value, Option<Value>)> {
@@ -78,23 +78,31 @@ pub(crate) fn strip(value: &Value, level: usize) -> Value {
     })).expect("stripping reads no data")
 }
 
-/// Mask only the current tangent; shared primals and older transform structure stay intact.
+/// Gate directions before a masked case: inactive infinite slopes must not reach its seeds.
 pub(crate) fn gate_inputs(origin: &mut Origin<Vec<Value>>, mask: &Value) -> Result<()> {
-    let Some(level) = origin.list.iter().filter_map(tag).max() else { return Ok(()); };
-    let changed = crate::eval::map_roots(&origin.reborrow(), |address| {
-        let value = root(&origin.reborrow(), address)?;
-        if tag(&value) != Some(level) { return Ok(None); }
-        let gated = map_leaves(&value, |leaf| {
-            let (primal, tangent) = split(leaf, level)?;
-            let Some(tangent) = tangent else { return Ok(leaf.clone()); };
-            let zero = tangent.zeros_like()?;
-            let call = crate::eval::projected_call(&origin.reborrow(), Operation::Primitive { primitive: Primitive::Choice, pairing: Pairing::Axes },
-                &[mask.clone(), zero, tangent], &[None, None, None])?;
-            Ok(dual(level, primal, Operation::dispatch(call.reborrow())?.assemble()?))
+    let mut levels = Vec::new();
+    for value in &origin.list {
+        visit_derivatives(value, true, &mut |id| {
+            if Level::find(id).is_some_and(|level| matches!(level.kind, LevelKind::Derivative)) && !levels.contains(&id) { levels.push(id); }
+        });
+    }
+    levels.sort_unstable_by(|a, b| b.cmp(a));
+    for level in levels {
+        *origin = crate::eval::map_roots(&origin.reborrow(), |address| {
+            let value = root(&origin.reborrow(), address)?;
+            let gated = map_leaves(&value, |leaf| {
+                let (primal, tangent) = split(leaf, level)?;
+                let linear = leaf.pending().is_some_and(|pending| pending.node.level() == Some(level));
+                let direction = match tangent.as_ref() { Some(value) => value, None if linear => leaf, None => return Ok(leaf.clone()) };
+                let zero = direction.zeros_like()?;
+                let call = crate::eval::projected_call(&origin.reborrow(), Operation::Primitive { primitive: Primitive::Choice, pairing: Pairing::Axes },
+                    &[mask.clone(), zero, direction.clone()], &[None, None, None])?;
+                let direction = Operation::dispatch(call.reborrow())?.assemble()?;
+                Ok(if tangent.is_some() { dual(level, primal, direction) } else { direction })
+            })?;
+            Ok(Some(RootReplacement::value(&gated, None)))
         })?;
-        RootReplacement::value(&gated, None).map(Some)
-    })?;
-    *origin = changed;
+    }
     Ok(())
 }
 pub(crate) fn detach(value: &Value) -> Value {
@@ -112,7 +120,7 @@ pub(crate) fn detach(value: &Value) -> Value {
 }
 
 pub(crate) fn levels(value: &Value) -> usize {
-    let mut tags = Vec::new(); visit_duals(value, &mut |id| if !tags.contains(&id) { tags.push(id); }); tags.len()
+    let mut tags = Vec::new(); visit_derivatives(value, false, &mut |id| if !tags.contains(&id) { tags.push(id); }); tags.len()
 }
 
 fn promoted(value: &Value) -> Result<Value> {
@@ -131,7 +139,7 @@ pub(crate) fn rule(level: &Level, origin: Origin<&[Value]>) -> Result<Outputs<Va
         let (primal, tangent) = split_deep(value, level.id)?;
         primals.push(primal); tangents.push(tangent);
     }
-    let result = Operation::jvp(&origin.with_list(primals.as_slice()), &tangents, level.id)?;
+    let result = Operation::jvp(&origin.with_list(primals.as_slice()), &tangents)?;
     debug_assert_eq!(result.primal.as_ref().len(), result.tangent.as_ref().len());
     let mut tangents = result.tangent.into_vec().into_iter();
     Ok(result.primal.map(|primal| match tangents.next().expect("a JVP preserves its output structure") {
@@ -153,8 +161,8 @@ pub(crate) fn custom_rule(function: &Function, origin: &Origin<&[Value]>) -> Res
     if roots[0].is_some() { return Err(two_arguments()); }
     let (argument, direction) = split_deep(&argument, level)?;
     let direction = direction.expect("the argument carries this derivative level");
-    let call = crate::eval::map_roots(origin, |at| (at.index == right.index)
-        .then(|| RootReplacement::value(&argument, None)).transpose())?;
+    let call = crate::eval::map_roots(origin, |at| Ok((at.index == right.index)
+        .then(|| RootReplacement::value(&argument, None))))?;
     let (primal, captured) = split_deep(&function.run(call.reborrow())?, level)?;
     let stripped = origin.with_list(origin.list.iter().map(|value| strip(value, level)).collect::<Vec<_>>());
     let tangent = rule.call_bound(&stripped.reborrow(), &[direction, argument], &[None, None])?;
@@ -174,7 +182,7 @@ pub(crate) fn linearity(call: &CallView<'_>, valence: usize) -> Linearity {
     };
     match call.operation {
         Operation::Primitive { primitive: p, .. } => primitive(*p, valence),
-        Operation::Read(_) | Operation::Join(_) => Jointly(u8::MAX),
+        Operation::Read(_) | Operation::ReadRelation { .. } | Operation::Join(_) => Jointly(u8::MAX),
         Operation::Convert(Mark::Real | Mark::Type { dtype: DType::Float(_), .. }) => Jointly(1),
         Operation::Fold { primitive: p, .. } if matches!(p, Primitive::Arithmetic(Arithmetic::Plus)) => Jointly(u8::MAX),
         Operation::Product { .. } => summed_product(call).map_or(No, |map| primitive(map, 2)),
@@ -189,45 +197,16 @@ fn sum(left: Option<Value>, right: Value) -> Result<Option<Value>> {
         Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Plus), pairing: Pairing::Axes }.call(&[left, right], 0)?, }))
 }
 fn joint_outputs(primal: Value, tangent: Option<Value>) -> Result<JvpOutputs> {
-    let primal = Outputs::one(primal).flatten()?;
+    let primal = Outputs::one(primal).flatten();
     let tangent = match tangent {
-        Some(tangent) => Outputs::one(tangent).flatten()?.map(Some),
+        Some(tangent) => Outputs::one(tangent).flatten().map(Some),
         None => Outputs::from(vec![None; primal.as_ref().len()]).with_trees(primal.trees().cloned()),
     };
     if primal.as_ref().len() != tangent.as_ref().len() { return Err(Error::planning()); }
     Ok(JvpOutputs { primal, tangent })
 }
 
-fn jvp_select(origin: &Origin<&[Value]>, tangents: &[Option<Value>], cases: usize) -> Result<JvpOutputs> {
-    use crate::eval::OperatorKind;
-    let roots = Function::argument_roots(origin)?.into_iter().flatten().collect::<Vec<_>>();
-    let mut functions = Vec::with_capacity(cases);
-    for value in &origin.list[..cases] {
-        let Value::Function(function) = value else { return Err(Error::planning()); };
-        let (bound, projection) = function.bound_roots(origin, &roots)?;
-        let directions = projection.iter().map(|source| source.and_then(|source| tangents[source].clone())).collect::<Vec<_>>();
-        let (_, packing) = pack(&bound.reborrow(), &directions, 0..0)?;
-        functions.push(Value::Function(Function::applied_kind(OperatorKind::JvpStep { packing, result: JvpResult::Joint }, vec![value.clone()])?));
-    }
-    let (packed, _) = pack(origin, tangents, 0..0)?;
-    let call = crate::eval::map_roots(&packed.reborrow(), |root| functions.get(root.index)
-        .map(|function| RootReplacement::value(function, None)).transpose())?;
-    let result = Operation::dispatch(call.reborrow())?.assemble()?;
-    let primal = primitive(origin, Primitive::Index, &[Value::integer(0), result.clone()])?;
-    let tangent = primitive(origin, Primitive::Index, &[Value::integer(1), result])?;
-    joint_outputs(primal, Some(tangent))
-}
-
-pub(crate) fn jvp(origin: &Origin<&[Value]>, tangents: &[Option<Value>], level: usize) -> Result<JvpOutputs> {
-    if let Operation::Select { cases } = origin.operation { return jvp_select(origin, tangents, cases); }
-    if matches!(origin.operation, Operation::Loop { exit: crate::primitive::Exit::Once, .. }) {
-        let values = origin.list.iter().zip(tangents).map(|(primal, tangent)| match tangent {
-            Some(tangent) => dual(level, primal.clone(), tangent.clone()), None => primal.clone(),
-        }).collect::<Vec<_>>();
-        let Value::Function(function) = &values[0] else { return Err(Error::planning()); };
-        let (primal, tangent) = split_deep(&function.run(origin.with_list(values.as_slice()))?, level)?;
-        return joint_outputs(primal, tangent);
-    }
+pub(crate) fn jvp(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Result<JvpOutputs> {
     let primal = Operation::dispatch(origin.reborrow())?;
     if primal.as_ref().iter().any(|value| matches!(value.dtype(), Some(DType::Complex(_)))) { return Err(system("complex results")); }
     let call = origin.call_view(&origin.list);
@@ -412,131 +391,7 @@ pub(crate) fn partials(origin: &Origin<&[crate::program::Read<Value>]>, result: 
 }
 
 fn root<'a>(origin: &Origin<&'a [Value]>, root: &array::TreeRoot) -> Result<std::borrow::Cow<'a, Value>> {
-    origin.trees.as_ref().map_or_else(|| Ok(std::borrow::Cow::Borrowed(&origin.list[root.leaves.start])), |trees| trees.at_root(root, origin.list))
-}
-// Each argument/capture root has one packed flag, followed by activity flags for its original leaves.
-fn tangent_roots<L: ?Sized>(origin: &Origin<L>) -> Result<impl Fn(&array::TreeRoot) -> bool> {
-    let arguments = Function::argument_roots(origin)?;
-    let first = arguments.iter().flatten().next().ok_or_else(Error::planning)?.index;
-    let end = arguments[1].as_ref().ok_or_else(Error::planning)?.index + 1;
-    let captures = origin.capture_root_start();
-    Ok(move |root| (first..end).contains(&root.index) || root.index >= captures)
-}
-pub(crate) fn pack(origin: &Origin<&[Value]>, tangents: &[Option<Value>], carries: std::ops::Range<usize>) -> Result<(Origin<Vec<Value>>, Box<[bool]>)> {
-    pack_with(origin, tangents, carries, |_, _| {})
-}
-fn pack_with(origin: &Origin<&[Value]>, tangents: &[Option<Value>], carries: std::ops::Range<usize>, mut tangent_leaf: impl FnMut(usize, usize)) -> Result<(Origin<Vec<Value>>, Box<[bool]>)> {
-    use array::TreeInput;
-    assert_eq!(origin.list.len(), tangents.len());
-    let mut activity = origin.list.iter().enumerate().map(|(i, value)|
-        matches!(value.dtype(), Some(DType::Float(_))) && (tangents[i].is_some() || carries.contains(&i))).collect::<Vec<_>>();
-    if let Some(trees) = &origin.trees {
-        trees.input_uses(|i, usage| activity[i] &= usage == TreeInput::Prototype && tangents[i].is_some());
-    }
-    let mut packing = Vec::new(); let mut extra = 0;
-    let eligible = tangent_roots(origin)?;
-    let packed = crate::eval::map_roots(origin, |address| {
-        if !eligible(address) { return Ok(None); }
-        let range = &address.leaves;
-        let active = &activity[range.clone()];
-        let any = active.iter().any(|active| *active);
-        packing.push(any); packing.extend_from_slice(active);
-        if !any { return Ok(None); }
-        for (i, &active) in active.iter().enumerate() { if active { tangent_leaf(range.start + extra + range.len() + i, range.start + i); } }
-        extra += range.len();
-        let tree = origin.trees.as_ref().map_or(array::Tree::Leaf, |trees| trees.root_at(address).clone());
-        let mut leaves = origin.list[range.clone()].to_vec();
-        leaves.extend(range.clone().map(|i| if activity[i] {
-            tangents[i].clone().map_or_else(|| origin.list[i].zeros_like(), Ok)
-        } else { Ok(origin.list[i].clone()) }).collect::<Result<Vec<_>>>()?);
-        let from = range.clone().map(Some).chain(std::iter::repeat_n(None, range.len())).collect();
-        Ok(Some(RootReplacement { tree: array::Tree::Array { layout: vec![2].into(), items: vec![tree.clone(), tree], prototype: None }, leaves, from: Some(from) }))
-    })?;
-    Ok((packed, packing.into_boxed_slice()))
-}
-fn packed_root<'a>(range: &std::ops::Range<usize>, packing: &'a [bool], at: &mut usize) -> Result<(bool, &'a [bool])> {
-    let packed = *packing.get(*at).ok_or_else(Error::planning)?; *at += 1;
-    if packed && range.len() % 2 != 0 { return Err(Error::planning()); }
-    let count = if packed { range.len() / 2 } else { range.len() };
-    let active = packing.get(*at..*at + count).ok_or_else(Error::planning)?; *at += count;
-    if !packed && active.iter().any(|active| *active) { return Err(Error::planning()); }
-    Ok((packed, active))
-}
-
-/// The same packing decoder supplies a split body's data and current-description aliases.
-pub(crate) fn packed_projection<L: ?Sized>(origin: &Origin<L>, len: usize, packing: &[bool], linear: bool) -> Result<Box<[crate::eval::RecordedInput]>> {
-    use crate::{eval::RecordedInput, ReadKind};
-    let roots: Vec<_> = origin.trees.as_ref().map_or_else(
-        || (0..len).map(|index| array::TreeRoot { index, leaves: index..index + 1 }).collect(), |trees| trees.roots().collect());
-    let eligible = tangent_roots(origin)?;
-    let mut at = 0; let mut source = 0; let mut inputs = Vec::new();
-    for root in roots.into_iter().filter(eligible) {
-        let (packed, active) = packed_root(&root.leaves, packing, &mut at)?; let count = active.len();
-        for (i, &active) in active.iter().enumerate() {
-            let primal = (root.leaves.start + i) as u32;
-            let tangent = (root.leaves.start + count + i) as u32;
-            if linear {
-                if !active { continue; }
-                inputs.push(RecordedInput { source: RecordedSource::Argument(source), target: tangent, read: ReadKind::Value });
-                inputs.push(RecordedInput { source: RecordedSource::Argument(source), target: primal, read: ReadKind::Description });
-            } else {
-                inputs.push(RecordedInput { source: RecordedSource::Argument(source), target: primal, read: ReadKind::Value });
-                if packed { inputs.push(RecordedInput { source: RecordedSource::Argument(source), target: tangent, read: ReadKind::Description }); }
-            }
-            source += 1;
-        }
-    }
-    if at != packing.len() { return Err(Error::planning()); }
-    Ok(inputs.into())
-}
-
-fn unpack(origin: &Origin<&[Value]>, packing: &[bool], level: usize, mut direction: impl FnMut(usize, &Value, &Value) -> Value) -> Result<Origin<Vec<Value>>> {
-    let mut at = 0;
-    let eligible = tangent_roots(origin)?;
-    let result = crate::eval::map_roots(origin, |address| {
-        if !eligible(address) { return Ok(None); }
-        let range = &address.leaves;
-        let (packed, active) = packed_root(range, packing, &mut at)?;
-        if !packed { return Ok(None); }
-        let count = active.len();
-        let trees = origin.trees.as_ref().ok_or_else(Error::planning)?;
-        let mut children = trees.root_at(address).children(range.start);
-        let (primal, primal_range) = children.next().ok_or_else(Error::planning)?;
-        let (_, tangent_range) = children.next().ok_or_else(Error::planning)?;
-        if primal_range.len() != count || tangent_range.len() != count || children.next().is_some() { return Err(Error::planning()); }
-        let leaves = primal_range.clone().enumerate().map(|(i, source)| {
-            let leaf = &origin.list[source];
-            let position = tangent_range.start + i;
-            if active[i] { dual(level, leaf.clone(), direction(position, leaf, &origin.list[position])) } else { leaf.clone() }
-        }).collect();
-        Ok(Some(RootReplacement { tree: primal.clone(), leaves, from: Some(primal_range.map(Some).collect()) }))
-    })?;
-    if at != packing.len() { return Err(Error::planning()); }
-    Ok(result)
-}
-pub(crate) fn jvp_step(function: &Function, packing: &[bool], form: JvpResult, origin: Origin<&[Value]>) -> Result<Value> {
-    use crate::linear::seed;
-    let scope = Scope::new(LevelKind::Derivative);
-    let mut seeds = Vec::new(); let mut inputs = Vec::new();
-    let call = unpack(&origin, packing, scope.level.id, |position, primal, tangent| match form {
-        JvpResult::Joint | JvpResult::Capture => {
-            let pending = seed(tangent, scope.level.id, position, Some(tangent.clone()));
-            if form == JvpResult::Capture { seeds.push(pending.clone()); }
-            Value::Pending(pending)
-        }
-        JvpResult::Linearized => {
-            let pending = seed(primal, scope.level.id, seeds.len(), None); seeds.push(pending.clone()); inputs.push(primal.clone()); Value::Pending(pending)
-        }
-    })?;
-    let result = function.run(call.reborrow())?;
-    let (primal, tangent) = split_deep(&result, scope.level.id)?;
-    let tangent = match tangent { Some(tangent) => tangent, None => zero_tangent(&primal)? };
-    if form == JvpResult::Joint { return Ok(Value::tuple(vec![primal, tangent])); }
-    if form == JvpResult::Capture { return Ok(Value::tuple(vec![primal, tangent, Value::tuple(seeds.into_iter().map(Value::Pending).collect())])); }
-    let forward = recorded_linear(&call.reborrow(), &tangent, &seeds)?;
-    let inputs = Value::tuple(inputs);
-    let pullback = transpose_function(&forward, &call.reborrow(), &inputs, &primal)?;
-    Ok(Value::tuple(vec![primal, Value::tuple(vec![Value::Function(pullback)])]))
+    Ok(origin.trees.as_ref().map_or_else(|| std::borrow::Cow::Borrowed(&origin.list[root.leaves.start]), |trees| trees.at_root(root, origin.list)))
 }
 
 fn primitive(parent: &Origin<&[Value]>, primitive: Primitive, arguments: &[Value]) -> Result<Value> {
@@ -545,7 +400,7 @@ fn primitive(parent: &Origin<&[Value]>, primitive: Primitive, arguments: &[Value
 }
 
 fn numeric_leaves(value: &Value) -> Result<Vec<Value>> {
-    let Some((trees, leaves)) = array::flatten(std::slice::from_ref(value))? else { return Ok(value.is_numeric().then(|| value.clone()).into_iter().collect()) };
+    let Some((trees, leaves)) = array::flatten(std::slice::from_ref(value)) else { return Ok(value.is_numeric().then(|| value.clone()).into_iter().collect()) };
     let mut values = Vec::new();
     trees.active_inputs(|position| { if leaves[position].is_numeric() { values.push(leaves[position].clone()); } });
     Ok(values)
@@ -605,51 +460,17 @@ fn axis_block(parent: &Origin<&[Value]>, value: &Value, first: &Value, count: &V
     Operation::dispatch(take.reborrow())?.assemble()
 }
 
-/// Partitions either an ordinary recording or the graph of a stopped actual call.
-fn linear_function(program: &crate::program::Program, context: crate::program::BindingContext,
-    arguments: Box<[crate::eval::RecordedInput]>, outputs: Vec<(Option<usize>, Value)>, mut input: impl FnMut(usize) -> Result<Value>) -> Result<Function> {
-    use crate::{eval::RecordedCode, program::{Builder, Node as ProgramNode, Out, PartialOut}};
-    use std::sync::Arc;
-    let inputs = program.nodes.iter().enumerate().filter_map(|(node, input)| match input {
-        ProgramNode::Input { position, control: false, .. }
-            if arguments.iter().any(|argument| argument.target as usize == *position && argument.read == crate::ReadKind::Value) => Some(Out::data(node, 0)),
-        _ => None,
-    }).collect::<Vec<_>>();
-    let partial = program.partial(&inputs);
-    let mut residuals = partial.residuals.iter().map(|&source| program.source_value(&context, source, &mut input)).collect::<Result<Vec<_>>>()?;
-    let mut linear = Builder::new(); linear.program = partial.linear;
-    let roots = outputs.iter().map(|(root, value)| {
-        let value = match root.map(|root| &partial.roots[root]) {
-            Some(PartialOut::Linear(output)) => return Ok(linear.program.roots[*output]),
-            Some(PartialOut::Primal(_)) => program.source_value(&context, program.roots[root.unwrap()], &mut input)?,
-            None => value.clone(),
-        };
-        let position = partial.residual_start + residuals.len();
-        let desc = Desc::of(&value).map(std::borrow::Cow::into_owned);
-        residuals.push(value);
-        Ok(linear.input(position, desc, None))
-    }).collect::<Result<Vec<_>>>()?;
-    linear.program.roots = roots;
-    let mut bindings = arguments.into_vec();
-    bindings.extend((0..residuals.len()).map(|i| crate::eval::RecordedInput { source: RecordedSource::Operand(i as u32), target: (partial.residual_start + i) as u32, read: crate::ReadKind::Value }));
-    let trees = array::flatten(&[Value::tuple(outputs.into_iter().map(|(_, value)| value).collect())])?.map(|(trees, _)| trees);
-    let code = RecordedCode { program: Arc::new(linear.program), inputs: bindings.into(), trees };
-    Function::recorded(code, context, residuals, input)
-}
-
-fn recorded_linear(parent: &Origin<&[Value]>, tangent: &Value, seeds: &[crate::graph::Pending]) -> Result<Function> {
-    use crate::{eval::RecordedInput, program::{BindingContext, Live, Program}};
-    let mut roots = Vec::new();
-    let outputs = numeric_leaves(tangent)?.into_iter().map(|value| {
-        let root = value.pending().map(|pending| { let root = roots.len(); roots.push(pending.clone()); root });
-        (root, value)
-    }).collect();
-    let live = Live::of(&roots);
-    let arguments = seeds.iter().enumerate().filter_map(|(source, seed)| live.position(seed).map(|_| RecordedInput {
+fn recorded_linear(parent: &Origin<&[Value]>, tangent: &Value, seeds: &[crate::graph::Pending], level: usize) -> Result<Function> {
+    use crate::{eval::{RecordedCode, RecordedInput}, program::{BindingContext, Live, Program}};
+    let live = Live::of(&numeric_leaves(tangent)?, Some(level));
+    let mut program = Program::of(&live);
+    program.outputs = Outputs::tuple(program.outputs.into_vec().into_iter().map(Outputs::one));
+    let inputs = seeds.iter().enumerate().filter_map(|(source, seed)| live.position(seed).map(|_| RecordedInput {
         source: RecordedSource::Argument(source as u32), target: live.input_position(seed, None) as u32, read: crate::ReadKind::Value,
     })).collect();
     let mut context = BindingContext::from_live(&live); context.root = Some(parent.with_list(()));
-    linear_function(&Program::of(&live), context, arguments, outputs, |position| live.input_value(position))
+    let code = RecordedCode { program: std::sync::Arc::new(program), inputs };
+    Function::recorded(code, context, Vec::new(), |position| live.input_value(position))
 }
 
 fn leaf_sizes(parent: &Origin<&[Value]>, leaves: &[Value]) -> Result<(Vec<Value>, Value)> {
@@ -720,39 +541,24 @@ fn zero_tangent(value: &Value) -> Result<Value> {
     })
 }
 
-/// One normal packed recording captures the call; a stopped body supplies its actual seed packet.
+/// Seed the actual argument once; ordinary body calls build the unrolled tangent graph.
 pub(crate) fn linearize(function: &Function, parent: &Origin<&[Value]>) -> Result<(Value, Value, Function)> {
-    use crate::{eval::OperatorKind, program::prepare};
+    let scope = Scope::new(LevelKind::Derivative);
     let mut arguments = Function::body_arguments(parent)?.into_owned();
     let input = promoted(arguments.last().ok_or_else(Error::planning)?)?;
-    *arguments.last_mut().unwrap() = input.clone();
+    let mut seeds = Vec::new();
+    let argument = map_leaves(&input, |leaf| {
+        if !matches!(leaf.dtype(), Some(DType::Float(_))) { return Ok(leaf.clone()); }
+        let seed = crate::linear::seed(leaf, scope.level.id, seeds.len(), None);
+        seeds.push(seed.clone()); Ok(dual(scope.level.id, leaf.clone(), Value::Pending(seed)))
+    })?;
+    *arguments.last_mut().unwrap() = argument;
     let from = Function::argument_ranges(parent)?.into_iter().flatten().map(|range| Some(range.start)).collect::<Vec<_>>();
     let call = function.bound(parent, &arguments, &from)?;
-    let right = Function::argument_ranges(&call)?[1].clone().ok_or_else(Error::planning)?;
-    let (packed, packing) = pack(&call.reborrow(), &vec![None; call.list.len()], right)?;
-    let capture = Function::applied_kind(OperatorKind::JvpStep { packing: packing.clone(), result: JvpResult::Capture }, vec![Value::Function(function.clone())])?;
-    let packed = crate::eval::map_roots(&packed.reborrow(), |root| (root.index == 0)
-        .then(|| RootReplacement::value(&Value::Function(capture.clone()), None)).transpose())?;
-    let projection = packed_projection(&packed, packed.list.len(), &packing, true)?;
-    let captured = prepare(&capture, packed.with_list(packed.list.clone()), 1)?.bound(&capture)?;
-    let value = captured.value.at(0); let tangent = captured.value.at(1);
+    let (value, tangent) = split_deep(&function.run(call.reborrow())?, scope.level.id)?;
     if numeric_leaves(&value)?.iter().any(|leaf| matches!(leaf.dtype(), Some(DType::Complex(_)))) { return Err(system("complex results")); }
-    let linear = if let Some(recording) = captured.recording {
-        let trees = recording.description.trees().ok_or_else(Error::planning)?;
-        let root = trees.roots().next().ok_or_else(Error::planning)?;
-        let (_, range) = trees.root_at(&root).children(root.leaves.start).nth(1).ok_or_else(Error::planning)?;
-        let mut positions = Vec::new();
-        trees.active_inputs(|position| { if range.contains(&position) && recording.description.as_ref()[position].as_ref().is_some_and(|desc| desc.dtype() != DType::Character) { positions.push(position); } });
-        let input = |position| packed.list.get(position).cloned().ok_or_else(Error::planning);
-        let outputs = positions.into_iter().map(|position| {
-            let value = recording.program.source_value(&captured.context, recording.program.roots[position], input)?;
-            Ok((Some(position), value))
-        }).collect::<Result<Vec<_>>>()?;
-        linear_function(&recording.program, captured.context, projection, outputs, input)?
-    } else {
-        let seeds = numeric_leaves(&captured.value.at(2))?.into_iter().map(|value| value.pending().cloned().ok_or_else(Error::planning)).collect::<Result<Vec<_>>>()?;
-        recorded_linear(&packed.reborrow(), &tangent, &seeds)?
-    };
+    let tangent = match tangent { Some(value) => value, None => zero_tangent(&value)? };
+    let linear = recorded_linear(&call.reborrow(), &tangent, &seeds, scope.level.id)?;
     Ok((input, value, linear))
 }
 
@@ -774,7 +580,7 @@ pub(crate) fn transpose_function(function: &Function, parent: &Origin<&[Value]>,
         let seed = crate::linear::seed(leaf, reverse.level.id, cotangents.len(), None); cotangents.push(seed.clone()); Ok(Value::Pending(seed))
     }).collect::<Result<Vec<_>>>()?);
     let gradients = crate::linear::transpose(&[tangent], &seeds, &[direction], scope.level.id)?;
-    recorded_linear(&call.reborrow(), &Value::tuple(gradients), &cotangents)
+    recorded_linear(&call.reborrow(), &Value::tuple(gradients), &cotangents, reverse.level.id)
 }
 
 pub(crate) fn differentiate(function: &Function, origin: Origin<&[Value]>) -> Result<Value> {

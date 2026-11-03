@@ -1,7 +1,7 @@
 //! Batched functions run on framed whole arguments through the normal dispatcher.
 use crate::{
     array::{self, Carried, Layout}, error::{Error, Result}, eval::{Function, OperatorKind},
-    primitive::{Exit, Operation, Pairing, ReadOp, ViewAxis}, program::{Desc, Origin, Outputs},
+    primitive::{Operation, Pairing, ReadOp, ViewAxis}, program::{Desc, Origin, Outputs},
     transform::{at_level, carried, Level, LevelKind, Scope}, Value,
 };
 
@@ -85,7 +85,8 @@ pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], o
 
 pub(crate) fn rule(level: &Level, origin: Origin<&[Value]>) -> Result<Outputs<Value>> {
     let LevelKind::Batched { frame, .. } = &level.kind else { unreachable!("a batched rule has a frame") };
-    let cells = Operation::describe(&origin.call_view(&origin.list))?.ok_or_else(|| Error::batch_stop(level.id))?;
+    let cells = Operation::build(&origin.call_view(&origin.list), &mut |_, _| {})?.1.ok_or_else(|| Error::batch_stop(level.id))?;
+    if cells.as_ref().iter().any(Option::is_none) { return Err(Error::batch_stop(level.id)); }
     let wholes = origin.list.iter().map(|value| array::map_leaves(value, |leaf| Ok(match at_level(leaf, level.id) {
         Some(Carried::Batch { whole, .. }) => whole.clone(), _ => leaf.clone(),
     }))).collect::<Result<Vec<_>>>()?;
@@ -93,19 +94,15 @@ pub(crate) fn rule(level: &Level, origin: Origin<&[Value]>) -> Result<Outputs<Va
     let results = Operation::dispatch(call.reborrow())?;
     debug_assert_eq!(results.as_ref().len(), cells.as_ref().len());
     let mut cells = cells.into_vec().into_iter();
-    Ok(results.map(|whole| carried(level.id, Carried::Batch { whole, cell: cells.next().expect("batching preserves output structure") })))
+    Ok(results.map(|whole| carried(level.id, Carried::Batch { whole, cell: cells.next().flatten().expect("batching has native cell descriptions") })))
 }
 
 pub(crate) fn lifted(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize, level: usize) -> Result<Vec<Value>> {
     let mut values = wholes.to_vec();
     let view = origin.call_view(&origin.list);
     let mut positions: Vec<_> = view.data_positions().collect();
-    if matches!(origin.operation, Operation::Loop { exit: Exit::Power, .. }) {
-        positions.extend(crate::program::LoopInputs::of(origin, origin.list.len())?.parameter.into_iter().flatten());
-    }
-    if let Operation::Select { cases } = origin.operation { positions.extend(view.root(cases).leaves); }
     positions.sort_unstable(); positions.dedup();
-    let reference = matches!(origin.operation, Operation::Loop { .. } | Operation::Select { .. } | Operation::Draw { .. } | Operation::Read(ReadOp::Cells { .. }))
+    let reference = matches!(origin.operation, Operation::Draw { .. } | Operation::Read(ReadOp::Cells { .. }))
         .then(|| Level::find(level).ok_or_else(Error::planning)?.frame_reference()).transpose()?;
     for position in positions {
         if at_level(&origin.list[position], level).is_some() || Desc::of(&values[position]).is_none() { continue; }
@@ -154,25 +151,9 @@ pub(crate) fn primitive_cells(origin: &Origin<&[Value]>, wholes: &[Value], frame
         let shifted: Vec<_> = if pair.1 { (0..frame).chain(axes.into_iter().map(|axis| frame + axis)).collect() }
             else { axes.into_iter().map(|axis| frame + axis).collect() };
         let spec = Value::integers([shifted.len()], shifted.into_iter().map(|axis| axis as i64).collect())?;
-        return crate::eval::map_roots(&origin.with_list(values.as_slice()), |at| (at.index == root.index).then(|| crate::eval::RootReplacement::value(&spec, None)).transpose());
+        return crate::eval::map_roots(&origin.with_list(values.as_slice()), |at| Ok((at.index == root.index).then(|| crate::eval::RootReplacement::value(&spec, None))));
     }
     Ok(origin.with_list(values))
-}
-
-fn framed_body(function: &Function, parent: &Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>], axes: usize, level: usize) -> Result<Function> {
-    framed_prepared(function, &function.bound(parent, arguments, from)?.reborrow(), axes, level)
-}
-
-fn framed_prepared(function: &Function, origin: &Origin<&[Value]>, axes: usize, level: usize) -> Result<Function> {
-    let mut flags = origin.list.iter().map(|value| match at_level(value, level) {
-        Some(Carried::Batch { cell, .. }) => Some(cell.atom), _ => None,
-    }).collect::<Vec<_>>();
-    for root in Function::argument_roots(&origin.reborrow())?.into_iter().flatten() {
-        for position in root.leaves {
-            flags[position] = Some(Desc::of(&origin.list[position]).ok_or_else(|| Error::batch_stop(level))?.atom);
-        }
-    }
-    Function::applied_kind(OperatorKind::Framed { axes, atoms: flags.into() }, vec![Value::Function(function.clone())])
 }
 
 pub(crate) fn cells(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize) -> Result<Origin<Vec<Value>>> {
@@ -185,13 +166,13 @@ pub(crate) fn cells(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize) -
             let row = call.row().ok_or_else(Error::planning)?;
             (row.cells)(origin, wholes, frame)
         }
-        Operation::Product { fold, map, contracted, pairing } => {
+        Operation::Product { contracted, pairing } => {
             let pairing = match pairing { Pairing::Matrices { frame: inner } => Pairing::Matrices { frame: inner + frame }, pairing => *pairing };
             let mut call = origin.with_list(lifted(origin, wholes, frame, level.id)?);
-            call.operation = Operation::Product { fold: *fold, map: *map, contracted: *contracted, pairing };
+            call.operation = Operation::Product { contracted: *contracted, pairing };
             Ok(call)
         }
-        Operation::Read(ReadOp::Cells { .. }) => crate::primitive::cell_read(origin, wholes, frame),
+        Operation::Read(ReadOp::Cells { .. }) | Operation::Join(_) => crate::primitive::cell_read(origin, wholes, frame),
         Operation::Read(ReadOp::Axes { axes, destinations }) => {
             let mapped = |input| at_level(&origin.list[input], level.id).is_some();
             let mut output: Vec<_> = (0..frame).map(|axis| ViewAxis { input: 0, axis: mapped(0).then_some(axis) }).collect();
@@ -207,34 +188,6 @@ pub(crate) fn cells(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize) -
             let mut call = origin.with_list(wholes.to_vec());
             call.operation = Operation::Read(ReadOp::Slice { axis: axis + if at_level(&origin.list[1], level.id).is_some() { frame } else { 0 } });
             Ok(call)
-        }
-        Operation::Loop { exit, order, body_result, batch_axes } => {
-            let arguments = Function::body_arguments(origin)?;
-            let from = Function::argument_ranges(origin)?.into_iter().flatten().map(|range| Some(range.start)).collect::<Vec<_>>();
-            let mut values = lifted(origin, wholes, frame, level.id)?;
-            let Value::Function(body) = &origin.list[0] else { return Err(Error::planning()); };
-            values[0] = Value::Function(if matches!(exit, Exit::Items { .. }) {
-                framed_prepared(body, &crate::eval::operators::items_prototype(origin)?.reborrow(), frame, level.id)?
-            } else { framed_body(body, origin, &arguments, &from, frame, level.id)? });
-            if matches!(exit, Exit::Predicate) {
-                let Value::Function(predicate) = &origin.list[1] else { return Err(Error::planning()); };
-                let carry = arguments.last().ok_or_else(Error::planning)?;
-                let source = from.last().copied().ok_or_else(Error::planning)?;
-                values[1] = Value::Function(framed_body(predicate, origin, &[carry.clone(), carry.clone()], &[source, source], frame, level.id)?);
-            }
-            let mut call = origin.with_list(values);
-            call.operation = Operation::Loop { exit: *exit, order: *order, body_result: *body_result, batch_axes: batch_axes + frame };
-            Ok(call)
-        }
-        Operation::Select { cases } => {
-            let arguments = Function::body_arguments(origin)?;
-            let from = Function::argument_ranges(origin)?.into_iter().flatten().map(|range| Some(range.start)).collect::<Vec<_>>();
-            let mut values = lifted(origin, wholes, frame, level.id)?;
-            for position in 0..*cases {
-                let Value::Function(function) = &origin.list[position] else { return Err(Error::planning()); };
-                values[position] = Value::Function(framed_body(function, origin, &arguments, &from, frame, level.id)?);
-            }
-            Ok(origin.with_list(values))
         }
         Operation::System => {
             let call = origin.call_view(&origin.list);

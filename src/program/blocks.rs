@@ -31,190 +31,11 @@ pub(crate) struct Prepared {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum ReadSource { Pool(usize), Output(Out), Argument(usize), Counts, Item(usize, Out) }
+enum ReadSource { Pool(usize), Output(Out) }
 
 #[cfg(not(web))]
 struct Code { code: Arc<crate::jit::Compiled>, folded: bool, inputs: Arc<[LoweredInput]>, outputs: Arc<[Export]> }
 
-pub(crate) struct ItemInput { pub(crate) position: usize, pub(crate) whole: Value }
-pub(crate) struct ItemInputs { pub(crate) axis: usize, pub(crate) inputs: Vec<ItemInput> }
-pub(crate) struct RepeatInputs<'a> {
-    pub(crate) carry: std::ops::Range<usize>,
-    pub(crate) count: Option<u64>,
-    pub(crate) counts: Option<&'a Value>,
-    pub(crate) items: Option<&'a ItemInputs>,
-    pub(crate) start: u64,
-    pub(crate) order: crate::primitive::Order,
-}
-pub(crate) struct PreparedLoop {
-    schedule: Arc<super::Schedule>,
-    prepared: Prepared,
-    converged: bool,
-    repeated: bool,
-    varying: bool,
-    traversal: Option<crate::primitive::Order>,
-    carry: std::ops::Range<usize>,
-}
-impl PreparedLoop {
-    fn fixed_carry(program: &Program, running: &Running, carry: &std::ops::Range<usize>, converged: bool) -> bool {
-        program.roots.len() == carry.len() && program.roots.iter().zip(carry.clone()).all(|(&root, position)| {
-            let Some(initial) = running.binding_context().input_desc(position) else { return false; };
-            (!converged || initial.layout.count() == 1) && running.desc(program, root).is_some_and(|result| initial.kind == result.kind && initial.atom == result.atom && initial.layout == result.layout)
-        })
-    }
-    fn fixed_items(running: &Running, repeat: &RepeatInputs<'_>) -> bool {
-        repeat.items.is_none_or(|items| repeat.count.is_some() && items.inputs.iter().all(|item| {
-            let Some(source) = super::Desc::of(&item.whole) else { return false; };
-            let Some(body) = running.binding_context().input_desc(item.position) else { return false; };
-            let mut shape = source.shape().to_vec();
-            if items.axis >= shape.len() { return false; }
-            let count = shape.remove(items.axis) as u64;
-            shape == body.shape() && repeat.start <= count && repeat.count.is_some_and(|left| left <= count - repeat.start)
-        }))
-    }
-    pub(crate) fn prepare(plan: &super::Plan, running: &Running, repeat: &RepeatInputs<'_>,
-        policy: crate::settings::Compiles, expected_runs: u64) -> Result<Option<Self>> {
-        let (carry, count) = (repeat.carry.clone(), repeat.count);
-        #[cfg(web)] { let _ = (plan, running, carry, count, policy, expected_runs); Ok(None) }
-        #[cfg(not(web))] {
-            use super::{Node, Stage, Step};
-            use crate::jit::{Input, Op, Ty, Value as Slot};
-            if policy == crate::settings::Compiles::Never || count.is_some_and(|count| count < 2) { return Ok(None); }
-            let program = &plan.program;
-            let [Stage::Block(block)] = plan.stages.as_slice() else { return Ok(None); };
-            let changing = carry.clone().chain(repeat.items.into_iter().flat_map(|items| items.inputs.iter().map(|item| item.position))).collect::<Vec<_>>();
-            if block.sections.len() != 1 || !Self::fixed_carry(program, running, &carry, count.is_none()) || !Self::fixed_items(running, repeat)
-                || !super::control::fixed_loop_parameters(program, &changing)
-                || (count.is_none() || repeat.counts.is_some()) && program.may_raise(running)?
-                || block.members.iter().any(|&node| !matches!(program.nodes[node], Node::Step { step: Step::Map { .. } | Step::Convert { .. } | Step::Picks { .. }, .. })) { return Ok(None); }
-            let section = &block.sections[0];
-            let Some(lowered) = &section.lowered else { return Ok(None); };
-            let items = running.desc(program, block.outputs[0]).ok_or_else(crate::Error::planning)?.layout.count();
-            let mut kernel = lowered.kernel.clone();
-            let mut inputs = lowered.inputs.to_vec();
-            let mut exports = section.outputs.to_vec();
-            let mut outputs = block.outputs.to_vec();
-            for (position, root) in program.roots.iter().enumerate() {
-                let Some(result) = running.desc(program, *root) else { return Ok(None); };
-                if outputs.contains(root) { continue; }
-                let fixed = match program.nodes[root.node] {
-                    Node::Literal { .. } => true,
-                    Node::Input { position, .. } => !repeat.items.is_some_and(|items| items.inputs.iter().any(|item| item.position == position))
-                        && (!carry.contains(&position) || program.roots[position - carry.start] == *root),
-                    _ => false,
-                };
-                if fixed && (repeat.counts.is_none() || program.nodes[root.node].input_position() == Some(carry.start + position)) { continue; }
-                if result.layout.count() != items { return Ok(None); }
-                let Some(value) = Lowered::output(program, running, *root, &exports, &mut inputs, &mut kernel) else { return Ok(None); };
-                let Slot::Step(stored) = kernel.step(Op::Convert, kernel.ty(value), value, None) else { unreachable!() };
-                kernel.stores.push(stored); exports.push(Export { output: *root, local: false }); outputs.push(*root);
-            }
-            let mut iterated = Vec::new();
-            if let Some(items) = repeat.items {
-                for input in &mut inputs {
-                    let source = match input.source { ReadSource::Pool(position) => program.reads[position].operand, ReadSource::Output(output) => output, _ => continue };
-                    let Some(position) = program.nodes[source.node].input_position() else { continue; };
-                    let Some(item) = items.inputs.iter().position(|item| item.position == position) else { continue; };
-                    if matches!(input.source, ReadSource::Pool(position) if !matches!(running.geometry.maps[position], Mapping::Linear(1) | Mapping::Single)) { return Ok(None); }
-                    let ty = match input.kind { Input::Array(ty, _) | Input::Scalar(ty) => ty, _ => return Ok(None) };
-                    input.kind = Input::Array(ty, crate::jit::Read::Forward);
-                    input.source = ReadSource::Item(item, source);
-                    kernel.inputs[input.slot] = input.kind;
-                    iterated.push(input.slot);
-                }
-            }
-            let mut carries = Vec::new();
-            let mut carried = vec![false; carry.len()];
-            let mut next = 0;
-            while next < inputs.len() {
-                let input = inputs[next].clone(); next += 1;
-                let source = match input.source { ReadSource::Pool(position) => program.reads[position].operand, ReadSource::Output(output) => output, _ => continue };
-                let Node::Input { position, .. } = program.nodes[source.node] else { continue; };
-                if !carry.contains(&position) || program.roots[position - carry.start] == source { continue; }
-                if matches!(input.kind, Input::Scalar(_)) && running.desc(program, source).is_some_and(|desc| desc.layout.count() != 1)
-                    || matches!(input.source, ReadSource::Pool(position) if !matches!(running.geometry.maps[position], rustymath::agreement::Mapping::Linear(1) | rustymath::agreement::Mapping::Single)) { return Ok(None); }
-                let Some(value) = Lowered::output(program, running, program.roots[position - carry.start], &exports, &mut inputs, &mut kernel) else { return Ok(None); };
-                carries.push((input.slot, value));
-                carried[position - carry.start] = true;
-            }
-            if repeat.counts.is_some() {
-                for position in carry.clone() {
-                    if carried[position - carry.start] { continue; }
-                    let root = program.roots[position - carry.start];
-                    if program.nodes[root.node].input_position() == Some(position) { continue; }
-                    let Some(desc) = running.binding_context().input_desc(position) else { return Ok(None); };
-                    if desc.layout.count() != items { return Ok(None); }
-                    let Some(ty) = Ty::of(desc.dtype()) else { return Ok(None); };
-                    let kind = if desc.atom { Input::Scalar(ty) } else { Input::Array(ty, crate::jit::Read::Forward) };
-                    let Slot::Input(slot) = kernel.input(kind) else { unreachable!() };
-                    inputs.push(LoweredInput { slot, source: ReadSource::Argument(position), kind });
-                    let Some(value) = Lowered::output(program, running, root, &exports, &mut inputs, &mut kernel) else { return Ok(None); };
-                    carries.push((slot, value));
-                }
-            }
-            let repeated = !carries.is_empty() || !iterated.is_empty();
-            if repeated {
-                let (count_slot, tolerances) = if count.is_some() {
-                    let kind = if repeat.counts.is_some() { Input::Array(Ty::I64, crate::jit::Read::Forward) } else { Input::Scalar(Ty::I64) };
-                    let Slot::Input(slot) = kernel.input(kind) else { unreachable!() };
-                    if repeat.counts.is_some() { inputs.push(LoweredInput { slot, source: ReadSource::Counts, kind }); }
-                    (Some(slot), None)
-                } else {
-                    let single = kernel.input(Input::Scalar(Ty::F32));
-                    let double = kernel.input(Input::Scalar(Ty::F64));
-                    (None, Some([single, double]))
-                };
-                if !kernel.repeat(carries, count_slot, tolerances, iterated, repeat.items.is_some() && matches!(repeat.order, crate::primitive::Order::Backward)) { return Ok(None); }
-            }
-            if kernel.check().is_err() { return Ok(None); }
-            let runs = if repeated { count.unwrap_or(1).max(expected_runs) } else { 1 };
-            let compile = policy == crate::settings::Compiles::Always || block.repays(items, runs);
-            let code = if compile {
-                let Ok((code, time)) = kernel.compiled() else { return Ok(None); };
-                if let Some(time) = time { crate::explain::compiled(|| "loop".into(), time); }
-                code
-            } else { let Some(code) = kernel.existing() else { return Ok(None); }; code };
-            let code = Code { code, folded: false, inputs: inputs.into(), outputs: exports.into() };
-            Ok(Some(Self { schedule: plan.schedule.clone(), prepared: Prepared { parts: vec![Some(code)], outputs: outputs.into() }, converged: count.is_none(), repeated, carry, varying: repeat.counts.is_some(), traversal: repeat.items.map(|_| repeat.order) }))
-        }
-    }
-    pub(crate) fn accepts(&self, plan: &super::Plan, running: &Running, inputs: &RepeatInputs<'_>) -> bool {
-        self.carry == inputs.carry && Self::fixed_carry(&plan.program, running, &inputs.carry, inputs.count.is_none()) && !inputs.count.is_some_and(|count| count < 2)
-            && Arc::ptr_eq(&self.schedule, &plan.schedule) && self.converged == inputs.count.is_none() && self.varying == inputs.counts.is_some() && self.traversal == inputs.items.map(|_| inputs.order) && Self::fixed_items(running, inputs)
-    }
-    pub(crate) fn run(&self, plan: &super::Plan, running: &mut Running, inputs: &RepeatInputs<'_>, numeric: crate::number::Numeric) -> Result<Outputs<Value>> {
-        if !self.accepts(plan, running, inputs) { return Err(crate::Error::planning()); }
-        let count = inputs.count;
-        let super::Stage::Block(block) = &self.schedule.stages[0] else { unreachable!() };
-        let program = &plan.program;
-        #[cfg(not(web))]
-        {
-            let mut positions = Vec::new();
-            for input in self.prepared.parts.iter().flatten().flat_map(|part| part.inputs.iter()) {
-                let sources = match input.source {
-                    ReadSource::Pool(position) => running.read(position).ok_or_else(crate::Error::planning)?.sources.clone(),
-                    ReadSource::Output(output) => running.output_read(program, output)?.sources,
-                    ReadSource::Argument(position) => { positions.push(position); continue; }
-                    ReadSource::Counts | ReadSource::Item(..) => continue,
-                };
-                positions.extend(sources.into_iter().filter_map(|source| program.nodes[source.node].input_position()));
-            }
-            positions.sort_unstable(); positions.dedup();
-            for position in positions { running.prepare_input(position)?; }
-        }
-        let items = running.desc(program, block.outputs[0]).ok_or_else(crate::Error::planning)?.layout.count();
-        let scalars = [count.unwrap_or_else(|| numeric.tolerance_at(FloatWidth::F32).value().to_bits()), numeric.tolerance_at(FloatWidth::F64).value().to_bits()];
-        let scalar_count = if !self.repeated { 0 } else if count.is_none() { 2 }
-            else if !self.varying || self.traversal == Some(crate::primitive::Order::Backward) { 1 } else { 0 };
-        let outputs = block.run_bound(program, running, items, Some(&self.prepared), &scalars[..scalar_count], Some(inputs))?;
-        if !outputs.has_result() { return Ok(outputs); }
-        program.roots.iter().map(|root| {
-            self.prepared.outputs.iter().position(|output| output == root).and_then(|position| outputs.as_ref().get(position))
-                .or_else(|| running.value(program, *root)).cloned().ok_or_else(crate::Error::planning)
-        })
-            .collect::<Result<Vec<_>>>().map(Into::into)
-    }
-}
 
 #[derive(Debug)]
 struct Export { output: Out, local: bool }
@@ -408,22 +229,8 @@ impl Block {
     }
 
     pub(crate) fn run(&self, program: &Program, running: &Running, items: usize, prepared: Option<&Prepared>) -> Result<Outputs<Value>> {
-        self.run_bound(program, running, items, prepared, &[], None)
-    }
-    fn run_bound(&self, program: &Program, running: &Running, items: usize, prepared: Option<&Prepared>, scalars: &[u64], repeat: Option<&RepeatInputs<'_>>) -> Result<Outputs<Value>> {
         use super::Node;
         use rustymath::{buffer::Buffer, operation::{Direction, Seed}};
-        #[cfg(not(web))]
-        let mut item_values = rustymath::hashing::HashMap::default();
-        #[cfg(not(web))]
-        if let Some(prepared) = prepared {
-            for input in prepared.parts.iter().flatten().flat_map(|part| part.inputs.iter()) {
-                if let ReadSource::Item(item, _) = input.source && !item_values.contains_key(&item) {
-                    let items = repeat.and_then(|repeat| repeat.items).ok_or_else(crate::Error::planning)?;
-                    item_values.insert(item, items.inputs[item].whole.read(crate::program::trace::ReadKind::RuntimeOnly)?);
-                }
-            }
-        }
         let geometry = self.geometry(program, running)?.ok_or_else(crate::Error::planning)?;
         let mut inputs = rustymath::hashing::HashMap::default();
         let mut settings = Vec::with_capacity(self.members.len());
@@ -446,28 +253,6 @@ impl Block {
                         let routed = running.output_read(program, output)?;
                         Input::of(self, program, running, Cow::Owned(routed.plan), &routed.sources)?
                     }
-                    ReadSource::Argument(position) => {
-                        let (view, plan) = running.input_read(position).ok_or_else(crate::Error::planning)?;
-                        Input::physical(view, plan)
-                    }
-                    ReadSource::Counts => {
-                        let counts = repeat.and_then(|repeat| repeat.counts).ok_or_else(crate::Error::planning)?;
-                        let (view, plan) = counts.physical_read(0).ok_or_else(crate::Error::planning)?;
-                        let layout = &geometry.iterations[0];
-                        let map = Mapping::new(counts.layout(), &(0..counts.rank()).collect::<Vec<_>>(), layout, layout.count());
-                        Input::physical(view, plan.remapped(map, layout.count(), rustymath::agreement::Missing::Invalid))
-                    }
-                    ReadSource::Item(item, _) => {
-                        let items = repeat.and_then(|repeat| repeat.items).ok_or_else(crate::Error::planning)?;
-                        let value = &item_values[&item];
-                        let (view, plan) = value.physical_read(0).ok_or_else(crate::Error::planning)?;
-                        let strides = rustymath::layout::strides(value.shape());
-                        let steps = std::iter::once(rustymath::gather::Steps::along(value.shape()[items.axis], strides[items.axis]))
-                            .chain(value.shape().iter().zip(strides).enumerate().filter(|(axis, _)| *axis != items.axis)
-                                .map(|(_, (&length, stride))| rustymath::gather::Steps::along(length, stride))).collect::<Vec<_>>();
-                        let map = Mapping::Steps { base: 0, steps: steps.into() };
-                        Input::physical(view, plan.remapped(map, value.len(), rustymath::agreement::Missing::Invalid))
-                    }
                     ReadSource::Pool(_) => continue,
                 };
                 inputs.insert(input.source, bound);
@@ -486,9 +271,7 @@ impl Block {
         let size = crate::settings::sizes().block.max(1);
         #[cfg(not(web))]
         let size = prepared.map_or(size, |prepared| prepared.parts.iter().flatten().fold(size, |size, part| size.min(part.code.block_limit())));
-        let extent = repeat.and_then(|repeat| repeat.items).map_or(1, |items| items.inputs.iter().map(|item| item.whole.shape()[items.axis]).max().unwrap_or(1));
-        let size = (size / extent.max(1)).max(1);
-        let execution = Execution { block: self, program, running, inputs, settings, outputs: writers, prepared, scalars, repeat, tally: &tally, size, geometry };
+        let execution = Execution { block: self, program, running, inputs, settings, outputs: writers, prepared, tally: &tally, size, geometry };
         if let Some((cells, _)) = execution.geometry.cells {
             let results = rustymath::parallel::each::<_, Scratch>(cells, |cell, scratch| execution.cell(cell, scratch))?;
             for result in results { result?; }
@@ -633,7 +416,7 @@ impl Lowered {
         if desc.atom && let super::Node::Literal { value, .. } = &program.nodes[output.node]
             && let Some(value) = literal_input(value, ty) { return Some(kernel.input(value)); }
         if let Some(input) = inputs.iter().find(|input| match input.source {
-            ReadSource::Output(root) | ReadSource::Item(_, root) => root == output,
+            ReadSource::Output(root) => root == output,
             ReadSource::Pool(position) => program.reads[position].operand == output
                 && matches!(running.geometry.maps[position], rustymath::agreement::Mapping::Linear(1) | rustymath::agreement::Mapping::Single),
             _ => false,
@@ -724,7 +507,6 @@ enum Source<'a> {
 }
 struct Input<'a> { plan: Cow<'a, rustymath::agreement::ReadPlan>, sources: Vec<Source<'a>> }
 impl<'a> Input<'a> {
-    fn physical(view: View<'a>, plan: ReadPlan) -> Self { Self { plan: Cow::Owned(plan), sources: vec![Source::Stored(Binding::full(view).as_codes())] } }
     fn of(block: &Block, program: &'a Program, running: &'a Running,
         plan: Cow<'a, rustymath::agreement::ReadPlan>, sources: &[Out]) -> Result<Self> {
         let sources = sources.iter().map(|&source| {
@@ -771,8 +553,6 @@ struct Execution<'a> {
     settings: Vec<rustymath::operation::Settings>,
     outputs: rustymath::hashing::HashMap<usize, Output>,
     prepared: Option<&'a Prepared>,
-    scalars: &'a [u64],
-    repeat: Option<&'a RepeatInputs<'a>>,
     tally: &'a crate::explain::Tally,
     size: usize,
     geometry: Geometry,
@@ -918,15 +698,7 @@ impl Execution<'_> {
             let dtype = match ty { jit::Input::Array(ty, _) | jit::Input::Scalar(ty) => ty.dtype(), _ => unreachable!() };
             match ty {
                 jit::Input::Array(_, _) => {
-                    if let ReadSource::Item(item, _) = input.source {
-                        let items = self.repeat.and_then(|repeat| repeat.items).expect("iterated input metadata");
-                        let extent = items.inputs[item].whole.shape()[items.axis];
-                        let width = self.geometry.iterations[0].count();
-                        let steps = vec![rustymath::gather::Steps::along(extent, width), rustymath::gather::Steps::along(range.len(), 1)];
-                        let plan = read.plan.remapped(Mapping::Steps { base: range.start, steps: steps.into() }, extent * range.len(), rustymath::agreement::Missing::Invalid);
-                        let reader = Read { sources: &sources, plan: &plan };
-                        arrays.push(reader.part_view(0..extent * range.len(), dtype, false, &mut scratch.copies[index])?.as_ptr());
-                    } else { arrays.push(reader.part_view(range.clone(), dtype, false, &mut scratch.copies[index])?.as_ptr()); }
+                    arrays.push(reader.part_view(range.clone(), dtype, false, &mut scratch.copies[index])?.as_ptr());
                 }
                 jit::Input::Scalar(ty) => {
                     let view = reader.part_view(range.start..range.start + 1, dtype, false, &mut scratch.copies[index])?;
@@ -937,18 +709,6 @@ impl Execution<'_> {
                     });
                 }
                 _ => unreachable!(),
-            }
-        }
-        scalars.extend_from_slice(self.scalars);
-        for input in prepared.inputs.iter() {
-            if let ReadSource::Item(item, _) = input.source {
-                let repeat = self.repeat.expect("iterated input metadata");
-                let items = repeat.items.expect("iterated input metadata");
-                let extent = items.inputs[item].whole.shape()[items.axis] as u64;
-                let backward = matches!(repeat.order, crate::primitive::Order::Backward);
-                let first = if backward { extent - 1 - repeat.start } else { repeat.start };
-                scalars.push(first * range.len() as u64);
-                scalars.push((if backward { -(range.len() as i64) } else { range.len() as i64 }) as u64);
             }
         }
         let fold_slot = section.members.end - 1;

@@ -20,11 +20,8 @@ fn broken(program: &Program) -> Option<String> {
     let reads_valid = |reads: &std::ops::Range<u32>| reads.start <= reads.end && reads.end as usize <= program.reads.len();
     for (position, node) in program.nodes.iter().enumerate() {
         match node {
-            Node::Input { desc, .. } | Node::Literal { desc, .. } | Node::Function { desc, .. } if *desc as usize >= program.descs.len() => {
+            Node::Input { desc, .. } | Node::Literal { desc, .. } if *desc as usize >= program.descs.len() => {
                 return Some(format!("v{position} has no description slot"));
-            }
-            Node::Function { binding: super::FunctionBinding::Rebuild { dependencies, .. }, .. } if !reads_valid(&dependencies.0) => {
-                return Some(format!("v{position} has invalid function dependencies"));
             }
             Node::Step { origin, descs, .. } => {
                 if !reads_valid(&origin.list) { return Some(format!("v{position} has invalid reads")); }
@@ -42,6 +39,9 @@ fn broken(program: &Program) -> Option<String> {
 }
 
 pub(crate) fn compatible(recorded: &Desc, current: &Desc) -> bool {
-    recorded.kind == current.kind && recorded.atom == current.atom && recorded.segments == current.segments
+    recorded.kind == current.kind && recorded.atom == current.atom
         && recorded.layout.same_but_lengths(&current.layout)
+}
+pub(crate) fn compatible_optional(recorded: Option<&Desc>, current: Option<&Desc>) -> bool {
+    match (recorded, current) { (Some(a), Some(b)) => compatible(a, b), (None, None) => true, _ => false }
 }

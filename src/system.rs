@@ -1,8 +1,8 @@
 use crate::execution::check;
 use crate::session;
-use crate::{Described, Error, ErrorKind, Function, Span, Value, ReadKind, program::{Desc, Description, Origin, Outputs, Step},
+use crate::{Described, Error, ErrorKind, Function, Span, Value, ReadKind, program::{Origin, Outputs},
     array::generated_len, number::Numeric, eval::OperatorKind, primitive::{Act, CallView, Operation, Primitive, Roles, Row, numeric}};
-use rustymath::{agreement::{Mapping, ReadPlan}, buffer::{DType, FloatWidth, View}, error::Kind, facts::Variant, layout::FRESH, operation::Kernel};
+use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth, View}, error::Kind, facts::Variant, layout::FRESH, operation::Kernel};
 use std::{borrow::Cow, sync::Arc};
 
 #[derive(Clone, Copy)]
@@ -120,7 +120,7 @@ impl SystemFunction {
 }
 
 pub(crate) fn native_row() -> &'static Row {
-    &const { Row { math: native_kernel, roles, form, describe, plan, maps, code, inverse, cells: crate::distribution::cells,
+    &const { Row { math: native_kernel, roles, form, build, code, inverse, cells: crate::distribution::cells,
         ..Row::new("•", "system", ["", ""], [crate::primitive::WHOLE; 3]) } }
 }
 
@@ -129,24 +129,17 @@ fn roles(call: &CallView<'_>) -> Result<Roles, Error> {
     if matches!(call.operation, Operation::Draw { .. }) { return crate::distribution::roles(call); }
     Ok(Roles::default())
 }
-fn describe(call: &CallView<'_>) -> Result<Option<Description>, Error> {
-    if matches!(call.operation, Operation::Draw { .. }) { return crate::distribution::describe(call); }
+fn build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<crate::primitive::RowResult, Error> {
+    if matches!(call.operation, Operation::Draw { .. }) { return crate::distribution::build(call, set); }
+    let (step, mut outputs, plan) = crate::primitive::host_build(call, set)?;
     if matches!(call.operation, Operation::Effect(Act::Output)) {
         let root = call.root(0);
         let descs = root.leaves.clone().map(|position| call.desc(position).map(Cow::into_owned)).collect::<Vec<_>>();
         let trees = call.trees.map(|trees| Arc::new(trees.project_roots(&[root])));
-        return Ok(Some(Outputs::from(descs).with_trees(trees).with_shy(true)));
+        outputs = Some(Outputs::from(descs).with_trees(trees).with_shy(true));
     }
-    Ok(None)
+    Ok((step, outputs, plan))
 }
-fn plan(call: &CallView<'_>, _: &[Option<Desc>]) -> Result<Step, Error> {
-    Ok(match call.operation {
-        Operation::Draw { .. } => return crate::distribution::plan(call),
-        Operation::Effect(_) => Step::Effect { token: Some(call.implicit_range().start as u32) },
-        _ => Step::Call,
-    })
-}
-fn maps(_: &CallView<'_>, _: &Step, _: &[Option<Desc>], _: &mut dyn FnMut(usize, Mapping)) -> Result<Option<ReadPlan>, Error> { Ok(None) }
 fn code(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
     match call.operation {
         Operation::Draw { .. } => crate::distribution::code(call),

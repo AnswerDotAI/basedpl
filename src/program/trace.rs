@@ -59,9 +59,9 @@ impl Tracing {
             Value::Function(_) | Value::Pending(_) | Value::Carried { .. } => value,
             value => Value::Pending(Pending::data(graph::Node::literal(value), 0)),
         };
-        if let Some((trees, leaves)) = crate::array::flatten(std::slice::from_ref(&value))? {
+        if let Some((trees, leaves)) = crate::array::flatten(std::slice::from_ref(&value)) {
             let leaves = leaves.into_iter().map(mark).collect::<Vec<_>>();
-            let mut roots = trees.build(&leaves)?;
+            let mut roots = trees.build(&leaves);
             return roots.pop().ok_or_else(Error::planning);
         }
         Ok(mark(value))
@@ -199,18 +199,19 @@ pub(crate) fn record(function: &crate::Function, origin: Origin<&[Value]>, argum
             inputs.push(input);
         }
     }
-    let result = function.run(origin.with_list(inputs.as_slice())).and_then(|value| Outputs::one(value).flatten());
+    let result = function.run(origin.with_list(inputs.as_slice())).map(|value| Outputs::one(value).flatten());
     let mut trace = session().traces.borrow_mut().stack.pop().unwrap();
     debug_assert_eq!(scope.id, trace.id);
     let mut description = None;
     if trace.stop.is_none() && let Ok(result) = &result {
         let trees = result.trees().cloned(); let values = result.as_ref();
-        let mut descriptions = Vec::with_capacity(values.len());
+        let mut descriptions = Vec::with_capacity(values.len()); let mut roots = Vec::with_capacity(values.len());
         for value in values {
             descriptions.push(Desc::of(value).map(std::borrow::Cow::into_owned));
-            if let Some(output) = trace.value(value, false) { trace.builder.program.roots.push(output); }
+            if let Some(output) = trace.value(value, false) { roots.push(output); }
             else { trace.stop(Reason::HostKind, None); break; }
         }
+        trace.builder.program.outputs = Outputs::from(roots).with_trees(trees.clone()).with_shy(result.shy);
         description = Some(Outputs::from(descriptions).with_trees(trees).with_shy(result.shy));
     }
     if trace.stop.is_none() && let Some(token) = trace.token.take() {
@@ -221,7 +222,7 @@ pub(crate) fn record(function: &crate::Function, origin: Origin<&[Value]>, argum
         trace.stop(Reason::Renderer, None);
     }
     for source in &mut trace.builder.program.sources {
-        source.publish |= trace.builder.program.roots.iter().any(|output| output.node == source.completion.node);
+        source.publish |= trace.builder.program.outputs.as_ref().iter().any(|output| output.node == source.completion.node);
     }
     let reads: Arc<[Parameter]> = std::mem::take(&mut trace.reads).into();
     let recording = if let Some(stop) = trace.stop { Err(stop) }
@@ -236,15 +237,10 @@ pub(crate) fn record(function: &crate::Function, origin: Origin<&[Value]>, argum
 }
 
 
-pub(crate) fn plan_case(function: &crate::Function, origin: Origin<Vec<Value>>) -> Result<Option<super::PreparedCall>> {
-    let (key, origin) = match super::prepare(function, origin, 1)? {
-        super::Preparation::Ready(call) => return Ok(Some(call)),
-        super::Preparation::Direct { .. } => return Ok(None),
-        super::Preparation::Record { key, origin } => (key, origin),
-    };
-    let Some(attempt) = super::record_attempt(function, key.clone(), &origin, true)? else { return Ok(None); };
-    match attempt.recording {
-        Some(recording) => super::PreparedCall::new(key, attempt.guard, recording, origin, 1).map(Some),
-        None => match attempt.result { Err(error) if !error.is_planning() => Err(error), _ => Ok(None) },
+pub(crate) fn plan_case(function: &crate::Function, origin: Origin<Vec<Value>>) -> Result<Option<super::BoundRecording>> {
+    match super::bind_call(function, origin, true) {
+        Ok(bound) => Ok(bound.filter(|bound| bound.recording.is_some())),
+        Err(error) if error.is_planning() => Ok(None),
+        Err(error) => Err(error),
     }
 }

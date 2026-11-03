@@ -1,5 +1,5 @@
 //! `•explain` and `•memory`, which report what a run did, what the thread that runs a session holds, and what a value keeps alive.
-use basedpl::{InterruptHandle, Session, settings::{Sizes, Waits, set_sizes}, timing};
+use basedpl::{InterruptHandle, Session, settings::{Sizes, set_sizes}, timing};
 
 /// Checks that `code` gives the value that `expected` gives, both run in `session`.
 fn check(session: &Session, code: &str, expected: &str) {
@@ -88,8 +88,7 @@ fn explain_and_memory() -> Vec<timing::Capture> {
     ] { check(&session, &format!(r#"(•explain "{code}").accumulations.path≡["{path}"]"#), "$t"); }
     // A fused group counts the runs that a long cycle splits its blocks into, and the items it copies out of inputs. A pending input that a name also holds is computed by the group as one of its outputs, with no `stored` row.
     check(&session, r#"big←¿[256 5000]⍴0 ⋄ f←(•explain "q←2×big(+⍤1)¿5000⍴0 ⋄ q≡q").fused ⋄ ∧/f.runs>f.blocks"#, "$t");
-    // With every call waiting, small arrays take the routes that these checks count. The reversed copy reads in place only in a compiled stage, and 4,194,304 items repay compiling `2×⌽sv+1` on its first run (`Blocks::repays`).
-    set_sizes(Sizes { waits: Waits::All, ..Sizes::DEFAULT });
+    // The reversed copy reads in place only in a compiled stage, and 4,194,304 items repay compiling `2×⌽sv+1` on its first run (`Blocks::repays`).
     check(&session, r#"sv←¿65536⍴0 ⋄ sq←[256 256]⍴sv ⋄ (•explain "q←2×1+⍉sq ⋄ q≡q").fused.copied"#, "[65536]ₓ");
     check(&session, r#"sv←¿4194304⍴0 ⋄ (•explain "q←2×⌽sv+1 ⋄ q≡q").fused.copied"#, "[0]ₓ");
     check(&session, r#"x←¿1000⍴0 ⋄ e←•explain "s←x-0.25 ⋄ q←s×1-s ⋄ q≡q" ⋄ (0=≢e.stored.reason)∧e.fused.glyphs≡["--×"]"#, "$t");
@@ -108,7 +107,6 @@ fn explain_and_memory() -> Vec<timing::Capture> {
         "gap":[["forced","+/"],["stopped","a result whose type depends on values"]]}), &InterruptHandle::default()).unwrap());
     // `•memory` counts the pending arrays this thread made, including one dropped on another thread. `bytes` counts what a value keeps alive, a shared base once, and takes active values under `∂`.
     let held = Session::new();
-    set_sizes(Sizes { waits: Waits::All, ..Sizes::DEFAULT });
     check(&held, "w←⍳1000 ⋄ n←(•memory 0).pending ⋄ p←⌽w ⋄ (•memory 0).pending-n", "1ₓ");
     check(&held, "p←0 ⋄ (•memory 0).pending-n", "0ₓ");
     let copy = held.eval("⌽w").value.expect("a pending copy");

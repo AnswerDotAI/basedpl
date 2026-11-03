@@ -45,9 +45,9 @@ pub fn difference(x: &Value, y: &Value, relative: Option<f64>, absolute: f64, ex
     items.or_else(|| inner(&x.prototype(), &y.prototype()).map(|m| format!("prototype{m}")))
 }
 
-/// The kinds of storage, as `•storage` names them under `numeric`, at the first place where `x` and `y` are held differently. Mixed and segmented storage count as one nested kind: a partition or a text column holds as segmented the items that a literal holds as mixed. It walks into the items of arrays that both hold as nested storage. With `compact_alike`, every compact kind counts as one, so only nested storage against compact storage differs.
+/// The kinds of storage, as `•storage` names them under `numeric`, at the first place where `x` and `y` are held differently. It walks into the items of mixed arrays. With `compact_alike`, every compact kind counts as one, so only nested storage against compact storage differs.
 fn kind_difference(x: &Value, y: &Value, numeric: Numeric, compact_alike: bool) -> Option<(&'static str, &'static str)> {
-    let nested = |kind: &str| kind == "mixed" || kind == "segmented";
+    let nested = |kind: &str| kind == "mixed";
     let (a, b) = (x.storage_kind(numeric), y.storage_kind(numeric));
     let differ = if compact_alike || nested(a) && nested(b) { nested(a) != nested(b) } else { a != b };
     if differ { return Some((a, b)); }
