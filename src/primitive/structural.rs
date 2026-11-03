@@ -34,7 +34,7 @@ impl WindowSpec {
     }
     pub(crate) fn from_call(call: &CallView<'_>) -> Result<Self, Error> {
         let root = call.axis_root().ok_or_else(Error::planning)?;
-        Self::new(&call.root_input(root.index)?)
+        Self::new(call.root_input(root.index)?.as_ref())
     }
     pub(crate) fn new(spec: &Value) -> Result<Self, Error> {
         let options = crate::data::Options::new("window", Some(spec), None, &["size", "edge", "step"])?;

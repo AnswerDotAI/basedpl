@@ -3,7 +3,7 @@ use rustymath::{
     agreement::{Binding, Mapping, Read, ReadPlan}, buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Floats, IntBuf, View, Width},
     error::Kind, facts::Range, with_width,
 };
-use std::{borrow::Cow, fmt, sync::Arc};
+use std::{borrow::Cow, fmt::{self, Debug}, sync::Arc};
 
 mod storage;
 mod text;
@@ -34,6 +34,16 @@ pub enum Value {
         /// Part 1: what the level carries, shared.
         carried: Arc<Carried>,
     },
+}
+impl Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Number(n) => n.fmt(f), Self::Character(c) => c.fmt(f), Self::Function(fun) => fun.fmt(f), Self::Operator(op) => op.fmt(f),
+            Self::Array(array) => array.fmt(f),
+            Self::Pending(pending) => f.debug_tuple("Pending").field(&pending.node).field(&pending.output).finish(),
+            Self::Carried { level, .. } => f.debug_struct("Carried").field("level", level).finish_non_exhaustive(),
+        }
+    }
 }
 
 /// Parts 1, 11: what a level carries, dual or batch; there are no other carriers (part 11).
@@ -235,7 +245,7 @@ impl Cells<'_> {
             let size = self.cell_layout.count();
             return Ok(Value::stored_part(array, i * size..(i + 1) * size, self.cell_layout.clone())?);
         }
-        Operation::Read(ReadOp::Cell { rank: self.cell_layout.shape().len() }).call(&[Value::from(i), self.array.clone()], 0)
+        Operation::Read(ReadOp::Cell { rank: self.cell_layout.shape().len() }).call(&[Value::integer(i as i64), self.array.clone()], 0)
     }
     pub fn prototype(&self) -> crate::error::Result<Value> {
         Ok(self.cell_layout.filled(&self.array.prototype()))
@@ -553,6 +563,22 @@ impl Value {
             Self::Array(data) => array(data, pending), _ => None,
         }
     }
+    pub(crate) fn primal(&self) -> &Value {
+        if let Self::Carried { carried, .. } = self && let Carried::Dual { primal, .. } = &**carried { return primal.primal(); }
+        self
+    }
+    pub(crate) fn all_numbers(&self) -> bool {
+        if let Some(dtype) = self.dtype() { return dtype != DType::Character; }
+        match self.primal() {
+            Self::Number(_) => true,
+            Self::Array(array) => match &**array {
+                ArrayData::Mixed { items, prototype, .. } => items.iter().chain(prototype).all(|value| value.is_atom() && value.all_numbers()),
+                _ => false,
+            },
+            Self::Pending(pending) => pending.completed().is_some_and(Value::all_numbers),
+            _ => false,
+        }
+    }
     pub(crate) fn kind(&self) -> Option<crate::number::Kind> {
         match self {
             Self::Number(n) => crate::number::Kind::number(n), Self::Character(_) => Some(crate::number::Kind::stored(DType::Character, false, false)),
@@ -829,7 +855,7 @@ impl Value {
     }
     pub fn enclose(&self) -> crate::error::Result<Self> {
         let joined = Operation::Join(crate::primitive::Notation::Strand).call(&[self.clone()], 0)?;
-        Operation::Read(ReadOp::Reshape).call(&[Value::empty([0], Value::from(0))?, joined], 1)
+        Operation::Read(ReadOp::Reshape).call(&[Value::empty([0], Value::integer(0))?, joined], 1)
     }
     pub(crate) fn unit(self) -> crate::error::Result<Self> { if self.is_atom() { Ok(self) } else { self.enclose() } }
 
@@ -881,7 +907,7 @@ impl Value {
     pub fn export_widening(&self) -> Option<Width> {
         if self.fixed_width().is_some() { return None; }
         let DType::Integer(stored) = self.dtype()? else { return None };
-        let width = Numeric::current().integer_width(); (width.bytes() > stored.bytes()).then_some(width)
+        let width = Numeric::current().integer_width(); (width > stored).then_some(width)
     }
     pub fn widened_for_export(&self) -> Option<Buffer> {
         let dtype = DType::Integer(self.export_widening()?);

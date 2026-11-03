@@ -78,10 +78,10 @@ fn render(HostCall { left: delays, right: picture, .. }: HostCall<'_>) -> Result
 }
 
 /// The picture in the encoded image `bytes`. An animated PNG with more than one frame gives its frames along a first axis, as a rank-4 array with a channel axis even for grey frames, so `•image⁻¹` encodes it back.
-fn decoded(bytes: &[u8], width: rustymath::buffer::FloatWidth) -> Result<Value, Error> {
+fn decoded(bytes: &[u8], float: rustymath::buffer::FloatWidth) -> Result<Value, Error> {
     let Raster { count, height, width, channels, data } = codec::decode(bytes).map_err(|e| Error::domain(format!("invalid image: {e}")))?;
     let shape = match count { 1 if channels == 1 => vec![height, width], 1 => vec![height, width, channels], n => vec![n, height, width, channels] };
-    Value::floats(shape, width, data.into_iter().map(|v| f64::from(v) / 65535.)).described("image exceeds array limits")
+    Value::floats(shape, float, data.into_iter().map(|v| f64::from(v) / 65535.)).described("image exceeds array limits")
 }
 
 /// `frames` encoded in `format`, as an animation with `delays`. Only PNG holds an animation. JPEG drops alpha.

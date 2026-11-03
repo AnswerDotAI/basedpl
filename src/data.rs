@@ -1,8 +1,8 @@
 use crate::execution::check;
 use crate::session;
-use crate::{Described, Error, ErrorKind, Number, Span, Value, keyed, number::Numeric, system::HostCall, primitive::{numeric, real}};
+use crate::{Described, Error, ErrorKind, Number, Span, Value, keyed, number::{Kind as NumberKind, Numeric}, system::HostCall, primitive::{numeric, real}};
 use rustymath::hashing::{HashMap, HashMapExt};
-use rustymath::{buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
+use rustymath::{buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
 use std::io::Read;
 
 pub(crate) fn text(value: &Value) -> Result<String, Error> { keyed::name(value).map(|s| s.to_string()).ok_or_else(|| Error::domain("expected text")) }
@@ -16,10 +16,10 @@ pub(crate) fn imported(shape: Vec<usize>, mut items: Vec<Value>, filled: impl Fn
         let mut data = items.iter().enumerate().filter(|&(i, _)| !filled(i)).map(|(_, v)| number(v));
         let like = data.next().flatten().filter(|n| n.as_integer().is_some()).cloned().filter(|n| data.all(|d| d.is_some_and(|d| d.same_variant(n))));
         if let Some(like) = like {
-            // An ordinary integer's view is at 64 bits, so the fill isn't limited to the narrowest width that holds `like`.
-            let (dtype, like) = (like.view().map(|v| v.dtype()), Value::Number(like));
+            let fixed = like.fixed_width();
+            let kind = NumberKind::stored(DType::Integer(fixed.unwrap_or(Width::I64)), fixed.is_some(), false);
             for v in items.iter_mut().enumerate().filter_map(|(i, v)| filled(i).then_some(v)) {
-                match Value::fill_of(v, dtype, like.fixed_width().is_some()) { Ok((_, fill)) => *v = like.fill_item(Some(&fill)), Err(_) => widened = true }
+                match crate::primitive::keep_atom(v, kind) { Ok(fill) => *v = fill, Err(_) => widened = true }
             }
         }
     }

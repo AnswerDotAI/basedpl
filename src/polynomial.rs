@@ -3,7 +3,7 @@ use crate::{
     Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Cells, Layout, generated_len},
     number::{Arithmetic, Field, Math, Numeric, read_as, with_field}, primitive::{Primitive, scalar}
 };
-use rustymath::{buffer::{Element, FloatWidth}, scalar::Float, error::Kind, with_float_width};
+use rustymath::{buffer::{Element, FloatWidth}, Float, error::Kind, with_float_width};
 
 fn int(n: usize) -> Number { Number::from_integer(n as i64) }
 fn numbers(a: &Value) -> Result<Vec<Number>, Error> {
@@ -15,6 +15,7 @@ fn vector(data: Vec<Number>) -> Result<Value, Error> {
 
 enum Polynomial {
     Coefficients(Vec<Number>), Factored(Number, Vec<Number>), Powers { coefficients: Vec<Number>, exponents: Vec<Vec<Number>>, variables: usize }
+}
 impl Polynomial {
     fn parse(a: &Value) -> Result<Self, Error> {
         if a.all_numbers() { return Ok(Self::Coefficients(numbers(a)?)); }
@@ -48,8 +49,8 @@ impl Polynomial {
             Self::Factored(m, roots) => {
                 generated_len(&[roots.len() + 1])?;
                 Ok(with_field!(numeric; std::iter::once(m).chain(roots), T, width => {
-                    let roots: Vec<T> = roots.iter().map(T::of).collect();
-                    rustymath::polynomial::from_roots(T::of(m), &roots)?.into_iter().map(|c| c.number(width)).collect()
+                    let roots: Vec<T> = roots.iter().map(Field::of).collect();
+                    rustymath::polynomial::from_roots(Field::of(m), &roots)?.into_iter().map(|c| c.number(width)).collect()
                 }))
             }
             Self::Powers { coefficients, exponents, variables } => {
@@ -78,11 +79,11 @@ impl Polynomial {
         if x.is_empty() { return Err(Error::new(Kind::Length, "polynomial needs coordinates")); }
         match self {
             Self::Coefficients(c) => Ok(with_field!(numeric; c.iter().chain(x), T, width => {
-                let c: Vec<T> = c.iter().map(T::of).collect(); rustymath::polynomial::value(&c, &T::of(&x[0]))?.number(width)
+                let c: Vec<T> = c.iter().map(Field::of).collect(); rustymath::polynomial::value(&c, &Field::of(&x[0]))?.number(width)
             })),
             Self::Factored(m, roots) => Ok(with_field!(numeric; std::iter::once(m).chain(roots).chain(x), T, width => {
-                let roots: Vec<T> = roots.iter().map(T::of).collect();
-                rustymath::polynomial::factored(&T::of(m), &roots, &T::of(&x[0]))?.number(width)
+                let roots: Vec<T> = roots.iter().map(Field::of).collect();
+                rustymath::polynomial::factored(&Field::of(m), &roots, &Field::of(&x[0]))?.number(width)
             })),
             Self::Powers { coefficients, exponents, .. } => {
                 let mut y = int(0);
@@ -121,7 +122,7 @@ impl Polynomial {
         if !matches!(self, Self::Powers { .. }) {
             let c = self.coefficients(numeric)?;
             return Ok(Self::Coefficients(with_field!(numeric; c.iter(), T, width => {
-                let mut c: Vec<T> = c.iter().map(T::of).collect(); for _ in 0..order { c = rustymath::polynomial::derivative(&c)? }
+                let mut c: Vec<T> = c.iter().map(Field::of).collect(); for _ in 0..order { c = rustymath::polynomial::derivative(&c)? }
                 c.into_iter().map(|c| c.number(width)).collect()
             })));
         }

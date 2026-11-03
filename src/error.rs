@@ -20,6 +20,7 @@ pub struct Span { pub source: Arc<Source>, pub range: Range<usize> }
 
 /// Two spans are equal where they cover the same bytes of one source.
 impl PartialEq for Span { fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.source, &other.source) && self.range == other.range } }
+impl Eq for Span {}
 
 #[derive(Clone, Debug)]
 pub enum ErrorKind {
@@ -133,6 +134,8 @@ impl Error {
 }
 
 impl From<rustymath::error::Error> for Error { fn from(e: rustymath::error::Error) -> Self { Self::new(e, "") } }
+impl From<ErrorKind> for Error { fn from(kind: ErrorKind) -> Self { Self::new(kind, "") } }
+impl From<Kind> for Error { fn from(kind: Kind) -> Self { Self::new(kind, "") } }
 /// A batched run's stop. Only the level that owns the run catches it, so its span never shows.
 /// A message from numeric code, which reports a DOMAIN error as its message alone.
 impl From<&'static str> for Error { fn from(message: &'static str) -> Self { Self::domain(message) } }
@@ -153,7 +156,11 @@ impl Span {
 
 /// Gives an error kind its message, where the kind carries none. An `ErrorKind` that wraps a rustymath error keeps that error's message.
 pub(crate) trait Described<T> { fn described(self, message: &str) -> std::result::Result<T, Error>; }
-impl<T, K: Into<ErrorKind>> Described<T> for std::result::Result<T, K> { fn described(self, message: &str) -> std::result::Result<T, Error> { self.map_err(|k| Error::new(k, message)) } }
+impl<T, E: Into<Error>> Described<T> for std::result::Result<T, E> {
+    fn described(self, message: &str) -> std::result::Result<T, Error> {
+        self.map_err(|error| { let mut error = error.into(); if error.message.is_empty() { error.message = message.into(); } error })
+    }
+}
 
 /// Places an error at a source span, where it has no span yet.
 pub(crate) trait At<T> { fn at(self, span: &Span) -> std::result::Result<T, Error>; }

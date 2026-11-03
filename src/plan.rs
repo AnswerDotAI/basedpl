@@ -1,6 +1,6 @@
 //! Description and map rules shared by live calls and concrete plan refill.
-use crate::{Error, Value, array::{Frame, Layout}, error::Result, primitive::{CallView, Operation, Pairing, Primitive, ReadOp, RowResult, ViewAxis}, program::{Desc, Description, Origin, Outputs, Read, Step}};
-use rustymath::{agreement::{Mapping, Missing, ReadPlan}, buffer::Width, facts::Range, gather::Steps};
+use crate::{Error, Value, agreement::Agree, array::{Frame, Layout}, error::Result, primitive::{CallView, Operation, Pairing, Primitive, ReadOp, RowResult, ViewAxis}, program::{Desc, Description, Origin, Outputs, Read, Step}};
+use rustymath::{agreement::{Mapping, Missing, ReadPlan}, buffer::Width, facts::Range, error::Kind as ErrorTag, gather::Steps};
 
 pub(crate) struct Fold {
     pub(crate) arg: usize,
@@ -26,7 +26,7 @@ impl Fold {
         if Some(input) != self.seed { return Err(Error::planning()); }
         let seed = call.desc(input).ok_or_else(Error::planning)?;
         let agreement = crate::agreement::Agreement::new(&seed.layout, &self.result)?;
-        if agreement.layout != self.result { return Err(Error::new(crate::ErrorKind::Length, "fold seed does not agree with its result cells")); }
+        if agreement.layout != self.result { return Err(Error::new(ErrorTag::Length, "fold seed does not agree with its result cells")); }
         Ok(agreement.left)
     }
 }
@@ -81,7 +81,7 @@ pub(crate) fn product(call: &CallView<'_>) -> Result<Product> {
 pub(crate) fn position_width(bound: usize, numeric: crate::number::Numeric) -> Result<Width, rustymath::error::Error> {
     if numeric.is_static() {
         if numeric.int == Width::I32 && bound > i32::MAX as usize + 1 {
-            return Err(rustymath::error::Error::new(rustymath::error::Kind::Limit, "a count or position doesn't fit the int width"));
+            return Err(rustymath::error::Error::new(ErrorTag::Limit, "a count or position doesn't fit the int width"));
         }
         Ok(numeric.int)
     } else { Ok(Width::below(bound)) }
@@ -130,7 +130,7 @@ pub(crate) fn leading_bound(layout: &Layout) -> Option<usize> { layout.keys(0).i
 
 /// The layout of the grade of an argument laid out as `layout`, a position for each major cell along its first axis, with that axis's name and without its keys, and the bound below which the positions lie (`leading_bound`). RANK for a unit.
 pub(crate) fn graded(layout: &Layout) -> Result<(Layout, Option<usize>), rustymath::error::Error> {
-    if layout.shape().is_empty() { return Err(rustymath::error::Error::new(rustymath::error::Kind::Rank, "grade needs arrays of rank at least one")); }
+    if layout.shape().is_empty() { return Err(rustymath::error::Error::new(ErrorTag::Rank, "grade needs arrays of rank at least one")); }
     Ok((layout.axes(0..1).without_keys(0), leading_bound(layout)))
 }
 
@@ -256,7 +256,7 @@ pub(crate) fn code_read(call: &CallView<'_>, kind: &ReadOp) -> Result<crate::pro
     let values: Vec<_> = (0..layout.count()).map(|position| match plan.at(position) {
         ReadAt::Input { position, .. } => Ok(source.at(position)),
         ReadAt::Default => Ok(prototype.clone()),
-        ReadAt::Invalid => Err(Error::new(crate::ErrorKind::Index, "view position is outside the source")),
+        ReadAt::Invalid => Err(Error::new(ErrorTag::Index, "view position is outside the source")),
         ReadAt::Index(position) => Ok(Value::integer(position)),
     }).collect::<Result<_>>()?;
     let value = if atom { values.into_iter().next().unwrap_or(prototype) }
@@ -346,7 +346,7 @@ pub(crate) fn form_relation(origin: Origin<&[Value]>) -> Result<Option<Outputs<V
                     None => selected.zeros_like()?,
                     Some(primitive) => {
                         let slope = at_slope(&origin, original, *primitive, 0)?;
-                        if slope.as_number().and_then(crate::Number::lossless_float) == Some(1.0) { return Ok(Some(Outputs::one(direction))); }
+                        if slope.as_number().and_then(|number| number.lossless_float()) == Some(1.0) { return Ok(Some(Outputs::one(direction))); }
                         call(&origin, Operation::Primitive { primitive: Primitive::Arithmetic(crate::number::Arithmetic::Times), pairing: Pairing::Axes }, &[slope, selected.clone()])?
                     }
                 };

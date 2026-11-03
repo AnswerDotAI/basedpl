@@ -14,8 +14,8 @@ pub(crate) fn factory(HostCall { right, .. }: HostCall<'_>) -> Result<Value, Err
 
 pub(crate) fn element(tag: &str, attrs: Option<&Value>, children: &Value) -> Result<Value, Error> {
     let attrs = attrs.cloned().unwrap_or_else(keyed::empty_record);
-    keyed::vector(vec!["tag".into(), "attrs".into(), "children".into()], vec![keyed::text(tag), attrs, children.clone()])
-        .and_then(|e| e.with_renderer(display::renderer("html-renderer", render_html))).described("XML element exceeds array limits")
+    let element = keyed::vector(vec!["tag".into(), "attrs".into(), "children".into()], vec![keyed::text(tag), attrs, children.clone()])?;
+    element.with_renderer(display::renderer("html-renderer", render_html)).described("XML element exceeds array limits")
 }
 
 fn attribute(value: &Value) -> Result<String, Error> {

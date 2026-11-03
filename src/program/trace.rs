@@ -155,7 +155,7 @@ impl Trace {
             }
             let output = pending.node.with_state(|state| match state {
                 graph::State::Input { position, role: Role::Seed, .. } =>
-                    Some(self.builder.input(*position, pending.description().cloned(), pending.node.level())),
+                    Some(self.builder.input(position, pending.description().cloned(), pending.node.level())),
                 graph::State::Input { value: Some(source), .. } => self.value(source, literal), _ => None,
             });
             if let Some(output) = output { self.mapped.insert(pending.clone(), output); return Some(output); }

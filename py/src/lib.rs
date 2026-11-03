@@ -1,5 +1,5 @@
 use basedpl::{
-    EvalOptions, Evaluation, Function, InterruptHandle, Number, ReadKind, Session, Value, buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}
+    Error, EvalOptions, Evaluation, Function, InterruptHandle, Number, OperatorValue, ReadKind, Session, Value, buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}
 };
 use num_bigint::BigInt;
 use pyo3::{
@@ -57,7 +57,7 @@ fn labelled(value: Value, keys: Vec<Option<Arc<Keys>>>, names: Vec<Option<Arc<st
 /// The value of an object that exports a buffer, such as a rustymath array or a `memoryview`, with its dtype and labels.
 fn numeric(obj: &Bound<'_, PyAny>) -> PyResult<Option<Value>> {
     let Some((read, layout)) = rustymath_buffer::read_array(obj)? else { return Ok(None) };
-    Value::imported_buffer(layout.shape(), read.into_buffer()).and_then(|v| v.with_core_layout(layout)).map(Some).map_err(value_error)
+    Value::imported_buffer(layout.shape(), read.into_buffer()).map_err(Error::from).and_then(|v| v.with_core_layout(layout)).map(Some).map_err(value_error)
 }
 
 /// NumPy's `generic` and `ndarray` types, once NumPy is imported. Until then no object is NumPy's, so NumPy needn't be installed.
@@ -155,7 +155,7 @@ fn exported(py: Python<'_>, a: &Value) -> PyResult<Py<PyAny>> {
             Value::Array(_) => exported(py, e)?,
             Value::Function(f) => Py::new(py, PyFunction { inner: f.clone() })?.into_any(),
             Value::Operator(op) => Py::new(py, PyOperator { inner: op.clone() })?.into_any(),
-            Value::Pending(_) | Value::Carried { .. } => unreachable!("Python exports observed values"),
+            _ => unreachable!("Python exports observed values"),
         })
     }
     if !a.is_atom() && a.view().is_some() { return Ok(Py::new(py, PyArray::from(a.clone()))?.into_any()); }
@@ -447,7 +447,7 @@ impl PyFunction {
 
 /// An operator held as a value, as a module record holds it.
 #[pyclass(frozen, name = "_Operator")]
-struct PyOperator { inner: basedpl::Operator }
+struct PyOperator { inner: Arc<OperatorValue> }
 
 #[pymethods]
 impl PyOperator {
@@ -632,7 +632,7 @@ fn python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
 fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
     let value = if let Some(inner) = result.value { Some(Py::new(py, PyArray::from(inner))?.into_any()) }
     else if let Some(inner) = result.function { Some(Py::new(py, PyFunction { inner })?.into_any()) }
-    else if let Some(inner) = result.operator { Some(Py::new(py, PyOperator { inner })?.into_any()) }
+    else if let Some(inner) = result.operator { Some(Py::new(py, PyOperator { inner: Arc::new(inner) })?.into_any()) }
     else { None };
     let d = PyDict::new(py);
     d.set_item("value", value)?;

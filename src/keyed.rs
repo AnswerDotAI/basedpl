@@ -1,4 +1,4 @@
-use crate::{ErrorKind, Number, Value, array::{Items, Layout}};
+use crate::{Error, ErrorKind, Number, Value, array::{Items, Layout}};
 use rustymath::hashing::{HashMap, HashSet, HashSetExt};
 use rustymath::{buffer::{FloatWidth, View}, error::Kind};
 use std::sync::Arc;
@@ -55,7 +55,7 @@ impl Texts {
     }
 }
 /// An array of `shape` holding the text items `items`, with empty text as its prototype.
-pub(crate) fn texts(shape: &[usize], items: Vec<Value>) -> Result<Value, ErrorKind> { Value::shaped(shape, items, text("")) }
+pub(crate) fn texts(shape: &[usize], items: Vec<Value>) -> Result<Value, ErrorKind> { Value::from_parts(shape, items, text("")) }
 /// A text column sharing repeated texts.
 pub(crate) fn text_column(shape: &[usize], column: &[&str]) -> Result<Value, ErrorKind> {
     let mut shared = Texts::default();
@@ -92,7 +92,7 @@ impl Selector {
     /// `None` when the value holds no names at all; mixed contents are a DOMAIN ERROR.
     pub fn of(value: &Value) -> Result<Option<Self>, ErrorKind> {
         // Only characters, alone or among mixed items, can be names (`name`), so numbers in any storage hold none.
-        if value.dtype() != Some(rustymath::buffer::DType::Character) && !value.holds_mixed() && value.leaf_dtype() != Some(rustymath::buffer::DType::Character) { return Ok(None); }
+        if value.dtype() != Some(rustymath::buffer::DType::Character) && !value.holds_mixed() { return Ok(None); }
         if let Some(k) = name(value) { return Ok(Some(Self::One(k))); }
         if value.is_atom() || value.is_empty() || !value.elements().any(|e| name(&e).is_some()) { return Ok(None); }
         let names = value.elements().map(|e| name(&e).ok_or(Kind::Domain)).collect::<Result<_, _>>()?;
@@ -109,16 +109,15 @@ pub(crate) fn partial_layout(names: Vec<Option<Arc<str>>>) -> Result<Layout, Err
 }
 /// A vector whose entries with a name are keyed by it. Each entry keeps its kind, as items written in brackets do.
 pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -> Result<Value, ErrorKind> {
-    let vector =
-        if values.is_empty() { Value::empty(vec![0], Value::Number(Number::float(0.0, FloatWidth::F64)))? } else { Value::new(vec![values.len()], values)? };
-    vector.with_keys(vec![partial_layout(names)?.keys(0).cloned()])
+    let prototype = values.first().map_or_else(|| Value::Number(Number::float(0.0, FloatWidth::F64)), Value::zeroed);
+    Value::stored_values(partial_layout(names)?, values, Some(prototype), crate::array::Widening::Items)
 }
 
 /// A record of columns: the field `names[j]` holds item `j` of each row, as an array of `shape`, or as that row's item when `shape` is empty. Without rows, each field is an empty array of `empty[j]`.
 pub(crate) fn table(names: &[&str], shape: &[usize], rows: Vec<Vec<Value>>, empty: Vec<Value>) -> Result<Value, ErrorKind> {
     let mut columns: Vec<Vec<Value>> = vec![Vec::with_capacity(rows.len()); names.len()];
     for row in rows { for (column, item) in columns.iter_mut().zip(row) { column.push(item); } }
-    let values = columns.into_iter().zip(empty).map(|(column, empty)| Value::shaped(shape, column, empty));
+    let values = columns.into_iter().zip(empty).map(|(column, empty)| Value::from_parts(shape, column, empty));
     vector(names.iter().map(|&n| n.into()).collect(), values.collect::<Result<_, _>>()?)
 }
 
@@ -207,9 +206,9 @@ fn entry<'a>(lists: &'a [Vec<Option<Arc<str>>>], axis_names: Option<&Arc<Keys>>)
     match (axis_names, lists) { (None, [list]) => match &list[..] { [Some(name)] => Some(name), _ => None }, _ => None }
 }
 
-pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
+pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) -> Result<Value, Error> {
     let (lists, axis_names) = labels(keys)?;
-    if let (None, Some(name)) = (axes, entry(&lists, axis_names)) { return vector(vec![name.clone()], vec![values.clone()]); }
+    if let (None, Some(name)) = (axes, entry(&lists, axis_names)) { return Ok(vector(vec![name.clone()], vec![values.clone()])?); }
     let default: Vec<_> = (0..lists.len()).collect();
     let axes = axes.unwrap_or(&default);
     if axes.len() != lists.len() { return Err(Kind::Length.into()); }
@@ -224,7 +223,7 @@ pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) ->
 }
 
 /// `value` without axis names or position keys on `axes`, or on every axis: monadic `:`.
-pub(crate) fn remove(value: &Value, axes: Option<&[usize]>) -> Result<Value, ErrorKind> {
+pub(crate) fn remove(value: &Value, axes: Option<&[usize]>) -> Result<Value, Error> {
     if !matches!(value, Value::Array(_)) { return Ok(value.clone()); }
     let Some(axes) = axes else { return value.clone().with_keys(vec![])?.with_axis_names(vec![]) };
     let mut keys = value.layout().all_keys();
@@ -237,7 +236,7 @@ pub(crate) fn remove(value: &Value, axes: Option<&[usize]>) -> Result<Value, Err
 }
 
 /// `keys:⁻¹value`: `value` without the labels that `keys:` attaches. Those are the position keys of the leading axes that `keys` labels, and those axes' names where `keys` is keyed. Other names and keys stay. Where `keys:` makes a record of one entry, the result is that entry's value.
-pub(crate) fn deconstruct(keys: &Value, value: &Value) -> Result<Value, ErrorKind> {
+pub(crate) fn deconstruct(keys: &Value, value: &Value) -> Result<Value, Error> {
     let (lists, axis_names) = labels(keys)?;
     if entry(&lists, axis_names).is_some() { return value.elements().next().ok_or(Kind::Length.into()); }
     let unlabelled = remove(value, Some(&(0..lists.len()).collect::<Vec<_>>()))?;
@@ -246,12 +245,12 @@ pub(crate) fn deconstruct(keys: &Value, value: &Value) -> Result<Value, ErrorKin
 }
 
 /// The positions along each of `axes`, or the keys where the axis has them: one vector, or a vector of them for several axes.
-pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKind> { axis_selectors(value, axes, false) }
+pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, Error> { axis_selectors(value, axes, false) }
 
 /// [`selectors`], each along an axis with the name of the axis it selects, as `⍳⍠` gives them. Each then pairs with that axis by name. Indexing by one keeps the keys at the positions it selects.
-pub(crate) fn named_selectors(value: &Value, axes: &[usize]) -> Result<Value, ErrorKind> { axis_selectors(value, axes, true) }
+pub(crate) fn named_selectors(value: &Value, axes: &[usize]) -> Result<Value, Error> { axis_selectors(value, axes, true) }
 
-fn axis_selectors(value: &Value, axes: &[usize], named: bool) -> Result<Value, ErrorKind> {
+fn axis_selectors(value: &Value, axes: &[usize], named: bool) -> Result<Value, Error> {
     let mut values = Vec::new();
     for &axis in axes {
         let &len = value.shape().get(axis).ok_or(Kind::Rank)?;
@@ -262,7 +261,7 @@ fn axis_selectors(value: &Value, axes: &[usize], named: bool) -> Result<Value, E
         };
         values.push(if named { selector.with_axis_names(vec![value.axis_name(axis).cloned()])? } else { selector });
     }
-    if values.len() == 1 { Ok(values.pop().unwrap()) } else { Value::from_parts(vec![values.len()], values, Value::integers(vec![0], vec![])?) }
+    Ok(if values.len() == 1 { values.pop().unwrap() } else { Value::from_parts(vec![values.len()], values, Value::integers(vec![0], vec![])?)? })
 }
 
 /// For each axis of `target`, the keys in `selectors` that it lacks, each once.

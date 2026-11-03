@@ -17,8 +17,8 @@ pub(crate) fn factory(HostCall { right, .. }: HostCall<'_>) -> Result<Value, Err
 /// `X draw Y`: a record of the drawing function's source, the options `X` and the data `Y`, displayed as a canvas. Without options, the JavaScript gets an empty object.
 pub(crate) fn draw(source: &str, options: Option<&Value>, data: &Value) -> Result<Value, Error> {
     let options = options.cloned().unwrap_or_else(keyed::empty_record);
-    keyed::vector(vec!["source".into(), "options".into(), "data".into()], vec![keyed::text(source), options, data.clone()])
-        .and_then(|canvas| canvas.with_renderer(display::renderer("canvas-renderer", render))).described("canvas exceeds array limits")
+    let canvas = keyed::vector(vec!["source".into(), "options".into(), "data".into()], vec![keyed::text(source), options, data.clone()])?;
+    canvas.with_renderer(display::renderer("canvas-renderer", render)).described("canvas exceeds array limits")
 }
 
 /// The browser build sends the canvas as JSON, with its typed arrays as bytes, for the page to draw with `canvas.js`. The native build sends HTML that holds the same JSON and bytes, and runs `canvas.js` itself. Both send the text `canvas: N frames` when the options give `fps` and the data is a vector of `N` frames, and `canvas` otherwise.

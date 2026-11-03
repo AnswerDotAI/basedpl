@@ -214,7 +214,7 @@ impl Value {
     /// The dtype and fixedness shared by the items, independent of compact or mixed storage. A carrier shows its template's kind.
     pub(crate) fn shown_kind(&self) -> Option<(rustymath::buffer::DType, bool)> {
         match self.as_items() {
-            Items::Values(items) => super::storage::items_kind(items, Widening::Items),
+            Items::Values(items) => super::storage::joined_kind(items, Widening::Items).map(|kind| (kind.dtype(), kind.fixed_width().is_some())),
             items => items.dtype().map(|dtype| (dtype, items.fixed_width().is_some())),
         }
     }

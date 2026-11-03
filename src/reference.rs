@@ -1,5 +1,5 @@
 //! Development-only checks, shared by the tests and the worker: reference cases, `.bpl` reference files and the examples in `.qmd` pages.
-use crate::{EvalOptions, InterruptHandle, Session, Value, number::Numeric, settings::Compiles};
+use crate::{EvalOptions, InterruptHandle, Session, Value, Number, number::Numeric, settings::Compiles};
 use serde_json::{Value as JsonValue, json};
 use std::{collections::VecDeque, sync::{Arc, Mutex}};
 
@@ -48,7 +48,7 @@ pub fn difference(x: &Value, y: &Value, relative: Option<f64>, absolute: f64, ex
 /// The kinds of storage, as `•storage` names them under `numeric`, at the first place where `x` and `y` are held differently. It walks into the items of mixed arrays. With `compact_alike`, every compact kind counts as one, so only nested storage against compact storage differs.
 fn kind_difference(x: &Value, y: &Value, numeric: Numeric, compact_alike: bool) -> Option<(&'static str, &'static str)> {
     let nested = |kind: &str| kind == "mixed";
-    let (a, b) = (x.storage_kind(numeric), y.storage_kind(numeric));
+    let (a, b) = (crate::system::storage_kind(x, numeric), crate::system::storage_kind(y, numeric));
     let differ = if compact_alike || nested(a) && nested(b) { nested(a) != nested(b) } else { a != b };
     if differ { return Some((a, b)); }
     if !nested(a) || x.is_atom() || y.is_atom() || x.len() != y.len() { return None; }
@@ -258,9 +258,9 @@ const COVERAGE_SECTIONS: [(&str, &str); 2] = [("dynamic", ""), ("static", r#"•
 const COVERAGE_RIGHT: [&str; 5] = ["0", "1", "2", "0.5", "¯1"];
 const COVERAGE_LEFT: [&str; 2] = ["1", "2"];
 
-/// The coverage matrix of the pervasive primitives against the executors, as the route test checks it. Each pervasive form in the facts table, apart from `ᵇ`'s, monadic `+`'s and those that no kind runs on carried values (`Form::Unsupported`), gives cases in a section under dynamic kinds and one under static kinds, all on floats. Each case that maps a form puts it between two other steps of one block stage: it reads `1+x` and its result is doubled. A lone call forced at once runs eagerly, outside any stage, and a form that `Pervasive::kept` removes leaves two steps, which compile. A form that doesn't lower leaves no compiled part, because a part of one step after it doesn't compile. A monadic form gives `2×f 1+x` and its gradient, `{+/f⍵}∂ x`. So does each monadic rule of the form rewriter whose function maps its argument, spelled as the rule writes it with `1+x` for `⍵`, as in `2×⍟1+1+x`, where the rewriter puts the rule's function. Each row of the mark `ₐ` gives its marked function's cases as code writes them: a monadic one `2×√ₐ1+x` and `{+/√ₐ⍵}∂ x`, a dyadic one `2×(1+x)*ₐy` and both gradients, `{+/⍵*ₐy}∂ x` and `{+/y*ₐ⍵}∂ x`. A form's own case that a rule would rewrite reads `2+x` in place of `1+x`, as `2×⍟2+x` does, and tests the form itself. A dyadic form gives `2×(1+x)g y`, `2×(1+x)g c` for each constant of `COVERAGE_RIGHT`, `2×c g 1+x` for each of `COVERAGE_LEFT`, the fold `g/2×x`, the inner product `m+.g k` and the gradients `{+/⍵ g y}∂ x`, `{g/⍵}∂ x` and `{+/,m+.g ⍵}∂ k`. A form whose left argument chooses a function, as `○`'s circle code does, takes the codes 0 to 8 on the left instead. Each case runs as the run with fusion at any size runs it, which compiles every stage (`RUNS[2]`), and must take the `compiled` route, or the `fused fold` route for a fold, or the `trace` route for a gradient. An inner product must only record no slow event. `gaps` lists the ways the matrix accepts a case falling short, one line each: the section, a tab, the case's code, a tab, then a `⍝⍝⍝ gap` or `⍝⍝⍝ allows` line as a reference case writes it. A case that `gaps` lists needn't take its route, because each of its lines names the event that stands in the route's way. The captures check those lines as a reference case's are checked, so a line whose event has gone fails. Gives the captures and, for each case whose evaluation fails, such as `~` on floats, its section, code and error. A line of `gaps` that names no case is an error.
+/// Scalar primitive route cases come from the language row and its resolved numerical object; gaps name expected slow paths.
 pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(Vec<crate::timing::Capture>, Vec<String>), String> {
-    use crate::primitive::{Extension, Form, Primitive};
+    use crate::primitive::{Operation, Pairing, Primitive};
     let text = std::fs::read_to_string(gaps).map_err(|e| format!("{}: {e}", gaps.display()))?;
     let mut listed = Vec::new();
     for (n, line) in text.lines().enumerate().filter(|(_, l)| !l.is_empty()) {
@@ -269,7 +269,15 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
         let (key, rest) = directive.strip_prefix("⍝⍝⍝ ").and_then(|d| d.split_once(' ')).filter(|(k, _)| matches!(*k, "gap" | "allows")).ok_or_else(fail)?;
         listed.push((section, code, key, event(rest), false));
     }
-    let pervasive = |p: Primitive, dyadic: bool| { let f = p.facts(dyadic); f.extension == Extension::Pervasive && f.form != Form::Unsupported };
+    let form = |primitive: Primitive, dyadic: bool| -> Option<bool> {
+        if !primitive.info().pervasive(1 + usize::from(dyadic)) { return None; }
+        let args = vec![Value::Number(Number::float(2.0, rustymath::buffer::FloatWidth::F64)); 1 + usize::from(dyadic)];
+        let origin = Operation::Primitive { primitive, pairing: Pairing::Axes }.origin_numeric(&args, 0, Numeric::EXACT).ok()?;
+        let call = origin.call_view(&origin.list);
+        let variant = call.variant(rustymath::buffer::DType::Float(rustymath::buffer::FloatWidth::F64)).ok()?;
+        if Operation::kernel(&call, variant).ok().flatten().is_none() && !primitive.info().defined[usize::from(dyadic)] { return None; }
+        Some(dyadic && origin.roles.kind(0) == Some(crate::ReadKind::Value))
+    };
     let mut cases: Vec<(String, &str)> = Vec::new();
     // A function's cases with one argument, and with each circle code as its left argument.
     let monadic = |g: &str| [(format!("2×{g}2+x"), "compiled"), (format!("{{+/{g}⍵}}∂ x"), "trace")];
@@ -277,11 +285,11 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
     for p in Primitive::all().filter(|p| !matches!(p, Primitive::Bitwise(_))) {
         let g = p.glyph();
         // Monadic `+` keeps a real operand (`Pervasive::kept`), so its case would compute nothing to compile.
-        if pervasive(p, false) && p.facts(false).linear != Some(crate::primitive::LinearMap::Same) {
+        if form(p, false).is_some() && p != Primitive::Arithmetic(crate::number::Arithmetic::Plus) {
             cases.extend(monadic(&g));
         }
-        if !pervasive(p, true) { continue; }
-        if p.info().dyad.code {
+        let Some(code) = form(p, true) else { continue; };
+        if code {
             cases.extend(coded(&g));
             continue;
         }
@@ -343,7 +351,7 @@ fn observed_result(mut result: crate::Evaluation, session: &Session) -> Result<c
     if result.error.is_none() && let Some(value) = result.value.take() {
         match value.read(crate::ReadKind::Value).and_then(|value| { session.raise()?; Ok(value) }) {
             Ok(value) => result.value = Some(value),
-            Err(error) if error.is_control() => return Err(unreadable(error)),
+            Err(error) if error.kind.is_control() => return Err(unreadable(error)),
             Err(error) => result.error = Some(error),
         }
     }

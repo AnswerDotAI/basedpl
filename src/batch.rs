@@ -192,7 +192,7 @@ pub(crate) fn cells(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize) -
         Operation::System => {
             let call = origin.call_view(&origin.list);
             let function = call.function(0).and_then(Function::system_function).ok_or_else(Error::planning)?;
-            (function.row(None).cells)(origin, wholes, frame)
+            (function.row().cells)(origin, wholes, frame)
         }
         _ => Err(Error::batch_stop(level.id)),
     }

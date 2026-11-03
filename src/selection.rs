@@ -1,6 +1,6 @@
 use crate::{Error, Value, array::{ArrayData, Carried, Widening, map_leaves}, error::Result, graph::{Node, Pending},
     primitive::{Operation, Primitive, SelectionProjection}, program::{Desc, Origin, Read, Step, trace::Role}};
-use rustymath::{agreement::{ReadPlan, ReadRoute}, hashing::HashMap};
+use rustymath::{agreement::{ReadPlan, ReadRoute}, hashing::HashMap, error::Kind as ErrorTag};
 use std::sync::Arc;
 
 fn foreign() -> Error { Error::domain("cannot assign to an item that isn't from the target") }
@@ -34,10 +34,10 @@ pub(crate) fn rooted(root: &Value) -> Result<Value> {
 }
 
 #[derive(Clone)]
-enum PathPart { Item(usize), Prototype }
+pub(crate) enum PathPart { Item(usize), Prototype }
 struct RootPort { position: usize, pending: Pending, path: Vec<PathPart>, writable: bool }
 pub(crate) struct RootPorts<'a> { root: &'a Value, ports: Vec<RootPort> }
-fn replace(current: &Value, path: &[PathPart], value: Value) -> Result<Value> {
+pub(crate) fn replace(current: &Value, path: &[PathPart], value: Value) -> Result<Value> {
     let Some((part, rest)) = path.split_first() else { return Ok(value); };
     match part {
         PathPart::Item(i) => {
@@ -126,7 +126,7 @@ impl<'ports, 'root> Walking<'ports, 'root> {
             let call = origin.call_view(&origin);
             if let Operation::Primitive { primitive, .. } = call.operation
                 && primitive.selects(call.explicit_argument_roots().len() == 2) {
-                for source in call.source_roots()? { if !self.validate(&call.root_input(source.index)?, root)? { return Ok(false); } }
+                for source in call.source_roots()? { if !self.validate(call.root_input(source.index)?.as_ref(), root)? { return Ok(false); } }
                 return Ok(true);
             }
         }
@@ -277,7 +277,7 @@ pub(crate) fn code_at(call: &crate::primitive::CallView<'_>) -> Result<crate::pr
                         }
                         ReadAt::Default => {},
                         ReadAt::Invalid if !call.mode.dynamic => {},
-                        ReadAt::Invalid => return Err(Error::new(crate::ErrorKind::Index, "write position is outside the array")),
+                        ReadAt::Invalid => return Err(Error::new(ErrorTag::Index, "write position is outside the array")),
                         ReadAt::Index(_) => return Err(foreign()),
                     }
                 }
@@ -300,11 +300,11 @@ pub(crate) fn code_at(call: &crate::primitive::CallView<'_>) -> Result<crate::pr
             let before = if before.pending().is_some_and(|pending| pending.description().is_none()) { before.read(ReadKind::Structure)? } else { before };
             let mut items = if matches!(before, Value::Pending(_) | Value::Carried { .. }) {
                 (0..before.len()).map(|item| call.apply(Operation::Read(ReadOp::Cell { rank: 0 }),
-                    &[Value::from(item), before.clone()], &[None; 2])).collect::<Result<Vec<_>>>()?
+                    &[Value::integer(item as i64), before.clone()], &[None; 2])).collect::<Result<Vec<_>>>()?
             } else { before.elements().collect() };
             for (position, value) in changes {
                 if position >= items.len() {
-                    if call.mode.dynamic { return Err(Error::new(crate::ErrorKind::Index, "write position is outside the array")); }
+                    if call.mode.dynamic { return Err(Error::new(ErrorTag::Index, "write position is outside the array")); }
                     continue;
                 }
                 items[position] = merge(&items[position], value)?;

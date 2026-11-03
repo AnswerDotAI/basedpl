@@ -94,7 +94,8 @@ pub(crate) fn read(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, 
     let seconds = moments.into_iter().map(|m| m.map(seconds).ok_or_else(|| Error::domain("invalid date"))).collect::<Result<Vec<_>, _>>()?;
     // Seconds since 1970 stay 64-bit, because a 32-bit float holds them only to within about two minutes.
     let second = |s| Value::Number(Number::float(s, FloatWidth::F64));
-    Value::shaped(&shape, seconds.into_iter().map(second).collect(), second(0.0)).described("invalid date")
+    let frame = if shape.is_empty() { crate::array::Frame::Direct } else { crate::array::Frame::Array(shape.into()) };
+    frame.collect(seconds.into_iter().map(second), second(0.0)).described("invalid date")
 }
 
 /// `•date⁻¹`'s options. The browser build has no `locale`, which keeps chrono's locale data out of it.

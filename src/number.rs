@@ -572,7 +572,7 @@ impl Mark {
     pub(crate) fn number(self, value: &Number, numeric: Numeric) -> Result<Number, ErrorKind> {
         let domain = |message| rustymath::error::Error::new(ErrorTag::Domain, message).into();
         let result = match self {
-            Self::Exact => value.whole(numeric).map_err(|error| Error::from(error).kind)?,
+            Self::Exact => value.whole(numeric).map_err(|error| Error::from(error).kind.clone())?,
             Self::Rational => value.to_unbounded().map_err(domain)?,
             Self::Real => value.approximated(numeric).map_err(domain)?,
             Self::Type { dtype: DType::Integer(width), fixed } => {

@@ -2,15 +2,13 @@
 
 `•storage Y` gives a record of how the items of `Y` are held. It reads no items, and a pending call stays pending.
 
-- `kind` names the storage: `"bool"`, `"integer"`, `"float64"`, `"float32"`, `"float16"`, `"complex128"`, `"complex64"`, `"character"`, `"mixed"` or `"segmented"`. An atom gives its own kind. That can also be `"rational"`, for an exact rational or an integer beyond 64 bits, or `"function"`. Compact storage holds items of one kind. `"integer"` covers integers of every width. Mixed storage keeps each item's kind. Segmented storage holds arrays of one rank and kind as parts of one array, its leaf, as Rank's `⊂` rows and partitions give them. Boxed display marks the same storage on its bottom edge. [Storage](../numbers.qmd#storage) describes each storage.
-- `leaf` names the storage of a segmented array's leaf, and is `""` for every other storage.
-- `groups` names how a segmented array's items divide its leaf. It is `"ranges"` where each item is a range of the leaf, and `"classes"` where the items are Key's groups of a vector of values, held in the values' own order with each value's class. It is `""` for every other storage.
-- `pending` is `$t` while fusion hasn't yet run the call that computes the items.
+- `kind` names the storage: `"bool"`, `"integer"`, `"float64"`, `"float32"`, `"float16"`, `"complex128"`, `"complex64"`, `"character"` or `"mixed"`. Under static kinds, integer names include their width, such as `"int32"`. An unbounded exact number gives `"rational"`; a function gives `"function"`. Compact storage holds items of one kind. Mixed storage keeps each item's kind. [Storage](../numbers.qmd#storage) describes the two forms.
+- `pending` is `$t` while the call that computes the items is pending.
 - `view` is `$t` when `Y` reads another array's items, as a reshape does.
-- `active` counts the levels of `∂` whose tags `Y` carries. Under `∂`, `kind` names the storage of the value being differentiated.
+- `active` counts the levels of `∂` whose tags `Y` carries. Under `∂`, `kind` names the storage of the primal value.
 
 ```bpl
-•storage 1.5 2.5             ⍝ ["kind":"float64" "leaf":"" "groups":"" "pending":$f "view":$f "active":0ₓ]
+•storage 1.5 2.5
 (•storage 2 3⍴⍳6ₓ).view       ⍝ $t
 y←1.5+¿200000⍴0
 (•storage y).pending         ⍝ $t

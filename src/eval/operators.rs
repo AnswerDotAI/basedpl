@@ -124,7 +124,7 @@ fn operator_call(f: &Function, origin: Origin<&[Value]>) -> Result<Value> {
             value_call(&first, &origin, &[left.unwrap_or(right).clone(), hy], &[from[0], None])
         }
         Atop => {
-            let hy = value_call(&second()?, &origin, &args, &from)?;
+            let hy = value_call(second()?.as_ref(), &origin, &args, &from)?;
             value_call(&first, &origin, &[hy], &[None])
         }
         Over => {
@@ -133,17 +133,17 @@ fn operator_call(f: &Function, origin: Origin<&[Value]>) -> Result<Value> {
             value_call(&first, &origin, &values, &vec![None; values.len()])
         }
         Valences => { let selected = if left.is_some() { second()? } else { first }; value_call(&selected, &origin, &args, &from) }
-        Power => power(&origin, function(&first)?, &second()?, &args, &from),
+        Power => power(&origin, function(&first)?, second()?.as_ref(), &args, &from),
         Reduce | ReduceFirst | Scan | ScanFirst => fold_call(&origin, function(&first)?, kind, &args, &from),
-        Rank => rank_call(&origin, function(&first)?, &second()?, &args, &from),
+        Rank => rank_call(&origin, function(&first)?, second()?.as_ref(), &args, &from),
         Each => each_call(&origin, function(&first)?, &args, &from),
         Outer => outer_call(&origin, function(&first)?, &args, &from),
         Key => key_call(&origin, function(&first)?, &args, &from),
-        Stencil => stencil_call(&origin, function(&first)?, &second()?, &args, &from),
-        Dot => product_call(&origin, function(&first)?, function(&second()?)?, &args, &from),
-        Axis => axis_call(&origin, function(&first)?, &second()?, &args, &from),
-        Under => under_call(&origin, &first, &second()?, &args, &from),
-        Agenda => agenda_call(&origin, &first, &second()?, &args, &from),
+        Stencil => stencil_call(&origin, function(&first)?, second()?.as_ref(), &args, &from),
+        Dot => product_call(&origin, function(&first)?, function(second()?.as_ref())?, &args, &from),
+        Axis => axis_call(&origin, function(&first)?, second()?.as_ref(), &args, &from),
+        Under => under_call(&origin, &first, second()?.as_ref(), &args, &from),
+        Agenda => agenda_call(&origin, &first, second()?.as_ref(), &args, &from),
         Inverse => inverse_call(&origin, function(&first)?, &args, &from),
         Mark(mark) => {
             if let Value::Function(g) = first.as_ref() {
@@ -315,7 +315,10 @@ fn items_call(origin: &Origin<&[Value]>, function: &Function, scan: bool, axis: 
             dispatch_in(origin, Operation::Read(ReadOp::Cell { rank: 0 }), &[Value::integer(0), right.clone()], &[None, *from.last().unwrap()])?
         };
         return match seed {
-            Some(seed) => function.call_bound(origin, if scan { &[seed.clone(), item] } else { &[item, seed.clone()] }, &[None, None]),
+            Some(seed) => {
+                let args = if scan { [seed.clone(), item] } else { [item, seed.clone()] };
+                function.call_bound(origin, &args, &[None, None])
+            }
             None if scan => Ok(right.clone()), None => Ok(item),
         };
     }
@@ -345,8 +348,10 @@ fn items_call(origin: &Origin<&[Value]>, function: &Function, scan: bool, axis: 
         if let Some(seed) = seed { return Ok(seed.clone()); }
         let primitive = function.dyadic_primitive().ok_or_else(|| Error::domain("this function has no reduction identity"))?;
         let prototype = right.prototype();
-        let kind = prototype.kind().unwrap_or_else(|| Numeric::current().kind(rustymath::buffer::DType::Float(Numeric::current().width)));
-        let mut value = primitive.info().identity(&origin.call_view(&origin.list), kind)?.ok_or_else(|| Error::domain("this function has no reduction identity"))?;
+        let call = origin.call_view(&origin.list);
+        let numeric = call.numeric()?;
+        let kind = prototype.kind().unwrap_or_else(|| crate::number::Kind::stored(rustymath::buffer::DType::Float(numeric.width), false, false));
+        let mut value = primitive.info().identity(&call, kind)?.ok_or_else(|| Error::domain("this function has no reduction identity"))?;
         if prototype.as_number().is_some_and(|n| n.is_unbounded()) { value = dispatch_in(origin, Operation::Convert(crate::number::Mark::Rational), &[value], &[None])?; }
         return Ok(value);
     }
@@ -597,7 +602,7 @@ fn cell_axes(origin: &Origin<&[Value]>, f: &Function, spec: &Value, args: &[Valu
             values.push(reorder(origin, arg, &axes)?); ranks.push(own.len());
         } else { values.push(arg.clone()); ranks.push(arg.rank()); }
     }
-    let frame = rustymath::agreement::Frames::new(&values.iter().zip(&ranks).map(|(arg, &rank)| (&arg.layout().core, rank)).collect::<Vec<_>>())?.layout.shape().len();
+    let frame = rustymath::agreement::Frames::new(&values.iter().zip(&ranks).map(|(arg, &rank)| (arg.core_layout(), rank)).collect::<Vec<_>>())?.layout.shape().len();
     let rank_value = Value::integers([ranks.len()], ranks.iter().map(|&rank| rank as i64).collect())?;
     let result = rank_call(origin, f, &rank_value, &values, &vec![None; values.len()])?;
     if frame != order - selected.len() { return Ok(result); }
@@ -624,7 +629,7 @@ fn invert(origin: &Origin<&[Value]>, f: &Function, args: &[Value], from: &[Optio
     let bound = f.bound(origin, args, from)?;
     match f.node() {
         FunctionNode::Primitive(primitive) => (primitive.info().inverse)(f, bound.reborrow(), first),
-        FunctionNode::System { function, .. } => (function.row(None).inverse)(f, bound.reborrow(), first),
+        FunctionNode::System { function, .. } => (function.row().inverse)(f, bound.reborrow(), first),
         FunctionNode::Applied { op: Operator::Kind(kind), .. } if first => (kind.info().inverse)(f, bound.reborrow()),
         FunctionNode::Applied { op: Operator::Kind(_), .. } => inverse_derived(f, bound.reborrow(), false),
         FunctionNode::Train(tines) if tines.len() == 2 => {
@@ -660,7 +665,7 @@ fn inverse_derived(f: &Function, origin: Origin<&[Value]>, first: bool) -> Resul
     let fixed = left.map(|left| (left, first));
     match kind {
         Inverse if first => function(&g)?.call_bound(&origin, &args, &from),
-        Atop => { let value = inverse(function(&g)?, None, right)?; inverse(function(&second()?)?, fixed, &value) }
+        Atop => { let value = inverse(function(&g)?, None, right)?; inverse(function(second()?.as_ref())?, fixed, &value) }
         Over => {
             let h = second()?;
             let bound = left.map(|left| value_call(&h, &origin, &[left.clone()], &[from[0]])).transpose()?;
@@ -706,7 +711,7 @@ fn inverse_derived(f: &Function, origin: Origin<&[Value]>, first: bool) -> Resul
             }
         }
         Each => each_call(&origin, &operand_inverse(function(&g)?)?, &args, &from),
-        Under => under_call(&origin, &Value::Function(operand_inverse(function(&g)?)?), &second()?, &args, &from),
+        Under => under_call(&origin, &Value::Function(operand_inverse(function(&g)?)?), second()?.as_ref(), &args, &from),
         Scan | ScanFirst if first => inverse_scan(&origin, function(&g)?, matches!(kind, ScanFirst), None, left, right),
         Rank => {
             let mut ranks = second()?.read(crate::ReadKind::Structure)?;
@@ -717,7 +722,7 @@ fn inverse_derived(f: &Function, origin: Origin<&[Value]>, first: bool) -> Resul
             rank_call(&origin, &operand_inverse(function(&g)?)?, &ranks, &args, &from)
         }
         Axis => {
-            let axes = value_call(&second()?, &origin, &args, &from)?;
+            let axes = value_call(second()?.as_ref(), &origin, &args, &from)?;
             if let Some(primitive) = function(&g)?.as_primitive() {
                 let (pairing, values, sources) = axis_arguments(&origin, &axes, &args, &from)?;
                 let call = projected_call(&origin, Operation::Primitive { primitive, pairing }, &values, &sources)?;

@@ -272,12 +272,13 @@ fn observe_counts(program: &Program, running: &mut Running) -> Result<Option<Ran
 }
 
 pub(crate) fn run(plan: &mut Plan, running: &mut Running) -> Result<Ran> {
-    let program = plan.program.clone();
+    let schedule = plan.schedule.clone();
+    let program = schedule.program.clone();
     let error = crate::eval::session().error.clone();
     if error.pending() { return Ok(Ran::Failed); }
     if let Some(outcome) = observe_counts(&program, running)? { return Ok(outcome); }
     for index in 0..plan.stages.len() {
-        let stage = &plan.stages[index];
+        let stage = &schedule.stages[index];
         let first = match stage { Stage::Step(node) => *node, Stage::Block(block) => block.members()[0] };
         if first < running.next || first < plan.from { continue; }
         crate::execution::check()?;
@@ -383,14 +384,14 @@ fn numeric_output(program: &Program, node: usize, value: Value) -> Outputs<Value
 }
 
 fn with_reads<T>(program: &Program, running: &Running, first: u32, arguments: &[u32],
-    run: impl FnOnce(&[rustymath::agreement::Read<'_>]) -> std::result::Result<T, rustymath::Error>) -> Result<T> {
+    run: impl FnOnce(&[rustymath::agreement::Read<'_>]) -> std::result::Result<T, rustymath::error::Error>) -> Result<T> {
     let routes: Vec<_> = arguments.iter().map(|&argument| running.read(first as usize + argument as usize).ok_or_else(Error::planning)).collect::<Result<_>>()?;
     let sources = routes.iter().map(|route| route.bind(program, running, |_| None)).collect::<Result<Vec<_>>>()?;
     let reads: Vec<_> = routes.iter().zip(&sources).map(|(route, sources)| rustymath::agreement::Read { plan: &route.plan, sources }).collect();
     Ok(run(&reads)?)
 }
 fn with_index_reads<T>(program: &Program, running: &Running, first: u32, indices: &[super::GatherIndex],
-    run: impl FnOnce(&[(rustymath::agreement::Read<'_>, rustymath::buffer::DType)]) -> std::result::Result<T, rustymath::Error>) -> Result<T> {
+    run: impl FnOnce(&[(rustymath::agreement::Read<'_>, rustymath::buffer::DType)]) -> std::result::Result<T, rustymath::error::Error>) -> Result<T> {
     let mut routes = Vec::with_capacity(indices.len());
     let mut types = Vec::with_capacity(indices.len());
     for index in indices {
@@ -485,7 +486,7 @@ fn product(program: &Program, running: &Running, node: usize, left: u32, right: 
     let sources = routes.iter().map(|route| route.bind(program, running, |_| None)).collect::<Result<Vec<_>>>()?;
     let inputs = std::array::from_fn(|i| rustymath::agreement::Read { plan: &routes[i].plan, sources: &sources[i] });
     let mut buffer = rustymath::buffer::Buffer::with_capacity(desc.dtype(), desc.layout.count());
-    rustymath::operation::product(&map, &fold, inputs, &product.plan, super::blocks::kernel_settings(&call)?, &mut buffer)?;
+    rustymath::operation::product(&map, fold.as_ref().ok_or_else(Error::planning)?, inputs, &product.plan, super::blocks::kernel_settings(&call)?, &mut buffer)?;
     Ok(numeric_output(program, node, Value::stored(desc, buffer)?))
 }
 

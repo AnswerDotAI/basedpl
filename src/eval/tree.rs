@@ -299,7 +299,7 @@ pub(crate) fn before(value: FunctionOperand, function: Function, span: &Span) ->
     Function::train_operands(vec![value, FunctionOperand::value(Value::Function(function), false)], span)
 }
 pub(super) fn atop(first: Function, second: Function, span: &Span) -> Result<Function, Error> {
-    Function::train(vec![Value::Function(first), Value::Function(second)], span)
+    Function::train_operands(vec![Value::Function(first).into(), Value::Function(second).into()], span)
 }
 pub(super) fn bound_right(operator: Binding, operand: Binding, literal: bool, span: &Span) -> Result<Binding, Error> {
     let Binding::Operator(OperatorValue::Operator(op)) = operator else { return Err(Error::domain("a right operand needs an unbound operator").at(span)) };
@@ -383,7 +383,7 @@ impl Entity {
     pub(super) fn fit(self, category: Category) -> Result<Self, Error> {
         let term = match self.term {
             Term::Binding(Binding::Function(f)) if category == Category::Value => Term::Binding(Binding::Value(Value::Function(f.function()?))),
-            Term::Binding(Binding::Operator(op)) if category == Category::Value => Term::Binding(Binding::Value(Value::Operator(op))),
+            Term::Binding(Binding::Operator(op)) if category == Category::Value => Term::Binding(Binding::Value(Value::Operator(Arc::new(op)))),
             Term::Binding(Binding::Value(v)) if category != Category::Value => Term::Binding(Binding::from_element(v)),
             term => term,
         };
@@ -488,7 +488,7 @@ pub(super) fn constant(node: &Node) -> Binding {
         NodeKind::Literal(a) => Binding::Value(a.clone()),
         NodeKind::Function(builtin) => Binding::from(builtin.function()),
         NodeKind::Operator(kind) => Binding::Operator(OperatorValue::Operator(Operator::Kind(kind.clone()))),
-        NodeKind::BoundOperator(kind, right) => Binding::Operator(OperatorValue::Bound { op: Operator::Kind(kind.clone()), right: right.clone() }),
+        NodeKind::BoundOperator(kind, right) => Binding::Operator(OperatorValue::Bound { op: Operator::Kind(kind.clone()), right: FunctionOperand::value(right.clone(), true) }),
         _ => unreachable!("a literal, a function or an operator"),
     }
 }
@@ -719,7 +719,7 @@ impl StatementCode {
             Op::Number { text, mark, empty, to, range } => {
                 let span = span_of(source, range);
                 let text: &str = text.map_or_else(|| &source.text[span.range.clone()], |text| text);
-                let number = crate::number::literal(text, *mark, Numeric::current()).map_err(|error| error.at(&span))?;
+                let number = crate::number::literal(text, *mark, Numeric::current()).at(&span)?;
                 let value = if *empty { Value::empty([0], Value::Number(number)).map_err(|kind| Error::new(kind, "invalid empty array").at(&span))? } else { Value::Number(number) };
                 registers[*to as usize] = Some(Entity::of(Binding::Value(value), range.clone(), false));
             }

@@ -1,6 +1,6 @@
 //! Assignment: plain, destructuring, modified and selective.
 
-use super::tree::{Facts, Last, Layer, Split, Target, To};
+use super::tree::{Entity, Term, narrow, Facts, Last, Layer, Split, Target, To};
 use super::*;
 use rustymath::error::Kind;
 

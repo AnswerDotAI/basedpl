@@ -33,7 +33,7 @@ fn started(interrupt: &InterruptHandle, limit: Option<Duration>) {
 
 pub fn items(session: &Session) -> Result<Option<usize>, crate::Error> {
     let result = session.eval("n");
-    if let Some(error) = result.error && error.is_control() { return Err(error); }
+    if let Some(error) = result.error && error.kind.is_control() { return Err(error); }
     let Some(value) = result.value else { return Ok(None) };
     let value = value.read(crate::ReadKind::Count)?;
     session.raise()?;

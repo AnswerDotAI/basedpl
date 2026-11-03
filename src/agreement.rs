@@ -37,8 +37,8 @@ impl Agree for Agreement {
     #[inline]
     fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>) {
         let [x, y] = self.positions(i, || [left.map_or(0, Value::len), right.len()]);
-        let item = |a: &'a Value, j: Option<usize>, map: &Mapping| j.map_or_else(|| Cow::Owned(a.mapped_fill(map)), |j| a.at_ref(j));
-        (left.map(|a| item(a, x, &self.left)), item(right, y, &self.right))
+        let item = |a: &'a Value, j: Option<usize>| j.map_or_else(|| Cow::Owned(a.prototype()), |j| a.at_ref(j));
+        (left.map(|a| item(a, x)), item(right, y))
     }
     fn laid(&self, left: Option<&Value>, right: &Value) -> Result<(Option<Value>, Value), ErrorKind> {
         let laid = |value: &Value, mapping: &Mapping| {

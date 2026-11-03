@@ -75,7 +75,7 @@ pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, fill: Option<&V
     }
     let cell = array.layout().axes(fields.len()..array.shape().len());
     let count = crate::array::element_count(cell.shape())?;
-    let item = array.fill_item(fill);
+    let item = host_item(&array, Steps::FILL, fill)?;
     Frame::Array(cell).collect(vec![item.clone(); count], || item).described("invalid Pick result")
 }
 
@@ -154,7 +154,7 @@ fn cell_offset(layout: &rustymath::layout::Layout, from: usize, fields: &[Value]
     for (axis, (field, &size)) in fields.iter().zip(shape).enumerate() {
         if layout.shape().is_empty() && crate::keyed::name(field).is_some() { return Err(Error::new(Kind::Rank, "a unit has no axis to look up a key on")); }
         let selector = axis_selector(field, layout, from + axis)?;
-        let n = selector.observed_number().described("expected numeric elements")?;
+        let n = numeric(&selector).described("expected numeric elements")?;
         // A NaN position reads the fill, as a position past an empty axis does.
         if n.as_float().is_some_and(f64::is_nan) { offset = None; continue; }
         let k = n.integer().described(rustymath::structure::NOT_WHOLE)?;
@@ -167,18 +167,26 @@ fn cell_offset(layout: &rustymath::layout::Layout, from: usize, fields: &[Value]
 }
 
 /// Adds to `array` the keys that the path `items` names and it lacks, level by level, as `⊃` reads its levels. `⌷` and `.[]` give one item, which selects in one level. A new entry that a later level reads starts as a record, and so does one at the last level where `descend`. Unless `write`, it only finds whether a key is missing, and leaves `array` as it was. Returns whether a key was missing.
-pub(crate) fn extend_path(items: &[Value], mut array: &mut Value, descend: bool, write: bool) -> Result<bool, Error> {
+pub(crate) fn extend_path(items: &[Value], array: &mut Value, descend: bool, write: bool) -> Result<bool, Error> {
     let (mut items, mut lacked) = (items.iter().cloned().peekable(), false);
+    let (mut current, mut parents) = (array.clone(), Vec::new());
     while items.peek().is_some() {
-        let fields = next_level(&mut items, array.shape().len())?;
+        let fields = next_level(&mut items, current.rank())?;
         let last = items.peek().is_none();
-        let missing = extend_fields(array, fields.iter().enumerate(), descend || !last, write)?;
+        let missing = extend_fields(&mut current, fields.iter().enumerate(), descend || !last, write)?;
         if missing && !write { return Ok(true); }
         lacked |= missing;
         if last { break; }
-        let offset = cell_offset(array.layout(), 0, &fields, false)?;
+        let offset = cell_offset(current.layout(), 0, &fields, false)?;
         if offset == Steps::FILL { return Err(Error::new(Kind::Index, "a path can't add keys past an empty axis")); }
-        if write { array = array.item_mut(&[offset], false); } else { *array = array.at(offset); }
+        let child = host_item(&current, offset, None)?;
+        parents.push((current, offset)); current = child;
+    }
+    if write {
+        for (parent, offset) in parents.into_iter().rev() {
+            current = crate::selection::replace(&parent, &[crate::selection::PathPart::Item(offset)], current)?;
+        }
+        *array = current;
     }
     Ok(lacked)
 }
@@ -381,8 +389,7 @@ impl Selection {
 /// The selection that the array `indices` makes as the positions of `@`, as one selector of `⌷`: major cells for positions, or where its items are vectors, the item or cell at each coordinate.
 pub(crate) fn at_indices(right: &Value, indices: &Value, span: &Span) -> Result<Selection, Error> {
     if right.is_unit() { return Err(Error::new(Kind::Length, "a unit has no major-cell axis")); }
-    // In a batched run, positions written as `[⍵]` hold a batch as an item, which joins into one batch of each cell's positions.
-    selection(right, &[IndexPart::Axis(crate::batch::joined(indices.clone()))], false, span)
+    selection(right, &[IndexPart::Axis(indices.clone())], false, span)
 }
 
 /// The selection that the selector `paths` makes as pick paths: the item or cell at the end of each, as `⊃` reads it. Without a suffix, the paths all end at items, or all at cells of one shape. A suffix selects within each path's cell, planned against that cell's own layout, so each cell reads its own keys and names, and the suffix's selections must agree in shape. Where they differ in keys or names, the result's axes keep only their lengths.
@@ -602,7 +609,7 @@ fn axis_selector(value: &Value, layout: &rustymath::layout::Layout, axis: usize)
     match selector {
         Selector::One(k) => position(&k),
         Selector::Many(shape, names) => Value::from_parts(shape, names.iter().map(|k| position(k)).collect::<Result<_, _>>()?, Value::integer(0))
-            .and_then(|v| v.with_layout(value.layout().clone())).described("invalid named selector")
+            ?.with_layout(value.layout().clone()).described("invalid named selector")
     }
 }
 
@@ -655,7 +662,7 @@ pub(super) fn index_roles(call: &CallView<'_>) -> Result<Roles, Error> {
     let root = call.root(call.explicit_argument_roots().start);
     let first = call.root_boundary(call.operation.functions());
     Ok(root.leaves.filter(|&position| selector_parameter(call, position))
-        .fold(Roles::default(), |roles, position| roles.with(position - first, ReadKind::Structure)))
+        .fold(Roles::default(), |reads, position| reads.with(position - first, ReadKind::Structure)))
 }
 
 fn structural_selector(call: &CallView<'_>, root: &TreeRoot) -> bool {

@@ -23,7 +23,7 @@ pub(crate) fn plot(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, 
         Some(mark) if keyed::name(mark).is_some() => Some(keyed::vector(vec!["mark".into()], vec![mark.clone()])), left => left.cloned().map(Ok)
     };
     let spec = keyed::vector(vec!["data".into()], vec![right.clone()]).and_then(|spec| settings.map_or(Ok(spec.clone()), |s| keyed::merge(&spec, &s?)));
-    spec.and_then(|spec| spec.with_renderer(display::renderer("plot-renderer", render))).described("•plot settings must be a keyed vector or a mark")
+    spec?.with_renderer(display::renderer("plot-renderer", render)).described("•plot settings must be a keyed vector or a mark")
 }
 
 fn render(HostCall { right: spec, site: span, .. }: HostCall<'_>) -> Result<Value, Error> {

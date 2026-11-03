@@ -58,16 +58,22 @@ pub(crate) enum DefinitionKind { Function, MonadicOperator, DyadicOperator }
 
 #[derive(Debug)]
 pub(crate) struct Definition {
-    pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, locals: &'static [Name], acts: bool, implicit_generator: bool, calls: &'static [Name],
+    pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, locals: &'static [Name], acts: bool, implicit_generator: bool,
     reads: &'static [Name]
 }
 impl Definition {
+    pub(crate) fn new(mut bodies: Vec<Vec<Statement>>, span: Span) -> Self {
+        let kind = definition_kind(&bodies);
+        let locals = locals(&bodies);
+        let (acts, implicit_generator) = effects(&bodies);
+        let reads = read_names(&bodies);
+        release(&mut bodies, locals);
+        Self { bodies, span, kind, locals, acts, implicit_generator, reads }
+    }
     /// The names that the definition could assign, sorted, which each of its calls keeps in slots.
     pub fn locals(&self) -> &'static [Name] { self.locals }
-    /// Whether a call of the definition may act (target part 17): its body holds `⎕←`, a `⎕` read, `⍎`, a call of an acting system function (`SystemFunction::acts`), or a nested definition that acts. `Function::acts` reads it.
+    /// Effects visible in its syntax, including nested definitions.
     pub(crate) fn acts(&self) -> bool { self.acts }
-    /// The free names that the body reads, nested definitions included, sorted: the functions it may call by name, whatever those names hold when it runs, which `Function::acts` looks up.
-    pub(crate) fn calls(&self) -> &[Name] { self.calls }
     pub(crate) fn implicit_generator(&self) -> bool { self.implicit_generator }
     pub(crate) fn reads(&self) -> &'static [Name] { self.reads }
 }
@@ -116,26 +122,25 @@ fn read_names(bodies: &[Vec<Statement>]) -> &'static [Name] {
     names.sort_unstable(); names.dedup();
     crate::name::kept(&names)
 }
-/// Whether a call of a definition with these bodies and `locals` may act, and the free names its bodies read, nested definitions included (`Definition::acts`, `Definition::calls`). A nested definition adds its own, which its flags already cover, so its nodes are skipped.
-fn effects(bodies: &[Vec<Statement>], locals: &[Name]) -> (bool, bool, &'static [Name]) {
-    let (mut acts, mut implicit_generator, mut names) = (false, false, Vec::new());
-    let free = |name: &Name| name.implicit().is_none() && locals.binary_search(name).is_err();
+fn effects(bodies: &[Vec<Statement>]) -> (bool, bool) {
+    let (mut acts, mut implicit_generator) = (false, false);
     for statement in bodies.iter().flatten() {
         visit(&statement.nodes, NameUse::default(), false, &mut |node, _, nested| {
-            if nested { return }
+            if nested { return; }
             match &node.kind {
                 NodeKind::Function(Builtin::Primitive(primitive)) if primitive.implicit_generator() => implicit_generator = true,
                 NodeKind::Output | NodeKind::Function(Builtin::Primitive(Primitive::Execute)) => acts = true,
-                NodeKind::Function(Builtin::System(entry)) => { let function = entry.built(); acts |= function.acts(); implicit_generator |= function.implicit_generator(); }
-                NodeKind::Dfn(definition) => { acts |= definition.acts; implicit_generator |= definition.implicit_generator; names.extend(definition.calls.iter().copied().filter(free)); }
-                NodeKind::Name(name, _) if free(name) => names.push(*name),
+                NodeKind::Function(Builtin::System(entry)) => {
+                    let function = entry.built();
+                    acts |= function.system_function().is_some_and(|function| function.acts());
+                    implicit_generator |= function.implicit_generator();
+                }
+                NodeKind::Dfn(definition) => { acts |= definition.acts; implicit_generator |= definition.implicit_generator; }
                 _ => {}
             }
         });
     }
-    names.sort_unstable();
-    names.dedup();
-    (acts, implicit_generator, crate::name::kept(&names))
+    (acts, implicit_generator)
 }
 
 pub(crate) fn plain_target(nodes: &[Node]) -> bool {
@@ -835,16 +840,7 @@ impl Parser<'_> {
                     span.range.end = self.tokens[self.pos - 1].span.range.end;
                     let mark = match self.tokens[self.pos - 1].kind { TokenKind::Close(mark) | TokenKind::BracketClose(mark) => mark, _ => None };
                     match token.kind {
-                        TokenKind::BraceOpen => {
-                            let mut bodies = bodies(inner, &span)?;
-                            let kind = definition_kind(&bodies);
-                            let locals = locals(&bodies);
-                            let (acts, implicit_generator, calls) = effects(&bodies, locals);
-                            let reads = read_names(&bodies);
-                            release(&mut bodies, locals);
-                            NodeKind::Dfn(Arc::new(Definition { locals, acts, implicit_generator, calls, bodies, span: span.clone(), kind,
-                                reads }))
-                        }
+                        TokenKind::BraceOpen => NodeKind::Dfn(Arc::new(Definition::new(bodies(inner, &span)?, span.clone()))),
                         TokenKind::Open if let Some(mark) = mark => marked_literal(parenthesised(inner, &span)?, &span, mark)?,
                         TokenKind::Open => parenthesised(inner, &span)?,
                         _ if let Some(mark) = mark => marked_literal(brackets(inner, &span)?, &span, mark)?,

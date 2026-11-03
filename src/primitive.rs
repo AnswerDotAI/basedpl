@@ -1,13 +1,12 @@
 use crate::execution::check;
 use crate::session;
-use crate::transform::Plain;
 use crate::{
     Described, Error, ErrorKind, Number, Span, Value, agreement::{Agree, Agreement}, eval::Function,
-    array::{Frame, Items, Lanes, Layout, Steps, Tree, TreeInput, TreeRoot, Widening, generated_len, or_and_sum, saturated}, keyed::Selector,
+    array::{Frame, Items, Lanes, Layout, Tree, TreeInput, TreeRoot, Widening, generated_len, saturated}, keyed::Selector,
     number::{Arithmetic, Kind as NumberKind, Kinds, Mark, Math, Numbers, Numeric, int::Int}, program::{control, Desc, Mode, Origin, Outputs, Step, trace::ReadKind}, search::{Cells, classify, first_matches, firsts}
 };
 use rustymath::hashing::{HashMap, HashMapExt};
-use rustymath::{Binary as _, agreement::{Mapping, ReadPlan}, buffer::{DType, FloatWidth, Width}, error::Kind, layout::{shown, strides}, with_width};
+use rustymath::{Binary as _, agreement::{Mapping, ReadPlan}, buffer::{DType, FloatWidth, Width}, error::Kind, gather::Steps, layout::{shown, strides}, with_width};
 use std::{borrow::Cow, cmp::Ordering};
 
 mod indexing;
@@ -15,7 +14,6 @@ mod numeric;
 mod search;
 mod structural;
 use search::*;
-pub(crate) use search::cell_grades;
 pub(crate) use {indexing::*, numeric::*, structural::*};
 
 /// A reduce or scan along the last or first axis. Its glyphs are `/ ⌿ \ ⍀`.
@@ -143,8 +141,6 @@ pub(crate) enum Pairing {
     Explicit { fill: bool },
     /// Part 5: by axis: leading axes agree, or by number or name through `⍠`'s operand, a parameter.
     Axes,
-    /// A Cartesian product: no axes agree.
-    Outer,
     /// Part 5: as matrices, over a stack of leading axes.
     Matrices { frame: usize },
 }
@@ -417,9 +413,10 @@ impl Operation {
             Self::Recipe(RecipeOp::FloatFloor) => call.kernel_for(Primitive::Math(Math::Floor), false, variant),
             Self::Recipe(op) => Ok(op.kernel(variant)),
             Self::Fold { primitive, .. } | Self::At { combine: Some(primitive), .. } => call.kernel_for(*primitive, true, variant),
-            Self::Product { .. } => match call.product_fold().and_then(Function::dyadic_primitive) {
-                Some(fold) => call.kernel_for(fold, true, variant), None => Ok(None),
-            },
+            Self::Product { contracted, .. } => {
+                let function = if *contracted == 0 { call.product_map() } else { call.product_fold() };
+                match function.and_then(Function::dyadic_primitive) { Some(primitive) => call.kernel_for(primitive, true, variant), None => Ok(None) }
+            }
             _ => Ok(None),
         }
     }
@@ -604,7 +601,7 @@ impl Operation {
         else if matches!(call.operation, Self::ReadRelation { .. }) { crate::plan::roles_relation(call)? }
         else if let Some(row) = call.row() { (row.roles)(call)? } else { match call.operation {
             Self::Product { .. } => numeric::roles(call)?,
-            Self::Join(Notation::Cells) => call.root(0).leaves.fold(Roles::default(), |roles, position| roles.with(position, ReadKind::Description)),
+            Self::Join(Notation::Cells) => call.root(0).leaves.fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Description)),
             Self::Read(ReadOp::Reshape) => Roles::default().with(0, ReadKind::Structure),
             Self::Read(ReadOp::Slice { .. }) => Roles::default().with(0, ReadKind::Value),
             _ => Roles::default(),
@@ -919,6 +916,7 @@ pub(crate) fn special(crate::system::HostCall { right, .. }: crate::system::Host
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Builtin { Primitive(Primitive), System(crate::system::Entry) }
 impl Builtin {
+    pub(crate) fn function(self) -> Function { match self { Self::Primitive(primitive) => Function::primitive(primitive), Self::System(entry) => entry.built() } }
     /// The builtin spelled `text`: a glyph or its Hanzi spelling, or a system name in any case, whose `•` may be spelled `系`.
     pub(crate) fn find(text: &str) -> Option<Self> {
         let first = text.chars().next()?;
@@ -1161,7 +1159,7 @@ fn description_roles(call: &CallView<'_>) -> Result<Roles, Error> {
     if call.explicit_argument_roots().len() != 1 { return Ok(Roles::default()); }
     let root = call.root(call.explicit_argument_roots().start);
     let first = call.root_boundary(call.operation.functions());
-    Ok(root.leaves.fold(Roles::default(), |roles, position| roles.with(position - first, ReadKind::Description)))
+    Ok(root.leaves.fold(Roles::default(), |reads, position| reads.with(position - first, ReadKind::Description)))
 }
 fn primitive_form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
     let Operation::Primitive { primitive, .. } = &origin.operation else { return Ok(None) };
@@ -1295,10 +1293,10 @@ fn host_primitive(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
             let span = call.site.cloned().unwrap_or_else(|| Span::whole(crate::Source::new("<primitive>", primitive.glyph())));
             let axis_spec = call.axis_root().map(|root| call.root_value(root.index, ReadKind::Structure)).transpose()?;
             let axes = axis_spec.as_deref().map(|spec| resolve_axes(spec, right.layout()).and_then(|spec| axes(&spec, right.rank()))).transpose()?;
-            let axis = axes.as_deref().map(|axes| if let [axis] = axes { Ok(*axis) } else { Err(Error::new(Kind::Rank, "one axis is required")) }).transpose()?;
+            let axis = || axes.as_deref().map(|axes| if let [axis] = axes { Ok(*axis) } else { Err(Error::new(Kind::Rank, "one axis is required")) }).transpose();
             match (*primitive, left) {
-                (Keys, None) => crate::keyed::remove(&right, axis).described("invalid axis keys")?,
-                (Keys, Some(left)) => crate::keyed::construct(left, &right, axis).described("invalid axis keys")?,
+                (Keys, None) => crate::keyed::remove(&right, axes.as_deref()).described("invalid axis keys")?,
+                (Keys, Some(left)) => crate::keyed::construct(left, &right, axes.as_deref()).described("invalid axis keys")?,
                 (Math(crate::number::Math::Not), Some(left)) => without(left, &right, numeric)?,
                 (Compare(Equal), None) => self_classify(&right, numeric)?, (Compare(NotEqual), None) => unique_mask(&right, numeric)?,
                 (Compare(Less | Greater), None) => sort(&right, *primitive == Compare(Greater), &span)?,
@@ -1318,10 +1316,10 @@ fn host_primitive(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
                 (Tally, Some(left)) => Value::Number(Number::from_bool(!left.matches_within(&right, numeric)?)),
                 (Iota, Some(left)) => index_of(left, &right, numeric)?, (Iota, None) => iota(&right, numeric)?, (Range, _) => range(left, &right, &span, numeric)?,
                 (Where, Some(left)) => interval_index(left, &right)?, (Where, None) => where_indices(&right, numeric)?,
-                (Replicate, Some(left)) => replicate(left, &right, axis, false, fill.as_deref().cloned())?, (Replicate, None) => runs(&right, numeric)?,
-                (Reverse(first), _) => rotate(left, &right, axis.unwrap_or(if first { 0 } else { right.rank().saturating_sub(1) }))?,
+                (Replicate, Some(left)) => replicate(left, &right, axis()?, false, fill.as_deref().cloned())?, (Replicate, None) => runs(&right, numeric)?,
+                (Reverse(first), _) => rotate(left, &right, axis()?.unwrap_or(if first { 0 } else { right.rank().saturating_sub(1) }))?,
                 (Transpose, _) => transpose(left, &right)?,
-                (Ravel | CatenateFirst, Some(left)) => catenate(left, &right, axis, *primitive == CatenateFirst, numeric)?,
+                (Ravel | CatenateFirst, Some(left)) => catenate(left, &right, axis()?, *primitive == CatenateFirst, numeric)?,
                 (Ravel, None) => right.relaid(Layout::from([right.len()]))?,
                 (CatenateFirst, None) => {
                     let rows = right.shape().first().copied().unwrap_or(1);
@@ -1334,12 +1332,12 @@ fn host_primitive(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
                     let mixed = crate::array::assemble_stored(right.layout(), &right.elements().collect::<Vec<_>>(), &right.prototype(), Widening::Arrays, fill.as_deref(), numeric)?;
                     match axis_spec { Some(spec) => placed_cells(&mixed, right.rank(), &spec)?, None => mixed }
                 },
-                (Enclose | Nest, Some(left)) => partition(left, &right, axis, *primitive == Nest)?,
+                (Enclose | Nest, Some(left)) => partition(left, &right, axis()?, *primitive == Nest)?,
                 (Enclose | Nest, None) => if let Some(axes) = axes { enclose_axes(&right, &axes)? }
                     else if *primitive == Nest && right.elements().chain([right.prototype()]).any(|value| matches!(value, Value::Array(_))) { right.into_owned() }
                     else { right.enclose().described("invalid enclosure")? },
                 (Take, None) => pick(&Value::integer(0), &right, session().prototype.get(), fill.as_deref(), &span)?,
-                (Drop, None) => split(&right, axis)?, (Take | Drop, Some(left)) => take_drop(*primitive == Take, left, &right, axes.as_deref(), fill.as_deref().cloned())?,
+                (Drop, None) => split(&right, axis()?)?, (Take | Drop, Some(left)) => take_drop(*primitive == Take, left, &right, axes.as_deref(), fill.as_deref().cloned())?,
                 (PartialSort { .. } | Ranks { .. }, _) => search::combined(*primitive, left, &right, &span, numeric)?,
                 _ => return Err(Error::new(ErrorKind::Unsupported, "primitive host implementation is unfinished")),
             }
@@ -1372,7 +1370,7 @@ pub(super) fn metadata(call: &CallView<'_>) -> Result<Option<(Desc, ReadPlan)>, 
     let layout_known = known || call.trees.is_some_and(|trees| matches!(trees.root_at(&root), Tree::Array { .. }));
     if !layout_known || *primitive == Primitive::Depth && !known { return Ok(None); }
     let depth = (*primitive == Primitive::Depth).then(|| call_depth(call, roots.start)).transpose()?;
-    metadata_result(*primitive, &call.root_layout(roots.start)?, depth, call.numeric()?).map(Some)
+    metadata_result(*primitive, call.root_layout(roots.start)?.as_ref(), depth, call.numeric()?).map(Some)
 }
 fn code_metadata(call: &CallView<'_>) -> Result<Value, Error> {
     let (desc, plan) = match metadata(call)? {
@@ -1439,7 +1437,6 @@ pub(crate) fn pervade(left: Option<&Value>, right: &Value, numeric: Numeric, agr
         let empty = pervade(left.map(Value::prototype).as_ref(), &right.prototype(), numeric, None, fill, &prototype)?;
         return Ok(Value::stored_values(agreement.layout, Vec::new(), Some(empty), widening)?);
     }
-    crate::explain::itemwise(rustymath::events::Route::ItemPairs, agreement.len);
     let item = |value: &Value, map: &Mapping, at| match map.get(at).filter(|&at| at < value.len()) {
         Some(at) => (walk.item)(value, at), None => Ok(fill.cloned().unwrap_or_else(|| value.prototype())),
     };
@@ -1678,7 +1675,7 @@ fn inverse_where(right: &Value) -> Result<Value, Error> {
     for e in right.elements() {
         let a = e.clone();
         if a.shape().len() > 1 { return Err(Error::new(Kind::Rank, "inverse where coordinates must be vectors")); }
-        let coordinate = a.elements().map(|e| e.observed_number().and_then(|n| n.nonnegative_integer::<usize>()).described("invalid position"))
+        let coordinate = a.elements().map(|e| numeric(&e)?.nonnegative_integer::<usize>().described("invalid position"))
             .collect::<Result<Vec<_>, _>>()?;
         if coordinates.is_empty() { shape.resize(coordinate.len(), 0); }
         if coordinate.len() != shape.len() { return Err(Error::new(Kind::Length, "coordinate lengths differ")); }

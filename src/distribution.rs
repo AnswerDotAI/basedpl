@@ -276,7 +276,7 @@ pub(crate) fn build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) ->
     Ok((Step::Draw, Some(Outputs::one(Some(desc))), None))
 }
 
-fn frame(call: &CallView<'_>) -> Result<Option<std::borrow::Cow<'_, Desc>>, Error> {
+fn frame<'a>(call: &'a CallView<'_>) -> Result<Option<std::borrow::Cow<'a, Desc>>, Error> {
     implicit_position(call.operation, call.explicit, call.captures, ImplicitInput::Frame)
         .map(|position| call.desc(position).ok_or_else(Error::planning)).transpose()
 }
@@ -331,7 +331,7 @@ pub(crate) fn code(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
         }
         Draw::Uniform(Law::Deal) => {
             let desc = deal_description(call)?;
-            deal(&call.root_value(roots.start, ReadKind::Count)?, &call.root_value(roots.end - 1, ReadKind::Value)?, &mut items, numeric, desc.as_ref())?
+            deal(call.root_value(roots.start, ReadKind::Count)?.as_ref(), call.root_value(roots.end - 1, ReadKind::Value)?.as_ref(), &mut items, numeric, desc.as_ref())?
         }
     };
     Ok(Outputs::one(result))
@@ -445,7 +445,7 @@ fn deal_numbers(n: Numbers, total: Numbers) -> Numbers {
 }
 fn deal_description(call: &CallView<'_>) -> Result<Option<Desc>, Error> {
     let roots = call.explicit_argument_roots();
-    let n = deal_item(&call.root_value(roots.start, ReadKind::Count)?)?;
+    let n = deal_item(call.root_value(roots.start, ReadKind::Count)?.as_ref())?;
     let count = deal_count(&n)?;
     let root = call.root(roots.end - 1);
     if root.leaves.len() != 1 { return Ok(None); }

@@ -1,8 +1,8 @@
 //! Agenda selection and ordinary cached case calls.
 use super::{Desc, Node, Origin, Outputs, Step};
-use crate::{Error, ErrorKind, Function, Value, array::{Layout, Widening}, error::Result, number::{Kind, Kinds, Numeric},
+use crate::{Error, Function, agreement::Agree, Value, array::{Layout, Widening}, error::Result, number::{Kind, Kinds, Numeric},
     primitive::{CallView, Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis}, program::trace::{self, ReadKind}};
-use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth}, convert::ConversionKind};
+use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth}, convert::ConversionKind, error::Kind as ErrorTag};
 
 fn roots(origin: &Origin<&[Value]>) -> Result<Vec<Value>> {
     let mut roots = match &origin.trees { Some(trees) => trees.build(origin.list), None => origin.list[..origin.explicit as usize].to_vec() };
@@ -115,7 +115,7 @@ fn selected_cells(parent: &Origin<&[Value]>, value: &Value, frame: &Value, rows:
     let cells = (0..value.rank()).filter(|axis| !paired.contains(axis)).collect::<Vec<_>>();
     let source = value.layout().axes(paired.iter().copied().filter(|&axis| axis < value.rank()));
     if crate::agreement::Agreement::new(frame.layout(), &source)?.layout != *frame.layout() {
-        return Err(Error::new(ErrorKind::Length, "an agenda argument does not agree with the selector"));
+        return Err(Error::new(ErrorTag::Length, "an agenda argument does not agree with the selector"));
     }
     let dimensions = (0..frame.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) })
         .chain(cells.iter().map(|&axis| ViewAxis { input: 0, axis: Some(axis) })).collect();
@@ -180,7 +180,7 @@ impl Made {
         let value = if value.pending().is_some_and(|pending| pending.description().is_none()) { value.read(ReadKind::Structure)? } else { value };
         if value.is_singleton() { return Ok(Self::Fill(value)); }
         let value = crate::keyed::reorder(&value, &rows.all_keys(), true)?;
-        if value.shape().first() != rows.shape().first() { return Err(Error::new(ErrorKind::Length, "a case needs one result for each cell that picks it")); }
+        if value.shape().first() != rows.shape().first() { return Err(Error::new(ErrorTag::Length, "a case needs one result for each cell that picks it")); }
         Ok(Self::Cells(value))
     }
     fn value(&self) -> &Value { match self { Self::Cells(value) | Self::Fill(value) => value } }
@@ -207,11 +207,11 @@ pub(crate) fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>> {
     if let Some(result) = masked(&origin, selector, args, &cases)? { return Ok(Some(result)); }
     let right = args.last().ok_or_else(Error::planning)?;
     let axes = rustymath::agreement::Agreement::paired_axes(right.layout(), selector.layout(), true);
-    if axes.iter().any(|&axis| axis >= right.rank()) { return Err(Error::new(ErrorKind::Rank, "the selector has an axis that the argument lacks")); }
+    if axes.iter().any(|&axis| axis >= right.rank()) { return Err(Error::new(ErrorTag::Rank, "the selector has an axis that the argument lacks")); }
     let frame = right.layout().axes(axes.iter().copied());
     let argument_cell = right.layout().axes((0..right.rank()).filter(|axis| !axes.contains(axis)));
     let agreement = crate::agreement::Agreement::new(&frame, selector.layout())?;
-    if agreement.layout != frame { return Err(Error::new(ErrorKind::Length, "the selector does not agree with the argument")); }
+    if agreement.layout != frame { return Err(Error::new(ErrorTag::Length, "the selector does not agree with the argument")); }
     let positions = selector_positions(selector, count, origin.mode.dynamic)?;
     let mut groups = vec![Vec::new(); count];
     for row in 0..frame.count() {
@@ -282,7 +282,7 @@ fn placed(parent: &Origin<&[Value]>, value: Value, axes: &[usize], rank: usize) 
     let order = (0..rank).map(|axis| axes.iter().position(|&selected| selected == axis)
         .unwrap_or_else(|| axes.len() + (0..axis).filter(|axis| !axes.contains(axis)).count())).collect::<Vec<_>>();
     let dimensions = order.iter().map(|&axis| ViewAxis { input: 0, axis: Some(axis) }).collect();
-    let destinations = rustymath::search::inverse_permutation(order);
+    let destinations = rustymath::search::inverse_permutation(order.into_iter());
     call(parent, Operation::Read(ReadOp::Axes { axes: dimensions, destinations: destinations.into() }), &[value])
 }
 

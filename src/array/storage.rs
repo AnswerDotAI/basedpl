@@ -30,7 +30,7 @@ pub(crate) fn joined_kind(items: &[Value], widening: Widening) -> Option<Logical
 pub(crate) fn packed(items: &[Value], widening: Widening) -> Option<(Buffer, LogicalKind)> {
     if !items.iter().all(|value| matches!(value, Value::Number(_) | Value::Character(_))) { return None; }
     let kind = joined_kind(items, widening)?;
-    let number = |value: &Value| match value { Value::Number(n) => Some(n), _ => None };
+    fn number(value: &Value) -> Option<&Number> { match value { Value::Number(n) => Some(n), _ => None } }
     let buffer = match kind.dtype() {
         DType::Boolean => Buffer::Booleans(items.iter().map(|v| number(v)?.as_bool()).collect::<Option<_>>()?),
         DType::Integer(width) => {

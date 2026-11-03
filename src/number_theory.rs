@@ -60,7 +60,7 @@ fn nth_primes(right: &Value, numeric: Numeric) -> Result<Value, Error> {
     }).collect::<Result<Vec<_>, Error>>()?;
     requests.sort_unstable();
     let (mut primes, mut index, mut p) = (nt::Primes::new(0), 0, 0);
-    let prototype = Integers { persistent: right.prototype().as_number().is_some_and(Number::is_unbounded), numeric }.value(0);
+    let prototype = Integers { persistent: right.prototype().as_number().is_some_and(|n| n.is_unbounded()), numeric }.value(0);
     let mut result = vec![prototype.clone(); right.len()];
     for (n, i, persistent) in requests {
         if n >= index {
@@ -116,7 +116,7 @@ fn each_cell(left: Option<&Value>, right: &Value, numeric: Numeric, f: impl Fn(O
         let x = x.as_deref().map(|a| number(a)).transpose()?;
         let source = if right.is_empty() { None } else { Some(number(&y)?) };
         let n = source.as_ref().map_or_else(|| Ok(BigInt::one()), |n| n.big_integer()).described("number theory requires whole numbers")?;
-        let persistent = source.as_ref().map_or_else(|| right.prototype().as_number().is_some_and(Number::is_unbounded), Number::is_unbounded);
+        let persistent = source.as_ref().map_or_else(|| right.prototype().as_number().is_some_and(|n| n.is_unbounded()), Number::is_unbounded);
         cells.push(f(x.as_ref(), n, Integers { persistent, numeric })?);
     }
     if right.is_atom() && left.is_none_or(Value::is_atom) { return Ok(cells.remove(0)); }
@@ -137,6 +137,6 @@ pub(crate) fn product(right: &Value, numeric: Numeric) -> Result<Value, Error> {
         data.push(Integers { persistent, numeric: numeric.for_values([&cell])? }.value(product));
     }
     if cells.frame().is_empty() { return Ok(data.remove(0)); }
-    let prototype = Integers { persistent: right.prototype().as_number().is_some_and(Number::is_unbounded), numeric }.value(0);
+    let prototype = Integers { persistent: right.prototype().as_number().is_some_and(|n| n.is_unbounded()), numeric }.value(0);
     cells.frame_layout().collect(data, prototype).described("invalid factor product")
 }

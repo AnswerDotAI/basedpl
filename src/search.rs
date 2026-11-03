@@ -22,7 +22,7 @@ use num_traits::ToPrimitive;
 pub(crate) enum Cells<'a> { Items(&'a Value), Arrays(Vec<Value>) }
 
 impl<'a> Cells<'a> {
-    pub(crate) fn of(array: &'a Value, rank: usize) -> Result<Self, ErrorKind> {
+    pub(crate) fn of(array: &'a Value, rank: usize) -> Result<Self, Error> {
         Ok(if rank == 0 { Self::Items(array) } else { Self::Arrays(array.cells(rank)?.collect()?) })
     }
     pub(crate) fn len(&self) -> usize { match self { Self::Items(a) => a.len(), Self::Arrays(cells) => cells.len() } }

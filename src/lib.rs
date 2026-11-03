@@ -55,7 +55,7 @@ pub use array::{Prototype, Shape, Value};
 pub(crate) use error::{At, Described};
 pub use error::{Error, ErrorKind, Source, Span};
 pub(crate) use eval::session;
-pub use eval::{Evaluation, Function, Operand, Operator, Session, Turn};
+pub use eval::{Evaluation, Function, Operator, OperatorValue, Session, Turn};
 pub use execution::{EvalOptions, Input, InterruptHandle, MimeBundle, MimeData, Output, OutputKind, OutputSink, Poll};
 pub use graph::forced;
 #[cfg(web)]

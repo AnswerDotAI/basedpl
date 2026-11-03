@@ -59,7 +59,7 @@ pub(super) fn find(left: &Value, right: &Value, numeric: Numeric) -> Result<Valu
     };
     let data = match compact { Some(data) => data, None => rustymath::search::find_with(left.shape(), shape, |i, o| left.at(i).matches_within(&right.at(o), numeric))? };
     if right.is_atom() { return Ok(Value::Number(Number::from_bool(data[0]))); }
-    Value::booleans(shape.to_vec(), data).and_then(|v| v.with_layout(right.layout().clone())).described("invalid find result")
+    Value::booleans(shape.to_vec(), data)?.with_layout(right.layout().clone()).described("invalid find result")
 }
 
 pub(super) fn self_classify(right: &Value, numeric: Numeric) -> Result<Value, Error> {
@@ -144,7 +144,7 @@ pub(super) fn index_roles(call: &CallView<'_>) -> Result<Roles, Error> {
     if call.explicit_argument_roots().len() != 1 { return Ok(Roles::default()); }
     let root = call.root(call.explicit_argument_roots().start);
     let first = call.root_boundary(call.operation.functions());
-    Ok(root.leaves.fold(Roles::default(), |roles, position| roles.with(position - first, ReadKind::Count)))
+    Ok(root.leaves.fold(Roles::default(), |reads, position| reads.with(position - first, ReadKind::Count)))
 }
 
 pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
@@ -182,7 +182,7 @@ pub(super) fn iota(right: &Value, numeric: Numeric) -> Result<Value, Error> {
         let data = (0..len).map(|i| coordinates(&lengths, &shape, i, count)).collect();
         Value::from_parts(shape, data, prototype)
     };
-    indices.and_then(|a| a.with_axis_names(super::structural::shape_names(right))).described("invalid iota")
+    indices?.with_axis_names(super::structural::shape_names(right)).described("invalid iota")
 }
 
 /// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within comparison tolerance. Each item is `a+i` or `a-i` for a count `i`, which is exact, or a fixed integer of the width that fixed arguments give (`Numeric::for_values`), so the result's type follows `a`'s, or that fixed type. The distance is `b-a` between ordinary values, so it can't wrap, and two characters count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the type of `n`.
@@ -212,7 +212,7 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span, numeric: N
 
 /// `⍸` of an unkeyed vector of integer counts. One pass checks the counts, and a second writes each position.
 fn where_vector(counts: &[i64]) -> Result<Value, Error> {
-    let (any, sum) = or_and_sum(counts);
+    let (any, sum) = counts.iter().fold((0i64, 0i64), |(any, sum), &n| (any | n, sum.wrapping_add(n)));
     if any < 0 { return Err(Error::domain("where needs nonnegative whole counts")); }
     let boolean = any <= 1;
     let total = if boolean { sum as usize } else { counts.iter().fold(0usize, |total, &n| total.saturating_add(rustymath::structure::Count::of(n).magnitude)) };
@@ -287,7 +287,7 @@ pub(super) fn index_of(left: &Value, right: &Value, numeric: Numeric) -> Result<
     let (positions, frame, bound) = search(left, right, numeric)?;
     match bound {
         Some(bound) => frame.positions_u32(positions, bound),
-        None => frame.collect(positions.into_iter().map(|p| position_value(left, 0, p as usize)), Value::integer(0)),
+        None => Ok(frame.collect(positions.into_iter().map(|p| position_value(left, 0, p as usize)), Value::integer(0))?),
     }.described("invalid index-of result")
 }
 
@@ -371,7 +371,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool) -> Result<V
         indices = (0..count as u32).collect();
         indices.sort_by(|&a, &b| direction(keys[a as usize].cmp(&keys[b as usize])));
     } else {
-        let cells = right.cells(right.shape().len() - 1).and_then(|c| c.collect()).described("invalid grade cells")?;
+        let cells = right.cells(right.shape().len() - 1)?.collect().described("invalid grade cells")?;
         let mut unordered = false;
         indices = (0..count as u32).collect();
         indices.sort_by(|&a, &b| match array_order(&cells[a as usize], &cells[b as usize]) {
@@ -379,7 +379,7 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool) -> Result<V
         });
         if unordered { return Err(Error::domain("functions have no ordering")); }
     }
-    positions(right, indices).and_then(|g| g.with_layout(layout)).described("invalid grade result")
+    positions(right, indices)?.with_layout(layout).described("invalid grade result")
 }
 
 /// `right`'s major cells in the order that `grade` gives, as `[⍋v]⌷v` or `[⍒v]⌷v`. A unit has one item, so it is already sorted.
@@ -387,7 +387,7 @@ pub(super) fn sort(right: &Value, down: bool, span: &Span) -> Result<Value, Erro
     if right.is_unit() { return Ok(right.clone()); }
     if right.shape().len() == 1 && right.keys(0).is_none() {
         if let Some(sorted) = compact_view(&Cells::Items(right)).map(|v| rustymath::search::view_sort(v, down)).transpose()?.flatten() {
-            return Value::from_buffer_at(right.shape(), sorted, right.fixed_width()).and_then(|v| v.with_layout(right.layout().clone()))
+            return Value::from_buffer_at(right.shape(), sorted, right.fixed_width())?.with_layout(right.layout().clone())
                 .described("invalid sort");
         }
     }
@@ -426,7 +426,7 @@ fn partial(grade: bool, down: bool, take: bool, left: Option<&Value>, right: &Va
     if range.len() > n / 4 { return None; }
     let taken = rustymath::search::view_selected(right.view()?, range, down)?;
     Some((|| {
-        let positions = Value::positions_u32([taken.len()], n, taken).and_then(|p| p.along_first_of(right)).described("invalid selected order")?;
+        let positions = Value::positions_u32([taken.len()], n, taken)?.along_first_of(right).described("invalid selected order")?;
         let selected = if grade { positions } else {
             let selector = Value::new([1], vec![positions]).described("invalid selected order")?;
             Primitive::Index.call(Some(&selector), right, span, numeric)?
@@ -441,7 +441,7 @@ fn ranks(down: bool, right: &Value, span: &Span, numeric: Numeric) -> Result<Val
     let Items::Compact(View::Integers(ints)) = grade.as_items() else { return Primitive::Grade(false).call(None, &grade, span, numeric) };
     let n = grade.len();
     let ranks = rustymath::with_ints!(ints, |positions| rustymath::search::inverse_permutation(positions.iter().map(|&p| i64::from(p) as usize)));
-    Value::positions_u32([n], n, ranks).and_then(|r| r.along_first_of(right)).described("invalid ranks")
+    Value::positions_u32([n], n, ranks)?.along_first_of(right).described("invalid ranks")
 }
 
 

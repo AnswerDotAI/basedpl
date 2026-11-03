@@ -355,11 +355,11 @@ fn compiled_stages_match_interpreted() {
                     session.set("source", basedpl::keyed::text(code)).unwrap();
                     eval("report←•explain source");
                     let value = eval("report.value").unwrap_or_else(|| panic!("{code} gave no value"));
-                    let runs = eval(r#"+/report.routes.calls×("compiled"≡)¨report.routes.route"#).unwrap().as_number().unwrap().to_float().unwrap();
+                    let runs = eval(r#"+/report.routes.calls×("compiled"≡)¨report.routes.route"#).unwrap().as_number().unwrap().as_integer().unwrap();
                     (value, runs)
                 };
                 let (compiled, runs) = run(Compiles::Always);
-                assert!(runs > 0.0, "{code} on {n} items ran no compiled part");
+                assert!(runs > 0, "{code} on {n} items ran no compiled part");
                 let interpreted = run(Compiles::Never).0;
                 assert_eq!(basedpl::reference::difference(&compiled, &interpreted, None, 0.0, true), None, "{code} on {n} items");
             }

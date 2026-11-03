@@ -3,7 +3,7 @@ use crate::session;
 use crate::{Described, Error, ErrorKind, Function, Span, Value, ReadKind, program::{Origin, Outputs},
     array::generated_len, number::Numeric, eval::OperatorKind, primitive::{Act, CallView, Operation, Primitive, Roles, Row, numeric}};
 use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth, View}, error::Kind, facts::Variant, layout::FRESH, operation::Kernel};
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, hash::{Hash, Hasher}, sync::Arc};
 
 #[derive(Clone, Copy)]
 pub(crate) struct HostCall<'a> {
@@ -72,6 +72,10 @@ impl PartialEq for SystemFunction {
             (Call::Js(x), Call::Js(y)) => same_arc(x, y), (x, y) => std::mem::discriminant(x) == std::mem::discriminant(y)
         }
     }
+}
+impl Eq for SystemFunction {}
+impl Hash for SystemFunction {
+    fn hash<H: Hasher>(&self, state: &mut H) { self.name.hash(state); }
 }
 
 impl Valence {
@@ -258,7 +262,7 @@ const BUILTINS: &[SystemFunction] = &[
     row("•fetch", Call::Value(crate::data::fetch), Ambivalent, Some(Text), Some(record), None).acting_as(Acts::Ends),
     row("•deflate", Call::Value(crate::data::inflate), Ambivalent, Some(Vector), Some(numbers), Some((crate::data::deflate, Ambivalent))),
     row("•hash", Call::Value(crate::data::hash), Ambivalent, Some(Vector), Some(text), None),
-    row("•uuid", Call::Value(crate::data::uuid), Ambivalent, Some(Number), Some(text), None).acting_as(Acts::When(crate::data::uuid_acts)),
+    row("•uuid", Call::Value(crate::data::uuid), Ambivalent, Some(Number), Some(text), None).acting_as(Acts::When(|left, right| if left.is_none() && right.as_number().and_then(|n| n.integer().ok()).is_some_and(|v| matches!(v, 1 | 4 | 6 | 7)) { Acts::Records } else { Acts::Never })),
     row("•normalize", Call::Value(normalize), Ambivalent, Some(Text), Some(text), None),
     row_of("•decompose", Call::Value(crate::primitive::decompose), Dyadic, None, Some(record), Some((crate::primitive::recompose, Dyadic)), Cells::Stacked(crate::primitive::stacked_decompositions)),
     row_of("•ucs", Call::Value(unicode_convert), Ambivalent, Some(Vector), Some(numbers), Some((unicode_convert, Ambivalent)), Cells::Elements),
@@ -399,23 +403,30 @@ fn delay(HostCall { right, .. }: HostCall<'_>) -> Result<(Value, bool), Error> {
     Ok((Value::Number(crate::Number::float(start.elapsed().as_secs_f64(), FloatWidth::F64)), true))
 }
 
-/// `•storage Y`: how `Y`'s items are held, as a record. `kind` names the storage (`Value::storage_kind`). Under static kinds, an integer's kind names its width as well, `int32` or `int64`, because the width is part of the kind there. `leaf` names the storage of the leaf array that segmented storage's items are parts of (`Value::leaf_kind`), and is empty for other storage. `groups` names how segmented storage groups the leaf: `ranges`, or `classes` where its items are Key's classes of a vector of values (`Value::groups_kind`). `pending` is true while the items wait in a pending call, and `view` while `Y` reads another array's items. `active` counts the `∂` levels whose tags `Y` carries. Reading no items, it never forces a pending array.
+/// The storage kind of the primal, without reading its items. Static integer kinds include their width.
+pub(crate) fn storage_kind(value: &Value, numeric: Numeric) -> &'static str {
+    let value = value.primal();
+    if let Some(dtype) = value.dtype() { return match dtype { DType::Integer(_) if !numeric.is_static() => "integer", _ => dtype.name() }; }
+    match value {
+        Value::Number(_) => "rational", Value::Function(_) => "function", Value::Operator(_) => "operator",
+        Value::Pending(pending) => pending.completed().map_or("mixed", |value| storage_kind(value, numeric)), _ => "mixed",
+    }
+}
 fn storage(HostCall { right, numeric, .. }: HostCall<'_>) -> Result<Value, Error> {
-    // A batched run's cells aren't stored as the cells of a run cell by cell are.
-    crate::transform::once()?;
+    if let Some(level) = crate::transform::Level::innermost_batched() { return Err(Error::batch_stop(level.id)); }
+    let value = right.primal();
     let flag = |b: bool| Value::Number(crate::Number::from_bool(b));
     let values = vec![
-        crate::keyed::text(right.storage_kind(numeric)), crate::keyed::text(right.leaf_kind(numeric)), crate::keyed::text(right.groups_kind()),
-        flag(right.template().pending().is_some()), flag(right.template().is_view()),
+        crate::keyed::text(storage_kind(value, numeric)), flag(value.pending().is_some()), flag(value.is_view()),
         Value::integer(crate::derivative::levels(right) as i64),
     ];
-    crate::keyed::vector(["kind", "leaf", "groups", "pending", "view", "active"].map(Into::into).to_vec(), values).described("invalid storage record")
+    crate::keyed::vector(["kind", "pending", "view", "active"].map(Into::into).to_vec(), values).described("invalid storage record")
 }
 
 /// `•memory x`: what this thread holds, and what `x` keeps alive, as a record. `records` counts the live linear nodes that `∂` builds, which each `∂` frees when it returns, and `pending` the live pending arrays. Each counts the nodes this thread made, wherever they are dropped. `bytes` counts the allocations that `x` keeps alive (`Value::footprint`). It reads no items and never forces a pending array. It takes active values under `∂`.
 fn memory(HostCall { right, .. }: HostCall<'_>) -> Result<Value, Error> {
     // A batched run keeps alive what a run cell by cell doesn't.
-    crate::transform::once()?;
+    if let Some(level) = crate::transform::Level::innermost_batched() { return Err(Error::batch_stop(level.id)); }
     use crate::explain::{Counted, live};
     let counts = [live(Counted::Record), live(Counted::Pending), right.footprint()].map(|n| Value::integer(n as i64)).to_vec();
     crate::keyed::vector(["records", "pending", "bytes"].map(Into::into).to_vec(), counts).described("invalid memory record")
@@ -443,7 +454,7 @@ fn indices(stem: &str, right: &Value, prototype: bool, span: &Span, numeric: Num
     right.layout().collect(items, fill).described("invalid index")
 }
 
-/// A fresh hidden name: `_`, `stem`, `·`, and 64 random bits from the operating system as 13 base-32 digits, anew on each call. A running trace or batched run keeps it (`transform::Levels::keep_fresh`).
+/// A fresh hidden name: `_`, `stem`, `·`, and 64 random bits from the operating system as 13 base-32 digits, anew on each call.
 pub(crate) fn fresh(stem: &str) -> std::sync::Arc<str> {
     const DIGITS: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
     let mut bits: u64 = rand::random();
@@ -452,9 +463,7 @@ pub(crate) fn fresh(stem: &str) -> std::sync::Arc<str> {
         bits /= 32;
         digit
     }).collect();
-    let name: std::sync::Arc<str> = format!("_{stem}{FRESH}{random}").into();
-    session().keep_fresh(name.clone());
-    name
+    format!("_{stem}{FRESH}{random}").into()
 }
 
 /// A fresh name with the stem of `name`, which `fresh` drew.
@@ -485,7 +494,7 @@ pub(crate) fn edged(mode: rustymath::structure::Edge, n: &Value, p: &Value) -> R
     let result = match edged.ok_or_else(|| Error::domain("•edge takes whole positions"))? {
         Edged::Floats(y) if p.is_atom() => return Ok(Value::Number(crate::Number::float(y[0], FloatWidth::F64))),
         Edged::Positions(q) if p.is_atom() => return Ok(Value::integer(q[0] as i64)), Edged::Floats(y) => p.layout().floats(FloatWidth::F64, y),
-        Edged::Positions(q) => Value::positions(p.layout().shape(), n, q.into_iter()).and_then(|v| v.with_layout(p.layout().clone()))
+        Edged::Positions(q) => p.layout().integers(q.into_iter().map(|p| p as i64).collect())
     };
     result.described("invalid positions")
 }
@@ -497,12 +506,14 @@ fn to_float(HostCall { left, right, site: span, numeric }: HostCall<'_>) -> Resu
     };
     let width =
         w.as_number().and_then(|n| n.integer().ok()).and_then(FloatWidth::of_bits).ok_or(Kind::Domain).described("•float takes a width of 16, 32 or 64")?;
-    crate::derivative::converted(right, rustymath::buffer::DType::Float(width), false, span)
+    let mut origin = Operation::Convert(crate::number::Mark::Type { dtype: DType::Float(width), fixed: false }).origin_numeric(std::slice::from_ref(right), 0, numeric)?;
+    origin.site = Some(span.clone());
+    Operation::dispatch(origin.reborrow())?.assemble()
 }
 
 /// The widest float width among the numbers in `v`, nested arrays and a dual's primal included, or `None` when they're all exact. Characters and functions are DOMAIN.
 fn widest(v: &Value) -> Result<Option<FloatWidth>, ErrorKind> {
-    let v = v.template();
+    let v = v.primal();
     match v.dtype() {
         Some(DType::Character) => Err(Kind::Domain.into()),
         Some(_) => Ok(v.float_width()),
@@ -570,8 +581,7 @@ fn normalize(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error>
 
 /// `•literal⁻¹ Y` writes `Y` as BPL source, which `•literal` reads back. A value that holds a function or an operator is a DOMAIN error.
 pub(crate) fn write_literal(HostCall { right, .. }: HostCall<'_>) -> Result<Value, Error> {
-    crate::transform::formats(None, right)?;
-    if right.holds_function() { return Err(Error::domain("•literal⁻¹ writes data, not functions")); }
+    if right.holds_functions() { return Err(Error::domain("•literal⁻¹ writes data, not functions")); }
     Ok(crate::keyed::text(&right.source(crate::display::Elide { plain: None, ..crate::display::Elide::NONE })))
 }
 
@@ -627,7 +637,8 @@ fn unicode_convert(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, 
         if encoding.is_none() && right.is_atom() { return Ok(Value::Character(chars[0])); }
         Value::characters(shape(chars.len())?, chars)
     };
-    result.and_then(|a| if encoding.is_none() { a.with_layout(right.layout().clone()) } else { Ok(a) }).described("invalid Unicode result")
+    let result = result.described("invalid Unicode result")?;
+    if encoding.is_none() { result.with_layout(right.layout().clone()) } else { Ok(result) }
 }
 
 pub(crate) fn native_parts<'a>(call: &'a crate::primitive::CallView<'_>) -> Result<(Cow<'a, SystemFunction>, Option<Value>), Error> {
@@ -678,7 +689,7 @@ fn invoke(function: &SystemFunction, data: Option<&Value>, call: HostCall<'_>) -
         #[cfg(web)] Call::Js(Some(function)) => return crate::js::call(function, call).map(|value| value.map_or_else(Outputs::empty, Outputs::one)),
         #[cfg(web)] Call::Js(None) => return Err(Error::planning()),
         Call::Mime => crate::session().mime(call.left, call.right, call.site),
-        Call::Time => crate::session().system_time(call.left, call.right, call.site, call.numeric),
+        Call::Time => crate::session().system_time(call),
         Call::Prefs => return crate::display::prefs(crate::session(), call.right).map(|(value, shy)| Outputs::one(value).with_shy(shy)),
     };
     result.map(Outputs::one)

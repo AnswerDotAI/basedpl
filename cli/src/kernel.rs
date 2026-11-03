@@ -21,7 +21,7 @@ fn expression(session: &Session, code: &str, interrupt: &InterruptHandle) -> Res
     if let Some(error) = result.error { return Err(error); }
     let item = if let Some(value) = result.value { Some(("array", value)) }
     else if let Some(f) = result.function { Some(("function", basedpl::Value::Function(f))) }
-    else { result.operator.map(|op| ("operator", basedpl::Value::Operator(op))) };
+    else { result.operator.map(|op| ("operator", basedpl::Value::Operator(Arc::new(op)))) };
     let (kind, data) = if let Some((kind, value)) = item {
         let value = value.read(basedpl::ReadKind::Value)?;
         session.raise()?;

@@ -1,15 +1,16 @@
 //! One key policy: structural facts, 0/1/more lengths, and parameters by read purpose.
 use super::{Desc, Key, Length, Live, Mode, ProgramKey};
-use crate::{Function, Number, Value, array::{Layout, Renderer, Trees}, error::Result, eval::OperatorKind, primitive::{Operation, Primitive, Roles}};
+use crate::{Function, Number, Value, array::{Layout, Renderer, Trees}, error::Result, eval::OperatorKind, graph::Pending, primitive::{Operation, Primitive, Roles}};
 use crate::program::trace::ReadKind;
 use rustymath::{buffer::DType, layout::Keys};
 use std::{hash::{Hash, Hasher}, sync::Arc};
 
-#[derive(Clone)]
-pub(crate) struct DefinitionKey(std::sync::Weak<crate::syntax::Definition>);
-impl PartialEq for DefinitionKey { fn eq(&self, other: &Self) -> bool { self.0.ptr_eq(&other.0) } }
-impl Eq for DefinitionKey {}
-impl Hash for DefinitionKey { fn hash<H: Hasher>(&self, state: &mut H) { self.0.as_ptr().hash(state); } }
+pub(crate) struct WeakKey<T>(std::sync::Weak<T>);
+impl<T> WeakKey<T> { fn alive(&self) -> bool { self.0.strong_count() != 0 } }
+impl<T> Clone for WeakKey<T> { fn clone(&self) -> Self { Self(self.0.clone()) } }
+impl<T> PartialEq for WeakKey<T> { fn eq(&self, other: &Self) -> bool { self.0.ptr_eq(&other.0) } }
+impl<T> Eq for WeakKey<T> {}
+impl<T> Hash for WeakKey<T> { fn hash<H: Hasher>(&self, state: &mut H) { self.0.as_ptr().hash(state); } }
 
 #[derive(Clone)]
 pub(crate) struct CaptureKey(Arc<crate::eval::CaptureBindings>);
@@ -56,7 +57,7 @@ pub(crate) enum KeyPart {
     Arguments(usize, usize), Trees(Option<Arc<Trees>>), Captures(CaptureKey), Description { kind: crate::number::Kind, atom: bool, layout: LayoutKey },
     Physical(Vec<(u8, usize)>), Parameter(ReadKind, Parameter), Missing,
     SourceBase(bool, Option<Arc<str>>),
-    Count(usize, Vec<KeyPart>), Primitive(Primitive), Operator(OperatorKind), Definition(DefinitionKey), System(Arc<str>),
+    Count(usize, Vec<KeyPart>), Primitive(Primitive), Operator(OperatorKind), Definition(WeakKey<crate::syntax::Definition>), Recorded(WeakKey<crate::eval::RecordedCode>), System(crate::system::SystemFunction),
     Train(usize), Array, Operand { structural: bool }, End,
 }
 
@@ -76,7 +77,10 @@ impl Encoder {
         Ok(Key(std::mem::take(&mut self.parts)))
     }
     pub(crate) fn definition(&mut self, definition: &Arc<crate::syntax::Definition>) {
-        self.push(KeyPart::Definition(DefinitionKey(Arc::downgrade(definition))));
+        self.push(KeyPart::Definition(WeakKey(Arc::downgrade(definition))));
+    }
+    pub(crate) fn recorded(&mut self, code: &Arc<crate::eval::RecordedCode>) {
+        self.push(KeyPart::Recorded(WeakKey(Arc::downgrade(code))));
     }
     fn context(&mut self, operation: &Operation, site: Option<&crate::Span>) {
         if matches!(operation, Operation::System | Operation::Effect(_)) {
@@ -139,7 +143,7 @@ impl Encoder {
         })
     }
 
-    fn data(&mut self, value: &Value) {
+    pub(crate) fn data(&mut self, value: &Value) {
         if let Some(desc) = Desc::of(value) { self.description(&desc); } else { self.push(KeyPart::Missing); }
         if let Value::Array(_) = value && let Some((_, Some(map))) = value.physical()
             && let Some((_, strides)) = map.affine(value.shape()) {
@@ -219,7 +223,7 @@ pub(crate) fn graph_key(live: &Live) -> ProgramKey {
             }
             crate::graph::State::Input { value, role, .. } => {
                 let pending = if node.descs().is_empty() { Pending::control(node.clone()) } else { Pending::data(node.clone(), 0) };
-                if *role == super::trace::Role::Seed || !matches!(value, Some(Value::Pending(_))) {
+                if role == super::trace::Role::Seed || !matches!(value, Some(Value::Pending(_))) {
                     key.push(KeyPart::Source(live.input_position(&pending, value)));
                 }
                 match value {
@@ -253,7 +257,8 @@ pub(crate) fn lifetime(key: &Key) -> Option<bool> {
     }
     fn parts_alive(parts: &[KeyPart]) -> Option<bool> {
         join(parts.iter().filter_map(|part| match part {
-            KeyPart::Definition(definition) => Some(definition.0.strong_count() != 0),
+            KeyPart::Definition(definition) => Some(definition.alive()),
+            KeyPart::Recorded(recorded) => Some(recorded.alive()),
             KeyPart::Parameter(_, value) => parameter(value), _ => None,
         }))
     }

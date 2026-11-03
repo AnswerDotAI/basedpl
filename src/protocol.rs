@@ -155,9 +155,9 @@ impl Response {
     pub fn new(mut result: Evaluation) -> Result<Self, Error> {
         let value = result.value.take().map(|value| crate::json::exportable(&value)).filter(|value| !value.holds_functions());
         if let Some(value) = value {
-            match Session::current(|session| { let value = value.read(crate::ReadKind::Value)?; session.raise()?; Ok(value) }) {
+            match Session::current(|session| -> Result<Value, Error> { let value = value.read(crate::ReadKind::Value)?; session.raise()?; Ok(value) }) {
                 Ok(value) => result.value = Some(value),
-                Err(error) if error.is_control() => return Err(error),
+                Err(error) if error.kind.is_control() => return Err(error),
                 Err(error) => result.error = Some(error),
             }
         }

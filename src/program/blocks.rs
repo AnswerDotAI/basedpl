@@ -518,7 +518,7 @@ impl<'a> Input<'a> {
         Ok(Self { plan, sources })
     }
 
-    fn bind<'b>(&'b self, locals: &'b [Local]) -> std::result::Result<Vec<rustymath::agreement::Binding<'b>>, rustymath::Error> {
+    fn bind<'b>(&'b self, locals: &'b [Local]) -> std::result::Result<Vec<rustymath::agreement::Binding<'b>>, rustymath::error::Error> {
         self.sources.iter().map(|source| match *source {
             Source::Stored(binding) => Ok(binding),
             Source::Local { slot, items } => rustymath::agreement::Binding::window(locals[slot].buffer.view(), locals[slot].start, items),
@@ -531,9 +531,9 @@ struct Output { ptr: *mut u8, items: usize, dtype: DType }
 unsafe impl Send for Output {}
 unsafe impl Sync for Output {}
 impl Output {
-    fn write(self, range: std::ops::Range<usize>, view: rustymath::buffer::View<'_>) -> std::result::Result<(), rustymath::Error> {
+    fn write(self, range: std::ops::Range<usize>, view: rustymath::buffer::View<'_>) -> std::result::Result<(), rustymath::error::Error> {
         if view.dtype() != self.dtype || view.len() != range.len() || range.end > self.items {
-            return Err(rustymath::Error::new(rustymath::error::Kind::Length, "block output shape"));
+            return Err(rustymath::error::Error::new(rustymath::error::Kind::Length, "block output shape"));
         }
         // The stage owns this fresh allocation; the piece scheduler gives each call a disjoint range.
         unsafe { std::ptr::copy_nonoverlapping(view.as_ptr(), self.ptr.add(range.start * self.dtype.bytes()), view.len() * self.dtype.bytes()); }
@@ -566,7 +566,7 @@ impl Execution<'_> {
         }
     }
 
-    fn cell(&self, cell: usize, scratch: &mut Scratch) -> std::result::Result<(), rustymath::Error> {
+    fn cell(&self, cell: usize, scratch: &mut Scratch) -> std::result::Result<(), rustymath::error::Error> {
         use rustymath::{agreement::{Binding, Missing, Read, ReadPlan}, buffer::Buffer, gather::Steps, operation::{Direction, Seed}};
         self.scratch(scratch);
         let (_, frame) = self.geometry.cells.unwrap();
@@ -617,7 +617,7 @@ impl Execution<'_> {
     }
 
     fn range(&self, section: &Section, range: std::ops::Range<usize>, scratch: &mut Scratch,
-        give: &mut dyn FnMut(usize, rustymath::operation::Piece<'_>)) -> std::result::Result<(), rustymath::Error> {
+        give: &mut dyn FnMut(usize, rustymath::operation::Piece<'_>)) -> std::result::Result<(), rustymath::error::Error> {
         use super::Node;
         use rustymath::{agreement::Read, buffer::Buffer, operation::Piece};
         self.scratch(scratch);
@@ -684,7 +684,7 @@ impl Execution<'_> {
 
     #[cfg(not(web))]
     fn compiled(&self, section: &Section, prepared: &Code, range: std::ops::Range<usize>, scratch: &mut Scratch,
-        give: &mut dyn FnMut(usize, rustymath::operation::Piece<'_>)) -> std::result::Result<(), rustymath::Error> {
+        give: &mut dyn FnMut(usize, rustymath::operation::Piece<'_>)) -> std::result::Result<(), rustymath::error::Error> {
         use crate::jit;
         use rustymath::{agreement::Read, buffer::{Buffer, Cast}, operation::{Piece, Total}};
         scratch.copies.resize_with(prepared.inputs.len(), || Buffer::with_capacity(DType::Boolean, 0));
@@ -755,7 +755,7 @@ impl Execution<'_> {
     }
 }
 
-fn block_shape() -> rustymath::Error { rustymath::Error::new(rustymath::error::Kind::Length, "block output shape") }
+fn block_shape() -> rustymath::error::Error { rustymath::error::Error::new(rustymath::error::Kind::Length, "block output shape") }
 
 pub(crate) fn kernel_settings(call: &crate::primitive::CallView<'_>) -> Result<rustymath::operation::Settings> {
     Ok(rustymath::operation::Settings { tolerance: call.setting(crate::primitive::Setting::Tolerance)

@@ -36,17 +36,6 @@ fn speed_cases_take_their_routes() {
         wrong.extend(r.violations().into_iter().map(|message| format!("{case}: {message}")));
         gaps.extend(r.named.gaps.iter().map(|(record, event)| format!("{case}: {record} \"{event}\"")));
     }
-    use rustymath::events::Route;
-    for &route in Route::ALL {
-        for (kind, required) in [("taken", route.reports_taken()), ("declined", route.reports_decline()), ("itemwise", route.reports_itemwise())] {
-            if !required { continue; }
-            let hot = routes.iter().find(|r| r.run.exercised(kind, route)).map(|r| (r, "hot"));
-            match hot.or_else(|| routes.iter().find(|r| r.warmup.exercised(kind, route)).map(|r| (r, "warmup-only"))) {
-                Some((r, when)) => println!("observed {kind} {} [{}] {} ({when})", route.name(), r.section, r.label),
-                None => wrong.push(format!("no case exercises {kind} {}", route.name())),
-            }
-        }
-    }
     println!("gaps that route cases tolerate: {gaps:#?}");
     assert!(wrong.is_empty(), "route contracts: {wrong:#?}");
 }

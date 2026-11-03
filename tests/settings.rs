@@ -60,7 +60,7 @@ fn language_examples() {
                     }
                 }
             }
-            for f in basedpl::reference::page(&text, None, &Default::default()) {
+            for f in basedpl::reference::page(&text, &Default::default()) {
                 failures.push(format!("{}:{}: {}\n{}", path.display(), f["line"], f["code"].as_str().unwrap(), f["message"].as_str().unwrap()));
             }
         }
@@ -133,7 +133,7 @@ fn boxed_display_and_function_trees() {
     assert!(s.eval("]dissect 1+2").output_text()[0].contains('加'));
     assert!(s.eval(r#"•prefs ["notation":"unknown"]"#).error.is_some());
     s.eval("f←{注 help\n乙}");
-    assert_eq!(s.inspect("f").unwrap().help, "help");
+    assert_eq!(s.inspect("f").unwrap().unwrap().help, "help");
 }
 
 fn expression_dissection() {
@@ -196,7 +196,7 @@ fn hanzi_spellings_and_language() {
                 assert!(seen.insert(alias, symbol.glyph).is_none_or(|glyph| glyph == symbol.glyph), "duplicate alias {alias}");
                 assert_eq!(canonical(alias).to_string(), symbol.glyph);
                 if matches!(symbol.kind, "function" | "monadic-operator" | "dyadic-operator") {
-                    assert_eq!(s.inspect(&alias.to_string()).unwrap().source, symbol.glyph);
+                    assert_eq!(s.inspect(&alias.to_string()).unwrap().unwrap().source, symbol.glyph);
                 }
             }
         }
@@ -209,9 +209,9 @@ fn hanzi_spellings_and_language() {
         "系prefs [\"float\":32]句(系storage 1).kind" => "\"float32\"", "語←1 ⋄ 𠀀←2 ⋄ 語+𠀀" => "3",
         "_加←1 ⋄ _+←2 ⋄ _加_总←3 ⋄ x_語←4 ⋄ [_加 _+ _加_总 x_語]" => "1 2 3 4",
     );
-    assert_eq!(s.name_class("系time"), 3);
-    assert_eq!(s.inspect("系time").unwrap().source, "•time");
-    assert!(s.set("乙", number(1)).is_err() && !s.erase("乙"));
+    assert_eq!(s.name_class("系time").unwrap(), 3);
+    assert_eq!(s.inspect("系time").unwrap().unwrap().source, "•time");
+    assert!(s.set("乙", number(1)).is_err() && !s.erase("乙").unwrap());
     equiv_in(&s, "{系nc \"乙\"}0", "2ₓ");
     equiv("かな←2 ⋄ 한글←3 ⋄ かな+한글", "5");
     let code = "加总 1 2句辞";

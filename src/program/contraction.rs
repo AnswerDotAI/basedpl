@@ -34,7 +34,9 @@ pub(crate) fn contract(program: &mut Program, running: &mut Running, node: usize
     }).collect();
     let Some(axes) = axes else { return Ok(false); };
     let saved = (program.nodes.len(), program.reads.len(), program.descs.len());
-    let mut views = Vec::new();
+    let mut views = [PLUS, TIMES].into_iter().map(|primitive| Read {
+        operand: program.literal(crate::Value::Function(crate::Function::primitive(primitive))), map: Mapping::Linear(1),
+    }).collect::<Vec<_>>();
     for which in 0..2 {
         let axes = axes.iter().map(|axis| ViewAxis { input: axis.input ^ which as u32, axis: axis.axis }).collect();
         let destinations = destinations[which].iter().map(|axis| order.iter().position(|other| other == axis).unwrap()).collect();
@@ -43,7 +45,7 @@ pub(crate) fn contract(program: &mut Program, running: &mut Running, node: usize
         let output = super::rules::append(program, running, &origin, operation, reads, 2, None, level)?;
         views.push(Read { operand: output, map: Mapping::Linear(1) });
     }
-    let replaced = super::rules::replace(program, running, node, &origin, Operation::Product { fold: PLUS, map: TIMES, contracted: 1, pairing: Pairing::Axes }, views, 2, None)?;
+    let replaced = super::rules::replace(program, running, node, &origin, Operation::Product { contracted: 1, pairing: Pairing::Axes }, views, 4, None)?;
     if !replaced {
         program.nodes.truncate(saved.0); program.reads.truncate(saved.1); program.descs.truncate(saved.2);
         running.values.truncate(saved.0); running.geometry.maps.truncate(saved.1); running.geometry.descs.truncate(saved.2);

@@ -66,7 +66,6 @@ fn format_number(n: &Number, precision: isize) -> Result<String, Error> {
 
 /// `⍕right`, or `left⍕right`, where `left` is a precision, a width and precision, or a width and precision for each column. A width of 0 fits a column to its longest number, with one space before each column after the first.
 pub(super) fn format_array(left: Option<&Value>, right: &Value) -> Result<Value, Error> {
-    crate::transform::formats(left, right)?;
     use crate::display::Elide;
     let Some(spec) = left else { return right.formatted(Elide::NONE).described("formatted array is too large"); };
     // An empty spec, `⍬` or `''`, gives monadic `⍕`'s text without the markers of numbers' kinds.
@@ -125,8 +124,8 @@ pub(super) fn matrix_divide(left: Option<&Value>, right: &Value, numeric: Numeri
         let matrix = match right.shape() { [] => Layout::from([1, 1]), [_] => right.layout().concat(&Layout::from([1])), _ => right.layout().clone() };
         let args: Vec<_> =
             [(right, matrix)].into_iter().chain(left.map(|x| (x, if x.shape().is_empty() { Layout::from([1]) } else { x.layout().clone() }))).collect();
-        let x = inexact(&args, (domain, width), |s, v| match *v {
-            [a, b] => s.solve(a, b), [a] => s.pinv(a), _ => unreachable!("a view for each argument")
+        let x = inexact(&args, (domain, width), |s, v| match v {
+            [a, b] => s.solve(a.clone(), b.clone()), [a] => s.pinv(a.clone()), _ => unreachable!("a view for each argument")
         }).map_err(|s| s.raised())?;
         let x = value(x.into_compact().1, layout)?;
         return Ok(if scalar { x.at(0) } else { x });
@@ -147,7 +146,7 @@ pub(crate) fn determinant(a: &Value, n: usize, numeric: Numeric) -> Result<Optio
     if domain == Domain::Exact {
         return Ok(Some(Value::Number(linalg::exact::determinant(&read::<BigRational>(a)?, n)?.number(width))));
     }
-    let d = inexact(&[(a, Layout::from([n, n]))], (domain, width), |s, v| s.det(v[0])).map_err(|s| s.raised())?;
+    let d = inexact(&[(a, Layout::from([n, n]))], (domain, width), |s, v| s.det(v[0].clone())).map_err(|s| s.raised())?;
     Ok(Some(value(d.into_compact().1, Layout::default())?.at(0)))
 }
 
@@ -167,7 +166,7 @@ pub(crate) fn matrix_inverse(a: &Value, stacked: bool, numeric: Numeric) -> Resu
         return Ok(Some((matrix_result(x.concat(), inverse, a.is_atom(), width)?, matrix_result(d, determinant, frame == 0, width)?)));
     }
     let matrices = if r < 2 { Layout::from([1, 1]) } else { a.layout().clone() };
-    let Some((x, d)) = inexact(&[(a, matrices)], (domain, width), |s, v| s.inverse(v[0])).map_err(|s| s.raised())? else { return Ok(None) };
+    let Some((x, d)) = inexact(&[(a, matrices)], (domain, width), |s, v| s.inverse(v[0].clone())).map_err(|s| s.raised())? else { return Ok(None) };
     let (x, d) = (value(x.into_compact().1, inverse)?, value(d.into_compact().1, determinant)?);
     Ok(Some((if a.is_atom() { x.at(0) } else { x }, if frame == 0 { d.at(0) } else { d })))
 }
@@ -175,7 +174,7 @@ pub(crate) fn matrix_inverse(a: &Value, stacked: bool, numeric: Numeric) -> Resu
 /// A result of `⌹`, `x`, laid out by `layout`, or its one item where it's `scalar`.
 fn matrix_result<T: Field>(mut x: Vec<T>, layout: Layout, scalar: bool, width: FloatWidth) -> Result<Value, Error> {
     if scalar { return Ok(Value::Number(x.swap_remove(0).number(width))); }
-    T::array(x, layout.shape().to_vec(), width).and_then(|v| v.with_layout(layout)).described("invalid matrix result")
+    T::array(x, layout.shape().to_vec(), width)?.with_layout(layout).described("invalid matrix result")
 }
 
 /// `f` on `args`, the arguments of a matrix function with no exact form, each with the layout it takes, through rustymath's [`Stacked`](linalg::Stacked), where exact numbers compute as floats of `width`. Compact storage is read in place. Mixed storage gives its numbers in the field of `domain`.
@@ -209,7 +208,7 @@ fn value(buffer: rustymath::buffer::Buffer, layout: Layout) -> Result<Value, Err
     let shape = layout.shape().to_vec();
     match buffer {
         rustymath::buffer::Buffer::Complexes(c) => Value::complex(shape, c), b => Value::imported_buffer(shape, b)
-    }.and_then(|v| v.with_layout(layout)).described("invalid matrix result")
+    }?.with_layout(layout).described("invalid matrix result")
 }
 
 /// `x f.g⍤2 y` on stacks of compact matrices with plain layouts, through rustymath's product kernel for the pair (`pervasive::inner`), which pairs the stacks' frames and splits the cells across rustymath's threads. `None` where `f.g⍤2` takes its general path, as for [`stacked`], and where the pair has no kernel for the stacks' items.
@@ -233,7 +232,7 @@ pub(crate) fn stacked_decompositions(left: &Value, right: &Value, span: &Span, n
     Some(factors(&d, right, None, span, numeric).and_then(|(names, cells)| {
         let keys = record(names.clone(), cells[..names.len()].to_vec())?.layout().clone();
         let layout = Layout::from(right.shape()[..right.shape().len() - 2].to_vec()).concat(&keys);
-        Value::new(layout.shape().to_vec(), cells).and_then(|v| v.with_layout(layout)).described("invalid rank cells")
+        Value::new(layout.shape().to_vec(), cells)?.with_layout(layout).described("invalid rank cells")
     }))
 }
 
@@ -273,7 +272,7 @@ fn factors(d: &Decomposition, right: &Value, hermitian: Option<bool>, span: &Spa
         }
     };
     let arrays = inexact(&[(right, right.layout().clone())], (domain, width), |s, v| {
-        let a = v[0];
+        let a = v[0].clone();
         Ok(match d.kind.as_str() {
             "svd" if d.rank.is_none() && !d.vectors => vec![s.svdvals(a)?],
             "svd" => { let (u, values, v) = s.svd(a, d.rank)?; if d.vectors { vec![u, values, v] } else { vec![values] } }
@@ -320,7 +319,7 @@ fn mixed(d: &Decomposition, right: &Value, hermitian: &[bool], span: &Span, nume
     let part = |h: bool| {
         let chosen = hermitian.iter().enumerate().filter(|&(_, &e)| e == h).map(|(i, _)| matrices.get(i)).collect::<Result<Vec<_>, _>>()
             .described("invalid matrices")?;
-        let stack = Value::assemble(&[chosen.len()], &chosen, &chosen[0], crate::array::Widening::Items).described("invalid matrices")?;
+        let stack = crate::array::assemble_stored(&Layout::from([chosen.len()]), &chosen, &chosen[0], Widening::Items, None, numeric).described("invalid matrices")?;
         factors(d, &stack, Some(h), span, numeric)
     };
     let ((names, yes), (_, no)) = (part(true)?, part(false)?);
@@ -598,8 +597,8 @@ pub(crate) fn object_kernel(primitive: Primitive, dyadic: bool, numeric: Numeric
         },
         (A(Divide), true) if variant.mathish => two!(rm::MathishDivide), (A(Divide), true) => two!(rm::Divide),
         (M(Magnitude), false) => one!(rm::Abs), (M(Magnitude), true) => two!(tol::Residue(tolerance)),
-        (M(Floor), false) => one!(tol::Floor(tolerance)), (M(Floor), true) => two!(rm::Minimum),
-        (M(Ceiling), false) => one!(tol::Ceil(tolerance)), (M(Ceiling), true) => two!(rm::Maximum),
+        (M(Floor), false) => one!(tol::Floor(tolerance)), (M(Floor), true) => two!(rm::reduce::Minimum),
+        (M(Ceiling), false) => one!(tol::Ceil(tolerance)), (M(Ceiling), true) => two!(rm::reduce::Maximum),
         (M(Power), false) => one!(rm::Exp), (M(Power), true) => two!(rm::Pow),
         (M(Log), false) => one!(rm::Ln),
         (M(Log), true) if variant.mathish => two!(rm::MathishLogb), (M(Log), true) => two!(rm::Logb),
@@ -631,12 +630,12 @@ pub(crate) fn object_kernel(primitive: Primitive, dyadic: bool, numeric: Numeric
         (S(Special::Sign), false) => one!(rm::Sign), (S(Special::Floor), false) => one!(tol::Floor(tol::Tolerance::EXACT)),
         (S(Special::LambertW), false) => one!(rm::LambertW),
         (S(Special::Real), false) => one!(rm::Real), (S(Special::Imag), false) => one!(rm::Imag), (S(Special::Angle), false) => one!(rm::Angle),
-        (S(Special::Gammaln), false) => one!(rm::Kept(rm::Lgamma)), (S(Special::Digamma), false) => one!(rm::Kept(rm::Digamma)),
-        (S(Special::Erf), false) => one!(rm::Kept(rm::Erf)), (S(Special::Erfc), false) => one!(rm::Kept(rm::Erfc)),
-        (S(Special::Erfinv), false) => one!(rm::Kept(rm::Erfinv)),
-        (S(Special::Beta), true) => two!(rm::Kept(rm::Beta)), (S(Special::Gammainc), true) => two!(rm::Kept(rm::Gammainc)),
-        (S(Special::Polygamma), true) => two!(rm::Kept(rm::Polygamma)),
-        (S(Special::BinomDn), true) => two!(rm::Kept(rm::BinomDn)), (S(Special::BinomDk), true) => two!(rm::Kept(rm::BinomDk)),
+        (S(Special::Gammaln), false) => one!(rm::Lgamma), (S(Special::Digamma), false) => one!(rm::Digamma),
+        (S(Special::Erf), false) => one!(rm::Erf), (S(Special::Erfc), false) => one!(rm::Erfc),
+        (S(Special::Erfinv), false) => one!(rm::Erfinv),
+        (S(Special::Beta), true) => two!(rm::Beta), (S(Special::Gammainc), true) => two!(rm::Gammainc),
+        (S(Special::Polygamma), true) => two!(rm::Polygamma),
+        (S(Special::BinomDn), true) => two!(rm::BinomDn), (S(Special::BinomDk), true) => two!(rm::BinomDk),
         (Primitive::Exact(Exact::Floor), false) => one!(tol::Floor(tolerance)),
         (Primitive::Exact(Exact::Ceiling), false) => one!(tol::Ceil(tolerance)),
         (Primitive::Exact(Exact::Quotient), true) if variant.mathish => two!(tol::MathishFloorDivide(tolerance)),
@@ -702,12 +701,12 @@ fn map_agreement(call: &CallView<'_>, left: &Layout, right: &Layout) -> Result<A
     match call.operation {
         Operation::Primitive { pairing: Pairing::Explicit { .. }, .. } => {
             let axis = call.root_value(call.axis_root().ok_or_else(Error::planning)?.index, ReadKind::Structure)?;
-            if axis.is_empty() && axis.keys(0).is_some() { return Agreement::new(left, right); }
+            if axis.is_empty() && axis.keys(0).is_some() { return Ok(Agreement::new(left, right)?); }
             let axes = axes(&resolve_axes(&axis, right)?, right.shape().len())?;
-            Agreement::with_axes(left, right, &axes)
+            Ok(Agreement::with_axes(left, right, &axes)?)
         }
         Operation::Primitive { pairing: Pairing::Matrices { .. }, .. } => Err(Error::domain("elementwise calls do not use matrix pairing")),
-        _ => Agreement::new(left, right),
+        _ => Ok(Agreement::new(left, right)?),
     }
 }
 pub(crate) fn map_geometry(call: &CallView<'_>) -> Result<(Layout, bool, Option<Mapping>, Mapping), Error> {
@@ -816,11 +815,11 @@ pub(super) fn code_recipe(call: &CallView<'_>) -> Result<Outputs<Value>, Error> 
     let Operation::Recipe(operation) = call.operation else { return Err(Error::planning()); };
     let (_, right) = map_arguments(call)?;
     if let RecipeOp::Convert { kind, conversion: rustymath::convert::ConversionKind::Keep } = operation {
-        return keep_atom(&call.value(right, ReadKind::Value)?, *kind).map(Outputs::one);
+        return keep_atom(call.value(right, ReadKind::Value)?.as_ref(), *kind).map(Outputs::one);
     }
     let Some(dtype) = call.desc(right).map(|desc| desc.dtype()) else { return code_map(call); };
     let Some((conversion, kind)) = operation.conversion(dtype) else { return code_map(call); };
-    converted_value(&call.value(right, ReadKind::Value)?, conversion, kind, call.mode.dynamic).map(Outputs::one)
+    converted_value(call.value(right, ReadKind::Value)?.as_ref(), conversion, kind, call.mode.dynamic).map(Outputs::one)
 }
 
 fn converted_value(value: &Value, conversion: rustymath::convert::Conversion, kind: NumberKind, checked: bool) -> Result<Value, Error> {
@@ -979,14 +978,16 @@ pub(crate) fn build_product(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapp
     let Some((map, fold)) = product_kernels(call, None)? else { return host_build(call, set); };
     let ranges = geometry.args.map(|position| call.desc(position).expect("a native product has input descriptions").bounds());
     if call.mode.dynamic && !map.domain(&ranges) { return host_build(call, set); }
-    let (range, dtype) = if let Some(fold) = fold {
+    let (range, dtype) = if let Some(fold) = &fold {
         let shape = geometry.plan.iteration.shape();
         let count = shape[shape.len() - geometry.plan.contracted..].iter().product();
         (rustymath::facts::Range::folded(map.range(&ranges), None, Some(count), |args| fold.range(&args)), fold.total_dtype().unwrap_or(fold.result_dtype()))
     } else { (map.range(&ranges), map.result_dtype()) };
     let (kind, range) = result_kind(call.numeric()?, dtype, range, IntegerResult::Never);
     let atom = geometry.plan.layout.shape().is_empty();
-    let step = Step::Product { left: geometry.args[0] as u32, right: geometry.args[1] as u32 };
+    let step = if fold.is_some() { Step::Product { left: geometry.args[0] as u32, right: geometry.args[1] as u32 } }
+        else { Step::Map { left: Some(geometry.args[0] as u32), right: geometry.args[1] as u32,
+            variant: result_variant(map_variant(call)?, kind.dtype())? } };
     for (position, map) in geometry.args.into_iter().zip(geometry.plan.mappings) { set(position, map); }
     let desc = Desc { kind, atom, layout: geometry.plan.layout.into(), range: Some(range) };
     Ok((step, Some(Outputs::one(Some(desc))), None))

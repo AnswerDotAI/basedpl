@@ -3,7 +3,7 @@ use basedpl::{Error, EvalOptions, Session, Value as AplValue};
 
 /// The value of `code`, evaluated apart from the names of the session that the calling test holds, if any (`Session::eval_apart`).
 pub fn run(code: &str) -> Result<Option<AplValue>, Error> {
-    let result = Session::current().eval_apart(code, EvalOptions::default());
+    let result = Session::current(|session| session.eval_apart(code, EvalOptions::default()));
     match result.error { Some(e) => Err(e), None => Ok(result.value) }
 }
 

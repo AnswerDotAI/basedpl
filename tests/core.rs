@@ -120,13 +120,13 @@ fn exact_results_and_readback() {
     for code in ["0.1|0.3", "3|6.000000000000001"] { assert!(run(code).unwrap().unwrap().same(&float(0.0)), "{code}"); }
     for code in ["1j2÷3j4", "×3j4", "÷1j2", "¯.5j2E¯1", "1E2j¯4E¯1", "1.7E308÷0.5j0.5", "5E¯324 ¯1.2345678901234567E200 1E¯100j2E100"] {
         let a = run(code).unwrap().unwrap();
-        assert!(run(&a.to_string()).unwrap().unwrap().same(&a), "{code}");
+        assert!(run(&a.literal()).unwrap().unwrap().same(&a), "{code}");
     }
     let huge = format!("1{}", "0".repeat(400));
-    assert_same(run(&format!("{huge}ₓ÷{huge}ₓ")).unwrap().unwrap(), &exact(1, 1));
+    assert_same(run(&format!("{huge}ᵣ÷{huge}ᵣ")).unwrap().unwrap(), &exact(1, 1));
     assert_same(run(&format!("{huge}1r{huge}0+0.5")).unwrap().unwrap(), &float(1.5));
-    assert_same(run(&format!("{huge}ₓ+0")).unwrap().unwrap(), &float(f64::INFINITY));
-    assert_same(run(&format!("{huge}ₓ+0j1")).unwrap().unwrap(), &number(num_complex::Complex64::new(f64::INFINITY, 1.0)));
+    assert_same(run(&format!("{huge}ᵣ+0")).unwrap().unwrap(), &float(f64::INFINITY));
+    assert_same(run(&format!("{huge}ᵣ+0j1")).unwrap().unwrap(), &number(num_complex::Complex64::new(f64::INFINITY, 1.0)));
 }
 #[test]
 fn array_literal_completeness() {

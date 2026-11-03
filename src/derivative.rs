@@ -490,7 +490,7 @@ fn mapped_jacobian(function: &Function, parent: &Origin<&[Value]>, input: &Value
         .filter(|leaf| matches!(leaf.dtype(), Some(DType::Float(_)))).collect::<Vec<_>>();
     let (sizes, total) = leaf_sizes(parent, &leaves)?;
     let range = primitive(parent, Primitive::Iota, std::slice::from_ref(&total))?;
-    let axis = |column| Operation::Read(ReadOp::Axes { axes: vec![ViewAxis { input: 0, axis: (!column).then_some(0) },
+    let axis = |column: bool| Operation::Read(ReadOp::Axes { axes: vec![ViewAxis { input: 0, axis: (!column).then_some(0) },
         ViewAxis { input: 0, axis: column.then_some(0) }].into(), destinations: vec![usize::from(column)].into() });
     let row = crate::eval::projected_call(parent, axis(false), std::slice::from_ref(&range), &[None])?;
     let column = crate::eval::projected_call(parent, axis(true), &[range], &[None])?;

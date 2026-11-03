@@ -761,7 +761,7 @@ impl<'s> Compiler<'s> {
         let local = match (&nodes[start..i], &value) {
             ([Node { kind: NodeKind::Name(name, _), .. }], Some(_)) => {
                 self.assigned.push((*name, category));
-                match session.bindings.here(*name) { Place::Slot(_, slot) => Some(slot), _ => None }
+                match session.bindings.here(*name) { Place::Slot(_, slot, _) => Some(slot), _ => None }
             }
             _ => None,
         };

@@ -6,7 +6,7 @@ impl Expression {
     pub(super) fn binding(binding: &Binding) -> Result<Option<Self>, Error> {
         Ok(Some(Self::Atom(match binding {
             Binding::Value(value) => value.clone(), Binding::Function(function) => Value::Function(function.function()?),
-            Binding::Operator(operator) => Value::Operator(operator.clone()), _ => return Ok(None),
+            Binding::Operator(operator) => Value::Operator(Arc::new(operator.clone())), _ => return Ok(None),
         })))
     }
     pub(super) fn array(value: &Value) -> Self { Self::Atom(value.clone()) }

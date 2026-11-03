@@ -10,7 +10,7 @@ pub(crate) mod trace;
 pub(crate) mod verify;
 
 use crate::{
-    Error, Function, Number, Span, Value, array::{Layout, Tree, TreeRoot, Trees}, graph::Pending, number::{Kind, Numeric},
+    Error, Function, ReadKind, Number, Span, Value, array::{Layout, Tree, TreeRoot, Trees}, graph::Pending, number::{Kind, Numeric},
     eval::CaptureBindings, settings::Compiles, transform::Level, primitive::{CallBindings, Input, Operation, ReadOp, Roles, ViewAxis},
 };
 use rustymath::{agreement::{Mapping, ReadPlan}, buffer::{DType, Width, FloatWidth, View}, convert::Conversion, facts::{Range, Variant}, hashing::HashMap};
@@ -114,7 +114,7 @@ impl<T> Outputs<T> {
                 else { Tree::Array { layout: Layout::from([children.len()]), items: children, prototype: None } });
             values.extend(part.into_vec());
         }
-        let mut trees = Trees::default();
+        let mut trees = Trees::leaves(0);
         trees.push_tree(Tree::Array { layout: Layout::from([items.len()]), items, prototype: None });
         Self::from(values).with_trees(Some(Arc::new(trees)))
     }
@@ -161,7 +161,7 @@ impl Outputs<Value> {
 // Steps (part 4)
 
 /// An output of a program node.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Out {
     /// The node's position.
     pub(crate) node: usize,
@@ -206,8 +206,8 @@ pub(crate) struct Origin<L: ?Sized> {
     pub(crate) list: L,
 }
 
-impl<L: AsRef<[Value]>> Origin<L> {
-    pub(crate) fn reborrow(&self) -> Origin<&[Value]> { self.with_list(self.list.as_ref()) }
+impl<L> Origin<L> {
+    pub(crate) fn reborrow<T>(&self) -> Origin<&[T]> where L: AsRef<[T]> { self.with_list(self.list.as_ref()) }
 }
 impl Origin<Vec<Value>> {
     pub(crate) fn capture_implicit(mut self, parent: Option<&Origin<&[Value]>>, mut inserted: impl FnMut(usize, Option<usize>)) -> crate::error::Result<Self> {
@@ -535,6 +535,7 @@ pub(crate) struct Program {
 }
 
 impl Program {
+    pub(crate) fn draws(&self) -> bool { self.nodes.iter().any(|node| matches!(node, Node::Step { step: Step::Draw, .. })) }
     pub(crate) fn cacheable_metadata(&self) -> bool {
         self.descs.iter().flatten().all(Desc::cacheable) && self.nodes.iter().all(|node| match node {
             Node::Step { origin, trees, .. } => origin.trees.as_ref().is_none_or(|trees| trees.cacheable()) && trees.as_ref().is_none_or(|trees| trees.cacheable()),
@@ -612,7 +613,7 @@ impl Program {
                 crate::graph::State::Input { value, role, .. } => {
                     let control = node.descs().is_empty();
                     let pending = if control { Pending::control(node.clone()) } else { Pending::data(node.clone(), 0) };
-                    let output = if let Some(Value::Pending(source)) = value && *role != trace::Role::Seed { builder.value_of(live, &mapped, &Value::Pending(source.clone()), false) } else {
+                    let output = if let Some(Value::Pending(source)) = value && role != trace::Role::Seed { builder.value_of(live, &mapped, &Value::Pending(source.clone()), false) } else {
                         let position = live.input_position(&pending, value);
                         if control { builder.control_input(position) } else { builder.input(position, node.desc(0).cloned(), node.level()) }
                     };
@@ -807,6 +808,7 @@ pub(crate) struct Builder { pub(crate) program: Program, bound: HashMap<(usize, 
 
 impl Builder {
     pub(crate) fn new() -> Self { Self { program: Program { nodes: Vec::new(), reads: Vec::new(), descs: Vec::new(), outputs: Outputs::empty(), sources: Vec::new(), token: None, parameters: Arc::from([]) }, bound: HashMap::default() } }
+    pub(crate) fn literal(&mut self, value: Value) -> Out { self.program.literal(value) }
     fn description(&mut self, desc: Option<Desc>) -> u32 { let at = self.program.descs.len() as u32; self.program.descs.push(desc); at }
     pub(crate) fn input(&mut self, position: usize, desc: Option<Desc>, level: Option<usize>) -> Out {
         self.input_port(position, desc.map(Desc::opaque), level, Some(0))
@@ -1286,11 +1288,11 @@ impl Reason {
         }
     }
 }
-impl Builder {
+impl Program {
     pub(crate) fn literal(&mut self, value: Value) -> Out {
         debug_assert!(!matches!(value, Value::Pending(_) | Value::Carried { .. }));
-        let desc = self.description(Desc::leaf(&value)); let node = self.program.nodes.len();
-        self.program.nodes.push(Node::Literal { value, desc }); Out::data(node, 0)
+        let desc = self.descs.len() as u32; self.descs.push(Desc::leaf(&value)); let node = self.nodes.len();
+        self.nodes.push(Node::Literal { value, desc }); Out::data(node, 0)
     }
 }
 
@@ -1456,7 +1458,7 @@ impl BoundRecording {
         for node in Live::of(self.outputs.as_ref(), None).nodes {
             let raises = node.with_state(|state| {
                 let crate::graph::State::Step { step, origin } = state else { return Ok(false); };
-                let call = origin.call_view(&origin.list);
+                let call = origin.call_view(origin);
                 Ok::<_, Error>(match step {
                     Step::Convert { conversion, .. } => conversion.may_raise(origin.mode.dynamic),
                     _ if !origin.mode.dynamic => false,

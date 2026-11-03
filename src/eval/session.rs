@@ -21,7 +21,7 @@ impl Session {
         self.bindings.replace(Bindings::default());
         self.prefacing.set(false); self.depth.set(0); self.prototype.set(false); self.capture.set(false);
         self.loading.borrow_mut().clear(); self.args.borrow_mut().clear(); self.guards.borrow_mut().clear();
-        self.levels.clear(); self.traces.borrow_mut().clear(); self.error.take(); self.token.take();
+        self.levels.clear(); self.traces.replace(Default::default()); self.error.take(); self.token.take();
         let generator = crate::distribution::fresh();
         std::mem::swap(&mut *self.generator.lock().unwrap_or_else(PoisonError::into_inner), &mut *generator.lock().unwrap_or_else(PoisonError::into_inner));
     }
@@ -141,27 +141,27 @@ impl Session {
         let name = crate::keyed::name(right).ok_or_else(|| Error::domain("expected a name string").at(span))?;
         f(self, &name).map_err(|error| error.at(span))
     }
-    pub(crate) fn system_nc(&self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    pub(crate) fn system_nc(&self, crate::system::HostCall { right, site: span, .. }: crate::system::HostCall<'_>) -> Result<Value, Error> {
         self.named(right, span, |s, name| Ok(Value::integer(s.name_class(name)?)))
     }
-    pub(crate) fn system_ex(&self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    pub(crate) fn system_ex(&self, crate::system::HostCall { right, site: span, .. }: crate::system::HostCall<'_>) -> Result<Value, Error> {
         self.named(right, span, |s, name| Ok(Value::integer(s.erase(name)? as i64)))
     }
-    pub(crate) fn system_src(&self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    pub(crate) fn system_src(&self, crate::system::HostCall { right, site: span, .. }: crate::system::HostCall<'_>) -> Result<Value, Error> {
         self.named(right, span, |s, name| s.name_source(name).map(|text| crate::keyed::text(&text)))
     }
     /// `•explain text` runs `text` in the caller's scope, as `⍎` does, computes its value, and gives a record of that value and of what happened while it ran and computed (`explain`). Computing a pending value records no `forced` row, as the speed timer's computing records none. Its options record: `"sites":$t` fills the `site` columns of `forced` and `stopped` rows with the code that computed the items or stopped the trace (`explain::site`).
-    pub(crate) fn system_explain(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    pub(crate) fn system_explain(&self, crate::system::HostCall { left, right, site: span, .. }: crate::system::HostCall<'_>) -> Result<Value, Error> {
         let sites = crate::data::Options::new("•explain", left, None, &["sites"])?.boolean("sites", false)?;
         let (result, events) = crate::explain::explained(sites, || {
             let result = self.execute(None, right, span).and_then(|r| r.array(span));
             let result = result.and_then(|value| crate::graph::forced(&[&value]).map(|()| value));
             result
         });
-        events.report(result?, span)
+        events.report(result?)
     }
     /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
-    pub(crate) fn system_literal(&self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    pub(crate) fn system_literal(&self, crate::system::HostCall { right, site: span, .. }: crate::system::HostCall<'_>) -> Result<Value, Error> {
         let parsed = self.parse(Source::new("<•literal>", Self::source_text(right, span)?)).complete()?;
         let [statement] = parsed.statements.as_slice() else { return Err(Error::domain("•literal reads one value").at(span)) };
         let written = |kind: &NodeKind| match kind {
@@ -174,7 +174,7 @@ impl Session {
         self.bind(&statement.nodes)?.array(span)
     }
     /// `•time t` gives the seconds since `t`, counting from the Unix epoch. `F •time x` gives each function's fastest time per call on `x`, in the layout of `F`.
-    pub(crate) fn system_time(&self, left: Option<&Value>, right: &Value, span: &Span, numeric: Numeric) -> Result<Value, Error> {
+    pub(crate) fn system_time(&self, crate::system::HostCall { left, right, site: span, numeric }: crate::system::HostCall<'_>) -> Result<Value, Error> {
         // Times stay 64-bit, as `•date` gives them, because a 32-bit float holds seconds since 1970 only to within about two minutes.
         let second = |s| Value::Number(crate::Number::float(s, FloatWidth::F64));
         let Some(functions) = left else {
@@ -185,24 +185,24 @@ impl Session {
             Value::Function(f) => self.fastest(&f, right, span), _ => Err(Error::domain("•time needs functions on its left").at(span))
         }).collect::<Result<Vec<_>, _>>()?;
         if functions.is_atom() { return Ok(second(times[0])); }
-        Value::floats(functions.shape().to_vec(), FloatWidth::F64, times).and_then(|t| t.with_layout(functions.layout().clone()))
+        Value::floats(functions.shape().to_vec(), FloatWidth::F64, times).map_err(Error::from).and_then(|t| t.with_layout(functions.layout().clone()))
             .described("invalid •time result").at(span)
     }
-    /// The fastest time per call of `f` on `x`, in seconds, including the computation of any items that the result defers (`Value::force`). Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
+    /// The fastest time per call of `f` on `x`, in seconds, including the computation of any items that the result defers (`Value::read`). Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
     fn fastest(&self, f: &Function, x: &Value, span: &Span) -> Result<f64, Error> {
         use {crate::host::Instant, std::time::Duration};
         let start = Instant::now();
         let (mut batch, mut best) = (1u32, f64::INFINITY);
         loop {
             let begun = Instant::now();
-            for _ in 0..batch { if let Binding::Value(v) = &f.call(None, x, span)?.value { v.force(); } }
+            for _ in 0..batch { if let Binding::Value(v) = &f.call(None, x, span)?.value { v.read(crate::ReadKind::Value)?; } }
             let taken = begun.elapsed();
             best = best.min(taken.as_secs_f64() / f64::from(batch));
             if start.elapsed() >= Duration::from_millis(100) { return Ok(best); }
             if taken < Duration::from_millis(1) { batch *= 2; }
         }
     }
-    pub(crate) fn system_nl(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    pub(crate) fn system_nl(&self, crate::system::HostCall { left, right, site: span, .. }: crate::system::HostCall<'_>) -> Result<Value, Error> {
         let prefix = match left {
             Some(value) => crate::keyed::name(value).ok_or_else(|| Error::domain("•nl prefix must be a string").at(span))?, None => "".into()
         };
@@ -249,7 +249,7 @@ impl Session {
         let span = Span::whole(Source::new("<call>", expression));
         let parsed = self.parse(span.source.clone()).complete()?;
         if parsed.statements.len() != 1 { return Err(Error::new(ErrorKind::Syntax, "call requires one function expression").at(&span)); }
-        Function::new(FunctionNode::LateBound(Arc::new(parsed), span.clone()), &span)
+        Ok(Function::late_bound(Arc::new(Definition::new(vec![parsed.statements], span))))
     }
     pub fn call_function_with(&self, function: &Function, args: &[Value], options: crate::EvalOptions) -> Evaluation {
         self.evaluation(options, |s| s.call_function(function, args))
@@ -453,7 +453,7 @@ impl Session {
             Some(Value::Function(f)) => f,
             _ => {
                 let Some(kind) = crate::keyed::name(left) else { return Err(Error::domain("•mime needs a function or a MIME type on its left").at(span)) };
-                before(crate::keyed::text(&kind), Function::primitive(Primitive::Keys), span)?
+                before(crate::keyed::text(&kind).into(), Function::primitive(Primitive::Keys), span)?
             }
         };
         right.clone().with_renderer(renderer).described("invalid •mime result").at(span)
@@ -601,11 +601,8 @@ impl Session {
     // Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
     #[inline(never)]
     pub(super) fn call_named(&self, function: &Function, origin: crate::program::Origin<&[Value]>) -> Result<Value, Error> {
-        let FunctionNode::LateBound(name) = function.node() else { unreachable!("a late-bound name") };
-        let span = Span::whole(Source::new("<call>", name.text()));
-        let position = origin.bindings.scope(function).and_then(|(_, scope)| scope.names.iter().find(|entry| entry.name == *name)).and_then(|entry| entry.position.as_ref())
-            .ok_or_else(|| undefined(*name, &span))?;
-        let function = Function::from_value(Binding::from_element(Function::capture_at(&origin, position).into_owned()), &span)?;
+        let FunctionNode::LateBound(definition) = function.node() else { unreachable!("a late-bound expression") };
+        let function = Function::from_value(self.bind(&definition.bodies[0][0].nodes)?.value, &definition.span)?;
         let arguments = Function::body_arguments(&origin)?;
         let from: Vec<_> = Function::argument_ranges(&origin)?.into_iter().flatten().map(|range| Some(range.start)).collect();
         function.call_bound(&origin, &arguments, &from)
