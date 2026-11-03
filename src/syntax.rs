@@ -428,7 +428,7 @@ pub(crate) fn zilde(fill: Number) -> Value { Value::empty([0], Value::Number(fil
 fn literal_token(kind: &TokenKind) -> bool {
     matches!(
         kind, TokenKind::Literal(_) | TokenKind::Number(_) | TokenKind::Zilde(_) | TokenKind::Open | TokenKind::Close(_) | TokenKind::BracketOpen
-            | TokenKind::BracketClose(_) | TokenKind::Semicolon | TokenKind::Separator | TokenKind::Function(Primitive::Keys) | TokenKind::Power(_)
+            | TokenKind::BracketClose(_) | TokenKind::Semicolon | TokenKind::Separator | TokenKind::Function(Primitive::Keys(false)) | TokenKind::Power(_)
             | TokenKind::Letter(Letter::Transpose)
     )
 }
@@ -569,7 +569,7 @@ fn header(tokens: &[Token], aliases: &mut bool) -> bool {
     let NodeKind::ArrayLiteral { cells, .. } = &record.kind else { unreachable!() };
     for cell in cells {
         let [Node { kind: NodeKind::Literal(key), .. }, colon, value] = cell.as_slice() else { continue; };
-        if colon.kind.primitive() != Some(Primitive::Keys) || crate::keyed::name(key).as_deref() != Some("hanzi_aliases") { continue; }
+        if colon.kind.primitive() != Some(Primitive::Keys(false)) || crate::keyed::name(key).as_deref() != Some("hanzi_aliases") { continue; }
         let on = match &value.kind {
             NodeKind::Literal(value) => value.boolean().ok(),
             NodeKind::Number { text: None, mark: None } => match value.span.text() { "0" => Some(false), "1" => Some(true), _ => None }, _ => None
@@ -744,7 +744,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
             }
             '⎕' => TokenKind::Output,
             ':' if chars.peek().is_some_and(|(_, c)| canonical(*c) == ':') => { chars.next(); TokenKind::ErrorGuard }
-            ':' => TokenKind::Function(Primitive::Keys),
+            ':' => TokenKind::Function(Primitive::Keys(false)),
             '?' => TokenKind::Predicate,
             '{' => TokenKind::BraceOpen,
             '}' => TokenKind::BraceClose,
@@ -1019,7 +1019,7 @@ fn marked_literal(kind: NodeKind, span: &Span, mark: Mark) -> Result<NodeKind, P
 /// The first item, at any depth, that isn't a literal, a key's colon or a node that `allowed` accepts. Lists, parentheses and runs are searched through.
 pub(crate) fn non_literal<'a>(nodes: &'a [Node], allowed: &impl Fn(&NodeKind) -> bool) -> Option<&'a Node> {
     nodes.iter().find_map(|node| match &node.kind {
-        NodeKind::Literal(_) | NodeKind::Number { .. } | NodeKind::Zilde(_) | NodeKind::Function(Builtin::Primitive(Primitive::Keys)) => None,
+        NodeKind::Literal(_) | NodeKind::Number { .. } | NodeKind::Zilde(_) | NodeKind::Function(Builtin::Primitive(Primitive::Keys(false))) => None,
         NodeKind::ArrayLiteral { cells, .. } => cells.iter().find_map(|cell| non_literal(cell, allowed)),
         NodeKind::Group(nodes) | NodeKind::Run(nodes) => non_literal(nodes, allowed), kind if allowed(kind) => None, _ => Some(node)
     })
@@ -1169,7 +1169,7 @@ pub(crate) fn unwrapped(mut nodes: Vec<Node>) -> Vec<Node> {
 
 /// The position of the `:` in a bracketed `key:value` item: its first `:`, which follows keys, with no function before them.
 pub(crate) fn key_colon(nodes: &[Node]) -> Option<usize> {
-    let i = nodes.iter().position(|n| n.kind.primitive() == Some(Primitive::Keys))?;
+    let i = nodes.iter().position(|n| n.kind.primitive() == Some(Primitive::Keys(false)))?;
     (i > 0 && nodes[..i].iter().all(key_node)).then_some(i)
 }
 

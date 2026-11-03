@@ -1,5 +1,5 @@
 //! One structural scheduler and one executor for forced graphs and recordings.
-use super::{Desc, Node, Out, Outputs, Plan, Program, Ran, Running, Schedule, Stage, Step};
+use super::{Desc, Node, Out, Outputs, Parameter, Plan, Program, Ran, Running, Schedule, Stage, Step};
 use crate::{Error, Value, error::Result, primitive::{Notation, Operation, ReadOp, WriteTarget}};
 use rustymath::agreement::Mapping;
 use std::{hash::{Hash, Hasher}, sync::Arc};
@@ -9,16 +9,16 @@ pub(crate) fn schedule(original: Arc<Program>, running: &mut Running, from: usiz
     let geometry = std::mem::take(&mut running.geometry);
     running.bind(&program, geometry);
     let until = count_boundary(&program, running);
-    let order: Vec<_> = program.order(0).into_iter().take_while(|&node| node < until).collect();
+    let order: Vec<_> = program.order(program.live_roots(), |_| false).into_iter().take_while(|&node| node < until).collect();
     if !freshen(&mut program, running, &order)? { return Err(Error::planning()); }
     let originals = super::rules::rewrite(&mut program, running, from, until)?;
     let geometry = std::mem::take(&mut running.geometry);
     running.bind(&program, geometry);
     let until = count_boundary(&program, running);
-    let order: Vec<_> = program.order(0).into_iter().take_while(|&node| node < until).collect();
+    let order: Vec<_> = program.order(program.live_roots(), |_| false).into_iter().take_while(|&node| node < until).collect();
     if !freshen(&mut program, running, &order)? { return Err(Error::planning()); }
     if crate::settings::verifies() { super::verify::check(&program); }
-    let execution = program.execution_order(from);
+    let execution = program.execution_order(|output| running.value(&program, output).is_some() || running.is_complete(&program, output));
     let readers = readers(&program, &execution);
     let mut stages = Vec::new();
     let mut group = super::blocks::Builder::default();
@@ -35,7 +35,7 @@ pub(crate) fn schedule(original: Arc<Program>, running: &mut Running, from: usiz
     let (releases, publications) = completion(&program, running, &stages, until);
     let schedule = Arc::new(Schedule { releases, publications, original, originals, program: Arc::new(program), order: order.into(), stages: stages.into() });
     let mut plan = Plan::new(schedule, from, runs);
-    plan.stamp = stamp(&plan.program, running);
+    running.geometry.stamp = stamp(&plan.program, running);
     plan.geometry = std::mem::take(&mut running.geometry);
     Ok(plan)
 }
@@ -52,7 +52,7 @@ pub(crate) fn restore_original(plan: &Plan, running: &mut Running) -> (Arc<Progr
         }
     }
     let from = original.parameters.iter().take(running.observed).rev().find_map(|parameter| match parameter {
-        super::Parameter::Count { output, .. } => Some(output.node + 1), _ => None
+        Parameter::Count { output, .. } => Some(output.node + 1), _ => None
     }).unwrap_or(0);
     running.values = values;
     running.bind(&original, geometry);
@@ -61,7 +61,7 @@ pub(crate) fn restore_original(plan: &Plan, running: &mut Running) -> (Arc<Progr
 
 fn count_boundary(program: &Program, running: &Running) -> usize {
     program.parameters.iter().skip(running.observed).find_map(|parameter| match parameter {
-        super::Parameter::Count { output, .. } => Some(output.node + 1), _ => None
+        Parameter::Count { output, .. } => Some(output.node + 1), _ => None
     }).unwrap_or(program.nodes.len())
 }
 
@@ -121,7 +121,7 @@ fn completion(program: &Program, running: &Running, stages: &[Stage], until: usi
             }
         }
     }
-    let mut crossing: Vec<_> = program.execution_order(until).into_iter()
+    let mut crossing: Vec<_> = program.execution_order(|_| false).into_iter().filter(|&node| node >= until)
         .flat_map(|node| program.demands(node, false).map(|(_, read, address)| (read.operand, address)))
         .filter(|(output, address)| *address || output.node < until).chain(program.live_roots().map(|output| (output, false))).collect();
     while let Some((output, address)) = crossing.pop() {
@@ -155,8 +155,8 @@ fn stamp(program: &Program, running: &Running) -> Option<u64> {
     }
     for (at, parameter) in program.parameters.iter().enumerate() {
         let value = match parameter {
-            super::Parameter::Input { position, read: super::trace::ReadKind::Count } => running.inputs.get(*position)?.as_ref()?,
-            super::Parameter::Count { output, .. } if at < running.observed => running.value(program, *output)?, _ => continue
+            Parameter::Input { position, read: super::trace::ReadKind::Count } => running.inputs.get(*position)?.as_ref()?,
+            Parameter::Count { output, .. } if at < running.observed => running.value(program, *output)?, _ => continue
         };
         value.identity_hash(&mut hash);
     }
@@ -167,15 +167,15 @@ pub(crate) fn refill(plan: &mut Plan, running: &mut Running, from: usize) -> Res
     if from != plan.from { return Ok(false); }
     let program = &plan.program;
     let current = stamp(program, running);
-    if current.is_none() || plan.stamp != current {
+    if current.is_none() || running.geometry.stamp != current {
         if !describe(program, running, &plan.order)? { return Ok(false); }
         for stage in plan.stages.iter() { if let Stage::Block(block) = stage && !block.accepts(program, running)? { return Ok(false); } }
     }
-    plan.stamp = current;
+    running.geometry.stamp = current;
     Ok(true)
 }
 
-struct Rebound { step: Step, outputs: super::Description, reads: Vec<super::Read>, plan: Option<rustymath::agreement::ReadPlan> }
+struct Rebound { step: Step, outputs: Option<super::Description>, reads: Vec<super::Read>, plan: Option<rustymath::agreement::ReadPlan> }
 
 fn bind_input(program: &Program, running: &mut Running, node: usize) -> bool {
     if let Node::Input { position, desc, .. } = &program.nodes[node] && let Some(current) = running.binding.input_desc(*position).cloned() {
@@ -189,13 +189,13 @@ fn bind_row(program: &Program, running: &Running, node: usize) -> Result<Option<
     let Node::Step { origin, .. } = &program.nodes[node] else { return Ok(None); };
     let mut reads = program.reads(&origin.list).to_vec();
     let bound = running.call(program, origin)?;
-    let (step, outputs, plan) = crate::fusion::row(&bound.call_view(&bound.list), &mut reads)?;
-    Ok(Some(Rebound { step, outputs: outputs.unwrap_or_else(Outputs::empty), reads, plan }))
+    let (step, outputs, plan) = crate::fusion::row(&bound.call_view(), &mut reads)?;
+    Ok(Some(Rebound { step, outputs, reads, plan }))
 }
 
 fn install_row(program: &Program, running: &mut Running, node: usize, row: Rebound) -> Result<()> {
     let Node::Step { origin, descs, .. } = &program.nodes[node] else { unreachable!() };
-    for (slot, desc) in descs.clone().zip(row.outputs.into_vec()) { running.geometry.descs[slot as usize] = desc; }
+    for (slot, desc) in descs.clone().zip(row.outputs.into_iter().flat_map(Outputs::into_vec)) { running.geometry.descs[slot as usize] = desc; }
     for (slot, read) in origin.list.clone().zip(row.reads) { running.geometry.maps[slot as usize] = read.map; }
     running.prepare_read_plan(node, row.plan);
     prepare_reads(program, running, node)
@@ -221,11 +221,13 @@ fn freshen(program: &mut Program, running: &mut Running, order: &[usize]) -> Res
         if let Node::Input { desc, .. } = program.nodes[node] { program.descs[desc as usize] = running.geometry.descs[desc as usize].clone(); }
         let Some(row) = bind_row(program, running, node)? else { continue; };
         let Node::Step { step, origin, descs, trees, shy, .. } = &mut program.nodes[node] else { unreachable!() };
-        if row.outputs.as_ref().len() != descs.len() { return Ok(false); }
+        if let Some(outputs) = &row.outputs {
+            if outputs.as_ref().len() != descs.len() { return Ok(false); }
+            *trees = outputs.trees().cloned();
+            *shy = outputs.shy;
+            for (slot, desc) in descs.clone().zip(outputs.as_ref()) { program.descs[slot as usize] = desc.clone(); }
+        } else if !descs.is_empty() || trees.is_some() { return Ok(false); }
         *step = row.step.clone();
-        *trees = row.outputs.trees().cloned();
-        *shy = row.outputs.shy;
-        for (slot, desc) in descs.clone().zip(row.outputs.as_ref()) { program.descs[slot as usize] = desc.clone(); }
         for (slot, read) in origin.list.clone().zip(&row.reads) { program.reads[slot as usize] = read.clone(); }
         install_row(program, running, node, row)?;
     }
@@ -237,11 +239,12 @@ fn describe(program: &Program, running: &mut Running, order: &[usize]) -> Result
         if !bind_input(program, running, node) { return Ok(false); }
         let Some(row) = bind_row(program, running, node)? else { continue; };
         let Node::Step { step, descs, trees, shy, .. } = &program.nodes[node] else { unreachable!() };
-        if &row.step != step || row.outputs.as_ref().len() != descs.len() || row.outputs.trees() != trees.as_ref() || row.outputs.shy != *shy {
-            return Ok(false);
-        }
-        if descs.clone().zip(row.outputs.as_ref())
-            .any(|(slot, current)| !super::verify::compatible_optional(program.descs[slot as usize].as_ref(), current.as_ref())) { return Ok(false); }
+        if &row.step != step { return Ok(false); }
+        if let Some(outputs) = &row.outputs {
+            if outputs.as_ref().len() != descs.len() || outputs.trees() != trees.as_ref() || outputs.shy != *shy { return Ok(false); }
+            if descs.clone().zip(outputs.as_ref())
+                .any(|(slot, current)| !super::verify::compatible_optional(program.descs[slot as usize].as_ref(), current.as_ref())) { return Ok(false); }
+        } else if !descs.is_empty() || trees.is_some() { return Ok(false); }
         install_row(program, running, node, row)?;
     }
     Ok(true)
@@ -249,7 +252,7 @@ fn describe(program: &Program, running: &mut Running, order: &[usize]) -> Result
 
 fn observe_counts(program: &Program, running: &mut Running) -> Result<Option<Ran>> {
     while let Some(parameter) = program.parameters.get(running.observed) {
-        let super::Parameter::Count { output, .. } = parameter else { running.observed += 1; continue; };
+        let Parameter::Count { output, .. } = parameter else { running.observed += 1; continue; };
         let Some(value) = running.value(program, *output) else { return Ok(None); };
         let stored = value.read(super::trace::ReadKind::Count)?;
         if crate::eval::session().error.pending() { return Ok(Some(Ran::Failed)); }
@@ -266,7 +269,6 @@ pub(crate) fn run(plan: &mut Plan, running: &mut Running) -> Result<Ran> {
     let program = schedule.program.clone();
     let error = crate::eval::session().error.clone();
     if error.pending() { return Ok(Ran::Failed); }
-    if let Some(outcome) = observe_counts(&program, running)? { return Ok(outcome); }
     for index in 0..plan.stages.len() {
         let stage = &schedule.stages[index];
         let first = match stage { Stage::Step(node) => *node, Stage::Block(block) => block.members()[0] };
@@ -281,7 +283,7 @@ pub(crate) fn run(plan: &mut Plan, running: &mut Running) -> Result<Ran> {
         if done { continue; }
         crate::execution::check()?;
         let outputs = match stage {
-            Stage::Step(node) => step(&program, running, *node, &plan.releases[index])?,
+            Stage::Step(node) => step(&program, running, *node, &plan.releases[index]),
             Stage::Block(block) => {
                 let count = items(&program, running, first);
                 let compile = crate::settings::compiles();
@@ -289,9 +291,9 @@ pub(crate) fn run(plan: &mut Plan, running: &mut Running) -> Result<Ran> {
                     let worthwhile = block.repays(count, plan.runs);
                     plan.prepared[index] = block.prepare(&program, running, count, worthwhile || matches!(compile, crate::settings::Compiles::Always));
                 }
-                block.run(&program, running, count, if matches!(compile, crate::settings::Compiles::Never) { None } else { plan.prepared[index].as_ref() })?
+                block.run(&program, running, count, if matches!(compile, crate::settings::Compiles::Never) { None } else { plan.prepared[index].as_ref() })
             }
-        }.flatten();
+        }?.flatten();
         if error.pending() { return Ok(Ran::Failed); }
         match stage {
             Stage::Step(node) => { running.store(*node, outputs); }
@@ -304,8 +306,9 @@ pub(crate) fn run(plan: &mut Plan, running: &mut Running) -> Result<Ran> {
         }
         for &source in plan.publications[index].iter() { running.publish(&program, source)?; }
         for &node in plan.releases[index].iter() { running.take_outputs(&program, node); }
-        if let Some(outcome) = observe_counts(&program, running)? { return Ok(outcome); }
     }
+    // A ready count does not mean that its scheduled prefix has run.
+    if let Some(outcome) = observe_counts(&program, running)? { return Ok(outcome); }
     program.outputs.clone().try_map(|output| running.argument(&program, output).cloned().ok_or_else(Error::planning)).map(Ran::Done)
 }
 
@@ -314,10 +317,10 @@ pub(crate) fn step(program: &Program, running: &mut Running, node: usize, final_
     let Node::Step { step, origin, descs, .. } = &program.nodes[node] else { unreachable!("only executable nodes are scheduled") };
     if matches!(step, Step::At { .. }) { return at(program, running, node, final_uses); }
     let bound = running.call(program, origin)?;
-    let call = bound.call_view(&bound.list);
+    let call = bound.call_view();
     match step {
         Step::Product { left, right } => return product(program, running, node, *left, *right),
-        Step::Call | Step::Draw | Step::Effect { .. } => return Operation::code(&call), _ => {}
+        Step::Call | Step::Draw | Step::Effect { .. } => return Operation::code(&crate::primitive::RunView::new(call, &bound.list)), _ => {}
     }
     let descs: Vec<_> = descs.clone().map(|slot| running.geometry.descs[slot as usize].as_ref().ok_or_else(Error::planning)).collect::<Result<_>>()?;
     let desc = descs[0];
@@ -445,9 +448,9 @@ pub(super) fn selected_addresses(
 fn address_route(program: &Program, running: &Running, node: usize, root: Out) -> Result<(rustymath::agreement::ReadPlan, usize)> {
     let Node::Step { origin, .. } = &program.nodes[node] else { unreachable!() };
     let bound = running.call(program, origin)?;
-    let call = bound.call_view(&bound.list);
+    let call = bound.call_view();
     if matches!(call.operation, Operation::ReadRelation { relation: crate::primitive::Relation::Back(_), .. }) {
-        return crate::plan::with_relation(&call, |original, relation, _, removed| {
+        return call.with_relation( |original, relation, _, removed| {
             let crate::primitive::Relation::Back(input) = relation else { unreachable!() };
             let position = |input: usize| input + if input >= removed.start { removed.len() } else { 0 };
             let wanted = program.reads[origin.list.start as usize + position(input as usize)].operand;
@@ -477,7 +480,7 @@ fn address_route(program: &Program, running: &Running, node: usize, root: Out) -
 pub(super) fn gather_addresses(program: &Program, running: &Running, node: usize) -> Result<rustymath::agreement::ReadPlan> {
     let Node::Step { origin, .. } = &program.nodes[node] else { return Err(Error::planning()); };
     let bound = running.call(program, origin)?;
-    let call = bound.call_view(&bound.list);
+    let call = bound.call_view();
     let geometry = crate::primitive::gather(&call)?.ok_or_else(Error::planning)?;
     let route = with_index_reads(program, running, origin.list.start, &geometry.indices, |indices| {
         rustymath::operation::gather_plan(&geometry.source_layout, &geometry.routes, indices, geometry.paired, origin.mode.dynamic, geometry.fill.is_some())
@@ -493,7 +496,7 @@ fn at(program: &Program, running: &mut Running, node: usize, final_uses: &[usize
     let desc = running.geometry.descs[descs.start as usize].clone().ok_or_else(Error::planning)?;
     let (kernel, settings) = {
         let bindings = running.call(program, origin)?;
-        let call = bindings.call_view(&bindings.list);
+        let call = bindings.call_view();
         (call.kernel(call.variant(desc.dtype())?)?, super::blocks::kernel_settings(&call)?)
     };
     let source = program.reads[origin.list.start as usize + *root as usize].operand;
@@ -538,7 +541,7 @@ fn at(program: &Program, running: &mut Running, node: usize, final_uses: &[usize
 fn product(program: &Program, running: &Running, node: usize, left: u32, right: u32) -> Result<Outputs<Value>> {
     let Node::Step { origin, descs, .. } = &program.nodes[node] else { return Err(Error::planning()); };
     let bound = running.call(program, origin)?;
-    let call = bound.call_view(&bound.list);
+    let call = bound.call_view();
     let product = crate::plan::product(&call)?;
     let desc = running.geometry.descs[descs.start as usize].as_ref().ok_or_else(Error::planning)?;
     let Some((map, fold)) = crate::primitive::product_kernels(&call, Some(desc.dtype()))? else { return Err(Error::planning()); };
@@ -554,7 +557,7 @@ fn product(program: &Program, running: &Running, node: usize, left: u32, right: 
 }
 
 pub(crate) fn framed_fallback(
-    function: &crate::Function, axes: usize, atoms: &[Option<bool>], notation: Notation, origin: super::Origin<&[Value]>) -> Result<Value> {
+    function: &crate::Function, axes: usize, atoms: &[Option<bool>], notation: Notation, origin: super::Origin<&[Value]>) -> Result<Outputs<Value>> {
     super::trace::Tracing::stop(super::Reason::Batch, origin.site.clone());
     let arguments = crate::Function::body_arguments(&origin)?.into_owned();
     let positions: Vec<_> = crate::Function::argument_roots(&origin)?.into_iter().flatten().enumerate()
@@ -570,22 +573,22 @@ pub(crate) fn framed_fallback(
         crate::execution::check()?;
         let mut inputs = arguments.clone();
         for (which, &(input, _)) in positions.iter().enumerate() { inputs[input] = at(which, cells[which].get(frame.cell(which, position))?)?; }
-        results.push(function.call_bound(&origin, &inputs, &from)?);
+        results.push(function.call_bound_outputs(&origin, &inputs, &from)?.into_cell()?);
     }
     let prototype = if let Some(first) = results.first() { first.clone() } else {
         let mut inputs = arguments.clone();
         for (which, &(input, _)) in positions.iter().enumerate() { inputs[input] = at(which, cells[which].prototype()?)?; }
-        function.prototype_bound(&origin, &inputs, &from)?
+        function.prototype_bound(&origin, &inputs, &from)?.into_cell()?
     };
     crate::explain::fallback("stopped framed body", frame.count);
     let references = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| (arguments[position].clone(), rank)).collect::<Vec<_>>();
     let reference = super::control::frame_reference(&crate::array::Layout::from(frame.layout), &references)?;
     if notation == Notation::Strand {
-        if results.is_empty() { return Ok(reference.layout().collect(results, prototype.zeroed())?); }
+        if results.is_empty() { return Ok(Outputs::one(reference.layout().collect(results, prototype.zeroed())?)); }
         let call = crate::eval::projected_call(&origin, Operation::join(notation, crate::array::Widening::Items), &results, &vec![None; results.len()])?;
-        return Operation::dispatch(call.reborrow())?.assemble()?.with_layout(reference.layout().clone());
+        return Operation::dispatch(call.reborrow())?.assemble()?.with_layout(reference.layout().clone()).map(Outputs::one);
     }
-    super::control::assemble(&reference, &results, &prototype, origin.mode)
+    super::control::assemble(&reference, &results, &prototype, origin.mode).map(Outputs::one)
 }
 
 pub(super) fn fold_dims(shape: &[usize], axis: usize) -> [usize; 3] {

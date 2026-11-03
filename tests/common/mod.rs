@@ -25,8 +25,9 @@ pub fn evaluated(session: &Session, code: &str) -> Option<AplValue> {
 /// Asserts that `actual` is exactly `expected`, as `Value::same` compares them.
 #[track_caller]
 pub fn assert_same(actual: impl Into<Option<AplValue>>, expected: &AplValue) {
-    let actual = actual.into();
-    assert!(actual.as_ref().is_some_and(|a| a.same(expected)), "{actual:?} is not {expected:?}");
+    let actual = actual.into().map(|a| a.read(basedpl::ReadKind::Value).unwrap());
+    let expected = expected.read(basedpl::ReadKind::Value).unwrap();
+    assert!(actual.as_ref().is_some_and(|a| a.same(&expected)), "{actual:?} is not {expected:?}");
 }
 
 /// Evaluates `expected` after `code`, under the settings that `code` leaves, in a module of its own.

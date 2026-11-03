@@ -1,7 +1,7 @@
 //! Development-only checks, shared by the tests and the worker: reference cases, `.bpl` reference files and the examples in `.qmd` pages.
 use crate::{EvalOptions, InterruptHandle, Number, Session, Value, number::Numeric, settings::Compiles};
 use serde_json::{Value as JsonValue, json};
-use std::{collections::VecDeque, sync::{Arc, Mutex}};
+use std::{collections::VecDeque, convert::Infallible, sync::{Arc, Mutex}};
 
 /// A value captured from another interpreter. Its numbers carry no exactness. A capture encodes a simple atom as a scalar array, and BPL expectations use based values directly.
 pub fn expected_array(value: &JsonValue) -> Option<Value> {
@@ -27,6 +27,9 @@ fn same_atom(x: &Value, y: &Value, relative: Option<f64>, absolute: f64, exactne
             a == b || (a.is_finite() && b.is_finite() && (a - b).norm() <= absolute.max(relative * a.norm().max(b.norm())))
         }
         (Value::Number(x), Value::Number(y)) => x == y,
+        (Value::Function(x), Value::Function(y)) => x.equal_by(y, false, &mut |a, b| {
+            Ok::<_, Infallible>(difference(a, b, relative, absolute, exactness).is_none())
+        }).unwrap(),
         _ => x.same(y),
     }
 }
@@ -277,7 +280,9 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
         if !primitive.info().pervasive(1 + usize::from(dyadic)) { return None; }
         let args = vec![Value::Number(Number::float(2.0, rustymath::buffer::FloatWidth::F64)); 1 + usize::from(dyadic)];
         let origin = Operation::Primitive { primitive, pairing: Pairing::Axes }.origin_numeric(&args, 0, Numeric::EXACT).ok()?;
-        let call = origin.call_view(&origin.list);
+        let current = origin.reborrow();
+        let prepared = Operation::prepare(&current).ok()?;
+        let call = prepared.view();
         let variant = call.variant(rustymath::buffer::DType::Float(rustymath::buffer::FloatWidth::F64)).ok()?;
         if Operation::kernel(&call, variant).ok().flatten().is_none() && !primitive.info().defined[usize::from(dyadic)] { return None; }
         Some(dyadic && origin.roles.kind(0) == Some(crate::ReadKind::Value))

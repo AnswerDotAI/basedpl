@@ -57,7 +57,7 @@ impl FunctionOperand {
     pub(crate) fn resolve<'a>(&'a self, origin: &'a crate::program::Origin<&'a [Value]>) -> Result<Cow<'a, Value>, Error> {
         match self { Self::Value { value, .. } => Ok(Cow::Borrowed(value)), Self::Input { position, .. } => Ok(Function::capture_at(origin, position)) }
     }
-    pub(crate) fn resolve_in_call<'a>(&'a self, call: &'a crate::primitive::CallView<'_>, read: ReadKind) -> Result<Cow<'a, Value>, Error> {
+    pub(crate) fn resolve_in_call<'a>(&'a self, call: &'a crate::primitive::RunView<'_>, read: ReadKind) -> Result<Cow<'a, Value>, Error> {
         match self { Self::Value { value, .. } => value.read_borrowed(read), Self::Input { position, .. } => Function::capture_value(call, position, read) }
     }
     fn key_parts(&self, kind: OperandKind, description: bool, key: &mut Encoder) -> Result<(), Error> {
@@ -103,7 +103,7 @@ impl Function {
         let root = root.shifted(origin.capture_root_start(), origin.capture_start());
         origin.trees.as_ref().map_or_else(|| Cow::Borrowed(&origin.list[root.leaves.start]), |trees| trees.at_root(&root, origin.list))
     }
-    pub(crate) fn capture_value<'a>(call: &'a crate::primitive::CallView<'_>, root: &TreeRoot, read: ReadKind) -> Result<Cow<'a, Value>, Error> {
+    pub(crate) fn capture_value<'a>(call: &'a crate::primitive::RunView<'_>, root: &TreeRoot, read: ReadKind) -> Result<Cow<'a, Value>, Error> {
         let root = root.shifted(call.capture_root_start(), call.capture_start());
         match call.trees {
             None => call.value(root.leaves.start, read),
@@ -112,19 +112,19 @@ impl Function {
     }
 
     /// Runs this body against the complete, snapshot-bound call.
-    pub(crate) fn run(&self, origin: crate::program::Origin<&[Value]>) -> Result<Value, Error> {
+    pub(crate) fn run(&self, origin: crate::program::Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
         check()?;
         let session = session();
         if !session.deeper() { return Err(Error::new(Kind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
-        let result = (|| {
+        let result = run_on_stack(|| {
             let _numeric = crate::settings::activate(&origin)?;
             session.with_call_context(self, origin.reborrow(), || {
-                if let Some(value) = crate::derivative::custom_rule(self, &origin)? { return Ok(value); }
+                if let Some(value) = crate::derivative::custom_rule(self, &origin)? { return Ok(Outputs::one(value)); }
                 self.run_body(origin.reborrow())
             })
-        })();
+        });
         session.ascend();
-        result
+        result.map(Outputs::flatten)
     }
 
     /// Projects a body call without executing it. `from` names each argument's old first leaf.
@@ -169,7 +169,7 @@ impl Function {
         if atoms.len() != origin.list.len() { return Err(Error::planning()); }
         Ok(Some((*axes, atoms, *notation, origin)))
     }
-    pub(crate) fn prototype_bound(&self, parent: &crate::program::Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<Value, Error> {
+    pub(crate) fn prototype_bound(&self, parent: &crate::program::Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<Outputs<Value>, Error> {
         session().prototype_mode(true, || {
             let origin = self.bound(parent, arguments, from)?;
             self.run(origin.reborrow())
@@ -177,8 +177,11 @@ impl Function {
     }
 
     pub(crate) fn call_bound(&self, parent: &crate::program::Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<Value, Error> {
+        self.call_bound_outputs(parent, arguments, from)?.assemble()
+    }
+    pub(crate) fn call_bound_outputs(&self, parent: &Origin<&[Value]>, arguments: &[Value], from: &[Option<usize>]) -> Result<Outputs<Value>, Error> {
         let origin = self.call_origin(parent, arguments, from)?;
-        Operation::dispatch(origin.reborrow())?.assemble()
+        Operation::dispatch(origin.reborrow())
     }
     pub(crate) fn recorded(
         mut code: RecordedCode, context: BindingContext, mut captures: Vec<Value>, mut input: impl FnMut(usize) -> Result<Value, Error>
@@ -195,7 +198,7 @@ impl Function {
             FunctionNode::Recorded { code: Arc::new(code), context: Arc::new(context), operands: captures.into_iter().map(FunctionOperand::from).collect() },
             None))
     }
-    fn run_recorded(&self, origin: Origin<&[Value]>) -> Result<Value, Error> {
+    fn run_recorded(&self, origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
         let FunctionNode::Recorded { code, context, .. } = self.node() else { unreachable!() };
         let arguments = Self::argument_ranges(&origin)?;
         let first = arguments.iter().flatten().next().ok_or_else(Error::planning)?.start;
@@ -209,11 +212,13 @@ impl Function {
             };
             Ok(Some((binding.read, value)))
         };
-        let outputs = code.program.bound(context, |input| resolve(input)?.map(|(_, value)| value.into_owned()).ok_or_else(Error::planning), |input| {
+        let mut running = crate::program::Running::new(Vec::new());
+        running.binding = (**context).clone();
+        let outputs = code.program.bound(running, &code.program.outputs, code.program.live_roots(), |input| resolve(input)?.map(|(_, value)| value.into_owned()).ok_or_else(Error::planning), |input| {
             let (_, value) = resolve(input)?.ok_or_else(Error::planning)?;
             Ok(crate::program::Desc::of(&value).map(Cow::into_owned))
         })?;
-        outputs.assemble()
+        Ok(outputs)
     }
 }
 
@@ -345,7 +350,7 @@ impl Function {
     pub(crate) fn matches(&self, other: &Self, numeric: Numeric) -> Result<bool, Error> {
         self.equal_by(other, false, &mut |a, b| a.matches_within(b, numeric))
     }
-    fn equal_by<E>(&self, other: &Self, structure: bool, values: &mut dyn FnMut(&Value, &Value) -> Result<bool, E>) -> Result<bool, E> {
+    pub(crate) fn equal_by<E>(&self, other: &Self, structure: bool, values: &mut dyn FnMut(&Value, &Value) -> Result<bool, E>) -> Result<bool, E> {
         use FunctionNode as N;
         if Arc::ptr_eq(&self.0, &other.0) { return Ok(true); }
         let same = match (self.node(), other.node()) {
@@ -481,6 +486,8 @@ fn room() -> bool {
     let left = stacker::remaining_stack();
     left.is_some_and(|r| r >= STACK_RED_ZONE)
 }
+#[inline(always)]
+fn run_on_stack<T>(run: impl FnOnce() -> T) -> T { if room() { run() } else { stacker::grow(STACK_SEGMENT, run) } }
 /// The LIMIT error for evaluation deeper than `MAX_CALL_DEPTH`.
 #[cold]
 fn depth_error(span: &Span) -> Error { Error::new(Kind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}")).at(span) }
@@ -865,8 +872,8 @@ pub enum OperatorKind {
 }
 
 pub(crate) struct OperatorInfo {
-    pub(crate) call: fn(&Function, crate::program::Origin<&[Value]>) -> crate::error::Result<Value>, pub(crate) spelling: fn(&OperatorKind) -> String,
-    pub(crate) inverse: fn(&Function, crate::program::Origin<&[Value]>) -> crate::error::Result<Value>,
+    pub(crate) call: fn(&Function, crate::program::Origin<&[Value]>) -> crate::error::Result<Outputs<Value>>, pub(crate) spelling: fn(&OperatorKind) -> String,
+    pub(crate) inverse: fn(&Function, crate::program::Origin<&[Value]>) -> crate::error::Result<Outputs<Value>>,
     pub(crate) discards: fn(&OperatorKind, &[Value], bool) -> bool, pub(crate) python: &'static str, pub(crate) names: [&'static str; 3],
     pub(crate) glyph: &'static str, pub(crate) operands: &'static [OperandKind],
     form: operators::Form
@@ -1146,7 +1153,7 @@ impl Function {
     pub(crate) fn call_array(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         self.call_outputs(left, right, span)?.assemble().at(span)
     }
-    fn run_body(&self, origin: crate::program::Origin<&[Value]>) -> Result<Value, Error> {
+    fn run_body(&self, origin: crate::program::Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
         match self.node() {
             FunctionNode::Applied { op: Operator::Kind(kind), .. } => (kind.info().call)(self, origin),
             FunctionNode::Defined(_) | FunctionNode::Applied { op: Operator::Closure(_), .. } => session().call_defined(self, origin),
@@ -1158,7 +1165,7 @@ impl Function {
                 let args = Self::body_arguments(&origin)?;
                 let ranges = Self::argument_ranges(&origin)?;
                 let from: Vec<_> = ranges.iter().flatten().map(|range| Some(range.start)).collect();
-                self.call_bound(&origin, &args, &from)
+                self.call_bound_outputs(&origin, &args, &from)
             }
         }
     }
@@ -1334,6 +1341,10 @@ impl Bound {
         let shy = outputs.shy;
         let value = if !outputs.has_result() { Binding::NoResult } else { Binding::from_element(outputs.assemble().at(span)?) };
         Ok(Self { value, shy, expression: None })
+    }
+    pub(super) fn into_outputs(self, span: &Span) -> Result<Outputs<Value>, Error> {
+        let outputs = match self.value { Binding::NoResult => Outputs::empty(), value => Outputs::one(value.into_value(span)?) };
+        Ok(outputs.with_shy(self.shy))
     }
     #[inline]
     pub(crate) fn array(self, span: &Span) -> Result<Value, Error> { self.value.into_value(span) }

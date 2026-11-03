@@ -1,6 +1,6 @@
 //! Nested Derivative/Batched levels. Dispatch invokes rules; Value::read owns observation.
 
-use crate::{Value, array::{Carried, Layout}, error::Result, primitive::{Operation, ReadOp, ViewAxis}, program::{Origin, Outputs}, session};
+use crate::{Value, array::{Carried, Layout}, error::Result, primitive::{CallView, Operation, ReadOp, ViewAxis}, program::{Origin, Outputs}, session};
 use std::{cell::{Cell, RefCell}, sync::Arc};
 
 #[derive(Default)]
@@ -70,13 +70,13 @@ impl Level {
         frame_reference(&source.references, &source.axes)
     }
 
-    pub(crate) fn rule(&self, origin: Origin<&[Value]>) -> Result<Outputs<Value>> {
+    pub(crate) fn rule(&self, origin: Origin<&[Value]>, call: &CallView) -> Result<Outputs<Value>> {
         let previous = session().levels.set_handling(self.id, true);
         let result = match &self.kind {
-            LevelKind::Derivative => crate::derivative::rule(self, origin),
+            LevelKind::Derivative => crate::derivative::rule(self, origin, call),
             LevelKind::Batched { .. } => {
                 let previous = session().levels.batch_rule.replace(Some(self.id));
-                let result = crate::batch::rule(self, origin);
+                let result = crate::batch::rule(self, origin, call);
                 session().levels.batch_rule.set(previous);
                 result
             }

@@ -70,8 +70,8 @@ pub(crate) fn capture_current(setting: Setting, snapshot: Numeric) -> Value {
 }
 
 fn setting(call: &CallView<'_>, name: Setting) -> Result<crate::Number> {
-    let (position, _) = call.setting(name).ok_or_else(|| Error::domain("missing numeric call context"))?;
-    call.value(position, crate::ReadKind::Structure)?.as_number().ok_or_else(|| Error::domain("invalid numeric call context"))
+    let position = call.setting(name).ok_or_else(|| Error::domain("missing numeric call context"))?;
+    call.parameter_at(position)?.as_number().ok_or_else(|| Error::domain("invalid numeric call context"))
 }
 
 pub(crate) fn captured(call: &CallView<'_>) -> Result<Numeric> {
@@ -92,9 +92,10 @@ pub(crate) struct NumericScope { depth: usize, thread: std::marker::PhantomData<
 impl Drop for NumericScope { fn drop(&mut self) { NUMERIC.with(|stack| stack.borrow_mut().truncate(self.depth)); } }
 
 pub(crate) fn activate(origin: &Origin<&[Value]>) -> Result<NumericScope> {
-    let call = origin.call_view(&origin.list);
+    let prepared = crate::primitive::Operation::prepare(origin)?;
+    let call = prepared.view();
     let numeric = captured(&call)?;
-    let operands = std::array::from_fn(|i| call.setting(Setting::BODY[i]).expect("captured BODY context").1.clone());
+    let operands = std::array::from_fn(|i| origin.list[call.setting(Setting::BODY[i]).expect("captured BODY context")].clone());
     let depth = NUMERIC.with(|stack| {
         let mut stack = stack.borrow_mut();
         let depth = stack.len();

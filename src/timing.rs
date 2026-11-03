@@ -1,5 +1,5 @@
 //! BPL measurements share reference records and setups. Numerical timing, copy units, footprint copies and retries live in Rustymath.
-use crate::{EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn, host::timing_lock, protocol::response, reference::{self, File}};
+use crate::{EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn, host::{Instant, timing_lock}, protocol::response, reference::{self, File}};
 use rustymath::hashing::HashMap;
 use rustymath::timing::{Budget, Cause, CopyTime, Footprint, Held, NATIVE_COLUMN, copy_time, footprint};
 pub use rustymath::timing::{RETRY_PAUSES, checks_budgets, name_cpu};
@@ -47,19 +47,21 @@ fn evaluated(session: &Session, parsed: &crate::Parsed, interrupt: &InterruptHan
     }
     result
 }
-/// Parse once, warm once, then take the fastest of five evaluations, forcing the result each time. Gives that time, the most bytes that the five evaluations held at once, as `rustymath::memory::peak_held` counts them, and the bytes that they left held in large allocations beyond what the first evaluation left.
-pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, usize, usize), Evaluation> {
+/// Parse once and force each evaluation. Return the fastest of five warm times, the first evaluation's time, peak large-allocation bytes during the warm runs, and bytes retained beyond the first evaluation. Parsing and setup are excluded.
+pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, f64, usize, usize), Evaluation> {
     let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
     let mut failed = None;
     let mut run = || {
         let result = evaluated(session, &parsed, interrupt);
         if result.error.is_some() { failed.get_or_insert(result); }
     };
+    let cold = Instant::now();
     run();
+    let cold_seconds = cold.elapsed().as_secs_f64();
     let start = rustymath::memory::held();
     let (seconds, held) = rustymath::memory::peak_held(|| rustymath::timing::fastest(|_| run()));
     let left = rustymath::memory::held().saturating_sub(start);
-    failed.map_or(Ok((seconds, held, left)), Err)
+    failed.map_or(Ok((seconds, cold_seconds, held, left)), Err)
 }
 
 /// The browser build's budget column: a case's third budget, after its macOS and Linux budgets.
@@ -155,7 +157,7 @@ pub fn costs(files: &[File], only: Option<&[&str]>, prefs: &str, interrupt: &Int
         let n = group.n;
         let copy = (section != "widths").then(|| copy_time::<f64>(n));
         let mut timed = |name| time(group.session(name)?, code, interrupt).map_err(|failed| failure(code, failed));
-        let (total, held, left) = timed(section)?;
+        let (total, _, held, left) = timed(section)?;
         if rustymath::memory::checks() && left > 0 {
             return Err(format!("{}: the timed runs left {left} more bytes held in large allocations than the first run", label(file, case)));
         }
@@ -192,11 +194,7 @@ impl Capture {
     pub fn violations(&self) -> Vec<String> {
         let mut wrong = Vec::new();
         for required in &self.named.routes {
-            use rustymath::events::{EventKind::{Declined, Taken}, Route};
-            if !Route::REQUIRED.iter().any(|route| route.name() == required) {
-                wrong.push(format!("unsupported route requirement {required}; use compiled, fused fold or trace"));
-                continue;
-            }
+            use rustymath::events::EventKind::{Declined, Taken};
             if !self.run.report.routes().any(|r| r.kind == Taken && r.route.name() == required.as_str()) {
                 let declines: Vec<_> = self.run.report.routes().filter(|r| r.kind == Declined).map(|r| format!("{}: {}", r.route.name(), r.reason)).collect();
                 wrong.push(if declines.is_empty() { format!("required route {required} was not taken") }
@@ -336,7 +334,7 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle, limit: Option<Dura
     for code in cases {
         let code = code.as_str().ok_or("each case must be a string")?;
         match time(&session, code, interrupt) {
-            Ok((seconds, ..)) => costs.push(json!({"code":code, "seconds":seconds, "copies":seconds / n as f64 / copy.seconds})),
+            Ok((seconds, cold_seconds, ..)) => costs.push(json!({"code":code, "seconds":seconds, "cold_seconds":cold_seconds, "copies":seconds / n as f64 / copy.seconds})),
             Err(failed) => return response(failed).map_err(|error| error.to_string()),
         }
     }

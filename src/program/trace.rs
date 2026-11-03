@@ -6,6 +6,7 @@ use std::{ops::Range, sync::{Arc, Mutex, Weak, atomic::AtomicUsize}};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ReadKind { Count, Structure, Value, Kind, Description, RuntimeOnly }
+impl ReadKind { pub(crate) fn is_parameter(self) -> bool { matches!(self, Self::Count | Self::Structure | Self::Value) } }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Role { Argument, Free(Option<Name>), StandIn, Root, Seed }
@@ -88,7 +89,7 @@ impl Tracing {
         let mut traces = session().traces.borrow_mut();
         for trace in traces.stack.iter_mut().rev() {
             if trace.stop.is_some() || !reach.0.iter().any(|input| input.trace == trace.id) { continue; }
-            let Some(output) = trace.value(&Value::Pending(pending.clone()), false) else { continue };
+            let Some(output) = trace.value(&Value::Pending(pending.clone()), false) else { trace.stop(Reason::Read, None); continue };
             if trace.reads.iter().any(|read| matches!(read, Parameter::Count { output: prior, .. } if *prior == output)) { continue; }
             trace.parameter(Parameter::Count { output });
         }
@@ -101,7 +102,7 @@ impl Tracing {
         let Some((step, origin)) = node.recipe() else { return };
         let mut reads = Vec::with_capacity(origin.list.len());
         for (i, read) in origin.list.iter().enumerate() {
-            let Some(operand) = trace.value(&read.operand, i < 64 && origin.literals & (1 << i) != 0) else { trace.stop(Reason::HostKind, None); return; };
+            let Some(operand) = trace.value(&read.operand, i < 64 && origin.literals & (1 << i) != 0) else { return };
             reads.push(super::Read { operand, map: read.map.clone() });
         }
         let publish = origin.nonrepeatable();
@@ -138,10 +139,7 @@ impl Trace {
                 return Some(output);
             }
             let output = pending.node.with_state(|state| match state {
-                graph::State::Input { position, role: Role::Seed, .. } => {
-                    Some(self.builder.input(position, pending.description().cloned(), pending.node.level()))
-                }
-                graph::State::Input { value: Some(source), .. } => self.value(source, literal),
+                graph::State::Input { value: Some(source), role, .. } if role != Role::Seed => self.value(source, literal),
                 _ => None,
             });
             if let Some(output) = output { self.mapped.insert(pending.clone(), output); return Some(output); }
@@ -187,7 +185,7 @@ pub(crate) fn record(function: &crate::Function, origin: Origin<&[Value]>, argum
             inputs.push(input);
         }
     }
-    let result = function.run(origin.with_list(inputs.as_slice())).map(|value| Outputs::one(value).flatten());
+    let result = function.run(origin.with_list(inputs.as_slice()));
     let mut trace = session().traces.borrow_mut().stack.pop().unwrap();
     debug_assert_eq!(scope.id, trace.id);
     let mut description = None;
@@ -198,7 +196,11 @@ pub(crate) fn record(function: &crate::Function, origin: Origin<&[Value]>, argum
         let mut roots = Vec::with_capacity(values.len());
         for value in values {
             descriptions.push(Desc::of(value).map(std::borrow::Cow::into_owned));
-            if let Some(output) = trace.value(value, false) { roots.push(output); } else { trace.stop(Reason::HostKind, None); break; }
+            if let Some(output) = trace.value(value, false) { roots.push(output); } else {
+                eprintln!("TRACE_RESULT leaf={} kind={:?} number={:?} operation={:?}", roots.len(), std::mem::discriminant(value),
+                    match value { Value::Number(number) => Some(number), _ => None }, value.pending().and_then(|pending| pending.node.recipe()).map(|(_, origin)| origin.operation.glyph()));
+                trace.stop(Reason::HostKind, None); break;
+            }
         }
         trace.builder.program.outputs = Outputs::from(roots).with_trees(trees.clone()).with_shy(result.shy);
         description = Some(Outputs::from(descriptions).with_trees(trees).with_shy(result.shy));

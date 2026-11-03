@@ -568,8 +568,17 @@ impl Mark {
 }
 
 pub(crate) fn literal(text: &str, mark: Option<Mark>, numeric: Numeric) -> Result<Number, ErrorKind> {
-    if mark == Some(Mark::Rational) { return Number::rational_literal(text, numeric); }
-    let value = Number::literal(text, numeric)?;
+    let value = if text.starts_with('$') {
+        let (text, mark) = plain_suffixes(text);
+        let width = match mark { Some(Mark::Type { dtype: DType::Float(width), .. }) => width, _ => numeric.width };
+        Number::float(match text.as_ref() { "$n" => f64::NAN, "$m" => width.epsilon(), _ => return Err(ErrorKind::Syntax) }, width)
+    } else {
+        if mark == Some(Mark::Rational) { return Number::rational_literal(text, numeric); }
+        if mark == Some(Mark::Exact) && text.chars().all(|c| c.is_ascii_digit() || c == '¯') {
+            return Number::parse_marked(text, mark, numeric);
+        }
+        Number::literal(text, numeric)?
+    };
     match mark { Some(mark) => mark.number(&value, numeric), None => Ok(value) }
 }
 
@@ -828,7 +837,11 @@ impl Number {
     }
     /// Parse a numeric literal with the shared suffix and mark table. Bare reals use the default float width; machine literals must fit their width. Integral rational text uses BigInt, and fractional rational text converts its parsed float exactly.
     pub(crate) fn parse(text: &str, numeric: Numeric) -> Result<Self, ErrorKind> {
+        Self::parse_marked(text, None, numeric)
+    }
+    fn parse_marked(text: &str, mark: Option<Mark>, numeric: Numeric) -> Result<Self, ErrorKind> {
         let (text, marked) = plain_suffixes(text);
+        let marked = marked.or(mark);
         if marked == Some(Mark::Real) {
             return Self::parse(&text, numeric)?.approximated(numeric).map_err(|e| rustymath::error::Error::new(ErrorTag::Domain, e).into());
         }
@@ -1081,5 +1094,9 @@ pub(crate) fn calculate(kernel: &rustymath::operation::Kernel, args: &[&Value], 
     let mut output = Buffer::with_capacity(kernel.result_dtype(), 1);
     kernel.map(&reads, 0..1, rustymath::operation::Settings { tolerance: Some(numeric.tolerance.value()) }, &mut output)?;
     let kind = Kind::stored(kernel.result_dtype(), numeric.fixed.is_some(), false);
-    Value::stored(&crate::program::Desc::new(kind, true, Layout::default()), output)
+    let value = Value::stored(&crate::program::Desc::new(kind, true, Layout::default()), output)?;
+    if !numeric.is_static() && let Value::Number(number) = &value && let Some(z) = number.as_complex() {
+        return Ok(Value::Number(Number::complex(z, number.float_width().unwrap()).marked(number.is_weak())));
+    }
+    Ok(value)
 }

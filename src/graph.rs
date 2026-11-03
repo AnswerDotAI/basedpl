@@ -308,6 +308,7 @@ impl Node {
     pub(crate) fn is_stored(&self) -> bool { self.with_state(|state| !matches!(state, State::Step { .. })) }
     pub(crate) fn is_complete(&self) -> bool {
         self.with_state(|state| match state {
+            State::Input { role: Role::Seed, .. } => false,
             State::Done(_) => true, State::Input { value: Some(Value::Pending(input)), .. } => input.node.is_complete(),
             State::Input { value, .. } => value.is_some(), State::Step { .. } => false
         })

@@ -2,14 +2,14 @@
 use super::{Desc, Node, Origin, Outputs, Step};
 use crate::{
     Error, Function, Value, array::{Layout, Widening}, error::Result, number::{Kind, Kinds, Numeric},
-    primitive::{CallView, Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis}, program::trace::{self, ReadKind}
+    primitive::{CallView, RunView, Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis}, program::trace::{self, ReadKind}
 };
 use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth}, convert::ConversionKind, error::Kind as ErrorTag};
 
 fn roots(origin: &Origin<&[Value]>) -> Result<Vec<Value>> {
     let mut roots = match &origin.trees { Some(trees) => trees.build(origin.list), None => origin.list[..origin.explicit as usize].to_vec() };
     roots.truncate(origin.explicit_roots as usize);
-    Ok(roots)
+    roots.into_iter().map(|root| root.exposed()).collect()
 }
 
 pub(crate) struct Choice { pub(crate) desc: Desc, pub(crate) mappings: Vec<Mapping> }
@@ -45,11 +45,12 @@ pub(crate) fn choice_build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mappi
     Ok((Step::Picks { selector: 0, choices: 1..call.explicit as u32 }, Some(Outputs::one(Some(choice.desc))), None))
 }
 
-pub(crate) fn choice_code(call: &CallView<'_>) -> Result<Outputs<Value>> {
+pub(crate) fn choice_code(call: &RunView<'_>) -> Result<Outputs<Value>> {
     use rustymath::{agreement::{Binding, Missing, Read}, buffer::Buffer};
     let values = (0..call.explicit).map(|position| call.value(position, ReadKind::Value).map(std::borrow::Cow::into_owned)).collect::<Result<Vec<_>>>()?;
     let origin = call.origin(values.as_slice());
-    let choice = choice(&origin.call_view(&origin.list))?.ok_or_else(|| Error::domain("a choice needs native arrays"))?;
+    let prepared = Operation::prepare(&origin)?;
+    let choice = choice(&prepared.view())?.ok_or_else(|| Error::domain("a choice needs native arrays"))?;
     let physical = values.iter().enumerate().map(|(source, value)| value.physical_read(source).ok_or_else(Error::planning)).collect::<Result<Vec<_>>>()?;
     let bindings = physical.iter().map(|(view, _)| Binding::full(*view)).collect::<Vec<_>>();
     let count = choice.desc.layout.count();
@@ -73,13 +74,10 @@ fn choose(parent: &Origin<&[Value]>, values: &[Value]) -> Result<Value> {
 struct Case { function: Function, origin: Origin<Vec<Value>> }
 impl Case {
     fn plan(&self) -> Result<Option<super::BoundRecording>> {
-        let mut values = self.origin.list.clone();
-        for value in &mut values {
-            if matches!(value, Value::Function(_) | Value::Operator(_)) { continue; }
-            let Some(desc) = Desc::of(value) else { return Ok(None); };
-            *value = Value::metadata(Some(desc.into_owned()));
+        if self.origin.list.iter().any(|value| !matches!(value, Value::Function(_) | Value::Operator(_)) && Desc::of(value).is_none()) {
+            return Ok(None);
         }
-        trace::plan_case(&self.function, self.origin.with_list(values))
+        trace::plan_case(&self.function, self.origin.clone())
     }
     fn run(&self, frame: &Value, rows: &[usize]) -> Result<Value> {
         let arguments = Function::argument_roots(&self.origin.reborrow())?;
@@ -205,15 +203,13 @@ impl Made {
     fn value(&self) -> &Value { match self { Self::Cells(value) | Self::Fill(value) => value } }
 }
 
-pub(crate) fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>> {
+pub(crate) fn form(origin: Origin<&[Value]>, _call: &CallView<'_>) -> Result<Option<Outputs<Value>>> {
     let Operation::Select { cases: count } = origin.operation else { return Ok(None); };
     if count == 0 { return Err(Error::domain("an agenda needs at least one case")); }
-    let view = origin.call_view(&origin.list);
-    for root in count..origin.explicit_roots as usize { view.root_layout(root)?; }
     let roots = roots(&origin)?;
     let selector = &roots[count];
     let args = &roots[count + 1..];
-    let from = (count + 1..origin.explicit_roots as usize).map(|root| Some(origin.call_view(&origin.list).root_boundary(root))).collect::<Vec<_>>();
+    let from = (count + 1..origin.explicit_roots as usize).map(|root| Some(origin.root_boundary(root))).collect::<Vec<_>>();
     let cases = roots[..count].iter().map(|value| {
         let Value::Function(function) = value else { return Err(Error::planning()); };
         Ok(Case { function: function.clone(), origin: function.bound(&origin, args, &from)? })

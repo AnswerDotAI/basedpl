@@ -1,7 +1,7 @@
 //! Search and ordering primitives: index of, membership, without, union, intersection, unique, duplicates, find, classification, run-length encoding, groups, iota, range, where, grade, sort and interval index. Their search kernels are in `crate::search`.
 
 use super::*;
-use crate::execution::check;
+use crate::{execution::check, keyed, plan};
 use crate::search::{compact_view, exact_cells};
 use rustymath::{buffer::View, error::Kind};
 
@@ -132,7 +132,7 @@ pub(super) fn groups(right: &Value, span: &Span, numeric: Numeric) -> Result<Val
     if numbered.firsts.is_empty() {
         return Value::from_parts(vec![0], Vec::new(), positions(right, Vec::new()).described("invalid groups")?).described("invalid groups");
     }
-    let values = right.keys(0).is_some().then(|| crate::keyed::selectors(right, &[0])).transpose().described("invalid groups")?;
+    let values = right.keys(0).is_some().then(|| crate::keyed::selectors(right.layout(), &[0])).transpose().described("invalid groups")?;
     crate::search::class_groups(values.as_ref(), right.shape().first().copied().unwrap_or(1), numbered, span, numeric)
 }
 
@@ -153,28 +153,49 @@ fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, count: Numbers) ->
 
 pub(super) fn index_roles(call: &CallView<'_>) -> Result<Roles, Error> {
     if call.explicit_argument_roots().len() != 1 { return Ok(Roles::default()); }
+    if call.axis_root().is_some() { return description_roles(call); }
     let root = call.root(call.explicit_argument_roots().start);
     let first = call.root_boundary(call.operation.functions());
     Ok(root.leaves.fold(Roles::default(), |reads, position| reads.with(position - first, ReadKind::Count)))
 }
 
+fn index_axes(call: &CallView<'_>) -> Result<Option<(Layout, Vec<usize>)>, Error> {
+    let Some(root) = call.axis_root() else { return Ok(None); };
+    let source = call.root_layout(call.explicit_argument_roots().start).ok_or_else(Error::planning)?;
+    let spec = call.root_parameter(root.index)?;
+    let axes = axes(&resolve_axes(&spec, &source)?, source.shape().len())?;
+    Ok(Some((source.into_owned(), axes)))
+}
+
+pub(super) fn axis_iota(call: &CallView<'_>) -> Result<Value, Error> {
+    let (layout, axes) = index_axes(call)?.ok_or_else(Error::planning)?;
+    keyed::named_selectors(&layout, &axes)
+}
+
 pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
     if call.explicit_argument_roots().len() != 1 { return host_build(call, set); }
-    let right = call.root_value(call.explicit_argument_roots().start, ReadKind::Count)?;
-    if right.rank() > 1 { return Err(Error::new(Kind::Rank, "iota needs a unit or vector shape")); }
-    if right.len() != 1 { return host_build(call, set); }
-    let count = right.as_items().integers().described("invalid iota dimension")?[0];
-    let len = rustymath::structure::Count::of(count).magnitude;
-    generated_len(&[len])?;
-    let Some(kind) = right.kind() else { return host_build(call, set); };
-    let kind = match Numbers::of(kind, call.numeric()?) {
-        Numbers::Exact => crate::number::Kind::stored(DType::Integer(Width::below(len)), false, false),
-        Numbers::Fixed(width) => crate::number::Kind::stored(DType::Integer(width), true, false),
-        Numbers::Float(width) => crate::number::Kind::stored(DType::Float(width), false, false),
+    let (len, kind, layout, descending) = if let Some((source, axes)) = index_axes(call)? {
+        let [axis] = axes.as_slice() else { return host_build(call, set); };
+        if source.keys(*axis).is_some() { return host_build(call, set); }
+        let len = source.shape()[*axis];
+        let kind = NumberKind::stored(DType::Integer(plan::position_width(len, call.numeric()?)?), false, false);
+        (len, kind, Layout::from([len]).with_names(vec![source.name(*axis).cloned()])?, false)
+    } else {
+        let right = call.root_parameter(call.explicit_argument_roots().start)?;
+        if right.rank() > 1 { return Err(Error::new(Kind::Rank, "iota needs a unit or vector shape")); }
+        if right.len() != 1 { return host_build(call, set); }
+        let count = right.as_items().integers().described("invalid iota dimension")?[0];
+        let len = rustymath::structure::Count::of(count).magnitude;
+        let Some(kind) = right.kind() else { return host_build(call, set); };
+        let kind = match Numbers::of(kind, call.numeric()?) {
+            Numbers::Exact => crate::number::Kind::stored(DType::Integer(Width::below(len)), false, false),
+            Numbers::Fixed(width) => crate::number::Kind::stored(DType::Integer(width), true, false),
+            Numbers::Float(width) => crate::number::Kind::stored(DType::Float(width), false, false),
+        };
+        (len, kind, Layout::from([len]).with_names(shape_names(&right))?, count < 0)
     };
-    let layout = Layout::from([len]).with_names(shape_names(&right))?;
+    generated_len(&[len])?;
     let desc = Desc { kind, atom: false, layout, range: Some(rustymath::facts::Range { lo: 0.0, hi: len.saturating_sub(1) as f64 }) };
-    let descending = count < 0;
     let read = ReadPlan::index(if descending { len.saturating_sub(1) as i64 } else { 0 }, if descending { -1 } else { 1 }, len);
     Ok((Step::Index { descending }, Some(Outputs::one(Some(desc))), Some(read)))
 }

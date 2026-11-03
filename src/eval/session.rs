@@ -450,7 +450,7 @@ impl Session {
     pub(super) fn nested<T>(&self, nodes: &[Node], f: impl FnOnce(&Self) -> Result<T, Error>) -> Result<T, Error> {
         crate::execution::check().at(&nodes[0].span)?;
         self.descend(&nodes[0].span)?;
-        let result = if room() { f(self) } else { stacker::grow(STACK_SEGMENT, || f(self)) };
+        let result = run_on_stack(|| f(self));
         self.ascend();
         result
     }
@@ -476,7 +476,7 @@ impl Session {
             Some(Value::Function(f)) => f,
             _ => {
                 let Some(kind) = crate::keyed::name(left) else { return Err(Error::domain("•mime needs a function or a MIME type on its left").at(span)) };
-                before(crate::keyed::text(&kind).into(), Function::primitive(Primitive::Keys), span)?
+                before(crate::keyed::text(&kind).into(), Function::primitive(Primitive::Keys(false)), span)?
             }
         };
         right.clone().with_renderer(renderer).described("invalid •mime result").at(span)
@@ -529,8 +529,7 @@ impl Session {
         let result = match left {
             Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)), None => self.execute_source(source, span)
         }?;
-        let outputs = match result.value { Binding::NoResult => Outputs::empty(), value => Outputs::one(value.into_value(span)?) };
-        Ok(outputs.with_shy(result.shy))
+        result.into_outputs(span)
     }
 
     /// The character atom or vector that `⍎` and `•load` observe.
@@ -603,7 +602,7 @@ impl Session {
     pub(super) fn keyed(&self, node: &Node, cell: usize, colon: usize, key: &Value, value: &Value) -> Result<Vec<crate::keyed::Entry>, Error> {
         let NodeKind::ArrayLiteral { cells, .. } = &node.kind else { unreachable!("a bracket literal") };
         if let Some(name) = crate::keyed::name(key) && value.rank() == 0 { return Ok(vec![(Some(name), value.clone())]); }
-        let item = Function::primitive(Primitive::Keys).call(Some(key), value, &cells[cell][colon].span)?.array(&node.span)?;
+        let item = Function::primitive(Primitive::Keys(false)).call(Some(key), value, &cells[cell][colon].span)?.array(&node.span)?;
         crate::keyed::entries(&item).described("key:value items must give keyed vectors").at(&node.span)
     }
 
@@ -624,12 +623,12 @@ impl Session {
 
     // Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
     #[inline(never)]
-    pub(super) fn call_named(&self, function: &Function, origin: crate::program::Origin<&[Value]>) -> Result<Value, Error> {
+    pub(super) fn call_named(&self, function: &Function, origin: crate::program::Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
         let FunctionNode::LateBound(definition) = function.node() else { unreachable!("a late-bound expression") };
         let function = Function::from_value(self.bind(&definition.bodies[0][0].nodes)?.value, &definition.span)?;
         let arguments = Function::body_arguments(&origin)?;
         let from: Vec<_> = Function::argument_ranges(&origin)?.into_iter().flatten().map(|range| Some(range.start)).collect();
-        function.call_bound(&origin, &arguments, &from)
+        function.call_bound_outputs(&origin, &arguments, &from)
     }
     pub(super) fn with_call_context<T>(
         &self, function: &Function, origin: crate::program::Origin<&[Value]>, run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
@@ -642,7 +641,7 @@ impl Session {
         self.bindings.leave(base, caller);
         result
     }
-    pub(super) fn call_defined(&self, function: &Function, origin: crate::program::Origin<&[Value]>) -> Result<Value, Error> {
+    pub(super) fn call_defined(&self, function: &Function, origin: crate::program::Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
         let defined = match function.node() {
             FunctionNode::Defined(_) => function, FunctionNode::Applied { op: Operator::Closure(defined), .. } => defined, _ => unreachable!("a defined body")
         };
@@ -669,7 +668,7 @@ impl Session {
             }
             Err(error) => Err(error),
         };
-        self.leave(base, caller, result, &definition.span)?.array(&definition.span)
+        self.leave(base, caller, result, &definition.span)?.into_outputs(&definition.span)
     }
 
     /// Drops the frames from `base` on, makes `caller` current and gives back `result`. A result that refers to a dropped frame is an error.
@@ -759,6 +758,7 @@ impl Session {
         while let Err(error) = &result {
             let Some((handler, catch)) = handlers.pop() else { break };
             if !catch.catches(&error.kind) { continue; }
+            if matches!(error.kind, ErrorKind::Interrupt) { crate::execution::check_now()?; }
             if let Some(level) = crate::transform::Level::innermost_batched() { return Err(Error::batch_stop(level.id)); }
             self.bindings.insert(self.bindings.here(Name::ERROR), Binding::Value(caught(error)));
             result = self.return_expression(handler, false);
@@ -780,8 +780,11 @@ impl Catch {
         Ok(Self::Kinds(names.iter().map(|n| ErrorKind::named(n)).collect::<Option<_>>().ok_or_else(invalid)?))
     }
     pub(super) fn catches(&self, kind: &ErrorKind) -> bool {
-        if kind.is_control() { return false; }
-        match self { Self::All => !matches!(kind, ErrorKind::Unsupported), Self::Kinds(kinds) => kinds.iter().any(|k| k.name() == kind.name()) }
+        match self {
+            Self::All => !kind.is_control() && !matches!(kind, ErrorKind::Unsupported),
+            Self::Kinds(kinds) => (!kind.is_control() || matches!(kind, ErrorKind::Interrupt))
+                && kinds.iter().any(|k| k.name() == kind.name()),
+        }
     }
 }
 

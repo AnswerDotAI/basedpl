@@ -1,7 +1,7 @@
 //! Borrowed stored items and the one policy for joining separately computed results.
 use super::{ArrayData, Layout, Number, SharedBuffer, Value};
 use crate::{
-    Error, ErrorKind, number::{Kind as LogicalKind, Kinds, Numeric, real}, primitive::{CallView, Notation, Operation, RowResult, host_build},
+    Error, ErrorKind, number::{Kind as LogicalKind, Kinds, Numeric, real}, primitive::{CallView, RunView, Notation, Operation, RowResult, host_build},
     program::{Desc, Outputs, Step, trace::ReadKind}
 };
 use rustymath::{
@@ -17,7 +17,9 @@ impl Widening {
     pub(crate) fn of_results(kinds: Kinds) -> Self { if kinds == Kinds::Static { Self::Arrays } else { Self::Items } }
 
     pub(crate) fn join(self, left: LogicalKind, right: LogicalKind) -> Option<LogicalKind> {
-        if self == Self::Items && left.is_exact() != right.is_exact() && !left.weak && !right.weak { return None; }
+        if self == Self::Items && (left.is_exact() != right.is_exact() || (left.dtype() == DType::Boolean) != (right.dtype() == DType::Boolean)) {
+            return None;
+        }
         left.join(right)
     }
 }
@@ -175,7 +177,7 @@ fn call_joining(call: &CallView<'_>) -> Result<Option<Joining>, Error> {
     let (frame, prototype) = if *notation == Notation::Cells {
         if call.explicit_roots < 2 { return Err(Error::planning()); }
         let Some(prototype) = call.root_desc(1) else { return Ok(None); };
-        (call.root_layout(0)?.into_owned(), prototype.into_owned())
+        (call.root_layout(0).ok_or_else(Error::planning)?.into_owned(), prototype.into_owned())
     } else { (Layout::from([roots.len()]), Desc::new(LogicalKind::stored(DType::Boolean, false, false), true, Layout::EMPTY)) };
     let mut cells = Vec::with_capacity(roots.len());
     for root in roots {
@@ -196,7 +198,7 @@ pub(crate) fn join_build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping
     })?;
     Ok((step, Some(Outputs::one(Some(join.desc))), Some(read)))
 }
-fn read_joined(join: Joining, cells: &[Value]) -> Result<Value, Error> { super::read_stored(&join.desc, &join.read, cells, false) }
+fn read_joined(join: Joining, cells: &[Value]) -> Result<Value, Error> { super::read_stored(&join.desc, &join.read, |source| cells.get(source), false) }
 /// Reads stored mixed/exact items through the same positional plan as native readers.
 pub(crate) fn read_values(layout: Layout, read: &ReadPlan, values: &[Value], prototype: &Value, widening: Widening) -> Result<Value, Error> {
     use rustymath::agreement::ReadAt;
@@ -205,9 +207,8 @@ pub(crate) fn read_values(layout: Layout, read: &ReadPlan, values: &[Value], pro
         Ok(match read.at(item) {
             ReadAt::Input { source, position } => {
                 let source = values.get(source).ok_or_else(Error::planning)?;
-                if matches!(source, Value::Pending(_) | Value::Carried { .. }) { return Err(Error::planning()); }
                 if position >= source.len() { return Err(Kind::Index.into()); }
-                source.at(position)
+                crate::primitive::item_at(source, &[position], None)?
             }
             ReadAt::Index(value) => Value::integer(value),
             ReadAt::Default => prototype.clone(),
@@ -216,11 +217,10 @@ pub(crate) fn read_values(layout: Layout, read: &ReadPlan, values: &[Value], pro
     }).collect::<Result<Vec<_>, Error>>()?;
     Ok(Value::stored_values(layout, items, Some(prototype.clone()), widening)?)
 }
-/// Execution's stored-cell assembly. Graph construction uses the Join origin, never a resolved-layout copy helper.
-pub(crate) fn assemble_stored(
+/// Collect cells through one positional plan; native graph joins use the same plan in their row.
+pub(crate) fn assemble_cells(
     frame: &Layout, cells: &[Value], prototype: &Value, widening: Widening, fill: Option<&Value>, numeric: Numeric) -> Result<Value, Error> {
     if frame.count() != cells.len() { return Err(Kind::Length.into()); }
-    if cells.iter().chain(fill).any(|value| matches!(value, Value::Pending(_) | Value::Carried { .. })) { return Err(Error::planning()); }
     let descriptions = cells.iter().map(Desc::leaf).collect::<Option<Vec<_>>>();
     if let (Some(cells_desc), Some(prototype_desc)) = (descriptions, Desc::leaf(prototype))
         && let Some(mut join) = joining(frame, &cells_desc, &prototype_desc, Notation::Rows, widening, fill.map(|_| cells.len()))? {
@@ -241,19 +241,22 @@ pub(crate) fn assemble_stored(
     })?;
     read_values(layout, &read, &values, &prototype.prototype(), widening)
 }
-pub(crate) fn join_code(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
+pub(crate) fn join_form(origin: &crate::program::Origin<&[Value]>, call: &CallView) -> Result<Option<Outputs<Value>>, Error> {
+    if call_joining(call)?.is_some() { return Ok(None); }
+    join_values(origin, call).map(Some)
+}
+pub(crate) fn join_code(call: &RunView<'_>) -> Result<Outputs<Value>, Error> {
+    join_values(&call.logical_origin()?.reborrow(), call)
+}
+fn join_values(origin: &crate::program::Origin<&[Value]>, call: &CallView) -> Result<Outputs<Value>, Error> {
     let Operation::Join { notation, widening, .. } = call.operation else { return Err(Error::planning()); };
     let roots = join_roots(call);
-    let mut cells = roots.clone().map(|root| call.root_input(root)?.exposed()).collect::<Result<Vec<_>, _>>()?;
-    let fill = call.fill_root().map(|root| call.root_value(root.index, ReadKind::Value).map(Cow::into_owned)).transpose()?;
-    if let Some(join) = call_joining(call)? {
-        if let Some(fill) = fill { cells.push(fill); }
-        return read_joined(join, &cells).map(Outputs::one);
-    }
-    let (frame, prototype) = if *notation == Notation::Cells { (call.root_layout(0)?.into_owned(), call.root_value(1, ReadKind::Value)?.into_owned()) }
+    let cells = roots.clone().map(|root| origin.root_input(root)?.exposed()).collect::<Result<Vec<_>, _>>()?;
+    let fill = call.fill_root().map(|root| origin.root_input(root.index)?.exposed()).transpose()?;
+    let (frame, prototype) = if *notation == Notation::Cells { (origin.root_input(0)?.exposed()?.layout().clone(), origin.root_input(1)?.exposed()?) }
     else { (Layout::from([cells.len()]), cells.first().map_or(Value::integer(0), Value::zeroed)) };
     let value = if *notation == Notation::Strand { Value::stored_values(frame, cells, Some(prototype), *widening)? }
-    else { assemble_stored(&frame, &cells, &prototype, *widening, fill.as_ref(), call.numeric()?)? };
+    else { assemble_cells(&frame, &cells, &prototype, *widening, fill.as_ref(), call.numeric()?)? };
     Ok(Outputs::one(value))
 }
 

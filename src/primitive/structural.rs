@@ -1,6 +1,7 @@
 //! Structural primitives, which rearrange or select items without computing new ones: reshape, take, drop, replicate, rotate, catenate, transpose, split, partition, windows and enlist.
 
 use super::*;
+use crate::keyed::{self, Labels};
 use rustymath::error::Kind;
 
 use rustymath::{layout::Layout as CoreLayout, structure::{self, Edge, Plan, Windows}};
@@ -12,7 +13,6 @@ impl WindowSpec {
     pub(crate) fn field_read(field: &str) -> ReadKind { if field.eq_ignore_ascii_case("size") { ReadKind::Count } else { ReadKind::Structure } }
     /// Separate fields before their read policies apply, including compact records and size/movement matrices.
     pub(crate) fn normalized(origin: &Origin<&[Value]>, spec: &Value, from: Option<usize>) -> Result<Value, Error> {
-        let call = origin.call_view(&origin.list);
         let row = |position| {
             let mut selected = crate::eval::projected_call(
                 origin, Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Axes }, &[Value::integer(position), spec.clone()], &[None, from]
@@ -35,7 +35,7 @@ impl WindowSpec {
     }
     pub(crate) fn from_call(call: &CallView<'_>) -> Result<Self, Error> {
         let root = call.axis_root().ok_or_else(Error::planning)?;
-        Self::new(call.root_input(root.index)?.as_ref())
+        Self::new(call.root_parameter(root.index)?.as_ref())
     }
     pub(crate) fn new(spec: &Value) -> Result<Self, Error> {
         let options = crate::data::Options::new("window", Some(spec), None, &["size", "edge", "step"])?;
@@ -58,24 +58,23 @@ impl WindowSpec {
     }
 }
 
-pub(super) fn windows_form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
-    let Operation::Primitive { pairing: Pairing::Axes, .. } = origin.operation else { return fill_form(origin); };
-    let call = origin.call_view(&origin.list);
+pub(super) fn windows_form(origin: Origin<&[Value]>, call: &CallView<'_>) -> Result<Option<Outputs<Value>>, Error> {
+    let Operation::Primitive { pairing: Pairing::Axes, .. } = origin.operation else { return fill_form(origin, call); };
     let roots = call.explicit_argument_roots();
     let right = call.root(roots.end - 1);
-    let spec = if roots.len() == 2 { call.root_input(roots.start)?.into_owned() } else { Value::integer(2) };
+    let spec = if roots.len() == 2 { origin.root_input(roots.start)?.into_owned() } else { Value::integer(2) };
     let spec = WindowSpec::normalized(&origin, &spec, (roots.len() == 2).then(|| call.root(roots.start).leaves.start))?;
-    let value = call.root_input(right.index)?.into_owned();
+    let value = origin.root_input(right.index)?.into_owned();
     let (pairing, values, from) = crate::eval::operators::axis_arguments(&origin, &spec, &[value], &[Some(right.leaves.start)])?;
     let normalized = crate::eval::projected_call(&origin, Operation::Primitive { primitive: Primitive::Windows, pairing }, &values, &from)?;
     Operation::dispatch(normalized.reborrow()).map(Some)
 }
 
-pub(super) fn windowed(call: &CallView<'_>) -> Result<Value, Error> {
-    let right = call.root_value(call.explicit_argument_roots().start, ReadKind::Value)?;
+pub(super) fn windowed(origin: &Origin<&[Value]>, call: &CallView) -> Result<Value, Error> {
+    let right = origin.root_input(call.explicit_argument_roots().start)?.exposed()?;
     let spec = WindowSpec::from_call(call)?;
     let (padding, plan) = spec.geometry(right.layout())?;
-    let fill = call.fill_root().map(|root| call.root_value(root.index, ReadKind::Value)).transpose()?;
+    let fill = call.fill_root().map(|root| origin.root_value(root.index, ReadKind::Value)).transpose()?;
     let padded = padding.map(|padding| copied_fill(&right, padding.layout.into(), &Mapping::from(padding.steps), fill.as_deref())).transpose()
         .described("invalid windows")?;
     remapped(padded.as_ref().unwrap_or(&right), plan).described("invalid windows")
@@ -123,7 +122,7 @@ pub(super) fn mix_axes(right: &Value, spec: &Value, span: &Span, numeric: Numeri
 }
 
 /// `mixed`, the mix of an array of rank `frame`, with its cell axes at the axes that `spec` lists, as `⊃⍠spec` places them: one axis gives the first of consecutive axes, and a vector gives each axis.
-fn placed_cells(call: &CallView<'_>, mixed: &Value, frame: usize, spec: &Value) -> Result<Value, Error> {
+fn placed_cells(call: &Origin<&[Value]>, mixed: &Value, frame: usize, spec: &Value) -> Result<Value, Error> {
     let rank = mixed.shape().len();
     let cell_rank = rank - frame;
     let positions = if spec.is_singleton() { let start = single_axis(spec, frame + 1)?; (start..start + cell_rank).collect::<Vec<_>>() }
@@ -431,7 +430,7 @@ pub(super) fn split(right: &Value, axis: Option<usize>) -> Result<Value, Error> 
     enclose_axes(right, &[axis])
 }
 
-fn partition(call: &CallView<'_>, left: &Value, right: &Value, axis: Option<usize>, runs: bool) -> Result<Value, Error> {
+fn partition(call: &Origin<&[Value]>, left: &Value, right: &Value, axis: Option<usize>, runs: bool) -> Result<Value, Error> {
     if left.shape().len() > 1 || runs && right.is_unit() {
         return Err(Error::new(Kind::Rank, "partition needs a unit or vector left argument and a right argument that is not a unit"));
     }
@@ -486,48 +485,64 @@ fn partition(call: &CallView<'_>, left: &Value, right: &Value, axis: Option<usiz
     Value::from_parts(vec![data.len()], data, prototype).described("invalid partition result")
 }
 
-pub(super) fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
-    if let Some(outputs) = fill_form(origin.reborrow())? { return Ok(Some(outputs)); }
-    let call = origin.call_view(&origin.list);
+pub(super) fn form(origin: Origin<&[Value]>, call: &CallView<'_>) -> Result<Option<Outputs<Value>>, Error> {
+    if let Some(outputs) = fill_form(origin.reborrow(), call)? { return Ok(Some(outputs)); }
     let roots = call.explicit_argument_roots();
     let Operation::Primitive { primitive, .. } = call.operation else { return Err(Error::planning()); };
     if matches!(primitive, Primitive::Identity(_)) {
         let source = call.source_roots()?.into_iter().next().ok_or_else(Error::planning)?.index;
-        return call.root_input(source).map(|value| Some(Outputs::one(value.into_owned())));
+        return origin.root_input(source).map(|value| Some(Outputs::one(value.into_owned())));
+    }
+    if let Primitive::Keys(inverse) = primitive {
+        let right = origin.root_input(roots.end.checked_sub(1).ok_or_else(|| Error::domain("a function needs an argument"))?)?.exposed()?;
+        let axis = call.axis_root().map(|root| {
+            let spec = call.root_parameter(root.index)?;
+            axes(&resolve_axes(&spec, right.layout())?, right.rank())
+        }).transpose()?;
+        let labels = if roots.len() == 2 { Some(Labels::new(call.root_parameter(roots.start)?.as_ref())?) } else { None };
+        let entry = axis.is_none() && labels.as_ref().is_some_and(|labels| labels.entry().is_some());
+        if Desc::of(&right).is_some() && (!entry || *inverse) { return Ok(None); }
+        let value = match labels {
+            Some(labels) => labels.value(&right, axis.as_deref(), *inverse)?, None => keyed::remove(&right, axis.as_deref())?
+        };
+        return Ok(Some(Outputs::one(value)));
     }
     if *primitive == Primitive::Mix && roots.len() == 1 {
-        let right = call.root_input(roots.start)?.exposed()?;
+        let right = origin.root_input(roots.start)?.exposed()?;
         let mut mixed = if let Some(desc) = Desc::of(&right) {
             if desc.atom {
-                call.apply(Operation::Read(ReadOp::Reshape), &[Value::integers([0], Vec::new())?, right.clone()], &[None, None])?
+                origin.apply(Operation::Read(ReadOp::Reshape), &[Value::integers([0], Vec::new())?, right.clone()], &[None, None])?
             } else { right.clone() }
         } else {
             let mut args = vec![right.clone(), right.prototype()];
             args.extend(right.elements());
             let fill = call.fill_root();
-            if let Some(fill) = &fill { args.push(call.root_input(fill.index)?.into_owned()); }
-            call.apply(Operation::Join { notation: Notation::Cells, widening: Widening::Arrays, fill: fill.is_some() }, &args, &vec![None; args.len()])?
+            if let Some(fill) = &fill { args.push(origin.root_input(fill.index)?.into_owned()); }
+            origin.apply(Operation::Join { notation: Notation::Cells, widening: Widening::Arrays, fill: fill.is_some() }, &args, &vec![None; args.len()])?
         };
         if let Some(root) = call.axis_root() {
-            let spec = call.root_value(root.index, ReadKind::Structure)?;
-            mixed = placed_cells(&call, &mixed, right.rank(), &spec)?;
+            let spec = call.root_parameter(root.index)?;
+            mixed = placed_cells(&origin, &mixed, right.rank(), &spec)?;
         }
         return Ok(Some(Outputs::one(mixed)));
     }
     if roots.len() == 2 && matches!(primitive, Primitive::Enclose | Primitive::Nest) {
-        let left = call.root_value(roots.start, ReadKind::Count)?;
-        let right = call.root_input(roots.end - 1)?.exposed()?;
+        let left = call.root_parameter(roots.start)?;
+        let right = origin.root_input(roots.end - 1)?.exposed()?;
         let axis = call.axis_root().map(|root| {
-            let spec = call.root_value(root.index, ReadKind::Structure)?;
+            let spec = call.root_parameter(root.index)?;
             single_axis(&resolve_axes(&spec, right.layout())?, right.rank())
         }).transpose()?;
-        return partition(&call, &left, &right, axis, *primitive == Primitive::Nest).map(|value| Some(Outputs::one(value)));
+        return partition(&origin, &left, &right, axis, *primitive == Primitive::Nest).map(|value| Some(Outputs::one(value)));
+    }
+    if !matches!(primitive, Primitive::Enclose | Primitive::Nest) && call.source_roots()?.iter().any(|root| call.trees.is_some_and(|trees| matches!(trees.root_at(root), Tree::Array { .. }))) {
+        return super::host_call(&origin, call).map(Some);
     }
     if roots.len() != 1 || !matches!(primitive, Primitive::Enclose | Primitive::Nest) { return Ok(None); }
-    let right = call.root_input(roots.start)?;
+    let right = origin.root_input(roots.start)?;
     let value = if let Some(root) = call.axis_root() {
         let right = right.exposed()?;
-        let spec = call.root_value(root.index, ReadKind::Structure)?;
+        let spec = call.root_parameter(root.index)?;
         enclose_axes(&right, &axes(&resolve_axes(&spec, right.layout())?, right.rank())?)?
     } else if *primitive == Primitive::Nest {
         let right = right.exposed()?;
@@ -549,7 +564,7 @@ fn parameter_read(primitive: Primitive) -> Option<ReadKind> {
         Primitive::Shape | Primitive::Take | Primitive::Drop | Primitive::Replicate(_) | Primitive::Reverse(_) | Primitive::Enclose | Primitive::Nest => {
             ReadKind::Count
         }
-        Primitive::Transpose | Primitive::Windows | Primitive::Keys => ReadKind::Structure,
+        Primitive::Transpose | Primitive::Windows | Primitive::Keys(_) => ReadKind::Structure,
         _ => return None,
     })
 }
@@ -576,46 +591,22 @@ pub(super) fn roles(call: &CallView<'_>) -> Result<Roles, Error> {
     Ok(root.leaves.fold(Roles::default(), |roles, position| roles.with(position - first, read)))
 }
 
-struct CellBindings<'a> { bindings: &'a dyn CallBindings, frame: usize, inputs: &'a [CellInput] }
-impl CallBindings for CellBindings<'_> {
-    fn len(&self) -> usize { self.bindings.len() }
-    fn input(&self, position: usize) -> Option<Input<'_>> { self.bindings.input(position) }
-    fn source(&self, position: usize) -> Result<Cow<'_, Value>, Error> { self.bindings.source(position) }
-    fn value(&self, position: usize, read: ReadKind) -> Result<Cow<'_, Value>, Error> { self.bindings.value(position, read) }
-    fn function(&self, position: usize) -> Option<&Function> { self.bindings.function(position) }
-    fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>> {
-        let desc = self.bindings.desc(position, literal)?;
-        let Ok(input) = self.inputs.binary_search_by_key(&position, |input| input.position as usize) else { return Some(desc) };
-        let mut desc = desc.into_owned();
-        if self.frame > desc.shape().len() { return None; }
-        desc.layout = desc.layout.axes(self.frame..desc.shape().len());
-        desc.atom = self.inputs[input].atom;
-        desc.kind.weak = self.inputs[input].weak;
-        Some(Cow::Owned(desc))
-    }
-}
-fn with_cells<T>(call: &CallView<'_>, apply: impl FnOnce(&CallView<'_>, usize) -> Result<T, Error>) -> Result<T, Error> {
-    let Operation::Read(ReadOp::Cells { operation, frame, inputs }) = call.operation else { return apply(call, 0) };
-    let bindings = CellBindings { bindings: call.bindings, frame: *frame, inputs };
-    apply(&call.projected(operation, &bindings), *frame)
-}
-pub(super) fn cell_roles(call: &CallView<'_>) -> Result<Roles, Error> { with_cells(call, |cell, _| Operation::roles(cell)) }
-pub(super) fn cell_sources(call: &CallView<'_>) -> Result<Vec<TreeRoot>, Error> { with_cells(call, |cell, _| Operation::source_roots(cell)) }
-pub(crate) fn cell_read(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize) -> Result<Origin<Vec<Value>>, Error> {
+pub(super) fn cell_roles(call: &CallView<'_>) -> Result<Roles, Error> { call.with_cells(|cell, _| Operation::roles(cell)) }
+pub(super) fn cell_sources(call: &CallView<'_>) -> Result<Vec<TreeRoot>, Error> { call.with_cells(|cell, _| Operation::source_roots(cell)) }
+pub(crate) fn cell_read(origin: &Origin<&[Value]>, call: &CallView, wholes: &[Value], frame: usize) -> Result<Origin<Vec<Value>>, Error> {
     let level = crate::transform::Level::current_batch_rule().ok_or_else(Error::planning)?;
-    let call = origin.call_view(&origin.list);
     let positions: Vec<_> = call.data_positions().collect();
     if origin.list.iter().enumerate()
         .any(|(position, value)| origin.executes(position) && value.carried_level() == Some(level.id) && !positions.contains(&position)) {
-            return crate::batch::unsupported(origin, wholes, frame);
+            return crate::batch::unsupported(origin, call, wholes, frame);
         }
-    if Operation::build(&call, &mut |_, _| {})?.2.is_none() { return crate::batch::unsupported(origin, wholes, frame); }
+    if Operation::build(&call, &mut |_, _| {})?.2.is_none() { return crate::batch::unsupported(origin, call, wholes, frame); }
     let inputs = positions.into_iter()
         .filter_map(|position| call.desc(position).map(|desc| CellInput { position: position as u32, atom: desc.atom, weak: desc.kind.weak })).collect();
     let operation = Operation::Read(ReadOp::Cells { operation: Box::new(origin.operation.clone()), frame, inputs });
     let mut normalized = origin.with_list(origin.list);
     normalized.operation = operation.clone();
-    let values = crate::batch::lifted(&normalized.reborrow(), wholes, frame, level.id)?;
+    let values = crate::batch::lifted(&normalized.reborrow(), call, wholes, frame, level.id)?;
     let from: Vec<_> = (0..values.len()).map(Some).collect();
     origin.rebuilt(operation, values, &from, origin.explicit, origin.explicit_roots, origin.trees.clone())
 }
@@ -639,7 +630,7 @@ fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
         let Some(kind) = left.kind.join(desc.kind) else { return Ok(None); };
         let rank = rank.max(left.shape().len()).max(1);
         let axis = call.axis_root().map(|root| {
-            let spec = call.root_value(root.index, ReadKind::Structure)?;
+            let spec = call.root_parameter(root.index)?;
             single_axis(&resolve_axes(&spec, &desc.layout)?, rank)
         }).transpose()?;
         let joined = catenation(&left.layout, &desc.layout, axis, *primitive == CatenateFirst)?;
@@ -662,11 +653,23 @@ fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
         return Ok(Some(ReadGeometry { source, desc: output, read }));
     }
     let axis = call.axis_root().map(|root| {
-        let spec = call.root_value(root.index, ReadKind::Structure)?;
+        let spec = call.root_parameter(root.index)?;
         axes(&resolve_axes(&spec, &desc.layout)?, rank)
     }).transpose()?;
-    let parameter = left.as_ref().zip(parameter_read(*primitive)).map(|(root, read)| call.root_value(root.index, read)).transpose()?;
+    let parameter = left.as_ref().zip(parameter_read(*primitive)).map(|(root, read)| call.root_parameter(root.index)).transpose()?;
     let (layout, atom, map) = match (*primitive, parameter.as_deref()) {
+        (Keys(inverse), spec) => {
+            let (layout, entry) = match spec {
+                Some(spec) => {
+                    let labels = Labels::new(spec)?;
+                    let entry = axis.is_none() && labels.entry().is_some();
+                    if entry && !inverse { return Ok(None); }
+                    (labels.layout(&desc.layout, axis.as_deref(), inverse)?, entry)
+                }
+                None => (keyed::remove_layout(&desc.layout, axis.as_deref())?, false),
+            };
+            (layout, desc.atom || entry, Mapping::Linear(1))
+        }
         (Identity(_), _) => (desc.layout.clone(), desc.atom, Mapping::Linear(1)),
         (Index | Bracket, None) if left.is_none() => (desc.layout.clone(), desc.atom, Mapping::Linear(1)),
         (Ravel, None) if axis.is_none() => (Layout::from([desc.layout.count()]), false, Mapping::Linear(1)),
@@ -716,7 +719,7 @@ fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
 
 fn build_cells(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
     let Operation::Read(ReadOp::Cells { inputs, .. }) = call.operation else { unreachable!("framed cell reads") };
-    with_cells(call, |cell, axes| {
+    call.with_cells(|cell, axes| {
         let (step, outputs, read) = Operation::build(cell, &mut |_, _| {})?;
         let (Some(mut outputs), Some(mut read)) = (outputs, read) else { return host_build(call, set); };
         if axes == 0 { return Ok((step, Some(outputs), Some(read))); }
@@ -743,16 +746,13 @@ pub(super) fn build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) ->
     Ok((Step::Copy { source: copy.source as u32 }, Some(Outputs::one(Some(copy.desc))), Some(copy.read)))
 }
 
-pub(super) fn code_cells(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
+pub(super) fn code_cells(call: &RunView<'_>) -> Result<Outputs<Value>, Error> {
     let (_, Some(outputs), Some(read)) = build_cells(call, &mut |_, _| {})? else { return Err(Error::planning()); };
     let desc = outputs.as_ref().first().and_then(Option::as_ref).ok_or_else(Error::planning)?;
-    let mut values: Vec<_> =
-        (0..call.len()).map(|position| call.input(position).map(|input| input.value.clone()).ok_or_else(Error::planning)).collect::<Result<_, _>>()?;
-    let mut positions = Vec::new();
+    let mut values = Vec::new();
     read.try_for_each_source(&mut |source, _| {
-        if !positions.contains(&source) { positions.push(source); }
+        if !values.iter().any(|(position, _)| *position == source) { values.push((source, call.value(source, ReadKind::Value)?.into_owned())); }
         Ok::<_, Error>(())
     })?;
-    for position in positions { values[position] = call.value(position, ReadKind::Value)?.into_owned(); }
-    crate::array::read_stored(desc, &read, &values, call.mode.dynamic).map(Outputs::one)
+    crate::array::read_stored(desc, &read, |source| values.iter().find(|(position, _)| *position == source).map(|(_, value)| value), call.mode.dynamic).map(Outputs::one)
 }

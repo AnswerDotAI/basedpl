@@ -123,7 +123,7 @@ fn each_cell(
         cells.push(f(x.as_ref(), n, Integers { persistent, numeric })?);
     }
     if right.is_atom() && left.is_none_or(Value::is_atom) { return Ok(cells.remove(0)); }
-    crate::array::assemble_stored(&agreement.layout, &cells[..agreement.len], &cells[0], crate::array::Widening::of_results(numeric.kinds), None, numeric)
+    crate::array::assemble_cells(&agreement.layout, &cells[..agreement.len], &cells[0], crate::array::Widening::of_results(numeric.kinds), None, numeric)
         .described("number theory result exceeds array limits")
 }
 

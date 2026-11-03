@@ -3,7 +3,7 @@ use crate::session;
 use crate::system::HostCall;
 use crate::{
     Described, Error, Number, ReadKind, Value, array::{Layout, Widening, generated_len}, keyed, number::{Kind as NumberKind, Numbers, Numeric},
-    primitive::{CallView, Operation as GraphOp, Roles, RowResult, counted, generated_items, host_build, numeric as number, real},
+    primitive::{CallView, RunView, Operation as GraphOp, Roles, RowResult, counted, generated_items, host_build, numeric as number, real},
     program::{Desc, ImplicitInput, Origin, Outputs, Step, implicit_position}, system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
 };
 pub(crate) use rustymath::distribution::Distribution;
@@ -202,8 +202,7 @@ fn generator_handle(record: &Value) -> Option<Value> {
 
 pub(crate) fn generator_input(origin: &Origin<&[Value]>, parent: Option<&Origin<&[Value]>>) -> Result<(Value, Option<usize>), Error> {
     if matches!(origin.operation, GraphOp::Draw { .. }) {
-        let call = origin.call_view(&origin.list);
-        let function = call.function(0).ok_or_else(Error::planning)?;
+        let Value::Function(function) = &origin.list[0] else { return Err(Error::planning()); };
         match function.system_function().map(|function| &function.call) {
             Some(Call::Generator(Some(_), _)) => return Ok((Value::Function(function.clone()), None)),
             Some(Call::Generator(None, _)) => {
@@ -211,8 +210,8 @@ pub(crate) fn generator_input(origin: &Origin<&[Value]>, parent: Option<&Origin<
                 let source = function.made_source(&parent.bindings).ok_or_else(Error::planning)?;
                 return Ok((source.resolve(parent)?.into_owned(), None));
             }
-            Some(Call::Distribution(_, Operation::Sample)) if call.explicit_argument_roots().len() == 2 => {
-                let record = call.root_input(call.explicit_argument_roots().start)?;
+            Some(Call::Distribution(_, Operation::Sample)) if origin.explicit_argument_roots().len() == 2 => {
+                let record = origin.root_input(origin.explicit_argument_roots().start)?;
                 let handle = generator_handle(&record).ok_or_else(|| Error::domain("sample takes a •rand generator on the left"))?;
                 return Ok((handle, None));
             }
@@ -256,7 +255,7 @@ pub(crate) fn roles(call: &CallView<'_>) -> Result<Roles, Error> {
 
 fn sample_shape(call: &CallView<'_>) -> Result<Vec<usize>, Error> {
     let roots = call.explicit_argument_roots();
-    let shape = call.root_value(roots.end - 1, ReadKind::Count)?;
+    let shape = call.root_parameter(roots.end - 1)?;
     if shape.rank() > 1 { return Err(Error::new(ErrorKind::Rank, "sample needs a shape vector")); }
     shape.as_items().nonnegative_integers::<usize>().described("sample needs nonnegative whole dimensions")
 }
@@ -290,11 +289,10 @@ fn frame<'a>(call: &'a CallView<'_>) -> Result<Option<std::borrow::Cow<'a, Desc>
         .transpose()
 }
 
-pub(crate) fn cells(origin: &Origin<&[Value]>, wholes: &[Value], axes: usize) -> Result<Origin<Vec<Value>>, Error> {
+pub(crate) fn cells(origin: &Origin<&[Value]>, view: &CallView, wholes: &[Value], axes: usize) -> Result<Origin<Vec<Value>>, Error> {
     use crate::transform::{Level, at_level};
     let level = Level::current_batch_rule().ok_or_else(Error::planning)?;
     let GraphOp::Draw { batch_axes } = origin.operation else { return Err(Error::batch_stop(level.id)); };
-    let view = origin.call_view(&origin.list);
     let kind = draw_kind(&view)?;
     match kind {
         Draw::Uniform(Law::Deal)
@@ -304,18 +302,21 @@ pub(crate) fn cells(origin: &Origin<&[Value]>, wholes: &[Value], axes: usize) ->
                 || view.root(view.explicit_argument_roots().end - 1).leaves.clone().any(|position| at_level(&origin.list[position], level.id).is_some()) =>
         { return Err(Error::batch_stop(level.id)); } _ => {}
     }
-    let values = crate::batch::lifted(origin, wholes, axes, level.id)?;
+    let values = crate::batch::lifted(origin, view, wholes, axes, level.id)?;
     let parent = origin.with_list(values.as_slice());
-    let view = parent.call_view(&parent.list);
-    let arguments = (0..origin.explicit_roots as usize).map(|root| view.root_input(root).map(std::borrow::Cow::into_owned)).collect::<Result<Vec<_>, _>>()?;
-    let from = (0..origin.explicit_roots as usize).map(|root| Some(view.root(root).leaves.start)).collect::<Vec<_>>();
+    let arguments = (0..origin.explicit_roots as usize).map(|root| parent.root_input(root).map(std::borrow::Cow::into_owned)).collect::<Result<Vec<_>, _>>()?;
+    let from = (0..origin.explicit_roots as usize).map(|root| Some(parent.root(root).leaves.start)).collect::<Vec<_>>();
     let batch_axes = batch_axes + axes;
     let call = crate::eval::projected_call(&parent, GraphOp::Draw { batch_axes }, &arguments, &from)?;
-    if build(&call.call_view(&call.list), &mut |_, _| {})?.1.is_none() { return Err(Error::batch_stop(level.id)); }
+    {
+        let current = call.reborrow();
+        let prepared = GraphOp::prepare(&current)?;
+        if build(&prepared.view(), &mut |_, _| {})?.1.is_none() { return Err(Error::batch_stop(level.id)); }
+    }
     Ok(call)
 }
 
-pub(crate) fn code(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
+pub(crate) fn code(call: &RunView<'_>) -> Result<Outputs<Value>, Error> {
     let generator = call.implicit(ImplicitInput::Generator).and_then(|(_, value)| match value {
         Value::Function(function) => match &function.system_function()?.call { Call::Generator(generator, _) => generator.as_ref(), _ => None }, _ => None
     }).ok_or_else(Error::planning)?;
@@ -350,14 +351,16 @@ pub(crate) fn code(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
 
 pub(crate) fn draw_origin(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
     use crate::primitive::{Builtin, Primitive};
-    let call = origin.call_view(&origin.list);
     let existing = origin.operation.functions() != 0;
-    let function = if existing { call.function(0).ok_or_else(Error::planning)?.clone() } else { Builtin::Primitive(Primitive::Random).function() };
+    let function = if existing {
+        let Value::Function(function) = &origin.list[0] else { return Err(Error::planning()); };
+        function.clone()
+    } else { Builtin::Primitive(Primitive::Random).function() };
     let mut arguments = vec![Value::Function(function)];
     let mut from = vec![existing.then_some(0)];
-    for root in call.explicit_argument_roots() {
-        arguments.push(call.root_input(root)?.into_owned());
-        from.push(Some(call.root(root).leaves.start));
+    for root in origin.explicit_argument_roots() {
+        arguments.push(origin.root_input(root)?.into_owned());
+        from.push(Some(origin.root(root).leaves.start));
     }
     let lowered = crate::eval::projected_call(&origin, GraphOp::Draw { batch_axes: 0 }, &arguments, &from)?;
     GraphOp::dispatch(lowered.reborrow())
@@ -462,7 +465,7 @@ fn deal_numbers(n: Numbers, total: Numbers) -> Numbers {
 }
 fn deal_description(call: &CallView<'_>) -> Result<Option<Desc>, Error> {
     let roots = call.explicit_argument_roots();
-    let n = deal_item(call.root_value(roots.start, ReadKind::Count)?.as_ref())?;
+    let n = deal_item(call.root_parameter(roots.start)?.as_ref())?;
     let count = deal_count(&n)?;
     let root = call.root(roots.end - 1);
     if root.leaves.len() != 1 { return Ok(None); }

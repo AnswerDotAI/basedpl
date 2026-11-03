@@ -1,5 +1,5 @@
 //! Root-indexed rewrites over programs, after batching and differentiation.
-use super::{BoundCall, Node, Out, Program, Read, Running, Step, StepKind};
+use super::{Node, Out, Program, Read, Running, Step, StepKind};
 use crate::{Value, error::Result, number::{Arithmetic, Math}, primitive::{Operation, Pairing, Primitive}};
 use rustymath::{agreement::Mapping, hashing::HashMap};
 use std::sync::OnceLock;
@@ -214,19 +214,19 @@ fn selective(program: &mut Program, running: &mut Running, node: usize, users: &
 fn prepare_row(
     program: &mut Program, running: &mut Running, source: &super::Origin<std::ops::Range<u32>>, operation: Operation, reads: Vec<Read>, roots: u32,
     trees: Option<std::sync::Arc<crate::array::Trees>>
-) -> Result<(Step, super::Origin<Vec<Read>>, super::Description, Option<rustymath::agreement::ReadPlan>)> {
+) -> Result<(Step, super::Origin<Vec<Read>>, Option<super::Description>, Option<rustymath::agreement::ReadPlan>)> {
     let old = program.reads(&source.list);
     let from = reads.iter().map(|read| old.iter().position(|old| old.operand == read.operand && old.map == read.map)).collect::<Vec<_>>();
-    let (mut draft, from) = source.projected(operation, reads, &from, roots, trees, |position| old[position].clone(), old.len())?;
+    let (mut draft, _) = source.projected(operation, reads, &from, roots, trees, |position| old[position].clone(), old.len())?;
     let mut reads = std::mem::take(&mut draft.list);
     let first = program.reads.len();
     program.reads.extend(reads.iter().cloned());
     running.geometry.maps.extend(reads.iter().map(|read| read.map.clone()));
     let prepared = (|| {
-        let bound = BoundCall { program, running, reads: first as u32..program.reads.len() as u32 };
-        let classified = source.rebuilt(draft.operation, bound, &from, draft.explicit, draft.explicit_roots, draft.trees)?;
-        let (step, outputs, plan) = crate::fusion::row(&classified.call_view(&classified.list), &mut reads)?;
-        Ok((step, classified.with_list(reads), outputs.ok_or_else(crate::Error::planning)?, plan))
+        let selected = draft.with_list(first as u32..program.reads.len() as u32);
+        let classified = running.call(program, &selected)?;
+        let (step, outputs, plan) = crate::fusion::row(&classified.call_view(), &mut reads)?;
+        Ok((step, classified.with_list(reads), outputs, plan))
     })();
     program.reads.truncate(first);
     running.geometry.maps.truncate(first);
@@ -238,7 +238,7 @@ pub(crate) fn replace(
     input_trees: Option<std::sync::Arc<crate::array::Trees>>) -> Result<bool> {
     let Node::Step { descs, level, trees, shy, .. } = &program.nodes[node] else { return Ok(false); };
     let (descs, level, trees, shy) = (descs.clone(), *level, trees.clone(), *shy);
-    let (step, origin, outputs, plan) = prepare_row(program, running, source, operation, reads, roots, input_trees)?;
+    let (step, origin, Some(outputs), plan) = prepare_row(program, running, source, operation, reads, roots, input_trees)? else { return Ok(false); };
     if outputs.as_ref().len() != descs.len() || outputs.trees() != trees.as_ref()
         || outputs.as_ref().iter().zip(program.descs[descs.start as usize..descs.end as usize].iter()).any(|(new, old)| {
             !super::verify::compatible_optional(old.as_ref(), new.as_ref())
@@ -263,6 +263,7 @@ pub(crate) fn append(
     trees: Option<std::sync::Arc<crate::array::Trees>>, level: Option<usize>) -> Result<Out> {
     let first = program.reads.len();
     let (step, origin, outputs, plan) = prepare_row(program, running, source, operation, reads, roots, trees)?;
+    let outputs = outputs.ok_or_else(crate::Error::planning)?;
     let mut builder = super::Builder::new();
     std::mem::swap(program, &mut builder.program);
     let output = builder.step(step, origin, &outputs, level);
@@ -315,7 +316,7 @@ fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<
     builder.program.parameters = program.remap_parameters(resolve);
     builder.program.sources = program.remap_sources(|source| mapped[source.node].map(|at| source.with_producer(at.node, 0)))?;
     let mut geometry = super::Geometry { descs: builder.program.descs.clone(), maps: builder.program.reads.iter().map(|read| read.map.clone()).collect(),
-        read_plans: vec![None; builder.program.nodes.len()], reads: vec![None; builder.program.reads.len()] };
+        stamp: None, read_plans: vec![None; builder.program.nodes.len()], reads: vec![None; builder.program.reads.len()] };
     let mut values: Vec<_> = (0..builder.program.nodes.len()).map(|_| None).collect();
     for (old, new) in mapped.iter().enumerate().filter_map(|(old, new)| new.map(|new| (old, new))) {
         values[new.node] = running.values.get_mut(old).and_then(Option::take);

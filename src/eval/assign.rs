@@ -2,6 +2,7 @@
 
 use super::tree::{Entity, Facts, Last, Layer, Split, Target, Term, To, narrow};
 use super::*;
+use crate::{keyed::Selector, primitive::{coordinate_fields, item_at}};
 use rustymath::error::Kind;
 
 struct ArrayBinding { place: Place, value: Value }
@@ -167,8 +168,12 @@ impl Session {
 
     /// The item of `right` that each target in `cells` takes: by key in a pattern, and otherwise by position, whatever keys `right` has. One item fills every positional target. A vector's part is its item, and any other array's part is a major cell (`Cells::get`).
     fn destructure<'a>(cells: &'a [(Option<Arc<str>>, To, Span)], right: &Value, span: &Span) -> Result<Vec<(&'a To, Value)>, Error> {
+        let right = right.exposed()?;
         let positional = cells.iter().all(|(key, ..)| key.is_none());
-        if positional && right.is_singleton() { return Ok(cells.iter().map(|(_, target, _)| (target, right.at(0))).collect()); }
+        if positional && right.is_singleton() {
+            let item = item_at(&right, &[0], None)?;
+            return Ok(cells.iter().map(|(_, target, _)| (target, item.clone())).collect());
+        }
         let keys = if positional { None } else {
             Some(right.keys(0).ok_or_else(|| Error::domain("a pattern reads items by key, and these items have none").at(span))?)
         };
@@ -182,7 +187,7 @@ impl Session {
                 }
                 None => i,
             };
-            let part = if items.shape().is_empty() { Ok(right.element(i)) } else { items.get(i) };
+            let part = if items.shape().is_empty() { item_at(&right, &[i], None) } else { items.get(i) };
             Ok((target, part.described("array exceeds limits").at(span)?))
         }).collect()
     }
@@ -191,9 +196,10 @@ impl Session {
     fn extend(&self, layer: &Layer, run: &mut [Option<Value>], descend: bool) -> Result<(), Error> {
         let Some(split) = layer.split.as_ref().filter(|split| split.keyed) else { return Ok(()) };
         let value = self.index(split, run)?;
+        if !Selector::may_hold_names(&value) { return Ok(()); }
         let pick = split.p == Primitive::Mix;
-        let items = if pick { crate::primitive::coordinate_fields(&value).collect() } else { vec![value.clone()] };
-        if !items.iter().flat_map(crate::primitive::coordinate_fields).any(|s| matches!(crate::keyed::Selector::of(&s), Ok(Some(_)))) { return Ok(()); }
+        let items = if pick { coordinate_fields(&value).collect() } else { vec![value.clone()] };
+        if !items.iter().filter(|value| Selector::may_hold_names(value)).flat_map(coordinate_fields).any(|s| matches!(Selector::of(&s), Ok(Some(_)))) { return Ok(()); }
         let container = &split.container;
         self.extend(container, run, true)?;
         let mut target = self.read(container, run)?;

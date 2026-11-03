@@ -5,10 +5,10 @@ use crate::{
 };
 use rustymath::{buffer::DType, hashing::{HashMap, HashMapExt}};
 
-/// A linear input. A direction binds it; reverse mode leaves the seed unbound.
-pub(crate) fn seed(like: &Value, level: usize, position: usize, value: Option<Value>) -> Pending {
+/// A linear input. Its source supplies metadata; a direction binds its numeric value.
+pub(crate) fn seed(like: &Value, level: usize, position: usize) -> Pending {
     let desc = Desc::of(like).expect("a differentiated leaf has a description").into_owned();
-    Pending::data(Node::input(position, value, Some(desc), Role::Seed, Some(level), None), 0)
+    Pending::data(Node::input(position, Some(like.primal().clone()), Some(desc), Role::Seed, Some(level), None), 0)
 }
 
 pub(crate) fn read_back(origin: &crate::program::Origin<&[crate::program::Read<Value>]>, cotangent: &Value, needed: &[bool]) -> Result<Vec<Option<Value>>> {

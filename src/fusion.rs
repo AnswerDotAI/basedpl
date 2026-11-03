@@ -1,6 +1,6 @@
 //! The row builder shared by dispatch, rewriting and concrete refill.
 use crate::{
-    Error, Value, error::Result, graph::{Node, Pending}, primitive::{CallView, Operation}, program::{Description, Origin, Outputs, Read, Reason, trace::Tracing}
+    Error, Value, error::Result, graph::{Node, Pending, State}, primitive::{CallView, Operation}, program::{Description, Live, Origin, Outputs, Read, Reason, trace::{Role, Tracing}}
 };
 use rustymath::agreement::Mapping;
 
@@ -10,9 +10,19 @@ pub(crate) fn row<O>(call: &CallView<'_>, reads: &mut [Read<O>]) -> Result<crate
     Operation::build(call, &mut |position, map| { reads[position].map = map; })
 }
 
-pub(crate) fn built(origin: Origin<&[Value]>, observed: &[Value]) -> Result<Outputs<Value>> {
-    let mut reads: Vec<_> = origin.list.iter().map(|value| Read { operand: value.clone(), map: Mapping::Linear(1) }).collect();
-    let (step, descs, _) = row(&origin.call_view(&observed), &mut reads)?;
+fn description_source(value: &Value) -> Result<Value> {
+    let value = value.primal();
+    if value.level().is_none() { return Ok(value.clone()); }
+    Live::of(std::slice::from_ref(value), None).substituted(|pending| pending.node.with_state(|state| match state {
+        State::Input { role: Role::Seed, value, .. } => value.cloned(), _ => None,
+    }))?.assemble()
+}
+
+pub(crate) fn built(origin: Origin<&[Value]>, call: &CallView) -> Result<Outputs<Value>> {
+    let mut reads: Vec<_> = origin.list.iter().enumerate().map(|(position, value)| Ok(Read {
+        operand: if origin.executes(position) { value.clone() } else { description_source(value)? }, map: Mapping::Linear(1),
+    })).collect::<Result<_>>()?;
+    let (step, descs, _) = row(call, &mut reads)?;
     if !origin.cacheable_metadata(origin.list.iter()) || !descs.as_ref().is_none_or(Description::cacheable_metadata) {
         Tracing::stop(Reason::Renderer, origin.site.clone());
         if Tracing::planning() { return Err(Error::planning()); }
@@ -22,6 +32,7 @@ pub(crate) fn built(origin: Origin<&[Value]>, observed: &[Value]) -> Result<Outp
     let site = origin.site.clone();
     let descs = descs.unwrap_or_else(Outputs::empty);
     let count = descs.as_ref().len();
+    if observing && Tracing::recording() { eprintln!("HOST_RESULT operation={}", origin.operation.glyph()); }
     if observing { Tracing::stop(Reason::HostKind, site.clone()); if Tracing::planning() { return Err(Error::planning()); } }
     let node = Node::build(step, origin.with_list(reads), descs, level);
     if observing || acts {

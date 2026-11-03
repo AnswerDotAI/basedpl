@@ -129,7 +129,14 @@ impl Error {
     pub(crate) fn at(mut self, span: &Span) -> Self { if self.span.is_none() { self.span = Some(span.clone()); } self }
     pub(crate) fn batch_stop(level: usize) -> Self { Self::new(ErrorKind::BatchStop(level), "host read of a batched value") }
     pub(crate) fn batch_level(&self) -> Option<usize> { match &self.kind { ErrorKind::BatchStop(level) => Some(*level), _ => None } }
-    pub(crate) fn planning() -> Self { Self::new(ErrorKind::Planning, "planning input has no items") }
+    #[inline(never)]
+    #[track_caller]
+    pub(crate) fn planning() -> Self {
+        if std::env::var_os("RUST_BACKTRACE").is_some_and(|value| value != "0") {
+            eprintln!("TEMP_PLANNING at {}\n{}", std::panic::Location::caller(), std::backtrace::Backtrace::force_capture());
+        }
+        Self::new(ErrorKind::Planning, "planning input has no items")
+    }
     pub(crate) fn is_planning(&self) -> bool { matches!(self.kind, ErrorKind::Planning) }
 }
 

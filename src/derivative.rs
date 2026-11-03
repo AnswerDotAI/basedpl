@@ -166,8 +166,7 @@ fn promoted(value: &Value) -> Result<Value> {
     })
 }
 
-pub(crate) fn rule(level: &Level, origin: Origin<&[Value]>) -> Result<Outputs<Value>> {
-    let call = origin.call_view(&origin.list);
+pub(crate) fn rule(level: &Level, origin: Origin<&[Value]>, call: &CallView) -> Result<Outputs<Value>> {
     if let Some(rule) = call.row().and_then(|row| row.jvp) { return rule(origin); }
     if matches!(origin.operation, Operation::Fold { positions: None, .. }) && matches!(Operation::linearity(&call), Linearity::No)
         && fold_rule(&call)?.is_none() {
@@ -200,7 +199,7 @@ pub(crate) fn custom_rule(function: &Function, origin: &Origin<&[Value]>) -> Res
     let (argument, direction) = split_deep(&argument, level)?;
     let direction = direction.expect("the argument carries this derivative level");
     let call = crate::eval::map_roots(origin, |at| Ok((at.index == right.index).then(|| RootReplacement::value(&argument, None))))?;
-    let (primal, captured) = split_deep(&function.run(call.reborrow())?, level)?;
+    let (primal, captured) = split_deep(&function.run(call.reborrow())?.assemble()?, level)?;
     let stripped = origin.with_list(origin.list.iter().map(|value| strip(value, level)).collect::<Vec<_>>());
     let tangent = rule.call_bound(&stripped.reborrow(), &[direction, argument], &[None, None])?;
     if tangent.shape() != primal.shape() {
@@ -230,10 +229,10 @@ pub(crate) fn linearity(call: &CallView<'_>) -> Linearity {
     }
 }
 
-fn fold_rule(call: &CallView<'_>) -> Result<Option<fn(&Origin<&[Value]>, &[Option<Value>]) -> Result<Value>>> {
+fn fold_rule(call: &CallView<'_>) -> Result<Option<fn(&Origin<&[Value]>, &[Option<Value>], &CallView) -> Result<Value>>> {
     use rustymath::reduce::Reduce;
     let right = call.explicit_argument_roots().last().ok_or_else(Error::planning)?;
-    let Some(dtype) = call.root_input(right)?.dtype() else { return Ok(None); };
+    let Some(dtype) = call.root_desc(right).map(|desc| desc.dtype()) else { return Ok(None); };
     Ok(match call.kernel(call.variant(dtype)?)?.and_then(|kernel| kernel.fold()) {
         Some(Reduce::Product) => Some(product_tangent), Some(Reduce::Max | Reduce::Min) => Some(extreme_tangent), _ => None
     })
@@ -246,10 +245,9 @@ fn sum(left: Option<Value>, right: Value) -> Result<Option<Value>> {
     }))
 }
 
-pub(crate) fn jvp(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Result<JvpOutputs> {
+pub(crate) fn jvp(origin: &Origin<&[Value]>, tangents: &[Option<Value>], call: &CallView) -> Result<JvpOutputs> {
     let primal = Operation::dispatch(origin.reborrow())?;
     if primal.as_ref().iter().any(|value| matches!(value.dtype(), Some(DType::Complex(_)))) { return Err(system("complex results")); }
-    let call = origin.call_view(&origin.list);
     let positions = call.mathematical_positions()?;
     let zero = match &origin.operation {
         Operation::Primitive { primitive, .. } => primitive.info().linear.zero[usize::from(call.explicit_argument_roots().len() == 2)],
@@ -262,7 +260,7 @@ pub(crate) fn jvp(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Resu
     let mut tangent = vec![None; primal.as_ref().len()];
     if zero || active.is_empty() { return Ok(JvpOutputs { primal, tangent: Outputs::from(tangent).with_trees(trees) }); }
     if matches!(origin.operation, Operation::Fold { .. }) && let Some(rule) = fold_rule(&call)? {
-        tangent[0] = Some(rule(origin, tangents)?);
+        tangent[0] = Some(rule(origin, tangents, call)?);
         return Ok(JvpOutputs { primal, tangent: Outputs::from(tangent).with_trees(trees) });
     }
     let conversion = match (&origin.operation, positions.as_slice()) {
@@ -333,9 +331,9 @@ pub(crate) fn jvp(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Resu
     Ok(JvpOutputs { primal, tangent: Outputs::from(tangent).with_trees(trees) })
 }
 
-fn product_tangent(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Result<Value> {
+fn product_tangent(origin: &Origin<&[Value]>, tangents: &[Option<Value>], call: &CallView) -> Result<Value> {
     use Arithmetic::{Divide, Minus, Plus, Times};
-    let positions = origin.call_view(&origin.list).mathematical_positions()?;
+    let positions = call.mathematical_positions()?;
     let calc = |p, args: &[Value]| primitive(origin, Primitive::Arithmetic(p), args);
     let equal = |value, n| primitive(origin, Primitive::Compare(crate::primitive::Comparison::Equal), &[value, Value::integer(n)]);
     let fold = |p, values: &[Value]| {
@@ -367,8 +365,7 @@ fn product_tangent(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Res
     calc(Times, &[rest, calc(Plus, &[none, one])?])
 }
 
-fn extreme_tangent(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Result<Value> {
-    let call = origin.call_view(&origin.list);
+fn extreme_tangent(origin: &Origin<&[Value]>, tangents: &[Option<Value>], call: &CallView) -> Result<Value> {
     let geometry = crate::plan::fold(&call)?;
     if let Some(seed) = geometry.seed {
         let roots: Vec<_> = (1..origin.explicit_roots as usize).map(|index| call.root(index)).collect();
@@ -377,7 +374,7 @@ fn extreme_tangent(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Res
         let unseeded = crate::eval::projected_call(origin, origin.operation.clone(), &values, &from)?;
         let mut directions = vec![None; unseeded.list.len()];
         directions[0] = tangents[geometry.arg].clone();
-        let folded = jvp(&unseeded.reborrow(), &directions)?;
+        let folded = Operation::jvp(&unseeded.reborrow(), &directions)?;
         let mut values = vec![folded.primal.assemble()?, origin.list[seed].clone()];
         let mut directions = vec![folded.tangent.as_ref()[0].clone(), tangents[seed].clone()];
         if geometry.scan {
@@ -387,7 +384,7 @@ fn extreme_tangent(origin: &Origin<&[Value]>, tangents: &[Option<Value>]) -> Res
         let Operation::Fold { primitive, .. } = origin.operation else { return Err(Error::planning()); };
         let combine = crate::eval::projected_call(origin, Operation::Primitive { primitive, pairing: Pairing::Axes }, &values, &[None, None])?;
         directions.resize(combine.list.len(), None);
-        return match jvp(&combine.reborrow(), &directions)?.tangent.into_vec().remove(0) { Some(value) => Ok(value), None => zero_tangent(&values[0]) };
+        return match Operation::jvp(&combine.reborrow(), &directions)?.tangent.into_vec().remove(0) { Some(value) => Ok(value), None => zero_tangent(&values[0]) };
     }
     let direction = match &tangents[geometry.arg] { Some(value) => value.clone(), None => zero_tangent(&origin.list[geometry.arg])? };
     if geometry.source.count() == 0 { return zero_tangent(&Operation::dispatch(origin.reborrow())?.assemble()?); }
@@ -405,7 +402,10 @@ impl GraphOps<'_, '_> {
         values.push((value, literal));
         slot
     }
-    fn get(&self, slot: rustymath::facts::Slot) -> Result<Value> { self.values.borrow()[slot.0 as usize].0.clone() }
+    fn get(&self, slot: rustymath::facts::Slot) -> Result<Value> {
+        let (value, literal) = self.values.borrow()[slot.0 as usize].clone();
+        if literal { value.and_then(Tracing::literal) } else { value }
+    }
     fn apply(&self, operation: Operation, slots: &[rustymath::facts::Slot]) -> rustymath::facts::Slot {
         let values = self.values.borrow();
         let literals = slots.iter().enumerate().fold(0, |bits, (i, slot)| bits | (u64::from(values[slot.0 as usize].1) << i));
@@ -479,14 +479,16 @@ impl rustymath::recipe::Ops<f64> for GraphOps<'_, '_> {
 }
 
 pub(crate) fn partials(origin: &Origin<&[crate::program::Read<Value>]>, result: &Value, needed: &[bool]) -> Result<Vec<Option<Value>>> {
-    if let Some(map) = summed_product(&origin.call_view(origin)) {
-        let positions = origin.call_view(origin).mathematical_positions()?;
+    let values: Vec<_> = origin.list.iter().map(|read| read.operand.clone()).collect();
+    let plain = origin.with_list(values.as_slice());
+    let prepared = Operation::prepare(&plain)?;
+    let call = prepared.view();
+    if let Some(map) = summed_product(&call) {
+        let positions = call.mathematical_positions()?;
         let [left, right] = positions.as_slice() else { return Err(Error::planning()); };
         let arguments = [Operation::read_input(origin, *left)?, Operation::read_input(origin, *right)?];
-        let values = origin.list.iter().map(|read| read.operand.clone()).collect::<Vec<_>>();
-        let parent = origin.with_list(values.as_slice());
         let call =
-            crate::eval::projected_call(&parent, Operation::Primitive { primitive: map, pairing: Pairing::Axes }, &arguments, &[Some(*left), Some(*right)])?;
+            crate::eval::projected_call(&plain, Operation::Primitive { primitive: map, pairing: Pairing::Axes }, &arguments, &[Some(*left), Some(*right)])?;
         let mapped = Operation::dispatch(call.reborrow())?.assemble()?;
         let reads =
             call.list.iter().map(|value| crate::program::Read { operand: value.clone(), map: rustymath::agreement::Mapping::Linear(1) }).collect::<Vec<_>>();
@@ -499,14 +501,11 @@ pub(crate) fn partials(origin: &Origin<&[crate::program::Read<Value>]>, result: 
         output[*right] = slopes.next().unwrap();
         return Ok(output);
     }
-    let call = origin.call_view(origin);
     let result = promoted(result)?;
     let dtype = result.dtype().ok_or_else(|| Error::domain("∂ needs numeric results"))?;
     let kernel = call.kernel(call.variant(dtype)?)?.ok_or_else(|| system(&origin.operation.glyph()))?;
     let positions = call.mathematical_positions()?;
     if positions.len() != kernel.arity() { return Err(Error::planning()); }
-    let values: Vec<_> = origin.list.iter().map(|read| read.operand.clone()).collect();
-    let plain = origin.with_list(values.as_slice());
     let DType::Float(width) = dtype else { return Err(Error::domain("∂ needs real-floating results")); };
     let graph = GraphOps { origin: &plain, values: Default::default(), width };
     let inputs = positions.iter().map(|&i| graph.put(Operation::read_input(origin, i).and_then(|value| promoted(&value)), false)).collect::<Vec<_>>();
@@ -635,7 +634,7 @@ fn mapped_jacobian(function: &Function, parent: &Origin<&[Value]>, input: &Value
     let (leaves, sizes, total) = if forward { (&inputs, &columns, &input_count) } else { (&outputs, &rows, &output_count) };
     let range = primitive(parent, Primitive::Iota, std::slice::from_ref(total))?;
     let scope = Scope::new(LevelKind::Derivative);
-    let index = crate::linear::seed(&Desc::of(&range).ok_or_else(Error::planning)?.zero(), scope.level.id, 0, None);
+    let index = crate::linear::seed(&Desc::of(&range).ok_or_else(Error::planning)?.zero(), scope.level.id, 0);
     let units = primitive(parent, Primitive::Compare(Comparison::Equal), &[range.clone(), Value::Pending(index.clone())])?;
     let mut first = Tracing::literal(Value::integer(0))?;
     let mut blocks = Vec::with_capacity(leaves.len());
@@ -649,7 +648,7 @@ fn mapped_jacobian(function: &Function, parent: &Origin<&[Value]>, input: &Value
         first = primitive(parent, Primitive::Arithmetic(Arithmetic::Plus), &[first, size.clone()])?;
     }
     let call = function.bound(parent, &[Value::tuple(blocks)], &[None])?;
-    let mut values = numeric_leaves(&function.run(call.reborrow())?)?.into_iter();
+    let mut values = numeric_leaves(&function.run(call.reborrow())?.assemble()?)?.into_iter();
     let mut flat = primitive(parent, Primitive::Ravel, &[values.next().ok_or_else(Error::planning)?])?;
     for value in values {
         let part = primitive(parent, Primitive::Ravel, &[value])?;
@@ -657,7 +656,7 @@ fn mapped_jacobian(function: &Function, parent: &Origin<&[Value]>, input: &Value
     }
     let directions = recorded(parent, &flat, &[index], scope.level.id)?;
     drop(scope);
-    let matrix = crate::batch::map(&directions, parent, &[range], 1, &[true], &[None], Notation::Cells)?;
+    let matrix = crate::batch::map(&directions, parent, &[range], 1, &[true], &[None], Notation::Cells)?.assemble()?;
     let matrix = if forward { primitive(parent, Primitive::Transpose, &[matrix])? } else { matrix };
     jacobian_structure(output, input, |out, arg, row, column| {
         let mut value = matrix.clone();
@@ -687,14 +686,14 @@ pub(crate) fn linearize(function: &Function, parent: &Origin<&[Value]>) -> Resul
     let mut seeds = Vec::new();
     let argument = map_leaves(&input, |leaf| {
         if !matches!(leaf.dtype(), Some(DType::Float(_))) { return Ok(leaf.clone()); }
-        let seed = crate::linear::seed(leaf, scope.level.id, seeds.len(), None);
+        let seed = crate::linear::seed(leaf, scope.level.id, seeds.len());
         seeds.push(seed.clone());
         dual(scope.level.id, leaf.clone(), Value::Pending(seed))
     })?;
     *arguments.last_mut().unwrap() = argument;
     let from = Function::argument_ranges(parent)?.into_iter().flatten().map(|range| Some(range.start)).collect::<Vec<_>>();
     let call = function.bound(parent, &arguments, &from)?;
-    let (value, tangent) = split_deep(&function.run(call.reborrow())?, scope.level.id)?;
+    let (value, tangent) = split_deep(&function.run(call.reborrow())?.assemble()?, scope.level.id)?;
     if numeric_leaves(&value)?.iter().any(|leaf| matches!(leaf.dtype(), Some(DType::Complex(_)))) { return Err(system("complex results")); }
     let tangent = match tangent { Some(value) => value, None => zero_tangent(&value)? };
     let linear = recorded(&call.reborrow(), &tangent, &seeds, scope.level.id)?;
@@ -706,19 +705,19 @@ pub(crate) fn transpose_function(function: &Function, parent: &Origin<&[Value]>,
     let scope = Scope::new(LevelKind::Derivative);
     let mut seeds = Vec::new();
     let directions = numeric_leaves(input)?.into_iter().filter(|leaf| matches!(leaf.dtype(), Some(DType::Float(_)))).map(|leaf| {
-        let seed = crate::linear::seed(&leaf, scope.level.id, seeds.len(), None);
+        let seed = crate::linear::seed(&leaf, scope.level.id, seeds.len());
         seeds.push(seed.clone());
         Value::Pending(seed)
     }).collect();
     let call = function.bound(parent, &[Value::tuple(directions)], &[None])?;
-    let tangent = function.run(call.reborrow())?;
+    let tangent = function.run(call.reborrow())?.assemble()?;
     let reverse = Scope::new(LevelKind::Derivative);
     let mut cotangents = Vec::new();
     let leaves = numeric_leaves(&tangent)?;
     let outputs = numeric_leaves(output)?;
     if leaves.len() != outputs.len() { return Err(Error::planning()); }
     let directions = leaves.iter().map(|leaf| {
-        let seed = crate::linear::seed(leaf, reverse.level.id, cotangents.len(), None);
+        let seed = crate::linear::seed(leaf, reverse.level.id, cotangents.len());
         cotangents.push(seed.clone());
         Value::Pending(seed)
     }).collect::<Vec<_>>();
@@ -764,7 +763,8 @@ pub(crate) fn transpose_fold(origin: &Origin<&[Read<Value>]>, cotangent: &Value,
     if !minus && !matches!(fold, Primitive::Arithmetic(Arithmetic::Plus)) { return Err(system("a nonlinear fold in an attached JVP")); }
     let values = origin.list.iter().map(|read| read.operand.clone()).collect::<Vec<_>>();
     let parent = origin.with_list(values.as_slice());
-    let positions = origin.call_view(origin).mathematical_positions()?;
+    let prepared = Operation::prepare(&parent)?;
+    let positions = prepared.view().mathematical_positions()?;
     let arg = *positions.last().ok_or_else(Error::planning)?;
     let mut direction = Operation::read_result(origin, cotangent)?;
     if *scan {

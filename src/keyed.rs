@@ -1,6 +1,6 @@
 use crate::{Error, ErrorKind, Number, Value, array::{Items, Layout}};
 use rustymath::hashing::{HashMap, HashSet, HashSetExt};
-use rustymath::{buffer::{FloatWidth, View}, error::Kind};
+use rustymath::{buffer::{DType, FloatWidth, View}, error::Kind};
 use std::sync::Arc;
 
 pub use rustymath::layout::Keys;
@@ -87,10 +87,10 @@ pub fn with_names(value: Value, names: Vec<Option<String>>) -> Result<Value, Str
 /// One name, or an array of names with its shape.
 pub(crate) enum Selector { One(Arc<str>), Many(Vec<usize>, Vec<Arc<str>>) }
 impl Selector {
+    pub fn may_hold_names(value: &Value) -> bool { value.dtype() == Some(DType::Character) || value.holds_mixed() }
     /// `None` when the value holds no names at all; mixed contents are a DOMAIN ERROR.
     pub fn of(value: &Value) -> Result<Option<Self>, ErrorKind> {
-        // Only characters, alone or among mixed items, can be names (`name`), so numbers in any storage hold none.
-        if value.dtype() != Some(rustymath::buffer::DType::Character) && !value.holds_mixed() { return Ok(None); }
+        if !Self::may_hold_names(value) { return Ok(None); }
         if let Some(k) = name(value) { return Ok(Some(Self::One(k))); }
         if value.is_atom() || value.is_empty() || !value.elements().any(|e| name(&e).is_some()) { return Ok(None); }
         let names = value.elements().map(|e| name(&e).ok_or(Kind::Domain)).collect::<Result<_, _>>()?;
@@ -186,69 +186,83 @@ fn names(value: &Value) -> Result<Vec<Option<Arc<str>>>, ErrorKind> {
     value.elements().enumerate().map(entry).collect()
 }
 
-/// The key list for each axis that `keys:` labels, in order, and those axes' names where `keys` is keyed.
-fn labels(keys: &Value) -> Result<(Vec<Vec<Option<Arc<str>>>>, Option<&Arc<Keys>>), ErrorKind> {
-    if keys.has_keys() && keys.shape().len() != 1 { return Err(Kind::Rank.into()); }
-    let axis_names = keys.keys(0);
-    let lists = if axis_names.is_some() { keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()? } else {
-        match names(keys) {
-            Ok(names) => vec![names], Err(_) if !keys.is_atom() && keys.shape().len() == 1 => keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()?,
-            Err(k) => return Err(k)
-        }
-    };
-    Ok((lists, axis_names))
-}
-
-/// The key of the record of one entry that `keys:` makes without axes, where `keys` is unkeyed and holds a single key.
-fn entry<'a>(lists: &'a [Vec<Option<Arc<str>>>], axis_names: Option<&Arc<Keys>>) -> Option<&'a Arc<str>> {
-    match (axis_names, lists) { (None, [list]) => match &list[..] { [Some(name)] => Some(name), _ => None }, _ => None }
-}
-
-pub(crate) fn construct(keys: &Value, values: &Value, axes: Option<&[usize]>) -> Result<Value, Error> {
-    let (lists, axis_names) = labels(keys)?;
-    if let (None, Some(name)) = (axes, entry(&lists, axis_names)) { return Ok(vector(vec![name.clone()], vec![values.clone()])?); }
-    let default: Vec<_> = (0..lists.len()).collect();
-    let axes = axes.unwrap_or(&default);
-    if axes.len() != lists.len() { return Err(Kind::Length.into()); }
-    let mut result = values.layout().all_keys();
-    let mut result_names = (0..values.shape().len()).map(|a| values.axis_name(a).cloned()).collect::<Vec<_>>();
-    for (i, (&axis, names)) in axes.iter().zip(lists).enumerate() {
-        let slot = result.get_mut(axis).ok_or(Kind::Rank)?;
-        *slot = Some(Keys::partial(names)?);
-        if let Some(names) = axis_names { result_names[axis] = names.names()[i].clone(); }
+/// Position-key lists and the axis names declared by a keyed specification.
+pub(crate) struct Labels { lists: Vec<Vec<Option<Arc<str>>>>, names: Option<Arc<Keys>> }
+impl Labels {
+    pub(crate) fn new(keys: &Value) -> Result<Self, ErrorKind> {
+        if keys.has_keys() && keys.rank() != 1 { return Err(Kind::Rank.into()); }
+        let axis_names = keys.keys(0).cloned();
+        let lists = if axis_names.is_some() { keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()? } else {
+            match names(keys) {
+                Ok(names) => vec![names], Err(_) if !keys.is_atom() && keys.rank() == 1 => keys.elements().map(|v| names(&v)).collect::<Result<_, _>>()?,
+                Err(k) => return Err(k)
+            }
+        };
+        Ok(Self { lists, names: axis_names })
     }
-    values.clone().with_keys(result)?.with_axis_names(result_names)
+    /// One unkeyed name wraps the entire argument in a record entry unless axes are supplied.
+    pub(crate) fn entry(&self) -> Option<&Arc<str>> {
+        match (self.names.as_ref(), self.lists.as_slice()) { (None, [list]) => match &list[..] { [Some(name)] => Some(name), _ => None }, _ => None }
+    }
+    /// Attach labels to a native array, or remove precisely those labels for the inverse. A plain specification keeps axis names.
+    pub(crate) fn layout(&self, value: &Layout, axes: Option<&[usize]>, inverse: bool) -> Result<Layout, Error> {
+        if inverse && axes.is_none() && let Some(name) = self.entry() {
+            if *value != partial_layout(vec![Some(name.clone())])? { return Err(Error::domain("no argument gives this result")); }
+            return Ok(Layout::EMPTY);
+        }
+        let default: Vec<_> = (0..self.lists.len()).collect();
+        let axes = axes.unwrap_or(&default);
+        if inverse {
+            let mut result = remove_layout(value, Some(axes)).map_err(|_| Error::domain("no argument gives this result"))?;
+            if self.names.is_none() { result = result.with_names(value.names().to_vec())?; }
+            if !self.layout(&result, Some(axes), false).is_ok_and(|back| back == *value) { return Err(Error::domain("no argument gives this result")); }
+            return Ok(result);
+        }
+        if axes.len() != self.lists.len() { return Err(Kind::Length.into()); }
+        let mut result = value.all_keys();
+        let mut result_names = (0..value.shape().len()).map(|axis| value.name(axis).cloned()).collect::<Vec<_>>();
+        for (i, (&axis, names)) in axes.iter().zip(&self.lists).enumerate() {
+            *result.get_mut(axis).ok_or(Kind::Rank)? = Some(Keys::partial(names.clone())?);
+            if let Some(names) = &self.names { result_names[axis] = names.names()[i].clone(); }
+        }
+        Ok(value.clone().with_keys(result)?.with_names(result_names)?)
+    }
+    pub(crate) fn value(&self, value: &Value, axes: Option<&[usize]>, inverse: bool) -> Result<Value, Error> {
+        if axes.is_none() && let Some(name) = self.entry() {
+            if !inverse { return Ok(vector(vec![name.clone()], vec![value.clone()])?); }
+            self.layout(value.layout(), None, true)?;
+            return value.elements().next().ok_or_else(|| Error::domain("no argument gives this result"));
+        }
+        value.clone().with_layout(self.layout(value.layout(), axes, inverse)?)
+    }
 }
 
-/// `value` without axis names or position keys on `axes`, or on every axis: monadic `:`.
-pub(crate) fn remove(value: &Value, axes: Option<&[usize]>) -> Result<Value, Error> {
-    if !matches!(value, Value::Array(_)) { return Ok(value.clone()); }
-    let Some(axes) = axes else { return value.clone().with_keys(vec![])?.with_axis_names(vec![]) };
-    let mut keys = value.layout().all_keys();
-    let mut names: Vec<_> = (0..value.shape().len()).map(|a| value.axis_name(a).cloned()).collect();
+/// The layout without names or position keys on `axes`, or on every axis.
+pub(crate) fn remove_layout(value: &Layout, axes: Option<&[usize]>) -> Result<Layout, Error> {
+    let Some(axes) = axes else { return Ok(value.clone().with_keys(vec![])?.with_names(vec![])?) };
+    let mut keys = value.all_keys();
+    let mut names = (0..value.shape().len()).map(|axis| value.name(axis).cloned()).collect::<Vec<_>>();
     for &axis in axes {
         *keys.get_mut(axis).ok_or(Kind::Rank)? = None;
         names[axis] = None;
     }
-    value.clone().with_keys(keys)?.with_axis_names(names)
+    Ok(value.clone().with_keys(keys)?.with_names(names)?)
 }
 
-/// `keys:⁻¹value`: `value` without the labels that `keys:` attaches. Those are the position keys of the leading axes that `keys` labels, and those axes' names where `keys` is keyed. Other names and keys stay. Where `keys:` makes a record of one entry, the result is that entry's value.
-pub(crate) fn deconstruct(keys: &Value, value: &Value) -> Result<Value, Error> {
-    let (lists, axis_names) = labels(keys)?;
-    if entry(&lists, axis_names).is_some() { return value.elements().next().ok_or(Kind::Length.into()); }
-    let unlabelled = remove(value, Some(&(0..lists.len()).collect::<Vec<_>>()))?;
-    // A plain list of key lists attaches no names, so every axis keeps its own.
-    if axis_names.is_some() { Ok(unlabelled) } else { unlabelled.with_axis_names(value.axis_names().to_vec()) }
+pub(crate) fn construct(keys: &Value, value: &Value, axes: Option<&[usize]>, inverse: bool) -> Result<Value, Error> {
+    Labels::new(keys)?.value(value, axes, inverse)
 }
+
+/// `value` without axis names or position keys on `axes`, or on every axis: monadic `:`.
+pub(crate) fn remove(value: &Value, axes: Option<&[usize]>) -> Result<Value, Error> { value.clone().with_layout(remove_layout(value.layout(), axes)?) }
 
 /// The positions along each of `axes`, or the keys where the axis has them: one vector, or a vector of them for several axes.
-pub(crate) fn selectors(value: &Value, axes: &[usize]) -> Result<Value, Error> { axis_selectors(value, axes, false) }
+pub(crate) fn selectors(value: &Layout, axes: &[usize]) -> Result<Value, Error> { axis_selectors(value, axes, false) }
 
 /// [`selectors`], each along an axis with the name of the axis it selects, as `⍳⍠` gives them. Each then pairs with that axis by name. Indexing by one keeps the keys at the positions it selects.
-pub(crate) fn named_selectors(value: &Value, axes: &[usize]) -> Result<Value, Error> { axis_selectors(value, axes, true) }
+pub(crate) fn named_selectors(value: &Layout, axes: &[usize]) -> Result<Value, Error> { axis_selectors(value, axes, true) }
 
-fn axis_selectors(value: &Value, axes: &[usize], named: bool) -> Result<Value, Error> {
+fn axis_selectors(value: &Layout, axes: &[usize], named: bool) -> Result<Value, Error> {
     let mut values = Vec::new();
     for &axis in axes {
         let &len = value.shape().get(axis).ok_or(Kind::Rank)?;
@@ -257,7 +271,7 @@ fn axis_selectors(value: &Value, axes: &[usize], named: bool) -> Result<Value, E
                 vec![len], k.names().iter().enumerate().map(|(i, k)| k.as_ref().map_or_else(|| position(i), |k| text(k))).collect(), text(""))?,
             None => Value::integers(vec![len], (0..len).map(|n| n as i64).collect())?
         };
-        values.push(if named { selector.with_axis_names(vec![value.axis_name(axis).cloned()])? } else { selector });
+        values.push(if named { selector.with_axis_names(vec![value.name(axis).cloned()])? } else { selector });
     }
     Ok(if values.len() == 1 { values.pop().unwrap() } else { Value::from_parts(vec![values.len()], values, Value::integers(vec![0], vec![])?)? })
 }

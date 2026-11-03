@@ -82,16 +82,18 @@ fn cancellation_preserves_session_and_unwinds_calls() {
     s.set("u", AplValue::floats(vec![1_000_000], basedpl::buffer::FloatWidth::F64, (0..1_000_000).map(|i| f64::from(i) + 0.5)).unwrap()).unwrap();
     assert!(matches!(s.eval_timeout("∪u", Duration::from_millis(2)).error.unwrap().kind, Timeout));
     assert!(matches!(s.eval_timeout("⍭1000000000000ₓ", Duration::from_millis(2)).error.unwrap().kind, Timeout));
-    let interrupt = basedpl::InterruptHandle::default();
-    let handle = interrupt.clone();
-    let cancel = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(10));
-        handle.interrupt();
-    });
-    let r = s.eval_with("{∇⍵}0", basedpl::EvalOptions { interrupt, timeout: Some(Duration::from_secs(2)), ..basedpl::EvalOptions::default() });
-    cancel.join().unwrap();
-    assert!(matches!(r.error.as_ref().unwrap().kind, Interrupt));
-    equiv_in(&s, "keep", "42");
+    for code in ["{∇⍵}0", r#"{"INTERRUPT"::99 ⋄ (+⍣{0})⍵}0"#] {
+        let interrupt = basedpl::InterruptHandle::default();
+        let handle = interrupt.clone();
+        let cancel = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(10));
+            handle.interrupt();
+        });
+        let r = s.eval_with(code, basedpl::EvalOptions { interrupt, timeout: Some(Duration::from_secs(2)), ..basedpl::EvalOptions::default() });
+        cancel.join().unwrap();
+        assert!(matches!(r.error.as_ref().unwrap().kind, Interrupt), "{code}");
+        equiv_in(&s, "keep", "42");
+    }
 }
 
 #[test]

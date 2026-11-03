@@ -1,6 +1,6 @@
 //! A scheduler-selected stage, executed blockwise from the program's own rows.
 use super::{Out, Outputs, Program, Running};
-use crate::{Value, error::Result};
+use crate::{ReadKind, Value, error::Result};
 use rustymath::{agreement::{Binding, Mapping, ReadPlan}, buffer::{DType, FloatWidth, View, Width}};
 use std::{borrow::Cow, sync::Arc};
 
@@ -45,7 +45,7 @@ impl Builder {
         if !readable(result.dtype()) { return Ok(false); }
         let fold = if matches!(step, Step::Fold { .. }) {
             let bindings = running.call(program, origin)?;
-            let fold = crate::plan::fold(&bindings.call_view(&bindings.list))?;
+            let fold = crate::plan::fold(&bindings.call_view())?;
             if fold.scan { return Ok(false); }
             Some(fold)
         } else { None };
@@ -138,7 +138,7 @@ impl Block {
         for (position, &node) in members.iter().enumerate() {
             let Node::Step { step, origin, .. } = &program.nodes[node] else { return Ok(None); };
             let bindings = running.call(program, origin)?;
-            let call = bindings.call_view(&bindings.list);
+            let call = bindings.call_view();
             kernels.push(match step {
                 Step::Map { variant, .. } | Step::Fold { variant, .. } => { let Some(kernel) = call.kernel(*variant)? else { return Ok(None); }; Some(kernel) }
                 _ => None,
@@ -227,7 +227,7 @@ impl Block {
                 }
             }
             let bindings = running.call(program, origin)?;
-            settings.push(kernel_settings(&bindings.call_view(&bindings.list))?);
+            settings.push(kernel_settings(&bindings.call_view())?);
         }
         #[cfg(not(web))]
         if let Some(prepared) = prepared {
@@ -318,7 +318,7 @@ impl Lowered {
             let desc = running.desc(program, output).expect("a block member has a description");
             let Some(ty) = Ty::of(desc.kind.dtype()) else { return Ok(None); };
             let bindings = running.call(program, origin)?;
-            let call = bindings.call_view(&bindings.list);
+            let call = bindings.call_view();
             let mut read = |argument, at, kernel: &mut jit::Kernel| {
                 Self::argument(program, running, members, &made, &mut inputs, kernel, origin.list.start as usize + argument as usize, at)
             };
@@ -332,7 +332,7 @@ impl Lowered {
                         arguments.push(value);
                     }
                     let tolerance = match call.setting(crate::primitive::Setting::Tolerance) {
-                        Some((argument, _)) => { let Some(value) = read(argument as u32, at, &mut kernel) else { return Ok(None); }; Some(value) } None => None
+                        Some(argument) => { let Some(value) = read(argument as u32, at, &mut kernel) else { return Ok(None); }; Some(value) } None => None
                     };
                     let Some(value) = kernel.formula(&object, at, &arguments, ty == Ty::Bool, tolerance) else { return Ok(None); };
                     if kernel.ty(value) == ty { value } else { kernel.step(Op::Convert, ty, value, None) }
@@ -740,5 +740,8 @@ fn block_shape() -> rustymath::error::Error { rustymath::error::Error::new(rusty
 
 pub(crate) fn kernel_settings(call: &crate::primitive::CallView<'_>) -> Result<rustymath::operation::Settings> {
     Ok(rustymath::operation::Settings {
-        tolerance: call.setting(crate::primitive::Setting::Tolerance).map(|(_, value)| crate::primitive::real(value)).transpose()? })
+        tolerance: call.setting(crate::primitive::Setting::Tolerance).map(|position| {
+            let value = call.parameter_at(position)?;
+            crate::primitive::real(&value)
+        }).transpose()? })
 }

@@ -213,14 +213,13 @@ impl Walk {
     }
 }
 
-pub(crate) fn form(origin: Origin<&[Value]>) -> Result<Option<crate::program::Outputs<Value>>> {
+pub(crate) fn form(origin: Origin<&[Value]>, call: &crate::primitive::CallView) -> Result<Option<crate::program::Outputs<Value>>> {
     let Operation::At { combine, target: mode } = origin.operation else { return Ok(None); };
-    let call = origin.call_view(&origin.list);
     if mode == WriteTarget::Selected && !origin.list.iter().any(differentiated)
-        && RootPorts::new(call.root_input(0)?.as_ref()).whole_path(call.root_input(1)?.as_ref()).is_some() { return code_at(&call).map(Some); }
-    if crate::primitive::at_geometry(&call)?.is_none() { return code_at(&call).map(Some); }
+        && RootPorts::new(origin.root_input(0)?.as_ref()).whole_path(origin.root_input(1)?.as_ref()).is_some() { return code_at(&origin, call).map(Some); }
+    if crate::primitive::at_geometry(&call)?.is_none() { return code_at(&origin, call).map(Some); }
     if mode != WriteTarget::Selected { return Ok(None); }
-    let root = call.root_input(0)?;
+    let root = origin.root_input(0)?;
     let port = subject(&root).pending().and_then(source_position).ok_or_else(foreign)?;
     let distinct = combine.is_none() && origin.list.iter().any(differentiated);
     let mut normalized = origin.with_list(origin.list);
@@ -234,13 +233,13 @@ pub(crate) fn form(origin: Origin<&[Value]>) -> Result<Option<crate::program::Ou
     Operation::dispatch(normalized).map(Some)
 }
 
-pub(crate) fn code_at(call: &crate::primitive::CallView<'_>) -> Result<crate::program::Outputs<Value>> {
+pub(crate) fn code_at(origin: &Origin<&[Value]>, call: &crate::primitive::CallView<'_>) -> Result<crate::program::Outputs<Value>> {
     use crate::{primitive::{Selection, Targets}, program::trace::ReadKind};
     use rustymath::agreement::ReadAt;
     let Operation::At { combine, target: mode } = call.operation else { return Err(Error::planning()); };
-    let root = call.root_input(0)?.into_owned();
-    let target = call.root_input(1)?.into_owned();
-    let mut values = call.root_input(2)?.into_owned();
+    let root = origin.root_input(0)?.into_owned();
+    let target = origin.root_input(1)?.into_owned();
+    let mut values = origin.root_input(2)?.into_owned();
     if [&root, &target, &values].into_iter().any(differentiated) {
         return Err(Error::new(crate::ErrorKind::Unsupported, "write derivatives require native arrays of unchanged shape"));
     }
@@ -280,7 +279,7 @@ pub(crate) fn code_at(call: &crate::primitive::CallView<'_>) -> Result<crate::pr
         let mut parts = parts.into_iter();
         let first = parts.next().ok_or_else(Error::planning)?;
         parts.try_fold(first, |left, right| {
-            call.apply(Operation::Primitive { primitive: Primitive::CatenateFirst, pairing: crate::primitive::Pairing::Axes }, &[left, right], &[None; 2])
+            origin.apply(Operation::Primitive { primitive: Primitive::CatenateFirst, pairing: crate::primitive::Pairing::Axes }, &[left, right], &[None; 2])
         })
     };
     for (source, changes) in writes {
@@ -297,12 +296,12 @@ pub(crate) fn code_at(call: &crate::primitive::CallView<'_>) -> Result<crate::pr
             let mut values = Vec::with_capacity(changes.len());
             for (target, value) in changes {
                 let value = if value.is_singleton() && target.len() != 1 {
-                    call.apply(Operation::Read(ReadOp::Reshape), &[Value::integer(target.len() as i64), value], &[None; 2])?
+                    origin.apply(Operation::Read(ReadOp::Reshape), &[Value::integer(target.len() as i64), value], &[None; 2])?
                 } else { value };
-                targets.push(call.apply(Operation::Read(ReadOp::Ravel), &[target], &[None])?);
-                values.push(call.apply(Operation::Read(ReadOp::Ravel), &[value], &[None])?);
+                targets.push(origin.apply(Operation::Read(ReadOp::Ravel), &[target], &[None])?);
+                values.push(origin.apply(Operation::Read(ReadOp::Ravel), &[value], &[None])?);
             }
-            call.apply(Operation::At { combine: *combine, target: WriteTarget::Selected }, &[before, concatenate(targets)?, concatenate(values)?], &[None; 3])?
+            origin.apply(Operation::At { combine: *combine, target: WriteTarget::Selected }, &[before, concatenate(targets)?, concatenate(values)?], &[None; 3])?
         } else {
             crate::program::trace::Tracing::stop(crate::program::Reason::HostKind, call.site.cloned());
             let before = before.read(ReadKind::Structure)?;

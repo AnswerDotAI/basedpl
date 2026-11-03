@@ -292,9 +292,10 @@ def time_cases(
     build:Annotated[str, {'nargs':'+'}]=None, # The build to time, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build; or a list of builds to compare
     rounds=2, # The fresh workers that each build gets, taking turns with any other builds' in alternating order
     timeout:float=LIMIT, # Seconds of work that the call gets across its builds and rounds, or a `Limit` to share (`worker.Limit`), counted from when each worker holds the timing lock; None: no limit
+    cold:bool=False, # First forced read in a fresh worker per case; end setup with the input to force it before timing; copies are not reported
     **kwargs
 ):
-    "Time `cases` in fresh workers, as `tests/speed.rs` does: in each worker the fastest of five runs, per item and in copies of the data, and of those the fastest over `rounds` workers, since a large case's time varies between processes by more than within one. Given several builds, it gives `ByBuild`, holding each case's fastest time on each build, and resolves each build once, as the comparison starts."
+    "Time fully read calculations, taking the fastest of five warm runs per worker or the first run with `cold=True`, then the fastest over `rounds`. Several builds alternate order each round and return `ByBuild`."
     if section:
         name, _, part = section.partition(':')
         speed = _reference_file((_SPEED/name).read_text())
@@ -304,14 +305,20 @@ def time_cases(
     setup = _reference_file((_SPEED/'arrays.bpl').read_text())['setup'] if setup is None else setup
     cases = listify(cases)
     limit = Limit.of(timeout)
+    groups = [[code] for code in cases] if cold else [cases]
+    field = 'cold_seconds' if cold else 'seconds'
     def timed(build):
-        with Worker(build, **kwargs) as w:
-            r = w.request(dict(timing=dict(setup=setup, prefs=prefs, cases=cases, threads=threads)), limit.left())
-            limit.spend(w.ran)
-        if e := r['error']:
-            limit.reached(e)
-            raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
-        return Costs((c['code'], c['seconds']*1e12/r['n'], c['copies']) for c in r['costs'])
+        rows = Costs()
+        for codes in groups:
+            with Worker(build, **kwargs) as w:
+                r = w.request(dict(timing=dict(setup=setup, prefs=prefs, cases=codes, threads=threads)), limit.left())
+                limit.spend(w.ran)
+            if e := r['error']:
+                limit.reached(e)
+                raise BplError(e, r['output']) if 'display' in e else ValueError(e['message'])
+            if cold and any(field not in c for c in r['costs']): raise ValueError(f'Build {build} does not support cold timing (missing cold_seconds)')
+            rows.extend((c['code'], c[field]*1e12/r['n'], None if cold else c['copies']) for c in r['costs'])
+        return rows
     builds = listify(build) or [None]
     runs, paths = [[] for _ in builds], [resolved(b) for b in builds]
     for r in range(rounds):

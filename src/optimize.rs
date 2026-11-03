@@ -17,7 +17,7 @@ pub(crate) fn optimize(f: &Function, origin: Origin<&[Value]>) -> Result<Value, 
     let right = arguments.last().ok_or_else(Error::planning)?;
     let left = (arguments.len() == 2).then(|| &arguments[0]);
     let options = Options::new("⇄", left, None, OPTIONS)?;
-    let numeric = crate::settings::captured(&origin.call_view(&origin.list))?;
+    let numeric = crate::settings::numeric();
     let width = right.float_width().unwrap_or(numeric.width);
     match width { FloatWidth::F64 => run::<f64>(f, &options, right, width, &origin), _ => run::<f32>(f, &options, right, width, &origin) }
 }

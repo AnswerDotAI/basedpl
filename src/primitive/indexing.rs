@@ -24,7 +24,7 @@ pub(super) fn brackets(left: &Value, right: &Value, fill: Option<Value>, span: &
 /// Written BPL selectors. Structural markers stay distinct until the applicable source or ending-cell frame is known.
 fn squad_part(value: Value) -> IndexPart<Value> {
     match &value {
-        Value::Function(function) if function.as_primitive() == Some(Primitive::Keys) => IndexPart::All,
+        Value::Function(function) if function.as_primitive() == Some(Primitive::Keys(false)) => IndexPart::All,
         Value::Number(number) if number.is_infinite() => {
             if number.as_float().is_some_and(|number| number < 0.0) { IndexPart::NewAxis } else { IndexPart::Rest }
         }
@@ -512,13 +512,14 @@ pub(crate) fn planned_read(right: &Value, plan: Plan, direct: bool, fill: Option
     remap(right, plan, fill)
 }
 
-/// The plan of a selection by `parts` on an array with `layout`, and whether it reads one item, as a step that selects at replay plans it (`program::Step::Gather`, `program::Writes::By`), for a write where `writes`. Without the whole array, positions never select pick paths.
-pub(crate) fn parts_plan(
-    layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>], paired: bool, writes: bool, span: &Span) -> Result<(Plan, bool), Error> {
-    let Positions::Plan(plan, direct) = axis_positions(layout, None, parts, None, paired, writes, span)? else {
-        unreachable!("positions plan without the whole array")
-    };
-    Ok((plan, direct))
+/// Plan positional, key and coordinate parts without traversing nested items.
+fn parts_plan(
+    layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, writes: bool, checked: bool
+) -> Result<(Plan, bool), Error> {
+    structure::plan_parts(layout, &source_claims(parts), axes, paired, writes, |i, axis| {
+        let IndexPart::Axis(value) = &parts[i] else { unreachable!("an axis refers to its written payload") };
+        axis_part(value, layout, axis, checked)
+    }, Error::from)
 }
 
 /// The items that `select` reads, as a selection to write into.
@@ -558,10 +559,7 @@ fn axis_positions(
             whole, path, parts[..first].iter().filter(|p| matches!(p, IndexPart::NewAxis)).count(), &parts[first + 1..], paired, writes, span)
         .map(Positions::Paths);
     }
-    let (plan, direct) = rustymath::structure::plan_parts(layout, &source_claims(parts), axes, paired, writes, |i, axis| {
-        let IndexPart::Axis(value) = &parts[i] else { unreachable!("an axis refers to its written payload") };
-        axis_part(value, layout, axis, true)
-    }, |e| Error::new(e, ""))?;
+    let (plan, direct) = parts_plan(layout, parts, axes, paired, writes, true)?;
     Ok(Positions::Plan(plan, direct))
 }
 
@@ -660,7 +658,7 @@ pub(crate) struct GatherGeometry {
 enum GatherPart { Data(GatherIndex, Desc), Known(Value) }
 
 fn selector_parameter(call: &CallView<'_>, position: usize) -> bool {
-    if call.function(position).is_some() { return true; }
+    if call.is_function(position) { return true; }
     call.desc(position).is_some_and(|desc| {
         desc.dtype() == DType::Character
             || matches!(desc.dtype(), DType::Float(_)) && desc.range.is_none_or(|range| !range.lo.is_finite() || !range.hi.is_finite())
@@ -685,12 +683,11 @@ fn structural_selector(call: &CallView<'_>, root: &TreeRoot) -> bool {
 }
 
 /// A known selection of a heterogeneous wrapper projects its original children, not their values.
-pub(super) fn index_form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
-    if let Some(outputs) = fill_form(origin.reborrow())? { return Ok(Some(outputs)); }
-    index_projection(origin, ReadKind::Structure)
+pub(super) fn index_form(origin: Origin<&[Value]>, call: &CallView) -> Result<Option<Outputs<Value>>, Error> {
+    if let Some(outputs) = fill_form(origin.reborrow(), call)? { return Ok(Some(outputs)); }
+    index_projection(origin, call, ReadKind::Structure)
 }
-fn index_projection(origin: Origin<&[Value]>, purpose: ReadKind) -> Result<Option<Outputs<Value>>, Error> {
-    let call = origin.call_view(&origin.list);
+fn index_projection(origin: Origin<&[Value]>, call: &CallView, purpose: ReadKind) -> Result<Option<Outputs<Value>>, Error> {
     let roots = call.explicit_argument_roots();
     if roots.len() != 2 { return Ok(None); }
     let source = call.root(roots.end - 1);
@@ -698,28 +695,34 @@ fn index_projection(origin: Origin<&[Value]>, purpose: ReadKind) -> Result<Optio
     if !matches!(trees.root_at(&source), Tree::Array { .. }) { return Ok(None); }
     let selector = call.root(roots.start);
     if purpose == ReadKind::Structure && !structural_selector(&call, &selector) { return Ok(None); }
-    let left = call.root_value(selector.index, purpose)?;
-    let right = call.root_input(source.index)?;
+    let left = origin.root_input(selector.index)?.read(purpose)?;
+    let right = origin.root_input(source.index)?;
     let parts = squad_parts(&left)?;
     if paths_part(right.layout(), &parts)?.is_some() { return Ok(None); }
-    let axis = call.axis_root().map(|root| call.root_value(root.index, ReadKind::Structure)).transpose()?;
-    let axes = axis.as_deref().filter(|spec| !(spec.is_empty() && spec.keys(0).is_some())).map(|spec| axes(&resolve_axes(spec, right.layout())?, right.rank()))
+    let axis = call.axis_root().map(|root| origin.root_input(root.index)?.read(ReadKind::Structure)).transpose()?;
+    let axes = axis.as_ref().filter(|spec| !(spec.is_empty() && spec.keys(0).is_some())).map(|spec| axes(&resolve_axes(spec, right.layout())?, right.rank()))
         .transpose()?;
     let paired = matches!(call.operation, Operation::Primitive { primitive: Primitive::Bracket, .. });
     let span = call.site.cloned().unwrap_or_else(|| Span::whole(crate::Source::new("<index>", "⌷")));
     let Positions::Plan(plan, direct) = axis_positions(right.layout(), Some(&right), &parts, axes.as_deref(), paired, false, &span)? else { return Ok(None); };
-    let fill = call.fill_root().map(|root| call.root_input(root.index).map(Cow::into_owned)).transpose()?;
+    let fill = call.fill_root().map(|root| origin.root_input(root.index).map(Cow::into_owned)).transpose()?;
     planned_read(&right, plan, direct, fill).map(|value| Some(Outputs::one(value)))
 }
 
-pub(super) fn pick_form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
-    if origin.call_view(&origin.list).explicit_argument_roots().len() == 1 { return super::structural::form(origin); }
-    if session().prototype.get() { return super::host_primitive(&origin.call_view(&origin.list)).map(Some); }
-    if let Some(outputs) = fill_form(origin.reborrow())? { return Ok(Some(outputs)); }
-    pick_projection(origin, ReadKind::Structure)
+pub(super) fn pick_form(origin: Origin<&[Value]>, call: &CallView) -> Result<Option<Outputs<Value>>, Error> {
+    if call.explicit_argument_roots().len() == 1 { return super::structural::form(origin, call); }
+    if session().prototype.get() {
+        let roots = call.explicit_argument_roots();
+        let left = origin.root_input(roots.start)?.read(ReadKind::Structure)?;
+        let right = origin.root_input(roots.end - 1)?;
+        let fill = call.fill_root().map(|root| origin.root_input(root.index)).transpose()?;
+        let span = call.site.cloned().unwrap_or_else(|| INDEX.clone());
+        return pick(&left, &right, true, fill.as_deref(), &span).map(|value| Some(Outputs::one(value)));
+    }
+    if let Some(outputs) = fill_form(origin.reborrow(), call)? { return Ok(Some(outputs)); }
+    pick_projection(origin, call, ReadKind::Structure)
 }
-fn pick_projection(origin: Origin<&[Value]>, purpose: ReadKind) -> Result<Option<Outputs<Value>>, Error> {
-    let call = origin.call_view(&origin.list);
+fn pick_projection(origin: Origin<&[Value]>, call: &CallView, purpose: ReadKind) -> Result<Option<Outputs<Value>>, Error> {
     let roots = call.explicit_argument_roots();
     if roots.len() != 2 { return Ok(None); }
     let Some(trees) = call.trees else { return Ok(None); };
@@ -728,14 +731,24 @@ fn pick_projection(origin: Origin<&[Value]>, purpose: ReadKind) -> Result<Option
     if !matches!(tree, Tree::Array { .. }) { return Ok(None); }
     let selector = call.root(roots.start);
     if purpose == ReadKind::Structure && !structural_selector(&call, &selector) { return Ok(None); }
-    let path = call.root_value(selector.index, purpose)?;
+    let path = origin.root_input(selector.index)?.read(purpose)?;
     if path.rank() > 1 { return Err(Error::new(Kind::Rank, "a path must be a unit or vector")); }
     let mut items = coordinate_fields(&path).peekable();
     while items.peek().is_some() {
-        let Tree::Array { layout, .. } = tree else { return Ok(None); };
+        let Tree::Array { layout, .. } = tree else {
+            let source = origin.list.get(range.start).ok_or_else(Error::planning)?;
+            if Desc::of(source).is_none() { return Ok(None); }
+            let mut args = vec![Value::tuple(items.collect()), source.clone()];
+            let mut from = vec![None, Some(range.start)];
+            for root in roots.end..origin.explicit_roots as usize {
+                args.push(origin.root_input(root)?.into_owned());
+                from.push(Some(call.root(root).leaves.start));
+            }
+            return origin.apply(origin.operation.clone(), &args, &from).map(|value| Some(Outputs::one(value)));
+        };
         let fields = next_level(&mut items, layout.shape().len())?;
         if fields.len() < layout.shape().len() { return Ok(None); }
-        let offset = cell_offset(layout, 0, &fields, false)?;
+        let offset = cell_offset(&layout, 0, &fields, false)?;
         let Some((child, leaves)) = tree.children(range.start).nth(offset) else { return Ok(None); };
         tree = child;
         range = leaves;
@@ -750,25 +763,26 @@ fn pick_projection(origin: Origin<&[Value]>, purpose: ReadKind) -> Result<Option
 }
 
 pub(crate) fn selection_projection(origin: Origin<&[Value]>) -> Result<Option<Value>, Error> {
+    let prepared = Operation::prepare(&origin)?;
+    let call = prepared.view();
     let projected = match origin.operation {
-        Operation::Primitive { primitive: Primitive::Index | Primitive::Bracket, .. } => index_projection(origin.reborrow(), ReadKind::RuntimeOnly)?,
-        Operation::Primitive { primitive: Primitive::Mix, .. } => pick_projection(origin.reborrow(), ReadKind::RuntimeOnly)?, _ => return Ok(None)
+        Operation::Primitive { primitive: Primitive::Index | Primitive::Bracket, .. } => index_projection(origin.reborrow(), &call, ReadKind::RuntimeOnly)?,
+        Operation::Primitive { primitive: Primitive::Mix, .. } => pick_projection(origin.reborrow(), &call, ReadKind::RuntimeOnly)?, _ => return Ok(None)
     };
     if let Some(projected) = projected { return projected.assemble().map(Some); }
-    let call = origin.call_view(&origin.list);
     let roots = call.explicit_argument_roots();
     if roots.len() != 2 { return Ok(None); }
     let source = call.root(roots.end - 1);
-    let right = call.root_input(source.index)?;
-    let left = call.root_value(roots.start, ReadKind::RuntimeOnly)?;
+    let right = origin.root_input(source.index)?;
+    let left = origin.root_input(roots.start)?.read(ReadKind::RuntimeOnly)?;
     if matches!(call.operation, Operation::Primitive { primitive: Primitive::Mix, .. }) {
         let span = call.site.cloned().unwrap_or_else(|| INDEX.clone());
         return pick(&left, &right, false, None, &span).map(Some);
     }
     let parts = squad_parts(&left)?;
-    let layout = call.root_layout(source.index)?;
-    let axis = call.axis_root().map(|root| call.root_value(root.index, ReadKind::Structure)).transpose()?;
-    let axes = axis.as_deref().filter(|spec| !(spec.is_empty() && spec.keys(0).is_some())).map(|spec| axes(&resolve_axes(spec, &layout)?, layout.shape().len()))
+    let layout = right.layout();
+    let axis = call.axis_root().map(|root| origin.root_input(root.index)?.read(ReadKind::Structure)).transpose()?;
+    let axes = axis.as_ref().filter(|spec| !(spec.is_empty() && spec.keys(0).is_some())).map(|spec| axes(&resolve_axes(spec, &layout)?, layout.shape().len()))
         .transpose()?;
     let paired = matches!(call.operation, Operation::Primitive { primitive: Primitive::Bracket, .. });
     let span = call.site.cloned().unwrap_or_else(|| INDEX.clone());
@@ -815,6 +829,13 @@ fn gather_parts(call: &CallView<'_>, root: &TreeRoot) -> Result<Option<Vec<Index
 fn index_source(call: &CallView<'_>) -> Option<TreeRoot> { call.explicit_argument_roots().last().map(|root| call.root(root)) }
 pub(super) fn source_roots(call: &CallView<'_>) -> Result<Vec<TreeRoot>, Error> { Ok(index_source(call).into_iter().collect()) }
 
+fn index_axes(call: &CallView<'_>, layout: &Layout) -> Result<Option<Vec<usize>>, Error> {
+    call.axis_root().map(|root| {
+        let spec = call.root_parameter(root.index)?;
+        if spec.is_empty() && spec.keys(0).is_some() { return Ok(None); }
+        axes(&resolve_axes(&spec, layout)?, layout.shape().len()).map(Some)
+    }).transpose().map(Option::flatten)
+}
 pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Error> {
     let Operation::Primitive { primitive: Primitive::Index | Primitive::Bracket, .. } = call.operation else { return Ok(None) };
     let roots = call.explicit_argument_roots();
@@ -822,7 +843,7 @@ pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Erro
     let root = index_source(call).ok_or_else(Error::planning)?;
     if root.leaves.len() != 1 { return Ok(None); }
     let source = root.leaves.start;
-    let Some(desc) = call.desc(source) else { return Ok(None) };
+    let Some(desc) = call.root_desc(root.index) else { return Ok(None) };
     let Some(parts) = gather_parts(call, &call.root(roots.start))? else { return Ok(None) };
     let claims: Vec<_> = parts.iter().map(|part| {
         part.as_ref().map(|part| match part {
@@ -830,11 +851,7 @@ pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Erro
             GatherPart::Known(value) => (structure::sole_name(value.layout()), value.index_width()),
         })
     }).collect();
-    let axes = call.axis_root().map(|root| {
-        let spec = call.root_value(root.index, ReadKind::Structure)?;
-        if spec.is_empty() && spec.keys(0).is_some() { return Ok(None); }
-        axes(&resolve_axes(&spec, &desc.layout)?, desc.shape().len()).map(Some)
-    }).transpose()?.flatten();
+    let axes = index_axes(call, &desc.layout)?;
     let mut indices = Vec::new();
     let routes = structure::routes(&desc.layout, &claims, axes.as_deref(), |part, axis| {
         let IndexPart::Axis(part) = &parts[part] else { unreachable!("a selector claim") };
@@ -852,8 +869,33 @@ pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Erro
     Ok(Some(GatherGeometry { source, source_layout: desc.layout.clone(), desc: output, routes, indices, paired, fill }))
 }
 
+fn known_index(call: &CallView<'_>) -> Result<Option<RowResult>, Error> {
+    let root = index_source(call).ok_or_else(Error::planning)?;
+    let Some(desc) = call.root_desc(root.index) else { return Ok(None) };
+    let selector = call.explicit_argument_roots().start;
+    let left = call.root_parameter(selector)?;
+    let parts = squad_parts(&left)?;
+    let axes = index_axes(call, &desc.layout)?;
+    if axes.is_none() && paths_part(&desc.layout, &parts)?.is_some() { return Ok(None); }
+    let mut read = ReadPlan::input(root.leaves.start, desc.layout.count());
+    let (layout, starts) = if let Some(axes) = axes {
+        let (order, starts) = listed_axes(&parts, &axes, desc.shape().len())?;
+        let plan = structure::transpose(&desc.layout, &rustymath::search::inverse_permutation(order.into_iter()))?;
+        read = read.remapped(Mapping::from(plan.steps), plan.layout.count(), Missing::Invalid);
+        (Layout::rearranged(plan.layout, &desc.layout), Some(starts))
+    } else { (desc.layout.clone(), None) };
+    let paired = matches!(call.operation, Operation::Primitive { primitive: Primitive::Bracket, .. });
+    let (plan, single) = parts_plan(&layout, &parts, starts.as_deref(), paired, false, call.mode.dynamic)?;
+    let atom = if parts.is_empty() { desc.atom } else { single };
+    let output = Desc { kind: crate::number::Kind { weak: atom && desc.kind.weak, ..desc.kind }, atom,
+        layout: Layout::rearranged(plan.layout, &desc.layout), range: filled_range(call, &desc) };
+    read = read.remapped(Mapping::from(plan.steps), output.layout.count(), fill_read(call, &output)?);
+    Ok(Some((Step::Copy { source: root.leaves.start as u32 }, Some(Outputs::one(Some(output))), Some(read))))
+}
 pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
     if call.explicit_argument_roots().len() == 1 { return structural::build(call, set); }
+    let selector = call.root(call.explicit_argument_roots().start);
+    if structural_selector(call, &selector) { return known_index(call)?.map_or_else(|| host_build(call, set), Ok); }
     let Some(geometry) = gather(call)? else { return host_build(call, set); };
     let (step, read) = if geometry.indices.is_empty() {
         let plan = structure::plan_routes(&geometry.source_layout, &geometry.routes, geometry.paired, false)?;

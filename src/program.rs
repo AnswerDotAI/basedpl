@@ -10,8 +10,8 @@ pub(crate) mod trace;
 pub(crate) mod verify;
 
 use crate::{
-    Error, Function, Number, ReadKind, Span, Value, array::{Layout, Tree, TreeRoot, Trees}, eval::CaptureBindings, graph::Pending, number::{Kind, Numeric},
-    primitive::{CallBindings, Input, Operation, ReadOp, Roles, ViewAxis}, settings::Compiles, transform::Level
+    Error, Function, Number, ReadKind, Span, Value, array::{Layout, Tree, TreeRoot, Trees}, eval::{CaptureBindings, FunctionNode}, graph::Pending, number::{Kind, Numeric},
+    primitive::{CallBindings, CallView, resolved_parameter, Operation, ReadOp, Roles, ViewAxis}, settings::Compiles, transform::Level
 };
 use rustymath::{agreement::{Mapping, ReadPlan}, buffer::{DType, FloatWidth, View, Width}, convert::Conversion, facts::{Range, Variant}, hashing::HashMap};
 use std::{borrow::Cow, hash::{Hash, Hasher}, sync::{Arc, Mutex, Weak, atomic::{AtomicUsize, Ordering}}};
@@ -138,6 +138,11 @@ impl Outputs<Value> {
         } else if self.as_ref().len() == 1 { Ok(self.into_item(0).unwrap()) }
         else { Err(crate::Error::planning()) }
     }
+    pub(crate) fn into_cell(self) -> crate::error::Result<Value> {
+        if self.has_result() { return self.assemble(); }
+        let empty = crate::syntax::zilde(crate::Number::literal("0", crate::settings::numeric())?);
+        trace::Tracing::literal(empty)
+    }
 }
 
 // Steps (part 4)
@@ -236,15 +241,8 @@ impl Origin<Vec<Value>> {
 
 impl<L: AsRef<[Value]>> CallBindings for L {
     fn len(&self) -> usize { self.as_ref().len() }
-    fn input(&self, position: usize) -> Option<crate::primitive::Input<'_>> {
-        static IDENTITY: Mapping = Mapping::Linear(1);
-        self.as_ref().get(position).map(|value| crate::primitive::Input { value, map: &IDENTITY })
-    }
     fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>> { Desc::input(self.as_ref().get(position)?, literal) }
-    fn value(&self, position: usize, purpose: trace::ReadKind) -> crate::error::Result<Cow<'_, Value>> {
-        self.as_ref().get(position).ok_or_else(crate::Error::planning)?.read_borrowed(purpose)
-    }
-    fn function(&self, position: usize) -> Option<&Function> { match self.as_ref().get(position)? { Value::Function(function) => Some(function), _ => None } }
+    fn parameter(&self, position: usize) -> Option<&Value> { self.as_ref().get(position).and_then(resolved_parameter) }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -278,6 +276,9 @@ impl<L: ?Sized> Origin<L> {
     pub(crate) fn read_kind(&self, position: usize) -> Option<ReadKind> {
         read_kind(&self.operation, self.explicit as usize, &self.roles, &self.bindings, position)
     }
+    pub(crate) fn parameter_reads(&self, len: usize) -> impl Iterator<Item = (usize, ReadKind)> + '_ {
+        (0..len).filter_map(|position| self.read_kind(position).filter(|read| read.is_parameter()).map(|read| (position, read)))
+    }
     pub(crate) fn executes(&self, position: usize) -> bool { self.read_kind(position) != Some(ReadKind::Description) }
     pub(crate) fn acts(&self) -> bool { matches!(self.operation, Operation::Effect(_)) || self.bindings.acts }
     pub(crate) fn invocation(mut self) -> Self where L: Sized {
@@ -285,11 +286,9 @@ impl<L: ?Sized> Origin<L> {
         self.context = None;
         self
     }
-    pub(crate) fn call_view<'a>(&'a self, bindings: &'a dyn crate::primitive::CallBindings) -> crate::primitive::CallView<'a> {
-        crate::primitive::CallView { operation: &self.operation, mode: self.mode, literals: self.literals, site: self.site.as_ref(), context: self.context,
-            roles: &self.roles, explicit: self.explicit as usize, explicit_roots: self.explicit_roots as usize, trees: self.trees.as_ref(),
-            captures: &self.bindings, bindings }
-    }
+    pub(crate) fn root(&self, index: usize) -> TreeRoot { TreeRoot::at(self.trees.as_deref(), index) }
+    pub(crate) fn root_boundary(&self, root: usize) -> usize { if root == self.explicit_roots as usize { self.explicit as usize } else { self.root(root).leaves.start } }
+    pub(crate) fn explicit_argument_roots(&self) -> std::ops::Range<usize> { self.operation.explicit_argument_roots(self.explicit_roots as usize) }
     pub(crate) fn with_list<M>(&self, list: M) -> Origin<M> {
         Origin { operation: self.operation.clone(), trees: self.trees.clone(), site: self.site.clone(), context: self.context, bindings: self.bindings.clone(),
             mode: self.mode, literals: self.literals, roles: self.roles.clone(), explicit: self.explicit, explicit_roots: self.explicit_roots, list }
@@ -301,7 +300,7 @@ impl<L: ?Sized> Origin<L> {
         let literals = self.literals_from(from);
         let mut origin = Origin { operation, trees, site: self.site.clone(), context: self.context, bindings: self.bindings.clone(), mode: self.mode, literals,
             roles: Roles::default(), explicit, explicit_roots, list };
-        origin.roles = Operation::roles(&origin.call_view(&origin.list))?;
+        origin.roles = Operation::roles_of(&origin)?;
         Ok(origin)
     }
     /// Splice a rewrite's explicit inputs onto this call's captured tail. `from` addresses this source call. The draft must be located and passed through `rebuilt` with positional bindings before any row uses it.
@@ -354,19 +353,8 @@ impl<L: ?Sized> Origin<L> {
 
 impl<L: AsRef<[Read<Value>]>> crate::primitive::CallBindings for Origin<L> {
     fn len(&self) -> usize { self.list.as_ref().len() }
-    fn input(&self, position: usize) -> Option<crate::primitive::Input<'_>> {
-        self.list.as_ref().get(position).map(|read| crate::primitive::Input { value: &read.operand, map: &read.map })
-    }
-    fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>> {
-        let value = &self.list.as_ref().get(position)?.operand;
-        Desc::input(value, literal)
-    }
-    fn value(&self, position: usize, purpose: trace::ReadKind) -> crate::error::Result<Cow<'_, Value>> {
-        self.list.as_ref().get(position).ok_or_else(crate::Error::planning)?.operand.read_borrowed(purpose)
-    }
-    fn function(&self, position: usize) -> Option<&Function> {
-        match &self.list.as_ref().get(position)?.operand { Value::Function(function) => Some(function), _ => None }
-    }
+    fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>> { Desc::input(&self.list.as_ref().get(position)?.operand, literal) }
+    fn parameter(&self, position: usize) -> Option<&Value> { resolved_parameter(&self.list.as_ref().get(position)?.operand) }
 }
 
 /// Parts 2, 4: a call's mode, which `Operation::call` takes from the session at the call. It chooses the plan (a kind rule; a kernel, such as `0÷0`'s), so describe and the builder read it and interning and keys compare it, and a later `•prefs` change can't change a pending node; it costs no list entry.
@@ -541,15 +529,15 @@ impl Program {
         self.outputs.as_ref().iter().copied().chain(self.token)
             .chain(self.parameters.iter().filter_map(|parameter| if let Parameter::Count { output, .. } = parameter { Some(*output) } else { None }))
     }
-    pub(crate) fn order(&self, from: usize) -> Vec<usize> {
+    pub(crate) fn order(&self, roots: impl IntoIterator<Item = Out>, mut available: impl FnMut(Out) -> bool) -> Vec<usize> {
         let mut needed = vec![false; self.nodes.len()];
-        let mut stack: Vec<_> = self.live_roots().map(|output| output.node).collect();
+        let mut stack: Vec<_> = roots.into_iter().filter(|&output| !available(output)).map(|output| output.node).collect();
         while let Some(node) = stack.pop() {
             if needed[node] { continue; }
             needed[node] = true;
-            stack.extend(self.dependencies(node).iter().map(|read| read.operand.node));
+            stack.extend(self.dependencies(node).iter().filter(|read| !available(read.operand)).map(|read| read.operand.node));
         }
-        needed.into_iter().enumerate().filter_map(|(node, needed)| (needed && node >= from).then_some(node)).collect()
+        needed.into_iter().enumerate().filter_map(|(node, needed)| (needed).then_some(node)).collect()
     }
     pub(crate) fn remap_parameters(&self, mut resolve: impl FnMut(Out) -> Out) -> Arc<[Parameter]> {
         self.parameters.iter().map(|parameter| match parameter {
@@ -690,9 +678,9 @@ impl Live {
                     crate::graph::State::Step { origin, .. } => {
                         for read in &origin.list { if !matches!(read.operand, Value::Pending(_)) { live.add_value(&read.operand); } }
                     }
-                    crate::graph::State::Input { value, role: trace::Role::Seed, .. } => {
+                    crate::graph::State::Input { role: trace::Role::Seed, .. } => {
                         let position = live.inputs.len();
-                        live.inputs.push(value.cloned());
+                        live.inputs.push(None);
                         live.pending.insert(Pending::data(node.clone(), 0), position);
                     }
                     crate::graph::State::Input { value: Some(Value::Pending(_)), .. } => {}
@@ -803,6 +791,7 @@ impl Live {
                 })?
             };
             for (i, (pending, replacement)) in outputs.into_iter().zip(replacements).enumerate() {
+                let replacement = replacement.map(|value| match value { Value::Pending(ref source) => values.get(source).cloned().unwrap_or(value), _ => value });
                 let value = replacement.or_else(|| result.as_ref().map(|result| result.as_ref()[i].clone())).unwrap_or_else(|| Value::Pending(pending.clone()));
                 values.insert(pending, value);
             }
@@ -862,11 +851,11 @@ impl Builder {
     }
 }
 
-/// Exact descriptions and routes belong to one preparation, and move back to its cached Plan after a run.
+/// Exact descriptions, routes and their validation stamp move together between a preparation and its cached Plan.
 #[derive(Clone, Default)]
 pub(crate) struct Geometry {
     pub(crate) descs: Vec<Option<Desc>>, pub(crate) maps: Vec<Mapping>, pub(crate) read_plans: Vec<Option<rustymath::agreement::ReadPlan>>,
-    pub(crate) reads: Vec<Option<Routed>>
+    pub(crate) reads: Vec<Option<Routed>>, pub(crate) stamp: Option<u64>
 }
 
 #[derive(Clone, Default)]
@@ -938,7 +927,14 @@ impl Running {
         Ok(call)
     }
     pub(crate) fn call<'a>(&'a self, program: &'a Program, origin: &Origin<std::ops::Range<u32>>) -> crate::error::Result<Origin<BoundCall<'a>>> {
-        self.bind_origin(origin, BoundCall { program, running: self, reads: origin.list.clone() })
+        let mut call = self.bind_origin(origin, BoundCall { program, running: self, reads: origin.list.clone(), parameters: Vec::new() })?;
+        call.roles = Operation::roles_of(&call)?;
+        let parameters = call.parameter_reads(call.list.len()).map(|(position, read)| {
+            let output = program.reads[origin.list.start as usize + position].operand;
+            self.logical_value(program, output, read).map(|value| (position, value.into_owned()))
+        }).collect::<crate::error::Result<Vec<_>>>()?;
+        call.list.parameters = parameters;
+        Ok(call)
     }
     pub(crate) fn bind(&mut self, program: &Program, geometry: Geometry) {
         self.values.resize_with(program.nodes.len(), || None);
@@ -988,8 +984,16 @@ impl Running {
             match self.inputs.get(position).and_then(Option::as_ref) { Some(Value::Pending(input)) => input.node.is_complete(), value => value.is_some() }
         } else { matches!(node, Node::Literal { .. }) }
     }
+    fn published_value(&self, program: &Program, output: Out) -> Option<Value> {
+        output.output?;
+        program.sources.iter().find_map(|source| {
+            let leaf = source.outputs.iter().position(|&published| published == output)?;
+            let node = self.binding.sources.get(source.original as usize)?.upgrade().map(crate::graph::Node)?;
+            node.completed()?.as_ref().get(leaf).cloned()
+        })
+    }
     pub(crate) fn binding_value(&self, program: &Program, output: Out) -> crate::error::Result<Value> {
-        if output.output.is_some() { return self.value(program, output).cloned().ok_or_else(crate::Error::planning); }
+        if output.output.is_some() { return self.value(program, output).cloned().or_else(|| self.published_value(program, output)).ok_or_else(crate::Error::planning); }
         if let Some(values) = self.values.get(output.node).and_then(Option::as_ref) {
             let mut pending = values.as_ref().iter().filter_map(Value::pending);
             if let Some(first) = pending.next() {
@@ -1059,7 +1063,7 @@ impl Running {
                 }
                 if matches!(relation, crate::primitive::Relation::Result) {
                     let bound = self.call(program, origin)?;
-                    return crate::plan::with_relation(&bound.call_view(&bound.list), |_, _, removed, _| {
+                    return bound.call_view().with_relation( |_, _, removed, _| {
                         let root = program.reads[origin.list.start as usize + removed[0].leaves.start].operand;
                         let (route, wanted) = run::selected_addresses(program, self, origin, *target, root)?;
                         route.compose_inputs(&mut |source, _| if source == wanted { self.route(program, root) } else { Err(Error::planning()) })
@@ -1122,35 +1126,46 @@ impl Running {
 }
 
 /// A borrowed row view over exactly the bindings execution reads.
-pub(crate) struct BoundCall<'a> { pub(crate) program: &'a Program, pub(crate) running: &'a Running, pub(crate) reads: std::ops::Range<u32> }
+pub(crate) struct BoundCall<'a> {
+    pub(crate) program: &'a Program, pub(crate) running: &'a Running, pub(crate) reads: std::ops::Range<u32>, parameters: Vec<(usize, Value)>
+}
 
-impl crate::primitive::CallBindings for BoundCall<'_> {
-    fn len(&self) -> usize { self.reads.len() }
-    fn source(&self, position: usize) -> crate::error::Result<Cow<'_, Value>> {
+impl BoundCall<'_> {
+    pub(crate) fn source(&self, position: usize) -> crate::error::Result<Cow<'_, Value>> {
         let output = self.program.reads[self.reads.start as usize + position].operand;
         if self.running.binding.root.is_none() && let Some(leaf) = output.output && let Node::Step { origin, .. } = &self.program.nodes[output.node]
             && let Some(context) = origin.context
             && let Some(node) = self.running.binding.sources.get(context as usize).and_then(Weak::upgrade).map(crate::graph::Node) && node.retained() {
                 return Ok(Cow::Owned(Value::Pending(Pending::data(node, leaf))));
             }
-        self.running.argument(self.program, output).map(Cow::Borrowed).ok_or_else(Error::planning)
+        if let Some(value) = self.running.argument(self.program, output) { return Ok(Cow::Borrowed(value)); }
+        if let Some(value) = self.running.published_value(self.program, output) { return Ok(Cow::Owned(value)); }
+        let mut running = Running::new(Vec::new());
+        running.inputs.clone_from(&self.running.inputs);
+        running.values.clone_from(&self.running.values);
+        running.binding = self.running.binding.clone();
+        let outputs = Outputs::one(output);
+        self.program.bound(running, &outputs, [output],
+            |position| self.running.inputs.get(position).and_then(Option::as_ref).cloned().ok_or_else(Error::planning),
+            |position| Ok(self.running.binding.input_descs.get(position).cloned().flatten()))?
+            .into_item(0).map(Cow::Owned).ok_or_else(Error::planning)
     }
-    fn input(&self, position: usize) -> Option<crate::primitive::Input<'_>> {
-        let at = self.reads.start as usize + position;
-        let read = self.program.reads.get(at)?;
-        Some(crate::primitive::Input { value: self.running.argument(self.program, read.operand)?, map: &self.running.geometry.maps[at] })
+    pub(crate) fn value(&self, position: usize, purpose: trace::ReadKind) -> crate::error::Result<Cow<'_, Value>> {
+        let output = self.program.reads.get(self.reads.start as usize + position).ok_or_else(crate::Error::planning)?.operand;
+        self.running.logical_value(self.program, output, purpose)
     }
+}
+
+impl CallBindings for BoundCall<'_> {
+    fn len(&self) -> usize { self.reads.len() }
     fn desc(&self, position: usize, _literal: bool) -> Option<Cow<'_, Desc>> {
         let read = self.program.reads.get(self.reads.start as usize + position)?;
         self.running.desc(self.program, read.operand).map(Cow::Borrowed)
     }
-    fn value(&self, position: usize, purpose: trace::ReadKind) -> crate::error::Result<Cow<'_, Value>> {
-        let output = self.program.reads.get(self.reads.start as usize + position).ok_or_else(crate::Error::planning)?.operand;
-        self.running.logical_value(self.program, output, purpose)
-    }
-    fn function(&self, position: usize) -> Option<&Function> {
+    fn parameter(&self, position: usize) -> Option<&Value> {
+        if let Ok(at) = self.parameters.binary_search_by_key(&position, |(position, _)| *position) { return Some(&self.parameters[at].1); }
         let output = self.program.reads.get(self.reads.start as usize + position)?.operand;
-        match self.running.value(self.program, output)? { Value::Function(function) => Some(function), _ => None }
+        self.running.argument(self.program, output).and_then(resolved_parameter)
     }
 }
 
@@ -1162,7 +1177,7 @@ pub(crate) struct Schedule {
     pub(crate) originals: Box<[Option<usize>]>, pub(crate) order: Box<[usize]>, pub(crate) stages: Box<[Stage]>
 }
 pub(crate) struct Plan {
-    pub(crate) schedule: Arc<Schedule>, pub(crate) prepared: Vec<Option<blocks::Prepared>>, pub(crate) geometry: Geometry, pub(crate) stamp: Option<u64>,
+    pub(crate) schedule: Arc<Schedule>, pub(crate) prepared: Vec<Option<blocks::Prepared>>, pub(crate) geometry: Geometry,
     pub(crate) from: usize, pub(crate) runs: u64
 }
 impl std::ops::Deref for Plan {
@@ -1172,7 +1187,7 @@ impl std::ops::Deref for Plan {
 impl Plan {
     pub(crate) fn new(schedule: Arc<Schedule>, from: usize, runs: u64) -> Self {
         let prepared = (0..schedule.stages.len()).map(|_| None).collect();
-        Self { schedule, prepared, geometry: Geometry::default(), stamp: None, from, runs }
+        Self { schedule, prepared, geometry: Geometry::default(), from, runs }
     }
 }
 
@@ -1203,7 +1218,7 @@ impl Length {
 }
 
 impl Key {
-    pub(crate) fn of(function: &Function, call: &crate::primitive::CallView<'_>) -> crate::error::Result<Self> { layout::call_key(function, call) }
+    pub(crate) fn of(function: &Function, origin: &Origin<&[Value]>) -> crate::error::Result<Self> { layout::call_key(function, origin) }
     pub(crate) fn extended(&self, node: usize, count: Key) -> Self {
         let mut key = self.clone();
         key.0.push(layout::KeyPart::Count(node, count.0));
@@ -1227,12 +1242,12 @@ pub(crate) struct Recording {
     pub(crate) effects: Effects, pub(crate) program: Arc<Program>, pub(crate) description: Description, pub(crate) failures: AtomicUsize
 }
 impl Recording {
-    fn observed(&self, event: &'static str, function: &Function) {
+    fn observed(&self, event: &'static str, function: &Function, bindings: &CaptureBindings) {
         if !rustymath::events::running() { return; }
         let items = self.description.as_ref().iter().flatten().map(|desc| desc.layout.count()).sum();
         rustymath::events::taken(rustymath::events::Route::Trace, items);
         let steps = self.program.nodes.iter().filter(|node| matches!(node, Node::Step { .. })).count();
-        crate::explain::program(event, steps, 0, 0, || function.bpl());
+        crate::explain::program(event, steps, 0, 0, || function.template(bindings).map_or_else(|_| "<unavailable function template>".into(), |template| template.bpl()));
     }
 }
 
@@ -1272,7 +1287,6 @@ impl Program {
         self.dependencies(node).iter().enumerate()
             .filter(move |(position, _)| self.dependency_executes(node, *position) && self.dependency_read(node, *position).is_some()).map(|(_, read)| read)
     }
-    pub(crate) fn execution_order(&self, from: usize) -> Vec<usize> { self.execution().into_iter().filter(|&node| node >= from).collect() }
     fn demands(&self, node: usize, address: bool) -> impl Iterator<Item = (usize, &Read, bool)> {
         let (stop, sources, target) = match &self.nodes[node] {
             Node::Step { step, origin, .. } => (
@@ -1286,10 +1300,11 @@ impl Program {
             (position, read, address)
         })
     }
-    fn execution(&self) -> Vec<usize> {
+    pub(crate) fn execution_order(&self, mut available: impl FnMut(Out) -> bool) -> Vec<usize> {
         let mut needed = vec![0u8; self.nodes.len()];
         let mut stack: Vec<_> = self.live_roots().map(|output| (output, false)).collect();
         while let Some((output, address)) = stack.pop() {
+            if !address && available(output) { continue; }
             let node = output.node;
             let bit = if address { 2 } else { 1 };
             if needed[node] & bit != 0 { continue; }
@@ -1454,7 +1469,6 @@ fn refilled(mut held: Held, running: &mut Running, expected_runs: u64) -> crate:
         running.bind(&program, std::mem::take(&mut held.geometry));
         if held.refill(from, running)? { return Ok(held); }
         let (original, from) = run::restore_original(&held, running);
-        held.geometry = std::mem::take(&mut running.geometry);
         if replanned { return Err(Error::domain("a fresh graph plan does not satisfy its descriptions")); }
         let key = held.key.clone();
         let guard = held.guard.clone();
@@ -1542,15 +1556,18 @@ impl BoundRecording {
     pub(crate) fn description(&self) -> crate::error::Result<Description> { Ok(self.outputs.clone().map(|value| Desc::of(&value).map(Cow::into_owned))) }
     pub(crate) fn may_raise(&self) -> crate::error::Result<bool> {
         for node in Live::of(self.outputs.as_ref(), None).nodes {
-            let raises = node.with_state(|state| {
-                let crate::graph::State::Step { step, origin } = state else { return Ok(false); };
-                let call = origin.call_view(origin);
-                Ok::<_, Error>(match step {
-                    Step::Convert { conversion, .. } => conversion.may_raise(origin.mode.dynamic), _ if !origin.mode.dynamic => false,
-                    Step::Map { variant, .. } => call.kernel(*variant)?.is_none_or(|kernel| kernel.may_raise()),
-                    Step::Picks { .. } => !control::choice_total(&call), _ => true
-                })
-            })?;
+            let Some((step, source)) = node.with_state(|state| match state {
+                crate::graph::State::Step { step, origin } => Some((step.clone(), origin.clone())), _ => None
+            }) else { continue; };
+            let values: Vec<_> = source.list.iter().map(|read| read.operand.clone()).collect();
+            let origin = source.with_list(values.as_slice());
+            let prepared = Operation::prepare(&origin)?;
+            let call = prepared.view();
+            let raises = match step {
+                Step::Convert { conversion, .. } => conversion.may_raise(origin.mode.dynamic), _ if !origin.mode.dynamic => false,
+                Step::Map { variant, .. } => call.kernel(variant)?.is_none_or(|kernel| kernel.may_raise()),
+                Step::Picks { .. } => !control::choice_total(&call), _ => true
+            };
             if raises { return Ok(true); }
         }
         Ok(false)
@@ -1567,30 +1584,34 @@ pub(crate) fn bind_call(function: &Function, origin: Origin<Vec<Value>>, plannin
         if !matches!(origin.read_kind(position), Some(ReadKind::Count | ReadKind::Structure | ReadKind::Value)) { origin.literals &= !(1 << position); }
     }
     let mut reason = None;
-    if origin.list.iter().any(|value| value.carried_level().is_some()) {
+    if origin.list.iter().any(|value| value.carried_level().is_some()) || !planning && matches!(function.node(), FunctionNode::Recorded { .. }) {
         if planning { return Ok(None); }
     } else if !origin.cacheable_metadata(origin.list.iter()) { reason = Some(Reason::Renderer); } else {
-        let key = Key::of(function, &origin.call_view(&origin.list))?;
+        let key = Key::of(function, &origin.reborrow())?;
         let (_, outcome) = programs().serve(&key, &origin.reborrow())?;
         match outcome {
             Outcome::Recording(recording) => {
                 let context = BindingContext::from_origin(&origin);
+                let mut running = Running::new(Vec::new());
+                running.binding = context;
                 let outputs = recording.program.bound(
-                    &context, |position| origin.list.get(position).cloned().ok_or_else(Error::planning),
+                    running, &recording.program.outputs, recording.program.live_roots(), |position| origin.list.get(position).cloned().ok_or_else(Error::planning),
                     |position| Ok(origin.list.get(position).and_then(Desc::of).map(Cow::into_owned)))?;
-                if !planning { recording.observed("replay", function); }
+                if !planning { recording.observed("replay", function, &origin.bindings); }
                 return Ok(Some(BoundRecording { recording: Some(recording), outputs }));
             }
             Outcome::Miss => {
                 if let Some(bound) = record_attempt(function, key, &origin, planning)? { return Ok(Some(bound)); } else { reason = Some(Reason::Recursion); }
             }
             Outcome::Busy => reason = Some(Reason::Recursion),
-            Outcome::Stop(_) => {}
+            Outcome::Stop(stop) => {
+                if !planning { rustymath::events::stopped(stop.reason.name(), 0, || stop.site.as_ref().map(|span| span.text().into())); }
+            }
         }
     }
     if planning { return Ok(None); }
     if let Some(reason) = reason { trace::Tracing::stop(reason, origin.site.clone()); }
-    Ok(Some(BoundRecording { recording: None, outputs: Outputs::one(function.run(origin.reborrow())?).flatten() }))
+    Ok(Some(BoundRecording { recording: None, outputs: function.run(origin.reborrow())? }))
 }
 fn record_attempt(function: &Function, key: Key, origin: &Origin<Vec<Value>>, planning: bool) -> crate::error::Result<Option<BoundRecording>> {
     let [left, right] = Function::argument_ranges(&origin.reborrow())?;
@@ -1602,7 +1623,7 @@ fn record_attempt(function: &Function, key: Key, origin: &Origin<Vec<Value>>, pl
     let guard = layout::guard_key(&origin.reborrow(), &traced.reads)?;
     let (recording, outcome) = match traced.recording {
         Ok(recording) => {
-            if !planning { recording.observed("record", function); }
+            if !planning { recording.observed("record", function, &origin.bindings); }
             let recording = Arc::new(recording);
             (Some(recording.clone()), Outcome::Recording(recording))
         }
@@ -1614,9 +1635,9 @@ fn record_attempt(function: &Function, key: Key, origin: &Origin<Vec<Value>>, pl
 
 impl Program {
     fn binding_uses(&self) -> (Vec<usize>, Vec<bool>) {
-        let order = self.order(0);
+        let order = self.order(self.live_roots(), |_| false);
         let mut executed = vec![false; self.nodes.len()];
-        let mut needed = self.execution_order(0);
+        let mut needed = self.execution_order(|_| false);
         for &at in &order { needed.extend(self.observed_dependencies(at).map(|read| read.operand.node)); }
         while let Some(at) = needed.pop() {
             if std::mem::replace(&mut executed[at], true) { continue; }
@@ -1638,15 +1659,16 @@ impl Program {
         reads
     }
     pub(crate) fn bound(
-        &self, current: &BindingContext, mut value: impl FnMut(usize) -> crate::error::Result<Value>,
+        &self, mut running: Running, outputs: &Outputs<Out>, roots: impl IntoIterator<Item = Out>,
+        mut value: impl FnMut(usize) -> crate::error::Result<Value>,
         mut description: impl FnMut(usize) -> crate::error::Result<Option<Desc>>) -> crate::error::Result<Outputs<Value>> {
-        let mut running = Running::new(Vec::new());
-        running.binding = current.clone();
         let inputs = self.nodes.iter().filter_map(Node::input_position).max().map_or(0, |position| position + 1);
         running.inputs.resize_with(inputs, || None);
         running.binding.input_descs.resize_with(inputs, || None);
         running.values.resize_with(self.nodes.len(), || None);
-        for at in self.order(0) {
+        for at in self.order(roots, |output| !matches!(self.nodes[output.node], Node::Literal { .. }) && (
+            running.argument(self, output).is_some() || running.published_value(self, output).is_some()
+                || running.is_complete(self, Out::control(output.node)) && matches!(&self.nodes[output.node], Node::Step { origin, .. } if origin.nonrepeatable()))) {
             let node = &self.nodes[at];
             let outputs = if let Some(position) = node.input_position() {
                 let desc = description(position)?.map(Desc::opaque);
@@ -1668,7 +1690,34 @@ impl Program {
             };
             running.values[at] = Some(outputs);
         }
-        let values = self.outputs.clone().try_map(|output| running.binding_value(self, output))?;
+        let values = outputs.clone().try_map(|output| running.binding_value(self, output))?;
         Ok(values)
+    }
+}
+
+impl Origin<&[Value]> {
+    pub(crate) fn root_input(&self, root: usize) -> crate::error::Result<Cow<'_, Value>> {
+        let root = self.root(root);
+        match &self.trees {
+            Some(trees) => trees.read_root(&root, |position| Ok(self.list[position].clone())).map(Cow::Owned),
+            None => self.list.get(root.leaves.start).map(Cow::Borrowed).ok_or_else(Error::planning),
+        }
+    }
+    pub(crate) fn root_value(&self, root: usize, read: ReadKind) -> crate::error::Result<Cow<'_, Value>> {
+        self.root_input(root)?.read(read).map(Cow::Owned)
+    }
+    pub(crate) fn apply(&self, operation: Operation, args: &[Value], from: &[Option<usize>]) -> crate::error::Result<Value> {
+        let origin = crate::eval::projected_call(self, operation, args, from)?;
+        Operation::dispatch(origin.reborrow())?.assemble()
+    }
+    pub(crate) fn map_root(&self, root: usize, call: &CallView, mut apply: impl FnMut(usize, &Value, bool) -> crate::error::Result<Value>) -> crate::error::Result<Outputs<Value>> {
+        let root = call.root(root);
+        let math = call.mathematical_positions()?;
+        let values = root.leaves.clone().map(|position| {
+            let value = &self.list[position];
+            if math.contains(&position) { apply(position, value, self.trees.as_ref().is_some_and(|trees| trees.input_use(position) == Some(crate::array::TreeInput::Prototype))) }
+            else { Ok(value.clone()) }
+        }).collect::<crate::error::Result<Vec<_>>>()?;
+        Ok(Outputs::from(values).with_trees(self.trees.as_ref().map(|trees| Arc::new(trees.project_roots(&[root])))))
     }
 }

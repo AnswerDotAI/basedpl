@@ -1,10 +1,11 @@
 use crate::execution::check;
 use crate::{
     Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Cells, Layout, generated_len},
-    number::{Arithmetic, Field, Math, Numeric, read_as, with_field},
+    number::{Arithmetic, Field, Kind as NumberKind, Math, Numeric, read_as, with_field},
     primitive::{CallView, Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis, scalar}, program::{Origin, Outputs}
 };
 use rustymath::{Float, buffer::{Element, FloatWidth}, error::Kind, recipe::Cmp, with_float_width};
+use std::num::Wrapping;
 
 fn int(n: usize) -> Number { Number::from_integer(n as i64) }
 fn numbers(a: &Value) -> Result<Vec<Number>, Error> {
@@ -13,6 +14,13 @@ fn numbers(a: &Value) -> Result<Vec<Number>, Error> {
 fn vector(data: Vec<Number>) -> Result<Value, Error> {
     Value::from_parts(vec![data.len()], data.into_iter().map(Value::Number).collect(), Value::Number(int(0))).described("invalid polynomial vector")
 }
+
+fn machine<'a>(numbers: impl Iterator<Item = &'a Number> + Clone, numeric: Numeric) -> Result<Option<(Vec<Wrapping<i64>>, Numeric)>, Error> {
+    let Some(values) = numbers.clone().map(|number| number.as_integer().map(Wrapping)).collect::<Option<Vec<_>>>() else { return Ok(None) };
+    let numeric = Numeric { fixed: None, ..numeric }.for_kinds(numbers.filter_map(NumberKind::number)).map_err(Error::domain)?;
+    Ok(Some((values, numeric)))
+}
+fn machine_number(value: Wrapping<i64>, numeric: Numeric) -> Number { Number::from_integer(value.0).wrapped(numeric) }
 
 enum Format { Coefficients, Factored { multiplier: Value, roots: Value }, Powers { table: Value, variables: usize } }
 fn format(a: &Value) -> Result<Format, Error> {
@@ -59,6 +67,9 @@ impl Polynomial {
             Self::Coefficients(c) => Ok(c.clone()),
             Self::Factored(m, roots) => {
                 generated_len(&[roots.len() + 1])?;
+                if let Some((values, numeric)) = machine(std::iter::once(m).chain(roots), numeric)? {
+                    return Ok(rustymath::polynomial::from_roots(values[0], &values[1..])?.into_iter().map(|c| machine_number(c, numeric)).collect());
+                }
                 Ok(with_field!(numeric; std::iter::once(m).chain(roots), T, width => {
                     let roots: Vec<T> = roots.iter().map(Field::of).collect();
                     rustymath::polynomial::from_roots(Field::of(m), &roots)?.into_iter().map(|c| c.number(width)).collect()
@@ -83,13 +94,23 @@ impl Polynomial {
         if x.len() != 1 && x.len() != self.variables() { return Err(Error::new(Kind::Length, "coordinates must match polynomial variables")); }
         if x.is_empty() { return Err(Error::new(Kind::Length, "polynomial needs coordinates")); }
         match self {
-            Self::Coefficients(c) => Ok(with_field!(numeric; c.iter().chain(x), T, width => {
-                let c: Vec<T> = c.iter().map(Field::of).collect(); rustymath::polynomial::value(&c, &Field::of(&x[0]))?.number(width)
-            })),
-            Self::Factored(m, roots) => Ok(with_field!(numeric; std::iter::once(m).chain(roots).chain(x), T, width => {
-                let roots: Vec<T> = roots.iter().map(Field::of).collect();
-                rustymath::polynomial::factored(&Field::of(m), &roots, &Field::of(&x[0]))?.number(width)
-            })),
+            Self::Coefficients(c) => {
+                if let Some((values, numeric)) = machine(c.iter().chain(x), numeric)? {
+                    return Ok(machine_number(rustymath::polynomial::value(&values[..c.len()], &values[c.len()])?, numeric));
+                }
+                Ok(with_field!(numeric; c.iter().chain(x), T, width => {
+                    let c: Vec<T> = c.iter().map(Field::of).collect(); rustymath::polynomial::value(&c, &Field::of(&x[0]))?.number(width)
+                }))
+            }
+            Self::Factored(m, roots) => {
+                if let Some((values, numeric)) = machine(std::iter::once(m).chain(roots).chain(x), numeric)? {
+                    return Ok(machine_number(rustymath::polynomial::factored(&values[0], &values[1..roots.len() + 1], &values[roots.len() + 1])?, numeric));
+                }
+                Ok(with_field!(numeric; std::iter::once(m).chain(roots).chain(x), T, width => {
+                    let roots: Vec<T> = roots.iter().map(Field::of).collect();
+                    rustymath::polynomial::factored(&Field::of(m), &roots, &Field::of(&x[0]))?.number(width)
+                }))
+            }
             Self::Powers { coefficients, exponents, .. } => {
                 let mut y = int(0);
                 for (c, powers) in coefficients.iter().zip(exponents) {
@@ -104,7 +125,7 @@ impl Polynomial {
                 }
                 Ok(y)
             }
-        }
+        }.map(|value| value.wrapped(numeric))
     }
 
     fn roots(&self, numeric: Numeric) -> Result<Value, Error> {
@@ -190,10 +211,10 @@ pub(crate) fn call(left: Option<&Value>, right: &Value, numeric: Numeric) -> Res
         let (coefficients, point) = polynomial_pair(&cells, right, index, point_index, |j| Ok(right.at(j)))?;
         let missing;
         let polynomial = if let Some(j) = index { &polynomials[j] } else { missing = Polynomial::parse(&coefficients)?; &missing };
-        results.push(Value::number(polynomial.evaluate(&coordinates(&point)?, settings)?.wrapped(settings)).unwrap());
+        results.push(Value::number(polynomial.evaluate(&coordinates(&point)?, settings)?).unwrap());
     }
     if agreement.layout.shape().is_empty() { return Ok(results.remove(0)); }
-    crate::array::assemble_stored(&agreement.layout, &results[..agreement.len], &results[0], crate::array::Widening::Items, None, numeric)
+    crate::array::assemble_cells(&agreement.layout, &results[..agreement.len], &results[0], crate::array::Widening::Items, None, numeric)
         .described("polynomial result exceeds array limits")
 }
 
@@ -211,15 +232,15 @@ fn each(source: &Value, numeric: Numeric, f: impl Fn(&Polynomial) -> Result<Valu
     let mut results = parsed(&cells)?.iter().map(f).collect::<Result<Vec<_>, _>>()?;
     let layout = cells.frame_layout();
     if layout.shape().is_empty() { return Ok(results.remove(0)); }
-    crate::array::assemble_stored(&layout, &results[..cells.len()], &results[0], crate::array::Widening::Items, None, numeric)
+    crate::array::assemble_cells(&layout, &results[..cells.len()], &results[0], crate::array::Widening::Items, None, numeric)
         .described("polynomial result exceeds array limits")
 }
 
-fn calc(call: &CallView<'_>, primitive: Primitive, args: &[Value]) -> Result<Value, Error> {
+fn calc(call: &Origin<&[Value]>, primitive: Primitive, args: &[Value]) -> Result<Value, Error> {
     call.apply(Operation::Primitive { primitive, pairing: Pairing::Axes }, args, &vec![None; args.len()])
 }
 
-fn coordinate(call: &CallView<'_>, value: &Value, index: usize, variables: usize) -> Result<Value, Error> {
+fn coordinate(call: &Origin<&[Value]>, value: &Value, index: usize, variables: usize) -> Result<Value, Error> {
     if value.all_numbers() { return Ok(value.clone()); }
     let pick = |point: Value| {
         if point.rank() > 1 { return Err(Error::new(Kind::Rank, "coordinates must be a unit or vector")); }
@@ -238,23 +259,23 @@ fn coordinate(call: &CallView<'_>, value: &Value, index: usize, variables: usize
     crate::program::control::assemble(&frame, &items, &prototype, call.mode)
 }
 
-fn grid(call: &CallView<'_>, value: &Value, points: &Value, terms: &Value, destinations: Vec<usize>) -> Result<Value, Error> {
+fn grid(call: &Origin<&[Value]>, value: &Value, points: &Value, terms: &Value, destinations: Vec<usize>) -> Result<Value, Error> {
     let axes = (0..points.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) })
         .chain(std::iter::once(ViewAxis { input: 2, axis: terms.rank().checked_sub(1) })).collect();
     call.apply(Operation::Read(ReadOp::Axes { axes, destinations: destinations.into() }), &[value.clone(), points.clone(), terms.clone()], &[None; 3])
 }
 
-fn broadcast(call: &CallView<'_>, value: &Value, points: &Value) -> Result<Value, Error> {
+fn broadcast(call: &Origin<&[Value]>, value: &Value, points: &Value) -> Result<Value, Error> {
     let axes = (0..points.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
     let destinations = (0..value.rank()).collect();
     call.apply(Operation::Read(ReadOp::Axes { axes, destinations }), &[value.clone(), points.clone()], &[None; 2])
 }
 
-fn total(call: &CallView<'_>, primitive: Primitive, value: Value) -> Result<Value, Error> {
+fn total(call: &Origin<&[Value]>, primitive: Primitive, value: Value) -> Result<Value, Error> {
     call.apply(Operation::Fold { primitive, first: false, scan: false, positions: None, pairing: Pairing::Axes }, &[value], &[None])
 }
 
-fn framed(call: &CallView<'_>, coefficients: &Value, points: &Value) -> Result<Value, Error> {
+fn framed(call: &Origin<&[Value]>, coefficients: &Value, points: &Value) -> Result<Value, Error> {
     for value in [coefficients, points] { calc(call, Primitive::Shape, std::slice::from_ref(value))?.read(crate::ReadKind::Structure)?; }
     let (cells, agreement) = polynomial_cells(coefficients, points.layout())?;
     let flat = call.apply(Operation::Read(ReadOp::Ravel), std::slice::from_ref(points), &[None])?;
@@ -272,11 +293,11 @@ fn framed(call: &CallView<'_>, coefficients: &Value, points: &Value) -> Result<V
 }
 
 pub(crate) fn jvp(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
-    let call = origin.call_view(&origin.list);
-    let roots = call.explicit_argument_roots();
+    let call = &origin;
+    let roots = origin.explicit_argument_roots();
     if roots.len() != 2 { return Err(crate::derivative::system("polynomial roots")); }
-    let c = call.root_input(roots.start)?.into_owned();
-    let x = call.root_input(roots.start + 1)?.into_owned();
+    let c = origin.root_input(roots.start)?.into_owned();
+    let x = origin.root_input(roots.start + 1)?.into_owned();
     if !c.all_numbers() {
         if crate::derivative::tag(&c).is_some() { return Err(crate::derivative::system("⌻ with respect to roots or exponents")); }
         if c.rank() > 1 { return framed(&call, &c, &x).map(Outputs::one); }

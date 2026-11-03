@@ -1,5 +1,5 @@
 //! One key policy: structural facts, 0/1/more lengths, and parameters by read purpose.
-use super::{Desc, Key, Length, Live, Mode, ProgramKey};
+use super::{Desc, Origin, Key, Length, Live, Mode, ProgramKey};
 use crate::program::trace::ReadKind;
 use crate::{
     Function, Number, Value, array::{Layout, Renderer, Trees}, error::Result, eval::OperatorKind, graph::Pending, primitive::{Operation, Primitive, Roles}
@@ -183,24 +183,23 @@ impl Encoder {
     pub(crate) fn finish(self) -> Key { Key(self.parts) }
 }
 
-pub(crate) fn call_key(function: &Function, call: &crate::primitive::CallView<'_>) -> Result<Key> {
+pub(crate) fn call_key(function: &Function, origin: &Origin<&[Value]>) -> Result<Key> {
     let mut key = Encoder::default();
     key.push(KeyPart::Call);
     function.key_parts(&mut key)?;
-    key.push(KeyPart::Operation(call.operation.clone()));
-    key.push(KeyPart::Mode(call.mode));
-    key.push(KeyPart::Roles(call.roles.clone()));
-    key.push(KeyPart::Arguments(call.explicit, call.explicit_roots));
-    key.push(KeyPart::Literal(call.literals));
-    key.push(KeyPart::Trees(call.trees.cloned()));
-    key.push(KeyPart::Captures(CaptureKey::of(call.captures)));
-    key.context(call.operation, call.site);
-    for position in 0..call.len() {
-        let value = call.input(position).ok_or_else(crate::Error::planning)?.value;
-        let read = super::read_kind(call.operation, call.explicit, call.roles, call.captures, position);
+    key.push(KeyPart::Operation(origin.operation.clone()));
+    key.push(KeyPart::Mode(origin.mode));
+    key.push(KeyPart::Roles(origin.roles.clone()));
+    key.push(KeyPart::Arguments(origin.explicit as usize, origin.explicit_roots as usize));
+    key.push(KeyPart::Literal(origin.literals));
+    key.push(KeyPart::Trees(origin.trees.clone()));
+    key.push(KeyPart::Captures(CaptureKey::of(&origin.bindings)));
+    key.context(&origin.operation, origin.site.as_ref());
+    for (position, value) in origin.list.iter().enumerate() {
+        let read = origin.read_kind(position);
         match value {
             Value::Function(function) => function.key_parts(&mut key)?,
-            value if position < 64 && call.literals & (1 << position) != 0 => key.value(value, ReadKind::Value)?,
+            value if position < 64 && origin.literals & (1 << position) != 0 => key.value(value, ReadKind::Value)?,
             value => {
                 if read.is_none() || matches!(read, Some(ReadKind::Kind | ReadKind::Description)) { key.data(value); }
                 if let Some(read) = read.filter(|read| *read != ReadKind::Description) { key.value(value, read)?; }

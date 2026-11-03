@@ -1,6 +1,6 @@
 use crate::{
     Error, ErrorKind, Number, display::{Elide, positions}, eval::{Function, OperatorValue}, graph::Pending, keyed::Keys, number::Numeric,
-    primitive::{Operation, ReadOp, ViewAxis}, program::Desc
+    primitive::{Operation, ReadOp, ViewAxis}, program::{Desc, trace::Tracing}
 };
 use rustymath::{
     agreement::{Binding, Mapping, Read, ReadPlan}, buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Floats, IntBuf, View, Width}, error::Kind,
@@ -274,6 +274,9 @@ pub(crate) struct Trees(Vec<Tree>);
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct TreeRoot { pub(crate) index: usize, pub(crate) leaves: std::ops::Range<usize> }
 impl TreeRoot {
+    pub(crate) fn at(trees: Option<&Trees>, index: usize) -> TreeRoot {
+        trees.map_or_else(|| TreeRoot { index, leaves: index..index + 1 }, |trees| trees.roots().nth(index).expect("a call root"))
+    }
     pub(crate) fn shifted(&self, roots: usize, leaves: usize) -> Self {
         Self { index: self.index + roots, leaves: self.leaves.start + leaves..self.leaves.end + leaves }
     }
@@ -508,11 +511,11 @@ pub(crate) fn read_value(desc: &Desc, read: &Read<'_>, checked: bool) -> crate::
     Value::stored(desc, buffer)
 }
 /// Bind only numbered sources that this logical read uses; metadata references are never observed here.
-pub(crate) fn read_stored(desc: &Desc, route: &ReadPlan, values: &[Value], checked: bool) -> Result<Value, Error> {
+pub(crate) fn read_stored<'a>(desc: &Desc, route: &ReadPlan, value: impl Fn(usize) -> Option<&'a Value>, checked: bool) -> Result<Value, Error> {
     let mut inputs: Vec<(usize, View<'_>, ReadPlan)> = Vec::new();
     let plan = route.compose_inputs(&mut |source, _| {
         if let Some((_, _, plan)) = inputs.iter().find(|(prior, _, _)| *prior == source) { return Ok(plan.clone()); }
-        let (view, plan) = values.get(source).and_then(|value| value.physical_read(inputs.len())).ok_or_else(Error::planning)?;
+        let (view, plan) = value(source).and_then(|value| value.physical_read(inputs.len())).ok_or_else(Error::planning)?;
         inputs.push((source, view, plan.clone()));
         Ok::<_, Error>(plan)
     })?;
@@ -540,7 +543,7 @@ impl Value {
         map_leaves(self, |leaf| {
             let Some(desc) = Desc::of(leaf).filter(|desc| desc.dtype() != DType::Character) else { return Ok(leaf.clone()); };
             let zero = desc.zero();
-            if leaf.is_atom() { return Ok(zero); }
+            if leaf.is_atom() { return Tracing::literal(zero); }
             if leaf.rank() == 0 { return Operation::Read(ReadOp::Reshape).call(&[Value::integers([0], Vec::new())?, zero], 2); }
             let axes = (0..leaf.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
             Operation::Read(ReadOp::Axes { axes, destinations: Box::new([]) }).call(&[zero, leaf.clone()], 1)
@@ -751,16 +754,22 @@ impl Value {
     pub(crate) fn matches_within(&self, other: &Self, numeric: Numeric) -> crate::error::Result<bool> {
         let left = self.read(crate::program::trace::ReadKind::Value)?;
         let right = other.read(crate::program::trace::ReadKind::Value)?;
-        if left.is_atom() != right.is_atom() || left.layout() != right.layout() { return Ok(false); }
-        if let (Some(x), Some(y)) = (left.view(), right.view()) && let Some(equal) = compact_match(x, y, numeric) { return Ok(equal); }
+        if left.is_atom() != right.is_atom() || !left.layout().matches(right.layout()) { return Ok(false); }
+        if left.is_empty() { return left.prototype().matches_within(&right.prototype(), numeric); }
+        let keyed = left.has_keys() || right.has_keys();
+        if !keyed && let (Some(x), Some(y)) = (left.view(), right.view()) && let Some(equal) = compact_match(x, y, numeric) { return Ok(equal); }
         match (&left, &right) {
             (Self::Number(x), Self::Number(y)) => x.matches(y, numeric).map_err(crate::Error::domain),
             (Self::Character(x), Self::Character(y)) => Ok(x == y),
             (Self::Function(x), Self::Function(y)) => x.matches(y, numeric),
             (Self::Operator(x), Self::Operator(y)) => x.matches(y, numeric),
             (Self::Array(_), Self::Array(_)) => {
-                for (x, y) in left.elements().zip(right.elements()) { if !x.matches_within(&y, numeric)? { return Ok(false); } }
-                if left.is_empty() { left.prototype().matches_within(&right.prototype(), numeric) } else { Ok(true) }
+                let mapping = keyed.then(|| Mapping::new(right.layout(), &(0..left.rank()).collect::<Vec<_>>(), left.layout(), left.len()));
+                for (i, x) in left.elements().enumerate() {
+                    let j = mapping.as_ref().map_or(i, |mapping| mapping.index(i));
+                    if !x.matches_within(&right.at(j), numeric)? { return Ok(false); }
+                }
+                Ok(true)
             }
             _ => Ok(false),
         }
