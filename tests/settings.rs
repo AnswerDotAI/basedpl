@@ -6,9 +6,9 @@ use common::*;
 
 #[test]
 fn checks_that_change_settings() {
-    let checks: [fn(); 8] = [
+    let checks: [fn(); 9] = [
         language_examples, mathish_arithmetic, boxed_display_and_function_trees, expression_dissection, threads_give_the_same_results,
-        hanzi_spellings_and_language, leading_prefs_set_how_their_code_reads, highlight_after_a_prefs_header,
+        hanzi_spellings_and_language, leading_prefs_set_how_their_code_reads, highlight_after_a_prefs_header, retained_selection_parameters_survive_data_reads,
     ];
     for check in checks {
         basedpl::settings::reset();
@@ -235,4 +235,28 @@ fn leading_prefs_set_how_their_code_reads() {
 fn highlight_after_a_prefs_header() {
     let code = "•prefs [\"hanzi_aliases\":$t]\n加1 注 comment";
     assert_eq!(basedpl::highlight(code, false).last().map(|(range, class)| (&code[range.clone()], *class)), Some(("注 comment", "comment")));
+}
+
+fn retained_selection_parameters_survive_data_reads() {
+    for mode in ["dynamic", "static"] {
+        let s = Session::new();
+        s.eval(&format!(r#"•prefs ["kinds":"{mode}"]"#));
+        let check = |code: &str, expected: &str| {
+            let result = s.eval(code);
+            assert!(result.error.is_none(), "{code}: {:?}", result.error);
+            assert_eq!(result.output_text(), [expected], "{code}");
+        };
+        for (code, expected) in [
+            ("(2×)@(0⌷)1 2 3", "2 2 3"), ("(2×)@([[0 2]]⌷)1 2 3", "2 2 6"),
+            ("-@[0 2]1 2 3", "¯1 2 ¯3"), ("x←3 8 2 ⋄ 10+@[5>]x", "13 8 12"),
+            ("f←{(2×)@(⍺⌷)⍵} ⋄ 0 f 1 2 3", "2 2 3"), ("2 f 4 5 6", "4 5 12"),
+            (r#"[[1 0]]⌷["b":4 "a":5]"#, r#"["a":5 "b":4]"#),
+            (r#"k←["a":1] ⋄ -@[k⍨]["b":4 "a":5]"#, r#"["b":4 "a":¯5]"#),
+        ] { check(code, expected); }
+        if mode == "static" {
+            check(r#"9⌷["b":4 "a":5]"#, "0");
+            check(r#"x←["b":4 "a":5] ⋄ x.[[0 9]]←7 ⋄ x"#, r#"["b":7 "a":5]"#);
+        }
+        fails_in(&s, "INDEX", &[r#""q"⌷["b":4 "a":5]"#]);
+    }
 }

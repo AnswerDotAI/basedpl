@@ -868,23 +868,29 @@ pub(crate) struct OperatorInfo {
     pub(crate) call: fn(&Function, crate::program::Origin<&[Value]>) -> crate::error::Result<Value>, pub(crate) spelling: fn(&OperatorKind) -> String,
     pub(crate) inverse: fn(&Function, crate::program::Origin<&[Value]>) -> crate::error::Result<Value>,
     pub(crate) discards: fn(&OperatorKind, &[Value], bool) -> bool, pub(crate) python: &'static str, pub(crate) names: [&'static str; 3],
-    pub(crate) glyph: &'static str, pub(crate) dyadic: bool, pub(crate) operands: fn(&OperatorKind, usize, &FunctionOperand) -> OperandKind,
+    pub(crate) glyph: &'static str, pub(crate) operands: &'static [OperandKind],
     form: operators::Form
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OperandKind { Structure, Data, Callable, Opaque }
+pub(crate) enum OperandKind { Structure, Data, Callable, Opaque, Function, Options }
 impl OperandKind {
-    fn data(self) -> bool { matches!(self, Self::Data | Self::Callable) }
+    fn data(self) -> bool { matches!(self, Self::Data | Self::Callable | Self::Function) }
+    fn for_operand(self, operand: &FunctionOperand) -> Self {
+        if self != Self::Options { return self; }
+        match operand.stored() {
+            Some(value) if !value.keys(0).is_some_and(|keys| keys.position("fill").is_some()) => Self::Structure, _ => Self::Data
+        }
+    }
     fn traverses(self, operand: &FunctionOperand) -> bool {
-        self == Self::Callable || self != Self::Opaque && matches!(operand.stored(), Some(Value::Function(_)))
+        matches!(self, Self::Callable | Self::Function) || self != Self::Opaque && matches!(operand.stored(), Some(Value::Function(_)))
     }
 }
 
 impl OperatorKind {
     pub(crate) fn info(&self) -> &'static OperatorInfo { operators::info(self) }
     pub(crate) fn glyph(&self) -> String { (self.info().spelling)(self) }
-    pub(crate) fn dyadic(&self) -> bool { self.info().dyadic }
+    pub(crate) fn dyadic(&self) -> bool { self.info().dyadic() }
 }
 
 impl Operator {
@@ -898,7 +904,7 @@ impl Operator {
         match self { Self::Kind(kind) => kind.dyadic(), Self::Closure(f) => f.definition().is_some_and(|d| d.kind == DefinitionKind::DyadicOperator) }
     }
     fn operand_count(&self) -> usize {
-        match self { Self::Kind(kind) => kind.info().operand_count(kind), Self::Closure(_) => 1 + usize::from(self.dyadic()) }
+        match self { Self::Kind(kind) => kind.info().operands.len(), Self::Closure(_) => 1 + usize::from(self.dyadic()) }
     }
     pub fn derive(&self, left: Value, right: Option<Value>) -> Result<Function, Error> {
         self.derive_operands(left.into(), right.map(FunctionOperand::from), &Span::whole(Source::new("<operator>", "")))
@@ -919,7 +925,7 @@ impl OperatorValue {
             Self::Operator(operator) => operator.key_parts(key)?,
             Self::Bound { op, right } => {
                 op.key_parts(key)?;
-                let kind = match op { Operator::Kind(kind) => (kind.info().operands)(kind, 1, right), Operator::Closure(_) => OperandKind::Data };
+                let kind = match op { Operator::Kind(kind) => kind.info().operands[1].for_operand(right), Operator::Closure(_) => OperandKind::Data };
                 right.key_parts(kind, false, key)?;
             }
         }
@@ -954,7 +960,7 @@ impl FunctionNode {
     }
     fn operand_kind(&self, position: usize) -> OperandKind {
         match self {
-            Self::Applied { op: Operator::Kind(kind), operands } => (kind.info().operands)(kind, position, &operands[position]),
+            Self::Applied { op: Operator::Kind(kind), operands } => kind.info().operands[position].for_operand(&operands[position]),
             Self::Array(_) => OperandKind::Callable, Self::System { function, .. } if function.native_opaque() => OperandKind::Opaque,
             Self::Applied { op: Operator::Closure(_), .. } | Self::Train(_) | Self::System { .. } | Self::Recorded { .. } => OperandKind::Data,
             _ => OperandKind::Structure
@@ -1033,9 +1039,18 @@ impl Function {
             FunctionNode::Applied { op: Operator::Kind(kind), operands } => kind.info().operation(operands), _ => None
         }
     }
-    fn new(node: FunctionNode, span: &Span) -> Result<Self, Error> {
-        if let FunctionNode::Applied { op, operands } = &node && operands.len() != op.operand_count() {
-            return Err(Error::domain("invalid operator operands").at(span));
+    fn new(mut node: FunctionNode, span: &Span) -> Result<Self, Error> {
+        if let FunctionNode::Applied { op, operands } = &mut node {
+            if operands.len() != op.operand_count() { return Err(Error::domain("invalid operator operands").at(span)); }
+            if let Operator::Kind(kind) = op {
+                for (kind, operand) in kind.info().operands.iter().zip(operands.iter_mut()) {
+                    if *kind != OperandKind::Function { continue; }
+                    let Some(value) = operand.stored() else { continue; };
+                    if matches!(value, Value::Function(_)) { continue; }
+                    let function = if value.holds_functions() { Self::array(operand.clone()) } else { Self::constant(operand.clone(), span)? };
+                    *operand = FunctionOperand::value(Value::Function(function), false);
+                }
+            }
         }
         Ok(Self::of(node, None))
     }
@@ -1057,8 +1072,10 @@ impl Function {
     pub(crate) fn made(function: SystemFunction, made: Value) -> Self {
         Self::of(FunctionNode::System { function, made: Some(FunctionOperand::from(made)) }, None)
     }
-    pub(crate) fn array(value: Value) -> Self { Self::of(FunctionNode::Array(FunctionOperand::from(value)), None) }
-    fn constant(value: Value, _: &Span) -> Result<Self, Error> { Operator::Kind(OperatorKind::Commute).derive(value, None) }
+    pub(crate) fn array(value: impl Into<FunctionOperand>) -> Self { Self::of(FunctionNode::Array(value.into()), None) }
+    fn constant(value: impl Into<FunctionOperand>, span: &Span) -> Result<Self, Error> {
+        Operator::Kind(OperatorKind::Commute).derive_operands(value.into(), None, span)
+    }
     pub(crate) fn commuted(&self, _: &Span) -> Result<Self, Error> { Operator::Kind(OperatorKind::Commute).derive(Value::Function(self.clone()), None) }
     fn as_constant(&self) -> Option<&Value> {
         match self.node() {

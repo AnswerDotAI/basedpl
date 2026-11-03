@@ -1,7 +1,7 @@
 //! Agenda selection and ordinary cached case calls.
 use super::{Desc, Node, Origin, Outputs, Step};
 use crate::{
-    Error, Function, Value, agreement::Agree, array::{Layout, Widening}, error::Result, number::{Kind, Kinds, Numeric},
+    Error, Function, Value, array::{Layout, Widening}, error::Result, number::{Kind, Kinds, Numeric},
     primitive::{CallView, Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis}, program::trace::{self, ReadKind}
 };
 use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth}, convert::ConversionKind, error::Kind as ErrorTag};
@@ -107,20 +107,39 @@ fn selector_positions(selector: &Value, cases: usize, checked: bool) -> Result<V
 fn listed(frame: &Layout, rows: &[usize]) -> Result<Layout> {
     Ok(if frame.shape().len() == 1 { frame.select(0, rows.iter().copied().map(Some))? } else { Layout::from([rows.len()]) })
 }
-/// A case receives a list of its selected cells, not a map over individual cells.
-fn selected_cells(parent: &Origin<&[Value]>, value: &Value, frame: &Value, rows: &[usize]) -> Result<Value> {
+pub(crate) fn selected_rows(selector: &Value, right: &Value, cases: usize, checked: bool) -> Result<(Vec<usize>, Vec<Vec<usize>>)> {
+    let axes = rustymath::agreement::Agreement::paired_axes(right.layout(), selector.layout(), true);
+    if axes.iter().any(|&axis| axis >= right.rank()) { return Err(Error::new(ErrorTag::Rank, "the selector has an axis that the argument lacks")); }
+    let frame = right.layout().axes(axes.iter().copied());
+    let agreement = rustymath::agreement::Agreement::onto(&frame, selector.layout())?;
+    if agreement.layout != *frame { return Err(Error::new(ErrorTag::Length, "the selector does not agree with the argument")); }
+    let positions = selector_positions(selector, cases, checked)?;
+    let mut groups = vec![Vec::new(); cases];
+    for row in 0..frame.count() {
+        let position = agreement.right.get(row).map_or(rustymath::gather::Steps::FILL, |index| positions[index]);
+        if position < cases { groups[position].push(row); }
+    }
+    Ok((axes, groups))
+}
+
+pub(crate) fn aligned_cells(parent: &Origin<&[Value]>, value: &Value, frame: &Value) -> Result<Value> {
     let paired = rustymath::agreement::Agreement::paired_axes(value.layout(), frame.layout(), true);
     let cells = (0..value.rank()).filter(|axis| !paired.contains(axis)).collect::<Vec<_>>();
     let source = value.layout().axes(paired.iter().copied().filter(|&axis| axis < value.rank()));
-    if crate::agreement::Agreement::new(frame.layout(), &source)?.layout != *frame.layout() {
-        return Err(Error::new(ErrorTag::Length, "an agenda argument does not agree with the selector"));
+    if rustymath::agreement::Agreement::onto(frame.layout(), &source)?.layout != **frame.layout() {
+        return Err(Error::new(ErrorTag::Length, "an argument does not agree with the selected axes"));
     }
     let dimensions = (0..frame.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) })
         .chain(cells.iter().map(|&axis| ViewAxis { input: 0, axis: Some(axis) })).collect();
     let destinations = (0..value.rank())
         .map(|axis| paired.iter().position(|&selected| selected == axis).unwrap_or_else(|| frame.rank() + cells.iter().position(|&cell| cell == axis).unwrap()))
         .collect();
-    let aligned = call(parent, Operation::Read(ReadOp::Axes { axes: dimensions, destinations }), &[value.clone(), frame.clone()])?;
+    call(parent, Operation::Read(ReadOp::Axes { axes: dimensions, destinations }), &[value.clone(), frame.clone()])
+}
+
+/// A case receives a list of its selected cells, not a map over individual cells.
+pub(crate) fn selected_cells(parent: &Origin<&[Value]>, value: &Value, frame: &Value, rows: &[usize]) -> Result<Value> {
+    let aligned = aligned_cells(parent, value, frame)?;
     let strides = rustymath::layout::strides(frame.shape());
     let indices = frame.shape().iter().zip(strides).map(|(&length, stride)| {
         listed(frame.layout(), rows)?.integers(rows.iter().map(|&row| ((row / stride) % length) as i64).collect()).map_err(Error::from)
@@ -142,7 +161,7 @@ fn masked(parent: &Origin<&[Value]>, selector: &Value, args: &[Value], cases: &[
         let effects = prepared.recording().effects;
         if effects.acts || effects.catches || effects.writes || !program.parameters.is_empty() || program.nodes.iter().any(|node| {
             matches!(node, Node::Step { step, origin, .. }
-            if origin.nonrepeatable() || origin.bindings.custom_derivative || !matches!(step, Step::Map { .. } | Step::Convert { .. } | Step::Picks { .. }))
+        if origin.nonrepeatable() || origin.bindings.custom_derivative || !matches!(step, Step::Map { .. } | Step::Convert { .. } | Step::Picks { .. }))
         }) || parent.mode.dynamic && prepared.may_raise()? { return Ok(None); }
         let description = prepared.description()?;
         if description.as_ref().is_empty()
@@ -206,18 +225,9 @@ pub(crate) fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>> {
     }
     if let Some(result) = masked(&origin, selector, args, &cases)? { return Ok(Some(result)); }
     let right = args.last().ok_or_else(Error::planning)?;
-    let axes = rustymath::agreement::Agreement::paired_axes(right.layout(), selector.layout(), true);
-    if axes.iter().any(|&axis| axis >= right.rank()) { return Err(Error::new(ErrorTag::Rank, "the selector has an axis that the argument lacks")); }
+    let (axes, groups) = selected_rows(selector, right, count, origin.mode.dynamic)?;
     let frame = right.layout().axes(axes.iter().copied());
     let argument_cell = right.layout().axes((0..right.rank()).filter(|axis| !axes.contains(axis)));
-    let agreement = crate::agreement::Agreement::new(&frame, selector.layout())?;
-    if agreement.layout != frame { return Err(Error::new(ErrorTag::Length, "the selector does not agree with the argument")); }
-    let positions = selector_positions(selector, count, origin.mode.dynamic)?;
-    let mut groups = vec![Vec::new(); count];
-    for row in 0..frame.count() {
-        let position = agreement.right.get(row).map_or(rustymath::gather::Steps::FILL, |index| positions[index]);
-        if position < count { groups[position].push(row); }
-    }
     let mut made = Vec::new();
     let reference = frame_reference(&frame, &[(right.clone(), 0)])?;
     for (index, case) in cases.iter().enumerate() {

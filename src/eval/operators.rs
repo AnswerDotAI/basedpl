@@ -1,15 +1,15 @@
 //! Operator semantics build ordinary calls, maps and selects; host iteration unrolls actual function calls.
 use super::*;
-use crate::{array::Layout, error::Result, primitive::{FoldKind, Marked, Notation, Pairing, ReadOp, ViewAxis}, program::{Origin, Outputs, control}};
+use crate::{array::{Layout, Widening}, error::Result, primitive::{FoldKind, Marked, Notation, Pairing, ReadOp, ViewAxis}, program::{Origin, Outputs, control}};
 
 #[derive(Clone, Copy)]
 pub(super) enum Form { Calls, Fold(FoldKind), Product, Bitwise }
-const fn entry(python: &'static str, glyph: &'static str, names: [&'static str; 3], dyadic: bool) -> OperatorInfo {
-    OperatorInfo { call: operator_call, spelling, inverse, discards, python, names, glyph, dyadic, operands: operand_kind, form: Form::Calls }
+const fn entry(python: &'static str, glyph: &'static str, names: [&'static str; 3], operands: &'static [OperandKind]) -> OperatorInfo {
+    OperatorInfo { call: operator_call, spelling, inverse, discards, python, names, glyph, operands, form: Form::Calls }
 }
 impl OperatorInfo {
     const fn with_form(mut self, form: Form) -> Self { self.form = form; self }
-    pub(super) fn operand_count(&self, _: &OperatorKind) -> usize { 1 + usize::from(self.dyadic) }
+    pub(crate) fn dyadic(&self) -> bool { self.operands.len() == 2 }
     pub(super) fn fold(&self) -> Option<FoldKind> { match self.form { Form::Fold(kind) => Some(kind), _ => None } }
     pub(super) fn operation(&self, operands: &[FunctionOperand]) -> Option<Operation> {
         match (self.form, operands) {
@@ -30,24 +30,27 @@ impl OperatorInfo {
     }
 }
 
-static ENTRIES: [OperatorInfo; 28] = [
-    entry("reduce", "/", ["slash", "reduce", ""], false).with_form(Form::Fold(FoldKind { first: false, scan: false })),
-    entry("reduce_first", "⌿", ["slash-bar", "reduce-first", ""], false).with_form(Form::Fold(FoldKind { first: true, scan: false })),
-    entry("scan", "\\", ["backslash", "scan", ""], false).with_form(Form::Fold(FoldKind { first: false, scan: true })),
-    entry("scan_first", "⍀", ["backslash-bar", "scan-first", ""], false).with_form(Form::Fold(FoldKind { first: true, scan: true })),
-    entry("each", "¨", ["diaeresis", "each", ""], false), entry("commute", "⍨", ["tilde-diaeresis", "self", "commute"], false),
-    entry("inverse", "⁻¹", ["superscript", "inverse", ""], false), entry("outer", "⊗", ["circle-times", "outer-product", ""], false),
-    entry("key", "⌸", ["quad-equal", "key", ""], false), entry("derivative", "∂", ["partial", "derivative", ""], false),
-    entry("optimize", "⇄", ["right-left-arrows", "optimize", ""], false),
-    entry("bitwise", "ᵇ", ["superscript-b", "bitwise", ""], false).with_form(Form::Bitwise), entry("mark", "", ["superscript", "", ""], false),
-    entry("under", "@", ["at", "under", ""], true), entry("atop", "∘", ["jot", "atop", ""], true),
-    entry("over", "⍥", ["circle-diaeresis", "over", ""], true), entry("rank", "⍤", ["jot-diaeresis", "rank", ""], true),
-    entry("axis", "⍠", ["quad-colon", "axis", ""], true), entry("stencil", "⌺", ["quad-diamond", "stencil", ""], true),
-    entry("dot", ".", ["dot", "determinant", "inner-product"], true).with_form(Form::Product), entry("power", "⍣", ["star-diaeresis", "power", ""], true),
-    entry("before", "↣", ["right-tail-arrow", "before", ""], true), entry("after", "↢", ["left-tail-arrow", "after", ""], true),
-    entry("valences", "⊘", ["circle-slash", "valences", ""], true), entry("agenda", "⍚", ["diamond-underbar", "agenda", ""], true),
-    entry("field", ".", ["dot", "field", ""], false), entry("index", ".", ["dot", "index", ""], true), entry("framed", "framed", ["", "framed", ""], false),
-];
+static ENTRIES: [OperatorInfo; 28] = {
+    use OperandKind::{Callable, Data, Function, Options};
+    [
+        entry("reduce", "/", ["slash", "reduce", ""], &[Function]).with_form(Form::Fold(FoldKind { first: false, scan: false })),
+        entry("reduce_first", "⌿", ["slash-bar", "reduce-first", ""], &[Function]).with_form(Form::Fold(FoldKind { first: true, scan: false })),
+        entry("scan", "\\", ["backslash", "scan", ""], &[Function]).with_form(Form::Fold(FoldKind { first: false, scan: true })),
+        entry("scan_first", "⍀", ["backslash-bar", "scan-first", ""], &[Function]).with_form(Form::Fold(FoldKind { first: true, scan: true })),
+        entry("each", "¨", ["diaeresis", "each", ""], &[Function]), entry("commute", "⍨", ["tilde-diaeresis", "self", "commute"], &[Data]),
+        entry("inverse", "⁻¹", ["superscript", "inverse", ""], &[Function]), entry("outer", "⊗", ["circle-times", "outer-product", ""], &[Function]),
+        entry("key", "⌸", ["quad-equal", "key", ""], &[Function]), entry("derivative", "∂", ["partial", "derivative", ""], &[Function]),
+        entry("optimize", "⇄", ["right-left-arrows", "optimize", ""], &[Function]),
+        entry("bitwise", "ᵇ", ["superscript-b", "bitwise", ""], &[Function]).with_form(Form::Bitwise), entry("mark", "", ["superscript", "", ""], &[Data]),
+        entry("under", "@", ["at", "under", ""], &[Function, Data]), entry("atop", "∘", ["jot", "atop", ""], &[Function, Function]),
+        entry("over", "⍥", ["circle-diaeresis", "over", ""], &[Function, Function]), entry("rank", "⍤", ["jot-diaeresis", "rank", ""], &[Function, Options]),
+        entry("axis", "⍠", ["quad-colon", "axis", ""], &[Function, Options]), entry("stencil", "⌺", ["quad-diamond", "stencil", ""], &[Function, Data]),
+        entry("dot", ".", ["dot", "determinant", "inner-product"], &[Function, Function]).with_form(Form::Product), entry("power", "⍣", ["star-diaeresis", "power", ""], &[Function, Data]),
+        entry("before", "↣", ["right-tail-arrow", "before", ""], &[Data, Function]), entry("after", "↢", ["left-tail-arrow", "after", ""], &[Function, Data]),
+        entry("valences", "⊘", ["circle-slash", "valences", ""], &[Function, Function]), entry("agenda", "⍚", ["diamond-underbar", "agenda", ""], &[Data, Callable]),
+        entry("field", ".", ["dot", "field", ""], &[Function]), entry("index", ".", ["dot", "index", ""], &[Function, Data]), entry("framed", "framed", ["", "framed", ""], &[Function]),
+    ]
+};
 
 pub(super) fn info(kind: &OperatorKind) -> &'static OperatorInfo {
     use OperatorKind::*;
@@ -70,12 +73,6 @@ impl OperatorKind {
 }
 
 fn spelling(kind: &OperatorKind) -> String { match kind { OperatorKind::Mark(mark) => mark.marker().into(), _ => kind.info().glyph.into() } }
-fn operand_kind(kind: &OperatorKind, position: usize, operand: &FunctionOperand) -> OperandKind {
-    if matches!((kind, position), (OperatorKind::Agenda, 1)) { return OperandKind::Callable; }
-    if position != 1 || !matches!(kind, OperatorKind::Rank | OperatorKind::Axis) { return OperandKind::Data; }
-    let Some(value) = operand.stored() else { return OperandKind::Data; };
-    if value.keys(0).is_some_and(|keys| keys.position("fill").is_some()) { OperandKind::Data } else { OperandKind::Structure }
-}
 
 fn function(value: &Value) -> Result<&Function> { match value { Value::Function(f) => Ok(f), _ => Err(Error::domain("operator needs a function operand")) } }
 fn applied(f: &Function) -> (&OperatorKind, &[FunctionOperand]) {
@@ -241,14 +238,12 @@ pub(super) fn function_array(f: &Function, origin: Origin<&[Value]>) -> Result<V
     let items = f.operand(&origin, 0)?;
     let args = Function::body_arguments(&origin)?;
     let from = argument_sources(&origin)?;
+    if items.is_unit() { return value_call(&items.at(0), &origin, &args, &from); }
     let results = items.elements().map(|item| value_call(&item, &origin, &args, &from)).collect::<Result<Vec<_>>>()?;
-    let mut result = dispatch_in(&origin, Operation::Join(Notation::Strand), &results, &vec![None; results.len()])?;
-    if items.rank() != 1 {
-        let shape = dispatch_in(&origin, Operation::Primitive { primitive: Primitive::Shape, pairing: Pairing::Axes }, &[items.as_ref().clone()], &[None])?;
-        result = dispatch_in(&origin, Operation::Primitive { primitive: Primitive::Shape, pairing: Pairing::Axes }, &[shape, result], &[None, None])?;
-    }
-    let axes = (0..items.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
-    dispatch_in(&origin, Operation::Read(ReadOp::Axes { axes, destinations: (0..items.rank()).collect() }), &[result, items.into_owned()], &[None, None])
+    let prototype = match results.first() { Some(value) => value.clone(), None => value_call(&items.prototype(), &origin, &args, &from)? };
+    let mut values = vec![items.into_owned(), prototype];
+    values.extend(results);
+    dispatch_in(&origin, Operation::join(Notation::Cells, Widening::Items), &values, &vec![None; values.len()])
 }
 
 fn power_count(value: &Value) -> Result<(bool, u64)> {
@@ -410,7 +405,7 @@ fn items_call(origin: &Origin<&[Value]>, function: &Function, scan: bool, axis: 
         total = function.call_bound(origin, &[total, item(i)?], &[None, None])?;
         values.push(total.clone());
     }
-    dispatch_in(origin, Operation::Join(Notation::Strand), &values, &vec![None; values.len()])?.with_layout(right.layout().clone())
+    dispatch_in(origin, Operation::join(Notation::Strand, Widening::Items), &values, &vec![None; values.len()])?.with_layout(right.layout().clone())
 }
 
 pub(crate) fn fold_fallback(origin: Origin<&[Value]>) -> Result<Value> {
@@ -471,14 +466,12 @@ fn each_call(origin: &Origin<&[Value]>, f: &Function, args: &[Value], from: &[Op
     crate::batch::map(f, origin, args, frame, &atoms, from, Notation::Strand)
 }
 
-fn outer_call(origin: &Origin<&[Value]>, f: &Function, args: &[Value], _: &[Option<usize>]) -> Result<Value> {
+fn outer_call(origin: &Origin<&[Value]>, f: &Function, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
     let [left, right] = args else { return Err(Error::domain("outer needs two arguments")); };
     let frame = left.rank() + right.rank();
-    let mut xshape = left.shape().to_vec();
-    xshape.extend(std::iter::repeat_n(1, right.rank()));
-    let mut yshape = vec![1; left.rank()];
-    yshape.extend_from_slice(right.shape());
-    crate::batch::map(f, origin, &[left.with_shape(xshape)?, right.with_shape(yshape)?], frame, &[true, true], &[None, None], Notation::Strand)
+    let x = insert_axes(origin, left, left.rank(), right.rank(), from[0])?;
+    let y = insert_axes(origin, right, 0, left.rank(), from[1])?;
+    crate::batch::map(f, origin, &[x, y], frame, &[true, true], &[None, None], Notation::Strand)
 }
 
 /// Scalar cells extend along the other argument's contracted axis before matrix planning.
@@ -548,16 +541,51 @@ fn agenda_call(origin: &Origin<&[Value]>, selector: &Value, cases: &Value, args:
 fn under_call(origin: &Origin<&[Value]>, f: &Value, g: &Value, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
     let scope = crate::selection::Scope::new(args.last().unwrap())?;
     let right = scope.root.clone();
+    let mut inputs = args.to_vec();
+    let mut sources = from.to_vec();
     let selected = match g {
-        Value::Function(g) => g.call_bound(origin, &[right.clone()], &[None])?,
+        Value::Function(g) => {
+            let selected = g.call_bound(origin, &[right.clone()], &[None])?;
+            if inputs.len() == 2 {
+                inputs[0] = g.call_bound(origin, &inputs[..1], &sources[..1])?;
+                sources[0] = None;
+            }
+            selected
+        }
         index => {
-            dispatch_in(origin, Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Axes }, &[index.clone(), right.clone()], &[None, None])?
+            let index = index.read(ReadKind::Structure)?;
+            let predicate = if index.shape() == [1] { match index.at(0) { Value::Function(p) => Some(p), _ => None } } else { None };
+            if let Some(predicate) = predicate {
+                let selector = predicate.call_bound(origin, &[right.clone()], &[None])?;
+                let (axes, rows) = control::selected_rows(&selector, &right, 2, origin.mode.dynamic)?;
+                if rows[1].is_empty() { return Ok(args.last().unwrap().clone()); }
+                if selector.is_unit() { right.clone() } else {
+                    let frame = right.layout().axes(axes.into_iter());
+                    let frame = control::frame_reference(&frame, &[(right.clone(), 0)])?;
+                    if inputs.len() == 2 && !inputs[0].is_unit() {
+                        inputs[0] = control::selected_cells(origin, &inputs[0], &frame, &rows[1])?;
+                        sources[0] = None;
+                    }
+                    control::selected_cells(origin, &right, &frame, &rows[1])?
+                }
+            } else {
+                if index.is_empty() { return Ok(args.last().unwrap().clone()); }
+                let index = Value::tuple(vec![index]);
+                let operation = Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Axes };
+                let selected = dispatch_in(origin, operation.clone(), &[index.clone(), right.clone()], &[None, None])?;
+                if inputs.len() == 2 && !inputs[0].is_unit() {
+                    let frame = right.layout().axes(0..right.rank().min(1));
+                    let frame = control::frame_reference(&frame, &[(right.clone(), 0)])?;
+                    let left = control::aligned_cells(origin, &inputs[0], &frame)?;
+                    inputs[0] = dispatch_in(origin, operation, &[index, left], &[None, None])?;
+                    sources[0] = None;
+                }
+                selected
+            }
         }
     };
     let walk = scope.select(&selected)?;
-    let mut inputs = args.to_vec();
-    *inputs.last_mut().unwrap() = selected.clone();
-    let mut sources = from.to_vec();
+    *inputs.last_mut().unwrap() = selected;
     *sources.last_mut().unwrap() = None;
     let result = value_call(f, origin, &inputs, &sources)?;
     if let Some(walk) = walk { return walk.write(result, None); }
@@ -595,7 +623,11 @@ pub(crate) fn axis_arguments(
 }
 fn axis_call(origin: &Origin<&[Value]>, f: &Function, spec: &Value, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
     let spec = value_call(spec, origin, args, from)?;
-    if let Some(primitive) = f.as_primitive() {
+    if let Some(keys) = spec.keys(0) {
+        if spec.rank() != 1 || spec.len() != 1 || keys.position("fill").is_none() { return Err(Error::domain("⍠'s options record needs fill")); }
+        return filled(origin, f, &spec, args, from);
+    }
+    if let Some(primitive) = f.as_primitive().filter(|p| p.info().axes[usize::from(args.len() == 2)]) {
         let (pairing, values, sources) = axis_arguments(origin, &spec, args, from)?;
         return dispatch_in(origin, Operation::Primitive { primitive, pairing }, &values, &sources);
     }
@@ -605,6 +637,49 @@ fn axis_call(origin: &Origin<&[Value]>, f: &Function, spec: &Value, args: &[Valu
             return axis_fold(origin, function(&g)?, kind, &spec, args, from);
         }
     cell_axes(origin, f, &spec, args, from)
+}
+
+fn filled(origin: &Origin<&[Value]>, f: &Function, spec: &Value, args: &[Value], from: &[Option<usize>]) -> Result<Value> {
+    use OperatorKind::{After, Axis, Before, Inverse};
+    let primitive = |p: Primitive, inverse: bool, axes: Option<&Value>| {
+        let (pairing, mut values, sources) = axis_arguments(origin, spec, args, from)?;
+        if let Some(axes) = axes { values[args.len()] = axes.clone(); }
+        let call = projected_call(origin, Operation::Primitive { primitive: p, pairing }, &values, &sources)?;
+        if inverse { (p.info().inverse)(&Function::primitive(p), call.reborrow(), true) }
+        else { Operation::dispatch(call.reborrow())?.assemble() }
+    };
+    let bound = match f.node() {
+        FunctionNode::Train(tines) if tines.len() == 2 => Some((0, 1)),
+        FunctionNode::Applied { op: Operator::Kind(Before), .. } => Some((0, 1)),
+        FunctionNode::Applied { op: Operator::Kind(After), .. } => Some((1, 0)), _ => None
+    };
+    if let Some((value, function_at)) = bound {
+        let fixed = f.operand(origin, value)?;
+        if !matches!(fixed.as_ref(), Value::Function(_)) {
+            if args.len() != 1 { return Err(Error::domain("a bound function takes one argument")); }
+            let inner = f.operand(origin, function_at)?;
+            let values = if value == 0 { [fixed.into_owned(), args[0].clone()] } else { [args[0].clone(), fixed.into_owned()] };
+            let sources = if value == 0 { [None, from[0]] } else { [from[0], None] };
+            return filled(origin, function(&inner)?, spec, &values, &sources);
+        }
+    }
+    match f.node() {
+        FunctionNode::Primitive(p) => primitive(*p, false, None),
+        FunctionNode::Applied { op: Operator::Kind(Inverse), .. } => {
+            let inner = f.operand(origin, 0)?;
+            if let Some(p) = function(&inner)?.as_primitive() { return primitive(p, true, None); }
+            Err(Error::domain("this function reads no fill"))
+        }
+        FunctionNode::Applied { op: Operator::Kind(Axis), .. } => {
+            let inner = f.operand(origin, 0)?;
+            let axes = value_call(f.operand(origin, 1)?.as_ref(), origin, args, from)?;
+            if axes.keys(0).is_some() { return Err(Error::domain("this function reads no fill")); }
+            if let Some(p) = function(&inner)?.as_primitive().filter(|p| p.info().axes[usize::from(args.len() == 2)]) { return primitive(p, false, Some(&axes)); }
+            let filled = Function::applied_kind(Axis, vec![inner.into_owned(), spec.clone()])?;
+            cell_axes(origin, &filled, &axes, args, from)
+        }
+        _ => Err(Error::domain("this function reads no fill"))
+    }
 }
 
 fn key_call(origin: &Origin<&[Value]>, f: &Function, args: &[Value], _: &[Option<usize>]) -> Result<Value> {
@@ -879,7 +954,7 @@ fn expanded(
     if let Some(value) = memo.get(&rows) { return Ok(value.clone()); }
     let vector = |items: &[Value]| {
         if items.is_empty() { Ok(Value::empty([0], prototype.clone())?) }
-        else { dispatch_in(origin, Operation::Join(Notation::Strand), items, &vec![None; items.len()]) }
+        else { dispatch_in(origin, Operation::join(Notation::Strand, Widening::Items), items, &vec![None; items.len()]) }
     };
     let column = m - rows.count_ones() as usize;
     let value = if column == n { fold_call(origin, g, &OperatorKind::Reduce, &[vector(&[])?], &[None])? } else {

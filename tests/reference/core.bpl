@@ -2182,6 +2182,12 @@ r   ⍝ [1 2 3;⍬;1 2 9;[1 2 9⋄4 5 9]]
 g←{[2↑⍵;¯2↑⍵]}
 [7 8]@g 1 2 3 4 5 6   ⍝ 7 7 3 4 8 8
 
+⍝ write-boolean-comparison — A comparison writes Boolean results into a Boolean array
+b←$t $f ⋄ b.[0]<←$f ⋄ b   ⍝ $f $f
+
+⍝ write-boolean-fold — A Boolean combiner keeps Boolean storage
+b←$t $f ⋄ b.[0]∧←$f ⋄ b   ⍝ $f $f
+
 ⍝ write-native-box — Replacing one numeric item with an array reconstructs the outer items
 a←1 2 3 ⋄ a.[0]←7 8 9 ⋄ a   ⍝ [[7 8 9] 2 3]
 
@@ -3382,31 +3388,66 @@ a←⍎""
 ⌻⁻¹[2ₓ 0⍴0ₓ]   ⍝ [2]ₓ
 
 ⍝ — Differentiate the bound polynomial evaluator
-f←[1 2 3]ₓ↣⌻ ⋄ f∂2ₓ   ⍝ 14ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ f∂2ₓ   ⍝ 14
 
 ⍝ — Repeated differentiation gives the second derivative
-f←[1 2 3]ₓ↣⌻ ⋄ f∂∂2ₓ   ⍝ 6ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ f∂∂2ₓ   ⍝ 6
 
-⍝ — Differentiating beyond the polynomial's degree gives exact zero
-f←[1 2 3]ₓ↣⌻ ⋄ f∂∂∂2ₓ   ⍝ 0ₓ
+⍝ — Differentiating beyond the polynomial's degree gives zero
+f←[1 2 3]ₓ↣⌻ ⋄ f∂∂∂2ₓ   ⍝ 0
+
+⍝ polynomial-zero-boundary — Higher derivatives at zero follow the polynomial, without division by the point
+f←[1 2 3]↣⌻ ⋄ f∂∂0   ⍝ 6
+
+⍝ polynomial-root-boundary — Higher derivatives of a factored polynomial remain defined at a root
+f←[2 [1 3]]↣⌻ ⋄ f∂∂1   ⍝ 4
+
+⍝ polynomial-zero-coefficient — A zero coefficient does not evaluate a negative power at zero
+f←(⊂[0 ¯1⋄1 0])↣⌻ ⋄ f∂0   ⍝ 0
+
+⍝ power-opaque-zero — An exponent supplied as data retains higher derivatives at zero
+exponent←2 ⋄ f←{⍵*exponent} ⋄ f∂∂0   ⍝ 2
+
+⍝ power-mixed-zero-exponent — A zero exponent keeps the nonzero base in mixed partials
+{exponent←⍵ ⋄ {⍵*exponent}∂2}∂0   ⍝ 0.5
+
+⍝ polynomial-power-table-zero — A power table uses the same higher derivative at zero
+f←(⊂[1 2⋄])↣⌻ ⋄ f∂∂0   ⍝ 2
 
 ⍝ — A vector of points gives the Jacobian, which is diagonal
-f←[1 2 3]ₓ↣⌻ ⋄ f∂ [1 2]ₓ   ⍝ [8 0⋄0 14]ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ f∂ [1 2]ₓ   ⍝ [8 0⋄0 14]
 
 ⍝ — Differentiate directly from the factored representation
-f←[2ₓ [1 3]ₓ]↣⌻ ⋄ f∂2ₓ   ⍝ 0ₓ
+f←[2ₓ [1 3]ₓ]↣⌻ ⋄ f∂2ₓ   ⍝ 0
 
 ⍝ — A multivariate gradient retains the coordinate enclosure
-f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ f∂⊂[3 4]ₓ   ⍝ ⊂[6 8]ₓ
+f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ f∂⊂[3 4]ₓ   ⍝ ⊂[6 8]
 
 ⍝ — The left argument passes to the function, and ∂ differentiates with respect to the right
 3 {⍺×⍵×⍵}∂ 2   ⍝ 12
 
+⍝ ad-dynamic-input-map — A dynamic square root differentiates without inspecting its tangent values
+{+/√⍵}∂1 4   ⍝ 0.5 0.25
+
+⍝ ad-structural-parameter-read — Scalar kind probes are not selectors; a bound circular code reads its actual value
+c←1 ⋄ [√∂4;⍟∂2;(c↣○)∂0]   ⍝ 0.25 0.5 1
+
+⍝ ad-opaque-invocation — Caller data stay opaque; body literals remain constants
+f←√ ⋄ a←4
+[f∂4;√∂a;√∂(1+3);{⍵×√4}∂0]   ⍝ 0.25 0.25 0.25 2
+
+⍝ ad-opaque-invocation-replay — A forced scalar derivative replays with the same literal
+s←•json⁻¹ √∂4 ⋄ √∂4   ⍝ 0.25
+
+⍝ ad-pending-input-refill — Serializing two gradients warms the graph before the input length changes
+sq←{+/⊼⍵}
+s←•json⁻¹ sq∂1 2 3 ⋄ s←•json⁻¹ sq∂4 5 6 ⋄ sq∂4 5 6 7   ⍝ 8 10 12 14
+
 ⍝ — A shared unit coordinate sums the partial derivatives
-f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ f∂3ₓ   ⍝ 12ₓ
+f←⊂[1 2 0⋄1 0 2]ₓ ↣⌻ ⋄ f∂3ₓ   ⍝ 12
 
 ⍝ — Two polynomials give one derivative each
-f←[1 2⋄3 4]ₓ↣⌻ ⋄ f∂ 3ₓ   ⍝ [2 4]ₓ
+f←[1 2⋄3 4]ₓ↣⌻ ⋄ f∂ 3ₓ   ⍝ [2 4]
 
 ⍝ — Assigning f∂ attaches a hand-written JVP rule, which the derivative calls with `⍺` as the direction
 r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ r∂3   ⍝ 6
@@ -3430,10 +3471,10 @@ ste←{⌊⍵} ⋄ ste∂←{⍺} ⋄ m←[1.5 2.5⋄3.5 4.5] ⋄ [{+/,ste⍤0�
 ste←{⌊⍵} ⋄ ste∂←{⍺} ⋄ v←1.5 2.5 3.5 4.5 ⋄ [{+/({+/ste ⍵}⌺3)⍵}∂ v; {{+/ste ⍵}∂⍵}⌺3 v]   ⍝ [2 3 3 2; [1 1 1⋄1 1 1⋄1 1 1⋄1 1 1]]
 
 ⍝ — The attached derivative replaces the polynomial's own
-f←[1 2 3]ₓ↣⌻ ⋄ f∂←{⍺×[0 0 5]ₓ⌻⍵} ⋄ f∂3ₓ   ⍝ 45ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ f∂←{⍺×[0 0 5]ₓ⌻⍵} ⋄ f∂3ₓ   ⍝ 45
 
 ⍝ — A higher order differentiates the attached derivative
-f←[1 2 3]ₓ↣⌻ ⋄ f∂←{⍺×[0 0 5]ₓ⌻⍵} ⋄ f∂∂3ₓ   ⍝ 30ₓ
+f←[1 2 3]ₓ↣⌻ ⋄ f∂←{⍺×[0 0 5]ₓ⌻⍵} ⋄ f∂∂3ₓ   ⍝ 30
 
 ⍝ — The inverse inverts the function, not its derivative
 k←3× ⋄ k∂←{3×⍺} ⋄ k⁻¹ 6   ⍝ 2

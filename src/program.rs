@@ -455,8 +455,6 @@ pub(crate) enum Step {
     Join {
         /// Part 4: the sources.
         sources: std::ops::Range<u32>,
-        /// Part 4: each item's id, from running the moving primitive on ids that number the sources' items in order.
-        ids: u32,
     },
     /// Part 4: a planned primitive that no block stage runs (a sort, a grade, a search, `⌹`), on forced operands, in a stage of its own.
     Call,
@@ -1052,7 +1050,7 @@ impl Running {
         self.value(program, source)?.physical().map(|(storage, _)| rustymath::agreement::Binding::full(storage))
     }
     pub(crate) fn route(&self, program: &Program, output: Out) -> crate::error::Result<ReadPlan> {
-        if self.value(program, output).is_none() && let Node::Step { origin, .. } = &program.nodes[output.node]
+        if let Node::Step { origin, .. } = &program.nodes[output.node]
             && let Operation::ReadRelation { operation, relation, .. } = &origin.operation
             && let Operation::At { target: target @ crate::primitive::WriteTarget::Source { .. }, .. } = &**operation {
                 if matches!(relation, crate::primitive::Relation::Validate) {
@@ -1068,7 +1066,7 @@ impl Running {
                     });
                 }
             }
-        if self.value(program, output).is_none() && output.output == Some(0) && matches!(&program.nodes[output.node], Node::Step { step, .. } if step.is_view())
+        if output.output == Some(0) && matches!(&program.nodes[output.node], Node::Step { step, .. } if step.is_view())
             && let Some(plan) = self.read_plan(output.node) {
                 let Node::Step { origin, .. } = &program.nodes[output.node] else { unreachable!() };
                 return plan.compose_inputs(&mut |source, _| self.route(program, program.reads[origin.list.start as usize + source].operand));
@@ -1274,31 +1272,29 @@ impl Program {
         self.dependencies(node).iter().enumerate()
             .filter(move |(position, _)| self.dependency_executes(node, *position) && self.dependency_read(node, *position).is_some()).map(|(_, read)| read)
     }
-    pub(crate) fn execution_order(&self, from: usize) -> Vec<usize> { self.execution(|_| false).into_iter().filter(|&node| node >= from).collect() }
-    pub(crate) fn remaining(&self, running: &Running) -> Vec<usize> {
-        self.execution(|output| if output.output.is_some() { running.value(self, output).is_some() } else { running.is_complete(self, output) })
+    pub(crate) fn execution_order(&self, from: usize) -> Vec<usize> { self.execution().into_iter().filter(|&node| node >= from).collect() }
+    fn demands(&self, node: usize, address: bool) -> impl Iterator<Item = (usize, &Read, bool)> {
+        let (stop, sources, target) = match &self.nodes[node] {
+            Node::Step { step, origin, .. } => (
+                address && matches!(origin.operation, Operation::Read(ReadOp::Root(_))),
+                address.then(|| step.selected_sources()).flatten(), origin.operation.reads_addresses(),
+            ),
+            _ => (false, None, false),
+        };
+        self.dependencies(node).iter().enumerate().filter(move |(position, _)| !stop && self.dependency_executes(node, *position)).map(move |(position, read)| {
+            let address = if address { sources.as_ref().is_some_and(|sources| sources.contains(&(position as u32))) } else { target && position == 1 };
+            (position, read, address)
+        })
     }
-    fn execution(&self, mut ready: impl FnMut(Out) -> bool) -> Vec<usize> {
+    fn execution(&self) -> Vec<usize> {
         let mut needed = vec![0u8; self.nodes.len()];
         let mut stack: Vec<_> = self.live_roots().map(|output| (output, false)).collect();
         while let Some((output, address)) = stack.pop() {
-            if !address && ready(output) { continue; }
             let node = output.node;
             let bit = if address { 2 } else { 1 };
             if needed[node] & bit != 0 { continue; }
             needed[node] |= bit;
-            let (sources, target) = match &self.nodes[node] {
-                Node::Step { step, origin, .. } => {
-                    if address && matches!(origin.operation, Operation::Read(ReadOp::Root(_))) { continue; }
-                    (address.then(|| step.selected_sources()).flatten(), origin.operation.reads_addresses())
-                }
-                _ => (None, false),
-            };
-            for (position, read) in self.dependencies(node).iter().enumerate() {
-                if !self.dependency_executes(node, position) { continue; }
-                let address = if address { sources.as_ref().is_some_and(|sources| sources.contains(&(position as u32))) } else { target && position == 1 };
-                stack.push((read.operand, address));
-            }
+            stack.extend(self.demands(node, address).map(|(_, read, address)| (read.operand, address)));
         }
         needed.into_iter().enumerate().filter_map(|(node, needed)| (needed & 1 != 0).then_some(node)).collect()
     }
@@ -1566,7 +1562,10 @@ pub(crate) fn call(function: &Function, origin: Origin<Vec<Value>>) -> crate::er
     Ok(bind_call(function, origin, false)?.expect("an ordinary call always binds").outputs)
 }
 pub(crate) fn bind_call(function: &Function, origin: Origin<Vec<Value>>, planning: bool) -> crate::error::Result<Option<BoundRecording>> {
-    let origin = origin.invocation();
+    let mut origin = origin.invocation();
+    for position in 0..origin.list.len().min(64) {
+        if !matches!(origin.read_kind(position), Some(ReadKind::Count | ReadKind::Structure | ReadKind::Value)) { origin.literals &= !(1 << position); }
+    }
     let mut reason = None;
     if origin.list.iter().any(|value| value.carried_level().is_some()) {
         if planning { return Ok(None); }
@@ -1647,12 +1646,11 @@ impl Program {
         running.inputs.resize_with(inputs, || None);
         running.binding.input_descs.resize_with(inputs, || None);
         running.values.resize_with(self.nodes.len(), || None);
-        let (order, executed) = self.binding_uses();
-        for at in order {
+        for at in self.order(0) {
             let node = &self.nodes[at];
             let outputs = if let Some(position) = node.input_position() {
                 let desc = description(position)?.map(Desc::opaque);
-                let input = if executed[at] || desc.is_none() { value(position)? } else { Value::metadata(desc.clone()) };
+                let input = value(position)?;
                 running.binding.input_descs[position] = desc;
                 running.inputs[position] = Some(input.clone());
                 Outputs::one(input)
@@ -1663,11 +1661,7 @@ impl Program {
                         let args =
                             self.reads(&origin.list).iter().map(|read| running.binding_value(self, read.operand)).collect::<crate::error::Result<Vec<_>>>()?;
                         let call = running.bind_origin(origin, args.as_slice())?;
-                        if executed[at] { Operation::instantiate(call)?.flatten() } else {
-                            match Operation::build(&call.call_view(&args), &mut |_, _| {})?.1 {
-                                Some(description) => description.map(Value::metadata), None => Operation::instantiate(call)?.flatten()
-                            }
-                        }
+                        Operation::instantiate(call)?.flatten()
                     }
                     Node::Input { .. } => unreachable!(),
                 }

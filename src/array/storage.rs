@@ -137,11 +137,10 @@ pub(crate) fn walk_values(out: &mut Vec<Value>, source: &Value, fill: &Value, ba
 
 struct Joining { desc: Desc, read: ReadPlan }
 fn padding(source: &Layout, target: &Layout) -> Mapping {
-    if source.count() == 1 { return Mapping::Single; }
     let missing = target.shape().len() - source.shape().len();
     let strides = rustymath::layout::strides(source.shape());
     Mapping::from(target.shape().iter().enumerate().map(|(axis, &n)| match axis.checked_sub(missing) {
-        None => Steps::along(n, 0), Some(axis) => Steps::clipped(0, n, source.shape()[axis], strides[axis])
+        None => Steps::clipped(0, n, 1, 0), Some(axis) => Steps::clipped(0, n, source.shape()[axis], strides[axis])
     }).collect::<Vec<_>>())
 }
 fn joined_read<'a>(sources: impl IntoIterator<Item = &'a Layout>, cell: Option<&Layout>, mut fill: impl FnMut(usize) -> Missing) -> Result<ReadPlan, Error> {
@@ -167,16 +166,11 @@ fn joining(frame: &Layout, cells: &[Desc], prototype: &Desc, notation: Notation,
 }
 pub(crate) fn join_roots(call: &CallView<'_>) -> std::ops::Range<usize> {
     let mut roots = call.explicit_argument_roots();
-    if matches!(call.operation, Operation::Join(Notation::Cells)) { roots.start += 2; }
+    if matches!(call.operation, Operation::Join { notation: Notation::Cells, .. }) { roots.start += 2; }
     roots
 }
-fn join_widening(call: &CallView<'_>) -> Widening {
-    if matches!(call.operation, Operation::Join(Notation::Cells)) {
-        Widening::of_results(if call.mode.dynamic { Kinds::Dynamic } else { Kinds::Static })
-    } else { Widening::Items }
-}
 fn call_joining(call: &CallView<'_>) -> Result<Option<Joining>, Error> {
-    let Operation::Join(notation) = call.operation else { return Err(Error::planning()); };
+    let Operation::Join { notation, widening, .. } = call.operation else { return Err(Error::planning()); };
     let roots = join_roots(call);
     let (frame, prototype) = if *notation == Notation::Cells {
         if call.explicit_roots < 2 { return Err(Error::planning()); }
@@ -188,15 +182,17 @@ fn call_joining(call: &CallView<'_>) -> Result<Option<Joining>, Error> {
         let Some(desc) = call.root_desc(root) else { return Ok(None); };
         cells.push(desc.into_owned());
     }
-    joining(&frame, &cells, &prototype, *notation, join_widening(call), None)
+    let fill = call.fill_root().map(|_| cells.len());
+    joining(&frame, &cells, &prototype, *notation, *widening, fill)
 }
 pub(crate) fn join_build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
     let Some(join) = call_joining(call)? else { return host_build(call, set); };
     let roots = join_roots(call);
-    let step = if roots.is_empty() { Step::Call } else { Step::Copy { source: call.root(roots.start).leaves.start.try_into().map_err(|_| Kind::Length)? } };
+    let step = Step::Join { sources: call.root_boundary(roots.start).try_into().map_err(|_| Kind::Length)?
+        ..call.root_boundary(roots.end).try_into().map_err(|_| Kind::Length)? };
     let read = join.read.compose_inputs(&mut |source, items| {
-        if source >= roots.len() { return Err(Error::planning()); }
-        Ok(ReadPlan::input(call.root(roots.start + source).leaves.start, items))
+        let root = if source < roots.len() { call.root(roots.start + source) } else { call.fill_root().ok_or_else(Error::planning)? };
+        Ok::<_, Error>(ReadPlan::input(root.leaves.start, items))
     })?;
     Ok((step, Some(Outputs::one(Some(join.desc))), Some(read)))
 }
@@ -246,14 +242,18 @@ pub(crate) fn assemble_stored(
     read_values(layout, &read, &values, &prototype.prototype(), widening)
 }
 pub(crate) fn join_code(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
-    let Operation::Join(notation) = call.operation else { return Err(Error::planning()); };
+    let Operation::Join { notation, widening, .. } = call.operation else { return Err(Error::planning()); };
     let roots = join_roots(call);
-    let cells = roots.clone().map(|root| call.root_input(root)?.exposed()).collect::<Result<Vec<_>, _>>()?;
-    if let Some(join) = call_joining(call)? { return read_joined(join, &cells).map(Outputs::one); }
+    let mut cells = roots.clone().map(|root| call.root_input(root)?.exposed()).collect::<Result<Vec<_>, _>>()?;
+    let fill = call.fill_root().map(|root| call.root_value(root.index, ReadKind::Value).map(Cow::into_owned)).transpose()?;
+    if let Some(join) = call_joining(call)? {
+        if let Some(fill) = fill { cells.push(fill); }
+        return read_joined(join, &cells).map(Outputs::one);
+    }
     let (frame, prototype) = if *notation == Notation::Cells { (call.root_layout(0)?.into_owned(), call.root_value(1, ReadKind::Value)?.into_owned()) }
     else { (Layout::from([cells.len()]), cells.first().map_or(Value::integer(0), Value::zeroed)) };
-    let value = if *notation == Notation::Strand { Value::stored_values(frame, cells, Some(prototype), Widening::Items)? }
-    else { assemble_stored(&frame, &cells, &prototype, join_widening(call), None, call.numeric()?)? };
+    let value = if *notation == Notation::Strand { Value::stored_values(frame, cells, Some(prototype), *widening)? }
+    else { assemble_stored(&frame, &cells, &prototype, *widening, fill.as_ref(), call.numeric()?)? };
     Ok(Outputs::one(value))
 }
 
@@ -261,6 +261,6 @@ pub(crate) fn stack(frame: &Value, cells: &[Value], prototype: &Value, numeric: 
     let mut values = Vec::with_capacity(cells.len() + 2);
     values.extend([frame.clone(), prototype.clone()]);
     values.extend_from_slice(cells);
-    let origin = Operation::Join(Notation::Cells).origin_numeric(&values, 0, numeric)?;
+    let origin = Operation::join(Notation::Cells, Widening::of_results(numeric.kinds)).origin_numeric(&values, 0, numeric)?;
     Operation::dispatch(origin.reborrow())?.assemble()
 }

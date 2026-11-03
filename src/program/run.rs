@@ -18,7 +18,7 @@ pub(crate) fn schedule(original: Arc<Program>, running: &mut Running, from: usiz
     let order: Vec<_> = program.order(0).into_iter().take_while(|&node| node < until).collect();
     if !freshen(&mut program, running, &order)? { return Err(Error::planning()); }
     if crate::settings::verifies() { super::verify::check(&program); }
-    let execution = program.remaining(running);
+    let execution = program.execution_order(from);
     let readers = readers(&program, &execution);
     let mut stages = Vec::new();
     let mut group = super::blocks::Builder::default();
@@ -100,30 +100,36 @@ fn flush(
 fn completion(program: &Program, running: &Running, stages: &[Stage], until: usize) -> (Box<[Box<[usize]>]>, Box<[Box<[usize]>]>) {
     let mut producers = vec![None; program.nodes.len()];
     let mut last = vec![None; program.nodes.len()];
-    let mut keep = vec![false; program.nodes.len()];
+    let mut keep = vec![0u8; program.nodes.len()];
+    let mut addressed = vec![usize::MAX; program.nodes.len()];
     for (index, stage) in stages.iter().enumerate() {
         match stage {
             Stage::Step(node) => producers[*node] = Some(index),
             Stage::Block(block) => { for output in block.outputs() { producers[output.node] = Some(index); } }
         }
         let nodes = match stage { Stage::Step(node) => std::slice::from_ref(node), Stage::Block(block) => block.members() };
-        for &node in nodes {
-            for (position, read) in program.dependencies(node).iter().enumerate() {
-                if let Node::Step { origin, .. } = &program.nodes[node] && !origin.executes(position) { continue; }
-                if let Node::Step { origin, step, .. } = &program.nodes[node] && step.reads_through()
+        let mut pending: Vec<_> = nodes.iter().map(|&node| (node, false)).collect();
+        while let Some((node, address)) = pending.pop() {
+            if address && addressed[node] == index { continue; }
+            if address { addressed[node] = index; }
+            for (position, read, address) in program.demands(node, address) {
+                if address { pending.push((read.operand.node, true)); }
+                else if let Node::Step { origin, step, .. } = &program.nodes[node] && step.reads_through()
                     && let Some(route) = running.read(origin.list.start as usize + position) {
                         for source in &route.sources { last[source.node] = Some(index); }
                     } else { last[read.operand.node] = Some(index); }
             }
         }
     }
-    let mut crossing: Vec<_> = program.execution_order(until).into_iter().flat_map(|node| program.execution_dependencies(node).map(|read| read.operand))
-        .filter(|output| output.node < until).chain(program.live_roots()).collect();
-    while let Some(output) = crossing.pop() {
-        if keep[output.node] { continue; }
-        keep[output.node] = true;
-        if producers[output.node].is_none() && running.value(program, output).is_none() && !running.is_complete(program, Out::control(output.node)) {
-            crossing.extend(program.execution_dependencies(output.node).map(|read| read.operand));
+    let mut crossing: Vec<_> = program.execution_order(until).into_iter()
+        .flat_map(|node| program.demands(node, false).map(|(_, read, address)| (read.operand, address)))
+        .filter(|(output, address)| *address || output.node < until).chain(program.live_roots().map(|output| (output, false))).collect();
+    while let Some((output, address)) = crossing.pop() {
+        let bit = if address { 2 } else { 1 };
+        if keep[output.node] & bit != 0 { continue; }
+        keep[output.node] |= bit;
+        if address || (producers[output.node].is_none() && running.value(program, output).is_none() && !running.is_complete(program, Out::control(output.node))) {
+            crossing.extend(program.demands(output.node, address).map(|(_, read, address)| (read.operand, address)));
         }
     }
     let mut publications = vec![Vec::new(); stages.len()];
@@ -138,7 +144,7 @@ fn completion(program: &Program, running: &Running, stages: &[Stage], until: usi
         }
     }
     let mut releases = vec![Vec::new(); stages.len()];
-    for (node, at) in last.into_iter().enumerate() { if !keep[node] && let Some(at) = at { releases[at].push(node); } }
+    for (node, at) in last.into_iter().enumerate() { if keep[node] & 1 == 0 && let Some(at) = at { releases[at].push(node); } }
     (releases.into_iter().map(Vec::into_boxed_slice).collect(), publications.into_iter().map(Vec::into_boxed_slice).collect())
 }
 
@@ -172,11 +178,10 @@ pub(crate) fn refill(plan: &mut Plan, running: &mut Running, from: usize) -> Res
 struct Rebound { step: Step, outputs: super::Description, reads: Vec<super::Read>, plan: Option<rustymath::agreement::ReadPlan> }
 
 fn bind_input(program: &Program, running: &mut Running, node: usize) -> bool {
-    if let Node::Input { position, desc, .. } = &program.nodes[node] && let Some(value) = running.inputs.get(*position).and_then(Option::as_ref)
-        && let Some(current) = Desc::leaf(value).map(Desc::opaque) {
-            if let Some(recorded) = &program.descs[*desc as usize] && !super::verify::compatible(recorded, &current) { return false; }
-            running.geometry.descs[*desc as usize] = Some(current);
-        }
+    if let Node::Input { position, desc, .. } = &program.nodes[node] && let Some(current) = running.binding.input_desc(*position).cloned() {
+        if let Some(recorded) = &program.descs[*desc as usize] && !super::verify::compatible(recorded, &current) { return false; }
+        running.geometry.descs[*desc as usize] = Some(current);
+    }
     true
 }
 
@@ -577,7 +582,7 @@ pub(crate) fn framed_fallback(
     let reference = super::control::frame_reference(&crate::array::Layout::from(frame.layout), &references)?;
     if notation == Notation::Strand {
         if results.is_empty() { return Ok(reference.layout().collect(results, prototype.zeroed())?); }
-        let call = crate::eval::projected_call(&origin, Operation::Join(notation), &results, &vec![None; results.len()])?;
+        let call = crate::eval::projected_call(&origin, Operation::join(notation, crate::array::Widening::Items), &results, &vec![None; results.len()])?;
         return Operation::dispatch(call.reborrow())?.assemble()?.with_layout(reference.layout().clone());
     }
     super::control::assemble(&reference, &results, &prototype, origin.mode)

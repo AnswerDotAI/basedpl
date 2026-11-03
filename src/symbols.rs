@@ -88,7 +88,7 @@ pub fn symbols() -> &'static [Symbol] {
         let operators = OperatorKind::all().filter(|op| op.info().glyph.chars().count() == 1).map(|op| {
             let info = op.info();
             let [name, monad, dyad] = info.names;
-            let kind = if info.dyadic { "dyadic-operator" } else { "monadic-operator" };
+            let kind = if info.dyadic() { "dyadic-operator" } else { "monadic-operator" };
             Symbol { glyph: info.glyph, name, kind, monad, dyad, monad_rank: String::new(), dyad_ranks: String::new(), hanzi: hanzi(info.glyph) }
         });
         syntax.chain(primitives).chain(operators).collect()

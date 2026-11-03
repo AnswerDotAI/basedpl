@@ -109,7 +109,7 @@ pub(super) fn duplicates(right: &Value, numeric: Numeric) -> Result<Value, Error
 
 /// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪` matches them. `#⁻¹` decodes the result back to `right`. `#/` does too, unless `right` is a unit or has leading keys. A unit gives the rank-0 length 1 and the unit itself. A keyed leading axis moves into a third item, the keys of every position, because a run's cells can have different keys.
 pub(super) fn runs(right: &Value, numeric: Numeric) -> Result<Value, Error> {
-    if right.is_unit() { return Value::new(vec![2], vec![Value::integer(1), right.clone()]).described("invalid runs"); }
+    if right.is_unit() { return Ok(Value::tuple(vec![Value::integer(1), right.clone()])); }
     let (first, axis) = classes(right, numeric)?;
     let starts: Vec<bool> = first.iter().enumerate().map(|(i, &f)| i == 0 || f != first[i - 1]).collect();
     let mut lengths: Vec<u64> = Vec::new();

@@ -233,7 +233,7 @@ pub(crate) fn cells(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize) -
             call.operation = Operation::Product { contracted: *contracted, pairing };
             Ok(call)
         }
-        Operation::Read(ReadOp::Cells { .. }) | Operation::Join(_) => crate::primitive::cell_read(origin, wholes, frame),
+        Operation::Read(ReadOp::Cells { .. }) | Operation::Join { .. } => crate::primitive::cell_read(origin, wholes, frame),
         Operation::Read(ReadOp::Axes { axes, destinations }) => {
             let mapped = |input| at_level(&origin.list[input], level.id).is_some();
             let mut output: Vec<_> = (0..frame).map(|axis| ViewAxis { input: 0, axis: mapped(0).then_some(axis) }).collect();

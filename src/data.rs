@@ -1,6 +1,7 @@
 use crate::execution::check;
 use crate::{
-    Described, Error, ErrorKind, Number, Span, Value, keyed, number::{Kind as NumberKind, Numeric}, primitive::{numeric, real}, session, system::HostCall
+    Described, Error, ErrorKind, Number, Span, Value, keyed, number::{Kind as NumberKind, Numeric}, primitive::{numeric, real}, program::trace::ReadKind,
+    session, system::HostCall
 };
 use rustymath::hashing::{HashMap, HashMapExt};
 use rustymath::{buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
@@ -59,6 +60,7 @@ impl Options {
     pub fn new(name: &'static str, value: Option<&Value>, shorthand: Option<&str>, allowed: &[&str]) -> Result<Self, Error> {
         let mut values = HashMap::new();
         let Some(value) = value else { return Ok(Self { values, name }) };
+        let value = value.read(ReadKind::Structure)?;
         if let Some(keys) = value.keys(0) {
             if value.shape().len() != 1 { return Err(Error::new(Kind::Rank, format!("{name} options must be a keyed vector"))); }
             for (k, v) in keys.names().iter().zip(value.elements()) {
@@ -67,7 +69,7 @@ impl Options {
                 if values.insert(k.clone(), v).is_some() { return Err(Error::domain(format!("duplicate {name} option: {k}"))); }
             }
         } else if let Some(key) = shorthand { values.insert(key.into(), value.clone()); }
-        else if !text(value).is_ok_and(|t| t.is_empty()) { return Err(Error::domain(format!("{name} expects '' or keyed options"))); }
+        else if !text(&value).is_ok_and(|t| t.is_empty()) { return Err(Error::domain(format!("{name} expects '' or keyed options"))); }
         Ok(Self { values, name })
     }
 

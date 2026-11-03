@@ -162,11 +162,11 @@ impl<'ports, 'root> Walking<'ports, 'root> {
     }
     fn sources(&mut self, value: &Value) -> Result<Option<Vec<usize>>> {
         let value = subject(value);
-        let Value::Pending(pending) = value else { return Err(foreign()); };
+        let Value::Pending(pending) = value else { return Ok(None); };
         let pending = pending.source();
         if let Some(port) = self.roots.source(&pending) { return Ok(Some(if port.writable { vec![port.position] } else { Vec::new() })); }
         if let Some(sources) = self.sources.get(&pending) { return Ok(Some(sources.clone())); }
-        let Some((step, origin)) = pending.node.recipe() else { return Err(foreign()); };
+        let Some((step, origin)) = pending.node.recipe() else { return Ok(None); };
         let Some(inputs) = step.selected_sources() else { return Ok(None); };
         let mut sources = Vec::new();
         for input in inputs {

@@ -2,7 +2,7 @@
 use super::binder::Category;
 use super::bindings::{Address, Callable};
 use super::*;
-use crate::syntax::{Definition, DefinitionKind, Letter};
+use crate::{array::Widening, primitive::Notation, syntax::{Definition, DefinitionKind, Letter}};
 use std::{borrow::Cow, ops::Range};
 
 /// The statement executor's inline registers; larger statements use heap storage.
@@ -354,7 +354,7 @@ impl Entity {
         Ok(match self.term {
             Term::Binding(value) => value, Term::Train(tines) => Binding::from(Function::train_operands(tines, &span())?),
             Term::Postfix(postfix) => Binding::Operator(postfix.operator(&span())?), Term::Left(a, f) => Binding::from(before(a, f.function()?, &span())?),
-            Term::Strand(items) => Binding::Value(Value::new(vec![items.len()], items).map_err(|k| Error::new(k, "invalid strand").at(&span()))?),
+            Term::Strand(items) => Binding::Value(Operation::join(Notation::Strand, Widening::Items).call(&items, 0).map_err(|error| error.at(&span()))?),
             Term::Entries(_) => unreachable!("a keyed item's entries go only into its literal")
         })
     }

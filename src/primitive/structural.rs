@@ -119,11 +119,11 @@ pub(super) fn enclose_axes(right: &Value, axes: &[usize]) -> Result<Value, Error
 }
 
 pub(super) fn mix_axes(right: &Value, spec: &Value, span: &Span, numeric: Numeric) -> Result<Value, Error> {
-    placed_cells(&Primitive::Mix.call(None, right, span, numeric)?, right.shape().len(), spec)
+    Primitive::Mix.call_parameters(&[right.clone(), spec.clone()], Pairing::Explicit { fill: false }, span, numeric)
 }
 
 /// `mixed`, the mix of an array of rank `frame`, with its cell axes at the axes that `spec` lists, as `⊃⍠spec` places them: one axis gives the first of consecutive axes, and a vector gives each axis.
-pub(super) fn placed_cells(mixed: &Value, frame: usize, spec: &Value) -> Result<Value, Error> {
+fn placed_cells(call: &CallView<'_>, mixed: &Value, frame: usize, spec: &Value) -> Result<Value, Error> {
     let rank = mixed.shape().len();
     let cell_rank = rank - frame;
     let positions = if spec.is_singleton() { let start = single_axis(spec, frame + 1)?; (start..start + cell_rank).collect::<Vec<_>>() }
@@ -133,7 +133,9 @@ pub(super) fn placed_cells(mixed: &Value, frame: usize, spec: &Value) -> Result<
     for (i, &a) in positions.iter().enumerate() { order[a] = frame + i; }
     let mut axes = 0..frame;
     for a in &mut order { if *a == usize::MAX { *a = axes.next().unwrap(); } }
-    reorder(mixed, &order)
+    let axes = order.iter().map(|&axis| ViewAxis { input: 0, axis: Some(axis) }).collect();
+    let destinations = rustymath::search::inverse_permutation(order.into_iter());
+    call.apply(Operation::Read(ReadOp::Axes { axes, destinations: destinations.into() }), &[mixed.clone()], &[None])
 }
 
 /// The axis names that the shape `dimensions` gives reshape and `⍳`: each key names its entry's axis, and an unkeyed entry leaves its axis unnamed.
@@ -429,11 +431,13 @@ pub(super) fn split(right: &Value, axis: Option<usize>) -> Result<Value, Error> 
     enclose_axes(right, &[axis])
 }
 
-pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: bool) -> Result<Value, Error> {
+fn partition(call: &CallView<'_>, left: &Value, right: &Value, axis: Option<usize>, runs: bool) -> Result<Value, Error> {
     if left.shape().len() > 1 || runs && right.is_unit() {
         return Err(Error::new(Kind::Rank, "partition needs a unit or vector left argument and a right argument that is not a unit"));
     }
-    let right = if right.is_unit() { right.with_shape(vec![1]).unwrap() } else { right.clone() };
+    let right = if right.is_unit() {
+        call.apply(Operation::Read(ReadOp::Reshape), &[Value::integer(1), right.clone()], &[None, None])?
+    } else { right.clone() };
     let axis = axis.unwrap_or(0);
     let traversal = Lanes::new(right.shape(), axis)?;
     let items = left.as_items();
@@ -458,20 +462,12 @@ pub(super) fn partition(left: &Value, right: &Value, axis: Option<usize>, runs: 
     let cell_layout = |range: std::ops::Range<usize>| CoreLayout::select(right.layout(), axis, range.map(Some));
     let prototype = cell_layout(0..0).map_err(ErrorKind::from).and_then(|layout| Layout::rearranged(layout, right.layout()).collect(vec![], right.prototype()))
         .described("invalid partition prototype")?;
-    // A partition of a plain array along its leading axis, or along an axis below axes of length 1, is a range of its items, which `part` lends as a view.
-    let leading = traversal.outer == 1 && right.layout().plain();
     let part = |range: std::ops::Range<usize>| -> Result<Value, Error> {
-        if leading {
-            let mut shape = right.shape().to_vec();
-            shape[axis] = range.len();
-            return right.part(range.start * traversal.inner..range.end * traversal.inner, shape).described("invalid partition");
-        }
-        let layout = cell_layout(range.clone())?;
-        let steps = vec![
-            Steps::along(traversal.outer, traversal.len * traversal.inner),
-            Steps::Stride { start: range.start * traversal.inner, len: range.len(), step: traversal.inner as isize }, Steps::along(traversal.inner, 1),
-        ];
-        remap(&right, Plan { layout, steps }, None)
+        let axis = Value::integer(axis as i64);
+        let dropped = call.apply(Operation::Primitive { primitive: Primitive::Drop, pairing: Pairing::Explicit { fill: false } },
+            &[Value::integer(range.start as i64), right.clone(), axis.clone()], &[None; 3])?;
+        call.apply(Operation::Primitive { primitive: Primitive::Take, pairing: Pairing::Explicit { fill: false } },
+            &[Value::integer(range.len() as i64), dropped, axis], &[None; 3])
     };
     // A partition starts at its divider and grows as the walk extends it. The next divider completes it.
     let mut data = Vec::with_capacity(total);
@@ -499,6 +495,34 @@ pub(super) fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, E
         let source = call.source_roots()?.into_iter().next().ok_or_else(Error::planning)?.index;
         return call.root_input(source).map(|value| Some(Outputs::one(value.into_owned())));
     }
+    if *primitive == Primitive::Mix && roots.len() == 1 {
+        let right = call.root_input(roots.start)?.exposed()?;
+        let mut mixed = if let Some(desc) = Desc::of(&right) {
+            if desc.atom {
+                call.apply(Operation::Read(ReadOp::Reshape), &[Value::integers([0], Vec::new())?, right.clone()], &[None, None])?
+            } else { right.clone() }
+        } else {
+            let mut args = vec![right.clone(), right.prototype()];
+            args.extend(right.elements());
+            let fill = call.fill_root();
+            if let Some(fill) = &fill { args.push(call.root_input(fill.index)?.into_owned()); }
+            call.apply(Operation::Join { notation: Notation::Cells, widening: Widening::Arrays, fill: fill.is_some() }, &args, &vec![None; args.len()])?
+        };
+        if let Some(root) = call.axis_root() {
+            let spec = call.root_value(root.index, ReadKind::Structure)?;
+            mixed = placed_cells(&call, &mixed, right.rank(), &spec)?;
+        }
+        return Ok(Some(Outputs::one(mixed)));
+    }
+    if roots.len() == 2 && matches!(primitive, Primitive::Enclose | Primitive::Nest) {
+        let left = call.root_value(roots.start, ReadKind::Count)?;
+        let right = call.root_input(roots.end - 1)?.exposed()?;
+        let axis = call.axis_root().map(|root| {
+            let spec = call.root_value(root.index, ReadKind::Structure)?;
+            single_axis(&resolve_axes(&spec, right.layout())?, right.rank())
+        }).transpose()?;
+        return partition(&call, &left, &right, axis, *primitive == Primitive::Nest).map(|value| Some(Outputs::one(value)));
+    }
     if roots.len() != 1 || !matches!(primitive, Primitive::Enclose | Primitive::Nest) { return Ok(None); }
     let right = call.root_input(roots.start)?;
     let value = if let Some(root) = call.axis_root() {
@@ -522,7 +546,7 @@ pub(super) fn sources(call: &CallView<'_>) -> Result<Vec<TreeRoot>, Error> {
 }
 fn parameter_read(primitive: Primitive) -> Option<ReadKind> {
     Some(match primitive {
-        Primitive::Shape | Primitive::Take | Primitive::Drop | Primitive::Replicate | Primitive::Reverse(_) | Primitive::Enclose | Primitive::Nest => {
+        Primitive::Shape | Primitive::Take | Primitive::Drop | Primitive::Replicate(_) | Primitive::Reverse(_) | Primitive::Enclose | Primitive::Nest => {
             ReadKind::Count
         }
         Primitive::Transpose | Primitive::Windows | Primitive::Keys => ReadKind::Structure,
@@ -658,9 +682,9 @@ fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
             let map = if layout.count() == desc.layout.count() { Mapping::Linear(1) } else { Mapping::Tiled(desc.layout.count()) };
             (layout, false, map)
         }
-        (Replicate, Some(counts)) => {
+        (Replicate(inverse), Some(counts)) => {
             let axis = match axis.as_deref() { Some([axis]) => *axis, Some(_) => return Err(Error::new(Kind::Rank, "one axis is required")), None => 0 };
-            let plan = replication(counts, &desc.layout, axis, false)?;
+            let plan = replication(counts, &desc.layout, axis, inverse)?;
             (Layout::rearranged(plan.layout, &desc.layout), false, Mapping::from(plan.steps))
         }
         (Take, None) => (desc.layout.axes(usize::from(rank != 0)..rank), rank <= 1, Mapping::Linear(1)),

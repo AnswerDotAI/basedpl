@@ -170,7 +170,7 @@ fn read_result(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<(L
         ReadOp::Root(_) => (source.clone(), call.root_atom(0)?),
         ReadOp::Ravel => (Layout::from([source.count()]), false),
         ReadOp::Reshape => {
-            let dimensions = call.parameter(0).ok_or_else(|| Error::domain("reshape needs its dimensions"))?;
+            let dimensions = call.parameter(0)?.ok_or_else(|| Error::domain("reshape needs its dimensions"))?;
             let shape = dimensions.as_items().nonnegative_integers::<usize>().map_err(|error| Error::new(error, "invalid reshape dimensions"))?;
             rustymath::layout::element_count(&shape)?;
             (Layout::from(shape), false)
@@ -208,7 +208,8 @@ fn read_position(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<
         ReadOp::Cell { rank } => source.shape()[..source.shape().len().checked_sub(*rank).ok_or_else(Error::planning)?].iter().product(),
         ReadOp::Slice { axis } => *source.shape().get(*axis).ok_or_else(Error::planning)?, _ => return Err(Error::planning())
     };
-    let position = call.parameter(0).and_then(Value::as_number).ok_or_else(|| Error::domain("a read position must be numeric"))?;
+    let parameter = call.parameter(0)?;
+    let position = parameter.as_deref().and_then(Value::as_number).ok_or_else(|| Error::domain("a read position must be numeric"))?;
     let nan = position.as_float().is_some_and(f64::is_nan);
     let at = position.integer().ok().and_then(|n| rustymath::layout::position(n, length));
     Ok((at, nan))
@@ -560,7 +561,7 @@ pub(crate) fn roles_relation(call: &CallView<'_>) -> Result<crate::primitive::Ro
                 Relation::Result | Relation::Back(_) | Relation::Validate => true,
             };
             let read = match original.roles.kind(position) {
-                None | Some(ReadKind::Kind | ReadKind::Description) if descriptor => Some(ReadKind::Description), read => read
+                None | Some(ReadKind::Kind | ReadKind::Description) if sources.contains(&absolute) => descriptor.then_some(ReadKind::Description), read => read
             };
             if let Some(read) = read { roles = roles.with(position + if position >= insertion { range.len() } else { 0 }, read); }
         }

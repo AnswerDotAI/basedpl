@@ -3,9 +3,10 @@
 use super::*;
 use crate::{array::Tree, program::GatherIndex};
 use rustymath::{
-    agreement::{Missing, ReadPlan}, buffer::View, error::Kind, layout::Layout as CoreLayout,
+    agreement::{Missing, ReadPlan}, buffer::View, error::Kind, gather::Table, layout::Layout as CoreLayout,
     structure::{self, IndexPart, Plan, Routes, Selector as AxisSelector}
 };
+use std::sync::Arc;
 
 /// `left⌷right`. With `axes`, as `⌷⍠axes`, the selectors apply to the axes that `axes` lists, one for each position or key a selector holds, so a selector of coordinates lists each axis it covers. Its result takes the place of the first of those axes in the array. A NaN position reads `fill`, or the prototype where there's none.
 pub(super) fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Value>, span: &Span) -> Result<Value, Error> {
@@ -475,7 +476,7 @@ impl Value {
         rustymath::structure::plan_parts(layout, &claims, None, true, writes, |i, axis| {
             if let Some(decoded) = frontend(i, axis) { return decoded; }
             let IndexPart::Axis(Some(value)) = &parts[i] else { unreachable!("the frontend decodes the parts that hold no value") };
-            axis_part(value, layout, axis).map_err(&err)
+            axis_part(value, layout, axis, true).map_err(&err)
         }, |e| err(Error::new(e, "")))
     }
     /// Whether `part`, the first written axis part of an index of this value, selects pick paths, which `select` reads.
@@ -559,32 +560,28 @@ fn axis_positions(
     }
     let (plan, direct) = rustymath::structure::plan_parts(layout, &source_claims(parts), axes, paired, writes, |i, axis| {
         let IndexPart::Axis(value) = &parts[i] else { unreachable!("an axis refers to its written payload") };
-        axis_part(value, layout, axis)
+        axis_part(value, layout, axis, true)
     }, |e| Error::new(e, ""))?;
     Ok(Positions::Plan(plan, direct))
 }
 
 /// The selector that `value`, one written axis part, gives at `axis` of an array with `layout`, and whether it reads one position. Coordinates read their axes as one axis, keys read their positions, and other values are positions.
-pub(crate) fn axis_part(value: &Value, layout: &rustymath::layout::Layout, axis: usize) -> Result<(AxisSelector, bool), Error> {
+pub(crate) fn axis_part(value: &Value, layout: &rustymath::layout::Layout, axis: usize, checked: bool) -> Result<(AxisSelector, bool), Error> {
     if let Some(k) = coordinate_width(value) {
         let fields = coordinate_parts(value, k).ok_or_else(|| Error::new(Kind::Domain, "pick paths that go inside items select alone"))?;
         let positions = fields.iter().map(|fields| cell_offset(layout, axis, fields, false)).collect::<Result<_, _>>()?;
-        return Ok((AxisSelector::Indices { layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::gather::Table::new(positions) },
+        return Ok((AxisSelector::Indices { layout: CoreLayout::clone(value.layout()), positions: Table::new(positions) },
             false));
     }
     let size = layout.shape()[axis];
     let value = axis_selector(value, layout, axis)?;
-    let selector = match value.view() {
-        Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)) if !value.is_atom() => AxisSelector::Indices {
-            layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::structure::index_table(std::sync::Arc::new(value.clone()), size)? },
-        _ => {
-            let positions = positions(&value, size)?;
-            match positions[..] {
-                [i] if value.is_atom() && i != Steps::FILL => AxisSelector::At(i),
-                _ => AxisSelector::Indices { layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::gather::Table::new(positions) },
-            }
-        }
+    let positions = match value.view() {
+        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) if !checked => Table::new(structure::positions_mode(view, size, false)?),
+        Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)) if !value.is_atom() => structure::index_table(Arc::new(value.clone()), size)?,
+        _ => Table::new(positions(&value, size)?),
     };
+    let selector = if value.is_atom() && let Some(i) = positions.get(0) { AxisSelector::At(i) }
+    else { AxisSelector::Indices { layout: CoreLayout::clone(value.layout()), positions } };
     Ok((selector, value.is_atom()))
 }
 
@@ -670,16 +667,21 @@ fn selector_parameter(call: &CallView<'_>, position: usize) -> bool {
     })
 }
 
+fn keyed_source(call: &CallView<'_>) -> bool {
+    index_source(call).and_then(|root| call.root_desc(root.index)).is_some_and(|desc| desc.layout.has_keys())
+}
+
 pub(super) fn index_roles(call: &CallView<'_>) -> Result<Roles, Error> {
     if call.explicit_argument_roots().len() != 2 { return Ok(Roles::default()); }
     let root = call.root(call.explicit_argument_roots().start);
     let first = call.root_boundary(call.operation.functions());
-    Ok(root.leaves.filter(|&position| selector_parameter(call, position))
+    Ok(root.leaves.filter(|&position| keyed_source(call) || selector_parameter(call, position))
         .fold(Roles::default(), |reads, position| reads.with(position - first, ReadKind::Structure)))
 }
 
 fn structural_selector(call: &CallView<'_>, root: &TreeRoot) -> bool {
-    root.leaves.clone().all(|position| selector_parameter(call, position) || position < 64 && call.literals & (1 << position) != 0)
+    let first = call.root_boundary(call.operation.functions());
+    root.leaves.clone().all(|position| call.roles.kind(position - first) == Some(ReadKind::Structure) || position < 64 && call.literals & (1 << position) != 0)
 }
 
 /// A known selection of a heterogeneous wrapper projects its original children, not their values.
@@ -711,6 +713,7 @@ fn index_projection(origin: Origin<&[Value]>, purpose: ReadKind) -> Result<Optio
 }
 
 pub(super) fn pick_form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
+    if origin.call_view(&origin.list).explicit_argument_roots().len() == 1 { return super::structural::form(origin); }
     if session().prototype.get() { return super::host_primitive(&origin.call_view(&origin.list)).map(Some); }
     if let Some(outputs) = fill_form(origin.reborrow())? { return Ok(Some(outputs)); }
     pick_projection(origin, ReadKind::Structure)
@@ -774,10 +777,10 @@ pub(crate) fn selection_projection(origin: Origin<&[Value]>) -> Result<Option<Va
     }
 }
 fn gather_part(call: &CallView<'_>, position: usize, item: Option<usize>) -> Result<Option<IndexPart<GatherPart>>, Error> {
-    let known = selector_parameter(call, position).then(|| call.value(position, ReadKind::Structure)).transpose()?;
+    let known = call.parameter(position - call.root_boundary(call.operation.functions()))?;
     let known = known.as_deref().map(|value| item.map_or_else(|| value.clone(), |item| value.at(item)));
     match known.map(squad_part) {
-        Some(IndexPart::Axis(value)) if value.dtype().is_some_and(|dtype| dtype != DType::Character) => {}
+        Some(IndexPart::Axis(value)) if !keyed_source(call) && value.dtype().is_some_and(|dtype| dtype != DType::Character) => {}
         Some(part) => return Ok(Some(part.map(GatherPart::Known))), None => {}
     }
     let Some(mut desc) = call.desc(position).map(Cow::into_owned) else { return Ok(None) };
@@ -836,7 +839,7 @@ pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Erro
     let routes = structure::routes(&desc.layout, &claims, axes.as_deref(), |part, axis| {
         let IndexPart::Axis(part) = &parts[part] else { unreachable!("a selector claim") };
         match part {
-            GatherPart::Known(value) => axis_part(value, &desc.layout, axis),
+            GatherPart::Known(value) => axis_part(value, &desc.layout, axis, call.mode.dynamic),
             GatherPart::Data(input, desc) => { indices.push(*input); Ok((AxisSelector::Shaped { layout: CoreLayout::clone(&desc.layout) }, desc.atom)) }
         }
     }, Error::from)?;

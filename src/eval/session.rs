@@ -1,7 +1,7 @@
 //! The session's evaluation API, names, display, file loading and name lookup, and calls of dfns with their error guards.
 
 use super::*;
-use crate::syntax::Statement;
+use crate::{array::Widening, primitive::Notation, syntax::Statement};
 use rustymath::{buffer::FloatWidth, error::Kind};
 
 impl Session {
@@ -617,8 +617,8 @@ impl Session {
     pub(super) fn list_literal(node: &Node, arrays: Vec<Value>) -> Result<Binding, Error> {
         let NodeKind::ArrayLiteral { form, .. } = &node.kind else { unreachable!("a bracket literal") };
         if arrays.is_empty() { return Ok(Binding::from_element(crate::syntax::zilde(crate::Number::float(0.0, crate::settings::float_width())))); }
-        let result = if *form == ListForm::Cells { Operation::Join(crate::primitive::Notation::Rows).call(&arrays, 0) }
-        else { Value::new(vec![arrays.len()], arrays).map_err(Error::from) };
+        let notation = if *form == ListForm::Cells { Notation::Rows } else { Notation::Strand };
+        let result = Operation::join(notation, Widening::Items).call(&arrays, 0);
         Ok(Binding::Value(result.map_err(|error| error.at(&node.span))?))
     }
 
