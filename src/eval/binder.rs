@@ -1,7 +1,10 @@
 //! The binder: the right-to-left reduction of a run's items by their categories, and the rewriting of dot access.
 
 use super::bindings::Address;
-use super::tree::{Entity, Fact, Facts, Keyed, Kind, Last, Layer, Level, Mark, Mismatch, Op, Postfix, Read, StatementCode, Split, Target, Term, To, constant, derived, lettered, narrow, paired, piece, postfixed, span_of};
+use super::tree::{
+    Entity, Fact, Facts, Keyed, Kind, Last, Layer, Level, Mark, Mismatch, Op, Postfix, Read, Split, StatementCode, Target, Term, To, constant, derived,
+    lettered, narrow, paired, piece, postfixed, span_of,
+};
 use super::*;
 
 impl Session {
@@ -34,22 +37,24 @@ impl Compiler<'_> {
             if (matches!(nodes[i].kind, NodeKind::Subscript(_)) && on_function
                 || matches!(nodes[i].kind, NodeKind::Operator(OperatorKind::Dot)) && matches!(out.last().map(|n| &n.kind), Some(NodeKind::Subscript(_))))
                 && let Some(start) = self.operand_start(&out, 0, out.len())? {
-                let inner = out.split_off(start);
-                let span = crate::syntax::cover(&inner);
-                out.push(Node { kind: NodeKind::Group(inner), span });
-                on_function = false;
-            }
+                    let inner = out.split_off(start);
+                    let span = crate::syntax::cover(&inner);
+                    out.push(Node { kind: NodeKind::Group(inner), span });
+                    on_function = false;
+                }
             if let (NodeKind::Operator(OperatorKind::Dot), Some(next)) = (&nodes[i].kind, nodes.get(i + 1)) {
-                let root = if on_function { None } else { match out.last() {
-                    Some(root) => {
-                        let array = match &root.kind {
-                            NodeKind::Name(_, _) | NodeKind::Group(_) => self.category(root)? == Category::Value,
-                            NodeKind::Literal(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Scope(..) => true, _ => false,
-                        };
-                        array.then_some(root)
+                let root = if on_function { None } else {
+                    match out.last() {
+                        Some(root) => {
+                            let array = match &root.kind {
+                                NodeKind::Name(_, _) | NodeKind::Group(_) => self.category(root)? == Category::Value,
+                                NodeKind::Literal(_) | NodeKind::ArrayLiteral { .. } | NodeKind::Scope(..) => true, _ => false
+                            };
+                            array.then_some(root)
+                        }
+                        None => None,
                     }
-                    None => None,
-                }};
+                };
                 // `.name` reads a field and `.[I]` selects, after an array or a function. After a function, a name that starts a dot path to a function is an inner product's operand instead, as in `+.ops.mul`.
                 let field = match (&next.kind, root.is_some()) { (NodeKind::Name(key, _), true) => Some(key.text()), _ => None };
                 let read = match &next.kind {
@@ -96,9 +101,10 @@ impl Compiler<'_> {
             while i + 1 < out.len() {
                 let NodeKind::Joiner(joiner) = out[i].kind else { i += 1; continue; };
                 let mut start = i - 1;
-                while start > 0 && matches!(out[start].kind, NodeKind::BoundOperator(OperatorKind::Power, _) | NodeKind::Operator(OperatorKind::Mark(_) | OperatorKind::Inverse) | NodeKind::Subscript(_) | NodeKind::Letter(_)) && touching(&out[start - 1], &out[start]) {
-                    start -= 1;
-                }
+                while start > 0 && matches!(
+                    out[start].kind, NodeKind::BoundOperator(OperatorKind::Power, _) | NodeKind::Operator(OperatorKind::Mark(_) | OperatorKind::Inverse)
+                        | NodeKind::Subscript(_) | NodeKind::Letter(_)
+                ) && touching(&out[start - 1], &out[start]) { start -= 1; }
                 let left =
                     if start + 1 == i { out[start].clone() } else { Node { kind: NodeKind::Group(out[start..i].to_vec()), span: cover(&out[start..i]) } };
                 if matches!(joiner, Joiner::Exponent) != exponent || !touching(&left, &out[i]) || !touching(&out[i], &out[i + 1])
@@ -150,9 +156,15 @@ impl Compiler<'_> {
     fn dot_path(&mut self, root: &Node, key: &str, range: std::ops::Range<u32>) {
         let path = match &root.kind {
             NodeKind::Name(name, _) => Some((*name, Vec::new())),
-            _ => { let at = narrow(&root.span.range); self.fields.iter().find(|(r, ..)| *r == at).map(|(_, name, keys)| (*name, keys.clone())) }
+            _ => {
+                let at = narrow(&root.span.range);
+                self.fields.iter().find(|(r, ..)| *r == at).map(|(_, name, keys)| (*name, keys.clone()))
+            }
         };
-        if let Some((name, mut keys)) = path && !self.fields.iter().any(|(at, ..)| *at == range) { keys.push(key.into()); self.fields.push((range, name, keys)); }
+        if let Some((name, mut keys)) = path && !self.fields.iter().any(|(at, ..)| *at == range) {
+            keys.push(key.into());
+            self.fields.push((range, name, keys));
+        }
     }
 
     /// Where the operand that ends at `end` in `nodes` starts, no further left than `begin` (`trailing`), compiling nothing.
@@ -195,9 +207,9 @@ impl Compiler<'_> {
                 let inner = self.selection(&inner)?.into_owned();
                 let item = if inner.len() == 1 { inner.into_iter().next().unwrap() } else { Node { kind: NodeKind::Group(inner), span } };
                 let span = Span { source: item.span.source.clone(), range: item.span.range.start..subscript.span.range.end };
-                out.push(Node { kind: NodeKind::Group(vec![
-                    index, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Index)), span: subscript.span }, item,
-                ]), span });
+                out.push(Node {
+                    kind: NodeKind::Group(vec![index, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Index)), span: subscript.span }, item]),
+                    span });
                 Cow::Owned(out)
             }
             _ => members,
@@ -210,8 +222,8 @@ impl Compiler<'_> {
         let selection = self.selection(&nodes[..nodes.len() - count])?;
         let mut slots = 0;
         let to = if count == 0 { self.plain(&selection, &mut slots)? }
-            else if self.session.assignment_names(&selection, &mut Some(&mut self.facts))? { self.names(&selection)? }
-            else { self.selected(&selection, &mut slots)? };
+        else if self.session.assignment_names(&selection, &mut Some(&mut self.facts))? { self.names(&selection)? }
+        else { self.selected(&selection, &mut slots)? };
         self.assigned.truncate(assigned);
         Ok(Target { to, slots, span: crate::syntax::cover(nodes), at: nodes[0].span.clone() })
     }
@@ -226,8 +238,7 @@ impl Compiler<'_> {
             _ if session.assignment_names(nodes, &mut Some(&mut self.facts))? => self.names(nodes)?,
             [Node { kind: NodeKind::Group(inner), .. }] => self.selected(inner, slots)?,
             _ => match session.rule_target(nodes, &mut Some(&mut self.facts))? {
-                Some((name, derivative)) => To::Rule(name, derivative, nodes[0].span.clone()),
-                None => self.selected(nodes, slots)?,
+                Some((name, derivative)) => To::Rule(name, derivative, nodes[0].span.clone()), None => self.selected(nodes, slots)?
             },
         })
     }
@@ -237,10 +248,13 @@ impl Compiler<'_> {
         Ok(match nodes {
             [Node { kind: NodeKind::Name(name, _), span }] => To::Name(*name, span.clone()),
             [Node { kind: NodeKind::Group(inner), .. }] => self.names(inner)?,
-            [Node { kind: NodeKind::ArrayLiteral { cells, record, .. }, span }] => match deferred(self.session.targets(cells, *record, &mut Some(&mut self.facts)))? {
-                Ok(cells) => To::Names(cells.into_iter().map(|(key, cell)| self.names(cell).map(|to| (key, to, cell[0].span.clone()))).collect::<Result<_, _>>()?, span.clone()),
-                Err(e) => To::Invalid(e),
-            },
+            [Node { kind: NodeKind::ArrayLiteral { cells, record, .. }, span }] => {
+                match deferred(self.session.targets(cells, *record, &mut Some(&mut self.facts)))? {
+                    Ok(cells) => To::Names(
+                        cells.into_iter().map(|(key, cell)| self.names(cell).map(|to| (key, to, cell[0].span.clone()))).collect::<Result<_, _>>()?, span.clone()
+                    ), Err(e) => To::Invalid(e)
+                }
+            }
             _ => unreachable!("`assignment_names` admits names, groups and brackets"),
         })
     }
@@ -248,8 +262,7 @@ impl Compiler<'_> {
     /// The selection target `nodes`, as layers (`layer`), or the error of one that assigns on its way to its root array.
     fn selected(&mut self, nodes: &[Node], slots: &mut usize) -> Result<To, Error> {
         Ok(match Session::root_assignment(nodes) {
-            Some(span) => To::Invalid(Error::new(ErrorKind::Syntax, INVALID_SELECTION).at(&span)),
-            None => To::Selected(self.layer(nodes, slots)?),
+            Some(span) => To::Invalid(Error::new(ErrorKind::Syntax, INVALID_SELECTION).at(&span)), None => To::Selected(self.layer(nodes, slots)?)
         })
     }
 
@@ -259,9 +272,8 @@ impl Compiler<'_> {
         let (mut nodes, mut keys) = (nodes, true);
         loop {
             match nodes {
-                [Node { kind: NodeKind::Group(inner), .. }] => nodes = inner,
-                [Node { kind: NodeKind::Run(inner), .. }] => (nodes, keys) = (inner, false),
-                _ => break,
+                [Node { kind: NodeKind::Group(inner), .. }] => nodes = inner, [Node { kind: NodeKind::Run(inner), .. }] => (nodes, keys) = (inner, false),
+                _ => break
             }
         }
         let selects = |node: &Node| matches!(node.kind.primitive(), Some(Primitive::Index | Primitive::Bracket | Primitive::Mix));
@@ -272,7 +284,8 @@ impl Compiler<'_> {
         let last_at = nodes.len() - 1;
         let split = at_split.map(|i| -> Result<Split, Error> {
             let index = deferred(self.part(&nodes[..i], None))?;
-            let slot = *slots; *slots += 1;
+            let slot = *slots;
+            *slots += 1;
             let unit = self.category(&nodes[i + 1])?.valence().is_none();
             let container = Box::new(self.layer(&nodes[i + 1..], slots)?);
             let p = nodes[i].kind.primitive().expect("a selecting primitive");
@@ -374,9 +387,7 @@ impl Rule {
 
 /// Whether `value` is a postfix operator, which binds an array before its neighbours use it, and stands for a call after one (`tree::Postfix::of`): a digit's or a mark's operator kind, or a bound `⍠`, as a subscript is.
 #[inline]
-pub(super) fn postfix(value: &Binding) -> bool {
-    matches!(value, Binding::Operator(op) if Postfix::of(op).is_some())
-}
+pub(super) fn postfix(value: &Binding) -> bool { matches!(value, Binding::Operator(op) if Postfix::of(op).is_some()) }
 
 /// The role that the compiler binds `value` with: the category that the binder gives it (`Category::bound`), and whether it's a postfix operator (`postfix`).
 #[inline]
@@ -392,8 +403,7 @@ pub(super) fn role_of(found: Option<&Binding>) -> (Category, bool) { found.map_o
 pub(super) fn field_role(found: Option<Binding>, keys: &[Arc<str>]) -> (Category, bool) {
     match found {
         Some(Binding::Value(a)) => keys.iter().try_fold(a, |a, key| (!numeric(&a)).then(|| crate::keyed::field(&a, key)).flatten())
-            .map_or(UNBOUND, |item| role(&Binding::from_element(item))),
-        found => role_of(found.as_ref()),
+            .map_or(UNBOUND, |item| role(&Binding::from_element(item))), found => role_of(found.as_ref())
     }
 }
 
@@ -404,7 +414,9 @@ fn numeric(a: &Value) -> bool { a.kind().is_some() }
 struct Item { read: Read, category: Category, role: Category, range: std::ops::Range<u32>, postfix: bool, call: bool, literal: bool }
 
 impl Item {
-    fn new(read: Read, category: Category, range: std::ops::Range<u32>) -> Self { Self { read, category, role: category, range, postfix: false, call: false, literal: false } }
+    fn new(read: Read, category: Category, range: std::ops::Range<u32>) -> Self {
+        Self { read, category, role: category, range, postfix: false, call: false, literal: false }
+    }
 }
 
 /// Pushes `item`, with the category it binds with against the item below it (`Category::before`).
@@ -435,8 +447,8 @@ fn note(facts: &mut Vec<Fact>, fact: Fact) { if !facts.contains(&fact) { facts.p
 
 /// The compiler of a statement: the binder's grammar applied to items that instructions compute as the statement runs, so that how a statement binds depends only on its text and on what the names it reads hold when it starts. A call's result is a value to the binder, whatever it holds. It keeps the instructions, constants and levels so far, the registers in use and free, every level's facts about what names hold, which the statement checks as it starts, each name that an assignment earlier in the statement binds, with the category of what it assigned, and the dot path of each field read that `members` formed, by its text (`dot_path`).
 pub(super) struct Compiler<'s> {
-    session: &'s Session, ops: Vec<Op>, constants: Vec<Entity>, levels: Vec<Option<Level>>, registers: u32, free: Vec<u32>,
-    facts: Vec<Fact>, assigned: Vec<(Name, Category)>, fields: Vec<(std::ops::Range<u32>, Name, Vec<Arc<str>>)>,
+    session: &'s Session, ops: Vec<Op>, constants: Vec<Entity>, levels: Vec<Option<Level>>, registers: u32, free: Vec<u32>, facts: Vec<Fact>,
+    assigned: Vec<(Name, Category)>, fields: Vec<(std::ops::Range<u32>, Name, Vec<Arc<str>>)>
 }
 
 impl<'s> Compiler<'s> {
@@ -451,15 +463,14 @@ impl<'s> Compiler<'s> {
     /// The statement `nodes` as this compiler compiled it, whose value `result` holds.
     fn finish(self, nodes: &[Node], result: Item) -> StatementCode {
         let levels = self.levels.into_iter().map(|level| level.expect("a level that the compiler closed")).collect();
-        StatementCode { ops: self.ops, constants: self.constants, registers: self.registers as usize, result: result.read, call: result.call, facts: self.facts, span: nodes[0].span.clone(), levels }
+        StatementCode { ops: self.ops, constants: self.constants, registers: self.registers as usize, result: result.read, call: result.call, facts: self.facts,
+            span: nodes[0].span.clone(), levels }
     }
 
     /// A compiler with nothing compiled.
     fn new(session: &'s Session) -> Self {
-        Compiler {
-            session, ops: Vec::new(), constants: Vec::new(), levels: Vec::new(), registers: 0, free: Vec::new(), facts: Vec::new(), assigned: Vec::new(),
-            fields: Vec::new()
-        }
+        Compiler { session, ops: Vec::new(), constants: Vec::new(), levels: Vec::new(), registers: 0, free: Vec::new(), facts: Vec::new(), assigned: Vec::new(),
+            fields: Vec::new() }
     }
 
     /// Where the operand that ends at `end` starts, no further left than `begin`, with its item, read right to left as `level` reads it. An operand is what the strongest rules join, as an operator joins its operand and a dyadic operator its right operand. An operator waits for its operand, so whatever is to its left joins it until one arrives.
@@ -542,7 +553,9 @@ impl<'s> Compiler<'s> {
             NodeKind::Name(name, take) => self.name(*name, *take, range)?,
             NodeKind::Subscript(index) => self.postfix_item(Postfix::Index(index.clone()), range),
             NodeKind::Letter(letter) => self.postfix_item(lettered(*letter), range),
-            NodeKind::BoundOperator(OperatorKind::Power, count) => self.postfix_item(Postfix::Power(count.as_number().expect("a superscript count").integer().expect("an integer superscript")), range),
+            NodeKind::BoundOperator(OperatorKind::Power, count) => {
+                self.postfix_item(Postfix::Power(count.as_number().expect("a superscript count").integer().expect("an integer superscript")), range)
+            }
             NodeKind::Operator(OperatorKind::Inverse) => self.postfix_item(Postfix::Power(-1), range),
             NodeKind::Operator(OperatorKind::Mark(mark)) => self.postfix_item(Postfix::Mark(*mark), range),
             NodeKind::Number { text, mark } => {
@@ -555,12 +568,14 @@ impl<'s> Compiler<'s> {
                 self.ops.push(Op::Number { text: Some("0"), mark: *mark, empty: true, to, range: range.clone() });
                 Item::new(Read::Register(to), Category::Value, range)
             }
-            NodeKind::Literal(_) | NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::BoundOperator(..) => self.constant(Term::Binding(constant(node)), range),
+            NodeKind::Literal(_) | NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::BoundOperator(..) => {
+                self.constant(Term::Binding(constant(node)), range)
+            }
             // A dfn becomes a function or an operator as it's read, which captures the frame that reads it.
             NodeKind::Dfn(definition) => {
                 let category = match definition.kind {
                     DefinitionKind::Function => Category::Function, DefinitionKind::MonadicOperator => Category::Operator,
-                    DefinitionKind::DyadicOperator => Category::DyadicOperator,
+                    DefinitionKind::DyadicOperator => Category::DyadicOperator
                 };
                 let to = self.register();
                 self.ops.push(Op::Closure { definition: definition.clone(), to, range: range.clone(), check: category });
@@ -574,7 +589,9 @@ impl<'s> Compiler<'s> {
             }
             // An unknown system name fails as it's read, where a known one would be a function.
             NodeKind::System(name) => self.fail(undefined(name, &node.span), Category::Function, range),
-            NodeKind::Joiner(_) => self.fail(Error::new(ErrorKind::Syntax, "ⱼ, ₑ and ᵣ join the two arrays they touch, as in xⱼy or 2ₑn").at(&node.span), Category::Value, range),
+            NodeKind::Joiner(_) => {
+                self.fail(Error::new(ErrorKind::Syntax, "ⱼ, ₑ and ᵣ join the two arrays they touch, as in xⱼy or 2ₑn").at(&node.span), Category::Value, range)
+            }
             _ => self.fail(Error::new(ErrorKind::Syntax, "unexpected assignment symbol").at(&node.span), Category::Value, range),
         })
     }
@@ -627,8 +644,7 @@ impl<'s> Compiler<'s> {
         self.one_value(node, value.category.valence().is_some())?;
         let path = self.fields.iter().find(|(at, ..)| *at == range).map(|(_, name, keys)| (*name, keys.clone()));
         let (category, postfix) = match path {
-            Some((name, keys)) => session.path_role(name, &keys, &mut Some(&mut self.facts))?,
-            None => (value.category.settled(), value.postfix),
+            Some((name, keys)) => session.path_role(name, &keys, &mut Some(&mut self.facts))?, None => (value.category.settled(), value.postfix)
         };
         if let Read::Constant(c) = value.read && self.ops.len() == start.ops + 1 {
             let constant = self.constants[c as usize].clone().value(&node.span.source)?;
@@ -658,16 +674,15 @@ impl<'s> Compiler<'s> {
             };
             // The value and the key are items of their own, value first. As one expression, `key:f` would be a train.
             let named = match &nodes[..colon] {
-                _ if colon + 1 < nodes.len() => None,
-                [Node { kind: NodeKind::Name(name, _), .. }] => Some(crate::keyed::text(name.text())),
-                _ => return Err(Error::new(ErrorKind::Syntax, "a key with no value is a name, as in [a:]").at(&nodes[colon].span)),
+                _ if colon + 1 < nodes.len() => None, [Node { kind: NodeKind::Name(name, _), .. }] => Some(crate::keyed::text(name.text())),
+                _ => return Err(Error::new(ErrorKind::Syntax, "a key with no value is a name, as in [a:]").at(&nodes[colon].span))
             };
             let at = if named.is_some() { 0..colon } else { colon + 1..nodes.len() };
             let text = narrow(&crate::syntax::cover(&nodes[at.clone()]).range);
             let (value, held) = self.item(node, &shared, k, at)?;
             functions |= value.category.settled() == Category::Function;
             // An absent value leaves its item out, key and all, and its key isn't evaluated.
-            if value.category == Category::Absent { self.release(value.read); continue }
+            if value.category == Category::Absent { self.release(value.read); continue; }
             let key = match named {
                 Some(key) => key,
                 None => match self.item(node, &shared, k, 0..colon)? {
@@ -676,7 +691,9 @@ impl<'s> Compiler<'s> {
                     }
                     // A key that isn't constant makes the item's entries as its own level ends, from the value that evaluated before it.
                     (key, Some(keyed)) => {
-                        let Some(Level { kind: Kind::Item { key: slot, .. }, .. }) = &mut self.levels[keyed as usize - 1] else { unreachable!("an item's level") };
+                        let Some(Level { kind: Kind::Item { key: slot, .. }, .. }) = &mut self.levels[keyed as usize - 1] else {
+                            unreachable!("an item's level")
+                        };
                         *slot = Some(Keyed::Value { value: value.read, colon: colon as u32 });
                         self.release(value.read);
                         pieces.push(key.read);
@@ -702,16 +719,15 @@ impl<'s> Compiler<'s> {
         let category = if functions { Category::Callable } else { Category::Value };
         let constants = &self.constants;
         let folded = if matches!(node.kind, NodeKind::ArrayLiteral { form: ListForm::Cells, .. }) { None } else {
-            pieces.iter().map(|piece| match piece { Read::Constant(c) => Some(Cow::Borrowed(&constants[*c as usize])), Read::Register(_) => None })
-                .collect::<Option<Vec<_>>>().and_then(|pieces| super::tree::assembled(node, pieces.into_iter()).ok())
+            pieces.iter().map(|piece| match piece {
+                Read::Constant(c) => Some(Cow::Borrowed(&constants[*c as usize])), Read::Register(_) => None
+            }).collect::<Option<Vec<_>>>().and_then(|pieces| super::tree::assembled(node, pieces.into_iter()).ok())
         };
-        if let Some(value) = folded {
-            self.truncate(start);
-            return Ok(self.constant(Term::Binding(value), range));
-        }
+        if let Some(value) = folded { self.truncate(start); return Ok(self.constant(Term::Binding(value), range)); }
         for &piece in &pieces { self.release(piece) }
         let to = self.register();
-        self.ops.push(Op::Array { literal: shared.get_or_init(|| Arc::new(node.clone())).clone(), pieces: pieces.into_boxed_slice(), to, range: range.clone(), check: category });
+        self.ops.push(Op::Array { literal: shared.get_or_init(|| Arc::new(node.clone())).clone(), pieces: pieces.into_boxed_slice(), to, range: range.clone(),
+            check: category });
         Ok(Item::new(Read::Register(to), category, range))
     }
 
@@ -736,10 +752,8 @@ impl<'s> Compiler<'s> {
         self.ops.push(Op::ExitItem { level: id, from: value.read });
         self.release(value.read);
         let to = self.register();
-        self.levels[id as usize - 1] = Some(Level {
-            to, range: text.clone(), span: nodes[0].span.clone(), check: Category::Value,
-            kind: Kind::Item { literal: shared.get_or_init(|| Arc::new(node.clone())).clone(), cell: cell as u32, key: None }
-        });
+        self.levels[id as usize - 1] = Some(Level { to, range: text.clone(), span: nodes[0].span.clone(), check: Category::Value,
+            kind: Kind::Item { literal: shared.get_or_init(|| Arc::new(node.clone())).clone(), cell: cell as u32, key: None } });
         Ok((Item::new(Read::Register(to), value.category, text), Some(id)))
     }
 
@@ -751,8 +765,7 @@ impl<'s> Compiler<'s> {
         if begin == i { return Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(span)); }
         match value.as_ref().map(|value| value.category) {
             Some(Category::NoResult) => return Err(Error::new(ErrorKind::Value, "assignment requires a value").at(span)),
-            Some(Category::Absent) => return Err(Error::new(ErrorKind::Value, ABSENT).at(span)),
-            _ => {}
+            Some(Category::Absent) => return Err(Error::new(ErrorKind::Value, ABSENT).at(span)), _ => {}
         }
         // A one-node target starts where it is, whatever its name holds, so only a longer one reads the roles of what its names hold.
         let (start, modifier) = if i - begin == 1 { (begin, None) } else { self.target(nodes, begin, i)? };
@@ -790,10 +803,7 @@ impl<'s> Compiler<'s> {
             let start = self.trailing(nodes, begin, operand).map(|(start, _)| start);
             self.truncate(read);
             start?
-        } else {
-            self.truncate(mark);
-            operand
-        };
+        } else { self.truncate(mark); operand };
         if start > begin && self.category(&nodes[start])? == Category::Value && self.category(&nodes[start - 1])? == Category::Value {
             let span = Span { source: nodes[start].span.source.clone(), range: nodes[start - 1].span.range.start..nodes[start].span.range.end };
             return Err(Error::new(ErrorKind::Syntax, STRAND_TARGET).at(&span));
@@ -836,10 +846,7 @@ impl<'s> Compiler<'s> {
                 let literal = left.literal;
                 self.folded(left, right, Category::Left, range, source, |left, right, to| Op::Attach { left, right, to, literal })
             }
-            Rule::Call if right.category == Category::Absent => {
-                self.release(left.read);
-                self.constant(Term::Binding(Binding::Absent), left.range)
-            }
+            Rule::Call if right.category == Category::Absent => { self.release(left.read); self.constant(Term::Binding(Binding::Absent), left.range) }
             Rule::Call => self.call(left, right, span, last),
             Rule::Train => {
                 let range = left.range.clone();
@@ -853,11 +860,12 @@ impl<'s> Compiler<'s> {
     }
 
     /// `left` and `right` reduced by the instruction that `op` makes, or, where both are constants, by running that instruction's step on them (`tree::paired`), which gives a constant where it succeeds; where it fails, the instruction fails as the statement runs. The item binds as `category`, with the text `range`.
-    fn folded(&mut self, left: Item, right: Item, category: Category, range: std::ops::Range<u32>, source: &Arc<Source>, op: impl Fn(Read, Read, u32) -> Op) -> Item {
-        if let (Read::Constant(l), Read::Constant(r)) = (left.read, right.read)
-            && let Ok(entity) = paired(&op(left.read, right.read, 0), Cow::Borrowed(&self.constants[l as usize]), Cow::Borrowed(&self.constants[r as usize]), source, false) {
-            return self.constant(entity.term, range);
-        }
+    fn folded(
+        &mut self, left: Item, right: Item, category: Category, range: std::ops::Range<u32>, source: &Arc<Source>, op: impl Fn(Read, Read, u32) -> Op) -> Item {
+        if let (Read::Constant(l), Read::Constant(r)) = (left.read, right.read) && let Ok(entity) =
+                paired(&op(left.read, right.read, 0), Cow::Borrowed(&self.constants[l as usize]), Cow::Borrowed(&self.constants[r as usize]), source, false) {
+                    return self.constant(entity.term, range);
+                }
         self.release(left.read);
         self.release(right.read);
         let to = self.register();
@@ -882,10 +890,8 @@ impl<'s> Compiler<'s> {
         self.release(operand.read);
         self.release(operator.read);
         let to = self.register();
-        self.ops.push(Op::Derive {
-            operand: operand.read, operator: operator.read, to, span, range: range.clone(), result: category,
-            call: operand.call && !operator.postfix, literal: operand.literal
-        });
+        self.ops.push(Op::Derive { operand: operand.read, operator: operator.read, to, span, range: range.clone(), result: category,
+            call: operand.call && !operator.postfix, literal: operand.literal });
         Item { call: true, ..Item::new(Read::Register(to), category, range) }
     }
 
@@ -912,9 +918,8 @@ impl<'s> Compiler<'s> {
             return self.fail(Error::domain("ᵘ makes a scalar that holds a function. Enclose a subject with ⊂").at(&span), Category::Value, range);
         }
         let category = if array { Category::Value } else { Category::Callable };
-        if !array && let Read::Constant(o) = operand.read && let Ok(o) = self.constants[o as usize].clone().value(source) && let Ok(binding) = postfixed(&postfix, o, &span) {
-            return self.constant(Term::Binding(binding), range);
-        }
+        if !array && let Read::Constant(o) = operand.read && let Ok(o) = self.constants[o as usize].clone().value(source)
+            && let Ok(binding) = postfixed(&postfix, o, &span) { return self.constant(Term::Binding(binding), range); }
         self.release(operand.read);
         let to = self.register();
         self.ops.push(Op::Postfix { postfix, operand: operand.read, to, span, range: range.clone(), result: category });
@@ -956,10 +961,7 @@ impl<'s> Compiler<'s> {
     }
 
     /// A register that holds nothing the compiler still needs.
-    fn register(&mut self) -> u32 {
-        let r = self.free.pop().unwrap_or_else(|| { self.registers += 1; self.registers - 1 });
-        r
-    }
+    fn register(&mut self) -> u32 { let r = self.free.pop().unwrap_or_else(|| { self.registers += 1; self.registers - 1 }); r }
 
     /// Frees `read`'s register, whose item a reduction used up or dropped.
     fn release(&mut self, read: Read) { if let Read::Register(r) = read { self.free.push(r) } }

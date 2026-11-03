@@ -1,5 +1,5 @@
-use crate::{Described, Error, Span, Value, data::Options, display, keyed, primitive::real};
 use crate::system::HostCall;
+use crate::{Described, Error, Span, Value, data::Options, display, keyed, primitive::real};
 use plotters::{coord::{Shift, ranged1d::{DefaultFormatting, KeyPointHint, Ranged}}, prelude::*};
 use rustymath::error::Kind;
 

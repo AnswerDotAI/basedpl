@@ -19,15 +19,15 @@ fn speed_cases_take_their_routes() {
     let mut routes = explain_and_memory();
     let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
     routes.extend(timing::routes(&files, None, &InterruptHandle::default()).unwrap());
-    let (matrix, failed) = basedpl::reference::coverage(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/coverage.txt"), &InterruptHandle::default()).unwrap();
+    let (matrix, failed) =
+        basedpl::reference::coverage(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/coverage.txt"), &InterruptHandle::default()).unwrap();
     routes.extend(matrix);
     println!("coverage cases that fail to evaluate, which the matrix skips: {failed:#?}");
     let (mut wrong, mut gaps) = (Vec::new(), Vec::new());
     for file in basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/reference")).unwrap() {
         for case in file.cases.iter().filter(|case| basedpl::reference::routed(case)) {
             match basedpl::reference::route(&file, case, &InterruptHandle::default()) {
-                Ok(route) => routes.push(route),
-                Err(failure) => wrong.push(format!("[{}] {failure}", case["section"].as_str().unwrap_or_default())),
+                Ok(route) => routes.push(route), Err(failure) => wrong.push(format!("[{}] {failure}", case["section"].as_str().unwrap_or_default()))
             }
         }
     }
@@ -48,9 +48,9 @@ fn explain_and_memory() -> Vec<timing::Capture> {
     // Each documented spelling takes its fast combination once. Reference cases in `core.bpl` check that each gives what the same functions give through a dfn.
     for (spelling, combination) in [
         ("(10↑)∘⍋ v", "partial grade"), ("¯10↑< v", "partial sort"), ("↑> v", "partial sort"), ("(3⌷)∘⍒ v", "partial grade"),
-        ("⍋⍋ v", "ranks"), ("⍋⍒ v", "ranks"), ("k((+/⊢)⌸)v", "key classes"), ("k{+/⍵}⌸v", "key classes"),
-        ("k((⌈⌿⊢)⌸)v", "key classes"), ("k((⌊/⊢)⌸)b", "key classes"), ("k((+/⊢)⌸)k", "key classes"), ("-.× m", "determinant"),
-        ("+.× m", "permanent"), ("⍟1+v", "accuracy rule"), ("¯1+*v", "accuracy rule"), ("k÷ₓ3", "mark rule"),
+        ("⍋⍋ v", "ranks"), ("⍋⍒ v", "ranks"), ("k((+/⊢)⌸)v", "key classes"), ("k{+/⍵}⌸v", "key classes"), ("k((⌈⌿⊢)⌸)v", "key classes"),
+        ("k((⌊/⊢)⌸)b", "key classes"), ("k((+/⊢)⌸)k", "key classes"), ("-.× m", "determinant"), ("+.× m", "permanent"), ("⍟1+v", "accuracy rule"),
+        ("¯1+*v", "accuracy rule"), ("k÷ₓ3", "mark rule"),
     ] {
         routes.push(timing::route(&session, &serde_json::json!({"code":spelling, "route":[combination]}), &InterruptHandle::default()).unwrap());
     }
@@ -66,8 +66,8 @@ fn explain_and_memory() -> Vec<timing::Capture> {
     // Gradients through reversal, transpose, windows that move by 1 or 2, a sum of windows, a broadcast and a maximum along an axis make no accumulation: rustymath's `Transpose` reads each back, windows as a correlation, with fills between frames that move by more than 1, as a transposed strided convolution reads its cotangent. A selection that repeats positions makes one.
     for (code, scatters) in [
         ("{+/v×⌽⍵}∂ v", 0), ("{+/,(10 10⍴v)×⍉10 10⍴⍵}∂ 100↑v", 0), ("{+/,(998 3⍴v)×3↕⍵}∂ v", 0), ("{+/+/3↕⍵}∂ v", 0),
-        ("{+/,(1000 2⍴v)×⍵+⊗0 0}∂ v", 0), ("{+/⌈⌿⍵}∂ 10 100⍴v", 0),
-        ("{+/,(499 3⍴v)×[[3]⋄[2]]↕⍵}∂ v", 0), ("{+/⍵.[2|⍳≢⍵]}∂ v", 1),
+        ("{+/,(1000 2⍴v)×⍵+⊗0 0}∂ v", 0), ("{+/⌈⌿⍵}∂ 10 100⍴v", 0), ("{+/,(499 3⍴v)×[[3]⋄[2]]↕⍵}∂ v", 0),
+        ("{+/⍵.[2|⍳≢⍵]}∂ v", 1),
     ] { check(&session, &format!(r#"≢(•explain "{code}").accumulations.items"#), &format!("{scatters}ₓ")); }
     // Each path that adds a selection's items has a name: in place, logged for exact integers whose sums can overflow, on a converted copy, and in rounds for repeated positions or in one call for distinct ones, by a primitive or a dfn.
     check(&session, "i←¿1000⍴1000 ⋄ z←1000⍴0 ⋄ zx←1000⍴0ₓ ⋄ zh←16 •float 1000⍴0 ⋄ zr←1000⍴1ᵣ2 ⋄ $t", "$t");
@@ -93,7 +93,7 @@ fn explain_and_memory() -> Vec<timing::Capture> {
     }
     // Ranks of a forward-mode dual, then `+/`: `+/` computes at once, and its sum of ordinary integers takes a type that depends on values, which stops the trace. A loop trace of the same body records, since the fold settles on its range (`plan::Fold::lanes`). Why the forward trace builds no fold node is unplaced (plan, stage 3's "State", gs11_'s entry, "Left" (3) (c)).
     routes.push(timing::route(&session, &serde_json::json!({"code":"{+/⍋⍋⍵×3 1 2}∂ 2",
-        "gap":[["forced","+/"],["stopped","a result whose type depends on values"]]}), &InterruptHandle::default()).unwrap());
+    "gap":[["forced","+/"],["stopped","a result whose type depends on values"]]}), &InterruptHandle::default()).unwrap());
     // `•memory` counts the pending arrays this thread made, including one dropped on another thread. `bytes` counts what a value keeps alive, a shared base once, and takes active values under `∂`.
     let held = Session::new();
     check(&held, "w←⍳1000 ⋄ n←(•memory 0).pending ⋄ p←⌽w ⋄ (•memory 0).pending-n", "1ₓ");

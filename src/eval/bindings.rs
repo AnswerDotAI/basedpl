@@ -46,7 +46,8 @@ impl Callable {
     }
     fn call_outputs(&self, left: Option<&Value>, right: &Value, span: &Span) -> crate::error::Result<crate::program::Outputs<Value>> {
         let args: Vec<_> = left.into_iter().chain([right]).cloned().collect();
-        let mut origin = self.origin(&args, 0)?; origin.site = Some(span.clone());
+        let mut origin = self.origin(&args, 0)?;
+        origin.site = Some(span.clone());
         crate::primitive::Operation::dispatch(origin.reborrow()).map_err(|error| error.at(span))
     }
     pub(super) fn call_array(&self, left: Option<&Value>, right: &Value, span: &Span) -> crate::error::Result<Value> {
@@ -64,9 +65,8 @@ static IDS: AtomicU64 = AtomicU64::new(1);
 struct Unslotted { names: HashMap<Name, Binding>, record: Option<Value> }
 
 pub(super) struct Frame {
-    locals: &'static [Name], base: usize, id: u64,
-    unslotted: Option<Box<Unslotted>>, parent: Option<usize>, module: usize,
-    origin: Option<crate::program::Origin<Vec<Value>>>, scope: Option<u32>, roots: Box<[TreeRoot]>,
+    locals: &'static [Name], base: usize, id: u64, unslotted: Option<Box<Unslotted>>, parent: Option<usize>, module: usize,
+    origin: Option<crate::program::Origin<Vec<Value>>>, scope: Option<u32>, roots: Box<[TreeRoot]>
 }
 impl Frame {
     pub(super) fn new(parent: Option<usize>, module: usize, locals: &'static [Name]) -> Self {
@@ -93,18 +93,18 @@ impl Frame {
     }
     fn root_binding(&self, frame: usize, slot: usize, slots: &[Option<Binding>]) -> Result<Option<Binding>, Error> {
         Ok(self.root_value(slot, slots)?.map(|binding| match binding {
-            Binding::Value(Value::Function(function)) if self.origin.as_ref().is_some_and(|origin| origin.bindings.scope(&function).is_some()) =>
-                Binding::Function(super::FunctionBinding::Rebuild { template: function, dependencies: self.inputs(frame) }),
+            Binding::Value(Value::Function(function)) if self.origin.as_ref().is_some_and(|origin| origin.bindings.scope(&function).is_some()) => {
+                Binding::Function(super::FunctionBinding::Rebuild { template: function, dependencies: self.inputs(frame) })
+            }
             Binding::Value(Value::Function(function)) => function.into(),
-            Binding::Value(Value::Operator(operator)) => Binding::Operator((*operator).clone()), binding => binding,
+            Binding::Value(Value::Operator(operator)) => Binding::Operator((*operator).clone()),
+            binding => binding,
         }))
     }
     fn slot(&self, name: Name) -> Option<u32> {
         name.implicit().map(|k| k as u32).or_else(|| self.locals.binary_search(&name).ok().map(|k| (IMPLICIT + k) as u32))
     }
-    fn place(&self, i: usize, name: Name) -> Place {
-        self.slot(name).map_or(Place::Other(i, name, self.id), |slot| Place::Slot(i, slot, self.id))
-    }
+    fn place(&self, i: usize, name: Name) -> Place { self.slot(name).map_or(Place::Other(i, name, self.id), |slot| Place::Slot(i, slot, self.id)) }
     fn other(&self, name: Name) -> Option<&Binding> { self.unslotted.as_ref()?.names.get(&name) }
     fn key(&self, name: Name) -> Result<Option<Binding>, Error> {
         let Some(record) = self.unslotted.as_ref().and_then(|unslotted| unslotted.record.as_ref()) else { return Ok(None) };
@@ -113,10 +113,10 @@ impl Frame {
         Ok(Some(Binding::from_element(operation.call(&[crate::keyed::text(name.text()), record.clone()], 1)?)))
     }
     fn names<'a>(&'a self, slots: &'a [Option<Binding>]) -> impl Iterator<Item = &'a str> {
-        let locals = self.locals.iter().zip(&slots[self.base + IMPLICIT..]).filter(|(_, slot)| !matches!(slot, None | Some(Binding::Released))).map(|(name, _)| name.text());
-        let captured = self.closed().into_iter().flat_map(|scope| scope.names.iter()).filter_map(move |name| {
-            self.root_slot(name.position.as_ref()?).and_then(|slot| slots[slot].as_ref()).map(|_| name.name.text())
-        });
+        let locals = self.locals.iter().zip(&slots[self.base + IMPLICIT..]).filter(|(_, slot)| !matches!(slot, None | Some(Binding::Released)))
+            .map(|(name, _)| name.text());
+        let captured = self.closed().into_iter().flat_map(|scope| scope.names.iter())
+            .filter_map(move |name| self.root_slot(name.position.as_ref()?).and_then(|slot| slots[slot].as_ref()).map(|_| name.name.text()));
         let keys = |record: &'a Value| record.keys(0).into_iter().flat_map(|keys| keys.names().iter().flatten().map(|key| &**key));
         locals.chain(captured).chain(self.unslotted.iter().flat_map(move |u| u.names.keys().map(|name| name.text()).chain(u.record.iter().flat_map(keys))))
     }
@@ -152,20 +152,23 @@ pub(super) enum Address { Implicit(usize), Free(Box<Free>) }
 pub(super) struct Free {
     name: Name,
     // A captured slot stops lookup even when its call-time binding was absent.
-    slots: Box<[(u32, Option<u32>, bool)]>, module: usize, id: u64, entry: Option<u32>,
+    slots: Box<[(u32, Option<u32>, bool)]>,
+    module: usize,
+    id: u64,
+    entry: Option<u32>,
 }
 
-pub(super) struct Bindings {
-    stack: RefCell<Stack>, modules: RefCell<Vec<Module>>, current: Cell<Option<usize>>, module: Cell<usize>,
-}
+pub(super) struct Bindings { stack: RefCell<Stack>, modules: RefCell<Vec<Module>>, current: Cell<Option<usize>>, module: Cell<usize> }
 impl Default for Bindings {
-    fn default() -> Self { Self { stack: RefCell::default(), modules: RefCell::new(vec![Module::new()]), current: Cell::default(), module: Cell::default() } }
+    fn default() -> Self {
+        Self { stack: RefCell::default(), modules: RefCell::new(vec![Module::new()]), current: Cell::default(), module: Cell::default() }
+    }
 }
 impl Bindings {
     fn with_origin<R>(&self, inputs: &FrameInputs, run: impl FnOnce(crate::program::Origin<&[Value]>) -> crate::error::Result<R>) -> crate::error::Result<R> {
         let stack = self.stack.borrow();
-        let frame = stack.frames.get(inputs.frame).filter(|frame| frame.id == inputs.generation)
-            .ok_or_else(|| Error::domain("function's call frame has ended"))?;
+        let frame =
+            stack.frames.get(inputs.frame).filter(|frame| frame.id == inputs.generation).ok_or_else(|| Error::domain("function's call frame has ended"))?;
         if stack.slots[frame.captured()..frame.slots().end].iter().all(Option::is_none) {
             return run(frame.origin.as_ref().expect("a captured binding has call context").reborrow());
         }
@@ -175,8 +178,8 @@ impl Bindings {
     }
     fn origin_at(&self, inputs: &FrameInputs, source: Option<crate::program::Origin<&[Value]>>) -> crate::error::Result<crate::program::Origin<Vec<Value>>> {
         let stack = self.stack.borrow();
-        let frame = stack.frames.get(inputs.frame).filter(|frame| frame.id == inputs.generation)
-            .ok_or_else(|| Error::domain("function's call frame has ended"))?;
+        let frame =
+            stack.frames.get(inputs.frame).filter(|frame| frame.id == inputs.generation).ok_or_else(|| Error::domain("function's call frame has ended"))?;
         let source = source.unwrap_or_else(|| frame.origin.as_ref().expect("a captured binding has call context").reborrow());
         let overrides = &stack.slots[frame.captured()..frame.slots().end];
         if overrides.iter().all(Option::is_none) { return Ok(source.with_list(source.list.to_vec())); }
@@ -184,15 +187,13 @@ impl Bindings {
             let root = root.index;
             match &overrides[root] {
                 Some(Binding::Value(value)) => Ok(Some(super::RootReplacement::value(value, None))),
-                None | Some(Binding::Absent | Binding::Released) => Ok(None),
-                _ => Err(Error::domain("a captured override must be a produced value")),
+                None | Some(Binding::Absent | Binding::Released) => Ok(None), _ => Err(Error::domain("a captured override must be a produced value"))
             }
         })?;
         for (old, scope) in source.bindings.scopes.iter().zip(&mut std::sync::Arc::make_mut(&mut result.bindings).scopes) {
             for (old, name) in old.names.iter().zip(&mut scope.names) {
-                if old.position.as_ref().and_then(|position| frame.root_slot(position)).is_some_and(|slot| matches!(stack.slots[slot], Some(Binding::Absent | Binding::Released))) {
-                    name.position = None;
-                }
+                if old.position.as_ref().and_then(|position| frame.root_slot(position))
+                    .is_some_and(|slot| matches!(stack.slots[slot], Some(Binding::Absent | Binding::Released))) { name.position = None; }
             }
         }
         Ok(result)
@@ -203,15 +204,18 @@ impl Bindings {
             let stack = self.stack.borrow();
             stack.frames.iter().enumerate().rev().find_map(|(i, frame)| {
                 let original = frame.origin.as_ref()?;
-                (std::sync::Arc::ptr_eq(&original.bindings, &source.bindings) && stack.slots[frame.captured()..frame.slots().end].iter().any(Option::is_some)).then(|| frame.inputs(i))
+                (std::sync::Arc::ptr_eq(&original.bindings, &source.bindings) && stack.slots[frame.captured()..frame.slots().end].iter().any(Option::is_some))
+                    .then(|| frame.inputs(i))
             })
         };
         inputs.map(|inputs| self.origin_at(&inputs, Some(source.reborrow()))).transpose()
     }
 
     pub(super) fn replace(&self, other: Bindings) {
-        self.stack.replace(other.stack.into_inner()); self.modules.replace(other.modules.into_inner());
-        self.current.set(other.current.get()); self.module.set(other.module.get());
+        self.stack.replace(other.stack.into_inner());
+        self.modules.replace(other.modules.into_inner());
+        self.current.set(other.current.get());
+        self.module.set(other.module.get());
     }
     pub(super) fn current(&self) -> Option<usize> { self.current.get() }
     pub(super) fn inputs(&self) -> Option<FrameInputs> {
@@ -253,8 +257,8 @@ impl Bindings {
             if let Some(captured) = frame.closed().and_then(|scope| scope.names.iter().find(|binding| binding.name == name)) {
                 let Some(position) = &captured.position else { return Ok(None) };
                 let slot = frame.root_slot(position).ok_or_else(Error::planning)?;
-                return Ok(frame.root_binding(i, slot, &stack.slots)?.map(|binding|
-                    read(captured.place.unwrap_or(Place::Slot(i, (slot - frame.base) as u32, frame.id)), &binding)));
+                return Ok(frame.root_binding(i, slot, &stack.slots)?
+                    .map(|binding| read(captured.place.unwrap_or(Place::Slot(i, (slot - frame.base) as u32, frame.id)), &binding)));
             }
         }
         if name.implicit().is_some() { return Ok(None); }
@@ -277,8 +281,8 @@ impl Bindings {
                 if let Some(captured) = scope.names.iter().find(|binding| binding.name == name) {
                     let Some(position) = &captured.position else { return Ok(None) };
                     let slot = frame.root_slot(position).ok_or_else(Error::planning)?;
-                    return Ok(frame.root_binding(i, slot, &stack.slots)?.map(|binding|
-                        (captured.place.unwrap_or(Place::Slot(i, (slot - frame.base) as u32, frame.id)), binding)));
+                    return Ok(frame.root_binding(i, slot, &stack.slots)?
+                        .map(|binding| (captured.place.unwrap_or(Place::Slot(i, (slot - frame.base) as u32, frame.id)), binding)));
                 }
             }
         }
@@ -302,7 +306,7 @@ impl Bindings {
             Place::Other(i, name, id) => {
                 let Some(frame) = stack.frames.get(i).filter(|frame| frame.id == id) else { return Ok(None) };
                 if let Some(binding) = frame.other(name) { Some(binding.clone()) } else { frame.key(name)? }
-            },
+            }
             Place::Entry(module, entry) => self.modules.borrow().get(module).and_then(|module| module.entries.get(entry as usize)).cloned().flatten(),
         })
     }
@@ -313,7 +317,7 @@ impl Bindings {
                 if captured.place == Some(place) && let Some(slot) = captured.position.as_ref().and_then(|position| frame.root_slot(position)) {
                     stack.slots[slot] = value.map(|binding| match binding {
                         Binding::Function(super::FunctionBinding::Input(function)) => Binding::Value(Value::Function(function.clone())),
-                        Binding::Operator(operator) => Binding::Value(Value::Operator(std::sync::Arc::new(operator.clone()))), binding => binding.clone(),
+                        Binding::Operator(operator) => Binding::Value(Value::Operator(std::sync::Arc::new(operator.clone()))), binding => binding.clone()
                     }).or(Some(Binding::Absent));
                 }
             }
@@ -322,8 +326,17 @@ impl Bindings {
     pub(super) fn insert(&self, place: Place, value: Binding) {
         let mut stack = self.stack.borrow_mut();
         match place {
-            Place::Slot(i, slot, id) => { if let Some(frame) = stack.frames.get(i).filter(|frame| frame.id == id) { let at = frame.base + slot as usize; stack.slots[at] = Some(value.clone()); } }
-            Place::Other(i, name, id) => { if let Some(frame) = stack.frames.get_mut(i).filter(|frame| frame.id == id) { frame.unslotted.get_or_insert_default().names.insert(name, value.clone()); } }
+            Place::Slot(i, slot, id) => {
+                if let Some(frame) = stack.frames.get(i).filter(|frame| frame.id == id) {
+                    let at = frame.base + slot as usize;
+                    stack.slots[at] = Some(value.clone());
+                }
+            }
+            Place::Other(i, name, id) => {
+                if let Some(frame) = stack.frames.get_mut(i).filter(|frame| frame.id == id) {
+                    frame.unslotted.get_or_insert_default().names.insert(name, value.clone());
+                }
+            }
             Place::Entry(module, entry) => self.modules.borrow_mut()[module].entries[entry as usize] = Some(value.clone()),
         }
         Self::aliases(&mut stack, place, Some(&value));
@@ -331,8 +344,17 @@ impl Bindings {
     pub(super) fn remove(&self, place: Place) -> Option<Binding> {
         let mut stack = self.stack.borrow_mut();
         let old = match place {
-            Place::Slot(i, slot, id) => { let frame = stack.frames.get(i)?; if frame.id != id { return None; } let at = frame.base + slot as usize; stack.slots[at].take() }
-            Place::Other(i, name, id) => { let frame = stack.frames.get_mut(i)?; if frame.id != id { return None; } frame.unslotted.as_mut()?.names.remove(&name) }
+            Place::Slot(i, slot, id) => {
+                let frame = stack.frames.get(i)?;
+                if frame.id != id { return None; }
+                let at = frame.base + slot as usize;
+                stack.slots[at].take()
+            }
+            Place::Other(i, name, id) => {
+                let frame = stack.frames.get_mut(i)?;
+                if frame.id != id { return None; }
+                frame.unslotted.as_mut()?.names.remove(&name)
+            }
             Place::Entry(module, entry) => self.modules.borrow_mut()[module].entries[entry as usize].take(),
         };
         Self::aliases(&mut stack, place, None);
@@ -358,7 +380,9 @@ impl Bindings {
         match self.read_at(address, Binding::clone)? { Some(binding) => Ok(binding), None => self.unaddressed(address, Binding::clone) }
     }
     fn own_slot(address: &Address) -> Option<u32> {
-        match address { Address::Implicit(k) => Some(*k as u32), Address::Free(free) => match free.slots.first() { Some(&(0, Some(slot), false)) => Some(slot), _ => None } }
+        match address {
+            Address::Implicit(k) => Some(*k as u32), Address::Free(free) => match free.slots.first() { Some(&(0, Some(slot), false)) => Some(slot), _ => None }
+        }
     }
     pub(super) fn take_at(&self, address: &Address) -> Option<Binding> {
         let slot = Self::own_slot(address)?;
@@ -388,7 +412,7 @@ impl Bindings {
                 candidates.next();
                 let value = match slot {
                     Some(slot) if stop => frame.root_binding(frame_index, frame.base + slot as usize, &stack.slots)?,
-                    Some(slot) => stack.slots[frame.base + slot as usize].clone(), None => None,
+                    Some(slot) => stack.slots[frame.base + slot as usize].clone(), None => None
                 };
                 if value.is_some() || stop { return Ok(Some(value.as_ref().map(&read))); }
             }
@@ -407,22 +431,36 @@ impl Bindings {
         let mut names = HashSet::new();
         for (_, frame) in self.chain(&stack.frames) { names.extend(frame.names(&stack.slots).map(str::to_owned)); }
         names.extend(self.modules.borrow()[self.module()].bound().map(|(name, _)| name.text().to_owned()));
-        let mut names: Vec<_> = names.into_iter().collect(); names.sort(); names
+        let mut names: Vec<_> = names.into_iter().collect();
+        names.sort();
+        names
     }
-    pub(super) fn new_module(&self) -> usize { let mut modules = self.modules.borrow_mut(); modules.push(Module::new()); modules.len() - 1 }
+    pub(super) fn new_module(&self) -> usize {
+        let mut modules = self.modules.borrow_mut();
+        modules.push(Module::new());
+        modules.len() - 1
+    }
     pub(super) fn module_names(&self, module: usize) -> Vec<(Name, Binding)> {
-        let mut names: Vec<_> = self.modules.borrow()[module].bound().map(|(name, value)| (name, value.clone())).collect(); names.sort_by_key(|&(name, _)| name); names
+        let mut names: Vec<_> = self.modules.borrow()[module].bound().map(|(name, value)| (name, value.clone())).collect();
+        names.sort_by_key(|&(name, _)| name);
+        names
     }
     pub(super) fn at_top_level<T>(&self, module: Option<usize>, run: impl FnOnce() -> T) -> T {
         let (current, running) = (self.current.replace(None), self.module.get());
         if let Some(module) = module { self.module.set(module); }
-        let result = run(); self.current.set(current); self.module.set(running); result
+        let result = run();
+        self.current.set(current);
+        self.module.set(running);
+        result
     }
     pub(super) fn depth(&self) -> usize { self.stack.borrow().frames.len() }
-    pub(super) fn enter(&self, mut frame: Frame, mut implicit: [Option<Binding>; IMPLICIT], closed: Option<(Option<u32>, crate::program::Origin<&[Value]>)>, span: &Span) -> Result<(), Error> {
+    pub(super) fn enter(
+        &self, mut frame: Frame, mut implicit: [Option<Binding>; IMPLICIT], closed: Option<(Option<u32>, crate::program::Origin<&[Value]>)>, span: &Span
+    ) -> Result<(), Error> {
         if let Some((scope, origin)) = closed {
             frame.scope = scope;
-            frame.roots = origin.trees.as_ref().map_or_else(|| (0..origin.list.len()).map(|index| TreeRoot { index, leaves: index..index + 1 }).collect(), |trees| trees.roots().collect());
+            frame.roots = origin.trees.as_ref()
+                .map_or_else(|| (0..origin.list.len()).map(|index| TreeRoot { index, leaves: index..index + 1 }).collect(), |trees| trees.roots().collect());
             frame.origin = Some(origin.with_list(origin.list.to_vec()));
         }
         let mut stack = self.stack.borrow_mut();
@@ -430,13 +468,16 @@ impl Bindings {
         frame.base = stack.slots.len();
         let inputs = frame.inputs(stack.frames.len());
         for binding in implicit.iter_mut().flatten() {
-            if let Binding::Function(super::FunctionBinding::Input(function)) = binding && frame.origin.as_ref().is_some_and(|origin| origin.bindings.scope(function).is_some()) {
-                *binding = Binding::Function(super::FunctionBinding::Rebuild { template: function.clone(), dependencies: inputs.clone() });
-            }
+            if let Binding::Function(super::FunctionBinding::Input(function)) = binding
+                && frame.origin.as_ref().is_some_and(|origin| origin.bindings.scope(function).is_some()) {
+                    *binding = Binding::Function(super::FunctionBinding::Rebuild { template: function.clone(), dependencies: inputs.clone() });
+                }
         }
         stack.slots.resize_with(frame.slots().end, || None);
         for (slot, value) in stack.slots[frame.base..frame.base + IMPLICIT].iter_mut().zip(&mut implicit) { std::mem::swap(slot, value); }
-        self.current.set(Some(stack.frames.len())); stack.frames.push(frame); Ok(())
+        self.current.set(Some(stack.frames.len()));
+        stack.frames.push(frame);
+        Ok(())
     }
     pub(super) fn enter_context(&self, origin: crate::program::Origin<&[Value]>, span: &Span) -> Result<(), Error> {
         let current = self.current.get();
@@ -449,5 +490,8 @@ impl Bindings {
         if let Some(base) = stack.frames.get(depth).map(|frame| frame.base) { stack.slots.truncate(base); }
         stack.frames.truncate(depth);
     }
-    pub(super) fn leave(&self, depth: usize, current: Option<usize>) { self.truncate(depth); self.current.set(current); }
+    pub(super) fn leave(&self, depth: usize, current: Option<usize>) {
+        self.truncate(depth);
+        self.current.set(current);
+    }
 }

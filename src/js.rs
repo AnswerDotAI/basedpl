@@ -90,7 +90,7 @@ fn array(value: &Value) -> Result<Js, ErrorKind> {
         parts
     };
     let dense = match value.physical() {
-        Some((view, Some(map))) => Some(Buffer::cast_mapped(view, map, value.len(), view.dtype()).map_err(ErrorKind::from)?), _ => None,
+        Some((view, Some(map))) => Some(Buffer::cast_mapped(view, map, value.len(), view.dtype()).map_err(ErrorKind::from)?), _ => None
     };
     let items = dense.as_ref().map_or_else(|| value.as_items(), |buffer| Items::Compact(buffer.view()));
     let data = match items {

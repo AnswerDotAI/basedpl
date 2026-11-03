@@ -1,6 +1,6 @@
 //! Assignment: plain, destructuring, modified and selective.
 
-use super::tree::{Entity, Term, narrow, Facts, Last, Layer, Split, Target, To};
+use super::tree::{Entity, Facts, Last, Layer, Split, Target, Term, To, narrow};
 use super::*;
 use rustymath::error::Kind;
 
@@ -41,16 +41,16 @@ impl Session {
         Ok(ArrayBinding { place, value })
     }
 
-    fn update_array(&self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> { self.store_at(binding.place, Binding::from_element(value), span) }
+    fn update_array(&self, binding: &ArrayBinding, value: Value, span: &Span) -> Result<(), Error> {
+        self.store_at(binding.place, Binding::from_element(value), span)
+    }
     pub(super) fn store_at(&self, place: Place, value: Binding, span: &Span) -> Result<(), Error> {
-        let value = match value {
-            Binding::Function(FunctionBinding::Rebuild { .. }) => Function::from_value(value, span)?.into(),
-            value => value,
-        };
+        let value = match value { Binding::Function(FunctionBinding::Rebuild { .. }) => Function::from_value(value, span)?.into(), value => value };
         if value.environment() > place.frame() { return Err(Error::domain("value would export a local closure").at(span)); }
         if place.frame() != self.bindings.current() {
             if self.bindings.get(place)?.is_some_and(|old| Category::bound(&old) != Category::bound(&value)) {
-                return Err(Error::new(ErrorKind::Syntax, "an assignment can't change a name outside its function between an array, a function and an operator").at(span));
+                return Err(Error::new(
+                    ErrorKind::Syntax, "an assignment can't change a name outside its function between an array, a function and an operator").at(span));
             }
         }
         self.writing(place, span)?;
@@ -62,10 +62,7 @@ impl Session {
     #[inline]
     pub(super) fn assigned(&self, target: &Target, value: Option<Binding>, local: Option<u32>, span: &Span) -> Result<Binding, Error> {
         let Some(value) = value else { return Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(span)) };
-        match local {
-            Some(slot) => self.store_at(self.bindings.local(slot), value.clone(), span)?,
-            None => self.assign(target, None, &value)?,
-        }
+        match local { Some(slot) => self.store_at(self.bindings.local(slot), value.clone(), span)?, None => self.assign(target, None, &value)? }
         Ok(value)
     }
 
@@ -83,12 +80,15 @@ impl Session {
 
     /// Applies the compiled target, with a modified assignment's function where supplied.
     pub(super) fn assign(&self, target: &Target, modifier: Option<Function>, value: &Binding) -> Result<(), Error> {
-        match modifier { Some(f) => self.modify(target, &target.to, f, value), None => self.assign_to(target, &target.to, value) }.map_err(|error| error.at(&target.span))
+        match modifier {
+            Some(f) => self.modify(target, &target.to, f, value), None => self.assign_to(target, &target.to, value)
+        }.map_err(|error| error.at(&target.span))
     }
 
-
     /// Shows `value` as explicit output (`⎕←`), laid out as output inside a function is where `function` holds. A replay of an output effect shows it so too (`program::Act::run`).
-    pub(crate) fn explicit_output(&self, value: &crate::Value, function: bool) { self.execution.output(crate::OutputKind::Explicit, self.display_settings().explicit(value, function)); }
+    pub(crate) fn explicit_output(&self, value: &crate::Value, function: bool) {
+        self.execution.output(crate::OutputKind::Explicit, self.display_settings().explicit(value, function));
+    }
 
     fn assign_to(&self, target: &Target, to: &To, value: &Binding) -> Result<(), Error> {
         match to {
@@ -128,9 +128,8 @@ impl Session {
     /// Updates a modified assignment's target `to` with `modifier`, taking `value` as its right argument: names update the arrays they hold, and a selection writes through `write_modified`.
     fn modify(&self, target: &Target, to: &To, modifier: Function, value: &Binding) -> Result<(), Error> {
         match to {
-            To::Selected(layer) => self.selected(layer, &mut vec![None; target.slots], Some(modifier), value),
-            To::Invalid(e) => Err(e.clone()),
-            names => self.modify_names(names, &value.clone().into_value(&target.at)?, &modifier),
+            To::Selected(layer) => self.selected(layer, &mut vec![None; target.slots], Some(modifier), value), To::Invalid(e) => Err(e.clone()),
+            names => self.modify_names(names, &value.clone().into_value(&target.at)?, &modifier)
         }
     }
 
@@ -141,7 +140,8 @@ impl Session {
                 self.update_array(&binding, modifier.call_array(Some(&binding.value), right, span)?, span)
             }
             To::Names(cells, span) => { for (cell, item) in Self::destructure(cells, right, span)? { self.modify_names(cell, &item, modifier)?; } Ok(()) }
-            To::Invalid(error) => Err(error.clone()), _ => unreachable!("a modified target is a name or a destructuring pattern"),
+            To::Invalid(error) => Err(error.clone()),
+            _ => unreachable!("a modified target is a name or a destructuring pattern"),
         }
     }
 
@@ -169,7 +169,9 @@ impl Session {
     fn destructure<'a>(cells: &'a [(Option<Arc<str>>, To, Span)], right: &Value, span: &Span) -> Result<Vec<(&'a To, Value)>, Error> {
         let positional = cells.iter().all(|(key, ..)| key.is_none());
         if positional && right.is_singleton() { return Ok(cells.iter().map(|(_, target, _)| (target, right.at(0))).collect()); }
-        let keys = if positional { None } else { Some(right.keys(0).ok_or_else(|| Error::domain("a pattern reads items by key, and these items have none").at(span))?) };
+        let keys = if positional { None } else {
+            Some(right.keys(0).ok_or_else(|| Error::domain("a pattern reads items by key, and these items have none").at(span))?)
+        };
         let items = right.cells(right.shape().len().saturating_sub(1)).described("array exceeds limits").at(span)?;
         if positional && items.len() != cells.len() { return Err(Error::new(Kind::Length, "destructuring needs one item for each name").at(span)); }
         cells.iter().enumerate().map(|(i, (key, target, at))| {
@@ -196,7 +198,7 @@ impl Session {
         self.extend(container, run, true)?;
         let mut target = self.read(container, run)?;
         let changed = if pick { crate::primitive::extend_path(&items, &mut target, descend, true)? }
-            else { crate::primitive::extend_indices(&items[0], &mut target, descend, true)? };
+        else { crate::primitive::extend_indices(&items[0], &mut target, descend, true)? };
         if changed { self.selected(container, run, None, &Binding::Value(target))?; }
         Ok(())
     }
@@ -212,10 +214,9 @@ impl Session {
         let right = value.clone().into_value(&layer.at)?;
         if modifier.is_none() { self.extend(layer, run, false)?; }
         let binding = self.root(layer)?;
-        let root = crate::selection::rooted(&binding.value)?;
-        let target = self.fold(layer, run, root.clone())?;
-        let walk = crate::selection::selecting(&target, &root)?
-            .ok_or_else(|| Error::domain("cannot assign to an item that isn't from the original").at(&layer.span))?;
+        let scope = crate::selection::Scope::new(&binding.value)?;
+        let target = self.fold(layer, run, scope.root.clone())?;
+        let walk = scope.select(&target)?.ok_or_else(|| Error::domain("cannot assign to an item that isn't from the original").at(&layer.span))?;
         let updated = match modifier {
             None => walk.write(right, None)?,
             Some(f) => match f.as_primitive() {
@@ -224,19 +225,17 @@ impl Session {
                     let each = Operator::Kind(OperatorKind::Each).derive(Value::Function(f), None)?;
                     walk.write(each.call_array(Some(&target), &right, &layer.span)?, None)?
                 }
-            }
+            },
         };
         self.update_array(&binding, updated, &layer.span)
     }
-
 
     /// The binding of the array that `layer` ends in, its root.
     fn root(&self, layer: &Layer) -> Result<ArrayBinding, Error> {
         match &layer.last {
             Last::Name(name, span) => self.array_binding(*name, span),
-            Last::Container => self.root(&layer.split.as_ref().expect("a split holds the container").container),
-            Last::Layer(inner) => self.root(inner),
-            Last::Invalid(e) => Err(e.clone()),
+            Last::Container => self.root(&layer.split.as_ref().expect("a split holds the container").container), Last::Layer(inner) => self.root(inner),
+            Last::Invalid(e) => Err(e.clone())
         }
     }
 
@@ -248,10 +247,8 @@ impl Session {
             return Function::primitive(split.p).call_array(Some(&index), &value, &split.p_at);
         }
         let value = match &layer.last {
-            Last::Name(..) => root,
-            Last::Container => self.fold(&layer.split.as_ref().expect("a split holds the container").container, run, root)?,
-            Last::Layer(inner) => self.fold(inner, run, root)?,
-            Last::Invalid(_) => unreachable!("`root` raises the error before the walk"),
+            Last::Name(..) => root, Last::Container => self.fold(&layer.split.as_ref().expect("a split holds the container").container, run, root)?,
+            Last::Layer(inner) => self.fold(inner, run, root)?, Last::Invalid(_) => unreachable!("`root` raises the error before the walk")
         };
         let Some(prefix) = &layer.prefix else { return Ok(value) };
         let seed = Entity::new(Term::Binding(Binding::Value(value)), narrow(&layer.last_at.range), false, None);
@@ -260,10 +257,7 @@ impl Session {
     }
 
     /// What `layer` gives as an expression: its code run on its root array's value.
-    fn read(&self, layer: &Layer, run: &mut [Option<Value>]) -> Result<Value, Error> {
-        let root = self.root(layer)?.value;
-        self.fold(layer, run, root)
-    }
+    fn read(&self, layer: &Layer, run: &mut [Option<Value>]) -> Result<Value, Error> { let root = self.root(layer)?.value; self.fold(layer, run, root) }
 
     /// The value of `split`'s index, evaluated once in a run, one level deeper, and kept at its slot.
     fn index(&self, split: &Split, run: &mut [Option<Value>]) -> Result<Value, Error> {
@@ -277,5 +271,4 @@ impl Session {
         run[split.slot] = Some(value.clone());
         Ok(value)
     }
-
 }

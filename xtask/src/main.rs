@@ -44,9 +44,7 @@ fn main() -> anyhow::Result<()> {
     });
     fs::write(pkg.join("package.json"), serde_json::to_string_pretty(&package)?)?;
     fs::copy(root.join("wasm/README.md"), pkg.join("README.md"))?;
-    let assets = [
-        "python/basedpl/bpl.tmLanguage.json", "python/basedpl/hpl.tmLanguage.json", "src/canvas.js",
-    ].map(|a| root.join(a));
+    let assets = ["python/basedpl/bpl.tmLanguage.json", "python/basedpl/hpl.tmLanguage.json", "src/canvas.js"].map(|a| root.join(a));
     for asset in &assets { fs::copy(asset, pkg.join(asset.file_name().expect("an asset is a file")))?; }
     let mut browsers = vec![pkg.join("browser")];
     if out.is_none() { browsers.push(root.join("nbs/playground/browser")); }

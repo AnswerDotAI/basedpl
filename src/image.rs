@@ -1,5 +1,5 @@
-use crate::{Described, Error, Value, data, display, keyed};
 use crate::system::HostCall;
+use crate::{Described, Error, Value, data, display, keyed};
 use rustymath::{buffer::DType, error::Kind};
 
 /// Decoding and encoding of image files: ImageIO on Apple platforms, and the `image` and `png` crates elsewhere.
@@ -38,7 +38,9 @@ pub(crate) fn image(HostCall { left, right, site: span, numeric }: HostCall<'_>)
     layout(&picture, delays.clone())?;
     let renderer = display::renderer("image-renderer", render);
     let renderer = match delays {
-        Some(d) => crate::Function::build("train", vec![Value::floats(vec![d.len()], numeric.width, d).described("invalid delays")?, Value::Function(renderer)])?,
+        Some(d) => {
+            crate::Function::build("train", vec![Value::floats(vec![d.len()], numeric.width, d).described("invalid delays")?, Value::Function(renderer)])?
+        }
         None => renderer,
     };
     picture.with_renderer(renderer).described("invalid image")
@@ -126,7 +128,9 @@ fn layout(picture: &Value, delays: Option<Vec<f64>>) -> Result<([usize; 4], Opti
         [height, width] => (height, width, 1), [height, width, channels @ 1..=4] => (height, width, channels),
         _ => return Err(Error::new(Kind::Rank, "a picture has axes for rows, columns and up to four channels"))
     };
-    let real = match picture.dtype() { Some(DType::Complex(_)) => picture.elements().all(|v| crate::primitive::real(&v).is_ok()), Some(DType::Character) | None => false, Some(_) => true };
+    let real = match picture.dtype() {
+        Some(DType::Complex(_)) => picture.elements().all(|v| crate::primitive::real(&v).is_ok()), Some(DType::Character) | None => false, Some(_) => true
+    };
     if !real { return Err(Error::domain("a picture holds real numbers")); }
     Ok(([count, height, width, channels], delays))
 }

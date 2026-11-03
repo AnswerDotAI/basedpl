@@ -1,7 +1,9 @@
 //! Agenda selection and ordinary cached case calls.
 use super::{Desc, Node, Origin, Outputs, Step};
-use crate::{Error, Function, agreement::Agree, Value, array::{Layout, Widening}, error::Result, number::{Kind, Kinds, Numeric},
-    primitive::{CallView, Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis}, program::trace::{self, ReadKind}};
+use crate::{
+    Error, Function, Value, agreement::Agree, array::{Layout, Widening}, error::Result, number::{Kind, Kinds, Numeric},
+    primitive::{CallView, Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis}, program::trace::{self, ReadKind}
+};
 use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth}, convert::ConversionKind, error::Kind as ErrorTag};
 
 fn roots(origin: &Origin<&[Value]>) -> Result<Vec<Value>> {
@@ -10,10 +12,7 @@ fn roots(origin: &Origin<&[Value]>) -> Result<Vec<Value>> {
     Ok(roots)
 }
 
-pub(crate) struct Choice {
-    pub(crate) desc: Desc,
-    pub(crate) mappings: Vec<Mapping>,
-}
+pub(crate) struct Choice { pub(crate) desc: Desc, pub(crate) mappings: Vec<Mapping> }
 
 pub(crate) fn choice_sources(call: &CallView<'_>) -> Result<Vec<crate::array::TreeRoot>> {
     Ok(call.explicit_argument_roots().skip(1).map(|root| call.root(root)).collect())
@@ -24,9 +23,7 @@ fn choice_kind(mut kinds: impl Iterator<Item = Kind>, dynamic: bool) -> Option<K
     let widening = if dynamic { Widening::Items } else { Widening::Arrays };
     kinds.try_fold(first, |left, right| widening.join(left, right))
 }
-pub(crate) fn choice_total(call: &CallView<'_>) -> bool {
-    call.explicit >= 3 && call.desc(0).is_some_and(|desc| desc.dtype() == DType::Boolean)
-}
+pub(crate) fn choice_total(call: &CallView<'_>) -> bool { call.explicit >= 3 && call.desc(0).is_some_and(|desc| desc.dtype() == DType::Boolean) }
 pub(crate) fn choice(call: &CallView<'_>) -> Result<Option<Choice>> {
     use crate::agreement::{Agree, Agreement};
     if call.explicit < 2 { return Err(Error::domain("a choice needs a selector and at least one result")); }
@@ -59,8 +56,9 @@ pub(crate) fn choice_code(call: &CallView<'_>) -> Result<Outputs<Value>> {
     let plans = physical.into_iter().zip(choice.mappings).map(|((_, plan), mapping)| plan.remapped(mapping, count, Missing::Default)).collect::<Vec<_>>();
     let reads = plans.iter().map(|plan| Read { plan, sources: &bindings }).collect::<Vec<_>>();
     let mut output = Buffer::with_capacity(choice.desc.dtype(), count);
-    rustymath::operation::choose((reads[0], values[0].dtype().ok_or_else(Error::planning)?), &reads[1..], 0..count,
-        choice.desc.dtype(), call.mode.dynamic && !choice_total(call), &mut output)?;
+    rustymath::operation::choose(
+        (reads[0], values[0].dtype().ok_or_else(Error::planning)?), &reads[1..], 0..count, choice.desc.dtype(), call.mode.dynamic && !choice_total(call),
+        &mut output)?;
     Ok(Outputs::one(Value::stored(&choice.desc, output)?))
 }
 
@@ -87,8 +85,8 @@ impl Case {
         let arguments = Function::argument_roots(&self.origin.reborrow())?;
         let bound = crate::eval::map_roots(&self.origin.reborrow(), |root| {
             if !arguments.iter().flatten().any(|argument| argument.index == root.index) { return Ok(None); }
-            let value = self.origin.trees.as_ref().map_or_else(|| self.origin.list[root.leaves.start].clone(),
-                |trees| trees.at_root(root, &self.origin.list).into_owned());
+            let value = self.origin.trees.as_ref()
+                .map_or_else(|| self.origin.list[root.leaves.start].clone(), |trees| trees.at_root(root, &self.origin.list).into_owned());
             if value.is_unit() && root.index != self.origin.explicit_roots as usize - 1 { return Ok(None); }
             let value = selected_cells(&self.origin.reborrow(), &value, frame, rows)?;
             Ok(Some(crate::eval::RootReplacement::value(&value, None)))
@@ -119,16 +117,16 @@ fn selected_cells(parent: &Origin<&[Value]>, value: &Value, frame: &Value, rows:
     }
     let dimensions = (0..frame.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) })
         .chain(cells.iter().map(|&axis| ViewAxis { input: 0, axis: Some(axis) })).collect();
-    let destinations = (0..value.rank()).map(|axis| paired.iter().position(|&selected| selected == axis)
-        .unwrap_or_else(|| frame.rank() + cells.iter().position(|&cell| cell == axis).unwrap())).collect();
+    let destinations = (0..value.rank())
+        .map(|axis| paired.iter().position(|&selected| selected == axis).unwrap_or_else(|| frame.rank() + cells.iter().position(|&cell| cell == axis).unwrap()))
+        .collect();
     let aligned = call(parent, Operation::Read(ReadOp::Axes { axes: dimensions, destinations }), &[value.clone(), frame.clone()])?;
     let strides = rustymath::layout::strides(frame.shape());
-    let indices = frame.shape().iter().zip(strides).map(|(&length, stride)|
+    let indices = frame.shape().iter().zip(strides).map(|(&length, stride)| {
         listed(frame.layout(), rows)?.integers(rows.iter().map(|&row| ((row / stride) % length) as i64).collect()).map_err(Error::from)
-    ).collect::<Result<Vec<_>>>()?;
+    }).collect::<Result<Vec<_>>>()?;
     let spec = Value::integers([frame.rank()], (0..frame.rank()).map(|axis| axis as i64).collect())?;
-    call(parent, Operation::Primitive { primitive: Primitive::Bracket, pairing: Pairing::Explicit { fill: false } },
-        &[Value::tuple(indices), aligned, spec])
+    call(parent, Operation::Primitive { primitive: Primitive::Bracket, pairing: Pairing::Explicit { fill: false } }, &[Value::tuple(indices), aligned, spec])
 }
 
 fn masked(parent: &Origin<&[Value]>, selector: &Value, args: &[Value], cases: &[Case]) -> Result<Option<Outputs<Value>>> {
@@ -142,19 +140,21 @@ fn masked(parent: &Origin<&[Value]>, selector: &Value, args: &[Value], cases: &[
         let Some(prepared) = case.plan()? else { return Ok(None); };
         let program = &prepared.recording().program;
         let effects = prepared.recording().effects;
-        if effects.acts || effects.catches || effects.writes || !program.parameters.is_empty()
-            || program.nodes.iter().any(|node| matches!(node, Node::Step { step, origin, .. }
-                if origin.nonrepeatable() || origin.bindings.custom_derivative || !matches!(step, Step::Map { .. } | Step::Convert { .. } | Step::Picks { .. })))
-            || parent.mode.dynamic && prepared.may_raise()? { return Ok(None); }
+        if effects.acts || effects.catches || effects.writes || !program.parameters.is_empty() || program.nodes.iter().any(|node| {
+            matches!(node, Node::Step { step, origin, .. }
+            if origin.nonrepeatable() || origin.bindings.custom_derivative || !matches!(step, Step::Map { .. } | Step::Convert { .. } | Step::Picks { .. }))
+        }) || parent.mode.dynamic && prepared.may_raise()? { return Ok(None); }
         let description = prepared.description()?;
-        if description.as_ref().is_empty() || description.as_ref().iter().any(|desc|
-            desc.as_ref().is_none_or(|desc| !desc.atom && desc.layout != selector_desc.layout)) { return Ok(None); }
+        if description.as_ref().is_empty()
+            || description.as_ref().iter().any(|desc| desc.as_ref().is_none_or(|desc| !desc.atom && desc.layout != selector_desc.layout)) { return Ok(None); }
         descriptions.push(description);
     }
     let Some(first) = descriptions.first() else { return Err(Error::domain("an agenda needs at least one case")); };
     if descriptions.iter().any(|description| description.trees() != first.trees() || description.as_ref().len() != first.as_ref().len()) { return Ok(None); }
     for leaf in 0..first.as_ref().len() {
-        if choice_kind(descriptions.iter().map(|description| description.as_ref()[leaf].as_ref().unwrap().kind), parent.mode.dynamic).is_none() { return Ok(None); }
+        if choice_kind(descriptions.iter().map(|description| description.as_ref()[leaf].as_ref().unwrap().kind), parent.mode.dynamic).is_none() {
+            return Ok(None);
+        }
     }
     let mut choices = Vec::with_capacity(cases.len());
     for (index, case) in cases.iter().enumerate() {
@@ -230,40 +230,43 @@ pub(crate) fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>> {
         if position == rustymath::gather::Steps::FILL { return Err(Error::domain("the selector's fill picks no case")); }
         let value = crate::eval::session().prototype_mode(true, || cases[position].run(&reference, &[]))?;
         let cell = if value.is_singleton() { argument_cell }
-            else if value.shape().first() == Some(&0) { value.layout().axes(1..value.rank()) } else { Layout::default() };
+        else if value.shape().first() == Some(&0) { value.layout().axes(1..value.rank()) }
+        else { Layout::default() };
         let value = frame.concat(&cell).collect(std::iter::empty(), value.prototype())?;
         return outputs(placed(&origin, value, &axes, right.rank())?).map(Some);
     }
     let mut layouts = made.iter().filter_map(|(_, value)| match value {
-        Made::Cells(value) => Some(value.layout().axes(1..value.rank())), Made::Fill(_) => None,
+        Made::Cells(value) => Some(value.layout().axes(1..value.rank())), Made::Fill(_) => None
     }).collect::<Vec<_>>();
     if layouts.is_empty() { layouts.push(argument_cell); }
     let cell = Layout::assembled(layouts.iter())?;
     let prototype = made.first().map_or_else(|| right.prototype(), |(_, value)| value.value().prototype());
     let kinds = std::iter::once(prototype.kind()).chain(made.iter().map(|(_, value)| value.value().kind())).collect::<Option<Vec<_>>>();
-    if let Some(kind) = kinds.and_then(|kinds| choice_kind(kinds.into_iter(), origin.mode.dynamic))
-        && made.iter().all(|(_, value)| match value { Made::Cells(value) => value.shape()[1..] == *cell.shape(), Made::Fill(_) => true }) {
-        let zero = call(&origin, Operation::Recipe(RecipeOp::Convert {
-            kind, conversion: ConversionKind::Keep }), std::slice::from_ref(&prototype))?;
+    if let Some(kind) = kinds.and_then(|kinds| choice_kind(kinds.into_iter(), origin.mode.dynamic)) && made.iter().all(|(_, value)| match value {
+        Made::Cells(value) => value.shape()[1..] == *cell.shape(), Made::Fill(_) => true
+    }) {
+        let zero = call(&origin, Operation::Recipe(RecipeOp::Convert { kind, conversion: ConversionKind::Keep }), std::slice::from_ref(&prototype))?;
         let dimensions = axes.iter().map(|&axis| ViewAxis { input: 1, axis: Some(axis) })
             .chain((0..cell.shape().len()).map(|axis| ViewAxis { input: 2, axis: Some(axis) })).collect();
-        let mut result = call(&origin, Operation::Read(ReadOp::Axes { axes: dimensions, destinations: Box::new([]) }),
-            &[zero, right.clone(), cell.filled(&prototype)])?;
+        let mut result =
+            call(&origin, Operation::Read(ReadOp::Axes { axes: dimensions, destinations: Box::new([]) }), &[zero, right.clone(), cell.filled(&prototype)])?;
         for (index, value) in made {
-            let mut shape = vec![groups[index].len()]; shape.extend_from_slice(cell.shape());
+            let mut shape = vec![groups[index].len()];
+            shape.extend_from_slice(cell.shape());
             let width = cell.count();
             let positions = groups[index].iter().flat_map(|&row| (0..width).map(move |item| row * width + item));
             let positions = Value::positions(shape, result.len(), positions)?;
-            result = call(&origin, Operation::At { combine: None, selection: false }, &[result, positions, value.value().clone()])?;
+            result =
+                call(&origin, Operation::At { combine: None, target: crate::primitive::WriteTarget::Indices }, &[result, positions, value.value().clone()])?;
         }
         return outputs(placed(&origin, result, &axes, right.rank())?).map(Some);
     }
     let mut values = vec![cell.filled(&prototype); frame.count()];
     for (index, result) in made {
         match result {
-            Made::Cells(value) => for (offset, &row) in groups[index].iter().enumerate() {
-                values[row] = value.cells(value.rank() - 1)?.get(offset)?;
-            },
+            Made::Cells(value) => {
+                for (offset, &row) in groups[index].iter().enumerate() { values[row] = value.cells(value.rank() - 1)?.get(offset)?; }
+            }
             Made::Fill(value) => {
                 let scalar = call(&origin, Operation::Read(ReadOp::Item), &[value])?;
                 let reference = cell.filled(&prototype);
@@ -279,16 +282,16 @@ pub(crate) fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>> {
 
 fn placed(parent: &Origin<&[Value]>, value: Value, axes: &[usize], rank: usize) -> Result<Value> {
     if value.rank() != rank { return Ok(value); }
-    let order = (0..rank).map(|axis| axes.iter().position(|&selected| selected == axis)
-        .unwrap_or_else(|| axes.len() + (0..axis).filter(|axis| !axes.contains(axis)).count())).collect::<Vec<_>>();
+    let order = (0..rank)
+        .map(|axis| axes.iter().position(|&selected| selected == axis).unwrap_or_else(|| axes.len() + (0..axis).filter(|axis| !axes.contains(axis)).count()))
+        .collect::<Vec<_>>();
     let dimensions = order.iter().map(|&axis| ViewAxis { input: 0, axis: Some(axis) }).collect();
     let destinations = rustymath::search::inverse_permutation(order.into_iter());
     call(parent, Operation::Read(ReadOp::Axes { axes: dimensions, destinations: destinations.into() }), &[value])
 }
 
 pub(crate) fn assemble(frame: &Value, values: &[Value], prototype: &Value, mode: super::Mode) -> Result<Value> {
-    let numeric = Numeric { kinds: if mode.dynamic { Kinds::Dynamic } else { Kinds::Static },
-        mathish: mode.mathish, ..Numeric::current() };
+    let numeric = Numeric { kinds: if mode.dynamic { Kinds::Dynamic } else { Kinds::Static }, mathish: mode.mathish, ..Numeric::current() };
     crate::array::stack(frame, values, prototype, numeric)
 }
 
@@ -299,8 +302,7 @@ pub(crate) fn frame_reference(frame: &Layout, sources: &[(Value, usize)]) -> Res
         let source = value.layout().axes(0..value.rank().saturating_sub(*cell));
         let [destinations, _] = rustymath::agreement::Agreement::axis_pairs(&source, frame);
         for (axis, destination) in destinations.into_iter().enumerate() {
-            if destination < axes.len() && axes[destination].is_none()
-                && source.axes(std::iter::once(axis)) == frame.axes(std::iter::once(destination)) {
+            if destination < axes.len() && axes[destination].is_none() && source.axes(std::iter::once(axis)) == frame.axes(std::iter::once(destination)) {
                 axes[destination] = Some(ViewAxis { input: 1 + input as u32, axis: Some(axis) });
             }
         }
@@ -309,10 +311,8 @@ pub(crate) fn frame_reference(frame: &Layout, sources: &[(Value, usize)]) -> Res
     crate::transform::frame_reference(&references, &axes)
 }
 
-
 fn outputs(value: Value) -> Result<Outputs<Value>> {
     Ok(match crate::array::flatten(std::slice::from_ref(&value)) {
-        Some((trees, leaves)) => Outputs::from(leaves).with_trees(Some(trees)), None => Outputs::one(value),
+        Some((trees, leaves)) => Outputs::from(leaves).with_trees(Some(trees)), None => Outputs::one(value)
     })
 }
-

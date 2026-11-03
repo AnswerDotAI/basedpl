@@ -1,8 +1,8 @@
 use crate::name::{Name, is_implicit};
 use crate::{
-    At, Described, Error, ErrorKind, Number, Source, Span, Value,
-    number::{Arithmetic, DENOMINATOR, EXPONENT, IMAGINARY, MARKS, Mark, Math, SUFFIXES, Suffix, subscript},
-    primitive::{Builtin, Exact, Primitive}, eval::OperatorKind, symbols::canonical
+    At, Described, Error, ErrorKind, Number, Source, Span, Value, eval::OperatorKind,
+    number::{Arithmetic, DENOMINATOR, EXPONENT, IMAGINARY, MARKS, Mark, Math, SUFFIXES, Suffix, subscript}, primitive::{Builtin, Exact, Primitive},
+    symbols::canonical
 };
 use rustymath::{buffer::{DType, FloatWidth}, error::Kind};
 use std::{iter::Peekable, str::CharIndices, sync::Arc};
@@ -114,12 +114,12 @@ fn read_names(bodies: &[Vec<Statement>]) -> &'static [Name] {
             if nested { return; }
             match &node.kind {
                 NodeKind::Name(name, _) if !target.binding && name.implicit().is_none() => names.push(*name),
-                NodeKind::Dfn(definition) => names.extend_from_slice(definition.reads()),
-                _ => {}
+                NodeKind::Dfn(definition) => names.extend_from_slice(definition.reads()), _ => {}
             }
         });
     }
-    names.sort_unstable(); names.dedup();
+    names.sort_unstable();
+    names.dedup();
     crate::name::kept(&names)
 }
 fn effects(bodies: &[Vec<Statement>]) -> (bool, bool) {
@@ -135,7 +135,10 @@ fn effects(bodies: &[Vec<Statement>]) -> (bool, bool) {
                     acts |= function.system_function().is_some_and(|function| function.acts());
                     implicit_generator |= function.implicit_generator();
                 }
-                NodeKind::Dfn(definition) => { acts |= definition.acts; implicit_generator |= definition.implicit_generator; }
+                NodeKind::Dfn(definition) => {
+                    acts |= definition.acts;
+                    implicit_generator |= definition.implicit_generator;
+                }
                 _ => {}
             }
         });
@@ -148,9 +151,9 @@ pub(crate) fn plain_target(nodes: &[Node]) -> bool {
     match &node.kind {
         NodeKind::Name(..) => true,
         NodeKind::Group(inner) => plain_target(inner),
-        NodeKind::ArrayLiteral { cells, form: ListForm::Items | ListForm::Rows, record } => cells.iter().all(|cell| {
-            if *record { key_colon(cell).is_some_and(|colon| plain_target(&cell[colon + 1..])) } else { plain_target(cell) }
-        }),
+        NodeKind::ArrayLiteral { cells, form: ListForm::Items | ListForm::Rows, record } => {
+            cells.iter().all(|cell| if *record { key_colon(cell).is_some_and(|colon| plain_target(&cell[colon + 1..])) } else { plain_target(cell) })
+        }
         _ => false,
     }
 }
@@ -165,7 +168,10 @@ fn visit(nodes: &[Node], parent: NameUse, nested: bool, f: &mut dyn FnMut(&Node,
         match &node.kind {
             NodeKind::Group(nodes) | NodeKind::Run(nodes) => visit(nodes, target, nested, f),
             NodeKind::ArrayLiteral { cells, .. } => { for nodes in cells { visit(nodes, target, nested, f); } }
-            NodeKind::Scope(record, body) => { visit(std::slice::from_ref(record), target, nested, f); visit(std::slice::from_ref(body), target, nested, f); }
+            NodeKind::Scope(record, body) => {
+                visit(std::slice::from_ref(record), target, nested, f);
+                visit(std::slice::from_ref(body), target, nested, f);
+            }
             NodeKind::Dfn(definition) => { for statement in definition.bodies.iter().flatten() { visit(&statement.nodes, NameUse::default(), true, f); } }
             _ => {}
         }
@@ -360,9 +366,11 @@ pub(crate) fn joined_term(left: Node, joiner: Joiner, at: &Span, right: Node) ->
         }
         Joiner::Exponent => vec![left, function(Primitive::Arithmetic(Arithmetic::Times)), number("10"), function(Primitive::Math(Math::Power)), right],
         Joiner::Denominator => {
-            let floor = |value| node(NodeKind::Group(vec![function(Primitive::Math(Math::Floor)), value, node(NodeKind::Operator(OperatorKind::Mark(Mark::Rational)))]));
+            let floor = |value| {
+                node(NodeKind::Group(vec![function(Primitive::Math(Math::Floor)), value, node(NodeKind::Operator(OperatorKind::Mark(Mark::Rational)))]))
+            };
             vec![floor(left), function(Primitive::Exact(Exact::Ratio)), floor(right)]
-        },
+        }
     };
     Node { kind: NodeKind::Group(nodes), span }
 }
@@ -413,17 +421,15 @@ fn suffix(chars: &mut Characters<'_>, suffix: Suffix) -> bool {
     follows
 }
 
-
-
 /// The empty numeric vector whose prototype is `fill`.
 pub(crate) fn zilde(fill: Number) -> Value { Value::empty([0], Value::Number(fill)).unwrap() }
 
 /// Whether a token can be part of a marked literal: a literal, a parenthesis or bracket, `;`, `⋄`, a key's colon, or a superscript that the parser folds into the number before it.
 fn literal_token(kind: &TokenKind) -> bool {
     matches!(
-        kind, TokenKind::Literal(_) | TokenKind::Number(_) | TokenKind::Zilde(_) | TokenKind::Open | TokenKind::Close(_) | TokenKind::BracketOpen | TokenKind::BracketClose(_) | TokenKind::Semicolon
-            | TokenKind::Separator | TokenKind::Function(Primitive::Keys)
-            | TokenKind::Power(_) | TokenKind::Letter(Letter::Transpose)
+        kind, TokenKind::Literal(_) | TokenKind::Number(_) | TokenKind::Zilde(_) | TokenKind::Open | TokenKind::Close(_) | TokenKind::BracketOpen
+            | TokenKind::BracketClose(_) | TokenKind::Semicolon | TokenKind::Separator | TokenKind::Function(Primitive::Keys) | TokenKind::Power(_)
+            | TokenKind::Letter(Letter::Transpose)
     )
 }
 
@@ -440,8 +446,7 @@ fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>,
                 for token in &mut tokens[start + 1..i] {
                     match token.kind {
                         TokenKind::Number(_) | TokenKind::Literal(Value::Number(_)) => token.kind = TokenKind::Number(Some(mark)),
-                        TokenKind::Zilde(_) => token.kind = TokenKind::Zilde(Some(mark)),
-                        _ => {}
+                        TokenKind::Zilde(_) => token.kind = TokenKind::Zilde(Some(mark)), _ => {}
                     }
                 }
             }
@@ -556,7 +561,8 @@ pub(crate) fn prefs_record(nodes: &[Node]) -> Option<&Node> {
 fn header(tokens: &[Token], aliases: &mut bool) -> bool {
     let Some(start) = tokens.iter().position(|token| !matches!(token.kind, TokenKind::Separator)) else { return false; };
     let tokens = &tokens[start..];
-    if !matches!(tokens.first().map(|token| &token.kind), Some(TokenKind::System(name)) if crate::system::Entry::find(name) == Some(crate::system::Entry::PREFS)) { return false; }
+    if !matches!(tokens.first().map(|token| &token.kind), Some(TokenKind::System(name)) if crate::system::Entry::find(name) == Some(crate::system::Entry::PREFS))
+    { return false; }
     let Ok(statements) = (Parser { tokens, pos: 0 }).pieces(None).and_then(statements) else { return false; };
     let [nodes] = statements.as_slice() else { return false; };
     let Some(record) = prefs_record(nodes) else { return false; };
@@ -566,8 +572,7 @@ fn header(tokens: &[Token], aliases: &mut bool) -> bool {
         if colon.kind.primitive() != Some(Primitive::Keys) || crate::keyed::name(key).as_deref() != Some("hanzi_aliases") { continue; }
         let on = match &value.kind {
             NodeKind::Literal(value) => value.boolean().ok(),
-            NodeKind::Number { text: None, mark: None } => match value.span.text() { "0" => Some(false), "1" => Some(true), _ => None },
-            _ => None,
+            NodeKind::Number { text: None, mark: None } => match value.span.text() { "0" => Some(false), "1" => Some(true), _ => None }, _ => None
         };
         if let Some(on) = on { *aliases = on; }
     }
@@ -669,8 +674,8 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
         let key = source.text[..start].chars().next_back().is_some_and(|c| canonical(c) == '.');
         name(chars, key).map_err(|(end, message)| Error::new(ErrorKind::Syntax, message).at(&span(end)))?;
         TokenKind::Name(source.text[start..position(chars, len)].to_owned())
-    } else if c == 'ᵣ' { chars.next(); TokenKind::Joiner(Joiner::Denominator)
-    } else if let Some(mark) = marked(chars)? { TokenKind::Operator(OperatorKind::Mark(mark)) } else {
+    } else if c == 'ᵣ' { chars.next(); TokenKind::Joiner(Joiner::Denominator) }
+    else if let Some(mark) = marked(chars)? { TokenKind::Operator(OperatorKind::Mark(mark)) } else {
         chars.next();
         match c {
             '\'' => {
@@ -711,12 +716,11 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
                 let token = match chars.next() {
                     Some((_, 't')) => TokenKind::Literal(Value::Number(Number::from_bool(true))),
                     Some((_, 'f')) => TokenKind::Literal(Value::Number(Number::from_bool(false))),
-                    Some((_, 'n')) => { width_mark(chars); TokenKind::Number(None) },
+                    Some((_, 'n')) => { width_mark(chars); TokenKind::Number(None) }
                     Some((_, 'a')) => TokenKind::Literal(crate::keyed::text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
-                    Some((_, 'd')) => TokenKind::Literal(crate::keyed::text("0123456789")),
-                    Some((_, 'm')) => { width_mark(chars); TokenKind::Number(None) }
+                    Some((_, 'd')) => TokenKind::Literal(crate::keyed::text("0123456789")), Some((_, 'm')) => { width_mark(chars); TokenKind::Number(None) }
                     Some((_, 'e')) => TokenKind::Name("$e".into()),
-                    _ => return Err(Error::new(ErrorKind::Syntax, DOLLAR).at(&span(position(chars, len))).into()),
+                    _ => return Err(Error::new(ErrorKind::Syntax, DOLLAR).at(&span(position(chars, len))).into())
                 };
                 if chars.peek().is_some_and(|&(_, c)| name_char(c) || c.is_ascii_digit()) {
                     return Err(Error::new(ErrorKind::Syntax, DOLLAR).at(&span(position(chars, len))).into());
@@ -781,8 +785,9 @@ fn class(kind: &TokenKind, text: &str, canonical: fn(char) -> char) -> Option<&'
     match kind {
         TokenKind::Literal(_) => Some(if text.starts_with(['"', '\'']) { "string" } else { "literal" }),
         TokenKind::Number(_) | TokenKind::Zilde(_) => Some("literal"),
-        TokenKind::Power(_) | TokenKind::Operator(OperatorKind::Mark(_)) | TokenKind::Letter(_) => Some("monadic-operator"), TokenKind::Subscript(_) | TokenKind::ErrorGuard => Some("syntax"),
-        TokenKind::Joiner(_) => Some("literal"), TokenKind::Name(_) => Some("name"), TokenKind::System(_) => Some("function"), _ => None
+        TokenKind::Power(_) | TokenKind::Operator(OperatorKind::Mark(_)) | TokenKind::Letter(_) => Some("monadic-operator"),
+        TokenKind::Subscript(_) | TokenKind::ErrorGuard => Some("syntax"), TokenKind::Joiner(_) => Some("literal"), TokenKind::Name(_) => Some("name"),
+        TokenKind::System(_) => Some("function"), _ => None
     }
 }
 
@@ -842,9 +847,8 @@ impl Parser<'_> {
                     match token.kind {
                         TokenKind::BraceOpen => NodeKind::Dfn(Arc::new(Definition::new(bodies(inner, &span)?, span.clone()))),
                         TokenKind::Open if let Some(mark) = mark => marked_literal(parenthesised(inner, &span)?, &span, mark)?,
-                        TokenKind::Open => parenthesised(inner, &span)?,
-                        _ if let Some(mark) = mark => marked_literal(brackets(inner, &span)?, &span, mark)?,
-                        _ => brackets(inner, &span)?,
+                        TokenKind::Open => parenthesised(inner, &span)?, _ if let Some(mark) = mark => marked_literal(brackets(inner, &span)?, &span, mark)?,
+                        _ => brackets(inner, &span)?
                     }
                 }
                 TokenKind::Literal(a) => NodeKind::Literal(a.clone()),
@@ -866,9 +870,8 @@ impl Parser<'_> {
                         span.range.end = next.range.end;
                         self.pos += 1;
                     }
-                    NodeKind::Subscript(if indices.is_empty() { first } else {
-                        Value::new([indices.len()], indices).described("invalid subscript list").at(&span)?
-                    })
+                    NodeKind::Subscript(if indices.is_empty() { first }
+                    else { Value::new([indices.len()], indices).described("invalid subscript list").at(&span)? })
                 }
                 TokenKind::Joiner(joiner) => NodeKind::Joiner(*joiner),
                 TokenKind::Name(name) => NodeKind::Name(Name::new(name), false),
@@ -1056,9 +1059,8 @@ fn strands(nodes: Vec<Node>) -> Result<Vec<Node>, ParseFailure> {
             // A digit power binds to the one number before it, before literals strand, so `2 3²` is `2 9`: the number and its powers group, which the binder folds (`tree::Postfix`).
             let mut powered = vec![node];
             while matches!(powered[0].kind, NodeKind::Number { .. } | NodeKind::Literal(Value::Number(_))) && let Some(next) = nodes.peek()
-                && matches!(next.kind, NodeKind::BoundOperator(OperatorKind::Power, _) | NodeKind::Operator(OperatorKind::Inverse)) && touching(powered.last().expect("the number"), next) {
-                powered.push(nodes.next().expect("the power peeked"));
-            }
+                && matches!(next.kind, NodeKind::BoundOperator(OperatorKind::Power, _) | NodeKind::Operator(OperatorKind::Inverse))
+                && touching(powered.last().expect("the number"), next) { powered.push(nodes.next().expect("the power peeked")); }
             if powered.len() > 1 {
                 close_strand(&mut strand, &mut out)?;
                 out.push(Node { span: cover(&powered), kind: NodeKind::Group(powered) });
@@ -1100,7 +1102,8 @@ fn runs(nodes: Vec<Node>) -> Vec<Node> {
 /// Whether `node` is written as a function: a primitive, an operator, a dfn, or parentheses round such nodes.
 fn written_function(node: &Node) -> bool {
     match &node.kind {
-        NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::BoundOperator(..) | NodeKind::Dfn(_) => true, NodeKind::Group(inner) => inner.iter().all(written_function), _ => false
+        NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::BoundOperator(..) | NodeKind::Dfn(_) => true,
+        NodeKind::Group(inner) => inner.iter().all(written_function), _ => false
     }
 }
 
@@ -1156,10 +1159,7 @@ fn flush(run: &mut Vec<Node>, out: &mut Vec<Node>) {
 }
 
 /// Close the last run (`unwrapped`).
-fn finish((mut out, mut run): (Vec<Node>, Vec<Node>)) -> Vec<Node> {
-    flush(&mut run, &mut out);
-    unwrapped(out)
-}
+fn finish((mut out, mut run): (Vec<Node>, Vec<Node>)) -> Vec<Node> { flush(&mut run, &mut out); unwrapped(out) }
 
 /// `nodes` without the wrapper of a run that is the whole expression, which needs none: the parser's statements and the binder's joined runs (`binder::Compiler::joined`).
 pub(crate) fn unwrapped(mut nodes: Vec<Node>) -> Vec<Node> {
@@ -1174,7 +1174,11 @@ pub(crate) fn key_colon(nodes: &[Node]) -> Option<usize> {
 }
 
 /// Whether a node can stand before `:` as a key: a literal, a name, a group or brackets.
-pub(crate) fn key_node(n: &Node) -> bool { matches!(n.kind, NodeKind::Literal(_) | NodeKind::Number { .. } | NodeKind::Zilde(_) | NodeKind::Name(..) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. }) }
+pub(crate) fn key_node(n: &Node) -> bool {
+    matches!(
+        n.kind, NodeKind::Literal(_) | NodeKind::Number { .. } | NodeKind::Zilde(_) | NodeKind::Name(..) | NodeKind::Group(_) | NodeKind::ArrayLiteral { .. }
+    )
+}
 
 /// The program in `source`, with numbers that have no marker read as floats of the current settings' default width. The current settings also give literals their kinds. They're the session's within an evaluation or `Session::parse`, and the defaults elsewhere, as in a check of structure without evaluation. A complete input can still have a binding or domain error.
 pub fn parse(source: Arc<Source>) -> ParseStatus { parse_with_aliases(source, false) }
@@ -1182,9 +1186,10 @@ pub fn parse(source: Arc<Source>) -> ParseStatus { parse_with_aliases(source, fa
 pub(crate) fn parse_with_aliases(source: Arc<Source>, aliases: bool) -> ParseStatus {
     let tokens = match lex(&source, aliases, None) { Ok(tokens) => tokens, Err(failure) => return failure.into() };
     match (Parser { tokens: &tokens, pos: 0 }).pieces(None).and_then(statements) {
-        Ok(statements) => ParseStatus::Complete(Parsed {
-            statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() }),
-        Err(failure) => failure.into()
+        Ok(statements) => {
+            ParseStatus::Complete(Parsed { statements: statements.into_iter().map(|nodes| Statement { nodes, kind: StatementKind::Expression }).collect() })
+        }
+        Err(failure) => failure.into(),
     }
 }
 
@@ -1281,10 +1286,11 @@ fn body_node(body: &[Statement], dfn: &Span) -> SyntaxNode {
 impl NodeKind {
     fn name(&self) -> &'static str {
         match self {
-            Self::Literal(_) | Self::Number { .. } | Self::Zilde(_) => "Literal", Self::Function(_) => "Function", Self::Operator(_) | Self::BoundOperator(..) => "Operator", Self::Name(..) => "Name",
-            Self::System(_) => "System", Self::Assign => "Assign", Self::Output => "Output", Self::ErrorGuard => "ErrorGuard", Self::Group(_) => "Group",
-            Self::Run(_) => "Run", Self::Subscript(_) => "Subscript", Self::Scope(..) => "Scope", Self::ArrayLiteral { .. } => "ArrayLiteral",
-            Self::Dfn(_) => "Dfn", Self::Joiner(_) => "Joiner", Self::Letter(_) => "Letter"
+            Self::Literal(_) | Self::Number { .. } | Self::Zilde(_) => "Literal", Self::Function(_) => "Function",
+            Self::Operator(_) | Self::BoundOperator(..) => "Operator", Self::Name(..) => "Name", Self::System(_) => "System", Self::Assign => "Assign",
+            Self::Output => "Output", Self::ErrorGuard => "ErrorGuard", Self::Group(_) => "Group", Self::Run(_) => "Run", Self::Subscript(_) => "Subscript",
+            Self::Scope(..) => "Scope", Self::ArrayLiteral { .. } => "ArrayLiteral", Self::Dfn(_) => "Dfn", Self::Joiner(_) => "Joiner",
+            Self::Letter(_) => "Letter"
         }
     }
     /// The primitive that a glyph's node holds, or `None` for any other node.

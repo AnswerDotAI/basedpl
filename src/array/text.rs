@@ -43,7 +43,10 @@ impl Value {
     /// `⍕`'s text for this value. Numbers show their kind's markers where `el.marks` is set, as monadic `⍕` shows them.
     pub(crate) fn formatted(&self, el: Elide) -> Result<Self, ErrorKind> {
         if self.is_unit() {
-            if let Value::Function(f) = self.at(0) { let text = format!("⟨{}⟩", f.bpl()); return Self::characters([text.chars().count()], text.chars().collect()); }
+            if let Value::Function(f) = self.at(0) {
+                let text = format!("⟨{}⟩", f.bpl());
+                return Self::characters([text.chars().count()], text.chars().collect());
+            }
         }
         // A keyed array formats as its display text, so its keys stay visible.
         let keyed = self.has_keys();
@@ -198,9 +201,11 @@ impl Value {
         let Self::Array(array) = self else { return crate::display::plain(self, el) };
         let layout = self.layout().axes(1..self.rank());
         let size = layout.count();
-        let rows: Vec<_> = positions(self.shape()[0], edges).map(|i| i.map_or_else(|| "…".into(), |i| {
-            Self::stored_part(array, i * size..(i + 1) * size, layout.clone()).expect("a major cell fits its array").row(item, el, edges)
-        })).collect();
+        let rows: Vec<_> = positions(self.shape()[0], edges).map(|i| {
+            i.map_or_else(
+                || "…".into(),
+                |i| Self::stored_part(array, i * size..(i + 1) * size, layout.clone()).expect("a major cell fits its array").row(item, el, edges))
+        }).collect();
         // One major cell needs a trailing `⋄`, or it reads back as that cell alone.
         if rows.len() == 1 { format!("[{}⋄]", rows[0]) } else { format!("[{}]", rows.join("⋄")) }
     }
@@ -269,9 +274,12 @@ impl Value {
         matches!(self, Self::Array(_)) && self.shape().len() == 1 && self.len() >= 2 && !self.has_keys() && !self.shows_names(el)
             && self.string_literal(el.display).is_none() && !matches!(self.shown_kind(), Some((rustymath::buffer::DType::Integer(_), _)))
             && match self.as_items() {
-                items if items.nested() => items.values()
-                    .all(|e| matches!(*e, Self::Number(_) | Self::Pending(_)) || matches!(*e, Self::Character(c) if !c.is_control()) || e.string_literal(el.display).is_some()),
-                Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()), _ => true
+                items if items.nested() => items.values().all(|e| {
+                    matches!(*e, Self::Number(_) | Self::Pending(_)) || matches!(*e, Self::Character(c) if !c.is_control())
+                        || e.string_literal(el.display).is_some()
+                }),
+                Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()),
+                _ => true,
             }
     }
 

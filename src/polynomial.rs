@@ -3,7 +3,7 @@ use crate::{
     Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Cells, Layout, generated_len},
     number::{Arithmetic, Field, Math, Numeric, read_as, with_field}, primitive::{Primitive, scalar}
 };
-use rustymath::{buffer::{Element, FloatWidth}, Float, error::Kind, with_float_width};
+use rustymath::{Float, buffer::{Element, FloatWidth}, error::Kind, with_float_width};
 
 fn int(n: usize) -> Number { Number::from_integer(n as i64) }
 fn numbers(a: &Value) -> Result<Vec<Number>, Error> {
@@ -208,7 +208,8 @@ pub(crate) fn call(left: Option<&Value>, right: &Value, numeric: Numeric) -> Res
         results.push(Value::number(polynomial.evaluate(&coordinates(&point)?, settings)?.wrapped(settings)).unwrap());
     }
     if agreement.layout.shape().is_empty() { return Ok(results.remove(0)); }
-    crate::array::assemble_stored(&agreement.layout, &results[..agreement.len], &results[0], crate::array::Widening::Items, None, numeric).described("polynomial result exceeds array limits")
+    crate::array::assemble_stored(&agreement.layout, &results[..agreement.len], &results[0], crate::array::Widening::Items, None, numeric)
+        .described("polynomial result exceeds array limits")
 }
 
 /// `⌻⁻¹Y`: the coefficients of each polynomial in `Y`, given by its multiplier and roots or by its terms.
@@ -225,7 +226,8 @@ fn each(source: &Value, numeric: Numeric, f: impl Fn(&Polynomial) -> Result<Valu
     let mut results = parsed(&cells)?.iter().map(f).collect::<Result<Vec<_>, _>>()?;
     let layout = cells.frame_layout();
     if layout.shape().is_empty() { return Ok(results.remove(0)); }
-    crate::array::assemble_stored(&layout, &results[..cells.len()], &results[0], crate::array::Widening::Items, None, numeric).described("polynomial result exceeds array limits")
+    crate::array::assemble_stored(&layout, &results[..cells.len()], &results[0], crate::array::Widening::Items, None, numeric)
+        .described("polynomial result exceeds array limits")
 }
 
 /// The partial derivative of each polynomial in `c` with respect to each variable, as coefficients that `⌻` evaluates: a vector for a polynomial in one variable, and an exponent table for one in several. `∂` evaluates them at a point to differentiate `C⌻x`.

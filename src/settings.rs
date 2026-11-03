@@ -30,11 +30,11 @@ fn width(value: u8) -> FloatWidth {
 }
 
 pub(crate) fn numeric() -> Numeric {
-    NUMERIC.with(|stack| stack.borrow().last().map(|active| active.numeric)).unwrap_or_else(|| Numeric {
-        mathish: MATHISH.load(Relaxed), width: width(FLOAT.load(Relaxed)),
-        kinds: if STATIC_KINDS.load(Relaxed) { Kinds::Static } else { Kinds::Dynamic },
-        int: if INT32.load(Relaxed) { Width::I32 } else { Width::I64 }, ..Numeric::DEFAULT
-    }.with_public_tolerance())
+    NUMERIC.with(|stack| stack.borrow().last().map(|active| active.numeric)).unwrap_or_else(|| {
+        Numeric { mathish: MATHISH.load(Relaxed), width: width(FLOAT.load(Relaxed)),
+            kinds: if STATIC_KINDS.load(Relaxed) { Kinds::Static } else { Kinds::Dynamic }, int: if INT32.load(Relaxed) { Width::I32 } else { Width::I64 },
+            ..Numeric::DEFAULT }.with_public_tolerance()
+    })
 }
 
 pub(crate) fn int_storage() -> Option<Width> { let n = numeric(); (n.kinds == Kinds::Static).then_some(n.int) }
@@ -47,9 +47,11 @@ pub(crate) fn set_numeric(numeric: Numeric) {
     FLOAT.store(numeric.width as u8, Relaxed);
     STATIC_KINDS.store(numeric.kinds == Kinds::Static, Relaxed);
     INT32.store(numeric.int == Width::I32, Relaxed);
-    NUMERIC.with(|stack| for active in stack.borrow_mut().iter_mut() {
-        active.numeric = numeric;
-        active.operands = std::array::from_fn(|i| capture(Setting::BODY[i], numeric));
+    NUMERIC.with(|stack| {
+        for active in stack.borrow_mut().iter_mut() {
+            active.numeric = numeric;
+            active.operands = std::array::from_fn(|i| capture(Setting::BODY[i], numeric));
+        }
     });
 }
 
@@ -57,13 +59,14 @@ pub(crate) fn capture(setting: Setting, n: Numeric) -> Value {
     match setting {
         Setting::Width => Value::integer(n.width as i64), Setting::IntegerWidth => Value::integer(n.int as i64),
         Setting::Tolerance => Value::Number(crate::Number::float(n.tolerance.value(), FloatWidth::F64)),
-        Setting::Units => Value::Number(crate::Number::float(n.units, FloatWidth::F64)),
+        Setting::Units => Value::Number(crate::Number::float(n.units, FloatWidth::F64))
     }
 }
 pub(crate) fn capture_current(setting: Setting, snapshot: Numeric) -> Value {
-    NUMERIC.with(|stack| stack.borrow().last().map(|active| {
-        active.operands[Setting::BODY.iter().position(|&name| name == setting).expect("every setting belongs to BODY")].clone()
-    })).unwrap_or_else(|| capture(setting, snapshot))
+    NUMERIC.with(|stack| {
+        stack.borrow().last()
+            .map(|active| active.operands[Setting::BODY.iter().position(|&name| name == setting).expect("every setting belongs to BODY")].clone())
+    }).unwrap_or_else(|| capture(setting, snapshot))
 }
 
 fn setting(call: &CallView<'_>, name: Setting) -> Result<crate::Number> {
@@ -83,9 +86,7 @@ pub(crate) fn captured(call: &CallView<'_>) -> Result<Numeric> {
 
 pub(crate) fn convergence(call: &CallView<'_>) -> Result<Numeric> { Ok(captured(call)?.convergence()) }
 
-pub(crate) fn converged(call: &CallView<'_>, left: &Value, right: &Value) -> Result<bool> {
-    left.matches_within(right, convergence(call)?)
-}
+pub(crate) fn converged(call: &CallView<'_>, left: &Value, right: &Value) -> Result<bool> { left.matches_within(right, convergence(call)?) }
 
 pub(crate) struct NumericScope { depth: usize, thread: std::marker::PhantomData<std::rc::Rc<()>> }
 impl Drop for NumericScope { fn drop(&mut self) { NUMERIC.with(|stack| stack.borrow_mut().truncate(self.depth)); } }
@@ -94,7 +95,12 @@ pub(crate) fn activate(origin: &Origin<&[Value]>) -> Result<NumericScope> {
     let call = origin.call_view(&origin.list);
     let numeric = captured(&call)?;
     let operands = std::array::from_fn(|i| call.setting(Setting::BODY[i]).expect("captured BODY context").1.clone());
-    let depth = NUMERIC.with(|stack| { let mut stack = stack.borrow_mut(); let depth = stack.len(); stack.push(ActiveNumeric { numeric, operands }); depth });
+    let depth = NUMERIC.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        let depth = stack.len();
+        stack.push(ActiveNumeric { numeric, operands });
+        depth
+    });
     Ok(NumericScope { depth, thread: std::marker::PhantomData })
 }
 
@@ -117,7 +123,10 @@ impl Sizes {
     pub const SMALL: Self = Self { block: 11, run: 37 };
 }
 pub(crate) fn sizes() -> Sizes { Sizes { block: BLOCK.load(Relaxed), run: RUN.load(Relaxed) } }
-pub fn set_sizes(sizes: Sizes) { BLOCK.store(sizes.block, Relaxed); RUN.store(sizes.run, Relaxed); }
+pub fn set_sizes(sizes: Sizes) {
+    BLOCK.store(sizes.block, Relaxed);
+    RUN.store(sizes.run, Relaxed);
+}
 pub fn set_small_sizes(on: bool) { set_sizes(if on { Sizes::SMALL } else { Sizes::DEFAULT }); }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

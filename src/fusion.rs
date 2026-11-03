@@ -1,6 +1,7 @@
 //! The row builder shared by dispatch, rewriting and concrete refill.
-use crate::{Value, Error, error::Result, graph::{Node, Pending}, primitive::{CallView, Operation},
-    program::{Description, Origin, Outputs, Read, trace::Tracing, Reason}};
+use crate::{
+    Error, Value, error::Result, graph::{Node, Pending}, primitive::{CallView, Operation}, program::{Description, Origin, Outputs, Read, Reason, trace::Tracing}
+};
 use rustymath::agreement::Mapping;
 
 pub(crate) const BUFFERED: usize = 3 << 15;
@@ -21,10 +22,7 @@ pub(crate) fn built(origin: Origin<&[Value]>, observed: &[Value]) -> Result<Outp
     let site = origin.site.clone();
     let descs = descs.unwrap_or_else(Outputs::empty);
     let count = descs.as_ref().len();
-    if observing {
-        Tracing::stop(Reason::HostKind, site.clone());
-        if Tracing::planning() { return Err(Error::planning()); }
-    }
+    if observing { Tracing::stop(Reason::HostKind, site.clone()); if Tracing::planning() { return Err(Error::planning()); } }
     let node = Node::build(step, origin.with_list(reads), descs, level);
     if observing || acts {
         if Tracing::planning() { Tracing::stop(Reason::Effect, site); return Err(Error::planning()); }
@@ -34,9 +32,9 @@ pub(crate) fn built(origin: Origin<&[Value]>, observed: &[Value]) -> Result<Outp
         if acts { Tracing::acted(&Value::Pending(completion)); }
         if observing { return node.observe(); }
     }
-    let values = (if count == 1 { Outputs::one(Value::Pending(Pending::data(node.clone(), 0))) }
-        else { Outputs::many((0..count).map(|output| Value::Pending(Pending::data(node.clone(), output as u32))).collect()) }
-        ).with_trees(node.description().trees().cloned()).with_shy(node.description().shy);
+    let values = (if count == 1 { Outputs::one(Value::Pending(Pending::data(node.clone(), 0))) } else {
+        Outputs::many((0..count).map(|output| Value::Pending(Pending::data(node.clone(), output as u32))).collect())
+    }).with_trees(node.description().trees().cloned()).with_shy(node.description().shy);
     if !acts && level.is_none() && node.over_budget() {
         if Tracing::planning() { Tracing::stop(Reason::Execute, site.clone()); return Err(Error::planning()); }
         let roots: Vec<_> = values.as_ref().iter().filter_map(Value::pending).cloned().collect();

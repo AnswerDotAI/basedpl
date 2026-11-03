@@ -84,7 +84,8 @@ impl From<Kind> for ErrorKind { fn from(kind: Kind) -> Self { Self::Array(rustym
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Unsupported | Self::Interrupt | Self::Timeout | Self::BatchStop(_) | Self::Planning => f.write_str(self.name()), _ => write!(f, "{} ERROR", self.name())
+            Self::Unsupported | Self::Interrupt | Self::Timeout | Self::BatchStop(_) | Self::Planning => f.write_str(self.name()),
+            _ => write!(f, "{} ERROR", self.name()),
         }
     }
 }
@@ -96,7 +97,6 @@ pub struct Error(Box<ErrorData>);
 /// The fields of an [`Error`], which it dereferences to. `span` is `None` until the error is placed. The evaluator places its own errors at the nodes it reports, and `Function::call` places each error that the function's code raised without a span at the call's span.
 #[derive(Clone, Debug)]
 pub struct ErrorData { pub kind: ErrorKind, pub message: String, pub span: Option<Span>, pub calls: Vec<Span> }
-
 
 impl std::ops::Deref for Error {
     type Target = ErrorData;
@@ -136,8 +136,7 @@ impl Error {
 impl From<rustymath::error::Error> for Error { fn from(e: rustymath::error::Error) -> Self { Self::new(e, "") } }
 impl From<ErrorKind> for Error { fn from(kind: ErrorKind) -> Self { Self::new(kind, "") } }
 impl From<Kind> for Error { fn from(kind: Kind) -> Self { Self::new(kind, "") } }
-/// A batched run's stop. Only the level that owns the run catches it, so its span never shows.
-/// A message from numeric code, which reports a DOMAIN error as its message alone.
+/// A batched run's stop. Only the level that owns the run catches it, so its span never shows. A message from numeric code, which reports a DOMAIN error as its message alone.
 impl From<&'static str> for Error { fn from(message: &'static str) -> Self { Self::domain(message) } }
 
 impl Span {
@@ -158,13 +157,19 @@ impl Span {
 pub(crate) trait Described<T> { fn described(self, message: &str) -> std::result::Result<T, Error>; }
 impl<T, E: Into<Error>> Described<T> for std::result::Result<T, E> {
     fn described(self, message: &str) -> std::result::Result<T, Error> {
-        self.map_err(|error| { let mut error = error.into(); if error.message.is_empty() { error.message = message.into(); } error })
+        self.map_err(|error| {
+            let mut error = error.into();
+            if error.message.is_empty() { error.message = message.into(); }
+            error
+        })
     }
 }
 
 /// Places an error at a source span, where it has no span yet.
 pub(crate) trait At<T> { fn at(self, span: &Span) -> std::result::Result<T, Error>; }
-impl<T, E: Into<Error>> At<T> for std::result::Result<T, E> { fn at(self, span: &Span) -> std::result::Result<T, Error> { self.map_err(|e| e.into().at(span)) } }
+impl<T, E: Into<Error>> At<T> for std::result::Result<T, E> {
+    fn at(self, span: &Span) -> std::result::Result<T, Error> { self.map_err(|e| e.into().at(span)) }
+}
 
 // Render tabs at four-column stops. Escape other controls rather than sending them to the terminal. Source spans themselves remain unchanged UTF-8 byte offsets.
 fn display_text(text: &str) -> String {

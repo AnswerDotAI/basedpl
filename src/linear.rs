@@ -1,7 +1,7 @@
 //! Linear seeds and the transpose of the canonical graph.
 use crate::{
-    array, derivative, error::Result, graph::{Node, Pending}, number::{Arithmetic, Mark},
-    primitive::{Operation, Pairing, Primitive}, program::{trace::Role, Desc, Live, Origin, Read, Step}, Error, Value,
+    Error, Value, array, derivative, error::Result, graph::{Node, Pending}, number::{Arithmetic, Mark}, primitive::{Operation, Pairing, Primitive},
+    program::{Desc, Live, Origin, Read, Step, trace::Role}
 };
 use rustymath::{buffer::DType, hashing::{HashMap, HashMapExt}};
 
@@ -13,15 +13,18 @@ pub(crate) fn seed(like: &Value, level: usize, position: usize, value: Option<Va
 
 pub(crate) fn read_back(origin: &crate::program::Origin<&[crate::program::Read<Value>]>, cotangent: &Value, needed: &[bool]) -> Result<Vec<Option<Value>>> {
     assert_eq!(origin.list.len(), needed.len());
-    needed.iter().enumerate().map(|(input, &needed)| {
-        needed.then(|| crate::primitive::Operation::read_back(origin, input, cotangent)).transpose()
-    }).collect()
+    needed.iter().enumerate().map(|(input, &needed)| needed.then(|| crate::primitive::Operation::read_back(origin, input, cotangent)).transpose()).collect()
 }
 
 fn add(cotangents: &mut HashMap<Pending, Value>, source: Pending, contribution: Value) -> Result<()> {
-    let value = match cotangents.remove(&source) { None => contribution, Some(previous) =>
-        Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Plus), pairing: Pairing::Axes }.call(&[previous, contribution], 0)?, };
-    cotangents.insert(source, value); Ok(())
+    let value = match cotangents.remove(&source) {
+        None => contribution,
+        Some(previous) => {
+            Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Plus), pairing: Pairing::Axes }.call(&[previous, contribution], 0)?
+        }
+    };
+    cotangents.insert(source, value);
+    Ok(())
 }
 
 pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value], level: usize) -> Result<Vec<Value>> {
@@ -33,7 +36,10 @@ pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value]
         let directions = array::flatten(std::slice::from_ref(direction)).map_or_else(|| vec![direction.clone()], |(_, leaves)| leaves);
         if leaves.len() != directions.len() { return Err(Error::domain("a cotangent must match its result's structure")); }
         for (leaf, direction) in leaves.into_iter().zip(directions) {
-            if let Value::Pending(source) = leaf { live_roots.push(Value::Pending(source.clone())); add(&mut cotangents, source, direction)?; }
+            if let Value::Pending(source) = leaf {
+                live_roots.push(Value::Pending(source.clone()));
+                add(&mut cotangents, source, direction)?;
+            }
         }
     }
     let live = Live::of(&live_roots, Some(level));
@@ -51,10 +57,13 @@ pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value]
                 let result = Value::Pending(Pending::data(node.clone(), 0));
                 let slopes = Operation::partials(&origin, &result, &needed)?;
                 let direction = Operation::read_result(&origin, direction)?;
-                slopes.into_iter().enumerate().map(|(input, slope)| slope.map(|slope| {
-                    let contribution = Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Times), pairing: Pairing::Axes }.call(&[slope, direction.clone()], 0)?;
-                    Operation::read_back(&origin, input, &contribution)
-                }).transpose()).collect::<Result<Vec<_>>>()?
+                slopes.into_iter().enumerate().map(|(input, slope)| {
+                    slope.map(|slope| {
+                        let contribution = Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Times), pairing: Pairing::Axes }
+                            .call(&[slope, direction.clone()], 0)?;
+                        Operation::read_back(&origin, input, &contribution)
+                    }).transpose()
+                }).collect::<Result<Vec<_>>>()?
             }
             Step::Convert { arg, .. } => {
                 let dtype = origin.list[arg as usize].operand.dtype().ok_or_else(Error::planning)?;

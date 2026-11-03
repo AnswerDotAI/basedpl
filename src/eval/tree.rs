@@ -1,9 +1,8 @@
 //! The binder's uncached register instructions and value constructors. Each statement compiles against its current categories, then executes once. Graph replay bypasses this executor.
 use super::binder::Category;
-use super::bindings::Callable;
-use crate::syntax::{Definition, DefinitionKind, Letter};
-use super::bindings::Address;
+use super::bindings::{Address, Callable};
 use super::*;
+use crate::syntax::{Definition, DefinitionKind, Letter};
 use std::{borrow::Cow, ops::Range};
 
 /// The statement executor's inline registers; larger statements use heap storage.
@@ -40,14 +39,15 @@ pub(super) enum To {
 /// A target expression compiled around its root name. The resulting graph goes through the shared selection walk.
 #[derive(Clone, Debug)]
 pub(super) struct Layer {
-    pub(super) split: Option<Split>, pub(super) prefix: Option<Result<StatementCode, Error>>, pub(super) last: Last, pub(super) last_at: Span, pub(super) span: Span, pub(super) at: Span,
+    pub(super) split: Option<Split>, pub(super) prefix: Option<Result<StatementCode, Error>>, pub(super) last: Last, pub(super) last_at: Span,
+    pub(super) span: Span, pub(super) at: Span
 }
 
 /// A selecting primitive and its index expression, evaluated once per assignment. `simple` marks a single array operand; `keyed` allows creation of missing keyed items.
 #[derive(Clone, Debug)]
 pub(super) struct Split {
-    pub(super) p: Primitive, pub(super) index: Result<StatementCode, Error>, pub(super) slot: usize, pub(super) keyed: bool, pub(super) simple: bool, pub(super) unit: bool,
-    pub(super) container: Box<Layer>, pub(super) at: Span, pub(super) p_at: Span,
+    pub(super) p: Primitive, pub(super) index: Result<StatementCode, Error>, pub(super) slot: usize, pub(super) keyed: bool, pub(super) simple: bool,
+    pub(super) unit: bool, pub(super) container: Box<Layer>, pub(super) at: Span, pub(super) p_at: Span
 }
 
 impl Split {
@@ -70,7 +70,7 @@ impl Fact {
     fn changed(&self, session: &Session) -> Result<bool, Error> {
         let bindings = &session.bindings;
         let current = if self.keys.is_empty() { bindings.role_at(&self.address)?.unwrap_or(super::binder::UNBOUND) }
-            else { super::binder::field_role(bindings.load(&self.address)?, &self.keys) };
+        else { super::binder::field_role(bindings.load(&self.address)?, &self.keys) };
         Ok(current != self.role)
     }
 }
@@ -81,10 +81,7 @@ pub(super) enum Read { Register(u32), Constant(u32) }
 
 /// A group or run inside a statement, whose instructions sit between an `Enter` and an `Exit`. Levels are numbered from 1 in the order of their `Enter`s, and 0 is the statement. Its value goes to register `to`, with the text `range` and the category `check` that the compiler fixed. `span` is its first node's text, where errors in it point. `kind` says what it evaluates.
 #[derive(Clone, Debug)]
-pub(super) struct Level {
-    pub(super) to: u32, pub(super) range: Range<u32>, pub(super) span: Span,
-    pub(super) check: Category, pub(super) kind: Kind
-}
+pub(super) struct Level { pub(super) to: u32, pub(super) range: Range<u32>, pub(super) span: Span, pub(super) check: Category, pub(super) kind: Kind }
 
 /// What a level evaluates: a group or run, or an item, in cell `cell`, of the bracket literal `literal`, with how a keyed item's level makes its entries (`Keyed`). Each counts toward the depth limit while it runs, as `Session::nested` counts what it evaluates.
 #[derive(Clone, Debug)]
@@ -265,18 +262,14 @@ pub(super) fn assembled<'e>(node: &Node, pieces: impl Iterator<Item = Cow<'e, En
 fn piece_value(piece: Cow<'_, Entity>) -> Option<Value> {
     match piece {
         Cow::Owned(Entity { term: Term::Binding(Binding::Value(value)), .. }) => Some(value),
-        Cow::Borrowed(Entity { term: Term::Binding(Binding::Value(value)), .. }) => Some(value.clone()),
-        _ => None,
+        Cow::Borrowed(Entity { term: Term::Binding(Binding::Value(value)), .. }) => Some(value.clone()), _ => None
     }
 }
 
 /// What a bracket item in cell `cell` of the literal `literal` gives it, from the item's `value`: nothing for an absent `⍺`, the array (`session::listed`), or, with a key and the position of the item's colon, the item's entries (`Session::keyed`).
 pub(super) fn piece(session: &Session, literal: &Node, cell: usize, value: Binding, key: Option<(&Value, usize)>, span: &Span) -> Result<Term, Error> {
     let Some(value) = super::session::listed(value, span)? else { return Ok(Term::Binding(Binding::Absent)) };
-    Ok(match key {
-        None => Term::Binding(Binding::Value(value)),
-        Some((key, colon)) => Term::Entries(session.keyed(literal, cell, colon, key, &value)?),
-    })
+    Ok(match key { None => Term::Binding(Binding::Value(value)), Some((key, colon)) => Term::Entries(session.keyed(literal, cell, colon, key, &value)?) })
 }
 
 /// What an item of a compiled statement holds (`Entity`): a binding, or a term that the binder hasn't finished: a train's tines, an array bound as a function's left argument, a strand's items, a postfix, or a keyed item's entries.
@@ -360,8 +353,7 @@ impl Entity {
         let span = || span_of(source, &self.range);
         Ok(match self.term {
             Term::Binding(value) => value, Term::Train(tines) => Binding::from(Function::train_operands(tines, &span())?),
-            Term::Postfix(postfix) => Binding::Operator(postfix.operator(&span())?),
-            Term::Left(a, f) => Binding::from(before(a, f.function()?, &span())?),
+            Term::Postfix(postfix) => Binding::Operator(postfix.operator(&span())?), Term::Left(a, f) => Binding::from(before(a, f.function()?, &span())?),
             Term::Strand(items) => Binding::Value(Value::new(vec![items.len()], items).map_err(|k| Error::new(k, "invalid strand").at(&span()))?),
             Term::Entries(_) => unreachable!("a keyed item's entries go only into its literal")
         })
@@ -373,7 +365,9 @@ impl Entity {
             Binding::Function(f) => Ok(f),
             value => {
                 let function = Function::from_value(value, &span_of(source, &range))?;
-                Ok(match session().bindings.inputs() { Some(dependencies) => Callable::Rebuild { template: function, dependencies }, None => Callable::Input(function) })
+                Ok(match session().bindings.inputs() {
+                    Some(dependencies) => Callable::Rebuild { template: function, dependencies }, None => Callable::Input(function)
+                })
             }
         }
     }
@@ -384,8 +378,7 @@ impl Entity {
         let term = match self.term {
             Term::Binding(Binding::Function(f)) if category == Category::Value => Term::Binding(Binding::Value(Value::Function(f.function()?))),
             Term::Binding(Binding::Operator(op)) if category == Category::Value => Term::Binding(Binding::Value(Value::Operator(Arc::new(op)))),
-            Term::Binding(Binding::Value(v)) if category != Category::Value => Term::Binding(Binding::from_element(v)),
-            term => term,
+            Term::Binding(Binding::Value(v)) if category != Category::Value => Term::Binding(Binding::from_element(v)), term => term
         };
         Ok(Self { term, category, ..self })
     }
@@ -440,7 +433,9 @@ pub(super) fn attached<'p>(
 pub(super) fn split_call<'p>(left: Cow<'p, Entity>, source: &Arc<Source>) -> Result<(Option<Cow<'p, Value>>, Cow<'p, Callable>, bool), Error> {
     Ok(match left {
         Cow::Owned(Entity { term: Term::Left(FunctionOperand::Value { value, literal }, f), .. }) => (Some(Cow::Owned(value)), Cow::Owned(f), literal),
-        Cow::Borrowed(Entity { term: Term::Left(FunctionOperand::Value { value, literal }, f), .. }) => (Some(Cow::Borrowed(value)), Cow::Borrowed(f), *literal),
+        Cow::Borrowed(Entity { term: Term::Left(FunctionOperand::Value { value, literal }, f), .. }) => {
+            (Some(Cow::Borrowed(value)), Cow::Borrowed(f), *literal)
+        }
         left => (None, function_of(left, source)?, false),
     })
 }
@@ -476,7 +471,9 @@ fn push_tines(entity: Cow<'_, Entity>, tines: &mut Vec<Tine>, literal: bool, sou
         Cow::Borrowed(Entity { term: Term::Train(borrowed), .. }) => tines.extend_from_slice(borrowed),
         Cow::Owned(Entity { term: Term::Left(a, f), .. }) => tines.extend([a, FunctionOperand::value(Value::Function(f.function()?), false)]),
         Cow::Borrowed(Entity { term: Term::Left(a, f), .. }) => tines.extend([a.clone(), FunctionOperand::value(Value::Function(f.function()?), false)]),
-        entity if matches!(entity.category, Category::Value | Category::Callable) => tines.push(FunctionOperand::value(array_of(entity, source)?.into_owned(), literal)),
+        entity if matches!(entity.category, Category::Value | Category::Callable) => {
+            tines.push(FunctionOperand::value(array_of(entity, source)?.into_owned(), literal))
+        }
         entity => tines.push(FunctionOperand::value(Value::Function(function_of(entity, source)?.function()?), false)),
     }
     Ok(())
@@ -488,7 +485,9 @@ pub(super) fn constant(node: &Node) -> Binding {
         NodeKind::Literal(a) => Binding::Value(a.clone()),
         NodeKind::Function(builtin) => Binding::from(builtin.function()),
         NodeKind::Operator(kind) => Binding::Operator(OperatorValue::Operator(Operator::Kind(kind.clone()))),
-        NodeKind::BoundOperator(kind, right) => Binding::Operator(OperatorValue::Bound { op: Operator::Kind(kind.clone()), right: FunctionOperand::value(right.clone(), true) }),
+        NodeKind::BoundOperator(kind, right) => {
+            Binding::Operator(OperatorValue::Bound { op: Operator::Kind(kind.clone()), right: FunctionOperand::value(right.clone(), true) })
+        }
         _ => unreachable!("a literal, a function or an operator"),
     }
 }
@@ -522,11 +521,9 @@ impl Postfix {
     fn parts(&self, a: Value) -> (Operation, Option<Value>, Value) {
         let primitive = |primitive| Operation::Primitive { primitive, pairing: crate::primitive::Pairing::Axes };
         match self {
-            Self::Index(index) => (primitive(Primitive::Index), Some(index.clone()), a),
-            Self::Transpose => (primitive(Primitive::Transpose), None, a),
+            Self::Index(index) => (primitive(Primitive::Index), Some(index.clone()), a), Self::Transpose => (primitive(Primitive::Transpose), None, a),
             Self::Power(n) => (primitive(Primitive::Math(crate::number::Math::Power)), Some(a), Value::weak_integer(*n)),
-            Self::Mark(mark) => (mark.conversion(), None, a),
-            Self::Unit => unreachable!("ᵘ after an array compiles to an error"),
+            Self::Mark(mark) => (mark.conversion(), None, a), Self::Unit => unreachable!("ᵘ after an array compiles to an error")
         }
     }
     pub(super) fn call(&self, a: Value, span: &Span) -> Result<Value, Error> {
@@ -544,9 +541,8 @@ impl Postfix {
             Self::Index(index) => OperatorValue::Bound { op: Operator::Kind(OperatorKind::Axis), right: FunctionOperand::value(index.clone(), true) },
             Self::Power(-1) => kind(OperatorKind::Inverse),
             Self::Power(n) => OperatorValue::Bound { op: Operator::Kind(OperatorKind::Power), right: FunctionOperand::value(Value::integer(*n), true) },
-            Self::Mark(mark) => kind(OperatorKind::Mark(*mark)),
-            Self::Transpose => return Err(Error::domain("ᵀ transposes the array before it").at(span)),
-            Self::Unit => return Err(Error::domain("ᵘ makes a scalar that holds the function before it").at(span)),
+            Self::Mark(mark) => kind(OperatorKind::Mark(*mark)), Self::Transpose => return Err(Error::domain("ᵀ transposes the array before it").at(span)),
+            Self::Unit => return Err(Error::domain("ᵘ makes a scalar that holds the function before it").at(span))
         })
     }
     pub(super) fn of(operator: &OperatorValue) -> Option<Self> {
@@ -554,8 +550,7 @@ impl Postfix {
             OperatorValue::Bound { op: Operator::Kind(OperatorKind::Axis), right } => Some(Self::Index(right.stored()?.clone())),
             OperatorValue::Bound { op: Operator::Kind(OperatorKind::Power), right } => right.stored()?.as_number()?.integer().ok().map(Self::Power),
             OperatorValue::Operator(Operator::Kind(OperatorKind::Inverse)) => Some(Self::Power(-1)),
-            OperatorValue::Operator(Operator::Kind(OperatorKind::Mark(mark))) => Some(Self::Mark(*mark)),
-            _ => None,
+            OperatorValue::Operator(Operator::Kind(OperatorKind::Mark(mark))) => Some(Self::Mark(*mark)), _ => None
         }
     }
 }
@@ -567,18 +562,14 @@ pub(super) fn lettered(letter: Letter) -> Postfix { match letter { Letter::Trans
 pub(super) fn postfixed(postfix: &Postfix, operand: Binding, span: &Span) -> Result<Binding, Error> {
     match (postfix, operand) {
         (Postfix::Unit, Binding::Function(f)) => Ok(Binding::Value(unit(f.function()?, span)?)),
-        (postfix, Binding::Value(a)) => Ok(Binding::Value(postfix.call(a, span)?)),
-        _ => unreachable!("the compiler compiles a postfix for its operand's role"),
+        (postfix, Binding::Value(a)) => Ok(Binding::Value(postfix.call(a, span)?)), _ => unreachable!("the compiler compiles a postfix for its operand's role")
     }
 }
 
 impl StatementCode {
     /// Whether every fact that the statement's binding read still holds, which the statement checks as it starts (target part 18: roles are read again at each statement's start).
     #[inline(always)]
-    fn holds(&self, session: &Session) -> Result<bool, Error> {
-        for fact in &self.facts { if fact.changed(session)? { return Ok(false); } }
-        Ok(true)
-    }
+    fn holds(&self, session: &Session) -> Result<bool, Error> { for fact in &self.facts { if fact.changed(session)? { return Ok(false); } } Ok(true) }
 
     /// The statement evaluated by its compiled steps (`StatementCode::run_with`).
     #[inline(always)]
@@ -630,21 +621,15 @@ impl StatementCode {
                     let taken = if *take { session.bindings.take_at(address) } else { None };
                     let found = match taken { Some(value) => Some(value), None => session.bindings.load(address)? };
                     let value = match found {
-                        Some(value) if !matches!(value, Binding::Released) => value,
-                        found => return Err(unbound(*name, found, &span_of(source, range))),
+                        Some(value) if !matches!(value, Binding::Released) => value, found => return Err(unbound(*name, found, &span_of(source, range)))
                     };
                     if put(registers, *to, Entity::of(value, range.clone(), false), *check) {
-                        match on {
-                            Mismatch::Fit => refit(registers, *to, *check)?,
-                            Mismatch::Fail => return Err(role_changed(&span_of(source, range))),
-                        }
+                        match on { Mismatch::Fit => refit(registers, *to, *check)?, Mismatch::Fail => return Err(role_changed(&span_of(source, range))) }
                     }
                 }
                 Op::Enter { level } => {
                     // A level counts toward the depth limit until it exits, as `Session::nested` counts what it evaluates.
-                    if !session.deeper() {
-                        return Err(depth_error(&self.levels[*level as usize - 1].span));
-                    }
+                    if !session.deeper() { return Err(depth_error(&self.levels[*level as usize - 1].span)); }
                 }
                 Op::Exit { level, from } => {
                     let held = &self.levels[*level as usize - 1];
@@ -665,9 +650,7 @@ impl StatementCode {
                     let literals = if x.is_some() { u64::from(left_literal) | (literals & 2) } else { (literals >> 1) & 1 };
                     let mut origin = f.origin(&args, literals)?;
                     origin.site = Some(span.clone());
-                    if tail && *last && tails(&f) {
-                        return Ok(Step::Tail(Application { origin, span: span.clone(), unshy: false }));
-                    }
+                    if tail && *last && tails(&f) { return Ok(Step::Tail(Application { origin, span: span.clone(), unshy: false })); }
                     let expression = match parts { Some(parts) => Some(dissected(&f.function()?, x.as_deref(), &y, parts)), None => None };
                     let bound = Bound::from_outputs(Operation::dispatch(origin.reborrow())?, span)?;
                     if put(registers, *to, Entity::new(Term::Binding(bound.value), range.clone(), bound.shy, expression), *result) {
@@ -691,7 +674,9 @@ impl StatementCode {
             }
         }
         let (shy, expression) = match self.result {
-            Read::Register(r) => registers[r as usize].as_mut().map_or((false, None), |entity| (entity.shy, if CAPTURE { entity.expression.take() } else { None })),
+            Read::Register(r) => {
+                registers[r as usize].as_mut().map_or((false, None), |entity| (entity.shy, if CAPTURE { entity.expression.take() } else { None }))
+            }
             Read::Constant(_) => (false, None),
         };
         Ok(Step::Done(Bound { value: called_as(self.value(registers, self.result, source)?, self.call), shy, expression }))
@@ -710,17 +695,20 @@ impl StatementCode {
                 let record = self.argument(registers, *root, source)?.into_owned();
                 if !session.deeper() { return Err(depth_error(&span)); }
                 let bound = session.scoped(&record, &span, |session| match session.statement_step(body, false)? {
-                    Step::Done(bound) => Ok(bound), Step::Tail(_) => unreachable!("a scope's body isn't in tail position"),
+                    Step::Done(bound) => Ok(bound), Step::Tail(_) => unreachable!("a scope's body isn't in tail position")
                 });
                 session.ascend();
                 let bound = bound?;
-                if put(registers, *to, Entity::new(Term::Binding(bound.value), range.clone(), bound.shy, None), Category::Value) { refit(registers, *to, Category::Value)?; }
+                if put(registers, *to, Entity::new(Term::Binding(bound.value), range.clone(), bound.shy, None), Category::Value) {
+                    refit(registers, *to, Category::Value)?;
+                }
             }
             Op::Number { text, mark, empty, to, range } => {
                 let span = span_of(source, range);
                 let text: &str = text.map_or_else(|| &source.text[span.range.clone()], |text| text);
                 let number = crate::number::literal(text, *mark, Numeric::current()).at(&span)?;
-                let value = if *empty { Value::empty([0], Value::Number(number)).map_err(|kind| Error::new(kind, "invalid empty array").at(&span))? } else { Value::Number(number) };
+                let value = if *empty { Value::empty([0], Value::Number(number)).map_err(|kind| Error::new(kind, "invalid empty array").at(&span))? }
+                else { Value::Number(number) };
                 registers[*to as usize] = Some(Entity::of(Binding::Value(value), range.clone(), false));
             }
             Op::Input { to, range } => {
@@ -749,7 +737,10 @@ impl StatementCode {
                 let entity = Entity::of(value, range.clone(), true);
                 registers[*to as usize] = Some(if *call && entity.category() != Category::Value { entity.fit(Category::Value)? } else { entity });
             }
-            Op::BindRight { operator: left, operand: right, to, .. } | Op::Strand { left, right, to } | Op::Attach { left, right, to, .. } | Op::Train { left, right, to, .. } => {
+            Op::BindRight { operator: left, operand: right, to, .. }
+            | Op::Strand { left, right, to }
+            | Op::Attach { left, right, to, .. }
+            | Op::Train { left, right, to, .. } => {
                 let entity = paired(op, self.read(registers, *left), self.read(registers, *right), source, CAPTURE)?;
                 registers[*to as usize] = Some(entity);
             }
@@ -801,11 +792,15 @@ impl StatementCode {
 
     /// `read`'s entity as an argument (`array_of`).
     #[inline(always)]
-    fn argument<'p>(&'p self, registers: &mut [Option<Entity>], read: Read, source: &Arc<Source>) -> Result<Cow<'p, Value>, Error> { array_of(self.read(registers, read), source) }
+    fn argument<'p>(&'p self, registers: &mut [Option<Entity>], read: Read, source: &Arc<Source>) -> Result<Cow<'p, Value>, Error> {
+        array_of(self.read(registers, read), source)
+    }
 
     /// `read`'s entity as a called function (`function_of`).
     #[inline(always)]
-    fn called<'p>(&'p self, registers: &mut [Option<Entity>], read: Read, source: &Arc<Source>) -> Result<Cow<'p, Callable>, Error> { function_of(self.read(registers, read), source) }
+    fn called<'p>(&'p self, registers: &mut [Option<Entity>], read: Read, source: &Arc<Source>) -> Result<Cow<'p, Callable>, Error> {
+        function_of(self.read(registers, read), source)
+    }
 
     /// The entity that `read` gives, owned: a register's, which the read empties, or a copy of a constant.
     #[inline(always)]

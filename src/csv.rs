@@ -1,19 +1,12 @@
 use crate::execution::check;
-use crate::{Described, Error, Number, Value, system::HostCall, array::generated_len, data::{Types, text as string}, keyed};
+use crate::{Described, Error, Number, Value, array::generated_len, data::{Types, text as string}, keyed, system::HostCall};
 use num_bigint::BigInt;
 use rustymath::error::Kind;
 use std::sync::Arc;
 
 struct Options {
-    common: crate::data::Options,
-    separator: u8,
-    quote: Option<u8>,
-    escape: Option<u8>,
-    double_quote: bool,
-    trim: bool,
-    decimal: char,
-    thousands: Option<char>,
-    numeric: crate::number::Numeric,
+    common: crate::data::Options, separator: u8, quote: Option<u8>, escape: Option<u8>, double_quote: bool, trim: bool, decimal: char, thousands: Option<char>,
+    numeric: crate::number::Numeric
 }
 
 impl Options {
@@ -21,7 +14,8 @@ impl Options {
         let mut allowed = vec!["separator", "quotechar", "escapechar", "doublequote", "decimal", "thousands", "trim", "header", "fill"];
         allowed.extend(if import { &["missing", "types"][..] } else { &["forcequotes", "lineending"][..] });
         let common = crate::data::Options::new(if import { "•csv" } else { "•csv⁻¹" }, left, None, &allowed)?;
-        let mut opts = Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None, numeric };
+        let mut opts =
+            Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None, numeric };
         let byte = |c: Option<char>| -> Result<Option<u8>, Error> {
             c.map(|c| {
                 if c.is_ascii() && !matches!(c, '\r' | '\n' | '\0') { Ok(c as u8) }
@@ -80,7 +74,9 @@ impl Options {
 }
 
 /// `•csv`: parse CSV text into a keyed vector of columns.
-pub(crate) fn parse(HostCall { left, right, numeric, .. }: HostCall<'_>) -> Result<Value, Error> { import(&string(right)?, &Options::new(left, true, numeric)?) }
+pub(crate) fn parse(HostCall { left, right, numeric, .. }: HostCall<'_>) -> Result<Value, Error> {
+    import(&string(right)?, &Options::new(left, true, numeric)?)
+}
 
 /// `•csv⁻¹`: CSV text for a vector of columns.
 pub(crate) fn serialize(HostCall { left, right, numeric, .. }: HostCall<'_>) -> Result<Value, Error> { export(right, &Options::new(left, false, numeric)?) }

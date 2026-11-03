@@ -2,9 +2,9 @@ use crate::execution::check;
 use crate::{Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Frame, generated_len}, number::{Numeric, low_bits}};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, ToPrimitive, Zero};
-use rustymath::{buffer::DType, error::Kind};
 use rustymath::number_theory as nt;
 use rustymath::structure::Count;
+use rustymath::{buffer::DType, error::Kind};
 
 fn number(e: &Value) -> Result<Number, Error> {
     match e { Value::Number(n) => Ok(n.clone()), _ => Err(Error::domain("number theory requires numeric arguments")) }
@@ -53,11 +53,12 @@ fn factor_result(selector: Option<&Number>, n: BigUint, results: Integers) -> Re
 fn nth_primes(right: &Value, numeric: Numeric) -> Result<Value, Error> {
     generated_len(right.shape())?;
     let mut requests = right.elements().enumerate().map(|(i, e)| {
-        let value = number(&e)?;
-        // Prime indices count from 0: `⍭ 0` is 2.
-        let n = value.nonnegative_integer::<usize>().described("prime indices must be nonnegative whole numbers")?;
-        Ok((n, i, value.is_unbounded()))
-    }).collect::<Result<Vec<_>, Error>>()?;
+            let value = number(&e)?;
+            // Prime indices count from 0: `⍭ 0` is 2.
+            let n = value.nonnegative_integer::<usize>().described("prime indices must be nonnegative whole numbers")?;
+            Ok((n, i, value.is_unbounded()))
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
     requests.sort_unstable();
     let (mut primes, mut index, mut p) = (nt::Primes::new(0), 0, 0);
     let prototype = Integers { persistent: right.prototype().as_number().is_some_and(|n| n.is_unbounded()), numeric }.value(0);
@@ -91,7 +92,8 @@ fn prime(selector: &Number, n: BigInt, results: Integers) -> Result<Value, Error
 pub(crate) fn call(factor: bool, left: Option<&Value>, right: &Value, numeric: Numeric) -> Result<Value, Error> {
     if !factor && left.is_none() { return nth_primes(right, numeric); }
     let result = each_cell(left, right, numeric, |x, n, results| match factor {
-        true => factor_result(x, n.to_biguint().ok_or_else(|| Error::domain("factorisation requires positive whole numbers"))?, results), false => prime(x.unwrap(), n, results)
+        true => factor_result(x, n.to_biguint().ok_or_else(|| Error::domain("factorisation requires positive whole numbers"))?, results),
+        false => prime(x.unwrap(), n, results),
     })?;
     match right.fixed_width() {
         Some(width) if factor && left.is_none() => result.converted(DType::Integer(width), numeric, true).described("invalid factors"), _ => Ok(result)
@@ -107,7 +109,8 @@ pub(crate) fn index(right: &Value, numeric: Numeric) -> Result<Value, Error> {
 }
 
 /// `f` applied to the items of `left` and `right` that pair up, with each result as a cell.
-fn each_cell(left: Option<&Value>, right: &Value, numeric: Numeric, f: impl Fn(Option<&Number>, BigInt, Integers) -> Result<Value, Error>) -> Result<Value, Error> {
+fn each_cell(
+    left: Option<&Value>, right: &Value, numeric: Numeric, f: impl Fn(Option<&Number>, BigInt, Integers) -> Result<Value, Error>) -> Result<Value, Error> {
     let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).described("number theory frames must agree")?;
     let mut cells = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
@@ -120,7 +123,8 @@ fn each_cell(left: Option<&Value>, right: &Value, numeric: Numeric, f: impl Fn(O
         cells.push(f(x.as_ref(), n, Integers { persistent, numeric })?);
     }
     if right.is_atom() && left.is_none_or(Value::is_atom) { return Ok(cells.remove(0)); }
-    crate::array::assemble_stored(&agreement.layout, &cells[..agreement.len], &cells[0], crate::array::Widening::of_results(numeric.kinds), None, numeric).described("number theory result exceeds array limits")
+    crate::array::assemble_stored(&agreement.layout, &cells[..agreement.len], &cells[0], crate::array::Widening::of_results(numeric.kinds), None, numeric)
+        .described("number theory result exceeds array limits")
 }
 
 pub(crate) fn product(right: &Value, numeric: Numeric) -> Result<Value, Error> {
@@ -131,7 +135,8 @@ pub(crate) fn product(right: &Value, numeric: Numeric) -> Result<Value, Error> {
         let cell = cells.get(i).described("invalid factor cell")?;
         let (mut product, mut persistent) = (BigInt::one(), false);
         for e in cell.elements() {
-            let value = number(&e)?; persistent |= value.is_unbounded();
+            let value = number(&e)?;
+            persistent |= value.is_unbounded();
             product *= value.big_integer().described("factors must be whole")?;
         }
         data.push(Integers { persistent, numeric: numeric.for_values([&cell])? }.value(product));

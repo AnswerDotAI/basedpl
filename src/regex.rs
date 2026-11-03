@@ -1,6 +1,6 @@
 //! `text •r pattern` gives a table of the matches of a regular expression in a text, and `text •replace [pattern template]` replaces them. Each thread keeps the patterns it compiled last, so a pattern that a loop uses compiles once (`compiled`). The host owns pattern syntax and matching for this API and help search: fancy-regex natively, JavaScript in the browser.
-use crate::system::HostCall;
 use crate::execution::check;
+use crate::system::HostCall;
 use crate::{Described, Error, Value, array::generated_len, data::text, host::Regex, keyed};
 use std::{cell::RefCell, sync::Arc};
 
@@ -19,8 +19,7 @@ thread_local! {
 fn compiled(pattern: &str) -> Result<Arc<Regex>, Error> {
     COMPILED.with_borrow_mut(|kept| {
         let entry = match kept.iter().position(|(text, _)| text == pattern) {
-            Some(at) => kept.remove(at),
-            None => (pattern.to_owned(), Arc::new(Regex::new(pattern, false)?)),
+            Some(at) => kept.remove(at), None => (pattern.to_owned(), Arc::new(Regex::new(pattern, false)?))
         };
         let regex = entry.1.clone();
         kept.insert(0, entry);

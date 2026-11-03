@@ -68,7 +68,10 @@ pub enum Value { Input(usize), Step(usize) }
 
 /// An elementwise operation. Integers wrap at their width, and bytes compare and order as unsigned. `Maximum` and `Minimum` give `y` where floats `x` and `y` are equal or either is NaN, as rustymath's `maximum` and `minimum` do. `Floor` rounds a float down to a whole number, keeping `-0`. `MultiplyAdd(z)` gives `x × y + z` for floats, rounded once. `Compare` gives a Boolean: floats compare exactly, NaN equal to nothing, and Booleans only by `Eq` and `Ne`. `And`, `Or` and `Xor` take Booleans or integers, bit by bit, and `Not` takes Booleans. `Select(m)` gives `x` where the Boolean `m` is true and `y` where it's false. `Convert` converts its argument to the step's type with no tolerance: a float to an integer by its floor, saturating at the integer's range, and 0 for NaN; an integer to a narrower one by wrapping; a Boolean to 1 or 0. `Truncate` converts without the floor; `Bitcast` preserves the bits. Shifts take unsigned bit patterns at the resolved working width.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Op { Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Bitcast, ShiftLeft, ShiftRight(bool), Compare(Cmp), Overflows(u8), Check { reporter: usize }, Repair { predicate: Value, routine: usize }, And, Or, Xor, Not, Select(Value), MultiplyAdd(Value) }
+pub enum Op {
+    Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Bitcast, ShiftLeft, ShiftRight(bool), Compare(Cmp),
+    Overflows(u8), Check { reporter: usize }, Repair { predicate: Value, routine: usize }, And, Or, Xor, Not, Select(Value), MultiplyAdd(Value)
+}
 
 /// A comparison.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -93,7 +96,10 @@ pub struct Kernel { pub inputs: Vec<Input>, pub steps: Vec<Step>, pub stores: Ve
 
 impl Kernel {
     pub(crate) fn input(&mut self, input: Input) -> Value {
-        let at = matches!(input, Input::Constant(..)).then(|| self.inputs.iter().position(|&i| i == input)).flatten().unwrap_or_else(|| { self.inputs.push(input); self.inputs.len() - 1 });
+        let at = matches!(input, Input::Constant(..)).then(|| self.inputs.iter().position(|&i| i == input)).flatten().unwrap_or_else(|| {
+            self.inputs.push(input);
+            self.inputs.len() - 1
+        });
         Value::Input(at)
     }
 
@@ -140,8 +146,8 @@ impl Kernel {
         use rustymath::{recipe::Ops, tolerant::{Tolerance, Tolerant}};
         let ty = self.ty(input);
         let (signed, whole, nan) = if ty.float() {
-            let ops = Recording { kernel: std::cell::RefCell::new(&mut *self), ty,
-                variant: rustymath::facts::Variant::checked(ty.dtype()), tolerance: None, declined: std::cell::Cell::new(false) };
+            let ops = Recording { kernel: std::cell::RefCell::new(&mut *self), ty, variant: rustymath::facts::Variant::checked(ty.dtype()), tolerance: None,
+                declined: std::cell::Cell::new(false) };
             let tolerance = if checked { Tolerance::DEFAULT } else { Tolerance::EXACT };
             let (rounded, whole) = tolerance.nearest_whole_in::<f64, _>(&ops, encoded(input));
             (decoded(rounded), Some(decoded(whole)), Some(decoded(ops.not(ops.equal(encoded(input), encoded(input))))))
@@ -163,13 +169,13 @@ impl Kernel {
             position = self.step(Op::Select(valid), Ty::I64, position, Some(missing));
             valid = self.step(Op::Or, Ty::Bool, valid, Some(nan));
         }
-        if checked { self.step(Op::Check { reporter: rustymath::error::Kind::Index.reporter() as usize }, Ty::I64, position, Some(valid)) }
-        else { position }
+        if checked { self.step(Op::Check { reporter: rustymath::error::Kind::Index.reporter() as usize }, Ty::I64, position, Some(valid)) } else { position }
     }
     pub(crate) fn formula(&mut self, object: &rustymath::operation::Kernel, ty: Ty, x: &[Value], test: bool, tolerance: Option<Value>) -> Option<Value> {
         let before = (self.inputs.len(), self.steps.len());
         let (result, predicate, validity, declined) = {
-            let o = Recording { kernel: std::cell::RefCell::new(&mut *self), ty, variant: object.variant, tolerance: tolerance.map(encoded), declined: std::cell::Cell::new(false) };
+            let o = Recording { kernel: std::cell::RefCell::new(&mut *self), ty, variant: object.variant, tolerance: tolerance.map(encoded),
+                declined: std::cell::Cell::new(false) };
             let args: Vec<_> = x.iter().copied().map(encoded).collect();
             let result = if test { object.test(&o, &args) } else { object.formula(&o, &args) };
             let predicate = if !test && ty.float() && object.repair_routine().is_some() { object.repair_predicate(&o, &args) } else { None };
@@ -180,12 +186,14 @@ impl Kernel {
         };
         let result = result.map(|result| match (predicate, object.repair_routine()) {
             (Some(predicate), Some(repair)) => self.step(Op::Repair { predicate, routine: match ty {
-                Ty::F32 => repair.single as usize, Ty::F64 => repair.double as usize, _ => unreachable!(),
+                Ty::F32 => repair.single as usize, Ty::F64 => repair.double as usize, _ => unreachable!()
             } }, ty, result, Some(x[0])),
             _ => result,
-        }).map(|result| if let Some((kind, valid)) = validity {
-            self.step(Op::Check { reporter: kind.reporter() as usize }, if test { Ty::Bool } else { ty }, result, Some(valid))
-        } else { result });
+        }).map(|result| {
+            if let Some((kind, valid)) = validity {
+                self.step(Op::Check { reporter: kind.reporter() as usize }, if test { Ty::Bool } else { ty }, result, Some(valid))
+            } else { result }
+        });
         if result.is_none() || declined || (before.1..self.steps.len()).any(|k| self.check_step(k).is_err()) {
             self.inputs.truncate(before.0);
             self.steps.truncate(before.1);
@@ -195,12 +203,13 @@ impl Kernel {
 }
 
 // The low bit distinguishes inputs from emitted instructions without another slot table.
-fn encoded(v: Value) -> rustymath::facts::Slot {
-    rustymath::facts::Slot(match v { Value::Input(k) => 2 * k as u32, Value::Step(k) => 2 * k as u32 + 1 })
-}
+fn encoded(v: Value) -> rustymath::facts::Slot { rustymath::facts::Slot(match v { Value::Input(k) => 2 * k as u32, Value::Step(k) => 2 * k as u32 + 1 }) }
 fn decoded(v: rustymath::facts::Slot) -> Value { if v.0 & 1 == 0 { Value::Input((v.0 / 2) as usize) } else { Value::Step((v.0 / 2) as usize) } }
 
-struct Recording<'a> { kernel: std::cell::RefCell<&'a mut Kernel>, ty: Ty, variant: rustymath::facts::Variant, tolerance: Option<rustymath::facts::Slot>, declined: std::cell::Cell<bool> }
+struct Recording<'a> {
+    kernel: std::cell::RefCell<&'a mut Kernel>, ty: Ty, variant: rustymath::facts::Variant, tolerance: Option<rustymath::facts::Slot>,
+    declined: std::cell::Cell<bool>
+}
 impl Recording<'_> {
     fn emit(&self, op: Op, ty: Ty, x: rustymath::facts::Slot, y: Option<rustymath::facts::Slot>) -> rustymath::facts::Slot {
         encoded(self.kernel.borrow_mut().step(op, ty, decoded(x), y.map(decoded)))
@@ -234,7 +243,10 @@ impl rustymath::recipe::Ops<f64> for Recording<'_> {
     fn integer(&self, x: i64) -> Self::I { encoded(self.kernel.borrow_mut().input(Input::Constant(self.integer_ty(), x as u64))) }
     fn integer_op(&self, op: rustymath::recipe::Integer, x: Self::I, y: Self::I) -> Self::I {
         use rustymath::recipe::Integer::*;
-        let op = match op { Add => Op::Add, Subtract => Op::Subtract, And => Op::And, Or => Op::Or, Xor => Op::Xor, ShiftLeft => Op::ShiftLeft, ShiftRight => Op::ShiftRight(false), SignedShiftRight => Op::ShiftRight(self.ty != Ty::U8) };
+        let op = match op {
+            Add => Op::Add, Subtract => Op::Subtract, And => Op::And, Or => Op::Or, Xor => Op::Xor, ShiftLeft => Op::ShiftLeft,
+            ShiftRight => Op::ShiftRight(false), SignedShiftRight => Op::ShiftRight(self.ty != Ty::U8)
+        };
         self.emit(op, self.integer_ty(), x, Some(y))
     }
     fn integer_compare(&self, op: rustymath::recipe::Cmp, x: Self::I, y: Self::I) -> Self::B { self.compare(op, x, y) }
@@ -254,16 +266,19 @@ impl rustymath::recipe::Ops<f64> for Recording<'_> {
     fn unary(&self, op: rustymath::recipe::Unary, x: Self::V) -> Self::V {
         use rustymath::recipe::Unary::*;
         match op {
-            Negate => self.numeric(Op::Negate, x, None), Magnitude => self.numeric(Op::Magnitude, x, None), Sqrt => self.numeric(Op::Sqrt, x, None), Floor => if self.integral() { x } else { self.numeric(Op::Floor, x, None) },
-            Ln => self.formula(rustymath::Ln, x), Exp => self.formula(rustymath::Exp, x),
-            Sin => self.formula(rustymath::Sin, x), Cos => self.formula(rustymath::Cos, x),
-            Sinh => self.formula(rustymath::Sinh, x), Cosh => self.formula(rustymath::Cosh, x),
-            Not => self.numeric(Op::Subtract, self.number(1.0), Some(x)), _ => self.declined(x)
+            Negate => self.numeric(Op::Negate, x, None), Magnitude => self.numeric(Op::Magnitude, x, None), Sqrt => self.numeric(Op::Sqrt, x, None),
+            Floor => { if self.integral() { x } else { self.numeric(Op::Floor, x, None) } } Ln => self.formula(rustymath::Ln, x),
+            Exp => self.formula(rustymath::Exp, x), Sin => self.formula(rustymath::Sin, x), Cos => self.formula(rustymath::Cos, x),
+            Sinh => self.formula(rustymath::Sinh, x), Cosh => self.formula(rustymath::Cosh, x), Not => self.numeric(Op::Subtract, self.number(1.0), Some(x)),
+            _ => self.declined(x)
         }
     }
     fn binary(&self, op: rustymath::recipe::Binary, x: Self::V, y: Self::V) -> Self::V {
         use rustymath::recipe::Binary::*;
-        let op = match op { Add => Op::Add, Subtract => Op::Subtract, Multiply => Op::Multiply, Divide => Op::Divide, Larger => Op::Maximum, Smaller => Op::Minimum, BitAnd => Op::And, _ => return self.declined(x) };
+        let op = match op {
+            Add => Op::Add, Subtract => Op::Subtract, Multiply => Op::Multiply, Divide => Op::Divide, Larger => Op::Maximum, Smaller => Op::Minimum,
+            BitAnd => Op::And, _ => return self.declined(x)
+        };
         self.numeric(op, x, Some(y))
     }
     fn compare(&self, op: rustymath::recipe::Cmp, x: Self::V, y: Self::V) -> Self::B {
@@ -324,18 +339,21 @@ impl Kernel {
     /// This kernel's native code, compiled the first time and kept for the process (`KERNELS`), with the compile's time where this call compiled it. A kernel that failed to compile keeps its failure and isn't tried again.
     pub fn compiled(&self) -> Result<(Arc<Compiled>, Option<Duration>), String> {
         let mut table = kernels();
-        match table.get(self) { Some(Some(code)) => return Ok((code.clone(), None)), Some(None) => return Err("a kernel that failed to compile before".into()), None => {} }
+        match table.get(self) {
+            Some(Some(code)) => return Ok((code.clone(), None)), Some(None) => return Err("a kernel that failed to compile before".into()), None => {}
+        }
         let start = Instant::now();
         let compiled = self.compile().map(Arc::new);
         table.insert(self.clone(), compiled.as_ref().ok().cloned());
         Ok((compiled?, Some(start.elapsed())))
     }
 
-
     /// This kernel compiled afresh.
     pub fn compile(&self) -> Result<Compiled, String> {
         let (module, entry) = self.defined()?;
-        let arrays = self.inputs.iter().map(|i| match i { Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) | Input::Constant(..) | Input::Index(_) => 0 }).sum();
+        let arrays = self.inputs.iter().map(|i| match i {
+            Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) | Input::Constant(..) | Input::Index(_) => 0
+        }).sum();
         let scalars = self.inputs.iter().filter(|i| matches!(i, Input::Scalar(_) | Input::Array(_, Read::Runs(Within::Strided)))).count();
         let runs = if self.inputs.iter().any(|i| matches!(i, Input::Array(_, Read::Runs(_)))) { 2 } else { 0 };
         let most = if self.folds.iter().any(|&(_, k)| self.steps[k].ty == Ty::Bool) { COUNTED } else { usize::MAX };
@@ -375,13 +393,13 @@ impl Kernel {
         let tys = &tys[..n];
         let (x, y, same) = (tys[0], tys.get(1).copied(), tys.get(1).is_none_or(|&y| y == tys[0]));
         let fits = match s.op {
-            Op::Convert => true, Op::Bitcast => x.bytes() == s.ty.bytes() && x != Ty::Bool && s.ty != Ty::Bool, Op::Compare(c) => s.ty == Ty::Bool && same && (x != Ty::Bool || matches!(c, Cmp::Eq | Cmp::Ne)),
+            Op::Convert => true, Op::Bitcast => x.bytes() == s.ty.bytes() && x != Ty::Bool && s.ty != Ty::Bool,
+            Op::Compare(c) => s.ty == Ty::Bool && same && (x != Ty::Bool || matches!(c, Cmp::Eq | Cmp::Ne)),
             Op::And | Op::Or | Op::Xor | Op::ShiftLeft | Op::ShiftRight(_) => !s.ty.float() && x == s.ty && same, Op::Not => s.ty == Ty::Bool && x == Ty::Bool,
-            Op::Repair { .. } => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool,
-            Op::Check { .. } => x == s.ty && y == Some(Ty::Bool),
+            Op::Repair { .. } => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::Check { .. } => x == s.ty && y == Some(Ty::Bool),
             Op::Overflows(operation) => operation < 3 && !x.float() && x != Ty::Bool && same && s.ty == Ty::Bool,
-            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::MultiplyAdd(_) => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == s.ty,
-            Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same,
+            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool,
+            Op::MultiplyAdd(_) => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == s.ty, Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same,
             _ => s.ty != Ty::Bool && x == s.ty && same
         };
         if fits { Ok(()) } else { Err(format!("step {k}: {:?} doesn't take {tys:?} for a {:?} result", s.op, s.ty)) }
@@ -423,7 +441,9 @@ impl Kernel {
         for (k, s) in self.steps.iter().enumerate() {
             let width = if s.ty != Ty::Bool { s.ty.bytes() } else {
                 let made = if matches!(s.op, Op::Convert) && self.ty(s.x) != Ty::Bool { 1 } else {
-                    [Some(s.x), s.y].into_iter().flatten().map(|v| match v { Value::Input(j) => self.inputs[j].ty().bytes(), Value::Step(j) => widths[j] }).max().unwrap_or(1)
+                    [Some(s.x), s.y].into_iter().flatten().map(|v| match v {
+                        Value::Input(j) => self.inputs[j].ty().bytes(), Value::Step(j) => widths[j]
+                    }).max().unwrap_or(1)
                 };
                 if wanted[k] == 0 { made } else { made.min(wanted[k]) }
             };
@@ -495,10 +515,7 @@ impl Kernel {
                     (b.ins().splat(t.vector(), x), None)
                 }
                 Input::Index(t) => (zeros(&mut b, t.vector()), None),
-                Input::Constant(t, bits) => {
-                    let x = constant(&mut b, t, bits);
-                    (b.ins().splat(t.vector(), x), None)
-                }
+                Input::Constant(t, bits) => { let x = constant(&mut b, t, bits); (b.ins().splat(t.vector(), x), None) }
             })
             .collect();
         // A kernel that reads runs takes their length and the items left in the call's first run in its last two scalar slots.
@@ -664,9 +681,8 @@ impl Kernel {
     fn input_items(&self, b: &mut FunctionBuilder, k: usize, i: Ir, skip: i64, single: bool, inputs: &[(Ir, Option<Ir>)]) -> Vec<Ir> {
         let width = self.narrowest();
         match self.inputs[k] {
-            Input::Scalar(ty) | Input::Constant(ty, _) => vec![inputs[k].0; (ty.bytes() / width) as usize],
-            Input::Index(ty) => indices(b, ty, i, skip, width),
-            Input::Array(ty, read) => load(b, ty, read.within(), inputs[k], i, skip, ty.bytes() / width, single),
+            Input::Scalar(ty) | Input::Constant(ty, _) => vec![inputs[k].0; (ty.bytes() / width) as usize], Input::Index(ty) => indices(b, ty, i, skip, width),
+            Input::Array(ty, read) => load(b, ty, read.within(), inputs[k], i, skip, ty.bytes() / width, single)
         }
     }
     /// Each step's results for a group's items from item `i + skip`, as a list of vectors, each type taking as many vectors as its width needs, and each mask lying at its width from `widths`. Where `single` holds, the lists hold the one item `i + skip`, in the first lane of their first vector. `inputs` holds each array's pointer, with a strided array's stride in bytes, and each scalar's vector.
@@ -709,7 +725,7 @@ impl Kernel {
                     x
                 }
                 (Op::MultiplyAdd(_), Some(y), Some(z)) => x.iter().zip(&y).zip(&z).map(|((&x, &y), &z)| b.ins().fma(x, y, z)).collect(),
-                (op, y, _) => x.iter().enumerate().map(|(j, &x)| arith(b, op, step.ty, x, y.as_ref().map(|y| y[j]))).collect()
+                (op, y, _) => x.iter().enumerate().map(|(j, &x)| arith(b, op, step.ty, x, y.as_ref().map(|y| y[j]))).collect(),
             };
             results.push(if step.ty == Ty::Bool { resize(b, result, false, widths[s]) } else { result });
         }
@@ -799,8 +815,13 @@ impl Acc {
             Ty::U8 => (0, 255), Ty::I16 => (i16::MIN.into(), i16::MAX.into()), Ty::I32 => (i32::MIN.into(), i32::MAX.into()), _ => (i64::MIN, i64::MAX)
         };
         let c = match (self.ty, self.fold) {
-            (t, f) if t.float() => (match f { Fold::Sum => at::<Sum>, Fold::Product => at::<Product>, Fold::Max => at::<Max>, Fold::Min => at::<Min>, _ => unreachable!("`Kernel::check` refuses a fold that compiled code doesn't take") })(b, t),
-            (_, Fold::Max) => int(b, lane, least), (_, Fold::Min) => int(b, lane, greatest), _ => int(b, lane, 0)
+            (t, f) if t.float() => (match f {
+                Fold::Sum => at::<Sum>, Fold::Product => at::<Product>, Fold::Max => at::<Max>, Fold::Min => at::<Min>,
+                _ => unreachable!("`Kernel::check` refuses a fold that compiled code doesn't take")
+            })(b, t),
+            (_, Fold::Max) => int(b, lane, least),
+            (_, Fold::Min) => int(b, lane, greatest),
+            _ => int(b, lane, 0),
         };
         match vector { Some(v) => b.ins().splat(v, c), None => c }
     }
@@ -810,8 +831,7 @@ impl Acc {
         match (self.fold, self.ty.float()) {
             _ if self.ty == Ty::Bool => b.ins().isub(total, x), (Fold::Sum, true) => b.ins().fadd(total, x), (Fold::Sum, false) => b.ins().iadd(total, x),
             (Fold::Product, _) => b.ins().fmul(total, x), (Fold::Max, _) => extreme(b, self.ty, true, x, total),
-            (Fold::Min, _) => extreme(b, self.ty, false, x, total),
-            _ => unreachable!("`Kernel::check` refuses a fold that compiled code doesn't take"),
+            (Fold::Min, _) => extreme(b, self.ty, false, x, total), _ => unreachable!("`Kernel::check` refuses a fold that compiled code doesn't take")
         }
     }
 
@@ -844,7 +864,10 @@ fn int(b: &mut FunctionBuilder, ty: Type, v: i64) -> Ir { let bits = ty.bits(); 
 
 /// The constant `bits`, as `Input::Constant` holds them, at scalar type `t`.
 fn constant(b: &mut FunctionBuilder, t: Ty, bits: u64) -> Ir {
-    match t { Ty::Bool => int(b, types::I8, -i64::from(bits != 0)), Ty::F32 => b.ins().f32const(f32::from_bits(bits as u32)), Ty::F64 => b.ins().f64const(f64::from_bits(bits)), _ => int(b, t.ir(), bits as i64) }
+    match t {
+        Ty::Bool => int(b, types::I8, -i64::from(bits != 0)), Ty::F32 => b.ins().f32const(f32::from_bits(bits as u32)),
+        Ty::F64 => b.ins().f64const(f64::from_bits(bits)), _ => int(b, t.ir(), bits as i64)
+    }
 }
 
 /// `v`'s bits as type `ty`.
@@ -917,8 +940,8 @@ fn arith(b: &mut FunctionBuilder, op: Op, ty: Ty, x: Ir, y: Option<Ir>) -> Ir {
         (Op::Subtract, Some(y)) => { if ty.float() { b.ins().fsub(x, y) } else { b.ins().isub(x, y) } } (Op::Multiply, Some(y)) => multiply(b, ty, x, y),
         (Op::Divide, Some(y)) => b.ins().fdiv(x, y), (Op::Maximum, Some(y)) => extreme(b, ty, true, x, y),
         (Op::Minimum, Some(y)) => extreme(b, ty, false, x, y), (Op::Negate, _) => { if ty.float() { b.ins().fneg(x) } else { b.ins().ineg(x) } }
-        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => b.ins().fabs(x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x), (Op::Floor, _) => b.ins().floor(x),
-        _ => unreachable!("`check` gives each operation its arguments")
+        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => b.ins().fabs(x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x),
+        (Op::Floor, _) => b.ins().floor(x), _ => unreachable!("`check` gives each operation its arguments")
     }
 }
 
@@ -933,8 +956,9 @@ fn divided(b: &mut FunctionBuilder, ty: Ty, x: Ir, y: Ir) -> Ir {
         }
         return result;
     }
-    let extend = |b: &mut FunctionBuilder, value| if machine == types::I64 { value }
-        else if ty == Ty::U8 { b.ins().uextend(types::I64, value) } else { b.ins().sextend(types::I64, value) };
+    let extend = |b: &mut FunctionBuilder, value| {
+        if machine == types::I64 { value } else if ty == Ty::U8 { b.ins().uextend(types::I64, value) } else { b.ins().sextend(types::I64, value) }
+    };
     let (x, y) = (extend(b, x), extend(b, y));
     let zero = b.ins().icmp_imm(IntCC::Equal, y, 0);
     let minimum = b.ins().icmp_imm(IntCC::Equal, x, i64::MIN);
@@ -957,7 +981,8 @@ fn shifted(b: &mut FunctionBuilder, op: Op, x: &[Ir], y: &[Ir], uniform: bool) -
         let valid = b.ins().icmp_imm(IntCC::UnsignedLessThan, y, bits as i64);
         let value = match op { Op::ShiftLeft => b.ins().ishl(x, y), Op::ShiftRight(true) => b.ins().sshr(x, y), _ => b.ins().ushr(x, y) };
         let fallback = if matches!(op, Op::ShiftRight(true)) { b.ins().sshr_imm(x, bits as i64 - 1) }
-            else if ty.is_vector() { zeros(b, ty) } else { b.ins().iconst(ty, 0) };
+        else if ty.is_vector() { zeros(b, ty) }
+        else { b.ins().iconst(ty, 0) };
         b.ins().select(valid, value, fallback)
     };
     if !b.func.dfg.value_type(x[0]).is_vector() { return x.iter().zip(y).map(|(&x, &y)| shift(b, x, y)).collect(); }
@@ -1182,8 +1207,7 @@ fn repaired(b: &mut FunctionBuilder, ty: Ty, value: Ir, input: Ir, mask: Ir, rou
     let repair = b.create_block();
     let done = b.create_block();
     b.append_block_param(done, ty.vector());
-    let flagged = if single { let lane = b.ins().extractlane(mask, 0); b.ins().icmp_imm(IntCC::NotEqual, lane, 0) }
-        else { b.ins().vany_true(mask) };
+    let flagged = if single { let lane = b.ins().extractlane(mask, 0); b.ins().icmp_imm(IntCC::NotEqual, lane, 0) } else { b.ins().vany_true(mask) };
     b.ins().brif(flagged, repair, &[], done, &[value.into()]);
     b.switch_to_block(repair);
     let mut signature = cranelift_codegen::ir::Signature::new(config.default_call_conv);
@@ -1229,10 +1253,8 @@ fn indices(b: &mut FunctionBuilder, ty: Ty, at: Ir, skip: i64, width: i64) -> Ve
 fn checked(b: &mut FunctionBuilder, valid: Ir, reporter: usize, single: bool, config: TargetFrontendConfig) {
     let failed = b.create_block();
     let done = b.create_block();
-    let invalid = if single {
-        let lane = b.ins().extractlane(valid, 0);
-        b.ins().icmp_imm(IntCC::Equal, lane, 0)
-    } else { let invalid = b.ins().bnot(valid); b.ins().vany_true(invalid) };
+    let invalid = if single { let lane = b.ins().extractlane(valid, 0); b.ins().icmp_imm(IntCC::Equal, lane, 0) }
+    else { let invalid = b.ins().bnot(valid); b.ins().vany_true(invalid) };
     b.ins().brif(invalid, failed, &[], done, &[]);
     b.switch_to_block(failed);
     let signature = b.func.import_signature(cranelift_codegen::ir::Signature::new(config.default_call_conv));
@@ -1245,7 +1267,9 @@ fn checked(b: &mut FunctionBuilder, valid: Ir, reporter: usize, single: bool, co
 fn overflows(b: &mut FunctionBuilder, operation: u8, ty: Ty, x: Ir, y: Ir) -> Ir {
     if operation != 2 {
         let result = if operation == 0 { b.ins().iadd(x, y) } else { b.ins().isub(x, y) };
-        if ty == Ty::U8 { return if operation == 0 { b.ins().icmp(IntCC::UnsignedLessThan, result, x) } else { b.ins().icmp(IntCC::UnsignedLessThan, x, y) }; }
+        if ty == Ty::U8 {
+            return if operation == 0 { b.ins().icmp(IntCC::UnsignedLessThan, result, x) } else { b.ins().icmp(IntCC::UnsignedLessThan, x, y) };
+        }
         let a = b.ins().bxor(x, if operation == 0 { result } else { y });
         let c = b.ins().bxor(y, result);
         let bits = if operation == 0 { b.ins().band(a, c) } else { let c = b.ins().bxor(x, result); b.ins().band(a, c) };
@@ -1273,4 +1297,3 @@ fn overflows(b: &mut FunctionBuilder, operation: u8, ty: Ty, x: Ir, y: Ir) -> Ir
     }
     flags
 }
-

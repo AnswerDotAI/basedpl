@@ -1,7 +1,7 @@
 //! BPL measurements share reference records and setups. Numerical timing, copy units, footprint copies and retries live in Rustymath.
 use crate::{EvalOptions, Evaluation, InterruptHandle, Session, Source, Turn, host::timing_lock, protocol::response, reference::{self, File}};
 use rustymath::hashing::HashMap;
-use rustymath::timing::{Budget, CopyTime, Footprint, Cause, Held, NATIVE_COLUMN, copy_time, footprint};
+use rustymath::timing::{Budget, Cause, CopyTime, Footprint, Held, NATIVE_COLUMN, copy_time, footprint};
 pub use rustymath::timing::{RETRY_PAUSES, checks_budgets, name_cpu};
 use serde_json::{Value as JsonValue, json};
 use std::time::Duration;
@@ -43,9 +43,7 @@ pub fn items(session: &Session) -> Result<Option<usize>, crate::Error> {
 fn evaluated(session: &Session, parsed: &crate::Parsed, interrupt: &InterruptHandle) -> Evaluation {
     let mut result = session.eval_parsed(parsed, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
     if result.error.is_none() && let Some(value) = result.value.take() {
-        match value.read(crate::ReadKind::Value).and_then(|value| { session.raise()?; Ok(value) }) {
-            Ok(value) => result.value = Some(value), Err(error) => result.error = Some(error),
-        }
+        match value.read(crate::ReadKind::Value).and_then(|value| { session.raise()?; Ok(value) }) { Ok(value) => result.value = Some(value), Err(error) => result.error = Some(error) }
     }
     result
 }
@@ -86,9 +84,9 @@ pub fn rows(cases: &[Case], column: Option<usize>) -> JsonValue {
     cases.iter().map(|c| {
         let b = c.budget(column);
         json!({"file":c.file, "section":c.section, "code":c.code, "label":c.label, "line":c.line(column), "copy":c.copy_line(), "budgets":c.budgets,
-            "budget":b.map(|b| b.value), "rule":b.map(|b| b.rule), "hold":b.and_then(|b| b.cause).map(Cause::name),
-            "over":b.is_some_and(|b| b.over(c.cost)), "stale":b.is_some_and(|b| b.stale(c.cost)),
-            "cost":c.cost, "seconds":c.seconds, "footprint":c.footprint.map(|f| json!({"bytes":f.bytes, "seconds":f.seconds}))})
+        "budget":b.map(|b| b.value), "rule":b.map(|b| b.rule), "hold":b.and_then(|b| b.cause).map(Cause::name),
+        "over":b.is_some_and(|b| b.over(c.cost)), "stale":b.is_some_and(|b| b.stale(c.cost)),
+        "cost":c.cost, "seconds":c.seconds, "footprint":c.footprint.map(|f| json!({"bytes":f.bytes, "seconds":f.seconds}))})
     }).collect()
 }
 
@@ -126,8 +124,8 @@ impl<'a> Group<'a> {
 fn failure(code: &str, failed: Evaluation) -> String { format!("{code}: {}", failed.error.map(|e| e.to_string()).unwrap_or_default()) }
 
 fn each_case<'a>(
-    files: &'a [File], only: Option<&[&str]>, start: &str, interrupt: &'a InterruptHandle, mut visit: impl FnMut(&mut Group<'a>, &'a File, &'a JsonValue) -> Result<(), String>
-) -> Result<(), String> {
+    files: &'a [File], only: Option<&[&str]>, start: &str, interrupt: &'a InterruptHandle,
+    mut visit: impl FnMut(&mut Group<'a>, &'a File, &'a JsonValue) -> Result<(), String>) -> Result<(), String> {
     for file in files {
         let wanted = |case: &&JsonValue| {
             case["budgets"].is_array() && only.is_none_or(|only| {
@@ -162,13 +160,15 @@ pub fn costs(files: &[File], only: Option<&[&str]>, prefs: &str, interrupt: &Int
             return Err(format!("{}: the timed runs left {left} more bytes held in large allocations than the first run", label(file, case)));
         }
         let (cost, footprint) = match copy {
-            Some(copy) => (total / n as f64 / copy.seconds, footprint::<f64>(n, held)),
-            None => (total / timed("exact")?.0, None),
+            Some(copy) => (total / n as f64 / copy.seconds, footprint::<f64>(n, held)), None => (total / timed("exact")?.0, None)
         };
         let mut holds = Vec::new();
-        for held in case["held"].as_array().into_iter().flatten() { rustymath::timing::hold(held.as_str().unwrap(), &mut holds).expect("`reference::file` checks each line"); }
+        for held in case["held"].as_array().into_iter().flatten() {
+            rustymath::timing::hold(held.as_str().unwrap(), &mut holds).expect("`reference::file` checks each line");
+        }
         result.push(Case { file: file.name.clone(), section: section.into(), code: code.into(), label: label(file, case),
-            budgets: case["budgets"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().into()).collect(), holds, cost, seconds: total / n as f64, copy, footprint });
+            budgets: case["budgets"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().into()).collect(), holds, cost, seconds: total / n as f64, copy,
+            footprint });
         Ok(())
     })?;
     Ok(result)
@@ -181,9 +181,7 @@ impl Observed {
     /// What `events` holds of one run.
     fn of(events: &crate::explain::Events) -> Self { Self { slow: events.slow(), report: events.observed().clone() } }
     /// Whether this run recorded a taken, declined or stopped route.
-    pub fn exercised(&self, kind: &str, route: rustymath::events::Route) -> bool {
-        self.report.routes().any(|e| e.kind.name() == kind && e.route == route)
-    }
+    pub fn exercised(&self, kind: &str, route: rustymath::events::Route) -> bool { self.report.routes().any(|e| e.kind.name() == kind && e.route == route) }
 }
 
 /// A case run once as `•explain` runs its text (`run`), after a warm-up run (`warmup`), with the routes, `allows` lines and `gap` lines that the case names.
@@ -202,7 +200,7 @@ impl Capture {
             if !self.run.report.routes().any(|r| r.kind == Taken && r.route.name() == required.as_str()) {
                 let declines: Vec<_> = self.run.report.routes().filter(|r| r.kind == Declined).map(|r| format!("{}: {}", r.route.name(), r.reason)).collect();
                 wrong.push(if declines.is_empty() { format!("required route {required} was not taken") }
-                    else { format!("required route {required} was not taken, with declines {}", declines.join("; ")) });
+                else { format!("required route {required} was not taken, with declines {}", declines.join("; ")) });
             }
         }
         let named: Vec<_> = self.named.allowed.iter().chain(&self.named.gaps).collect();
@@ -238,14 +236,16 @@ fn captured(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) ->
     let code = case["code"].as_str().unwrap();
     let (_, events, warmup) = warmed(session, code, false, interrupt).map_err(|failed| failure(code, failed))?;
     let named = |key: &str| case[key].as_array().into_iter().flatten().map(|v| (v[0].as_str().unwrap().into(), v[1].as_str().unwrap().into())).collect();
-    Ok(Capture { file: String::new(), section: case["section"].as_str().unwrap_or_default().into(), code: code.into(),
-        label: code.into(), run: Observed::of(&events), warmup: Observed::of(&warmup), named: Named {
+    Ok(Capture { file: String::new(), section: case["section"].as_str().unwrap_or_default().into(), code: code.into(), label: code.into(),
+        run: Observed::of(&events), warmup: Observed::of(&warmup), named: Named {
             routes: case["route"].as_array().into_iter().flatten().map(|s| s.as_str().unwrap().into()).collect(), allowed: named("allows"), gaps: named("gap") }
     })
 }
 
 /// `code` run twice in `session`, each run as `•explain` runs its text, with `site` columns where `sites` holds, and with its value forced: a warm-up, then the run that a route check reads. Gives that run's evaluation and events and the warm-up's events, or the evaluation that failed. Where this platform's costs decide which calls wait, both run under the Mac's costs instead (`fusion::Waits::Reference`): a route check tests the design's routes, so a directive observed on the Mac holds everywhere. A run with every call waiting, as the coverage matrix's, keeps that. The route test, `check_file` and the worker's `route` request (`route_request`) all capture through it.
-fn warmed(session: &Session, code: &str, sites: bool, interrupt: &InterruptHandle) -> Result<(Evaluation, crate::explain::Events, crate::explain::Events), Evaluation> {
+fn warmed(
+    session: &Session, code: &str, sites: bool, interrupt: &InterruptHandle
+) -> Result<(Evaluation, crate::explain::Events, crate::explain::Events), Evaluation> {
     let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
     let run = || evaluated(session, &parsed, interrupt);
     let (warm, warmup) = crate::explain::explained(sites, run);
@@ -258,8 +258,12 @@ fn warmed(session: &Session, code: &str, sites: bool, interrupt: &InterruptHandl
 /// The worker's `route` request: `•explain`'s record, without its `value`, of the run of `spec`'s `code` that a route check reads (`warmed`), in a fresh session that runs `prefs` and `setup` first (`session`), with `site` columns where `sites` holds. `bpltests.explain_diff` and `route_diff` read it.
 pub fn route_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
     let text = |key| spec[key].as_str().ok_or_else(|| format!("route needs {key} as a string"));
-    let session = match session(text("prefs")?, text("setup")?, interrupt) { Ok(session) => session, Err(failed) => return response(failed).map_err(|error| error.to_string()) };
-    let (mut evaluation, events, _) = match warmed(&session, text("code")?, spec["sites"].as_bool().unwrap_or(false), interrupt) { Ok(runs) => runs, Err(failed) => return response(failed).map_err(|error| error.to_string()) };
+    let session = match session(text("prefs")?, text("setup")?, interrupt) {
+        Ok(session) => session, Err(failed) => return response(failed).map_err(|error| error.to_string())
+    };
+    let (mut evaluation, events, _) = match warmed(&session, text("code")?, spec["sites"].as_bool().unwrap_or(false), interrupt) {
+        Ok(runs) => runs, Err(failed) => return response(failed).map_err(|error| error.to_string())
+    };
     evaluation.value = Some(events.records().map_err(|e| e.to_string())?);
     response(evaluation).map_err(|error| error.to_string())
 }
@@ -322,7 +326,9 @@ pub fn request(spec: &JsonValue, interrupt: &InterruptHandle, limit: Option<Dura
     started(interrupt, limit);
     let text = |key| spec[key].as_str().ok_or_else(|| format!("timing needs {key} as a string"));
     let cases = spec["cases"].as_array().ok_or("timing needs cases as an array")?;
-    let session = match session(text("prefs")?, text("setup")?, interrupt) { Ok(session) => session, Err(failed) => return response(failed).map_err(|error| error.to_string()) };
+    let session = match session(text("prefs")?, text("setup")?, interrupt) {
+        Ok(session) => session, Err(failed) => return response(failed).map_err(|error| error.to_string())
+    };
     if let Some(threads) = spec["threads"].as_u64() { rustymath::parallel::set_threads(threads as usize); }
     let n = items(&session).map_err(|error| error.to_string())?.ok_or("the setup must define n, its number of items")?;
     let copy = copy_time::<f64>(n);
@@ -346,7 +352,6 @@ pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle, limit: Option
     let files = reference::sources(&spec["files"])?;
     match costs(&files, only.as_deref(), spec["prefs"].as_str().unwrap_or_default(), interrupt, limit) {
         Ok(cases) => Ok(json!({"costs":rows(&cases, NATIVE_COLUMN), "error":null})),
-        Err(message) if interrupt.expired() => Ok(json!({"costs":[], "error":{"kind":"TIMEOUT", "message":message}})),
-        Err(message) => Err(message),
+        Err(message) if interrupt.expired() => Ok(json!({"costs":[], "error":{"kind":"TIMEOUT", "message":message}})), Err(message) => Err(message)
     }
 }

@@ -54,6 +54,10 @@ When `g` selects a position more than once, which of its values that position ke
 -@ 5↑ 1 2 3                ⍝ ¯1 ¯2 ¯3
 ```
 
+## Write support
+
+Selecting Under has the same [support and recording limits as selective assignment](left-arrow.qmd#write-support). [Differentiating writes](../autodiff.qmd#writes) describes the shape-preserving floating-array updates that `∂` supports.
+
 ## Other functions
 
 For any other `g`, `f@g Y` is `g⁻¹(f(g Y))`, and `X f@g Y` is `g⁻¹((g X)f(g Y))`. The inverse can't restore items that `g` drops, so Under uses it only for a `g` that keeps every item.
@@ -103,10 +107,11 @@ See [assigning an inverse](../assignment.ipynb#inverses-and-derivatives).
 - `DOMAIN`: `g` neither selects nor has a known inverse
 - `DOMAIN`: `g` can drop items but doesn't only select, as in `-@(+/1 0 1#)`
 - `DOMAIN`: a write reaches an item of `g`'s result that didn't come from `Y`, as `5` does in `(1+)@{[⍵₀ 5]}`
-- `INDEX`: a position is outside `Y`
+- `INDEX`: a position is outside `Y` in checked execution
 - `LENGTH`: the result of `f` doesn't fit the selection
 - `LENGTH`: paths in `g` end at cells of different shapes, or some at items and some at cells
 - `LENGTH`: with positions or `[p]`, a left argument doesn't line up with `Y`
 - `LENGTH`: the mask from `[p]` doesn't agree with the axes of `Y`
 - `INDEX`: a value of the mask from `[p]` is outside the two cases, 0 and 1
 - `DOMAIN`: a value of the mask from `[p]` isn't a whole number
+- `UNSUPPORTED`: a structural update outside the [write support](#write-support) described above

@@ -1,7 +1,7 @@
 //! `⇄`, the operator that minimizes its operand, or solves for where its operand is zero, through `rustymath::optimize`.
 use crate::{
-    Described, Error, ErrorKind, Function, Number, Value, array::Layout, data::Options, derivative, keyed,
-    number::read_as, primitive::real, program::{Origin, trace::ReadKind},
+    Described, Error, ErrorKind, Function, Number, Value, array::Layout, data::Options, derivative, keyed, number::read_as, primitive::real,
+    program::{Origin, trace::ReadKind}
 };
 use num_traits::ToPrimitive;
 use rustymath::{Native, buffer::{Cast, DType, FloatWidth}, error::Kind, linalg::Factor, optimize::{self, Bounds, Mapping, Method, Objective, Task}};
@@ -127,7 +127,8 @@ impl AtPoint {
 }
 /// The linearisation of `f` at `x`, from `last` where it was made at `x`, or at any point where `affine`, because an affine map's derivative is the same everywhere. A value, a gradient and products at one point then run `f` once.
 fn at_point<'a, F: Native>(
-    last: &'a mut Option<(Vec<f64>, AtPoint)>, f: &Function, point: &Point<'_>, x: &[F], affine: bool, origin: &Origin<&[Value]>) -> Result<&'a AtPoint, Error> {
+    last: &'a mut Option<(Vec<f64>, AtPoint)>, f: &Function, point: &Point<'_>, x: &[F], affine: bool, origin: &Origin<&[Value]>
+) -> Result<&'a AtPoint, Error> {
     let key = point_key(x);
     if !matches!(last, Some((k, _)) if affine || *k == key) { *last = Some((key, AtPoint::of(f, &point.value(x)?, origin)?)); }
     Ok(&last.as_ref().expect("a linearisation was just made").1)
@@ -145,7 +146,8 @@ impl<F: Native + Cast> Objective<F> for Goal<'_> {
     fn value(&mut self, x: &[F]) -> Result<F, Error> {
         let y = if self.gradient { at_point(&mut self.last, self.cost, &self.shape, x, false, self.origin)?.value.clone() }
         else { self.cost.call_bound(self.origin, &[self.shape.value(x)?], &[None])? };
-        let y = y.read(ReadKind::Value)?; crate::session().raise()?;
+        let y = y.read(ReadKind::Value)?;
+        crate::session().raise()?;
         real(&y).map(F::narrow).map_err(|_| Error::domain("⇄ needs its function to give one real number"))
     }
 
@@ -241,7 +243,8 @@ fn reals<'a, F: Native + Cast>(value: &'a Value) -> Result<Cow<'a, [F]>, Error> 
             number.to_real().map_err(|_| invalid())
         }).collect::<Result<Vec<_>, _>>().map(Cow::Owned)
     }
-    let value = value.read_borrowed(ReadKind::Value)?; crate::session().raise()?;
+    let value = value.read_borrowed(ReadKind::Value)?;
+    crate::session().raise()?;
     match value { Cow::Borrowed(value) => stored(value), Cow::Owned(value) => stored(&value).map(|items| Cow::Owned(items.into_owned())) }
 }
 

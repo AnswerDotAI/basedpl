@@ -14,13 +14,22 @@ impl Session {
     pub(super) fn blank() -> Self {
         Self { execution: Default::default(), prefacing: Default::default(), bindings: Default::default(), loading: Default::default(),
             depth: Default::default(), prototype: Default::default(), capture: Default::default(), levels: Default::default(), traces: Default::default(),
-            generator: crate::distribution::fresh().into(), args: Default::default(), error: Default::default(), token: Default::default(), guards: Default::default() }
+            generator: crate::distribution::fresh().into(), args: Default::default(), error: Default::default(), token: Default::default(),
+            guards: Default::default() }
     }
     pub(crate) fn clear(&self) {
         self.bindings.replace(Bindings::default());
-        self.prefacing.set(false); self.depth.set(0); self.prototype.set(false); self.capture.set(false);
-        self.loading.borrow_mut().clear(); self.args.borrow_mut().clear(); self.guards.borrow_mut().clear();
-        self.levels.clear(); self.traces.replace(Default::default()); self.error.take(); self.token.take();
+        self.prefacing.set(false);
+        self.depth.set(0);
+        self.prototype.set(false);
+        self.capture.set(false);
+        self.loading.borrow_mut().clear();
+        self.args.borrow_mut().clear();
+        self.guards.borrow_mut().clear();
+        self.levels.clear();
+        self.traces.replace(Default::default());
+        self.error.take();
+        self.token.take();
         self.generator.replace(crate::distribution::fresh());
     }
     pub(crate) fn generator(&self) -> crate::distribution::Generator { self.generator.borrow().clone() }
@@ -82,9 +91,12 @@ impl Session {
         display.boxed = false;
         display.elide = Elide { limit: 100, edges: 2, width: 80, ..display.elide };
         let (kind, text) = match binding {
-            Binding::Value(a) => ("array", display.array(&a, false)), binding @ Binding::Function(_) =>
-                ("function", Function::from_value(binding, &Span::whole(Source::new("<inspect>", name.text())))?.text(display.elide, &mut 100)),
-            Binding::Operator(op) => ("operator", op.text(display.elide)), _ => return Ok(None)
+            Binding::Value(a) => ("array", display.array(&a, false)),
+            binding @ Binding::Function(_) => {
+                ("function", Function::from_value(binding, &Span::whole(Source::new("<inspect>", name.text())))?.text(display.elide, &mut 100))
+            }
+            Binding::Operator(op) => ("operator", op.text(display.elide)),
+            _ => return Ok(None),
         };
         let mut chars = text.chars();
         let mut text: String = chars.by_ref().take(200).collect();
@@ -100,15 +112,16 @@ impl Session {
     pub(crate) fn guard_node(&self, node: &crate::graph::Node) {
         let mut guards = self.guards.borrow_mut();
         let Some(scope) = guards.last_mut() else { return };
-        if scope.nodes.len() >= scope.live.saturating_mul(2).max(8) { scope.nodes.retain(|node| node.strong_count() > 0); scope.live = scope.nodes.len(); }
+        if scope.nodes.len() >= scope.live.saturating_mul(2).max(8) {
+            scope.nodes.retain(|node| node.strong_count() > 0);
+            scope.live = scope.nodes.len();
+        }
         scope.nodes.push(node.downgrade());
     }
     fn guarded(&self, value: Option<&Value>) -> Result<(), Error> {
         let scope = std::mem::take(self.guards.borrow_mut().last_mut().expect("a running error guard has a scope"));
         for node in scope.nodes.into_iter().filter_map(|node| node.upgrade()).map(crate::graph::Node) {
-            for output in 0..node.descs().len() {
-                Value::Pending(Pending::data(node.clone(), output as u32)).read(crate::ReadKind::Value)?;
-            }
+            for output in 0..node.descs().len() { Value::Pending(Pending::data(node.clone(), output as u32)).read(crate::ReadKind::Value)?; }
         }
         if let Some(value) = value { value.read(crate::ReadKind::Value)?; }
         self.raise()
@@ -232,7 +245,9 @@ impl Session {
     fn evaluation(&self, options: crate::EvalOptions, evaluate: impl FnOnce(&Self) -> Evaluation) -> Evaluation {
         let _running = self.execution.begin(options);
         let mut result = evaluate(self);
-        if let Some(Err(error)) = result.value.as_ref().map(|value| crate::graph::forced(&[value])) { result = Evaluation { value: None, error: Some(error), ..result }; }
+        if let Some(Err(error)) = result.value.as_ref().map(|value| crate::graph::forced(&[value])) {
+            result = Evaluation { value: None, error: Some(error), ..result };
+        }
         self.execution.flush();
         Evaluation { output: self.execution.take_output(), ..result }
     }
@@ -270,7 +285,10 @@ impl Session {
                 result.value = Some(a);
             }
             Ok(Bound { value: Binding::Function(f), shy, .. }) => match Function::from_value(Binding::Function(f), &span) {
-                Ok(f) => { if self.execution.echo.get() && !shy { self.display_function(&f, None); } result.function = Some(f); }
+                Ok(f) => {
+                    if self.execution.echo.get() && !shy { self.display_function(&f, None); }
+                    result.function = Some(f);
+                }
                 Err(error) => result.error = Some(error),
             },
             Ok(_) => (),
@@ -327,9 +345,12 @@ impl Session {
             match bound {
                 Ok(bound) => {
                     let dissected = if dissecting && (dissect || !bound.shy && !matches!(bound.value, Binding::NoResult | Binding::Absent)) {
-                        let expression = match bound.expression { Some(expression) => Some(*expression), None => match Expression::binding(&bound.value) {
-                            Ok(expression) => expression, Err(error) => { result.error = Some(error); return result; }
-                        }};
+                        let expression = match bound.expression {
+                            Some(expression) => Some(*expression),
+                            None => match Expression::binding(&bound.value) {
+                                Ok(expression) => expression, Err(error) => { result.error = Some(error); return result; }
+                            },
+                        };
                         expression.map(|e| {
                             let display = crate::settings::display();
                             e.display(display.trees, display.elide)
@@ -348,7 +369,9 @@ impl Session {
                         }
                         _ if bound.shy => None,
                         Binding::Function(f) => {
-                            let f = match Function::from_value(Binding::Function(f), &nodes[0].span) { Ok(f) => f, Err(error) => { result.error = Some(error); return result; } };
+                            let f = match Function::from_value(Binding::Function(f), &nodes[0].span) {
+                                Ok(f) => f, Err(error) => { result.error = Some(error); return result; }
+                            };
                             if self.execution.echo.get() { self.display_function(&f, dissected.as_deref()); }
                             if i + 1 == parsed.statements.len() { result.function = Some(f); }
                             None
@@ -420,7 +443,7 @@ impl Session {
     pub(super) fn bind(&self, nodes: &[Node]) -> Result<Bound, Error> { self.bound(nodes) }
     pub(super) fn bound(&self, nodes: &[Node]) -> Result<Bound, Error> {
         self.nested(nodes, |session| match session.statement_step(nodes, false)? {
-            Step::Done(result) => Ok(result), Step::Tail(_) => unreachable!("a non-tail statement returns a value"),
+            Step::Done(result) => Ok(result), Step::Tail(_) => unreachable!("a non-tail statement returns a value")
         })
     }
     /// `f` evaluating `nodes` one level deeper, after an interrupt check, within the depth limit and on a stack that grows as needed.
@@ -503,7 +526,9 @@ impl Session {
     pub(crate) fn execute(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Outputs<Value>, Error> {
         crate::program::trace::Tracing::stop(crate::program::Reason::Execute, Some(span.clone()));
         let source = Source::new("<execute>", Self::source_text(right, span)?);
-        let result = match left { Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)), None => self.execute_source(source, span) }?;
+        let result = match left {
+            Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)), None => self.execute_source(source, span)
+        }?;
         let outputs = match result.value { Binding::NoResult => Outputs::empty(), value => Outputs::one(value.into_value(span)?) };
         Ok(outputs.with_shy(result.shy))
     }
@@ -519,8 +544,7 @@ impl Session {
     /// The `⎕` read's act (`program::Act::Input`, target part 17): the next line of input as text, or an empty vector at the end of input.
     pub(crate) fn line(&self, span: &Span) -> Result<Value, Error> {
         Ok(match self.execution.line(span)? {
-            Some(line) => crate::keyed::text(&line),
-            None => crate::syntax::zilde(crate::Number::float(0.0, crate::settings::float_width())),
+            Some(line) => crate::keyed::text(&line), None => crate::syntax::zilde(crate::Number::float(0.0, crate::settings::float_width()))
         })
     }
 
@@ -567,7 +591,7 @@ impl Session {
     /// The role (`binder::role`) of `name`'s binding, or of the field that `keys` reach from the array it holds (`binder::field_role`), as the compiler binds it, read without evaluating anything; an unbound name binds as an array. While a statement compiles, `log` keeps the fact that it read (`tree::Fact`), except for a name whose role no assignment can change (`Name::fixed`). The 1 home of a compile-time role read: the compiler's names and dot reads, and `path_category`.
     pub(super) fn path_role(&self, name: Name, keys: &[Arc<str>], log: &mut super::tree::Facts) -> Result<(Category, bool), Error> {
         let role = if keys.is_empty() { self.bindings.role(name)?.unwrap_or(super::binder::UNBOUND) }
-            else { super::binder::field_role(self.bindings.lookup(name)?.map(|(_, b)| b), keys) };
+        else { super::binder::field_role(self.bindings.lookup(name)?.map(|(_, b)| b), keys) };
         if let Some(log) = log && !(keys.is_empty() && name.fixed()) {
             let fact = super::tree::Fact::new(self.bindings.address(name), keys.into(), role);
             if !log.contains(&fact) { log.push(fact); }
@@ -578,9 +602,7 @@ impl Session {
     /// The entries of the keyed item in cell `cell` of the bracket literal `node`, whose `:` is at `colon`: `Keys` applies `key` to `value`, which must give a keyed vector. A name with a batch of atoms gives one entry that holds the batch, as `Keys` gives one entry in each cell, so a record built in a batched run holds batches as a list literal does. The level that finishes a compiled keyed item calls it as soon as the item's value and key are both ready (`tree::Keyed`). An item that fails there stops the items after it.
     pub(super) fn keyed(&self, node: &Node, cell: usize, colon: usize, key: &Value, value: &Value) -> Result<Vec<crate::keyed::Entry>, Error> {
         let NodeKind::ArrayLiteral { cells, .. } = &node.kind else { unreachable!("a bracket literal") };
-        if let Some(name) = crate::keyed::name(key) && value.rank() == 0 {
-            return Ok(vec![(Some(name), value.clone())]);
-        }
+        if let Some(name) = crate::keyed::name(key) && value.rank() == 0 { return Ok(vec![(Some(name), value.clone())]); }
         let item = Function::primitive(Primitive::Keys).call(Some(key), value, &cells[cell][colon].span)?.array(&node.span)?;
         crate::keyed::entries(&item).described("key:value items must give keyed vectors").at(&node.span)
     }
@@ -596,7 +618,7 @@ impl Session {
         let NodeKind::ArrayLiteral { form, .. } = &node.kind else { unreachable!("a bracket literal") };
         if arrays.is_empty() { return Ok(Binding::from_element(crate::syntax::zilde(crate::Number::float(0.0, crate::settings::float_width())))); }
         let result = if *form == ListForm::Cells { Operation::Join(crate::primitive::Notation::Rows).call(&arrays, 0) }
-            else { Value::new(vec![arrays.len()], arrays).map_err(Error::from) };
+        else { Value::new(vec![arrays.len()], arrays).map_err(Error::from) };
         Ok(Binding::Value(result.map_err(|error| error.at(&node.span))?))
     }
 
@@ -609,7 +631,8 @@ impl Session {
         let from: Vec<_> = Function::argument_ranges(&origin)?.into_iter().flatten().map(|range| Some(range.start)).collect();
         function.call_bound(&origin, &arguments, &from)
     }
-    pub(super) fn with_call_context<T>(&self, function: &Function, origin: crate::program::Origin<&[Value]>, run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+    pub(super) fn with_call_context<T>(
+        &self, function: &Function, origin: crate::program::Origin<&[Value]>, run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
         if function.definition().is_some() || !origin.bindings.scopes.iter().any(|scope| !scope.names.is_empty()) { return run(); }
         let base = self.bindings.depth();
         let caller = self.bindings.current();
@@ -620,7 +643,9 @@ impl Session {
         result
     }
     pub(super) fn call_defined(&self, function: &Function, origin: crate::program::Origin<&[Value]>) -> Result<Value, Error> {
-        let defined = match function.node() { FunctionNode::Defined(_) => function, FunctionNode::Applied { op: Operator::Closure(defined), .. } => defined, _ => unreachable!("a defined body") };
+        let defined = match function.node() {
+            FunctionNode::Defined(_) => function, FunctionNode::Applied { op: Operator::Closure(defined), .. } => defined, _ => unreachable!("a defined body")
+        };
         let definition = defined.definition().expect("a defined body");
         let (scope_index, scope) = origin.bindings.scope(defined).ok_or_else(Error::planning)?;
         let (parent, module) = (scope.parent, scope.module);
@@ -628,15 +653,18 @@ impl Session {
         let (left, right) = (if args.len() == 2 { Some(args[0].clone()) } else { None }, args.last().expect("a function has an argument").clone());
         let operands = function.node().operands();
         let operand = |i| (i < operands.len()).then(|| function.operand(&origin, i).map(|value| Binding::from_element(value.into_owned()))).transpose();
-        let implicit = [Some(left.map_or(Binding::Absent, Binding::Value)), Some(Binding::Value(right)), operand(0)?, operand(1)?,
-            Some(function.clone().into()), matches!(function.node(), FunctionNode::Applied { op: Operator::Closure(_), .. })
-                .then(|| Binding::Operator(OperatorValue::Operator(Operator::Closure(defined.clone()))))];
+        let implicit = [
+            Some(left.map_or(Binding::Absent, Binding::Value)), Some(Binding::Value(right)), operand(0)?, operand(1)?, Some(function.clone().into()),
+            matches!(function.node(), FunctionNode::Applied { op: Operator::Closure(_), .. })
+                .then(|| Binding::Operator(OperatorValue::Operator(Operator::Closure(defined.clone())))),
+        ];
         let (base, caller) = (self.bindings.depth(), self.bindings.current());
         self.bindings.enter(Frame::new(parent, module, definition.locals()), implicit, Some((Some(scope_index), origin.reborrow())), &definition.span)?;
         let result = match self.run_definition(definition, (0, 0), true) {
             Ok(Step::Done(bound)) => Ok(bound),
             Ok(Step::Tail(call)) => {
-                let value = Operation::dispatch(call.origin.reborrow()).and_then(|outputs| Bound::from_outputs(outputs, &call.span)).map_err(|error| error.at(&call.span));
+                let value = Operation::dispatch(call.origin.reborrow()).and_then(|outputs| Bound::from_outputs(outputs, &call.span))
+                    .map_err(|error| error.at(&call.span));
                 value.map(|mut bound| { if call.unshy { bound.shy = false; } bound })
             }
             Err(error) => Err(error),
@@ -703,7 +731,8 @@ impl Session {
                         StatementKind::ErrorGuard { index: i } => {
                             crate::program::trace::Tracing::stop(crate::program::Reason::Guard, Some(nodes[i].span.clone()));
                             let catch = Catch::new(&self.bound(&nodes[..i])?.array(&nodes[0].span)?, &nodes[i].span)?;
-                            if handlers.is_empty() { self.guards.borrow_mut().push(super::GuardScope::default()); } else { self.guarded(None)?; }
+                            if handlers.is_empty() { self.guards.borrow_mut().push(super::GuardScope::default()); }
+                            else { self.guarded(None)?; }
                             handlers.push((&nodes[i + 1..], catch));
                         }
                         StatementKind::Predicate => {
@@ -736,7 +765,6 @@ impl Session {
         }
         result
     }
-
 }
 
 /// The error for a predicate that isn't one Boolean, in a call and in each cell of a batched run.

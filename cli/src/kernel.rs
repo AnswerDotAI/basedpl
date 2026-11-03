@@ -26,9 +26,8 @@ fn expression(session: &Session, code: &str, interrupt: &InterruptHandle) -> Res
         let value = value.read(basedpl::ReadKind::Value)?;
         session.raise()?;
         let data = match value {
-            basedpl::Value::Function(f) => json!({"text/plain": f.bpl()}),
-            basedpl::Value::Operator(op) => json!({"text/plain": op.bpl()}),
-            value => json!(session.render(&value, interrupt.clone())?),
+            basedpl::Value::Function(f) => json!({"text/plain": f.bpl()}), basedpl::Value::Operator(op) => json!({"text/plain": op.bpl()}),
+            value => json!(session.render(&value, interrupt.clone())?)
         };
         (Some(kind), data)
     } else { (None, json!({})) };
@@ -151,7 +150,7 @@ impl LanguageSession for BplSession {
                 variables.push(record);
             }
             Ok(json!({"response": {"type": "response", "request_seq": request["seq"], "command": "inspectVariables", "success": true,
-            "body": {"variables": variables}}, "events": []}))
+        "body": {"variables": variables}}, "events": []}))
         }).await?.map_err(kernmini::Error::adapter)
     }
 

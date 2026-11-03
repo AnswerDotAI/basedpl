@@ -1,6 +1,6 @@
 //! Nested Derivative/Batched levels. Dispatch invokes rules; Value::read owns observation.
 
-use crate::{array::{Carried, Layout}, error::Result, primitive::{Operation, ReadOp, ViewAxis}, program::{Origin, Outputs}, session, Value};
+use crate::{Value, array::{Carried, Layout}, error::Result, primitive::{Operation, ReadOp, ViewAxis}, program::{Origin, Outputs}, session};
 use std::{cell::{Cell, RefCell}, sync::Arc};
 
 #[derive(Default)]
@@ -11,10 +11,7 @@ pub(crate) struct Level { pub(crate) id: usize, pub(crate) kind: LevelKind, dept
 
 pub(crate) struct FrameSource { references: Box<[Value]>, axes: Box<[ViewAxis]> }
 #[derive(Clone)]
-pub(crate) enum LevelKind {
-    Derivative,
-    Batched { frame: Layout, source: Arc<FrameSource> },
-}
+pub(crate) enum LevelKind { Derivative, Batched { frame: Layout, source: Arc<FrameSource> } }
 
 impl LevelKind {
     pub(crate) fn batched(frame: Layout, references: Box<[Value]>, axes: Box<[ViewAxis]>) -> Self {
@@ -35,7 +32,10 @@ impl Levels {
         assert_eq!(stack.last().map(|level| level.id), Some(id), "levels end in stack order");
         stack.pop();
     }
-    pub(crate) fn clear(&self) { self.stack.borrow_mut().clear(); self.batch_rule.set(None); }
+    pub(crate) fn clear(&self) {
+        self.stack.borrow_mut().clear();
+        self.batch_rule.set(None);
+    }
     pub(crate) fn writing(&self, place: crate::eval::Place) -> Result<()> {
         for level in self.stack.borrow().iter().rev() {
             if place.frame().is_some_and(|frame| frame >= level.depth) { continue; }
@@ -49,8 +49,7 @@ impl Levels {
 
     pub(crate) fn find(&self, id: usize) -> Option<Level> { self.stack.borrow().iter().rev().find(|level| level.id == id).cloned() }
     fn set_handling(&self, id: usize, handling: bool) -> bool {
-        self.stack.borrow_mut().iter_mut().find(|level| level.id == id)
-            .is_some_and(|level| std::mem::replace(&mut level.handling, handling))
+        self.stack.borrow_mut().iter_mut().find(|level| level.id == id).is_some_and(|level| std::mem::replace(&mut level.handling, handling))
     }
 
     pub(crate) fn innermost_batched(&self) -> Option<Level> {
@@ -80,7 +79,7 @@ impl Level {
                 let result = crate::batch::rule(self, origin);
                 session().levels.batch_rule.set(previous);
                 result
-            },
+            }
         };
         session().levels.set_handling(self.id, previous);
         result
@@ -89,13 +88,9 @@ impl Level {
 
 pub(crate) struct Scope { pub(crate) level: Level }
 
-impl Scope {
-    pub(crate) fn new(kind: LevelKind) -> Self { Self { level: Level::begin(kind) } }
-}
+impl Scope { pub(crate) fn new(kind: LevelKind) -> Self { Self { level: Level::begin(kind) } } }
 
-impl Drop for Scope {
-    fn drop(&mut self) { session().levels.end(self.level.id); }
-}
+impl Drop for Scope { fn drop(&mut self) { session().levels.end(self.level.id); } }
 
 /// A frame from actual runtime sources; all references are description-only inputs.
 pub(crate) fn frame_reference(references: &[Value], axes: &[ViewAxis]) -> Result<Value> {
@@ -105,8 +100,5 @@ pub(crate) fn frame_reference(references: &[Value], axes: &[ViewAxis]) -> Result
 pub(crate) fn carried(level: usize, carried: Carried) -> Value { Value::Carried { level, carried: Arc::new(carried) } }
 
 pub(crate) fn at_level(value: &Value, id: usize) -> Option<&Carried> {
-    match value {
-        Value::Carried { level, carried } if *level == id => Some(carried),
-        _ => None,
-    }
+    match value { Value::Carried { level, carried } if *level == id => Some(carried), _ => None }
 }

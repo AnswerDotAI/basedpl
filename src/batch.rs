@@ -1,11 +1,12 @@
 //! Batched functions run on framed whole arguments through the normal dispatcher.
 use crate::{
-    array::{self, Carried, Layout}, error::{Error, Result}, eval::{Function, OperatorKind},
-    primitive::{Notation, Operation, Pairing, ReadOp, ViewAxis}, program::{Desc, Origin, Outputs},
-    transform::{at_level, carried, Level, LevelKind, Scope}, Value,
+    Value, array::{self, Carried, Layout}, error::{Error, Result}, eval::{Function, OperatorKind},
+    primitive::{Notation, Operation, Pairing, ReadOp, Relation, ViewAxis, WriteTarget}, program::{Desc, Origin, Outputs},
+    transform::{Level, LevelKind, Scope, at_level, carried}
 };
 
-pub(crate) fn map(function: &Function, parent: &Origin<&[Value]>, args: &[Value], frame: usize, atoms: &[bool], from: &[Option<usize>], notation: Notation) -> Result<Value> {
+pub(crate) fn map(
+    function: &Function, parent: &Origin<&[Value]>, args: &[Value], frame: usize, atoms: &[bool], from: &[Option<usize>], notation: Notation) -> Result<Value> {
     assert_eq!(args.len(), atoms.len());
     let origin = function.bound(parent, args, from)?;
     let mut fields = vec![None; origin.list.len()];
@@ -24,9 +25,7 @@ pub(crate) fn map_prepared(function: &Function, mut origin: Origin<Vec<Value>>, 
 pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], notation: Notation, origin: Origin<&[Value]>) -> Result<Value> {
     let arguments = Function::body_arguments(&origin)?;
     if axes == 0 && (notation != Notation::Strand || arguments.iter().all(Value::is_atom)) { return function.run(origin); }
-    if arguments.iter().any(|value| Desc::of(value).is_none()) {
-        return crate::program::run::framed_fallback(function, axes, atoms, notation, origin);
-    }
+    if arguments.iter().any(|value| Desc::of(value).is_none()) { return crate::program::run::framed_fallback(function, axes, atoms, notation, origin); }
     let positions: Vec<_> = atoms.iter().enumerate().filter_map(|(i, atom)| atom.is_some().then_some(i)).collect();
     assert_eq!(origin.list.len(), atoms.len(), "one framing flag per bound input leaf");
     let descriptions = positions.iter().map(|&i| Desc::of(&origin.list[i]).map(|d| d.into_owned())).collect::<Option<Vec<_>>>();
@@ -44,10 +43,13 @@ pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], n
         frame = frame.concat(&descriptions[source].layout.axes(std::iter::once(axis)));
         references.push(source);
     }
-    let mut frame_inputs = Vec::new(); let mut indices = Vec::new();
+    let mut frame_inputs = Vec::new();
+    let mut indices = Vec::new();
     let frame_axes = references.iter().enumerate().map(|(axis, &source)| {
         let input = indices.iter().position(|&old| old == source).unwrap_or_else(|| {
-            indices.push(source); frame_inputs.push(origin.list[positions[source]].clone()); indices.len() - 1
+            indices.push(source);
+            frame_inputs.push(origin.list[positions[source]].clone());
+            indices.len() - 1
         });
         ViewAxis { input: 1 + input as u32, axis: Some(axis) }
     }).collect();
@@ -63,14 +65,11 @@ pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], n
     let id = scope.level.id;
     drop(scope);
     let result = match result {
-        Err(error) if error.batch_level() == Some(id) => return crate::program::run::framed_fallback(function, axes, atoms, notation, origin),
-        result => result?,
+        Err(error) if error.batch_level() == Some(id) => return crate::program::run::framed_fallback(function, axes, atoms, notation, origin), result => result?
     };
     let structured = array::flatten(std::slice::from_ref(&result)).is_some();
     let framed = array::map_leaves(&result, |leaf| {
-        let (whole, cell) = match at_level(leaf, id) {
-            Some(Carried::Batch { whole, cell }) => (whole, Some(cell)), _ => (leaf, None),
-        };
+        let (whole, cell) = match at_level(leaf, id) { Some(Carried::Batch { whole, cell }) => (whole, Some(cell)), _ => (leaf, None) };
         if structured && cell.is_none() { return Ok(leaf.clone()); }
         let batched = cell.is_some();
         let cell_start = if batched { axes } else { 0 };
@@ -79,11 +78,14 @@ pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], n
         let destinations = (0..whole.rank()).map(|axis| if batched { axis } else { axes + axis }).collect();
         let operation = Operation::Read(ReadOp::Axes { axes: dimensions.into(), destinations });
         let mut list = Vec::with_capacity(1 + positions.len());
-        list.push(whole.clone()); list.extend(positions.iter().map(|&i| origin.list[i].clone()));
+        list.push(whole.clone());
+        list.extend(positions.iter().map(|&i| origin.list[i].clone()));
         let from: Vec<_> = std::iter::once(None).chain(positions.iter().copied().map(Some)).collect();
         let call = crate::eval::projected_call(&origin, operation, &list, &from)?;
         let value = Operation::dispatch(call.reborrow())?.assemble()?;
-        if structured { return Ok(carried(id, Carried::Batch { whole: value, cell: cell.expect("only batched leaves were framed").clone() })); }
+        if structured {
+            return Ok(carried(id, Carried::Batch { whole: value, cell: cell.expect("only batched leaves were framed").clone() }));
+        }
         if notation != Notation::Strand || leaf.is_atom() { return Ok(value); }
         let selected = Value::integers([value.rank() - axes], (axes..value.rank()).map(|axis| axis as i64).collect())?;
         let operation = Operation::Primitive { primitive: crate::primitive::Primitive::Enclose, pairing: Pairing::Explicit { fill: false } };
@@ -95,8 +97,8 @@ pub(crate) fn framed(function: &Function, axes: usize, atoms: &[Option<bool>], n
     for position in 0..frame.count() {
         values.push(array::map_leaves(&framed, |leaf| {
             let Some(Carried::Batch { whole, cell }) = at_level(leaf, id) else { return Ok(leaf.clone()); };
-            let call = crate::eval::projected_call(&origin, Operation::Read(ReadOp::Cell { rank: cell.shape().len() }),
-                &[Value::integer(position as i64), whole.clone()], &[None, None])?;
+            let call = crate::eval::projected_call(
+                &origin, Operation::Read(ReadOp::Cell { rank: cell.shape().len() }), &[Value::integer(position as i64), whole.clone()], &[None, None])?;
             let value = Operation::dispatch(call.reborrow())?.assemble()?;
             if !cell.atom && cell.shape().is_empty() { value.enclose() } else { Ok(value) }
         })?);
@@ -112,9 +114,11 @@ pub(crate) fn rule(level: &Level, origin: Origin<&[Value]>) -> Result<Outputs<Va
     let LevelKind::Batched { frame, .. } = &level.kind else { unreachable!("a batched rule has a frame") };
     let cells = Operation::build(&origin.call_view(&origin.list), &mut |_, _| {})?.1.ok_or_else(|| Error::batch_stop(level.id))?;
     if cells.as_ref().iter().any(Option::is_none) { return Err(Error::batch_stop(level.id)); }
-    let wholes = origin.list.iter().map(|value| array::map_leaves(value, |leaf| Ok(match at_level(leaf, level.id) {
-        Some(Carried::Batch { whole, .. }) => whole.clone(), _ => leaf.clone(),
-    }))).collect::<Result<Vec<_>>>()?;
+    let wholes = origin.list.iter().map(|value| {
+        array::map_leaves(value, |leaf| {
+            Ok(match at_level(leaf, level.id) { Some(Carried::Batch { whole, .. }) => whole.clone(), _ => leaf.clone() })
+        })
+    }).collect::<Result<Vec<_>>>()?;
     let call = Operation::cells(&origin, &wholes, frame.shape().len())?;
     let results = Operation::dispatch(call.reborrow())?;
     debug_assert_eq!(results.as_ref().len(), cells.as_ref().len());
@@ -126,8 +130,9 @@ pub(crate) fn lifted(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize, 
     let mut values = wholes.to_vec();
     let view = origin.call_view(&origin.list);
     let mut positions: Vec<_> = view.data_positions().collect();
-    positions.sort_unstable(); positions.dedup();
-    let reference = matches!(origin.operation, Operation::Draw { .. } | Operation::Read(ReadOp::Cells { .. }))
+    positions.sort_unstable();
+    positions.dedup();
+    let reference = matches!(origin.operation, Operation::Draw { .. } | Operation::Read(ReadOp::Cells { .. }) | Operation::At { .. })
         .then(|| Level::find(level).ok_or_else(Error::planning)?.frame_reference()).transpose()?;
     for position in positions {
         if at_level(&origin.list[position], level).is_some() || Desc::of(&values[position]).is_none() { continue; }
@@ -135,8 +140,12 @@ pub(crate) fn lifted(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize, 
         let mut axes: Vec<_> = (0..frame).map(|axis| ViewAxis { input: u32::from(reference.is_some()), axis: reference.as_ref().map(|_| axis) }).collect();
         axes.extend((0..value.rank()).map(|axis| ViewAxis { input: 0, axis: Some(axis) }));
         let operation = Operation::Read(ReadOp::Axes { axes: axes.into(), destinations: (frame..frame + value.rank()).collect() });
-        let mut arguments = vec![value.clone()]; let mut from = vec![Some(position)];
-        if let Some(reference) = &reference { arguments.push(reference.clone()); from.push(None); }
+        let mut arguments = vec![value.clone()];
+        let mut from = vec![Some(position)];
+        if let Some(reference) = &reference {
+            arguments.push(reference.clone());
+            from.push(None);
+        }
         let call = crate::eval::projected_call(origin, operation, &arguments, &from)?;
         values[position] = Operation::dispatch(call.reborrow())?.assemble()?;
     }
@@ -160,7 +169,10 @@ pub(crate) fn primitive_cells(origin: &Origin<&[Value]>, wholes: &[Value], frame
                 let Operation::Fold { primitive, scan, positions, .. } = &origin.operation else { unreachable!() };
                 let args: Vec<_> = values[..origin.explicit as usize].iter().cloned().chain(std::iter::once(Value::integer(frame as i64))).collect();
                 let from: Vec<_> = (0..origin.explicit as usize).map(Some).chain(std::iter::once(None)).collect();
-                return crate::eval::projected_call(origin, Operation::Fold { primitive: *primitive, first: *first, scan: *scan, positions: *positions, pairing: Pairing::Explicit { fill: false } }, &args, &from);
+                return crate::eval::projected_call(
+                    origin,
+                    Operation::Fold { primitive: *primitive, first: *first, scan: *scan, positions: *positions, pairing: Pairing::Explicit { fill: false } },
+                    &args, &from);
             }
             (*pairing, false)
         }
@@ -176,17 +188,38 @@ pub(crate) fn primitive_cells(origin: &Origin<&[Value]>, wholes: &[Value], frame
         if spec.keys(0).is_some() { return Err(Error::batch_stop(level.id)); }
         let axes = crate::primitive::resolve_axes(&spec, origin.list[right.leaves.start].layout())?;
         let axes = crate::primitive::axes(&axes, origin.list[right.leaves.start].rank())?;
-        let shifted: Vec<_> = if pair.1 { (0..frame).chain(axes.into_iter().map(|axis| frame + axis)).collect() }
-            else { axes.into_iter().map(|axis| frame + axis).collect() };
+        let shifted: Vec<_> =
+            if pair.1 { (0..frame).chain(axes.into_iter().map(|axis| frame + axis)).collect() } else { axes.into_iter().map(|axis| frame + axis).collect() };
         let spec = Value::integers([shifted.len()], shifted.into_iter().map(|axis| axis as i64).collect())?;
-        return crate::eval::map_roots(&origin.with_list(values.as_slice()), |at| Ok((at.index == root.index).then(|| crate::eval::RootReplacement::value(&spec, None))));
+        return crate::eval::map_roots(&origin.with_list(values.as_slice()), |at| {
+            Ok((at.index == root.index).then(|| crate::eval::RootReplacement::value(&spec, None)))
+        });
     }
     Ok(origin.with_list(values))
 }
 
+fn at_cells(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize, level: &Level) -> Result<Origin<Vec<Value>>> {
+    let Operation::At { combine, target: WriteTarget::Source { port, frame: inner, distinct } } = origin.operation else {
+        return Err(Error::batch_stop(level.id));
+    };
+    let mut call = origin.with_list(lifted(origin, wholes, frame, level.id)?);
+    let frame = inner + if at_level(&origin.list[1], level.id).is_some() { 0 } else { frame };
+    call.operation = Operation::At { combine, target: WriteTarget::Source { port, frame, distinct } };
+    Ok(call)
+}
 pub(crate) fn cells(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize) -> Result<Origin<Vec<Value>>> {
     let level = Level::current_batch_rule().ok_or_else(Error::planning)?;
     match &origin.operation {
+        Operation::At { .. } => at_cells(origin, wholes, frame, &level),
+        Operation::ReadRelation { operation, relation: Relation::Result, .. }
+            if matches!(&**operation, Operation::At { target: WriteTarget::Source { .. }, .. }) =>
+        {
+            let mut call = origin.with_list(wholes.to_vec());
+            let Operation::ReadRelation { operation, .. } = &mut call.operation else { unreachable!() };
+            let Operation::At { target: WriteTarget::Source { frame: inner, .. }, .. } = &mut **operation else { unreachable!() };
+            if at_level(&origin.list[1], level.id).is_none() { *inner += frame; }
+            Ok(call)
+        }
         Operation::Primitive { primitive, .. } => (primitive.info().cells)(origin, wholes, frame),
         Operation::Recipe(_) | Operation::Convert(_) | Operation::Fold { .. } => primitive_cells(origin, wholes, frame),
         Operation::Draw { .. } => {
@@ -204,8 +237,9 @@ pub(crate) fn cells(origin: &Origin<&[Value]>, wholes: &[Value], frame: usize) -
         Operation::Read(ReadOp::Axes { axes, destinations }) => {
             let mapped = |input| at_level(&origin.list[input], level.id).is_some();
             let mut output: Vec<_> = (0..frame).map(|axis| ViewAxis { input: 0, axis: mapped(0).then_some(axis) }).collect();
-            output.extend(axes.iter().map(|axis| ViewAxis { input: axis.input,
-                axis: axis.axis.map(|index| index + if mapped(axis.input as usize) { frame } else { 0 }) }));
+            output.extend(
+                axes.iter().map(|axis| ViewAxis { input: axis.input, axis: axis.axis.map(|index| index + if mapped(axis.input as usize) { frame } else { 0 }) })
+            );
             let targets = (0..if mapped(0) { frame } else { 0 }).chain(destinations.iter().map(|axis| frame + axis)).collect();
             let mut call = origin.with_list(wholes.to_vec());
             call.operation = Operation::Read(ReadOp::Axes { axes: output.into(), destinations: targets });

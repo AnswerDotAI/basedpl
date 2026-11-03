@@ -41,12 +41,12 @@ x←0 0.5 1
 {1○x+⍵}∂0                   ⍝ 1 0.8775825619 0.5403023059
 ```
 
-`f∂∂` is `∂` applied to `f∂`. It gives second and mixed derivatives, such as the matrix of mixed derivatives of `×/`, the product of the items. Exact numbers give exact derivatives:
+`f∂∂` is `∂` applied to `f∂`. It gives second and mixed derivatives, such as the matrix of mixed derivatives of `×/`, the product of the items. Differentiated numbers promote to real floating-point values:
 
 ```bpl
 {⍵×⍵×⍵}∂∂∂2                  ⍝ 6
 ×/∂∂ 2 3                     ⍝ [0 1⋄1 0]
-⊼∂3ₓ                         ⍝ 6ₓ
+⊼∂3ₓ                         ⍝ 6
 ```
 
 ## Forward mode
@@ -107,9 +107,23 @@ ste←{⌊⍵} ⋄ ste∂←{⍺}
 
 A value that `f` writes to a name outside itself loses its derivatives when `∂` returns. A function gives the same values with and without `∂`.
 
+## Writes
+
+`∂` differentiates indexed, sliced and masked replacement and additive updates on native floating arrays. The update must keep the array's shape. The replacement can depend on the differentiated input:
+
+```bpl
+{v←⍵ ⋄ v.[0]←0 ⋄ +/v}∂1 2 3               ⍝ 0 1 1
+{v←⍵ ⋄ v.[0]+←⍵.[1] ⋄ +/v}∂1 2 3         ⍝ 1 2 1
+{v←⍵ ⋄ v.[[0 2]]←+/⍵ ⋄ +/v}∂1 2 3        ⍝ 2 3 2
+```
+
+Positions and masks are fixed choices during differentiation. `∂` does not differentiate which positions were chosen. Replacement requires distinct destinations. Additive updates accumulate every occurrence of a repeated destination. A broadcast replacement's gradient sums back to the replacement's original shape, as the third example shows.
+
+These rules also apply to selecting [Under](glyphs/at.qmd). An update on differentiated data that changes the array's shape or nesting, or uses a host-valued replacement, gives UNSUPPORTED ERROR. Ordinary [nested-item replacement](glyphs/left-arrow.qmd#write-support) can change an item's shape without differentiating the write.
+
 ## Programs: trace once, replay
 
-Without a program, `∂` builds its duals or its record afresh on every call, through the interpreter. A training loop calls `∂` hundreds of times, with arguments of the same types and shapes. This loop fits a network with 16 tanh units (`7○`) to 64 points of sin 3x (`1○3×x`), in 200 steps of gradient descent on a record of parameters:
+A training loop repeatedly differentiates the same loss. Here a network with 16 tanh units (`7○`) fits 64 points of sin 3x (`1○3×x`) in 200 steps of gradient descent on a record of parameters:
 
 ```bpl
 x←⍳64 ÷ 63 ⋄ y←1○3×x
@@ -120,57 +134,59 @@ p←{⍵ - 0.1× [x y]loss∂⍵}⍣200p
 [x y] loss p                ⍝ 0.07655752909
 ```
 
-`∂` runs from a program. The first call with given argument types and shapes traces the function. The function runs on traced values, which have a type and a shape but no items. Each call on a traced value works out the type and shape of its result, and adds a step to the program. The derivative's records and transposes run on traced values too. The program holds the whole call: the function's value and its derivative together. JAX traces a Python function into a jaxpr in the same way.
+A recording remembers the graph built by a function call. Later matching calls bind its inputs and build that graph without running the body again. The current arguments, captured free values and bound arrays supply those inputs. They are captured once at the call, not reread from names during deferred execution. Derivative steps use the ordinary graph, including when they are built inside a recorded function.
 
-Later calls with the same argument types and shapes replay the program on their arguments, without running the function. The replay runs each chain of elementwise steps as one stage, a block of items at a time. A stage folds its last step's items as it computes them. Its intermediate results exist only one block at a time. Once a stage is large enough, or runs again, BPL compiles it to machine code with Cranelift, if its steps can compile. The browser build has no compiler. It runs every stage on the interpreter's kernels. tinygrad's `TinyJit` replays the kernels of an earlier call in the same way. `•explain` shows whether a call built a program or replayed one:
+The cache keys input kinds, ranks, axis names and keys, equalities between lengths, and structural parameters such as operator ranks and permutations. Ordinary data-axis lengths have three classes: 0, 1 and more than 1. A new length in the same class can reuse the recording. The graph's descriptions and read maps are refilled with the actual lengths. A count that decides how many calls Power or a dfn fold unrolls is keyed by its exact value.
+
+Only a read schedules and executes the graph. The scheduler groups elementwise operations and folds into block stages. Intermediates stay within a block where the stage permits it. Native stages compile to machine code with Cranelift when the expected work repays compilation. The browser runs the same stages without the native JIT. `•explain` reports `record` when a call creates a recording and `replay` when it reuses one:
 
 ```bpl
-sq←{+/⊼⍵} ⋄ g←sq∂ 1 2 3
-(•explain "sq∂ 4 5 6").programs.event      ⍝ ["replayed"]
-(•explain "sq∂ 4 5 6 7").programs.event    ⍝ ["built"]
+sq←{+/⊼⍵} ⋄ sq 1 2 3
+(•explain "sq 4 5 6").programs.event      ⍝ ["replay"]
+(•explain "sq 4 5 6 7").programs.event    ⍝ ["replay"]
 ```
 
-The second call replays the program that the first call built. Four numbers need a program of their own.
+Both later calls reuse the recording. Three and four items have the same length class.
 
-A dfn keeps its programs with its definition. Any other function, such as a train, keeps them by its structure for the rest of the session. The structure leaves out the arrays that the function binds, which become inputs, as a dfn's free names do. So `+/w×⊢` replays its program when `w` holds new values of the same type and shape:
+A dfn's definition identifies its recordings. Other functions key by structure. Bound arrays and free data are inputs rather than part of that structure. Replacing `w` with new data of the same kind and compatible layout does not require another recording:
 
 ```bpl
-w←1 2 3 ⋄ g←(+/w×⊢)∂ 4 5 6
-w←7 8 9 ⋄ (•explain "(+/w×⊢)∂ 4 5 6").programs.event   ⍝ ["replayed"]
+w←1 2 3 ⋄ (+/w×⊢)4 5 6
+w←7 8 9 ⋄ (•explain "(+/w×⊢)4 5 6").programs.event   ⍝ ["replay"]
 ```
 
 ### What stops a trace
 
-A trace stops where its program can't hold what the function does. `∂` then runs that call through duals and records, more slowly. It keeps the stop for those argument types and shapes. `•explain` gives the reason in its `stopped` rows. A trace stops at:
+Stopping a recording leaves the ordinary call running through the same graph and derivative rules. It does not select a different numerical evaluator. The cache keeps the stop for its signature and structural parameters. `•explain` lists the reason in `stopped`:
 
-- an effect that a program can't hold (`"an effect"`): an effect on a nested or differentiated value; a system function that acts and gives text, a record or a table, such as `•host`, `•nget` or `•remove`; `•prefs`, `•load`, `•ex`, `•explain` and `•rand`, which change the session; input through `⎕`; and `⍕` of a differentiated value. Output (`⎕←`), `•time`, `•delay` and `•nput` don't stop a trace: each replay runs them in order, after the work before them. A number that one gives is new on each call, so a guard on it stops the trace;
-- a write to a name outside the function (`"a write"`);
-- an error that an error guard catches (`"a caught error"`);
-- a random draw that no program step holds (`"a random draw"`): a draw inside a map, a deal, a discrete distribution's samples, and a roll whose bounds the trace can't show to be all 0, or all whole numbers of at least 1;
-- text that `⍎` runs (`"text that ⍎ runs"`);
-- a read of a differentiated value's items (`"a read of a traced value"`): a guard's predicate, a count or positions computed from one, or Agenda's (`⍚`) selector computed from one where a case can't run on every item, as a dfn case can't;
-- a function called on each item of a differentiated value (`"a function called on each item"`): a map that calls its function once for each cell, as where its batched call falls back; a fold by a primitive that `∂` has no rule for, such as `!/`; and a fold or scan by a dfn whose body no loop node holds, as where the body itself stops a trace;
-- a call whose result type depends on its values, under dynamic kinds, where the first run's items give the other type or the call is `!` (`"a result whose type depends on values"`), described below;
-- a call that programs don't hold yet, such as a selection by computed positions along axes or with a fill (its reason names the call);
-- a definition traced 9 times in a row with no replay between, as when a free value or an argument's lengths change on every call (`"the retrace limit"`).
+- `observing argument data`: a host decision reads an argument's items, as a dfn guard does. A dynamic result kind that cannot be proved from descriptions also requires such a read.
+- `host-kind data`: the call needs structure that the recording cannot describe, such as a write that replaces a native number by an array.
+- `itemwise batch fallback`: a map must call the body separately for each cell instead of batching it.
+- `outer binding write`, `binding or setting effect`, `execute`, `error guard` or `recursion`: the body changes bindings or settings, runs text, catches errors or recurses through a boundary that recording does not hold.
+- `runtime renderer metadata` or `drawn name as text`: rendering or text depends on runtime bindings or fresh axis names.
+- `retrace limit`: too many variants of a recording's structural read parameters.
 
-A guard on a differentiated value stops a trace:
+Output effects such as `⎕←`, `•time`, `•delay` and `•nput`, and numeric draws with described results, remain in recordings. Replay runs each effect and draw once in order.
+
+A guard on a differentiated value reads its primal value to choose the executed body. It still computes the derivative of that body:
 
 ```bpl
 pos←{+/⍵ > 0 ? +/⊼⍵ ; 0}
-(•explain "pos∂ 1 2 3").stopped.reason    ⍝ ["a read of a traced value"]
+(•explain "pos∂ 1 2 3").stopped.reason
 ```
 
-Reading a type or a shape never stops a trace. A guard on `≢⍵`, or a value computed from a length such as the divisor in `÷≢⍵`, holds for every call with the argument types and shapes that the program holds. Each replay reads the current value of every name that the function reads from outside its body, and of every array that a function other than a dfn binds. A name or an array read as a count or a guard's condition is part of the program itself. A replay checks its value. A new value traces the function again. A name read as positions isn't: each replay selects at its current positions, and raises INDEX ERROR at one outside its axis.
+Reading a kind or a shape needs no items. Ordinary array counts, such as the number of results from a selection, can be recorded and recomputed at their current lengths. Captured data used to decide graph structure becomes a checked parameter. Runtime positions remain data: replay selects at the current positions. [Assignment](glyphs/left-arrow.qmd#write-support) describes how checked and static writes handle invalid positions.
 
-A program fixes every type before it runs. Under the default dynamic kinds, a result's type can depend on its values: `√` of a negative number gives a complex number. On reals, the calls that can do this are `√` and every root but the cube root `3√`, `⍟`, `!`, `0○`, and `*` whose exponent isn't a whole number or is the value being differentiated. For each of these but `!`, a trace assumes the type that its first run's items give, together with the range of values on which that type always results, such as from 0 up for `√`. Each replay checks that its items stay in that range. A replay whose items leave it traces the function again. That trace counts toward the retrace limit. A trace stops at `!`. It also stops where its first run's items give the other type, as `√` of a negative number does. Under static kinds, which `•prefs ["kinds":"static"]` sets, every type follows from the argument types, and replays check nothing. Static kinds are the setting for work where speed matters. `√ₐ`, `⍟ₐ` and `*ₐ` give real results whatever the values, under either setting. Their traces neither stop nor check a range ([Numbers](numbers.qmd#approximate)).
+Under dynamic kinds, an operation such as `√` can return real or complex values. Range proofs use kinds, keyed literals, graph operations and current shapes and counts, never the observed extrema of an input. If those facts do not decide the result kind, the operation reads the relevant data. Recording stops when that read depends on an argument:
 
 ```bpl
 roots←{+/√⍵}
-(•explain "roots∂ 1 2 3").programs.event  ⍝ ["built"]
+(•explain "roots 1 2 3").stopped.reason    ⍝ ["observing argument data"]
 ```
 
-Write a function for `∂` under static kinds, with each branch as Agenda (`⍚`) or Under at positions (`f@[p]`) rather than a guard. A guard reads a differentiated value to pick one body for the whole call, which a program can't hold. `⍚` and `@` pick items within whole arrays. A program holds such a branch as a masked select where every case can run on every item, as pervasive primitives and constants can. Each case then reads the differentiated value with a zero tangent at the items that picked another case, so a case's infinite slope there can't make the gradient NaN. A branch with any other case, such as a dfn, runs each case on its own items instead. That stops the trace, and `∂` still gives the right result, more slowly.
+Static kinds fix numeric result kinds from the argument kinds. `√ₐ`, `⍟ₐ` and `*ₐ` select real results under either setting. These forms avoid the data read needed to choose between real and complex results ([Numbers](numbers.qmd#approximate)).
+
+Write fast differentiated code under static kinds, using Agenda (`⍚`) or mask Under (`f@[p]`) for array branches rather than dfn guards. A masked case runs on whole arrays. AD gates its inputs and tangent directions so an inactive infinite slope does not make the gradient NaN. Cases that cannot run masked compact their selected cells and call the original bound function on that group. Both forms use the same graph and derivative rules.
 
 ## Index notation
 
@@ -206,27 +222,17 @@ JAX, Dex and tinygrad are the role models. Futhark, Dex and Julia set the standa
 |---|---|
 | JAX | A function traced into a program of primitives, and replayed on later calls. Reverse mode as the transpose of a linearisation. JVP rules that reverse mode transposes, like `custom_jvp` rules. `•detach` as `stop_gradient`. Rank doing the job of `vmap`. |
 | Dex | Linearising, then transposing. Indices that name a formula's axes. Accumulation as the transpose of indexing. |
-| tinygrad | Lazy arrays: a call on a large array gives a pending array, and a read of its items runs the calls it needs, fused. Derivative code that fuses as other code does. Copies, such as a transpose or a slice, whose transposes are copies, not scatters. A program replayed as `TinyJit` replays its kernels. |
+| tinygrad | Lazy arrays: every numerical call builds a pending node, and a read of its items runs the calls it needs, fused. Derivative code that fuses as other code does. Copies, such as a transpose or a slice, whose transposes are copies, not scatters. A program replayed as `TinyJit` replays its kernels. |
 | Futhark | One table of partial derivatives for both modes, which BPL's table was mapped from. The rules for folds by `×`, `⌈` and `⌊`. Accumulation as the transpose of a gather. |
 | ForwardDiff | Dual numbers with tags, which keep nested derivatives apart. |
 | J | `D.`, which gives a Jacobian, and `d.`, which gives the derivative at each item. `f∂` and `f∂⍤0` do these jobs. |
 
-BPL also differs from all of them. `∂` strips its tags from values that escape it, where JAX raises an error when a leaked tracer is used. One operator picks the mode, where JAX offers `jvp`, `vjp`, `jacfwd` and `jacrev`. A Jacobian takes its keys, axis names and records from the rules of outer products. Exact numbers give exact derivatives. Futhark differentiates its program before running it and recomputes values in reverse mode. BPL differentiates the calls that `f` makes as it runs. It keeps their linear steps instead of recomputing values.
+BPL also differs from all of them. `∂` strips its tags from values that escape it, where JAX raises an error when a leaked tracer is used. One operator picks the mode, where JAX offers `jvp`, `vjp`, `jacfwd` and `jacrev`. A Jacobian takes its keys, axis names and records from the rules of outer products. Futhark differentiates its program before running it and recomputes values in reverse mode. BPL differentiates the calls that `f` makes as it runs. It keeps their linear steps instead of recomputing values.
 
-## Not built yet
+## Iteration and limits
 
-These are planned:
+Power (`⍣`) and dfn folds and scans call their bodies through the ordinary function entry. Under `∂`, each call adds primal and linear steps to the same graph. There is no separate loop node or loop-specific derivative program. Reverse mode keeps the values that the transposes need until `∂` returns. A long iteration keeps those values for every step. BPL has no checkpointing pass to trade recomputation for memory, as Futhark does.
 
-- Programs inside maps. `∂` inside a map, as in `{f∂⍵}¨x`, runs without a program. `•explain` gives the reason "a call under another level". Batching inside traces is planned.
-- Joins. A program step is designed for `,`, `⍪` and `@` with differentiated values.
-- Whole training steps. A program holds one call of `∂`. The update, and the loop around it, run outside the program. A tracing point for whole training steps, such as `⍣`, would run a step's forward pass, gradient and update as one program.
-- Deferred Jacobians. `f∂ x` builds every item of the Jacobian. The plan holds a large Jacobian as its linearisation, and builds its items only when something reads them. `J+.×v` would then run as a JVP, `u+.×J` as a vector–Jacobian product, and `b⌹J` as an iterative solve, as in the Gauss–Newton step `x - r⁝x ⌹ r∂x`.
-- The GPU. Programs run on the CPU. A later stage adds a WebGPU back end, with arrays kept on the device.
+`∂` differentiates through the executed iterations of `⍣∞` and `⇄`. It does not use implicit differentiation of the converged answer. Complex differentiation gives UNSUPPORTED ERROR.
 
-These limits have no plan yet:
-
-- Reverse mode keeps every value that its transposes need until `∂` returns. A long iteration keeps a record for each step. Checkpointing, which Futhark uses for loops, recomputes values instead of keeping them. BPL has none.
-- Nested `∂`, as in `f∂∂`, runs without a program.
-- `∂` differentiates through each iteration of `⍣∞` and `⇄`. Rules from the implicit function theorem would differentiate their answers directly.
-- `∂` gives UNSUPPORTED ERROR for complex numbers.
-- Forward mode carries one direction for each pass.
+Graphs run on the CPU. A GPU backend is planned.

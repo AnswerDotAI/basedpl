@@ -1,5 +1,5 @@
 use crate::execution::check;
-use crate::{Described, Error, ErrorKind, Number, Value, system::HostCall, data::{Options, imported, text}, keyed::{self, Form}};
+use crate::{Described, Error, ErrorKind, Number, Value, data::{Options, imported, text}, keyed::{self, Form}, system::HostCall};
 use num_bigint::BigInt;
 use rustymath::error::Kind;
 use rustymath::hashing::{HashMap, HashMapExt};
@@ -152,10 +152,8 @@ fn export(value: &Value, fill: Option<&Number>) -> Result<Json, Error> {
         Value::Pending(_) | Value::Carried { .. } => unreachable!("JSON exports observed values"),
     }
     let keys = match keyed::form(value) {
-        Form::Text(text) => return Ok(Json::String(text.to_string())),
-        Form::Array if value.is_unit() => return export(&value.at(0), fill),
-        Form::Array => None,
-        Form::Object(keys) => Some(keys),
+        Form::Text(text) => return Ok(Json::String(text.to_string())), Form::Array if value.is_unit() => return export(&value.at(0), fill), Form::Array => None,
+        Form::Object(keys) => Some(keys)
     };
     let cells = value.cells(value.rank() - 1).described("invalid JSON array")?;
     let values = (0..cells.len()).map(|i| export(&cells.get(i).described("invalid JSON cell")?, fill)).collect::<Result<Vec<_>, _>>()?;

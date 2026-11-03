@@ -1,12 +1,14 @@
 use crate::execution::check;
-use crate::session;
 use crate::{
-    Described, Error, ErrorKind, Number, Span, Value, agreement::{Agree, Agreement}, eval::Function,
-    array::{Frame, Items, Lanes, Layout, Tree, TreeInput, TreeRoot, Widening, generated_len, saturated}, keyed::Selector,
-    number::{Arithmetic, Kind as NumberKind, Kinds, Mark, Math, Numbers, Numeric, int::Int}, program::{control, Desc, Mode, Origin, Outputs, Step, trace::ReadKind}, search::{Cells, classify, first_matches, firsts}
+    Described, Error, ErrorKind, Number, Span, Value, agreement::{Agree, Agreement},
+    array::{Frame, Items, Lanes, Layout, Tree, TreeInput, TreeRoot, Widening, generated_len, saturated}, eval::Function, keyed::Selector,
+    number::{Arithmetic, Kind as NumberKind, Kinds, Mark, Math, Numbers, Numeric, int::Int},
+    program::{Desc, Mode, Origin, Outputs, Step, control, trace::ReadKind}, search::{Cells, classify, first_matches, firsts}, session
 };
 use rustymath::hashing::{HashMap, HashMapExt};
-use rustymath::{Binary as _, agreement::{Mapping, ReadPlan}, buffer::{DType, FloatWidth, Width}, error::Kind, gather::Steps, layout::{shown, strides}, with_width};
+use rustymath::{
+    Binary as _, agreement::{Mapping, ReadPlan}, buffer::{DType, FloatWidth, Width}, error::Kind, gather::Steps, layout::{shown, strides}, with_width
+};
 use std::{borrow::Cow, cmp::Ordering};
 
 mod indexing;
@@ -22,9 +24,8 @@ pub(crate) struct FoldKind { pub scan: bool, pub first: bool }
 /// View relations; selectors, dimensions and counts are call operands, not operation identity.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum ReadOp {
-    Ravel, Reshape, Item, Cell { rank: usize }, Slice { axis: usize },
-    Axes { axes: Box<[ViewAxis]>, destinations: Box<[usize]> },
-    Cells { operation: Box<Operation>, frame: usize, inputs: Box<[CellInput]> },
+    Root(usize), Ravel, Reshape, Item, Cell { rank: usize }, Slice { axis: usize }, Axes { axes: Box<[ViewAxis]>, destinations: Box<[usize]> },
+    Cells { operation: Box<Operation>, frame: usize, inputs: Box<[CellInput]> }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -35,14 +36,9 @@ pub(crate) struct CellInput { pub(crate) position: u32, pub(crate) atom: bool, p
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum RecipeOp {
-    Unary(rustymath::recipe::Unary),
-    Binary(rustymath::recipe::Binary),
-    Compare(rustymath::recipe::Cmp),
-    Integer(rustymath::recipe::Integer),
-    IntegerCompare(rustymath::recipe::Cmp),
-    ToInteger, FromInteger(FloatWidth), ToBits, FromBits(FloatWidth),
-    Convert { kind: NumberKind, conversion: rustymath::convert::ConversionKind },
-    FloatFloor,
+    Unary(rustymath::recipe::Unary), Binary(rustymath::recipe::Binary), Compare(rustymath::recipe::Cmp), Integer(rustymath::recipe::Integer),
+    IntegerCompare(rustymath::recipe::Cmp), ToInteger, FromInteger(FloatWidth), ToBits, FromBits(FloatWidth),
+    Convert { kind: NumberKind, conversion: rustymath::convert::ConversionKind }, FloatFloor
 }
 
 impl RecipeOp {
@@ -55,8 +51,7 @@ impl RecipeOp {
             Self::FromInteger(width) => Conversion { input: word, output: working(width), kind: Cast },
             Self::ToBits => Conversion { input: working(crate::array::float_width_of(input)?), output: word, kind: Bits },
             Self::FromBits(width) => Conversion { input: word, output: working(width), kind: Bits },
-            Self::Convert { kind, conversion } => Conversion { input, output: kind.dtype(), kind: conversion },
-            _ => return None,
+            Self::Convert { kind, conversion } => Conversion { input, output: kind.dtype(), kind: conversion }, _ => return None
         };
         let kind = match self { Self::Convert { kind, .. } => kind, _ => NumberKind::stored(conversion.output, conversion.output.is_integral(), false) };
         Some((conversion, kind))
@@ -64,20 +59,18 @@ impl RecipeOp {
     fn kernel(self, variant: rustymath::facts::Variant) -> Option<rustymath::operation::Kernel> {
         use rustymath::operation::Kernel;
         match self {
-            Self::Unary(op) => Kernel::unary(op, variant), Self::Binary(op) => Kernel::binary(op, variant),
-            Self::Compare(op) => Kernel::compare(op, variant), Self::Integer(op) => Kernel::integer(op, variant),
-            Self::IntegerCompare(op) => Kernel::integer_compare(op, variant), _ => None,
+            Self::Unary(op) => Kernel::unary(op, variant), Self::Binary(op) => Kernel::binary(op, variant), Self::Compare(op) => Kernel::compare(op, variant),
+            Self::Integer(op) => Kernel::integer(op, variant), Self::IntegerCompare(op) => Kernel::integer_compare(op, variant), _ => None
         }
     }
 }
 
-pub(crate) struct JvpOutputs {
-    pub(crate) primal: Outputs<Value>,
-    pub(crate) tangent: Outputs<Option<Value>>,
-}
+pub(crate) struct JvpOutputs { pub(crate) primal: Outputs<Value>, pub(crate) tangent: Outputs<Option<Value>> }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum Relation { Input(u32), Result, Back(u32) }
+pub(crate) enum Relation { Input(u32), Result, Back(u32), Validate }
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum WriteTarget { Indices, Selected, Source { port: usize, frame: usize, distinct: bool } }
 
 /// Part 5: what dispatch is called with, plain data. The function values a call plans from or runs, and the values it reads at the call (parameters), are its arguments, never fields: a run binds them from the live graph.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -116,7 +109,7 @@ pub(crate) enum Operation {
         /// Part 16: an accumulating write's primitive (`y.[dst]+←v`; a copy's transpose's `+`, part 15); none replaces.
         combine: Option<Primitive>,
         /// A structural target rooted in the original; otherwise the operand gives explicit positions.
-        selection: bool,
+        target: WriteTarget,
     },
     /// Parts 5, 14: a select (`⍚`, `f@[p]`, a guard on framed values); its cases are the call's function values.
     Select {
@@ -174,25 +167,28 @@ pub(crate) enum Act {
 
 /// An operand read relative to its producer, before the stored source's physical mapping.
 #[derive(Clone, Copy)]
-pub(crate) struct Input<'a> {
-    pub(crate) value: &'a Value,
-    pub(crate) map: &'a Mapping,
-}
+pub(crate) struct Input<'a> { pub(crate) value: &'a Value, pub(crate) map: &'a Mapping }
 
 /// Positional access shared by live calls and Program + Running bindings.
 pub(crate) trait CallBindings {
     fn len(&self) -> usize;
     fn input(&self, position: usize) -> Option<Input<'_>>;
+    fn source(&self, position: usize) -> Result<Cow<'_, Value>, Error> {
+        self.input(position).map(|input| Cow::Borrowed(input.value)).ok_or_else(Error::planning)
+    }
     fn value(&self, position: usize, read: ReadKind) -> crate::error::Result<Cow<'_, Value>>;
     fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>>;
     fn function(&self, position: usize) -> Option<&Function>;
 }
 
 pub(crate) struct Omitted<'a> { pub(crate) bindings: &'a dyn CallBindings, pub(crate) range: std::ops::Range<usize> }
-impl Omitted<'_> { fn index(&self, position: usize) -> usize { position + if position >= self.range.start { self.range.len() } else { 0 } } }
+impl Omitted<'_> {
+    fn index(&self, position: usize) -> usize { position + if position >= self.range.start { self.range.len() } else { 0 } }
+}
 impl CallBindings for Omitted<'_> {
     fn len(&self) -> usize { self.bindings.len() - self.range.len() }
     fn input(&self, position: usize) -> Option<Input<'_>> { self.bindings.input(self.index(position)) }
+    fn source(&self, position: usize) -> Result<Cow<'_, Value>, Error> { self.bindings.source(self.index(position)) }
     fn value(&self, position: usize, read: ReadKind) -> crate::error::Result<Cow<'_, Value>> { self.bindings.value(self.index(position), read) }
     fn desc(&self, position: usize, literal: bool) -> Option<Cow<'_, Desc>> { self.bindings.desc(self.index(position), literal) }
     fn function(&self, position: usize) -> Option<&Function> { self.bindings.function(self.index(position)) }
@@ -201,27 +197,23 @@ impl CallBindings for Omitted<'_> {
 /// Borrowed facts of one resolved call. Describing and planning allocate no parallel operand lists.
 #[derive(Clone, Copy)]
 pub(crate) struct CallView<'a> {
-    pub(crate) operation: &'a Operation,
-    pub(crate) mode: Mode,
-    pub(crate) literals: u64,
-    pub(crate) roles: &'a Roles,
-    pub(crate) explicit: usize,
-    pub(crate) explicit_roots: usize,
-    pub(crate) trees: Option<&'a std::sync::Arc<crate::array::Trees>>,
-    pub(crate) captures: &'a std::sync::Arc<crate::eval::CaptureBindings>,
-    pub(crate) bindings: &'a dyn CallBindings,
-    pub(crate) site: Option<&'a Span>,
-    pub(crate) context: Option<u32>,
+    pub(crate) operation: &'a Operation, pub(crate) mode: Mode, pub(crate) literals: u64, pub(crate) roles: &'a Roles, pub(crate) explicit: usize,
+    pub(crate) explicit_roots: usize, pub(crate) trees: Option<&'a std::sync::Arc<crate::array::Trees>>,
+    pub(crate) captures: &'a std::sync::Arc<crate::eval::CaptureBindings>, pub(crate) bindings: &'a dyn CallBindings, pub(crate) site: Option<&'a Span>,
+    pub(crate) context: Option<u32>
 }
 
 impl CallView<'_> {
-    pub(crate) fn projected<'a>(&'a self, operation: &'a Operation, bindings: &'a dyn CallBindings) -> CallView<'a> { CallView { operation, bindings, ..*self } }
+    pub(crate) fn projected<'a>(&'a self, operation: &'a Operation, bindings: &'a dyn CallBindings) -> CallView<'a> {
+        CallView { operation, bindings, ..*self }
+    }
     pub(crate) fn origin<L>(&self, list: L) -> crate::program::Origin<L> {
         crate::program::Origin { operation: self.operation.clone(), mode: self.mode, literals: self.literals, roles: self.roles.clone(),
-            explicit: self.explicit as u32, explicit_roots: self.explicit_roots as u32, trees: self.trees.cloned(), site: self.site.cloned(), context: self.context, bindings: self.captures.clone(), list }
+            explicit: self.explicit as u32, explicit_roots: self.explicit_roots as u32, trees: self.trees.cloned(), site: self.site.cloned(),
+            context: self.context, bindings: self.captures.clone(), list }
     }
-    pub(crate) fn with_read<T>(&self, position: usize, read: ReadKind,
-        use_value: impl FnOnce(&Value, &Mapping) -> crate::error::Result<T>) -> crate::error::Result<T> {
+    pub(crate) fn with_read<T>(
+        &self, position: usize, read: ReadKind, use_value: impl FnOnce(&Value, &Mapping) -> crate::error::Result<T>) -> crate::error::Result<T> {
         let input = self.input(position).ok_or_else(|| Error::domain("missing call argument"))?;
         let value = input.value.read(read)?;
         use_value(&value, input.map)
@@ -238,34 +230,33 @@ impl CallView<'_> {
         let position = crate::program::implicit_position(self.operation, self.explicit, self.captures, input)?;
         Some((position, self.input(position)?.value))
     }
-    pub(crate) fn kernel(&self, variant: rustymath::facts::Variant) -> crate::error::Result<Option<rustymath::operation::Kernel>> { Operation::kernel(self, variant) }
+    pub(crate) fn kernel(&self, variant: rustymath::facts::Variant) -> crate::error::Result<Option<rustymath::operation::Kernel>> {
+        Operation::kernel(self, variant)
+    }
     pub(crate) fn root(&self, index: usize) -> TreeRoot {
         self.trees.map_or_else(|| TreeRoot { index, leaves: index..index + 1 }, |trees| trees.roots().nth(index).expect("a call root"))
     }
-    pub(crate) fn root_boundary(&self, root: usize) -> usize {
-        if root == self.explicit_roots { return self.explicit; }
-        self.root(root).leaves.start
-    }
+    pub(crate) fn root_boundary(&self, root: usize) -> usize { if root == self.explicit_roots { return self.explicit; } self.root(root).leaves.start }
     pub(crate) fn row(&self) -> Option<&'static Row> {
         match self.operation {
             Operation::Primitive { primitive, .. } => Some(primitive.info()),
-            Operation::System | Operation::Draw { .. } | Operation::Effect(_) => Some(crate::system::native_row()),
-            _ => None,
+            Operation::System | Operation::Draw { .. } | Operation::Effect(_) => Some(crate::system::native_row()), _ => None
         }
     }
     fn options_root(&self) -> Option<(usize, bool)> { self.operation.options_root(self.explicit_roots) }
     pub(crate) fn axis_root(&self) -> Option<TreeRoot> { self.options_root().map(|(root, _)| self.root(root)) }
     pub(crate) fn fill_root(&self) -> Option<TreeRoot> { self.options_root().filter(|(_, fill)| *fill).map(|(root, _)| self.root(root + 1)) }
-    pub(crate) fn explicit_argument_roots(&self) -> std::ops::Range<usize> {
-        self.operation.explicit_argument_roots(self.explicit_roots)
-    }
+    pub(crate) fn explicit_argument_roots(&self) -> std::ops::Range<usize> { self.operation.explicit_argument_roots(self.explicit_roots) }
     pub(crate) fn explicit_arguments(&self) -> std::ops::Range<usize> {
-        let roots = self.explicit_argument_roots(); self.root_boundary(roots.start)..self.root_boundary(roots.end)
+        let roots = self.explicit_argument_roots();
+        self.root_boundary(roots.start)..self.root_boundary(roots.end)
     }
     pub(crate) fn data_positions(&self) -> impl Iterator<Item = usize> + '_ {
         let first = self.root_boundary(self.operation.functions());
-        self.explicit_arguments().chain(self.fill_root().into_iter().flat_map(|root| root.leaves)).filter(move |&position| matches!(self.roles.kind(position - first), None | Some(ReadKind::Kind))
-            && (!matches!(self.operation, Operation::At { .. }) || !self.root(1).leaves.contains(&position)))
+        self.explicit_arguments().chain(self.fill_root().into_iter().flat_map(|root| root.leaves)).filter(move |&position| {
+            matches!(self.roles.kind(position - first), None | Some(ReadKind::Kind))
+                && (!matches!(self.operation, Operation::At { .. }) || !self.root(1).leaves.contains(&position))
+        })
     }
     pub(crate) fn operand_kind(&self) -> crate::error::Result<Option<crate::number::Kind>> {
         let mut joined: Option<crate::number::Kind> = None;
@@ -284,10 +275,11 @@ impl CallView<'_> {
     pub(crate) fn variant(&self, dtype: rustymath::buffer::DType) -> crate::error::Result<rustymath::facts::Variant> {
         let numeric = Numeric { mathish: self.mode.mathish, kinds: if self.mode.dynamic { Kinds::Dynamic } else { Kinds::Static },
             fixed: self.operand_kind()?.and_then(crate::number::Kind::fixed_width), ..Numeric::DEFAULT };
-        Ok(rustymath::facts::Variant { dtype, checked: self.mode.dynamic, wrapping: dtype.is_integral(), mathish: numeric.mathish_at(crate::array::float_width_of(dtype)) })
+        Ok(rustymath::facts::Variant { dtype, checked: self.mode.dynamic, wrapping: dtype.is_integral(),
+            mathish: numeric.mathish_at(crate::array::float_width_of(dtype)) })
     }
-    pub(crate) fn kernel_for(&self, primitive: Primitive, dyadic: bool, variant: rustymath::facts::Variant)
-        -> crate::error::Result<Option<rustymath::operation::Kernel>> {
+    pub(crate) fn kernel_for(
+        &self, primitive: Primitive, dyadic: bool, variant: rustymath::facts::Variant) -> crate::error::Result<Option<rustymath::operation::Kernel>> {
         let mut numeric = self.numeric()?;
         numeric.tolerance = crate::array::float_width_of(variant.dtype).map_or(rustymath::tolerant::Tolerance::EXACT, |width| numeric.tolerance_at(width));
         let code = self.parameter(0).and_then(Value::as_number).and_then(|number| number.integer().ok());
@@ -298,7 +290,7 @@ impl CallView<'_> {
         for position in self.data_positions().filter(|position| self.explicit_arguments().contains(position)) {
             let slot = types.get_mut(count).ok_or_else(|| Error::domain("too many numeric operands"))?;
             *slot = match self.desc(position) {
-                Some(desc) => { if direct { ranges[count] = desc.bounds(); } desc.kind.dtype() },
+                Some(desc) => { if direct { ranges[count] = desc.bounds(); } desc.kind.dtype() }
                 None if self.input(position).is_some_and(|input| matches!(input.value, Value::Number(_))) => DType::Float(numeric.width),
                 None => return Ok(None),
             };
@@ -321,18 +313,15 @@ impl CallView<'_> {
     }
     pub(crate) fn root_input(&self, root: usize) -> Result<Cow<'_, Value>, Error> {
         let root = self.root(root);
-        let input = |position| self.input(position).map(|input| input.value).ok_or_else(Error::planning);
         match self.trees {
-            Some(trees) => trees.read_root(&root, |position| input(position).cloned()).map(Cow::Owned),
-            None => input(root.leaves.start).map(Cow::Borrowed),
+            Some(trees) => trees.read_root(&root, |position| self.bindings.source(position).map(Cow::into_owned)).map(Cow::Owned),
+            None => self.bindings.source(root.leaves.start),
         }
     }
     fn host_value(&self, position: usize) -> Result<Cow<'_, Value>, Error> {
         let value = self.input(position).ok_or_else(Error::planning)?.value;
         match value {
-            Value::Pending(pending) => match pending.completed() {
-                Some(value) => Ok(Cow::Borrowed(value)), None => self.value(position, ReadKind::Structure),
-            },
+            Value::Pending(pending) => match pending.completed() { Some(value) => Ok(Cow::Borrowed(value)), None => self.value(position, ReadKind::Structure) },
             _ => Ok(Cow::Borrowed(value)),
         }
     }
@@ -353,7 +342,7 @@ impl CallView<'_> {
             Some(Cow::Borrowed(desc)) => Ok(Cow::Borrowed(&desc.layout)),
             Some(Cow::Owned(desc)) => Ok(Cow::Owned(desc.layout)),
             None => Ok(match self.host_value(root.leaves.start)? {
-                Cow::Borrowed(value) => Cow::Borrowed(value.layout()), Cow::Owned(value) => Cow::Owned(value.layout().clone()),
+                Cow::Borrowed(value) => Cow::Borrowed(value.layout()), Cow::Owned(value) => Cow::Owned(value.layout().clone())
             }),
         }
     }
@@ -365,7 +354,9 @@ impl CallView<'_> {
     pub(crate) fn mathematical_positions(&self) -> Result<Vec<usize>, Error> {
         let fill = (!matches!(self.operation, Operation::ReadRelation { .. })).then(|| self.fill_root()).flatten();
         let mut positions: Vec<_> = self.source_roots()?.into_iter().chain(fill).flat_map(|root| root.leaves).collect();
-        positions.sort_unstable(); positions.dedup(); Ok(positions)
+        positions.sort_unstable();
+        positions.dedup();
+        Ok(positions)
     }
     pub(crate) fn parameter(&self, operand: usize) -> Option<&Value> {
         self.roles.read(operand).and_then(|_| self.input(self.root_boundary(self.operation.functions()) + operand).map(|input| input.value))
@@ -375,8 +366,9 @@ impl CallView<'_> {
         let math = self.mathematical_positions()?;
         let values = root.leaves.clone().map(|position| {
             let value = self.input(position).ok_or_else(Error::planning)?.value;
-            if math.contains(&position) { apply(position, value, self.trees.is_some_and(|trees| trees.input_use(position) == Some(TreeInput::Prototype))) }
-            else { Ok(value.clone()) }
+            if math.contains(&position) {
+                apply(position, value, self.trees.is_some_and(|trees| trees.input_use(position) == Some(TreeInput::Prototype)))
+            } else { Ok(value.clone()) }
         }).collect::<Result<Vec<_>, _>>()?;
         Ok(Outputs::from(values).with_trees(self.trees.map(|trees| std::sync::Arc::new(trees.project_roots(&[root])))))
     }
@@ -389,22 +381,25 @@ impl CallView<'_> {
 }
 
 impl Operation {
-    fn underlying(&self) -> &Self { match self { Self::ReadRelation { operation, .. } | Self::Read(ReadOp::Cells { operation, .. }) => operation.underlying(), _ => self } }
+    fn underlying(&self) -> &Self {
+        match self { Self::ReadRelation { operation, .. } | Self::Read(ReadOp::Cells { operation, .. }) => operation.underlying(), _ => self }
+    }
     pub(crate) fn product_functions(&self) -> Option<ProductFunctions> {
-        match self.underlying() { Self::Product { contracted, .. } => {
-            let fold = (*contracted != 0).then_some(0);
-            Some(ProductFunctions { fold, map: usize::from(fold.is_some()) })
-        }, _ => None }
+        match self.underlying() {
+            Self::Product { contracted, .. } => {
+                let fold = (*contracted != 0).then_some(0);
+                Some(ProductFunctions { fold, map: usize::from(fold.is_some()) })
+            }
+            _ => None,
+        }
     }
     pub(crate) fn source_roots(call: &CallView<'_>) -> Result<Vec<TreeRoot>, Error> {
         if let Some(row) = call.row() { return (row.sources)(call); }
         match call.operation {
-            Self::Read(ReadOp::Cells { .. }) => structural::cell_sources(call),
-            Self::ReadRelation { .. } => crate::plan::source_roots_relation(call),
+            Self::Read(ReadOp::Cells { .. }) => structural::cell_sources(call), Self::ReadRelation { .. } => crate::plan::source_roots_relation(call),
             Self::Read(kind) => Ok(vec![call.root(crate::plan::read_source(kind))]),
             Self::Join(Notation::Cells) => Ok((2..call.explicit_roots).map(|root| call.root(root)).collect()),
-            Self::At { .. } => Ok(vec![call.root(0), call.root(2)]),
-            _ => data_roots(call),
+            Self::At { .. } => Ok(vec![call.root(0), call.root(2)]), _ => data_roots(call)
         }
     }
     /// Resolve the one shared numerical definition from this call's rows and captured mode.
@@ -426,41 +421,46 @@ impl Operation {
     pub(crate) fn build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
         if let Some(row) = call.row() { return (row.build)(call, set); }
         match call.operation {
-            Self::Read(ReadOp::Cells { .. }) => structural::build(call, set),
-            Self::Read(kind) => crate::plan::build_read(call, kind, set),
-            Self::ReadRelation { .. } => crate::plan::build_relation(call, set),
-            Self::At { .. } => indexing::build_at(call, set),
-            Self::Recipe(_) => numeric::build_map(call, set),
-            Self::Join(_) => crate::array::join_build(call, set),
-            Self::Fold { .. } => numeric::build_fold(call, set),
-            Self::Product { .. } => numeric::build_product(call, set),
-            _ => host_build(call, set),
+            Self::Read(ReadOp::Cells { .. }) => structural::build(call, set), Self::Read(kind) => crate::plan::build_read(call, kind, set),
+            Self::ReadRelation { .. } => crate::plan::build_relation(call, set), Self::At { .. } => indexing::build_at(call, set),
+            Self::Recipe(_) => numeric::build_map(call, set), Self::Join(_) => crate::array::join_build(call, set),
+            Self::Fold { .. } => numeric::build_fold(call, set), Self::Product { .. } => numeric::build_product(call, set), _ => host_build(call, set)
         }
     }
     /// Batch this complete call, including non-row operations, through normal dispatch.
-    pub(crate) fn cells(origin: &crate::program::Origin<&[Value]>, wholes: &[Value], frame: usize) -> crate::error::Result<crate::program::Origin<Vec<Value>>> { crate::batch::cells(origin, wholes, frame) }
+    pub(crate) fn cells(origin: &crate::program::Origin<&[Value]>, wholes: &[Value], frame: usize) -> crate::error::Result<crate::program::Origin<Vec<Value>>> {
+        crate::batch::cells(origin, wholes, frame)
+    }
     pub(crate) fn linearity(call: &CallView<'_>) -> Linearity { crate::derivative::linearity(call) }
     /// Joint primal and tangent evaluation.
-    pub(crate) fn jvp(origin: &crate::program::Origin<&[Value]>, tangents: &[Option<Value>]) -> crate::error::Result<JvpOutputs> { crate::derivative::jvp(origin, tangents) }
-    pub(crate) fn partials(origin: &crate::program::Origin<&[crate::program::Read<Value>]>, result: &Value,
-        needed: &[bool]) -> crate::error::Result<Vec<Option<Value>>> { crate::derivative::partials(origin, result, needed) }
+    pub(crate) fn jvp(origin: &crate::program::Origin<&[Value]>, tangents: &[Option<Value>]) -> crate::error::Result<JvpOutputs> {
+        crate::derivative::jvp(origin, tangents)
+    }
+    pub(crate) fn partials(
+        origin: &crate::program::Origin<&[crate::program::Read<Value>]>, result: &Value, needed: &[bool]) -> crate::error::Result<Vec<Option<Value>>> {
+        crate::derivative::partials(origin, result, needed)
+    }
     /// Internal views use the same dispatch, roles and row-plan builder as glyph calls.
     pub(crate) fn reading(kind: ReadOp, args: &[Value], literals: u64) -> crate::error::Result<Value> { Self::Read(kind).call(args, literals) }
-    pub(crate) fn relation_origin(origin: &Origin<&[crate::program::Read<Value>]>, relation: Relation,
-        result: Option<&Value>) -> Result<Origin<Vec<Value>>, Error> {
+    pub(crate) fn relation_origin(
+        origin: &Origin<&[crate::program::Read<Value>]>, relation: Relation, result: Option<&Value>) -> Result<Origin<Vec<Value>>, Error> {
         let values: Vec<_> = origin.list.iter().map(|read| read.operand.clone()).collect();
         let parent = origin.with_list(values.as_slice());
         let trees = origin.trees.as_deref().cloned().unwrap_or_else(|| crate::array::Trees::leaves(values.len()));
         let roots: Vec<_> = trees.roots().take(origin.explicit_roots as usize).collect();
         let mut arguments: Vec<_> = roots.iter().map(|root| trees.at_root(root, &values).into_owned()).collect();
         let mut from: Vec<_> = roots.iter().map(|root| Some(root.leaves.start)).collect();
-        if let Some(result) = result { arguments.push(result.clone()); from.push(None); }
+        if let Some(result) = result {
+            arguments.push(result.clone());
+            from.push(None);
+        }
         if let Relation::Back(input) = relation {
             let input = values.get(input as usize).ok_or_else(Error::planning)?;
-            arguments.push(input.zeros_like()?); from.push(None);
+            arguments.push(input.zeros_like()?);
+            from.push(None);
         }
-        let operation = Self::ReadRelation { operation: Box::new(origin.operation.clone()), relation,
-            arguments: origin.explicit as usize - origin.operation.functions() };
+        let operation =
+            Self::ReadRelation { operation: Box::new(origin.operation.clone()), relation, arguments: origin.explicit as usize - origin.operation.functions() };
         crate::eval::projected_call(&parent, operation, &arguments, &from)
     }
     fn relation(origin: &Origin<&[crate::program::Read<Value>]>, relation: Relation, result: Option<&Value>) -> Result<Value, Error> {
@@ -505,11 +505,12 @@ impl Operation {
             })?;
         }
         let trees = (trees.is_some() || captured_trees.root_count() != 0).then(|| {
-            std::sync::Arc::new(trees.as_deref().cloned().unwrap_or_else(|| Trees::leaves(explicit))
-                .concat(&Trees::leaves(tail - explicit)).concat(&captured_trees))
+            std::sync::Arc::new(
+                trees.as_deref().cloned().unwrap_or_else(|| Trees::leaves(explicit)).concat(&Trees::leaves(tail - explicit)).concat(&captured_trees))
         });
         let origin = Origin { operation: self.clone(), mode, roles: Roles::default(), literals,
-            explicit: explicit.try_into().expect("argument positions fit u32"), explicit_roots: args.len().try_into().expect("argument roots fit u32"), trees, site: None, context: None, bindings: std::sync::Arc::new(captures), list };
+            explicit: explicit.try_into().expect("argument positions fit u32"), explicit_roots: args.len().try_into().expect("argument roots fit u32"), trees,
+            site: None, context: None, bindings: std::sync::Arc::new(captures), list };
         let mut origin = origin.capture_implicit(None, |_, _| {})?;
         origin.roles = Self::roles(&origin.call_view(&origin.list))?;
         Ok(origin)
@@ -530,9 +531,7 @@ impl Operation {
             crate::plan::form_relation(origin.reborrow())?
         } else if matches!(origin.operation, Self::Convert(_)) {
             numeric::convert_form(origin.reborrow())?
-        } else if matches!(origin.operation, Self::Product { .. }) {
-            crate::eval::operators::product_form(&origin)?.map(Outputs::one)
-        } else {
+        } else if matches!(origin.operation, Self::Product { .. }) { crate::eval::operators::product_form(&origin)?.map(Outputs::one) } else {
             let form = origin.call_view(&origin.list).row().map_or(control::form as fn(_) -> _, |row| row.form);
             form(origin.reborrow())?
         };
@@ -543,7 +542,8 @@ impl Operation {
         check()?;
         let (carried, barrier) = origin.list.iter().enumerate().filter(|(position, _)| origin.executes(*position))
             .fold((None, None), |(carried, barrier), (_, value)| (carried.max(value.carried_level()), barrier.max(value.level())));
-        let resource = (!origin.operation.implicit_inputs(&origin.bindings).is_empty()).then(crate::transform::Level::innermost_batched).flatten().map(|level| level.id);
+        let resource =
+            (!origin.operation.implicit_inputs(&origin.bindings).is_empty()).then(crate::transform::Level::innermost_batched).flatten().map(|level| level.id);
         if let Some(level) = carried.max(resource).filter(|&level| barrier.is_none_or(|barrier| level >= barrier)) {
             return crate::transform::Level::find(level).ok_or_else(|| Error::domain("a transform level has ended"))?.rule(origin);
         }
@@ -567,28 +567,36 @@ impl Operation {
             Self::Convert(_) => numeric::code_convert(call),
             Self::Fold { positions: Some(_), .. } => numeric::code_fold_positions(call),
             Self::Fold { .. } | Self::Product { .. } => {
-                let values = (0..call.len()).map(|position| call.input(position).map(|input| input.value.clone()).ok_or_else(Error::planning)).collect::<Result<Vec<_>, _>>()?;
+                let values = (0..call.len()).map(|position| call.input(position).map(|input| input.value.clone()).ok_or_else(Error::planning))
+                    .collect::<Result<Vec<_>, _>>()?;
                 let origin = call.origin(values);
                 let value = if matches!(call.operation, Self::Fold { .. }) { crate::eval::operators::fold_fallback(origin.reborrow())? }
-                    else { crate::eval::operators::product_fallback(origin.reborrow())? };
+                else { crate::eval::operators::product_fallback(origin.reborrow())? };
                 Ok(Outputs::one(value))
             }
             Self::At { .. } => crate::selection::code_at(call),
             _ => unreachable!("semantic forms normalize before graph construction; row-owned calls use their row"),
         }
     }
+    pub(crate) fn reads_addresses(&self) -> bool {
+        match self {
+            Self::At { target, .. } => *target != WriteTarget::Indices,
+            Self::ReadRelation { operation, relation: Relation::Result | Relation::Validate, .. } => {
+                matches!(&**operation, Self::At { target: WriteTarget::Source { .. }, .. })
+            }
+            _ => false,
+        }
+    }
     /// Number of callable roots at the start of the explicit input list.
     pub(crate) fn functions(&self) -> usize {
         if let Some(product) = self.product_functions() { return product.map + 1; }
-        match self.underlying() { Self::Select { cases } => *cases,
-            Self::Call | Self::Draw { .. } | Self::Effect(Act::Call) | Self::System => 1, _ => 0 }
+        match self.underlying() { Self::Select { cases } => *cases, Self::Call | Self::Draw { .. } | Self::Effect(Act::Call) | Self::System => 1, _ => 0 }
     }
     fn options_root(&self, roots: usize) -> Option<(usize, bool)> {
         match self {
-            Self::Read(ReadOp::Cells { operation, .. }) => operation.options_root(roots),
-            Self::Primitive { pairing: Pairing::Explicit { fill }, .. } | Self::Fold { pairing: Pairing::Explicit { fill }, .. }
-                | Self::Product { pairing: Pairing::Explicit { fill }, .. } => Some((roots - 1 - usize::from(*fill), *fill)),
-            _ => None,
+            Self::Read(ReadOp::Cells { operation, .. }) => operation.options_root(roots), Self::Primitive { pairing: Pairing::Explicit { fill }, .. }
+            | Self::Fold { pairing: Pairing::Explicit { fill }, .. }
+            | Self::Product { pairing: Pairing::Explicit { fill }, .. } => Some((roots - 1 - usize::from(*fill), *fill)), _ => None
         }
     }
     pub(crate) fn explicit_argument_roots(&self, roots: usize) -> std::ops::Range<usize> {
@@ -600,17 +608,21 @@ impl Operation {
     }
     /// Part 5: which operands (the arguments after the function values) are read at the call, each with its read kind (`ReadKind`), from the operands themselves, before any description. A parameter may be a host value (the options record in `["size":3 "edge":"wrap"]↕v`); a data operand that's one makes the call a host call.
     pub(crate) fn roles(call: &CallView<'_>) -> Result<Roles, Error> {
-        let mut roles = if matches!(call.operation, Self::Read(ReadOp::Cells { .. })) { structural::cell_roles(call)? }
-        else if matches!(call.operation, Self::ReadRelation { .. }) { crate::plan::roles_relation(call)? }
-        else if let Some(row) = call.row() { (row.roles)(call)? } else { match call.operation {
-            Self::Product { .. } => numeric::roles(call)?,
-            Self::Join(Notation::Cells) => call.root(0).leaves.fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Description)),
-            Self::Read(ReadOp::Axes { .. }) => (call.root_boundary(1)..call.explicit)
-                .fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Description)),
-            Self::Read(ReadOp::Reshape) => Roles::default().with(0, ReadKind::Structure),
-            Self::Read(ReadOp::Slice { .. } | ReadOp::Cell { .. }) => Roles::default().with(0, ReadKind::Value),
-            _ => Roles::default(),
-        }};
+        let mut roles = if matches!(call.operation, Self::Read(ReadOp::Cells { .. })) {
+            structural::cell_roles(call)?
+        } else if matches!(call.operation, Self::ReadRelation { .. }) { crate::plan::roles_relation(call)? }
+        else if let Some(row) = call.row() { (row.roles)(call)? } else {
+            match call.operation {
+                Self::Product { .. } => numeric::roles(call)?,
+                Self::Join(Notation::Cells) => call.root(0).leaves.fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Description)),
+                Self::Read(ReadOp::Axes { .. }) => {
+                    (call.root_boundary(1)..call.explicit).fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Description))
+                }
+                Self::Read(ReadOp::Reshape) => Roles::default().with(0, ReadKind::Structure),
+                Self::Read(ReadOp::Slice { .. } | ReadOp::Cell { .. }) => Roles::default().with(0, ReadKind::Value),
+                _ => Roles::default(),
+            }
+        };
         let first = call.root_boundary(call.operation.functions());
         if let Some((root, _)) = call.options_root() {
             for position in call.root_boundary(root)..call.root_boundary(root + 1) {
@@ -623,11 +635,9 @@ impl Operation {
     /// Part 4: the numeric values its calls' kernels read at run, put among those calls' parameters; a primitive's come from its row.
     pub(crate) fn settings(&self) -> &'static [Setting] {
         match self.underlying() {
-            op if op.functions() != 0 => Setting::BODY,
-            Self::Recipe(_) => Setting::BODY,
+            op if op.functions() != 0 => Setting::BODY, Self::Recipe(_) => Setting::BODY,
             Self::Primitive { primitive, .. } | Self::Fold { primitive, .. } => primitive.info().settings,
-            Self::Join(_) | Self::Product { .. } | Self::Convert(_) | Self::At { combine: Some(_), .. } => Setting::BODY,
-            _ => &[],
+            Self::Join(_) | Self::Product { .. } | Self::Convert(_) | Self::At { .. } => Setting::BODY, _ => &[]
         }
     }
     pub(crate) fn implicit_inputs(&self, captures: &crate::eval::CaptureBindings) -> &'static [crate::program::ImplicitInput] {
@@ -637,7 +647,7 @@ impl Operation {
             Self::Draw { .. } => &[Generator],
             Self::Effect(_) => &[Token],
             Self::Call | Self::Select { .. } => match (captures.acts, captures.implicit_generator) {
-                (true, true) => &[Token, Generator], (true, false) => &[Token], (false, true) => &[Generator], _ => &[],
+                (true, true) => &[Token, Generator], (true, false) => &[Token], (false, true) => &[Generator], _ => &[]
             },
             _ => &[],
         }
@@ -646,10 +656,11 @@ impl Operation {
         match self {
             Self::Primitive { primitive, .. } => primitive.glyph().into(),
             Self::Fold { primitive, first, scan, .. } => format!("{}{}", primitive.glyph(), FoldKind { first: *first, scan: *scan }.glyph()),
-            Self::Product { .. } => ".".into(),
-            Self::Select { .. } => "⍚".into(), Self::Call => "call".into(), Self::At { .. } => "@".into(),
-            Self::Convert(mark) => mark.marker().into(), Self::Join(_) => "[]".into(), Self::ReadRelation { relation, .. } => if matches!(relation, Relation::Back(_)) { "read⁻" } else { "read" }.into(), Self::Read(_) => "view".into(), Self::Recipe(_) => "math".into(),
-            Self::Draw { .. } => "¿".into(), Self::Effect(_) => "effect".into(), Self::System => "system".into(),
+            Self::Product { .. } => ".".into(), Self::Select { .. } => "⍚".into(), Self::Call => "call".into(), Self::At { .. } => "@".into(),
+            Self::Convert(mark) => mark.marker().into(), Self::Join(_) => "[]".into(),
+            Self::ReadRelation { relation, .. } => if matches!(relation, Relation::Back(_)) { "read⁻" } else { "read" }.into(),
+            Self::Read(_) => "view".into(), Self::Recipe(_) => "math".into(), Self::Draw { .. } => "¿".into(), Self::Effect(_) => "effect".into(),
+            Self::System => "system".into()
         }
     }
 }
@@ -668,8 +679,7 @@ impl Roles {
     fn insert(&mut self, position: usize, kind: ReadKind) {
         assert!(kind != ReadKind::RuntimeOnly, "runtime-only reads are not argument roles");
         match self.0.binary_search_by_key(&position, |&(position, _)| position) {
-            Ok(index) => self.0[index].1 = kind,
-            Err(index) => self.0.insert(index, (position, kind)),
+            Ok(index) => self.0[index].1 = kind, Err(index) => self.0.insert(index, (position, kind))
         }
     }
 }
@@ -678,9 +688,7 @@ impl Roles {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Setting { Width, IntegerWidth, Tolerance, Units }
 
-impl Setting {
-    pub(crate) const BODY: &'static [Self] = &[Self::Width, Self::IntegerWidth, Self::Tolerance, Self::Units];
-}
+impl Setting { pub(crate) const BODY: &'static [Self] = &[Self::Width, Self::IntegerWidth, Self::Tolerance, Self::Units]; }
 
 impl FoldKind {
     /// `/`, a reduction along the last axis.
@@ -700,8 +708,6 @@ impl FoldKind {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Spelling { Infix, Superscript, Dot }
 
-
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Comparison { Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual }
 impl Comparison {
@@ -712,13 +718,14 @@ impl Comparison {
         }
     }
     /// The values of the items `v` for which `v` compared with the one number `c` holds, and of those for which it doesn't, as the comparison's kernel decides them at tolerance `t` on floats of `width` (`tolerant::against_ranges`), `left` where `v` is the left argument. `None` for `=` and `≠`, and where `c` is NaN.
-    pub(crate) fn ranges(self, c: f64, t: rustymath::tolerant::Tolerance, width: rustymath::buffer::FloatWidth, left: bool) -> Option<[rustymath::facts::Range; 2]> {
+    pub(crate) fn ranges(
+        self, c: f64, t: rustymath::tolerant::Tolerance, width: rustymath::buffer::FloatWidth, left: bool) -> Option<[rustymath::facts::Range; 2]> {
         fn at<F: rustymath::Float>(p: Comparison, c: F, t: rustymath::tolerant::Tolerance, left: bool) -> Option<[rustymath::facts::Range; 2]> {
-            use rustymath::tolerant::{against_ranges, Greater, GreaterEqual, Less, LessEqual};
+            use rustymath::tolerant::{Greater, GreaterEqual, Less, LessEqual, against_ranges};
             match p {
                 Comparison::Less => against_ranges(Less(t), t, c, left), Comparison::LessEqual => against_ranges(LessEqual(t), t, c, left),
                 Comparison::Greater => against_ranges(Greater(t), t, c, left), Comparison::GreaterEqual => against_ranges(GreaterEqual(t), t, c, left),
-                Comparison::Equal | Comparison::NotEqual => None,
+                Comparison::Equal | Comparison::NotEqual => None
             }
         }
         if width == rustymath::buffer::FloatWidth::F32 { at(self, c as f32, t, left) } else { at(self, c, t, left) }
@@ -727,9 +734,47 @@ impl Comparison {
 /// A primitive function. `Bracket` is bracket indexing, `A.[I J]`, which pairs its index arrays by broadcasting. It has no glyph. Its row has `⌷`'s forms, apart from Rank's rule for leading cell axes. `Exact` has no glyph either.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Primitive {
-    Arithmetic(Arithmetic), Math(Math), Bitwise(u8), Random, Identity(bool), Compare(Comparison), Iota, Range, Keys, Depth, Where, Member, Union, Intersection,
-    Find, Grade(bool), Index, Bracket, Encode, Decode, MatrixDivide, Execute, Format, Shape, Tally, Ravel, Enclose, Nest, Mix, Take, Drop, Replicate,
-    CatenateFirst, Reverse(bool), Transpose, Windows, Prime, Factor, Polynomial, Exact(Exact), Special(Special),
+    Arithmetic(Arithmetic),
+    Math(Math),
+    Bitwise(u8),
+    Random,
+    Identity(bool),
+    Compare(Comparison),
+    Iota,
+    Range,
+    Keys,
+    Depth,
+    Where,
+    Member,
+    Union,
+    Intersection,
+    Find,
+    Grade(bool),
+    Index,
+    Bracket,
+    Encode,
+    Decode,
+    MatrixDivide,
+    Execute,
+    Format,
+    Shape,
+    Tally,
+    Ravel,
+    Enclose,
+    Nest,
+    Mix,
+    Take,
+    Drop,
+    Replicate,
+    CatenateFirst,
+    Reverse(bool),
+    Transpose,
+    Windows,
+    Prime,
+    Factor,
+    Polynomial,
+    Exact(Exact),
+    Special(Special),
     /// Part 7: a selection of a grade or sort (`k↑⍋⍵`, `↑⍋⍵`, `i⌷⍋⍵`, `i⊃⍋⍵`, for `⍋ ⍒ < >`) as a partial sort.
     PartialSort {
         /// Part 7: of a grade (`⍋ ⍒`), not a sort (`< >`).
@@ -765,9 +810,7 @@ pub(crate) enum Primitive {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IntegerResult { Never, Dynamic, Always }
-impl IntegerResult {
-    pub(crate) fn applies(self, dynamic: bool) -> bool { self == Self::Always || self == Self::Dynamic && dynamic }
-}
+impl IntegerResult { pub(crate) fn applies(self, dynamic: bool) -> bool { self == Self::Always || self == Self::Dynamic && dynamic } }
 pub(crate) type RowResult = (Step, Option<crate::program::Description>, Option<ReadPlan>);
 /// Language rules and metadata for one primitive. Mathematical facts come from its selected rustymath Kernel.
 pub(crate) struct Row {
@@ -803,38 +846,39 @@ impl Row {
         match arguments { 1 => self.ranks[0] == 0, 2 => self.ranks[1] == 0 && self.ranks[2] == 0, _ => false }
     }
     pub(crate) const fn new(glyph: &'static str, name: &'static str, names: [&'static str; 2], ranks: [Rank; 3]) -> Self {
-        Self { glyph, name, names, ranks, math: numeric::kernel, roles: no_roles, sources: data_roots, form: primitive_form, settings: Setting::BODY, defined: [false; 2], integer_result: [IntegerResult::Never; 2],
-            build: host_build, code: host_primitive, inverse: inverse_primitive,
+        Self { glyph, name, names, ranks, math: numeric::kernel, roles: no_roles, sources: data_roots, form: primitive_form, settings: Setting::BODY,
+            defined: [false; 2], integer_result: [IntegerResult::Never; 2], build: host_build, code: host_primitive, inverse: inverse_primitive,
             cells: crate::batch::unsupported, under: [Under::Computational; 2], discards: [false; 2],
-            linear: Linear { monadic: Linearity::No, dyadic: Linearity::No, zero: [false; 2] }, own_identity: None,
-            cost: 1.0, passes: 1, alternates: false, first_axis: false, implicit_generator: false }
+            linear: Linear { monadic: Linearity::No, dyadic: Linearity::No, zero: [false; 2] }, own_identity: None, cost: 1.0, passes: 1, alternates: false,
+            first_axis: false, implicit_generator: false }
     }
     const fn mapped(self) -> Self {
         Self { form: map_form, cells: crate::batch::primitive_cells, roles: numeric::roles, build: numeric::build_map, code: numeric::code, ..self }
     }
-    const fn linear(self, monadic: Linearity, dyadic: Linearity, zero: [bool; 2]) -> Self {
-        Self { linear: Linear { monadic, dyadic, zero }, ..self }
-    }
+    const fn linear(self, monadic: Linearity, dyadic: Linearity, zero: [bool; 2]) -> Self { Self { linear: Linear { monadic, dyadic, zero }, ..self } }
     const fn moves(self) -> Self {
-        Self { sources: structural::sources, form: structural::form, cells: structural::cell_read, build: structural::build,
-            under: [Under::Structural; 2], linear: Linear { monadic: Linearity::Jointly(1), dyadic: Linearity::Jointly(2), zero: [false; 2] }, ..self }
+        Self { sources: structural::sources, form: structural::form, cells: structural::cell_read, build: structural::build, under: [Under::Structural; 2],
+            linear: Linear { monadic: Linearity::Jointly(1), dyadic: Linearity::Jointly(2), zero: [false; 2] }, ..self }
     }
     pub(crate) fn identity(&self, call: &CallView<'_>, kind: crate::number::Kind) -> crate::error::Result<Option<Value>> {
         if let Some(identity) = self.own_identity { return Ok(Some(identity(kind))); }
         let Some(kernel) = (self.math)(call, call.variant(kind.dtype())?)? else { return Ok(None) };
-        Ok(kernel.identity().map(|n| Value::Number(match kind.dtype() {
-            rustymath::buffer::DType::Boolean => Number::from_bool(n != 0.0),
-            rustymath::buffer::DType::Integer(width) if kind.fixed_width().is_some() => Number::fixed(n as i64, width),
-            rustymath::buffer::DType::Integer(width) => Number::integer_at(n as i64, width),
-            rustymath::buffer::DType::Float(width) => Number::float(n, width),
-            rustymath::buffer::DType::Complex(width) => Number::complex_kept(num_complex::Complex64::new(n, 0.0), width.into()),
-            rustymath::buffer::DType::Character => unreachable!("a numerical identity has numerical items"),
-        })))
+        Ok(kernel.identity().map(|n| {
+            Value::Number(match kind.dtype() {
+                rustymath::buffer::DType::Boolean => Number::from_bool(n != 0.0),
+                rustymath::buffer::DType::Integer(width) if kind.fixed_width().is_some() => Number::fixed(n as i64, width),
+                rustymath::buffer::DType::Integer(width) => Number::integer_at(n as i64, width),
+                rustymath::buffer::DType::Float(width) => Number::float(n, width),
+                rustymath::buffer::DType::Complex(width) => Number::complex_kept(num_complex::Complex64::new(n, 0.0), width.into()),
+                rustymath::buffer::DType::Character => unreachable!("a numerical identity has numerical items"),
+            })
+        }))
     }
 }
 
 /// A batching rule returns the complete transformed call, including its metadata.
-pub(crate) type Batching = fn(origin: &crate::program::Origin<&[Value]>, wholes: &[Value], frame: usize) -> crate::error::Result<crate::program::Origin<Vec<Value>>>;
+pub(crate) type Batching =
+    fn(origin: &crate::program::Origin<&[Value]>, wholes: &[Value], frame: usize) -> crate::error::Result<crate::program::Origin<Vec<Value>>>;
 
 /// Part 16: which Under a row's calls take.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -880,22 +924,30 @@ impl Exact {
 /// Functions returned by `•special`, and internal derivative objects.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Special {
-    Gammaln, Digamma, Polygamma, Erf, Erfc, Erfinv, Beta, Gammainc, Betainc, BetaincAt([u64; 2]), Sign, Floor, BinomDn, BinomDk, LambertW, Real, Imag, Angle,
+    Gammaln, Digamma, Polygamma, Erf, Erfc, Erfinv, Beta, Gammainc, Betainc, BetaincAt([u64; 2]), Sign, Floor, BinomDn, BinomDk, LambertW, Real, Imag, Angle
 }
 impl Special {
     /// Every function that `•special` makes, for the table of functions (`Builtin::function`).
-    pub(crate) const ALL: [Self; 9] = [Self::Gammaln, Self::Digamma, Self::Polygamma, Self::Erf, Self::Erfc, Self::Erfinv, Self::Beta, Self::Gammainc, Self::Betainc];
+    pub(crate) const ALL: [Self; 9] =
+        [Self::Gammaln, Self::Digamma, Self::Polygamma, Self::Erf, Self::Erfc, Self::Erfinv, Self::Beta, Self::Gammainc, Self::Betainc];
     fn row(self) -> &'static Row {
-        macro_rules! one { ($name:literal, $cost:expr) => { &const { Row { cost: $cost, ..Row::new(concat!("•special\"", $name, "\""), $name, [$name, ""], [0; 3]).mapped() } } }; }
-        macro_rules! two { ($name:literal, $cost:expr) => { &const { Row { cost: $cost, ..Row::new(concat!("•special\"", $name, "\""), $name, ["", $name], [0; 3]).mapped() } } }; }
+        macro_rules! one {
+            ($name:literal, $cost:expr) => {
+                &const { Row { cost: $cost, ..Row::new(concat!("•special\"", $name, "\""), $name, [$name, ""], [0; 3]).mapped() } }
+            };
+        }
+        macro_rules! two {
+            ($name:literal, $cost:expr) => {
+                &const { Row { cost: $cost, ..Row::new(concat!("•special\"", $name, "\""), $name, ["", $name], [0; 3]).mapped() } }
+            };
+        }
         match self {
-            Self::Gammaln => one!("gammaln", 100.0), Self::Digamma => one!("digamma", 100.0),
-            Self::Erf => one!("erf", 25.0), Self::Erfc => one!("erfc", 25.0), Self::Erfinv => one!("erfinv", 60.0),
-            Self::Polygamma => two!("polygamma", 200.0), Self::Beta => two!("beta", 300.0), Self::Gammainc => two!("gammainc", 400.0),
-            Self::Betainc => &const { Row::new("•special\"betainc\"", "betainc", ["", "betainc"], [0, 1, 0]) },
+            Self::Gammaln => one!("gammaln", 100.0), Self::Digamma => one!("digamma", 100.0), Self::Erf => one!("erf", 25.0), Self::Erfc => one!("erfc", 25.0),
+            Self::Erfinv => one!("erfinv", 60.0), Self::Polygamma => two!("polygamma", 200.0), Self::Beta => two!("beta", 300.0),
+            Self::Gammainc => two!("gammainc", 400.0), Self::Betainc => &const { Row::new("•special\"betainc\"", "betainc", ["", "betainc"], [0, 1, 0]) },
             Self::BetaincAt(_) => one!("betainc", 600.0), Self::Sign => one!("sign", 1.0), Self::Floor => one!("floor", 1.0),
-            Self::BinomDn => two!("binom_dn", 900.0), Self::BinomDk => two!("binom_dk", 900.0),
-            Self::LambertW => one!("lambertw", 100.0), Self::Real => one!("real", 1.0), Self::Imag => one!("imag", 1.0), Self::Angle => one!("angle", 12.0),
+            Self::BinomDn => two!("binom_dn", 900.0), Self::BinomDk => two!("binom_dk", 900.0), Self::LambertW => one!("lambertw", 100.0),
+            Self::Real => one!("real", 1.0), Self::Imag => one!("imag", 1.0), Self::Angle => one!("angle", 12.0)
         }
     }
     fn dyadic(self) -> bool { matches!(self, Self::Gammainc | Self::Polygamma | Self::Beta | Self::Betainc | Self::BinomDn | Self::BinomDk) }
@@ -909,12 +961,13 @@ pub(crate) fn special(crate::system::HostCall { right, .. }: crate::system::Host
     Ok(Value::Function(Builtin::Primitive(Primitive::Special(s)).function()))
 }
 
-
 /// A built-in function as the parser reads it: a glyph's primitive, or a system name's entry in the system table. The two differ only in how they're spelled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Builtin { Primitive(Primitive), System(crate::system::Entry) }
 impl Builtin {
-    pub(crate) fn function(self) -> Function { match self { Self::Primitive(primitive) => Function::primitive(primitive), Self::System(entry) => entry.built() } }
+    pub(crate) fn function(self) -> Function {
+        match self { Self::Primitive(primitive) => Function::primitive(primitive), Self::System(entry) => entry.built() }
+    }
     /// The builtin spelled `text`: a glyph or its Hanzi spelling, or a system name in any case, whose `•` may be spelled `系`.
     pub(crate) fn find(text: &str) -> Option<Self> {
         let first = text.chars().next()?;
@@ -926,7 +979,6 @@ impl Builtin {
 /// A natural rank: the rank of the cells a function applies to. `WHOLE` is the whole argument.
 pub(crate) type Rank = u8;
 pub(crate) const WHOLE: Rank = Rank::MAX;
-
 
 /// The number `e` holds, as a kernel reads it (`Value::computed`). A dual number is UNSUPPORTED, and any other value is DOMAIN.
 #[inline]
@@ -940,9 +992,7 @@ pub(crate) fn real(value: &Value) -> Result<f64, Error> {
     Ok(n.re)
 }
 /// The width of a floating constant combined with `like`.
-fn width_like(like: &Value, numeric: Numeric) -> FloatWidth {
-    like.kind().map_or(numeric.width, |kind| kind.real_width(numeric))
-}
+fn width_like(like: &Value, numeric: Numeric) -> FloatWidth { like.kind().map_or(numeric.width, |kind| kind.real_width(numeric)) }
 /// The float `n` at the width that a constant combined with `like` takes (`width_like`).
 pub(crate) fn float_like(n: f64, like: &Value, numeric: Numeric) -> Value { Value::Number(Number::float(n, width_like(like, numeric))) }
 /// The complex number `z` with parts of the width that a constant combined with `like` takes (`width_like`).
@@ -1028,14 +1078,25 @@ impl Primitive {
     pub(crate) fn info(&self) -> &'static Row {
         use {Arithmetic::*, Comparison::*, Linearity::{Each, Jointly, No}, Math::*};
         const W: Rank = WHOLE;
-        macro_rules! row { ($g:expr, $n:expr, $m:expr, $d:expr, $r:expr) => { Row::new($g, $n, [$m, $d], $r) }; }
+        macro_rules! row {
+            ($g:expr, $n:expr, $m:expr, $d:expr, $r:expr) => {
+                Row::new($g, $n, [$m, $d], $r)
+            };
+        }
         const DIVIDE: Row = Row::new("÷", "obelus", ["reciprocal", "divide"], [0; 3]).mapped();
-        const FLOOR: Row = Row { integer_result: [IntegerResult::Dynamic, IntegerResult::Never], ..Row::new("⌊", "downstile", ["floor", "minimum"], [0; 3]).mapped().linear(No, No, [true, false]) };
-        const CEILING: Row = Row { integer_result: [IntegerResult::Dynamic, IntegerResult::Never], ..Row::new("⌈", "upstile", ["ceiling", "maximum"], [0; 3]).mapped().linear(No, No, [true, false]) };
+        const FLOOR: Row = Row { integer_result: [IntegerResult::Dynamic, IntegerResult::Never],
+            ..Row::new("⌊", "downstile", ["floor", "minimum"], [0; 3]).mapped().linear(No, No, [true, false]) };
+        const CEILING: Row = Row { integer_result: [IntegerResult::Dynamic, IntegerResult::Never],
+            ..Row::new("⌈", "upstile", ["ceiling", "maximum"], [0; 3]).mapped().linear(No, No, [true, false]) };
         match self {
             Self::Arithmetic(Plus) => &const { row!("+", "plus", "conjugate", "add", [0; 3]).mapped().linear(Jointly(1), Jointly(3), [false; 2]) },
             Self::Arithmetic(Minus) => &const { row!("-", "minus", "negate", "subtract", [0; 3]).mapped().linear(Jointly(1), Jointly(3), [false; 2]) },
-            Self::Arithmetic(Times) => &const { Row { integer_result: [IntegerResult::Dynamic, IntegerResult::Never], ..row!("×", "times", "sign", "multiply", [0; 3]).mapped().linear(No, Each, [true, false]) } },
+            Self::Arithmetic(Times) => {
+                &const {
+                    Row { integer_result: [IntegerResult::Dynamic, IntegerResult::Never],
+                        ..row!("×", "times", "sign", "multiply", [0; 3]).mapped().linear(No, Each, [true, false]) }
+                }
+            }
             Self::Arithmetic(Divide) => &DIVIDE,
             Self::Bitwise(_) => &const { row!("ᵇ", "superscript-b", "bitwise", "bitwise", [0; 3]).mapped().linear(No, No, [true; 2]) },
             Self::Math(Ceiling) => &CEILING,
@@ -1048,27 +1109,79 @@ impl Primitive {
             Self::Math(Root) => &const { Row { cost: 9.25, ..row!("√", "radical", "sqrt", "root", [0; 3]).mapped() } },
             Self::Math(Factorial) => &const { Row { cost: 132.0, ..row!("!", "exclamation", "factorial", "binomial", [0; 3]).mapped() } },
             Self::Math(Lcm) => &const { Row { defined: [true, false], ..row!("∧", "wedge", "polar", "and", [0; 3]).mapped().linear(No, No, [false, true]) } },
-            Self::Math(Gcd) => &const { Row { defined: [true, false], ..row!("∨", "vee", "real-imag", "or", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) } },
-            Self::Math(Nand) => &const { Row { defined: [true, false], ..row!("⊼", "wedge-bar", "square", "nand", [0; 3]).mapped().linear(No, No, [false, true]) } },
-            Self::Math(Nor) => &const { Row { defined: [true, false], ..row!("⊽", "vee-bar", "double", "nor", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) } },
+            Self::Math(Gcd) => {
+                &const { Row { defined: [true, false], ..row!("∨", "vee", "real-imag", "or", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) } }
+            }
+            Self::Math(Nand) => {
+                &const { Row { defined: [true, false], ..row!("⊼", "wedge-bar", "square", "nand", [0; 3]).mapped().linear(No, No, [false, true]) } }
+            }
+            Self::Math(Nor) => {
+                &const { Row { defined: [true, false], ..row!("⊽", "vee-bar", "double", "nor", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) } }
+            }
             Self::Math(Not) => &const { row!("~", "tilde", "not", "without", [0, W, W]).mapped().linear(No, No, [true, false]) },
             Self::Compare(Equal) => &const { row!("=", "equals", "classify", "equal", [W, 0, 0]).mapped().linear(No, No, [true; 2]) },
             Self::Compare(NotEqual) => &const { row!("≠", "not-equals", "unique-mask", "not-equal", [W, 0, 0]).mapped().linear(No, No, [true; 2]) },
             Self::Compare(Less) => &const { row!("<", "less-than", "sort-up", "less", [W, 0, 0]).mapped().linear(No, No, [false, true]) },
             Self::Compare(Greater) => &const { row!(">", "greater-than", "sort-down", "greater", [W, 0, 0]).mapped().linear(No, No, [false, true]) },
-            Self::Compare(LessEqual) => &const { Row { defined: [true, false], ..row!("≤", "less-than-or-equal", "decrement", "less-equal", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) } },
-            Self::Compare(GreaterEqual) => &const { Row { defined: [true, false], ..row!("≥", "greater-than-or-equal", "increment", "greater-equal", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) } },
-            Self::Iota => &const { Row { roles: search::index_roles, build: search::build_index, ..row!("⍳", "iota", "indices", "index-of", [1, W, W]).linear(No, No, [true; 2]) } },
+            Self::Compare(LessEqual) => {
+                &const {
+                    Row { defined: [true, false],
+                        ..row!("≤", "less-than-or-equal", "decrement", "less-equal", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) }
+                }
+            }
+            Self::Compare(GreaterEqual) => {
+                &const {
+                    Row { defined: [true, false],
+                        ..row!("≥", "greater-than-or-equal", "increment", "greater-equal", [0; 3]).mapped().linear(Jointly(1), No, [false, true]) }
+                }
+            }
+            Self::Iota => {
+                &const {
+                    Row { roles: search::index_roles, build: search::build_index,
+                        ..row!("⍳", "iota", "indices", "index-of", [1, W, W]).linear(No, No, [true; 2]) }
+                }
+            }
             Self::Range => &const { row!("↦", "right-arrow-from-bar", "range", "to", [0; 3]).linear(No, No, [true; 2]) },
             Self::Keys => &const { row!(":", "colon", "unkey", "keyed", [W, 1, W]).moves() },
-            Self::Shape => &const { Row { roles: structural::roles, discards: [false, true], ..row!("⍴", "rho", "shape", "reshape", [W, 1, W]).moves().linear(No, Jointly(2), [true, false]) } },
-            Self::Tally => &const { Row { roles: description_roles, build: structural::build, ..row!("≢", "equal-underbar-slash", "tally", "not-match", [W; 3]).linear(No, No, [true; 2]) } },
-            Self::Depth => &const { Row { roles: description_roles, build: structural::build, ..row!("≡", "equal-underbar", "depth", "match", [W; 3]).linear(No, No, [true; 2]) } },
-            Self::Ravel => &const { Row { roles: structural::roles, ..row!(",", "comma", "ravel", "catenate", [W; 3]).moves().linear(Jointly(1), Jointly(3), [false; 2]) } },
-            Self::CatenateFirst => &const { Row { roles: structural::roles, first_axis: true, ..row!("⍪", "comma-bar", "table", "catenate-first", [W; 3]).moves().linear(Jointly(1), Jointly(3), [false; 2]) } },
-            Self::Enclose => &const { Row { roles: structural::roles, discards: [false, true], ..row!("⊂", "left-shoe", "enclose", "partitioned-enclose", [W, 1, W]).moves() } },
-            Self::Mix => &const { Row { form: indexing::pick_form, sources: indexing::source_roots, roles: indexing::index_roles, discards: [false, true], ..row!("⊃", "right-shoe", "mix", "pick", [0, 1, W]).moves() } },
-            Self::Nest => &const { Row { roles: structural::roles, discards: [false, true], ..row!("⊆", "left-shoe-underbar", "nest", "partition", [W, 1, W]).moves() } },
+            Self::Shape => {
+                &const {
+                    Row { roles: structural::roles, discards: [false, true],
+                        ..row!("⍴", "rho", "shape", "reshape", [W, 1, W]).moves().linear(No, Jointly(2), [true, false]) }
+                }
+            }
+            Self::Tally => {
+                &const {
+                    Row { roles: description_roles, build: structural::build,
+                        ..row!("≢", "equal-underbar-slash", "tally", "not-match", [W; 3]).linear(No, No, [true; 2]) }
+                }
+            }
+            Self::Depth => {
+                &const {
+                    Row { roles: description_roles, build: structural::build,
+                        ..row!("≡", "equal-underbar", "depth", "match", [W; 3]).linear(No, No, [true; 2]) }
+                }
+            }
+            Self::Ravel => {
+                &const { Row { roles: structural::roles, ..row!(",", "comma", "ravel", "catenate", [W; 3]).moves().linear(Jointly(1), Jointly(3), [false; 2]) } }
+            }
+            Self::CatenateFirst => {
+                &const {
+                    Row { roles: structural::roles, first_axis: true,
+                        ..row!("⍪", "comma-bar", "table", "catenate-first", [W; 3]).moves().linear(Jointly(1), Jointly(3), [false; 2]) }
+                }
+            }
+            Self::Enclose => {
+                &const { Row { roles: structural::roles, discards: [false, true], ..row!("⊂", "left-shoe", "enclose", "partitioned-enclose", [W, 1, W]).moves() } }
+            }
+            Self::Mix => {
+                &const {
+                    Row { form: indexing::pick_form, sources: indexing::source_roots, roles: indexing::index_roles, discards: [false, true],
+                        ..row!("⊃", "right-shoe", "mix", "pick", [0, 1, W]).moves() }
+                }
+            }
+            Self::Nest => {
+                &const { Row { roles: structural::roles, discards: [false, true], ..row!("⊆", "left-shoe-underbar", "nest", "partition", [W, 1, W]).moves() } }
+            }
             Self::Member => &const { row!("∊", "epsilon", "enlist", "member", [W; 3]).linear(Jointly(1), No, [false, true]) },
             Self::Union => &const { Row { discards: [true; 2], ..row!("∪", "down-shoe", "unique", "union", [W; 3]) } },
             Self::Intersection => &const { Row { discards: [true; 2], ..row!("∩", "up-shoe", "duplicates", "intersection", [W; 3]) } },
@@ -1077,16 +1190,34 @@ impl Primitive {
             Self::Take => &const { Row { roles: structural::roles, discards: [true; 2], ..row!("↑", "up-arrow", "first", "take", [W, 1, W]).moves() } },
             Self::Drop => &const { Row { roles: structural::roles, discards: [false, true], ..row!("↓", "down-arrow", "split", "drop", [1, 1, W]).moves() } },
             Self::Reverse(false) => &const { Row { roles: structural::roles, ..row!("⌽", "circle-stile", "reverse", "rotate", [1, 0, 1]).moves() } },
-            Self::Reverse(true) => &const { Row { roles: structural::roles, first_axis: true, ..row!("⊖", "circle-bar", "reverse-first", "rotate-first", [W; 3]).moves() } },
-            Self::Transpose => &const { Row { roles: structural::roles, discards: [false, true], ..row!("⍉", "circle-backslash", "transpose", "reorder-axes", [W, 1, W]).moves() } },
+            Self::Reverse(true) => {
+                &const { Row { roles: structural::roles, first_axis: true, ..row!("⊖", "circle-bar", "reverse-first", "rotate-first", [W; 3]).moves() } }
+            }
+            Self::Transpose => {
+                &const {
+                    Row { roles: structural::roles, discards: [false, true], ..row!("⍉", "circle-backslash", "transpose", "reorder-axes", [W, 1, W]).moves() }
+                }
+            }
             Self::Encode => &const { row!("⊤", "down-tack", "binary-encode", "encode", [W, 1, 0]).linear(No, No, [true; 2]) },
             Self::Decode => &const { row!("⊥", "up-tack", "binary-decode", "decode", [1; 3]) },
             Self::Execute => &const { row!("⍎", "hydrant", "execute", "execute-in", [1, W, W]) },
             Self::Format => &const { row!("⍕", "thorn", "format", "format-spec", [W, 1, W]).linear(No, No, [true; 2]) },
-            Self::Index | Self::Bracket => &const { Row { form: indexing::index_form, sources: indexing::source_roots, roles: indexing::index_roles, build: indexing::build_index, discards: [false, true], ..row!("⌷", "squad", "materialise", "index", [W, 1, W]).moves() } },
+            Self::Index | Self::Bracket => {
+                &const {
+                    Row { form: indexing::index_form, sources: indexing::source_roots, roles: indexing::index_roles, build: indexing::build_index,
+                        discards: [false, true], ..row!("⌷", "squad", "materialise", "index", [W, 1, W]).moves() }
+                }
+            }
             Self::MatrixDivide => &const { row!("⌹", "domino", "matrix-inverse", "matrix-divide", [2, W, 2]) },
-            Self::Replicate => &const { Row { roles: structural::roles, discards: [false, true], ..row!("#", "hash", "runs", "replicate", [W, 1, W]).moves() } },
-            Self::Windows => &const { Row { form: structural::windows_form, roles: structural::roles, discards: [false, true], ..row!("↕", "up-down-arrow", "pairs", "windows", [W; 3]).moves() } },
+            Self::Replicate => {
+                &const { Row { roles: structural::roles, discards: [false, true], ..row!("#", "hash", "runs", "replicate", [W, 1, W]).moves() } }
+            }
+            Self::Windows => {
+                &const {
+                    Row { form: structural::windows_form, roles: structural::roles, discards: [false, true],
+                        ..row!("↕", "up-down-arrow", "pairs", "windows", [W; 3]).moves() }
+                }
+            }
             Self::Prime => &const { row!("⍭", "stile-tilde", "prime", "prime-mode", [0; 3]).linear(No, No, [true; 2]) },
             Self::Factor => &const { row!("⨸", "circle-divide", "factors", "factor-spec", [0; 3]).linear(No, No, [true; 2]) },
             Self::Polynomial => &const { row!("⌻", "quad-jot", "roots", "polyval", [1, 1, 0]) },
@@ -1094,7 +1225,9 @@ impl Primitive {
             Self::Find => &const { row!("⍷", "epsilon-underbar", "groups", "find", [W; 3]).linear(No, No, [true; 2]) },
             Self::Identity(false) => &const { row!("⊢", "right-tack", "same", "right", [W; 3]).moves() },
             Self::Identity(true) => &const { row!("⊣", "left-tack", "same-left", "left", [W; 3]).moves().linear(Jointly(1), Jointly(1), [false; 2]) },
-            Self::Random => &const { Row { form: draw_form, implicit_generator: true, ..row!("¿", "inverted-question", "roll", "deal", [0; 3]).linear(No, No, [true; 2]) } },
+            Self::Random => {
+                &const { Row { form: draw_form, implicit_generator: true, ..row!("¿", "inverted-question", "roll", "deal", [0; 3]).linear(No, No, [true; 2]) } }
+            }
             Self::Exact(Exact::Floor) => &const { Row { integer_result: [IntegerResult::Always, IntegerResult::Never], ..FLOOR } },
             Self::Exact(Exact::Ceiling) => &const { Row { integer_result: [IntegerResult::Always, IntegerResult::Never], ..CEILING } },
             Self::Exact(Exact::Quotient) => &const { Row { integer_result: [IntegerResult::Never, IntegerResult::Always], ..DIVIDE } },
@@ -1108,8 +1241,12 @@ impl Primitive {
             Self::RealLn => &const { row!("⍟", "circle-star", "natural-log", "", [0; 3]).mapped() },
             Self::RealPow => &const { row!("*", "star", "", "exponent", [0; 3]).mapped() },
             Self::RealCircle { .. } => &const { row!("○", "circle", "", "circular", [0; 3]).mapped() },
-            Self::Choice => &const { Row { sources: control::choice_sources, build: control::choice_build, code: control::choice_code,
-                ..row!("⍚", "choice", "choice", "choice", [0; 3]).linear(Jointly(u8::MAX), Jointly(u8::MAX), [false; 2]) } },
+            Self::Choice => {
+                &const {
+                    Row { sources: control::choice_sources, build: control::choice_build, code: control::choice_code,
+                        ..row!("⍚", "choice", "choice", "choice", [0; 3]).linear(Jointly(u8::MAX), Jointly(u8::MAX), [false; 2]) }
+                }
+            }
         }
     }
     pub(crate) fn glyph(self) -> &'static str { self.info().glyph }
@@ -1134,20 +1271,17 @@ impl Primitive {
     pub(crate) fn implicit_generator(self) -> bool { self.info().implicit_generator }
     pub(crate) fn truth_table(self) -> Option<u8> {
         let variant = rustymath::facts::Variant { dtype: DType::Boolean, checked: false, wrapping: false, mathish: false };
-        numeric::object_kernel(self, true, Numeric::EXACT, None, variant, &[DType::Boolean; 2], &[rustymath::facts::Range::ANY; 2]).ok().flatten()?.truth_table()
+        numeric::object_kernel(self, true, Numeric::EXACT, None, variant, &[DType::Boolean; 2], &[rustymath::facts::Range::ANY; 2]).ok().flatten()?
+            .truth_table()
     }
     pub(crate) fn marked(self, mark: Mark, dyadic: bool) -> Option<Marked> {
         use crate::number::{Arithmetic::Divide, Math::*};
         if matches!((mark, self), (Mark::Real | Mark::Rational, Self::Arithmetic(Divide))) { return Some(Marked::Arguments(mark)); }
         Some(Marked::Primitive(match (mark, self, dyadic) {
-            (Mark::Exact, Self::Math(Floor), false) => Self::Exact(Exact::Floor),
-            (Mark::Exact, Self::Math(Ceiling), false) => Self::Exact(Exact::Ceiling),
-            (Mark::Exact, Self::Arithmetic(Divide), true) => Self::Exact(Exact::Quotient),
-            (Mark::Real, Self::Math(Root), false) => Self::RealSqrt,
-            (Mark::Real, Self::Math(Log), false) => Self::RealLn,
-            (Mark::Real, Self::Math(Power), true) => Self::RealPow,
-            (Mark::Real, Self::Math(Circle | Arc), true) => Self::RealCircle { inverse: self == Self::Math(Arc) },
-            _ => return None,
+            (Mark::Exact, Self::Math(Floor), false) => Self::Exact(Exact::Floor), (Mark::Exact, Self::Math(Ceiling), false) => Self::Exact(Exact::Ceiling),
+            (Mark::Exact, Self::Arithmetic(Divide), true) => Self::Exact(Exact::Quotient), (Mark::Real, Self::Math(Root), false) => Self::RealSqrt,
+            (Mark::Real, Self::Math(Log), false) => Self::RealLn, (Mark::Real, Self::Math(Power), true) => Self::RealPow,
+            (Mark::Real, Self::Math(Circle | Arc), true) => Self::RealCircle { inverse: self == Self::Math(Arc) }, _ => return None
         }))
     }
 }
@@ -1183,7 +1317,9 @@ fn normalize_fill(origin: Origin<&[Value]>, sources: &[TreeRoot]) -> Result<Opti
     for root in sources {
         if root.leaves.len() != 1 { return Ok(None); }
         let Some(source) = call.root_desc(root.index) else { return Ok(None); };
-        kind = Some(match kind { None => source.kind, Some(kind) => kind.join(source.kind).ok_or_else(|| Error::domain("fill sources have incompatible types"))? });
+        kind = Some(match kind {
+            None => source.kind, Some(kind) => kind.join(source.kind).ok_or_else(|| Error::domain("fill sources have incompatible types"))?
+        });
     }
     let Some(kind) = kind else { return Ok(None); };
     let fill_desc = (fill.leaves.len() == 1).then(|| call.root_desc(fill.index)).flatten();
@@ -1196,20 +1332,24 @@ fn normalize_fill(origin: Origin<&[Value]>, sources: &[TreeRoot]) -> Result<Opti
         if source.kind.dtype() != kind.dtype() || source.kind.fixed_width() != kind.fixed_width() {
             let operation = Operation::Convert(Mark::Type { dtype: kind.dtype(), fixed: kind.fixed_width().is_some() });
             let converted = crate::eval::projected_call(&origin, operation, &[arguments[root.index].clone()], &[from[root.index]])?;
-            arguments[root.index] = Operation::dispatch(converted.reborrow())?.assemble()?; changed = true;
+            arguments[root.index] = Operation::dispatch(converted.reborrow())?.assemble()?;
+            changed = true;
         }
     }
     if fill_desc.as_ref().is_none_or(|desc| desc.kind != kind) {
-        let converted = crate::eval::projected_call(&origin, Operation::Recipe(RecipeOp::Convert { kind, conversion: rustymath::convert::ConversionKind::Keep }), &[arguments[fill.index].clone()], &[from[fill.index]])?;
-        arguments[fill.index] = Operation::dispatch(converted.reborrow())?.assemble()?; changed = true;
+        let converted = crate::eval::projected_call(
+            &origin, Operation::Recipe(RecipeOp::Convert { kind, conversion: rustymath::convert::ConversionKind::Keep }), &[arguments[fill.index].clone()],
+            &[from[fill.index]])?;
+        arguments[fill.index] = Operation::dispatch(converted.reborrow())?.assemble()?;
+        changed = true;
     }
     if !changed { return Ok(None); }
     let converted = crate::eval::projected_call(&origin, origin.operation.clone(), &arguments, &from)?;
     Operation::dispatch(converted.reborrow()).map(Some)
 }
 fn data_roots(call: &CallView<'_>) -> Result<Vec<TreeRoot>, Error> {
-    Ok(call.explicit_argument_roots().map(|root| call.root(root))
-        .filter(|root| call.data_positions().any(|position| root.leaves.contains(&position))).collect())
+    Ok(call.explicit_argument_roots().map(|root| call.root(root)).filter(|root| call.data_positions().any(|position| root.leaves.contains(&position)))
+        .collect())
 }
 fn fill_form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
     let call = origin.call_view(&origin.list);
@@ -1284,9 +1424,10 @@ fn host_primitive(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
         (Windows, _) => structural::windowed(call)?,
         _ => {
             let sources = if primitive.selects(dyadic) { call.source_roots()? } else { Vec::new() };
-            let read = |root| if sources.iter().any(|source| source.index == root) {
-                call.root_input(root)?.exposed().map(Cow::Owned)
-            } else { call.root_value(root, ReadKind::Value) };
+            let read = |root| {
+                if sources.iter().any(|source| source.index == root) { call.root_input(root)?.exposed().map(Cow::Owned) }
+                else { call.root_value(root, ReadKind::Value) }
+            };
             let right = read(right_root)?;
             let fill = call.fill_root().map(|root| call.root_value(root.index, ReadKind::Value)).transpose()?;
             let left = dyadic.then(|| read(roots.start)).transpose()?;
@@ -1294,31 +1435,44 @@ fn host_primitive(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
             let span = call.site.cloned().unwrap_or_else(|| Span::whole(crate::Source::new("<primitive>", primitive.glyph())));
             let axis_spec = call.axis_root().map(|root| call.root_value(root.index, ReadKind::Structure)).transpose()?;
             let axes = axis_spec.as_deref().map(|spec| resolve_axes(spec, right.layout()).and_then(|spec| axes(&spec, right.rank()))).transpose()?;
-            let axis = || axes.as_deref().map(|axes| if let [axis] = axes { Ok(*axis) } else { Err(Error::new(Kind::Rank, "one axis is required")) }).transpose();
+            let axis =
+                || axes.as_deref().map(|axes| if let [axis] = axes { Ok(*axis) } else { Err(Error::new(Kind::Rank, "one axis is required")) }).transpose();
             match (*primitive, left) {
                 (Keys, None) => crate::keyed::remove(&right, axes.as_deref()).described("invalid axis keys")?,
                 (Keys, Some(left)) => crate::keyed::construct(left, &right, axes.as_deref()).described("invalid axis keys")?,
                 (Math(crate::number::Math::Not), Some(left)) => without(left, &right, numeric)?,
-                (Compare(Equal), None) => self_classify(&right, numeric)?, (Compare(NotEqual), None) => unique_mask(&right, numeric)?,
+                (Compare(Equal), None) => self_classify(&right, numeric)?,
+                (Compare(NotEqual), None) => unique_mask(&right, numeric)?,
                 (Compare(Less | Greater), None) => sort(&right, *primitive == Compare(Greater), &span)?,
                 (Prime | Factor, _) => crate::number_theory::call(*primitive == Factor, left, &right, numeric)?,
                 (Polynomial, _) => crate::polynomial::call(left, &right, numeric)?,
-                (Member, Some(left)) => membership(left, &right, numeric)?, (Member, None) => enlist(&right, &span, numeric)?,
-                (Union, Some(left)) => union(left, &right, numeric)?, (Union, None) => unique(&right, numeric)?,
-                (Intersection, Some(left)) => intersection(left, &right, numeric)?, (Intersection, None) => duplicates(&right, numeric)?,
-                (Find, Some(left)) => find(left, &right, numeric)?, (Find, None) => groups(&right, &span, numeric)?,
+                (Member, Some(left)) => membership(left, &right, numeric)?,
+                (Member, None) => enlist(&right, &span, numeric)?,
+                (Union, Some(left)) => union(left, &right, numeric)?,
+                (Union, None) => unique(&right, numeric)?,
+                (Intersection, Some(left)) => intersection(left, &right, numeric)?,
+                (Intersection, None) => duplicates(&right, numeric)?,
+                (Find, Some(left)) => find(left, &right, numeric)?,
+                (Find, None) => groups(&right, &span, numeric)?,
                 (Grade(down), _) => grade(left, &right, down)?,
-                (MatrixDivide, _) => matrix_divide(left, &right, numeric)?, (Format, _) => format_array(left, &right)?,
+                (MatrixDivide, _) => matrix_divide(left, &right, numeric)?,
+                (Format, _) => format_array(left, &right)?,
                 (Execute, _) => return session().execute(left, &right, &span),
                 (Encode | Decode, Some(left)) => radix(left, &right, *primitive == Encode, numeric)?,
-                (Encode, None) => binary_encode(&right)?, (Decode, None) => radix(&binary_base(), &right, false, numeric)?,
-                (Index, Some(left)) => squad(left, &right, axes.as_deref(), fill.as_deref().cloned(), &span)?, (Bracket, Some(left)) => brackets(left, &right, fill.as_deref().cloned(), &span)?,
+                (Encode, None) => binary_encode(&right)?,
+                (Decode, None) => radix(&binary_base(), &right, false, numeric)?,
+                (Index, Some(left)) => squad(left, &right, axes.as_deref(), fill.as_deref().cloned(), &span)?,
+                (Bracket, Some(left)) => brackets(left, &right, fill.as_deref().cloned(), &span)?,
                 (Index | Bracket, None) => right.into_owned(),
                 (Depth, Some(left)) => Value::Number(Number::from_bool(left.matches_within(&right, numeric)?)),
                 (Tally, Some(left)) => Value::Number(Number::from_bool(!left.matches_within(&right, numeric)?)),
-                (Iota, Some(left)) => index_of(left, &right, numeric)?, (Iota, None) => iota(&right, numeric)?, (Range, _) => range(left, &right, &span, numeric)?,
-                (Where, Some(left)) => interval_index(left, &right)?, (Where, None) => where_indices(&right, numeric)?,
-                (Replicate, Some(left)) => replicate(left, &right, axis()?, false, fill.as_deref().cloned())?, (Replicate, None) => runs(&right, numeric)?,
+                (Iota, Some(left)) => index_of(left, &right, numeric)?,
+                (Iota, None) => iota(&right, numeric)?,
+                (Range, _) => range(left, &right, &span, numeric)?,
+                (Where, Some(left)) => interval_index(left, &right)?,
+                (Where, None) => where_indices(&right, numeric)?,
+                (Replicate, Some(left)) => replicate(left, &right, axis()?, false, fill.as_deref().cloned())?,
+                (Replicate, None) => runs(&right, numeric)?,
                 (Reverse(first), _) => rotate(left, &right, axis()?.unwrap_or(if first { 0 } else { right.rank().saturating_sub(1) }))?,
                 (Transpose, _) => transpose(left, &right)?,
                 (Ravel | CatenateFirst, Some(left)) => catenate(left, &right, axis()?, *primitive == CatenateFirst, numeric)?,
@@ -1331,12 +1485,14 @@ fn host_primitive(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
                 (Shape, Some(left)) => reshape(left, &right, fill.as_deref().cloned())?,
                 (Mix, Some(left)) => pick(left, &right, session().prototype.get(), fill.as_deref(), &span)?,
                 (Mix, None) => {
-                    let mixed = crate::array::assemble_stored(right.layout(), &right.elements().collect::<Vec<_>>(), &right.prototype(), Widening::Arrays, fill.as_deref(), numeric)?;
+                    let mixed = crate::array::assemble_stored(
+                        right.layout(), &right.elements().collect::<Vec<_>>(), &right.prototype(), Widening::Arrays, fill.as_deref(), numeric)?;
                     match axis_spec { Some(spec) => placed_cells(&mixed, right.rank(), &spec)?, None => mixed }
-                },
+                }
                 (Enclose | Nest, Some(left)) => partition(left, &right, axis()?, *primitive == Nest)?,
                 (Take, None) => pick(&Value::integer(0), &right, session().prototype.get(), fill.as_deref(), &span)?,
-                (Drop, None) => split(&right, axis()?)?, (Take | Drop, Some(left)) => take_drop(*primitive == Take, left, &right, axes.as_deref(), fill.as_deref().cloned())?,
+                (Drop, None) => split(&right, axis()?)?,
+                (Take | Drop, Some(left)) => take_drop(*primitive == Take, left, &right, axes.as_deref(), fill.as_deref().cloned())?,
                 (PartialSort { .. } | Ranks { .. }, _) => search::combined(*primitive, left, &right, &span, numeric)?,
                 _ => return Err(Error::new(ErrorKind::Unsupported, "primitive host implementation is unfinished")),
             }
@@ -1345,16 +1501,16 @@ fn host_primitive(call: &CallView<'_>) -> Result<Outputs<Value>, Error> {
     Ok(Outputs::one(value))
 }
 /// Counts derived from metadata use the same integer kind policy and read-plan execution as other graph values.
-fn metadata_result(primitive: Primitive, layout: &Layout, depth: Option<usize>, numeric: Numeric)
-    -> Result<(Desc, ReadPlan), Error> {
+fn metadata_result(primitive: Primitive, layout: &Layout, depth: Option<usize>, numeric: Numeric) -> Result<(Desc, ReadPlan), Error> {
     use rustymath::facts::Range;
     let (lengths, result, atom) = match primitive {
-        Primitive::Shape => (layout.shape().to_vec(), if layout.has_names() { crate::keyed::partial_layout(layout.names().to_vec())? } else { Layout::from([layout.shape().len()]) }, false),
+        Primitive::Shape => (layout.shape().to_vec(),
+            if layout.has_names() { crate::keyed::partial_layout(layout.names().to_vec())? } else { Layout::from([layout.shape().len()]) }, false),
         Primitive::Tally => (vec![layout.shape().first().copied().unwrap_or(1)], Layout::EMPTY, true),
-        Primitive::Depth => (vec![depth.ok_or_else(Error::planning)?], Layout::EMPTY, true),
-        _ => return Err(Error::planning()),
+        Primitive::Depth => (vec![depth.ok_or_else(Error::planning)?], Layout::EMPTY, true), _ => return Err(Error::planning())
     };
-    let lengths = lengths.into_iter().map(|length| i64::try_from(length).map_err(|_| Error::new(Kind::Limit, "count exceeds the integer range"))).collect::<Result<Vec<_>, _>>()?;
+    let lengths = lengths.into_iter().map(|length| i64::try_from(length).map_err(|_| Error::new(Kind::Limit, "count exceeds the integer range")))
+        .collect::<Result<Vec<_>, _>>()?;
     let range = Range { lo: lengths.iter().copied().min().unwrap_or(0) as f64, hi: lengths.iter().copied().max().unwrap_or(0) as f64 };
     let (kind, range) = result_kind(numeric, DType::Integer(Width::U8), range, IntegerResult::Never);
     let read = ReadPlan::joined(lengths.into_iter().map(|length| ReadPlan::index(length, 0, 1)))?;
@@ -1383,9 +1539,7 @@ fn code_metadata(call: &CallView<'_>) -> Result<Value, Error> {
     crate::array::read_value(&desc, &rustymath::agreement::Read { plan: &plan, sources: &[] }, call.mode.dynamic)
 }
 /// An atom has depth zero. An array has one more than its deepest item, or its prototype when empty.
-fn described_depth(desc: &Desc) -> usize {
-    if desc.atom { 0 } else { 1 }
-}
+fn described_depth(desc: &Desc) -> usize { if desc.atom { 0 } else { 1 } }
 
 pub(crate) fn depth(right: &Value) -> usize {
     if let Some(desc) = Desc::of(right) { return described_depth(&desc); }
@@ -1395,8 +1549,7 @@ pub(crate) fn depth(right: &Value) -> usize {
 
 fn call_depth(call: &CallView<'_>, root: usize) -> Result<usize, Error> {
     fn leaf(call: &CallView<'_>, position: usize) -> Result<usize, Error> {
-        call.desc(position).map(|desc| described_depth(&desc))
-            .map(Ok).unwrap_or_else(|| call.host_value(position).map(|value| depth(&value)))
+        call.desc(position).map(|desc| described_depth(&desc)).map(Ok).unwrap_or_else(|| call.host_value(position).map(|value| depth(&value)))
     }
     fn node(call: &CallView<'_>, tree: &Tree, start: usize) -> Result<usize, Error> {
         match tree {
@@ -1415,21 +1568,24 @@ fn call_depth(call: &CallView<'_>, root: usize) -> Result<usize, Error> {
 #[derive(Clone, Copy)]
 pub(crate) struct Pervasion<'a> {
     pub(crate) apply: &'a dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>,
-    pub(crate) prototype: &'a dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>,
-    pub(crate) leaf: &'a dyn Fn(&Value) -> bool,
-    pub(crate) item: &'a dyn Fn(&Value, usize) -> Result<Value, Error>,
+    pub(crate) prototype: &'a dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>, pub(crate) leaf: &'a dyn Fn(&Value) -> bool,
+    pub(crate) item: &'a dyn Fn(&Value, usize) -> Result<Value, Error>
 }
 impl<'a> Pervasion<'a> {
-    pub(crate) fn atoms(apply: &'a dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>,
-        prototype: &'a dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>) -> Self {
+    pub(crate) fn atoms(
+        apply: &'a dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>, prototype: &'a dyn Fn(Option<&Value>, &Value) -> Result<Value, Error>) -> Self {
         Self { apply, prototype, leaf: &Value::is_atom, item: &|value, at| Ok(value.at(at)) }
     }
 }
 /// One nested agreement walk; its leaves either dispatch graph calls or run host scalar code.
-pub(crate) fn pervade(left: Option<&Value>, right: &Value, numeric: Numeric, agreement: Option<Agreement>, fill: Option<&Value>, walk: &Pervasion<'_>) -> Result<Value, Error> {
+pub(crate) fn pervade(
+    left: Option<&Value>, right: &Value, numeric: Numeric, agreement: Option<Agreement>, fill: Option<&Value>, walk: &Pervasion<'_>) -> Result<Value, Error> {
     check()?;
     if (walk.leaf)(right) && left.is_none_or(walk.leaf) { return (walk.apply)(left, right); }
-    let agreement = match agreement { Some(agreement) => agreement, None => Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).described("array shapes do not agree")? };
+    let agreement = match agreement {
+        Some(agreement) => agreement,
+        None => Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).described("array shapes do not agree")?,
+    };
     let widening = Widening::of_results(numeric.kinds);
     if agreement.len == 0 {
         let prototype = Pervasion { apply: walk.prototype, ..*walk };
@@ -1437,7 +1593,7 @@ pub(crate) fn pervade(left: Option<&Value>, right: &Value, numeric: Numeric, agr
         return Ok(Value::stored_values(agreement.layout, Vec::new(), Some(empty), widening)?);
     }
     let item = |value: &Value, map: &Mapping, at| match map.get(at).filter(|&at| at < value.len()) {
-        Some(at) => (walk.item)(value, at), None => Ok(fill.cloned().unwrap_or_else(|| value.prototype())),
+        Some(at) => (walk.item)(value, at), None => Ok(fill.cloned().unwrap_or_else(|| value.prototype()))
     };
     let mut values = Vec::with_capacity(agreement.len);
     for at in 0..agreement.len {
@@ -1453,9 +1609,8 @@ impl Primitive {
     pub(crate) fn inverted(self) -> Option<Self> {
         use crate::number::Math::{Arc, Circle, Log, Pi, Power};
         match self {
-            Self::Arithmetic(Arithmetic::Minus | Arithmetic::Divide) | Self::Math(Pi) => Some(self),
-            Self::Math(Power) => Some(Self::Math(Log)), Self::Math(Log) => Some(Self::Math(Power)), Self::Math(Circle) => Some(Self::Math(Arc)),
-            _ => None,
+            Self::Arithmetic(Arithmetic::Minus | Arithmetic::Divide) | Self::Math(Pi) => Some(self), Self::Math(Power) => Some(Self::Math(Log)),
+            Self::Math(Log) => Some(Self::Math(Power)), Self::Math(Circle) => Some(Self::Math(Arc)), _ => None
         }
     }
 }
@@ -1535,7 +1690,9 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         Polynomial => crate::polynomial::coefficients(right, numeric),
         Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Math(Not) | Index | MatrixDivide => p.call(None, right, span, numeric),
         Arithmetic(Times) => {
-            if !p.call(None, right, span, numeric)?.matches_within(right, numeric)? { return Err(Error::domain("× gives only ¯1, 0, 1 and unit complex numbers")); }
+            if !p.call(None, right, span, numeric)?.matches_within(right, numeric)? {
+                return Err(Error::domain("× gives only ¯1, 0, 1 and unit complex numbers"));
+            }
             Ok(right.clone())
         }
         Math(Power) => Math(Log).call(None, right, span, numeric),
@@ -1586,12 +1743,15 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         }
         Grade(down) => {
             let ranks = Grade(false).call(None, right, span, numeric);
-            let candidate = if down { ranks.and_then(|r| Arithmetic(Minus).call(Some(&Value::integer(right.len() as i64 - 1)), &r, span, numeric)) } else { ranks };
+            let candidate =
+                if down { ranks.and_then(|r| Arithmetic(Minus).call(Some(&Value::integer(right.len() as i64 - 1)), &r, span, numeric)) } else { ranks };
             checked(p, None, candidate, right, span, numeric)
         }
         Execute => crate::system::write_literal(crate::system::HostCall { left: None, right, site: span, numeric }),
         Ravel => checked(p, None, Ok(right.clone()), right, span, numeric),
-        CatenateFirst => checked(p, None, if matches!(right.shape(), [_, 1]) { Ravel.call(None, right, span, numeric) } else { Ok(right.clone()) }, right, span, numeric),
+        CatenateFirst => {
+            checked(p, None, if matches!(right.shape(), [_, 1]) { Ravel.call(None, right, span, numeric) } else { Ok(right.clone()) }, right, span, numeric)
+        }
         Windows => inverse_windows(&Value::integer(2), right, span, numeric),
         _ => Err(Error::domain("this primitive has no known inverse")),
     }
@@ -1658,7 +1818,8 @@ fn inverse_decode(base: &Value, right: &Value, settings: Numeric) -> Result<Valu
         while !n.is_zero() {
             check()?;
             if n.order(&n.one())?.is_lt() { return Err(Error::domain("inverse decode cannot represent this value")); }
-            let quotient = scalar(Primitive::Arithmetic(Arithmetic::Divide), Some(&n), &b, settings)?; n = scalar(Primitive::Math(Math::Floor), None, &quotient, settings)?;
+            let quotient = scalar(Primitive::Arithmetic(Arithmetic::Divide), Some(&n), &b, settings)?;
+            n = scalar(Primitive::Math(Math::Floor), None, &quotient, settings)?;
             count += 1;
             generated_len(&[count])?;
         }
@@ -1675,8 +1836,7 @@ fn inverse_where(right: &Value) -> Result<Value, Error> {
     for e in right.elements() {
         let a = e.clone();
         if a.shape().len() > 1 { return Err(Error::new(Kind::Rank, "inverse where coordinates must be vectors")); }
-        let coordinate = a.elements().map(|e| numeric(&e)?.nonnegative_integer::<usize>().described("invalid position"))
-            .collect::<Result<Vec<_>, _>>()?;
+        let coordinate = a.elements().map(|e| numeric(&e)?.nonnegative_integer::<usize>().described("invalid position")).collect::<Result<Vec<_>, _>>()?;
         if coordinates.is_empty() { shape.resize(coordinate.len(), 0); }
         if coordinate.len() != shape.len() { return Err(Error::new(Kind::Length, "coordinate lengths differ")); }
         for (size, &c) in shape.iter_mut().zip(&coordinate) { *size = (*size).max(c + 1); }

@@ -6,7 +6,7 @@ impl Expression {
     pub(super) fn binding(binding: &Binding) -> Result<Option<Self>, Error> {
         Ok(Some(Self::Atom(match binding {
             Binding::Value(value) => value.clone(), Binding::Function(function) => Value::Function(function.function()?),
-            Binding::Operator(operator) => Value::Operator(Arc::new(operator.clone())), _ => return Ok(None),
+            Binding::Operator(operator) => Value::Operator(Arc::new(operator.clone())), _ => return Ok(None)
         })))
     }
     pub(super) fn array(value: &Value) -> Self { Self::Atom(value.clone()) }
@@ -18,20 +18,23 @@ impl Expression {
     }
     fn tree(&self, el: Elide, budget: &mut usize) -> crate::display::Tree {
         use crate::display::Tree;
-        if *budget == 0 { return Tree::leaf("…"); } *budget -= 1;
+        if *budget == 0 { return Tree::leaf("…"); }
+        *budget -= 1;
         match self {
             Self::Atom(Value::Function(function)) => function.tree(el, budget),
             Self::Atom(value) => Tree::leaf(value.operand(el)),
             Self::Call { function, left, right } => {
                 let mut children = vec![function.tree(el, budget)];
-                children.extend(left.iter().map(|a| a.tree(el, budget))); children.push(right.tree(el, budget));
+                children.extend(left.iter().map(|a| a.tree(el, budget)));
+                children.push(right.tree(el, budget));
                 Tree { label: "call".into(), children }
             }
             Self::Strand(items) => Tree { label: "[]".into(), children: items.iter().map(|a| a.tree(el, budget)).collect() },
         }
     }
     fn text(&self, el: Elide, budget: &mut usize) -> String {
-        if *budget == 0 { return "…".into(); } *budget -= 1;
+        if *budget == 0 { return "…".into(); }
+        *budget -= 1;
         match self {
             Self::Atom(Value::Function(function)) => function.text(el, budget),
             Self::Atom(value) => value.operand(el),

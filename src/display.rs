@@ -86,10 +86,7 @@ impl Elide {
 }
 
 /// The positions display shows along an axis of `len` items: all of them, or the first and last `edges` with `None` for the gap between.
-pub(crate) fn positions(len: usize, edges: Option<usize>) -> impl Iterator<Item = Option<usize>> + Clone {
-    let e = edges.unwrap_or(len);
-    ends(len, e, e)
-}
+pub(crate) fn positions(len: usize, edges: Option<usize>) -> impl Iterator<Item = Option<usize>> + Clone { let e = edges.unwrap_or(len); ends(len, e, e) }
 
 /// The positions of `len` items: the first `head` and the last `tail` with `None` for the gap between, or all of them where `head + tail` covers them.
 pub(crate) fn ends(len: usize, head: usize, tail: usize) -> impl Iterator<Item = Option<usize>> + Clone {
@@ -201,7 +198,8 @@ impl Settings {
 
 /// How `•prefs` acts (`system::Acts`): a record that sets something changes settings, an effect that ends a recording; an empty one only reads them.
 pub(crate) fn prefs_acts(_: Option<&Value>, right: &Value) -> crate::system::Acts {
-    if right.rank() == 1 && !right.is_empty() && right.keys(0).is_some_and(|keys| keys.complete()) { crate::system::Acts::Ends } else { crate::system::Acts::Never }
+    if right.rank() == 1 && !right.is_empty() && right.keys(0).is_some_and(|keys| keys.complete()) { crate::system::Acts::Ends }
+    else { crate::system::Acts::Never }
 }
 
 /// `•prefs Y` applies the settings in the record `Y`, and returns all of them. Settings hold for the whole process (`settings`). The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `mathish`, on by default, makes 64-bit floats compare with a tolerance and zero divided by zero give zero, under dynamic kinds. `float` is the width of new floats in bits, 16, 32 or 64. Until it's set, new floats take 64 bits under dynamic kinds and 32 under static kinds. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `fusion` makes each call that computes a pending argument report it. `threads` is the number of threads that large calls split across, from then on. 0 gives the default. 1 runs them on the calling thread alone. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::tried`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. `batch` starts on.
@@ -235,9 +233,8 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
     settings::set_hanzi_aliases(hanzi_aliases);
     if let Some(n) = threads { rustymath::parallel::set_threads(n); }
     if let Some(seed) = seed { session.seed(seed); }
-    let entries = display.entries(numeric.width).into_iter().chain(numeric.entries()).chain([
-        ("threads", Value::integer(rustymath::parallel::thread_setting() as i64)), ("hanzi_aliases", Value::Number(Number::from_bool(hanzi_aliases))),
-    ]);
+    let entries = display.entries(numeric.width).into_iter().chain(numeric.entries())
+        .chain([("threads", Value::integer(rustymath::parallel::thread_setting() as i64)), ("hanzi_aliases", Value::Number(Number::from_bool(hanzi_aliases)))]);
     let (keys, values): (Vec<std::sync::Arc<str>>, Vec<Value>) = entries.map(|(k, v)| (k.into(), v)).unzip();
     Ok((keyed::vector(keys, values).described("invalid settings record")?, shy))
 }
@@ -410,7 +407,7 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
     match a {
         Value::Number(n) => return el.number(n), Value::Function(f) => return format!("⟨{}⟩", f.text(el, &mut 1000)),
         Value::Operator(op) => return op.text(el), Value::Character(_) => return a.literal(), Value::Array(_) => (),
-        Value::Pending(_) | Value::Carried { .. } => unreachable!("display requires observed values"),
+        Value::Pending(_) | Value::Carried { .. } => unreachable!("display requires observed values")
     }
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
     if a.shape().len() <= 1 {

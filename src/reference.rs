@@ -1,5 +1,5 @@
 //! Development-only checks, shared by the tests and the worker: reference cases, `.bpl` reference files and the examples in `.qmd` pages.
-use crate::{EvalOptions, InterruptHandle, Session, Value, Number, number::Numeric, settings::Compiles};
+use crate::{EvalOptions, InterruptHandle, Number, Session, Value, number::Numeric, settings::Compiles};
 use serde_json::{Value as JsonValue, json};
 use std::{collections::VecDeque, sync::{Arc, Mutex}};
 
@@ -87,10 +87,10 @@ fn runs(case: &JsonValue) -> Vec<Run> { RUNS.into_iter().filter(|r| !(r.compiles
 fn enter(prefs: Option<&str>, run: Option<Run>) -> Result<(), JsonValue> {
     crate::settings::reset();
     crate::settings::set_verifies(true);
-    if let Some(prefs) = prefs
-        && let Some(error) = Session::current(|session| session.eval_apart(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() })).error {
-            return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
-        }
+    if let Some(prefs) = prefs && let Some(error) =
+            Session::current(|session| session.eval_apart(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() })).error {
+                return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
+            }
     if let Some(run) = run { crate::settings::set_compiles(run.compiles); }
     Ok(())
 }
@@ -111,7 +111,9 @@ fn outcome(
     let (expected, no_result) = if let Some(source) = case["expected_code"].as_str() {
         let expected = evaluated(source, setup, None, timeout, interrupt)?;
         if expected.error.is_some() || expected.function.is_some() || expected.operator.is_some() {
-            return Err(json!({"status":"invalid", "message":"expectation must produce a value or no result", "actual":crate::protocol::response(expected).map_err(unreadable)?}));
+            return Err(
+                json!({"status":"invalid", "message":"expectation must produce a value or no result", "actual":crate::protocol::response(expected).map_err(unreadable)?}),
+            );
         }
         let no_result = expected.value.is_none();
         (expected.value, no_result)
@@ -199,7 +201,9 @@ fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Dur
         }
     };
     match mismatch {
-        Some(message) => Err(json!({"status":"mismatch", "message":format!("{words}: {message}"), "actual":crate::protocol::response(second).map_err(unreadable)?})),
+        Some(message) => {
+            Err(json!({"status":"mismatch", "message":format!("{words}: {message}"), "actual":crate::protocol::response(second).map_err(unreadable)?}))
+        }
         None => Ok(Outcome { value: None, numeric, expected: None }),
     }
 }
@@ -285,14 +289,9 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
     for p in Primitive::all().filter(|p| !matches!(p, Primitive::Bitwise(_))) {
         let g = p.glyph();
         // Monadic `+` keeps a real operand (`Pervasive::kept`), so its case would compute nothing to compile.
-        if form(p, false).is_some() && p != Primitive::Arithmetic(crate::number::Arithmetic::Plus) {
-            cases.extend(monadic(&g));
-        }
+        if form(p, false).is_some() && p != Primitive::Arithmetic(crate::number::Arithmetic::Plus) { cases.extend(monadic(&g)); }
         let Some(code) = form(p, true) else { continue; };
-        if code {
-            cases.extend(coded(&g));
-            continue;
-        }
+        if code { cases.extend(coded(&g)); continue; }
         cases.push((format!("2×(2+x){g}y"), "compiled"));
         cases.extend(COVERAGE_RIGHT.iter().map(|c| (format!("2×(2+x){g}{c}"), "compiled")));
         cases.extend(COVERAGE_LEFT.iter().map(|c| (format!("2×{c}{g}2+x"), "compiled")));
@@ -311,7 +310,9 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
             enter(Some(prefs).filter(|p| !p.is_empty()), Some(RUNS[1])).map_err(|e| e.to_string())?;
             let session = Session::new();
             initialized(&session, COVERAGE_SETUP).map_err(|e| e.to_string())?;
-            match crate::timing::route(&session, &case, interrupt) { Ok(capture) => captures.push(capture), Err(message) => failed.push(format!("[{section}] {code}: {message}")) }
+            match crate::timing::route(&session, &case, interrupt) {
+                Ok(capture) => captures.push(capture), Err(message) => failed.push(format!("[{section}] {code}: {message}"))
+            }
         }
     }
     let unused: Vec<_> = listed.iter().filter(|e| !e.4).map(|e| format!("{}\t{}", e.0, e.1)).collect();
@@ -344,15 +345,15 @@ fn evaluated(
     let session = Session::new();
     initialized(&session, setup)?;
     let _files = fixture(&session, code)?;
-    observed_result(session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input: lines(input), ..EvalOptions::default() }), &session)
+    observed_result(
+        session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input: lines(input), ..EvalOptions::default() }), &session)
 }
 
 fn observed_result(mut result: crate::Evaluation, session: &Session) -> Result<crate::Evaluation, JsonValue> {
     if result.error.is_none() && let Some(value) = result.value.take() {
         match value.read(crate::ReadKind::Value).and_then(|value| { session.raise()?; Ok(value) }) {
-            Ok(value) => result.value = Some(value),
-            Err(error) if error.kind.is_control() => return Err(unreadable(error)),
-            Err(error) => result.error = Some(error),
+            Ok(value) => result.value = Some(value), Err(error) if error.kind.is_control() => return Err(unreadable(error)),
+            Err(error) => result.error = Some(error)
         }
     }
     Ok(result)
@@ -629,12 +630,18 @@ fn case_result(case: &JsonValue, setup: &str, routes: bool, interrupt: &Interrup
 /// A case's failing runs as one failure. It takes the status, kind and result of the first, or of an interrupt, which stops its caller (`failures`). Its message names each failing run, since each run's message starts with the run's words (`outcome`, `unwound`), or says "every run" where `every` run failed with one message.
 fn combined(failures: &[(Run, JsonValue)], every: bool) -> JsonValue {
     let message = |f: &JsonValue| f["message"].as_str().unwrap_or_default().to_owned();
-    let body = |(run, f): &(Run, JsonValue)| { let m = message(f); m.strip_prefix(run.words).and_then(|m| m.strip_prefix(": ")).map_or(m.clone(), str::to_owned) };
+    let body = |(run, f): &(Run, JsonValue)| {
+        let m = message(f);
+        m.strip_prefix(run.words).and_then(|m| m.strip_prefix(": ")).map_or(m.clone(), str::to_owned)
+    };
     let first = body(&failures[0]);
     let lead = failures.iter().find(|(_, f)| f["status"] == "interrupt").unwrap_or(&failures[0]);
     let mut failure = lead.1.clone();
-    failure["message"] = json!(if every && failures.len() > 1 && failures.iter().all(|f| body(f) == first) { format!("every run: {first}") }
-        else { failures.iter().map(|(_, f)| message(f)).collect::<Vec<_>>().join("; ") });
+    failure["message"] = json!(if every && failures.len() > 1 && failures.iter().all(|f| body(f) == first) {
+        format!("every run: {first}")
+    } else {
+        failures.iter().map(|(_, f)| message(f)).collect::<Vec<_>>().join("; ")
+    });
     failure
 }
 
@@ -699,7 +706,7 @@ pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
                         (Some(actual), Some(wanted), None) => difference(&actual, &wanted, None, TOLERANCE, true), _ => Some("no result".into())
                     }
                 }
-            }
+            },
         };
         if let Some(message) = message { failures.push(json!({"line": i + 1, "code": code.trim_end(), "expected": expected, "message": message})); }
         code.clear();
@@ -718,7 +725,8 @@ pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Jso
     let matches = |id: &JsonValue, case: &JsonValue| *id == case["id"] || *id == case["line"];
     let unknown: Vec<_> = ids.into_iter().flatten().filter(|id| !cases.iter().any(|case| matches(id, case))).map(JsonValue::to_string).collect();
     if !unknown.is_empty() { return Err(format!("{} match no case. Each id is a case's id or its header's line number.", unknown.join(", "))); }
-    let selected = cases.iter().filter(|case| checked(case) && ids.is_none_or(|ids| ids.iter().any(|id| matches(id, case)))).inspect(|case| eprintln!("case {}", case["line"]));
+    let selected = cases.iter().filter(|case| checked(case) && ids.is_none_or(|ids| ids.iter().any(|id| matches(id, case))))
+        .inspect(|case| eprintln!("case {}", case["line"]));
     Ok(json!({"failures": failures(selected, &file.setup, true, interrupt), "error": null}))
 }
 

@@ -1,6 +1,7 @@
 use crate::execution::check;
-use crate::session;
-use crate::{Described, Error, ErrorKind, Number, Span, Value, keyed, number::{Kind as NumberKind, Numeric}, system::HostCall, primitive::{numeric, real}};
+use crate::{
+    Described, Error, ErrorKind, Number, Span, Value, keyed, number::{Kind as NumberKind, Numeric}, primitive::{numeric, real}, session, system::HostCall
+};
 use rustymath::hashing::{HashMap, HashMapExt};
 use rustymath::{buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
 use std::io::Read;
@@ -183,9 +184,7 @@ fn file_options(name: &'static str, left: Option<&Value>, shorthand: Option<&str
 }
 
 /// `data` as a vector of byte values, one byte each.
-pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> {
-    Value::from_buffer([data.len()], Buffer::Integers(rustymath::buffer::IntBuf::U8(data)))
-}
+pub(crate) fn byte_vector(data: Vec<u8>) -> Result<Value, ErrorKind> { Value::from_buffer([data.len()], Buffer::Integers(rustymath::buffer::IntBuf::U8(data))) }
 
 /// The bytes in an array of integers from 0 to 255, in ravel order. `None` for any other array.
 pub(crate) fn byte_items(value: &Value) -> Option<Vec<u8>> {

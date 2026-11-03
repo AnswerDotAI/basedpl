@@ -364,6 +364,16 @@ fn binding_error_recovery() {
 }
 
 #[test]
+fn selective_error_preserves_binding() {
+    let s = Session::new();
+    equiv_in(&s, "x←1 2 3", "1 2 3");
+    fails_in(&s, "INDEX", &["x.[[0 5]]←9"]);
+    equiv_in(&s, "x", "1 2 3");
+    assert!(s.eval("{\"INDEX\"::x ⋄ x.[[0 5]]←9}0").error.is_none());
+    equiv_in(&s, "x", "1 2 3");
+}
+
+#[test]
 fn definitions_retain_only_needed_sources() {
     let source = Source::new("definition.bpl", "bad←{1÷⍵}");
     let weak = Arc::downgrade(&source);

@@ -57,4 +57,3 @@ impl Agree for Agreement {
 fn with_renderer(core: Result<Core, Error>, left: &Layout, right: &Layout) -> Result<Agreement, ErrorKind> {
     Ok(core?.map_layout(|core| Layout::paired(core, left, right)))
 }
-

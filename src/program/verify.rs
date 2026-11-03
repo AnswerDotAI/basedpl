@@ -3,9 +3,7 @@ use super::{Desc, Node, Out, Program, Step};
 use crate::Value;
 use rustymath::buffer::DType;
 
-pub(crate) fn check(program: &Program) {
-    if let Some(problem) = broken(program) { panic!("a program breaks its contract: {problem}"); }
-}
+pub(crate) fn check(program: &Program) { if let Some(problem) = broken(program) { panic!("a program breaks its contract: {problem}"); } }
 
 pub(crate) fn ranged(operation: &crate::primitive::Operation, value: &Value, desc: &Desc) {
     let Some(range) = desc.range else { return; };
@@ -39,8 +37,7 @@ fn broken(program: &Program) -> Option<String> {
 }
 
 pub(crate) fn compatible(recorded: &Desc, current: &Desc) -> bool {
-    recorded.kind == current.kind && recorded.atom == current.atom
-        && recorded.layout.same_but_lengths(&current.layout)
+    recorded.kind == current.kind && recorded.atom == current.atom && recorded.layout.same_but_lengths(&current.layout)
 }
 pub(crate) fn compatible_optional(recorded: Option<&Desc>, current: Option<&Desc>) -> bool {
     match (recorded, current) { (Some(a), Some(b)) => compatible(a, b), (None, None) => true, _ => false }

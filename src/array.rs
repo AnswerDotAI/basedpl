@@ -1,7 +1,10 @@
-use crate::{Error, ErrorKind, Number, display::{Elide, positions}, eval::{Function, OperatorValue}, graph::Pending, keyed::Keys, number::Numeric, primitive::{Operation, ReadOp, ViewAxis}, program::Desc};
+use crate::{
+    Error, ErrorKind, Number, display::{Elide, positions}, eval::{Function, OperatorValue}, graph::Pending, keyed::Keys, number::Numeric,
+    primitive::{Operation, ReadOp, ViewAxis}, program::Desc
+};
 use rustymath::{
-    agreement::{Binding, Mapping, Read, ReadPlan}, buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Floats, IntBuf, View, Width},
-    error::Kind, facts::Range, with_width,
+    agreement::{Binding, Mapping, Read, ReadPlan}, buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Floats, IntBuf, View, Width}, error::Kind,
+    facts::Range, with_width
 };
 use std::{borrow::Cow, fmt::{self, Debug}, sync::Arc};
 
@@ -10,7 +13,7 @@ mod text;
 pub(crate) use {storage::*, text::*};
 
 pub use rustymath::layout::Shape;
-pub(crate) use rustymath::layout::{agreed, count, element_count, generated_len, Lanes};
+pub(crate) use rustymath::layout::{Lanes, agreed, count, element_count, generated_len};
 
 /// Part 1: a value: an atom (llms.txt "Terms": number, character, function, operator), an array, a pending value, or a level's carried value. Arrays, operators and carried values are shared handles, so cloning one costs an `Arc` clone (cost model: 5). No `Eq` or `Hash`: interning, the store's index and program keys each compare values by their own function.
 #[derive(Clone)]
@@ -39,9 +42,8 @@ impl Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Number(n) => n.fmt(f), Self::Character(c) => c.fmt(f), Self::Function(fun) => fun.fmt(f), Self::Operator(op) => op.fmt(f),
-            Self::Array(array) => array.fmt(f),
-            Self::Pending(pending) => f.debug_tuple("Pending").field(&pending.node).field(&pending.output).finish(),
-            Self::Carried { level, .. } => f.debug_struct("Carried").field("level", level).finish_non_exhaustive(),
+            Self::Array(array) => array.fmt(f), Self::Pending(pending) => f.debug_tuple("Pending").field(&pending.node).field(&pending.output).finish(),
+            Self::Carried { level, .. } => f.debug_struct("Carried").field("level", level).finish_non_exhaustive()
         }
     }
 }
@@ -73,7 +75,8 @@ impl Renderer {
 }
 impl PartialEq for Renderer {
     fn eq(&self, other: &Self) -> bool {
-        self.data_free == other.data_free && if self.data_free { self.function.structure_eq(&other.function) } else { self.function.address() == other.function.address() }
+        self.data_free == other.data_free
+            && if self.data_free { self.function.structure_eq(&other.function) } else { self.function.address() == other.function.address() }
     }
 }
 impl Eq for Renderer {}
@@ -116,7 +119,9 @@ impl Layout {
         Self::kept(core, renderer)
     }
     /// `core` with the renderer that `left` and `right` agree on, for the layout of their pairing by broadcasting.
-    pub(crate) fn paired(core: rustymath::layout::Layout, left: &Self, right: &Self) -> Self { Self::kept(core, agreed([left.renderer.as_ref(), right.renderer.as_ref()])) }
+    pub(crate) fn paired(core: rustymath::layout::Layout, left: &Self, right: &Self) -> Self {
+        Self::kept(core, agreed([left.renderer.as_ref(), right.renderer.as_ref()]))
+    }
     pub fn renderer(&self) -> Option<&crate::Function> { self.renderer.as_ref().map(|renderer| &renderer.function) }
     pub fn with_renderer(self, renderer: Option<crate::Function>) -> Self { Self { core: self.core, renderer: renderer.map(Renderer::new) } }
     pub(crate) fn renderer_metadata(&self) -> Option<&Renderer> { self.renderer.as_ref() }
@@ -162,8 +167,8 @@ impl Layout {
         Value::stored_buffer(self.clone(), Buffer::Booleans(items), crate::number::Kind::stored(DType::Boolean, false, false), None)
     }
     pub fn floats(&self, width: FloatWidth, items: impl IntoIterator<Item = f64>) -> Result<Value, ErrorKind> {
-        Value::stored_buffer(self.clone(), Buffer::Floats(FloatBuf::collect(width, items.into_iter())),
-            crate::number::Kind::stored(DType::Float(width), false, false), None)
+        Value::stored_buffer(
+            self.clone(), Buffer::Floats(FloatBuf::collect(width, items.into_iter())), crate::number::Kind::stored(DType::Float(width), false, false), None)
     }
     /// The shape that cells of `shapes` share when assembled by trailing-axis agreement: each axis as long as the longest cell's, where a cell of lower rank has leading axes of length 1.
     pub(crate) fn assembled_shape<'a>(shapes: impl Iterator<Item = &'a [usize]> + Clone) -> Vec<usize> {
@@ -248,9 +253,7 @@ impl Cells<'_> {
         }
         Operation::Read(ReadOp::Cell { rank: self.cell_layout.shape().len() }).call(&[Value::integer(i as i64), self.array.clone()], 0)
     }
-    pub fn prototype(&self) -> crate::error::Result<Value> {
-        Ok(self.cell_layout.filled(&self.array.prototype()))
-    }
+    pub fn prototype(&self) -> crate::error::Result<Value> { Ok(self.cell_layout.filled(&self.array.prototype())) }
     pub fn collect(&self) -> crate::error::Result<Vec<Value>> { (0..self.len()).map(|i| self.get(i)).collect() }
 }
 
@@ -263,7 +266,6 @@ pub enum ArrayData {
 
 #[derive(Clone, Debug)]
 pub(crate) enum SharedBuffer { Owned(Buffer), View { base: Arc<ArrayData>, map: Mapping } }
-
 
 /// The containers of flattened arguments. Data, including empty prototypes, remains in leaves.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -278,10 +280,7 @@ impl TreeRoot {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) enum Tree {
-    Leaf,
-    Array { layout: Layout, items: Vec<Tree>, prototype: Option<Box<Tree>> },
-}
+pub(crate) enum Tree { Leaf, Array { layout: Layout, items: Vec<Tree>, prototype: Option<Box<Tree>> } }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TreeInput { Prototype }
 
@@ -294,32 +293,39 @@ pub(crate) fn flatten(args: &[Value]) -> Option<(Arc<Trees>, Vec<Value>)> {
 
 impl Tree {
     fn cacheable(&self) -> bool {
-        match self { Self::Leaf => true, Self::Array { layout, items, prototype } =>
-            layout.cacheable() && items.iter().all(Self::cacheable) && prototype.as_deref().is_none_or(Self::cacheable) }
+        match self {
+            Self::Leaf => true,
+            Self::Array { layout, items, prototype } => {
+                layout.cacheable() && items.iter().all(Self::cacheable) && prototype.as_deref().is_none_or(Self::cacheable)
+            }
+        }
     }
     pub(crate) fn of(value: &Value, leaves: &mut Vec<Value>) -> Self {
-        if let Value::Array(array) = value { if let ArrayData::Mixed { layout, items, prototype } = &**array {
-            return Self::Array { layout: layout.clone(), items: items.iter().map(|value| Self::of(value, leaves)).collect(),
-                prototype: prototype.as_ref().map(|value| Box::new(Self::of(value, leaves))) };
-        }}
-        leaves.push(value.clone()); Self::Leaf
+        if let Value::Array(array) = value {
+            if let ArrayData::Mixed { layout, items, prototype } = &**array {
+                return Self::Array { layout: layout.clone(), items: items.iter().map(|value| Self::of(value, leaves)).collect(),
+                    prototype: prototype.as_ref().map(|value| Box::new(Self::of(value, leaves))) };
+            }
+        }
+        leaves.push(value.clone());
+        Self::Leaf
     }
     fn build(&self, leaves: &mut impl Iterator<Item = Value>) -> Value {
         self.read(&mut || Ok(leaves.next().expect("one value per tree leaf"))).expect("structural assembly reads no data")
     }
     pub(crate) fn read(&self, leaf: &mut impl FnMut() -> Result<Value, Error>) -> Result<Value, Error> {
         match self {
-            Self::Leaf => leaf(),
-            Self::Array { layout, items, prototype } => Ok(Value::Array(Arc::new(ArrayData::Mixed {
-                layout: layout.clone(), items: items.iter().map(|tree| tree.read(leaf)).collect::<Result<_, _>>()?,
-                prototype: prototype.as_ref().map(|tree| tree.read(leaf)).transpose()?,
-            }))),
+            Self::Leaf => leaf(), Self::Array { layout, items, prototype } => Ok(Value::Array(Arc::new(ArrayData::Mixed { layout: layout.clone(),
+                items: items.iter().map(|tree| tree.read(leaf)).collect::<Result<_, _>>()?,
+                prototype: prototype.as_ref().map(|tree| tree.read(leaf)).transpose()? })))
         }
     }
     pub(crate) fn children(&self, start: usize) -> impl Iterator<Item = (&Tree, std::ops::Range<usize>)> {
         let items = match self { Self::Array { items, .. } => items.as_slice(), _ => &[] };
         items.iter().scan(start, |position, tree| {
-            let first = *position; *position += tree.len(); Some((tree, first..*position))
+            let first = *position;
+            *position += tree.len();
+            Some((tree, first..*position))
         })
     }
     fn describe<'a>(&self, start: usize, leaf: &mut impl FnMut(usize) -> Option<Cow<'a, Desc>>) -> Option<Cow<'a, Desc>> {
@@ -330,14 +336,18 @@ impl Tree {
             Self::Leaf => visit(start, inherited),
             Self::Array { items, prototype, .. } => {
                 let mut position = start;
-                for tree in items { tree.visit_inputs(position, inherited, visit); position += tree.len(); }
+                for tree in items {
+                    tree.visit_inputs(position, inherited, visit);
+                    position += tree.len();
+                }
                 if let Some(tree) = prototype { tree.visit_inputs(position, Some(TreeInput::Prototype), visit); }
             }
         }
     }
     pub(crate) fn len(&self) -> usize {
-        match self { Self::Leaf => 1, Self::Array { items, prototype, .. } => 
-            items.iter().map(Self::len).sum::<usize>() + prototype.as_ref().map_or(0, |t| t.len()) }
+        match self {
+            Self::Leaf => 1, Self::Array { items, prototype, .. } => items.iter().map(Self::len).sum::<usize>() + prototype.as_ref().map_or(0, |t| t.len())
+        }
     }
 }
 
@@ -346,18 +356,20 @@ impl Trees {
     pub(crate) fn root_count(&self) -> usize { self.0.len() }
     fn visit_inputs(&self, mut visit: impl FnMut(usize, Option<TreeInput>)) {
         let mut position = 0;
-        for tree in &self.0 { tree.visit_inputs(position, None, &mut visit); position += tree.len(); }
+        for tree in &self.0 {
+            tree.visit_inputs(position, None, &mut visit);
+            position += tree.len();
+        }
     }
     pub(crate) fn input_uses(&self, mut visit: impl FnMut(usize, TreeInput)) {
         self.visit_inputs(|position, usage| { if let Some(usage) = usage { visit(position, usage); } });
     }
     pub(crate) fn input_use(&self, position: usize) -> Option<TreeInput> {
         let mut usage = None;
-        self.input_uses(|at, value| { if at == position { usage = Some(value); } }); usage
+        self.input_uses(|at, value| { if at == position { usage = Some(value); } });
+        usage
     }
-    pub(crate) fn active_inputs(&self, mut visit: impl FnMut(usize)) {
-        self.visit_inputs(|position, usage| { if usage.is_none() { visit(position); } });
-    }
+    pub(crate) fn active_inputs(&self, mut visit: impl FnMut(usize)) { self.visit_inputs(|position, usage| { if usage.is_none() { visit(position); } }); }
     pub(crate) fn leaves(count: usize) -> Self { Self(vec![Tree::Leaf; count]) }
     pub(crate) fn push_leaf(&mut self) { self.0.push(Tree::Leaf); }
     pub(crate) fn push_tree(&mut self, tree: Tree) { self.0.push(tree); }
@@ -365,26 +377,29 @@ impl Trees {
     pub(crate) fn push(&mut self, value: &Value, leaves: &mut Vec<Value>) { self.0.push(Tree::of(value, leaves)); }
     pub(crate) fn append_root(&mut self, source: &Trees, root: &TreeRoot) { self.0.push(source.root_at(root).clone()); }
     pub(crate) fn root_at(&self, root: &TreeRoot) -> &Tree {
-        let tree = &self.0[root.index]; debug_assert_eq!(tree.len(), root.leaves.len()); tree
+        let tree = &self.0[root.index];
+        debug_assert_eq!(tree.len(), root.leaves.len());
+        tree
     }
     pub(crate) fn describe_root<'a>(&self, root: &TreeRoot, mut leaf: impl FnMut(usize) -> Option<Cow<'a, Desc>>) -> Option<Cow<'a, Desc>> {
         self.root_at(root).describe(root.leaves.start, &mut leaf)
     }
     pub(crate) fn at_root<'a>(&self, root: &TreeRoot, leaves: &'a [Value]) -> Cow<'a, Value> {
         match self.root_at(root) {
-            Tree::Leaf => Cow::Borrowed(&leaves[root.leaves.start]),
-            tree => Cow::Owned(tree.build(&mut leaves[root.leaves.clone()].iter().cloned())),
+            Tree::Leaf => Cow::Borrowed(&leaves[root.leaves.start]), tree => Cow::Owned(tree.build(&mut leaves[root.leaves.clone()].iter().cloned()))
         }
     }
     pub(crate) fn read_root(&self, root: &TreeRoot, mut read_leaf: impl FnMut(usize) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
         let mut position = root.leaves.start;
-        self.root_at(root).read(&mut || { let at = position; position += 1; read_leaf(at) })
+        self.root_at(root).read(&mut || {
+            let at = position;
+            position += 1;
+            read_leaf(at)
+        })
     }
     pub(crate) fn concat(&self, other: &Trees) -> Trees { Self(self.0.iter().chain(&other.0).cloned().collect()) }
     pub(crate) fn project_roots(&self, roots: &[TreeRoot]) -> Trees { Self(roots.iter().map(|root| self.root_at(root).clone()).collect()) }
-    pub(crate) fn without_root(&self, root: &TreeRoot) -> Self {
-        Self(self.0[..root.index].iter().chain(&self.0[root.index + 1..]).cloned().collect())
-    }
+    pub(crate) fn without_root(&self, root: &TreeRoot) -> Self { Self(self.0[..root.index].iter().chain(&self.0[root.index + 1..]).cloned().collect()) }
     pub(crate) fn build(&self, leaves: &[Value]) -> Vec<Value> {
         let mut leaves = leaves.iter().cloned();
         self.0.iter().map(|tree| tree.build(&mut leaves)).collect()
@@ -392,7 +407,9 @@ impl Trees {
 
     pub(crate) fn roots(&self) -> impl Iterator<Item = TreeRoot> + '_ {
         self.0.iter().enumerate().scan(0, |start, (index, tree)| {
-            let first = *start; *start += tree.len(); Some(TreeRoot { index, leaves: first..*start })
+            let first = *start;
+            *start += tree.len();
+            Some(TreeRoot { index, leaves: first..*start })
         })
     }
     pub(crate) fn leaf_ranges(&self) -> impl Iterator<Item = std::ops::Range<usize>> + '_ { self.roots().map(|root| root.leaves) }
@@ -405,17 +422,14 @@ impl ArrayData {
             Self::Mixed { items, prototype, .. } => items.iter().all(Value::cacheable_metadata) && prototype.as_ref().is_none_or(Value::cacheable_metadata),
         }
     }
-    pub(crate) fn layout(&self) -> &Layout {
-        match self { Self::Compact { layout, .. } | Self::Mixed { layout, .. } => layout }
-    }
+    pub(crate) fn layout(&self) -> &Layout { match self { Self::Compact { layout, .. } | Self::Mixed { layout, .. } => layout } }
     pub(crate) fn len(&self) -> usize { self.layout().count() }
-    pub(crate) fn kind(&self) -> Option<crate::number::Kind> {
-        match self { Self::Compact { kind, .. } => Some(*kind), Self::Mixed { .. } => None }
-    }
+    pub(crate) fn kind(&self) -> Option<crate::number::Kind> { match self { Self::Compact { kind, .. } => Some(*kind), Self::Mixed { .. } => None } }
     pub(crate) fn storage(&self) -> Items<'_> {
         match self {
-            Self::Compact { buffer: SharedBuffer::Owned(buffer), kind, .. } =>
-                match (buffer.view(), kind.fixed_width()) { (View::Integers(ints), Some(_)) => Items::Fixed(ints), (view, _) => Items::Compact(view) },
+            Self::Compact { buffer: SharedBuffer::Owned(buffer), kind, .. } => match (buffer.view(), kind.fixed_width()) {
+                (View::Integers(ints), Some(_)) => Items::Fixed(ints), (view, _) => Items::Compact(view)
+            },
             Self::Compact { buffer: SharedBuffer::View { base, map }, .. } => Items::Mapped { source: base, map, start: 0, len: self.len() },
             Self::Mixed { items, .. } => Items::Values(items),
         }
@@ -449,11 +463,16 @@ impl Footprint for ArrayData {
 impl Footprint for Value {
     fn footprint_in(&self, seen: &mut Seen) -> usize {
         match self {
-            Self::Array(array) => array.footprint_in(seen), Self::Pending(pending) => pending.node.footprint_in(seen),
-            Self::Carried { carried, .. } => if unseen(carried, seen) {
-                match &**carried { Carried::Dual { primal, tangent } => primal.footprint_in(seen) + tangent.footprint_in(seen),
-                    Carried::Batch { whole, .. } => whole.footprint_in(seen) }
-            } else { 0 },
+            Self::Array(array) => array.footprint_in(seen),
+            Self::Pending(pending) => pending.node.footprint_in(seen),
+            Self::Carried { carried, .. } => {
+                if unseen(carried, seen) {
+                    match &**carried {
+                        Carried::Dual { primal, tangent } => primal.footprint_in(seen) + tangent.footprint_in(seen),
+                        Carried::Batch { whole, .. } => whole.footprint_in(seen),
+                    }
+                } else { 0 }
+            }
             _ => 0,
         }
     }
@@ -463,14 +482,15 @@ pub(crate) fn map_leaves(value: &Value, mut f: impl FnMut(&Value) -> crate::erro
     let Some((trees, leaves)) = flatten(std::slice::from_ref(value)) else { return f(value) };
     let mut preserved = vec![false; leaves.len()];
     trees.input_uses(|position, usage| preserved[position] = usage == TreeInput::Prototype);
-    let mapped = leaves.iter().enumerate().map(|(i, value)| if preserved[i] { Ok(value.clone()) } else { f(value) }).collect::<crate::error::Result<Vec<_>>>()?;
+    let mapped =
+        leaves.iter().enumerate().map(|(i, value)| if preserved[i] { Ok(value.clone()) } else { f(value) }).collect::<crate::error::Result<Vec<_>>>()?;
     if leaves.iter().zip(&mapped).all(|(old, new)| old.identical(new)) { return Ok(value.clone()); }
     trees.build(&mapped).pop().ok_or_else(|| Error::domain("missing tree root"))
 }
 
-
 pub(crate) fn drop_chain<T>(node: &mut T, take: impl Fn(&mut T, &mut Vec<Arc<T>>)) {
-    let mut chain = Vec::new(); take(node, &mut chain);
+    let mut chain = Vec::new();
+    take(node, &mut chain);
     while let Some(node) = chain.pop() { if let Ok(mut node) = Arc::try_unwrap(node) { take(&mut node, &mut chain); } }
 }
 pub(crate) fn float_width_of(dtype: DType) -> Option<FloatWidth> {
@@ -493,7 +513,8 @@ pub(crate) fn read_stored(desc: &Desc, route: &ReadPlan, values: &[Value], check
     let plan = route.compose_inputs(&mut |source, _| {
         if let Some((_, _, plan)) = inputs.iter().find(|(prior, _, _)| *prior == source) { return Ok(plan.clone()); }
         let (view, plan) = values.get(source).and_then(|value| value.physical_read(inputs.len())).ok_or_else(Error::planning)?;
-        inputs.push((source, view, plan.clone())); Ok::<_, Error>(plan)
+        inputs.push((source, view, plan.clone()));
+        Ok::<_, Error>(plan)
     })?;
     let sources: Vec<_> = inputs.iter().map(|(_, view, _)| Binding::full(*view)).collect();
     read_value(desc, &Read { plan: &plan, sources: &sources }, checked)
@@ -509,7 +530,8 @@ impl Value {
             Self::Array(array) => array.cacheable_metadata(),
             Self::Pending(pending) => pending.node.descs().iter().flatten().all(Desc::cacheable),
             Self::Carried { carried, .. } => match &**carried {
-                Carried::Dual { primal, .. } => primal.cacheable_metadata(), Carried::Batch { whole, cell, .. } => whole.cacheable_metadata() && cell.cacheable(),
+                Carried::Dual { primal, .. } => primal.cacheable_metadata(),
+                Carried::Batch { whole, cell, .. } => whole.cacheable_metadata() && cell.cacheable(),
             },
             _ => true,
         }
@@ -519,9 +541,7 @@ impl Value {
             let Some(desc) = Desc::of(leaf).filter(|desc| desc.dtype() != DType::Character) else { return Ok(leaf.clone()); };
             let zero = desc.zero();
             if leaf.is_atom() { return Ok(zero); }
-            if leaf.rank() == 0 {
-                return Operation::Read(ReadOp::Reshape).call(&[Value::integers([0], Vec::new())?, zero], 2);
-            }
+            if leaf.rank() == 0 { return Operation::Read(ReadOp::Reshape).call(&[Value::integers([0], Vec::new())?, zero], 2); }
             let axes = (0..leaf.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
             Operation::Read(ReadOp::Axes { axes, destinations: Box::new([]) }).call(&[zero, leaf.clone()], 1)
         })
@@ -543,18 +563,19 @@ impl Value {
     pub fn read(&self, read: crate::program::trace::ReadKind) -> Result<Value, Error> {
         if read == crate::ReadKind::Description { return Err(Error::planning()); }
         map_leaves(self, |leaf| match leaf {
-            Self::Pending(pending) => pending.node.clone().into_storage(pending.output.ok_or_else(|| Error::domain("control completion cannot be read as data"))?, read),
+            Self::Pending(pending) => {
+                pending.node.clone().into_storage(pending.output.ok_or_else(|| Error::domain("control completion cannot be read as data"))?, read)
+            }
             Self::Function(function) => Ok(Self::Function(function.observed(read)?)),
             Self::Operator(operator) => Ok(Self::Operator(Arc::new(operator.observed(read)?))),
             Self::Carried { level, carried } => match &**carried {
-                Carried::Dual { primal, .. } => primal.read(read),
-                Carried::Batch { .. } => Err(Error::batch_stop(*level)),
+                Carried::Dual { primal, .. } => primal.read(read), Carried::Batch { .. } => Err(Error::batch_stop(*level))
             },
             Self::Array(array) if matches!(&**array, ArrayData::Compact { buffer: SharedBuffer::View { .. }, .. }) && leaf.view().is_none() => {
                 let (view, plan) = leaf.physical_read(0).expect("a stored view has a physical read");
                 let sources = [rustymath::agreement::Binding::full(view)];
                 read_value(&crate::program::Desc::leaf(leaf).unwrap(), &rustymath::agreement::Read { plan: &plan, sources: &sources }, true)
-            },
+            }
             _ => Ok(leaf.clone()),
         })
     }
@@ -575,7 +596,7 @@ impl Value {
         }
         match self {
             Self::Pending(value) => pending.then(|| value.node.level()).flatten(), Self::Carried { level, .. } => Some(*level),
-            Self::Array(data) => array(data, pending), _ => None,
+            Self::Array(data) => array(data, pending), _ => None
         }
     }
     pub(crate) fn primal(&self) -> &Value {
@@ -587,8 +608,7 @@ impl Value {
         match self.primal() {
             Self::Number(_) => true,
             Self::Array(array) => match &**array {
-                ArrayData::Mixed { items, prototype, .. } => items.iter().chain(prototype).all(|value| value.is_atom() && value.all_numbers()),
-                _ => false,
+                ArrayData::Mixed { items, prototype, .. } => items.iter().chain(prototype).all(|value| value.is_atom() && value.all_numbers()), _ => false
             },
             Self::Pending(pending) => pending.completed().is_some_and(Value::all_numbers),
             _ => false,
@@ -599,33 +619,31 @@ impl Value {
             Self::Number(n) => crate::number::Kind::number(n), Self::Character(_) => Some(crate::number::Kind::stored(DType::Character, false, false)),
             Self::Array(array) => array.kind(), Self::Pending(pending) => pending.description().map(|desc| desc.kind),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.kind(), Carried::Batch { cell, .. } => Some(cell.kind) },
-            _ => None,
+            _ => None
         }
     }
     pub(crate) fn range(&self) -> Option<Range> {
         match self {
             Self::Number(n) => Some(n.lossless_float().map_or_else(|| n.dtype().map_or(Range::ANY, Range::of_dtype), |n| Range::of(Some(n)))),
-            Self::Character(_) => None,
-            Self::Array(array) => match &**array {
-                ArrayData::Compact { range, .. } => *range, _ => None,
-            },
+            Self::Character(_) => None, Self::Array(array) => match &**array { ArrayData::Compact { range, .. } => *range, _ => None },
             Self::Pending(pending) => pending.description().and_then(|desc| desc.range),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.range(), Carried::Batch { cell, .. } => cell.range },
-            _ => None,
+            _ => None
         }
     }
     pub fn is_atom(&self) -> bool {
-        match self { Self::Array(_) => false, Self::Pending(p) => {
-                p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").is_atom(), |desc| desc.atom)
-            },
-            Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.is_atom(), Carried::Batch { cell, .. } => cell.atom }, _ => true }
+        match self {
+            Self::Array(_) => false,
+            Self::Pending(p) => p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").is_atom(), |desc| desc.atom),
+            Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.is_atom(), Carried::Batch { cell, .. } => cell.atom },
+            _ => true,
+        }
     }
     pub(crate) fn layout(&self) -> &Layout {
         static ATOM: Layout = Layout::EMPTY;
         match self {
-            Self::Array(array) => array.layout(), Self::Pending(p) => {
-                p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").layout(), |desc| &desc.layout)
-            },
+            Self::Array(array) => array.layout(),
+            Self::Pending(p) => p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").layout(), |desc| &desc.layout),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.layout(), Carried::Batch { cell, .. } => &cell.layout },
             _ => &ATOM,
         }
@@ -644,77 +662,86 @@ impl Value {
         fn numeric(array: &ArrayData) -> bool {
             match array {
                 ArrayData::Compact { kind, .. } => kind.dtype() != DType::Character,
-                ArrayData::Mixed { items, prototype, .. } => (!items.is_empty() || prototype.is_some())
-                    && items.iter().chain(prototype).all(Value::is_numeric),
+                ArrayData::Mixed { items, prototype, .. } => (!items.is_empty() || prototype.is_some()) && items.iter().chain(prototype).all(Value::is_numeric),
             }
         }
         match self {
-            Self::Number(_) => true, Self::Array(array) => numeric(array),
-            Self::Pending(pending) => pending.description().map_or_else(|| pending.output.and_then(|output| pending.node.stored(output)).is_some_and(|value| value.is_numeric()),
+            Self::Number(_) => true,
+            Self::Array(array) => numeric(array),
+            Self::Pending(pending) => pending.description().map_or_else(
+                || pending.output.and_then(|output| pending.node.stored(output)).is_some_and(|value| value.is_numeric()),
                 |desc| desc.dtype() != DType::Character),
-            Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.is_numeric(), Carried::Batch { whole, .. } => whole.is_numeric() },
+            Self::Carried { carried, .. } => match &**carried {
+                Carried::Dual { primal, .. } => primal.is_numeric(), Carried::Batch { whole, .. } => whole.is_numeric()
+            },
             _ => false,
         }
     }
     pub fn is_exact(&self) -> bool {
         self.kind().map_or_else(|| match self {
-            Self::Number(n) => n.is_exact(), Self::Array(a) => match &**a { ArrayData::Mixed { items, prototype, .. } =>
-                items.iter().chain(prototype).all(Self::is_exact), _ => false }, _ => false,
+            Self::Number(n) => n.is_exact(),
+            Self::Array(a) => match &**a { ArrayData::Mixed { items, prototype, .. } => items.iter().chain(prototype).all(Self::is_exact), _ => false },
+            _ => false,
         }, crate::number::Kind::is_exact)
     }
-    pub fn is_integral(&self) -> bool {
-        self.dtype().is_some_and(DType::is_integral) || matches!(self, Self::Number(n) if n.is_integral())
-    }
+    pub fn is_integral(&self) -> bool { self.dtype().is_some_and(DType::is_integral) || matches!(self, Self::Number(n) if n.is_integral()) }
     pub(crate) fn holds_values(&self) -> bool { matches!(self, Self::Array(a) if matches!(&**a, ArrayData::Mixed { .. })) }
     pub(crate) fn holds_mixed(&self) -> bool { matches!(self, Self::Array(a) if matches!(&**a, ArrayData::Mixed { .. })) }
     pub(crate) fn is_simple(&self) -> bool { self.kind().is_some() }
     pub fn holds_functions(&self) -> bool {
         match self {
             Self::Function(_) | Self::Operator(_) => true,
-            Self::Array(a) => match &**a {
-                ArrayData::Mixed { items, prototype, .. } => items.iter().chain(prototype).any(Self::holds_functions),
-                _ => false,
+            Self::Array(a) => match &**a { ArrayData::Mixed { items, prototype, .. } => items.iter().chain(prototype).any(Self::holds_functions), _ => false },
+            Self::Carried { carried, .. } => match &**carried {
+                Carried::Dual { primal, .. } => primal.holds_functions(), Carried::Batch { whole, .. } => whole.holds_functions()
             },
-            Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.holds_functions(), Carried::Batch { whole, .. } => whole.holds_functions() },
             _ => false,
         }
     }
     pub(crate) fn environment(&self) -> Option<usize> {
         match self {
-            Self::Function(f) => f.environment(), Self::Operator(op) => op.environment(),
-            Self::Array(a) => match &**a { ArrayData::Mixed { items, prototype, .. } => items.iter().chain(prototype).filter_map(Self::environment).max(), _ => None },
+            Self::Function(f) => f.environment(),
+            Self::Operator(op) => op.environment(),
+            Self::Array(a) => match &**a {
+                ArrayData::Mixed { items, prototype, .. } => items.iter().chain(prototype).filter_map(Self::environment).max(), _ => None
+            },
             _ => None,
         }
     }
     pub(crate) fn address(&self) -> Option<usize> {
         match self {
             Self::Array(a) => Some(Arc::as_ptr(a) as usize), Self::Function(f) => Some(f.address()), Self::Operator(op) => Some(Arc::as_ptr(op) as usize),
-            Self::Pending(p) => Some(p.node.address()), Self::Carried { carried, .. } => Some(Arc::as_ptr(carried) as usize), _ => None,
+            Self::Pending(p) => Some(p.node.address()), Self::Carried { carried, .. } => Some(Arc::as_ptr(carried) as usize), _ => None
         }
     }
     pub(crate) fn identical(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Number(x), Self::Number(y)) => x.identical(y) && x.is_weak() == y.is_weak(),
-            (Self::Character(x), Self::Character(y)) => x == y, (Self::Pending(x), Self::Pending(y)) => x == y,
-            _ => self.address().zip(other.address()).is_some_and(|(x, y)| x == y),
+            (Self::Number(x), Self::Number(y)) => x.identical(y) && x.is_weak() == y.is_weak(), (Self::Character(x), Self::Character(y)) => x == y,
+            (Self::Pending(x), Self::Pending(y)) => x == y, _ => self.address().zip(other.address()).is_some_and(|(x, y)| x == y)
         }
     }
     pub(crate) fn identity_hash<H: std::hash::Hasher>(&self, state: &mut H) {
         use std::hash::Hash;
         std::mem::discriminant(self).hash(state);
         match self {
-            Self::Number(n) => { n.identity_hash(state); n.is_weak().hash(state); }
-            Self::Character(c) => c.hash(state), Self::Pending(p) => p.hash(state),
+            Self::Number(n) => {
+                n.identity_hash(state);
+                n.is_weak().hash(state);
+            }
+            Self::Character(c) => c.hash(state),
+            Self::Pending(p) => p.hash(state),
             _ => self.address().hash(state),
         }
     }
     pub fn same(&self, other: &Self) -> bool {
         if self.identical(other) { return true; }
         match (self, other) {
-            (Self::Number(x), Self::Number(y)) => x.identical(y), (Self::Character(x), Self::Character(y)) => x == y,
-            (Self::Array(x), Self::Array(y)) => x.layout() == y.layout() && self.len() == other.len()
-                && self.elements().zip(other.elements()).all(|(x, y)| x.same(&y))
-                && (!self.is_empty() || self.prototype().same(&other.prototype())),
+            (Self::Number(x), Self::Number(y)) => x.identical(y),
+            (Self::Character(x), Self::Character(y)) => x == y,
+            (Self::Array(x), Self::Array(y)) => {
+                x.layout() == y.layout() && self.len() == other.len() && self.elements().zip(other.elements()).all(|(x, y)| x.same(&y))
+                    && (!self.is_empty() || self.prototype().same(&other.prototype()))
+            }
             _ => false,
         }
     }
@@ -742,8 +769,10 @@ impl Value {
     pub(crate) fn as_items(&self) -> Items<'_> {
         match self {
             Self::Array(array) => array.storage(),
-            Self::Number(n) => match n.view() { Some(View::Integers(ints)) if n.fixed_width().is_some() => Items::Fixed(ints),
-                Some(view) => Items::Compact(view), None => Items::Values(std::slice::from_ref(self)) },
+            Self::Number(n) => match n.view() {
+                Some(View::Integers(ints)) if n.fixed_width().is_some() => Items::Fixed(ints), Some(view) => Items::Compact(view),
+                None => Items::Values(std::slice::from_ref(self))
+            },
             Self::Character(c) => Items::Compact(View::Characters(std::slice::from_ref(c))),
             Self::Function(_) | Self::Operator(_) => Items::Values(std::slice::from_ref(self)),
             Self::Pending(_) | Self::Carried { .. } => panic!("read a value before borrowing its stored items"),
@@ -794,7 +823,8 @@ impl Value {
         if let Some((buffer, kind)) = packed(&items, widening) {
             return Ok(Self::Array(Arc::new(ArrayData::Compact { layout, kind, buffer: SharedBuffer::Owned(buffer), range: None })));
         }
-        Ok(Self::Array(Arc::new(ArrayData::Mixed { layout, prototype: items.is_empty().then(|| prototype.expect("an empty array has a prototype")), items: items.into() })))
+        Ok(Self::Array(Arc::new(ArrayData::Mixed { layout, prototype: items.is_empty().then(|| prototype.expect("an empty array has a prototype")),
+            items: items.into() })))
     }
     pub(crate) fn stored_buffer(layout: Layout, buffer: Buffer, kind: crate::number::Kind, range: Option<Range>) -> Result<Self, ErrorKind> {
         if element_count(layout.shape())? != buffer.len() { return Err(Kind::Length.into()); }
@@ -823,17 +853,23 @@ impl Value {
     }
     pub(crate) fn complex(shape: impl Into<Shape>, items: ComplexBuf) -> Result<Self, ErrorKind> { Self::from_buffer(shape, Buffer::Complexes(items)) }
     pub(crate) fn characters(shape: impl Into<Shape>, items: Vec<char>) -> Result<Self, ErrorKind> { Self::from_buffer(shape, Buffer::Characters(items)) }
-    pub(crate) fn positions_buffer(shape: impl Into<Shape>, _: usize, items: IntBuf) -> Result<Self, ErrorKind> { Self::from_buffer(shape, Buffer::Integers(items)) }
-    pub(crate) fn positions_u32(shape: impl Into<Shape>, bound: usize, items: Vec<u32>) -> Result<Self, ErrorKind> { Self::positions(shape, bound, items.into_iter()) }
+    pub(crate) fn positions_buffer(shape: impl Into<Shape>, _: usize, items: IntBuf) -> Result<Self, ErrorKind> {
+        Self::from_buffer(shape, Buffer::Integers(items))
+    }
+    pub(crate) fn positions_u32(shape: impl Into<Shape>, bound: usize, items: Vec<u32>) -> Result<Self, ErrorKind> {
+        Self::positions(shape, bound, items.into_iter())
+    }
     pub(crate) fn positions<P: num_traits::AsPrimitive<i64>>(shape: impl Into<Shape>, bound: usize, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
         let width = Width::below(bound);
         with_width!(width, T => Self::from_buffer(shape, <T as Element>::buffer(items.map(|n| n.as_() as T).collect())))
     }
-    pub(crate) fn fixed_integers<P: num_traits::AsPrimitive<i64>>(shape: impl Into<Shape>, width: Width, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
+    pub(crate) fn fixed_integers<P: num_traits::AsPrimitive<i64>>(
+        shape: impl Into<Shape>, width: Width, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
         with_width!(width, T => Self::from_buffer_at(shape, <T as Element>::buffer(items.map(|n| n.as_() as T).collect()), Some(width)))
     }
     pub fn empty(shape: impl Into<Shape>, prototype: Value) -> Result<Self, ErrorKind> {
-        let shape = shape.into(); if element_count(&shape)? != 0 { return Err(Kind::Length.into()); }
+        let shape = shape.into();
+        if element_count(&shape)? != 0 { return Err(Kind::Length.into()); }
         Self::stored_values(shape.into(), Vec::new(), Some(prototype), Widening::Items)
     }
 
@@ -843,7 +879,9 @@ impl Value {
             ArrayData::Compact { kind, range: bounds, .. } => {
                 let outer = Mapping::Steps { base: range.start, steps: vec![rustymath::gather::Steps::along(range.len(), 1)].into() };
                 let (base, map) = ArrayData::physical(array);
-                let map = match map { None => outer, Some(map) => map.composed(&outer, array.layout().shape(), layout.shape(), true).expect("a stored view composes") };
+                let map = match map {
+                    None => outer, Some(map) => map.composed(&outer, array.layout().shape(), layout.shape(), true).expect("a stored view composes")
+                };
                 Ok(Self::Array(Arc::new(ArrayData::Compact { layout, kind: *kind, buffer: SharedBuffer::View { base: base.clone(), map }, range: *bounds })))
             }
             ArrayData::Mixed { items, prototype, .. } => Self::stored_values(layout, items[range].to_vec(), prototype.clone(), Widening::Items),
@@ -866,31 +904,38 @@ impl Value {
         self.relaid(layout.unique_names())
     }
     pub fn with_core_layout(self, layout: rustymath::layout::Layout) -> crate::error::Result<Self> {
-        let renderer = self.layout().renderer.clone(); self.with_layout(Layout::kept(layout, renderer))
+        let renderer = self.layout().renderer.clone();
+        self.with_layout(Layout::kept(layout, renderer))
     }
-    pub fn enclose(&self) -> crate::error::Result<Self> {
-        Ok(Self::stored_values(Layout::EMPTY, vec![self.clone()], None, Widening::Items)?)
-    }
+    pub fn enclose(&self) -> crate::error::Result<Self> { Ok(Self::stored_values(Layout::EMPTY, vec![self.clone()], None, Widening::Items)?) }
     pub(crate) fn unit(self) -> crate::error::Result<Self> { if self.is_atom() { Ok(self) } else { self.enclose() } }
 
     pub fn prototype(&self) -> Value {
         match self {
-            Self::Number(n) => Self::Number(n.zero()), Self::Character(_) => Self::Character(' '),
-            Self::Array(array) => array.prototype(), Self::Pending(p) => p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").prototype(), Desc::zero),
-            Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.prototype(), Carried::Batch { cell, .. } => cell.zero() },
+            Self::Number(n) => Self::Number(n.zero()),
+            Self::Character(_) => Self::Character(' '),
+            Self::Array(array) => array.prototype(),
+            Self::Pending(p) => p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").prototype(), Desc::zero),
+            Self::Carried { carried, .. } => match &**carried {
+                Carried::Dual { primal, .. } => primal.prototype(), Carried::Batch { cell, .. } => cell.zero()
+            },
             _ => Self::integer(0),
         }
     }
     pub(crate) fn innermost_prototype(&self) -> Value {
-        let mut value = self.prototype(); while matches!(value, Self::Array(_)) { value = value.prototype(); } value
+        let mut value = self.prototype();
+        while matches!(value, Self::Array(_)) { value = value.prototype(); }
+        value
     }
     pub fn zeroed(&self) -> Value {
         if self.is_atom() { return self.prototype(); }
         if let Some(kind) = self.kind() {
-            let prototype = self.prototype(); let range = prototype.range();
+            let prototype = self.prototype();
+            let range = prototype.range();
             let zero = Buffer::cast(prototype.view().expect("a compact prototype"), kind.dtype()).expect("a prototype fits its array kind");
             let base = Arc::new(ArrayData::Compact { layout: Layout::from([1]), kind, buffer: SharedBuffer::Owned(zero), range });
-            return Self::Array(Arc::new(ArrayData::Compact { layout: self.layout().clone(), kind, buffer: SharedBuffer::View { base, map: Mapping::Single }, range }));
+            return Self::Array(Arc::new(ArrayData::Compact { layout: self.layout().clone(), kind, buffer: SharedBuffer::View { base, map: Mapping::Single },
+                range }));
         }
         let items = self.elements().map(|value| value.zeroed()).collect();
         Self::stored_values(self.layout().clone(), items, Some(self.prototype()), Widening::Items).expect("zeroed items retain the layout")
@@ -901,11 +946,18 @@ impl Value {
     pub fn keys(&self, axis: usize) -> Option<&Arc<Keys>> { self.layout().keys(axis) }
     pub fn has_keys(&self) -> bool { self.layout().has_keys() }
     pub(crate) fn renderer(&self) -> Option<&Function> { self.layout().renderer() }
-    pub fn with_axis_names(self, names: Vec<Option<Arc<str>>>) -> crate::error::Result<Self> { let layout = self.layout().clone().with_names(names)?; self.with_layout(layout) }
-    pub(crate) fn with_keys(self, keys: Vec<Option<Arc<Keys>>>) -> crate::error::Result<Self> { let layout = self.layout().clone().with_keys(keys)?; self.with_layout(layout) }
+    pub fn with_axis_names(self, names: Vec<Option<Arc<str>>>) -> crate::error::Result<Self> {
+        let layout = self.layout().clone().with_names(names)?;
+        self.with_layout(layout)
+    }
+    pub(crate) fn with_keys(self, keys: Vec<Option<Arc<Keys>>>) -> crate::error::Result<Self> {
+        let layout = self.layout().clone().with_keys(keys)?;
+        self.with_layout(layout)
+    }
     pub(crate) fn with_renderer(self, renderer: Function) -> crate::error::Result<Self> {
         let value = if self.is_atom() { self.enclose()? } else { self };
-        let layout = value.layout().clone().with_renderer(Some(renderer)); value.with_layout(layout)
+        let layout = value.layout().clone().with_renderer(Some(renderer));
+        value.with_layout(layout)
     }
     pub(crate) fn along_first_of(self, source: &Value) -> crate::error::Result<Self> { self.with_axis_names(vec![source.axis_name(0).cloned()]) }
     pub(crate) fn unkeyed(&self) -> crate::error::Result<Self> {
@@ -913,14 +965,20 @@ impl Value {
         self.clone().with_layout(layout)
     }
     pub(crate) fn unnamed_frame(self, rank: usize) -> crate::error::Result<Self> {
-        let mut names = self.axis_names().to_vec(); let frame = self.rank() - rank; names[..frame].fill(None); self.with_axis_names(names)
+        let mut names = self.axis_names().to_vec();
+        let frame = self.rank() - rank;
+        names[..frame].fill(None);
+        self.with_axis_names(names)
     }
-    pub(crate) fn is_view(&self) -> bool { matches!(self, Self::Array(array) if matches!(&**array, ArrayData::Compact { buffer: SharedBuffer::View { .. }, .. })) }
+    pub(crate) fn is_view(&self) -> bool {
+        matches!(self, Self::Array(array) if matches!(&**array, ArrayData::Compact { buffer: SharedBuffer::View { .. }, .. }))
+    }
     pub(crate) fn footprint(&self) -> usize { self.footprint_in(&mut Seen::default()) }
     pub fn export_widening(&self) -> Option<Width> {
         if self.fixed_width().is_some() { return None; }
         let DType::Integer(stored) = self.dtype()? else { return None };
-        let width = Numeric::current().integer_width(); (width > stored).then_some(width)
+        let width = Numeric::current().integer_width();
+        (width > stored).then_some(width)
     }
     pub fn widened_for_export(&self) -> Option<Buffer> {
         let dtype = DType::Integer(self.export_widening()?);
@@ -950,16 +1008,15 @@ impl Value {
     }
     pub(crate) fn ordinary(&self) -> Self {
         match self {
-            Self::Number(n) => Self::Number(n.ordinary()), Self::Array(array) => match &**array {
+            Self::Number(n) => Self::Number(n.ordinary()),
+            Self::Array(array) => match &**array {
                 ArrayData::Compact { layout, kind, buffer, range } => Self::Array(Arc::new(ArrayData::Compact { layout: layout.clone(),
-                    kind: crate::number::Kind::stored(kind.dtype(), false, kind.weak), buffer: buffer.clone(), range: *range })),
-                _ => self.clone(),
-            }, _ => self.clone(),
+                    kind: crate::number::Kind::stored(kind.dtype(), false, kind.weak), buffer: buffer.clone(), range: *range })), _ => self.clone()
+            },
+            _ => self.clone(),
         }
     }
-    pub(crate) fn strong(&self) -> Self {
-        match self { Self::Number(n) => Self::Number(n.clone().marked(false)), _ => self.clone() }
-    }
+    pub(crate) fn strong(&self) -> Self { match self { Self::Number(n) => Self::Number(n.clone().marked(false)), _ => self.clone() } }
     pub(crate) fn cells(&self, rank: usize) -> Result<Cells<'_>, ErrorKind> {
         let split = self.rank().checked_sub(rank).ok_or(Kind::Rank)?;
         let count = self.shape()[..split].iter().product();
@@ -967,5 +1024,3 @@ impl Value {
     }
     pub fn major_cells(&self) -> crate::error::Result<Vec<Value>> { self.cells(self.rank().checked_sub(1).ok_or(Kind::Rank)?)?.collect() }
 }
-
-

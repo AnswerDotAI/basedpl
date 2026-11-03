@@ -30,3 +30,26 @@ x←1 2 3 ⋄ 2↑x ←8 9 ⋄ x ⍝ 8 9 3
 ```
 
 Inside a dfn, plain assignment is local. Modified and selective assignment update the nearest existing binding. [Assignment](../assignment.ipynb) covers every form.
+
+## Write support
+
+A selected item of a nested array can be replaced by a value of a different shape. Selecting characters inside its items instead updates those characters:
+
+```bpl
+a←"red" "green" "blue" ⋄ (2↑a)←"orange" "violet" ⋄ a   ⍝ "orange" "violet" "blue"
+a←"red" "green" "blue" ⋄ (2↑¨a)←'*' ⋄ a                ⍝ "**d" "**een" "**ue"
+```
+
+A computed whole-array target cannot change its outer shape or keys. This gives UNSUPPORTED ERROR. Use plain `a←Y` to replace the whole array. Replacing an item inside the array can change that item's own shape or keys.
+
+Selective writes to arrays containing unbounded numbers (`ᵣ`) or functions give UNSUPPORTED ERROR.
+
+Under dynamic kinds, numeric positions are checked before the binding changes. An invalid position raises INDEX ERROR and leaves the name unchanged. Static native-numeric writes skip invalid numeric positions. Shape and type errors stay checked in either mode.
+
+Shape-preserving native-array updates support recorded execution and batching. Replacing a number in a flat array by a vector works in ordinary execution, but stops recording the surrounding function:
+
+```bpl
+a←1 2 3 ⋄ a.[0]←7 8 9 ⋄ a   ⍝ [[7 8 9] 2 3]
+```
+
+A stopped recording still runs its numerical work through the ordinary graph. See [differentiating writes](../autodiff.qmd#writes) for the smaller subset supported by `∂`.

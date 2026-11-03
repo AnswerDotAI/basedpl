@@ -5,30 +5,17 @@ use rustymath::{agreement::{Binding, Mapping, ReadPlan}, buffer::{DType, FloatWi
 use std::{borrow::Cow, sync::Arc};
 
 #[derive(Clone, Debug)]
-pub(crate) struct Block {
-    members: Arc<[usize]>,
-    outputs: Arc<[Out]>,
-    kernels: Arc<[Option<rustymath::operation::Kernel>]>,
-    sections: Arc<[Section]>
-}
+pub(crate) struct Block { members: Arc<[usize]>, outputs: Arc<[Out]>, kernels: Arc<[Option<rustymath::operation::Kernel>]>, sections: Arc<[Section]> }
 
 #[cfg(not(web))]
 #[derive(Clone, Debug)]
-struct Lowered {
-    kernel: crate::jit::Kernel,
-    folded: Option<crate::jit::Kernel>,
-    inputs: Arc<[LoweredInput]>,
-}
+struct Lowered { kernel: crate::jit::Kernel, folded: Option<crate::jit::Kernel>, inputs: Arc<[LoweredInput]> }
 
 #[cfg(not(web))]
 #[derive(Clone, Debug)]
 struct LoweredInput { slot: usize, source: ReadSource, kind: crate::jit::Input }
 
-pub(crate) struct Prepared {
-    outputs: Arc<[Out]>,
-    #[cfg(not(web))]
-    parts: Vec<Option<Code>>,
-}
+pub(crate) struct Prepared { outputs: Arc<[Out]>, #[cfg(not(web))] parts: Vec<Option<Code>> }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum ReadSource { Pool(usize), Output(Out) }
@@ -36,24 +23,14 @@ enum ReadSource { Pool(usize), Output(Out) }
 #[cfg(not(web))]
 struct Code { code: Arc<crate::jit::Compiled>, folded: bool, inputs: Arc<[LoweredInput]>, outputs: Arc<[Export]> }
 
-
 #[derive(Debug)]
 struct Export { output: Out, local: bool }
 
 #[derive(Debug)]
-struct Section {
-    members: std::ops::Range<usize>,
-    outputs: Arc<[Export]>,
-    #[cfg(not(web))]
-    lowered: Option<Lowered>,
-}
+struct Section { members: std::ops::Range<usize>, outputs: Arc<[Export]>, #[cfg(not(web))] lowered: Option<Lowered> }
 
 #[derive(Default)]
-struct Geometry {
-    iterations: Vec<crate::array::Layout>,
-    folds: Vec<Option<crate::plan::Fold>>,
-    cells: Option<(usize, usize)>,
-}
+struct Geometry { iterations: Vec<crate::array::Layout>, folds: Vec<Option<crate::plan::Fold>>, cells: Option<(usize, usize)> }
 
 #[derive(Default)]
 pub(crate) struct Builder { members: Vec<usize>, geometry: Geometry }
@@ -73,21 +50,21 @@ impl Builder {
             Some(fold)
         } else { None };
         let iteration = fold.as_ref().map_or_else(|| result.layout.clone(), |fold| fold.source.clone());
-        if self.geometry.folds.last().is_some_and(Option::is_none)
-            && self.geometry.iterations.last().unwrap().count() != iteration.count() { return Ok(false); }
+        if self.geometry.folds.last().is_some_and(Option::is_none) && self.geometry.iterations.last().unwrap().count() != iteration.count() {
+            return Ok(false);
+        }
         let cells = if let Some(first) = self.geometry.folds.iter().flatten().next() {
             let frame = &first.source.shape()[..first.axis];
             if self.geometry.cells.is_none() {
                 for (slot, &previous) in self.members.iter().enumerate() {
-                    if !self.local(program, running, previous, &self.geometry.iterations[slot], self.geometry.folds[slot].as_ref(), Some(frame))? { return Ok(false); }
+                    if !self.local(program, running, previous, &self.geometry.iterations[slot], self.geometry.folds[slot].as_ref(), Some(frame))? {
+                        return Ok(false);
+                    }
                 }
             }
             if !self.local(program, running, node, &iteration, fold.as_ref(), Some(frame))? { return Ok(false); }
             Some((frame.iter().product(), frame.len()))
-        } else {
-            if !self.local(program, running, node, &iteration, fold.as_ref(), None)? { return Ok(false); }
-            None
-        };
+        } else { if !self.local(program, running, node, &iteration, fold.as_ref(), None)? { return Ok(false); } None };
         self.members.push(node);
         self.geometry.iterations.push(iteration);
         self.geometry.folds.push(fold);
@@ -95,12 +72,12 @@ impl Builder {
         Ok(true)
     }
 
-    fn local(&self, program: &Program, running: &Running, node: usize, iteration: &crate::array::Layout,
-        fold: Option<&crate::plan::Fold>, frame: Option<&[usize]>) -> Result<bool> {
+    fn local(
+        &self, program: &Program, running: &Running, node: usize, iteration: &crate::array::Layout, fold: Option<&crate::plan::Fold>, frame: Option<&[usize]>
+    ) -> Result<bool> {
         let origin = origin(program, node);
         if let Some(frame) = frame {
-            if !iteration.shape().starts_with(frame)
-                || iteration.shape()[frame.len()..].iter().product::<usize>() > crate::settings::sizes().block.max(1)
+            if !iteration.shape().starts_with(frame) || iteration.shape()[frame.len()..].iter().product::<usize>() > crate::settings::sizes().block.max(1)
                 || fold.is_some_and(|fold| fold.axis < frame.len()) { return Ok(false); }
         }
         for position in origin.list.clone() {
@@ -115,11 +92,14 @@ impl Builder {
             if let Some(frame) = frame {
                 if !desc.shape().starts_with(frame) { return Ok(false); }
                 let width = desc.shape()[frame.len()..].iter().product::<usize>();
-                if strides[..frame.len()].iter().zip(rustymath::layout::strides(frame))
-                    .any(|(&stride, expected)| stride != (expected * width) as isize) { return Ok(false); }
-                let (lo, hi) = strides[frame.len()..].iter().zip(&layout.shape()[frame.len()..]).fold((base as i128, base as i128), |(lo, hi), (&stride, &n)| {
-                    let end = stride as i128 * n.saturating_sub(1) as i128; (lo + end.min(0), hi + end.max(0))
-                });
+                if strides[..frame.len()].iter().zip(rustymath::layout::strides(frame)).any(|(&stride, expected)| stride != (expected * width) as isize) {
+                    return Ok(false);
+                }
+                let (lo, hi) =
+                    strides[frame.len()..].iter().zip(&layout.shape()[frame.len()..]).fold((base as i128, base as i128), |(lo, hi), (&stride, &n)| {
+                        let end = stride as i128 * n.saturating_sub(1) as i128;
+                        (lo + end.min(0), hi + end.max(0))
+                    });
                 if lo < 0 || hi >= width as i128 { return Ok(false); }
             } else if base != 0 || desc.layout.count() != layout.count()
                 || strides.iter().zip(rustymath::layout::strides(layout.shape())).any(|(&stride, expected)| stride != expected as isize) { return Ok(false); }
@@ -133,15 +113,17 @@ impl Builder {
 }
 
 fn origin(program: &Program, node: usize) -> &super::Origin<std::ops::Range<u32>> {
-    let super::Node::Step { origin, .. } = &program.nodes[node] else { unreachable!("a block member is a step") }; origin
+    let super::Node::Step { origin, .. } = &program.nodes[node] else { unreachable!("a block member is a step") };
+    origin
 }
 
 impl Block {
     fn lower(program: &Program, running: &Running, members: &[usize], outputs: &[Out]) -> Result<Option<Self>> {
         use super::{Node, Step};
-        if members.is_empty() || outputs.is_empty() || outputs.iter().enumerate().any(|(at, output)| output.output != Some(0)
-            || !members.contains(&output.node) || outputs[..at].contains(output))
-            { return Ok(None); }
+        if members.is_empty() || outputs.is_empty()
+            || outputs.iter().enumerate().any(|(at, output)| output.output != Some(0) || !members.contains(&output.node) || outputs[..at].contains(output)) {
+                return Ok(None);
+            }
         let mut kernels = Vec::new();
         let mut sections = Vec::new();
         let mut first = 0;
@@ -149,9 +131,7 @@ impl Block {
         for (position, &node) in members.iter().enumerate() {
             for read in origin(program, node).list.clone() {
                 if let Some(read) = running.read(read as usize) {
-                    for source in read.sources.iter() {
-                        if let Ok(slot) = members.binary_search(&source.node) { last_use[slot] = position; }
-                    }
+                    for source in read.sources.iter() { if let Ok(slot) = members.binary_search(&source.node) { last_use[slot] = position; } }
                 }
             }
         }
@@ -160,9 +140,7 @@ impl Block {
             let bindings = running.call(program, origin)?;
             let call = bindings.call_view(&bindings.list);
             kernels.push(match step {
-                Step::Map { variant, .. } | Step::Fold { variant, .. } => {
-                    let Some(kernel) = call.kernel(*variant)? else { return Ok(None); }; Some(kernel)
-                }
+                Step::Map { variant, .. } | Step::Fold { variant, .. } => { let Some(kernel) = call.kernel(*variant)? else { return Ok(None); }; Some(kernel) }
                 _ => None,
             });
             if matches!(step, Step::Fold { .. }) || position + 1 == members.len() {
@@ -195,25 +173,32 @@ impl Block {
     }
 
     pub(crate) fn repays(&self, items: usize, runs: u64) -> bool {
-        #[cfg(web)] { let _ = (items, runs); false }
-        #[cfg(not(web))] {
-            let compile_ns: f64 = self.sections.iter().filter_map(|section| section.lowered.as_ref())
-                .map(|lowered| 50_000. + 8_000. * lowered.kernel.steps.len() as f64).sum();
+        #[cfg(web)]
+        { let _ = (items, runs); false }
+        #[cfg(not(web))]
+        {
+            let compile_ns: f64 =
+                self.sections.iter().filter_map(|section| section.lowered.as_ref()).map(|lowered| 50_000. + 8_000. * lowered.kernel.steps.len() as f64).sum();
             compile_ns > 0. && items as f64 * (1 + 2 * self.members.len().saturating_sub(1)) as f64 * 0.25 * runs as f64 >= compile_ns
         }
     }
 
     pub(crate) fn prepare(&self, program: &Program, running: &Running, items: usize, compile: bool) -> Option<Prepared> {
-        #[cfg(web)] { let _ = (program, running, items, compile); None }
-        #[cfg(not(web))] {
+        #[cfg(web)]
+        { let _ = (program, running, items, compile); None }
+        #[cfg(not(web))]
+        {
             use rustymath::events::{Route, declined};
             let geometry = self.geometry(program, running).ok()??;
             let parts: Vec<_> = self.sections.iter().map(|section| {
                 if section.members.len() == 1 && geometry.folds[section.members.start].is_some() { return None; }
                 let Some(lowered) = &section.lowered else { declined(Route::Compiled, "a stage without emitted code", items); return None; };
-                let folded = geometry.cells.is_none() && geometry.folds[section.members.end - 1].as_ref().is_some_and(|fold| fold.dims()[2] == 1) && lowered.folded.is_some();
+                let folded = geometry.cells.is_none() && geometry.folds[section.members.end - 1].as_ref().is_some_and(|fold| fold.dims()[2] == 1)
+                    && lowered.folded.is_some();
                 let kernel = if folded { lowered.folded.as_ref().unwrap() } else { &lowered.kernel };
-                if !compile { return kernel.existing().map(|code| Code { code, folded, inputs: lowered.inputs.clone(), outputs: section.outputs.clone() }); }
+                if !compile {
+                    return kernel.existing().map(|code| Code { code, folded, inputs: lowered.inputs.clone(), outputs: section.outputs.clone() });
+                }
                 let Ok((code, time)) = kernel.compiled() else { declined(Route::Compiled, "machine code", items); return None; };
                 if let Some(time) = time { crate::explain::compiled(|| self.glyphs(program), time); }
                 Some(Code { code, folded, inputs: lowered.inputs.clone(), outputs: section.outputs.clone() })
@@ -224,7 +209,7 @@ impl Block {
 
     fn glyphs(&self, program: &Program) -> String {
         self.members.iter().filter_map(|&node| match &program.nodes[node] {
-            super::Node::Step { origin, .. } => Some(origin.operation.glyph()), _ => None,
+            super::Node::Step { origin, .. } => Some(origin.operation.glyph()), _ => None
         }).collect()
     }
 
@@ -282,15 +267,18 @@ impl Block {
             let mut scratch = Scratch::default();
             let seed_input = fold.seed.map(|position| &execution.inputs[&ReadSource::Pool(origin(program, self.members[last]).list.start as usize + position)]);
             let seed_sources = seed_input.map(|input| input.bind(&scratch.locals)).transpose()?;
-            let seed = seed_input.zip(seed_sources.as_ref()).map(|(input, sources)| rustymath::agreement::Read { sources, plan: &input.plan }).map_or(Seed::Identity, Seed::Tail);
+            let seed = seed_input.zip(seed_sources.as_ref()).map(|(input, sources)| rustymath::agreement::Read { sources, plan: &input.plan })
+                .map_or(Seed::Identity, Seed::Tail);
             if self.members.len() == 1 {
                 let origin = origin(program, self.members[last]);
                 let input = &execution.inputs[&ReadSource::Pool(origin.list.start as usize + fold.arg)];
                 let sources = input.bind(&scratch.locals)?;
-                self.kernel(last).fold_read(fold.source.shape(), fold.axis, seed, Direction::Right, execution.settings[last],
+                self.kernel(last).fold_read(
+                    fold.source.shape(), fold.axis, seed, Direction::Right, execution.settings[last],
                     rustymath::agreement::Read { sources: &sources, plan: &input.plan }, &mut buffers[slot])?;
             } else {
-                self.kernel(last).fold_pieces(fold.dims(), seed, Direction::Right, execution.settings[last],
+                self.kernel(last).fold_pieces(
+                    fold.dims(), seed, Direction::Right, execution.settings[last],
                     &|range, give| execution.range(section, range, &mut Scratch::default(), give), &mut buffers[slot])?;
             }
             rustymath::events::taken(rustymath::events::Route::FusedFold, items);
@@ -309,13 +297,15 @@ impl Block {
             unsafe { buffer.set_len(count); }
         }
         crate::explain::fused(|| self.glyphs(program), items, &tally);
-        buffers.into_iter().zip(outputs.iter()).map(|(buffer, &output)| Value::stored(running.desc(program, output).unwrap(), buffer)).collect::<Result<Vec<_>>>().map(Into::into)
+        buffers.into_iter().zip(outputs.iter()).map(|(buffer, &output)| Value::stored(running.desc(program, output).unwrap(), buffer))
+            .collect::<Result<Vec<_>>>().map(Into::into)
     }
 }
 
 #[cfg(not(web))]
 impl Lowered {
-    fn of(program: &Program, running: &Running, members: &[usize], objects: &[Option<rustymath::operation::Kernel>], outputs: &[Export]) -> Result<Option<Self>> {
+    fn of(
+        program: &Program, running: &Running, members: &[usize], objects: &[Option<rustymath::operation::Kernel>], outputs: &[Export]) -> Result<Option<Self>> {
         use super::{Node, Step};
         use crate::jit::{self, Op, Ty};
         let mut kernel = jit::Kernel::default();
@@ -342,11 +332,7 @@ impl Lowered {
                         arguments.push(value);
                     }
                     let tolerance = match call.setting(crate::primitive::Setting::Tolerance) {
-                        Some((argument, _)) => {
-                            let Some(value) = read(argument as u32, at, &mut kernel) else { return Ok(None); };
-                            Some(value)
-                        }
-                        None => None,
+                        Some((argument, _)) => { let Some(value) = read(argument as u32, at, &mut kernel) else { return Ok(None); }; Some(value) } None => None
                     };
                     let Some(value) = kernel.formula(&object, at, &arguments, ty == Ty::Bool, tolerance) else { return Ok(None); };
                     if kernel.ty(value) == ty { value } else { kernel.step(Op::Convert, ty, value, None) }
@@ -401,24 +387,32 @@ impl Lowered {
             let jit::Value::Step(index) = kernel.step(Op::Convert, ty, value, None) else { unreachable!() };
             kernel.stores.push(index);
         }
-        let folded = reduction.map(|fold| { let mut folded = kernel.clone(); folded.folds.push(fold); folded });
+        let folded = reduction.map(|fold| {
+            let mut folded = kernel.clone();
+            folded.folds.push(fold);
+            folded
+        });
         if let Some((_, index)) = reduction { kernel.stores.push(index); }
         Ok(kernel.check().ok().map(|_| Self { kernel, folded, inputs: inputs.into() }))
     }
 
-    fn output(program: &Program, running: &Running, output: Out, exports: &[Export],
-        inputs: &mut Vec<LoweredInput>, kernel: &mut crate::jit::Kernel) -> Option<crate::jit::Value> {
+    fn output(
+        program: &Program, running: &Running, output: Out, exports: &[Export], inputs: &mut Vec<LoweredInput>, kernel: &mut crate::jit::Kernel
+    ) -> Option<crate::jit::Value> {
         use crate::jit::{Input, Read, Ty, Value as Slot};
         if let Some(position) = exports.iter().position(|export| export.output == output) { return Some(Slot::Step(kernel.stores[position])); }
         if !matches!(program.nodes[output.node], super::Node::Input { .. } | super::Node::Literal { .. }) { return None; }
         let desc = running.desc(program, output)?;
         let ty = Ty::of(desc.dtype())?;
-        if desc.atom && let super::Node::Literal { value, .. } = &program.nodes[output.node]
-            && let Some(value) = literal_input(value, ty) { return Some(kernel.input(value)); }
+        if desc.atom && let super::Node::Literal { value, .. } = &program.nodes[output.node] && let Some(value) = literal_input(value, ty) {
+            return Some(kernel.input(value));
+        }
         if let Some(input) = inputs.iter().find(|input| match input.source {
             ReadSource::Output(root) => root == output,
-            ReadSource::Pool(position) => program.reads[position].operand == output
-                && matches!(running.geometry.maps[position], rustymath::agreement::Mapping::Linear(1) | rustymath::agreement::Mapping::Single),
+            ReadSource::Pool(position) => {
+                program.reads[position].operand == output
+                    && matches!(running.geometry.maps[position], rustymath::agreement::Mapping::Linear(1) | rustymath::agreement::Mapping::Single)
+            }
             _ => false,
         }) { return Some(Slot::Input(input.slot)); }
         let kind = if desc.atom { Input::Scalar(ty) } else { Input::Array(ty, Read::Forward) };
@@ -428,38 +422,36 @@ impl Lowered {
     }
 
     fn argument(
-        program: &Program, running: &Running, members: &[usize], made: &rustymath::hashing::HashMap<Out, crate::jit::Value>,
-        inputs: &mut Vec<LoweredInput>, kernel: &mut crate::jit::Kernel, position: usize, at: crate::jit::Ty,
-    ) -> Option<crate::jit::Value> {
+        program: &Program, running: &Running, members: &[usize], made: &rustymath::hashing::HashMap<Out, crate::jit::Value>, inputs: &mut Vec<LoweredInput>,
+        kernel: &mut crate::jit::Kernel, position: usize, at: crate::jit::Ty) -> Option<crate::jit::Value> {
         use crate::jit::{Input, Op, Read, Ty};
         use rustymath::agreement::Mapping;
         let argument = &program.reads[position];
         let map = &running.geometry.maps[position];
         if let rustymath::agreement::ReadRoute::Index { step, .. } = running.read(position)?.plan.route() {
-            let base = if let Some(input) = inputs.iter().find(|input| input.source == ReadSource::Pool(position)) { crate::jit::Value::Input(input.slot) }
-                else {
-                    let value = kernel.input(Input::Scalar(Ty::I64));
-                    let crate::jit::Value::Input(slot) = value else { unreachable!() };
-                    inputs.push(LoweredInput { slot, source: ReadSource::Pool(position), kind: kernel.inputs[slot] }); value
-                };
+            let base = if let Some(input) = inputs.iter().find(|input| input.source == ReadSource::Pool(position)) {
+                crate::jit::Value::Input(input.slot)
+            } else {
+                let value = kernel.input(Input::Scalar(Ty::I64));
+                let crate::jit::Value::Input(slot) = value else { unreachable!() };
+                inputs.push(LoweredInput { slot, source: ReadSource::Pool(position), kind: kernel.inputs[slot] });
+                value
+            };
             let index = kernel.input(Input::Index(Ty::I64));
             let stride = kernel.input(Input::Constant(Ty::I64, *step as u64));
             let offset = kernel.step(Op::Multiply, Ty::I64, index, Some(stride));
             let value = kernel.step(Op::Add, Ty::I64, base, Some(offset));
             return Some(if at == Ty::I64 { value } else { kernel.step(Op::Convert, at, value, None) });
         }
-        let value = if let Some(&value) = made.get(&argument.operand) {
-            if !matches!(map, Mapping::Linear(1)) { return None; }
-            value
-        } else {
+        let value = if let Some(&value) = made.get(&argument.operand) { if !matches!(map, Mapping::Linear(1)) { return None; } value } else {
             if members.contains(&argument.operand.node) || running.read(position)?.sources.iter().any(|source| members.contains(&source.node)) { return None; }
             let desc = running.desc(program, argument.operand)?;
             let ty = Ty::of(read_as(desc.kind.dtype()))?;
             let scalar = desc.atom || matches!(map, Mapping::Single);
-            if scalar && let super::Node::Literal { value, .. } = &program.nodes[argument.operand.node]
-                && let Some(input) = literal_input(value, at) { return Some(kernel.input(input)); }
-            if let Some(input) = inputs.iter().find(|input| input.source == ReadSource::Pool(position)) { crate::jit::Value::Input(input.slot) }
-            else {
+            if scalar && let super::Node::Literal { value, .. } = &program.nodes[argument.operand.node] && let Some(input) = literal_input(value, at) {
+                return Some(kernel.input(input));
+            }
+            if let Some(input) = inputs.iter().find(|input| input.source == ReadSource::Pool(position)) { crate::jit::Value::Input(input.slot) } else {
                 let value = kernel.input(if scalar { Input::Scalar(ty) } else { Input::Array(ty, Read::Forward) });
                 let crate::jit::Value::Input(slot) = value else { unreachable!() };
                 inputs.push(LoweredInput { slot, source: ReadSource::Pool(position), kind: kernel.inputs[slot] });
@@ -470,10 +462,7 @@ impl Lowered {
     }
 }
 
-
-pub(crate) fn readable(dtype: DType) -> bool {
-    matches!(dtype, DType::Boolean | DType::Integer(_) | DType::Float(FloatWidth::F32 | FloatWidth::F64))
-}
+pub(crate) fn readable(dtype: DType) -> bool { matches!(dtype, DType::Boolean | DType::Integer(_) | DType::Float(FloatWidth::F32 | FloatWidth::F64)) }
 pub(crate) fn read_as(dtype: DType) -> DType { if dtype == DType::Character { DType::Integer(Width::I32) } else { dtype } }
 
 #[cfg(not(web))]
@@ -482,9 +471,8 @@ fn literal_input(value: &Value, ty: crate::jit::Ty) -> Option<crate::jit::Input>
     match value {
         Value::Character(c) => Some(Input::constant(ty, u32::from(*c) as f64)),
         Value::Number(n) => Some(match ty {
-            Ty::F32 | Ty::F64 => Input::constant(ty, n.to_float().ok()?),
-            Ty::Bool => Input::Constant(ty, u64::from(n.as_bool()?)),
-            _ => Input::Constant(ty, n.as_integer().or_else(|| n.as_bool().map(i64::from))? as u64),
+            Ty::F32 | Ty::F64 => Input::constant(ty, n.to_float().ok()?), Ty::Bool => Input::Constant(ty, u64::from(n.as_bool()?)),
+            _ => Input::Constant(ty, n.as_integer().or_else(|| n.as_bool().map(i64::from))? as u64)
         }),
         _ => None,
     }
@@ -495,25 +483,22 @@ fn arguments(step: &super::Step) -> Vec<u32> {
     match step {
         Step::Map { left, right, .. } => left.iter().copied().chain(std::iter::once(*right)).collect(),
         Step::Convert { arg, .. } | Step::Fold { arg, .. } => vec![*arg],
-        Step::Picks { selector, choices } => std::iter::once(*selector).chain(choices.clone()).collect(),
-        _ => Vec::new(),
+        Step::Picks { selector, choices } => std::iter::once(*selector).chain(choices.clone()).collect(), _ => Vec::new()
     }
 }
 
 #[derive(Clone, Copy)]
-enum Source<'a> {
-    Stored(rustymath::agreement::Binding<'a>),
-    Local { slot: usize, items: usize },
-}
+enum Source<'a> { Stored(rustymath::agreement::Binding<'a>), Local { slot: usize, items: usize } }
 struct Input<'a> { plan: Cow<'a, rustymath::agreement::ReadPlan>, sources: Vec<Source<'a>> }
 impl<'a> Input<'a> {
-    fn of(block: &Block, program: &'a Program, running: &'a Running,
-        plan: Cow<'a, rustymath::agreement::ReadPlan>, sources: &[Out]) -> Result<Self> {
+    fn of(block: &Block, program: &'a Program, running: &'a Running, plan: Cow<'a, rustymath::agreement::ReadPlan>, sources: &[Out]) -> Result<Self> {
         let sources = sources.iter().map(|&source| {
             if let Some(slot) = block.members.iter().position(|&node| node == source.node) {
                 let items = running.desc(program, source).ok_or_else(crate::Error::planning)?.layout.count();
                 Ok(Source::Local { slot, items })
-            } else { running.binding(program, source).map(|binding| Source::Stored(binding.as_codes())).ok_or_else(crate::Error::planning) }
+            } else {
+                running.binding(program, source).map(|binding| Source::Stored(binding.as_codes())).ok_or_else(crate::Error::planning)
+            }
         }).collect::<Result<_>>()?;
         Ok(Self { plan, sources })
     }
@@ -536,7 +521,9 @@ impl Output {
             return Err(rustymath::error::Error::new(rustymath::error::Kind::Length, "block output shape"));
         }
         // The stage owns this fresh allocation; the piece scheduler gives each call a disjoint range.
-        unsafe { std::ptr::copy_nonoverlapping(view.as_ptr(), self.ptr.add(range.start * self.dtype.bytes()), view.len() * self.dtype.bytes()); }
+        unsafe {
+            std::ptr::copy_nonoverlapping(view.as_ptr(), self.ptr.add(range.start * self.dtype.bytes()), view.len() * self.dtype.bytes());
+        }
         Ok(())
     }
 }
@@ -546,16 +533,9 @@ struct Local { buffer: rustymath::buffer::Buffer, start: usize }
 struct Scratch { locals: Vec<Local>, copies: Vec<rustymath::buffer::Buffer>, fold: Option<rustymath::buffer::Buffer> }
 
 struct Execution<'a> {
-    block: &'a Block,
-    program: &'a Program,
-    running: &'a Running,
-    inputs: rustymath::hashing::HashMap<ReadSource, Input<'a>>,
-    settings: Vec<rustymath::operation::Settings>,
-    outputs: rustymath::hashing::HashMap<usize, Output>,
-    prepared: Option<&'a Prepared>,
-    tally: &'a crate::explain::Tally,
-    size: usize,
-    geometry: Geometry,
+    block: &'a Block, program: &'a Program, running: &'a Running, inputs: rustymath::hashing::HashMap<ReadSource, Input<'a>>,
+    settings: Vec<rustymath::operation::Settings>, outputs: rustymath::hashing::HashMap<usize, Output>, prepared: Option<&'a Prepared>,
+    tally: &'a crate::explain::Tally, size: usize, geometry: Geometry
 }
 
 impl Execution<'_> {
@@ -584,8 +564,8 @@ impl Execution<'_> {
             if let Some(seed) = fold.seed {
                 let input = &self.inputs[&ReadSource::Pool(origin.list.start as usize + seed)];
                 let sources = input.bind(&scratch.locals)?;
-                Read { sources: &sources, plan: &input.plan }.read_into(result_start..result_start + count,
-                    seed_buffer.dtype(), origin.mode.dynamic, &mut seed_buffer)?;
+                Read { sources: &sources, plan: &input.plan }.read_into(
+                    result_start..result_start + count, seed_buffer.dtype(), origin.mode.dynamic, &mut seed_buffer)?;
             }
             let seed_sources = [Binding::full(seed_buffer.view())];
             let seed_plan = ReadPlan::input(0, count);
@@ -593,14 +573,16 @@ impl Execution<'_> {
             let mut output = std::mem::replace(&mut scratch.locals[slot].buffer, Buffer::with_capacity(DType::Boolean, 0));
             let input = &self.inputs[&ReadSource::Pool(origin.list.start as usize + fold.arg)];
             let mut sources = input.bind(&scratch.locals)?;
-            let mut plan = input.plan.remapped(rustymath::agreement::Mapping::Steps { base: start, steps: vec![Steps::along(width, 1)].into() }, width, Missing::Invalid);
+            let mut plan =
+                input.plan.remapped(rustymath::agreement::Mapping::Steps { base: start, steps: vec![Steps::along(width, 1)].into() }, width, Missing::Invalid);
             #[cfg(not(web))]
             if self.code(section, width).is_some() {
                 sources = vec![Binding::full(scratch.fold.as_ref().unwrap().view())];
                 plan = ReadPlan::input(0, width);
             }
-            self.block.kernel(slot).fold_read(&fold.source.shape()[frame..], fold.axis - frame, seed, Direction::Right, self.settings[slot],
-                Read { sources: &sources, plan: &plan }, &mut output)?;
+            self.block.kernel(slot).fold_read(
+                &fold.source.shape()[frame..], fold.axis - frame, seed, Direction::Right, self.settings[slot], Read { sources: &sources, plan: &plan },
+                &mut output)?;
             if output.len() != count { return Err(block_shape()); }
             if let Some(writer) = self.outputs.get(&self.block.members[slot]) { writer.write(result_start..result_start + count, output.view())?; }
             scratch.locals[slot] = Local { buffer: output, start: result_start };
@@ -616,8 +598,9 @@ impl Execution<'_> {
         self.prepared?.parts[index].as_ref().filter(|prepared| prepared.code.takes(items))
     }
 
-    fn range(&self, section: &Section, range: std::ops::Range<usize>, scratch: &mut Scratch,
-        give: &mut dyn FnMut(usize, rustymath::operation::Piece<'_>)) -> std::result::Result<(), rustymath::error::Error> {
+    fn range(
+        &self, section: &Section, range: std::ops::Range<usize>, scratch: &mut Scratch, give: &mut dyn FnMut(usize, rustymath::operation::Piece<'_>)
+    ) -> std::result::Result<(), rustymath::error::Error> {
         use super::Node;
         use rustymath::{agreement::Read, buffer::Buffer, operation::Piece};
         self.scratch(scratch);
@@ -648,11 +631,11 @@ impl Execution<'_> {
                 output.clear();
                 {
                     let arguments = arguments(step);
-                    let bindings = arguments.iter().map(|&argument| self.inputs[&ReadSource::Pool(origin.list.start as usize + argument as usize)]
-                        .bind(&scratch.locals)).collect::<std::result::Result<Vec<_>, _>>()?;
-                    let reads: Vec<_> = arguments.iter().zip(&bindings).map(|(&argument, sources)| Read {
-                        sources, plan: &self.inputs[&ReadSource::Pool(origin.list.start as usize + argument as usize)].plan,
-                    }).collect();
+                    let bindings = arguments.iter()
+                        .map(|&argument| self.inputs[&ReadSource::Pool(origin.list.start as usize + argument as usize)].bind(&scratch.locals))
+                        .collect::<std::result::Result<Vec<_>, _>>()?;
+                    let reads: Vec<_> = arguments.iter().zip(&bindings).map(|(&argument, sources)| Read { sources,
+                            plan: &self.inputs[&ReadSource::Pool(origin.list.start as usize + argument as usize)].plan }).collect();
                     match step {
                         super::Step::Map { .. } => self.block.kernel(slot).map(&reads, part.clone(), self.settings[slot], &mut output)?,
                         super::Step::Convert { conversion, .. } => conversion.map(reads[0], part.clone(), origin.mode.dynamic, &mut output)?,
@@ -683,7 +666,8 @@ impl Execution<'_> {
     }
 
     #[cfg(not(web))]
-    fn compiled(&self, section: &Section, prepared: &Code, range: std::ops::Range<usize>, scratch: &mut Scratch,
+    fn compiled(
+        &self, section: &Section, prepared: &Code, range: std::ops::Range<usize>, scratch: &mut Scratch,
         give: &mut dyn FnMut(usize, rustymath::operation::Piece<'_>)) -> std::result::Result<(), rustymath::error::Error> {
         use crate::jit;
         use rustymath::{agreement::Read, buffer::{Buffer, Cast}, operation::{Piece, Total}};
@@ -697,15 +681,12 @@ impl Execution<'_> {
             let ty = input.kind;
             let dtype = match ty { jit::Input::Array(ty, _) | jit::Input::Scalar(ty) => ty.dtype(), _ => unreachable!() };
             match ty {
-                jit::Input::Array(_, _) => {
-                    arrays.push(reader.part_view(range.clone(), dtype, false, &mut scratch.copies[index])?.as_ptr());
-                }
+                jit::Input::Array(_, _) => { arrays.push(reader.part_view(range.clone(), dtype, false, &mut scratch.copies[index])?.as_ptr()); }
                 jit::Input::Scalar(ty) => {
                     let view = reader.part_view(range.start..range.start + 1, dtype, false, &mut scratch.copies[index])?;
                     scalars.push(match ty {
-                        jit::Ty::F32 | jit::Ty::F64 => f64::cast(view, 0)?.to_bits(),
-                        jit::Ty::Bool => u64::from(bool::cast(view, 0)?),
-                        _ => i64::cast(view, 0)? as u64,
+                        jit::Ty::F32 | jit::Ty::F64 => f64::cast(view, 0)?.to_bits(), jit::Ty::Bool => u64::from(bool::cast(view, 0)?),
+                        _ => i64::cast(view, 0)? as u64
                     });
                 }
                 _ => unreachable!(),
@@ -758,7 +739,6 @@ impl Execution<'_> {
 fn block_shape() -> rustymath::error::Error { rustymath::error::Error::new(rustymath::error::Kind::Length, "block output shape") }
 
 pub(crate) fn kernel_settings(call: &crate::primitive::CallView<'_>) -> Result<rustymath::operation::Settings> {
-    Ok(rustymath::operation::Settings { tolerance: call.setting(crate::primitive::Setting::Tolerance)
-        .map(|(_, value)| crate::primitive::real(value)).transpose()? })
+    Ok(rustymath::operation::Settings {
+        tolerance: call.setting(crate::primitive::Setting::Tolerance).map(|(_, value)| crate::primitive::real(value)).transpose()? })
 }
-

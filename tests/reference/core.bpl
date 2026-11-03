@@ -2157,6 +2157,34 @@ a←"HELLO" "WORLD"
 (2↑¨a)←'*'
 a   ⍝ "**LLO" "**RLD"
 
+⍝ write-nested-replace — Selecting outer items replaces each whole string, not its old character shape
+a←"red" "green" "blue"
+(2↑a)←"orange" "violet"
+a   ⍝ "orange" "violet" "blue"
+
+⍝ write-refill — Replaying a selection uses the new count, index and array
+f←{a←⍵ ⋄ (⍺↑a)←0 ⋄ a}
+g←{a←⍵ ⋄ a.[⍺]←9 ⋄ a}
+[1 f 1 2 3;2 f 4 5 6;1 g 1 2 3;0 g 4 5 6]   ⍝ [0 2 3;0 0 6;1 9 3;9 5 6]
+
+⍝ write-computed-mask — Mask counts are read before planning the write, including on replay with changed masks
+f←{a←⍵ ⋄ ((0<a)#a)←0 ⋄ a}
+[f ¯1 2 ¯3 4;f 5 ¯6 7 ¯8]   ⍝ [¯1 0 ¯3 0;0 ¯6 0 ¯8]
+
+⍝ write-static-absent — Invalid static destinations are skipped, including on empty arrays; negative indices still count from the end
+•prefs ["kinds":"static"]
+f←{a←⍵ ⋄ a.[⍺]←9 ⋄ a}
+r←[5 f 1 2 3;0 f ⍬;¯1 f 1 2 3;{a←⍵ ⋄ a.[[5 ¯1]]←9 ⋄ a}⍤1[1 2 3⋄4 5 6]]
+•prefs ["kinds":"dynamic"]
+r   ⍝ [1 2 3;⍬;1 2 9;[1 2 9⋄4 5 9]]
+
+⍝ write-grouped-fill — Each selected prefix spreads its own replacement before writes are grouped
+g←{[2↑⍵;¯2↑⍵]}
+[7 8]@g 1 2 3 4 5 6   ⍝ 7 7 3 4 8 8
+
+⍝ write-native-box — Replacing one numeric item with an array reconstructs the outer items
+a←1 2 3 ⋄ a.[0]←7 8 9 ⋄ a   ⍝ [[7 8 9] 2 3]
+
 ⍝ — Each uses a separate mask for each nested vector
 a←"HELLO" "WORLD"
 (a='O' #¨ a)←'*'
@@ -2272,6 +2300,34 @@ a←[[1 2;3 4];5 6]
 
 ⍝ write-dual — Under and a selective assignment inside `∂` write through the dual's primal, and a written position's slope comes from its new value
 [{+/(2×)@(1↑)⍵}∂ 1 2 3 ; {v←⍵ ⋄ (1↑v)←0 ⋄ +/v×⍵}∂ 1 2 3]   ⍝ (2 1 1⋄0 4 6)
+
+⍝ write-derivatives — Replacement removes the old slope; addition retains it, and a broadcast replacement collects every selected contribution
+[{v←⍵ ⋄ v.[0]←0 ⋄ +/v}∂1 2 3 ; {v←⍵ ⋄ v.[0]+←⍵.[1] ⋄ +/v}∂1 2 3 ; {v←⍵ ⋄ v.[[0 2]]←+/⍵ ⋄ +/v}∂1 2 3]   ⍝ [0 1 1;1 2 1;2 3 2]
+
+⍝ write-jacobian — Each output direction uses the same selected positions
+{v←⍵ ⋄ v.[0]+←⍵.[1] ⋄ v}∂1 2 3   ⍝ [1 1 0⋄0 1 0⋄0 0 1]
+
+⍝ write-derivative-mask — The mask is a primal choice, not a differentiated input
+{v←⍵ ⋄ ((0<v)#v)←0 ⋄ +/v}∂¯1 2 ¯3 4   ⍝ 1 0 1 0
+
+⍝ write-derivative-refill — Repeated derivatives use the current captured positions
+f←{v←⍵ ⋄ v.[i]←0 ⋄ +/v}
+i←0 ⋄ a←f∂1 2 3 ⋄ i←1 ⋄ [a;f∂4 5 6]   ⍝ [0 1 1;1 0 1]
+
+⍝ write-add-repeated — Repeated additions contribute each time
+{v←⍵ ⋄ v.[[0 0]]+←⍵.[1] ⋄ +/v}∂1 2 3   ⍝ 1 3 1
+
+⍝ write-replace-repeated — Replacement derivatives require distinct destinations
+{v←⍵ ⋄ v.[[0 0]]←0 ⋄ +/v}∂1 2 3
+⍝ error: UNSUPPORTED
+
+⍝ write-derivative-boxing — A differentiated write cannot change a native item into a nested array
+{v←⍵ ⋄ v.[0]←7 8 ⋄ +/∊v}∂1 2 3
+⍝ error: UNSUPPORTED
+
+⍝ write-derivative-host — A differentiated write cannot introduce exact rational items
+{v←⍵ ⋄ v.[0]←1r2 ⋄ +/v}∂1 2 3
+⍝ error: UNSUPPORTED
 
 ⍝ — A selection written with spaces finds its array as the touching form does
 lv←1 2 3

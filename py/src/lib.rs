@@ -1,5 +1,6 @@
 use basedpl::{
-    Error, EvalOptions, Evaluation, Function, InterruptHandle, Number, OperatorValue, ReadKind, Session, Value, buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}
+    Error, EvalOptions, Evaluation, Function, InterruptHandle, Number, OperatorValue, ReadKind, Session, Value,
+    buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}
 };
 use num_bigint::BigInt;
 use pyo3::{
@@ -130,11 +131,15 @@ fn element(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Value> {
 }
 
 fn observed(value: &Value, kind: ReadKind) -> PyResult<Value> {
-    Python::attach(|py| py.detach(|| Session::current(|session| -> Result<Value, basedpl::Error> {
-        let value = value.read(kind)?;
-        session.raise()?;
-        Ok(value)
-    }))).map_err(value_error)
+    Python::attach(|py| {
+        py.detach(|| {
+            Session::current(|session| -> Result<Value, basedpl::Error> {
+                let value = value.read(kind)?;
+                session.raise()?;
+                Ok(value)
+            })
+        })
+    }).map_err(value_error)
 }
 fn array(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> { exported(py, &observed(value, ReadKind::Value)?) }
 
@@ -194,7 +199,8 @@ fn index_error(error: basedpl::Error) -> PyErr {
 
 /// Decodes a Python index of `value` once, for a read or, where `writes`, a write, through `⌷`'s planner. Python's own kinds, slices, keys, integers and lists of keys, decode without converting. `convert` turns other selectors into arrays, which decode as `⌷` decodes them, except Boolean masks, which select where they hold true. Pick paths allow positions, keys, full slices, None and ... as suffixes, but not partial slices or masks.
 fn selection(value: &Value, index: &Bound<'_, PyAny>, writes: bool, convert: &Bound<'_, PyAny>) -> PyResult<IndexSelection> {
-    let converted = |obj: &Bound<'_, PyAny>| -> PyResult<Value> { observed(convert.call1((obj,))?.extract::<PyRef<'_, PyArray>>()?.value()?, ReadKind::Structure) };
+    let converted =
+        |obj: &Bound<'_, PyAny>| -> PyResult<Value> { observed(convert.call1((obj,))?.extract::<PyRef<'_, PyArray>>()?.value()?, ReadKind::Structure) };
     let parts = rustymath_buffer::selection::parts(index)?;
     let values = parts.iter().map(|p| p.as_ref().try_map(|p| if rustymath_buffer::selection::native(p) { Ok(None) } else { converted(p).map(Some) }))
         .collect::<PyResult<Vec<_>>>()?;
@@ -226,9 +232,7 @@ fn selection(value: &Value, index: &Bound<'_, PyAny>, writes: bool, convert: &Bo
 /// The array whose compact items an export lends for `value`, with the offset of `value`'s first item in them and, for a structural copy read through an affine map, each axis's stride in items. A copy that hasn't been built lends its source's items this way. Otherwise `value` lends its own items where they're compact. `None` where neither applies.
 fn lendable(value: &Value) -> Option<(Value, usize, Option<Vec<isize>>)> {
     let (_, map) = value.physical()?;
-    let (offset, strides) = match map {
-        Some(map) => { let (offset, strides) = map.affine(value.shape())?; (offset, Some(strides)) }, None => (0, None),
-    };
+    let (offset, strides) = match map { Some(map) => { let (offset, strides) = map.affine(value.shape())?; (offset, Some(strides)) } None => (0, None) };
     Some((value.clone(), offset, strides))
 }
 
@@ -375,18 +379,22 @@ impl PyArray {
     }
     fn select(&self, py: Python<'_>, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Py<PyDict>> {
         let (value, selection) = (self.value()?.clone(), selection(self.value()?, index, false, convert)?);
-        let value = py.detach(move || Session::current(|_| match selection {
-            IndexSelection::Planned(plan, atom) => value.selected(plan, atom), IndexSelection::Rich(parts) => value.select(&parts)
-        })).map_err(index_error)?;
+        let value = py.detach(move || {
+            Session::current(|_| match selection {
+                IndexSelection::Planned(plan, atom) => value.selected(plan, atom), IndexSelection::Rich(parts) => value.select(&parts)
+            })
+        }).map_err(index_error)?;
         let mut result = Evaluation::default();
         match value { Value::Function(f) => result.function = Some(f), a => result.value = Some(a) }
         response(py, result)
     }
     fn assign(&self, py: Python<'_>, index: &Bound<'_, PyAny>, values: PyRef<'_, PyArray>, convert: &Bound<'_, PyAny>) -> PyResult<Self> {
         let (value, values, selection) = (self.value()?.clone(), values.value()?.clone(), selection(self.value()?, index, true, convert)?);
-        py.detach(move || Session::current(|_| match selection {
-            IndexSelection::Planned(plan, atom) => value.assigned(plan, atom, &values), IndexSelection::Rich(parts) => value.assigned_parts(&parts, &values)
-        })).map(Self::from).map_err(index_error)
+        py.detach(move || {
+            Session::current(|_| match selection {
+                IndexSelection::Planned(plan, atom) => value.assigned(plan, atom, &values), IndexSelection::Rich(parts) => value.assigned_parts(&parts, &values)
+            })
+        }).map(Self::from).map_err(index_error)
     }
     /// Whether this array holds `query`, a native array or a `str`. A one-character string is an atom. A longer one is one item where the major cells are items, as a list of strings holds them, and otherwise a character vector, which matches a row of characters.
     fn contains(&self, py: Python<'_>, query: &Bound<'_, PyAny>) -> PyResult<bool> {
@@ -401,8 +409,7 @@ impl PyArray {
             Err(_) => query.extract::<PyRef<'_, PyArray>>()?.value()?.clone(),
         };
         py.detach(move || Session::current(|_| value.contains(&query))).map_err(|e| match &e.kind {
-            basedpl::ErrorKind::Array(e) if e.kind == rustymath::error::Kind::Rank => PyTypeError::new_err(e.message.to_string()),
-            _ => value_error(e),
+            basedpl::ErrorKind::Array(e) if e.kind == rustymath::error::Kind::Rank => PyTypeError::new_err(e.message.to_string()), _ => value_error(e)
         })
     }
 }
@@ -504,9 +511,11 @@ impl PySession {
     #[pyo3(signature = (*, name=None, function=None))]
     fn inspect(&self, py: Python<'_>, name: Option<String>, function: Option<PyRef<'_, PyFunction>>) -> PyResult<Option<Py<PyDict>>> {
         let function = function.map(|f| f.inner.clone());
-        let info = py.detach(move || Session::current(|session| {
-            match (name, function) { (Some(name), _) => session.inspect(&name), (_, Some(function)) => Ok(Some(function.inspect(session))), _ => Ok(None) }
-        })).map_err(value_error)?;
+        let info = py.detach(move || {
+            Session::current(|session| match (name, function) {
+                (Some(name), _) => session.inspect(&name), (_, Some(function)) => Ok(Some(function.inspect(session))), _ => Ok(None)
+            })
+        }).map_err(value_error)?;
         info.map(|i| {
             let d = PyDict::new(py);
             d.set_item("kind", i.kind)?;
@@ -547,12 +556,14 @@ impl PySession {
         request.options.output = show.map(|show| stream(show, shown.clone(), signal.clone()));
         let mut result = {
             let active = &self.active;
-            let result = py.detach(move || Session::current(|session| {
-                let outer = active.lock().unwrap().replace(request.options.interrupt.clone());
-                let result = request.run(session);
-                *active.lock().unwrap() = outer;
-                result
-            }));
+            let result = py.detach(move || {
+                Session::current(|session| {
+                    let outer = active.lock().unwrap().replace(request.options.interrupt.clone());
+                    let result = request.run(session);
+                    *active.lock().unwrap() = outer;
+                    result
+                })
+            });
             result.map_err(PyValueError::new_err)?
         };
         result.output.append(&mut shown.lock().unwrap());

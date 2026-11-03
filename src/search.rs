@@ -12,11 +12,13 @@
 //!
 //! Other data takes the pairwise comparison.
 use crate::execution::check;
-use crate::{Error, ErrorKind, error::Described, Span, Value, ReadKind, array::{ArrayData, Items, Layout, Widening}, primitive::Primitive, number::{Numeric, read_as}};
+use crate::{
+    Error, ErrorKind, ReadKind, Span, Value, array::{ArrayData, Items, Layout, Widening}, error::Described, number::{Numeric, read_as}, primitive::Primitive
+};
+use num_traits::ToPrimitive;
 use rustymath::hashing::{HashMap, HashMapExt, Hashing};
 use rustymath::{buffer::{FloatWidth, Floats, Source, View}, search::{self, Chains}, tolerant::{self, Near, Tolerance}, with_float_width};
 use std::{borrow::Cow, hash::{BuildHasher, Hash, Hasher}, sync::Arc};
-use num_traits::ToPrimitive;
 
 /// The cells a search compares. The cells of rank 0 are an array's items.
 pub(crate) enum Cells<'a> { Items(&'a Value), Arrays(Vec<Value>) }
@@ -125,10 +127,7 @@ fn groupable(len: usize) -> Result<(), Error> {
 
 /// `values`' major cells at `positions`, in order, by the one selection that `⌷` makes (`primitive::select`), or where `values` is `None` the positions themselves.
 pub(crate) fn rows_of(values: Option<&Value>, positions: Value, span: &Span) -> Result<Value, Error> {
-    match values {
-        Some(v) => crate::primitive::select(v, &[rustymath::structure::IndexPart::Axis(positions)], None, false, None, span),
-        None => Ok(positions),
-    }
+    match values { Some(v) => crate::primitive::select(v, &[rustymath::structure::IndexPart::Axis(positions)], None, false, None, span), None => Ok(positions) }
 }
 
 /// Classes in first-occurrence order, each holding its values' major cells or their positions.
@@ -223,10 +222,7 @@ fn exact(value: &Value) -> Option<search::Exact<'_>> {
 /// Each cell as an exact key, when every cell is one.
 pub(crate) fn exact_cells<'a>(cells: &'a Cells) -> Option<Vec<search::Exact<'a>>> {
     match cells {
-        Cells::Items(a) if a.level().is_none() => match a.as_items() {
-            Items::Values(items) => items.iter().map(exact).collect(),
-            _ => None,
-        },
+        Cells::Items(a) if a.level().is_none() => match a.as_items() { Items::Values(items) => items.iter().map(exact).collect(), _ => None },
         Cells::Items(_) => None, Cells::Arrays(cells) => cells.iter().map(exact).collect()
     }
 }
@@ -241,7 +237,9 @@ fn shared_classes(cells: &Cells) -> Option<Vec<u32>> {
     let Cells::Items(a) = cells else { return None };
     if a.level().is_some() { return None; }
     match a.as_items() {
-        Items::Values(items) => shared(items.len(), items.iter().map(|v| match v { Value::Array(array) => Some(Arc::as_ptr(array)), _ => None }), |i| exact(&items[i])),
+        Items::Values(items) => shared(items.len(), items.iter().map(|v| match v {
+            Value::Array(array) => Some(Arc::as_ptr(array)), _ => None
+        }), |i| exact(&items[i])),
         _ => None,
     }
 }

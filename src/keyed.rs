@@ -34,9 +34,7 @@ pub enum Form<'a> {
 }
 
 /// The form that a host format with strings and objects gives array `a` (`Form`).
-pub fn form(a: &Value) -> Form<'_> {
-    match a.keys(0) { Some(keys) => Form::Object(keys), None => name(a).map_or(Form::Array, Form::Text) }
-}
+pub fn form(a: &Value) -> Form<'_> { match a.keys(0) { Some(keys) => Form::Object(keys), None => name(a).map_or(Form::Array, Form::Text) } }
 
 /// Character vectors for the texts that one import reads. Each distinct text is made once, and every cell that repeats it shares that one array. Only the first `SHAREABLE` distinct texts are shared. A text first read after those is made for its cell alone.
 #[derive(Default)]
@@ -295,7 +293,7 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
             keys[0] = Some(Keys::partial(added[0].iter().cloned().map(Some).collect())?);
             let cells = Value::from_parts(shape, vec![fill.clone(); len], fill)?.with_keys(keys)?.with_axis_names(target.axis_names().to_vec())?;
             *target = crate::primitive::Operation::Primitive { primitive: crate::primitive::Primitive::CatenateFirst, pairing: crate::primitive::Pairing::Axes }
-                .call(&[target.clone(), cells], 0)?;
+                    .call(&[target.clone(), cells], 0)?;
             return Ok(());
         }
         shape = target.shape().to_vec();

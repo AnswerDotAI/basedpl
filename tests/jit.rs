@@ -325,11 +325,18 @@ fn compiled_stages_match_interpreted() {
     fixed.extend(["+", "-", "×", "÷", "⌈", "⌊"].map(|g| format!("--xf{g}yf")));
     for g in ["=", "≠", "<", "≤", ">", "≥"] { fixed.extend([format!("~x{g}y"), format!("~xf{g}yf"), format!("~yf{g}0.75"), format!("~0.75{g}yf")]); }
     // Dynamic kinds compare within the default tolerance: `x×1+1E¯15` lies within it of `x`.
-    for g in ["=", "≠", "<", "≤", ">", "≥"] { dynamic.extend([format!("~x{g}y"), format!("~y{g}0.75"), format!("~0.75{g}y"), format!("~x{g}x×1+1E¯15")]); }
-    dynamic.extend(["-|x", "~p∧q", "~p∨q", "--xf+x", "+/b-1", "⌈/b-1", "--x÷0", "--÷x", "--πx", "--x*¯1", "+/(x<y)×x", "+/x≤x", "+/(x<y)∧b<y", "--y|x", "--0.75|x", "--x|0.75"].map(String::from));
+    for g in ["=", "≠", "<", "≤", ">", "≥"] {
+        dynamic.extend([format!("~x{g}y"), format!("~y{g}0.75"), format!("~0.75{g}y"), format!("~x{g}x×1+1E¯15")]);
+    }
+    dynamic.extend([
+        "-|x", "~p∧q", "~p∨q", "--xf+x", "+/b-1", "⌈/b-1", "--x÷0", "--÷x", "--πx", "--x*¯1", "+/(x<y)×x", "+/x≤x", "+/(x<y)∧b<y", "--y|x",
+        "--0.75|x", "--x|0.75",
+    ].map(String::from));
     fixed.extend([
-        "--x÷y", "+/x=x", "+/(x<y)∧b<y", "+/h≤k", "+/w≠z", "+/l≤m", "(0.75≤)⍚[- ⊢]xf", "+/yf>0.75", "0ₓ₄+/xf<yf", "+/(xf<yf)×x", "-|xf", "√|xf", "√|x", "--u+v", "--h×k", "--w-z", "--l⌈m", "~u<v", "~l≥m",
-        "-|h", "--u+h", "+/h×k", "⌈/u+v", "+/u>v", "+/bf-1", "⌈/bf-1", "--×x", "--×xf", "--⌊x", "--⌈xf", "--⌊(x÷3)×3", "--⌈(xf÷3)×3", "--÷xf", "--πxf", "--xfπyf", "--x*¯1", "--xf*0.5", "--x*1.5", "--xf*¯0.5", "--1ₓ|l", "--2ₓ|l", "--4ₓ|w", "--256ₓ|h", "--2ₓ|u",
+        "--x÷y", "+/x=x", "+/(x<y)∧b<y", "+/h≤k", "+/w≠z", "+/l≤m", "(0.75≤)⍚[- ⊢]xf", "+/yf>0.75", "0ₓ₄+/xf<yf", "+/(xf<yf)×x", "-|xf",
+        "√|xf", "√|x", "--u+v", "--h×k", "--w-z", "--l⌈m", "~u<v", "~l≥m", "-|h", "--u+h", "+/h×k", "⌈/u+v", "+/u>v", "+/bf-1", "⌈/bf-1", "--×x",
+        "--×xf", "--⌊x", "--⌈xf", "--⌊(x÷3)×3", "--⌈(xf÷3)×3", "--÷xf", "--πxf", "--xfπyf", "--x*¯1", "--xf*0.5", "--x*1.5", "--xf*¯0.5",
+        "--1ₓ|l", "--2ₓ|l", "--4ₓ|w", "--256ₓ|h", "--2ₓ|u",
     ].map(String::from));
     let options = || basedpl::EvalOptions { echo: false, ..Default::default() };
     for n in [0, 1, 7, 37].map(|more| 16 * settings::Sizes::DEFAULT.block + more) {

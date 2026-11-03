@@ -27,7 +27,8 @@ impl Value {
     /// Whether `query` matches one major cell, as `≡` matches arrays, within the tolerance. Its layout must match a cell's (`rustymath::search::member_layout`). Compact items search through `rustymath::search::view_member`, and other items search as `∊` does. A rank-0 value gives a Rank error. Pending operands are read first.
     pub fn contains(&self, query: &Value) -> Result<bool, Error> {
         let numeric = Numeric::current();
-        let array = self.read(ReadKind::Value)?; let query = query.read(ReadKind::Value)?;
+        let array = self.read(ReadKind::Value)?;
+        let query = query.read(ReadKind::Value)?;
         if rustymath::search::member_layout(array.core_layout(), query.core_layout())?.is_none() { return Ok(false); }
         if let (Some(x), Some(y)) = (array.view(), query.view()) {
             let t = crate::search::compared_at(array.float_width().max(query.float_width()), numeric).1;
@@ -54,10 +55,14 @@ pub(super) fn find(left: &Value, right: &Value, numeric: Numeric) -> Result<Valu
     let shape = right.shape();
     let (x, y) = (left.as_items(), right.as_items());
     let compact = match (x, y) {
-        (Items::Compact(x), Items::Compact(y)) => rustymath::search::view_find(
-            x, left.shape(), y, shape, crate::search::compared_at(left.float_width().max(right.float_width()), numeric).1), _ => None
+        (Items::Compact(x), Items::Compact(y)) => {
+            rustymath::search::view_find(x, left.shape(), y, shape, crate::search::compared_at(left.float_width().max(right.float_width()), numeric).1)
+        }
+        _ => None,
     };
-    let data = match compact { Some(data) => data, None => rustymath::search::find_with(left.shape(), shape, |i, o| left.at(i).matches_within(&right.at(o), numeric))? };
+    let data = match compact {
+        Some(data) => data, None => rustymath::search::find_with(left.shape(), shape, |i, o| left.at(i).matches_within(&right.at(o), numeric))?
+    };
     if right.is_atom() { return Ok(Value::Number(Number::from_bool(data[0]))); }
     Value::booleans(shape.to_vec(), data)?.with_layout(right.layout().clone()).described("invalid find result")
 }
@@ -76,7 +81,11 @@ pub(super) fn self_classify(right: &Value, numeric: Numeric) -> Result<Value, Er
     let (classes, major) = (distinct(right, numeric)?, crate::plan::major_axis(right.layout()));
     let n = major.shape()[0];
     let mut data = vec![false; classes.firsts.len() * n];
-    rustymath::with_ints!(classes.numbers.view(), |numbers| { for (p, &c) in numbers.iter().enumerate() { data[i64::from(c) as usize * n + p] = true } });
+    rustymath::with_ints!(classes.numbers.view(), |numbers| {
+        for (p, &c) in numbers.iter().enumerate() {
+            data[i64::from(c) as usize * n + p] = true
+        }
+    });
     Layout::from(vec![classes.firsts.len()]).concat(&major).booleans(data).described("invalid classification")
 }
 
@@ -120,7 +129,9 @@ pub(super) fn runs(right: &Value, numeric: Numeric) -> Result<Value, Error> {
 /// The positions of each distinct major cell, in the order of `∪`, as monadic Key groups them (`search::class_groups`): exact integers, or the keys of a keyed leading axis. A unit is one cell.
 pub(super) fn groups(right: &Value, span: &Span, numeric: Numeric) -> Result<Value, Error> {
     let numbered = distinct(right, numeric)?;
-    if numbered.firsts.is_empty() { return Value::from_parts(vec![0], Vec::new(), positions(right, Vec::new()).described("invalid groups")?).described("invalid groups"); }
+    if numbered.firsts.is_empty() {
+        return Value::from_parts(vec![0], Vec::new(), positions(right, Vec::new()).described("invalid groups")?).described("invalid groups");
+    }
     let values = right.keys(0).is_some().then(|| crate::keyed::selectors(right, &[0])).transpose().described("invalid groups")?;
     crate::search::class_groups(values.as_ref(), right.shape().first().copied().unwrap_or(1), numbered, span, numeric)
 }
@@ -205,7 +216,8 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span, numeric: N
         return Primitive::Arithmetic(Arithmetic::Times).call(Some(&sign), &counts(1..steps(&n)?.saturating_add(1))?, span, numeric);
     };
     let start = left.at(0);
-    let distance = real(Primitive::Arithmetic(Arithmetic::Minus).call(Some(&right.at(0).ordinary()), &start.ordinary(), span, numeric)?.read(ReadKind::Value)?)?;
+    let distance =
+        real(Primitive::Arithmetic(Arithmetic::Minus).call(Some(&right.at(0).ordinary()), &start.ordinary(), span, numeric)?.read(ReadKind::Value)?)?;
     let op = if distance.grade_order(&distance.zero()).is_lt() { Arithmetic::Minus } else { Arithmetic::Plus };
     Primitive::Arithmetic(op).call(Some(&start), &counts(0..steps(&distance)?.saturating_add(1))?, span, numeric)
 }
@@ -278,7 +290,9 @@ fn search(haystack: &Value, needles: &Value, numeric: Numeric) -> Result<(Vec<u3
 }
 
 /// The first major cell that matches each major cell of `right`, and the layout of the major-cell axis.
-fn classes(right: &Value, numeric: Numeric) -> Result<(Vec<u32>, Layout), Error> { Ok((classify(&major_cells(right)?, numeric)?, crate::plan::major_axis(right.layout()))) }
+fn classes(right: &Value, numeric: Numeric) -> Result<(Vec<u32>, Layout), Error> {
+    Ok((classify(&major_cells(right)?, numeric)?, crate::plan::major_axis(right.layout())))
+}
 
 /// The major cells of `right`. A unit is one cell.
 fn major_cells<'a>(right: &'a Value) -> Result<Cells<'a>, Error> { search_cells(right, right.shape().len().saturating_sub(1)) }
@@ -316,10 +330,7 @@ fn element_order(left: &Value, right: &Value) -> Option<Ordering> {
 fn array_order(left: &Value, right: &Value) -> Option<Ordering> {
     let rank_order = left.rank().cmp(&right.rank());
     if !rank_order.is_eq() { return Some(rank_order); }
-    for (x, y) in left.elements().zip(right.elements()) {
-        let order = element_order(&x, &y)?;
-        if !order.is_eq() { return Some(order); }
-    }
+    for (x, y) in left.elements().zip(right.elements()) { let order = element_order(&x, &y)?; if !order.is_eq() { return Some(order); } }
     Some(left.len().cmp(&right.len()).then_with(|| left.shape().cmp(right.shape())))
 }
 
@@ -366,8 +377,9 @@ pub(super) fn grade(left: Option<&Value>, right: &Value, down: bool) -> Result<V
             }
             Ordering::Equal
         });
-    } else if let Some(order) = key_grade(right, count, down) { indices = order; }
-    else if let Some(keys) = (right.shape().len() == 1).then(|| exact_cells(&items)).flatten() {
+    } else if let Some(order) = key_grade(right, count, down) {
+        indices = order;
+    } else if let Some(keys) = (right.shape().len() == 1).then(|| exact_cells(&items)).flatten() {
         indices = (0..count as u32).collect();
         indices.sort_by(|&a, &b| direction(keys[a as usize].cmp(&keys[b as usize])));
     } else {
@@ -387,27 +399,24 @@ pub(super) fn sort(right: &Value, down: bool, span: &Span) -> Result<Value, Erro
     if right.is_unit() { return Ok(right.clone()); }
     if right.shape().len() == 1 && right.keys(0).is_none() {
         if let Some(sorted) = compact_view(&Cells::Items(right)).map(|v| rustymath::search::view_sort(v, down)).transpose()?.flatten() {
-            return Value::from_buffer_at(right.shape(), sorted, right.fixed_width())?.with_layout(right.layout().clone())
-                .described("invalid sort");
+            return Value::from_buffer_at(right.shape(), sorted, right.fixed_width())?.with_layout(right.layout().clone()).described("invalid sort");
         }
     }
     let order = Value::new(vec![1], vec![grade(None, right, down)?]).described("invalid sort")?;
     squad(&order, right, None, None, span)
 }
 
-
 /// Partial sorting and permutation ranks use their native algorithms when their arguments qualify.
 pub(super) fn combined(primitive: Primitive, left: Option<&Value>, right: &Value, span: &Span, numeric: Numeric) -> Result<Value, Error> {
     use rustymath::events::{self, Route};
     let (route, fast) = match primitive {
-        Primitive::PartialSort { grade, down, take } => (if grade { Route::PartialGrade } else { Route::PartialSort }, partial(grade, down, take, left, right, span, numeric)),
+        Primitive::PartialSort { grade, down, take } => {
+            (if grade { Route::PartialGrade } else { Route::PartialSort }, partial(grade, down, take, left, right, span, numeric))
+        }
         Primitive::Ranks { down } => (Route::Ranks, Some(ranks(down, right, span, numeric))),
         _ => unreachable!("an ordering combination"),
     };
-    if let Some(result) = fast {
-        if result.is_ok() { events::taken(route, right.len()); }
-        return result;
-    }
+    if let Some(result) = fast { if result.is_ok() { events::taken(route, right.len()); } return result; }
     events::declined(route, "arguments that don't suit it", right.len());
     let Primitive::PartialSort { grade, down, take } = primitive else { unreachable!("ranks always run") };
     let order = if grade { Primitive::Grade(down) } else { Primitive::Compare(if down { Comparison::Greater } else { Comparison::Less }) };
@@ -443,7 +452,6 @@ fn ranks(down: bool, right: &Value, span: &Span, numeric: Numeric) -> Result<Val
     let ranks = rustymath::with_ints!(ints, |positions| rustymath::search::inverse_permutation(positions.iter().map(|&p| i64::from(p) as usize)));
     Value::positions_u32([n], n, ranks)?.along_first_of(right).described("invalid ranks")
 }
-
 
 pub(super) fn interval_index(left: &Value, right: &Value) -> Result<Value, Error> {
     let (rank, frame, bound) = crate::plan::search_frame(left.layout(), right.layout())?;

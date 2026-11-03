@@ -1,17 +1,13 @@
 use crate::execution::check;
-use crate::session;
-use crate::{Described, Error, ErrorKind, Function, Span, Value, ReadKind, program::{Origin, Outputs},
-    array::generated_len, number::Numeric, eval::OperatorKind, primitive::{Act, CallView, Operation, Primitive, Roles, Row, numeric}};
+use crate::{
+    Described, Error, ErrorKind, Function, ReadKind, Span, Value, array::generated_len, eval::OperatorKind, number::Numeric,
+    primitive::{Act, CallView, Operation, Primitive, Roles, Row, numeric}, program::{Origin, Outputs}, session
+};
 use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth, View}, error::Kind, facts::Variant, layout::FRESH, operation::Kernel};
 use std::{borrow::Cow, hash::{Hash, Hasher}, sync::Arc};
 
 #[derive(Clone, Copy)]
-pub(crate) struct HostCall<'a> {
-    pub(crate) left: Option<&'a Value>,
-    pub(crate) right: &'a Value,
-    pub(crate) site: &'a Span,
-    pub(crate) numeric: Numeric,
-}
+pub(crate) struct HostCall<'a> { pub(crate) left: Option<&'a Value>, pub(crate) right: &'a Value, pub(crate) site: &'a Span, pub(crate) numeric: Numeric }
 
 pub(crate) type Native = fn(HostCall<'_>) -> Result<Value, Error>;
 pub(crate) type Effect = fn(HostCall<'_>) -> Result<(Value, bool), Error>;
@@ -68,15 +64,13 @@ impl PartialEq for SystemFunction {
         self.name == other.name && match (&self.call, &other.call) {
             (Call::Distribution(x, a), Call::Distribution(y, b)) => (x, a) == (y, b),
             (Call::Generator(x, a), Call::Generator(y, b)) => same_arc(x, y) && a == b, (Call::Element(x), Call::Element(y)) => x == y,
-            (Call::Edge(x), Call::Edge(y)) => x == y, (Call::Canvas(x), Call::Canvas(y)) => x == y, #[cfg(web)]
-            (Call::Js(x), Call::Js(y)) => same_arc(x, y), (x, y) => std::mem::discriminant(x) == std::mem::discriminant(y)
+            (Call::Edge(x), Call::Edge(y)) => x == y, (Call::Canvas(x), Call::Canvas(y)) => x == y, #[cfg(web)] (Call::Js(x), Call::Js(y)) => same_arc(x, y),
+            (x, y) => std::mem::discriminant(x) == std::mem::discriminant(y)
         }
     }
 }
 impl Eq for SystemFunction {}
-impl Hash for SystemFunction {
-    fn hash<H: Hasher>(&self, state: &mut H) { self.name.hash(state); }
-}
+impl Hash for SystemFunction { fn hash<H: Hasher>(&self, state: &mut H) { self.name.hash(state); } }
 
 impl Valence {
     /// A call with the wrong number of arguments is a SYNTAX error.
@@ -97,10 +91,7 @@ impl SystemFunction {
     /// How a call of this function on `left` and `right` acts: its row's `acts`, with `When` decided by the arguments. A call that acts is an effect's node (`program::Act::Call`).
     pub(crate) fn acting(&self, left: Option<&Value>, right: &Value) -> Acts { match self.acts { Acts::When(decide) => decide(left, right), acts => acts } }
     /// This row, acting as `acts` says.
-    const fn acting_as(mut self, acts: Acts) -> Self {
-        self.acts = acts;
-        self
-    }
+    const fn acting_as(mut self, acts: Acts) -> Self { self.acts = acts; self }
     pub(crate) fn native_opaque(&self) -> bool { match self.call { Call::Generator(..) => true, #[cfg(web)] Call::Js(_) => true, _ => false } }
     pub(crate) fn implicit_generator(&self) -> bool {
         matches!(self.call, Call::Distribution(_, crate::distribution::Operation::Sample)) || self.entry == Some(Entry::named("•distribution"))
@@ -124,8 +115,10 @@ impl SystemFunction {
 }
 
 pub(crate) fn native_row() -> &'static Row {
-    &const { Row { math: native_kernel, roles, form, build, code, inverse, cells: crate::distribution::cells,
-        ..Row::new("•", "system", ["", ""], [crate::primitive::WHOLE; 3]) } }
+    &const {
+        Row { math: native_kernel, roles, form, build, code, inverse, cells: crate::distribution::cells,
+            ..Row::new("•", "system", ["", ""], [crate::primitive::WHOLE; 3]) }
+    }
 }
 
 fn native_kernel(_: &CallView<'_>, _: Variant) -> Result<Option<Kernel>, Error> { Ok(None) }
@@ -169,15 +162,13 @@ fn form(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
     system.check(left_value.as_deref())?;
     let host = HostCall { left: left_value.as_deref(), right: &right_value, site: call.site.ok_or_else(Error::planning)?, numeric: call.numeric()? };
     if let Call::Active(active) = system.call { return active(host).map(|value| Some(Outputs::one(value))); }
-    if host.left.into_iter().chain([host.right]).any(|value| crate::derivative::tag(value).is_some()) {
-        return Err(crate::derivative::system(system.name));
-    }
+    if host.left.into_iter().chain([host.right]).any(|value| crate::derivative::tag(value).is_some()) { return Err(crate::derivative::system(system.name)); }
     if session().prototype.get() && let Some(prototype) = system.prototype { return Ok(Some(Outputs::one(prototype(host)))); }
     if let Some(item) = system.item && (item.maps(&right_value) || item.rows(&right_value)) {
         let mut mapped = function.clone();
         if let Some(left) = &left_value { mapped = Function::applied_kind(OperatorKind::Before, vec![left.clone().into_owned(), Value::Function(mapped)])?; }
         mapped = if item.rows(&right_value) { Function::applied_kind(OperatorKind::Rank, vec![Value::Function(mapped), Value::integer(1)])? }
-            else { Function::applied_kind(OperatorKind::Each, vec![Value::Function(mapped)])? };
+        else { Function::applied_kind(OperatorKind::Each, vec![Value::Function(mapped)])? };
         return mapped.call_bound(&origin, &[right_value.into_owned()], &[Some(call.root(right).leaves.start)]).map(|value| Some(Outputs::one(value)));
     }
     if system.call.draws() { return crate::distribution::draw_origin(origin).map(Some); }
@@ -229,14 +220,11 @@ fn special(_: HostCall<'_>) -> Value { Value::Function(crate::primitive::Builtin
 /// A row of the table. A system function that maps over several items has a result prototype, which an empty mapped argument gives.
 const fn row(
     name: &'static str, call: Call, valence: Valence, item: Option<Item>, prototype: Option<fn(HostCall<'_>) -> Value>, inverse: Option<(Native, Valence)>
-) -> SystemFunction {
-    row_of(name, call, valence, item, prototype, inverse, Cells::Each)
-}
+) -> SystemFunction { row_of(name, call, valence, item, prototype, inverse, Cells::Each) }
 /// A row of the table whose function runs on a batched run's cells as `cells` says.
 const fn row_of(
     name: &'static str, call: Call, valence: Valence, item: Option<Item>, prototype: Option<fn(HostCall<'_>) -> Value>, inverse: Option<(Native, Valence)>,
-    cells: Cells
-) -> SystemFunction {
+    cells: Cells) -> SystemFunction {
     assert!(item.is_none() || prototype.is_some(), "a system function that maps over items needs a result prototype");
     SystemFunction { name, call, valence, item, prototype, inverse, cells, acts: Acts::Never, entry: None }
 }
@@ -251,12 +239,11 @@ const BUILTINS: &[SystemFunction] = &[
     row("•xml", Call::Value(crate::xml::parse), Monadic, Some(Text), Some(record), Some((crate::xml::serialize, Monadic))),
     row("•svg", Call::Value(crate::xml::svg), Ambivalent, None, Some(record), None),
     row("•plot", Call::Value(crate::plot::plot), Ambivalent, None, Some(record), None),
-    row("•image", Call::Value(crate::image::image), Ambivalent, Some(Vector), Some(float), Some((crate::image::encode, Ambivalent))).acting_as(Acts::When(crate::image::acts)),
-    row("•canvas", Call::Value(crate::canvas::factory), Monadic, Some(Text), Some(canvas), None), #[cfg(web)]
+    row("•image", Call::Value(crate::image::image), Ambivalent, Some(Vector), Some(float), Some((crate::image::encode, Ambivalent)))
+        .acting_as(Acts::When(crate::image::acts)), row("•canvas", Call::Value(crate::canvas::factory), Monadic, Some(Text), Some(canvas), None), #[cfg(web)]
     row("•js", Call::Value(crate::js::function), Monadic, Some(Text), Some(crate::js::prototype), None).acting_as(Acts::Ends),
     row("•vfi", Call::Value(crate::data::vfi), Ambivalent, Some(Text), Some(valid_numbers), None),
-    row("•r", Call::Value(crate::regex::matches), Dyadic, None, None, None),
-    row("•replace", Call::Value(crate::regex::replace), Dyadic, None, None, None),
+    row("•r", Call::Value(crate::regex::matches), Dyadic, None, None, None), row("•replace", Call::Value(crate::regex::replace), Dyadic, None, None, None),
     row("•distribution", Call::Value(crate::distribution::distribution), Ambivalent, Some(Text), Some(record), None),
     row("•special", Call::Value(crate::primitive::special), Monadic, Some(Text), Some(special), None),
     row("•rand", Call::Value(crate::distribution::generator), Monadic, None, Some(record), None).acting_as(Acts::Records),
@@ -265,14 +252,18 @@ const BUILTINS: &[SystemFunction] = &[
     row("•fetch", Call::Value(crate::data::fetch), Ambivalent, Some(Text), Some(record), None).acting_as(Acts::Ends),
     row("•deflate", Call::Value(crate::data::inflate), Ambivalent, Some(Vector), Some(numbers), Some((crate::data::deflate, Ambivalent))),
     row("•hash", Call::Value(crate::data::hash), Ambivalent, Some(Vector), Some(text), None),
-    row("•uuid", Call::Value(crate::data::uuid), Ambivalent, Some(Number), Some(text), None).acting_as(Acts::When(|left, right| if left.is_none() && right.as_number().and_then(|n| n.integer().ok()).is_some_and(|v| matches!(v, 1 | 4 | 6 | 7)) { Acts::Records } else { Acts::Never })),
-    row("•normalize", Call::Value(normalize), Ambivalent, Some(Text), Some(text), None),
-    row_of("•decompose", Call::Value(crate::primitive::decompose), Dyadic, None, Some(record), Some((crate::primitive::recompose, Dyadic)), Cells::Stacked(crate::primitive::stacked_decompositions)),
+    row("•uuid", Call::Value(crate::data::uuid), Ambivalent, Some(Number), Some(text), None).acting_as(Acts::When(|left, right| {
+        if left.is_none() && right.as_number().and_then(|n| n.integer().ok()).is_some_and(|v| matches!(v, 1 | 4 | 6 | 7)) { Acts::Records } else { Acts::Never }
+    })), row("•normalize", Call::Value(normalize), Ambivalent, Some(Text), Some(text), None), row_of(
+        "•decompose", Call::Value(crate::primitive::decompose), Dyadic, None, Some(record), Some((crate::primitive::recompose, Dyadic)),
+        Cells::Stacked(crate::primitive::stacked_decompositions)),
     row_of("•ucs", Call::Value(unicode_convert), Ambivalent, Some(Vector), Some(numbers), Some((unicode_convert, Ambivalent)), Cells::Elements),
-    row("•load", Call::Load, Monadic, Some(Text), Some(record), None).acting_as(Acts::Ends), row("•signal", Call::Value(signal), Ambivalent, None, Some(number), None),
-    row("•storage", Call::Active(storage), Monadic, None, Some(record), None), row("•float", Call::Active(to_float), Ambivalent, None, None, None),
-    row("•time", Call::Time, Ambivalent, None, Some(seconds), None).acting_as(Acts::Records), row("•host", Call::Value(host), Monadic, Some(Text), Some(text), None).acting_as(Acts::Ends),
-    #[cfg(not(web))] row("•delay", Call::Effect(delay), Monadic, None, Some(seconds), None).acting_as(Acts::Records),
+    row("•load", Call::Load, Monadic, Some(Text), Some(record), None).acting_as(Acts::Ends),
+    row("•signal", Call::Value(signal), Ambivalent, None, Some(number), None), row("•storage", Call::Active(storage), Monadic, None, Some(record), None),
+    row("•float", Call::Active(to_float), Ambivalent, None, None, None),
+    row("•time", Call::Time, Ambivalent, None, Some(seconds), None).acting_as(Acts::Records),
+    row("•host", Call::Value(host), Monadic, Some(Text), Some(text), None).acting_as(Acts::Ends), #[cfg(not(web))]
+    row("•delay", Call::Effect(delay), Monadic, None, Some(seconds), None).acting_as(Acts::Records),
     row("•date", Call::Value(crate::date::read), Ambivalent, None, Some(seconds), Some((crate::date::write, Ambivalent))), #[cfg(not(web))]
     row("•path", Call::Value(crate::files::path), Ambivalent, None, Some(record), Some((crate::files::join, Monadic))), #[cfg(not(web))]
     row("•metadata", Call::Value(crate::files::metadata), Monadic, None, Some(record), None).acting_as(Acts::Ends), #[cfg(not(web))]
@@ -412,7 +403,7 @@ pub(crate) fn storage_kind(value: &Value, numeric: Numeric) -> &'static str {
     if let Some(dtype) = value.dtype() { return match dtype { DType::Integer(_) if !numeric.is_static() => "integer", _ => dtype.name() }; }
     match value {
         Value::Number(_) => "rational", Value::Function(_) => "function", Value::Operator(_) => "operator",
-        Value::Pending(pending) => pending.completed().map_or("mixed", |value| storage_kind(value, numeric)), _ => "mixed",
+        Value::Pending(pending) => pending.completed().map_or("mixed", |value| storage_kind(value, numeric)), _ => "mixed"
     }
 }
 fn storage(HostCall { right, numeric, .. }: HostCall<'_>) -> Result<Value, Error> {
@@ -509,7 +500,8 @@ fn to_float(HostCall { left, right, site: span, numeric }: HostCall<'_>) -> Resu
     };
     let width =
         w.as_number().and_then(|n| n.integer().ok()).and_then(FloatWidth::of_bits).ok_or(Kind::Domain).described("•float takes a width of 16, 32 or 64")?;
-    let mut origin = Operation::Convert(crate::number::Mark::Type { dtype: DType::Float(width), fixed: false }).origin_numeric(std::slice::from_ref(right), 0, numeric)?;
+    let mut origin =
+        Operation::Convert(crate::number::Mark::Type { dtype: DType::Float(width), fixed: false }).origin_numeric(std::slice::from_ref(right), 0, numeric)?;
     origin.site = Some(span.clone());
     Operation::dispatch(origin.reborrow())?.assemble()
 }
@@ -671,7 +663,9 @@ use Item::{Number, Text, Vector};
 impl Item {
     pub(crate) fn maps(self, right: &Value) -> bool {
         let depth = crate::primitive::depth(right);
-        match self { Self::Number => depth > 0, Self::Vector => depth > 1, Self::Text => depth > 1 || (right.is_empty() && right.dtype() != Some(DType::Character)) }
+        match self {
+            Self::Number => depth > 0, Self::Vector => depth > 1, Self::Text => depth > 1 || (right.is_empty() && right.dtype() != Some(DType::Character))
+        }
     }
     pub(crate) fn rows(self, right: &Value) -> bool { self == Self::Text && right.rank() > 1 && right.dtype() == Some(DType::Character) }
 }
@@ -680,20 +674,17 @@ fn invoke(function: &SystemFunction, data: Option<&Value>, call: HostCall<'_>) -
     function.check(call.left)?;
     if crate::session().prototype.get() && let Some(prototype) = function.prototype { return Ok(Outputs::one(prototype(call))); }
     let result = match &function.call {
-        Call::Value(f) | Call::Active(f) => f(call),
-        Call::Effect(f) => return f(call).map(|(value, shy)| Outputs::one(value).with_shy(shy)),
+        Call::Value(f) | Call::Active(f) => f(call), Call::Effect(f) => return f(call).map(|(value, shy)| Outputs::one(value).with_shy(shy)),
         Call::Session(f) => f(crate::session(), call),
         Call::Distribution(kind, op) => crate::distribution::call(*kind, *op, data.ok_or_else(Error::planning)?, call),
-        Call::Generator(..) => return Err(Error::planning()),
-        Call::Load => crate::session().load(call.right, call.site)?.array(call.site),
+        Call::Generator(..) => return Err(Error::planning()), Call::Load => crate::session().load(call.right, call.site)?.array(call.site),
         Call::Element(tag) => crate::xml::element(tag, call.left, call.right),
         Call::Edge(mode) => edged(*mode, call.left.ok_or_else(Error::planning)?, call.right),
-        Call::Canvas(source) => crate::canvas::draw(source, call.left, call.right),
-        #[cfg(web)] Call::Js(Some(function)) => return crate::js::call(function, call).map(|value| value.map_or_else(Outputs::empty, Outputs::one)),
-        #[cfg(web)] Call::Js(None) => return Err(Error::planning()),
-        Call::Mime => crate::session().mime(call.left, call.right, call.site),
+        Call::Canvas(source) => crate::canvas::draw(source, call.left, call.right), #[cfg(web)]
+        Call::Js(Some(function)) => return crate::js::call(function, call).map(|value| value.map_or_else(Outputs::empty, Outputs::one)), #[cfg(web)]
+        Call::Js(None) => return Err(Error::planning()), Call::Mime => crate::session().mime(call.left, call.right, call.site),
         Call::Time => crate::session().system_time(call),
-        Call::Prefs => return crate::display::prefs(crate::session(), call.right).map(|(value, shy)| Outputs::one(value).with_shy(shy)),
+        Call::Prefs => return crate::display::prefs(crate::session(), call.right).map(|(value, shy)| Outputs::one(value).with_shy(shy))
     };
     result.map(Outputs::one)
 }

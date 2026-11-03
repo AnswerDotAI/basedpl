@@ -11,7 +11,9 @@ pub(crate) fn contract(program: &mut Program, running: &mut Running, node: usize
     if !matches!(origin.operation, Operation::Fold { primitive: PLUS, scan: false, .. }) { return Ok(false); }
     let input = program.reads[origin.list.start as usize + *arg as usize].clone();
     if !matches!(input.map, Mapping::Linear(1)) { return Ok(false); }
-    let Node::Step { step: Step::Map { left: Some(left), right, variant }, origin: multiply, .. } = &program.nodes[input.operand.node] else { return Ok(false); };
+    let Node::Step { step: Step::Map { left: Some(left), right, variant }, origin: multiply, .. } = &program.nodes[input.operand.node] else {
+        return Ok(false);
+    };
     if multiply.operation.primitive() != Some(TIMES) || multiply.mode != origin.mode { return Ok(false); }
     let bound = running.call(program, multiply)?;
     let Some(mapper) = bound.call_view(&bound.list).kernel(*variant)? else { return Ok(false); };
@@ -24,19 +26,20 @@ pub(crate) fn contract(program: &mut Program, running: &mut Running, node: usize
     let Some(destinations) = destinations(program, running, &source, &grid) else { return Ok(false); };
     let mut order: Vec<_> = (0..grid.shape().len()).filter(|&a| a != axis).collect();
     order.push(axis);
-    let axes: Option<Vec<_>> = order.iter().map(|&axis| {
-        for (input, axes) in destinations.iter().enumerate() {
-            if let Some(source_axis) = axes.iter().enumerate().find_map(|(a, &to)| (to == axis && running.desc(program, source[input].operand).unwrap().shape()[a] == grid.shape()[axis]).then_some(a)) {
-                return Some(ViewAxis { input: input as u32, axis: Some(source_axis) });
+    let axes: Option<Vec<_>> =
+        order.iter().map(|&axis| {
+            for (input, axes) in destinations.iter().enumerate() {
+                if let Some(source_axis) = axes.iter().enumerate().find_map(|(a, &to)| {
+                    (to == axis && running.desc(program, source[input].operand).unwrap().shape()[a] == grid.shape()[axis]).then_some(a)
+                }) { return Some(ViewAxis { input: input as u32, axis: Some(source_axis) }); }
             }
-        }
-        (grid.shape()[axis] == 1).then_some(ViewAxis { input: 0, axis: None })
-    }).collect();
+            (grid.shape()[axis] == 1).then_some(ViewAxis { input: 0, axis: None })
+        }).collect();
     let Some(axes) = axes else { return Ok(false); };
     let saved = (program.nodes.len(), program.reads.len(), program.descs.len());
-    let mut views = [PLUS, TIMES].into_iter().map(|primitive| Read {
-        operand: program.literal(crate::Value::Function(crate::Function::primitive(primitive))), map: Mapping::Linear(1),
-    }).collect::<Vec<_>>();
+    let mut views = [PLUS, TIMES].into_iter()
+        .map(|primitive| Read { operand: program.literal(crate::Value::Function(crate::Function::primitive(primitive))), map: Mapping::Linear(1) })
+        .collect::<Vec<_>>();
     for which in 0..2 {
         let axes = axes.iter().map(|axis| ViewAxis { input: axis.input ^ which as u32, axis: axis.axis }).collect();
         let destinations = destinations[which].iter().map(|axis| order.iter().position(|other| other == axis).unwrap()).collect();
@@ -47,9 +50,14 @@ pub(crate) fn contract(program: &mut Program, running: &mut Running, node: usize
     }
     let replaced = super::rules::replace(program, running, node, &origin, Operation::Product { contracted: 1, pairing: Pairing::Axes }, views, 4, None)?;
     if !replaced {
-        program.nodes.truncate(saved.0); program.reads.truncate(saved.1); program.descs.truncate(saved.2);
-        running.values.truncate(saved.0); running.geometry.maps.truncate(saved.1); running.geometry.descs.truncate(saved.2);
-        running.geometry.read_plans.truncate(saved.0); running.geometry.reads.truncate(saved.1);
+        program.nodes.truncate(saved.0);
+        program.reads.truncate(saved.1);
+        program.descs.truncate(saved.2);
+        running.values.truncate(saved.0);
+        running.geometry.maps.truncate(saved.1);
+        running.geometry.descs.truncate(saved.2);
+        running.geometry.read_plans.truncate(saved.0);
+        running.geometry.reads.truncate(saved.1);
     }
     Ok(replaced)
 }
@@ -62,8 +70,9 @@ fn destinations(program: &Program, running: &Running, sources: &[Read; 2], grid:
         if base != 0 { return None; }
         let source_steps = strides(desc.shape());
         for (axis, (&length, &stride)) in desc.shape().iter().zip(&source_steps).enumerate() {
-            let matches = |a: usize| !destinations[input].contains(&a)
-                && if length == 1 { steps[a] == 0 } else { grid.shape()[a] == length && steps[a] == stride as isize };
+            let matches = |a: usize| {
+                !destinations[input].contains(&a) && if length == 1 { steps[a] == 0 } else { grid.shape()[a] == length && steps[a] == stride as isize }
+            };
             let named = desc.layout.name(axis).and_then(|name| (0..grid.shape().len()).find(|&a| grid.name(a) == Some(name)));
             let found = match named { Some(a) => matches(a).then_some(a), None => (0..grid.shape().len()).find(|&a| matches(a)) }?;
             destinations[input].push(found);

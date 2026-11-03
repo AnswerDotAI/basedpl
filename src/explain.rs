@@ -64,7 +64,8 @@ pub(crate) fn mixed(span: &crate::Span, target: &'static str, written: &'static 
 /// Captured only from an event builder that was asked for sites.
 pub(crate) fn site() -> Option<String> {
     let trace = std::backtrace::Backtrace::force_capture().to_string();
-    let named = trace.lines().filter_map(|line| line.trim_start().split_once(": ").filter(|(n, _)| n.bytes().all(|b| b.is_ascii_digit())).and_then(|(_, s)| frame(s)));
+    let named =
+        trace.lines().filter_map(|line| line.trim_start().split_once(": ").filter(|(n, _)| n.bytes().all(|b| b.is_ascii_digit())).and_then(|(_, s)| frame(s)));
     let mut frames: Vec<String> = Vec::new();
     for name in named.skip_while(|name| ["explain::", "graph::Node::", "array::", "program::trace::"].iter().any(|p| name.starts_with(p))) {
         if frames.last() != Some(&name) { frames.push(name); }
@@ -76,7 +77,10 @@ fn frame(symbol: &str) -> Option<String> {
     let symbol = match symbol.strip_prefix('<') {
         Some(rest) => {
             let mut depth = 1usize;
-            let close = rest.char_indices().find(|&(_, c)| { depth = match c { '<' => depth + 1, '>' => depth - 1, _ => depth }; depth == 0 })?.0;
+            let close = rest.char_indices().find(|&(_, c)| {
+                depth = match c { '<' => depth + 1, '>' => depth - 1, _ => depth };
+                depth == 0
+            })?.0;
             format!("{}{}", rest[..close].split(" as ").next()?, &rest[close + 1..])
         }
         None => symbol.to_owned(),
@@ -116,12 +120,13 @@ impl Events {
     pub(crate) fn slow(&self) -> Vec<(&'static str, String, String)> {
         self.0.records.iter().filter(|event| event.slow() || matches!(event, Event::Route(r) if r.kind == EventKind::Declined)).map(|event| {
             let key = match event {
-                Event::Stored { reason, .. } => (*reason).to_owned(), Event::Forced { function, .. } => function.clone(), Event::Fallback { reason, .. } => reason.clone(),
+                Event::Stored { reason, .. } => (*reason).to_owned(), Event::Forced { function, .. } => function.clone(),
+                Event::Fallback { reason, .. } => reason.clone(),
                 Event::Route(r) if r.kind == EventKind::Declined => format!("{}: {}", r.route.name(), r.reason), Event::Route(r) => r.reason.to_owned(),
-                _ => unreachable!("slow event"),
+                _ => unreachable!("slow event")
             };
             let fields = event.fields().iter().map(|field| match field {
-                Field::Text(t) => (*t).to_owned(), Field::Count(n) => n.to_string(), Field::Truth(t) => t.to_string(),
+                Field::Text(t) => (*t).to_owned(), Field::Count(n) => n.to_string(), Field::Truth(t) => t.to_string()
             }).collect::<Vec<_>>().join(" ");
             (event.name(), key, fields)
         }).collect()
