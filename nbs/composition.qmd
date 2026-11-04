@@ -23,7 +23,7 @@ A space keeps a train apart from its argument. `+/÷≢ v` applies the train to 
 
 ```bpl
 v←2 4 9 ⋄ +/÷≢ v             ⍝ 5
-v←2 4 9 ⋄ +/÷≢v              ⍝ 1ᵣ3
+v←2 4 9 ⋄ +/÷≢v              ⍝ 0ₓ
 ```
 
 ## Identity functions

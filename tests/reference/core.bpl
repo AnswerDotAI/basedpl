@@ -5066,6 +5066,7 @@ x←["ab"∊"b";~0 1;0 1⊼1 1;0 1⊽0 0] ⋄ [x {(•storage ⍵).kind}¨x]   �
 ⍝ logical-numeric-truth — Boolean conversion keeps its default tolerance when Mathish is off
 •prefs ["mathish":$f] ⋄ n←1-1e¯15
 r←[~[0 n];(1+1e¯15)⊼n;0⊽n] ⋄ •prefs ["mathish":$t] ⋄ r
+⍝ =>
 [[$t $f] $f $f]
 
 ⍝ — Structural functions keep integer storage

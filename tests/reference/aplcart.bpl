@@ -9864,7 +9864,7 @@ inter←{0ₓ=≢⍺?⍺;i←⍵⍳↑⍺ ⋄ i=≢⍵?(1↓⍺)∇⍵;(1↑⍺)
 "100000000000000000000"
 
 ⍝ aplcart/table.tsv:2186 — Exact rational addition
-⍕(1ₓ÷3ₓ)+1ₓ÷2ₓ   ⍝ "5ᵣ6"
+⍕(1ᵣ÷3ᵣ)+1ᵣ÷2ᵣ   ⍝ "5ᵣ6"
 
 ⍝ aplcart/table.tsv:2198 — Balanced-ternary addition
 encode←{⍵=0?,0ₓ;{⍵=0?⍬;(∇⌊(⍵+1ₓ)÷3ₓ),¯1ₓ+3ₓ|⍵+1ₓ}⍵}

@@ -350,9 +350,9 @@ fn held_values_follow_read_demand() {
 #[test]
 fn stored_inputs_and_live_proofs() {
     let s = Session::new();
-    equiv_in(&s, "x←2ₓ×⍳3ₓ ⋄ ⎕←x ⋄ x+240ₓ", "[240 242 244]ₓ");
-    equiv_in(&s, "x←10ₓ×⍳3ₓ ⋄ ⎕←x ⋄ x+240ₓ", "[240 250 260]ₓ");
-    equiv_in(&s, "v←¯3 4 ⋄ x←⊼v ⋄ y←√x ⋄ ⎕←x ⋄ y", "3 4");
+    equiv_in(&s, "x←2ₓ×⍳3ₓ ⋄ ⎕←x ⋄ (x+240ₓ)≡[240 242 244]ₓ", "$t");
+    equiv_in(&s, "x←10ₓ×⍳3ₓ ⋄ ⎕←x ⋄ (x+240ₓ)≡[240 250 260]ₓ", "$t");
+    equiv_in(&s, "v←¯3 4 ⋄ x←⊼v ⋄ y←√x ⋄ ⎕←x ⋄ y≡3 4", "$t");
 }
 #[test]
 fn observed_counts_refill_shapes() {

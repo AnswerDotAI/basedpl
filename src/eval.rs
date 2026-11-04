@@ -1241,7 +1241,15 @@ impl Function {
             FunctionOperand::Value { value, .. } => value.clone(), _ => unreachable!("only real function values are inspected")
         }).collect()))
     }
-    pub fn inspect(&self, _: &Session) -> crate::Inspection { crate::Inspection::new("function", self.bpl()) }
+    pub fn inspect(&self, session: &Session) -> crate::Inspection {
+        if let FunctionNode::LateBound(definition) = self.node()
+            && let [Node { kind: NodeKind::Name(name, _), .. }] = definition.bodies[0][0].nodes.as_slice()
+            && let Ok(Some((_, binding @ Binding::Function(_)))) = session.bindings.lookup(*name)
+            && let Ok(function) = Self::from_value(binding, &definition.span) {
+            return crate::Inspection::new("function", function.bpl());
+        }
+        crate::Inspection::new("function", self.bpl())
+    }
     pub fn builtin(name: &str) -> Option<Self> {
         match crate::inspection::item(name, false)? { NodeKind::Function(builtin) => Some(builtin.function()), _ => None }
     }

@@ -368,6 +368,7 @@ pub fn coverage(gaps: &std::path::Path, selection: &mut Selection, wrong: &mut V
     cases.extend([
         ("2×⍟1+1+x".into(), "compiled"), ("{+/⍟1+⍵}∂ x".into(), "trace"),
         ("2×¯1+*1+x".into(), "compiled"), ("{+/¯1+*⍵}∂ x".into(), "trace"),
+        ("!2+x".into(), "compiled"), ("2×!x".into(), "compiled"),
     ]);
     for g in ["√ₐ", "⍟ₐ", "÷ₐ", "1○ₐ", "1○⁻¹ₐ", "5○ₐ", "5○⁻¹ₐ"] { cases.extend(monadic(g)); }
     for g in ["*ₐ", "÷ₐ"] {

@@ -717,7 +717,7 @@ impl Kernel {
                     x.iter().zip(&y).zip(&mask).map(|((&value, &input), &mask)| repaired(b, step.ty, value, input, mask, routine, single, config)).collect()
                 }
                 (Op::Check { reporter }, Some(valid), _) => {
-                    let valid = resize(b, valid, false, step.ty.bytes());
+                    let valid = resize(b, valid, false, widths[s]);
                     for &mask in &valid { checked(b, mask, reporter, single, config); }
                     x
                 }

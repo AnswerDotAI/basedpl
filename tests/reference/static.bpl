@@ -5,13 +5,13 @@ kind←{(•storage ⍵).kind} ⋄ replayed←{∧/(0<⍶ ⍵.programs)≥⍵.pr
 
 ⍝⍝ Static kinds
 
-⍝ — Under static kinds, a result's kind follows from its arguments' kinds: real arguments stay real, complex results stay complex, ⌊ and ÷ give floats, and integers compute at the int width. New floats take 32 bits
+⍝ — Under static kinds, a result's kind follows from its arguments' kinds: real arguments stay real, complex results stay complex, ⌊ gives floats and integer ÷ floors, and integers compute at the int width. New floats take 32 bits
 {(•storage ⍵).kind}¨[√¯4 9;1j0;0j1×0j1;⌊2.5 3.5;7ₓ÷2ₓ;[1 2]ₓ;○[0]ₓ₁;○0⍴3ₓ]
-"float32" "complex64" "complex64" "float32" "float32" "int32" "complex64" "complex64"
+"float32" "complex64" "complex64" "float32" "int32" "int32" "complex64" "complex64"
 
 ⍝ — Static kinds give NaN outside the real domain and wrap integers that don't fit. Exact fractions stay exact
 [√¯4 9;⌊2.5 ∞;7ₓ÷2ₓ;2147483647ₓ+1ₓ;2ₓ*100ₓ;1r3+1r6]
-[[$n 3] [2 ∞] 3.5 ¯2147483648ₓ 0ₓ 1ᵣ2]
+[[$n 3] [2 ∞] 3ₓ ¯2147483648ₓ 0ₓ 1ᵣ2]
 
 ⍝ — `√ₐ` and `⍟ₐ` give the real part where `√` and `⍟` give NaN, as floats of the arguments' width
 [√ₐ¯4 9;⍟ₐ¯1 ¯2;kind √ₐ¯4 9]
@@ -40,7 +40,7 @@ kind←{(•storage ⍵).kind} ⋄ replayed←{∧/(0<⍶ ⍵.programs)≥⍵.pr
 •prefs ["float":64] ⋄ {(•storage ⍵).kind}¨[(32•float 1 2)×2;(32•float 1 2)+0j1;[1 2]ₓ+0.5;[1 2]ₓ+32•float 0.5;$t $f+$t $t]
 "float32" "complex64" "float64" "float32" "int32"
 
-⍝ — With the int pref at 64, folds, scans and integer products wrap at 64 bits, where dynamic kinds widen to exact integers of any size. `static-int32.bpl` checks them at 32 bits
+⍝ — With the int pref at 64, folds, scans and integer products wrap at 64 bits. `static-int32.bpl` checks them at 32 bits
 •prefs ["int":64] ⋄ [+/[9223372036854775807 1]ₓ +\[9223372036854775807 1]ₓ ×/[4294967296 4294967296]ₓ [9223372036854775807 1]ₓ+.×[1 1]ₓ]
 [¯9223372036854775808ₓ [9223372036854775807 ¯9223372036854775808]ₓ 0ₓ ¯9223372036854775808ₓ]
 
@@ -48,9 +48,9 @@ kind←{(•storage ⍵).kind} ⋄ replayed←{∧/(0<⍶ ⍵.programs)≥⍵.pr
 •prefs ["int":64] ⋄ [10ₓ⊥20⍴9ₓ;31ₓ₄⊥[2 32]⍴(⍳10ₓ)ₓ₄;¯7ₓ⊥30⍴[3 ¯5]ₓ]
 [7766279631452241919ₓ;[¯1617581680 ¯1829123632]ₓ₄;2220363030220159130ₓ]
 
-⍝ — Under static kinds, ÷ divides integers as floats on every route: on arrays, in folds and in scans, lanes of one item included
+⍝ — Under static kinds, integer ÷ floors at the int width on every route: arrays, folds and scans, including one-item lanes
 {(•storage ⍵).kind}¨[[6 8]ₓ÷[3 2]ₓ;÷/[6 3]ₓ;÷\[6 3]ₓ;÷/,5ₓ;÷\,5ₓ;÷/[2 1]⍴5ₓ 7ₓ]
-"float32" "float32" "float32" "float32" "float32" "float32"
+"int32" "int32" "int32" "int32" "int32" "int32"
 
 ⍝ — A write whose items have another kind gives the whole array the compact kind that holds both, through `@`, indexed assignment and modified assignment. A Boolean written among bytes keeps bytes. Characters among numbers leave the array mixed
 x←[0 200 253 255]ₓ₁
