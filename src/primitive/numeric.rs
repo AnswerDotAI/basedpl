@@ -943,7 +943,7 @@ pub(crate) fn build_fold(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping
     let length = geometry.dims()[1];
     if source.dtype() == DType::Character && (geometry.result.count() == 0 || geometry.seed.is_none() && length == 1) {
         let read = ReadPlan::copy(geometry.arg, source.layout.count(), Mapping::Linear(1), geometry.result.count(), Missing::Default);
-        let desc = Desc { layout: geometry.result, atom: geometry.atom, ..source.clone() };
+        let desc = Desc { layout: geometry.result, atom: geometry.atom, ..source.into_owned() };
         set(geometry.arg, Mapping::Linear(1));
         return Ok((Step::Copy { source: geometry.arg as u32 }, Some(Outputs::one(Some(desc))), Some(read)));
     }
