@@ -439,14 +439,13 @@ fn source_relation(original: &CallView<'_>, input: usize, reference: &Desc) -> R
     Ok(SourceRelation { value, source: map, cotangent, route })
 }
 
-fn input_relation(original: &CallView<'_>, input: usize) -> Result<SourceRelation> {
-    let source = original.desc(input).or_internal()?;
-    let (layout, atom, map, cotangent) = match original.operation {
+fn input_grid(original: &CallView<'_>, input: usize, source_atom: bool) -> Result<(Layout, bool, Mapping, Mapping)> {
+    Ok(match original.operation {
         Operation::Fold { .. } => {
             let geometry = fold(original)?;
             let map = geometry.input_read(original, input)?;
             if Some(input) == geometry.seed { (geometry.result, geometry.atom, map, Mapping::Linear(1)) }
-            else { let cotangent = geometry.result_read(); (geometry.source, source.atom, map, cotangent) }
+            else { let cotangent = geometry.result_read(); (geometry.source, source_atom, map, cotangent) }
         }
         Operation::Product { .. } => {
             let geometry = product(original)?;
@@ -462,7 +461,23 @@ fn input_relation(original: &CallView<'_>, input: usize) -> Result<SourceRelatio
             else { return Err(Error::internal()); };
             (layout, atom, map, Mapping::Linear(1))
         }
-    };
+    })
+}
+
+/// Read a logical source root; `Relation::Input` still reads a numerical leaf for AD.
+pub(crate) fn read_root(origin: &Origin<&[Value]>, call: &CallView<'_>, root: Root) -> Result<Value> {
+    let source = call.layout().root(root);
+    if !call.trees.is_some_and(|trees| matches!(trees.root_at(&source), crate::array::Tree::Array { .. })) {
+        return Operation::read_input(&read_origin(origin).reborrow(), source.leaves.start);
+    }
+    let value = origin.root_input(root)?;
+    let (layout, _, map, _) = input_grid(call, source.leaves.start, false)?;
+    crate::primitive::copied(&value, layout, &map).map_err(Into::into)
+}
+
+fn input_relation(original: &CallView<'_>, input: usize) -> Result<SourceRelation> {
+    let source = original.desc(input).or_internal()?;
+    let (layout, atom, map, cotangent) = input_grid(original, input, source.atom)?;
     let value = Desc { layout, atom, kind: source.kind, range: crate::primitive::filled_range(original, &source) };
     let missing = crate::primitive::fill_read(original, &value)?;
     let route = ReadPlan::copy(input, source.layout.count(), map.clone(), value.layout.count(), missing);

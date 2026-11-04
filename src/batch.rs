@@ -134,11 +134,14 @@ pub(crate) fn lifted(origin: &Origin<&[Value]>, view: &CallView, wholes: &[Value
     let reference = matches!(origin.operation, Operation::Draw { .. } | Operation::Read(ReadOp::Cells { .. }) | Operation::At { .. })
         .then(|| Level::find(level).or_internal()?.frame_reference()).transpose()?;
     for position in positions {
-        if at_level(&origin.list[position], level).is_some() || Desc::of(&values[position]).is_none() { continue; }
+        let batched = at_level(&origin.list[position], level).is_some();
+        if Desc::of(&values[position]).is_none() || batched && !matches!(origin.operation, Operation::Read(ReadOp::Cells { .. })) { continue; }
         let value = &values[position];
+        if batched && reference.as_ref().is_some_and(|reference| value.shape().starts_with(reference.shape())) { continue; }
+        let cell_start = if batched { frame } else { 0 };
         let mut axes: Vec<_> = (0..frame).map(|axis| ViewAxis { input: u32::from(reference.is_some()), axis: reference.as_ref().map(|_| axis) }).collect();
-        axes.extend((0..value.rank()).map(|axis| ViewAxis { input: 0, axis: Some(axis) }));
-        let operation = Operation::Read(ReadOp::Axes { axes: axes.into(), destinations: (frame..frame + value.rank()).collect() });
+        axes.extend((cell_start..value.rank()).map(|axis| ViewAxis { input: 0, axis: Some(axis) }));
+        let operation = Operation::Read(ReadOp::Axes { axes: axes.into(), destinations: (frame - cell_start..frame - cell_start + value.rank()).collect() });
         let mut arguments = vec![value.clone()];
         if let Some(reference) = &reference {
             arguments.push(reference.clone());

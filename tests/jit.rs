@@ -56,7 +56,7 @@ fn folds_match_rustymath() {
                     unsafe { kernel.run(n, block, &[x.as_ptr().cast()], &[0.5, 1e-4, 1.0].map(f64::to_bits), &[out.as_mut_ptr().cast()], &mut totals) };
                     assert!(out.iter().zip(&halves).all(|(a, b)| a.to_bits() == b.to_bits()), "halves of {n} items");
                     for (k, h) in halves.chunks(block).enumerate() {
-                        let got = |j: usize| f64::from_bits(totals[4 * k + j]);
+                        let got = |j: usize| f64::from(rustymath::operation::Total { items: h.len(), bits: totals[4 * k + j] }.value::<$f>().unwrap());
                         let nan = h.iter().any(|v| v.is_nan());
                         let (most, least) =
                             h.iter().filter(|v| !v.is_nan()).fold((f64::NEG_INFINITY, f64::INFINITY), |(a, b), &v| (a.max(v.into()), b.min(v.into())));

@@ -515,10 +515,8 @@ pub(crate) fn product_fallback(origin: Origin<&[Value]>) -> Result<Value> {
     let fold = call.function(0).or_internal()?;
     let map = call.function(1).or_internal()?;
     let geometry = crate::plan::product(&call)?;
-    let reads: Vec<_> = origin.list.iter().map(|operand| crate::program::Read::linear(operand.clone())).collect();
-    let reads = origin.with_list(reads.as_slice());
-    let arguments = geometry.args.map(|input| Operation::read_input(&reads, input)).into_iter().collect::<Result<Vec<_>>>()?;
-    let pairs = crate::batch::map(map, &origin, &arguments, geometry.plan.iteration.shape().len(), &[true, true], Notation::Cells)?.assemble()?;
+    let arguments = call.layout().arguments().map(|root| crate::plan::read_root(&origin, &call, root)).collect::<Result<Vec<_>>>()?;
+    let pairs = crate::batch::map(map, &origin, &arguments, geometry.plan.iteration.shape().len(), &[true, true], Notation::Strand)?.assemble()?;
     let function = fold.clone();
     if contracted == 1 { return items_call(&origin, &function, false, pairs.rank().saturating_sub(1), &[pairs]); }
     let reduce = Function::applied_kind(OperatorKind::Reduce, vec![Value::Function(function)])?;

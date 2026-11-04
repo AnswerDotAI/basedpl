@@ -302,7 +302,7 @@ impl rustymath::recipe::Ops<f64> for Recording<'_> {
     fn select(&self, m: Self::B, x: Self::V, y: Self::V) -> Self::V { self.numeric(Op::Select(decoded(m)), x, Some(y)) }
 }
 
-/// The generated function: the number of items, the items in each block, the arrays' pointers, the scalar slots, the stored results' pointers and the totals. The array slots hold each array's pointer, with a run-by-run array's table after it (`Read`). The scalar slots hold each scalar input and each strided array's stride in items, in the order of the kernel's inputs, then, where the kernel reads runs, their length and the items left in the call's first run. Scalar slots and totals take 8 bytes: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1.
+/// The generated function: the number of items, the items in each block, the arrays' pointers, the scalar slots, the stored results' pointers and the totals. The array slots hold each array's pointer, with a run-by-run array's table after it (`Read`). The scalar slots hold each scalar input and each strided array's stride in items, in the order of the kernel's inputs, then, where the kernel reads runs, their length and the items left in the call's first run. Scalar slots take 8 bytes: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1. Fold totals use the raw-bit slots of [`rustymath::operation::Total`].
 type Entry = unsafe extern "C" fn(usize, usize, *const *const u8, *const u64, *const *mut u8, *mut u64);
 
 /// A compiled kernel, which owns its machine code. `most` is the most items in a block that it takes (`takes`). The module only keeps the code's memory. `JITModule` isn't `Sync`, and the mutex makes `Compiled` `Sync` without code that locks it.
@@ -847,7 +847,8 @@ impl Acc {
     /// `total` as its 8-byte slot holds it.
     fn slot(self, b: &mut FunctionBuilder, total: Ir) -> Ir {
         match self.ty {
-            Ty::F32 => b.ins().fpromote(types::F64, total), Ty::F64 | Ty::I64 | Ty::Bool => total, Ty::U8 => b.ins().uextend(types::I64, total),
+            Ty::F32 => { let bits = cast(b, types::I32, total); b.ins().uextend(types::I64, bits) }
+            Ty::F64 | Ty::I64 | Ty::Bool => total, Ty::U8 => b.ins().uextend(types::I64, total),
             _ => b.ins().sextend(types::I64, total)
         }
     }
