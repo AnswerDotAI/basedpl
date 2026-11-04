@@ -840,23 +840,9 @@ impl BindingContext {
     /// A stored graph node's input keeps the node's description, as graph building read it (`Desc::of_pending`); other inputs give kind bounds only.
     pub(crate) fn from_live(live: &Live) -> Self {
         let mut input_descs = live.inputs.iter().map(|value| value.as_ref().and_then(Desc::of).map(|desc| desc.into_owned().opaque())).collect::<Vec<_>>();
-        static DIAGNOSE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let mut owners = DIAGNOSE.get_or_init(|| std::env::var_os("BASEDPL_INPUT_DESCS").is_some()).then(|| vec![None::<&Pending>; live.inputs.len()]);
         for (pending, &position) in &live.pending {
             if pending.node.with_state(|state| matches!(state, crate::graph::State::Done(_))) {
-                let desc = Desc::of_pending(pending, false).map(Cow::into_owned);
-                if let Some(owners) = &mut owners {
-                    if let (Some(prior), Some(old), Some(new)) = (owners[position], input_descs[position].as_ref(), desc.as_ref()) {
-                        if !old.metadata_eq(new) || old.range.map(|r| (r.lo, r.hi)) != new.range.map(|r| (r.lo, r.hi)) {
-                            eprintln!("input-desc slot={position} conflicts(kind={},atom={},layout={}) prior={:x}:{:?} {:?}/{} {:?} {:?} incoming={:x}:{:?} {:?}/{} {:?} {:?}",
-                                old.kind != new.kind, old.atom != new.atom, old.layout != new.layout,
-                                prior.node.address(), prior.output, old.kind, old.atom, old.shape(), old.range,
-                                pending.node.address(), pending.output, new.kind, new.atom, new.shape(), new.range);
-                        }
-                    }
-                    owners[position] = Some(pending);
-                }
-                input_descs[position] = desc;
+                input_descs[position] = Desc::of_pending(pending, false).map(Cow::into_owned);
             } else if input_descs[position].is_none() { input_descs[position] = pending.description().cloned().map(Desc::opaque); }
         }
         Self { root: None, contexts: live.contexts(), sources: live.nodes.iter().map(|node| Arc::downgrade(&node.0)).collect(), input_descs }

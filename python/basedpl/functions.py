@@ -86,7 +86,9 @@ class Operator:
     def __repr__(self): return repr(self._inner)
     def __call__(self, *operands): return Function(self._inner.derive(*[o._inner if isinstance(o, Function) else _array(o) for o in operands]))
 
-def fork(f, g, h): return _build('train', f, g, h)
+def fork(f, g, h):
+    f, h = (o if isinstance(o, _Combinators) else _build('⍨', o) for o in (f, h))
+    return _build('train', f, g, h)
 def atop(f, g): return _build('∘', f, g)
 
 def _python_name(name):

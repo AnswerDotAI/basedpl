@@ -143,15 +143,13 @@ fn completion(program: &Program, running: &Running, stages: &[Stage], until: usi
 fn stamp(program: &Program, running: &Running) -> Option<u64> {
     let mut hash = std::hash::DefaultHasher::new();
     for node in &program.nodes {
-        if let Node::Input { position, control: false, .. } = node { running.binding.input_desc(*position)?.shape().hash(&mut hash); }
+        if let Node::Input { position, control: false, .. } = node {
+            let desc = running.binding.input_desc(*position)?;
+            (desc.kind, desc.atom, &desc.layout).hash(&mut hash);
+        }
     }
-    for (at, parameter) in program.parameters.iter().enumerate() {
-        let value = match parameter {
-            Parameter::Input { position, read: super::trace::ReadKind::Count } => running.inputs.get(*position)?.as_ref()?,
-            Parameter::Count { output, .. } if at < running.observed => running.value(program, *output)?, _ => continue
-        };
-        value.identity_hash(&mut hash);
-    }
+    // Count buffers can be freed while a cached stamp remains.
+    running.counts.lengths.hash(&mut hash);
     Some(hash.finish())
 }
 

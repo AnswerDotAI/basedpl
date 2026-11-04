@@ -346,6 +346,13 @@ fn held_values_follow_read_demand() {
         equiv_in(&s, "e.value", value);
     }
 }
+
+#[test]
+fn observed_counts_refill_shapes() {
+    let s = Session::new();
+    equiv_in(&s, "n←3 4 ⋄ f←{n⍴⍵} ⋄ ∧/(⍴f 1)=[3 4]", "$t");
+    equiv_in(&s, "n←5 6 ⋄ ∧/(⍴f 1)=[5 6]", "$t");
+}
 #[test]
 fn result_output_and_nonexecuting_parse() {
     let s = Session::new();

@@ -71,7 +71,7 @@ pub(crate) enum KeyPart {
 }
 
 #[derive(Default)]
-pub(crate) struct Encoder { pub(crate) parts: Vec<KeyPart>, lengths: Vec<usize>, names: Vec<Arc<str>> }
+pub(crate) struct Encoder { pub(crate) parts: Vec<KeyPart>, pub(super) lengths: Vec<usize>, names: Vec<Arc<str>> }
 
 impl Encoder {
     pub(crate) fn push(&mut self, part: KeyPart) { self.parts.push(part); }
