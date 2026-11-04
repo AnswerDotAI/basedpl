@@ -914,9 +914,19 @@ class ExplainDiff(list):
             if row.get('site'): lines.append(f'    site {row["site"]}')
         return '\n'.join(lines) or 'no difference'
 
-def _explained(case, setup, prefs, build, sites, limit):
-    "`•explain`'s records of `case` on `build`, as a route check captures them (the worker's `route` request), spending `limit`: each record's name to its rows, each row a dict from column to value. A build older than that request runs `case` as `•explain` text instead (`_explained_by_text`)."
-    with Worker(resolved(build)) as w:
+@delegates(environment)
+def explained(
+    case, # BPL code to explain
+    setup='', # BPL that defines the case's inputs
+    prefs='', # BPL preferences to run before setup
+    build:str=None, # A kept build ID or binary path; None selects the installed build
+    sites=False, # Fill forced and stopped rows' site columns
+    timeout:float=LIMIT, # Seconds shared by warm-up and capture, or a `Limit`
+    **kwargs
+):
+    "Capture `•explain` records after an explained warm-up. Return each record's name mapped to its row dictionaries. Older builds use text-based capture."
+    limit = Limit.of(timeout)
+    with Worker(resolved(build), **kwargs) as w:
         r = w.request(dict(route=dict(code=case, setup=setup, prefs=prefs, sites=sites)), limit.left())
         limit.spend(w.ran)
         if (r['error'] or {}).get('kind') == 'REQUEST': r = _explained_by_text(w, case, setup, prefs, sites, limit)
@@ -960,7 +970,7 @@ def explain_diff(
 ):
     "How `•explain`'s records of `case` differ between two builds: each row that only one build gave, and each row that both gave whose counts or program listing moved. Each build captures `case` as the route test does (the worker's `route` request), in a fresh worker: `prefs` and `setup` run, then an explained warm-up run, then the run whose records it compares."
     limit = Limit.of(timeout)
-    old, new = (_explained(case, setup, prefs, b, sites, limit) for b in (base, build))
+    old, new = (explained(case, setup, prefs, b, sites, limit) for b in (base, build))
     return ExplainDiff((name, *r) for name in [*new, *(n for n in old if n not in new)] for r in _paired(old.get(name, []), new.get(name, [])))
 
 def _cost_env(path, **kwargs):

@@ -303,13 +303,13 @@ impl Operation {
         Self::dispatch(origin.reborrow())?.assemble()
     }
     pub(crate) fn dispatch(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
+        if matches!(origin.operation, Self::Call) {
+            let Value::Function(function) = &origin.list[0] else { return Err(Error::internal()); };
+            return function.invoke(origin.reborrow(), true);
+        }
         let prepared = Self::prepare(&origin)?;
         let call = prepared.view();
-        let formed = if matches!(origin.operation, Self::Call) {
-            let Value::Function(function) = &origin.list[0] else { return Err(Error::internal()); };
-            let function = function.clone();
-            Some(crate::program::call(&function, origin.with_list(origin.list.to_vec()))?)
-        } else if matches!(origin.operation, Self::At { .. }) {
+        let formed = if matches!(origin.operation, Self::At { .. }) {
             crate::selection::form(origin.reborrow(), &call)?
         } else if matches!(origin.operation, Self::ReadRelation { .. }) {
             crate::plan::form_relation(origin.reborrow(), &call)?

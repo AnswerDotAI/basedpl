@@ -641,7 +641,53 @@ impl Session {
         self.bindings.leave(base, caller);
         result
     }
-    pub(super) fn call_defined(&self, function: &Function, origin: crate::program::Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
+    pub(super) fn run_function(&self, first: &Function, origin: Origin<&[Value]>, mut admit: bool) -> Result<Outputs<Value>, Error> {
+        let (base, caller) = (self.bindings.depth(), self.bindings.current());
+        let mut next: Option<Application> = None;
+        let (mut tail_span, mut unshy) = (None, false);
+        let mut result = loop {
+            let (function, current) = match &next {
+                Some(call) => {
+                    let Value::Function(function) = &call.origin.list[0] else { break Err(Error::internal()); };
+                    (function, call.origin.reborrow())
+                }
+                None => (first, origin.reborrow()),
+            };
+            let invocation = admit.then(|| current.with_list(current.list.to_vec()).invocation());
+            let current = invocation.as_ref().map_or(current, Origin::reborrow);
+            let step = (|| {
+                check()?;
+                if let Some(invocation) = &invocation {
+                    let _prepared = Operation::prepare(&current)?;
+                    if let Some(bound) = crate::program::admit_call(function, invocation, false)? { return Ok(Step::Done(bound.outputs)); }
+                }
+                function.run_step(current.reborrow())
+            })();
+            match step {
+                Ok(Step::Done(mut outputs)) => {
+                    if self.bindings.depth() > base {
+                        let environment = outputs.as_ref().iter().filter_map(Value::environment).max();
+                        if let Err(error) = Self::check_closure(base, environment, current.site.as_ref()) { break Err(error); }
+                    }
+                    if unshy { outputs.shy = false; }
+                    break Ok(outputs);
+                }
+                Ok(Step::Tail(call)) => {
+                    let keep = base.max(call.environment().map_or(0, |i| i + 1));
+                    self.bindings.leave(keep, caller);
+                    tail_span = Some(call.span.clone());
+                    unshy |= call.unshy;
+                    next = Some(call);
+                    admit = true;
+                }
+                Err(error) => break Err(error),
+            }
+        };
+        if let (Err(error), Some(span)) = (&mut result, tail_span) { error.calls.push(span); }
+        self.bindings.leave(base, caller);
+        result
+    }
+    pub(super) fn call_defined(&self, function: &Function, origin: crate::program::Origin<&[Value]>) -> Result<Step<Outputs<Value>>, Error> {
         let defined = match function.node() {
             FunctionNode::Defined(_) => function, FunctionNode::Applied { op: Operator::Closure(defined), .. } => defined, _ => unreachable!("a defined body")
         };
@@ -657,30 +703,24 @@ impl Session {
             matches!(function.node(), FunctionNode::Applied { op: Operator::Closure(_), .. })
                 .then(|| Binding::Operator(OperatorValue::Operator(Operator::Closure(defined.clone())))),
         ];
-        let (base, caller) = (self.bindings.depth(), self.bindings.current());
         self.bindings.enter(Frame::new(parent, module, definition.locals()), implicit, Some((Some(scope_index), origin.reborrow())), &definition.span)?;
-        let result = match self.run_definition(definition, (0, 0), true) {
-            Ok(Step::Done(bound)) => Ok(bound),
-            Ok(Step::Tail(call)) => {
-                let value = Operation::dispatch(call.origin.reborrow()).and_then(|outputs| Bound::from_outputs(outputs, &call.span))
-                    .map_err(|error| error.at(&call.span));
-                value.map(|mut bound| { if call.unshy { bound.shy = false; } bound })
-            }
-            Err(error) => Err(error),
-        };
-        self.leave(base, caller, result, &definition.span)?.into_outputs(&definition.span)
+        match self.run_definition(definition, (0, 0), true)? {
+            Step::Done(bound) => bound.into_outputs(&definition.span).map(Step::Done), Step::Tail(call) => Ok(Step::Tail(call))
+        }
     }
 
+    fn check_closure(base: usize, environment: Option<usize>, span: Option<&Span>) -> Result<(), Error> {
+        if !environment.is_some_and(|i| i >= base) { return Ok(()); }
+        let error = Error::domain("result would return a local closure");
+        Err(if let Some(span) = span { error.at(span) } else { error })
+    }
     /// Drops the frames from `base` on, makes `caller` current and gives back `result`. A result that refers to a dropped frame is an error.
     fn leave(&self, base: usize, caller: Option<usize>, result: Result<Bound, Error>, span: &Span) -> Result<Bound, Error> {
         let result = result.and_then(|mut bound| {
             if matches!(bound.value, Binding::Function(_)) { bound.value = Function::from_value(bound.value, span)?.into(); }
+            Self::check_closure(base, bound.value.environment(), Some(span))?;
             Ok(bound)
         });
-        let result = match result {
-            Ok(bound) if bound.value.environment().is_some_and(|i| i >= base) => Err(Error::domain("result would return a local closure").at(span)),
-            result => result,
-        };
         self.bindings.leave(base, caller);
         result
     }

@@ -354,7 +354,6 @@ pub(crate) fn form_relation(origin: Origin<&[Value]>, view: &CallView) -> Result
                     None => selected.zeros_like()?,
                     Some(primitive) => {
                         let slope = at_slope(&origin, &source.reborrow(), *primitive, 0)?;
-                        if slope.as_number().and_then(|number| number.lossless_float()) == Some(1.0) { return Ok(Some(Outputs::one(direction))); }
                         call(
                             &origin, Operation::Primitive { primitive: Primitive::Arithmetic(crate::number::Arithmetic::Times), pairing: Pairing::Axes },
                             &[slope, selected.clone()])?

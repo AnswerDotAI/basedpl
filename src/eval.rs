@@ -120,19 +120,22 @@ impl Function {
     }
 
     /// Runs this body against the complete, snapshot-bound call.
-    pub(crate) fn run(&self, origin: crate::program::Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
-        check()?;
+    pub(crate) fn run(&self, origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> { self.invoke(origin, false) }
+    pub(crate) fn invoke(&self, origin: Origin<&[Value]>, admit: bool) -> Result<Outputs<Value>, Error> {
+        session().run_function(self, origin, admit).map(Outputs::flatten)
+    }
+    fn run_step(&self, origin: Origin<&[Value]>) -> Result<Step<Outputs<Value>>, Error> {
         let session = session();
         if !session.deeper() { return Err(Error::new(Kind::Limit, format!("evaluation depth exceeds {MAX_CALL_DEPTH}"))); }
         let result = run_on_stack(|| {
             let _numeric = crate::settings::activate(&origin)?;
             session.with_call_context(self, origin.reborrow(), || {
-                if let Some(value) = crate::derivative::custom_rule(self, &origin)? { return Ok(Outputs::one(value)); }
+                if let Some(value) = crate::derivative::custom_rule(self, &origin)? { return Ok(Step::Done(Outputs::one(value))); }
                 self.run_body(origin.reborrow())
             })
         });
         session.ascend();
-        result.map(Outputs::flatten)
+        result
     }
 
     /// Projects a body call without executing it.
@@ -1132,10 +1135,10 @@ impl Function {
     pub(crate) fn call_array(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         self.call_outputs(left, right, span)?.assemble().at(span)
     }
-    fn run_body(&self, origin: crate::program::Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
+    fn run_body(&self, origin: crate::program::Origin<&[Value]>) -> Result<Step<Outputs<Value>>, Error> {
         match self.node() {
             FunctionNode::Applied { op: Operator::Kind(kind), .. } => (kind.info().call)(self, origin),
-            FunctionNode::Defined(_) | FunctionNode::Applied { op: Operator::Closure(_), .. } => session().call_defined(self, origin),
+            FunctionNode::Defined(_) | FunctionNode::Applied { op: Operator::Closure(_), .. } => return session().call_defined(self, origin),
             FunctionNode::Train(_) => operators::train_call(self, origin),
             FunctionNode::Array(_) => operators::function_array(self, origin),
             FunctionNode::LateBound(_) => session().call_named(self, origin),
@@ -1144,7 +1147,7 @@ impl Function {
                 let args = Self::body_arguments(&origin)?;
                 self.call_bound_outputs(&origin, &args)
             }
-        }
+        }.map(Step::Done)
     }
     fn discards(&self, dyadic: bool) -> bool {
         if self.rules().is_some_and(|rules| rules.inverse.is_some()) { return false; }
@@ -1303,7 +1306,14 @@ impl Function {
 }
 pub(crate) struct Bound { value: Binding, shy: bool, expression: Option<Box<Expression>> }
 struct Application { origin: crate::program::Origin<Vec<Value>>, span: Span, unshy: bool }
-enum Step { Done(Bound), Tail(Application) }
+impl Application {
+    fn environment(&self) -> Option<usize> {
+        self.origin.list.iter().filter_map(Value::environment)
+            .chain(self.origin.bindings.scopes.iter().filter_map(|scope| scope.parent))
+            .chain(self.origin.bindings.scopes.iter().flat_map(|scope| scope.names.iter()).filter_map(|name| name.place.and_then(Place::frame))).max()
+    }
+}
+enum Step<T = Bound> { Done(T), Tail(Application) }
 
 /// An element as a binding: a function stays a function, and anything else is a value.
 impl From<Value> for Bound {

@@ -385,7 +385,12 @@ pub fn coverage(gaps: &std::path::Path, selection: &mut Selection, wrong: &mut V
             if !selection.case("coverage", &case) { continue; }
             selected += 1;
             if skipped.contains(&(section, code.as_str())) { skipped_count += 1; continue; }
-            if !route.is_empty() && case.get("gap").is_none() && case.get("allows").is_none() { case["route"] = json!([route]); }
+            let waived = ["gap", "allows"].into_iter().flat_map(|key| case[key].as_array().into_iter().flatten()).any(|event| match *route {
+                "trace" => event[0] == "stopped",
+                "fused fold" => event[0] == "declined" && event[1].as_str().is_some_and(|reason| reason.starts_with("fused fold: ")),
+                _ => false,
+            });
+            if !route.is_empty() && !waived { case["route"] = json!([route]); }
             checked += 1;
             enter(Some(prefs).filter(|p| !p.is_empty()), Some(RUNS[1])).map_err(|e| e.to_string())?;
             let session = Session::new();

@@ -230,7 +230,7 @@ pub(crate) fn record(function: &crate::Function, origin: Origin<&[Value]>, argum
 fn planning_stop() -> Error { Error::new(ErrorKind::Planning, "a planning run stopped") }
 
 pub(crate) fn plan_case(function: &crate::Function, origin: Origin<Vec<Value>>) -> Result<Option<super::BoundRecording>> {
-    match super::bind_call(function, origin, true) {
+    match super::admit_call(function, &origin.invocation(), true) {
         Ok(bound) => Ok(bound.filter(|bound| bound.recording.is_some())),
         Err(error) if error.is_planning() => Ok(None),
         // A bug while planning a case: report it as a stop naming its line, then run the case ordinarily.

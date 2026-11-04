@@ -1,6 +1,4 @@
-dynamic	!/2×x	⍝⍝⍝ gap forced "!/": the fold reads its pending argument inside the group
 dynamic	*/2×x	⍝⍝⍝ gap forced "*/": the fold reads its pending argument inside the group
-dynamic	2×!2+x	⍝⍝⍝ allows forced "!": `!` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×(2+x)!0	⍝⍝⍝ allows forced "!": `!` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×(2+x)!0.5	⍝⍝⍝ allows forced "!": `!` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×(2+x)!1	⍝⍝⍝ allows forced "!": `!` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
@@ -33,7 +31,6 @@ dynamic	2×(2+x)⍟1	⍝⍝⍝ allows forced "⍟": `⍟` doesn't fuse here, so 
 dynamic	2×(2+x)⍟2	⍝⍝⍝ allows forced "⍟": `⍟` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×(2+x)⍟y	⍝⍝⍝ allows forced "⍟": `⍟` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×(2+x)⍟¯1	⍝⍝⍝ allows forced "⍟": `⍟` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
-dynamic	2×*2+x	⍝⍝⍝ allows declined "compiled: exponential": the exponential runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 dynamic	2×0○2+x	⍝⍝⍝ allows forced "○": `○` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×1!2+x	⍝⍝⍝ allows forced "!": `!` doesn't fuse here, so it computes its pending argument by itself: dynamic kinds keep a call whose result's type its values decide out of block stages (Jeremy, 26 October 2026); static kinds fuse it
 dynamic	2×1*2+x	⍝⍝⍝ gap declined "compiled: exponent": the JIT lowers 1*y as the constant 1
@@ -78,7 +75,7 @@ dynamic	{+/,m+.≤⍵}∂ k	⍝⍝⍝ allows stopped "a result whose type depend
 dynamic	{+/,m+.≥⍵}∂ k	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
 dynamic	{+/,m+.⍟⍵}∂ k	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
 dynamic	{+/×⍵}∂ x	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
-dynamic	{+/√⍵}∂ x	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
+dynamic	{+/√⍵}∂ x	⍝⍝⍝ allows stopped "host-kind data": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
 dynamic	{+/⌈⍵}∂ x	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
 dynamic	{+/⌊⍵}∂ x	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
 dynamic	{+/⍟⍵}∂ x	⍝⍝⍝ allows stopped "a result whose type depends on values": dynamic kinds stop a trace at a result whose type its values decide (Jeremy, 26 October 2026); static kinds trace it
@@ -102,7 +99,6 @@ dynamic	∧/2×x	⍝⍝⍝ gap forced "∧/": the fold reads its pending argumen
 dynamic	∨/2×x	⍝⍝⍝ gap forced "∨/": the fold reads its pending argument inside the group
 dynamic	⍟/2×x	⍝⍝⍝ gap forced "⍟/": the fold reads its pending argument inside the group
 dynamic	⍟/2×x	⍝⍝⍝ gap itemwise "item lanes": a kernel folds the whole array
-static	2×!2+x	⍝⍝⍝ allows declined "compiled: factorial": the gamma function runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×(2+x)!0	⍝⍝⍝ allows declined "compiled: binomial": the binomial runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×(2+x)!0.5	⍝⍝⍝ allows declined "compiled: binomial": the binomial runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×(2+x)!1	⍝⍝⍝ allows declined "compiled: binomial": the binomial runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
@@ -141,7 +137,6 @@ static	2×(2+x)⍟1	⍝⍝⍝ allows declined "compiled: logarithm": the logarit
 static	2×(2+x)⍟2	⍝⍝⍝ allows declined "compiled: logarithm": the logarithm runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×(2+x)⍟y	⍝⍝⍝ allows declined "compiled: logarithm": the logarithm runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×(2+x)⍟¯1	⍝⍝⍝ allows declined "compiled: logarithm": the logarithm runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
-static	2×*2+x	⍝⍝⍝ allows declined "compiled: exponential": the exponential runs on rustymath's kernel between compiled parts; compiled calls into it gained at most 7%
 static	2×0○2+x	⍝⍝⍝ gap declined "compiled: circular": the JIT lowers 0○ as the square root of 1-x×x
 static	2×1!2+x	⍝⍝⍝ gap declined "compiled: binomial": the JIT lowers y choose 1 as y
 static	2×1*2+x	⍝⍝⍝ gap declined "compiled: exponent": the JIT lowers 1*y as the constant 1
@@ -187,7 +182,6 @@ static	*/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't ru
 static	⍟/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
 static	π/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
 static	√/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
-static	!/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
 static	∧/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
 static	∨/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group
 static	=/2×x	⍝⍝⍝ gap declined "fused fold: a fold that its group can't run": the fold computes its pending argument before it folds, outside the group

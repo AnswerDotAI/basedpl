@@ -1578,10 +1578,6 @@ impl BoundRecording {
     }
 }
 
-pub(crate) fn call(function: &Function, origin: Origin<Vec<Value>>) -> crate::error::Result<Outputs<Value>> {
-    crate::execution::check()?;
-    Ok(bind_call(function, origin, false)?.expect("an ordinary call always binds").outputs)
-}
 impl Origin<Vec<Value>> {
     /// This call with its arguments and captured names as data, or `None` where none holds a constant. A recorded body's inputs are data, so recordings stay shared across values (target part 19); `call_key` keys any other literal node by value, and bound operands keep their constants. A body run inline keeps its constants for the enclosing trace.
     fn data_inputs(&self) -> Option<Self> {
@@ -1594,14 +1590,13 @@ impl Origin<Vec<Value>> {
         Some(origin)
     }
 }
-pub(crate) fn bind_call(function: &Function, origin: Origin<Vec<Value>>, planning: bool) -> crate::error::Result<Option<BoundRecording>> {
-    let origin = origin.invocation();
+pub(crate) fn admit_call(function: &Function, origin: &Origin<Vec<Value>>, planning: bool) -> crate::error::Result<Option<BoundRecording>> {
     let mut reason = None;
     if origin.list.iter().any(|value| value.carried_level().is_some()) || !planning && matches!(function.node(), FunctionNode::Recorded { .. }) {
         if planning { return Ok(None); }
     } else if !origin.cacheable_metadata(origin.list.iter()) { reason = Some(Reason::Renderer); } else {
         let data = origin.data_inputs();
-        let entry = data.as_ref().unwrap_or(&origin);
+        let entry = data.as_ref().unwrap_or(origin);
         let key = Key::of(function, &entry.reborrow())?;
         let (_, outcome) = programs().serve(&key, &entry.reborrow())?;
         match outcome {
@@ -1626,7 +1621,7 @@ pub(crate) fn bind_call(function: &Function, origin: Origin<Vec<Value>>, plannin
     }
     if planning { return Ok(None); }
     if let Some(reason) = reason { trace::Tracing::stop(reason, origin.site.clone())?; }
-    Ok(Some(BoundRecording { recording: None, outputs: function.run(origin.reborrow())? }))
+    Ok(None)
 }
 fn record_attempt(function: &Function, key: Key, origin: &Origin<Vec<Value>>, planning: bool) -> crate::error::Result<Option<BoundRecording>> {
     let arguments = Function::argument_leaves(origin)?;

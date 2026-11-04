@@ -1039,7 +1039,8 @@ impl Value {
     pub fn export_widening(&self) -> Option<Width> {
         if self.fixed_width().is_some() { return None; }
         let DType::Integer(stored) = self.dtype()? else { return None };
-        let width = Numeric::current().integer_width();
+        let numeric = Numeric::current();
+        let width = if numeric.is_static() { numeric.integer_width() } else { Width::I64 };
         (width > stored).then_some(width)
     }
     pub fn widened_for_export(&self) -> Option<Buffer> {

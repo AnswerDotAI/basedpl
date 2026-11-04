@@ -363,9 +363,10 @@ fn compiled_stages_match_interpreted() {
                     eval(SETUP);
                     session.set("source", basedpl::keyed::text(code)).unwrap();
                     eval("report←•explain source");
-                    let value = eval("report.value").unwrap_or_else(|| panic!("{code} gave no value"));
+                    let value = eval("report.value").unwrap_or_else(|| panic!("{code} gave no value")).read(basedpl::ReadKind::Value).unwrap();
                     let runs = eval(r#"+/report.routes.calls×("compiled"≡)¨report.routes.route"#).unwrap().read(basedpl::ReadKind::Value).unwrap();
                     let runs = runs.as_number().unwrap().as_integer().unwrap();
+                    session.raise().unwrap();
                     (value, runs)
                 };
                 let (compiled, runs) = run(Compiles::Always);
