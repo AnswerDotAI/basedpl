@@ -517,7 +517,7 @@ impl Footprint for Value {
 fn map_tree(value: &Value, mut f: impl FnMut(&Value, Option<TreeInput>) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
     let Some((trees, leaves)) = flatten(std::slice::from_ref(value)) else { return f(value, None) };
     let mut uses = vec![None; leaves.len()];
-    trees.input_uses(|position, usage| uses[position] = usage);
+    trees.input_uses(|position, usage| uses[position] = Some(usage));
     let mapped = leaves.iter().zip(uses).map(|(value, usage)| f(value, usage)).collect::<crate::error::Result<Vec<_>>>()?;
     if leaves.iter().zip(&mapped).all(|(old, new)| old.identical(new)) { return Ok(value.clone()); }
     trees.build(&mapped).pop().ok_or_else(|| Error::domain("missing tree root"))
