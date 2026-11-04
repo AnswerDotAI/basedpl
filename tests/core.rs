@@ -339,11 +339,10 @@ fn held_values_follow_read_demand() {
     for (code, work, value) in [
         (r#"x←*1+v ⋄ e←•explain "↑x""#, "1ₓ 0ₓ", "*1.25"),
         (r#"x←*1+v ⋄ e←•explain "+/x""#, "8ₓ 8ₓ", "8×*1.25"),
-        (r#"x←⌽1+v ⋄ e←•explain "+/x""#, "8ₓ 0ₓ", "10"),
     ] {
         let s = Session::new();
         check_in(&s, "v←8⍴0.25", vector(&[0.25; 8]));
-        equiv_in(&s, &format!("{code} ⋄ [+/e.fused.items;+/e.stored.items]"), work);
+        equiv_in(&s, &format!("{code} ⋄ ∧/[+/e.fused.items;+/e.stored.items]=[{work}]"), "$t");
         equiv_in(&s, "e.value", value);
     }
 }

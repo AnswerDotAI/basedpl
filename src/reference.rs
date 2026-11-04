@@ -316,10 +316,11 @@ const COVERAGE_SECTIONS: [(&str, &str); 2] = [("dynamic", ""), ("static", r#"•
 const COVERAGE_RIGHT: [&str; 5] = ["0", "1", "2", "0.5", "¯1"];
 const COVERAGE_LEFT: [&str; 2] = ["1", "2"];
 
-/// Enumerates scalar-row cases without running applicability probes. Unexpected evaluation failures count as failures.
+/// Enumerates numerical objects and defined scalar forms through their canonical metadata. Unexpected evaluation failures count as failures.
 /// Validates gap and skip names against the complete inventory, then runs only the selected original-size cases.
 pub fn coverage(gaps: &std::path::Path, selection: &mut Selection, wrong: &mut Vec<String>, interrupt: &InterruptHandle) -> Result<Vec<crate::timing::Capture>, String> {
-    use crate::primitive::Primitive;
+    use crate::{number::Math, primitive::{Operation, Pairing, Primitive}, program::trace::ReadKind};
+    use rustymath::buffer::{DType, FloatWidth::F64};
     if !selection.source("coverage") { return Ok(Vec::new()); }
     let text = std::fs::read_to_string(gaps).map_err(|e| format!("{}: {e}", gaps.display()))?;
     let mut listed = Vec::new();
@@ -329,17 +330,34 @@ pub fn coverage(gaps: &std::path::Path, selection: &mut Selection, wrong: &mut V
         let (key, rest) = directive.strip_prefix("⍝⍝⍝ ").and_then(|d| d.split_once(' ')).filter(|(k, _)| matches!(*k, "gap" | "allows")).ok_or_else(fail)?;
         listed.push((section, code, key, event(rest), false));
     }
+    let boolean = |primitive, dyadic| matches!((primitive, dyadic),
+        (Primitive::Math(Math::Not), false) | (Primitive::Math(Math::Nand | Math::Nor), true));
+    let form = |primitive: Primitive, dyadic: bool| -> Result<Option<bool>, crate::Error> {
+        if !primitive.info().pervasive(1 + usize::from(dyadic)) { return Ok(None); }
+        let (dtype, number) = if boolean(primitive, dyadic) { (DType::Boolean, Number::from_bool(true)) }
+            else { (DType::Float(F64), Number::float(2.0, F64)) };
+        let args = vec![Value::Number(number); 1 + usize::from(dyadic)];
+        let origin = Operation::Primitive { primitive, pairing: Pairing::Axes }.origin_numeric(&args, Numeric::EXACT)?;
+        let current = origin.reborrow();
+        let prepared = Operation::prepare(&current)?;
+        let call = prepared.view();
+        let variant = call.variant(dtype)?;
+        if Operation::kernel(&call, variant)?.is_none() && !primitive.info().defined[usize::from(dyadic)] { return Ok(None); }
+        Ok(Some(dyadic && origin.roles.kind(0) == Some(ReadKind::Value)))
+    };
     let mut cases: Vec<(String, &str)> = Vec::new();
-    // A function's cases with one argument, and with each circle code as its left argument.
     let monadic = |g: &str| [(format!("2×{g}2+x"), "compiled"), (format!("{{+/{g}⍵}}∂ x"), "trace")];
     let coded = |g: &str| (0..=8).flat_map(|c| [(format!("2×{c}{g}2+x"), "compiled"), (format!("{{+/{c}{g}⍵}}∂ x"), "trace")]).collect::<Vec<_>>();
-    // Float mapping fixtures do not describe bitwise inputs, draws, ranges, or scalar disclosure.
-    for p in Primitive::all().filter(|p| !matches!(p, Primitive::Bitwise(_) | Primitive::Random | Primitive::Range | Primitive::Mix)) {
+    for p in Primitive::all().filter(|p| !matches!(p, Primitive::Bitwise(_))) {
         let g = p.glyph();
         // Monadic `+` keeps a real operand (`Pervasive::kept`), so its case would compute nothing to compile.
-        if p.info().pervasive(1) && p != Primitive::Arithmetic(crate::number::Arithmetic::Plus) { cases.extend(monadic(&g)); }
-        if !p.info().pervasive(2) { continue; }
-        if matches!(p, Primitive::Math(crate::number::Math::Circle)) { cases.extend(coded(&g)); continue; }
+        if form(p, false).map_err(|e| format!("{g} monad fixture: {e}"))?.is_some() && p != Primitive::Arithmetic(crate::number::Arithmetic::Plus) {
+            if boolean(p, false) { cases.push((format!("2×{g}0.5<x"), "compiled")); }
+            else { cases.extend(monadic(&g)); }
+        }
+        let Some(parameter) = form(p, true).map_err(|e| format!("{g} dyad fixture: {e}"))? else { continue; };
+        if boolean(p, true) { cases.push((format!("2×(0.5<x){g}0.5<y"), "compiled")); continue; }
+        if parameter { cases.extend(coded(&g)); continue; }
         cases.push((format!("2×(2+x){g}y"), "compiled"));
         cases.extend(COVERAGE_RIGHT.iter().map(|c| (format!("2×(2+x){g}{c}"), "compiled")));
         cases.extend(COVERAGE_LEFT.iter().map(|c| (format!("2×{c}{g}2+x"), "compiled")));
