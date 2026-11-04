@@ -5,8 +5,8 @@ use rustymath::buffer::DType;
 
 #[derive(Clone, Copy)]
 pub(super) enum Form { Calls, Fold(FoldKind), Product, Bitwise }
-const fn entry(python: &'static str, glyph: &'static str, names: [&'static str; 3], operands: &'static [OperandKind]) -> OperatorInfo {
-    OperatorInfo { call: operator_call, spelling, inverse, discards, python, names, glyph, operands, form: Form::Calls }
+const fn entry(glyph: &'static str, names: [&'static str; 3], operands: &'static [OperandKind]) -> OperatorInfo {
+    OperatorInfo { call: operator_call, spelling, inverse, discards, names, glyph, operands, form: Form::Calls }
 }
 impl OperatorInfo {
     const fn with_form(mut self, form: Form) -> Self { self.form = form; self }
@@ -34,22 +34,22 @@ impl OperatorInfo {
 static ENTRIES: [OperatorInfo; 28] = {
     use OperandKind::{Callable, Data, Function, Options};
     [
-        entry("reduce", "/", ["slash", "reduce", ""], &[Function]).with_form(Form::Fold(FoldKind { first: false, scan: false })),
-        entry("reduce_first", "⌿", ["slash-bar", "reduce-first", ""], &[Function]).with_form(Form::Fold(FoldKind { first: true, scan: false })),
-        entry("scan", "\\", ["backslash", "scan", ""], &[Function]).with_form(Form::Fold(FoldKind { first: false, scan: true })),
-        entry("scan_first", "⍀", ["backslash-bar", "scan-first", ""], &[Function]).with_form(Form::Fold(FoldKind { first: true, scan: true })),
-        entry("each", "¨", ["diaeresis", "each", ""], &[Function]), entry("commute", "⍨", ["tilde-diaeresis", "self", "commute"], &[Data]),
-        entry("inverse", "⁻¹", ["superscript", "inverse", ""], &[Function]), entry("outer", "⊗", ["circle-times", "outer-product", ""], &[Function]),
-        entry("key", "⌸", ["quad-equal", "key", ""], &[Function]), entry("derivative", "∂", ["partial", "derivative", ""], &[Function]),
-        entry("optimize", "⇄", ["right-left-arrows", "optimize", ""], &[Function]),
-        entry("bitwise", "ᵇ", ["superscript-b", "bitwise", ""], &[Function]).with_form(Form::Bitwise), entry("mark", "", ["superscript", "", ""], &[Data]),
-        entry("under", "@", ["at", "under", ""], &[Function, Data]), entry("atop", "∘", ["jot", "atop", ""], &[Function, Function]),
-        entry("over", "⍥", ["circle-diaeresis", "over", ""], &[Function, Function]), entry("rank", "⍤", ["jot-diaeresis", "rank", ""], &[Function, Options]),
-        entry("axis", "⍠", ["quad-colon", "axis", ""], &[Function, Options]), entry("stencil", "⌺", ["quad-diamond", "stencil", ""], &[Function, Data]),
-        entry("dot", ".", ["dot", "determinant", "inner-product"], &[Function, Function]).with_form(Form::Product), entry("power", "⍣", ["star-diaeresis", "power", ""], &[Function, Data]),
-        entry("before", "↣", ["right-tail-arrow", "before", ""], &[Data, Function]), entry("after", "↢", ["left-tail-arrow", "after", ""], &[Function, Data]),
-        entry("valences", "⊘", ["circle-slash", "valences", ""], &[Function, Function]), entry("agenda", "⍚", ["diamond-underbar", "agenda", ""], &[Data, Callable]),
-        entry("field", ".", ["dot", "field", ""], &[Function]), entry("index", ".", ["dot", "index", ""], &[Function, Data]), entry("framed", "framed", ["", "framed", ""], &[Function]),
+        entry("/", ["slash", "reduce", ""], &[Function]).with_form(Form::Fold(FoldKind { first: false, scan: false })),
+        entry("⌿", ["slash-bar", "reduce-first", ""], &[Function]).with_form(Form::Fold(FoldKind { first: true, scan: false })),
+        entry("\\", ["backslash", "scan", ""], &[Function]).with_form(Form::Fold(FoldKind { first: false, scan: true })),
+        entry("⍀", ["backslash-bar", "scan-first", ""], &[Function]).with_form(Form::Fold(FoldKind { first: true, scan: true })),
+        entry("¨", ["diaeresis", "each", ""], &[Function]), entry("⍨", ["tilde-diaeresis", "self", "commute"], &[Data]),
+        entry("⁻¹", ["superscript", "inverse", ""], &[Function]), entry("⊗", ["circle-times", "outer-product", ""], &[Function]),
+        entry("⌸", ["quad-equal", "key", ""], &[Function]), entry("∂", ["partial", "derivative", ""], &[Function]),
+        entry("⇄", ["right-left-arrows", "optimize", ""], &[Function]),
+        entry("ᵇ", ["superscript-b", "bitwise", ""], &[Function]).with_form(Form::Bitwise), entry("", ["superscript", "", ""], &[Data]),
+        entry("@", ["at", "under", ""], &[Function, Data]), entry("∘", ["jot", "atop", ""], &[Function, Function]),
+        entry("⍥", ["circle-diaeresis", "over", ""], &[Function, Function]), entry("⍤", ["jot-diaeresis", "rank", ""], &[Function, Options]),
+        entry("⍠", ["quad-colon", "axis", ""], &[Function, Options]), entry("⌺", ["quad-diamond", "stencil", ""], &[Function, Data]),
+        entry(".", ["dot", "determinant", "inner-product"], &[Function, Function]).with_form(Form::Product), entry("⍣", ["star-diaeresis", "power", ""], &[Function, Data]),
+        entry("↣", ["right-tail-arrow", "before", ""], &[Data, Function]), entry("↢", ["left-tail-arrow", "after", ""], &[Function, Data]),
+        entry("⊘", ["circle-slash", "valences", ""], &[Function, Function]), entry("⍚", ["diamond-underbar", "agenda", ""], &[Data, Callable]),
+        entry(".", ["dot", "field", ""], &[Function]), entry(".", ["dot", "index", ""], &[Function, Data]), entry("framed", ["", "framed", ""], &[Function]),
     ]
 };
 

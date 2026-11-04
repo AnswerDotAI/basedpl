@@ -630,7 +630,13 @@ fn map_agreement(call: &CallView<'_>, left: &Layout, right: &Layout) -> Result<A
         Operation::Primitive { pairing: Pairing::Explicit { .. }, .. } => {
             let Some(root) = call.axis_root() else { return Ok(Agreement::new(left, right)?); };
             let axis = call.root_parameter(root.index)?;
-            let axes = axes(&resolve_axes(&axis, right)?, right.shape().len())?;
+            let axes = axes(&resolve_axes(&axis, right)?, right.shape().len()).map_err(|error| {
+                if std::env::var_os("BASEDPL_AXIS_INPUTS").is_some() {
+                    eprintln!("axis-call {} arguments={:?} axis-root={} left={:?} right={:?}\n{}", call.operation.glyph(),
+                        call.layout().argument_positions(), root.index.get(), left.shape(), right.shape(), std::backtrace::Backtrace::force_capture());
+                }
+                error
+            })?;
             Ok(Agreement::with_axes(left, right, &axes)?)
         }
         Operation::Primitive { pairing: Pairing::Matrices { .. }, .. } => Err(Error::domain("elementwise calls do not use matrix pairing")),

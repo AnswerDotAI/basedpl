@@ -202,33 +202,34 @@ fn conversions_match_rust() {
         };
     }
     macro_rules! convert {
-        (f32, $v:expr) => {
+        (f32, $v:expr, $op:expr) => {
             match $v {
                 Item::Int(i) => i as f32,
                 Item::Float(f) => f as f32,
             }
         };
-        (f64, $v:expr) => {
+        (f64, $v:expr, $op:expr) => {
             match $v {
                 Item::Int(i) => i as f64,
                 Item::Float(f) => f,
             }
         };
-        ($t:ty, $v:expr) => {
+        ($t:ty, $v:expr, $op:expr) => {
             match $v {
                 Item::Int(i) => i as $t,
-                Item::Float(f) => f.floor() as $t,
+                Item::Float(f) => (if $op == Op::Truncate { f } else { f.floor() }) as $t,
             }
         };
     }
     macro_rules! pair {
-        ($from:ident $from_src:ident, $to:ident $to_t:tt) => {{
+        ($from:ident $from_src:ident, $to:ident $to_t:tt) => { pair!($from $from_src, $to $to_t, Op::Convert) };
+        ($from:ident $from_src:ident, $to:ident $to_t:tt, $op:expr) => {{
             let x = source!($from_src);
             let items = items!($from_src, x);
             let pad = vec![0u8; n];
             let kernel = Kernel {
                 inputs: vec![Input::Array(Ty::$from, Read::Forward), Input::Array(Ty::U8, Read::Forward)],
-                steps: vec![Step { op: Op::Convert, ty: Ty::$to, x: Value::Input(0), y: None }],
+                steps: vec![Step { op: $op, ty: Ty::$to, x: Value::Input(0), y: None }],
                 stores: vec![0],
                 folds: vec![],
             }
@@ -239,7 +240,7 @@ fn conversions_match_rust() {
             unsafe { kernel.run(n, n, &[x.as_ptr().cast(), pad.as_ptr().cast()], &[], &[out.as_mut_ptr().cast()], &mut []) };
             for (k, &item) in items.iter().enumerate() {
                 let got: $to_t = unsafe { *out.as_ptr().cast::<$to_t>().add(k) };
-                let expected: $to_t = convert!($to_t, item);
+                let expected: $to_t = convert!($to_t, item, $op);
                 assert!(
                     got == expected || got != got && expected != expected, "{} to {}: item {k}, {item:?}, gave {got:?} for {expected:?}", stringify!($from),
                     stringify!($to)
@@ -259,6 +260,7 @@ fn conversions_match_rust() {
     from!(I64 i64);
     from!(F32 F32);
     from!(F64 F64);
+    pair!(F32 F32, I32 i32, Op::Truncate); pair!(F64 F64, I64 i64, Op::Truncate);
 }
 
 /// A run-by-run array read through a table of its runs' first items, forward, backward and at a stride within each run, plus a plain array, stored and summed. Calls start at a run's start, inside a run and one item before a run's end, and blocks end inside runs, so each loop starts and ends runs. The items are integers and halves, so each block's sum is exact in any order.

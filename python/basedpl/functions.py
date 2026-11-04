@@ -18,7 +18,7 @@ class _Combinators(_Operators):
     @property
     def left(self): return _build('↣', _HOLE, self, valence=1)
     def __pow__(self, counts): return _build('⍣', self, counts)
-    def __getitem__(self, axis): return _build('axis', self, axis, valence=self._valence)
+    def __getitem__(self, axis): return _build('⍠', self, axis, valence=self._valence)
     def __lshift__(self, g): return _build('∘', self, g)
     def __rshift__(self, g): return _build('∘', g, self)
     def __matmul__(self, g):
@@ -86,7 +86,7 @@ class Operator:
     def __repr__(self): return repr(self._inner)
     def __call__(self, *operands): return Function(self._inner.derive(*[o._inner if isinstance(o, Function) else _array(o) for o in operands]))
 
-def fork(f, g, h): return _build('fork', f, g, h)
+def fork(f, g, h): return _build('train', f, g, h)
 def atop(f, g): return _build('∘', f, g)
 
 def _python_name(name):

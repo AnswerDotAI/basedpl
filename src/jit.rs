@@ -69,7 +69,7 @@ pub enum Value { Input(usize), Step(usize) }
 /// An elementwise operation. Integers wrap at their width, and bytes compare and order as unsigned. `Maximum` and `Minimum` give `y` where floats `x` and `y` are equal or either is NaN, as rustymath's `maximum` and `minimum` do. `Floor` rounds a float down to a whole number, keeping `-0`. `MultiplyAdd(z)` gives `x × y + z` for floats, rounded once. `Compare` gives a Boolean: floats compare exactly, NaN equal to nothing, and Booleans only by `Eq` and `Ne`. `And`, `Or` and `Xor` take Booleans or integers, bit by bit, and `Not` takes Booleans. `Select(m)` gives `x` where the Boolean `m` is true and `y` where it's false. `Convert` converts its argument to the step's type with no tolerance: a float to an integer by its floor, saturating at the integer's range, and 0 for NaN; an integer to a narrower one by wrapping; a Boolean to 1 or 0. `Truncate` converts without the floor; `Bitcast` preserves the bits. Shifts take unsigned bit patterns at the resolved working width.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Op {
-    Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Bitcast, ShiftLeft, ShiftRight(bool), Compare(Cmp),
+    Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Truncate, Bitcast, ShiftLeft, ShiftRight(bool), Compare(Cmp),
     Overflows(u8), Check { reporter: usize }, Repair { predicate: Value, routine: usize }, And, Or, Xor, Not, Select(Value), MultiplyAdd(Value)
 }
 
@@ -78,7 +78,7 @@ pub enum Op {
 pub enum Cmp { Eq, Ne, Lt, Le, Gt, Ge }
 
 impl Op {
-    fn dyadic(self) -> bool { !matches!(self, Op::Negate | Op::Magnitude | Op::Sqrt | Op::Floor | Op::Convert | Op::Bitcast | Op::Not) }
+    fn dyadic(self) -> bool { !matches!(self, Op::Negate | Op::Magnitude | Op::Sqrt | Op::Floor | Op::Convert | Op::Truncate | Op::Bitcast | Op::Not) }
     /// The value that a step of this operation reads besides `x` and `y`: `Select`'s mask and `MultiplyAdd`'s addend.
     fn third(self) -> Option<Value> { match self { Op::Select(v) | Op::MultiplyAdd(v) | Op::Repair { predicate: v, .. } => Some(v), _ => None } }
 }
@@ -132,7 +132,7 @@ impl Kernel {
                 let zero = self.input(Input::constant(from, 0.0));
                 self.step(Op::Compare(Cmp::Ne), Ty::Bool, x, Some(zero))
             }
-            _ => self.step(Op::Convert, to, x, None),
+            _ => self.step(if conversion.kind == ConversionKind::Truncate { Op::Truncate } else { Op::Convert }, to, x, None),
         };
         let valid = if checked {
             let o = Recording { kernel: std::cell::RefCell::new(&mut *self), ty: from, variant: rustymath::facts::Variant::checked(from.dtype()),
@@ -251,7 +251,7 @@ impl rustymath::recipe::Ops<f64> for Recording<'_> {
     }
     fn integer_compare(&self, op: rustymath::recipe::Cmp, x: Self::I, y: Self::I) -> Self::B { self.compare(op, x, y) }
     fn integer_select(&self, m: Self::B, x: Self::I, y: Self::I) -> Self::I { self.emit(Op::Select(decoded(m)), self.integer_ty(), x, Some(y)) }
-    fn to_integer(&self, x: Self::V) -> Self::I { self.emit(Op::Convert, self.integer_ty(), x, None) }
+    fn to_integer(&self, x: Self::V) -> Self::I { self.emit(Op::Truncate, self.integer_ty(), x, None) }
     fn from_integer(&self, x: Self::I) -> Self::V { self.numeric(Op::Convert, x, None) }
     fn to_bits(&self, x: Self::V) -> Self::I { self.emit(if self.ty.float() { Op::Bitcast } else { Op::Convert }, self.integer_ty(), x, None) }
     fn from_bits(&self, x: Self::I) -> Self::V { self.numeric(if self.ty.float() { Op::Bitcast } else { Op::Convert }, x, None) }
@@ -390,7 +390,7 @@ impl Kernel {
         let tys = &tys[..n];
         let (x, y, same) = (tys[0], tys.get(1).copied(), tys.get(1).is_none_or(|&y| y == tys[0]));
         let fits = match s.op {
-            Op::Convert => true, Op::Bitcast => x.bytes() == s.ty.bytes() && x != Ty::Bool && s.ty != Ty::Bool,
+            Op::Convert | Op::Truncate => true, Op::Bitcast => x.bytes() == s.ty.bytes() && x != Ty::Bool && s.ty != Ty::Bool,
             Op::Compare(c) => s.ty == Ty::Bool && same && (x != Ty::Bool || matches!(c, Cmp::Eq | Cmp::Ne)),
             Op::And | Op::Or | Op::Xor | Op::ShiftLeft | Op::ShiftRight(_) => !s.ty.float() && x == s.ty && same, Op::Not => s.ty == Ty::Bool && x == Ty::Bool,
             Op::Repair { .. } => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::Check { .. } => x == s.ty && y == Some(Ty::Bool),
@@ -437,7 +437,7 @@ impl Kernel {
         let mut widths: Vec<i64> = Vec::with_capacity(self.steps.len());
         for (k, s) in self.steps.iter().enumerate() {
             let width = if s.ty != Ty::Bool { s.ty.bytes() } else {
-                let made = if matches!(s.op, Op::Convert) && self.ty(s.x) != Ty::Bool { 1 } else {
+                let made = if matches!(s.op, Op::Convert | Op::Truncate) && self.ty(s.x) != Ty::Bool { 1 } else {
                     [Some(s.x), s.y].into_iter().flatten().map(|v| match v {
                         Value::Input(j) => self.inputs[j].ty().bytes(), Value::Step(j) => widths[j]
                     }).max().unwrap_or(1)
@@ -697,12 +697,12 @@ impl Kernel {
             let x = read(b, step.x);
             let y = step.y.map(|y| read(b, y));
             // A step on masks reads them at its own width.
-            let (x, y) = if step.ty == Ty::Bool && self.ty(step.x) == Ty::Bool && !matches!(step.op, Op::Convert) {
+            let (x, y) = if step.ty == Ty::Bool && self.ty(step.x) == Ty::Bool && !matches!(step.op, Op::Convert | Op::Truncate) {
                 (resize(b, x, false, widths[s]), y.map(|y| resize(b, y, false, widths[s])))
             } else { (x, y) };
             let third = step.op.third().map(|v| read(b, v));
             let result = match (step.op, y, third) {
-                (Op::Convert, _, _) => convert(b, x, self.ty(step.x), step.ty),
+                (op @ (Op::Convert | Op::Truncate), _, _) => convert(b, x, self.ty(step.x), step.ty, op == Op::Convert),
                 (Op::Bitcast, _, _) => x.iter().map(|&v| cast(b, step.ty.vector(), v)).collect(),
                 (op @ (Op::ShiftLeft | Op::ShiftRight(_)), Some(y), _) => {
                     let uniform = matches!(step.y, Some(Value::Input(k)) if matches!(self.inputs[k], Input::Scalar(_) | Input::Constant(..)));
@@ -1127,8 +1127,8 @@ fn in_bytes(b: &mut FunctionBuilder, mut x: Vec<Ir>) -> Vec<Ir> {
     x
 }
 
-/// `x`, a group's vectors of type `from`, converted to type `to` as `Op::Convert` says.
-fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty) -> Vec<Ir> {
+/// `x`, a group's vectors of type `from`, converted to type `to` as `Op::Convert` or `Op::Truncate` says.
+fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty, floor: bool) -> Vec<Ir> {
     if from == to { return x; }
     match (from, to) {
         (Ty::Bool, _) => {
@@ -1159,6 +1159,7 @@ fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty) -> Vec<Ir> {
             wide
         }
         _ => {
+            let x = if floor { x.iter().map(|&v| b.ins().floor(v)).collect() } else { x };
             if to == Ty::I64 {
                 let x = if from == Ty::F32 { widen(b, &x, false) } else { x };
                 return lanewise(b, &x, types::I64X2, |b, v| b.ins().fcvt_to_sint_sat(types::I64, v));

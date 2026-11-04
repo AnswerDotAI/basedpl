@@ -3,7 +3,7 @@ use crate::execution::check;
 use crate::program::layout::{Encoder, KeyPart};
 use crate::{
     At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, ReadKind, Source, Span, Value, array::{Root, Tree, TreeRoot, Trees}, display::Elide, graph::Pending,
-    name::Name, number::{Mark, Numeric}, primitive::{Builtin, Operation, Pairing, Primitive}, program::{BindingContext, Origin, Outputs}, symbols::Notation,
+    name::Name, number::{MARKS, Mark, Numeric}, primitive::{Builtin, Operation, Pairing, Primitive}, program::{BindingContext, Origin, Outputs}, symbols::Notation,
     syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind}, system::SystemFunction
 };
 use rustymath::hashing::{HashMap, HashMapExt};
@@ -869,7 +869,7 @@ pub enum OperatorKind {
 pub(crate) struct OperatorInfo {
     pub(crate) call: fn(&Function, crate::program::Origin<&[Value]>) -> crate::error::Result<Outputs<Value>>, pub(crate) spelling: fn(&OperatorKind) -> String,
     pub(crate) inverse: fn(&Function, crate::program::Origin<&[Value]>) -> crate::error::Result<Outputs<Value>>,
-    pub(crate) discards: fn(&OperatorKind, &[Value], bool) -> bool, pub(crate) python: &'static str, pub(crate) names: [&'static str; 3],
+    pub(crate) discards: fn(&OperatorKind, &[Value], bool) -> bool, pub(crate) names: [&'static str; 3],
     pub(crate) glyph: &'static str, pub(crate) operands: &'static [OperandKind],
     form: operators::Form
 }
@@ -1223,10 +1223,13 @@ impl Function {
     }
     pub fn parts(&self) -> Option<(String, Vec<Value>)> {
         let name = match self.node() {
-            FunctionNode::Applied { op: Operator::Kind(kind), .. } => kind.info().python, FunctionNode::Train(_) => "train", FunctionNode::Array(_) => "fn",
+            FunctionNode::Applied { op: Operator::Kind(kind), .. } => match kind {
+                OperatorKind::Field(_) | OperatorKind::Index | OperatorKind::Framed { .. } => return None, _ => kind.glyph()
+            },
+            FunctionNode::Train(_) => "train".into(), FunctionNode::Array(_) => "fn".into(),
             FunctionNode::Primitive(_) | FunctionNode::System { .. } => return Some((self.bpl(), vec![])), _ => return None
         };
-        Some((name.into(), self.operands().iter().map(|operand| match operand {
+        Some((name, self.operands().iter().map(|operand| match operand {
             FunctionOperand::Value { value, .. } => value.clone(), _ => unreachable!("only real function values are inspected")
         }).collect()))
     }
@@ -1240,7 +1243,9 @@ impl Function {
             return Self::train_operands(operands.into_iter().map(FunctionOperand::from).collect(), &Span::whole(Source::new("<train>", "")));
         }
         if name == "fn" && operands.len() == 1 { return Ok(Self::array(operands.into_iter().next().unwrap())); }
-        let kind = OperatorKind::all().find(|kind| kind.info().python == name).ok_or_else(|| Error::domain("unknown operator"))?;
+        let kind = OperatorKind::all().find(|kind| kind.info().glyph == name)
+            .or_else(|| MARKS.iter().find_map(|&(glyph, mark)| (glyph == name).then_some(OperatorKind::Mark(mark))))
+            .ok_or_else(|| Error::domain("unknown operator"))?;
         let mut operands = operands.into_iter();
         Operator::Kind(kind).derive(operands.next().ok_or_else(|| Error::domain("missing operator operand"))?, operands.next())
     }

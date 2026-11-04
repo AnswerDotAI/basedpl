@@ -57,6 +57,8 @@ def test_python_printer():
     teq(to_python(bpl.fn('unknown')), 'fn("unknown")')
     teq(to_python(bpl.fn('(⎕←1)+')), 'fn("(⎕←1)+")')
     teq(to_python(Array([add, multiply]).fn), 'bpl("[+ ×]").fn')
+    for name in ('exact', 'rational'):
+        assert to_python(getattr(add, name)).endswith('.'+name)
 
 
 def test_load(tmp_path, monkeypatch):
