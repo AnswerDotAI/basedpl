@@ -9,7 +9,7 @@ use rustymath::agreement::Frames;
 use rustymath::array::ArrayView;
 use rustymath::buffer::{Buffer, FloatWidth, IntBuf};
 use rustymath::linalg::{self, Factor, Inner, PlusTimes};
-use rustymath::{buffer::View, error::Kind};
+use rustymath::{self as rm, buffer::View, error::Kind, facts::{Formula, Range, Variant}, operation::Kernel, tolerant as tol};
 
 pub(super) fn complex_parts(origin: &Origin<&[Value]>, call: &CallView<'_>, polar: bool) -> Result<Outputs<Value>, Error> {
     let root = call.layout().arguments().last().expect("a parts argument");
@@ -528,129 +528,50 @@ pub(crate) fn roles(call: &CallView<'_>) -> Result<Roles, Error> {
             .filter(|x| x.fract() == 0.0).map(|x| x as i64)
     } else { None };
     let variant = rustymath::facts::Variant { dtype: DType::Float(FloatWidth::F64), checked: true, wrapping: false, mathish: call.mode.mathish };
-    let has_real_kind = match object_kernel(primitive, dyadic, Numeric::EXACT, code, variant, &types[..count - start], &ranges[..count - start]) {
+    let has_real_kind = match primitive.kernel(dyadic, &ObjectArgs { numeric: Numeric::EXACT, code, variant, types: &types[..count - start], ranges: &ranges[..count - start] }) {
         Ok(Some(kernel)) => matches!(kernel.result_dtype(), DType::Complex(_)) || kernel.domain(&ranges[..count - start]), _ => !circle
     };
     if !has_real_kind { for &position in &positions[start..] { roles = roles.with(position, ReadKind::Kind); } }
     Ok(roles)
 }
 
-pub(crate) fn kernel(call: &CallView<'_>, variant: rustymath::facts::Variant) -> Result<Option<rustymath::operation::Kernel>, Error> {
-    let (primitive, dyadic) = match call.operation {
-        Operation::Primitive { primitive, .. } => (*primitive, call.layout().argument_positions().len() == 2), Operation::Fold { primitive, .. } => (*primitive, true),
-        Operation::At { combine: Some(primitive), .. } => (*primitive, true), _ => return Ok(None)
-    };
-    call.kernel_for(primitive, dyadic, variant)
-}
-fn resolved<K: rustymath::facts::Formula<N>, const N: usize>(
-    object: K, variant: rustymath::facts::Variant, types: &[DType], ranges: &[rustymath::facts::Range], numeric: Numeric
-) -> Result<rustymath::operation::Kernel, Error> {
-    let types = if let [kind] = types { [*kind; N] } else { types.try_into().map_err(|_| Error::domain("numeric operand count changed"))? };
-    let ranges = if let [range] = ranges { [*range; N] } else { ranges.try_into().map_err(|_| Error::internal())? };
-    let variant = if variant.dtype.is_integral() && !object.integer_domain(ranges) {
-        rustymath::facts::Variant { dtype: DType::Float(numeric.exact_width(variant.dtype)), ..variant }
-    } else { variant };
-    rustymath::facts::Formula::resolve(&object, variant, types).map(|kernel| kernel.ranged(&ranges)).map_err(Into::into)
-}
+pub(crate) type MathFactory = fn(Primitive, &ObjectArgs<'_>) -> Result<Option<Kernel>, Error>;
 
-pub(crate) fn object_kernel(
-    primitive: Primitive, dyadic: bool, numeric: Numeric, code: Option<i64>, variant: rustymath::facts::Variant, types: &[DType],
-    ranges: &[rustymath::facts::Range]) -> Result<Option<rustymath::operation::Kernel>, Error> {
-    use crate::number::{Arithmetic::*, Math::*};
-    use Primitive::{Arithmetic as A, Math as M, Special as S};
-    use rustymath::{self as rm, tolerant as tol};
-    macro_rules! one {
-        ($object:expr) => {
-            resolved::<_, 1>($object, variant, types, ranges, numeric)?
-        };
+pub(crate) struct ObjectArgs<'a> {
+    pub(super) numeric: Numeric,
+    pub(super) code: Option<i64>,
+    pub(super) variant: Variant,
+    pub(super) types: &'a [DType],
+    pub(super) ranges: &'a [Range],
+}
+impl ObjectArgs<'_> {
+    pub(super) fn resolve<K: Formula<N>, const N: usize>(&self, object: K) -> Result<Option<Kernel>, Error> {
+        let types = if let [kind] = self.types { [*kind; N] } else { self.types.try_into().map_err(|_| Error::domain("numeric operand count changed"))? };
+        let ranges = if let [range] = self.ranges { [*range; N] } else { self.ranges.try_into().map_err(|_| Error::internal())? };
+        let variant = if self.variant.dtype.is_integral() && !object.integer_domain(ranges) {
+            Variant { dtype: DType::Float(self.numeric.exact_width(self.variant.dtype)), ..self.variant }
+        } else { self.variant };
+        object.resolve(variant, types).map(|kernel| Some(kernel.ranged(&ranges))).map_err(Into::into)
     }
-    macro_rules! two {
-        ($object:expr) => {
-            resolved::<_, 2>($object, variant, types, ranges, numeric)?
-        };
+    pub(super) fn tolerance(&self) -> tol::Tolerance {
+        self.numeric.tolerance_at(match self.variant.dtype { DType::Float(width) => width, DType::Complex(width) => width.into(), _ => self.numeric.width })
     }
-    let tolerance = numeric.tolerance_at(match variant.dtype { DType::Float(width) => width, DType::Complex(width) => width.into(), _ => numeric.width });
-    Ok(Some(match (primitive, dyadic) {
-        (A(Plus), false) => one!(rm::Conj),
-        (A(Plus), true) => two!(rm::Add),
-        (A(Minus), false) => one!(rm::Negate),
-        (A(Minus), true) => two!(rm::Subtract),
-        (A(Times), false) => one!(rm::Sign),
-        (A(Times), true) => two!(rm::Multiply),
-        (A(Divide), false) => one!(rm::Reciprocal),
-        (A(Divide), true) if types.iter().all(|kind| kind.is_integral()) => {
-            if variant.mathish { two!(tol::MathishFloorDivide(tolerance)) } else { two!(tol::FloorDivide(tolerance)) }
-        }
-        (A(Divide), true) if variant.mathish => two!(rm::MathishDivide),
-        (A(Divide), true) => two!(rm::Divide),
-        (M(Magnitude), false) => one!(rm::Abs),
-        (M(Magnitude), true) => two!(tol::Residue(tolerance)),
-        (M(Floor), false) => one!(tol::Floor(tolerance)),
-        (M(Floor), true) => two!(rm::reduce::Minimum),
-        (M(Ceiling), false) => one!(tol::Ceil(tolerance)),
-        (M(Ceiling), true) => two!(rm::reduce::Maximum),
-        (M(Power), false) => one!(rm::Exp),
-        (M(Power), true) => two!(rm::Pow),
-        (M(Log), false) => one!(rm::Ln),
-        (M(Log), true) if variant.mathish => two!(rm::MathishLogb),
-        (M(Log), true) => two!(rm::Logb),
-        (M(Pi), false) => one!(rm::PiTimes),
-        (M(Pi), true) => two!(rm::PiTimes),
-        (M(Root), false) => one!(rm::Sqrt),
-        (M(Root), true) => two!(rm::Root),
-        (M(Factorial), false) => one!(rm::Factorial),
-        (M(Factorial), true) => two!(rm::Flipped(rm::Binom)),
-        (M(Gcd), true) => two!(tol::Gcd(tolerance)),
-        (M(Lcm), true) => two!(tol::Lcm(tolerance)),
-        (M(Not), false) => one!(rm::Not),
-        (M(Nand), true) => two!(rm::Nand),
-        (M(Nor), true) => two!(rm::Nor),
-        (M(Circle), false) => one!(rm::Cis),
-        (M(op @ (Circle | Arc)), true) => {
-            let Some(code) = code else { return Ok(None); };
-            let kind = *types.last().ok_or_else(|| Error::domain("circle needs an argument"))?;
-            return rm::operation::Kernel::circle(code, op == Arc, false, variant, [kind]).map_err(Into::into);
-        }
-        (Primitive::RealCircle { inverse }, true) => {
-            let Some(code) = code else { return Ok(None); };
-            let kind = *types.last().ok_or_else(|| Error::domain("circle needs an argument"))?;
-            return rm::operation::Kernel::circle(code, inverse, true, variant, [kind]).map_err(Into::into);
-        }
-        (Primitive::Compare(comparison), true) => match comparison {
-            Comparison::Equal => two!(tol::Equal(tolerance)), Comparison::NotEqual => two!(tol::NotEqual(tolerance)),
-            Comparison::Less => two!(tol::Less(tolerance)), Comparison::LessEqual => two!(tol::LessEqual(tolerance)),
-            Comparison::Greater => two!(tol::Greater(tolerance)), Comparison::GreaterEqual => two!(tol::GreaterEqual(tolerance))
-        },
-        (Primitive::Bitwise(table), false) => one!(rm::Bitwise(table)),
-        (Primitive::Bitwise(table), true) => two!(rm::Bitwise(table)),
-        (Primitive::RealSqrt, false) => one!(rm::RealSqrt),
-        (Primitive::RealLn, false) => one!(rm::RealLn),
-        (Primitive::RealPow, true) => two!(rm::RealPow),
-        (Primitive::Log1p, false) => one!(rm::Log1p),
-        (Primitive::Expm1, false) => one!(rm::Expm1),
-        (S(Special::Sign), false) => one!(rm::Sign),
-        (S(Special::Floor), false) => one!(tol::Floor(tol::Tolerance::EXACT)),
-        (S(Special::LambertW), false) => one!(rm::LambertW),
-        (S(Special::Real), false) => one!(rm::Real),
-        (S(Special::Imag), false) => one!(rm::Imag),
-        (S(Special::Angle), false) => one!(rm::Angle),
-        (S(Special::Gammaln), false) => one!(rm::Lgamma),
-        (S(Special::Digamma), false) => one!(rm::Digamma),
-        (S(Special::Erf), false) => one!(rm::Erf),
-        (S(Special::Erfc), false) => one!(rm::Erfc),
-        (S(Special::Erfinv), false) => one!(rm::Erfinv),
-        (S(Special::Beta), true) => two!(rm::Beta),
-        (S(Special::Gammainc), true) => two!(rm::Gammainc),
-        (S(Special::Polygamma), true) => two!(rm::Polygamma),
-        (S(Special::BinomDn), true) => two!(rm::BinomDn),
-        (S(Special::BinomDk), true) => two!(rm::BinomDk),
-        (Primitive::Exact(Exact::Floor), false) => one!(tol::Floor(tolerance)),
-        (Primitive::Exact(Exact::Ceiling), false) => one!(tol::Ceil(tolerance)),
-        (Primitive::Exact(Exact::Quotient), true) if variant.mathish => two!(tol::MathishFloorDivide(tolerance)),
-        (Primitive::Exact(Exact::Quotient), true) => two!(tol::FloorDivide(tolerance)),
-        (Primitive::Exact(Exact::Ratio), true) => two!(rm::Divide),
-        _ => return Ok(None),
-    }))
+    pub(super) fn divide(&self, integral: bool) -> Result<Option<Kernel>, Error> {
+        if integral {
+            if self.variant.mathish { self.resolve::<_, 2>(tol::MathishFloorDivide(self.tolerance())) }
+            else { self.resolve::<_, 2>(tol::FloorDivide(self.tolerance())) }
+        } else if self.variant.mathish { self.resolve::<_, 2>(rm::MathishDivide) }
+        else { self.resolve::<_, 2>(rm::Divide) }
+    }
+    pub(super) fn circle(&self, inverse: bool, real: bool) -> Result<Option<Kernel>, Error> {
+        let Some(code) = self.code else { return Ok(None); };
+        let kind = *self.types.last().ok_or_else(|| Error::domain("circle needs an argument"))?;
+        Kernel::circle(code, inverse, real, self.variant, [kind]).map_err(Into::into)
+    }
+    pub(super) fn bitwise<const N: usize>(&self, primitive: Primitive) -> Result<Option<Kernel>, Error> where rm::Bitwise: Formula<N> {
+        let Primitive::Bitwise(table) = primitive else { return Err(Error::internal()); };
+        self.resolve::<_, N>(rm::Bitwise(table))
+    }
 }
 
 pub(crate) fn map_arguments(call: &CallView<'_>) -> Result<(Option<usize>, usize), Error> {
@@ -899,11 +820,14 @@ fn scalar_map(call: &CallView<'_>, left: Option<&Value>, right: &Value, numeric:
         mathish: numeric.mathish_at(crate::array::float_width_of(dtype)) };
     let types: Vec<_> = args.iter().map(|value| value.dtype().unwrap_or(DType::Float(numeric.width))).collect();
     let ranges: Vec<_> = args.iter().map(|value| Desc::of(value).map_or(rustymath::facts::Range::ANY, |desc| desc.bounds())).collect();
-    let resolve = |variant| match call.operation {
-        Operation::Recipe(RecipeOp::FloatFloor) => object_kernel(Primitive::Math(Math::Floor), false, numeric, None, variant, &types, &ranges),
-        Operation::Recipe(operation) => Ok(operation.kernel(variant)), Operation::Primitive { primitive, .. } => object_kernel(
-            *primitive, call.layout().arguments().len() == 2, numeric, left.and_then(Value::as_number).and_then(|number| number.integer().ok()), variant,
-            &types, &ranges), _ => unreachable!("a mapped operation")
+    let resolve = |variant| {
+        let args = ObjectArgs { numeric, code: left.and_then(Value::as_number).and_then(|number| number.integer().ok()), variant, types: &types, ranges: &ranges };
+        match call.operation {
+            Operation::Recipe(RecipeOp::FloatFloor) => Primitive::Math(Math::Floor).kernel(false, &args),
+            Operation::Recipe(operation) => Ok(operation.kernel(variant)),
+            Operation::Primitive { primitive, .. } => primitive.kernel(call.layout().arguments().len() == 2, &args),
+            _ => unreachable!("a mapped operation")
+        }
     };
     let mut kernel = resolve(variant)?.ok_or_else(|| Error::domain("numeric formula does not take these kinds"))?;
     if !prototype && call.mode.dynamic && !kernel.domain(&ranges) && !matches!(dtype, DType::Complex(_) | DType::Character) {
@@ -966,7 +890,7 @@ pub(crate) fn product_kernels(
         let working = match result {
             Some(result) if dtype.is_integral() && result.is_integral() => dtype.common(result).or_internal()?, _ => dtype
         };
-        let Some(reducer) = object_kernel(fold, true, numeric, None, call.variant(working)?, &[dtype; 2], &[rustymath::facts::Range::ANY; 2])? else {
+        let Some(reducer) = fold.kernel(true, &ObjectArgs { numeric, code: None, variant: call.variant(working)?, types: &[dtype; 2], ranges: &[Range::ANY; 2] })? else {
             return Ok(None);
         };
         Some(reducer)

@@ -178,12 +178,12 @@ impl CallView<'_> {
             mathish: numeric.mathish_at(crate::array::float_width_of(dtype)) })
     }
     pub(crate) fn kernel_for(
-        &self, primitive: Primitive, dyadic: bool, variant: rustymath::facts::Variant) -> crate::error::Result<Option<rustymath::operation::Kernel>> {
+        &self, primitive: Primitive, dyadic: bool, variant: Variant) -> Result<Option<Kernel>, Error> {
         let mut numeric = self.numeric()?;
-        numeric.tolerance = crate::array::float_width_of(variant.dtype).map_or(rustymath::tolerant::Tolerance::EXACT, |width| numeric.tolerance_at(width));
+        numeric.tolerance = crate::array::float_width_of(variant.dtype).map_or(tol::Tolerance::EXACT, |width| numeric.tolerance_at(width));
         let code = self.parameter(self.layout().data())?.as_deref().and_then(Value::as_number).and_then(|number| number.integer().ok());
         let mut types = [variant.dtype; 3];
-        let mut ranges = [rustymath::facts::Range::ANY; 3];
+        let mut ranges = [Range::ANY; 3];
         let direct = matches!(self.operation, Operation::Primitive { .. } | Operation::Product { .. });
         let mut count = 0;
         let layout = self.layout();
@@ -196,7 +196,7 @@ impl CallView<'_> {
             };
             count += 1;
         }
-        numeric::object_kernel(primitive, dyadic, numeric, code, variant, &types[..count], &ranges[..count])
+        primitive.kernel(dyadic, &ObjectArgs { numeric, code, variant, types: &types[..count], ranges: &ranges[..count] })
     }
     pub(crate) fn len(&self) -> usize { self.bindings.len() }
     fn parameter_allowed(&self, position: usize) -> bool {

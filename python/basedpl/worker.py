@@ -57,11 +57,12 @@ class Worker:
     def __init__(
         self,
         bpl=None, # The native `bpl` to run (`resolved`); None or `installed`: the installed build
+        stderr_limit=30, # Maximum diagnostic lines to retain; None keeps all stderr
         **kwargs
     ):
         self.process = subprocess.Popen((resolved(bpl), '--worker'), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             encoding='utf-8', bufsize=1, env=environment(**kwargs))
-        self._replies, self._stderr = queue.Queue(), deque(maxlen=30)
+        self._replies, self._stderr = queue.Queue(), deque(maxlen=stderr_limit)
         self._write_lock, self._request_lock = threading.Lock(), threading.Lock()
         self._id, self._active, self._heard, self._started, self.ran = 0, None, time.monotonic(), time.monotonic(), None
         self._readers = [threading.Thread(target=self._read, daemon=True), threading.Thread(target=self._read_errors, daemon=True)]
