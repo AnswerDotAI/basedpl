@@ -662,9 +662,7 @@ impl Execution<'_> {
         &self, section: &Section, prepared: &Code, range: std::ops::Range<usize>, scratch: &mut Scratch,
         give: &mut dyn FnMut(usize, rustymath::operation::Piece<'_>)) -> std::result::Result<(), rustymath::error::Error> {
         use crate::jit;
-        use rustymath::{agreement::Read, buffer::{Buffer, Cast}, operation::{Piece, Total}};
-        let dump_inputs = std::env::var_os("BASEDPL_BLOCK_INPUTS").is_some() && range.start < self.size.saturating_mul(2);
-        if dump_inputs { eprintln!("block inputs section={:?} range={range:?} recipe={:?}", section.members, section.lowered.as_ref().map(|lowered| &lowered.kernel.inputs)); }
+        use rustymath::{agreement::{Read, ReadRoute}, buffer::{Buffer, Cast}, operation::{Piece, Total}};
         scratch.copies.resize_with(prepared.inputs.len(), || Buffer::with_capacity(DType::Boolean, 0));
         let mut arrays = Vec::new();
         let mut scalars = Vec::new();
@@ -675,19 +673,14 @@ impl Execution<'_> {
             let ty = input.kind;
             let dtype = match ty { jit::Input::Array(ty, _) | jit::Input::Scalar(ty) => ty.dtype(), _ => unreachable!() };
             match ty {
-                jit::Input::Array(_, _) => {
-                    let view = reader.part_view(range.clone(), dtype, false, &mut scratch.copies[index])?;
-                    if dump_inputs { eprintln!("block array input={index} kind={ty:?} len={} route={:?} first={:?}", reader.plan.len(), reader.plan.route(),
-                        (view.len() != 0).then(|| f64::cast(view, 0).map(|x| (x, x.to_bits())))); }
-                    arrays.push(view.as_ptr());
-                }
+                jit::Input::Array(_, _) => { arrays.push(reader.part_view(range.clone(), dtype, false, &mut scratch.copies[index])?.as_ptr()); }
                 jit::Input::Scalar(ty) => {
-                    let view = reader.part_view(range.start..range.start + 1, dtype, false, &mut scratch.copies[index])?;
+                    let start = if matches!(reader.plan.route(), ReadRoute::Index { .. }) { range.start } else { 0 };
+                    let view = reader.part_view(start..start + 1, dtype, false, &mut scratch.copies[index])?;
                     scalars.push(match ty {
                         jit::Ty::F32 | jit::Ty::F64 => f64::cast(view, 0)?.to_bits(), jit::Ty::Bool => u64::from(bool::cast(view, 0)?),
                         _ => i64::cast(view, 0)? as u64
                     });
-                    if dump_inputs { eprintln!("block scalar input={index} kind={ty:?} len={} route={:?} bits={:#018x}", reader.plan.len(), reader.plan.route(), scalars.last().unwrap()); }
                 }
                 _ => unreachable!(),
             }

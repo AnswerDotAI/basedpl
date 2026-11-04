@@ -167,9 +167,7 @@ impl CallView<'_> {
         Ok(joined)
     }
     pub(crate) fn numeric(&self) -> crate::error::Result<Numeric> {
-        let mut numeric = crate::settings::captured(self)?;
-        numeric.fixed = self.operand_kind()?.and_then(crate::number::Kind::fixed_width);
-        Ok(numeric)
+        crate::settings::captured(self)?.for_kinds(self.operand_kind()?).map_err(Error::domain)
     }
     pub(crate) fn variant(&self, dtype: rustymath::buffer::DType) -> crate::error::Result<rustymath::facts::Variant> {
         let numeric = Numeric { mathish: self.mode.mathish, kinds: if self.mode.dynamic { Kinds::Dynamic } else { Kinds::Static },

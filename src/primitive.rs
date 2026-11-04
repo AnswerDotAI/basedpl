@@ -608,17 +608,36 @@ impl Row {
         Self { sources: structural::sources, form: structural::form, cells: structural::cell_read, build: structural::build, under: [Under::Structural; 2],
             linear: Linear { monadic: Linearity::Jointly(1), dyadic: Linearity::Jointly(2), zero: [false; 2] }, ..self }
     }
-    pub(crate) fn identity(&self, call: &CallView<'_>, kind: crate::number::Kind) -> crate::error::Result<Option<Value>> {
+    pub(crate) fn identity(&self, call: &CallView<'_>, prototype: &Value) -> Result<Option<Value>, Error> {
+        if matches!(prototype, Value::Array(_)) {
+            let mut items = Vec::with_capacity(prototype.len());
+            for item in prototype.elements() {
+                let Some(value) = self.identity(call, &item)? else { return Ok(None); };
+                items.push(value);
+            }
+            let Some(fill) = self.identity(call, &prototype.prototype())? else { return Ok(None); };
+            return Ok(Some(prototype.layout().collect(items, fill)?));
+        }
+        if !matches!(prototype, Value::Number(_) | Value::Character(_)) { return Ok(None); }
+        let numeric = call.numeric()?;
+        let kind = prototype.kind().filter(|kind| kind.dtype() != DType::Character)
+            .unwrap_or_else(|| NumberKind::stored(DType::Float(numeric.width), false, false));
         if let Some(identity) = self.own_identity { return Ok(Some(identity(kind))); }
-        let Some(kernel) = call.kernel(call.variant(kind.dtype())?)? else { return Ok(None) };
+        let Some(factory) = self.math[1] else { return Ok(None); };
+        let args = ObjectArgs { numeric, code: None, variant: call.variant(kind.dtype())?, types: &[kind.dtype(); 2], ranges: &[kind.range(); 2] };
+        let Some(kernel) = factory(call.operation.primitive().or_internal()?, &args)? else { return Ok(None); };
         Ok(kernel.identity().map(|n| {
-            Value::Number(match kind.dtype() {
-                rustymath::buffer::DType::Boolean => Number::from_bool(n != 0.0),
-                rustymath::buffer::DType::Integer(width) if kind.fixed_width().is_some() => Number::fixed(n as i64, width),
-                rustymath::buffer::DType::Integer(width) => Number::integer_at(n as i64, width),
-                rustymath::buffer::DType::Float(width) => Number::float(n, width),
-                rustymath::buffer::DType::Complex(width) => Number::complex_kept(num_complex::Complex64::new(n, 0.0), width.into()),
-                rustymath::buffer::DType::Character => unreachable!("a numerical identity has numerical items"),
+            Value::Number(match prototype {
+                _ if n.is_infinite() => Number::float(n, numeric.width_of([prototype.float_width()])),
+                Value::Number(value) if value.is_unbounded() => value.like(n as i32),
+                _ => match kind.dtype() {
+                    DType::Boolean => Number::from_bool(n != 0.0),
+                    DType::Integer(width) if kind.fixed_width().is_some() => Number::fixed(n as i64, width),
+                    DType::Integer(width) => Number::integer_at(n as i64, width),
+                    DType::Float(width) => Number::float(n, width),
+                    DType::Complex(width) => Number::complex_kept(num_complex::Complex64::new(n, 0.0), width.into()),
+                    DType::Character => unreachable!("a numerical identity has numerical items"),
+                },
             })
         }))
     }

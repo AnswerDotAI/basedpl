@@ -577,8 +577,11 @@ pub(crate) fn framed_fallback(
     let reference = super::control::frame_reference(&crate::array::Layout::from(frame.layout), &references)?;
     if notation == Notation::Strand {
         if results.is_empty() { return Ok(Outputs::one(reference.layout().collect(results, prototype.zeroed())?)); }
-        let call = crate::eval::projected_call(&origin, Operation::join(notation, crate::array::Widening::Items), &results)?;
-        return Operation::dispatch(call.reborrow())?.assemble()?.with_layout(reference.layout().clone()).map(Outputs::one);
+        let mut values = Vec::with_capacity(results.len() + 2);
+        values.extend([reference, prototype.unit()?]);
+        for value in results { values.push(value.unit()?); }
+        let call = crate::eval::projected_call(&origin, Operation::join(Notation::Cells, crate::array::Widening::Items), &values)?;
+        return Operation::dispatch(call.reborrow())?.assemble().map(Outputs::one);
     }
     super::control::assemble(&reference, &results, &prototype, origin.mode).map(Outputs::one)
 }

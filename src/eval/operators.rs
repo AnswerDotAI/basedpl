@@ -399,14 +399,7 @@ fn items_call(origin: &Origin<&[Value]>, function: &Function, scan: bool, axis: 
         let primitive = function.dyadic_primitive().ok_or_else(|| Error::domain("this function has no reduction identity"))?;
         let prototype = right.prototype();
         let prepared = Operation::prepare(origin)?;
-        let call = prepared.view();
-        let numeric = call.numeric()?;
-        let kind = prototype.kind().unwrap_or_else(|| crate::number::Kind::stored(rustymath::buffer::DType::Float(numeric.width), false, false));
-        let mut value = primitive.info().identity(&call, kind)?.ok_or_else(|| Error::domain("this function has no reduction identity"))?;
-        if prototype.as_number().is_some_and(|n| n.is_unbounded()) {
-            value = dispatch_in(origin, Operation::Convert(crate::number::Mark::Rational), &[value])?;
-        }
-        return Ok(value);
+        return primitive.info().identity(&prepared.view(), &prototype)?.ok_or_else(|| Error::domain("this function has no reduction identity"));
     }
     let item = |i| dispatch_in(origin, Operation::Read(ReadOp::Slice { axis }), &[Value::constant(Value::integer(i as i64)), right.clone()]);
     if !scan {

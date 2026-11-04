@@ -858,7 +858,7 @@ impl Value {
     pub(crate) fn as_real(&self) -> Option<f64> { self.as_number()?.to_float().ok() }
     pub(crate) fn boolean(&self) -> Result<bool, ErrorKind> {
         if !self.is_singleton() { return Err(Kind::Length.into()); }
-        self.as_number().ok_or(Kind::Domain)?.boolean().map_err(|_| Kind::Domain.into())
+        match self.at(0) { Self::Number(n) => n.boolean().map_err(|_| Kind::Domain.into()), _ => Err(Kind::Domain.into()) }
     }
     pub(crate) fn disclose(&self) -> Value { if self.is_empty() { self.prototype() } else { self.at(0) } }
 

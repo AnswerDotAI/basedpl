@@ -661,7 +661,7 @@ pub(crate) fn result_kind(
             let lower = if width == Width::U8 { 0.0 } else { -upper };
             range.lo >= lower && range.hi < upper
         };
-        dtype = if fixed || numeric.is_static() { numeric.kind(dtype) } else {
+        dtype = if fixed || numeric.is_static() { DType::Integer(numeric.integer_width()) } else {
             DType::Integer([Width::U8, Width::I16, Width::I32, Width::I64].into_iter().find(|&width| fits(width)).unwrap_or(Width::I64))
         };
         if let DType::Integer(width) = dtype && !fits(width) { range = rustymath::facts::Range::of_dtype(dtype); }
@@ -928,7 +928,8 @@ pub(super) fn code_fold_positions(call: &RunView<'_>) -> Result<Outputs<Value>, 
 }
 pub(crate) fn build_fold(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
     let positions = matches!(call.operation, Operation::Fold { positions: Some(_), .. });
-    if call.layout().argument_positions().any(|position| call.desc(position).is_none()) {
+    let roots = call.layout().arguments();
+    if roots.clone().any(|root| call.root_desc(root).is_none()) || roots.len() == 2 && call.root_atom(roots.start) != Some(true) {
         if positions { return Err(Error::domain("winner positions need a real numeric array")); }
         return host_build(call, set);
     }
@@ -944,13 +945,15 @@ pub(crate) fn build_fold(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping
     let items = source.bounds();
     let seed = geometry.seed.and_then(|seed| call.desc(seed)).map(|seed| seed.bounds());
     let length = geometry.dims()[1];
+    let empty_identity = !geometry.scan && length == 0 && seed.is_none() && kernel.identity().is_some_and(|n| !n.is_finite());
     let mut range = if length == 0 { seed.unwrap_or_else(|| rustymath::facts::Range::of(kernel.identity())) }
     else { kernel.fold_range(items, seed, length) };
     if geometry.scan { range = range.join(items); }
-    let dtype = if geometry.scan { kernel.scan_dtype() }
+    let dtype = if empty_identity { DType::Float(call.numeric()?.width_of([source.kind.float_width()])) }
+    else if geometry.scan { kernel.scan_dtype() }
     else { kernel.fold_dtype(source.dtype(), length, geometry.seed.and_then(|seed| call.desc(seed)).map(|seed| seed.dtype())) };
     let (kind, range) = result_kind(call.numeric()?, dtype, range, IntegerResult::Never);
-    let variant = result_variant(variant, kind.dtype())?;
+    let variant = if empty_identity { call.variant(kind.dtype())? } else { result_variant(variant, kind.dtype())? };
     for input in geometry.seed.into_iter().chain([geometry.arg]) { set(input, geometry.input_read(call, input)?); }
     let step = Step::Fold { arg: geometry.arg as u32, seed: geometry.seed.map(|seed| seed as u32), axis: geometry.axis, variant };
     let desc = Desc { kind, atom: geometry.atom, layout: geometry.result, range: Some(range) };
@@ -958,7 +961,7 @@ pub(crate) fn build_fold(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping
 }
 
 pub(crate) fn build_product(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
-    if call.layout().argument_positions().any(|position| call.desc(position).is_none()) { return host_build(call, set); }
+    if call.layout().arguments().any(|root| call.root_desc(root).is_none()) { return host_build(call, set); }
     let geometry = crate::plan::product(call)?;
     let Some((map, fold)) = product_kernels(call, None)? else { return host_build(call, set); };
     let ranges = geometry.args.map(|position| call.desc(position).expect("a native product has input descriptions").bounds());
