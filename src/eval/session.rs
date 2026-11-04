@@ -122,13 +122,26 @@ impl Session {
         }
         scope.nodes.push(node.downgrade());
     }
-    fn guarded(&self, value: Option<&Value>) -> Result<(), Error> {
+    fn guarded<'a>(&self, values: impl IntoIterator<Item = &'a Value>) -> Result<(), Error> {
         let scope = std::mem::take(self.guards.borrow_mut().last_mut().expect("a running error guard has a scope"));
         for node in scope.nodes.into_iter().filter_map(|node| node.upgrade()).map(crate::graph::Node) {
             for output in 0..node.descs().len() { Value::Pending(Pending::data(node.clone(), output as u32)).read(crate::ReadKind::Value)?; }
         }
-        if let Some(value) = value { value.read(crate::ReadKind::Value)?; }
+        for value in values { value.read(crate::ReadKind::Value)?; }
         self.raise()
+    }
+    pub(crate) fn prototype_outputs(&self, run: impl FnOnce() -> Result<Outputs<Value>, Error>) -> Result<Outputs<Value>, Error> {
+        self.raise()?;
+        let result = self.prototype_mode(true, || {
+            self.guards.borrow_mut().push(GuardScope::default());
+            let result = run().and_then(|outputs| self.guarded(outputs.as_ref()).map(|()| outputs));
+            self.guards.borrow_mut().pop();
+            result
+        });
+        match result {
+            Err(error) if Catch::All.catches(&error.kind) => Ok(Outputs::one(Value::Number(Numeric::current().float(0.0)))),
+            result => result,
+        }
     }
     pub(super) fn writing(&self, place: Place, span: &Span) -> Result<(), Error> {
         if place.frame() != self.bindings.current() {
@@ -622,11 +635,31 @@ impl Session {
         Ok(Binding::Value(result.map_err(|error| error.at(&node.span))?))
     }
 
+    /// Resolves bare-name aliases in the installed call context, without evaluating function expressions.
+    pub(super) fn named_function(&self, function: &Function) -> Result<Option<Function>, Error> {
+        let mut resolved: Option<Function> = None;
+        let mut remaining = MAX_CALL_DEPTH - self.depth.get();
+        loop {
+            let function = resolved.as_ref().unwrap_or(function);
+            let FunctionNode::LateBound(definition) = function.node() else { break };
+            if function.rules().is_some() { break; }
+            let nodes = &definition.bodies[0][0].nodes;
+            if !matches!(nodes.as_slice(), [Node { kind: NodeKind::Name(..), .. }]) { break; }
+            if remaining == 0 { return Err(depth_error(&definition.span)); }
+            remaining -= 1;
+            let next = Function::from_value(self.bind(nodes)?.value, &definition.span)?;
+            resolved = Some(next);
+        }
+        Ok(resolved)
+    }
     // Inlined into `dispatch`, this would add its locals to the stack frame of every BPL call, limiting recursion in the browser.
     #[inline(never)]
     pub(super) fn call_named(&self, function: &Function, origin: crate::program::Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
         let FunctionNode::LateBound(definition) = function.node() else { unreachable!("a late-bound expression") };
-        let function = Function::from_value(self.bind(&definition.bodies[0][0].nodes)?.value, &definition.span)?;
+        let function = match self.named_function(function)? {
+            Some(function) => function,
+            None => Function::from_value(self.bind(&definition.bodies[0][0].nodes)?.value, &definition.span)?,
+        };
         let arguments = Function::body_arguments(&origin)?;
         function.call_bound_outputs(&origin, &arguments)
     }

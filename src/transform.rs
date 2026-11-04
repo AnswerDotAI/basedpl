@@ -1,6 +1,6 @@
 //! Nested Derivative/Batched levels. Dispatch invokes rules; Value::read owns observation.
 
-use crate::{Value, array::{Carried, Layout}, error::Result, primitive::{CallView, Operation, ReadOp, ViewAxis}, program::{Origin, Outputs}, session};
+use crate::{Value, array::Carried, error::Result, primitive::{CallView, Operation, ReadOp, ViewAxis}, program::{Origin, Outputs}, session};
 use std::{cell::{Cell, RefCell}, sync::Arc};
 
 #[derive(Default)]
@@ -9,15 +9,9 @@ pub(crate) struct Levels { stack: RefCell<Vec<Level>>, last: Cell<usize>, batch_
 #[derive(Clone)]
 pub(crate) struct Level { pub(crate) id: usize, pub(crate) kind: LevelKind, depth: usize, handling: bool }
 
-pub(crate) struct FrameSource { references: Box<[Value]>, axes: Box<[ViewAxis]> }
 #[derive(Clone)]
-pub(crate) enum LevelKind { Derivative, Batched { frame: Layout, source: Arc<FrameSource> } }
+pub(crate) enum LevelKind { Derivative, Batched { frame: Value } }
 
-impl LevelKind {
-    pub(crate) fn batched(frame: Layout, references: Box<[Value]>, axes: Box<[ViewAxis]>) -> Self {
-        Self::Batched { frame, source: Arc::new(FrameSource { references, axes }) }
-    }
-}
 impl Levels {
     pub(crate) fn begin(&self, kind: LevelKind) -> Level {
         self.last.set(self.last.get() + 1);
@@ -65,8 +59,8 @@ impl Level {
     pub(crate) fn current_batch_rule() -> Option<Self> { session().levels.current_batch_rule() }
 
     pub(crate) fn frame_reference(&self) -> Result<Value> {
-        let LevelKind::Batched { source, .. } = &self.kind else { return Err(crate::Error::internal()); };
-        frame_reference(&source.references, &source.axes)
+        let LevelKind::Batched { frame } = &self.kind else { return Err(crate::Error::internal()); };
+        Ok(frame.clone())
     }
 
     pub(crate) fn rule(&self, origin: Origin<&[Value]>, call: &CallView) -> Result<Outputs<Value>> {
@@ -95,6 +89,27 @@ impl Drop for Scope { fn drop(&mut self) { session().levels.end(self.level.id); 
 pub(crate) fn frame_reference(references: &[Value], axes: &[ViewAxis]) -> Result<Value> {
     let arguments = std::iter::once(Value::constant(Value::integer(0))).chain(references.iter().cloned()).collect::<Vec<_>>();
     Operation::Read(ReadOp::Axes { axes: axes.into(), destinations: Box::new([]) }).call(&arguments)
+}
+
+pub(crate) fn agreed_frame(references: &[Value], rank: usize) -> Result<Value> {
+    let mut arguments = vec![Value::constant(Value::Number(crate::Number::from_bool(false)))];
+    let mut frames = Vec::with_capacity(references.len());
+    for reference in references {
+        let (mut value, mut offset) = (reference, 0);
+        while let Value::Carried { carried, .. } = value {
+            value = match &**carried {
+                Carried::Dual { primal, .. } => primal,
+                Carried::Batch { whole, cell } => {
+                    offset += whole.rank() - cell.shape().len();
+                    whole
+                }
+            };
+        }
+        let input = arguments.len() as u32;
+        frames.push((offset..offset + rank).map(|axis| ViewAxis { input, axis: Some(axis) }).collect());
+        arguments.push(value.clone());
+    }
+    Operation::Read(ReadOp::Frame { frames: frames.into() }).call(&arguments)
 }
 pub(crate) fn carried(level: usize, carried: Carried) -> Value { Value::Carried { level, carried: Arc::new(carried) } }
 

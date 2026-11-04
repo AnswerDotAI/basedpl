@@ -174,7 +174,7 @@ impl Function {
         Ok(Some((*axes, atoms, *notation, origin)))
     }
     pub(crate) fn prototype_bound(&self, parent: &crate::program::Origin<&[Value]>, arguments: &[Value]) -> Result<Outputs<Value>, Error> {
-        session().prototype_mode(true, || {
+        session().prototype_outputs(|| {
             let origin = self.bound(parent, arguments)?;
             self.run(origin.reborrow())
         })
@@ -1242,12 +1242,7 @@ impl Function {
         }).collect()))
     }
     pub fn inspect(&self, session: &Session) -> crate::Inspection {
-        if let FunctionNode::LateBound(definition) = self.node()
-            && let [Node { kind: NodeKind::Name(name, _), .. }] = definition.bodies[0][0].nodes.as_slice()
-            && let Ok(Some((_, binding @ Binding::Function(_)))) = session.bindings.lookup(*name)
-            && let Ok(function) = Self::from_value(binding, &definition.span) {
-            return crate::Inspection::new("function", function.bpl());
-        }
+        if let Ok(Some(function)) = session.named_function(self) { return crate::Inspection::new("function", function.bpl()); }
         crate::Inspection::new("function", self.bpl())
     }
     pub fn builtin(name: &str) -> Option<Self> {

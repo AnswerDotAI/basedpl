@@ -425,6 +425,8 @@ pub(crate) fn fold_fallback(origin: Origin<&[Value]>) -> Result<Value> {
 }
 
 fn fold_call(origin: &Origin<&[Value]>, f: &Function, kind: &OperatorKind, args: &[Value]) -> Result<Value> {
+    let named = session().named_function(f)?;
+    let f = named.as_ref().unwrap_or(f);
     let FoldKind { first, scan } = kind.info().fold().expect("a fold operator");
     if let Some(primitive) = f.dyadic_primitive() {
         return dispatch_in(origin, Operation::Fold { primitive, first, scan, positions: None, pairing: Pairing::Axes }, args);
@@ -776,6 +778,8 @@ fn cell_axes(origin: &Origin<&[Value]>, f: &Function, spec: &Value, args: &[Valu
 fn inverse_call(origin: &Origin<&[Value]>, f: &Function, args: &[Value]) -> Result<Outputs<Value>> { invert(origin, f, args, true) }
 
 fn invert(origin: &Origin<&[Value]>, f: &Function, args: &[Value], first: bool) -> Result<Outputs<Value>> {
+    let named = session().named_function(f)?;
+    let f = named.as_ref().unwrap_or(f);
     if let Some(g) = f.rules().and_then(|rules| rules.inverse.as_ref()) {
         if !first { return Err(Error::domain("this function has no known inverse")); }
         return g.call_bound_outputs(origin, args);

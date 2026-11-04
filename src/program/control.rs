@@ -234,7 +234,7 @@ pub(crate) fn form(origin: Origin<&[Value]>, _call: &CallView<'_>) -> Result<Opt
     if frame.count() == 0 {
         let position = selector_positions(&selector.prototype(), count, true)?[0];
         if position == rustymath::gather::Steps::FILL { return Err(Error::domain("the selector's fill picks no case")); }
-        let value = crate::eval::session().prototype_mode(true, || cases[position].run(&reference, &[]))?;
+        let value = crate::eval::session().prototype_outputs(|| cases[position].run(&reference, &[]).map(Outputs::one))?.into_cell()?;
         let cell = if value.is_singleton() { argument_cell }
         else if value.shape().first() == Some(&0) { value.layout().axes(1..value.rank()) }
         else { Layout::default() };

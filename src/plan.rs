@@ -185,6 +185,11 @@ fn read_result(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<(L
             if *axis >= rank { return Err(Error::domain("a slice refers to an absent axis")); }
             (source.axes((0..rank).filter(|a| a != axis)), rank == 1)
         }
+        ReadOp::Frame { frames } => {
+            let mut layout = Layout::default();
+            for axes in frames { layout = crate::agreement::Agreement::new(&layout, &axes_layout(call, axes)?)?.layout; }
+            (layout, false)
+        }
         ReadOp::Axes { axes, destinations } => {
             if destinations.len() != rank || destinations.iter().any(|&a| a >= axes.len()) { return Err(Error::domain("view axes do not cover the source")); }
             let atom = axes.is_empty() && call.root_atom(read_source(kind)).or_internal()?;
@@ -220,6 +225,7 @@ fn read_mapping(kind: &ReadOp, source: &Layout, result: &Layout, position: Optio
     Ok(match kind {
         ReadOp::Cells { .. } => return Err(Error::internal()),
         ReadOp::Root(_) | ReadOp::Ravel | ReadOp::Item => Mapping::Linear(1),
+        ReadOp::Frame { .. } => Mapping::Single,
         ReadOp::Cell { .. } => match position {
             Some(position) => Mapping::Steps { base: position * result.count(), steps: vec![Steps::along(result.count(), 1)].into() }, None => Mapping::Tiled(0)
         },

@@ -718,9 +718,10 @@ pub(super) fn build_map(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)
             set(right, Mapping::Linear(1));
             return Ok((Step::Convert { arg: right as u32, conversion }, Some(Outputs::one(Some(desc))), None));
         }
+    let (layout, atom, left_map, right_map) = map_geometry(call)?;
+    if layout.count() == 0 { return host_build(call, set); }
     let variant = map_variant(call)?;
     let Some(kernel) = call.kernel(variant)? else { return host_build(call, set); };
-    let (layout, atom, left_map, right_map) = map_geometry(call)?;
     let mut ranges = [rustymath::facts::Range::ANY; 2];
     let mut count = 0;
     for position in left.into_iter().chain([right]) {

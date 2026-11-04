@@ -27,6 +27,7 @@ pub(crate) struct FoldKind { pub scan: bool, pub first: bool }
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum ReadOp {
     Root(usize), Ravel, Reshape, Item, Cell { rank: usize }, Slice { axis: usize }, Axes { axes: Box<[ViewAxis]>, destinations: Box<[usize]> },
+    Frame { frames: Box<[Box<[ViewAxis]>]> },
     Cells { operation: Box<Operation>, frame: usize, inputs: Box<[CellInput]> }
 }
 
@@ -392,7 +393,7 @@ impl Operation {
             match call.operation {
                 Self::Product { .. } => numeric::roles(call)?,
                 Self::Join { notation: Notation::Cells, .. } => call.layout().root(Root(0)).leaves.fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Description)),
-                Self::Read(ReadOp::Axes { .. }) => {
+                Self::Read(ReadOp::Axes { .. } | ReadOp::Frame { .. }) => {
                     let layout = call.layout();
                     (layout.start(Root(1))..layout.explicit().end).fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Description))
                 }
@@ -1383,7 +1384,9 @@ pub(crate) fn pervade(
     let widening = Widening::of_results(numeric.kinds);
     if agreement.len == 0 {
         let prototype = Pervasion { apply: walk.prototype, ..*walk };
-        let empty = pervade(left.map(Value::prototype).as_ref(), &right.prototype(), numeric, None, fill, &prototype)?;
+        let empty = session().prototype_outputs(|| {
+            pervade(left.map(Value::prototype).as_ref(), &right.prototype(), numeric, None, fill, &prototype).map(Outputs::one)
+        })?.into_cell()?;
         return Ok(Value::stored_values(agreement.layout, Vec::new(), Some(empty), widening)?);
     }
     let item = |value: &Value, map: &Mapping, at| match map.get(at).filter(|&at| at < value.len()) {
