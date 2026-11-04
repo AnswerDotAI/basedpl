@@ -759,7 +759,7 @@ impl Special {
 fn betainc_form(origin: Origin<&[Value]>, call: &CallView) -> Result<Option<Outputs<Value>>, Error> {
     let roots = call.layout().arguments();
     if roots.len() != 2 { return Ok(None); }
-    if crate::derivative::tag(&origin.root_input(roots.start)?).is_some() {
+    if crate::derivative::tag(origin.root_input(roots.start)?.as_ref()).is_some() {
         return Err(Error::new(ErrorKind::Unsupported, format!("∂ can't differentiate {} in its left argument", origin.operation.glyph())));
     }
     let pair = call.root_parameter(roots.start)?;
