@@ -941,7 +941,7 @@ pub(crate) fn build_fold(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping
     }
     let source = call.desc(geometry.arg).expect("a native fold has a source description");
     let length = geometry.dims()[1];
-    if source.dtype() == DType::Character && (geometry.result.count() == 0 || geometry.seed.is_none() && length == 1) {
+    if source.dtype() == DType::Character && geometry.seed.is_none() && length == 1 {
         let read = ReadPlan::copy(geometry.arg, source.layout.count(), Mapping::Linear(1), geometry.result.count(), Missing::Default);
         let desc = Desc { layout: geometry.result, atom: geometry.atom, ..source.into_owned() };
         set(geometry.arg, Mapping::Linear(1));

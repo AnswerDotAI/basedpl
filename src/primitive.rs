@@ -511,7 +511,7 @@ pub(crate) enum Primitive {
     Replicate(bool),
     CatenateFirst,
     Reverse(bool),
-    Transpose,
+    Transpose(bool),
     Windows,
     Prime,
     Factor,
@@ -851,7 +851,7 @@ impl Primitive {
             Self::Math(Lcm), Self::Math(Gcd), Self::Math(Nand), Self::Math(Nor), Self::Math(Not), Self::Compare(Equal), Self::Compare(NotEqual),
             Self::Compare(Less), Self::Compare(LessEqual), Self::Compare(Greater), Self::Compare(GreaterEqual), Self::Iota, Self::Range, Self::Keys(false),
             Self::Shape, Self::Tally, Self::Depth, Self::Ravel, Self::CatenateFirst, Self::Enclose, Self::Mix, Self::Nest, Self::Member, Self::Union,
-            Self::Intersection, Self::Grade(false), Self::Grade(true), Self::Take, Self::Drop, Self::Reverse(false), Self::Reverse(true), Self::Transpose,
+            Self::Intersection, Self::Grade(false), Self::Grade(true), Self::Take, Self::Drop, Self::Reverse(false), Self::Reverse(true), Self::Transpose(false),
             Self::Encode, Self::Decode, Self::Execute, Self::Format, Self::Index, Self::MatrixDivide, Self::Replicate(false), Self::Windows, Self::Prime, Self::Factor,
             Self::Polynomial, Self::Where, Self::Find, Self::Identity(false), Self::Identity(true), Self::Random,
         ]
@@ -874,6 +874,8 @@ impl Primitive {
             .math(math!(1, rm::Cis), Some(|_, args| args.circle(false, false))) };
         const REPLICATE: Row = Row { axes: [false, true], roles: structural::roles, under: [Under::Computational, Under::Structural], discards: [false, true],
             ..Row::new("#", "hash", ["runs", "replicate"], [W, 1, W]).moves().linear(No, Jointly(2), [false; 2]) };
+        const TRANSPOSE: Row = Row { roles: structural::roles, discards: [false, true],
+            ..Row::new("⍉", "circle-backslash", ["transpose", "reorder-axes"], [W, 1, W]).moves() };
         match self {
             Self::Arithmetic(Plus) => &const { row!("+", "plus", "conjugate", "add", [0; 3]).mapped().math(math!(1, rm::Conj), math!(2, rm::Add)).linear(Jointly(1), Jointly(3), [false; 2]) },
             Self::Arithmetic(Minus) => &const { row!("-", "minus", "negate", "subtract", [0; 3]).mapped().math(math!(1, rm::Negate), math!(2, rm::Subtract)).linear(Jointly(1), Jointly(3), [false; 2]) },
@@ -962,7 +964,7 @@ impl Primitive {
             }
             Self::Mix => {
                 &const {
-                    Row { axes: [true, false], form: indexing::pick_form, sources: indexing::source_roots, roles: indexing::index_roles, discards: [false, true],
+                    Row { axes: [true, false], form: indexing::pick_form, sources: indexing::source_roots, roles: indexing::index_roles, build: indexing::build_index, discards: [false, true],
                         ..row!("⊃", "right-shoe", "mix", "pick", [0, 1, W]).moves() }
                 }
             }
@@ -980,11 +982,8 @@ impl Primitive {
             Self::Reverse(true) => {
                 &const { Row { own_identity: Some(OwnIdentity::Scalar(0)), axes: [true; 2], roles: structural::roles, first_axis: true, ..row!("⊖", "circle-bar", "reverse-first", "rotate-first", [W; 3]).moves() } }
             }
-            Self::Transpose => {
-                &const {
-                    Row { roles: structural::roles, discards: [false, true], ..row!("⍉", "circle-backslash", "transpose", "reorder-axes", [W, 1, W]).moves() }
-                }
-            }
+            Self::Transpose(false) => &TRANSPOSE,
+            Self::Transpose(true) => &const { Row { glyph: "⍉⁻¹", discards: [false; 2], ..TRANSPOSE } },
             Self::Encode => &const { Row { own_identity: Some(OwnIdentity::Scalar(0)), ..row!("⊤", "down-tack", "binary-encode", "encode", [W, 1, 0]).linear(No, No, [true; 2]) } },
             Self::Decode => &const { row!("⊥", "up-tack", "binary-decode", "decode", [1; 3]) },
             Self::Execute => &const { row!("⍎", "hydrant", "execute", "execute-in", [1, W, W]) },
@@ -1189,8 +1188,8 @@ fn inverse_primitive(function: &Function, origin: crate::program::Origin<&[Value
     let prepared = Operation::prepare(&origin)?;
     let call = prepared.view();
     let origin = prepared.origin();
-    if matches!(primitive, Primitive::Keys(_)) && call.layout().fill().is_some() { return Err(Error::domain("this function reads no fill")); }
-    let reversed = match primitive { Primitive::Replicate(inverse) => Some(Primitive::Replicate(!inverse)), Primitive::Keys(inverse) => Some(Primitive::Keys(!inverse)), _ => None };
+    if matches!(primitive, Primitive::Keys(_) | Primitive::Transpose(_)) && call.layout().fill().is_some() { return Err(Error::domain("this function reads no fill")); }
+    let reversed = match primitive { Primitive::Replicate(inverse) => Some(Primitive::Replicate(!inverse)), Primitive::Keys(inverse) => Some(Primitive::Keys(!inverse)), Primitive::Transpose(inverse) => Some(Primitive::Transpose(!inverse)), _ => None };
     if bound_first && call.layout().arguments().len() == 2 && let Some(primitive) = reversed {
         let pairing = match &origin.operation { Operation::Primitive { pairing, .. } => pairing.clone(), _ => Pairing::Axes };
         let roots = Roots::new(call.layout().arguments().start, call.layout().explicit_roots().end);
@@ -1275,7 +1274,7 @@ fn host_call(origin: &Origin<&[Value]>, call: &CallView) -> Result<Outputs<Value
                 (Replicate(inverse), Some(left)) => replicate(left, &right, axis()?, inverse, fill.as_deref().cloned())?,
                 (Replicate(false), None) => runs(&right, numeric)?,
                 (Reverse(first), _) => rotate(left, &right, axis()?.unwrap_or(if first { 0 } else { right.rank().saturating_sub(1) }))?,
-                (Transpose, _) => transpose(left, &right)?,
+                (Transpose(inverse), _) => transpose(left, &right, inverse)?,
                 (Ravel | CatenateFirst, Some(left)) => catenate(left, &right, axis()?, *primitive == CatenateFirst, numeric)?,
                 (Ravel, None) => right.relaid(Layout::from([right.len()]))?,
                 (CatenateFirst, None) => {
@@ -1452,7 +1451,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             }
             Math(Log) => call(Math(Power), Some(a), &Arithmetic(Divide).call(None, right, span, numeric)?),
             Reverse(_) if first => call(p, Some(&Arithmetic(Minus).call(None, a, span, numeric)?), right),
-            Transpose if first => inverse_transpose(a, right),
+            Transpose(inverse) if first => call(Transpose(!inverse), Some(a), right),
             Decode if first => inverse_decode(a, right, numeric),
             Encode if first => Decode.call(Some(a), right, span, numeric),
             Identity(left) => {
@@ -1474,7 +1473,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         };
     }
     match p {
-        Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose | Identity(_) | Math(Not) | Index | MatrixDivide => p.call(None, right, span, numeric),
+        Arithmetic(Plus | Minus | Divide) | Reverse(_) | Transpose(_) | Identity(_) | Math(Not) | Index | MatrixDivide => p.call(None, right, span, numeric),
         Arithmetic(Times) => {
             if !p.call(None, right, span, numeric)?.matches_within(right, numeric)? {
                 return Err(Error::domain("× gives only ¯1, 0, 1 and unit complex numbers"));
@@ -1507,13 +1506,13 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
         Drop => Mix.call(None, right, span, numeric),
         Math(Lcm | Gcd) => {
             // The two parts are on the last axis, which reversing the axes brings to the front.
-            let parts = Transpose.call(None, right, span, numeric)?;
+            let parts = Transpose(false).call(None, right, span, numeric)?;
             if parts.shape().first() != Some(&2) { return Err(Error::new(Kind::Length, "the last axis must hold two parts")); }
             let (x, y) = (Index.call(Some(&Value::integer(0)), &parts, span, numeric)?, Index.call(Some(&Value::integer(1)), &parts, span, numeric)?);
             let y = if matches!(p, Math(Lcm)) { Math(Circle).call(None, &y, span, numeric)? }
             else { Arithmetic(Times).call(Some(&complex_like(num_complex::Complex64::new(0., 1.), &y, numeric)), &y, span, numeric)? };
             let number = if matches!(p, Math(Lcm)) { Arithmetic(Times) } else { Arithmetic(Plus) }.call(Some(&x), &y, span, numeric)?;
-            Transpose.call(None, &number, span, numeric)
+            Transpose(false).call(None, &number, span, numeric)
         }
         Grade(down) => {
             let ranks = Grade(false).call(None, right, span, numeric);

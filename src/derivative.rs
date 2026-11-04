@@ -279,7 +279,8 @@ pub(crate) fn jvp(origin: &Origin<&[Value]>, tangents: &[Option<Value>], call: &
         Linearity::Jointly(mask) => {
             let mut arguments = origin.list.to_vec();
             for &position in &positions {
-                if mask == u8::MAX || call.layout().arguments().enumerate()
+                if mask == u8::MAX || call.layout().fill().is_some_and(|fill| fill.leaves.contains(&position))
+                        || call.layout().arguments().enumerate()
                         .any(|(operand, root)| operand < 8 && mask & (1 << operand) != 0 && call.layout().root(root).leaves.contains(&position)) {
                             arguments[position] = match tangents[position].clone() { Some(value) => value, None => origin.list[position].zeros_like()? };
                         }
@@ -655,7 +656,7 @@ fn mapped_jacobian(linear: &Function, parent: &Origin<&[Value]>, input: &Outputs
     let directions = recorded(parent, &Outputs::one(flat), &[index], scope.level.id)?;
     drop(scope);
     let matrix = crate::batch::map(&directions, parent, &[range], 1, &[true], Notation::Cells)?.assemble()?;
-    let matrix = if forward { primitive(parent, Primitive::Transpose, &[matrix])? } else { matrix };
+    let matrix = if forward { primitive(parent, Primitive::Transpose(false), &[matrix])? } else { matrix };
     jacobian_structure(output, input, |out, arg, row, column| {
         let mut value = matrix.clone();
         for (axis, index, sizes) in [(0, row, &rows), (1, column, &columns)] {

@@ -537,7 +537,7 @@ impl Postfix {
     fn parts(&self, a: Value) -> (Operation, Option<Value>, Value) {
         let primitive = |primitive| Operation::Primitive { primitive, pairing: crate::primitive::Pairing::Axes };
         match self {
-            Self::Index(index) => (primitive(Primitive::Index), Some(index.clone()), a), Self::Transpose => (primitive(Primitive::Transpose), None, a),
+            Self::Index(index) => (primitive(Primitive::Index), Some(index.clone()), a), Self::Transpose => (primitive(Primitive::Transpose(false)), None, a),
             Self::Power(n) => (primitive(Primitive::Math(crate::number::Math::Power)), Some(a), Value::constant(Value::weak_integer(*n))),
             Self::Mark(mark) => (mark.conversion(), None, a), Self::Unit => unreachable!("ᵘ after an array compiles to an error")
         }

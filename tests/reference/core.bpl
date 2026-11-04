@@ -259,10 +259,10 @@ f←+⍠⍬ ⋄ g←×₁ ⋄ m←3 2⍴⍳6 ⋄ [(•storage [1 2]ₛ f 1.5).ki
 ⍝ =>
 ["float32" ; [1 2⋄1 2⋄1 2] ; 24 48 33]
 
-⍝ fill-option-routes — A filled position reads the chosen fill through `∂`, whose tangent there is 0, a batched map, a pending keyed call and a fold of padded windows
-a←"p" "q":1 2 ⋄ b←"q" "r":3 4 ⋄ c←["k":["p" "q"]]:2 44000⍴⍳88000 ⋄ d←["k":["q" "r"]]:2 44000⍴1000+⍳88000 ⋄ r←c+⍠["fill":¯1] d ⋄ v←⍳1000 ⋄ [:{⍵+⍠["fill":10] b}∂a ; {5↑⍠["fill":9] ⍵}∂1 2 ; ({5↑⍠["fill":¯1] ⍵}⍤1)2 3⍴⍳6 ; (•storage r).pending ; :r.[[0 1 2] [0 0 43999]] ; (+/["size":¯3 "fill":100]↕v).[[0 1 999]]]
+⍝ fill-option-routes — A constant fill has zero tangent. A differentiated fill keeps its derivative. Fills pass through batched maps, pending keyed calls and folds of padded windows.
+a←"p" "q":1 2 ⋄ b←"q" "r":3 4 ⋄ c←["k":["p" "q"]]:2 44000⍴⍳88000 ⋄ d←["k":["q" "r"]]:2 44000⍴1000+⍳88000 ⋄ r←c+⍠["fill":¯1] d ⋄ v←⍳1000 ⋄ [:{⍵+⍠["fill":10] b}∂a ; {5↑⍠["fill":9] ⍵}∂1 2 ; ({5↑⍠["fill":¯1] ⍵}⍤1)2 3⍴⍳6 ; (•storage r).pending ; :r.[[0 1 2] [0 0 43999]] ; (+/["size":¯3 "fill":100]↕v).[[0 1 999]] ; {5↑⍠["fill":⍵]1 2}∂9 ; {+/5↑⍠["fill":⍵]1 2}∂9]
 ⍝ =>
-[[1 0⋄0 1⋄0 0] ; [1 0⋄0 1⋄0 0⋄0 0⋄0 0] ; [0 1 2 ¯1 ¯1⋄3 4 5 ¯1 ¯1] ; $t ; ¯1 45000 88998 ; 101 3 2097]
+[[1 0⋄0 1⋄0 0] ; [1 0⋄0 1⋄0 0⋄0 0⋄0 0] ; [0 1 2 ¯1 ¯1⋄3 4 5 ¯1 ¯1] ; $t ; ¯1 45000 88998 ; 101 3 2097 ; 0 0 1 1 1 ; 3]
 
 ⍝ fill-option-reversed — A reversed read of a take's fills reads the chosen fill
 v←⍳1000 ⋄ w←1005↑⍠["fill":¯1] v ⋄ r←2×⌽w ⋄ [5↑r ; (+/r)=998990 ; 5↑5↓r ; 5↑¯10↑r]

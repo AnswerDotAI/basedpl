@@ -733,7 +733,7 @@ fn reorder(origin: &Origin<&[Value]>, value: &Value, sources: &[usize]) -> Resul
     let mut destinations = vec![0; sources.len()];
     for (destination, &source) in sources.iter().enumerate() { destinations[source] = destination as i64; }
     let order = Value::integers([destinations.len()], destinations)?;
-    dispatch_in(origin, Operation::Primitive { primitive: Primitive::Transpose, pairing: Pairing::Axes }, &[order, value.clone()])
+    dispatch_in(origin, Operation::Primitive { primitive: Primitive::Transpose(false), pairing: Pairing::Axes }, &[order, value.clone()])
 }
 
 fn cell_axes(origin: &Origin<&[Value]>, f: &Function, spec: &Value, args: &[Value]) -> Result<Outputs<Value>> {

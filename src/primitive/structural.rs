@@ -318,19 +318,13 @@ fn transpose_groups(spec: &Value, right: &Layout, inverse: bool) -> Result<Vec<T
     }).collect()
 }
 
-/// Change shape without copying, keeping metadata only on axes that were not split or merged.
-fn regroup(right: &Value, shape: Vec<usize>, sources: &[Vec<usize>], names: &[Option<std::sync::Arc<str>>]) -> Result<Value, Error> {
-    if right.is_atom() && shape.is_empty() { return Ok(right.clone()); }
-    let layout = structure::regrouped(right.layout(), shape.clone(), sources, names)?;
-    right.with_shape(shape).and_then(|a| a.with_layout(Layout::rearranged(layout, right.layout()))).described("invalid transpose shape")
-}
-
-fn transpose_geometry(spec: Option<&Value>, right: &Layout) -> Result<(Layout, Mapping), Error> {
+fn transpose_geometry(spec: Option<&Value>, right: &Layout, inverse: bool) -> Result<(Layout, Mapping), Error> {
     let rank = right.shape().len();
     let Some(spec) = spec else {
         return structure::transpose(right, &(0..rank).rev().collect::<Vec<_>>()).map(|plan| (Layout::rearranged(plan.layout, right), Mapping::from(plan.steps)))
             .map_err(Error::from);
     };
+    if inverse { return inverse_transpose_geometry(spec, right); }
     let groups = transpose_groups(spec, right, false)?;
     if groups.len() > rank { return Err(Error::new(Kind::Length, "transpose has more axes than its argument")); }
     let mut destinations = Vec::new();
@@ -374,14 +368,14 @@ fn transpose_geometry(spec: Option<&Value>, right: &Layout) -> Result<(Layout, M
     structure::transpose(&expanded, &destinations).map(|plan| (Layout::rearranged(plan.layout, right), Mapping::from(plan.steps))).map_err(Error::from)
 }
 
-pub(super) fn transpose(spec: Option<&Value>, right: &Value) -> Result<Value, Error> {
-    let (layout, map) = transpose_geometry(spec, right.layout())?;
+pub(super) fn transpose(spec: Option<&Value>, right: &Value, inverse: bool) -> Result<Value, Error> {
+    let (layout, map) = transpose_geometry(spec, right.layout(), inverse)?;
     if right.is_atom() { return Ok(right.clone()); }
     copied(right, layout, &map).described("invalid transpose")
 }
 
-pub(super) fn inverse_transpose(spec: &Value, right: &Value) -> Result<Value, Error> {
-    let groups = transpose_groups(spec, right.layout(), true)?;
+fn inverse_transpose_geometry(spec: &Value, right: &Layout) -> Result<(Layout, Mapping), Error> {
+    let groups = transpose_groups(spec, right, true)?;
     let mut order = Vec::new();
     let mut shape = Vec::new();
     let mut sources = Vec::new();
@@ -406,8 +400,9 @@ pub(super) fn inverse_transpose(spec: &Value, right: &Value) -> Result<Value, Er
             order.push(axis);
         }
     }
-    let ordered = reorder(right, &order)?;
-    regroup(&ordered, shape, &sources, &names)
+    let ordered = structure::transpose(right, &rustymath::search::inverse_permutation(order.into_iter()))?;
+    let layout = structure::regrouped(&ordered.layout, shape, &sources, &names)?;
+    Ok((Layout::rearranged(layout, right), Mapping::from(ordered.steps)))
 }
 
 /// The shared data-remapping kernel: input axis `i` goes to `axes[i]`. Where no axis moves, `right` itself.
@@ -557,7 +552,7 @@ fn parameter_read(primitive: Primitive) -> Option<ReadKind> {
         Primitive::Shape | Primitive::Take | Primitive::Drop | Primitive::Replicate(_) | Primitive::Reverse(_) | Primitive::Enclose | Primitive::Nest => {
             ReadKind::Count
         }
-        Primitive::Transpose | Primitive::Windows | Primitive::Keys(_) => ReadKind::Structure,
+        Primitive::Transpose(_) | Primitive::Windows | Primitive::Keys(_) => ReadKind::Structure,
         _ => return None,
     })
 }
@@ -696,10 +691,10 @@ fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
                 };
                 let numbers = rotation(counts)?;
                 let plan = structure::rotate(&desc.layout, axis, counts.zip(numbers.as_deref()).map(|(counts, numbers)| (counts.shape(), numbers)))?;
-                (desc.layout.clone(), desc.atom, Mapping::from(plan.steps))
+                (Layout::rearranged(plan.layout, &desc.layout), desc.atom, Mapping::from(plan.steps))
             }
         }
-        (Transpose, spec) => { let (layout, map) = transpose_geometry(spec, &desc.layout)?; (layout, desc.atom, map) }
+        (Transpose(inverse), spec) => { let (layout, map) = transpose_geometry(spec, &desc.layout, inverse)?; (layout, desc.atom, map) }
         _ => return Ok(None),
     };
     let kind = crate::number::Kind { weak: atom && desc.kind.weak, ..desc.kind };

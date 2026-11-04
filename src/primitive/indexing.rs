@@ -786,7 +786,7 @@ fn index_axes(call: &CallView<'_>, layout: &Layout) -> Result<Option<Vec<usize>>
     }).transpose().map(Option::flatten)
 }
 pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Error> {
-    let Operation::Primitive { primitive: Primitive::Index | Primitive::Bracket, .. } = call.operation else { return Ok(None) };
+    let Operation::Primitive { primitive: primitive @ (Primitive::Index | Primitive::Bracket | Primitive::Mix), .. } = call.operation else { return Ok(None) };
     let roots = call.layout().arguments();
     if roots.len() != 2 { return Ok(None); }
     let root = index_source(call).or_internal()?;
@@ -794,6 +794,10 @@ pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Erro
     let source = root.leaves.start;
     let Some(desc) = call.root_desc(root.index) else { return Ok(None) };
     let Some(parts) = gather_parts(call, &call.layout().root(roots.start))? else { return Ok(None) };
+    if *primitive == Primitive::Mix && (parts.len() > desc.shape().len() || parts.iter().any(|part| match part {
+        IndexPart::Axis(GatherPart::Data(_, desc)) => !desc.atom,
+        IndexPart::Axis(GatherPart::Known(value)) => !value.is_atom() && crate::keyed::name(value).is_none(), _ => true,
+    })) { return Ok(None); }
     let claims: Vec<_> = parts.iter().map(|part| {
         part.as_ref().map(|part| match part {
             GatherPart::Data(_, desc) => (structure::sole_name(&desc.layout), 1),
@@ -844,7 +848,7 @@ fn known_index(call: &CallView<'_>) -> Result<Option<RowResult>, Error> {
 pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
     if call.layout().arguments().len() == 1 { return structural::build(call, set); }
     let selector = call.layout().root(call.layout().arguments().start);
-    if structural_selector(call, &selector) { return known_index(call)?.map_or_else(|| host_build(call, set), Ok); }
+    if structural_selector(call, &selector) && !matches!(call.operation, Operation::Primitive { primitive: Primitive::Mix, .. }) { return known_index(call)?.map_or_else(|| host_build(call, set), Ok); }
     let Some(geometry) = gather(call)? else { return host_build(call, set); };
     let (step, read) = if geometry.indices.is_empty() {
         let plan = structure::plan_routes(&geometry.source_layout, &geometry.routes, geometry.paired, false)?;
