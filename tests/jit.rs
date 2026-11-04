@@ -372,7 +372,7 @@ fn compiled_stages_match_interpreted() {
                 let (compiled, runs) = run(Compiles::Always);
                 assert!(runs > 0, "{code} on {n} items ran no compiled part");
                 let interpreted = run(Compiles::Never).0;
-                assert_eq!(basedpl::reference::difference(&compiled, &interpreted, None, 0.0, true), None, "{code} on {n} items");
+                assert_eq!(basedpl::reference::difference(&compiled, &interpreted, None, 0.0, true), None, "{code} on {n} items; block boundary compiled {:?}, interpreted {:?}", compiled.at(settings::Sizes::DEFAULT.block), interpreted.at(settings::Sizes::DEFAULT.block));
             }
         }
     }

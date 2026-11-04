@@ -146,13 +146,17 @@ fn effects(bodies: &[Vec<Statement>]) -> (bool, bool) {
     (acts, implicit_generator)
 }
 
+pub(crate) fn pattern_target(cell: &[Node], colon: usize) -> &[Node] {
+    if colon + 1 == cell.len() { &cell[..colon] } else { &cell[colon + 1..] }
+}
+
 pub(crate) fn plain_target(nodes: &[Node]) -> bool {
     let [node] = nodes else { return false };
     match &node.kind {
         NodeKind::Name(..) => true,
         NodeKind::Group(inner) => plain_target(inner),
         NodeKind::ArrayLiteral { cells, form: ListForm::Items | ListForm::Rows, record } => {
-            cells.iter().all(|cell| if *record { key_colon(cell).is_some_and(|colon| plain_target(&cell[colon + 1..])) } else { plain_target(cell) })
+            cells.iter().all(|cell| if *record { key_colon(cell).is_some_and(|colon| plain_target(pattern_target(cell, colon))) } else { plain_target(cell) })
         }
         _ => false,
     }

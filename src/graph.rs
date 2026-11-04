@@ -51,6 +51,8 @@ impl Pending {
     pub(crate) fn control(node: Node) -> Self { Self { node, output: None } }
     pub(crate) fn description(&self) -> Option<&Desc> { self.output.and_then(|output| self.node.desc(output)) }
     pub(crate) fn completed(&self) -> Option<&Value> { self.node.completed()?.as_ref().get(self.output? as usize) }
+    /// A new read of completed, nonliteral data crosses an opaque boundary.
+    pub(crate) fn opaque(&self) -> bool { !self.node.is_literal() && self.node.completed().is_some() }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -117,14 +119,7 @@ impl Retention {
 impl Drop for Retained {
     fn drop(&mut self) {
         for node in self.nodes.get_mut().unwrap_or_else(PoisonError::into_inner).drain(..).filter_map(|node| node.upgrade()) {
-            let retired = {
-                let mut state = lock(&node.state);
-                if let OwnedState::Step { retained, .. } = &mut *state {
-                    *retained -= 1;
-                    if *retained == 0 && node.values.get().is_some() { Some(std::mem::replace(&mut *state, OwnedState::Done)) } else { None }
-                } else { None }
-            };
-            drop(retired);
+            if let Some(state) = Node(node).release_recipe() { retire(state); }
         }
     }
 }
@@ -133,7 +128,7 @@ fn same_origin(left: &Origin<Vec<Read<Value>>>, right: &Origin<Vec<Read<Value>>>
     left.operation == right.operation && left.mode == right.mode && left.explicit == right.explicit
         && left.explicit_roots == right.explicit_roots && left.roles == right.roles && left.trees == right.trees && left.list.len() == right.list.len()
         && left.bindings == right.bindings && left.site == right.site
-        && left.list.iter().zip(right.list.iter()).all(|(x, y)| x.operand.identical(&y.operand) && x.map == y.map)
+        && left.list.iter().zip(right.list.iter()).all(|(x, y)| x.operand.identical(&y.operand) && x.map == y.map && x.opaque == y.opaque)
 }
 
 fn origin_hash(origin: &Origin<Vec<Read<Value>>>, hasher: &impl BuildHasher) -> u64 {
@@ -149,12 +144,13 @@ fn origin_hash(origin: &Origin<Vec<Read<Value>>>, hasher: &impl BuildHasher) -> 
         Arc::as_ptr(&site.source).hash(&mut state);
         site.range.hash(&mut state);
     }
-    for read in &origin.list { read.operand.identity_hash(&mut state); }
+    for read in &origin.list { read.operand.identity_hash(&mut state); read.opaque.hash(&mut state); }
     state.finish()
 }
 
 impl Node {
-    pub(crate) fn build(step: Step, origin: Origin<Vec<Read<Value>>>, description: crate::program::Description, level: Option<usize>) -> Self {
+    pub(crate) fn build(step: Step, mut origin: Origin<Vec<Read<Value>>>, description: crate::program::Description, level: Option<usize>) -> Self {
+        for read in &mut origin.list { if let Some(pending) = read.operand.pending() { read.opaque |= pending.opaque(); } }
         let reach = origin.list.iter().enumerate().filter(|(position, _)| origin.executes(*position))
             .filter_map(|(_, read)| read.operand.pending().and_then(|p| p.node.reach())).reduce(Reach::join);
         let mut intern = lock(&INTERN);
@@ -203,6 +199,10 @@ impl Node {
         }
         if origin.list.iter().all(|read| Desc::of(&read.operand).is_none_or(|desc| desc.atom)) {
             kept.data = kept.data.max(described_bytes(&description));
+        }
+        for read in &origin.list {
+            if !read.opaque && let Some(pending) = read.operand.pending()
+                && let OwnedState::Step { retained, .. } = &mut *lock(&pending.node.0.state) { *retained += 1; }
         }
         let node = Self(Arc::new(NodeData { description, literal: false, level, reach, kept, exact: OnceLock::new(), values: OnceLock::new(), holds: AtomicUsize::new(0),
             state: Mutex::new(OwnedState::Step { step, origin, retained: 0, lease: None }) }));
@@ -285,24 +285,19 @@ impl Node {
     pub(crate) fn address(&self) -> usize { Arc::as_ptr(&self.0) as usize }
     pub(crate) fn downgrade(&self) -> Weak<NodeData> { Arc::downgrade(&self.0) }
 
-    pub(crate) fn with_state<R>(&self, look: impl FnOnce(State<'_>) -> R) -> R {
-        if let Some(values) = self.0.values.get() { return look(State::Done(values)); }
-        self.with_recipe_state(look)
-    }
-    fn with_recipe_state<R>(&self, look: impl FnOnce(State<'_>) -> R) -> R {
+    pub(crate) fn with_state<R>(&self, look: impl FnOnce(State<'_>) -> R) -> R { self.with_recipe_state(false, look) }
+    fn with_recipe_state<R>(&self, recipes: bool, look: impl FnOnce(State<'_>) -> R) -> R {
         let state = lock(&self.0.state);
+        let needed = recipes && matches!(&*state, OwnedState::Step { step, retained, .. }
+            if step.selected_sources().is_some() || *retained != 0 && !self.descs().is_empty());
+        if !needed && let Some(values) = self.completed() { return look(State::Done(values)); }
         look(match &*state {
             OwnedState::Step { step, origin, .. } => State::Step { step, origin },
             OwnedState::Input { position, role, value } => State::Input { position: *position, role: *role, value: value.as_ref() },
             OwnedState::Done => State::Done(self.0.values.get().expect("a completed node owns its outputs")),
         })
     }
-    pub(crate) fn with_address_state<R>(&self, look: impl FnOnce(State<'_>) -> R) -> R {
-        self.with_recipe_state(|state| match state {
-            State::Step { step, .. } if step.selected_sources().is_some() => look(state),
-            _ => { if let Some(values) = self.completed() { look(State::Done(values)) } else { look(state) } }
-        })
-    }
+    pub(crate) fn with_address_state<R>(&self, look: impl FnOnce(State<'_>) -> R) -> R { self.with_recipe_state(true, look) }
     pub(crate) fn recipe(&self) -> Option<(Step, Origin<Vec<Read<Value>>>)> {
         match &*lock(&self.0.state) { OwnedState::Step { step, origin, .. } => Some((step.clone(), origin.clone())), _ => None }
     }
@@ -311,6 +306,13 @@ impl Node {
         if let OwnedState::Step { lease, .. } = &mut *lock(&self.0.state) { lease.get_or_insert_with(|| reads.clone()); }
     }
 
+    fn release_recipe(&self) -> Option<OwnedState> {
+        let mut state = lock(&self.0.state);
+        let OwnedState::Step { retained, .. } = &mut *state else { return None; };
+        debug_assert!(*retained != 0);
+        *retained -= 1;
+        if *retained == 0 && self.completed().is_some() { Some(std::mem::replace(&mut *state, OwnedState::Done)) } else { None }
+    }
     pub(crate) fn finish(&self, results: Outputs<Value>) {
         debug_assert!(self.descs().is_empty() || results.as_ref().len() == self.descs().len());
         let retired = {
@@ -318,7 +320,7 @@ impl Node {
             let _ = self.0.values.set(results);
             match &mut *state { OwnedState::Step { retained, .. } if *retained != 0 => None, _ => Some(std::mem::replace(&mut *state, OwnedState::Done)) }
         };
-        drop(retired);
+        if let Some(state) = retired { retire(state); }
     }
 
     pub(crate) fn stored(&self, output: u32) -> Option<Value> {
@@ -389,14 +391,31 @@ impl std::fmt::Debug for Node {
 
 pub fn forced(values: &[&Value]) -> Result<()> { for value in values { value.read(ReadKind::Value)?; } Ok(()) }
 
-impl Drop for NodeData {
-    fn drop(&mut self) {
-        crate::array::drop_chain(self, |node, chain| {
-            let mut take = |value| { if let Value::Pending(pending) = value { chain.push(pending.node.0); } };
-            match node.state.get_mut().unwrap_or_else(PoisonError::into_inner) {
-                OwnedState::Step { origin, .. } => { for read in std::mem::take(&mut origin.list) { take(read.operand); } }
-                OwnedState::Input { value, .. } => { if let Some(value) = value.take() { take(value); } } OwnedState::Done => {}
+enum Retired { State(OwnedState), Node(Arc<NodeData>) }
+fn retire(state: OwnedState) {
+    if matches!(state, OwnedState::Done) { return; }
+    let mut work = Vec::new();
+    let mut current = Some(Retired::State(state));
+    while let Some(item) = current.take().or_else(|| work.pop()) {
+        match item {
+            Retired::State(OwnedState::Step { origin, .. }) => {
+                for read in origin.list {
+                    if let Value::Pending(pending) = read.operand {
+                        if !read.opaque && let Some(state) = pending.node.release_recipe() { work.push(Retired::State(state)); }
+                        if pending.node.completed().is_none() || pending.node.retained() { work.push(Retired::Node(pending.node.0)); }
+                    }
+                }
             }
-        });
+            Retired::State(OwnedState::Input { value: Some(Value::Pending(pending)), .. }) => work.push(Retired::Node(pending.node.0)),
+            Retired::Node(node) => {
+                if let Ok(mut node) = Arc::try_unwrap(node) {
+                    current = Some(Retired::State(std::mem::replace(node.state.get_mut().unwrap_or_else(PoisonError::into_inner), OwnedState::Done)));
+                }
+            }
+            _ => {}
+        }
     }
+}
+impl Drop for NodeData {
+    fn drop(&mut self) { retire(std::mem::replace(self.state.get_mut().unwrap_or_else(PoisonError::into_inner), OwnedState::Done)); }
 }

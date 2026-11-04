@@ -35,11 +35,12 @@ pub(crate) struct Desc {
 impl Desc {
     pub(crate) fn cacheable(&self) -> bool { self.layout.cacheable() }
     pub(crate) fn of(value: &Value) -> Option<Cow<'_, Desc>> { Self::described(value, true) }
-    /// A call's description of its input `value`: a raw leaf gives its kind bounds only; a literal node keeps its exact description (target part 4). Graph descriptions keep their proved ranges.
+    /// A call's input description: literals and pending graph steps keep proved ranges; raw or completed data supply kind bounds.
     pub(crate) fn input(value: &Value) -> Option<Cow<'_, Desc>> { Self::described(value, false) }
     /// A pending value's description: its node's, else its completed value's.
     pub(crate) fn of_pending(pending: &Pending, exact: bool) -> Option<Cow<'_, Desc>> {
-        pending.description().map(Cow::Borrowed).or_else(|| Self::described(pending.completed()?, exact))
+        let desc = pending.description().map(Cow::Borrowed).or_else(|| Self::described(pending.completed()?, exact))?;
+        Some(if !exact && pending.opaque() { Cow::Owned(desc.into_owned().opaque()) } else { desc })
     }
     fn described(value: &Value, exact: bool) -> Option<Cow<'_, Desc>> {
         match value {
@@ -171,7 +172,7 @@ pub(crate) struct Read<O = Out> {
     pub(crate) operand: O,
     /// Part 3: the map it's read through.
     pub(crate) map: Mapping,
-    /// Whether the row reads its operand's kind bounds only, as the recording that built it did. `Program::of` sets it on reads of a recording's input that stands for a graph value.
+    /// Whether this read crossed a stored-data or recorded-input boundary and supplies kind bounds only.
     pub(crate) opaque: bool,
 }
 impl<O> Read<O> {
@@ -549,7 +550,7 @@ impl Program {
                 crate::graph::State::Step { step, origin } => {
                     let reads = origin.list.iter().map(|read| {
                         let operand = builder.value_of(live, &mapped, &read.operand);
-                        let opaque = matches!(&read.operand, Value::Pending(pending) if opaque_inputs.contains(pending));
+                        let opaque = read.opaque || matches!(&read.operand, Value::Pending(pending) if opaque_inputs.contains(pending));
                         Read { operand, map: read.map.clone(), opaque }
                     }).collect();
                     for (position, read) in origin.list.iter().enumerate() {
@@ -837,7 +838,7 @@ pub(crate) struct BindingContext {
     pub(crate) root: Option<Origin<()>>, contexts: Vec<Option<Origin<()>>>, sources: Vec<Weak<crate::graph::NodeData>>, input_descs: Vec<Option<Desc>>
 }
 impl BindingContext {
-    /// A stored graph node's input keeps the node's description, as graph building read it (`Desc::of_pending`); other inputs give kind bounds only.
+    /// Inputs give kind bounds; pending in-graph producers remain steps in the live graph.
     pub(crate) fn from_live(live: &Live) -> Self {
         let mut input_descs = live.inputs.iter().map(|value| value.as_ref().and_then(Desc::of).map(|desc| desc.into_owned().opaque())).collect::<Vec<_>>();
         for (pending, &position) in &live.pending {

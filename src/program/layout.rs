@@ -63,7 +63,7 @@ pub(crate) enum Parameter {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum KeyPart {
-    Stored(bool), Publishing(bool), Graph, Call, Node(usize), Output(Option<u32>), Source(usize), Operation(Operation), Mode(Mode), Roles(Roles),
+    Stored(bool), Opaque(bool), Publishing(bool), Graph, Call, Node(usize), Output(Option<u32>), Source(usize), Operation(Operation), Mode(Mode), Roles(Roles),
     Arguments(usize, usize), Trees(Option<Arc<Trees>>), Captures(CaptureKey), Description { kind: crate::number::Kind, atom: bool, layout: LayoutKey },
     Physical(Vec<(u8, usize)>), Parameter(ReadKind, Parameter), Missing, SourceBase(bool, Option<Arc<str>>), Count(usize, Vec<KeyPart>), Primitive(Primitive),
     Operator(OperatorKind), Definition(WeakKey<crate::syntax::Definition>), Recorded(WeakKey<crate::eval::RecordedCode>), System(crate::system::SystemFunction),
@@ -248,6 +248,7 @@ pub(crate) fn graph_key(live: &Live) -> ProgramKey {
                 key.push(KeyPart::Captures(CaptureKey::of(&origin.bindings)));
                 key.context(&origin.operation, origin.site.as_ref());
                 for (i, read) in origin.list.iter().enumerate() {
+                    key.push(KeyPart::Opaque(read.opaque));
                     match &read.operand {
                         value @ Value::Pending(_) => reference(&mut key, value),
                         value => {

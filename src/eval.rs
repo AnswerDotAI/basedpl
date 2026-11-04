@@ -3,7 +3,7 @@ use crate::execution::check;
 use crate::program::layout::{Encoder, KeyPart};
 use crate::{
     At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, ReadKind, Source, Span, Value, array::{Root, Tree, TreeRoot, Trees}, display::Elide, graph::Pending,
-    name::Name, number::{MARKS, Mark, Numeric}, primitive::{Builtin, Operation, Pairing, Primitive}, program::{BindingContext, Origin, Outputs}, symbols::Notation,
+    name::Name, number::{MARKS, Mark, Numeric}, primitive::{Builtin, Marked, Operation, Pairing, Primitive}, program::{BindingContext, Origin, Outputs}, symbols::Notation,
     syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind}, system::SystemFunction
 };
 use rustymath::hashing::{HashMap, HashMapExt};
@@ -1037,11 +1037,16 @@ impl Function {
         }
         made.as_ref().map(Cow::Borrowed).or_else(|| function.native_data().map(|value| Cow::Owned(value.into())))
     }
-    pub(crate) fn operation(&self) -> Option<Operation> {
+    pub(crate) fn operation(&self, dyadic: bool) -> Option<Operation> {
         if self.rules().is_some() { return None; }
         match self.node() {
             FunctionNode::Primitive(primitive) => Some(Operation::Primitive { primitive: *primitive, pairing: Pairing::Axes }),
             FunctionNode::System { .. } => Some(Operation::System),
+            FunctionNode::Applied { op: Operator::Kind(OperatorKind::Mark(mark)), operands } => {
+                let Value::Function(function) = operands.first()?.stored()? else { return None; };
+                let (_, Marked::Primitive(primitive)) = operators::marked_primitive(function, *mark, dyadic)? else { return None; };
+                Some(Operation::Primitive { primitive, pairing: Pairing::Axes })
+            }
             FunctionNode::Applied { op: Operator::Kind(kind), operands } => kind.info().operation(operands), _ => None
         }
     }
@@ -1108,7 +1113,7 @@ impl Function {
         Bound::from_outputs(self.call_outputs(left, right, span)?, span)
     }
     fn call_shape<'a>(&self, arguments: &'a [Value]) -> (Operation, Cow<'a, [Value]>) {
-        let operation = self.operation().filter(|operation| !matches!(operation, Operation::Product { .. }) || arguments.len() == 2).unwrap_or(Operation::Call);
+        let operation = self.operation(arguments.len() == 2).filter(|operation| !matches!(operation, Operation::Product { .. }) || arguments.len() == 2).unwrap_or(Operation::Call);
         let values = if matches!(operation, Operation::Product { .. }) {
             Cow::Owned(
                 self.operands().iter().map(|operand| operand.stored().expect("identified product function").clone()).chain(arguments.iter().cloned()).collect())

@@ -96,6 +96,16 @@ fn dispatch_in(parent: &Origin<&[Value]>, operation: Operation, args: &[Value]) 
     dispatch_outputs(parent, operation, args)?.assemble()
 }
 
+pub(super) fn marked_primitive(function: &Function, mark: Mark, dyadic: bool) -> Option<(Primitive, Marked)> {
+    if function.rules().is_some() { return None; }
+    let primitive = function.as_primitive().or_else(|| {
+        let FunctionNode::Applied { op: Operator::Kind(OperatorKind::Inverse), operands } = function.node() else { return None; };
+        let Value::Function(inner) = operands.first()?.stored()? else { return None; };
+        inner.as_primitive().and_then(Primitive::inverted)
+    })?;
+    Some((primitive, primitive.marked(mark, dyadic)?))
+}
+
 /// A lower-level operation inherits the enclosing call's metadata, with explicit positional projections.
 
 fn operator_call(f: &Function, origin: Origin<&[Value]>) -> Result<Outputs<Value>> {
@@ -158,12 +168,7 @@ fn operator_call(f: &Function, origin: Origin<&[Value]>) -> Result<Outputs<Value
         Inverse => return inverse_call(&origin, function(&first)?, &args),
         Mark(mark) => {
             if let Value::Function(g) = first.as_ref() {
-                let primitive = if let Some(primitive) = g.as_primitive() {
-                    Some(primitive)
-                } else if matches!(g.node(), FunctionNode::Applied { op: Operator::Kind(Inverse), .. }) {
-                    match g.operand(&origin, 0)?.as_ref() { Value::Function(inner) => inner.as_primitive().and_then(Primitive::inverted), _ => None }
-                } else { None };
-                if let Some(form) = primitive.and_then(|primitive| primitive.marked(*mark, left.is_some())) {
+                if let Some((primitive, form)) = marked_primitive(g, *mark, left.is_some()) {
                     match form {
                         Marked::Primitive(primitive) => return Function::primitive(primitive).call_bound_outputs(&origin, &args),
                         Marked::Arguments(mark) => {
@@ -171,7 +176,7 @@ fn operator_call(f: &Function, origin: Origin<&[Value]>) -> Result<Outputs<Value
                                 if value.is_numeric() { dispatch_in(&origin, Operation::Convert(mark), std::slice::from_ref(value)) }
                                 else { Ok(value.clone()) }
                             }).collect::<Result<Vec<_>>>()?;
-                            return Function::primitive(primitive.unwrap()).call_bound_outputs(&origin, &arguments);
+                            return Function::primitive(primitive).call_bound_outputs(&origin, &arguments);
                         }
                     }
                 }

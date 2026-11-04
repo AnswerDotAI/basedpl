@@ -3465,6 +3465,9 @@ r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ r∂3   ⍝ 6
 ⍝ — Inside another function, an attached rule gives the call's derivative
 r←{⍵×⍵} ⋄ r∂←{⍺×7} ⋄ {1+r ⍵}∂3   ⍝ 7
 
+⍝ mark-inverse-rule — A mark keeps an inverse function's attached derivative
+r←*⁻¹ ⋄ r∂←{⍺×7} ⋄ rₐ∂3   ⍝ 7
+
 ⍝ — A function with an attached derivative applies the function itself
 r←{⍵×⍵} ⋄ r∂←{⍺×2×⍵} ⋄ r 3   ⍝ 9
 
@@ -5059,6 +5062,11 @@ x←[[1 2 6]ₓ÷[1 2 3]ₓ;⍳3ₓ;1ₓ+[2 3]ₓ;10ₓ-[2 3]ₓ;[2 3]ₓ×4ₓ;
 
 ⍝ — Truth values are Booleans, whatever the arguments
 x←["ab"∊"b";~0 1;0 1⊼1 1;0 1⊽0 0] ⋄ [x {(•storage ⍵).kind}¨x]   ⍝ [[[$f $t] [$t $f] [$t $f] [$t $f]];4⍴⊂"bool"]
+
+⍝ logical-numeric-truth — Boolean conversion keeps its default tolerance when Mathish is off
+•prefs ["mathish":$f] ⋄ n←1-1e¯15
+r←[~[0 n];(1+1e¯15)⊼n;0⊽n] ⋄ •prefs ["mathish":$t] ⋄ r
+[[$t $f] $f $f]
 
 ⍝ — Structural functions keep integer storage
 x←[⌽⍳3ₓ;1⌽⍳3ₓ;5↑⍳3ₓ;1↓⍳3ₓ;[[2 0]]⌷⍳3ₓ;1 0 1#⍳3ₓ;1 0 1#⁻¹[1 2]ₓ;+\⍳3ₓ;-¨⍳3ₓ;[1 2]ₓ∪[2 3]ₓ;[1 2]ₓ∩[2]ₓ;

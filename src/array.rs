@@ -526,11 +526,6 @@ pub(crate) fn map_leaves(value: &Value, mut f: impl FnMut(&Value) -> crate::erro
     map_tree(value, |value, usage| if usage == Some(TreeInput::Prototype) { Ok(value.clone()) } else { f(value) })
 }
 
-pub(crate) fn drop_chain<T>(node: &mut T, take: impl Fn(&mut T, &mut Vec<Arc<T>>)) {
-    let mut chain = Vec::new();
-    take(node, &mut chain);
-    while let Some(node) = chain.pop() { if let Ok(mut node) = Arc::try_unwrap(node) { take(&mut node, &mut chain); } }
-}
 pub(crate) fn float_width_of(dtype: DType) -> Option<FloatWidth> {
     match dtype { DType::Float(width) => Some(width), DType::Complex(width) => Some(width.into()), _ => None }
 }

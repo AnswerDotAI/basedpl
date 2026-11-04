@@ -348,6 +348,13 @@ fn held_values_follow_read_demand() {
 }
 
 #[test]
+fn stored_inputs_and_live_proofs() {
+    let s = Session::new();
+    equiv_in(&s, "x←2ₓ×⍳3ₓ ⋄ ⎕←x ⋄ x+240ₓ", "[240 242 244]ₓ");
+    equiv_in(&s, "x←10ₓ×⍳3ₓ ⋄ ⎕←x ⋄ x+240ₓ", "[240 250 260]ₓ");
+    equiv_in(&s, "v←¯3 4 ⋄ x←⊼v ⋄ y←√x ⋄ ⎕←x ⋄ y", "3 4");
+}
+#[test]
 fn observed_counts_refill_shapes() {
     let s = Session::new();
     equiv_in(&s, "n←3 4 ⋄ f←{n⍴⍵} ⋄ ∧/(⍴f 1)=[3 4]", "$t");

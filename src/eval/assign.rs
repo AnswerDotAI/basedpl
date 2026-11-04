@@ -158,7 +158,7 @@ impl Session {
                 [Node { kind: NodeKind::Literal(text), .. }] if colon + 1 < cell.len() => crate::keyed::name(text).ok_or_else(key_error)?,
                 _ => return Err(key_error()),
             };
-            let target = if colon + 1 == cell.len() { &cell[..colon] } else { &cell[colon + 1..] };
+            let target = crate::syntax::pattern_target(cell, colon);
             if !(matches!(target, [Node { kind: NodeKind::Name(_, _), .. }]) || self.assignment_names(target, log)?) {
                 return Err(Error::new(ErrorKind::Syntax, "a pattern assigns to a name or to brackets of names").at(&target[0].span));
             }
