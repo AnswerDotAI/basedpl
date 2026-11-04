@@ -518,9 +518,8 @@ pub(crate) fn product_fallback(origin: Origin<&[Value]>) -> Result<Value> {
     let geometry = crate::plan::product(&call)?;
     let arguments = call.layout().arguments().map(|root| crate::plan::read_root(&origin, &call, root)).collect::<Result<Vec<_>>>()?;
     let pairs = crate::batch::map(map, &origin, &arguments, geometry.plan.iteration.shape().len(), &[true, true], Notation::Strand)?.assemble()?;
-    let function = fold.clone();
-    if contracted == 1 { return items_call(&origin, &function, false, pairs.rank().saturating_sub(1), &[pairs]); }
-    let reduce = Function::applied_kind(OperatorKind::Reduce, vec![Value::Function(function)])?;
+    if contracted == 1 { return fold_call(&origin, fold, &OperatorKind::Reduce, &[pairs]); }
+    let reduce = Function::applied_kind(OperatorKind::Reduce, vec![Value::Function(fold.clone())])?;
     let ravelled = Function::applied_kind(OperatorKind::Atop, vec![Value::Function(reduce), Value::Function(Function::primitive(Primitive::Ravel))])?;
     let axes: Vec<_> = (pairs.rank().saturating_sub(contracted)..pairs.rank()).map(|axis| axis as i64).collect();
     cell_axes(&origin, &ravelled, &Value::integers([axes.len()], axes)?, &[pairs])?.assemble()

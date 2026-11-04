@@ -732,8 +732,18 @@ impl Special {
             Self::Polygamma => two!("polygamma", 200.0, math!(2, rm::Polygamma)),
             Self::Beta => two!("beta", 300.0, math!(2, rm::Beta)),
             Self::Gammainc => two!("gammainc", 400.0, math!(2, rm::Gammainc)),
-            Self::Betainc => &const { Row::new("•special\"betainc\"", "betainc", ["", "betainc"], [0, 1, 0]) },
-            Self::BetaincAt(_) => one!("betainc", 600.0, None),
+            Self::Betainc => &const { Row {
+                roles: |call| {
+                    let roots = call.layout().arguments();
+                    Ok(if roots.len() == 2 { Roles(call.layout().root(roots.start).leaves.map(|position| (position, ReadKind::Value)).collect()) }
+                        else { Roles::default() })
+                }, form: betainc_form,
+                ..Row::new("•special\"betainc\"", "betainc", ["", "betainc"], [0, 1, 0])
+            } },
+            Self::BetaincAt(_) => one!("betainc", 600.0, Some(|primitive, args| {
+                let Primitive::Special(Self::BetaincAt([a, b])) = primitive else { return Err(Error::internal()); };
+                args.resolve(rm::BetaincAt(f64::from_bits(a), f64::from_bits(b)))
+            })),
             Self::Sign => one!("sign", 1.0, math!(1, rm::Sign)),
             Self::Floor => one!("floor", 1.0, math!(1, tol::Floor(tol::Tolerance::EXACT))),
             Self::BinomDn => two!("binom_dn", 900.0, math!(2, rm::BinomDn)),
@@ -744,6 +754,20 @@ impl Special {
             Self::Angle => one!("angle", 12.0, math!(1, rm::Angle))
         }
     }
+}
+
+fn betainc_form(origin: Origin<&[Value]>, call: &CallView) -> Result<Option<Outputs<Value>>, Error> {
+    let roots = call.layout().arguments();
+    if roots.len() != 2 { return Ok(None); }
+    if crate::derivative::tag(&origin.root_input(roots.start)?).is_some() {
+        return Err(Error::new(ErrorKind::Unsupported, format!("∂ can't differentiate {} in its left argument", origin.operation.glyph())));
+    }
+    let pair = call.root_parameter(roots.start)?;
+    if pair.shape() != [2] { return Err(Error::new(Kind::Length, "betainc's left argument is one pair of shape parameters: for an array of pairs, use ⍤1 0")); }
+    let (a, b) = (real(&pair.at(0))?, real(&pair.at(1))?);
+    let primitive = Primitive::Special(Special::BetaincAt([a.to_bits(), b.to_bits()]));
+    let right = origin.root_input(roots.start.after(1))?.into_owned();
+    origin.apply(Operation::Primitive { primitive, pairing: Pairing::Axes }, &[right]).map(|value| Some(Outputs::one(value)))
 }
 
 /// `•special name`: the function that `name` names, as SciPy names it, such as `erf`.

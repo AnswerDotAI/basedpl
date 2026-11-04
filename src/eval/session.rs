@@ -279,6 +279,7 @@ impl Session {
         let span = Span::whole(Source::new("<call>", expression));
         let parsed = self.parse(span.source.clone()).complete()?;
         if parsed.statements.len() != 1 { return Err(Error::new(ErrorKind::Syntax, "call requires one function expression").at(&span)); }
+        if let [Node { kind: NodeKind::Function(builtin), .. }] = parsed.statements[0].nodes.as_slice() { return Ok(builtin.function()); }
         Ok(Function::late_bound(Arc::new(Definition::new(vec![parsed.statements], span))))
     }
     pub fn call_function_with(&self, function: &Function, args: &[Value], options: crate::EvalOptions) -> Evaluation {

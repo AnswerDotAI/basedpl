@@ -17,6 +17,16 @@ use crate::{
 use rustymath::{agreement::{Mapping, ReadPlan}, buffer::DType, convert::Conversion, facts::{Range, Variant}, hashing::HashMap};
 use std::{borrow::Cow, hash::{Hash, Hasher}, sync::{Arc, Mutex, Weak, atomic::AtomicUsize}};
 
+fn wspan_diag<'a>(values: impl IntoIterator<Item = (usize, &'a Value)>) -> Vec<String> {
+    values.into_iter().map(|(position, value)| {
+        let stored = value.pending().and_then(Pending::completed).unwrap_or(value);
+        let data = (matches!(stored, Value::Number(_) | Value::Character(_) | Value::Array(_)) && stored.dtype().is_some() && stored.len() <= 16)
+            .then(|| format!("{stored:?}"));
+        format!("{position}: {:?}{:?} id={:?} stored={:?}{:?} data={data:?}",
+            value.dtype(), value.shape(), value.address(), stored.dtype(), stored.shape())
+    }).collect()
+}
+
 // Descriptions (part 2)
 
 /// Part 2 (JAX abstract eval): a description. A step's comes only from the row builder (Operation::build); a leaf's is made once, by `Desc::leaf`. No `PartialEq`, `Eq` or `Hash` (`Range` and `Layout` derive neither `Eq` nor `Hash`): keys compare descriptions by class (length class and bucket, kind, atom flag, part 10; key sets by identity, then by contents, part 2), and no reader needs exact equality.
@@ -910,6 +920,11 @@ impl Running {
             self.logical_value(program, output, read).map(|value| (position, value.into_owned()))
         }).collect::<crate::error::Result<Vec<_>>>()?;
         call.list.parameters = parameters;
+        if std::env::var_os("BASEDPL_WSPAN_DIAG").is_some() && !call.list.parameters.is_empty() {
+            eprintln!("WSPAN row {} reads={:?} roles={:?} parameters={:?}", call.operation.glyph(),
+                program.reads(&origin.list).iter().map(|read| (read.operand.node, read.operand.output, read.opaque)).collect::<Vec<_>>(),
+                call.parameter_reads(call.list.len()).collect::<Vec<_>>(), wspan_diag(call.list.parameters.iter().map(|(position, value)| (*position, value))));
+        }
         Ok(call)
     }
     pub(crate) fn bind(&mut self, program: &Program, geometry: Geometry) {
@@ -1602,6 +1617,11 @@ pub(crate) fn admit_call(function: &Function, origin: &Origin<Vec<Value>>, plann
         let (_, outcome) = programs().serve(&key, &entry.reborrow())?;
         match outcome {
             Outcome::Recording(recording) => {
+                if std::env::var_os("BASEDPL_WSPAN_DIAG").is_some() {
+                    eprintln!("WSPAN replay {:?} explicit={}/{} captures={} inputs={:?} values={:?}",
+                        entry.site.as_ref().map(|site| site.text()), entry.explicit, entry.explicit_roots, entry.layout().captures(),
+                        recording.program.nodes.iter().filter_map(Node::input_position).collect::<Vec<_>>(), wspan_diag(entry.list.iter().enumerate()));
+                }
                 let context = BindingContext::from_origin(entry);
                 let mut running = Running::new(Vec::new());
                 running.binding = context;

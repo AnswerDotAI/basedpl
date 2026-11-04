@@ -628,7 +628,8 @@ fn pick_bounds_parameter(call: &CallView<'_>) -> bool {
 pub(super) fn index_roles(call: &CallView<'_>) -> Result<Roles, Error> {
     if call.layout().arguments().len() != 2 { return Ok(Roles::default()); }
     let root = call.layout().root(call.layout().arguments().start);
-    Ok(root.leaves.filter(|&position| keyed_source(call) || pick_bounds_parameter(call) || selector_parameter(call, position))
+    let structured = call.trees.is_some_and(|trees| trees.root_at(&root).children(root.leaves.start).any(|(child, _)| matches!(child, Tree::Array { .. })));
+    Ok(root.leaves.filter(|&position| structured || keyed_source(call) || pick_bounds_parameter(call) || selector_parameter(call, position))
         .fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Structure)))
 }
 
@@ -666,10 +667,6 @@ fn index_projection(origin: Origin<&[Value]>, call: &CallView, purpose: ReadKind
 pub(super) fn pick_form(origin: Origin<&[Value]>, call: &CallView) -> Result<Option<Outputs<Value>>, Error> {
     if call.layout().arguments().len() == 1 { return super::structural::form(origin, call); }
     let roots = call.layout().arguments();
-    if call.root_layout(roots.start).is_some_and(|layout| layout.shape() == [0])
-        && call.root_desc(roots.start).is_none_or(|desc| desc.dtype() != DType::Character) {
-        return origin.root_input(roots.back().or_internal()?).map(|value| Some(Outputs::one(value.into_owned())));
-    }
     if session().prototype.get() {
         let left = origin.root_input(roots.start)?.read(ReadKind::Structure)?;
         let right = origin.root_input(roots.back().or_internal()?)?;
@@ -678,6 +675,10 @@ pub(super) fn pick_form(origin: Origin<&[Value]>, call: &CallView) -> Result<Opt
         return pick(&left, &right, true, fill.as_deref(), &span).map(|value| Some(Outputs::one(value)));
     }
     if let Some(outputs) = fill_form(origin.reborrow(), call)? { return Ok(Some(outputs)); }
+    if call.root_layout(roots.start).is_some_and(|layout| layout.shape() == [0])
+        && call.root_desc(roots.start).is_none_or(|desc| desc.dtype() != DType::Character) {
+        return origin.root_input(roots.back().or_internal()?).map(|value| Some(Outputs::one(value.into_owned())));
+    }
     pick_projection(origin, call, ReadKind::Structure)
 }
 fn pick_projection(origin: Origin<&[Value]>, call: &CallView, purpose: ReadKind) -> Result<Option<Outputs<Value>>, Error> {
