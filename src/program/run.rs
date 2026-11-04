@@ -52,16 +52,21 @@ fn rows(program: &Program, running: &Running, from: usize) -> (usize, Vec<usize>
     (until, program.order(program.live_roots(), |_| false).into_iter().take_while(|&node| node < until).filter(|&node| node >= from).collect())
 }
 
-fn readers(program: &Program, order: &[usize]) -> Vec<Vec<usize>> {
-    let mut readers = vec![Vec::new(); program.nodes.len()];
-    for &node in order { for read in program.execution_dependencies(node) { readers[read.operand.node].push(node); } }
-    for output in program.live_roots() { readers[output.node].push(program.nodes.len()); }
+#[derive(Default)]
+struct Readers { nodes: Vec<usize>, export: bool }
+
+fn readers(program: &Program, order: &[usize]) -> Vec<Readers> {
+    let mut readers: Vec<_> = (0..program.nodes.len()).map(|_| Readers::default()).collect();
+    for &node in order { for read in program.execution_dependencies(node) { readers[read.operand.node].nodes.push(node); } }
+    for output in program.live_roots().chain(program.sources.iter().filter(|source| source.publish).flat_map(|source| source.outputs.iter().copied())) {
+        readers[output.node].export = true;
+    }
     readers
 }
 
-fn transparent(program: &Program, node: usize, readers: &[Vec<usize>]) -> bool {
+fn transparent(program: &Program, node: usize, readers: &[Readers]) -> bool {
     matches!(&program.nodes[node], Node::Step { step, .. } if step.is_view()) && !program.live_roots().any(|output| output.node == node)
-        && readers[node].iter().all(|&reader| matches!(&program.nodes[reader], Node::Step { step, .. } if step.reads_through()))
+        && readers[node].nodes.iter().all(|&reader| matches!(&program.nodes[reader], Node::Step { step, .. } if step.reads_through()))
 }
 
 pub(super) fn items(program: &Program, running: &Running, node: usize) -> usize {
@@ -72,13 +77,13 @@ pub(super) fn items(program: &Program, running: &Running, node: usize) -> usize 
 }
 
 fn flush(
-    program: &Program, running: &Running, readers: &[Vec<usize>], group: &mut super::blocks::Builder, outputs: &mut Vec<Out>, stages: &mut Vec<Stage>
+    program: &Program, running: &Running, readers: &[Readers], group: &mut super::blocks::Builder, outputs: &mut Vec<Out>, stages: &mut Vec<Stage>
 ) -> Result<()> {
     if group.members().is_empty() { return Ok(()); }
     let group = std::mem::take(group);
     let members = group.members().to_vec();
     outputs.clear();
-    for &node in &members { if readers[node].iter().any(|reader| !members.contains(reader)) { outputs.push(Out::data(node, 0)); } }
+    for &node in &members { if readers[node].export || readers[node].nodes.iter().any(|reader| !members.contains(reader)) { outputs.push(Out::data(node, 0)); } }
     if let Some(block) = group.finish(program, running, outputs)? { stages.push(Stage::Block(block)); }
     else { stages.extend(members.into_iter().map(Stage::Step)); }
     Ok(())

@@ -261,16 +261,51 @@ pub fn route(file: &File, case: &JsonValue, interrupt: &InterruptHandle) -> Resu
 
 pub fn routed(case: &JsonValue) -> bool { ["route", "allows", "gap"].iter().any(|key| case.get(key).is_some()) }
 
-/// The cases among `codes` that `tests/skipped.txt` skips in `test`. Each line there holds a test's name, a case's code and the `meta/open.md` item that records why the case is skipped, separated by tabs. Each call writes `test`'s lines to stderr past the test harness's capture. A line of `test`'s that names none of `codes` panics.
-pub fn skipped<'a>(test: &str, codes: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
+/// Native test selectors: exact source name, section prefix, and case-ID or code prefix.
+#[derive(Debug, Default)]
+pub struct Selection { source: Option<String>, section: Option<String>, case: Option<String>, selected: usize }
+
+impl Selection {
+    pub fn from_env() -> Self {
+        let [source, section, case] = ["BASEDPL_SOURCE", "BASEDPL_SECTION", "BASEDPL_CASE"].map(|key| std::env::var(key).ok());
+        Self { source, section, case, selected: 0 }
+    }
+    pub fn source(&self, source: &str) -> bool {
+        self.source.as_deref().is_none_or(|s| s.trim_end_matches(".bpl") == source.trim_end_matches(".bpl"))
+    }
+    pub fn includes(&mut self, source: &str, section: &str, id: &str, code: &str) -> bool {
+        let selected = self.source(source) && self.section.as_deref().is_none_or(|s| section.starts_with(s))
+            && self.case.as_deref().is_none_or(|s| id.starts_with(s) || code.starts_with(s));
+        self.selected += usize::from(selected);
+        selected
+    }
+    pub fn case(&mut self, source: &str, case: &JsonValue) -> bool {
+        self.includes(source, case["section"].as_str().unwrap_or_default(), case["id"].as_str().unwrap_or_default(), case["code"].as_str().unwrap_or_default())
+    }
+    pub fn files(&mut self, files: &mut Vec<File>) {
+        for file in files.iter_mut() { file.cases.retain(|case| self.case(&file.name, case)); }
+        files.retain(|file| !file.cases.is_empty());
+    }
+    pub fn assert_selected(&self) { assert!(self.selected != 0, "no cases matched {self:?}"); }
+}
+
+/// Validates the skip manifest against all (section, code) names before any case selection.
+pub fn skipped<'a>(test: &str, cases: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<(&'a str, &'a str)> {
     use std::io::Write;
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/skipped.txt");
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    let lines: Vec<(&str, &str)> = text.lines().filter_map(|line| line.strip_prefix(test)?.strip_prefix('\t')?.split_once('\t')).collect();
-    for (code, item) in &lines { let _ = writeln!(std::io::stderr(), "skipped in {test}: {code} ({item})"); }
-    let codes: Vec<&str> = codes.into_iter().collect();
-    if let Some((code, _)) = lines.iter().find(|(code, _)| !codes.contains(code)) { panic!("{}: {test} has no case {code}", path.display()); }
-    codes.into_iter().filter(|code| lines.iter().any(|(skip, _)| skip == code)).collect()
+    let mut lines = Vec::new();
+    for (n, line) in text.lines().enumerate().filter(|(_, line)| !line.is_empty()) {
+        let fields: Vec<_> = line.splitn(4, '\t').collect();
+        let [name, section, code, item] = fields[..] else { panic!("{}:{}: expected test, section, code and reason separated by tabs", path.display(), n + 1); };
+        if name == test { lines.push((section, code, item)); }
+    }
+    let cases: Vec<_> = cases.into_iter().collect();
+    for &(section, code, item) in &lines {
+        assert!(cases.iter().any(|&(s, c)| (section == "*" || section == s) && code == c), "{}: {test} has no case [{section}] {code}", path.display());
+        let _ = writeln!(std::io::stderr(), "known skip in {test} [{section}]: {code} ({item})");
+    }
+    cases.into_iter().filter(|&(section, code)| lines.iter().any(|&(s, c, _)| (s == "*" || s == section) && c == code)).collect()
 }
 
 /// The data that `coverage`'s cases read, with a matrix for its inner products.
@@ -281,9 +316,11 @@ const COVERAGE_SECTIONS: [(&str, &str); 2] = [("dynamic", ""), ("static", r#"•
 const COVERAGE_RIGHT: [&str; 5] = ["0", "1", "2", "0.5", "¯1"];
 const COVERAGE_LEFT: [&str; 2] = ["1", "2"];
 
-/// Scalar primitive route cases come from the language row and its resolved numerical object; gaps name expected slow paths. Runs every case but those `tests/skipped.txt` skips (`skipped`), and checks `gaps` against every case. Gives the captures, adds each case that panics to `wrong`, and prints and skips each case that fails to evaluate.
-pub fn coverage(gaps: &std::path::Path, wrong: &mut Vec<String>, interrupt: &InterruptHandle) -> Result<Vec<crate::timing::Capture>, String> {
-    use crate::primitive::{Operation, Pairing, Primitive};
+/// Enumerates scalar-row cases without running applicability probes. Unexpected evaluation failures count as failures.
+/// Validates gap and skip names against the complete inventory, then runs only the selected original-size cases.
+pub fn coverage(gaps: &std::path::Path, selection: &mut Selection, wrong: &mut Vec<String>, interrupt: &InterruptHandle) -> Result<Vec<crate::timing::Capture>, String> {
+    use crate::primitive::Primitive;
+    if !selection.source("coverage") { return Ok(Vec::new()); }
     let text = std::fs::read_to_string(gaps).map_err(|e| format!("{}: {e}", gaps.display()))?;
     let mut listed = Vec::new();
     for (n, line) in text.lines().enumerate().filter(|(_, l)| !l.is_empty()) {
@@ -292,27 +329,17 @@ pub fn coverage(gaps: &std::path::Path, wrong: &mut Vec<String>, interrupt: &Int
         let (key, rest) = directive.strip_prefix("⍝⍝⍝ ").and_then(|d| d.split_once(' ')).filter(|(k, _)| matches!(*k, "gap" | "allows")).ok_or_else(fail)?;
         listed.push((section, code, key, event(rest), false));
     }
-    let form = |primitive: Primitive, dyadic: bool| -> Option<bool> {
-        if !primitive.info().pervasive(1 + usize::from(dyadic)) { return None; }
-        let args = vec![Value::Number(Number::float(2.0, rustymath::buffer::FloatWidth::F64)); 1 + usize::from(dyadic)];
-        let origin = Operation::Primitive { primitive, pairing: Pairing::Axes }.origin_numeric(&args, Numeric::EXACT).ok()?;
-        let current = origin.reborrow();
-        let prepared = Operation::prepare(&current).ok()?;
-        let call = prepared.view();
-        let variant = call.variant(rustymath::buffer::DType::Float(rustymath::buffer::FloatWidth::F64)).ok()?;
-        if Operation::kernel(&call, variant).ok().flatten().is_none() && !primitive.info().defined[usize::from(dyadic)] { return None; }
-        Some(dyadic && origin.roles.kind(0) == Some(crate::ReadKind::Value))
-    };
     let mut cases: Vec<(String, &str)> = Vec::new();
     // A function's cases with one argument, and with each circle code as its left argument.
     let monadic = |g: &str| [(format!("2×{g}2+x"), "compiled"), (format!("{{+/{g}⍵}}∂ x"), "trace")];
     let coded = |g: &str| (0..=8).flat_map(|c| [(format!("2×{c}{g}2+x"), "compiled"), (format!("{{+/{c}{g}⍵}}∂ x"), "trace")]).collect::<Vec<_>>();
-    for p in Primitive::all().filter(|p| !matches!(p, Primitive::Bitwise(_))) {
+    // Float mapping fixtures do not describe bitwise inputs, draws, ranges, or scalar disclosure.
+    for p in Primitive::all().filter(|p| !matches!(p, Primitive::Bitwise(_) | Primitive::Random | Primitive::Range | Primitive::Mix)) {
         let g = p.glyph();
         // Monadic `+` keeps a real operand (`Pervasive::kept`), so its case would compute nothing to compile.
-        if form(p, false).is_some() && p != Primitive::Arithmetic(crate::number::Arithmetic::Plus) { cases.extend(monadic(&g)); }
-        let Some(code) = form(p, true) else { continue; };
-        if code { cases.extend(coded(&g)); continue; }
+        if p.info().pervasive(1) && p != Primitive::Arithmetic(crate::number::Arithmetic::Plus) { cases.extend(monadic(&g)); }
+        if !p.info().pervasive(2) { continue; }
+        if matches!(p, Primitive::Math(crate::number::Math::Circle)) { cases.extend(coded(&g)); continue; }
         cases.push((format!("2×(2+x){g}y"), "compiled"));
         cases.extend(COVERAGE_RIGHT.iter().map(|c| (format!("2×(2+x){g}{c}"), "compiled")));
         cases.extend(COVERAGE_LEFT.iter().map(|c| (format!("2×{c}{g}2+x"), "compiled")));
@@ -320,8 +347,8 @@ pub fn coverage(gaps: &std::path::Path, wrong: &mut Vec<String>, interrupt: &Int
         cases.push((format!("{{{g}/⍵}}∂ x"), "trace"));
         cases.push((format!("{{+/,m+.{g}⍵}}∂ k"), "trace"));
     }
-    let skipped = skipped("coverage", cases.iter().map(|(code, _)| code.as_str()));
-    let (mut captures, mut failed) = (Vec::new(), Vec::new());
+    let skipped = skipped("coverage", COVERAGE_SECTIONS.iter().flat_map(|&(section, _)| cases.iter().map(move |(code, _)| (section, code.as_str()))));
+    let (mut captures, mut selected, mut checked, mut skipped_count, mut failed) = (Vec::new(), 0, 0, 0, 0);
     for (section, prefs) in COVERAGE_SECTIONS {
         for (code, route) in &cases {
             let mut case = json!({"code":code, "section":section, "id":code});
@@ -329,22 +356,25 @@ pub fn coverage(gaps: &std::path::Path, wrong: &mut Vec<String>, interrupt: &Int
                 case.as_object_mut().unwrap().entry(entry.2).or_insert_with(|| json!([])).as_array_mut().unwrap().push(entry.3.clone());
                 entry.4 = true;
             }
-            if skipped.contains(&code.as_str()) { continue; }
+            if !selection.case("coverage", &case) { continue; }
+            selected += 1;
+            if skipped.contains(&(section, code.as_str())) { skipped_count += 1; continue; }
             if !route.is_empty() && case.get("gap").is_none() && case.get("allows").is_none() { case["route"] = json!([route]); }
+            checked += 1;
             enter(Some(prefs).filter(|p| !p.is_empty()), Some(RUNS[1])).map_err(|e| e.to_string())?;
             let session = Session::new();
             initialized(&session, COVERAGE_SETUP).map_err(|e| e.to_string())?;
             match crate::timing::route(&session, &case, interrupt) {
                 Ok(capture) => captures.push(capture),
-                Err(Uncaptured::Failed(message)) => failed.push(format!("[{section}] {code}: {message}")),
-                Err(Uncaptured::Panicked(message)) => wrong.push(format!("[{section}] {code}: {message}")),
+                Err(failure) => { failed += 1; wrong.push(format!("[{section}] {code}: {failure}")); }
             }
         }
     }
     let unused: Vec<_> = listed.iter().filter(|e| !e.4).map(|e| format!("{}\t{}", e.0, e.1)).collect();
     if !unused.is_empty() { return Err(format!("{} names no case: {unused:?}", gaps.display())); }
-    println!("coverage cases that fail to evaluate, which the matrix skips: {failed:#?}");
-    Ok(captures)}
+    eprintln!("coverage: {} generated, {selected} selected, {skipped_count} explicitly skipped, {checked} checked, {failed} failed to evaluate", cases.len() * COVERAGE_SECTIONS.len());
+    Ok(captures)
+}
 
 fn route_check(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<(), JsonValue> {
     if !routed(case) { return Ok(()); }

@@ -335,6 +335,19 @@ fn persistent_arrays_and_functions() {
 }
 
 #[test]
+fn held_values_follow_read_demand() {
+    for (code, work, value) in [
+        (r#"x←*1+v ⋄ e←•explain "↑x""#, "1ₓ 0ₓ", "*1.25"),
+        (r#"x←*1+v ⋄ e←•explain "+/x""#, "8ₓ 8ₓ", "8×*1.25"),
+        (r#"x←⌽1+v ⋄ e←•explain "+/x""#, "8ₓ 0ₓ", "10"),
+    ] {
+        let s = Session::new();
+        check_in(&s, "v←8⍴0.25", vector(&[0.25; 8]));
+        equiv_in(&s, &format!("{code} ⋄ [+/e.fused.items;+/e.stored.items]"), work);
+        equiv_in(&s, "e.value", value);
+    }
+}
+#[test]
 fn result_output_and_nonexecuting_parse() {
     let s = Session::new();
     equiv_in(&s, "x←2", "2");
@@ -453,8 +466,8 @@ fn lexical_frames_are_reclaimed() {
         ("pass←{x←42 ⋄ op←{⍵=0?⍶ ⍵;∇⍵-1} ⋄ ({x}op)⍵} ⋄ pass 25000", 42.), ("loop←{⍵=0?a←7;(∇⍵-1)} ⋄ loop 25000", 7.),
         ("f←{\"DOMAIN\"::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
     ];
-    let skipped = basedpl::reference::skipped("lexical_frames_are_reclaimed", cases.iter().map(|(code, _)| *code));
-    for (code, expected) in cases.into_iter().filter(|(code, _)| !skipped.contains(code)) { check_in(&s, code, float(expected)); }
+    let skipped = basedpl::reference::skipped("lexical_frames_are_reclaimed", cases.iter().map(|(code, _)| ("", *code)));
+    for (code, expected) in cases.into_iter().filter(|(code, _)| !skipped.contains(&("", *code))) { check_in(&s, code, float(expected)); }
     assert_eq!(s.eval("f 20000").error.unwrap().kind.name(), "LIMIT");
     check_in(&s, "deep 15000", float(15000.));
     let source = Source::new("calls", "outer 25000");

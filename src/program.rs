@@ -469,6 +469,7 @@ impl Node {
     pub(crate) fn input_position(&self) -> Option<usize> { match self { Self::Input { position, .. } => Some(*position), _ => None } }
 }
 
+/// Publication stores a whole result only when its existing execution produces it.
 #[derive(Clone)]
 pub(crate) struct Source { pub(crate) original: u32, pub(crate) completion: Out, pub(crate) outputs: Box<[Out]>, pub(crate) publish: bool }
 #[derive(Clone)]
@@ -557,7 +558,7 @@ impl Program {
                             if !matches!(builder.program.nodes[output.node], Node::Literal { .. }) && !counts.contains(&output) { counts.push(output); }
                         }
                     }
-                    let publishing = origin.nonrepeatable() || live.roots.iter().any(|root| root.pending().is_some_and(|pending| &pending.node == node));
+                    let publishing = live.publishes(node, origin);
                     let mut origin = origin.with_list(reads).invocation();
                     origin.context = Some(context.try_into().expect("live context fits u32"));
                     let output = builder.step(step.clone(), origin, node.description(), node.level());
@@ -711,6 +712,12 @@ impl Live {
             .expect("a real input is bound by the identity walk")
     }
     pub(crate) fn nodes(&self) -> &[crate::graph::Node] { &self.nodes }
+    pub(crate) fn publishes(&self, node: &crate::graph::Node, origin: &Origin<Vec<Read<Value>>>) -> bool {
+        origin.nonrepeatable() || self.roots.iter().any(|root| root.pending().is_some_and(|pending| &pending.node == node))
+            || node.bound() && node.level().is_none() && trace::Tracing::stores_bound()
+                && origin.list.iter().any(|read| read.operand.pending().is_some_and(|operand| !operand.node.is_stored()))
+                && node.descs().iter().all(|desc| desc.as_ref().is_some_and(|desc| desc.atom || desc.bytes() <= node.kept().data))
+    }
     pub(crate) fn input_value(&self, position: usize) -> crate::error::Result<Value> {
         self.inputs.get(position).and_then(Option::as_ref).cloned()
             .or_else(|| self.pending.iter().find_map(|(pending, &source)| (source == position).then(|| Value::Pending(pending.clone()))))
@@ -1012,6 +1019,10 @@ impl Running {
             )
         };
         let description = node.description();
+        if node.bound() && !program.live_roots().any(|output| output.node == completion.node) {
+            let items = description.as_ref().iter().flatten().map(|desc| desc.layout.count()).sum();
+            crate::explain::stored(|| node.recipe().map_or_else(String::new, |(_, origin)| origin.operation.glyph()), items, "bound");
+        }
         node.finish(values.with_trees(description.trees().cloned()).with_shy(description.shy));
         Ok(())
     }
@@ -1509,31 +1520,9 @@ fn cached(
     run_refilled(held, running, expected_runs)
 }
 
-/// The bound steps a read stores (`graph::Hold`, `meta/recursion-cost-design.md`): ordinary unstored steps a binding holds, with an unstored step among their operands, whose outputs are atoms or no larger than the data they derive from (`graph::Kept`). A bound chain then never exceeds 2 steps.
-fn bound_steps(live: &Live, roots: &[Pending]) -> Vec<crate::graph::Node> {
-    if !live.nodes.iter().any(crate::graph::Node::bound) || !trace::Tracing::stores_bound() { return Vec::new(); }
-    let steps: rustymath::hashing::HashSet<_> = live.nodes.iter().filter(|node| !node.is_stored()).cloned().collect();
-    live.nodes.iter().filter(|&node| node.bound() && node.level().is_none() && steps.contains(node) && roots.iter().all(|root| root.node != *node))
-        .filter(|node| node.with_state(|state| matches!(state, crate::graph::State::Step { origin, .. }
-            if origin.list.iter().any(|read| read.operand.pending().is_some_and(|operand| steps.contains(&operand.node))))))
-        .filter(|node| node.descs().iter().all(|desc| desc.as_ref().is_some_and(|desc| {
-            desc.atom || desc.bytes() <= node.kept().data
-        })))
-        .cloned().collect()
-}
-
 fn execute_live(roots: &[Pending]) -> crate::error::Result<Option<(Held, Running)>> {
-    let mut values: Vec<_> = roots.iter().cloned().map(Value::Pending).collect();
+    let values: Vec<_> = roots.iter().cloned().map(Value::Pending).collect();
     let mut live = Live::of(&values, None);
-    let bound = bound_steps(&live, roots);
-    if !bound.is_empty() {
-        for node in &bound {
-            let items = node.descs().iter().flatten().map(|desc| desc.layout.count()).sum();
-            crate::explain::stored(|| node.recipe().map_or_else(String::new, |(_, origin)| origin.operation.glyph()), items, "bound");
-            values.extend((0..node.descs().len()).map(|output| Value::Pending(Pending::data(node.clone(), output as u32))));
-        }
-        live = Live::of(&values, None);
-    }
     trace::Tracing::executing(&live.nodes)?;
     let mut running = Running::from_live(&live);
     let store = live.cacheable_metadata().then_some(programs());

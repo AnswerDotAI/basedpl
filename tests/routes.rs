@@ -6,7 +6,10 @@ use basedpl::{InterruptHandle, timing};
 fn speed_cases_take_their_routes() {
     let _lock = rustymath::timing::shared().unwrap();
     rustymath::parallel::set_threads(1);
-    let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
+    let mut files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
+    let mut selection = basedpl::reference::Selection::from_env();
+    selection.files(&mut files);
+    selection.assert_selected();
     let (routes, failures) = timing::routes(&files, None, &InterruptHandle::default()).unwrap();
     timing::contracts(&routes, failures);
 }

@@ -105,19 +105,18 @@ const TIMES: &str = "BASEDPL_TIMES";
 /// The start of the line on which a child prints that it finished a case: the case's position, its seconds, then its file and line.
 const TIME: &str = "reference time: ";
 
-/// The cases that `BASEDPL_SOURCE` and `BASEDPL_CASE` select, in `SOURCES`' order, each with its file's name as `file`. Panics on an id that two cases share.
+/// Selected expected-answer cases in source order, with their file name for child reports.
 fn chosen() -> Vec<reference::File> {
     let mut chosen = Vec::new();
-    let selected = std::env::var("BASEDPL_CASE").ok();
-    let source = std::env::var("BASEDPL_SOURCE").ok();
     for mut file in SOURCES.iter().map(|&(name, text)| reference::file(name, text).unwrap_or_else(|e| panic!("{name}.bpl: {e}"))).chain(speed()) {
         let name = file.name.trim_end_matches(".bpl");
-        if source.as_deref().is_some_and(|f| f != name) { continue; }
-        let wanted = |case: &Value| selected.as_deref().is_none_or(|s| case["id"].as_str().unwrap().starts_with(s));
-        file.cases.retain(|case| reference::checked(case) && wanted(case));
+        file.cases.retain(reference::checked);
         for case in &mut file.cases { case["file"] = json!(name); }
         if !file.cases.is_empty() { chosen.push(file); }
     }
+    let mut selection = reference::Selection::from_env();
+    selection.files(&mut chosen);
+    selection.assert_selected();
     chosen
 }
 

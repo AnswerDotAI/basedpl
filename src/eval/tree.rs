@@ -734,7 +734,10 @@ impl StatementCode {
                 registers[*to as usize] = Some(Entity::of(Binding::Value(value), range.clone(), false));
             }
             Op::Input { to, range } => {
-                let line = Operation::Effect(crate::primitive::Act::Input).call(&[]).map_err(|error| error.at(&span_of(source, range)))?;
+                let span = span_of(source, range);
+                let mut origin = Operation::Effect(crate::primitive::Act::Input).origin(&[])?;
+                origin.site = Some(span.clone());
+                let line = Operation::dispatch(origin.reborrow()).and_then(|outputs| outputs.assemble()).map_err(|error| error.at(&span))?;
                 registers[*to as usize] = Some(Entity::of(Binding::Value(line), range.clone(), false));
             }
             Op::Postfix { postfix, operand, to, span, range, result } => {
