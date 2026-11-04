@@ -4,7 +4,7 @@ use crate::{
     Described, Error, ErrorKind, Function, ReadKind, Span, Value, array::{Root, generated_len}, eval::OperatorKind, number::Numeric,
     primitive::{Act, CallView, RunView, Operation, Primitive, Roles, Row, numeric}, program::{Origin, Outputs}, session
 };
-use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth, View}, error::Kind, facts::Variant, layout::FRESH, operation::Kernel};
+use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth, View}, error::Kind, layout::FRESH};
 use std::{borrow::Cow, hash::{Hash, Hasher}, sync::Arc};
 
 #[derive(Clone, Copy)]
@@ -113,12 +113,11 @@ impl SystemFunction {
 
 pub(crate) fn native_row() -> &'static Row {
     &const {
-        Row { math: native_kernel, roles, form, build, code, inverse, cells: crate::distribution::cells,
+        Row { roles, form, build, code, inverse, cells: crate::distribution::cells,
             ..Row::new("•", "system", ["", ""], [crate::primitive::WHOLE; 3]) }
     }
 }
 
-fn native_kernel(_: &CallView<'_>, _: Variant) -> Result<Option<Kernel>, Error> { Ok(None) }
 fn roles(call: &CallView<'_>) -> Result<Roles, Error> {
     if matches!(call.operation, Operation::Draw { .. }) { return crate::distribution::roles(call); }
     let Some(system) = call.function(0).and_then(Function::system_function) else { return Ok(Roles::default()); };
