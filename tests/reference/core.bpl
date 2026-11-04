@@ -3886,8 +3886,7 @@ pg←•special "polygamma" ⋄ {⍵ pg 2}∂1
 ig←•special "gammainc" ⋄ [{1 ig ⍵}∂0; {2 ig ⍵}∂3]   ⍝ [1;3×*¯3]
 
 ⍝ special-betainc — Shape pairs are call-time data; x slopes keep their endpoint limits
-bi←•special "betainc" ⋄ ab←2 3 ⋄ f←{ab bi ⍵} ⋄ before←f0.5 ⋄ ab←4 5 ⋄ [before; f0.5; [2 3⋄4 5](bi⍤1 0)0.5 0.25; {[2 3]bi⍵}∂0.5; {[1 2]bi⍵}∂0; {[2 1]bi⍵}∂1]
-⍝ [0.6875; 0.63671875; 0.6875 0.1138153076171875; 1.5; 2; 2]
+bi←•special "betainc" ⋄ ab←2 3 ⋄ f←{ab bi ⍵} ⋄ before←f0.5 ⋄ ab←4 5 ⋄ [before; f0.5; [2 3⋄4 5](bi⍤1 0)0.5 0.25; {[2 3]bi⍵}∂0.5; {[1 2]bi⍵}∂0; {[2 1]bi⍵}∂1] ⍝ [0.6875; 0.63671875; 0.6875 0.1138153076171875; 1.5; 2; 2]
 
 ⍝ — In reverse mode, a result drawn only from constants has a gradient of zeros
 c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0

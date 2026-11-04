@@ -569,7 +569,10 @@ pub(crate) fn framed_fallback(
     }
     let prototype = if let Some(first) = results.first() { first.clone() } else {
         let mut inputs = arguments.clone();
-        for (which, &(input, _)) in positions.iter().enumerate() { inputs[input] = at(which, cells[which].prototype()?)?; }
+        for (which, &(input, _)) in positions.iter().enumerate() {
+            let cell = &cells[which];
+            inputs[input] = at(which, if cell.len() == 0 { cell.prototype()? } else { cell.get(0)? })?;
+        }
         function.prototype_bound(&origin, &inputs)?.into_cell()?
     };
     crate::explain::fallback("stopped framed body", frame.count);
