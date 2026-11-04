@@ -398,8 +398,7 @@ fn items_call(origin: &Origin<&[Value]>, function: &Function, scan: bool, axis: 
         if let Some(seed) = seed { return Ok(seed.clone()); }
         let primitive = function.dyadic_primitive().ok_or_else(|| Error::domain("this function has no reduction identity"))?;
         let prototype = right.prototype();
-        let prepared = Operation::prepare(origin)?;
-        return primitive.info().identity(&prepared.view(), &prototype)?.ok_or_else(|| Error::domain("this function has no reduction identity"));
+        return primitive.info().identity(origin, &prototype)?.ok_or_else(|| Error::domain("this function has no reduction identity"));
     }
     let item = |i| dispatch_in(origin, Operation::Read(ReadOp::Slice { axis }), &[Value::constant(Value::integer(i as i64)), right.clone()]);
     if !scan {

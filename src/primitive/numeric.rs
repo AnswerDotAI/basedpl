@@ -5,7 +5,7 @@ use crate::execution::check;
 use crate::number::{Domain, Field, read, with_field};
 use num_complex::Complex64;
 use num_rational::BigRational;
-use rustymath::agreement::Frames;
+use rustymath::agreement::{Frames, Missing};
 use rustymath::array::ArrayView;
 use rustymath::buffer::{Buffer, FloatWidth, IntBuf};
 use rustymath::linalg::{self, Factor, Inner, PlusTimes};
@@ -940,11 +940,17 @@ pub(crate) fn build_fold(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping
         return Ok((Step::Call, Some(Outputs::one(Some(desc))), None));
     }
     let source = call.desc(geometry.arg).expect("a native fold has a source description");
+    let length = geometry.dims()[1];
+    if source.dtype() == DType::Character && (geometry.result.count() == 0 || geometry.seed.is_none() && length == 1) {
+        let read = ReadPlan::copy(geometry.arg, source.layout.count(), Mapping::Linear(1), geometry.result.count(), Missing::Default);
+        let desc = Desc { layout: geometry.result, atom: geometry.atom, ..source.clone() };
+        set(geometry.arg, Mapping::Linear(1));
+        return Ok((Step::Copy { source: geometry.arg as u32 }, Some(Outputs::one(Some(desc))), Some(read)));
+    }
     let variant = map_variant(call)?;
     let Some(kernel) = call.kernel(variant)? else { return host_build(call, set); };
     let items = source.bounds();
     let seed = geometry.seed.and_then(|seed| call.desc(seed)).map(|seed| seed.bounds());
-    let length = geometry.dims()[1];
     let empty_identity = !geometry.scan && length == 0 && seed.is_none() && kernel.identity().is_some_and(|n| !n.is_finite());
     let mut range = if length == 0 { seed.unwrap_or_else(|| rustymath::facts::Range::of(kernel.identity())) }
     else { kernel.fold_range(items, seed, length) };
