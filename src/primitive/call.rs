@@ -337,6 +337,7 @@ impl CallBindings for CellBindings<'_> {
 pub(crate) struct PreparedCall<'a> { origin: &'a Origin<&'a [Value]>, values: Cow<'a, [Value]> }
 impl PreparedCall<'_> {
     pub(crate) fn view(&self) -> CallView<'_> { CallView::new(self.origin, &self.values) }
+    pub(crate) fn origin(&self) -> Origin<&[Value]> { self.origin.with_list(self.values.as_ref()) }
 }
 impl<'a> Origin<crate::program::BoundCall<'a>> {
     pub(crate) fn call_view(&self) -> CallView<'_> { CallView::new(self, &self.list) }

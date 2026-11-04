@@ -1155,6 +1155,7 @@ fn inverse_primitive(function: &Function, origin: crate::program::Origin<&[Value
     let primitive = function.as_primitive().ok_or_else(|| Error::domain("an inverse row needs its primitive"))?;
     let prepared = Operation::prepare(&origin)?;
     let call = prepared.view();
+    let origin = prepared.origin();
     if matches!(primitive, Primitive::Keys(_)) && call.layout().fill().is_some() { return Err(Error::domain("this function reads no fill")); }
     let reversed = match primitive { Primitive::Replicate(inverse) => Some(Primitive::Replicate(!inverse)), Primitive::Keys(inverse) => Some(Primitive::Keys(!inverse)), _ => None };
     if bound_first && call.layout().arguments().len() == 2 && let Some(primitive) = reversed {

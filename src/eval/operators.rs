@@ -790,10 +790,16 @@ fn invert(origin: &Origin<&[Value]>, f: &Function, args: &[Value], first: bool) 
         if !first { return Err(Error::domain("this function has no known inverse")); }
         return g.call_bound_outputs(origin, args);
     }
+    let row = match f.node() {
+        FunctionNode::Primitive(primitive) => Some(primitive.info().inverse),
+        FunctionNode::System { function, .. } => Some(function.row().inverse), _ => None,
+    };
+    if let Some(inverse) = row {
+        let bound = f.call_origin(origin, args)?;
+        return inverse(f, bound.reborrow(), first).map(Outputs::one);
+    }
     let bound = f.bound(origin, args)?;
     match f.node() {
-        FunctionNode::Primitive(primitive) => (primitive.info().inverse)(f, bound.reborrow(), first).map(Outputs::one),
-        FunctionNode::System { function, .. } => (function.row().inverse)(f, bound.reborrow(), first).map(Outputs::one),
         FunctionNode::Applied { op: Operator::Kind(kind), .. } if first => (kind.info().inverse)(f, bound.reborrow()),
         FunctionNode::Applied { op: Operator::Kind(_), .. } => inverse_derived(f, bound.reborrow(), false),
         FunctionNode::Train(tines) if tines.len() == 2 => {
