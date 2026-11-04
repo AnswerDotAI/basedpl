@@ -53,6 +53,7 @@ impl Kind {
     pub(crate) fn join(self, other: Self) -> Option<Self> {
         let (left, right) = (self.dtype(), other.dtype());
         let dtype = match (self.weak, other.weak) {
+            _ if matches!((self.element, other.element), (Element::Ordinary(_), Element::Ordinary(_))) => left.common(right)?,
             (false, true) => left.common_weak(right)?, (true, false) => right.common_weak(left)?, _ => left.common(right)?
         };
         let fixed = [self, other].iter().any(|kind| kind.fixed_width().is_some())

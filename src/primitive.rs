@@ -1443,8 +1443,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             Arithmetic(Minus) => call(Arithmetic(Plus), Some(right), a),
             Arithmetic(Times) => call(Arithmetic(Divide), Some(right), a),
             Arithmetic(Divide) => call(Arithmetic(Times), Some(right), a),
-            Compare(Comparison::NotEqual) if boolean_array(a) && boolean_array(right) => call(p, Some(a), right),
-            Compare(Comparison::Equal) if boolean_array(a) && boolean_array(right) => call(p, Some(a), right),
+            Compare(Comparison::NotEqual | Comparison::Equal) if boolean_array(a)? && boolean_array(right)? => call(p, Some(a), right),
             Math(Power) => call(p, Some(right), &Arithmetic(Divide).call(None, a, span, numeric)?),
             Math(Root) if first => call(Math(Power), Some(right), a),
             Math(Root) => call(Math(Log), Some(right), a),
@@ -1560,8 +1559,12 @@ fn inverse_items(p: Primitive, right: &Value, span: &Span, numeric: Numeric) -> 
     }
 }
 
-fn boolean_array(a: &Value) -> bool {
-    a.elements().all(|e| match e { Value::Number(n) => n.boolean().is_ok(), a @ Value::Array(_) => boolean_array(&a), _ => false })
+fn boolean_array(a: &Value) -> Result<bool, Error> {
+    fn stored(a: &Value) -> bool {
+        a.elements().all(|e| match e { Value::Number(n) => n.boolean().is_ok(), a @ Value::Array(_) => stored(&a), _ => false })
+    }
+    if a.dtype() == Some(DType::Boolean) { return Ok(true); }
+    Ok(stored(&a.read(ReadKind::Value)?))
 }
 
 /// `candidate` if it can be built and `p` maps it back to `right`, with the fixed left argument `a` if there is one. Otherwise no argument gives `right`. An interrupt, a timeout or a stop passes through (`ErrorKind::is_control`).

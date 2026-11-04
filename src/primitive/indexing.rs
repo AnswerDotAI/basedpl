@@ -620,10 +620,15 @@ fn keyed_source(call: &CallView<'_>) -> bool {
     index_source(call).and_then(|root| call.root_desc(root.index)).is_some_and(|desc| desc.layout.has_keys())
 }
 
+fn pick_bounds_parameter(call: &CallView<'_>) -> bool {
+    call.mode.dynamic && matches!(call.operation, Operation::Primitive { primitive: Primitive::Mix, .. })
+        && index_source(call).and_then(|root| call.root_desc(root.index)).is_some_and(|desc| desc.layout.count() == 0)
+}
+
 pub(super) fn index_roles(call: &CallView<'_>) -> Result<Roles, Error> {
     if call.layout().arguments().len() != 2 { return Ok(Roles::default()); }
     let root = call.layout().root(call.layout().arguments().start);
-    Ok(root.leaves.filter(|&position| keyed_source(call) || selector_parameter(call, position))
+    Ok(root.leaves.filter(|&position| keyed_source(call) || pick_bounds_parameter(call) || selector_parameter(call, position))
         .fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Structure)))
 }
 
@@ -660,8 +665,12 @@ fn index_projection(origin: Origin<&[Value]>, call: &CallView, purpose: ReadKind
 
 pub(super) fn pick_form(origin: Origin<&[Value]>, call: &CallView) -> Result<Option<Outputs<Value>>, Error> {
     if call.layout().arguments().len() == 1 { return super::structural::form(origin, call); }
+    let roots = call.layout().arguments();
+    if call.root_layout(roots.start).is_some_and(|layout| layout.shape() == [0])
+        && call.root_desc(roots.start).is_none_or(|desc| desc.dtype() != DType::Character) {
+        return origin.root_input(roots.back().or_internal()?).map(|value| Some(Outputs::one(value.into_owned())));
+    }
     if session().prototype.get() {
-        let roots = call.layout().arguments();
         let left = origin.root_input(roots.start)?.read(ReadKind::Structure)?;
         let right = origin.root_input(roots.back().or_internal()?)?;
         let fill = call.layout().fill().map(|root| origin.root_input(root.index)).transpose()?;
@@ -743,7 +752,7 @@ fn gather_part(call: &CallView<'_>, position: usize, item: Option<usize>) -> Res
     let known = call.parameter(position)?;
     let known = known.as_deref().map(|value| item.map_or_else(|| value.clone(), |item| value.at(item)));
     match known.map(squad_part) {
-        Some(IndexPart::Axis(value)) if !keyed_source(call) && value.dtype().is_some_and(|dtype| dtype != DType::Character) => {}
+        Some(IndexPart::Axis(value)) if !keyed_source(call) && !pick_bounds_parameter(call) && value.dtype().is_some_and(|dtype| dtype != DType::Character) => {}
         Some(part) => return Ok(Some(part.map(GatherPart::Known))), None => {}
     }
     let Some(mut desc) = call.desc(position).map(Cow::into_owned) else { return Ok(None) };
@@ -809,6 +818,10 @@ pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Erro
     let routes = structure::routes(&desc.layout, &claims, axes.as_deref(), |part, axis| {
         let IndexPart::Axis(part) = &parts[part] else { unreachable!("a selector claim") };
         match part {
+            GatherPart::Known(value) if *primitive == Primitive::Mix && desc.shape()[axis] == 0 && value.is_numeric() => {
+                if call.mode.dynamic { cell_offset(&desc.layout, axis, std::slice::from_ref(value), false)?; }
+                Ok((AxisSelector::Indices { layout: CoreLayout::EMPTY, positions: Table::new(vec![Steps::FILL]) }, true))
+            }
             GatherPart::Known(value) => axis_part(value, &desc.layout, axis, call.mode.dynamic),
             GatherPart::Data(input, desc) => { indices.push(*input); Ok((AxisSelector::Shaped { layout: CoreLayout::clone(&desc.layout) }, desc.atom)) }
         }
