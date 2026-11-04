@@ -341,7 +341,10 @@ fn compiled_stages_match_interpreted() {
         "--1ₓ|l", "--2ₓ|l", "--4ₓ|w", "--256ₓ|h", "--2ₓ|u",
     ].map(String::from));
     let options = || basedpl::EvalOptions { echo: false, ..Default::default() };
-    for n in [0, 1, 7, 37].map(|more| 16 * settings::Sizes::DEFAULT.block + more) {
+    let sizes = [0, 1, 7, 37].map(|more| 16 * settings::Sizes::DEFAULT.block + more);
+    let selected = std::env::var_os("BASEDPL_JIT_SIZE_INDEX").map(|s| s.to_str().and_then(|s| s.parse::<usize>().ok()).filter(|&i| i < sizes.len()).expect("BASEDPL_JIT_SIZE_INDEX must select an existing size index"));
+    for (i, n) in sizes.into_iter().enumerate() {
+        if selected.is_some_and(|j| i != j) { continue; }
         for (prefs, cases) in [("", &dynamic), (r#"•prefs ["kinds":"static"]"#, &fixed)] {
             settings::reset();
             // Static kinds make ordinary integers at the `int` width, so the arrays are made under the kinds that read them.
@@ -375,5 +378,6 @@ fn compiled_stages_match_interpreted() {
                 assert_eq!(basedpl::reference::difference(&compiled, &interpreted, None, 0.0, true), None, "{code} on {n} items; scalar compiled {:?}, interpreted {:?}", compiled.as_number(), interpreted.as_number());
             }
         }
+        eprintln!("checked size {i}: {n} items, {} dynamic and {} static cases", dynamic.len(), fixed.len());
     }
 }
