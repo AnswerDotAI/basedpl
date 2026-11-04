@@ -38,11 +38,15 @@ impl Session {
     pub fn interactive() -> Turn { Self::make_interactive(); Self::new() }
     /// Makes the interactive display settings the current ones and the ones that `]clear` restores. Settings are process-wide, so this needs no session. Python's BPL magics use it on the workspace they share with the Python API.
     pub fn make_interactive() { crate::settings::set_display_defaults(crate::display::Settings::interactive()); }
-    /// `value` as this session's implicit display shows it, as text. Display is a forcing read (`graph::forced`): a data error in the value's work raises here.
+    fn observed_value(&self, value: &Value) -> Result<Value, Error> {
+        let value = value.read(crate::ReadKind::Value)?;
+        self.raise()?;
+        Ok(value)
+    }
+    /// `value` as this session's implicit display shows it, as text. Display is a forcing read: a data error in the value's work raises here.
     pub fn show(&self, value: &Value) -> Result<String, Error> {
         self.within(|| {
-            let value = value.read(crate::ReadKind::Value)?;
-            self.raise()?;
+            let value = self.observed_value(value)?;
             Ok(self.display_settings().array(&value, false))
         })
     }
@@ -91,7 +95,7 @@ impl Session {
         display.boxed = false;
         display.elide = Elide { limit: 100, edges: 2, width: 80, ..display.elide };
         let (kind, text) = match binding {
-            Binding::Value(a) => ("array", display.array(&a, false)),
+            Binding::Value(a) => ("array", display.array(&self.observed_value(&a)?, false)),
             binding @ Binding::Function(_) => {
                 ("function", Function::from_value(binding, &Span::whole(Source::new("<inspect>", name.text())))?.text(display.elide, &mut 100))
             }
@@ -359,7 +363,8 @@ impl Session {
                         Binding::NoResult | Binding::Absent | Binding::Released => None,
                         Binding::Value(a) => {
                             if diagram && i + 1 == parsed.statements.len() {
-                                self.execution.output(crate::OutputKind::Display, self.display_settings().diagram(&a));
+                                let shown = match self.observed_value(&a) { Ok(value) => value, Err(e) => { result.error = Some(e); return result; } };
+                                self.execution.output(crate::OutputKind::Display, self.display_settings().diagram(&shown));
                             } else if self.execution.echo.get() && !bound.shy {
                                 if let Err(e) = self.display_value(&a, &nodes[0].span) { result.error = Some(e); return result; }
                             }
@@ -497,13 +502,11 @@ impl Session {
 
     /// A value with a renderer formats through it. Other values, and a renderer that fails, format as text. Display is a forcing read and a checkpoint (`graph::forced`): a data error raises before any output, before a failing renderer's fallback could hide it.
     fn render_value(&self, value: &Value, span: &Span) -> Result<crate::MimeBundle, Error> {
-        let value = value.read(crate::ReadKind::Value)?;
-        self.raise()?;
+        let value = self.observed_value(value)?;
         if value.renderer().is_some() {
             match self.mime_value(&value, span) {
                 Ok(bundle) => {
-                    let bundle = bundle.read(crate::ReadKind::Value)?;
-                    self.raise()?;
+                    let bundle = self.observed_value(&bundle)?;
                     return Ok(crate::display::bundle(&bundle).expect("•mime checks its bundle"));
                 }
                 Err(error) if error.kind.is_control() => return Err(error),

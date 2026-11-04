@@ -514,14 +514,16 @@ impl Footprint for Value {
     }
 }
 
-pub(crate) fn map_leaves(value: &Value, mut f: impl FnMut(&Value) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
-    let Some((trees, leaves)) = flatten(std::slice::from_ref(value)) else { return f(value) };
-    let mut preserved = vec![false; leaves.len()];
-    trees.input_uses(|position, usage| preserved[position] = usage == TreeInput::Prototype);
-    let mapped =
-        leaves.iter().enumerate().map(|(i, value)| if preserved[i] { Ok(value.clone()) } else { f(value) }).collect::<crate::error::Result<Vec<_>>>()?;
+fn map_tree(value: &Value, mut f: impl FnMut(&Value, Option<TreeInput>) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
+    let Some((trees, leaves)) = flatten(std::slice::from_ref(value)) else { return f(value, None) };
+    let mut uses = vec![None; leaves.len()];
+    trees.input_uses(|position, usage| uses[position] = usage);
+    let mapped = leaves.iter().zip(uses).map(|(value, usage)| f(value, usage)).collect::<crate::error::Result<Vec<_>>>()?;
     if leaves.iter().zip(&mapped).all(|(old, new)| old.identical(new)) { return Ok(value.clone()); }
     trees.build(&mapped).pop().ok_or_else(|| Error::domain("missing tree root"))
+}
+pub(crate) fn map_leaves(value: &Value, mut f: impl FnMut(&Value) -> crate::error::Result<Value>) -> crate::error::Result<Value> {
+    map_tree(value, |value, usage| if usage == Some(TreeInput::Prototype) { Ok(value.clone()) } else { f(value) })
 }
 
 pub(crate) fn drop_chain<T>(node: &mut T, take: impl Fn(&mut T, &mut Vec<Arc<T>>)) {
@@ -599,7 +601,7 @@ impl Value {
     }
     pub fn read(&self, read: crate::program::trace::ReadKind) -> Result<Value, Error> {
         if read == crate::ReadKind::Description { return Err(Error::internal()); }
-        map_leaves(self, |leaf| match leaf {
+        map_tree(self, |leaf, _| match leaf {
             Self::Pending(pending) => {
                 pending.node.clone().into_storage(pending.output.ok_or_else(|| Error::domain("control completion cannot be read as data"))?, read)
             }

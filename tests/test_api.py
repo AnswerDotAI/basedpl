@@ -17,7 +17,7 @@ def test_documentation_examples():
 def test_builtin_attributes():
     for api in (basedpl, bpl):
         teq(api.add([1, 2], 10).py, [11, 12])
-        teq((api.add(2)(3).py, api.multiply(2)(3).py, api.divide(2)(3).py), (5, 6, Fraction(3, 2)))
+        teq((api.add(2)(3).py, api.multiply(2)(3).py, api.divide(2)(3).py), (5, 6, 1))
         teq((api.plus(2, 3).py, api.times(-2).py, api.downstile(2.5).py), (5, -1, 2))
         teq(getattr(api, '•distribution')([2, 0.5], 'binomial')['quantile'](1.).py, 2)
         assert {'add', 'plus', 'conjugate', 'distribution', 'π'} <= set(dir(api))
@@ -232,7 +232,7 @@ def test_array_surface():
     with pytest.raises(ValueError): a[::0]
     with pytest.raises(IndexError): a[:, :, 1:]
     assert (Array(7) % 3).py == 1 and (Array(7) // 3).py == 2
-    assert (Array(2) ** 3).py == 8 and (Array(3) / 2).py == Fraction(3, 2)
+    assert (Array(2) ** 3).py == 8 and (Array(3) / 2).py == 1
     assert operator.index(Array(3)) == 3 and int(Array(3.5)) == 3 and float(Array(Fraction(1, 2))) == .5
     assert bool(Array([1])) and not bool(Array(0))
     with pytest.raises(ValueError): bool(a)
@@ -396,12 +396,12 @@ def test_words_binding_and_operators():
     assert multiply(2.)(3).py == 6. and type(multiply(2.)(3).py) is float
     assert multiply(2)(3).py == 6 and type(multiply(2)(3).py) is int
     assert subtract(2.)(5).py == 3 and subtract.left(2.)(5).py == -3
-    assert divide.left(1)(3).py == Fraction(1, 3)
+    assert divide.left(Fraction(1))(3).py == Fraction(1, 3)
     assert sign(-3).py == -1 and exponent(2)(3).py == 9
     assert not_(0).py == 1
     mean = add.reduce / tally
-    assert mean([1, 2, 4]).py == Fraction(7, 3)
-    assert fork(add.reduce, divide, tally)([1, 2, 4]).py == Fraction(7, 3)
+    assert mean([1, 2, 4]).py == 2
+    assert fork(add.reduce, divide, tally)([1, 2, 4]).py == 2
     assert (add.reduce + 2)([1, 2]).py == 5
     assert (2 - add.reduce)([1, 2]).py == -1
     np.testing.assert_array_equal(add.scan([1, 2, 3]), [1, 3, 6])

@@ -798,20 +798,12 @@ pub(crate) fn single_axis(axis: &Value, rank: usize) -> Result<usize, Error> {
     rustymath::layout::position(n, rank).ok_or_else(|| Error::domain("axis must be within the array rank"))
 }
 
-#[track_caller]
 pub(crate) fn axes(axis: &Value, rank: usize) -> Result<Vec<usize>, Error> {
     if axis.shape().len() > 1 { return Err(Error::new(Kind::Rank, "axes must be a unit or vector")); }
     let mut result = Vec::new();
-    let values = axis.as_items().integers().described("axis must be a whole number")?;
-    for &n in values.iter() {
+    for &n in axis.as_items().integers().described("axis must be a whole number")?.iter() {
         match rustymath::layout::position(n, rank) {
-            Some(a) if !result.contains(&a) => result.push(a), _ => {
-                if std::env::var_os("BASEDPL_AXIS_INPUTS").is_some() {
-                    eprintln!("axis-inputs axes={values:?} rank={rank} bad={n} kind={:?} atom={} shape={:?} range={:?} caller={}",
-                        axis.kind(), axis.is_atom(), axis.shape(), axis.range(), std::panic::Location::caller());
-                }
-                return Err(Error::domain("axes must be distinct and within the array rank"));
-            }
+            Some(a) if !result.contains(&a) => result.push(a), _ => return Err(Error::domain("axes must be distinct and within the array rank"))
         }
     }
     Ok(result)

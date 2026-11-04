@@ -365,6 +365,14 @@ pub fn coverage(gaps: &std::path::Path, selection: &mut Selection, wrong: &mut V
         cases.push((format!("{{{g}/⍵}}∂ x"), "trace"));
         cases.push((format!("{{+/,m+.{g}⍵}}∂ k"), "trace"));
     }
+    cases.extend([
+        ("2×⍟1+1+x".into(), "compiled"), ("{+/⍟1+⍵}∂ x".into(), "trace"),
+        ("2×¯1+*1+x".into(), "compiled"), ("{+/¯1+*⍵}∂ x".into(), "trace"),
+    ]);
+    for g in ["√ₐ", "⍟ₐ", "÷ₐ", "1○ₐ", "1○⁻¹ₐ", "5○ₐ", "5○⁻¹ₐ"] { cases.extend(monadic(g)); }
+    for g in ["*ₐ", "÷ₐ"] {
+        cases.extend([(format!("2×(2+x){g}y"), "compiled"), (format!("{{+/⍵{g}y}}∂ x"), "trace")]);
+    }
     let skipped = skipped("coverage", COVERAGE_SECTIONS.iter().flat_map(|&(section, _)| cases.iter().map(move |(code, _)| (section, code.as_str()))));
     let (mut captures, mut selected, mut checked, mut skipped_count, mut failed) = (Vec::new(), 0, 0, 0, 0);
     for (section, prefs) in COVERAGE_SECTIONS {
