@@ -229,7 +229,7 @@ impl Value {
     pub(crate) fn item(&self, el: Elide) -> String { let text = self.source(el); if needs_group(&text) { format!("({text})") } else { text } }
     /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in `⊂3` or `0 3⍴0`, needs parentheses.
     pub(crate) fn operand(&self, el: Elide) -> String {
-        let text = self.source(el);
+        let text = self.data().source(el);
         if outside(&text, |c| !(c.is_ascii_digit() || " ¯.∞⍬".contains(c) || crate::number::subscript(c))) { format!("({text})") } else { text }
     }
 

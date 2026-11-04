@@ -1,6 +1,7 @@
 //! Description and map rules shared by live calls and concrete plan refill.
+use crate::error::OrInternal;
 use crate::{
-    Error, Value, agreement::Agree, array::{Frame, Layout}, error::Result,
+    Error, Value, agreement::Agree, array::{Frame, Layout, Root}, error::Result,
     primitive::{CallView, RunView, Operation, Pairing, Primitive, ReadOp, RowResult, ViewAxis, WriteTarget}, program::{Desc, Description, Origin, Outputs, Read, Step}
 };
 use rustymath::{agreement::{Mapping, Missing, ReadPlan}, buffer::Width, error::Kind as ErrorTag, facts::Range, gather::Steps};
@@ -21,8 +22,8 @@ impl Fold {
     }
     pub(crate) fn input_read(&self, call: &CallView<'_>, input: usize) -> Result<Mapping> {
         if input == self.arg { return Ok(Mapping::Linear(1)); }
-        if Some(input) != self.seed { return Err(Error::planning()); }
-        let seed = call.desc(input).ok_or_else(Error::planning)?;
+        if Some(input) != self.seed { return Err(Error::internal()); }
+        let seed = call.desc(input).or_internal()?;
         let agreement = crate::agreement::Agreement::new(&seed.layout, &self.result)?;
         if agreement.layout != self.result { return Err(Error::new(ErrorTag::Length, "fold seed does not agree with its result cells")); }
         Ok(agreement.left)
@@ -31,13 +32,13 @@ impl Fold {
 
 pub(crate) fn fold(call: &CallView<'_>) -> Result<Fold> {
     use crate::primitive::{resolve_axes, single_axis};
-    let Operation::Fold { first, scan, .. } = call.operation else { return Err(Error::planning()); };
-    let roots: Vec<_> = call.explicit_argument_roots().collect();
+    let Operation::Fold { first, scan, .. } = call.operation else { return Err(Error::internal()); };
+    let roots: Vec<_> = call.layout().arguments().collect();
     let (seed, root) = match roots.as_slice() {
-        [right] => (None, *right), [left, right] => (Some(call.root_boundary(*left)), *right), _ => return Err(Error::planning())
+        [right] => (None, *right), [left, right] => (Some(call.layout().start(*left)), *right), _ => return Err(Error::internal())
     };
-    let arg = call.root_boundary(root);
-    let source = call.root_layout(root).ok_or_else(Error::planning)?;
+    let arg = call.layout().start(root);
+    let source = call.root_layout(root).or_internal()?;
     let rank = source.shape().len();
     let axis = if let Some(root) = call.axis_root() {
         let spec = call.root_parameter(root.index)?;
@@ -45,7 +46,7 @@ pub(crate) fn fold(call: &CallView<'_>) -> Result<Fold> {
     } else if *first { 0 }
     else { rank.saturating_sub(1) };
     let result = source.folded(*scan, axis);
-    Ok(Fold { arg, seed, axis, scan: *scan, source: source.into_owned(), result, atom: (!*scan && rank == 1) || call.root_atom(root).ok_or_else(Error::planning)? })
+    Ok(Fold { arg, seed, axis, scan: *scan, source: source.into_owned(), result, atom: (!*scan && rank == 1) || call.root_atom(root).or_internal()? })
 }
 
 pub(crate) struct Product { pub(crate) args: [usize; 2], pub(crate) plan: rustymath::linalg::ProductPlan }
@@ -58,12 +59,12 @@ impl Product {
 
 pub(crate) fn product(call: &CallView<'_>) -> Result<Product> {
     use crate::{agreement::Agreement, primitive::{Pairing, axes, resolve_axes}};
-    let Operation::Product { pairing, contracted, .. } = call.operation else { return Err(Error::planning()); };
-    let roots: Vec<_> = call.explicit_argument_roots().collect();
-    let [left, right] = roots.as_slice() else { return Err(Error::planning()); };
-    let args = [call.root_boundary(*left), call.root_boundary(*right)];
-    let left = call.root_layout(*left).ok_or_else(Error::planning)?;
-    let right = call.root_layout(*right).ok_or_else(Error::planning)?;
+    let Operation::Product { pairing, contracted, .. } = call.operation else { return Err(Error::internal()); };
+    let roots: Vec<_> = call.layout().arguments().collect();
+    let [left, right] = roots.as_slice() else { return Err(Error::internal()); };
+    let args = [call.layout().start(*left), call.layout().start(*right)];
+    let left = call.root_layout(*left).or_internal()?;
+    let right = call.root_layout(*right).or_internal()?;
     let plan = match pairing {
         Pairing::Matrices { frame } => rustymath::linalg::ProductPlan::matrices([&left, &right], *frame)?,
         Pairing::Axes | Pairing::Explicit { .. } => {
@@ -138,16 +139,16 @@ pub(crate) fn search_frame(haystack: &Layout, needles: &Layout) -> Result<(usize
     Ok((rank, frame, leading_bound(haystack).map(|n| n + 1)))
 }
 
-pub(crate) fn read_source(kind: &ReadOp) -> usize { if matches!(kind, ReadOp::Reshape | ReadOp::Slice { .. } | ReadOp::Cell { .. }) { 1 } else { 0 } }
+pub(crate) fn read_source(kind: &ReadOp) -> Root { Root(u32::from(matches!(kind, ReadOp::Reshape | ReadOp::Slice { .. } | ReadOp::Cell { .. }))) }
 
-fn source_layout(call: &CallView<'_>, root: usize) -> Result<Layout> { Ok(call.root_layout(root).ok_or_else(Error::planning)?.into_owned()) }
+fn source_layout(call: &CallView<'_>, root: Root) -> Result<Layout> { Ok(call.root_layout(root).or_internal()?.into_owned()) }
 
 fn axes_layout(call: &CallView<'_>, axes: &[ViewAxis]) -> Result<Layout> {
     let (mut shape, mut names, mut keys) = (Vec::with_capacity(axes.len()), Vec::with_capacity(axes.len()), Vec::with_capacity(axes.len()));
     for axis in axes {
         match axis.axis {
             Some(at) => {
-                let layout = source_layout(call, axis.input as usize)?;
+                let layout = source_layout(call, Root(axis.input as u32))?;
                 shape.push(*layout.shape().get(at).ok_or_else(|| Error::domain("a view refers to an absent axis"))?);
                 names.push(layout.name(at).cloned());
                 keys.push(layout.keys(at).cloned());
@@ -166,8 +167,8 @@ fn axes_layout(call: &CallView<'_>, axes: &[ViewAxis]) -> Result<Layout> {
 fn read_result(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<(Layout, bool)> {
     let rank = source.shape().len();
     Ok(match kind {
-        ReadOp::Cells { .. } => return Err(Error::planning()),
-        ReadOp::Root(_) => (source.clone(), call.root_atom(0).ok_or_else(Error::planning)?),
+        ReadOp::Cells { .. } => return Err(Error::internal()),
+        ReadOp::Root(_) => (source.clone(), call.root_atom(Root(0)).or_internal()?),
         ReadOp::Ravel => (Layout::from([source.count()]), false),
         ReadOp::Reshape => {
             let dimensions = call.parameter(0)?.ok_or_else(|| Error::domain("reshape needs its dimensions"))?;
@@ -186,14 +187,14 @@ fn read_result(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<(L
         }
         ReadOp::Axes { axes, destinations } => {
             if destinations.len() != rank || destinations.iter().any(|&a| a >= axes.len()) { return Err(Error::domain("view axes do not cover the source")); }
-            let atom = axes.is_empty() && call.root_atom(read_source(kind)).ok_or_else(Error::planning)?;
+            let atom = axes.is_empty() && call.root_atom(read_source(kind)).or_internal()?;
             (axes_layout(call, axes)?, atom)
         }
     })
 }
 
 pub(crate) fn build_read(call: &CallView<'_>, kind: &ReadOp, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult> {
-    let root = call.root(read_source(kind));
+    let root = call.layout().root(read_source(kind));
     if root.leaves.len() != 1 { return crate::primitive::host_build(call, set); }
     let Some(source) = call.root_desc(root.index) else { return crate::primitive::host_build(call, set); };
     let (layout, atom, map, read) = read_geometry(call, kind)?;
@@ -205,8 +206,8 @@ pub(crate) fn build_read(call: &CallView<'_>, kind: &ReadOp, set: &mut dyn FnMut
 
 fn read_position(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<(Option<usize>, bool)> {
     let length = match kind {
-        ReadOp::Cell { rank } => source.shape()[..source.shape().len().checked_sub(*rank).ok_or_else(Error::planning)?].iter().product(),
-        ReadOp::Slice { axis } => *source.shape().get(*axis).ok_or_else(Error::planning)?, _ => return Err(Error::planning())
+        ReadOp::Cell { rank } => source.shape()[..source.shape().len().checked_sub(*rank).or_internal()?].iter().product(),
+        ReadOp::Slice { axis } => *source.shape().get(*axis).or_internal()?, _ => return Err(Error::internal())
     };
     let parameter = call.parameter(0)?;
     let position = parameter.as_deref().and_then(Value::as_number).ok_or_else(|| Error::domain("a read position must be numeric"))?;
@@ -217,7 +218,7 @@ fn read_position(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<
 
 fn read_mapping(kind: &ReadOp, source: &Layout, result: &Layout, position: Option<usize>) -> Result<Mapping> {
     Ok(match kind {
-        ReadOp::Cells { .. } => return Err(Error::planning()),
+        ReadOp::Cells { .. } => return Err(Error::internal()),
         ReadOp::Root(_) | ReadOp::Ravel | ReadOp::Item => Mapping::Linear(1),
         ReadOp::Cell { .. } => match position {
             Some(position) => Mapping::Steps { base: position * result.count(), steps: vec![Steps::along(result.count(), 1)].into() }, None => Mapping::Tiled(0)
@@ -245,14 +246,14 @@ fn read_geometry(call: &CallView<'_>, kind: &ReadOp) -> Result<(Layout, bool, Ma
         (position, if !nan && call.mode.dynamic { Missing::Invalid } else { Missing::Default })
     } else { (None, Missing::Default) };
     let map = read_mapping(kind, &source, &layout, position)?;
-    let read = ReadPlan::copy(call.root(read_source(kind)).leaves.start, source.count(), map.clone(), layout.count(), missing);
+    let read = ReadPlan::copy(call.layout().root(read_source(kind)).leaves.start, source.count(), map.clone(), layout.count(), missing);
     Ok((layout, atom, map, read))
 }
 
 pub(crate) fn read_form(origin: &Origin<&[Value]>, call: &CallView) -> Result<Option<Outputs<Value>>> {
     let Operation::Read(kind) = call.operation else { return Ok(None); };
     if matches!(kind, ReadOp::Cells { .. }) { return Ok(None); }
-    let source = call.root(read_source(kind));
+    let source = call.layout().root(read_source(kind));
     if !call.trees.is_some_and(|trees| matches!(trees.root_at(&source), crate::array::Tree::Array { .. })) { return Ok(None); }
     read_values(origin, call, kind).map(Some)
 }
@@ -275,18 +276,18 @@ fn read_values(origin: &Origin<&[Value]>, call: &CallView, kind: &ReadOp) -> Res
 }
 
 fn call(parent: &Origin<&[Value]>, operation: Operation, arguments: &[Value]) -> Result<Value> {
-    let origin = crate::eval::projected_call(parent, operation, arguments, &vec![None; arguments.len()])?;
+    let origin = crate::eval::projected_call(parent, operation, arguments)?;
     Operation::dispatch(origin.reborrow())?.assemble()
 }
 fn read_origin(origin: &Origin<&[Value]>) -> Origin<Vec<Read<Value>>> {
-    origin.with_list(origin.list.iter().cloned().map(|operand| Read { operand, map: Mapping::Linear(1) }).collect())
+    origin.with_list(origin.list.iter().cloned().map(Read::linear).collect())
 }
 fn broadcast_back(parent: &Origin<&[Value]>, source: Value, direction: Value) -> Result<Value> {
-    let source_desc = Desc::of(&source).ok_or_else(Error::planning)?;
-    let result_desc = Desc::of(&direction).ok_or_else(Error::planning)?;
+    let source_desc = Desc::of(&source).or_internal()?;
+    let result_desc = Desc::of(&direction).or_internal()?;
     let axes = (0..result_desc.shape().len()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
     let destinations = rustymath::agreement::Agreement::paired_axes(&result_desc.layout, &source_desc.layout, true).into();
-    let view = crate::eval::projected_call(parent, Operation::Read(ReadOp::Axes { axes, destinations }), &[source, direction.clone()], &[None, None])?;
+    let view = crate::eval::projected_call(parent, Operation::Read(ReadOp::Axes { axes, destinations }), &[source, direction.clone()])?;
     let reads = read_origin(&view.reborrow());
     Operation::read_back(&reads.reborrow(), 0, &direction)
 }
@@ -303,15 +304,15 @@ fn forward_source(original: &CallView<'_>, source: &Origin<&[Value]>, input: usi
 }
 fn at_slope(parent: &Origin<&[Value]>, original: &Origin<&[Value]>, primitive: Primitive, input: usize) -> Result<Value> {
     let reads = read_origin(original);
-    let root = original.root_input(0)?.into_owned();
+    let root = original.root_input(Root(0))?.into_owned();
     let selected = Operation::read_result(&reads.reborrow(), &root)?;
-    let values = original.root_input(2)?.into_owned();
-    let origin = crate::eval::projected_call(parent, Operation::Primitive { primitive, pairing: Pairing::Axes }, &[selected, values], &[None, None])?;
+    let values = original.root_input(Root(2))?.into_owned();
+    let origin = crate::eval::projected_call(parent, Operation::Primitive { primitive, pairing: Pairing::Axes }, &[selected, values])?;
     let result = Operation::dispatch(origin.reborrow())?.assemble()?;
     let reads = read_origin(&origin.reborrow());
     let mut needed = vec![false; reads.list.len()];
     needed[input] = true;
-    Operation::partials(&reads.reborrow(), &result, &needed)?.into_iter().nth(input).flatten().ok_or_else(Error::planning)
+    Operation::partials(&reads.reborrow(), &result, &needed)?.into_iter().nth(input).flatten().or_internal()
 }
 pub(crate) fn form_relation(origin: Origin<&[Value]>, view: &CallView) -> Result<Option<Outputs<Value>>> {
     let Operation::ReadRelation { .. } = origin.operation else { return Ok(None); };
@@ -322,7 +323,7 @@ pub(crate) fn form_relation(origin: Origin<&[Value]>, view: &CallView) -> Result
             if let Operation::At { target: WriteTarget::Indices, .. } = original.operation {
                 let direction = origin.root_input(removed[0].index)?.into_owned();
                 let flat = call(&origin, Operation::Read(ReadOp::Ravel), &[direction])?;
-                let target = Value::tuple(vec![source.reborrow().root_input(1)?.into_owned()]);
+                let target = Value::tuple(vec![source.reborrow().root_input(Root(1))?.into_owned()]);
                 return call(&origin, Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Axes }, &[target, flat]).map(Outputs::one).map(Some);
             }
             return Ok(None);
@@ -334,13 +335,13 @@ pub(crate) fn form_relation(origin: Origin<&[Value]>, view: &CallView) -> Result
             return original.with_relation(|base, inner, arguments, range| {
                 let base_source = base.origin(source.list.iter().enumerate().filter(|(position, _)| !range.contains(position)).map(|(_, value)| value.clone()).collect::<Vec<_>>());
                 let Relation::Back(source_index) = inner else { unreachable!() };
-                if input != arguments[0].leaves.start { return Err(Error::planning()); }
+                if input != arguments[0].leaves.start { return Err(Error::internal()); }
                 let forward = forward_source(base, &base_source.reborrow(), source_index as usize, &direction)?;
                 let reference = source.reborrow().root_input(arguments[0].index)?.into_owned();
                 if forward.layout() == reference.layout() { return Ok(Some(Outputs::one(forward))); }
                 let base_reads = read_origin(&base_source.reborrow());
                 let result = Operation::relation_origin(&base_reads.reborrow(), Relation::Result, Some(&reference))?;
-                let position = result.root(result.explicit_roots as usize - 1).leaves.start;
+                let position = result.layout().root(result.layout().explicit_roots().back().or_internal()?).leaves.start;
                 let reads = read_origin(&result.reborrow());
                 Operation::read_back(&reads.reborrow(), position, &forward).map(Outputs::one).map(Some)
             });
@@ -348,7 +349,7 @@ pub(crate) fn form_relation(origin: Origin<&[Value]>, view: &CallView) -> Result
         if let Operation::At { target: mode, combine } = original.operation {
             let reads = read_origin(&source.reborrow());
             let selected = Operation::read_result(&reads.reborrow(), &direction)?;
-            if input == original.root(0).leaves.start {
+            if input == original.layout().root(Root(0)).leaves.start {
                 let values = match combine {
                     None => selected.zeros_like()?,
                     Some(primitive) => {
@@ -359,10 +360,10 @@ pub(crate) fn form_relation(origin: Origin<&[Value]>, view: &CallView) -> Result
                             &[slope, selected.clone()])?
                     }
                 };
-                let target = source.reborrow().root_input(1)?.into_owned();
+                let target = source.reborrow().root_input(Root(1))?.into_owned();
                 return call(&origin, Operation::At { combine: None, target: *mode }, &[direction, target, values]).map(Outputs::one).map(Some);
             }
-            if input != original.root(2).leaves.start { return Err(Error::planning()); }
+            if input != original.layout().root(Root(2)).leaves.start { return Err(Error::internal()); }
             let selected = match combine {
                 None => selected,
                 Some(primitive) => {
@@ -372,11 +373,11 @@ pub(crate) fn form_relation(origin: Origin<&[Value]>, view: &CallView) -> Result
                         &[slope, selected])?
                 }
             };
-            return broadcast_back(&origin, source.reborrow().root_input(2)?.into_owned(), selected).map(Outputs::one).map(Some);
+            return broadcast_back(&origin, source.reborrow().root_input(Root(2))?.into_owned(), selected).map(Outputs::one).map(Some);
         }
         let (step, _, _) = Operation::build(original, &mut |_, _| {})?;
         let Step::Picks { selector, choices } = step else { return Ok(None); };
-        let Some(choice) = choices.clone().position(|position| position as usize == input) else { return Err(Error::planning()); };
+        let Some(choice) = choices.clone().position(|position| position as usize == input) else { return Err(Error::internal()); };
         let zero = direction.zeros_like()?;
         let mut arguments = vec![source.list[selector as usize].clone()];
         arguments.extend((0..choices.len()).map(|position| if position == choice { direction.clone() } else { zero.clone() }));
@@ -390,12 +391,12 @@ pub(crate) fn form_relation(origin: Origin<&[Value]>, view: &CallView) -> Result
 pub(crate) fn source_roots_relation(call: &CallView<'_>) -> Result<Vec<crate::array::TreeRoot>> {
     call.with_relation(|original, relation, removed, _| match relation {
         crate::primitive::Relation::Input(input) => {
-            let source = original.source_roots()?.into_iter().find(|root| root.leaves.contains(&(input as usize))).ok_or_else(Error::planning)?;
+            let source = original.source_roots()?.into_iter().find(|root| root.leaves.contains(&(input as usize))).or_internal()?;
             let mut roots = vec![source];
-            if let Some(fill) = original.fill_root() && roots[0].index != fill.index { roots.push(fill); }
+            if let Some(fill) = original.layout().fill() && roots[0].index != fill.index { roots.push(fill); }
             Ok(roots)
         }
-        crate::primitive::Relation::Result | crate::primitive::Relation::Back(_) => Ok(vec![removed.first().cloned().ok_or_else(Error::planning)?]),
+        crate::primitive::Relation::Result | crate::primitive::Relation::Back(_) => Ok(vec![removed.first().cloned().or_internal()?]),
         crate::primitive::Relation::Validate => Ok(Vec::new()),
     })
 }
@@ -409,7 +410,7 @@ fn relation_grid(original: &CallView<'_>, input: Option<usize>, reference: &Desc
         Operation::Fold { .. } => {
             let geometry = fold(original)?;
             if input.is_some() && input == geometry.seed { return Ok((geometry.result, geometry.atom, Mapping::Linear(1))); }
-            let atom = original.desc(geometry.arg).ok_or_else(Error::planning)?.atom;
+            let atom = original.desc(geometry.arg).or_internal()?.atom;
             let cotangent = geometry.result_read();
             Ok((geometry.source, atom, cotangent))
         }
@@ -427,11 +428,11 @@ fn source_relation(original: &CallView<'_>, input: usize, reference: &Desc) -> R
         if relation.value.layout == reference.layout { relation.cotangent = Mapping::Linear(1); }
         return Ok(relation);
     }
-    let source = original.desc(input).ok_or_else(Error::planning)?;
+    let source = original.desc(input).or_internal()?;
     let (layout, atom, cotangent) = relation_grid(original, Some(input), reference)?;
     let mut maps = vec![Mapping::Linear(1); original.len()];
     let (step, _, route) = Operation::build(original, &mut |position, map| { maps[position] = map; })?;
-    let map = maps.get(input).ok_or_else(Error::planning)?.clone();
+    let map = maps.get(input).or_internal()?.clone();
     let mapped = matches!(step, Step::Map { .. } | Step::Convert { .. });
     let route = route.or_else(|| mapped.then(|| ReadPlan::copy(input, source.layout.count(), map.clone(), layout.count(), Missing::Default)));
     let range = Some(source.bounds().join(Range::of(Some(0.0))));
@@ -440,7 +441,7 @@ fn source_relation(original: &CallView<'_>, input: usize, reference: &Desc) -> R
 }
 
 fn input_relation(original: &CallView<'_>, input: usize) -> Result<SourceRelation> {
-    let source = original.desc(input).ok_or_else(Error::planning)?;
+    let source = original.desc(input).or_internal()?;
     let (layout, atom, map, cotangent) = match original.operation {
         Operation::Fold { .. } => {
             let geometry = fold(original)?;
@@ -450,16 +451,16 @@ fn input_relation(original: &CallView<'_>, input: usize) -> Result<SourceRelatio
         }
         Operation::Product { .. } => {
             let geometry = product(original)?;
-            let index = geometry.args.iter().position(|&position| position == input).ok_or_else(Error::planning)?;
+            let index = geometry.args.iter().position(|&position| position == input).or_internal()?;
             let cotangent = geometry.result_read();
             (geometry.plan.iteration.into(), false, geometry.plan.mappings[index].clone(), cotangent)
         }
         _ => {
             let (left, right) = crate::primitive::map_arguments(original)?;
             let (layout, atom, left_map, right_map) = crate::primitive::map_geometry(original)?;
-            let map = if Some(input) == left { left_map.ok_or_else(Error::planning)? }
+            let map = if Some(input) == left { left_map.or_internal()? }
             else if input == right { right_map }
-            else { return Err(Error::planning()); };
+            else { return Err(Error::internal()); };
             (layout, atom, map, Mapping::Linear(1))
         }
     };
@@ -476,7 +477,7 @@ pub(crate) fn build_relation(call: &CallView<'_>, set: &mut dyn FnMut(usize, Map
         let (desc, step, read) = match relation {
             Validate => {
                 let desc = Desc::new(crate::number::Kind::stored(rustymath::buffer::DType::Boolean, false, false), true, Layout::default());
-                (desc, Step::Copy { source: original.root(1).leaves.start as u32 }, None)
+                (desc, Step::Copy { source: original.layout().root(Root(1)).leaves.start as u32 }, None)
             }
             Input(input) => {
                 let source = input_relation(original, input as usize)?;
@@ -497,7 +498,7 @@ pub(crate) fn build_relation(call: &CallView<'_>, set: &mut dyn FnMut(usize, Map
                 }
             }
             Back(input) => {
-                let desc = original.desc(input as usize).ok_or_else(Error::planning)?.into_owned();
+                let desc = original.desc(input as usize).or_internal()?.into_owned();
                 let reference = root_desc(call, &removed[0])?;
                 let source = source_relation(original, input as usize, &reference)?;
                 let cotangent = removed[0].leaves.start;
@@ -518,31 +519,20 @@ pub(crate) fn build_relation(call: &CallView<'_>, set: &mut dyn FnMut(usize, Map
     })
 }
 
-pub(crate) fn relation_source(call: &CallView<'_>) -> Result<usize> {
-    call.with_relation(|_, relation, _, range| {
-        let crate::primitive::Relation::Back(input) = relation else { return Err(Error::planning()); };
-        let input = input as usize;
-        Ok(input + if input >= range.start { range.len() } else { 0 })
-    })
-}
-
 pub(crate) fn roles_relation(call: &CallView<'_>) -> Result<crate::primitive::Roles> {
     call.with_relation(|original, relation, _, range| {
         use crate::{primitive::{Relation, Roles}, program::trace::ReadKind};
-        let first = original.root_boundary(original.operation.functions());
-        let insertion = range.start - first;
         let sources = original.mathematical_positions()?;
         let mut roles = Roles::default();
-        for position in 0..original.len() - first {
-            let absolute = position + first;
-            let descriptor = sources.contains(&absolute) && match relation {
-                Relation::Input(input) => absolute != input as usize && original.fill_root().is_none_or(|fill| !fill.leaves.contains(&absolute)),
+        for position in original.layout().data()..original.len() {
+            let descriptor = sources.contains(&position) && match relation {
+                Relation::Input(input) => position != input as usize && original.layout().fill().is_none_or(|fill| !fill.leaves.contains(&position)),
                 Relation::Result | Relation::Back(_) | Relation::Validate => true,
             };
             let read = match original.roles.kind(position) {
-                None | Some(ReadKind::Kind | ReadKind::Description) if sources.contains(&absolute) => descriptor.then_some(ReadKind::Description), read => read
+                None | Some(ReadKind::Kind | ReadKind::Description) if sources.contains(&position) => descriptor.then_some(ReadKind::Description), read => read
             };
-            if let Some(read) = read { roles = roles.with(position + if position >= insertion { range.len() } else { 0 }, read); }
+            if let Some(read) = read { roles = roles.with(position + if position >= range.start { range.len() } else { 0 }, read); }
         }
         Ok(roles)
     })

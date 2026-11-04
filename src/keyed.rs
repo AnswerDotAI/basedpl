@@ -307,7 +307,7 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
             keys[0] = Some(Keys::partial(added[0].iter().cloned().map(Some).collect())?);
             let cells = Value::from_parts(shape, vec![fill.clone(); len], fill)?.with_keys(keys)?.with_axis_names(target.axis_names().to_vec())?;
             *target = crate::primitive::Operation::Primitive { primitive: crate::primitive::Primitive::CatenateFirst, pairing: crate::primitive::Pairing::Axes }
-                    .call(&[target.clone(), cells], 0)?;
+                    .call(&[target.clone(), cells])?;
             return Ok(());
         }
         shape = target.shape().to_vec();
@@ -323,7 +323,7 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
     let names = target.axis_names().to_vec();
     let count = Value::integers([shape.len()], shape.iter().map(|&n| n as i64).collect())?;
     *target = crate::primitive::Operation::Primitive { primitive: crate::primitive::Primitive::Take, pairing: crate::primitive::Pairing::Axes }
-        .call(&[count, target.clone()], 0)?.with_keys(keys)?.with_axis_names(names)?;
+        .call(&[count, target.clone()])?.with_keys(keys)?.with_axis_names(names)?;
     Ok(())
 }
 
@@ -337,7 +337,7 @@ pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool)
         let positions = source.positions(target, subset)?;
         let indices = Value::positions([positions.len()], value.shape()[axis], positions.into_iter())?;
         result = Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Explicit { fill: false } }
-            .call(&[indices, result, Value::integer(axis as i64)], 0)?;
+            .call(&[indices, result, Value::integer(axis as i64)])?;
     }
     Ok(result)
 }

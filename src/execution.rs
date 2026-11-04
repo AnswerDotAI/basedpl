@@ -114,9 +114,6 @@ fn stopped() -> Result<(), rustymath::error::Error> {
 /// Whether the running evaluation has been interrupted.
 fn interrupted() -> bool { stops().as_ref().is_some_and(|s| s.interrupt.is_set()) }
 
-/// Ends an interrupt that a guard caught, so that its handler runs. Another interrupt stops the handler.
-pub(crate) fn clear_interrupt() { if let Some(s) = &*stops() { s.interrupt.flag.store(false, Ordering::Relaxed) } }
-
 #[derive(Default)]
 pub(crate) struct Execution {
     pub echo: Cell<bool>,

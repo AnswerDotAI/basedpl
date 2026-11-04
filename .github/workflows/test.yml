@@ -32,8 +32,12 @@ jobs:
       - run: node tests/input.mjs
       - run: node tests/highlighting.mjs
         if: ${{ !cancelled() }}
+      - run: cargo test
+        if: ${{ !cancelled() }}
       # With `BASEDPL_COSTS`, the speed tests here and in the `wasm` job log every case's cost, which `basedpl.bpltests.logged_costs` reads.
-      - run: BASEDPL_COSTS=1 cargo test
+      - run: BASEDPL_COSTS=1 cargo test --test speed
+        if: ${{ !cancelled() }}
+      - run: cargo test --test routes
         if: ${{ !cancelled() }}
       - run: pytest -q
         if: ${{ !cancelled() }}

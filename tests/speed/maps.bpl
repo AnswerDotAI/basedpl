@@ -71,13 +71,13 @@ v×v+1
 
 ⍝ Each over a nested array whose 10,000 items are vectors of 8 small integers. Each passes its operand each item, as Rank passes each row of the matrix that holds them. Where every item is a compact array of one layout and dtype, a batched map stacks the items into one array and runs as Rank does.
 ⍝ Expected: `{⍵+1ₓ}¨nest` and `{+/⍵}¨nest` 2.5 copies: as `{⍵+1ₓ}⍤1⁝irow` and `+/⍤1 irow`, which cost 1.88 and 2.02 on 30 October 2026, and a copy of the 80,000 one-byte items into one array.
-⍝ On 30 October 2026 `{⍵+1ₓ}¨nest` cost 33 times its Rank form, and `{+/⍵}¨nest` 12 times. Stacking costs about 18 ns an item, and assembling `{⍵+1ₓ}¨nest`'s 10,000 result arrays about 30 more (`meta/open.md`, "Each over a nested array of arrays"). Before then each called its dfn once for each item, at 416 and 357.
-⍝⍝⍝ held macos 62.9 linux ~107 wasm ~88.1: stacking and assembling the items (open.md, "Each over a nested array of arrays"); Linux and wasm hold estimates of 1.7 and 1.4 times the macOS cost
+⍝ On 30 October 2026 `{⍵+1ₓ}¨nest` cost 33 times its Rank form, and `{+/⍵}¨nest` 12 times. Stacking costs about 18 ns an item, and assembling `{⍵+1ₓ}¨nest`'s 10,000 result arrays about 30 more. Before then each called its dfn once for each item, at 416 and 357.
+⍝⍝⍝ held macos 62.9 linux ~107 wasm ~88.1: stacking and assembling the items; Linux and wasm hold estimates of 1.7 and 1.4 times the macOS cost
 ⍝⍝⍝ route batching
 {⍵+1ₓ}¨nest
 ⍝⍝: 5	5	5
 
-⍝⍝⍝ held macos 24.7 linux ~42 wasm ~34.6: stacking and assembling the items (open.md, "Each over a nested array of arrays"); Linux and wasm hold estimates of 1.7 and 1.4 times the macOS cost
+⍝⍝⍝ held macos 24.7 linux ~42 wasm ~34.6: stacking and assembling the items; Linux and wasm hold estimates of 1.7 and 1.4 times the macOS cost
 ⍝⍝⍝ route batching
 {+/⍵}¨nest
 ⍝⍝: 5	5	5

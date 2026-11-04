@@ -331,9 +331,6 @@ fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compil
     KERNELS.get_or_init(Default::default).lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Forgets every kernel and its code, as a new process has none.
-pub(crate) fn forget_kernels() { kernels().clear() }
-
 impl Kernel {
     pub(crate) fn existing(&self) -> Option<Arc<Compiled>> { kernels().get(self).and_then(Clone::clone) }
     /// This kernel's native code, compiled the first time and kept for the process (`KERNELS`), with the compile's time where this call compiled it. A kernel that failed to compile keeps its failure and isn't tried again.

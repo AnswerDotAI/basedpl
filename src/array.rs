@@ -1,6 +1,7 @@
+use crate::error::OrInternal;
 use crate::{
     Error, ErrorKind, Number, display::{Elide, positions}, eval::{Function, OperatorValue}, graph::Pending, keyed::Keys, number::Numeric,
-    primitive::{Operation, ReadOp, ViewAxis}, program::{Desc, trace::Tracing}
+    primitive::{Operation, ReadOp, ViewAxis}, program::Desc
 };
 use rustymath::{
     agreement::{Binding, Mapping, Read, ReadPlan}, buffer::{Buffer, ComplexBuf, DType, Element, FloatBuf, FloatWidth, Floats, IntBuf, View, Width}, error::Kind,
@@ -140,17 +141,12 @@ impl Layout {
     pub fn select(&self, axis: usize, positions: impl ExactSizeIterator<Item = Option<usize>>) -> Result<Self, ErrorKind> {
         Ok(Self::kept(self.core.select(axis, positions)?, self.renderer.clone()))
     }
-    /// Grows the first axis in place, keeping the renderer. `names` gives the keys of the new positions.
-    pub fn append(&mut self, len: usize, names: Option<&[Option<Arc<str>>]>) -> Result<(), ErrorKind> { Ok(self.core.append(len, names)?) }
     pub fn axes(&self, axes: impl Iterator<Item = usize> + Clone) -> Self { Self::bare(self.core.axes(axes)) }
     pub fn concat(&self, other: &Self) -> Self { Self::bare(self.core.concat(other)) }
-    pub(crate) fn contracted(&self, right: &Self) -> Self { Self::bare(self.core.contracted(right)) }
     /// The layout of a fold along `along` of an array of this layout. A scan keeps every axis. A fold keeps the names and keys of the axes it doesn't fold.
     pub(crate) fn folded(&self, scan: bool, along: usize) -> Self {
         if scan { self.clone() } else { self.axes((0..self.shape().len()).filter(|&a| a != along)) }
     }
-    /// Whether one of the first `frame` axes has a name.
-    pub(crate) fn frame_named(&self, frame: usize) -> bool { self.names().iter().take(frame).any(Option::is_some) }
     /// The array with this layout holding `items`. An empty array takes `prototype`.
     pub fn collect(&self, items: impl IntoIterator<Item = Value>, prototype: impl Prototype) -> Result<Value, ErrorKind> {
         Value::stored_values(self.clone(), items.into_iter().collect(), Some(prototype.value()), Widening::Items)
@@ -251,7 +247,7 @@ impl Cells<'_> {
             let size = self.cell_layout.count();
             return Ok(Value::stored_part(array, i * size..(i + 1) * size, self.cell_layout.clone())?);
         }
-        Operation::Read(ReadOp::Cell { rank: self.cell_layout.shape().len() }).call(&[Value::integer(i as i64), self.array.clone()], 0)
+        Operation::Read(ReadOp::Cell { rank: self.cell_layout.shape().len() }).call(&[Value::integer(i as i64), self.array.clone()])
     }
     pub fn prototype(&self) -> crate::error::Result<Value> { Ok(self.cell_layout.filled(&self.array.prototype())) }
     pub fn collect(&self) -> crate::error::Result<Vec<Value>> { (0..self.len()).map(|i| self.get(i)).collect() }
@@ -271,14 +267,53 @@ pub(crate) enum SharedBuffer { Owned(Buffer), View { base: Arc<ArrayData>, map: 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Trees(Vec<Tree>);
 
+/// A root's index among a call's trees: 1 per explicit argument, setting, implicit input and capture. List positions stay `usize`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct Root(pub(crate) u32);
+impl Root {
+    pub(crate) fn get(self) -> usize { self.0 as usize }
+    /// The root `count` roots after this one.
+    pub(crate) fn after(self, count: usize) -> Self { Self(self.0 + count as u32) }
+    /// The root `count` roots before this one, if there is one.
+    pub(crate) fn before(self, count: usize) -> Option<Self> { self.0.checked_sub(count as u32).map(Self) }
+}
+
+/// The roots from `start` up to, not including, `end`. Iterates like `Range<usize>`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct TreeRoot { pub(crate) index: usize, pub(crate) leaves: std::ops::Range<usize> }
-impl TreeRoot {
-    pub(crate) fn at(trees: Option<&Trees>, index: usize) -> TreeRoot {
-        trees.map_or_else(|| TreeRoot { index, leaves: index..index + 1 }, |trees| trees.roots().nth(index).expect("a call root"))
+pub(crate) struct Roots { pub(crate) start: Root, pub(crate) end: Root }
+impl Roots {
+    pub(crate) fn new(start: Root, end: Root) -> Self { Self { start, end } }
+    /// The last root, without consuming the range.
+    pub(crate) fn back(&self) -> Option<Root> { self.end.before(1).filter(|&root| root >= self.start) }
+}
+impl Iterator for Roots {
+    type Item = Root;
+    fn next(&mut self) -> Option<Root> {
+        if self.start >= self.end { return None; }
+        let root = self.start;
+        self.start = root.after(1);
+        Some(root)
     }
-    pub(crate) fn shifted(&self, roots: usize, leaves: usize) -> Self {
-        Self { index: self.index + roots, leaves: self.leaves.start + leaves..self.leaves.end + leaves }
+    fn size_hint(&self) -> (usize, Option<usize>) { let n = self.end.get().saturating_sub(self.start.get()); (n, Some(n)) }
+}
+impl DoubleEndedIterator for Roots {
+    fn next_back(&mut self) -> Option<Root> {
+        if self.start >= self.end { return None; }
+        self.end = Root(self.end.0 - 1);
+        Some(self.end)
+    }
+}
+impl ExactSizeIterator for Roots {}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct TreeRoot { pub(crate) index: Root, pub(crate) leaves: std::ops::Range<usize> }
+impl TreeRoot {
+    pub(crate) fn at(trees: Option<&Trees>, index: Root) -> TreeRoot {
+        trees.map_or_else(|| TreeRoot { index, leaves: index.get()..index.get() + 1 }, |trees| trees.roots().nth(index.get()).expect("a call root"))
+    }
+    /// This capture-relative root as a root of the whole call, whose captures start at root `roots` and list position `leaves`.
+    pub(crate) fn shifted(&self, roots: Root, leaves: usize) -> Self {
+        Self { index: roots.after(self.index.get()), leaves: self.leaves.start + leaves..self.leaves.end + leaves }
     }
 }
 
@@ -376,11 +411,11 @@ impl Trees {
     pub(crate) fn leaves(count: usize) -> Self { Self(vec![Tree::Leaf; count]) }
     pub(crate) fn push_leaf(&mut self) { self.0.push(Tree::Leaf); }
     pub(crate) fn push_tree(&mut self, tree: Tree) { self.0.push(tree); }
-    pub(crate) fn insert_leaves(&mut self, root: usize, count: usize) { self.0.splice(root..root, std::iter::repeat_n(Tree::Leaf, count)); }
+    pub(crate) fn insert_leaves(&mut self, root: Root, count: usize) { self.0.splice(root.get()..root.get(), std::iter::repeat_n(Tree::Leaf, count)); }
     pub(crate) fn push(&mut self, value: &Value, leaves: &mut Vec<Value>) { self.0.push(Tree::of(value, leaves)); }
     pub(crate) fn append_root(&mut self, source: &Trees, root: &TreeRoot) { self.0.push(source.root_at(root).clone()); }
     pub(crate) fn root_at(&self, root: &TreeRoot) -> &Tree {
-        let tree = &self.0[root.index];
+        let tree = &self.0[root.index.get()];
         debug_assert_eq!(tree.len(), root.leaves.len());
         tree
     }
@@ -402,7 +437,6 @@ impl Trees {
     }
     pub(crate) fn concat(&self, other: &Trees) -> Trees { Self(self.0.iter().chain(&other.0).cloned().collect()) }
     pub(crate) fn project_roots(&self, roots: &[TreeRoot]) -> Trees { Self(roots.iter().map(|root| self.root_at(root).clone()).collect()) }
-    pub(crate) fn without_root(&self, root: &TreeRoot) -> Self { Self(self.0[..root.index].iter().chain(&self.0[root.index + 1..]).cloned().collect()) }
     pub(crate) fn build(&self, leaves: &[Value]) -> Vec<Value> {
         let mut leaves = leaves.iter().cloned();
         self.0.iter().map(|tree| tree.build(&mut leaves)).collect()
@@ -412,10 +446,9 @@ impl Trees {
         self.0.iter().enumerate().scan(0, |start, (index, tree)| {
             let first = *start;
             *start += tree.len();
-            Some(TreeRoot { index, leaves: first..*start })
+            Some(TreeRoot { index: Root(index as u32), leaves: first..*start })
         })
     }
-    pub(crate) fn leaf_ranges(&self) -> impl Iterator<Item = std::ops::Range<usize>> + '_ { self.roots().map(|root| root.leaves) }
 }
 
 impl ArrayData {
@@ -515,7 +548,7 @@ pub(crate) fn read_stored<'a>(desc: &Desc, route: &ReadPlan, value: impl Fn(usiz
     let mut inputs: Vec<(usize, View<'_>, ReadPlan)> = Vec::new();
     let plan = route.compose_inputs(&mut |source, _| {
         if let Some((_, _, plan)) = inputs.iter().find(|(prior, _, _)| *prior == source) { return Ok(plan.clone()); }
-        let (view, plan) = value(source).and_then(|value| value.physical_read(inputs.len())).ok_or_else(Error::planning)?;
+        let (view, plan) = value(source).and_then(|value| value.physical_read(inputs.len())).or_internal()?;
         inputs.push((source, view, plan.clone()));
         Ok::<_, Error>(plan)
     })?;
@@ -524,9 +557,10 @@ pub(crate) fn read_stored<'a>(desc: &Desc, route: &ReadPlan, value: impl Fn(usiz
 }
 
 impl Value {
-    /// A current description-only dependency; its ordinary Input node refuses any attempt to read DATA.
-    pub(crate) fn metadata(desc: Option<Desc>) -> Value {
-        Value::Pending(Pending::data(crate::graph::Node::input(0, None, desc, crate::program::trace::Role::StandIn, None, None), 0))
+    /// A description-only stand-in for an array of `layout`, as a read's axes reference; its Input node refuses any attempt to read its items.
+    pub(crate) fn stand_in(layout: Layout) -> Value {
+        let desc = Desc::new(crate::number::Kind::stored(DType::Boolean, false, false), false, layout);
+        Value::Pending(Pending::data(crate::graph::Node::input(0, None, Some(desc), crate::program::trace::Role::StandIn, None, None), 0))
     }
     pub(crate) fn cacheable_metadata(&self) -> bool {
         match self {
@@ -542,11 +576,11 @@ impl Value {
     pub(crate) fn zeros_like(&self) -> Result<Value, Error> {
         map_leaves(self, |leaf| {
             let Some(desc) = Desc::of(leaf).filter(|desc| desc.dtype() != DType::Character) else { return Ok(leaf.clone()); };
-            let zero = desc.zero();
-            if leaf.is_atom() { return Tracing::literal(zero); }
-            if leaf.rank() == 0 { return Operation::Read(ReadOp::Reshape).call(&[Value::integers([0], Vec::new())?, zero], 2); }
+            let zero = Value::constant(desc.zero());
+            if leaf.is_atom() { return Ok(zero); }
+            if leaf.rank() == 0 { return Operation::Read(ReadOp::Reshape).call(&[Value::integers([0], Vec::new())?, zero]); }
             let axes = (0..leaf.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
-            Operation::Read(ReadOp::Axes { axes, destinations: Box::new([]) }).call(&[zero, leaf.clone()], 1)
+            Operation::Read(ReadOp::Axes { axes, destinations: Box::new([]) }).call(&[zero, leaf.clone()])
         })
     }
     /// Expose host containers without reading their native pending children or removing transform levels.
@@ -564,7 +598,7 @@ impl Value {
         })
     }
     pub fn read(&self, read: crate::program::trace::ReadKind) -> Result<Value, Error> {
-        if read == crate::ReadKind::Description { return Err(Error::planning()); }
+        if read == crate::ReadKind::Description { return Err(Error::internal()); }
         map_leaves(self, |leaf| match leaf {
             Self::Pending(pending) => {
                 pending.node.clone().into_storage(pending.output.ok_or_else(|| Error::domain("control completion cannot be read as data"))?, read)
@@ -588,6 +622,28 @@ impl Value {
     }
 
     pub(crate) fn pending(&self) -> Option<&Pending> { if let Self::Pending(p) = self { Some(p) } else { None } }
+    /// A constant (target part 4): `value` with each leaf a literal node, which traces and forced graphs read as a constant keyed by value. Functions, pending and carried values stay as they are.
+    pub(crate) fn constant(value: Value) -> Value {
+        let mark = |value: Value| match value {
+            Value::Function(_) | Value::Pending(_) | Value::Carried { .. } => value, value => Value::Pending(Pending::data(crate::graph::Node::literal(value), 0))
+        };
+        match flatten(std::slice::from_ref(&value)) {
+            Some((trees, leaves)) => trees.build(&leaves.into_iter().map(mark).collect::<Vec<_>>()).pop().expect("a value flattens to 1 root"),
+            None => mark(value),
+        }
+    }
+    /// The value a literal node holds; `None` for any other value.
+    pub(crate) fn constant_value(&self) -> Option<&Value> { self.pending().filter(|pending| pending.node.is_literal())?.completed() }
+    /// Where a pending value's metadata comes from: its description, else the value it completed to, as for a nested literal node (target part 2).
+    fn pending_metadata(pending: &Pending) -> std::result::Result<&crate::program::Desc, Option<&Value>> { pending.description().ok_or_else(|| pending.completed()) }
+    /// This value as data: each literal node becomes the value it holds, keeping a number's weakness; nothing else changes. A recorded body takes its inputs through it; host code reading an item takes it through this or `read`, while containers hold items unread (target part 4).
+    pub(crate) fn data(&self) -> Value {
+        let leaf = |value: &Value| value.constant_value().unwrap_or(value).clone();
+        match flatten(std::slice::from_ref(self)) {
+            Some((trees, leaves)) => trees.build(&leaves.iter().map(leaf).collect::<Vec<_>>()).pop().expect("a value flattens to 1 root"),
+            None => leaf(self),
+        }
+    }
     pub(crate) fn level(&self) -> Option<usize> { self.level_with_pending(true) }
     pub(crate) fn carried_level(&self) -> Option<usize> { self.level_with_pending(false) }
     fn level_with_pending(&self, pending: bool) -> Option<usize> {
@@ -620,7 +676,7 @@ impl Value {
     pub(crate) fn kind(&self) -> Option<crate::number::Kind> {
         match self {
             Self::Number(n) => crate::number::Kind::number(n), Self::Character(_) => Some(crate::number::Kind::stored(DType::Character, false, false)),
-            Self::Array(array) => array.kind(), Self::Pending(pending) => pending.description().map(|desc| desc.kind),
+            Self::Array(array) => array.kind(), Self::Pending(pending) => Self::pending_metadata(pending).map_or_else(|value| value.and_then(Value::kind), |desc| Some(desc.kind)),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.kind(), Carried::Batch { cell, .. } => Some(cell.kind) },
             _ => None
         }
@@ -629,7 +685,7 @@ impl Value {
         match self {
             Self::Number(n) => Some(n.lossless_float().map_or_else(|| n.dtype().map_or(Range::ANY, Range::of_dtype), |n| Range::of(Some(n)))),
             Self::Character(_) => None, Self::Array(array) => match &**array { ArrayData::Compact { range, .. } => *range, _ => None },
-            Self::Pending(pending) => pending.description().and_then(|desc| desc.range),
+            Self::Pending(pending) => Self::pending_metadata(pending).map_or_else(|value| value.and_then(Value::range), |desc| desc.range),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.range(), Carried::Batch { cell, .. } => cell.range },
             _ => None
         }
@@ -637,7 +693,7 @@ impl Value {
     pub fn is_atom(&self) -> bool {
         match self {
             Self::Array(_) => false,
-            Self::Pending(p) => p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").is_atom(), |desc| desc.atom),
+            Self::Pending(p) => Self::pending_metadata(p).map_or_else(|value| value.expect("host metadata is observed before use").is_atom(), |desc| desc.atom),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.is_atom(), Carried::Batch { cell, .. } => cell.atom },
             _ => true,
         }
@@ -646,7 +702,7 @@ impl Value {
         static ATOM: Layout = Layout::EMPTY;
         match self {
             Self::Array(array) => array.layout(),
-            Self::Pending(p) => p.description().map_or_else(|| p.completed().expect("host metadata is observed before use").layout(), |desc| &desc.layout),
+            Self::Pending(p) => Self::pending_metadata(p).map_or_else(|value| value.expect("host metadata is observed before use").layout(), |desc| &desc.layout),
             Self::Carried { carried, .. } => match &**carried { Carried::Dual { primal, .. } => primal.layout(), Carried::Batch { cell, .. } => &cell.layout },
             _ => &ATOM,
         }
@@ -688,7 +744,6 @@ impl Value {
         }, crate::number::Kind::is_exact)
     }
     pub fn is_integral(&self) -> bool { self.dtype().is_some_and(DType::is_integral) || matches!(self, Self::Number(n) if n.is_integral()) }
-    pub(crate) fn holds_values(&self) -> bool { matches!(self, Self::Array(a) if matches!(&**a, ArrayData::Mixed { .. })) }
     pub(crate) fn holds_mixed(&self) -> bool { matches!(self, Self::Array(a) if matches!(&**a, ArrayData::Mixed { .. })) }
     pub(crate) fn is_simple(&self) -> bool { self.kind().is_some() }
     pub fn holds_functions(&self) -> bool {
@@ -800,7 +855,6 @@ impl Value {
     pub fn as_booleans(&self) -> Option<&[bool]> { match self.view()? { View::Booleans(v) => Some(v), _ => None } }
     pub fn at(&self, i: usize) -> Value { self.at_ref(i).into_owned() }
     pub(crate) fn at_ref(&self, i: usize) -> Cow<'_, Value> { self.as_items().item_ref(i) }
-    pub(crate) fn element(&self, i: usize) -> Value { self.at(i) }
     pub fn elements(&self) -> impl DoubleEndedIterator<Item = Value> + ExactSizeIterator + Clone + '_ { (0..self.len()).map(|i| self.at(i)) }
     pub(crate) fn items(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Value> + '_ { range.map(|i| self.at(i)) }
     pub fn as_number(&self) -> Option<Number> { self.is_unit().then(|| match self.at(0) { Self::Number(n) => Some(n), _ => None }).flatten() }
@@ -829,8 +883,11 @@ impl Value {
         if items.is_empty() && let Some(kind) = prototype.as_ref().filter(|value| value.is_atom()).and_then(Value::kind) {
             return Self::stored_buffer(layout, Buffer::with_capacity(kind.dtype(), 0), kind.strong(), Some(Range::EMPTY));
         }
-        if let Some((buffer, kind)) = packed(&items, widening) {
-            return Ok(Self::Array(Arc::new(ArrayData::Compact { layout, kind, buffer: SharedBuffer::Owned(buffer), range: None })));
+        // Packing reads the items, so literal nodes give their values; a container packed only from constants is a constant (target part 4). Unpacked items stay unread.
+        let read = items.iter().any(|item| item.constant_value().is_some()).then(|| items.iter().map(Value::data).collect::<Vec<_>>());
+        if let Some((buffer, kind)) = packed(read.as_deref().unwrap_or(&items), widening) {
+            let value = Self::Array(Arc::new(ArrayData::Compact { layout, kind, buffer: SharedBuffer::Owned(buffer), range: None }));
+            return Ok(if !items.is_empty() && items.iter().all(|item| item.constant_value().is_some()) { Value::constant(value) } else { value });
         }
         Ok(Self::Array(Arc::new(ArrayData::Mixed { layout, prototype: items.is_empty().then(|| prototype.expect("an empty array has a prototype")),
             items: items.into() })))
@@ -899,7 +956,7 @@ impl Value {
     pub(crate) fn part(&self, range: std::ops::Range<usize>, layout: impl Into<Layout>) -> crate::error::Result<Self> {
         let layout = layout.into();
         if let Self::Array(array) = self { return Ok(Self::stored_part(array, range, layout)?); }
-        if matches!(self, Self::Pending(_) | Self::Carried { .. }) { return Err(Error::planning()); }
+        if matches!(self, Self::Pending(_) | Self::Carried { .. }) { return Err(Error::internal()); }
         if range != (0..1) || layout.count() != 1 { return Err(Kind::Length.into()); }
         Ok(Self::stored_values(layout, vec![self.clone()], Some(self.zeroed()), Widening::Items)?)
     }
@@ -973,12 +1030,6 @@ impl Value {
         let layout = Layout::kept(self.layout().core.clone().with_keys(vec![None; self.rank()])?, self.layout().renderer.clone());
         self.clone().with_layout(layout)
     }
-    pub(crate) fn unnamed_frame(self, rank: usize) -> crate::error::Result<Self> {
-        let mut names = self.axis_names().to_vec();
-        let frame = self.rank() - rank;
-        names[..frame].fill(None);
-        self.with_axis_names(names)
-    }
     pub(crate) fn is_view(&self) -> bool {
         matches!(self, Self::Array(array) if matches!(&**array, ArrayData::Compact { buffer: SharedBuffer::View { .. }, .. }))
     }
@@ -1006,10 +1057,8 @@ impl Value {
     }
     pub(crate) fn converted(&self, to: DType, _: Numeric, fixed: bool) -> crate::error::Result<Self> {
         let mark = crate::number::Mark::Type { dtype: to, fixed };
-        mark.conversion().call(&[self.clone()], 0)
+        mark.conversion().call(&[self.clone()])
     }
-    pub(crate) fn to_fixed(&self, width: Width, numeric: Numeric) -> crate::error::Result<Self> { self.converted(DType::Integer(width), numeric, true) }
-    pub(crate) fn to_float_width(&self, width: FloatWidth) -> crate::error::Result<Self> { self.converted(DType::Float(width), Numeric::current(), false) }
     pub(crate) fn wrapped(&self, numeric: Numeric) -> crate::error::Result<Self> {
         let Some(width) = numeric.wrap_width() else { return Ok(self.clone()); };
         if !matches!(self.dtype(), Some(DType::Integer(_))) { return Ok(self.clone()); }
@@ -1025,7 +1074,6 @@ impl Value {
             _ => self.clone(),
         }
     }
-    pub(crate) fn strong(&self) -> Self { match self { Self::Number(n) => Self::Number(n.clone().marked(false)), _ => self.clone() } }
     pub(crate) fn cells(&self, rank: usize) -> Result<Cells<'_>, ErrorKind> {
         let split = self.rank().checked_sub(rank).ok_or(Kind::Rank)?;
         let count = self.shape()[..split].iter().product();

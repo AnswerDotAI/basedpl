@@ -1,10 +1,10 @@
 //! One key policy: structural facts, 0/1/more lengths, and parameters by read purpose.
+use crate::error::OrInternal;
 use super::{Desc, Origin, Key, Length, Live, Mode, ProgramKey};
 use crate::program::trace::ReadKind;
 use crate::{
     Function, Number, Value, array::{Layout, Renderer, Trees}, error::Result, eval::OperatorKind, graph::Pending, primitive::{Operation, Primitive, Roles}
 };
-use rustymath::{buffer::DType, layout::Keys};
 use std::{hash::{Hash, Hasher}, sync::Arc};
 
 pub(crate) struct WeakKey<T>(std::sync::Weak<T>);
@@ -63,7 +63,7 @@ pub(crate) enum Parameter {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum KeyPart {
-    Stored(bool), Graph, Call, Node(usize), Output(Option<u32>), Source(usize), Operation(Operation), Mode(Mode), Roles(Roles), Literal(u64),
+    Stored(bool), Graph, Call, Node(usize), Output(Option<u32>), Source(usize), Operation(Operation), Mode(Mode), Roles(Roles),
     Arguments(usize, usize), Trees(Option<Arc<Trees>>), Captures(CaptureKey), Description { kind: crate::number::Kind, atom: bool, layout: LayoutKey },
     Physical(Vec<(u8, usize)>), Parameter(ReadKind, Parameter), Missing, SourceBase(bool, Option<Arc<str>>), Count(usize, Vec<KeyPart>), Primitive(Primitive),
     Operator(OperatorKind), Definition(WeakKey<crate::syntax::Definition>), Recorded(WeakKey<crate::eval::RecordedCode>), System(crate::system::SystemFunction),
@@ -126,7 +126,7 @@ impl Encoder {
         let stored = value.read_borrowed(purpose)?;
         let value = stored.as_ref();
         let parameter = match purpose {
-            ReadKind::Description | ReadKind::RuntimeOnly => return Err(crate::Error::planning()),
+            ReadKind::Description | ReadKind::RuntimeOnly => return Err(crate::Error::internal()),
             ReadKind::Kind if value.kind().is_some() => Parameter::Kind(value.kind().unwrap()),
             ReadKind::Count => {
                 let layout = self.layout(value.layout());
@@ -162,8 +162,18 @@ impl Encoder {
                 Parameter::Operator(key.parts)
             }
             Value::Array(_) => Parameter::Array(self.layout(value.layout()), value.elements().map(|item| self.parameter(&item)).collect::<Result<_>>()?),
-            Value::Pending(_) | Value::Carried { .. } => return Err(crate::Error::planning()),
+            Value::Pending(_) | Value::Carried { .. } => return Err(crate::Error::internal()),
         })
+    }
+
+    /// Key a function or operator atom by its structure; false for any other value.
+    pub(crate) fn callable(&mut self, value: &Value) -> Result<bool> {
+        match value {
+            Value::Function(function) => function.key_parts(self)?,
+            Value::Operator(operator) => operator.key_parts(self)?,
+            _ => return Ok(false),
+        }
+        Ok(true)
     }
 
     pub(crate) fn data(&mut self, value: &Value) {
@@ -191,20 +201,15 @@ pub(crate) fn call_key(function: &Function, origin: &Origin<&[Value]>) -> Result
     key.push(KeyPart::Mode(origin.mode));
     key.push(KeyPart::Roles(origin.roles.clone()));
     key.push(KeyPart::Arguments(origin.explicit as usize, origin.explicit_roots as usize));
-    key.push(KeyPart::Literal(origin.literals));
     key.push(KeyPart::Trees(origin.trees.clone()));
     key.push(KeyPart::Captures(CaptureKey::of(&origin.bindings)));
     key.context(&origin.operation, origin.site.as_ref());
     for (position, value) in origin.list.iter().enumerate() {
+        if key.callable(value)? { continue; }
+        if value.constant_value().is_some() { key.value(value, ReadKind::Value)?; continue; }
         let read = origin.read_kind(position);
-        match value {
-            Value::Function(function) => function.key_parts(&mut key)?,
-            value if position < 64 && origin.literals & (1 << position) != 0 => key.value(value, ReadKind::Value)?,
-            value => {
-                if read.is_none() || matches!(read, Some(ReadKind::Kind | ReadKind::Description)) { key.data(value); }
-                if let Some(read) = read.filter(|read| *read != ReadKind::Description) { key.value(value, read)?; }
-            }
-        }
+        if read.is_none() || matches!(read, Some(ReadKind::Kind | ReadKind::Description)) { key.data(value); }
+        if let Some(read) = read.filter(|read| *read != ReadKind::Description) { key.value(value, read)?; }
     }
     Ok(key.finish())
 }
@@ -212,7 +217,7 @@ pub(crate) fn call_key(function: &Function, origin: &Origin<&[Value]>) -> Result
 pub(crate) fn guard_key(origin: &super::Origin<&[Value]>, reads: &[super::Parameter]) -> Result<Key> {
     let mut key = Encoder::default();
     for parameter in reads {
-        if let super::Parameter::Input { position, read } = parameter { key.value(origin.list.get(*position).ok_or_else(crate::Error::planning)?, *read)?; }
+        if let super::Parameter::Input { position, read } = parameter { key.value(origin.list.get(*position).or_internal()?, *read)?; }
     }
     Ok(key.finish())
 }
@@ -238,21 +243,19 @@ pub(crate) fn graph_key(live: &Live) -> ProgramKey {
                 key.push(KeyPart::Mode(origin.mode));
                 key.push(KeyPart::Arguments(origin.explicit as usize, origin.explicit_roots as usize));
                 key.push(KeyPart::Roles(origin.roles.clone()));
-                key.push(KeyPart::Literal(origin.literals));
                 key.push(KeyPart::Trees(origin.trees.clone()));
                 key.push(KeyPart::Captures(CaptureKey::of(&origin.bindings)));
                 key.context(&origin.operation, origin.site.as_ref());
                 for (i, read) in origin.list.iter().enumerate() {
                     match &read.operand {
                         value @ Value::Pending(_) => reference(&mut key, value),
-                        value if i < 64 && origin.literals & (1 << i) != 0 => { key.value(value, ReadKind::Value).expect("a literal is stored"); }
                         value => {
                             key.push(KeyPart::Source(live.values[&super::Identity::of(value)]));
-                            if let Value::Function(function) = value {
-                                function.key_parts(&mut key).expect("a callable has a structural key");
-                            } else if let Some(read) = origin.read_kind(i).filter(|read| *read != ReadKind::Description) {
-                                key.value(value, read).expect("resolved call parameters");
-                            } else { key.data(value); }
+                            if !key.callable(value).expect("a callable has a structural key") {
+                                if let Some(read) = origin.read_kind(i).filter(|read| *read != ReadKind::Description) {
+                                    key.value(value, read).expect("resolved call parameters");
+                                } else { key.data(value); }
+                            }
                         }
                     }
                 }

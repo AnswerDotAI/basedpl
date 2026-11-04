@@ -95,7 +95,7 @@ impl Session {
         match to {
             To::Name(name, span) => self.store(*name, value.clone(), span),
             To::Output(span) => match value {
-                Binding::Value(a) => Operation::Effect(crate::primitive::Act::Output).call(&[a.clone()], 0).map(|_| ()).map_err(|error| error.at(span)),
+                Binding::Value(a) => Operation::Effect(crate::primitive::Act::Output).call(&[a.clone()]).map(|_| ()).map_err(|error| error.at(span)),
                 _ => Err(Error::domain("output requires a subject").at(span)),
             },
             To::Names(cells, span) => {
@@ -195,7 +195,7 @@ impl Session {
     /// Builds missing keyed containers. Each index expression runs once.
     fn extend(&self, layer: &Layer, run: &mut [Option<Value>], descend: bool) -> Result<(), Error> {
         let Some(split) = layer.split.as_ref().filter(|split| split.keyed) else { return Ok(()) };
-        let value = self.index(split, run)?;
+        let value = self.index(split, run)?.read(crate::ReadKind::Value)?;
         if !Selector::may_hold_names(&value) { return Ok(()); }
         let pick = split.p == Primitive::Mix;
         let items = if pick { coordinate_fields(&value).collect() } else { vec![value.clone()] };

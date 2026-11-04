@@ -9,7 +9,7 @@ step←{[[0]]⌷⍵ ←0 ⋄ ⍵}
 ⍝ `fib 16ₓ` makes 3193 calls of a dfn, each with up to four primitive calls on single numbers. Its cost is mostly the evaluator's own work for each call.
 ⍝ Expected: 64 copies: 3,193 dfn calls of about 150 ns each, for a frame, a guard and four scalar primitive calls.
 ⍝ Linux expects 109 copies, because scalar work costs about 1.7 times as many copies on CI's x86 runner, as `v⍳w`'s comment in `arrays.bpl` says.
-⍝⍝⍝ held macos 105 linux 189 wasm 156: each dfn call takes about 270 ns on macOS against the expected 150 (open.md, "Dfn calls")
+⍝⍝⍝ held macos 105 linux 189 wasm 156: each dfn call takes about 270 ns on macOS against the expected 150
 fib 16ₓ
 ⍝⍝: 96	170	96
 

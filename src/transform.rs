@@ -60,13 +60,12 @@ impl Levels {
 
 impl Level {
     pub(crate) fn begin(kind: LevelKind) -> Self { session().levels.begin(kind) }
-    pub(crate) fn end(self) { session().levels.end(self.id); }
     pub(crate) fn find(id: usize) -> Option<Self> { session().levels.find(id) }
     pub(crate) fn innermost_batched() -> Option<Self> { session().levels.innermost_batched() }
     pub(crate) fn current_batch_rule() -> Option<Self> { session().levels.current_batch_rule() }
 
     pub(crate) fn frame_reference(&self) -> Result<Value> {
-        let LevelKind::Batched { source, .. } = &self.kind else { return Err(crate::Error::planning()); };
+        let LevelKind::Batched { source, .. } = &self.kind else { return Err(crate::Error::internal()); };
         frame_reference(&source.references, &source.axes)
     }
 
@@ -94,8 +93,8 @@ impl Drop for Scope { fn drop(&mut self) { session().levels.end(self.level.id); 
 
 /// A frame from actual runtime sources; all references are description-only inputs.
 pub(crate) fn frame_reference(references: &[Value], axes: &[ViewAxis]) -> Result<Value> {
-    let arguments = std::iter::once(Value::integer(0)).chain(references.iter().cloned()).collect::<Vec<_>>();
-    Operation::Read(ReadOp::Axes { axes: axes.into(), destinations: Box::new([]) }).call(&arguments, 1)
+    let arguments = std::iter::once(Value::constant(Value::integer(0))).chain(references.iter().cloned()).collect::<Vec<_>>();
+    Operation::Read(ReadOp::Axes { axes: axes.into(), destinations: Box::new([]) }).call(&arguments)
 }
 pub(crate) fn carried(level: usize, carried: Carried) -> Value { Value::Carried { level, carried: Arc::new(carried) } }
 

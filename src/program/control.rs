@@ -1,21 +1,22 @@
 //! Agenda selection and ordinary cached case calls.
+use crate::error::OrInternal;
 use super::{Desc, Node, Origin, Outputs, Step};
 use crate::{
     Error, Function, Value, array::{Layout, Widening}, error::Result, number::{Kind, Kinds, Numeric},
     primitive::{CallView, RunView, Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis}, program::trace::{self, ReadKind}
 };
-use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth}, convert::ConversionKind, error::Kind as ErrorTag};
+use rustymath::{agreement::Mapping, buffer::DType, convert::ConversionKind, error::Kind as ErrorTag};
 
 fn roots(origin: &Origin<&[Value]>) -> Result<Vec<Value>> {
-    let mut roots = match &origin.trees { Some(trees) => trees.build(origin.list), None => origin.list[..origin.explicit as usize].to_vec() };
-    roots.truncate(origin.explicit_roots as usize);
+    let mut roots = match &origin.trees { Some(trees) => trees.build(origin.list), None => origin.list[origin.layout().explicit()].to_vec() };
+    roots.truncate(origin.layout().explicit_roots().len());
     roots.into_iter().map(|root| root.exposed()).collect()
 }
 
 pub(crate) struct Choice { pub(crate) desc: Desc, pub(crate) mappings: Vec<Mapping> }
 
 pub(crate) fn choice_sources(call: &CallView<'_>) -> Result<Vec<crate::array::TreeRoot>> {
-    Ok(call.explicit_argument_roots().skip(1).map(|root| call.root(root)).collect())
+    Ok(call.layout().arguments().skip(1).map(|root| call.layout().root(root)).collect())
 }
 
 fn choice_kind(mut kinds: impl Iterator<Item = Kind>, dynamic: bool) -> Option<Kind> {
@@ -23,12 +24,12 @@ fn choice_kind(mut kinds: impl Iterator<Item = Kind>, dynamic: bool) -> Option<K
     let widening = if dynamic { Widening::Items } else { Widening::Arrays };
     kinds.try_fold(first, |left, right| widening.join(left, right))
 }
-pub(crate) fn choice_total(call: &CallView<'_>) -> bool { call.explicit >= 3 && call.desc(0).is_some_and(|desc| desc.dtype() == DType::Boolean) }
+pub(crate) fn choice_total(call: &CallView<'_>) -> bool { call.layout().explicit().len() >= 3 && call.desc(0).is_some_and(|desc| desc.dtype() == DType::Boolean) }
 pub(crate) fn choice(call: &CallView<'_>) -> Result<Option<Choice>> {
     use crate::agreement::{Agree, Agreement};
-    if call.explicit < 2 { return Err(Error::domain("a choice needs a selector and at least one result")); }
-    if call.explicit_roots != call.explicit { return Ok(None); }
-    let Some(descs) = (0..call.explicit).map(|position| call.desc(position).map(|desc| desc.into_owned())).collect::<Option<Vec<_>>>() else { return Ok(None) };
+    if call.layout().explicit().len() < 2 { return Err(Error::domain("a choice needs a selector and at least one result")); }
+    if call.layout().explicit_roots().len() != call.layout().explicit().len() { return Ok(None); }
+    let Some(descs) = call.layout().explicit().map(|position| call.desc(position).map(|desc| desc.into_owned())).collect::<Option<Vec<_>>>() else { return Ok(None) };
     let Some(kind) = choice_kind(descs[1..].iter().map(|desc| desc.kind), call.mode.dynamic) else { return Ok(None); };
     let mut layout = descs[0].layout.clone();
     for desc in &descs[1..] { layout = Agreement::new(&layout, &desc.layout)?.layout; }
@@ -42,29 +43,29 @@ pub(crate) fn choice(call: &CallView<'_>) -> Result<Option<Choice>> {
 pub(crate) fn choice_build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<crate::primitive::RowResult> {
     let Some(choice) = choice(call)? else { return crate::primitive::host_build(call, set); };
     for (position, mapping) in choice.mappings.into_iter().enumerate() { set(position, mapping); }
-    Ok((Step::Picks { selector: 0, choices: 1..call.explicit as u32 }, Some(Outputs::one(Some(choice.desc))), None))
+    Ok((Step::Picks { selector: 0, choices: 1..call.layout().explicit().end as u32 }, Some(Outputs::one(Some(choice.desc))), None))
 }
 
 pub(crate) fn choice_code(call: &RunView<'_>) -> Result<Outputs<Value>> {
     use rustymath::{agreement::{Binding, Missing, Read}, buffer::Buffer};
-    let values = (0..call.explicit).map(|position| call.value(position, ReadKind::Value).map(std::borrow::Cow::into_owned)).collect::<Result<Vec<_>>>()?;
+    let values = call.layout().explicit().map(|position| call.value(position, ReadKind::Value).map(std::borrow::Cow::into_owned)).collect::<Result<Vec<_>>>()?;
     let origin = call.origin(values.as_slice());
     let prepared = Operation::prepare(&origin)?;
     let choice = choice(&prepared.view())?.ok_or_else(|| Error::domain("a choice needs native arrays"))?;
-    let physical = values.iter().enumerate().map(|(source, value)| value.physical_read(source).ok_or_else(Error::planning)).collect::<Result<Vec<_>>>()?;
+    let physical = values.iter().enumerate().map(|(source, value)| value.physical_read(source).or_internal()).collect::<Result<Vec<_>>>()?;
     let bindings = physical.iter().map(|(view, _)| Binding::full(*view)).collect::<Vec<_>>();
     let count = choice.desc.layout.count();
     let plans = physical.into_iter().zip(choice.mappings).map(|((_, plan), mapping)| plan.remapped(mapping, count, Missing::Default)).collect::<Vec<_>>();
     let reads = plans.iter().map(|plan| Read { plan, sources: &bindings }).collect::<Vec<_>>();
     let mut output = Buffer::with_capacity(choice.desc.dtype(), count);
     rustymath::operation::choose(
-        (reads[0], values[0].dtype().ok_or_else(Error::planning)?), &reads[1..], 0..count, choice.desc.dtype(), call.mode.dynamic && !choice_total(call),
+        (reads[0], values[0].dtype().or_internal()?), &reads[1..], 0..count, choice.desc.dtype(), call.mode.dynamic && !choice_total(call),
         &mut output)?;
     Ok(Outputs::one(Value::stored(&choice.desc, output)?))
 }
 
 fn call(parent: &Origin<&[Value]>, operation: Operation, values: &[Value]) -> Result<Value> {
-    let origin = crate::eval::projected_call(parent, operation, values, &vec![None; values.len()])?;
+    let origin = crate::eval::projected_call(parent, operation, values)?;
     Operation::dispatch(origin.reborrow())?.assemble()
 }
 fn choose(parent: &Origin<&[Value]>, values: &[Value]) -> Result<Value> {
@@ -85,9 +86,9 @@ impl Case {
             if !arguments.iter().flatten().any(|argument| argument.index == root.index) { return Ok(None); }
             let value = self.origin.trees.as_ref()
                 .map_or_else(|| self.origin.list[root.leaves.start].clone(), |trees| trees.at_root(root, &self.origin.list).into_owned());
-            if value.is_unit() && root.index != self.origin.explicit_roots as usize - 1 { return Ok(None); }
+            if value.is_unit() && Some(root.index) != self.origin.layout().explicit_roots().last() { return Ok(None); }
             let value = selected_cells(&self.origin.reborrow(), &value, frame, rows)?;
-            Ok(Some(crate::eval::RootReplacement::value(&value, None)))
+            Ok(Some(crate::eval::RootReplacement::value(&value)))
         })?;
         Operation::dispatch(bound.reborrow())?.assemble()
     }
@@ -209,10 +210,9 @@ pub(crate) fn form(origin: Origin<&[Value]>, _call: &CallView<'_>) -> Result<Opt
     let roots = roots(&origin)?;
     let selector = &roots[count];
     let args = &roots[count + 1..];
-    let from = (count + 1..origin.explicit_roots as usize).map(|root| Some(origin.root_boundary(root))).collect::<Vec<_>>();
     let cases = roots[..count].iter().map(|value| {
-        let Value::Function(function) = value else { return Err(Error::planning()); };
-        Ok(Case { function: function.clone(), origin: function.bound(&origin, args, &from)? })
+        let Value::Function(function) = value else { return Err(Error::internal()); };
+        Ok(Case { function: function.clone(), origin: function.bound(&origin, args)? })
     }).collect::<Result<Vec<_>>>()?;
     if selector.is_unit() {
         let position = selector_positions(selector, count, origin.mode.dynamic)?[0];
@@ -220,7 +220,7 @@ pub(crate) fn form(origin: Origin<&[Value]>, _call: &CallView<'_>) -> Result<Opt
         return Operation::dispatch(cases[position].origin.reborrow()).map(Some);
     }
     if let Some(result) = masked(&origin, selector, args, &cases)? { return Ok(Some(result)); }
-    let right = args.last().ok_or_else(Error::planning)?;
+    let right = args.last().or_internal()?;
     let (axes, groups) = selected_rows(selector, right, count, origin.mode.dynamic)?;
     let frame = right.layout().axes(axes.iter().copied());
     let argument_cell = right.layout().axes((0..right.rank()).filter(|axis| !axes.contains(axis)));
@@ -255,7 +255,7 @@ pub(crate) fn form(origin: Origin<&[Value]>, _call: &CallView<'_>) -> Result<Opt
         let dimensions = axes.iter().map(|&axis| ViewAxis { input: 1, axis: Some(axis) })
             .chain((0..cell.shape().len()).map(|axis| ViewAxis { input: 2, axis: Some(axis) })).collect();
         let mut result =
-            call(&origin, Operation::Read(ReadOp::Axes { axes: dimensions, destinations: Box::new([]) }), &[zero, right.clone(), cell.filled(&prototype)])?;
+            call(&origin, Operation::Read(ReadOp::Axes { axes: dimensions, destinations: Box::new([]) }), &[zero, right.clone(), Value::stand_in(cell.clone())])?;
         for (index, value) in made {
             let mut shape = vec![groups[index].len()];
             shape.extend_from_slice(cell.shape());
@@ -275,9 +275,8 @@ pub(crate) fn form(origin: Origin<&[Value]>, _call: &CallView<'_>) -> Result<Opt
             }
             Made::Fill(value) => {
                 let scalar = call(&origin, Operation::Read(ReadOp::Item), &[value])?;
-                let reference = cell.filled(&prototype);
                 let axes = (0..cell.shape().len()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
-                let spread = call(&origin, Operation::Read(ReadOp::Axes { axes, destinations: Box::new([]) }), &[scalar, reference])?;
+                let spread = call(&origin, Operation::Read(ReadOp::Axes { axes, destinations: Box::new([]) }), &[scalar, Value::stand_in(cell.clone())])?;
                 for &row in &groups[index] { values[row] = spread.clone(); }
             }
         }
@@ -313,7 +312,7 @@ pub(crate) fn frame_reference(frame: &Layout, sources: &[(Value, usize)]) -> Res
             }
         }
     }
-    let axes = axes.into_iter().map(|axis| axis.ok_or_else(Error::planning)).collect::<Result<Vec<_>>>()?;
+    let axes = axes.into_iter().map(|axis| axis.or_internal()).collect::<Result<Vec<_>>>()?;
     crate::transform::frame_reference(&references, &axes)
 }
 

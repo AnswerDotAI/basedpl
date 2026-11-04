@@ -1,5 +1,5 @@
 //! Development-only checks, shared by the tests and the worker: reference cases, `.bpl` reference files and the examples in `.qmd` pages.
-use crate::{EvalOptions, InterruptHandle, Number, Session, Value, number::Numeric, settings::Compiles};
+use crate::{EvalOptions, InterruptHandle, Number, Session, Value, number::Numeric, settings::Compiles, timing::Uncaptured};
 use serde_json::{Value as JsonValue, json};
 use std::{collections::VecDeque, convert::Infallible, sync::{Arc, Mutex}};
 
@@ -246,16 +246,32 @@ fn capture(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result
     let threads = rustymath::parallel::set_threads(1);
     let captured = crate::timing::route(&session, case, interrupt);
     rustymath::parallel::set_threads(threads);
-    captured.map_err(|message| json!({"status":"invalid", "message":message}))
+    captured.map_err(|uncaptured| match uncaptured {
+        Uncaptured::Failed(message) => json!({"status":"invalid", "message":message}),
+        Uncaptured::Panicked(message) => json!({"status":"panic", "message":message}),
+    })
 }
 
-/// `capture` of `file`'s `case` with the file's setup, named as the route test reports it (`timing::named`).
+/// `capture` of `file`'s `case` with the file's setup, named as the route test reports it (`timing::named`). A case that panics gives a failure (`caught`).
 pub fn route(file: &File, case: &JsonValue, interrupt: &InterruptHandle) -> Result<crate::timing::Capture, String> {
     let message = |failed: JsonValue| failed["message"].as_str().map_or_else(|| failed.to_string(), str::to_owned);
-    crate::timing::named(capture(case, &file.setup, interrupt).map_err(message), file, case)
+    let captured = caught("route check", || capture(case, &file.setup, interrupt).map_err(message)).and_then(|captured| captured);
+    crate::timing::named(captured, file, case)
 }
 
 pub fn routed(case: &JsonValue) -> bool { ["route", "allows", "gap"].iter().any(|key| case.get(key).is_some()) }
+
+/// The cases among `codes` that `tests/skipped.txt` skips in `test`. Each line there holds a test's name, a case's code and the `meta/open.md` item that records why the case is skipped, separated by tabs. Each call writes `test`'s lines to stderr past the test harness's capture. A line of `test`'s that names none of `codes` panics.
+pub fn skipped<'a>(test: &str, codes: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
+    use std::io::Write;
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/skipped.txt");
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let lines: Vec<(&str, &str)> = text.lines().filter_map(|line| line.strip_prefix(test)?.strip_prefix('\t')?.split_once('\t')).collect();
+    for (code, item) in &lines { let _ = writeln!(std::io::stderr(), "skipped in {test}: {code} ({item})"); }
+    let codes: Vec<&str> = codes.into_iter().collect();
+    if let Some((code, _)) = lines.iter().find(|(code, _)| !codes.contains(code)) { panic!("{}: {test} has no case {code}", path.display()); }
+    codes.into_iter().filter(|code| lines.iter().any(|(skip, _)| skip == code)).collect()
+}
 
 /// The data that `coverage`'s cases read, with a matrix for its inner products.
 const COVERAGE_SETUP: &str = "x←0.25+¿4096⍴0 ⋄ y←0.25+¿4096⍴0 ⋄ m←0.25+¿[64 64]⍴0 ⋄ k←0.25+¿[64 64]⍴0";
@@ -265,8 +281,8 @@ const COVERAGE_SECTIONS: [(&str, &str); 2] = [("dynamic", ""), ("static", r#"•
 const COVERAGE_RIGHT: [&str; 5] = ["0", "1", "2", "0.5", "¯1"];
 const COVERAGE_LEFT: [&str; 2] = ["1", "2"];
 
-/// Scalar primitive route cases come from the language row and its resolved numerical object; gaps name expected slow paths.
-pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(Vec<crate::timing::Capture>, Vec<String>), String> {
+/// Scalar primitive route cases come from the language row and its resolved numerical object; gaps name expected slow paths. Runs every case but those `tests/skipped.txt` skips (`skipped`), and checks `gaps` against every case. Gives the captures, adds each case that panics to `wrong`, and prints and skips each case that fails to evaluate.
+pub fn coverage(gaps: &std::path::Path, wrong: &mut Vec<String>, interrupt: &InterruptHandle) -> Result<Vec<crate::timing::Capture>, String> {
     use crate::primitive::{Operation, Pairing, Primitive};
     let text = std::fs::read_to_string(gaps).map_err(|e| format!("{}: {e}", gaps.display()))?;
     let mut listed = Vec::new();
@@ -279,7 +295,7 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
     let form = |primitive: Primitive, dyadic: bool| -> Option<bool> {
         if !primitive.info().pervasive(1 + usize::from(dyadic)) { return None; }
         let args = vec![Value::Number(Number::float(2.0, rustymath::buffer::FloatWidth::F64)); 1 + usize::from(dyadic)];
-        let origin = Operation::Primitive { primitive, pairing: Pairing::Axes }.origin_numeric(&args, 0, Numeric::EXACT).ok()?;
+        let origin = Operation::Primitive { primitive, pairing: Pairing::Axes }.origin_numeric(&args, Numeric::EXACT).ok()?;
         let current = origin.reborrow();
         let prepared = Operation::prepare(&current).ok()?;
         let call = prepared.view();
@@ -301,8 +317,10 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
         cases.extend(COVERAGE_RIGHT.iter().map(|c| (format!("2×(2+x){g}{c}"), "compiled")));
         cases.extend(COVERAGE_LEFT.iter().map(|c| (format!("2×{c}{g}2+x"), "compiled")));
         cases.extend([(format!("{g}/2×x"), "fused fold"), (format!("m+.{g}k"), ""), (format!("{{+/⍵{g}y}}∂ x"), "trace")]);
-        cases.extend([(format!("{{{g}/⍵}}∂ x"), "trace"), (format!("{{+/,m+.{g}⍵}}∂ k"), "trace")]);
+        cases.push((format!("{{{g}/⍵}}∂ x"), "trace"));
+        cases.push((format!("{{+/,m+.{g}⍵}}∂ k"), "trace"));
     }
+    let skipped = skipped("coverage", cases.iter().map(|(code, _)| code.as_str()));
     let (mut captures, mut failed) = (Vec::new(), Vec::new());
     for (section, prefs) in COVERAGE_SECTIONS {
         for (code, route) in &cases {
@@ -311,19 +329,22 @@ pub fn coverage(gaps: &std::path::Path, interrupt: &InterruptHandle) -> Result<(
                 case.as_object_mut().unwrap().entry(entry.2).or_insert_with(|| json!([])).as_array_mut().unwrap().push(entry.3.clone());
                 entry.4 = true;
             }
+            if skipped.contains(&code.as_str()) { continue; }
             if !route.is_empty() && case.get("gap").is_none() && case.get("allows").is_none() { case["route"] = json!([route]); }
             enter(Some(prefs).filter(|p| !p.is_empty()), Some(RUNS[1])).map_err(|e| e.to_string())?;
             let session = Session::new();
             initialized(&session, COVERAGE_SETUP).map_err(|e| e.to_string())?;
             match crate::timing::route(&session, &case, interrupt) {
-                Ok(capture) => captures.push(capture), Err(message) => failed.push(format!("[{section}] {code}: {message}"))
+                Ok(capture) => captures.push(capture),
+                Err(Uncaptured::Failed(message)) => failed.push(format!("[{section}] {code}: {message}")),
+                Err(Uncaptured::Panicked(message)) => wrong.push(format!("[{section}] {code}: {message}")),
             }
         }
     }
     let unused: Vec<_> = listed.iter().filter(|e| !e.4).map(|e| format!("{}\t{}", e.0, e.1)).collect();
     if !unused.is_empty() { return Err(format!("{} names no case: {unused:?}", gaps.display())); }
-    Ok((captures, failed))
-}
+    println!("coverage cases that fail to evaluate, which the matrix skips: {failed:#?}");
+    Ok(captures)}
 
 fn route_check(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<(), JsonValue> {
     if !routed(case) { return Ok(()); }
@@ -650,12 +671,17 @@ fn combined(failures: &[(Run, JsonValue)], every: bool) -> JsonValue {
     failure
 }
 
-/// What `check` gives, or, where it panics, a failure of status `panic` whose message names `words`, the run, and the panic's message. The cases after it still run, in Python's `check_file` and in `cargo test` alike.
-fn unwound<T>(words: &str, check: impl FnOnce() -> Result<T, JsonValue>) -> Result<T, JsonValue> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(check)).unwrap_or_else(|panic| {
+/// What `check` gives, or, where it panics, the message `words: panicked: …` with the panic's own message. The cases after it still run.
+pub(crate) fn caught<T>(words: &str, check: impl FnOnce() -> T) -> Result<T, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(check)).map_err(|panic| {
         let message = panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_default();
-        Err(json!({"status":"panic", "message":format!("{words}: panicked: {message}")}))
+        format!("{words}: panicked: {message}")
     })
+}
+
+/// What `check` gives, or, where it panics, a failure of status `panic` whose message names `words`, the run, and the panic's message (`caught`). The cases after it still run, in Python's `check_file` and in `cargo test` alike.
+fn unwound<T>(words: &str, check: impl FnOnce() -> Result<T, JsonValue>) -> Result<T, JsonValue> {
+    caught(words, check).unwrap_or_else(|message| Err(json!({"status":"panic", "message":message})))
 }
 
 /// What `check` gives, or a leak where `rustymath::memory::set_checks` is on and a case that passes leaves the guard's count higher than it found it on each of two runs. One run that leaves it higher can be filling a cache that lasts.

@@ -128,7 +128,7 @@ kx kmeans kc
 ⍝ The same cost in index notation. Both forms are kept because they trade speed for accuracy. The tacit form expands each squared distance as |x|²+|c|²−2x·c, which runs as one matrix product and stays faster, but loses accuracy where a point is near a centre, because the terms nearly cancel. The index form subtracts first, so its error stays proportional to the distance.
 ⍝ Expected: 208 copies natively and 410 in wasm: 33.5 million differences, each squared and summed, 1,536 flops an item, at 8 in a copy's time for rustymath's own kernels and 4 in wasm; and the million distances, written and then read by the `⌊` fold, about 16 natively and 24 in wasm.
 ⍝ On 27 October 2026 it measured 1,089 on macOS, while its fold copied `x.[n d]` across all 33,554,432 items of the grid ("repeats of each item"). Since that fold reads the repeats in place, it measures about 780.
-⍝⍝⍝ held macos 781 linux 1399 wasm 3423: the fold over the grid runs at about 0.2 ns an item, where a fold that kept its sums in registers would come near the expected cost (open.md, "Fused folds with `inner` above 1")
+⍝⍝⍝ held macos 781 linux 1399 wasm 3423: the fold over the grid runs at about 0.2 ns an item, where a fold that kept its sums in registers would come near the expected cost
 kx kmeansi kc
 ⍝⍝: 320	320	620
 
@@ -150,14 +150,14 @@ kx kmeansi kc
 ⍝ One step of heat diffusion on a 512 by 512 grid, 4 times `n`, reading each cell's four neighbours through `•edge`'s clamped positions.
 ⍝ Expected: 9 copies: one fused pass of seven calls over 262,144 items, which reads each neighbour from forward runs, as `hu+0.2×(hu+hu+hu+hu)-4×hu` measures it. Wasm, twice that.
 ⍝ On 27 October 2026 it measured 26 to 31 on macOS.
-⍝⍝⍝ held macos 26 linux 44.7 wasm 58.1: its two column-shifted reads through `•edge`'s clamped positions copy their whole input, because a run of positions doesn't end at a row's edge, and ending runs there costs more than the copy saves (open.md, "Heat's clamped column reads")
+⍝⍝⍝ held macos 26 linux 44.7 wasm 58.1: its two column-shifted reads through `•edge`'s clamped positions copy their whole input, because a run of positions doesn't end at a row's edge, and ending runs there costs more than the copy saves
 heat hu
 ⍝⍝: 18	18	36
 
 ⍝ The loss of one convolutional layer with tanh units: 8 images of 3 channels, each 32 by 32, into 16 channels through a 3 by 3 kernel, against the targets `cy`.
 ⍝ Expected: 29 copies on macOS, 39 on Linux and 78 in wasm: the windows' copy, 221,184 items, about 3.4; a product of 3.5 million multiply-adds, 108 flops an item, which takes 3.6 at Accelerate's rank-k rate, 13.5 at 8 in a copy's time for rustymath's own kernels and 27 at 4 in wasm; `7○` on 131,072 items, 20 natively and 40 in wasm; and the loss's pass, about 2.
 ⍝ On 27 October 2026 it measured 111 to 125 on macOS, because a fold computed its argument, a copy of 1,572,864 items, instead of reading through its group. Since the fold along `c`, `a` and `b` runs as one product (`eval::folded_along`), it measures 56 to 75, the higher figures during a video call. In one timing during the call, the convolution took about half of the case's time, against its expected 7 copies of 29, and the same convolution over the interior windows alone, without `•edge`, took about two thirds of that for 88% as many windows. `•explain` declines to read 352,256 items in place: the windows and the result's transpose.
-⍝⍝⍝ held macos 55 linux 81 wasm 130: the gap from the expected 29 isn't placed (open.md, "Convolution loss")
+⍝⍝⍝ held macos 55 linux 81 wasm 130: the gap from the expected 29 isn't placed
 ⍝⍝⍝ allows forced "+.×": a matrix product reads its arguments whole
 cx closs ck
 ⍝⍝: 58	78	120
@@ -252,7 +252,7 @@ kx kmeansi∂ kc
 ⍝⍝⍝ busy wasm 3595: its data passes CI's L2 (open.md, "Footprint copies")
 ⍝⍝⍝ gap stopped "a result whose type depends on values": normalization should keep guarded real traces through square root and logarithm
 ⍝⍝⍝ allows forced "+.×⍤2": a matrix product reads its arguments whole
-⍝⍝⍝ gap forced "+/": the gradient's fold of 65,536 items should run in its pending argument's fused pass (open.md, "Dynamic `dec∂`'s fold")
+⍝⍝⍝ gap forced "+/": the gradient's fold of 65,536 items should run in its pending argument's fused pass
 [tid ttg] dec∂ tp
 ⍝⍝: 700	1400	2700
 

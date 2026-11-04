@@ -34,6 +34,15 @@ doctest = false
 # Without a unit-test build, `cargo test` compiles the library only once.
 test = false
 
+# The timing suite and the speed cases' route test: plain `cargo test` skips them; `cargo test --test speed` and `cargo test --test routes` run them.
+[[test]]
+name = "speed"
+test = false
+
+[[test]]
+name = "routes"
+test = false
+
 [profile.test]
 inherits = "release"
 
@@ -81,7 +90,8 @@ plotters = { git = "https://github.com/AnswerDotAI/plotters.git", branch = "mast
 base64 = ">=0.22.1, <1"
 stacker = ">=0.1.25, <1"
 bytemuck = { version = ">=1.25.2, <2", features = ["extern_crate_alloc"] }
-json5 = ">=1.3.1, <2"
+# 1.3.7 rounds integers beyond 64 bits to floats through deserialize_any.
+json5 = "=1.3.1"
 roxmltree = { version = ">=0.21.1, <1", default-features = false, features = ["std"] }
 sha2 = ">=0.10.9, <1"
 uuid = { version = ">=1.26.1, <2", features = ["v1", "v3", "v4", "v5", "v6", "v7", "v8"] }

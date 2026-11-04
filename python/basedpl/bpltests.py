@@ -1145,8 +1145,8 @@ class _Step:
     timing: bool = False
 
 def _cargo_test(root, *args):
-    "The command that runs `cargo test` with `args` in `root` through fastws's `run_tests`, and exits 1 when a test fails."
-    return [sys.executable, '-c', f"import sys; from fastws.cargo import run_tests; r = run_tests({', '.join(map(repr, (str(root), *args)))}); print(r.text); sys.exit(not r.ok)"]
+    "The command that runs `cargo test` with `args` in `root` through fastws's `run_tests`, with no execution limit of its own (the step's `timeout` bounds it), and exits 1 when a test fails."
+    return [sys.executable, '-c', f"import sys; from fastws.cargo import run_tests; r = run_tests({', '.join(map(repr, (str(root), *args)))}, timeout=None); print(r.text); sys.exit(not r.ok)"]
 
 def _steps(out, node):
     "The steps of `prerelease`. Its browser package goes in `out/'wasm'`. `node` is the Node binary that the editor tests run under (`_node`)."
@@ -1158,14 +1158,16 @@ def _steps(out, node):
         *(_Step(f'{r.name}: checked tests', _cargo_test(r, '--profile', 'checked', '--target-dir', str(r/'target'/'prerelease')), r, timeout=3600) for r in (B, R)),
         _Step('target builds', ['bpl-tests', 'target_builds', wasm], B, (dev,)),
         _Step('basedpl: pytest', ['pytest', '-q'], B, (dev,), timeout=1200),
-        _Step('rustymath: pytest', ['pytest', '-q', '--ignore', 'tests/test_speed.py'], R, (rdev,), timeout=1200),
+        _Step('rustymath: pytest', ['pytest', '-q'], R, (rdev,), timeout=1200),
         *(_Step(f'basedpl: {t} test', [node, f'tests/{t}.mjs'], B, (dev,), timeout=300) for t in ('input', 'highlighting')),
         _Step('basedpl: browser tests', ['bpl-tests', 'wasm_test', wasm], B, ('target builds',), timeout=900),
         _Step('basedpl: BPL notebooks', ['bpl-nb', '--save'], B, (dev,)),
         _Step('basedpl: nbdev', ['nbdev-prepare'], B, (dev, 'basedpl: BPL notebooks')),
         _Step('rustymath: nbdev', ['nbdev-prepare'], R, (rdev,)),
-        _Step('basedpl: cargo test', _cargo_test(B), B, (dev,), dict(BASEDPL_COSTS='1'), 3600, True),
-        _Step('rustymath: cargo test', _cargo_test(R), R, (rdev,), dict(RUSTYMATH_COSTS='1'), 3600, True),
+        *(_Step(f'{r.name}: cargo test', _cargo_test(r), r, (d,), timeout=3600) for r, d in ((B, dev), (R, rdev))),
+        _Step('basedpl: route test', _cargo_test(B, '--test', 'routes'), B, (dev,), timeout=3600),
+        _Step('basedpl: speed test', _cargo_test(B, '--test', 'speed'), B, (dev,), dict(BASEDPL_COSTS='1'), 3600, True),
+        _Step('rustymath: speed test', _cargo_test(R, '--test', 'speed'), R, (rdev,), dict(RUSTYMATH_COSTS='1'), 3600, True),
         _Step('rustymath: Python speed test', ['pytest', '-q', 'tests/test_speed.py'], R, (rdev,), dict(RUSTYMATH_COSTS='1'), 600, True),
         _Step('basedpl: thread scaling', ['bpl-tests', 'thread_scaling'], B, (dev,), timing=True),
         _Step('basedpl: browser speed test', ['bpl-tests', 'wasm_test', wasm, '--speed'], B, ('target builds',), timeout=900, timing=True)]

@@ -279,3 +279,19 @@ $t $t
 ⍝ — A program's key holds its arguments' labels, so arguments with other keys run from another program, with their own keys in the result
 d←[3 4]⍴0.1×⍳12 ⋄ dk←["a" "b" "c" "d"]:⍤1 d ⋄ dq←["a" "b" "c" "e"]:⍤1 d ⋄ g←{+/,⍵×⍵} ⋄ e←•explain "[g∂dk ; g∂dq ; g∂dk]" ⋄ [3ₓ=≢e.programs.event ; (⍕¨e.value)≡⍕¨[2×dk ; 2×dq ; 2×dk]]
 $t $t
+
+⍝⍝ Constants in derivative graphs
+
+⍝ — Under static kinds, ∂ of a sum with a literal term, a repeated argument or a literal factor traces with no stops
+x←1 2 3 4.5
+stops←{≢(•explain ⍵).stopped.reason}¨"{+/⍵+1}∂x" "{+/⍵+⍵}∂x" "{+/⍵×2}∂x"
+[{+/⍵+1}∂x ; {+/⍵+⍵}∂x ; {+/⍵×2}∂x ; stops]
+⍝ =>
+[1 1 1 1 ; 2 2 2 2 ; 2 2 2 2 ; [0 0 0]ₓ]
+
+⍝ — Under static kinds, ∂ of a fold by - or ÷ on an empty vector gives an empty gradient, with no trace stops
+e←0⍴0.5
+stops←{≢(•explain ⍵).stopped.reason}¨"{-/⍵}∂e" "{÷/⍵}∂e"
+[{-/⍵}∂e ; {÷/⍵}∂e ; stops]
+⍝ =>
+[0⍴0 ; 0⍴0 ; [0 0]ₓ]

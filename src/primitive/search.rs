@@ -152,28 +152,27 @@ fn coordinates(lengths: &[i64], shape: &[usize], flat: usize, count: Numbers) ->
 }
 
 pub(super) fn index_roles(call: &CallView<'_>) -> Result<Roles, Error> {
-    if call.explicit_argument_roots().len() != 1 { return Ok(Roles::default()); }
+    if call.layout().arguments().len() != 1 { return Ok(Roles::default()); }
     if call.axis_root().is_some() { return description_roles(call); }
-    let root = call.root(call.explicit_argument_roots().start);
-    let first = call.root_boundary(call.operation.functions());
-    Ok(root.leaves.fold(Roles::default(), |reads, position| reads.with(position - first, ReadKind::Count)))
+    let root = call.layout().root(call.layout().arguments().start);
+    Ok(root.leaves.fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Count)))
 }
 
 fn index_axes(call: &CallView<'_>) -> Result<Option<(Layout, Vec<usize>)>, Error> {
     let Some(root) = call.axis_root() else { return Ok(None); };
-    let source = call.root_layout(call.explicit_argument_roots().start).ok_or_else(Error::planning)?;
+    let source = call.root_layout(call.layout().arguments().start).or_internal()?;
     let spec = call.root_parameter(root.index)?;
     let axes = axes(&resolve_axes(&spec, &source)?, source.shape().len())?;
     Ok(Some((source.into_owned(), axes)))
 }
 
 pub(super) fn axis_iota(call: &CallView<'_>) -> Result<Value, Error> {
-    let (layout, axes) = index_axes(call)?.ok_or_else(Error::planning)?;
+    let (layout, axes) = index_axes(call)?.or_internal()?;
     keyed::named_selectors(&layout, &axes)
 }
 
 pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
-    if call.explicit_argument_roots().len() != 1 { return host_build(call, set); }
+    if call.layout().arguments().len() != 1 { return host_build(call, set); }
     let (len, kind, layout, descending) = if let Some((source, axes)) = index_axes(call)? {
         let [axis] = axes.as_slice() else { return host_build(call, set); };
         if source.keys(*axis).is_some() { return host_build(call, set); }
@@ -181,7 +180,7 @@ pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mappin
         let kind = NumberKind::stored(DType::Integer(plan::position_width(len, call.numeric()?)?), false, false);
         (len, kind, Layout::from([len]).with_names(vec![source.name(*axis).cloned()])?, false)
     } else {
-        let right = call.root_parameter(call.explicit_argument_roots().start)?;
+        let right = call.root_parameter(call.layout().arguments().start)?;
         if right.rank() > 1 { return Err(Error::new(Kind::Rank, "iota needs a unit or vector shape")); }
         if right.len() != 1 { return host_build(call, set); }
         let count = right.as_items().integers().described("invalid iota dimension")?[0];

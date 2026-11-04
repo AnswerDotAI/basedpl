@@ -35,7 +35,6 @@ impl Tally {
     pub(crate) fn new() -> Self { Self(recording().then(Counts::default)) }
     pub(crate) fn block(&self) { self.add(|c| &c.blocks, 1) }
     pub(crate) fn run(&self) { self.add(|c| &c.runs, 1) }
-    pub(crate) fn copied(&self, items: usize) { self.add(|c| &c.copied, items) }
     fn add(&self, count: fn(&Counts) -> &AtomicUsize, n: usize) { if let Some(c) = &self.0 { count(c).fetch_add(n, Relaxed); } }
 }
 pub(crate) fn fused(glyphs: impl FnOnce() -> String, items: usize, tally: &Tally) {
@@ -45,8 +44,10 @@ pub(crate) fn fused(glyphs: impl FnOnce() -> String, items: usize, tally: &Tally
     });
 }
 pub(crate) fn fast(rule: &'static str, function: impl FnOnce() -> String) { events::emit(|_| Event::Fast { rule, function: function() }); }
-pub(crate) fn accumulated(items: usize, size: usize, path: &'static str) { events::emit(|_| Event::Accumulation { items, size, path }); }
 pub(crate) fn fallback(reason: impl std::fmt::Display, items: usize) { events::emit(|_| Event::Fallback { reason: reason.to_string(), items }); }
+pub(crate) fn stored(glyphs: impl FnOnce() -> String, items: usize, reason: &'static str) {
+    events::emit(|_| Event::Stored { glyphs: glyphs(), items, reason, partway: false });
+}
 pub(crate) fn program(event: &'static str, steps: usize, compiled: usize, blocks: usize, listing: impl FnOnce() -> String) {
     events::emit(|_| Event::Program { event, steps, compiled, blocks, listing: listing() });
 }
@@ -54,46 +55,6 @@ pub(crate) fn program(event: &'static str, steps: usize, compiled: usize, blocks
 pub(crate) fn compiled(glyphs: impl FnOnce() -> String, time: std::time::Duration) {
     events::emit(|_| Event::Compile { glyphs: glyphs(), microseconds: time.as_micros() as usize });
 }
-pub(crate) fn mixed(span: &crate::Span, target: &'static str, written: &'static str, items: usize) {
-    events::emit(|_| {
-        let (line, column) = span.position();
-        Event::Mixed { code: span.text().into(), line, column, target, written, items }
-    });
-}
-
-/// Captured only from an event builder that was asked for sites.
-pub(crate) fn site() -> Option<String> {
-    let trace = std::backtrace::Backtrace::force_capture().to_string();
-    let named =
-        trace.lines().filter_map(|line| line.trim_start().split_once(": ").filter(|(n, _)| n.bytes().all(|b| b.is_ascii_digit())).and_then(|(_, s)| frame(s)));
-    let mut frames: Vec<String> = Vec::new();
-    for name in named.skip_while(|name| ["explain::", "graph::Node::", "array::", "program::trace::"].iter().any(|p| name.starts_with(p))) {
-        if frames.last() != Some(&name) { frames.push(name); }
-        if frames.len() == 6 { break; }
-    }
-    Some(frames.join(" <- "))
-}
-fn frame(symbol: &str) -> Option<String> {
-    let symbol = match symbol.strip_prefix('<') {
-        Some(rest) => {
-            let mut depth = 1usize;
-            let close = rest.char_indices().find(|&(_, c)| {
-                depth = match c { '<' => depth + 1, '>' => depth - 1, _ => depth };
-                depth == 0
-            })?.0;
-            format!("{}{}", rest[..close].split(" as ").next()?, &rest[close + 1..])
-        }
-        None => symbol.to_owned(),
-    };
-    let own = symbol.strip_prefix("basedpl::")?;
-    let (mut plain, mut depth) = (String::new(), 0usize);
-    for c in own.chars() {
-        match c { '<' | '{' => depth += 1, '>' | '}' => depth = depth.saturating_sub(1), _ if depth == 0 => plain.push(c), _ => {} }
-    }
-    let hash = |part: &&str| part.len() == 17 && part.starts_with('h') && part[1..].bytes().all(|b| b.is_ascii_hexdigit());
-    Some(plain.split("::").filter(|part| !part.is_empty() && !hash(part)).collect::<Vec<_>>().join("::"))
-}
-
 fn explain_record(names: Vec<&str>, values: Vec<Value>) -> Result<Value, Error> {
     keyed::vector(names.into_iter().map(Arc::from).collect(), values).described("invalid explain record")
 }
@@ -135,7 +96,4 @@ impl Events {
 
 #[derive(Clone, Copy)]
 pub(crate) enum Counted { Record, Pending }
-pub(crate) struct Live(Counted);
-impl Live { pub(crate) fn new(kind: Counted) -> Self { MADE[kind as usize].fetch_add(1, Relaxed); Self(kind) } }
-impl Drop for Live { fn drop(&mut self) { MADE[self.0 as usize].fetch_sub(1, Relaxed); } }
 pub(crate) fn live(kind: Counted) -> usize { MADE[kind as usize].load(Relaxed) }

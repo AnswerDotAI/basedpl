@@ -1,7 +1,8 @@
 //! A scheduler-selected stage, executed blockwise from the program's own rows.
+use crate::error::OrInternal;
 use super::{Out, Outputs, Program, Running};
-use crate::{ReadKind, Value, error::Result};
-use rustymath::{agreement::{Binding, Mapping, ReadPlan}, buffer::{DType, FloatWidth, View, Width}};
+use crate::{Value, error::Result};
+use rustymath::buffer::{DType, FloatWidth, Width};
 use std::{borrow::Cow, sync::Arc};
 
 #[derive(Clone, Debug)]
@@ -18,7 +19,7 @@ struct LoweredInput { slot: usize, source: ReadSource, kind: crate::jit::Input }
 pub(crate) struct Prepared { outputs: Arc<[Out]>, #[cfg(not(web))] parts: Vec<Option<Code>> }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum ReadSource { Pool(usize), Output(Out) }
+enum ReadSource { Pool(usize) }
 
 #[cfg(not(web))]
 struct Code { code: Arc<crate::jit::Compiled>, folded: bool, inputs: Arc<[LoweredInput]>, outputs: Arc<[Export]> }
@@ -216,7 +217,7 @@ impl Block {
     pub(crate) fn run(&self, program: &Program, running: &Running, items: usize, prepared: Option<&Prepared>) -> Result<Outputs<Value>> {
         use super::Node;
         use rustymath::{buffer::Buffer, operation::{Direction, Seed}};
-        let geometry = self.geometry(program, running)?.ok_or_else(crate::Error::planning)?;
+        let geometry = self.geometry(program, running)?.or_internal()?;
         let mut inputs = rustymath::hashing::HashMap::default();
         let mut settings = Vec::with_capacity(self.members.len());
         for &node in self.members.iter() {
@@ -229,23 +230,9 @@ impl Block {
             let bindings = running.call(program, origin)?;
             settings.push(kernel_settings(&bindings.call_view())?);
         }
-        #[cfg(not(web))]
-        if let Some(prepared) = prepared {
-            for input in prepared.parts.iter().flatten().flat_map(|part| part.inputs.iter()) {
-                if inputs.contains_key(&input.source) { continue; }
-                let bound = match input.source {
-                    ReadSource::Output(output) => {
-                        let routed = running.output_read(program, output)?;
-                        Input::of(self, program, running, Cow::Owned(routed.plan), &routed.sources)?
-                    }
-                    ReadSource::Pool(_) => continue,
-                };
-                inputs.insert(input.source, bound);
-            }
-        }
         let outputs = prepared.map_or(&*self.outputs, |prepared| &*prepared.outputs);
         let mut buffers: Vec<_> = outputs.iter().map(|&output| {
-            let desc = running.desc(program, output).ok_or_else(crate::Error::planning)?;
+            let desc = running.desc(program, output).or_internal()?;
             Ok(Buffer::with_capacity(desc.kind.dtype(), desc.layout.count()))
         }).collect::<Result<_>>()?;
         let writers = outputs.iter().zip(&mut buffers).map(|(&output, buffer)| {
@@ -264,7 +251,7 @@ impl Block {
             let last = self.members.len() - 1;
             let section = &self.sections[0];
             let slot = outputs.iter().position(|output| output.node == self.members[last]).expect("a final fold is a stage output");
-            let mut scratch = Scratch::default();
+            let scratch = Scratch::default();
             let seed_input = fold.seed.map(|position| &execution.inputs[&ReadSource::Pool(origin(program, self.members[last]).list.start as usize + position)]);
             let seed_sources = seed_input.map(|input| input.bind(&scratch.locals)).transpose()?;
             let seed = seed_input.zip(seed_sources.as_ref()).map(|(input, sources)| rustymath::agreement::Read { sources, plan: &input.plan })
@@ -331,7 +318,7 @@ impl Lowered {
                         let Some(value) = read(argument, at, &mut kernel) else { return Ok(None); };
                         arguments.push(value);
                     }
-                    let tolerance = match call.setting(crate::primitive::Setting::Tolerance) {
+                    let tolerance = match call.layout().setting(crate::primitive::Setting::Tolerance) {
                         Some(argument) => { let Some(value) = read(argument as u32, at, &mut kernel) else { return Ok(None); }; Some(value) } None => None
                     };
                     let Some(value) = kernel.formula(&object, at, &arguments, ty == Ty::Bool, tolerance) else { return Ok(None); };
@@ -394,31 +381,6 @@ impl Lowered {
         });
         if let Some((_, index)) = reduction { kernel.stores.push(index); }
         Ok(kernel.check().ok().map(|_| Self { kernel, folded, inputs: inputs.into() }))
-    }
-
-    fn output(
-        program: &Program, running: &Running, output: Out, exports: &[Export], inputs: &mut Vec<LoweredInput>, kernel: &mut crate::jit::Kernel
-    ) -> Option<crate::jit::Value> {
-        use crate::jit::{Input, Read, Ty, Value as Slot};
-        if let Some(position) = exports.iter().position(|export| export.output == output) { return Some(Slot::Step(kernel.stores[position])); }
-        if !matches!(program.nodes[output.node], super::Node::Input { .. } | super::Node::Literal { .. }) { return None; }
-        let desc = running.desc(program, output)?;
-        let ty = Ty::of(desc.dtype())?;
-        if desc.atom && let super::Node::Literal { value, .. } = &program.nodes[output.node] && let Some(value) = literal_input(value, ty) {
-            return Some(kernel.input(value));
-        }
-        if let Some(input) = inputs.iter().find(|input| match input.source {
-            ReadSource::Output(root) => root == output,
-            ReadSource::Pool(position) => {
-                program.reads[position].operand == output
-                    && matches!(running.geometry.maps[position], rustymath::agreement::Mapping::Linear(1) | rustymath::agreement::Mapping::Single)
-            }
-            _ => false,
-        }) { return Some(Slot::Input(input.slot)); }
-        let kind = if desc.atom { Input::Scalar(ty) } else { Input::Array(ty, Read::Forward) };
-        let Slot::Input(slot) = kernel.input(kind) else { unreachable!() };
-        inputs.push(LoweredInput { slot, source: ReadSource::Output(output), kind });
-        Some(Slot::Input(slot))
     }
 
     fn argument(
@@ -494,10 +456,10 @@ impl<'a> Input<'a> {
     fn of(block: &Block, program: &'a Program, running: &'a Running, plan: Cow<'a, rustymath::agreement::ReadPlan>, sources: &[Out]) -> Result<Self> {
         let sources = sources.iter().map(|&source| {
             if let Some(slot) = block.members.iter().position(|&node| node == source.node) {
-                let items = running.desc(program, source).ok_or_else(crate::Error::planning)?.layout.count();
+                let items = running.desc(program, source).or_internal()?.layout.count();
                 Ok(Source::Local { slot, items })
             } else {
-                running.binding(program, source).map(|binding| Source::Stored(binding.as_codes())).ok_or_else(crate::Error::planning)
+                running.binding(program, source).map(|binding| Source::Stored(binding.as_codes())).or_internal()
             }
         }).collect::<Result<_>>()?;
         Ok(Self { plan, sources })
@@ -740,7 +702,7 @@ fn block_shape() -> rustymath::error::Error { rustymath::error::Error::new(rusty
 
 pub(crate) fn kernel_settings(call: &crate::primitive::CallView<'_>) -> Result<rustymath::operation::Settings> {
     Ok(rustymath::operation::Settings {
-        tolerance: call.setting(crate::primitive::Setting::Tolerance).map(|position| {
+        tolerance: call.layout().setting(crate::primitive::Setting::Tolerance).map(|position| {
             let value = call.parameter_at(position)?;
             crate::primitive::real(&value)
         }).transpose()? })

@@ -1,14 +1,15 @@
 //! Borrowed stored items and the one policy for joining separately computed results.
-use super::{ArrayData, Layout, Number, SharedBuffer, Value};
+use crate::error::OrInternal;
+use super::{ArrayData, Layout, Number, Root, Roots, Value};
 use crate::{
-    Error, ErrorKind, number::{Kind as LogicalKind, Kinds, Numeric, real}, primitive::{CallView, RunView, Notation, Operation, RowResult, host_build},
-    program::{Desc, Outputs, Step, trace::ReadKind}
+    Error, ErrorKind, number::{Kind as LogicalKind, Kinds, Numeric}, primitive::{CallView, RunView, Notation, Operation, RowResult, host_build},
+    program::{Desc, Outputs, Step}
 };
 use rustymath::{
-    agreement::{Mapping, Missing, ReadPlan}, buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Floats, IntBuf, Ints, View, Width}, error::Kind,
+    agreement::{Mapping, Missing, ReadPlan}, buffer::{Buffer, ComplexBuf, DType, FloatBuf, Ints, View, Width}, error::Kind,
     gather::Steps
 };
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Widening { Arrays, Items }
@@ -83,15 +84,6 @@ impl<'a> Items<'a> {
     pub(crate) fn len(self) -> usize {
         match self { Self::Compact(v) => v.len(), Self::Fixed(v) => v.len(), Self::Values(v) => v.len(), Self::Mapped { len, .. } => len }
     }
-    pub(crate) fn slice(self, range: std::ops::Range<usize>) -> Self {
-        match self {
-            Self::Compact(v) => Self::Compact(v.slice(range)),
-            Self::Fixed(v) => { let View::Integers(v) = View::Integers(v).slice(range) else { unreachable!() }; Self::Fixed(v) }
-            Self::Values(v) => Self::Values(&v[range]),
-            Self::Mapped { source, map, start, .. } => Self::Mapped { source, map, start: start + range.start, len: range.len() },
-        }
-    }
-
     pub(crate) fn item(self, i: usize) -> Value {
         match self {
             Self::Compact(View::Booleans(v)) => Value::Number(Number::from_bool(v[i])),
@@ -166,34 +158,34 @@ fn joining(frame: &Layout, cells: &[Desc], prototype: &Desc, notation: Notation,
     })?;
     Ok(Some(Joining { desc, read }))
 }
-pub(crate) fn join_roots(call: &CallView<'_>) -> std::ops::Range<usize> {
-    let mut roots = call.explicit_argument_roots();
-    if matches!(call.operation, Operation::Join { notation: Notation::Cells, .. }) { roots.start += 2; }
+pub(crate) fn join_roots(call: &CallView<'_>) -> Roots {
+    let mut roots = call.layout().arguments();
+    if matches!(call.operation, Operation::Join { notation: Notation::Cells, .. }) { roots.start = roots.start.after(2); }
     roots
 }
 fn call_joining(call: &CallView<'_>) -> Result<Option<Joining>, Error> {
-    let Operation::Join { notation, widening, .. } = call.operation else { return Err(Error::planning()); };
+    let Operation::Join { notation, widening, .. } = call.operation else { return Err(Error::internal()); };
     let roots = join_roots(call);
     let (frame, prototype) = if *notation == Notation::Cells {
-        if call.explicit_roots < 2 { return Err(Error::planning()); }
-        let Some(prototype) = call.root_desc(1) else { return Ok(None); };
-        (call.root_layout(0).ok_or_else(Error::planning)?.into_owned(), prototype.into_owned())
+        if call.layout().explicit_roots().len() < 2 { return Err(Error::internal()); }
+        let Some(prototype) = call.root_desc(Root(1)) else { return Ok(None); };
+        (call.root_layout(Root(0)).or_internal()?.into_owned(), prototype.into_owned())
     } else { (Layout::from([roots.len()]), Desc::new(LogicalKind::stored(DType::Boolean, false, false), true, Layout::EMPTY)) };
     let mut cells = Vec::with_capacity(roots.len());
     for root in roots {
         let Some(desc) = call.root_desc(root) else { return Ok(None); };
         cells.push(desc.into_owned());
     }
-    let fill = call.fill_root().map(|_| cells.len());
+    let fill = call.layout().fill().map(|_| cells.len());
     joining(&frame, &cells, &prototype, *notation, *widening, fill)
 }
 pub(crate) fn join_build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
     let Some(join) = call_joining(call)? else { return host_build(call, set); };
     let roots = join_roots(call);
-    let step = Step::Join { sources: call.root_boundary(roots.start).try_into().map_err(|_| Kind::Length)?
-        ..call.root_boundary(roots.end).try_into().map_err(|_| Kind::Length)? };
+    let step = Step::Join { sources: call.layout().start(roots.start).try_into().map_err(|_| Kind::Length)?
+        ..call.layout().start(roots.end).try_into().map_err(|_| Kind::Length)? };
     let read = join.read.compose_inputs(&mut |source, items| {
-        let root = if source < roots.len() { call.root(roots.start + source) } else { call.fill_root().ok_or_else(Error::planning)? };
+        let root = if source < roots.len() { call.layout().root(roots.start.after(source)) } else { call.layout().fill().or_internal()? };
         Ok::<_, Error>(ReadPlan::input(root.leaves.start, items))
     })?;
     Ok((step, Some(Outputs::one(Some(join.desc))), Some(read)))
@@ -206,7 +198,7 @@ pub(crate) fn read_values(layout: Layout, read: &ReadPlan, values: &[Value], pro
     let items = (0..read.len()).map(|item| {
         Ok(match read.at(item) {
             ReadAt::Input { source, position } => {
-                let source = values.get(source).ok_or_else(Error::planning)?;
+                let source = values.get(source).or_internal()?;
                 if position >= source.len() { return Err(Kind::Index.into()); }
                 crate::primitive::item_at(source, &[position], None)?
             }
@@ -249,11 +241,11 @@ pub(crate) fn join_code(call: &RunView<'_>) -> Result<Outputs<Value>, Error> {
     join_values(&call.logical_origin()?.reborrow(), call)
 }
 fn join_values(origin: &crate::program::Origin<&[Value]>, call: &CallView) -> Result<Outputs<Value>, Error> {
-    let Operation::Join { notation, widening, .. } = call.operation else { return Err(Error::planning()); };
+    let Operation::Join { notation, widening, .. } = call.operation else { return Err(Error::internal()); };
     let roots = join_roots(call);
     let cells = roots.clone().map(|root| origin.root_input(root)?.exposed()).collect::<Result<Vec<_>, _>>()?;
-    let fill = call.fill_root().map(|root| origin.root_input(root.index)?.exposed()).transpose()?;
-    let (frame, prototype) = if *notation == Notation::Cells { (origin.root_input(0)?.exposed()?.layout().clone(), origin.root_input(1)?.exposed()?) }
+    let fill = call.layout().fill().map(|root| origin.root_input(root.index)?.exposed()).transpose()?;
+    let (frame, prototype) = if *notation == Notation::Cells { (origin.root_input(Root(0))?.exposed()?.layout().clone(), origin.root_input(Root(1))?.exposed()?) }
     else { (Layout::from([cells.len()]), cells.first().map_or(Value::integer(0), Value::zeroed)) };
     let value = if *notation == Notation::Strand { Value::stored_values(frame, cells, Some(prototype), *widening)? }
     else { assemble_cells(&frame, &cells, &prototype, *widening, fill.as_ref(), call.numeric()?)? };
@@ -264,6 +256,6 @@ pub(crate) fn stack(frame: &Value, cells: &[Value], prototype: &Value, numeric: 
     let mut values = Vec::with_capacity(cells.len() + 2);
     values.extend([frame.clone(), prototype.clone()]);
     values.extend_from_slice(cells);
-    let origin = Operation::join(Notation::Cells, Widening::of_results(numeric.kinds)).origin_numeric(&values, 0, numeric)?;
+    let origin = Operation::join(Notation::Cells, Widening::of_results(numeric.kinds)).origin_numeric(&values, numeric)?;
     Operation::dispatch(origin.reborrow())?.assemble()
 }

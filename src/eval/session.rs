@@ -128,9 +128,7 @@ impl Session {
     }
     pub(super) fn writing(&self, place: Place, span: &Span) -> Result<(), Error> {
         if place.frame() != self.bindings.current() {
-            let planning = crate::program::trace::Tracing::planning();
-            crate::program::trace::Tracing::stop(crate::program::Reason::OuterWrite, Some(span.clone()));
-            if planning { return Err(Error::planning()); }
+            crate::program::trace::Tracing::stop(crate::program::Reason::OuterWrite, Some(span.clone()))?;
         }
         self.levels.writing(place).map_err(|error| error.at(span))
     }
@@ -524,7 +522,7 @@ impl Session {
 
     /// Runs `right` as BPL text, with `left`'s keys as names where given. Stops the current trace before execution.
     pub(crate) fn execute(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Outputs<Value>, Error> {
-        crate::program::trace::Tracing::stop(crate::program::Reason::Execute, Some(span.clone()));
+        crate::program::trace::Tracing::stop(crate::program::Reason::Execute, Some(span.clone()))?;
         let source = Source::new("<execute>", Self::source_text(right, span)?);
         let result = match left {
             Some(record) => self.scoped(record, span, |session| session.execute_source(source, span)), None => self.execute_source(source, span)
@@ -617,7 +615,7 @@ impl Session {
         let NodeKind::ArrayLiteral { form, .. } = &node.kind else { unreachable!("a bracket literal") };
         if arrays.is_empty() { return Ok(Binding::from_element(crate::syntax::zilde(crate::Number::float(0.0, crate::settings::float_width())))); }
         let notation = if *form == ListForm::Cells { Notation::Rows } else { Notation::Strand };
-        let result = Operation::join(notation, Widening::Items).call(&arrays, 0);
+        let result = Operation::join(notation, Widening::Items).call(&arrays);
         Ok(Binding::Value(result.map_err(|error| error.at(&node.span))?))
     }
 
@@ -627,8 +625,7 @@ impl Session {
         let FunctionNode::LateBound(definition) = function.node() else { unreachable!("a late-bound expression") };
         let function = Function::from_value(self.bind(&definition.bodies[0][0].nodes)?.value, &definition.span)?;
         let arguments = Function::body_arguments(&origin)?;
-        let from: Vec<_> = Function::argument_ranges(&origin)?.into_iter().flatten().map(|range| Some(range.start)).collect();
-        function.call_bound_outputs(&origin, &arguments, &from)
+        function.call_bound_outputs(&origin, &arguments)
     }
     pub(super) fn with_call_context<T>(
         &self, function: &Function, origin: crate::program::Origin<&[Value]>, run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
@@ -646,7 +643,7 @@ impl Session {
             FunctionNode::Defined(_) => function, FunctionNode::Applied { op: Operator::Closure(defined), .. } => defined, _ => unreachable!("a defined body")
         };
         let definition = defined.definition().expect("a defined body");
-        let (scope_index, scope) = origin.bindings.scope(defined).ok_or_else(Error::planning)?;
+        let (scope_index, scope) = origin.bindings.scope(defined).or_internal()?;
         let (parent, module) = (scope.parent, scope.module);
         let args = Function::body_arguments(&origin)?;
         let (left, right) = (if args.len() == 2 { Some(args[0].clone()) } else { None }, args.last().expect("a function has an argument").clone());
@@ -728,7 +725,7 @@ impl Session {
                             }
                         }
                         StatementKind::ErrorGuard { index: i } => {
-                            crate::program::trace::Tracing::stop(crate::program::Reason::Guard, Some(nodes[i].span.clone()));
+                            crate::program::trace::Tracing::stop(crate::program::Reason::Guard, Some(nodes[i].span.clone()))?;
                             let catch = Catch::new(&self.bound(&nodes[..i])?.array(&nodes[0].span)?, &nodes[i].span)?;
                             if handlers.is_empty() { self.guards.borrow_mut().push(super::GuardScope::default()); }
                             else { self.guarded(None)?; }

@@ -213,12 +213,19 @@ impl Capture {
     }
 }
 
-/// Warm one case, then capture a forced evaluation in the same session (`warmed`). A panic names no case, so a case that panics names itself before the panic goes on.
-pub fn route(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -> Result<Capture, String> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| captured(session, case, interrupt))).unwrap_or_else(|panic| {
-        eprintln!("route case panicked: [{}] {}", case["section"].as_str().unwrap_or_default(), case["code"].as_str().unwrap_or_default());
-        std::panic::resume_unwind(panic)
-    })
+/// Why `route` captured no run of a case: its evaluation failed, or it panicked. Each variant holds its message. A panic's message starts `route capture: panicked:`.
+pub enum Uncaptured { Failed(String), Panicked(String) }
+
+impl std::fmt::Display for Uncaptured {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { match self { Self::Failed(message) | Self::Panicked(message) => f.write_str(message) } }
+}
+
+/// Warm one case, then capture a forced evaluation in the same session (`warmed`). A case that panics gives `Uncaptured::Panicked` instead of unwinding into its caller.
+pub fn route(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -> Result<Capture, Uncaptured> {
+    match crate::reference::caught("route capture", || captured(session, case, interrupt)) {
+        Ok(captured) => captured.map_err(Uncaptured::Failed),
+        Err(panic) => Err(Uncaptured::Panicked(panic)),
+    }
 }
 
 /// `captured`, a route of `file`'s `case`, named by `label` in its result and in any error.
@@ -266,14 +273,30 @@ pub fn route_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Js
     response(evaluation).map_err(|error| error.to_string())
 }
 
-/// Capture every timed case outside its timed loop, with its ordinary setup and size.
-pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Capture>, String> {
-    let mut result = Vec::new();
+/// Capture every timed case outside its timed loop, with its ordinary setup and size. Gives the captures and a message for each case that fails to evaluate.
+pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<(Vec<Capture>, Vec<String>), String> {
+    let (mut result, mut failed) = (Vec::new(), Vec::new());
     each_case(files, only, "", interrupt, |group, file, case| {
-        result.push(named(route(group.session(case["section"].as_str().unwrap())?, case, interrupt), file, case)?);
+        let session = group.session(case["section"].as_str().unwrap())?;
+        let captured = route(session, case, interrupt).map_err(|uncaptured| uncaptured.to_string());
+        match named(captured, file, case) {
+            Ok(capture) => result.push(capture), Err(failure) => failed.push(failure),
+        }
         Ok(())
     })?;
-    Ok(result)
+    Ok((result, failed))
+}
+
+/// Fails, listing them, on `wrong` and on each capture's violations (`Capture::violations`), named `[section] label`. First prints the gaps the captures tolerate (`cargo test -- --nocapture` shows them). The route tests in `tests/explain.rs` and `tests/routes.rs` end with it.
+pub fn contracts(routes: &[Capture], mut wrong: Vec<String>) {
+    let mut gaps = Vec::new();
+    for r in routes {
+        let case = format!("[{}] {}", r.section, r.label);
+        wrong.extend(r.violations().into_iter().map(|message| format!("{case}: {message}")));
+        gaps.extend(r.named.gaps.iter().map(|(record, event)| format!("{case}: {record} \"{event}\"")));
+    }
+    println!("gaps that route cases tolerate: {gaps:#?}");
+    assert!(wrong.is_empty(), "route contracts: {wrong:#?}");
 }
 
 /// Times the cases in `files`, retimes each one over its native budget after each pause in `RETRY_PAUSES`, and gives the lines of those still over it. `print` gets the copy lines and every cost where `all` is set, each retry's lines, then each case still over its budget, marked `over`, and last each case whose gap's hold has outlived the gap, as `rustymath::timing::Budget::stale` decides from its first cost, marked `stale`.

@@ -1,19 +1,32 @@
 //! The live graph: immutable descriptions, recipes and cached results.
+use crate::error::OrInternal;
 use crate::{
-    Error, Value, array::{Footprint, Seen, Trees}, error::Result, number::Kind, program::{
+    Error, Value, array::{Footprint, Seen}, error::Result, program::{
         Desc, Origin, Outputs, Read, Step, trace::{Reach, ReadKind, Role, Tracing}
     }
 };
 use rustymath::hashing::HashMap;
-use std::{cell::RefCell, hash::{BuildHasher, Hash, Hasher}, sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError, Weak}};
+use std::{cell::RefCell, hash::{BuildHasher, Hash, Hasher}, sync::{Arc, atomic::{AtomicUsize, Ordering::Relaxed}, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError, Weak}};
 
 #[derive(Clone)]
 pub(crate) struct Node(pub(crate) Arc<NodeData>);
 
 pub(crate) struct NodeData {
-    description: crate::program::Description, literal: bool, level: Option<usize>, reach: Option<Reach>, kept: Kept, values: OnceLock<Outputs<Value>>,
+    description: crate::program::Description, literal: bool, level: Option<usize>, reach: Option<Reach>, kept: Kept, exact: OnceLock<Kept>, values: OnceLock<Outputs<Value>>, holds: AtomicUsize,
     state: Mutex<OwnedState>
 }
+
+/// A binding's hold on a pending value. A read that computes a held node stores it (`program::execute_live`).
+pub struct Hold(Node);
+impl Hold {
+    /// A hold on `value`'s node, where `value` is pending.
+    pub fn of(value: &Value) -> Option<Self> {
+        let node = &value.pending()?.node;
+        node.0.holds.fetch_add(1, Relaxed);
+        Some(Self(node.clone()))
+    }
+}
+impl Drop for Hold { fn drop(&mut self) { self.0.0.holds.fetch_sub(1, Relaxed); } }
 
 enum OwnedState {
     Step { step: Step, origin: Origin<Vec<Read<Value>>>, retained: usize, lease: Option<Retention> },
@@ -37,12 +50,12 @@ impl Pending {
     pub(crate) fn data(node: Node, output: u32) -> Self { Self { node, output: Some(output) } }
     pub(crate) fn control(node: Node) -> Self { Self { node, output: None } }
     pub(crate) fn description(&self) -> Option<&Desc> { self.output.and_then(|output| self.node.desc(output)) }
-    pub(crate) fn desc(&self) -> &Desc { self.description().expect("numeric description is unresolved or absent") }
     pub(crate) fn completed(&self) -> Option<&Value> { self.node.completed()?.as_ref().get(self.output? as usize) }
 }
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct Kept { pub(crate) nodes: usize, pub(crate) graph: usize, pub(crate) bytes: usize, pub(crate) largest: usize }
+/// A pending graph's size. `data` is the largest data the graph derives from, by description: a stored or literal operand, an input, or a generator's output (a step whose data operands are atoms).
+pub(crate) struct Kept { pub(crate) nodes: usize, pub(crate) graph: usize, pub(crate) bytes: usize, pub(crate) largest: usize, pub(crate) data: usize }
 
 pub(crate) const MAX_KEPT: usize = 8;
 const MAX_GRAPH: usize = 1 << 20;
@@ -63,6 +76,8 @@ impl Intern {
 static INTERN: LazyLock<Mutex<Intern>> = LazyLock::new(Mutex::default);
 
 fn lock<T>(value: &Mutex<T>) -> MutexGuard<'_, T> { value.lock().unwrap_or_else(PoisonError::into_inner) }
+/// The size in bytes of a node's largest described output.
+fn described_bytes(description: &crate::program::Description) -> usize { description.as_ref().iter().flatten().map(Desc::bytes).max().unwrap_or(0) }
 
 #[derive(Clone, Default)]
 pub(crate) struct Retention(Arc<Retained>);
@@ -115,7 +130,7 @@ impl Drop for Retained {
 }
 
 fn same_origin(left: &Origin<Vec<Read<Value>>>, right: &Origin<Vec<Read<Value>>>) -> bool {
-    left.operation == right.operation && left.mode == right.mode && left.literals == right.literals && left.explicit == right.explicit
+    left.operation == right.operation && left.mode == right.mode && left.explicit == right.explicit
         && left.explicit_roots == right.explicit_roots && left.roles == right.roles && left.trees == right.trees && left.list.len() == right.list.len()
         && left.bindings == right.bindings && left.site == right.site
         && left.list.iter().zip(right.list.iter()).all(|(x, y)| x.operand.identical(&y.operand) && x.map == y.map)
@@ -125,7 +140,6 @@ fn origin_hash(origin: &Origin<Vec<Read<Value>>>, hasher: &impl BuildHasher) -> 
     let mut state = hasher.build_hasher();
     origin.operation.hash(&mut state);
     origin.mode.hash(&mut state);
-    origin.literals.hash(&mut state);
     origin.roles.hash(&mut state);
     origin.trees.hash(&mut state);
     origin.explicit.hash(&mut state);
@@ -163,22 +177,34 @@ impl Node {
         };
         let mut kept = Kept { nodes: 1,
             graph: std::mem::size_of::<NodeData>() + origin.list.capacity() * std::mem::size_of::<Read<Value>>() + description.heap_bytes(), bytes: 0,
-            largest: 0 };
+            largest: 0, data: 0 };
         for (i, read) in origin.list.iter().enumerate() {
             if let Some(pending) = read.operand.pending() {
                 if origin.list[..i].iter().any(|read| read.operand.pending().is_some_and(|prior| prior.node == pending.node)) { continue; }
+                if let Some(value) = pending.completed() {
+                    let bytes = value.footprint();
+                    kept.bytes += bytes;
+                    kept.largest = kept.largest.max(bytes);
+                    kept.data = kept.data.max(pending.node.kept().data).max(pending.description().map_or(0, Desc::bytes));
+                    continue;
+                }
                 let part = pending.node.kept();
                 kept.nodes = kept.nodes.saturating_add(part.nodes);
                 kept.graph = kept.graph.saturating_add(part.graph);
                 kept.bytes = kept.bytes.saturating_add(part.bytes);
                 kept.largest = kept.largest.max(part.largest);
+                kept.data = kept.data.max(part.data);
             } else {
                 let bytes = read.operand.footprint();
                 kept.bytes += bytes;
                 kept.largest = kept.largest.max(bytes);
+                kept.data = kept.data.max(Desc::of(&read.operand).map_or(0, |desc| desc.bytes()));
             }
         }
-        let node = Self(Arc::new(NodeData { description, literal: false, level, reach, kept, values: OnceLock::new(),
+        if origin.list.iter().all(|read| Desc::of(&read.operand).is_none_or(|desc| desc.atom)) {
+            kept.data = kept.data.max(described_bytes(&description));
+        }
+        let node = Self(Arc::new(NodeData { description, literal: false, level, reach, kept, exact: OnceLock::new(), values: OnceLock::new(), holds: AtomicUsize::new(0),
             state: Mutex::new(OwnedState::Step { step, origin, retained: 0, lease: None }) }));
         if let Some(hash) = hash { intern.nodes.get_mut(&hash).unwrap().push(Arc::downgrade(&node.0)); }
         drop(intern);
@@ -192,8 +218,8 @@ impl Node {
         debug_assert!(!matches!(value, Value::Pending(_) | Value::Carried { .. }));
         let description = Outputs::one(Desc::leaf(&value));
         let bytes = value.footprint();
-        let kept = Kept { nodes: 1, graph: std::mem::size_of::<NodeData>(), bytes, largest: bytes };
-        Self(Arc::new(NodeData { description, literal: true, level: None, reach: None, kept, values: OnceLock::from(Outputs::one(value)),
+        let kept = Kept { nodes: 1, graph: std::mem::size_of::<NodeData>(), bytes, largest: bytes, data: described_bytes(&description) };
+        Self(Arc::new(NodeData { description, literal: true, level: None, reach: None, kept, exact: OnceLock::new(), values: OnceLock::from(Outputs::one(value)), holds: AtomicUsize::new(0),
             state: Mutex::new(OwnedState::Done) }))
     }
     pub(crate) fn is_literal(&self) -> bool { self.0.literal }
@@ -209,7 +235,8 @@ impl Node {
         let reach = match (reach, value.as_ref().and_then(Value::pending).and_then(|pending| pending.node.reach())) {
             (Some(own), Some(parent)) => Some(own.join(parent)), (own, None) => own, (None, parent) => parent
         };
-        Self(Arc::new(NodeData { description, literal: false, level, reach, kept: Kept::default(), values: OnceLock::new(),
+        let kept = Kept { data: described_bytes(&description), ..Kept::default() };
+        Self(Arc::new(NodeData { description, literal: false, level, reach, kept, exact: OnceLock::new(), values: OnceLock::new(), holds: AtomicUsize::new(0),
             state: Mutex::new(OwnedState::Input { position, role, value }) }))
     }
 
@@ -218,7 +245,10 @@ impl Node {
     pub(crate) fn desc(&self, output: u32) -> Option<&Desc> { self.descs().get(output as usize)?.as_ref() }
     pub(crate) fn level(&self) -> Option<usize> { self.0.level }
     pub(crate) fn reach(&self) -> Option<Reach> { self.0.reach.clone() }
-    pub(crate) fn kept(&self) -> Kept { self.0.kept }
+    /// The node's pending-graph size: the exact walk's once `over_budget` has walked it, before that the bound `build` summed, which counts a subgraph that several paths share once per path.
+    pub(crate) fn kept(&self) -> Kept { self.0.exact.get().copied().unwrap_or(self.0.kept) }
+    /// Whether a binding holds this node now (`Hold`).
+    pub(crate) fn bound(&self) -> bool { self.0.holds.load(Relaxed) != 0 }
     pub(crate) fn over_budget(&self) -> bool {
         if !self.kept().over_budget() { return false; }
         let mut kept = Kept::default();
@@ -248,6 +278,8 @@ impl Node {
                 }
             });
         }
+        kept.data = self.0.kept.data;
+        let _ = self.0.exact.set(kept);
         kept.over_budget()
     }
     pub(crate) fn address(&self) -> usize { Arc::as_ptr(&self.0) as usize }
@@ -295,11 +327,11 @@ impl Node {
         })
     }
     pub(crate) fn completed(&self) -> Option<&Outputs<Value>> { self.0.values.get() }
-    pub(crate) fn observe(&self) -> Result<Outputs<Value>> { Ok(self.completed().ok_or_else(Error::planning)?.clone().flatten()) }
+    pub(crate) fn observe(&self) -> Result<Outputs<Value>> { Ok(self.completed().or_internal()?.clone().flatten()) }
     pub(crate) fn ready_value() -> &'static Value {
         static READY: LazyLock<Value> = LazyLock::new(|| {
             Value::Pending(Pending::control(Node(Arc::new(NodeData { description: crate::program::Description::empty(), literal: false, level: None,
-                reach: None, kept: Kept::default(), values: OnceLock::from(Outputs::empty()), state: Mutex::new(OwnedState::Done) }))))
+                reach: None, kept: Kept::default(), exact: OnceLock::new(), values: OnceLock::from(Outputs::empty()), holds: AtomicUsize::new(0), state: Mutex::new(OwnedState::Done) }))))
         });
         &READY
     }
@@ -315,12 +347,12 @@ impl Node {
     }
 
     pub(crate) fn exposed(self, output: u32, read: ReadKind) -> Result<Value> {
-        if read == ReadKind::Description { return Err(Error::planning()); }
+        if read == ReadKind::Description { return Err(Error::internal()); }
         if self.level().is_some() { return Err(Error::domain("cannot read an unbound linear value")); }
         let pending = Pending::data(self.clone(), output);
         if read != ReadKind::RuntimeOnly { Tracing::judge(&pending, read)?; }
         if let Some(value) = self.stored(output) { return Ok(value); }
-        if self.with_state(|state| matches!(state, State::Input { value: None, .. })) { return Err(Error::planning()); }
+        if self.with_state(|state| matches!(state, State::Input { value: None, .. })) { return Err(Tracing::stand_in()); }
         crate::program::execute(std::slice::from_ref(&pending))?;
         // Returning a host result is a checkpoint; execute itself only records numeric errors.
         crate::session().raise()?;

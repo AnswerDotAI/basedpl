@@ -10,16 +10,9 @@ type Core = rustymath::agreement::Agreement;
 pub(crate) trait Agree: Sized {
     fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
     fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind>;
-    fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
     /// The positions that pair `i` reads. `None` means an argument reads its fill, as it does for a key that it lacks: its mapping's chosen fill, or its prototype. With no pairs, each argument reads its first item, or its prototype where it has none. `positions` calls `lens` for the arguments' item counts only where there are no pairs.
     fn positions(&self, i: usize, lens: impl FnOnce() -> [usize; 2]) -> [Option<usize>; 2];
-    /// The pair of items that pair `i` reads (`positions`).
-    #[inline]
-    fn values(&self, left: Option<&Value>, right: &Value, i: usize) -> (Option<Value>, Value) {
-        let (x, y) = self.values_ref(left, right, i);
-        (x.map(Cow::into_owned), y.into_owned())
-    }
-    /// `values`, borrowing each item that its argument holds as a value.
+    /// The pair of items that pair `i` reads (`positions`), borrowing each item that its argument holds as a value.
     fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>);
     /// `left` and `right` laid out as the result, each repeated over the axes and positions it lacks, as broadcasting repeats it. An atom stays as it stands, since the call reads it at every position (main's decision 23). `Err` where an argument can't be laid, as a ragged batch stops its run.
     fn laid(&self, left: Option<&Value>, right: &Value) -> Result<(Option<Value>, Value), ErrorKind>;
@@ -28,7 +21,6 @@ pub(crate) trait Agree: Sized {
 impl Agree for Agreement {
     fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> { with_renderer(Core::new(left, right), left, right) }
     fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind> { with_renderer(Core::with_axes(left, right, axes), left, right) }
-    fn outer(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> { with_renderer(Core::outer(left, right), left, right) }
     // Maps call these once for each cell.
     #[inline]
     fn positions(&self, i: usize, lens: impl FnOnce() -> [usize; 2]) -> [Option<usize>; 2] {

@@ -1,6 +1,5 @@
 //! The binder: the right-to-left reduction of a run's items by their categories, and the rewriting of dot access.
 
-use super::bindings::Address;
 use super::tree::{
     Entity, Fact, Facts, Keyed, Kind, Last, Layer, Level, Mark, Mismatch, Op, Postfix, Read, Split, StatementCode, Target, Term, To, constant, derived,
     lettered, narrow, paired, piece, postfixed, span_of,
@@ -276,14 +275,14 @@ impl Compiler<'_> {
                 _ => break
             }
         }
-        let selects = |node: &Node| matches!(node.kind.primitive(), Some(Primitive::Index | Primitive::Bracket | Primitive::Mix));
+        let selects = |node: &Node| node.kind.primitive().is_some_and(Primitive::takes_index);
         let first = nodes.iter().position(selects);
         let keyed = keys && first.is_some_and(|i| i > 0 && i + 1 < nodes.len() && nodes[..i].iter().all(crate::syntax::key_node));
         let simple = nodes.len() > 2 && selects(&nodes[1]) && self.is_array(&nodes[0])?;
         let at_split = if keyed { first } else { simple.then_some(1) };
         let last_at = nodes.len() - 1;
         let split = at_split.map(|i| -> Result<Split, Error> {
-            let index = deferred(self.part(&nodes[..i], None))?;
+            let index = deferred(self.part(&nodes[..i], None, true))?;
             let slot = *slots;
             *slots += 1;
             let unit = self.category(&nodes[i + 1])?.valence().is_none();
@@ -292,7 +291,7 @@ impl Compiler<'_> {
             Ok(Split { p, index, slot, keyed, simple, unit, container, at: nodes[0].span.clone(), p_at: nodes[i].span.clone() })
         }).transpose()?;
         let prefix = if last_at > 0 && !split.as_ref().is_some_and(|split| split.simple && split.unit) {
-            Some(deferred(self.part(&nodes[..last_at], Some(Category::Value)))?)
+            Some(deferred(self.part(&nodes[..last_at], Some(Category::Value), false))?)
         } else { None };
         let node = &nodes[last_at];
         let last = match &node.kind {
@@ -311,11 +310,12 @@ impl Compiler<'_> {
     /// Whether this compiler reads `node` as an array: a literal, or a node whose category is an array's.
     fn is_array(&mut self, node: &Node) -> Result<bool, Error> { Ok(matches!(node.kind, NodeKind::Literal(_)) || self.category(node)? == Category::Value) }
 
-    /// `nodes`, a part of an assignment's target, compiled as a statement of its own, with an item of category `seed` to their right where one is given, for the assignment to run, or the error that compiling it gives, which the assignment raises where it runs the part. Its facts join this statement's, which checks them as it starts.
-    fn part(&mut self, nodes: &[Node], seed: Option<Category>) -> Result<StatementCode, Error> {
+    /// `nodes`, a part of an assignment's target, compiled as a statement of its own, with an item of category `seed` to their right where one is given, for the assignment to run, or the error that compiling it gives, which the assignment raises where it runs the part. Where `index`, its result is a literal index argument (`Compiler::operand`). Its facts join this statement's, which checks them as it starts.
+    fn part(&mut self, nodes: &[Node], seed: Option<Category>, index: bool) -> Result<StatementCode, Error> {
         let mut compiler = Compiler::new(self.session);
         let seed = seed.map(|category| Item::new(Read::Register(compiler.register()), category, 0..0));
         let result = compiler.level(nodes, 0, seed)?;
+        if index { compiler.operand(&result, true); }
         let mut code = compiler.finish(nodes, result);
         for fact in std::mem::take(&mut code.facts) { note(&mut self.facts, fact); }
         Ok(code)
@@ -409,13 +409,17 @@ pub(super) fn field_role(found: Option<Binding>, keys: &[Arc<str>]) -> (Category
 
 fn numeric(a: &Value) -> bool { a.kind().is_some() }
 
-/// An item on the compiler's stacks: where its instructions read it, its own category and the category it binds with (`Category::before`), its text, whether it's a postfix operator (`postfix`), and whether a call or a derive gave it (`call`). A function that a call gives binds as a value in its statement, but an assignment stores it as the function, and an operator other than a subscript or a superscript takes it as its function operand.
+/// An item on the compiler's stacks: where its instructions read it, its own category and the category it binds with (`Category::before`), its text, whether it's a postfix operator (`postfix`), whether a call or a derive gave it (`call`), and where a literal atom's value comes from (`literal`). A function that a call gives binds as a value in its statement, but an assignment stores it as the function, and an operator other than a subscript or a superscript takes it as its function operand.
 #[derive(Clone, Debug)]
-struct Item { read: Read, category: Category, role: Category, range: std::ops::Range<u32>, postfix: bool, call: bool, literal: bool }
+struct Item { read: Read, category: Category, role: Category, range: std::ops::Range<u32>, postfix: bool, call: bool, literal: Option<Literal> }
+
+/// Where a literal atom's value comes from, so that an operand position can make it a constant (`Compiler::operand`): a constant entry, or an `Op::Number` instruction, by index.
+#[derive(Clone, Copy, Debug)]
+enum Literal { Constant(u32), Number(usize) }
 
 impl Item {
     fn new(read: Read, category: Category, range: std::ops::Range<u32>) -> Self {
-        Self { read, category, role: category, range, postfix: false, call: false, literal: false }
+        Self { read, category, role: category, range, postfix: false, call: false, literal: None }
     }
 }
 
@@ -551,7 +555,7 @@ impl<'s> Compiler<'s> {
             NodeKind::Group(inner) | NodeKind::Run(inner) => self.group(node, inner, None)?,
             NodeKind::ArrayLiteral { .. } => self.literal(node)?,
             NodeKind::Name(name, take) => self.name(*name, *take, range)?,
-            NodeKind::Subscript(index) => self.postfix_item(Postfix::Index(index.clone()), range),
+            NodeKind::Subscript(index) => self.postfix_item(Postfix::Index(Value::constant(index.clone())), range),
             NodeKind::Letter(letter) => self.postfix_item(lettered(*letter), range),
             NodeKind::BoundOperator(OperatorKind::Power, count) => {
                 self.postfix_item(Postfix::Power(count.as_number().expect("a superscript count").integer().expect("an integer superscript")), range)
@@ -560,12 +564,12 @@ impl<'s> Compiler<'s> {
             NodeKind::Operator(OperatorKind::Mark(mark)) => self.postfix_item(Postfix::Mark(*mark), range),
             NodeKind::Number { text, mark } => {
                 let to = self.register();
-                self.ops.push(Op::Number { text: *text, mark: *mark, empty: false, to, range: range.clone() });
-                Item { literal: true, ..Item::new(Read::Register(to), Category::Value, range) }
+                self.ops.push(Op::Number { text: *text, mark: *mark, empty: false, to, range: range.clone(), constant: None });
+                Item { literal: Some(Literal::Number(self.ops.len() - 1)), ..Item::new(Read::Register(to), Category::Value, range) }
             }
             NodeKind::Zilde(mark) => {
                 let to = self.register();
-                self.ops.push(Op::Number { text: Some("0"), mark: *mark, empty: true, to, range: range.clone() });
+                self.ops.push(Op::Number { text: Some("0"), mark: *mark, empty: true, to, range: range.clone(), constant: None });
                 Item::new(Read::Register(to), Category::Value, range)
             }
             NodeKind::Literal(_) | NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::BoundOperator(..) => {
@@ -669,7 +673,10 @@ impl<'s> Compiler<'s> {
             let Some(colon) = record.then(|| crate::syntax::key_colon(nodes)).flatten() else {
                 let (item, _) = self.item(node, &shared, k, 0..nodes.len())?;
                 functions |= item.category.settled() == Category::Function;
-                if item.category != Category::Absent { pieces.push(item.read) }
+                if item.category != Category::Absent {
+                    if !record { self.operand(&item, false); }
+                    pieces.push(item.read)
+                }
                 continue;
             };
             // The value and the key are items of their own, value first. As one expression, `key:f` would be a train.
@@ -754,7 +761,7 @@ impl<'s> Compiler<'s> {
         let to = self.register();
         self.levels[id as usize - 1] = Some(Level { to, range: text.clone(), span: nodes[0].span.clone(), check: Category::Value,
             kind: Kind::Item { literal: shared.get_or_init(|| Arc::new(node.clone())).clone(), cell: cell as u32, key: None } });
-        Ok((Item::new(Read::Register(to), value.category, text), Some(id)))
+        Ok((Item { literal: value.literal, ..Item::new(Read::Register(to), value.category, text) }, Some(id)))
     }
 
     /// The assignment whose `←` is at `i` among `nodes`, of `value`, or with no value, `a(f)←`'s update. Gives the item that holds what the assignment gives, which is shy, and the position where its target starts, where the walk carries on. A target that is one name gives that name the category of `value` for the rest of the statement.
@@ -779,6 +786,8 @@ impl<'s> Compiler<'s> {
             _ => None,
         };
         let call = value.as_ref().is_some_and(|value| value.call);
+        // A selective write's values and a modified assignment's argument are operands of graph operations; a plain assignment's value stays data (target part 4).
+        if let Some(value) = &value && (modifier.is_some() || matches!(target.to, To::Selected(_))) { self.operand(value, false); }
         let value = value.map(|value| { self.release(value.read); value.read });
         let modifier = modifier.map(|(_, item): (u32, Item)| { self.release(item.read); item.read });
         let to = self.register();
@@ -832,26 +841,30 @@ impl<'s> Compiler<'s> {
             // Arrays side by side form a strand, one item each, as in `[a b c]`.
             Rule::Adjacent => {
                 let range = left.range.clone();
+                self.operand(&left, false);
+                self.operand(&right, false);
                 self.folded(left, right, Category::Value, range, source, |left, right, to| Op::Strand { left, right, to })
             }
             Rule::Derive => self.derive(left, right, span, source),
             Rule::BindRight => {
                 let (range, call) = (left.range.clone(), right.call);
-                let literal = right.literal;
-                self.folded(left, right, Category::Operator, range, source, |operator, operand, to| Op::BindRight { operator, operand, to, call, literal })
+                self.operand(&right, false);
+                self.folded(left, right, Category::Operator, range, source, |operator, operand, to| Op::BindRight { operator, operand, to, call })
             }
             // A call belongs to its function's text, so a bound left argument takes `right`'s.
             Rule::Attach => {
                 let range = right.range.clone();
-                let literal = left.literal;
-                self.folded(left, right, Category::Left, range, source, |left, right, to| Op::Attach { left, right, to, literal })
+                let index = self.takes_index(right.read);
+                self.operand(&left, index);
+                self.folded(left, right, Category::Left, range, source, |left, right, to| Op::Attach { left, right, to })
             }
             Rule::Call if right.category == Category::Absent => { self.release(left.read); self.constant(Term::Binding(Binding::Absent), left.range) }
             Rule::Call => self.call(left, right, span, last),
             Rule::Train => {
                 let range = left.range.clone();
-                let literals = [left.literal, right.literal];
-                self.folded(left, right, Category::Train, range, source, |left, right, to| Op::Train { left, right, to, literals })
+                self.operand(&left, false);
+                self.operand(&right, false);
+                self.folded(left, right, Category::Train, range, source, |left, right, to| Op::Train { left, right, to })
             }
             _ => return Err(Error::new(ErrorKind::Syntax, "these grammatical categories do not bind").at(&span)),
         };
@@ -879,11 +892,12 @@ impl<'s> Compiler<'s> {
             let postfix = postfix.clone();
             return self.postfix(operand, operator, postfix, span, source);
         }
+        self.operand(&operand, false);
         let category = self.derived_category(&operand, &operator);
         let range = operand.range.clone();
         if let (Read::Constant(o), Read::Constant(p)) = (operand.read, operator.read) {
             let o = self.constants[o as usize].clone().value(source);
-            if let (Ok(o), Ok(p)) = (o, self.constants[p as usize].clone().value(source)) && let Ok(binding) = derived(o, p, operand.literal, &span) {
+            if let (Ok(o), Ok(p)) = (o, self.constants[p as usize].clone().value(source)) && let Ok(binding) = derived(o, p, &span) {
                 return self.constant(Term::Binding(binding), range);
             }
         }
@@ -891,7 +905,7 @@ impl<'s> Compiler<'s> {
         self.release(operator.read);
         let to = self.register();
         self.ops.push(Op::Derive { operand: operand.read, operator: operator.read, to, span, range: range.clone(), result: category,
-            call: operand.call && !operator.postfix, literal: operand.literal });
+            call: operand.call && !operator.postfix });
         Item { call: true, ..Item::new(Read::Register(to), category, range) }
     }
 
@@ -930,16 +944,16 @@ impl<'s> Compiler<'s> {
     fn call(&mut self, function: Item, argument: Item, span: Span, last: bool) -> Item {
         let range = narrow(&span.range);
         let read = function.read;
-        let (left, function, left_literal) = match self.ops.last() {
-            Some(&Op::Attach { left, right, to, literal }) if read == Read::Register(to) => { self.ops.pop(); (Some(left), right, literal) }
-            _ => (None, read, false),
+        let (left, function) = match self.ops.last() {
+            Some(&Op::Attach { left, right, to }) if read == Read::Register(to) => { self.ops.pop(); (Some(left), right) }
+            _ => (None, read),
         };
         let function = self.built(function, &span);
-        let literals = u64::from(left_literal) | (u64::from(argument.literal) << 1);
+        self.operand(&argument, false);
         self.release(read);
         self.release(argument.read);
         let (argument, to) = (argument.read, self.register());
-        self.ops.push(Op::Call { left, function, argument, to, span, range: range.clone(), result: Category::Value, last, literals });
+        self.ops.push(Op::Call { left, function, argument, to, span, range: range.clone(), result: Category::Value, last });
         Item { call: true, ..Item::new(Read::Register(to), Category::Value, range) }
     }
 
@@ -953,11 +967,34 @@ impl<'s> Compiler<'s> {
 
     /// An item that reads `term`, kept as a constant with the text `range`, which binds as the term's category.
     fn constant(&mut self, term: Term, range: std::ops::Range<u32>) -> Item {
-        let literal = matches!(&term, Term::Binding(Binding::Value(Value::Number(_) | Value::Character(_))));
+        let atom = matches!(&term, Term::Binding(Binding::Value(Value::Number(_) | Value::Character(_))));
         let entity = Entity::new(term, range.clone(), false, None);
         let category = entity.category();
         self.constants.push(entity);
-        Item { literal, ..Item::new(Read::Constant(self.constants.len() as u32 - 1), category, range) }
+        let at = self.constants.len() as u32 - 1;
+        Item { literal: atom.then_some(Literal::Constant(at)), ..Item::new(Read::Constant(at), category, range) }
+    }
+
+    /// Makes `item`'s literal a constant, as an operand of a graph operation takes it (target part 4): its constant entry becomes a literal node, once, or its `Op::Number` gives its literal node. A literal index argument (`index`) makes any constant entry one, strings included.
+    fn operand(&mut self, item: &Item, index: bool) {
+        let entry = match (item.literal, item.read) {
+            (Some(Literal::Number(op)), _) => {
+                if let Op::Number { constant, .. } = &mut self.ops[op] { constant.get_or_insert_with(Default::default); }
+                return;
+            }
+            (Some(Literal::Constant(c)), _) => c,
+            (None, Read::Constant(c)) if index => c,
+            _ => return,
+        };
+        if let Term::Binding(Binding::Value(value)) = &mut self.constants[entry as usize].term && value.constant_value().is_none() {
+            *value = Value::constant(value.clone());
+        }
+    }
+
+    /// Whether `read` is a constant selecting primitive, whose left argument is an index (`Primitive::takes_index`).
+    fn takes_index(&self, read: Read) -> bool {
+        let Read::Constant(c) = read else { return false };
+        matches!(&self.constants[c as usize].term, Term::Binding(Binding::Function(f)) if f.function().is_ok_and(|f| f.as_primitive().is_some_and(Primitive::takes_index)))
     }
 
     /// A register that holds nothing the compiler still needs.

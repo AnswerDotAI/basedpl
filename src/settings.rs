@@ -70,7 +70,7 @@ pub(crate) fn capture_current(setting: Setting, snapshot: Numeric) -> Value {
 }
 
 fn setting(call: &CallView<'_>, name: Setting) -> Result<crate::Number> {
-    let position = call.setting(name).ok_or_else(|| Error::domain("missing numeric call context"))?;
+    let position = call.layout().setting(name).ok_or_else(|| Error::domain("missing numeric call context"))?;
     call.parameter_at(position)?.as_number().ok_or_else(|| Error::domain("invalid numeric call context"))
 }
 
@@ -84,10 +84,6 @@ pub(crate) fn captured(call: &CallView<'_>) -> Result<Numeric> {
         tolerance: Tolerance::new(tolerance).ok_or_else(|| Error::domain("invalid tolerance call context"))?, units, fixed: None })
 }
 
-pub(crate) fn convergence(call: &CallView<'_>) -> Result<Numeric> { Ok(captured(call)?.convergence()) }
-
-pub(crate) fn converged(call: &CallView<'_>, left: &Value, right: &Value) -> Result<bool> { left.matches_within(right, convergence(call)?) }
-
 pub(crate) struct NumericScope { depth: usize, thread: std::marker::PhantomData<std::rc::Rc<()>> }
 impl Drop for NumericScope { fn drop(&mut self) { NUMERIC.with(|stack| stack.borrow_mut().truncate(self.depth)); } }
 
@@ -95,7 +91,7 @@ pub(crate) fn activate(origin: &Origin<&[Value]>) -> Result<NumericScope> {
     let prepared = crate::primitive::Operation::prepare(origin)?;
     let call = prepared.view();
     let numeric = captured(&call)?;
-    let operands = std::array::from_fn(|i| origin.list[call.setting(Setting::BODY[i]).expect("captured BODY context")].clone());
+    let operands = std::array::from_fn(|i| origin.list[call.layout().setting(Setting::BODY[i]).expect("captured BODY context")].clone());
     let depth = NUMERIC.with(|stack| {
         let mut stack = stack.borrow_mut();
         let depth = stack.len();
@@ -108,10 +104,6 @@ pub(crate) fn activate(origin: &Origin<&[Value]>) -> Result<NumericScope> {
 pub(crate) fn display() -> display::Settings { DISPLAY.read().unwrap_or_else(PoisonError::into_inner)[0] }
 pub(crate) fn set_display(display: display::Settings) { DISPLAY.write().unwrap_or_else(PoisonError::into_inner)[0] = display; }
 pub(crate) fn set_display_defaults(display: display::Settings) { *DISPLAY.write().unwrap_or_else(PoisonError::into_inner) = [display; 2]; }
-pub(crate) fn reports_fusion() -> bool { REPORTS_FUSION.load(Relaxed) }
-pub(crate) fn set_reports_fusion(on: bool) { REPORTS_FUSION.store(on, Relaxed) }
-pub(crate) fn batch() -> bool { BATCHING.load(Relaxed) }
-pub(crate) fn set_batch(on: bool) { BATCHING.store(on, Relaxed) }
 pub fn hanzi_aliases() -> bool { HANZI_ALIASES.load(Relaxed) }
 pub(crate) fn set_hanzi_aliases(on: bool) { HANZI_ALIASES.store(on, Relaxed) }
 pub(crate) fn verifies() -> bool { VERIFIES.load(Relaxed) }

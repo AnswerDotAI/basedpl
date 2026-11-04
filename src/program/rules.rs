@@ -1,4 +1,5 @@
 //! Root-indexed rewrites over programs, after batching and differentiation.
+use crate::error::OrInternal;
 use super::{Node, Out, Program, Read, Running, Step, StepKind};
 use crate::{Value, error::Result, number::{Arithmetic, Math}, primitive::{Operation, Pairing, Primitive}};
 use rustymath::{agreement::Mapping, hashing::HashMap};
@@ -119,13 +120,12 @@ fn matches(pattern: Pattern, program: &Program, read: &Read, bound: &mut Bound) 
 fn matched(rule: &Rule, program: &Program, node: usize) -> Option<Bound> {
     let mut bound = Bound::new();
     if let Some(pattern) = rule.pattern {
-        matches(pattern, program, &Read { operand: Out::data(node, 0), map: Mapping::Linear(1) }, &mut bound).then_some(bound)
+        matches(pattern, program, &Read::linear(Out::data(node, 0)), &mut bound).then_some(bound)
     } else { Some(bound) }
 }
 
-pub(crate) fn rewrite(program: &mut Program, running: &mut Running, from: usize, until: usize) -> Result<Box<[Option<usize>]>> {
+pub(crate) fn rewrite(program: &mut Program, running: &mut Running, from: usize, until: usize) -> Result<()> {
     let mut replaced = false;
-    let originals = program.nodes.len();
     let mut users = vec![0; program.nodes.len()];
     for node in 0..program.nodes.len() { for read in program.execution_dependencies(node) { users[read.operand.node] += 1; } }
     for root in program.live_roots() { users[root.node] += 1; }
@@ -155,14 +155,12 @@ pub(crate) fn rewrite(program: &mut Program, running: &mut Running, from: usize,
             }
         }
     }
-    if !replaced { return Ok((0..originals).map(Some).collect()); }
-    let mut mapped = ordered(program, running, from)?;
-    mapped.truncate(originals);
-    Ok(mapped.into())
+    if replaced { ordered(program, running, from)?; }
+    Ok(())
 }
 
 fn explicit_trees(source: &super::Origin<std::ops::Range<u32>>) -> Option<std::sync::Arc<crate::array::Trees>> {
-    source.trees.as_ref().map(|trees| std::sync::Arc::new(trees.project_roots(&trees.roots().take(source.explicit_roots as usize).collect::<Vec<_>>())))
+    source.trees.as_ref().map(|trees| std::sync::Arc::new(trees.project_roots(&trees.roots().take(source.layout().explicit_roots().len()).collect::<Vec<_>>())))
 }
 
 fn selective(program: &mut Program, running: &mut Running, node: usize, users: &[usize]) -> Result<bool> {
@@ -178,25 +176,25 @@ fn selective(program: &mut Program, running: &mut Running, node: usize, users: &
     }
     let (copy, map, level) = (copy.clone(), map.clone(), *level);
     let positions = left.iter().copied().chain(std::iter::once(*right)).collect::<Vec<_>>();
-    let map_args = program.reads(&map.list)[..map.explicit as usize].to_vec();
+    let map_args = program.reads(&map.list)[map.layout().explicit()].to_vec();
     let mut args = map_args.clone();
-    let copy_args = program.reads(&copy.list)[..copy.explicit as usize].to_vec();
+    let copy_args = program.reads(&copy.list)[copy.layout().explicit()].to_vec();
     let saved = (program.nodes.len(), program.reads.len(), program.descs.len());
     for input in positions {
         let argument = &map_args[input as usize];
-        let desc = running.desc(program, argument.operand).ok_or_else(crate::Error::planning)?;
+        let desc = running.desc(program, argument.operand).or_internal()?;
         if desc.atom { continue; }
         let aligned = if argument.map == Mapping::Linear(1) && desc.layout == running.desc(program, output).unwrap().layout { argument.operand } else {
             append(
                 program, running, &map, Operation::ReadRelation { operation: Box::new(map.operation.clone()),
-                    relation: crate::primitive::Relation::Input(input), arguments: map.explicit as usize - map.operation.functions() }, map_args.clone(),
+                    relation: crate::primitive::Relation::Input(input), arguments: map.layout().explicit().end - map.layout().data() }, map_args.clone(),
                 map.explicit_roots, explicit_trees(&map), level)?
         };
         let mut selected = copy_args.clone();
-        selected[source] = Read { operand: aligned, map: Mapping::Linear(1) };
+        selected[source] = Read::linear(aligned);
         let selected = append(program, running, &copy, copy.operation.clone(), selected, copy.explicit_roots, explicit_trees(&copy), level)?;
         selective(program, running, selected.node, users)?;
-        args[input as usize] = Read { operand: selected, map: Mapping::Linear(1) };
+        args[input as usize] = Read::linear(selected);
     }
     let changed = replace(program, running, node, &map, map.operation.clone(), args, map.explicit_roots, explicit_trees(&map))?;
     if !changed {
@@ -216,8 +214,7 @@ fn prepare_row(
     trees: Option<std::sync::Arc<crate::array::Trees>>
 ) -> Result<(Step, super::Origin<Vec<Read>>, Option<super::Description>, Option<rustymath::agreement::ReadPlan>)> {
     let old = program.reads(&source.list);
-    let from = reads.iter().map(|read| old.iter().position(|old| old.operand == read.operand && old.map == read.map)).collect::<Vec<_>>();
-    let (mut draft, _) = source.projected(operation, reads, &from, roots, trees, |position| old[position].clone(), old.len())?;
+    let mut draft = source.projected(operation, reads, roots, trees, |position| old[position].clone(), old.len())?;
     let mut reads = std::mem::take(&mut draft.list);
     let first = program.reads.len();
     program.reads.extend(reads.iter().cloned());
@@ -263,7 +260,7 @@ pub(crate) fn append(
     trees: Option<std::sync::Arc<crate::array::Trees>>, level: Option<usize>) -> Result<Out> {
     let first = program.reads.len();
     let (step, origin, outputs, plan) = prepare_row(program, running, source, operation, reads, roots, trees)?;
-    let outputs = outputs.ok_or_else(crate::Error::planning)?;
+    let outputs = outputs.or_internal()?;
     let mut builder = super::Builder::new();
     std::mem::swap(program, &mut builder.program);
     let output = builder.step(step, origin, &outputs, level);
@@ -279,7 +276,7 @@ pub(crate) fn append(
     Ok(output)
 }
 
-fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<Vec<Option<usize>>> {
+fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<()> {
     let mut state = vec![0u8; program.nodes.len()];
     let mut order = Vec::new();
     let counts = program.parameters.iter().filter_map(|parameter| match parameter { super::Parameter::Count { output, .. } => Some(*output), _ => None });
@@ -320,6 +317,7 @@ fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<
     let mut values: Vec<_> = (0..builder.program.nodes.len()).map(|_| None).collect();
     for (old, new) in mapped.iter().enumerate().filter_map(|(old, new)| new.map(|new| (old, new))) {
         values[new.node] = running.values.get_mut(old).and_then(Option::take);
+        geometry.read_plans[new.node] = running.geometry.read_plans.get_mut(old).and_then(Option::take);
         for output in 0..program.outputs(old) {
             if let Some(desc) = running.geometry.descs.get(program.desc_index(Out::data(old, output as u32))).cloned() {
                 geometry.descs[builder.program.desc_index(Out::data(new.node, output as u32))] = desc;
@@ -327,10 +325,11 @@ fn ordered(program: &mut Program, running: &mut Running, from: usize) -> Result<
         }
         for (old, new) in program.dependency_range(old).zip(builder.program.dependency_range(new.node)) {
             if let Some(map) = running.geometry.maps.get(old as usize) { geometry.maps[new as usize] = map.clone(); }
+            geometry.reads[new as usize] = running.geometry.reads.get_mut(old as usize).and_then(Option::take);
         }
     }
     running.values = values;
     *program = builder.program;
     running.bind(program, geometry);
-    Ok(mapped.into_iter().map(|at| at.map(|at| at.node)).collect())
+    Ok(())
 }

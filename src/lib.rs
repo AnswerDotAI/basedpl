@@ -57,7 +57,7 @@ pub use error::{Error, ErrorKind, Source, Span};
 pub(crate) use eval::session;
 pub use eval::{Evaluation, Function, Operator, OperatorValue, Session, Turn};
 pub use execution::{EvalOptions, Input, InterruptHandle, MimeBundle, MimeData, Output, OutputKind, OutputSink, Poll};
-pub use graph::forced;
+pub use graph::{Hold, forced};
 #[cfg(web)]
 pub use host::configure_browser;
 pub use inspection::Inspection;

@@ -12,12 +12,10 @@ pub(crate) struct WindowSpec { pub(crate) sizes: Vec<i64>, pub(crate) moves: Vec
 impl WindowSpec {
     pub(crate) fn field_read(field: &str) -> ReadKind { if field.eq_ignore_ascii_case("size") { ReadKind::Count } else { ReadKind::Structure } }
     /// Separate fields before their read policies apply, including compact records and size/movement matrices.
-    pub(crate) fn normalized(origin: &Origin<&[Value]>, spec: &Value, from: Option<usize>) -> Result<Value, Error> {
+    pub(crate) fn normalized(origin: &Origin<&[Value]>, spec: &Value) -> Result<Value, Error> {
         let row = |position| {
-            let mut selected = crate::eval::projected_call(
-                origin, Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Axes }, &[Value::integer(position), spec.clone()], &[None, from]
-            )?;
-            selected.literals |= 1;
+            let selected = crate::eval::projected_call(
+                origin, Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Axes }, &[Value::constant(Value::integer(position)), spec.clone()])?;
             Operation::dispatch(selected.reborrow())?.assemble()
         };
         let (keys, values) = if let Some(keys) = spec.keys(0) {
@@ -34,7 +32,7 @@ impl WindowSpec {
         Value::tuple(values).with_keys(vec![Some(keys)]).described("invalid window options")
     }
     pub(crate) fn from_call(call: &CallView<'_>) -> Result<Self, Error> {
-        let root = call.axis_root().ok_or_else(Error::planning)?;
+        let root = call.axis_root().or_internal()?;
         Self::new(call.root_parameter(root.index)?.as_ref())
     }
     pub(crate) fn new(spec: &Value) -> Result<Self, Error> {
@@ -60,21 +58,21 @@ impl WindowSpec {
 
 pub(super) fn windows_form(origin: Origin<&[Value]>, call: &CallView<'_>) -> Result<Option<Outputs<Value>>, Error> {
     let Operation::Primitive { pairing: Pairing::Axes, .. } = origin.operation else { return fill_form(origin, call); };
-    let roots = call.explicit_argument_roots();
-    let right = call.root(roots.end - 1);
+    let roots = call.layout().arguments();
+    let right = call.layout().root(roots.back().or_internal()?);
     let spec = if roots.len() == 2 { origin.root_input(roots.start)?.into_owned() } else { Value::integer(2) };
-    let spec = WindowSpec::normalized(&origin, &spec, (roots.len() == 2).then(|| call.root(roots.start).leaves.start))?;
+    let spec = WindowSpec::normalized(&origin, &spec)?;
     let value = origin.root_input(right.index)?.into_owned();
-    let (pairing, values, from) = crate::eval::operators::axis_arguments(&origin, &spec, &[value], &[Some(right.leaves.start)])?;
-    let normalized = crate::eval::projected_call(&origin, Operation::Primitive { primitive: Primitive::Windows, pairing }, &values, &from)?;
+    let (pairing, values) = crate::eval::operators::axis_arguments(&origin, &spec, &[value])?;
+    let normalized = crate::eval::projected_call(&origin, Operation::Primitive { primitive: Primitive::Windows, pairing }, &values)?;
     Operation::dispatch(normalized.reborrow()).map(Some)
 }
 
 pub(super) fn windowed(origin: &Origin<&[Value]>, call: &CallView) -> Result<Value, Error> {
-    let right = origin.root_input(call.explicit_argument_roots().start)?.exposed()?;
+    let right = origin.root_input(call.layout().arguments().start)?.exposed()?;
     let spec = WindowSpec::from_call(call)?;
     let (padding, plan) = spec.geometry(right.layout())?;
-    let fill = call.fill_root().map(|root| origin.root_value(root.index, ReadKind::Value)).transpose()?;
+    let fill = call.layout().fill().map(|root| origin.root_value(root.index, ReadKind::Value)).transpose()?;
     let padded = padding.map(|padding| copied_fill(&right, padding.layout.into(), &Mapping::from(padding.steps), fill.as_deref())).transpose()
         .described("invalid windows")?;
     remapped(padded.as_ref().unwrap_or(&right), plan).described("invalid windows")
@@ -109,7 +107,7 @@ pub(super) fn enclose_axes(right: &Value, axes: &[usize]) -> Result<Value, Error
     let whole = if order.iter().copied().eq(0..rank) { right.clone() } else {
         let dimensions = order.iter().map(|&axis| ViewAxis { input: 0, axis: Some(axis) }).collect();
         Operation::Read(ReadOp::Axes { axes: dimensions, destinations: rustymath::search::inverse_permutation(order.into_iter()).into() })
-            .call(&[right.clone()], 0)?
+            .call(&[right.clone()])?
     };
     let data = whole.cells(axes.len())?.collect()?.into_iter().map(|value| if value.is_atom() { value.enclose() } else { Ok(value) })
         .collect::<Result<Vec<_>, Error>>()?;
@@ -134,7 +132,7 @@ fn placed_cells(call: &Origin<&[Value]>, mixed: &Value, frame: usize, spec: &Val
     for a in &mut order { if *a == usize::MAX { *a = axes.next().unwrap(); } }
     let axes = order.iter().map(|&axis| ViewAxis { input: 0, axis: Some(axis) }).collect();
     let destinations = rustymath::search::inverse_permutation(order.into_iter());
-    call.apply(Operation::Read(ReadOp::Axes { axes, destinations: destinations.into() }), &[mixed.clone()], &[None])
+    call.apply(Operation::Read(ReadOp::Axes { axes, destinations: destinations.into() }), &[mixed.clone()])
 }
 
 /// The axis names that the shape `dimensions` gives reshape and `⍳`: each key names its entry's axis, and an unkeyed entry leaves its axis unnamed.
@@ -168,11 +166,6 @@ pub(crate) fn copied_fill(right: &Value, layout: Layout, map: &Mapping, fill: Op
     if map.in_order(right.len(), layout.shape()) && let Value::Array(array) = right { return Value::stored_part(array, 0..right.len(), layout); }
     let (base, steps) = map.to_walk(layout.shape());
     walked(right, layout, base, &steps, fill)
-}
-
-/// Flat positions in a host value, with its prototype at missing positions unless `fill` is supplied.
-pub(crate) fn copied_at(right: &Value, offsets: Vec<usize>, layout: Layout, fill: Option<&Value>) -> Result<Value, ErrorKind> {
-    copied_fill(right, layout, &Mapping::from(vec![Steps::table(offsets)]), fill)
 }
 
 fn walked(source: &Value, layout: Layout, base: usize, steps: &[Steps], fill: Option<&Value>) -> Result<Value, ErrorKind> {
@@ -435,7 +428,7 @@ fn partition(call: &Origin<&[Value]>, left: &Value, right: &Value, axis: Option<
         return Err(Error::new(Kind::Rank, "partition needs a unit or vector left argument and a right argument that is not a unit"));
     }
     let right = if right.is_unit() {
-        call.apply(Operation::Read(ReadOp::Reshape), &[Value::integer(1), right.clone()], &[None, None])?
+        call.apply(Operation::Read(ReadOp::Reshape), &[Value::integer(1), right.clone()])?
     } else { right.clone() };
     let axis = axis.unwrap_or(0);
     let traversal = Lanes::new(right.shape(), axis)?;
@@ -464,9 +457,9 @@ fn partition(call: &Origin<&[Value]>, left: &Value, right: &Value, axis: Option<
     let part = |range: std::ops::Range<usize>| -> Result<Value, Error> {
         let axis = Value::integer(axis as i64);
         let dropped = call.apply(Operation::Primitive { primitive: Primitive::Drop, pairing: Pairing::Explicit { fill: false } },
-            &[Value::integer(range.start as i64), right.clone(), axis.clone()], &[None; 3])?;
+            &[Value::integer(range.start as i64), right.clone(), axis.clone()])?;
         call.apply(Operation::Primitive { primitive: Primitive::Take, pairing: Pairing::Explicit { fill: false } },
-            &[Value::integer(range.len() as i64), dropped, axis], &[None; 3])
+            &[Value::integer(range.len() as i64), dropped, axis])
     };
     // A partition starts at its divider and grows as the walk extends it. The next divider completes it.
     let mut data = Vec::with_capacity(total);
@@ -487,14 +480,14 @@ fn partition(call: &Origin<&[Value]>, left: &Value, right: &Value, axis: Option<
 
 pub(super) fn form(origin: Origin<&[Value]>, call: &CallView<'_>) -> Result<Option<Outputs<Value>>, Error> {
     if let Some(outputs) = fill_form(origin.reborrow(), call)? { return Ok(Some(outputs)); }
-    let roots = call.explicit_argument_roots();
-    let Operation::Primitive { primitive, .. } = call.operation else { return Err(Error::planning()); };
+    let roots = call.layout().arguments();
+    let Operation::Primitive { primitive, .. } = call.operation else { return Err(Error::internal()); };
     if matches!(primitive, Primitive::Identity(_)) {
-        let source = call.source_roots()?.into_iter().next().ok_or_else(Error::planning)?.index;
+        let source = call.source_roots()?.into_iter().next().or_internal()?.index;
         return origin.root_input(source).map(|value| Some(Outputs::one(value.into_owned())));
     }
     if let Primitive::Keys(inverse) = primitive {
-        let right = origin.root_input(roots.end.checked_sub(1).ok_or_else(|| Error::domain("a function needs an argument"))?)?.exposed()?;
+        let right = origin.root_input(roots.end.before(1).ok_or_else(|| Error::domain("a function needs an argument"))?)?.exposed()?;
         let axis = call.axis_root().map(|root| {
             let spec = call.root_parameter(root.index)?;
             axes(&resolve_axes(&spec, right.layout())?, right.rank())
@@ -511,14 +504,14 @@ pub(super) fn form(origin: Origin<&[Value]>, call: &CallView<'_>) -> Result<Opti
         let right = origin.root_input(roots.start)?.exposed()?;
         let mut mixed = if let Some(desc) = Desc::of(&right) {
             if desc.atom {
-                origin.apply(Operation::Read(ReadOp::Reshape), &[Value::integers([0], Vec::new())?, right.clone()], &[None, None])?
+                origin.apply(Operation::Read(ReadOp::Reshape), &[Value::integers([0], Vec::new())?, right.clone()])?
             } else { right.clone() }
         } else {
             let mut args = vec![right.clone(), right.prototype()];
             args.extend(right.elements());
-            let fill = call.fill_root();
+            let fill = call.layout().fill();
             if let Some(fill) = &fill { args.push(origin.root_input(fill.index)?.into_owned()); }
-            origin.apply(Operation::Join { notation: Notation::Cells, widening: Widening::Arrays, fill: fill.is_some() }, &args, &vec![None; args.len()])?
+            origin.apply(Operation::Join { notation: Notation::Cells, widening: Widening::Arrays, fill: fill.is_some() }, &args)?
         };
         if let Some(root) = call.axis_root() {
             let spec = call.root_parameter(root.index)?;
@@ -528,7 +521,7 @@ pub(super) fn form(origin: Origin<&[Value]>, call: &CallView<'_>) -> Result<Opti
     }
     if roots.len() == 2 && matches!(primitive, Primitive::Enclose | Primitive::Nest) {
         let left = call.root_parameter(roots.start)?;
-        let right = origin.root_input(roots.end - 1)?.exposed()?;
+        let right = origin.root_input(roots.back().or_internal()?)?.exposed()?;
         let axis = call.axis_root().map(|root| {
             let spec = call.root_parameter(root.index)?;
             single_axis(&resolve_axes(&spec, right.layout())?, right.rank())
@@ -551,13 +544,13 @@ pub(super) fn form(origin: Origin<&[Value]>, call: &CallView<'_>) -> Result<Opti
     Ok(Some(Outputs::one(value)))
 }
 pub(super) fn sources(call: &CallView<'_>) -> Result<Vec<TreeRoot>, Error> {
-    let roots = call.explicit_argument_roots();
-    let Operation::Primitive { primitive, .. } = call.operation else { return Err(Error::planning()); };
+    let roots = call.layout().arguments();
+    let Operation::Primitive { primitive, .. } = call.operation else { return Err(Error::internal()); };
     let source = match primitive {
-        Primitive::Ravel | Primitive::CatenateFirst if roots.len() == 2 => return Ok(roots.map(|root| call.root(root)).collect()),
-        Primitive::Identity(true) if roots.len() == 2 => roots.start, _ => roots.end.checked_sub(1).ok_or_else(Error::planning)?
+        Primitive::Ravel | Primitive::CatenateFirst if roots.len() == 2 => return Ok(roots.map(|root| call.layout().root(root)).collect()),
+        Primitive::Identity(true) if roots.len() == 2 => roots.start, _ => roots.end.before(1).or_internal()?
     };
-    Ok(vec![call.root(source)])
+    Ok(vec![call.layout().root(source)])
 }
 fn parameter_read(primitive: Primitive) -> Option<ReadKind> {
     Some(match primitive {
@@ -583,18 +576,17 @@ pub(super) fn roles(call: &CallView<'_>) -> Result<Roles, Error> {
         }
         return Ok(Roles::default());
     }
-    if *primitive == Primitive::Shape && call.explicit_argument_roots().len() == 1 { return description_roles(call); }
-    if call.explicit_argument_roots().len() != 2 { return Ok(Roles::default()); }
+    if *primitive == Primitive::Shape && call.layout().arguments().len() == 1 { return description_roles(call); }
+    if call.layout().arguments().len() != 2 { return Ok(Roles::default()); }
     let Some(read) = parameter_read(*primitive) else { return Ok(Roles::default()) };
-    let root = call.root(call.explicit_argument_roots().start);
-    let first = call.root_boundary(call.operation.functions());
-    Ok(root.leaves.fold(Roles::default(), |roles, position| roles.with(position - first, read)))
+    let root = call.layout().root(call.layout().arguments().start);
+    Ok(root.leaves.fold(Roles::default(), |roles, position| roles.with(position, read)))
 }
 
 pub(super) fn cell_roles(call: &CallView<'_>) -> Result<Roles, Error> { call.with_cells(|cell, _| Operation::roles(cell)) }
 pub(super) fn cell_sources(call: &CallView<'_>) -> Result<Vec<TreeRoot>, Error> { call.with_cells(|cell, _| Operation::source_roots(cell)) }
 pub(crate) fn cell_read(origin: &Origin<&[Value]>, call: &CallView, wholes: &[Value], frame: usize) -> Result<Origin<Vec<Value>>, Error> {
-    let level = crate::transform::Level::current_batch_rule().ok_or_else(Error::planning)?;
+    let level = crate::transform::Level::current_batch_rule().or_internal()?;
     let positions: Vec<_> = call.data_positions().collect();
     if origin.list.iter().enumerate()
         .any(|(position, value)| origin.executes(position) && value.carried_level() == Some(level.id) && !positions.contains(&position)) {
@@ -607,17 +599,16 @@ pub(crate) fn cell_read(origin: &Origin<&[Value]>, call: &CallView, wholes: &[Va
     let mut normalized = origin.with_list(origin.list);
     normalized.operation = operation.clone();
     let values = crate::batch::lifted(&normalized.reborrow(), call, wholes, frame, level.id)?;
-    let from: Vec<_> = (0..values.len()).map(Some).collect();
-    origin.rebuilt(operation, values, &from, origin.explicit, origin.explicit_roots, origin.trees.clone())
+    origin.rebuilt(operation, values, origin.explicit, origin.explicit_roots, origin.trees.clone())
 }
 struct ReadGeometry { source: usize, desc: Desc, read: ReadPlan }
 
 fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
     use Primitive::*;
     let Operation::Primitive { primitive, .. } = call.operation else { unreachable!("a structural row") };
-    let roots = call.explicit_argument_roots();
-    let right = call.root(roots.clone().last().ok_or_else(|| Error::domain("a function needs an argument"))?);
-    let left = (roots.len() == 2).then(|| call.root(roots.start));
+    let roots = call.layout().arguments();
+    let right = call.layout().root(roots.clone().last().ok_or_else(|| Error::domain("a function needs an argument"))?);
+    let left = (roots.len() == 2).then(|| call.layout().root(roots.start));
     let source = if *primitive == Identity(true) { left.as_ref().unwrap_or(&right) } else { &right };
     if source.leaves.len() != 1 { return Ok(None); }
     let Some(desc) = call.root_desc(source.index) else { return Ok(None) };
@@ -656,7 +647,7 @@ fn read_geometry(call: &CallView<'_>) -> Result<Option<ReadGeometry>, Error> {
         let spec = call.root_parameter(root.index)?;
         axes(&resolve_axes(&spec, &desc.layout)?, rank)
     }).transpose()?;
-    let parameter = left.as_ref().zip(parameter_read(*primitive)).map(|(root, read)| call.root_parameter(root.index)).transpose()?;
+    let parameter = left.as_ref().zip(parameter_read(*primitive)).map(|(root, _)| call.root_parameter(root.index)).transpose()?;
     let (layout, atom, map) = match (*primitive, parameter.as_deref()) {
         (Keys(inverse), spec) => {
             let (layout, entry) = match spec {
@@ -747,8 +738,8 @@ pub(super) fn build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) ->
 }
 
 pub(super) fn code_cells(call: &RunView<'_>) -> Result<Outputs<Value>, Error> {
-    let (_, Some(outputs), Some(read)) = build_cells(call, &mut |_, _| {})? else { return Err(Error::planning()); };
-    let desc = outputs.as_ref().first().and_then(Option::as_ref).ok_or_else(Error::planning)?;
+    let (_, Some(outputs), Some(read)) = build_cells(call, &mut |_, _| {})? else { return Err(Error::internal()); };
+    let desc = outputs.as_ref().first().and_then(Option::as_ref).or_internal()?;
     let mut values = Vec::new();
     read.try_for_each_source(&mut |source, _| {
         if !values.iter().any(|(position, _)| *position == source) { values.push((source, call.value(source, ReadKind::Value)?.into_owned())); }

@@ -1,6 +1,7 @@
+use crate::error::OrInternal;
 use crate::{
-    Error, Value, array::{ArrayData, Carried, Frame, Widening, map_leaves}, error::Result, graph::{Pending, Retention, RetentionScope},
-    primitive::{Operation, Primitive, ReadOp, WriteTarget}, program::{Desc, Origin, Step, trace::Role}
+    Error, Value, array::{ArrayData, Carried, Frame, Root, Widening, map_leaves}, error::Result, graph::{Pending, Retention, RetentionScope},
+    primitive::{Operation, Primitive, ReadOp, WriteTarget}, program::{Desc, Origin, Step}
 };
 use rustymath::{error::Kind as ErrorTag, hashing::HashMap};
 use std::sync::Arc;
@@ -27,7 +28,7 @@ pub(crate) fn rooted(root: &Value) -> Result<Value> {
             value => {
                 let at = *position;
                 *position += 1;
-                if Desc::of(value).is_some() { return Operation::Read(ReadOp::Root(at)).call(std::slice::from_ref(value), 0); }
+                if Desc::of(value).is_some() { return Operation::Read(ReadOp::Root(at)).call(std::slice::from_ref(value)); }
                 Err(Error::new(crate::ErrorKind::Unsupported, "writes into exact rational or function roots are not supported"))
             }
         })
@@ -79,7 +80,7 @@ impl<'a> RootPorts<'a> {
         collect(root, &mut Vec::new(), true, &mut ports);
         Self { root, ports }
     }
-    fn port(&self, position: usize) -> Result<&RootPort> { self.ports.get(position).and_then(Option::as_ref).ok_or_else(Error::planning) }
+    fn port(&self, position: usize) -> Result<&RootPort> { self.ports.get(position).and_then(Option::as_ref).or_internal() }
     fn source(&self, pending: &Pending) -> Option<&RootPort> { self.port(source_position(pending)?).ok().filter(|port| port.pending.source() == *pending) }
     fn whole_path(&self, target: &Value) -> Option<Vec<usize>> {
         fn first(value: &Value) -> Option<Pending> {
@@ -122,8 +123,8 @@ impl<'a> RootPorts<'a> {
 }
 
 fn source_position(pending: &Pending) -> Option<usize> {
-    if let Some((_, origin)) = pending.node.recipe() && let Operation::Read(ReadOp::Root(position)) = origin.operation { return Some(position); }
-    pending.node.with_state(|state| match state { crate::graph::State::Input { position, role: Role::Root, .. } => Some(position), _ => None })
+    let (_, origin) = pending.node.recipe()?;
+    if let Operation::Read(ReadOp::Root(position)) = origin.operation { Some(position) } else { None }
 }
 
 fn same_item(target: &Value, root: &Value) -> bool {
@@ -209,23 +210,23 @@ impl Scope {
 pub(crate) struct Walk { root: Value, target: Value, lease: Retention }
 impl Walk {
     pub(crate) fn write(self, values: Value, combine: Option<Primitive>) -> Result<Value> {
-        self.lease.writing(|| Operation::At { combine, target: WriteTarget::Selected }.call(&[self.root, self.target, values], 0))
+        self.lease.writing(|| Operation::At { combine, target: WriteTarget::Selected }.call(&[self.root, self.target, values]))
     }
 }
 
 pub(crate) fn form(origin: Origin<&[Value]>, call: &crate::primitive::CallView) -> Result<Option<crate::program::Outputs<Value>>> {
     let Operation::At { combine, target: mode } = origin.operation else { return Ok(None); };
     if mode == WriteTarget::Selected && !origin.list.iter().any(differentiated)
-        && RootPorts::new(origin.root_input(0)?.as_ref()).whole_path(origin.root_input(1)?.as_ref()).is_some() { return code_at(&origin, call).map(Some); }
+        && RootPorts::new(origin.root_input(Root(0))?.as_ref()).whole_path(origin.root_input(Root(1))?.as_ref()).is_some() { return code_at(&origin, call).map(Some); }
     if crate::primitive::at_geometry(&call)?.is_none() { return code_at(&origin, call).map(Some); }
     if mode != WriteTarget::Selected { return Ok(None); }
-    let root = origin.root_input(0)?;
+    let root = origin.root_input(Root(0))?;
     let port = subject(&root).pending().and_then(source_position).ok_or_else(foreign)?;
     let distinct = combine.is_none() && origin.list.iter().any(differentiated);
     let mut normalized = origin.with_list(origin.list);
     normalized.operation = Operation::At { combine, target: WriteTarget::Source { port, frame: 0, distinct } };
     if origin.mode.dynamic {
-        let reads = origin.list.iter().map(|value| crate::program::Read { operand: subject(value).clone(), map: rustymath::agreement::Mapping::Linear(1) })
+        let reads = origin.list.iter().map(|value| crate::program::Read::linear(subject(value).clone()))
             .collect::<Vec<_>>();
         let checked = Operation::relation_origin(&normalized.with_list(reads.as_slice()), crate::primitive::Relation::Validate, None)?;
         Operation::dispatch(checked.reborrow())?.assemble()?.read(crate::ReadKind::RuntimeOnly)?;
@@ -236,10 +237,10 @@ pub(crate) fn form(origin: Origin<&[Value]>, call: &crate::primitive::CallView) 
 pub(crate) fn code_at(origin: &Origin<&[Value]>, call: &crate::primitive::CallView<'_>) -> Result<crate::program::Outputs<Value>> {
     use crate::{primitive::{Selection, Targets}, program::trace::ReadKind};
     use rustymath::agreement::ReadAt;
-    let Operation::At { combine, target: mode } = call.operation else { return Err(Error::planning()); };
-    let root = origin.root_input(0)?.into_owned();
-    let target = origin.root_input(1)?.into_owned();
-    let mut values = origin.root_input(2)?.into_owned();
+    let Operation::At { combine, target: mode } = call.operation else { return Err(Error::internal()); };
+    let root = origin.root_input(Root(0))?.into_owned();
+    let target = origin.root_input(Root(1))?.into_owned();
+    let mut values = origin.root_input(Root(2))?.into_owned();
     if [&root, &target, &values].into_iter().any(differentiated) {
         return Err(Error::new(crate::ErrorKind::Unsupported, "write derivatives require native arrays of unchanged shape"));
     }
@@ -277,9 +278,9 @@ pub(crate) fn code_at(origin: &Origin<&[Value]>, call: &crate::primitive::CallVi
     })? { return Err(foreign()); }
     let concatenate = |parts: Vec<Value>| -> Result<Value> {
         let mut parts = parts.into_iter();
-        let first = parts.next().ok_or_else(Error::planning)?;
+        let first = parts.next().or_internal()?;
         parts.try_fold(first, |left, right| {
-            origin.apply(Operation::Primitive { primitive: Primitive::CatenateFirst, pairing: crate::primitive::Pairing::Axes }, &[left, right], &[None; 2])
+            origin.apply(Operation::Primitive { primitive: Primitive::CatenateFirst, pairing: crate::primitive::Pairing::Axes }, &[left, right])
         })
     };
     for (source, changes) in writes {
@@ -296,14 +297,14 @@ pub(crate) fn code_at(origin: &Origin<&[Value]>, call: &crate::primitive::CallVi
             let mut values = Vec::with_capacity(changes.len());
             for (target, value) in changes {
                 let value = if value.is_singleton() && target.len() != 1 {
-                    origin.apply(Operation::Read(ReadOp::Reshape), &[Value::integer(target.len() as i64), value], &[None; 2])?
+                    origin.apply(Operation::Read(ReadOp::Reshape), &[Value::integer(target.len() as i64), value])?
                 } else { value };
-                targets.push(origin.apply(Operation::Read(ReadOp::Ravel), &[target], &[None])?);
-                values.push(origin.apply(Operation::Read(ReadOp::Ravel), &[value], &[None])?);
+                targets.push(origin.apply(Operation::Read(ReadOp::Ravel), &[target])?);
+                values.push(origin.apply(Operation::Read(ReadOp::Ravel), &[value])?);
             }
-            origin.apply(Operation::At { combine: *combine, target: WriteTarget::Selected }, &[before, concatenate(targets)?, concatenate(values)?], &[None; 3])?
+            origin.apply(Operation::At { combine: *combine, target: WriteTarget::Selected }, &[before, concatenate(targets)?, concatenate(values)?])?
         } else {
-            crate::program::trace::Tracing::stop(crate::program::Reason::HostKind, call.site.cloned());
+            crate::program::trace::Tracing::stop(crate::program::Reason::HostKind, call.site.cloned())?;
             let before = before.read(ReadKind::Structure)?;
             let mut items = before.elements().collect::<Vec<_>>();
             for (target, values) in changes {

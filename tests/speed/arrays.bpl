@@ -462,20 +462,20 @@ lut.[ux]
 ⍝ Under copies the argument, applies the function to what the structural function selects, and writes the result back through the same map.
 ⍝ Expected: `-@⌽ v` 3 copies: one copy, the negation read through the reversed map, as `-⌽v` costs, and the reversed write; `-@⍉ m` 4 copies: one copy, the negation read through the transpose, about 1.5 copies as `⍉m` costs, and the write back in tiles, about 1.5 copies.
 ⍝ `-@⍉ m` measures about 6.4 on macOS and 6.7 in wasm. Its negation runs as a separate pass over the gathered transpose, about 1 copy, where the expected cost reads through the transpose.
-⍝⍝⍝ gap forced "-@⌽": Under should run its function through the selection's map in the fused pass and write the results back, as the expected cost assumes (open.md, "Under through a structural selection")
+⍝⍝⍝ gap forced "-@⌽": Under should run its function through the selection's map in the fused pass and write the results back, as the expected cost assumes
 -@⌽ v
 ⍝⍝: 6	6	6
 
-⍝⍝⍝ gap forced "-@⍉": Under should run its function through the selection's map in the fused pass and write the results back, as the expected cost assumes (open.md, "Under through a structural selection")
+⍝⍝⍝ gap forced "-@⍉": Under should run its function through the selection's map in the fused pass and write the results back, as the expected cost assumes
 -@⍉ m
 ⍝⍝: 8	8	8
 
 ⍝ Expected: `(2×)@((n+2ₓ)↑) v` and `(2×)@(¯1⌽(n+2ₓ)↑) v` 3 copies each: one copy, the doubling read through the overtake's map, and the write back of the items that the overtake took from `v`. The write back walks the overtake's steps and skips its fills. They measure about 4 on macOS: the doubling reads a copy that the map makes first.
-⍝⍝⍝ gap forced "2↣×@(65538↣↑)": Under should run its function through the selection's map in the fused pass and write the results back, as the expected cost assumes (open.md, "Under through a structural selection")
+⍝⍝⍝ gap forced "2↣×@(65538↣↑)": Under should run its function through the selection's map in the fused pass and write the results back, as the expected cost assumes
 (2×)@(n+2ₓ ↑)v
 ⍝⍝: 6	6	6
 
-⍝⍝⍝ gap forced "2↣×@(¯1↣⌽∘(65538↣↑))": Under should run its function through the selection's map in the fused pass and write the results back, as the expected cost assumes (open.md, "Under through a structural selection")
+⍝⍝⍝ gap forced "2↣×@(¯1↣⌽∘(65538↣↑))": Under should run its function through the selection's map in the fused pass and write the results back, as the expected cost assumes
 (2×)@(¯1⌽(n+2ₓ)↑) v
 ⍝⍝: 6	6	6
 

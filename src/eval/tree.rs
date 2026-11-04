@@ -100,7 +100,8 @@ pub(super) enum Mismatch { Fit, Fail }
 pub(super) enum Op {
     /// A read of `name` at its `address` (`Bindings::load`). With `take`, the read is the dfn's last read of a local, which takes the binding out of the frame (`Bindings::take_at`). A name that nothing binds fails (`unbound`). A value whose category isn't `check` does what `on` says.
     Load { name: Name, address: Address, take: bool, to: u32, range: Range<u32>, check: Category, on: Mismatch },
-    Number { text: Option<&'static str>, mark: Option<crate::number::Mark>, empty: bool, to: u32, range: Range<u32> },
+    /// A number literal, parsed under the settings in force: a raw value, or at an operand position its `constant`.
+    Number { text: Option<&'static str>, mark: Option<crate::number::Mark>, empty: bool, to: u32, range: Range<u32>, constant: Option<Constant> },
     /// The bracket literal `literal`, assembled from `pieces` (`assembled`): the registers that its items' levels gave, and its constant items and entries, in the literal's order.
     Array { literal: Arc<Node>, pieces: Box<[Read]>, to: u32, range: Range<u32>, check: Category },
     /// The start of a nested level, which counts toward the depth limit until its `Exit`.
@@ -110,19 +111,19 @@ pub(super) enum Op {
     /// The end of a bracket item's level, whose value `from` holds. The value goes into its literal whatever its category.
     ExitItem { level: u32, from: Read },
     /// A call made at the function's text `span`: `function` on `argument`, with `left` bound as its left argument where one is given. `last` marks the statement's last reduction, made with nothing left to compile or on either stack and no assignment in progress. It returns a call of a dfn or a derived function to the caller's loop in a dfn's last statement, and it alone can give no result.
-    Call { left: Option<Read>, function: Read, argument: Read, to: u32, span: Span, range: Range<u32>, result: Category, last: bool, literals: u64 },
+    Call { left: Option<Read>, function: Read, argument: Read, to: u32, span: Span, range: Range<u32>, result: Category, last: bool },
     /// An operator applied to its operand at `span`: a derived function (`derived`), or, for a name that holds a postfix operator, the call that it stands for on an array (`Postfix::of`). With `call`, a function or operator atom that a call gave as the operand is that function or operator (`called_as`).
-    Derive { operand: Read, operator: Read, to: u32, span: Span, range: Range<u32>, result: Category, call: bool, literal: bool },
+    Derive { operand: Read, operator: Read, to: u32, span: Span, range: Range<u32>, result: Category, call: bool },
     /// An assignment through `Session::assigned` to `target`, as the statement compiled it (`Target`), whose `←` is at `span`: of `value`, or with no value, `a(f)←`'s update. Register `modifier` holds a modified assignment's function, which compiles before this as any function does. A target that is a plain name stores in the frame's slot for it, `local`, where it has one. The value goes to register `to`, shy, with the text `range`, which is `←`'s. With `call`, a function or operator atom that a call gave is stored as that function or operator, and the register keeps it as a value.
     Assign { value: Option<Read>, local: Option<u32>, target: Target, span: Span, modifier: Option<Read>, to: u32, range: Range<u32>, call: bool },
     /// A dyadic operator bound to its right operand. With `call`, a function or operator atom that a call gave as the operand is that function or operator.
-    BindRight { operator: Read, operand: Read, to: u32, call: bool, literal: bool },
+    BindRight { operator: Read, operand: Read, to: u32, call: bool },
     /// Two items side by side as a strand.
     Strand { left: Read, right: Read, to: u32 },
     /// An array bound as a function's left argument.
-    Attach { left: Read, right: Read, to: u32, literal: bool },
+    Attach { left: Read, right: Read, to: u32 },
     /// Two items joined as tines of a train.
-    Train { left: Read, right: Read, to: u32, literals: [bool; 2] },
+    Train { left: Read, right: Read, to: u32 },
     /// A dfn, read where it's written: a function or an operator that closes over the running frame (`closure`).
     Closure { definition: Arc<Definition>, to: u32, range: Range<u32>, check: Category },
     /// A record scope compiled when entered, using its current field categories.
@@ -135,6 +136,23 @@ pub(super) enum Op {
     Fail { error: Error },
 }
 
+
+/// A literal number's constant at an operand position (target part 4): its literal node, made under the numeric settings it holds and made again when they change.
+#[derive(Debug, Default)]
+pub(super) struct Constant(std::sync::Mutex<Option<(Numeric, Value)>>);
+impl Clone for Constant {
+    fn clone(&self) -> Self { Self(std::sync::Mutex::new(self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone())) }
+}
+impl Constant {
+    /// The literal node for `numeric`, made from `make`'s value where the cached node has other settings.
+    fn get(&self, numeric: Numeric, make: impl FnOnce() -> Result<Value, Error>) -> Result<Value, Error> {
+        let mut cached = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((made, value)) = &*cached && *made == numeric { return Ok(value.clone()); }
+        let value = Value::constant(make()?);
+        *cached = Some((numeric, value.clone()));
+        Ok(value)
+    }
+}
 /// How far the compilation had got: its numbers of instructions, constants and levels, and its registers in use and free. Truncating to a mark drops what came after it (`Compiler::truncate`).
 #[derive(Default)]
 pub(super) struct Mark { pub(super) ops: usize, pub(super) constants: usize, pub(super) levels: usize, pub(super) registers: u32, pub(super) free: Vec<u32> }
@@ -211,10 +229,10 @@ fn role_changed(span: &Span) -> Error {
 /// What a step that pairs its two operands gives from the entities it reads: a bound right operand, a strand, a bound left argument or a train. The executor runs it on what its registers and constants hold, and the compiler on two constants, to fold them. With `capture`, a strand or a bound left argument keeps its parts' expressions.
 pub(super) fn paired(op: &Op, mut left: Cow<'_, Entity>, right: Cow<'_, Entity>, source: &Arc<Source>, capture: bool) -> Result<Entity, Error> {
     Ok(match op {
-        Op::BindRight { call, literal, .. } => {
+        Op::BindRight { call, .. } => {
             let range = left.range.clone();
             let span = span_of(source, &range);
-            Entity::of(bound_right(left.into_owned().value(source)?, called_as(right.into_owned().value(source)?, *call), *literal, &span)?, range, false)
+            Entity::of(bound_right(left.into_owned().value(source)?, called_as(right.into_owned().value(source)?, *call), &span)?, range, false)
         }
         Op::Strand { .. } => {
             let (mut left, mut right) = (left.into_owned(), right.into_owned());
@@ -227,12 +245,12 @@ pub(super) fn paired(op: &Op, mut left: Cow<'_, Entity>, right: Cow<'_, Entity>,
             });
             Entity::new(Term::Strand(items), range, false, expression)
         }
-        Op::Attach { literal, .. } => {
+        Op::Attach { .. } => {
             let expression = match &mut left { Cow::Owned(entity) if capture => entity.expression.take(), _ => None };
             let (x, f, range) = attached(left, right, source)?;
-            Entity::new(Term::Left(FunctionOperand::value(x.into_owned(), *literal), f.into_owned()), range, false, expression)
+            Entity::new(Term::Left(FunctionOperand::from(x.into_owned()), f.into_owned()), range, false, expression)
         }
-        Op::Train { literals, .. } => { let range = left.range.clone(); Entity::new(Term::Train(train(left, right, source, *literals)?), range, false, None) }
+        Op::Train { .. } => { let range = left.range.clone(); Entity::new(Term::Train(train(left, right, source)?), range, false, None) }
         _ => unreachable!("a step that pairs two operands"),
     })
 }
@@ -289,18 +307,18 @@ pub(super) enum Term {
 pub(super) type Tine = FunctionOperand;
 
 pub(crate) fn before(value: FunctionOperand, function: Function, span: &Span) -> Result<Function, Error> {
-    Function::train_operands(vec![value, FunctionOperand::value(Value::Function(function), false)], span)
+    Function::train_operands(vec![value, FunctionOperand::from(Value::Function(function))], span)
 }
 pub(super) fn atop(first: Function, second: Function, span: &Span) -> Result<Function, Error> {
     Function::train_operands(vec![Value::Function(first).into(), Value::Function(second).into()], span)
 }
-pub(super) fn bound_right(operator: Binding, operand: Binding, literal: bool, span: &Span) -> Result<Binding, Error> {
+pub(super) fn bound_right(operator: Binding, operand: Binding, span: &Span) -> Result<Binding, Error> {
     let Binding::Operator(OperatorValue::Operator(op)) = operator else { return Err(Error::domain("a right operand needs an unbound operator").at(span)) };
-    Ok(Binding::Operator(OperatorValue::Bound { op, right: FunctionOperand::value(operand.into_value(span)?, literal) }))
+    Ok(Binding::Operator(OperatorValue::Bound { op, right: FunctionOperand::from(operand.into_value(span)?) }))
 }
-pub(super) fn derived(operand: Binding, operator: Binding, literal: bool, span: &Span) -> Result<Binding, Error> {
+pub(super) fn derived(operand: Binding, operator: Binding, span: &Span) -> Result<Binding, Error> {
     let Binding::Operator(operator) = operator else { return Err(Error::domain("an operand needs an operator").at(span)) };
-    operator.derive_operands(FunctionOperand::value(operand.into_value(span)?, literal), None, span).map(Binding::from).map_err(|error| error.at(span))
+    operator.derive_operands(FunctionOperand::from(operand.into_value(span)?), None, span).map(Binding::from).map_err(|error| error.at(span))
 }
 pub(super) fn tails(function: &Callable) -> bool { function.definition().is_some() }
 /// An item of a compiled statement, in a register or among its constants: its term, its text, whether it's shy, its category, and, while `Session::capture` is on, the expression that dissects it.
@@ -354,7 +372,7 @@ impl Entity {
         Ok(match self.term {
             Term::Binding(value) => value, Term::Train(tines) => Binding::from(Function::train_operands(tines, &span())?),
             Term::Postfix(postfix) => Binding::Operator(postfix.operator(&span())?), Term::Left(a, f) => Binding::from(before(a, f.function()?, &span())?),
-            Term::Strand(items) => Binding::Value(Operation::join(Notation::Strand, Widening::Items).call(&items, 0).map_err(|error| error.at(&span()))?),
+            Term::Strand(items) => Binding::Value(Operation::join(Notation::Strand, Widening::Items).call(&items).map_err(|error| error.at(&span()))?),
             Term::Entries(_) => unreachable!("a keyed item's entries go only into its literal")
         })
     }
@@ -430,31 +448,29 @@ pub(super) fn attached<'p>(
 
 /// A call's left argument and function, from the entity before its right argument: a bound left argument's parts, or no left argument and the entity as a function.
 #[inline]
-pub(super) fn split_call<'p>(left: Cow<'p, Entity>, source: &Arc<Source>) -> Result<(Option<Cow<'p, Value>>, Cow<'p, Callable>, bool), Error> {
+pub(super) fn split_call<'p>(left: Cow<'p, Entity>, source: &Arc<Source>) -> Result<(Option<Cow<'p, Value>>, Cow<'p, Callable>), Error> {
     Ok(match left {
-        Cow::Owned(Entity { term: Term::Left(FunctionOperand::Value { value, literal }, f), .. }) => (Some(Cow::Owned(value)), Cow::Owned(f), literal),
-        Cow::Borrowed(Entity { term: Term::Left(FunctionOperand::Value { value, literal }, f), .. }) => {
-            (Some(Cow::Borrowed(value)), Cow::Borrowed(f), *literal)
-        }
-        left => (None, function_of(left, source)?, false),
+        Cow::Owned(Entity { term: Term::Left(FunctionOperand::Value { value }, f), .. }) => (Some(Cow::Owned(value)), Cow::Owned(f)),
+        Cow::Borrowed(Entity { term: Term::Left(FunctionOperand::Value { value }, f), .. }) => (Some(Cow::Borrowed(value)), Cow::Borrowed(f)),
+        left => (None, function_of(left, source)?),
     })
 }
 /// The tines of `left` and then of `right`, which join in a train (`Rule::Train`). The tines go into a train's own list where either side brings one, and otherwise into a new list with room for `TINES`, so a statement that builds a train at each call allocates once for it.
 #[inline]
-pub(super) fn train(left: Cow<'_, Entity>, right: Cow<'_, Entity>, source: &Arc<Source>, literals: [bool; 2]) -> Result<Vec<Tine>, Error> {
+pub(super) fn train(left: Cow<'_, Entity>, right: Cow<'_, Entity>, source: &Arc<Source>) -> Result<Vec<Tine>, Error> {
     Ok(match (left, right) {
-        (Cow::Owned(Entity { term: Term::Train(mut tines), .. }), right) => { push_tines(right, &mut tines, literals[1], source)?; tines }
+        (Cow::Owned(Entity { term: Term::Train(mut tines), .. }), right) => { push_tines(right, &mut tines, source)?; tines }
         (left, Cow::Owned(Entity { term: Term::Train(mut tines), .. })) => {
             let n = tines.len();
-            push_tines(left, &mut tines, literals[0], source)?;
+            push_tines(left, &mut tines, source)?;
             let pushed = tines.len() - n;
             tines.rotate_right(pushed);
             tines
         }
         (left, right) => {
             let mut tines = Vec::with_capacity(TINES);
-            push_tines(left, &mut tines, literals[0], source)?;
-            push_tines(right, &mut tines, literals[1], source)?;
+            push_tines(left, &mut tines, source)?;
+            push_tines(right, &mut tines, source)?;
             tines
         }
     })
@@ -465,16 +481,16 @@ const TINES: usize = 4;
 
 /// Appends `entity`'s parts to `tines` as tines of a train: a train's tines, a bound left argument's array and function, or the entity as one array or function. Where `entity` is borrowed, as a recording's constant is (`tree.rs`), each tine copies only its own array or function.
 #[inline]
-fn push_tines(entity: Cow<'_, Entity>, tines: &mut Vec<Tine>, literal: bool, source: &Arc<Source>) -> Result<(), Error> {
+fn push_tines(entity: Cow<'_, Entity>, tines: &mut Vec<Tine>, source: &Arc<Source>) -> Result<(), Error> {
     match entity {
         Cow::Owned(Entity { term: Term::Train(owned), .. }) => tines.extend(owned),
         Cow::Borrowed(Entity { term: Term::Train(borrowed), .. }) => tines.extend_from_slice(borrowed),
-        Cow::Owned(Entity { term: Term::Left(a, f), .. }) => tines.extend([a, FunctionOperand::value(Value::Function(f.function()?), false)]),
-        Cow::Borrowed(Entity { term: Term::Left(a, f), .. }) => tines.extend([a.clone(), FunctionOperand::value(Value::Function(f.function()?), false)]),
+        Cow::Owned(Entity { term: Term::Left(a, f), .. }) => tines.extend([a, FunctionOperand::from(Value::Function(f.function()?))]),
+        Cow::Borrowed(Entity { term: Term::Left(a, f), .. }) => tines.extend([a.clone(), FunctionOperand::from(Value::Function(f.function()?))]),
         entity if matches!(entity.category, Category::Value | Category::Callable) => {
-            tines.push(FunctionOperand::value(array_of(entity, source)?.into_owned(), literal))
+            tines.push(FunctionOperand::from(array_of(entity, source)?.into_owned()))
         }
-        entity => tines.push(FunctionOperand::value(Value::Function(function_of(entity, source)?.function()?), false)),
+        entity => tines.push(FunctionOperand::from(Value::Function(function_of(entity, source)?.function()?))),
     }
     Ok(())
 }
@@ -486,7 +502,7 @@ pub(super) fn constant(node: &Node) -> Binding {
         NodeKind::Function(builtin) => Binding::from(builtin.function()),
         NodeKind::Operator(kind) => Binding::Operator(OperatorValue::Operator(Operator::Kind(kind.clone()))),
         NodeKind::BoundOperator(kind, right) => {
-            Binding::Operator(OperatorValue::Bound { op: Operator::Kind(kind.clone()), right: FunctionOperand::value(right.clone(), true) })
+            Binding::Operator(OperatorValue::Bound { op: Operator::Kind(kind.clone()), right: FunctionOperand::from(Value::constant(right.clone())) })
         }
         _ => unreachable!("a literal, a function or an operator"),
     }
@@ -522,14 +538,14 @@ impl Postfix {
         let primitive = |primitive| Operation::Primitive { primitive, pairing: crate::primitive::Pairing::Axes };
         match self {
             Self::Index(index) => (primitive(Primitive::Index), Some(index.clone()), a), Self::Transpose => (primitive(Primitive::Transpose), None, a),
-            Self::Power(n) => (primitive(Primitive::Math(crate::number::Math::Power)), Some(a), Value::weak_integer(*n)),
+            Self::Power(n) => (primitive(Primitive::Math(crate::number::Math::Power)), Some(a), Value::constant(Value::weak_integer(*n))),
             Self::Mark(mark) => (mark.conversion(), None, a), Self::Unit => unreachable!("ᵘ after an array compiles to an error")
         }
     }
     pub(super) fn call(&self, a: Value, span: &Span) -> Result<Value, Error> {
         let (operation, x, y) = self.parts(a);
         let args: Vec<_> = x.into_iter().chain([y]).collect();
-        operation.call(&args, 0).map_err(|error| error.at(span))
+        operation.call(&args).map_err(|error| error.at(span))
     }
     fn expression(&self, a: &Value, operand: Option<Box<Expression>>) -> Option<Box<Expression>> {
         let (Operation::Primitive { primitive, .. }, x, y) = self.parts(a.clone()) else { return None };
@@ -538,9 +554,9 @@ impl Postfix {
     pub(super) fn operator(&self, span: &Span) -> Result<OperatorValue, Error> {
         let kind = |kind| OperatorValue::Operator(Operator::Kind(kind));
         Ok(match self {
-            Self::Index(index) => OperatorValue::Bound { op: Operator::Kind(OperatorKind::Axis), right: FunctionOperand::value(index.clone(), true) },
+            Self::Index(index) => OperatorValue::Bound { op: Operator::Kind(OperatorKind::Axis), right: FunctionOperand::from(index.clone()) },
             Self::Power(-1) => kind(OperatorKind::Inverse),
-            Self::Power(n) => OperatorValue::Bound { op: Operator::Kind(OperatorKind::Power), right: FunctionOperand::value(Value::integer(*n), true) },
+            Self::Power(n) => OperatorValue::Bound { op: Operator::Kind(OperatorKind::Power), right: FunctionOperand::from(Value::constant(Value::integer(*n))) },
             Self::Mark(mark) => kind(OperatorKind::Mark(*mark)), Self::Transpose => return Err(Error::domain("ᵀ transposes the array before it").at(span)),
             Self::Unit => return Err(Error::domain("ᵘ makes a scalar that holds the function before it").at(span))
         })
@@ -548,7 +564,10 @@ impl Postfix {
     pub(super) fn of(operator: &OperatorValue) -> Option<Self> {
         match operator {
             OperatorValue::Bound { op: Operator::Kind(OperatorKind::Axis), right } => Some(Self::Index(right.stored()?.clone())),
-            OperatorValue::Bound { op: Operator::Kind(OperatorKind::Power), right } => right.stored()?.as_number()?.integer().ok().map(Self::Power),
+            OperatorValue::Bound { op: Operator::Kind(OperatorKind::Power), right } => {
+                let count = right.stored()?;
+                count.data().as_number()?.integer().ok().map(Self::Power)
+            }
             OperatorValue::Operator(Operator::Kind(OperatorKind::Inverse)) => Some(Self::Power(-1)),
             OperatorValue::Operator(Operator::Kind(OperatorKind::Mark(mark))) => Some(Self::Mark(*mark)), _ => None
         }
@@ -639,16 +658,15 @@ impl StatementCode {
                     registers[held.to as usize] = Some(if entity.category() == held.check { entity } else { entity.fit(held.check)? });
                     session.ascend();
                 }
-                Op::Call { left, function, argument, to, span, range, result, last, literals } => {
+                Op::Call { left, function, argument, to, span, range, result, last } => {
                     let parts = CAPTURE.then(|| [taken_expression(registers, (*left).unwrap_or(*function)), taken_expression(registers, *argument)]);
-                    let (x, f, left_literal) = match left {
-                        Some(x) => (Some(self.argument(registers, *x, source)?), self.called(registers, *function, source)?, literals & 1 != 0),
+                    let (x, f) = match left {
+                        Some(x) => (Some(self.argument(registers, *x, source)?), self.called(registers, *function, source)?),
                         None => split_call(self.read(registers, *function), source)?,
                     };
                     let y = self.argument(registers, *argument, source)?;
                     let args: Vec<_> = x.iter().map(|x| x.as_ref().clone()).chain([y.as_ref().clone()]).collect();
-                    let literals = if x.is_some() { u64::from(left_literal) | (literals & 2) } else { (literals >> 1) & 1 };
-                    let mut origin = f.origin(&args, literals)?;
+                    let mut origin = f.origin(&args)?;
                     origin.site = Some(span.clone());
                     if tail && *last && tails(&f) { return Ok(Step::Tail(Application { origin, span: span.clone(), unshy: false })); }
                     let expression = match parts { Some(parts) => Some(dissected(&f.function()?, x.as_deref(), &y, parts)), None => None };
@@ -657,7 +675,7 @@ impl StatementCode {
                         returned(registers, *to, *result, *last, span)?;
                     }
                 }
-                Op::Derive { operand, operator, to, span, range, result, call, literal } => {
+                Op::Derive { operand, operator, to, span, range, result, call } => {
                     let expression = if CAPTURE { taken_expression(registers, *operand) } else { None };
                     let (operand, operator) = (called_as(self.value(registers, *operand, source)?, *call), self.value(registers, *operator, source)?);
                     let postfix = match (&operand, &operator) { (Binding::Value(_), Binding::Operator(op)) => Postfix::of(op), _ => None };
@@ -666,7 +684,7 @@ impl StatementCode {
                             let expression = if CAPTURE { postfix.expression(&a, expression) } else { None };
                             Entity::new(Term::Binding(Binding::Value(postfix.call(a, span)?)), range.clone(), false, expression)
                         }
-                        (_, operand) => Entity::of(derived(operand, operator, *literal, span)?, range.clone(), false),
+                        (_, operand) => Entity::of(derived(operand, operator, span)?, range.clone(), false),
                     };
                     if put(registers, *to, entity, *result) { returned(registers, *to, *result, false, span)?; }
                 }
@@ -703,16 +721,20 @@ impl StatementCode {
                     refit(registers, *to, Category::Value)?;
                 }
             }
-            Op::Number { text, mark, empty, to, range } => {
+            Op::Number { text, mark, empty, to, range, constant } => {
                 let span = span_of(source, range);
                 let text: &str = text.map_or_else(|| &source.text[span.range.clone()], |text| text);
-                let number = crate::number::literal(text, *mark, Numeric::current()).at(&span)?;
-                let value = if *empty { Value::empty([0], Value::Number(number)).map_err(|kind| Error::new(kind, "invalid empty array").at(&span))? }
-                else { Value::Number(number) };
+                let numeric = Numeric::current();
+                let number = || crate::number::literal(text, *mark, numeric).at(&span);
+                let value = match constant {
+                    _ if *empty => Value::empty([0], Value::Number(number()?)).map_err(|kind| Error::new(kind, "invalid empty array").at(&span))?,
+                    Some(constant) => constant.get(numeric, || Ok(Value::Number(number()?)))?,
+                    None => Value::Number(number()?),
+                };
                 registers[*to as usize] = Some(Entity::of(Binding::Value(value), range.clone(), false));
             }
             Op::Input { to, range } => {
-                let line = Operation::Effect(crate::primitive::Act::Input).call(&[], 0).map_err(|error| error.at(&span_of(source, range)))?;
+                let line = Operation::Effect(crate::primitive::Act::Input).call(&[]).map_err(|error| error.at(&span_of(source, range)))?;
                 registers[*to as usize] = Some(Entity::of(Binding::Value(line), range.clone(), false));
             }
             Op::Postfix { postfix, operand, to, span, range, result } => {

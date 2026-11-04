@@ -32,8 +32,10 @@ pub enum ErrorKind {
     Timeout,
     /// Only the matching map boundary consumes this tag.
     BatchStop(usize),
-    /// A stand-in was observed while planning; BPL guards never catch it.
+    /// A planning run stopped where it can't plan through. Only `trace::plan_case` consumes it, so it never shows.
     Planning,
+    /// A broken internal assumption, which is a bug. Its message names the source line. No guard catches it.
+    Internal,
     /// An error of a kind that rustymath's functions on arrays share: Length, Rank, Index, Limit, Domain or Overflow.
     Array(rustymath::error::Error),
     /// A kind that a program names when it signals an error, in upper case.
@@ -58,7 +60,8 @@ impl ErrorKind {
             Self::Interrupt => "INTERRUPT",
             Self::Timeout => "TIMEOUT",
             Self::BatchStop(_) => "STOP",
-            Self::Planning => "RETRACE",
+            Self::Planning => "PLANNING",
+            Self::Internal => "INTERNAL",
             Self::Array(e) => match e.kind {
                 Kind::Domain => "DOMAIN", Kind::Length => "LENGTH", Kind::Limit | Kind::Overflow => "LIMIT", Kind::Rank => "RANK", Kind::Index => "INDEX",
                 Kind::Interrupt => "INTERRUPT", Kind::Timeout => "TIMEOUT"
@@ -72,15 +75,15 @@ impl ErrorKind {
         let name = name.to_uppercase();
         Some(Self::builtin().into_iter().find(|k| k.name() == name).unwrap_or_else(|| Self::Custom(name.into())))
     }
-    /// Whether an error of this kind controls evaluation rather than reporting a failure. An interrupt or a timeout ends the evaluation. A batched run's stop sends its level back to running cell by cell. A planning read stops the recording. A handler that catches every error lets these pass.
-    pub(crate) fn is_control(&self) -> bool { matches!(self, Self::Interrupt | Self::Timeout | Self::BatchStop(_) | Self::Planning) }
+    /// Whether an error of this kind controls evaluation rather than reporting a failure. An interrupt or a timeout ends the evaluation. A batched run's stop sends its level back to running cell by cell. A planning stop ends a planning run. An internal error is a bug. A handler that catches every error lets these pass.
+    pub(crate) fn is_control(&self) -> bool { matches!(self, Self::Interrupt | Self::Timeout | Self::BatchStop(_) | Self::Planning | Self::Internal) }
 }
 
 impl From<rustymath::error::Error> for ErrorKind { fn from(e: rustymath::error::Error) -> Self { Self::Array(e) } }
 /// A kind with no message, for `Error::new` or `described` to supply one.
 impl From<Kind> for ErrorKind { fn from(kind: Kind) -> Self { Self::Array(rustymath::error::Error::new(kind, "")) } }
 
-/// `DOMAIN ERROR` and so on. Interrupts, timeouts, stops, `Retrace` and unsupported features show their names alone.
+/// `DOMAIN ERROR` and so on. Interrupts, timeouts, stops, planning stops and unsupported features show their names alone.
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -129,15 +132,20 @@ impl Error {
     pub(crate) fn at(mut self, span: &Span) -> Self { if self.span.is_none() { self.span = Some(span.clone()); } self }
     pub(crate) fn batch_stop(level: usize) -> Self { Self::new(ErrorKind::BatchStop(level), "host read of a batched value") }
     pub(crate) fn batch_level(&self) -> Option<usize> { match &self.kind { ErrorKind::BatchStop(level) => Some(*level), _ => None } }
+    /// A broken internal assumption, which is a bug: its message names the calling line. Call it directly: passed as a function item it loses that line.
+    #[cold]
     #[inline(never)]
     #[track_caller]
-    pub(crate) fn planning() -> Self {
-        if std::env::var_os("RUST_BACKTRACE").is_some_and(|value| value != "0") {
-            eprintln!("TEMP_PLANNING at {}\n{}", std::panic::Location::caller(), std::backtrace::Backtrace::force_capture());
-        }
-        Self::new(ErrorKind::Planning, "planning input has no items")
-    }
+    pub(crate) fn internal() -> Self { Self::new(ErrorKind::Internal, format!("at {}", std::panic::Location::caller())) }
     pub(crate) fn is_planning(&self) -> bool { matches!(self.kind, ErrorKind::Planning) }
+    pub(crate) fn is_internal(&self) -> bool { matches!(self.kind, ErrorKind::Internal) }
+}
+
+/// An absent value that is a bug: `None` becomes an internal error naming the calling line.
+pub(crate) trait OrInternal<T> { fn or_internal(self) -> Result<T>; }
+impl<T> OrInternal<T> for Option<T> {
+    #[track_caller]
+    fn or_internal(self) -> Result<T> { match self { Some(value) => Ok(value), None => Err(Error::internal()) } }
 }
 
 impl From<rustymath::error::Error> for Error { fn from(e: rustymath::error::Error) -> Self { Self::new(e, "") } }

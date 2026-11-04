@@ -13,7 +13,7 @@
 //! Other data takes the pairwise comparison.
 use crate::execution::check;
 use crate::{
-    Error, ErrorKind, ReadKind, Span, Value, array::{ArrayData, Items, Layout, Widening}, error::Described, number::{Numeric, read_as}, primitive::Primitive
+    Error, ReadKind, Span, Value, array::{Items, Layout, Widening}, error::Described, number::{Numeric, read_as}, primitive::Primitive
 };
 use num_traits::ToPrimitive;
 use rustymath::hashing::{HashMap, HashMapExt, Hashing};
@@ -111,12 +111,6 @@ pub(crate) fn numbered(cells: &Cells, numeric: Numeric) -> Result<search::Number
     groupable(cells.len())?;
     if let Some(numbered) = compact_at(cells, numeric).and_then(|(x, t)| search::view_numbered(x, t)) { return numbered.map_err(Error::from); }
     Ok(search::numbered(&classify(cells, numeric)?))
-}
-
-/// The positions of `items` grouped by the group that `group` gives each item, as rustymath's `search::grouped_by` gives them. More than `u32::MAX` items, which 32-bit positions can't hold, raises LIMIT ERROR.
-pub(crate) fn grouped_by<T: Copy + Sync>(items: &[T], n: usize, group: impl Fn(T) -> usize + Sync) -> Result<search::Groups, Error> {
-    groupable(items.len())?;
-    Ok(search::grouped_by(items, n, group))
 }
 
 /// A LIMIT ERROR for more items than grouped positions hold, which is `u32::MAX`.

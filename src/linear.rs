@@ -1,9 +1,10 @@
 //! Linear seeds and the transpose of the canonical graph.
+use crate::error::OrInternal;
 use crate::{
     Error, Value, array, derivative, error::Result, graph::{Node, Pending}, number::{Arithmetic, Mark}, primitive::{Operation, Pairing, Primitive},
-    program::{Desc, Live, Origin, Read, Step, trace::Role}
+    program::{Desc, Live, Step, trace::Role}
 };
-use rustymath::{buffer::DType, hashing::{HashMap, HashMapExt}};
+use rustymath::hashing::HashMap;
 
 /// A linear input. Its source supplies metadata; a direction binds its numeric value.
 pub(crate) fn seed(like: &Value, level: usize, position: usize) -> Pending {
@@ -20,7 +21,7 @@ fn add(cotangents: &mut HashMap<Pending, Value>, source: Pending, contribution: 
     let value = match cotangents.remove(&source) {
         None => contribution,
         Some(previous) => {
-            Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Plus), pairing: Pairing::Axes }.call(&[previous, contribution], 0)?
+            Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Plus), pairing: Pairing::Axes }.call(&[previous, contribution])?
         }
     };
     cotangents.insert(source, value);
@@ -28,7 +29,7 @@ fn add(cotangents: &mut HashMap<Pending, Value>, source: Pending, contribution: 
 }
 
 pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value], level: usize) -> Result<Vec<Value>> {
-    if roots.len() != directions.len() { return Err(Error::planning()); }
+    if roots.len() != directions.len() { return Err(Error::internal()); }
     let mut cotangents = HashMap::default();
     let mut live_roots = Vec::new();
     for (root, direction) in roots.iter().zip(directions) {
@@ -52,31 +53,31 @@ pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value]
         let origin = origin.with_list(origin.list.as_slice());
         let contributions = match step {
             Step::Map { .. } | Step::Product { .. } | Step::Call => {
-                if output.len() != 1 { return Err(Error::planning()); }
-                let direction = output[0].as_ref().ok_or_else(Error::planning)?;
+                if output.len() != 1 { return Err(Error::internal()); }
+                let direction = output[0].as_ref().or_internal()?;
                 let result = Value::Pending(Pending::data(node.clone(), 0));
                 let slopes = Operation::partials(&origin, &result, &needed)?;
                 let direction = Operation::read_result(&origin, direction)?;
                 slopes.into_iter().enumerate().map(|(input, slope)| {
                     slope.map(|slope| {
                         let contribution = Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Times), pairing: Pairing::Axes }
-                            .call(&[slope, direction.clone()], 0)?;
+                            .call(&[slope, direction.clone()])?;
                         Operation::read_back(&origin, input, &contribution)
                     }).transpose()
                 }).collect::<Result<Vec<_>>>()?
             }
             Step::Convert { arg, .. } => {
-                let dtype = origin.list[arg as usize].operand.dtype().ok_or_else(Error::planning)?;
-                let direction = output[0].as_ref().ok_or_else(Error::planning)?;
-                let direction = Operation::Convert(Mark::Type { dtype, fixed: false }).call(std::slice::from_ref(direction), 0)?;
+                let dtype = origin.list[arg as usize].operand.dtype().or_internal()?;
+                let direction = output[0].as_ref().or_internal()?;
+                let direction = Operation::Convert(Mark::Type { dtype, fixed: false }).call(std::slice::from_ref(direction))?;
                 read_back(&origin, &direction, &needed)?
             }
             Step::Fold { axis, .. } => {
-                let direction = output[0].as_ref().ok_or_else(Error::planning)?;
+                let direction = output[0].as_ref().or_internal()?;
                 derivative::transpose_fold(&origin, direction, &needed, axis)?
             }
             Step::Copy { .. } | Step::Gather { .. } | Step::Join { .. } | Step::Picks { .. } | Step::At { .. } => {
-                let direction = output[0].as_ref().ok_or_else(Error::planning)?;
+                let direction = output[0].as_ref().or_internal()?;
                 read_back(&origin, direction, &needed)?
             }
             Step::Draw | Step::Effect { .. } | Step::Index { .. } => vec![None; origin.list.len()],

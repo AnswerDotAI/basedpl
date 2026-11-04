@@ -2,9 +2,9 @@ use crate::{Error, ErrorKind, Value, array::Layout};
 use num_bigint::BigInt;
 use num_complex::{Complex32, Complex64};
 use num_rational::BigRational;
-use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
+use num_traits::{FromPrimitive, Signed, ToPrimitive, Zero};
 use rustymath::{
-    Binary as _, Float, Unary as _, buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats, Ints, View, Width}, error::Kind as ErrorTag,
+    Binary as _, Float, buffer::{ComplexBuf, ComplexWidth, Complexes, DType, FloatWidth, Floats, Ints, View, Width}, error::Kind as ErrorTag,
     tolerant::{Tolerance, Tolerant, TolerantComplex}, with_float_width
 };
 use std::{borrow::Cow, cmp::Ordering, fmt, sync::Arc};
@@ -61,20 +61,18 @@ impl Kind {
     }
 }
 
-/// A scalar conversion's domain or interrupt failure.
+/// A scalar conversion's domain failure.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Failure { Domain(&'static str), Interrupt(rustymath::error::Kind) }
+pub(crate) enum Failure { Domain(&'static str) }
 
 impl From<&'static str> for Failure { fn from(message: &'static str) -> Self { Self::Domain(message) } }
 
 impl From<Failure> for &'static str {
-    fn from(failure: Failure) -> Self { match failure { Failure::Domain(message) => message, Failure::Interrupt(_) => "evaluation interrupted" } }
+    fn from(Failure::Domain(message): Failure) -> Self { message }
 }
 
 impl From<Failure> for crate::Error {
-    fn from(failure: Failure) -> Self {
-        match failure { Failure::Domain(message) => crate::Error::domain(message), Failure::Interrupt(kind) => crate::Error::new(kind, "") }
-    }
+    fn from(Failure::Domain(message): Failure) -> Self { crate::Error::domain(message) }
 }
 
 /// A number's representation. The final `bool` marks a weak ordinary number (`Number::is_weak`).
@@ -247,8 +245,6 @@ impl Numeric {
     pub(crate) fn for_values<'a>(self, values: impl IntoIterator<Item = &'a Value>) -> Result<Self, crate::Error> {
         self.for_kinds(values.into_iter().filter_map(Kind::value)).map_err(crate::Error::domain)
     }
-    /// Exact comparison, as `EXACT` gives, under these kinds settings. Integer and Boolean kernels take it.
-    pub(crate) fn exact(self) -> Self { Self { mathish: self.mathish, kinds: self.kinds, int: self.int, fixed: self.fixed, ..Self::EXACT } }
     /// The kind that an array of `dtype` computes in. Under static kinds, integers compute at least at the `int` width, whatever width their storage takes, except in a call whose results are the same at every width that holds its arguments (`pervasive::first_kind`). Other dtypes, and every dtype under dynamic kinds, are their own.
     pub(crate) fn kind(self, dtype: DType) -> DType {
         match dtype {
@@ -340,11 +336,6 @@ pub(crate) mod int {
     pub(crate) trait Int: Copy + Ord + Into<i64> + TryFrom<i64> + 'static {
         /// `n` at this width. The caller knows that it fits.
         fn from_i64(n: i64) -> Self;
-        #[inline]
-        fn to_i64(self) -> i64 { self.into() }
-        /// `n` at this width, when it fits.
-        #[inline]
-        fn narrowed(n: i64) -> Option<Self> { Self::try_from(n).ok() }
     }
     macro_rules! widths {
         ($($t:ty),+) => {$(
@@ -531,7 +522,6 @@ pub(crate) enum Mark { Exact, Rational, Type { dtype: DType, fixed: bool }, Real
 
 impl Mark {
     pub(crate) fn marker(self) -> &'static str { MARKS.iter().find(|(_, mark)| *mark == self).expect("a written mark").0 }
-    pub(crate) fn of(text: &str) -> Option<Self> { MARKS.iter().find(|(spelling, _)| *spelling == text).map(|(_, mark)| *mark) }
     pub(crate) fn integer(fixed: Option<Width>) -> Self {
         fixed.filter(|width| crate::settings::int_storage() != Some(*width))
             .map_or(Self::Exact, |width| Self::Type { dtype: DType::Integer(width), fixed: true })
@@ -746,10 +736,6 @@ impl Number {
         };
         Ok(Self::unbounded(value).marked(self.is_weak()))
     }
-    /// The address of the shared value that an exact number holds, which its copies keep (`Value::address`). `None` for any other number.
-    pub(crate) fn address(&self) -> Option<usize> { match &self.0 { Exact(n, _) => Some(Arc::as_ptr(n) as usize), _ => None } }
-    /// This number, with an exact number's value copied to an address of its own (`Value::readdressed`).
-    pub(crate) fn readdressed(&self) -> Self { match &self.0 { Exact(n, weak) => Self(Exact(Arc::new(BigRational::clone(n)), *weak)), _ => self.clone() } }
     /// This float's value, which a narrower float converts to exactly.
     pub fn as_float(&self) -> Option<f64> { self.0.float().map(|(n, _)| n) }
     /// This float as one item of float storage, at its width.

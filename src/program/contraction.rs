@@ -39,7 +39,7 @@ pub(crate) fn contract(program: &mut Program, running: &mut Running, node: usize
     let Some(axes) = axes else { return Ok(false); };
     let saved = (program.nodes.len(), program.reads.len(), program.descs.len());
     let mut views = [PLUS, TIMES].into_iter()
-        .map(|primitive| Read { operand: program.literal(crate::Value::Function(crate::Function::primitive(primitive))), map: Mapping::Linear(1) })
+        .map(|primitive| Read::linear(program.literal(crate::Value::Function(crate::Function::primitive(primitive)))))
         .collect::<Vec<_>>();
     for which in 0..2 {
         let axes = axes.iter().map(|axis| ViewAxis { input: axis.input ^ which as u32, axis: axis.axis }).collect();
@@ -47,7 +47,7 @@ pub(crate) fn contract(program: &mut Program, running: &mut Running, node: usize
         let operation = Operation::Read(ReadOp::Axes { axes, destinations });
         let reads = vec![source[which].clone(), source[1 - which].clone()];
         let output = super::rules::append(program, running, &origin, operation, reads, 2, None, level)?;
-        views.push(Read { operand: output, map: Mapping::Linear(1) });
+        views.push(Read::linear(output));
     }
     let replaced = super::rules::replace(program, running, node, &origin, Operation::Product { contracted: 1, pairing: Pairing::Axes }, views, 4, None)?;
     if !replaced {

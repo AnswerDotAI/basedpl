@@ -38,13 +38,13 @@ f←{(+/⍵>0)×+/⍵} ⋄ e←•explain "[f∂ ,5 ; f∂ ,6]" ⋄ e.value,≢e
 g←{3} ⋄ [g∂ 1 2 3 4 ; g∂ 1 2 3 4 5 ; g∂ 1 2 3 4 5 6 7]   ⍝ [[0 0 0 0] [0 0 0 0 0] [0 0 0 0 0 0 0]]
 
 ⍝ program-bounded-map — A map whose cells change length between calls records with its cells' axis bounded, and a later call whose cells fall in the same bucket replays that recording [batched]
-f←{+/⍵×⍵}⍤1 ⋄ a←f [3 100]⍴⍳300 ⋄ b←f [3 120]⍴⍳360 ⋄ e←•explain "f [3 70]⍴⍳210" ⋄ [e.programs.event ; e.value≡+/⍤1⊼[3 70]⍴⍳210]   ⍝ [["replay"] $t]
+f←{+/⍵×⍵}⍤1 ⋄ a←f [3 100]⍴⍳300 ⋄ b←f [3 120]⍴⍳360 ⋄ e←•explain "f [3 70]⍴⍳210" ⋄ [e.programs.event ; e.value≡+/⍤1⊼[3 70]⍴⍳210]   ⍝ [["replayed"] $t]
 
 ⍝ program-bounded-gradient — A gradient whose argument changes length between calls records with that axis bounded: its cotangent spread is a copy that follows the argument's extent, so a later call in the same bucket replays the recording and gives the gradient at its own length
-f←{+/⍵×⍵} ⋄ a←f∂ 0.5×⍳100 ⋄ b←f∂ 0.5×⍳120 ⋄ e←•explain "f∂ 0.5×⍳70" ⋄ [e.programs.event ; e.value≡⍳70]   ⍝ [["replay"] $t]
+f←{+/⍵×⍵} ⋄ a←f∂ 0.5×⍳100 ⋄ b←f∂ 0.5×⍳120 ⋄ e←•explain "f∂ 0.5×⍳70" ⋄ [e.programs.event ; e.value≡⍳70]   ⍝ [["replayed"] $t]
 
 ⍝ program-bounded-take — A map whose body takes from both ends of cells that change length between calls records each take as a copy through a template of the cells' extent, so a later call whose cells fall in the same bucket replays the recording, filling each template at its own length [batched]
-h←{+/(¯2↑⍵)×2↑⍵}⍤1 ⋄ a←h [3 100]⍴⍳300 ⋄ b←h [3 120]⍴⍳360 ⋄ m←[3 70]⍴⍳210 ⋄ e←•explain "h [3 70]⍴⍳210" ⋄ [e.programs.event ; e.value≡+/⍤1⁝(¯2(↑⍤1)m)×2(↑⍤1)m]   ⍝ [["replay"] $t]
+h←{+/(¯2↑⍵)×2↑⍵}⍤1 ⋄ a←h [3 100]⍴⍳300 ⋄ b←h [3 120]⍴⍳360 ⋄ m←[3 70]⍴⍳210 ⋄ e←•explain "h [3 70]⍴⍳210" ⋄ [e.programs.event ; e.value≡+/⍤1⁝(¯2(↑⍤1)m)×2(↑⍤1)m]   ⍝ [["replayed"] $t]
 
 ⍝ program-bounded-key — Key's operand runs batched over groups of one length. Where that length changes between calls, the operand's recording bounds it, and `≢` on the batch pins it, so a replay never returns an earlier call's counts
 k←{(≢⊢)⌸⍵} ⋄ j←{(≢⊢)⌸⍵} ⋄ [k¨[10⍴2 ; (5⍴1),5⍴2 ; (6⍴1),6⍴2 ; (7⍴1),7⍴2] ; j¨[(5⍴1),5⍴2 ; (3⍴1),3⍴2 ; (6⍴1),6⍴2 ; (7⍴1),7⍴2 ; (8⍴1),8⍴2]]   ⍝ [[,10 ; 5 5 ; 6 6 ; 7 7]ₓ ; [5 5 ; 3 3 ; 6 6 ; 7 7 ; 8 8]ₓ]
@@ -1013,13 +1013,13 @@ a←99 ⋄ op←{a←⍵ ⋄ b←a+1 ⋄ b,⍶"a"} ⋄ ⍎ op 5
 ⍝ error: VALUE ERROR
 
 ⍝ — A dfn's last read of a local takes it out of the frame, so a pending array that only the reader then holds joins the reader's group
-x←¿1000000⍴0 ⋄ e←•explain "{a←⍵×2 ⋄ +/a+1} x" ⋄ ≢e.stored.reason   ⍝ 0ₓ
+x←¿1000000⍴0 ⋄ e←•explain "{a←⍵×2 ⋄ +/a+1} x" ⋄ ≢e.stored.partway#e.stored.reason   ⍝ 0ₓ
 
 ⍝ — A statement that reads a dfn's local more than once releases it at the read that runs last: the leftmost in a run, the rightmost item in a bracket. A dot path or subscript that reads it twice binds its root first, and keeps it
 [{+/⍵×⍵} 1 2 3 ; {[⍵ ; ⍵+1]} 3 ; {x←⍵ ⋄ x.[x]} 1 0 ; {x←⍵ ⋄ x₀.[x₁]} [10 20] 1 ; {T←⍵ ⋄ T.(a+T.b)} ["a":1 "b":2]]   ⍝ [14 [3 4] [0 1] 20 3]
 
 ⍝ — Released at its leftmost read, `⍵` in `⍵×⍵` leaves the pending array to the reader's group
-x←¿1000000⍴0 ⋄ e←•explain "{+/⍵×⍵} x-0.5" ⋄ ≢e.stored.reason   ⍝ 0ₓ
+x←¿1000000⍴0 ⋄ e←•explain "{+/⍵×⍵} x-0.5" ⋄ ≢e.stored.partway#e.stored.reason   ⍝ 0ₓ
 
 ⍝ — A name that `⍎` binds in the frame hides the global from a compiled read
 x←1 ⋄ f←{a←x ⋄ ⍎"x←2" ⋄ a,x} ⋄ (f 0),(f 0)   ⍝ 1 2 1 2
@@ -1738,6 +1738,12 @@ k←0 2 1 2 ⋄ k⍚[- ⊢ 10×] 1 2 3 4   ⍝ ¯1 20 3 40
 ⍝ agenda:constant-fill-shape — When every result fills, the argument gives the cell shape
 0 0⍚[0 ⊢] [1 2 3⋄4 5 6]   ⍝ [0 0 0⋄0 0 0]
 
+⍝ agenda:recorded-cells — A dfn's second call replays its select of rows, whether the cases' results share a kind or not
+g←{0 1⍚[{⍵×10} {⍵+100}] ⍵} ⋄ f←{0 1⍚[{⍵×10} {'x'}] ⍵} ⋄ m←2 3⍴⍳6
+[g m ; g m+1 ; f m ; f m+1]
+⍝ =>
+[[0 10 20⋄103 104 105] ; [10 20 30⋄104 105 106] ; [0 10 20⋄'x' 'x' 'x'] ; [10 20 30⋄'x' 'x' 'x']]
+
 ⍝ agenda:result-keys — A case's result keys align with the cells that picked it
 x←["a":1 "b":2 "c":3]
 p←{["a":0 "b":1 "c":1]} ⋄ f←{⌽⍵+0j1}
@@ -2310,6 +2316,9 @@ a←[[1 2;3 4];5 6]
 
 ⍝ write-jacobian — Each output direction uses the same selected positions
 {v←⍵ ⋄ v.[0]+←⍵.[1] ⋄ v}∂1 2 3   ⍝ [1 1 0⋄0 1 0⋄0 0 1]
+
+⍝ write-computed-replacement — A computed replacement for several positions writes each one, in a dfn's recorded call and its replay, and under ∂
+f←{v←0 0 0 ⋄ v.[[0 2]]←⍵ ⋄ v} ⋄ [f 5 6 ; f 7 8 ; {v←⍵ ⋄ v.[[0 2]]←⍵.[[1 1]]×⍵.[[0 2]] ⋄ +/v}∂1 2 3]   ⍝ [5 0 6;7 0 8;2 5 2]
 
 ⍝ write-derivative-mask — The mask is a primal choice, not a differentiated input
 {v←⍵ ⋄ ((0<v)#v)←0 ⋄ +/v}∂¯1 2 ¯3 4   ⍝ 1 0 1 0
@@ -4192,6 +4201,10 @@ x←0 1 2 3 4 ⋄ y←2.1 5.4 15.2 40.3 109.1 ⋄ r←{⍵.((a×*b×x)-y)}
 ⍝ =>
 ["a":0 "b":0]
 
+⍝ — With more residuals than variables, each Jacobian product that ∂ gives holds every residual, here three that are zero at one point [atol=1e-10]
+f←{[x y]←⍵ ⋄ [(⊼x)-4 ; (⊼y)-9 ; x+y-5]}
+["solve":$t] f⇄ 1 1   ⍝ 2 3
+
 ⍝ — With linear, a square system runs GMRES on products from the function [atol=1e-12]
 m←[4 1⋄1 3] ⋄ b←1 2
 (["solve":$t "linear":$t] {(m+.×⍵)-b}⇄ 0 0) - b⌹m   ⍝ 0 0
@@ -5775,7 +5788,7 @@ t←{v←4096×64•float,⍵ ⋄ +/(1ₓ+⍳≢v)×⌊ₓv}
 v←0.5×⍳300000 ⋄ t←v×2 ⋄ f←⌈/t ⋄ s←t÷f ⋄ +/t+s   ⍝ 45000000000
 
 ⍝ — Destructuring takes each major cell of a pending array as a copy through its map, so the assignment computes nothing and the sum reads the cells where `2×m` computes them
-m←2 131072⍴⍳262144 ⋄ e←•explain "[a b]←2×m ⋄ +/a+b" ⋄ w←2×m ⋄ [≢e.forced.function ; ≢e.stored.items ; e.value=+/(0⌷w)+1⌷w]   ⍝ 0ₓ 0ₓ $t
+m←2 131072⍴⍳262144 ⋄ e←•explain "[a b]←2×m ⋄ +/a+b" ⋄ w←2×m ⋄ [≢e.forced.function ; ≢e.stored.partway#e.stored.items ; e.value=+/(0⌷w)+1⌷w]   ⍝ 0ₓ 0ₓ $t
 
 ⍝ — Under dynamic kinds, ⌊ and ⌈ keep an exact number exact beside an infinity, and give their right argument beside NaN, as a float. On a large array they don't fuse beside an exact number or a comparison, because a fused group reads them as floats
 x←¿160000⍴0 ⋄ x.[[0 1 2 3]]←[∞ ¯∞ $n 0] ⋄ [4↑x⌊0ₓ ⋄ 4↑x⌈0ₓ ⋄ 4↑x⌊x>0 ⋄ 4↑x⌈$t]
@@ -5844,7 +5857,7 @@ x←¿1000000⍴0 ⋄ c←x-0.5 ⋄ d←x-0.5 ⋄ e←•explain "+/c×c" ⋄ [e
 y←¿1000000⍴0 ⋄ c←2×y ⋄ e←•explain "y+⌽c" ⋄ [e.stored.reason ; (•storage c).pending ; e.value≡y+⌽c]   ⍝ [0⍴⊂"" $f $t]
 
 ⍝ fusion:shared-copy-chain — When a name holds a copy of a pending copy and their maps don't compose, each fold reads the copies' source through both maps, and the name's copy stays pending: no fold stores a copy
-v←¿1000000⍴0 ⋄ q←1000005↑1⌽v ⋄ a←•explain "+/q+1" ⋄ b←•explain "+/q+1" ⋄ [≢a.stored.items ; ≢b.stored.items ; (•storage q).pending]   ⍝ [0ₓ 0ₓ $t]
+v←¿1000000⍴0 ⋄ q←1000005↑1⌽v ⋄ a←•explain "+/q+1" ⋄ b←•explain "+/q+1" ⋄ [≢a.stored.partway#a.stored.items ; ≢b.stored.partway#b.stored.items ; (•storage q).pending]   ⍝ [0ₓ 0ₓ $t]
 
 ⍝ fusion:named-view — A view that a name holds stays a view. A fold of named windows slides over their source, a fold of a named transpose reads through its map, and a call on named windows reads them through their map. None of them computes the view
 u←¿2000⍴0 ⋄ m←¿400 400⍴0 ⋄ w←100↕u ⋄ t←⍉m ⋄ a←•explain "+/w" ⋄ b←•explain "+⌿t" ⋄ c←•explain "+/w×2" ⋄ (0ₓ=≢¨[a.forced.items b.forced.items c.forced.items]),(•storage w).pending,(•storage t).pending
@@ -5857,9 +5870,9 @@ x←0.001×⍳3000 ⋄ y←0.5+x ⋄ [+/x×x>0.5 ; +/(*x-1)×2+x ; +/(⍟y)×x+1
 ⍝ fusion:fixed-fold-copy — A fold of a pending copy of fixed integers that overflows keeps its wrapped totals at the fixed width, as the fold of the stored copy does
 m←[300 300]⍴200ₓ₁ ⋄ [(+/⍉m)≡+/(⍉m)+0ₓ₁ ; 3↑+/⍉m]   ⍝ [$t [96 96 96]ₓ₁]
 
-⍝ fusion:shared-input — A group's program computes a pending array that it reads through a copy, here `c×2` read with a fill, in a unit of its own. It computes `c`, which a name holds, as one of its outputs and stores its items. The result matches one computed from `c`'s stored items, and no `stored` row appears
-y←¿1000000⍴0 ⋄ c←y-0.5 ⋄ e←•explain "c+1000000↑500000↑c×2" ⋄ r←e.value ⋄ [(500000↑r)≡(500000↑c)+2×500000↑c ; (500000↓r)≡500000↓c ; e.stored.reason]
-[$t $t 0⍴⊂""]
+⍝ fusion:shared-input — A group's program computes a pending array that it reads through a copy, here `c×2` read with a fill, in a unit of its own. It computes `c`, which a name holds, as one of its outputs and stores its items. The result matches one computed from `c`'s stored items, and no slow `stored` row appears
+y←¿1000000⍴0 ⋄ c←y-0.5 ⋄ e←•explain "c+1000000↑500000↑c×2" ⋄ r←e.value ⋄ [(500000↑r)≡(500000↑c)+2×500000↑c ; (500000↓r)≡500000↓c ; ≢e.stored.partway#e.stored.reason]
+[$t $t 0ₓ]
 
 ⍝ fusion:narrowed-fold — A read of a few items of a pending array that a fold left computes only those items. The fork's right tine folds the array first
 y←¿1000000⍴0 ⋄ (•explain "(↑ , +/) 0.5×y").forced.items   ⍝ [1]ₓ
@@ -10633,3 +10646,55 @@ u←["unique":1 "prefix":"run"] •mkdir testpath
 ⍝ —
 •nget "-"
 ⍝ error: IO ERROR
+
+⍝⍝ Constants and data
+
+⍝ — A free name in an operator's operand is data, so each call reads its current value
+k←2
+f←{(k↣×)⍵}
+a←f 1 2
+k←3
+[a ; f 1 2]   ⍝ [2 4 ; 3 6]
+
+⍝ — A dfn operator gives each literal operand its own result, in any order of calls
+ap←{⍶ ⍵} ⋄ [(2↣×) ap 1 2 ; (3↣×) ap 1 2 ; (2↣×) ap 1 2]
+[2 4 ; 3 6 ; 2 4]
+
+⍝ — A count that a free name holds is read at each call, beside a literal count
+n←3
+a←{⍵×2}⍣n⁝1
+n←4
+[a ; {⍵×2}⍣n⁝1 ; {⍵×2}⍣3⁝1]   ⍝ 8 16 8
+
+⍝ — An axis given as an argument applies to its own call
+s←{+/⍠⍺⁝⍵}
+m←[2 3]⍴⍳6
+[0 s m ; 1 s m ; 0 s m]
+⍝ =>
+[3 5 7 ; 3 12 ; 3 5 7]
+
+⍝ — A scalar argument is data: calls with other scalars replay the first call's recording
+f←{⍵+⍺}
+v←1.5 2.5
+e←•explain "[1 f v ; 2 f v ; 3 f v]"
+[e.value ; 2≤+/e.programs.event≡¨⊂"replayed"]
+⍝ =>
+[[2.5 3.5] [3.5 4.5] [4.5 5.5] ; $t]
+
+⍝ — A count taken from a length stays correct when a dfn runs again at another length, then at the first
+f←{((≢⍵)-1)↑⍵}
+[f 1 2 3 ; f 1 2 3 4 5 ; f 1 2 3]
+⍝ =>
+[1 2 ; 1 2 3 4 ; 1 2]
+
+⍝ — ∂ of a dfn whose count comes from a length gives correct gradients at two lengths
+g←{+/(((≢⍵)-1)↑⍵)×2}
+[g∂1 2 3 ; g∂1 2 3 4 5]
+⍝ =>
+[2 2 0 ; 2 2 2 2 0]
+
+⍝ — A map whose cells give results of lengths that depend on their values stays correct when a dfn runs again at another length, then at the first
+h←{+/¨{⍳⍵}¨⍵}
+[h [1 2 3]ₓ ; h [1 2 3 4 5]ₓ ; h [1 2 3]ₓ]
+⍝ =>
+[[0 1 3]ₓ ; [0 1 3 6 10]ₓ ; [0 1 3]ₓ]

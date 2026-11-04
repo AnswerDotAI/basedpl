@@ -1,5 +1,5 @@
 //! Structural and range contracts of the flat program.
-use super::{Desc, Node, Out, Program, Step};
+use super::{Desc, Node, Out, Program};
 use crate::Value;
 use rustymath::buffer::DType;
 

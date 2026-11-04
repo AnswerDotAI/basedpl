@@ -4,7 +4,7 @@
 //!
 //! Timings come from the development build, which `cargo test` and `cargo develop` share. Like `bpl` and the Python extensions, this test registers rustymath's memory guard as its global allocator. Each case then allocates as a user's process does, including the guard's request for huge pages on large blocks on Linux.
 //!
-//! A second test checks that every case has its macOS, Linux and wasm budgets. Both speed tests pass a case that lacks the budget they read, without checking it.
+//! Plain `cargo test` skips this test binary (`test = false` in `Cargo.toml`); `cargo test --test speed` runs it, as do CI's `Test` workflow and `bpl-tests prerelease`. `tests/reference.rs` checks that every case has its macOS, Linux and wasm budgets.
 use basedpl::timing;
 use std::io::Write;
 
@@ -21,11 +21,4 @@ fn functions_cost_what_their_work_needs() {
     let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
     let over = timing::measured(&files, all, |line| writeln!(stderr, "{line}").unwrap()).unwrap();
     if checks { assert!(over.is_empty(), "{over:#?}"); }
-}
-
-#[test]
-fn every_case_has_its_three_budgets() {
-    let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
-    let missing: Vec<_> = files.iter().flat_map(|f| &f.cases).filter(|c| c["budgets"].as_array().is_none_or(|b| b.len() != 3)).collect();
-    assert!(missing.is_empty(), "each case needs a macOS, a Linux and a wasm budget: {missing:#?}");
 }

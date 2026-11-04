@@ -668,7 +668,6 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
                 if let Some(end) = run_on(chars, true) { return Err(Error::new(ErrorKind::Syntax, "invalid exact numeric literal").at(&span(end)).into()); }
             }
         }
-        let end = position(chars, len);
         TokenKind::Number(None)
     } else if name_char_in(raw, chars.aliases) {
         let key = source.text[..start].chars().next_back().is_some_and(|c| canonical(c) == '.');

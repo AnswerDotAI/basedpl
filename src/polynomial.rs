@@ -2,7 +2,7 @@ use crate::execution::check;
 use crate::{
     Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Cells, Layout, generated_len},
     number::{Arithmetic, Field, Kind as NumberKind, Math, Numeric, read_as, with_field},
-    primitive::{CallView, Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis, scalar}, program::{Origin, Outputs}
+    primitive::{Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis, scalar}, program::{Origin, Outputs}
 };
 use rustymath::{Float, buffer::{Element, FloatWidth}, error::Kind, recipe::Cmp, with_float_width};
 use std::num::Wrapping;
@@ -237,7 +237,7 @@ fn each(source: &Value, numeric: Numeric, f: impl Fn(&Polynomial) -> Result<Valu
 }
 
 fn calc(call: &Origin<&[Value]>, primitive: Primitive, args: &[Value]) -> Result<Value, Error> {
-    call.apply(Operation::Primitive { primitive, pairing: Pairing::Axes }, args, &vec![None; args.len()])
+    call.apply(Operation::Primitive { primitive, pairing: Pairing::Axes }, args)
 }
 
 fn coordinate(call: &Origin<&[Value]>, value: &Value, index: usize, variables: usize) -> Result<Value, Error> {
@@ -247,9 +247,9 @@ fn coordinate(call: &Origin<&[Value]>, value: &Value, index: usize, variables: u
         calc(call, Primitive::Shape, std::slice::from_ref(&point))?.read(crate::ReadKind::Structure)?;
         if point.len() != 1 && point.len() != variables { return Err(Error::new(Kind::Length, "coordinates must match polynomial variables")); }
         if point.is_atom() { return Ok(point); }
-        if point.is_unit() { return call.apply(Operation::Read(ReadOp::Item), &[point], &[None]); }
+        if point.is_unit() { return call.apply(Operation::Read(ReadOp::Item), &[point]); }
         let index = Value::integer(if point.is_singleton() { 0 } else { index as i64 });
-        call.apply(Operation::Read(ReadOp::Slice { axis: 0 }), &[index, point], &[None, None])
+        call.apply(Operation::Read(ReadOp::Slice { axis: 0 }), &[index, point])
     };
     if value.is_unit() { return pick(value.at(0)); }
     calc(call, Primitive::Shape, std::slice::from_ref(value))?.read(crate::ReadKind::Structure)?;
@@ -262,28 +262,28 @@ fn coordinate(call: &Origin<&[Value]>, value: &Value, index: usize, variables: u
 fn grid(call: &Origin<&[Value]>, value: &Value, points: &Value, terms: &Value, destinations: Vec<usize>) -> Result<Value, Error> {
     let axes = (0..points.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) })
         .chain(std::iter::once(ViewAxis { input: 2, axis: terms.rank().checked_sub(1) })).collect();
-    call.apply(Operation::Read(ReadOp::Axes { axes, destinations: destinations.into() }), &[value.clone(), points.clone(), terms.clone()], &[None; 3])
+    call.apply(Operation::Read(ReadOp::Axes { axes, destinations: destinations.into() }), &[value.clone(), points.clone(), terms.clone()])
 }
 
 fn broadcast(call: &Origin<&[Value]>, value: &Value, points: &Value) -> Result<Value, Error> {
     let axes = (0..points.rank()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
     let destinations = (0..value.rank()).collect();
-    call.apply(Operation::Read(ReadOp::Axes { axes, destinations }), &[value.clone(), points.clone()], &[None; 2])
+    call.apply(Operation::Read(ReadOp::Axes { axes, destinations }), &[value.clone(), points.clone()])
 }
 
 fn total(call: &Origin<&[Value]>, primitive: Primitive, value: Value) -> Result<Value, Error> {
-    call.apply(Operation::Fold { primitive, first: false, scan: false, positions: None, pairing: Pairing::Axes }, &[value], &[None])
+    call.apply(Operation::Fold { primitive, first: false, scan: false, positions: None, pairing: Pairing::Axes }, &[value])
 }
 
 fn framed(call: &Origin<&[Value]>, coefficients: &Value, points: &Value) -> Result<Value, Error> {
     for value in [coefficients, points] { calc(call, Primitive::Shape, std::slice::from_ref(value))?.read(crate::ReadKind::Structure)?; }
     let (cells, agreement) = polynomial_cells(coefficients, points.layout())?;
-    let flat = call.apply(Operation::Read(ReadOp::Ravel), std::slice::from_ref(points), &[None])?;
+    let flat = call.apply(Operation::Read(ReadOp::Ravel), std::slice::from_ref(points))?;
     let mut values = Vec::with_capacity(agreement.len.max(1));
     for i in 0..agreement.len.max(1) {
         check()?;
         let (c, point) = polynomial_pair(&cells, points, agreement.left.get(i), agreement.right.get(i), |j| {
-            call.apply(Operation::Read(ReadOp::Slice { axis: 0 }), &[Value::integer(j as i64), flat.clone()], &[None; 2])
+            call.apply(Operation::Read(ReadOp::Slice { axis: 0 }), &[Value::integer(j as i64), flat.clone()])
         })?;
         values.push(calc(call, Primitive::Polynomial, &[c, point.unit()?])?);
     }
@@ -294,10 +294,10 @@ fn framed(call: &Origin<&[Value]>, coefficients: &Value, points: &Value) -> Resu
 
 pub(crate) fn jvp(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
     let call = &origin;
-    let roots = origin.explicit_argument_roots();
+    let roots = origin.layout().arguments();
     if roots.len() != 2 { return Err(crate::derivative::system("polynomial roots")); }
     let c = origin.root_input(roots.start)?.into_owned();
-    let x = origin.root_input(roots.start + 1)?.into_owned();
+    let x = origin.root_input(roots.start.after(1))?.into_owned();
     if !c.all_numbers() {
         if crate::derivative::tag(&c).is_some() { return Err(crate::derivative::system("⌻ with respect to roots or exponents")); }
         if c.rank() > 1 { return framed(&call, &c, &x).map(Outputs::one); }
@@ -309,13 +309,13 @@ pub(crate) fn jvp(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
         Format::Coefficients => {
             let frame = c.rank().saturating_sub(1);
             let axes = (0..frame).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
-            let zero = call.apply(Operation::Read(ReadOp::Axes { axes, destinations: Box::new([]) }), &[Value::integer(0), c.clone()], &[None; 2])?;
+            let zero = call.apply(Operation::Read(ReadOp::Axes { axes, destinations: Box::new([]) }), &[Value::integer(0), c.clone()])?;
             let points = calc(&call, plus, &[zero, coordinate(&call, &x, 0, 1)?])?;
             calc(&call, Primitive::Shape, std::slice::from_ref(&c))?.read(crate::ReadKind::Structure)?;
             let count = c.shape().last().copied().unwrap_or(1);
             let coefficient = |index| {
                 if c.rank() == 0 { return Ok(c.clone()); }
-                call.apply(Operation::Read(ReadOp::Slice { axis: frame }), &[Value::integer(index as i64), c.clone()], &[None; 2])
+                call.apply(Operation::Read(ReadOp::Slice { axis: frame }), &[Value::integer(index as i64), c.clone()])
             };
             let mut value = if count == 0 { Value::integer(0) } else { coefficient(count - 1)? };
             for index in (0..count.saturating_sub(1)).rev() {
@@ -325,13 +325,13 @@ pub(crate) fn jvp(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
         }
         Format::Powers { table, variables } => {
             calc(&call, Primitive::Shape, std::slice::from_ref(&table))?.read(crate::ReadKind::Structure)?;
-            let coefficients = call.apply(Operation::Read(ReadOp::Slice { axis: 1 }), &[Value::integer(0), table.clone()], &[None; 2])?;
+            let coefficients = call.apply(Operation::Read(ReadOp::Slice { axis: 1 }), &[Value::integer(0), table.clone()])?;
             let points = coordinate(&call, &x, 0, variables)?;
             let mut terms = grid(&call, &coefficients, &points, &coefficients, vec![points.rank()])?;
-            let zero = call.apply(Operation::Recipe(RecipeOp::Compare(Cmp::Equal)), &[terms.clone(), Value::integer(0)], &[None; 2])?;
+            let zero = call.apply(Operation::Recipe(RecipeOp::Compare(Cmp::Equal)), &[terms.clone(), Value::integer(0)])?;
             let nonzero = calc(&call, Primitive::Arithmetic(Arithmetic::Minus), &[Value::integer(1), zero])?;
             for axis in 0..variables {
-                let exponents = call.apply(Operation::Read(ReadOp::Slice { axis: 1 }), &[Value::integer(1 + axis as i64), table.clone()], &[None; 2])?;
+                let exponents = call.apply(Operation::Read(ReadOp::Slice { axis: 1 }), &[Value::integer(1 + axis as i64), table.clone()])?;
                 let point = coordinate(&call, &x, axis, variables)?;
                 let point = grid(&call, &point, &points, &coefficients, (0..point.rank()).collect())?;
                 let exponents = grid(&call, &exponents, &points, &coefficients, vec![points.rank()])?;
@@ -346,9 +346,9 @@ pub(crate) fn jvp(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
             let mut value = multiplier;
             for index in 0..roots.len() {
                 let root = if roots.is_atom() { roots.clone() } else if roots.rank() == 0 {
-                    call.apply(Operation::Read(ReadOp::Item), std::slice::from_ref(&roots), &[None])?
+                    call.apply(Operation::Read(ReadOp::Item), std::slice::from_ref(&roots))?
                 } else {
-                    call.apply(Operation::Read(ReadOp::Slice { axis: 0 }), &[Value::integer(index as i64), roots.clone()], &[None; 2])?
+                    call.apply(Operation::Read(ReadOp::Slice { axis: 0 }), &[Value::integer(index as i64), roots.clone()])?
                 };
                 value = calc(&call, times, &[value, calc(&call, Primitive::Arithmetic(Arithmetic::Minus), &[points.clone(), root])?])?;
             }
@@ -356,7 +356,7 @@ pub(crate) fn jvp(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
         }
     };
     let value = if value.is_unit() && !value.is_atom() {
-        call.apply(Operation::Read(ReadOp::Item), &[value], &[None])?
+        call.apply(Operation::Read(ReadOp::Item), &[value])?
     } else { value };
     Ok(Outputs::one(value))
 }

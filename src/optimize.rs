@@ -1,4 +1,5 @@
 //! `⇄`, the operator that minimizes its operand, or solves for where its operand is zero, through `rustymath::optimize`.
+use crate::error::OrInternal;
 use crate::{
     Described, Error, ErrorKind, Function, Number, Value, array::Layout, data::Options, derivative, keyed, number::read_as, primitive::real,
     program::{Origin, trace::ReadKind}
@@ -14,7 +15,7 @@ const OPTIONS: &[&str] =
 /// `f⇄ start` or `options f⇄ start`: the point where `f` is least, searching from `start`. With the `solve` option, `f` gives residuals. The point is then where they're zero, or where the sum of their squares is least when there are more residuals than variables. With `linear` as well, `f` is affine. The point has `start`'s shape and keys. With the `report` option, the result is a record of the point, its value, the number of evaluations and whether the search converged.
 pub(crate) fn optimize(f: &Function, origin: Origin<&[Value]>) -> Result<Value, Error> {
     let arguments = Function::body_arguments(&origin)?;
-    let right = arguments.last().ok_or_else(Error::planning)?;
+    let right = arguments.last().or_internal()?;
     let left = (arguments.len() == 2).then(|| &arguments[0]);
     let options = Options::new("⇄", left, None, OPTIONS)?;
     let numeric = crate::settings::numeric();
@@ -64,7 +65,7 @@ fn run<F: Native + Cast + Factor>(f: &Function, options: &Options, start: &Value
         let gradient = settings.method_for(task, n) == Method::Lbfgs;
         optimize::minimize(&mut Goal { cost: f, gradient, last, shape: point, batch, origin }, &x, &settings)?
     } else {
-        let r0 = match &last { Some((_, lin)) => lin.value.clone(), None => f.call_bound(origin, &[start], &[None])? };
+        let r0 = match &last { Some((_, lin)) => lin.value.clone(), None => f.call_bound(origin, &[start])? };
         let first = reals::<F>(&r0)?;
         let m = first.len();
         // A square linear system takes no products with the transpose, so it's solved directly, not through normal equations that would square A's condition number.
@@ -93,7 +94,7 @@ impl<'a> Point<'a> {
 
     /// Calls `f` on the point `x` and reads its numbers into `out`.
     fn call<F: Native + Cast>(&self, f: &Function, x: &[F], out: &mut [F], message: &str, origin: &Origin<&[Value]>) -> Result<(), Error> {
-        let y = f.call_bound(origin, &[self.value(x)?], &[None])?;
+        let y = f.call_bound(origin, &[self.value(x)?])?;
         fill(out, &y, message)
     }
 
@@ -119,10 +120,10 @@ impl<'a> Point<'a> {
 struct AtPoint { value: Value, pushforward: Function, pullback: Function }
 impl AtPoint {
     fn of(function: &Function, point: &Value, parent: &Origin<&[Value]>) -> Result<Self, Error> {
-        let origin = function.bound(parent, std::slice::from_ref(point), &[None])?;
+        let origin = function.bound(parent, std::slice::from_ref(point))?;
         let (input, value, pushforward) = derivative::linearize(function, &origin.reborrow())?;
         let pullback = derivative::transpose_function(&pushforward, &origin.reborrow(), &input, &value)?;
-        Ok(Self { value, pushforward, pullback })
+        Ok(Self { value: value.assemble()?, pushforward, pullback })
     }
 }
 /// The linearisation of `f` at `x`, from `last` where it was made at `x`, or at any point where `affine`, because an affine map's derivative is the same everywhere. A value, a gradient and products at one point then run `f` once.
@@ -145,7 +146,7 @@ impl<F: Native + Cast> Objective<F> for Goal<'_> {
 
     fn value(&mut self, x: &[F]) -> Result<F, Error> {
         let y = if self.gradient { at_point(&mut self.last, self.cost, &self.shape, x, false, self.origin)?.value.clone() }
-        else { self.cost.call_bound(self.origin, &[self.shape.value(x)?], &[None])? };
+        else { self.cost.call_bound(self.origin, &[self.shape.value(x)?])? };
         let y = y.read(ReadKind::Value)?;
         crate::session().raise()?;
         real(&y).map(F::narrow).map_err(|_| Error::domain("⇄ needs its function to give one real number"))
@@ -155,7 +156,7 @@ impl<F: Native + Cast> Objective<F> for Goal<'_> {
 
     /// One call of the operand on every candidate, which gives one value for each.
     fn values(&mut self, xs: &[F], out: &mut [F]) -> Result<(), Error> {
-        let ys = self.cost.call_bound(self.origin, &[self.shape.candidates(xs, out.len())?], &[None])?;
+        let ys = self.cost.call_bound(self.origin, &[self.shape.candidates(xs, out.len())?])?;
         fill(out, &ys, "⇄ needs its function to give one value for each candidate")
     }
 
@@ -164,7 +165,7 @@ impl<F: Native + Cast> Objective<F> for Goal<'_> {
     fn gradient(&mut self, x: &[F], g: &mut [F]) -> Result<(), Error> {
         let linear = at_point(&mut self.last, self.cost, &self.shape, x, false, self.origin)?;
         let direction = Value::Number(Number::float(1.0, self.shape.width));
-        let gradient = linear.pullback.call_bound(self.origin, &[Value::tuple(vec![direction])], &[None])?.at(0);
+        let gradient = linear.pullback.run_recorded(self.origin, &[direction])?.into_item(0).or_internal()?;
         fill(g, &gradient, "⇄ needs its function to give one real number")
     }
 }
@@ -196,7 +197,7 @@ impl<F: Native + Cast> Mapping<F> for Residual<'_> {
     fn vjp(&mut self, u: &[F], x: &[F], out: &mut [F]) -> Result<(), Error> {
         let u = self.values.value(u)?;
         let linear = at_point(&mut self.last, self.f, &self.point, x, self.affine, self.origin)?;
-        let product = linear.pullback.call_bound(self.origin, &[Value::tuple(vec![u])], &[None])?.at(0);
+        let product = linear.pullback.run_recorded(self.origin, &[u])?.into_item(0).or_internal()?;
         fill(out, &product, "⇄ needs its function to give the same number of residuals at every point")
     }
 
@@ -207,7 +208,7 @@ impl<F: Native + Cast> Mapping<F> for Residual<'_> {
         let direction = self.point.value(v)?;
         match at_point(&mut self.last, self.f, &self.point, x, self.affine, self.origin) {
             Ok(lin) => {
-                let product = lin.pushforward.call_bound(self.origin, &[Value::tuple(vec![direction])], &[None])?.at(0);
+                let product = lin.pushforward.run_recorded(self.origin, &[direction])?.assemble()?;
                 fill(out, &product, "⇄ needs its function to give the same number of residuals at every point")?;
                 Ok(true)
             }

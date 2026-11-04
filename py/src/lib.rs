@@ -1,5 +1,5 @@
 use basedpl::{
-    Error, EvalOptions, Evaluation, Function, InterruptHandle, Number, OperatorValue, ReadKind, Session, Value,
+    Error, EvalOptions, Evaluation, Function, Hold, InterruptHandle, Number, OperatorValue, ReadKind, Session, Value,
     buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}
 };
 use num_bigint::BigInt;
@@ -178,9 +178,9 @@ fn exported(py: Python<'_>, a: &Value) -> PyResult<Py<PyAny>> {
 
 /// A BPL value, or nothing once `own` has moved its items into NumPy.
 #[pyclass(name = "_Array")]
-struct PyArray { inner: Option<Value> }
+struct PyArray { inner: Option<Value>, _hold: Option<Hold> }
 
-impl From<Value> for PyArray { fn from(inner: Value) -> Self { Self { inner: Some(inner) } } }
+impl From<Value> for PyArray { fn from(inner: Value) -> Self { Self { _hold: Hold::of(&inner), inner: Some(inner) } } }
 
 impl PyArray {
     /// The value, or an error once `own` has moved its items.
@@ -353,7 +353,7 @@ impl PyArray {
     /// The items for NumPy to view writably: moved with no copy where nothing else holds them, and copied otherwise. Integers that static kinds store narrower than their kind come widened to it (`Value::widened_for_export`). For items it can't move, such as exact numbers, it still empties the array and returns `None`, so the caller copies them first.
     fn own(&mut self) -> PyResult<Option<Owned>> {
         let value = observed(self.value()?, ReadKind::Value)?;
-        self.inner = None;
+        (self.inner, self._hold) = (None, None);
         let shape = value.shape().to_vec();
         let items = match value.widened_for_export() { Some(items) => Some(items), None => value.into_buffer().ok() };
         Ok(items.map(|items| Owned::new(items, &shape)))
