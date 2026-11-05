@@ -16,17 +16,33 @@ pub(crate) struct NodeData {
     state: Mutex<OwnedState>
 }
 
-/// A binding's hold on a pending value. A read that computes a held node stores it (`program::execute_live`).
-pub struct Hold(Node);
+/// A binding's hold on its pending data leaves. A read that computes a held node stores it (`program::execute_live`).
+pub struct Hold { node: Option<Node>, _children: Vec<Hold> }
 impl Hold {
-    /// A hold on `value`'s node, where `value` is pending.
+    /// Hold the actual data in a value, without following names or callable templates.
     pub fn of(value: &Value) -> Option<Self> {
-        let node = &value.pending()?.node;
-        node.0.holds.fetch_add(1, Relaxed);
-        Some(Self(node.clone()))
+        use crate::array::{ArrayData, Carried};
+        match value {
+            Value::Pending(pending) => {
+                let node = pending.source().node;
+                node.0.holds.fetch_add(1, Relaxed);
+                Some(Self { node: Some(node), _children: Vec::new() })
+            }
+            Value::Array(array) => match &**array { ArrayData::Mixed { items, .. } => Self::many(items.iter().filter_map(Self::of)), _ => None },
+            Value::Function(function) => function.hold(), Value::Operator(operator) => operator.hold(),
+            Value::Carried { carried, .. } => match &**carried {
+                Carried::Dual { primal, tangent } => Self::many([primal, tangent].into_iter().filter_map(Self::of)),
+                Carried::Batch { whole, .. } => Self::of(whole),
+            },
+            _ => None,
+        }
+    }
+    pub(crate) fn many(holds: impl Iterator<Item = Hold>) -> Option<Self> {
+        let mut children: Vec<_> = holds.collect();
+        match children.len() { 0 => None, 1 => children.pop(), _ => Some(Self { node: None, _children: children }) }
     }
 }
-impl Drop for Hold { fn drop(&mut self) { self.0.0.holds.fetch_sub(1, Relaxed); } }
+impl Drop for Hold { fn drop(&mut self) { if let Some(node) = &self.node { node.0.holds.fetch_sub(1, Relaxed); } } }
 
 enum OwnedState {
     Step { step: Step, origin: Origin<Vec<Read<Value>>>, retained: usize, lease: Option<Retention> },
@@ -57,11 +73,10 @@ impl Pending {
 
 #[derive(Clone, Copy, Default)]
 /// A pending graph's size. `data` is the largest data the graph derives from, by description: a stored or literal operand, an input, or a generator's output (a step whose data operands are atoms).
-pub(crate) struct Kept { pub(crate) nodes: usize, pub(crate) graph: usize, pub(crate) bytes: usize, pub(crate) largest: usize, pub(crate) data: usize }
+pub(crate) struct Kept { pub(crate) graph: usize, pub(crate) data: usize }
 
-pub(crate) const MAX_KEPT: usize = 8;
 const MAX_GRAPH: usize = 1 << 20;
-impl Kept { fn over_budget(self) -> bool { self.graph > MAX_GRAPH || self.bytes > self.largest.saturating_mul(MAX_KEPT) } }
+impl Kept { fn over_budget(self) -> bool { self.graph > MAX_GRAPH } }
 
 struct Intern { nodes: HashMap<u64, Vec<Weak<NodeData>>>, next: usize }
 impl Default for Intern { fn default() -> Self { Self { nodes: HashMap::default(), next: 64 } } }
@@ -171,29 +186,19 @@ impl Node {
             }
             Some(hash)
         };
-        let mut kept = Kept { nodes: 1,
-            graph: std::mem::size_of::<NodeData>() + origin.list.capacity() * std::mem::size_of::<Read<Value>>() + description.heap_bytes(), bytes: 0,
-            largest: 0, data: 0 };
+        let mut kept = Kept {
+            graph: std::mem::size_of::<NodeData>() + origin.list.capacity() * std::mem::size_of::<Read<Value>>() + description.heap_bytes(), data: 0 };
         for (i, read) in origin.list.iter().enumerate() {
             if let Some(pending) = read.operand.pending() {
                 if origin.list[..i].iter().any(|read| read.operand.pending().is_some_and(|prior| prior.node == pending.node)) { continue; }
-                if let Some(value) = pending.completed() {
-                    let bytes = value.footprint();
-                    kept.bytes += bytes;
-                    kept.largest = kept.largest.max(bytes);
+                if pending.completed().is_some() {
                     kept.data = kept.data.max(pending.node.kept().data).max(pending.description().map_or(0, Desc::bytes));
                     continue;
                 }
                 let part = pending.node.kept();
-                kept.nodes = kept.nodes.saturating_add(part.nodes);
                 kept.graph = kept.graph.saturating_add(part.graph);
-                kept.bytes = kept.bytes.saturating_add(part.bytes);
-                kept.largest = kept.largest.max(part.largest);
                 kept.data = kept.data.max(part.data);
             } else {
-                let bytes = read.operand.footprint();
-                kept.bytes += bytes;
-                kept.largest = kept.largest.max(bytes);
                 kept.data = kept.data.max(Desc::of(&read.operand).map_or(0, |desc| desc.bytes()));
             }
         }
@@ -217,8 +222,7 @@ impl Node {
     pub(crate) fn literal(value: Value) -> Self {
         debug_assert!(!matches!(value, Value::Pending(_) | Value::Carried { .. }));
         let description = Outputs::one(Desc::leaf(&value));
-        let bytes = value.footprint();
-        let kept = Kept { nodes: 1, graph: std::mem::size_of::<NodeData>(), bytes, largest: bytes, data: described_bytes(&description) };
+        let kept = Kept { graph: std::mem::size_of::<NodeData>(), data: described_bytes(&description) };
         Self(Arc::new(NodeData { description, literal: true, level: None, reach: None, kept, exact: OnceLock::new(), values: OnceLock::from(Outputs::one(value)), holds: AtomicUsize::new(0),
             state: Mutex::new(OwnedState::Done) }))
     }
@@ -253,21 +257,13 @@ impl Node {
         if !self.kept().over_budget() { return false; }
         let mut kept = Kept::default();
         let mut nodes = rustymath::hashing::HashSet::default();
-        let mut storage = Seen::default();
         let mut pending = vec![self.clone()];
         while let Some(node) = pending.pop() {
             if !nodes.insert(node.clone()) { continue; }
-            kept.nodes += 1;
             kept.graph += std::mem::size_of::<NodeData>();
             kept.graph += node.0.description.heap_bytes();
             node.with_state(|state| {
-                let mut input = |value: &Value| {
-                    if let Some(source) = value.pending() { pending.push(source.node.clone()); } else {
-                        let bytes = value.footprint_in(&mut storage);
-                        kept.bytes += bytes;
-                        kept.largest = kept.largest.max(bytes);
-                    }
-                };
+                let mut input = |value: &Value| { if let Some(source) = value.pending() { pending.push(source.node.clone()); } };
                 match state {
                     State::Step { origin, .. } => {
                         kept.graph += origin.list.capacity() * std::mem::size_of::<Read<Value>>();
@@ -313,8 +309,12 @@ impl Node {
         *retained -= 1;
         if *retained == 0 && self.completed().is_some() { Some(std::mem::replace(&mut *state, OwnedState::Done)) } else { None }
     }
-    pub(crate) fn finish(&self, results: Outputs<Value>) {
+    pub(crate) fn finish(&self, mut results: Outputs<Value>) {
         debug_assert!(self.descs().is_empty() || results.as_ref().len() == self.descs().len());
+        // Scalar storage follows the declared kind, just like native array storage.
+        for (value, desc) in results.as_mut().iter_mut().zip(self.descs()) {
+            if let (Value::Number(number), Some(desc)) = (value, desc) { *number = number.clone().stored(desc.kind); }
+        }
         let retired = {
             let mut state = lock(&self.0.state);
             let _ = self.0.values.set(results);
@@ -362,7 +362,8 @@ impl Node {
     }
     pub(crate) fn into_storage(self, output: u32, read: ReadKind) -> Result<Value> {
         let pending = Pending::data(self.clone(), output);
-        let value = self.exposed(output, read)?.read(read)?;
+        // Exposure observes this read once; following its stored input aliases is execution, not another host observation.
+        let value = self.exposed(output, read)?.read(ReadKind::RuntimeOnly)?;
         if read == ReadKind::Count { Tracing::counted(&pending)?; }
         Ok(value)
     }

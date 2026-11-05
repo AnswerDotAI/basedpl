@@ -40,6 +40,8 @@ m←3 4⍴⍳12ₓ
 
 On a keyed axis, a string is one key.
 
+An array selector can repeat a position or key. If a source key would repeat on a result axis, that axis drops its source keys. The selector's own keys and axis names follow the usual rules.
+
 ```bpl
 T←"aa" "bb":1 2
 "bb"⌷T             ⍝ 2

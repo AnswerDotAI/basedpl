@@ -47,7 +47,7 @@ When a function `g` returns items of `Y` that selecting primitives took, `f@g Y`
 (1+)@{⍵>15 # ⍵} 10 20 30   ⍝ 10 21 31
 ```
 
-When `g` selects a position more than once, which of its values that position keeps isn't promised. A value at a fill, such as overtaking `↑` adds, is dropped.
+`g` may select a keyed or unkeyed position more than once. Which replacement that position keeps isn't promised. The updated array retains its keys. A write at a fill position is dropped.
 
 ```bpl
 ≥@↕ 1 2 3                  ⍝ 2 3 4

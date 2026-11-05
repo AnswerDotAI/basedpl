@@ -384,6 +384,12 @@ fn mark_head(chars: &mut Characters<'_>) -> Option<Mark> { let &(_, c) = chars.p
 
 fn mark(chars: &mut Characters<'_>) -> Result<Option<Mark>, (ErrorKind, String)> {
     let Some(mark) = mark_head(chars) else { return Ok(None) };
+    if mark == Mark::Rational {
+        let mut next = chars.clone();
+        next.next();
+        if number_part(next.clone()) || next.peek().is_some_and(|&(_, c)|
+            name_char_in(c, chars.aliases) || is_implicit(c) || matches!(c, '(' | '[' | '\'' | '"' | '$' | '•' | '⍬')) { return Ok(None); }
+    }
     chars.next();
     if mark != Mark::Exact { return Ok(Some(mark)); }
     let Some(&(_, c)) = chars.peek().filter(|(_, c)| *c == '₋' || script_digit(SUBSCRIPT_DIGITS, *c).is_some()) else { return Ok(Some(mark)) };

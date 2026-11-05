@@ -278,6 +278,8 @@ fn declared_ranks_match_rank() {
     use basedpl::symbols::symbols;
     let s = Session::new();
     s.eval(r#"n←2 ⋄ v←1 2 3 ⋄ w←3 1 2 ⋄ u←1 0 1 ⋄ m←2 3⍴⍳6 ⋄ q←3 3⍴2 7 6 9 5 1 4 3 8 ⋄ t←2 2 3⍴⍳12 ⋄ c←"abc" ⋄ k←2 3⍴"abcdef" ⋄ e←[1 2;3 4 5]"#);
+    fails_in(&s, "LENGTH", &["1 2⌽2", "1 2⊖2"]);
+    equiv_in(&s, "[⌽2;1⌽2;[1]⌽2;⌽⊂2]", "[2;2;2;⊂2]");
     let args = ["n", "v", "w", "u", "m", "q", "t", "c", "k", "e"];
     let mut differ = Vec::new();
     let mut compare = |direct: String, ranked: String| {
@@ -295,6 +297,8 @@ fn declared_ranks_match_rank() {
         }
     }
     assert!(differ.is_empty(), "these differ from Rank at their declared ranks: {differ:?}");
+    for body in ["{2×⍠⍬⍵}", "{⍵×⍠⍬2}"] { equiv(&format!("({body}⍤0)1 2 3"), "2 4 6"); }
+    equiv("2({⍺×⍠⍬⍵}⍤[0 0])1 2 3", "2 4 6");
 }
 
 #[test]
@@ -360,6 +364,26 @@ fn observed_counts_refill_shapes() {
     equiv_in(&s, "n←3 4 ⋄ f←{n⍴⍵} ⋄ ∧/(⍴f 1)=[3 4]", "$t");
     equiv_in(&s, "n←5 6 ⋄ ∧/(⍴f 1)=[5 6]", "$t");
 }
+
+#[test]
+fn primitive_bodies_share_fold_facts() {
+    for (body, monad) in [("{⍺+⍵}", Some("+3")), ("{x←⍺ ⋄ x+⍵}", None)] {
+        let s = Session::new();
+        s.eval(&format!("f←{body}"));
+        for argument in ["⍬", "⍳3", "⍳5"] { equiv_in(&s, &format!("f/{argument}"), &format!("+/{argument}")); }
+        equiv_in(&s, "f\\⍳5", "+\\⍳5");
+        equiv_in(&s, "f/₁2 3⍴⍳6", "+/₁2 3⍴⍳6");
+        if let Some(expected) = monad { equiv_in(&s, "f 3", expected); } else { fails_in(&s, "VALUE", &["f 3"]); }
+    }
+    let s = Session::new();
+    equiv_in(&s, "g←+ ⋄ f←{⍺ g ⍵} ⋄ f/⍳3", "+/⍳3");
+    equiv_in(&s, "g←× ⋄ f/1+⍳5", "×/1+⍳5");
+    equiv_in(&s, "calls←0 ⋄ f←{calls+←1 ⋄ ⍺+⍵} ⋄ r←f/1 2 3 ⋄ (r=6)∧calls=2", "$t");
+    equiv_in(&s, "h←{⍵} ⋄ h∂←{7×⍺} ⋄ f←{⍺+h ⍵} ⋄ {f/⍵}∂1 2 3", "1 7 49");
+    equiv_in(&s, "f←{1+⍵} ⋄ f/1 2 3", "5");
+    fails_in(&s, "DOMAIN", &["f/⍬"]);
+}
+
 #[test]
 fn result_output_and_nonexecuting_parse() {
     let s = Session::new();
@@ -480,7 +504,7 @@ fn lexical_frames_are_reclaimed() {
         ("f←{\"DOMAIN\"::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
     ];
     let skipped = basedpl::reference::skipped("lexical_frames_are_reclaimed", cases.iter().map(|(code, _)| ("", *code)));
-    for (code, expected) in cases.into_iter().filter(|(code, _)| !skipped.contains(&("", *code))) { check_in(&s, code, float(expected)); }
+    for (_, (code, expected)) in cases.into_iter().enumerate().filter(|(index, _)| !skipped.iter().any(|(i, _)| i == index)) { check_in(&s, code, float(expected)); }
     assert_eq!(s.eval("f 20000").error.unwrap().kind.name(), "LIMIT");
     check_in(&s, "deep 15000", float(15000.));
     let source = Source::new("calls", "outer 25000");

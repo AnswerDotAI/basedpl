@@ -38,6 +38,6 @@ BPL computes this combination by an algorithm of its own, in any spelling. [Trai
 At an item below ¯1 under dynamic kinds, and on complex numbers, `⍟1+Y` computes `⍟` of `1+Y`. Softplus, `⍟1+*Y`, stays accurate for a very negative `Y`:
 
 ```bpl
-⍟1+1E¯17          ⍝ 1ₑ¯17
-⍟1+*¯40           ⍝ 4.248354255ₑ¯18
+f←⍟1+ ⋄ f 1E¯17          ⍝ 1ₑ¯17
+softplus←⍟1+* ⋄ softplus ¯40   ⍝ 4.248354255ₑ¯18
 ```

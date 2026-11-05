@@ -2,9 +2,9 @@
 use crate::error::OrInternal;
 use crate::{
     Error, Value, agreement::Agree, array::{Frame, Layout, Root}, error::Result,
-    primitive::{CallView, RunView, Operation, Pairing, Primitive, ReadOp, RowResult, ViewAxis, WriteTarget}, program::{Desc, Description, Origin, Outputs, Read, Step}
+    primitive::{CallView, RunView, Operation, Pairing, Primitive, ReadOp, RowResult, ViewAxis, WriteTarget}, program::{Desc, Description, Origin, Outputs, PlannedOutputs, Read, Step}
 };
-use rustymath::{agreement::{Mapping, Missing, ReadPlan}, buffer::Width, error::Kind as ErrorTag, facts::Range, gather::Steps};
+use rustymath::{agreement::{Agreement as FrameAgreement, Mapping, Missing, ReadPlan}, buffer::Width, error::Kind as ErrorTag, facts::Range, gather::Steps, linalg::ProductPlan};
 
 pub(crate) struct Fold {
     pub(crate) arg: usize, pub(crate) seed: Option<usize>, pub(crate) axis: usize, pub(crate) scan: bool, pub(crate) source: Layout, pub(crate) result: Layout,
@@ -49,7 +49,7 @@ pub(crate) fn fold(call: &CallView<'_>) -> Result<Fold> {
     Ok(Fold { arg, seed, axis, scan: *scan, source: source.into_owned(), result, atom: (!*scan && rank == 1) || call.root_atom(root).or_internal()? })
 }
 
-pub(crate) struct Product { pub(crate) args: [usize; 2], pub(crate) plan: rustymath::linalg::ProductPlan }
+pub(crate) struct Product { pub(crate) args: [usize; 2], pub(crate) plan: ProductPlan }
 impl Product {
     pub(crate) fn result_read(&self) -> Mapping {
         let shape = self.plan.iteration.shape();
@@ -66,13 +66,23 @@ pub(crate) fn product(call: &CallView<'_>) -> Result<Product> {
     let left = call.root_layout(*left).or_internal()?;
     let right = call.root_layout(*right).or_internal()?;
     let plan = match pairing {
-        Pairing::Matrices { frame } => rustymath::linalg::ProductPlan::matrices([&left, &right], *frame)?,
+        Pairing::Matrices { frame } => {
+            let frame = *frame;
+            let [lr, rr] = [left.shape().len(), right.shape().len()];
+            if lr <= frame || rr <= frame { return Err(Error::new(ErrorTag::Rank, "an inner product needs vector or array cells")); }
+            let [mut xa, mut ya] = FrameAgreement::axis_pairs(&left.axes(0..frame), &right.axes(0..frame));
+            let first = xa.iter().chain(&ya).max().map_or(0, |axis| axis + 1);
+            let middle = first + lr - frame - 1;
+            xa.extend(first..middle);
+            ya.extend(middle..middle + rr - frame - 1);
+            ProductPlan::paired([&left, &right], &[(lr - 1, frame)], Some([xa, ya]))?
+        }
         Pairing::Axes | Pairing::Explicit { .. } => {
             let agreement = if let Some(root) = call.axis_root() {
                 let spec = call.root_parameter(root.index)?;
                 Agreement::with_axes(&left, &right, &axes(&resolve_axes(&spec, &right)?, right.shape().len())?)?
             } else { Agreement::new(&left, &right)? };
-            rustymath::linalg::ProductPlan::folded((*agreement.layout).clone(), [agreement.left, agreement.right], *contracted)?
+            ProductPlan::folded((*agreement.layout).clone(), [agreement.left, agreement.right], *contracted)?
         }
     };
     Ok(Product { args, plan })
@@ -139,7 +149,9 @@ pub(crate) fn search_frame(haystack: &Layout, needles: &Layout) -> Result<(usize
     Ok((rank, frame, leading_bound(haystack).map(|n| n + 1)))
 }
 
-pub(crate) fn read_source(kind: &ReadOp) -> Root { Root(u32::from(matches!(kind, ReadOp::Reshape | ReadOp::Slice { .. } | ReadOp::Cell { .. }))) }
+pub(crate) fn read_source(kind: &ReadOp) -> Root {
+    Root(match kind { ReadOp::Range { .. } => 3, ReadOp::Reshape | ReadOp::Slice { .. } | ReadOp::Cell { .. } => 1, _ => 0 })
+}
 
 fn source_layout(call: &CallView<'_>, root: Root) -> Result<Layout> { Ok(call.root_layout(root).or_internal()?.into_owned()) }
 
@@ -167,9 +179,9 @@ fn axes_layout(call: &CallView<'_>, axes: &[ViewAxis]) -> Result<Layout> {
 fn read_result(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<(Layout, bool)> {
     let rank = source.shape().len();
     Ok(match kind {
-        ReadOp::Cells { .. } => return Err(Error::internal()),
+        ReadOp::Cells { .. } | ReadOp::Range { .. } => return Err(Error::internal()),
         ReadOp::Root(_) => (source.clone(), call.root_atom(Root(0)).or_internal()?),
-        ReadOp::Ravel => (Layout::from([source.count()]), false),
+        ReadOp::Ravel => (crate::primitive::ravel_layout(source, None)?, false),
         ReadOp::Reshape => {
             let dimensions = call.parameter(0)?.ok_or_else(|| Error::domain("reshape needs its dimensions"))?;
             let shape = dimensions.as_items().nonnegative_integers::<usize>().map_err(|error| Error::new(error, "invalid reshape dimensions"))?;
@@ -192,7 +204,7 @@ fn read_result(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<(L
         }
         ReadOp::Axes { axes, destinations } => {
             if destinations.len() != rank || destinations.iter().any(|&a| a >= axes.len()) { return Err(Error::domain("view axes do not cover the source")); }
-            let atom = axes.is_empty() && call.root_atom(read_source(kind)).or_internal()?;
+            let atom = axes.is_empty() && call.layout().arguments().all(|root| call.root_atom(root) == Some(true));
             (axes_layout(call, axes)?, atom)
         }
     })
@@ -206,7 +218,7 @@ pub(crate) fn build_read(call: &CallView<'_>, kind: &ReadOp, set: &mut dyn FnMut
     let range = if read.affine(layout.shape()).is_none() { crate::primitive::filled_range(call, &source) } else { source.range };
     let desc = Desc { layout, atom, kind: crate::number::Kind { weak: atom && source.kind.weak, ..source.kind }, range };
     set(root.leaves.start, map);
-    Ok((Step::Copy { source: root.leaves.start as u32 }, Some(Description::one(Some(desc))), Some(read)))
+    Ok((Step::Copy { source: root.leaves.start as u32 }, PlannedOutputs::Described(Description::one(Some(desc))), Some(read)))
 }
 
 fn read_position(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<(Option<usize>, bool)> {
@@ -223,7 +235,7 @@ fn read_position(call: &CallView<'_>, kind: &ReadOp, source: &Layout) -> Result<
 
 fn read_mapping(kind: &ReadOp, source: &Layout, result: &Layout, position: Option<usize>) -> Result<Mapping> {
     Ok(match kind {
-        ReadOp::Cells { .. } => return Err(Error::internal()),
+        ReadOp::Cells { .. } | ReadOp::Range { .. } => return Err(Error::internal()),
         ReadOp::Root(_) | ReadOp::Ravel | ReadOp::Item => Mapping::Linear(1),
         ReadOp::Frame { .. } => Mapping::Single,
         ReadOp::Cell { .. } => match position {
@@ -246,12 +258,21 @@ fn read_mapping(kind: &ReadOp, source: &Layout, result: &Layout, position: Optio
 }
 fn read_geometry(call: &CallView<'_>, kind: &ReadOp) -> Result<(Layout, bool, Mapping, ReadPlan)> {
     let source = source_layout(call, read_source(kind))?;
-    let (layout, atom) = read_result(call, kind, &source)?;
-    let (position, missing) = if matches!(kind, ReadOp::Slice { .. } | ReadOp::Cell { .. }) {
-        let (position, nan) = read_position(call, kind, &source)?;
-        (position, if !nan && call.mode.dynamic { Missing::Invalid } else { Missing::Default })
-    } else { (None, Missing::Default) };
-    let map = read_mapping(kind, &source, &layout, position)?;
+    let (layout, atom, map, missing) = if let ReadOp::Range { axis } = kind {
+        let integer = |position| call.parameter(position)?.or_internal()?.as_number().or_internal()?.integer().map_err(Error::from);
+        let nonnegative = |position| usize::try_from(integer(position)?).map_err(|_| Error::domain("an index range needs nonnegative start and count"));
+        let step = isize::try_from(integer(2)?).map_err(|_| Error::domain("an index range step exceeds machine counts"))?;
+        let plan = rustymath::structure::select_axis(&source, *axis, rustymath::structure::Selector::Range { start: nonnegative(0)?, len: nonnegative(1)?, step })?;
+        (Layout::rearranged(plan.layout, &source), false, Mapping::from(plan.steps), Missing::Invalid)
+    } else {
+        let (layout, atom) = read_result(call, kind, &source)?;
+        let (position, missing) = if matches!(kind, ReadOp::Slice { .. } | ReadOp::Cell { .. }) {
+            let (position, nan) = read_position(call, kind, &source)?;
+            (position, if !nan && call.mode.dynamic { Missing::Invalid } else { Missing::Default })
+        } else { (None, Missing::Default) };
+        let map = read_mapping(kind, &source, &layout, position)?;
+        (layout, atom, map, missing)
+    };
     let read = ReadPlan::copy(call.layout().root(read_source(kind)).leaves.start, source.count(), map.clone(), layout.count(), missing);
     Ok((layout, atom, map, read))
 }
@@ -275,9 +296,10 @@ fn read_values(origin: &Origin<&[Value]>, call: &CallView, kind: &ReadOp) -> Res
         ReadAt::Input { position, .. } => Ok(source.at(position)), ReadAt::Default => Ok(prototype.clone()),
         ReadAt::Invalid => Err(Error::new(ErrorTag::Index, "view position is outside the source")), ReadAt::Index(position) => Ok(Value::integer(position))
     }).collect::<Result<_>>()?;
+    // A structural read keeps the selected items' domains; it is not numeric array assembly.
     let value = if matches!(kind, ReadOp::Cell { rank: 0 }) { values.into_iter().next().unwrap_or(prototype).unit()? }
     else if atom { values.into_iter().next().unwrap_or(prototype) }
-    else { Value::stored_values(layout, values, Some(prototype), crate::array::Widening::Arrays)? };
+    else { crate::array::collect_values(&layout, values, Some(prototype), crate::array::Widening::Items)? };
     Ok(crate::program::Outputs::one(value))
 }
 
@@ -535,7 +557,7 @@ pub(crate) fn build_relation(call: &CallView<'_>, set: &mut dyn FnMut(usize, Map
                 }
             }
         };
-        Ok((step, Some(Description::one(Some(desc))), read))
+        Ok((step, PlannedOutputs::Described(Description::one(Some(desc))), read))
     })
 }
 

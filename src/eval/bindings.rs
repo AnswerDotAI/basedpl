@@ -1,6 +1,6 @@
 //! Slot frames, call-time capture bindings and stable module entries.
 use crate::error::OrInternal;
-use super::{Binding, Category, MAX_FRAME_DEPTH};
+use super::{Binding, Category, FunctionBinding, MAX_FRAME_DEPTH};
 use crate::{Error, Span, Value, array::{Root, TreeRoot}, graph::Hold, name::Name};
 use rustymath::{error::Kind, hashing::{HashMap, HashMapExt, HashSet, HashSetExt}};
 use std::{cell::{Cell, RefCell}, ops::Range, sync::atomic::{AtomicU64, Ordering::Relaxed}};
@@ -131,8 +131,13 @@ impl Slots {
     }
     fn push(&mut self) -> usize { self.resize(self.len() + 1); self.len() - 1 }
 }
-/// A binding's hold on its value, where the value is pending.
-fn held(binding: &Binding) -> Option<Hold> { if let Binding::Value(value) = binding { Hold::of(value) } else { None } }
+/// A binding owns reuse of its actual data, not callable templates or environments.
+fn held(binding: &Binding) -> Option<Hold> {
+    match binding {
+        Binding::Value(value) => Hold::of(value), Binding::Function(FunctionBinding::Input(function)) => function.hold(),
+        Binding::Operator(operator) => operator.hold(), _ => None,
+    }
+}
 struct Chain<'a> { frames: &'a [Frame], scope: Option<usize> }
 impl<'a> Iterator for Chain<'a> {
     type Item = (usize, &'a Frame);
@@ -144,6 +149,7 @@ impl<'a> Iterator for Chain<'a> {
     }
 }
 
+/// Deleted bindings leave empty entries because compiled name addresses retain entry numbers. The id distinguishes modules at the same ordinal in different sessions.
 struct Module { id: u64, entries: Slots, index: HashMap<Name, u32> }
 impl Module {
     fn new() -> Self { Self { id: IDS.fetch_add(1, Relaxed), entries: Slots::default(), index: HashMap::new() } }
@@ -255,6 +261,7 @@ impl Bindings {
     fn find<T>(&self, name: Name, read: impl FnOnce(Place, &Binding) -> T) -> Result<Option<T>, Error> {
         self.find_from(self.current.get(), self.module(), name, read)
     }
+    /// Empty local slots fall through to outer bindings. Captured names stop lookup even when their call-time binding is absent. Scope assignments precede record keys.
     fn find_from<T>(&self, parent: Option<usize>, module: usize, name: Name, read: impl FnOnce(Place, &Binding) -> T) -> Result<Option<T>, Error> {
         let stack = self.stack.borrow();
         for (i, frame) in (Chain { frames: &stack.frames, scope: parent }) {
@@ -366,7 +373,7 @@ impl Bindings {
             }
             Place::Entry(module, entry) => self.modules.borrow_mut()[module].entries.set(entry as usize, None),
         };
-        Self::aliases(&mut stack, place, None);
+        if old.is_some() { Self::aliases(&mut stack, place, None); }
         old
     }
     pub(super) fn address(&self, name: Name) -> Address {

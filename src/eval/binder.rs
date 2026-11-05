@@ -315,7 +315,7 @@ impl Compiler<'_> {
         let mut compiler = Compiler::new(self.session);
         let seed = seed.map(|category| Item::new(Read::Register(compiler.register()), category, 0..0));
         let result = compiler.level(nodes, 0, seed)?;
-        if index { compiler.operand(&result, true); }
+        if index { compiler.operand(&result); }
         let mut code = compiler.finish(nodes, result);
         for fact in std::mem::take(&mut code.facts) { note(&mut self.facts, fact); }
         Ok(code)
@@ -570,7 +570,7 @@ impl<'s> Compiler<'s> {
             NodeKind::Zilde(mark) => {
                 let to = self.register();
                 self.ops.push(Op::Number { text: Some("0"), mark: *mark, empty: true, to, range: range.clone(), constant: None });
-                Item::new(Read::Register(to), Category::Value, range)
+                Item { literal: Some(Literal::Number(self.ops.len() - 1)), ..Item::new(Read::Register(to), Category::Value, range) }
             }
             NodeKind::Literal(_) | NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::BoundOperator(..) => {
                 self.constant(Term::Binding(constant(node)), range)
@@ -674,7 +674,7 @@ impl<'s> Compiler<'s> {
                 let (item, _) = self.item(node, &shared, k, 0..nodes.len())?;
                 functions |= item.category.settled() == Category::Function;
                 if item.category != Category::Absent {
-                    if !record { self.operand(&item, false); }
+                    self.operand(&item);
                     pieces.push(item.read)
                 }
                 continue;
@@ -690,6 +690,7 @@ impl<'s> Compiler<'s> {
             functions |= value.category.settled() == Category::Function;
             // An absent value leaves its item out, key and all, and its key isn't evaluated.
             if value.category == Category::Absent { self.release(value.read); continue; }
+            self.operand(&value);
             let key = match named {
                 Some(key) => key,
                 None => match self.item(node, &shared, k, 0..colon)? {
@@ -787,7 +788,7 @@ impl<'s> Compiler<'s> {
         };
         let call = value.as_ref().is_some_and(|value| value.call);
         // A selective write's values and a modified assignment's argument are operands of graph operations; a plain assignment's value stays data (target part 4).
-        if let Some(value) = &value && (modifier.is_some() || matches!(target.to, To::Selected(_))) { self.operand(value, false); }
+        if let Some(value) = &value && (modifier.is_some() || matches!(target.to, To::Selected(_))) { self.operand(value); }
         let value = value.map(|value| { self.release(value.read); value.read });
         let modifier = modifier.map(|(_, item): (u32, Item)| { self.release(item.read); item.read });
         let to = self.register();
@@ -841,29 +842,28 @@ impl<'s> Compiler<'s> {
             // Arrays side by side form a strand, one item each, as in `[a b c]`.
             Rule::Adjacent => {
                 let range = left.range.clone();
-                self.operand(&left, false);
-                self.operand(&right, false);
+                self.operand(&left);
+                self.operand(&right);
                 self.folded(left, right, Category::Value, range, source, |left, right, to| Op::Strand { left, right, to })
             }
             Rule::Derive => self.derive(left, right, span, source),
             Rule::BindRight => {
                 let (range, call) = (left.range.clone(), right.call);
-                self.operand(&right, false);
+                self.operand(&right);
                 self.folded(left, right, Category::Operator, range, source, |operator, operand, to| Op::BindRight { operator, operand, to, call })
             }
             // A call belongs to its function's text, so a bound left argument takes `right`'s.
             Rule::Attach => {
                 let range = right.range.clone();
-                let index = self.takes_index(right.read);
-                self.operand(&left, index);
+                self.operand(&left);
                 self.folded(left, right, Category::Left, range, source, |left, right, to| Op::Attach { left, right, to })
             }
             Rule::Call if right.category == Category::Absent => { self.release(left.read); self.constant(Term::Binding(Binding::Absent), left.range) }
             Rule::Call => self.call(left, right, span, last),
             Rule::Train => {
                 let range = left.range.clone();
-                self.operand(&left, false);
-                self.operand(&right, false);
+                self.operand(&left);
+                self.operand(&right);
                 self.folded(left, right, Category::Train, range, source, |left, right, to| Op::Train { left, right, to })
             }
             _ => return Err(Error::new(ErrorKind::Syntax, "these grammatical categories do not bind").at(&span)),
@@ -892,7 +892,7 @@ impl<'s> Compiler<'s> {
             let postfix = postfix.clone();
             return self.postfix(operand, operator, postfix, span, source);
         }
-        self.operand(&operand, false);
+        self.operand(&operand);
         let category = self.derived_category(&operand, &operator);
         let range = operand.range.clone();
         if let (Read::Constant(o), Read::Constant(p)) = (operand.read, operator.read) {
@@ -949,7 +949,7 @@ impl<'s> Compiler<'s> {
             _ => (None, read),
         };
         let function = self.built(function, &span);
-        self.operand(&argument, false);
+        self.operand(&argument);
         self.release(read);
         self.release(argument.read);
         let (argument, to) = (argument.read, self.register());
@@ -965,36 +965,29 @@ impl<'s> Compiler<'s> {
         match self.constants[c as usize].clone().value(&span.source) { Ok(function) => self.constant(Term::Binding(function), range).read, Err(_) => read }
     }
 
-    /// An item that reads `term`, kept as a constant with the text `range`, which binds as the term's category.
+    /// A source constant, preserving literal provenance for every Value. Names, formal inputs and runtime/shape-derived data never enter this table.
     fn constant(&mut self, term: Term, range: std::ops::Range<u32>) -> Item {
-        let atom = matches!(&term, Term::Binding(Binding::Value(Value::Number(_) | Value::Character(_))));
+        let literal = matches!(&term, Term::Binding(Binding::Value(_)));
         let entity = Entity::new(term, range.clone(), false, None);
         let category = entity.category();
         self.constants.push(entity);
         let at = self.constants.len() as u32 - 1;
-        Item { literal: atom.then_some(Literal::Constant(at)), ..Item::new(Read::Constant(at), category, range) }
+        Item { literal: literal.then_some(Literal::Constant(at)), ..Item::new(Read::Constant(at), category, range) }
     }
 
-    /// Makes `item`'s literal a constant, as an operand of a graph operation takes it (target part 4): its constant entry becomes a literal node, once, or its `Op::Number` gives its literal node. A literal index argument (`index`) makes any constant entry one, strings included.
-    fn operand(&mut self, item: &Item, index: bool) {
-        let entry = match (item.literal, item.read) {
-            (Some(Literal::Number(op)), _) => {
+    /// Makes a syntax literal an operand's literal node once; opaque reads carry no literal provenance.
+    fn operand(&mut self, item: &Item) {
+        let entry = match item.literal {
+            Some(Literal::Number(op)) => {
                 if let Op::Number { constant, .. } = &mut self.ops[op] { constant.get_or_insert_with(Default::default); }
                 return;
             }
-            (Some(Literal::Constant(c)), _) => c,
-            (None, Read::Constant(c)) if index => c,
-            _ => return,
+            Some(Literal::Constant(c)) => c,
+            None => return,
         };
         if let Term::Binding(Binding::Value(value)) = &mut self.constants[entry as usize].term && value.constant_value().is_none() {
             *value = Value::constant(value.clone());
         }
-    }
-
-    /// Whether `read` is a constant selecting primitive, whose left argument is an index (`Primitive::takes_index`).
-    fn takes_index(&self, read: Read) -> bool {
-        let Read::Constant(c) = read else { return false };
-        matches!(&self.constants[c as usize].term, Term::Binding(Binding::Function(f)) if f.function().is_ok_and(|f| f.as_primitive().is_some_and(Primitive::takes_index)))
     }
 
     /// A register that holds nothing the compiler still needs.

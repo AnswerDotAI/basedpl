@@ -79,6 +79,8 @@ def test_worker_cancellation_and_reference_sessions():
             with pytest.raises(KeyboardInterrupt): w.eval('{∇⍵}0', timeout=2)
         finally: timer.join()
         assert w.eval('keep+1')['value'] == 43
+        result = w.request(dict(case=dict(code='•delay3', expected_code='0')), timeout=5)
+        assert result['modes'][0]['status'] == 'timeout'
         assert w.request(dict(case=case), timeout=1)['status'] == 'pass'
         assert w.request(dict(case=dict(code='a', expected_error='VALUE ERROR')), timeout=1)['status'] == 'pass'
         assert 'atom versus array' in w.request(dict(case=dict(code='1', expected=dict(shape=[1], data=[1], prototype=0))))['message']

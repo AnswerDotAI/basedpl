@@ -12,7 +12,7 @@ Run the active cases with:
 cargo test --test reference -- --nocapture
 ```
 
-Each run of a reference case has a two-second deadline.
+Each run of a reference case has a two-second deadline, including its final value read. `tests/skipped.txt` names full-size cases temporarily set aside. Rust reference checks and `check_file` honor the same list and report those cases separately as unresolved skips.
 
 To run active cases, set `BASEDPL_CASE` to an ID or ID prefix:
 

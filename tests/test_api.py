@@ -248,6 +248,15 @@ def test_array_surface():
     assert repr(Array(2)) != repr(Array(2.))
     assert [repr(Array(s)) for s in ('text', '', ['ab', 'cd'])] == ["'text'", "''", "['ab', 'cd']"]
 
+def test_pending_indexing():
+    for n in (4, 7, 3):
+        a = Array(list(range(n))) + 1
+        teq(a[1::2].py, list(range(2, n+1, 2)))
+        a[1::2] = 0
+        teq(a.py, [i+1 if i%2 == 0 else 0 for i in range(n)])
+
+
+
 def test_python_array_value_semantics():
     a = Array([[1, 2], [3, 4]], keys=[['a', 'b'], None], names=['row', 'col'])
     held, view, f = Array(a), a[:, ::-1], add.left(a)

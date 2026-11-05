@@ -111,7 +111,7 @@ impl Kernel {
 
     pub(crate) fn conversion(&mut self, conversion: rustymath::convert::Conversion, x: Value, checked: bool) -> Option<Value> {
         use rustymath::convert::ConversionKind;
-        if conversion.kind == ConversionKind::Keep { return None; }
+        if conversion.kind == ConversionKind::Keep && !(conversion.input.is_integral() && conversion.output.is_integral()) { return None; }
         let from = self.ty(x);
         let to = Ty::of(conversion.output)?;
         let value = match conversion.kind {
@@ -134,7 +134,7 @@ impl Kernel {
             }
             _ => self.step(if conversion.kind == ConversionKind::Truncate { Op::Truncate } else { Op::Convert }, to, x, None),
         };
-        let valid = if checked {
+        let valid = if checked || conversion.kind == ConversionKind::Keep {
             let o = Recording { kernel: std::cell::RefCell::new(&mut *self), ty: from, variant: rustymath::facts::Variant::checked(from.dtype()),
                 tolerance: None, declined: std::cell::Cell::new(false) };
             conversion.validity(&o, encoded(x)).map(|(kind, valid)| (kind, decoded(valid)))
@@ -718,7 +718,7 @@ impl Kernel {
                 }
                 (Op::Check { reporter }, Some(valid), _) => {
                     let valid = resize(b, valid, false, widths[s]);
-                    for &mask in &valid { checked(b, mask, reporter, single, config); }
+                    for &mask in valid.iter().take(if single { 1 } else { valid.len() }) { checked(b, mask, reporter, single, config); }
                     x
                 }
                 (Op::MultiplyAdd(_), Some(y), Some(z)) => x.iter().zip(&y).zip(&z).map(|((&x, &y), &z)| b.ins().fma(x, y, z)).collect(),

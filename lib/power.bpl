@@ -57,7 +57,7 @@ ArcTan ← {
 
 rl   ← {≤2ₓ*31ₓ | ⍵×7ₓ*5ₓ}  ⍝ next random link  LCG(7*5, ¯1+2*31)
 
-roll ← {⌊⍵×⍺÷≤2ₓ*31ₓ}  ⍝ roll ⍵ with random link ⍺.
+roll ← {⌊⍵×⍺÷ₐ≤2ₓ*31ₓ}  ⍝ roll ⍵ with random link ⍺.
 
 ⍝ From http://dfns.dyalog.com/c_traj.htm
 

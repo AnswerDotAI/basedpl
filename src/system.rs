@@ -2,7 +2,7 @@ use crate::error::OrInternal;
 use crate::execution::check;
 use crate::{
     Described, Error, ErrorKind, Function, ReadKind, Span, Value, array::{Root, generated_len}, eval::OperatorKind, number::Numeric,
-    primitive::{Act, CallView, RunView, Operation, Primitive, Roles, Row, numeric}, program::{Origin, Outputs}, session
+    primitive::{Act, CallView, RunView, Operation, Primitive, Roles, Row, numeric}, program::{Origin, Outputs, PlannedOutputs}, session
 };
 use rustymath::{agreement::Mapping, buffer::{DType, FloatWidth, View}, error::Kind, layout::FRESH};
 use std::{borrow::Cow, hash::{Hash, Hasher}, sync::Arc};
@@ -137,7 +137,7 @@ fn build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<cra
         let root = call.layout().root(Root(0));
         let descs = root.leaves.clone().map(|position| call.desc(position).map(Cow::into_owned)).collect::<Vec<_>>();
         let trees = call.trees.map(|trees| Arc::new(trees.project_roots(&[root])));
-        outputs = Some(Outputs::from(descs).with_trees(trees).with_shy(true));
+        outputs = PlannedOutputs::Described(Outputs::from(descs).with_trees(trees).with_shy(true));
     }
     Ok((step, outputs, plan))
 }
@@ -169,12 +169,8 @@ fn form(origin: Origin<&[Value]>, call: &CallView<'_>) -> Result<Option<Outputs<
     if let Call::Active(active) = system.call { return active(host).map(|value| Some(Outputs::one(value))); }
     if host.left.into_iter().chain([host.right]).any(|value| crate::derivative::tag(value).is_some()) { return Err(crate::derivative::system(system.name)); }
     if session().prototype.get() && let Some(prototype) = system.prototype { return Ok(Some(Outputs::one(prototype(host)))); }
-    if let Some(item) = system.item && (item.maps(&right_value) || item.rows(&right_value)) {
-        let mut mapped = function.clone();
-        if let Some(left) = &left_value { mapped = Function::applied_kind(OperatorKind::Before, vec![left.clone().into_owned(), Value::Function(mapped)])?; }
-        mapped = if item.rows(&right_value) { Function::applied_kind(OperatorKind::Rank, vec![Value::Function(mapped), Value::integer(1)])? }
-        else { Function::applied_kind(OperatorKind::Each, vec![Value::Function(mapped)])? };
-        return mapped.call_bound(&origin, &[right_value.into_owned()]).map(|value| Some(Outputs::one(value)));
+    if let Some(item) = system.item && let Some(value) = item.extend(function, &origin, left_value.as_deref(), &right_value)? {
+        return Ok(Some(Outputs::one(value)));
     }
     if system.call.draws() { return crate::distribution::draw_origin(origin).map(Some); }
     let acts = system.acting(left_value.as_deref(), &right_value);
@@ -407,9 +403,10 @@ pub(crate) fn storage_kind(value: &Value, numeric: Numeric) -> &'static str {
 fn storage(HostCall { right, numeric, .. }: HostCall<'_>) -> Result<Value, Error> {
     if let Some(level) = crate::transform::Level::innermost_batched() { return Err(Error::batch_stop(level.id)); }
     let value = right.primal();
+    let state = value.storage_state();
     let flag = |b: bool| Value::Number(crate::Number::from_bool(b));
     let values = vec![
-        crate::keyed::text(storage_kind(value, numeric)), flag(value.pending().is_some()), flag(value.is_view()),
+        crate::keyed::text(storage_kind(value, numeric)), flag(state.pending), flag(state.view),
         Value::integer(crate::derivative::levels(right) as i64),
     ];
     crate::keyed::vector(["kind", "pending", "view", "active"].map(Into::into).to_vec(), values).described("invalid storage record")
@@ -664,6 +661,15 @@ impl Item {
         }
     }
     pub(crate) fn rows(self, right: &Value) -> bool { self == Self::Text && right.rank() > 1 && right.dtype() == Some(DType::Character) }
+    pub(crate) fn extend(self, function: &Function, origin: &Origin<&[Value]>, left: Option<&Value>, right: &Value) -> Result<Option<Value>, Error> {
+        if !self.maps(right) && !self.rows(right) { return Ok(None); }
+        let mut mapped = function.clone();
+        if let Some(left) = left { mapped = Function::applied_kind(OperatorKind::Before, vec![left.clone(), Value::Function(mapped)])?; }
+        mapped = if self.rows(right) {
+            Function::applied_kind(OperatorKind::Rank, vec![Value::Function(mapped), Value::constant(Value::integer(1))])?
+        } else { Function::applied_kind(OperatorKind::Each, vec![Value::Function(mapped)])? };
+        mapped.call_bound(origin, &[right.clone()]).map(Some)
+    }
 }
 
 fn invoke(function: &SystemFunction, data: Option<&Value>, call: HostCall<'_>) -> Result<Outputs<Value>, Error> {

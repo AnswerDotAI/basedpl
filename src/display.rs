@@ -202,11 +202,11 @@ pub(crate) fn prefs_acts(_: Option<&Value>, right: &Value) -> crate::system::Act
     else { crate::system::Acts::Never }
 }
 
-/// `•prefs Y` applies the settings in the record `Y`, and returns all of them. Settings hold for the whole process (`settings`). The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `mathish`, on by default, makes 64-bit floats compare with a tolerance and zero divided by zero give zero, under dynamic kinds. `float` is the width of new floats in bits, 16, 32 or 64. Until it's set, new floats take 64 bits under dynamic kinds and 32 under static kinds. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `fusion` makes each call that computes a pending argument report it. `threads` is the number of threads that large calls split across, from then on. 0 gives the default. 1 runs them on the calling thread alone. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::tried`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. `batch` starts on.
+/// `•prefs Y` applies the settings in the record `Y`, and returns all of them. Settings hold for the whole process (`settings`). The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `mathish`, on by default, makes 64-bit floats compare with a tolerance and zero divided by zero give zero, under dynamic kinds. `float` is the width of new floats in bits, 16, 32 or 64. Until it's set, new floats take 64 bits under dynamic kinds and 32 under static kinds. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `fusion` logs the operation and item count when a held pending result is stored. `threads` is the number of threads that large calls split across, from then on. 0 gives the default. 1 runs them on the calling thread alone. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::framed`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. `batch` starts on.
 pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, bool), crate::Error> {
     let (mut display, mut numeric, mut threads, mut seed) = (settings::display(), settings::numeric(), None, None);
     let mut float_set = settings::float_set();
-    let mut hanzi_aliases = settings::hanzi_aliases();
+    let (mut hanzi_aliases, mut batch, mut fusion) = (settings::hanzi_aliases(), settings::batch(), settings::reports_fusion());
     let pairs = keyed::pairs(right).described("•prefs takes a record of settings")?;
     let shy = !pairs.is_empty();
     for (key, value) in pairs {
@@ -216,6 +216,8 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
                 if !session.prefacing.get() { return Err(Error::domain("hanzi_aliases needs a leading •prefs declaration on a literal record")); }
                 hanzi_aliases = value.boolean().described("hanzi_aliases must be Boolean")?;
             }
+            "batch" => batch = value.boolean().described("batch must be Boolean")?,
+            "fusion" => fusion = value.boolean().described("fusion must be Boolean")?,
             "threads" => {
                 let n = value.as_number().and_then(|n| n.integer().ok()).and_then(|n| usize::try_from(n).ok());
                 threads = Some(n.ok_or(Kind::Domain).described("threads must be a nonnegative whole number")?);
@@ -231,10 +233,12 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
     settings::set_numeric(numeric);
     settings::set_float_set(float_set);
     settings::set_hanzi_aliases(hanzi_aliases);
+    settings::set_batch(batch);
+    settings::set_reports_fusion(fusion);
     if let Some(n) = threads { rustymath::parallel::set_threads(n); }
     if let Some(seed) = seed { session.seed(seed); }
     let entries = display.entries(numeric.width).into_iter().chain(numeric.entries())
-        .chain([("threads", Value::integer(rustymath::parallel::thread_setting() as i64)), ("hanzi_aliases", Value::Number(Number::from_bool(hanzi_aliases)))]);
+        .chain([("threads", Value::integer(rustymath::parallel::thread_setting() as i64)), ("hanzi_aliases", Value::Number(Number::from_bool(hanzi_aliases))), ("batch", Value::Number(Number::from_bool(batch))), ("fusion", Value::Number(Number::from_bool(fusion)))]);
     let (keys, values): (Vec<std::sync::Arc<str>>, Vec<Value>) = entries.map(|(k, v)| (k.into(), v)).unzip();
     Ok((keyed::vector(keys, values).described("invalid settings record")?, shy))
 }
@@ -519,7 +523,7 @@ impl Tree {
 }
 
 /// Convert a keyed vector from MIME types to text, or to bytes for binary types such as `image/png`, into the bundle sent to frontends. A value whose prototype is a number holds bytes.
-pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKind> {
+pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, Error> {
     crate::keyed::pairs(value)?.into_iter().map(|(name, value)| {
         if !name.contains('/') || name.contains(char::is_whitespace) { return Err(Kind::Domain.into()); }
         let data = if value.prototype().as_number().is_some() { crate::data::byte_items(&value).map(crate::MimeData::Bytes) }

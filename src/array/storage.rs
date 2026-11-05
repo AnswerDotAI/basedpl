@@ -2,8 +2,8 @@
 use crate::error::OrInternal;
 use super::{ArrayData, Layout, Number, Root, Roots, Value};
 use crate::{
-    Error, ErrorKind, number::{Kind as LogicalKind, Kinds, Numeric}, primitive::{CallView, RunView, Notation, Operation, RowResult, host_build},
-    program::{Desc, Outputs, Step}
+    Error, ErrorKind, number::{Kind as LogicalKind, Numeric}, primitive::{CallView, RunView, Notation, Operation, RowResult, host_build},
+    program::{Desc, Outputs, PlannedOutputs, Step}
 };
 use rustymath::{
     agreement::{Mapping, Missing, ReadPlan}, buffer::{Buffer, ComplexBuf, DType, FloatBuf, Ints, View, Width}, error::Kind,
@@ -11,11 +11,13 @@ use rustymath::{
 };
 use std::borrow::Cow;
 
+/// `Arrays` joins whole arrays using their common numeric kind. `Items` keeps exact/nonexact and Boolean/non-Boolean items in separate representations.
+/// A missing common kind leaves the collection mixed. Dynamic result collection uses `Items`; static collection uses `Arrays`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Widening { Arrays, Items }
 
 impl Widening {
-    pub(crate) fn of_results(kinds: Kinds) -> Self { if kinds == Kinds::Static { Self::Arrays } else { Self::Items } }
+    pub(crate) fn of_results(dynamic: bool) -> Self { if dynamic { Self::Items } else { Self::Arrays } }
 
     pub(crate) fn join(self, left: LogicalKind, right: LogicalKind) -> Option<LogicalKind> {
         if self == Self::Items && (left.is_exact() != right.is_exact() || (left.dtype() == DType::Boolean) != (right.dtype() == DType::Boolean)) {
@@ -23,18 +25,31 @@ impl Widening {
         }
         left.join(right)
     }
+    fn joined(self, kinds: impl IntoIterator<Item = Option<LogicalKind>>) -> Option<LogicalKind> {
+        let mut kinds = kinds.into_iter();
+        let first = kinds.next()??;
+        kinds.try_fold(first, |kind, next| self.join(kind, next?))
+    }
 }
 
 pub(crate) fn joined_kind(items: &[Value], widening: Widening) -> Option<LogicalKind> {
     if !items.iter().all(Value::is_atom) { return None; }
-    let mut kinds = items.iter().map(Value::kind);
-    let first = kinds.next()??;
-    kinds.try_fold(first, |kind, next| widening.join(kind, next?)).map(LogicalKind::strong)
+    let declared = widening.joined(items.iter().map(Value::kind))?;
+    if declared.fixed_width().is_none() { return Some(declared.strong()); }
+    widening.joined(items.iter().map(Value::promotion_kind)).map(LogicalKind::strong)
 }
 
-pub(crate) fn packed(items: &[Value], widening: Widening) -> Option<(Buffer, LogicalKind)> {
+pub(crate) fn collect_values(layout: &Layout, items: Vec<Value>, prototype: Option<Value>, widening: Widening) -> Result<Value, Error> {
+    let deferred = items.iter().any(|item| matches!(item, Value::Pending(_) | Value::Carried { .. }) && item.constant_value().is_none());
+    if layout.renderer().is_some() || !deferred || joined_kind(&items, widening).is_none() {
+        return Ok(Value::stored_values(layout.clone(), items, prototype, widening)?);
+    }
+    let values = [Value::stand_in(layout.clone()), items[0].clone()].into_iter().chain(items).collect::<Vec<_>>();
+    Operation::join(Notation::Cells, widening).call(&values)
+}
+
+pub(crate) fn packed(items: &[Value], kind: LogicalKind) -> Option<Buffer> {
     if !items.iter().all(|value| matches!(value, Value::Number(_) | Value::Character(_))) { return None; }
-    let kind = joined_kind(items, widening)?;
     fn number(value: &Value) -> Option<&Number> { match value { Value::Number(n) => Some(n), _ => None } }
     let buffer = match kind.dtype() {
         DType::Boolean => Buffer::Booleans(items.iter().map(|v| number(v)?.as_bool()).collect::<Option<_>>()?),
@@ -50,7 +65,7 @@ pub(crate) fn packed(items: &[Value], widening: Widening) -> Option<(Buffer, Log
         }
         DType::Character => Buffer::Characters(items.iter().map(|v| if let Value::Character(c) = v { Some(*c) } else { None }).collect::<Option<_>>()?),
     };
-    Some((buffer, kind))
+    Some(buffer)
 }
 
 #[derive(Clone, Copy)]
@@ -91,11 +106,20 @@ impl<'a> Items<'a> {
             Self::Fixed(v) => Value::Number(Number::fixed(v.get(i), v.tag())),
             Self::Compact(View::Floats(v)) => Value::Number(Number::float(v.get(i), v.tag())),
             Self::Compact(View::Complexes(v)) => Value::Number(Number::complex_kept(v.get(i), v.tag().into())),
-            Self::Compact(View::Characters(v)) => Value::Character(v[i]), Self::Values(v) => v[i].clone(),
+            Self::Compact(View::Characters(v)) => Value::Character(v[i]), Self::Values(_) => self.item_ref(i).into_owned(),
             Self::Mapped { source, map, start, .. } => map.get(start + i).map_or_else(|| source.prototype(), |i| source.storage().item(i))
         }
     }
-    pub(crate) fn item_ref(self, i: usize) -> Cow<'a, Value> { match self { Self::Values(v) => Cow::Borrowed(&v[i]), _ => Cow::Owned(self.item(i)) } }
+    pub(crate) fn item_ref(self, i: usize) -> Cow<'a, Value> {
+        let Self::Values(values) = self else { return Cow::Owned(self.item(i)); };
+        let value = &values[i];
+        // Reading an array item makes a weak number strong; rebuilding an argument tree does not.
+        if let Value::Number(n) = value.constant_value().unwrap_or(value) && n.is_weak() {
+            let strong = Value::Number(n.clone().marked(false));
+            return Cow::Owned(if value.constant_value().is_some() { Value::constant(strong) } else { strong });
+        }
+        Cow::Borrowed(value)
+    }
     pub(crate) fn values(self) -> impl Iterator<Item = Cow<'a, Value>> { (0..self.len()).map(move |i| self.item_ref(i)) }
     pub(crate) fn nested(self) -> bool { matches!(self, Self::Values(_)) }
     pub(crate) fn fixed_width(self) -> Option<Width> { match self { Self::Fixed(v) => Some(v.tag()), _ => None } }
@@ -145,12 +169,12 @@ fn joined_read<'a>(sources: impl IntoIterator<Item = &'a Layout>, cell: Option<&
 }
 fn joining(frame: &Layout, cells: &[Desc], prototype: &Desc, notation: Notation, widening: Widening, fill: Option<usize>) -> Result<Option<Joining>, Error> {
     if frame.count() != cells.len() { return Err(Kind::Length.into()); }
-    let first = cells.first().unwrap_or(prototype);
-    let kind = cells.iter().try_fold(first.kind, |kind, cell| widening.join(kind, cell.kind));
+    let descs = if cells.is_empty() { std::slice::from_ref(prototype) } else { cells };
+    let kind = widening.joined(descs.iter().map(|cell| Some(cell.kind)));
     let Some(kind) = kind else { return Ok(None); };
     if notation == Notation::Strand && cells.iter().any(|cell| !cell.atom) { return Ok(None); }
     let cell = if notation == Notation::Strand { Layout::EMPTY } else {
-        Layout::assembled(if cells.is_empty() { std::slice::from_ref(prototype) } else { cells }.iter().map(|cell| &cell.layout))?
+        Layout::assembled(descs.iter().map(|cell| &cell.layout))?
     };
     let desc = Desc::new(kind.strong(), false, frame.concat(&cell));
     let read = joined_read(cells.iter().map(|cell| &cell.layout), (notation != Notation::Strand).then_some(&cell), |_| {
@@ -168,13 +192,17 @@ fn call_joining(call: &CallView<'_>) -> Result<Option<Joining>, Error> {
     let roots = join_roots(call);
     let (frame, prototype) = if *notation == Notation::Cells {
         if call.layout().explicit_roots().len() < 2 { return Err(Error::internal()); }
+        // A live cell supplies this metadata; a separately zeroed prototype would lose its graph and shape dependencies.
         let Some(prototype) = call.root_desc(Root(1)) else { return Ok(None); };
         (call.root_layout(Root(0)).or_internal()?.into_owned(), prototype.into_owned())
     } else { (Layout::from([roots.len()]), Desc::new(LogicalKind::stored(DType::Boolean, false, false), true, Layout::EMPTY)) };
     let mut cells = Vec::with_capacity(roots.len());
-    for root in roots {
+    for root in roots.clone() {
         let Some(desc) = call.root_desc(root) else { return Ok(None); };
         cells.push(desc.into_owned());
+    }
+    if widening.joined(cells.iter().map(|desc| Some(desc.kind))).is_some_and(|kind| kind.fixed_width().is_some()) {
+        for (root, desc) in roots.zip(cells.iter_mut()) { desc.kind = call.promotion_kind(call.layout().root(root).leaves.start, desc.kind); }
     }
     let fill = call.layout().fill().map(|_| cells.len());
     joining(&frame, &cells, &prototype, *notation, *widening, fill)
@@ -188,7 +216,7 @@ pub(crate) fn join_build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping
         let root = if source < roots.len() { call.layout().root(roots.start.after(source)) } else { call.layout().fill().or_internal()? };
         Ok::<_, Error>(ReadPlan::input(root.leaves.start, items))
     })?;
-    Ok((step, Some(Outputs::one(Some(join.desc))), Some(read)))
+    Ok((step, PlannedOutputs::Described(Outputs::one(Some(join.desc))), Some(read)))
 }
 fn read_joined(join: Joining, cells: &[Value]) -> Result<Value, Error> { super::read_stored(&join.desc, &join.read, |source| cells.get(source), false) }
 /// Reads stored mixed/exact items through the same positional plan as native readers.
@@ -207,7 +235,7 @@ pub(crate) fn read_values(layout: Layout, read: &ReadPlan, values: &[Value], pro
             ReadAt::Invalid => return Err(Kind::Index.into()),
         })
     }).collect::<Result<Vec<_>, Error>>()?;
-    Ok(Value::stored_values(layout, items, Some(prototype.clone()), widening)?)
+    collect_values(&layout, items, Some(prototype.clone()), widening)
 }
 /// Collect cells through one positional plan; native graph joins use the same plan in their row.
 pub(crate) fn assemble_cells(
@@ -226,15 +254,12 @@ pub(crate) fn assemble_cells(
     let cell = Layout::assembled(if cells.is_empty() { std::slice::from_ref(prototype) } else { cells }.iter().map(Value::layout))?;
     let layout = frame.concat(&cell);
     let mut values = cells.to_vec();
-    let read = joined_read(cells.iter().map(Value::layout), Some(&cell), |i| {
-        let position = values.len();
-        values.push(fill.cloned().unwrap_or_else(|| cells[i].prototype()));
-        Missing::Scalar(position)
-    })?;
+    for cell in cells { values.push(fill.cloned().unwrap_or_else(|| cell.prototype()).unit()?); }
+    let read = joined_read(cells.iter().map(Value::layout), Some(&cell), |i| Missing::Scalar(cells.len() + i))?;
     read_values(layout, &read, &values, &prototype.prototype(), widening)
 }
 pub(crate) fn join_form(origin: &crate::program::Origin<&[Value]>, call: &CallView) -> Result<Option<Outputs<Value>>, Error> {
-    if call_joining(call)?.is_some() { return Ok(None); }
+    if call_joining(call)?.is_some() { return crate::primitive::normalize_inputs(origin.reborrow(), call, &call.source_roots()?); }
     join_values(origin, call).map(Some)
 }
 pub(crate) fn join_code(call: &RunView<'_>) -> Result<Outputs<Value>, Error> {
@@ -256,6 +281,17 @@ pub(crate) fn stack(frame: &Value, cells: &[Value], prototype: &Value, numeric: 
     let mut values = Vec::with_capacity(cells.len() + 2);
     values.extend([frame.clone(), prototype.clone()]);
     values.extend_from_slice(cells);
-    let origin = Operation::join(Notation::Cells, Widening::of_results(numeric.kinds)).origin_numeric(&values, numeric)?;
+    let origin = Operation::join(Notation::Cells, Widening::of_results(!numeric.is_static())).origin_numeric(&values, numeric)?;
     Operation::dispatch(origin.reborrow())?.assemble()
+}
+
+#[cfg(test)]
+#[test]
+fn literal_minimum_requires_a_fixed_result() {
+    let items = [Value::Number(Number::from_integer(1)), Value::Number(Number::fixed(1, Width::U8)),
+        Value::constant(Value::Number(Number::integer_at(1, Width::I32).marked(true)))];
+    for widening in [Widening::Arrays, Widening::Items] {
+        assert_eq!(joined_kind(&items, widening), Some(LogicalKind::stored(DType::Integer(Width::I32), false, false)));
+        assert_eq!(joined_kind(&items[1..], widening), Some(LogicalKind::stored(DType::Integer(Width::U8), true, false)));
+    }
 }

@@ -46,10 +46,14 @@ pub(crate) fn fused(glyphs: impl FnOnce() -> String, items: usize, tally: &Tally
 pub(crate) fn fast(rule: &'static str, function: impl FnOnce() -> String) { events::emit(|_| Event::Fast { rule, function: function() }); }
 pub(crate) fn fallback(reason: impl std::fmt::Display, items: usize) { events::emit(|_| Event::Fallback { reason: reason.to_string(), items }); }
 pub(crate) fn stored(glyphs: impl FnOnce() -> String, items: usize, reason: &'static str) {
-    events::emit(|_| Event::Stored { glyphs: glyphs(), items, reason, partway: false });
+    let reports = crate::settings::reports_fusion();
+    if !recording() && !reports { return; }
+    let glyphs = glyphs();
+    if reports { crate::eval::session().execution.write(&format!("stored {glyphs}: {items} items ({reason})\n")); }
+    events::emit(|_| Event::Stored { glyphs, items, reason, partway: false });
 }
-pub(crate) fn program(event: &'static str, steps: usize, compiled: usize, blocks: usize, listing: impl FnOnce() -> String) {
-    events::emit(|_| Event::Program { event, steps, compiled, blocks, listing: listing() });
+pub(crate) fn program(event: &'static str, steps: usize, listing: impl FnOnce() -> String) {
+    events::emit(|_| Event::Program { event, steps, listing: listing() });
 }
 #[cfg(not(web))]
 pub(crate) fn compiled(glyphs: impl FnOnce() -> String, time: std::time::Duration) {

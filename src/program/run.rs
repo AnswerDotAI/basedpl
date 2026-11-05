@@ -1,23 +1,30 @@
 //! One structural scheduler and one executor for forced graphs and recordings.
 use crate::error::OrInternal;
-use super::{Node, Out, Outputs, Parameter, Plan, Program, Ran, Running, Schedule, Stage, Step};
-use crate::{Error, Value, error::Result, primitive::{Notation, Operation, ReadOp, WriteTarget}};
-use rustymath::agreement::Mapping;
+use super::{Node, Out, Outputs, Parameter, Plan, PlannedOutputs, Program, Ran, Running, Schedule, Stage, Step};
+use crate::{Error, Value, array::{Widening, count}, error::Result, primitive::{GatherGeometry, Notation, Operation, ReadOp, WriteTarget}};
+use rustymath::{agreement::Mapping, gather::Steps};
 use std::{hash::{Hash, Hasher}, sync::Arc};
 
 pub(crate) fn schedule(base: Arc<Program>, running: &mut Running, from: usize, runs: u64) -> Result<Plan> {
     let mut program = (*base).clone();
+    let optimize = crate::settings::optimizes();
     let geometry = std::mem::take(&mut running.geometry);
     running.bind(&program, geometry);
     let (until, order) = rows(&program, running, from);
     freshen(&mut program, running, &order)?;
-    super::rules::rewrite(&mut program, running, from, until)?;
+    if optimize { super::rules::rewrite(&mut program, running, from, until)?; }
     let geometry = std::mem::take(&mut running.geometry);
     running.bind(&program, geometry);
     let (until, order) = rows(&program, running, from);
     freshen(&mut program, running, &order)?;
     if crate::settings::verifies() { super::verify::check(&program); }
-    let execution = program.execution_order(|output| running.value(&program, output).is_some() || running.is_complete(&program, output));
+    // Only this schedule's rebound rows have current physical read routes.
+    let routed = |node, position| {
+        let Node::Step { step, origin, .. } = &program.nodes[node] else { return None; };
+        if !step.reads_through() || order.binary_search(&node).is_err() { return None; }
+        running.read(origin.list.start as usize + position).map(|route| route.sources.as_ref())
+    };
+    let execution = program.execution_order(|output| running.value(&program, output).is_some() || running.is_complete(&program, output), routed);
     let readers = readers(&program, &execution);
     let mut stages = Vec::new();
     let mut group = super::blocks::Builder::default();
@@ -25,6 +32,7 @@ pub(crate) fn schedule(base: Arc<Program>, running: &mut Running, from: usize, r
     for &node in execution.iter().take_while(|&&node| node < until) {
         if matches!(program.nodes[node], Node::Input { .. } | Node::Literal { .. }) { continue; }
         if transparent(&program, node, &readers) { continue; }
+        if !optimize { stages.push(Stage::Step(node)); continue; }
         if !group.push(&program, running, node)? {
             flush(&program, running, &readers, &mut group, &mut outputs, &mut stages)?;
             if !group.push(&program, running, node)? { stages.push(Stage::Step(node)); }
@@ -113,7 +121,7 @@ fn completion(program: &Program, running: &Running, stages: &[Stage], until: usi
             }
         }
     }
-    let mut crossing: Vec<_> = program.execution_order(|_| false).into_iter().filter(|&node| node >= until)
+    let mut crossing: Vec<_> = program.execution_order(|_| false, |_, _| None).into_iter().filter(|&node| node >= until)
         .flat_map(|node| program.demands(node, false).map(|(_, read, address)| (read.operand, address)))
         .filter(|(output, address)| *address || output.node < until).chain(program.live_roots().map(|output| (output, false))).collect();
     while let Some((output, address)) = crossing.pop() {
@@ -164,7 +172,7 @@ pub(crate) fn refill(plan: &mut Plan, running: &mut Running) -> Result<bool> {
     Ok(true)
 }
 
-struct Rebound { step: Step, outputs: Option<super::Description>, reads: Vec<super::Read>, plan: Option<rustymath::agreement::ReadPlan> }
+struct Rebound { step: Step, outputs: PlannedOutputs, reads: Vec<super::Read>, plan: Option<rustymath::agreement::ReadPlan> }
 
 fn bind_input(program: &Program, running: &mut Running, node: usize) -> bool {
     if let Node::Input { position, desc, .. } = &program.nodes[node] && let Some(current) = running.binding.input_desc(*position).cloned() {
@@ -184,7 +192,7 @@ fn bind_row(program: &Program, running: &Running, node: usize) -> Result<Option<
 
 fn install_row(program: &Program, running: &mut Running, node: usize, row: Rebound) -> Result<()> {
     let Node::Step { origin, descs, .. } = &program.nodes[node] else { unreachable!() };
-    for (slot, desc) in descs.clone().zip(row.outputs.into_iter().flat_map(Outputs::into_vec)) { running.geometry.descs[slot as usize] = desc; }
+    for (slot, desc) in descs.clone().zip(row.outputs.into_description().into_vec()) { running.geometry.descs[slot as usize] = desc; }
     for (slot, read) in origin.list.clone().zip(row.reads) { running.geometry.maps[slot as usize] = read.map; }
     running.prepare_read_plan(node, row.plan);
     prepare_reads(program, running, node)
@@ -209,9 +217,9 @@ fn freshen(program: &mut Program, running: &mut Running, order: &[usize]) -> Res
         if !bind_input(program, running, node) { return Err(Error::internal()); }
         if let Node::Input { desc, .. } = program.nodes[node] { program.descs[desc as usize] = running.geometry.descs[desc as usize].clone(); }
         let Some(row) = bind_row(program, running, node)? else { continue; };
-        if !fits(program, node, row.outputs.as_ref()) { return Err(Error::internal()); }
         let Node::Step { step, origin, descs, trees, shy, .. } = &mut program.nodes[node] else { unreachable!() };
-        if let Some(outputs) = &row.outputs {
+        if !row.outputs.fits_arity(descs.len(), trees.as_ref()) { return Err(Error::internal()); }
+        if let Some(outputs) = row.outputs.described() {
             *trees = outputs.trees().cloned();
             *shy = outputs.shy;
             for (slot, desc) in descs.clone().zip(outputs.as_ref()) { program.descs[slot as usize] = desc.clone(); }
@@ -223,18 +231,12 @@ fn freshen(program: &mut Program, running: &mut Running, order: &[usize]) -> Res
     Ok(())
 }
 
-/// Whether a row re-derived from the current inputs has the shape `program` recorded for `node`: as many outputs, and no descriptions or trees without outputs.
-fn fits(program: &Program, node: usize, outputs: Option<&super::Description>) -> bool {
-    let Node::Step { descs, trees, .. } = &program.nodes[node] else { return true };
-    outputs.map_or(descs.is_empty() && trees.is_none(), |outputs| outputs.as_ref().len() == descs.len())
-}
-
 fn describe(program: &Program, running: &mut Running, order: &[usize]) -> Result<bool> {
     for &node in order {
         if !bind_input(program, running, node) { return Ok(false); }
         let Some(row) = bind_row(program, running, node)? else { continue; };
         let Node::Step { step, descs, trees, shy, .. } = &program.nodes[node] else { unreachable!() };
-        if &row.step != step || !fits(program, node, row.outputs.as_ref()) || row.outputs.as_ref().is_some_and(|outputs| outputs.trees() != trees.as_ref()
+        if &row.step != step || !row.outputs.fits_arity(descs.len(), trees.as_ref()) || row.outputs.described().is_some_and(|outputs| outputs.trees() != trees.as_ref()
             || outputs.shy != *shy || descs.clone().zip(outputs.as_ref()).any(|(slot, current)| !super::verify::compatible_optional(program.descs[slot as usize].as_ref(), current.as_ref()))) {
             return Ok(false);
         }
@@ -275,6 +277,15 @@ pub(crate) fn run(plan: &mut Plan, running: &mut Running) -> Result<Ran> {
         };
         if done { continue; }
         crate::execution::check()?;
+        if crate::explain::recording() {
+            let nodes = match stage { Stage::Step(node) => std::slice::from_ref(node), Stage::Block(block) => block.members() };
+            for &node in nodes {
+                let Node::Step { origin, .. } = &program.nodes[node] else { unreachable!() };
+                if let Some((rule, function)) = origin.operation.primitive().and_then(|primitive| primitive.info().fast) {
+                    crate::explain::fast(rule, || function.into());
+                }
+            }
+        }
         let outputs = match stage {
             Stage::Step(node) => step(&program, running, *node, &plan.releases[index]),
             Stage::Block(block) => {
@@ -356,7 +367,7 @@ pub(crate) fn step(program: &Program, running: &mut Running, node: usize, final_
             if let Some(fill) = geometry.fill { routes.push(logical(fill)?); }
             let sources = routes.iter().map(|route| route.bind(program, running, |_| None)).collect::<Result<Vec<_>>>()?;
             let reads = routes.iter().zip(&sources).map(|(route, sources)| rustymath::agreement::Read { plan: &route.plan, sources }).collect::<Vec<_>>();
-            with_index_reads(program, running, origin.list.start, &geometry.indices, |indices| {
+            with_index_reads(program, running, origin.list.start, &geometry, |indices| {
                 rustymath::operation::gather(
                     reads[0], &geometry.source_layout, &geometry.routes, indices, geometry.paired, *checked, geometry.fill.map(|_| *reads.last().unwrap()),
                     &mut output)
@@ -392,17 +403,20 @@ fn with_reads<T>(
     Ok(run(&reads)?)
 }
 fn with_index_reads<T>(
-    program: &Program, running: &Running, first: u32, indices: &[super::GatherIndex],
+    program: &Program, running: &Running, first: u32, geometry: &GatherGeometry,
     run: impl FnOnce(&[(rustymath::agreement::Read<'_>, rustymath::buffer::DType)]) -> std::result::Result<T, rustymath::error::Error>) -> Result<T> {
-    let mut routes = Vec::with_capacity(indices.len());
-    let mut types = Vec::with_capacity(indices.len());
-    for index in indices {
+    let mut routes = Vec::with_capacity(geometry.indices.len());
+    let mut types = Vec::with_capacity(geometry.indices.len());
+    for index in &geometry.indices {
         let source = program.reads[first as usize + index.input as usize].operand;
         let mut route = running.output_read(program, source)?;
+        let desc = running.desc(program, source).or_internal()?;
         if let Some(item) = index.item {
-            route.plan = route.plan.remapped(Mapping::Steps { base: item, steps: Vec::new() }, 1, rustymath::agreement::Missing::Invalid);
+            let (frame, cell) = desc.shape().split_at(geometry.frame);
+            let steps = Steps::row_major(frame, count(cell), 0).collect();
+            route.plan = route.plan.remapped(Mapping::Steps { base: item, steps }, count(frame), rustymath::agreement::Missing::Invalid);
         }
-        types.push(running.desc(program, source).or_internal()?.dtype());
+        types.push(desc.dtype());
         routes.push(route);
     }
     let sources = routes.iter().map(|route| route.bind(program, running, |_| None)).collect::<Result<Vec<_>>>()?;
@@ -452,15 +466,13 @@ fn address_route(program: &Program, running: &Running, node: usize, root: Out) -
                     return selected_addresses(program, running, origin, *target, wanted);
                 }
             if let Some(route) = running.read_plan(node) {
-                let route = route.compose_inputs(&mut |source, items| {
-                    Ok::<_, Error>(rustymath::agreement::ReadPlan::input(program.desc_index(program.reads[origin.list.start as usize + source].operand), items))
-                })?;
-                return Ok((route, program.desc_index(wanted)));
+                // A transpose targets one operand occurrence, even when operands share a node.
+                return Ok((route.clone(), position(input as usize)));
             }
             let mut geometry = crate::primitive::gather(original)?.or_internal()?;
             let wanted = if input as usize == geometry.source { 0 } else if geometry.fill == Some(input) { 1 } else { return Err(Error::internal()); };
             for index in &mut geometry.indices { index.input = position(index.input as usize) as u32; }
-            let route = with_index_reads(program, running, origin.list.start, &geometry.indices, |indices| {
+            let route = with_index_reads(program, running, origin.list.start, &geometry, |indices| {
                 rustymath::operation::gather_plan(
                     &geometry.source_layout, &geometry.routes, indices, geometry.paired, original.mode.dynamic, geometry.fill.is_some())
             })?;
@@ -475,7 +487,7 @@ pub(super) fn gather_addresses(program: &Program, running: &Running, node: usize
     let bound = running.call(program, origin)?;
     let call = bound.call_view();
     let geometry = crate::primitive::gather(&call)?.or_internal()?;
-    let route = with_index_reads(program, running, origin.list.start, &geometry.indices, |indices| {
+    let route = with_index_reads(program, running, origin.list.start, &geometry, |indices| {
         rustymath::operation::gather_plan(&geometry.source_layout, &geometry.routes, indices, geometry.paired, origin.mode.dynamic, geometry.fill.is_some())
     })?;
     route.compose_addresses(&mut |source, items| {
@@ -556,15 +568,23 @@ pub(crate) fn framed_fallback(
     let positions: Vec<_> = crate::Function::argument_roots(&origin)?.into_iter().flatten().enumerate()
         .filter_map(|(position, root)| atoms[root.leaves.start].map(|atom| (position, atom))).collect();
     let ranks: Vec<_> = positions.iter().map(|&(position, _)| arguments[position].rank().saturating_sub(axes)).collect();
-    let layouts: Vec<_> = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| (arguments[position].core_layout(), rank)).collect();
-    let frame = rustymath::agreement::Frames::new(&layouts)?;
+    let sources = positions.iter().map(|&(position, _)| arguments[position].clone()).collect::<Vec<_>>();
+    let reference = crate::transform::agreed_frame(&sources, axes)?;
+    let frame = reference.layout();
+    let mappings = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| {
+        let source = arguments[position].layout().axes(0..arguments[position].rank() - rank);
+        Ok(rustymath::agreement::Agreement::onto(frame, &source)?.right)
+    }).collect::<Result<Vec<_>>>()?;
     let cells = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| arguments[position].cells(rank)).collect::<std::result::Result<Vec<_>, _>>()?;
     let at = |which: usize, value: Value| if positions[which].1 && value.is_unit() { Operation::Read(ReadOp::Item).call(&[value]) } else { Ok(value) };
-    let mut results = Vec::with_capacity(frame.count);
-    for position in 0..frame.count {
+    let mut results = Vec::with_capacity(frame.count());
+    for position in 0..frame.count() {
         crate::execution::check()?;
         let mut inputs = arguments.clone();
-        for (which, &(input, _)) in positions.iter().enumerate() { inputs[input] = at(which, cells[which].get(frame.cell(which, position))?)?; }
+        for (which, &(input, _)) in positions.iter().enumerate() {
+            let cell = match mappings[which].get(position) { Some(index) => cells[which].get(index)?, None => cells[which].prototype()? };
+            inputs[input] = at(which, cell)?;
+        }
         results.push(function.call_bound_outputs(&origin, &inputs)?.into_cell()?);
     }
     let prototype = if let Some(first) = results.first() { first.clone() } else {
@@ -575,15 +595,13 @@ pub(crate) fn framed_fallback(
         }
         function.prototype_bound(&origin, &inputs)?.into_cell()?
     };
-    crate::explain::fallback("stopped framed body", frame.count);
-    let references = positions.iter().zip(&ranks).map(|(&(position, _), &rank)| (arguments[position].clone(), rank)).collect::<Vec<_>>();
-    let reference = super::control::frame_reference(&crate::array::Layout::from(frame.layout), &references)?;
+    crate::explain::fallback("stopped framed body", frame.count());
     if notation == Notation::Strand {
         if results.is_empty() { return Ok(Outputs::one(reference.layout().collect(results, prototype.zeroed())?)); }
         let mut values = Vec::with_capacity(results.len() + 2);
         values.extend([reference, prototype.unit()?]);
         for value in results { values.push(value.unit()?); }
-        let call = crate::eval::projected_call(&origin, Operation::join(Notation::Cells, crate::array::Widening::Items), &values)?;
+        let call = crate::eval::projected_call(&origin, Operation::join(Notation::Cells, Widening::of_results(origin.mode.dynamic)), &values)?;
         return Operation::dispatch(call.reborrow())?.assemble().map(Outputs::one);
     }
     super::control::assemble(&reference, &results, &prototype, origin.mode).map(Outputs::one)

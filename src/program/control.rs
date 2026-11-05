@@ -1,6 +1,6 @@
 //! Agenda selection and ordinary cached case calls.
 use crate::error::OrInternal;
-use super::{Desc, Node, Origin, Outputs, Step};
+use super::{Desc, Node, Origin, Outputs, PlannedOutputs, Step};
 use crate::{
     Error, Function, Value, array::{Layout, Widening}, error::Result, number::{Kind, Kinds, Numeric},
     primitive::{CallView, RunView, Operation, Pairing, Primitive, ReadOp, RecipeOp, ViewAxis}, program::trace::{self, ReadKind}
@@ -21,7 +21,7 @@ pub(crate) fn choice_sources(call: &CallView<'_>) -> Result<Vec<crate::array::Tr
 
 fn choice_kind(mut kinds: impl Iterator<Item = Kind>, dynamic: bool) -> Option<Kind> {
     let first = kinds.next()?;
-    let widening = if dynamic { Widening::Items } else { Widening::Arrays };
+    let widening = Widening::of_results(dynamic);
     kinds.try_fold(first, |left, right| widening.join(left, right))
 }
 pub(crate) fn choice_total(call: &CallView<'_>) -> bool { call.layout().explicit().len() >= 3 && call.desc(0).is_some_and(|desc| desc.dtype() == DType::Boolean) }
@@ -43,7 +43,7 @@ pub(crate) fn choice(call: &CallView<'_>) -> Result<Option<Choice>> {
 pub(crate) fn choice_build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<crate::primitive::RowResult> {
     let Some(choice) = choice(call)? else { return crate::primitive::host_build(call, set); };
     for (position, mapping) in choice.mappings.into_iter().enumerate() { set(position, mapping); }
-    Ok((Step::Picks { selector: 0, choices: 1..call.layout().explicit().end as u32 }, Some(Outputs::one(Some(choice.desc))), None))
+    Ok((Step::Picks { selector: 0, choices: 1..call.layout().explicit().end as u32 }, PlannedOutputs::Described(Outputs::one(Some(choice.desc))), None))
 }
 
 pub(crate) fn choice_code(call: &RunView<'_>) -> Result<Outputs<Value>> {
@@ -74,12 +74,7 @@ fn choose(parent: &Origin<&[Value]>, values: &[Value]) -> Result<Value> {
 
 struct Case { function: Function, origin: Origin<Vec<Value>> }
 impl Case {
-    fn plan(&self) -> Result<Option<super::BoundRecording>> {
-        if self.origin.list.iter().any(|value| !matches!(value, Value::Function(_) | Value::Operator(_)) && Desc::of(value).is_none()) {
-            return Ok(None);
-        }
-        trace::plan_case(&self.function, self.origin.clone())
-    }
+    fn plan(&self) -> Result<Option<super::BoundRecording>> { trace::plan_call(&self.function, self.origin.clone(), false) }
     fn run(&self, frame: &Value, rows: &[usize]) -> Result<Value> {
         let arguments = Function::argument_roots(&self.origin.reborrow())?;
         let bound = crate::eval::map_roots(&self.origin.reborrow(), |root| {
@@ -95,12 +90,28 @@ impl Case {
 }
 
 fn selector_positions(selector: &Value, cases: usize, checked: bool) -> Result<Vec<usize>> {
-    let selector = selector.read(ReadKind::Count)?;
+    let selector = selector.read(ReadKind::Structure)?;
     if let Some(view) = selector.view() { return Ok(rustymath::structure::positions_mode(view, cases, checked)?); }
     selector.elements().map(|value| {
         let number = value.as_number().ok_or_else(|| Error::domain("an agenda selector must be numeric"))?;
         crate::primitive::position(&number, cases)
     }).collect()
+}
+
+fn scalar_position(selector: &Value, cases: usize, checked: bool) -> Result<usize> {
+    let position = selector_positions(selector, cases, checked)?[0];
+    if position == rustymath::gather::Steps::FILL { return Err(Error::domain("the selector's fill picks no case")); }
+    Ok(position)
+}
+pub(crate) fn agenda_cases(cases: &Value, selector: Option<&Value>) -> Result<Value> {
+    let cases = cases.exposed()?;
+    if cases.rank() != 1 { return Err(Error::new(ErrorTag::Rank, "agenda needs a vector of cases")); }
+    if cases.is_empty() { return Err(Error::domain("an agenda needs at least one case")); }
+    if let Some(selector) = selector {
+        let selector = selector.exposed()?;
+        if !matches!(selector, Value::Function(_)) && selector.is_unit() { scalar_position(&selector, cases.len(), true)?; }
+    }
+    Ok(cases)
 }
 
 fn listed(frame: &Layout, rows: &[usize]) -> Result<Layout> {
@@ -158,10 +169,17 @@ fn masked(parent: &Origin<&[Value]>, selector: &Value, args: &[Value], cases: &[
         let Some(prepared) = case.plan()? else { return Ok(None); };
         let program = &prepared.recording().program;
         let effects = prepared.recording().effects;
+        let arguments = Function::argument_leaves(&case.origin)?;
+        // Scalar captures commute with selecting rows; a captured array does not.
         if effects.acts || effects.catches || effects.writes || !program.parameters.is_empty() || program.nodes.iter().any(|node| {
-            matches!(node, Node::Step { step, origin, .. }
-        if origin.nonrepeatable() || origin.bindings.custom_derivative || !matches!(step, Step::Map { .. } | Step::Convert { .. } | Step::Picks { .. }))
-        }) || parent.mode.dynamic && prepared.may_raise()? { return Ok(None); }
+            match node {
+                Node::Input { position, desc, .. } => !arguments.contains(position)
+                    && program.descs[*desc as usize].as_ref().is_some_and(|desc| !desc.shape().is_empty()),
+                Node::Literal { value, .. } => !value.is_unit(),
+                Node::Step { step, origin, .. } => origin.nonrepeatable() || origin.bindings.custom_derivative
+                    || !matches!(step, Step::Map { .. } | Step::Convert { .. } | Step::Picks { .. }),
+            }
+        }) || parent.mode.dynamic && effects.raises { return Ok(None); }
         let description = prepared.description()?;
         if description.as_ref().is_empty()
             || description.as_ref().iter().any(|desc| desc.as_ref().is_none_or(|desc| !desc.atom && desc.layout != selector_desc.layout)) { return Ok(None); }
@@ -170,14 +188,15 @@ fn masked(parent: &Origin<&[Value]>, selector: &Value, args: &[Value], cases: &[
     let Some(first) = descriptions.first() else { return Err(Error::domain("an agenda needs at least one case")); };
     if descriptions.iter().any(|description| description.trees() != first.trees() || description.as_ref().len() != first.as_ref().len()) { return Ok(None); }
     for leaf in 0..first.as_ref().len() {
-        if choice_kind(descriptions.iter().map(|description| description.as_ref()[leaf].as_ref().unwrap().kind), parent.mode.dynamic).is_none() {
-            return Ok(None);
-        }
+        let mut kinds = descriptions.iter().map(|description| description.as_ref()[leaf].as_ref().unwrap().kind);
+        let Some(kind) = choice_kind(kinds.clone(), parent.mode.dynamic) else { return Ok(None); };
+        // A dynamic result must not widen because of a case that no item selects.
+        if parent.mode.dynamic && kinds.any(|other| other.strong() != kind.strong()) { return Ok(None); }
     }
     let mut choices = Vec::with_capacity(cases.len());
     for (index, case) in cases.iter().enumerate() {
         let mut masks = vec![selector.clone()];
-        masks.extend((0..cases.len()).map(|position| Value::Number(crate::Number::from_bool(position == index))));
+        masks.extend((0..cases.len()).map(|position| Value::constant(Value::Number(crate::Number::from_bool(position == index)))));
         let mask = choose(parent, &masks)?;
         let mut origin = case.origin.with_list(case.origin.list.clone());
         crate::derivative::gate_inputs(&mut origin, &mask)?;
@@ -189,7 +208,22 @@ fn masked(parent: &Origin<&[Value]>, selector: &Value, args: &[Value], cases: &[
         values.extend(choices.iter().map(|case| case[leaf].clone()));
         selected.push(choose(parent, &values)?);
     }
+    crate::explain::fast("masked select", || parent.operation.glyph());
     Ok(Some(Outputs::from(selected).with_trees(first.trees().cloned()).with_shy(first.shy)))
+}
+
+/// Predicate updates share Agenda's lane-wise planner only when its result preserves the target's native kind.
+pub(crate) fn masked_update(parent: &Origin<&[Value]>, selector: &Value, function: &Function, args: &[Value]) -> Result<Option<Value>> {
+    let Some(right) = args.last().and_then(Desc::of) else { return Ok(None); };
+    if Desc::of(selector).is_none_or(|desc| desc.dtype() != DType::Boolean) || selector.is_empty() { return Ok(None); }
+    let case = Case { origin: function.bound(parent, args)?, function: function.clone() };
+    let Some(prepared) = case.plan()? else { return Ok(None); };
+    let description = prepared.description()?;
+    let [Some(output)] = description.as_ref() else { return Ok(None); };
+    if description.trees().is_some() || output.kind != right.kind { return Ok(None); }
+    let identity = Function::primitive(Primitive::Identity(false));
+    let keep = Case { origin: identity.bound(parent, args)?, function: identity };
+    masked(parent, selector, args, &[keep, case])?.map(Outputs::assemble).transpose()
 }
 
 enum Made { Cells(Value), Fill(Value) }
@@ -212,11 +246,10 @@ pub(crate) fn form(origin: Origin<&[Value]>, _call: &CallView<'_>) -> Result<Opt
     let args = &roots[count + 1..];
     let cases = roots[..count].iter().map(|value| {
         let Value::Function(function) = value else { return Err(Error::internal()); };
-        Ok(Case { function: function.clone(), origin: function.bound(&origin, args)? })
+        Ok(Case { origin: function.bound(&origin, args)?, function: function.clone() })
     }).collect::<Result<Vec<_>>>()?;
     if selector.is_unit() {
-        let position = selector_positions(selector, count, origin.mode.dynamic)?[0];
-        if position == rustymath::gather::Steps::FILL { return Err(Error::domain("the selector's fill picks no case")); }
+        let position = scalar_position(selector, count, origin.mode.dynamic)?;
         return Operation::dispatch(cases[position].origin.reborrow()).map(Some);
     }
     if let Some(result) = masked(&origin, selector, args, &cases)? { return Ok(Some(result)); }
@@ -232,8 +265,7 @@ pub(crate) fn form(origin: Origin<&[Value]>, _call: &CallView<'_>) -> Result<Opt
         made.push((index, Made::new(case.run(&reference, &groups[index])?, &rows)?));
     }
     if frame.count() == 0 {
-        let position = selector_positions(&selector.prototype(), count, true)?[0];
-        if position == rustymath::gather::Steps::FILL { return Err(Error::domain("the selector's fill picks no case")); }
+        let position = scalar_position(&selector.prototype(), count, true)?;
         let value = crate::eval::session().prototype_outputs(|| cases[position].run(&reference, &[]).map(Outputs::one))?.into_cell()?;
         let cell = if value.is_singleton() { argument_cell }
         else if value.shape().first() == Some(&0) { value.layout().axes(1..value.rank()) }
@@ -305,9 +337,9 @@ pub(crate) fn frame_reference(frame: &Layout, sources: &[(Value, usize)]) -> Res
     let mut axes = vec![None; frame.shape().len()];
     for (input, (value, cell)) in sources.iter().enumerate() {
         let source = value.layout().axes(0..value.rank().saturating_sub(*cell));
-        let [destinations, _] = rustymath::agreement::Agreement::axis_pairs(&source, frame);
-        for (axis, destination) in destinations.into_iter().enumerate() {
-            if destination < axes.len() && axes[destination].is_none() && source.axes(std::iter::once(axis)) == frame.axes(std::iter::once(destination)) {
+        let paired = rustymath::agreement::Agreement::paired_axes(&source, frame, true);
+        for (destination, axis) in paired.into_iter().enumerate() {
+            if axis < source.shape().len() && axes[destination].is_none() && source.axes(std::iter::once(axis)) == frame.axes(std::iter::once(destination)) {
                 axes[destination] = Some(ViewAxis { input: 1 + input as u32, axis: Some(axis) });
             }
         }

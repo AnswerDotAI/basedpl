@@ -15,10 +15,11 @@ Defers = Annotated[str, {'choices': ['all', 'reference']}] # The values that `en
 def environment(
     native=False, # Run rustymath's own linear algebra in place of Accelerate, through `RUSTYMATH_NATIVE=1`, in a macOS build with rustymath's `native` feature
     compile:Compiles=None, # How block stages compile, through `BASEDPL_COMPILE` (`settings::Compiles`): `always`, every stage on its first run; `never`, none; None, by the compile policy
-    defer:Defers=None # Which costs decide whether a call waits, through `BASEDPL_DEFER` (`settings::waits`): `all`, every call waits, as fusion at any size runs; `reference`, the Mac's costs, as route checks take; None, this platform's costs
+    defer:Defers=None, # Which costs decide whether a call waits, through `BASEDPL_DEFER` (`settings::waits`): `all`, every call waits, as fusion at any size runs; `reference`, the Mac's costs, as route checks take; None, this platform's costs
+    noopt:bool=None # Fix the child process policy: True disables optional optimizations; False enables them; None inherits
 ):
     "This process's environment, with these settings, for a `bpl` process or speed test that it starts. Every tool that starts one takes them through `@delegates(environment)`."
-    return os.environ | ({'RUSTYMATH_NATIVE': '1'} if native else {}) | ({'BASEDPL_COMPILE': compile} if compile else {}) | ({'BASEDPL_DEFER': defer} if defer else {})
+    return os.environ | ({'RUSTYMATH_NATIVE': '1'} if native else {}) | ({'BASEDPL_COMPILE': compile} if compile else {}) | ({'BASEDPL_DEFER': defer} if defer else {}) | ({'BASEDPL_NOOPT': '1' if noopt else '0'} if noopt is not None else {})
 
 LIMIT = 30 # Seconds of work that a check or timing call gets unless its `timeout` says otherwise; builds and waits for the timing lock don't count
 
@@ -58,10 +59,12 @@ class Worker:
         self,
         bpl=None, # The native `bpl` to run (`resolved`); None or `installed`: the installed build
         stderr_limit=30, # Maximum diagnostic lines to retain; None keeps all stderr
+        cwd=None, # Working directory of the child; None inherits the caller's directory
         **kwargs
     ):
+        self.cwd = None if cwd is None else Path(cwd).expanduser().resolve()
         self.process = subprocess.Popen((resolved(bpl), '--worker'), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            encoding='utf-8', bufsize=1, env=environment(**kwargs))
+            encoding='utf-8', bufsize=1, env=environment(**kwargs), cwd=self.cwd)
         self._replies, self._stderr = queue.Queue(), deque(maxlen=stderr_limit)
         self._write_lock, self._request_lock = threading.Lock(), threading.Lock()
         self._id, self._active, self._heard, self._started, self.ran = 0, None, time.monotonic(), time.monotonic(), None

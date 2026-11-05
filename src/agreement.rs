@@ -9,6 +9,7 @@ type Core = rustymath::agreement::Agreement;
 /// Basedpl's constructors and readers for `Agreement`. The constructors pair axes as rustymath's do, and keep the renderer that both arguments' layouts agree on.
 pub(crate) trait Agree: Sized {
     fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
+    fn onto(left: &Layout, right: &Layout) -> Result<Self, ErrorKind>;
     fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind>;
     /// The positions that pair `i` reads. `None` means an argument reads its fill, as it does for a key that it lacks: its mapping's chosen fill, or its prototype. With no pairs, each argument reads its first item, or its prototype where it has none. `positions` calls `lens` for the arguments' item counts only where there are no pairs.
     fn positions(&self, i: usize, lens: impl FnOnce() -> [usize; 2]) -> [Option<usize>; 2];
@@ -20,6 +21,7 @@ pub(crate) trait Agree: Sized {
 
 impl Agree for Agreement {
     fn new(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> { with_renderer(Core::new(left, right), left, right) }
+    fn onto(left: &Layout, right: &Layout) -> Result<Self, ErrorKind> { with_renderer(Core::onto(left, right), left, right) }
     fn with_axes(left: &Layout, right: &Layout, axes: &[usize]) -> Result<Self, ErrorKind> { with_renderer(Core::with_axes(left, right, axes), left, right) }
     // Maps call these once for each cell.
     #[inline]

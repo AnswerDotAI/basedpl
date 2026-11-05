@@ -175,6 +175,13 @@ impl serde::Serialize for Response {
     }
 }
 
+/// The protocol value of an already-observed result, without reading it again.
+pub(crate) fn stored(value: Option<&Value>) -> Result<JsonValue, Error> {
+    let value = value.map(crate::json::exportable).filter(|value| !value.holds_functions());
+    serde_json::to_value(value.as_ref().map(Json)).map_err(|error| Error::domain(error.to_string()))
+}
+
+
 pub fn response(result: Evaluation) -> Result<JsonValue, Error> {
     serde_json::to_value(Response::new(result)?).map_err(|error| Error::domain(error.to_string()))
 }

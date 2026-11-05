@@ -4190,7 +4190,7 @@ Jv←2 0 1 ⋄ ¯1⌽(+\∊⍨↢↦+/) 1↣+ Jv   ⍝ $t $f $f $t $t $f
 Im←[1 2⋄2 3⋄3 1] ⋄ -/(⍳⌈/∘,)=⊗⍉ Im   ⍝ [0 0⋄1 1⋄¯1 1]ₓ
 
 ⍝ aplcart/table.tsv:1491 — Shannon entropy of array ⍵
-Y← "aaabbc"  ⋄ -(1⊥2(⍟×⊢)⊢↢≢⌸÷≢) Y   ⍝ 1.4591479170272448
+Y← "aaabbc"  ⋄ -(1⊥2(⍟×⊢)⊢↢≢⌸÷ₐ≢) Y   ⍝ 1.4591479170272448
 
 ⍝ aplcart/table.tsv:1492 — Null near-zero (within absolute distance Ms) real and imaginary parts in N
 Ms←0.01
@@ -5810,7 +5810,7 @@ Av{(b∧⍺)⊽c#⁻¹ </∘ 2↣↕ 0⍪(c←b∨⍺)#b←~⍵}B
 $t $f $t $t $f
 
 ⍝ aplcart/table.tsv:2054 — Discrete Fourier Transformation
-{⍵+.×⍨*π0j¯2×n÷⍨×⊗⍨⍳n←≢⍵} 1 2j¯1 0j¯1 ¯1j2   ⍝ 2 ¯2j¯2 0j¯2 4j4
+{⍵+.×⍨*π0j¯2×n÷ₐ⍨×⊗⍨⍳n←≢⍵} 1 2j¯1 0j¯1 ¯1j2   ⍝ 2 ¯2j¯2 0j¯2 4j4
 
 ⍝ aplcart/table.tsv:2055 — Progressive index of (⍳) without replacement
 X←1 2 1
@@ -5844,7 +5844,7 @@ Y#⁻¹⍨~(⍳Mv+⍥≢Y)∊Mv⌊↣+⍳≢Mv   ⍝ 0 1 2 0 3
 Yv←[2 1 2;["ba"⋄"ca"⋄"db"]] ⋄ {{[⍋[⍵]⌷⍺]⌷⍵}/⍵,⊂⍳≢↑⍵}Yv   ⍝ [1 0 2]ₓ
 
 ⍝ aplcart/table.tsv:2065 — Inverse Discrete Fourier Transformation
-{n÷⍨⍵+.×⍨*π0j2×n÷⍨×⊗⍨⍳n←≢⍵} 2 ¯2j¯2 0j¯2 4j4
+{n÷⍨⍵+.×⍨*π0j2×n÷ₐ⍨×⊗⍨⍳n←≢⍵} 2 ¯2j¯2 0j¯2 4j4
 1 2j¯1 0j¯1 ¯1j2
 
 ⍝ aplcart/table.tsv:2066 — Changing connectivity list Jm to a connectivity matrix

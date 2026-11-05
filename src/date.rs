@@ -1,6 +1,6 @@
 //! `•date` reads a moment, in seconds since the Unix epoch, from text or from a record of fields. `•date⁻¹` writes a moment as a record, or as text with a pattern. Patterns, field names and ISO 8601 text follow chrono.
 use crate::system::HostCall;
-use crate::{Described, Error, Number, Value, data::{Options, text}, keyed, primitive::real};
+use crate::{Described, Error, Number, Value, array::Frame, data::{Options, text}, keyed, primitive::real};
 use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Utc};
 use rustymath::buffer::FloatWidth;
 use std::fmt::Write;
@@ -94,8 +94,7 @@ pub(crate) fn read(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, 
     let seconds = moments.into_iter().map(|m| m.map(seconds).ok_or_else(|| Error::domain("invalid date"))).collect::<Result<Vec<_>, _>>()?;
     // Seconds since 1970 stay 64-bit, because a 32-bit float holds them only to within about two minutes.
     let second = |s| Value::Number(Number::float(s, FloatWidth::F64));
-    let frame = if shape.is_empty() { crate::array::Frame::Direct } else { crate::array::Frame::Array(shape.into()) };
-    frame.collect(seconds.into_iter().map(second), second(0.0)).described("invalid date")
+    Frame::from_shape(&shape).collect(seconds.into_iter().map(second), second(0.0)).described("invalid date")
 }
 
 /// `•date⁻¹`'s options. The browser build has no `locale`, which keeps chrono's locale data out of it.

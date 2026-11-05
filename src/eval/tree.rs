@@ -670,7 +670,7 @@ impl StatementCode {
                     origin.site = Some(span.clone());
                     if tail && *last && tails(&f) { return Ok(Step::Tail(Application { origin, span: span.clone(), unshy: false })); }
                     let expression = match parts { Some(parts) => Some(dissected(&f.function()?, x.as_deref(), &y, parts)), None => None };
-                    let bound = Bound::from_outputs(Operation::dispatch(origin.reborrow())?, span)?;
+                    let bound = Bound::from_outputs(Operation::dispatch(origin.reborrow()).at(span)?, span)?;
                     if put(registers, *to, Entity::new(Term::Binding(bound.value), range.clone(), bound.shy, expression), *result) {
                         returned(registers, *to, *result, *last, span)?;
                     }

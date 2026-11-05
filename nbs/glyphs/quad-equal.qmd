@@ -18,5 +18,6 @@ Key calls `f` once on all its groups where it can, whatever `f`'s spelling, as a
 
 ```bpl
 1 1 2(+/⊢)⌸10 20 30                            ⍝ 30 30
-(•explain "1 1 2{+/⍵}⌸10 20 30").routes.route  ⍝ ["key classes" "batching"]
+e←•explain "1 1 2{+/⍵}⌸10 20 30"
+[(⊂"key classes")∊e.routes.route ; (⊂"batching")∊e.fast.rule]  ⍝ [$t $t]
 ```

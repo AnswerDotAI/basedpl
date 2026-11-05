@@ -37,11 +37,15 @@ fn same_atom(x: &Value, y: &Value, relative: Option<f64>, absolute: f64, exactne
 /// Locate a structural or numeric mismatch of the value `x` from `y`. Approximate numbers may differ by the tolerances that `same_atom` takes. With `exactness`, each number's exactness must match too. Items compare before prototypes, because a nested array's prototype comes from its first item. A mismatch inside an item that is an array adds its own message, as in `data[0]: shape: [0] != [1]`.
 pub fn difference(x: &Value, y: &Value, relative: Option<f64>, absolute: f64, exactness: bool) -> Option<String> {
     let inner = |a: &Value, b: &Value| {
-        if a.is_atom() && b.is_atom() { (!same_atom(a, b, relative, absolute, exactness)).then(String::new) }
+        if a.is_atom() && b.is_atom() {
+            (!same_atom(a, b, relative, absolute, exactness)).then(|| match (a, b) {
+                (Value::Number(a), Value::Number(b)) => format!(": {a} != {b}"), _ => String::new()
+            })
+        }
         else { difference(a, b, relative, absolute, exactness).map(|m| format!(": {m}")) }
     };
     if x.is_atom() != y.is_atom() { return Some("atom versus array".into()); }
-    if x.is_atom() { return inner(x, y).map(|_| "atom".into()); }
+    if x.is_atom() { return inner(x, y).map(|message| format!("atom{message}")); }
     if x.shape() != y.shape() { return Some(format!("shape: {:?} != {:?}", x.shape(), y.shape())); }
     if x.layout().all_keys() != y.layout().all_keys() || x.axis_names() != y.axis_names() { return Some("axis keys or names".into()); }
     let items = x.elements().zip(y.elements()).enumerate().find_map(|(i, (a, b))| inner(&a, &b).map(|m| format!("data[{i}]{m}")));
@@ -82,16 +86,45 @@ const RUNS: [Run; 4] = [
     Run { compiles: Compiles::Policy, twice: true, words: "on a dfn's second call" },
 ];
 
-/// `mixed` permits another storage kind; `compiled` skips the uncompiled run when the result reports compilation.
-const FLAGS: [&str; 2] = ["mixed", "compiled"];
-fn runs(case: &JsonValue) -> Vec<Run> { RUNS.into_iter().filter(|r| !(r.compiles == Compiles::Never && case["compiled"] == true)).collect() }
+/// `mixed` permits another storage kind; `compiled` observes compilation; `optimized` observes an optional optimization.
+const FLAGS: [&str; 3] = ["mixed", "compiled", "optimized"];
+#[derive(Clone, Copy)]
+enum CheckAction { Value(Run), Storage, Routes }
+
+/// One check's immutable worker policy and action, shared by both test frontends.
+#[derive(Clone, Copy)]
+pub struct Check { pub name: &'static str, pub noopt: bool, action: CheckAction }
+impl Check {
+    fn value(run: Run, noopt: bool) -> Self { Self { name: run.words, noopt, action: CheckAction::Value(run) } }
+    fn here(self) -> bool { self.noopt != crate::settings::optimizes() }
+    fn json(self) -> JsonValue { json!({"mode":self.name, "noopt":self.noopt}) }
+}
+
+/// Requested checks. The additional diagnostic is opt-in until its resource/applicability review is complete.
+pub fn checks(case: &JsonValue) -> Vec<Check> {
+    let mut checks: Vec<_> = RUNS.into_iter().filter(|r| !(r.compiles == Compiles::Never && case["compiled"] == true))
+        .map(|run| Check::value(run, false)).collect();
+    checks.push(Check { name: "storage kinds", noopt: false, action: CheckAction::Storage });
+    if routed(case) { checks.push(Check { name: "routes", noopt: false, action: CheckAction::Routes }); }
+    if (case["noopt"] == true || !crate::settings::optimizes()) && case["compiled"] != true && case["optimized"] != true {
+        checks.push(Check::value(Run { compiles: Compiles::Never, twice: false, words: "without optional optimization" }, true));
+    }
+    checks
+}
+
+fn active_checks(case: &JsonValue) -> Vec<Check> { checks(case).into_iter().filter(|check| check.here()).collect() }
+fn mode_names(case: &JsonValue) -> Vec<&'static str> { active_checks(case).iter().map(|check| check.name).collect() }
+fn check_progress(case: &JsonValue, mode: &JsonValue) {
+    if case["file"].is_string() { eprintln!("check {}", json!({"file":case["file"],"line":case["line"],"result":mode})); }
+}
 
 /// Defaults and file preferences, with the run's compile setting.
 fn enter(prefs: Option<&str>, run: Option<Run>) -> Result<(), JsonValue> {
     crate::settings::reset();
+    rustymath::parallel::set_threads(1);
     crate::settings::set_verifies(true);
     if let Some(prefs) = prefs && let Some(error) =
-            Session::current(|session| session.eval_apart(prefs, EvalOptions { timeout: Some(TIMEOUT), echo: false, ..EvalOptions::default() })).error {
+            Session::current(|session| session.eval_apart(prefs, EvalOptions { timeout: case_timeout(), echo: false, ..EvalOptions::default() })).error {
                 return Err(json!({"status":"invalid", "message":format!("file header: {error}")}));
             }
     if let Some(run) = run { crate::settings::set_compiles(run.compiles); }
@@ -128,6 +161,7 @@ fn outcome(
     }
     let failed = |mut failure: JsonValue| {
         failure["message"] = json!(format!("{words}: {}", failure["message"].as_str().unwrap_or_default()));
+        failure["expected_value"] = crate::protocol::stored(expected.as_ref()).map_err(unreadable)?;
         Err(failure)
     };
     if let Some(error) = &result.error {
@@ -164,7 +198,7 @@ fn outcome(
 const TWICE: &str = "reference_case";
 
 /// `case`'s code as the body of a dfn that one session calls twice, under the settings in force. The first call runs each statement through the binder, which records it, and the second call runs the recordings. The second call must give the first's value, storage kind, error and output. Before each call, the session's random numbers restart from seed 0, each call reads its own `input` lines, and the second call finds the `testpath` fixture's directory emptied. The settings go back in force before the second call, because the first call can change them. Code that can't be a dfn's body, such as code with a syntax error, passes this run unchecked.
-fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<Outcome, JsonValue> {
+fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<Option<Outcome>, JsonValue> {
     let Some(code) = case["code"].as_str() else { return Err(json!({"status":"invalid", "message":"missing code"})); };
     let input = optional_text(case, "input", "input")?;
     let options = || EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, ..EvalOptions::default() };
@@ -177,11 +211,11 @@ fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Dur
             if call == 1 { enter(case["prefs"].as_str(), Some(run))?; }
             if call == 1 && let Some(dir) = &files { emptied(dir.path())?; }
             session.seed(0);
-            calls.push(observed_result(session.eval_with(&format!("{TWICE} 0"), EvalOptions { input: lines(input), ..options() }), &session)?);
+            calls.push(observed_result(&session, EvalOptions { input: lines(input), ..options() }, |options| session.eval_with(&format!("{TWICE} 0"), options))?);
         }
     }
     let numeric = crate::settings::numeric();
-    let Ok([first, second]) = <[crate::Evaluation; 2]>::try_from(calls) else { return Ok(Outcome { value: None, numeric, expected: None }) };
+    let Ok([first, second]) = <[crate::Evaluation; 2]>::try_from(calls) else { return Ok(None) };
     let words = run.words;
     for error in [&first.error, &second.error].into_iter().flatten() {
         if matches!(error.kind, crate::ErrorKind::Timeout | crate::ErrorKind::Interrupt) {
@@ -205,9 +239,9 @@ fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Dur
     };
     match mismatch {
         Some(message) => {
-            Err(json!({"status":"mismatch", "message":format!("{words}: {message}"), "actual":crate::protocol::response(second).map_err(unreadable)?}))
+            Err(json!({"status":"mismatch", "message":format!("{words}: {message}"), "expected_value":crate::protocol::stored(first.value.as_ref()).map_err(unreadable)?, "actual":crate::protocol::response(second).map_err(unreadable)?}))
         }
-        None => Ok(Outcome { value: None, numeric, expected: None }),
+        None => Ok(Some(Outcome { value: None, numeric, expected: None })),
     }
 }
 
@@ -227,15 +261,29 @@ fn verdict(case: &JsonValue, outcomes: &[(Run, Outcome)]) -> JsonValue {
     json!({"status":"pass"})
 }
 
-/// `case` checked as `failures` checks it with its route directives, and no setup: `{"status":"pass"}`, or the case with the `status`, `message` and `kind` of its failure, and its `actual` result where there is one.
+/// One whole reference case, including each applicable mode and its shared setup.
 pub fn check(case: &JsonValue, interrupt: &InterruptHandle) -> JsonValue {
-    failures([case], "", true, interrupt).pop().unwrap_or_else(|| json!({"status":"pass"}))
+    let names = mode_names(case);
+    if let Some(modes) = case.get("only_modes") && modes.as_array().is_none_or(|modes|
+        modes.is_empty() || modes.iter().any(|mode| mode.as_str().is_none_or(|name| !names.contains(&name)))) {
+        return json!({"status":"invalid", "message":"only_modes must name applicable checks", "expected_modes":names});
+    }
+    let mut result = failed(case, &held_back(|| case_result(case, case["setup"].as_str().unwrap_or_default(), true, interrupt)));
+    if interrupt.expired() {
+        if result["status"] == "timeout" { result["status"] = json!("watchdog"); }
+        if let Some(modes) = result["modes"].as_array_mut() {
+            for mode in modes { if mode["status"] == "timeout" { mode["status"] = json!("watchdog"); } }
+        }
+    }
+    result["expected_modes"] = json!(mode_names(case));
+    crate::settings::reset();
+    result
 }
 
 /// A timed record's expectation, checked once outside timing, with fresh setup for both expressions.
 pub fn check_once(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<(), JsonValue> {
     enter(case["prefs"].as_str(), None)?;
-    outcome(case, setup, RUNS[0], Some(TIMEOUT), interrupt).map(drop)
+    outcome(case, setup, RUNS[0], case_timeout(), interrupt).map(drop)
 }
 
 /// Warm and capture a case under its ordinary preferences and setup, on one thread, as route checks run it.
@@ -290,7 +338,7 @@ impl Selection {
 }
 
 /// Validates the skip manifest against all (section, code) names before any case selection.
-pub fn skipped<'a>(test: &str, cases: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<(&'a str, &'a str)> {
+pub fn skipped<'a>(test: &str, cases: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<(usize, String)> {
     use std::io::Write;
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/skipped.txt");
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -305,7 +353,24 @@ pub fn skipped<'a>(test: &str, cases: impl IntoIterator<Item = (&'a str, &'a str
         assert!(cases.iter().any(|&(s, c)| (section == "*" || section == s) && code == c), "{}: {test} has no case [{section}] {code}", path.display());
         let _ = writeln!(std::io::stderr(), "known skip in {test} [{section}]: {code} ({item})");
     }
-    cases.into_iter().filter(|&(section, code)| lines.iter().any(|&(s, c, _)| (s == "*" || s == section) && c == code)).collect()
+    cases.into_iter().enumerate().filter_map(|(index, (section, code))| {
+        lines.iter().find(|line| (line.0 == "*" || line.0 == section) && line.1 == code).map(|line| (index, line.2.to_owned()))
+    }).collect()
+}
+
+/// Mark known over-deadline reference cases without removing their inventory records.
+pub fn mark_skipped(file: &mut File) {
+    let test = format!("reference:{}.bpl", file.name.trim_end_matches(".bpl"));
+    let keys: Vec<_> = file.cases.iter().map(|case| {
+        let key = case["id"].as_str().filter(|key| !key.is_empty()).unwrap_or_else(|| case["comment"].as_str().unwrap_or_default().lines().next().unwrap_or_default());
+        (case["section"].as_str().unwrap_or_default(), key)
+    }).collect();
+    let selected: Vec<_> = [(test.clone(), "skip_reason"), (format!("noopt:{test}"), "noopt_skip_reason")].into_iter()
+        .flat_map(|(test, field)| skipped(&test, keys.iter().copied()).into_iter().map(move |(index, reason)| (index, reason, field))).collect();
+    for &(index, _, _) in &selected {
+        assert_eq!(keys.iter().filter(|&&key| key == keys[index]).count(), 1, "{test}: ambiguous case key {:?}", keys[index]);
+    }
+    for (index, reason, field) in selected { file.cases[index][field] = json!(reason); }
 }
 
 /// The data that `coverage`'s cases read, with a matrix for its inner products.
@@ -376,8 +441,8 @@ pub fn coverage(gaps: &std::path::Path, selection: &mut Selection, wrong: &mut V
     }
     let skipped = skipped("coverage", COVERAGE_SECTIONS.iter().flat_map(|&(section, _)| cases.iter().map(move |(code, _)| (section, code.as_str()))));
     let (mut captures, mut selected, mut checked, mut skipped_count, mut failed) = (Vec::new(), 0, 0, 0, 0);
-    for (section, prefs) in COVERAGE_SECTIONS {
-        for (code, route) in &cases {
+    for (section_index, &(section, prefs)) in COVERAGE_SECTIONS.iter().enumerate() {
+        for (case_index, (code, route)) in cases.iter().enumerate() {
             let mut case = json!({"code":code, "section":section, "id":code});
             for entry in listed.iter_mut().filter(|e| e.0 == section && e.1 == code.as_str()) {
                 case.as_object_mut().unwrap().entry(entry.2).or_insert_with(|| json!([])).as_array_mut().unwrap().push(entry.3.clone());
@@ -385,7 +450,7 @@ pub fn coverage(gaps: &std::path::Path, selection: &mut Selection, wrong: &mut V
             }
             if !selection.case("coverage", &case) { continue; }
             selected += 1;
-            if skipped.contains(&(section, code.as_str())) { skipped_count += 1; continue; }
+            if skipped.iter().any(|(index, _)| *index == section_index * cases.len() + case_index) { skipped_count += 1; continue; }
             let waived = ["gap", "allows"].into_iter().flat_map(|key| case[key].as_array().into_iter().flatten()).any(|event| match *route {
                 "trace" => event[0] == "stopped",
                 "fused fold" => event[0] == "declined" && event[1].as_str().is_some_and(|reason| reason.starts_with("fused fold: ")),
@@ -413,15 +478,18 @@ fn route_check(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Re
     let wrong = capture(case, setup, interrupt)?.violations();
     if wrong.is_empty() { Ok(()) } else { Err(json!({"status":"route", "message":wrong.join("; ")})) }
 }
-/// `case` with the `status`, `message` and `kind` of the failure `result`, and its `actual` result where there is one.
+/// The case with its failure status, message and available observed results.
 fn failed(case: &JsonValue, result: &JsonValue) -> JsonValue {
     let mut failure = case.clone();
-    for key in ["status", "message", "kind", "actual"] { if let Some(value) = result.get(key) { failure[key] = value.clone(); } }
+    for key in ["status", "message", "kind", "actual", "expected_value", "modes"] { if let Some(value) = result.get(key) { failure[key] = value.clone(); } }
     failure
 }
 fn initialized(session: &Session, setup: &str) -> Result<(), JsonValue> {
+    if setup.contains("test_compiled") {
+        session.set("test_compiled", Value::Number(crate::Number::from_bool(crate::settings::compiles() == Compiles::Always))).expect("valid fixture name");
+    }
     if setup.is_empty() { return Ok(()); }
-    if let Some(error) = session.eval_with(setup, EvalOptions { echo: false, timeout: Some(TIMEOUT), ..EvalOptions::default() }).error {
+    if let Some(error) = session.eval_with(setup, EvalOptions { echo: false, timeout: case_timeout(), ..EvalOptions::default() }).error {
         return Err(json!({"status":"invalid", "message":format!("setup: {error}")}));
     }
     Ok(())
@@ -433,20 +501,19 @@ fn evaluated(
     let session = Session::new();
     initialized(&session, setup)?;
     let _files = fixture(&session, code)?;
-    observed_result(
-        session.eval_with(code, EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input: lines(input), ..EvalOptions::default() }), &session)
+    observed_result(&session,
+        EvalOptions { timeout, interrupt: interrupt.clone(), echo: false, input: lines(input), ..EvalOptions::default() }, |options| session.eval_with(code, options))
 }
 
-fn observed_result(mut result: crate::Evaluation, session: &Session) -> Result<crate::Evaluation, JsonValue> {
-    if result.error.is_none() && let Some(value) = result.value.take() {
-        match value.read(crate::ReadKind::Value).and_then(|value| { session.raise()?; Ok(value) }) {
-            Ok(value) => result.value = Some(value), Err(error) if error.kind.is_control() => return Err(unreadable(error)),
-            Err(error) => result.error = Some(error)
-        }
-    }
+fn observed_result(session: &Session, options: EvalOptions, evaluate: impl FnOnce(EvalOptions) -> crate::Evaluation) -> Result<crate::Evaluation, JsonValue> {
+    let mut result = crate::timing::observed(session, options, evaluate);
+    if result.error.as_ref().is_some_and(|error| error.kind.is_control()) { return Err(unreadable(result.error.take().unwrap())); }
     Ok(result)
 }
-fn unreadable(error: crate::Error) -> JsonValue { json!({"status":"error", "message":error.to_string()}) }
+fn unreadable(error: crate::Error) -> JsonValue {
+    let status = match error.kind { crate::ErrorKind::Timeout => "timeout", crate::ErrorKind::Interrupt => "interrupt", _ => "error" };
+    json!({"status":status, "message":error.to_string()})
+}
 
 /// A new temporary directory for the `testpath` fixture, where `code` names one, with `testpath` in `session` naming a path inside it. The directory lasts as long as the returned guard.
 fn fixture(session: &Session, code: &str) -> Result<Option<tempfile::TempDir>, JsonValue> {
@@ -474,7 +541,9 @@ fn lines(input: Option<&str>) -> Option<Arc<dyn crate::Input>> {
 }
 
 /// How long each evaluation of a case or a page example may run.
-pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+pub(crate) fn case_timeout() -> Option<std::time::Duration> {
+    Some(std::time::Duration::from_secs(2))
+}
 
 /// The id and comment of a case header, `⍝ id — comment`, or `⍝ — comment` with no id.
 fn header(line: &str) -> Option<(&str, &str)> {
@@ -681,7 +750,7 @@ pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str,
             failures.push(failed(case, &json!({"status": "unchecked", "message": format!("the check stopped at {why} before this case finished, so it and the cases after it are unchecked")})));
             break;
         }
-        if result["status"] == "pass" { continue; }
+        if matches!(result["status"].as_str(), Some("pass" | "skipped")) { continue; }
         failures.push(failed(case, &result));
     }
     crate::settings::reset();
@@ -693,26 +762,73 @@ fn forget_compiled() { crate::program::programs().entries.lock().unwrap_or_else(
 
 /// The verdict on `case` over each of its runs, and on its routes where `routes` asks. Each run's settings (`enter`), the run and the reset after it run under `unwound`. A panic in any of them, the reset's barrier over the pending work that the run left included, fails this case. A failing run doesn't stop the runs after it, except one that panicked, timed out or was interrupted: after a panic the case's settings can't be trusted, and more runs would only spend more time. The failure names each failing run (`combined`). Each case starts with no kept plans or compiled kernels (`forget_compiled`), so its result doesn't depend on the cases before it.
 fn case_result(case: &JsonValue, setup: &str, routes: bool, interrupt: &InterruptHandle) -> JsonValue {
+    let checks = active_checks(case);
+    if checks.is_empty() { return json!({"status":"not applicable", "modes":[]}); }
+    let skip = case.get("skip_reason").or_else(|| (!crate::settings::optimizes()).then(|| case.get("noopt_skip_reason")).flatten());
+    if let Some(reason) = skip {
+        let modes: Vec<_> = checks.iter().map(|check| json!({"mode":check.name,"status":"skipped","message":reason})).collect();
+        return json!({"status":"skipped", "message":reason, "modes":modes});
+    }
     forget_compiled();
+    let selected = |name: &str| case["only_modes"].as_array().is_none_or(|modes| modes.iter().any(|mode| mode == name));
+    let continued = case["only_modes"].is_array();
+    let origin = if continued { "fresh continuation" } else { "standard" };
+    let mut modes: Vec<_> = checks.iter().map(|check| json!({"mode":check.name,"status":"unexecuted"})).collect();
     let (mut outcomes, mut failures, mut stopped) = (Vec::new(), Vec::new(), false);
-    for run in runs(case) {
+    for (index, check) in checks.iter().enumerate() {
+        let CheckAction::Value(run) = check.action else { continue; };
+        if !selected(run.words) { continue; }
+        modes[index]["origin"] = json!(origin);
+        modes[index]["status"] = json!("running"); check_progress(case, &modes[index]);
         let ran = unwound(run.words, || {
+            if run.twice && continued {
+                enter(case["prefs"].as_str(), Some(RUNS[0]))?;
+                outcome(case, setup, RUNS[0], case_timeout(), interrupt).map_err(|failure|
+                    json!({"status":"blocked", "message":format!("normal warmup did not complete: {}", failure["message"])}))?;
+            }
             enter(case["prefs"].as_str(), Some(run))?;
-            let ran = if run.twice { twice(case, setup, run, Some(TIMEOUT), interrupt) } else { outcome(case, setup, run, Some(TIMEOUT), interrupt) };
+            let ran = if run.twice { twice(case, setup, run, case_timeout(), interrupt) }
+                else { outcome(case, setup, run, case_timeout(), interrupt).map(Some) };
             crate::settings::reset();
             ran
         });
         match ran {
-            Ok(outcome) => outcomes.push((run, outcome)),
+            Ok(Some(outcome)) => { modes[index]["status"] = json!("pass"); outcomes.push((run, outcome)); }
+            Ok(None) => modes[index]["status"] = json!("not applicable"),
             Err(failure) => {
-                stopped = matches!(failure["status"].as_str(), Some("panic" | "timeout" | "interrupt"));
+                for (key, value) in failure.as_object().unwrap() { modes[index][key] = value.clone(); }
+                stopped = matches!(failure["status"].as_str(), Some("panic" | "timeout" | "interrupt" | "blocked"));
                 failures.push((run, failure));
-                if stopped { break; }
             }
         }
+        check_progress(case, &modes[index]);
+        if stopped { break; }
     }
-    let result = if failures.is_empty() { verdict(case, &outcomes) } else { combined(&failures, outcomes.is_empty() && !stopped) };
-    if routes && result["status"] == "pass" { unwound("in the route check", || route_check(case, setup, interrupt)).err().unwrap_or(result) } else { result }
+    let mut result = if failures.is_empty() { verdict(case, &outcomes) } else { combined(&failures, outcomes.is_empty() && !stopped) };
+    if checks[0].noopt && failures.is_empty() {
+        for (key, value) in result.as_object().unwrap() { modes[0][key] = value.clone(); }
+        check_progress(case, &modes[0]);
+    }
+    if let Some(index) = checks.iter().position(|check| matches!(check.action, CheckAction::Storage)) {
+        let kinds = &mut modes[index];
+        if !continued && !stopped && failures.is_empty() {
+            for (key, value) in result.as_object().unwrap() { kinds[key] = value.clone(); }
+        } else { kinds["status"] = json!("blocked"); kinds["message"] = json!("needs all standard-mode outcomes in one worker"); }
+        check_progress(case, kinds);
+    }
+    if let Some(index) = checks.iter().position(|check| matches!(check.action, CheckAction::Routes)) {
+        let route = &mut modes[index];
+        if routes && selected("routes") && result["status"] == "pass" {
+            route["status"] = json!("running"); route["origin"] = json!(origin); check_progress(case, route);
+            if let Err(failure) = unwound("in the route check", || route_check(case, setup, interrupt)) {
+                for (key, value) in failure.as_object().unwrap() { route[key] = value.clone(); }
+                result = failure;
+            } else { route["status"] = json!("pass"); }
+        } else { route["status"] = json!("blocked"); route["message"] = json!("needs a completed value check"); }
+        check_progress(case, route);
+    }
+    result["modes"] = json!(modes);
+    result
 }
 
 /// A case's failing runs as one failure. It takes the status, kind and result of the first, or of an interrupt, which stops its caller (`failures`). Its message names each failing run, since each run's message starts with the run's words (`outcome`, `unwound`), or says "every run" where `every` run failed with one message.
@@ -761,7 +877,7 @@ fn held_back(check: impl Fn() -> JsonValue) -> JsonValue {
 
 /// The examples in the `bpl` blocks of `text`, a `.qmd` page, that fail. Each block runs in a fresh session of its own. Each expectation runs in a module of its own after its lines (`Session::eval_apart`), under the settings they leave. The lines up to each line with a ` ⍝ ` comment, and up to the block's end, run as one evaluation, with `TIMEOUT` to run. Its value must show the same text as the comment's value, in the session's display with every item, or match it within the default tolerances that `same_atom` describes, with the same exactness. `•prefs` option `prec` sets how many digits the display shows. Lines with no comment must run without an error. Each page starts with no kept plans or compiled kernels (`forget_compiled`). Each evaluation notes its line on stderr as it starts (`example LINE`), which a check reads as progress (`bpltests._checked`). An interrupt, or the deadline of `interrupt` passing, fails the example that it stops as `unchecked`, and no example after it runs. Each failure gives the `line` of its comment or of the block's end, the `code` that ran, its `expected` comment and a `message`.
 pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
-    let options = || EvalOptions { timeout: Some(TIMEOUT), echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
+    let options = || EvalOptions { timeout: case_timeout(), echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() };
     let (mut failures, mut session, mut code) = (Vec::new(), None, String::new());
     forget_compiled();
     for (i, line) in text.lines().enumerate() {
@@ -779,9 +895,9 @@ pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
         }
         if expected.is_none() && !closing { continue; }
         eprintln!("example {}", i + 1);
-        let result = observed_result(bpl.eval_with(&code, options()), bpl);
+        let result = observed_result(bpl, options(), |options| bpl.eval_with(&code, options));
         // The expectation evaluates after the code, under the settings that the code leaves.
-        let wanted = expected.map(|e| observed_result(bpl.eval_apart(e, options()), bpl)).transpose();
+        let wanted = expected.map(|e| observed_result(bpl, options(), |options| bpl.eval_apart(e, options))).transpose();
         if let Some(why) = interrupt.stop() {
             failures.push(json!({"line": i + 1, "status": "unchecked", "code": code.trim_end(), "expected": expected, "message": format!("the check stopped at {why} before this example finished, so it and the examples after it are unchecked")}));
             break;
@@ -810,7 +926,9 @@ pub fn page(text: &str, interrupt: &InterruptHandle) -> Vec<JsonValue> {
 
 /// The reply to the worker's `reference` request. It gives `text` in a `.bpl` reference file's format and, optionally, a list of the `ids` to check, each a case's id or its header's line number. An id that matches no case is an error. The reply gives the cases that fail, with their route directives, as `failures` gives them. As it starts each case, the worker notes `case LINE` on stderr, which names the case where an abort ends it (`bpltests._checked`).
 pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
-    let file = file(spec["name"].as_str().unwrap_or_default(), spec["text"].as_str().ok_or("reference needs text as a string")?)?;
+    let mut file = file(spec["name"].as_str().unwrap_or_default(), spec["text"].as_str().ok_or("reference needs text as a string")?)?;
+    if spec["noopt"] == true { for case in &mut file.cases { case["noopt"] = json!(true); } }
+    mark_skipped(&mut file);
     let cases = &file.cases;
     let ids = match spec.get("ids") {
         None | Some(JsonValue::Null) => None, Some(ids) => Some(ids.as_array().ok_or("ids must be a list of case ids and header line numbers")?)
@@ -818,9 +936,19 @@ pub fn file_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Jso
     let matches = |id: &JsonValue, case: &JsonValue| *id == case["id"] || *id == case["line"];
     let unknown: Vec<_> = ids.into_iter().flatten().filter(|id| !cases.iter().any(|case| matches(id, case))).map(JsonValue::to_string).collect();
     if !unknown.is_empty() { return Err(format!("{} match no case. Each id is a case's id or its header's line number.", unknown.join(", "))); }
-    let selected = cases.iter().filter(|case| checked(case) && ids.is_none_or(|ids| ids.iter().any(|id| matches(id, case))))
-        .inspect(|case| eprintln!("case {}", case["line"]));
-    Ok(json!({"failures": failures(selected, &file.setup, true, interrupt), "error": null}))
+    let selected: Vec<_> = cases.iter().filter(|case| checked(case) && ids.is_none_or(|ids| ids.iter().any(|id| matches(id, case)))).collect();
+    if spec["inventory"] == true {
+        let cases: Vec<_> = selected.iter().map(|case| {
+            let mut case = (**case).clone();
+            let checks = checks(&case);
+            case["expected_modes"] = json!(checks.iter().map(|check| check.name).collect::<Vec<_>>());
+            case["checks"] = json!(checks.into_iter().map(Check::json).collect::<Vec<_>>());
+            case
+        }).collect();
+        return Ok(json!({"cases":cases, "setup":file.setup, "error":null}));
+    }
+    let skipped: Vec<_> = selected.iter().copied().filter(|case| case.get("skip_reason").is_some()).collect();
+    Ok(json!({"failures": failures(selected.into_iter().inspect(|case| eprintln!("case {}", case["line"])), &file.setup, true, interrupt), "skipped":skipped, "error": null}))
 }
 
 /// The reply to the worker's `page` request, which gives the `text` of a `.qmd` page. The reply gives the examples that fail, as `page` gives them.

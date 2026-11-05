@@ -1,5 +1,5 @@
 use crate::execution::check;
-use crate::{Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Frame, generated_len}, number::{Numeric, low_bits}};
+use crate::{Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Frame, Widening, assemble_cells, generated_len}, number::{Numeric, low_bits}};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, ToPrimitive, Zero};
 use rustymath::number_theory as nt;
@@ -123,7 +123,7 @@ fn each_cell(
         cells.push(f(x.as_ref(), n, Integers { persistent, numeric })?);
     }
     if right.is_atom() && left.is_none_or(Value::is_atom) { return Ok(cells.remove(0)); }
-    crate::array::assemble_cells(&agreement.layout, &cells[..agreement.len], &cells[0], crate::array::Widening::of_results(numeric.kinds), None, numeric)
+    assemble_cells(&agreement.layout, &cells[..agreement.len], &cells[0], Widening::of_results(!numeric.is_static()), None, numeric)
         .described("number theory result exceeds array limits")
 }
 

@@ -43,5 +43,5 @@ BPL computes this combination by an algorithm of its own, in any spelling. [Trai
 On complex numbers, `¯1+*Y` computes `*Y`, then subtracts 1.
 
 ```bpl
-¯1+*1E¯17         ⍝ 1ₑ¯17
+f←¯1+* ⋄ f 1E¯17         ⍝ 1ₑ¯17
 ```

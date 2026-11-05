@@ -63,6 +63,7 @@ pub use host::configure_browser;
 pub use inspection::Inspection;
 pub use keyed::Keys;
 pub use number::Number;
+pub use primitive::Index;
 pub use program::trace::ReadKind;
 pub use rustymath::buffer;
 pub use syntax::{ParseStatus, Parsed, SyntaxNode, highlight, in_code, number_marks, parse, subscripts, superscripts, syntax_tree};

@@ -40,12 +40,57 @@ pub fn items(session: &Session) -> Result<Option<usize>, crate::Error> {
     Ok(value.as_real().filter(|&n| n >= 0.0 && n.fract() == 0.0).map(|n| n as usize))
 }
 
-fn evaluated(session: &Session, parsed: &crate::Parsed, interrupt: &InterruptHandle) -> Evaluation {
-    let mut result = session.eval_parsed(parsed, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
+fn read_result(session: &Session, mut result: Evaluation) -> Evaluation {
     if result.error.is_none() && let Some(value) = result.value.take() {
         match value.read(crate::ReadKind::Value).and_then(|value| { session.raise()?; Ok(value) }) { Ok(value) => result.value = Some(value), Err(error) => result.error = Some(error) }
     }
     result
+}
+pub(crate) fn observed(session: &Session, options: EvalOptions, evaluate: impl FnOnce(EvalOptions) -> Evaluation) -> Evaluation {
+    session.within(|| {
+        let _running = session.execution.begin(options.clone());
+        read_result(session, evaluate(options))
+    })
+}
+fn evaluated(session: &Session, parsed: &crate::Parsed, interrupt: &InterruptHandle) -> Evaluation {
+    read_result(session, session.eval_parsed(parsed, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() }))
+}
+/// Run one reusable dfn per step. Sampling requests warm one call before announcing readiness; force requests read each result. Setup and parsing run once.
+pub fn repeat_request(spec: &str, mut options: EvalOptions) -> Result<(), String> {
+    let spec: JsonValue = serde_json::from_str(spec).map_err(|error| error.to_string())?;
+    let text = |key| spec[key].as_str().ok_or_else(|| format!("measurement needs {key} as a string"));
+    let count = spec["count"].as_u64().ok_or("measurement needs count as a nonnegative integer")?;
+    let force = spec["force"].as_bool().unwrap_or(true);
+    let ready = spec["ready"].as_bool().unwrap_or(false);
+    let session = Session::new();
+    options.echo = false;
+    if let Some(error) = session.eval_with(text("setup")?, options.clone()).error { return Err(error.to_string()); }
+    let source = Source::new("<measurement>", format!("{{\n{}\n}}", text("code")?));
+    let defined = session.eval_source(source.clone(), options.clone());
+    if let Some(error) = defined.error { return Err(error.to_string()); }
+    let function = defined.function.ok_or("measurement did not define a body")?;
+    let zero = session.eval_with("0", options.clone());
+    if let Some(error) = zero.error { return Err(error.to_string()); }
+    let arguments = [zero.value.ok_or("measurement did not create its argument")?];
+    let span = crate::Span::whole(source);
+    let result = session.evaluation(options, |session| {
+        let call = || {
+            let result = session.call_function_at(&function, &arguments, &span);
+            if force { read_result(session, result) } else { result }
+        };
+        if ready {
+            let result = call();
+            if result.error.is_some() { return result; }
+            drop(result);
+            eprintln!("bpl-profile-ready");
+        }
+        for _ in 0..count {
+            let result = call();
+            if result.error.is_some() { return result; }
+        }
+        Evaluation::default()
+    });
+    result.error.map_or(Ok(()), |error| Err(error.to_string()))
 }
 /// Parse once and force each evaluation. Return the fastest of five warm times, the first evaluation's time, peak large-allocation bytes during the warm runs, and bytes retained beyond the first evaluation. Parsing and setup are excluded.
 pub fn time(session: &Session, code: &str, interrupt: &InterruptHandle) -> Result<(f64, f64, usize, usize), Evaluation> {
@@ -194,8 +239,11 @@ impl Capture {
     pub fn violations(&self) -> Vec<String> {
         let mut wrong = Vec::new();
         for required in &self.named.routes {
-            use rustymath::events::EventKind::{Declined, Taken};
-            if !self.run.report.routes().any(|r| r.kind == Taken && r.route.name() == required.as_str()) {
+            use rustymath::events::{Event, EventKind::{Declined, Taken}};
+            if !self.run.report.records.iter().any(|event| match event {
+                Event::Route(r) => r.kind == Taken && r.route.name() == required.as_str(),
+                Event::Fast { rule: rule @ ("accuracy rule" | "mark rule" | "batching"), .. } => *rule == required.as_str(), _ => false
+            }) {
                 let declines: Vec<_> = self.run.report.routes().filter(|r| r.kind == Declined).map(|r| format!("{}: {}", r.route.name(), r.reason)).collect();
                 wrong.push(if declines.is_empty() { format!("required route {required} was not taken") }
                 else { format!("required route {required} was not taken, with declines {}", declines.join("; ")) });
@@ -239,7 +287,7 @@ pub(crate) fn named(captured: Result<Capture, String>, file: &File, case: &JsonV
 /// `route`'s capture of `case`.
 fn captured(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -> Result<Capture, String> {
     let code = case["code"].as_str().unwrap();
-    let (_, events, warmup) = warmed(session, code, false, interrupt).map_err(|failed| failure(code, failed))?;
+    let (_, events, warmup) = warmed(session, code, false, interrupt, reference::case_timeout()).map_err(|failed| failure(code, failed))?;
     let named = |key: &str| case[key].as_array().into_iter().flatten().map(|v| (v[0].as_str().unwrap().into(), v[1].as_str().unwrap().into())).collect();
     Ok(Capture { file: String::new(), section: case["section"].as_str().unwrap_or_default().into(), code: code.into(), label: code.into(),
         run: Observed::of(&events), warmup: Observed::of(&warmup), named: Named {
@@ -249,10 +297,10 @@ fn captured(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) ->
 
 /// `code` run twice in `session`, each run as `•explain` runs its text, with `site` columns where `sites` holds, and with its value forced: a warm-up, then the run that a route check reads. Gives that run's evaluation and events and the warm-up's events, or the evaluation that failed. Where this platform's costs decide which calls wait, both run under the Mac's costs instead (`fusion::Waits::Reference`): a route check tests the design's routes, so a directive observed on the Mac holds everywhere. A run with every call waiting, as the coverage matrix's, keeps that. The route test, `check_file` and the worker's `route` request (`route_request`) all capture through it.
 fn warmed(
-    session: &Session, code: &str, sites: bool, interrupt: &InterruptHandle
+    session: &Session, code: &str, sites: bool, interrupt: &InterruptHandle, timeout: Option<Duration>
 ) -> Result<(Evaluation, crate::explain::Events, crate::explain::Events), Evaluation> {
     let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
-    let run = || evaluated(session, &parsed, interrupt);
+    let run = || observed(session, EvalOptions { echo: false, interrupt: interrupt.clone(), timeout, ..EvalOptions::default() }, |options| session.eval_parsed(&parsed, options));
     let (warm, warmup) = crate::explain::explained(sites, run);
     if warm.error.is_some() { return Err(warm); }
     let (evaluation, events) = crate::explain::explained(sites, run);
@@ -266,7 +314,7 @@ pub fn route_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Js
     let session = match session(text("prefs")?, text("setup")?, interrupt) {
         Ok(session) => session, Err(failed) => return response(failed).map_err(|error| error.to_string())
     };
-    let (mut evaluation, events, _) = match warmed(&session, text("code")?, spec["sites"].as_bool().unwrap_or(false), interrupt) {
+    let (mut evaluation, events, _) = match warmed(&session, text("code")?, spec["sites"].as_bool().unwrap_or(false), interrupt, None) {
         Ok(runs) => runs, Err(failed) => return response(failed).map_err(|error| error.to_string())
     };
     evaluation.value = Some(events.records().map_err(|e| e.to_string())?);

@@ -1,7 +1,7 @@
 •prefs ["kinds":"static"]
 
 ⍝⍝ setup
-kind←{(•storage ⍵).kind} ⋄ replayed←{∧/(0<⍶ ⍵.programs)≥⍵.programs.event≡¨⊂"replayed"} ⋄ compiled←⊢.compiled replayed ⋄ staged←⊢.blocks replayed ⋄ ok←{∧/,(⍺≠⍺)∨⍺=⍵}
+kind←{(•storage ⍵).kind} ⋄ reports←{•explain⍵}¨ ⋄ ran←{(0<≢⍵.programs.event)∧(0=≢⍵.stopped.reason,⍵.fallbacks.reason)∧∨/⍵.routes.route∊"compiled" "fusion" "vector kernel" "mapped kernel"} ⋄ compiled←{∧/{(ran⍵)∧test_compiled≤∨/⍵.routes.route≡¨⊂"compiled"}¨⍵} ⋄ staged←{∧/{(ran⍵)∧test_compiled≤0<≢⍵.fused.items}¨⍵} ⋄ ok←{∧/,(⍺≠⍺)∨⍺=⍵}
 
 ⍝⍝ Static kinds
 
@@ -92,7 +92,7 @@ j←[¯3 0 3 1000]ₓ ⋄ j=3   ⍝ $f $f $t $f
 
 ⍝ — Under static kinds, a function whose results are approximate gives floats for integer arguments, at the width ÷ gives them: ⌹ inverts and solves integer matrices as floats, polar gives an integer's magnitude and angle as floats, and the derivatives of `!` and Lambert W give an atom the floats they give an array. Exact fractions stay exact
 [{(•storage ⍵).kind}¨[⌹2 2⍴[2 1 1 3]ₓ;[1 2]ₓ⌹2 2⍴[2 1 1 3]ₓ;(⌹⍤2)2 2 2⍴[2 1 1 3]ₓ;∧[3 ¯4]ₓ;∧3ₓ;{2ₓ!⍵}∂5ₓ;{2ₓ!⍵}∂[5 6]ₓ;{!⍵}∂3ₓ;{!⍵}∂[3]ₓ;(×↢*)⁻¹ 3ₓ;(×↢*)⁻¹ [3]ₓ];⌹1r3]
-["float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32";3ₓ]
+["float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32";3ᵣ]
 
 ⍝ — Under static kinds, `∂` computes an integer argument as floats of the width `÷` gives it: the derivative of `-⍵` at `3ₓ` is the float ¯1
 [{-⍵}∂3ₓ ; {+/-⍵}∂[2 3]ₓ ; {⍵*3ₓ}∂2ₓ ; •float {⍵}∂3ₓ ; •float {⍵}∂$t]
@@ -166,13 +166,13 @@ x←0.5×⍳20 ⋄ n←0 ⋄ f←{+/n↑⍵} ⋄ t←{n⊢←⍵ ⋄ f∂x} ⋄ 
 n←[(1 2) 0] ⋄ f←{+/⍵÷1⊃n} ⋄ a←f∂1 2 ⋄ n←[(1 2) ¯0] ⋄ [a ; f∂1 2]
 [∞ ∞ ; ¯∞ ¯∞]
 
-⍝ — A trace stops at what a program can't hold, such as an effect, and `∂` runs without a program. `•explain` gives the stop a `stopped` row
+⍝ — Reading host metadata stops a trace; `∂` still returns the correct derivative, and `•explain` reports the stop
 f←{+/⍵×≢(•storage ⍵).kind} ⋄ e←•explain "f∂1.5 2.5" ⋄ e.value (e.stopped.reason)
-[[7 7] ; ,⊂"an effect"]
+[[7 7] ; ,⊂"host-kind data"]
 
 ⍝ — In a training step, `loss∂⍵` builds its program on the first call, which holds the loss and its gradient, and every later call replays it, with no trace stopped. It gives the gradient's closed form to within the last bits that a fold's order can change
-X←0.1×[6 3]⍴⍳18 ⋄ y←0.5×⍳6 ⋄ loss←{e←(X+.×⍵)-y ⋄ (+/e×e)÷≢y} ⋄ step←{⍵-0.01×loss∂⍵} ⋄ e←•explain "(step⍣10)3⍴0" ⋄ by←{e←(X+.×⍵)-y ⋄ ⍵-0.01×(2×(⍉X)+.×e)÷≢y} ⋄ w←(by⍣10)3⍴0 ⋄ ((⌈/|e.value-w)≤1e¯5×⌈/|w),(e.loops.way≡,⊂"replay"),(⊃e.loops.iterations),≢e.stopped.reason
-[1 1 10 0]ₓ
+X←0.1×[6 3]⍴⍳18 ⋄ y←0.5×⍳6 ⋄ loss←{e←(X+.×⍵)-y ⋄ (+/e×e)÷≢y} ⋄ step←{⍵-0.01×loss∂⍵} ⋄ e←•explain "(step⍣10)3⍴0" ⋄ by←{e←(X+.×⍵)-y ⋄ ⍵-0.01×(2×(⍉X)+.×e)÷≢y} ⋄ w←(by⍣10)3⍴0 ⋄ ((⌈/|e.value-w)≤1e¯5×⌈/|w),(∨/(⊂"replayed")∊e.programs.event),≢e.stopped.reason
+[1 1 0]ₓ
 
 ⍝ — A gradient that reads its argument at repeated positions adds the cotangent back at them in one accumulation step of its program, into zeros that the replay makes. Both calls run from programs, and no trace stops
 v←0.5×⍳10 ⋄ g←{+/(⍵.[[3 5 3]])*2} ⋄ e←•explain "[g∂v ; g∂v]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason
@@ -182,72 +182,78 @@ v←0.5×⍳10 ⋄ g←{+/(⍵.[[3 5 3]])*2} ⋄ e←•explain "[g∂v ; g∂v]
 x←0.1×2 5 3⍴⍳30 ⋄ w←0.01×2 3 4⍴⍳24 ⋄ f←{+/,(⍵(+.×⍤2)w)*2} ⋄ e←•explain "[f∂x ; f∂x]" ⋄ c←2×(x(+.×⍤2)w)(+.×⍤2)0 2 1⍉w ⋄ (∧/{(⌈/,|⍵-c)≤1e¯5×⌈/,|c}¨e.value),(≢e.programs.event),≢e.stopped.reason
 [1 2 0]ₓ
 
-⍝ — A program's first reuse compiles each block stage of elementwise steps on arrays of one shape, and later calls run its compiled parts. A compiled part gives the values that its steps give one at a time. This case and the block-stage cases after it run a body on a free name in the program that `∂` builds: the gradient of `{+/⍵×(f v)}` is `f v` [compiled]
-f←{(⍵-0.5)×⍵+0.5} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡[w;w;w]),⌈/e.programs.compiled
+⍝ — An elementwise dfn body keeps its values on each call and replay. The harness requires compiled execution in its compiled run and accepts native kernels at these small sizes under the normal policy. Each workload is captured separately [compiled]
+f←{(⍵-0.5)×⍵+0.5} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ reads←reports["F∂o" "F∂o" "F∂o"] ⋄ w←f v ⋄ (e.value≡[w;w;w]),1ₓ×compiled reads
 [1 1]ₓ
 
-⍝ — A run with a step that doesn't lower to machine operations, such as `*`, still compiles: the steps that lower around it, the comparison `⍵>0.25` among them, become compiled parts, and `*` runs on its precompiled kernel inside the same stage. A comparison's Booleans stay Booleans until a later step reads them as floats [compiled]
-f←{(*⍵-0.5)×⍵>0.25} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡[w;w;w]),(⌈/e.programs.blocks),⌈/e.programs.compiled
+⍝ — Exponentials, arithmetic and comparisons in a dfn run through block stages. Booleans stay Boolean until a later step reads them as floats. Each captured call gives the steps' values and takes the required execution route [compiled]
+f←{(*⍵-0.5)×⍵>0.25} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ reads←reports["F∂o" "F∂o" "F∂o"] ⋄ w←f v ⋄ (e.value≡[w;w;w]),(1ₓ×staged reads),1ₓ×compiled reads
 [1 1 1]ₓ
 
-⍝ — A run of steps that lower compiles where it holds at least two steps or the whole stage. Here `⍵-0.5`, `×` and the gradient's `×` lower, but each stands alone beside a `*`, which doesn't, so the stage compiles nothing and runs each step on its precompiled kernel [compiled]
-f←{*(*⍵-0.5)×*⍵} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡[w;w;w]),(⌈/e.programs.blocks),⌈/e.programs.compiled
+⍝ — A nested exponential chain gives the same values on each execution. Its third execution reuses code without a new compile. The compiled run must still report compiled execution on every call [compiled]
+f←{*(*⍵-0.5)×*⍵} ⋄ v←0.25×⍳8 ⋄ F←{+/⍵×(f v)} ⋄ o←0×v ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ reads←reports["F∂o" "F∂o" "F∂o"] ⋄ w←f v ⋄ (e.value≡[w;w;w]),(1ₓ×compiled reads),≢(↑⌽reads).compiles.glyphs
 [1 1 0]ₓ
 
 ⍝ — A block stage stores each value that later steps read and folds a value of one axis. It reads an array of another shape through the map that agreement gives it, as `r`'s stage reads the sum of each row that its fold gave. Each gives the interpreter's values
-g←{d←*⍵-0.5 ⋄ d÷⌈/d} ⋄ s←{d←⍵×⍵>0.5 ⋄ d-+/d} ⋄ h←{2×*⍵×w} ⋄ r←{*⍵-(+/⍵)÷8} ⋄ w←0.5 1.5 ⋄ v←0.25×⍳8 ⋄ m←[2 4]⍴v ⋄ G←{+/⍵×(g v)} ⋄ S←{+/⍵×(s v)} ⋄ H←{+/,⍵×(h m)} ⋄ R←{+/,⍵×(r m)} ⋄ o←0×v ⋄ p←0×m ⋄ e←•explain "[G∂o ; G∂o ; S∂o ; S∂o ; H∂p ; H∂p ; R∂p ; R∂p]" ⋄ (e.value≡[g v ; g v ; s v ; s v ; h m ; h m ; r m ; r m]),staged e
+g←{d←*⍵-0.5 ⋄ d÷⌈/d} ⋄ s←{d←⍵×⍵>0.5 ⋄ d-+/d} ⋄ h←{2×*⍵×w} ⋄ r←{*⍵-(+/⍵)÷8} ⋄ w←0.5 1.5 ⋄ v←0.25×⍳8 ⋄ m←[2 4]⍴v ⋄ G←{+/⍵×(g v)} ⋄ S←{+/⍵×(s v)} ⋄ H←{+/,⍵×(h m)} ⋄ R←{+/,⍵×(r m)} ⋄ o←0×v ⋄ p←0×m ⋄ e←•explain "[G∂o ; G∂o ; S∂o ; S∂o ; H∂p ; H∂p ; R∂p ; R∂p]" ⋄ reads←reports["G∂o" "G∂o" "S∂o" "S∂o" "H∂p" "H∂p" "R∂p" "R∂p"] ⋄ (e.value≡[g v ; g v ; s v ; s v ; h m ; h m ; r m ; r m]),staged reads
 $t $t
 
 ⍝ — With the int pref at 64, a block stage computes integers as the interpreter does: ordinary integers wrap at the `int` width, and fixed integers wrap at their own width. Each replay runs a block stage and gives the interpreter's values, as floats because they're a gradient
-•prefs ["int":64] ⋄ f←{⍵+⍵×2ₓ} ⋄ g←{(⍵×2ₓ)+1ₓ} ⋄ v←4611686018427387900ₓ+⍳8ₓ ⋄ u←(13×⍳20ₓ)ₓ₁ ⋄ F←{+/⍵×(f v)} ⋄ G←{+/⍵×(g u)} ⋄ o←8⍴0 ⋄ p←20⍴0 ⋄ e←•explain "[F∂o ; F∂o ; F∂o ; G∂p ; G∂p ; G∂p]" ⋄ (e.value≡1×[f v ; f v ; f v ; g u ; g u ; g u]),staged e
+•prefs ["int":64] ⋄ f←{⍵+⍵×2ₓ} ⋄ g←{(⍵×2ₓ)+1ₓ} ⋄ v←4611686018427387900ₓ+⍳8ₓ ⋄ u←(13×⍳20ₓ)ₓ₁ ⋄ F←{+/⍵×(f v)} ⋄ G←{+/⍵×(g u)} ⋄ o←8⍴0 ⋄ p←20⍴0 ⋄ e←•explain "[F∂o ; F∂o ; F∂o ; G∂p ; G∂p ; G∂p]" ⋄ reads←reports["F∂o" "F∂o" "F∂o" "G∂p" "G∂p" "G∂p"] ⋄ (e.value≡1×[f v ; f v ; f v ; g u ; g u ; g u]),staged reads
 $t $t
 
 ⍝ — A block stage holds Booleans as values. Logical functions on Booleans give Booleans, and so does `∧` of two comparisons. A comparison that a float step reads gives it 1 and 0. Each replay runs a block stage and gives the interpreter's values, as floats because they're a gradient
-f←{~⍺∧⍵} ⋄ g←{(⍺>0.5)∧⍵>0.5} ⋄ h←{(⍵>3)×⍵} ⋄ a←0≠20⍴[1 0 1 1]ₓ ⋄ b←0≠20⍴[1 1 0 0]ₓ ⋄ x←0.1×⍳20 ⋄ y←⌽x ⋄ F←{+/⍵×(a f b)} ⋄ G←{+/⍵×(x g y)} ⋄ H←{+/⍵×(h x)} ⋄ o←20⍴0 ⋄ e←•explain "[F∂o ; F∂o ; F∂o ; G∂o ; G∂o ; G∂o ; H∂o ; H∂o ; H∂o]" ⋄ (e.value≡1×[a f b ; a f b ; a f b ; x g y ; x g y ; x g y ; h x ; h x ; h x]),staged e
+f←{~⍺∧⍵} ⋄ g←{(⍺>0.5)∧⍵>0.5} ⋄ h←{(⍵>3)×⍵} ⋄ a←0≠20⍴[1 0 1 1]ₓ ⋄ b←0≠20⍴[1 1 0 0]ₓ ⋄ x←0.1×⍳20 ⋄ y←⌽x ⋄ F←{+/⍵×(a f b)} ⋄ G←{+/⍵×(x g y)} ⋄ H←{+/⍵×(h x)} ⋄ o←20⍴0 ⋄ e←•explain "[F∂o ; F∂o ; F∂o ; G∂o ; G∂o ; G∂o ; H∂o ; H∂o ; H∂o]" ⋄ reads←reports["F∂o" "F∂o" "F∂o" "G∂o" "G∂o" "G∂o" "H∂o" "H∂o" "H∂o"] ⋄ (e.value≡1×[a f b ; a f b ; a f b ; x g y ; x g y ; x g y ; h x ; h x ; h x]),staged reads
 $t $t
 
 ⍝ — A size mark in a dfn becomes a conversion step in its program. The step converts as the interpreter does. A fixed mark takes a float's floor and clamps it to the type's range: NaN gives 0, and an infinity gives the nearer end of the range. Each of the nine calls runs from a program, and each replay runs a block stage
-f←{⌊ₓ₁ ⍵×255} ⋄ g←{⌊ₓ₄ ⍵×2.5} ⋄ k←{÷ₚ ⍵+1} ⋄ v←0.5 0.25 1.5 ¯0.1 2.9999999999999996 ¯3.5 300.5 $n ∞ ¯∞ ⋄ F←{+/⍵×(f v)} ⋄ G←{+/⍵×(g v)} ⋄ K←{+/⍵×(k v)} ⋄ o←10⍴0 ⋄ e←•explain "[F∂o ; F∂o ; F∂o ; G∂o ; G∂o ; G∂o ; K∂o ; K∂o ; K∂o]" ⋄ (e.value≡1×[f v ; f v ; f v ; g v ; g v ; g v ; k v ; k v ; k v]),(staged e),(≢e.programs.event),⊂(f v)
+f←{⌊ₓ₁ ⍵×255} ⋄ g←{⌊ₓ₄ ⍵×2.5} ⋄ k←{÷ₚ ⍵+1} ⋄ v←0.5 0.25 1.5 ¯0.1 2.9999999999999996 ¯3.5 300.5 $n ∞ ¯∞ ⋄ F←{+/⍵×(f v)} ⋄ G←{+/⍵×(g v)} ⋄ K←{+/⍵×(k v)} ⋄ o←10⍴0 ⋄ e←•explain "[F∂o ; F∂o ; F∂o ; G∂o ; G∂o ; G∂o ; K∂o ; K∂o ; K∂o]" ⋄ reads←reports["F∂o" "F∂o" "F∂o" "G∂o" "G∂o" "G∂o" "K∂o" "K∂o" "K∂o"] ⋄ (e.value≡1×[f v ; f v ; f v ; g v ; g v ; g v ; k v ; k v ; k v]),(staged reads),(+/{0<≢⍵.programs.event}¨reads),⊂(f v)
 [$t $t 9ₓ [127 63 255 0 255 0 255 0 255 0]ₓ₁]
 
-⍝ — A product of conversions to wider fixed integers reads the narrow arrays through the conversions, which a program leaves pending for it. Each of the three calls runs from a program and gives the interpreter's result
-f←{(⍵ₓ₄)+.×⍵ₓ₄} ⋄ u←(30 30⍴37ₓ×⍳900ₓ)ₓ₁ ⋄ F←{+/,⍵×(f u)} ⋄ o←30 30⍴0 ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←1×f u ⋄ (e.value≡[w;w;w]),≢e.programs.event
-[1 3]ₓ
+⍝ — Products read narrow captures through fixed conversions. Warm calls replay without new recordings, and a same-kind changed capture supplies fresh items without retracing
+f←{(⍵ₓ₄)+.×⍵ₓ₄} ⋄ u←(30 30⍴37ₓ×⍳900ₓ)ₓ₁ ⋄ F←{+/,⍵×(f u)} ⋄ o←30 30⍴0 ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←1×f u ⋄ j←•explain "F∂o" ⋄ u←⌽u ⋄ k←•explain "F∂o" ⋄ [(e.value≡[w;w;w])∧j.value≡w ; k.value≡1×(f u) ; ~k.value≡w ; 0<≢j.programs.event ; 0<≢k.programs.event ; ~∨/(⊂"built")∊j.programs.event,k.programs.event ; 0=≢j.stopped.reason,k.stopped.reason]
+7⍴$t
 
 ⍝ — In a compiled part, as in the interpreter, `x⌈y` and `x⌊y` give NaN or the other argument beside NaN, and a zero of either sign for two zeros [compiled]
-v←$n 0 ¯0,997⍴1 ⋄ hi←{(--⍵)⌈¯0} ⋄ lo←{(--⍵)⌊0} ⋄ H←{+/⍵×(hi v)} ⋄ L←{+/⍵×(lo v)} ⋄ o←1000⍴0 ⋄ e←•explain "[H∂o ; H∂o ; L∂o ; L∂o]" ⋄ ((⊃3↑¨e.value) ok 0),compiled e
+v←$n 0 ¯0,997⍴1 ⋄ hi←{(--⍵)⌈¯0} ⋄ lo←{(--⍵)⌊0} ⋄ H←{+/⍵×(hi v)} ⋄ L←{+/⍵×(lo v)} ⋄ o←1000⍴0 ⋄ e←•explain "[H∂o ; H∂o ; L∂o ; L∂o]" ⋄ reads←reports["H∂o" "H∂o" "L∂o" "L∂o"] ⋄ ((⊃3↑¨e.value) ok 0),compiled reads
 $t $t
 
 ⍝ — A compiled part folds negative zeros [compiled]
-z←-1000⍴0 ⋄ s←{+/--⍵} ⋄ S←{⍵×(s z)} ⋄ e←•explain "[S∂0 ; S∂0 ; S∂0]" ⋄ e.value,compiled e
+z←-1000⍴0 ⋄ s←{+/--⍵} ⋄ S←{⍵×(s z)} ⋄ e←•explain "[S∂0 ; S∂0 ; S∂0]" ⋄ reads←reports["S∂0" "S∂0" "S∂0"] ⋄ e.value,compiled reads
 0 0 0 1
 
 ⍝ — A compiled part folds sums and products of f32 and f64 in registers, within 10⁻⁴ of the interpreter's totals, relative. The later calls of each program run compiled [compiled]
-f←{+/(⍵-0.5)×⍵-0.5} ⋄ p←{×/1+1e¯4×⍵-0.5} ⋄ v←0.001×⍳5000 ⋄ w←64•float v ⋄ Fw←{⍵×(f w)} ⋄ Pv←{⍵×(p v)} ⋄ Pw←{⍵×(p w)} ⋄ e←•explain "[Fw∂0 ; Fw∂0 ; Fw∂0 ; Pv∂0 ; Pv∂0 ; Pv∂0 ; Pw∂0 ; Pw∂0 ; Pw∂0]" ⋄ x←[f w ; f w ; f w ; p v ; p v ; p v ; p w ; p w ; p w] ⋄ (∧/(|e.value-x)≤1e¯4×|x),compiled e
+f←{+/(⍵-0.5)×⍵-0.5} ⋄ p←{×/1+1e¯4×⍵-0.5} ⋄ v←0.001×⍳5000 ⋄ w←64•float v ⋄ Fw←{⍵×(f w)} ⋄ Pv←{⍵×(p v)} ⋄ Pw←{⍵×(p w)} ⋄ e←•explain "[Fw∂0 ; Fw∂0 ; Fw∂0 ; Pv∂0 ; Pv∂0 ; Pv∂0 ; Pw∂0 ; Pw∂0 ; Pw∂0]" ⋄ reads←reports["Fw∂0" "Fw∂0" "Fw∂0" "Pv∂0" "Pv∂0" "Pv∂0" "Pw∂0" "Pw∂0" "Pw∂0"] ⋄ x←[f w ; f w ; f w ; p v ; p v ; p v ; p w ; p w ; p w] ⋄ (∧/(|e.value-x)≤1e¯4×|x),compiled reads
 $t $t
 
 ⍝ — A compiled part folds floats by ⌈ and ⌊ in registers, from ¯∞ and ∞, with the greatest and least items. Beside NaN it gives NaN or the greatest or least of the other items: here the greatest item comes first and NaNs follow it [compiled]
-h←{⌈/--⍵} ⋄ l←{⌊/--⍵} ⋄ v←-0.5+⍳5000 ⋄ n←v ⋄ n.[[32 4000]]←$n ⋄ Hv←{⍵×(h v)} ⋄ Lv←{⍵×(l v)} ⋄ Hn←{⍵×(h n)} ⋄ Ln←{⍵×(l n)} ⋄ e←•explain "[Hv∂0 ; Hv∂0 ; Hv∂0 ; Lv∂0 ; Lv∂0 ; Lv∂0 ; Hn∂0 ; Hn∂0 ; Ln∂0 ; Ln∂0]" ⋄ r←e.value ⋄ (∧/(6↑r)=¯0.5 ¯0.5 ¯0.5 ¯4999.5 ¯4999.5 ¯4999.5),(∧/((6↓r)≠6↓r)∨(6↓r)=¯0.5 ¯0.5 ¯4999.5 ¯4999.5),compiled e
+h←{⌈/--⍵} ⋄ l←{⌊/--⍵} ⋄ v←-0.5+⍳5000 ⋄ n←v ⋄ n.[[32 4000]]←$n ⋄ Hv←{⍵×(h v)} ⋄ Lv←{⍵×(l v)} ⋄ Hn←{⍵×(h n)} ⋄ Ln←{⍵×(l n)} ⋄ e←•explain "[Hv∂0 ; Hv∂0 ; Hv∂0 ; Lv∂0 ; Lv∂0 ; Lv∂0 ; Hn∂0 ; Hn∂0 ; Ln∂0 ; Ln∂0]" ⋄ reads←reports["Hv∂0" "Hv∂0" "Hv∂0" "Lv∂0" "Lv∂0" "Lv∂0" "Hn∂0" "Hn∂0" "Ln∂0" "Ln∂0"] ⋄ r←e.value ⋄ (∧/(6↑r)=¯0.5 ¯0.5 ¯0.5 ¯4999.5 ¯4999.5 ¯4999.5),(∧/((6↓r)≠6↓r)∨(6↓r)=¯0.5 ¯0.5 ¯4999.5 ¯4999.5),compiled reads
 $t $t $t
 
 ⍝ — A block stage folds fixed integers as the interpreter does: `+` wraps at the items' width, and `⌈` and `⌊` give the greatest and least items. Each fold joins its stage, as a count of a comparison's Booleans does, and gives the interpreter's values, compiled or not [compiled]
-s←{+/⍵×3ₓ₁} ⋄ hi←{⌈/⍵+1ₓ₁} ⋄ lo←{⌊/⍵+1ₓ₁} ⋄ c←{+/⍵>100ₓ₁} ⋄ u←(⍳5000ₓ)ₓ₁ ⋄ S←{⍵×(s u)} ⋄ Hi←{⍵×(hi u)} ⋄ Lo←{⍵×(lo u)} ⋄ C←{⍵×(c u)} ⋄ z←32•float 0 ⋄ e←•explain "[S∂z ; S∂z ; S∂z ; Hi∂z ; Hi∂z ; Hi∂z ; Lo∂z ; Lo∂z ; Lo∂z ; C∂z ; C∂z ; C∂z]" ⋄ w←1×[s u ; s u ; s u ; hi u ; hi u ; hi u ; lo u ; lo u ; lo u ; c u ; c u ; c u] ⋄ (e.value≡w),(⌈/e.programs.compiled),⊂∪e.fused.glyphs
-[$t 1ₓ ["×+/" "+⌈/" "+⌊/" ">+/"]]
+s←{+/⍵×3ₓ₁} ⋄ hi←{⌈/⍵+1ₓ₁} ⋄ lo←{⌊/⍵+1ₓ₁} ⋄ c←{+/⍵>100ₓ₁} ⋄ u←(⍳5000ₓ)ₓ₁ ⋄ S←{⍵×(s u)} ⋄ Hi←{⍵×(hi u)} ⋄ Lo←{⍵×(lo u)} ⋄ C←{⍵×(c u)} ⋄ z←32•float 0 ⋄ e←•explain "[S∂z ; S∂z ; S∂z ; Hi∂z ; Hi∂z ; Hi∂z ; Lo∂z ; Lo∂z ; Lo∂z ; C∂z ; C∂z ; C∂z]" ⋄ reads←reports["S∂z" "S∂z" "S∂z" "Hi∂z" "Hi∂z" "Hi∂z" "Lo∂z" "Lo∂z" "Lo∂z" "C∂z" "C∂z" "C∂z"] ⋄ w←1×[s u ; s u ; s u ; hi u ; hi u ; hi u ; lo u ; lo u ; lo u ; c u ; c u ; c u] ⋄ (e.value≡w),(1ₓ×compiled reads),∧/(3#"×+/" "+⌈/" "+⌊/" ">+/"){∨/∊⍺⍷¨⍵.fused.glyphs}¨reads
+[1 1 1]ₓ
 
 ⍝ — A compiled part counts a comparison's Booleans in registers, with the interpreter's counts beside NaN, the infinities and items equal to the comparison's other argument, for f32 and f64 items, and for rows that blocks cross [compiled]
-c←{[+/⍵>0.5 ; +/⍵≤0.5 ; +/⍵=0.5 ; +/⍵≠0.5]} ⋄ r←{+/⍵>0.5} ⋄ v←$n ∞ ¯∞ 0.5 0.5 ¯0.5,0.0002×⍳4994 ⋄ f←32•float v ⋄ d←64•float v ⋄ m←2 5000⍴d,d ⋄ Cf←{+/⍵×(c f)} ⋄ Cd←{+/⍵×(c d)} ⋄ Rm←{+/⍵×(r m)} ⋄ o←4⍴0 ⋄ p←2⍴0 ⋄ e←•explain "[Cf∂o ; Cf∂o ; Cf∂o ; Cd∂o ; Cd∂o ; Cd∂o ; Rm∂p ; Rm∂p ; Rm∂p]" ⋄ (e.value≡1×[c f ; c f ; c f ; c d ; c d ; c d ; r m ; r m ; r m]),compiled e
+c←{[+/⍵>0.5 ; +/⍵≤0.5 ; +/⍵=0.5 ; +/⍵≠0.5]} ⋄ r←{+/⍵>0.5} ⋄ v←$n ∞ ¯∞ 0.5 0.5 ¯0.5,0.0002×⍳4994 ⋄ f←32•float v ⋄ d←64•float v ⋄ m←2 5000⍴d,d ⋄ Cf←{+/⍵×(c f)} ⋄ Cd←{+/⍵×(c d)} ⋄ Rm←{+/⍵×(r m)} ⋄ o←4⍴0 ⋄ p←2⍴0 ⋄ e←•explain "[Cf∂o ; Cf∂o ; Cf∂o ; Cd∂o ; Cd∂o ; Cd∂o ; Rm∂p ; Rm∂p ; Rm∂p]" ⋄ reads←reports["Cf∂o" "Cf∂o" "Cf∂o" "Cd∂o" "Cd∂o" "Cd∂o" "Rm∂p" "Rm∂p" "Rm∂p"] ⋄ (e.value≡1×[c f ; c f ; c f ; c d ; c d ; c d ; r m ; r m ; r m]),compiled reads
 $t $t
 
 ⍝ — A comparison of integers computes at the narrowest width that holds both operands, compiled or not, and counts as comparisons of the same values as floats do: two u8 arrays at u8, a u8 array beside 300 or ¯1, which need i16, at i16, and an i16 array at i16 [compiled]
-u←(⍳5000ₓ)ₓ₁ ⋄ v←(7ₓ×⍳5000ₓ)ₓ₁ ⋄ i←(¯2500ₓ+⍳5000ₓ)ₓ₂ ⋄ c←{[+/⍵>v ; +/⍵>300 ; +/⍵≥¯1 ; +/⍵<¯1ₓ ; +/⍵≤127]} ⋄ d←{[+/⍵>127 ; +/⍵≤¯300ₓ ; +/⍵=0ₓ₁]} ⋄ Cu←{+/⍵×(c u)} ⋄ Di←{+/⍵×(d i)} ⋄ o←5⍴0 ⋄ p←3⍴0 ⋄ e←•explain "[Cu∂o ; Cu∂o ; Cu∂o ; Di∂p ; Di∂p ; Di∂p]" ⋄ x←1×u ⋄ y←1×v ⋄ j←1×i ⋄ f←[+/x>y ; +/x>300 ; +/x≥¯1 ; +/x<¯1 ; +/x≤127] ⋄ g←[+/j>127 ; +/j≤¯300 ; +/j=0] ⋄ (e.value≡1×[f;f;f;g;g;g]),compiled e
+u←(⍳5000ₓ)ₓ₁ ⋄ v←(7ₓ×⍳5000ₓ)ₓ₁ ⋄ i←(¯2500ₓ+⍳5000ₓ)ₓ₂ ⋄ c←{[+/⍵>v ; +/⍵>300 ; +/⍵≥¯1 ; +/⍵<¯1ₓ ; +/⍵≤127]} ⋄ d←{[+/⍵>127 ; +/⍵≤¯300ₓ ; +/⍵=0ₓ₁]} ⋄ Cu←{+/⍵×(c u)} ⋄ Di←{+/⍵×(d i)} ⋄ o←5⍴0 ⋄ p←3⍴0 ⋄ e←•explain "[Cu∂o ; Cu∂o ; Cu∂o ; Di∂p ; Di∂p ; Di∂p]" ⋄ reads←reports["Cu∂o" "Cu∂o" "Cu∂o" "Di∂p" "Di∂p" "Di∂p"] ⋄ x←1×u ⋄ y←1×v ⋄ j←1×i ⋄ f←[+/x>y ; +/x>300 ; +/x≥¯1 ; +/x<¯1 ; +/x≤127] ⋄ g←[+/j>127 ; +/j≤¯300 ; +/j=0] ⋄ (e.value≡1×[f;f;f;g;g;g]),compiled reads
 $t $t
 
 ⍝ — A stage whose steps don't all lower compiles each run of steps that do, and runs the others on their precompiled kernels: here `3|⍵` runs precompiled, and the steps after it run as one compiled part, with the interpreter's values [compiled]
-k←{((⍵-0.5)×⍵+0.5)+3|⍵} ⋄ v←0.001×⍳5000 ⋄ K←{+/⍵×(k v)} ⋄ o←0×v ⋄ e←•explain "[K∂o ; K∂o ; K∂o]" ⋄ w←k v ⋄ (e.value≡[w;w;w]),compiled e
+k←{((⍵-0.5)×⍵+0.5)+3|⍵} ⋄ v←0.001×⍳5000 ⋄ K←{+/⍵×(k v)} ⋄ o←0×v ⋄ e←•explain "[K∂o ; K∂o ; K∂o]" ⋄ reads←reports["K∂o" "K∂o" "K∂o"] ⋄ w←k v ⋄ (e.value≡[w;w;w]),compiled reads
 $t $t
 
 ⍝ — An ordinary integer is a fixed integer of the int width. A fixed integer of that width displays with plain ₓ, a weak literal beside bytes takes their width, plain ₓ gives the int width, and integer ÷ₓ wraps where its quotient doesn't fit
 u←[100 200]ₓ₁ ⋄ [⍕[1 2]ₓ₄+1ₓ ; u+1ₓ ; (uₓ)+200ₓ ; ¯2147483648ₓ÷ₓ¯1ₓ]   ⍝ ["[2 3]ₓ" [101 201]ₓ₁ [300 400]ₓ ¯2147483648ₓ]
+
+⍝ — Weak literal minima do not specialize opaque inputs, and tacit and dfn additions share promotion
+f←1ₓ₁+ ⋄ g←{1ₓ₁+⍵} ⋄ u←1ₓ ⋄ k←[kind f u;kind g u] ⋄ u←256ₓ
+[kind 1ₓ₁+1ₓ ; kind 1ₓ₁+256ₓ ; kind [1ₓ 2ₓ] ; k ; f u ; g u]
+⍝ =>
+["uint8";"int16";"int32";["int32";"int32"];257ₓ;257ₓ]
 
 ⍝ — •csv and •json read integers at the int width, whatever their values, as every new integer does
 nl←•ucs 10 ⋄ (kind (•csv "a",nl,"7").a) (kind (•json "{""a"":[1,2]}").a)   ⍝ "int32" "int32"
@@ -265,15 +271,15 @@ d←[3 4]⍴0.1×⍳12 ⋄ dn←["r":3 "c":4]⍴d ⋄ dk←["a" "b" "c" "d"]:⍤
 $t $t
 
 ⍝ — Block stages run a labelled program's steps through its layouts' maps. Where two arrays' keys differ, the program pairs them by the union of the keys, as the interpreter does, and each missing item reads as 0
-d←[3 4]⍴0.1×⍳12 ⋄ dn←["r":3 "c":4]⍴d ⋄ dk←["a" "b" "c" "d"]:⍤1 d ⋄ dq←["a" "b" "c" "e"]:⍤1 d ⋄ g←{(⍵-0.5)×⍵+0.5} ⋄ h←{⍺+⍵×2} ⋄ Gk←{+/,⍵×(g dk)} ⋄ Gn←{+/,⍵×(g dn)} ⋄ Hq←{+/,⍵×(dk h dq)} ⋄ zk←0×dk ⋄ zn←0×dn ⋄ zq←0×(dk h dq) ⋄ e←•explain "[Gk∂zk ; Gk∂zk ; Gn∂zn ; Gn∂zn]" ⋄ q←•explain "[Hq∂zq ; Hq∂zq]" ⋄ [staged e ; 2ₓ=≢q.programs.event ; (⍕¨q.value)≡2⍴⊂⍕dk+dq×2]
+d←[3 4]⍴0.1×⍳12 ⋄ dn←["r":3 "c":4]⍴d ⋄ dk←["a" "b" "c" "d"]:⍤1 d ⋄ dq←["a" "b" "c" "e"]:⍤1 d ⋄ g←{(⍵-0.5)×⍵+0.5} ⋄ h←{⍺+⍵×2} ⋄ Gk←{+/,⍵×(g dk)} ⋄ Gn←{+/,⍵×(g dn)} ⋄ Hq←{+/,⍵×(dk h dq)} ⋄ zk←0×dk ⋄ zn←0×dn ⋄ zq←0×(dk h dq) ⋄ e←•explain "[Gk∂zk ; Gk∂zk ; Gn∂zn ; Gn∂zn]" ⋄ reads←reports["Gk∂zk" "Gk∂zk" "Gn∂zn" "Gn∂zn"] ⋄ q←•explain "[Hq∂zq ; Hq∂zq]" ⋄ reads_q←reports["Hq∂zq" "Hq∂zq"] ⋄ [staged reads ; staged reads_q ; (⍕¨q.value)≡2⍴⊂⍕dk+dq×2]
 $t $t $t
 
 ⍝ — A step that reads another step of its group through a table or a transpose ends the group, and the next stage reads the stored step through that map, as with permuted keys or named axes in another order
-d←[3 4]⍴0.1×⍳12 ⋄ dk←["a" "b" "c" "d"]:⍤1 d ⋄ dp←["d" "c" "b" "a"]:⍤1 d ⋄ dn←["r":3 "c":4]⍴d ⋄ dt←["c":4 "r":3]⍴⍉d ⋄ h←{(⍺+⍵×2)×3} ⋄ Hp←{+/,⍵×(dk h dp)} ⋄ Ht←{+/,⍵×(dn h dt)} ⋄ zp←0×(dk h dp) ⋄ zt←0×(dn h dt) ⋄ p←•explain "[Hp∂zp ; Hp∂zp]" ⋄ t←•explain "[Ht∂zt ; Ht∂zt]" ⋄ [staged p ; staged t ; (⍕¨p.value)≡2⍴⊂⍕(dk+dp×2)×3 ; (⍕¨t.value)≡2⍴⊂⍕(dn+dt×2)×3]
+d←[3 4]⍴0.1×⍳12 ⋄ dk←["a" "b" "c" "d"]:⍤1 d ⋄ dp←["d" "c" "b" "a"]:⍤1 d ⋄ dn←["r":3 "c":4]⍴d ⋄ dt←["c":4 "r":3]⍴⍉d ⋄ h←{(⍺+⍵×2)×3} ⋄ Hp←{+/,⍵×(dk h dp)} ⋄ Ht←{+/,⍵×(dn h dt)} ⋄ zp←0×(dk h dp) ⋄ zt←0×(dn h dt) ⋄ p←•explain "[Hp∂zp ; Hp∂zp]" ⋄ reads_p←reports["Hp∂zp" "Hp∂zp"] ⋄ t←•explain "[Ht∂zt ; Ht∂zt]" ⋄ reads_t←reports["Ht∂zt" "Ht∂zt"] ⋄ [staged reads_p ; staged reads_t ; (⍕¨p.value)≡2⍴⊂⍕(dk+dp×2)×3 ; (⍕¨t.value)≡2⍴⊂⍕(dn+dt×2)×3]
 $t $t $t $t
 
 ⍝ — A fold along a window axis of at most 8 positions runs as steps of a block stage, which read the windows' source once for each position: through padding by any edge mode, along two window axes, and from a value that an earlier stage stores. Maxima and minima pass over NaN as the interpreter's folds do
-f←{+/¯3↕⍵} ⋄ g←{⌈/["size":3 "edge":"wrap"]↕⍵} ⋄ h←{⌊/⌊/3 3↕⍵} ⋄ k←{2×+/3↕⍵+1} ⋄ p←{⌈/₂ ₃[[2 2]⋄[2 2]]↕⍵} ⋄ v←0.25×⍳12 ⋄ w←1.5 $n 2 0.5 $n $n 3 4 2.5 $n 1 6 ⋄ m←[3 4]⍴w ⋄ F←{+/,⍵×(f v)} ⋄ G←{+/,⍵×(g w)} ⋄ H←{+/,⍵×(h m)} ⋄ K←{+/,⍵×(k v)} ⋄ P←{+/,⍵×(p m)} ⋄ zf←0×(f v) ⋄ zg←0×(g w) ⋄ zh←0×(h m) ⋄ zk←0×(k v) ⋄ zp←0×(p m) ⋄ e←•explain "[F∂zf ; F∂zf ; G∂zg ; G∂zg ; H∂zh ; H∂zh ; K∂zk ; K∂zk ; P∂zp ; P∂zp]" ⋄ (e.value≡[f v ; f v ; g w ; g w ; h m ; h m ; k v ; k v ; p m ; p m]),staged e
+f←{+/¯3↕⍵} ⋄ g←{⌈/["size":3 "edge":"wrap"]↕⍵} ⋄ h←{⌊/⌊/3 3↕⍵} ⋄ k←{2×+/3↕⍵+1} ⋄ p←{⌈/₂ ₃[[2 2]⋄[2 2]]↕⍵} ⋄ v←0.25×⍳12 ⋄ w←1.5 $n 2 0.5 $n $n 3 4 2.5 $n 1 6 ⋄ m←[3 4]⍴w ⋄ F←{+/,⍵×(f v)} ⋄ G←{+/,⍵×(g w)} ⋄ H←{+/,⍵×(h m)} ⋄ K←{+/,⍵×(k v)} ⋄ P←{+/,⍵×(p m)} ⋄ zf←0×(f v) ⋄ zg←0×(g w) ⋄ zh←0×(h m) ⋄ zk←0×(k v) ⋄ zp←0×(p m) ⋄ e←•explain "[F∂zf ; F∂zf ; G∂zg ; G∂zg ; H∂zh ; H∂zh ; K∂zk ; K∂zk ; P∂zp ; P∂zp]" ⋄ reads←reports["F∂zf" "F∂zf" "G∂zg" "G∂zg" "H∂zh" "H∂zh" "K∂zk" "K∂zk" "P∂zp" "P∂zp"] ⋄ (e.value≡[f v ; f v ; g w ; g w ; h m ; h m ; k v ; k v ; p m ; p m]),staged reads
 $t $t
 
 ⍝ — A program's key holds its arguments' labels, so arguments with other keys run from another program, with their own keys in the result
@@ -295,3 +301,7 @@ stops←{≢(•explain ⍵).stopped.reason}¨"{-/⍵}∂e" "{÷/⍵}∂e"
 [{-/⍵}∂e ; {÷/⍵}∂e ; stops]
 ⍝ =>
 [0⍴0 ; 0⍴0 ; [0 0]ₓ]
+
+⍝ structural-operator-captures — Axis names and rank vectors held in names remain call-time inputs, even after a body has been recorded
+d←["r":2 "c":3]⍴⍳6 ⋄ axis←"r" ⋄ f←{+/⍠axis ⍵} ⋄ a←f d ⋄ axis←"c" ⋄ b←f d ⋄ m←2 3⍴⍳6 ⋄ ranks←0 1 ⋄ g←{≢⍤ranks ⍵} ⋄ c←g m ⋄ ranks←1 0 ⋄ e←g m ⋄ [a≡+⌿d ; b≡+/d ; c≡(≢⍤[0 1])m ; e≡(≢⍤[1 0])m]
+4⍴$t

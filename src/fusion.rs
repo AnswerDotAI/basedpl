@@ -19,13 +19,14 @@ pub(crate) fn built(origin: Origin<&[Value]>, call: &CallView) -> Result<Outputs
     let mut reads: Vec<_> = origin.list.iter().enumerate()
         .map(|(position, value)| Ok(Read::linear(if origin.executes(position) { value.clone() } else { description_source(value)? }))).collect::<Result<_>>()?;
     let (step, descs, _) = row(call, &mut reads)?;
-    if !origin.cacheable_metadata(origin.list.iter()) || !descs.as_ref().is_none_or(Description::cacheable_metadata) {
+    Tracing::produced(&step, call)?;
+    if !origin.cacheable_metadata(origin.list.iter()) || !descs.described().is_none_or(Description::cacheable_metadata) {
         Tracing::stop(Reason::Renderer, origin.site.clone())?;
     }
     let level = origin.list.iter().enumerate().filter(|(position, _)| origin.executes(*position)).filter_map(|(_, value)| value.level()).max();
-    let (observing, acts) = (descs.is_none(), origin.acts());
+    let (observing, acts) = (descs.observes(), origin.acts());
     let site = origin.site.clone();
-    let descs = descs.unwrap_or_else(Outputs::empty);
+    let descs = descs.into_description();
     let count = descs.as_ref().len();
     if observing { Tracing::stop(Reason::HostKind, site.clone())?; }
     let node = Node::build(step, origin.with_list(reads), descs, level);

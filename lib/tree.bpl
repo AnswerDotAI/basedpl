@@ -49,7 +49,7 @@ chk ← {  ⍝ tree stats / integrity check.
   ht←≥⌈/hts  ⍝ node height.
   kr←⌽2⍴¯1⌽keys  ⍝ key range for subtree.
   ⍺>0ₓ?[ok sz dp ht kr];  ⍝ subtree: ok size tot_dep height range.
-  [ok sz ⌊0.5+dp÷sz ht]  ⍝ root: ok size mean_depth height.
+  [ok sz ⌊0.5+dp÷ₐsz ht]  ⍝ root: ok size mean_depth height.
 }  ⍝ :: ∇ t → y s d h {r}
 
 ⍝ Shared by sbst, redblack and splay.
@@ -146,7 +146,7 @@ avl ← {  ⍝ Adelson-Velskii, Landis trees.
     ht←≥⌈/hts  ⍝ subtree height.
     kr←⌽2⍴¯1⌽keys  ⍝ key range for subtree.
     ⍺>0ₓ?[ok sz dp ht kr];  ⍝ subtree: ok size tot_dep height range.
-    [ok sz ⌊0.5+dp÷sz ht]  ⍝ root: ok size mean_depth height.
+    [ok sz ⌊0.5+dp÷ₐsz ht]  ⍝ root: ok size mean_depth height.
   }  ⍝ :: ∇ t → y s d h {r}
   fmt←{  ⍝ formatted tree ⍵, its key=value after decoration ⍺.
     ⍵≡0?0 0⍴"";  ⍝ null tree: null format.
@@ -366,7 +366,7 @@ redblack ← {  ⍝ Red-black trees.
     [ht sz]←≥(⌈/hs),+/ss  ⍝ tree height and size.
     dp←⍺++/ds  ⍝ total depths.
     ⍺>0ₓ?[ok sz dp ht kr blks blk];  ⍝ subtree stats.
-    [ok sz ⌊0.5+dp÷sz ht]  ⍝ root: ok size mean_depth height.
+    [ok sz ⌊0.5+dp÷ₐsz ht]  ⍝ root: ok size mean_depth height.
   }  ⍝ ok size tot_dep ht rng blks blk ← ∇ t
   search←{  ⍝ search subtree ⍺ for key ⊃⍵.
     [inf red [lft rgt]]←⍺  ⍝ parts of node.

@@ -42,14 +42,42 @@ impl Value {
 pub(super) fn unique(right: &Value, numeric: Numeric) -> Result<Value, Error> { replicate(&unique_mask(right, numeric)?, right, None, false, None) }
 
 /// `left` with the major cells of `right` that it lacks. A weak atom takes the other argument's numeric kind before `without` makes it an array.
-pub(super) fn union(left: &Value, right: &Value, numeric: Numeric) -> Result<Value, Error> {
+pub(super) fn union(origin: &Origin<&[Value]>, left: &Value, right: &Value, numeric: Numeric) -> Result<Value, Error> {
     let weak = structural::joined_weak(right, left, numeric)?;
-    catenate(left, &without(&weak, left, numeric)?, None, true, numeric)
+    origin.apply(Operation::Primitive { primitive: Primitive::CatenateFirst, pairing: Pairing::Axes }, &[left.clone(), without(&weak, left, numeric)?])
 }
 
 pub(super) fn intersection(left: &Value, right: &Value, numeric: Numeric) -> Result<Value, Error> {
     replicate(&found_mask(left, right, true, numeric)?, left, None, false, None)
 }
+
+pub(super) fn ordered_jvp(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
+    let Operation::Primitive { primitive, .. } = origin.operation else { unreachable!() };
+    let arguments = origin.layout().arguments().map(|root| origin.root_input(root).map(Cow::into_owned)).collect::<Result<Vec<_>, _>>()?;
+    let primals = arguments.iter().map(crate::derivative::detach).collect::<Vec<_>>();
+    let apply = |primitive, arguments: &[Value]| origin.apply(Operation::Primitive { primitive, pairing: Pairing::Axes }, arguments);
+    if primitive.info().linear.zero[usize::from(arguments.len() == 2)] { return apply(primitive, &primals).map(Outputs::one); }
+    let result = if let [left, right] = arguments.as_slice() {
+        let union = primitive == Primitive::Union;
+        let (source, other) = if union { (&primals[1], &primals[0]) } else { (&primals[0], &primals[1]) };
+        let mut mask = apply(Primitive::Member, &[source.clone(), other.clone()])?;
+        if primitive != Primitive::Intersection { mask = apply(Primitive::Math(crate::number::Math::Not), &[mask])?; }
+        let selected = apply(Primitive::Replicate(false), &[mask, if union { right.clone() } else { left.clone() }])?;
+        if union { apply(Primitive::CatenateFirst, &[left.clone(), selected])? } else { selected }
+    } else {
+        let positions = match primitive {
+            Primitive::Compare(down @ (Comparison::Less | Comparison::Greater)) => {
+                if arguments[0].is_unit() { return Ok(Outputs::one(arguments[0].clone())); }
+                apply(Primitive::Grade(down == Comparison::Greater), &primals)?
+            }
+            _ => { let result = apply(primitive, &primals)?; apply(Primitive::Iota, &[primals[0].clone(), result])? }
+        };
+        let positions = apply(Primitive::Enclose, &[positions])?;
+        apply(Primitive::Index, &[positions, arguments[0].clone()])?
+    };
+    Ok(Outputs::one(result))
+}
+
 
 pub(super) fn find(left: &Value, right: &Value, numeric: Numeric) -> Result<Value, Error> {
     let shape = right.shape();
@@ -107,10 +135,17 @@ pub(super) fn duplicates_mask(right: &Value, numeric: Numeric) -> Result<Value, 
 /// The distinct major cells that occur more than once, in order of first appearance.
 pub(super) fn duplicates(right: &Value, numeric: Numeric) -> Result<Value, Error> { replicate(&duplicates_mask(right, numeric)?, right, None, false, None) }
 
+pub(super) fn runs_expansion(origin: Origin<&[Value]>) -> Result<Option<Outputs<Value>>, Error> {
+    let roots = origin.layout().arguments();
+    if roots.len() != 1 { return Ok(None); }
+    let prepared = Operation::prepare(&origin)?;
+    runs(&origin, origin.root_input(roots.start)?.as_ref(), prepared.view().numeric()?).map(|value| Some(Outputs::one(value)))
+}
+
 /// The runs of adjacent matching major cells: the length of each run, as exact integers, and its first cell. Cells match as `∪` matches them. `#⁻¹` decodes the result back to `right`. `#/` does too, unless `right` is a unit or has leading keys. A unit gives the rank-0 length 1 and the unit itself. A keyed leading axis moves into a third item, the keys of every position, because a run's cells can have different keys.
-pub(super) fn runs(right: &Value, numeric: Numeric) -> Result<Value, Error> {
+pub(super) fn runs(origin: &Origin<&[Value]>, right: &Value, numeric: Numeric) -> Result<Value, Error> {
     if right.is_unit() { return Ok(Value::tuple(vec![Value::integer(1), right.clone()])); }
-    let (first, axis) = classes(right, numeric)?;
+    let (first, axis) = classes(&right.read(ReadKind::Value)?, numeric)?;
     let starts: Vec<bool> = first.iter().enumerate().map(|(i, &f)| i == 0 || f != first[i - 1]).collect();
     let mut lengths: Vec<u64> = Vec::new();
     for &start in &starts {
@@ -118,10 +153,11 @@ pub(super) fn runs(right: &Value, numeric: Numeric) -> Result<Value, Error> {
         *lengths.last_mut().expect("the first cell starts a run") += 1;
     }
     let lengths = generated_items(vec![lengths.len()], lengths.into_iter(), starts.len() as u64 + 1, Numbers::Exact).described("invalid run lengths")?;
-    let values = replicate(&axis.booleans(starts).described("invalid run starts")?, right, None, false, None)?;
+    let starts = axis.booleans(starts).described("invalid run starts")?;
+    let values = origin.apply(Operation::Primitive { primitive: Primitive::Replicate(false), pairing: Pairing::Axes }, &[starts, right.clone()])?;
     if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).described("invalid runs"); }
-    let layout = values.layout().clone().without_keys(0);
-    let values = values.with_layout(layout).described("invalid runs")?;
+    let values = origin.apply(Operation::Primitive { primitive: Primitive::Keys(false), pairing: Pairing::Explicit { fill: false } },
+        &[values, Value::constant(Value::integer(0))])?;
     let all = positions(right, (0..right.shape()[0] as u32).collect()).described("invalid run keys")?;
     Value::new(vec![3], vec![lengths, values, all]).described("invalid runs")
 }
@@ -171,8 +207,32 @@ pub(super) fn axis_iota(call: &CallView<'_>) -> Result<Value, Error> {
     keyed::named_selectors(&layout, &axes)
 }
 
+/// One invariant haystack searches all framed needles in the same ordinary call.
+pub(super) fn index_cells(origin: &Origin<&[Value]>, call: &CallView, wholes: &[Value], frame: usize) -> Result<Origin<Vec<Value>>, Error> {
+    let roots = call.layout().arguments();
+    let level = crate::transform::Level::current_batch_rule().or_internal()?;
+    if roots.len() != 2 { return crate::batch::unsupported(origin, call, wholes, frame); }
+    let left = call.layout().root(roots.start);
+    let right = call.layout().root(roots.back().or_internal()?);
+    let (Some(haystack), Some(needles)) = (call.root_desc(left.index), call.root_desc(right.index)) else {
+        return crate::batch::unsupported(origin, call, wholes, frame);
+    };
+    if left.leaves.clone().any(|position| origin.list[position].carried_level() == Some(level.id))
+        || needles.shape().len() < haystack.shape().len().saturating_sub(1) {
+        return crate::batch::unsupported(origin, call, wholes, frame);
+    }
+    Ok(origin.with_list(wholes.to_vec()))
+}
+
+
 pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
-    if call.layout().arguments().len() != 1 { return host_build(call, set); }
+    let roots = call.layout().arguments();
+    if roots.len() == 2 {
+        let (Some(haystack), Some(needles)) = (call.root_desc(roots.start), call.root_desc(roots.back().or_internal()?)) else { return host_build(call, set); };
+        let (_, frame, Some(bound)) = plan::search_frame(&haystack.layout, &needles.layout)? else { return host_build(call, set); };
+        return Ok((Step::Call, PlannedOutputs::Described(Outputs::one(Some(frame.positions_desc(bound)))), None));
+    }
+    if roots.len() != 1 { return host_build(call, set); }
     let (len, kind, layout, descending) = if let Some((source, axes)) = index_axes(call)? {
         let [axis] = axes.as_slice() else { return host_build(call, set); };
         if source.keys(*axis).is_some() { return host_build(call, set); }
@@ -196,7 +256,7 @@ pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mappin
     generated_len(&[len])?;
     let desc = Desc { kind, atom: false, layout, range: Some(rustymath::facts::Range { lo: 0.0, hi: len.saturating_sub(1) as f64 }) };
     let read = ReadPlan::index(if descending { len.saturating_sub(1) as i64 } else { 0 }, if descending { -1 } else { 1 }, len);
-    Ok((Step::Index { descending }, Some(Outputs::one(Some(desc))), Some(read)))
+    Ok((Step::Index { descending }, PlannedOutputs::Described(Outputs::one(Some(desc))), Some(read)))
 }
 /// A negative length counts down, as J's `i.` does: `⍳¯3` is `2 1 0`. A keyed shape names the result's axes, as it does for reshape: `⍳["i":3]` is `0 1 2` along an axis named `i`.
 pub(super) fn iota(right: &Value, numeric: Numeric) -> Result<Value, Error> {
@@ -214,6 +274,18 @@ pub(super) fn iota(right: &Value, numeric: Numeric) -> Result<Value, Error> {
         Value::from_parts(shape, data, prototype)
     };
     indices?.with_axis_names(super::structural::shape_names(right)).described("invalid iota")
+}
+
+pub(super) fn range_jvp(origin: Origin<&[Value]>) -> Result<Outputs<Value>, Error> {
+    let primals = origin.list.iter().map(crate::derivative::detach).collect::<Vec<_>>();
+    let result = Operation::dispatch(origin.with_list(primals.as_slice()))?.assemble()?;
+    let roots = origin.layout().arguments();
+    if roots.len() != 2 { return Ok(Outputs::one(result)); }
+    let start = origin.root_input(roots.start)?.into_owned();
+    // Counts are discrete; translating the start translates every generated item.
+    let shift = origin.apply(Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Minus), pairing: Pairing::Axes },
+        &[start.clone(), crate::derivative::detach(&start)])?;
+    origin.apply(Operation::Primitive { primitive: Primitive::Arithmetic(Arithmetic::Plus), pairing: Pairing::Axes }, &[shift, result]).map(Outputs::one)
 }
 
 /// `a↦b` counts from `a` towards `b` in steps of 1, as far as `b` without passing it, and floors the number of steps within comparison tolerance. Each item is `a+i` or `a-i` for a count `i`, which is exact, or a fixed integer of the width that fixed arguments give (`Numeric::for_values`), so the result's type follows `a`'s, or that fixed type. The distance is `b-a` between ordinary values, so it can't wrap, and two characters count through the code points between them. `↦n` is the first `⌊|n|` counting numbers, negated when `n` is negative, with the type of `n`.

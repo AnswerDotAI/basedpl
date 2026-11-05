@@ -17,6 +17,18 @@ fn native_expression_and_diagnostic() {
 }
 
 #[test]
+fn measurement_reuses_body_with_fresh_locals() {
+    for (code, count, ready, succeeds) in [("x←x+1 ⋄ x=8?100⍴x;missing", 3, true, true), ("missing", 0, false, true), ("missing", 0, true, false), ("missing", 1, false, false)] {
+        let spec = serde_json::json!({"setup":"x←7", "code":code, "count":count, "ready":ready}).to_string();
+        let output = Command::new(env!("CARGO_BIN_EXE_bpl")).args(["--measure", &spec]).output().unwrap();
+        assert_eq!(output.status.success(), succeeds, "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(output.stdout.is_empty());
+        assert_eq!(String::from_utf8_lossy(&output.stderr).contains("bpl-profile-ready\n"), ready && succeeds);
+    }
+}
+
+
+#[test]
 fn repl_continuation_recovery_and_eof() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_bpl")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     child.stdin.take().unwrap().write_all("(2×3\n)+4\n1÷'a'\n2+2\n)\n¯2+5\n".as_bytes()).unwrap();

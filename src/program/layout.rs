@@ -1,11 +1,24 @@
 //! One key policy: structural facts, 0/1/more lengths, and parameters by read purpose.
 use crate::error::OrInternal;
-use super::{Desc, Origin, Key, Length, Live, Mode, ProgramKey};
+use super::{Desc, Origin, Key, Length, Live, Mode};
 use crate::program::trace::ReadKind;
 use crate::{
     Function, Number, Value, array::{Layout, Renderer, Trees}, error::Result, eval::OperatorKind, graph::Pending, primitive::{Operation, Primitive, Roles}
 };
-use std::{hash::{Hash, Hasher}, sync::Arc};
+use std::{borrow::Cow, hash::{Hash, Hasher}, sync::Arc};
+
+pub(crate) type KeyValue = fn(&mut Encoder, &Value, ReadKind) -> Result<()>;
+
+fn stored_parameter(value: &Value) -> Result<Cow<'_, Value>> {
+    let mut stored = Cow::Borrowed(value);
+    while let Value::Pending(pending) = stored.as_ref() {
+        let source = pending.source();
+        let value = source.node.is_complete().then(|| source.output.and_then(|output| source.node.stored(output))).flatten().or_internal()?;
+        stored = Cow::Owned(value);
+    }
+    if matches!(stored.as_ref(), Value::Carried { .. }) { return Err(crate::Error::internal()); }
+    Ok(stored)
+}
 
 pub(crate) struct WeakKey<T>(std::sync::Weak<T>);
 impl<T> WeakKey<T> { fn alive(&self) -> bool { self.0.strong_count() != 0 } }
@@ -38,7 +51,7 @@ impl Hash for Scalar {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct Axis { class: u8, equal: Option<u32>, name: Option<AxisName>, keys: Option<Vec<Option<AxisName>>> }
+pub(crate) struct Axis { class: u8, equal: Option<u32>, name: Option<Arc<str>>, keys: Option<Vec<Option<Arc<str>>>> }
 impl Hash for Axis {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.class.hash(state);
@@ -47,8 +60,6 @@ impl Hash for Axis {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) enum AxisName { Given(Arc<str>), Drawn(u32) }
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Count { Finite(Length, bool), Infinite(bool) }
 
@@ -65,13 +76,13 @@ pub(crate) enum Parameter {
 pub(crate) enum KeyPart {
     Stored(bool), Opaque(bool), Publishing(bool), Graph, Call, Node(usize), Output(Option<u32>), Source(usize), Operation(Operation), Mode(Mode), Roles(Roles),
     Arguments(usize, usize), Trees(Option<Arc<Trees>>), Captures(CaptureKey), Description { kind: crate::number::Kind, atom: bool, layout: LayoutKey },
-    Physical(Vec<(u8, usize)>), Parameter(ReadKind, Parameter), Missing, SourceBase(bool, Option<Arc<str>>), Count(usize, Vec<KeyPart>), Primitive(Primitive),
+    Shape(Vec<usize>), Physical(Vec<(u8, usize)>), Parameter(ReadKind, Parameter), Missing, SourceBase(bool, Option<Arc<str>>), Count(usize, Arc<[KeyPart]>), Primitive(Primitive),
     Operator(OperatorKind), Definition(WeakKey<crate::syntax::Definition>), Recorded(WeakKey<crate::eval::RecordedCode>), System(crate::system::SystemFunction),
     Train(usize), Array, Operand { structural: bool }, End
 }
 
 #[derive(Default)]
-pub(crate) struct Encoder { pub(crate) parts: Vec<KeyPart>, pub(super) lengths: Vec<usize>, names: Vec<Arc<str>> }
+pub(crate) struct Encoder { pub(crate) parts: Vec<KeyPart>, pub(super) lengths: Vec<usize> }
 
 impl Encoder {
     pub(crate) fn push(&mut self, part: KeyPart) { self.parts.push(part); }
@@ -84,7 +95,7 @@ impl Encoder {
     pub(crate) fn count(&mut self, stored: &Value) -> Result<Key> {
         debug_assert!(self.parts.is_empty());
         self.value(stored, ReadKind::Count)?;
-        Ok(Key(std::mem::take(&mut self.parts)))
+        Ok(Key(std::mem::take(&mut self.parts).into()))
     }
     pub(crate) fn definition(&mut self, definition: &Arc<crate::syntax::Definition>) { self.push(KeyPart::Definition(WeakKey(Arc::downgrade(definition)))); }
     pub(crate) fn recorded(&mut self, code: &Arc<crate::eval::RecordedCode>) { self.push(KeyPart::Recorded(WeakKey(Arc::downgrade(code)))); }
@@ -96,20 +107,10 @@ impl Encoder {
         }
     }
 
-    fn name(&mut self, name: &Arc<str>) -> AxisName {
-        if !rustymath::layout::hidden(name) || !name.contains(rustymath::layout::FRESH) { return AxisName::Given(name.clone()); }
-        let at = self.names.iter().position(|prior| prior == name).unwrap_or_else(|| {
-            self.names.push(name.clone());
-            self.names.len() - 1
-        });
-        AxisName::Drawn(at as u32)
-    }
-
     fn layout(&mut self, layout: &Layout) -> LayoutKey {
         let axes = layout.shape().iter().enumerate().map(|(axis, &length)| {
             let key = Axis { class: length.min(2) as u8, equal: self.lengths.iter().position(|&n| n == length).map(|i| i as u32),
-                name: layout.name(axis).map(|name| self.name(name)),
-                keys: layout.keys(axis).map(|keys| keys.names().iter().map(|name| name.as_ref().map(|name| self.name(name))).collect()) };
+                name: layout.name(axis).cloned(), keys: layout.keys(axis).map(|keys| keys.names().to_vec()) };
             self.lengths.push(length);
             key
         }).collect();
@@ -123,7 +124,16 @@ impl Encoder {
     }
 
     pub(crate) fn value(&mut self, value: &Value, purpose: ReadKind) -> Result<()> {
+        self.data(value);
         let stored = value.read_borrowed(purpose)?;
+        self.emit(stored.as_ref(), purpose)
+    }
+    pub(crate) fn stored(&mut self, value: &Value, purpose: ReadKind) -> Result<()> {
+        self.data(value);
+        self.emit(value, purpose)
+    }
+    fn emit(&mut self, value: &Value, purpose: ReadKind) -> Result<()> {
+        let stored = stored_parameter(value)?;
         let value = stored.as_ref();
         let parameter = match purpose {
             ReadKind::Description | ReadKind::RuntimeOnly => return Err(crate::Error::internal()),
@@ -131,7 +141,8 @@ impl Encoder {
             ReadKind::Count => {
                 let layout = self.layout(value.layout());
                 let lengths = value.elements().map(|value| {
-                    let number = value.as_number().ok_or_else(|| crate::Error::domain("expected a numeric count"))?;
+                    let stored = stored_parameter(&value)?;
+                    let number = stored.as_ref().as_number().ok_or_else(|| crate::Error::domain("expected a numeric count"))?;
                     if number.is_infinite() { return Ok(Count::Infinite(number.as_float().unwrap().is_sign_negative())); }
                     let count = number.integer()?;
                     let length = count.unsigned_abs() as usize;
@@ -148,17 +159,19 @@ impl Encoder {
     }
 
     fn parameter(&mut self, value: &Value) -> Result<Parameter> {
+        let stored = stored_parameter(value)?;
+        let value = stored.as_ref();
         Ok(match value {
             Value::Number(number) => Parameter::Number(Scalar(number.clone())),
             Value::Character(character) => Parameter::Character(*character),
             Value::Function(function) => {
                 let mut key = Encoder::default();
-                function.key_parts(&mut key)?;
+                function.key_parts(&mut key, Encoder::stored)?;
                 Parameter::Function(key.parts)
             }
             Value::Operator(operator) => {
                 let mut key = Encoder::default();
-                operator.key_parts(&mut key)?;
+                operator.key_parts(&mut key, Encoder::stored)?;
                 Parameter::Operator(key.parts)
             }
             Value::Array(_) => Parameter::Array(self.layout(value.layout()), value.elements().map(|item| self.parameter(&item)).collect::<Result<_>>()?),
@@ -167,10 +180,10 @@ impl Encoder {
     }
 
     /// Key a function or operator atom by its structure; false for any other value.
-    pub(crate) fn callable(&mut self, value: &Value) -> Result<bool> {
+    pub(crate) fn callable(&mut self, value: &Value, encode: KeyValue) -> Result<bool> {
         match value {
-            Value::Function(function) => function.key_parts(self)?,
-            Value::Operator(operator) => operator.key_parts(self)?,
+            Value::Function(function) => function.key_parts(self, encode)?,
+            Value::Operator(operator) => operator.key_parts(self, encode)?,
             _ => return Ok(false),
         }
         Ok(true)
@@ -190,13 +203,13 @@ impl Encoder {
         }
     }
 
-    pub(crate) fn finish(self) -> Key { Key(self.parts) }
+    pub(crate) fn finish(self) -> Key { Key(self.parts.into()) }
 }
 
 pub(crate) fn call_key(function: &Function, origin: &Origin<&[Value]>) -> Result<Key> {
     let mut key = Encoder::default();
     key.push(KeyPart::Call);
-    function.key_parts(&mut key)?;
+    function.key_parts(&mut key, Encoder::value)?;
     key.push(KeyPart::Operation(origin.operation.clone()));
     key.push(KeyPart::Mode(origin.mode));
     key.push(KeyPart::Roles(origin.roles.clone()));
@@ -205,10 +218,10 @@ pub(crate) fn call_key(function: &Function, origin: &Origin<&[Value]>) -> Result
     key.push(KeyPart::Captures(CaptureKey::of(&origin.bindings)));
     key.context(&origin.operation, origin.site.as_ref());
     for (position, value) in origin.list.iter().enumerate() {
-        if key.callable(value)? { continue; }
+        if key.callable(value, Encoder::value)? { continue; }
         if value.constant_value().is_some() { key.value(value, ReadKind::Value)?; continue; }
         let read = origin.read_kind(position);
-        if read.is_none() || matches!(read, Some(ReadKind::Kind | ReadKind::Description)) { key.data(value); }
+        if read.is_none() || read == Some(ReadKind::Description) { key.data(value); }
         if let Some(read) = read.filter(|read| *read != ReadKind::Description) { key.value(value, read)?; }
     }
     Ok(key.finish())
@@ -217,12 +230,16 @@ pub(crate) fn call_key(function: &Function, origin: &Origin<&[Value]>) -> Result
 pub(crate) fn guard_key(origin: &super::Origin<&[Value]>, reads: &[super::Parameter]) -> Result<Key> {
     let mut key = Encoder::default();
     for parameter in reads {
-        if let super::Parameter::Input { position, read } = parameter { key.value(origin.list.get(*position).or_internal()?, *read)?; }
+        if let super::Parameter::Input { position, read } = parameter {
+            let value = origin.list.get(*position).or_internal()?;
+            if *read == ReadKind::Description { super::trace::Tracing::shape(origin, value)?; key.push(KeyPart::Shape(value.shape().to_vec())); }
+            else { key.value(value, *read)?; }
+        }
     }
     Ok(key.finish())
 }
 
-pub(crate) fn graph_key(live: &Live) -> ProgramKey {
+pub(crate) fn graph_key(live: &Live) -> Result<Key> {
     let mut key = Encoder::default();
     key.push(KeyPart::Graph);
     let nodes: rustymath::hashing::HashMap<_, _> = live.nodes.iter().cloned().enumerate().map(|(i, node)| (node, i)).collect();
@@ -237,56 +254,64 @@ pub(crate) fn graph_key(live: &Live) -> ProgramKey {
     };
     for node in &live.nodes {
         key.push(KeyPart::Stored(node.completed().is_some()));
-        node.with_address_state(|state| match state {
-            crate::graph::State::Step { origin, .. } => {
-                key.push(KeyPart::Publishing(live.publishes(node, origin)));
-                key.push(KeyPart::Operation(origin.operation.clone()));
-                key.push(KeyPart::Mode(origin.mode));
-                key.push(KeyPart::Arguments(origin.explicit as usize, origin.explicit_roots as usize));
-                key.push(KeyPart::Roles(origin.roles.clone()));
-                key.push(KeyPart::Trees(origin.trees.clone()));
-                key.push(KeyPart::Captures(CaptureKey::of(&origin.bindings)));
-                key.context(&origin.operation, origin.site.as_ref());
-                for (i, read) in origin.list.iter().enumerate() {
-                    key.push(KeyPart::Opaque(read.opaque));
-                    match &read.operand {
-                        value @ Value::Pending(_) => reference(&mut key, value),
-                        value => {
-                            key.push(KeyPart::Source(live.values[&super::Identity::of(value)]));
-                            if !key.callable(value).expect("a callable has a structural key") {
-                                if let Some(read) = origin.read_kind(i).filter(|read| *read != ReadKind::Description) {
-                                    key.value(value, read).expect("resolved call parameters");
-                                } else { key.data(value); }
+        node.with_address_state(|state| -> Result<()> {
+            match state {
+                crate::graph::State::Step { origin, .. } => {
+                    key.push(KeyPart::Publishing(live.publishes(node, origin)));
+                    key.push(KeyPart::Operation(origin.operation.clone()));
+                    key.push(KeyPart::Mode(origin.mode));
+                    key.push(KeyPart::Arguments(origin.explicit as usize, origin.explicit_roots as usize));
+                    key.push(KeyPart::Roles(origin.roles.clone()));
+                    key.push(KeyPart::Trees(origin.trees.clone()));
+                    key.push(KeyPart::Captures(CaptureKey::of(&origin.bindings)));
+                    key.context(&origin.operation, origin.site.as_ref());
+                    for (i, read) in origin.list.iter().enumerate() {
+                        key.push(KeyPart::Opaque(read.opaque));
+                        match &read.operand {
+                            value @ Value::Pending(_) => {
+                                reference(&mut key, value);
+                                if let Some(read) = origin.read_kind(i).filter(|read| matches!(read, ReadKind::Structure | ReadKind::Value)) {
+                                    key.stored(value, read)?;
+                                }
+                            }
+                            value => {
+                                key.push(KeyPart::Source(live.values[&super::Identity::of(value)]));
+                                if !key.callable(value, Encoder::stored)? {
+                                    if let Some(read) = origin.read_kind(i).filter(|read| *read != ReadKind::Description) {
+                                        key.stored(value, read)?;
+                                    } else { key.data(value); }
+                                }
                             }
                         }
                     }
                 }
-            }
-            crate::graph::State::Input { value, role, .. } => {
-                let pending = if node.descs().is_empty() { Pending::control(node.clone()) } else { Pending::data(node.clone(), 0) };
-                if role == super::trace::Role::Seed || !matches!(value, Some(Value::Pending(_))) {
-                    key.push(KeyPart::Source(live.input_position(&pending, value)));
-                }
-                match value {
-                    Some(value @ Value::Pending(_)) => reference(&mut key, value), Some(value) => key.data(value),
-                    None => match node.desc(0) { Some(desc) => key.description(desc), None => key.push(KeyPart::Missing) }
-                }
-            }
-            crate::graph::State::Done(values) => {
-                for (i, value) in values.as_ref().iter().enumerate() {
-                    if node.is_literal() { key.value(value, ReadKind::Value).expect("a source literal is stored"); } else {
-                        key.push(KeyPart::Source(live.input_position(&Pending::data(node.clone(), i as u32), Some(value))));
-                        key.data(value);
+                crate::graph::State::Input { value, role, .. } => {
+                    let pending = if node.descs().is_empty() { Pending::control(node.clone()) } else { Pending::data(node.clone(), 0) };
+                    if role == super::trace::Role::Seed || !matches!(value, Some(Value::Pending(_))) {
+                        key.push(KeyPart::Source(live.input_position(&pending, value)));
+                    }
+                    match value {
+                        Some(value @ Value::Pending(_)) => reference(&mut key, value), Some(value) => key.data(value),
+                        None => match node.desc(0) { Some(desc) => key.description(desc), None => key.push(KeyPart::Missing) }
                     }
                 }
-                if !node.is_literal() { key.push(KeyPart::Source(live.input_position(&Pending::control(node.clone()), None))); }
-                key.push(KeyPart::Output(None));
+                crate::graph::State::Done(values) => {
+                    for (i, value) in values.as_ref().iter().enumerate() {
+                        if node.is_literal() { key.stored(value, ReadKind::Value)?; } else {
+                            key.push(KeyPart::Source(live.input_position(&Pending::data(node.clone(), i as u32), Some(value))));
+                            key.data(value);
+                        }
+                    }
+                    if !node.is_literal() { key.push(KeyPart::Source(live.input_position(&Pending::control(node.clone()), None))); }
+                    key.push(KeyPart::Output(None));
+                }
             }
-        });
+            Ok(())
+        })?;
         key.push(KeyPart::End);
     }
     for root in &live.roots { reference(&mut key, root); }
-    ProgramKey(key.finish())
+    Ok(key.finish())
 }
 
 pub(crate) fn lifetime(key: &Key) -> Option<bool> {

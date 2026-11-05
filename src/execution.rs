@@ -20,6 +20,7 @@ impl InterruptHandle {
 /// The message of the timeout error that a passed request deadline gives.
 const TIME_LIMIT: &str = "the request reached its time limit";
 
+#[derive(Clone)]
 pub struct EvalOptions {
     pub interrupt: InterruptHandle,
     pub timeout: Option<Duration>,

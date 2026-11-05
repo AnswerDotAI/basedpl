@@ -3,7 +3,7 @@
 //! - A number is a JavaScript number, and a Boolean is `true` or `false`. A string is a JavaScript string, and a record is an object.
 //! - Any other array is `{shape, data}`. `data` is a typed array when every item is a number: `Float32Array` for 32-bit floats, `Float64Array` for other approximate and fractional numbers, and for integers the width BPL stores them at, `Uint8Array`, `Int16Array`, `Int32Array` or `BigInt64Array`, as Python's `.np` does. Complex numbers are their real and imaginary parts in turn, with a last axis of length 2. Otherwise `data` is an `Array` of items. Axis names and keys, when an array has them, are `axis_names` and `axis_keys`, as in `protocol.rs`.
 //! - A JavaScript number becomes a float of the session's default width, a `BigInt` an exact one, an `Array` a vector and a function a BPL function. An object with `shape` and `data` becomes an array, and any other object a record. `undefined` and `null` give no value.
-use crate::{Described, ErrorKind, Number, Value, array::Items, keyed::{self, Form}};
+use crate::{Described, Error, ErrorKind, Number, Value, array::Items, keyed::{self, Form}};
 use rustymath::{buffer::{Buffer, Complexes, FloatBuf, FloatWidth, Floats, Ints, View}, error::Kind};
 use serde_json::{Value as Json, json};
 
@@ -50,7 +50,7 @@ pub fn export(value: &Value) -> Result<Js, crate::Error> {
         exported(&value).described("a value cannot cross into JavaScript")
     })
 }
-fn exported(value: &Value) -> Result<Js, ErrorKind> {
+fn exported(value: &Value) -> Result<Js, Error> {
     match value {
         Value::Number(n) => number(n),
         Value::Character(c) => Ok(Js::Text(c.to_string())),
@@ -66,7 +66,7 @@ fn exported(value: &Value) -> Result<Js, ErrorKind> {
     }
 }
 
-fn number(n: &Number) -> Result<Js, ErrorKind> {
+fn number(n: &Number) -> Result<Js, Error> {
     if let Some(b) = n.as_bool() { return Ok(Js::Bool(b)); }
     match n.complex_items() {
         Some(Complexes::F32(&[z])) => return Ok(shaped(vec![2], Js::Typed(Typed::Float32(vec![z.re, z.im])), Vec::new(), Vec::new())),
@@ -76,7 +76,7 @@ fn number(n: &Number) -> Result<Js, ErrorKind> {
 }
 
 /// An array as `{shape, data}`, with `axis_names` and `axis_keys` when it has them.
-fn array(value: &Value) -> Result<Js, ErrorKind> {
+fn array(value: &Value) -> Result<Js, Error> {
     let mut shape = value.shape().to_vec();
     let mut names: Vec<Js> = value.axis_names().iter().map(|n| n.as_ref().map_or(Js::Undefined, |n| Js::Text(n.to_string()))).collect();
     let mut keys: Vec<Js> = if value.has_keys() {

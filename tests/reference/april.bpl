@@ -4220,9 +4220,9 @@ esp←"Uno" "Dos" "Tres" "" ""
 [mscan:]←•load "lib/array.bpl"
 mscan ⍳10ₓ   ⍝ [0 ¯1 1 ¯2 2 ¯3 3 ¯4 4 ¯5]ₓ
 
-⍝ april/libraries/dfns/array/demo.lisp:329 —
+⍝ april/libraries/dfns/array/demo.lisp:329 — Right-prefix field division uses explicit rationals
 [dscan:]←•load "lib/array.bpl"
-dscan ⍳10ₓ   ⍝ [0 0 0 0 0 0 0 0 0 0]ₓ
+dscan(⍳10ₓ)ᵣ   ⍝ [0 0 0 0 0 0 0 0 0 0]ᵣ
 
 ⍝ april/libraries/dfns/array/demo.lisp:330 —
 [ascan:]←•load "lib/array.bpl"

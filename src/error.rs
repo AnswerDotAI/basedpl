@@ -32,7 +32,7 @@ pub enum ErrorKind {
     Timeout,
     /// Only the matching map boundary consumes this tag.
     BatchStop(usize),
-    /// A planning run stopped where it can't plan through. Only `trace::plan_case` consumes it, so it never shows.
+    /// A planning run stopped where it can't plan through. Only `trace::plan_call` consumes it, so it never shows.
     Planning,
     /// A broken internal assumption, which is a bug. Its message names the source line. No guard catches it.
     Internal,

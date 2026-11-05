@@ -28,8 +28,10 @@ fn cases_take_their_routes() {
     let mut routes = explain_and_memory(&mut selection, &mut wrong);
     let gaps = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/coverage.txt");
     routes.extend(basedpl::reference::coverage(&gaps, &mut selection, &mut wrong, &InterruptHandle::default()).unwrap());
-    for file in basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/reference")).unwrap() {
+    for mut file in basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/reference")).unwrap() {
+        basedpl::reference::mark_skipped(&mut file);
         for case in file.cases.iter().filter(|case| basedpl::reference::routed(case) && selection.case(&file.name, case)) {
+            if case.get("skip_reason").is_some() { continue; }
             match basedpl::reference::route(&file, case, &InterruptHandle::default()) {
                 Ok(route) => routes.push(route), Err(failure) => wrong.push(format!("[{}] {failure}", case["section"].as_str().unwrap_or_default()))
             }
@@ -53,12 +55,21 @@ fn explain_and_memory(selection: &mut basedpl::reference::Selection, wrong: &mut
         ("⍋⍋ v", "ranks"), ("⍋⍒ v", "ranks"), ("k((+/⊢)⌸)v", "key classes"), ("k{+/⍵}⌸v", "key classes"), ("k((⌈⌿⊢)⌸)v", "key classes"),
         ("k((⌊/⊢)⌸)b", "key classes"), ("k((+/⊢)⌸)k", "key classes"), ("-.× m", "determinant"), ("+.× m", "permanent"), ("⍟1+v", "accuracy rule"),
         ("¯1+*v", "accuracy rule"), ("k÷ₓ3", "mark rule"),
+        ("{⍺+⍵}/1+v", "fused fold"),
+        ("(0.5<)⍚[⊢ -] v", "trace"), ("-@[0.5<] v", "trace"), ("(0.5<)⍚[0 √ₐ] v", "trace"),
+        ("(0.5<)⍚[⊢ {-⍵}] v", "trace"), ("{(0.5<)⍚[⊢ -]⍵}⍤1⁝100 10⍴v", "trace"), ("{+/(⍵>0.5)⍚[0 ÷]⍵}∂v", "trace"),
     ]);
     if !cases.is_empty() {
         let session = Session::new();
         check(wrong, &session, "v←¿1000⍴0 ⋄ k←¿1000⍴7 ⋄ b←0=¿1000⍴3 ⋄ m←[2 1 0⋄1 3 1⋄0 1 4]ₓ ⋄ $t", "$t");
         for (code, route) in cases { routes.extend(capture(wrong, &session, serde_json::json!({"code":code, "route":[route]}))); }
     }
+    for (code, ()) in selected(selection, "inverse folds", ["-/1+v", "÷/1+v", "{⍺-⍵}/1+v"].into_iter().map(|code| (code, ()))) {
+        let session = Session::new();
+        check(wrong, &session, "v←¿1000⍴0 ⋄ $t", "$t");
+        routes.extend(capture(wrong, &session, serde_json::json!({"code":code, "route":["alternated fold", "fused fold"]})));
+    }
+
     // Records are freed after returned, outer-name, nested, custom-rule and optimizer linearizations.
     for (code, ()) in selected(selection, "records", [
         "{+/⍵×⍵}∂ 1 2 3", "{+/,⍵+.×⍵}∂ [1 2⋄3 4]", "x←0.5×⍳300000 ⋄ ≢{+/⊼1○⍵}∂ x",

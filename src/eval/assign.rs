@@ -2,7 +2,7 @@
 
 use super::tree::{Entity, Facts, Last, Layer, Split, Target, Term, To, narrow};
 use super::*;
-use crate::{keyed::Selector, primitive::{coordinate_fields, item_at}};
+use crate::{array::Layout, keyed::Selector, primitive::{coordinate_fields, item_at}};
 use rustymath::error::Kind;
 
 struct ArrayBinding { place: Place, value: Value }
@@ -220,18 +220,22 @@ impl Session {
         let right = value.clone().into_value(&layer.at)?;
         if modifier.is_none() { self.extend(layer, run, false)?; }
         let binding = self.root(layer)?;
+        if modifier.is_none() && layer.prefix.is_none() && layer.split.is_none() && matches!(layer.last, Last::Name(..)) {
+            return self.update_array(&binding, right, &layer.span);
+        }
         let scope = crate::selection::Scope::new(&binding.value)?;
         let target = self.fold(layer, run, scope.root.clone())?;
         let walk = scope.select(&target)?.ok_or_else(|| Error::domain("cannot assign to an item that isn't from the original").at(&layer.span))?;
         let updated = match modifier {
             None => walk.write(right, None)?,
-            Some(f) => match f.as_primitive() {
-                Some(primitive) => walk.write(right, Some(primitive))?,
-                None => {
-                    let each = Operator::Kind(OperatorKind::Each).derive(Value::Function(f), None)?;
-                    walk.write(each.call_array(Some(&target), &right, &layer.span)?, None)?
+            Some(f) => {
+                let arguments = [&target, &right].map(|value| Desc::of(value).map(|desc| Desc::new(desc.kind, true, Layout::EMPTY)));
+                let origin = f.origin(&[target.clone(), right.clone()])?;
+                match f.primitive_body(&origin.reborrow(), &arguments)? {
+                    Some(primitive) if primitive.info().pervasive(2) => walk.write(right, Some(primitive))?,
+                    _ => walk.modified(right, &f, &layer.span)?,
                 }
-            },
+            }
         };
         self.update_array(&binding, updated, &layer.span)
     }

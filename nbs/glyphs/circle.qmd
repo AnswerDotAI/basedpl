@@ -29,7 +29,7 @@ Function. Keys: `Alt-o`. Hanzi: `圆` (`圓`). Ranks: `0` monadic, `0 0` dyadic
 | 7 | tanh | arctanh |
 | 8 | `√(-1−y²)` | `-√(-1−y²)` |
 
-Uses complex continuation where needed. The cuts of `3○⁻¹` and `5○⁻¹` lie on the imaginary axis. As in C99 and NumPy, the sign of a zero real part chooses the side of these cuts: `3○⁻¹ 0j2` and `3○⁻¹ ¯0j2` give results on opposite sides. On a cut along the real axis, results always come from the side above the cut, because BPL turns a number whose imaginary part is zero, `¯0` included, into a real. For example, `2j¯0` is `2`. A real argument computes with an imaginary part of +0:
+Uses complex continuation where needed. The cuts of `3○⁻¹` and `5○⁻¹` lie on the imaginary axis. The signed real zeros in `3○⁻¹ 0j2` and `3○⁻¹ ¯0j2` distinguish the two sides. [Zero's sign is not guaranteed](../numbers.qmd#accuracy). Under dynamic kinds, the literal `2j¯0` is read as real `2`. A real argument computes with an imaginary part of +0:
 
 ```bpl
 1○⁻¹2              ⍝ 1.5707963267948966j1.3169578969248166

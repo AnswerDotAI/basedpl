@@ -1,7 +1,7 @@
 //! Process defaults and the numeric context captured by a deferred body call.
 use crate::{Value, display, error::{Error, Result}, number::{Kinds, Numeric}, primitive::{CallView, Setting}, program::Origin};
 use rustymath::{buffer::{FloatWidth, Width}, tolerant::Tolerance};
-use std::{cell::RefCell, sync::{LazyLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering::Relaxed}}};
+use std::{cell::RefCell, sync::{LazyLock, OnceLock, PoisonError, RwLock, atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering::Relaxed}}};
 
 const HANZI: bool = false;
 const BATCH: bool = true;
@@ -56,11 +56,11 @@ pub(crate) fn set_numeric(numeric: Numeric) {
 }
 
 pub(crate) fn capture(setting: Setting, n: Numeric) -> Value {
-    match setting {
+    Value::constant(match setting {
         Setting::Width => Value::integer(n.width as i64), Setting::IntegerWidth => Value::integer(n.int as i64),
         Setting::Tolerance => Value::Number(crate::Number::float(n.tolerance.value(), FloatWidth::F64)),
         Setting::Units => Value::Number(crate::Number::float(n.units, FloatWidth::F64))
-    }
+    })
 }
 pub(crate) fn capture_current(setting: Setting, snapshot: Numeric) -> Value {
     NUMERIC.with(|stack| {
@@ -88,10 +88,17 @@ pub(crate) struct NumericScope { depth: usize, thread: std::marker::PhantomData<
 impl Drop for NumericScope { fn drop(&mut self) { NUMERIC.with(|stack| stack.borrow_mut().truncate(self.depth)); } }
 
 pub(crate) fn activate(origin: &Origin<&[Value]>) -> Result<NumericScope> {
-    let prepared = crate::primitive::Operation::prepare(origin)?;
-    let call = prepared.view();
-    let numeric = captured(&call)?;
-    let operands = std::array::from_fn(|i| origin.list[call.layout().setting(Setting::BODY[i]).expect("captured BODY context")].clone());
+    let mut values = origin.list.to_vec();
+    for position in origin.layout().settings() { values[position] = values[position].read(crate::ReadKind::Value)?; }
+    activate_call(&CallView::new(origin, &values), |position| Ok(origin.list[position].clone()))
+}
+
+pub(crate) fn activate_call(call: &CallView<'_>, operand: impl Fn(usize) -> Result<Value>) -> Result<NumericScope> {
+    let numeric = captured(call)?;
+    let mut operands = std::array::from_fn(|_| Value::integer(0));
+    for (i, &setting) in Setting::BODY.iter().enumerate() {
+        operands[i] = operand(call.layout().setting(setting).expect("captured BODY context"))?;
+    }
     let depth = NUMERIC.with(|stack| {
         let mut stack = stack.borrow_mut();
         let depth = stack.len();
@@ -106,6 +113,15 @@ pub(crate) fn set_display(display: display::Settings) { DISPLAY.write().unwrap_o
 pub(crate) fn set_display_defaults(display: display::Settings) { *DISPLAY.write().unwrap_or_else(PoisonError::into_inner) = [display; 2]; }
 pub fn hanzi_aliases() -> bool { HANZI_ALIASES.load(Relaxed) }
 pub(crate) fn set_hanzi_aliases(on: bool) { HANZI_ALIASES.store(on, Relaxed) }
+/// Fixed for the process because cached schedules do not key this policy.
+pub(crate) fn optimizes() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| !matches!(std::env::var("BASEDPL_NOOPT").as_deref(), Ok("1")))
+}
+pub(crate) fn batch() -> bool { BATCHING.load(Relaxed) }
+pub(crate) fn set_batch(on: bool) { BATCHING.store(on, Relaxed) }
+pub(crate) fn reports_fusion() -> bool { REPORTS_FUSION.load(Relaxed) }
+pub(crate) fn set_reports_fusion(on: bool) { REPORTS_FUSION.store(on, Relaxed) }
 pub(crate) fn verifies() -> bool { VERIFIES.load(Relaxed) }
 pub(crate) fn set_verifies(on: bool) { VERIFIES.store(on, Relaxed) }
 
@@ -127,7 +143,7 @@ pub enum Compiles { Policy, Always, Never }
 #[cfg(not(web))]
 impl Compiles {
     fn from_env() -> Self {
-        static FROM_ENV: std::sync::OnceLock<Compiles> = std::sync::OnceLock::new();
+        static FROM_ENV: OnceLock<Compiles> = OnceLock::new();
         *FROM_ENV.get_or_init(|| match std::env::var("BASEDPL_COMPILE").as_deref() {
             Ok("always") => Self::Always, Ok("never") => Self::Never, _ => Self::Policy
         })
@@ -135,6 +151,7 @@ impl Compiles {
 }
 #[cfg(not(web))]
 pub(crate) fn compiles() -> Compiles {
+    if !optimizes() { return Compiles::Never; }
     match COMPILES.load(Relaxed) { 0 => Compiles::Policy, 1 => Compiles::Always, 2 => Compiles::Never, _ => Compiles::from_env() }
 }
 pub fn set_compiles(compiles: Compiles) { COMPILES.store(compiles as u8, Relaxed) }

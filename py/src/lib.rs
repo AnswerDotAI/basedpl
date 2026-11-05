@@ -1,5 +1,5 @@
 use basedpl::{
-    Error, EvalOptions, Evaluation, Function, Hold, InterruptHandle, Number, OperatorValue, ReadKind, Session, Value,
+    Error, EvalOptions, Evaluation, Function, Hold, Index, InterruptHandle, Number, OperatorValue, ReadKind, Session, Value,
     buffer::{Buffer, DType, FloatWidth, IntBuf, View}, keyed::{self, Texts}
 };
 use num_bigint::BigInt;
@@ -187,7 +187,6 @@ impl PyArray {
     fn value(&self) -> PyResult<&Value> { self.inner.as_ref().ok_or_else(|| PyValueError::new_err("own() moved this array's items into NumPy")) }
 }
 
-enum IndexSelection { Planned(rustymath::structure::Plan, bool), Rich(Vec<IndexPart<Value>>) }
 
 /// The Python exception for an indexing error: `KeyError` for a missing key, and otherwise the exception for the error's kind, with BPL's message.
 fn index_error(error: basedpl::Error) -> PyErr {
@@ -197,8 +196,8 @@ fn index_error(error: basedpl::Error) -> PyErr {
     rustymath_buffer::py_err(rustymath::error::Error::new(e.kind, text))
 }
 
-/// Decodes a Python index of `value` once, for a read or, where `writes`, a write, through `⌷`'s planner. Python's own kinds, slices, keys, integers and lists of keys, decode without converting. `convert` turns other selectors into arrays, which decode as `⌷` decodes them, except Boolean masks, which select where they hold true. Pick paths allow positions, keys, full slices, None and ... as suffixes, but not partial slices or masks.
-fn selection(value: &Value, index: &Bound<'_, PyAny>, writes: bool, convert: &Bound<'_, PyAny>) -> PyResult<IndexSelection> {
+/// Decodes Python syntax into shared selectors. Python owns slice normalization and Boolean-mask syntax; BPL owns selection and replacement.
+fn selection(value: &Value, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Vec<IndexPart<Index>>> {
     let converted =
         |obj: &Bound<'_, PyAny>| -> PyResult<Value> { observed(convert.call1((obj,))?.extract::<PyRef<'_, PyArray>>()?.value()?, ReadKind::Structure) };
     let parts = rustymath_buffer::selection::parts(index)?;
@@ -206,27 +205,37 @@ fn selection(value: &Value, index: &Bound<'_, PyAny>, writes: bool, convert: &Bo
         .collect::<PyResult<Vec<_>>>()?;
     if let Some(IndexPart::Axis(Some(first))) = values.iter().find(|p| matches!(p, IndexPart::Axis(_) | IndexPart::All))
         && value.picks_paths(first).map_err(index_error)? {
-            let paths = parts.iter().zip(values).map(|(p, v)| {
+            return parts.iter().zip(values).map(|(p, v)| {
                 v.try_map(|v| match (p.axis(), v) {
-                    (_, Some(v)) if !matches!(v.view(), Some(View::Booleans(_))) => Ok(v), (Some(p), None) if !p.is_instance_of::<PySlice>() => converted(p),
+                    (_, Some(v)) if !matches!(v.view(), Some(View::Booleans(_))) => Ok(Index::Value(v)),
+                    (Some(p), None) if !p.is_instance_of::<PySlice>() => converted(p).map(Index::Value),
                     _ => Err(PyTypeError::new_err("an index with pick paths takes positions, keys, full slices, None and ..., not partial slices or masks"))
                 })
-            }).collect::<PyResult<Vec<_>>>()?;
-            return Ok(IndexSelection::Rich(paths));
+            }).collect();
         }
     let layout = value.core_layout();
-    value.planned(&values, writes, |i, axis| {
-        let (IndexPart::Axis(p), IndexPart::Axis(v)) = (&parts[i], &values[i]) else { unreachable!("planned decodes axis parts") };
-        match v {
-            None => Some(rustymath_buffer::selection::selector(layout, axis, p, || unreachable!("a native selector decodes without converting"))),
-            Some(v) => match v.view() {
-                Some(View::Booleans(_)) => {
-                    Some(rustymath_buffer::selection::array_selector(layout, axis, v.core_layout().clone(), std::sync::Arc::new(v.clone())))
+    let claims: Vec<_> = values.iter().map(|p| p.as_ref().map(|v| v.as_ref().map_or((None, 1), |v| (rustymath::structure::sole_name(v.core_layout()), v.index_width())))).collect();
+    rustymath::structure::addressed_parts(layout, &claims, None).map_err(rustymath_buffer::py_err)?.into_iter().map(|(axis, part)| {
+        part.try_map(|i| {
+            let (IndexPart::Axis(p), IndexPart::Axis(v)) = (&parts[i], &values[i]) else { unreachable!("addressed indices refer to axis parts") };
+            let selector = match v {
+                None => rustymath_buffer::selection::selector(layout, axis, p, || unreachable!("native selector"))?.0,
+                Some(v) => match v.view() {
+                    Some(View::Booleans(mask)) => rustymath_buffer::selection::boolean_selector(layout, axis, v.core_layout(), mask)?.0,
+                    _ => return Ok(Index::Value(v.clone())),
+                },
+            };
+            Ok(match selector {
+                rustymath::structure::Selector::At(at) => Index::Value(Value::integer(at as i64)),
+                rustymath::structure::Selector::Range { start, len, step } => Index::Range { start, count: len, step },
+                rustymath::structure::Selector::Indices { layout, positions } => {
+                    let positions = positions.listed().expect("Python native selectors produce listed positions").iter().map(|&p| p as i64).collect();
+                    Index::Value(Value::integers(layout.shape().to_vec(), positions).map_err(|e| index_error(Error::from(e)))?)
                 }
-                _ => None,
-            },
-        }
-    }, index_error).map(|(plan, atom)| IndexSelection::Planned(plan, atom))
+                _ => unreachable!("Python axis decoder produces positions or ranges"),
+            })
+        })
+    }).collect()
 }
 
 /// The array whose compact items an export lends for `value`, with the offset of `value`'s first item in them and, for a structural copy read through an affine map, each axis's stride in items. A copy that hasn't been built lends its source's items this way. Otherwise `value` lends its own items where they're compact. `None` where neither applies.
@@ -289,17 +298,15 @@ impl PyArray {
     }
     fn with_names(&self, names: Option<Vec<Option<String>>>) -> PyResult<Self> {
         let value = self.value()?;
-        let layout = value.core_layout().clone().with_names(names.unwrap_or_default().into_iter().map(|n| n.map(Arc::from)).collect())
-            .map_err(rustymath_buffer::py_err)?;
-        Ok(Session::current(|_| value.clone().with_core_layout(layout)).map_err(value_error)?.into())
+        let names = names.unwrap_or_else(|| vec![None; value.rank()]);
+        Ok(keyed::with_names(value.clone(), names).map_err(value_error)?.into())
     }
     #[getter]
     fn keys(&self) -> PyResult<Vec<Option<Vec<Option<&str>>>>> { Ok(basedpl::keyed::key_lists(self.value()?)) }
     fn with_keys(&self, keys: Option<Vec<Option<Vec<Option<String>>>>>) -> PyResult<Self> {
         let value = self.value()?;
-        let keys = rustymath_buffer::axis_keys(keys.unwrap_or_default())?;
-        let layout = value.core_layout().clone().with_keys(keys).map_err(rustymath_buffer::py_err)?;
-        Ok(Session::current(|_| value.clone().with_core_layout(layout)).map_err(value_error)?.into())
+        let keys = keys.unwrap_or_else(|| vec![None; value.rank()]);
+        Ok(keyed::with_key_lists(value.clone(), keys).map_err(value_error)?.into())
     }
     fn __rustymath_array__(&self, py: Python<'_>) -> PyResult<(Py<PyAny>, Py<PyAny>, Vec<Option<String>>)> {
         if !self.exports()? {
@@ -378,23 +385,15 @@ impl PyArray {
         Ok(cells.into_iter().map(Self::from).collect())
     }
     fn select(&self, py: Python<'_>, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Py<PyDict>> {
-        let (value, selection) = (self.value()?.clone(), selection(self.value()?, index, false, convert)?);
-        let value = py.detach(move || {
-            Session::current(|_| match selection {
-                IndexSelection::Planned(plan, atom) => value.selected(plan, atom), IndexSelection::Rich(parts) => value.select(&parts)
-            })
-        }).map_err(index_error)?;
+        let (value, parts) = (self.value()?.clone(), selection(self.value()?, index, convert)?);
+        let value = py.detach(move || Session::current(|_| value.select(&parts))).map_err(index_error)?;
         let mut result = Evaluation::default();
         match value { Value::Function(f) => result.function = Some(f), a => result.value = Some(a) }
         response(py, result)
     }
     fn assign(&self, py: Python<'_>, index: &Bound<'_, PyAny>, values: PyRef<'_, PyArray>, convert: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let (value, values, selection) = (self.value()?.clone(), values.value()?.clone(), selection(self.value()?, index, true, convert)?);
-        py.detach(move || {
-            Session::current(|_| match selection {
-                IndexSelection::Planned(plan, atom) => value.assigned(plan, atom, &values), IndexSelection::Rich(parts) => value.assigned_parts(&parts, &values)
-            })
-        }).map(Self::from).map_err(index_error)
+        let (value, values, parts) = (self.value()?.clone(), values.value()?.clone(), selection(self.value()?, index, convert)?);
+        py.detach(move || Session::current(|_| value.assigned_parts(&parts, &values))).map(Self::from).map_err(index_error)
     }
     /// Whether this array holds `query`, a native array or a `str`. A one-character string is an atom. A longer one is one item where the major cells are items, as a list of strings holds them, and otherwise a character vector, which matches a row of characters.
     fn contains(&self, py: Python<'_>, query: &Bound<'_, PyAny>) -> PyResult<bool> {

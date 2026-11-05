@@ -1,9 +1,9 @@
 use crate::error::OrInternal;
 use crate::{
-    Error, Value, array::{ArrayData, Carried, Frame, Root, Widening, map_leaves}, error::Result, graph::{Pending, Retention, RetentionScope},
+    Error, Span, Value, array::{ArrayData, Carried, Frame, Root, Widening, map_leaves}, error::Result, eval::Function, graph::{Pending, Retention, RetentionScope},
     primitive::{Operation, Primitive, ReadOp, WriteTarget}, program::{Desc, Origin, Step}
 };
-use rustymath::{error::Kind as ErrorTag, hashing::HashMap};
+use rustymath::{agreement::ReadAt, error::Kind as ErrorTag, hashing::HashMap};
 use std::sync::Arc;
 
 fn foreign() -> Error { Error::domain("cannot assign to an item that isn't from the target") }
@@ -29,7 +29,7 @@ pub(crate) fn rooted(root: &Value) -> Result<Value> {
                 let at = *position;
                 *position += 1;
                 if Desc::of(value).is_some() { return Operation::Read(ReadOp::Root(at)).call(std::slice::from_ref(value)); }
-                Err(Error::new(crate::ErrorKind::Unsupported, "writes into exact rational or function roots are not supported"))
+                Ok(value.clone())
             }
         })
     }
@@ -91,11 +91,10 @@ impl<'a> RootPorts<'a> {
             }
         }
         let port = self.source(&first(target)?)?;
-        if !port.writable { return None; }
         let mut path = Vec::new();
         let mut candidate = subject(self.root).clone();
         for part in &port.path {
-            if same_item(target, &candidate) { return Some(path); }
+            if same_item(target, &candidate) { return (!path.is_empty()).then_some(path); }
             let PathPart::Item(i) = part else { return None; };
             path.push(*i);
             candidate = subject(&candidate.at(*i)).clone();
@@ -117,8 +116,9 @@ impl<'a> RootPorts<'a> {
         if !port.writable { return Ok(current); }
         replace(&current, &port.path, value)
     }
-    pub(crate) fn visit_execution(&self, target: &Value, values: &Value, mut visit: impl FnMut(&Value, Value, Destination<'_>) -> Result<()>) -> Result<bool> {
-        Walking::new(self).visit(target, values, &mut visit)
+    pub(crate) fn visit_execution(&self, target: &Value, values: &Value, mut visit: impl FnMut(&Value, Value, Destination<'_>) -> Result<()>) -> Result<()> {
+        Walking::new(self).map(target, values, &mut |target, values, destination| { visit(target, values, destination)?; Ok(None) })?;
+        Ok(())
     }
 }
 
@@ -159,6 +159,9 @@ impl<'ports, 'root> Walking<'ports, 'root> {
             for item in items { if !self.validate(item)? { return Ok(false); } }
             return Ok(true);
         }
+        if Desc::of(target).is_none() {
+            return Err(Error::new(crate::ErrorKind::Unsupported, "writes into exact rational or function roots are not supported"));
+        }
         Ok(self.sources(target)?.is_some())
     }
     fn sources(&mut self, value: &Value) -> Result<Option<Vec<usize>>> {
@@ -177,22 +180,29 @@ impl<'ports, 'root> Walking<'ports, 'root> {
         self.sources.insert(pending.clone(), sources.clone());
         Ok(Some(sources))
     }
-    fn visit(&mut self, target: &Value, values: &Value, visit: &mut impl FnMut(&Value, Value, Destination<'_>) -> Result<()>) -> Result<bool> {
-        if let Some(destination) = self.roots.whole_path(target) { visit(target, values.clone(), Destination::Whole(&destination))?; return Ok(true); }
-        if let Some(target) = self.projection(target)? { return self.visit(&target, values, visit); }
+    /// Visit the existing destinations, rebuilding replacement values only when the visitor returns a change.
+    fn map(
+        &mut self, target: &Value, values: &Value, visit: &mut impl FnMut(&Value, Value, Destination<'_>) -> Result<Option<Value>>,
+    ) -> Result<Option<Value>> {
+        if let Some(destination) = self.roots.whole_path(target) { return visit(target, values.clone(), Destination::Whole(&destination)); }
+        if let Some(target) = self.projection(target)? { return self.map(&target, values, visit); }
         let exposed = subject(target).exposed()?;
         let target = subject(&exposed);
         let values = Frame::of(target).replacement(values)?;
         if let Value::Array(data) = target && let ArrayData::Mixed { items, .. } = &**data {
+            let mut mapped = Vec::with_capacity(items.len());
+            let mut changed = false;
             for (i, item) in items.iter().enumerate() {
                 let value = crate::primitive::item_at(&values, &[if values.is_singleton() { 0 } else { i }], None)?;
-                if !self.visit(item, &value, visit)? { return Ok(false); }
+                let replacement = self.map(item, &value, visit)?;
+                changed |= replacement.is_some();
+                mapped.push(replacement.unwrap_or(value));
             }
+            if changed { Frame::of(target).collect(mapped, || target.prototype()).map(Some).map_err(Error::from) } else { Ok(None) }
         } else {
-            let Some(sources) = self.sources(target)? else { return Ok(false); };
-            visit(target, values, Destination::Read(sources))?;
+            let sources = self.sources(target)?.ok_or_else(foreign)?;
+            visit(target, values, Destination::Read(sources))
         }
-        Ok(true)
     }
 }
 pub(crate) enum Destination<'a> { Whole(&'a [usize]), Read(Vec<usize>) }
@@ -207,10 +217,78 @@ impl Scope {
         Ok(Walking::new(&ports).validate(target)?.then(|| Walk { root: self.root, target: target.clone(), lease }))
     }
 }
+#[derive(PartialEq, Eq, Hash)]
+enum ItemTarget { Whole(Vec<usize>), Read(usize, usize) }
+
+impl RootPorts<'_> {
+    fn modified_values(
+        &self, target: &Value, values: &Value, address: Option<ReadAt>, mut update: impl FnMut(ItemTarget, &Value) -> Option<Value>,
+    ) -> Result<(Value, bool)> {
+        let mut writable = false;
+        let result = Walking::new(self).map(target, values, &mut |part, values, destination| {
+            if let Destination::Whole(path) = destination {
+                writable = true;
+                return Ok(update(ItemTarget::Whole(path.to_vec()), &values));
+            }
+            let Destination::Read(sources) = destination else { unreachable!() };
+            let route = address.is_none().then(|| crate::program::selection_addresses(part)).transpose()?;
+            let mut items = Vec::with_capacity(part.len());
+            let mut changed = false;
+            for i in 0..part.len() {
+                let value = if part.is_atom() { values.clone() }
+                    else { crate::primitive::item_at(&values, &[if values.is_singleton() { 0 } else { i }], None)? };
+                items.push(match address.unwrap_or_else(|| route.as_ref().unwrap().at(i)) {
+                    ReadAt::Input { source, position } if sources.contains(&source) => {
+                        writable = true;
+                        if let Some(replacement) = update(ItemTarget::Read(source, position), &value) { changed = true; replacement } else { value }
+                    }
+                    ReadAt::Index(_) => return Err(foreign()),
+                    _ => value,
+                });
+            }
+            if changed { Frame::of(part).collect(items, || part.prototype()).map(Some).map_err(Error::from) } else { Ok(None) }
+        })?;
+        Ok((result.unwrap_or_else(|| values.clone()), writable))
+    }
+}
+
 pub(crate) struct Walk { root: Value, target: Value, lease: Retention }
 impl Walk {
     pub(crate) fn write(self, values: Value, combine: Option<Primitive>) -> Result<Value> {
         self.lease.writing(|| Operation::At { combine, target: WriteTarget::Selected }.call(&[self.root, self.target, values]))
+    }
+    pub(crate) fn modified(self, values: Value, function: &Function, span: &Span) -> Result<Value> {
+        let ports = RootPorts::new(&self.root);
+        if ports.whole_path(&self.target).is_some() {
+            let result = function.call_array(Some(&self.target), &values, span)?;
+            return self.write(result, None);
+        }
+        let frame = Frame::of(&self.target);
+        let values = frame.replacement(&values)?;
+        let addresses = self.target.kind().is_some().then(|| crate::program::selection_addresses(subject(&self.target))).transpose()?;
+        let mut latest = HashMap::default();
+        let mut targets = Vec::with_capacity(self.target.len());
+        for i in 0..self.target.len() {
+            let retention = RetentionScope::capture();
+            let target = crate::primitive::item_at(&self.target, &[i], None)?;
+            let retained = retention.finish();
+            let address = addresses.as_ref().map(|addresses| addresses.at(i));
+            let (old, writable) = ports.modified_values(&target, &target, address, |key, _| latest.get(&key).cloned())?;
+            if writable {
+                let value = if self.target.is_atom() { values.clone() }
+                    else { crate::primitive::item_at(&values, &[if values.is_singleton() { 0 } else { i }], None)? };
+                let result = function.call_array(Some(&old), &value, span)?;
+                ports.modified_values(&target, &result, address, |key, value| { latest.insert(key, value.clone()); None })?;
+            }
+            targets.push((target, address, retained));
+        }
+        let values = if targets.is_empty() { values } else {
+            let values = targets.iter().map(|(target, address, _retained)| {
+                ports.modified_values(target, target, *address, |key, _| latest.get(&key).cloned()).map(|(value, _)| value)
+            }).collect::<Result<Vec<_>>>()?;
+            frame.collect(values, || self.target.prototype()).map_err(Error::from)?
+        };
+        self.write(values, None)
     }
 }
 
@@ -218,7 +296,8 @@ pub(crate) fn form(origin: Origin<&[Value]>, call: &crate::primitive::CallView) 
     let Operation::At { combine, target: mode } = origin.operation else { return Ok(None); };
     if mode == WriteTarget::Selected && !origin.list.iter().any(differentiated)
         && RootPorts::new(origin.root_input(Root(0))?.as_ref()).whole_path(origin.root_input(Root(1))?.as_ref()).is_some() { return code_at(&origin, call).map(Some); }
-    if crate::primitive::at_geometry(&call)?.is_none() { return code_at(&origin, call).map(Some); }
+    let geometry = crate::primitive::at_geometry(call)?;
+    if geometry.is_none() { return code_at(&origin, call).map(Some); }
     if mode != WriteTarget::Selected { return Ok(None); }
     let root = origin.root_input(Root(0))?;
     let port = subject(&root).pending().and_then(source_position).ok_or_else(foreign)?;
@@ -255,27 +334,24 @@ pub(crate) fn code_at(origin: &Origin<&[Value]>, call: &crate::primitive::CallVi
         let target = selected.read(&scope.root, None, &span)?;
         return scope.select(&target)?.ok_or_else(foreign)?.write(values, *combine).map(crate::program::Outputs::one).map(crate::program::Outputs::flatten);
     }
+    let widening = Widening::of_results(call.mode.dynamic);
     let merge = |old: &Value, new: Value| -> Result<Value> {
         match combine { Some(primitive) => primitive.call(Some(old), &new, &span, call.numeric()?), None => Ok(new) }
     };
     let ports = RootPorts::new(&root);
     let mut current = root.clone();
     let mut writes: HashMap<usize, Vec<(Value, Value)>> = HashMap::default();
-    if !ports.visit_execution(&target, &values, |target, values, destination| {
+    ports.visit_execution(&target, &values, |target, values, destination| {
         match destination {
             Destination::Whole(path) => {
                 let old = crate::primitive::item_at(&current, path, None)?;
                 let value = merge(&old, values)?;
-                if path.is_empty() && subject(&root).holds_mixed() && (value.layout() != root.layout() || value.is_atom() != root.is_atom()) {
-                    return Err(Error::new(
-                        crate::ErrorKind::Unsupported, "computed whole-array writes cannot change outer shape or keys; assign the root directly"));
-                }
                 current = replace(&current, &path.iter().copied().map(PathPart::Item).collect::<Vec<_>>(), value)?;
             }
             Destination::Read(sources) => { for source in sources { writes.entry(source).or_default().push((target.clone(), values.clone())); } }
         }
         Ok(())
-    })? { return Err(foreign()); }
+    })?;
     let concatenate = |parts: Vec<Value>| -> Result<Value> {
         let mut parts = parts.into_iter();
         let first = parts.next().or_internal()?;
@@ -285,14 +361,15 @@ pub(crate) fn code_at(origin: &Origin<&[Value]>, call: &crate::primitive::CallVi
     };
     for (source, changes) in writes {
         let before = ports.at(&current, source)?;
-        let native = Desc::of(&before).and_then(|desc| {
-            changes.iter().try_fold(desc.kind, |kind, (target, value)| {
-                let desc = Desc::of(value)?;
-                if target.is_atom() && !desc.atom { return None; }
-                kind.join(desc.kind)
-            })
-        });
-        let after = if native.is_some() {
+        let native = changes.iter().try_fold(true, |native, (target, values)| -> Result<bool> {
+            if !native { return Ok(false); }
+            let projected = crate::eval::projected_call(origin, Operation::At { combine: *combine, target: WriteTarget::Selected },
+                &[before.clone(), target.clone(), values.clone()])?;
+            let current = projected.reborrow();
+            let prepared = Operation::prepare(&current)?;
+            Ok(crate::primitive::at_geometry(&prepared.view())?.is_some())
+        })?;
+        let after = if native {
             let mut targets = Vec::with_capacity(changes.len());
             let mut values = Vec::with_capacity(changes.len());
             for (target, value) in changes {
@@ -327,7 +404,7 @@ pub(crate) fn code_at(origin: &Origin<&[Value]>, call: &crate::primitive::CallVi
                     }
                 }
             }
-            if before.is_atom() { items.remove(0) } else { Value::stored_values(before.layout().clone(), items, Some(before.prototype()), Widening::Arrays)? }
+            if before.is_atom() { items.remove(0) } else { Value::stored_values(before.layout().clone(), items, Some(before.prototype()), widening)? }
         };
         current = ports.replace(current, source, after)?;
     }

@@ -1,4 +1,4 @@
-use crate::{Error, ErrorKind, Number, Value, array::{Items, Layout}};
+use crate::{Error, ErrorKind, Number, Value, array::{Frame, Items, Layout}, eval::Function, program::{Desc, Origin}, primitive::{item_at, Operation, Pairing, Primitive}};
 use rustymath::hashing::{HashMap, HashSet, HashSetExt};
 use rustymath::{buffer::{DType, FloatWidth, View}, error::Kind};
 use std::sync::Arc;
@@ -52,8 +52,8 @@ impl Texts {
         v
     }
 }
-/// An array of `shape` holding the text items `items`, with empty text as its prototype.
-pub(crate) fn texts(shape: &[usize], items: Vec<Value>) -> Result<Value, ErrorKind> { Value::from_parts(shape, items, text("")) }
+/// Text items over `shape`, or the sole text when the shape is empty.
+pub(crate) fn texts(shape: &[usize], items: Vec<Value>) -> Result<Value, ErrorKind> { Frame::from_shape(shape).collect(items, text("")) }
 /// A text column sharing repeated texts.
 pub(crate) fn text_column(shape: &[usize], column: &[&str]) -> Result<Value, ErrorKind> {
     let mut shared = Texts::default();
@@ -74,14 +74,49 @@ pub fn key_lists(value: &Value) -> Vec<Option<Vec<Option<&str>>>> {
 pub fn with_key_lists(value: Value, lists: Vec<Option<Vec<Option<String>>>>) -> Result<Value, String> {
     if lists.len() != value.shape().len() { return Err("axis_keys must have one entry per axis".into()); }
     let keys = lists.into_iter().map(|k| k.map(|names| Keys::partial(names.into_iter().map(|n| n.map(Into::into)).collect())).transpose())
-        .collect::<Result<_, _>>().map_err(|e| e.to_string())?;
-    value.with_keys(keys).map_err(|_| "key lists must match array axes".into())
+        .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    let result = if matches!(&value, Value::Pending(_) | Value::Carried { .. }) {
+        crate::Session::current(|_| -> crate::error::Result<Value> {
+            value.core_layout().clone().with_keys(keys.clone())?;
+            let origin = Function::primitive(Primitive::Shape).origin(std::slice::from_ref(&value))?;
+            let origin = origin.reborrow();
+            let shape = origin.apply(Operation::Primitive { primitive: Primitive::Shape, pairing: Pairing::Axes }, std::slice::from_ref(&value))?;
+            let bare = origin.apply(Operation::Primitive { primitive: Primitive::Keys(false), pairing: Pairing::Axes }, std::slice::from_ref(&value))?;
+            let mut result = origin.apply(Operation::Primitive { primitive: Primitive::Shape, pairing: Pairing::Axes }, &[shape, bare])?;
+            for (axis, keys) in keys.into_iter().enumerate() {
+                if let Some(keys) = keys {
+                    let labels = Value::constant(Value::tuple(keys.names().iter().enumerate().map(label_value).collect()));
+                    result = origin.apply(Operation::Primitive { primitive: Primitive::Keys(false), pairing: Pairing::Explicit { fill: false } },
+                        &[labels, result, Value::constant(Value::integer(axis as i64))])?;
+                }
+            }
+            Ok(result)
+        })
+    } else { value.with_keys(keys) };
+    result.map_err(|error| error.to_string())
 }
 
 /// `value` with a name, or `None`, for each axis.
 pub fn with_names(value: Value, names: Vec<Option<String>>) -> Result<Value, String> {
-    if names.len() != value.shape().len() { return Err("axis_names must have one entry per axis".into()); }
-    value.with_axis_names(names.into_iter().map(|n| n.map(Into::into)).collect()).map_err(|k| k.to_string())
+    if names.len() != value.rank() { return Err("axis_names must have one entry per axis".into()); }
+    let names = names.into_iter().map(|n| n.map(Into::into)).collect();
+    let result = if matches!(&value, Value::Pending(_) | Value::Carried { .. }) {
+        crate::Session::current(|_| {
+            let origin = Function::primitive(Primitive::Shape).origin(std::slice::from_ref(&value))?;
+            renamed(&origin.reborrow(), &value, names)
+        })
+    } else { value.with_axis_names(names) };
+    result.map_err(|error| error.to_string())
+}
+
+pub(crate) fn renamed(origin: &Origin<&[Value]>, value: &Value, names: Vec<Option<Arc<str>>>) -> crate::error::Result<Value> {
+    debug_assert_eq!(names.len(), value.rank());
+    if names.iter().enumerate().all(|(axis, name)| value.axis_name(axis) == name.as_ref()) { return Ok(value.clone()); }
+    let labels = Value::constant(Value::tuple(names.iter().enumerate().map(label_value).collect()));
+    let shape = origin.apply(Operation::Primitive { primitive: Primitive::Shape, pairing: Pairing::Axes }, std::slice::from_ref(value))?;
+    let shape = origin.apply(Operation::Primitive { primitive: Primitive::Keys(false), pairing: Pairing::Explicit { fill: false } },
+        &[labels, shape, Value::constant(Value::integer(0))])?;
+    origin.apply(Operation::Primitive { primitive: Primitive::Shape, pairing: Pairing::Axes }, &[shape, value.clone()])
 }
 
 /// One name, or an array of names with its shape.
@@ -115,7 +150,7 @@ pub(crate) fn partial_vector(names: Vec<Option<Arc<str>>>, values: Vec<Value>) -
 pub(crate) fn table(names: &[&str], shape: &[usize], rows: Vec<Vec<Value>>, empty: Vec<Value>) -> Result<Value, ErrorKind> {
     let mut columns: Vec<Vec<Value>> = vec![Vec::with_capacity(rows.len()); names.len()];
     for row in rows { for (column, item) in columns.iter_mut().zip(row) { column.push(item); } }
-    let values = columns.into_iter().zip(empty).map(|(column, empty)| Value::from_parts(shape, column, empty));
+    let values = columns.into_iter().zip(empty).map(|(column, empty)| Frame::from_shape(shape).collect(column, empty));
     vector(names.iter().map(|&n| n.into()).collect(), values.collect::<Result<_, _>>()?)
 }
 
@@ -123,7 +158,7 @@ pub(crate) fn table(names: &[&str], shape: &[usize], rows: Vec<Vec<Value>>, empt
 pub(crate) type Field = (Arc<str>, Vec<Value>);
 
 /// The fields of the record `value`, item by item: the shape its array fields share, and each field's name with one item per position. An atom or a text is a single item, which every position shares.
-pub(crate) fn fields(value: &Value) -> Result<(Vec<usize>, Vec<Field>), ErrorKind> {
+pub(crate) fn fields(value: &Value) -> Result<(Vec<usize>, Vec<Field>), Error> {
     let pairs = pairs(value)?;
     let single = |v: &Value| v.is_atom() || name(v).is_some();
     let shape = pairs.iter().find(|(_, v)| !single(v)).map_or(vec![], |(_, v)| v.shape().to_vec());
@@ -145,7 +180,7 @@ pub(crate) fn slots(fields: Vec<Field>, names: &[&str], used: usize) -> Result<V
 }
 
 /// The entries of a keyed vector, in order. An empty vector has none. Every entry needs a name.
-pub(crate) fn pairs(value: &Value) -> Result<Vec<(Arc<str>, Value)>, ErrorKind> {
+pub(crate) fn pairs(value: &Value) -> Result<Vec<(Arc<str>, Value)>, Error> {
     entries(value)?.into_iter().map(|(k, v)| Some((k?, v))).collect::<Option<_>>().ok_or_else(|| Kind::Domain.into())
 }
 
@@ -153,11 +188,12 @@ pub(crate) fn pairs(value: &Value) -> Result<Vec<(Arc<str>, Value)>, ErrorKind> 
 pub(crate) type Entry = (Option<Arc<str>>, Value);
 
 /// The entries of a keyed vector, in order, with `None` for an entry that has no name.
-pub(crate) fn entries(value: &Value) -> Result<Vec<Entry>, ErrorKind> {
+pub(crate) fn entries(value: &Value) -> Result<Vec<Entry>, Error> {
     if value.shape().len() != 1 { return Err(Kind::Rank.into()); }
     if value.is_empty() { return Ok(vec![]); }
     let keys = value.keys(0).ok_or(Kind::Domain)?;
-    Ok(keys.names().iter().cloned().zip(value.elements()).collect())
+    keys.names().iter().cloned().enumerate()
+        .map(|(i, key)| Ok((key, item_at(value, &[i], None)?))).collect()
 }
 
 pub(crate) fn field(value: &Value, name: &str) -> Option<Value> {
@@ -166,15 +202,17 @@ pub(crate) fn field(value: &Value, name: &str) -> Option<Value> {
 }
 
 /// Entries in `new` replace `old` entries with the same name. Other `new` entries follow.
-pub(crate) fn merge(old: &Value, new: &Value) -> Result<Value, ErrorKind> {
+pub(crate) fn merge(old: &Value, new: &Value) -> Result<Value, Error> {
     let mut items = pairs(old)?;
     for (name, value) in pairs(new)? { if let Some((_, v)) = items.iter_mut().find(|(k, _)| k == &name) { *v = value; } else { items.push((name, value)); } }
     let (names, values) = items.into_iter().unzip();
-    vector(names, values)
+    Ok(vector(names, values)?)
 }
 
 /// A position, as the selector of a position with no name.
 fn position(i: usize) -> Value { Value::integer(i as i64) }
+
+fn label_value((i, name): (usize, &Option<Arc<str>>)) -> Value { name.as_ref().map_or_else(|| position(i), |name| text(name)) }
 
 /// Names for positions: one name, or a vector of names in which a position with no name gives its own position.
 fn names(value: &Value) -> Result<Vec<Option<Arc<str>>>, ErrorKind> {
@@ -268,7 +306,7 @@ fn axis_selectors(value: &Layout, axes: &[usize], named: bool) -> Result<Value, 
         let &len = value.shape().get(axis).ok_or(Kind::Rank)?;
         let selector = match value.keys(axis) {
             Some(k) => Value::from_parts(
-                vec![len], k.names().iter().enumerate().map(|(i, k)| k.as_ref().map_or_else(|| position(i), |k| text(k))).collect(), text(""))?,
+                vec![len], k.names().iter().enumerate().map(label_value).collect(), text(""))?,
             None => Value::integers(vec![len], (0..len).map(|n| n as i64).collect())?
         };
         values.push(if named { selector.with_axis_names(vec![value.name(axis).cloned()])? } else { selector });
@@ -292,10 +330,11 @@ pub(crate) fn missing<'a>(target: &Value, selectors: impl IntoIterator<Item = (u
     Ok(added)
 }
 
-/// Adds an entry to `target` for each key in `added`, which `missing` gives for each axis. A new vector entry that a longer path descends into starts as a record. Otherwise a new entry starts as the prototype, which the assignment replaces. Mixed storage stays mixed. New keys on the leading axis alone append in place. New keys on another axis rebuild the array.
+/// Adds an entry to `target` for each key in `added`, which `missing` gives for each axis. A new vector entry that a longer path descends into starts as a record. A whole new host-kind vector field uses a neutral numeric placeholder; other new entries use the prototype. Mixed storage stays mixed. New keys on the leading axis alone append in place. New keys on another axis rebuild the array.
 pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: bool) -> crate::error::Result<()> {
     let rank = target.shape().len();
     let fill = if descend && rank == 1 { empty_record() } else { target.prototype() };
+    let fill = if rank == 1 && !descend && Desc::of(&fill).is_none() { Value::integer(0) } else { fill };
     let mut shape = target.shape().to_vec();
     if added[1..].iter().all(Vec::is_empty) {
         shape[0] += added[0].len();
@@ -320,10 +359,15 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
         shape[axis] = all.len();
         keys[axis] = Some(Keys::partial(all)?);
     }
-    let names = target.axis_names().to_vec();
     let count = Value::integers([shape.len()], shape.iter().map(|&n| n as i64).collect())?;
-    *target = crate::primitive::Operation::Primitive { primitive: crate::primitive::Primitive::Take, pairing: crate::primitive::Pairing::Axes }
-        .call(&[count, target.clone()])?.with_keys(keys)?.with_axis_names(names)?;
+    let padded = crate::primitive::Operation::Primitive { primitive: crate::primitive::Primitive::Take, pairing: crate::primitive::Pairing::Axes }
+        .call(&[count, target.clone()])?;
+    let layout = padded.layout().clone().with_keys(keys)?;
+    let axes: Vec<_> = (0..rank).filter(|&axis| layout.keys(axis).is_some()).collect();
+    let labels = axis_selectors(&layout, &axes, false)?;
+    let axes = Value::integers([axes.len()], axes.into_iter().map(|axis| axis as i64).collect())?;
+    *target = crate::primitive::Operation::Primitive { primitive: crate::primitive::Primitive::Keys(false), pairing: crate::primitive::Pairing::Explicit { fill: false } }
+        .call(&[labels, padded, axes])?;
     Ok(())
 }
 
@@ -337,7 +381,7 @@ pub(crate) fn reorder(value: &Value, wanted: &[Option<Arc<Keys>>], subset: bool)
         let positions = source.positions(target, subset)?;
         let indices = Value::positions([positions.len()], value.shape()[axis], positions.into_iter())?;
         result = Operation::Primitive { primitive: Primitive::Index, pairing: Pairing::Explicit { fill: false } }
-            .call(&[indices, result, Value::integer(axis as i64)])?;
+            .call(&[Value::tuple(vec![indices]), result, Value::constant(Value::integer(axis as i64))])?;
     }
     Ok(result)
 }

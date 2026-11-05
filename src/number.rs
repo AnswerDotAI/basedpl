@@ -17,7 +17,7 @@ pub struct Number(Repr);
 pub(crate) struct Kind { pub(crate) element: Element, pub(crate) weak: bool }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Element { Boolean, Fixed(DType), Ordinary(DType), Float(DType), Complex(DType), Character }
+pub(crate) enum Element { Boolean, Fixed(DType), Ordinary(DType), Float(DType), Complex(DType), Infinity(DType, i32), Character }
 
 impl Kind {
     pub(crate) fn stored(dtype: DType, fixed: bool, weak: bool) -> Self {
@@ -27,12 +27,16 @@ impl Kind {
         };
         Self { element, weak }
     }
-    pub(crate) fn number(number: &Number) -> Option<Self> { Some(Self::stored(number.dtype()?, number.fixed_width().is_some(), number.is_weak())) }
-    pub(crate) fn value(value: &Value) -> Option<Self> { value.kind() }
+    pub(crate) fn number(number: &Number) -> Option<Self> {
+        let mut kind = Self::stored(number.dtype()?, number.fixed_width().is_some(), number.is_weak());
+        if let Some(sign @ (-1 | 1)) = number.order_class() { kind.element = Element::Infinity(kind.dtype(), sign); }
+        Some(kind)
+    }
+    pub(crate) fn value(value: &Value) -> Option<Self> { value.promotion_kind() }
     pub(crate) fn dtype(self) -> DType {
         match self.element {
             Element::Boolean => DType::Boolean, Element::Character => DType::Character,
-            Element::Fixed(dtype) | Element::Ordinary(dtype) | Element::Float(dtype) | Element::Complex(dtype) => dtype
+            Element::Fixed(dtype) | Element::Ordinary(dtype) | Element::Float(dtype) | Element::Complex(dtype) | Element::Infinity(dtype, _) => dtype
         }
     }
     pub(crate) fn fixed_width(self) -> Option<Width> { match self.element { Element::Fixed(DType::Integer(width)) => Some(width), _ => None } }
@@ -47,13 +51,21 @@ impl Kind {
             })
         })
     }
-    pub(crate) fn strong(self) -> Self { Self { weak: false, ..self } }
+    pub(crate) fn strong(self) -> Self { Self::stored(self.dtype(), self.fixed_width().is_some(), false) }
     pub(crate) fn is_exact(self) -> bool { matches!(self.element, Element::Boolean | Element::Fixed(_) | Element::Ordinary(_)) }
-    pub(crate) fn range(self) -> rustymath::facts::Range { rustymath::facts::Range::of_dtype(self.dtype()) }
+    pub(crate) fn order_class(self) -> Option<i32> { match self.element { Element::Infinity(_, sign) => Some(sign), _ => self.is_exact().then_some(0) } }
+    pub(crate) fn range(self) -> rustymath::facts::Range {
+        match self.element { Element::Infinity(_, sign) => rustymath::facts::Range::of(Some(f64::INFINITY * f64::from(sign))), _ => rustymath::facts::Range::of_dtype(self.dtype()) }
+    }
+    pub(crate) fn literal(self, range: rustymath::facts::Range) -> Self {
+        if self.weak && matches!(self.element, Element::Ordinary(_)) {
+            Self::stored(DType::Integer(Width::narrowest(range.lo as i64, range.hi as i64)), false, true)
+        } else { self }
+    }
     pub(crate) fn join(self, other: Self) -> Option<Self> {
         let (left, right) = (self.dtype(), other.dtype());
         let dtype = match (self.weak, other.weak) {
-            _ if matches!((self.element, other.element), (Element::Ordinary(_), Element::Ordinary(_))) => left.common(right)?,
+            _ if left.is_integral() && right.is_integral() => left.common(right)?,
             (false, true) => left.common_weak(right)?, (true, false) => right.common_weak(left)?, _ => left.common(right)?
         };
         let fixed = [self, other].iter().any(|kind| kind.fixed_width().is_some())
@@ -76,18 +88,22 @@ impl From<Failure> for crate::Error {
     fn from(Failure::Domain(message): Failure) -> Self { crate::Error::domain(message) }
 }
 
-/// A number's representation. The final `bool` marks a weak ordinary number (`Number::is_weak`).
+/// Floating promotion also distinguishes the bare infinity symbols from computed IEEE infinities.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FloatMark { Strong, Weak, Infinity }
+
+/// A number's representation. The final flag marks promotion strength.
 #[derive(Clone, Debug)]
 enum Repr {
     /// A truth value. It acts as the integer 0 or 1 wherever a number is expected.
     Boolean(bool, bool),
     Integer(MachineInt, bool),
     Fixed(MachineInt),
-    Float(f64, bool),
+    Float(f64, FloatMark),
     /// A float of 32 bits. Arithmetic reads it as the `f64` it converts to exactly.
-    Single(f32, bool),
+    Single(f32, FloatMark),
     /// A float of 16 bits. Arithmetic reads it as the `f64` it converts to exactly.
-    Half(half::f16, bool),
+    Half(half::f16, FloatMark),
     Exact(Arc<BigRational>, bool),
     Complex(Complex64, bool),
     /// A complex number with 32-bit parts. Arithmetic reads it as the `Complex64` it converts to exactly.
@@ -313,7 +329,7 @@ impl From<i128> for Number { fn from(n: i128) -> Self { i64::try_from(n).map_or_
 
 /// A complex number with no imaginary part is a float.
 impl From<Complex64> for Number { fn from(n: Complex64) -> Self { Self::complex(n, FloatWidth::F64) } }
-impl From<Complex32> for Number { fn from(n: Complex32) -> Self { if n.im == 0.0 { Self(Single(n.re, false)) } else { Self(Complex32(n, false)) } } }
+impl From<Complex32> for Number { fn from(n: Complex32) -> Self { if n.im == 0.0 { Self(Single(n.re, FloatMark::Strong)) } else { Self(Complex32(n, false)) } } }
 
 /// Stored real-number conversions and total grade order.
 pub(crate) mod real {
@@ -562,10 +578,14 @@ pub(crate) fn literal(text: &str, mark: Option<Mark>, numeric: Numeric) -> Resul
     let value = if text.starts_with('$') {
         let (text, mark) = plain_suffixes(text);
         let width = match mark { Some(Mark::Type { dtype: DType::Float(width), .. }) => width, _ => numeric.width };
-        Number::float(match text.as_ref() { "$n" => f64::NAN, "$m" => width.epsilon(), _ => return Err(ErrorKind::Syntax) }, width)
+        match text.as_ref() {
+            TRUE_NAME => Number::from_bool(true), FALSE_NAME => Number::from_bool(false),
+            NAN_NAME => Number::float(f64::NAN, width), "$m" => Number::float(width.epsilon(), width), _ => return Err(ErrorKind::Syntax)
+        }
     } else {
+        let numeric = match mark { Some(Mark::Type { dtype: DType::Float(width), .. }) => numeric.with_width(width), _ => numeric };
         if mark == Some(Mark::Rational) { return Number::rational_literal(text, numeric); }
-        if mark == Some(Mark::Exact) && text.chars().all(|c| c.is_ascii_digit() || c == '¯') {
+        if matches!(mark, Some(Mark::Exact | Mark::Type { dtype: DType::Integer(_), .. })) && text.chars().all(|c| c.is_ascii_digit() || c == '¯') {
             return Number::parse_marked(text, mark, numeric);
         }
         Number::literal(text, numeric)?
@@ -590,6 +610,7 @@ impl Number {
             Element::Ordinary(DType::Integer(width)) => Self::integer_at(self.as_integer().expect("a stored integer"), width),
             Element::Fixed(DType::Integer(width)) => Self::fixed(self.as_integer().expect("a stored integer"), width), _ => self
         };
+        let number = if matches!(kind.element, Element::Infinity(_, _)) && number.is_infinite() { number.float_marked(FloatMark::Infinity) } else { number };
         number.marked(kind.weak)
     }
     pub(crate) fn fixed(n: i64, width: Width) -> Self { Self(Fixed(MachineInt::new(n, width))) }
@@ -693,23 +714,34 @@ impl Number {
     /// Whether this number is weak for promotion. A result is weak only when every operand is weak. Array items are strong.
     #[inline]
     pub(crate) fn is_weak(&self) -> bool {
-        matches!(
-            self.0,
-            Boolean(_, true) | Integer(_, true) | Exact(_, true) | Float(_, true) | Single(_, true) | Half(_, true) | Complex(_, true) | Complex32(_, true)
-        )
+        matches!(self.0, Boolean(_, true) | Integer(_, true) | Exact(_, true) | Complex(_, true) | Complex32(_, true))
+            || self.float_mark().is_some_and(|mark| mark != FloatMark::Strong)
+    }
+    fn float_mark(&self) -> Option<FloatMark> { match self.0 { Float(_, mark) | Single(_, mark) | Half(_, mark) => Some(mark), _ => None } }
+    fn float_marked(mut self, mark: FloatMark) -> Self {
+        if let Float(_, slot) | Single(_, slot) | Half(_, slot) = &mut self.0 { *slot = mark; }
+        self
+    }
+    /// Disjoint ordered domains: all finite exact numbers, and the two bare infinity symbols.
+    pub(crate) fn order_class(&self) -> Option<i32> {
+        if self.is_exact() { Some(0) }
+        else { (self.float_mark() == Some(FloatMark::Infinity)).then(|| if self.as_float().unwrap().is_sign_positive() { 1 } else { -1 }) }
     }
     /// Sets an ordinary number's promotion strength. Fixed integers stay strong.
     #[inline]
     pub fn marked(mut self, weak: bool) -> Self { self.mark(weak); self }
     pub(crate) fn mark(&mut self, weak: bool) {
-        if let Boolean(_, w) | Integer(_, w) | Exact(_, w) | Float(_, w) | Single(_, w) | Half(_, w) | Complex(_, w) | Complex32(_, w) = &mut self.0 {
-            *w = weak;
+        match &mut self.0 {
+            Float(_, mark) | Single(_, mark) | Half(_, mark) if !weak || *mark != FloatMark::Infinity =>
+                *mark = if weak { FloatMark::Weak } else { FloatMark::Strong },
+            Boolean(_, w) | Integer(_, w) | Exact(_, w) | Complex(_, w) | Complex32(_, w) => *w = weak,
+            _ => {}
         }
     }
     /// The number that literal text writes. A width or fixed-width marker makes it strong. With `ₓ` or `ₐ`, or none, it stays weak.
     pub(crate) fn literal(text: &str, numeric: Numeric) -> Result<Self, ErrorKind> {
-        let n = Self::parse(text, numeric)?;
-        Ok(n.marked(matches!(plain_suffixes(text).1, None | Some(Mark::Exact | Mark::Real))))
+        let n = Self::parse(text, numeric)?.marked(matches!(plain_suffixes(text).1, None | Some(Mark::Exact | Mark::Real)));
+        Ok(if matches!(text, "∞" | "¯∞") { n.float_marked(FloatMark::Infinity) } else { n })
     }
     pub(crate) fn bool_slice(&self) -> Option<&[bool]> { match &self.0 { Boolean(b, _) => Some(std::slice::from_ref(b)), _ => None } }
     #[inline]
@@ -749,8 +781,8 @@ impl Number {
     /// A float of `width`, holding `value` rounded to it.
     pub fn float(value: f64, width: FloatWidth) -> Self {
         match width {
-            FloatWidth::F16 => Self(Half(half::f16::from_f64(value), false)), FloatWidth::F32 => Self(Single(value as f32, false)),
-            FloatWidth::F64 => Self(Float(value, false))
+            FloatWidth::F16 => Self(Half(half::f16::from_f64(value), FloatMark::Strong)), FloatWidth::F32 => Self(Single(value as f32, FloatMark::Strong)),
+            FloatWidth::F64 => Self(Float(value, FloatMark::Strong))
         }
     }
     /// The float `y`, at its own width. Code outside this module states the width of every float it makes, through `float`.
@@ -775,7 +807,7 @@ impl Number {
     }
     /// This number, with a 64-bit float or complex number rounded to `width`. A weak number stays weak. Other numbers stay as they are.
     pub(crate) fn at_width(self, width: FloatWidth) -> Self {
-        match self.0 { Float(n, weak) => Self::float(n, width).marked(weak), Complex(z, weak) => self.complex_like(z, width).marked(weak), _ => self }
+        match self.0 { Float(n, mark) => Self::float(n, width).float_marked(mark), Complex(z, weak) => self.complex_like(z, width).marked(weak), _ => self }
     }
     /// The width of this float, or of the parts of this complex number. `None` for any other number.
     #[inline]
@@ -977,7 +1009,7 @@ impl Number {
         if right.0.integer().is_some() { return right.grade_order(self).reverse(); }
         match (&self.0, &right.0) {
             (x, y) if let (Some((x, _)), Some((y, _))) = (x.complex(), y.complex()) => real::grade(x.re, y.re).then(real::grade(x.im, y.im)),
-            (x, _) if let Some((x, _)) = x.complex() => Self(Float(x.re, false)).grade_order(right).then(real::grade(x.im, 0.0)),
+            (x, _) if let Some((x, _)) = x.complex() => Self(Float(x.re, FloatMark::Strong)).grade_order(right).then(real::grade(x.im, 0.0)),
             (_, y) if y.complex().is_some() => right.grade_order(self).reverse(), (Exact(x, _), Exact(y, _)) => x.cmp(y),
             (Exact(x, _), _) => x.as_ref().cmp(&BigRational::from_float(right.as_float().unwrap()).unwrap()),
             (_, Exact(_, _)) => right.grade_order(self).reverse(), _ => real::grade(self.as_float().unwrap(), right.as_float().unwrap())
@@ -1061,9 +1093,13 @@ impl fmt::Display for Number {
 }
 
 /// Host scalar evaluation uses the same exact definition or typed native kernel as array reads.
-pub(crate) fn calculate(kernel: &rustymath::operation::Kernel, args: &[&Value], numeric: Numeric) -> Result<Value, Error> {
-    use rustymath::{agreement::{Binding, Read, ReadPlan}, buffer::Buffer};
+pub(crate) fn calculate(kernel: &rustymath::operation::Kernel, args: &[&Value], numeric: Numeric, infinity_signs: bool) -> Result<Value, Error> {
+    use rustymath::{agreement::{Binding, Read, ReadPlan}, buffer::Buffer, characters::{ByKinds, Policy}};
+    if let Some(Policy::Kinds(side)) = kernel.input_policy() {
+        return Ok(match side { ByKinds::Truth(value) => Value::Number(Number::from_bool(value)), side => args[usize::from(side == ByKinds::Right)].clone() });
+    }
     let numbers: Option<Vec<_>> = args.iter().map(|value| value.as_number()).collect();
+    let infinite = infinity_signs && numbers.as_ref().is_some_and(|numbers| numbers.len() == 2 && numbers.iter().any(Number::is_infinite));
     if let Some(numbers) = numbers && numbers.iter().any(|n| n.is_unbounded()) && numbers.iter().all(|n| n.is_exact()) {
         let exact: Vec<_> = numbers.iter().map(|n| n.as_exact().expect("exact operands")).collect();
         if let Some(value) = kernel.exact(&exact)? {
@@ -1073,7 +1109,11 @@ pub(crate) fn calculate(kernel: &rustymath::operation::Kernel, args: &[&Value], 
     let values: Vec<_> = args.iter().map(|value| {
         if value.view().is_some() { return Ok(Cow::Borrowed(*value)); }
         let number = value.as_number().ok_or_else(|| Error::domain("numeric formula needs numbers or characters"))?;
-        Ok(Cow::Owned(Value::Number(number.approximated(numeric).map_err(Error::domain)?)))
+        let number = if infinite && number.is_unbounded() {
+            let exact = number.exact_ref().expect("an unbounded exact number");
+            numeric.float(if exact.is_zero() { 0.0 } else if exact.is_negative() { -1.0 } else { 1.0 })
+        } else { number.approximated(numeric).map_err(Error::domain)? };
+        Ok(Cow::Owned(Value::Number(number)))
     }).collect::<Result<_, Error>>()?;
     let sources: Vec<_> = values.iter().map(|value| Binding::full(value.view().expect("a scalar native argument"))).collect();
     let plans: Vec<_> = (0..sources.len()).map(|source| ReadPlan::input(source, 1)).collect();

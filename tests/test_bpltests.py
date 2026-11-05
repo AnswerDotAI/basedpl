@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import pytest
 from basedpl.reference import Corpus
-from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets
+from basedpl.bpltests import Case, parse, render, convert, add, description, literal, set_budgets, check_file
 from basedpl.worker import Worker
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,3 +88,34 @@ def test_set_budgets(tmp_path):
     set_budgets({'neg': 1.2}, path=rm)
     assert rm.read_text() == '[float64]\nneg\t2.4\t2.4\n'
     with pytest.raises(ValueError): set_budgets({'neg': 1}, path=rm, builds='wasm')
+
+
+def test_checker_preserves_failed_modes_and_unvisited_cases(tmp_path):
+    path = tmp_path/'continuation.bpl'
+    path.write_text(r'''⍝⍝ setup
+⍝ test_compiled enables the existing compile-mode fixture
+⍝⍝ cases
+⍝ prefix — Preserve a failure before a later mode stops
+{test_compiled?(+⍣{0})1;0}0   ⍝ 1
+
+⍝ tail — Later queued work still runs
+1+1   ⍝ 2
+''')
+    report = check_file(tmp_path, timeout=1)
+    assert not report['errors'], report
+    first, tail = report['cases']
+    modes = {m['mode']: m for m in first['modes']}
+    assert modes['with normal compilation']['status'] == 'mismatch', modes['with normal compilation'].get('actual')
+    assert modes['with compiled stages']['status'] == 'watchdog'
+    assert modes['with uncompiled stages']['status'] == 'mismatch'
+    assert modes['with uncompiled stages']['origin'] == 'fresh continuation'
+    assert modes["on a dfn's second call"]['status'] == modes['storage kinds']['status'] == 'blocked'
+    assert tail['status'] == 'pass' and all(m['status'] in ('pass', 'not applicable') for m in tail['modes'])
+    assert first in report['failures'] and first in report['incomplete'] and not report['complete']
+    with pytest.raises(ValueError, match='match no case'): check_file(path, ids=['absent'])
+    path.write_text('\n'+path.read_text())
+    selected = check_file(path, ids=tail, timeout=1)
+    assert selected['complete'] and len(selected['cases']) == 1 and selected['cases'][0]['line'] == tail['line']+1
+    path.write_text(path.read_text()+'\n⍝ another — The same code would be ambiguous\n1+1   ⍝ 2\n')
+    with pytest.raises(ValueError, match='ambiguous'): check_file(path, ids=[tail])
+

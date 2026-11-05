@@ -29,6 +29,8 @@ x←1 2 3 ⋄ 2↑x ←8 9 ⋄ x ⍝ 8 9 3
 [top: k:b]←["top":1 "k":2] ⋄ top b ⍝ 1 2
 ```
 
+A target can select a keyed position more than once. The original array keeps its keys. Which replacement it keeps at a repeated position isn't promised.
+
 Inside a dfn, plain assignment is local. Modified and selective assignment update the nearest existing binding. [Assignment](../assignment.ipynb) covers every form.
 
 ## Write support

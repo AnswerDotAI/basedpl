@@ -143,6 +143,14 @@ impl Session {
             result => result,
         }
     }
+    pub(crate) fn end_transform(&self, id: usize) {
+        for place in self.levels.end(id) {
+            if let Some(Binding::Value(value)) = self.bindings.get(place).expect("a written binding remains addressable until transform exit") {
+                self.bindings.insert(place, Binding::Value(crate::derivative::strip(&value, id)));
+            }
+        }
+    }
+
     pub(super) fn writing(&self, place: Place, span: &Span) -> Result<(), Error> {
         if place.frame() != self.bindings.current() {
             crate::program::trace::Tracing::stop(crate::program::Reason::OuterWrite, Some(span.clone()))?;
@@ -257,14 +265,16 @@ impl Session {
         self.evaluation(options, |s| s.bindings.at_top_level(Some(s.bindings.new_module()), || s.evaluate_source(Source::new("<input>", code))))
     }
     /// One evaluation under `options`: `evaluate`'s result, with the output it produced. Its value leaves the session computed: a forcing read (`graph::forced`), whose error becomes the evaluation's.
-    fn evaluation(&self, options: crate::EvalOptions, evaluate: impl FnOnce(&Self) -> Evaluation) -> Evaluation {
-        let _running = self.execution.begin(options);
-        let mut result = evaluate(self);
-        if let Some(Err(error)) = result.value.as_ref().map(|value| crate::graph::forced(&[value])) {
-            result = Evaluation { value: None, error: Some(error), ..result };
-        }
-        self.execution.flush();
-        Evaluation { output: self.execution.take_output(), ..result }
+    pub(crate) fn evaluation(&self, options: crate::EvalOptions, evaluate: impl FnOnce(&Self) -> Evaluation) -> Evaluation {
+        self.within(|| {
+            let _running = self.execution.begin(options);
+            let mut result = evaluate(self);
+            if let Some(Err(error)) = result.value.as_ref().map(|value| crate::graph::forced(&[value])) {
+                result = Evaluation { value: None, error: Some(error), ..result };
+            }
+            self.execution.flush();
+            Evaluation { output: self.execution.take_output(), ..result }
+        })
     }
     pub fn eval_timeout(&self, code: &str, timeout: std::time::Duration) -> Evaluation {
         self.eval_with(code, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() })
@@ -287,20 +297,23 @@ impl Session {
     }
     fn call_function(&self, function: &Function, args: &[Value]) -> Evaluation {
         let span = Span::whole(Source::new("<call>", function.bpl()));
+        self.call_function_at(function, args, &span)
+    }
+    pub(crate) fn call_function_at(&self, function: &Function, args: &[Value], span: &Span) -> Evaluation {
         let mut result = Evaluation::default();
         let called = (|| {
             let (left, right) = match args {
                 [right] => (None, right), [left, right] => (Some(left), right),
-                _ => return Err(Error::new(Kind::Length, "call requires one or two arguments").at(&span))
+                _ => return Err(Error::new(Kind::Length, "call requires one or two arguments").at(span))
             };
-            function.call(left, right, &span)?.result(&span)
+            function.call(left, right, span)?.result(span)
         })();
         match called {
             Ok(Bound { value: Binding::Value(a), shy, .. }) => {
-                if self.execution.echo.get() && !shy { if let Err(e) = self.display_value(&a, &span) { result.error = Some(e); } }
+                if self.execution.echo.get() && !shy { if let Err(e) = self.display_value(&a, span) { result.error = Some(e); } }
                 result.value = Some(a);
             }
-            Ok(Bound { value: Binding::Function(f), shy, .. }) => match Function::from_value(Binding::Function(f), &span) {
+            Ok(Bound { value: Binding::Function(f), shy, .. }) => match Function::from_value(Binding::Function(f), span) {
                 Ok(f) => {
                     if self.execution.echo.get() && !shy { self.display_function(&f, None); }
                     result.function = Some(f);
@@ -493,7 +506,7 @@ impl Session {
             Some(Value::Function(f)) => f,
             _ => {
                 let Some(kind) = crate::keyed::name(left) else { return Err(Error::domain("•mime needs a function or a MIME type on its left").at(span)) };
-                before(crate::keyed::text(&kind).into(), Function::primitive(Primitive::Keys(false)), span)?
+                before(Value::constant(crate::keyed::text(&kind).into()).into(), Function::primitive(Primitive::Keys(false)), span)?
             }
         };
         right.clone().with_renderer(renderer).described("invalid •mime result").at(span)
@@ -502,7 +515,7 @@ impl Session {
         let fallback = crate::keyed::vector(vec!["text/plain".into()], vec![crate::keyed::text(&self.show(right)?)]).unwrap();
         let Some(renderer) = right.renderer().cloned() else { return Ok(fallback); };
         let echo = self.execution.echo.replace(false);
-        let rendered = renderer.call_array(None, right, span);
+        let rendered = renderer.call_array(None, right, span).and_then(|value| self.observed_value(&value));
         self.execution.echo.set(echo);
         let bundle = crate::keyed::merge(&fallback, &rendered?).described("MIME renderer must return a keyed vector").at(span)?;
         crate::display::bundle(&bundle).described("MIME bundle must map MIME types to text or bytes").at(span)?;
@@ -616,15 +629,23 @@ impl Session {
     /// The entries of the keyed item in cell `cell` of the bracket literal `node`, whose `:` is at `colon`: `Keys` applies `key` to `value`, which must give a keyed vector. A name with a batch of atoms gives one entry that holds the batch, as `Keys` gives one entry in each cell, so a record built in a batched run holds batches as a list literal does. The level that finishes a compiled keyed item calls it as soon as the item's value and key are both ready (`tree::Keyed`). An item that fails there stops the items after it.
     pub(super) fn keyed(&self, node: &Node, cell: usize, colon: usize, key: &Value, value: &Value) -> Result<Vec<crate::keyed::Entry>, Error> {
         let NodeKind::ArrayLiteral { cells, .. } = &node.kind else { unreachable!("a bracket literal") };
-        if let Some(name) = crate::keyed::name(key) && value.rank() == 0 { return Ok(vec![(Some(name), value.clone())]); }
-        let item = Function::primitive(Primitive::Keys(false)).call(Some(key), value, &cells[cell][colon].span)?.array(&node.span)?;
+        let key = key.read(crate::ReadKind::Structure).at(&node.span)?;
+        if let Some(name) = crate::keyed::name(&key) && value.rank() == 0 { return Ok(vec![(Some(name), value.clone())]); }
+        let item = Function::primitive(Primitive::Keys(false)).call(Some(&key), value, &cells[cell][colon].span)?.array(&node.span)?;
         crate::keyed::entries(&item).described("key:value items must give keyed vectors").at(&node.span)
     }
 
     /// The record literal `node`, from its items' entries in order. Its keys must be unique.
     pub(super) fn record_literal(node: &Node, entries: Vec<crate::keyed::Entry>) -> Result<Binding, Error> {
-        let (names, values) = entries.into_iter().unzip();
-        Ok(Binding::Value(crate::keyed::partial_vector(names, values).described("keys must be unique").at(&node.span)?))
+        let (names, values): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
+        if values.is_empty() { return Ok(Binding::Value(crate::keyed::partial_vector(names, values)?)); }
+        let layout = crate::keyed::partial_layout(names).described("keys must be unique").at(&node.span)?;
+        let labels = Value::constant(crate::keyed::selectors(&layout, &[0])?);
+        let result = Operation::join(Notation::Strand, Widening::Items).call(&values).and_then(|value| {
+            Operation::Primitive { primitive: Primitive::Keys(false), pairing: Pairing::Explicit { fill: false } }
+                .call(&[labels, value, Value::constant(Value::integer(0))])
+        });
+        Ok(Binding::Value(result.map_err(|error| error.at(&node.span))?))
     }
 
     /// The list literal `node`, from its items' arrays in order, which assemble by its form.
@@ -848,9 +869,10 @@ const PREDICATE: &str = "a predicate requires a Boolean singleton";
 pub(super) enum Catch { All, Kinds(Vec<ErrorKind>) }
 impl Catch {
     fn new(value: &Value, span: &Span) -> Result<Self, Error> {
-        if value.read(crate::ReadKind::Value)?.as_real() == Some(f64::INFINITY) { return Ok(Self::All); }
+        let value = value.read(crate::ReadKind::Value)?;
+        if value.as_real() == Some(f64::INFINITY) { return Ok(Self::All); }
         let invalid = || Error::domain("a guard names error kinds, as in \"DOMAIN\"::, or catches every kind with ∞::").at(span);
-        let (_, names) = crate::keyed::text_items(value).ok_or_else(invalid)?;
+        let (_, names) = crate::keyed::text_items(&value).ok_or_else(invalid)?;
         Ok(Self::Kinds(names.iter().map(|n| ErrorKind::named(n)).collect::<Option<_>>().ok_or_else(invalid)?))
     }
     pub(super) fn catches(&self, kind: &ErrorKind) -> bool {

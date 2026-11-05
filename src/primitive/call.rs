@@ -119,7 +119,7 @@ pub(crate) struct CallView<'a> {
 }
 
 impl CallView<'_> {
-    fn new<'a, L: ?Sized>(origin: &'a Origin<L>, bindings: &'a dyn CallBindings) -> CallView<'a> {
+    pub(crate) fn new<'a, L: ?Sized>(origin: &'a Origin<L>, bindings: &'a dyn CallBindings) -> CallView<'a> {
         CallView { operation: &origin.operation, mode: origin.mode, site: origin.site.as_ref(), context: origin.context,
             roles: &origin.roles, explicit: origin.explicit as usize, explicit_roots: origin.explicit_roots as usize, trees: origin.trees.as_ref(),
             captures: &origin.bindings, bindings }
@@ -157,14 +157,33 @@ impl CallView<'_> {
                 && (!matches!(self.operation, Operation::At { .. }) || !layout.root(Root(1)).leaves.contains(&position))
         })
     }
-    pub(crate) fn operand_kind(&self) -> crate::error::Result<Option<crate::number::Kind>> {
-        let mut joined: Option<crate::number::Kind> = None;
-        for position in self.data_positions() {
-            let Some(desc) = self.desc(position) else { return Ok(None) };
-            if desc.kind.dtype() == rustymath::buffer::DType::Character { continue; }
-            joined = Some(match joined { None => desc.kind, Some(kind) => kind.join(desc.kind).ok_or_else(|| Error::domain("numeric kinds do not agree"))? });
-        }
-        Ok(joined)
+    /// Cell operands in ascending position order, including description-only arguments but not promoting their numeric kinds.
+    pub(crate) fn cell_positions(&self) -> impl Iterator<Item = usize> + '_ {
+        let mut data = self.data_positions().peekable();
+        let mut descriptions = self.layout().leaves(self.layout().arguments()).filter(|&position| self.roles.kind(position) == Some(ReadKind::Description)).peekable();
+        std::iter::from_fn(move || match (data.peek().copied(), descriptions.peek().copied()) {
+            (Some(a), Some(b)) if a < b => data.next(),
+            (_, Some(_)) => descriptions.next(),
+            (Some(_), None) => data.next(),
+            (None, None) => None,
+        })
+    }
+    pub(crate) fn promotion_kind(&self, position: usize, kind: NumberKind) -> NumberKind {
+        self.desc(position).filter(|_| self.constant(position)).map_or(kind, |desc| kind.literal(desc.bounds()))
+    }
+    pub(crate) fn operand_kind(&self) -> crate::error::Result<Option<NumberKind>> {
+        let join = |literal| -> Result<Option<NumberKind>, Error> {
+            let mut joined: Option<NumberKind> = None;
+            for position in self.data_positions() {
+                let Some(desc) = self.desc(position) else { return Ok(None) };
+                if desc.kind.dtype() == rustymath::buffer::DType::Character { continue; }
+                let kind = if literal { self.promotion_kind(position, desc.kind) } else { desc.kind };
+                joined = Some(match joined { None => kind, Some(previous) => previous.join(kind).ok_or_else(|| Error::domain("numeric kinds do not agree"))? });
+            }
+            Ok(joined)
+        };
+        let declared = join(false)?;
+        if declared.is_some_and(|kind| kind.fixed_width().is_some()) { join(true) } else { Ok(declared) }
     }
     pub(crate) fn numeric(&self) -> crate::error::Result<Numeric> {
         crate::settings::captured(self)?.for_kinds(self.operand_kind()?).map_err(Error::domain)
@@ -182,6 +201,7 @@ impl CallView<'_> {
         let code = self.parameter(self.layout().data())?.as_deref().and_then(Value::as_number).and_then(|number| number.integer().ok());
         let mut types = [variant.dtype; 3];
         let mut ranges = [Range::ANY; 3];
+        let mut classes = [None; 3];
         let direct = matches!(self.operation, Operation::Primitive { .. } | Operation::Product { .. });
         let mut count = 0;
         let layout = self.layout();
@@ -189,12 +209,13 @@ impl CallView<'_> {
         for position in self.data_positions().filter(|position| arguments.contains(position)) {
             let slot = types.get_mut(count).ok_or_else(|| Error::domain("too many numeric operands"))?;
             *slot = match self.desc(position) {
-                Some(desc) => { if direct { ranges[count] = desc.bounds(); } desc.kind.dtype() }
+                Some(desc) => { classes[count] = desc.kind.order_class(); if direct { ranges[count] = desc.bounds(); } desc.kind.dtype() }
                 None => return Ok(None),
             };
             count += 1;
         }
         primitive.kernel(dyadic, &ObjectArgs { numeric, code, variant, types: &types[..count], ranges: &ranges[..count] })
+            .map(|kernel| kernel.map(|kernel| kernel.ordered(&classes[..count], &types[..count])))
     }
     pub(crate) fn len(&self) -> usize { self.bindings.len() }
     fn parameter_allowed(&self, position: usize) -> bool {
@@ -218,15 +239,18 @@ impl CallView<'_> {
         let root = self.layout().root(root);
         match self.trees { Some(trees) => trees.describe_root(&root, |position| self.desc(position)), None => self.desc(root.leaves.start) }
     }
+    /// Host leaves have shape and atom metadata even when they have no native numerical description.
     pub(crate) fn root_atom(&self, root: Root) -> Option<bool> {
         let at = self.layout().root(root);
         if self.trees.is_some_and(|trees| !matches!(trees.root_at(&at), Tree::Leaf)) { return Some(false); }
         self.root_desc(root).map(|desc| desc.atom)
+            .or_else(|| self.bindings.parameter(at.leaves.start).map(Value::is_atom))
     }
     pub(crate) fn root_layout(&self, root: Root) -> Option<Cow<'_, Layout>> {
         let at = self.layout().root(root);
         if let Some(trees) = self.trees && let Tree::Array { layout, .. } = trees.root_at(&at) { return Some(Cow::Borrowed(layout)); }
         self.root_desc(root).map(|desc| match desc { Cow::Borrowed(desc) => Cow::Borrowed(&desc.layout), Cow::Owned(desc) => Cow::Owned(desc.layout) })
+            .or_else(|| self.bindings.parameter(at.leaves.start).map(|value| Cow::Borrowed(value.layout())))
     }
     pub(crate) fn desc(&self, position: usize) -> Option<Cow<'_, Desc>> { self.bindings.desc(position) }
     /// Whether position `position` holds a constant: a literal node (target part 4).
@@ -293,6 +317,7 @@ impl<'a> std::ops::Deref for RunView<'a> {
 impl<'a> RunView<'a> {
     pub(crate) fn new(call: CallView<'a>, bindings: &'a crate::program::BoundCall<'a>) -> Self { Self { call, bindings } }
     pub(crate) fn source(&self, position: usize) -> Result<Cow<'_, Value>, Error> { self.bindings.source(position) }
+    #[track_caller]
     pub(crate) fn value(&self, position: usize, read: ReadKind) -> Result<Cow<'_, Value>, Error> { self.bindings.value(position, read) }
     pub(crate) fn implicit(&self, input: crate::program::ImplicitInput) -> Option<(usize, &Value)> {
         let position = self.layout().implicit_input(input)?;
@@ -335,7 +360,6 @@ impl CallBindings for CellBindings<'_> {
 pub(crate) struct PreparedCall<'a> { origin: &'a Origin<&'a [Value]>, values: Cow<'a, [Value]> }
 impl PreparedCall<'_> {
     pub(crate) fn view(&self) -> CallView<'_> { CallView::new(self.origin, &self.values) }
-    pub(crate) fn origin(&self) -> Origin<&[Value]> { self.origin.with_list(self.values.as_ref()) }
 }
 impl<'a> Origin<crate::program::BoundCall<'a>> {
     pub(crate) fn call_view(&self) -> CallView<'_> { CallView::new(self, &self.list) }

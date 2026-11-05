@@ -8,7 +8,7 @@
 | `trees` | `$t` shows functions and dissected expressions as trees; `$f` uses linear notation. Independent of `box` | as `box` |
 | `fns` | `$f` leaves output made inside functions unboxed | as `box` |
 | `dissect` | `$t` shows the bound expression before each normal result, using `trees` | `$f` |
-| `fusion` | `$t` writes a line for each call that ends a fused computation, as described below | `$f` |
+| `fusion` | `$t` logs the operation and item count when a held pending result is stored | `$f` |
 | `limit` | The most items display shows in full. `∞` shows every item | `1000` |
 | `edges` | Positions shown at each end of a long axis | `3` |
 | `prec` | Significant digits shown for each float. `∞` shows every digit | `10` |
@@ -45,9 +45,9 @@ With `batch` on, a map calls its operand once on all its cells together where it
 
 `seed` restarts the session's random numbers from the seed given, so the same seed gives the same draws of [`¿`](../glyphs/inverted-question.qmd) and of a distribution's `sample`. The settings that `•prefs` returns leave `seed` out, because the stream moves on with each draw. Restoring saved settings therefore never reseeds it.
 
-`fusion` shows where large computations stop waiting. Calls of these glyphs on arrays large enough to wait, about 210 KB of result on Apple silicon ([Performance](../performance.qmd)), run together, block by block, reading each array once: monadic `+ - ÷ | * π ⊼ ⊽ ≤ ≥`, and dyadic `+ - × ÷ | ⌈ ⌊ π` and the comparisons. Under dynamic kinds, `√` and `⍟` join them where earlier calls keep their argument from being negative or ¯0, as in `√|y` and `⍟1+*y`, and so do dyadic `*` on such a base, as in `0.5*y`, and dyadic `⍟` on two such arguments. So do calls on Booleans, such as `∧` and `~`, and calls on integers where integers wrap: under static kinds, and at a fixed width under either kinds. A width or fixed mark, or `•float`, on a waiting result runs with its calls, and stores only the converted items. A comparison runs with a later call that reads it, as in `y×x>0`, unless a name also holds it. Structural functions such as `⌽`, `⍉`, `↑`, `↓` and `↕` wait too on arrays of that size and of any kind, holding only where each item of their result comes from in their argument. Each call waits until something reads its result. A call that would make a chain of waiting calls hold more than 64 calls, or keep alive more than 8 times its largest array, first computes the waiting results it reads. Fused calls, reductions, other pervasive calls and `+.×` read a waiting structural result from its argument, without building it. A read of a few items computes only those items. Any other reader computes the whole result first, such as `⍋`, display, and Python conversions other than NumPy views of structural results. With `fusion` set to `$t`, the innermost call that computes items of a waiting result writes a line naming its function and position, such as `fusion ends at ⍋ (<input>:1:46)`. A reduction such as `+/` of a waiting result runs with the calls and writes nothing. [Performance](../performance.qmd) explains how waiting calls, compiling and static kinds make code fast.
+With `fusion` set to `$t`, storing a pending result kept by a binding writes its operation, item count and reason, such as `stored +: 160000 items (bound)`. It does not enable or disable fusion. Calls build a lazy graph under either setting. A read runs the required graph and can combine its calculations into fused stages. Use [`•explain`](explain.qmd) to inspect those stages and their routes. [Performance](../performance.qmd) describes the execution model.
 
-[`•explain`](explain.qmd) records the same events. In the first example, the comparison runs with the arithmetic and `+/`. In the second, monadic `⌊` ends the fusion of `y×2`. In the third, `|` keeps the argument of `√` from being negative, so `√` runs with the other calls:
+[`•explain`](explain.qmd) also reports fused stages, rewrites, recorded programs and execution routes. These examples compare a fold of computed data, an integer conversion, and a square root whose argument is nonnegative:
 
 ```bpl
 y←¿1000000⍴0

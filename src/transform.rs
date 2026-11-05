@@ -1,13 +1,15 @@
 //! Nested Derivative/Batched levels. Dispatch invokes rules; Value::read owns observation.
+//! A larger id is a newer transform. Rules dispatch calls on their parts, exposing older levels to those calls.
 
 use crate::{Value, array::Carried, error::Result, primitive::{CallView, Operation, ReadOp, ViewAxis}, program::{Origin, Outputs}, session};
 use std::{cell::{Cell, RefCell}, sync::Arc};
 
 #[derive(Default)]
-pub(crate) struct Levels { stack: RefCell<Vec<Level>>, last: Cell<usize>, batch_rule: Cell<Option<usize>> }
+pub(crate) struct Levels { stack: RefCell<Vec<Running>>, last: Cell<usize>, batch_rule: Cell<Option<usize>> }
 
 #[derive(Clone)]
-pub(crate) struct Level { pub(crate) id: usize, pub(crate) kind: LevelKind, depth: usize, handling: bool }
+pub(crate) struct Level { pub(crate) id: usize, pub(crate) kind: LevelKind }
+struct Running { level: Level, depth: usize, handling: bool, writes: Vec<crate::eval::Place> }
 
 #[derive(Clone)]
 pub(crate) enum LevelKind { Derivative, Batched { frame: Value } }
@@ -15,39 +17,40 @@ pub(crate) enum LevelKind { Derivative, Batched { frame: Value } }
 impl Levels {
     pub(crate) fn begin(&self, kind: LevelKind) -> Level {
         self.last.set(self.last.get() + 1);
-        let level = Level { id: self.last.get(), kind, depth: session().frame_depth(), handling: false };
-        self.stack.borrow_mut().push(level.clone());
+        let level = Level { id: self.last.get(), kind };
+        self.stack.borrow_mut().push(Running { level: level.clone(), depth: session().frame_depth(), handling: false, writes: Vec::new() });
         level
     }
 
-    pub(crate) fn end(&self, id: usize) {
+    pub(crate) fn end(&self, id: usize) -> Vec<crate::eval::Place> {
         let mut stack = self.stack.borrow_mut();
-        if !stack.iter().any(|level| level.id == id) { return; }
-        assert_eq!(stack.last().map(|level| level.id), Some(id), "levels end in stack order");
-        stack.pop();
+        if !stack.iter().any(|running| running.level.id == id) { return Vec::new(); }
+        assert_eq!(stack.last().map(|running| running.level.id), Some(id), "levels end in stack order");
+        stack.pop().expect("a running transform level").writes
     }
     pub(crate) fn clear(&self) {
         self.stack.borrow_mut().clear();
         self.batch_rule.set(None);
     }
     pub(crate) fn writing(&self, place: crate::eval::Place) -> Result<()> {
-        for level in self.stack.borrow().iter().rev() {
-            if place.frame().is_some_and(|frame| frame >= level.depth) { continue; }
-            return Err(match &level.kind {
-                LevelKind::Batched { .. } => crate::Error::batch_stop(level.id),
-                LevelKind::Derivative => crate::Error::domain("a differentiated function cannot write outside its call"),
-            });
+        for running in self.stack.borrow_mut().iter_mut().rev() {
+            if place.frame().is_some_and(|frame| frame >= running.depth) { continue; }
+            match &running.level.kind {
+                LevelKind::Batched { .. } => return Err(crate::Error::batch_stop(running.level.id)),
+                LevelKind::Derivative => if !running.writes.contains(&place) { running.writes.push(place); },
+            }
         }
         Ok(())
     }
 
-    pub(crate) fn find(&self, id: usize) -> Option<Level> { self.stack.borrow().iter().rev().find(|level| level.id == id).cloned() }
+    pub(crate) fn find(&self, id: usize) -> Option<Level> { self.stack.borrow().iter().rev().find(|running| running.level.id == id).map(|running| running.level.clone()) }
     fn set_handling(&self, id: usize, handling: bool) -> bool {
-        self.stack.borrow_mut().iter_mut().find(|level| level.id == id).is_some_and(|level| std::mem::replace(&mut level.handling, handling))
+        self.stack.borrow_mut().iter_mut().find(|running| running.level.id == id).is_some_and(|running| std::mem::replace(&mut running.handling, handling))
     }
 
+    /// Exclude the batch whose rule is running from implicit resource dispatch. Explicit carried operands still select their own level.
     pub(crate) fn innermost_batched(&self) -> Option<Level> {
-        self.stack.borrow().iter().rev().find(|level| !level.handling && matches!(&level.kind, LevelKind::Batched { .. })).cloned()
+        self.stack.borrow().iter().rev().find(|running| !running.handling && matches!(&running.level.kind, LevelKind::Batched { .. })).map(|running| running.level.clone())
     }
     pub(crate) fn current_batch_rule(&self) -> Option<Level> { self.batch_rule.get().and_then(|id| self.find(id)) }
 }
@@ -83,7 +86,7 @@ pub(crate) struct Scope { pub(crate) level: Level }
 
 impl Scope { pub(crate) fn new(kind: LevelKind) -> Self { Self { level: Level::begin(kind) } } }
 
-impl Drop for Scope { fn drop(&mut self) { session().levels.end(self.level.id); } }
+impl Drop for Scope { fn drop(&mut self) { session().end_transform(self.level.id); } }
 
 /// A frame from actual runtime sources; all references are description-only inputs.
 pub(crate) fn frame_reference(references: &[Value], axes: &[ViewAxis]) -> Result<Value> {
@@ -106,7 +109,7 @@ pub(crate) fn agreed_frame(references: &[Value], rank: usize) -> Result<Value> {
             };
         }
         let input = arguments.len() as u32;
-        frames.push((offset..offset + rank).map(|axis| ViewAxis { input, axis: Some(axis) }).collect());
+        frames.push((offset..(offset + rank).min(value.rank())).map(|axis| ViewAxis { input, axis: Some(axis) }).collect());
         arguments.push(value.clone());
     }
     Operation::Read(ReadOp::Frame { frames: frames.into() }).call(&arguments)

@@ -1,12 +1,11 @@
 //! Indexing primitives: `⌷`, `⊃` and bracket indexing, and the `Selection` of items that selective assignment and `@` write through.
 
 use super::*;
-use crate::{array::Tree, program::GatherIndex};
+use crate::{array::{ArrayData, Tree}, program::GatherIndex};
 use rustymath::{
     agreement::{Missing, ReadPlan}, buffer::View, error::Kind, gather::Table, layout::Layout as CoreLayout,
     structure::{self, IndexPart, Plan, Routes, Selector as AxisSelector}
 };
-use std::sync::Arc;
 
 /// `left⌷right`. With `axes`, as `⌷⍠axes`, the selectors apply to the axes that `axes` lists, one for each position or key a selector holds, so a selector of coordinates lists each axis it covers. Its result takes the place of the first of those axes in the array. A NaN position reads `fill`, or the prototype where there's none.
 pub(super) fn squad(left: &Value, right: &Value, axes: Option<&[usize]>, fill: Option<Value>, span: &Span) -> Result<Value, Error> {
@@ -67,13 +66,12 @@ pub(crate) fn coordinate_fields(value: &Value) -> impl Iterator<Item = Value> + 
 }
 
 /// `left⊃right`: the item or cell at the end of the path `left` into `right`. A last level that selects a cell outside its axes gives a cell of `fill`'s items, or of prototypes where there's none (`Value::fill_item`).
-pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, fill: Option<&Value>, span: &Span) -> Result<Value, Error> {
+pub(crate) fn pick(left: &Value, right: &Value, prototype: bool, fill: Option<&Value>) -> Result<Value, Error> {
     let (array, _, fields) = walk(left, right, prototype)?;
     if fields.is_empty() { return Ok(array.into_owned()); }
     if fields.len() >= array.shape().len() { return host_item(&array, cell_offset(array.layout(), 0, &fields, prototype)?, fill); }
-    if cell_offset(array.layout(), 0, &fields, prototype)? != Steps::FILL {
-        return select(&array, &fields.into_iter().map(IndexPart::Axis).collect::<Vec<_>>(), None, false, None, span);
-    }
+    let offset = cell_offset(array.layout(), 0, &fields, prototype)?;
+    if offset != Steps::FILL { return array.cells(array.rank() - fields.len())?.get(offset); }
     let cell = array.layout().axes(fields.len()..array.shape().len());
     let count = crate::array::element_count(cell.shape())?;
     let item = host_item(&array, Steps::FILL, fill)?;
@@ -219,7 +217,7 @@ pub(crate) fn positions(a: &Value, size: usize) -> Result<Vec<usize>, Error> {
 }
 
 /// A compact array of whole numbers serves as index values that a selection's table reads in place, so that no list of offsets is built from them.
-impl rustymath::gather::IndexSource for Value { fn view(&self) -> View<'_> { self.as_items().view().expect("index values are compact") } }
+impl rustymath::gather::IndexSource for ArrayData { fn view(&self) -> View<'_> { self.storage().view().expect("index values are compact") } }
 
 /// The items a selection reaches. An offset is a flat position in the array. A path goes down through nested items, one position for each level, and the empty path is the whole array. A walk reaches the positions that `steps` give from `base`, in the order `walk` reads them, without listing them, as a selection of cells along axes does. In a batched run, each cell can reach offsets of its own (`batch::Cells`), which a read or a write serves on the batch's whole.
 pub(crate) enum Targets { Offsets(Vec<usize>), Paths(Vec<Vec<usize>>), Walk { base: usize, steps: Vec<Steps> } }
@@ -267,11 +265,21 @@ impl Targets {
 /// The item of `array` at `path`, with `fill` where the path's last position reaches no item, or the prototype where there's none. A path stops at an atom, so a simple item stands for the nested items below it.
 pub(crate) fn item_at(array: &Value, path: &[usize], fill: Option<&Value>) -> Result<Value, Error> {
     let Some((&last, outer)) = path.split_last() else { return Ok(array.clone()); };
-    let item = outer.iter().try_fold(array.clone(), |item, &i| if item.is_atom() { Ok(item) } else { host_item(&item, i, None) })?;
-    if item.is_atom() { Ok(item) } else { host_item(&item, last, fill) }
+    let item = outer.iter().try_fold(array.clone(), |item, &i| host_item(&item, i, None))?;
+    host_item(&item, last, fill)
 }
 
 fn host_item(array: &Value, index: usize, fill: Option<&Value>) -> Result<Value, Error> {
+    if index == Steps::FILL && !session().prototype.get() && matches!(array, Value::Pending(_) | Value::Carried { .. }) && Desc::of(array).is_some() {
+        let source = Operation::Primitive { primitive: Primitive::Ravel, pairing: Pairing::Axes }.call(std::slice::from_ref(array))?;
+        let index = Value::constant(Value::Number(Numeric::current().float(f64::NAN)));
+        let mut args = vec![index, source];
+        let pairing = if let Some(fill) = fill {
+            args.extend([Value::constant(crate::keyed::empty_record()), fill.clone()]);
+            Pairing::Explicit { fill: true }
+        } else { Pairing::Axes };
+        return Operation::Primitive { primitive: Primitive::Bracket, pairing }.call(&args);
+    }
     if index == Steps::FILL { return Ok(fill.cloned().unwrap_or_else(|| array.prototype())); }
     if array.is_atom() { return Ok(array.clone()); }
     if matches!(array, Value::Pending(_) | Value::Carried { .. }) {
@@ -284,22 +292,28 @@ fn host_item(array: &Value, index: usize, fill: Option<&Value>) -> Result<Value,
 
 pub(crate) struct Selection { pub frame: Frame, pub targets: Targets }
 
+fn replacement_agreement(layout: &Layout, values: &Layout) -> Result<Agreement, Error> {
+    let agreement = Agreement::onto(layout, values).described("replacement does not broadcast over selection")?;
+    if agreement.layout.shape() != layout.shape() { return Err(Error::new(Kind::Length, "replacement does not broadcast over selection")); }
+    if agreement.right.fills() { return Err(Error::new(Kind::Index, "keyed replacement is missing a selected key")); }
+    Ok(agreement)
+}
+
 impl Frame {
     pub(crate) fn replacement(&self, values: &Value) -> Result<Value, Error> {
         Ok(match self {
             Frame::Direct => values.clone(),
-            Frame::Array(_) if values.is_singleton() => {
+            Frame::Array(layout) if values.is_singleton() && !(layout.has_keys() && values.has_keys()) => {
                 if matches!(values, Value::Pending(_) | Value::Carried { .. }) { Operation::Read(ReadOp::Item).call(std::slice::from_ref(values))? }
                 else { values.unkeyed()? }
             }
             Frame::Array(layout) => {
-                use crate::agreement::{Agree, Agreement};
-                let agreement = Agreement::new(layout, values.layout()).described("replacement does not broadcast over selection")?;
-                if agreement.layout.shape() != layout.shape() { return Err(Error::new(Kind::Length, "replacement does not broadcast over selection")); }
+                use crate::agreement::Agree;
+                let agreement = replacement_agreement(layout, values.layout())?;
                 if matches!(values, Value::Pending(_) | Value::Carried { .. }) {
                     let reference = Value::stand_in(layout.clone());
                     let axes = (0..layout.shape().len()).map(|axis| ViewAxis { input: 1, axis: Some(axis) }).collect();
-                    let [destinations, _] = rustymath::agreement::Agreement::axis_pairs(values.layout(), layout);
+                    let destinations = rustymath::agreement::Agreement::paired_axes(layout, values.layout(), true);
                     Operation::Read(ReadOp::Axes { axes, destinations: destinations.into() }).call(&[values.clone(), reference])?
                 } else { agreement.laid(None, values).described("replacement does not broadcast over selection")?.1 }
             }
@@ -307,10 +321,6 @@ impl Frame {
     }
 }
 impl Selection {
-    fn assign(&self, array: &Value, values: &Value, span: &Span) -> Result<Value, Error> {
-        let values = self.frame.replacement(values)?;
-        self.write(array, &values, span)
-    }
     /// The selection of the items at `offsets`, as a vector.
     pub(crate) fn offsets(offsets: Vec<usize>) -> Selection {
         Selection { frame: Frame::Array(vec![offsets.len()].into()), targets: Targets::Offsets(offsets) }
@@ -354,7 +364,7 @@ impl Selection {
 
 /// The selection that the selector `paths` makes as pick paths: the item or cell at the end of each, as `⊃` reads it. Without a suffix, the paths all end at items, or all at cells of one shape. A suffix selects within each path's cell, planned against that cell's own layout, so each cell reads its own keys and names, and the suffix's selections must agree in shape. Where they differ in keys or names, the result's axes keep only their lengths.
 fn paths_selection(
-    right: &Value, paths: &Value, prefix: usize, suffix: &[IndexPart<Value>], paired: bool, writes: bool, span: &Span) -> Result<Selection, Error> {
+    right: &Value, paths: &Value, prefix: usize, suffix: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<Selection, Error> {
     let mut targets = Targets::Offsets(Vec::with_capacity(paths.len()));
     if prefix == 0 && suffix.is_empty() {
         let mut end = None::<Frame>;
@@ -375,7 +385,7 @@ fn paths_selection(
         let i = match plans.iter().position(|(c, ..)| *c == cell) {
             Some(i) => i,
             None => {
-                let plan = suffix_plan(&cell, suffix, paired, writes, span)?;
+                let plan = suffix_plan(&cell, suffix, paired, span)?;
                 if plans.first().is_some_and(|(.., row)| row.shape() != plan.layout.shape()) {
                     return Err(Error::new(Kind::Length, "paths select cells of different shapes"));
                 }
@@ -391,7 +401,7 @@ fn paths_selection(
         }
     }
     let row = match &plans[..] {
-        [] => suffix_plan(&prototype_cell(paths, right)?.unwrap_or_default(), suffix, paired, writes, span)?.layout.into(),
+        [] => suffix_plan(&prototype_cell(paths, right)?.unwrap_or_default(), suffix, paired, span)?.layout.into(),
         [(.., row), rest @ ..] if rest.iter().all(|(.., other)| other == row) => row.clone(), [(.., row), ..] => crate::array::Layout::from(row.shape())
     };
     let layout = crate::array::Layout::from(vec![1; prefix]).concat(paths.layout()).concat(&row);
@@ -399,8 +409,8 @@ fn paths_selection(
 }
 
 /// The plan that `suffix` makes within a cell with layout `cell`.
-fn suffix_plan(cell: &rustymath::layout::Layout, suffix: &[IndexPart<Value>], paired: bool, writes: bool, span: &Span) -> Result<Plan, Error> {
-    match axis_positions(cell, None, suffix, None, paired, writes, span)? {
+fn suffix_plan(cell: &rustymath::layout::Layout, suffix: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<Plan, Error> {
+    match axis_positions(cell, None, suffix, None, paired, span)? {
         Positions::Plan(plan, _) => Ok(plan), Positions::Paths(_) => unreachable!("a suffix plans without pick paths")
     }
 }
@@ -414,43 +424,52 @@ fn prototype_cell(paths: &Value, right: &Value) -> Result<Option<crate::array::L
 /// The span that errors report when a frontend indexes an array.
 static INDEX: std::sync::LazyLock<Span> = std::sync::LazyLock::new(|| Span { source: crate::Source::new("<index>", "[]"), range: 0..2 });
 
+/// A frontend axis selector: a BPL value or a range normalized against this call's source.
+pub enum Index { Value(Value), Range { start: usize, count: usize, step: isize } }
+
+fn index(right: &Value, parts: &[IndexPart<Index>]) -> Result<Value, Error> {
+    let claims: Vec<_> = parts.iter().map(|part| part.as_ref().map(|index| match index {
+        Index::Value(value) => (structure::sole_name(value.layout()), value.index_width()), Index::Range { .. } => (None, 1)
+    })).collect();
+    let mut right = right.clone();
+    for (axis, part) in structure::addressed_parts(right.layout(), &claims, None)? {
+        if let IndexPart::Axis(i) = part && let IndexPart::Axis(Index::Range { start, count, step }) = &parts[i] {
+            let integer = |n| i64::try_from(n).map(Value::integer).map_err(|_| Error::new(Kind::Length, "an index range exceeds machine counts"));
+            right = Operation::Read(ReadOp::Range { axis }).call(&[integer(*start)?, integer(*count)?, Value::integer(*step as i64), right])?;
+        }
+    }
+    let selectors = parts.iter().map(|part| Ok(match part {
+        // Explicit axis values stay values even when their atoms spell bracket punctuation.
+        IndexPart::Axis(Index::Value(value)) => match squad_part(value.clone()) { IndexPart::Axis(_) => value.clone(), _ => value.enclose()? },
+        IndexPart::Axis(Index::Range { .. }) | IndexPart::All => Value::Function(Function::primitive(Primitive::Keys(false))),
+        IndexPart::NewAxis => Value::Number(Number::float(f64::NEG_INFINITY, FloatWidth::F64)), IndexPart::Rest => Value::Number(Number::float(f64::INFINITY, FloatWidth::F64))
+    })).collect::<Result<Vec<_>, Error>>()?;
+    let selectors = Value::from_parts(vec![selectors.len()], selectors, Value::integer(0)).described("invalid index selectors")?;
+    Operation::Primitive { primitive: Primitive::Bracket, pairing: Pairing::Axes }.call(&[selectors, right])
+}
+
 impl Value {
     /// Source axes consumed by one numeric, key or coordinate-array selector.
     pub fn index_width(&self) -> usize { coordinate_width(self).unwrap_or(1) }
-    /// Plans a frontend's selection of this value by written `parts`, as `⌷` plans one, with index arrays paired by broadcasting, for an assignment where `writes`. `frontend(i, axis)` decodes the parts that hold no value, as Python decodes slices, and can decode other parts too, as Python decodes Boolean masks. It gives `None` to leave a part to `⌷`'s decoding. Also gives whether the selection reads one item. `err` converts BPL errors to the frontend's.
-    pub fn planned<E>(
-        &self, parts: &[IndexPart<Option<Value>>], writes: bool, mut frontend: impl FnMut(usize, usize) -> Option<Result<(AxisSelector, bool), E>>,
-        err: impl Fn(Error) -> E) -> Result<(Plan, bool), E> {
-        let layout = self.core_layout();
-        let claims: Vec<_> = parts.iter()
-            .map(|p| p.as_ref().map(|v| v.as_ref().map_or((None, 1), |v| (rustymath::structure::sole_name(v.layout()), v.index_width())))).collect();
-        rustymath::structure::plan_parts(layout, &claims, None, true, writes, |i, axis| {
-            if let Some(decoded) = frontend(i, axis) { return decoded; }
-            let IndexPart::Axis(Some(value)) = &parts[i] else { unreachable!("the frontend decodes the parts that hold no value") };
-            axis_part(value, layout, axis, true).map_err(&err)
-        }, |e| err(Error::new(e, "")))
-    }
-    /// Whether `part`, the first written axis part of an index of this value, selects pick paths, which `select` reads.
+    /// Whether the first written axis selector selects nested pick paths.
     pub fn picks_paths(&self, part: &Value) -> Result<bool, Error> {
         if coordinate_width(part).is_none() { return Ok(false); }
         Ok(paths_part(self.core_layout(), &[IndexPart::Axis(part.clone())])?.is_some())
     }
-    /// Reads written bracket selectors, preserving structural markers until their frame is known.
-    pub fn select(&self, parts: &[IndexPart<Value>]) -> Result<Value, Error> { select(self, parts, None, true, None, &INDEX) }
-    /// Reads a checked structural selection. `atom` distinguishes a direct item from a rank-zero array.
-    pub fn selected(&self, plan: Plan, atom: bool) -> Result<Value, Error> { planned_read(self, plan, atom, None) }
-    /// Replaces a checked structural selection without changing the original value.
-    pub fn assigned(&self, plan: Plan, atom: bool, values: &Value) -> Result<Value, Error> { planned_selection(plan, atom).assign(self, values, &INDEX) }
-    /// Replaces rich BPL selectors with the same broadcasting as a planned frontend assignment.
-    pub fn assigned_parts(&self, parts: &[IndexPart<Value>], values: &Value) -> Result<Value, Error> {
-        selection(self, parts, true, &INDEX)?.assign(self, values, &INDEX)
+    /// Reads frontend selectors through the same graph operations as bracket indexing.
+    pub fn select(&self, parts: &[IndexPart<Index>]) -> Result<Value, Error> { index(self, parts) }
+    /// Replaces the same logical selection that `select` reads.
+    pub fn assigned_parts(&self, parts: &[IndexPart<Index>], values: &Value) -> Result<Value, Error> {
+        let scope = crate::selection::Scope::new(self)?;
+        let target = index(&scope.root, parts)?;
+        scope.select(&target)?.ok_or_else(|| Error::domain("cannot assign to an item that isn't from the original"))?.write(values.clone(), None)
     }
 }
 /// The items that `parts` read from `right`, one part for each leading axis: their cross product, or where `paired`, with index arrays paired by broadcasting. A position that reaches no item reads `fill`, or the prototype where there's none.
 pub(crate) fn select(
     right: &Value, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, fill: Option<Value>, span: &Span) -> Result<Value, Error> {
     if parts.is_empty() { return every_item(right); }
-    let (plan, direct) = match axis_positions(right.layout(), Some(right), parts, axes, paired, false, span)? {
+    let (plan, direct) = match axis_positions(right.layout(), Some(right), parts, axes, paired, span)? {
         Positions::Plan(plan, direct) => (plan, direct), Positions::Paths(paths) => return paths.read(right, fill.as_ref(), span)
     };
     planned_read(right, plan, direct, fill)
@@ -465,27 +484,14 @@ pub(crate) fn planned_read(right: &Value, plan: Plan, direct: bool, fill: Option
 
 /// Plan positional, key and coordinate parts without traversing nested items.
 fn parts_plan(
-    layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, writes: bool, checked: bool
+    layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, checked: bool
 ) -> Result<(Plan, bool), Error> {
-    structure::plan_parts(layout, &source_claims(parts), axes, paired, writes, |i, axis| {
+    structure::plan_parts(layout, &source_claims(parts), axes, paired, |i, axis| {
         let IndexPart::Axis(value) = &parts[i] else { unreachable!("an axis refers to its written payload") };
         axis_part(value, layout, axis, checked)
     }, Error::from)
 }
 
-/// The items that `select` reads, as a selection to write into.
-pub(crate) fn selection(right: &Value, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<Selection, Error> {
-    if parts.is_empty() && right.is_unit() { return Ok(Selection { frame: Frame::Direct, targets: Targets::Paths(vec![vec![]]) }); }
-    let (plan, direct) = match axis_positions(right.layout(), Some(right), parts, None, paired, true, span)? {
-        Positions::Plan(plan, direct) => (plan, direct), Positions::Paths(paths) => return Ok(paths)
-    };
-    Ok(planned_selection(plan, direct))
-}
-
-fn planned_selection(plan: Plan, direct: bool) -> Selection {
-    if direct && plan.layout.shape().is_empty() { return Selection { frame: Frame::Direct, targets: Targets::Offsets(Steps::combined(0, &plan.steps)) }; }
-    Selection { frame: Frame::Array(plan.layout.into()), targets: Targets::Walk { base: 0, steps: plan.steps } }
-}
 
 /// How a selection by parts reads: a plan of positions, with whether it reads one item, or pick paths.
 enum Positions { Plan(Plan, bool), Paths(Selection) }
@@ -499,18 +505,18 @@ fn paths_part(layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>]) ->
     Ok((paths && rustymath::structure::addressed(layout, &[(rustymath::structure::sole_name(path.layout()), k)])?[0] == 0).then_some(first))
 }
 
-/// The plan of a selection by parts on an array with `layout`: the cross product of their positions, or where `paired`, their positions paired by broadcasting. Also whether the result is one item. A selector of coordinates reads its axes as one axis. Coordinates that differ in length or go inside items select pick paths into `whole`, the array itself. A pick path's suffix plans within the layout of the cell it reaches, with no `whole`. `writes` plans a write, whose positions can repeat a key.
+/// The plan of a selection by parts on an array with `layout`: the cross product of their positions, or where `paired`, their positions paired by broadcasting. Also whether the result is one item. A selector of coordinates reads its axes as one axis. Coordinates that differ in length or go inside items select pick paths into `whole`, the array itself. A pick path's suffix plans within the layout of the cell it reaches, with no `whole`.
 fn axis_positions(
-    layout: &rustymath::layout::Layout, whole: Option<&Value>, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, writes: bool, span: &Span
+    layout: &rustymath::layout::Layout, whole: Option<&Value>, parts: &[IndexPart<Value>], axes: Option<&[usize]>, paired: bool, span: &Span
 ) -> Result<Positions, Error> {
     if parts.iter().filter(|p| matches!(p, IndexPart::Rest)).count() > 1 { return Err(Error::new(Kind::Index, "only one rest selector is allowed")); }
     if let Some(whole) = whole && axes.is_none() && let Some(first) = paths_part(layout, parts)? {
         let IndexPart::Axis(path) = &parts[first] else { unreachable!("pick paths are an axis part") };
         return paths_selection(
-            whole, path, parts[..first].iter().filter(|p| matches!(p, IndexPart::NewAxis)).count(), &parts[first + 1..], paired, writes, span)
+            whole, path, parts[..first].iter().filter(|p| matches!(p, IndexPart::NewAxis)).count(), &parts[first + 1..], paired, span)
         .map(Positions::Paths);
     }
-    let (plan, direct) = parts_plan(layout, parts, axes, paired, writes, true)?;
+    let (plan, direct) = parts_plan(layout, parts, axes, paired, true)?;
     Ok(Positions::Plan(plan, direct))
 }
 
@@ -524,9 +530,9 @@ pub(crate) fn axis_part(value: &Value, layout: &rustymath::layout::Layout, axis:
     }
     let size = layout.shape()[axis];
     let value = axis_selector(value, layout, axis)?;
-    let positions = match value.view() {
-        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) if !checked => Table::new(structure::positions_mode(view, size, false)?),
-        Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)) if !value.is_atom() => structure::index_table(Arc::new(value.clone()), size)?,
+    let positions = match (value.view(), &value) {
+        (Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))), _) if !checked => Table::new(structure::positions_mode(view, size, false)?),
+        (Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)), Value::Array(storage)) => structure::index_table(storage.clone(), size)?,
         _ => Table::new(positions(&value, size)?),
     };
     let selector = if value.is_atom() && let Some(i) = positions.get(0) { AxisSelector::At(i) }
@@ -578,15 +584,24 @@ pub(crate) fn at_target(call: &CallView<'_>, root: &Desc) -> Result<Desc, Error>
     Ok(target)
 }
 pub(crate) fn at_geometry(call: &CallView<'_>) -> Result<Option<(Desc, Mapping, Option<ReadPlan>)>, Error> {
-    let Operation::At { target: mode, .. } = call.operation else { unreachable!("a write") };
+    let Operation::At { combine, target: mode } = call.operation else { unreachable!("a write") };
     let roots = [call.layout().root(Root(0)), call.layout().root(Root(1)), call.layout().root(Root(2))];
     if roots.iter().any(|root| root.leaves.len() != 1) { return Ok(None); }
     let (Some(root), Some(_), Some(values)) = (call.root_desc(Root(0)), call.root_desc(Root(1)), call.root_desc(Root(2))) else { return Ok(None) };
     let target = at_target(call, &root)?;
     if target.atom && !values.atom { return Ok(None); }
-    let Some(kind) = root.kind.join(values.kind) else { return Ok(None) };
-    let agreement = Agreement::new(&target.layout, &values.layout)?;
-    if agreement.layout != target.layout { return Err(Error::new(Kind::Length, "write values do not match positions")); }
+    let numeric = call.numeric()?;
+    let widening = Widening::of_results(call.mode.dynamic);
+    let Some(mut kind) = widening.join(root.kind, values.kind) else { return Ok(None) };
+    if kind.fixed_width().is_some() { kind = call.operand_kind()?.or_internal()?; }
+    let agreement = replacement_agreement(&target.layout, &values.layout)?;
+    if let Some(primitive) = combine {
+        let Some(kernel) = call.kernel(call.variant(kind.dtype())?)? else { return Ok(None); };
+        let range = kernel.fold_range(values.bounds(), Some(root.bounds()), target.layout.count());
+        let (result, _) = result_kind(numeric, kernel.result_dtype(), range, primitive.info().integer_result[1], false);
+        let Some(joined) = widening.join(root.kind, result) else { return Ok(None); };
+        kind = joined;
+    }
     let route = (*mode != WriteTarget::Indices).then(|| ReadPlan::input(roots[1].leaves.start, target.layout.count()));
     Ok(Some((Desc { kind: kind.strong(), atom: root.atom, layout: root.layout.clone(), range: None }, agreement.right, route)))
 }
@@ -598,13 +613,47 @@ pub(super) fn build_at(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping))
     set(roots[0].leaves.start, Mapping::Linear(1));
     set(roots[1].leaves.start, Mapping::Linear(1));
     set(roots[2].leaves.start, values);
-    Ok((step, Some(Outputs::one(Some(desc))), route))
+    Ok((step, PlannedOutputs::Described(Outputs::one(Some(desc))), route))
 }
 
 pub(crate) struct GatherGeometry {
     pub(crate) source: usize, pub(crate) source_layout: Layout, pub(crate) desc: Desc, pub(crate) routes: Routes, pub(crate) indices: Vec<GatherIndex>,
-    pub(crate) paired: bool, pub(crate) fill: Option<u32>
+    pub(crate) paired: bool, pub(crate) fill: Option<u32>, pub(crate) frame: usize
 }
+impl GatherGeometry {
+    pub(super) fn frameable(&self) -> bool {
+        self.fill.is_none() && (self.paired || self.routes.selectors.iter().filter(|selector| match selector {
+            AxisSelector::Indices { layout, .. } | AxisSelector::Shaped { layout } => !layout.shape().is_empty(), _ => false,
+        }).count() <= 1)
+    }
+    /// Pair each cell's selectors with its source frame, using the ordinary gather planner.
+    fn framed(mut self, call: &CallView<'_>, axes: usize) -> Result<Option<Self>, Error> {
+        if axes == 0 { return Ok(Some(self)); }
+        if !self.frameable() { return Ok(None); }
+        let source = call.desc(self.source).or_internal()?;
+        let frame = source.layout.axes(0..axes);
+        for selector in &mut self.routes.selectors {
+            match selector {
+                AxisSelector::Shaped { layout } => *layout = CoreLayout::from(frame.shape()).concat(layout),
+                AxisSelector::Indices { layout, .. } => *layout = CoreLayout::from(vec![1; axes]).concat(layout), _ => {}
+            }
+        }
+        for source in &mut self.routes.sources { for axis in source { *axis += axes; } }
+        let selectors = frame.shape().iter().enumerate().map(|(axis, &len)| AxisSelector::Indices {
+            layout: [vec![1; axis], vec![len]].concat().into(), positions: Table::new((0..len).collect()),
+        }).collect::<Vec<_>>();
+        self.routes.selectors.splice(0..0, selectors);
+        self.routes.sources.splice(0..0, (0..axes).map(|axis| vec![axis]));
+        self.source_layout = source.layout.clone();
+        self.desc.layout = frame.concat(&self.desc.layout);
+        self.desc.atom = false;
+        self.desc.kind.weak = false;
+        self.paired = true;
+        self.frame += axes;
+        Ok(Some(self))
+    }
+}
+
 
 enum GatherPart { Data(GatherIndex, Desc), Known(Value) }
 
@@ -629,12 +678,12 @@ pub(super) fn index_roles(call: &CallView<'_>) -> Result<Roles, Error> {
     if call.layout().arguments().len() != 2 { return Ok(Roles::default()); }
     let root = call.layout().root(call.layout().arguments().start);
     let structured = call.trees.is_some_and(|trees| trees.root_at(&root).children(root.leaves.start).any(|(child, _)| matches!(child, Tree::Array { .. })));
-    Ok(root.leaves.filter(|&position| structured || keyed_source(call) || pick_bounds_parameter(call) || selector_parameter(call, position))
+    Ok(root.leaves.filter(|&position| call.constant(position) || structured || keyed_source(call) || pick_bounds_parameter(call) || selector_parameter(call, position))
         .fold(Roles::default(), |reads, position| reads.with(position, ReadKind::Structure)))
 }
 
 fn structural_selector(call: &CallView<'_>, root: &TreeRoot) -> bool {
-    root.leaves.clone().all(|position| call.roles.kind(position) == Some(ReadKind::Structure) || call.constant(position))
+    root.leaves.clone().all(|position| call.roles.kind(position) == Some(ReadKind::Structure))
 }
 
 /// A known selection of a heterogeneous wrapper projects its original children, not their values.
@@ -659,7 +708,7 @@ fn index_projection(origin: Origin<&[Value]>, call: &CallView, purpose: ReadKind
         .transpose()?;
     let paired = matches!(call.operation, Operation::Primitive { primitive: Primitive::Bracket, .. });
     let span = call.site.cloned().unwrap_or_else(|| Span::whole(crate::Source::new("<index>", "⌷")));
-    let Positions::Plan(plan, direct) = axis_positions(right.layout(), Some(&right), &parts, axes.as_deref(), paired, false, &span)? else { return Ok(None); };
+    let Positions::Plan(plan, direct) = axis_positions(right.layout(), Some(&right), &parts, axes.as_deref(), paired, &span)? else { return Ok(None); };
     let fill = call.layout().fill().map(|root| origin.root_input(root.index).map(Cow::into_owned)).transpose()?;
     planned_read(&right, plan, direct, fill).map(|value| Some(Outputs::one(value)))
 }
@@ -671,8 +720,7 @@ pub(super) fn pick_form(origin: Origin<&[Value]>, call: &CallView) -> Result<Opt
         let left = origin.root_input(roots.start)?.read(ReadKind::Structure)?;
         let right = origin.root_input(roots.back().or_internal()?)?;
         let fill = call.layout().fill().map(|root| origin.root_input(root.index)).transpose()?;
-        let span = call.site.cloned().unwrap_or_else(|| INDEX.clone());
-        return pick(&left, &right, true, fill.as_deref(), &span).map(|value| Some(Outputs::one(value)));
+        return pick(&left, &right, true, fill.as_deref()).map(|value| Some(Outputs::one(value)));
     }
     if let Some(outputs) = fill_form(origin.reborrow(), call)? { return Ok(Some(outputs)); }
     if call.root_layout(roots.start).is_some_and(|layout| layout.shape() == [0])
@@ -735,8 +783,7 @@ pub(crate) fn selection_projection(origin: Origin<&[Value]>) -> Result<Option<Va
     let right = origin.root_input(source.index)?;
     let left = origin.root_input(roots.start)?.read(ReadKind::RuntimeOnly)?;
     if matches!(call.operation, Operation::Primitive { primitive: Primitive::Mix, .. }) {
-        let span = call.site.cloned().unwrap_or_else(|| INDEX.clone());
-        return pick(&left, &right, false, None, &span).map(Some);
+        return pick(&left, &right, false, None).map(Some);
     }
     let parts = squad_parts(&left)?;
     let layout = right.layout();
@@ -745,24 +792,22 @@ pub(crate) fn selection_projection(origin: Origin<&[Value]>) -> Result<Option<Va
         .transpose()?;
     let paired = matches!(call.operation, Operation::Primitive { primitive: Primitive::Bracket, .. });
     let span = call.site.cloned().unwrap_or_else(|| INDEX.clone());
-    match axis_positions(&layout, Some(&right), &parts, axes.as_deref(), paired, false, &span)? {
+    match axis_positions(&layout, Some(&right), &parts, axes.as_deref(), paired, &span)? {
         Positions::Paths(selection) => selection.read(&right, None, &span).map(Some), Positions::Plan(..) => Ok(None)
     }
 }
 fn gather_part(call: &CallView<'_>, position: usize, item: Option<usize>) -> Result<Option<IndexPart<GatherPart>>, Error> {
     let known = call.parameter(position)?;
     let known = known.as_deref().map(|value| item.map_or_else(|| value.clone(), |item| value.at(item)));
-    match known.map(squad_part) {
-        Some(IndexPart::Axis(value)) if !keyed_source(call) && !pick_bounds_parameter(call) && value.dtype().is_some_and(|dtype| dtype != DType::Character) => {}
-        Some(part) => return Ok(Some(part.map(GatherPart::Known))), None => {}
-    }
+    if let Some(part) = known.map(squad_part) { return Ok(Some(part.map(GatherPart::Known))); }
+    let Some(index) = GatherIndex::of(call, position, item) else { return Ok(None) };
     let Some(mut desc) = call.desc(position).map(Cow::into_owned) else { return Ok(None) };
     if desc.dtype() == DType::Character { return Ok(None); }
     if item.is_some() {
         desc.layout = Layout::default();
         desc.atom = true;
     }
-    Ok(Some(IndexPart::Axis(GatherPart::Data(GatherIndex { input: position as u32, item }, desc))))
+    Ok(Some(IndexPart::Axis(GatherPart::Data(index, desc))))
 }
 
 fn gather_parts(call: &CallView<'_>, root: &TreeRoot) -> Result<Option<Vec<IndexPart<GatherPart>>>, Error> {
@@ -781,7 +826,7 @@ fn gather_parts(call: &CallView<'_>, root: &TreeRoot) -> Result<Option<Vec<Index
     }
     let position = root.leaves.start;
     let Some(desc) = call.desc(position) else { return gather_part(call, position, None).map(|part| part.map(|part| vec![part])); };
-    if desc.dtype() == DType::Character { return gather_part(call, position, None).map(|part| part.map(|part| vec![part])); }
+    if desc.atom || desc.dtype() == DType::Character { return gather_part(call, position, None).map(|part| part.map(|part| vec![part])); }
     if desc.shape().len() > 1 { return Err(Error::new(Kind::Rank, "squad indices must be a unit or vector")); }
     (0..desc.layout.count()).map(|item| gather_part(call, position, Some(item))).collect::<Result<Option<Vec<_>>, _>>()
 }
@@ -796,6 +841,9 @@ fn index_axes(call: &CallView<'_>, layout: &Layout) -> Result<Option<Vec<usize>>
     }).transpose().map(Option::flatten)
 }
 pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Error> {
+    if matches!(call.operation, Operation::Read(ReadOp::Cells { .. })) {
+        return call.with_cells(|cell, axes| match gather(cell)? { Some(geometry) => geometry.framed(call, axes), None => Ok(None) });
+    }
     let Operation::Primitive { primitive: primitive @ (Primitive::Index | Primitive::Bracket | Primitive::Mix), .. } = call.operation else { return Ok(None) };
     let roots = call.layout().arguments();
     if roots.len() != 2 { return Ok(None); }
@@ -828,12 +876,12 @@ pub(crate) fn gather(call: &CallView<'_>) -> Result<Option<GatherGeometry>, Erro
         }
     }, Error::from)?;
     let paired = matches!(call.operation, Operation::Primitive { primitive: Primitive::Bracket, .. });
-    let layout = structure::layout_routes(&desc.layout, &routes, paired, false)?;
+    let layout = structure::layout_routes(&desc.layout, &routes, paired)?;
     let atom = if parts.is_empty() { desc.atom } else { routes.one };
     let fill = match call.layout().fill() { Some(root) if root.leaves.len() == 1 => Some(root.leaves.start as u32), Some(_) => return Ok(None), None => None };
     let output = Desc { kind: crate::number::Kind { weak: atom && desc.kind.weak, ..desc.kind }, atom, layout: Layout::rearranged(layout, &desc.layout),
         range: filled_range(call, &desc) };
-    Ok(Some(GatherGeometry { source, source_layout: desc.layout.clone(), desc: output, routes, indices, paired, fill }))
+    Ok(Some(GatherGeometry { source, source_layout: desc.layout.clone(), desc: output, routes, indices, paired, fill, frame: 0 }))
 }
 
 fn known_index(call: &CallView<'_>) -> Result<Option<RowResult>, Error> {
@@ -852,20 +900,23 @@ fn known_index(call: &CallView<'_>) -> Result<Option<RowResult>, Error> {
         (Layout::rearranged(plan.layout, &desc.layout), Some(starts))
     } else { (desc.layout.clone(), None) };
     let paired = matches!(call.operation, Operation::Primitive { primitive: Primitive::Bracket, .. });
-    let (plan, single) = parts_plan(&layout, &parts, starts.as_deref(), paired, false, call.mode.dynamic)?;
+    let (plan, single) = parts_plan(&layout, &parts, starts.as_deref(), paired, call.mode.dynamic)?;
     let atom = if parts.is_empty() { desc.atom } else { single };
     let output = Desc { kind: crate::number::Kind { weak: atom && desc.kind.weak, ..desc.kind }, atom,
         layout: Layout::rearranged(plan.layout, &desc.layout), range: filled_range(call, &desc) };
     read = read.remapped(Mapping::from(plan.steps), output.layout.count(), fill_read(call, &output)?);
-    Ok(Some((Step::Copy { source: root.leaves.start as u32 }, Some(Outputs::one(Some(output))), Some(read))))
+    Ok(Some((Step::Copy { source: root.leaves.start as u32 }, PlannedOutputs::Described(Outputs::one(Some(output))), Some(read))))
 }
 pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
     if call.layout().arguments().len() == 1 { return structural::build(call, set); }
     let selector = call.layout().root(call.layout().arguments().start);
     if structural_selector(call, &selector) && !matches!(call.operation, Operation::Primitive { primitive: Primitive::Mix, .. }) { return known_index(call)?.map_or_else(|| host_build(call, set), Ok); }
     let Some(geometry) = gather(call)? else { return host_build(call, set); };
+    build_gather(call, geometry, set)
+}
+pub(super) fn build_gather(call: &CallView<'_>, geometry: GatherGeometry, set: &mut dyn FnMut(usize, Mapping)) -> Result<RowResult, Error> {
     let (step, read) = if geometry.indices.is_empty() {
-        let plan = structure::plan_routes(&geometry.source_layout, &geometry.routes, geometry.paired, false)?;
+        let plan = structure::plan_routes(&geometry.source_layout, &geometry.routes, geometry.paired)?;
         let map = Mapping::from(plan.steps);
         set(geometry.source, map.clone());
         let read = ReadPlan::copy(geometry.source, geometry.source_layout.count(), map, geometry.desc.layout.count(), fill_read(call, &geometry.desc)?);
@@ -873,5 +924,5 @@ pub(super) fn build_index(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mappin
     } else {
         (Step::Gather { source: geometry.source as u32, indices: geometry.indices.into_boxed_slice(), checked: call.mode.dynamic, fill: geometry.fill }, None)
     };
-    Ok((step, Some(Outputs::one(Some(geometry.desc))), read))
+    Ok((step, PlannedOutputs::Described(Outputs::one(Some(geometry.desc))), read))
 }

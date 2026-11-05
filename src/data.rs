@@ -19,7 +19,7 @@ pub(crate) fn imported(shape: Vec<usize>, mut items: Vec<Value>, filled: impl Fn
         let like = data.next().flatten().filter(|n| n.as_integer().is_some()).cloned().filter(|n| data.all(|d| d.is_some_and(|d| d.same_variant(n))));
         if let Some(like) = like {
             let fixed = like.fixed_width();
-            let kind = NumberKind::stored(DType::Integer(fixed.unwrap_or(Width::I64)), fixed.is_some(), false);
+            let kind = NumberKind::stored(if like.as_bool().is_some() { DType::Boolean } else { DType::Integer(fixed.unwrap_or(Width::I64)) }, fixed.is_some(), false);
             for v in items.iter_mut().enumerate().filter_map(|(i, v)| filled(i).then_some(v)) {
                 match crate::primitive::keep_atom(v, kind) { Ok(fill) => *v = fill, Err(_) => widened = true }
             }

@@ -5,12 +5,12 @@ use crate::system::HostCall;
 use crate::{
     Described, Error, Number, ReadKind, Value, array::{Layout, Widening, generated_len}, keyed, number::{Kind as NumberKind, Numbers, Numeric},
     primitive::{CallView, RunView, Operation as GraphOp, Roles, RowResult, counted, generated_items, host_build, numeric as number, real},
-    program::{Desc, ImplicitInput, Origin, Outputs, Step}, system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
+    program::{Desc, ImplicitInput, Origin, Outputs, PlannedOutputs, Step}, system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
 };
 pub(crate) use rustymath::distribution::Distribution;
 use rustymath::{
     agreement::Mapping, buffer::{Buffer, DType, Element, FloatBuf, FloatWidth, Width}, distribution::{Cdf, Invalid, Pdf, Quantile, standard},
-    error::Kind as ErrorKind, facts::Variant, operation::Kernel, random::{self, Items, Stream}, with_width
+    error::Kind as ErrorKind, facts::{Formula, Variant}, operation::Kernel, random::{self, Items, Stream}, with_width
 };
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -116,8 +116,8 @@ fn samples(d: &Distribution, shape: &[usize], len: usize, width: FloatWidth, ite
 fn kernel(d: Distribution, op: Operation, width: FloatWidth, input: DType, numeric: Numeric) -> Result<Kernel, Error> {
     let variant = Variant { dtype: DType::Float(width), checked: !numeric.is_static(), mathish: numeric.mathish_at(Some(width)), wrapping: false };
     Ok(match op {
-        Operation::Density => Kernel::resolve(Pdf(d), variant, [input])?, Operation::Cdf => Kernel::resolve(Cdf(d), variant, [input])?,
-        Operation::Quantile => Kernel::resolve(Quantile(d), variant, [input])?, Operation::Sample => return Err(Error::internal())
+        Operation::Density => Pdf(d).resolve(variant, [input])?, Operation::Cdf => Cdf(d).resolve(variant, [input])?,
+        Operation::Quantile => Quantile(d).resolve(variant, [input])?, Operation::Sample => return Err(Error::internal())
     })
 }
 
@@ -278,7 +278,7 @@ pub(crate) fn build(call: &CallView<'_>, set: &mut dyn FnMut(usize, Mapping)) ->
         }
         Draw::Uniform(Law::Deal) => { let Some(desc) = deal_description(call)? else { return host_build(call, set); }; desc }
     };
-    Ok((Step::Draw, Some(Outputs::one(Some(desc))), None))
+    Ok((Step::Draw, PlannedOutputs::Described(Outputs::one(Some(desc))), None))
 }
 
 fn frame<'a>(call: &'a CallView<'_>) -> Result<Option<std::borrow::Cow<'a, Desc>>, Error> {
@@ -307,7 +307,7 @@ pub(crate) fn cells(origin: &Origin<&[Value]>, view: &CallView, wholes: &[Value]
     {
         let current = call.reborrow();
         let prepared = GraphOp::prepare(&current)?;
-        if build(&prepared.view(), &mut |_, _| {})?.1.is_none() { return Err(Error::batch_stop(level.id)); }
+        if build(&prepared.view(), &mut |_, _| {})?.1.observes() { return Err(Error::batch_stop(level.id)); }
     }
     Ok(call)
 }

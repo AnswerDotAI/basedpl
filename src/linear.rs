@@ -1,7 +1,7 @@
 //! Linear seeds and the transpose of the canonical graph.
 use crate::error::OrInternal;
 use crate::{
-    Error, Value, array, derivative, error::Result, graph::{Node, Pending}, number::{Arithmetic, Mark}, primitive::{Operation, Pairing, Primitive},
+    Error, Value, array, derivative, error::Result, graph::{Node, Pending}, number::{Arithmetic, Mark}, primitive::{CallView, Operation, Pairing, Primitive},
     program::{Desc, Live, Step, trace::Role}
 };
 use rustymath::hashing::HashMap;
@@ -48,7 +48,10 @@ pub(crate) fn transpose(roots: &[Value], seeds: &[Pending], directions: &[Value]
         let Some((step, origin)) = node.recipe() else { continue; };
         let output = (0..node.descs().len()).map(|i| cotangents.remove(&Pending::data(node.clone(), i as u32))).collect::<Vec<_>>();
         if output.iter().all(Option::is_none) { continue; }
-        let needed = origin.list.iter().map(|read| read.operand.pending().is_some_and(|source| source.node.level() == Some(level))).collect::<Vec<_>>();
+        let mut needed = vec![false; origin.list.len()];
+        for input in CallView::new(&origin, &origin).mathematical_positions()? {
+            needed[input] = origin.list[input].operand.pending().is_some_and(|source| source.node.level() == Some(level));
+        }
         if needed.iter().all(|needed| !needed) { continue; }
         let origin = origin.with_list(origin.list.as_slice());
         let contributions = match step {

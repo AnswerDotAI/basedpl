@@ -1,9 +1,10 @@
 use crate::error::OrInternal;
 use crate::execution::check;
-use crate::program::layout::{Encoder, KeyPart};
+use crate::program::layout::{Encoder, KeyPart, KeyValue};
 use crate::{
-    At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, ReadKind, Source, Span, Value, array::{Root, Tree, TreeRoot, Trees}, display::Elide, graph::Pending,
-    name::Name, number::{MARKS, Mark, Numeric}, primitive::{Builtin, Marked, Operation, Pairing, Primitive}, program::{BindingContext, Origin, Outputs}, symbols::Notation,
+    At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, ReadKind, Source, Span, Value, array::{Root, Tree, TreeRoot, Trees}, display::Elide, graph::{Hold, Pending},
+    name::Name, number::{MARKS, Mark, Numeric}, primitive::{Builtin, Marked, Operation, Pairing, Primitive},
+    program::{BindingContext, Desc, Origin, Outputs, trace::{self, Role}}, symbols::Notation,
     syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind}, system::SystemFunction
 };
 use rustymath::hashing::{HashMap, HashMapExt};
@@ -65,16 +66,16 @@ impl FunctionOperand {
     pub(crate) fn resolve_in_call<'a>(&'a self, call: &'a crate::primitive::RunView<'_>, read: ReadKind) -> Result<Cow<'a, Value>, Error> {
         match self { Self::Value { value, .. } => value.read_borrowed(read), Self::Input { position, .. } => Function::capture_value(call, position, read) }
     }
-    fn key_parts(&self, usage: OperandUse, key: &mut Encoder) -> Result<(), Error> {
+    fn key_parts(&self, usage: OperandUse, key: &mut Encoder, encode: KeyValue) -> Result<(), Error> {
         key.push(KeyPart::Operand { structural: usage == OperandUse::Structure });
         let Some(value) = self.stored().filter(|_| usage != OperandUse::Opaque) else { key.push(KeyPart::Missing); return Ok(()); };
         match (usage, value) {
-            (OperandUse::Structure, _) => key.value(value, ReadKind::Value)?,
-            (OperandUse::Child, Value::Function(child)) => child.key_parts(key)?,
+            (OperandUse::Structure, _) => encode(key, value, ReadKind::Value)?,
+            (OperandUse::Child, Value::Function(child)) => child.key_parts(key, encode)?,
             _ => {
                 key.data(value);
-                if usage.descends() { visit_functions(value, &mut |function| function.key_parts(key))?; }
-                if usage != OperandUse::Metadata { self.constants(|constant| key.value(constant, ReadKind::Value))?; }
+                if usage.descends() { visit_functions(value, &mut |function| function.key_parts(key, encode))?; }
+                if usage != OperandUse::Metadata { self.constants(|constant| encode(key, constant, ReadKind::Value))?; }
             }
         }
         Ok(())
@@ -194,12 +195,13 @@ impl Function {
         for (position, read) in code.program.input_reads() {
             if bindings.iter().any(|binding| binding.target as usize == position) { continue; }
             let source = RecordedSource::Operand(captures.len() as u32);
-            captures.push(input(position)?);
+            let value = input(position)?;
+            captures.push(if read == ReadKind::Description { value.primal().clone() } else { value });
             bindings.push(RecordedInput { source, target: position as u32, read });
         }
         code.inputs = bindings.into();
         Ok(Self::of(
-            FunctionNode::Recorded { code: Arc::new(code), context: Arc::new(context), operands: captures.into_iter().map(FunctionOperand::from).collect() },
+            FunctionNode::Recorded { code: Arc::new(code), context: Arc::new(context.recorded()), operands: captures.into_iter().map(FunctionOperand::from).collect() },
             None))
     }
     /// Runs this recorded body on its argument leaves, left argument first.
@@ -214,7 +216,7 @@ impl Function {
         };
         let mut running = crate::program::Running::new(Vec::new());
         running.binding = (**context).clone();
-        code.program.bound(running, &code.program.outputs, code.program.live_roots(), |input| resolve(input).map(Cow::into_owned),
+        code.program.bound(running, &code.program.outputs, code.program.live_roots(), |input| resolve(input).map(|value| Some(value.into_owned())),
             |input| Ok(crate::program::Desc::of(&*resolve(input)?).map(Cow::into_owned)))
     }
 }
@@ -280,13 +282,20 @@ impl Function {
         closure.into_iter().chain(operands.iter().enumerate().map(move |(i, operand)| Component::Operand(i, operand, self.node().operand_use(i, operand))))
             .chain(rules.into_iter().flatten())
     }
-    pub(crate) fn key_parts(&self, key: &mut Encoder) -> Result<(), Error> {
+    pub(crate) fn hold(&self) -> Option<Hold> {
+        Hold::many(self.components(&self.operands()).filter_map(|component| match component {
+            Component::Closure(child) | Component::Inverse(Some(child)) | Component::Derivative(Some(child)) => child.hold(),
+            Component::Operand(_, operand, usage) if !matches!(usage, OperandUse::Metadata | OperandUse::Opaque) => operand.stored().and_then(Hold::of),
+            _ => None,
+        }))
+    }
+    pub(crate) fn key_parts(&self, key: &mut Encoder, encode: KeyValue) -> Result<(), Error> {
         Head::of(self.node()).key_parts(key);
         for component in self.components(&self.operands()) {
             match component {
-                Component::Closure(child) | Component::Inverse(Some(child)) | Component::Derivative(Some(child)) => child.key_parts(key)?,
+                Component::Closure(child) | Component::Inverse(Some(child)) | Component::Derivative(Some(child)) => child.key_parts(key, encode)?,
                 Component::Inverse(None) | Component::Derivative(None) => key.push(KeyPart::Missing),
-                Component::Operand(_, operand, usage) => operand.key_parts(usage, key)?,
+                Component::Operand(_, operand, usage) => operand.key_parts(usage, key, encode)?,
             }
         }
         key.push(KeyPart::End);
@@ -737,7 +746,18 @@ impl<C: CaptureValues> CaptureWalk<'_, '_, C> {
         Ok(position)
     }
     fn function(&mut self, function: &Function) -> Result<(), Error> {
-        if self.bindings.scope(function).is_some() { return Ok(()); }
+        let implicit = function.implicit_generator();
+        let (acts, draws) = match function.node() {
+            FunctionNode::Primitive(Primitive::Execute) => (true, false), FunctionNode::System { function, .. } => (function.acts(), function.call.draws()),
+            FunctionNode::Defined(definition) | FunctionNode::LateBound(definition) => (definition.acts(), false),
+            FunctionNode::Recorded { code, .. } => (code.program.token.is_some(), code.program.draws()), _ => (false, false)
+        };
+        self.bindings.implicit_generator |= implicit;
+        self.bindings.acts |= acts;
+        self.bindings.draws |= implicit || draws;
+        self.bindings.needs_binding |= function.needs_binding();
+        self.bindings.custom_derivative |= function.rules().is_some_and(|rules| rules.derivative.is_some());
+        if function.as_primitive().is_some() || self.bindings.scope(function).is_some() { return Ok(()); }
         if self.source.is_none() && function.0.environment.closed.is_some() { return Err(Error::internal()); }
         let existing = self.source.and_then(|source| source.bindings.scope(function));
         let index = existing.map_or_else(|| {
@@ -751,17 +771,6 @@ impl<C: CaptureValues> CaptureWalk<'_, '_, C> {
             |(_, scope)| scope.clone());
         self.bindings.order.push(index);
         self.bindings.scopes[index as usize] = scope.clone();
-        let implicit = function.implicit_generator();
-        let (acts, draws) = match function.node() {
-            FunctionNode::Primitive(Primitive::Execute) => (true, false), FunctionNode::System { function, .. } => (function.acts(), function.call.draws()),
-            FunctionNode::Defined(definition) | FunctionNode::LateBound(definition) => (definition.acts(), false),
-            FunctionNode::Recorded { code, .. } => (code.program.token.is_some(), code.program.draws()), _ => (false, false)
-        };
-        self.bindings.implicit_generator |= implicit;
-        self.bindings.acts |= acts;
-        self.bindings.draws |= implicit || draws;
-        self.bindings.needs_binding |= function.needs_binding();
-        self.bindings.custom_derivative |= function.rules().is_some_and(|rules| rules.derivative.is_some());
         if existing.is_some() {
             for name in &mut scope.names { if let Some(root) = &name.position { name.position = Some(self.root(root, true)?); } }
         } else {
@@ -896,7 +905,7 @@ impl OperandUse {
             kind => Self::Input { descends: matches!(kind, OperandKind::Callable | OperandKind::Function) },
         }
     }
-    fn captured(self) -> bool { matches!(self, Self::Input { .. } | Self::Metadata | Self::Opaque) }
+    fn captured(self) -> bool { self != Self::Child }
     fn descends(self) -> bool { matches!(self, Self::Child | Self::Input { descends: true }) }
 }
 
@@ -907,8 +916,9 @@ impl OperatorKind {
 }
 
 impl Operator {
-    fn key_parts(&self, key: &mut Encoder) -> Result<(), Error> {
-        match self { Self::Kind(kind) => Head::Operator(kind).key_parts(key), Self::Closure(function) => function.key_parts(key)? }
+    fn hold(&self) -> Option<Hold> { match self { Self::Kind(_) => None, Self::Closure(function) => function.hold() } }
+    fn key_parts(&self, key: &mut Encoder, encode: KeyValue) -> Result<(), Error> {
+        match self { Self::Kind(kind) => Head::Operator(kind).key_parts(key), Self::Closure(function) => function.key_parts(key, encode)? }
         Ok(())
     }
     fn operand_kind(&self, position: usize) -> OperandKind { match self { Self::Kind(kind) => kind.info().operands[position], Self::Closure(_) => OperandKind::Data } }
@@ -933,12 +943,18 @@ impl OperatorValue {
     pub fn derive(&self, left: Value, right: Option<Value>) -> Result<Function, Error> {
         self.derive_operands(left.into(), right.map(FunctionOperand::from), &Span::whole(Source::new("<operator>", "")))
     }
-    pub(crate) fn key_parts(&self, key: &mut Encoder) -> Result<(), Error> {
+    pub(crate) fn hold(&self) -> Option<Hold> {
         match self {
-            Self::Operator(operator) => operator.key_parts(key)?,
+            Self::Operator(operator) => operator.hold(),
+            Self::Bound { op, right } => Hold::many(op.hold().into_iter().chain(right.stored().and_then(Hold::of))),
+        }
+    }
+    pub(crate) fn key_parts(&self, key: &mut Encoder, encode: KeyValue) -> Result<(), Error> {
+        match self {
+            Self::Operator(operator) => operator.key_parts(key, encode)?,
             Self::Bound { op, right } => {
-                op.key_parts(key)?;
-                right.key_parts(OperandUse::of(op.operand_kind(1), false, right), key)?;
+                op.key_parts(key, encode)?;
+                right.key_parts(OperandUse::of(op.operand_kind(1), false, right), key, encode)?;
             }
         }
         key.push(KeyPart::End);
@@ -1018,10 +1034,21 @@ impl Function {
             _ => None,
         }))
     }
+    /// Exact primitive form, for syntax or already-normalized IR; semantic consumers query primitive_body.
     pub(crate) fn as_primitive(&self) -> Option<Primitive> { match (self.node(), self.rules()) { (FunctionNode::Primitive(p), None) => Some(*p), _ => None } }
-    pub(crate) fn dyadic_primitive(&self) -> Option<Primitive> {
-        if self.rules().is_some() { return None; }
-        match self.node() { FunctionNode::Applied { op: Operator::Kind(kind), operands } => kind.info().dyadic_primitive(operands), _ => self.as_primitive() }
+    fn declared_primitive(&self, dyadic: bool) -> Option<Primitive> {
+        match self.operation(dyadic)? { Operation::Primitive { primitive, pairing: Pairing::Axes } => Some(primitive), _ => None }
+    }
+    /// One semantic admission query. Declared constructors need no native descriptions; other bodies require every input's description.
+    pub(crate) fn primitive_body(&self, parent: &Origin<&[Value]>, arguments: &[Option<Desc>]) -> Result<Option<Primitive>, Error> {
+        if !(1..=2).contains(&arguments.len()) { return Ok(None); }
+        if let Some(primitive) = self.declared_primitive(arguments.len() == 2) { return Ok(Some(primitive)); }
+        let Some(arguments) = arguments.iter().enumerate().map(|(position, desc)| desc.as_ref().map(|desc| {
+            Value::Pending(Pending::data(crate::graph::Node::input(position, None, Some(desc.clone().opaque()), Role::StandIn, None, None), 0))
+        })).collect::<Option<Vec<_>>>() else { return Ok(None); };
+        let origin = self.bound(parent, &arguments)?;
+        if origin.bindings.custom_derivative { return Ok(None); }
+        Ok(trace::plan_call(self, origin.clone(), true)?.and_then(|bound| bound.recording?.direct_primitive(&origin.reborrow())))
     }
     pub(crate) fn definition(&self) -> Option<&Definition> {
         match self.node() { FunctionNode::Defined(d) => Some(d), FunctionNode::Applied { op: Operator::Closure(f), .. } => f.definition(), _ => None }
@@ -1047,7 +1074,7 @@ impl Function {
                 let (_, Marked::Primitive(primitive)) = operators::marked_primitive(function, *mark, dyadic)? else { return None; };
                 Some(Operation::Primitive { primitive, pairing: Pairing::Axes })
             }
-            FunctionNode::Applied { op: Operator::Kind(kind), operands } => kind.info().operation(operands), _ => None
+            FunctionNode::Applied { op: Operator::Kind(kind), operands } => kind.info().operation(operands, dyadic), _ => None
         }
     }
     fn new(mut node: FunctionNode, span: &Span) -> Result<Self, Error> {
@@ -1060,6 +1087,9 @@ impl Function {
                     if matches!(value, Value::Function(_)) { continue; }
                     let function = if value.holds_functions() { Self::array(operand.clone()) } else { Self::constant(operand.clone(), span)? };
                     *operand = FunctionOperand::from(Value::Function(function));
+                }
+                if matches!(kind, OperatorKind::Agenda) && let Some(cases) = operands[1].stored() {
+                    crate::program::control::agenda_cases(cases, operands[0].stored()).map_err(|error| error.at(span))?;
                 }
             }
         }

@@ -251,8 +251,8 @@ impl Block {
         for &node in self.members.iter() {
             let Node::Step { origin, .. } = &program.nodes[node] else { unreachable!() };
             for position in origin.list.clone() {
-                if let Some(read) = running.read(position as usize) {
-                    inputs.insert(ReadSource::Pool(position as usize), Input::of(self, program, running, Cow::Borrowed(&read.plan), &read.sources)?);
+                if running.read(position as usize).is_some() {
+                    inputs.insert(ReadSource::Pool(position as usize), Input::of(self, program, running, position as usize)?);
                 }
             }
             let bindings = running.call(program, origin)?;
@@ -481,8 +481,11 @@ fn arguments(step: &super::Step) -> Vec<u32> {
 enum Source<'a> { Stored(rustymath::agreement::Binding<'a>), Local { slot: usize, items: usize } }
 struct Input<'a> { plan: Cow<'a, rustymath::agreement::ReadPlan>, sources: Vec<Source<'a>> }
 impl<'a> Input<'a> {
-    fn of(block: &Block, program: &'a Program, running: &'a Running, plan: Cow<'a, rustymath::agreement::ReadPlan>, sources: &[Out]) -> Result<Self> {
-        let sources = sources.iter().map(|&source| {
+    fn of(block: &Block, program: &'a Program, running: &'a Running, position: usize) -> Result<Self> {
+        let read = running.read(position).or_internal()?;
+        let character = running.desc(program, program.reads[position].operand).or_internal()?.dtype() == DType::Character;
+        let plan = read.plan.as_codes(character);
+        let sources = read.sources.iter().map(|&source| {
             if let Some(slot) = block.members.iter().position(|&node| node == source.node) {
                 let items = running.desc(program, source).or_internal()?.layout.count();
                 Ok(Source::Local { slot, items })
@@ -702,6 +705,7 @@ impl Execution<'_> {
         if folded && !prepared.folded {
             let dtype = self.block.kernel(fold_slot).variant.dtype;
             let held = scratch.fold.get_or_insert_with(|| Buffer::with_capacity(dtype, self.size));
+            if held.dtype() != dtype { *held = Buffer::with_capacity(dtype, self.size); }
             held.clear();
             held.reserve(range.len());
             outs.push(held.as_mut_ptr());
@@ -723,6 +727,7 @@ impl Execution<'_> {
             unsafe { held.set_len(range.len()); }
             give(range.start, Piece::Items(held.view()));
         }
+        rustymath::operation::report_maps(prepared.inputs.iter().map(|input| &*self.inputs[&input.source].plan), range.clone());
         rustymath::events::taken(rustymath::events::Route::Compiled, range.len());
         self.tally.run();
         Ok(())
