@@ -1,21 +1,29 @@
 use crate::execution::check;
-use crate::{Described, Error, Number, Value, array::generated_len, data::{Types, text as string}, keyed, system::HostCall};
+use crate::{Described, Error, Number, Span, Value, array::generated_len, data::{Types, text as string}, keyed};
 use num_bigint::BigInt;
 use rustymath::error::Kind;
 use std::sync::Arc;
 
 struct Options {
-    common: crate::data::Options, separator: u8, quote: Option<u8>, escape: Option<u8>, double_quote: bool, trim: bool, decimal: char, thousands: Option<char>,
-    numeric: crate::number::Numeric
+    common: crate::data::Options,
+    separator: u8,
+    quote: Option<u8>,
+    escape: Option<u8>,
+    double_quote: bool,
+    trim: bool,
+    decimal: char,
+    thousands: Option<char>,
+    /// The width of the floats that fields read as, the session's default width.
+    width: rustymath::buffer::FloatWidth,
 }
 
 impl Options {
-    fn new(left: Option<&Value>, import: bool, numeric: crate::number::Numeric) -> Result<Self, Error> {
+    fn new(left: Option<&Value>, import: bool) -> Result<Self, Error> {
         let mut allowed = vec!["separator", "quotechar", "escapechar", "doublequote", "decimal", "thousands", "trim", "header", "fill"];
         allowed.extend(if import { &["missing", "types"][..] } else { &["forcequotes", "lineending"][..] });
         let common = crate::data::Options::new(if import { "•csv" } else { "•csv⁻¹" }, left, None, &allowed)?;
-        let mut opts =
-            Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None, numeric };
+        let width = crate::number::Numeric::current().width;
+        let mut opts = Self { common, separator: b',', quote: Some(b'"'), escape: None, double_quote: true, trim: false, decimal: '.', thousands: None, width };
         let byte = |c: Option<char>| -> Result<Option<u8>, Error> {
             c.map(|c| {
                 if c.is_ascii() && !matches!(c, '\r' | '\n' | '\0') { Ok(c as u8) }
@@ -67,23 +75,21 @@ impl Options {
             if let Ok(n) = field.parse::<i64>() { return Some(Number::from_integer(n)); }
             return Some(field.parse::<BigInt>().ok()?.into());
         }
-        let n = Number::float(field.parse::<f64>().ok()?, self.numeric.width);
+        let n = Number::float(field.parse::<f64>().ok()?, self.width);
         if n.is_infinite() && !matches!(digits.to_ascii_lowercase().as_str(), "inf" | "infinity") { return None; }
         Some(n)
     }
 }
 
 /// `•csv`: parse CSV text into a keyed vector of columns.
-pub(crate) fn parse(HostCall { left, right, numeric, .. }: HostCall<'_>) -> Result<Value, Error> {
-    import(&string(right)?, &Options::new(left, true, numeric)?)
-}
+pub(crate) fn parse(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> { import(&string(right)?, &Options::new(left, true)?) }
 
 /// `•csv⁻¹`: CSV text for a vector of columns.
-pub(crate) fn serialize(HostCall { left, right, numeric, .. }: HostCall<'_>) -> Result<Value, Error> { export(right, &Options::new(left, false, numeric)?) }
+pub(crate) fn serialize(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> { export(right, &Options::new(left, false)?) }
 
 fn import(source: &str, opts: &Options) -> Result<Value, Error> {
     let header = opts.common.boolean("header", true)?;
-    let fill = opts.common.fill(opts.numeric)?;
+    let fill = opts.common.fill()?;
     let mut missing = vec![String::new()];
     if let Some(v) = opts.common.values.get("missing") {
         if let Some(s) = keyed::name(v) { missing.push(s.to_string()); } else { for s in v.elements() { missing.push(string(&s)?); } }
@@ -132,10 +138,10 @@ fn import(source: &str, opts: &Options) -> Result<Value, Error> {
             }
             crate::data::typed_column(
                 "•csv", &name, crate::data::imported(vec![cells.len()], numbers, |i| absent[i], Value::integer(0)).described("invalid CSV column")?,
-                typed.as_ref(), absent.contains(&true), opts.numeric)?
+                typed.as_ref(), absent.contains(&true))?
         } else {
-            let column: Vec<&str> = cells.iter().zip(&absent).map(|(s, &a)| if a { "" } else { s.as_str() }).collect();
-            keyed::text_column(&[cells.len()], &column).described("invalid CSV column")?
+            let mut texts = keyed::Texts::default();
+            keyed::texts(&[cells.len()], cells.iter().zip(&absent).map(|(s, &a)| texts.text(if a { "" } else { s })).collect()).described("invalid CSV column")?
         };
         result.push(column);
     }
@@ -151,7 +157,7 @@ fn export(table: &Value, opts: &Options) -> Result<Value, Error> {
     let rows = columns.first().map_or(0, Value::len);
     if columns.iter().any(|c| c.len() != rows) { return Err(Error::new(Kind::Length, "CSV columns must have equal lengths")); }
     let header = opts.common.boolean("header", table.keys(0).is_some())?;
-    let fill = opts.common.fill(opts.numeric)?;
+    let fill = opts.common.fill()?;
     let force = match opts.common.values.get("forcequotes") {
         None => false,
         Some(v) => match v.as_number().and_then(|n| n.integer().ok()) {

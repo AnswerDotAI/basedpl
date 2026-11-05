@@ -2,8 +2,6 @@ use rustymath::error::Kind;
 use std::{fmt, ops::Range, path::PathBuf, sync::Arc};
 use unicode_width::UnicodeWidthStr;
 
-pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
-
 /// Shared source identity and text. Syntax and errors retain only the sources they use.
 #[derive(Debug)]
 /// `file` marks a source read from a file. Its `name` is then the file's path.
@@ -18,10 +16,6 @@ impl Source {
 #[derive(Clone, Debug)]
 pub struct Span { pub source: Arc<Source>, pub range: Range<usize> }
 
-/// Two spans are equal where they cover the same bytes of one source.
-impl PartialEq for Span { fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.source, &other.source) && self.range == other.range } }
-impl Eq for Span {}
-
 #[derive(Clone, Debug)]
 pub enum ErrorKind {
     Syntax,
@@ -30,12 +24,8 @@ pub enum ErrorKind {
     Unsupported,
     Interrupt,
     Timeout,
-    /// Only the matching map boundary consumes this tag.
-    BatchStop(usize),
-    /// A planning run stopped where it can't plan through. Only `trace::plan_call` consumes it, so it never shows.
-    Planning,
-    /// A broken internal assumption, which is a bug. Its message names the source line. No guard catches it.
-    Internal,
+    /// A batched run's stop, which holds the id of the level that owns the run and whether a later run of the same operand would stop again (`transform::Stop`). Only that level catches it.
+    Stop(crate::transform::Stop),
     /// An error of a kind that rustymath's functions on arrays share: Length, Rank, Index, Limit, Domain or Overflow.
     Array(rustymath::error::Error),
     /// A kind that a program names when it signals an error, in upper case.
@@ -50,7 +40,7 @@ impl ErrorKind {
             Self::Unsupported, Self::Interrupt, Self::Timeout,
         ]
     }
-    /// The name that guards and `•signal` use, such as `DOMAIN`. Rustymath's Overflow is LIMIT.
+    /// The name that guards and `•signal` use, such as `DOMAIN`. Rustymath's Overflow is LIMIT, because BPL's exact integers grow and BPL has no overflow kind.
     pub fn name(&self) -> &str {
         match self {
             Self::Syntax => "SYNTAX",
@@ -59,9 +49,7 @@ impl ErrorKind {
             Self::Unsupported => "UNSUPPORTED",
             Self::Interrupt => "INTERRUPT",
             Self::Timeout => "TIMEOUT",
-            Self::BatchStop(_) => "STOP",
-            Self::Planning => "PLANNING",
-            Self::Internal => "INTERNAL",
+            Self::Stop { .. } => "STOP",
             Self::Array(e) => match e.kind {
                 Kind::Domain => "DOMAIN", Kind::Length => "LENGTH", Kind::Limit | Kind::Overflow => "LIMIT", Kind::Rank => "RANK", Kind::Index => "INDEX",
                 Kind::Interrupt => "INTERRUPT", Kind::Timeout => "TIMEOUT"
@@ -75,25 +63,24 @@ impl ErrorKind {
         let name = name.to_uppercase();
         Some(Self::builtin().into_iter().find(|k| k.name() == name).unwrap_or_else(|| Self::Custom(name.into())))
     }
-    /// Whether an error of this kind controls evaluation rather than reporting a failure. An interrupt or a timeout ends the evaluation. A batched run's stop sends its level back to running cell by cell. A planning stop ends a planning run. An internal error is a bug. A handler that catches every error lets these pass.
-    pub(crate) fn is_control(&self) -> bool { matches!(self, Self::Interrupt | Self::Timeout | Self::BatchStop(_) | Self::Planning | Self::Internal) }
+    /// Whether an error of this kind controls evaluation rather than reporting a failure. An interrupt or a timeout ends the evaluation. A batched run's stop sends its level back to running cell by cell. A handler that catches every error lets these pass.
+    pub(crate) fn is_control(&self) -> bool { matches!(self, Self::Interrupt | Self::Timeout | Self::Stop { .. }) }
 }
 
 impl From<rustymath::error::Error> for ErrorKind { fn from(e: rustymath::error::Error) -> Self { Self::Array(e) } }
 /// A kind with no message, for `Error::new` or `described` to supply one.
 impl From<Kind> for ErrorKind { fn from(kind: Kind) -> Self { Self::Array(rustymath::error::Error::new(kind, "")) } }
 
-/// `DOMAIN ERROR` and so on. Interrupts, timeouts, stops, planning stops and unsupported features show their names alone.
+/// `DOMAIN ERROR` and so on. Interrupts, timeouts, stops and unsupported features show their names alone.
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Unsupported | Self::Interrupt | Self::Timeout | Self::BatchStop(_) | Self::Planning => f.write_str(self.name()),
-            _ => write!(f, "{} ERROR", self.name()),
+            Self::Unsupported | Self::Interrupt | Self::Timeout | Self::Stop { .. } => f.write_str(self.name()), _ => write!(f, "{} ERROR", self.name())
         }
     }
 }
 
-/// An error: its kind, message and span, and the calls it passed through. Boxing its fields keeps each `std::result::Result<T, Error>` to one pointer on the stack that deep recursion uses.
+/// An error: its kind, message and span, and the calls it passed through. Boxing its fields keeps each `Result<T, Error>` to one pointer on the stack that deep recursion uses.
 #[derive(Clone, Debug)]
 pub struct Error(Box<ErrorData>);
 
@@ -130,28 +117,12 @@ impl Error {
     #[cold]
     #[inline(never)]
     pub(crate) fn at(mut self, span: &Span) -> Self { if self.span.is_none() { self.span = Some(span.clone()); } self }
-    pub(crate) fn batch_stop(level: usize) -> Self { Self::new(ErrorKind::BatchStop(level), "host read of a batched value") }
-    pub(crate) fn batch_level(&self) -> Option<usize> { match &self.kind { ErrorKind::BatchStop(level) => Some(*level), _ => None } }
-    /// A broken internal assumption, which is a bug: its message names the calling line. Call it directly: passed as a function item it loses that line.
-    #[cold]
-    #[inline(never)]
-    #[track_caller]
-    pub(crate) fn internal() -> Self { Self::new(ErrorKind::Internal, format!("at {}", std::panic::Location::caller())) }
-    pub(crate) fn is_planning(&self) -> bool { matches!(self.kind, ErrorKind::Planning) }
-    pub(crate) fn is_internal(&self) -> bool { matches!(self.kind, ErrorKind::Internal) }
-}
-
-/// An absent value that is a bug: `None` becomes an internal error naming the calling line.
-pub(crate) trait OrInternal<T> { fn or_internal(self) -> Result<T>; }
-impl<T> OrInternal<T> for Option<T> {
-    #[track_caller]
-    fn or_internal(self) -> Result<T> { match self { Some(value) => Ok(value), None => Err(Error::internal()) } }
 }
 
 impl From<rustymath::error::Error> for Error { fn from(e: rustymath::error::Error) -> Self { Self::new(e, "") } }
-impl From<ErrorKind> for Error { fn from(kind: ErrorKind) -> Self { Self::new(kind, "") } }
-impl From<Kind> for Error { fn from(kind: Kind) -> Self { Self::new(kind, "") } }
-/// A batched run's stop. Only the level that owns the run catches it, so its span never shows. A message from numeric code, which reports a DOMAIN error as its message alone.
+/// A batched run's stop. Only the level that owns the run catches it, so its span never shows.
+impl From<crate::transform::Stop> for Error { fn from(stop: crate::transform::Stop) -> Self { Self::new(stop, crate::transform::STOPPED) } }
+/// A message from numeric code, which reports a DOMAIN error as its message alone.
 impl From<&'static str> for Error { fn from(message: &'static str) -> Self { Self::domain(message) } }
 
 impl Span {
@@ -165,26 +136,16 @@ impl Span {
         match std::path::Path::new(&self.source.name).parent() { Some(dir) if relative && self.source.file => dir.join(path), _ => path.into() }
     }
     /// The bytes of the file `path` names.
-    pub(crate) fn read(&self, path: &str) -> std::result::Result<Vec<u8>, Error> { crate::host::read(&self.path(path)).map_err(|e| Error::io(path, e)) }
+    pub(crate) fn read(&self, path: &str) -> Result<Vec<u8>, Error> { crate::host::read(&self.path(path)).map_err(|e| Error::io(path, e)) }
 }
 
 /// Gives an error kind its message, where the kind carries none. An `ErrorKind` that wraps a rustymath error keeps that error's message.
-pub(crate) trait Described<T> { fn described(self, message: &str) -> std::result::Result<T, Error>; }
-impl<T, E: Into<Error>> Described<T> for std::result::Result<T, E> {
-    fn described(self, message: &str) -> std::result::Result<T, Error> {
-        self.map_err(|error| {
-            let mut error = error.into();
-            if error.message.is_empty() { error.message = message.into(); }
-            error
-        })
-    }
-}
+pub(crate) trait Described<T> { fn described(self, message: &str) -> Result<T, Error>; }
+impl<T, K: Into<ErrorKind>> Described<T> for Result<T, K> { fn described(self, message: &str) -> Result<T, Error> { self.map_err(|k| Error::new(k, message)) } }
 
 /// Places an error at a source span, where it has no span yet.
-pub(crate) trait At<T> { fn at(self, span: &Span) -> std::result::Result<T, Error>; }
-impl<T, E: Into<Error>> At<T> for std::result::Result<T, E> {
-    fn at(self, span: &Span) -> std::result::Result<T, Error> { self.map_err(|e| e.into().at(span)) }
-}
+pub(crate) trait At<T> { fn at(self, span: &Span) -> Result<T, Error>; }
+impl<T, E: Into<Error>> At<T> for Result<T, E> { fn at(self, span: &Span) -> Result<T, Error> { self.map_err(|e| e.into().at(span)) } }
 
 // Render tabs at four-column stops. Escape other controls rather than sending them to the terminal. Source spans themselves remain unchanged UTF-8 byte offsets.
 fn display_text(text: &str) -> String {

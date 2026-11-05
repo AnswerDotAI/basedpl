@@ -128,17 +128,12 @@ pub(crate) fn run(args: &[String]) -> i32 {
     let (args, program_args) = args.split_at(program);
     let stdin = io::stdin();
     let stdout = io::stdout();
-    // Each write locks stderr and stdout for itself. A lock held through an evaluation would block every write from a pool thread, such as a panic's report, while this thread waits for the pool: the process would hang.
-    let mut err = io::stderr();
+    let stderr = io::stderr();
+    let mut err = stderr.lock();
     let result = match args {
         [] => repl(&mut err, stdin.is_terminal() && stdout.is_terminal()),
-        [flag] if flag == "--worker" => crate::worker::run(&mut io::stdout()).map(|_| 0),
-        [flag, file] if flag == "--costs" => costs(file, &mut io::stdout(), &mut err),
-        [flag, spec] if flag == "--measure" => Printer::new(true).and_then(|printer| {
-            let result = basedpl::timing::repeat_request(spec, printer.options());
-            printer.finish(Evaluation::default(), &mut err)?;
-            match result { Ok(()) => Ok(0), Err(error) => writeln!(err, "{error}").map(|_| 1) }
-        }),
+        [flag] if flag == "--worker" => crate::worker::run(&mut stdout.lock()).map(|_| 0),
+        [flag, file] if flag == "--costs" => costs(file, &mut stdout.lock(), &mut err),
         [flag, code] if flag == "-e" => expression(Source::new("<expression>", code.as_str()), true, program_args, &mut err),
         [flag] if flag == "--help" || flag == "-h" => write!(stdout.lock(), "{USAGE}").map(|_| 0),
         [flag] if flag == "--version" => writeln!(stdout.lock(), "basedpl {}", env!("CARGO_PKG_VERSION")).map(|_| 0),

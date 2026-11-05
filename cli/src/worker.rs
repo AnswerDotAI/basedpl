@@ -56,18 +56,14 @@ impl serde::Serialize for Line {
     }
 }
 
-/// The result of one request, or why it can't run. Its `timeout_ms` limits the whole request, which a timing or costs request counts from when it holds the timing lock (`timing::started`).
+/// The result of one request, or why it can't run.
 fn reply(session: &Session, request: &Value, interrupt: InterruptHandle) -> Result<Reply, String> {
     if request.get("id").is_some_and(|id| !id.is_u64()) { return Err("id must be a nonnegative integer".into()); }
     let options = EvalOptions { interrupt, ..basedpl::protocol::options(request)? };
-    let (interrupt, limit) = (&options.interrupt, options.timeout);
-    if let Some(spec) = request.get("timing") { return basedpl::timing::request(spec, interrupt, limit).map(Reply::Json); }
-    if let Some(spec) = request.get("costs") { return basedpl::timing::file_request(spec, interrupt, limit).map(Reply::Json); }
-    if let Some(limit) = limit { interrupt.expire_after(limit); }
-    if let Some(case) = request.get("case") { return Ok(Reply::Json(basedpl::reference::check(case, interrupt))); }
-    if let Some(spec) = request.get("reference") { return basedpl::reference::file_request(spec, interrupt).map(Reply::Json); }
-    if let Some(spec) = request.get("page") { return basedpl::reference::page_request(spec, interrupt).map(Reply::Json); }
-    if let Some(spec) = request.get("route") { return basedpl::timing::route_request(spec, interrupt).map(Reply::Json); }
-    basedpl::protocol::request(session, request, options)
-        .and_then(|result| basedpl::protocol::Response::new(result).map(Reply::Response).map_err(|error| error.to_string()))
+    if let Some(case) = request.get("case") { return Ok(Reply::Json(basedpl::reference::check(case, &options.interrupt))); }
+    if let Some(spec) = request.get("timing") { return basedpl::timing::request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(spec) = request.get("costs") { return basedpl::timing::file_request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(spec) = request.get("reference") { return basedpl::reference::file_request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(spec) = request.get("page") { return basedpl::reference::page_request(spec, &options.interrupt).map(Reply::Json); }
+    basedpl::protocol::request(session, request, options).map(|e| Reply::Response(basedpl::protocol::Response(e)))
 }

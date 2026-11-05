@@ -1,6 +1,5 @@
 //! Paths and the filesystem, named after Rust's `std::path` and `std::fs`. `•path` reads a path into its parts and `•path⁻¹` joins them. `•metadata` and `•readdir` give tables of entries, and `•copy`, `•rename`, `•remove` and `•mkdir` change the filesystem.
 use crate::execution::check;
-use crate::system::HostCall;
 use crate::{Described, Error, Number, Span, Value, data::{Options, text}, keyed};
 use std::{fs, path::Path};
 
@@ -16,7 +15,7 @@ fn paths(value: &Value) -> Result<(Vec<usize>, Vec<std::sync::Arc<str>>), Error>
 }
 
 /// `•path Y`: the parts of the path `Y`, or of each path in `Y`, as a record. The `absolute` option first joins a relative path to the working directory, as `std::path::absolute` does. Neither form reads the disk.
-pub(crate) fn path(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Result<Value, Error> {
+pub(crate) fn path(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let absolute = Options::new("•path", left, None, &["absolute"])?.boolean("absolute", false)?;
     let (shape, paths) = paths(right)?;
     let paths = paths.iter().map(|p| match absolute {
@@ -27,7 +26,7 @@ pub(crate) fn path(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Re
 }
 
 /// `•path⁻¹ R`: the path that the record `R` gives, or one for each of its positions, joined from `parent`, `stem` and `extension`.
-pub(crate) fn join(HostCall { right, .. }: HostCall<'_>) -> Result<Value, Error> {
+pub(crate) fn join(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let (shape, fields) = keyed::fields(right).described("•path⁻¹ needs a record of path parts that agree")?;
     let parts = keyed::slots(fields, &PARTS, 3).map_err(|name| Error::domain(format!("unknown path part: {name}")))?;
     let part = |i: usize, p: usize| -> Result<String, Error> { parts[i].as_ref().map_or(Ok(String::new()), |items| text(&items[p])) };
@@ -102,13 +101,15 @@ fn entries(rows: Vec<Vec<Value>>) -> Result<Value, Error> {
 }
 
 /// `•metadata Y`: a table with a row for the path `Y`, or for each path in `Y`.
-pub(crate) fn metadata(HostCall { right, site: span, .. }: HostCall<'_>) -> Result<Value, Error> {
+pub(crate) fn metadata(_: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    crate::transform::acts()?;
     let (_, paths) = paths(right)?;
     entries(paths.iter().map(|p| row(&span.path(p), p)).collect())
 }
 
 /// `•readdir Y`: a table with a row for each entry of the directory `Y`, sorted by path. The left argument is a glob that each entry's path within `Y` must match, or options `glob` and `recurse`, which also lists entries of subdirectories.
-pub(crate) fn readdir(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Result<Value, Error> {
+pub(crate) fn readdir(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    crate::transform::acts()?;
     let opts = Options::new("•readdir", left, Some("glob"), &["glob", "recurse"])?;
     let dir = text(right)?;
     let glob = match opts.values.get("glob") {
@@ -138,7 +139,7 @@ fn argument(value: &Value, span: &Span) -> Result<(String, std::path::PathBuf), 
 }
 
 /// `to •copy from`: copies the file or directory `from` to `to`, and gives `to`.
-pub(crate) fn copy(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Result<(Value, bool), Error> {
+pub(crate) fn copy(left: Option<&Value>, right: &Value, span: &Span) -> Result<(Value, bool), Error> {
     let ((to, dest), (from, source)) = (argument(left.expect("•copy is dyadic"), span)?, argument(right, span)?);
     if source.is_dir() {
         for entry in walkdir::WalkDir::new(&source) {
@@ -153,14 +154,14 @@ pub(crate) fn copy(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Re
 }
 
 /// `to •rename from`: moves `from` to `to`, and gives `to`.
-pub(crate) fn rename(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Result<(Value, bool), Error> {
+pub(crate) fn rename(left: Option<&Value>, right: &Value, span: &Span) -> Result<(Value, bool), Error> {
     let ((to, dest), (from, source)) = (argument(left.expect("•rename is dyadic"), span)?, argument(right, span)?);
     fs::rename(&source, &dest).map_err(|e| Error::io(&format!("{from} to {to}"), e))?;
     Ok((keyed::text(&to), true))
 }
 
 /// `•remove Y`: removes the file or empty directory `Y`, and gives `Y`. The `recurse` option removes a directory and everything in it.
-pub(crate) fn remove(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Result<(Value, bool), Error> {
+pub(crate) fn remove(left: Option<&Value>, right: &Value, span: &Span) -> Result<(Value, bool), Error> {
     let recurse = Options::new("•remove", left, None, &["recurse"])?.boolean("recurse", false)?;
     let (path, file) = argument(right, span)?;
     let removed = match (file.symlink_metadata().is_ok_and(|m| m.is_dir()), recurse) {
@@ -171,7 +172,7 @@ pub(crate) fn remove(HostCall { left, right, site: span, .. }: HostCall<'_>) -> 
 }
 
 /// `•mkdir Y`: makes the directory `Y` and any missing parents, and gives `Y`, which isn't displayed. The `unique` option then makes a directory with a new, unique name inside `Y`, starting with the `prefix` option, and gives its path, which is displayed. It stays until removed.
-pub(crate) fn mkdir(HostCall { left, right, site: span, .. }: HostCall<'_>) -> Result<(Value, bool), Error> {
+pub(crate) fn mkdir(left: Option<&Value>, right: &Value, span: &Span) -> Result<(Value, bool), Error> {
     let unique = Unique::new(&Options::new("•mkdir", left, None, &["unique", "prefix"])?, "•mkdir")?;
     let (path, file) = argument(right, span)?;
     fs::create_dir_all(&file).map_err(|e| Error::io(&path, e))?;

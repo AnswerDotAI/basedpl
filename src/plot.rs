@@ -1,4 +1,3 @@
-use crate::system::HostCall;
 use crate::{Described, Error, Span, Value, data::Options, display, keyed, primitive::real};
 use plotters::{coord::{Shift, ranged1d::{DefaultFormatting, KeyPointHint, Ranged}}, prelude::*};
 use rustymath::error::Kind;
@@ -18,16 +17,15 @@ const COLORS: [(&str, RGBColor); 10] = [
 fn drawn<T, E: std::fmt::Display>(result: Result<T, E>) -> Result<T, Error> { result.map_err(|e| Error::domain(format!("plot drawing failed: {e}"))) }
 
 /// `X •plot Y` returns a spec holding the data `Y`, the settings in `X` and a renderer. Plain text `X` is shorthand for `mark`.
-pub(crate) fn plot(HostCall { left, right, .. }: HostCall<'_>) -> Result<Value, Error> {
+pub(crate) fn plot(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     let settings = match left {
         Some(mark) if keyed::name(mark).is_some() => Some(keyed::vector(vec!["mark".into()], vec![mark.clone()])), left => left.cloned().map(Ok)
     };
-    let spec = keyed::vector(vec!["data".into()], vec![right.clone()])?;
-    let spec = match settings { Some(settings) => keyed::merge(&spec, &settings?)?, None => spec };
-    spec.with_renderer(display::renderer("plot-renderer", render)).described("•plot settings must be a keyed vector or a mark")
+    let spec = keyed::vector(vec!["data".into()], vec![right.clone()]).and_then(|spec| settings.map_or(Ok(spec.clone()), |s| keyed::merge(&spec, &s?)));
+    spec.and_then(|spec| spec.with_renderer(display::renderer("plot-renderer", render))).described("•plot settings must be a keyed vector or a mark")
 }
 
-fn render(HostCall { right: spec, site: span, .. }: HostCall<'_>) -> Result<Value, Error> {
+fn render(_: Option<&Value>, spec: &Value, span: &Span) -> Result<Value, Error> {
     let data = keyed::field(spec, "data").ok_or_else(|| Error::domain("•plot needs data"))?;
     let figure = is_figure(&data);
     let opts = Options::new("•plot", Some(spec), None, if figure { FIGURE } else { PLOT })?;

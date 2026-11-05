@@ -39,7 +39,7 @@ impl Ty {
 
 /// An input: an array that the loop reads item by item, as its `Read` says, a scalar that every item pairs with, or a constant: a number fixed when the kernel is built, such as a reciprocal's 1, held as its bits at its type (`Input::constant`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Input { Array(Ty, Read), Scalar(Ty), Constant(Ty, u64), Index(Ty) }
+pub enum Input { Array(Ty, Read), Scalar(Ty), Constant(Ty, u64) }
 
 /// How the loop reads an array: forward from the item at its pointer, or run by run. A run-by-run array takes two array slots: its item 0, then a table of the item offset of each run's first item, from the run that holds the call's first item. A kernel's runs share one length (`Entry`). Within a run, the items lie as `Within` says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -55,7 +55,7 @@ impl Read {
 }
 
 impl Input {
-    fn ty(self) -> Ty { match self { Input::Array(t, _) | Input::Scalar(t) | Input::Constant(t, _) | Input::Index(t) => t } }
+    fn ty(self) -> Ty { match self { Input::Array(t, _) | Input::Scalar(t) | Input::Constant(t, _) => t } }
     /// The constant `x` at float or integer type `t`, as `x` converts to it.
     pub fn constant(t: Ty, x: f64) -> Self {
         Input::Constant(t, match t { Ty::F32 => (x as f32).to_bits().into(), Ty::F64 => x.to_bits(), _ => x as i64 as u64 })
@@ -66,243 +66,33 @@ impl Input {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Value { Input(usize), Step(usize) }
 
-/// An elementwise operation. Integers wrap at their width, and bytes compare and order as unsigned. `Maximum` and `Minimum` give `y` where floats `x` and `y` are equal or either is NaN, as rustymath's `maximum` and `minimum` do. `Floor` rounds a float down to a whole number, keeping `-0`. `MultiplyAdd(z)` gives `x × y + z` for floats, rounded once. `Compare` gives a Boolean: floats compare exactly, NaN equal to nothing, and Booleans only by `Eq` and `Ne`. `And`, `Or` and `Xor` take Booleans or integers, bit by bit, and `Not` takes Booleans. `Select(m)` gives `x` where the Boolean `m` is true and `y` where it's false. `Convert` converts its argument to the step's type with no tolerance: a float to an integer by its floor, saturating at the integer's range, and 0 for NaN; an integer to a narrower one by wrapping; a Boolean to 1 or 0. `Truncate` converts without the floor; `Bitcast` preserves the bits. Shifts take unsigned bit patterns at the resolved working width.
+/// An elementwise operation. Integers wrap at their width, and bytes compare and order as unsigned. `Maximum` and `Minimum` give `y` where floats `x` and `y` are equal or either is NaN, as rustymath's `maximum` and `minimum` do. `Floor` rounds a float down to a whole number, keeping `-0`. `MultiplyAdd(z)` gives `x × y + z` for floats, rounded once. `Compare` gives a Boolean: floats compare exactly, NaN equal to nothing, and Booleans only by `Eq` and `Ne`. `And`, `Or` and `Xor` take Booleans or integers, bit by bit, and `Not` takes Booleans. `Select(m)` gives `x` where the Boolean `m` is true and `y` where it's false. `Convert` converts its argument to the step's type as `element::Converts` does with no tolerance: a float to an integer by its floor, saturating at the integer's range, and 0 for NaN; an integer to a narrower one by wrapping; a Boolean to 1 or 0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Op {
-    Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Truncate, Bitcast, ShiftLeft, ShiftRight(bool), Compare(Cmp),
-    Overflows(u8), Check { reporter: usize }, Repair { predicate: Value, routine: usize }, And, Or, Xor, Not, Select(Value), MultiplyAdd(Value)
-}
+pub enum Op { Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Compare(Cmp), And, Or, Xor, Not, Select(Value), MultiplyAdd(Value) }
 
 /// A comparison.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cmp { Eq, Ne, Lt, Le, Gt, Ge }
 
 impl Op {
-    fn dyadic(self) -> bool { !matches!(self, Op::Negate | Op::Magnitude | Op::Sqrt | Op::Floor | Op::Convert | Op::Truncate | Op::Bitcast | Op::Not) }
+    fn dyadic(self) -> bool { !matches!(self, Op::Negate | Op::Magnitude | Op::Sqrt | Op::Floor | Op::Convert | Op::Not) }
     /// The value that a step of this operation reads besides `x` and `y`: `Select`'s mask and `MultiplyAdd`'s addend.
-    fn third(self) -> Option<Value> { match self { Op::Select(v) | Op::MultiplyAdd(v) | Op::Repair { predicate: v, .. } => Some(v), _ => None } }
+    fn third(self) -> Option<Value> { match self { Op::Select(v) | Op::MultiplyAdd(v) => Some(v), _ => None } }
 }
 
 /// One step: an operation on one or two values, with a result of type `ty`. The arguments of every operation but `Convert` and `Compare` have type `ty` too, and `Compare`'s two arguments have one type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Step { pub op: Op, pub ty: Ty, pub x: Value, pub y: Option<Value> }
 
-/// The reduction of a fold of each block of the loop's items (`Kernel::folds`): `Sum`, `Product` for floats, `Max` or `Min`, those that `Reduce::compiles` names. A float fold keeps as many running results as rustymath's folds keep for its type (`rustymath::reduce::running`), each from the reduction's identity, and item `k` of each group of that many steps result `k`. A float maximum or minimum gives the greatest or least of the items that aren't NaN, which rustymath's rule for folds allows. An integer sum wraps at the integer's width. A sum of Booleans, as a kernel's only fold, counts the true items, in blocks of at most `COUNTED` items (`Compiled::takes`). Other folds of Booleans go through a block stage's held block, which rustymath folds. Integer products fold outside block stages.
-pub use rustymath::reduce::Reduce as Fold;
+/// A fold of each block of the loop's items by `Sum`, by `Product` for floats, or by `Max` or `Min`. A float fold keeps as many running results as rustymath's folds keep for its type (`rustymath::reduce::running`), each from the reduction's identity, and item `k` of each group of that many steps result `k`. A float maximum or minimum gives the greatest or least of the items that aren't NaN, which rustymath's rule for folds allows. An integer sum wraps at the integer's width. A sum of Booleans, as a kernel's only fold, counts the true items, in blocks of at most `COUNTED` items (`Compiled::takes`). Other folds of Booleans go through a block stage's held block, which rustymath folds. Integer products fold outside block stages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Fold { Sum, Product, Max, Min }
 
 /// One loop over `n` items: its inputs, its steps, the steps whose results it stores, each into an array of `n` items, and the steps whose results it folds.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Kernel { pub inputs: Vec<Input>, pub steps: Vec<Step>, pub stores: Vec<usize>, pub folds: Vec<(Fold, usize)> }
 
-impl Kernel {
-    pub(crate) fn input(&mut self, input: Input) -> Value {
-        let at = matches!(input, Input::Constant(..)).then(|| self.inputs.iter().position(|&i| i == input)).flatten().unwrap_or_else(|| {
-            self.inputs.push(input);
-            self.inputs.len() - 1
-        });
-        Value::Input(at)
-    }
-
-    pub(crate) fn step(&mut self, op: Op, ty: Ty, x: Value, y: Option<Value>) -> Value {
-        let at = self.steps.len();
-        self.steps.push(Step { op, ty, x, y });
-        Value::Step(at)
-    }
-
-    pub(crate) fn conversion(&mut self, conversion: rustymath::convert::Conversion, x: Value, checked: bool) -> Option<Value> {
-        use rustymath::convert::ConversionKind;
-        if conversion.kind == ConversionKind::Keep && !(conversion.input.is_integral() && conversion.output.is_integral()) { return None; }
-        let from = self.ty(x);
-        let to = Ty::of(conversion.output)?;
-        let value = match conversion.kind {
-            ConversionKind::Bits => {
-                if from == Ty::F32 && to == Ty::I64 {
-                    let bits = self.step(Op::Bitcast, Ty::I32, x, None);
-                    let wide = self.step(Op::Convert, Ty::I64, bits, None);
-                    let mask = self.input(Input::Constant(Ty::I64, u32::MAX.into()));
-                    self.step(Op::And, Ty::I64, wide, Some(mask))
-                } else if !from.float() && to.float() {
-                    let word = if to == Ty::F32 { Ty::I32 } else { Ty::I64 };
-                    let bits = self.step(Op::Convert, word, x, None);
-                    self.step(Op::Bitcast, to, bits, None)
-                } else if from.bytes() == to.bytes() { self.step(Op::Bitcast, to, x, None) }
-                else { return None; }
-            }
-            _ if to == Ty::Bool && from != Ty::Bool => {
-                let zero = self.input(Input::constant(from, 0.0));
-                self.step(Op::Compare(Cmp::Ne), Ty::Bool, x, Some(zero))
-            }
-            _ => self.step(if conversion.kind == ConversionKind::Truncate { Op::Truncate } else { Op::Convert }, to, x, None),
-        };
-        let valid = if checked || conversion.kind == ConversionKind::Keep {
-            let o = Recording { kernel: std::cell::RefCell::new(&mut *self), ty: from, variant: rustymath::facts::Variant::checked(from.dtype()),
-                tolerance: None, declined: std::cell::Cell::new(false) };
-            conversion.validity(&o, encoded(x)).map(|(kind, valid)| (kind, decoded(valid)))
-        } else { None };
-        Some(match valid { Some((kind, valid)) => self.step(Op::Check { reporter: kind.reporter() as usize }, to, value, Some(valid)), None => value })
-    }
-
-    pub(crate) fn position(&mut self, input: Value, size: usize, checked: bool) -> Value {
-        use rustymath::{recipe::Ops, tolerant::{Tolerance, Tolerant}};
-        let ty = self.ty(input);
-        let (signed, whole, nan) = if ty.float() {
-            let ops = Recording { kernel: std::cell::RefCell::new(&mut *self), ty, variant: rustymath::facts::Variant::checked(ty.dtype()), tolerance: None,
-                declined: std::cell::Cell::new(false) };
-            let tolerance = if checked { Tolerance::DEFAULT } else { Tolerance::EXACT };
-            let (rounded, whole) = tolerance.nearest_whole_in::<f64, _>(&ops, encoded(input));
-            (decoded(rounded), Some(decoded(whole)), Some(decoded(ops.not(ops.equal(encoded(input), encoded(input))))))
-        } else { (input, None, None) };
-        let signed = if self.ty(signed) == Ty::I64 { signed } else { self.step(Op::Convert, Ty::I64, signed, None) };
-        let (position, valid) = {
-            let ops = Recording { kernel: std::cell::RefCell::new(&mut *self), ty: Ty::I64,
-                variant: rustymath::facts::Variant::checked(DType::Integer(Width::I64)), tolerance: None, declined: std::cell::Cell::new(false) };
-            rustymath::structure::position_recipe::<f64, _>(&ops, encoded(signed), size as i64)
-        };
-        let (mut position, mut valid) = (decoded(position), decoded(valid));
-        if let (Some(whole), Some(nan)) = (whole, nan) {
-            if checked {
-                let whole_or_nan = self.step(Op::Or, Ty::Bool, whole, Some(nan));
-                position = self.step(Op::Check { reporter: rustymath::error::Kind::Domain.reporter() as usize }, Ty::I64, position, Some(whole_or_nan));
-            }
-            valid = self.step(Op::And, Ty::Bool, valid, Some(whole));
-            let missing = self.input(Input::Constant(Ty::I64, u64::MAX));
-            position = self.step(Op::Select(valid), Ty::I64, position, Some(missing));
-            valid = self.step(Op::Or, Ty::Bool, valid, Some(nan));
-        }
-        if checked { self.step(Op::Check { reporter: rustymath::error::Kind::Index.reporter() as usize }, Ty::I64, position, Some(valid)) } else { position }
-    }
-    pub(crate) fn formula(&mut self, object: &rustymath::operation::Kernel, ty: Ty, x: &[Value], test: bool, tolerance: Option<Value>) -> Option<Value> {
-        let before = (self.inputs.len(), self.steps.len());
-        let (result, predicate, validity, declined) = {
-            let o = Recording { kernel: std::cell::RefCell::new(&mut *self), ty, variant: object.variant, tolerance: tolerance.map(encoded),
-                declined: std::cell::Cell::new(false) };
-            let args: Vec<_> = x.iter().copied().map(encoded).collect();
-            let result = if test { object.test(&o, &args) } else { object.formula(&o, &args) };
-            let predicate = if !test && ty.float() && object.repair_routine().is_some() { object.repair_predicate(&o, &args) } else { None };
-            let validity = if object.variant.checked {
-                result.and_then(|result| object.validity(&o, &args, result)).map(|(kind, valid)| (kind, decoded(valid)))
-            } else { None };
-            (result.map(decoded), predicate.map(decoded), validity, o.declined.get())
-        };
-        let result = result.map(|result| match (predicate, object.repair_routine()) {
-            (Some(predicate), Some(repair)) => self.step(Op::Repair { predicate, routine: match ty {
-                Ty::F32 => repair.single as usize, Ty::F64 => repair.double as usize, _ => unreachable!()
-            } }, ty, result, Some(x[0])),
-            _ => result,
-        }).map(|result| {
-            if let Some((kind, valid)) = validity {
-                self.step(Op::Check { reporter: kind.reporter() as usize }, if test { Ty::Bool } else { ty }, result, Some(valid))
-            } else { result }
-        });
-        if result.is_none() || declined || (before.1..self.steps.len()).any(|k| self.check_step(k).is_err()) {
-            self.inputs.truncate(before.0);
-            self.steps.truncate(before.1);
-            None
-        } else { result }
-    }
-}
-
-// The low bit distinguishes inputs from emitted instructions without another slot table.
-fn encoded(v: Value) -> rustymath::facts::Slot { rustymath::facts::Slot(match v { Value::Input(k) => 2 * k as u32, Value::Step(k) => 2 * k as u32 + 1 }) }
-fn decoded(v: rustymath::facts::Slot) -> Value { if v.0 & 1 == 0 { Value::Input((v.0 / 2) as usize) } else { Value::Step((v.0 / 2) as usize) } }
-
-struct Recording<'a> {
-    kernel: std::cell::RefCell<&'a mut Kernel>, ty: Ty, variant: rustymath::facts::Variant, tolerance: Option<rustymath::facts::Slot>,
-    declined: std::cell::Cell<bool>
-}
-impl Recording<'_> {
-    fn emit(&self, op: Op, ty: Ty, x: rustymath::facts::Slot, y: Option<rustymath::facts::Slot>) -> rustymath::facts::Slot {
-        encoded(self.kernel.borrow_mut().step(op, ty, decoded(x), y.map(decoded)))
-    }
-    fn numeric(&self, op: Op, x: rustymath::facts::Slot, y: Option<rustymath::facts::Slot>) -> rustymath::facts::Slot { self.emit(op, self.ty, x, y) }
-    fn integer_ty(&self) -> Ty { match self.ty { Ty::F32 | Ty::Bool => Ty::I32, Ty::F64 => Ty::I64, ty => ty } }
-    fn declined(&self, x: rustymath::facts::Slot) -> rustymath::facts::Slot { self.declined.set(true); x }
-    fn formula<K: rustymath::facts::Formula<1>>(&self, object: K, x: rustymath::facts::Slot) -> rustymath::facts::Slot {
-        let object = rustymath::operation::Kernel::new(object, self.variant);
-        self.kernel.borrow_mut().formula(&object, self.ty, &[decoded(x)], false, self.tolerance.map(decoded)).map(encoded).unwrap_or_else(|| self.declined(x))
-    }
-}
-
-impl rustymath::recipe::Ops<f64> for Recording<'_> {
-    type V = rustymath::facts::Slot;
-    type B = rustymath::facts::Slot;
-    type I = rustymath::facts::Slot;
-    type W = rustymath::facts::Slot;
-    fn fused(&self) -> bool { rustymath::FUSED }
-    fn widen(&self, x: Self::V) -> Self::W { self.emit(Op::Convert, Ty::F64, x, None) }
-    fn wide_number(&self, x: f64) -> Self::W { encoded(self.kernel.borrow_mut().input(Input::constant(Ty::F64, x))) }
-    fn wide_multiply_add(&self, x: Self::W, y: Self::W, z: Self::W) -> Self::W {
-        if rustymath::FUSED { self.emit(Op::MultiplyAdd(decoded(z)), Ty::F64, x, Some(y)) }
-        else { let product = self.emit(Op::Multiply, Ty::F64, x, Some(y)); self.emit(Op::Add, Ty::F64, product, Some(z)) }
-    }
-    fn narrow(&self, x: Self::W) -> Self::V { self.numeric(Op::Convert, x, None) }
-    fn width(&self) -> FloatWidth { if self.ty.bytes() <= 4 { FloatWidth::F32 } else { FloatWidth::F64 } }
-    fn integral(&self) -> bool { !self.ty.float() }
-    fn tolerance(&self, fallback: f64) -> Self::V { self.tolerance.unwrap_or_else(|| self.number(fallback)) }
-    fn number(&self, x: f64) -> Self::V { encoded(self.kernel.borrow_mut().input(Input::constant(self.ty, x))) }
-    fn integer(&self, x: i64) -> Self::I { encoded(self.kernel.borrow_mut().input(Input::Constant(self.integer_ty(), x as u64))) }
-    fn integer_op(&self, op: rustymath::recipe::Integer, x: Self::I, y: Self::I) -> Self::I {
-        use rustymath::recipe::Integer::*;
-        let op = match op {
-            Add => Op::Add, Subtract => Op::Subtract, And => Op::And, Or => Op::Or, Xor => Op::Xor, ShiftLeft => Op::ShiftLeft,
-            ShiftRight => Op::ShiftRight(false), SignedShiftRight => Op::ShiftRight(self.ty != Ty::U8)
-        };
-        self.emit(op, self.integer_ty(), x, Some(y))
-    }
-    fn integer_compare(&self, op: rustymath::recipe::Cmp, x: Self::I, y: Self::I) -> Self::B { self.compare(op, x, y) }
-    fn integer_select(&self, m: Self::B, x: Self::I, y: Self::I) -> Self::I { self.emit(Op::Select(decoded(m)), self.integer_ty(), x, Some(y)) }
-    fn to_integer(&self, x: Self::V) -> Self::I { self.emit(Op::Truncate, self.integer_ty(), x, None) }
-    fn from_integer(&self, x: Self::I) -> Self::V { self.numeric(Op::Convert, x, None) }
-    fn to_bits(&self, x: Self::V) -> Self::I { self.emit(if self.ty.float() { Op::Bitcast } else { Op::Convert }, self.integer_ty(), x, None) }
-    fn from_bits(&self, x: Self::I) -> Self::V { self.numeric(if self.ty.float() { Op::Bitcast } else { Op::Convert }, x, None) }
-    fn constant(&self, x: Self::V) -> Option<f64> {
-        let Value::Input(k) = decoded(x) else { return None };
-        match self.kernel.borrow().inputs[k] {
-            Input::Constant(Ty::F32, b) => Some(f32::from_bits(b as u32) as f64), Input::Constant(Ty::F64, b) => Some(f64::from_bits(b)),
-            Input::Constant(Ty::U8, b) => Some(b as u8 as f64), Input::Constant(Ty::I16, b) => Some(b as i16 as f64),
-            Input::Constant(Ty::I32, b) => Some(b as i32 as f64), Input::Constant(Ty::I64, b) => Some(b as i64 as f64), _ => None
-        }
-    }
-    fn unary(&self, op: rustymath::recipe::Unary, x: Self::V) -> Self::V {
-        use rustymath::recipe::Unary::*;
-        match op {
-            Negate => self.numeric(Op::Negate, x, None), Magnitude => self.numeric(Op::Magnitude, x, None), Sqrt => self.numeric(Op::Sqrt, x, None),
-            Floor => { if self.integral() { x } else { self.numeric(Op::Floor, x, None) } } Ln => self.formula(rustymath::Ln, x),
-            Exp => self.formula(rustymath::Exp, x), Sin => self.formula(rustymath::Sin, x), Cos => self.formula(rustymath::Cos, x),
-            Sinh => self.formula(rustymath::Sinh, x), Cosh => self.formula(rustymath::Cosh, x), Not => self.numeric(Op::Subtract, self.number(1.0), Some(x)),
-            _ => self.declined(x)
-        }
-    }
-    fn binary(&self, op: rustymath::recipe::Binary, x: Self::V, y: Self::V) -> Self::V {
-        use rustymath::recipe::Binary::*;
-        let op = match op {
-            Add => Op::Add, Subtract => Op::Subtract, Multiply => Op::Multiply, Divide => Op::Divide, Larger => Op::Maximum, Smaller => Op::Minimum,
-            BitAnd => Op::And, _ => return self.declined(x)
-        };
-        self.numeric(op, x, Some(y))
-    }
-    fn compare(&self, op: rustymath::recipe::Cmp, x: Self::V, y: Self::V) -> Self::B {
-        use rustymath::recipe::Cmp::*;
-        let op = match op { Less => Cmp::Lt, LessEqual => Cmp::Le, Equal => Cmp::Eq };
-        self.emit(Op::Compare(op), Ty::Bool, x, Some(y))
-    }
-    fn multiply_add(&self, x: Self::V, y: Self::V, z: Self::V) -> Self::V {
-        if rustymath::FUSED && self.ty.float() { self.numeric(Op::MultiplyAdd(decoded(z)), x, Some(y)) }
-        else { self.numeric(Op::Add, self.numeric(Op::Multiply, x, Some(y)), Some(z)) }
-    }
-    fn overflow(&self, op: rustymath::recipe::Binary, x: Self::V, y: Self::V) -> Self::B {
-        use rustymath::recipe::Binary;
-        if self.ty.float() { return encoded(self.kernel.borrow_mut().input(Input::Constant(Ty::Bool, 0))); }
-        let operation = match op { Binary::Add => 0, Binary::Subtract => 1, Binary::Multiply => 2, _ => return self.declined(x) };
-        self.emit(Op::Overflows(operation), Ty::Bool, x, Some(y))
-    }
-    fn and(&self, x: Self::B, y: Self::B) -> Self::B { self.emit(Op::And, Ty::Bool, x, Some(y)) }
-    fn or(&self, x: Self::B, y: Self::B) -> Self::B { self.emit(Op::Or, Ty::Bool, x, Some(y)) }
-    fn not(&self, x: Self::B) -> Self::B { self.emit(Op::Not, Ty::Bool, x, None) }
-    fn select(&self, m: Self::B, x: Self::V, y: Self::V) -> Self::V { self.numeric(Op::Select(decoded(m)), x, Some(y)) }
-}
-
-/// The generated function: the number of items, the items in each block, the arrays' pointers, the scalar slots, the stored results' pointers and the totals. The array slots hold each array's pointer, with a run-by-run array's table after it (`Read`). The scalar slots hold each scalar input and each strided array's stride in items, in the order of the kernel's inputs, then, where the kernel reads runs, their length and the items left in the call's first run. Scalar slots take 8 bytes: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1. Fold totals use the raw-bit slots of [`rustymath::operation::Total`].
+/// The generated function: the number of items, the items in each block, the arrays' pointers, the scalar slots, the stored results' pointers and the totals. The array slots hold each array's pointer, with a run-by-run array's table after it (`Read`). The scalar slots hold each scalar input and each strided array's stride in items, in the order of the kernel's inputs, then, where the kernel reads runs, their length and the items left in the call's first run. Scalar slots and totals take 8 bytes: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1.
 type Entry = unsafe extern "C" fn(usize, usize, *const *const u8, *const u64, *const *mut u8, *mut u64);
 
 /// A compiled kernel, which owns its machine code. `most` is the most items in a block that it takes (`takes`). The module only keeps the code's memory. `JITModule` isn't `Sync`, and the mutex makes `Compiled` `Sync` without code that locks it.
@@ -323,7 +113,7 @@ fn isa() -> Result<OwnedTargetIsa, String> {
     }).clone()
 }
 
-/// Each kernel compiled so far, with its code, or `None` where it failed to compile: the 1 home of compiled code (target part 9). A stage holds a handle to its code, fetched when its plan decides to compile.
+/// Each kernel that ran or compiled so far, with its code once it compiled.
 static KERNELS: OnceLock<Mutex<HashMap<Kernel, Option<Arc<Compiled>>>>> = OnceLock::new();
 
 /// The table of kernels, locked.
@@ -331,26 +121,26 @@ fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compil
     KERNELS.get_or_init(Default::default).lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Forgets every kernel and its code, as a new process has none.
+pub(crate) fn forget_kernels() { kernels().clear() }
+
 impl Kernel {
-    pub(crate) fn existing(&self) -> Option<Arc<Compiled>> { kernels().get(self).and_then(Clone::clone) }
-    /// This kernel's native code, compiled the first time and kept for the process (`KERNELS`), with the compile's time where this call compiled it. A kernel that failed to compile keeps its failure and isn't tried again.
+    /// This kernel's native code, compiled the first time and kept for the process, with the compile's time where this call compiled it.
     pub fn compiled(&self) -> Result<(Arc<Compiled>, Option<Duration>), String> {
-        let mut table = kernels();
-        match table.get(self) {
-            Some(Some(code)) => return Ok((code.clone(), None)), Some(None) => return Err("a kernel that failed to compile before".into()), None => {}
-        }
+        if let Some(Some(c)) = kernels().get(self) { return Ok((c.clone(), None)); }
         let start = Instant::now();
-        let compiled = self.compile().map(Arc::new);
-        table.insert(self.clone(), compiled.as_ref().ok().cloned());
-        Ok((compiled?, Some(start.elapsed())))
+        let c = Arc::new(self.compile()?);
+        let time = start.elapsed();
+        Ok((kernels().entry(self.clone()).or_default().get_or_insert(c).clone(), Some(time)))
     }
+
+    /// Whether this kernel ran or compiled before. It counts as seen from now on.
+    pub fn seen(&self) -> bool { let mut k = kernels(); k.contains_key(self) || k.insert(self.clone(), None).is_some() }
 
     /// This kernel compiled afresh.
     pub fn compile(&self) -> Result<Compiled, String> {
         let (module, entry) = self.defined()?;
-        let arrays = self.inputs.iter().map(|i| match i {
-            Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) | Input::Constant(..) | Input::Index(_) => 0
-        }).sum();
+        let arrays = self.inputs.iter().map(|i| match i { Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) | Input::Constant(..) => 0 }).sum();
         let scalars = self.inputs.iter().filter(|i| matches!(i, Input::Scalar(_) | Input::Array(_, Read::Runs(Within::Strided)))).count();
         let runs = if self.inputs.iter().any(|i| matches!(i, Input::Array(_, Read::Runs(_)))) { 2 } else { 0 };
         let most = if self.folds.iter().any(|&(_, k)| self.steps[k].ty == Ty::Bool) { COUNTED } else { usize::MAX };
@@ -390,20 +180,16 @@ impl Kernel {
         let tys = &tys[..n];
         let (x, y, same) = (tys[0], tys.get(1).copied(), tys.get(1).is_none_or(|&y| y == tys[0]));
         let fits = match s.op {
-            Op::Convert | Op::Truncate => true, Op::Bitcast => x.bytes() == s.ty.bytes() && x != Ty::Bool && s.ty != Ty::Bool,
-            Op::Compare(c) => s.ty == Ty::Bool && same && (x != Ty::Bool || matches!(c, Cmp::Eq | Cmp::Ne)),
-            Op::And | Op::Or | Op::Xor | Op::ShiftLeft | Op::ShiftRight(_) => !s.ty.float() && x == s.ty && same, Op::Not => s.ty == Ty::Bool && x == Ty::Bool,
-            Op::Repair { .. } => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::Check { .. } => x == s.ty && y == Some(Ty::Bool),
-            Op::Overflows(operation) => operation < 3 && !x.float() && x != Ty::Bool && same && s.ty == Ty::Bool,
-            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool,
-            Op::MultiplyAdd(_) => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == s.ty, Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same,
+            Op::Convert => true, Op::Compare(c) => s.ty == Ty::Bool && same && (x != Ty::Bool || matches!(c, Cmp::Eq | Cmp::Ne)),
+            Op::And | Op::Or | Op::Xor => !s.ty.float() && x == s.ty && same, Op::Not => s.ty == Ty::Bool && x == Ty::Bool,
+            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::MultiplyAdd(_) => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == s.ty,
+            Op::Divide | Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same,
             _ => s.ty != Ty::Bool && x == s.ty && same
         };
         if fits { Ok(()) } else { Err(format!("step {k}: {:?} doesn't take {tys:?} for a {:?} result", s.op, s.ty)) }
     }
     /// An error for a step that `check_step` refuses, for a store or fold of a missing step, and for a fold by a reduction that its type doesn't have.
     pub fn check(&self) -> Result<(), String> {
-        if self.inputs.iter().any(|input| matches!(input, Input::Index(ty) if *ty != Ty::I64)) { return Err("an affine index must use i64".into()); }
         for k in 0..self.steps.len() { self.check_step(k)?; }
         if let Some(k) = self.stores.iter().chain(self.folds.iter().map(|f| &f.1)).find(|&&k| k >= self.steps.len()) {
             return Err(format!("a store or fold reads step {k}, which isn't in the kernel"));
@@ -411,7 +197,7 @@ impl Kernel {
         let lanes = 16 / self.narrowest() as usize;
         for &(fold, k) in &self.folds {
             let ty = self.steps[k].ty;
-            let has = fold.compiles() && if ty == Ty::Bool { fold == Fold::Sum && self.folds.len() == 1 } else { fold != Fold::Product || ty.float() };
+            let has = if ty == Ty::Bool { fold == Fold::Sum && self.folds.len() == 1 } else { fold != Fold::Product || ty.float() };
             if !has { return Err(format!("a fold by {fold:?} of {ty:?} items")); }
             if ty.float() && running(ty.bytes() as usize) % lanes != 0 {
                 return Err(format!("a fold of {ty:?} items whose running results don't split into groups of {lanes}"));
@@ -437,10 +223,8 @@ impl Kernel {
         let mut widths: Vec<i64> = Vec::with_capacity(self.steps.len());
         for (k, s) in self.steps.iter().enumerate() {
             let width = if s.ty != Ty::Bool { s.ty.bytes() } else {
-                let made = if matches!(s.op, Op::Convert | Op::Truncate) && self.ty(s.x) != Ty::Bool { 1 } else {
-                    [Some(s.x), s.y].into_iter().flatten().map(|v| match v {
-                        Value::Input(j) => self.inputs[j].ty().bytes(), Value::Step(j) => widths[j]
-                    }).max().unwrap_or(1)
+                let made = if matches!(s.op, Op::Convert) && self.ty(s.x) != Ty::Bool { 1 } else {
+                    [Some(s.x), s.y].into_iter().flatten().map(|v| match v { Value::Input(j) => self.inputs[j].ty().bytes(), Value::Step(j) => widths[j] }).max().unwrap_or(1)
                 };
                 if wanted[k] == 0 { made } else { made.min(wanted[k]) }
             };
@@ -453,7 +237,7 @@ impl Kernel {
     pub fn totals(&self) -> Option<usize> { self.folds.iter().map(|&(_, k)| self.steps[k].ty).find(|t| t.float()).map(|t| running(t.bytes() as usize)) }
 
     /// The type of value `v`.
-    pub(crate) fn ty(&self, v: Value) -> Ty { match v { Value::Input(k) => self.inputs[k].ty(), Value::Step(k) => self.steps[k].ty } }
+    fn ty(&self, v: Value) -> Ty { match v { Value::Input(k) => self.inputs[k].ty(), Value::Step(k) => self.steps[k].ty } }
 
     /// The loop's code. It runs over the items in blocks of the caller's size, each with totals of its own, which it stores block by block. Within a block, the main loop takes `group` groups at a time, then a loop over single groups follows, then a scalar loop takes the items left over.
     fn build(&self, ctx: &mut Context, config: TargetFrontendConfig) {
@@ -511,8 +295,10 @@ impl Kernel {
                     let x = slot(&mut b, t, scalars, (s - 1) * 8);
                     (b.ins().splat(t.vector(), x), None)
                 }
-                Input::Index(t) => (zeros(&mut b, t.vector()), None),
-                Input::Constant(t, bits) => { let x = constant(&mut b, t, bits); (b.ins().splat(t.vector(), x), None) }
+                Input::Constant(t, bits) => {
+                    let x = constant(&mut b, t, bits);
+                    (b.ins().splat(t.vector(), x), None)
+                }
             })
             .collect();
         // A kernel that reads runs takes their length and the items left in the call's first run in its last two scalar slots.
@@ -619,17 +405,17 @@ impl Kernel {
         };
         looped(&mut b, group_head, group_body, groups, single_head, group * lanes, &mut |b, iv| {
             let now = current(b);
-            let results: Vec<_> = (0..group).map(|u| self.items(b, iv, u * lanes, false, &now, config)).collect();
+            let results: Vec<_> = (0..group).map(|u| self.items(b, iv, u * lanes, false, &now)).collect();
             self.finish(b, &results, iv, lanes, &outs, &accs, &vector_totals);
         });
         looped(&mut b, single_head, single_body, singles, scalar_head, lanes, &mut |b, iv| {
             let now = current(b);
-            let results = [self.items(b, iv, 0, false, &now, config)];
+            let results = [self.items(b, iv, 0, false, &now)];
             self.finish(b, &results, iv, lanes, &outs, &accs, &vector_totals);
         });
         looped(&mut b, scalar_head, scalar_body, stop, seg_head, 1, &mut |b, iv| {
             let now = current(b);
-            let results = [self.items(b, iv, 0, true, &now, config)];
+            let results = [self.items(b, iv, 0, true, &now)];
             self.store(b, &results, iv, 1, true, &outs);
             for ((acc, &(_, k)), &total) in accs.iter().zip(&self.folds).zip(&scalar_totals) {
                 let item = b.ins().extractlane(results[0][k][0], 0);
@@ -675,54 +461,35 @@ impl Kernel {
         b.finalize(config);
     }
 
-    fn input_items(&self, b: &mut FunctionBuilder, k: usize, i: Ir, skip: i64, single: bool, inputs: &[(Ir, Option<Ir>)]) -> Vec<Ir> {
-        let width = self.narrowest();
-        match self.inputs[k] {
-            Input::Scalar(ty) | Input::Constant(ty, _) => vec![inputs[k].0; (ty.bytes() / width) as usize], Input::Index(ty) => indices(b, ty, i, skip, width),
-            Input::Array(ty, read) => load(b, ty, read.within(), inputs[k], i, skip, ty.bytes() / width, single)
-        }
-    }
     /// Each step's results for a group's items from item `i + skip`, as a list of vectors, each type taking as many vectors as its width needs, and each mask lying at its width from `widths`. Where `single` holds, the lists hold the one item `i + skip`, in the first lane of their first vector. `inputs` holds each array's pointer, with a strided array's stride in bytes, and each scalar's vector.
-    fn items(&self, b: &mut FunctionBuilder, i: Ir, skip: i64, single: bool, inputs: &[(Ir, Option<Ir>)], config: TargetFrontendConfig) -> Vec<Vec<Ir>> {
-        let widths = self.widths();
+    fn items(&self, b: &mut FunctionBuilder, i: Ir, skip: i64, single: bool, inputs: &[(Ir, Option<Ir>)]) -> Vec<Vec<Ir>> {
+        let (width, widths) = (self.narrowest(), self.widths());
         let mut results: Vec<Vec<Ir>> = Vec::with_capacity(self.steps.len());
         let mut loaded: Vec<Option<Vec<Ir>>> = vec![None; self.inputs.len()];
         for (s, step) in self.steps.iter().enumerate() {
             let mut read = |b: &mut FunctionBuilder, v: Value| -> Vec<Ir> {
                 match v {
                     Value::Step(k) => results[k].clone(),
-                    Value::Input(k) => loaded[k].get_or_insert_with(|| self.input_items(b, k, i, skip, single, inputs)).clone(),
+                    Value::Input(k) => match self.inputs[k] {
+                        Input::Scalar(t) | Input::Constant(t, _) => vec![inputs[k].0; (t.bytes() / width) as usize],
+                        Input::Array(t, read) => {
+                            loaded[k].get_or_insert_with(|| load(b, t, read.within(), inputs[k], i, skip, t.bytes() / width, single)).clone()
+                        }
+                    },
                 }
             };
             let x = read(b, step.x);
             let y = step.y.map(|y| read(b, y));
             // A step on masks reads them at its own width.
-            let (x, y) = if step.ty == Ty::Bool && self.ty(step.x) == Ty::Bool && !matches!(step.op, Op::Convert | Op::Truncate) {
+            let (x, y) = if step.ty == Ty::Bool && self.ty(step.x) == Ty::Bool && !matches!(step.op, Op::Convert) {
                 (resize(b, x, false, widths[s]), y.map(|y| resize(b, y, false, widths[s])))
             } else { (x, y) };
             let third = step.op.third().map(|v| read(b, v));
             let result = match (step.op, y, third) {
-                (op @ (Op::Convert | Op::Truncate), _, _) => convert(b, x, self.ty(step.x), step.ty, op == Op::Convert),
-                (Op::Bitcast, _, _) => x.iter().map(|&v| cast(b, step.ty.vector(), v)).collect(),
-                (op @ (Op::ShiftLeft | Op::ShiftRight(_)), Some(y), _) => {
-                    let uniform = matches!(step.y, Some(Value::Input(k)) if matches!(self.inputs[k], Input::Scalar(_) | Input::Constant(..)));
-                    shifted(b, op, &x, &y, uniform)
-                }
-                (Op::Divide, Some(y), _) if !step.ty.float() => x.iter().zip(&y).map(|(&x, &y)| divided(b, step.ty, x, y)).collect(),
-                (Op::Compare(c), Some(y), _) => compare(b, c, self.ty(step.x), &x, &y),
-                (Op::Overflows(operation), Some(y), _) => x.iter().zip(&y).map(|(&x, &y)| overflows(b, operation, self.ty(step.x), x, y)).collect(),
+                (Op::Convert, _, _) => convert(b, x, self.ty(step.x), step.ty), (Op::Compare(c), Some(y), _) => compare(b, c, self.ty(step.x), &x, &y),
                 (Op::Select(_), Some(y), Some(m)) => select(b, &m, &x, &y),
-                (Op::Repair { routine, .. }, Some(y), Some(mask)) => {
-                    let mask = resize(b, mask, false, step.ty.bytes());
-                    x.iter().zip(&y).zip(&mask).map(|((&value, &input), &mask)| repaired(b, step.ty, value, input, mask, routine, single, config)).collect()
-                }
-                (Op::Check { reporter }, Some(valid), _) => {
-                    let valid = resize(b, valid, false, widths[s]);
-                    for &mask in valid.iter().take(if single { 1 } else { valid.len() }) { checked(b, mask, reporter, single, config); }
-                    x
-                }
                 (Op::MultiplyAdd(_), Some(y), Some(z)) => x.iter().zip(&y).zip(&z).map(|((&x, &y), &z)| b.ins().fma(x, y, z)).collect(),
-                (op, y, _) => x.iter().enumerate().map(|(j, &x)| arith(b, op, step.ty, x, y.as_ref().map(|y| y[j]))).collect(),
+                (op, y, _) => x.iter().enumerate().map(|(j, &x)| arith(b, op, step.ty, x, y.as_ref().map(|y| y[j]))).collect()
             };
             results.push(if step.ty == Ty::Bool { resize(b, result, false, widths[s]) } else { result });
         }
@@ -812,13 +579,8 @@ impl Acc {
             Ty::U8 => (0, 255), Ty::I16 => (i16::MIN.into(), i16::MAX.into()), Ty::I32 => (i32::MIN.into(), i32::MAX.into()), _ => (i64::MIN, i64::MAX)
         };
         let c = match (self.ty, self.fold) {
-            (t, f) if t.float() => (match f {
-                Fold::Sum => at::<Sum>, Fold::Product => at::<Product>, Fold::Max => at::<Max>, Fold::Min => at::<Min>,
-                _ => unreachable!("`Kernel::check` refuses a fold that compiled code doesn't take")
-            })(b, t),
-            (_, Fold::Max) => int(b, lane, least),
-            (_, Fold::Min) => int(b, lane, greatest),
-            _ => int(b, lane, 0),
+            (t, f) if t.float() => (match f { Fold::Sum => at::<Sum>, Fold::Product => at::<Product>, Fold::Max => at::<Max>, Fold::Min => at::<Min> })(b, t),
+            (_, Fold::Max) => int(b, lane, least), (_, Fold::Min) => int(b, lane, greatest), _ => int(b, lane, 0)
         };
         match vector { Some(v) => b.ins().splat(v, c), None => c }
     }
@@ -828,7 +590,7 @@ impl Acc {
         match (self.fold, self.ty.float()) {
             _ if self.ty == Ty::Bool => b.ins().isub(total, x), (Fold::Sum, true) => b.ins().fadd(total, x), (Fold::Sum, false) => b.ins().iadd(total, x),
             (Fold::Product, _) => b.ins().fmul(total, x), (Fold::Max, _) => extreme(b, self.ty, true, x, total),
-            (Fold::Min, _) => extreme(b, self.ty, false, x, total), _ => unreachable!("`Kernel::check` refuses a fold that compiled code doesn't take")
+            (Fold::Min, _) => extreme(b, self.ty, false, x, total)
         }
     }
 
@@ -847,8 +609,7 @@ impl Acc {
     /// `total` as its 8-byte slot holds it.
     fn slot(self, b: &mut FunctionBuilder, total: Ir) -> Ir {
         match self.ty {
-            Ty::F32 => { let bits = cast(b, types::I32, total); b.ins().uextend(types::I64, bits) }
-            Ty::F64 | Ty::I64 | Ty::Bool => total, Ty::U8 => b.ins().uextend(types::I64, total),
+            Ty::F32 => b.ins().fpromote(types::F64, total), Ty::F64 | Ty::I64 | Ty::Bool => total, Ty::U8 => b.ins().uextend(types::I64, total),
             _ => b.ins().sextend(types::I64, total)
         }
     }
@@ -862,10 +623,7 @@ fn int(b: &mut FunctionBuilder, ty: Type, v: i64) -> Ir { let bits = ty.bits(); 
 
 /// The constant `bits`, as `Input::Constant` holds them, at scalar type `t`.
 fn constant(b: &mut FunctionBuilder, t: Ty, bits: u64) -> Ir {
-    match t {
-        Ty::Bool => int(b, types::I8, -i64::from(bits != 0)), Ty::F32 => b.ins().f32const(f32::from_bits(bits as u32)),
-        Ty::F64 => b.ins().f64const(f64::from_bits(bits)), _ => int(b, t.ir(), bits as i64)
-    }
+    match t { Ty::F32 => b.ins().f32const(f32::from_bits(bits as u32)), Ty::F64 => b.ins().f64const(f64::from_bits(bits)), _ => int(b, t.ir(), bits as i64) }
 }
 
 /// `v`'s bits as type `ty`.
@@ -938,64 +696,11 @@ fn arith(b: &mut FunctionBuilder, op: Op, ty: Ty, x: Ir, y: Option<Ir>) -> Ir {
         (Op::Subtract, Some(y)) => { if ty.float() { b.ins().fsub(x, y) } else { b.ins().isub(x, y) } } (Op::Multiply, Some(y)) => multiply(b, ty, x, y),
         (Op::Divide, Some(y)) => b.ins().fdiv(x, y), (Op::Maximum, Some(y)) => extreme(b, ty, true, x, y),
         (Op::Minimum, Some(y)) => extreme(b, ty, false, x, y), (Op::Negate, _) => { if ty.float() { b.ins().fneg(x) } else { b.ins().ineg(x) } }
-        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => b.ins().fabs(x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x),
-        (Op::Floor, _) => b.ins().floor(x), _ => unreachable!("`check` gives each operation its arguments")
+        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => b.ins().fabs(x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x), (Op::Floor, _) => b.ins().floor(x),
+        _ => unreachable!("`check` gives each operation its arguments")
     }
 }
 
-fn divided(b: &mut FunctionBuilder, ty: Ty, x: Ir, y: Ir) -> Ir {
-    let machine = b.func.dfg.value_type(x);
-    if machine.is_vector() {
-        let mut result = zeros(b, machine);
-        for lane in 0..machine.lane_count() as u8 {
-            let (x, y) = (b.ins().extractlane(x, lane), b.ins().extractlane(y, lane));
-            let value = divided(b, ty, x, y);
-            result = b.ins().insertlane(result, value, lane);
-        }
-        return result;
-    }
-    let extend = |b: &mut FunctionBuilder, value| {
-        if machine == types::I64 { value } else if ty == Ty::U8 { b.ins().uextend(types::I64, value) } else { b.ins().sextend(types::I64, value) }
-    };
-    let (x, y) = (extend(b, x), extend(b, y));
-    let zero = b.ins().icmp_imm(IntCC::Equal, y, 0);
-    let minimum = b.ins().icmp_imm(IntCC::Equal, x, i64::MIN);
-    let minus = b.ins().icmp_imm(IntCC::Equal, y, -1);
-    let overflow = b.ins().band(minimum, minus);
-    let invalid = b.ins().bor(zero, overflow);
-    let one = b.ins().iconst(types::I64, 1);
-    let divisor = b.ins().select(invalid, one, y);
-    let q = b.ins().sdiv(x, divisor);
-    let q = b.ins().select(overflow, x, q);
-    let fallback = b.ins().iconst(types::I64, 0);
-    let q = b.ins().select(zero, fallback, q);
-    if machine == types::I64 { q } else { b.ins().ireduce(machine, q) }
-}
-
-fn shifted(b: &mut FunctionBuilder, op: Op, x: &[Ir], y: &[Ir], uniform: bool) -> Vec<Ir> {
-    let shift = |b: &mut FunctionBuilder, x, y| {
-        let ty = b.func.dfg.value_type(x);
-        let bits = ty.lane_bits();
-        let valid = b.ins().icmp_imm(IntCC::UnsignedLessThan, y, bits as i64);
-        let value = match op { Op::ShiftLeft => b.ins().ishl(x, y), Op::ShiftRight(true) => b.ins().sshr(x, y), _ => b.ins().ushr(x, y) };
-        let fallback = if matches!(op, Op::ShiftRight(true)) { b.ins().sshr_imm(x, bits as i64 - 1) }
-        else if ty.is_vector() { zeros(b, ty) }
-        else { b.ins().iconst(ty, 0) };
-        b.ins().select(valid, value, fallback)
-    };
-    if !b.func.dfg.value_type(x[0]).is_vector() { return x.iter().zip(y).map(|(&x, &y)| shift(b, x, y)).collect(); }
-    if uniform { let count = b.ins().extractlane(y[0], 0); return x.iter().map(|&x| shift(b, x, count)).collect(); }
-    x.iter().zip(y).map(|(&x, &y)| {
-        let ty = b.func.dfg.value_type(x);
-        let mut result = zeros(b, ty);
-        for l in 0..ty.lane_count() as u8 {
-            let (x, y) = (b.ins().extractlane(x, l), b.ins().extractlane(y, l));
-            let value = shift(b, x, y);
-            result = b.ins().insertlane(result, value, l);
-        }
-        result
-    }).collect()
-}
 /// `x × y`, wrapping for integers. A vector of bytes multiplies at 16 bits, because x86-64 has no vector multiply of bytes.
 fn multiply(b: &mut FunctionBuilder, ty: Ty, x: Ir, y: Ir) -> Ir {
     if ty.float() { return b.ins().fmul(x, y); }
@@ -1128,8 +833,8 @@ fn in_bytes(b: &mut FunctionBuilder, mut x: Vec<Ir>) -> Vec<Ir> {
     x
 }
 
-/// `x`, a group's vectors of type `from`, converted to type `to` as `Op::Convert` or `Op::Truncate` says.
-fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty, floor: bool) -> Vec<Ir> {
+/// `x`, a group's vectors of type `from`, converted to type `to` as `Op::Convert` says.
+fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty) -> Vec<Ir> {
     if from == to { return x; }
     match (from, to) {
         (Ty::Bool, _) => {
@@ -1160,7 +865,7 @@ fn convert(b: &mut FunctionBuilder, x: Vec<Ir>, from: Ty, to: Ty, floor: bool) -
             wide
         }
         _ => {
-            let x = if floor { x.iter().map(|&v| b.ins().floor(v)).collect() } else { x };
+            let x: Vec<Ir> = x.iter().map(|&v| b.ins().floor(v)).collect();
             if to == Ty::I64 {
                 let x = if from == Ty::F32 { widen(b, &x, false) } else { x };
                 return lanewise(b, &x, types::I64X2, |b, v| b.ins().fcvt_to_sint_sat(types::I64, v));
@@ -1199,100 +904,4 @@ impl Compiled {
 
     /// Whether the kernel takes blocks of `block` items: any block, except that a kernel that counts Booleans takes at most `COUNTED` items.
     pub fn takes(&self, block: usize) -> bool { block <= self.most }
-    pub(crate) fn block_limit(&self) -> usize { self.most }
-}
-
-fn repaired(b: &mut FunctionBuilder, ty: Ty, value: Ir, input: Ir, mask: Ir, routine: usize, single: bool, config: TargetFrontendConfig) -> Ir {
-    let repair = b.create_block();
-    let done = b.create_block();
-    b.append_block_param(done, ty.vector());
-    let flagged = if single { let lane = b.ins().extractlane(mask, 0); b.ins().icmp_imm(IntCC::NotEqual, lane, 0) } else { b.ins().vany_true(mask) };
-    b.ins().brif(flagged, repair, &[], done, &[value.into()]);
-    b.switch_to_block(repair);
-    let mut signature = cranelift_codegen::ir::Signature::new(config.default_call_conv);
-    signature.params.push(AbiParam::new(ty.ir()));
-    signature.returns.push(AbiParam::new(ty.ir()));
-    let signature = b.func.import_signature(signature);
-    let function = b.ins().iconst(config.pointer_type(), routine as i64);
-    let mut current = value;
-    for lane in 0..if single { 1 } else { ty.vector().lane_count() as u8 } {
-        let call = b.create_block();
-        let next = b.create_block();
-        b.append_block_param(next, ty.vector());
-        let flag = b.ins().extractlane(mask, lane);
-        let flag = b.ins().icmp_imm(IntCC::NotEqual, flag, 0);
-        b.ins().brif(flag, call, &[], next, &[current.into()]);
-        b.switch_to_block(call);
-        let argument = b.ins().extractlane(input, lane);
-        let called = b.ins().call_indirect(signature, function, &[argument]);
-        let result = b.inst_results(called)[0];
-        let result = b.ins().insertlane(current, result, lane);
-        b.ins().jump(next, &[result.into()]);
-        b.switch_to_block(next);
-        current = b.block_params(next)[0];
-    }
-    b.ins().jump(done, &[current.into()]);
-    b.switch_to_block(done);
-    b.block_params(done)[0]
-}
-
-fn indices(b: &mut FunctionBuilder, ty: Ty, at: Ir, skip: i64, width: i64) -> Vec<Ir> {
-    let lanes = ty.vector().lane_count() as i64;
-    (0..ty.bytes() / width).map(|vector| {
-        let mut value = zeros(b, ty.vector());
-        for lane in 0..lanes {
-            let index = b.ins().iadd_imm_s(at, skip + vector * lanes + lane);
-            let index = if ty.ir() == b.func.dfg.value_type(index) { index } else { b.ins().ireduce(ty.ir(), index) };
-            value = b.ins().insertlane(value, index, lane as u8);
-        }
-        value
-    }).collect()
-}
-
-fn checked(b: &mut FunctionBuilder, valid: Ir, reporter: usize, single: bool, config: TargetFrontendConfig) {
-    let failed = b.create_block();
-    let done = b.create_block();
-    let invalid = if single { let lane = b.ins().extractlane(valid, 0); b.ins().icmp_imm(IntCC::Equal, lane, 0) }
-    else { let invalid = b.ins().bnot(valid); b.ins().vany_true(invalid) };
-    b.ins().brif(invalid, failed, &[], done, &[]);
-    b.switch_to_block(failed);
-    let signature = b.func.import_signature(cranelift_codegen::ir::Signature::new(config.default_call_conv));
-    let function = b.ins().iconst(config.pointer_type(), reporter as i64);
-    b.ins().call_indirect(signature, function, &[]);
-    b.ins().jump(done, &[]);
-    b.switch_to_block(done);
-}
-
-fn overflows(b: &mut FunctionBuilder, operation: u8, ty: Ty, x: Ir, y: Ir) -> Ir {
-    if operation != 2 {
-        let result = if operation == 0 { b.ins().iadd(x, y) } else { b.ins().isub(x, y) };
-        if ty == Ty::U8 {
-            return if operation == 0 { b.ins().icmp(IntCC::UnsignedLessThan, result, x) } else { b.ins().icmp(IntCC::UnsignedLessThan, x, y) };
-        }
-        let a = b.ins().bxor(x, if operation == 0 { result } else { y });
-        let c = b.ins().bxor(y, result);
-        let bits = if operation == 0 { b.ins().band(a, c) } else { let c = b.ins().bxor(x, result); b.ins().band(a, c) };
-        let zero = zeros(b, ty.vector());
-        return b.ins().icmp(IntCC::SignedLessThan, bits, zero);
-    }
-    if ty != Ty::I64 {
-        let left = widen(b, &[x], ty == Ty::U8);
-        let right = widen(b, &[y], ty == Ty::U8);
-        let wide_ty = match ty { Ty::U8 => Ty::I16, Ty::I16 => Ty::I32, _ => Ty::I64 };
-        let products: Vec<_> = left.iter().zip(right).map(|(&x, y)| multiply(b, wide_ty, x, y)).collect();
-        let truncated = narrow(b, &products);
-        let restored = widen(b, &truncated, ty == Ty::U8);
-        let flags: Vec<_> = products.into_iter().zip(restored).map(|(x, y)| b.ins().icmp(IntCC::NotEqual, x, y)).collect();
-        return narrow(b, &flags)[0];
-    }
-    let mut flags = zeros(b, ty.vector());
-    for lane in 0..ty.vector().lane_count() as u8 {
-        let x = b.ins().extractlane(x, lane);
-        let y = b.ins().extractlane(y, lane);
-        let (_, flag) = b.ins().smul_overflow(x, y);
-        let flag = b.ins().ineg(flag);
-        let flag = b.ins().sextend(types::I64, flag);
-        flags = b.ins().insertlane(flags, flag, lane);
-    }
-    flags
 }

@@ -1,5 +1,5 @@
 //! Every glyph's kind, names and ranks, shared by completion, help and Python.
-use crate::{eval::OperatorKind, primitive::{Primitive, Rank, WHOLE}};
+use crate::primitive::{OperatorKind, Primitive, Rank, WHOLE};
 use rustymath::hashing::HashMap;
 use std::sync::OnceLock;
 
@@ -80,12 +80,12 @@ pub fn symbols() -> &'static [Symbol] {
             dyad_ranks: String::new(), hanzi: hanzi(glyph) });
         let primitives = Primitive::all().map(|p| {
             let info = p.info();
-            let [monad, dyad] = info.names;
+            let (monad, dyad) = (info.monad.facts.name, info.dyad.facts.name);
             let rank = |r: Rank| if r == WHOLE { "∞".to_string() } else { r.to_string() };
-            let (monad_rank, dyad_ranks) = (rank(info.ranks[0]), info.ranks[1..].iter().map(|&r| rank(r)).collect::<Vec<_>>().join(" "));
+            let (monad_rank, dyad_ranks) = (rank(info.monad.rank), info.dyad.ranks.map(rank).join(" "));
             Symbol { glyph: info.glyph, name: info.name, kind: "function", monad, dyad, monad_rank, dyad_ranks, hanzi: hanzi(info.glyph) }
         });
-        let operators = OperatorKind::all().filter(|op| op.info().glyph.chars().count() == 1).map(|op| {
+        let operators = OperatorKind::all().map(|op| {
             let info = op.info();
             let [name, monad, dyad] = info.names;
             let kind = if info.dyadic() { "dyadic-operator" } else { "monadic-operator" };

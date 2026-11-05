@@ -1,5 +1,5 @@
-use crate::{Described, Error, Number, Value, keyed, number::Mark, settings, symbols::Notation};
-use rustymath::{buffer::{DType, FloatWidth}, error::Kind};
+use crate::{Described, Error, Number, Value, keyed, settings, symbols::Notation, transform::Plain};
+use rustymath::{buffer::FloatWidth, error::Kind};
 use std::borrow::Cow;
 use unicode_width::UnicodeWidthStr;
 
@@ -65,10 +65,11 @@ impl Elide {
     pub fn unmarked(self, n: &Number) -> String { format!("{:#}", n.rounded(self.prec)) }
     /// The marker of a float of `width`, when markers show and the width isn't `plain`.
     pub fn width_marker(self, width: FloatWidth) -> Option<&'static str> {
-        (self.marks && Some(width) != self.plain).then(|| Mark::Type { dtype: DType::Float(width), fixed: false }.marker())
+        (self.marks && Some(width) != self.plain).then(|| crate::number::Mark::Width(width).marker())
     }
     /// The marker for a numeric dtype and its fixedness under these display settings.
-    pub fn kind_marker(self, kind: DType, fixed: bool) -> Option<&'static str> {
+    pub fn kind_marker(self, kind: rustymath::buffer::DType, fixed: bool) -> Option<&'static str> {
+        use {crate::number::Mark, rustymath::buffer::DType};
         if !self.marks { return None; }
         match kind {
             DType::Integer(w) => Some(Mark::integer(fixed.then_some(w)).marker()), DType::Float(w) => self.width_marker(w),
@@ -86,13 +87,10 @@ impl Elide {
 }
 
 /// The positions display shows along an axis of `len` items: all of them, or the first and last `edges` with `None` for the gap between.
-pub(crate) fn positions(len: usize, edges: Option<usize>) -> impl Iterator<Item = Option<usize>> + Clone { let e = edges.unwrap_or(len); ends(len, e, e) }
-
-/// The positions of `len` items: the first `head` and the last `tail` with `None` for the gap between, or all of them where `head + tail` covers them.
-pub(crate) fn ends(len: usize, head: usize, tail: usize) -> impl Iterator<Item = Option<usize>> + Clone {
-    let gap = len > head.saturating_add(tail);
-    let (head, tail) = if gap { (head, len - tail) } else { (len, len) };
-    (0..head).map(Some).chain(gap.then_some(None)).chain((tail..len).map(Some))
+pub(crate) fn positions(len: usize, edges: Option<usize>) -> impl Iterator<Item = Option<usize>> + Clone {
+    let gap = edges.filter(|&e| len > 2 * e);
+    let (head, tail) = gap.map_or((len, len), |e| (e, len - e));
+    (0..head).map(Some).chain(gap.map(|_| None)).chain((tail..len).map(Some))
 }
 
 /// The index of each position display shows on the axes of `shape`, in order, with `None` for a gap. The positions under a gap collapse into it. Each comes with the axis whose index changed to reach it, or `None` for the first.
@@ -196,19 +194,14 @@ impl Settings {
     }
 }
 
-/// How `•prefs` acts (`system::Acts`): a record that sets something changes settings, an effect that ends a recording; an empty one only reads them.
-pub(crate) fn prefs_acts(_: Option<&Value>, right: &Value) -> crate::system::Acts {
-    if right.rank() == 1 && !right.is_empty() && right.keys(0).is_some_and(|keys| keys.complete()) { crate::system::Acts::Ends }
-    else { crate::system::Acts::Never }
-}
-
-/// `•prefs Y` applies the settings in the record `Y`, and returns all of them. Settings hold for the whole process (`settings`). The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `mathish`, on by default, makes 64-bit floats compare with a tolerance and zero divided by zero give zero, under dynamic kinds. `float` is the width of new floats in bits, 16, 32 or 64. Until it's set, new floats take 64 bits under dynamic kinds and 32 under static kinds. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `fusion` logs the operation and item count when a held pending result is stored. `threads` is the number of threads that large calls split across, from then on. 0 gives the default. 1 runs them on the calling thread alone. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::framed`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. `batch` starts on.
+/// `•prefs Y` applies the settings in the record `Y`, and returns all of them. Settings hold for the whole process (`settings`). The result is shy when `Y` sets something, as an assignment's is, so `•prefs ⍬` shows the settings. Besides the display settings, `mathish`, on by default, makes 64-bit floats compare with a tolerance and zero divided by zero give zero, under dynamic kinds. `float` is the width of new floats in bits, 16, 32 or 64. Until it's set, new floats take 64 bits under dynamic kinds and 32 under static kinds. Code parsed after a change reads its literals at the new width. `kinds` is `"dynamic"`, the default, or `"static"`, under which every result's kind follows from the operation, its arguments' kinds and these settings, never from values. `int` is the width of new integers under static kinds, 32 or 64. `fusion` makes each call that computes a pending argument report it. `threads` is the number of threads that large calls split across, from then on. 0 gives the default. 1 runs them on the calling thread alone. `seed`, a nonnegative integer, seeds the session's random numbers, which `¿` and a distribution's `sample` draw. The returned settings leave it out, because the stream moves on as it draws. `batch` makes Each, Rank, stencils and outer products first try one call of their operand on batches of all their cells (`batch::tried`). Where that call can't give every cell's result, they call the operand once for each cell. The results are the same either way. `batch` starts on.
 pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, bool), crate::Error> {
     let (mut display, mut numeric, mut threads, mut seed) = (settings::display(), settings::numeric(), None, None);
     let mut float_set = settings::float_set();
     let (mut hanzi_aliases, mut batch, mut fusion) = (settings::hanzi_aliases(), settings::batch(), settings::reports_fusion());
     let pairs = keyed::pairs(right).described("•prefs takes a record of settings")?;
     let shy = !pairs.is_empty();
+    if shy { crate::transform::acts()?; }
     for (key, value) in pairs {
         if numeric.set(&key, &value, &mut float_set).map_err(|message| Error::domain(message))? { continue; }
         match &*key {
@@ -216,8 +209,6 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
                 if !session.prefacing.get() { return Err(Error::domain("hanzi_aliases needs a leading •prefs declaration on a literal record")); }
                 hanzi_aliases = value.boolean().described("hanzi_aliases must be Boolean")?;
             }
-            "batch" => batch = value.boolean().described("batch must be Boolean")?,
-            "fusion" => fusion = value.boolean().described("fusion must be Boolean")?,
             "threads" => {
                 let n = value.as_number().and_then(|n| n.integer().ok()).and_then(|n| usize::try_from(n).ok());
                 threads = Some(n.ok_or(Kind::Domain).described("threads must be a nonnegative whole number")?);
@@ -226,6 +217,8 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
                 let n = value.as_number().and_then(|n| n.nonnegative_integer::<u64>().ok());
                 seed = Some(n.ok_or(Kind::Domain).described("seed must be a nonnegative whole number")?);
             }
+            "batch" => batch = value.boolean().described("batch must be Boolean")?,
+            "fusion" => fusion = value.boolean().described("fusion must be Boolean")?,
             key => { if !display.set(key, &value).described("invalid display setting")? { return Err(Error::domain("unknown setting")); } }
         }
     }
@@ -236,9 +229,14 @@ pub(crate) fn prefs(session: &crate::Session, right: &Value) -> Result<(Value, b
     settings::set_batch(batch);
     settings::set_reports_fusion(fusion);
     if let Some(n) = threads { rustymath::parallel::set_threads(n); }
-    if let Some(seed) = seed { session.seed(seed); }
-    let entries = display.entries(numeric.width).into_iter().chain(numeric.entries())
-        .chain([("threads", Value::integer(rustymath::parallel::thread_setting() as i64)), ("hanzi_aliases", Value::Number(Number::from_bool(hanzi_aliases))), ("batch", Value::Number(Number::from_bool(batch))), ("fusion", Value::Number(Number::from_bool(fusion)))]);
+    if let Some(seed) = seed {
+        *session.generator.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = crate::distribution::Stream::seeded(seed);
+    }
+    let flag = |b| Value::Number(Number::from_bool(b));
+    let entries = display.entries(numeric.width).into_iter().chain(numeric.entries()).chain([
+        ("fusion", flag(fusion)), ("threads", Value::integer(rustymath::parallel::thread_setting() as i64)), ("hanzi_aliases", flag(hanzi_aliases)),
+        ("batch", flag(batch)),
+    ]);
     let (keys, values): (Vec<std::sync::Arc<str>>, Vec<Value>) = entries.map(|(k, v)| (k.into(), v)).unzip();
     Ok((keyed::vector(keys, values).described("invalid settings record")?, shy))
 }
@@ -293,7 +291,7 @@ impl Cell {
     }
     /// A cell holding `block`, the text of `item`.
     fn item(block: Block, item: &Value) -> Self {
-        let number = matches!(item, Value::Number(_)).then(|| Decimals::of(block.lines[0].chars()));
+        let number = matches!(item.displayed(), Plain::Number(_)).then(|| Decimals::of(block.lines[0].chars()));
         Self { block, number, nested: matches!(item, Value::Array(_)) }
     }
     pub fn height(&self) -> usize { self.block.lines.len() }
@@ -376,14 +374,13 @@ fn array(a: &Value, el: Elide) -> Block {
                 Cell::spot(spot, |i| {
                     let item = if a.is_empty() { a.prototype() } else { a.at(i) };
                     chars &= matches!(item, Value::Character(_));
-                    let block = match &item {
+                    let block = match item.displayed() {
                         // An `ₓ` box already says its numbers are exact, and a width's marker gives their width.
-                        Value::Number(n) if Some(kind) == a.mark(el) => Block::new(el.unmarked(n)),
-                        Value::Number(n) => Block::new(el.number(n)),
-                        Value::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
-                        Value::Array(_) => array(&item, el),
-                        Value::Function(_) | Value::Operator(_) => Block::new(plain(&item, el)),
-                        Value::Pending(_) | Value::Carried { .. } => unreachable!("display requires observed values"),
+                        Plain::Number(n) if Some(kind) == a.mark(el) => Block::new(el.unmarked(n)),
+                        Plain::Number(n) => Block::new(el.number(n)),
+                        Plain::Character(c) => Block::new(if c.is_control() { c.escape_default().to_string() } else { c.to_string() }),
+                        Plain::Array(item) => array(item, el),
+                        Plain::Function(_) | Plain::Operator(_) => Block::new(plain(&item, el)),
                     };
                     let block = match a.shown_key(0, i, el) { Some(key) => block.labelled(&key), None => block };
                     Cell::item(block, &item)
@@ -408,10 +405,9 @@ fn boxes(a: &Value) -> bool { a.shape().len() != 1 || !a.is_simple() }
 
 /// Display text for `a` without frames: a vector or unit as source text, and higher ranks as rows.
 pub(crate) fn plain(a: &Value, el: Elide) -> String {
-    match a {
-        Value::Number(n) => return el.number(n), Value::Function(f) => return format!("⟨{}⟩", f.text(el, &mut 1000)),
-        Value::Operator(op) => return op.text(el), Value::Character(_) => return a.literal(), Value::Array(_) => (),
-        Value::Pending(_) | Value::Carried { .. } => unreachable!("display requires observed values")
+    match a.displayed() {
+        Plain::Number(n) => return el.number(n), Plain::Function(f) => return format!("⟨{}⟩", f.text(el, &mut 1000)),
+        Plain::Operator(op) => return op.text(el), Plain::Character(_) => return a.literal(), Plain::Array(_) => ()
     }
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
     if a.shape().len() <= 1 {
@@ -439,9 +435,9 @@ pub(crate) fn table(a: &Value, el: Elide, breaks: bool) -> (usize, Vec<(Option<V
                 Value::Character(c) => Cell::text(c.into()),
                 item => {
                     spaced = true;
-                    match &item {
-                        Value::Number(n) if mark.is_some() => Cell::number(el.unmarked(n)), Value::Number(n) => Cell::number(el.number(n)),
-                        Value::Function(_) | Value::Operator(_) => Cell::text(plain(&item, el)), _ => Cell::text(item.item(el))
+                    match item.displayed() {
+                        Plain::Number(n) if mark.is_some() => Cell::number(el.unmarked(n)), Plain::Number(n) => Cell::number(el.number(n)),
+                        Plain::Function(_) | Plain::Operator(_) => Cell::text(plain(&item, el)), _ => Cell::text(item.item(el))
                     }
                 }
             })
@@ -523,7 +519,7 @@ impl Tree {
 }
 
 /// Convert a keyed vector from MIME types to text, or to bytes for binary types such as `image/png`, into the bundle sent to frontends. A value whose prototype is a number holds bytes.
-pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, Error> {
+pub(crate) fn bundle(value: &Value) -> Result<crate::MimeBundle, crate::ErrorKind> {
     crate::keyed::pairs(value)?.into_iter().map(|(name, value)| {
         if !name.contains('/') || name.contains(char::is_whitespace) { return Err(Kind::Domain.into()); }
         let data = if value.prototype().as_number().is_some() { crate::data::byte_items(&value).map(crate::MimeData::Bytes) }

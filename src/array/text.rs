@@ -1,15 +1,16 @@
 //! Text forms of values: `⍕` formatting, and source text that reads back.
 
 use super::*;
+use crate::transform::Plain;
 use rustymath::buffer::View;
 
 /// Text as a double-quoted string literal.
 pub(crate) fn quoted(text: &str) -> String { format!("\"{}\"", text.replace('"', "\"\"")) }
 
-/// The positions of `len` lines or characters cut to `limit`, keeping up to `edges` of them at the end.
 fn excerpt(len: usize, limit: usize, edges: usize) -> impl Iterator<Item = Option<usize>> {
     let tail = edges.min(limit / 2);
-    crate::display::ends(len, limit - tail, tail)
+    let (head, end) = if len > limit { (limit - tail, len - tail) } else { (len, len) };
+    (0..head).map(Some).chain((head < end).then_some(None)).chain((end..len).map(Some))
 }
 
 /// Whether `test` holds for a character of source text outside brackets, parentheses, braces and quotes.
@@ -43,10 +44,7 @@ impl Value {
     /// `⍕`'s text for this value. Numbers show their kind's markers where `el.marks` is set, as monadic `⍕` shows them.
     pub(crate) fn formatted(&self, el: Elide) -> Result<Self, ErrorKind> {
         if self.is_unit() {
-            if let Value::Function(f) = self.at(0) {
-                let text = format!("⟨{}⟩", f.bpl());
-                return Self::characters([text.chars().count()], text.chars().collect());
-            }
+            if let Value::Function(f) = self.at(0) { let text = f.to_string(); return Self::characters([text.chars().count()], text.chars().collect()); }
         }
         // A keyed array formats as its display text, so its keys stay visible.
         let keyed = self.has_keys();
@@ -139,20 +137,31 @@ impl Value {
     /// Source text that reads back as the value. Strings are quoted, and arrays use bracket notation.
     pub fn literal(&self) -> String { self.source(Elide::NONE) }
 
+    /// Whether the value is a function or an operator, or holds one at any depth, including as an empty array's prototype.
+    pub(crate) fn holds_function(&self) -> bool {
+        match self {
+            Self::Function(_) | Self::Operator(_) => true,
+            Self::Array(_) => match self.as_items() {
+                Items::Values(items) => items.iter().any(Self::holds_function) || (items.is_empty() && self.prototype().holds_function()), _ => false
+            },
+            _ => false,
+        }
+    }
+
     /// Source text for the value, with large arrays elided as `el` says. Elided text doesn't read back.
     pub(crate) fn source(&self, el: Elide) -> String {
-        match self {
-            Self::Number(n) => el.number(n),
-            Self::Character(c) if c.is_control() => format!("•ucs {}", *c as u32),
-            Self::Character(c) => format!("'{c}'"),
-            Self::Function(f) => {
+        match self.displayed() {
+            Plain::Number(n) => el.number(n),
+            Plain::Character(c) if c.is_control() => format!("•ucs {}", c as u32),
+            Plain::Character(c) => format!("'{c}'"),
+            Plain::Function(f) => {
                 let text = f.text(el, &mut 1000);
                 // A native that a factory made, such as a generator's `roll` or a `•canvas` drawing function, has no spelling that reads back.
                 if f.system_function().is_some_and(|s| s.entry.is_none()) { return format!("⟨{text}⟩"); }
                 if text.contains(' ') { format!("({text})") } else { text }
             }
-            Self::Operator(op) => { let text = op.text(el); if text.contains(' ') { format!("({text})") } else { text } }
-            Self::Array(_) => {
+            Plain::Operator(op) => { let text = op.text(el); if text.contains(' ') { format!("({text})") } else { text } }
+            Plain::Array(_) => {
                 if self.shows_names(el) { return self.named_literal(el); }
                 let edges = if self.shape().len() == 1 { el.last(self.shape()) } else { el.edges(self.shape()) };
                 if self.string_literal(el.display).is_some() { return quoted(&self.elided_text(el)); }
@@ -169,7 +178,6 @@ impl Value {
                     _ => self.block_literal(Self::item, el, edges)
                 }
             }
-            Self::Pending(_) | Self::Carried { .. } => unreachable!("source formatting requires observed values"),
         }
     }
 
@@ -198,16 +206,15 @@ impl Value {
 
     /// An array of rank 2 or more in array notation, one major cell at a time, with `item` writing each item. `edges` elides positions on every axis of the whole array.
     fn block_literal(&self, item: fn(&Self, Elide) -> String, el: Elide, edges: Option<usize>) -> String {
-        let Self::Array(array) = self else { return crate::display::plain(self, el) };
-        let layout = self.layout().axes(1..self.rank());
-        let size = layout.count();
-        let rows: Vec<_> = positions(self.shape()[0], edges).map(|i| {
-            i.map_or_else(
-                || "…".into(),
-                |i| Self::stored_part(array, i * size..(i + 1) * size, layout.clone()).expect("a major cell fits its array").row(item, el, edges))
-        }).collect();
-        // One major cell needs a trailing `⋄`, or it reads back as that cell alone.
-        if rows.len() == 1 { format!("[{}⋄]", rows[0]) } else { format!("[{}]", rows.join("⋄")) }
+        let Ok(cells) = self.cells(self.shape().len() - 1) else { return crate::display::plain(self, el) };
+        let rows: Result<Vec<String>, ErrorKind> =
+            positions(cells.len(), edges).map(|i| i.map_or(Ok("…".into()), |i| Ok(cells.get(i)?.row(item, el, edges)))).collect();
+        match rows {
+            // One major cell needs a trailing `⋄`, or it reads back as that cell alone.
+            Ok(rows) if rows.len() == 1 => format!("[{}⋄]", rows[0]),
+            Ok(rows) => format!("[{}]", rows.join("⋄")),
+            Err(_) => crate::display::plain(self, el),
+        }
     }
 
     /// One numeric marker for a nonempty array whose items share a kind. Float widths obey `el.plain`.
@@ -218,8 +225,9 @@ impl Value {
     }
     /// The dtype and fixedness shared by the items, independent of compact or mixed storage. A carrier shows its template's kind.
     pub(crate) fn shown_kind(&self) -> Option<(rustymath::buffer::DType, bool)> {
-        match self.as_items() {
-            Items::Values(items) => super::storage::joined_kind(items, Widening::Items).map(|kind| (kind.dtype(), kind.fixed_width().is_some())),
+        let held = self.template();
+        match held.as_items() {
+            Items::Values(items) => super::storage::items_kind(items, Widening::Items),
             items => items.dtype().map(|dtype| (dtype, items.fixed_width().is_some())),
         }
     }
@@ -229,7 +237,7 @@ impl Value {
     pub(crate) fn item(&self, el: Elide) -> String { let text = self.source(el); if needs_group(&text) { format!("({text})") } else { text } }
     /// The value as an operator's operand, which is one item. Text with anything other than literals outside brackets, as in `⊂3` or `0 3⍴0`, needs parentheses.
     pub(crate) fn operand(&self, el: Elide) -> String {
-        let text = self.data().source(el);
+        let text = self.source(el);
         if outside(&text, |c| !(c.is_ascii_digit() || " ¯.∞⍬".contains(c) || crate::number::subscript(c))) { format!("({text})") } else { text }
     }
 
@@ -249,10 +257,7 @@ impl Value {
     fn named_literal(&self, el: Elide) -> String {
         let shape: Vec<_> = self.axis_names().iter().zip(self.shape())
             .map(|(n, len)| el.name(n).map_or_else(|| len.to_string(), |n| format!("{}:{len}", quoted(&n)))).collect();
-        let Self::Array(array) = self else { unreachable!("only arrays have axis names") };
-        let layout = self.layout().clone().with_names(vec![]).expect("removing axis names");
-        let unnamed = Self::stored_part(array, 0..self.len(), layout).expect("the entire stored array");
-        format!("[{}]⍴{}", shape.join(" "), unnamed.source(el))
+        format!("[{}]⍴{}", shape.join(" "), self.clone().with_axis_names(vec![]).unwrap().source(el))
     }
 
     /// An array of rank 2 or more with keys: a key list for each axis, applied to the array without keys. A position stands for each missing key.
@@ -263,10 +268,7 @@ impl Value {
                 .map(|i| i.map_or_else(|| "…".into(), |i| self.shown_key(axis, i, el).map_or_else(|| i.to_string(), |k| quoted(&k)))).collect();
             match keys.len() { 0 => "⍬".into(), 1 => format!("[{}]", keys[0]), _ => keys.join(" ") }
         }).collect();
-        let Self::Array(array) = self else { unreachable!("only arrays have axis keys") };
-        let layout = self.layout().clone().with_keys(vec![]).expect("removing axis keys");
-        let unkeyed = Self::stored_part(array, 0..self.len(), layout).expect("the entire stored array");
-        format!("[{}]:{}", lists.join(";"), unkeyed.source(el))
+        format!("[{}]:{}", lists.join(";"), self.unkeyed().source(el))
     }
 
     /// Whether plain display shows the vector as a strand: a vector of two or more numbers, characters or strings. Exact integers show in brackets instead.
@@ -274,12 +276,9 @@ impl Value {
         matches!(self, Self::Array(_)) && self.shape().len() == 1 && self.len() >= 2 && !self.has_keys() && !self.shows_names(el)
             && self.string_literal(el.display).is_none() && !matches!(self.shown_kind(), Some((rustymath::buffer::DType::Integer(_), _)))
             && match self.as_items() {
-                items if items.nested() => items.values().all(|e| {
-                    matches!(*e, Self::Number(_) | Self::Pending(_)) || matches!(*e, Self::Character(c) if !c.is_control())
-                        || e.string_literal(el.display).is_some()
-                }),
-                Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()),
-                _ => true,
+                Items::Values(items) => items.iter()
+                    .all(|e| matches!(e, Self::Number(_)) || matches!(e, Self::Character(c) if !c.is_control()) || e.string_literal(el.display).is_some()),
+                Items::Compact(View::Characters(cs)) => cs.iter().all(|c| !c.is_control()), _ => true
             }
     }
 

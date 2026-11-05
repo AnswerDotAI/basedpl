@@ -3,7 +3,7 @@
 //! - A number is a JavaScript number, and a Boolean is `true` or `false`. A string is a JavaScript string, and a record is an object.
 //! - Any other array is `{shape, data}`. `data` is a typed array when every item is a number: `Float32Array` for 32-bit floats, `Float64Array` for other approximate and fractional numbers, and for integers the width BPL stores them at, `Uint8Array`, `Int16Array`, `Int32Array` or `BigInt64Array`, as Python's `.np` does. Complex numbers are their real and imaginary parts in turn, with a last axis of length 2. Otherwise `data` is an `Array` of items. Axis names and keys, when an array has them, are `axis_names` and `axis_keys`, as in `protocol.rs`.
 //! - A JavaScript number becomes a float of the session's default width, a `BigInt` an exact one, an `Array` a vector and a function a BPL function. An object with `shape` and `data` becomes an array, and any other object a record. `undefined` and `null` give no value.
-use crate::{Described, Error, ErrorKind, Number, Value, array::Items, keyed::{self, Form}};
+use crate::{ErrorKind, Number, Value, array::Items, element::read_as, keyed};
 use rustymath::{buffer::{Buffer, Complexes, FloatBuf, FloatWidth, Floats, Ints, View}, error::Kind};
 use serde_json::{Value as Json, json};
 
@@ -43,30 +43,23 @@ impl Typed {
 }
 
 /// `value` as a JavaScript value. A function or operator, even inside an array, has none.
-pub fn export(value: &Value) -> Result<Js, crate::Error> {
-    crate::Session::current(|session| {
-        let value = value.read(crate::ReadKind::Value)?;
-        session.raise()?;
-        exported(&value).described("a value cannot cross into JavaScript")
-    })
-}
-fn exported(value: &Value) -> Result<Js, Error> {
+pub fn export(value: &Value) -> Result<Js, ErrorKind> {
     match value {
         Value::Number(n) => number(n),
         Value::Character(c) => Ok(Js::Text(c.to_string())),
         Value::Function(_) | Value::Operator(_) => Err(Kind::Domain.into()),
-        Value::Array(_) => match keyed::form(value) {
-            Form::Text(text) => Ok(Js::Text(text.to_string())),
-            Form::Object(keys) if value.rank() == 1 && keys.complete() => {
-                keyed::pairs(value)?.into_iter().map(|(key, value)| Ok((key.to_string(), exported(&value)?))).collect::<Result<_, _>>().map(Js::Object)
+        Value::Carried(carrier) => export(carrier.template()),
+        Value::Array(_) => {
+            if value.keys(0).is_none() { if let Some(text) = keyed::name(value) { return Ok(Js::Text(text.to_string())); } }
+            if value.shape().len() == 1 && value.keys(0).is_some_and(|k| k.complete()) {
+                return keyed::pairs(value)?.into_iter().map(|(k, v)| Ok((k.to_string(), export(&v)?))).collect::<Result<_, _>>().map(Js::Object);
             }
-            _ => array(value),
-        },
-        Value::Pending(_) | Value::Carried { .. } => unreachable!("JavaScript exports observed values"),
+            array(value)
+        }
     }
 }
 
-fn number(n: &Number) -> Result<Js, Error> {
+fn number(n: &Number) -> Result<Js, ErrorKind> {
     if let Some(b) = n.as_bool() { return Ok(Js::Bool(b)); }
     match n.complex_items() {
         Some(Complexes::F32(&[z])) => return Ok(shaped(vec![2], Js::Typed(Typed::Float32(vec![z.re, z.im])), Vec::new(), Vec::new())),
@@ -76,7 +69,7 @@ fn number(n: &Number) -> Result<Js, Error> {
 }
 
 /// An array as `{shape, data}`, with `axis_names` and `axis_keys` when it has them.
-fn array(value: &Value) -> Result<Js, Error> {
+fn array(value: &Value) -> Result<Js, ErrorKind> {
     let mut shape = value.shape().to_vec();
     let mut names: Vec<Js> = value.axis_names().iter().map(|n| n.as_ref().map_or(Js::Undefined, |n| Js::Text(n.to_string()))).collect();
     let mut keys: Vec<Js> = if value.has_keys() {
@@ -89,11 +82,7 @@ fn array(value: &Value) -> Result<Js, Error> {
         if !keys.is_empty() { keys.push(Js::Undefined); }
         parts
     };
-    let dense = match value.physical() {
-        Some((view, Some(map))) => Some(Buffer::cast_mapped(view, map, value.len(), view.dtype()).map_err(ErrorKind::from)?), _ => None
-    };
-    let items = dense.as_ref().map_or_else(|| value.as_items(), |buffer| Items::Compact(buffer.view()));
-    let data = match items {
+    let data = match value.as_items() {
         Items::Values(items) => match items.iter().map(|v| if let Value::Number(n) = v { Some(n) } else { None }).collect::<Option<Vec<_>>>() {
             Some(numbers) if !numbers.is_empty() || matches!(value.prototype(), Value::Number(_)) => {
                 if numbers.iter().any(|n| n.as_complex().is_some()) {
@@ -101,7 +90,7 @@ fn array(value: &Value) -> Result<Js, Error> {
                     complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float64(parts.concat())))
                 } else { Js::Typed(Typed::Float64(numbers.iter().map(|n| n.to_float()).collect::<Result<_, _>>().map_err(|_| Kind::Domain)?)) }
             }
-            _ => Js::List(items.iter().map(exported).collect::<Result<_, _>>()?),
+            _ => Js::List(items.iter().map(export).collect::<Result<_, _>>()?),
         },
         items => match items.view().expect("compact items") {
             View::Booleans(b) => Js::Typed(Typed::Uint8(b.iter().map(|&b| b.into()).collect())),
@@ -110,7 +99,7 @@ fn array(value: &Value) -> Result<Js, Error> {
             View::Integers(Ints::I32(v)) => Js::Typed(Typed::Int32(v.to_vec())),
             View::Integers(Ints::I64(v)) => Js::Typed(Typed::BigInt64(v.to_vec())),
             View::Floats(Floats::F32(v)) => Js::Typed(Typed::Float32(v.to_vec())),
-            View::Floats(floats) => Js::Typed(Typed::Float64((0..floats.len()).map(|i| floats.get(i)).collect())),
+            View::Floats(_) => Js::Typed(Typed::Float64(read_as::<f64>(value).expect("real storage").into_owned())),
             View::Complexes(Complexes::F32(v)) => {
                 complex(&mut shape, &mut names, &mut keys, Js::Typed(Typed::Float32(v.iter().flat_map(|z| [z.re, z.im]).collect())))
             }
@@ -244,7 +233,7 @@ pub(crate) use web::{call, function, message, prototype};
 #[cfg(web)]
 mod web {
     use super::{Js, Typed, export, imported};
-    use crate::{Error, Value, system::HostCall};
+    use crate::{Error, Span, Value};
     use js_sys::{
         Array, BigInt64Array, Float32Array, Float64Array, Function, Int8Array, Int16Array, Int32Array, Object, Reflect, Uint8Array, Uint8ClampedArray,
         Uint16Array, Uint32Array,
@@ -277,7 +266,7 @@ mod web {
 
     /// The BPL function that calls the JavaScript function `f`.
     pub(super) fn value(f: Arc<JsFunction>) -> Value {
-        Value::Function(crate::system::native("•js", crate::system::Call::Js(Some(f)), crate::system::Valence::Ambivalent))
+        Value::Function(crate::system::native("•js", crate::system::Call::Js(f), crate::system::Valence::Ambivalent))
     }
 
     /// `js` as a JavaScript value.
@@ -339,7 +328,8 @@ mod web {
     }
 
     /// `•js Y`: the function that the JavaScript source `Y` evaluates to.
-    pub(crate) fn function(HostCall { right, .. }: HostCall<'_>) -> Result<Value, Error> {
+    pub(crate) fn function(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+        crate::transform::acts()?;
         let source = crate::data::text(right)?;
         let f = js_sys::eval(&source).map_err(|e| Error::domain(message(&e)))?;
         let f = f.dyn_into::<Function>().map_err(|_| Error::domain("•js source must give a function"))?;
@@ -347,14 +337,15 @@ mod web {
     }
 
     /// `•js`'s result prototype: a function that does nothing.
-    pub(crate) fn prototype(_: HostCall<'_>) -> Value { value(Arc::new(JsFunction::new(Function::new_no_args("")))) }
+    pub(crate) fn prototype(_: &Span) -> Value { value(Arc::new(JsFunction::new(Function::new_no_args("")))) }
 
     /// Calls `f` with `right`, or with `left` then `right`. `None` when it returns `undefined` or `null`.
-    pub(crate) fn call(f: &JsFunction, HostCall { left, right, numeric, .. }: HostCall<'_>) -> Result<Option<Value>, Error> {
-        let arg = |value: &Value| export(value).map(to_js);
+    pub(crate) fn call(f: &JsFunction, left: Option<&Value>, right: &Value) -> Result<Option<Value>, Error> {
+        crate::transform::acts()?;
+        let arg = |v: &Value| export(v).map(to_js).map_err(|_| Error::domain("a function or operator can't cross into JavaScript"));
         let f = f.get();
         let result = match left { Some(left) => f.call2(&JsValue::UNDEFINED, &arg(left)?, &arg(right)?), None => f.call1(&JsValue::UNDEFINED, &arg(right)?) };
         let result = from_js(&result.map_err(|e| Error::domain(message(&e)))?).map_err(|e| Error::domain(e))?;
-        imported(result, numeric.width).map_err(|_| Error::domain("the JavaScript result has no BPL form"))
+        imported(result, crate::number::Numeric::current().width).map_err(|_| Error::domain("the JavaScript result has no BPL form"))
     }
 }

@@ -29,17 +29,17 @@ impl serde::Serialize for Json<'_> {
                 else { s.serialize_f64(x) }
             }
             Value::Character(c) => s.serialize_char(*c),
-            Value::Array(_) => {
+            a @ Value::Array(_) => {
                 let mut map = s.serialize_map(None)?;
-                map.serialize_entry("shape", self.0.shape())?;
-                map.serialize_entry("data", &Data(self.0))?;
-                map.serialize_entry("prototype", &Json(&self.0.prototype()))?;
-                if self.0.layout().has_names() { map.serialize_entry("axis_names", &self.0.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>())?; }
-                if self.0.has_keys() { map.serialize_entry("axis_keys", &keyed::key_lists(self.0))?; }
+                map.serialize_entry("shape", a.shape())?;
+                map.serialize_entry("data", &Data(a))?;
+                map.serialize_entry("prototype", &Json(&a.prototype()))?;
+                if a.layout().has_names() { map.serialize_entry("axis_names", &a.axis_names().iter().map(|n| n.as_deref()).collect::<Vec<_>>())?; }
+                if a.has_keys() { map.serialize_entry("axis_keys", &keyed::key_lists(a))?; }
                 map.end()
             }
+            Value::Carried(carrier) => Json(carrier.template()).serialize(s),
             Value::Function(_) | Value::Operator(_) => Err(S::Error::custom("a function has no JSON value")),
-            Value::Pending(_) | Value::Carried { .. } => unreachable!("protocol values are preflighted"),
         }
     }
 }
@@ -59,8 +59,8 @@ impl serde::Serialize for Data<'_> {
 /// A one-character string is a character.
 pub fn character(s: &str) -> Option<char> { let mut chars = s.chars(); chars.next().filter(|_| chars.next().is_none()) }
 
-/// A value from its JSON encoding. Floats are 64-bit, because the protocol carries no width. Numbers captured from another interpreter carry no exactness, so `approximate` reads them all as floats. A complex number follows the current kinds, as `Number::complex_in_session` says.
-pub(crate) fn import(value: &JsonValue, approximate: bool) -> Result<Value, String> {
+/// An element of the JSON protocol. Its floats are 64-bit, because the protocol carries no width. A complex number follows the current kinds, as `Number::complex_in_session` says.
+fn import_element(value: &JsonValue, approximate: bool) -> Result<Value, String> {
     let number = match value {
         JsonValue::Number(n) if approximate => n.as_f64().map(|x| Number::float(x, FloatWidth::F64)).ok_or_else(|| Kind::Domain.into()),
         JsonValue::Number(n) => crate::json::number(n, FloatWidth::F64),
@@ -89,15 +89,19 @@ pub(crate) fn import(value: &JsonValue, approximate: bool) -> Result<Value, Stri
 }
 
 fn import_array(value: &JsonValue, approximate: bool) -> Result<Value, String> {
+    if value.get("shape").is_none() { return import_element(value, approximate); }
     let shape = value["shape"].as_array().ok_or("expected array shape")?.iter()
         .map(|n| n.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("invalid array dimension")).collect::<Result<Vec<_>, _>>()?;
-    let data = value["data"].as_array().ok_or("expected array data")?.iter().map(|v| import(v, approximate)).collect::<Result<Vec<_>, _>>()?;
-    let prototype = import(&value["prototype"], approximate)?;
+    let data = value["data"].as_array().ok_or("expected array data")?.iter().map(|v| import_element(v, approximate)).collect::<Result<Vec<_>, _>>()?;
+    let prototype = import_element(&value["prototype"], approximate)?;
     let mut result = Value::from_parts(shape, data, prototype).map_err(|k| k.to_string())?;
     if let Some(names) = value.get("axis_names") { result = keyed::with_names(result, serde_json::from_value(names.clone()).map_err(|e| e.to_string())?)?; }
     let Some(keys) = value.get("axis_keys") else { return Ok(result); };
     keyed::with_key_lists(result, serde_json::from_value(keys.clone()).map_err(|e| e.to_string())?)
 }
+
+/// An array from its JSON encoding. Numbers captured from another interpreter carry no exactness, so `approximate` reads them all as floats.
+pub(crate) fn import(value: &JsonValue, approximate: bool) -> Result<Value, String> { import_array(value, approximate) }
 
 /// The evaluation options a request sets: `timeout_ms`, and `echo`, which defaults to true.
 pub fn options(request: &JsonValue) -> Result<EvalOptions, String> {
@@ -149,42 +153,23 @@ impl serde::Serialize for crate::MimeData {
 /// An output as JSON: its kind, and its MIME bundle.
 pub fn output(o: &crate::Output) -> JsonValue { json!({"kind": o.kind.name(), "data": o.data}) }
 
-/// A preflighted reply. Its value and prototypes are stored before streaming starts.
-pub struct Response(Evaluation);
-impl Response {
-    pub fn new(mut result: Evaluation) -> Result<Self, Error> {
-        let value = result.value.take().map(|value| crate::json::exportable(&value)).filter(|value| !value.holds_functions());
-        if let Some(value) = value {
-            match Session::current(|session| -> Result<Value, Error> {
-                let value = value.read(crate::ReadKind::Value)?;
-                session.raise()?;
-                Ok(value)
-            }) { Ok(value) => result.value = Some(value), Err(error) if error.kind.is_control() => return Err(error), Err(error) => result.error = Some(error) }
-        }
-        Ok(Self(result))
-    }
-}
+/// The reply to a request, serialized as it's written: its `value`, `output` and `error`. A function, or an array that holds one, has no JSON value: `value` is `null`, and `output` holds its display.
+pub struct Response(pub Evaluation);
+
 impl serde::Serialize for Response {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
+        let value = self.0.value.as_ref().map(crate::json::exportable).filter(|v| !v.holds_function());
         let mut map = s.serialize_map(Some(3))?;
-        map.serialize_entry("value", &self.0.value.as_ref().map(Json))?;
+        map.serialize_entry("value", &value.as_ref().map(Json))?;
         map.serialize_entry("output", &self.0.output.iter().map(output).collect::<Vec<_>>())?;
         map.serialize_entry("error", &self.0.error.as_ref().map(error))?;
         map.end()
     }
 }
 
-/// The protocol value of an already-observed result, without reading it again.
-pub(crate) fn stored(value: Option<&Value>) -> Result<JsonValue, Error> {
-    let value = value.map(crate::json::exportable).filter(|value| !value.holds_functions());
-    serde_json::to_value(value.as_ref().map(Json)).map_err(|error| Error::domain(error.to_string()))
-}
-
-
-pub fn response(result: Evaluation) -> Result<JsonValue, Error> {
-    serde_json::to_value(Response::new(result)?).map_err(|error| Error::domain(error.to_string()))
-}
+/// The reply to a request, as a JSON value.
+pub fn response(result: Evaluation) -> JsonValue { serde_json::to_value(Response(result)).expect("a response serializes") }
 
 /// The reply to a request that can't run.
 pub fn request_error(message: &str) -> JsonValue { json!({"value": null, "output": [], "error": {"kind": "REQUEST", "message": message}}) }
