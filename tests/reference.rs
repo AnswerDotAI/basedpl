@@ -80,8 +80,9 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&exact, &InterruptHandle::default())["status"], "mismatch");
     let error = reference::route(&json!({"code":"•delay3"}), "", &InterruptHandle::default()).err().expect("route capture has a deadline");
     assert!(error["message"].as_str().is_some_and(|message| message.contains("TIMEOUT")), "{error}");
-    for (code, class) in [(r#"(•explain "1+1").fused"#, "report"), (r#""•explain" ⍝ •memory"#, "value"), ("(•storage 1 2).kind", "value"), ("(•storage 1 2).pending", "report")] {
-        assert_eq!(reference::class(&json!({"code":code})), class, "{code}");
+    for code in [r#"(•explain "1+1").value"#, r#"(•explain "1+1").fused"#] {
+        let checked = reference::check(&cases(&format!("⍝ —\n{code}   ⍝ 3"))[0], &InterruptHandle::default());
+        assert!(reference::fails(&checked) && !reference::obliged(&checked), "{checked}");
     }
 }
 
@@ -137,25 +138,25 @@ fn reference_cases() {
     while !left.is_empty() {
         let shares = cores.min(left.len());
         let children: Vec<_> = (0..shares).map(|k| {
-            let share: Vec<usize> = left.iter().copied().skip(k).step_by(shares).collect();
-            let positions = share.iter().map(usize::to_string).collect::<Vec<_>>().join(" ");
-            let child = std::process::Command::new(&exe).args(["reference_cases", "--exact", "--nocapture"]).env(SHARD, positions)
-                .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
-            // Every child's output is read as it comes, each on a thread of its own: a child whose pipe fills waits, inside the case it's timing, until its output is read.
-            (share, std::thread::spawn(move || child.wait_with_output()))
-        }).collect();
+                let share: Vec<usize> = left.iter().copied().skip(k).step_by(shares).collect();
+                let positions = share.iter().map(usize::to_string).collect::<Vec<_>>().join(" ");
+                let child = std::process::Command::new(&exe).args(["reference_cases", "--exact", "--nocapture"]).env(SHARD, positions)
+                    .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+                // Every child's output is read as it comes, each on a thread of its own: a child whose pipe fills waits, inside the case it's timing, until its output is read.
+                (share, std::thread::spawn(move || child.wait_with_output()))
+            })
+            .collect();
         left.clear();
         for (share, child) in children {
             let output = child.join().unwrap().unwrap();
             for line in String::from_utf8_lossy(&output.stdout).lines() {
-                if let Some((i, result)) = line.strip_prefix(RESULT).and_then(|r| r.split_once(' ')) { results[i.parse::<usize>().unwrap()] = Some(serde_json::from_str(result).unwrap()); }
+                if let Some((i, result)) = line.strip_prefix(RESULT).and_then(|r| r.split_once(' ')) {
+                    results[i.parse::<usize>().unwrap()] = Some(serde_json::from_str(result).unwrap());
+                }
                 if let Some((_, time)) = line.strip_prefix(TIME).and_then(|t| t.split_once(' ')) { times.push(time.to_string()); }
             }
             let unfinished: Vec<usize> = share.into_iter().filter(|&i| results[i].is_none()).collect();
-            if output.status.success() {
-                unchecked.extend(unfinished);
-                continue;
-            }
+            if output.status.success() { unchecked.extend(unfinished); continue; }
             let stderr = String::from_utf8_lossy(&output.stderr);
             let tail: Vec<&str> = stderr.lines().rev().take(20).collect();
             let reason = format!("{}: {}", output.status, tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
@@ -176,10 +177,16 @@ fn reference_cases() {
     let results: Vec<Value> = results.into_iter().flatten().collect();
     if let Ok(path) = std::env::var(RESULTS) { std::fs::write(&path, serde_json::to_string(&results).unwrap()).unwrap(); }
     let obligations = results.iter().filter(|r| reference::obliged(r)).count();
-    eprintln!("{count} reference cases; runs by mode (planned, checked, failed, not applicable): {}; {obligations} cases hold release-2 obligations", reference::accounting(&results));
+    eprintln!(
+        "{count} reference cases; runs by mode (planned, checked, failed, not applicable): {}; {obligations} cases hold release-2 obligations",
+        reference::accounting(&results)
+    );
     let mut wrong: Vec<String> = results.iter().filter(|r| reference::fails(r)).map(|f| {
         let mode = f["mode"].as_str().map(|mode| format!("{mode}: ")).unwrap_or_default();
-        format!("{}.bpl:{} [{}] {}: {mode}{} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"], f["status"])
+        format!(
+            "{}.bpl:{} [{}] {}: {mode}{} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"],
+            f["status"]
+        )
     }).collect();
     wrong.extend(unchecked.iter().map(|&i| format!("{}.bpl:{}: a child left it unchecked", cases[i].1["file"].as_str().unwrap(), cases[i].1["line"])));
     wrong.extend(stops);

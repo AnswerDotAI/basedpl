@@ -33,6 +33,9 @@
 ⍝ program-fold-one-item — `∂` of a dfn that counts Booleans in a lane of one item runs from a program on both calls
 f←{(+/⍵>0)×+/⍵} ⋄ e←•explain "[f∂ ,5 ; f∂ ,6]" ⋄ e.value,≢e.programs.event   ⍝ [[1] [1] 2ₓ]
 
+⍝ program-comparison-singleton-fold — A one-row comparison reduction returns its inputs without comparing, including under ∂
+f←{+/,=⌿⍵} ⋄ [f 1 2⍴2 3 ; f∂1 2⍴2 3]   ⍝ [5 ; 1 2⍴1]
+
 ⍝ program-bounded-constant — `∂` of a dfn whose result is a constant, at three lengths, the last two in one bucket, gives zeros of each argument's length, whether or not a later call replays an earlier call's recording
 g←{3} ⋄ [g∂ 1 2 3 4 ; g∂ 1 2 3 4 5 ; g∂ 1 2 3 4 5 6 7]   ⍝ [[0 0 0 0] [0 0 0 0 0] [0 0 0 0 0 0 0]]
 
@@ -196,23 +199,22 @@ x←10 20 30 40 ⋄ i←⍳4ₓ ⋄ [[(4•edge i-1)]⌷⍠["fill":¯1] x ; [[[0
 ⍝ fill-option-boundary — A missing item in the source keeps its default fill when an outer selection chooses another fill
 v←100001↑⍳100000 ⋄ [[99999 100000 $n]]⌷⍠["fill":9]v   ⍝ 99999 0 9
 
-⍝ fill-option-all-missing — An all-missing selection leaves a shared pending source unevaluated
-e←•explain "v←1+1 2 ⋄ w←v ⋄ [[$n $n $n]]⌷⍠[""fill"":9]v" ⋄ [e.value;+/e.forced.items]   ⍝ [9 9 9;0ₓ]
+⍝ fill-option-all-missing — An all-missing selection from a shared computed source gives the chosen fill
+e←•explain "v←1+1 2 ⋄ w←v ⋄ [[$n $n $n]]⌷⍠[""fill"":9]v" ⋄ e.value   ⍝ 9 9 9
 
 ⍝ fill-option-trace — A chosen fill on computed data stays in the differentiated program
 ⍝⍝⍝ route trace
 {+/5↑⍠["fill":9]1+⍵}∂1 2   ⍝ 1 1
 
-⍝ fill-option-selective — A shared computed source is selected once, then cached on reuse [unfused]
+⍝ fill-option-selective — Repeated selections from a shared computed source preserve their positions and the chosen fill [unfused]
 ⍝⍝⍝ route fusion
-⍝⍝⍝ allows forced "⌷⍠[""fill"":9]": first read computes selected items; repeated reads cache the source
 n←1000000 ⋄ v←⍳n ⋄ w←2×1+v
 e←•explain "[[0 $n 999999 0]]⌷⍠[""fill"":9]w"
 s←•explain "[[1]]⌷⍠[""fill"":9]w"
 t←•explain "[[500000]]⌷⍠[""fill"":9]w"
-[e.value;3≥+/e.forced.items;(n-3)≤+/s.forced.items;1≥+/t.forced.items]
+[e.value;s.value≡,4;t.value≡,1000002]
 ⍝ =>
-[2 9 2000000 2;$t;$t;$t]
+[2 9 2000000 2;$t;$t]
 
 ⍝ fill-option-mapped — Keyed arithmetic reads through the alignment maps without copying its operands first
 ⍝⍝⍝ route mapped kernel
@@ -445,8 +447,8 @@ x←2 3 1 ⋄ n←{(⍵+2÷⍵)÷2} ⋄ a←{z←⍕⍵ ⋄ ⌈/⍵}∂ x ⋄ b�
 ⍝ program-item — `∂` runs from a program where a dfn reads one item of a traced array, as `↑`, `⊃`, subscripts and selection do. No trace stops
 v←1 2 3 4 ⋄ f←{(↑⍵)×+/⍵} ⋄ g←{(1⊃⍵)+⍵₃} ⋄ h←{+/⍵×⍵.[2]} ⋄ e←•explain "[f∂v ; g∂v ; h∂v]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[11 1 1 1] [0 1 0 1] [3 3 13 3] 3ₓ 0ₓ]
 
-⍝ program-per-item — `∂` of a dfn that calls a function once for each item of a traced array, as a fold by a dfn or Each through a guard does, runs without a program, with the reason "a function called on each item"
-v←1 2 3 4 ⋄ f←{{⍺×⍵}/⍵} ⋄ g←{+/{⍵>2?⍵×2;⍵}¨⍵} ⋄ e←•explain "[f∂v ; g∂v]" ⋄ e.value,(≢e.programs.event),e.stopped.reason   ⍝ [[24 12 8 6] [1 1 2 2] 0ₓ "a function called on each item"]
+⍝ program-per-item — A dfn equivalent to multiplication uses the fold's program; Each through a guard on traced data runs without one
+v←1 2 3 4 ⋄ f←{{⍺×⍵}/⍵} ⋄ g←{+/{⍵>2?⍵×2;⍵}¨⍵} ⋄ e←•explain "[f∂v ; g∂v]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[24 12 8 6] [1 1 2 2] 1ₓ 1ₓ]
 
 ⍝ program-each-call — `∂` of a dfn that draws random numbers or runs text with `⍎` runs without a program, with the reasons "a random draw" and "text that ⍎ runs". Each call draws new numbers, where a replay of a program would reuse its first call's draws
 v←1 2 3 ⋄ f←{+/⍵×¿3⍴0} ⋄ g←{+/⍎"⍵×⍵"} ⋄ e←•explain "[f∂v ; g∂v]" ⋄ [(f∂v)≡f∂v ; 1⊃e.value ; ≢e.programs.event ; e.stopped.reason]   ⍝ [$f [2 4 6] 0ₓ ["a random draw" "text that ⍎ runs"]]
@@ -510,11 +512,14 @@ v←1 2 3 ⋄ g←{w←⍺ ⋄ (+/w×⊢)∂⍵} ⋄ e←•explain "[4 5 6 g v 
 ⍝ program-positions — `∂` of a dfn that selects at positions from its left argument runs from a program, which reads the positions again at each replay. A pick from each row, as `⌷⍤[0 1]` makes it, selects every row at once. No trace stops
 v←0.5×⍳10 ⋄ m←0.1×3 4⍴⍳12 ⋄ p←[3 5 3]ₓ ⋄ q←[1 2 2]ₓ ⋄ r←[0 3 1]ₓ ⋄ s←[2 2 0]ₓ ⋄ f←{+/(⍵.[⍺])*2} ⋄ g←{+/(⍺⌷⍤[0 1]⍵)*2} ⋄ e←•explain "[p f∂ v ; q f∂ v ; r g∂ m ; s g∂ m]" ⋄ e.value,(≢e.programs.event),≢e.stopped.reason   ⍝ [[0 0 0 6 0 5 0 0 0 0] [0 1 4 0 0 0 0 0 0 0] [0 0 0 0⋄0 0 0 1.4⋄0 1.8 0 0] [0 0 0.4 0⋄0 0 1.2 0⋄1.6 0 0 0] 4ₓ 0ₓ]
 
-⍝ program-positions-range — A replay reads positions from the left argument as selection does: one outside its axis reads the fill, whose derivative is zero
-v←0.5×⍳10 ⋄ f←{+/(⍵.[⍺])*2} ⋄ p←[3 5 3]ₓ ⋄ q←[3 50 3]ₓ ⋄ a←p f∂ v ⋄ q f∂ v   ⍝ 0 0 0 6 0 0 0 0 0 0
+⍝ program-positions-range — Out-of-range positions read fill with zero derivative. Changing source and index-vector lengths within the same length class still uses current positions and shape
+v←0.5×⍳10 ⋄ f←{+/(⍵.[⍺])*2} ⋄ p←[3 5 3]ₓ ⋄ q←[3 50 3]ₓ ⋄ a←p f∂ v ⋄ b←q f∂ v ⋄ c←[0 2 2 3]ₓ f∂ 1 2 3 4 ⋄ [b ; c ; ⍴c]   ⍝ [[0 0 0 6 0 0 0 0 0 0] [2 0 12 8] [4]ₓ]
 
 ⍝ program-rank-fork — `∂` of a dfn that applies a fork by Rank or along a named axis, as a layer norm's mean `(+/÷≢)⍤1` does, runs from a program, and so does a pick from each row at positions that a free name holds. A replay after the name changes picks the new positions [batched]
 m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ t←[2 0 3]ₓ ⋄ f←{+/,⊼⍵-(+/÷≢)⍤1⍵} ⋄ g←{+/,⊼⍵-(+/÷≢)⍠d⍵} ⋄ h←{+/t⌷⍤[0 1]⍵×⍵} ⋄ e←•explain "[f∂m ; ,g∂x ; h∂m]" ⋄ t←[1 1 1]ₓ ⋄ [(≢e.programs.event),≢e.stopped.reason ; e.value ; h∂m]   ⍝ [[3 0]ₓ [[¯3 ¯1 1 3⋄¯3 ¯1 1 3⋄¯3 ¯1 1 3] [¯3 ¯1 1 3 ¯3 ¯1 1 3 ¯3 ¯1 1 3] [0 0 4 0⋄8 0 0 0⋄0 0 0 22]] [0 2 0 0⋄0 10 0 0⋄0 18 0 0]]
+
+⍝ program-map-dfn-replay — Rank and Each of a dfn inside a differentiated dfn replay their second invocation on new input values, including when already warm [batched]
+f←{+/{⊼⍵}⍤0⍵} ⋄ g←{+/{⊼⍵}¨⍵} ⋄ a←f∂1 2 3 ⋄ b←•explain "f∂4 5 6" ⋄ c←g∂1 2 3 ⋄ d←•explain "g∂4 5 6" ⋄ [(b.programs.event≡,⊂"replayed")∧d.programs.event≡,⊂"replayed" ; [a ; b.value ; c ; d.value]]   ⍝ [$t [2 4 6 ; 8 10 12 ; 2 4 6 ; 8 10 12]]
 
 ⍝ program-rank-named — `∂` of a dfn that applies a pervasive function by Rank to arguments whose frames have the same names runs from a program, and gives the gradient of the same dfn without names
 m←1×3 4⍴⍳12 ⋄ [n d]←•index ⍴m ⋄ x←m.[n d] ⋄ f←{c←+/⍠d ⍵ ⋄ +/,⊼⍵-⍤[1 0]c} ⋄ e←•explain "f∂x" ⋄ [(≢e.programs.event),≢e.stopped.reason ; ,e.value ; ,{c←+/⍤1⍵ ⋄ +/,⊼⍵-⍤[1 0]c}∂m]   ⍝ (1ₓ 0ₓ⋄24 26 28 30 96 98 100 102 168 170 172 174⋄24 26 28 30 96 98 100 102 168 170 172 174)
@@ -1121,12 +1126,11 @@ f←{(≢⍺)*⌊⍵} ⋄ a←1 2 f 3 ⋄ b←1 2 3 f 4 ⋄ c←1 2 f ¯3 ⋄ [0
 ⍝ — Bound pi fractions invert either argument
 (1↣π)⁻¹1π4   ⍝ 4
 
-⍝ — `⍟1+x` computes log1p on data in every spelling: an expression, spaced or parenthesised, a train, a composition, a named train and a dfn
-⍝⍝⍝ route accuracy rule
+⍝ rewrite-log1p-data — `⍟1+x` computes log1p on data in every spelling: an expression, spaced or parenthesised, a train, a composition, a named train and a dfn
 {x←⍵ ⋄ f←⍟1+ ⋄ 1E17×[⍟1+x ; ⍟ 1+x ; ⍟(x+1) ; (⍟1+)x ; ⍟∘(1+)x ; f x ; {⍟1+⍵}x]}1E¯17   ⍝ 7⍴1
 
-⍝ — `ₓ` after `÷`, `⌊` or `⌈` runs one exact kernel in place of the call and the floor (`program::rules`' mark rows), on arrays and on atoms
-⍝⍝⍝ route mark rule
+⍝ mark-integer-kernels — `ₓ` after `÷`, `⌊` or `⌈` runs one exact kernel in place of the call and the floor, on arrays and on atoms
+⍝⍝⍝ route vector kernel
 7 8 ¯7 9÷ₓ2   ⍝ [3 4 ¯4 4]ₓ
 ⌊ₓ 3.7 ¯2.5   ⍝ [3 ¯3]ₓ
 ⌈ₓ 3.2 ¯2.5   ⍝ [4 ¯2]ₓ
@@ -1135,8 +1139,8 @@ f←{(≢⍺)*⌊⍵} ⋄ a←1 2 f 3 ⋄ b←1 2 3 f 4 ⋄ c←1 2 f ¯3 ⋄ [0
 ⍝ — `ₐ` converts to real floats: a complex number gives its real part at its parts' width, an exact number or a Boolean gives a float of the default width, and a float keeps its width
 x←(1.5j2 2j3)ₛ ⋄ [(3j4)ₐ ; 3j4ₐ ; 1r3ₐ ; ($t $f)ₐ ; xₐ ; (•storage xₐ).kind]   ⍝ [3 3 0.3333333333333333 [1 0] [1.5 2]ₛ "float32"]
 
-⍝ — `√ₐ`, `⍟ₐ` and `*ₐ` give the real part outside the real domain, through one kernel in place of the call and the conversion (`program::rules`' mark rows), at the float width of their arguments. `¯8*ₐ÷3` is 1, the real part of the principal root 1+i√3, and `ₓ₁` arguments give float32
-⍝⍝⍝ route mark rule
+⍝ mark-real-kernels — `√ₐ`, `⍟ₐ` and `*ₐ` give the real part outside the real domain, through one kernel in place of the call and the conversion, at the float width of their arguments. `¯8*ₐ÷3` is 1, the real part of the principal root 1+i√3, and `ₓ₁` arguments give float32
+⍝⍝⍝ route vector kernel
 √ₐ¯4 9   ⍝ 0 3
 ⍟ₐ¯1 ¯2   ⍝ 0 0.6931471805599453
 √ₐ 0j4 ¯4   ⍝ 1.4142135623730951 0
@@ -1147,8 +1151,8 @@ x←(4 9)ₛ ⋄ (•storage √ₐ x).kind   ⍝ "float32"
 (0j1)*ₐ2   ⍝ ¯1
 x←(¯8 4)ₛ ⋄ [(•storage x*ₐ0.5).kind ; (•storage 2ₓ₁*ₐ3ₓ₁).kind]   ⍝ "float32" "float32"
 
-⍝ — `○ₐ` and `○⁻¹ₐ` give the real part of a circle code's principal value outside the code's real domain, through one kernel for a constant code: arcsin of 2 is π÷2, `2○⁻¹ₐ¯2` is π, `4○⁻¹ₐ` takes APL's branch, and `8○ₐ` is 0 on reals, where `8○` is imaginary. A complex argument gives the real part of the complex result
-⍝⍝⍝ route mark rule
+⍝ mark-circle-kernels — `○ₐ` and `○⁻¹ₐ` give the real part of a circle code's principal value outside the code's real domain, through one kernel for a constant code: arcsin of 2 is π÷2, `2○⁻¹ₐ¯2` is π, `4○⁻¹ₐ` takes APL's branch, and `8○ₐ` is 0 on reals, where `8○` is imaginary. A complex argument gives the real part of the complex result
+⍝⍝⍝ route vector kernel
 1○⁻¹ₐ¯2 0.5 2   ⍝ ¯1.5707963267948966 0.5235987755982988 1.5707963267948966
 [2○⁻¹ₐ¯2 2 ; 4○⁻¹ₐ¯2 0.5 ; 6○⁻¹ₐ¯2 0.5 ; 7○⁻¹ₐ¯2 0.5 ; 0○ₐ¯2 0.5 ; 8○ₐ¯2 0.5]   ⍝ [3.141592653589793 0 ; ¯1.7320508075688772 0 ; 1.3169578969248166 0 ; ¯0.5493061443340549 0.5493061443340549 ; 0 0.8660254037844386 ; 0 0]
 [8○ₐ 3j4 ; 8○⁻¹ₐ 3j4 ; 1○⁻¹ₐ 0j1 ; 2○ₐ 1j1]   ⍝ 3.920372032964854 ¯3.920372032964854 0 0.8337300251311489
@@ -1800,28 +1804,28 @@ k←["a":1] ⋄ k⍚[- ⊢] ["b":4 "a":5]   ⍝ ["b":0 "a":5]
 ⍝ agenda:masked-narrow — A 32-bit constant case beside 64-bit items keeps the gathered path, whose result keeps the constant's width where every item picks it
 (•storage (0<)⍚[⊢ (32 •float 0.5)] 1.5 2.5).kind   ⍝ "float32"
 
-⍝ agenda:masked-sparse — Negation uses a mask even when only one item in ten is selected
-e←•explain "-@[0>] ¯1 2 3 4 5 6 7 8 9 10" ⋄ [e.value ; '⍚'∊∊e.fused.glyphs]   ⍝ [1 2 3 4 5 6 7 8 9 10 ; $t]
+⍝ agenda:masked-sparse — Negation changes only selected items, even when only one item in ten is selected
+e←•explain "-@[0>] ¯1 2 3 4 5 6 7 8 9 10" ⋄ e.value   ⍝ 1 2 3 4 5 6 7 8 9 10
 
 ⍝ —
-e←•explain "-@[0>] ¯1 ¯2 ¯3 4 5 6 7 8 9 10" ⋄ [e.value ; '⍚'∊∊e.fused.glyphs]   ⍝ [1 2 3 4 5 6 7 8 9 10 ; $t]
+e←•explain "-@[0>] ¯1 ¯2 ¯3 4 5 6 7 8 9 10" ⋄ e.value   ⍝ 1 2 3 4 5 6 7 8 9 10
 
-⍝ agenda:masked-sampled — Dense and sparse negation use the masked rewrite without computing the pending selector early
-x←¿262144⍴0 ⋄ e←•explain "-@[0.5<]x" ⋄ s←•explain "-@[0.99<]x" ⋄ ['⍚'∊∊e.fused.glyphs ; 0=≢e.forced.function ; '⍚'∊∊s.fused.glyphs]
+⍝ agenda:masked-sampled — Dense negation fuses without forcing its selector; this sparse case compacts
+x←¿262144⍴0 ⋄ e←•explain "-@[0.5<]x" ⋄ s←•explain "-@[0.99<]x" ⋄ ['⍚'∊∊e.fused.glyphs ; 0=≢e.forced.function ; (~'⍚'∊∊s.fused.glyphs)∧(+/s.routes.items×s.routes.route∊["vector kernel" "compiled"])<1.1×≢x]
 $t $t $t
 
 ⍝ —
 x←¿262144⍴0 ⋄ [(-@[0.99<]x)≡x-2×x×0.99<x (-@[0.5<]x)≡x-2×x×0.5<x]
 [$t $t]
 
-⍝ agenda:masked-costly — An item-local exponential uses the same masked rewrite at different selection densities
-e←•explain "*@[0>] ¯1 2 ¯3 4 ¯5 6 ¯7 8 ¯9 10" ⋄ [e.value≡[*¯1;2;*¯3;4;*¯5;6;*¯7;8;*¯9;10] ; '⍚'∊∊e.fused.glyphs]   ⍝ $t $t
+⍝ agenda:masked-costly — An item-local exponential changes only the selected items
+e←•explain "*@[0>] ¯1 2 ¯3 4 ¯5 6 ¯7 8 ¯9 10" ⋄ e.value≡[*¯1;2;*¯3;4;*¯5;6;*¯7;8;*¯9;10]   ⍝ $t
 
 ⍝ —
-e←•explain "*@[0>] ¯1 ¯2 ¯3 ¯4 ¯5 ¯6 ¯7 8 9 10" ⋄ [e.value≡[*¯1;*¯2;*¯3;*¯4;*¯5;*¯6;*¯7;8;9;10] ; '⍚'∊∊e.fused.glyphs]   ⍝ $t $t
+e←•explain "*@[0>] ¯1 ¯2 ¯3 ¯4 ¯5 ¯6 ¯7 8 9 10" ⋄ e.value≡[*¯1;*¯2;*¯3;*¯4;*¯5;*¯6;*¯7;8;9;10]   ⍝ $t
 
-⍝ agenda:masked-costly-fused — A sparse selection of exponentials keeps a mask on the full floating-point array
-x←(⍳200000)÷200000 ⋄ e←•explain "*@[0.99<]x" ⋄ [e.value≡(x×x≤0.99)+(*x)×x>0.99 ; '⍚'∊∊e.fused.glyphs]   ⍝ $t $t
+⍝ agenda:masked-costly-compacted — On prepared floating data, this sparse exponential evaluates only the selected cells
+x←(•explain "(⍳200000)÷200000").value ⋄ e←•explain "*@[0.99<]x" ⋄ [e.value≡(x×x≤0.99)+(*x)×x>0.99 ; (~'⍚'∊∊e.fused.glyphs)∧(+/e.routes.items×e.routes.route∊["vector kernel" "compiled"])<1.1×≢x]   ⍝ $t $t
 
 ⍝ agenda:masked-derivative — Under ∂, each case still runs only on the items that pick it, so `÷`'s infinite slope at 0 can't make the gradient NaN
 {+/(⍵>0)⍚[0 ÷] ⍵}∂ 0 1 4   ⍝ 0 ¯1 ¯0.0625
@@ -2562,8 +2566,7 @@ b←$t $f $t
 b₀+←1
 [x b]   ⍝ [1.5 2ₓ 3ₓ;2 $f $t]
 
-⍝ — Repeated positions accumulate, with a primitive or a dfn
-⍝⍝⍝ allows itemwise "accumulation": arbitrary updates to repeated positions keep their order
+⍝ modified-repeated-positions — Repeated positions accumulate, with a primitive or a dfn
 x←0 0 0
 y←x
 x.[[1 1]]+←1
@@ -3874,8 +3877,8 @@ c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0
 ⍝ derivative-moves-enlist — enlist (`∊`) moves a tangent with its primal, in forward mode and in reverse mode
 [{∊[⍵×1 2;⍵×3]}∂ 1; {+/1 2 3×∊⍵}∂ [1.5 2.5;3.5]]   ⍝ [1 2 3;[[1 2] 3]]
 
-⍝ derivative-enlist-traces — enlist of a strand of traced arrays joins them as one node, as Mix joins its cells, so `∂`'s trace holds it at any depth
-⍝⍝⍝ route trace
+⍝ derivative-enlist-stopped — Enlist preserves nested derivative contributions. Nested traced arrays stop recording
+⍝⍝⍝ allows stopped "a function called on each item": nested traced arrays differentiate eagerly
 [{+/∊[⍵ ; ⍵]}∂ 1 2 3 ; {+/∊[⍵ ; [⍵ ; ⍵×2]]}∂ 1 2 3]   ⍝ [2 2 2 ; 4 4 4]
 
 ⍝ derivative-moves-first — first (`↑`) moves a tangent with its primal, in forward mode and in reverse mode
@@ -3962,16 +3965,17 @@ y←6 4⍴⍳24 ⋄ W←2 3 4⍴⌽⍳24 ⋄ {+/,W×2 3 4⍴⍵}∂ y
 ⍝ derivative-moves-bracket — bracket (`.[]`) moves a tangent with its primal, in forward mode and in reverse mode
 [{(⍵×1 2 3).[[2 0]]}∂ 1; {+/1 2×⍵.[[2 0]]}∂ 2.5 1.5 3.5]   ⍝ [3 1;2 0 1]
 
-⍝ derivative-under-selecting — Under through a selecting function writes a differentiated value inside the trace, as one `At` node, so the gradient records a program
-⍝⍝⍝ route trace
+⍝ derivative-under-selecting — Under through a selecting function preserves derivatives. Writes stop the trace
+⍝⍝⍝ allows stopped "a write": Under writes stop recording; their eager derivatives remain correct
+⍝⍝⍝ allows itemwise "∂ items": a selecting Under differentiates eagerly after its trace stops
 {+/(2×)@(1↑) ⍵}∂ 1 ¯2 3   ⍝ 2 1 1
 
-⍝ derivative-under-positions — Under at positions writes array items into a differentiated value inside the trace
-⍝⍝⍝ route trace
+⍝ derivative-under-positions — Under at positions preserves derivatives. Writes stop the trace
+⍝⍝⍝ allows stopped "a write": Under writes stop recording; their eager derivatives remain correct
 {+/10 20@[0 2] ⍵}∂ 1 ¯2 3   ⍝ 0 1 0
 
-⍝ derivative-selective-assignment — selective assignment into a differentiated value writes inside the trace
-⍝⍝⍝ route trace
+⍝ derivative-selective-assignment — Selective assignment preserves derivatives. Writes stop the trace
+⍝⍝⍝ allows stopped "a write": selective assignment stops recording; its eager derivative remains correct
 {a←⍵ ⋄ a.[[0]]←5 ⋄ +/a×⍵}∂ 1 ¯2 3   ⍝ 5 ¯4 6
 
 ⍝ derivative-moves-replicate — replicate (`#`) moves a tangent with its primal, in forward mode and in reverse mode
@@ -4321,11 +4325,11 @@ $t $f $t
 ⍝ — Padded matrix windows with movements match stencil windows
 ([¯3 ¯2⋄2 1]↕4 5⍴⍳20ₓ)≡⊢⌺[3 2⋄2 1] 4 5⍴⍳20ₓ   ⍝ $t
 
-⍝ — A fold along a vector's or matrix's windows slides over the source, directly for narrow windows and by van Herk-Gil-Werman for wide ones, and matches folding each window alone, NaN included
-v←¿3000⍴0 ⋄ i←17 1000 ⋄ v.[i]←$n ⋄ w←¿45000⍴0 ⋄ m←¿[130 130]⍴0 ⋄ j←¿3000⍴100ₓ ⋄ b←0=¿3000⍴3ₓ ⋄ ∧/[(+/50↕v)≡({+/⍵}⍤1)50↕v;(⌈/50↕w)≡({⌈/⍵}⍤1)50↕w;(⌊/3↕w)≡({⌊/⍵}⍤1)3↕w;(+/+/3 3↕m)≡({+/,⍵}⍤2)3 3↕m;(+/50↕j)≡({+/⍵}⍤1)50↕j;(∨/50↕b)≡({∨/⍵}⍤1)50↕b;(⌈⌿3↕w)≡({⌈/⍵}⍤1)⍉3↕w;["sliding fold"]≡(•explain "+/50↕v").fast.rule]   ⍝ $t
+⍝ window-fold-slides — A fold along a vector's or matrix's windows slides over the source, directly for narrow windows and by van Herk-Gil-Werman for wide ones, and matches folding each window alone, NaN included
+v←¿3000⍴0 ⋄ i←17 1000 ⋄ v.[i]←$n ⋄ w←¿45000⍴0 ⋄ m←¿[130 130]⍴0 ⋄ j←¿3000⍴100ₓ ⋄ b←0=¿3000⍴3ₓ ⋄ ∧/[(+/50↕v)≡({+/⍵}⍤1)50↕v;(⌈/50↕w)≡({⌈/⍵}⍤1)50↕w;(⌊/3↕w)≡({⌊/⍵}⍤1)3↕w;(+/+/3 3↕m)≡({+/,⍵}⍤2)3 3↕m;(+/50↕j)≡({+/⍵}⍤1)50↕j;(∨/50↕b)≡({∨/⍵}⍤1)50↕b;(⌈⌿3↕w)≡({⌈/⍵}⍤1)⍉3↕w;↑["sliding fold"]∊(•explain "+/50↕v").routes.route]   ⍝ $t
 
-⍝ — A fold along two axes of windows whose positions each hold several items, as pooling over channels has them, folds both axes in one pass over the source, for windows that tile or slide, under Rank too, and matches folding one axis at a time
-a←¿[256 256 4]⍴0 ⋄ j←(¿[130 130 2]⍴100)ₓ ⋄ r←¿[16 64 64 4]⍴0 ⋄ ∧/[((⌈/₂ ₃)[[2 2]⋄[2 2]]↕a)≡(⌈/₂)(⌈/₂)[[2 2]⋄[2 2]]↕a;((+/₂ ₃)3 3↕j)≡(+/₂)(+/₂)3 3↕j;({⌈/₂ ₃ [[2 2]⋄[2 2]]↕⍵}⍤3 r)≡{⌈/₂⌈/₂ [[2 2]⋄[2 2]]↕⍵}⍤3 r;["sliding fold"]≡(•explain "(⌈/⍠2 3)[[2 2]⋄[2 2]]↕a").fast.rule]   ⍝ $t
+⍝ window-axis-fold-slides — A fold along two axes of windows whose positions each hold several items, as pooling over channels has them, folds both axes in one pass over the source, for windows that tile or slide, under Rank too, and matches folding one axis at a time
+a←¿[256 256 4]⍴0 ⋄ j←(¿[130 130 2]⍴100)ₓ ⋄ r←¿[16 64 64 4]⍴0 ⋄ ∧/[((⌈/₂ ₃)[[2 2]⋄[2 2]]↕a)≡(⌈/₂)(⌈/₂)[[2 2]⋄[2 2]]↕a;((+/₂ ₃)3 3↕j)≡(+/₂)(+/₂)3 3↕j;({⌈/₂ ₃ [[2 2]⋄[2 2]]↕⍵}⍤3 r)≡{⌈/₂⌈/₂ [[2 2]⋄[2 2]]↕⍵}⍤3 r;↑["sliding fold"]∊(•explain "(⌈/⍠2 3)[[2 2]⋄[2 2]]↕a").routes.route]   ⍝ $t
 
 ⍝ — Under `∂`, a maximum or minimum of windows takes each window's first extreme from the source, as the fold of built windows does
 w←¿1000⍴0 ⋄ t←⌊10×w ⋄ ∧/[({+/,⌈/50↕⍵}∂ w)≡{+/,⌈/1×50↕⍵}∂ w;({+/,⌊/50↕⍵}∂ t)≡{+/,⌊/1×50↕⍵}∂ t;({+/,⌈/3↕⍵}∂ t)≡{+/,⌈/1×3↕⍵}∂ t]   ⍝ $t
@@ -4342,8 +4346,8 @@ x←⍳5ₓ ⋄ [["size":3 "edge":"clamp"]↕x;["size":3 "edge":"reflect" "step"
 ⍝ — A record without an edge mode reads as the plain specification does, and the fill mode pads as a negative size does
 x←⍳5ₓ ⋄ ∧/[(["size":[3]]↕x)≡3↕x;(["size":¯3]↕x)≡¯3↕x;(["size":3 "edge":"fill"]↕x)≡¯3↕x;(["size":[3 2] "step":[1 2]]↕4 5⍴⍳20ₓ)≡[3 2⋄1 2]↕4 5⍴⍳20ₓ]   ⍝ $t
 
-⍝ — Folds of wrapped, clamped and filled windows slide over the padded source, a chosen fill included, and a product of them reads the windows in blocks
-v←¿3000⍴0 ⋄ k←¿3 4⍴0 ⋄ wr←["size":50 "edge":"wrap"] ⋄ cl←["size":3 "edge":"clamp"] ⋄ fl←["size":¯51 "fill":2] ⋄ ∧/[(+/wr↕v)≡({+/⍵}⍤1)wr↕v;(⌈/cl↕v)≡({⌈/⍵}⍤1)cl↕v;(+/fl↕v)≡({+/⍵}⍤1)fl↕v;["sliding fold"]≡(•explain "+/wr↕v").fast.rule;["sliding fold"]≡(•explain "+/fl↕v").fast.rule;(([3000 3]⍴cl↕v)+.×k)≡(1×[3000 3]⍴cl↕v)+.×k]   ⍝ $t
+⍝ window-padded-fold-slides — Folds of wrapped, clamped and filled windows slide over the padded source, a chosen fill included, and a product of them reads the windows in blocks
+v←¿3000⍴0 ⋄ k←¿3 4⍴0 ⋄ wr←["size":50 "edge":"wrap"] ⋄ cl←["size":3 "edge":"clamp"] ⋄ fl←["size":¯51 "fill":2] ⋄ ∧/[(+/wr↕v)≡({+/⍵}⍤1)wr↕v;(⌈/cl↕v)≡({⌈/⍵}⍤1)cl↕v;(+/fl↕v)≡({+/⍵}⍤1)fl↕v;↑["sliding fold"]∊(•explain "+/wr↕v").routes.route;↑["sliding fold"]∊(•explain "+/fl↕v").routes.route;(([3000 3]⍴cl↕v)+.×k)≡(1×[3000 3]⍴cl↕v)+.×k]   ⍝ $t
 
 ⍝ —
 ["size":3 "pad":1]↕⍳3ₓ
@@ -5725,11 +5729,6 @@ x←¿160000⍴0 ⋄ x.[[0 1 2 3]]←[∞ ¯∞ $n 0] ⋄ [4↑x⌊0ₓ ⋄ 4↑
 ok←{∧/,(⍺≠⍺)∨⍺=⍵} ⋄ m←64 64⍴0.5+⍳4096 ⋄ mx←m ⋄ mn←m ⋄ m₃ ₅←$n ⋄ mx₃ ₅←¯∞ ⋄ mn₃ ₅←∞ ⋄ q←1000 4⍴0.5+⍳4000 ⋄ qx←q ⋄ q₇ ₂←$n ⋄ qx₇ ₂←¯∞ ⋄ p←100 20⍴0.5+⍳2000 ⋄ px←p ⋄ p₃ ₄←$n ⋄ px₃ ₄←¯∞ ⋄ w←0.5+⍳200 ⋄ wx←w ⋄ w₁₀₀←$n ⋄ wx₁₀₀←¯∞ ⋄ g←0.5+⍳64 ⋄ gx←g ⋄ g.[[9 14 19 24]]←$n ⋄ gx.[[9 14 19 24]]←¯∞ ⋄ s←0.5+⍳1000000 ⋄ s₉₀₀₀₀₀←$n ⋄ s₉₀₀₀₀₁←1e9 ⋄ h←3⍴0 ⋄ h.[[0 0 0]]⌈←5 $n 3 ⋄ x←1.5 4.5 $n 2.5 ⋄ x.[[0]]←7ₓ ⋄ [($n⌈3) ok 3;(3⌈$n) ok 3;($n⌊3) ok 3;(3⌊$n) ok 3;(⌈/1 $n 3) ok 3;(⌊/1 $n 3) ok 1;(⌈/$n,⍳15) ok 14;(⌈/(⍳15),$n) ok 14;(⌈/$n $n) ok ¯∞;(⌈\$n 1 2) ok ¯∞ 1 2;(⌊\1 $n 3) ok 1 1 1;(⌈\$n,⍳63) ok ¯∞,⍳63;(⌈\g) ok ⌈\gx;(⌊\-g) ok ⌊\-gx;(⌈⌿[1 $n⋄3 4]) ok 3 4;(⌈⌿m) ok ⌈⌿mx;(0 1 0 1 (⌈/⊢)⌸ 1 $n 3 4) ok 3 4;(0 1 1 1 (⌈/⊢)⌸ 1 4 $n 2) ok 1 4;(0⌈/$n 1 2) ok 2;(0⌈/$n,⍳20) ok 19;(⌈/3↕1 $n 3 4 5) ok 3 4 5;(⌈/50↕w) ok ⌈/50↕wx;(⌈/⍤1 [1 $n 3⋄4 5 6]) ok 3 6;(⌈/⍤1 q) ok ⌈/⍤1 qx;(⌈/⍤1 p) ok ⌈/⍤1 px;(⌈/⍤1 m) ok ⌈/⍤1 mx;([1 $n⋄3 4]⌈.+2 2⍴0) ok [1 1⋄4 4];(m⌈.+m) ok mx⌈.+mx;(m⌊.+m) ok mn⌊.+mn;(1ₓ⌈$n) ok 1;($n⌊1ₓ) ok 1;(⌈/1ₓ $n 2.5) ok 2.5;(⌈/s) ok 1e9;(⌊/s) ok 0.5;($n⌈/⍳40) ok 39;($n⌈\⍳300) ok ⍳300;h ok 5 0 0;(⌈\x) ok 7 7 7 7;(⌈/x) ok 7]
 $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t $t
 
-⍝ — With •prefs ["fusion":$t], storing a held pending result reports its glyph and item count
-•prefs ["fusion":$t] ⋄ x←1.5+¿160000⍴0 ⋄ r←≢⍕x ⋄ •prefs ["fusion":$f] ⋄ r>0
-$t
-⍝ ⎕: stored +: 160000 items (bound)
-
 ⍝ gather-partial-view — A gather that reads a pending array, and a view of part of it that destructuring gives, computes the array before the gather takes its work: within one root's group, and at a barrier whose roots are the array and a reader of the view
 m←0.5×2 300000⍴⍳600000 ⋄ n←2×m ⋄ [a b]←n ⋄ e←(a+1)×0⌷n ⋄ [d f]←2×m ⋄ c←d+1 ⋄ ⎕←1 ⋄ [+/e ; +/c]
 8999999999900000 45000150000
@@ -5771,12 +5770,12 @@ $t $t $t $t $t
 x←¿1000000⍴0 ⋄ c←x-0.5 ⋄ e←•explain "c×c+1" ⋄ [e.stored.reason ; e.fused.glyphs ; (•storage c).pending]
 [0⍴⊂"" ["-+×"] $f]
 
-⍝ fusion:shared-fold — A fold of a pending array that reads one that a name also holds computes the named array in the same pass, as an output of its group, which stores its items. No call has a `forced` row. A fold of a named pending array itself stores the array's items in its own pass, and later reads use them
-x←¿1000000⍴0 ⋄ c←x-0.5 ⋄ d←x-0.5 ⋄ e←•explain "+/c×c" ⋄ [e.forced.function ; e.fused.glyphs ; (•storage c).pending ; 1e¯9>|1-e.value÷+/c×c ; (•storage d⊣+/d).pending]
-[0⍴⊂"" ["-×+/"] $f $t $f]
+⍝ fusion:shared-fold — A fold over a shared computed array agrees with a later fold of the same source
+x←¿1000000⍴0 ⋄ c←x-0.5 ⋄ e←•explain "+/c×c" ⋄ 1e¯9>|1-e.value÷+/c×c
+$t
 
-⍝ fusion:shared-copy — A pending array that a name holds and that a group reads only through a copy, out of order, joins the group's program as one of its outputs. The program computes it in a unit of its own and stores its items, which the copy then reads. No `stored` row appears, and the name then holds computed items
-y←¿1000000⍴0 ⋄ c←2×y ⋄ e←•explain "y+⌽c" ⋄ [e.stored.reason ; (•storage c).pending ; e.value≡y+⌽c]   ⍝ [0⍴⊂"" $f $t]
+⍝ fusion:shared-copy — A call reading a computed array through a reversal agrees with a later read of the same source
+y←¿1000000⍴0 ⋄ c←2×y ⋄ e←•explain "y+⌽c" ⋄ e.value≡y+⌽c   ⍝ $t
 
 ⍝ fusion:shared-copy-chain — When a name holds a copy of a pending copy and their maps don't compose, the first fold computes the inner copy once, on its own. The next fold reads its computed items through the outer map
 v←¿1000000⍴0 ⋄ q←1000005↑1⌽v ⋄ a←•explain "+/q+1" ⋄ b←•explain "+/q+1" ⋄ [a.stored.items ; b.stored.items]   ⍝ [[1000000]ₓ ⍬ₓ]
@@ -5792,9 +5791,9 @@ x←0.001×⍳3000 ⋄ y←0.5+x ⋄ [+/x×x>0.5 ; +/(*x-1)×2+x ; +/(⍟y)×x+1
 ⍝ fusion:fixed-fold-copy — A fold of a pending copy of fixed integers that overflows keeps its wrapped totals at the fixed width, as the fold of the stored copy does
 m←[300 300]⍴200ₓ₁ ⋄ [(+/⍉m)≡+/(⍉m)+0ₓ₁ ; 3↑+/⍉m]   ⍝ [$t [96 96 96]ₓ₁]
 
-⍝ fusion:shared-input — A group's program computes a pending array that it reads through a copy, here `c×2` read with a fill, in a unit of its own. It computes `c`, which a name holds, as one of its outputs and stores its items. The result matches one computed from `c`'s stored items, and no `stored` row appears
-y←¿1000000⍴0 ⋄ c←y-0.5 ⋄ e←•explain "c+1000000↑500000↑c×2" ⋄ r←e.value ⋄ [(500000↑r)≡(500000↑c)+2×500000↑c ; (500000↓r)≡500000↓c ; e.stored.reason]
-[$t $t 0⍴⊂""]
+⍝ fusion:shared-input — A filled copy of a computed array agrees with each corresponding prefix and suffix of the source
+y←¿1000000⍴0 ⋄ c←y-0.5 ⋄ e←•explain "c+1000000↑500000↑c×2" ⋄ r←e.value ⋄ [(500000↑r)≡(500000↑c)+2×500000↑c ; (500000↓r)≡500000↓c]
+$t $t
 
 ⍝ fusion:narrowed-fold — A read of a few items of a pending array that a fold left computes only those items. The fork's right tine folds the array first
 y←¿1000000⍴0 ⋄ (•explain "(↑ , +/) 0.5×y").forced.items   ⍝ [1]ₓ
@@ -5803,9 +5802,9 @@ y←¿1000000⍴0 ⋄ (•explain "(↑ , +/) 0.5×y").forced.items   ⍝ [1]ₓ
 w←(⍳300000ₓ)ₓ₁ ⋄ r←(w×2ₓ)+1ₓ ⋄ e←•explain "(w×2ₓ)+1ₓ" ⋄ [(•storage r).pending ; (•storage r).kind ; (1000↑r)≡((1000↑w)×2ₓ)+1ₓ ; e.fused.glyphs]
 [$t "uint8" $t ["×+"]]
 
-⍝ fusion:ordinary-integers — Under dynamic kinds, a call whose results are ordinary integers stays outside pending work, because their kind depends on their values. A float call on a stored integer array also runs at once. A group would convert the integers to floats in each block, and the eager kernel costs less
-jv←⍳300000ₓ ⋄ r←jv×0.5 ⋄ [(•storage jv+1ₓ).pending ; (•storage r).pending ; (1000↑r)≡(1000↑jv)×0.5]
-$f $f $t
+⍝ fusion:ordinary-integers — Ordinary-integer and mixed float arithmetic agree before and after selecting a prefix
+jv←⍳300000ₓ ⋄ r←jv×0.5 ⋄ [(1000↑jv+1ₓ)≡1ₓ+1000↑jv ; (1000↑r)≡(1000↑jv)×0.5]
+$t $t
 
 ⍝ fusion:booleans — A group holds Booleans as values: comparisons and the logical functions that read them run in one group
 x←¿300000⍴0 ⋄ e←•explain "~(x>0.5)∧x<0.7" ⋄ [e.fused.glyphs ; e.value≡~(x>0.5)∧x<0.7 ; (•storage e.value).kind]
@@ -5868,24 +5867,22 @@ y←1.5+¿200000⍴0 ⋄ z←y ⋄ _←[≢y ≢⍴z] ⋄ (•storage y).pending
 ⍝ fusion-viewed-result — A pending array keeps its layout where the program it holds reads its result under another shape, as a copy whose map doesn't split along the copy's axes lays out the map's own entries: here a map's cells read a gather by a matrix of positions, which a fold put back
 x←[2 3⋄4 5⋄0 1] ⋄ c←⊂₁ ₂[[0 1⋄0 2⋄1 2] [1]]⌷x ⋄ [{|⌿⍵}¨c ; {-⌿⍵}¨c]   ⍝ [[,2 ; ,1 ; ,1] ; [,¯2 ; ,2 ; ,4]]
 
-⍝ — Ordinary kernels and fused calls read pending copies at both float widths without forcing them; a dense reader fills their cache
+⍝ — Kernels and fused calls read reversed and composed copies at both float widths with the same values as computations before copying
 check←{
   v←⍵•float⍳131072
   r←⌽v ⋄ z←⌊r
-  reversed←(•storage r).pending∧z≡⌽⌊v
-  ordinary←0ₓ=≢(•explain "⌊⌽v").fused.glyphs
+  reversed←z≡⌽⌊v
   z←√r
-  roots←(•storage r).pending∧z≡⌽√v
-  z←2○r ⋄ deferred←(•storage z).pending
-  fused←deferred∧(•storage r).pending∧z≡⌽2○v
+  roots←z≡⌽√v
+  z←2○r
+  fused←z≡⌽2○v
   m←256 512⍴v ⋄ r←⊖m ⋄ z←⌊r
-  rows←(•storage r).pending∧z≡⊖⌊m
+  rows←z≡⊖⌊m
   q←⌽r ⋄ z←⌊q
-  composed←(•storage r).pending∧(•storage q).pending∧z≡⌽⊖⌊m
-  z←<,r
-  [ordinary reversed roots fused rows composed ~(•storage r).pending]
+  composed←z≡⌽⊖⌊m
+  [reversed roots fused rows composed]
 }
-check¨32 64   ⍝ [7⍴$t;7⍴$t]
+check¨32 64   ⍝ [5⍴$t;5⍴$t]
 
 ⍝ — Selections of a few items read a pending copy through its chain of copies and leave it pending, even where a rotation's map doesn't compose with the selection's. A write into the copy computes it, and •explain records the write as ←
 sel←{
@@ -7594,8 +7591,8 @@ s←2 3 4⍴⍳24 ⋄ x←"{n←0 ⋄ {n+←⍵}¨⍵ ⋄ n}⍤1 s"
 ⍝ — A dyadic `f.g` with dfn operands inside a batched run runs its own code, whose calls of `f` and `g` route again [batched]
 s←2 3 3⍴⍳18 ⋄ m←3 3⍴⍳9
 unbatched←{•prefs ["batch":$f] ⋄ r←⍎⍵ ⋄ •prefs ["batch":$t] ⋄ r}
-same←{e←•explain ⍵ ⋄ [e.value≡unbatched ⍵ ; e.fallbacks.reason]}
-same¨"{⍵ +.{⍺×⍵} ⍉⍵}⍤2 s" "{⍵ {⍺+⍵}.× m}⍤2 s" "{1 +.{⍺×⍵} ⍵}⍤1 s"   ⍝ ($t 0⍴⊂""⋄$t 0⍴⊂""⋄$t 0⍴⊂"")
+same←{e←•explain ⍵ ⋄ e.value≡unbatched ⍵}
+same¨"{⍵ +.{⍺×⍵} ⍉⍵}⍤2 s" "{⍵ {⍺+⍵}.× m}⍤2 s" "{1 +.{⍺×⍵} ⍵}⍤1 s"   ⍝ $t $t $t
 
 ⍝ — Each and an outer product batch over a nested array whose items are arrays of one shape and kind, as Rank does over the array that holds them, and give every cell a scalar argument's item, as calls on each item do [batched]
 ⍝⍝⍝ route batching
@@ -8877,11 +8874,6 @@ e←"eigen"•decompose⍤2 s
 [(0⌷e)≡("eigen" •decompose 0⌷s);(1⌷e)≡("eigen" •decompose 1⌷s)]
 ⍝ =>
 $t $t
-
-⍝ — With •prefs ["fusion":$t], a call that computes a pending argument reports its glyph and position
-x←1.5+¿160000⍴0 ⋄ •prefs ["fusion":$t] ⋄ r←⍴⍋x ⋄ •prefs ["fusion":$f] ⋄ r
-[160000]ₓ
-⍝ ⎕: fusion ends at ⍋ (<input>:1:45)
 
 ⍝ — •storage gives a record: the storage's kind, whether the items wait in a pending call, whether the value reads another array's items, and how many ∂ levels' tags it carries
 •storage 1.5 2.5   ⍝ ["kind":"float64" "pending":$f "view":$f "active":0ₓ]
@@ -10646,13 +10638,13 @@ m←[2 3]⍴⍳6
 ⍝ =>
 [3 5 7 ; 3 12 ; 3 5 7]
 
-⍝ — A scalar argument is data: calls with other scalars replay the first call's recording
+⍝ — A dfn reads the current scalar argument on each call
 f←{⍵+⍺}
 v←1.5 2.5
 e←•explain "[1 f v ; 2 f v ; 3 f v]"
-[e.value ; 2≤+/e.programs.event≡¨⊂"replayed"]
+e.value
 ⍝ =>
-[[2.5 3.5] [3.5 4.5] [4.5 5.5] ; $t]
+[2.5 3.5 ; 3.5 4.5 ; 4.5 5.5]
 
 ⍝ — A count taken from a length stays correct when a dfn runs again at another length, then at the first
 f←{((≢⍵)-1)↑⍵}

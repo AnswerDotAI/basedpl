@@ -3,9 +3,9 @@
 //! A tape value has no items, so reading them is a bug (`Traced::storage`). Tape values live only in the tangents of duals, and only code that handles tangents meets them.
 use super::{complex, dual, numbers, numeric, packed, split, strip, zeros};
 use crate::plan::Desc;
-use crate::program::{Node, Origin, Program, Read, Step, run, trace::{self, Role, Traced, Tracer}};
+use crate::program::{Node, Origin, Program, Read, Step, Writes, run, trace::{self, Role, Traced, Tracer}};
 use crate::{
-    Error, ErrorKind, Function, Span, Value, agreement::expand, array::Layout, error::Described, cancel::check, number::Arithmetic,
+    Error, ErrorKind, Function, Span, Value, agreement::expand, array::Layout, cancel::check, error::Described, number::Arithmetic,
     primitive::{FoldKind, Form, LinearMap, Operation, Primitive}, session, transform::{Carrier, Kind, Op, Pairing, walk}
 };
 use rustymath::{agreement::{Mapping, Missing, ReadPlan, Run}, buffer::DType, gather::{Steps, Writes as Places}};
@@ -98,10 +98,7 @@ fn linearize(
     let primal = strip(&primal, tag);
     numeric(&primal)?;
     let read = match tangent {
-        Some(t) if tape_of(&t).is_some() => {
-            let laid = expand(&t, primal.layout());
-            tape_of(&laid).map(|t| t.read.clone())
-        }
+        Some(t) if tape_of(&t).is_some() => { let laid = expand(&t, primal.layout()); tape_of(&laid).map(|t| t.read.clone()) }
         // A tangent with no tape value anywhere in it came only from constants, as when `c∩⍵` draws its items from `c`. The result then doesn't depend on the argument.
         Some(t) if !t.carried() => None,
         Some(_) => return Err(Error::new(ErrorKind::Unsupported, "∂ can't differentiate this result in reverse mode")),
@@ -119,12 +116,12 @@ pub(crate) fn taped(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span
         Op::Operation(Operation::Primitive(p), _) if matches!(p.facts(left.is_some()).form, Form::Moves { .. }) => return None,
         Op::Operation(Operation::Primitive(Primitive::Arithmetic(Arithmetic::Plus)), Pairing::At(_)) => left.is_some(),
         Op::Operation(Operation::Primitive(p), Pairing::Axis(None)) => match (p.facts(left.is_some()).linear, left) {
-            (Some(LinearMap::Product), Some(l)) => tape(l) != tape(right),
-            (Some(LinearMap::Quotient), Some(_)) => !tape(right),
-            (Some(LinearMap::Sum | LinearMap::Difference), Some(_)) | (Some(LinearMap::Same | LinearMap::Negation), None) => true,
-            _ => false,
+            (Some(LinearMap::Product), Some(l)) => tape(l) != tape(right), (Some(LinearMap::Quotient), Some(_)) => !tape(right),
+            (Some(LinearMap::Sum | LinearMap::Difference), Some(_)) | (Some(LinearMap::Same | LinearMap::Negation), None) => true, _ => false
         },
-        Op::Operation(operation @ Operation::Fold(..), Pairing::Axis(_)) => left.is_none() && operation.facts(false).and_then(|r| r.linear) == Some(LinearMap::Sum),
+        Op::Operation(operation @ Operation::Fold(..), Pairing::Axis(_)) => {
+            left.is_none() && operation.facts(false).and_then(|r| r.linear) == Some(LinearMap::Sum)
+        }
         Op::Operation(operation @ Operation::Product(..), Pairing::Axis(None) | Pairing::Matrices) => {
             operation == Operation::PLUS_TIMES && left.is_some_and(|l| tape(l) != tape(right))
         }
@@ -147,11 +144,9 @@ fn untransposable(what: &str) -> Error { Error::new(ErrorKind::Unsupported, form
 /// What `op` calls, for an error message.
 fn glyph(op: &Op<'_>) -> String {
     match op {
-        Op::Operation(Operation::Primitive(p), _) => p.glyph().into(),
-        Op::Operation(Operation::Fold(p, _), _) => format!("{}/", p.glyph()),
-        Op::Operation(Operation::Product(f, g), _) => format!("{}.{}", f.glyph(), g.glyph()),
-        Op::Operation(..) | Op::Fold(..) => "this fold".into(),
-        Op::Product => "this product".into(), Op::Ruled(..) => "an attached rule".into(), Op::System(_, f) => f.name.into(),
+        Op::Operation(Operation::Primitive(p), _) => p.glyph().into(), Op::Operation(Operation::Fold(p, _), _) => format!("{}/", p.glyph()),
+        Op::Operation(Operation::Product(f, g), _) => format!("{}.{}", f.glyph(), g.glyph()), Op::Operation(..) | Op::Fold(..) => "this fold".into(),
+        Op::Product => "this product".into(), Op::Ruled(..) => "an attached rule".into(), Op::System(_, f) => f.name.into()
     }
 }
 
@@ -162,10 +157,8 @@ fn transpose(tape: &Program, u: Value, seeds: usize, span: &Span) -> Result<Vec<
     let mut values = vec![None; nodes.len()];
     for (j, node) in nodes.iter().enumerate() {
         values[j] = match &node.origin {
-            Origin::Input(_) => None,
-            Origin::Held(v) => Some(v.clone()),
-            Origin::Step(step) if step.reads().any(|i| values[i].is_none()) => None,
-            Origin::Step(step) => Some(run::run(step, nodes, &values, None, &node.desc, span)?),
+            Origin::Input(_) => None, Origin::Held(v) => Some(v.clone()), Origin::Step(step) if step.reads().any(|i| values[i].is_none()) => None,
+            Origin::Step(step) => Some(run::run(step, nodes, &values, None, &node.desc, span)?)
         };
     }
     let mut back = Back { nodes, values, cotangents: vec![None; nodes.len()], span };
@@ -222,10 +215,12 @@ impl Back<'_> {
         let count = self.nodes[read.of].desc.layout.count();
         let map = Mapping::from(places);
         let shape = walk_shape(&map, &[places.len()]);
-        if !self.nodes[read.of].desc.atom && items.len() == places.len() && let Some(inverse) = ReadPlan::copy(0, count, map, places.len(), Missing::Invalid).inverse(0, &shape, count) {
-            let back = crate::fusion::copied(items, Layout::from(walk_shape(&inverse, &[count])), &inverse, None).described("a cotangent reads its copy back")?;
-            return self.add(read, back);
-        }
+        if !self.nodes[read.of].desc.atom && items.len() == places.len()
+            && let Some(inverse) = ReadPlan::copy(0, count, map, places.len(), Missing::Invalid).inverse(0, &shape, count) {
+                let back =
+                    crate::fusion::copied(items, Layout::from(walk_shape(&inverse, &[count])), &inverse, None).described("a cotangent reads its copy back")?;
+                return self.add(read, back);
+            }
         let desc = &self.nodes[read.of].desc;
         let mut sum = self.cotangents[read.of].take().unwrap_or_else(|| desc.layout.zeros(&desc.zero()));
         sum_at(&mut sum, places, items, self.span)?;
@@ -235,8 +230,9 @@ impl Back<'_> {
 
     /// Adds `u` at the walk `base`, `steps` of the node that `read` reads. A broadcast's cotangent sums along the axes it repeats over (step 0) first, and only the remaining axes write back. A repeated axis reads one offset of its source, its start, which joins the base.
     fn add_walked(&mut self, read: &Read, base: usize, steps: &[Steps], u: Value) -> Result<(), Error> {
-        let starts: Vec<(usize, usize)> = steps.iter().enumerate()
-            .filter_map(|(a, s)| match *s { Steps::Stride { start, len, step: 0 } if len > 1 => Some((a, start)), _ => None }).collect();
+        let starts: Vec<(usize, usize)> = steps.iter().enumerate().filter_map(|(a, s)| match *s {
+            Steps::Stride { start, len, step: 0 } if len > 1 => Some((a, start)), _ => None
+        }).collect();
         let repeated: Vec<usize> = starts.iter().map(|&(a, _)| a).collect();
         let base = base + starts.iter().map(|&(_, start)| start).sum::<usize>();
         let u = if repeated.is_empty() { u } else { crate::eval::folded_along(PLUS, FoldKind::REDUCE, &repeated, &u, self.span)? };
@@ -251,27 +247,56 @@ impl Back<'_> {
         Ok(crate::primitive::structural::plan(form, &params, &layouts)?.1)
     }
 
-    /// The input that node `j` reads by affine axes, with the map that it reads through: a copy's source, or the one input that a structural step's plan reads positionally, as windows, a transpose or a reshape reads it. `None` for any other node, and where the plan reads its fill.
-    fn walked(&self, j: usize) -> Result<Option<(Read, Mapping)>, Error> {
-        Ok(match &self.nodes[j].origin {
-            Origin::Step(Step::Copy { of, map }) => Some((Read::node(self.nodes, *of), map.clone())),
-            Origin::Step(Step::Structural { inputs, form, params, .. }) =>
-                self.planned(inputs, form, params)?.positional(self.nodes[j].desc.shape()).and_then(|(s, map)| Some((inputs.get(s)?.clone(), map))),
-            _ => None,
-        })
+    fn walked(&self, j: usize) -> Option<(Read, Mapping)> { crate::program::positional_source(self.nodes, j, |j| self.values[j].as_ref()) }
+
+    /// Transposes a complete, unit-stride windows product as a full correlation, without storing or scattering its window cotangent.
+    fn convolved_back(&self, t: &Read, c: &Value, u: &Value) -> Result<Option<(Read, Value)>, Error> {
+        use crate::primitive::{remap, reshape_to, transpose_axes};
+        use rustymath::{signal::{Mode, correlation}, structure::Walk};
+        let mut at = t.of;
+        let (source, map) = loop {
+            let Some((source, map)) = self.walked(at) else { return Ok(None) };
+            if !map.in_order(source.layout.count(), self.nodes[at].desc.shape()) { break (source, map); }
+            at = source.of;
+        };
+        let (copy, shape) = (self.nodes[at].desc.shape(), source.layout.shape());
+        let (base, steps) = map.to_walk(copy);
+        if base != 0 { return Ok(None); }
+        let Some(windows) = Walk::new(&steps, copy, shape).and_then(|w| w.windows(shape))
+            .filter(|w| w.iter().zip(shape).all(|(&[n, w, step], &len)| step == 1 && n + w - 1 == len))
+            .map(|w| w.iter().map(|&[_, w, _]| w).collect::<Vec<_>>())
+        else { return Ok(None); };
+        let s = windows.len();
+        let k = c.shape().first().copied().unwrap_or(1).max(1);
+        if !Mapping::contract(&t.layout, t.layout.shape().len().saturating_sub(1), c.layout(), 0)?.in_order(k, &[k]) { return Ok(None); }
+        let frames: Vec<usize> = (0..s).map(|a| shape[a] + 1 - windows[a]).collect();
+        if crate::array::count(&frames) * k != t.layout.count() { return Ok(None); }
+        let (rest, filters) = (&shape[s..], c.len() / k);
+        let input: Vec<usize> = frames.iter().copied().chain([filters]).collect();
+        let kernel: Vec<usize> = windows.iter().copied().chain([filters]).chain(rest.iter().copied()).collect();
+        let conv = correlation(&input, &kernel, s, Mode::Full, &vec![1; s], true)?;
+        let span = self.span;
+        let u = reshape_to(&input, u, span)?;
+        let padded = match conv.padding { Some(p) => remap(&u, p, None)?, None => u };
+        let a = reshape_to(&conv.size[..2], &remap(&padded, conv.windows, None)?, span)?;
+        // Coefficients hold windows, then source channels, then filters. Correlation reads filters before source channels.
+        let laid: Vec<usize> = windows.iter().chain(rest).copied().chain([filters]).collect();
+        let moved = transpose_axes((0..s).chain(s + 1..=s + rest.len()).chain([s]).collect(), &reshape_to(&laid, c, span)?)?;
+        let b = reshape_to(&conv.size[1..], &remap(&moved, conv.kernel, None)?, span)?;
+        Ok(Some((source, plus_times(&a, &b, false, span)?)))
     }
 
     /// Adds the cotangent of a sum along `axis` of `of` straight to the input that `of` reads, where `of` reads windows that slide along that input's first axis (rustymath's `Slide`), as the forward fold reads them. Each input item takes the sum of the cotangents of the windows that read it: the windows of `u` with `width - 1` zeros at each end of its first axis, summed, which runs as the same sliding fold. Gives false, adding nothing, for any other node, whose fold and read then transpose in turn.
     fn add_slid(&mut self, of: &Read, axis: usize, u: &Value) -> Result<bool, Error> {
         use rustymath::reduce::{FoldRoute, fold_route};
-        let Some((source, map)) = self.walked(of.of)? else { return Ok(false) };
+        let Some((source, map)) = self.walked(of.of) else { return Ok(false) };
         let copy = self.nodes[of.of].desc.shape();
-        if of.layout.shape() != copy { return Ok(false) }
+        if of.layout.shape() != copy { return Ok(false); }
         let FoldRoute::Slide(s) = fold_route(&map, copy, Some(source.layout.shape()), false, &[axis]) else { return Ok(false) };
         // The windows' frames, the copy's other axis along the same source axis, come first in `u`, which holds the folds' results in order.
         let frames: Vec<usize> = s.walk.along[axis].map_or(vec![], |q| s.walk.walking(q).filter(|&r| r != axis).collect());
         let (Ok([1, len, _]), [w], [1], [f]) = (<[usize; 3]>::try_from(&s.dims[..]), &s.widths[..], &s.every[..], &frames[..]) else { return Ok(false) };
-        if *f - usize::from(axis < *f) != 0 || !Steps::in_order(&s.tables) || u.shape().first() != Some(&(len + 1 - w)) { return Ok(false) }
+        if *f - usize::from(axis < *f) != 0 || !Steps::in_order(&s.tables) || u.shape().first() != Some(&(len + 1 - w)) { return Ok(false); }
         let span = self.span;
         let zeros = crate::primitive::reshape_to(&[&[w - 1][..], &u.shape()[1..]].concat(), &zero_of(u), span)?;
         let first = Primitive::CatenateFirst;
@@ -284,38 +309,37 @@ impl Back<'_> {
 
     /// The value that `read` gives of a node that doesn't depend on a seed: a coefficient or a position.
     fn held(&self, read: &Read) -> Result<Value, Error> {
-        match &self.values[read.of] {
-            Some(v) => laid(v, &read.layout, self.span),
-            None => Err(untransposable("a coefficient that depends on a seed")),
-        }
+        match &self.values[read.of] { Some(v) => laid(v, &read.layout, self.span), None => Err(untransposable("a coefficient that depends on a seed")) }
     }
 
     /// Adds the cotangents of `step`'s operands that depend on a seed, from `u`, the cotangent of the node that `step` makes, which `desc` describes.
     fn step(&mut self, step: &Step, u: Value, desc: &Desc) -> Result<(), Error> {
         let span = self.span;
         match step {
-            Step::Map { left, right, plan } => match (plan.p, left) {
-                (Primitive::Arithmetic(Arithmetic::Plus), None) => self.add(right, u),
-                (Primitive::Arithmetic(Arithmetic::Minus), None) => self.add(right, negated(&u, span)?),
-                (Primitive::Arithmetic(Arithmetic::Plus), Some(l)) => { self.add_summed(l, &u, 0)?; self.add_summed(right, &u, 0) }
-                (Primitive::Arithmetic(Arithmetic::Minus), Some(l)) => { self.add_summed(l, &u, 0)?; self.add_summed(right, &negated(&u, span)?, 0) }
-                (Primitive::Arithmetic(Arithmetic::Times), Some(l)) => {
+            Step::Map { left, right, plan } => match (plan.p.facts(left.is_some()).linear, left) {
+                (Some(LinearMap::Same), None) => self.add(right, u),
+                (Some(LinearMap::Negation), None) => self.add(right, negated(&u, span)?),
+                (Some(LinearMap::Sum), Some(l)) => { self.add_summed(l, &u, 0)?; self.add_summed(right, &u, 0) }
+                (Some(LinearMap::Difference), Some(l)) => { self.add_summed(l, &u, 0)?; self.add_summed(right, &negated(&u, span)?, 0) }
+                (Some(LinearMap::Product), Some(l)) => {
                     let (t, c) = if self.live(l.of) { (l, right) } else { (right, l) };
                     // `u` first keeps this node's order of named axes.
                     let v = TIMES.call(Some(&u), &self.held(c)?, span)?;
                     self.add_summed(t, &v, 0)
                 }
-                (Primitive::Arithmetic(Arithmetic::Divide), Some(l)) => {
+                (Some(LinearMap::Quotient), Some(l)) => {
                     let v = Primitive::Arithmetic(Arithmetic::Divide).call(Some(&u), &self.held(right)?, span)?;
                     self.add_summed(l, &v, 0)
                 }
-                (p, _) => Err(untransposable(p.glyph())),
+                _ => Err(untransposable(plan.p.glyph())),
             },
             Step::Convert { of, .. } => {
-                let u = match self.nodes[of.of].desc.kind.dtype { Some(DType::Float(w)) => u.to_float_width(w).described("a cotangent converts to floats")?, _ => u };
+                let u = match self.nodes[of.of].desc.kind.dtype {
+                    Some(DType::Float(w)) => u.to_float_width(w).described("a cotangent converts to floats")?, _ => u
+                };
                 self.add(of, u)
             }
-            Step::Fold { p, kind, axis, seed: None, of } if *p == PLUS => {
+            Step::Fold { p, kind, axis, seed: None, of } if Operation::Fold(*p, *kind).facts(false).and_then(|r| r.linear) == Some(LinearMap::Sum) => {
                 if !kind.scan && self.add_slid(of, *axis, &u)? { return Ok(()); }
                 let v = if kind.scan { reversed_scan(*kind, *axis, &u, span)? } else { spread(&u, *axis, &of.layout, span)? };
                 self.add(of, v)
@@ -327,15 +351,10 @@ impl Back<'_> {
                     let c = swapped(&c)?;
                     let back = if coefficient_left { plus_times(&c, &u, true, span)? } else { plus_times(&u, &c, true, span)? };
                     self.add_summed(t, &back, 2)
-                } else {
-                    let back = product_back(&c, &u, &t.layout, coefficient_left, span)?;
-                    self.add(t, back)
-                }
+                } else if !coefficient_left && let Some((source, back)) = self.convolved_back(t, &c, &u)? { self.add(&source, back) }
+                else { let back = product_back(&c, &u, &t.layout, coefficient_left, span)?; self.add(t, back) }
             }
-            Step::Copy { of, map } => {
-                let (base, steps) = map.to_walk(desc.shape());
-                self.add_walked(&Read::node(self.nodes, *of), base, &steps, u)
-            }
+            Step::Copy { of, map } => { let (base, steps) = map.to_walk(desc.shape()); self.add_walked(&Read::node(self.nodes, *of), base, &steps, u) }
             Step::Structural { inputs, form, params, .. } => {
                 let plan = self.planned(inputs, form, params)?;
                 // A plan that reads one input by affine axes, as a transpose, reversal or reshape does, writes back along its walk, as a copy's does.
@@ -365,15 +384,22 @@ impl Back<'_> {
                 Ok(())
             }
             Step::Gather { of, by } => {
+                if !self.live(of.of) { return Ok(()); }
                 let source = of.desc(self.nodes);
                 let parts = by.parts(|r| self.held(r).expect("a selection's positions are held"));
-                let (plan, _) = crate::primitive::parts_plan(&source.layout, &parts, by.paired, span)?;
-                self.add_at(of, Places::Walk { base: 0, steps: &plan.steps }, &u)
+                let zero = source.layout.zeros(&source.zero());
+                let back = run::selected_at(PLUS, zero, &u, &parts, by.paired, span)?;
+                self.add(of, back)
             }
             Step::At { p, base, items, writes } if *p == PLUS => {
                 if self.live(items.of) {
-                    // The cotangent reads at the writes, in their own shape, and sums down to the items' layout, where a single item spread over every write.
-                    let read = crate::fusion::copied(&u, Layout::from(walk_shape(writes, items.layout.shape())), writes, None).described("a cotangent reads its writes")?;
+                    // The cotangent reads at the writes, then sums where one item spread over several targets.
+                    let read = match writes {
+                        Writes::By(by) => crate::primitive::select(
+                            &u, &by.parts(|r| self.held(r).expect("an accumulation's positions are held")), None, by.paired, None, span)?,
+                        Writes::Map(map) => crate::fusion::copied(&u, Layout::from(walk_shape(map, items.layout.shape())), map, None)
+                            .described("a cotangent reads its writes")?
+                    };
                     self.add_summed(items, &read, 0)?;
                 }
                 self.add(base, u)
@@ -427,7 +453,9 @@ fn laid(v: &Value, layout: &Layout, span: &Span) -> Result<Value, Error> {
 fn flat(v: &Value, span: &Span) -> Result<Value, Error> { if v.is_atom() { Ok(v.clone()) } else { Primitive::Ravel.call(None, v, span) } }
 
 /// The shape that `map` walks, one length for each of its steps: `otherwise` for a map without steps.
-fn walk_shape(map: &Mapping, otherwise: &[usize]) -> Vec<usize> { match map { Mapping::Steps { steps, .. } => steps.iter().map(Steps::len).collect(), _ => otherwise.to_vec() } }
+fn walk_shape(map: &Mapping, otherwise: &[usize]) -> Vec<usize> {
+    match map { Mapping::Steps { steps, .. } => steps.iter().map(Steps::len).collect(), _ => otherwise.to_vec() }
+}
 
 /// The cotangent of a `+` fold along `along` from `u`, the fold's cotangent: each summed item takes its lane's, as a length-1 axis broadcast back to `layout`.
 fn spread(u: &Value, along: usize, layout: &Layout, span: &Span) -> Result<Value, Error> {
@@ -474,7 +502,7 @@ fn product_back(c: &Value, u: &Value, layout: &Layout, coefficient_left: bool, s
     // Where the contraction keeps `c`'s order and `c` holds more items than `u` and the result together, `u` and the result transpose in its place: `(⍉c)+.×u` is `⍉(⍉u)+.×c`, and `u+.×⍉c` is `⍉c+.×⍉u`. A matrix of one row or column transposes without moving items.
     if !matches!(contract, Mapping::Steps { .. }) && csize > u.len() + tsize {
         let result = if coefficient_left { plus_times(&flip(&reshaped([m, n], u)?)?, &reshaped([m, k], c)?, false, span)? }
-            else { plus_times(&reshaped([k, m], c)?, &flip(&reshaped([n, m], u)?)?, false, span)? };
+        else { plus_times(&reshaped([k, m], c)?, &flip(&reshaped([n, m], u)?)?, false, span)? };
         return laid(&flip(&result)?, layout, span);
     }
     // `c` as a matrix whose rows run along its contracted axis, in the order of the keys on the tape operand's, as `+.×` pairs them (`Mapping::contract`).
@@ -487,8 +515,8 @@ fn product_back(c: &Value, u: &Value, layout: &Layout, coefficient_left: bool, s
         }
         _ => rows,
     };
-    let result = if coefficient_left { plus_times(&rows, &reshaped([m, n], u)?, false, span)? }
-        else { plus_times(&reshaped([n, m], u)?, &flip(&rows)?, false, span)? };
+    let result =
+        if coefficient_left { plus_times(&rows, &reshaped([m, n], u)?, false, span)? } else { plus_times(&reshaped([n, m], u)?, &flip(&rows)?, false, span)? };
     laid(&result, layout, span)
 }
 
@@ -541,7 +569,8 @@ impl Ids {
         let zero = self.sources.first().and_then(|(v, _)| tape_of(v)).map_or(Value::integer(0), |t| t.zero.clone());
         let mut sum = Layout::from(vec![offsets.len()]).zeros(&zero);
         for (s, (places, items)) in reads {
-            let read = self.sources[s].0.carrier().expect("a tape value").copied(Layout::from(vec![items.len()]), &Mapping::from(vec![Steps::table(items)]), None).expect("a tangent copies through its ids");
+            let read = self.sources[s].0.carrier().expect("a tape value")
+                .copied(Layout::from(vec![items.len()]), &Mapping::from(vec![Steps::table(items)]), None).expect("a tangent copies through its ids");
             PLUS.at(&mut sum, Places::Offsets(&places), &read, span).expect("tangents of one layout add");
         }
         laid(&sum, &layout, span).expect("ids keep their layout")

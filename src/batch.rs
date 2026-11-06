@@ -1,10 +1,9 @@
 //! Batched maps. A batched run calls the operand of an Each, a Rank or an outer product once, on carriers that hold the map's whole arguments (`Batch`), instead of once for each cell. Each, Rank and an outer product lay their arguments over the map's frame through the agreement that pairs their cells (`Arguments::laid`). A map starts a run through `tried` while the `batch` pref is on. `tried` begins the run's level (`transform::Kind::Batched`) and ends it after the call. A map inside a run widens that run instead, so its operand runs once on the cells of both maps (`Entry::Widen`). Routing hands each call with a batch at that level to `call`, for a primitive or an operation that primitives name, such as a fold by a primitive, or to `route`, for an operation by a dfn. `call` runs the call on the whole arguments at the cells' ranks, by Rank's routes for whole arrays (`eval::whole_cells` and `eval::folded_cells`). A call with no such rule stops the run (`transform::Stop`). The map then calls the operand once for each cell, as it does without batching. A call that would repeat constants into too many items stops the run with a chunk size instead, and the operand runs once on each chunk of cells (`chunked`). Batches hold only compact items of one kind, whose cells of rank 0 are atoms.
 use crate::array::{Footprint, Seen};
-use crate::session;
 use crate::{
     Described, Error, ErrorKind, Function, Span, Value, agreement::{Agree, Agreement, laid_cells, spread},
-    array::{Gather, Layout, Promotion, Storage, Widening, item_dtype}, primitive::{FoldKind, Form, Operation, Primitive},
-    error::{Cause, Kept, Stop}, transform::{Carrier, Ended, Op, Pairing}
+    array::{Gather, Layout, Promotion, Storage, Widening, item_dtype}, error::{Cause, Kept, Stop}, primitive::{FoldKind, Form, Operation, Primitive}, session,
+    transform::{Carrier, Ended, Op, Pairing}
 };
 use rustymath::{agreement::Mapping, buffer::DType, gather::{Steps, Writes}, structure::IndexPart};
 use std::borrow::Cow;
@@ -40,8 +39,8 @@ impl Batch {
     pub(crate) fn holds_functions(&self) -> bool { self.whole.holds_functions() }
     /// Item `i` of every cell, as a batch of atoms.
     pub(crate) fn at(&self, i: usize) -> Value {
-        let items =
-            crate::fusion::copied(&self.whole, self.frame_layout(), &Mapping::from(self.frame_steps(i)), None).expect("a frame's positions lie inside the whole");
+        let items = crate::fusion::copied(&self.whole, self.frame_layout(), &Mapping::from(self.frame_steps(i)), None)
+            .expect("a frame's positions lie inside the whole");
         batch(self.level, items, self.frame)
     }
     /// The items, for code with no rule for batches (`ArrayData::storage`). Item `i` is item `i` of every cell, as a batch of atoms. A kernel that reads a number from such an item gets an error (`Value::computed`). An observing read of it stops the run (`Value::observed`). Either way the map falls back to one call for each cell. Building the items records an `itemwise` row in `•explain`.
@@ -59,9 +58,17 @@ impl Batch {
         let steps: Vec<Steps> = self.frame_steps(0).into_iter().chain(map.tables(layout.shape())).collect();
         Ok(batch(self.level, crate::fusion::copied(&self.whole, self.frame_layout().concat(&layout), &Mapping::Steps { base: 0, steps }, fill)?, self.frame))
     }
-    /// `form` with `params` on `inputs`, for each cell, as `fusion::copy` gives it: the cells under the plan's layout, or one copy of the whole through the map that `structural::plan` plans on a cell's layout, where the call reads only this batch's input. A call with several inputs, a carried parameter or fill, or a plan of another kind stops the run.
-    pub(crate) fn structural(&self, form: &crate::primitive::structural::Form, params: &[Value], inputs: &[&Value], fill: Option<&Value>) -> Result<Value, Error> {
+    /// `form` with `params` on `inputs`, for each cell, as `fusion::copy` gives it: the cells under the plan's layout, or one copy of the whole through the map that `structural::plan` plans on a cell's layout, where the call reads only this batch's input. A parameter-free forward call on two inputs with no fill uses the original call's batch rule. Other multi-input calls, carried parameters or fills, and unsupported plans stop the run.
+    pub(crate) fn structural(
+        &self, form: &crate::primitive::structural::Form, params: &[Value], inputs: &[&Value], fill: Option<&Value>) -> Result<Value, Error> {
         let stop = || Error::from(Stop::new(self.level, Cause::Rule));
+        if let (crate::primitive::structural::Form::Call { p, axis, inverse: false, fill: false }, [x, y]) = (form, inputs)
+            && params.is_empty()
+            && fill.is_none()
+        {
+            // A recorded multi-source copy uses the original call's whole-cell batching, not the unary copy rule below.
+            return p.call_axis(Some(*x), *y, *axis, &crate::fusion::FORCING);
+        }
         if inputs.len() != 1 || params.iter().chain(fill).any(|v| v.carried()) { return Err(stop()); }
         let (layout, plan) = crate::primitive::structural::plan(form, params, &[self.template().layout()])?;
         // A reshape of atoms to no axes gives each cell a rank-0 array, which a batch of atoms can't hold, so the map runs cell by cell (`Form::keeps_atoms`).
@@ -498,12 +505,11 @@ pub(crate) fn bracketed(parts: &[IndexPart<Value>], right: &Value, paired: bool,
     Some(result(level, whole, b.frame, || true, Stop::new(level, Cause::Rule)))
 }
 
-/// Each cell's offsets and selection layout from the shared framed plan. Fill-bearing update plans fall back to ordinary execution.
+/// Each cell's offsets and selection layout from the shared framed plan. Missing positions remain `Steps::FILL`, which reads fill and writes nothing (`Cells`, `placed`).
 pub(crate) fn cell_selection(parts: &[IndexPart<Value>], right: &Value, paired: bool, span: &Span) -> Option<(Layout, Cells)> {
     let (level, Some(b), laid) = framed_parts(parts)? else { return None };
     let frame = b.frame_layout();
     let plan = crate::primitive::framed_plan(&laid, right.layout(), false, paired, &frame, span)?;
-    if plan.steps.iter().any(Steps::fills) { return None; }
     let list = Steps::combined(0, &plan.steps);
     Some((plan.layout.axes(frame.shape().len()..plan.layout.shape().len()).into(), Cells { level, frame, list }))
 }
@@ -584,8 +590,7 @@ fn run(operand: &Function, x: Option<&Side>, y: &Side, frame: &Layout, entry: &E
     match called {
         Ok(value) => whole_over(value, level, frame).ok_or(Ended::Fell("the result")),
         Err(e) => Err(match e.kind {
-            ErrorKind::Stop(stop) if stop.level() == level => Ended::Stopped(stop, None), _ if e.kind.is_control() => Ended::Passed(e),
-            _ => Ended::Fell("an error")
+            ErrorKind::Stop(stop) if stop.level() == level => Ended::Stopped(stop, None), _ if e.kind.is_control() => Ended::Passed(e), _ => Ended::Failed(e)
         }),
     }
 }
@@ -666,6 +671,7 @@ pub(crate) fn tried(
             return fell_back(stop, cells);
         }
         Err(Ended::Fell(reason)) => return fell_back(reason, cells),
+        Err(Ended::Failed(error)) => return fell_back(error, cells),
         Err(Ended::Passed(e)) => return Some(Err(e)),
     };
     let cell = whole.layout().axes(run_frame.shape().len()..whole.shape().len());

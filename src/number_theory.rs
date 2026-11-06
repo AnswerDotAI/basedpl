@@ -3,8 +3,7 @@ use crate::{Described, Error, Number, Value, agreement::{Agree, Agreement}, arra
 use num_bigint::{BigInt, BigUint};
 use num_rational::BigRational;
 use num_traits::{One, ToPrimitive, Zero};
-use rustymath::{convert::saturated, error::Kind};
-use rustymath::number_theory as nt;
+use rustymath::{convert::saturated, error::Kind, number_theory as nt};
 
 fn number(e: &Value) -> Result<Number, Error> {
     match e { Value::Number(n) => Ok(n.clone()), _ => Err(Error::domain("number theory requires numeric arguments")) }

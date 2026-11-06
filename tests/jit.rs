@@ -330,7 +330,7 @@ fn compiled_stages_match_interpreted() {
     }
     dynamic.extend([
         "-|x", "~p∧q", "~p∨q", "--xf+x", "+/b-1", "⌈/b-1", "--x÷0", "--÷x", "--πx", "--x*¯1", "+/(x<y)×x", "+/x≤x", "+/(x<y)∧b<y", "--y|x",
-        "--0.75|x", "--x|0.75",
+        "--0.75|x", "--x|0.75", "yi←¯32768ₓ↦32767ₓ ⋄ forced←yi≡yi ⋄ +/yi-16ₓ×yi÷16ₓ",
     ].map(String::from));
     fixed.extend([
         "--x÷y", "+/x=x", "+/(x<y)∧b<y", "+/h≤k", "+/w≠z", "+/l≤m", "(0.75≤)⍚[- ⊢]xf", "+/yf>0.75", "0ₓ₄+/xf<yf", "+/(xf<yf)×x", "-|xf",
@@ -340,7 +340,9 @@ fn compiled_stages_match_interpreted() {
     ].map(String::from));
     let options = || basedpl::EvalOptions { echo: false, ..Default::default() };
     let sizes = [0, 1, 7, 37].map(|more| 16 * settings::Sizes::DEFAULT.block + more);
-    let selected = std::env::var_os("BASEDPL_JIT_SIZE_INDEX").map(|s| s.to_str().and_then(|s| s.parse::<usize>().ok()).filter(|&i| i < sizes.len()).expect("BASEDPL_JIT_SIZE_INDEX must select an existing size index"));
+    let selected = std::env::var_os("BASEDPL_JIT_SIZE_INDEX").map(|s| {
+        s.to_str().and_then(|s| s.parse::<usize>().ok()).filter(|&i| i < sizes.len()).expect("BASEDPL_JIT_SIZE_INDEX must select an existing size index")
+    });
     for (i, n) in sizes.into_iter().enumerate() {
         if selected.is_some_and(|j| i != j) { continue; }
         for (prefs, cases) in [("", &dynamic), (r#"•prefs ["kinds":"static"]"#, &fixed)] {
@@ -372,7 +374,10 @@ fn compiled_stages_match_interpreted() {
                 let (compiled, runs) = run(Compiles::Always);
                 assert!(runs > 0, "{code} on {n} items ran no compiled part");
                 let interpreted = run(Compiles::Never).0;
-                assert_eq!(basedpl::reference::difference(&compiled, &interpreted, None, 0.0, true), None, "{code} on {n} items; scalar compiled {:?}, interpreted {:?}", compiled.as_number(), interpreted.as_number());
+                assert_eq!(
+                    basedpl::reference::difference(&compiled, &interpreted, None, 0.0, true), None,
+                    "{code} on {n} items; scalar compiled {:?}, interpreted {:?}", compiled.as_number(), interpreted.as_number()
+                );
             }
         }
         eprintln!("checked size {i}: {n} items, {} dynamic and {} static cases", dynamic.len(), fixed.len());

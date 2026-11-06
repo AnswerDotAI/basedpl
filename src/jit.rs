@@ -76,7 +76,10 @@ pub enum Value { Input(usize), Step(usize) }
 
 /// An elementwise operation. Integers wrap at their width, and bytes compare and order as unsigned. `Maximum` and `Minimum` give `y` where floats `x` and `y` are equal or either is NaN, as rustymath's `maximum` and `minimum` do. `Floor` rounds a float down to a whole number, keeping `-0`. `MultiplyAdd(z)` gives `x × y + z` for floats, rounded once. `Compare` gives a Boolean: floats compare exactly, NaN equal to nothing, and Booleans only by `Eq` and `Ne`. `And`, `Or` and `Xor` take Booleans or integers, bit by bit, and `Not` takes Booleans. `Select(m)` gives `x` where the Boolean `m` is true and `y` where it's false. `Convert` converts its argument to the step's type as `element::Converts` does with no tolerance: a float to an integer by its floor, saturating at the integer's range, and 0 for NaN; an integer to a narrower one by wrapping; a Boolean to 1 or 0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Op { Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Compare(Cmp), And, Or, Xor, Not, Select(Value), MultiplyAdd(Value) }
+pub enum Op {
+    Add, Subtract, Multiply, Divide, Maximum, Minimum, Negate, Magnitude, Sqrt, Floor, Convert, Compare(Cmp), And, Or, Xor, Not, Select(Value),
+    MultiplyAdd(Value)
+}
 
 /// A comparison.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -152,10 +155,7 @@ impl Kernel {
     }
 
     /// Whether this kernel, or one that differs only in its constants, ran or compiled before. It counts as seen from now on.
-    pub fn seen(&self) -> bool {
-        let (key, mut k) = (self.key(), kernels());
-        k.contains_key(&key) || kept(&mut k, &key).insert(key, None).is_some()
-    }
+    pub fn seen(&self) -> bool { let (key, mut k) = (self.key(), kernels()); k.contains_key(&key) || kept(&mut k, &key).insert(key, None).is_some() }
 
     /// This kernel with each constant's value cleared, as the table of kernels keys it.
     fn key(&self) -> Kernel {
@@ -164,7 +164,9 @@ impl Kernel {
     }
 
     /// Each constant input's bits, in input order. A run passes them in the scalar slots after the others (`Compiled::run`).
-    pub fn constants(&self) -> impl Iterator<Item = u64> + '_ { self.inputs.iter().filter_map(|i| match *i { Input::Constant(_, bits) => Some(bits), _ => None }) }
+    pub fn constants(&self) -> impl Iterator<Item = u64> + '_ {
+        self.inputs.iter().filter_map(|i| match *i { Input::Constant(_, bits) => Some(bits), _ => None })
+    }
 
     /// The scalar slots before the constants: one for each scalar input and each strided array's stride, then two for runs where an input reads runs.
     fn scalar_slots(&self) -> usize {
@@ -175,7 +177,9 @@ impl Kernel {
     /// This kernel compiled afresh.
     pub fn compile(&self) -> Result<Compiled, String> {
         let (module, entry) = self.defined()?;
-        let arrays = self.inputs.iter().map(|i| match i { Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) | Input::Constant(..) => 0 }).sum();
+        let arrays = self.inputs.iter().map(|i| match i {
+            Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) | Input::Constant(..) => 0
+        }).sum();
         let scalars = self.scalar_slots() + self.constants().count();
         let most = if self.folds.iter().any(|&(_, k)| self.steps[k].ty == Ty::Bool) { COUNTED } else { usize::MAX };
         Ok(Compiled { _module: Mutex::new(module), entry, counts: [arrays, scalars, self.stores.len(), self.folds.len()], most })
@@ -216,9 +220,9 @@ impl Kernel {
         let fits = match s.op {
             Op::Convert => true, Op::Compare(c) => s.ty == Ty::Bool && same && (x != Ty::Bool || matches!(c, Cmp::Eq | Cmp::Ne)),
             Op::And | Op::Or | Op::Xor => !s.ty.float() && x == s.ty && same, Op::Not => s.ty == Ty::Bool && x == Ty::Bool,
-            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool, Op::MultiplyAdd(_) => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == s.ty,
-            Op::Divide | Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same,
-            _ => s.ty != Ty::Bool && x == s.ty && same
+            Op::Select(_) => x == s.ty && y == Some(s.ty) && tys[2] == Ty::Bool,
+            Op::MultiplyAdd(_) => s.ty.float() && x == s.ty && y == Some(s.ty) && tys[2] == s.ty,
+            Op::Divide | Op::Sqrt | Op::Floor => s.ty.float() && x == s.ty && same, _ => s.ty != Ty::Bool && x == s.ty && same
         };
         if fits { Ok(()) } else { Err(format!("step {k}: {:?} doesn't take {tys:?} for a {:?} result", s.op, s.ty)) }
     }
@@ -258,7 +262,9 @@ impl Kernel {
         for (k, s) in self.steps.iter().enumerate() {
             let width = if s.ty != Ty::Bool { s.ty.bytes() } else {
                 let made = if matches!(s.op, Op::Convert) && self.ty(s.x) != Ty::Bool { 1 } else {
-                    [Some(s.x), s.y].into_iter().flatten().map(|v| match v { Value::Input(j) => self.inputs[j].ty().bytes(), Value::Step(j) => widths[j] }).max().unwrap_or(1)
+                    [Some(s.x), s.y].into_iter().flatten().map(|v| match v {
+                        Value::Input(j) => self.inputs[j].ty().bytes(), Value::Step(j) => widths[j]
+                    }).max().unwrap_or(1)
                 };
                 if wanted[k] == 0 { made } else { made.min(wanted[k]) }
             };
@@ -268,7 +274,10 @@ impl Kernel {
     }
 
     /// The running totals of the kernel's float sum or product (`running`), where it has one: a maximum or minimum is exact in any association, so it keeps `UNROLL` sets, as an integer fold does. Each pass of the main loop steps every total once, one vector of totals for each vector of items, and the loops over single vectors and items step one vector of them.
-    pub fn totals(&self) -> Option<usize> { self.folds.iter().filter(|(fold, _)| matches!(fold, Fold::Sum | Fold::Product)).map(|&(_, k)| self.steps[k].ty).find(|t| t.float()).map(|t| running(t.bytes() as usize)) }
+    pub fn totals(&self) -> Option<usize> {
+        self.folds.iter().filter(|(fold, _)| matches!(fold, Fold::Sum | Fold::Product)).map(|&(_, k)| self.steps[k].ty).find(|t| t.float())
+            .map(|t| running(t.bytes() as usize))
+    }
 
     /// The type of value `v`.
     fn ty(&self, v: Value) -> Ty { match v { Value::Input(k) => self.inputs[k].ty(), Value::Step(k) => self.steps[k].ty } }
@@ -733,8 +742,8 @@ fn arith(b: &mut FunctionBuilder, op: Op, ty: Ty, x: Ir, y: Option<Ir>) -> Ir {
         (Op::Subtract, Some(y)) => { if ty.float() { b.ins().fsub(x, y) } else { b.ins().isub(x, y) } } (Op::Multiply, Some(y)) => multiply(b, ty, x, y),
         (Op::Divide, Some(y)) => b.ins().fdiv(x, y), (Op::Maximum, Some(y)) => extreme(b, ty, true, x, y),
         (Op::Minimum, Some(y)) => extreme(b, ty, false, x, y), (Op::Negate, _) => { if ty.float() { b.ins().fneg(x) } else { b.ins().ineg(x) } }
-        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => magnitude(b, x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x), (Op::Floor, _) => b.ins().floor(x),
-        _ => unreachable!("`check` gives each operation its arguments")
+        (Op::Magnitude, _) => match ty { Ty::U8 => x, _ if ty.float() => magnitude(b, x), _ => b.ins().iabs(x) }, (Op::Sqrt, _) => b.ins().sqrt(x),
+        (Op::Floor, _) => b.ins().floor(x), _ => unreachable!("`check` gives each operation its arguments")
     }
 }
 

@@ -1,9 +1,8 @@
 use crate::cancel::check;
-use crate::session;
 use crate::{
     Described, Error, ErrorKind, Function, Span, Value, array::generated_len, number::Numeric, primitive::{
         Extension::{self, Items, Whole}, Item::{Number, Text, Vector}, Primitive, numeric
-    }
+    }, session
 };
 use rustymath::{buffer::{DType, FloatWidth, View}, error::Kind, layout::FRESH};
 use std::borrow::Cow;
@@ -13,6 +12,20 @@ pub(crate) type Native = fn(Option<&Value>, &Value, &Span) -> Result<Value, Erro
 /// A native called for its effect. It returns its result, and whether the result is shy, as an assignment's is.
 pub(crate) type Effect = fn(Option<&Value>, &Value, &Span) -> Result<(Value, bool), Error>;
 
+/// A value-native's observation boundary: duals give primals, known trace counts/free values can be read, and unknown data or linear tangents stop before legacy readers. Active natives keep symbolic arguments.
+pub(crate) fn observed_call(call: Native, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+    if !session().transforming() { return call(left, right, span); }
+    let read = |value: &Value| {
+        crate::transform::walk(value, &mut |mut leaf| {
+            while let Some(carrier) = leaf.carrier() {
+                leaf = carrier.observed()?.ok_or_else(|| Error::new(ErrorKind::Unsupported, "a native system function can't read a linear tangent"))?;
+            }
+            Ok(leaf.clone())
+        })
+    };
+    let (x, y) = (left.map(read).transpose()?, read(right)?);
+    call(x.as_ref(), &y, span)
+}
 #[derive(Clone, Debug)]
 pub(crate) enum Call {
     Value(Native),
@@ -221,7 +234,7 @@ pub(crate) fn inverse(f: &SystemFunction, left: Option<&Value>, right: &Value, s
     }
     let (call, valence) = f.inverse.ok_or_else(|| Error::domain("this function has no known inverse"))?;
     valence.check(&format!("{}⁻¹", f.name), left)?;
-    call(left, right, span)
+    observed_call(call, left, right, span)
 }
 
 const HOST_FACTS: &[&str] = &["args", "version", "env", "width", "height", #[cfg(not(web))] "cwd", #[cfg(not(web))] "temp",];

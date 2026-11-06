@@ -44,7 +44,7 @@ pub(crate) fn forcing() -> Forcing { FORCING.fetch_add(1, Ordering::Relaxed); Fo
 
 /// Why the running evaluation must stop: an interrupt, or a passed deadline. It first calls the poll, when `POLL_INTERVAL` has passed since the poll last ran, outside the lock. `Ok` when no evaluation runs. It's rustymath's interrupt check in this process, which its worker threads call too.
 fn stopped() -> Result<(), rustymath::error::Error> {
-    if FORCING.load(Ordering::Relaxed) > 0 { return Ok(()) }
+    if FORCING.load(Ordering::Relaxed) > 0 { return Ok(()); }
     let now = Instant::now();
     let (interrupt, poll, late) = {
         let mut stops = stops();

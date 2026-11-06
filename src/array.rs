@@ -86,7 +86,9 @@ impl Layout {
     }
     /// The array with this layout holding a copy of `item` at every position, in compact storage where `item`'s kind allows it. An empty array takes `item`'s prototype. A carried atom broadcasts through its carrier (`fusion::copied`), so no array holds a running level's data as items: a tape value as a copy of itself, a dual as a dual of its broadcast parts.
     pub(crate) fn filled(&self, item: &Value) -> Value {
-        if item.is_atom() && item.carried() { return crate::fusion::copied(item, self.clone(), &Mapping::Single, None).expect("a carried atom broadcasts to any layout"); }
+        if item.is_atom() && item.carried() {
+            return crate::fusion::copied(item, self.clone(), &Mapping::Single, None).expect("a carried atom broadcasts to any layout");
+        }
         let n = self.count();
         let mut data = Gather::new(&[item], n);
         data.fill(item, n);
@@ -211,7 +213,9 @@ impl ArrayData {
         }
     }
     /// The bound on the items: the one stored with owned items, a view's base's, or a pending array's planned one.
-    fn range(&self) -> Range { match &self.data { Data::Own(_) => self.range, Data::Of(base, ..) => base.range(), Data::Node(p) => p.range, Data::Carried(_) => Range::ANY } }
+    fn range(&self) -> Range {
+        match &self.data { Data::Own(_) => self.range, Data::Of(base, ..) => base.range(), Data::Node(p) => p.range, Data::Carried(_) => Range::ANY }
+    }
     /// Whether mixed storage holds the items, directly or as a view's base's. A pending array computes compact items, and a carrier holds a running level's data.
     fn mixed(&self) -> bool {
         match &self.data {
@@ -455,7 +459,9 @@ impl Value {
         (!pending.is_forced()).then(|| (pending, view_shared || Arc::strong_count(array) != 1 || Arc::strong_count(pending) != 1))
     }
     /// An array of `layout` whose items `pending` computes when they're first read.
-    pub(crate) fn deferred(layout: Layout, pending: Arc<Pending>) -> Self { Self::Array(Arc::new(ArrayData { layout, data: Data::Node(pending), range: Range::ANY })) }
+    pub(crate) fn deferred(layout: Layout, pending: Arc<Pending>) -> Self {
+        Self::Array(Arc::new(ArrayData { layout, data: Data::Node(pending), range: Range::ANY }))
+    }
     /// The pending array that this value alone holds, taken out of it, as a held value of a pending program holds one (`fusion::held`). `None` for any other value, which drops as usual.
     pub(crate) fn into_pending(self) -> Option<Arc<Pending>> {
         let Self::Array(a) = self else { return None };
@@ -466,7 +472,9 @@ impl Value {
         Self::from_carrier(primal.layout().clone(), Carrier::Dual(Arc::new(crate::derivative::Dual::new(tag, primal, tangent))))
     }
     /// An array of `layout` that holds `carrier` in place of its items.
-    pub(crate) fn from_carrier(layout: Layout, carrier: Carrier) -> Self { Self::Array(Arc::new(ArrayData { layout, data: Data::Carried(carrier), range: Range::ANY })) }
+    pub(crate) fn from_carrier(layout: Layout, carrier: Carrier) -> Self {
+        Self::Array(Arc::new(ArrayData { layout, data: Data::Carried(carrier), range: Range::ANY }))
+    }
     /// The running level's data that this value carries: an array's, in place of its items, or a carried atom's (`transform::Carrier`).
     #[inline]
     pub(crate) fn carrier(&self) -> Option<&Carrier> { match self { Self::Array(a) => a.carrier(), Self::Carried(carrier) => Some(carrier), _ => None } }
@@ -518,7 +526,9 @@ impl Value {
         if generated_len(layout.shape())? != data.len() { return Err(Kind::Length.into()); }
         Ok(Value::Array(Arc::new(ArrayData { layout, data: Data::Own(data), range: Range::ANY })))
     }
-    pub fn booleans(layout: impl Into<Layout>, data: Vec<bool>) -> Result<Self, ErrorKind> { Self::from_storage(layout, Storage::Compact(Buffer::Booleans(data))) }
+    pub fn booleans(layout: impl Into<Layout>, data: Vec<bool>) -> Result<Self, ErrorKind> {
+        Self::from_storage(layout, Storage::Compact(Buffer::Booleans(data)))
+    }
 
     pub fn floats(layout: impl Into<Layout>, width: FloatWidth, data: impl IntoIterator<Item = f64>) -> Result<Self, ErrorKind> {
         Self::from_storage(layout, Storage::Compact(Buffer::Floats(FloatBuf::collect(width, data.into_iter()))))
@@ -527,22 +537,23 @@ impl Value {
         Self::from_storage(layout, Storage::Compact(Buffer::Characters(data)))
     }
     /// The positions `items`, each below `bound`, written straight to the width that stores them: the narrowest that holds every position below `bound`, or the `int` width under static kinds (`ordinary_width`).
-    pub(crate) fn positions<P: num_traits::AsPrimitive<i64>>(layout: impl Into<Layout>, bound: usize, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
+    pub(crate) fn positions<P: num_traits::AsPrimitive<i64>>(
+        layout: impl Into<Layout>, bound: usize, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
         Self::integers_at(layout, ordinary_width(Width::below(bound)), false, items).map(|v| v.ranged(below(bound)))
     }
     /// Fixed integers of `width`, written straight from `items`. An item that `width` doesn't hold wraps to its low bits.
-    pub(crate) fn fixed_integers<P: num_traits::AsPrimitive<i64>>(layout: impl Into<Layout>, width: Width, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
-        Self::integers_at(layout, width, true, items)
-    }
+    pub(crate) fn fixed_integers<P: num_traits::AsPrimitive<i64>>(
+        layout: impl Into<Layout>, width: Width, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> { Self::integers_at(layout, width, true, items) }
     /// The integers `items` written straight to `width`, as fixed integers where `fixed` holds and ordinary ones otherwise.
-    fn integers_at<P: num_traits::AsPrimitive<i64>>(layout: impl Into<Layout>, width: Width, fixed: bool, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
+    fn integers_at<P: num_traits::AsPrimitive<i64>>(
+        layout: impl Into<Layout>, width: Width, fixed: bool, items: impl Iterator<Item = P>) -> Result<Self, ErrorKind> {
         Self::from_storage(layout, Storage::Compact(with_width!(width, T => T::buffer(items.map(|i| T::from_i64(i.as_())).collect()))).fixed(fixed))
     }
     /// `positions` from a buffer of them. Stored as 32-bit integers, they keep the buffer, with no pass over it.
     pub(crate) fn positions_u32(layout: impl Into<Layout>, bound: usize, data: Vec<u32>) -> Result<Self, ErrorKind> {
         match ordinary_width(Width::below(bound)) {
-            Width::I32 => Self::from_storage(layout, Storage::Compact(Buffer::Integers(IntBuf::I32(bytemuck::allocation::cast_vec(data))))).map(|v| v.ranged(below(bound))),
-            _ => Self::positions(layout, bound, data.into_iter()),
+            Width::I32 => Self::from_storage(layout, Storage::Compact(Buffer::Integers(IntBuf::I32(bytemuck::allocation::cast_vec(data)))))
+                .map(|v| v.ranged(below(bound))), _ => Self::positions(layout, bound, data.into_iter())
         }
     }
     /// Ordinary integers at the width that stores them (`ordinary_width`).
@@ -564,7 +575,9 @@ impl Value {
     /// An array of `layout` holding `buffer`. Integer storage takes the width that stores ordinary integers (`ordinary_width`).
     pub fn from_buffer(layout: impl Into<Layout>, buffer: Buffer) -> Result<Self, ErrorKind> { Self::from_buffer_at(layout, buffer, None) }
     /// An array of `buffer`, as fixed integers of width `fixed` where that's given, and otherwise as `from_buffer` gives it (`Storage::at`).
-    pub(crate) fn from_buffer_at(layout: impl Into<Layout>, buffer: Buffer, fixed: Option<Width>) -> Result<Self, ErrorKind> { Self::from_bounded(layout, buffer, fixed, Range::ANY) }
+    pub(crate) fn from_buffer_at(layout: impl Into<Layout>, buffer: Buffer, fixed: Option<Width>) -> Result<Self, ErrorKind> {
+        Self::from_bounded(layout, buffer, fixed, Range::ANY)
+    }
     /// `from_buffer_at`'s array, for the results of a computation that `range` bounds. Ordinary integers under dynamic kinds take the narrowest width that holds the coarsened bound where it's finite, with no pass over them (`Storage::narrowed`), and record it.
     pub(crate) fn from_bounded(layout: impl Into<Layout>, buffer: Buffer, fixed: Option<Width>, range: Range) -> Result<Self, ErrorKind> {
         let range = crate::plan::coarse(range);
@@ -573,12 +586,16 @@ impl Value {
     }
     /// This new array with `range`, coarsened (`plan::coarse`), as the bound on its items, where it holds ordinary integers under dynamic kinds. Any other value as it is.
     pub(crate) fn ranged(mut self, range: Range) -> Self {
-        if let Self::Array(a) = &mut self && let Some(a) = Arc::get_mut(a) && crate::settings::int_storage().is_none() && matches!(a.data, Data::Own(Storage::Compact(Buffer::Integers(_)))) { a.range = crate::plan::coarse(range); }
+        if let Self::Array(a) = &mut self && let Some(a) = Arc::get_mut(a) && crate::settings::int_storage().is_none()
+            && matches!(a.data, Data::Own(Storage::Compact(Buffer::Integers(_)))) { a.range = crate::plan::coarse(range); }
         self
     }
     /// The bound on this array's items: the one the steps that made it recorded (`ArrayData::range`), within [0, 1] for Booleans, whose items always lie there. `Range::ANY` for any other value.
     pub(crate) fn range(&self) -> Range {
-        match self { Self::Array(a) if self.dtype() == Some(DType::Boolean) => a.range().meet(Range::of_dtype(DType::Boolean)), Self::Array(a) => a.range(), _ => Range::ANY }
+        match self {
+            Self::Array(a) if self.dtype() == Some(DType::Boolean) => a.range().meet(Range::of_dtype(DType::Boolean)), Self::Array(a) => a.range(),
+            _ => Range::ANY
+        }
     }
     /// This array with its ordinary integers stored at `dtype` where they're stored narrower, as a program stores each step's items at the dtype its plan describes (`program::run`); any other value as it is. An atom keeps its number, which has no storage width.
     pub(crate) fn stored_at(self, dtype: DType) -> Self {
@@ -587,13 +604,6 @@ impl Value {
         let Some(view) = self.view() else { return self };
         let buffer = match Buffer::cast(view, dtype) { Ok(buffer) => buffer, Err(_) => return self };
         Self::from_storage(self.layout().clone(), Storage::Compact(buffer)).unwrap_or(self)
-    }
-    /// This array with its ordinary integers stored at the narrowest width that holds them (`Storage::narrowed`), as a program's result is stored when it leaves the program (`program::run::lone`); any other value, a pending array among them, as it is.
-    pub(crate) fn narrowed(self) -> Self {
-        if self.is_atom() || self.fixed_width().is_some() || !matches!(self.dtype(), Some(DType::Integer(_))) || self.view().is_none() { return self; }
-        let layout = self.layout().clone();
-        let buffer = match self.into_buffer() { Ok(buffer) => buffer, Err(value) => return value };
-        Self::from_buffer(layout, buffer).expect("an array's items fit its layout")
     }
     /// A frontend buffer imported at its supplied dtype, without integer narrowing.
     pub fn imported_buffer(layout: impl Into<Layout>, buffer: Buffer) -> Result<Self, ErrorKind> {
@@ -674,7 +684,9 @@ impl Value {
         Ok(())
     }
     /// Complex results of an operation, which stay complex even where no item has an imaginary part (`Number::complex`).
-    pub(crate) fn complex(layout: impl Into<Layout>, data: ComplexBuf) -> Result<Self, ErrorKind> { Self::from_storage(layout, Storage::Compact(Buffer::Complexes(data))) }
+    pub(crate) fn complex(layout: impl Into<Layout>, data: ComplexBuf) -> Result<Self, ErrorKind> {
+        Self::from_storage(layout, Storage::Compact(Buffer::Complexes(data)))
+    }
     /// Whether every number, including those in nested arrays, is exact. Non-finite values in integer storage count as exact.
     pub fn is_exact(&self) -> bool { self.exact_domain() == Some(true) }
     /// Whether all items are Boolean or exact integers, with no active transformation.
@@ -768,11 +780,10 @@ impl Value {
         if self.dtype() == Some(DType::Float(width)) { return Ok(self.clone()); }
         match self.view() {
             Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)) => {
-                with_float_width!(width, F => F::build(self.layout().clone(), crate::element::read_as::<F>(self).ok_or(Kind::Domain)?.into_owned())).ok_or_else(|| Kind::Domain.into())
+                with_float_width!(width, F => F::build(self.layout().clone(), crate::element::read_as::<F>(self).ok_or(Kind::Domain)?.into_owned()))
+                    .ok_or_else(|| Kind::Domain.into())
             }
-            Some(View::Complexes(z)) => {
-                Self::complex(self.layout().clone(), ComplexBuf::collect(width.into(), z.widened().iter().copied()))
-            }
+            Some(View::Complexes(z)) => Self::complex(self.layout().clone(), ComplexBuf::collect(width.into(), z.widened().iter().copied())),
             _ => {
                 self.layout().collect(self.elements().map(|e| e.to_float_width(width)).collect::<Result<Vec<_>, _>>()?, self.prototype().to_float_width(width)?)
             }
@@ -786,10 +797,7 @@ impl Value {
         }
     }
     /// This value with each number as a real float (`ₐ`), item by item through `Number::to_real`: a complex number gives its real part, and an exact number a float at the current width. Its layout stays. DOMAIN for a character, and for a value that a running level carries.
-    pub(crate) fn real(&self) -> Result<Self, ErrorKind> {
-        let numeric = Numeric::current();
-        self.each_number(&|n| n.to_real(numeric))
-    }
+    pub(crate) fn real(&self) -> Result<Self, ErrorKind> { let numeric = Numeric::current(); self.each_number(&|n| n.to_real(numeric)) }
     /// This value with each number in the unbounded integer and rational domain (`ᵣ`), item by item through `Number::to_rational`. Its layout stays. DOMAIN for a character, and for a value that a running level carries.
     pub(crate) fn rational(&self) -> Result<Self, ErrorKind> { self.each_number(&Number::to_rational) }
     /// This value with `f` of each of its numbers, at any depth, keeping its layout. An empty array's prototype converts too. DOMAIN for any other item.
@@ -926,8 +934,7 @@ impl Value {
     pub(crate) fn relaid(&self, layout: Layout) -> Result<Self, ErrorKind> {
         if element_count(layout.shape())? != self.len() { return Err(Kind::Length.into()); }
         match self {
-            Self::Array(a) => Ok(ArrayData::view(a, layout.unique_names())), Self::Carried(c) => Ok(c.view(layout)),
-            _ => Self::new(layout, vec![self.clone()])
+            Self::Array(a) => Ok(ArrayData::view(a, layout.unique_names())), Self::Carried(c) => Ok(c.view(layout)), _ => Self::new(layout, vec![self.clone()])
         }
     }
     /// The array with no names on its frame, the axes before its cells of rank `rank`, as a view.
@@ -1018,7 +1025,8 @@ impl Value {
     }
     /// `cells` assembled by trailing-axis agreement into an array whose frame is `frame`, as `Layout::assemble` and `mix` assemble them. The cells' layout is `cell_layout` where the caller knows it, and otherwise the layout that the cells agree on (`Layout::assembled`).
     pub(crate) fn assemble_layout(
-        frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening, chosen: Option<&Value>, cell_layout: Option<&Layout>) -> Result<Self, ErrorKind> {
+        frame: &Layout, cells: &[Self], empty_cell: &Self, widening: Widening, chosen: Option<&Value>, cell_layout: Option<&Layout>
+    ) -> Result<Self, ErrorKind> {
         if element_count(frame.shape())? != cells.len() { return Err(Kind::Length.into()); }
         if cells.is_empty() { return frame.concat(cell_layout.unwrap_or(empty_cell.layout())).collect(vec![], empty_cell.prototype()); }
         let cell_layout = match cell_layout { Some(layout) => layout.clone(), None => Layout::assembled(cells.iter().map(Value::layout))? };

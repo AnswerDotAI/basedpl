@@ -276,8 +276,8 @@ pub(crate) fn extend_indices(left: &Value, array: &mut Value, descend: bool, wri
 }
 
 fn extend_fields<'a>(array: &mut Value, fields: impl IntoIterator<Item = (usize, &'a Value)>, descend: bool, write: bool) -> Result<bool, Error> {
-    let wanted = fields.into_iter().map(|(axis, f)| Ok((axis, crate::keyed::selected_keys(f)?)))
-        .collect::<Result<Vec<_>, crate::ErrorKind>>().described("invalid named axis extension")?;
+    let wanted = fields.into_iter().map(|(axis, f)| Ok((axis, crate::keyed::selected_keys(f)?))).collect::<Result<Vec<_>, crate::ErrorKind>>()
+        .described("invalid named axis extension")?;
     extend_keys(array, &wanted, descend, write)
 }
 
@@ -298,7 +298,9 @@ fn claims(parts: &[IndexPart<Option<Value>>]) -> Vec<IndexPart<(Option<&str>, us
 /// The positions that the index values of `a` give along an axis of length `size`, as `structure::positions` reads them: a negative value counts back from the end, and a value outside the axis, one that isn't a whole number within the comparison tolerance in force (which only Mathish makes nonzero) or a NaN gives `Steps::FILL`. Storage that isn't compact reads each value through `Items::positions`.
 pub(crate) fn positions(a: &Value, size: usize) -> Result<Vec<usize>, Error> {
     match a.view() {
-        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => rustymath::structure::positions(view, size, crate::number::Numeric::current().tolerance).map_err(Error::from),
+        Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) => {
+            rustymath::structure::positions(view, size, crate::number::Numeric::current().tolerance).map_err(Error::from)
+        }
         _ => Ok(rustymath::structure::counted_positions(&a.as_items().positions().described(rustymath::structure::NOT_WHOLE)?, size)),
     }
 }
@@ -428,7 +430,9 @@ impl Selection {
         };
         let data = match &self.targets {
             // A carried array reads through its carrier, as `select` reads it, where a `Gather` would hold a batch's items one at a time.
-            Targets::Offsets(offsets) if array.carrier().is_some() => return crate::fusion::copied_at(array, offsets.clone(), layout.clone(), fill).map_err(invalid),
+            Targets::Offsets(offsets) if array.carrier().is_some() => {
+                return crate::fusion::copied_at(array, offsets.clone(), layout.clone(), fill).map_err(invalid);
+            }
             Targets::Offsets(offsets) => {
                 let mut data = Gather::new(&[array], offsets.len());
                 data.at(array, offsets, fill);
@@ -491,10 +495,7 @@ impl Selection {
         }
         let offsets = match &self.targets {
             Targets::Offsets(offsets) => offsets,
-            Targets::Paths(paths) => {
-                for (i, path) in paths.iter().enumerate() { array.write_path(path, self.item(&values, i))? }
-                return Ok(());
-            }
+            Targets::Paths(paths) => { for (i, path) in paths.iter().enumerate() { array.write_path(path, self.item(&values, i))? } return Ok(()); }
             Targets::Walk { base, steps } => {
                 if array.is_atom() || matches!(self.frame, Frame::Direct) {
                     return self.listed().expect("a walk lists its targets").write_targets(array, &values);
@@ -675,23 +676,14 @@ pub(crate) fn parts_plan(layout: &rustymath::layout::Layout, parts: &[IndexPart<
     Ok((plan, direct))
 }
 
-/// Whether `part` holds positions that the running trace computes, such as an argument's, and so can't read: a traced array of integers, Booleans or floats, or a traced atom of integers or Booleans, that isn't a free name's value or computed from free names alone (`Traced::held`). An atom of floats can be `∞` or `¯∞`, which select whole axes. A step selects by such parts at replay (`trace::gathered`).
-fn traced_positions(part: &Value) -> bool {
-    part.carrier().and_then(crate::transform::Carrier::traced).is_some_and(|t| {
-        t.held().is_none() && { let desc = t.desc(); desc.kind.dtype.is_some_and(|d| d.kind() <= 1 || d.kind() == 2 && !desc.atom) }
-    })
-}
+/// Whether a selector's kind and atom flag fix it as numeric positions. A float atom may be `∞` or `¯∞`, which select whole axes instead.
+pub(crate) fn numeric_positions(desc: &crate::plan::Desc) -> bool { desc.kind.dtype.is_some_and(|d| d.kind() <= 1 || d.kind() == 2 && !desc.atom) }
+
+/// Whether a recording computes these numeric positions. Do not observe a free value here: it remains replayed data, not a value-specialized assumption.
+fn traced_positions(part: &Value) -> bool { part.carrier().and_then(crate::transform::Carrier::traced).is_some_and(|t| numeric_positions(&t.desc())) }
 
 /// Whether `part` carries an older transform level than `right`: a coefficient of an outer level, which `right`'s tape records as a Gather's positions (`trace::Arg::of`).
 fn older_level(part: &Value, right: &Value) -> bool { part.carrier().zip(right.carrier()).is_some_and(|(p, r)| p.level() < r.level()) }
-
-/// The plan that `parts_plan` gives with zeros in place of the parts whose positions the running trace computes (`traced_positions`), for the description of a step that selects by them at replay: a selection's layout, and whether it reads one item, depend only on its parts' layouts.
-pub(crate) fn traced_plan(layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<(Plan, bool), Error> {
-    let zeroed = |v: &Value| {
-        if !traced_positions(v) { v.clone() } else if v.is_atom() { Value::integer(0) } else { v.layout().filled(&Value::integer(0)) }
-    };
-    parts_plan(layout, &parts.iter().map(|part| part.as_ref().map(zeroed)).collect::<Vec<_>>(), paired, span)
-}
 
 /// The offset of the item that one integer position on each axis of `right` selects. `None` for parts of any other kind, and for a position outside its axis, which the general path reports.
 fn item_offset(right: &Value, parts: &[IndexPart<Value>]) -> Option<usize> {
@@ -767,7 +759,8 @@ fn axis_part(value: &Value, layout: &rustymath::layout::Layout, axis: usize) -> 
     let size = layout.shape()[axis];
     let selector = match value.view() {
         Some(View::Booleans(_) | View::Integers(_) | View::Floats(_)) if !value.is_atom() => AxisSelector::Indices {
-            layout: rustymath::layout::Layout::clone(value.layout()), positions: rustymath::structure::index_table(std::sync::Arc::new(value.clone()), size, crate::number::Numeric::current().tolerance)? },
+            layout: rustymath::layout::Layout::clone(value.layout()),
+            positions: rustymath::structure::index_table(std::sync::Arc::new(value.clone()), size, crate::number::Numeric::current().tolerance)? },
         _ => {
             let positions = positions(&value, size)?;
             match positions[..] {

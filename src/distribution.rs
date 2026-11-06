@@ -1,14 +1,12 @@
 use crate::cancel::check;
-use crate::session;
 use crate::{
     Described, Error, Number, Span, Value, array::generated_len, element::{Stored, read_as}, keyed, number::Numeric, primitive::{numeric, pervade, real},
-    system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
+    session, system::{Call, Valence::{Ambivalent, Dyadic, Monadic}, natives}
 };
 use rand::rngs::ChaCha8Rng;
-use rustymath::random::{Counter, Items, Key};
 pub(crate) use rustymath::distribution::Distribution;
-use rustymath::{Arg, Unary as _, distribution::{Cdf, Invalid, Pdf, Quantile, standard}};
-use rustymath::{Float as _, buffer::FloatWidth, error::Kind, with_float_width};
+use rustymath::random::{Counter, Items, Key};
+use rustymath::{Arg, Float as _, Unary as _, buffer::FloatWidth, distribution::{Cdf, Invalid, Pdf, Quantile, standard}, error::Kind, with_float_width};
 use std::sync::{Arc, Mutex, PoisonError};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -59,10 +57,7 @@ fn construct(constructor: &Constructor, right: &Value) -> Result<Distribution, E
             let n = numeric(&right.at(0))?.nonnegative_integer::<u64>().described("binomial trials must be a nonnegative whole number")?;
             Distribution::binomial(n, p)
         }
-        Constructor::Poisson => {
-            let [rate] = parameters(right)?;
-            Distribution::poisson(rate)
-        }
+        Constructor::Poisson => { let [rate] = parameters(right)?; Distribution::poisson(rate) }
     };
     made.map_err(|e| Error::domain(e.to_string()))
 }
@@ -191,7 +186,9 @@ pub(crate) fn drawn(generator: Option<&Generator>, f: impl Fn(&mut Stream) -> Re
 
 /// `f` drawing from `generator`, or from the session's generator where it's `None`, where `f` also takes the cell it draws for. Outside a batched run, `f` draws once, for cell 0. In a batched run, `f` draws for each cell of the run in turn (`batch::each_cell`), a call each in cell order, as the cells would draw unbatched. `primitive::drawn_value` uses the cell to give each draw that cell of each batched argument (`batch::cell`).
 pub(crate) fn drawn_cells(generator: Option<&Generator>, f: impl Fn(usize, &mut Stream) -> Result<Value, Error>) -> Result<Value, Error> {
-    drawing(generator, |batched, stream| match batched { Some((level, frame)) => crate::batch::each_cell(level, frame, |c| f(c, stream)), None => f(0, stream) })
+    drawing(generator, |batched, stream| match batched {
+        Some((level, frame)) => crate::batch::each_cell(level, frame, |c| f(c, stream)), None => f(0, stream)
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

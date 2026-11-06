@@ -1,6 +1,5 @@
 use crate::cancel::check;
-use crate::session;
-use crate::{Described, Error, ErrorKind, Number, Span, Value, array::Storage, keyed, number::Numeric, primitive::{numeric, real}};
+use crate::{Described, Error, ErrorKind, Number, Span, Value, array::Storage, keyed, number::Numeric, primitive::{numeric, real}, session};
 use rustymath::hashing::{HashMap, HashMapExt};
 use rustymath::{buffer::{Buffer, ComplexBuf, DType, FloatBuf, FloatWidth, Ints, View, Width}, error::Kind};
 use std::io::Read;
@@ -147,7 +146,9 @@ pub(crate) fn typed_column(reader: &str, name: &str, column: Value, typed: Optio
             b.extend_from(Buffer::kept(n.view()?, dtype).ok()?.view(), 0..1).then_some(b)
         }),
     }.ok_or_else(lost)?;
-    if fixed || numeric.is_static() || !matches!(dtype, DType::Integer(_)) { return Value::from_storage([column.len()], Storage::Compact(buffer).fixed(fixed)).described("invalid column"); }
+    if fixed || numeric.is_static() || !matches!(dtype, DType::Integer(_)) {
+        return Value::from_storage([column.len()], Storage::Compact(buffer).fixed(fixed)).described("invalid column");
+    }
     Value::from_buffer([column.len()], buffer).described("invalid column")
 }
 

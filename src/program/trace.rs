@@ -1,11 +1,11 @@
 //! The program that a running level builds from values that carry a type and a layout but no items (`Traced`). A trace builds one from a dfn's call, which later calls replay (`programmed`). Reverse mode's tape builds one from a `∂` call's linear calls on tangents, which `derivative::tape` runs backwards. Both record steps through one `Tracer`, and each traced value's `role` says which its program serves.
 
+use super::{Node, Nodes, Origin, Program, Read, Recent, Selector, Step, Writes, run};
 use crate::plan::Desc;
-use super::{Node, Nodes, Origin, Program, Read, Recent, Selector, Step, run};
 use crate::{
-    Error, ErrorKind, error::Described, Function, Number, Span, Value, array::{Layout, Seen, Shape, Storage}, eval::Place, number::Numeric, plan::{self, Operand},
-    primitive::{FoldKind, Operation, Primitive, structural::Form}, session,
-    error::{Cause, Kept, Stop}, transform::{Carrier, Ended, Kind, Op, Pairing}
+    Error, ErrorKind, Function, Number, Span, Value, array::{Layout, Seen, Shape, Storage}, error::Described, error::{Cause, Kept, Stop}, eval::Place,
+    number::Numeric, plan::{self, Operand}, primitive::{FoldKind, Operation, Primitive, structural::Form}, session,
+    transform::{Carrier, Ended, Kind, Op, Pairing}
 };
 use rustymath::{agreement::Mapping, buffer::{Buffer, DType}, domain::Range, structure::IndexPart};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, atomic::{AtomicBool, Ordering}};
@@ -74,7 +74,8 @@ impl Tracer {
             let unread = Value::integer(0);
             let mut inputs = vec![&unread; b.inputs.len()];
             for (i, _, value) in &names { inputs[*i] = value; }
-            run::values(&program, &crate::program::planned(&program), &inputs, &crate::fusion::FORCING).ok().map(|values| run::read(&program, &values, &program.result))
+            run::values(&program, &crate::program::planned(&program), &inputs, &crate::fusion::FORCING).ok()
+                .map(|values| run::read(&program, &values, &program.result))
         });
         b.nodes = program.nodes;
         value
@@ -128,7 +129,9 @@ impl Traced {
     }
     /// The items as code with no rule for traced values reads them: a trace's are atoms outside the program. A tape value has none, so a read of one is a bug in code that handles tangents.
     pub(crate) fn storage(&self) -> &Storage {
-        if self.role == Role::Tape { panic!("a tape value has no items: code that reads a tangent missed a tape value, at\n{}", std::backtrace::Backtrace::force_capture()); }
+        if self.role == Role::Tape {
+            panic!("a tape value has no items: code that reads a tangent missed a tape value, at\n{}", std::backtrace::Backtrace::force_capture());
+        }
         Carrier::built(&self.items, rustymath::events::Route::TracedItems, self.read.layout.count(), |_| self.outside(Shape::EMPTY))
     }
     /// Whether code with no rule for traces has read the items (`storage`).
@@ -143,7 +146,9 @@ impl Traced {
     /// This value under `layout`, which has as many items: the same read, laid out again. A layout with a renderer can't be in a program.
     pub(crate) fn view(&self, layout: Layout) -> Value {
         match crate::plan::copy(&self.desc(), &layout) {
-            Ok(desc) if self.read.of != OUTSIDE => traced(self.level, self.role, Read { layout: desc.layout.clone(), ..self.read.clone() }, &desc, &self.tracer),
+            Ok(desc) if self.read.of != OUTSIDE => {
+                traced(self.level, self.role, Read { layout: desc.layout.clone(), ..self.read.clone() }, &desc, &self.tracer)
+            }
             _ => self.outside(layout.shape().into()),
         }
     }
@@ -184,7 +189,8 @@ impl Traced {
         let parameters = params.iter().map(|v| Arg::of(v, level, role)).collect::<Result<Vec<_>, _>>().map_err(fail)?;
         let fill = fill.map(|v| Arg::of(v, level, role)).transpose().map_err(fail)?;
         let values = params.iter().map(|v| match v.carrier_at(level).and_then(Carrier::traced) {
-            Some(t) => Ok(match t.count() { Some(count) => count, None => t.observed("a structural parameter that the program computes")? }.clone()), None => Ok(v.clone())
+            Some(t) => Ok(match t.count() { Some(count) => count, None => t.observed("a structural parameter that the program computes")? }.clone()),
+            None => Ok(v.clone()),
         }).collect::<Result<Vec<_>, Error>>()?;
         let layout = {
             let layouts: Vec<&Layout> = args.iter().map(|a| &a.desc().layout).collect();
@@ -197,10 +203,8 @@ impl Traced {
         let source = Desc { kind, ..args[0].desc().clone() };
         let atoms = form.keeps_atoms() && layout.shape().is_empty() && args.iter().chain(&fill).all(|a| a.desc().atom);
         let desc = if atoms { plan::item(&source) } else { plan::copy(&source, &layout) }.map_err(fail)?;
-        let step = Step::Structural {
-            inputs: args.into_iter().map(|a| a.read(&self.tracer)).collect(), form: form.clone(),
-            params: parameters.into_iter().map(|a| a.read(&self.tracer)).collect(), fill: fill.map(|a| a.read(&self.tracer)),
-        };
+        let step = Step::Structural { inputs: args.into_iter().map(|a| a.read(&self.tracer)).collect(), form: form.clone(),
+            params: parameters.into_iter().map(|a| a.read(&self.tracer)).collect(), fill: fill.map(|a| a.read(&self.tracer)) };
         Ok(node(level, role, &self.tracer, desc, step))
     }
     /// The items of `value`, this value, that `parts` select, where a part holds positions that the program computes (`primitive::select`): a gather step (`gather`).
@@ -245,10 +249,7 @@ pub(crate) fn per_item(left: Option<&Value>, right: &Value) -> Result<(), Error>
 }
 
 /// Stops the running trace before a random draw or `⍎`. A replay of the trace's program would run neither, though each must run on every call. `Ok` where no trace runs.
-pub(crate) fn each_call(reason: &'static str) -> Result<(), Error> {
-    if session().tracing().is_none() { return Ok(()); }
-    Err(stopped(reason))
-}
+pub(crate) fn each_call(reason: &'static str) -> Result<(), Error> { if session().tracing().is_none() { return Ok(()); } Err(stopped(reason)) }
 
 /// Notes that the running trace's program must key its arguments' exact lengths, for code that unrolls a loop by a traced length or builds a constant from a traced shape. Steps and views that hold lengths need no note: `build` finds them. Nothing where no trace runs.
 pub(crate) fn exact(reason: &'static str) { if let Some((_, tracer)) = session().tracing() { tracer.exact(reason); } }
@@ -263,9 +264,8 @@ pub(crate) fn stopped(reason: &'static str) -> Error {
 /// The error of a call that a program for `role` at level `level` can't hold, for `reason`: a trace's stop, after noting the reason for `•explain`. On a tape, a value that holds the running trace's data stops that trace (`unholdable`), which runs the call again untraced. Otherwise a tape gives UNSUPPORTED ERROR, because reverse mode can't then transpose the call.
 fn failed(role: Role, level: u64, tracer: &Tracer, reason: &'static str) -> Error {
     match role {
-        Role::Trace => { tracer.stopping(reason); Stop::new(level, Cause::Rule).into() }
-        Role::Tape if reason == HOLDS_TRACED => stopped(reason),
-        Role::Tape => Error::new(ErrorKind::Unsupported, format!("∂ can't record {reason}")),
+        Role::Trace => { tracer.stopping(reason); Stop::new(level, Cause::Rule).into() } Role::Tape if reason == HOLDS_TRACED => stopped(reason),
+        Role::Tape => Error::new(ErrorKind::Unsupported, format!("∂ can't record {reason}"))
     }
 }
 
@@ -273,7 +273,10 @@ fn failed(role: Role, level: u64, tracer: &Tracer, reason: &'static str) -> Erro
 fn unholdable(value: &Value) -> &'static str {
     let Some((level, _)) = session().tracing() else { return "a value that programs can't hold" };
     let mut held = false;
-    let _ = crate::transform::visit(value, &mut |leaf| { held |= leaf.carrier().is_some_and(|c| c.level() == level); Ok(()) });
+    let _ = crate::transform::visit(value, &mut |leaf| {
+        held |= leaf.carrier().is_some_and(|c| c.level() == level);
+        Ok(())
+    });
     if held { HOLDS_TRACED } else { "a value that programs can't hold" }
 }
 
@@ -296,13 +299,14 @@ fn selector(args: Vec<IndexPart<Arg<'_>>>, paired: bool, tracer: &Tracer) -> Sel
     Selector { parts: args.into_iter().map(|part| part.map(|arg| arg.read(tracer))).collect(), paired }
 }
 
-/// The items of `source` that `parts` select, where a part holds positions that the program computes, such as an argument's (`primitive::select`), in the program that `tracer` builds at level `level` for `role`: a step that plans and reads them at each run (`Step::Gather`), described by planning the parts' layouts (`primitive::traced_plan`). `paired` pairs index arrays, as `.[]` does.
+/// The items of `source` that `parts` select, recorded at `level` for `role`. The admitted arguments supply the result's layout without reading symbolic positions (`Arg::positions`); the Gather reads their values at replay. `paired` pairs index arrays, as `.[]` does.
 fn gather(level: u64, role: Role, tracer: &Arc<Tracer>, source: &Value, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<Value, Error> {
     let fail = |reason| failed(role, level, tracer, reason);
     let (of, args) = match (Arg::of(source, level, role), part_args(parts, level, role)) {
         (Ok(of), Ok(args)) => (of, args), (Err(reason), _) | (_, Err(reason)) => return Err(fail(reason))
     };
-    let (plan, direct) = crate::primitive::traced_plan(source.layout(), parts, paired, span)?;
+    let shapes = args.iter().map(|part| part.as_ref().try_map(Arg::positions)).collect::<Result<Vec<_>, _>>().map_err(fail)?;
+    let (plan, direct) = crate::primitive::parts_plan(source.layout(), &shapes, paired, span)?;
     let desc = if direct && plan.layout.shape().is_empty() { plan::item(of.desc()) } else { plan::copy(of.desc(), &plan.layout.into()) }.map_err(fail)?;
     let step = Step::Gather { of: of.read(tracer), by: selector(args, paired, tracer) };
     Ok(node(level, role, tracer, desc, step))
@@ -314,6 +318,18 @@ pub(crate) fn gathered(source: &Value, parts: &[IndexPart<Value>], paired: bool,
     gather(level, Role::Trace, &tracer, source, parts, paired, span)
 }
 
+/// Combines `items` into the positions that `parts` select from `base`, retaining those positions as inputs of the running recording (`run::selected_at`).
+pub(crate) fn added(p: Primitive, base: &Value, items: &Value, parts: &[IndexPart<Value>], paired: bool) -> Result<Value, Error> {
+    let (level, tracer) = session().tracing().expect("a trace runs");
+    let planned = (|| -> Result<_, &'static str> {
+        let (b, i, args) = (Arg::of(base, level, Role::Trace)?, Arg::of(items, level, Role::Trace)?, part_args(parts, level, Role::Trace)?);
+        let desc = plan::at(p, b.desc(), i.desc(), Numeric::current())?;
+        Ok((b, i, args, desc))
+    })();
+    let (b, i, args, desc) = planned.map_err(stopped)?;
+    let step = Step::At { p, base: b.read(&tracer), items: i.read(&tracer), writes: Writes::By(selector(args, paired, &tracer)) };
+    Ok(node(level, Role::Trace, &tracer, desc, step))
+}
 /// An argument of a call that a program records: a traced value's read and description, or a value that the program holds as it is.
 enum Arg<'a> { Traced(Read, Desc), Held(&'a Value, Desc) }
 
@@ -331,6 +347,13 @@ impl<'a> Arg<'a> {
     fn operand(&self) -> Operand<'_> { match self { Arg::Held(value, desc) => desc.operand(value), Arg::Traced(_, desc) => Operand::Traced(desc) } }
     /// The argument's description.
     fn desc(&self) -> &Desc { match self { Arg::Traced(_, desc) | Arg::Held(_, desc) => desc } }
+    /// A layout representative for positions: stored values retain structural sentinels and keys; symbolic numeric positions use zeros without reading items.
+    fn positions(&self) -> Result<Value, &'static str> {
+        if let Arg::Held(value, _) = self && value.carrier().is_none() { return Ok((*value).clone()); }
+        let desc = self.desc();
+        if !crate::primitive::numeric_positions(desc) { return Err("a selector whose layout depends on values"); }
+        Ok(if desc.atom { Value::integer(0) } else { desc.layout.filled(&Value::integer(0)) })
+    }
     /// The argument's read: its own, or the read of a new node that holds the value.
     fn read(self, tracer: &Tracer) -> Read {
         match self {
@@ -362,16 +385,17 @@ impl<'a> Arg<'a> {
     }
 }
 
-/// The call of `op` on `left` and `right` at level `level`, as routing hands it over (`transform::call`), or as a tape records a linear call (`derivative::tape::taped`). A pervasive primitive, a seeded or unseeded fold by a primitive, a product of two, also on stacks of matrices (`Pairing::Matrices`), and a primitive that combines items into a base at writes (`Pairing::At`) become steps, with the results their plans give (`plan`). For a trace, `≢` and `⍴` of a traced value read its layout (`shape_query`), and another primitive runs its own code, which reads only the shapes of traced values, moves them through their carrier (`Carrier::structural`, `copied` and `view`), or stops at a read of their items. Any other call, and one that no plan covers, stops a trace, or gives UNSUPPORTED ERROR on a tape (`failed`).
+/// The call of `op` on `left` and `right` at level `level`, as routing hands it over (`transform::call`), or as a tape records a linear call (`derivative::tape::taped`). A pervasive primitive, a seeded or unseeded fold by a primitive, a product of two, also on stacks of matrices (`Pairing::Matrices`), and a primitive that combines items into a base at writes (`Pairing::At`) become steps, with the results their plans give (`plan`). For a trace, `≢` and `⍴` of a traced value read its layout (`shape_query`), and another primitive runs its own code, which reads only the shapes of traced values, moves them through their carrier (`Carrier::structural`, `copied` and `view`), or stops at a read of their items. System functions run their own code: value natives observe arguments through `system::observed_call`, active natives retain them, and effects stop at their owner. Any other call, and one that no plan covers, stops a trace, or gives UNSUPPORTED ERROR on a tape (`failed`).
 pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) -> Option<Result<Value, Error>> {
     let t = left.into_iter().chain([right]).find_map(|v| v.carrier_at(level)?.traced())?;
     let (tracer, role) = (t.tracer.clone(), t.role);
     let stop = |reason: &'static str| Some(Err(failed(role, level, &tracer, reason)));
     if role == Role::Trace && left.is_none() && t.read.of != OUTSIDE
         && let Op::Operation(Operation::Primitive(p @ (Primitive::Tally | Primitive::Shape)), Pairing::Axis(None)) = &op {
-        return Some(shape_query(*p, t, right, level));
-    }
+            return Some(shape_query(*p, t, right, level));
+        }
     let (operation, pairing) = match op {
+        Op::System(..) if role == Role::Trace => return None,
         Op::Operation(Operation::Primitive(p), _) if role == Role::Trace && !p.scalar(left.is_some()) => return None,
         Op::Operation(operation, pairing @ (Pairing::Axis(_) | Pairing::Matrices | Pairing::At(_))) => (operation, pairing),
         _ => return stop("a call that programs don't take yet"),
@@ -382,7 +406,9 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) 
     let desc = |arg: &Arg| arg.desc().clone();
     let numeric = Numeric::current();
     let planned = match (operation, pairing, &args.0) {
-        (Operation::Primitive(p), Pairing::Axis(None), x) => plan::map(p, x.as_ref().map(Arg::operand).as_ref(), &args.1.operand(), left.is_some_and(|l| std::ptr::eq(l, right)), numeric).map(Planned::Map),
+        (Operation::Primitive(p), Pairing::Axis(None), x) => {
+            plan::map(p, x.as_ref().map(Arg::operand).as_ref(), &args.1.operand(), left.is_some_and(|l| std::ptr::eq(l, right)), numeric).map(Planned::Map)
+        }
         (Operation::Fold(p, kind), Pairing::Axis(axis), x) => {
             let (seed, y) = (x.as_ref().map(desc), desc(&args.1));
             plan::fold_desc(p, kind, axis, seed.as_ref(), &y, numeric).map(|(d, axis)| Planned::Fold(p, kind, d, axis))
@@ -397,22 +423,24 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) 
         _ => Err("a call that programs don't take yet"),
     };
     let planned = match planned { Ok(planned) => planned, Err(reason) => return stop(reason) };
-    if role == Role::Trace && let Planned::Map(m) = &planned && let Some(kept) = crate::pervasive::unchanged(&m.plan, left, right) { return Some(Ok(kept.clone())); }
+    if role == Role::Trace && let Planned::Map(m) = &planned && let Some(kept) = crate::pervasive::unchanged(&m.plan, left, right) {
+        return Some(Ok(kept.clone()));
+    }
     // An unseeded `+` fold of a traced `×` runs as one product where its operands allow (`contraction`), and an unseeded fold of a copy that repeats items folds the copy's source (`fold_of_copy`). A tape records the same steps, and its transpose runs them as products and folds.
     if let (Planned::Fold(p, kind, d, axis), None, Arg::Traced(read, _)) = (&planned, &args.0, &args.1) {
         let mut builder = tracer.builder();
         if let Some(read) = super::contraction::routed(&mut builder.nodes, *p, *kind, read, &[*axis], d, numeric) {
-                let desc = read.desc(&builder.nodes);
-                drop(builder);
-                return Some(Ok(traced(level, role, read, &desc, &tracer)));
-            }
+            let desc = read.desc(&builder.nodes);
+            drop(builder);
+            return Some(Ok(traced(level, role, read, &desc, &tracer)));
+        }
     }
     let (left, right) = (args.0.map(|x| x.read(&tracer)), args.1.read(&tracer));
     let (desc, step) = match planned {
         Planned::Map(m) => (m.desc, Step::Map { left, right, plan: m.plan }),
         Planned::Fold(p, kind, d, axis) => (d, Step::Fold { p, kind, axis, seed: left, of: right }),
         Planned::Product(f, g, d, stacked) => (d, Step::Product { f, g, left: left.expect("a planned product has a left argument"), right, stacked }),
-        Planned::At(p, d, writes) => (d, Step::At { p, base: left.expect("an accumulation has a base"), items: right, writes }),
+        Planned::At(p, d, writes) => (d, Step::At { p, base: left.expect("an accumulation has a base"), items: right, writes: Writes::Map(writes) }),
     };
     Some(Ok(node(level, role, &tracer, desc, step)))
 }
@@ -527,7 +555,7 @@ pub(crate) fn build(
         Ok(value) => value,
         Err(e) if e.kind.is_control() && !matches!(e.kind, crate::ErrorKind::Stop(s) if s.level() == level) => return end(Ended::Passed(e)),
         Err(e) => {
-            return end(match e.kind { crate::ErrorKind::Stop(s) => Ended::Stopped(s, tracer.builder().stopped), _ => Ended::Fell("an error") });
+            return end(match e.kind { crate::ErrorKind::Stop(s) => Ended::Stopped(s, tracer.builder().stopped), _ => Ended::Failed(e) });
         }
     };
     let (mut reads, mut fell) = (Vec::new(), None);
@@ -579,8 +607,7 @@ pub(crate) enum Descs { Leaf(Desc), Nested(Layout, Vec<Descs>) }
 fn alike(a: &Descs, b: &Descs, exact: bool) -> bool {
     match (a, b) {
         (Descs::Leaf(x), Descs::Leaf(y)) => x.kind == y.kind && x.atom == y.atom && x.range == y.range && laid_alike(&x.layout, &y.layout, exact),
-        (Descs::Nested(l, xs), Descs::Nested(m, ys)) => l == m && xs.len() == ys.len() && xs.iter().zip(ys).all(|(x, y)| alike(x, y, exact)),
-        _ => false,
+        (Descs::Nested(l, xs), Descs::Nested(m, ys)) => l == m && xs.len() == ys.len() && xs.iter().zip(ys).all(|(x, y)| alike(x, y, exact)), _ => false
     }
 }
 
@@ -657,7 +684,11 @@ impl Recording {
             let mut new = |n: &Option<Arc<str>>| match n {
                 Some(n) if self.named.contains(n) => Some(match fresh.iter().find(|(old, _)| old == n) {
                     Some((_, f)) => f.clone(),
-                    None => { let f = crate::system::renamed(n); fresh.push((n.clone(), f.clone())); f }
+                    None => {
+                        let f = crate::system::renamed(n);
+                        fresh.push((n.clone(), f.clone()));
+                        f
+                    }
                 }),
                 n => n.clone(),
             };
@@ -688,7 +719,8 @@ impl Entry {
     /// The free values, read again for a call: `None` at an index that isn't an input. A name is read from where it's bound, and a datum from `data`, the data of the function that the call runs. The outer `None` means a free value no longer holds what the trace assumed, so the outcome doesn't apply to the call.
     fn reread(&self, data: &[Value]) -> Option<Vec<Option<Value>>> {
         self.captured.iter().map(|c| match (c.free.found(data)?, &c.expect) {
-            (Found::Value(v), Expect::Value(desc)) if desc.matches(&v) && Desc::of(&v).is_some_and(|d| d.range.within(desc.range.lo, desc.range.hi)) && laid_alike(&desc.layout, v.layout(), self.exact()) => Some(Some(v)),
+            (Found::Value(v), Expect::Value(desc)) if desc.matches(&v) && Desc::of(&v).is_some_and(|d| d.range.within(desc.range.lo, desc.range.hi))
+                    && laid_alike(&desc.layout, v.layout(), self.exact()) => { Some(Some(v)) }
             (Found::Function(f), Expect::Function(g)) if f.identity() == g.identity() => Some(None),
             (Found::Value(v), Expect::Same(w)) if v.same(w) => Some(None), (Found::Value(v), Expect::Held(w)) if v.same(w) => Some(Some(v)), _ => None
         }).collect()
@@ -806,6 +838,7 @@ pub(crate) fn programmed(
                     Outcome::Stopped { reason: noted.unwrap_or(stop.cause().reason()), any_key: stop.cause().kept() == Kept::Always }
                 }
                 Err(Ended::Fell(reason)) => Outcome::Stopped { reason, any_key: false },
+                Err(Ended::Failed(error)) => { crate::explain::fallback(error, right.len()); Outcome::Stopped { reason: "an error", any_key: false } }
                 Err(Ended::Passed(error)) => return Some(Err(error)),
             };
             let entry = Entry { key: key.clone(), captured, outcome: outcome.clone(), changes, served: AtomicBool::new(false) };
@@ -833,13 +866,14 @@ pub(crate) fn programmed(
     }).collect();
     // A program that keys length classes holds no views, so each result is its node's value as the run gives it (`run::read`).
     let result = run::values(program, &crate::program::planned(program), &inputs, span).map(|values| match &recording.result {
-        Descs::Leaf(_) => run::read(program, &values, &program.result),
-        // A nested result's leaves are the program's result and its outputs, each laid out as the result's description says.
-        nested => {
-            let nodes = std::iter::once(program.result.of).chain(program.outputs.iter().copied());
-            nested.built(&mut nodes.zip(nested.leaves()).map(|(j, desc)| run::read(program, &values, &Read::new(j, desc.layout.clone()))))
-        }
-    }).and_then(|value| recording.renamed(value));
+            Descs::Leaf(_) => run::read(program, &values, &program.result),
+            // A nested result's leaves are the program's result and its outputs, each laid out as the result's description says.
+            nested => {
+                let nodes = std::iter::once(program.result.of).chain(program.outputs.iter().copied());
+                nested.built(&mut nodes.zip(nested.leaves()).map(|(j, desc)| run::read(program, &values, &Read::new(j, desc.layout.clone()))))
+            }
+        })
+        .and_then(|value| recording.renamed(value));
     if result.is_ok() { rustymath::events::taken(rustymath::events::Route::Trace, right.len()); }
     crate::explain::program(event, program.nodes.iter().filter(|n| matches!(n.origin, Origin::Step(_))).count(), || recording.listing(&key));
     Some(result)

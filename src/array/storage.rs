@@ -1,13 +1,13 @@
 //! Array storage: rustymath's compact buffers or mixed values, the borrowed `Items` view, BPL's promotion rules for compact dtypes, and `Gather`, which builds new storage from the items of existing arrays. `Gather::walk` reads them through rustymath's `gather::Steps`.
 
 use super::*;
+use num_complex::Complex;
 pub(crate) use rustymath::gather::Steps;
 use rustymath::{
     buffer::{Buffer, ComplexBuf, Complexes, DType, Element, FloatBuf, Floats, IntBuf, Ints, Source, View, Width}, error::Kind,
     with_complexes, with_floats, with_ints, with_width
 };
 use std::sync::{OnceLock, atomic::{AtomicU8, AtomicU32, Ordering::Relaxed}};
-use num_complex::Complex;
 
 /// An array's items: a rustymath buffer, whose items share one dtype, or mixed values. Mixed storage keeps each item's dtype. It also remembers what it works out about its items.
 #[derive(Clone, Debug)]
@@ -91,6 +91,7 @@ pub(crate) fn ordinary_width(width: Width) -> Width { static_width(width).unwrap
 pub(crate) fn item_dtype(item: &Value) -> Option<DType> {
     match item { Value::Number(n) => n.dtype(), Value::Character(_) => Some(DType::Character), _ => None }
 }
+fn item_kind(item: &Value) -> crate::plan::Kind { if item_dtype(item).is_some() { crate::plan::Kind::value(item) } else { crate::plan::Kind::default() } }
 /// Whether `item` is a weak number (`Number::is_weak`).
 fn is_weak(item: &Value) -> bool { matches!(item, Value::Number(n) if n.is_weak()) }
 /// Whether `a` and `b` are items of one representation, such as two 64-bit floats, two exact integers or two characters (`Number::same_variant`).
@@ -114,7 +115,7 @@ pub(super) fn compact_dtype(data: &[Value], widening: Widening) -> Option<(DType
     };
     let weak = data[..run].iter().all(is_weak);
     let prefix = crate::plan::Kind::stored(Some(head), first.fixed_width(), weak);
-    let joined = crate::plan::Kind::join([prefix].into_iter().chain(data[run..].iter().map(crate::plan::Kind::item)), widening);
+    let joined = crate::plan::Kind::join([prefix].into_iter().chain(data[run..].iter().map(item_kind)), widening);
     joined.dtype.map(|dtype| (dtype, joined.fixed.is_some()))
 }
 
@@ -185,13 +186,11 @@ impl Storage {
     /// `buffer` as storage, with the range that picks its width (`narrowed`, given the range `known` that the step that computed it gives, if any) and `Range::ANY` otherwise: integers fixed at `fixed` where that's given, and otherwise ordinary integers at the width that stores them. Other items stay compact.
     pub(crate) fn at(buffer: Buffer, fixed: Option<Width>, known: Option<Range>) -> (Self, Range) {
         match (buffer, fixed) {
-            (Buffer::Integers(v), Some(width)) if v.view().tag() == width => (Self::Fixed(v), Range::ANY),
-            (Buffer::Integers(v), Some(width)) => {
-                (Self::Compact(with_width!(width, T => with_ints!(v.view(), |v| T::buffer(v.iter().map(|&n| T::from_i64(n.into())).collect())))).fixed(true), Range::ANY)
-            }
-            (Buffer::Integers(IntBuf::U8(v)), None) => Self::narrowed(v, known), (Buffer::Integers(IntBuf::I16(v)), None) => Self::narrowed(v, known),
-            (Buffer::Integers(IntBuf::I32(v)), None) => Self::narrowed(v, known), (Buffer::Integers(IntBuf::I64(v)), None) => Self::narrowed(v, known),
-            (buffer, _) => (Self::Compact(buffer), Range::ANY),
+            (Buffer::Integers(v), Some(width)) if v.view().tag() == width => (Self::Fixed(v), Range::ANY), (Buffer::Integers(v), Some(width)) => (
+                Self::Compact(with_width!(width, T => with_ints!(v.view(), |v| T::buffer(v.iter().map(|&n| T::from_i64(n.into())).collect())))).fixed(true),
+                Range::ANY), (Buffer::Integers(IntBuf::U8(v)), None) => Self::narrowed(v, known),
+            (Buffer::Integers(IntBuf::I16(v)), None) => Self::narrowed(v, known), (Buffer::Integers(IntBuf::I32(v)), None) => Self::narrowed(v, known),
+            (Buffer::Integers(IntBuf::I64(v)), None) => Self::narrowed(v, known), (buffer, _) => (Self::Compact(buffer), Range::ANY)
         }
     }
     pub(super) fn set_fixed(&mut self, fixed: bool) {
@@ -201,11 +200,14 @@ impl Storage {
     }
     pub(super) fn into_buffer(self) -> Option<Buffer> { match self { Self::Compact(b) => Some(b), Self::Fixed(b) => Some(Buffer::Integers(b)), _ => None } }
     /// The ordinary integers `data` at the width that stores them (`ordinary_width`), with the range that picks it. Under dynamic kinds that's the narrowest width that holds `known`, where a step that computed them gives that range, or else that holds their least and greatest items, which rustymath finds together in one pass at the width of `T`. They keep `T` where it's narrower. Under static kinds the `int` width holds them with no pass, unless `T` is wider, and the range is `Range::ANY`.
-    pub(crate) fn narrowed<T: Whole>(data: Vec<T>, known: Option<Range>) -> (Self, Range) where rustymath::reduce::Max: rustymath::reduce::Reduction<T, Total = T>,
-        rustymath::reduce::Min: rustymath::reduce::Reduction<T, Total = T> {
+    pub(crate) fn narrowed<T: Whole>(data: Vec<T>, known: Option<Range>) -> (Self, Range) where
+        rustymath::reduce::Max: rustymath::reduce::Reduction<T, Total = T>, rustymath::reduce::Min: rustymath::reduce::Reduction<T, Total = T> {
         let int = crate::settings::int_storage();
         if let Some(int) = int && int.join(T::WIDTH) == int { return (Self::within(data, int), Range::ANY); }
-        let range = known.unwrap_or_else(|| { let (min, max) = rustymath::reduce::extremes(&data); Range { lo: min.to_i64() as f64, hi: max.to_i64() as f64 } });
+        let range = known.unwrap_or_else(|| {
+            let (min, max) = rustymath::reduce::extremes(&data);
+            Range { lo: min.to_i64() as f64, hi: max.to_i64() as f64 }
+        });
         let width = ordinary_width(Width::narrowest(range.lo as i64, range.hi as i64));
         (Self::within(data, if T::WIDTH.join(width) == T::WIDTH { width } else { T::WIDTH }), range)
     }
@@ -335,8 +337,8 @@ impl<'a> Items<'a> {
         Some(match self {
             Self::Fixed(v) => Value::Number(Number::fixed(0, v.tag())), Self::Compact(View::Booleans(_)) => Value::Number(Number::from_bool(false)),
             Self::Compact(View::Integers(_)) => Value::integer(0), Self::Compact(View::Floats(v)) => Value::Number(Number::float(0.0, v.tag())),
-            Self::Compact(View::Complexes(v)) => Value::Number(Number::float(0.0, v.tag().into())), Self::Compact(View::Characters(_)) => Value::Character(char::FILL),
-            Self::Values(_) => return None
+            Self::Compact(View::Complexes(v)) => Value::Number(Number::float(0.0, v.tag().into())),
+            Self::Compact(View::Characters(_)) => Value::Character(char::FILL), Self::Values(_) => return None
         })
     }
     /// The dtype of these items, or `None` for mixed ones.
@@ -355,7 +357,9 @@ impl<'a> Items<'a> {
             Self::Compact(View::Booleans(v)) => Value::Number(Number::from_bool(v[i])),
             Self::Compact(View::Integers(v)) => Value::integer(v.get(i)),
             Self::Compact(View::Floats(v)) => Value::Number(Number::float(with_floats!(v, |x| f64::from(x[i])), v.tag())),
-            Self::Compact(View::Complexes(v)) => Value::Number(Number::complex(with_complexes!(v, |x| Complex64::new(x[i].re.into(), x[i].im.into())), v.tag().into())),
+            Self::Compact(View::Complexes(v)) => {
+                Value::Number(Number::complex(with_complexes!(v, |x| Complex64::new(x[i].re.into(), x[i].im.into())), v.tag().into()))
+            }
             Self::Compact(View::Characters(v)) => Value::Character(v[i]),
             Self::Values(v) => v[i].clone(),
         }
@@ -584,9 +588,7 @@ impl Gather {
         if self.leveled(source) {
             return self.join.as_mut().expect("a joined buffer").each(source, false, |g, s, part| g.walk(s, base, steps, part.fill(fill)));
         }
-        if let Some((inner, base, steps)) = crate::fusion::walk_through(source, base, steps, fill.is_some()) {
-            return self.walk(&inner, base, &steps, fill);
-        }
+        if let Some((inner, base, steps)) = crate::fusion::walk_through(source, base, steps, fill.is_some()) { return self.walk(&inner, base, &steps, fill); }
         self.follow(source);
         let native = fill.and_then(|fill| source.native_fill(fill));
         if copy_into!(&mut self.data, source.as_items(), |d, s| rustymath::gather::walk(

@@ -7,10 +7,11 @@ use std::path::Path;
 struct Pattern { name: &'static str, regex: &'static str, homes: &'static [&'static str], budget: usize, instead: &'static str }
 
 const PATTERNS: &[Pattern] = &[
-    Pattern { name: "an `Error` constructor passed to `ok_or_else` as a function item", regex: r"\bok_or_else\(\s*(?:\w+::)*Error::\w+\s*\)", homes: &[], budget: 0,
-        instead: "call `Error::internal()` directly, or `or_internal()` on an `Option`: a function item loses the call site" },
-    Pattern { name: "an `.as_primitive()` call", regex: r"\.as_primitive\s*\(", homes: &["eval/rewrite.rs"], budget: 2,
-        instead: "compute through `operation()` or `dyadic_primitive()`, which give an admitted dfn body's primitive; `as_primitive` serves display, inverses and syntax only" },
+    Pattern { name: "an `Error` constructor passed to `ok_or_else` as a function item", regex: r"\bok_or_else\(\s*(?:\w+::)*Error::\w+\s*\)", homes: &[],
+        budget: 0, instead: "call `Error::internal()` directly, or `or_internal()` on an `Option`: a function item loses the call site" }, Pattern {
+        name: "an `.as_primitive()` call", regex: r"\.as_primitive\s*\(", homes: &["eval/rewrite.rs"], budget: 2,
+        instead: "compute through `operation()` or `dyadic_primitive()`, which give an admitted dfn body's primitive; `as_primitive` serves display, inverses and syntax only"
+    },
 ];
 
 /// Adds each `.rs` file under `dir`, as its path relative to `src` and its code with line comments removed.
@@ -37,8 +38,12 @@ fn inference_pattern_counts_match_their_budgets() {
         let total: usize = found.iter().map(|&(_, n)| n).sum();
         let by_file = || found.iter().map(|(path, n)| format!("{path} {n}")).collect::<Vec<_>>().join(", ");
         match total.cmp(&pattern.budget) {
-            std::cmp::Ordering::Greater => Some(format!("{} occurs {total} times, over its budget of {}: {}. By file: {}", pattern.name, pattern.budget, pattern.instead, by_file())),
-            std::cmp::Ordering::Less => Some(format!("{} occurs {total} times, under its budget of {}: lower the budget to {total} in this change.", pattern.name, pattern.budget)),
+            std::cmp::Ordering::Greater => {
+                Some(format!("{} occurs {total} times, over its budget of {}: {}. By file: {}", pattern.name, pattern.budget, pattern.instead, by_file()))
+            }
+            std::cmp::Ordering::Less => {
+                Some(format!("{} occurs {total} times, under its budget of {}: lower the budget to {total} in this change.", pattern.name, pattern.budget))
+            }
             std::cmp::Ordering::Equal => None,
         }
     }).collect();

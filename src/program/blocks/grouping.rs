@@ -10,9 +10,7 @@ pub(crate) fn plan(program: &Program) -> Plan {
         program.nodes.iter().zip(&live).filter_map(|(n, &l)| match &n.origin { Origin::Step(s) if l => Some(s), _ => None })
     };
     let copies = steps().any(|s| matches!(s, Step::Copy { .. }));
-    if !stages(steps().filter(|s| !matches!(s, Step::Copy { .. })).count(), false, copies) {
-        return each(program, &live);
-    }
+    if !stages(steps().filter(|s| !matches!(s, Step::Copy { .. })).count(), false, copies) { return each(program, &live); }
     let mut readers = vec![Vec::new(); program.nodes.len()];
     for (j, node) in program.nodes.iter().enumerate() { if live[j] && let Origin::Step(step) = &node.origin { for i in step.reads() { readers[i].push(j); } } }
     let mut units = Vec::new();
@@ -144,7 +142,9 @@ pub(crate) fn readable(dtype: DType) -> bool { matches!(dtype, DType::Boolean | 
 fn input(program: &Program, i: usize) -> bool { !program.nodes[i].desc.atom && readable(program.nodes[i].desc.dtype()) }
 
 /// How the operands of a map step read over its result: `left`, where the step is dyadic, and `right`.
-pub(super) fn agreement(left: Option<&Read>, right: &Read) -> Option<Agreement> { Agreement::new(left.map_or(&Layout::default(), |r| &r.layout), &right.layout).ok() }
+pub(super) fn agreement(left: Option<&Read>, right: &Read) -> Option<Agreement> {
+    Agreement::new(left.map_or(&Layout::default(), |r| &r.layout), &right.layout).ok()
+}
 
 /// Whether node `j` is a conversion that only inner products read, each of which reads its operand through it (`pervasive::reads_widened`). A replay leaves it pending for them (`Unit::Pending`), so that its converted items are never stored.
 fn read_through(program: &Program, readers: &[Vec<usize>], j: usize) -> bool {
@@ -159,8 +159,12 @@ fn folds(p: Primitive, dtype: DType, result: &Desc) -> bool {
     let fold = reduction(p, dtype);
     match dtype {
         DType::Float(FloatWidth::F32 | FloatWidth::F64) => matches!(fold, Some(Reduce::Sum | Reduce::Product | Reduce::Max | Reduce::Min)),
-        DType::Integer(_) => matches!(fold, Some(Reduce::Max | Reduce::Min)) || Numeric::current().wraps(result.kind.dtype, result.kind.fixed) && matches!(fold, Some(Reduce::Sum)),
-        DType::Boolean => matches!(fold, Some(Reduce::Sum | Reduce::Min | Reduce::Max | Reduce::Xor | Reduce::Xnor)), _ => false
+        DType::Integer(_) => {
+            matches!(fold, Some(Reduce::Max | Reduce::Min))
+                || Numeric::current().wraps(result.kind.dtype, result.kind.fixed) && matches!(fold, Some(Reduce::Sum))
+        }
+        DType::Boolean => matches!(fold, Some(Reduce::Sum | Reduce::Min | Reduce::Max | Reduce::Xor | Reduce::Xnor)),
+        _ => false,
     }
 }
 

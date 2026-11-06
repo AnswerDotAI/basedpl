@@ -39,14 +39,15 @@ pub(in crate::eval) fn grouped(s: crate::primitive::Special, left: Option<&Value
         }
         _ => (Function::primitive(Primitive::Tally), None),
     };
-    let f = Function::new(FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(operand), Operand::Function(Function::primitive(Primitive::Identity(false)))]), span)?;
+    let f = Function::new(
+        FunctionNode::Composed(OperatorKind::Atop, [Operand::Function(operand), Operand::Function(Function::primitive(Primitive::Identity(false)))]), span)?;
     groups(&f, keys, &key_cells, left, right, numbered, span)
 }
 
 /// Key's general path: `f` called on each group with its key, from the classes that `numbered` gives, or else that the key cells give.
 fn groups(
-    f: &Function, keys: &Value, key_cells: &crate::search::Cells, left: Option<&Value>, right: &Value, numbered: Option<rustymath::search::Numbered>, span: &Span
-) -> Result<Bound, Error> {
+    f: &Function, keys: &Value, key_cells: &crate::search::Cells, left: Option<&Value>, right: &Value, numbered: Option<rustymath::search::Numbered>,
+    span: &Span) -> Result<Bound, Error> {
     let classes = match numbered { Some(n) => n.grouped(), None => crate::search::grouped(&key_cells, span)? };
     let count = classes.firsts.len();
     // A monadic Key's values are the positions along `right`, which are each group's rows themselves unless that axis has keys.

@@ -358,7 +358,13 @@ fn primitive_bodies_share_fold_facts() {
         for argument in ["⍳3", "⍳5"] { equiv_in(&s, &format!("f/{argument}"), &format!("+/{argument}")); }
         equiv_in(&s, "f\\⍳5", "+\\⍳5");
         equiv_in(&s, "f/₁2 3⍴⍳6", "+/₁2 3⍴⍳6");
-        if let Some(expected) = monad { equiv_in(&s, "f/⍬", "+/⍬"); equiv_in(&s, "f 3", expected); } else { fails_in(&s, "DOMAIN", &["f/⍬"]); fails_in(&s, "VALUE", &["f 3"]); }
+        if let Some(expected) = monad {
+            equiv_in(&s, "f/⍬", "+/⍬");
+            equiv_in(&s, "f 3", expected);
+        } else {
+            fails_in(&s, "DOMAIN", &["f/⍬"]);
+            fails_in(&s, "VALUE", &["f 3"]);
+        }
     }
     let s = Session::new();
     equiv_in(&s, "g←+ ⋄ f←{⍺ g ⍵} ⋄ f/⍳3", "+/⍳3");
@@ -489,7 +495,9 @@ fn lexical_frames_are_reclaimed() {
         ("f←{\"DOMAIN\"::7 ⋄ ⍵=0?1÷'a';∇⍵-1} ⋄ f 2000", 7.),
     ];
     let skipped = basedpl::reference::skipped("lexical_frames_are_reclaimed", cases.iter().map(|(code, _)| ("", *code))).unwrap();
-    for (_, (code, expected)) in cases.into_iter().enumerate().filter(|(index, _)| !skipped.iter().any(|(i, _)| i == index)) { check_in(&s, code, float(expected)); }
+    for (_, (code, expected)) in cases.into_iter().enumerate().filter(|(index, _)| !skipped.iter().any(|(i, _)| i == index)) {
+        check_in(&s, code, float(expected));
+    }
     assert_eq!(s.eval("f 20000").error.unwrap().kind.name(), "LIMIT");
     check_in(&s, "deep 15000", float(15000.));
     let source = Source::new("calls", "outer 25000");

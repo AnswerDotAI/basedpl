@@ -4,16 +4,16 @@ use crate::{
     primitive::{Builtin, FoldKind, OperandKind, Operation, OperatorKind, Primitive, Superscript}, symbols::Notation,
     syntax::{Definition, DefinitionKind, Node, NodeKind}
 };
-use rustymath::hashing::{HashMap, HashMapExt};
 use rustymath::error::Kind;
+use rustymath::hashing::{HashMap, HashMapExt};
 use std::{borrow::Cow, convert::Infallible, sync::Arc};
 
 mod assign;
 mod binder;
 mod bindings;
 mod dissect;
-mod rewrite;
 mod operators;
+mod rewrite;
 mod session;
 mod tree;
 pub(crate) use binder::before;
@@ -72,8 +72,8 @@ impl Function {
         Ok(match (&self.node.kind, &other.node.kind) {
             (N::Primitive(x), N::Primitive(y)) => x == y, (N::System(x), N::System(y)) => x == y,
             (N::LateBound(_, x), N::LateBound(_, y)) => x.source.text == y.source.text, (N::Fold(f, x), N::Fold(g, y)) => x == y && f.equal_by(g, values)?,
-            (N::Inverse(f), N::Inverse(g)) => f.equal_by(g, values)?,
-            (N::Defined(x), N::Defined(y)) => x == y, (N::Derived(c, a, b), N::Derived(d, x, y)) => c == d && operands_equal(a, b, x, y, values)?,
+            (N::Inverse(f), N::Inverse(g)) => f.equal_by(g, values)?, (N::Defined(x), N::Defined(y)) => x == y,
+            (N::Derived(c, a, b), N::Derived(d, x, y)) => c == d && operands_equal(a, b, x, y, values)?,
             (N::Ruled(f, r), N::Ruled(g, s)) => f.equal_by(g, values)? && r.equal_by(s, values)?,
             (N::Modified(o, a), N::Modified(p, b)) => o == p && a.equal_by(b, values)?,
             (N::Composed(o, [a, b]), N::Composed(p, [x, y])) => o == p && a.equal_by(x, values)? && b.equal_by(y, values)?,
@@ -103,7 +103,9 @@ const STACK_SEGMENT: usize = 16 << 20;
 #[inline(always)]
 fn room() -> bool {
     #[cfg(web)]
-    unsafe extern "C" { safe static __stack_low: u8; }
+    unsafe extern "C" {
+        safe static __stack_low: u8;
+    }
     #[cfg(web)]
     let left = stacker::remaining_stack().or_else(|| Some((psm::stack_pointer() as usize).saturating_sub(&raw const __stack_low as usize)));
     #[cfg(not(web))]
@@ -243,9 +245,9 @@ impl FunctionNode {
             Self::System(f) => system_name(f.name, el.notation) + &f.argument().map_or(String::new(), |a| crate::array::quoted(&a)),
             Self::Ruled(f, _) => f.node().label(el), Self::LateBound(_, span) => span.source.text.clone(),
             Self::Defined(c) | Self::Derived(c, ..) => c.text().into(), Self::Fold(_, h) => el.notation.glyph(h.glyph()).into(),
-            Self::Inverse(_) => "⁻¹".into(),
-            Self::Modified(OperatorKind::Super(Superscript::Mark(mark)), _) => mark.marker().into(), Self::Array(a) => a.source(el),
-            Self::Modified(op, _) | Self::Composed(op, _) => el.notation.glyph(op.glyph()).into(), Self::Fork(_) => "fork".into()
+            Self::Inverse(_) => "⁻¹".into(), Self::Modified(OperatorKind::Super(Superscript::Mark(mark)), _) => mark.marker().into(),
+            Self::Array(a) => a.source(el), Self::Modified(op, _) | Self::Composed(op, _) => el.notation.glyph(op.glyph()).into(),
+            Self::Fork(_) => "fork".into()
         }
     }
 }
@@ -255,8 +257,7 @@ impl Builtin {
     pub(crate) fn function(self) -> Function {
         static TABLE: std::sync::LazyLock<HashMap<Builtin, Function>> = std::sync::LazyLock::new(|| {
             let primitives = Primitive::all().chain([Primitive::Bracket]).chain(crate::primitive::Exact::ALL.map(Primitive::Exact))
-                .chain(crate::primitive::Special::ALL.map(Primitive::Special))
-                .map(|p| (Builtin::Primitive(p), Function::of(FunctionNode::Primitive(p))));
+                .chain(crate::primitive::Special::ALL.map(Primitive::Special)).map(|p| (Builtin::Primitive(p), Function::of(FunctionNode::Primitive(p))));
             primitives.chain(crate::system::Entry::all().map(|entry| (Builtin::System(entry), entry.built()))).collect()
         });
         let Builtin::Primitive(p) = self else { return TABLE[&self].clone() };
@@ -276,7 +277,7 @@ impl Function {
             FunctionNode::Defined(c) => c.definition.admitted(),
             FunctionNode::Modified(OperatorKind::Bitwise, Operand::Function(g)) => crate::pervasive::truth_table(g.dyadic_primitive()?).map(Primitive::Bitwise),
             FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), Operand::Function(f)) => match f.dyadic_primitive()?.marked(*mark, true)? {
-                crate::primitive::Marked::Primitive(p) => Some(p), crate::primitive::Marked::Arguments(_) => None,
+                crate::primitive::Marked::Primitive(p) => Some(p), crate::primitive::Marked::Arguments(_) => None
             },
             FunctionNode::Inverse(g) => g.dyadic_primitive()?.left_inverse(),
             _ => None,
@@ -414,7 +415,8 @@ impl Function {
     /// A train. Each subject first binds the part after it, so `2×` is `2↣×` (`train_parts`). The train then builds from its last part leftwards (`train_shape`). So `32+1.8×` is `(32↣+)∘(1.8↣×)`, `⊢-2×⊢` is `⊢-(2↣×)∘⊢`, and `2|#⊢` is `(2↣|)#⊢`.
     fn train(tines: Vec<Tine>, span: &Span) -> Result<Self, Error> {
         let parts = Self::train_parts(&tines, |f| Ok(f.clone()), |a, f: Result<Self, Error>| before(a.clone(), f?, span));
-        Self::train_shape(parts, &mut (), |_, f| f, |_, g, f, result| Self::new(FunctionNode::Fork([g?, f?, result]), span), |_, f, result| atop(f?, result, span))
+        Self::train_shape(
+            parts, &mut (), |_, f| f, |_, g, f, result| Self::new(FunctionNode::Fork([g?, f?, result]), span), |_, f, result| atop(f?, result, span))
     }
     /// A train's parts, last part first, each with whether it's bound. Each function tine makes a part (`function`), and each subject binds the part after it as its left argument (`bind`). `train` builds a train's function from these parts, and `operators::train_call` calls them.
     fn train_parts<'t, P>(tines: &'t [Tine], function: impl Fn(&'t Function) -> P, bind: impl Fn(&'t Value, P) -> P) -> impl Iterator<Item = (P, bool)> {
@@ -726,7 +728,8 @@ impl Function {
             FunctionNode::System(f) => {
                 if let (true, Some(prototype)) = (session().prototype.get(), f.prototype) { return Ok(Bound::from(prototype(span))); }
                 match &f.call {
-                    crate::system::Call::Value(call) | crate::system::Call::Active(call) => call(left, right, span),
+                    crate::system::Call::Value(call) => crate::system::observed_call(*call, left, right, span),
+                    crate::system::Call::Active(call) => call(left, right, span),
                     crate::system::Call::Effect(call) => {
                         crate::transform::acts().at(span)?;
                         return call(left, right, span).map(|(value, shy)| Bound { shy, ..Bound::from(value) });
@@ -894,7 +897,8 @@ impl OperatorNode {
     }
     fn is_dyadic(&self) -> bool {
         match self {
-            Self::Defined(c) => c.definition.kind == DefinitionKind::DyadicOperator, Self::Primitive(op) => op.info().dyadic(), Self::Subscript(_) | Self::Bound(..) => false
+            Self::Defined(c) => c.definition.kind == DefinitionKind::DyadicOperator, Self::Primitive(op) => op.info().dyadic(),
+            Self::Subscript(_) | Self::Bound(..) => false
         }
     }
 
@@ -987,8 +991,7 @@ impl Binding {
     fn stored(self) -> Self {
         match self {
             Self::Value(a @ (Value::Function(_) | Value::Operator(_))) => Self::from_element(a),
-            Self::Value(n @ Value::Number(_)) if crate::number::Numeric::current().is_static() => Self::Value(n.strong()),
-            value => value,
+            Self::Value(n @ Value::Number(_)) if crate::number::Numeric::current().is_static() => Self::Value(n.strong()), value => value
         }
     }
     /// An operator element as a binding, out of line so that `from_element` stays small enough to inline.

@@ -12,7 +12,6 @@ pub(in crate::eval) fn outer(operand: &Function, left: Option<&Value>, right: &V
 // Out of line, as `each_items` is, so that `outer`'s frame holds only its fast paths.
 #[inline(never)]
 fn outer_items(operand: &Function, left: &Value, right: &Value, span: &Span) -> Result<Bound, Error> {
-    crate::program::trace::per_item(Some(left), right)?;
     let agreement = Agreement::outer(left.layout(), right.layout()).described("outer product is too large")?;
     // A batched try reads each argument laid over the result's frame (`batch::Arguments::laid`), as Each's does (`items_whole`).
     let whole = || crate::batch::Arguments::laid(&agreement, Some(items_whole(left)), items_whole(right));
@@ -61,8 +60,9 @@ impl Contraction {
             for k in 0..n.max(1) {
                 for (j, column) in columns.iter_mut().enumerate() {
                     let rk = if n == 0 { 0 } else { self.positions.index(k) };
-                    column.push(
-                        session().prototype_mode(size == 0 || n == 0, || g.call_with(Some(item(left, i * nx + k)), item(right, rk * cols + j), span)?.array(span))?);
+                    column.push(session().prototype_mode(size == 0 || n == 0, || {
+                        g.call_with(Some(item(left, i * nx + k)), item(right, rk * cols + j), span)?.array(span)
+                    })?);
                 }
             }
             for column in columns {
@@ -103,8 +103,8 @@ fn by_rows(
         let count = per.min(rows - start);
         let x = match &flat {
             None => left.relaid(Layout::from(vec![rows, n, 1])), Some(flat) => crate::fusion::copied(
-                flat, Layout::from(vec![count * n]), &rustymath::agreement::Mapping::from(vec![Steps::Stride { start: start * n, len: count * n, step: 1 }]), None)
-            .and_then(|x| x.relaid(Layout::from(vec![count, n, 1])))
+                flat, Layout::from(vec![count * n]), &rustymath::agreement::Mapping::from(vec![Steps::Stride { start: start * n, len: count * n, step: 1 }]),
+                None).and_then(|x| x.relaid(Layout::from(vec![count, n, 1])))
         };
         let x = match x.described("invalid product rows") { Ok(x) => x, Err(e) => return Some(Err(e)) };
         parts.push(match product(x, y.clone())? { Ok(p) => p, Err(e) => return Some(Err(e)) });
@@ -141,13 +141,13 @@ pub(crate) fn primitive_product(f: Primitive, g: Primitive, left: &Value, right:
 /// Monadic `f.g` for primitives `f` and `g`, as `Operation::run` and the combinations `Determinant` and `Permanent` give it: for a square matrix of numbers, the determinant of `-.×` (`primitive::determinant`) and, below 64 rows, the permanent of `+.×`, and otherwise the expansion by minors that function operands take (`expansion`), whose calls of the operation by its primitives a running level takes.
 pub(crate) fn primitive_expansion(f: Primitive, g: Primitive, right: &Value, span: &Span) -> Result<Value, Error> {
     use rustymath::events::Route;
-    let route = match Operation::Product(f, g) { Operation::MINUS_TIMES => Some(Route::Determinant), Operation::PLUS_TIMES => Some(Route::Permanent), _ => None };
+    let route = match Operation::Product(f, g) {
+        Operation::MINUS_TIMES => Some(Route::Determinant), Operation::PLUS_TIMES => Some(Route::Permanent), _ => None
+    };
     if let Some(route) = route {
         let square = matrix(right).filter(|&[m, n]| m == n && n > 0 && !crate::transform::carried(None, right)).map(|[_, n]| n);
         let fast = match (route, square) {
-            (Route::Determinant, Some(n)) => crate::primitive::determinant(right, n)?,
-            (Route::Permanent, Some(n)) if n < 64 => permanent(right, n)?,
-            _ => None,
+            (Route::Determinant, Some(n)) => crate::primitive::determinant(right, n)?, (Route::Permanent, Some(n)) if n < 64 => permanent(right, n)?, _ => None
         };
         let Some(value) = fast else {
             rustymath::events::declined(route, "arguments that don't suit it", right.len());

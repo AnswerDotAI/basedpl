@@ -1,8 +1,13 @@
 //! The binder: the right-to-left reduction of a run's items by their categories, and the rewriting of dot access.
 
 use super::tree::{Facts, Recorder, Reduction};
-use super::{ABSENT, Application, Binding, Bound, Function, FunctionNode, NO_TARGET, Operand, OperatorNode, Session, Step, bindings::Place, dissect::Expression, tree::Recording};
-use crate::{At, Described, Error, ErrorKind, Source, Span, Value, primitive::{Builtin, OperatorKind, Primitive, Superscript}, syntax::{ListForm, Node, NodeKind}};
+use super::{
+    ABSENT, Application, Binding, Bound, Function, FunctionNode, NO_TARGET, Operand, OperatorNode, Session, Step, bindings::Place, dissect::Expression,
+    tree::Recording,
+};
+use crate::{
+    At, Described, Error, ErrorKind, Source, Span, Value, primitive::{Builtin, OperatorKind, Primitive, Superscript}, syntax::{ListForm, Node, NodeKind}
+};
 use std::{borrow::Cow, sync::Arc};
 
 impl Session {
@@ -36,9 +41,9 @@ impl Session {
                 let inner = self.selection_members(&inner).into_owned();
                 let item = if inner.len() == 1 { inner.into_iter().next().unwrap() } else { Node { kind: NodeKind::Group(inner), span } };
                 let span = Span { source: item.span.source.clone(), range: item.span.range.start..subscript.span.range.end };
-                out.push(Node { kind: NodeKind::Group(vec![
-                    index, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Index)), span: subscript.span }, item,
-                ]), span });
+                out.push(Node {
+                    kind: NodeKind::Group(vec![index, Node { kind: NodeKind::Function(Builtin::Primitive(Primitive::Index)), span: subscript.span }, item]),
+                    span });
                 Cow::Owned(out)
             }
             _ => members,
@@ -54,11 +59,11 @@ impl Session {
             if (matches!(nodes[i].kind, NodeKind::Subscript(_)) && on_function
                 || matches!(nodes[i].kind, NodeKind::Operator(OperatorKind::Product)) && matches!(out.last().map(|n| &n.kind), Some(NodeKind::Subscript(_))))
                 && let Ok((start, _)) = self.trailing_operand(&out, out.len(), log) {
-                let inner = out.split_off(start);
-                let span = crate::syntax::cover(&inner);
-                out.push(Node { kind: NodeKind::Group(inner), span });
-                on_function = false;
-            }
+                    let inner = out.split_off(start);
+                    let span = crate::syntax::cover(&inner);
+                    out.push(Node { kind: NodeKind::Group(inner), span });
+                    on_function = false;
+                }
             if let (NodeKind::Operator(OperatorKind::Product), Some(next)) = (&nodes[i].kind, nodes.get(i + 1)) {
                 let root = out.last().filter(|root| {
                     !on_function && match &root.kind {
@@ -108,9 +113,8 @@ impl Session {
             while i + 1 < out.len() {
                 let NodeKind::Joiner(joiner) = out[i].kind else { i += 1; continue; };
                 let mut start = i - 1;
-                while start > 0 && matches!(out[start].kind, NodeKind::Operator(OperatorKind::Super(_)) | NodeKind::Subscript(_)) && touching(&out[start - 1], &out[start]) {
-                    start -= 1;
-                }
+                while start > 0 && matches!(out[start].kind, NodeKind::Operator(OperatorKind::Super(_)) | NodeKind::Subscript(_))
+                    && touching(&out[start - 1], &out[start]) { start -= 1; }
                 let left =
                     if start + 1 == i { out[start].clone() } else { Node { kind: NodeKind::Group(out[start..i].to_vec()), span: cover(&out[start..i]) } };
                 if matches!(joiner, Joiner::Exponent) != exponent || !touching(&left, &out[i]) || !touching(&out[i], &out[i + 1])
@@ -122,7 +126,9 @@ impl Session {
         }
         // An `ᵣ` that joins nothing marks what it follows, as `÷ᵣ` divides in the unbounded domain.
         for node in &mut out {
-            if matches!(node.kind, NodeKind::Joiner(Joiner::Denominator)) { node.kind = NodeKind::Operator(OperatorKind::Super(Superscript::Mark(crate::number::Mark::Rational))); }
+            if matches!(node.kind, NodeKind::Joiner(Joiner::Denominator)) {
+                node.kind = NodeKind::Operator(OperatorKind::Super(Superscript::Mark(crate::number::Mark::Rational)));
+            }
         }
         Cow::Owned(out)
     }
@@ -561,9 +567,14 @@ impl Binder {
             // An operator still awaiting its operand cannot reduce with its right neighbour.
             Rule::Wait(_) => true,
             // Postfix operators bind an array before its neighbours use it as an argument or operand.
-            _ if matches!(&left.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Subscript(_)))) => true,
-            _ if top.role == Category::Value && matches!(&below.term, Term::Binding(Binding::Operator(
-                self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Subscript(_)))) => false,
+            _ if matches!(
+                &left.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Subscript(_)))
+            ) =>
+            { true }
+            _ if top.role == Category::Value && matches!(
+                &below.term, Term::Binding(Binding::Operator(self::OperatorNode::Primitive(OperatorKind::Super(_)) | self::OperatorNode::Subscript(_)))
+            ) =>
+            { false }
             old => match Rule::get(left.category.before(Some(top.role)), top.role) {
                 // Adjacent arrays group from the right: `v w i` is `v (w i)`.
                 Rule::Adjacent if matches!(old, Rule::Adjacent) => false,
@@ -578,10 +589,13 @@ impl Binder {
         let joined = if rewriting { session.joined(nodes, &mut rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(nodes) };
         let members = if rewriting { session.members_with(&joined, &mut rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(&joined[..]) };
         // Fast combinations replace their spellings before the binder walks the nodes (`rewrite::expression`).
-        let combined = if rewriting { super::rewrite::expression(session, &members, &mut rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(&members[..]) };
+        let combined =
+            if rewriting { super::rewrite::expression(session, &members, &mut rec.as_deref_mut().map(Recorder::facts)) } else { Cow::Borrowed(&members[..]) };
         let nodes = &combined[..];
         let source = &nodes[0].span.source;
-        if matches!(joined, Cow::Owned(_)) || matches!(members, Cow::Owned(_)) || matches!(combined, Cow::Owned(_)) { log(&mut rec, |rc| rc.rewritten(nodes.to_vec())); }
+        if matches!(joined, Cow::Owned(_)) || matches!(members, Cow::Owned(_)) || matches!(combined, Cow::Owned(_)) {
+            log(&mut rec, |rc| rc.rewritten(nodes.to_vec()));
+        }
         let (mut binder, mut pending, mut cursor, mut held, mut after_call, mut assignment) = match resume {
             Some(r) => (Self::restacked(r.stack), r.pending, r.cursor, r.next, r.after_call, r.assignment),
             None => {
@@ -620,7 +634,9 @@ impl Binder {
                                     rc.group(node, &entity);
                                     entity
                                 }
-                                None => Entity::held(Bound { shy: false, ..session.nested(inner, |session| Self::evaluate_seeded(inner, session, right))? }, range),
+                                None => {
+                                    Entity::held(Bound { shy: false, ..session.nested(inner, |session| Self::evaluate_seeded(inner, session, right))? }, range)
+                                }
                             }
                         } else if matches!(node.kind, NodeKind::Group(_) | NodeKind::Run(_)) {
                             match rec.as_deref_mut() {

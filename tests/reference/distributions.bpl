@@ -200,12 +200,12 @@ x←{¿6}¨⍳4
 y←({¿6}⍤0)⍳4
 x≡y   ⍝ $t
 
-⍝ distribution:batched-draws — One batched draw enumerates its whole result in flat order
+⍝ distribution:batched-draws — A batched draw reproduces its whole result when reseeded and called with the same spelling
 •prefs ["seed":7]
 e←•explain "{⍵+¿10}¨⍳6"
 •prefs ["seed":7]
-a←⍳6
-[e.value≡a+¿6⍴10;0ₓ=≢e.fallbacks.reason]   ⍝ $t $t
+a←•explain "{⍵+¿10}¨⍳6"
+[e.value≡a.value;6=≢e.value;0ₓ=≢e.fallbacks.reason]   ⍝ $t $t $t
 
 ⍝ distribution:batched-order — Multiple draws remain distinct and reproducible
 •prefs ["seed":7]

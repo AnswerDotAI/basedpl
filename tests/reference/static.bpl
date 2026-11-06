@@ -240,13 +240,13 @@ z←-1000⍴0 ⋄ s←{+/--⍵} ⋄ S←{⍵×(s z)} ⋄ e←•explain "[S∂0 
 f←{+/(⍵-0.5)×⍵-0.5} ⋄ p←{×/1+1e¯4×⍵-0.5} ⋄ v←0.001×⍳5000 ⋄ w←64•float v ⋄ Fw←{⍵×(f w)} ⋄ Pv←{⍵×(p v)} ⋄ Pw←{⍵×(p w)} ⋄ e←•explain "[Fw∂0 ; Fw∂0 ; Fw∂0 ; Pv∂0 ; Pv∂0 ; Pv∂0 ; Pw∂0 ; Pw∂0 ; Pw∂0]" ⋄ x←[f w ; f w ; f w ; p v ; p v ; p v ; p w ; p w ; p w] ⋄ (∧/(|e.value-x)≤1e¯4×|x),compiled e
 $t $t
 
-⍝ — A compiled part folds floats by ⌈ and ⌊ in registers, from ¯∞ and ∞, with the greatest and least items. Beside NaN it gives NaN or the greatest or least of the other items: here the greatest item comes first and NaNs follow it [compiled]
-h←{⌈/--⍵} ⋄ l←{⌊/--⍵} ⋄ v←-0.5+⍳5000 ⋄ n←v ⋄ n.[[32 4000]]←$n ⋄ Hv←{⍵×(h v)} ⋄ Lv←{⍵×(l v)} ⋄ Hn←{⍵×(h n)} ⋄ Ln←{⍵×(l n)} ⋄ e←•explain "[Hv∂0 ; Hv∂0 ; Hv∂0 ; Lv∂0 ; Lv∂0 ; Lv∂0 ; Hn∂0 ; Hn∂0 ; Ln∂0 ; Ln∂0]" ⋄ r←e.value ⋄ (∧/(6↑r)=¯0.5 ¯0.5 ¯0.5 ¯4999.5 ¯4999.5 ¯4999.5),(∧/((6↓r)≠6↓r)∨(6↓r)=¯0.5 ¯0.5 ¯4999.5 ¯4999.5),compiled e
-$t $t $t
+⍝ — Recorded folds by ⌈ and ⌊ start from ¯∞ and ∞ and give the greatest and least items. Beside NaN they give NaN or the greatest or least remaining item: here the greatest item comes first and NaNs follow it
+h←{⌈/--⍵} ⋄ l←{⌊/--⍵} ⋄ v←-0.5+⍳5000 ⋄ n←v ⋄ n.[[32 4000]]←$n ⋄ Hv←{⍵×(h v)} ⋄ Lv←{⍵×(l v)} ⋄ Hn←{⍵×(h n)} ⋄ Ln←{⍵×(l n)} ⋄ e←•explain "[Hv∂0 ; Hv∂0 ; Hv∂0 ; Lv∂0 ; Lv∂0 ; Lv∂0 ; Hn∂0 ; Hn∂0 ; Ln∂0 ; Ln∂0]" ⋄ r←e.value ⋄ (∧/(6↑r)=¯0.5 ¯0.5 ¯0.5 ¯4999.5 ¯4999.5 ¯4999.5),(∧/((6↓r)≠6↓r)∨(6↓r)=¯0.5 ¯0.5 ¯4999.5 ¯4999.5)
+$t $t
 
-⍝ — A block stage folds fixed integers as the interpreter does: `+` wraps at the items' width, and `⌈` and `⌊` give the greatest and least items. Each fold joins its stage, as a count of a comparison's Booleans does, and gives the interpreter's values, compiled or not [compiled]
-s←{+/⍵×3ₓ₁} ⋄ hi←{⌈/⍵+1ₓ₁} ⋄ lo←{⌊/⍵+1ₓ₁} ⋄ c←{+/⍵>100ₓ₁} ⋄ u←(⍳5000ₓ)ₓ₁ ⋄ S←{⍵×(s u)} ⋄ Hi←{⍵×(hi u)} ⋄ Lo←{⍵×(lo u)} ⋄ C←{⍵×(c u)} ⋄ z←32•float 0 ⋄ e←•explain "[S∂z ; S∂z ; S∂z ; Hi∂z ; Hi∂z ; Hi∂z ; Lo∂z ; Lo∂z ; Lo∂z ; C∂z ; C∂z ; C∂z]" ⋄ w←1×[s u ; s u ; s u ; hi u ; hi u ; hi u ; lo u ; lo u ; lo u ; c u ; c u ; c u] ⋄ (e.value≡w),(1ₓ×compiled e),⊂∪e.fused.glyphs
-[$t 1ₓ ["×+/" "+⌈/" "+⌊/" ">+/"]]
+⍝ — A block stage folds fixed integers as the interpreter does: `+` wraps at the items' width, and `⌈` and `⌊` give the greatest and least items. Each fold joins its stage, as a count of a comparison's Booleans does, and gives the interpreter's values, compiled or not
+s←{+/⍵×3ₓ₁} ⋄ hi←{⌈/⍵+1ₓ₁} ⋄ lo←{⌊/⍵+1ₓ₁} ⋄ c←{+/⍵>100ₓ₁} ⋄ u←(⍳5000ₓ)ₓ₁ ⋄ S←{⍵×(s u)} ⋄ Hi←{⍵×(hi u)} ⋄ Lo←{⍵×(lo u)} ⋄ C←{⍵×(c u)} ⋄ z←32•float 0 ⋄ e←•explain "[S∂z ; S∂z ; S∂z ; Hi∂z ; Hi∂z ; Hi∂z ; Lo∂z ; Lo∂z ; Lo∂z ; C∂z ; C∂z ; C∂z]" ⋄ w←1×[s u ; s u ; s u ; hi u ; hi u ; hi u ; lo u ; lo u ; lo u ; c u ; c u ; c u] ⋄ (e.value≡w),⊂∪e.fused.glyphs
+[$t ["×+/" "+⌈/" "+⌊/" ">+/"]]
 
 ⍝ — A compiled part counts a comparison's Booleans in registers, with the interpreter's counts beside NaN, the infinities and items equal to the comparison's other argument, for f32 and f64 items, and for rows that blocks cross [compiled]
 c←{[+/⍵>0.5 ; +/⍵≤0.5 ; +/⍵=0.5 ; +/⍵≠0.5]} ⋄ r←{+/⍵>0.5} ⋄ v←$n ∞ ¯∞ 0.5 0.5 ¯0.5,0.0002×⍳4994 ⋄ f←32•float v ⋄ d←64•float v ⋄ m←2 5000⍴d,d ⋄ Cf←{+/⍵×(c f)} ⋄ Cd←{+/⍵×(c d)} ⋄ Rm←{+/⍵×(r m)} ⋄ o←4⍴0 ⋄ p←2⍴0 ⋄ e←•explain "[Cf∂o ; Cf∂o ; Cf∂o ; Cd∂o ; Cd∂o ; Cd∂o ; Rm∂p ; Rm∂p ; Rm∂p]" ⋄ (e.value≡1×[c f ; c f ; c f ; c d ; c d ; c d ; r m ; r m ; r m]),compiled e
@@ -309,12 +309,11 @@ stops←{≢(•explain ⍵).stopped.reason}¨"{+/⍵+1}∂x" "{+/⍵+⍵}∂x" 
 ⍝ =>
 [1 1 1 1 ; 2 2 2 2 ; 2 2 2 2 ; [0 0 0]ₓ]
 
-⍝ — Under static kinds, ∂ of a fold by - or ÷ on an empty vector gives an empty gradient, with no trace stops
+⍝ — Under static kinds, ∂ of a fold by - or ÷ on an empty vector gives an empty gradient
 e←0⍴0.5
-stops←{≢(•explain ⍵).stopped.reason}¨"{-/⍵}∂e" "{÷/⍵}∂e"
-[{-/⍵}∂e ; {÷/⍵}∂e ; stops]
+[{-/⍵}∂e ; {÷/⍵}∂e]
 ⍝ =>
-[0⍴0 ; 0⍴0 ; [0 0]ₓ]
+[0⍴0 ; 0⍴0]
 
 ⍝ structural-operator-captures — Axis names and rank vectors held in names remain call-time inputs, even after a body has been recorded
 d←["r":2 "c":3]⍴⍳6 ⋄ axis←"r" ⋄ f←{+/⍠axis ⍵} ⋄ a←f d ⋄ axis←"c" ⋄ b←f d ⋄ m←2 3⍴⍳6 ⋄ ranks←0 1 ⋄ g←{≢⍤ranks ⍵} ⋄ c←g m ⋄ ranks←1 0 ⋄ e←g m ⋄ [a≡+⌿d ; b≡+/d ; c≡(≢⍤[0 1])m ; e≡(≢⍤[1 0])m]

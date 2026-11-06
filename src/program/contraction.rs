@@ -21,8 +21,7 @@ pub(crate) fn contracted(nodes: &mut Nodes, p: Primitive, kind: FoldKind, of: &R
 }
 
 /// The read of new nodes in `nodes` that compute a `+` fold along `axes` of `of`, which reads `x×y` planned under `numeric`, as one product, or the reason that no product computes it. The fold runs along the axes of the `×`'s frame that step within `axes` (`within`): each is one axis of the frame, or where `of` is a view, a run of adjacent axes that it merges, as a fold along several adjacent axes reads them (`eval::folded_along`). The view merges no other axes. Both operands' sources must step along each folded axis through affine maps, except that an operand that holds one item along each folded axis factors out of the fold (`factored`). Each other axis of the frame is a batch axis where both operands step along it, a row where only the left one does, and a column where only the right one does. An axis of one item is a row. The rows or the columns must hold more than one item, because a product reuses items only along them: a fused multiply and fold, which reads each item once, costs less for `+/a×b` on arrays of one shape. A copy lays out the left operand's source as batch, row and folded axes, and the right operand's as batch, folded and column axes, or a view does where the map reads the source in order. The operands swap, and the rows with the columns, where the swapped order needs fewer copies. A product contracts them (`Step::Product`), stacked where batch axes remain, with the rows as one axis, the folded axes as one and the columns as one, and `•explain` lists it as a fast combination. A copy lays the product out as `result`, the fold's description, whose type the product's must be.
-fn product(
-    nodes: &mut Nodes, x: &Read, y: &Read, numeric: Numeric, kind: FoldKind, of: &Read, axes: &[usize], result: &Desc) -> Result<Read, &'static str> {
+fn product(nodes: &mut Nodes, x: &Read, y: &Read, numeric: Numeric, kind: FoldKind, of: &Read, axes: &[usize], result: &Desc) -> Result<Read, &'static str> {
     let (plus, times) = (Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times));
     let frame = nodes[of.of].desc.shape().to_vec();
     let lens = |axes: &[usize]| axes.iter().map(|&a| frame[a]).collect::<Vec<_>>();
@@ -34,7 +33,8 @@ fn product(
     if result.layout.shape() != lens(&kept).as_slice() { return Err("a view of the products"); }
     let agreement =
         Agreement::new(&x.layout, &y.layout).ok().filter(|a| a.layout.shape() == frame.as_slice()).ok_or("operands that don't pair as the products do")?;
-    let (mut left, mut right) = Source::of(nodes, x, &agreement.left, &frame).zip(Source::of(nodes, y, &agreement.right, &frame)).ok_or("a read that isn't affine")?;
+    let (mut left, mut right) =
+        Source::of(nodes, x, &agreement.left, &frame).zip(Source::of(nodes, y, &agreement.right, &frame)).ok_or("a read that isn't affine")?;
     // An operand that holds one item along each folded axis factors out of the fold (`factored`).
     let constant = |s: &Source| folded.iter().all(|&a| frame[a] == 1 || s.strides[a] == 0);
     match (constant(&left), constant(&right)) {

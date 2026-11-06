@@ -12,7 +12,9 @@ pub(crate) trait Stored: Element {
     /// The items of `value`, when its storage has this type.
     fn slice(value: &Value) -> Option<&[Self]> { Self::of(value.view()?) }
     /// An array of `data`, stored as this element type. Integers keep their width.
-    fn build(layout: impl Into<crate::array::Layout>, data: Vec<Self>) -> Option<Value> { Value::from_storage(layout, Storage::Compact(Self::buffer(data))).ok() }
+    fn build(layout: impl Into<crate::array::Layout>, data: Vec<Self>) -> Option<Value> {
+        Value::from_storage(layout, Storage::Compact(Self::buffer(data))).ok()
+    }
     /// An array of `data`, with integers moved to the narrowest width that holds them, in a pass over them. Other element types are stored as `build` stores them.
     fn build_narrowed(layout: impl Into<crate::array::Layout>, data: Vec<Self>) -> Option<Value> { Self::build(layout, data) }
     /// `items` read as this element type, which only the complex element types can do.

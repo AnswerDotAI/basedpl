@@ -95,13 +95,13 @@ Positions and axes count from 0, as in BQN and Python. Default [Mathish mode](ht
 
 ### Numbers
 
-Bare numbers are approximate. Use `ₓ` for exact integers and `r` for exact fractions:
+Bare numbers are approximate. Use `ₓ` for machine integers and `ᵣ` for unbounded integers and exact fractions:
 
 ``` bpl
-1r3+1r6
+1ᵣ÷3ᵣ
 ```
 
-    1ᵣ2
+    1ᵣ3
 
 Complex numbers use `j` between real and imaginary parts. Functions such as square root extend into the complex domain:
 
@@ -181,7 +181,7 @@ Explore [iteration and inverses](https://answerdotai.github.io/basedpl/glyphs/st
 f←[1 2 3]ₓ⌻ ⋄ f∂2ₓ
 ```
 
-    14ₓ
+    14
 
 [Probability distributions](https://answerdotai.github.io/basedpl/distributions.html) provide sampling, density, CDF and quantiles. Two fair coin tosses give these probabilities for 0, 1 and 2 heads:
 

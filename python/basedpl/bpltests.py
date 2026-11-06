@@ -1406,8 +1406,8 @@ class _Step:
     timing: bool = False
 
 def _cargo_test(root, *args):
-    "The command that runs `cargo test` with `args` in `root` through fastws's `run_tests`, with no execution limit of its own (the step's `timeout` bounds it), and exits 1 when a test fails."
-    return [sys.executable, '-c', f"import sys; from fastws.cargo import run_tests; r = run_tests({', '.join(map(repr, (str(root), *args)))}, timeout=None); print(r.text); sys.exit(not r.ok)"]
+    "The command that runs `cargo test` with `args` in `root` through fastws's `run_tests`, using its default per-binary execution budget, and exits 1 when a test fails."
+    return [sys.executable, '-c', f"import sys; from fastws.cargo import run_tests; r = run_tests({', '.join(map(repr, (str(root), *args)))}); print(r.text); sys.exit(not r.ok)"]
 
 def _steps(out, node):
     "The steps of `prerelease`. Its browser package goes in `out/'wasm'`. `node` is the Node binary that the editor tests run under (`_node`)."
@@ -1441,8 +1441,10 @@ def _preflight():
     notes, problems, node = [f'basedpl {version(_ROOT)}, rustymath {rm}'], [], 'node'
     need = tomllib.loads((_ROOT/'Cargo.toml').read_text())['workspace']['dependencies']['rustymath']['version']
     if re.search(rf'>=\s*{re.escape(rm)}\b', need): notes.append(f'basedpl needs rustymath {rm}, which is unreleased, so rustymath ships first')
-    if not (_ROOT/'node_modules').is_dir(): problems.append('`tests/highlighting.mjs` reads `shiki` from `node_modules`, which `npm ci` installs')
-    try: node = _node()
+    try:
+        node = _node()
+        deps = bounded([node, '--input-type=module', '-e', "import.meta.resolve('shiki')"], LIMIT, cwd=_ROOT)
+        if deps.returncode: problems.append('`tests/highlighting.mjs` needs `shiki`: run `npm ci`')
     except ValueError as e: problems.append(str(e))
     notes.append(f'Node: {node}')
     return notes, problems, node

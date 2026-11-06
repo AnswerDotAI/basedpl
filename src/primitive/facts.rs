@@ -165,9 +165,7 @@ pub(crate) struct Dyad {
 pub(crate) struct Info { pub glyph: &'static str, pub name: &'static str, pub monad: Monad, pub dyad: Dyad }
 
 /// The facts of a form with `form`, before `monad` or `dyad` names it: its own code takes arguments of any rank, and it has no meaning of its own with `⍠`.
-pub(super) const fn of(form: Form) -> Facts {
-    Facts { name: "", extension: Extension::Whole, axes: false, form, linear: None, cost: 1, cells: CellRule::No }
-}
+pub(super) const fn of(form: Form) -> Facts { Facts { name: "", extension: Extension::Whole, axes: false, form, linear: None, cost: 1, cells: CellRule::No } }
 /// The facts of a pervasive form.
 const PERVASIVE: Facts = Facts { extension: Extension::Pervasive, ..of(Form::Pervasive) };
 /// The facts of a form that moves items, selects none of its right argument's, and copies through no plan.
@@ -226,7 +224,7 @@ impl Primitive {
     };
     /// This primitive's row in the glyph table, built once, at compile time.
     pub(crate) fn info(self) -> &'static Info {
-        use {Arithmetic::*, Comparison::*, self::Form::*, Identity::*, Math::*, Selects::*};
+        use {self::Form::*, Arithmetic::*, Comparison::*, Identity::*, Math::*, Selects::*};
         const W: Rank = WHOLE;
         const fn row(glyph: &'static str, name: &'static str, monad: Monad, dyad: Dyad) -> Info { Info { glyph, name, monad, dyad } }
         // `⌷`'s forms, which bracket indexing (`A.[I J]`) shares. Rank runs only `⌷` along leading cell axes, because bracket indexing pairs its index arrays.
@@ -285,42 +283,20 @@ impl Primitive {
                 &const { row("|", "stile", monad("magnitude", 0, PERVASIVE), dyad("residue", [0, 0], PERVASIVE.axes().cost(6)).identity(Formula)) }
             }
             Self::Math(Power) => {
-                &const {
-                    row(
-                        "*", "star", monad("exponential", 0, PERVASIVE.cost(7)),
-                        dyad("exponent", [0, 0], PERVASIVE.axes().cost(25)).identity(Formula))
-                }
+                &const { row("*", "star", monad("exponential", 0, PERVASIVE.cost(7)), dyad("exponent", [0, 0], PERVASIVE.axes().cost(25)).identity(Formula)) }
             }
             Self::Math(Log) => {
-                &const {
-                    row(
-                        "⍟", "circle-star", monad("natural-log", 0, PERVASIVE.cost(12)),
-                        dyad("logarithm", [0, 0], PERVASIVE.axes().cost(12)))
-                }
+                &const { row("⍟", "circle-star", monad("natural-log", 0, PERVASIVE.cost(12)), dyad("logarithm", [0, 0], PERVASIVE.axes().cost(12))) }
             }
             Self::Math(Circle | Arc) => {
-                &const {
-                    row(
-                        "○", "circle", monad("cis", 0, PERVASIVE.form(Unsupported).cost(12)),
-                        dyad("circular", [0, 0], PERVASIVE.axes().cost(8)).code())
-                }
+                &const { row("○", "circle", monad("cis", 0, PERVASIVE.form(Unsupported).cost(12)), dyad("circular", [0, 0], PERVASIVE.axes().cost(8)).code()) }
             }
-            Self::Math(Pi) => {
-                &const { row("π", "pi", monad("pi-times", 0, PERVASIVE), dyad("pi-ratio", [0, 0], PERVASIVE.axes())) }
-            }
-            Self::Math(Root) => {
-                &const { row("√", "radical", monad("sqrt", 0, PERVASIVE.cost(2)), dyad("root", [0, 0], PERVASIVE.axes().cost(10))) }
-            }
+            Self::Math(Pi) => &const { row("π", "pi", monad("pi-times", 0, PERVASIVE), dyad("pi-ratio", [0, 0], PERVASIVE.axes())) },
+            Self::Math(Root) => &const { row("√", "radical", monad("sqrt", 0, PERVASIVE.cost(2)), dyad("root", [0, 0], PERVASIVE.axes().cost(10))) },
             Self::Math(Factorial) => {
-                &const {
-                    row(
-                        "!", "exclamation", monad("factorial", 0, PERVASIVE.cost(160)),
-                        dyad("binomial", [0, 0], PERVASIVE.axes().cost(900)).identity(Formula))
-                }
+                &const { row("!", "exclamation", monad("factorial", 0, PERVASIVE.cost(160)), dyad("binomial", [0, 0], PERVASIVE.axes().cost(900)).identity(Formula)) }
             }
-            Self::Math(Lcm) => {
-                &const { row("∧", "wedge", monad("polar", 0, of(Own)), dyad("and", [0, 0], PERVASIVE.axes().form(Constant)).identity(Logical)) }
-            }
+            Self::Math(Lcm) => &const { row("∧", "wedge", monad("polar", 0, of(Own)), dyad("and", [0, 0], PERVASIVE.axes().form(Constant)).identity(Logical)) },
             Self::Math(Gcd) => {
                 &const { row("∨", "vee", monad("real-imag", 0, of(Own)), dyad("or", [0, 0], PERVASIVE.axes().form(Constant)).identity(Logical)) }
             }
@@ -332,17 +308,11 @@ impl Primitive {
             }
             Self::Math(Not) => &const { row("~", "tilde", monad("not", 0, PERVASIVE.form(Constant)), dyad("without", [W, W], of(Orders))) },
             Self::Compare(Equal) => {
-                &const {
-                    row(
-                        "=", "equals", monad("classify", W, of(Constant)),
-                        dyad("equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Formula))
-                }
+                &const { row("=", "equals", monad("classify", W, of(Constant)), dyad("equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Formula)) }
             }
             Self::Compare(NotEqual) => {
                 &const {
-                    row(
-                        "≠", "not-equals", monad("unique-mask", W, of(Constant)),
-                        dyad("not-equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Formula))
+                    row("≠", "not-equals", monad("unique-mask", W, of(Constant)), dyad("not-equal", [0, 0], PERVASIVE.axes().form(Constant)).identity(Formula))
                 }
             }
             Self::Compare(Less) => {
@@ -509,7 +479,9 @@ impl Primitive {
             Self::Special(Special::LambertW) => &const { row("(×↢*)⁻¹", "lambertw", monad("lambertw", 0, PERVASIVE.cost(100)), NO_DYAD) },
             Self::Special(Special::Selected(..)) => &const { row("↑⍋", "selected", monad("selected", W, of(Own)), dyad("selected", [W, W], of(Own))) },
             Self::Special(Special::Ranks(_)) => &const { row("⍋⍋", "ranks", monad("ranks", W, of(Own)), NO_DYAD) },
-            Self::Special(Special::GroupCounts) => &const { row("≢⊢⌸", "group_counts", monad("group_counts", W, of(Own)), dyad("group_counts", [W, W], of(Own))) },
+            Self::Special(Special::GroupCounts) => {
+                &const { row("≢⊢⌸", "group_counts", monad("group_counts", W, of(Own)), dyad("group_counts", [W, W], of(Own))) }
+            }
             Self::Special(Special::GroupFolds(..)) => &const { row("f/⊢⌸", "group_folds", NO_MONAD, dyad("group_folds", [W, W], of(Own))) },
             Self::Special(Special::Determinant) => &const { row("-.×", "determinant", monad("determinant", W, of(Own)), NO_DYAD) },
             Self::Special(Special::Permanent) => &const { row("+.×", "permanent", monad("permanent", W, of(Own)), NO_DYAD) },

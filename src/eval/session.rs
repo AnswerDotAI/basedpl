@@ -1,10 +1,17 @@
 //! The session's evaluation API, names, display, file loading and name lookup, and calls of dfns with their error guards.
 
-use super::{Argument, Binding, Bound, Closure, Evaluation, FUNCTION_CLASS, Function, FunctionNode, MAX_CALL_DEPTH, OPERATOR_CLASS, Operator, OperatorNode, STACK_SEGMENT, SUBJECT_CLASS, Session, Step, Turn, binder::{Binder, Category, before}, bindings::{Frame, FrameBindings, Place}, depth_error, dissect::Expression, operators::Guarded, released, room, session, undefined};
-use crate::{At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value, display::Elide, name::Name, primitive::{Builtin, Primitive}, syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind}};
-use std::sync::Arc;
+use super::{
+    Argument, Binding, Bound, Closure, Evaluation, FUNCTION_CLASS, Function, FunctionNode, MAX_CALL_DEPTH, OPERATOR_CLASS, Operator, OperatorNode,
+    STACK_SEGMENT, SUBJECT_CLASS, Session, Step, Turn, binder::{Binder, Category, before}, bindings::{Frame, FrameBindings, Place}, depth_error,
+    dissect::Expression, operators::Guarded, released, room, session, undefined
+};
 use crate::syntax::Statement;
+use crate::{
+    At, Described, Error, ErrorKind, Output, ParseStatus, Parsed, Source, Span, Value, display::Elide, name::Name, primitive::{Builtin, Primitive},
+    syntax::{Definition, DefinitionKind, ListForm, Node, NodeKind, StatementKind}
+};
 use rustymath::{buffer::FloatWidth, error::Kind};
+use std::sync::Arc;
 
 impl Session {
     /// A turn at the process's one session, cleared to how a new session starts. It waits while another thread holds a turn.
@@ -187,9 +194,8 @@ impl Session {
     /// `•explain text` runs `text` in the caller's scope, as `⍎` does, computes its value, and gives a record of that value and of what happened while it ran and computed (`explain`). Computing a pending value records no `forced` row, as the speed timer's computing records none.
     pub(crate) fn system_explain(&self, _: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         crate::transform::acts().at(span)?;
-        let (result, events) = crate::explain::explained(|| {
-            self.execute(None, right, span).and_then(|r| r.array(span)).and_then(|value| value.forced().map(|()| value))
-        });
+        let (result, events) =
+            crate::explain::explained(|| self.execute(None, right, span).and_then(|r| r.array(span)).and_then(|value| value.forced().map(|()| value)));
         events.report(result?, span)
     }
     /// `•literal text` reads a value from BPL source, as `•literal⁻¹` writes it, without running code. The text may hold literals and the functions that `•literal⁻¹` writes: `⍴`, `⊂`, `,`, `:` and `•ucs`.
@@ -218,8 +224,7 @@ impl Session {
             Value::Function(f) => self.fastest(&f, right, span), _ => Err(Error::domain("•time needs functions on its left").at(span))
         }).collect::<Result<Vec<_>, _>>()?;
         if functions.is_atom() { return Ok(second(times[0])); }
-        Value::floats(functions.layout().clone(), FloatWidth::F64, times)
-            .described("invalid •time result").at(span)
+        Value::floats(functions.layout().clone(), FloatWidth::F64, times).described("invalid •time result").at(span)
     }
     /// The fastest time per call of `f` on `x`, in seconds, including the computation of any items that the result defers (`Value::forced`). Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.
     fn fastest(&self, f: &Function, x: &Value, span: &Span) -> Result<f64, Error> {

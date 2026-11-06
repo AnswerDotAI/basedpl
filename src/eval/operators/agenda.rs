@@ -17,7 +17,8 @@ fn cases_picked(selector: &Value, len: usize, span: &Span) -> Result<Value, Erro
 }
 
 /// `selector⍚cases`. A unit selector picks one case, which takes the whole arguments. Any other selector picks a case for each cell (`Cells::chosen`), or, where a select can run both cases on every item, selects their results item by item (`selected`).
-pub(super) fn agenda<L: Argument, R: Argument>(operands: &[Operand; 2], left: Option<L>, right: R, text: impl FnOnce() -> String, span: &Span) -> Result<Bound, Error> {
+pub(super) fn agenda<L: Argument, R: Argument>(
+    operands: &[Operand; 2], left: Option<L>, right: R, text: impl FnOnce() -> String, span: &Span) -> Result<Bound, Error> {
     let [selector, Operand::Value(fs)] = operands else { unreachable!() };
     let (x, y) = (left.as_ref().map(L::value), right.value());
     let index = computed(selector, x, y, span)?;
@@ -64,7 +65,7 @@ fn predicate(a: &Value) -> Option<Function> { if a.shape() != [1] { return None;
 
 /// `f@[p]`, where `p` gives the mask `selector`: `f` runs once on the cells whose mask isn't 0 (`fusion::truths`, `Cells::marked`), and its results go back in their places under assignment's rule. Every other cell keeps its value, as does one whose key the mask lacks. A unit mask marks the whole argument or none of it. Where a select can run `f` on every item, it does (`selected`), and `•explain` names the call with `text`.
 fn masked(f: &Function, selector: &Value, left: Option<&Value>, right: &Value, text: impl FnOnce() -> String, span: &Span) -> Result<Value, Error> {
-    let selector = &crate::fusion::truths(selector, span)?;
+    let selector = &*crate::fusion::truths(selector, span)?;
     if selector.shape().is_empty() {
         let [k] = crate::primitive::positions(selector, 2)?[..] else { unreachable!("a unit has one position") };
         if k != 1 { return Ok(right.clone()); }
@@ -139,8 +140,8 @@ fn select_cost(f: &Function, width: rustymath::buffer::FloatWidth) -> Option<u32
     let numeric = Numeric::current();
     let kernel = |p: Primitive, dyadic: bool| {
         let copies = u32::from(p.facts(dyadic).cost);
-        crate::pervasive::kernel_at(p, None, DType::Float(width), 1 + usize::from(dyadic), numeric).is_some_and(|k| crate::pervasive::settles(&k) && matches!(k.result_dtype(), DType::Float(_)))
-            .then_some(copies)
+        crate::pervasive::kernel_at(p, None, DType::Float(width), 1 + usize::from(dyadic), numeric)
+            .is_some_and(|k| crate::pervasive::settles(&k) && matches!(k.result_dtype(), DType::Float(_))).then_some(copies)
     };
     let dyad = |g: &Function| g.dyadic_primitive().and_then(|p| kernel(p, true));
     if let Some(a) = f.as_constant() { return (real(a) == Some(width)).then_some(0); }
@@ -262,7 +263,8 @@ impl Cells {
                 }
             }
             // The case cells give the cells' layout. The scalar fills at cells that pick no case carry none.
-            let result = Value::assemble_layout(&self.framed.frame(), &items, &fill, crate::array::Widening::Items, None, Some(&cell)).described("invalid result")?;
+            let result =
+                Value::assemble_layout(&self.framed.frame(), &items, &fill, crate::array::Widening::Items, None, Some(&cell)).described("invalid result")?;
             let (_, positions) = placed(&self.framed, &self.axes, &cell)?;
             if rustymath::gather::counts_up(&positions) { return Ok(result); }
             return crate::primitive::transpose_axes(fronted(&self.axes, self.framed.layout.shape().len()), &result);
@@ -303,7 +305,8 @@ impl Cells {
 pub(in crate::eval) enum Guarded { Unanimous(bool), Joined(Value) }
 
 /// A guard whose predicate gives each cell of batched run `level` a Boolean of its own, run as `⍚` runs a selector for each cell (`Cells`). `truths` holds the Booleans, laid out as the run's frame (`batch::truths`). Where the cells take both sides, `side` runs each side once, on the cells that take it, given whether the predicate holds there, the cells' positions in the frame and their layout as a list. It gives a batch over those cells or a constant (`batch::whole_over`), and the two results join into one batch over the frame. A side whose cells differ in layout from the other side's stops the run, because a batch's cells share one layout.
-pub(in crate::eval) fn guard(truths: &Value, level: u64, mut side: impl FnMut(bool, &[u32], &crate::array::Layout) -> Result<Value, Error>) -> Result<Guarded, Error> {
+pub(in crate::eval) fn guard(
+    truths: &Value, level: u64, mut side: impl FnMut(bool, &[u32], &crate::array::Layout) -> Result<Value, Error>) -> Result<Guarded, Error> {
     use crate::error::{Cause, Stop};
     let cells = Cells::new(truths, None, truths)?;
     let groups = cells.picked(truths, 2)?;

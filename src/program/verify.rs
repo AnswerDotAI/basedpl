@@ -42,7 +42,9 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
             let y = operand(nodes, right, &y);
             let mapped = plan::map(plan.p, x.as_ref(), &y, plan.same, plan.numeric)?;
             let held = [x.as_ref().is_some_and(|o| matches!(o, Operand::Held(_))), matches!(y, Operand::Held(_))];
-            if same(&mapped.plan, plan, held) { Ok(mapped.desc) } else { Err("a plan other than the one that its operands give") }
+            // A scalar read through another layout can lose its constant in `operand`; the stored plan keeps that constant and its result bound.
+            if same(&mapped.plan, plan, held) { Ok(Desc { range: plan.result_range(), ..mapped.desc }) }
+            else { Err("a plan other than the one that its operands give") }
         }
         Step::Convert { of, .. } => plan::convert(&desc(of), node.desc.dtype()),
         Step::Copy { of, .. } if node.desc.atom => plan::item(&nodes[*of].desc),

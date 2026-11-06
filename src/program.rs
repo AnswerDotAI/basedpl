@@ -22,7 +22,7 @@ pub(crate) struct Program {
 }
 
 /// A value of a program: its description, and what makes it.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Node { pub(crate) desc: Desc, pub(crate) origin: Origin }
 
 impl Node {
@@ -30,8 +30,7 @@ impl Node {
     fn matches(&self, other: &Node) -> bool {
         let same = match (&self.origin, &other.origin) {
             (Origin::Step(x), Origin::Step(y)) => x == y,
-            (Origin::Held(x), Origin::Held(y)) => match (held_identity(x), held_identity(y)) { (None, None) => x.same(y), (a, b) => a == b },
-            _ => false
+            (Origin::Held(x), Origin::Held(y)) => match (held_identity(x), held_identity(y)) { (None, None) => x.same(y), (a, b) => a == b }, _ => false
         };
         same && self.desc == other.desc
     }
@@ -55,9 +54,7 @@ impl Node {
 /// What identifies a held value, as `Node::matches` compares it and `Node::key` hashes it: for an array, the pending array that it defers to, so that a program holds each pending array once (`fusion::held`), or else its allocation; for a carried atom, its carrier's allocation (`Carrier::identity`). `None` for a plain atom, which matches by value.
 fn held_identity(v: &Value) -> Option<*const ()> {
     match v {
-        Value::Array(a) => Some(v.pending().map_or(Arc::as_ptr(a).cast::<()>(), |p| Arc::as_ptr(p).cast())),
-        Value::Carried(c) => Some(c.identity()),
-        _ => None,
+        Value::Array(a) => Some(v.pending().map_or(Arc::as_ptr(a).cast::<()>(), |p| Arc::as_ptr(p).cast())), Value::Carried(c) => Some(c.identity()), _ => None
     }
 }
 
@@ -93,13 +90,28 @@ impl Nodes {
     }
 }
 
-impl std::ops::Deref for Nodes { type Target = [Node]; fn deref(&self) -> &[Node] { &self.list } }
+impl std::ops::Deref for Nodes {
+    type Target = [Node];
+    fn deref(&self) -> &[Node] { &self.list }
+}
 impl std::fmt::Debug for Nodes { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { std::fmt::Debug::fmt(&self.list, f) } }
 impl FromIterator<Node> for Nodes {
-    fn from_iter<I: IntoIterator<Item = Node>>(nodes: I) -> Self { let mut out = Self::default(); for node in nodes { out.push(node); } out }
+    fn from_iter<I: IntoIterator<Item = Node>>(nodes: I) -> Self {
+        let mut out = Self::default();
+        for node in nodes { out.push(node); }
+        out
+    }
 }
-impl IntoIterator for Nodes { type Item = Node; type IntoIter = std::vec::IntoIter<Node>; fn into_iter(self) -> Self::IntoIter { self.list.into_iter() } }
-impl<'a> IntoIterator for &'a Nodes { type Item = &'a Node; type IntoIter = std::slice::Iter<'a, Node>; fn into_iter(self) -> Self::IntoIter { self.list.iter() } }
+impl IntoIterator for Nodes {
+    type Item = Node;
+    type IntoIter = std::vec::IntoIter<Node>;
+    fn into_iter(self) -> Self::IntoIter { self.list.into_iter() }
+}
+impl<'a> IntoIterator for &'a Nodes {
+    type Item = &'a Node;
+    type IntoIter = std::slice::Iter<'a, Node>;
+    fn into_iter(self) -> Self::IntoIter { self.list.iter() }
+}
 
 /// Adds `own` in order to `nodes`, as `Program::add_to` does, and gives the new number of each of its nodes.
 fn added(own: Nodes, nodes: &mut Nodes, mut replaced: impl FnMut(&mut Nodes, &[usize], usize, &Node) -> Option<usize>) -> Vec<usize> {
@@ -112,10 +124,31 @@ fn added(own: Nodes, nodes: &mut Nodes, mut replaced: impl FnMut(&mut Nodes, &[u
     at
 }
 
-/// One copy of the source of node `node`, where `node` is itself a copy, through its map composed with `map` for a result of `shape` (`Mapping::compose`). `None` for any other node, and where the maps don't compose. The trace and fusion's resolved programs both compose a copy of a copy through it.
+/// The positional source of a copy or kind-preserving structural step. Structural parameters must already be stored under their recorded layouts; otherwise returns `None` without forcing or observation.
+pub(crate) fn positional_source<'a>(nodes: &[Node], node: usize, value: impl Fn(usize) -> Option<&'a Value>) -> Option<(Read, Mapping)> {
+    match &nodes[node].origin {
+        Origin::Step(Step::Copy { of, map }) => Some((Read::node(nodes, *of), map.clone())),
+        Origin::Step(Step::Structural { inputs, form, params, .. }) => {
+            let params = params.iter().map(|r| {
+                let v = value(r.of)?;
+                if v.pending().is_some() || v.carried() || v.layout() != &r.layout { return None; }
+                Some(v.clone())
+            }).collect::<Option<Vec<_>>>()?;
+            let layouts: Vec<&Layout> = inputs.iter().map(|r| &r.layout).collect();
+            let plan = crate::primitive::structural::plan(form, &params, &layouts).ok()?.1;
+            let (source, map) = plan.positional(nodes[node].desc.shape())?;
+            let source = inputs.get(source)?;
+            if nodes[source.of].desc.kind != nodes[node].desc.kind { return None; }
+            Some((source.clone(), map))
+        }
+        _ => None,
+    }
+}
+
+/// One copy of node `node`'s positional source, composing its map with `map` for a result of `shape`. Unresolved parameters and maps that don't compose give `None`.
 pub(crate) fn copy_of_copy(nodes: &[Node], node: usize, map: &Mapping, shape: &[usize]) -> Option<Step> {
-    let Origin::Step(Step::Copy { of, map: inner }) = &nodes[node].origin else { return None };
-    Some(Step::Copy { of: *of, map: inner.compose(map, nodes[node].desc.shape(), shape)? })
+    let (source, inner) = positional_source(nodes, node, |j| match &nodes[j].origin { Origin::Held(v) => Some(v), _ => None })?;
+    Some(Step::Copy { of: source.of, map: inner.compose(map, nodes[node].desc.shape(), shape)? })
 }
 
 /// The node that a read of node `of` through `map`, for a result of `frame`, takes its items from, with the map to them: through each copy that the read meets whose map composes (`copy_of_copy`), or `of` itself.
@@ -181,15 +214,19 @@ pub(crate) enum Step {
     Product { f: Primitive, g: Primitive, left: Read, right: Read, stacked: bool },
     /// `yes` where the Booleans of `mask` are true and `no` where they're false, each an array of the mask's layout or an atom (`plan::select`).
     Select { mask: Read, yes: Read, no: Read },
-    /// `base` with each item of `items` combined into it by `p` at the place that `writes`, a map that the program holds (`Step::holds_lengths`), gives for that item, as `Pairing::At` pairs them (`plan::at`): accumulation where `p` is `+`.
-    At { p: Primitive, base: Read, items: Read, writes: Mapping },
+    /// `base` with each item of `items` combined into it by `p` at `writes`: a held map or positions read at replay (`Writes`). This is accumulation where `p` is `+` (`plan::at`).
+    At { p: Primitive, base: Read, items: Read, writes: Writes },
     /// A mask of Booleans in the layout of `of`, true at the item of each lane along `axis` that `p`, `⌈` or `⌊`, picks, the first of any ties (`derivative::extreme_mask`, `plan::picks`).
     Picks { p: Primitive, axis: usize, of: Read },
     /// Monadic `p`, `≢` or `⍴`, of `of`, read from its value's layout when the step runs, so that a replay at new lengths gives the new count or shape (`trace::build` needn't key the lengths exactly).
     Shape { p: Primitive, of: Read },
 }
 
-/// The index parts of a selection whose positions the program reads at replay (`Step::Gather`): each axis part a read of the node that holds its positions, with index arrays paired, as `.[]` pairs them, or crossed, as `⌷` crosses them.
+/// Where an accumulation writes: a held map, which fixes lengths, or a selector whose positions the program reads at replay (`Step::At`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Writes { Map(Mapping), By(Selector) }
+
+/// The index parts of a selection whose positions the program reads at replay (`Step::Gather`, `Writes::By`): each axis part a read of its positions, with index arrays paired as `.[]` pairs them or crossed as `⌷` crosses them.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Selector { pub(crate) parts: Vec<IndexPart<Read>>, pub(crate) paired: bool }
 
@@ -232,16 +269,25 @@ macro_rules! operands {
             Step::Copy { .. } => ([None, None, None], None, none()),
             Step::Structural { inputs, params, fill, .. } => ([fill.$as(), None, None], None, [Some(inputs), Some(params)]),
             Step::Gather { of, by } => ([Some(of), None, None], Some(by), none()),
-            Step::At { base, items, .. } => ([Some(base), Some(items), None], None, none()),
+            Step::At { base, items, writes, .. } => (
+                [Some(base), Some(items), None], match writes {
+                    Writes::By(by) => Some(by),
+                    Writes::Map(_) => None,
+                }, none(),
+            ),
             Step::Picks { of, .. } => ([Some(of), None, None], None, none()),
             Step::Shape { of, .. } => ([Some(of), None, None], None, none()),
         };
-        reads.into_iter().flatten().chain(by.into_iter().flat_map(|by| {
-            by.parts.$iter().filter_map(|part| match part {
-                IndexPart::Axis(read) => Some(read),
-                _ => None,
-            })
-        })).chain(lists.into_iter().flatten().flat_map(|list| list.$iter()))
+        reads
+            .into_iter()
+            .flatten()
+            .chain(by.into_iter().flat_map(|by| {
+                by.parts.$iter().filter_map(|part| match part {
+                    IndexPart::Axis(read) => Some(read),
+                    _ => None,
+                })
+            }))
+            .chain(lists.into_iter().flatten().flat_map(|list| list.$iter()))
     }};
 }
 
@@ -261,17 +307,16 @@ impl Step {
         for read in self.operands_mut() { read.of = at[read.of]; }
     }
     /// Whether this step holds a table of positions, as a copy or an accumulation does where a selection by data made its positions (`Mapping::tabled`). `planned` keeps no plan for a program with such a step.
-    pub(crate) fn tabled(&self) -> bool { matches!(self, Step::Copy { map, .. } | Step::At { writes: map, .. } if map.tabled()) }
+    pub(crate) fn tabled(&self) -> bool { matches!(self, Step::Copy { map, .. } | Step::At { writes: Writes::Map(map), .. } if map.tabled()) }
     /// Whether this step holds lengths that fix it to one size: a copy or an accumulation through a raw map. A recording that holds one replays only at the lengths it was built for (`trace::build`).
-    pub(crate) fn holds_lengths(&self) -> bool { matches!(self, Step::Copy { .. } | Step::At { .. }) }
+    pub(crate) fn holds_lengths(&self) -> bool { matches!(self, Step::Copy { .. } | Step::At { writes: Writes::Map(_), .. }) }
     /// The glyph that `•explain` lists for this step: the function's for a map or an accumulation, the fold's, the product's with `⍤2` on stacks, `⍚` for a select, the query's for a shape step, and none for a conversion, a copy, a structural call, a gather, an overlap add or picks.
     pub(crate) fn glyph(&self) -> String {
         match *self {
             Step::Map { ref plan, .. } => plan.p.glyph().into(), Step::At { p, .. } => p.glyph().into(),
             Step::Fold { p, kind, .. } => Operation::Fold(p, kind).glyph(),
             Step::Product { f, g, stacked, .. } => Operation::Product(f, g).glyph() + if stacked { "⍤2" } else { "" },
-            Step::Select { .. } => Operation::Select.glyph(),
-            Step::Shape { p, .. } => p.glyph().into(),
+            Step::Select { .. } => Operation::Select.glyph(), Step::Shape { p, .. } => p.glyph().into(),
             Step::Convert { .. } | Step::Copy { .. } | Step::Structural { .. } | Step::Gather { .. } | Step::Picks { .. } => String::new()
         }
     }
@@ -299,7 +344,8 @@ impl Program {
                 Origin::Step(Step::Copy { of, .. }) => format!("copy {}", at(*of)),
                 Origin::Step(Step::Structural { inputs, form, params, fill }) => format!(
                     "{form:?} {}{}{}", inputs.iter().map(read).collect::<Vec<_>>().join(" "),
-                    params.iter().map(|p| " ".to_owned() + &read(p)).collect::<String>(), fill.as_ref().map(|f| " fill ".to_owned() + &read(f)).unwrap_or_default()
+                    params.iter().map(|p| " ".to_owned() + &read(p)).collect::<String>(),
+                    fill.as_ref().map(|f| " fill ".to_owned() + &read(f)).unwrap_or_default()
                 ),
                 Origin::Step(Step::Gather { of, by }) => format!("gather {} at {}", read(of), by.listing(read)),
                 Origin::Step(step @ Step::Fold { axis, seed, of, .. }) => {
@@ -307,7 +353,12 @@ impl Program {
                 }
                 Origin::Step(step @ Step::Product { left, right, .. }) => format!("{} {} {}", step.glyph(), read(left), read(right)),
                 Origin::Step(step @ Step::Select { mask, yes, no }) => format!("{} {} {} {}", step.glyph(), read(mask), read(yes), read(no)),
-                Origin::Step(step @ Step::At { base, items, .. }) => format!("{} into {} {}", step.glyph(), read(base), read(items)),
+                Origin::Step(step @ Step::At { base, items, writes, .. }) => format!(
+                    "{} into {} {}{}", step.glyph(), read(base), read(items), match writes {
+                        Writes::By(by) => format!(" at {}", by.listing(read)),
+                        Writes::Map(_) => String::new(),
+                    }
+                ),
                 Origin::Step(Step::Picks { p, axis, of }) => format!("picks {} along {axis} {}", p.glyph(), read(of)),
                 Origin::Step(step @ Step::Shape { of, .. }) => format!("{} {}", step.glyph(), read(of)),
             };

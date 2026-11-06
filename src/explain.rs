@@ -190,10 +190,11 @@ impl Events {
             }).collect::<Vec<_>>().join(" ")
         };
         let mut rows: Vec<_> = self.report.records.iter().filter_map(|event| Some((event.name(), event.slow_name()?.to_owned(), text(event)))).collect();
-        rows.extend(by_route(self.unclaimed.iter().copied()).into_iter().map(|(route, items)| ("itemwise", route.name().to_owned(), format!("{} {items}", route.name()))));
+        rows.extend(
+            by_route(self.unclaimed.iter().copied()).into_iter()
+                .map(|(route, items)| ("itemwise", route.name().to_owned(), format!("{} {items}", route.name()))));
         rows.extend(self.report.records.iter().filter_map(|event| match event {
-            Event::Route(r) if r.kind == EventKind::Declined => Some((event.name(), format!("{}: {}", r.route.name(), r.reason), text(event))),
-            _ => None,
+            Event::Route(r) if r.kind == EventKind::Declined => Some((event.name(), format!("{}: {}", r.route.name(), r.reason), text(event))), _ => None
         }));
         rows
     }

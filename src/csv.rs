@@ -70,9 +70,7 @@ impl Options {
             field = field.replace(self.decimal, ".");
         }
         let digits = field.trim_start_matches(['+', '-']);
-        if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
-            return Number::decimal(&field).map(|n| Number::data_integer(n, self.width));
-        }
+        if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) { return Number::decimal(&field).map(|n| Number::data_integer(n, self.width)); }
         let n = Number::float(field.parse::<f64>().ok()?, self.width);
         if n.is_infinite() && !matches!(digits.to_ascii_lowercase().as_str(), "inf" | "infinity") { return None; }
         Some(n)

@@ -66,9 +66,7 @@ fn planned() -> Option<Numeric> { PLANNED.with(std::cell::Cell::get) }
 /// `f`, run with `numeric` as this thread's numeric settings: a pending array computes its items under the settings that planned it, whatever `•prefs` has set since. Code that the force runs on other threads reads no settings: a block stage's folds take theirs from the plan (`BlockFold::settings`).
 pub(crate) fn under<T>(numeric: Numeric, f: impl FnOnce() -> T) -> T {
     struct Restore(Option<Numeric>);
-    impl Drop for Restore {
-        fn drop(&mut self) { PLANNED.with(|p| p.set(self.0)); }
-    }
+    impl Drop for Restore { fn drop(&mut self) { PLANNED.with(|p| p.set(self.0)); } }
     let _restore = Restore(PLANNED.with(|p| p.replace(Some(numeric))));
     f()
 }

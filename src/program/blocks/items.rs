@@ -14,7 +14,7 @@ impl Last<'_, '_> {
         match self {
             Last::F32(_) => DType::Float(FloatWidth::F32), Last::F64(_) => DType::Float(FloatWidth::F64), Last::Bool(_) => DType::Boolean,
             Last::U8(_) => DType::Integer(Width::U8), Last::I16(_) => DType::Integer(Width::I16), Last::I32(_) => DType::Integer(Width::I32),
-            Last::I64(_) => DType::Integer(Width::I64), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer"),
+            Last::I64(_) => DType::Integer(Width::I64), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer")
         }
     }
     /// Writes the first `n` items of `out`, which have the slots' type, into the next `n` slots.
@@ -23,7 +23,7 @@ impl Last<'_, '_> {
         match self {
             Last::F32(s) => s.copy(&f32::held(view)[..n]), Last::F64(s) => s.copy(&f64::held(view)[..n]), Last::Bool(s) => s.copy(&bool::held(view)[..n]),
             Last::U8(s) => s.copy(&u8::held(view)[..n]), Last::I16(s) => s.copy(&i16::held(view)[..n]), Last::I32(s) => s.copy(&i32::held(view)[..n]),
-            Last::I64(s) => s.copy(&i64::held(view)[..n]), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer"),
+            Last::I64(s) => s.copy(&i64::held(view)[..n]), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer")
         }
     }
 }
@@ -76,7 +76,8 @@ impl<'a> Got<'a> {
     pub(super) fn dtype(&self) -> DType {
         match self {
             Got::F32(_) => DType::Float(FloatWidth::F32), Got::F64(_) => DType::Float(FloatWidth::F64), Got::Bool(_) => DType::Boolean,
-            Got::U8(_) => DType::Integer(Width::U8), Got::I16(_) => DType::Integer(Width::I16), Got::I32(_) => DType::Integer(Width::I32), Got::I64(_) => DType::Integer(Width::I64),
+            Got::U8(_) => DType::Integer(Width::U8), Got::I16(_) => DType::Integer(Width::I16), Got::I32(_) => DType::Integer(Width::I32),
+            Got::I64(_) => DType::Integer(Width::I64)
         }
     }
 }

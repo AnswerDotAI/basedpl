@@ -1,11 +1,17 @@
 //! Assignment: plain, destructuring, modified and selective.
 
 use super::tree::{Fact, Facts};
-use super::{ArrayBinding, Binding, Function, INVALID_SELECTION, NO_TARGET, OperatorNode, STRAND_TARGET, Session, binder::{Binder, Category, Entity, Rule, Term, atop, narrow}, bindings::Place, fusion_report, undefined};
-use crate::{At, Described, Error, ErrorKind, Span, Value, array::Frame as ResultFrame, name::Name, primitive::{Builtin, OperatorKind, Primitive, Selection, Superscript, Targets}, syntax::{DefinitionKind, ListForm, Node, NodeKind}};
+use super::{
+    ArrayBinding, Binding, Function, INVALID_SELECTION, NO_TARGET, OperatorNode, STRAND_TARGET, Session,
+    binder::{Binder, Category, Entity, Rule, Term, atop, narrow}, bindings::Place, fusion_report, undefined
+};
+use crate::{
+    At, Described, Error, ErrorKind, Span, Value, array::Frame as ResultFrame, name::Name,
+    primitive::{Builtin, OperatorKind, Primitive, Selection, Superscript, Targets}, syntax::{DefinitionKind, ListForm, Node, NodeKind}
+};
+use rustymath::error::Kind;
 use rustymath::hashing::{HashMap, HashMapExt};
 use std::sync::Arc;
-use rustymath::error::Kind;
 
 impl Session {
     /// Whether `nodes` is one name that can hold an array, or brackets of such names, as in `[a b]←`.
@@ -137,7 +143,9 @@ impl Session {
             return if self.modify_monadic(target)? { Ok(Binding::NoResult) } else { Err(Error::new(ErrorKind::Syntax, NO_TARGET).at(span)) };
         };
         match local {
-            Some(k) => self.bindings.insert(Place::Slot(self.bindings.current().expect("a compiled statement runs in its dfn's frame"), k), value.clone().stored()),
+            Some(k) => {
+                self.bindings.insert(Place::Slot(self.bindings.current().expect("a compiled statement runs in its dfn's frame"), k), value.clone().stored())
+            }
             None => self.assign(target, &value)?,
         }
         Ok(value)
@@ -193,8 +201,7 @@ impl Session {
         }
         if let Some((name, derivative)) = self.rule_target(target) { return self.attach_rule(name, derivative, value, span); }
         match self.modified_target(target)? {
-            Some((array, modifier)) => self.modify(array, modifier, value),
-            None => self.assign_selected(target, None, value),
+            Some((array, modifier)) => self.modify(array, modifier, value), None => self.assign_selected(target, None, value)
         }
     }
 

@@ -1,15 +1,16 @@
 //! Folds of stored values by the pervasive functions: along an axis, in groups, in sliding windows and as picks, through `p`'s formula and rustymath's reductions.
 use super::*;
 
-/// A reduction of `right` along `axis`, from the right as the general fold does, through `p`'s formula (`Kernel::fold_read`) from the kind the fold computes in, with `map`'s reruns at wider kinds (`computed`), as an integer `-/[0 1]ₓ` reruns past `u8`. The formula's own fold combines items in any order where `p` allows it, and an unseeded `-` or `÷` folds as an alternating sum or product. A pending copy reads its source through its map, with its prototype at each fill position, so rustymath folds it by sliding windows or through the map (`reduce::fold_route`) without building the copy, unless a name holds it and its map doesn't reread cheaply (`reduce::rereads_cheaply`): that copy is built once, for its later reads. A seed combines with the total through `map`, for functions that `seed_last` allows. `None` where no kind gives the result, as for an empty lane of a function with no identity: the general fold then gives the result or error.
-pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value>) -> Option<Value> {
-    use rustymath::operation::{Direction, Seed};
+/// A reduction of `right` along `axis`, from the right as the general fold does, through `p`'s formula (`Kernel::fold_read`) from the kind the fold computes in, with `map`'s reruns at wider kinds (`computed`), as an integer `-/[0 1]ₓ` reruns past `u8`. The formula's own fold combines items in any order where `p` allows it, and an unseeded `-` or `÷` folds as an alternating sum or product. A pending copy reads its source through its map, with its prototype at each fill position, so rustymath folds it by sliding windows or through the map (`reduce::fold_route`) without building the copy, unless `reduce::fold_route` chooses stored lanes for a held copy (`FoldRoute::Lanes`): that copy is built once, for its later reads. A seed combines with the total through `map`, for functions that `seed_last` allows. `None` where no kind gives the result, as for an empty lane of a function with no identity: the general fold then gives the result or error. A failed seed combination returns its error.
+pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value>) -> Option<Result<Value, crate::Error>> {
+    use rustymath::{operation::{Direction, Seed}, reduce::{FoldRoute, fold_route}};
     if seed.is_some() && !seed_last(p, right) { return None; }
     let plan = plan::fold(p, FoldKind::REDUCE, seed.map(Kind::value), Kind::value(right), Numeric::current());
     let numeric = plan.numeric;
     let floats = match plan.floated() { Some(width) => Some(right.to_float_width(width).ok()?), None => None };
-    let copy = floats.is_none().then(|| crate::fusion::source(right)).flatten()
-        .filter(|(_, mapping)| !crate::fusion::held_copy(right) || reduce::rereads_cheaply(mapping, right.shape()));
+    let copy = floats.is_none().then(|| crate::fusion::source(right)).flatten().filter(|(source, mapping)| {
+        !matches!(fold_route(mapping, right.shape(), Some(source.shape()), crate::fusion::held_copy(right), &[axis]), FoldRoute::Lanes)
+    });
     let items = copy.as_ref().map_or_else(|| floats.as_ref().unwrap_or(right), |(source, _)| source);
     let dtype = plan.computes_in()?;
     let settings = numeric.settings_for(dtype);
@@ -19,15 +20,20 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
     let fill = mapping.fills().then(|| crate::array::Layout::from([1]).filled(&right.prototype()));
     let args: Vec<_> = std::iter::once((items, &mapping, right.len())).chain(fill.as_ref().map(|f| (f, &Mapping::Single, 1))).collect();
     let missing = if fill.is_some() { Missing::Scalar(1) } else { Missing::Default };
-    let ((out, order), _) = with_reads(&args, missing, |reads, types| computed(p, None, &[types[0]; 2], dtype, numeric, |kernel| {
-        let mut out = Buffer::with_capacity(kernel.fold_dtype(types[0], len, None), 0);
-        kernel.fold_read(right.shape(), axis, Seed::Identity, Direction::Right, settings, reads[0], &mut out).map(|order| (out, order))
-    }))?.ok().flatten()?;
+    let ((out, order), _) = with_reads(&args, missing, |reads, types| {
+        computed(p, None, &[types[0]; 2], dtype, numeric, |kernel| {
+            let mut out = Buffer::with_capacity(kernel.fold_dtype(types[0], len, None), 0);
+            kernel.fold_read(right.shape(), axis, Seed::Identity, Direction::Right, settings, reads[0], &mut out).map(|order| (out, order))
+        })
+    })?.ok().flatten()?;
     // A copy lays out folds left in their source's order, pending where it's large, so that a later fold of windows can slide over them.
     let laid = if order.is_some() { vec![out.len()] } else { shape.clone() };
-    let result = wrapped(rounded(Value::from_bounded(laid, out, numeric.fixed, plan.range(right.range(), None, len)).ok()?, plan.halve), || right.dtype(), numeric);
-    let result = match order { Some(order) => crate::fusion::copied(&result, crate::array::Layout::from(shape), &Mapping::from(order), None).ok()?, None => result };
-    let Some(seed) = seed else { return Some(result) };
+    let result =
+        wrapped(rounded(Value::from_bounded(laid, out, numeric.fixed, plan.range(right.range(), None, len)).ok()?, plan.halve), || right.dtype(), numeric);
+    let result = match order {
+        Some(order) => crate::fusion::copied(&result, crate::array::Layout::from(shape), &Mapping::from(order), None).ok()?, None => result
+    };
+    let Some(seed) = seed else { return Some(Ok(result)) };
     let agreement = Agreement::new(result.layout(), seed.layout()).ok()?;
     map(&plan::pervasive_on(p, Some(&result), seed, numeric), Some(&result), seed, &agreement)
 }

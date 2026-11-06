@@ -58,17 +58,23 @@ pub fn difference(x: &Value, y: &Value, relative: Option<f64>, absolute: f64, ex
         let kind = if x.shape().len() == y.shape().len() { "length differs" } else { "rank differs" };
         return Some(Difference::new(kind, format!("shape: {:?} != {:?}", x.shape(), y.shape())));
     }
-    if x.layout().all_keys() != y.layout().all_keys() || x.axis_names() != y.axis_names() { return Some(Difference::new("keys or names differ", "axis keys or names")); }
-    let items = x.elements().zip(y.elements()).enumerate().find_map(|(i, (a, b))| inner(&a, &b).map(|d| Difference { in_item: !d.message.is_empty(), message: format!("data[{i}]{}", d.message), ..d }));
-    items.or_else(|| inner(&x.prototype(), &y.prototype()).map(|d| Difference { kind: "prototype differs", in_item: false, message: format!("prototype{}", d.message) }))
+    if x.layout().all_keys() != y.layout().all_keys() || x.axis_names() != y.axis_names() {
+        return Some(Difference::new("keys or names differ", "axis keys or names"));
+    }
+    let items = x.elements().zip(y.elements()).enumerate()
+        .find_map(|(i, (a, b))| inner(&a, &b).map(|d| Difference { in_item: !d.message.is_empty(), message: format!("data[{i}]{}", d.message), ..d }));
+    items.or_else(|| {
+        inner(&x.prototype(), &y.prototype()).map(|d| Difference { kind: "prototype differs", in_item: false, message: format!("prototype{}", d.message) })
+    })
 }
 
 /// `kind`, or the storage that explains a mismatch of `actual` from `expected` under `numeric`: floats where machine integers are expected, a rational result, or a rank-0 array where an atom is expected.
 fn explained(actual: &Value, expected: &Value, numeric: Numeric, kind: &'static str) -> &'static str {
     let (got, wanted) = (actual.storage_kind(numeric), expected.storage_kind(numeric));
     let integers = wanted == "integer" || wanted.starts_with("int") || wanted.starts_with("uint");
-    if got.starts_with("float") && integers { if actual.is_atom() { "float atom for int" } else { "float array for int" } }
-    else if got == "rational" && wanted != "rational" { "rational result" }
+    if got.starts_with("float") && integers {
+        if actual.is_atom() { "float atom for int" } else { "float array for int" }
+    } else if got == "rational" && wanted != "rational" { "rational result" }
     else if !actual.is_atom() && actual.shape().is_empty() && expected.is_atom() { "rank-0 array for atom" }
     else { kind }
 }
@@ -144,8 +150,7 @@ struct Outcome { value: Option<Value>, numeric: Numeric, expected: Option<Value>
 fn tolerances(case: &JsonValue) -> (Option<f64>, f64) { (case["relative_tolerance"].as_f64(), case["absolute_tolerance"].as_f64().unwrap_or(TOLERANCE)) }
 
 /// `case`'s code checked against an independent captured value or BPL expectation, in `run`, under the settings in force. Each side receives a fresh session, and the expectation evaluates after the code, under the settings that the code leaves. A BPL expectation must match each number's exactness. A value captured from another interpreter carries none, so its numbers compare by value. A failure's message names its run.
-fn outcome(
-    case: &JsonValue, setup: &str, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<Outcome, JsonValue> {
+fn outcome(case: &JsonValue, setup: &str, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<Outcome, JsonValue> {
     let Some(code) = case["code"].as_str() else { return Err(json!({"status":"invalid", "message":"missing code"})); };
     let error_kind = case["expected_error"].as_str().filter(|s| !s.is_empty());
     let (output, input) = (optional_text(case, "expected_output", "output expectation")?, optional_text(case, "input", "input")?);
@@ -174,14 +179,18 @@ fn outcome(
     }
     let numeric = Numeric::current();
     let mismatch = if result.error.is_some() { None }
-    else if result.function.is_some() || result.operator.is_some() { Some(Difference::new("function result", "unexpected function or operator result")) } else {
+    else if result.function.is_some() || result.operator.is_some() {
+        Some(Difference::new("function result", "unexpected function or operator result"))
+    } else {
         match (error_kind, &result.value, &expected) {
-            (Some(kind), _, _) => Some(Difference::new("error expected", format!("expected {kind}"))), (_, None, _) if no_result => None,
+            (Some(kind), _, _) => Some(Difference::new("error expected", format!("expected {kind}"))),
+            (_, None, _) if no_result => None,
             (_, None, _) => Some(Difference::new("no result", "no result")),
             (_, Some(_), _) if no_result => Some(Difference::new("no result expected", "expected no result")),
-            (_, Some(actual), Some(expected)) => difference(actual, expected, relative, absolute, exactness)
-                .map(|d| Difference { kind: explained(actual, expected, numeric, d.kind), ..d }),
-            _ => unreachable!()
+            (_, Some(actual), Some(expected)) => {
+                difference(actual, expected, relative, absolute, exactness).map(|d| Difference { kind: explained(actual, expected, numeric, d.kind), ..d })
+            }
+            _ => unreachable!(),
         }
     };
     let mismatch = mismatch.or_else(|| {
@@ -234,9 +243,12 @@ fn twice(case: &JsonValue, setup: &str, run: Run, timeout: Option<std::time::Dur
         Some(Difference::new("output differs", format!("output {:?}, {:?} on the first call", written(&second), written(&first))))
     } else if category(&first) != category(&second) { Some(Difference::new("function result", "a function or operator from one call only")) } else {
         match (&first.value, &second.value) {
-            (Some(a), Some(b)) => difference(b, a, relative, absolute, true).or_else(|| kind_difference(b, a, numeric, false)
-                .map(|(kind, first_kind)| Difference::new("storage kind differs", format!("storage kind: {kind}, {first_kind} on the first call")))),
-            (None, None) => None, _ => Some(Difference::new("no result", "a value from one call only"))
+            (Some(a), Some(b)) => difference(b, a, relative, absolute, true).or_else(|| {
+                kind_difference(b, a, numeric, false)
+                    .map(|(kind, first_kind)| Difference::new("storage kind differs", format!("storage kind: {kind}, {first_kind} on the first call")))
+            }),
+            (None, None) => None,
+            _ => Some(Difference::new("no result", "a value from one call only")),
         }
     };
     match mismatch {
@@ -253,16 +265,13 @@ fn kinds(case: &JsonValue, first: Option<&(Run, Outcome)>, run: Run, outcome: &O
             .map(|(kind, first_kind)| format!("storage kind: {kind} {}, {first_kind} {}", run.words, first_run.words)),
         None if case["expected_code"].is_string() && case["mixed"] != true => outcome.value.as_ref().zip(outcome.expected.as_ref())
             .and_then(|(value, expected)| kind_difference(value, expected, outcome.numeric, true))
-            .map(|(kind, expected_kind)| format!("storage kind: {kind}, {expected_kind} in the expectation")),
-        None => None,
+            .map(|(kind, expected_kind)| format!("storage kind: {kind}, {expected_kind} in the expectation")), None => None
     };
     mismatch.map_or(Ok(()), |message| Err(Difference::new("storage kind differs", message).recorded(json!({"status":"mismatch"}))))
 }
 
 /// `case`'s result as `results` gives it, with its route directives and no setup.
-pub fn check(case: &JsonValue, interrupt: &InterruptHandle) -> JsonValue {
-    results([case], "", true, interrupt).remove(0)
-}
+pub fn check(case: &JsonValue, interrupt: &InterruptHandle) -> JsonValue { results([case], "", true, interrupt).remove(0) }
 
 /// A timed record's expectation, checked once outside timing, with fresh setup for both expressions.
 pub fn check_once(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<(), JsonValue> {
@@ -282,15 +291,6 @@ pub fn route(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Resu
 }
 
 pub fn routed(case: &JsonValue) -> bool { ["route", "allows", "gap"].iter().any(|key| case.get(key).is_some()) }
-/// The system functions whose results report how the engine ran code, not values. `•storage` reports a value's `kind`, which is a value check, beside `pending`, whether the value waits, which is a report. `•prefs`'s `fusion` preference prints where fusion ends and what it stores, which is a report.
-const REPORTS: [(&str, Option<&str>); 4] = [("•explain", None), ("•memory", None), ("•storage", Some("pending")), ("•prefs", Some("fusion"))];
-/// Whether `case` is a report check: its code or expectation calls a function of `REPORTS`, naming its report field where `REPORTS` gives one, as a name or a string. The lexer reads the code, so a function name in a string or a comment doesn't count. A report check's failures are release-2 obligations (`obliged`).
-pub fn reports(case: &JsonValue) -> bool {
-    let tokens: Vec<(&str, &str)> = ["code", "expected_code"].into_iter().filter_map(|key| case[key].as_str())
-        .flat_map(|code| crate::syntax::highlight(code, false).into_iter().map(move |(range, class)| (class, &code[range]))).collect();
-    let has = |class: &str, text: &str| tokens.iter().any(|&(c, t)| c == class && t.trim_matches('"').eq_ignore_ascii_case(text));
-    REPORTS.iter().any(|&(function, field)| has("function", function) && field.is_none_or(|field| has("name", field) || has("string", field)))
-}
 /// The violations of `case`'s route directives (`routed`), as a `"route"` failure.
 fn route_check(case: &JsonValue, setup: &str, interrupt: &InterruptHandle) -> Result<(), JsonValue> {
     if !routed(case) { return Ok(()); }
@@ -553,7 +553,9 @@ pub fn skipped<'a>(test: &str, cases: impl IntoIterator<Item = (&'a str, &'a str
     let mut lines = Vec::new();
     for (n, line) in text.lines().enumerate().filter(|(_, line)| !line.is_empty()) {
         let fields: Vec<_> = line.splitn(4, '\t').collect();
-        let [name, section, key, reason] = fields[..] else { return Err(format!("{}:{}: expected a test, a section, a case's key and a reason, separated by tabs", path.display(), n + 1)) };
+        let [name, section, key, reason] = fields[..] else {
+            return Err(format!("{}:{}: expected a test, a section, a case's key and a reason, separated by tabs", path.display(), n + 1));
+        };
         if name == test { lines.push((section, key, reason)); }
     }
     let cases: Vec<_> = cases.into_iter().collect();
@@ -562,7 +564,8 @@ pub fn skipped<'a>(test: &str, cases: impl IntoIterator<Item = (&'a str, &'a str
         return Err(format!("{}: {test} has no case [{section}] {key}", path.display()));
     }
     for (section, key, reason) in &lines { let _ = writeln!(std::io::stderr(), "skipped in {test} [{section}]: {key} ({reason})"); }
-    Ok(cases.iter().enumerate().filter_map(|(index, &case)| lines.iter().find(|&&(section, key, _)| names((section, key), case)).map(|line| (index, line.2.to_owned()))).collect())
+    Ok(cases.iter().enumerate()
+        .filter_map(|(index, &case)| lines.iter().find(|&&(section, key, _)| names((section, key), case)).map(|line| (index, line.2.to_owned()))).collect())
 }
 
 /// `file` with each case that `tests/skipped.txt` lists under `reference:NAME.bpl` marked by its `skip_reason`. A case's key is its id, or else its comment's first line. A key that two of the file's cases share can't be skipped.
@@ -570,7 +573,8 @@ pub fn skipped<'a>(test: &str, cases: impl IntoIterator<Item = (&'a str, &'a str
 pub fn with_skips(mut file: File) -> Result<File, String> {
     let test = format!("reference:{}.bpl", file.name.trim_end_matches(".bpl"));
     let keys: Vec<(String, String)> = file.cases.iter().map(|case| {
-        let key = case["id"].as_str().filter(|id| !id.is_empty()).unwrap_or_else(|| case["comment"].as_str().unwrap_or_default().lines().next().unwrap_or_default());
+        let key = case["id"].as_str().filter(|id| !id.is_empty())
+            .unwrap_or_else(|| case["comment"].as_str().unwrap_or_default().lines().next().unwrap_or_default());
         (case["section"].as_str().unwrap_or_default().to_owned(), key.to_owned())
     }).collect();
     for (index, reason) in skipped(&test, keys.iter().map(|(section, key)| (section.as_str(), key.as_str())))? {
@@ -616,16 +620,13 @@ pub fn failures<'a>(cases: impl IntoIterator<Item = &'a JsonValue>, setup: &str,
 /// Whether `status`, a case's or a run's, is a failure: neither `"pass"` nor `"skipped"`.
 fn failing(status: &str) -> bool { !matches!(status, "pass" | "skipped") }
 
-/// Whether `status`, a case's or a run's, fails a run in a case of class `class`: any failure in a value check, and a crash, panic or timeout in a report check too, since then the code gave no value to report on.
-fn failure(status: &str, class: &JsonValue) -> bool { failing(status) && (class != "report" || matches!(status, "crash" | "panic" | "timeout")) }
+/// Whether a case's value, error or output assertion failed, regardless of what its code observes.
+pub fn fails(result: &JsonValue) -> bool { failing(result["status"].as_str().unwrap_or_default()) }
 
-/// Whether `result` fails a run (`failure`). A report check (`reports`) that fails in another way, and a route violation, are release-2 obligations (`obliged`), which no run fails on.
-pub fn fails(result: &JsonValue) -> bool { failure(result["status"].as_str().unwrap_or_default(), &result["class"]) }
+/// Whether `result` holds route violations that remain visible separately from its assertions.
+pub fn obliged(result: &JsonValue) -> bool { result.get("obligations").is_some() }
 
-/// Whether `result` holds a release-2 obligation: a failing status that fails no run (`fails`), or route violations under `obligations`.
-pub fn obliged(result: &JsonValue) -> bool { failing(result["status"].as_str().unwrap_or_default()) && !fails(result) || result.get("obligations").is_some() }
-
-/// The runs of `results` counted by mode: for each mode, how many runs its cases planned, how many were checked, how many failed, and how many didn't apply. Each case plans the runs that its `modes` lists, apart from those marked `"not applicable"`. A planned run is checked once it has a status other than `"unchecked"` or `"skipped"`, and fails when that status fails a run (`failure`).
+/// The runs of `results` counted by mode: planned, checked, failed and not applicable. A planned run is checked once its status is neither `"unchecked"` nor `"skipped"`; every failed assertion counts.
 pub fn accounting(results: &[JsonValue]) -> JsonValue {
     let mut counts = std::collections::BTreeMap::<&str, [u64; 4]>::new();
     for result in results {
@@ -636,25 +637,24 @@ pub fn accounting(results: &[JsonValue]) -> JsonValue {
             let checked = !matches!(status, "unchecked" | "skipped");
             *planned += 1;
             *done += u64::from(checked);
-            *failed += u64::from(checked && failure(status, &result["class"]));
+            *failed += u64::from(checked && failing(status));
         }
     }
-    JsonValue::Object(counts.into_iter().map(|(mode, [planned, checked, failed, inapplicable])| (mode.to_owned(), json!({"planned":planned, "checked":checked, "failed":failed, "not applicable":inapplicable}))).collect())
+    JsonValue::Object(counts.into_iter().map(|(mode, [planned, checked, failed, inapplicable])| {
+        (mode.to_owned(), json!({"planned":planned, "checked":checked, "failed":failed, "not applicable":inapplicable}))
+    }).collect())
 }
 
 /// The modes that `case` plans: the names of its runs (`runs`).
 pub fn modes(case: &JsonValue) -> Vec<&'static str> { runs(case).into_iter().map(|run| run.words).collect() }
 
-/// `case`'s class: `"report"` for a report check (`reports`), otherwise `"value"`.
-pub fn class(case: &JsonValue) -> &'static str { if reports(case) { "report" } else { "value" } }
-
 /// The result of `case` when the process checking it stopped: each mode it plans (`modes`) with a `"crash"` status, and `message` saying why.
 pub fn crashed(case: &JsonValue, message: &str) -> JsonValue {
     let modes: Vec<_> = modes(case).into_iter().map(|mode| json!({"mode":mode, "status":"crash"})).collect();
-    recorded(case, json!({"status":"crash", "message":message, "class":class(case), "modes":modes}))
+    recorded(case, json!({"status":"crash", "message":message, "modes":modes}))
 }
 
-/// The result of `case`, with its class (`reports`) and each of its runs (`runs`) under `modes` as `{"mode", "status", "message"}`. The case's status and `message` are its first failing run's, with that run's name under `mode`, or `"pass"`. Each run starts from its file's leading `•prefs` header and the run's settings (`enter`), and a panic fails that run alone. A run that panics, times out or is interrupted ends the case: the runs after it stay `"unchecked"`. The run with no compiled parts doesn't apply (`"not applicable"`) where the run that compiles every stage compiled nothing. A case with a `skip_reason` (`with_skips`) runs nothing. Where `routes` is set, a case that passes is checked against its route directives (`route_check`), whose violations go under `obligations`.
+/// The result of `case`, with each run (`runs`) under `modes` as `{"mode", "status", "message"}`. Its status and message come from the first failing run, or `"pass"`. Each run starts from the file's leading preferences and its mode's settings (`enter`). A panic, timeout or interrupt ends the case; later runs stay `"unchecked"`. A never-compiled run is not applicable if the always-compiled run compiled nothing. A skipped case runs nothing. Route-directive violations (`route_check`) remain separate `obligations`.
 fn case_result(case: &JsonValue, setup: &str, routes: bool, interrupt: &InterruptHandle) -> JsonValue {
     let skip = case.get("skip_reason");
     let (mut outcomes, mut modes, mut failure, mut compiled) = (Vec::<(Run, Outcome)>::new(), Vec::new(), None::<JsonValue>, false);
@@ -663,8 +663,7 @@ fn case_result(case: &JsonValue, setup: &str, routes: bool, interrupt: &Interrup
         let stopped = failure.as_ref().is_some_and(|f| matches!(f["status"].as_str(), Some("panic" | "timeout" | "interrupt")));
         modes.push(if let Some(reason) = skip { entry("skipped", reason.clone()) }
         else if stopped { entry("unchecked", JsonValue::Null) }
-        else if run.compiles == Compiles::Never && !compiled { entry("not applicable", json!("the run that compiles every stage compiled nothing")) }
-        else {
+        else if run.compiles == Compiles::Never && !compiled { entry("not applicable", json!("the run that compiles every stage compiled nothing")) } else {
             let before = crate::program::blocks::compiled_runs();
             let ran = unwound(|| {
                 enter(case["prefs"].as_str(), Some(run))?;
@@ -675,17 +674,21 @@ fn case_result(case: &JsonValue, setup: &str, routes: bool, interrupt: &Interrup
             compiled |= run.compiles == Compiles::Always && crate::program::blocks::compiled_runs() > before;
             match ran {
                 Ok(outcome) => { outcomes.push((run, outcome)); entry("pass", JsonValue::Null) }
-                Err(mut f) => { let recorded = entry(f["status"].as_str().unwrap_or_default(), f["message"].clone()); f["mode"] = json!(run.words); failure.get_or_insert(f); recorded }
+                Err(mut f) => {
+                    let recorded = entry(f["status"].as_str().unwrap_or_default(), f["message"].clone());
+                    f["mode"] = json!(run.words);
+                    failure.get_or_insert(f);
+                    recorded
+                }
             }
         });
     }
     let mut result = match (skip, failure) {
-        (Some(reason), _) => json!({"status":"skipped", "message":reason}), (None, Some(failure)) => failure, (None, None) => json!({"status":"pass"}),
+        (Some(reason), _) => json!({"status":"skipped", "message":reason}), (None, Some(failure)) => failure, (None, None) => json!({"status":"pass"})
     };
     if routes && result["status"] == "pass" && let Err(violation) = unwound(|| route_check(case, setup, interrupt)) {
         result["obligations"] = json!([violation["message"]]);
     }
-    result["class"] = json!(class(case));
     result["modes"] = json!(modes);
     result
 }

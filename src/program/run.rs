@@ -1,8 +1,8 @@
 //! Replaying a program on a call's values, one step at a time on today's kernels. It is the reference that compiled code matches.
 
+use super::{Node, Origin, Program, Read, Step, Writes};
 use crate::plan::Desc;
-use super::{Node, Origin, Program, Read, Step};
-use crate::{At, Described, Error, Span, Value, primitive::Operation, transform::Pairing};
+use crate::{At, Described, Error, Span, Value, primitive::{Operation, Primitive}, transform::Pairing};
 use rustymath::structure::IndexPart;
 use std::borrow::Cow;
 
@@ -29,7 +29,7 @@ pub(crate) fn values(program: &Program, plan: &Plan, inputs: &[&Value], span: &S
     for (unit, drops) in plan.units.iter().zip(&plan.drops) {
         match unit {
             Unit::Node(j) => r.node(*j, drops, span)?, Unit::Pending(j) => r.pending(*j, span)?,
-            Unit::Blocks(b) => match b.run(&mut r.values) { Some(()) => {} None => { for &j in &b.nodes { r.node(j, &[], span)?; } } }
+            Unit::Blocks(b) => match b.run(&mut r.values) { Some(result) => result?, None => { for &j in &b.nodes { r.node(j, &[], span)?; } } }
         }
         for &i in drops { r.values[i] = None; }
     }
@@ -44,7 +44,7 @@ pub(crate) fn lone(program: &Program, span: &Span) -> Option<Result<Value, Error
     if crate::settings::verifies() { super::verify::check(program); }
     let values = program.nodes.iter().map(|n| match &n.origin { Origin::Held(v) => Some(v.clone()), _ => None }).collect();
     let mut r = Replay { program, values, inputs: &[] };
-    Some(r.node(j, &[], span).map(|()| taken(program, &mut r.values, &program.result).narrowed()))
+    Some(r.node(j, &[], span).map(|()| taken(program, &mut r.values, &program.result)))
 }
 
 impl Replay<'_> {
@@ -56,14 +56,19 @@ impl Replay<'_> {
             Origin::Held(value) => value.clone(),
             Origin::Step(step) => {
                 let owned = match step {
-                    Step::At { base, items, .. } if drops.contains(&base.of) && base.of != items.of => Some(taken(self.program, &mut self.values, base)), _ => None
+                    Step::At { base, .. } if drops.contains(&base.of) && step.operands().filter(|r| r.of == base.of).count() == 1 => {
+                        Some(taken(self.program, &mut self.values, base))
+                    }
+                    _ => None,
                 };
                 let value = run(step, &self.program.nodes, &self.values, owned, &node.desc, span)?.stored_at(node.desc.dtype());
                 if !node.desc.matches(&value) {
                     let (planned, gave) = (&node.desc.kind, crate::plan::Kind::value(&value));
                     let atom = |a: bool| if a { " atom" } else { "" };
-                    return Err(Error::domain(format!("a program's step gave a value its plan didn't describe: v{j} {} planned {:?} {:?}{}, gave {:?} {:?}{}",
-                        step.glyph(), planned.dtype, planned.fixed, atom(node.desc.atom), gave.dtype, gave.fixed, atom(value.is_atom()))).at(span));
+                    return Err(Error::domain(format!(
+                        "a program's step gave a value its plan didn't describe: v{j} {} planned {:?} {:?}{}, gave {:?} {:?}{}", step.glyph(), planned.dtype,
+                        planned.fixed, atom(node.desc.atom), gave.dtype, gave.fixed, atom(value.is_atom())
+                    )).at(span));
                 }
                 value
             }
@@ -101,13 +106,15 @@ pub(crate) fn run(step: &Step, nodes: &[Node], values: &[Option<Value>], owned: 
         Step::Copy { of, map } => crate::fusion::copied(node(*of), desc.layout.clone(), map, None).described("a program's copy").at(span)
             .map(|copied| if desc.atom { copied.at(0) } else { copied }),
         Step::Structural { inputs, form, params, fill } => {
-            let (inputs, params): (Vec<Value>, Vec<Value>) = (inputs.iter().map(|r| value(r).into_owned()).collect(), params.iter().map(|r| value(r).into_owned()).collect());
+            let (inputs, params): (Vec<Value>, Vec<Value>) =
+                (inputs.iter().map(|r| value(r).into_owned()).collect(), params.iter().map(|r| value(r).into_owned()).collect());
             let fill = fill.as_ref().map(|r| value(r).into_owned());
             crate::fusion::copy(form, &params, &inputs.iter().collect::<Vec<_>>(), fill.as_ref())
         }
         Step::Gather { of, by } => {
             let (source, parts) = (value(of), by.parts(|r| value(r).into_owned()));
-            let carried = crate::transform::carried(None, &source) || parts.iter().any(|p| matches!(p, IndexPart::Axis(v) if crate::transform::carried(None, v)));
+            let carried =
+                crate::transform::carried(None, &source) || parts.iter().any(|p| matches!(p, IndexPart::Axis(v) if crate::transform::carried(None, v)));
             if carried { return crate::primitive::select(&source, &parts, None, by.paired, None, span); }
             let (plan, direct) = crate::primitive::parts_plan(source.layout(), &parts, by.paired, span)?;
             crate::primitive::planned_read(&source, plan, direct, None)
@@ -122,8 +129,10 @@ pub(crate) fn run(step: &Step, nodes: &[Node], values: &[Option<Value>], owned: 
         }
         Step::At { p, base, items, writes } => {
             let mut base = owned.unwrap_or_else(|| value(base).into_owned());
-            p.at(&mut base, writes.as_writes().expect("a step's writes are a walk"), &value(items), span)?;
-            Ok(base)
+            match writes {
+                Writes::By(by) => selected_at(*p, base, &value(items), &by.parts(|r| value(r).into_owned()), by.paired, span),
+                Writes::Map(map) => { p.at(&mut base, map.as_writes().expect("a step's writes are a walk"), &value(items), span)?; Ok(base) }
+            }
         }
         Step::Picks { p, axis, of } => crate::derivative::extreme_mask(*p, &value(of), *axis).at(span),
         Step::Shape { p, of } => p.call(None, &value(of), span),
@@ -131,10 +140,17 @@ pub(crate) fn run(step: &Step, nodes: &[Node], values: &[Option<Value>], owned: 
     }
 }
 
+/// Combines `items` at `parts`' selected positions. A recording keeps the selector; a batched run combines each cell's positions on its whole; stored indices plan one walk.
+pub(crate) fn selected_at(p: Primitive, mut base: Value, items: &Value, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<Value, Error> {
+    if crate::session().tracing().is_some() { return super::trace::added(p, &base, items, parts, paired); }
+    if let Some((_, cells)) = crate::batch::cell_selection(parts, &base, paired, span) { return cells.combined(&base, items, p, span); }
+    let (plan, _) = crate::primitive::parts_plan(base.layout(), parts, paired, span)?;
+    p.at(&mut base, rustymath::gather::Writes::Walk { base: 0, steps: &plan.steps }, items, span)?;
+    Ok(base)
+}
 /// The value that `read` gives of its node's value `value`: the value as it is, or, where the read is a view (`Read::view`), its items under the read's layout. A read that isn't a view takes the value whatever its layout, as a recording replayed at new lengths reads each value.
 fn through<'a>(value: &'a Value, read: &Read, nodes: &[Node]) -> Cow<'a, Value> {
-    if !read.view(nodes) { Cow::Borrowed(value) }
-    else { Cow::Owned(value.relaid(read.layout.clone()).expect("a view has as many items as its node")) }
+    if !read.view(nodes) { Cow::Borrowed(value) } else { Cow::Owned(value.relaid(read.layout.clone()).expect("a view has as many items as its node")) }
 }
 
 /// The value that `read` gives of its node's value in `values`, which stays there.

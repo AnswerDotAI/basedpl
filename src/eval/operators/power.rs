@@ -49,8 +49,9 @@ pub(super) fn power(operands: &[Operand; 2], left: Option<&Value>, right: impl A
                     inverse = Some(f.inverse(span)?);
                 }
                 let step = inverse.as_ref().unwrap_or(f);
-                if c.1 == u64::MAX { converge(step, &mut value, span)?; }
-                else { for _ in steps..c.1 { value = step.call_with(left, value, span)?.array(span)?; } }
+                if c.1 == u64::MAX { converge(step, &mut value, span)?; } else {
+                    for _ in steps..c.1 { value = step.call_with(left, value, span)?.array(span)?; }
+                }
                 steps = c.1;
                 states.insert(c, value.clone());
             }

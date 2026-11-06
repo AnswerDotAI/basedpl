@@ -195,7 +195,9 @@ impl Numeric {
     /// The tolerance of a call that computes at `dtype`: `tolerance_at` its float width, and exact for a kind with no float width, whose items compare exactly. A kernel's resolution reads it, and so do its run `Settings` at a float dtype (`settings_for`).
     pub(crate) fn tolerance_of(self, dtype: DType) -> Tolerance { crate::array::float_width_of(dtype).map_or(Tolerance::EXACT, |w| self.tolerance_at(w)) }
     /// The run settings of a kernel that computes at `dtype`. rustymath's recipes read their tolerance in place of the one the kernel was resolved with: `tolerance_of(dtype)` at a float dtype. At any other dtype it's the tolerance within which the kernel reads a float argument as a whole number, `self.tolerance`, which only Mathish makes nonzero; integer bodies don't read it.
-    pub(crate) fn settings_for(self, dtype: DType) -> rustymath::operation::Settings { rustymath::operation::Settings { tolerance: crate::array::float_width_of(dtype).map_or(self.tolerance, |w| self.tolerance_at(w)) } }
+    pub(crate) fn settings_for(self, dtype: DType) -> rustymath::operation::Settings {
+        rustymath::operation::Settings { tolerance: crate::array::float_width_of(dtype).map_or(self.tolerance, |w| self.tolerance_at(w)) }
+    }
     /// These settings for a computation at `width` that runs at 32 bits or more. 16-bit floats run this way, because they have no kernels of their own. Comparisons keep the tolerance of `width`. New floats take at least 32 bits.
     pub(crate) fn widened(self, width: FloatWidth) -> Self {
         let run = width.max(FloatWidth::F32);
@@ -217,7 +219,9 @@ impl Numeric {
     /// Whether integer results wrap at a fixed width under these settings: where they carry a fixed width, or under static kinds. `fixes` and `wraps` answer for one operand's kind.
     pub(crate) fn wrapping(self) -> bool { self.fixed.is_some() || self.is_static() }
     /// Whether integers of `dtype`, fixed at `fixed`, have a fixed width under these settings: a declared fixed width, or any integer under static kinds. A weak number beside them converts to that width only if its value fits.
-    pub(crate) fn fixes(self, dtype: Option<DType>, fixed: Option<Width>) -> bool { fixed.is_some() || self.is_static() && matches!(dtype, Some(DType::Integer(_))) }
+    pub(crate) fn fixes(self, dtype: Option<DType>, fixed: Option<Width>) -> bool {
+        fixed.is_some() || self.is_static() && matches!(dtype, Some(DType::Integer(_)))
+    }
     /// Whether integers of `dtype`, fixed at `fixed`, wrap on overflow under these settings: where their width is fixed (`fixes`), and at 64 bits, which no wider width follows. Under static kinds a Boolean computes as an integer, so it wraps too.
     pub(crate) fn wraps(self, dtype: Option<DType>, fixed: Option<Width>) -> bool {
         self.fixes(dtype, fixed) || self.is_static() && dtype == Some(DType::Boolean) || dtype == Some(DType::Integer(Width::I64))
@@ -258,9 +262,13 @@ impl Numeric {
 pub(crate) enum Halving { Off, Widened, Rounded }
 impl Halving {
     /// The kind at which the call reads an operand of `dtype`: a 16-bit float as a 32-bit one.
-    pub(crate) fn operand(self, dtype: DType) -> DType { if self != Self::Off && dtype == DType::Float(FloatWidth::F16) { DType::Float(FloatWidth::F32) } else { dtype } }
+    pub(crate) fn operand(self, dtype: DType) -> DType {
+        if self != Self::Off && dtype == DType::Float(FloatWidth::F16) { DType::Float(FloatWidth::F32) } else { dtype }
+    }
     /// The kind of a result that the call computes as `dtype`: a 32-bit float as a 16-bit one where the call rounds.
-    pub(crate) fn result(self, dtype: DType) -> DType { if self == Self::Rounded && dtype == DType::Float(FloatWidth::F32) { DType::Float(FloatWidth::F16) } else { dtype } }
+    pub(crate) fn result(self, dtype: DType) -> DType {
+        if self == Self::Rounded && dtype == DType::Float(FloatWidth::F32) { DType::Float(FloatWidth::F16) } else { dtype }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -310,8 +318,8 @@ impl From<Complex32> for Number { fn from(n: Complex32) -> Self { Self(Complex32
 pub(crate) mod real {
     use super::{ErrorKind, Kind, Numeric, count_as};
     use num_traits::ToPrimitive;
-    use std::cmp::Ordering;
     use rustymath::tolerant::Tolerant;
+    use std::cmp::Ordering;
     /// The whole number that `y` stands for where one is needed, as a count, an index or a Boolean: within the comparison tolerance in force (`Numeric::current`), which only Mathish makes nonzero. An f32 value lies within it of a whole number only when it is one.
     #[inline]
     pub(crate) fn whole(y: f64) -> Option<f64> { Numeric::current().tolerance.whole(y) }
@@ -512,7 +520,7 @@ impl Mark {
     pub(crate) fn zero(self) -> Number {
         match self {
             Self::Exact => Number::from_integer(0), Self::Width(w) => Number::float(0.0, w), Self::Fixed(w) => Number::fixed(0, w),
-            Self::Real => Number::float(0.0, Numeric::current().width), Self::Rational => Number::rational(BigRational::zero()),
+            Self::Real => Number::float(0.0, Numeric::current().width), Self::Rational => Number::rational(BigRational::zero())
         }
     }
     /// The marker of an integer that is fixed at `fixed`, or ordinary: plain `ₓ` for an ordinary integer, and under static kinds for a fixed integer of the `int` width, which their ordinary integers are.
@@ -535,9 +543,7 @@ impl Number {
     pub(crate) fn decimal(text: &str) -> Option<Result<i64, f64>> {
         use std::num::IntErrorKind::{NegOverflow, PosOverflow};
         match text.parse::<i64>() {
-            Ok(n) => Some(Ok(n)),
-            Err(e) if matches!(e.kind(), PosOverflow | NegOverflow) => Some(Err(text.parse::<f64>().ok()?)),
-            Err(_) => None,
+            Ok(n) => Some(Ok(n)), Err(e) if matches!(e.kind(), PosOverflow | NegOverflow) => Some(Err(text.parse::<f64>().ok()?)), Err(_) => None
         }
     }
     /// The number that a whole number in data (`•csv`, `•json`) gives: a machine integer where it fits 64 bits, and otherwise its nearest float of `width`. Data never makes `ᵣ` numbers.
@@ -574,8 +580,7 @@ impl Number {
         let n = match (self.as_integer(), &self.0) {
             (Some(i), _) if t.wrapping() => FixedInt::new(i, t.integer_width()).value(),
             (None, Exact(q, _)) if q.is_integer() && t.wrapping() => FixedInt::new(low_bits(q.numer()), t.integer_width()).value(),
-            (None, Exact(q, _)) if q.is_integer() => low_bits(q.numer()),
-            _ => return self,
+            (None, Exact(q, _)) if q.is_integer() => low_bits(q.numer()), _ => return self
         };
         match t.fixed { Some(width) => Self::fixed(n, width), None if self.as_integer() == Some(n) => self, None => Self::from_integer(n) }
     }
@@ -624,8 +629,7 @@ impl Number {
     pub(crate) fn is_weak(&self) -> bool {
         match self.0 {
             Boolean(_, w) | Integer(_, w) | Exact(_, w) | Complex(_, w) | Complex32(_, w) => w,
-            Float(_, mark) | Single(_, mark) | Half(_, mark) => mark != FloatMark::Strong,
-            Fixed(_) => false,
+            Float(_, mark) | Single(_, mark) | Half(_, mark) => mark != FloatMark::Strong, Fixed(_) => false
         }
     }
     /// Sets an ordinary number's promotion strength. Fixed integers stay strong. A bound marked weak stays a bound, and one marked strong becomes an ordinary strong float.
@@ -634,20 +638,21 @@ impl Number {
     pub(crate) fn mark(&mut self, weak: bool) {
         match &mut self.0 {
             Boolean(_, w) | Integer(_, w) | Exact(_, w) | Complex(_, w) | Complex32(_, w) => *w = weak,
-            Float(_, mark) | Single(_, mark) | Half(_, mark) => if !weak { *mark = FloatMark::Strong } else if *mark == FloatMark::Strong { *mark = FloatMark::Weak },
+            Float(_, mark) | Single(_, mark) | Half(_, mark) => {
+                if !weak { *mark = FloatMark::Strong } else if *mark == FloatMark::Strong { *mark = FloatMark::Weak }
+            }
             Fixed(_) => {}
         }
     }
     /// This float with `mark`. Other numbers stay as they are.
-    fn float_marked(mut self, mark: FloatMark) -> Self {
-        if let Float(_, m) | Single(_, m) | Half(_, m) = &mut self.0 { *m = mark; }
-        self
-    }
+    fn float_marked(mut self, mark: FloatMark) -> Self { if let Float(_, m) | Single(_, m) | Half(_, m) = &mut self.0 { *m = mark; } self }
     /// Whether this number is in the unbounded domain (`ᵣ`).
     pub(crate) fn is_unbounded(&self) -> bool { matches!(self.0, Exact(_, _)) }
     /// The ordered domain that this number belongs to, which an order-only function such as `⌊` or `<` reads before promotion (`Kernel::ordered`): 0 for every exact number, 1 and ¯1 for the bounds `∞` and `¯∞`, and `None` for other numbers. Every exact number lies between the bounds, a rational beyond float range too.
     pub(crate) fn order_class(&self) -> Option<i32> {
-        if matches!(self.0, Float(_, FloatMark::Bound) | Single(_, FloatMark::Bound) | Half(_, FloatMark::Bound)) { return self.as_float().map(|n| if n > 0.0 { 1 } else { -1 }); }
+        if matches!(self.0, Float(_, FloatMark::Bound) | Single(_, FloatMark::Bound) | Half(_, FloatMark::Bound)) {
+            return self.as_float().map(|n| if n > 0.0 { 1 } else { -1 });
+        }
         self.is_exact().then_some(0)
     }
     /// The number that literal text writes. A width marker makes it strong.
@@ -682,13 +687,11 @@ impl Number {
         let width = self.float_width().unwrap_or(numeric.width);
         match self.0 {
             Complex(z, _) => Ok(Self::float(z.re, width)), Complex32(z, _) => Ok(Self::float(z.re as f64, width)),
-            _ => self.to_float().map(|x| Self::float(x, width)).map_err(|_| Kind::Domain.into()),
+            _ => self.to_float().map(|x| Self::float(x, width)).map_err(|_| Kind::Domain.into())
         }
     }
     /// A whole float as a machine integer, saturating as Rust's `as` does: past 64 bits and at an infinity to the nearest limit, and NaN to 0.
-    fn exact_integer(n: f64) -> Self {
-        Self::from_integer(n as i64)
-    }
+    fn exact_integer(n: f64) -> Self { Self::from_integer(n as i64) }
     /// This number written with `ₓ`: exact as it is, or a float that stands for a whole number (`real::whole`), an infinity or NaN made a machine integer (`exact_integer`). `None` for a fraction or a complex number.
     pub(crate) fn marked_exact(&self) -> Option<Self> {
         match (&self.0, self.as_float()) {
@@ -770,10 +773,8 @@ impl Number {
     pub(crate) fn parse(text: &str, numeric: Numeric) -> Result<Self, ErrorKind> {
         let (text, marked) = plain_suffixes(text);
         match marked {
-            Some(Mark::Fixed(width)) => return Self::fixed_literal(&text, width),
-            Some(Mark::Rational) => return Self::rational_literal(&text, numeric),
-            Some(Mark::Real) => return Self::parse(&text, numeric)?.to_real(numeric),
-            _ => {}
+            Some(Mark::Fixed(width)) => return Self::fixed_literal(&text, width), Some(Mark::Rational) => return Self::rational_literal(&text, numeric),
+            Some(Mark::Real) => return Self::parse(&text, numeric)?.to_real(numeric), _ => {}
         }
         let numeric = match marked { Some(Mark::Width(w)) => numeric.with_width(w), _ => numeric };
         let (text, width) = (text.replace('¯', "-").replace('∞', "inf"), numeric.width);
@@ -793,7 +794,9 @@ impl Number {
                 None => {
                     let value = Self::parse(n, numeric)?;
                     if let Some(f) = value.as_float().filter(|f| !f.is_finite()) { return Ok(Self::exact_integer(f)); }
-                    let floor = match value.exact_ref() { Some(r) => Some(r.floor()), None => value.as_float().and_then(|f| BigRational::from_float(f.floor())) };
+                    let floor = match value.exact_ref() {
+                        Some(r) => Some(r.floor()), None => value.as_float().and_then(|f| BigRational::from_float(f.floor()))
+                    };
                     floor.ok_or(ErrorKind::Syntax)?.to_integer().to_i64().ok_or_else(wide)?
                 }
             };
@@ -816,9 +819,8 @@ impl Number {
         let width = self.float_width().unwrap_or(FloatWidth::F64);
         let value = match self.dtype() {
             _ if self.is_unbounded() => Self::rational(BigRational::from_integer(n.into())),
-            Some(DType::Complex(_)) => Self::complex(Complex64::new(n.into(), 0.0), width),
-            _ if self.is_exact() => Self::from_integer(n.into()),
-            _ => Self::float(n.into(), width),
+            Some(DType::Complex(_)) => Self::complex(Complex64::new(n.into(), 0.0), width), _ if self.is_exact() => Self::from_integer(n.into()),
+            _ => Self::float(n.into(), width)
         };
         value.marked(self.is_weak())
     }
@@ -917,7 +919,8 @@ impl Number {
                 let x = self.real_as::<f64>()?;
                 return Ok([Self::float(x.abs(), w), Self::float(rustymath::atan2(0.0, x), w)]);
             }
-            let magnitude = crate::pervasive::number(crate::primitive::Primitive::Math(Math::Magnitude), None, self, t).map_err(|_| "a magnitude of this number")?;
+            let magnitude =
+                crate::pervasive::number(crate::primitive::Primitive::Math(Math::Magnitude), None, self, t).map_err(|_| "a magnitude of this number")?;
             return Ok([magnitude, Self::float(self.to_complex().map(|z| rustymath::atan2(z.im, z.re))?, width)]);
         }
         match self.as_complex() { Some(z) => Ok([Self::float(z.re, width), Self::float(z.im, width)]), None => Ok([self.clone(), self.zero()]) }

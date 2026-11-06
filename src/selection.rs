@@ -95,7 +95,9 @@ impl Labels {
     fn place(&self, id: usize, targets: &mut Targets) {
         match &self.places {
             Places::Offsets(n) => targets.push(&[offset(id, *n)]),
-            Places::Paths(paths) => match id.checked_sub(1).and_then(|i| paths.get(i)) { Some(path) => targets.push(path), None => targets.push(&[Steps::FILL]) },
+            Places::Paths(paths) => match id.checked_sub(1).and_then(|i| paths.get(i)) {
+                Some(path) => targets.push(path), None => targets.push(&[Steps::FILL])
+            },
         }
     }
     /// Whether a selected item is a fill, whose label is 0, or an array of fills, as a prototype is.
@@ -192,8 +194,9 @@ impl Labelled {
     /// This selection read as `kind`. Ids that keep an item's storage name the item itself (`Labels::nested`), so a selection of the item's elements gives its ids storage of their own.
     fn with_kind(&self, kind: SelectionKind) -> Value {
         let labels = match &self.labels {
-            Lead::Ids(ids) if self.kind == SelectionKind::Item && kind == SelectionKind::Elements && !ids.is_atom() =>
-                Lead::Ids(ids.layout().collect(ids.elements(), Value::integer(0)).expect("ids fill their layout")),
+            Lead::Ids(ids) if self.kind == SelectionKind::Item && kind == SelectionKind::Elements && !ids.is_atom() => {
+                Lead::Ids(ids.layout().collect(ids.elements(), Value::integer(0)).expect("ids fill their layout"))
+            }
             labels => labels.clone(),
         };
         Self { level: self.level, kind, root: self.root.clone(), layout: self.layout.clone(), atom: self.atom, labels, values: self.values.clone() }.value()
@@ -211,10 +214,13 @@ impl Labelled {
         let mapping = match &self.labels { Lead::Ids(ids) => return ids.clone(), Lead::Mapped(mapping) => mapping };
         if self.atom { return Value::integer(mapping.get(0).map_or(0, crate::transform::offset_id) as i64); }
         let (base, steps) = mapping.to_walk(self.layout.shape());
-        Value::integers(self.layout.clone(), Steps::combined(base, &steps).into_iter().map(|o| crate::transform::offset_id(o) as i64).collect()).expect("ids fill the layout")
+        Value::integers(self.layout.clone(), Steps::combined(base, &steps).into_iter().map(|o| crate::transform::offset_id(o) as i64).collect())
+            .expect("ids fill the layout")
     }
     /// Whether this is the root itself, unchanged, which a write replaces whole where its kind is one item.
-    fn whole(&self) -> bool { !self.atom && self.layout == *self.root.layout() && matches!(&self.labels, Lead::Mapped(m) if m.in_order(self.root.len(), self.layout.shape())) }
+    fn whole(&self) -> bool {
+        !self.atom && self.layout == *self.root.layout() && matches!(&self.labels, Lead::Mapped(m) if m.in_order(self.root.len(), self.layout.shape()))
+    }
     /// The value that answers queries that read no items: an atom's own value, the values where something has read them, or else the root, whose kind and prototype a selection from it shares.
     pub(crate) fn template(&self) -> &Value { if self.atom { self.values() } else { self.values.get().unwrap_or(&self.root) } }
     pub(crate) fn storage(&self) -> &Storage { self.values().storage().expect("a labelled array's values are an array") }
@@ -250,22 +256,23 @@ impl Labelled {
             crate::fusion::copied(self.values(), layout, map, fill)?))
     }
     /// `form`'s result on `inputs`, with `params` and `fill`, at this label level (`fusion::copy`): the values and the labels copy through the same plan. One labelled input that the plan reads whole, or through one map, gives this label viewed or `copied` through that map, which composes a mapping where there's no fill and so builds no ids. An input that this level doesn't carry labels its items `FOREIGN`. A position that reaches no item, or reads the fill, has the fill's label, 0. Parameters and the fill read as values.
-    pub(crate) fn structural(&self, form: &crate::primitive::structural::Form, params: &[Value], inputs: &[&Value], fill: Option<&Value>) -> Result<Value, Error> {
+    pub(crate) fn structural(
+        &self, form: &crate::primitive::structural::Form, params: &[Value], inputs: &[&Value], fill: Option<&Value>) -> Result<Value, Error> {
         let level = self.level;
         let params: Vec<Value> = params.iter().map(|p| strip(p, level)).collect();
         if let [input] = inputs && let Some(l) = at_level(input, level) && !input.is_atom() {
             let (layout, plan) = crate::primitive::structural::plan(form, &params, &[input.layout()])?;
             match plan.route() {
                 ReadRoute::Input(0) => return Ok(l.view(layout)),
-                ReadRoute::Map { input: source, map, .. } if matches!(source.route(), ReadRoute::Input(0)) =>
-                    return l.copied(layout, map, fill.map(|f| strip(f, level)).as_ref()).described("a structural copy"),
+                ReadRoute::Map { input: source, map, .. } if matches!(source.route(), ReadRoute::Input(0)) => {
+                    return l.copied(layout, map, fill.map(|f| strip(f, level)).as_ref()).described("a structural copy");
+                }
                 _ => {}
             }
         }
         let foreign = Value::integer(FOREIGN);
         let (values, ids): (Vec<Value>, Vec<Value>) = inputs.iter().map(|v| match at_level(v, level) {
-            Some(l) => (l.values().clone(), l.ids()),
-            None => (strip(v, level), if v.is_atom() { foreign.clone() } else { v.layout().filled(&foreign) }),
+            Some(l) => (l.values().clone(), l.ids()), None => (strip(v, level), if v.is_atom() { foreign.clone() } else { v.layout().filled(&foreign) })
         }).unzip();
         let values = crate::fusion::copy(form, &params, &values.iter().collect::<Vec<_>>(), fill.map(|f| strip(f, level)).as_ref())?;
         let ids = crate::fusion::copy(form, &params, &ids.iter().collect::<Vec<_>>(), fill.map(|_| Value::integer(0)).as_ref())?;

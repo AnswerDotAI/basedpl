@@ -33,8 +33,7 @@ fn forced(py: Python<'_>, value: &Value) -> PyResult<()> {
     let result = py.detach(move || Session::current().forced(&value, options));
     if let Some(e) = caught.lock().unwrap().take() { return Err(e); }
     result.map_err(|e| match py.import("basedpl").and_then(|m| m.getattr("BplError")?.call1((error(py, &e)?, PyList::empty(py)))) {
-        Ok(raised) => PyErr::from_value(raised),
-        Err(failed) => failed,
+        Ok(raised) => PyErr::from_value(raised), Err(failed) => failed
     })
 }
 
@@ -664,12 +663,10 @@ fn python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
 fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
     let value = if let Some(inner) = result.value {
         Some(match inner {
-            Value::Function(inner) => Py::new(py, PyFunction { inner })?.into_any(),
-            Value::Operator(inner) => Py::new(py, PyOperator { inner })?.into_any(),
-            inner => Py::new(py, PyArray::from(inner))?.into_any(),
+            Value::Function(inner) => Py::new(py, PyFunction { inner })?.into_any(), Value::Operator(inner) => Py::new(py, PyOperator { inner })?.into_any(),
+            inner => Py::new(py, PyArray::from(inner))?.into_any()
         })
-    }
-    else if let Some(inner) = result.function { Some(Py::new(py, PyFunction { inner })?.into_any()) }
+    } else if let Some(inner) = result.function { Some(Py::new(py, PyFunction { inner })?.into_any()) }
     else if let Some(inner) = result.operator { Some(Py::new(py, PyOperator { inner })?.into_any()) }
     else { None };
     let d = PyDict::new(py);
@@ -700,7 +697,10 @@ fn _reference_file(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
 fn _reference_accounting(py: Python<'_>, results: &str) -> PyResult<Py<PyAny>> {
     let results: Vec<serde_json::Value> = serde_json::from_str(results).map_err(|e| PyValueError::new_err(e.to_string()))?;
     let each = |f: fn(&serde_json::Value) -> bool| results.iter().map(f).collect::<Vec<_>>();
-    python(py, &serde_json::json!({"modes":basedpl::reference::accounting(&results), "fails":each(basedpl::reference::fails), "obliged":each(basedpl::reference::obliged)}))
+    python(
+        py,
+        &serde_json::json!({"modes":basedpl::reference::accounting(&results), "fails":each(basedpl::reference::fails), "obliged":each(basedpl::reference::obliged)}),
+    )
 }
 
 /// The reference reply (`reference::reply`) for `case`, given as JSON, when the worker checking it stopped (`reference::crashed`), with `message` saying why.

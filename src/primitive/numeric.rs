@@ -25,7 +25,9 @@ pub(super) fn complex_parts(right: &Value, polar: bool) -> Result<Value, Error> 
     // Float and complex storage give floats in one pass, at the floats' or parts' width. Integers and Booleans keep their kind in one pass, with imaginary parts of 0 or `$f`. The general loop below keeps other exact numbers exact, and gives an integer's polar parts: its exact magnitude and a float angle.
     let parts = match right.as_items() {
         Items::Compact(View::Complexes(z)) if polar => {
-            with_complexes!(z, |z| Stored::build(layout.clone(), z.iter().flat_map(|&z| [rustymath::hypot(z.re, z.im), rustymath::atan2(z.im, z.re)]).collect::<Vec<_>>()))
+            with_complexes!(z, |z| Stored::build(
+                layout.clone(), z.iter().flat_map(|&z| [rustymath::hypot(z.re, z.im), rustymath::atan2(z.im, z.re)]).collect::<Vec<_>>()
+            ))
         }
         Items::Compact(View::Complexes(z)) => with_complexes!(z, |z| Stored::build(layout.clone(), z.iter().flat_map(|z| [z.re, z.im]).collect::<Vec<_>>())),
         Items::Compact(View::Floats(x)) => rustymath::with_floats!(x, |x| float_parts(x, polar, layout.clone())),
@@ -54,7 +56,7 @@ pub(super) fn from_parts(right: &Value, polar: bool, span: &Span) -> Result<Valu
     if parts.shape().first() != Some(&2) { return Err(Error::new(Kind::Length, "the last axis must hold two parts")); }
     let (x, y) = (Index.call(Some(&Value::integer(0)), &parts, span)?, Index.call(Some(&Value::integer(1)), &parts, span)?);
     let y = if polar { Primitive::Math(Math::Circle).call(None, &y, span)? }
-        else { Primitive::Arithmetic(Arithmetic::Times).call(Some(&complex_like(Complex64::new(0., 1.), &y)), &y, span)? };
+    else { Primitive::Arithmetic(Arithmetic::Times).call(Some(&complex_like(Complex64::new(0., 1.), &y)), &y, span)? };
     let number = Primitive::Arithmetic(if polar { Arithmetic::Times } else { Arithmetic::Plus }).call(Some(&x), &y, span)?;
     Transpose.call(None, &number, span)
 }
@@ -327,7 +329,10 @@ impl Decomposition {
         let (vectors, complete) = (options.boolean("vectors", true)?, options.boolean("complete", false)?);
         if !vectors && !matches!(kind.as_str(), "svd" | "eigen") { return Err(Error::domain("only svd and eigen can leave out their vectors")); }
         if complete && kind != "qr" { return Err(Error::domain("only qr has complete factors")); }
-        let rank = options.number("rank")?.map(|k| crate::number::real::whole(k).filter(|&k| k >= 1.0).map(|k| k as usize).ok_or_else(|| Error::domain("•decompose rank must be a positive whole number"))).transpose()?;
+        let rank = options.number("rank")?.map(|k| {
+            crate::number::real::whole(k).filter(|&k| k >= 1.0).map(|k| k as usize)
+                .ok_or_else(|| Error::domain("•decompose rank must be a positive whole number"))
+        }).transpose()?;
         if rank.is_some() && kind != "svd" { return Err(Error::domain("only svd takes a rank")); }
         Ok(Self { kind, vectors, complete, rank })
     }
@@ -539,7 +544,9 @@ pub(super) fn radix(left: &Value, right: &Value, encode: bool) -> Result<Value, 
                 let items: Vec<T> = items.iter().map(T::of).collect();
                 rustymath::polynomial::encode(&items[..xlen], &items[xlen..], |b, v| b.residue(v, t, w)).into_iter().map(|d| d.number(w)).collect::<Vec<_>>()
             });
-            for d in digits { data.push(Value::Number(if inexact { d.to_float_width(width).map_err(error)? } else { d.machine_result(&[left, right], settings) })); }
+            for d in digits {
+                data.push(Value::Number(if inexact { d.to_float_width(width).map_err(error)? } else { d.machine_result(&[left, right], settings) }));
+            }
         }
         if left.is_atom() && right.is_atom() { return Ok(data.remove(0)); }
         return layout.collect(data, Value::Number(zero)).described("invalid encode result");
@@ -591,7 +598,9 @@ fn encode_whole<'a>(bases: Items<'a>, values: Items<'a>, layout: &Layout) -> Opt
     let (bases, values) = (whole(bases)?, whole(values)?);
     if bases.is_empty() { return None; }
     let data = rustymath::integer::encode(&bases, &values)?;
-    match float { None => Value::integers(layout.clone(), data), Some(width) => Value::floats(layout.clone(), width, data.into_iter().map(rustymath::convert::float)) }.ok()
+    match float {
+        None => Value::integers(layout.clone(), data), Some(width) => Value::floats(layout.clone(), width, data.into_iter().map(rustymath::convert::float))
+    }.ok()
 }
 
 /// `bases⊥digits` when both hold numbers in compact storage, with each cell of `len` digits together and in order. `bases` holds `xlen` bases and each cell `ylen` digits, where 1 serves every position. The value is floats when either argument holds floats, and exact when both hold integers. Integers decode with each step wrapped at 64 bits, as integer `⊥` wraps at `i64`, and the caller wraps the values to the call's width. `None` for other arguments.
@@ -610,7 +619,9 @@ fn decode_compact(bases: &Value, digits: &Value, xlen: usize, ylen: usize, len: 
 
 /// `¿`, drawing from `generator`, or from the session's generator where `generator` is `None`. It deals where `left` is given, and rolls each item of `right` otherwise. Each roll and each deal is one draw call. In a batched run, each cell rolls or deals in turn (`distribution::drawn_cells`), with that cell of each batched argument (`batch::cell`).
 pub(crate) fn drawn_value(generator: Option<&crate::distribution::Generator>, left: Option<&Value>, right: &Value) -> Result<Value, Error> {
-    let Some(left) = left else { return crate::distribution::drawn_cells(generator, |c, stream| roll(&crate::batch::cell(right, c)?, false, &mut stream.items(1))) };
+    let Some(left) = left else {
+        return crate::distribution::drawn_cells(generator, |c, stream| roll(&crate::batch::cell(right, c)?, false, &mut stream.items(1)));
+    };
     crate::distribution::drawn_cells(generator, |c, stream| deal(&crate::batch::cell(left, c)?, &crate::batch::cell(right, c)?, &mut stream.rng()))
 }
 
@@ -649,10 +660,10 @@ fn roll(right: &Value, fill: bool, call: &mut rustymath::random::Items) -> Resul
         Items::Values(items) => { for e in items { data.add(item(e.clone(), call)?); } }
         bounds if !fill => {
             let bounds = bounds.nonnegative_integers::<u64>().described("roll needs a nonnegative whole number")?;
-            // A bound of 0 draws a float between 0 and 1, unless integers wrap (`zero_bound`). The other draws keep their exactness beside it.
-            // Both folds are branch-free and vectorise. The first tests for one bound repeated, the common case, and the second finds the least and greatest.
+            // A bound of 0 draws a float between 0 and 1, unless integers wrap (`zero_bound`). The other draws keep their exactness beside it. Both folds are branch-free and vectorise. The first tests for one bound repeated, the common case, and the second finds the least and greatest.
             let first = bounds[0];
-            let (lo, hi) = if bounds.iter().fold(true, |same, &b| same & (b == first)) { (first, first) } else { bounds.iter().fold((u64::MAX, 0), |(lo, hi), &b| (lo.min(b), hi.max(b))) };
+            let (lo, hi) = if bounds.iter().fold(true, |same, &b| same & (b == first)) { (first, first) }
+            else { bounds.iter().fold((u64::MAX, 0), |(lo, hi), &b| (lo.min(b), hi.max(b))) };
             if lo > 0 {
                 let mut draws = Vec::with_capacity(bounds.len());
                 rustymath::random::roll(if lo == hi { rustymath::Arg::One(hi) } else { rustymath::Arg::Many(&bounds) }, bounds.len(), call, &mut draws);

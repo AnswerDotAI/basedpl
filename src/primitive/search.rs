@@ -122,7 +122,7 @@ pub(super) fn unruns(right: &Value, span: &Span) -> Result<Value, Error> {
     let (lengths, values) = (items.next().expect("lengths"), items.next().expect("values"));
     // `runs` writes the atom `1ₓ` as the length only for a unit, which then needs no replicate.
     let decoded = if matches!(&lengths, Value::Number(n) if n.integer_items().is_some_and(|i| i.get(0) == 1)) { values }
-        else { replicate(&lengths, &values, None, false, None)? };
+    else { replicate(&lengths, &values, None, false, None)? };
     match items.next() { Some(keys) => Primitive::Keys.call(Some(&keys), &decoded, span), None => Ok(decoded) }
 }
 
@@ -184,7 +184,8 @@ pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span) -> Result<
     let real = |v: Value| match v { Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(Error::domain("range needs real numbers or two characters")) };
     let steps = |distance: &Number| -> Result<usize, Error> {
         let t = Numeric::current();
-        let whole = crate::pervasive::number(Primitive::Math(Math::Floor), None, &crate::pervasive::number(Primitive::Math(Math::Magnitude), None, distance, t)?, t)?;
+        let whole =
+            crate::pervasive::number(Primitive::Math(Math::Floor), None, &crate::pervasive::number(Primitive::Math(Math::Magnitude), None, distance, t)?, t)?;
         whole.nonnegative_integer().described("range needs a finite length")
     };
     let mark = Numeric::for_values(left.into_iter().chain([right])).fixed.map_or(Mark::Exact, Mark::Fixed);
@@ -239,9 +240,7 @@ pub(super) fn where_indices(right: &Value) -> Result<Value, Error> {
             return built.described("invalid where result");
         }
     }
-    if let (Some(counts), [_]) = (right.as_items().ints(), right.shape()) {
-        if right.keys(0).is_none() { return where_vector(&counts.widened()); }
-    }
+    if let (Some(counts), [_]) = (right.as_items().ints(), right.shape()) { if right.keys(0).is_none() { return where_vector(&counts.widened()); } }
     let counts = right.as_items().nonnegative_integers().described("where needs nonnegative whole counts")?;
     let total = generated_len(&[counts.iter().fold(0usize, |total, &n| total.saturating_add(n))])?;
     if right.shape().len() == 1 && right.keys(0).is_none() {
@@ -390,8 +389,7 @@ pub(super) fn sort(right: &Value, down: bool, span: &Span) -> Result<Value, Erro
     if right.is_unit() { return Ok(right.clone()); }
     if right.shape().len() == 1 && right.keys(0).is_none() {
         if let Some(sorted) = compact_view(&Cells::Items(right)).map(|v| rustymath::search::view_sort(v, down)).transpose()?.flatten() {
-            return Value::from_bounded(right.layout().clone(), sorted, right.fixed_width(), right.range())
-                .described("invalid sort");
+            return Value::from_bounded(right.layout().clone(), sorted, right.fixed_width(), right.range()).described("invalid sort");
         }
     }
     let order = Value::new(vec![1], vec![grade(None, right, down)?]).described("invalid sort")?;
@@ -408,9 +406,8 @@ pub(crate) fn ordered_cells(p: Primitive, y: &Value, k: usize) -> Option<Result<
     let (n, width) = (y.shape()[frame], crate::array::count(&y.shape()[frame + 1..]));
     let dims = [y.len() / width / n, n, 1];
     if !grade && k == 1 {
-        return rustymath::search::view_sort_along(view, dims, down).transpose().map(|sorted| {
-            Value::from_bounded(y.layout().clone(), sorted?, y.fixed_width(), y.range()).described("invalid sort")
-        });
+        return rustymath::search::view_sort_along(view, dims, down).transpose()
+            .map(|sorted| Value::from_bounded(y.layout().clone(), sorted?, y.fixed_width(), y.range()).described("invalid sort"));
     }
     if width > 16 { return None; }
     let columns: Vec<_> = (0..width).map(|j| (view, j, width)).collect();

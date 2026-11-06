@@ -191,7 +191,9 @@ impl Recorder {
     pub(super) fn leaf(&mut self, node: &Node, cursor: usize, entity: &Entity, session: &Session) {
         let Term::Binding(binding) = &entity.term else { unreachable!("a leaf's entity holds its value") };
         let leaf = match (&node.kind, binding) {
-            (NodeKind::Literal(_) | NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::Subscript(_), _) => Leaf::Constant(Term::Binding(binding.clone())),
+            (NodeKind::Literal(_) | NodeKind::Function(_) | NodeKind::Operator(_) | NodeKind::Subscript(_), _) => {
+                Leaf::Constant(Term::Binding(binding.clone()))
+            }
             (NodeKind::Name(name, last), _) => Leaf::Resolve(entity.category(), Some(session.bindings.address(*name)), *last),
             _ => Leaf::Resolve(entity.category(), None, false),
         };
@@ -512,8 +514,8 @@ impl Recorder {
 fn settled(entity: Entity, source: &Arc<Source>) -> Result<Entity, Error> {
     let (range, shy) = (entity.range.clone(), entity.shy);
     Ok(match entity.term {
-        Term::Train(tines) => Entity::new(Term::Tines(tines), range, shy, None),
-        Term::Strand(_) | Term::Left(..) => Entity::held(entity.bound(source)?, range), _ => entity
+        Term::Train(tines) => Entity::new(Term::Tines(tines), range, shy, None), Term::Strand(_) | Term::Left(..) => Entity::held(entity.bound(source)?, range),
+        _ => entity
     })
 }
 
@@ -731,8 +733,8 @@ impl Recording {
     /// The call of a group's train, which register `function` holds as its tines: by its tines where `calls_tines` accepts them, giving `train_call` the arguments that the statement holds and the train's readers (`train_readers`), which `readers` keeps from the first call, and otherwise as its function. A level that the binder took over holds its train as a function, which calls as any function does. A train's call is never a tail call.
     #[inline(never)]
     fn call_tines(
-        &self, registers: &mut [Option<Entity>], left: Option<Read>, function: Read, argument: Read, readers: &OnceLock<usize>, span: &Span, source: &Arc<Source>
-    ) -> Result<Bound, Error> {
+        &self, registers: &mut [Option<Entity>], left: Option<Read>, function: Read, argument: Read, readers: &OnceLock<usize>, span: &Span,
+        source: &Arc<Source>) -> Result<Bound, Error> {
         let x = match left { Some(x) => Some(self.argument(registers, x, source)?), None => None };
         let f = self.read(registers, function);
         let y = self.argument(registers, argument, source)?;

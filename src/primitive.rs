@@ -15,10 +15,10 @@ mod inverse;
 mod numeric;
 mod search;
 pub(crate) mod structural;
+pub(crate) use facts::Form;
 use search::*;
 pub(crate) use search::{matched_cells, ordered_cells, searched_cells};
 pub(crate) use {facts::*, indexing::*, inverse::*, numeric::*, structural::*};
-pub(crate) use facts::Form;
 
 /// A reduce or scan along the last or first axis. Its glyphs are `/ ⌿ \ ⍀`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,15 +47,17 @@ impl Operation {
     }
     /// The call as the newest running level takes it, or else by the operation's own code.
     fn routed(self, pairing: crate::transform::Pairing<'_>, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
+        if let (Self::Fold(p, kind), crate::transform::Pairing::Axis(axis)) = (self, pairing) {
+            return crate::eval::primitive_fold(p, kind, axis, left, right, span);
+        }
         if let Some(result) = crate::transform::call(crate::transform::Op::Operation(self, pairing), left, right, span) { return result; }
         self.run(pairing, left, right, span)
     }
-    /// The operation's own code: rustymath's kernels where they apply, and otherwise calls of the primitives that define it, each of which routes again. A fold or scan takes `eval::primitive_fold`, a product `eval::primitive_product` or `eval::primitive_expansion`, `Pairing::Matrices` takes each matrix or pair of matrices (`eval::matrices`), and a primitive paired by `Pairing::At` combines at its offsets (`pervasive::at`).
+    /// The operation's own code: rustymath's kernels where they apply, and otherwise calls of the primitives that define it. Folds resolve their shape in `primitive_fold` before routing. Products take `eval::primitive_product` or `eval::primitive_expansion`, `Pairing::Matrices` takes each matrix or pair of matrices, and `Pairing::At` combines at its offsets.
     fn run(self, pairing: crate::transform::Pairing<'_>, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
         use crate::transform::Pairing;
         match (self, pairing) {
             (_, Pairing::Matrices) => crate::eval::matrices(self, left, right, span),
-            (Self::Fold(p, kind), Pairing::Axis(axis)) => crate::eval::primitive_fold(p, kind, axis, left, right, span),
             (Self::Product(f, g), Pairing::Axis(None)) => match left {
                 Some(x) => crate::eval::primitive_product(f, g, x, right, span), None => crate::eval::primitive_expansion(f, g, right, span)
             },
@@ -93,7 +95,26 @@ impl Operation {
 pub(crate) enum Superscript { Power(i64), Transpose, Unit, Mark(crate::number::Mark) }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum OperatorKind {
-    Each, Bitwise, Commute, Before, Rank, Atop, Axis, Over, After, Product, Outer, Key, Power, Optimize, Valences, Under, Differentiate, Agenda, Stencil, Fold(FoldKind),
+    Each,
+    Bitwise,
+    Commute,
+    Before,
+    Rank,
+    Atop,
+    Axis,
+    Over,
+    After,
+    Product,
+    Outer,
+    Key,
+    Power,
+    Optimize,
+    Valences,
+    Under,
+    Differentiate,
+    Agenda,
+    Stencil,
+    Fold(FoldKind),
     /// A superscript after an item: `²` or `⁻¹` repeats or inverts a function and raises an array to a power. `ᵀ` transposes an array, `ᵘ` makes a scalar that holds a function, and a number marker makes an array's numbers, or a function's results, exact integers or floats of a width (`Superscript::Mark`). It binds as a monadic operator does.
     Super(Superscript),
 }
@@ -213,7 +234,9 @@ impl Real {
     }
     /// The primitive whose row this function shares.
     fn primitive(self) -> Primitive {
-        Primitive::Math(match self { Self::Sqrt => Math::Root, Self::Ln => Math::Log, Self::Pow => Math::Power, Self::Circle => Math::Circle, Self::Arc => Math::Arc })
+        Primitive::Math(match self {
+            Self::Sqrt => Math::Root, Self::Ln => Math::Log, Self::Pow => Math::Power, Self::Circle => Math::Circle, Self::Arc => Math::Arc
+        })
     }
 }
 
@@ -227,7 +250,9 @@ impl Primitive {
         match mark {
             Mark::Rational if self == Self::Arithmetic(Arithmetic::Divide) => Some(Marked::Arguments(mark)),
             Mark::Exact => Exact::of(self, dyadic).map(|e| Marked::Primitive(Self::Exact(e))),
-            Mark::Real => Real::of(self, dyadic).map(|r| Marked::Primitive(Self::Real(r))).or_else(|| self.facts(dyadic).pervasive().then_some(Marked::Arguments(mark))),
+            Mark::Real => {
+                Real::of(self, dyadic).map(|r| Marked::Primitive(Self::Real(r))).or_else(|| self.facts(dyadic).pervasive().then_some(Marked::Arguments(mark)))
+            }
             _ => None,
         }
     }
@@ -236,17 +261,27 @@ impl Primitive {
         use Math::*;
         match self {
             Self::Math(Circle) => Some(Self::Math(Arc)), Self::Math(Power) => Some(Self::Math(Log)), Self::Math(Log) => Some(Self::Math(Power)),
-            Self::Encode => Some(Self::Decode), Self::Arithmetic(Arithmetic::Minus) | Self::Math(Pi) => Some(self), _ => None,
+            Self::Encode => Some(Self::Decode), Self::Arithmetic(Arithmetic::Minus) | Self::Math(Pi) => Some(self), _ => None
         }
     }
     /// The primitive whose monad undoes this one's monad. The pairs in `PAIRS` undo each other, and the primitives in the first arm undo themselves.
     pub(crate) fn monadic_inverse(self) -> Option<Primitive> {
         use {Arithmetic::*, Math::*};
-        const PAIRS: [(Primitive, Primitive); 4] =
-            [(Primitive::Math(Power), Primitive::Math(Log)), (Primitive::Math(Root), Primitive::Math(Nand)), (Primitive::Encode, Primitive::Decode), (Primitive::Enclose, Primitive::Take)];
+        const PAIRS: [(Primitive, Primitive); 4] = [
+            (Primitive::Math(Power), Primitive::Math(Log)), (Primitive::Math(Root), Primitive::Math(Nand)), (Primitive::Encode, Primitive::Decode),
+            (Primitive::Enclose, Primitive::Take),
+        ];
         match self {
-            Self::Arithmetic(Plus | Minus | Divide) | Self::Reverse(_) | Self::Transpose | Self::Identity(_) | Self::Math(Not) | Self::Index | Self::MatrixDivide => Some(self),
-            _ => PAIRS.iter().find_map(|&(p, q)| if p == self { Some(q) } else if q == self { Some(p) } else { None }),
+            Self::Arithmetic(Plus | Minus | Divide)
+            | Self::Reverse(_)
+            | Self::Transpose
+            | Self::Identity(_)
+            | Self::Math(Not)
+            | Self::Index
+            | Self::MatrixDivide => Some(self),
+            _ => PAIRS.iter().find_map(|&(p, q)| {
+                if p == self { Some(q) } else if q == self { Some(p) } else { None }
+            }),
         }
     }
 }
@@ -254,8 +289,8 @@ impl Primitive {
 /// A function without a glyph. `•special` makes the ones in `ALL`, named as SciPy names them. `∂` records `Sign`, `|`'s slope in floats, and `BinomDn` and `BinomDk`, the slopes of `!`'s binomial in n and in k. `LambertW` is the inverse of the hook `×↢*`. The form rewriter puts the rest in place of the combinations they compute by an algorithm of their own (`eval/rewrite.rs`): `Log1p` and `Expm1` for `⍟1+⍵` and `¯1+*⍵`, `Selected` for a selection from an order, `Ranks` for a grade of a grade, `GroupCounts` and `GroupFolds` for Key's count and fold of each group, and `Determinant` and `Permanent` for monadic `-.×` and `+.×`. `Polygamma`, `Beta`, `Gammainc`, `Betainc`, the binomial's slopes and `GroupFolds` take two arguments, `Selected` and `GroupCounts` one or two, and the others one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Special {
-    Gammaln, Digamma, Polygamma, Erf, Erfc, Erfinv, Beta, Gammainc, Betainc, BetaincAt([u64; 2]), Sign, BinomDn, BinomDk,
-    Log1p, Expm1, LambertW, Selected(Order, Pick), Ranks(bool), GroupCounts, GroupFolds(Folding, bool), Determinant, Permanent,
+    Gammaln, Digamma, Polygamma, Erf, Erfc, Erfinv, Beta, Gammainc, Betainc, BetaincAt([u64; 2]), Sign, BinomDn, BinomDk, Log1p, Expm1, LambertW,
+    Selected(Order, Pick), Ranks(bool), GroupCounts, GroupFolds(Folding, bool), Determinant, Permanent
 }
 /// The order that `Special::Selected` selects from: a grade, `⍋` or `⍒` where `true`, or a sort, `<` or `>` where `true`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -268,11 +303,15 @@ pub(crate) enum Pick { Take, First, Index, Mix }
 pub(crate) enum Folding { Plus, Max, Min, Times }
 impl Order {
     pub(crate) fn primitive(self) -> Primitive {
-        match self { Self::Grade(down) => Primitive::Grade(down), Self::Sort(down) => Primitive::Compare(if down { Comparison::Greater } else { Comparison::Less }) }
+        match self {
+            Self::Grade(down) => Primitive::Grade(down), Self::Sort(down) => Primitive::Compare(if down { Comparison::Greater } else { Comparison::Less })
+        }
     }
 }
 impl Pick {
-    pub(crate) fn primitive(self) -> Primitive { match self { Self::Take | Self::First => Primitive::Take, Self::Index => Primitive::Index, Self::Mix => Primitive::Mix } }
+    pub(crate) fn primitive(self) -> Primitive {
+        match self { Self::Take | Self::First => Primitive::Take, Self::Index => Primitive::Index, Self::Mix => Primitive::Mix }
+    }
 }
 impl Folding {
     pub(crate) fn primitive(self) -> Primitive {
@@ -284,11 +323,14 @@ impl Folding {
 }
 impl Special {
     /// Every function that `•special` makes, for the table of functions (`Builtin::function`).
-    pub(crate) const ALL: [Self; 9] = [Self::Gammaln, Self::Digamma, Self::Polygamma, Self::Erf, Self::Erfc, Self::Erfinv, Self::Beta, Self::Gammainc, Self::Betainc];
+    pub(crate) const ALL: [Self; 9] =
+        [Self::Gammaln, Self::Digamma, Self::Polygamma, Self::Erf, Self::Erfc, Self::Erfinv, Self::Beta, Self::Gammainc, Self::Betainc];
     fn dyadic(self) -> bool { matches!(self, Self::Gammainc | Self::Polygamma | Self::Beta | Self::Betainc | Self::BinomDn | Self::BinomDk) }
     fn valence(self) -> crate::system::Valence { if self.dyadic() { crate::system::Valence::Dyadic } else { crate::system::Valence::Monadic } }
     /// Whether this function computes a fast combination that isn't elementwise, which `eval::combined` runs.
-    pub(crate) fn combines(self) -> bool { matches!(self, Self::Selected(..) | Self::Ranks(_) | Self::GroupCounts | Self::GroupFolds(..) | Self::Determinant | Self::Permanent) }
+    pub(crate) fn combines(self) -> bool {
+        matches!(self, Self::Selected(..) | Self::Ranks(_) | Self::GroupCounts | Self::GroupFolds(..) | Self::Determinant | Self::Permanent)
+    }
 }
 
 /// `•special name`: the function that `name` names, as SciPy names it, such as `erf`.
@@ -340,9 +382,8 @@ pub(crate) fn counted(value: &Value) -> Mark {
 fn generated(n: u64, mark: Mark) -> Value {
     match mark {
         Mark::Width(width) => Value::Number(Number::float(n as f64, width)), Mark::Fixed(width) => Value::Number(Number::fixed(n as i64, width)),
-        Mark::Exact => Value::integer(saturated(n)),
-        Mark::Real => Value::Number(Number::float(n as f64, Numeric::current().width)),
-        Mark::Rational => Value::Number(Number::rational(num_bigint::BigInt::from(n).into())),
+        Mark::Exact => Value::integer(saturated(n)), Mark::Real => Value::Number(Number::float(n as f64, Numeric::current().width)),
+        Mark::Rational => Value::Number(Number::rational(num_bigint::BigInt::from(n).into()))
     }
 }
 /// Counts or positions at `layout`, each below `bound`, as `generated` gives each one. Exact ones take the width that holds every value below `bound` (`Value::positions`).
@@ -473,15 +514,21 @@ impl Primitive {
         if axis.is_some() && !self.facts(left.is_some()).axes { return Err(Error::new(ErrorKind::Syntax, "axis is not supported by this primitive")); }
         match (self, left) {
             // A complex array computes as the combination that these functions replace, on the whole array, where a real array takes their kernels.
-            (Self::Special(Special::Log1p), None) if crate::derivative::complex(right) => Self::Math(Math::Log).call(None, &Self::Arithmetic(Arithmetic::Plus).call(Some(&Value::weak_integer(1)), right, span)?, span),
-            (Self::Special(Special::Expm1), None) if crate::derivative::complex(right) => Self::Arithmetic(Arithmetic::Minus).call(Some(&Self::Math(Math::Power).call(None, right, span)?), &Value::weak_integer(1), span),
+            (Self::Special(Special::Log1p), None) if crate::derivative::complex(right) => {
+                Self::Math(Math::Log).call(None, &Self::Arithmetic(Arithmetic::Plus).call(Some(&Value::weak_integer(1)), right, span)?, span)
+            }
+            (Self::Special(Special::Expm1), None) if crate::derivative::complex(right) => {
+                Self::Arithmetic(Arithmetic::Minus).call(Some(&Self::Math(Math::Power).call(None, right, span)?), &Value::weak_integer(1), span)
+            }
             _ if self.scalar(left.is_some()) => self.pervasive_apply(None, left, right, span, false),
             (Self::Keys, None) => crate::keyed::remove(right, None).described("invalid axis keys"),
             (Self::Keys, Some(x)) => crate::keyed::construct(x, right, None).described("invalid axis keys"),
             (Self::Identity(true), Some(x)) => Ok(x.clone()),
             (Self::Identity(_), _) => Ok(right.clone()),
             (Self::Special(Special::Betainc), Some(x)) => {
-                if x.shape() != [2] { return Err(Error::new(Kind::Length, "betainc's left argument is one pair of shape parameters: for an array of pairs, use ⍤1 0")); }
+                if x.shape() != [2] {
+                    return Err(Error::new(Kind::Length, "betainc's left argument is one pair of shape parameters: for an array of pairs, use ⍤1 0"));
+                }
                 let (a, b) = (real(&x.at(0))?, real(&x.at(1))?);
                 Self::Special(Special::BetaincAt([a.to_bits(), b.to_bits()])).call(None, right, span)
             }
@@ -611,8 +658,7 @@ impl Primitive {
                     return match &spec { Some(s) => self.call_axes(Some(l), &right, s, span), None => self.call(Some(l), &right, span) };
                 }
                 let agreement = match &spec {
-                    Some(s) => axis_agreement(&left, &right, s)?,
-                    None => Agreement::new(left.layout(), right.layout()).described("array shapes do not agree")?,
+                    Some(s) => axis_agreement(&left, &right, s)?, None => Agreement::new(left.layout(), right.layout()).described("array shapes do not agree")?
                 };
                 let left = crate::fusion::copied(&left, agreement.layout.clone(), &agreement.left, x.as_ref()).described("invalid keyed argument")?;
                 let right = crate::fusion::copied(&right, agreement.layout, &agreement.right, y.as_ref()).described("invalid keyed argument")?;
@@ -676,12 +722,9 @@ impl Primitive {
         Self::planned(&plan, left, right, span, fill, agreement)
     }
     /// The items that `agreement` pairs from `left` and `right`, computed as `plan` plans their call: through its kernel where the kernel takes the items, and otherwise item by item.
-    pub(crate) fn planned(plan: &crate::plan::Pervasive, left: Option<&Value>, right: &Value, span: &Span, fill: bool, agreement: Agreement) -> Result<Value, Error> {
-        if !fill || agreement.len == 0 {
-            if let Some(result) = crate::pervasive::map(plan, left, right, &agreement) {
-                return Ok(result);
-            }
-        }
+    pub(crate) fn planned(
+        plan: &crate::plan::Pervasive, left: Option<&Value>, right: &Value, span: &Span, fill: bool, agreement: Agreement) -> Result<Value, Error> {
+        if !fill || agreement.len == 0 { if let Some(result) = crate::pervasive::map(plan, left, right, &agreement) { return result; } }
         if agreement.len == 0 {
             let prototype = plan.p.pervasive_item(left.map(Value::prototype).as_ref(), &right.prototype(), span, true)?;
             return empty_result(agreement, prototype);
@@ -692,9 +735,9 @@ impl Primitive {
     fn pervasive_item(self, left: Option<&Value>, right: &Value, span: &Span, fill: bool) -> Result<Value, Error> {
         check()?;
         if !fill && let Some(result) =
-            crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Axis(None)), left, right, span) {
-                return result;
-            }
+                crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Axis(None)), left, right, span) {
+                    return result;
+                }
         if matches!((self, left, right), (Self::Arithmetic(Arithmetic::Plus), None, Value::Character(_))) { return Ok(right.clone()); }
         if matches!(right, Value::Array(_)) || matches!(left, Some(Value::Array(_))) { return self.pervasive_apply(None, left, right, span, fill); }
         // A character computes as its code point (`pervasive::character_item`). A function that takes no characters, or none of these items, meets them below as it meets any other item that isn't a number. An empty result's fill is the prototype of the result on the arguments' prototypes.
@@ -706,7 +749,9 @@ impl Primitive {
                 _ if crate::pervasive::booleans(self, left.is_some()) => Value::Number(Number::from_bool(false)),
                 (Self::Math(Math::Floor | Math::Ceiling) | Self::Arithmetic(Arithmetic::Times), None, _) | (Self::Exact(_), _, _) => Value::integer(0),
                 (Self::Random, _, Value::Number(y)) => Value::Number(y.zero()),
-                (Self::Math(Math::Circle | Math::Arc | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) | (Self::Real(_), _, _) => float_like(0.0, right),
+                (Self::Math(Math::Circle | Math::Arc | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) | (Self::Real(_), _, _) => {
+                    float_like(0.0, right)
+                }
                 (Self::Bitwise(_), _, Value::Number(y)) => {
                     Value::Number(if y.as_bool().is_some() && left.is_none_or(|x| x.as_number().is_some_and(|n| n.as_bool().is_some())) {
                         Number::from_bool(false)
@@ -827,9 +872,7 @@ fn pairwise(left: Option<&Value>, right: &Value, agreement: Agreement, f: &dyn F
 }
 
 /// The empty result that `agreement` lays out, each cell `prototype`.
-fn empty_result(agreement: Agreement, prototype: Value) -> Result<Value, Error> {
-    Value::empty(agreement.layout, prototype).described("invalid empty result")
-}
+fn empty_result(agreement: Agreement, prototype: Value) -> Result<Value, Error> { Value::empty(agreement.layout, prototype).described("invalid empty result") }
 
 /// The agreement of a pervasive call along the axes that `spec` lists in its higher-rank argument, which the lower-rank argument's axes pair with in order.
 fn axis_agreement(left: &Value, right: &Value, spec: &Value) -> Result<Agreement, Error> {

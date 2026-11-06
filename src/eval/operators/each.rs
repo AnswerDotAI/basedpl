@@ -10,6 +10,11 @@ pub(super) fn each_pair(
     if !atoms {
         if let Some(result) = crate::batch::tried(operand, whole, &layout, mixed.is_some(), span) { return result.map(Bound::from); }
     }
+    // A recording can take the batched route; reject only the per-item fallback here.
+    if len != 0 && crate::session().tracing().is_some() {
+        let (x, y) = pair(0)?;
+        crate::program::trace::per_item(x.as_ref(), &y)?;
+    }
     let items = assembled(len, layout, mixed, |i, empty| {
         let (x, y) = pair(i)?;
         result_item(if empty { on_prototypes(operand, x.as_ref(), &y, span)? } else { operand.call_with(x, y, span)? }.value)
@@ -50,7 +55,6 @@ pub(in crate::eval) fn each(operand: &Function, left: Option<&Value>, right: &Va
 // Out of line, so that `each`'s frame holds only its fast paths. Recursion through them, as in Each on a scalar, keeps that frame on the browser's stack, whose size limits the depth of recursion (`tests/wasm.mjs`).
 #[inline(never)]
 fn each_items(operand: &Function, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
-    crate::program::trace::per_item(left, right)?;
     let agreement = Agreement::new(left.map_or(&Default::default(), Value::layout), right.layout()).described("frames do not agree")?;
     each_pair(
         operand, agreement.len, agreement.layout.clone(), |i| Ok(agreement.values(left, right, i)),

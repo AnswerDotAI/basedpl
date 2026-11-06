@@ -51,7 +51,7 @@ pub(in crate::eval) fn cell_axes(f: &Function, spec: &Value, left: Option<&Value
     let cells = |x: &Value| -> Result<(Value, usize), Error> {
         let n = x.shape().len();
         let own = if named { crate::primitive::resolve_axes(spec, x).ok().and_then(|s| crate::primitive::axes(&s, n).ok()) }
-            else { selected.iter().all(|&i| i < n).then(|| selected.clone()) };
+        else { selected.iter().all(|&i| i < n).then(|| selected.clone()) };
         match own { Some(own) => Ok((moved_last(x, &own)?, own.len())), None => Ok((x.clone(), n)) }
     };
     let (y, yr) = cells(right)?;
@@ -62,7 +62,8 @@ pub(in crate::eval) fn cell_axes(f: &Function, spec: &Value, left: Option<&Value
     // Rank pairs the frames by name, so named axes can build a grid larger than the target's frame. That result keeps Rank's order: the paired frame, then the cells.
     let frame = order - selected.len();
     let frame_layout = |v: &Value, r: usize| v.layout().axes(0..v.shape().len() - r);
-    let paired = Agreement::new(&x.as_ref().map_or_else(Default::default, |(x, r)| frame_layout(x, *r)), &frame_layout(&y, yr)).map_or(frame, |a| a.layout.shape().len());
+    let paired = Agreement::new(&x.as_ref().map_or_else(Default::default, |(x, r)| frame_layout(x, *r)), &frame_layout(&y, yr))
+        .map_or(frame, |a| a.layout.shape().len());
     if paired != frame { return Ok(Bound::from(result)); }
     // Result cells of the selected rank return to the selected axes. Other result cells start at the first selected axis.
     let cell = result.shape().len().saturating_sub(frame);

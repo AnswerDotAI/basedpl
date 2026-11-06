@@ -27,8 +27,7 @@ fn identity(p: Primitive, prototype: &Value, span: &Span) -> Result<Value, Error
             match prototype {
                 _ if crate::pervasive::booleans(p, true) => truth(n != 0.0),
                 Value::Number(value) if matches!(id, Logical) && value.as_bool().is_some() => truth(n != 0.0),
-                Value::Number(value) if n.is_finite() => Ok(Value::Number(value.like(n as i32))),
-                _ => number(n),
+                Value::Number(value) if n.is_finite() => Ok(Value::Number(value.like(n as i32))), _ => number(n)
             }
         }
     }
@@ -72,7 +71,9 @@ pub(super) fn folds_whole(operand: &Function, left: Option<&Value>, right: &Valu
 #[inline(never)]
 pub(crate) fn in_turn(operand: &Function, kind: FoldKind, axis: Option<&Value>, right: &Value, span: &Span) -> Result<Option<Value>, Error> {
     let Some(axis) = axis.filter(|_| !kind.scan) else { return Ok(None) };
-    let Some(p) = operand.dyadic_primitive().filter(|&p| right.template_dtype().and_then(|d| crate::pervasive::kernel_at(p, None, d, 2, crate::number::Numeric::current())).and_then(|k| k.fold()).is_some()) else { return Ok(None) };
+    let Some(p) = operand.dyadic_primitive().filter(|&p| {
+        right.template_dtype().and_then(|d| crate::pervasive::kernel_at(p, None, d, 2, crate::number::Numeric::current())).and_then(|k| k.fold()).is_some()
+    }) else { return Ok(None); };
     let axes = crate::primitive::resolve_axes(axis, right)?;
     if axes.is_singleton() { return Ok(None); }
     folded_along(p, kind, &crate::primitive::axes(&axes, right.shape().len())?, right, span).map(Some)
@@ -106,7 +107,8 @@ pub(crate) fn folded_along(p: Primitive, kind: FoldKind, axes: &[usize], right: 
             return product.with_layout(without(&axes)).described("invalid fold keys");
         }
         // The fold of a pending array keeps its lanes regular, as one fold's plan does where its lanes hold two or more items.
-        if axes.iter().all(|&a| right.shape()[a] > 1) && let Some((product, done)) = crate::fusion::fold(right, p, kind, &axes, None) {
+        if axes.iter().all(|&a| right.shape()[a] > 1) && let Some(result) = crate::fusion::fold(right, p, kind, &axes, None) {
+            let (product, done) = result?;
             (folded, rest) = (product.with_layout(without(&axes[..done])).described("invalid fold keys")?, &axes[done..]);
         }
     }
@@ -130,7 +132,7 @@ fn fold_ravels(operand: &Function, kind: FoldKind, axes: &Value, left: Option<&V
 pub(super) enum FoldPlan {
     /// A fold of a unit with no axis given, or a scan of an atom: its one item, which only a seed changes. A fold puts the item on the seed's left, and a scan puts it on the seed's right.
     One(Value),
-    /// The argument's items unchanged, in the result's shape: a scan of an empty array, a scan of lanes of one item with no seed, or a fold of them where no level carries the argument.
+    /// The argument's items unchanged, in the result's shape: a scan of an empty array, or an unseeded scan or fold of lanes of one item. Views preserve any level carried by the argument.
     Whole(Value),
     /// A fold with nothing left to compute: no results, or lanes of no items, each of which gives the seed or the operand's identity.
     Done(Value),
@@ -161,9 +163,8 @@ impl FoldPlan {
         else if lanes.len == 0 {
             let item = match seed { Some(seed) => seed.clone(), None => identity()? };
             Self::Done(Value::new(shape, vec![item; size]).described("invalid identity result")?)
-        } else if seed.is_none() && lanes.len == 1 && !crate::transform::carried(None, right) {
-            Self::Whole(right.relaid(crate::array::Layout::from(shape)).described("invalid fold result")?)
-        } else { Self::Lanes { lanes, shape } };
+        } else if seed.is_none() && lanes.len == 1 { Self::Whole(right.relaid(crate::array::Layout::from(shape)).described("invalid fold result")?) }
+        else { Self::Lanes { lanes, shape } };
         Ok((along, plan))
     }
 }
@@ -173,13 +174,14 @@ fn fold_array(operand: &Function, kind: FoldKind, axis: Option<usize>, seed: Opt
     let (along, plan) = FoldPlan::new(kind, axis, seed, right, || Err(Error::domain("this function has no reduction identity")))?;
     let result = match plan {
         FoldPlan::One(item) => match seed {
-            Some(seed) if kind.scan => operand.call_with(Some(seed), item, span)?.array(span)?, Some(seed) => operand.call_with(Some(item), seed, span)?.array(span)?, None => item
+            Some(seed) if kind.scan => operand.call_with(Some(seed), item, span)?.array(span)?,
+            Some(seed) => operand.call_with(Some(item), seed, span)?.array(span)?, None => item
         },
         FoldPlan::Whole(items) => items,
         FoldPlan::Done(result) => result,
         FoldPlan::Lanes { lanes, shape } => match by_lanes(operand, kind, seed, right, along, &lanes, span) {
-            Some(result) => result?,
-            None => item_lanes(kind.scan, &lanes, shape, seed, right, |x, y| operand.call_with(Some(x), y, span)?.array(span), crate::transform::carried(None, right))?,
+            Some(result) => result?, None => item_lanes(
+                kind.scan, &lanes, shape, seed, right, |x, y| operand.call_with(Some(x), y, span)?.array(span), crate::transform::carried(None, right))?
         },
     };
     folded(result, kind, along, right)
@@ -191,14 +193,21 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
     let seed = seed.map(|s| crate::primitive::weakened_beside(s, crate::plan::Kind::value(right)).unwrap_or_else(|| s.clone()));
     let seed = seed.as_ref();
     let call = |x: Value, y: Value| p.call(Some(&x), &y, span);
-    let lone = |v: Value| if seed.is_none() { crate::pervasive::lone(p, v) } else { v };
+    let lone = |v: Value| if seed.is_none() { crate::pervasive::lone(p, v, span) } else { Ok(v) };
     // Kernels that read numbers directly leave a value that a level carries to the path through items.
     let active = crate::transform::carried(None, right);
     let (along, plan) = FoldPlan::new(kind, axis, seed, right, || identity(p, &right.prototype(), span))?;
+    if matches!(&plan, FoldPlan::Lanes { .. }) {
+        if let Some(result) = crate::transform::call(crate::transform::Op::Operation(Operation::Fold(p, kind), Pairing::Axis(axis)), seed, right, span) {
+            return result;
+        }
+    }
     let mut last = None;
     let result = match plan {
-        FoldPlan::One(item) => match seed { Some(seed) if kind.scan => scan_step(p, call)(seed.clone(), item)?, Some(seed) => call(item, seed.clone())?, None => lone(item) },
-        FoldPlan::Whole(items) => lone(items),
+        FoldPlan::One(item) => match seed {
+            Some(seed) if kind.scan => scan_step(p, call)(seed.clone(), item)?, Some(seed) => call(item, seed.clone())?, None => lone(item)?
+        },
+        FoldPlan::Whole(items) => lone(items)?,
         FoldPlan::Done(result) => result,
         FoldPlan::Lanes { lanes, shape } if kind.scan => {
             if let Some(result) = (!active).then(|| crate::pervasive::scan(p, right, seed, &lanes)).flatten() {
@@ -214,7 +223,7 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
                 Some(s @ Value::Number(_)) if !fixed_seed && !active && crate::pervasive::seed_last(p, right) => { last = Some(s); None } s => s
             };
             match (seed.is_none() || fixed_seed).then(|| crate::fusion::fold(right, p, kind, &[along], seed)).flatten() {
-                Some((fused, _)) => fused,
+                Some(result) => result?.0,
                 None => {
                     let kernel = !active && (seed.is_none() || fixed_seed);
                     // Float sums and products take the kernel for any number of items, because they fold in any order. Reading the items to see that would compute a pending argument, which the kernel reads more cheaply, so lanes of two or more items take it without asking.
@@ -222,12 +231,11 @@ pub(crate) fn primitive_fold(p: Primitive, kind: FoldKind, axis: Option<usize>, 
                         matches!(p, Primitive::Arithmetic(Plus | Times))
                             && matches!(right.as_items(), crate::array::Items::Compact(rustymath::buffer::View::Floats(_)))
                     };
-                    let result = match ((kernel && (lanes.len >= 2 || any())).then(|| crate::pervasive::fold(p, right, along, seed)).flatten(), p) {
-                        (Some(result), _) => result,
+                    match ((kernel && (lanes.len >= 2 || any())).then(|| crate::pervasive::fold(p, right, along, seed)).flatten(), p) {
+                        (Some(result), _) => result?,
                         (None, Primitive::Arithmetic(op)) if kernel && right.all_numbers() => number_lanes(op, false, right, seed, &lanes, shape)?,
                         _ => item_lanes(false, &lanes, shape, seed, right, call, active)?,
-                    };
-                    if lanes.len == 1 { lone(result) } else { result }
+                    }
                 }
             }
         }

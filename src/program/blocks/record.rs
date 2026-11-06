@@ -3,7 +3,9 @@
 use super::*;
 
 /// Steps recorded into `kernel` at type `ty`. As `rustymath::recipe::Ops`, it records a formula's recipe, so a compiled part computes as rustymath's kernels do. `held` pairs each operand that the program holds with its number, which a recipe reads while recording (`Ops::constant`). A recipe step that no compiled kernel takes, such as a shift, declines the recording (`declined`), and the step doesn't lower. `tolerance` is the comparison tolerance at the step's type (`Numeric::tolerance_of`), which a recipe reads through `Ops::tolerance`, as an eager kernel reads it from its run `Settings`.
-struct Recording<'a> { kernel: std::cell::RefCell<&'a mut jit::Kernel>, ty: jit::Ty, held: [Option<(jit::Value, f64)>; 2], declined: std::cell::Cell<bool>, tolerance: Tolerance }
+struct Recording<'a> {
+    kernel: std::cell::RefCell<&'a mut jit::Kernel>, ty: jit::Ty, held: [Option<(jit::Value, f64)>; 2], declined: std::cell::Cell<bool>, tolerance: Tolerance
+}
 
 impl Recording<'_> {
     /// The value of a new step `op` of `x` and `y` that gives type `ty`.
@@ -32,20 +34,15 @@ impl Recording<'_> {
         match self.kernel.borrow().inputs[k] { jit::Input::Constant(t, bits) => Some(jit::Input::decoded(t, bits)), _ => None }
     }
     /// `x` in place of a step that no compiled kernel takes, which declines the recording.
-    fn decline(&self, x: jit::Value) -> jit::Value {
-        self.declined.set(true);
-        x
-    }
+    fn decline(&self, x: jit::Value) -> jit::Value { self.declined.set(true); x }
     /// Whether the recording's values are integers or Booleans.
     fn integral(&self) -> bool { !matches!(self.ty, jit::Ty::F32 | jit::Ty::F64) }
     /// The Boolean function whose truth table is `t`, on `x`, through the kernel's `And`, `Or`, `Xor` and `Not`: for one argument, bit `i` is the result for `i`, and for two, bit `2x + y`. `None` for any table but those and their negations.
     fn table(&self, t: u8, x: &[jit::Value]) -> Option<jit::Value> {
         let b = |op, x, y| self.step(op, jit::Ty::Bool, x, y);
         let (op, not) = match (x.len(), t) {
-            (1, 1) => return Some(b(jit::Op::Not, x[0], None)),
-            (2, 8) => (jit::Op::And, false), (2, 14) => (jit::Op::Or, false), (2, 6) => (jit::Op::Xor, false),
-            (2, 7) => (jit::Op::And, true), (2, 1) => (jit::Op::Or, true), (2, 9) => (jit::Op::Xor, true),
-            _ => return None,
+            (1, 1) => return Some(b(jit::Op::Not, x[0], None)), (2, 8) => (jit::Op::And, false), (2, 14) => (jit::Op::Or, false),
+            (2, 6) => (jit::Op::Xor, false), (2, 7) => (jit::Op::And, true), (2, 1) => (jit::Op::Or, true), (2, 9) => (jit::Op::Xor, true), _ => return None
         };
         let v = b(op, x[0], Some(x[1]));
         Some(if not { b(jit::Op::Not, v, None) } else { v })
@@ -67,22 +64,21 @@ impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
     fn wide_number(&self, x: f64) -> jit::Value { self.constant(x) }
     fn wide_multiply_add(&self, x: jit::Value, y: jit::Value, z: jit::Value) -> jit::Value { <Self as rustymath::recipe::Ops<F>>::multiply_add(self, x, y, z) }
     fn narrow(&self, x: jit::Value) -> jit::Value { x }
-    fn integer(&self, x: i64) -> jit::Value {
-        let c = self.constant(x as f64);
-        if self.integral() { c } else { self.decline(c) }
-    }
+    fn integer(&self, x: i64) -> jit::Value { let c = self.constant(x as f64); if self.integral() { c } else { self.decline(c) } }
     fn integer_op(&self, op: rustymath::recipe::Integer, x: jit::Value, y: jit::Value) -> jit::Value {
         use rustymath::recipe::Integer;
         let op = match op {
-            Integer::Add => jit::Op::Add, Integer::Subtract => jit::Op::Subtract, Integer::And => jit::Op::And, Integer::Or => jit::Op::Or, Integer::Xor => jit::Op::Xor,
-            _ => return self.decline(x),
+            Integer::Add => jit::Op::Add, Integer::Subtract => jit::Op::Subtract, Integer::And => jit::Op::And, Integer::Or => jit::Op::Or,
+            Integer::Xor => jit::Op::Xor, _ => return self.decline(x)
         };
         if self.integral() { self.at(op, x, Some(y)) } else { self.decline(x) }
     }
     fn integer_compare(&self, op: rustymath::recipe::Cmp, x: jit::Value, y: jit::Value) -> jit::Value {
         if self.integral() { <Self as rustymath::recipe::Ops<F>>::compare(self, op, x, y) } else { self.decline(x) }
     }
-    fn integer_select(&self, m: jit::Value, x: jit::Value, y: jit::Value) -> jit::Value { if self.integral() { self.at(jit::Op::Select(m), x, Some(y)) } else { self.decline(x) } }
+    fn integer_select(&self, m: jit::Value, x: jit::Value, y: jit::Value) -> jit::Value {
+        if self.integral() { self.at(jit::Op::Select(m), x, Some(y)) } else { self.decline(x) }
+    }
     fn to_integer(&self, x: jit::Value) -> jit::Value { if self.integral() { x } else { self.decline(x) } }
     fn from_integer(&self, x: jit::Value) -> jit::Value { if self.integral() { x } else { self.decline(x) } }
     fn to_bits(&self, x: jit::Value) -> jit::Value { if self.integral() { x } else { self.decline(x) } }
@@ -93,7 +89,7 @@ impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
         use rustymath::recipe::Unary;
         let op = match op {
             Unary::Negate => jit::Op::Negate, Unary::Magnitude => jit::Op::Magnitude, Unary::Sqrt => jit::Op::Sqrt, Unary::Floor => jit::Op::Floor,
-            _ => return self.decline(x),
+            _ => return self.decline(x)
         };
         self.at(op, x, None)
     }
@@ -102,7 +98,7 @@ impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
         let op = match op {
             Binary::Add => jit::Op::Add, Binary::Subtract => jit::Op::Subtract, Binary::Multiply => jit::Op::Multiply, Binary::Divide => jit::Op::Divide,
             Binary::Larger => jit::Op::Maximum, Binary::Smaller => jit::Op::Minimum, Binary::BitAnd if self.integral() => jit::Op::And,
-            _ => return self.decline(x),
+            _ => return self.decline(x)
         };
         self.at(op, x, Some(y))
     }
@@ -122,9 +118,11 @@ impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
 }
 
 /// Records into `kernel` the steps of a pervasive step of plan `plan` at type `at` on `x` and, for a dyad, `y`, by the formula that the step's kernel runs (`pervasive::formula`), so a compiled part computes as the kernel does. `held` gives each operand's number where the program holds it. A recipe reads it while recording, as a power's exponent, a divisor or a comparison's one number. The last recorded step gives the result: a test's Booleans, or items of type `at`. A step whose type `made` differs from `at` lowers only for a test, since a kernel converts other results by rules that a compiled step doesn't follow. `None` where the step doesn't lower: its formula has no recipe here, or the recipe takes a step that no compiled kernel takes, as an exact float residue does.
-pub(super) fn recorded(kernel: &mut jit::Kernel, plan: &Pervasive, at: DType, made: jit::Ty, x: jit::Value, y: Option<jit::Value>, held: [Option<f64>; 2]) -> Option<()> {
+pub(super) fn recorded(
+    kernel: &mut jit::Kernel, plan: &Pervasive, at: DType, made: jit::Ty, x: jit::Value, y: Option<jit::Value>, held: [Option<f64>; 2]) -> Option<()> {
     let ty = jit::Ty::of(at)?;
-    let o = Recording { kernel: std::cell::RefCell::new(kernel), ty, held: [held[0].map(|c| (x, c)), y.zip(held[1])], declined: std::cell::Cell::new(false), tolerance: plan.numeric.tolerance_of(at) };
+    let o = Recording { kernel: std::cell::RefCell::new(kernel), ty, held: [held[0].map(|c| (x, c)), y.zip(held[1])], declined: std::cell::Cell::new(false),
+        tolerance: plan.numeric.tolerance_of(at) };
     let (args, arity, integral) = ([x, y.unwrap_or(x)], 1 + usize::from(y.is_some()), o.integral());
     let (mathish, t) = (plan.numeric.mathish_at(at), o.tolerance);
     let op = pervasive::formula(plan.p, arity, mathish, integral, t)?;

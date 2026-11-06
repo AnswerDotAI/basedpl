@@ -221,7 +221,7 @@ v←32 •float 1.5 2.5
 32•float1.5 × 16777217ₓ    ⍝ 25165824
 ```
 
-Complex numbers have 64-bit or 32-bit parts. `•storage` gives their kind as `"complex128"` and `"complex64"`, after their whole size. They follow the rules for floats. A complex number takes the width of the floats it comes from, and a 16-bit float that becomes complex takes 32-bit parts. A complex number beside a float computes at the wider of their widths. Complex results stay complex, even where the imaginary part becomes zero. A complex atom displays its zero imaginary part, as `¯1ⱼ0`. In a complex array, display shows an item whose imaginary part is zero as a real number. A literal is the one exception: under dynamic kinds, `1j0` reads as the float `1`. A real-valued function, such as absolute value `|`, still returns real storage. Use `ₐ` to take the real part at the same width. `ₛ`, `ₚ` and `ₕ` mark the width of the parts, and display marks parts that aren't of the default width:
+Complex numbers have 64-bit or 32-bit parts. `•storage` gives their kind as `"complex128"` and `"complex64"`, after their whole size. They follow the rules for floats. A complex number takes the width of the floats it comes from, and a 16-bit float that becomes complex takes 32-bit parts. A complex number beside a float computes at the wider of their widths. Complex results stay complex, even where the imaginary part becomes zero. A complex atom displays its zero imaginary part, as `¯1ⱼ0`. An array omits an item's zero imaginary part only when another item has a nonzero imaginary part. A literal is the one exception: under dynamic kinds, `1j0` reads as the float `1`. A real-valued function, such as absolute value `|`, still returns real storage. Use `ₐ` to take the real part at the same width. `ₛ`, `ₚ` and `ₕ` mark the width of the parts, and display marks parts that aren't of the default width:
 
 ```bpl
 ⊢.kind¨•storage¨[[2j3]ₛ;[2j3]ₕ;√[¯4]ₛ;[2j3]ₛ×1.5]       ⍝ "complex64" "complex64" "complex64" "complex64"
@@ -270,7 +270,7 @@ Extra accuracy from a rewrite is not promised for literal-only expressions or in
 
 [Mathish mode](mathish.qmd) is on by default. For [Mathish types](terms.qmd#term-mathish-types), floating comparisons use relative tolerance `1E¯14`, measured against the larger magnitude, and `0÷0` and `1⍟1` give zero. Disable it with `•prefs ["mathish":$f]` for exact floating comparisons and NaN at floating zero divided by zero.
 
-The calculation's kind and `kinds` setting decide whether these conventions apply. Explicit 64-bit float suffixes and imported buffers follow the same rule as literals. Static calculations and fixed-integer operations never use Mathish conventions, even when their floating computation uses 64 bits. The narrower floats keep exact comparisons and raw division. Acceptance of integer and Boolean arguments and convergence stopping rules are independent of Mathish mode.
+The calculation's kind and `kinds` setting decide whether these conventions apply. Explicit 64-bit float suffixes and imported buffers follow the same rule as literals. Static calculations and fixed-integer operations never use Mathish conventions, even when their floating computation uses 64 bits. The narrower floats keep exact comparisons and raw division. Convergence stopping rules are independent of Mathish mode.
 
 ## Infinities and NaN
 

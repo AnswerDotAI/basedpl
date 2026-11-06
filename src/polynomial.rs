@@ -1,7 +1,7 @@
 use crate::cancel::check;
 use crate::{
-    Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Cells, Layout, generated_len}, element::{Float, read_as}, primitive::Primitive,
-    number::{Arithmetic, Field, Math, Numeric, with_field}
+    Described, Error, Number, Value, agreement::{Agree, Agreement}, array::{Cells, Layout, generated_len}, element::{Float, read_as},
+    number::{Arithmetic, Field, Math, Numeric, with_field}, primitive::Primitive
 };
 use rustymath::{buffer::FloatWidth, error::Kind, with_float_width};
 

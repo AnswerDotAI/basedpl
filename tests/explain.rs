@@ -29,8 +29,7 @@ fn speed_cases_take_their_routes() {
     let mut failed = Vec::new();
     let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
     match timing::routes(&files, None, &InterruptHandle::default()) {
-        Ok((captured, errors)) => { routes.extend(captured); failed.extend(errors) }
-        Err(message) => failed.push(message),
+        Ok((captured, errors)) => { routes.extend(captured); failed.extend(errors) } Err(message) => failed.push(message)
     }
     for file in basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/reference")).unwrap() {
         for case in file.cases.iter().filter(|case| basedpl::reference::routed(case)) {
@@ -82,12 +81,14 @@ fn explain_and_memory() -> (Vec<timing::Capture>, Vec<String>) {
         ("{+/v×⌽⍵}∂ v", 0), ("{+/,(10 10⍴v)×⍉10 10⍴⍵}∂ 100↑v", 0), ("{+/,(998 3⍴v)×3↕⍵}∂ v", 0), ("{+/+/3↕⍵}∂ v", 0),
         ("{+/,(1000 2⍴v)×⍵+⊗0 0}∂ v", 0), ("{+/⌈⌿⍵}∂ 10 100⍴v", 0), ("{+/,(499 3⍴v)×[[3]⋄[2]]↕⍵}∂ v", 0),
         ("{+/⍵.[2|⍳≢⍵]}∂ v", 1),
-    ] { report(&mut wrong, &session, &format!(r#"≢(•explain "{code}").accumulations.items"#), &format!("{scatters}ₓ")); }
+    ] {
+        report(&mut wrong, &session, &format!(r#"≢(•explain "{code}").accumulations.items"#), &format!("{scatters}ₓ"));
+    }
     // Each path that adds a selection's items has a name: in place, on a converted copy, in rounds for repeated positions, in one call for distinct ones, and item by item for a dfn that isn't one primitive's spelling. Exact integers whose sums can overflow widen on a copy once, then add in place.
     check(&session, "i←¿1000⍴1000 ⋄ z←1000⍴0 ⋄ zx←1000⍴0ₓ ⋄ zh←16 •float 1000⍴0 ⋄ zr←1000⍴1ᵣ2 ⋄ $t", "$t");
     for (code, path) in [
-        ("z.[i]+←1", "in place"), ("zx.[i]+←1ₓ", "on a copy"), ("zx.[i]+←1ₓ", "in place"), ("zh.[i]+←1", "on a copy"), ("zr.[i]+←1ᵣ3", "rounds"),
-        ("zr.[⍳10]+←1ᵣ3", "one call"), ("z.[i] {⍺+2×⍵}←1", "item by item"),
+        ("z.[i]+←1", "in place"), ("zx.[i]+←1ₓ", "on a copy"), ("zx.[i]+←1ₓ", "in place"), ("zh.[i]+←1", "on a copy"),
+        ("zr.[i]+←1ᵣ3", "rounds"), ("zr.[⍳10]+←1ᵣ3", "one call"), ("z.[i] {⍺+2×⍵}←1", "item by item"),
     ] { report(&mut wrong, &session, &format!(r#"(•explain "{code}").accumulations.path≡["{path}"]"#), "$t"); }
     // A fused group counts the runs that a long cycle splits its blocks into, and the items it copies out of inputs. A pending input that a name also holds is computed by the group as one of its outputs, with no `stored` row.
     report(&mut wrong, &session, r#"big←¿[256 5000]⍴0 ⋄ f←(•explain "q←2×big(+⍤1)¿5000⍴0 ⋄ q≡q").fused ⋄ ∧/f.runs>f.blocks"#, "$t");

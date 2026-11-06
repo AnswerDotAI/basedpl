@@ -9,13 +9,17 @@
 //! A structural glyph that copies one source through rustymath `Steps` (`remapped`) gives a pending copy (`copy`) where its result has at least `Sizes::min_items` items, for a source of any compact kind. Forcing composes a read of a copy with the copy's map, and moves a read with no repeat or fill under each pending pervasive call it reaches that only it holds (`Pending::resolved`). `2×⌽v+1` then runs as one program that reads `v` backwards. A read that copies (`Mapping::copies`), such as a reversal's, moves only under a call that reads one array, so `2×⌽y×x+0.5` computes `y×x+0.5` first and then reads it backwards. A call whose two array arguments copy arrays of one layout through one map that gives no fill runs on those arrays instead, and the map copies its result once (`copied_once`): `(3↕x)×3↕y` runs as `3↕x×y`. A copy of floats that no call reads through, and a copy of any other kind, walks its source as `remapped` does. A fold of a copy of windows along its own axis runs sliding folds over the source (`slide`), at a cost for each item that doesn't grow with the window's width. A short fold of windows over padding runs as a block stage that reads through the padding (`fold`). A fold along two axes of windows, as `⌈/⍠2 3` pools, folds both axes in one pass over the source (`fold_windows`).
 use crate::array::{Footprint, Seen};
 use crate::{
-    Described, Error, ErrorKind, Number, Source, Span, Value, agreement::{Agree, Agreement}, array::{Gather, Layout, Storage, generated_len}, explain::Live, number::Numeric, pervasive,
-    plan::Desc, primitive::{FoldKind, Primitive, structural::Form}, program::{
+    Described, Error, ErrorKind, Number, Source, Span, Value, agreement::{Agree, Agreement}, array::{Gather, Layout, Storage, generated_len}, explain::Live,
+    number::Numeric, pervasive, plan::Desc, primitive::{FoldKind, Primitive, structural::Form}, program::{
         Node, Nodes, Origin, Program, Read, Step, blocks::{compiles_on_first_run, readable}, run::{self, Unit}
     }
 };
 use rustymath::hashing::{HashMap, HashMapExt};
-use rustymath::{agreement::{Binding, Mapping, Read as PlanRead, ReadRoute, Run}, buffer::{Buffer, DType, FloatWidth, View}, domain::Range, gather::Steps, layout::{count, strides}, reduce::{FoldRoute, fold_route}, structure::Slide};
+use rustymath::{
+    agreement::{Binding, Mapping, Read as PlanRead, ReadRoute, Run}, buffer::{Buffer, DType, FloatWidth, View}, domain::Range, gather::Steps,
+    layout::{count, strides}, reduce::{FoldRoute, fold_route}, structure::Slide
+};
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError};
 
@@ -30,7 +34,7 @@ const MAX_KEPT: usize = 8;
 
 /// An array whose items a program computes when something first reads them. The program holds the arrays and atoms that the call reads, among them other pending arrays, each pending array in a value of its own (`held`). Forcing gathers a chain of them into one program, which runs block by block.
 pub(crate) struct Pending {
-    /// What computes the items, until forcing takes it: a program, or a lone call that reads no pending array, kept until forcing makes the call or a reader needs its program (`programmed`).
+    /// What computes the items: a call on stored operands, or a typed program once calls compose.
     work: Mutex<Option<Work>>,
     result: OnceLock<Storage>,
     /// Whether an actual read has already planned a nonempty selective computation of this result.
@@ -51,7 +55,6 @@ pub(crate) struct Pending {
     _live: Live,
 }
 
-/// What a new pending array computes its items from: a program, or a lone call that reads no pending array and builds its program only when something asks for one (`Pending::programmed`).
 enum Work { Program(Program), Call(Call) }
 
 impl Work {
@@ -79,6 +82,8 @@ impl Call {
         let right = read(&mut nodes, &y, right, layout.shape());
         ending(nodes, desc, Step::Map { left, right, plan })
     }
+    /// The call's result, made now with the agreement it was given, as eager dispatch makes it after it declines to defer (`Primitive::planned`).
+    fn made(&self) -> Result<Value, Error> { Primitive::planned(&self.plan, self.x.as_ref(), &self.y, &FORCING, false, self.agreement.clone()) }
 }
 
 /// The pending array that node `node` holds, while it hasn't been computed.
@@ -211,9 +216,7 @@ fn resolved(program: Program) -> Program {
 fn moved(pending: &Arc<Pending>, map: &Mapping, frame: &[usize]) -> Option<(Value, Mapping)> {
     let shape = pending.layout.shape();
     let Mapping::Steps { base: 0, steps: outer } = map else { return None };
-    if map.fills() || Arc::strong_count(pending) != 1 || !pending.runs() || outer.iter().any(Steps::spreads) || Steps::rereads(outer, shape) {
-        return None;
-    }
+    if map.fills() || Arc::strong_count(pending) != 1 || !pending.runs() || outer.iter().any(Steps::spreads) || Steps::rereads(outer, shape) { return None; }
     let mut work = pending.programmed();
     let program = work.as_ref()?.program()?;
     let arrays = program.nodes.iter().filter(|n| matches!(n.origin, Origin::Held(_)) && !n.desc.atom).count();
@@ -250,14 +253,14 @@ pub(crate) fn affine(value: &Value) -> Option<(Value, usize, Vec<isize>)> {
 }
 
 /// `mask` as Booleans: 0 is false and any other value true (`0≠mask`), as `@[p]` and a select read a mask. A Boolean mask stays as it is.
-pub(crate) fn truths(mask: &Value, span: &Span) -> Result<Value, Error> {
-    if mask.dtype() == Some(DType::Boolean) { return Ok(mask.clone()); }
-    Primitive::Compare(crate::primitive::Comparison::NotEqual).call(Some(&Value::integer(0)), mask, span)
+pub(crate) fn truths<'a>(mask: &'a Value, span: &Span) -> Result<Cow<'a, Value>, Error> {
+    if mask.dtype() == Some(DType::Boolean) { return Ok(Cow::Borrowed(mask)); }
+    Primitive::Compare(crate::primitive::Comparison::NotEqual).call(Some(&Value::integer(0)), mask, span).map(Cow::Owned)
 }
 
 /// `yes` where `mask` isn't 0 (`truths`) and `no` elsewhere, after agreement, as the masks of `∂`'s partials' recipes and a replayed `Select` step ask. Plain values of compact numbers choose through rustymath's `operation::choose` (`chosen_mapped`). A trace's or a tape's value records one `Select` step (`program::trace::chosen`). Where another running level carries a value, or an operand isn't compact, the two arms stack along a new first axis, then the mask chooses one row for each item (`primitive::select`), so a dual of an outer `∂` call passes through as any copy or selection does. The items' positions are then a constant of their count, which a trace's program keys exactly (`trace::exact`).
 pub(crate) fn chosen(mask: &Value, yes: &Value, no: &Value, span: &Span) -> Result<Value, Error> {
-    let mask = &truths(mask, span)?;
+    let mask = &*truths(mask, span)?;
     let mut layout: Option<Layout> = None;
     for v in [mask, yes, no].into_iter().filter(|v| !v.is_atom()) {
         layout = Some(match layout { None => v.layout().clone(), Some(l) => Agreement::new(&l, v.layout()).described("a select's values agree")?.layout });
@@ -271,15 +274,14 @@ pub(crate) fn chosen(mask: &Value, yes: &Value, no: &Value, span: &Span) -> Resu
     let chosen = if mask.dtype() == Some(DType::Boolean) && [&mask, &yes, &no].iter().all(plain) {
         let read = |v: &Value| (v.clone(), if v.is_atom() { Mapping::Single } else { Mapping::Linear(1) });
         chosen_mapped(read(&mask), read(&yes), read(&no), &Layout::from(layout.shape().to_vec()), n)
-    } else if let Some(selected) = crate::program::trace::chosen(&mask, &yes, &no) {
-        selected
-    } else {
+    } else if let Some(selected) = crate::program::trace::chosen(&mask, &yes, &no) { selected } else {
         let arms = Primitive::CatenateFirst.call(
             Some(&crate::primitive::reshape_to(&[1, n], &no, span)?), &crate::primitive::reshape_to(&[1, n], &yes, span)?, span)?;
         let rows = crate::primitive::reshape_to(&[n], &mask, span)?;
         crate::program::trace::exact("a select's item positions");
         let items = Value::integers(vec![n], (0..n as i64).collect()).described("invalid positions")?;
-        let chosen = crate::primitive::select(&arms, &[rustymath::structure::IndexPart::Axis(rows), rustymath::structure::IndexPart::Axis(items)], None, true, None, span)?;
+        let chosen = crate::primitive::select(
+            &arms, &[rustymath::structure::IndexPart::Axis(rows), rustymath::structure::IndexPart::Axis(items)], None, true, None, span)?;
         crate::primitive::reshape_to(layout.shape(), &chosen, span)?
     };
     if atoms { return Ok(chosen.at(0)); }
@@ -292,7 +294,8 @@ fn chosen_mapped((mask, m): (Value, Mapping), (x, xm): (Value, Mapping), (y, ym)
     let args = [(&held[0], &m, len), (&held[1], &ym, len), (&held[2], &xm, len)];
     pervasive::with_reads(&args, rustymath::agreement::Missing::Default, |reads, types| {
         let mut buffer = Buffer::with_capacity(types[2], len);
-        rustymath::operation::choose((reads[0], DType::Boolean), &[reads[1], reads[2]], 0..len, types[2], false, &mut buffer).expect("a select of floats of one width never fails");
+        rustymath::operation::choose((reads[0], DType::Boolean), &[reads[1], reads[2]], 0..len, types[2], false, &mut buffer)
+            .expect("a select of floats of one width never fails");
         Value::from_storage(layout.clone(), Storage::Compact(buffer)).expect("a select's items fit its layout")
     }).expect("a select reads compact items")
 }
@@ -304,7 +307,7 @@ pub(crate) fn defers(settles: bool, len: usize) -> bool {
     settles
 }
 
-/// The call of `p` on `x` and `y` as a pending array, or `agreement` back where the call can't be deferred. Its plan must fix its result's type (`Pervasive::fuses`), and each array that it reads must hold items of a type that a block stage holds (`blocks::readable`). A stored array of Booleans or integers, or a pending copy of one, must also be of the type that the call computes at, unless the stage compiles on its first run (`blocks::compiles_on_first_run`): a compiled part converts such items in registers as it reads them, while a precompiled step converts them into a buffer on every run, which costs more than computing the call at once. Where the call would gather more than `MAX_NODES` calls, the pending arrays it reads run first. A call that reads no pending array keeps its plan and arguments in place of a program (`Work::Call`). Out of line, so that its code stays out of the frame of dispatch, which stays on the stack through each level of recursion.
+/// The call of `p` on `x` and `y` as a pending array, or `agreement` back where the call can't be deferred. Its plan must fix its result's type (`Pervasive::fuses`), and each array that it reads must hold items of a type that a block stage holds (`blocks::readable`). A stored array of Booleans or integers, or a pending copy of one, must also be of the type that the call computes at, unless the stage compiles on its first run (`blocks::compiles_on_first_run`): a compiled part converts such items in registers as it reads them, while a precompiled step converts them into a buffer on every run, which costs more than computing the call at once. Where the call would gather more than `MAX_NODES` calls, the pending arrays it reads run first. Out of line, so that its code stays out of the frame of dispatch, which stays on the stack through each level of recursion.
 #[inline(never)]
 pub(crate) fn defer(p: Primitive, plan: &crate::plan::Pervasive, x: Option<&Value>, y: &Value, agreement: Agreement) -> Result<Value, Agreement> {
     if let Some(copied) = x.and_then(|x| copied_once(p, plan, x, y, &agreement)) { return Ok(copied); }
@@ -452,16 +455,17 @@ fn copied_once(p: Primitive, plan: &crate::plan::Pervasive, x: &Value, y: &Value
 
 /// A structural primitive's result: `form` with `params`, on `inputs`, laid out as `structural::plan` plans it on their layouts. A carried input or parameter hands the call to its carrier (`Carrier::structural`). A plan that reads its one source through a map copies it (`copied`). Any other plan reads every source into the kind that the sources holding items join to (`array::items_kind`), with `fill` at a position that reaches no item: compact sources and atoms, each atom as one item, in one typed read, and other sources item by item. Where no source holds an item, the result reads item by item and takes the first input's prototype, as `Gather::joined_kind` does. `Step::Structural` replays through it.
 pub(crate) fn copy(form: &Form, params: &[Value], inputs: &[&Value], fill: Option<&Value>) -> Result<Value, Error> {
-    if let Some(carrier) = crate::transform::newest_carrier(params.iter().chain(inputs.iter().copied())) { return carrier.structural(form, params, inputs, fill); }
+    if let Some(carrier) = crate::transform::newest_carrier(params.iter().chain(inputs.iter().copied())) {
+        return carrier.structural(form, params, inputs, fill);
+    }
     let layouts: Vec<&Layout> = inputs.iter().map(|v| v.layout()).collect();
     let (layout, plan) = crate::primitive::structural::plan(form, params, &layouts)?;
     let prototype = inputs.first().map_or_else(|| Value::Number(Number::from_bool(false)), |v| v.prototype());
     let item = |i: usize| match plan.at(i) {
         Run::Source { source, .. } if source == inputs.len() => Ok(fill.expect("a plan reads its fill source only when the call has a fill").clone()),
-        Run::Source { source, first, .. } => Ok(inputs[source].at(first)),
-        Run::Fill => Ok(prototype.clone()),
+        Run::Source { source, first, .. } => Ok(inputs[source].at(first)), Run::Fill => Ok(prototype.clone()),
         Run::Invalid => Err(Error::new(rustymath::error::Kind::Index, "a structural read reaches no source")),
-        Run::Index { .. } => unreachable!("a structural plan reads sources, never indices"),
+        Run::Index { .. } => unreachable!("a structural plan reads sources, never indices")
     };
     // A copy of atoms to a result with no axes gives an atom where the form keeps atoms (`Form::keeps_atoms`), as `⌽3` and `⍬↓0` do, and otherwise a rank-0 array, as `⍬⍴5` gives.
     if layout.shape().is_empty() && inputs.iter().copied().chain(fill).all(|v| v.is_atom()) {
@@ -491,12 +495,14 @@ pub(crate) fn copied_through(source: &Value, plan: &rustymath::agreement::ReadPl
         ReadRoute::Input(0) => copied(source, layout.clone(), map, fill),
         ReadRoute::Map { map: Mapping::Steps { steps, .. }, .. } => {
             let inner = Layout::from(steps.iter().map(Steps::len).collect::<Vec<_>>());
-            copied_through(source, input, &inner, fill)?.and_then(|padded| { padded.force(); copied(&padded, layout.clone(), map, fill) })
+            copied_through(source, input, &inner, fill)?.and_then(|padded| {
+                padded.force();
+                copied(&padded, layout.clone(), map, fill)
+            })
         }
         _ => return None,
     })
 }
-
 
 /// Items of `right` laid out by `layout`, read through `map` as `Gather::walk` reads a walk's tables (`Mapping::to_walk`): `right` itself under `layout` where the map reads every item in order (`Mapping::in_order`), a carried array's copy (`Carrier::copied`), a pending copy where the copy defers, and otherwise a copy made at once (`walked`). A position that reaches no item reads `fill`, or the prototype where there's none. A copy with a fill is made at once.
 pub(crate) fn copied(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>) -> Result<Value, ErrorKind> {
@@ -614,12 +620,20 @@ pub(crate) fn picks(value: &Value, p: Primitive, kind: FoldKind) -> Option<Vec<i
 /// The span at which a pending program's steps run, and the steps that a trace replays to compute a value that it observes (`trace::Tracer::hold`). Neither has source text. A pending call never fails, and a trace's replay that fails stops the trace.
 pub(crate) static FORCING: LazyLock<Span> = LazyLock::new(|| Span { source: Source::new("<pending>", ""), range: 0..0 });
 
-/// The value of `program`'s result, run by its plan's units (`program::planned`) after its maps move to the storage order that their operands and readers need (`program::layout::reorder`). A program whose only step gives its result, as a lone call forced at once makes, runs that step on its own with no plan (`run::lone`). Each output's value becomes the items of the pending array that `kept` gives for it, which no `forced` row counts. An error from a call inside the program stops the run. The pending array that holds `program` keeps its own nodes.
+/// The value of `program`'s result, run by its plan's units (`program::planned`) after its maps move to the storage order that their operands and readers need (`program::layout::reorder`). A program whose only step gives its result, as a lone call forced at once makes, runs that step on its own with no plan (`run::lone`). Each output's value becomes the items of the pending array that `kept` gives for it, which no `forced` row counts. An error from a call inside the program stops the run. The pending array that holds `program` keeps its own nodes. On failure, each uncomputed output's owner recovers a program for that output, including only its dependencies.
 fn replayed(program: &Program, kept: &[Arc<Pending>]) -> Result<Value, Error> {
     if let Some(value) = run::lone(program, &FORCING) { return value; }
     let moved = crate::program::layout::reorder(program);
     let program = moved.as_ref().unwrap_or(program);
-    let mut values = run::values(program, &crate::program::planned(program), &[], &FORCING)?;
+    let mut values = match run::values(program, &crate::program::planned(program), &[], &FORCING) {
+        Ok(values) => values,
+        Err(error) => {
+            for (pending, &j) in kept.iter().zip(&program.outputs) {
+                if !pending.is_forced() { pending.put(Program::at(program.nodes.iter().cloned().collect(), j).live()); }
+            }
+            return Err(error);
+        }
+    };
     // Where two pending arrays compute the same items, their outputs share one node: each use before its last takes a clone.
     for (k, (pending, &j)) in kept.iter().zip(&program.outputs).enumerate() {
         let again = j == program.result.of || program.outputs[k + 1..].contains(&j);
@@ -629,8 +643,8 @@ fn replayed(program: &Program, kept: &[Arc<Pending>]) -> Result<Value, Error> {
     Ok(run::taken(program, &mut values, &program.result))
 }
 
-/// The fold of a pending array along `axes[0]`, as `+/`, `⌈⌿` or a fold with an axis reduces it, computed block by block: the array's program with a `Fold` step, which a block stage runs. A view of all of a pending array's items folds the same way, by its own shape. Where another array also holds the array, as a name does, the same pass stores its items as an output of the program, and every later read uses them. Otherwise the fold never builds the array, and leaves its program in it, so a later read still computes the items, as the other tine of `(⊢÷+/)` does. A copy of windows folded along an axis that steps through its source folds through `pervasive::fold` instead, which rustymath runs as sliding folds over the source, whether or not another array holds it, except a short fold of windows over a pending copy, such as padding (`staged`). That fold runs as a block stage that reads the source through both copies, where sliding would first make the padded copy. The result holds the lanes' results by the fold's shape, which the fold's caller lays out (`folded` in `eval::operators`). A copy folds through its map where the caller's kernel can (`pervasive::mapped_fold`): `None` for a copy that no call moves under, which stays pending for the caller's kernel to read. A copy that repeats items, as a broadcast does, folds its source instead, where `program::contraction::fold_of_copy` allows. A seed, where the fold has one, joins each lane as its last item (`Step::Fold`), and a seeded fold never slides. A `+` fold of a `×` whose operands read their sources through affine maps runs as one product instead, which leaves the `×` pending (`program::contraction`). With several `axes`, the product folds along all of them, and the result keeps the array's other axes. The result comes with the number of `axes` it folds along. Where no product computes that fold, the fold runs along the first of them as above, because by then the pending arrays that the program reads have gathered into it, which can't be undone. Also `None` where no block stage takes the fold, after computing the array's items as usual.
-pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], seed: Option<&Value>) -> Option<(Value, usize)> {
+/// The fold of a pending array along `axes[0]`, as `+/`, `⌈⌿` or a fold with an axis reduces it, computed block by block: the array's program with a `Fold` step, which a block stage runs. A view of all of a pending array's items folds the same way, by its own shape. Where another array also holds the array, as a name does, the same pass stores its items as an output of the program, and every later read uses them. Otherwise the fold never builds the array, and leaves its program in it, so a later read still computes the items, as the other tine of `(⊢÷+/)` does. A copy of windows folded along an axis that steps through its source folds through `pervasive::fold` instead, which rustymath runs as sliding folds over the source, whether or not another array holds it, except a short fold of windows over a pending copy, such as padding (`staged`). That fold runs as a block stage that reads the source through both copies, where sliding would first make the padded copy. The result holds the lanes' results by the fold's shape, which the fold's caller lays out (`folded` in `eval::operators`). A copy folds through its map where the caller's kernel can (`pervasive::mapped_fold`): `None` for a copy that no call moves under, which stays pending for the caller's kernel to read. A copy that repeats items, as a broadcast does, folds its source instead, where `program::contraction::fold_of_copy` allows. A seed, where the fold has one, joins each lane as its last item (`Step::Fold`), and a seeded fold never slides. A `+` fold of a `×` whose operands read their sources through affine maps runs as one product instead, which leaves the `×` pending (`program::contraction`). With several `axes`, the product folds along all of them, and the result keeps the array's other axes. The result comes with the number of `axes` it folds along. Where no product computes that fold, the fold runs along the first of them as above, because by then the pending arrays that the program reads have gathered into it, which can't be undone. Also `None` where no block stage takes the fold, after computing the array's items as usual. A program that fails returns its error, with the pending array's program restored for a later read.
+pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], seed: Option<&Value>) -> Option<Result<(Value, usize), Error>> {
     let axis = axes[0];
     // A fold gathers a pending array's program only where the settings that planned it are still in force. Otherwise the array computes under its own (`Pending::force`).
     let folded = value.folded().filter(|(pending, _)| pending.numeric == Numeric::current());
@@ -642,7 +656,9 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], 
         Some((items, result))
     });
     let staged = seed.is_none() && folded.zip(folds.as_ref()).is_some_and(|((pending, _), (items, result))| staged(pending, p, kind, axis, items, result));
-    if seed.is_none() && !staged && windows(value, kind, &[axis]).is_some() && let Some(slid) = pervasive::fold(p, value, axis, None) { return Some((slid, 1)); }
+    if seed.is_none() && !staged && windows(value, kind, &[axis]).is_some() && let Some(slid) = pervasive::fold(p, value, axis, None) {
+        return Some(slid.map(|v| (v, 1)));
+    }
     let (pending, shared) = folded?;
     let program = resolved(pending.take());
     if copy_source(&program).is_some() && !staged {
@@ -661,7 +677,7 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], 
         nodes.truncate(len);
         pending.put(Program { nodes, result: root, outputs });
         if result.is_none() { rustymath::events::declined(rustymath::events::Route::FusedFold, "a copy that no call moves under", pending.len()); }
-        return result.and_then(Result::ok).map(|v| (v, 1));
+        return result.map(|result| result.map(|v| (v, 1)));
     }
     let (Program { mut nodes, result: root, outputs }, kept) = pending.gathered(program);
     let root = root.of;
@@ -673,7 +689,7 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], 
         let of = Read::new(root, value.shape().into());
         if let Some(read) = seed.is_none().then(|| crate::program::contraction::routed(&mut nodes, p, kind, &of, axes, &desc, Numeric::current())).flatten() {
             let program = Program { outputs: outputs.clone(), ..Program::new(nodes, read) };
-            result = replayed(&program, &kept).ok().map(|v| (v, axes.len()));
+            result = Some(replayed(&program, &kept).map(|v| (v, axes.len())));
             (nodes, stored) = (program.nodes, false);
         } else {
             let seed = seed.map(|s| { let at = held(&mut nodes, s); Read::node(&nodes, at) });
@@ -682,21 +698,22 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], 
             let plan = crate::program::planned(&program);
             if plan.units.iter().any(|u| matches!(u, Unit::Blocks(b) if b.nodes.contains(&at))) {
                 let kept: Vec<_> = kept.iter().cloned().chain(shared.then(|| pending.clone())).collect();
-                result = replayed(&program, &kept).ok().map(|v| (v, 1));
+                result = Some(replayed(&program, &kept).map(|v| (v, 1)));
             }
             nodes = program.nodes;
         }
     }
     nodes.truncate(root + 1);
     match result {
-        Some(_) if stored => {}
-        Some(_) => pending.put(Program::at(nodes, root)),
+        Some(Ok(_)) if stored => {}
+        Some(Ok(_)) => pending.put(Program::at(nodes, root)),
+        Some(Err(_)) => pending.put(Program { outputs, ..Program::at(nodes, root) }),
         None => {
             rustymath::events::declined(rustymath::events::Route::FusedFold, "a fold that its group can't run", pending.len());
             let program = Program { outputs, ..Program::at(nodes, root) };
             match replayed(&program, &kept) {
                 Ok(value) => pending.result.set(pending.counted(value)).expect("a pending array computes its items once"),
-                Err(_) => pending.put(Program { outputs: Vec::new(), ..program }),
+                Err(error) => { pending.put(Program { outputs: Vec::new(), ..program }); return Some(Err(error)); }
             }
         }
     }
@@ -731,7 +748,11 @@ impl Pending {
     pub(crate) fn dtype(&self) -> DType { self.dtype }
     pub(crate) fn prototype(&self) -> Value { self.prototype.clone() }
     /// `value`'s items as this array's.
-    fn items(&self, value: Value) -> Storage { value.into_storage().fixed(self.prototype.fixed_width().is_some()) }
+    fn items(&self, value: Value) -> Storage {
+        let storage = value.stored_at(self.dtype).into_storage().fixed(self.prototype.fixed_width().is_some());
+        debug_assert_eq!(storage.dtype(), Some(self.dtype), "a materialized pending array keeps its described dtype");
+        storage
+    }
     /// `value`'s items as this array's, counted as computed for `•explain`'s `forced` rows.
     fn counted(&self, value: Value) -> Storage { crate::explain::computed(self.len()); self.items(value) }
     /// The items, computing them on the first read (`force`). A read inside an evaluation forces the arrays that it reads, holding off the deadline and interrupt checks until the force ends (`execution::forcing`), so they stop the evaluation at the next check after it. The session's execution scope forces each result through `Value::forced`, which a deadline or an interrupt stops with an error.
@@ -741,27 +762,27 @@ impl Pending {
         self.force().expect("a pending array's calls settle, and no deadline or interrupt stops a force that a read makes (`cancel::forcing`)");
         self.result.get().expect("forcing stores the items")
     }
-    /// Computes the items where they haven't been, and gives the error that stopped a call inside the computation: an interrupt, a deadline or another failure. The work stays for a later force after an error. A lone call is made as the eager call is (`Primitive::planned`). A copy reads through its map, which computes only the items that it reads of a pending array that it copies. Any other array's program runs with the pending arrays that it reads gathered into it (`gathered`). The force runs under the numeric settings that planned the array (`settings::under`), whatever `•prefs` has set since.
+    /// Computes the items where they haven't been, and gives the error that stopped a call inside the computation: an interrupt, a deadline or another failure. The work stays for a later force after an error. Every program step preserves its described storage type through the ordinary typed executor. A copy reads through its map, which computes only the items that it reads of a pending array that it copies. Any other array's program runs with the pending arrays that it reads gathered into it (`gathered`). The force runs under the numeric settings that planned the array (`settings::under`), whatever `•prefs` has set since.
     pub(crate) fn force(&self) -> Result<(), Error> { crate::settings::under(self.numeric, || self.compute()) }
     /// `force`'s work, under the numeric settings that planned it.
     fn compute(&self) -> Result<(), Error> {
         let mut work = self.work();
         if self.result.get().is_some() { return Ok(()); }
-        let Some(taken) = work.take() else { return Ok(()) };
-        let program = match taken {
-            Work::Call(call) => match Primitive::planned(&call.plan, call.x.as_ref(), &call.y, &FORCING, false, call.agreement.clone()) {
-                Ok(value) => { let _ = self.result.set(self.counted(value)); return Ok(()); }
-                Err(error) => { *work = Some(Work::Call(call)); return Err(error); }
-            },
-            Work::Program(program) => resolved(program),
-        };
-        let value = match copy_source(&program) {
-            Some((source, map)) => { let (base, tables) = map.to_walk(self.layout.shape()); walked(source, self.layout.clone(), base, &tables, None).expect("a copy's items fit its layout") }
-            None => {
-                let (program, kept) = self.gathered(program);
-                match replayed(&program, &kept) { Ok(value) => value, Err(error) => { *work = Some(Work::Program(program)); return Err(error); } }
+        let value = if let Some(Work::Call(call)) = work.as_ref() { call.made()? } else {
+            let Some(taken) = work.take() else { return Ok(()) };
+            let program = resolved(taken.into_program());
+            match copy_source(&program) {
+                Some((source, map)) => {
+                    let (base, tables) = map.to_walk(self.layout.shape());
+                    walked(source, self.layout.clone(), base, &tables, None).expect("a copy's items fit its layout")
+                }
+                None => {
+                    let (program, kept) = self.gathered(program);
+                    match replayed(&program, &kept) { Ok(value) => value, Err(error) => { *work = Some(Work::Program(program)); return Err(error); } }
+                }
             }
         };
+        *work = None;
         let _ = self.result.set(self.counted(value));
         Ok(())
     }
@@ -769,7 +790,7 @@ impl Pending {
     pub(crate) fn into_storage(mut self) -> Storage { self.storage(); std::mem::take(&mut self.result).into_inner().expect("the items are computed above") }
     /// What computes the items, under its lock, or `None` once something has taken it.
     fn work(&self) -> MutexGuard<'_, Option<Work>> { self.work.lock().unwrap_or_else(PoisonError::into_inner) }
-    /// `work`, with a lone call replaced by its program (`Call::program`), for a reader that needs the program itself.
+    /// The work promoted to a program where a composed read needs one.
     fn programmed(&self) -> MutexGuard<'_, Option<Work>> {
         let mut work = self.work();
         if matches!(*work, Some(Work::Call(_))) { *work = work.take().map(|w| Work::Program(w.into_program())); }
@@ -862,13 +883,12 @@ fn merge(
 }
 
 impl Footprint for Pending {
-    /// The bytes that this pending array keeps alive: its items once computed, and until then the values that its program or its lone call holds.
+    /// The bytes that this pending array keeps alive: its items once computed, and until then the values that its program holds.
     fn footprint_in(&self, seen: &mut Seen) -> usize {
         if let Some(storage) = self.result.get() { return storage.footprint_in(seen); }
         match &*self.work() {
             Some(Work::Call(call)) => call.held().map(|v| v.footprint_in(seen)).sum(),
-            Some(Work::Program(program)) => program.nodes.iter().map(|n| match &n.origin { Origin::Held(v) => v.footprint_in(seen), _ => 0 }).sum(),
-            None => 0,
+            Some(Work::Program(program)) => program.nodes.iter().map(|n| match &n.origin { Origin::Held(v) => v.footprint_in(seen), _ => 0 }).sum(), None => 0
         }
     }
 }

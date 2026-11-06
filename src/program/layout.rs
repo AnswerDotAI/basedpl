@@ -1,7 +1,7 @@
 //! A traced program's maps in the storage order that their operands and readers need (`ordered`).
 
-use crate::plan::Desc;
 use super::{Node, Nodes, Origin, Program, Read, Step, along, copy_of_copy, laid_out, stepped, through_copies};
+use crate::plan::Desc;
 use crate::{array::Layout, number::Numeric};
 use rustymath::{agreement::{Agreement, Mapping}, gather::counts_up, layout::count, search::inverse_permutation};
 

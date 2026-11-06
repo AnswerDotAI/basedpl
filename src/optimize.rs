@@ -2,8 +2,7 @@
 use crate::{
     Described, Error, ErrorKind, Function, Number, Span, Value, array::Layout, data::Options, derivative::Linearized, element::Float, keyed, primitive::real,
 };
-use rustymath::{Native, linalg::Factor, optimize::{self, Bounds, Mapping, Method, Objective, Task}};
-use rustymath::{buffer::FloatWidth, error::Kind};
+use rustymath::{Native, buffer::FloatWidth, error::Kind, linalg::Factor, optimize::{self, Bounds, Mapping, Method, Objective, Task}};
 use std::borrow::Cow;
 
 /// The options that `options f⇄ start` takes.

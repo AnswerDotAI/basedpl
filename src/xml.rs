@@ -124,6 +124,4 @@ pub(crate) fn svg(left: Option<&Value>, right: &Value, _: &Span) -> Result<Value
 fn render_html(_: Option<&Value>, tree: &Value, _: &Span) -> Result<Value, Error> { markup("text/html", tree, Markup::Html) }
 fn render_svg(_: Option<&Value>, tree: &Value, _: &Span) -> Result<Value, Error> { markup("image/svg+xml", tree, Markup::Xml) }
 /// The markup of `tree` as a MIME bundle of type `kind`.
-fn markup(kind: &str, tree: &Value, mode: Markup) -> Result<Value, Error> {
-    display::mime(kind, text(tree, mode)?).described("invalid XML MIME bundle")
-}
+fn markup(kind: &str, tree: &Value, mode: Markup) -> Result<Value, Error> { display::mime(kind, text(tree, mode)?).described("invalid XML MIME bundle") }

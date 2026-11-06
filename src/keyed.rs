@@ -260,7 +260,8 @@ pub(crate) fn extend(target: &mut Value, added: Vec<Vec<Arc<str>>>, descend: boo
         }
     }
     let plan = rustymath::structure::extended(target.layout(), &added)?;
-    *target = crate::fusion::copied(target, crate::primitive::structural::relaid(plan.layout, &[target.layout()]), &rustymath::agreement::Mapping::from(plan.steps), None)?;
+    *target = crate::fusion::copied(
+        target, crate::primitive::structural::relaid(plan.layout, &[target.layout()]), &rustymath::agreement::Mapping::from(plan.steps), None)?;
     Ok(())
 }
 

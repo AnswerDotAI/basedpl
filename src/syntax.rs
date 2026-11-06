@@ -72,7 +72,12 @@ fn admitted(bodies: &[Vec<Statement>]) -> Option<Primitive> {
     let [Statement { nodes, kind: StatementKind::Expression, .. }] = body.as_slice() else { return None };
     let mut nodes = nodes.as_slice();
     while let [Node { kind: NodeKind::Run(inner) | NodeKind::Group(inner), .. }] = nodes { nodes = inner; }
-    let [Node { kind: NodeKind::Name(Name::ALPHA, _), .. }, Node { kind: NodeKind::Function(Builtin::Primitive(p)), .. }, Node { kind: NodeKind::Name(Name::OMEGA, _), .. }] = nodes else { return None };
+    let [
+        Node { kind: NodeKind::Name(Name::ALPHA, _), .. },
+        Node { kind: NodeKind::Function(Builtin::Primitive(p)), .. },
+        Node { kind: NodeKind::Name(Name::OMEGA, _), .. },
+    ] = nodes
+    else { return None; };
     Some(*p)
 }
 
@@ -300,7 +305,9 @@ pub(crate) fn joined_term(left: Node, joiner: Joiner, at: &Span, right: Node) ->
             vec![left, function(Primitive::Arithmetic(Arithmetic::Plus)), right, function(Primitive::Arithmetic(Arithmetic::Times)), number("0j1")]
         }
         Joiner::Exponent => vec![left, function(Primitive::Arithmetic(Arithmetic::Times)), number("10"), function(Primitive::Math(Math::Power)), right],
-        Joiner::Denominator => vec![left, mark(Mark::Exact), function(Primitive::Arithmetic(Arithmetic::Divide)), mark(Mark::Rational), right, mark(Mark::Exact)],
+        Joiner::Denominator => {
+            vec![left, mark(Mark::Exact), function(Primitive::Arithmetic(Arithmetic::Divide)), mark(Mark::Rational), right, mark(Mark::Exact)]
+        }
     };
     Node { kind: NodeKind::Group(nodes), span }
 }
@@ -314,9 +321,9 @@ fn mark(chars: &mut Characters<'_>) -> Result<Option<Mark>, (ErrorKind, String)>
     if mark == Mark::Rational {
         let mut next = chars.clone();
         next.next();
-        if number_part(next.clone()) || next.peek().is_some_and(|&(_, c)| {
-            name_char_in(c, chars.aliases) || is_implicit(c) || matches!(c, '(' | '[' | '\'' | '"' | '$' | '•' | '⍬')
-        }) { return Ok(None); }
+        if number_part(next.clone())
+            || next.peek().is_some_and(|&(_, c)| name_char_in(c, chars.aliases) || is_implicit(c) || matches!(c, '(' | '[' | '\'' | '"' | '$' | '•' | '⍬'))
+        { return Ok(None); }
     }
     chars.next();
     if mark != Mark::Exact { return Ok(Some(mark)); }
@@ -465,7 +472,10 @@ pub fn subscripts() -> String { [SUBSCRIPT_DIGITS, "₋"].concat() }
 /// Number markers and their word names, for Python properties and editor generation.
 pub fn number_marks() -> Vec<(&'static str, &'static str)> {
     MARKS.iter().map(|&(text, mark)| {
-        (text, match mark { Mark::Exact => "exact", Mark::Width(w) => DType::Float(w).name(), Mark::Fixed(w) => DType::Integer(w).name(), Mark::Real => "approximate", Mark::Rational => "rational" })
+        (text, match mark {
+            Mark::Exact => "exact", Mark::Width(w) => DType::Float(w).name(), Mark::Fixed(w) => DType::Integer(w).name(), Mark::Real => "approximate",
+            Mark::Rational => "rational"
+        })
     }).collect()
 }
 
@@ -629,7 +639,9 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
         real_literal(chars).map_err(|message| Error::new(ErrorKind::Syntax, message).at(&span(position(chars, len))))?;
         if suffix(chars, IMAGINARY) {
             real_literal(chars).map_err(|message| Error::new(ErrorKind::Syntax, message).at(&span(position(chars, len))))?;
-            if !matches!(marked(chars)?, None | Some(Mark::Width(_) | Mark::Real)) { return Err(Error::new(ErrorKind::Syntax, "invalid complex numeric literal").at(&span(position(chars, len))).into()); }
+            if !matches!(marked(chars)?, None | Some(Mark::Width(_) | Mark::Real)) {
+                return Err(Error::new(ErrorKind::Syntax, "invalid complex numeric literal").at(&span(position(chars, len))).into());
+            }
             if let Some(end) = run_on(chars, false) { return Err(Error::new(ErrorKind::Syntax, "invalid complex numeric literal").at(&span(end)).into()); }
         } else {
             let rational = suffix(chars, DENOMINATOR);
@@ -851,9 +863,8 @@ impl Parser<'_> {
                         span.range.end = next.range.end;
                         self.pos += 1;
                     }
-                    NodeKind::Subscript(if indices.is_empty() { first } else {
-                        Value::new([indices.len()], indices).described("invalid subscript list").at(&span)?
-                    })
+                    NodeKind::Subscript(if indices.is_empty() { first }
+                    else { Value::new([indices.len()], indices).described("invalid subscript list").at(&span)? })
                 }
                 TokenKind::Joiner(joiner) => NodeKind::Joiner(*joiner),
                 TokenKind::Name(name) => NodeKind::Name(Name::new(name), false),
