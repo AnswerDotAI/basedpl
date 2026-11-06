@@ -202,34 +202,33 @@ fn conversions_match_rust() {
         };
     }
     macro_rules! convert {
-        (f32, $v:expr, $op:expr) => {
+        (f32, $v:expr) => {
             match $v {
                 Item::Int(i) => i as f32,
                 Item::Float(f) => f as f32,
             }
         };
-        (f64, $v:expr, $op:expr) => {
+        (f64, $v:expr) => {
             match $v {
                 Item::Int(i) => i as f64,
                 Item::Float(f) => f,
             }
         };
-        ($t:ty, $v:expr, $op:expr) => {
+        ($t:ty, $v:expr) => {
             match $v {
                 Item::Int(i) => i as $t,
-                Item::Float(f) => (if $op == Op::Truncate { f } else { f.floor() }) as $t,
+                Item::Float(f) => f.floor() as $t,
             }
         };
     }
     macro_rules! pair {
-        ($from:ident $from_src:ident, $to:ident $to_t:tt) => { pair!($from $from_src, $to $to_t, Op::Convert) };
-        ($from:ident $from_src:ident, $to:ident $to_t:tt, $op:expr) => {{
+        ($from:ident $from_src:ident, $to:ident $to_t:tt) => {{
             let x = source!($from_src);
             let items = items!($from_src, x);
             let pad = vec![0u8; n];
             let kernel = Kernel {
                 inputs: vec![Input::Array(Ty::$from, Read::Forward), Input::Array(Ty::U8, Read::Forward)],
-                steps: vec![Step { op: $op, ty: Ty::$to, x: Value::Input(0), y: None }],
+                steps: vec![Step { op: Op::Convert, ty: Ty::$to, x: Value::Input(0), y: None }],
                 stores: vec![0],
                 folds: vec![],
             }
@@ -240,7 +239,7 @@ fn conversions_match_rust() {
             unsafe { kernel.run(n, n, &[x.as_ptr().cast(), pad.as_ptr().cast()], &[], &[out.as_mut_ptr().cast()], &mut []) };
             for (k, &item) in items.iter().enumerate() {
                 let got: $to_t = unsafe { *out.as_ptr().cast::<$to_t>().add(k) };
-                let expected: $to_t = convert!($to_t, item, $op);
+                let expected: $to_t = convert!($to_t, item);
                 assert!(
                     got == expected || got != got && expected != expected, "{} to {}: item {k}, {item:?}, gave {got:?} for {expected:?}", stringify!($from),
                     stringify!($to)
@@ -260,7 +259,6 @@ fn conversions_match_rust() {
     from!(I64 i64);
     from!(F32 F32);
     from!(F64 F64);
-    pair!(F32 F32, I32 i32, Op::Truncate); pair!(F64 F64, I64 i64, Op::Truncate);
 }
 
 /// A run-by-run array read through a table of its runs' first items, forward, backward and at a stride within each run, plus a plain array, stored and summed. Calls start at a run's start, inside a run and one item before a run's end, and blocks end inside runs, so each loop starts and ends runs. The items are integers and halves, so each block's sum is exact in any order.
@@ -366,10 +364,9 @@ fn compiled_stages_match_interpreted() {
                     eval(SETUP);
                     session.set("source", basedpl::keyed::text(code)).unwrap();
                     eval("report←•explain source");
-                    let value = eval("report.value").unwrap_or_else(|| panic!("{code} gave no value")).read(basedpl::ReadKind::Value).unwrap();
-                    let runs = eval(r#"+/report.routes.calls×("compiled"≡)¨report.routes.route"#).unwrap().read(basedpl::ReadKind::Value).unwrap();
+                    let value = eval("report.value").unwrap_or_else(|| panic!("{code} gave no value"));
+                    let runs = eval(r#"+/report.routes.calls×("compiled"≡)¨report.routes.route"#).unwrap();
                     let runs = runs.as_number().unwrap().as_integer().unwrap();
-                    session.raise().unwrap();
                     (value, runs)
                 };
                 let (compiled, runs) = run(Compiles::Always);

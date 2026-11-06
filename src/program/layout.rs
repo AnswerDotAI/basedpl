@@ -1,6 +1,6 @@
 //! A traced program's maps in the storage order that their operands and readers need (`ordered`).
 
-use super::{Desc, Node, Origin, Program, Read, Step, add, along, copy_of_copy, laid_out, stepped, through_copies};
+use super::{Desc, Node, Nodes, Origin, Program, Read, Step, along, copy_of_copy, laid_out, stepped, through_copies};
 use crate::{array::Layout, number::Numeric};
 use rustymath::{agreement::{Agreement, Mapping}, gather::counts_up, layout::count, search::inverse_permutation};
 
@@ -136,7 +136,7 @@ fn permutation(map: &Mapping, frame: &[usize], shape: &[usize]) -> Option<Vec<us
 
 /// `program`'s nodes again, with each map whose order moves (`storage_orders`) storing in its new order: its operands laid out in that order, a fold of a moved map folding along the moved axis, a copy of one reading through the move, and each other reader, the result and the outputs reading a moved map through one copy back to its own layout. `None` where a map doesn't compose.
 fn reordered(program: &Program, order: &[Option<Vec<usize>>]) -> Option<Program> {
-    let mut r = Reordering { nodes: &program.nodes, order, out: Vec::new(), at: Vec::new(), back: vec![None; program.nodes.len()] };
+    let mut r = Reordering { nodes: &program.nodes, order, out: Nodes::default(), at: Vec::new(), back: vec![None; program.nodes.len()] };
     for (j, node) in program.nodes.iter().enumerate() {
         let at = match &node.origin {
             Origin::Step(Step::Map { .. }) if order[j].is_some() => r.map(node, order[j].as_ref()?)?, Origin::Step(Step::Fold { kind, seed, of, .. })
@@ -151,7 +151,7 @@ fn reordered(program: &Program, order: &[Option<Vec<usize>>]) -> Option<Program>
 }
 
 /// The rebuilding of a program's nodes that `reordered` does: the old nodes and their orders, the new nodes, the new node of each old one, and each moved map's copy back to its old layout.
-struct Reordering<'a> { nodes: &'a [Node], order: &'a [Option<Vec<usize>>], out: Vec<Node>, at: Vec<usize>, back: Vec<Option<usize>> }
+struct Reordering<'a> { nodes: &'a [Node], order: &'a [Option<Vec<usize>>], out: Nodes, at: Vec<usize>, back: Vec<Option<usize>> }
 
 impl<'a> Reordering<'a> {
     /// The new order of map `m`, where it moves.
@@ -185,7 +185,7 @@ impl<'a> Reordering<'a> {
         };
         let left = match left { Some(l) => Some(operand(l, &agreement.left)?), None => None };
         let right = operand(right, &agreement.right)?;
-        Some(add(&mut self.out, Node { desc: Desc { layout: new, ..node.desc.clone() }, origin: Origin::Step(Step::Map { left, right, plan: plan.clone() }) }))
+        Some(self.out.add(Node { desc: Desc { layout: new, ..node.desc.clone() }, origin: Origin::Step(Step::Map { left, right, plan: plan.clone() }) }))
     }
     /// Fold step `node`, which folds a moved map in its old layout, folding the map's new node along the moved axis instead, with a copy that puts the kept axes back in the fold's order where they differ.
     fn fold(&mut self, node: &Node) -> Option<usize> {
@@ -197,7 +197,7 @@ impl<'a> Reordering<'a> {
         let at = o.iter().position(|a| a == axis)?;
         let (desc, at) =
             crate::plan::fold(*p, *kind, s.as_ref().map(|s| s.kind), y.kind, Numeric::current()).and_then(|f| f.desc(Some(at), s.as_ref(), &y)).ok()?;
-        let folded = add(&mut self.out, Node { desc, origin: Origin::Step(Step::Fold { p: *p, kind: *kind, axis: at, seed, of: read }) });
+        let folded = self.out.add(Node { desc, origin: Origin::Step(Step::Fold { p: *p, kind: *kind, axis: at, seed, of: read }) });
         let kept: Vec<usize> = o.iter().copied().filter(|a| a != axis).collect();
         let axes = (0..o.len()).filter(|a| a != axis).map(|a| kept.iter().position(|&k| k == a)).collect::<Option<Vec<_>>>()?;
         Some(laid_out(&self.out, folded, along(self.out[folded].desc.shape(), &axes), &node.desc.layout)?.added(&mut self.out, folded))
@@ -216,6 +216,6 @@ impl<'a> Reordering<'a> {
             }
             origin => origin.clone(),
         };
-        Some(add(&mut self.out, Node { desc: node.desc.clone(), origin }))
+        Some(self.out.add(Node { desc: node.desc.clone(), origin }))
     }
 }

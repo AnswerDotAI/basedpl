@@ -41,7 +41,7 @@ pub(super) fn unique(right: &Value, span: &Span) -> Result<Value, Error> { repli
 
 /// `left` with the cells of `right` that it lacks. A weak `right` takes the width that `left` gives it first, as `catenate` weakens its arguments, because `without` makes it an array. A weak integer must fit fixed integers beside it, as in catenation (`Primitive::joined_weak`).
 pub(super) fn union(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
-    let weak = Primitive::Union.joined_weak(right, left)?;
+    let weak = Primitive::Union.weaken_value(right, left);
     catenate(left, &without(weak.as_ref().unwrap_or(right), left, span)?, None, true)
 }
 
@@ -173,7 +173,8 @@ pub(super) fn iota(right: &Value) -> Result<Value, Error> {
 pub(super) fn range(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let real = |v: Value| match v { Value::Number(n) if n.to_float().is_ok() => Ok(n), _ => Err(Error::domain("range needs real numbers or two characters")) };
     let steps = |distance: &Number| -> Result<usize, Error> {
-        let whole = distance.math_monad(Math::Magnitude)?.floor(Numeric::current())?;
+        let t = Numeric::current();
+        let whole = crate::pervasive::number(Primitive::Math(Math::Floor), None, &crate::pervasive::number(Primitive::Math(Math::Magnitude), None, distance, t)?, t)?;
         whole.nonnegative_integer().described("range needs a finite length")
     };
     let mark = Numeric::for_values(left.into_iter().chain([right]))?.fixed.map_or(Mark::Exact, Mark::Fixed);

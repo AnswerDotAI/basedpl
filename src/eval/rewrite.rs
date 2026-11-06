@@ -420,15 +420,15 @@ fn constant(node: &Node) -> bool {
     }
 }
 
-/// The Key or product that combination `s` replaces, which a running level sees in its place.
+/// The Key or product that combination `s` replaces, which a running level sees in its place. It has no rewrite, so calling it doesn't come back to `combined`.
 fn original(s: Special, span: &Span) -> Result<Function, Error> {
     use {crate::number::Arithmetic::*, FunctionNode as N, OperatorKind as O};
     let p = Function::primitive;
     let key = |f: Function| {
         let operand = Function::new(N::Composed(O::Atop, [Operand::Function(f), Operand::Function(p(Primitive::Identity(false)))]), span)?;
-        Function::new(N::Modified(O::Key, Operand::Function(operand)), span)
+        Function::unrewritten(N::Modified(O::Key, Operand::Function(operand)), span)
     };
-    let product = |f| Function::new(N::Composed(O::Product, [Operand::Function(p(Primitive::Arithmetic(f))), Operand::Function(p(Primitive::Arithmetic(Times)))]), span);
+    let product = |f| Function::unrewritten(N::Composed(O::Product, [Operand::Function(p(Primitive::Arithmetic(f))), Operand::Function(p(Primitive::Arithmetic(Times)))]), span);
     match s {
         Special::GroupCounts => key(p(Primitive::Tally)),
         Special::GroupFolds(by, first) => key(Function::new(N::Fold(p(by.primitive()), FoldKind { scan: false, first }), span)?),
@@ -470,7 +470,7 @@ pub(super) fn taken(route: Route, s: Special) {
     if rustymath::events::running() { crate::explain::fast(route, Primitive::Special(s).glyph().into()) }
 }
 
-/// The items of `right`'s order that `pick` takes, through rustymath's partial selection, where `right` is a vector without keys and they are at most a quarter of its items. `left` is the count to take or the position to pick.
+/// The items of `right`'s order that `pick` takes, through rustymath's partial selection, where `right` is a vector without keys. `left` is the count to take or the position to pick.
 fn selected(order: Order, pick: Pick, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Value, Error>> {
     if right.shape().len() != 1 || right.keys(0).is_some() || crate::transform::carried(left, right) { return None; }
     let n = right.len();
@@ -483,8 +483,6 @@ fn selected(order: Order, pick: Pick, left: Option<&Value>, right: &Value, span:
         Pick::First => { let i = rustymath::layout::position(0, n)?; (i..i + 1, true) }
         Pick::Index | Pick::Mix => { let i = rustymath::layout::position(integer(left?)?, n)?; (i..i + 1, true) }
     };
-    // Large runs cost more to comparison-sort than grading the whole vector by radix or counting.
-    if range.len() > n / 4 { return None; }
     let (grade, down) = match order { Order::Grade(down) => (true, down), Order::Sort(down) => (false, down) };
     let taken = rustymath::search::view_selected(right.view()?, range, down)?;
     Some((|| {
@@ -493,7 +491,7 @@ fn selected(order: Order, pick: Pick, left: Option<&Value>, right: &Value, span:
             let selector = Value::new([1], vec![positions]).described("invalid selected order")?;
             Primitive::Index.call(Some(&selector), right, span)?
         };
-        if item { crate::primitive::pick(&Value::integer(0), &selected, session().prototype.get(), None, span) } else { Ok(selected) }
+        if item { crate::primitive::pick(&Value::integer(0), &selected, None, span) } else { Ok(selected) }
     })())
 }
 

@@ -37,6 +37,8 @@ pub(crate) struct Elide {
     pub display: bool,
     /// How text shows hidden names, which start with `_`. Source text shows them in full. Box mode shortens them. Plain display leaves hidden axis names out and shortens hidden keys.
     pub hidden: Hidden,
+    /// Whether a complex number with a zero imaginary part shows as its real part, as the items of an array that holds a complex number with a nonzero imaginary part do (`items_of`). An atom, and an array whose imaginary parts are all zero, keep `ⱼ0`.
+    pub reals: bool,
 }
 /// How text shows a hidden name, which starts with `_`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -45,7 +47,7 @@ impl Default for Elide { fn default() -> Self { Self { limit: 1000, edges: 3, pr
 impl Elide {
     /// Shows every item and every digit, as source text and `⍕` do, with 64-bit floats plain.
     pub const NONE: Self = Self { limit: usize::MAX, edges: 0, prec: usize::MAX, width: usize::MAX, columns: usize::MAX, plain: Some(FloatWidth::F64),
-        marks: true, notation: Notation::Apl, display: false, hidden: Hidden::Full };
+        marks: true, notation: Notation::Apl, display: false, hidden: Hidden::Full, reals: false };
     /// The positions kept at each end of a long axis of an array of `shape`, or `None` when display shows every item.
     pub fn edges(self, shape: &[usize]) -> Option<usize> {
         let count = shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d)).unwrap_or(usize::MAX);
@@ -59,10 +61,20 @@ impl Elide {
     /// The text of `n` rounded to `prec` significant digits, with its numeric marker when `marks` is set. Float widths obey `plain`.
     pub fn number(self, n: &Number) -> String {
         if !self.marks { return self.unmarked(n); }
+        let n = self.shown_number(n);
         format!("{}{}", n.rounded(self.prec), n.float_width().and_then(|w| self.width_marker(w)).unwrap_or_default())
     }
     /// The text of `n` rounded as `number` rounds it, without a marker, for an array that writes one marker for all its numbers.
-    pub fn unmarked(self, n: &Number) -> String { format!("{:#}", n.rounded(self.prec)) }
+    pub fn unmarked(self, n: &Number) -> String { format!("{:#}", self.shown_number(n).rounded(self.prec)) }
+    /// `n` as an item shows it: a complex number with a zero imaginary part as its real part where `reals` is set.
+    pub fn shown_number(self, n: &Number) -> std::borrow::Cow<'_, Number> {
+        match n.as_complex() {
+            Some(z) if self.reals && z.im == 0.0 => std::borrow::Cow::Owned(Number::float(z.re, n.float_width().unwrap_or(FloatWidth::F64))),
+            _ => std::borrow::Cow::Borrowed(n),
+        }
+    }
+    /// These settings for the items of `a`: complex items with a zero imaginary part show as real numbers in an array that holds a complex number with a nonzero one (`Value::keeps_complex`).
+    pub fn items_of(self, a: &Value) -> Self { Self { reals: a.keeps_complex(), ..self } }
     /// The marker of a float of `width`, when markers show and the width isn't `plain`.
     pub fn width_marker(self, width: FloatWidth) -> Option<&'static str> {
         (self.marks && Some(width) != self.plain).then(|| crate::number::Mark::Width(width).marker())
@@ -357,6 +369,7 @@ fn marker(a: &Value, el: Elide) -> &'static str {
 
 /// A boxed diagram of `a`: its items in a frame that marks its shape and storage, with nested arrays boxed in turn.
 fn array(a: &Value, el: Elide) -> Block {
+    let el = el.items_of(a);
     if a.is_unit() || is_text(a, el) || (a.has_keys() && a.shape() == [0]) { return Block::new(plain(a, el)); }
     if a.has_keys() && a.shape().len() > 1 {
         // The table inside leaves out the kind that the frame's corner shows.
@@ -409,6 +422,7 @@ pub(crate) fn plain(a: &Value, el: Elide) -> String {
         Plain::Number(n) => return el.number(n), Plain::Function(f) => return format!("⟨{}⟩", f.text(el, &mut 1000)),
         Plain::Operator(op) => return op.text(el), Plain::Character(_) => return a.literal(), Plain::Array(_) => ()
     }
+    let el = el.items_of(a);
     if a.has_keys() && a.shape().len() > 1 { return labelled(a, el); }
     if a.shape().len() <= 1 {
         return if is_text(a, el) { crate::array::quoted(&a.elided_text(el)) }

@@ -1,9 +1,9 @@
 //! Helpers that basedpl's test binaries share.
-use basedpl::{Error, EvalOptions, ReadKind, Session, Value as AplValue, reference::difference};
+use basedpl::{Error, EvalOptions, Session, Value as AplValue};
 
 /// The value of `code`, evaluated apart from the names of the session that the calling test holds, if any (`Session::eval_apart`).
 pub fn run(code: &str) -> Result<Option<AplValue>, Error> {
-    let result = Session::current(|session| session.eval_apart(code, EvalOptions::default()));
+    let result = Session::current().eval_apart(code, EvalOptions::default());
     match result.error { Some(e) => Err(e), None => Ok(result.value) }
 }
 
@@ -25,20 +25,17 @@ pub fn evaluated(session: &Session, code: &str) -> Option<AplValue> {
 /// Asserts that `actual` is exactly `expected`, as `Value::same` compares them.
 #[track_caller]
 pub fn assert_same(actual: impl Into<Option<AplValue>>, expected: &AplValue) {
-    let actual = actual.into().map(|a| a.read(basedpl::ReadKind::Value).unwrap());
-    let expected = expected.read(basedpl::ReadKind::Value).unwrap();
-    assert!(actual.as_ref().is_some_and(|a| a.same(&expected)), "{actual:?} is not {expected:?}");
+    let actual = actual.into();
+    assert!(actual.as_ref().is_some_and(|a| a.same(expected)), "{actual:?} is not {expected:?}");
 }
 
 /// Evaluates `expected` after `code`, under the settings that `code` leaves, in a module of its own.
 #[track_caller]
 pub fn equiv_in(session: &Session, code: &str, expected: &str) {
-    let actual = evaluated(session, code).expect("expected an array").read(ReadKind::Value).unwrap();
+    let actual = evaluated(session, code);
     let wanted = session.eval_apart(expected, EvalOptions::default());
     assert!(wanted.error.is_none(), "{expected}: {:?}", wanted.error);
-    let expected = wanted.value.expect("expected an array").read(ReadKind::Value).unwrap();
-    let mismatch = difference(&actual, &expected, Some(0.0), 0.0, true);
-    assert!(mismatch.is_none(), "{code}: {actual:?} is not {expected:?}: {mismatch:?}");
+    assert_same(actual, &wanted.value.expect("expected an array"));
 }
 
 #[track_caller]

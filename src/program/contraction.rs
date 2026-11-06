@@ -1,11 +1,11 @@
 //! Folds that read their argument's sources instead of computing it. A `+` fold of a `×` whose operands read their sources through affine maps runs as one product, which never computes the grid of products (`contracted`): index notation's level 3. A fold of a copy that repeats items, as a broadcast does, folds the copy's source, which never computes the copy (`fold_of_copy`). Fusion's pending programs and the trace both call each, so the two routes find the same folds.
 
-use super::{Desc, Laid, Node, Origin, Read, Step, add, along, laid_out, stepped};
+use super::{Desc, Laid, Node, Nodes, Origin, Read, Step, along, laid_out, stepped};
 use crate::{agreement::{Agree, Agreement}, array::Layout, number::{Arithmetic, Numeric}, plan::Operand, primitive::{FoldKind, Primitive}};
 use rustymath::{agreement::Mapping, gather::Steps, layout::{count, strides}};
 
 /// The read of new nodes in `nodes` that compute the fold by `p` along `axes` of `of` as one product (`product`), where the fold is a `+` reduction and `of` reads a `×`. `one`, the description of the fold along any one of the axes, gives the result's type, and the result keeps `of`'s other axes. Where no product computes such a fold, `•explain` lists the reason as a declined route. `None`, adding nothing, for any other fold, and where no product computes it.
-pub(crate) fn contracted(nodes: &mut Vec<Node>, p: Primitive, kind: FoldKind, of: &Read, axes: &[usize], one: &Desc) -> Option<Read> {
+pub(crate) fn contracted(nodes: &mut Nodes, p: Primitive, kind: FoldKind, of: &Read, axes: &[usize], one: &Desc) -> Option<Read> {
     let Origin::Step(Step::Map { left: Some(x), right: y, plan }) = &nodes[of.of].origin else { return None };
     if p != Primitive::Arithmetic(Arithmetic::Plus) || kind.scan || plan.p != Primitive::Arithmetic(Arithmetic::Times) { return None; }
     let (x, y, numeric, items) = (x.clone(), y.clone(), plan.numeric, nodes[of.of].desc.layout.count());
@@ -17,7 +17,7 @@ pub(crate) fn contracted(nodes: &mut Vec<Node>, p: Primitive, kind: FoldKind, of
 
 /// The read of new nodes in `nodes` that compute a `+` fold along `axes` of `of`, which reads `x×y` planned under `numeric`, as one product, or the reason that no product computes it. The fold runs along the axes of the `×`'s frame that step within `axes` (`within`): each is one axis of the frame, or where `of` is a view, a run of adjacent axes that it merges, as a fold along several adjacent axes reads them (`eval::folded_along`). The view merges no other axes. Both operands' sources must step along each folded axis through affine maps, except that an operand that holds one item along each folded axis factors out of the fold (`factored`). Each other axis of the frame is a batch axis where both operands step along it, a row where only the left one does, and a column where only the right one does. An axis of one item is a row. The rows or the columns must hold more than one item, because a product reuses items only along them: a fused multiply and fold, which reads each item once, costs less for `+/a×b` on arrays of one shape. A copy lays out the left operand's source as batch, row and folded axes, and the right operand's as batch, folded and column axes, or a view does where the map reads the source in order. A product contracts them (`Step::Product`), stacked where batch axes remain, with the rows as one axis, the folded axes as one and the columns as one, and `•explain` lists it as a fast combination. A copy lays the product out as `result`, the fold's description, whose type the product's must be.
 fn product(
-    nodes: &mut Vec<Node>, x: &Read, y: &Read, numeric: Numeric, kind: FoldKind, of: &Read, axes: &[usize], result: &Desc) -> Result<Read, &'static str> {
+    nodes: &mut Nodes, x: &Read, y: &Read, numeric: Numeric, kind: FoldKind, of: &Read, axes: &[usize], result: &Desc) -> Result<Read, &'static str> {
     let (plus, times) = (Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times));
     let frame = nodes[of.of].desc.shape().to_vec();
     let lens = |axes: &[usize]| axes.iter().map(|&a| frame[a]).collect::<Vec<_>>();
@@ -64,8 +64,8 @@ fn product(
     } else { None };
     let (xn, yn) = (xl.added(nodes, left.of), yl.added(nodes, right.of));
     let step = Step::Product { f: plus, g: times, left: Read::new(xn, Layout::from(xr)), right: Read::new(yn, Layout::from(yr)), stacked };
-    let mut at = add(nodes, Node { desc, origin: Origin::Step(step) });
-    if let Some((map, desc)) = moved { at = add(nodes, Node { desc, origin: Origin::Step(Step::Copy { of: at, map }) }); }
+    let mut at = nodes.add(Node { desc, origin: Origin::Step(step) });
+    if let Some((map, desc)) = moved { at = nodes.add(Node { desc, origin: Origin::Step(Step::Copy { of: at, map }) }); }
     Ok(Read::new(at, result.layout.clone()))
 }
 
@@ -82,7 +82,7 @@ fn within(view: &[usize], frame: &[usize], axes: &[usize]) -> Option<Vec<usize>>
 
 /// The read of new nodes in `nodes` that compute a `+` fold along `folded`, axes of `frame`, of the products of `stepping` and `constant`, where `constant` holds one item along each folded axis: `constant` times the fold of `stepping`, with no product computed before the fold. A copy lays out `stepping` along the frame's kept axes that it reads, then the folded axes, and a fold (`Step::Fold`) sums along the folded axes as one. The sum and `constant` spread over the kept axes (`spread`) for the `×`, whose description must give the type of `result`, the fold's description.
 fn factored(
-    nodes: &mut Vec<Node>, stepping: &Source, constant: &Source, numeric: Numeric, kind: FoldKind, frame: &[usize], folded: &[usize], result: &Desc
+    nodes: &mut Nodes, stepping: &Source, constant: &Source, numeric: Numeric, kind: FoldKind, frame: &[usize], folded: &[usize], result: &Desc
 ) -> Result<Read, &'static str> {
     let lens = |axes: &[usize]| axes.iter().map(|&a| frame[a]).collect::<Vec<_>>();
     let kept: Vec<usize> = (0..frame.len()).filter(|a| !folded.contains(a)).collect();
@@ -97,7 +97,7 @@ fn factored(
     let plus = Primitive::Arithmetic(Arithmetic::Plus);
     let (sum, axis) = crate::plan::fold(plus, kind, None, items.kind, numeric)?.desc(Some(sk.len()), None, &items)?;
     let of = Read::new(laid.added(nodes, stepping.of), items.layout.clone());
-    let sum = add(nodes, Node { desc: sum, origin: Origin::Step(Step::Fold { p: plus, kind, axis, seed: None, of }) });
+    let sum = nodes.add(Node { desc: sum, origin: Origin::Step(Step::Fold { p: plus, kind, axis, seed: None, of }) });
     let x = spread(nodes, sum, frame, &kept, &holds(&sk));
     let y = if nodes[constant.of].desc.atom { Read::node(nodes, constant.of) } else {
         let ck = reads(constant);
@@ -110,12 +110,12 @@ fn factored(
     let yo = match &held { Some(v) => Operand::Held(v), None => Operand::Traced(&yd) };
     let mapped = crate::plan::map(Primitive::Arithmetic(Arithmetic::Times), Some(&Operand::Traced(&xd)), &yo, false, numeric)?;
     if mapped.desc.dtype() != result.dtype() || mapped.desc.kind.fixed != result.kind.fixed { return Err("a product of another type than the fold's"); }
-    let at = add(nodes, Node { desc: mapped.desc, origin: Origin::Step(Step::Map { left: Some(x), right: y, plan: mapped.plan }) });
+    let at = nodes.add(Node { desc: mapped.desc, origin: Origin::Step(Step::Map { left: Some(x), right: y, plan: mapped.plan }) });
     Ok(Read::new(at, result.layout.clone()))
 }
 
 /// The read of new nodes in `nodes` that compute the fold by `p` along `axis` of `of`, a read of a copy under any shape, from the copy's source: the source's fold along the axis that `axis` steps along, spread over the copy's other axes (`spread`). The copy must step along its source from its first item, as `stepped` describes, read the whole of that axis, and read more items than its source holds, as a broadcast does. A fold of a broadcast then folds the broadcast's source once, and never computes the broadcast. A copy that reads each item once folds its source in place when it runs (`Mapping::block` in `pervasive::mapped_fold`). `None`, adding nothing, for a scan, a seeded fold and any other read.
-pub(crate) fn fold_of_copy(nodes: &mut Vec<Node>, p: Primitive, kind: FoldKind, of: &Read, axis: usize, result: &Desc, numeric: Numeric) -> Option<Read> {
+pub(crate) fn fold_of_copy(nodes: &mut Nodes, p: Primitive, kind: FoldKind, of: &Read, axis: usize, result: &Desc, numeric: Numeric) -> Option<Read> {
     let Origin::Step(Step::Copy { of: source, map }) = &nodes[of.of].origin else { return None };
     let (source, frame, shape) = (*source, of.layout.shape(), nodes[*source].desc.shape().to_vec());
     if kind.scan || count(&shape) >= count(frame) { return None; }
@@ -124,7 +124,7 @@ pub(crate) fn fold_of_copy(nodes: &mut Vec<Node>, p: Primitive, kind: FoldKind, 
     let items = nodes[source].desc.clone();
     let (desc, b) = crate::plan::fold(p, kind, None, items.kind, numeric).and_then(|f| f.desc(Some(b), None, &items)).ok()?;
     let read = Read::node(nodes, source);
-    let folded = add(nodes, Node { desc, origin: Origin::Step(Step::Fold { p, kind, axis: b, seed: None, of: read }) });
+    let folded = nodes.add(Node { desc, origin: Origin::Step(Step::Fold { p, kind, axis: b, seed: None, of: read }) });
     // Each other axis of the copy reads the axis of the fold's result that holds the source axis it stepped along.
     let kept: Vec<usize> = (0..frame.len()).filter(|&a| a != axis).collect();
     let holds: Vec<Option<usize>> = kept.iter().map(|&a| along[a].map(|c| if c < b { c } else { c - 1 })).collect();
@@ -132,7 +132,7 @@ pub(crate) fn fold_of_copy(nodes: &mut Vec<Node>, p: Primitive, kind: FoldKind, 
 }
 
 /// A read of node `at` over the frame's axes `kept`: each kept axis steps along the axis of `at`'s array that `holds` gives for it, or repeats one item where it gives none. A view where that reads the array in order (`laid_out`), and otherwise a copy.
-fn spread(nodes: &mut Vec<Node>, at: usize, frame: &[usize], kept: &[usize], holds: &[Option<usize>]) -> Read {
+fn spread(nodes: &mut Nodes, at: usize, frame: &[usize], kept: &[usize], holds: &[Option<usize>]) -> Read {
     let step = strides(nodes[at].desc.shape());
     let map = Mapping::from(kept.iter().zip(holds).map(|(&a, h)| Steps::along(frame[a], h.map_or(0, |h| step[h]))).collect::<Vec<_>>());
     let layout = Layout::from(kept.iter().map(|&a| frame[a]).collect::<Vec<_>>());

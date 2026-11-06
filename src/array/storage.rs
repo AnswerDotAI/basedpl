@@ -7,6 +7,7 @@ use rustymath::{
     with_complexes, with_floats, with_ints, with_width
 };
 use std::sync::{OnceLock, atomic::{AtomicU8, AtomicU32, Ordering::Relaxed}};
+use num_complex::Complex;
 
 /// An array's items: a rustymath buffer, whose items share one dtype, or mixed values. Mixed storage keeps each item's dtype. It also remembers what it works out about its items.
 #[derive(Clone, Debug)]
@@ -49,14 +50,9 @@ pub(super) fn same_items(x: Items, y: Items, prototypes: impl FnOnce() -> (Value
     }
 }
 
-/// How numbers of different dtypes share compact storage. Compact arrays joined into one widen exact integers to floats, because compact storage holds one dtype, and they read Booleans as the narrowest integers. Items gathered one at a time keep each number's kind: exact and approximate numbers stay apart, and a Boolean stays apart from other numbers. That covers items written in brackets, items computed by an operation and, under dynamic kinds, items written into an existing array (`of_writes`). Among such items only floats widen, to complex. That changes no value, because a complex number with no imaginary part reads back as a float.
+/// How numbers of different dtypes share compact storage. Compact arrays joined into one widen exact integers to floats, because compact storage holds one dtype, and they read Booleans as the narrowest integers. Items gathered one at a time, whether written in brackets, computed apart by an operation or written into an existing array, join the same way under static kinds, so that a result's type never depends on which items its parts give. Under dynamic kinds they keep each number's kind: exact and approximate numbers stay apart, a Boolean stays apart from other numbers, and only floats widen, to complex. That changes no value: such a float reads back as a complex number with no imaginary part. Kinds that no compact dtype holds, such as characters among numbers, leave the items mixed under both.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Widening { Arrays, Items }
-
-impl Widening {
-    /// How a write into an existing array joins its kind with the kinds written. Under static kinds the whole array takes the compact dtype that holds both, as arrays joined into one do (`Arrays`), so that its type never depends on which items a write reaches. Under dynamic kinds each number keeps its own kind (`Items`). Kinds that no compact dtype holds, such as characters among numbers, leave the array mixed under both.
-    pub(crate) fn of_writes() -> Self { if crate::number::Numeric::current().is_static() { Self::Arrays } else { Self::Items } }
-}
 
 /// BPL's rules for compact dtypes: whether a dtype's numbers are exact, and which dtype holds the numbers of two dtypes.
 pub(crate) trait Promotion: Sized {
@@ -74,9 +70,10 @@ impl Promotion for DType {
         use DType::*;
         if self == other { return Some(self); }
         match (self, other) { (Character, _) | (_, Character) => return None, (Integer(a), Integer(b)) => return Some(Integer(a.join(b))), _ => () }
-        // Joined compact arrays read Booleans as the narrowest integers. Items gathered one at a time keep a Boolean apart from other numbers.
-        if self == Boolean || other == Boolean { if widening == Widening::Items { return None; } return Some(if self == Boolean { other } else { self }); }
-        if widening == Widening::Items && (self.exact() == Some(true) || other.exact() == Some(true)) { return None; }
+        // Joined compact arrays read Booleans as the narrowest integers, as all items do under static kinds. Items gathered one at a time under dynamic kinds keep a Boolean, and an exact number, apart from other numbers.
+        let apart = widening == Widening::Items && !crate::number::Numeric::current().is_static();
+        if self == Boolean || other == Boolean { if apart { return None; } return Some(if self == Boolean { other } else { self }); }
+        if apart && (self.exact() == Some(true) || other.exact() == Some(true)) { return None; }
         self.common(other)
     }
     fn wider(self) -> Option<Self> {
@@ -102,7 +99,7 @@ fn same_variant(a: &Value, b: &Value) -> bool {
 }
 
 /// The compact dtype that holds every item of `data` under `widening`, if one does. Ordinary integers take the width that stores them all (`ordinary_width`). A weak number beside strong floats or complex numbers takes their width, wherever it sits (`plan::Kind::join`).
-pub(super) fn items_kind(data: &[Value], widening: Widening) -> Option<(DType, bool)> {
+pub(super) fn compact_dtype(data: &[Value], widening: Widening) -> Option<(DType, bool)> {
     let first = data.first()?;
     let first_dtype = item_dtype(first)?;
     // Comparing each item's variant with the first item's is cheap enough for copies of mixed storage that stay mixed. Only items from the first one of another variant on need their dtypes joined.
@@ -117,7 +114,7 @@ pub(super) fn items_kind(data: &[Value], widening: Widening) -> Option<(DType, b
     };
     let weak = data[..run].iter().all(is_weak);
     let prefix = crate::plan::Kind::stored(Some(head), first.fixed_width(), weak);
-    let joined = crate::plan::Kind::join([prefix].into_iter().chain(data[run..].iter().map(crate::plan::Kind::item)), widening).ok()?;
+    let joined = crate::plan::Kind::join([prefix].into_iter().chain(data[run..].iter().map(crate::plan::Kind::item)), widening);
     joined.dtype.map(|dtype| (dtype, joined.fixed.is_some()))
 }
 
@@ -271,10 +268,10 @@ impl Storage {
             known => known == 2,
         }
     }
-    /// Compact storage of the dtype that `widening` gives the items (`items_kind`), when there is one. Other items stay mixed, and a weak number among them becomes strong, as an array's items are.
+    /// Compact storage of the dtype that `widening` gives the items (`compact_dtype`), when there is one. Other items stay mixed, and a weak number among them becomes strong, as an array's items are.
     pub(super) fn compact(mut data: Vec<Value>, widening: Widening) -> Self {
         // Collecting from `data.iter()` sizes the compact buffer exactly. Consuming `data` would reuse its larger allocation.
-        match items_kind(&data, widening) {
+        match compact_dtype(&data, widening) {
             Some((dtype, fixed)) => Self::of_dtype(dtype, &data, fixed),
             None => { for v in &mut data { if let Value::Number(n) = v { n.mark(false); } } Self::mixed(data) }
         }
@@ -354,10 +351,7 @@ impl<'a> Items<'a> {
             Self::Compact(View::Booleans(v)) => Value::Number(Number::from_bool(v[i])),
             Self::Compact(View::Integers(v)) => Value::integer(v.get(i)),
             Self::Compact(View::Floats(v)) => Value::Number(Number::float(with_floats!(v, |x| f64::from(x[i])), v.tag())),
-            // An item with no imaginary part is a widened real, except under static kinds.
-            Self::Compact(View::Complexes(v)) => {
-                Value::Number(Number::complex_in_session(with_complexes!(v, |x| Complex64::new(x[i].re.into(), x[i].im.into())), v.tag().into()))
-            }
+            Self::Compact(View::Complexes(v)) => Value::Number(Number::complex(with_complexes!(v, |x| Complex64::new(x[i].re.into(), x[i].im.into())), v.tag().into())),
             Self::Compact(View::Characters(v)) => Value::Character(v[i]),
             Self::Values(v) => v[i].clone(),
         }
@@ -390,12 +384,12 @@ impl<'a> Items<'a> {
         if let Some((n, _)) = converted { return Ok(Cow::Owned(n)); }
         self.each(Ok, real::integer, Number::integer).map(Cow::Owned)
     }
-    /// Each item as a signed position: an integer, or `None` for NaN, which reads a fill. Compact storage decodes through rustymath's `structure::signed_positions`, and every float as `structure::float_position` reads it. A fraction, an infinity or a non-number is DOMAIN.
+    /// Each item as a signed position: an integer, or `None` for NaN, which reads a fill. Compact storage decodes through rustymath's `structure::signed_positions`, and every float as `structure::float_position` reads it. A fraction or an infinity also gives `None`. A non-number is DOMAIN.
     pub(crate) fn positions(&self) -> Result<Vec<Option<i64>>, ErrorKind> {
         if let Some(view @ (View::Booleans(_) | View::Integers(_) | View::Floats(_))) = self.view() {
-            return rustymath::structure::signed_positions(view).map_err(|_| Kind::Domain.into());
+            return Ok(rustymath::structure::signed_positions(view));
         }
-        let real = |y: f64| -> Result<Option<i64>, ErrorKind> { rustymath::structure::float_position(y).map_err(|_| Kind::Domain.into()) };
+        let real = |y: f64| -> Result<Option<i64>, ErrorKind> { Ok(rustymath::structure::float_position(y)) };
         self.each(|n| Ok(Some(n)), real, |n| match n.as_float() { Some(y) => real(y), None => n.integer().map(Some) })
     }
     /// The items of Boolean or integer storage as integers. `None` for any other storage.
@@ -421,6 +415,14 @@ impl<'a> Items<'a> {
 }
 
 fn number(value: &Value) -> Result<&Number, ErrorKind> { match value { Value::Number(n) => Ok(n), _ => Err(Kind::Domain.into()) } }
+
+/// The kind of the items that joining sources of these item counts and kinds under `widening` gives (`plan::Kind::join`), or `None` where no source holds an item. A source with no items and a dtype, an empty compact array, holds nothing that could change the join, so it drops out: `⍬,⍳5ₓ` gives integers. Values (`Gather::joined_kind`), structural copies (`fusion::copy`) and traced copies' descriptions all join through it.
+pub(crate) fn items_kind(sources: impl IntoIterator<Item = (usize, crate::plan::Kind)>, widening: Widening) -> Option<crate::plan::Kind> {
+    let mut active = sources.into_iter().filter(|(n, k)| *n > 0 || k.dtype.is_none()).map(|(_, k)| k).peekable();
+    active.peek()?;
+    Some(crate::plan::Kind::join(active, widening))
+}
+
 /// Items copied from source arrays into a new array. The buffer takes the compact dtype that its `widening` gives the nonempty sources, and widens for wider items. A weak number beside strong floats or complex numbers takes their width, wherever it comes among the items (`plan::Kind::join`), so `weak` records whether only weak numbers gave the buffer's dtype. A mixed source, or an item that no compact dtype holds, makes the buffer mixed, and it stays mixed.
 ///
 /// A source that carries a dual or a labelled value starts a join (`transform::Join`): the buffer then copies what each source holds and that level's data into buffers of their own, and `finish` gives an array that carries the data again. Number duals that `add` takes are repacked this way into an array dual.
@@ -442,11 +444,9 @@ impl Gather {
         Self { data: Storage::with_capacity(joined.dtype, capacity).fixed(joined.fixed.is_some()), dtype: joined.dtype, open: false, weak: joined.weak,
             widening, join: None }
     }
-    /// The kind of the items that a buffer joining `sources` under `widening` holds, or `None` where no source holds any. An empty compact source holds no items that could change it.
+    /// The kind of the items that a buffer joining `sources` under `widening` holds, or `None` where no source holds any (`items_kind`).
     pub(crate) fn joined_kind(sources: &[&Value], widening: Widening) -> Option<crate::plan::Kind> {
-        let mut active = sources.iter().copied().filter(|v| !v.is_empty() || v.dtype().is_none());
-        let first = active.next()?;
-        Some(crate::plan::Kind::join([first].into_iter().chain(active).map(crate::plan::Kind::value), widening).unwrap_or_default())
+        items_kind(sources.iter().map(|v| (v.len(), crate::plan::Kind::value(v))), widening)
     }
     pub(crate) fn len(&self) -> usize { match &self.join { Some(join) => join.len(), None => self.data.len() } }
     /// An empty buffer for an operation's items, added one at a time. It takes the dtype of its first items. Each number keeps its exactness.
@@ -489,7 +489,7 @@ impl Gather {
         if self.dtype == source.dtype && self.data.fixed_width() == source.fixed && self.weak == source.weak { return; }
         if self.dtype.is_none() { return; }
         let current = crate::plan::Kind::stored(self.dtype, self.data.fixed_width(), self.weak);
-        let Ok(joined) = crate::plan::Kind::join([current, source], self.widening) else { self.mixed(); return; };
+        let joined = crate::plan::Kind::join([current, source], self.widening);
         let Some(dtype) = joined.dtype else { self.mixed(); return; };
         if self.dtype != Some(dtype) {
             let capacity = self.data.capacity();
@@ -626,8 +626,8 @@ impl Gather {
         if self.leveled(source) {
             return self.join.as_mut().expect("a joined buffer").each(source, false, |g, s, part| g.walk(s, base, steps, part.fill(fill)));
         }
-        if let Some((inner, base, steps, fill)) = crate::fusion::walk_through(source, base, steps, fill) {
-            return self.walk(&inner, base, &steps, fill.as_ref());
+        if let Some((inner, base, steps)) = crate::fusion::walk_through(source, base, steps, fill.is_some()) {
+            return self.walk(&inner, base, &steps, fill);
         }
         self.follow(source);
         let native = fill.and_then(|fill| source.native_fill(fill));

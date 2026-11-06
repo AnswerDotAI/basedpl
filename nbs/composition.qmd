@@ -19,7 +19,7 @@ In a train, a [subject](terms.qmd#term-subject) becomes the left argument of the
 fahrenheit←32+1.8× ⋄ fahrenheit 100     ⍝ 212
 ```
 
-A space keeps a train apart from its argument. `+/÷≢ v` applies the train to `v`. Without the space, the one run `+/÷≢v` reads as `+/÷(≢v)`:
+A space keeps a train apart from its argument. `+/÷≢ v` applies the train to `v`. Without the space, the one run `+/÷≢v` reads as `+/÷(≢v)`, the reciprocal of the count `3ₓ`, which [`÷`](glyphs/obelus.qmd) floors to `0ₓ` for machine integers:
 
 ```bpl
 v←2 4 9 ⋄ +/÷≢ v             ⍝ 5

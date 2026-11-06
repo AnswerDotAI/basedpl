@@ -23,7 +23,7 @@ invr ← {  ⍝ Approx inverse of real-valued function.
 }
 
 ⍝ From http://dfns.dyalog.com/s_limit.htm
-GM ← ×/*÷∘≢  ⍝ Geometric mean.
+GM ← ×/*÷∘(≢ₐ)  ⍝ Geometric mean of floats: the count is a float too.
 AGM ← {↑(+/÷≢ , GM)⍣∞ ⍵}  ⍝ Arithmetic-geometric mean.
 
 ArcTan ← {

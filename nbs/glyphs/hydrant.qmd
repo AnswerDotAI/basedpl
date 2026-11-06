@@ -16,11 +16,7 @@ On a character matrix, `⍎` evaluates each row. On an array of strings, it eval
 ⍎"1+1" "2×3"        ⍝ 2 6
 ```
 
-Assignments and explicit output in `⍎Y` take effect in the current scope. A statement binds by what its names hold when it starts, so a change that `⍎Y` makes to a name, between an array, a function and an operator, makes a later read of that name in the same statement a `SYNTAX` error: with `x←1`, `x+⍎"x←+ ⋄ 2"` fails. A name that is unbound when the statement starts binds as an array, so `⍎Y` can assign it.
-
-```bpl
-z+⍎"z←3"           ⍝ 6
-```
+Assignments and explicit output in `⍎Y` take effect in the current scope.
 
 `T⍎Y` evaluates `Y` with each key on the first axis of `T` as a name, as [Dot](dot.qmd)'s `T.(expr)` does. Names that aren't keys resolve in the current scope. Assignments stay inside the evaluation, and leave `T` unchanged.
 

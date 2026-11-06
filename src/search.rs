@@ -40,10 +40,9 @@ impl<'a> Cells<'a> {
 /// The items of `cells` when they're one array's compact items, which rustymath's searches of views take.
 pub(crate) fn compact_view<'a>(cells: &Cells<'a>) -> Option<View<'a>> { cells.items()?.view() }
 
-/// The float width that items compare at, the widest among them or f64 without floats, and that width's tolerance under `numeric`.
+/// The float width that items compare at, the widest among them or f64 without floats, and the tolerance they compare at: that width's under `numeric`, or exact without floats, as `Numeric::tolerance_of` gives a kind.
 pub(crate) fn compared_at(width: Option<FloatWidth>, numeric: Numeric) -> (FloatWidth, Tolerance) {
-    let width = width.unwrap_or(FloatWidth::F64);
-    (width, numeric.tolerance_at(width))
+    (width.unwrap_or(FloatWidth::F64), width.map_or(Tolerance::EXACT, |w| numeric.tolerance_at(w)))
 }
 
 /// The items of `cells` when they're one array's compact items, with the tolerance they compare at. Reading the width of compact items costs nothing, where cells of mixed storage take a pass over every cell.
@@ -106,15 +105,14 @@ pub(crate) fn classify(cells: &Cells, span: &Span) -> Result<Vec<u32>, Error> {
 /// The number of cells in each class, in order of first appearance, as the groups of `grouped` hold them, with no group built.
 pub(crate) fn class_counts(cells: &Cells, span: &Span) -> Result<Vec<usize>, Error> {
     if let Some(counts) = compact_at(cells).and_then(|(x, t)| search::view_class_counts(x, t)) { return counts.map_err(Error::from); }
-    Ok(search::numbered(&classify(cells, span)?).counts())
+    Ok(search::numbered(&classify(cells, span)?).counts)
 }
 
 /// The classes of `cells`, numbered in order of first appearance, with the positions of each. Booleans, characters and integers whose values span a table group straight from those values. Other cells group by the representatives that `classify` gives them.
 pub(crate) fn grouped(cells: &Cells, span: &Span) -> Result<search::Grouped, Error> {
     groupable(cells.len())?;
     if let Some(grouped) = compact_at(cells).and_then(|(x, t)| search::view_grouped(x, t)) { return grouped.map_err(Error::from); }
-    let search::Numbered { firsts, numbers, .. } = numbered(cells, span)?;
-    Ok(search::Grouped::new(firsts, &numbers))
+    Ok(numbered(cells, span)?.grouped())
 }
 
 /// The classes of `cells` as `grouped` numbers them, with each cell's class number in place of each class's positions, which a fold of each class reads in one pass.

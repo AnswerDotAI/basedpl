@@ -1,4 +1,4 @@
-//! The settings that `•prefs` changes, held once for the whole process. Code on any thread reads them, and a computation reads the settings in force when it runs. `•prefs` writes them, the lexer writes the settings in a source's leading `•prefs` header as it reads them, and `reset` restores the defaults, as `]clear` does. Nothing keeps a setting to put back later. Rustymath holds the thread count, the one setting that it reads itself (`rustymath::parallel::set_threads`).
+//! The settings that `•prefs` changes, held once for the whole process. Code on any thread reads them, and a computation reads the settings in force when it runs. `•prefs` writes them, the lexer writes the settings in a source's leading `•prefs` header as it reads them, and `reset` restores the defaults, as `]clear` does. Nothing keeps a setting to put back later, except that a pending array computes its items under the numeric settings that planned it (`under`). Rustymath holds the thread count, the one setting that it reads itself (`rustymath::parallel::set_threads`).
 //!
 //! Each setting that calls and scalar operations read is an atomic, read with a relaxed load. A read of several settings can see some of them from before a concurrent write and some from after it. The display settings, which only display reads, sit behind a lock.
 pub use crate::fusion::Sizes;
@@ -34,16 +34,39 @@ const UNSET: u8 = u8::MAX;
 /// The display settings in force, then the ones that `reset` restores.
 static DISPLAY: LazyLock<RwLock<[display::Settings; 2]>> = LazyLock::new(|| RwLock::new([display::Settings::default(); 2]));
 
-/// The numeric settings in force.
+thread_local! {
+    /// The numeric settings of the force that this thread runs (`under`), which `numeric`, `int_storage` and `float_width` give in place of the process's.
+    static PLANNED: std::cell::Cell<Option<Numeric>> = const { std::cell::Cell::new(None) };
+}
+
+/// The numeric settings of the force that this thread runs, if one runs.
+#[inline]
+fn planned() -> Option<Numeric> { PLANNED.with(std::cell::Cell::get) }
+
+/// `f`, run with `numeric` as this thread's numeric settings: a pending array computes its items under the settings that planned it, whatever `•prefs` has set since. Code that the force runs on other threads reads no settings: a block stage's folds take theirs from the plan (`BlockFold::settings`).
+pub(crate) fn under<T>(numeric: Numeric, f: impl FnOnce() -> T) -> T {
+    struct Restore(Option<Numeric>);
+    impl Drop for Restore {
+        fn drop(&mut self) { PLANNED.with(|p| p.set(self.0)); }
+    }
+    let _restore = Restore(PLANNED.with(|p| p.replace(Some(numeric))));
+    f()
+}
+
+/// The numeric settings in force: a running force's (`under`), or the process's.
 #[inline]
 pub(crate) fn numeric() -> Numeric {
+    if let Some(numeric) = planned() { return numeric; }
     let mathish = MATHISH.load(Relaxed);
     let kinds = if STATIC_KINDS.load(Relaxed) { Kinds::Static } else { Kinds::Dynamic };
     Numeric { mathish, width: float_width(), kinds, int: if INT32.load(Relaxed) { Width::I32 } else { Width::I64 }, ..Numeric::DEFAULT }.with_public_tolerance()
 }
 /// The `int` width under static kinds, and `None` under dynamic kinds. Static kinds store every ordinary integer array at the `int` width, and dynamic kinds store each one at the narrowest width that holds its values (`array::ordinary_width`). It reads only the two settings that array construction needs.
 #[inline]
-pub(crate) fn int_storage() -> Option<Width> { STATIC_KINDS.load(Relaxed).then(|| if INT32.load(Relaxed) { Width::I32 } else { Width::I64 }) }
+pub(crate) fn int_storage() -> Option<Width> {
+    if let Some(numeric) = planned() { return (numeric.kinds == Kinds::Static).then_some(numeric.int); }
+    STATIC_KINDS.load(Relaxed).then(|| if INT32.load(Relaxed) { Width::I32 } else { Width::I64 })
+}
 /// Makes `numeric` the numeric settings in force. Only `Numeric::convergence` changes `units`, for its own comparisons, so the store leaves them out.
 pub(crate) fn set_numeric(numeric: Numeric) {
     MATHISH.store(numeric.mathish, Relaxed);
@@ -54,6 +77,7 @@ pub(crate) fn set_numeric(numeric: Numeric) {
 /// The width of new floats. Until the `float` pref sets one, `Numeric::set` keeps it at the width the kinds give.
 #[inline]
 pub fn float_width() -> FloatWidth {
+    if let Some(numeric) = planned() { return numeric.width; }
     match FLOAT.load(Relaxed) { w if w == FloatWidth::F16 as u8 => FloatWidth::F16, w if w == FloatWidth::F32 as u8 => FloatWidth::F32, _ => FloatWidth::F64 }
 }
 /// Whether the `float` pref has set the width of new floats, which a change of `kinds` then leaves alone.

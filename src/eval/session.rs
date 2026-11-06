@@ -59,11 +59,15 @@ impl Session {
     pub fn interactive() -> Turn { Self::make_interactive(); Self::new() }
     /// Makes the interactive display settings the current ones and the ones that `]clear` restores. Settings are process-wide, so this needs no session. Python's BPL magics use it on the workspace they share with the Python API.
     pub fn make_interactive() { crate::settings::set_display_defaults(crate::display::Settings::interactive()); }
-    /// `value` as this session's implicit display shows it, as text.
-    pub fn show(&self, value: &Value) -> String { self.display_settings().array(value, false) }
+    /// `value` as this session's implicit display shows it, as text, or the error that computing its pending items gives.
+    pub fn show(&self, value: &Value) -> String {
+        if let Err(e) = self.forced(value, crate::EvalOptions::default()) { return e.to_string(); }
+        self.display_settings().array(value, false)
+    }
     /// The implicit MIME display of `value`, without publishing it. Rendering is interruptible; a renderer's side output is discarded.
     pub fn render(&self, value: &Value, interrupt: crate::InterruptHandle) -> Result<crate::MimeBundle, Error> {
         let _running = self.execution.begin(crate::EvalOptions { interrupt, echo: false, output: Some(Arc::new(|_| {})), ..crate::EvalOptions::default() });
+        value.forced()?;
         self.render_value(value, &Span::whole(Source::new("<display>", "")))
     }
     /// The display settings, with floats of the default width shown without a marker.
@@ -265,6 +269,11 @@ impl Session {
         self.execution.flush();
         self.stacks.take();
         Evaluation { output: self.execution.take_output(), ..result }
+    }
+    /// `value`'s pending items computed, as a host computes them before it reads them: under the running evaluation's deadline and interrupt where one runs, and otherwise under `options`, as an evaluation would run. The force's interrupt, timeout or error comes back as an evaluation's would.
+    pub fn forced(&self, value: &Value, options: crate::EvalOptions) -> Result<(), Error> {
+        let _running = (!crate::execution::running()).then(|| self.execution.begin(options));
+        value.forced()
     }
     pub fn eval_timeout(&self, code: &str, timeout: std::time::Duration) -> Evaluation {
         self.eval_with(code, crate::EvalOptions { timeout: Some(timeout), ..crate::EvalOptions::default() })
@@ -508,6 +517,7 @@ impl Session {
     }
 
     fn display_value(&self, value: &Value, span: &Span) -> Result<(), Error> {
+        value.forced()?;
         self.execution.emit(Output { kind: crate::OutputKind::Display, data: self.render_value(value, span)? });
         Ok(())
     }
@@ -602,10 +612,10 @@ impl Session {
                 None => return Err(undefined(name, &node.span)),
             },
             NodeKind::System(name) => return Err(undefined(name, &node.span)),
-            NodeKind::Group(_) | NodeKind::Run(_) => return Binder::nested(node, self),
+            NodeKind::Group(_) | NodeKind::Run(_) => return Binder::nested(node, self)?.bound(&node.span.source),
             NodeKind::Scope(root, body) => {
                 let record = self.resolve(root)?.array(&root.span)?;
-                return self.scoped(&record, &node.span, |session| session.resolve(body));
+                return self.scoped(&record, &node.span, |session| session.resolve(body)).map(Bound::given);
             }
             NodeKind::ArrayLiteral { .. } => self.bracket(node, |nodes, _, _, within| match within {
                 Within::Key => self.array_result(nodes).map(Some), _ => self.item_result(nodes)
@@ -875,11 +885,11 @@ impl Session {
         let Some((level, frame)) = levels.widened() else { return Ok(binding) };
         crate::batch::widened(value, level, frame).map(Binding::Value)
     }
-    /// What the binding at `place` holds now, as a program's replay reads a free name again (`program::Found`). `None` where nothing is bound there.
-    pub(crate) fn captured(&self, place: Place) -> Option<crate::program::Found> {
+    /// What the binding at `place` holds now, as a program's replay reads a free name again (`program::trace::Found`). `None` where nothing is bound there.
+    pub(crate) fn captured(&self, place: Place) -> Option<crate::program::trace::Found> {
         Some(match self.bindings.get(place)? {
-            Binding::Value(Value::Function(f)) | Binding::Function(f) => crate::program::Found::Function(f),
-            Binding::Value(v) => crate::program::Found::Value(v), _ => crate::program::Found::Other
+            Binding::Value(Value::Function(f)) | Binding::Function(f) => crate::program::trace::Found::Function(f),
+            Binding::Value(v) => crate::program::trace::Found::Value(v), _ => crate::program::trace::Found::Other
         })
     }
 }

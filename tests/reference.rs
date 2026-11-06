@@ -5,13 +5,6 @@ use serde_json::{Value, json};
 #[global_allocator]
 static GUARD: rustymath::memory::Guard = rustymath::memory::Guard::new();
 
-const SOURCES: &[(&str, &str)] = &[
-    ("core", include_str!("reference/core.bpl")), ("graphics", include_str!("reference/graphics.bpl")), ("ngn", include_str!("reference/ngn.bpl")),
-    ("april", include_str!("reference/april.bpl")), ("aplcart", include_str!("reference/aplcart.bpl")), ("dyalog", include_str!("reference/dyalog.bpl")),
-    ("regex", include_str!("reference/regex.bpl")), ("distributions", include_str!("reference/distributions.bpl")), ("lib", include_str!("reference/lib.bpl")),
-    ("bqn", include_str!("reference/bqn.bpl")), ("static", include_str!("reference/static.bpl")), ("static-int32", include_str!("reference/static-int32.bpl")),
-];
-
 fn cases(text: &str) -> Vec<Value> { reference::file("", text).unwrap().cases }
 
 #[test]
@@ -37,9 +30,11 @@ fn reference_format_and_comparison() {
     let exactness = json!({"code":"1", "expected_code":"1ₓ"});
     assert_eq!(reference::check(&exactness, &InterruptHandle::default())["status"], "mismatch");
     let kinds =
-        reference::check(&json!({"setup":"⍝ test_compiled", "code":"(32+32×test_compiled)•float1", "expected":{"shape":[], "data":[1], "prototype":0}}), &InterruptHandle::default());
-    assert_eq!(kinds["status"], "mismatch");
-    assert!(kinds["message"].as_str().is_some_and(|message| message.starts_with("storage kind:")), "{kinds}");
+        reference::check(&json!({"code":r#"{⍵?1;$t}"batch"⊃•prefs ⍬"#, "expected":{"shape":[], "data":[1], "prototype":0}}), &InterruptHandle::default());
+    assert_eq!(
+        (kinds["status"].as_str(), kinds["message"].as_str()),
+        (Some("mismatch"), Some("storage kind: float64 with the batch pref on, bool with the batch pref off"))
+    );
     let captured = json!({"code":"1ₓ", "expected":{"shape":[], "data":[1], "prototype":0}});
     assert_eq!(reference::check(&captured, &InterruptHandle::default())["status"], "pass");
     let parsed = cases("⍝  — [rtol=1e-14 atol=1e-15]\nf←{\n\n⍵+1\n}\nf 2\n⍝ =>\n3\n\n⍝  —\n\"unfinished\n⍝ error: SYNTAX ERROR\n\n");
@@ -55,13 +50,16 @@ fn reference_format_and_comparison() {
     assert_eq!(&text[span[0].as_u64().unwrap() as usize..span[1].as_u64().unwrap() as usize], "⍝⍝: 2 3 4");
     assert!(reference::failures(file.cases.iter().filter(|c| reference::checked(c)), &file.setup, false, &InterruptHandle::default()).is_empty());
     reference::check_once(&file.cases[0], &file.setup, &InterruptHandle::default()).unwrap();
-    let text = "⍝ route-format —\n⍝⍝⍝ allows stopped \"observing argument data\": guard on differentiated data\n{0<+/⍵?+/⍵×⍵;0}∂1 2";
+    let text = "⍝ route-format —\n⍝⍝⍝ route vector kernel\n⍝⍝⍝ gap stopped \"a read of a traced value\": guard on differentiated data\n{0<+/⍵?+/⍵×⍵;0}∂1 2";
     for ending in ["   ⍝ 2 4", "\n2 4"] {
         let mut routed = cases(&format!("{text}{ending}")).remove(0);
-        assert_eq!(routed["allows"][0], json!(["stopped", "observing argument data"]));
-        assert_eq!(reference::check(&routed, &InterruptHandle::default())["status"], "pass");
+        assert_eq!(routed["route"], json!(["vector kernel"]));
+        assert_eq!(routed["gap"][0], json!(["stopped", "a read of a traced value"]));
+        let checked = reference::check(&routed, &InterruptHandle::default());
+        assert!(checked["status"] == "pass" && !reference::obliged(&checked), "{checked}");
         routed["route"] = json!(["missing route"]);
-        assert_eq!(reference::check(&routed, &InterruptHandle::default())["status"], "route");
+        let checked = reference::check(&routed, &InterruptHandle::default());
+        assert!(checked["status"] == "pass" && reference::obliged(&checked), "a route violation is an obligation: {checked}");
     }
     for (code, expect, status) in [
         ("1E¯10", "0", "mismatch"), ("1E¯16", "0", "pass"), ("1+1E¯15", "1", "pass"), ("a←3", "a", "invalid"), ("1", "{}0", "mismatch"),
@@ -80,9 +78,11 @@ fn reference_format_and_comparison() {
     assert_eq!(reference::check(&case, &InterruptHandle::default())["status"], "mismatch");
     let exact = json!({"code":"32•float 1+3×2*¯23", "expected_code":"32•float 1", "relative_tolerance":0.0});
     assert_eq!(reference::check(&exact, &InterruptHandle::default())["status"], "mismatch");
-    let file = reference::file("deadline", "").unwrap();
-    let error = reference::route(&file, &json!({"code":"•delay3"}), &InterruptHandle::default()).err().expect("route capture has a deadline");
-    assert!(error.contains("TIMEOUT"), "{error}");
+    let error = reference::route(&json!({"code":"•delay3"}), "", &InterruptHandle::default()).err().expect("route capture has a deadline");
+    assert!(error["message"].as_str().is_some_and(|message| message.contains("TIMEOUT")), "{error}");
+    for (code, class) in [(r#"(•explain "1+1").fused"#, "report"), (r#""•explain" ⍝ •memory"#, "value"), ("(•storage 1 2).kind", "value"), ("(•storage 1 2).pending", "report")] {
+        assert_eq!(reference::class(&json!({"code":code})), class, "{code}");
+    }
 }
 
 /// The speed files, `tests/speed/*.bpl`.
@@ -96,87 +96,64 @@ fn every_speed_case_has_its_three_budgets() {
     assert!(missing.is_empty(), "each case needs a macOS, a Linux and a wasm budget: {missing:#?}");
 }
 
-/// The variable that makes a run of `reference_cases` a child that checks the cases at these positions in `chosen`'s order, as in `3 11 19`.
+/// The variable that makes a run of `reference_cases` a child that checks the cases at these positions in the suite's order, as in `3 11 19`.
 const SHARD: &str = "BASEDPL_SHARD";
-/// The start of each line on which a child prints one of its failures, as JSON.
-const FAILURE: &str = "reference failure: ";
+/// The start of each line on which a child prints a case's position and result, as JSON.
+const RESULT: &str = "reference result: ";
 /// The variable that makes `reference_cases` print its slowest cases: how many to print, each with the seconds that all its runs took together.
 const TIMES: &str = "BASEDPL_TIMES";
 /// The start of the line on which a child prints that it finished a case: the case's position, its seconds, then its file and line.
 const TIME: &str = "reference time: ";
+/// The variable that names a file where `reference_cases` writes every case's result, as a JSON list in the suite's order, for a results record.
+const RESULTS: &str = "BASEDPL_RESULTS";
 
-/// Selected expected-answer cases in source order, with their file name for child reports.
-fn chosen() -> Vec<reference::File> {
-    let mut chosen = Vec::new();
-    for mut file in SOURCES.iter().map(|&(name, text)| reference::file(name, text).unwrap_or_else(|e| panic!("{name}.bpl: {e}"))).chain(speed()) {
-        reference::mark_skipped(&mut file);
-        let name = file.name.trim_end_matches(".bpl");
-        file.cases.retain(reference::checked);
-        for case in &mut file.cases { case["file"] = json!(name); case["noopt"] = json!(std::env::var("BASEDPL_CHECK_NOOPT").as_deref() == Ok("1")); }
-        if !file.cases.is_empty() { chosen.push(file); }
-    }
-    let mut selection = reference::Selection::from_env();
-    selection.files(&mut chosen);
-    selection.assert_selected();
-    chosen
-}
-
-/// The native check inventory supplies value/storage/route checks and optional NoOpt jobs. Children keep one immutable policy, share the core limit, and report every finished job; after a crash, later jobs are retried in fresh children.
+/// The suite (`reference::suite`), checked in child processes that split its cases, one child per core. A child that stops gives its first unfinished case a crash result (`reference::crashed`), and its later cases go to fresh children. Prints the counts by mode (`reference::accounting`) and how many cases hold obligations, and fails on each case that fails a run (`reference::fails`) or that a child left unchecked.
 #[test]
 fn reference_cases() {
-    let chosen = chosen();
-    let cases: Vec<(&reference::File, &Value)> = chosen.iter().flat_map(|file| file.cases.iter().map(move |case| (file, case))).collect();
-    let jobs: Vec<_> = cases.iter().enumerate().flat_map(|(i, (_, case))| {
-        let checks = reference::checks(case);
-        [false, true].into_iter().filter(move |noopt| checks.iter().any(|check| check.noopt == *noopt)).map(move |noopt| (i, noopt))
-    }).collect();
+    let suite = reference::suite().unwrap();
+    let cases: Vec<(&reference::File, &Value)> = suite.iter().flat_map(|file| file.cases.iter().map(move |case| (file, case))).collect();
     if let Ok(shard) = std::env::var(SHARD) {
         // Each child runs in a process of its own, where no other test allocates, so the guard's count belongs to its cases alone.
         rustymath::memory::set_checks(true);
         for i in shard.split(' ').map(|i| i.parse::<usize>().expect("BASEDPL_SHARD holds case positions")) {
-            let (file, case) = cases[jobs[i].0];
+            let (file, case) = cases[i];
             let start = std::time::Instant::now();
-            for failure in reference::failures([case], &file.setup, false, &InterruptHandle::default()) { println!("{FAILURE}{failure}"); }
+            for result in reference::results([case], &file.setup, false, &InterruptHandle::default()) { println!("{RESULT}{i} {result}"); }
             println!("{TIME}{i} {} {}.bpl:{}", start.elapsed().as_secs_f64(), case["file"].as_str().unwrap(), case["line"]);
         }
         return;
     }
     // Shared, so that no timing runs while the cases load the machine.
     let _lock = rustymath::timing::shared().unwrap();
-    let count = jobs.len();
-    assert!(count > 0, "no reference cases selected");
+    let count = cases.len();
+    assert!(count > 0, "the suite has no cases");
     let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
     // macOS reads the directory that holds a process's executable as its bundle when a framework such as ImageIO first asks for the bundle's information, and `target/debug/deps` holds hundreds of thousands of files. The children run from a copy of this test in a directory of its own.
     let dir = tempfile::tempdir().unwrap();
     let exe = dir.path().join("reference");
     std::fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
-    let (mut checked, mut failures, mut times, mut skipped, mut stops) = (vec![false; count], Vec::<Value>::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut results, mut times, mut unchecked, mut stops) = (vec![None::<Value>; count], Vec::new(), Vec::new(), Vec::new());
     let mut left: Vec<usize> = (0..count).collect();
     while !left.is_empty() {
-        let noopt = jobs[left[0]].1;
-        let current: Vec<_> = left.iter().copied().filter(|&i| jobs[i].1 == noopt).collect();
-        left.retain(|&i| jobs[i].1 != noopt);
-        let shares = cores.min(current.len());
+        let shares = cores.min(left.len());
         let children: Vec<_> = (0..shares).map(|k| {
-            let share: Vec<usize> = current.iter().copied().skip(k).step_by(shares).collect();
+            let share: Vec<usize> = left.iter().copied().skip(k).step_by(shares).collect();
             let positions = share.iter().map(usize::to_string).collect::<Vec<_>>().join(" ");
-            let child = std::process::Command::new(&exe).args(["reference_cases", "--exact", "--nocapture"]).env(SHARD, positions).env("BASEDPL_NOOPT", if noopt { "1" } else { "0" })
+            let child = std::process::Command::new(&exe).args(["reference_cases", "--exact", "--nocapture"]).env(SHARD, positions)
                 .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
             // Every child's output is read as it comes, each on a thread of its own: a child whose pipe fills waits, inside the case it's timing, until its output is read.
             (share, std::thread::spawn(move || child.wait_with_output()))
         }).collect();
+        left.clear();
         for (share, child) in children {
             let output = child.join().unwrap().unwrap();
             for line in String::from_utf8_lossy(&output.stdout).lines() {
-                if let Some(failure) = line.strip_prefix(FAILURE) { failures.push(serde_json::from_str(failure).unwrap()); }
-                if let Some((i, time)) = line.strip_prefix(TIME).and_then(|t| t.split_once(' ')) {
-                    checked[i.parse::<usize>().unwrap()] = true;
-                    times.push(time.to_string());
-                }
+                if let Some((i, result)) = line.strip_prefix(RESULT).and_then(|r| r.split_once(' ')) { results[i.parse::<usize>().unwrap()] = Some(serde_json::from_str(result).unwrap()); }
+                if let Some((_, time)) = line.strip_prefix(TIME).and_then(|t| t.split_once(' ')) { times.push(time.to_string()); }
             }
-            let unfinished: Vec<usize> = share.into_iter().filter(|&i| !checked[i]).collect();
+            let unfinished: Vec<usize> = share.into_iter().filter(|&i| results[i].is_none()).collect();
             if output.status.success() {
-                skipped.extend(unfinished);
+                unchecked.extend(unfinished);
                 continue;
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -184,9 +161,7 @@ fn reference_cases() {
             let reason = format!("{}: {}", output.status, tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
             match unfinished.split_first() {
                 Some((&i, later)) => {
-                    let case = cases[jobs[i].0].1;
-                    checked[i] = true;
-                    failures.push(json!({"file":case["file"], "line":case["line"], "section":case["section"], "id":case["id"], "message":format!("its child stopped ({reason})"), "kind":"crash"}));
+                    results[i] = Some(reference::crashed(cases[i].1, &format!("its child stopped ({reason})")));
                     left.extend_from_slice(later);
                 }
                 None => stops.push(format!("a child stopped after its last case ({reason})")),
@@ -198,19 +173,14 @@ fn reference_cases() {
         times.sort_by(|a, b| b.0.total_cmp(&a.0));
         for (seconds, case) in times.iter().take(slowest.parse().expect("BASEDPL_TIMES holds a count")) { eprintln!("{seconds:6.3} s  {case}"); }
     }
-    failures.sort_by(|a, b| (a["file"].as_str(), a["line"].as_u64()).cmp(&(b["file"].as_str(), b["line"].as_u64())));
-    let mut failed: Vec<_> = failures.iter().map(|f| (f["file"].as_str(), f["line"].as_u64())).collect();
-    failed.dedup();
-    let explicit_skips = jobs.iter().filter(|&&(i, noopt)| cases[i].1.get("skip_reason").is_some() || noopt && cases[i].1.get("noopt_skip_reason").is_some()).count();
-    let summary = format!("{count} reference case-policy jobs planned, {} checked, {} failed, {explicit_skips} explicitly skipped", count - skipped.len() - explicit_skips, failed.len());
-    let mut wrong: Vec<String> = failures.iter().map(|f| {
-        format!(
-            "{}.bpl:{} [{}] {}: {} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"],
-            f["kind"]
-        )
+    let results: Vec<Value> = results.into_iter().flatten().collect();
+    if let Ok(path) = std::env::var(RESULTS) { std::fs::write(&path, serde_json::to_string(&results).unwrap()).unwrap(); }
+    let obligations = results.iter().filter(|r| reference::obliged(r)).count();
+    eprintln!("{count} reference cases; runs by mode (planned, checked, failed, not applicable): {}; {obligations} cases hold release-2 obligations", reference::accounting(&results));
+    let mut wrong: Vec<String> = results.iter().filter(|r| reference::fails(r)).map(|f| {
+        format!("{}.bpl:{} [{}] {}: {} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"], f["status"])
     }).collect();
-    wrong.extend(skipped.iter().map(|&i| format!("{}.bpl:{}: a child skipped it", cases[jobs[i].0].1["file"].as_str().unwrap(), cases[jobs[i].0].1["line"])));
+    wrong.extend(unchecked.iter().map(|&i| format!("{}.bpl:{}: a child left it unchecked", cases[i].1["file"].as_str().unwrap(), cases[i].1["line"])));
     wrong.extend(stops);
-    assert!(wrong.is_empty(), "{summary}:\n{}", wrong.join("\n"));
-    eprintln!("{summary}: all applicable checks passed");
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }

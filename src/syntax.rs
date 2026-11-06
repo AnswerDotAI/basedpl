@@ -2,7 +2,7 @@ use crate::name::{Name, is_implicit};
 use crate::{
     At, Described, Error, ErrorKind, Number, Source, Span, Value,
     number::{Arithmetic, DENOMINATOR, EXPONENT, IMAGINARY, MARKS, Mark, Math, Numeric, SUFFIXES, Suffix, subscript},
-    primitive::{Builtin, Exact, OperatorKind, Primitive, Superscript}, symbols::canonical
+    primitive::{Builtin, OperatorKind, Primitive, Superscript}, symbols::canonical
 };
 use rustymath::{buffer::{DType, FloatWidth}, error::Kind};
 use std::{iter::Peekable, str::CharIndices, sync::{Arc, atomic::{AtomicU64, Ordering::Relaxed}}};
@@ -50,7 +50,7 @@ pub(crate) enum DefinitionKind { Function, MonadicOperator, DyadicOperator }
 #[derive(Debug)]
 pub(crate) struct Definition {
     pub bodies: Vec<Vec<Statement>>, pub span: Span, pub kind: DefinitionKind, locals: &'static [Name], remembered: AtomicU64,
-    programs: crate::program::Programs
+    programs: crate::program::trace::Programs, admitted: Option<Primitive>
 }
 impl Definition {
     /// The names that the definition could assign, sorted, which each of its calls keeps in slots.
@@ -60,7 +60,19 @@ impl Definition {
     /// Records what maps remember of a stopped batched run of this definition.
     pub fn remember(&self, memory: u64) { self.remembered.store(memory, Relaxed) }
     /// The programs that `∂` of this definition builds, and the argument signatures whose traces stopped (`program`).
-    pub(crate) fn programs(&self) -> &crate::program::Programs { &self.programs }
+    pub(crate) fn programs(&self) -> &crate::program::trace::Programs { &self.programs }
+    /// The primitive this definition is, where it's `{⍺ p ⍵}` (`admitted`): computation takes it as that primitive, with its algebraic and floating-point freedoms. Display keeps the definition's text.
+    pub(crate) fn admitted(&self) -> Option<Primitive> { self.admitted }
+}
+
+/// The primitive that a definition is, where its one body is one expression `⍺ p ⍵` of a primitive `p`. An absent `⍺` drops out, so the definition is `p` with either valence.
+fn admitted(bodies: &[Vec<Statement>]) -> Option<Primitive> {
+    let [body] = bodies else { return None };
+    let [Statement { nodes, kind: StatementKind::Expression, .. }] = body.as_slice() else { return None };
+    let mut nodes = nodes.as_slice();
+    while let [Node { kind: NodeKind::Run(inner) | NodeKind::Group(inner), .. }] = nodes { nodes = inner; }
+    let [Node { kind: NodeKind::Name(Name::ALPHA, _), .. }, Node { kind: NodeKind::Function(Builtin::Primitive(p)), .. }, Node { kind: NodeKind::Name(Name::OMEGA, _), .. }] = nodes else { return None };
+    Some(*p)
 }
 
 fn definition_kind(bodies: &[Vec<Statement>]) -> DefinitionKind {
@@ -275,19 +287,19 @@ fn real_literal(chars: &mut Characters<'_>) -> Result<(), &'static str> {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Joiner { Imaginary, Exponent, Denominator }
 
-/// The group that `left`, `joiner` at `at` and `right` stand for: `xⱼy` is `x+y×0ⱼ1`, `xₑy` is `x×10*y` and `xᵣy` is the exact quotient of `xₓ` by `yₓ`, under either kinds (`Exact::Ratio`).
+/// The group that `left`, `joiner` at `at` and `right` stand for: `xⱼy` is `x+y×0ⱼ1`, `xₑy` is `x×10*y` and `xᵣy` is `xₓ÷ᵣyₓ`, the exact quotient of the two integers, under either kinds.
 pub(crate) fn joined_term(left: Node, joiner: Joiner, at: &Span, right: Node) -> Node {
     let span = Span { source: at.source.clone(), range: left.span.range.start..right.span.range.end };
     let node = |kind| Node { kind, span: at.clone() };
     let number = |text| node(NodeKind::Literal(Value::Number(literal_number(text, Numeric::current()).expect("a joiner's constant is a number"))));
     let function = |p| node(NodeKind::Function(Builtin::Primitive(p)));
-    let mark = || node(NodeKind::Operator(OperatorKind::Super(Superscript::Mark(Mark::Exact))));
+    let mark = |m| node(NodeKind::Operator(OperatorKind::Super(Superscript::Mark(m))));
     let nodes = match joiner {
         Joiner::Imaginary => {
             vec![left, function(Primitive::Arithmetic(Arithmetic::Plus)), right, function(Primitive::Arithmetic(Arithmetic::Times)), number("0j1")]
         }
         Joiner::Exponent => vec![left, function(Primitive::Arithmetic(Arithmetic::Times)), number("10"), function(Primitive::Math(Math::Power)), right],
-        Joiner::Denominator => vec![left, mark(), function(Primitive::Exact(Exact::Ratio)), right, mark()],
+        Joiner::Denominator => vec![left, mark(Mark::Exact), function(Primitive::Arithmetic(Arithmetic::Divide)), mark(Mark::Rational), right, mark(Mark::Exact)],
     };
     Node { kind: NodeKind::Group(nodes), span }
 }
@@ -297,6 +309,14 @@ fn mark_head(chars: &mut Characters<'_>) -> Option<Mark> { let &(_, c) = chars.p
 
 fn mark(chars: &mut Characters<'_>) -> Result<Option<Mark>, (ErrorKind, String)> {
     let Some(mark) = mark_head(chars) else { return Ok(None) };
+    // `ᵣ` before something that starts a value joins the two (`xᵣy`, as the joiner token), and marks what it follows only otherwise.
+    if mark == Mark::Rational {
+        let mut next = chars.clone();
+        next.next();
+        if number_part(next.clone()) || next.peek().is_some_and(|&(_, c)| {
+            name_char_in(c, chars.aliases) || is_implicit(c) || matches!(c, '(' | '[' | '\'' | '"' | '$' | '•' | '⍬')
+        }) { return Ok(None); }
+    }
     chars.next();
     if mark != Mark::Exact { return Ok(Some(mark)); }
     let Some(&(_, c)) = chars.peek().filter(|(_, c)| *c == '₋' || script_digit(SUBSCRIPT_DIGITS, *c).is_some()) else { return Ok(Some(mark)) };
@@ -340,11 +360,9 @@ fn number_text(text: &str) -> String { text.chars().map(canonical).collect() }
 /// The number that literal text writes, read by `Number::literal` once each character takes its canonical spelling.
 fn literal_number(text: &str, numeric: Numeric) -> Result<Number, ErrorKind> { Number::literal(&number_text(text), numeric) }
 
-/// A number written inside `[…]ₓ`. An integer's digits read exactly, and a whole float becomes exact.
+/// A number written inside `[…]ₓ`: the literal with its own `ₓ` (`Number::parse`), so an integer's digits read exactly, a fraction floors and an infinity saturates.
 fn exact_number(text: &str, numeric: Numeric) -> Result<Number, ErrorKind> {
-    let (text, numeric) = (number_text(text), numeric.with_width(FloatWidth::F64));
-    if text.chars().all(|c| c.is_ascii_digit() || c == '¯') { return Number::parse(&format!("{text}ₓ"), numeric); }
-    Number::literal(&text, numeric)?.marked_exact().ok_or_else(|| Kind::Domain.into())
+    Number::parse(&format!("{}ₓ", number_text(text)), numeric.with_width(FloatWidth::F64))
 }
 
 /// The empty numeric vector whose prototype is `fill`.
@@ -373,7 +391,7 @@ fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>,
                 for token in &mut tokens[start + 1..i] {
                     let text = token.span.text();
                     let value = match (&token.kind, mark) {
-                        (TokenKind::Literal(Value::Number(n)), _) if n.as_bool().is_some() && !matches!(mark, Mark::Fixed(_)) => continue,
+                        (TokenKind::Literal(Value::Number(n)), _) if n.as_bool().is_some() && !matches!(mark, Mark::Fixed(_) | Mark::Real) => continue,
                         (TokenKind::Literal(Value::Number(_)), Mark::Exact) if text.starts_with('$') => continue,
                         (TokenKind::Literal(Value::Number(_)), Mark::Exact) => {
                             Value::Number(exact_number(text, numeric).described("ₓ marks whole numbers exact").at(&token.span)?)
@@ -386,6 +404,11 @@ fn mark_literals(tokens: &mut Vec<Token>) -> Result<Vec<std::ops::Range<usize>>,
                             let n = if text.starts_with('$') { Ok(n.clone()) } else { literal_number(text, numeric.with_width(w)) };
                             let n = n.and_then(|n| n.to_float_width(w).map_err(|_| Kind::Domain.into()));
                             Value::Number(n.described(&format!("{} marks numbers", mark.marker())).at(&token.span)?)
+                        }
+                        (TokenKind::Literal(Value::Number(n)), Mark::Real) => Value::Number(n.to_real(numeric).described("ₐ marks numbers").at(&token.span)?),
+                        (TokenKind::Literal(Value::Number(n)), Mark::Rational) => {
+                            let n = if text.starts_with('$') { n.to_rational() } else { literal_number(&format!("{text}ᵣ"), numeric) };
+                            Value::Number(n.described("ᵣ marks real numbers").at(&token.span)?)
                         }
                         (TokenKind::Literal(_), _) if text.chars().map(canonical).eq(['⍬']) => zilde(mark.zero()),
                         _ => continue,
@@ -441,7 +464,7 @@ pub fn subscripts() -> String { [SUBSCRIPT_DIGITS, "₋"].concat() }
 /// Number markers and their word names, for Python properties and editor generation.
 pub fn number_marks() -> Vec<(&'static str, &'static str)> {
     MARKS.iter().map(|&(text, mark)| {
-        (text, match mark { Mark::Exact => "exact", Mark::Width(w) => DType::Float(w).name(), Mark::Fixed(w) => DType::Integer(w).name() })
+        (text, match mark { Mark::Exact => "exact", Mark::Width(w) => DType::Float(w).name(), Mark::Fixed(w) => DType::Integer(w).name(), Mark::Real => "approximate", Mark::Rational => "rational" })
     }).collect()
 }
 
@@ -605,7 +628,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
         real_literal(chars).map_err(|message| Error::new(ErrorKind::Syntax, message).at(&span(position(chars, len))))?;
         if suffix(chars, IMAGINARY) {
             real_literal(chars).map_err(|message| Error::new(ErrorKind::Syntax, message).at(&span(position(chars, len))))?;
-            width_mark(chars);
+            if !matches!(marked(chars)?, None | Some(Mark::Width(_) | Mark::Real)) { return Err(Error::new(ErrorKind::Syntax, "invalid complex numeric literal").at(&span(position(chars, len))).into()); }
             if let Some(end) = run_on(chars, false) { return Err(Error::new(ErrorKind::Syntax, "invalid complex numeric literal").at(&span(end)).into()); }
         } else {
             let rational = suffix(chars, DENOMINATOR);
@@ -613,7 +636,7 @@ fn token(source: &Arc<Source>, chars: &mut Characters<'_>) -> Result<Option<Toke
                 chars.next_if(|&(_, c)| canonical(c) == '¯');
                 if digits(chars) == 0 { return Err(Error::new(ErrorKind::Syntax, "expected integer denominator").at(&span(position(chars, len))).into()); }
             }
-            if rational || marked(chars)?.is_some() {
+            if marked(chars)?.is_some() || rational {
                 if let Some(end) = run_on(chars, true) { return Err(Error::new(ErrorKind::Syntax, "invalid exact numeric literal").at(&span(end)).into()); }
             }
         }
@@ -802,9 +825,10 @@ impl Parser<'_> {
                             let mut bodies = bodies(inner, &span)?;
                             let kind = definition_kind(&bodies);
                             let locals = locals(&bodies);
+                            let admitted = admitted(&bodies);
                             release(&mut bodies, locals);
                             NodeKind::Dfn(Arc::new(Definition { locals, bodies, span: span.clone(), kind, remembered: AtomicU64::new(0),
-                                programs: Default::default() }))
+                                programs: Default::default(), admitted }))
                         }
                         TokenKind::Open if let Some(mark) = mark => marked_literal(parenthesised(inner, &span)?, &span, mark)?,
                         TokenKind::Open => parenthesised(inner, &span)?,

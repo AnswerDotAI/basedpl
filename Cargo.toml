@@ -34,13 +34,9 @@ doctest = false
 # Without a unit-test build, `cargo test` compiles the library only once.
 test = false
 
-# The timing suite and the speed cases' route test: plain `cargo test` skips them; `cargo test --test speed` and `cargo test --test routes` run them.
+# Plain `cargo test` skips the timing suite; `cargo test --test speed` runs it.
 [[test]]
 name = "speed"
-test = false
-
-[[test]]
-name = "routes"
 test = false
 
 [profile.test]

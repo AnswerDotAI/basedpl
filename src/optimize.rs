@@ -150,7 +150,7 @@ impl<F: Native + Float> Objective<F> for Goal<'_> {
     }
 }
 
-/// The operand as a mapping from a point to its residuals, with the products that `∂` gives where it differentiates `f`, from one record at each point, and the preconditioner of option `precondition` for a linear solve. `values` lays out a cotangent as the residuals are laid out.
+/// The operand as a mapping from a point to its residuals, with the products that `∂` gives where it differentiates `f`, from one tape at each point, and the preconditioner of option `precondition` for a linear solve. `values` lays out a cotangent as the residuals are laid out.
 struct Residual<'a> {
     f: &'a Function,
     /// Option `precondition`, whose function takes and gives arrays of the start's layout.
@@ -159,7 +159,7 @@ struct Residual<'a> {
     values: Point<'a>,
     /// Whether `∂` gives products with `f`'s Jacobian and its transpose, as the linearisation at the start found.
     products: bool,
-    /// Whether `f` is affine, so that one record serves every point.
+    /// Whether `f` is affine, so that one tape serves every point.
     affine: bool,
     last: Option<(Vec<f64>, Linearized)>,
     span: &'a crate::Span,

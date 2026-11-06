@@ -2,7 +2,7 @@
 
 Function. Keys: `Alt-o u`. Hanzi: `因`. Ranks: `0` monadic, `0 0` dyadic
 
-`⨸N`: sorted prime factors, with multiplicity. J's `q:` family. Positive whole input; exact integer results.
+`⨸N`: sorted prime factors, with multiplicity. J's `q:` family. Positive whole input. Results take the argument's domain: `⨸12ᵣ` gives `[2 2 3]ᵣ`.
 
 ```bpl
 ⨸700                 ⍝ [2 2 5 5 7]ₓ
@@ -10,7 +10,7 @@ Function. Keys: `Alt-o u`. Hanzi: `因`. Ranks: `0` monadic, `0 0` dyadic
 ⨸⁻¹⨸700              ⍝ 700ₓ
 ```
 
-Inverse: product. `K⨸N` selects exponents or a factor table.
+Inverse: product. A product of machine integers past 64 bits gives the largest 64-bit integer. `K⨸N` selects exponents or a factor table.
 
 | K | Result |
 |---|---|

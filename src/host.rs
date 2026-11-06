@@ -5,8 +5,12 @@ use std::{io, path::{Path, PathBuf}, time::Duration};
 
 pub(crate) use std::time::Instant;
 
-/// Takes the machine's timing lock exclusively, as `rustymath::timing::exclusive` describes.
-pub(crate) fn timing_lock() -> Result<rustymath::timing::Hold, String> { rustymath::timing::exclusive().map_err(|e| e.to_string()) }
+/// Takes the machine's timing lock exclusively, as `rustymath::timing::exclusive` describes, then writes `started` to stderr. A worker's caller counts a timing's deadline from that note (`basedpl.worker`).
+pub(crate) fn timing_lock() -> Result<rustymath::timing::Hold, String> {
+    let hold = rustymath::timing::exclusive().map_err(|e| e.to_string())?;
+    eprintln!("started");
+    Ok(hold)
+}
 
 pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> { std::fs::read(path) }
 /// The name that identifies the file at `path`, for `•load`'s cycle check.
@@ -74,7 +78,6 @@ impl Regex {
     pub(crate) fn new(pattern: &str, insensitive: bool) -> Result<Self, Error> {
         fancy_regex::RegexBuilder::new(pattern).case_insensitive(insensitive).build().map(Self).map_err(regex_error)
     }
-    pub(crate) fn as_str(&self) -> &str { self.0.as_str() }
     pub(crate) fn find(&self, text: &str) -> Result<Option<usize>, Error> { self.0.find(text).map(|m| m.map(|m| m.start())).map_err(regex_error) }
     /// The number of groups, not counting the whole match.
     pub(crate) fn groups(&self) -> usize { self.0.captures_len() - 1 }

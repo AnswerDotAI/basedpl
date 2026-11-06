@@ -88,7 +88,7 @@ class Operator:
 
 def fork(f, g, h):
     f, h = (o if isinstance(o, _Combinators) else _build('⍨', o) for o in (f, h))
-    return _build('train', f, g, h)
+    return _build('fork', f, g, h)
 def atop(f, g): return _build('∘', f, g)
 
 def _python_name(name):

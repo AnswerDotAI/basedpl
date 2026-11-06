@@ -40,7 +40,7 @@ m←3 4⍴⍳12ₓ
 
 On a keyed axis, a string is one key.
 
-An array selector can repeat a position or key. If a source key would repeat on a result axis, that axis drops its source keys. The selector's own keys and axis names follow the usual rules.
+An array selector can repeat a position or key, and gives one item for each of its items. Where it repeats an item of a keyed axis, by key or by position, the result's axis has no keys: for `T←"a" "b":1 2`, `T.[["a" "a"]]` gives `1 1`, as `T.[[0 0]]` does. The selector's own keys and axis names follow the usual rules.
 
 ```bpl
 T←"aa" "bb":1 2
@@ -82,7 +82,7 @@ t←⍳⍠"month" sales
 sales≡[t]⌷sales     ⍝ $t
 ```
 
-A named selector counts a negative position back from the end, as an unnamed one does, and a position outside its axis is an Index error. A NaN position reads fill. [`⍠`](quad-colon.qmd#fill) can choose that fill. Other rules for the edges are arithmetic on positions, and [`•edge`](../system/edge.qmd) names them. It gives NaN outside the axis by default:
+A named selector counts a negative position back from the end, as an unnamed one does, and a position outside its axis or not a whole number reads fill, and a write there writes nothing, as [Indexing](../indexing.ipynb#positions) describes. [`⍠`](quad-colon.qmd#fill) can choose that fill. Other rules for the edges are arithmetic on positions, and [`•edge`](../system/edge.qmd) names them. It gives NaN outside the axis by default:
 
 ```bpl
 x←10ₓ×↦5ₓ ⋄ i←⍳["i":5] ⋄ clamp←•edge "clamp"
@@ -123,5 +123,7 @@ m←["r":3 "c":3]⍴⍳9ₓ ⋄ p←["r":3]⍴2 0 1
 ## Errors
 
 - `LENGTH`: selectors that share a name but differ in length, coordinates that end at cells of different shapes, or suffixes that select different shapes in them
-- `INDEX`: selectors consuming more axes than the array has, position outside its axis, missing key, two selectors for one axis, a named selector with no axis to select
-- `DOMAIN`: a position that isn't whole, NaN, `∞` or `¯∞` inside an array of positions, coordinates of differing lengths beside another selector
+- `INDEX`: selectors consuming more axes than the array has, two selectors for one axis, a named selector with no axis to select
+- `DOMAIN`: coordinates of differing lengths beside another selector
+
+A missing key reads the fill too.

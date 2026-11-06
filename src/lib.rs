@@ -26,7 +26,6 @@ pub mod jit;
 pub mod js;
 mod json;
 pub mod keyed;
-mod linear;
 mod name;
 mod number;
 mod number_theory;

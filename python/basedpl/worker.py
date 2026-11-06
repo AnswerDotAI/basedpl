@@ -11,15 +11,12 @@ from contextlib import contextmanager
 
 INSTALLED_BPL = Path(sysconfig.get_path('scripts'))/'bpl' # The `bpl` that `cargo develop` installs, a link through its installed build (`fastws.store`)
 Compiles = Annotated[str, {'choices': ['always', 'never']}] # The values that `environment`'s `compile` takes, as choices for a shell argument
-Defers = Annotated[str, {'choices': ['all', 'reference']}] # The values that `environment`'s `defer` takes, as choices for a shell argument
 def environment(
     native=False, # Run rustymath's own linear algebra in place of Accelerate, through `RUSTYMATH_NATIVE=1`, in a macOS build with rustymath's `native` feature
     compile:Compiles=None, # How block stages compile, through `BASEDPL_COMPILE` (`settings::Compiles`): `always`, every stage on its first run; `never`, none; None, by the compile policy
-    defer:Defers=None, # Which costs decide whether a call waits, through `BASEDPL_DEFER` (`settings::waits`): `all`, every call waits, as fusion at any size runs; `reference`, the Mac's costs, as route checks take; None, this platform's costs
-    noopt:bool=None # Fix the child process policy: True disables optional optimizations; False enables them; None inherits
 ):
     "This process's environment, with these settings, for a `bpl` process or speed test that it starts. Every tool that starts one takes them through `@delegates(environment)`."
-    return os.environ | ({'RUSTYMATH_NATIVE': '1'} if native else {}) | ({'BASEDPL_COMPILE': compile} if compile else {}) | ({'BASEDPL_DEFER': defer} if defer else {}) | ({'BASEDPL_NOOPT': '1' if noopt else '0'} if noopt is not None else {})
+    return os.environ | ({'RUSTYMATH_NATIVE': '1'} if native else {}) | ({'BASEDPL_COMPILE': compile} if compile else {})
 
 LIMIT = 30 # Seconds of work that a check or timing call gets unless its `timeout` says otherwise; builds and waits for the timing lock don't count
 
@@ -67,7 +64,7 @@ class Worker:
             encoding='utf-8', bufsize=1, env=environment(**kwargs), cwd=self.cwd)
         self._replies, self._stderr = queue.Queue(), deque(maxlen=stderr_limit)
         self._write_lock, self._request_lock = threading.Lock(), threading.Lock()
-        self._id, self._active, self._heard, self._started, self.ran = 0, None, time.monotonic(), time.monotonic(), None
+        self._id, self._active, self._heard, self._started, self._waiting, self.ran = 0, None, time.monotonic(), time.monotonic(), False, None
         self._readers = [threading.Thread(target=self._read, daemon=True), threading.Thread(target=self._read_errors, daemon=True)]
         for t in self._readers: t.start()
 
@@ -81,19 +78,24 @@ class Worker:
     def _read_errors(self):
         with self.process.stderr as stream:
             for line in stream:
-                if line == 'started\n': self._started = time.monotonic()
-                else: self._stderr.append(line)
+                if line == 'started\n': self._started, self._waiting = time.monotonic(), False
+                else:
+                    self._stderr.append(line)
+                    if line.startswith('waiting for ') and ' to release ' in line: self._waiting = True
                 self._heard = time.monotonic()
 
     def _reply(self, within, stall):
-        "The next reply, which must arrive within `within` seconds of the request, or of the worker's `started` note where a timing request writes one once it holds the timing lock (`timing::started`), and within `stall` seconds of the worker's last line of stderr or of the request, or else `TimeoutError`. `None` sets no limit. `ran` then holds the seconds from that start to the reply."
+        "The next reply, which must arrive within `within` seconds of the request, or of the worker's `started` note where a timing request writes one once it holds the timing lock (`host::timing_lock`), and within `stall` seconds of the worker's last line of stderr or of the request, or else `TimeoutError`. While the worker waits for the lock, as its `waiting for … to release` note says, neither limit runs: the lock gives up after 5 minutes itself. `None` sets no limit. `ran` then holds the seconds from that start to the reply."
         self._started = self._heard = time.monotonic()
+        self._waiting = False
         while True:
-            ends = [t for t in (None if within is None else self._started+within, None if stall is None else self._heard+stall) if t is not None]
-            left = min(ends) - time.monotonic() if ends else None
-            if left is not None and left <= 0:
-                late = within is not None and time.monotonic() >= self._started+within
-                raise TimeoutError(f'worker {"did not stop before the deadline" if late else f"wrote nothing for {stall} seconds"}; its session is lost')
+            if self._waiting: left = .25
+            else:
+                ends = [t for t in (None if within is None else self._started+within, None if stall is None else self._heard+stall) if t is not None]
+                left = min(ends) - time.monotonic() if ends else None
+                if left is not None and left <= 0:
+                    late = within is not None and time.monotonic() >= self._started+within
+                    raise TimeoutError(f'worker {"did not stop before the deadline" if late else f"wrote nothing for {stall} seconds"}; its session is lost')
             try: reply = self._replies.get(timeout=left)
             except queue.Empty: continue
             self.ran = time.monotonic() - self._started

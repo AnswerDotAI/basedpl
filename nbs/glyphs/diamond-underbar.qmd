@@ -2,7 +2,7 @@
 
 Dyadic operator. Keys: `Alt-Minus Backtick`. Hanzi: `择` (`擇`)
 
-`selector⍚cases` derives a function that runs one of `cases` on the whole argument, or picks one for each cell. `cases` is a nonempty vector of functions, and an array among them acts as a constant function. The selector is an array, or a function that runs once on the original arguments. Its values pick cases as positions pick items: whole numbers that count from 0, where a negative value counts back from the end. A Boolean selector picks case 0 for `$f` and case 1 for `$t`.
+`selector⍚cases` derives a function that runs one of `cases` on the whole argument, or picks one for each cell. `cases` is a nonempty vector of functions, and an array among them acts as a constant function. The selector is an array, or a function that runs once on the original arguments. Its values pick cases modulo the number of cases, after a fractional value is floored: 0 picks the first case, and `¯1⍚[f g h]` picks `h`. A Boolean selector picks case 0 for `$f` and case 1 for `$t`.
 
 ## One case
 
@@ -44,13 +44,13 @@ m←["i":2 "j":3]⍴⍳6ₓ
 (4ₓ<+⌿)⍚[⊢ -] m                    ⍝ ["i":2 "j":3]⍴[0 ¯1 ¯2 3 ¯4 ¯5]ₓ
 ```
 
-A NaN in the selector picks no case, and its cell gets the result's fill. Under dynamic kinds, results keep their kinds, as Each's results do. Under static kinds, they join to one compact type, as a write's items do. Result cells keep the keys and names they agree on and pad differing shapes, as Rank does. A single value fills every item of its cells; when every result fills, the argument gives the cell shape. An argument with no cells gives an empty result: as Each does with prototypes, the case that the selector's fill picks runs on no cells, and the result is empty, with that case's cells.
+Under dynamic kinds, results keep their kinds, as Each's results do. Under static kinds, they join to one compact type, as a write's items do. Result cells keep the keys and names they agree on and pad differing shapes, as Rank does. A single value fills every item of its cells; when every result fills, the argument gives the cell shape. An argument with no cells gives an empty result: as Each does with prototypes, the case that the selector's fill picks runs on no cells, and the result is empty, with that case's cells.
 
 ```bpl
 0 1 2⍚[5 (1↓)⍤1 ⊢] [1 2 3⋄4 5 6⋄7 8 9]   ⍝ [5 5 5⋄5 6 0⋄7 8 9]
 ```
 
-A selector with keys pairs with the argument by key, as arithmetic does. A cell whose key the selector lacks gets the fill, as a NaN's cell does. A key that only the selector has is ignored.
+A selector with keys pairs with the argument by key, as arithmetic does. A cell whose key the selector lacks gets the fill. A key that only the selector has is ignored.
 
 ```bpl
 k←["a":1] ⋄ k⍚[- 10×] ["b":4 "a":5]      ⍝ ["b":0 "a":50]
@@ -63,12 +63,12 @@ A cell's derivative comes only from the case that the cell picks. Below, the cel
 {+/(⍵>0)⍚[0 √]⍵}∂ 0 1 4            ⍝ 0 0.5 0.25
 ```
 
-`f@[p] Y` is `p⍚[⊢ f] Y`, with two differences. [Under](at.qmd) converts its result to one kind, as assignment does. Under also leaves a cell that picks no case unchanged, where `⍚` gives it the fill.
+`f@[p] Y` is like `p⍚[⊢ f] Y`, with three differences. [Under](at.qmd) selects a cell for any mask value other than 0, where `⍚` takes the value modulo 2. Under converts its result to one kind, as assignment does. Under also leaves a cell that picks no case unchanged, where `⍚` gives it the fill.
 
 Where the selector gives a Boolean for each item of a float argument, and every case is a function that can't fail, such as `⊢`, `-`, `2×` or a constant, `⍚` and `@[p]` can run each case on the whole argument, then keep for each item the result of the case it picks. That gives the same result faster. On a large argument, the selector's comparison, the cases and the pick then run as one [fused](../system/prefs.qmd) group. `•explain` names this `"masked select"`:
 
 ```bpl
-(•explain "(0>)⍚[⊢ -] ¯1 4 ¯2").fast.combination   ⍝ ["masked select"]
+(•explain "(0>)⍚[⊢ -] ¯1 4 ¯2").fast.rule          ⍝ ["masked select"]
 ```
 
 ## Errors
@@ -77,5 +77,3 @@ Where the selector gives a Boolean for each item of a float argument, and every 
 - `LENGTH`: the selector's axes don't agree with the argument's
 - `LENGTH`: a left argument doesn't line up with the right argument
 - `LENGTH`: a case's result has neither one cell for each of its cells nor exactly one item
-- `INDEX`: a selector value outside the cases
-- `DOMAIN`: a selector value that isn't a whole number

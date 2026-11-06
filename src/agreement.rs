@@ -37,8 +37,8 @@ impl Agree for Agreement {
     #[inline]
     fn values_ref<'a>(&self, left: Option<&'a Value>, right: &'a Value, i: usize) -> (Option<Cow<'a, Value>>, Cow<'a, Value>) {
         let [x, y] = self.positions(i, || [left.map_or(0, Value::len), right.len()]);
-        let item = |a: &'a Value, j: Option<usize>, map: &Mapping| j.map_or_else(|| Cow::Owned(a.mapped_fill(map)), |j| a.at_ref(j));
-        (left.map(|a| item(a, x, &self.left)), item(right, y, &self.right))
+        let item = |a: &'a Value, j: Option<usize>| j.map_or_else(|| Cow::Owned(a.fill_item(None)), |j| a.at_ref(j));
+        (left.map(|a| item(a, x)), item(right, y))
     }
     fn laid(&self, left: Option<&Value>, right: &Value) -> (Option<Value>, Value) {
         let laid = |v: &Value, mapping: &Mapping| laid_cells(v, 0, mapping, &self.layout).expect("an agreement's layout fits");
@@ -64,14 +64,16 @@ pub(crate) fn broadcast_tables(mapping: &Mapping, frame: &[usize], cell: &[usize
     Steps::with_base(base * size, steps.into_iter().map(|s| s.scaled(size)).chain(cells).collect())
 }
 
-/// `value`, whose cells have rank `rank`, laid out as `frame` followed by its cells' axes: at each position of `frame`, the cell that `mapping` reads there, as broadcasting reads it. Where `mapping` gives a fill, as for a key that `value` lacks, the cell holds fills. An array copies as a structural glyph copies, through `primitive::copied`, which moves a dual's primal and tangent together and copies a record as one `Op::Copy`. An atom fills the frame. An error where the result would pass the size limit.
+/// `value`, whose cells have rank `rank`, laid out as `frame` followed by its cells' axes: at each position of `frame`, the cell that `mapping` reads there, as broadcasting reads it. Where `mapping` gives a fill, as for a key that `value` lacks, the cell holds fills. An array copies as a structural glyph copies, through `fusion::copied`, which copies a carried array through its carrier. An atom fills the frame, and stays an atom over a frame with no axes. An error where the result would pass the size limit.
 pub(crate) fn laid_cells(value: &Value, rank: usize, mapping: &Mapping, frame: &Layout) -> Result<Value, ErrorKind> {
+    // A frame with no axes repeats nothing, so the value lays out as itself, and an atom stays an atom.
+    if value.is_atom() && frame.shape().is_empty() { return Ok(value.clone()); }
     let n = value.shape().len();
     let layout = frame.concat(&value.layout().axes(n - rank..n));
     if value.is_atom() { generated_len(layout.shape())?; return Ok(layout.filled(value)); }
     // A value whose frame is `frame` already holds each cell where the mapping reads it.
     if *value.layout().axes(0..n - rank) == **frame { return value.relaid(layout); }
-    crate::primitive::copied(value, layout, &mapping.with_steps(0, broadcast_tables(mapping, frame.shape(), &value.shape()[n - rank..])))
+    crate::fusion::copied(value, layout, &Mapping::Steps { base: 0, steps: broadcast_tables(mapping, frame.shape(), &value.shape()[n - rank..]) }, None)
 }
 
 /// `value` repeated at each position of `frame`: an array with `frame`'s axes, then `value`'s. An error where the result would pass the size limit.

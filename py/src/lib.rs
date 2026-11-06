@@ -26,6 +26,19 @@ impl Collect for Items {
 
 fn value_error(e: impl ToString) -> PyErr { PyValueError::new_err(e.to_string()) }
 
+/// `value`'s pending items computed before Python reads them, under Python's Ctrl-C, as an evaluation runs. A failure raises the `BplError` that an evaluation's would.
+fn forced(py: Python<'_>, value: &Value) -> PyResult<()> {
+    let caught = Arc::new(Mutex::new(None));
+    let options = EvalOptions { poll: Some(ctrl_c(caught.clone())), ..EvalOptions::default() };
+    let value = value.clone();
+    let result = py.detach(move || Session::current().forced(&value, options));
+    if let Some(e) = caught.lock().unwrap().take() { return Err(e); }
+    result.map_err(|e| match py.import("basedpl").and_then(|m| m.getattr("BplError")?.call1((error(py, &e)?, PyList::empty(py)))) {
+        Ok(raised) => PyErr::from_value(raised),
+        Err(failed) => failed,
+    })
+}
+
 /// A float zero at `width`, as the prototype of imported numbers.
 fn zero(width: FloatWidth) -> Value { Value::Number(Number::float(0.0, width).marked(true)) }
 
@@ -108,7 +121,7 @@ fn element(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Value> {
     if obj.is_exact_instance_of::<PyInt>() { return Ok(Value::Number(Number::from(obj.extract::<BigInt>()?).marked(true))); }
     if obj.is_exact_instance_of::<PyFloat>() { return Ok(Value::Number(Number::float(obj.extract()?, width).marked(true))); }
     if let Ok(z) = obj.cast_exact::<PyComplex>() {
-        return Ok(Value::Number(Number::complex_in_session(num_complex::Complex64::new(z.real(), z.imag()), width).marked(true)));
+        return Ok(Value::Number(Number::complex(num_complex::Complex64::new(z.real(), z.imag()), width).marked(true)));
     }
     if obj.is_none() { return Ok(Value::Number(Number::float(f64::NAN, width))); }
     if let Ok(s) = obj.cast::<PyString>() { return text(s, &mut items.texts); }
@@ -159,6 +172,7 @@ fn array(py: Python<'_>, a: &Value) -> PyResult<Py<PyAny>> {
             Value::Carried(_) => return Err(PyValueError::new_err("a value that a running ∂ carries has no Python value")),
         })
     }
+    forced(py, a)?;
     if !a.is_atom() && a.view().is_some() { return Ok(Py::new(py, PyArray::from(a.clone()))?.into_any()); }
     let result = PyDict::new(py);
     if a.is_atom() { result.set_item("atom", element(py, a)?)?; return Ok(result.into_any().unbind()); }
@@ -181,6 +195,12 @@ impl From<Value> for PyArray { fn from(inner: Value) -> Self { Self { inner: Som
 impl PyArray {
     /// The value, or an error once `own` has moved its items.
     fn value(&self) -> PyResult<&Value> { self.inner.as_ref().ok_or_else(|| PyValueError::new_err("own() moved this array's items into NumPy")) }
+    /// The value with its pending items computed, for a read of its items. `value` alone suffices to pass the value back to BPL or read its layout.
+    fn stored(&self, py: Python<'_>) -> PyResult<&Value> {
+        let value = self.value()?;
+        forced(py, value)?;
+        Ok(value)
+    }
 }
 
 enum IndexSelection { Planned(rustymath::structure::Plan, bool), Rich(Vec<IndexPart<Value>>) }
@@ -193,18 +213,32 @@ fn index_error(error: basedpl::Error) -> PyErr {
     rustymath_buffer::py_err(rustymath::error::Error::new(e.kind, text))
 }
 
-/// Decodes a Python index of `value` once, for reads and writes, through `⌷`'s planner. Python's own kinds, slices, keys, integers and lists of keys, decode without converting. `convert` turns other selectors into arrays, which decode as `⌷` decodes them, except Boolean masks, which select where they hold true. Pick paths allow positions, keys, full slices, None and ... as suffixes, but not partial slices or masks.
-fn selection(value: &Value, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<IndexSelection> {
-    let converted = |obj: &Bound<'_, PyAny>| -> PyResult<Value> { Ok(convert.call1((obj,))?.extract::<PyRef<'_, PyArray>>()?.value()?.clone()) };
+/// A Python index's written parts, and the array that `convert` makes of each axis part that Python's own kinds don't cover, which decodes as `⌷` decodes it, Booleans as positions. Slices, keys, integers and lists of keys hold `None`: they decode without converting.
+struct Decoded<'py> { parts: Vec<IndexPart<Bound<'py, PyAny>>>, values: Vec<IndexPart<Option<Value>>> }
+
+fn decoded<'py>(index: &Bound<'py, PyAny>, convert: &Bound<'py, PyAny>) -> PyResult<Decoded<'py>> {
     let parts = rustymath_buffer::selection::parts(index)?;
-    let values = parts.iter().map(|p| p.as_ref().try_map(|p| if rustymath_buffer::selection::native(p) { Ok(None) } else { converted(p).map(Some) }))
+    let values = parts.iter().map(|p| p.as_ref().try_map(|p| if rustymath_buffer::selection::native(p) { Ok(None) } else { converted(p, convert).map(Some) }))
         .collect::<PyResult<Vec<_>>>()?;
+    Ok(Decoded { parts, values })
+}
+
+/// `obj` as the array that `convert` makes of it, with its items computed.
+fn converted(obj: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Value> {
+    let value = convert.call1((obj,))?.extract::<PyRef<'_, PyArray>>()?.value()?.clone();
+    forced(obj.py(), &value)?;
+    Ok(value)
+}
+
+/// Plans a decoded Python index of `value` through `⌷`'s planner, for reads and writes. A position that reaches no item reads the fill, as in `⌷`, and so does a missing key, except a plain integer out of range, which raises `IndexError` so that Python's iteration protocol ends. Pick paths allow positions, keys, full slices, None and ... as suffixes, but not partial slices.
+fn selection(value: &Value, index: Decoded<'_>, convert: &Bound<'_, PyAny>) -> PyResult<IndexSelection> {
+    let Decoded { parts, values } = index;
     if let Some(IndexPart::Axis(Some(first))) = values.iter().find(|p| matches!(p, IndexPart::Axis(_) | IndexPart::All))
         && value.picks_paths(first).map_err(index_error)? {
             let paths = parts.iter().zip(values).map(|(p, v)| {
                 v.try_map(|v| match (p.axis(), v) {
-                    (_, Some(v)) if !matches!(v.view(), Some(View::Booleans(_))) => Ok(v), (Some(p), None) if !p.is_instance_of::<PySlice>() => converted(p),
-                    _ => Err(PyTypeError::new_err("an index with pick paths takes positions, keys, full slices, None and ..., not partial slices or masks"))
+                    (_, Some(v)) => Ok(v), (Some(p), None) if !p.is_instance_of::<PySlice>() => converted(p, convert),
+                    _ => Err(PyTypeError::new_err("an index with pick paths takes positions, keys, full slices, None and ..., not partial slices"))
                 })
             }).collect::<PyResult<Vec<_>>>()?;
             return Ok(IndexSelection::Rich(paths));
@@ -214,20 +248,19 @@ fn selection(value: &Value, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>
         let (IndexPart::Axis(p), IndexPart::Axis(v)) = (&parts[i], &values[i]) else { unreachable!("planned decodes axis parts") };
         match v {
             None => Some(rustymath_buffer::selection::selector(layout, axis, p, || unreachable!("a native selector decodes without converting"))),
-            Some(v) => match v.view() {
-                Some(View::Booleans(_)) => {
-                    Some(rustymath_buffer::selection::array_selector(layout, axis, v.core_layout().clone(), std::sync::Arc::new(v.clone())))
-                }
-                _ => None,
-            },
+            Some(_) => None,
         }
     }, index_error).map(|(plan, atom)| IndexSelection::Planned(plan, atom))
 }
 
-/// The array whose compact items an export lends for `value`, with the offset of `value`'s first item in them and, for a structural copy read through an affine map, each axis's stride in items. A copy that hasn't been built lends its source's items this way. Otherwise `value` lends its own items where they're compact. `None` where neither applies.
-fn lendable(value: &Value) -> Option<(Value, usize, Option<Vec<isize>>)> {
-    if let Some((source, offset, strides)) = value.affine().filter(|(source, ..)| source.view().is_some()) { return Some((source, offset, Some(strides))); }
-    value.view().map(|_| (value.clone(), 0, None))
+/// The array whose compact items an export lends for `value`, with the offset of `value`'s first item in them and, for a structural copy read through an affine map, each axis's stride in items. A copy that hasn't been built lends its source's items this way, and only the source is computed. Otherwise `value` lends its own items where they're compact. `None` where neither applies.
+fn lendable(py: Python<'_>, value: &Value) -> PyResult<Option<(Value, usize, Option<Vec<isize>>)>> {
+    if let Some((source, offset, strides)) = value.affine() {
+        forced(py, &source)?;
+        if source.view().is_some() { return Ok(Some((source, offset, Some(strides)))); }
+    }
+    forced(py, value)?;
+    Ok(value.view().map(|_| (value.clone(), 0, None)))
 }
 
 /// Items that `own` moved out of BPL, which NumPy views writably through `data`, their address, as `dtype`. NumPy can write any bytes into them, so Booleans are held as `u8` and characters as `i32`, which have no invalid values.
@@ -296,10 +329,10 @@ impl PyArray {
         Ok(value.clone().with_core_layout(layout).map_err(|k| PyValueError::new_err(k.to_string()))?.into())
     }
     fn __rustymath_array__(&self, py: Python<'_>) -> PyResult<(Py<PyAny>, Py<PyAny>, Vec<Option<String>>)> {
-        if !self.exports()? {
+        if !self.exports(py)? {
             return Err(PyTypeError::new_err("only ordinary compact values can cross to Rustymath; convert exact or mixed values explicitly"));
         }
-        let value = self.value()?;
+        let value = self.stored(py)?;
         let owner = match value.widened_for_export() {
             Some(items) => Owned::new(items, value.shape()).into_py_any(py)?, None => self.copy()?.into_py_any(py)?
         };
@@ -313,14 +346,14 @@ impl PyArray {
     fn parts(&self, py: Python<'_>) -> PyResult<Py<PyAny>> { array(py, self.value()?) }
     /// The items as nested lists of Python scalars, or one scalar at rank 0, read without NumPy. Only compact items convert.
     fn tolist<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let value = self.value()?;
+        let value = self.stored(py)?;
         let items = value.view().ok_or_else(|| PyTypeError::new_err("only compact items convert to a list"))?;
         rustymath_buffer::tolist(py, items, value.shape())
     }
     /// The string that an unkeyed, unnamed character vector holds, or `None`.
     #[getter]
-    fn text(&self) -> PyResult<Option<String>> {
-        let value = self.value()?;
+    fn text(&self, py: Python<'_>) -> PyResult<Option<String>> {
+        let value = self.stored(py)?;
         let plain = value.shape().len() == 1 && !value.has_keys() && value.axis_names().is_empty();
         Ok(match value.view() { Some(View::Characters(c)) if plain => Some(c.iter().collect()), _ => None })
     }
@@ -329,13 +362,13 @@ impl PyArray {
     fn text_content(&self) -> PyResult<Option<String>> { Ok(basedpl::keyed::name(self.value()?).map(|s| s.to_string())) }
     /// Whether NumPy can read the items through the buffer protocol: compact storage, or a structural copy that reads compact items through an affine map.
     #[getter]
-    fn exports(&self) -> PyResult<bool> { Ok(lendable(self.value()?).is_some()) }
+    fn exports(&self, py: Python<'_>) -> PyResult<bool> { Ok(lendable(py, self.value()?)?.is_some()) }
     #[getter]
     fn export_dtype(&self) -> PyResult<Option<&'static str>> { Ok(self.value()?.export_widening().map(|w| DType::Integer(w).name())) }
     /// Lends physical storage read-only. The public NumPy adapter selects the logical export dtype before applying the requested dtype and copy policy.
     unsafe fn __getbuffer__(slf: Bound<'_, Self>, view: *mut ffi::Py_buffer, flags: c_int) -> PyResult<()> {
         let value = slf.borrow().value()?.clone();
-        let (items, offset, strides) = lendable(&value).ok_or_else(|| PyBufferError::new_err("an array of mixed or exact items has no buffer"))?;
+        let (items, offset, strides) = lendable(slf.py(), &value)?.ok_or_else(|| PyBufferError::new_err("an array of mixed or exact items has no buffer"))?;
         let dtype = items.view().expect("lendable items are compact").dtype();
         // SAFETY: the offset and strides reach only items of `items`, as the copy's map does. An atom holds its items inline, so the pointer comes from the copy that the export holds.
         unsafe {
@@ -345,41 +378,48 @@ impl PyArray {
         }
     }
     /// The items for NumPy to view writably: moved with no copy where nothing else holds them, and copied otherwise. Integers that static kinds store narrower than their kind come widened to it (`Value::widened_for_export`). For items it can't move, such as exact numbers, it still empties the array and returns `None`, so the caller copies them first.
-    fn own(&mut self) -> PyResult<Option<Owned>> {
-        self.value()?;
+    fn own(&mut self, py: Python<'_>) -> PyResult<Option<Owned>> {
+        self.stored(py)?;
         let value = self.inner.take().expect("checked above");
         let shape = value.shape().to_vec();
         let items = match value.widened_for_export() { Some(items) => Some(items), None => value.into_buffer().ok() };
         Ok(items.map(|items| Owned::new(items, &shape)))
     }
     fn __repr__(&self) -> PyResult<String> { Ok(self.value()?.to_string()) }
-    fn literal(&self) -> PyResult<String> { Ok(self.value()?.literal()) }
-    fn native_atom(&self) -> PyResult<Self> {
-        let value = self.value()?;
+    fn literal(&self, py: Python<'_>) -> PyResult<String> { Ok(self.stored(py)?.literal()) }
+    fn native_atom(&self, py: Python<'_>) -> PyResult<Self> {
+        let value = self.stored(py)?;
         if !value.is_singleton() { return Err(PyValueError::new_err("conversion requires a singleton array")); }
         let item = value.at(0);
         if matches!(item, Value::Array(_)) { return Err(PyTypeError::new_err("conversion requires an atom")); }
         Ok(item.into())
     }
-    fn atom(&self, py: Python<'_>) -> PyResult<Py<PyAny>> { array(py, self.native_atom()?.value()?) }
-    fn cells(&self) -> PyResult<Vec<Self>> {
-        let value = self.value()?;
+    fn atom(&self, py: Python<'_>) -> PyResult<Py<PyAny>> { array(py, self.native_atom(py)?.value()?) }
+    fn cells(&self, py: Python<'_>) -> PyResult<Vec<Self>> {
+        let value = self.stored(py)?;
         if value.shape().is_empty() { return Err(PyTypeError::new_err("a unit has no major cells")); }
         let cells = value.major_cells().map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(cells.into_iter().map(Self::from).collect())
     }
     fn select(&self, py: Python<'_>, index: &Bound<'_, PyAny>, convert: &Bound<'_, PyAny>) -> PyResult<Py<PyDict>> {
-        let (value, selection) = (self.value()?.clone(), selection(self.value()?, index, convert)?);
+        let (value, selection) = (self.stored(py)?.clone(), selection(self.value()?, decoded(index, convert)?, convert)?);
         let value = py.detach(move || {
             let _turn = Session::current();
             match selection { IndexSelection::Planned(plan, atom) => value.selected(plan, atom), IndexSelection::Rich(parts) => value.select(&parts) }
         }).map_err(index_error)?;
         let mut result = Evaluation::default();
-        match value { Value::Function(f) => result.function = Some(f), a => result.value = Some(a) }
+        result.value = Some(value);
         response(py, result)
     }
     fn assign(&self, py: Python<'_>, index: &Bound<'_, PyAny>, values: PyRef<'_, PyArray>, convert: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let (value, values, selection) = (self.value()?.clone(), values.value()?.clone(), selection(self.value()?, index, convert)?);
+        let (value, values, Decoded { parts, values: written }) = (self.stored(py)?.clone(), values.stored(py)?.clone(), decoded(index, convert)?);
+        // A write adds the keys that it names and the value lacks before it plans, as BPL's assignment does.
+        let native: Vec<_> = parts.iter().map(|p| p.axis().and_then(rustymath_buffer::selection::key_names).unwrap_or_default()).collect();
+        let (value, written) = py.detach(move || {
+            let _turn = Session::current();
+            value.with_missing_keys(&written, |i| native[i].clone()).map(|value| (value, written))
+        }).map_err(index_error)?;
+        let selection = selection(&value, Decoded { parts, values: written }, convert)?;
         py.detach(move || {
             let _turn = Session::current();
             match selection {
@@ -389,7 +429,7 @@ impl PyArray {
     }
     /// Whether this array holds `query`, a native array or a `str`. A one-character string is an atom. A longer one is one item where the major cells are items, as a list of strings holds them, and otherwise a character vector, which matches a row of characters.
     fn contains(&self, py: Python<'_>, query: &Bound<'_, PyAny>) -> PyResult<bool> {
-        let value = self.value()?.clone();
+        let value = self.stored(py)?.clone();
         let query = match query.cast::<PyString>() {
             Ok(s) => match text(s, &mut Texts::default())? {
                 chars @ Value::Array(_) if value.shape().len() == 1 => {
@@ -397,7 +437,7 @@ impl PyArray {
                 }
                 item => item,
             },
-            Err(_) => query.extract::<PyRef<'_, PyArray>>()?.value()?.clone(),
+            Err(_) => query.extract::<PyRef<'_, PyArray>>()?.stored(py)?.clone(),
         };
         py.detach(move || {
             let _turn = Session::current();
@@ -632,7 +672,13 @@ fn python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
 
 /// A result as the dict that the JSON protocol sends, holding native arrays and functions.
 fn response(py: Python<'_>, result: Evaluation) -> PyResult<Py<PyDict>> {
-    let value = if let Some(inner) = result.value { Some(Py::new(py, PyArray::from(inner))?.into_any()) }
+    let value = if let Some(inner) = result.value {
+        Some(match inner {
+            Value::Function(inner) => Py::new(py, PyFunction { inner })?.into_any(),
+            Value::Operator(inner) => Py::new(py, PyOperator { inner })?.into_any(),
+            inner => Py::new(py, PyArray::from(inner))?.into_any(),
+        })
+    }
     else if let Some(inner) = result.function { Some(Py::new(py, PyFunction { inner })?.into_any()) }
     else if let Some(inner) = result.operator { Some(Py::new(py, PyOperator { inner })?.into_any()) }
     else { None };

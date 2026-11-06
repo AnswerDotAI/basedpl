@@ -21,7 +21,6 @@ pub(crate) enum Call {
     /// A native called for its effect.
     Effect(Effect),
     Session(fn(&crate::Session, Option<&Value>, &Value, &crate::Span) -> Result<Value, Error>),
-    Regex(std::sync::Arc<crate::host::Regex>, crate::regex::Operation),
     Distribution(std::sync::Arc<crate::distribution::Distribution>, crate::distribution::Operation),
     Generator(crate::distribution::Generator, crate::distribution::Draw),
     Load,
@@ -54,7 +53,6 @@ pub(crate) struct SystemFunction {
 impl PartialEq for SystemFunction {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name && match (&self.call, &other.call) {
-            (Call::Regex(x, a), Call::Regex(y, b)) => (x.as_str(), a) == (y.as_str(), b),
             (Call::Distribution(x, a), Call::Distribution(y, b)) => (x, a) == (y, b),
             (Call::Generator(x, a), Call::Generator(y, b)) => std::sync::Arc::ptr_eq(x, y) && a == b, (Call::Element(x), Call::Element(y)) => x == y,
             (Call::Edge(x), Call::Edge(y)) => x == y, (Call::Canvas(x), Call::Canvas(y)) => x == y, #[cfg(web)]
@@ -132,7 +130,8 @@ const BUILTINS: &[SystemFunction] = &[
     row("•canvas", Call::Value(crate::canvas::factory), Monadic, Items(Text), Some(canvas), None), #[cfg(web)]
     row("•js", Call::Value(crate::js::function), Monadic, Items(Text), Some(crate::js::prototype), None),
     row("•vfi", Call::Value(crate::data::vfi), Ambivalent, Items(Text), Some(valid_numbers), None),
-    row("•r", Call::Value(crate::regex::compile), Monadic, Items(Text), Some(record), None),
+    row("•r", Call::Value(crate::regex::matches), Dyadic, Whole, Some(record), None),
+    row("•replace", Call::Value(crate::regex::replace), Dyadic, Whole, Some(text), None),
     row("•distribution", Call::Value(crate::distribution::distribution), Ambivalent, Items(Text), Some(record), None),
     row("•special", Call::Value(crate::primitive::special), Monadic, Items(Text), Some(special), None),
     row("•rand", Call::Value(crate::distribution::generator), Monadic, Whole, Some(record), None),
@@ -290,13 +289,13 @@ fn storage(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     crate::keyed::vector(["kind", "pending", "view", "active"].map(Into::into).to_vec(), values).described("invalid storage record")
 }
 
-/// `•memory x`: what this thread holds, and what `x` keeps alive, as a record. `records` counts the live record nodes of `∂`, which each `∂` frees when it returns, and `pending` the live pending arrays. Each counts the nodes this thread made, wherever they are dropped. `bytes` counts the allocations that `x` keeps alive (`Value::footprint`). It reads no items and never forces a pending array. It takes active values under `∂`.
+/// `•memory x`: what this thread holds, and what `x` keeps alive, as a record. `pending` counts the live pending arrays that this thread made, wherever they are dropped. `bytes` counts the allocations that `x` keeps alive (`Value::footprint`). It reads no items and never forces a pending array. It takes active values under `∂`.
 fn memory(_: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
     // A batched run keeps alive what a run cell by cell doesn't.
     crate::transform::acts()?;
-    use crate::explain::{Counted, live};
-    let counts = [live(Counted::Record), live(Counted::Pending), right.footprint()].map(|n| Value::integer(n as i64)).to_vec();
-    crate::keyed::vector(["records", "pending", "bytes"].map(Into::into).to_vec(), counts).described("invalid memory record")
+    use crate::explain::live;
+    let counts = [live(), right.footprint()].map(|n| Value::integer(n as i64)).to_vec();
+    crate::keyed::vector(["pending", "bytes"].map(Into::into).to_vec(), counts).described("invalid memory record")
 }
 
 /// `•detach Y`: `Y` with every `∂` tag stripped. No derivative flows back through the result. Outside `∂`, it gives `Y`.

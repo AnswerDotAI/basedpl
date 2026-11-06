@@ -157,7 +157,7 @@ impl Observed {
     fn of(events: &crate::explain::Events) -> Self { Self { slow: events.slow(), report: events.observed().clone() } }
     /// Whether this run recorded `route` as an event of `kind`: "taken", "declined" or "itemwise". An itemwise route appears in `slow`, as `•explain`'s own rows hold it.
     pub fn exercised(&self, kind: &str, route: rustymath::events::Route) -> bool {
-        self.report.records.iter().any(|e| e.kind.name() == kind && e.route == route)
+        self.report.records.iter().filter_map(rustymath::events::Event::route).any(|r| r.kind.name() == kind && r.route == route)
             || self.slow.iter().any(|(record, event, _)| *record == kind && event == route.name())
     }
 }
@@ -171,7 +171,7 @@ impl Capture {
         let mut wrong = Vec::new();
         for required in &self.named.routes {
             use rustymath::events::EventKind::{Declined, Taken};
-            let records = self.run.report.records.iter();
+            let records = self.run.report.records.iter().filter_map(rustymath::events::Event::route);
             if !records.clone().any(|r| r.kind == Taken && r.route.name() == required.as_str()) {
                 let declines: Vec<_> = records.filter(|r| r.kind == Declined).map(|r| format!("{}: {}", r.route.name(), r.reason)).collect();
                 wrong.push(if declines.is_empty() { format!("required route {required} was not taken") }
@@ -190,24 +190,41 @@ impl Capture {
     }
 }
 
-/// Warm one case, then capture a forced evaluation in the same session.
-pub fn route(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -> Result<Capture, String> {
-    let code = case["code"].as_str().unwrap();
-    let parsed = session.parse(Source::new("<input>", code)).complete().map_err(|e| failure(code, Evaluation::failed(e)))?;
+/// `code` parsed once and run twice in `session`, each run as `•explain` runs its text, with its value forced: a warm-up, then the run that a route check reads. Gives that run's evaluation and events and the warm-up's events, or the evaluation that failed. The route test (`route`) and the worker's `route` request (`route_request`) both capture through it.
+fn warmed(session: &Session, code: &str, timeout: Option<std::time::Duration>, interrupt: &InterruptHandle) -> Result<(Evaluation, crate::explain::Events, crate::explain::Events), Evaluation> {
+    let parsed = session.parse(Source::new("<input>", code)).complete().map_err(Evaluation::failed)?;
     let run = || {
-        let evaluation = session.eval_parsed(&parsed, EvalOptions { echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
+        let evaluation = session.eval_parsed(&parsed, EvalOptions { timeout, echo: false, interrupt: interrupt.clone(), ..EvalOptions::default() });
         if let Some(value) = &evaluation.value { value.force(); }
         evaluation
     };
     let (warm, warmup) = crate::explain::explained(run);
-    if warm.error.is_some() { return Err(failure(code, warm)); }
+    if warm.error.is_some() { return Err(warm); }
     let (evaluation, events) = crate::explain::explained(run);
-    if evaluation.error.is_some() { return Err(failure(code, evaluation)); }
+    if evaluation.error.is_some() { return Err(evaluation); }
+    Ok((evaluation, events, warmup))
+}
+
+/// Warm one case, then capture a forced evaluation in the same session (`warmed`).
+pub fn route(session: &Session, case: &JsonValue, interrupt: &InterruptHandle) -> Result<Capture, String> {
+    let code = case["code"].as_str().unwrap();
+    let (_, events, warmup) = warmed(session, code, Some(reference::TIMEOUT), interrupt).map_err(|failed| failure(code, failed))?;
     let named = |key: &str| case[key].as_array().into_iter().flatten().map(|v| (v[0].as_str().unwrap().into(), v[1].as_str().unwrap().into())).collect();
     Ok(Capture { file: String::new(), section: case["section"].as_str().unwrap_or_default().into(), code: code.into(),
         label: case["id"].as_str().unwrap_or(code).into(), run: Observed::of(&events), warmup: Observed::of(&warmup), named: Named {
             routes: case["route"].as_array().into_iter().flatten().map(|s| s.as_str().unwrap().into()).collect(), allowed: named("allows"), gaps: named("gap") }
     })
+}
+
+/// The worker's `route` request: the `•explain` record of the run of `spec`'s `code` that a route check reads (`warmed`), in a fresh session that runs `prefs` and `setup` first (`session`). `bpltests.explained` reads it.
+pub fn route_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<JsonValue, String> {
+    let text = |key| spec[key].as_str().ok_or_else(|| format!("route needs {key} as a string"));
+    let code = text("code")?;
+    let session = match session(text("prefs")?, text("setup")?) { Ok(session) => session, Err(failed) => return Ok(response(failed)) };
+    let (mut evaluation, events, _) = match warmed(&session, code, None, interrupt) { Ok(runs) => runs, Err(failed) => return Ok(response(failed)) };
+    let value = evaluation.value.take().ok_or("route needs code that gives a value")?;
+    evaluation.value = Some(events.report(value, &crate::Span::whole(Source::new("<input>", code))).map_err(|error| error.to_string())?);
+    Ok(response(evaluation))
 }
 
 /// Capture every timed case outside its timed loop, with its ordinary setup and size.

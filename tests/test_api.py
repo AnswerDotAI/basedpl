@@ -207,20 +207,23 @@ def test_array_surface():
     np.testing.assert_array_equal(10 - a, [[9, 8, 7], [6, 5, 4]])
     np.testing.assert_array_equal(a[1, :], [4, 5, 6])
     np.testing.assert_array_equal(a[:, [0, 2]], [[1, 3], [4, 6]])
-    np.testing.assert_array_equal(a[:, a[0] > 1], [[2, 3], [5, 6]])
-    np.testing.assert_array_equal(a[[True, True], np.array([False, True, True])], [2, 6])
-    assert a[:, [False, False, False]].shape == (2, 0)
+    np.testing.assert_array_equal(a[:, a[0] > 1], [[1, 2, 2], [4, 5, 5]])
+    np.testing.assert_array_equal(a[[False, True], np.array([True, False])], [2, 4])
+    np.testing.assert_array_equal(a[:, [False, False, False]], [[1, 1, 1], [4, 4, 4]])
     np.testing.assert_array_equal(a[:, [0, 1, 1]], [[1, 2, 2], [4, 5, 5]])
-    for mask in ([True], [[True, False, True]], True, Array(True), np.bool_(True), np.array([], dtype=bool)):
-        with pytest.raises(IndexError, match='Boolean selector'): a[:, mask]
+    np.testing.assert_array_equal(a[:, True], [2, 5])
     np.testing.assert_array_equal(bpl('[mask]⌷v', mask=[False, True, True], v=[10, 20, 30]), [10, 20, 20])
     np.testing.assert_array_equal(list(a)[0], [1, 2, 3])
     with pytest.raises(IndexError): a[2, 0]
-    with pytest.raises(IndexError, match='outside'): a[:, np.array([0, 3])]
+    np.testing.assert_array_equal(a[:, np.array([0, 3])], [[1, 0], [4, 0]])
     k = bpl('["aa":1 "bb":2]')
     np.testing.assert_array_equal(k[Array(['bb', 'aa'])], [2, 1])
-    for key in ('zz', ['aa', 'zz'], Array(['aa', 'zz'])):
-        with pytest.raises(KeyError): k[key]
+    assert k['zz'] == 0
+    for key in (['aa', 'zz'], Array(['aa', 'zz'])): assert k[key].py == {'aa': 1, 1: 0}
+    for key, want in (('zz', dict(aa=1, bb=2, zz=3)), (['aa', 'zz'], dict(aa=3, bb=2, zz=3)), (Array(['aa', 'zz']), dict(aa=3, bb=2, zz=3))):
+        written = bpl('["aa":1 "bb":2]')
+        written[key] = 3
+        assert written.py == want
     nested, paths = bpl('[2 3⍴⍳6ₓ;2 2⍴⍳4ₓ]'), bpl('[[0 1] [1 0]]')
     np.testing.assert_array_equal(nested[paths, 0], [3, 0])
     with pytest.raises(TypeError, match='partial slices'): nested[paths, 1:]
@@ -275,8 +278,8 @@ def test_python_array_value_semantics():
     expanded = held[None, ...]
     assert expanded.keys == (None, ('a', 'b'), None) and expanded.names == (None, 'row', 'col')
     for inf in (-np.inf, np.inf):
-        with pytest.raises(ValueError): held[:, inf]
-        with pytest.raises(ValueError): held[bpl('[[0] [1]]'), inf]
+        teq(held[:, inf].np, [0, 0])
+        teq(held[bpl('[[0] [1]]'), inf].np, [0, 0])
     nested = bpl('[[1 2 3⋄4 5 6] [7 8 9⋄10 11 12]]')
     paths = bpl('[[0 1] [1 0]]')
     rows = np.array([[4, 5, 6], [7, 8, 9]])
@@ -351,8 +354,8 @@ def test_keyed_arrays():
     collision = Array(shape=7)
     assert collision.shape == (1,) and collision['shape'].py == 7
     with pytest.raises(AttributeError): k.missing
-    with pytest.raises(KeyError): k['missing']
-    with pytest.raises(ValueError): k[['qty', 'qty']]
+    assert k['missing'].py == 0
+    assert k[['qty', 'qty']].keys == (None,)
 
 def test_keys_dataframe():
     import pandas as pd

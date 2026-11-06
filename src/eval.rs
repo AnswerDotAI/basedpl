@@ -210,14 +210,15 @@ fn system_name(name: &str, notation: Notation) -> String {
     name.strip_prefix('•').map_or_else(|| name.into(), |name| format!("{}{name}", notation.glyph("•")))
 }
 
-/// The name of `f.g`, where `f` and `g` are primitives.
-pub(crate) fn product(f: &Function, g: &Function) -> Option<Operation> { Some(Operation::Product(f.as_primitive()?, g.as_primitive()?)) }
+/// The name of `f.g`, where `f` and `g` are primitives or dfns admitted as primitives.
+pub(crate) fn product(f: &Function, g: &Function) -> Option<Operation> { Some(Operation::Product(f.dyadic_primitive()?, g.dyadic_primitive()?)) }
 
 impl FunctionNode {
-    /// The operation this node names: a primitive, a fold or scan by a primitive, or an inner product of two primitives.
+    /// The operation this node names: a primitive, a dfn admitted as one (`Definition::admitted`), a fold or scan by one, or an inner product of two. Computation asks this; display and syntax ask `as_primitive`.
     fn operation(&self) -> Option<Operation> {
         match self {
             Self::Primitive(p) => Some(Operation::Primitive(*p)), Self::Fold(f, kind) => Some(Operation::Fold(f.dyadic_primitive()?, *kind)),
+            Self::Defined(c) => c.definition.admitted().map(Operation::Primitive),
             Self::Composed(OperatorKind::Product, [Operand::Function(f), Operand::Function(g)]) => product(f, g), _ => None
         }
     }
@@ -253,7 +254,7 @@ impl FunctionNode {
 }
 
 impl Builtin {
-    /// This built-in function's `Function`, from one table that every session and thread shares. The table is built on the first read. It holds each system function, each primitive that `Primitive::all` lists, and the primitives without a glyph: `Bracket`, the `Exact` functions that `xₓ` and `xᵣy` call, and the functions that `•special` makes. `Arc`, the form that `○⁻¹` calls, and `ᵇ`'s tables never become functions. A fast combination's function (`Special`) has no entry, and becomes a function of its own on each read.
+    /// This built-in function's `Function`, from one table that every session and thread shares. The table is built on the first read. It holds each system function, each primitive that `Primitive::all` lists, and the primitives without a glyph: `Bracket`, the `Exact` functions that `ₓ` after a primitive calls, and the functions that `•special` makes. `Arc`, the form that `○⁻¹` calls, and `ᵇ`'s tables never become functions. A fast combination's function (`Special`) has no entry, and becomes a function of its own on each read.
     pub(crate) fn function(self) -> Function {
         static TABLE: std::sync::LazyLock<HashMap<Builtin, Function>> = std::sync::LazyLock::new(|| {
             let primitives = Primitive::all().chain([Primitive::Bracket]).chain(crate::primitive::Exact::ALL.map(Primitive::Exact))
@@ -271,11 +272,16 @@ impl Function {
     fn node(&self) -> &FunctionNode { &self.node.kind }
     /// The primitive this function is, where it is one.
     pub(crate) fn as_primitive(&self) -> Option<Primitive> { match self.node() { FunctionNode::Primitive(p) => Some(*p), _ => None } }
-    /// The primitive this function is when called with two arguments: its own primitive, or for `gᵇ`, `Primitive::Bitwise` of `g`'s truth table, where `g`'s Boolean kernel gives one (`pervasive::truth_table`). A dyadic call of `gᵇ`, and folds and scans, which call their operand with two arguments, use it to run `gᵇ` through the kernels. A monadic `gᵇ` reads `g`'s monadic form, which this table doesn't describe.
+    /// The primitive this function is when called with two arguments: its own primitive, a dfn's admitted primitive (`Definition::admitted`), a marked primitive's own function (`Primitive::marked`), as `*ₐ` is `Real::Pow`, `p⁻¹`'s primitive where it has one (`Primitive::left_inverse`), as `○⁻¹` is `Math::Arc`, or for `gᵇ`, `Primitive::Bitwise` of `g`'s truth table, where `g`'s Boolean kernel gives one (`pervasive::truth_table`). A dyadic call of `gᵇ`, and folds and scans, which call their operand with two arguments, use it to run `gᵇ` through the kernels. A monadic `gᵇ` reads `g`'s monadic form, which this table doesn't describe.
     pub(crate) fn dyadic_primitive(&self) -> Option<Primitive> {
         match self.node() {
             FunctionNode::Primitive(p) => Some(*p),
+            FunctionNode::Defined(c) => c.definition.admitted(),
             FunctionNode::Modified(OperatorKind::Bitwise, Operand::Function(g)) => crate::pervasive::truth_table(g.dyadic_primitive()?).map(Primitive::Bitwise),
+            FunctionNode::Modified(OperatorKind::Super(Superscript::Mark(mark)), Operand::Function(f)) => match f.dyadic_primitive()?.marked(*mark, true)? {
+                crate::primitive::Marked::Primitive(p) => Some(p), crate::primitive::Marked::Arguments(_) => None,
+            },
+            FunctionNode::Inverse(g) => g.dyadic_primitive()?.left_inverse(),
             _ => None,
         }
     }
@@ -454,7 +460,8 @@ impl Function {
         let needs = if let FunctionNode::Primitive(p) = &kind { rewrite::glyph(*p) } else { 0 };
         Self { node: Arc::new(FunctionData { kind, environment: None, late: false, rewritten: [None, None], needs, owns: false }) }
     }
-    fn new(node: FunctionNode, span: &Span) -> Result<Self, Error> {
+    /// The function of `node`, with its operands checked and what they give it, and no rewrite. `rewrite::original` builds the function that a combination replaces this way, so a call of it doesn't come back to the combination.
+    fn unrewritten(node: FunctionNode, span: &Span) -> Result<Self, Error> {
         use OperatorKind::*;
         let node = match node {
             FunctionNode::Modified(op, a) => {
@@ -495,7 +502,7 @@ impl Function {
                         Value::Function(f) => Ok(Value::Function(f)), a => Function::constant(a, span).map(Value::Function)
                     }).collect::<Result<Vec<_>, _>>()?;
                     // A selector for each cell meets the argument only when the function runs.
-                    if let Operand::Value(index) = &a { if index.is_unit() { agenda_index(index, options.len()).at(span)?; } }
+                    if let Operand::Value(index) = &a { if index.is_unit() { agenda_index(index, options.len(), span).at(span)?; } }
                     b = Operand::Value(Value::new(vec![options.len()], options).described("invalid agenda options").at(span)?);
                 }
                 match (op, a, b) {
@@ -515,7 +522,11 @@ impl Function {
             FunctionNode::Fork(fns) => fns.iter().any(Function::owns), _ => false
         };
         let needs = rewrite::built_from(&node);
-        let mut f = Self { node: Arc::new(FunctionData { kind: node, environment, late, rewritten: [None, None], needs, owns }) };
+        Ok(Self { node: Arc::new(FunctionData { kind: node, environment, late, rewritten: [None, None], needs, owns }) })
+    }
+    /// `unrewritten`, with the functions that compute its calls through a fast combination (`rewrite::function`).
+    fn new(node: FunctionNode, span: &Span) -> Result<Self, Error> {
+        let mut f = Self::unrewritten(node, span)?;
         let rewritten = rewrite::function(&f, span);
         if rewritten.iter().any(Option::is_some) && let Some(data) = Arc::get_mut(&mut f.node) { data.rewritten = rewritten; }
         Ok(f)
@@ -547,8 +558,7 @@ impl Function {
     /// A call of the primitive `p`: on numbers, a form that applies a kernel to each pair of items runs it at once (`Primitive::scalar_call`), and any other call goes through `dispatch`.
     #[inline(never)]
     fn call_primitive(&self, p: Primitive, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> {
-        let scalar = if session().transforming() { None } else { p.scalar_call(left, right) };
-        scalar.map_or_else(|| self.dispatch(left, right, span), |result| result.map(Bound::from)).map_err(|e| e.at(span))
+        p.scalar_call(left, right).map_or_else(|| self.dispatch(left, right, span), |result| result.map(Bound::from)).map_err(|e| e.at(span))
     }
     /// `dispatch` under `•prefs ["fusion":$t]` or `•explain`. Where no call inside it reported, it reports the items of pending arrays that this call computed, with the function and its position. Under the `fusion` pref it also reports each argument that `∂` carries, a dual or a traced value, whose items the call read one by one (`derivative`), keeping that argument's carrier through the call to see. It keeps nothing else, so the call holds its arguments as an unreported call does: a kept argument would keep the arrays it holds alive, which changes the routes that ask whether something else holds an array (`Value::folded`). It claims the routes that ran item by item inside it and that no call inside it claimed (`explain::claim_itemwise`). `watched` makes each report. Out of line, so that `call` pays one branch.
     #[cold]
@@ -573,28 +583,25 @@ impl Function {
     // Inlined into `dispatch`, this would put a second copy of `call` and `dispatch` in the stack frame of every BPL call.
     #[inline(never)]
     fn ruled(&self, left: Option<&Value>, right: &Value, span: &Span) -> Result<Bound, Error> { self.call(left, right, span) }
-    /// `traced` run, from a program, on this function, or on one with its data replaced (`program::tacit`), and these arguments, or `None` where no program takes the call and the interpreter runs it. `∂` asks first (`derivative::differentiate`). A dfn keeps its programs on its definition, which every call of its text shares. Any other function's programs are kept by its structure (`program::Tacit`).
+    /// `traced` run, from a program, on this function, or on one with its data replaced (`trace::tacit`), and these arguments, or `None` where no program takes the call and the interpreter runs it. `∂` asks first (`derivative::differentiate`). A dfn keeps its programs on its definition, which every call of its text shares. Any other function's programs are kept by its structure (`trace::Tacit`).
     pub(crate) fn programmed(
         &self, left: Option<&Value>, right: &Value, span: &Span, traced: &dyn Fn(&Function, Option<&Value>, &Value) -> Result<Value, Error>
     ) -> Option<Result<Value, Error>> {
         match self.node() {
             FunctionNode::Defined(closure) => {
-                crate::program::call(closure.definition.programs(), closure.environment, left, right, span, &[], &|_, x, y| traced(self, x, y))
+                crate::program::trace::programmed(closure.definition.programs(), closure.environment, left, right, span, &[], &|_, x, y| traced(self, x, y))
             }
-            _ => crate::program::tacit(self, left, right, span, traced),
+            _ => crate::program::trace::tacit(self, left, right, span, traced),
         }
     }
-    /// Calls the function that computes this call through a fast combination, where the form rewriter gave one (`rewrite`) and no running level carries an argument. Otherwise it sends compositions, forks and dfns straight to their handlers, with the arguments as the caller gave them, and other functions to `apply`.
+    /// Calls the function as a running level takes it, where one carries an argument (`transform::call`). Otherwise it calls the function that computes this call through a fast combination, where the form rewriter gave one (`rewrite`), or sends compositions, forks and dfns straight to their handlers, with the arguments as the caller gave them, and other functions to `apply`.
     #[inline(always)]
     fn dispatch<L: Argument, R: Argument>(&self, left: Option<L>, right: R, span: &Span) -> Result<Bound, Error> {
         let resolved;
         let f = if self.late() { resolved = self.resolve(session(), &mut HashMap::new(), 0)?; &resolved } else { self };
         let (x, y) = (left.as_ref().map(L::value), right.value());
-        if session().transforming() {
-            if let Some(result) = f.op(x).and_then(|op| crate::transform::call(op, x, y, span)) { return result.map(Bound::from); }
-        } else if let Some(rewritten) = &f.node.rewritten[usize::from(x.is_some())] {
-            return Self::through(rewritten, left, right, span);
-        }
+        if let Some(result) = f.op(x).and_then(|op| crate::transform::call(op, x, y, span)) { return result.map(Bound::from); }
+        if let Some(rewritten) = &f.node.rewritten[usize::from(x.is_some())] { return Self::through(rewritten, left, right, span); }
         match f.node() {
             FunctionNode::Composed(..) if f.owns() => composition(f, left, right, span),
             FunctionNode::Composed(..) => composition(f, x, y, span),
@@ -681,7 +688,7 @@ impl Function {
     pub(crate) fn with_data(&self, values: &mut dyn Iterator<Item = Value>, span: &Span) -> Result<Self, Error> {
         self.rebuilt(&mut Data(&mut |_| values.next().expect("a value for each datum"), span))
     }
-    /// The structure that `program::Tacit` keeps this function's programs by: the function with a placeholder (`placeholder`) for each datum that a program takes as an input. The data go in `data`, in the order that `with_data` replaces them. An error in it points at `span`, the call that needs it.
+    /// The structure that `trace::Tacit` keeps this function's programs by: the function with a placeholder (`placeholder`) for each datum that a program takes as an input. The data go in `data`, in the order that `with_data` replaces them. An error in it points at `span`, the call that needs it.
     pub(crate) fn structure(&self, data: &mut Vec<Value>, span: &Span) -> Result<Self, Error> {
         self.rebuilt(&mut Data(&mut |a| { data.push(a.clone()); Value::Number(placeholder()) }, span))
     }
@@ -741,7 +748,6 @@ impl Function {
                     crate::system::Call::Session(call) => call(session(), left, right, span),
                     crate::system::Call::Prefs => return crate::display::prefs(session(), right).map(|(value, shy)| Bound { shy, ..Bound::from(value) }),
                     crate::system::Call::Time => session().system_time(left, right, span),
-                    crate::system::Call::Regex(regex, operation) => crate::regex::call(regex, *operation, left, right),
                     crate::system::Call::Distribution(d, operation) => crate::distribution::call(d, *operation, left, right, span),
                     crate::system::Call::Generator(g, _) => crate::primitive::drawn_value(Some(g), left, right, span),
                     crate::system::Call::Load => return session().load(right, span),
@@ -986,6 +992,15 @@ impl Binding {
     fn from_element(element: Value) -> Self {
         match element { Value::Function(f) => Self::Function(f), Value::Operator(op) => Self::operator(op), _ => Self::Value(element) }
     }
+    /// This binding as a name stores it: a function or operator atom, which a call gives as an array (`Bound::given`), as the function or operator it holds, so the name reads as one. Under static kinds a weak number is stored strong: a name keeps its declared kind, not a literal's minimum width.
+    #[inline]
+    fn stored(self) -> Self {
+        match self {
+            Self::Value(a @ (Value::Function(_) | Value::Operator(_))) => Self::from_element(a),
+            Self::Value(n @ Value::Number(_)) if crate::number::Numeric::current().is_static() => Self::Value(n.strong()),
+            value => value,
+        }
+    }
     /// An operator element as a binding, out of line so that `from_element` stays small enough to inline.
     #[cold]
     fn operator(op: Operator) -> Self { Self::Operator(Arc::unwrap_or_clone(op.0)) }
@@ -1005,7 +1020,8 @@ impl Binding {
         }
     }
 }
-struct Bound { value: Binding, shy: bool, expression: Option<Box<Expression>> }
+/// A value, with whether it displays, the expression it captured, and the category it binds with where that isn't its value's own (`Bound::category`).
+struct Bound { value: Binding, shy: bool, expression: Option<Box<Expression>>, category: Option<Category> }
 struct Application { function: Function, left: Option<Value>, right: Value, span: Span, unshy: bool, expression: Option<Box<Expression>> }
 enum Step { Done(Bound), Tail(Application) }
 
@@ -1016,7 +1032,16 @@ impl From<Value> for Bound {
 }
 impl Bound {
     #[inline]
-    fn new(value: Binding) -> Self { Self { value, shy: false, expression: None } }
+    fn new(value: Binding) -> Self { Self { value, shy: false, expression: None, category: None } }
+    /// This value as a call's result, a subscript's selection or a scope's result gives it: an array even where it holds a function, so `+/÷(f 0)` is an expression and `(f 0) 3` a strand. A function becomes a function atom. A function that a name holds, or that `⍚` selects, is called.
+    fn given(self) -> Self {
+        let value = match self.value { Binding::Function(f) => Binding::Value(Value::Function(f)), value => value };
+        let category = matches!(value, Binding::Value(_)).then_some(Category::Value);
+        Self { value, category, ..self }
+    }
+    /// The category the value binds with: the one it was given, which a group keeps from its entity, or else its value's own (`Category::bound`).
+    #[inline]
+    fn category(&self) -> Category { self.category.unwrap_or_else(|| Category::bound(&self.value)) }
     #[inline]
     fn array(self, span: &Span) -> Result<Value, Error> { self.value.into_value(span) }
     fn result(self, span: &Span) -> Result<Self, Error> {
@@ -1063,8 +1088,8 @@ pub struct Session {
     pub(crate) drawn: crate::distribution::Drawn,
     /// The program's command-line arguments.
     pub(crate) args: std::cell::RefCell<Vec<String>>,
-    /// The programs that `∂` builds for functions other than dfns, kept by the functions' structure (`program::tacit`).
-    pub(crate) tacit: crate::program::Tacit,
+    /// The programs that `∂` builds for functions other than dfns, kept by the functions' structure (`trace::tacit`).
+    pub(crate) tacit: crate::program::trace::Tacit,
 }
 
 /// The process's one session, and its turns. A thread takes a turn to use the session, and another thread that wants a turn waits until it ends. `holder` is the thread with the turn and how many turns it holds.

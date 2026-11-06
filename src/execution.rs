@@ -70,6 +70,13 @@ fn stops() -> MutexGuard<'static, Option<Stops>> { STOPS.lock().unwrap_or_else(P
 /// Checks left before [`check`] next reads the clock. Each evaluation starts it at zero, so an interrupt set before the evaluation stops it at the first check. Relaxed loads and stores are enough: a check on another thread at the same time, such as Python's `in` makes without a turn, only moves the next clock read.
 static COUNTDOWN: AtomicU32 = AtomicU32::new(0);
 
+/// Forces of pending arrays running now, on any thread. A force can't fail, so [`stopped`] holds off while one runs: a deadline or interrupt that comes due mid-force stops the evaluation at the first check after it.
+static FORCING: AtomicU32 = AtomicU32::new(0);
+/// Holds off the running evaluation's stops while it lives. `Value::storage`'s force takes it; `Value::forced`, which can fail, doesn't.
+pub(crate) struct Forcing(());
+impl Drop for Forcing { fn drop(&mut self) { FORCING.fetch_sub(1, Ordering::Relaxed); } }
+pub(crate) fn forcing() -> Forcing { FORCING.fetch_add(1, Ordering::Relaxed); Forcing(()) }
+
 /// One evaluation's stops and output, in force until the guard drops. Dropping it restores the evaluation it ran inside, if any, as when a Python callback evaluates inside an evaluation.
 pub(crate) struct Running<'a> { execution: &'a Execution, outer: (Run, bool, u32, Option<Stops>) }
 impl Drop for Running<'_> {
@@ -84,6 +91,7 @@ impl Drop for Running<'_> {
 
 /// Why the running evaluation must stop: an interrupt, or a passed deadline. It first calls the poll, when `POLL_INTERVAL` has passed since the poll last ran, outside the lock. `Ok` when no evaluation runs. It's rustymath's interrupt check in this process, which its worker threads call too.
 fn stopped() -> Result<(), rustymath::error::Error> {
+    if FORCING.load(Ordering::Relaxed) > 0 { return Ok(()) }
     let now = Instant::now();
     let (interrupt, poll, late) = {
         let mut stops = stops();
@@ -102,6 +110,8 @@ fn stopped() -> Result<(), rustymath::error::Error> {
 
 /// Whether the running evaluation has been interrupted.
 fn interrupted() -> bool { stops().as_ref().is_some_and(|s| s.interrupt.is_set()) }
+/// Whether an evaluation runs, whose stops are in force.
+pub(crate) fn running() -> bool { stops().is_some() }
 
 /// Ends an interrupt that a guard caught, so that its handler runs. Another interrupt stops the handler.
 pub(crate) fn clear_interrupt() { if let Some(s) = &*stops() { s.interrupt.0.store(false, Ordering::Relaxed) } }

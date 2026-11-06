@@ -1,5 +1,4 @@
 use crate::execution::check;
-use crate::session;
 use crate::transform::Plain;
 use crate::{
     Described, Error, ErrorKind, Number, Span, Value, agreement::{Agree, Agreement},
@@ -13,7 +12,7 @@ use std::{borrow::Cow, cmp::Ordering};
 mod indexing;
 mod numeric;
 mod search;
-mod structural;
+pub(crate) mod structural;
 use search::*;
 pub(crate) use search::{matched_cells, ordered_cells, searched_cells};
 pub(crate) use {indexing::*, numeric::*, structural::*};
@@ -29,11 +28,11 @@ impl Operation {
     pub(crate) const PLUS_TIMES: Self = Self::Product(Primitive::Arithmetic(Arithmetic::Plus), Primitive::Arithmetic(Arithmetic::Times));
     /// `-.×`, whose monad is the determinant.
     pub(crate) const MINUS_TIMES: Self = Self::Product(Primitive::Arithmetic(Arithmetic::Minus), Primitive::Arithmetic(Arithmetic::Times));
-    /// Whether Rank's routes run the operation with this valence on a whole stack of matrices at once (`primitive::stacked`): `⌹`, monadic `-.×`, and dyadic `f.g` where rustymath has a product kernel for the pair (`pervasive::known_product`).
+    /// Whether Rank's routes run the operation with this valence on a whole stack of matrices at once (`primitive::stacked`): `⌹`, monadic `-.×`, and dyadic `f.g` of pervasive functions, which rustymath's `operation::product` runs on any pair.
     pub(crate) fn stacks(self, dyadic: bool) -> bool {
         match (self, dyadic) {
             (Self::Primitive(Primitive::MatrixDivide), _) | (Self::MINUS_TIMES, false) => true,
-            (Self::Product(f, g), true) => crate::pervasive::known_product(f, g, true).is_some(), _ => false
+            (Self::Product(f, g), true) => f.facts(true).pervasive() && g.facts(true).pervasive(), _ => false
         }
     }
     /// The operation on `left` and `right`, paired by `pairing`, as the newest running level among them takes it (`transform::call`), or else by its own code (`run`). `∂`'s rules and Rank's routes on whole arguments call folds, products and stacks of matrices through it. A primitive along an axis calls `Primitive::call_axis`, which routes the same way. Under `•prefs ["fusion":$t]` or `•explain`, a call that computed pending arrays, where no call inside it reported, reports them as a function call does (`eval::watched`), named by the operation's glyphs (`glyph`).
@@ -45,9 +44,7 @@ impl Operation {
     }
     /// The call as the newest running level takes it, or else by the operation's own code.
     fn routed(self, pairing: crate::transform::Pairing<'_>, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-        if session().transforming() {
-            if let Some(result) = crate::transform::call(crate::transform::Op::Operation(self, pairing), left, right, span) { return result; }
-        }
+        if let Some(result) = crate::transform::call(crate::transform::Op::Operation(self, pairing), left, right, span) { return result; }
         self.run(pairing, left, right, span)
     }
     /// The operation's own code: rustymath's kernels where they apply, and otherwise calls of the primitives that define it, each of which routes again. A fold or scan takes `eval::primitive_fold`, a product `eval::primitive_product` or `eval::primitive_expansion`, `Pairing::Matrices` takes each matrix or pair of matrices (`eval::matrices`), and a primitive paired by `Pairing::At` combines at its offsets (`pervasive::at`).
@@ -192,15 +189,15 @@ impl Comparison {
 pub(crate) enum Primitive {
     Arithmetic(Arithmetic), Math(Math), Bitwise(u8), Random, Identity(bool), Compare(Comparison), Iota, Range, Keys, Depth, Where, Member, Union, Intersection,
     Find, Grade(bool), Index, Bracket, Encode, Decode, MatrixDivide, Execute, Format, Shape, Tally, Ravel, Enclose, Nest, Mix, Take, Drop, Replicate,
-    CatenateFirst, Reverse(bool), Transpose, Windows, Prime, Factor, Polynomial, Exact(Exact), Special(Special)
+    CatenateFirst, Reverse(bool), Transpose, Windows, Prime, Factor, Polynomial, Exact(Exact), Real(Real), Special(Special)
 }
 
-/// A function with exact results under either kinds, which `ₓ` after a primitive or `xᵣy` reaches, as `Math::Arc` is the inverse that `○⁻¹` reaches. `⌊ₓ`, `⌈ₓ` and dyadic `÷ₓ` give integers, each through one kernel. `Ratio` is the quotient that `xᵣy` writes: `÷` of exact numbers as dynamic kinds compute it. Each shares the row of the primitive it modifies, as `Bracket` shares `⌷`'s.
+/// A function with exact results under either kinds, which `ₓ` after a primitive reaches, as `Math::Arc` is the inverse that `○⁻¹` reaches. `⌊ₓ`, `⌈ₓ` and dyadic `÷ₓ` give integers, each through one kernel. Each shares the row of the primitive it modifies, as `Bracket` shares `⌷`'s.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Exact { Floor, Ceiling, Quotient, Ratio }
+pub(crate) enum Exact { Floor, Ceiling, Quotient }
 impl Exact {
     /// Every function with exact results, for the table of functions (`Builtin::function`).
-    pub(crate) const ALL: [Self; 4] = [Self::Floor, Self::Ceiling, Self::Quotient, Self::Ratio];
+    pub(crate) const ALL: [Self; 3] = [Self::Floor, Self::Ceiling, Self::Quotient];
     /// The function that `ₓ` after `p` reaches when called with two arguments where `dyadic`, for a `p` with a kernel of its own for it.
     pub(crate) fn of(p: Primitive, dyadic: bool) -> Option<Self> {
         use {Arithmetic::*, Math::*};
@@ -213,20 +210,55 @@ impl Exact {
     fn primitive(self) -> Primitive {
         match self {
             Self::Floor => Primitive::Math(Math::Floor), Self::Ceiling => Primitive::Math(Math::Ceiling),
-            Self::Quotient | Self::Ratio => Primitive::Arithmetic(Arithmetic::Divide)
+            Self::Quotient => Primitive::Arithmetic(Arithmetic::Divide)
         }
     }
-    /// This function on the number `y`, and on `x` when it's dyadic: what dynamic kinds compute, made an exact integer (`Number::whole`), apart from `Ratio`'s fraction. Under static kinds a result from floats goes to `whole` as a float of their width, so that it saturates as a float converts, where a result from integers wraps.
+    /// This function on the number `y`, and on `x` when it's dyadic, through its formula (`pervasive::number`), made an exact integer (`Number::whole`). Under static kinds a result from floats goes to `whole` as a float of their width, so that it saturates as a float converts, where a result from integers wraps.
     fn number(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> {
-        let n = match (self, x) {
-            (Self::Floor, _) => y.floor(t)?, (Self::Ceiling, _) => y.ceiling(t)?, (Self::Quotient, Some(x)) => number_quotient(x, y, t, true)?,
-            (Self::Ratio, Some(x)) => return number_quotient(x, y, t, false),
-            (Self::Quotient | Self::Ratio, None) => unreachable!("a quotient takes two numbers")
-        };
+        let n = crate::pervasive::number(Primitive::Exact(self), x, y, t)?;
         let n = match y.float_width().max(x.and_then(Number::float_width)) {
             Some(width) if t.is_static() && n.is_exact() => Number::float(n.to_float().map_err(<&str>::from)?, width), _ => n
         };
         n.whole(t)
+    }
+}
+
+/// A function with real results, which `ₐ` after a primitive reaches: monadic `√` and `⍟`, dyadic `*`, and `○` and `○⁻¹` by code, which give the real part where the result would leave the real domain (rustymath's `RealSqrt`, `RealLn`, `RealPow` and `RealCircle`). Each shares the row of the primitive it modifies, as `Exact` does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Real { Sqrt, Ln, Pow, Circle, Arc }
+impl Real {
+    /// The function that `ₐ` after `p` reaches when called with two arguments where `dyadic`.
+    pub(crate) fn of(p: Primitive, dyadic: bool) -> Option<Self> {
+        use Math::*;
+        Some(match (p, dyadic) {
+            (Primitive::Math(Root), false) => Self::Sqrt, (Primitive::Math(Log), false) => Self::Ln, (Primitive::Math(Power), true) => Self::Pow,
+            (Primitive::Math(Circle), true) => Self::Circle, (Primitive::Math(Arc), true) => Self::Arc, _ => return None
+        })
+    }
+    /// The primitive whose row this function shares.
+    fn primitive(self) -> Primitive {
+        Primitive::Math(match self { Self::Sqrt => Math::Root, Self::Ln => Math::Log, Self::Pow => Math::Power, Self::Circle => Math::Circle, Self::Arc => Math::Arc })
+    }
+}
+
+/// What a mark after a primitive does (`Primitive::marked`): calls a function of its own, or converts the arguments before the call.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Marked { Primitive(Primitive), Arguments(Mark) }
+
+impl Primitive {
+    /// What `mark` after this primitive does when called with two arguments where `dyadic`. A mark picks the domain before computing: `ₓ` and `ₐ` reach a function of their own where there is one (`Exact::of`, `Real::of`), `ₐ` after any other pervasive function converts its arguments to real floats, as `!ₐ25ₓ` computes in floats, and `÷ᵣ` divides its arguments in the unbounded domain. `None` where the mark converts the results, as `≢ₐ` gives a float count.
+    pub(crate) fn marked(self, mark: Mark, dyadic: bool) -> Option<Marked> {
+        match mark {
+            Mark::Rational if self == Self::Arithmetic(Arithmetic::Divide) => Some(Marked::Arguments(mark)),
+            Mark::Exact => Exact::of(self, dyadic).map(|e| Marked::Primitive(Self::Exact(e))),
+            Mark::Real => Real::of(self, dyadic).map(|r| Marked::Primitive(Self::Real(r))).or_else(|| self.facts(dyadic).pervasive().then_some(Marked::Arguments(mark))),
+            _ => None,
+        }
+    }
+    /// The primitive that `x p⁻¹ y` calls on `x` and `y` in that order, where it is one: the arc functions for `○`, and `⍟` and `*` for each other. The binder's `p⁻¹` (`FunctionNode::Inverse`) reaches it as its two-argument primitive (`Function::dyadic_primitive`).
+    pub(crate) fn left_inverse(self) -> Option<Primitive> {
+        use Math::*;
+        match self { Self::Math(Circle) => Some(Self::Math(Arc)), Self::Math(Power) => Some(Self::Math(Log)), Self::Math(Log) => Some(Self::Math(Power)), _ => None }
     }
 }
 
@@ -275,17 +307,6 @@ pub(crate) fn special(_: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
     let name = crate::keyed::name(right).ok_or_else(|| Error::domain("a special function's name must be a string"))?;
     let s = Special::ALL.into_iter().find(|&s| Primitive::Special(s).info().name == &*name).ok_or_else(|| Error::domain("unknown special function"))?;
     Ok(Value::Function(Builtin::Primitive(Primitive::Special(s)).function()))
-}
-
-fn number_quotient(x: &Number, y: &Number, t: Numeric, floor: bool) -> Result<Number, crate::number::Failure> {
-    let width = x.float_width().max(y.float_width());
-    if t.mathish_at(width) && x.is_zero() && y.is_zero() {
-        if width.is_none() { Ok(Number::from_integer(0)) }
-        else if x.as_complex().is_some() || y.as_complex().is_some() {
-            Ok(Number::from(rustymath::MathishDivide.one(x.to_complex()?, y.to_complex()?)))
-        } else { Ok(Number::float(rustymath::MathishDivide.one(x.to_float()?, y.to_float()?), FloatWidth::F64)) }
-    } else if floor { x.floor_quotient(y, t).map_err(Into::into) }
-    else { x.dyad(Arithmetic::Divide, y) }
 }
 
 /// A built-in function as the parser reads it: a glyph's primitive, or a system name's entry in the system table. The two differ only in how they're spelled.
@@ -338,7 +359,7 @@ pub(crate) enum Form {
     Unsupported,
 }
 
-/// The linear map that a form is. Reverse mode records it, in place of computing it, when an argument is a record (`linear::call`).
+/// The linear map that a form is. Reverse mode records it, in place of computing it, when an argument is a tape value (`derivative::tape::taped`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LinearMap {
     /// `+y`, which leaves the real numbers that tangents hold unchanged.
@@ -543,21 +564,24 @@ pub(crate) fn counted(value: &Value) -> Mark {
     else if value.is_exact() { Mark::Exact }
     else { Mark::Width(Numeric::current().width_of([value.float_width()])) }
 }
-/// The count `n` as `mark`'s type. An exact value beyond `i64` is a big integer.
+/// The count `n` as `mark`'s type. An exact count beyond `i64` saturates (`int_count`). `ₐ` counts in floats of the session's width, and `ᵣ` in the unbounded domain.
 fn generated(n: u64, mark: Mark) -> Value {
     match mark {
         Mark::Width(width) => Value::Number(Number::float(n as f64, width)), Mark::Fixed(width) => Value::Number(Number::fixed(n as i64, width)),
-        Mark::Exact => match i64::try_from(n) { Ok(n) => Value::integer(n), Err(_) => Value::Number(num_bigint::BigInt::from(n).into()) }
+        Mark::Exact => Value::integer(i64::try_from(n).unwrap_or(i64::MAX)),
+        Mark::Real => Value::Number(Number::float(n as f64, Numeric::current().width)),
+        Mark::Rational => Value::Number(Number::rational(num_bigint::BigInt::from(n).into())),
     }
 }
-/// Counts or positions in `shape`, each below `bound`, as `generated` gives each one. Exact ones take the width that holds every value below `bound` (`Value::positions`), and a value beyond `i64` makes the array mixed.
+/// Counts or positions in `shape`, each below `bound`, as `generated` gives each one. Exact ones take the width that holds every value below `bound` (`Value::positions`).
 fn generated_items(shape: Vec<usize>, values: impl Iterator<Item = u64>, bound: u64, mark: Mark) -> Result<Value, ErrorKind> {
     match (mark, usize::try_from(bound)) {
         (Mark::Width(width), _) => Value::floats(shape, width, values.map(|n| rustymath::convert::float(n as i64))),
+        (Mark::Real, _) => Value::floats(shape, Numeric::current().width, values.map(|n| rustymath::convert::float(n as i64))),
         (Mark::Fixed(width), _) => Value::fixed_integers(shape, width, values),
         (Mark::Exact, Ok(below)) if i64::try_from(bound).is_ok() => Value::positions(shape, below, values),
         (Mark::Exact, _) if i64::try_from(bound).is_ok() => Value::integers(shape, values.map(|n| n as i64).collect()),
-        (Mark::Exact, _) => Value::new(shape, values.map(|n| generated(n, mark)).collect()),
+        (Mark::Exact | Mark::Rational, _) => Value::new(shape, values.map(|n| generated(n, mark)).collect()),
     }
 }
 fn selected(a: &Value, i: usize) -> Value { a.at(if a.is_singleton() { 0 } else { i }) }
@@ -569,10 +593,12 @@ pub(crate) fn named_axis(v: &Value) -> Option<std::sync::Arc<str>> {
 }
 /// Whether the axis operand `spec` names an axis, as a whole or in one of its items.
 pub(crate) fn names_axes(spec: &Value) -> bool { named_axis(spec).is_some() || spec.elements().any(|e| named_axis(&e).is_some()) }
-pub(crate) fn resolve_axes(spec: &Value, target: &Value) -> Result<Value, Error> {
+pub(crate) fn resolve_axes(spec: &Value, target: &Value) -> Result<Value, Error> { resolve_axes_in(spec, target.layout()) }
+/// `spec` with each axis name it holds replaced by that axis's number in `target`.
+pub(crate) fn resolve_axes_in(spec: &Value, target: &rustymath::layout::Layout) -> Result<Value, Error> {
     let resolve = |value: Value| match named_axis(&value) {
         None => Ok(value),
-        Some(name) => target.layout().axis_named(&name).map(axis_value).ok_or_else(|| Error::new(Kind::Index, format!("unknown axis: {}", shown(&name)))),
+        Some(name) => target.axis_named(&name).map(axis_value).ok_or_else(|| Error::new(Kind::Index, format!("unknown axis: {}", shown(&name)))),
     };
     if named_axis(spec).is_some() { return resolve(spec.clone()); }
     if !names_axes(spec) { return Ok(spec.clone()); }
@@ -612,7 +638,7 @@ impl Primitive {
     };
     /// This primitive's row in the glyph table, built once, at compile time.
     pub(crate) fn info(self) -> &'static Info {
-        use {Arithmetic::*, Comparison::*, Form::*, Identity::*, Math::*, Selects::*};
+        use {Arithmetic::*, Comparison::*, self::Form::*, Identity::*, Math::*, Selects::*};
         const W: Rank = WHOLE;
         const fn row(glyph: &'static str, name: &'static str, monad: Monad, dyad: Dyad) -> Info { Info { glyph, name, monad, dyad } }
         // `⌷`'s forms, which bracket indexing (`A.[I J]`) shares. Rank runs only `⌷` along leading cell axes, because bracket indexing pairs its index arrays.
@@ -902,6 +928,7 @@ impl Primitive {
             Self::Special(Special::Betainc) => &const { row("•special\"betainc\"", "betainc", NO_MONAD, dyad("betainc", [1, 0], of(Own))) },
             Self::Special(Special::BetaincAt(_)) => &const { row("•special\"betainc\"", "betainc", monad("betainc", 0, PERVASIVE.cost(600).approximate()), NO_DYAD) },
             Self::Exact(e) => e.primitive().info(),
+            Self::Real(r) => r.primitive().info(),
             Self::MatrixDivide => {
                 &const { row("⌹", "domino", monad("matrix-inverse", 2, of(Own).cellwise()), dyad("matrix-divide", [W, 2], of(Own).cellwise())) }
             }
@@ -978,7 +1005,7 @@ impl Primitive {
     #[inline]
     pub(crate) fn scalar(self, dyadic: bool) -> bool {
         match self {
-            Self::Arithmetic(_) | Self::Exact(_) => true, Self::Math(Math::Nand | Math::Nor | Math::Gcd | Math::Lcm) => dyadic,
+            Self::Arithmetic(_) | Self::Exact(_) | Self::Real(_) => true, Self::Math(Math::Nand | Math::Nor | Math::Gcd | Math::Lcm) => dyadic,
             Self::Math(Math::Not) => !dyadic, Self::Math(_) => true, Self::Compare(_) => dyadic, Self::Special(Special::Betainc) => false,
             Self::Special(s) => !s.combines() && s.dyadic() == dyadic, _ => false
         }
@@ -1044,12 +1071,10 @@ impl Primitive {
         check()?;
         // A fast combination that isn't elementwise runs before any running level, which then sees the functions it combines.
         if let Self::Special(s) = self && s.combines() { return crate::eval::combined(s, left, right, span); }
-        if session().transforming() {
-            if let Some(result) =
-                crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Axis(axis)), left, right, span) {
-                    return result;
-                }
-        }
+        if let Some(result) =
+            crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Axis(axis)), left, right, span) {
+                return result;
+            }
         self.run_axis(left, right, axis, span)
     }
     /// `call_axis` without routing to a running level: the primitive's own code, which a level's rule runs on a value that the level carries (`selection::call`).
@@ -1075,15 +1100,8 @@ impl Primitive {
             (Self::Math(Math::Nor), None) => Self::Arithmetic(Arithmetic::Plus).call(Some(right), right, span),
             (Self::Math(Math::Gcd | Math::Lcm), None) => complex_parts(right, matches!(self, Self::Math(Math::Lcm))),
             (Self::Math(Math::Not), Some(x)) => without(x, right, span),
-            (Self::Bitwise(_), _) => {
-                fn integers(v: &Value) -> Cow<'_, Value> {
-                    if !matches!(v.dtype(), Some(rustymath::buffer::DType::Float(_))) { return Cow::Borrowed(v); }
-                    let Ok(items) = v.as_items().integers() else { return Cow::Borrowed(v) };
-                    Cow::Owned(if v.is_atom() { Value::integer(items[0]) } else { v.layout().integers(items.into_owned()).expect("same shape") })
-                }
-                let (x, y) = (left.map(integers), integers(right));
-                self.pervasive_apply(None, x.as_deref(), &y, span, false)
-            }
+            // `Bitwise`'s kernel takes whole floats itself.
+            (Self::Bitwise(_), _) => self.pervasive_apply(None, left, right, span, false),
             (Self::Compare(Equal), None) => self_classify(right, span),
             (Self::Compare(NotEqual), None) => unique_mask(right, span),
             (Self::Compare(op @ (LessEqual | GreaterEqual)), None) => {
@@ -1101,7 +1119,7 @@ impl Primitive {
             (Self::Intersection, None) => duplicates(right, span),
             (Self::Find, Some(x)) => find(x, right, span),
             (Self::Find, None) => groups(right, span),
-            (Self::Grade(down), _) => { fits_int(right.shape().first().copied().unwrap_or(1).saturating_sub(1))?; grade(left, right, down) }
+            (Self::Grade(down), _) => grade(left, right, down),
             (Self::MatrixDivide, _) => matrix_divide(left, right),
             (Self::Format, _) => format_array(left, right),
             (Self::Encode | Self::Decode, Some(x)) => radix(x, right, matches!(self, Self::Encode)),
@@ -1113,19 +1131,12 @@ impl Primitive {
             (Self::Depth, Some(x)) => Ok(Value::Number(Number::from_bool(x.matches(right, span)?))),
             (Self::Depth, None) => Ok(Value::integer(depth(right) as i64)),
             (Self::Tally, Some(x)) => Ok(Value::Number(Number::from_bool(!x.matches(right, span)?))),
-            (Self::Tally, None) => {
-                let n = right.shape().first().copied().unwrap_or(1);
-                fits_int(n)?;
-                Ok(generated(n as u64, Mark::Exact))
-            }
+            (Self::Tally, None) => Ok(generated(int_count(right.shape().first().copied().unwrap_or(1)), Mark::Exact)),
             (Self::Iota, Some(x)) => index_of(x, right, span),
-            (Self::Iota, None) => iota(right).and_then(|r| {
-                fits_int(r.shape().iter().copied().max().unwrap_or(1).saturating_sub(1))?;
-                Ok(r)
-            }),
+            (Self::Iota, None) => iota(right),
             (Self::Range, _) => range(left, right, span),
             (Self::Where, Some(x)) => interval_index(x, right),
-            (Self::Where, None) => { fits_int(right.len().saturating_sub(1))?; where_indices(right) }
+            (Self::Where, None) => where_indices(right),
             (Self::Random, _) => drawn_value(None, left, right, span),
             (Self::Replicate, Some(x)) => replicate(x, right, axis, false, None),
             (Self::Replicate, None) => runs(right, span),
@@ -1148,13 +1159,12 @@ impl Primitive {
             }
             (Self::Shape, Some(x)) => reshape(x, right, None),
             (Self::Shape, None) => {
-                fits_int(right.shape().iter().copied().max().unwrap_or(0))?;
-                let dimensions = right.shape().iter().map(|&n| generated(n as u64, Mark::Exact)).collect();
+                let dimensions = right.shape().iter().map(|&n| generated(int_count(n), Mark::Exact)).collect();
                 let shape = if !right.layout().has_names() { Value::from_parts(vec![right.shape().len()], dimensions, Value::integer(0)) }
                 else { crate::keyed::partial_vector(right.axis_names().to_vec(), dimensions) };
                 shape.described("invalid shape")
             }
-            (Self::Mix, Some(x)) => pick(x, right, session().prototype.get(), None, span),
+            (Self::Mix, Some(x)) => pick(x, right, None, span),
             (Self::Mix, None) => {
                 if let Some(axis) = axis { return mix_axes(right, &axis_value(axis), span); }
                 right.mix(Widening::Arrays, None).described("cannot assemble cells")
@@ -1170,7 +1180,7 @@ impl Primitive {
                 }
                 right.enclose().described("invalid enclosure")
             }
-            (Self::Take, None) => pick(&Value::integer(0), right, session().prototype.get(), None, span),
+            (Self::Take, None) => pick(&Value::integer(0), right, None, span),
             (Self::Drop, None) => split(right, axis),
             (Self::Take | Self::Drop, Some(x)) => take_drop(matches!(self, Self::Take), x, right, axis.map(|a| vec![a]).as_deref(), None),
             _ => unreachable!("every form that `scalar` excludes has code of its own, and `apply` runs `⍎`"),
@@ -1211,25 +1221,13 @@ impl Primitive {
                 if x.is_none() && y.is_none() {
                     return match &spec { Some(s) => self.call_axes(Some(l), &right, s, span), None => self.call(Some(l), &right, span) };
                 }
-                let (mx, my) = (x.as_ref().and_then(|fill| left.native_fill(fill)), y.as_ref().and_then(|fill| right.native_fill(fill)));
-                if x.is_some() && mx.is_none() || y.is_some() && my.is_none() {
-                    let agreement = match &spec {
-                        Some(s) => axis_agreement(&left, &right, s)?,
-                        None => Agreement::new(left.layout(), right.layout()).described("array shapes do not agree")?,
-                    };
-                    let left = copied_fill(&left, agreement.layout.clone(), &agreement.left, x.as_ref()).described("invalid keyed argument")?;
-                    let right = copied_fill(&right, agreement.layout, &agreement.right, y.as_ref()).described("invalid keyed argument")?;
-                    return self.call(Some(&left), &right, span);
-                }
-                self.agreed(&left, &right, |left, right| {
-                    let mut agreement = match &spec {
-                        Some(s) => axis_agreement(left, right, s)?,
-                        None => Agreement::new(left.layout(), right.layout()).described("array shapes do not agree")?,
-                    };
-                    agreement.left = agreement.left.filled(mx);
-                    agreement.right = agreement.right.filled(my);
-                    Ok(agreement)
-                }, span)
+                let agreement = match &spec {
+                    Some(s) => axis_agreement(&left, &right, s)?,
+                    None => Agreement::new(left.layout(), right.layout()).described("array shapes do not agree")?,
+                };
+                let left = crate::fusion::copied(&left, agreement.layout.clone(), &agreement.left, x.as_ref()).described("invalid keyed argument")?;
+                let right = crate::fusion::copied(&right, agreement.layout, &agreement.right, y.as_ref()).described("invalid keyed argument")?;
+                self.call(Some(&left), &right, span)
             }
             (Self::Take, false, Some(x)) => {
                 let (right, fill) = Self::fill_for(fill, right, false, span)?;
@@ -1246,7 +1244,7 @@ impl Primitive {
             }
             (Self::Take, false, None) | (Self::Mix, false, Some(_)) => {
                 let (right, fill) = Self::fill_for(fill, right, false, span)?;
-                pick(left.unwrap_or(&Value::integer(0)), &right, session().prototype.get(), fill.as_ref(), span)
+                pick(left.unwrap_or(&Value::integer(0)), &right, fill.as_ref(), span)
             }
             (Self::Mix, false, None) => {
                 let fill = right.mixed_fill(fill, Widening::Arrays)?;
@@ -1261,12 +1259,10 @@ impl Primitive {
         self.weakened(Some(left), right, |left, right| {
             let left = left.expect("a paired call is dyadic");
             let agreement = agree(left, right)?;
-            if session().transforming() {
-                if let Some(result) = crate::transform::call(
-                    crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Agreed(&agreement)), Some(left), right, span) {
-                        return result;
-                    }
-            }
+            if let Some(result) = crate::transform::call(
+                crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Agreed(&agreement)), Some(left), right, span) {
+                    return result;
+                }
             self.pervasive_mapped(Some(left), right, span, false, agreement)
         })
     }
@@ -1285,7 +1281,7 @@ impl Primitive {
         let plan = crate::plan::pervasive_on(self, left, right, Numeric::current()).map_err(Error::domain)?;
         if let Some(kept) = crate::pervasive::unchanged(&plan, left, right) { return Ok(kept.clone()); }
         // A large fusible call on floats becomes a pending array, which `fusion` computes with the calls that read it.
-        let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(&plan, agreement.len) {
+        let agreement = if agreement.len != 0 && !fill && crate::fusion::defers(plan.fuses(), agreement.len) {
             match crate::fusion::defer(self, &plan, left, right, agreement) { Ok(pending) => return Ok(pending), Err(agreement) => agreement }
         } else { agreement };
         Self::planned(&plan, left, right, span, fill, agreement)
@@ -1306,12 +1302,10 @@ impl Primitive {
 
     fn pervasive_item(self, left: Option<&Value>, right: &Value, span: &Span, fill: bool) -> Result<Value, Error> {
         check()?;
-        if !fill && session().transforming() {
-            if let Some(result) =
-                crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Axis(None)), left, right, span) {
-                    return result;
-                }
-        }
+        if !fill && let Some(result) =
+            crate::transform::call(crate::transform::Op::Operation(Operation::Primitive(self), crate::transform::Pairing::Axis(None)), left, right, span) {
+                return result;
+            }
         if matches!((self, left, right), (Self::Arithmetic(Arithmetic::Plus), None, Value::Character(_))) { return Ok(right.clone()); }
         if matches!(right, Value::Array(_)) || matches!(left, Some(Value::Array(_))) { return self.pervasive_apply(None, left, right, span, fill); }
         // A character computes as its code point (`pervasive::character_item`). A function that takes no characters, or none of these items, meets them below as it meets any other item that isn't a number. An empty result's fill is the prototype of the result on the arguments' prototypes.
@@ -1323,7 +1317,7 @@ impl Primitive {
                 _ if self.facts(left.is_some()).booleans => Value::Number(Number::from_bool(false)),
                 (Self::Math(Math::Floor | Math::Ceiling) | Self::Arithmetic(Arithmetic::Times), None, _) | (Self::Exact(_), _, _) => Value::integer(0),
                 (Self::Random, _, Value::Number(y)) => Value::Number(y.zero()),
-                (Self::Math(Math::Circle | Math::Arc | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) => float_like(0.0, right),
+                (Self::Math(Math::Circle | Math::Arc | Math::Pi | Math::Log), _, _) | (Self::Math(Math::Power), None, _) | (Self::Real(_), _, _) => float_like(0.0, right),
                 (Self::Bitwise(_), _, Value::Number(y)) => {
                     Value::Number(if y.as_bool().is_some() && left.is_none_or(|x| x.as_number().is_some_and(|n| n.as_bool().is_some())) {
                         Number::from_bool(false)
@@ -1345,16 +1339,16 @@ impl Primitive {
     /// This form's result on the number `y`, and on `x` when it's dyadic, under the settings `t`: the kernel that `pervasive_item` applies to each pair of items, and that `scalar_call` applies to a call on numbers. `=` follows IEEE, where NaN equals nothing.
     fn on_numbers(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Value, Error> { self.number(x, y, t).map(Value::Number).map_err(Error::from) }
 
-    /// This arithmetic or math function on the number `y`, and on `x` when it's dyadic, under the numeric settings `t`, as a pervasive call and the fold of numbers apply it. A float that a function gives from exact numbers takes the default width, and the code of `○` takes no part in that. A call that computes at 16 bits runs on 32-bit copies of its 16-bit floats (`Number::halves`). Under static kinds, an integer call with an integer kernel runs it at the `int` width (`integer_kernel`). `statically` gives the kind of any other result. A result is weak only when every operand is weak (`Number::is_weak`).
+    /// This arithmetic or math function on the number `y`, and on `x` when it's dyadic, under the numeric settings `t`, as a pervasive call and the fold of numbers apply it. A float that a function gives from exact numbers takes the default width, and the code of `○` takes no part in that. A call that computes at 16 bits runs on 32-bit copies of its 16-bit floats (`Number::halves`). Every function computes through its formula, comparisons included (`pervasive::number`). A result is weak only when every operand is weak (`Number::is_weak`).
     pub(crate) fn number(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> {
         // Static calls run in a copy of their own. This copy then compiles without their paths.
         if t.is_static() { return self.static_number(x, y, t); }
-        self.marked(x, y, t)
+        self.marked_number(x, y, t)
     }
     #[inline(never)]
-    fn static_number(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> { self.marked(x, y, t) }
+    fn static_number(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> { self.marked_number(x, y, t) }
     #[inline(always)]
-    fn marked(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> {
+    fn marked_number(self, x: Option<&Number>, y: &Number, t: Numeric) -> Result<Number, crate::number::Failure> {
         let mut result = self.number_value(x, y, t);
         if let Ok(n) = &mut result { n.mark(y.is_weak() && x.is_none_or(Number::is_weak)); }
         result
@@ -1365,16 +1359,8 @@ impl Primitive {
         // A weak operand beside a strong number takes the width that NEP 50 gives it (`weak_beside`), before any function decides. Every call on numbers meets this point: scalar calls, the superscript power of a literal, folds of numbers and items that mixed storage holds. Beside a fixed operand, the call settles at the fixed width below instead, as `weak_beside` expects.
         if let Some(x) = x && x.is_weak() != y.is_weak() {
             if x.is_weak() {
-                if y.fixed_width().is_none() && let Some(x) = self.weak_beside(x, y.dtype(), t) { return self.number(Some(&x.map_err(Domain)?), y, t); }
-            } else if x.fixed_width().is_none() && let Some(y) = self.weak_beside(y, x.dtype(), t) { return self.number(Some(x), &y.map_err(Domain)?, t); }
-        }
-        if let Self::Compare(op) = self {
-            let x = x.expect("a dyadic comparison");
-            let yes = match op {
-                Comparison::Equal | Comparison::NotEqual => x.equal(y, t).map(|eq| eq == matches!(op, Comparison::Equal)),
-                _ => x.compare(y, t).map(|order| order.is_some_and(|order| op.ordered(order))),
-            }.map_err(Domain)?;
-            return Ok(Number::from_bool(yes));
+                if y.fixed_width().is_none() && let Some(x) = weak_beside(x, y.dtype()) { return self.number(Some(&x.map_err(Domain)?), y, t); }
+            } else if x.fixed_width().is_none() && let Some(y) = weak_beside(y, x.dtype()) { return self.number(Some(x), &y.map_err(Domain)?, t); }
         }
         let fixed = y.fixed_width().is_some() || x.is_some_and(|x| x.fixed_width().is_some());
         if let Self::Exact(e) = self {
@@ -1382,78 +1368,17 @@ impl Primitive {
             let (x, y) = (x.map(Number::ordinary), y.ordinary());
             return e.number(x.as_ref(), &y, t);
         }
-        if fixed && let Some(width) = Number::fixed_promotion(x, y).map_err(Domain)? { return self.fixed_number(x, y, t.with_fixed(width), width); }
-        if let Self::Bitwise(table) = self { return y.bitwise(x, table).map_err(Domain); }
-        let integer = |n: &Number| matches!(n.dtype(), Some(rustymath::buffer::DType::Integer(_)));
-        if t.is_static() && integer(y) && x.is_none_or(integer) && let Ok(n) = self.integer_kernel(x, y, t, t.integer_width()) { return Ok(n); }
+        let t = if fixed && let Some(width) = Number::fixed_promotion(x, y).map_err(Domain)? { t.with_fixed(width) } else { t };
         if let Some((x, y, t, halve)) = Number::halves(x, y, t) { return self.number(x.as_ref(), &y, t).map(|n| if halve { n.halved() } else { n }); }
-        let n = match (self, x) {
-            (Self::Arithmetic(Arithmetic::Divide), Some(x)) => number_quotient(x, y, t, false)?,
-            (Self::Math(Math::Log), Some(x)) if t.mathish_at(Some(t.width_of([x.float_width(), y.float_width()]))) => x.logarithm(y, true)?,
-            (Self::Math(Math::Floor), None) => y.floor(t).map_err(Domain)?, (Self::Math(Math::Ceiling), None) => y.ceiling(t).map_err(Domain)?,
-            (Self::Math(Math::Magnitude), Some(x)) => x.residue(y, t).map_err(Domain)?, (Self::Math(Math::Gcd), Some(x)) => x.gcd(y, t).map_err(Domain)?,
-            (Self::Math(Math::Lcm), Some(x)) => x.lcm(y, t).map_err(Domain)?, (Self::Math(op), Some(x)) => x.math_dyad(op, y)?,
-            (Self::Math(op), None) => y.math_monad(op)?, (Self::Arithmetic(op), Some(x)) => x.dyad(op, y)?, (Self::Arithmetic(op), None) => y.monad(op)?,
-            (Self::Special(Special::Log1p), None) => y.log1p()?, (Self::Special(Special::Expm1), None) => y.expm1()?,
-            (Self::Special(_), _) => crate::pervasive::real(self, x, y, t).map_err(Domain)?.ok_or(Domain("this special function has no kernel for these numbers"))?,
-            _ => unreachable!("only arithmetic and math functions take numbers here")
-        };
-        let exact = y.is_exact() && (self.info().dyad.code || x.is_none_or(Number::is_exact));
-        let n = if exact { n.at_width(t.width) } else { n };
-        let n = if t.is_static() { self.statically(x, y, n, t).map_err(Domain)? } else { n };
-        Ok(n)
-    }
-
-    /// The result on numbers `x` and `y`, of which some are fixed, at the fixed width `width` that `t` carries. A function with an integer kernel at that width runs it, and one whose kernels compute in floats runs at their float width. Where the integer kernel fails, and for any other function, it gives what static kinds give at that width: the exact result wrapped, or a float of the width that floats from these integers take.
-    #[inline(never)]
-    fn fixed_number(self, x: Option<&Number>, y: &Number, t: Numeric, width: Width) -> Result<Number, crate::number::Failure> {
-        use crate::number::Failure::Domain;
-        use rustymath::buffer::DType;
-        match self.integer_kernel(x, y, t, width) {
-            Ok(n) => return Ok(n),
-            Err(Some(DType::Float(w))) => {
-                let (x, y) = (x.map(|x| x.to_float_width(w)).transpose().map_err(Domain)?, y.to_float_width(w).map_err(Domain)?);
-                return self.number(x.as_ref(), &y, t);
-            }
-            Err(_) => (),
-        }
-        let (x, y) = (x.map(Number::ordinary), y.ordinary());
-        let exact = Numeric { mathish: false, kinds: crate::number::Kinds::Dynamic, fixed: None, width: t.exact_width(DType::Integer(width)), ..t };
-        self.statically(x.as_ref(), &y, self.number(x.as_ref(), &y, exact)?, t).map_err(Domain)
-    }
-
-    /// This function on the integers `y`, and `x` where it's dyadic, through its integer kernel at `width` under `t`: fixed integers at their fixed width, and ordinary integers under static kinds at the `int` width. `Err` with the kind that the call computes in (`pervasive::computes`) where that isn't an integer kind, or where the kernel fails.
-    #[inline(always)]
-    fn integer_kernel(self, x: Option<&Number>, y: &Number, t: Numeric, width: Width) -> Result<Number, Option<rustymath::buffer::DType>> {
-        use rustymath::buffer::DType;
-        let kind = crate::pervasive::computes(self, x.is_some(), || [x.and_then(|x| x.to_float().ok()), y.to_float().ok()], DType::Integer(width), t);
-        if matches!(kind, Some(DType::Boolean | DType::Integer(_))) && let Some(n) = crate::pervasive::scalar(self, x, y, t) { return Ok(n); }
-        Err(kind)
-    }
-
-    /// The result of this function on numbers under static kinds, from `n`, the result that dynamic kinds give: `n` as the kind that an array call's plan gives every result (`plan::atom_result`), as an array of these numbers' kinds would hold it. An integer result wraps to the integer width (`Number::wrapped`), which is the fixed width for a call on fixed integers that has no kernel of its own. A real result is NaN where dynamic kinds give a complex number. An integer power with a negative exponent is a DOMAIN error. Exact fractions, which compact storage doesn't hold, stay exact.
-    fn statically(self, x: Option<&Number>, y: &Number, n: Number, t: Numeric) -> Result<Number, &'static str> {
-        use rustymath::buffer::DType;
-        Ok(match crate::plan::atom_result(self, x, y, t) {
-            None | Some(DType::Boolean | DType::Character) => n,
-            Some(DType::Complex(w)) => Number::complex_kept(n.to_complex()?, w.into()),
-            Some(DType::Float(w)) if n.as_complex().is_some() => Number::float(f64::NAN, w),
-            Some(DType::Float(w)) => { if n.is_exact() { Number::float(n.to_float().map_err(<&str>::from)?, w) } else { n } }
-            Some(DType::Integer(_)) if n.as_integer().is_some() => n.wrapped(t),
-            Some(DType::Integer(_)) => match n.as_exact() {
-                Some(r) if r.is_integer() => n.wrapped(t),
-                Some(_) if matches!(self, Self::Math(Math::Power)) => return Err("an integer power with a negative exponent isn't an integer"), Some(_) => n,
-                None => n.at_width(t.exact_width(DType::Integer(t.integer_width())))
-            },
-        })
+        crate::pervasive::number(self, x, y, t)
     }
 }
 
-/// Under static kinds, a LIMIT error where a count or position of `n` doesn't fit the `int` width. A wrapped position would read the wrong item without any sign.
-fn fits_int(n: usize) -> Result<(), Error> {
+/// The count `n` as an `int`: past the `int` width under static kinds, or past `i64`, it saturates to the width's maximum, as a conversion does.
+fn int_count(n: usize) -> u64 {
     let t = Numeric::current();
-    if t.is_static() && !i64::try_from(n).is_ok_and(|n| t.fits(n)) { return Err(Error::new(Kind::Limit, "a count or position doesn't fit the int width")); }
-    Ok(())
+    let max = if !t.is_static() || t.fits(i64::MAX) { i64::MAX } else { i32::MAX.into() };
+    (n as u64).min(max as u64)
 }
 
 /// The depth of `right`: 0 for an atom, and for an array one more than its deepest element. An empty array counts its prototype. A carried array answers from its carrier's template, without reading its items.
@@ -1478,14 +1403,15 @@ pub(crate) fn pervade(
     pairwise(left, right, agreement, &|x, y| pervade(x, y, f, whole, span))
 }
 
+/// Weak `n` at the width that NEP 50 gives it beside a strong operand of dtype `strong` (`plan::Kind::beside`), or `None` where it keeps its own. A weak number is never fixed. Callers settle a fixed strong operand before this. The conversion fails for an exact number beyond the range of floats.
+fn weak_beside(n: &Number, strong: Option<rustymath::buffer::DType>) -> Option<Result<Number, &'static str>> {
+    let kind = crate::plan::Kind::stored(n.dtype(), None, true);
+    let to = kind.beside(crate::plan::Kind::stored(strong, None, false));
+    if to.dtype == kind.dtype { return None; }
+    Some(n.to_float_width(to.float_width()?))
+}
+
 impl Primitive {
-    /// Weak `n` at the width that NEP 50 gives it beside a strong operand of dtype `strong` (`plan::Kind::beside`), or `None` where it keeps its own. A weak number is never fixed. Callers settle a fixed strong operand before this. The conversion fails for an exact number beyond the range of floats.
-    fn weak_beside(self, n: &Number, strong: Option<rustymath::buffer::DType>, t: Numeric) -> Option<Result<Number, &'static str>> {
-        let kind = crate::plan::Kind::stored(n.dtype(), None, true);
-        let to = kind.beside(self, crate::plan::Kind::stored(strong, None, false), t);
-        if to.dtype == kind.dtype { return None; }
-        Some(n.to_float_width(to.float_width()?))
-    }
     /// A weak `value` at the width that this function gives it beside `other`: the width that `plan::Kind::beside` gives it beside strong floats, or the width of fixed integers where a weak integer fits them. A weak integer that doesn't fit stays weak, for the call's promotion to report (`plan::Kind::fixed`).
     #[inline]
     pub(crate) fn weaken_value(self, value: &Value, other: &Value) -> Option<Value> {
@@ -1495,12 +1421,7 @@ impl Primitive {
         if let (Some(width), Some(i), None) = (other.fixed_width(), n.as_integer(), n.as_bool()) {
             return (Width::narrowest(i, i).join(width) == width).then(|| Value::Number(Number::fixed(i, width)));
         }
-        self.weak_beside(n, other.dtype(), Numeric::current())?.ok().map(Value::Number)
-    }
-    /// A weak `value` at the width that it takes when this function joins it with `other` into one array, as `weaken_value` gives it. DOMAIN for a weak integer that doesn't fit the fixed integers of `other` (`plan::Kind::fits`).
-    pub(crate) fn joined_weak(self, value: &Value, other: &Value) -> Result<Option<Value>, Error> {
-        crate::plan::Kind::fits([value, other])?;
-        Ok(self.weaken_value(value, other))
+        weak_beside(n, other.dtype())?.ok().map(Value::Number)
     }
 
     /// `f` with weak numeric operands converted before array mapping or scalar calls.
@@ -1534,7 +1455,7 @@ fn empty_result(agreement: Agreement, prototype: Value) -> Result<Value, Error> 
 }
 
 pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value, axis: Option<&Value>, span: &Span) -> Result<Value, Error> {
-    use crate::number::{Arithmetic::*, Math::{Arc, Circle, Gcd, Lcm, Log, Nand, Nor, Not, Pi, Power, Root}};
+    use crate::number::{Arithmetic::*, Math::{Circle, Gcd, Lcm, Log, Nand, Nor, Not, Pi, Power, Root}};
     use Primitive::*;
     if let Some(axis) = axis {
         if axis.shape().len() > 1 { return Err(Error::new(Kind::Rank, "axes must be a unit or vector")); }
@@ -1556,6 +1477,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
                 return Err(Error::domain("zero multiplier/divisor has no inverse"));
             }
         return match p {
+            p if first && let Some(q) = p.left_inverse() => call(q, Some(a), right),
             Replicate if first => {
                 let axis = axis.map(|a| single_axis(&resolve_axes(a, right)?, right.shape().len())).transpose()?;
                 replicate(a, right, axis, true, None)
@@ -1568,8 +1490,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
             Arithmetic(Divide) => call(Arithmetic(Times), Some(right), a),
             Compare(Comparison::NotEqual) if boolean_array(a) && boolean_array(right) => call(p, Some(a), right),
             Compare(Comparison::Equal) if boolean_array(a) && boolean_array(right) => call(p, Some(a), right),
-            Math(Power) if first => call(Math(Log), Some(a), right),
-            Math(Power) => call(p, Some(right), &Arithmetic(Divide).call(None, a, span)?),
+            Math(Power) => call(Math(Root), Some(a), right),
             Math(Root) if first => call(Math(Power), Some(right), a),
             Math(Root) => call(Math(Log), Some(right), a),
             Math(Pi) if first => call(p, Some(a), right),
@@ -1577,9 +1498,7 @@ pub(crate) fn inverse(p: Primitive, bound: Option<(&Value, bool)>, right: &Value
                 let product = call(Arithmetic(Times), Some(right), a)?;
                 call(Arithmetic(Divide), Some(&product), &float_like(std::f64::consts::PI, &product))
             }
-            Math(Log) if first => call(Math(Power), Some(a), right),
-            Math(Log) => call(Math(Power), Some(a), &Arithmetic(Divide).call(None, right, span)?),
-            Math(Circle) if first => call(Math(Arc), Some(a), right),
+            Math(Log) => call(Math(Root), Some(right), a),
             Reverse(_) if first => call(p, Some(&Arithmetic(Minus).call(None, a, span)?), right),
             Transpose if first => inverse_transpose(a, right),
             Decode if first => inverse_decode(a, right),
@@ -1731,7 +1650,7 @@ fn inverse_decode(base: &Value, right: &Value) -> Result<Value, Error> {
         while !n.is_zero() {
             check()?;
             if n.order(&n.one())?.is_lt() { return Err(Error::domain("inverse decode cannot represent this value")); }
-            n = n.dyad(Arithmetic::Divide, &b).and_then(|n| n.floor(Numeric::current()).map_err(crate::number::Failure::from))?;
+            n = crate::pervasive::number(Primitive::Exact(Exact::Quotient), Some(&n), &b, Numeric::current())?;
             count += 1;
             generated_len(&[count])?;
         }

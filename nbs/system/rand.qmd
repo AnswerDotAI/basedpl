@@ -5,9 +5,9 @@
 - `roll Y` works like `¿Y`.
 - `X deal Y` works like `X¿Y`.
 
-A distribution's `sample` takes a generator on its left, as in `g d.sample 3`. Each whole-array draw reserves one stream from its generator when it executes. The stream depends on the seed and draw count, not on how many numbers earlier draws produced. Reading a draw's result again reuses its samples. Copies of a generator share its count. Deferred draws reserve streams in the order their results are read.
+A distribution's `sample` takes a generator on its left, as in `g d.sample 3`. Each draw takes the generator's next stream when it runs. A draw's numbers depend on the seed and on how many draws came before it, not on how many numbers those draws produced. Copies of a generator share its count.
 
-A [batched call](../evaluation.qmd#functions-and-effects) draws for its whole frame in flat item order. A [map](../terms.qmd#term-map) that runs cell by cell executes separate draws for those cells. The same seed does not promise the same numbers between batched and cell-by-cell execution, or between different spellings.
+A [map](../terms.qmd#term-map) draws for each cell separately, in cell order, whether or not it runs as a [batched call](../evaluation.qmd#functions-and-effects), so both give the same numbers. A guard that splits the cells is the exception: each side of the guard draws for its own cells in turn. A whole-array draw and a map of draws over the same items take different streams, so `¿v` and `¿¨v` give different numbers.
 
 ```bpl
 g←•rand 3 ⋄ h←•rand 3 ⋄ (g.roll 4⍴6)≡h.roll 4⍴6    ⍝ $t

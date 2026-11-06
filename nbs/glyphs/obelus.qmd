@@ -20,6 +20,14 @@ A nonzero float divided by zero gives an infinity. Floating zero divided by zero
 0÷0               ⍝ 0
 ```
 
+An integer divided by zero gives the integer limit of its sign: i64's under dynamic kinds, where integers widen, and the width's own for fixed widths and under static kinds. An integer zero divided by zero gives zero, with Mathish mode on or off. `÷ₓ` follows the same rule:
+
+```bpl
+5ₓ₈÷0ₓ₈           ⍝ 9223372036854775807ₓ₈
+¯5ₓ₈÷0ₓ₈          ⍝ ¯9223372036854775808ₓ₈
+0ₓ÷0ₓ             ⍝ 0ₓ
+```
+
 ## Inverse
 
 `÷⁻¹` is `÷`. With the right argument fixed, `(÷↢X)⁻¹Y` is `Y×X`. These recover the original value for nonzero floating or rational division; integer floor division loses the remainder.

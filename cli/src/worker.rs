@@ -64,6 +64,7 @@ fn reply(session: &Session, request: &Value, interrupt: InterruptHandle) -> Resu
     if let Some(spec) = request.get("timing") { return basedpl::timing::request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("costs") { return basedpl::timing::file_request(spec, &options.interrupt).map(Reply::Json); }
     if let Some(spec) = request.get("reference") { return basedpl::reference::file_request(spec, &options.interrupt).map(Reply::Json); }
-    if let Some(spec) = request.get("page") { return basedpl::reference::page_request(spec, &options.interrupt).map(Reply::Json); }
+    if let Some(spec) = request.get("page") { return basedpl::reference::page_request(spec, &options.interrupt, options.timeout).map(Reply::Json); }
+    if let Some(spec) = request.get("route") { return basedpl::timing::route_request(spec, &options.interrupt).map(Reply::Json); }
     basedpl::protocol::request(session, request, options).map(|e| Reply::Response(basedpl::protocol::Response(e)))
 }

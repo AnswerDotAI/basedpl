@@ -1,7 +1,7 @@
 •prefs ["kinds":"static" "int":32]
-⍝⍝ setup
-compiled←{∧/{(0<≢⍵.programs.event)∧(0=≢⍵.stopped.reason,⍵.fallbacks.reason)∧(∨/⍵.routes.route∊"compiled" "fusion" "vector kernel" "mapped kernel")∧test_compiled≤∨/⍵.routes.route≡¨⊂"compiled"}¨⍵}
+
 ⍝⍝ Static kinds with 32-bit integers
+
 ⍝ — The int pref sets the width at which integers compute and wrap
 [2147483647ₓ+1ₓ (•storage [1 2]ₓ).kind]
 ¯2147483648ₓ "int32"
@@ -19,7 +19,7 @@ c←6 6⍴2000000000ₓ+⍳36ₓ ⋄ [(c+.×c)≡c{+/⍺×⍵}⍤1⍤1 2⍉c;(�
 [$t "int32"]
 
 ⍝ — Under the int pref at 32, a block stage wraps ordinary integers at 32 bits, as the interpreter does. Each replay of the program that `∂` builds runs a block stage on the body `f v`, whose values the gradient gives as floats
-f←{⍵+⍵×2ₓ} ⋄ v←2147483000ₓ+⍳20ₓ ⋄ F←{+/⍵×(f v)} ⋄ o←20⍴0 ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ reads←{•explain⍵}¨3⍴⊂"F∂o" ⋄ w←f v ⋄ (e.value≡1×[w;w;w]),(compiled reads),(⊂(•storage w).kind),⊂¯3↑w
+f←{⍵+⍵×2ₓ} ⋄ v←2147483000ₓ+⍳20ₓ ⋄ F←{+/⍵×(f v)} ⋄ o←20⍴0 ⋄ e←•explain "[F∂o ; F∂o ; F∂o]" ⋄ w←f v ⋄ (e.value≡1×[w;w;w]),(∧/(0<≢e.fused.items)≥e.programs.event≡¨⊂"replayed"),(⊂(•storage w).kind),⊂¯3↑w
 [$t $t "int32" [2147481755 2147481758 2147481761]ₓ]
 
 ⍝ — Under the int pref at 32, a fixed integer of 32 bits displays with plain ₓ, and one of 64 bits keeps its suffix

@@ -8,12 +8,16 @@ Function. Hanzi: `幂` (`冪`). Ranks: `0` monadic, `0 0` dyadic
 *0                ⍝ 1
 ```
 
-`X*Y`: X<sup>Y</sup>. Whole powers of exact operands stay exact.
+`X*Y`: X<sup>Y</sup>. Whole powers of integers give integers, and whole powers of rationals (`ᵣ`) give rationals. An integer with a negative exponent floors, as integer [`÷`](obelus.qmd) does:
 
 ```bpl
-2*3               ⍝ 8
-2ₓ*¯3ₓ            ⍝ 1r8
+2ₓ*3ₓ             ⍝ 8ₓ
+2ₓ*¯3ₓ            ⍝ 0ₓ
+¯2ₓ*¯3ₓ           ⍝ ¯1ₓ
+2ᵣ*¯3ₓ            ⍝ 1ᵣ8
 ```
+
+This holds in both modes and at every width. Base `1ₓ` gives `1ₓ`, base `¯1ₓ` gives `1ₓ` or `¯1ₓ` as the exponent is even or odd, and base `0ₓ` gives the largest integer: i64's under dynamic kinds, where integers widen, and the width's own for fixed widths and under static kinds.
 
 Other powers use principal complex branches where needed.
 

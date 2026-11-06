@@ -145,7 +145,7 @@ uns ← {2ₓ*⍺ | ⍵}  ⍝ Unsigned from signed integer.
 
 nicediv ← {  ⍝ ⍵ similar integers with sum ⍺.
   q←⍵⍴⌊⍺÷⍵  ⍝ quotient.
-  d←+\ ⍵|⍺ ÷ ⍵⍴⍵  ⍝ residue spread in ⍵ decimal steps.
+  d←+\ ⍵|⍺ ÷ₐ ⍵⍴⍵  ⍝ residue spread in ⍵ decimal steps.
   i←</↕0ₓ,⌊0.5+d
   q+i
 }

@@ -27,9 +27,9 @@ fn broken(program: &Program) -> Option<String> {
 /// Whether `read` lays out as many items as its node holds.
 fn counted(nodes: &[Node], read: &Read) -> bool { read.layout.count() == nodes[read.of].desc.layout.count() }
 
-/// What `read` gives as an operand of a plan: a held value read as it is, whose number can pick a kernel, or otherwise `desc`, the read's description.
+/// What `read` gives as an operand of a plan: a held value read as it is, as the trace planned it (`Desc::operand`), or otherwise `desc`, the read's description.
 fn operand<'a>(nodes: &'a [Node], read: &Read, desc: &'a Desc) -> Operand<'a> {
-    match &nodes[read.of].origin { Origin::Held(value) if *value.layout() == read.layout => Operand::Held(value), _ => Operand::Traced(desc) }
+    match &nodes[read.of].origin { Origin::Held(value) if *value.layout() == read.layout => desc.operand(value), _ => Operand::Traced(desc) }
 }
 
 /// The description that planning `step`, the step of `node`, on the values that it reads gives. A pervasive step plans under the settings that its plan holds, so that a pending program forced after `•prefs` changes them still checks, and its plan must be the one that planning gives. The other steps plan under the session's settings.
@@ -63,6 +63,7 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
         Step::At { p, base, items, .. } => plan::at(*p, &desc(base), &desc(items), Numeric::current()),
         Step::OverlapAdd { of, .. } => plan::overlap(&desc(of), &node.desc.layout),
         Step::Picks { axis, of, .. } => plan::picks(&desc(of), *axis),
+        Step::Structural { .. } | Step::Shape { .. } => Ok(node.desc.clone()),
         Step::Select { mask, yes, no } => {
             let (m, y, n) = (desc(mask), desc(yes), desc(no));
             Ok(plan::select(&operand(nodes, mask, &m), &operand(nodes, yes, &y), &operand(nodes, no, &n))?.desc)
@@ -70,8 +71,8 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
     }
 }
 
-/// Whether plan `a`, which planning gives, is plan `b`, the step's. Constants compare by their bits, so that a NaN constant matches itself, and only on the sides that `held` marks. A constant comes from a value, and the plan of an operand that isn't a held value read as it is can hold the constant of the value that the operand copies, as fusion's plan of `(⊂3)+4` does.
+/// Whether plan `a`, which planning gives, is plan `b`, the step's. Constants compare by their bits, so that a NaN constant matches itself, and only on the sides that `held` marks. A constant comes from a value, and the plan of an operand that isn't a held value read as it is can hold the constant of the value that the operand copies, as fusion's plan of `(⊂3)+4` does. The kind the plan computes at (`at`) comes from its constants, so it's left out with them.
 fn same(a: &Pervasive, b: &Pervasive, held: [bool; 2]) -> bool {
     let constants = |p: &Pervasive| [0, 1].map(|k| p.constants[k].filter(|_| held[k]).map(f64::to_bits));
-    Pervasive { constants: [None; 2], ..*a } == Pervasive { constants: [None; 2], ..*b } && constants(a) == constants(b)
+    Pervasive { constants: [None; 2], at: None, ..*a } == Pervasive { constants: [None; 2], at: None, ..*b } && constants(a) == constants(b)
 }

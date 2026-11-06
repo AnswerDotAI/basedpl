@@ -63,7 +63,6 @@ impl Regex {
         let groups = regexp(&format!("(?:{pattern})|"), insensitive).map_err(Error::domain)?.exec("").map_or(0, |m| m.length() as usize - 1);
         Ok(Self { pattern: pattern.into(), groups, insensitive })
     }
-    pub(crate) fn as_str(&self) -> &str { &self.pattern }
     pub(crate) fn find(&self, text: &str) -> Result<Option<usize>, Error> {
         let text = js_sys::JsString::from(text);
         let at = text.search(&regexp(&self.pattern, self.insensitive).map_err(Error::domain)?);

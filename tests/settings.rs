@@ -21,11 +21,11 @@ fn mathish_arithmetic() {
     equiv_in!(&s; "0ₓ÷0ₓ" => "0ₓ", "0÷ₓ0" => "0ₓ", "÷/1 0 0" => "∞");
     equiv_in(&s, r#"•prefs ["mathish":$f] ⋄ [≠⍨0÷0;≠⍨1⍟1;0.3=0.1+0.2]"#, "[$t;$t;$f]");
     equiv_in(&s, r#"•prefs ["mathish":$t] ⋄ [0÷0;1⍟1;0.3=0.1+0.2]"#, "[0;0;$t]");
-    equiv_in(&s, "[0ₚ÷0ₚ;≠⍨0ₓ₄÷0ₓ₄;≠⍨0ₓ₈÷0ₓ₈]", "[0;$t;$t]");
-    equiv_in(&s, "n←[0ₛ÷0ₛ;0ₓ₂÷0ₓ₂] ⋄ [≠⍨¨n;{(•storage ⍵).kind}¨n]", r#"[$t $t;"float32" "float32"]"#);
+    equiv_in(&s, "[0ₚ÷0ₚ;0ₓ₄÷0ₓ₄;0ₓ₈÷0ₓ₈]", "[0;0ₓ₄;0ₓ₈]");
+    equiv_in(&s, "n←[0ₛ÷0ₛ;0ₓ₂÷0ₓ₂] ⋄ [≠⍨n₀;0=n₁;{(•storage ⍵).kind}¨n]", r#"[$t;$t;"float32" "int16"]"#);
     equiv_in(&s, "[÷¯0÷0;÷¯0 ¯0÷0 0;÷¯0÷¨0 0]", "[¯∞;¯∞ ¯∞;¯∞ ¯∞]");
-    equiv_in(&s, r#"•prefs ["kinds":"static"] ⋄ n←[0÷0;0ₓ÷0ₓ;0j0ₚ÷0j0ₚ;1j0ₚ⍟1j0ₚ] ⋄ [≠⍨¨n;0.7=0.1+0.6]"#, "[$t $t $t $t;$f]");
-    equiv_in(&s, r#"•prefs ["float":32] ⋄ [≠⍨0ₓ÷0ₓ;≠⍨[0 0]ₓ÷[0 0]ₓ;≠⍨0ₓ÷¨[0 0]ₓ]"#, "[$t;$t $t;$t $t]");
+    equiv_in(&s, r#"•prefs ["kinds":"static"] ⋄ n←[0÷0;0j0ₚ÷0j0ₚ;1j0ₚ⍟1j0ₚ] ⋄ [≠⍨¨n;0=0ₓ÷0ₓ;0.7=0.1+0.6]"#, "[$t $t $t;$t;$f]");
+    equiv_in(&s, r#"•prefs ["float":32] ⋄ [0=0ₓ÷0ₓ;0=[0 0]ₓ÷[0 0]ₓ;0=0ₓ÷¨[0 0]ₓ]"#, "[$t;$t $t;$t $t]");
     equiv_in(
         &s,
         r#"•prefs ["kinds":"dynamic"] ⋄ n←1ₓ⍟1ₓ ⋄ p←1ₚ⍟1ₚ ⋄ [≠⍨n;(•storage n).kind;p;(•storage p).kind;0.3ₚ=0.1ₚ+0.2ₚ]"#,
@@ -60,7 +60,7 @@ fn language_examples() {
                     }
                 }
             }
-            for f in basedpl::reference::page(&text, &Default::default()) {
+            for f in basedpl::reference::page(&text, None, &Default::default(), None) {
                 failures.push(format!("{}:{}: {}\n{}", path.display(), f["line"], f["code"].as_str().unwrap(), f["message"].as_str().unwrap()));
             }
         }
@@ -133,7 +133,7 @@ fn boxed_display_and_function_trees() {
     assert!(s.eval("]dissect 1+2").output_text()[0].contains('加'));
     assert!(s.eval(r#"•prefs ["notation":"unknown"]"#).error.is_some());
     s.eval("f←{注 help\n乙}");
-    assert_eq!(s.inspect("f").unwrap().unwrap().help, "help");
+    assert_eq!(s.inspect("f").unwrap().help, "help");
 }
 
 fn expression_dissection() {
@@ -152,9 +152,11 @@ fn expression_dissection() {
     assert_eq!(r.output_text()[0], "2");
     assert_eq!(r.output_text()[2], "3");
     assert_same(r.value, &float(3.));
-    assert_eq!(s.eval("f").output_text().len(), 1);
-    let r = s.eval("↑[+]");
+    let r = s.eval("f");
     assert!(r.function.is_some());
+    assert_eq!(r.output_text().len(), 1);
+    let r = s.eval("↑[+]");
+    assert!(r.function.is_none() && r.value.is_some());
     assert_eq!(r.output_text().len(), 2);
     s.eval("k←3");
     for code in ["1+⍳3", "(1+⍳3)ᵀ", "(+/⍳3) (≢⍳4)", "(k+⊢) ⍳4"] {
@@ -196,7 +198,7 @@ fn hanzi_spellings_and_language() {
                 assert!(seen.insert(alias, symbol.glyph).is_none_or(|glyph| glyph == symbol.glyph), "duplicate alias {alias}");
                 assert_eq!(canonical(alias).to_string(), symbol.glyph);
                 if matches!(symbol.kind, "function" | "monadic-operator" | "dyadic-operator") {
-                    assert_eq!(s.inspect(&alias.to_string()).unwrap().unwrap().source, symbol.glyph);
+                    assert_eq!(s.inspect(&alias.to_string()).unwrap().source, symbol.glyph);
                 }
             }
         }
@@ -209,9 +211,9 @@ fn hanzi_spellings_and_language() {
         "系prefs [\"float\":32]句(系storage 1).kind" => "\"float32\"", "語←1 ⋄ 𠀀←2 ⋄ 語+𠀀" => "3",
         "_加←1 ⋄ _+←2 ⋄ _加_总←3 ⋄ x_語←4 ⋄ [_加 _+ _加_总 x_語]" => "1 2 3 4",
     );
-    assert_eq!(s.name_class("系time").unwrap(), 3);
-    assert_eq!(s.inspect("系time").unwrap().unwrap().source, "•time");
-    assert!(s.set("乙", number(1)).is_err() && !s.erase("乙").unwrap());
+    assert_eq!(s.name_class("系time"), 3);
+    assert_eq!(s.inspect("系time").unwrap().source, "•time");
+    assert!(s.set("乙", number(basedpl::Number::from_integer(1))).is_err() && !s.erase("乙"));
     equiv_in(&s, "{系nc \"乙\"}0", "2ₓ");
     equiv("かな←2 ⋄ 한글←3 ⋄ かな+한글", "5");
     let code = "加总 1 2句辞";
@@ -257,6 +259,6 @@ fn retained_selection_parameters_survive_data_reads() {
             check(r#"9⌷["b":4 "a":5]"#, "0");
             check(r#"x←["b":4 "a":5] ⋄ x.[[0 9]]←7 ⋄ x"#, r#"["b":7 "a":5]"#);
         }
-        fails_in(&s, "INDEX", &[r#""q"⌷["b":4 "a":5]"#]);
+        check(r#""q"⌷["b":4 "a":5]"#, "0");
     }
 }

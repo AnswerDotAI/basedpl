@@ -14,7 +14,7 @@ pub(crate) trait Stored: Element {
     fn of_ints_mut(_ints: &mut IntBuf) -> Option<&mut [Self]> { None }
     /// An array of `data`, stored as this element type. Integers keep their width.
     fn build(shape: impl Into<crate::Shape>, data: Vec<Self>) -> Option<Value> { Value::from_storage(shape, Storage::Compact(Self::buffer(data))).ok() }
-    /// An array of `data` under `numeric`'s kinds. Only complex numbers build differently: dynamic kinds narrow them to floats where no item has an imaginary part, and static kinds keep them complex.
+    /// An array of `data` under `numeric`'s settings: integers at its fixed width where it has one, and otherwise as `build` stores them.
     fn build_at(shape: impl Into<crate::Shape>, data: Vec<Self>, numeric: Numeric) -> Option<Value> {
         if numeric.fixed.is_some() { Value::from_buffer_at(shape, Self::buffer(data), numeric.fixed).ok() } else { Self::build(shape, data) }
     }

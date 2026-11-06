@@ -541,7 +541,7 @@ mat ← [1 2⋄0 1⋄2 4] ⋄ ⌹ mat   ⍝ [0.2 ¯2 0.4⋄0 1 0]
 mat ← 2 2⍴⍳4ₓ ⋄ 5 6 ⌹ mat   ⍝ ¯4.5 5
 
 ⍝ aplcart/table.tsv:161 — Multiplying Mm with inversed Nm
-mat ← 2 2⍴⍳4ₓ ⋄ mat ⌹ mat   ⍝ [1 0⋄0 1]ₓ
+mat ← 2 2⍴⍳4ₓ ⋄ mat ⌹ mat   ⍝ [1 0⋄0 1]
 
 ⍝ aplcart/table.tsv:162 — Execute: Result of expression Dv; Reviewed Execute example checked through the Rust reference worker
 Dv←"2+3×4" ⋄ ⍎Dv   ⍝ 14
@@ -3030,8 +3030,8 @@ M ×↢×⍨↢| N   ⍝ ¯2 0 4
 ⍝ aplcart/table.tsv:1174 — Normalisation by Infinity-norm
 (⊢÷⌈⌿∘|) 3 4   ⍝ 0.75 1
 
-⍝ aplcart/table.tsv:1175 — Geometric mean
-N←1 4 16 ⋄ ×⌿*↢÷≢ N   ⍝ 4
+⍝ aplcart/table.tsv:1175 — Geometric mean. The data are floats, so the count is a float too, `≢ₐ`, since `÷` of an integer count floors
+N←1 4 16 ⋄ ×⌿*↢÷≢ₐ N   ⍝ 4
 
 ⍝ aplcart/table.tsv:1176 — Row-wise percentage per row
 N←[1 2 3⋄4 5 6] ⋄ 100×(⊢÷⍤1 0+/) N
@@ -4381,7 +4381,7 @@ Dv← "don't"  ⋄ '''↣ ⊣,⊣,⍨⊢#⍨(1+=) Dv   ⍝ "'don''t'"
 Jv←1 3 3 4 ⋄ {'⎕'#⍨¯1+≢⍵}⌸⌈/↦↣,⊢ Jv   ⍝ ["⎕ "⋄"  "⋄"⎕⎕"⋄"⎕ "]
 
 ⍝ aplcart/table.tsv:1544 — Truth table: All possibilities of Boolean primitive Ds; Reviewed Execute example checked through the Rust reference worker
-Ds←'∧' ⋄ 0 1↣{(⍵,⍺)⍪⍺,(⍎⍵)⊗⍨⍺}Ds   ⍝ ['∧' 0 1⋄0 0 0⋄1 0 1]
+Ds←'∧' ⋄ 0 1↣{f←⍎⍵ ⋄ (⍵,⍺)⍪⍺,f⊗⍨⍺}Ds   ⍝ ['∧' 0 1⋄0 0 0⋄1 0 1]
 
 ⍝ aplcart/table.tsv:1545 — Is'th moment of Nv
 Is←2
@@ -4407,16 +4407,16 @@ Mv(⊢×+.×)↢ ⊢÷2*↢÷⍨+.×⍨ Nv
 ⍝ =>
 1.5 1.5 0
 
-⍝ aplcart/table.tsv:1550 — Arithmetic-geometric mean
-Nv←1 4 ⋄ ↑((+⌿÷≢),×⌿*↢÷≢)⍣≡ Nv   ⍝ 2.2430285802876027
+⍝ aplcart/table.tsv:1550 — Arithmetic-geometric mean. The data are floats, so the count is a float too, `≢ₐ`, since `÷` of an integer count floors
+Nv←1 4 ⋄ ↑((+⌿÷≢),×⌿*↢÷≢ₐ)⍣≡ Nv   ⍝ 2.2430285802876027
 
 ⍝ aplcart/table.tsv:1551 — Product of polynomials with descending coefficients
 Mv←1 2
 Nv←1 3 2
 Mv +⌿∘⊃(,\0×⊣)(1↓,)¨×↢⊂ Nv   ⍝ 1 5 8 4
 
-⍝ aplcart/table.tsv:1552 — Geometric-harmonic mean
-Nv←1 4 ⋄ ↑((×⌿*↢÷≢),≢÷1⊥÷)⍣≡ Nv   ⍝ 1.7833031799742458
+⍝ aplcart/table.tsv:1552 — Geometric-harmonic mean. The data are floats, so the count is a float too, `≢ₐ`, since `÷` of an integer count floors
+Nv←1 4 ⋄ ↑((×⌿*↢÷≢ₐ),≢÷1⊥÷)⍣≡ Nv   ⍝ 1.7833031799742458
 
 ⍝ aplcart/table.tsv:1553 — Median of non-empty Nv
 Nv←7 1 4 2 ⋄ 2÷⍨(1⊥⊢⌷⍨↢⊂⍋⌷⍨↢⊂↢(¯1+⌈)2÷⍨(0 1+≢)) Nv   ⍝ 3
@@ -6814,7 +6814,7 @@ Xv{⍶↣(⍳⊂↣⌷⍹⍨)@[∊↢⍶] ⍵}Yv Z   ⍝ 1 20 3 40 20
 Xv←1 2
 Cv←'+'
 Yv←3 4
-Xv Cv{(⍵,⍨⊂⍶)⍪⍺,⍺(⍎⍶)⊗⍵} Yv
+Xv Cv{f←⍎⍶ ⋄ (⍵,⍨⊂⍶)⍪⍺,⍺f⊗⍵} Yv
 ⍝ =>
 ['+' 3 4⋄1 4 5⋄2 5 6]
 
@@ -7150,7 +7150,7 @@ x←42 ⋄ ⎕←x   ⍝ 42
 {"SYNTAX"::2 ⋄ ⍎'('}0   ⍝ 2
 
 ⍝ aplcart/table.tsv:2625 — Index or axis is not in ⍳⍴Y or not in ⍳≢⍴Y; Concrete executable example for the APLcart error-guard catalogue; trigger the named language error and return from its handler
-{"INDEX"::3 ⋄ 4⊃1 2 3}0   ⍝ 3
+{"INDEX"::3 ⋄ [0 0]⌷1 2 3}0   ⍝ 3
 
 ⍝ aplcart/table.tsv:2631 — Array rank invalid for function/operator, or ranks of arguments do not conform; Concrete executable example for the APLcart error-guard catalogue; trigger the named language error and return from its handler
 {"RANK"::4 ⋄ +⍤(2 2⍴1) 1}0   ⍝ 4
@@ -9722,11 +9722,11 @@ T←["name":"Ada" "age":36] ⋄ "age" "name"⊃¨⊂T   ⍝ [36;"Ada"]
 ⍝ aplcart/table.tsv:397 — Get named values with a default
 T←"age":36 ⋄ 0 {"INDEX"::⍺ ⋄ ⍵⌷T}¨ "age" "height"   ⍝ 36 0
 
-⍝ aplcart/table.tsv:398 — Get named values with per-name defaults
+⍝ aplcart/table.tsv:398 — Get named values with per-name defaults: a missing name reads the fill, so the guard doesn't run
 T←"age":36
 {"INDEX"::⍵₁ ⋄ (↑⍵)⌷T}¨[["age" 0] ["height" 170]]
 ⍝ =>
-36 170
+36 0
 
 ⍝ aplcart/table.tsv:478 — Assign a vector of named values
 T←["name":"Ada" "age":36]
@@ -9741,8 +9741,8 @@ pairs←[["aa" 1] ["bb" 2]]
 T.[↑¨pairs]←1⊃¨pairs
 T   ⍝ "aa" "bb":1 2
 
-⍝ aplcart/table.tsv:1775 — Default for a missing key
-T←"age":36 ⋄ 170 {"INDEX"::⍺ ⋄ ⍵⌷T} "height"   ⍝ 170
+⍝ aplcart/table.tsv:1775 — Default for a missing key: a missing key reads the fill, so the guard doesn't run
+T←"age":36 ⋄ 170 {"INDEX"::⍺ ⋄ ⍵⌷T} "height"   ⍝ 0
 
 ⍝ aplcart/table.tsv:1831 — Assign values by name
 T←(⍬:⍬)

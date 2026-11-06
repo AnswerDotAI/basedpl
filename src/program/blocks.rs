@@ -1,19 +1,19 @@
 //! Block stages: a run of a program's elementwise steps on values of one item count, and a fold of the last of them that ends the run, computed a block of items at a time. Pending work and dfn replays run this way. `plan` finds the runs.
 //!
-//! Each step computes at one type, which it reads its operands as: floats of 32 or 64 bits, Booleans, or integers, which wrap. It writes a run's items into a buffer of that type, or Booleans for a comparison that the stage stores or folds or that a step at another type reads. A comparison at a float width that only steps at float widths read writes 1 and 0 as floats, which those steps read as they read floats. Its kernel comes from its type's `Kernels` table, through `pervasive::node`. A buffer holds a later step's items once every step that reads it has run, and the last step writes straight into its value, or into the block that the fold reads. A step reads an operand of another type by converting a run of its items (`Converts`).
+//! Each step computes at one type, which it reads its operands as: floats of 32 or 64 bits, Booleans, or integers, which wrap. It writes a run's items into a buffer of that type, or Booleans for a comparison that the stage stores or folds or that a step at another type reads. A comparison at a float width that only steps at float widths read writes 1 and 0 as floats, which those steps read as they read floats. A map step's kernel is its formula's, resolved at its type (`Pervasive::kernel`), which it runs through `Kernel::map`. A buffer holds a later step's items once every step that reads it has run, and the last step writes straight into its value, or into the block that the fold reads. A step reads an operand of another type by converting a run of its items (`Converts`).
 //!
 //! A stage's steps fall into parts (`Part`): runs of steps that lower to machine operations giving their kernels' results exactly (`lowered_op`), each at least two steps long or the whole stage, and the steps around them. A compiled part's kernel computes its steps for a run in one call, in registers. It reads the run's inputs where the driver places them, the stage's atoms as arguments and earlier parts' buffers, and writes each value that leaves the part: to its buffer, its output, the value's slots or the block that the fold reads. The steps around compiled parts run on their precompiled kernels, and so does every step where the stage doesn't compile. A stage compiles all its parts or none. The browser build compiles nothing.
 //!
-//! The stage reads each array made outside it through the map that agreement gives it, or through the map of a copy or view of it, without making the copy. A block splits into runs at each repeat of at least the sizes' `run` items, and each run reads one repeat in place, except that a compiled part reads each repeat's item from a table, so that its runs needn't end there (`Reading::Tabled`). A cycle shorter than a block reads from its period, written out once. A map that walks entries for each cycle, as a broadcast of a transposed read does, reads one cycle, which the stage gathers once each time it runs. A map whose reads copy most blocks (`Mapping::copies`) copies each run into a buffer. Ranges of whole blocks split across threads. A stage with a fold folds each block's items while they're in the cache, in the pieces that `reduce::fold_pieces` gives.
+//! The stage reads each array made outside it through the map that agreement gives it, or through the map of a copy or view of it, without making the copy. A block splits into runs at each repeat of at least the sizes' `run` items, and each run reads one repeat in place, except that a compiled part reads each repeat's item from a table, so that its runs needn't end there (`Reading::Tabled`). A cycle shorter than a block reads from its period, written out once. A map that walks entries for each cycle, as a broadcast of a transposed read does, reads one cycle, which the stage gathers once each time it runs. A map whose reads copy most blocks (`Mapping::copies`) copies each run into a buffer. Ranges of whole blocks split across threads. A stage with a fold folds each block's items while they're in the cache, in the pieces that its kernel's fold takes (`Kernel::fold_pieces`).
 
 use super::{Desc, Origin, Program, Read, Step, run::{Plan, Unit}};
 use crate::{
     Number, Value, agreement::{Agree, Agreement}, array::{Layout, Shape, Storage, float_width_of}, element::{Converts, Stored}, explain::Tally,
-    number::int::Int, pervasive::{self, Kernels, Out, Reduce}, plan::Pervasive, primitive::{FoldKind, Primitive}
+    number::Numeric, pervasive::{self, Reduce}, plan::Pervasive, primitive::{FoldKind, Primitive}
 };
 use rustymath::{
-    Arg, agreement::{Mapping, Period, expanded, expanded_items, tiled_cycle, in_place}, buffer::{Buffer, DType, Element, FloatWidth, View, Width},
-    gather::Steps, layout::strides, parallel::{self, Slots}, reduce::{self, Reduction}, tolerant::{Exactly, Tolerance}
+    Arg, agreement::{Mapping, Period, Walked, expanded, expanded_items, tiled_cycle, in_place}, buffer::{Buffer, DType, Element, FloatWidth, View, Width},
+    gather::Steps, layout::strides, operation::{Kernel, Settings}, parallel::{self, Slots}, reduce, tolerant::{Exactly, Tolerance}
 };
 use std::{borrow::Cow, ops::Range, sync::atomic::{AtomicBool, Ordering::Relaxed}};
 #[cfg(not(web))]
@@ -50,18 +50,16 @@ macro_rules! with_item {
     };
 }
 
-/// The program's nodes in the order replays run them: each on its own, or with others as one block stage, which has compiled parts where its steps lower (`Blocks::parted`). Several groups stay open at once, so that steps of different item counts each form a stage. A step joins a group whose values it reads where it can, or else any open group, the latest first, or else starts one. Each other group whose values it reads runs before it, so open groups never read each other's values. A node that reads none of a group's values runs before the group's unit, so inputs, held values and unrelated steps don't end a group. A conversion that only `+.×` products read stays pending for them to read through (`read_through`). Each value goes after the last unit that reads it. Only the steps that the result and the outputs read run. A program whose steps can't form a stage (`stages`) runs each node on its own, without grouping, and drops nothing before the replay ends.
+/// The program's nodes in the order replays run them: each on its own, or with others as one block stage, which has compiled parts where its steps lower (`Blocks::parted`). Several groups stay open at once, so that steps of different item counts each form a stage. A step joins a group whose values it reads where it can, or else any open group, the latest first, or else starts one. Each other group whose values it reads runs before it, so open groups never read each other's values. A node that reads none of a group's values runs before the group's unit, so inputs, held values and unrelated steps don't end a group. A conversion that only `+.×` products read stays pending for them to read through (`read_through`). Each value goes after the last unit that reads it. Only the steps that the result and the outputs read run. A program whose steps can't form a stage (`stages`) runs each node on its own, without grouping (`each`).
 pub(crate) fn plan(program: &Program) -> Plan {
-    if crate::settings::verifies() { super::verify::check(program); }
-    // Only the steps that the result and the outputs read run (`Program::reached`). Counting a fold as a step, those bound what any group of them counts.
-    let live = program.reached(std::iter::once(program.result.of).chain(program.outputs.iter().copied()));
+    // Only the steps that the result and the outputs read run (`Program::needed`). Counting a fold as a step, those bound what any group of them counts.
+    let live = program.needed();
     let steps = || {
         program.nodes.iter().zip(&live).filter_map(|(n, &l)| match &n.origin { Origin::Step(s) if l => Some(s), _ => None })
     };
     let copies = steps().any(|s| matches!(s, Step::Copy { .. }));
     if !stages(steps().filter(|s| !matches!(s, Step::Copy { .. })).count(), false, copies) {
-        let units: Vec<_> = (0..program.nodes.len()).filter(|&j| live[j]).map(Unit::Node).collect();
-        return Plan { drops: vec![Vec::new(); units.len()], units };
+        return each(program, &live);
     }
     let mut readers = vec![Vec::new(); program.nodes.len()];
     for (j, node) in program.nodes.iter().enumerate() { if live[j] && let Origin::Step(step) = &node.origin { for i in step.reads() { readers[i].push(j); } } }
@@ -79,6 +77,17 @@ pub(crate) fn plan(program: &Program) -> Plan {
         units.push(if read_through(program, &readers, j) { Unit::Pending(j) } else { Unit::Node(j) });
     }
     for mut group in groups { group.finish(program, &readers, &mut units); }
+    Plan { drops: dropped(program, &units), units }
+}
+
+/// A plan that runs each of `live`'s nodes on its own, in order, with each value dropped after the last node that reads it: `plan`'s plan where no group of steps forms a stage.
+fn each(program: &Program, live: &[bool]) -> Plan {
+    let units: Vec<_> = (0..program.nodes.len()).filter(|&j| live[j]).map(Unit::Node).collect();
+    Plan { drops: dropped(program, &units), units }
+}
+
+/// The values that go after each of `units`: those that no later unit reads, the result and the outputs kept.
+fn dropped(program: &Program, units: &[Unit]) -> Vec<Vec<usize>> {
     let mut last = vec![None; program.nodes.len()];
     for (u, unit) in units.iter().enumerate() {
         match unit {
@@ -88,7 +97,7 @@ pub(crate) fn plan(program: &Program) -> Plan {
     }
     let mut drops = vec![Vec::new(); units.len()];
     for (i, u) in last.into_iter().enumerate() { if let Some(u) = u && !program.takes(i) { drops[u].push(i); } }
-    Plan { units, drops }
+    drops
 }
 
 /// Nodes that one unit can compute: elementwise steps on values of one item count, the copies through which they read arrays made outside the group, and then a fold of the last step, which ends the group.
@@ -185,20 +194,21 @@ fn input(program: &Program, i: usize) -> bool { !program.nodes[i].desc.atom && r
 /// How the operands of a map step read over its result: `left`, where the step is dyadic, and `right`.
 fn agreement(left: Option<&Read>, right: &Read) -> Option<Agreement> { Agreement::new(left.map_or(&Layout::default(), |r| &r.layout), &right.layout).ok() }
 
-/// Whether node `j` is a conversion that only `+.×` products read, each of which reads its operand through it (`pervasive::reads_widened`). A replay leaves it pending for them (`Unit::Pending`), so that its converted items are never stored.
+/// Whether node `j` is a conversion that only inner products read, each of which reads its operand through it (`pervasive::reads_widened`). A replay leaves it pending for them (`Unit::Pending`), so that its converted items are never stored.
 fn read_through(program: &Program, readers: &[Vec<usize>], j: usize) -> bool {
     let Origin::Step(Step::Convert { ref of, .. }) = program.nodes[j].origin else { return false };
-    let product = |&r: &usize| matches!(program.nodes[r].origin, Origin::Step(Step::Product { f, g, .. }) if pervasive::known_product(f, g, false) == Some(rustymath::linalg::Product::PlusTimes));
+    let product = |&r: &usize| matches!(program.nodes[r].origin, Origin::Step(Step::Product { .. }));
     !program.takes(j) && !readers[j].is_empty() && readers[j].iter().all(product) && !program.nodes[of.of].desc.atom
         && pervasive::reads_widened(program.nodes[of.of].desc.dtype(), program.nodes[j].desc.dtype())
 }
 
-/// Whether a block stage folds items of `dtype` by `p` a block at a time: floats by `with_float_reduction!`'s reductions, integers by `⌈` and `⌊`, and by `+` where they wrap, as `integer_fold` folds them, and Booleans by `with_truth_reduction!`'s.
+/// Whether a block stage folds items of `dtype` by `p` a block at a time (`reduction`): floats by `+`, `×`, `⌈` and `⌊`, integers by `⌈` and `⌊`, and by `+` where they wrap, and Booleans by the reductions their truth tables name.
 fn folds(p: Primitive, dtype: DType, wraps: bool) -> bool {
+    let fold = reduction(p, dtype);
     match dtype {
-        DType::Float(FloatWidth::F32 | FloatWidth::F64) => matches!(pervasive::folds(p), Some(Reduce::Sum | Reduce::Product | Reduce::Max | Reduce::Min)),
-        DType::Integer(_) => matches!(pervasive::folds(p), Some(Reduce::Max | Reduce::Min)) || wraps && matches!(pervasive::folds(p), Some(Reduce::Sum)),
-        DType::Boolean => matches!(pervasive::truth_fold(p), Some(Reduce::Sum | Reduce::Min | Reduce::Max | Reduce::Xor | Reduce::Xnor)), _ => false
+        DType::Float(FloatWidth::F32 | FloatWidth::F64) => matches!(fold, Some(Reduce::Sum | Reduce::Product | Reduce::Max | Reduce::Min)),
+        DType::Integer(_) => matches!(fold, Some(Reduce::Max | Reduce::Min)) || wraps && matches!(fold, Some(Reduce::Sum)),
+        DType::Boolean => matches!(fold, Some(Reduce::Sum | Reduce::Min | Reduce::Max | Reduce::Xor | Reduce::Xnor)), _ => false
     }
 }
 
@@ -208,35 +218,20 @@ fn alternates(p: Primitive, dtype: DType) -> bool {
     matches!(dtype, DType::Float(FloatWidth::F32 | FloatWidth::F64)) && matches!(p, Primitive::Arithmetic(Minus | Divide))
 }
 
-/// A fold's total as a compiled part gives it, in its 8-byte slot (`Item::from_slot`). An alternated total never comes from a slot, because no compiled part folds by `-` or `÷` (`alternates`).
-trait Slotted: Copy {
-    fn from_slot(slot: u64) -> Self;
-}
-impl<T: Item> Slotted for T {
-    fn from_slot(slot: u64) -> T { <T as Item>::from_slot(slot) }
-}
-impl<S: Copy> Slotted for (S, bool) {
-    fn from_slot(_: u64) -> Self { unreachable!("no compiled part folds by - or ÷") }
-}
-
-/// Whether a stage's fold by `p` of items of `items` takes a seed of type `seed` into a result of type `result`, merging the seed into each total at the end (`Blocks::folded`): a fold of floats with a float seed, whose result keeps the items' width, of integers with an integer seed, by `⌈` or `⌊`, or by `+` into a result of the items' width, and a count of Booleans by `+` with an integer seed. A sum of integers into a wider integer folds after the stage, because a compiled part sums integers at the items' width.
+/// Whether a stage's fold by `p` of items of `items` takes a seed of type `seed` into a result of type `result`, combining the seed with each total at the end (`Blocks::folded`): a fold of floats with a float seed, whose result keeps the items' width, of integers with an integer seed, by `⌈` or `⌊`, or by `+` into a result of the items' width, and a count of Booleans by `+` with an integer seed. A sum of integers into a wider integer folds after the stage, because a compiled part sums integers at the items' width.
 fn seeds(p: Primitive, items: DType, seed: DType, result: DType) -> bool {
     match (items, seed, result) {
         (DType::Float(a), DType::Float(_), DType::Float(b)) => a == b,
-        (DType::Integer(_), DType::Boolean | DType::Integer(_), DType::Integer(_)) => match pervasive::folds(p) {
+        (DType::Integer(_), DType::Boolean | DType::Integer(_), DType::Integer(_)) => match reduction(p, items) {
             Some(Reduce::Max | Reduce::Min) => true, Some(Reduce::Sum) => items == result, _ => false
         },
-        (DType::Boolean, DType::Boolean | DType::Integer(_), DType::Integer(_)) => matches!(pervasive::folds(p), Some(Reduce::Sum)),
+        (DType::Boolean, DType::Boolean | DType::Integer(_), DType::Integer(_)) => matches!(reduction(p, items), Some(Reduce::Sum)),
         _ => false,
     }
 }
 
-/// `totals`, each with the fold's seed, where it has one, merged in by `R` as the fold's last item. `None` where the seed has no value of type `T`.
-fn seeded<T: Copy, R: Reduction<T, Total = T>>(totals: Vec<T>, seed: Option<Option<T>>) -> Option<Vec<T>> {
-    let Some(seed) = seed else { return Some(totals) };
-    let seed = seed?;
-    Some(totals.into_iter().map(|t| R::merge(t, seed).0).collect())
-}
+/// The reduction by which a stage folds items of `dtype` by `p`: the fold of `p`'s kernel there (`Kernel::fold`), which for Booleans is the one their truth table names.
+fn reduction(p: Primitive, dtype: DType) -> Option<Reduce> { pervasive::kernel_at(p, None, dtype, 2, Numeric::current())?.fold() }
 
 /// Whether a stage folds a fold by `p` and `kind` along `len` positions of items of `items`, into a result that `result` describes, as one step of `p` for each position (`Blocks::window`): a fold, not a scan, along 2 to `DIRECT` positions, by a reduction that a stage folds (`folds`), into a result of its items' type, as a sum of Booleans isn't.
 pub(crate) fn short_window(p: Primitive, kind: FoldKind, len: usize, items: DType, result: &Desc) -> bool {
@@ -286,7 +281,8 @@ fn identity(r: Reduce) -> Option<f64> {
 pub(crate) fn computes(plan: &Pervasive, out: DType) -> Option<DType> {
     let at = plan.computes().filter(|&at| readable(at))?;
     let kernel = plan.kernel().filter(|_| plan.settled().is_ok() && plan.halve.is_none())?;
-    (kernel.kind.kind() == at.kind() && out == at || kernel.kind == DType::Boolean && out == DType::Boolean).then_some(at)
+    let made = kernel.result_dtype();
+    (made.kind() == at.kind() && out == at || made == DType::Boolean && out == DType::Boolean).then_some(at)
 }
 
 /// The most arrays, scalars or stored values that a compiled part takes. A run passes them to the kernel in fixed arrays on its stack.
@@ -331,7 +327,7 @@ fn lowered_op(plan: &Pervasive, at: DType, dyadic: bool, divisor: Option<f64>) -
         (A(Plus), true) => jit::Op::Add, (A(Minus), true) => jit::Op::Subtract, (A(Times), true) => jit::Op::Multiply,
         (A(Divide), true) if !plan.numeric.mathish_at(width) || divisor.is_some_and(|d| d != 0.0) => jit::Op::Divide, (M(Math::Ceiling), true) => jit::Op::Maximum,
         (M(Math::Floor), true) => jit::Op::Minimum, (M(Math::Lcm), true) if at == DType::Boolean => jit::Op::And, (M(Math::Gcd), true) if at == DType::Boolean => jit::Op::Or,
-        (M(Math::Not), false) => jit::Op::Not, (C(c), true) if width.is_none_or(|w| plan.numeric.tolerance_at(w).is_exact()) => jit::Op::Compare(cmp(c)),
+        (M(Math::Not), false) => jit::Op::Not, (C(c), true) if plan.numeric.tolerance_of(at).is_exact() => jit::Op::Compare(cmp(c)),
         (A(Minus), false) => jit::Op::Negate, (M(Math::Magnitude), false) => jit::Op::Magnitude, (M(Math::Root), false) => jit::Op::Sqrt, _ => return None
     })
 }
@@ -385,6 +381,23 @@ impl Recording<'_> {
 impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
     type V = jit::Value;
     type B = jit::Value;
+    type I = jit::Value;
+    type W = jit::Value;
+    fn width(&self) -> FloatWidth { if self.ty == jit::Ty::F32 { FloatWidth::F32 } else { FloatWidth::F64 } }
+    fn fused(&self) -> bool { rustymath::FUSED }
+    fn widen(&self, x: jit::Value) -> jit::Value { x }
+    fn wide_number(&self, x: f64) -> jit::Value { self.constant(x) }
+    fn wide_multiply_add(&self, x: jit::Value, y: jit::Value, z: jit::Value) -> jit::Value { <Self as rustymath::recipe::Ops<F>>::multiply_add(self, x, y, z) }
+    fn narrow(&self, x: jit::Value) -> jit::Value { x }
+    fn integer(&self, _: i64) -> jit::Value { unreachable!("a compiled recipe calls integer operations") }
+    fn integer_op(&self, op: rustymath::recipe::Integer, _: jit::Value, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls {op:?}") }
+    fn integer_compare(&self, op: rustymath::recipe::Cmp, _: jit::Value, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls an integer {op:?}") }
+    fn integer_select(&self, _: jit::Value, _: jit::Value, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls an integer select") }
+    fn to_integer(&self, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls to_integer") }
+    fn from_integer(&self, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls from_integer") }
+    fn to_bits(&self, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls to_bits") }
+    fn from_bits(&self, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls from_bits") }
+    fn overflow(&self, op: rustymath::recipe::Binary, _: jit::Value, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe checks overflow of {op:?}") }
     fn number(&self, x: F) -> jit::Value { self.constant(x.wide()) }
     fn unary(&self, op: rustymath::recipe::Unary, x: jit::Value) -> jit::Value {
         use rustymath::recipe::Unary;
@@ -417,7 +430,7 @@ impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
     fn select(&self, m: jit::Value, x: jit::Value, y: jit::Value) -> jit::Value { self.at(jit::Op::Select(m), x, Some(y)) }
 }
 
-/// Records into `kernel` the steps that give a pervasive step of plan `plan` at type `at` from `x` and, for a dyad, `y`, where no one machine operation does (`lowered_op`), through the formulas that the step's kernel runs too. These are a reciprocal, `π`'s two forms, Mathish division, a power by a held exponent (`exponent` is its route, and `y` omits the exponent), tolerant comparisons (`pervasive::compare_against` where the program holds one argument, as `held` gives each, and otherwise `pervasive::compare_steps`), a residue within a tolerance, and, where the step gives floats of type `at` (`made`), as static kinds do, sign, floor and ceiling, all through `rustymath::recipe`; and an integer residue by a held positive power of two, through `rustymath::integer::mask`. A comparison's last step gives Booleans. An exact float residue doesn't lower: rustymath's `Residue` recomputes the items whose quotient passes the float's precision, which a compiled step can't. `None` where the step doesn't lower.
+/// Records into `kernel` the steps that give a pervasive step of plan `plan` at type `at` from `x` and, for a dyad, `y`, where no one machine operation does (`lowered_op`), through the formulas that the step's kernel runs too. These are a reciprocal, `π`'s two forms, Mathish division, a power by a held exponent (`exponent` is its route, and `y` omits the exponent), tolerant comparisons (the recipe of the comparison's formula, `pervasive::formula`, against the one number the program holds where `held` gives one), a residue within a tolerance, and, where the step gives floats of type `at` (`made`), as static kinds do, sign, floor and ceiling, all through `rustymath::recipe`; and an integer residue by a held positive power of two, through `rustymath::integer::mask`. A comparison's last step gives Booleans. An exact float residue doesn't lower: rustymath's `Residue` recomputes the items whose quotient passes the float's precision, which a compiled step can't. `None` where the step doesn't lower.
 #[cfg(not(web))]
 fn recorded(kernel: &mut jit::Kernel, plan: &Pervasive, at: DType, made: jit::Ty, x: jit::Value, y: Option<jit::Value>, exponent: Option<rustymath::Exponent>, held: [Option<f64>; 2]) -> Option<()> {
     use crate::number::{Arithmetic::*, Math};
@@ -434,7 +447,7 @@ fn recorded(kernel: &mut jit::Kernel, plan: &Pervasive, at: DType, made: jit::Ty
         return Some(());
     };
     let (numeric, floats) = (plan.numeric, made == ty);
-    let t = numeric.tolerance_at(width);
+    let t = numeric.tolerance_of(at);
     match (plan.p, y) {
         (M(Math::Power), None) => { at_float!(ty, |G| recipe::power::<G, _>(&o, exponent?, x))?; }
         (A(Divide), None) => { at_float!(ty, |G| Some(recipe::reciprocal::<G, _>(&o, x)))?; }
@@ -443,22 +456,35 @@ fn recorded(kernel: &mut jit::Kernel, plan: &Pervasive, at: DType, made: jit::Ty
         (A(Divide), Some(y)) if numeric.mathish_at(Some(width)) => { at_float!(ty, |G| Some(recipe::mathish_divide::<G, _>(&o, x, y)))?; }
         (A(Times) | Primitive::Special(crate::primitive::Special::Sign), None) if floats => { at_float!(ty, |G| Some(recipe::sign::<G, _>(&o, x)))?; }
         (M(Math::Floor), None) if floats => {
-            at_float!(ty, |G| Some(if t.is_exact() { recipe::exact_floor::<G, _>(&o, x) } else { recipe::floor(&o, G::narrow(t.value()), x) }))?;
+            at_float!(ty, |G| Some(if t.is_exact() { recipe::exact_floor::<G, _>(&o, x) } else { recipe::floor::<G, _>(&o, recipe::Ops::<G>::number(&o, G::narrow(t.value())), x) }))?;
         }
         (M(Math::Ceiling), None) if floats => {
-            at_float!(ty, |G| Some(recipe::ceil::<G, _>(&o, x, |o, v| if t.is_exact() { recipe::exact_floor::<G, _>(o, v) } else { recipe::floor(o, G::narrow(t.value()), v) })))?;
+            at_float!(ty, |G| Some(recipe::ceil::<G, _>(&o, x, |o, v| if t.is_exact() { recipe::exact_floor::<G, _>(o, v) } else { recipe::floor::<G, _>(o, recipe::Ops::<G>::number(o, G::narrow(t.value())), v) })))?;
         }
         (M(Math::Magnitude), Some(y)) if !t.is_exact() => {
-            at_float!(ty, |G| Some(recipe::residue::<G, _>(&o, Some(G::narrow(t.value())), x, y, |o, v| recipe::floor(o, G::narrow(t.value()), v))))?;
+            at_float!(ty, |G| Some(recipe::residue::<G, _>(&o, Some(recipe::Ops::<G>::number(&o, G::narrow(t.value()))), x, y, |o, v| recipe::floor::<G, _>(o, recipe::Ops::<G>::number(o, G::narrow(t.value())), v))))?;
         }
-        (C(c), Some(y)) => {
-            let against = |o: &Recording<'_>| match held { [_, Some(k)] => Some((k, x, true)), [Some(k), None] => Some((k, y, false)), _ => None }
-                .and_then(|(k, v, left)| at_float!(ty, |G| crate::pervasive::compare_against::<G, _>(c, t, o, G::narrow(k), v, left)));
-            if against(&o).is_none() { at_float!(ty, |G| Some(crate::pervasive::compare_steps::<G, _>(c, t, &o, x, y)))?; }
+        (C(_), Some(y)) => {
+            let held = match held { [_, Some(k)] => Some((k, x, true)), [Some(k), None] => Some((k, y, false)), _ => None };
+            at_float!(ty, |G| pervasive::formula(plan.p, 2, false, false, t, Compared::<G> { o: &o, x, y, held, at: std::marker::PhantomData }).flatten())?;
         }
         _ => return None,
     }
     Some(())
+}
+
+/// A comparison's recipe through `o` at float type `G`: against the one number that `held` gives, with the value it compares (`Formula::emit_against`), or on `x` and `y` (`Formula::emit_test`).
+#[cfg(not(web))]
+struct Compared<'a, 'b, G> { o: &'a Recording<'b>, x: jit::Value, y: jit::Value, held: Option<(f64, jit::Value, bool)>, at: std::marker::PhantomData<G> }
+
+#[cfg(not(web))]
+impl<G: rustymath::Float> pervasive::Visit for Compared<'_, '_, G> {
+    type Out = Option<()>;
+    fn visit<K: rustymath::facts::Formula<N>, const N: usize>(self, k: K) -> Option<()> {
+        if let Some((c, v, left)) = self.held && k.emit_against::<G, _>(self.o, G::narrow(c), v, left).is_some() { return Some(()); }
+        if N != 2 { return None; }
+        k.emit_test::<G, _>(self.o, std::array::from_fn(|i| [self.x, self.y][i])).map(|_| ())
+    }
 }
 
 /// Whether a compiled kernel converts items of type `from` to `to` as a step whose tolerance is `tolerance` reads them (`Converts`): to any type but Booleans, and from a float to an integer only where the tolerance is exact, since the kernel floors exactly.
@@ -467,18 +493,18 @@ fn converts(from: DType, to: DType, tolerance: Tolerance) -> bool {
     from == to || (to != DType::Boolean && (matches!(to, DType::Float(_)) || !matches!(from, DType::Float(_)) || tolerance.is_exact()))
 }
 
-/// An array that a stage reads: the program's node `of`, read through `map`. Where the node's own map walks entries for each cycle (`Period::Walks`), or cycles with a period shorter than a block, `gather` holds that map, the stage writes the node's cycle out once each time it runs (`gathered_once`), and `map` reads it as `Tiled`. Where the stage would walk each block of the node's map as one strided run, while the whole copy reads through the tiled transpose (`tiles_whole`), the stage gathers the whole copy through `gather` instead, and `map` reads it in order.
+/// An array that a stage reads: the program's node `of`, planned at `dtype`, read through `map`. Where the node's own map walks entries for each cycle (`Period::Walks`), or cycles with a period shorter than a block, `gather` holds that map, the stage writes the node's cycle out once each time it runs (`gathered_once`), and `map` reads it as `Tiled`. Where the stage would walk each block of the node's map as one strided run, while the whole copy reads through the tiled transpose (`tiles_whole`), the stage gathers the whole copy through `gather` instead, and `map` reads it in order. Both maps find their walk and cycle once and keep them for every run (`Walked`).
 #[derive(PartialEq)]
-struct Input { of: usize, map: Mapping, gather: Option<Mapping> }
+struct Input { of: usize, dtype: DType, map: Walked<'static>, gather: Option<Walked<'static>> }
 
 impl Input {
-    /// Node `of` read through `map`, as its cycle written out once where `map` walks entries or cycles with a period shorter than a block, or as one gathered copy where `map` tiles whole.
-    fn new(of: usize, map: Mapping) -> Self {
+    /// Node `of` read through `map`, as its cycle written out once where `map` walks entries, or cycles with a period shorter than a block that a reader writes out (`Period::tiling`, as `tiled_cycle` writes it), or as one gathered copy where `map` tiles whole. A longer cycle reads in place.
+    fn new(of: usize, dtype: DType, map: Mapping) -> Self {
         let block = crate::settings::sizes().block;
         match map.period() {
-            Some(Period::Walks { len, .. }) => Self { of, map: Mapping::Tiled(len), gather: Some(map) },
-            Some(Period::Cycles(p)) if p < block => Self { of, map: Mapping::Tiled(p), gather: Some(map) },
-            _ if map.tiles_whole(block) => Self { of, map: Mapping::Linear(1), gather: Some(map) }, _ => Self { of, map, gather: None }
+            Some(Period::Walks { len, .. }) => Self { of, dtype, map: Mapping::Tiled(len).into(), gather: Some(map.into()) },
+            Some(period @ Period::Cycles(p)) if p < block && period.tiling(block).is_some() => Self { of, dtype, map: Mapping::Tiled(p).into(), gather: Some(map.into()) },
+            _ if map.tiles_whole(block) => Self { of, dtype, map: Mapping::Linear(1).into(), gather: Some(map.into()) }, _ => Self { of, dtype, map: map.into(), gather: None }
         }
     }
 }
@@ -501,8 +527,8 @@ impl std::fmt::Debug for Blocks {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("Blocks").field("nodes", &self.nodes).finish() }
 }
 
-/// One step of a block stage: program node `j`, what it computes, its operands, the type it computes at and reads its operands as, the tolerance of a float's floor where it converts floats to integers, whether it gives Booleans, whether its value holds fixed integers, and the shape of its value.
-struct BlockStep { j: usize, op: Op, operands: [Option<Operand>; 3], at: DType, tolerance: Tolerance, booleans: bool, fixed: bool, shape: Shape }
+/// One step of a block stage: program node `j`, what it computes, its operands, the type it computes at and reads its operands as, the tolerance of a float's floor where it converts floats to integers, whether it gives Booleans, whether its value holds fixed integers, and its node's layout, which its value takes with its keys and axis names.
+struct BlockStep { j: usize, op: Op, operands: [Option<Operand>; 3], at: DType, tolerance: Tolerance, booleans: bool, fixed: bool, layout: Layout, kernel: Option<Kernel> }
 
 impl BlockStep {
     /// The type of the step's items.
@@ -535,8 +561,8 @@ impl Op {
 #[derive(Clone, Copy, PartialEq)]
 enum Operand { Input(usize), Constant(usize), Identity(Reduce), Step(usize) }
 
-/// A fold by `p` of the last step's items, laid out as `dims`, `[outer, len, inner]`, along its middle axis, whose totals, laid out as `shape` and of type `dtype`, are program node `j`. `fixed` is whether those totals are fixed integers. `seed` is the atom node that each total takes as its last item, where the fold has a seed.
-struct BlockFold { j: usize, p: Primitive, dims: [usize; 3], shape: Shape, dtype: DType, fixed: bool, seed: Option<usize> }
+/// A fold by `p` of the last step's items, laid out as `dims`, `[outer, len, inner]`, along its middle axis, whose totals, laid out as `layout`, with its node's keys and axis names, and of type `dtype`, are program node `j`. `fixed` is whether those totals are fixed integers. `seed` is the atom node that each total takes as its last item, where the fold has a seed. `kernel` folds the lanes under `numeric`, at the last step's type.
+struct BlockFold { j: usize, p: Primitive, dims: [usize; 3], layout: Layout, dtype: DType, fixed: bool, seed: Option<usize>, numeric: Numeric, settings: Settings, kernel: Option<Kernel> }
 
 /// A kernel and its code, compiled once, the first time a stage asks for it (`Blocks::compiles`). A kernel that fails to compile keeps its failure, and isn't tried again.
 #[cfg(not(web))]
@@ -588,16 +614,16 @@ impl Blocks {
             let Origin::Step(step) = &node.origin else { return None };
             let shape = node.desc.shape();
             let made = |op, operands, at, tolerance| BlockStep { j, op, operands, at, tolerance, booleans: node.desc.dtype() == DType::Boolean,
-                fixed: node.desc.kind.fixed.is_some(), shape: shape.into() };
+                fixed: node.desc.kind.fixed.is_some(), layout: node.desc.layout.clone(), kernel: None };
             match step {
                 Step::Map { left, right, plan } => {
                     let at = computes(plan, node.desc.dtype())?;
                     let (x, y) = b.paired(program, members, left.as_ref(), right, shape)?;
-                    b.steps.push(made(Op::Map(*plan), [x, Some(y), None], at, Tolerance::EXACT));
+                    b.steps.push(BlockStep { kernel: Some(plan.kernel()?), ..made(Op::Map(*plan), [x, Some(y), None], at, Tolerance::EXACT) });
                 }
                 Step::Convert { of, numeric } => {
                     let y = b.operand(program, members, of, &Mapping::Linear(1), shape)?;
-                    let tolerance = float_width_of(program.nodes[of.of].desc.dtype()).map_or(Tolerance::EXACT, |w| numeric.tolerance_at(w));
+                    let tolerance = numeric.tolerance_of(program.nodes[of.of].desc.dtype());
                     b.steps.push(made(Op::Convert, [None, Some(y), None], node.desc.dtype(), tolerance));
                 }
                 Step::Select { mask, yes, no } => {
@@ -616,8 +642,10 @@ impl Blocks {
                     None => {
                         let shape = of.layout.shape();
                         let dims = [crate::array::count(&shape[..axis]), shape[axis], crate::array::count(&shape[axis + 1..])];
-                        b.fold = Some(BlockFold { j, p, dims, shape: node.desc.shape().into(), dtype: node.desc.dtype(), fixed: node.desc.kind.fixed.is_some(),
-                            seed: seed.as_ref().map(|s| s.of) });
+                        let current = Numeric::current();
+                        let numeric = Numeric { fixed: node.desc.kind.fixed.or(current.fixed), ..current };
+                        b.fold = Some(BlockFold { j, p, dims, layout: node.desc.layout.clone(), dtype: node.desc.dtype(), fixed: node.desc.kind.fixed.is_some(),
+                            seed: seed.as_ref().map(|s| s.of), numeric, settings: numeric.settings_for(program.nodes[of.of].desc.dtype()), kernel: None });
                     }
                 },
                 _ => return None,
@@ -635,6 +663,11 @@ impl Blocks {
         for s in (0..last).filter(|s| !b.stores.contains(s)) {
             if float(b.steps[s].at) && b.steps[s + 1..].iter().filter(|r| r.reads().any(|t| t == s)).all(|r| float(r.at)) { b.steps[s].booleans = false; }
         }
+        // The fold's kernel computes at the last step's type, under the fold's numeric settings, which wrap where its totals are fixed integers.
+        if let Some(fold) = &mut b.fold {
+            let items = b.steps.last()?.made();
+            fold.kernel = Some(pervasive::kernel_at(fold.p, None, items, 2, fold.numeric)?);
+        }
         b.size = b.steps.iter().map(|s| s.at.bytes()).max()?;
         (b.slots, b.kinds, b.count) = buffers(&b.steps);
         b.laid = b.laid_out(crate::settings::sizes());
@@ -642,7 +675,7 @@ impl Blocks {
             s.constants(|k| match &program.nodes[b.constants[k]].origin { Origin::Held(v) => v.as_number(), _ => None })
         }).collect();
         b.glyphs = members.iter().filter_map(|&j| match &program.nodes[j].origin { Origin::Step(step) => Some(step.glyph()), _ => None }).collect();
-        b.plain = b.inputs.iter().all(|x| matches!(x.map, Mapping::Single | Mapping::Linear(1)));
+        b.plain = b.inputs.iter().all(|x| matches!(*x.map, Mapping::Single | Mapping::Linear(1)));
         #[cfg(not(web))]
         { (b.parts, b.folding, b.declines) = b.parted(program); if b.tabled() { (b.parts, b.folding, b.declines) = b.parted(program); } }
         #[cfg(web)]
@@ -665,15 +698,15 @@ impl Blocks {
             }).sum();
             reads.push(self.operand(program, members, &Read::node(&program.nodes, copy), &Mapping::Steps { base, steps: rest.clone().into() }, frame)?);
         }
-        let start = pervasive::folds(p).filter(|&r| matches!(node.desc.dtype(), DType::Float(_)) && identity(r).is_some());
+        let start = reduction(p, node.desc.dtype()).filter(|&r| matches!(node.desc.dtype(), DType::Float(_)) && identity(r).is_some());
         let mut total = match start { Some(r) => Operand::Identity(r), None => reads.remove(0) };
         for x in reads {
             let constant = match total { Operand::Identity(r) => identity(r), _ => None };
             let plan = crate::plan::pervasive(p, Some(items.kind), items.kind, [None, constant], crate::number::Numeric::current()).ok()?;
             let at = computes(&plan, node.desc.dtype())?;
             // As in a step of rustymath's `Folds`, each read is the left operand and the total the right. Beside a NaN, `Core::maximum` and `minimum` give the right operand, the total.
-            self.steps.push(BlockStep { j, op: Op::Map(plan), operands: [Some(x), Some(total), None], at, tolerance: Tolerance::EXACT,
-                booleans: node.desc.dtype() == DType::Boolean, fixed: node.desc.kind.fixed.is_some(), shape: frame.into() });
+            self.steps.push(BlockStep { j, kernel: Some(plan.kernel()?), op: Op::Map(plan), operands: [Some(x), Some(total), None], at,
+                tolerance: Tolerance::EXACT, booleans: node.desc.dtype() == DType::Boolean, fixed: node.desc.kind.fixed.is_some(), layout: node.desc.layout.clone() });
             total = Operand::Step(self.steps.len() - 1);
         }
         Some(())
@@ -701,7 +734,7 @@ impl Blocks {
             });
             return Some(Operand::Constant(k));
         }
-        let input = Input::new(i, map);
+        let input = Input::new(i, program.nodes[i].desc.dtype(), map);
         let k = self.inputs.iter().position(|x| *x == input).unwrap_or_else(|| {
             self.inputs.push(input);
             self.inputs.len() - 1
@@ -720,7 +753,7 @@ impl Blocks {
         let read = |m: &Mapping, block| match (reading(m, block, sizes.run), m) {
             (Reading::Copied, _) => 2, (_, Mapping::Single | Mapping::Linear(2..)) => 0, _ => 1
         };
-        let buffers = |block| self.count + self.inputs.iter().map(|x| read(&x.map, block)).sum::<usize>();
+        let buffers = |block| self.count + self.inputs.iter().map(|x| read(&*x.map, block)).sum::<usize>();
         let mut block = sizes.block;
         while block > sizes.run && buffers(block) * block * size > crate::fusion::BUFFERED { block /= 2; }
         self.inputs.iter().fold(block, |b, x| b.max(x.map.line_block(size)))
@@ -737,7 +770,7 @@ impl Blocks {
         let tally = Tally::new();
         let sizes = crate::settings::sizes();
         let laid = if self.laid.sizes == sizes { Cow::Borrowed(&self.laid) } else { Cow::Owned(self.laid_out(sizes)) };
-        let (main, rest, compiled) = {
+        let (main, rest) = {
             let read = |of: usize| values[of].as_ref()?.view().filter(|v| readable(v.dtype()));
             // What each input gathers once for every range (`gathered_once`): its cycle, written out to cover a block at any phase where it's shorter, or the whole copy.
             let gathered: Vec<Option<Buffer>> = self.inputs.iter().zip(&laid.reads).map(|(x, r)| match &x.gather {
@@ -759,7 +792,7 @@ impl Blocks {
                 }
             };
             #[cfg(not(web))]
-            let compiled = self.compiles(sizes);
+            let compiled = self.compiles(sizes, &inputs);
             #[cfg(web)]
             let compiled = false;
             let run = Run { inputs, constants, reads: &laid.reads, block: laid.block, tally: &tally, compiled };
@@ -770,7 +803,7 @@ impl Blocks {
                 None => {
                     let step = &self.steps[self.steps.len() - 1];
                     let buffer = with_item!(step.made(), T => T::buffer(self.written::<T>(&run, &shared, T::last)?));
-                    (step.j, built(buffer, step.shape.clone(), step.fixed)?)
+                    (step.j, built(buffer, &step.layout, step.fixed)?)
                 }
                 Some(fold) => {
                     let seed = match fold.seed { Some(s) => Some(values[s].as_ref()?.as_number()?), None => None };
@@ -780,12 +813,12 @@ impl Blocks {
             let rest: Vec<(usize, Value)> = outs.into_iter().zip(&self.extra).map(|(mut buffer, &s)| {
                     // SAFETY: the ranges cover `0..n`, and each wrote its items of every stored step (`range`).
                     unsafe { buffer.set_len(self.n) };
-                    Some((self.steps[s].j, built(buffer, self.steps[s].shape.clone(), self.steps[s].fixed)?))
+                    Some((self.steps[s].j, built(buffer, &self.steps[s].layout, self.steps[s].fixed)?))
                 })
                 .collect::<Option<_>>()?;
-            (main, rest, compiled)
+            (main, rest)
         };
-        if self.steps.len() + usize::from(self.fold.is_some()) >= 2 { crate::explain::fused(|| self.glyphs.clone(), self.n, compiled, &tally); }
+        if self.steps.len() + usize::from(self.fold.is_some()) >= 2 { crate::explain::fused(|| self.glyphs.clone(), self.n, &tally); }
         if self.fold.is_some() && !self.steps.is_empty() { rustymath::events::taken(rustymath::events::Route::FusedFold, self.n); }
         values[main.0] = Some(main.1);
         for (j, value) in rest { values[j] = Some(value); }
@@ -803,13 +836,13 @@ impl Blocks {
     #[cfg(not(web))]
     fn kernels(&self) -> impl Iterator<Item = &Compiling> { self.parts.iter().filter_map(|p| p.lowered.as_ref()).map(|l| &l.code) }
 
-    /// Whether this run uses the stage's compiled parts, as the compile setting asks (`settings::compiles`). A stage compiles all its parts or none. `Never` uses none, and `Always` compiles them where they aren't compiled yet. The policy compiles them where the items repay a compile (`COMPILES_AT`) or where the first part's kernel ran or compiled before, in this stage or another (`jit::Kernel::seen`). A dfn program's stages therefore compile on the program's first reuse. A part reads an input as one item for the sizes it was lowered under (`one_item`), so it serves only runs under those sizes. Each run that uses compiled parts counts in `compiled_runs` and takes the `compiled` route. Where the setting asks, each reason that `parted` found for a step that compiles in no part declines that route.
+    /// Whether this run uses the stage's compiled parts, as the compile setting asks (`settings::compiles`). A stage compiles all its parts or none. `Never` uses none, and `Always` compiles them where they aren't compiled yet. The policy compiles them where the items repay a compile (`COMPILES_AT`) or where the first part's kernel ran or compiled before, in this stage or another (`jit::Kernel::seen`). A dfn program's stages therefore compile on the program's first reuse. A part reads an input as one item for the sizes it was lowered under (`one_item`), so it serves only runs under those sizes. It reads each input at its node's planned dtype, so it serves only runs whose inputs are stored at those dtypes: a dynamic ordinary integer stored narrower than planned (`Desc::matches`) runs the stage on its precompiled kernels. Each run that uses compiled parts counts in `compiled_runs` and takes the `compiled` route. Where the setting asks, each reason that `parted` found for a step that compiles in no part declines that route.
     #[cfg(not(web))]
-    fn compiles(&self, sizes: crate::fusion::Sizes) -> bool {
+    fn compiles(&self, sizes: crate::fusion::Sizes, inputs: &[View<'_>]) -> bool {
         use crate::settings::Compiles;
         use rustymath::events::{Route, declined, taken};
         let first = self.kernels().next();
-        let asks = sizes.run == self.laid.sizes.run && match crate::settings::compiles() {
+        let asks = sizes.run == self.laid.sizes.run && inputs.iter().zip(&self.inputs).all(|(v, x)| v.dtype() == x.dtype) && match crate::settings::compiles() {
             Compiles::Never => false, Compiles::Always => true,
             Compiles::Policy => compiles_on_first_run(self.n) || first.is_some_and(|f| f.code.get().is_some() || f.kernel.seen())
         };
@@ -845,7 +878,7 @@ impl Blocks {
             }
             s = to;
         }
-        let fold = self.fold.as_ref().and_then(|f| match pervasive::folds(f.p)? {
+        let fold = self.fold.as_ref().and_then(|f| match f.kernel.as_ref()?.fold()? {
             Reduce::Sum => Some(jit::Fold::Sum), Reduce::Product => Some(jit::Fold::Product), Reduce::Max => Some(jit::Fold::Max),
             Reduce::Min => Some(jit::Fold::Min), _ => None
         });
@@ -996,58 +1029,24 @@ impl Blocks {
         parallel::extended(&mut items, self.n, run.block, &|range, slots| self.range(range, run, outs, &mut last(slots))).then_some(items)
     }
 
-    /// The fold's value, from the stage run in the pieces that `reduce::fold_pieces` gives, which hands the fold each block's items in order. Floats fold by `with_float_reduction!`'s reductions, and by `-` through rustymath's `Alternated` (`alternates`), and a comparison's Booleans by `with_truth_reduction!`'s. Integers fold as `integer_fold` folds them: `+` through `Wrapped<Sum>`, and `⌈` and `⌊` at the items' width, and each total wraps to the result's width. A seed joins each total as the fold's last item, through its reduction's `merge` (`seeded`): at 64 bits where the fold gives integers, and at the items' width for floats. A fold of every item gives its one total as an atom, as `folded` in `eval::operators` takes it. `None` where a kernel fails or a total doesn't fit.
+    /// The fold's value, through its kernel's fold of the pieces that the stage hands over a block at a time (`Kernel::fold_pieces`): each block's items, or their total where a compiled part folds them. The kernel's formula picks the reduction, as the eager fold's does (`pervasive::fold`), so `-` and `÷` fold as alternating sums and products. A seed then combines with each total through `pervasive::map`, as the eager fold's does. A fold of every item gives its one total as an atom, as `folded` in `eval::operators` takes it. `None` where a step or the kernel fails.
     fn folded(&self, fold: &BlockFold, seed: Option<&Number>, run: &Run<'_>, outs: &[Option<Shared>]) -> Option<Value> {
-        let shape = fold.shape.clone();
-        let made = self.steps.last()?.made();
-        let value = match (made, fold.dtype) {
-            (DType::Boolean, _) if seed.is_none() => {
-                pervasive::with_truth_reduction!(fold.p, fold.dims[1], R => Stored::build_narrowed(shape, self.totals::<bool, R>(fold, run, outs)?))??
-            }
-            (DType::Boolean | DType::Integer(_), DType::Integer(width)) => {
-                let totals: Vec<i64> = match made {
-                    DType::Integer(items) => rustymath::with_width!(items, T => match pervasive::folds(fold.p)? {
-                        Reduce::Sum => self.totals::<T, rustymath::Wrapped<reduce::Sum>>(fold, run, outs)?,
-                        Reduce::Max => self.totals::<T, reduce::Max>(fold, run, outs)?.into_iter().map(Int::to_i64).collect(),
-                        Reduce::Min => self.totals::<T, reduce::Min>(fold, run, outs)?.into_iter().map(Int::to_i64).collect(),
-                        _ => return None,
-                    }),
-                    _ => {
-                        pervasive::with_truth_reduction!(fold.p, fold.dims[1], R => self.totals::<bool, R>(fold, run, outs)?.into_iter().map(i64::from).collect())?
-                    }
-                };
-                let seed = seed.map(Number::as_integer);
-                let totals = match pervasive::folds(fold.p)? {
-                    Reduce::Sum => seeded::<i64, rustymath::Wrapped<reduce::Sum>>(totals, seed)?, Reduce::Max => seeded::<i64, reduce::Max>(totals, seed)?,
-                    Reduce::Min => seeded::<i64, reduce::Min>(totals, seed)?, _ => return None
-                };
-                rustymath::with_width!(width, T => built(T::buffer(totals.into_iter().map(<T as Int>::from_i64).collect()), shape, fold.fixed)?)
-            }
-            (DType::Float(FloatWidth::F64), _) => self.float_folded::<f64>(fold, seed.map(Number::as_float), run, outs, shape)?,
-            (DType::Float(FloatWidth::F32), _) => self.float_folded::<f32>(fold, seed.map(|s| s.as_float().map(|f| f as f32)), run, outs, shape)?,
-            _ => return None,
+        use rustymath::{error::{Error, Kind as Failure}, operation::{Direction, Piece, Seed, Total}};
+        let kernel = fold.kernel.as_ref()?;
+        let mut out = Buffer::with_capacity(fold.dtype, fold.dims[0] * fold.dims[2]);
+        let pieces = |range: Range<usize>, give: &mut dyn FnMut(usize, Piece<'_>)| -> Result<(), Error> {
+            let ran = self.range(range, run, outs, &mut Last::Fold(&mut |start, block: Folded<'_>| give(start, match block {
+                Folded::Held(held) => Piece::Items(held.view()), Folded::Total(items, bits) => Piece::Total(Total { items, bits }),
+            })));
+            if ran { Ok(()) } else { Err(Error::new(Failure::Domain, "a block stage's step failed")) }
         };
-        Some(if fold.shape.is_empty() { value.at(0) } else { value })
-    }
-
-    /// `folded` for floats of type `F`: by `with_float_reduction!`'s reductions, with the seed merged in, or by `-` and `÷` through rustymath's `Alternated`, which a stage takes with no seed (`seeds`).
-    fn float_folded<F: Item + rustymath::Native + Stored>(&self, fold: &BlockFold, seed: Option<Option<F>>, run: &Run<'_>, outs: &[Option<Shared>], shape: Shape) -> Option<Value> {
-        if let Some(buffer) = pervasive::with_alternated!(fold.p, floats, R => reduce::Totals::buffer_of(self.totals::<F, R>(fold, run, outs)?)) { return built(buffer, shape, false); }
-        pervasive::with_float_reduction!(fold.p, R => F::build(shape, seeded::<F, R>(self.totals::<F, R>(fold, run, outs)?, seed)?))?
-    }
-
-    /// The folds by `R` of the lanes of the last step's items, which `range` hands over a block at a time: the block's items, or their total where a compiled part folds them, converted from its slot (`Slotted`).
-    fn totals<T: Item, R: Reduction<T, Total: Slotted>>(&self, fold: &BlockFold, run: &Run<'_>, outs: &[Option<Shared>]) -> Option<Vec<R::Total>> {
-        let mut totals = vec![R::unit(); fold.dims[0] * fold.dims[2]];
-        let ok = AtomicBool::new(true);
-        let fits = reduce::fold_pieces::<T, R>(&mut totals, fold.dims, &|range, give| {
-            if !self.range(range, run, outs, &mut Last::Fold(&mut |start, block: Folded<'_>| {
-                give(start, match block {
-                    Folded::Held(held) => reduce::Part::Items(T::held(held.view())), Folded::Total(n, t) => reduce::Part::Total(n, R::Total::from_slot(t))
-                })
-            })) { ok.store(false, Relaxed); }
-        });
-        (fits && ok.load(Relaxed)).then_some(totals)
+        kernel.fold_pieces(fold.dims, Seed::Identity, Direction::Right, fold.settings, &pieces, &mut out).ok()?;
+        let value = built(out, &fold.layout, fold.fixed)?;
+        let value = if fold.layout.shape().is_empty() { value.at(0) } else { value };
+        let Some(seed) = seed else { return Some(value) };
+        let seed = Value::Number(seed.clone());
+        let agreement = Agreement::new(value.layout(), seed.layout()).ok()?;
+        crate::plan::pervasive_on(fold.p, Some(&value), &seed, fold.numeric).ok().and_then(|plan| pervasive::map(&plan, Some(&value), &seed, &agreement))
     }
 
     /// Runs the stage on each block of `range` in turn, in runs that end at each repeat or long cycle of an input that the run reads in place (`Reading::ends`). Each run places its inputs' items once (`placed`), then computes the stage's parts in turn. A compiled part computes its steps in one call (`called`). Otherwise each step writes its buffer for the run, a stored step copies its items to its output in `outs` as it finishes, and the last step writes to `last`: its value's slots, or the block that the fold reads, which the fold gets after each block with the block's position. A stage of one compiled part can compute a stretch of whole blocks in one call instead (`over`). Gives false where a kernel fails.
@@ -1288,7 +1287,10 @@ impl Blocks {
     ) -> bool {
         let [b0, b1, b2] = A::scratch(scratch).each_mut();
         let read = |k: usize, buf| step.operands[k].map(|o| self.arg::<A>(o, constants[k], got, bufs, n, buf, step.tolerance));
-        let (x, y, m) = (read(0, b0), read(1, b1), read(2, b2));
+        let (x, y, m) = (read(0, b0), read(1, b1).expect("every step reads its last operand"), read(2, b2));
+        if let (Op::Map(plan), Some(kernel)) = (&step.op, &step.kernel) {
+            return mapped(kernel, x, y, n, plan.numeric.settings_for(plan.computes().expect("a step with a kernel has its computing kind")), dest);
+        }
         match dest {
             Dest::Buffer(Buffer::Booleans(v)) => Slots::append(v, n, |s| wrote(&step.op, x, y, m, n, Out::Bools(s))),
             Dest::Buffer(buffer) => Slots::append(A::items(buffer), n, |s| wrote(&step.op, x, y, m, n, Out::Items(s))),
@@ -1307,15 +1309,34 @@ impl Blocks {
     }
 }
 
-/// Writes the results of `op` on its operands' `n` items to `out`, and gives false where its kernel fails.
-fn wrote<A: Item>(op: &Op, x: Option<Arg<'_, A>>, y: Option<Arg<'_, A>>, m: Option<Arg<'_, A>>, n: usize, out: Out<'_, '_, A>) -> bool {
+/// Writes the results of a conversion or select step on its operands' `n` items to `out`.
+fn wrote<A: Item>(op: &Op, x: Option<Arg<'_, A>>, y: Arg<'_, A>, m: Option<Arg<'_, A>>, n: usize, out: Out<'_, '_, A>) -> bool {
     match (op, y) {
-        (Op::Map(plan), Some(y)) => pervasive::node::<A>(plan.p, x, y, n, out, plan.numeric),
-        (Op::Convert, Some(Arg::Many(items))) => out.items().is_some_and(|o| { o.copy(&items[..n]); true }),
-        (Op::Convert, Some(c @ Arg::One(_))) => out.items().is_some_and(|o| o.pairs(c, Arg::One(()), n, |c, ()| (c, true))),
-        (Op::Select, Some(y)) => out.items().is_some_and(|o| A::choose(x.expect("a select reads two cases"), y, m.expect("a select reads its mask"), n, o)),
-        (_, None) => unreachable!("every step reads its last operand"),
+        (Op::Convert, Arg::Many(items)) => out.items().is_some_and(|o| { o.copy(&items[..n]); true }),
+        (Op::Convert, c @ Arg::One(_)) => out.items().is_some_and(|o| o.pairs(c, Arg::One(()), n, |c, ()| (c, true))),
+        (Op::Select, y) => out.items().is_some_and(|o| A::choose(x.expect("a select reads two cases"), y, m.expect("a select reads its mask"), n, o)),
+        (Op::Map(_), _) => unreachable!("a map step runs its kernel (`mapped`)"),
     }
+}
+
+/// Runs `kernel` on its arguments' `n` items into `dest`: a buffer it appends them to, or the stage's last slots. The arguments are the last of `x` and `y` that the kernel takes, as a code-picked `○` takes `y` alone. Each reads its run in place, or its one item for every position. The kernel casts its results to `dest`'s type, so a comparison writes 1 and 0 where `dest` holds numbers. Gives false where the kernel fails.
+fn mapped<A: Item>(kernel: &Kernel, x: Option<Arg<'_, A>>, y: Arg<'_, A>, n: usize, settings: Settings, dest: Dest<'_, '_, '_>) -> bool {
+    use rustymath::agreement::{Binding, Missing, Read, ReadPlan};
+    let args: Vec<Arg<'_, A>> = x.into_iter().chain([y]).collect();
+    let args = &args[args.len().saturating_sub(kernel.arity())..];
+    let sources: Vec<Binding<'_>> = args.iter().map(|a| Binding::full(match a { Arg::Many(items) => A::view(&items[..n]), Arg::One(v) => A::view(std::slice::from_ref(v)) })).collect();
+    let plans: Vec<ReadPlan> = args.iter().enumerate().map(|(s, a)| match a {
+        Arg::Many(_) => ReadPlan::copy(s, n, Mapping::Linear(1), n, Missing::Default), Arg::One(_) => ReadPlan::copy(s, 1, Mapping::Single, n, Missing::Default),
+    }).collect();
+    let reads: Vec<Read<'_>> = plans.iter().map(|plan| Read { sources: &sources, plan }).collect();
+    let mut out = Buffer::with_capacity(match &dest { Dest::Buffer(buffer) => buffer.dtype(), Dest::Last(last) => last.dtype() }, n);
+    if kernel.map(&reads, 0..n, settings, &mut out).is_err() { return false; }
+    match dest {
+        Dest::Buffer(buffer) if buffer.is_empty() => *buffer = out,
+        Dest::Buffer(buffer) => { buffer.extend_from(out.view(), 0..n); }
+        Dest::Last(last) => last.copy(&out, n),
+    }
+    true
 }
 
 /// The buffer that each step writes for a run, by liveness, the type of each buffer, and the number of buffers that the steps would take if every buffer had one type, which sizes the blocks. A step's buffer holds a later step's items, of the same type, once every step that reads it has run. The last step writes straight into its value, or into the block that the fold reads, and has none. A line of steps therefore takes two buffers.
@@ -1386,6 +1407,34 @@ enum Last<'a, 'b> {
     I32(&'a mut Slots<'b, i32>), I64(&'a mut Slots<'b, i64>), Fold(&'a mut dyn FnMut(usize, Folded<'_>))
 }
 
+impl Last<'_, '_> {
+    /// The type of the stage's last slots, which a step's results are cast to before they're written there.
+    fn dtype(&self) -> DType {
+        match self {
+            Last::F32(_) => DType::Float(FloatWidth::F32), Last::F64(_) => DType::Float(FloatWidth::F64), Last::Bool(_) => DType::Boolean,
+            Last::U8(_) => DType::Integer(Width::U8), Last::I16(_) => DType::Integer(Width::I16), Last::I32(_) => DType::Integer(Width::I32),
+            Last::I64(_) => DType::Integer(Width::I64), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer"),
+        }
+    }
+    /// Writes the first `n` items of `out`, which have the slots' type, into the next `n` slots.
+    fn copy(&mut self, out: &Buffer, n: usize) {
+        let view = out.view();
+        match self {
+            Last::F32(s) => s.copy(&f32::held(view)[..n]), Last::F64(s) => s.copy(&f64::held(view)[..n]), Last::Bool(s) => s.copy(&bool::held(view)[..n]),
+            Last::U8(s) => s.copy(&u8::held(view)[..n]), Last::I16(s) => s.copy(&i16::held(view)[..n]), Last::I32(s) => s.copy(&i32::held(view)[..n]),
+            Last::I64(s) => s.copy(&i64::held(view)[..n]), Last::Fold(_) => unreachable!("a step writes a fold's block into a buffer"),
+        }
+    }
+}
+
+/// Where a conversion or select step writes the stage's last slots: items of its type, or Booleans.
+enum Out<'a, 'b, A> { Items(&'a mut Slots<'b, A>), Bools(&'a mut Slots<'b, bool>) }
+
+impl<'a, 'b, A: Item> Out<'a, 'b, A> {
+    /// The slots as items of type `A`: its own items, or the Booleans of a step on Booleans (`Item::truths`).
+    fn items(self) -> Option<&'a mut Slots<'b, A>> { match self { Out::Items(o) => Some(o), Out::Bools(o) => A::truths(o) } }
+}
+
 /// What a stage's fold gets for each block: the block that the last step wrote, or the total of the block's `n` items as its 8-byte slot holds it, which a compiled part folded as the fold folds a block (`Blocks::over`).
 enum Folded<'a> { Held(&'a Buffer), #[cfg_attr(web, expect(dead_code, reason = "the browser build compiles nothing"))] Total(usize, u64) }
 
@@ -1393,10 +1442,10 @@ enum Folded<'a> { Held(&'a Buffer), #[cfg_attr(web, expect(dead_code, reason = "
 enum Dest<'a, 'b, 'c> { Buffer(&'a mut Buffer), Last(&'a mut Last<'b, 'c>) }
 
 /// The items of `input` that `map` gathers once before a stage's run (`Input::gather`): its cycle, written out over `cover` positions where it's shorter (`tiled_cycle`), and otherwise every item, in one walk, which reads a map that tiles whole through the tiled transpose (`Steps::tiles_whole`).
-fn gathered_once(input: View<'_>, map: &Mapping, cover: usize) -> Buffer {
+fn gathered_once(input: View<'_>, map: &Walked<'_>, cover: usize) -> Buffer {
     with_item!(input.dtype(), A => {
         let mut items = Vec::new();
-        if tiled_cycle(A::held(input), map, cover, &mut items).is_none() && let Mapping::Steps { steps, .. } = map {
+        if tiled_cycle(A::held(input), map, cover, &mut items).is_none() && let Mapping::Steps { steps, .. } = &**map {
             let n = Steps::count(steps);
             items.reserve(n);
             expanded_items(map, A::held(input), 0, n, &mut items);
@@ -1406,12 +1455,12 @@ fn gathered_once(input: View<'_>, map: &Mapping, cover: usize) -> Buffer {
 }
 
 /// Items `from..from + n` of `input` that `map` lays over the stage's items, where they need no copy (`in_place`): in place, or from a cycle that `gathered_once` wrote out. `None` where they must be copied (`copy_into`).
-fn read_placed<'a>(input: View<'a>, map: &Mapping, from: usize, n: usize) -> Option<Got<'a>> {
+fn read_placed<'a>(input: View<'a>, map: &Walked<'_>, from: usize, n: usize) -> Option<Got<'a>> {
     with_item!(input.dtype(), A => in_place(map, A::held(input), from, n).map(|arg| A::got(arg)))
 }
 
 /// Copies items `from..from + n` of `input` that `map` lays over the stage's items into `copy`, a buffer of their type.
-fn copy_into(input: View<'_>, map: &Mapping, from: usize, n: usize, copy: &mut Buffer) {
+fn copy_into(input: View<'_>, map: &Walked<'_>, from: usize, n: usize, copy: &mut Buffer) {
     with_item!(input.dtype(), A => { let _ = expanded(map, A::held(input), from, n, A::items(copy)); })
 }
 
@@ -1432,7 +1481,9 @@ unsafe fn write(buffer: &Buffer, at: usize, out: &Shared, start: usize, n: usize
 }
 
 /// The array of `shape` that `buffer` holds, as fixed integers where `fixed` says.
-fn built(buffer: Buffer, shape: Shape, fixed: bool) -> Option<Value> { Value::from_storage(shape, Storage::Compact(buffer).fixed(fixed)).ok() }
+fn built(buffer: Buffer, layout: &Layout, fixed: bool) -> Option<Value> {
+    Value::from_storage(Shape::from(layout.shape()), Storage::Compact(buffer).fixed(fixed)).ok()?.with_layout(layout.clone()).ok()
+}
 
 /// A stored step's room for the stage's items, which the stage's ranges write in parallel, each its own items.
 struct Shared(*mut u8);
@@ -1448,7 +1499,7 @@ struct Scratch {
 }
 
 /// A type that a stage's buffers hold and its steps compute at: floats of 32 or 64 bits, Booleans, or integers.
-trait Item: Kernels + Sync {
+trait Item: Stored + Sync {
     /// The items of `view`, which have this type.
     fn held(view: View<'_>) -> &[Self] { Self::of(view).expect("a stage's items have their step's type") }
     /// The vector of `buffer`, which holds this type.
@@ -1465,13 +1516,13 @@ trait Item: Kernels + Sync {
     fn read<'a>(got: Got<'a>, n: usize, buf: &'a mut Vec<Self>, t: Tolerance) -> Arg<'a, Self>;
     /// The number `n` as this type, where it converts.
     fn constant(n: &Number) -> Option<Self>;
-    /// The item in a compiled kernel's 8-byte slot (`jit::Compiled::run`), as a scalar or a fold's total: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1.
+    /// The item as a compiled kernel's 8-byte slot holds it (`jit::Compiled::run`), as a scalar or a fold's total, which `rustymath::operation::Total` reads back: a float as an f64, an integer extended to 64 bits, and a Boolean as 0 or 1.
     #[cfg(not(web))]
     fn slot(self) -> u64;
-    /// The item that `slot` holds.
-    fn from_slot(slot: u64) -> Self;
     /// Writes `x` where `mask` isn't zero and `y` where it is into the next `n` slots of `out`, through rustymath's `Choose`, which has a kernel at every type.
     fn choose(x: Arg<'_, Self>, y: Arg<'_, Self>, mask: Arg<'_, Self>, n: usize, out: &mut Slots<'_, Self>) -> bool;
+    /// The slots of a Boolean result as slots of this type, which only `bool` gives: a step on Booleans writes a comparison's results as its own items.
+    fn truths<'a, 'b>(_slots: &'a mut Slots<'b, bool>) -> Option<&'a mut Slots<'b, Self>> { None }
 }
 
 /// Writes `Item` for each number type listed, with its variant of `Got` and `Last`, its field of `Scratch`, how a constant converts to it, and how it fills a kernel's slot, as a float or an integer (`@slot`). A step of a number type reads items of every other type that a stage holds through `Converts`. `@common` writes the methods that Booleans share.
@@ -1485,12 +1536,10 @@ macro_rules! items {
     (@slot float) => {
         #[cfg(not(web))]
         fn slot(self) -> u64 { f64::from(self).to_bits() }
-        fn from_slot(slot: u64) -> Self { f64::from_bits(slot) as Self }
     };
     (@slot int) => {
         #[cfg(not(web))]
         fn slot(self) -> u64 { i64::from(self) as u64 }
-        fn from_slot(slot: u64) -> Self { slot as Self }
     };
     ($($t:ty => $v:ident, $s:ident, |$n:ident| $constant:expr, $k:ident);+) => {$(
         impl Item for $t {
@@ -1523,7 +1572,7 @@ impl Item for bool {
         match got { Got::Bool(arg) => arg, _ => unreachable!("a step on Booleans reads Booleans") }
     }
     fn constant(n: &Number) -> Option<Self> { n.as_bool() }
+    fn truths<'a, 'b>(slots: &'a mut Slots<'b, bool>) -> Option<&'a mut Slots<'b, Self>> { Some(slots) }
     #[cfg(not(web))]
     fn slot(self) -> u64 { u64::from(self) }
-    fn from_slot(slot: u64) -> Self { slot != 0 }
 }

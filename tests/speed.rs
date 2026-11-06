@@ -18,10 +18,7 @@ fn functions_cost_what_their_work_needs() {
     let checks = timing::checks_budgets();
     let all = !checks || std::env::var_os("BASEDPL_COSTS").is_some();
     let mut stderr = std::io::stderr();
-    let mut files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
-    let mut selection = basedpl::reference::Selection::from_env();
-    selection.files(&mut files);
-    selection.assert_selected();
+    let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
     let over = timing::measured(&files, all, |line| writeln!(stderr, "{line}").unwrap()).unwrap();
     if checks { assert!(over.is_empty(), "{over:#?}"); }
 }

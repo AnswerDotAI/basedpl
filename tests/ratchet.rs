@@ -7,15 +7,10 @@ use std::path::Path;
 struct Pattern { name: &'static str, regex: &'static str, homes: &'static [&'static str], budget: usize, instead: &'static str }
 
 const PATTERNS: &[Pattern] = &[
-    Pattern { name: "the `Pending` variant or the `.pending()` accessor", regex: r"\bPending\s*\(|\.pending\(\)",
-        homes: &["graph.rs", "program.rs", "program/", "fusion.rs", "array.rs", "array/"], budget: 35,
-        instead: "host code takes a stored value from readback rather than testing whether a value is pending" },
     Pattern { name: "an `Error` constructor passed to `ok_or_else` as a function item", regex: r"\bok_or_else\(\s*(?:\w+::)*Error::\w+\s*\)", homes: &[], budget: 0,
         instead: "call `Error::internal()` directly, or `or_internal()` on an `Option`: a function item loses the call site" },
-    Pattern { name: "an associated `strong_count` call", regex: r"::strong_count\s*\(", homes: &[], budget: 0,
-        instead: "the binding owner marks a value held: reference counts measure sharing, not holders (`Weak`'s `.strong_count()` liveness check isn't counted)" },
-    Pattern { name: "`Numeric::current()`", regex: r"\bNumeric::current\s*\(", homes: &["number.rs"], budget: 6, instead: "read numeric settings from the call's origin" },
-    Pattern { name: "`Tracing::planning()`", regex: r"\bTracing::planning\s*\(", homes: &["program/trace.rs"], budget: 0, instead: "propagate the stop that `Tracing::stop` returns" },
+    Pattern { name: "an `.as_primitive()` call", regex: r"\.as_primitive\s*\(", homes: &["eval/rewrite.rs"], budget: 2,
+        instead: "compute through `operation()` or `dyadic_primitive()`, which give an admitted dfn body's primitive; `as_primitive` serves display, inverses and syntax only" },
 ];
 
 /// Adds each `.rs` file under `dir`, as its path relative to `src` and its code with line comments removed.

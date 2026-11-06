@@ -4976,9 +4976,9 @@ hex dec"Dead" "Beef"   ⍝ "dead" "beef"
 [dec:]←•load "lib/numeric.bpl"
 dec'f'   ⍝ 15ₓ
 
-⍝ april/libraries/dfns/numeric/demo.lisp:113 — Upstream adic/dec/convolve helpers; factorial uses ordinary dfn guards instead of April $. Original April expectation retained
+⍝ april/libraries/dfns/numeric/demo.lisp:113 — Upstream adic/dec/convolve helpers; factorial uses ordinary dfn guards instead of April $. Exact integers don't promote, so the input is shrunk from April's 254 digits to fit an i64
 [dec:]←•load "lib/numeric.bpl"
-⌊16⍟ dec '1',254#'0'   ⍝ 254ₓ
+⌊16⍟ dec '1',14#'0'   ⍝ 14ₓ
 
 ⍝ april/libraries/dfns/numeric/demo.lisp:114 — Upstream to-range helper; original April expectation retained
 [to: uns:]←•load "lib/numeric.bpl"

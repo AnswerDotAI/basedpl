@@ -42,16 +42,10 @@ a←"red" "green" "blue" ⋄ (2↑a)←"orange" "violet" ⋄ a   ⍝ "orange" "v
 a←"red" "green" "blue" ⋄ (2↑¨a)←'*' ⋄ a                ⍝ "**d" "**een" "**ue"
 ```
 
-A computed whole-array target cannot change its outer shape or keys. This gives UNSUPPORTED ERROR. Use plain `a←Y` to replace the whole array. Replacing an item inside the array can change that item's own shape or keys.
-
-Selective writes to arrays containing unbounded numbers (`ᵣ`) or functions give UNSUPPORTED ERROR.
-
-Under dynamic kinds, numeric positions are checked before the binding changes. An invalid position raises INDEX ERROR and leaves the name unchanged. Static native-numeric writes skip invalid numeric positions. Shape and type errors stay checked in either mode.
-
-Shape-preserving native-array updates support recorded execution and batching. Replacing a number in a flat array by a vector works in ordinary execution, but stops recording the surrounding function:
+A write at a position outside its axis or not a whole number writes nothing there. A number in a flat array can be replaced by an array, which leaves the array nested:
 
 ```bpl
 a←1 2 3 ⋄ a.[0]←7 8 9 ⋄ a   ⍝ [[7 8 9] 2 3]
 ```
 
-A stopped recording still runs its numerical work through the ordinary graph. See [differentiating writes](../autodiff.qmd#writes) for the smaller subset supported by `∂`.
+A write stops a trace under `∂`, which then runs the call without a program. See [differentiating writes](../autodiff.qmd#writes) for the updates that `∂` supports.

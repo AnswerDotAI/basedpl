@@ -12,12 +12,17 @@ Monadic operator. Keys: `Alt-q =`. Hanzi: `组` (`組`)
 
 Keys match with [tolerance](../evaluation.qmd#equality-and-ordering), as in `≠`. Results assemble with fill. Empty input calls `f` once for its prototype.
 
-## How Key runs
+## Fast combinations
 
-Key calls `f` once on all its groups where it can, whatever `f`'s spelling, as a [map](../evaluation.qmd#functions-and-effects) calls its operand once on all its cells. A fold or scan of each group of a vector, such as `K (+/⊢)⌸Y` or `K {+/⍵}⌸Y`, reads each item of `Y` by its group's number. [`•explain`](../system/explain.qmd) reports that route as `"key classes"`.
+BPL computes each of these combinations by an algorithm of its own, in any spelling. [Trains](../evaluation.qmd#trains) says which spellings BPL recognises.
+
+| Combination | Applies to | Benefit |
+|---|---|---|
+| `≢⊢ ⌸Y` or `K (≢⊢)⌸Y` | any keys | counts each group's major cells without building the groups |
+| `K (f/⊢)⌸Y` or `K (f⌿⊢)⌸Y`, with `f` of `+ ⌈ ⌊`, or `×` of floats | a vector `Y` of floats, integers or Booleans | folds every group in one pass, without a call of the operand for each group |
 
 ```bpl
-1 1 2(+/⊢)⌸10 20 30                            ⍝ 30 30
-e←•explain "1 1 2{+/⍵}⌸10 20 30"
-[(⊂"key classes")∊e.routes.route ; (⊂"batching")∊e.fast.rule]  ⍝ [$t $t]
+≢⊢ ⌸"banana"                                ⍝ [1 3 2]ₓ
+1 1 2(+/⊢)⌸10 20 30                         ⍝ 30 30
+(•explain "1 1 2(+/⊢)⌸10 20 30").fast.rule  ⍝ ["group folds"]
 ```

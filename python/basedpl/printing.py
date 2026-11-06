@@ -59,15 +59,14 @@ class _Printer:
             if _builtins.get(name, (None,))[0] == kind: return name, 100
             return _apl(f), 100
         a = args[0]
-        if kind == 'train' and len(args) == 2: kind = '∘' if isinstance(a, _Function) else '↣'
         if kind == 'fn': return f'{_literal(a)}.fn', 100
         if kind in ('/', '⌿', '\\', '⍀'):
             axis = f'[{r(args[1])}]' if len(args) == 2 else ''
             return f'{r(a, True, 100)}.{_method(kind, dyad)}{axis}', 100
-        if kind == '⍠': return f'{r(a, dyad, 100)}[{r(args[1])}]', 100
-        if kind == '⁻¹': return f'{r(a, dyad, 100)}.undo', 100
+        if kind in ('⍠', 'axis'): return f'{r(a, dyad, 100)}[{r(args[1])}]', 100
+        if kind == 'inverse': return f'{r(a, dyad, 100)}.undo', 100
         if kind in _marks: return f'{r(a, dyad, 100)}.{_marks[kind]}', 100
-        if kind == 'train' and len(args) == 3:
+        if kind == 'fork' and len(args) == 3:
             b, c = args[1:]
             middle = b.parts()
             if middle and not middle[1] and middle[0] in _infix:

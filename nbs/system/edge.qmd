@@ -14,7 +14,7 @@ p←¯2+⍳8ₓ
 
 Fill gives 64-bit floats whatever the float pref, with NaN for a position outside the axis. The other modes give exact integers. `"reflect"` leaves out the edge item, as NumPy's and PyTorch's `reflect` do. `"symmetric"` repeats it, as NumPy's `symmetric` does. An axis of length 0 gives NaN in every mode. A NaN in `p` stays NaN.
 
-A selection reads the positions that `•edge` gives. A NaN position reads the fill. `⌷⍠["fill":v]` reads `v` there instead. A write through a NaN position writes nothing. A position with spaces in it goes in parentheses inside brackets:
+A selection reads the positions that `•edge` gives. NaN isn't a whole number, so it reads the fill and a write there writes nothing, as [Indexing](../indexing.ipynb#positions) describes. `⌷⍠["fill":v]` reads `v` there instead. A position with spaces in it goes in parentheses inside brackets:
 
 ```bpl
 x←10 20 30 40 ⋄ i←⍳4ₓ ⋄ clamp←•edge "clamp"

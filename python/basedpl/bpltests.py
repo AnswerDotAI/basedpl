@@ -1,5 +1,5 @@
 "Read BPL test cases, convert reference inventories, activate reviewed cases, time BPL as the speed test does, and set the budgets of basedpl's and rustymath's speed tests."
-import difflib, json, math, os, re, selectors, statistics, subprocess, sys, tempfile, time, tomllib
+import csv, difflib, json, math, os, re, selectors, statistics, subprocess, sys, tempfile, time, tomllib
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter, defaultdict
 from queue import Empty, Queue
@@ -196,8 +196,18 @@ def add(ids, output='tests/reference', directory='provenance'):
 
 _STALL = 60 # Seconds that a check's worker may start no case or example before it counts as stuck, as a deadlock leaves it: a case runs at most a few evaluations of `reference::TIMEOUT`, 2 s each
 
+def _merged(replies):
+    "One reply from several `reference` or `page` replies: their failures and obligations together, and their counts by mode (`accounting`) summed."
+    accounting = {}
+    for r in replies:
+        for mode, counts in r.get('accounting', {}).items():
+            total = accounting.setdefault(mode, {'planned': 0, 'checked': 0, 'failed': 0, 'not applicable': 0})
+            for k, n in counts.items(): total[k] += n
+    return dict(failures=[f for r in replies for f in r['failures']], obligations=[o for r in replies for o in r.get('obligations', [])], accounting=accounting)
+
+
 def _checked(worker, kind, spec, sentinel, bpl, limit):
-    "The failures that `worker` gives for a `kind` request, `reference` or `page`, with `spec`, without the case that `sentinel` picks. A reply that doesn't report that case raises `ValueError`, so a worker that checked nothing, or passed everything, never reads as a pass. A reference worker notes each case on stderr as it starts it (`case LINE`), and a page worker each example (`example LINE`). Where an abort, such as a stack overflow, ends the worker, or the worker starts nothing for `_STALL` seconds, the last noted case fails as `crashed` or `timeout`, and the cases after it run in a fresh worker of `bpl` while `limit` has time left. A stuck worker is closed, so no worker outlives the timing lock's hold (`_failures`). Each request gets what's left of `limit`: where it runs out, the worker stops and gives the next case or example as `unchecked`, and the sentinel goes unchecked too."
+    "The reply that `worker` gives for a `kind` request, `reference` or `page`, with `spec`. A page request's text ends with an example that must fail, which `sentinel` picks and the reply leaves out. A page that the deadline ends early reports its first unchecked example instead (`reference::page`). Otherwise a reply that doesn't report it raises `ValueError`, as does a reference reply whose counts by mode (`accounting`) show no case, so a worker that checked nothing never reads as a pass. A reference worker notes each case on stderr as it starts it (`case LINE`). Where an abort, such as a stack overflow, ends the worker, or the worker starts nothing for `_STALL` seconds, the last noted case fails as `crashed` or `timeout`, and the cases after it run in a fresh worker of `bpl` while `limit` has time left. A stuck worker is closed, so no worker outlives the timing lock's hold (`_replies`). Each request gets what's left of `limit`."
     try: r = worker.request({kind: spec}, timeout=limit.left(), stall=_STALL)
     except (EOFError, TimeoutError) as e:
         started = re.findall(r'^case (\d+)$', worker.diagnostics, re.M)
@@ -208,130 +218,55 @@ def _checked(worker, kind, spec, sentinel, bpl, limit):
         try: limit.left()
         except TimeoutError: rest = None
         message = (str(e) if stuck else 'the worker aborted') + (f': {tail}' if tail else '') + ('; the call reached its limit, so the cases after it are unchecked' if rest is None else '')
-        failed = dict(id='', line=line, section='', comment='', code='', expected_code='', status='timeout' if stuck else 'crashed', message=message, actual=None)
-        if rest is None: return [failed]
-        with Worker(bpl, cwd=worker.cwd) as w: return [failed, *_checked(w, kind, dict(spec, ids=rest), sentinel, bpl, limit)]
+        failed = dict(failures=[dict(id='', line=line, section='', comment='', code='', status='timeout' if stuck else 'crashed', message=message)])
+        if not rest: return failed
+        with Worker(bpl, cwd=worker.cwd) as w: return _merged([failed, _checked(w, kind, dict(spec, ids=rest), sentinel, bpl, limit)])
     if e := r['error']: raise ValueError(e['message'])
-    stopped = any(f.get('status') == 'unchecked' for f in r['failures'])
-    if not stopped and sum(map(sentinel, r['failures'])) != 1: raise ValueError("the worker didn't report the case that must fail, so its result can't be trusted")
-    return [f for f in r['failures'] if not sentinel(f)]
+    if kind == 'reference' and not r['accounting']: raise ValueError("the worker reported no case, so its result can't be trusted")
+    if sentinel is None or any(f.get('status') == 'unchecked' for f in r['failures']): return r
+    if sum(map(sentinel, r['failures'])) != 1: raise ValueError("the worker didn't report the example that must fail, so its result can't be trusted")
+    return dict(r, failures=[f for f in r['failures'] if not sentinel(f)])
 
 
-def _failures(kind, specs, sentinel, build=None, timeout=LIMIT, cwd=None):
-    "The failures that `_checked` gives for each of `specs`, each in a fresh worker, all at once, every one running the same build, resolved once. The workers run while this holds the timing lock shared, as the reference test does, and share `timeout`'s limit (`worker.Limit`), counted while this holds the lock. Every worker closes before this returns or raises, which ends any request still running, as after a Ctrl-C. Each failure holds its code's linear form (`syntax.linear`) as `linear`."
+def _replies(kind, specs, sentinel=None, build=None, timeout=LIMIT, cwd=None):
+    "One reply (`_merged`) from what `_checked` gives for each of `specs`, each in a fresh worker, all at once, every one running the same build, resolved once. The workers run while this holds the timing lock shared, as the reference test does, and share `timeout`'s limit (`worker.Limit`), counted while this holds the lock. Every worker closes before this returns or raises, which ends any request still running, as after a Ctrl-C. Each failure and obligation holds its spec's file `name` as `file`, and its code's linear form (`syntax.linear`) as `linear`."
     bpl, limit = resolved(build), Limit.of(timeout)
     with timing_lock(), limit.running():
         workers = [Worker(bpl, cwd=cwd) for _ in specs]
         pool = ThreadPoolExecutor(len(workers))
-        try: return [f | {'linear': linear(f['code'])} for job in [pool.submit(_checked, w, kind, s, sentinel, bpl, limit) for w, s in zip(workers, specs)] for f in job.result()]
+        try: replies = [job.result() for job in [pool.submit(_checked, w, kind, s, sentinel, bpl, limit) for w, s in zip(workers, specs)]]
         finally:
             for w in workers: w.close()
             pool.shutdown()
+    def tagged(r, s): return dict(r, **{k: [{'file': s.get('name'), **f, 'linear': linear(f['code'])} for f in r.get(k, [])] for k in ('failures', 'obligations')})
+    return _merged([tagged(r, s) for r, s in zip(replies, specs)])
 
 
 def check_file(
-    path, # A .bpl reference file, or a directory of them
-    ids:Annotated[int|str|dict, {'nargs':'*'}]=None, # Case ids, header lines, or previous report records (matched by file/section/code); None checks all
-    build:str=None, # Installed build, kept build id, or path to a bpl; resolved once
-    timeout:float=LIMIT, # Watchdog seconds per case or fresh mode continuation; None removes the watchdog
-    noopt:bool=False, # Include one independent unoptimized value check; use selected cases until applicability/resource review is complete
-    cwd:Path=None, # Working directory for relative BPL loads; None inherits the caller's directory
+    path, # A `.bpl` reference file, or a directory of them
+    ids:Annotated[int|str, {'nargs':'*'}]=None, # Check only these cases, each named by its id or its header's line number
+    build:str=None, # The build to check, resolved once (`worker.resolved`): a path to a `bpl`, a prefix of the id of a build that `cargo develop` kept, or None or `installed` for the installed build
+    timeout:float=LIMIT, # Seconds of work that the check gets, or a `Limit` to share (`worker.Limit`); None: no limit
+    cwd:Path=None, # The workers' working directory, for relative `•load` paths; None: this process's
 ):
-    "Check applicable modes and report named skips, failures and incomplete coverage. Healthy workers are reused; later independent modes run fresh after a stop."
-    path, bpl = Path(path), resolved(build)
-    paths = sorted(path.glob('*.bpl')) if path.is_dir() else [path]
-    ids = None if ids is None else [int(i) if isinstance(i, str) and i.isdigit() else i for i in ([ids] if isinstance(ids, dict) else listify(ids))]
-    cases, errors = [], []
-    with timing_lock(), Worker(bpl, cwd=cwd, noopt=False) as inventory:
-        for file in paths:
-            spec = dict(name=file.name, text=file.read_text(), inventory=True, noopt=noopt)
-            reply = inventory.request({'reference': spec}, timeout=timeout)
-            if reply.get('error'): errors.append(dict(file=file.name, message=reply['error'])); continue
-            cases.extend((dict(case, file=file.name), reply['setup']) for case in reply['cases'])
-        if ids is not None:
-            chosen = set()
-            for item in ids:
-                if isinstance(item, dict):
-                    fields = ('file', 'section', 'code')
-                    found = [(c, s) for c, s in cases if all(c.get(k) == item.get(k) for k in fields)]
-                    if len(found) > 1: raise ValueError('previous case record is ambiguous; select its current id or header line')
-                else: found = [(c, s) for c, s in cases if item in (c['id'], c['line'])]
-                if not found: raise ValueError(f'{item} match no case')
-                chosen.update((c['file'], c['line']) for c, _ in found)
-            cases = [(c, s) for c, s in cases if (c['file'], c['line']) in chosen]
-        pending = Queue()
-        for case in cases: pending.put(case)
-
-        def consume(_):
-            workers, rows = {}, []
-            try:
-                while True:
-                    try: case, setup = pending.get_nowait()
-                    except Empty: return rows
-                    if reason := case.get('skip_reason'):
-                        modes = [dict(mode=name, status='skipped', message=reason) for name in case['expected_modes']]
-                        rows.append(dict(case, modes=modes, status='skipped'))
-                        continue
-                    policies = {check['mode']: check['noopt'] for check in case['checks']}
-                    modes = {name: dict(mode=name, status='unexecuted') for name in case['expected_modes']}
-
-                    def request(only=None, noopt=False):
-                        worker = workers.get(noopt)
-                        if worker is None: worker = workers[noopt] = Worker(bpl, cwd=cwd, stderr_limit=None, noopt=noopt)
-                        spec = dict(case, setup=setup)
-                        if only: spec['only_modes'] = [only]
-                        try:
-                            reply = worker.request({'case': spec}, timeout=timeout)
-                            if reply.get('error'): raise ValueError(reply['error'])
-                            progress = reply.get('modes', [])
-                            if reply['status'] not in ('pass', 'timeout', 'interrupt', 'blocked', 'watchdog', 'skipped'):
-                                case.setdefault('failure', {k: reply[k] for k in ('status', 'message', 'kind', 'actual', 'expected_value') if k in reply})
-                            if any(m['status'] in ('timeout', 'interrupt', 'panic', 'watchdog') for m in progress):
-                                worker.close()
-                                del workers[noopt]
-                        except (TimeoutError, EOFError) as error:
-                            progress = []
-                            for line in worker.diagnostics.splitlines():
-                                if not line.startswith('check '): continue
-                                note = json.loads(line[6:])
-                                if (note['file'], note['line']) == (case['file'], case['line']) and (not only or note['result']['mode'] == only):
-                                    progress.append(note['result'])
-                            active = next((p for p in reversed(progress) if p['status'] == 'running'), None)
-                            if active is None: active = dict(mode=only or case['expected_modes'][0])
-                            progress.append(dict(active, status='watchdog' if isinstance(error, TimeoutError) else 'crash', message=str(error),
-                                                 origin='fresh continuation' if only else 'standard'))
-                            worker.close()
-                            del workers[noopt]
-                        for mode in progress:
-                            if only and mode['mode'] != only: continue
-                            if mode['status'] != 'unexecuted': modes[mode['mode']] = mode
-                        for mode in modes.values():
-                            if mode['status'] == 'running': mode.update(status='watchdog', message='request stopped before this mode completed')
-
-                    request()
-                    for name, mode in modes.items():
-                        if mode['status'] != 'unexecuted' or name == 'storage kinds': continue
-                        normal = modes[case['expected_modes'][0]]
-                        if name == "on a dfn's second call" and normal['status'] != 'pass':
-                            mode.update(status='blocked', message='normal warmup did not complete successfully')
-                        elif name == 'routes' and any(m['status'] not in ('pass', 'not applicable') for n, m in modes.items() if n not in ('routes', 'storage kinds') and not policies[n]):
-                            mode.update(status='blocked', message='needs completed value checks')
-                        else: request(name, noopt=policies[name])
-                    if modes['storage kinds']['status'] == 'unexecuted':
-                        modes['storage kinds'].update(status='blocked', message='needs all standard-mode outcomes in one worker')
-                    failed = case.get("failure") or [m for m in modes.values() if m['status'] not in ('pass', 'not applicable', 'blocked', 'unexecuted', 'watchdog', 'crash', 'skipped')]
-                    incomplete = any(m['status'] in ('blocked', 'unexecuted', 'watchdog', 'crash', 'skipped') for m in modes.values())
-                    rows.append(dict(case, modes=list(modes.values()), status='fail' if failed else 'incomplete' if incomplete else 'pass'))
-            finally:
-                for worker in workers.values(): worker.close()
-
-        with ThreadPoolExecutor(max_workers=max(1, min(os.cpu_count() or 1, len(cases)))) as pool:
-            rows = sorted((row for group in pool.map(consume, range(min(os.cpu_count() or 1, len(cases)))) for row in group),
-                          key=lambda row: (row['file'], row['line']))
-    coverage = dict(Counter(m['status'] for row in rows for m in row['modes']))
-    unfinished = [r for r in rows if any(m['status'] in ('blocked', 'unexecuted', 'watchdog', 'crash', 'skipped') for m in r['modes'])]
-    return dict(cases=rows, failures=[r for r in rows if r['status'] == 'fail'], incomplete=unfinished, skipped=[r for r in rows if any(m['status'] == 'skipped' for m in r['modes'])],
-                errors=errors, coverage=coverage, complete=bool(rows) and not errors and not unfinished)
+    "Check the cases in `path` as `tests/reference.rs` does, with their route directives, in a fresh worker for each core that takes every n-th case of a file. Returns what the workers reply, as `reference::file_request` gives it: the `failures` in file and line order, the `obligations`, and the counts by mode under `accounting`."
+    files = sorted(Path(path).glob('*.bpl')) if Path(path).is_dir() else [Path(path)]
+    if isinstance(ids, (int, str)): ids = [ids]
+    specs, known = [], set()
+    for file in files:
+        source = file.read_text()
+        cases = _reference_file(source)['cases']
+        known.update(k for c in cases for k in (c['id'], c['line']))
+        lines = [c['line'] for c in cases if ids is None or c['id'] in ids or c['line'] in ids]
+        n = max(1, min(os.cpu_count(), len(lines)))
+        specs += [dict(name=file.name, text=source, ids=lines[k::n]) for k in range(n) if lines[k::n]]
+    # An id that names no case goes to a worker for the first file, whose error names it.
+    if unknown := [i for i in ids or () if i not in known]:
+        specs = specs or [dict(name=files[0].name, text=files[0].read_text(), ids=[])]
+        specs[0]['ids'] += unknown
+    if not specs: raise ValueError(f'{path} holds no case to check')
+    result = _replies('reference', specs, build=build, timeout=timeout, cwd=cwd)
+    return dict(result, failures=sorted(result['failures'], key=lambda f: (f['file'], f['line'])))
 
 
 def check_page(
@@ -343,7 +278,109 @@ def check_page(
     "Run the BPL examples in `.qmd` page `path` in a fresh worker, as `tests/core.rs` does, and return the failures."
     text = Path(path).read_text().rstrip('\n') + '\n\n```bpl\n0 ⍝ 1\n```\n'
     line = text.count('\n') - 1
-    return _failures('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, build, timeout)
+    return _replies('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, build, timeout)['failures']
+
+_INTEGRAL = re.compile(r'^[\[\]()⋄;\s¯\d]*\d[\[\]()⋄;\s¯\d]*ₓ[\])\s]*$')
+_UNRUN = ('skipped', 'unchecked')
+
+# A mismatch message is a path of `data[i]: ` steps into nested items, then the difference found there, such as `shape: [2] != [3]`.
+_STEPS, _SHAPES = re.compile(r'^(?:data\[\d+\]: )*'), re.compile(r'^shape: (\[[^\]]*\]) != (\[[^\]]*\])$')
+_LEAVES = {'atom versus array': 'atom versus array', 'atom': 'value differs', 'axis keys or names': 'keys or names differ', 'unexpected function or operator result': 'function result'}
+
+def _kind(r):
+    "A mismatch's kind: a float result where the expected value is a machine integer, a rank-0 array where it's an atom, or a rational result; otherwise the difference that its message names, with `in an item` where the difference is inside a nested item."
+    v, expected = (r.get('actual') or {}).get('value'), r.get('expected_code') or ''
+    integral = bool(_INTEGRAL.match(expected))
+    if isinstance(v, float) and integral: return 'float atom for int'
+    if isinstance(v, dict):
+        if 'rational' in v: return 'rational result'
+        if v.get('shape') == [] and not expected.lstrip('( ').startswith('⊂'): return 'rank-0 array for atom'
+        if integral and any(isinstance(x, float) for x in v.get('data', ())): return 'float array for int'
+    message = _unmoded(r)
+    steps = _STEPS.match(message)[0]
+    leaf = message[len(steps):]
+    if shapes := _SHAPES.match(leaf): kind = 'length differs' if len(re.findall(r'\d+', shapes[1])) == len(re.findall(r'\d+', shapes[2])) else 'rank differs'
+    elif re.fullmatch(r'data\[\d+\]', leaf): kind = 'value differs'
+    elif leaf.startswith('expected '): kind = 'error expected'
+    elif leaf.startswith('output: '): kind = 'output differs'
+    else: kind = _LEAVES.get(leaf, 'other mismatch')
+    return f'{kind} in an item' if steps and kind != 'other mismatch' else kind
+
+def _unmoded(r):
+    "A case's message without the name of the mode that gave it, so one message counts once whatever mode it came from."
+    m = r.get('message') or ''
+    for mode in r.get('modes', ()):
+        if m.startswith(p := f"{mode['mode']}: "): return m[len(p):]
+    return m
+
+def _records(x):
+    "Case records: `x` itself, or those in the JSON file at path `x`."
+    return x if isinstance(x, list) else json.loads(Path(x).read_text())
+
+def _identity(r):
+    "A case's identity across records: its file and id, or, for a case without an id, its file, section and code."
+    return r.get('file'), r.get('id') or (r.get('section'), r.get('code'))
+
+# The status of a run that passed in the baseline record and doesn't apply now, such as a run with no compiled parts after a run that compiled nothing.
+_LOST = 'no longer applies'
+
+def _against(results, baseline):
+    "`results`, where each run that is `not applicable` but passed in `baseline` has status `_LOST`. A lost run doesn't fail its case."
+    passed = {(_identity(r), m['mode']) for r in baseline for m in r.get('modes', ()) if m['status'] == 'pass'}
+    return [dict(r, modes=[dict(m, status=_LOST) if m['status'] == 'not applicable' and (_identity(r), m['mode']) in passed else m for m in r.get('modes', ())]) for r in results]
+
+@dataclass
+class ReferenceSummary:
+    "A reference run's summary, which `reference_summary` gives: counts by mode, failing value cases by status, mismatch kind and message, failures by file, and the cases with a run that no longer applies."
+    cases: int
+    obligations: int
+    modes: dict
+    passing: Counter
+    statuses: Counter
+    kinds: dict
+    messages: Counter
+    files: Counter
+    lost: list
+    compared: bool
+    def __repr__(self):
+        failing = sum(self.statuses.values())
+        compared = f' A run that passed in the baseline record and doesn\'t apply now is reported as "{_LOST}" and doesn\'t fail its case.' if self.compared else ' No baseline record compared.'
+        lines = [f'{self.cases} cases; {self.obligations} hold release-2 obligations. Runs by mode (checked, failed, not run, not applicable, {_LOST}): '
+                 + '; '.join(f'{m} {c}, {f}, {u}, {n}, {l}' for m, (c, f, u, n, l) in self.modes.items()) + '.' + compared, '',
+                 f'{failing} value cases fail. ' + ' '.join(f'{n} of them pass {m}.' for m, n in self.passing.items())
+                 + ' By status and kind: ' + ', '.join(f'{k} {n}' for k, n in self.statuses.most_common()) + '.', '', '## Kinds', '']
+        lines += [f'- {kind} ({self.statuses[kind]}): ' + ', '.join(f"{r['id']} `{' ⋄ '.join(r['code'].splitlines())}`" for r in rs) for kind, rs in self.kinds.items()]
+        lines += ['', '## Messages, most common', ''] + [f'- {n}: {m}' for m, n in self.messages.most_common(15)]
+        lines += ['', '## By file', '', ', '.join(f'{f} {n}' for f, n in self.files.most_common())]
+        if self.compared: lines += ['', f'## Runs that {_LOST} ({len(self.lost)} cases)', '', ', '.join(f"{r.get('file')}:{r.get('id') or r.get('line')}" for r in self.lost)]
+        return '\n'.join(lines)
+
+def reference_summary(
+    results, # Case records, as `tests/reference.rs` writes them with `BASEDPL_RESULTS` set, or the path of that file
+    baseline=None, # The accepted record's case records, or the path of that file: each run that passed there and doesn't apply now is reported, without failing its case
+    examples:int=3, # Cases listed for each mismatch kind
+):
+    "Summarise a reference run: its counts by mode, its failing value cases by status and mismatch kind, its commonest messages, its failures by file, and the cases with a run that no longer applies."
+    results = _records(results)
+    if baseline is not None: results = _against(results, _records(baseline))
+    modes = defaultdict(lambda: [0, 0, 0, 0, 0])
+    for r in results:
+        for m in r.get('modes', ()):
+            counts = modes[m['mode']]
+            if m['status'] == _LOST: counts[4] += 1
+            elif m['status'] == 'not applicable': counts[3] += 1
+            elif m['status'] in _UNRUN: counts[2] += 1
+            else: counts[0] += 1; counts[1] += m['status'] != 'pass'
+    failing = [r for r in results if r['status'] != 'pass' and r.get('class', 'value') == 'value']
+    statuses = Counter(_kind(r) if r['status'] == 'mismatch' else r['status'] for r in failing)
+    kinds = defaultdict(list)
+    for r in failing:
+        if r['status'] == 'mismatch' and (k := _kind(r)) != 'other mismatch' and len(kinds[k]) < examples: kinds[k].append(r)
+    return ReferenceSummary(
+        cases=len(results), obligations=sum(r['status'] != 'pass' for r in results if r.get('class') == 'report'), modes=dict(modes),
+        passing=Counter(m['mode'] for r in failing for m in r.get('modes', ()) if m['status'] == 'pass'), statuses=statuses, kinds=dict(kinds),
+        messages=Counter(_unmoded(r) for r in failing if r['status'] == 'error'), files=Counter(r.get('file') for r in failing),
+        lost=[r for r in results if any(m['status'] == _LOST for m in r.get('modes', ()))], compared=baseline is not None)
 
 _ROOT = Path(__file__).parents[2]
 _SPEED = _ROOT/'tests'/'speed'
@@ -496,16 +533,15 @@ _SETTLE, _SPAN = 5e8, 5e8
 # A case that names N outside its strings supplies its own repetition and reads.
 _NAMES_N, _QUOTED = re.compile(r'(?<!\w)N(?!\w)'), re.compile(r'"(?:[^"]|"")*"|\'.\'')
 
+# The line that a sampled process writes to stdout once it has run its setup and warmed one step.
+_READY = 'bpl-profile-ready'
+
 def _command(case, n, setup, force=False, forever=False):
-    "The CLI arguments for one instruction-count or sampling process."
+    "The CLI arguments for one instruction-count or sampling process: an `-e` program, which the release's `bpl` runs as well as today's. A case that doesn't name `N` runs once per step inside a dfn, `N` times per process. With `force`, each such step reads an item of its result, which computes a pending result in full. With `forever`, the process warms one step, writes `_READY` to stdout, then repeats the step until it is killed; a case that names `N` repeats whole."
     named = _NAMES_N.search(_QUOTED.sub('', case))
-    read = force and not named
-    code = case if named or read else f'{{{case} ⋄ ⍵}}⍣N 0'
-    if read or forever:
-        if not read: code = f'{code} ⋄ ⍵'
-        return ['--measure', json.dumps(dict(setup=_setup(n, setup), code=code,
-            count=1_000_000_000 if forever else n, force=read, ready=forever))]
-    return ['-e', _program(code, n, setup)]
+    step = f'{{r←{case} ⋄ ⍵⊣⊃,r}}' if force and not named else f'{{{case} ⋄ ⍵}}'
+    if forever: return ['-e', f'{_setup(n, setup)}\nprofiled←{step}\nwarm←profiled 0\n⎕←"{_READY}"\nsteps←1000000000\nprofiled⍣steps 0']
+    return ['-e', _program(case if named else f'{step}⍣N 0', n, setup)]
 
 def _locked(pool, calls, limit=None):
     "The results of `calls`, each a function and its arguments, run at once on `pool` as one batch, holding the machine's timing lock shared for that batch alone, and spending `limit` (`worker.Limit`) while it runs. A timing that waits for the lock runs between batches. An interrupt or error cancels the calls that haven't started; those running end within `limit` (`fastws.procs.bounded`)."
@@ -603,16 +639,16 @@ def _self_samples(command, bpl, seconds, replays, within, settings, callers):
     with limit.running(), tempfile.TemporaryDirectory() as directory:
         env = _counting(replays, **settings)
         if sys.platform == 'linux': env['PERF_BUILDID_DIR'] = directory
-        p = subprocess.Popen([resolved(bpl), *command], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, env=env)
+        p = subprocess.Popen([resolved(bpl), *command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
         try:
-            diagnostics = b''
+            printed = b''
             with selectors.DefaultSelector() as waiting:
-                waiting.register(p.stderr, selectors.EVENT_READ)
-                while b'\nbpl-profile-ready\n' not in b'\n'+diagnostics:
+                waiting.register(p.stdout, selectors.EVENT_READ)
+                while _READY.encode() not in printed:
                     if not waiting.select(limit.left()): raise TimeoutError('profiled process did not finish setup and its warm call before the deadline')
-                    chunk = os.read(p.stderr.fileno(), 4096)
-                    if not chunk: raise ValueError(f'profiled process exited {p.poll()} before readiness:\n{diagnostics.decode(errors="replace")}')
-                    diagnostics += chunk
+                    chunk = os.read(p.stdout.fileno(), 4096)
+                    if not chunk: raise ValueError(f'profiled process exited {p.wait()} before readiness:\n{p.stderr.read()}')
+                    printed += chunk
             if sys.platform == 'linux': sampled = _perf_samples(p.pid, seconds, limit.left(), directory, callers)
             else:
                 with tempfile.NamedTemporaryFile('r', suffix='.txt', dir=directory) as report:
@@ -620,10 +656,10 @@ def _self_samples(command, bpl, seconds, replays, within, settings, callers):
                     except subprocess.TimeoutExpired: raise TimeoutError("sample did not finish before the call's deadline; check Developer Tools authorization") from None
                     if s.returncode: raise ValueError(s.stdout + s.stderr)
                     lines = report.read().splitlines()
-            if p.poll() is not None: raise ValueError(f'profiled process exited {p.returncode} during sampling:\n{diagnostics.decode(errors="replace")}{p.stderr.read()}')
+            if p.poll() is not None: raise ValueError(f'profiled process exited {p.returncode} during sampling:\n{p.stderr.read()}')
             if sys.platform == 'linux': return sampled
         finally:
-            p.kill(); p.wait(); p.stderr.close()
+            p.kill(); p.wait(); p.stdout.close(); p.stderr.close()
             if sys.platform == 'linux': Path(f'/tmp/perf-{p.pid}.map').unlink(missing_ok=True)
     start = next((i for i, line in enumerate(lines) if 'com.apple.main-thread' in line), None)
     if start is None: raise ValueError('sample returned no main-thread report')
@@ -965,6 +1001,14 @@ def logged_costs(
     copies = list(dict.fromkeys((int(m['items']), int(m['bytes']), float(m['ns']), m['source'] == 'stored for') for m in found))
     return SpeedCosts(rows.values(), cpu, platform, copies, footprints, {k: (*hold, k in stale) for k, hold in held.items()})
 
+def table_costs(
+    path, # A tab-separated table with `file`, `section`, `code`, `cost` and `budget` columns, such as `meta/pre-rewrite-costs.tsv` (expands `~`)
+    file:str=None, # Only the rows of this speed file, named without `.bpl`; None: every row
+)->SpeedCosts:
+    "The rows that `speed_costs` gives, read from a costs table, as `compare_costs` takes them. Costs are in copies; a table gives no time for each item."
+    rows = list(csv.reader(Path(path).expanduser().read_text().splitlines()[1:], delimiter='\t'))
+    return SpeedCosts((s, c, float(cost), float(b) if b else None, None) for f, s, c, cost, b in rows if file in (None, f))
+
 CHANGE = 0.2
 class CostChanges(list):
     "The cases that `compare_costs` reports, as `(section, code, before, after, budget, change)` rows. `before` and `after` are costs, or `None` for a case that `time_cases` found too quick to time. `change` is the fractional change in the case's time for each item where both runs give one, and in its cost otherwise, so it holds across a change to `rustymath::timing::COPIES`. Cases over their budget in `after` come first, then cases whose change is more than `CHANGE`, largest first, then cases that only one run timed, as when a case's code changed between the runs. `before` is `None` for a case that only the later run timed, and `after` for one that only the earlier run timed, and `change` is `None` for both. `budget` is `None` for a case with no budget."
@@ -1038,7 +1082,7 @@ def bisect(
             return f'{type(e).__name__}: {e}'
     def checked(b):
         report = check_file(path, [case], build=b, timeout=limit.left())
-        return '; '.join(f"{m['status']}: {m.get('message', '')}" for c in report['cases'] for m in c['modes'] if m['status'] not in ('pass', 'not applicable'))
+        return '; '.join(f"{m['status']}: {m.get('message') or ''}" for f in report['failures'] for m in f.get('modes') or [f] if m['status'] != 'pass')
     measure = dict(check=checked,
                    value=printed,
                    instructions=lambda b: instructions(case, setup, build=b, timeout=limit)[0][1],
@@ -1095,7 +1139,7 @@ def explained(
         if (r['error'] or {}).get('kind') == 'REQUEST': r = _explained_by_text(w, case, setup, prefs, sites, limit)
     limit.reached(r['error'])
     if r['error']: raise BplError(r['error'], r['output'])
-    return {name: [{k: v.item() if hasattr(v, 'item') else v for k, v in zip(t, vals)} for vals in zip(*t.values())] for name, t in _value(r['value']).items()}
+    return {name: [{k: v.item() if hasattr(v, 'item') else v for k, v in zip(t, vals)} for vals in zip(*t.values())] for name, t in _value(r['value']).items() if name != 'value'}
 
 def _explained_by_text(w, case, setup, prefs, sites, limit):
     "The reply of `w`, a build older than the worker's `route` request, to `•explain` of a second run of `case`, after `prefs`, `setup` and an explained first run, each evaluation spending `limit`. A build older than `•explain`'s options runs without `sites`."
@@ -1163,11 +1207,9 @@ def cargo_costs(
     if build: return _run_costs([Path(build).expanduser()], path, timeout, **kwargs)
     limit = Limit.of(timeout)
     left = limit.left()
-    try: result = run_tests(path, '--profile', 'lto', '--test', 'speed', timeout=left, env=_cost_env(path, **kwargs))
-    except TimeoutError:
-        limit.spend(left)
-        raise
+    result = run_tests(path, '--profile', 'lto', '--test', 'speed', timeout=left, env=_cost_env(path, **kwargs))
     limit.spend(result.seconds)
+    if late := next((s for s in result.suites if s.timed_out), None): raise TimeoutError(late.output)
     return _cost_rows(result.text, result.returncode)
 
 def _python_path(path, build):
@@ -1195,6 +1237,17 @@ def run_pytest(
     "What `pytest -q` prints for `tests`, run in the package at `path`."
     limit = Limit.of(timeout)
     with limit.running(): p = bounded([sys.executable, '-m', 'pytest', '-q', *listify(tests)], limit.left(), cwd=Path(path).expanduser(), env=os.environ | _python_path(path, build))
+    return Report(p.stdout + p.stderr)
+
+def run_nbtest(
+    nb:str, # A notebook or folder of notebooks within the package, as `nbdev-test --path` takes it, such as `nbs/arrays.ipynb`
+    path='.', # A package, such as rustymath, whose notebooks these are
+    build:str=None, # The build of the package to test, as `run_pytest` takes it
+    timeout:float=LIMIT # Seconds of work that the run gets, or a `Limit` to share (`worker.Limit`); None: no limit
+):
+    "What `nbdev-test` prints for `nb`, tracebacks included, run in the package at `path` on `build`'s Python package."
+    limit = Limit.of(timeout)
+    with limit.running(): p = bounded([sys.executable, '-c', 'from nbdev.test import nbdev_test; nbdev_test()', '--path', nb], limit.left(), cwd=Path(path).expanduser(), env=os.environ | _python_path(path, build))
     return Report(p.stdout + p.stderr)
 
 class Report(str):
@@ -1339,7 +1392,7 @@ def _steps(out, node):
         _Step('basedpl: nbdev', ['nbdev-prepare'], B, (dev, 'basedpl: BPL notebooks')),
         _Step('rustymath: nbdev', ['nbdev-prepare'], R, (rdev,)),
         *(_Step(f'{r.name}: cargo test', _cargo_test(r), r, (d,), timeout=3600) for r, d in ((B, dev), (R, rdev))),
-        _Step('basedpl: route test', _cargo_test(B, '--test', 'routes'), B, (dev,), timeout=3600),
+        _Step('basedpl: route test', _cargo_test(B, '--test', 'explain'), B, (dev,), timeout=3600),
         _Step('basedpl: speed test', _cargo_test(B, '--profile', 'lto', '--test', 'speed'), B, (dev,), dict(BASEDPL_COSTS='1'), 3600, True),
         _Step('rustymath: speed test', _cargo_test(R, '--profile', 'lto', '--test', 'speed'), R, (rdev,), dict(RUSTYMATH_COSTS='1'), 3600, True),
         _Step('rustymath: Python speed test', ['pytest', '-q', 'tests/test_speed.py'], R, (rdev,), dict(RUSTYMATH_COSTS='1'), 600, True),
@@ -1564,7 +1617,7 @@ def dead_functions(
 
 
 
-_COMMANDS = 'check_file check_page time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs run_pytest compare_costs bisect explain_diff wasm_test wasm_stack target_builds prerelease module_edges dead_functions'.split()
+_COMMANDS = 'check_file check_page reference_summary time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs run_pytest run_nbtest compare_costs bisect explain_diff wasm_test wasm_stack target_builds prerelease module_edges dead_functions'.split()
 
 def main():
     "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."

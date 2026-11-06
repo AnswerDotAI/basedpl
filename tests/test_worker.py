@@ -88,8 +88,8 @@ def test_worker_cancellation_and_reference_sessions():
         case = dict(code='∞', expected_code='∞', relative_tolerance=1e-14)
         assert w.request(dict(case=case))['status'] == 'pass'
         assert w.request(dict(case=dict(case, code='1e308')))['status'] == 'mismatch'
-        [f] = w.request(dict(page=dict(text='```bpl\n{⍵+1}⍣1e9⁝0 ⍝ 0\n1 ⍝ 1\n```\n')), timeout=.2)['failures']
-        assert (f['line'], f['status']) == (2, 'unchecked')
+        timed, f = w.request(dict(page=dict(text='```bpl\n{⍵+1}⍣1e9⁝0 ⍝ 0\n1 ⍝ 1\n```\n')), timeout=.2)['failures']
+        assert (timed['line'], f['line'], f['status']) == (2, 3, 'unchecked') and 'TIMEOUT' in timed['message']
     bpl.timeout = .01
     with pytest.raises(BplError) as e: bpl('x←7 ⋄ {∇⍵}0', 'explicit')
     assert e.value.kind == 'TIMEOUT'

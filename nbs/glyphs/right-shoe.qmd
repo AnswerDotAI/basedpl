@@ -35,7 +35,7 @@ T←["price":1 2 3;"qty":4 5 6]
 
 A level selects one item or cell. To read several items, use [Dot](dot.qmd) indexing: `x.[[0 2] [1 3]]` pairs two arrays of positions.
 
-With axes, `⊃⍠A Y` places the cell axes of Mix among the frame axes. See [Axis](quad-colon.qmd). On Pick, negative positions count from the end. A NaN position gives fill. So does position 0 or ¯1 on an empty axis, as it does for [First](up-arrow.qmd). [`⍠`](quad-colon.qmd#fill) can choose the fill for Mix, and for the last level of Pick's path.
+With axes, `⊃⍠A Y` places the cell axes of Mix among the frame axes. See [Axis](quad-colon.qmd). On Pick, negative positions count from the end. A position outside its axis or not a whole number gives fill, as [Indexing](../indexing.ipynb#positions) describes. So does position 0 or ¯1 on an empty axis, as it does for [First](up-arrow.qmd). [`⍠`](quad-colon.qmd#fill) can choose the fill for Mix, and for the last level of Pick's path.
 
 ## Inverse
 
@@ -49,5 +49,7 @@ With axes, `⊃⍠A Y` places the cell axes of Mix among the frame axes. See [Ax
 
 - `RANK`: Mix axes not a unit or vector, a path not a unit or vector, a level with more positions than its array has axes
 - `LENGTH`: Mix axis count not the cell rank
-- `INDEX`: position outside the array, missing key, or Mix axis outside the result
+- `INDEX`: a Mix axis outside the result
 - `DOMAIN`: repeated or fractional Mix axes, a level that holds an array of positions
+
+A missing key gives the fill too.

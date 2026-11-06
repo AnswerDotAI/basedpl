@@ -28,7 +28,7 @@ def test_static_kinds_read_under_the_session_settings():
     try:
         z = bpl('•prefs ["kinds":"static"] ⋄ 0j1 1j0×1')
         assert isinstance(z.py[1], np.complexfloating) and z.py[1] == 1
-        assert z.bpl == '[0ⱼ1 1ⱼ0]ₛ'
+        assert z.bpl == '[0ⱼ1 1]ₛ'
         assert bpl('(•storage x).kind', x=1+0j).py == 'complex64'
         ints = bpl('•prefs ["int":32] ⋄ ⍳5ₓ')
         assert ints.np.dtype == np.int32 and ints.own().dtype == np.int32
@@ -149,8 +149,8 @@ def test_exact_nested_and_character_values():
     np.testing.assert_array_equal(boxed.np.item(), [1, 2])
     assert bpl('0 3⍴""').shape == (0, 3) and bpl('0⍴⊂1 2').np.dtype == object
     assert bpl('x', x=[[], []]).shape == (2, 0)
-    assert type(bpl('1j2×1j¯2').py) is float and bpl('+1j2').py == 1-2j
-    assert bpl('0#1j2').np.dtype == np.float64
+    assert type(bpl('1j2×1j¯2').py) is complex and bpl('+1j2').py == 1-2j
+    assert bpl('0#1j2').np.dtype == np.complex128
     empty = bpl('0⍴⊂2 3⍴1ₓ')
     assert bpl('x≡0⍴⊂2 3⍴1ₓ', x=empty).py == 1
     assert Array(a := [1, 2]).shape == (2,)

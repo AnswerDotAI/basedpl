@@ -229,7 +229,7 @@ class Array(_Operators):
     def __iter__(self): return (Array(a) for a in self._inner.cells())
     def __contains__(self, item): return self._inner.contains(item if isinstance(item, str) else _array(item))
     def __getitem__(self, index):
-        "Select by positions, keys, slices or per-axis masks. `None` inserts an axis and `...` keeps omitted axes."
+        "Select by positions, keys or slices, as `⌷` does: Booleans read as positions, and index arrays pair. `None` inserts an axis and `...` keeps omitted axes."
         return _result(self._inner.select(index, _array)).value
     def __getattr__(self, name):
         "Read keyed fields when no Python attribute has that name."
