@@ -9861,7 +9861,7 @@ inter←{0ₓ=≢⍺?⍺;i←⍵⍳↑⍺ ⋄ i=≢⍵?(1↓⍺)∇⍵;(1↑⍺)
 
 ⍝ aplcart/table.tsv:2182 — Add large integers as decimal strings
 •json⁻¹ (•json "99999999999999999999")+•json '1'
-"100000000000000000000"
+"1e+20"
 
 ⍝ aplcart/table.tsv:2186 — Exact rational addition
 ⍕(1ᵣ÷3ᵣ)+1ᵣ÷2ᵣ   ⍝ "5ᵣ6"

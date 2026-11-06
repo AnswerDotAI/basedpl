@@ -95,7 +95,7 @@ impl Value {
 
     fn formatted_cells(&self, el: Elide) -> Result<Self, ErrorKind> {
         use crate::display::{Cell, Style, grid};
-        if self.is_empty() { return Self::empty([0], Value::Character(' ')); }
+        if self.is_empty() { return Self::empty([0], Value::Character(char::FILL)); }
         let rank = self.shape().len();
         let columns = self.shape().last().copied().unwrap_or(1);
         let (mut size, mut matrix, mut rows) = (0, rank > 1, Vec::new());

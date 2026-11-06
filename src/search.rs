@@ -6,7 +6,7 @@
 //! - Other Booleans, integers and floats read as floats of the search's float width, as an operand converts, and take `tolerant`'s searches. Only 64-bit floats compare within a tolerance. Floats that all equal whole numbers below `tolerant::whole_limit` search those whole numbers.
 //!
 //! Other cells build an index when a search is large enough, and always for a classification:
-//! - Exact data is hashed. Numbers must be exact, and arrays must have no keys and no functions. Where every cell is an integer or character atom, or an array of compact Booleans, integers or characters under a plain layout, equal keys are matching cells (`Exact`). Otherwise a hash bucket is only a candidate list, and `Value::matches` confirms each candidate.
+//! - Exact data is hashed. Numbers must be exact, and arrays must have no keys and no functions. Where every cell is an integer or character atom, or an array of compact Booleans, integers or characters under a plain layout, equal keys are matching cells (`search::Exact`). Otherwise a hash bucket is only a candidate list, and `Value::matches` confirms each candidate.
 //! - Real atoms take `tolerant`'s searches at 64 bits.
 //! - Cells that are arrays file under their first number, and `Value::matches` confirms each candidate. Classification sorts them by their first number, and compares each with the earlier representatives in its run.
 //!
@@ -201,52 +201,20 @@ fn hashes(cells: &Cells, seed: &Hashing) -> Option<Vec<u64>> {
     }).collect()
 }
 
-/// A cell that matches another exactly when their shapes and items are equal: an integer or character atom, which has no shape, or an array with no keys, names or renderer whose items are compact Booleans, integers or characters. Equal keys are matching cells, so a search by these keys needs no confirmation by `Value::matches`. Its hash leaves out the shape, which equality compares, and reads a key's characters as one run of bytes.
-#[derive(Clone, Copy)]
-struct Exact<'a> { shape: Option<&'a [usize]>, items: View<'a> }
-
-impl<'a> Exact<'a> {
-    fn of(value: &'a Value) -> Option<Self> {
-        let shape = match value {
-            Value::Number(_) | Value::Character(_) => None, Value::Array(_) if value.carrier().is_none() && value.layout().plain() => Some(value.shape()),
-            _ => return None
-        };
-        match value.view()? { items @ (View::Booleans(_) | View::Integers(_) | View::Characters(_)) => Some(Self { shape, items }), _ => None }
-    }
-}
-
-impl PartialEq for Exact<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        // For keys as short as most strings, a `memcmp` call, which slice equality makes, costs more than comparing item by item.
-        fn equal<T: PartialEq>(x: &[T], y: &[T]) -> bool { x.len() == y.len() && x.iter().zip(y).all(|(a, b)| a == b) }
-        let shapes = match (self.shape, other.shape) { (Some(x), Some(y)) => equal(x, y), (x, y) => x.is_none() && y.is_none() };
-        shapes && match (self.items, other.items) {
-            (View::Characters(x), View::Characters(y)) => equal(x, y), (x, y) => search::view_matches(x, y, Tolerance::EXACT) == Some(true)
-        }
-    }
-}
-
-impl Eq for Exact<'_> {}
-
-impl Hash for Exact<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self.items {
-            // SAFETY: a `char` is a valid `u32`, of the same size and alignment.
-            View::Characters(x) => unsafe { std::slice::from_raw_parts(x.as_ptr().cast::<u32>(), x.len()) }.hash(state),
-            View::Booleans(x) => { for &b in x { state.write_i64(b.into()) } }
-            View::Integers(x) => rustymath::with_ints!(x, |x| for &i in x {
-                state.write_i64(i.into())
-            }),
-            View::Floats(_) | View::Complexes(_) => unreachable!("an exact key holds no floats"),
-        }
-    }
+/// The cell `value` is as an exact key (`search::Exact`): an integer or character atom, which has no shape, or an array with no keys, names or renderer whose items are compact Booleans, integers or characters. Equal keys are matching cells, so a search by these keys needs no confirmation by `Value::matches`.
+fn exact(value: &Value) -> Option<search::Exact<'_>> {
+    let shape = match value {
+        Value::Number(_) | Value::Character(_) => None, Value::Array(_) if value.carrier().is_none() && value.layout().plain() => Some(value.shape()),
+        _ => return None
+    };
+    search::Exact::new(shape, value.view()?)
 }
 
 /// Each cell as an `Exact` key, when every cell is one.
-fn exact_cells<'a>(cells: &'a Cells) -> Option<Vec<Exact<'a>>> {
+fn exact_cells<'a>(cells: &'a Cells) -> Option<Vec<search::Exact<'a>>> {
     match cells {
-        Cells::Items(a) if a.carrier().is_none() => match a.as_items() { Items::Values(items) => items.iter().map(Exact::of).collect(), _ => None },
-        Cells::Items(_) => None, Cells::Arrays(cells) => cells.iter().map(Exact::of).collect()
+        Cells::Items(a) if a.carrier().is_none() => match a.as_items() { Items::Values(items) => items.iter().map(exact).collect(), _ => None },
+        Cells::Items(_) => None, Cells::Arrays(cells) => cells.iter().map(exact).collect()
     }
 }
 
@@ -270,7 +238,7 @@ fn shared_classes(cells: &Cells) -> Option<Vec<u32>> {
     }
     let mut owners: Vec<u32> = first.into_values().collect();
     owners.sort_unstable();
-    let keys = owners.iter().map(|&i| Exact::of(&items[i as usize])).collect::<Option<Vec<_>>>()?;
+    let keys = owners.iter().map(|&i| exact(&items[i as usize])).collect::<Option<Vec<_>>>()?;
     // Each array's first item takes the class of the earliest array with equal items.
     let mut class = vec![0; items.len()];
     for (&owner, &k) in owners.iter().zip(&search::first_classes(&keys, |k| k)) { class[owner as usize] = owners[k as usize]; }

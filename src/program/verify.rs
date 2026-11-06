@@ -51,17 +51,14 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
         Step::Gather { of, .. } => plan::copy(&desc(of), &node.desc.layout),
         Step::Fold { p, kind, axis, seed, of } => {
             let (seed, items) = (seed.as_ref().map(desc), desc(of));
-            let (planned, along) =
-                plan::fold(*p, *kind, seed.as_ref().map(|s| s.kind), items.kind, Numeric::current())?.desc(Some(*axis), seed.as_ref(), &items)?;
+            let (planned, along) = plan::fold_desc(*p, *kind, Some(*axis), seed.as_ref(), &items, Numeric::current())?;
             if along == *axis { Ok(planned) } else { Err("an axis other than the one that planning gives") }
         }
         Step::Product { f, g, left, right, stacked } => {
             let (x, y) = (desc(left), desc(right));
-            let plan = plan::product(*f, *g, x.kind, y.kind, Numeric::current())?;
-            if *stacked { plan.stacked_desc(&x, &y) } else { plan.desc(&x, &y) }
+            plan::product_desc(*f, *g, &x, &y, *stacked, Numeric::current())
         }
         Step::At { p, base, items, .. } => plan::at(*p, &desc(base), &desc(items), Numeric::current()),
-        Step::OverlapAdd { of, .. } => plan::overlap(&desc(of), &node.desc.layout),
         Step::Picks { axis, of, .. } => plan::picks(&desc(of), *axis),
         Step::Structural { .. } | Step::Shape { .. } => Ok(node.desc.clone()),
         Step::Select { mask, yes, no } => {
@@ -74,5 +71,5 @@ fn planned(nodes: &[Node], node: &Node, step: &Step) -> Result<Desc, &'static st
 /// Whether plan `a`, which planning gives, is plan `b`, the step's. Constants compare by their bits, so that a NaN constant matches itself, and only on the sides that `held` marks. A constant comes from a value, and the plan of an operand that isn't a held value read as it is can hold the constant of the value that the operand copies, as fusion's plan of `(⊂3)+4` does. The kind the plan computes at (`at`) comes from its constants, so it's left out with them.
 fn same(a: &Pervasive, b: &Pervasive, held: [bool; 2]) -> bool {
     let constants = |p: &Pervasive| [0, 1].map(|k| p.constants[k].filter(|_| held[k]).map(f64::to_bits));
-    Pervasive { constants: [None; 2], at: None, ..*a } == Pervasive { constants: [None; 2], at: None, ..*b } && constants(a) == constants(b)
+    Pervasive { constants: [None; 2], at: None, ..a.clone() } == Pervasive { constants: [None; 2], at: None, ..b.clone() } && constants(a) == constants(b)
 }

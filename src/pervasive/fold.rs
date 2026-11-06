@@ -1,7 +1,7 @@
 //! Folds of stored values by the pervasive functions: along an axis, in groups, in sliding windows and as picks, through `p`'s formula and rustymath's reductions.
 use super::*;
 
-/// A reduction of `right` along `axis`, from the right as the general fold does, through `p`'s formula (`Kernel::fold_read`) from the kind the fold computes in, with `map`'s reruns at wider kinds (`computed`), as an integer `-/[0 1]ₓ` reruns past `u8`. The formula's own fold combines items in any order where `p` allows it, and an unseeded `-` or `÷` folds as an alternating sum or product. A pending copy reads its source through its map, so rustymath folds it by sliding windows or through the map (`reduce::fold_route`) without building the copy, unless a name holds it and its map doesn't reread cheaply (`reduce::rereads_cheaply`): that copy is built once, for its later reads. A seed combines with the total through `map`, for functions that `seed_last` allows. `None` where no kind gives the result, as for an empty lane of a function with no identity, and for a copy whose map reaches a fill: the general fold then gives the result or error.
+/// A reduction of `right` along `axis`, from the right as the general fold does, through `p`'s formula (`Kernel::fold_read`) from the kind the fold computes in, with `map`'s reruns at wider kinds (`computed`), as an integer `-/[0 1]ₓ` reruns past `u8`. The formula's own fold combines items in any order where `p` allows it, and an unseeded `-` or `÷` folds as an alternating sum or product. A pending copy reads its source through its map, with its prototype at each fill position, so rustymath folds it by sliding windows or through the map (`reduce::fold_route`) without building the copy, unless a name holds it and its map doesn't reread cheaply (`reduce::rereads_cheaply`): that copy is built once, for its later reads. A seed combines with the total through `map`, for functions that `seed_last` allows. `None` where no kind gives the result, as for an empty lane of a function with no identity: the general fold then gives the result or error.
 pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value>) -> Option<Value> {
     use rustymath::operation::{Direction, Seed};
     if seed.is_some() && !seed_last(p, right) { return None; }
@@ -16,8 +16,11 @@ pub(crate) fn fold(p: Primitive, right: &Value, axis: usize, seed: Option<&Value
     let settings = numeric.settings_for(dtype);
     let mut shape = right.shape().to_vec();
     let len = shape.remove(axis);
-    let (mapping, missing) = match &copy { Some((_, mapping)) => (mapping.clone(), Missing::Invalid), None => (Mapping::Linear(1), Missing::Default) };
-    let (out, _) = with_reads(&[(items, &mapping, right.len())], missing, |reads, types| computed(p, None, &[types[0]; 2], dtype, numeric, |kernel| {
+    let mapping = copy.as_ref().map_or(Mapping::Linear(1), |(_, mapping)| mapping.clone());
+    let fill = mapping.fills().then(|| crate::array::Layout::from([1]).filled(&right.prototype()));
+    let args: Vec<_> = std::iter::once((items, &mapping, right.len())).chain(fill.as_ref().map(|f| (f, &Mapping::Single, 1))).collect();
+    let missing = if fill.is_some() { Missing::Scalar(1) } else { Missing::Default };
+    let (out, _) = with_reads(&args, missing, |reads, types| computed(p, None, &[types[0]; 2], dtype, numeric, |kernel| {
         let mut out = Buffer::with_capacity(kernel.fold_dtype(types[0], len, None), shape.iter().product());
         kernel.fold_read(right.shape(), axis, Seed::Identity, Direction::Right, settings, reads[0], &mut out).map(|()| out)
     }))?.ok().flatten()?;
@@ -44,14 +47,7 @@ pub(crate) fn fold_groups(p: Primitive, right: &Value, groups: &Numbered) -> Opt
     })
 }
 
-/// The folds by `p` of each window of `width` rows along the middle axis of `data`, an array of shape `dims`, by `p`'s reduction (`Reduce::run_sliding`). `None` for a function with no reduction, for storage it doesn't fold, and where a checked total doesn't fit.
-pub(crate) fn sliding(p: Primitive, data: View<'_>, dims: [usize; 3], width: usize, numeric: Numeric) -> Option<Buffer> {
-    let mut out = Buffer::with_capacity(data.dtype(), 0);
-    kernel_at(p, None, data.dtype(), 2, numeric)?.fold()?.run_sliding(variant(data.dtype(), numeric), dims, width, data, &mut out).ok()?;
-    Some(out)
-}
-
-/// The folds by `p` of each window along axes 1 and 3 of `data`, an array of shape `dims`, by `p`'s reduction (`Reduce::run_sliding_2d`), with each axis's window width and the positions between windows' starts. `None` wherever `sliding` gives `None`, and for windows wider than rustymath folds directly.
+/// The folds by `p` of each window along axes 1 and 3 of `data`, an array of shape `dims`, by `p`'s reduction (`Reduce::run_sliding_2d`), with each axis's window width and the positions between windows' starts. `None` for a function with no reduction, for storage it doesn't fold, where a checked total doesn't fit, and for windows wider than rustymath folds directly.
 pub(crate) fn sliding_2d(p: Primitive, data: View<'_>, dims: [usize; 5], widths: [usize; 2], every: [usize; 2], numeric: Numeric) -> Option<Buffer> {
     let mut out = Buffer::with_capacity(data.dtype(), 0);
     kernel_at(p, None, data.dtype(), 2, numeric)?.fold()?.run_sliding_2d(variant(data.dtype(), numeric), dims, widths, every, data, &mut out).ok()?;

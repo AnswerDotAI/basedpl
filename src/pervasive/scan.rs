@@ -29,7 +29,7 @@ pub(crate) fn inverse_scan(p: Primitive, right: &Value, seed: Option<&Value>, ax
         let mut out = Buffer::with_capacity(if compares { items } else { kernel.result_dtype() }, right.len());
         kernel.adjacent(axis.dims(), start, flip, settings, input, &mut out).map(|()| out)
     })?;
-    let value = halved(Value::from_buffer_at(right.shape().to_vec(), out, numeric.fixed).ok()?, plan.halve);
+    let value = halved(Value::from_buffer_at(right.layout().clone(), out, numeric.fixed).ok()?, plan.halve);
     Some(if compares { value } else { settled(value, || Some(dtype), numeric) })
 }
 

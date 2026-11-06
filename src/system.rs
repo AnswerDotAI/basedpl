@@ -361,8 +361,8 @@ pub(crate) fn edged(mode: rustymath::structure::Edge, n: &Value, p: &Value) -> R
     };
     let result = match edged.ok_or_else(|| Error::domain("•edge takes whole positions"))? {
         Edged::Floats(y) if p.is_atom() => return Ok(Value::Number(crate::Number::float(y[0], FloatWidth::F64))),
-        Edged::Positions(q) if p.is_atom() => return Ok(Value::integer(q[0] as i64)), Edged::Floats(y) => p.layout().floats(FloatWidth::F64, y),
-        Edged::Positions(q) => Value::positions(p.layout().shape(), n, q.into_iter()).and_then(|v| v.with_layout(p.layout().clone()))
+        Edged::Positions(q) if p.is_atom() => return Ok(Value::integer(q[0] as i64)), Edged::Floats(y) => Value::floats(p.layout().clone(), FloatWidth::F64, y),
+        Edged::Positions(q) => Value::positions(p.layout().clone(), n, q.into_iter())
     };
     result.described("invalid positions")
 }
@@ -421,20 +421,22 @@ fn case_convert(left: Option<&Value>, right: &Value, span: &Span) -> Result<Valu
 /// `value` with each character vector mapped as a string by `text`, and each other character mapped on its own. A character whose mapping has more than one character stays as it is.
 fn cased(value: &Value, text: fn(&str) -> String, span: &Span) -> Result<Value, Error> {
     check()?;
-    let mapped = match value {
+    match value {
         Value::Character(c) => {
             let s = text(&c.to_string());
             let mut chars = s.chars();
-            return Ok(Value::Character(match (chars.next(), chars.next()) { (Some(m), None) => m, _ => *c }));
+            Ok(Value::Character(match (chars.next(), chars.next()) { (Some(m), None) => m, _ => *c }))
         }
         Value::Array(_) if !value.is_empty() => match crate::keyed::name(value) {
-            Some(s) => crate::keyed::text(&text(&s)),
-            None => Value::new(value.shape(), value.elements().map(|e| cased(&e, text, span)).collect::<Result<_, _>>()?).described("invalid result")?,
+            Some(s) => {
+                let mapped = crate::keyed::text(&text(&s));
+                if mapped.shape() != value.shape() { return Ok(mapped); }
+                mapped.with_layout(value.layout().clone()).described("invalid result")
+            }
+            None => Value::new(value.layout().clone(), value.elements().map(|e| cased(&e, text, span)).collect::<Result<_, _>>()?).described("invalid result"),
         },
-        _ => return Ok(value.clone()),
-    };
-    if mapped.shape() != value.shape() { return Ok(mapped); }
-    mapped.with_layout(value.layout().clone()).described("invalid result")
+        _ => Ok(value.clone()),
+    }
 }
 
 /// `form •normalize text` puts `text` into a Unicode normalization form: `"NFC"`, the default, `"NFD"`, `"NFKC"` or `"NFKD"`.
@@ -469,9 +471,9 @@ fn unicode_convert(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
         if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "encoded •ucs needs a vector")); }
         Some(text)
     } else { None };
-    let shape = |len: usize| {
-        let shape = if encoding.is_some() { vec![len] } else { right.shape().to_vec() };
-        generated_len(&shape).map(|_| shape).map_err(Error::from)
+    let layout = |len: usize| {
+        let layout = if encoding.is_some() { crate::Layout::from(vec![len]) } else { right.layout().clone() };
+        generated_len(layout.shape()).map(|_| layout).map_err(Error::from)
     };
     let result = if matches!(right.prototype(), Value::Character(_)) {
         use crate::array::Items;
@@ -486,7 +488,7 @@ fn unicode_convert(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
             _ => chars.iter().map(|&c| i64::from(u32::from(c))).collect(),
         };
         if encoding.is_none() && right.is_atom() { return Ok(Value::integer(codes[0])); }
-        Value::integers(shape(codes.len())?, codes)
+        Value::integers(layout(codes.len())?, codes)
     } else {
         if !matches!(right.prototype(), Value::Number(_)) { return Err(invalid()); }
         let codes = right.as_items().nonnegative_integers::<u32>().map_err(|_| invalid())?;
@@ -502,7 +504,7 @@ fn unicode_convert(left: Option<&Value>, right: &Value, _: &Span) -> Result<Valu
             _ => codes.into_iter().map(char::from_u32).collect::<Option<_>>().ok_or_else(invalid)?,
         };
         if encoding.is_none() && right.is_atom() { return Ok(Value::Character(chars[0])); }
-        Value::characters(shape(chars.len())?, chars)
+        Value::characters(layout(chars.len())?, chars)
     };
-    result.and_then(|a| if encoding.is_none() { a.with_layout(right.layout().clone()) } else { Ok(a) }).described("invalid Unicode result")
+    result.described("invalid Unicode result")
 }

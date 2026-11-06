@@ -314,7 +314,7 @@ fn chosen_mapped((mask, m): (Value, Mapping), (x, xm): (Value, Mapping), (y, ym)
     pervasive::with_reads(&args, rustymath::agreement::Missing::Default, |reads, types| {
         let mut buffer = Buffer::with_capacity(types[2], len);
         rustymath::operation::choose((reads[0], DType::Boolean), &[reads[1], reads[2]], 0..len, types[2], false, &mut buffer).expect("a select of floats of one width never fails");
-        Value::from_storage(layout.shape().to_vec(), Storage::Compact(buffer)).expect("a select's items fit its layout")
+        Value::from_storage(layout.clone(), Storage::Compact(buffer)).expect("a select's items fit its layout")
     }).expect("a select reads compact items")
 }
 
@@ -340,7 +340,7 @@ pub(crate) fn defer(p: Primitive, plan: &crate::plan::Pervasive, x: Option<&Valu
     let fixed = plan.numeric.fixed.filter(|_| matches!(dtype, DType::Integer(_)));
     let prototype = Desc { kind: crate::plan::Kind::stored(Some(dtype), fixed, false), atom: true, layout: Default::default(), nonnegative: false }.zero();
     let (layout, desc) = (agreement.layout.clone(), described(dtype, &prototype, agreement.layout.shape(), plan.nonnegative_result()));
-    let call = Call { plan: *plan, x: x.cloned(), y: y.clone(), agreement, desc };
+    let call = Call { plan: plan.clone(), x: x.cloned(), y: y.clone(), agreement, desc };
     if args().all(|v| v.pending().is_none()) {
         let kept = kept_of(call.held());
         return Ok(Value::deferred(layout.clone(), Arc::new(Pending::new(Work::Call(call), layout, dtype, prototype, 1, kept))));
@@ -420,8 +420,7 @@ pub(crate) fn defers_select(mask: &Value, layout: &Layout) -> bool { defers(true
 pub(crate) fn select(mask: &Value, x: &Value, y: &Value, layout: &Layout, plan: &crate::plan::Select) -> Value {
     if !defers_select(mask, layout) {
         let len = layout.count();
-        return chosen_mapped((mask.clone(), Mapping::Linear(1)), (x.clone(), plan.yes.clone()), (y.clone(), plan.no.clone()), layout, len).with_layout(layout.clone())
-            .expect("a select's result fits its layout");
+        return chosen_mapped((mask.clone(), Mapping::Linear(1)), (x.clone(), plan.yes.clone()), (y.clone(), plan.no.clone()), layout, len);
     }
     let frame = layout.shape().to_vec();
     let mut nodes = Nodes::default();
@@ -500,24 +499,24 @@ pub(crate) fn copy(form: &Form, params: &[Value], inputs: &[&Value], fill: Optio
     let held: Vec<Option<Value>> = inputs.iter().copied().chain(fill).map(|v| v.is_atom().then(|| Layout::from([1]).filled(v))).collect();
     let views: Option<Vec<Binding<'_>>> =
         inputs.iter().copied().chain(fill).zip(&held).map(|(v, held)| held.as_ref().unwrap_or(v).view().map(Binding::full)).collect();
-    let kind = crate::array::items_kind(inputs.iter().copied().chain(fill).map(|v| (v.len(), crate::plan::Kind::value(v))), crate::array::Widening::Arrays)
-        .and_then(|k| k.dtype);
-    if let (Some(sources), Some(dtype)) = (views, kind) {
+    let sources: Vec<&Value> = inputs.iter().copied().chain(fill).collect();
+    let kind = crate::array::Gather::joined_kind(&sources, crate::array::Widening::Arrays);
+    if let (Some(views), Some(dtype)) = (views, kind.and_then(|k| k.dtype)) {
         let mut out = Buffer::with_capacity(dtype, len);
-        PlanRead { sources: &sources, plan: &plan }.read_into(0..len, dtype, true, &mut out)?;
-        return Value::from_buffer(layout.shape(), out).and_then(|v| v.with_layout(layout)).described("a structural result");
+        PlanRead { sources: &views, plan: &plan }.read_into(0..len, dtype, true, &mut out)?;
+        return Value::from_buffer_at(layout, out, kind.and_then(|k| k.fixed)).described("a structural result");
     }
-    let data = (0..len).map(item).collect::<Result<Vec<_>, Error>>()?;
-    let value = Value::from_parts(layout.shape(), data, prototype).and_then(|v| v.with_layout(layout)).described("a structural result")?;
-    Ok(match kind { Some(dtype) => value.converted(dtype, Numeric::current()).described("a structural result")?, None => value })
+    let mut data = crate::array::Gather::with_widening(&sources, len, crate::array::Widening::Arrays);
+    for i in 0..len { data.add(item(i)?); }
+    data.finish(layout, prototype).described("a structural result")
 }
 
-/// Items of `right` laid out by `layout`, read through `map` as `Gather::walk` reads a walk's tables (`Mapping::to_walk`): `right` itself under `layout` where the map reads every item in order, a carried array's copy (`Carrier::copied`), a pending copy where the copy defers, and otherwise a copy made at once (`walked`). A position that reaches no item reads `fill`, or the prototype where there's none. A copy with a fill is made at once.
+/// Items of `right` laid out by `layout`, read through `map` as `Gather::walk` reads a walk's tables (`Mapping::to_walk`): `right` itself under `layout` where the map reads every item in order (`Mapping::in_order`), a carried array's copy (`Carrier::copied`), a pending copy where the copy defers, and otherwise a copy made at once (`walked`). A position that reaches no item reads `fill`, or the prototype where there's none. A copy with a fill is made at once.
 pub(crate) fn copied(right: &Value, layout: Layout, map: &Mapping, fill: Option<&Value>) -> Result<Value, ErrorKind> {
     let len = generated_len(layout.shape())?;
     if right.is_atom() && layout.shape().is_empty() { return Ok(right.clone()); }
     let (base, tables) = map.to_walk(layout.shape());
-    if right.len() == len && base == 0 && Steps::in_order(&tables) { return right.relaid(layout); }
+    if map.in_order(right.len(), layout.shape()) { return right.relaid(layout); }
     let fill = fill.filter(|_| map.fills());
     if let Some(carrier) = right.carrier() { return carrier.copied(layout, map, fill); }
     if fill.is_none() && defers(true, len) && let Some(copy) = pending(right, &layout, map) { return Ok(copy); }
@@ -649,8 +648,7 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], 
     let folds = folded.and_then(|(pending, _)| {
         let items = Desc { layout: value.shape().into(), ..pending.desc() };
         let seed = seed.map(held_desc);
-        let (result, _) = crate::plan::fold(p, kind, seed.as_ref().map(|s| s.kind), items.kind, Numeric::current())
-            .and_then(|plan| plan.desc(Some(axis), seed.as_ref(), &items)).ok()?;
+        let (result, _) = crate::plan::fold_desc(p, kind, Some(axis), seed.as_ref(), &items, Numeric::current()).ok()?;
         Some((items, result))
     });
     let staged = seed.is_none() && folded.zip(folds.as_ref()).is_some_and(|((pending, _), (items, result))| staged(pending, p, kind, axis, items, result));
@@ -662,7 +660,7 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], 
         let Program { mut nodes, result: root, outputs } = program;
         let len = nodes.len();
         let read = folds.as_ref().filter(|_| seed.is_none()).and_then(|(_, desc)| {
-            crate::program::contraction::fold_of_copy(&mut nodes, p, kind, &Read::new(root.of, value.shape().into()), axis, desc, Numeric::current())
+            crate::program::contraction::routed(&mut nodes, p, kind, &Read::new(root.of, value.shape().into()), axes, desc, Numeric::current())
         });
         let result = read.map(|read| {
             let program = Program::new(std::mem::take(&mut nodes), read);
@@ -683,7 +681,7 @@ pub(crate) fn fold(value: &Value, p: Primitive, kind: FoldKind, axes: &[usize], 
     if let Some((_, desc)) = folds {
         // A view lists the array's items in order, under its own shape.
         let of = Read::new(root, value.shape().into());
-        if let Some(read) = seed.is_none().then(|| crate::program::contraction::contracted(&mut nodes, p, kind, &of, axes, &desc)).flatten() {
+        if let Some(read) = seed.is_none().then(|| crate::program::contraction::routed(&mut nodes, p, kind, &of, axes, &desc, Numeric::current())).flatten() {
             let program = Program { outputs: outputs.clone(), ..Program::new(nodes, read) };
             result = replayed(&program, &kept).ok().map(|v| (v, axes.len()));
             (nodes, stored) = (program.nodes, false);

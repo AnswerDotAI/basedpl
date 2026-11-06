@@ -218,7 +218,7 @@ impl Session {
             Value::Function(f) => self.fastest(&f, right, span), _ => Err(Error::domain("•time needs functions on its left").at(span))
         }).collect::<Result<Vec<_>, _>>()?;
         if functions.is_atom() { return Ok(second(times[0])); }
-        Value::floats(functions.shape().to_vec(), FloatWidth::F64, times).and_then(|t| t.with_layout(functions.layout().clone()))
+        Value::floats(functions.layout().clone(), FloatWidth::F64, times)
             .described("invalid •time result").at(span)
     }
     /// The fastest time per call of `f` on `x`, in seconds, including the computation of any items that the result defers (`Value::force`). Calls repeat for about 0.1 s, in batches that double until one takes 1 ms.

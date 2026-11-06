@@ -695,7 +695,7 @@ pub(crate) fn planned_read(right: &Value, plan: Plan, direct: bool, fill: Option
     remap(right, plan, fill)
 }
 
-/// The plan of a selection by `parts` on an array with `layout`, and whether it reads one item, as a step that selects at replay plans it (`program::Step::Gather`, `program::Writes::By`). Without the whole array, positions never select pick paths.
+/// The plan of a selection by `parts` on an array with `layout`, and whether it reads one item, as a step that selects at replay plans it (`program::Step::Gather`). Without the whole array, positions never select pick paths.
 pub(crate) fn parts_plan(layout: &rustymath::layout::Layout, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<(Plan, bool), Error> {
     let Positions::Plan(plan, direct) = axis_positions(layout, None, parts, None, paired, span)? else {
         unreachable!("positions plan without the whole array")
@@ -786,7 +786,7 @@ fn axis_part(value: &Value, layout: &rustymath::layout::Layout, axis: usize) -> 
     }
     match Selector::of(value).described("invalid axis selector")? {
         Some(Selector::One(k)) => return Ok((rustymath::structure::key_selector(layout, axis, [&*k], None)?, true)),
-        Some(Selector::Many(_, names)) => {
+        Some(Selector::Many(names)) => {
             let within = Some(rustymath::layout::Layout::clone(value.layout()));
             return Ok((rustymath::structure::key_selector(layout, axis, names.iter().map(|n| &**n), within)?, false));
         }

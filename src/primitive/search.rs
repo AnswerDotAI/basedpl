@@ -10,7 +10,7 @@ pub(super) fn found_mask(x: &Value, y: &Value, found: bool, span: &Span) -> Resu
     let (matches, frame) = search(y, x, span)?;
     if frame.shape().len() > 1 { return Err(Error::new(Kind::Rank, "set functions need cells of the same rank")); }
     let miss = y.shape()[0] as u32;
-    Layout::from(vec![matches.len()]).booleans(matches.into_iter().map(|p| (p < miss) == found).collect()).described("invalid set mask")
+    Value::booleans([matches.len()], matches.into_iter().map(|p| (p < miss) == found).collect()).described("invalid set mask")
 }
 
 pub(super) fn without(left: &Value, right: &Value, span: &Span) -> Result<Value, Error> {
@@ -58,7 +58,7 @@ pub(super) fn find(left: &Value, right: &Value, span: &Span) -> Result<Value, Er
     };
     let data = match compact { Some(data) => data, None => rustymath::search::find_with(left.shape(), shape, |i, o| left.at(i).matches(&right.at(o), span))? };
     if right.is_atom() { return Ok(Value::Number(Number::from_bool(data[0]))); }
-    Value::booleans(shape.to_vec(), data).and_then(|v| v.with_layout(right.layout().clone())).described("invalid find result")
+    Value::booleans(right.layout().clone(), data).described("invalid find result")
 }
 
 pub(super) fn self_classify(right: &Value, span: &Span) -> Result<Value, Error> {
@@ -69,18 +69,18 @@ pub(super) fn self_classify(right: &Value, span: &Span) -> Result<Value, Error> 
             let mut data = Vec::with_capacity(rows * b.len());
             data.extend(b.iter().map(|&x| x == first));
             if rows == 2 { data.extend(b.iter().map(|&x| x != first)) }
-            return Layout::from(vec![rows]).concat(&major_axis(right)).booleans(data).described("invalid classification");
+            return Value::booleans(Layout::from(vec![rows]).concat(&major_axis(right)), data).described("invalid classification");
         }
     }
     let (classes, major) = (distinct(right, span)?, major_axis(right));
     let n = major.shape()[0];
     let mut data = vec![false; classes.firsts.len() * n];
     for (row, these) in data.chunks_mut(n.max(1)).zip(classes.groups.each()) { for &p in these { row[p as usize] = true } }
-    Layout::from(vec![classes.firsts.len()]).concat(&major).booleans(data).described("invalid classification")
+    Value::booleans(Layout::from(vec![classes.firsts.len()]).concat(&major), data).described("invalid classification")
 }
 
 pub(super) fn unique_mask(right: &Value, span: &Span) -> Result<Value, Error> {
-    major_axis(right).booleans(firsts(&major_cells(right)?, span)?).described("invalid unique mask")
+    Value::booleans(major_axis(right), firsts(&major_cells(right)?, span)?).described("invalid unique mask")
 }
 
 /// The classes of the major cells of `right`, numbered in order of first appearance as `∪` finds them, with the positions of each.
@@ -91,7 +91,7 @@ pub(super) fn duplicates_mask(right: &Value, span: &Span) -> Result<Value, Error
     let (classes, major) = (distinct(right, span)?, major_axis(right));
     let mut mask = vec![false; major.shape()[0]];
     for (&first, &size) in classes.firsts.iter().zip(&classes.groups.sizes) { mask[first] = size > 1 }
-    major.booleans(mask).described("invalid duplicates mask")
+    Value::booleans(major, mask).described("invalid duplicates mask")
 }
 
 /// The distinct major cells that occur more than once, in order of first appearance.
@@ -108,7 +108,7 @@ pub(super) fn runs(right: &Value, span: &Span) -> Result<Value, Error> {
         *lengths.last_mut().expect("the first cell starts a run") += 1;
     }
     let lengths = generated_items(vec![lengths.len()], lengths.into_iter(), starts.len() as u64 + 1, Mark::Exact).described("invalid run lengths")?;
-    let values = replicate(&axis.booleans(starts).described("invalid run starts")?, right, None, false, None)?;
+    let values = replicate(&Value::booleans(axis, starts).described("invalid run starts")?, right, None, false, None)?;
     if right.keys(0).is_none() { return Value::new(vec![2], vec![lengths, values]).described("invalid runs"); }
     let layout = values.layout().clone().without_keys(0);
     let values = values.with_layout(layout).described("invalid runs")?;
@@ -380,7 +380,7 @@ pub(super) fn sort(right: &Value, down: bool, span: &Span) -> Result<Value, Erro
     if right.is_unit() { return Ok(right.clone()); }
     if right.shape().len() == 1 && right.keys(0).is_none() {
         if let Some(sorted) = compact_view(&Cells::Items(right)).map(|v| rustymath::search::view_sort(v, down)).transpose()?.flatten() {
-            return Value::from_buffer_at(right.shape(), sorted, right.fixed_width()).and_then(|v| v.with_layout(right.layout().clone()))
+            return Value::from_buffer_at(right.layout().clone(), sorted, right.fixed_width())
                 .described("invalid sort");
         }
     }
@@ -399,7 +399,7 @@ pub(crate) fn ordered_cells(p: Primitive, y: &Value, k: usize) -> Option<Result<
     let dims = [y.len() / width / n, n, 1];
     if !grade && k == 1 {
         return rustymath::search::view_sort_along(view, dims, down).transpose().map(|sorted| {
-            Value::from_buffer_at(y.shape(), sorted?, y.fixed_width()).and_then(|v| v.with_layout(y.layout().clone())).described("invalid sort")
+            Value::from_buffer_at(y.layout().clone(), sorted?, y.fixed_width()).described("invalid sort")
         });
     }
     if width > 16 { return None; }
@@ -407,7 +407,7 @@ pub(crate) fn ordered_cells(p: Primitive, y: &Value, k: usize) -> Option<Result<
     let order = match rustymath::search::view_lexgrade_along(&columns, dims, down) { Ok(order) => order?, Err(e) => return Some(Err(e.into())) };
     if grade {
         let layout = y.layout().axes(0..frame).concat(&crate::array::Layout::from([n]));
-        return Some(Value::positions(layout.shape(), n, order.into_iter()).and_then(|g| g.with_layout(layout)).described("invalid grade result"));
+        return Some(Value::positions(layout, n, order.into_iter()).described("invalid grade result"));
     }
     // Row `r` of the whole takes the row of its own cell that the cell's order names.
     let rows: Vec<usize> = order.iter().enumerate().map(|(r, &g)| r - r % n + g as usize).collect();
@@ -421,11 +421,11 @@ pub(crate) fn matched_cells(x: &Value, xk: usize, y: &Value, yk: usize, frame: &
     if x.is_empty() || y.is_empty() || x.has_keys() || y.has_keys() { return None; }
     let cell = |v: &Value, k: usize| v.layout().axes(v.shape().len() - k..v.shape().len());
     let cells = frame.count();
-    if !cell(x, xk).matches(&cell(y, yk)) { return frame.booleans(vec![not; cells]).ok(); }
+    if !cell(x, xk).matches(&cell(y, yk)) { return Value::booleans(frame.clone(), vec![not; cells]).ok(); }
     let (Some(xs), Some(ys)) = (x.view(), y.view()) else { return None };
     let t = Numeric::current();
     let matched = cell_items((xs, x.shape(), xk), (ys, y.shape(), yk), cells).map(|(xc, yc)| Some(crate::array::compact_match(xc, yc, t)? != not));
-    frame.booleans(matched.collect::<Option<_>>()?).ok()
+    Value::booleans(frame.clone(), matched.collect::<Option<_>>()?).ok()
 }
 
 /// What `p`, one of `⍳`, `∊` and `⍸`, gives each pair of cells of `x` and `y`, of ranks `xk` and `yk`, where each cell of the haystack, on the left where `haystack_left`, is a vector of compact items: a search of each cell's needles in its own haystack, by rustymath's kernels on slices of the whole arguments, as one value laid out by `frame` and the needles' cell axes. An argument with no axes besides its cell's is the same in every cell. `None` where a pair needs the search's own code: haystack cells that aren't vectors, keys on them, an empty argument, or items whose kinds rustymath's kernels don't search.
@@ -448,7 +448,7 @@ pub(crate) fn searched_cells(p: Primitive, x: &Value, xk: usize, y: &Value, yk: 
         found.extend(if matches!(p, Primitive::Where) { rustymath::search::view_bins(hc, ec)? } else { rustymath::search::view_index_of(hc, ec, t)?.ok()? });
     }
     let layout = frame.concat(&e.layout().axes(e.shape().len() - ek..e.shape().len()));
-    if matches!(p, Primitive::Member) { return layout.booleans(found.into_iter().map(|q| (q as usize) < n).collect()).ok(); }
+    if matches!(p, Primitive::Member) { return Value::booleans(layout, found.into_iter().map(|q| (q as usize) < n).collect()).ok(); }
     Frame::Array(layout).positions_u32(found, n + 1).ok()
 }
 

@@ -102,9 +102,8 @@ d←1 •distribution "bernoulli"
 ⍝ =>
 [[1 1 1]ₓ;0 1;0 1;[1 1 1]ₓ]
 
-⍝ distribution:bad-probability — Quantile validates before entering the library
-d←0 1 •distribution "normal" ⋄ d.quantile 1.01
-⍝ error: DOMAIN ERROR
+⍝ distribution:bad-probability — A probability outside [0,1] gives NaN
+d←0 1 •distribution "normal" ⋄ d.quantile 1.01   ⍝ $n
 
 ⍝ distribution:bad-shape — Sampling needs integer dimensions
 d←0 1 •distribution "normal" ⋄ d.sample 1.5
@@ -155,7 +154,7 @@ d←0 1 •distribution "normal" ⋄ d.sample 1000000001
 
 ⍝ distribution:integer-limit — Trial count is checked before floating-point rounding
 9007199254740993ₓ 1 •distribution "binomial"
-⍝ error: LIMIT ERROR
+⍝ error: DOMAIN ERROR
 
 ⍝ distribution:generator — The same seed gives the same draws
 g←•rand 42

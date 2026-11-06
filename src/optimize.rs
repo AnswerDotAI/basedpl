@@ -84,7 +84,7 @@ impl<'a> Point<'a> {
 
     fn value<F: Native>(&self, x: &[F]) -> Result<Value, Error> {
         if self.atom { return Ok(Value::Number(Number::float(x[0].wide(), self.width))); }
-        self.layout.floats(self.width, x.iter().map(|v| v.wide())).described("invalid point")
+        Value::floats(self.layout.clone(), self.width, x.iter().map(|v| v.wide())).described("invalid point")
     }
 
     /// Calls `f` on the point `x`, with `left` as its left argument, and reads its numbers into `out`. A result with another number of them gives LENGTH with `message`.
@@ -97,7 +97,7 @@ impl<'a> Point<'a> {
     fn candidates<F: Native>(&self, xs: &[F], k: usize) -> Result<Value, Error> {
         let n = xs.len() / k;
         let data = (0..n * k).map(|i| xs[i % k * n + i / k].wide());
-        self.layout.concat(&Layout::from([k])).floats(self.width, data).described("invalid candidates")
+        Value::floats(self.layout.concat(&Layout::from([k])), self.width, data).described("invalid candidates")
     }
 
     /// The point found, or with `report`, a record of the point, its value, the number of evaluations and whether the search converged.

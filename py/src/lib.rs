@@ -71,7 +71,7 @@ fn labelled(value: Value, keys: Vec<Option<Arc<Keys>>>, names: Vec<Option<Arc<st
 /// The value of an object that exports a buffer, such as a rustymath array or a `memoryview`, with its dtype and labels.
 fn numeric(obj: &Bound<'_, PyAny>) -> PyResult<Option<Value>> {
     let Some((read, layout)) = rustymath_buffer::read_array(obj)? else { return Ok(None) };
-    Value::imported_buffer(layout.shape(), read.into_buffer()).and_then(|v| v.with_core_layout(layout)).map(Some).map_err(value_error)
+    Value::imported_buffer(layout, read.into_buffer()).map(Some).map_err(value_error)
 }
 
 /// NumPy's `generic` and `ndarray` types, once NumPy is imported. Until then no object is NumPy's, so NumPy needn't be installed.
@@ -104,7 +104,7 @@ fn numpy(obj: &Bound<'_, PyAny>, items: &mut Items) -> PyResult<Option<Value>> {
     }
     if !"UO".contains(kind) { return numeric(&obj); }
     let data = obj.call_method0("ravel")?.call_method0("tolist")?.try_iter()?.map(|o| element(&o?, items)).collect::<PyResult<Vec<_>>>()?;
-    let prototype = if kind == 'U' { Value::Character(' ') } else { zero(items.width) };
+    let prototype = if kind == 'U' { Value::Character(<char as rustymath::buffer::Element>::FILL) } else { zero(items.width) };
     Value::imported(obj.getattr("shape")?.extract()?, data, prototype).map(Some).map_err(value_error)
 }
 
@@ -433,7 +433,7 @@ impl PyArray {
         let query = match query.cast::<PyString>() {
             Ok(s) => match text(s, &mut Texts::default())? {
                 chars @ Value::Array(_) if value.shape().len() == 1 => {
-                    Value::from_parts(Vec::<usize>::new(), vec![chars], Value::Character(' ')).map_err(value_error)?
+                    Value::from_parts(Vec::<usize>::new(), vec![chars], Value::Character(<char as rustymath::buffer::Element>::FILL)).map_err(value_error)?
                 }
                 item => item,
             },
@@ -705,6 +705,21 @@ fn _reference_file(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
     python(py, &serde_json::json!({"setup":file.setup, "cases":file.cases}))
 }
 
+/// The counts by mode of reference case records, as `tests/reference.rs` writes them (`reference::accounting`), and for each record whether it fails a run (`reference::fails`) and whether it holds a release-2 obligation (`reference::obliged`).
+#[pyfunction]
+fn _reference_accounting(py: Python<'_>, results: &str) -> PyResult<Py<PyAny>> {
+    let results: Vec<serde_json::Value> = serde_json::from_str(results).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let each = |f: fn(&serde_json::Value) -> bool| results.iter().map(f).collect::<Vec<_>>();
+    python(py, &serde_json::json!({"modes":basedpl::reference::accounting(&results), "fails":each(basedpl::reference::fails), "obliged":each(basedpl::reference::obliged)}))
+}
+
+/// The reference reply (`reference::reply`) for `case`, given as JSON, when the worker checking it stopped (`reference::crashed`), with `message` saying why.
+#[pyfunction]
+fn _reference_crashed(py: Python<'_>, case: &str, message: &str) -> PyResult<Py<PyAny>> {
+    let case: serde_json::Value = serde_json::from_str(case).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    python(py, &basedpl::reference::reply(vec![basedpl::reference::crashed(&case, message)]))
+}
+
 /// A case's budget for `cost` in `section`, as a footer or budget line writes it, by the rule that `rustymath::timing::budget` holds.
 #[pyfunction]
 #[pyo3(signature = (section, cost, estimate=false))]
@@ -756,6 +771,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOperator>()?;
     m.add_function(wrap_pyfunction!(_captured_literal, m)?)?;
     m.add_function(wrap_pyfunction!(_reference_file, m)?)?;
+    m.add_function(wrap_pyfunction!(_reference_accounting, m)?)?;
+    m.add_function(wrap_pyfunction!(_reference_crashed, m)?)?;
     m.add_function(wrap_pyfunction!(_parse, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("symbols", python(m.py(), &basedpl::symbols::rows())?)?;

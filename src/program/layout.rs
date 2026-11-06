@@ -195,8 +195,7 @@ impl<'a> Reordering<'a> {
         let seed = seed.as_ref().map(|s| Read::new(self.at[s.of], s.layout.clone()));
         let (y, s) = (read.desc(&self.out), seed.as_ref().map(|s| s.desc(&self.out)));
         let at = o.iter().position(|a| a == axis)?;
-        let (desc, at) =
-            crate::plan::fold(*p, *kind, s.as_ref().map(|s| s.kind), y.kind, Numeric::current()).and_then(|f| f.desc(Some(at), s.as_ref(), &y)).ok()?;
+        let (desc, at) = crate::plan::fold_desc(*p, *kind, Some(at), s.as_ref(), &y, Numeric::current()).ok()?;
         let folded = self.out.add(Node { desc, origin: Origin::Step(Step::Fold { p: *p, kind: *kind, axis: at, seed, of: read }) });
         let kept: Vec<usize> = o.iter().copied().filter(|a| a != axis).collect();
         let axes = (0..o.len()).filter(|a| a != axis).map(|a| kept.iter().position(|&k| k == a)).collect::<Option<Vec<_>>>()?;

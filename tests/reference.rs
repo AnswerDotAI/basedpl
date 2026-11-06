@@ -178,7 +178,8 @@ fn reference_cases() {
     let obligations = results.iter().filter(|r| reference::obliged(r)).count();
     eprintln!("{count} reference cases; runs by mode (planned, checked, failed, not applicable): {}; {obligations} cases hold release-2 obligations", reference::accounting(&results));
     let mut wrong: Vec<String> = results.iter().filter(|r| reference::fails(r)).map(|f| {
-        format!("{}.bpl:{} [{}] {}: {} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"], f["status"])
+        let mode = f["mode"].as_str().map(|mode| format!("{mode}: ")).unwrap_or_default();
+        format!("{}.bpl:{} [{}] {}: {mode}{} ({})", f["file"].as_str().unwrap(), f["line"], f["section"].as_str().unwrap(), f["id"].as_str().unwrap(), f["message"], f["status"])
     }).collect();
     wrong.extend(unchecked.iter().map(|&i| format!("{}.bpl:{}: a child left it unchecked", cases[i].1["file"].as_str().unwrap(), cases[i].1["line"])));
     wrong.extend(stops);

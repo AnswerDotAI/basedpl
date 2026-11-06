@@ -219,7 +219,7 @@ impl Recorder {
         let Term::Binding(value) = &entity.term else { unreachable!("a group's entity holds its value") };
         let leaf = match value {
             value @ (Binding::Value(_) | Binding::Function(_)) if constant => { self.truncate(open.start); Leaf::Constant(Term::Binding(value.clone())) }
-            value => {
+            _ => {
                 // A group whose last step builds its value as a train exits with the train's tines (`settled`). A call of its register calls them in place (`Op::CallTines`).
                 let train = matches!(open.kind, Kind::Group) && matches!(self.ops.last(), Some(&Op::Train { to, .. }) if from == Read::Register(to));
                 let to = self.close(walk, &open, from, range.clone(), entity.category());

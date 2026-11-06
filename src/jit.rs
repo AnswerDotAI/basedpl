@@ -37,7 +37,7 @@ impl Ty {
     fn float(self) -> bool { matches!(self, Ty::F32 | Ty::F64) }
 }
 
-/// An input: an array that the loop reads item by item, as its `Read` says, a scalar that every item pairs with, or a constant: a number fixed when the kernel is built, such as a reciprocal's 1, held as its bits at its type (`Input::constant`).
+/// An input: an array that the loop reads item by item, as its `Read` says, a scalar that every item pairs with, or a constant: a number that a recipe fixes, such as a reciprocal's 1, held in a scalar slot's form (`Input::constant`). Code reads a constant from a scalar slot, so kernels that differ only in their constants share one compile (`Kernel::key`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Input { Array(Ty, Read), Scalar(Ty), Constant(Ty, u64) }
 
@@ -56,13 +56,21 @@ impl Read {
 
 impl Input {
     fn ty(self) -> Ty { match self { Input::Array(t, _) | Input::Scalar(t) | Input::Constant(t, _) => t } }
-    /// The constant `x` at float or integer type `t`, as `x` converts to it.
+    /// The constant `x` at float or integer type `t`, as `x` converts to it, in a scalar slot's form (`float_slot`, `integer_slot`).
     pub fn constant(t: Ty, x: f64) -> Self {
-        Input::Constant(t, match t { Ty::F32 => (x as f32).to_bits().into(), Ty::F64 => x.to_bits(), _ => x as i64 as u64 })
+        Input::Constant(t, match t { Ty::F32 => float_slot((x as f32).into()), Ty::F64 => float_slot(x), _ => integer_slot(x as i64) })
     }
+    /// The number that constant bits `bits` hold at type `t`, the inverse of `float_slot` and `integer_slot`.
+    pub fn decoded(t: Ty, bits: u64) -> f64 { if t.float() { f64::from_bits(bits) } else { bits as i64 as f64 } }
 }
 
-/// A value that a step reads: the input of that number, or the result of the earlier step of that number. A program's constant is a scalar input, and a number fixed when the kernel is built is a constant input.
+/// A float in a scalar slot's form: its value as f64 bits, which code demotes to f32 where its type is f32 (`slot`). Every scalar and constant slot holds a float this way.
+pub(crate) fn float_slot(x: f64) -> u64 { x.to_bits() }
+
+/// An integer or Boolean in a scalar slot's form: its value as i64 bits, which code narrows to its type (`slot`).
+pub(crate) fn integer_slot(x: i64) -> u64 { x as u64 }
+
+/// A value that a step reads: the input of that number, or the result of the earlier step of that number. A program's constant is a scalar input, and a number that a recipe fixes is a constant input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Value { Input(usize), Step(usize) }
 
@@ -113,8 +121,10 @@ fn isa() -> Result<OwnedTargetIsa, String> {
     }).clone()
 }
 
-/// Each kernel that ran or compiled so far, with its code once it compiled.
+/// Each kernel that ran or compiled so far, keyed with its constants cleared (`Kernel::key`), with its code once it compiled.
 static KERNELS: OnceLock<Mutex<HashMap<Kernel, Option<Arc<Compiled>>>>> = OnceLock::new();
+/// The most kernels the table keeps. A table that's full forgets them all before it takes a new one; code in use stays alive through its `Arc`.
+const KEPT: usize = 4096;
 
 /// The table of kernels, locked.
 fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compiled>>>> {
@@ -124,27 +134,51 @@ fn kernels() -> std::sync::MutexGuard<'static, HashMap<Kernel, Option<Arc<Compil
 /// Forgets every kernel and its code, as a new process has none.
 pub(crate) fn forget_kernels() { kernels().clear() }
 
+/// The table `k`, emptied first where it's full and doesn't hold `key`.
+fn kept<'a>(k: &'a mut HashMap<Kernel, Option<Arc<Compiled>>>, key: &Kernel) -> &'a mut HashMap<Kernel, Option<Arc<Compiled>>> {
+    if k.len() >= KEPT && !k.contains_key(key) { k.clear(); }
+    k
+}
+
 impl Kernel {
-    /// This kernel's native code, compiled the first time and kept for the process, with the compile's time where this call compiled it.
+    /// This kernel's native code, compiled the first time and kept with at most `KEPT` others, with the compile's time where this call compiled it. Kernels that differ only in their constants share one code.
     pub fn compiled(&self) -> Result<(Arc<Compiled>, Option<Duration>), String> {
-        if let Some(Some(c)) = kernels().get(self) { return Ok((c.clone(), None)); }
+        let key = self.key();
+        if let Some(Some(c)) = kernels().get(&key) { return Ok((c.clone(), None)); }
         let start = Instant::now();
         let c = Arc::new(self.compile()?);
         let time = start.elapsed();
-        Ok((kernels().entry(self.clone()).or_default().get_or_insert(c).clone(), Some(time)))
+        Ok((kept(&mut kernels(), &key).entry(key).or_default().get_or_insert(c).clone(), Some(time)))
     }
 
-    /// Whether this kernel ran or compiled before. It counts as seen from now on.
-    pub fn seen(&self) -> bool { let mut k = kernels(); k.contains_key(self) || k.insert(self.clone(), None).is_some() }
+    /// Whether this kernel, or one that differs only in its constants, ran or compiled before. It counts as seen from now on.
+    pub fn seen(&self) -> bool {
+        let (key, mut k) = (self.key(), kernels());
+        k.contains_key(&key) || kept(&mut k, &key).insert(key, None).is_some()
+    }
+
+    /// This kernel with each constant's value cleared, as the table of kernels keys it.
+    fn key(&self) -> Kernel {
+        let inputs = self.inputs.iter().map(|&i| match i { Input::Constant(t, _) => Input::Constant(t, 0), i => i }).collect();
+        Kernel { inputs, steps: self.steps.clone(), stores: self.stores.clone(), folds: self.folds.clone() }
+    }
+
+    /// Each constant input's bits, in input order. A run passes them in the scalar slots after the others (`Compiled::run`).
+    pub fn constants(&self) -> impl Iterator<Item = u64> + '_ { self.inputs.iter().filter_map(|i| match *i { Input::Constant(_, bits) => Some(bits), _ => None }) }
+
+    /// The scalar slots before the constants: one for each scalar input and each strided array's stride, then two for runs where an input reads runs.
+    fn scalar_slots(&self) -> usize {
+        let scalars = self.inputs.iter().filter(|i| matches!(i, Input::Scalar(_) | Input::Array(_, Read::Runs(Within::Strided)))).count();
+        scalars + if self.inputs.iter().any(|i| matches!(i, Input::Array(_, Read::Runs(_)))) { 2 } else { 0 }
+    }
 
     /// This kernel compiled afresh.
     pub fn compile(&self) -> Result<Compiled, String> {
         let (module, entry) = self.defined()?;
         let arrays = self.inputs.iter().map(|i| match i { Input::Array(_, Read::Runs(_)) => 2, Input::Array(..) => 1, Input::Scalar(_) | Input::Constant(..) => 0 }).sum();
-        let scalars = self.inputs.iter().filter(|i| matches!(i, Input::Scalar(_) | Input::Array(_, Read::Runs(Within::Strided)))).count();
-        let runs = if self.inputs.iter().any(|i| matches!(i, Input::Array(_, Read::Runs(_)))) { 2 } else { 0 };
+        let scalars = self.scalar_slots() + self.constants().count();
         let most = if self.folds.iter().any(|&(_, k)| self.steps[k].ty == Ty::Bool) { COUNTED } else { usize::MAX };
-        Ok(Compiled { _module: Mutex::new(module), entry, counts: [arrays, scalars + runs, self.stores.len(), self.folds.len()], most })
+        Ok(Compiled { _module: Mutex::new(module), entry, counts: [arrays, scalars, self.stores.len(), self.folds.len()], most })
     }
 
     /// A module holding this kernel's finalized code, and its entry point. With `BASEDPL_JIT_DISASM` set, it prints the kernel and its machine code to stderr.
@@ -266,7 +300,8 @@ impl Kernel {
         let [n, block, arrays, scalars, outs, totals] = b.block_params(entry).try_into().expect("six parameters");
         let width = self.narrowest();
         let lanes = 16 / width;
-        let (mut a, mut s) = (0, 0);
+        // The constants take the scalar slots after every other scalar (`Kernel::constants`).
+        let (mut a, mut s, mut c, constants_at) = (0, 0, 0, self.scalar_slots() as i32);
         // Each run-by-run array, by its input's number, with its item 0, its table of runs' first items and its step within a run in bytes.
         let mut tabled: Vec<(usize, Ir, Ir, Ir)> = Vec::new();
         let inputs: Vec<(Ir, Option<Ir>)> = self.inputs.iter().enumerate().map(|(k, &input)| match input {
@@ -295,8 +330,9 @@ impl Kernel {
                     let x = slot(&mut b, t, scalars, (s - 1) * 8);
                     (b.ins().splat(t.vector(), x), None)
                 }
-                Input::Constant(t, bits) => {
-                    let x = constant(&mut b, t, bits);
+                Input::Constant(t, _) => {
+                    c += 1;
+                    let x = slot(&mut b, t, scalars, (constants_at + c - 1) * 8);
                     (b.ins().splat(t.vector(), x), None)
                 }
             })
@@ -620,11 +656,6 @@ const FLAGS: MemFlagsData = MemFlagsData::new().with_notrap();
 
 /// The integer `v` of scalar type `ty`, as an immediate of `ty`'s width.
 fn int(b: &mut FunctionBuilder, ty: Type, v: i64) -> Ir { let bits = ty.bits(); b.ins().iconst(ty, if bits < 64 { v & ((1 << bits) - 1) } else { v }) }
-
-/// The constant `bits`, as `Input::Constant` holds them, at scalar type `t`.
-fn constant(b: &mut FunctionBuilder, t: Ty, bits: u64) -> Ir {
-    match t { Ty::F32 => b.ins().f32const(f32::from_bits(bits as u32)), Ty::F64 => b.ins().f64const(f64::from_bits(bits)), _ => int(b, t.ir(), bits as i64) }
-}
 
 /// `v`'s bits as type `ty`.
 fn cast(b: &mut FunctionBuilder, ty: Type, v: Ir) -> Ir {

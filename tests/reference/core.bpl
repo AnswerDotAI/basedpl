@@ -1121,7 +1121,7 @@ f←{(≢⍺)*⌊⍵} ⋄ a←1 2 f 3 ⋄ b←1 2 3 f 4 ⋄ c←1 2 f ¯3 ⋄ [0
 ⍝ — Bound pi fractions invert either argument
 (1↣π)⁻¹1π4   ⍝ 4
 
-⍝ — `⍟1+x` computes log1p on data in every spelling: an expression, spaced or parenthesised, a train, a composition, a named train and a dfn [optimized]
+⍝ — `⍟1+x` computes log1p on data in every spelling: an expression, spaced or parenthesised, a train, a composition, a named train and a dfn
 ⍝⍝⍝ route accuracy rule
 {x←⍵ ⋄ f←⍟1+ ⋄ 1E17×[⍟1+x ; ⍟ 1+x ; ⍟(x+1) ; (⍟1+)x ; ⍟∘(1+)x ; f x ; {⍟1+⍵}x]}1E¯17   ⍝ 7⍴1
 
@@ -1175,10 +1175,10 @@ x←(¯2 0.5)ₛ ⋄ (•storage 1○⁻¹ₐ x).kind   ⍝ "float32"
 ⍝ — A train with a computed bound addend gives the same result grouped, inside a dfn and as a spaced run
 x←1 ⋄ y←3 ⋄ [(⍟(x)+⊢)y ; {(⍟(x)+⊢) ⍵}y ; ⍟(x)+⊢ y]   ⍝ 3⍴1.3862943611198906
 
-⍝ — `¯1+*x` and `(*x)-1` compute expm1. Softplus, `⍟1+*x`, keeps its accuracy for a very negative x [optimized]
+⍝ — `¯1+*x` and `(*x)-1` compute expm1. Softplus, `⍟1+*x`, keeps its accuracy for a very negative x
 [{¯1+*⍵}1E¯17 ; {(*⍵)-1}1E¯17 ; {⍟1+*⍵}¯40]   ⍝ 1ₑ¯17 1ₑ¯17 4.248354255291589ₑ¯18
 
-⍝ — On arrays, log1p and expm1 keep tiny items, in an expression, a train and a dfn [optimized]
+⍝ — On arrays, log1p and expm1 keep tiny items, in an expression, a train and a dfn
 v←1E¯17×1+¿1000⍴0 ⋄ [(⍟1+v)≡v ; ((⍟1+)v)≡v ; (¯1+*v)≡v ; ({(*⍵)-1}v)≡v]   ⍝ $t $t $t $t
 
 ⍝ — The log1p combination preserves the complex result below ¯1 and the real result at a positive item
@@ -3741,7 +3741,7 @@ b←["a":10 "b":10 "c":10] ⋄ v←["c":3 "a":1 "b":2]
 g←{2⊥⍵}∂ ⋄ replay←[g 1 2;g 1 2 3;g 1 2 3 4;g 3 4]
 [basic;d;e;[(•storage d).kind;(•storage e).kind];[{⊥⍵}∂⍬;{⍬⊥⍵}∂2;{10 10 10⊥⍵}∂(⊂2)];{b⊥⍵}∂v;replay;{"LENGTH"::1 ⋄ {["a":10]⊥⍵}∂v ⋄ 0}0]
 ⍝ =>
-[[100 10 1;3600 60 1;22;0 60 62;4 2 1;111];[100 10 1]ₛ;[4 2 1]ₛ;["float32" "float32"];[⍬;0;111];["c":1 "a":100 "b":10];[2 1;4 2 1;8 4 2 1;2 1];1]
+[[100 10 1;3600 60 1;22;0 60 62;4 2 1;111];[100 10 1]ₛ;[4 2 1]ₛ;["float32" "float32"];[⍬;0;⊂111];["c":1 "a":100 "b":10];[2 1;4 2 1;8 4 2 1;2 1];1]
 
 ⍝ — ⊥ under Rank differentiates each cell, monadic, with a base, or with its base bound
 [{+/,⊥⍤1[3 3]⍴⍵}∂ ⍳9; {+/,2(⊥⍤1)[3 3]⍴⍵}∂ ⍳9; {+/,(2↣⊥)⍤1[3 3]⍴⍵}∂ ⍳9]   ⍝ 3#⊂9⍴4 2 1
@@ -3801,6 +3801,9 @@ c←1 2 3 ⋄ {+/,c∩⍵}∂ 1.5 2 3.5   ⍝ 0 0 0
 ⍝ — Complex arguments are outside the subset
 {|⍵}∂3j4
 ⍝ error: UNSUPPORTED
+
+⍝ — The derivative of `|` at an integer is a float, the sign that `∂` records in floats
+{|⍵}∂¯3ₓ   ⍝ ¯1
 
 ⍝ — •json⁻¹ writes a dual as its plain value, as ⍕ does, so the length of its text has derivative 0
 {≢•json⁻¹ ⍵}∂ 3   ⍝ 0
@@ -4539,6 +4542,9 @@ x←¯1j0.1 1j¯1
 
 ⍝ — A real Lambert W argument below -1/e gives the complex principal value
 ×↢*⍨⁻¹ ¯1   ⍝ ¯0.31813150520476396j1.3372357014306895
+
+⍝ — An array of real arguments reruns on complex numbers where an item lies below -1/e
+×↢*⍨⁻¹ ,¯1   ⍝ [¯0.31813150520476396j1.3372357014306895]
 
 ⍝ —
 ×↢*⍨⁻¹ 'a'
@@ -6190,6 +6196,10 @@ v←32•float 1.5 2.5 ⋄ k←{(•storage ⍵).kind} ⋄ [k v,2.5;k 2.5⍪v;k 
 ⍝ — An array built from items, such as a list in brackets or a map's results, gives a weak number the width of the strong floats among them, wherever it sits, and Each's two routes agree. A strong 64-bit float widens the array. Where the items stay mixed, a weak number becomes strong, so a copy keeps its width
 v←32•float 1.5 0.5 2.5 ⋄ k←{(•storage ⍵).kind} ⋄ f←{[k {⍵>1?2.5;⍵}¨v;k {⍵>1?⍵;2.5}¨v]} ⋄ a←f 0 ⋄ •prefs ["batch":$f] ⋄ b←f 0 ⋄ •prefs ["batch":$t] ⋄ x←[0.1 v₀ "a"] ⋄ [k [v₀ 2.5];k [2.5 v₀];a≡b;a;k [2.5 v₀ (64•float 1)];k ¯1↓x;(¯1↓x)₀≡x₀]
 ["float32" "float32" $t ["float32" "float32"] "float64" "float64" $t]
+
+⍝ — A comparison of 32-bit floats with a number counts the same on every route, compiled parts included, which read the number as a constant
+x←32•float 0.1×⍳8 ⋄ [+/x>0.25 ; +/x≥0.25 ; +/x>0.5 ; +/x<0.1]
+[5 5 2 1]ₓ
 
 ⍝ — Under static kinds, an integer array computes at the wider of its storage width and the int width, so a 64-bit array under the int pref at 32 wraps at 64 bits
 a←[4000000000 2]ₓ ⋄ •prefs ["kinds":"static" "int":32] ⋄ r←[a×a +/a×a (•storage a×a).kind] ⋄ •prefs ["kinds":"dynamic" "int":64] ⋄ r
@@ -9344,6 +9354,10 @@ f←↑-ᵘ ⋄ 2 f 3   ⍝ ¯1.0
 ⍝ —
 0÷0   ⍝ 0
 
+⍝ — Exact numbers that `÷ₐ` divides as 64-bit floats take Mathish's zero for 0÷0. Integer floor division gives 0 whether Mathish is on or off
+[0ₓ÷ₐ0ₓ ; 0ₓ÷0ₓ]
+[0 0ₓ]
+
 ⍝ — Mathish division follows the array and fused routes
 (0÷⍳8)+0   ⍝ 8⍴0
 
@@ -10155,9 +10169,9 @@ src←'n',nl," 2 "
 ⍝ — Header-only input retains empty columns
 •csv "a,b"   ⍝ "a" "b":[0⍴⊂"";0⍴⊂""]
 
-⍝ — Integers beyond i64 remain exact
+⍝ — An integer beyond i64 reads as its nearest float
 •csv 'n',(•ucs 10),"9223372036854775808"
-"n":,9223372036854775808ᵣ
+"n":,9.223372036854776ₑ18
 
 ⍝ — Float promotion must not round large exact integers
 •csv 'n',(•ucs 10),"9007199254740993",(•ucs 10),"1.5"
@@ -10238,9 +10252,9 @@ fill •json⁻¹ fill •json "{""x"":[null,2]}"
 ⍝ =>
 "{""x"":[null,2]}"
 
-⍝ — Import keeps an integer beyond i64 that no float equals, beside float syntax
+⍝ — Import reads an integer beyond i64 as its nearest float, beside float syntax
 •json "[9223372036854775809,1.0,1e2]"
-9223372036854775809ᵣ 1 100
+9.223372036854776ₑ18 1 100
 
 ⍝ — Large exact integers export without rounding
 •json⁻¹ 9223372036854775808ᵣ   ⍝ "9223372036854775808"

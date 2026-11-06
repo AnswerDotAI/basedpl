@@ -55,7 +55,7 @@ Where `X` holds one number, `∂` runs `f` once, in forward mode. Every value th
 
 Each `∂` call tags the duals it makes. A call reads only the derivatives with its own tag. Under nested `∂`, as in `{⍵×⍵×⍵}∂∂∂2`, a value is a dual of a dual of a dual. Julia's ForwardDiff tags its dual numbers in the same way.
 
-Functions that move items, such as reshape, transpose, take and windows, move each item's derivative with the item. Comparisons, floor, `⍳`, grade and other functions whose results are counts, positions or Booleans give results with no derivative.
+Functions that move items, such as reshape, transpose, take and windows, move each item's derivative with the item. Comparisons, floor, integer `÷`, `⍳`, grade and other functions whose results are counts, positions, Booleans or floored integers give results with no derivative.
 
 ## Reverse mode
 

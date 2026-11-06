@@ -22,17 +22,6 @@ const RULES: &[(&str, Special)] = &[
     ("-.×⍵", Special::Determinant), ("+.×⍵", Special::Permanent),
 ];
 
-/// The pattern of each monadic rule whose function maps its argument, as `⍟1+⍵`.
-pub(crate) fn mapping_patterns() -> impl Iterator<Item = &'static str> {
-    RULES.iter().filter(|&&(text, s)| !text.contains('⍺') && Primitive::Special(s).facts(false).extension == crate::primitive::Extension::Pervasive).map(|&(text, _)| text)
-}
-
-/// Whether a rule matches some combination in expression `code`, read in `session`.
-pub(crate) fn rewrites(session: &Session, code: &str) -> bool {
-    let Ok(parsed) = crate::syntax::parse(crate::error::Source::new("<code>", code)).complete() else { return false };
-    parsed.statements.iter().any(|s| matches!(expression(session, &s.nodes, &mut None), Cow::Owned(_)))
-}
-
 /// Where an expression's form lies: a list of nodes, by its number in `Reader::lists`, and the nodes it covers there.
 type At = (usize, Range<usize>);
 

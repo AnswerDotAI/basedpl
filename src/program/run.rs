@@ -1,8 +1,8 @@
 //! Replaying a program on a call's values, one step at a time on today's kernels. It is the reference that compiled code matches.
 
-use super::{Desc, Node, Origin, Program, Read, Step, Writes};
+use super::{Desc, Node, Origin, Program, Read, Step};
 use crate::{At, Described, Error, Span, Value, primitive::Operation, transform::Pairing};
-use rustymath::{agreement::Mapping, structure::IndexPart};
+use rustymath::structure::IndexPart;
 use std::borrow::Cow;
 
 /// How a replay runs a program: one node on its own, a conversion that it leaves pending for the products that read through it, or a block stage that computes several a block of items at a time, through compiled parts where it has them (`blocks`). `blocks::plan` chooses.
@@ -15,11 +15,6 @@ pub(crate) struct Plan { pub(crate) units: Vec<Unit>, pub(crate) drops: Vec<Vec<
 
 /// The values a replay has so far, and the values of the program's inputs.
 struct Replay<'a> { program: &'a Program, values: Vec<Option<Value>>, inputs: &'a [&'a Value] }
-
-/// The value of `program`'s result, on `inputs`, the values of its inputs in order, from `plan`'s units in order (`values`).
-pub(crate) fn replay(program: &Program, plan: &Plan, inputs: &[&Value], span: &Span) -> Result<Value, Error> {
-    Ok(taken(program, &mut values(program, plan, inputs, span)?, &program.result))
-}
 
 /// The value that `read` gives, taken from its node's value in `values`.
 pub(crate) fn taken(program: &Program, values: &mut [Option<Value>], read: &Read) -> Value {
@@ -48,7 +43,7 @@ pub(crate) fn lone(program: &Program, span: &Span) -> Option<Result<Value, Error
     if crate::settings::verifies() { super::verify::check(program); }
     let values = program.nodes.iter().map(|n| match &n.origin { Origin::Held(v) => Some(v.clone()), _ => None }).collect();
     let mut r = Replay { program, values, inputs: &[] };
-    Some(r.node(j, &[], span).map(|()| taken(program, &mut r.values, &program.result)))
+    Some(r.node(j, &[], span).map(|()| taken(program, &mut r.values, &program.result).narrowed()))
 }
 
 impl Replay<'_> {
@@ -62,7 +57,7 @@ impl Replay<'_> {
                 let owned = match step {
                     Step::At { base, items, .. } if drops.contains(&base.of) && base.of != items.of => Some(taken(self.program, &mut self.values, base)), _ => None
                 };
-                let value = run(step, &self.program.nodes, &self.values, owned, &node.desc, span)?;
+                let value = run(step, &self.program.nodes, &self.values, owned, &node.desc, span)?.stored_at(node.desc.dtype());
                 if !node.desc.matches(&value) {
                     let (planned, gave) = (&node.desc.kind, crate::plan::Kind::value(&value));
                     let atom = |a: bool| if a { " atom" } else { "" };
@@ -126,26 +121,9 @@ pub(crate) fn run(step: &Step, nodes: &[Node], values: &[Option<Value>], owned: 
         }
         Step::At { p, base, items, writes } => {
             let mut base = owned.unwrap_or_else(|| value(base).into_owned());
-            let (planned, offsets): (_, Vec<usize>);
-            let writes = match writes {
-                Writes::Map(map) => map.as_writes().expect("a step's writes are a walk"),
-                Writes::Structural { form, params } => {
-                    let params: Vec<Value> = params.iter().map(|r| value(r).into_owned()).collect();
-                    let (layout, plan) = crate::primitive::structural::plan(form, &params, &[base.layout()])?;
-                    offsets = (0..layout.count()).map(|i| match plan.at(i) {
-                        rustymath::agreement::ReadAt::Input { source: 0, position } => position, _ => rustymath::gather::Steps::FILL
-                    }).collect();
-                    rustymath::gather::Writes::Offsets(&offsets)
-                }
-                Writes::By(by) => {
-                    planned = crate::primitive::parts_plan(base.layout(), &by.parts(|r| value(r).into_owned()), by.paired, span)?.0;
-                    rustymath::gather::Writes::Walk { base: 0, steps: &planned.steps }
-                }
-            };
-            p.at(&mut base, writes, &value(items), span)?;
+            p.at(&mut base, writes.as_writes().expect("a step's writes are a walk"), &value(items), span)?;
             Ok(base)
         }
-        Step::OverlapAdd { of, windows } => overlap_added(&value(of), windows, &desc.layout).at(span),
         Step::Picks { p, axis, of } => crate::derivative::extreme_mask(*p, &value(of), *axis).at(span),
         Step::Shape { p, of } => p.call(None, &value(of), span),
         Step::Select { mask, yes, no } => crate::fusion::chosen(&value(mask), &value(yes), &value(no), span),
@@ -161,24 +139,4 @@ fn through<'a>(value: &'a Value, read: &Read, nodes: &[Node]) -> Cow<'a, Value> 
 /// The value that `read` gives of its node's value in `values`, which stays there.
 pub(crate) fn read(program: &Program, values: &[Option<Value>], read: &Read) -> Value {
     through(values[read.of].as_ref().expect("a read's node has its value"), read, &program.nodes).into_owned()
-}
-
-/// `u`, the cotangent of a copy of overlapping windows whose `[count, width, step]` along each source axis `windows` gives, with each frame added back where its window read, laid out as the source's `layout`: rustymath's `overlap_add` along one source axis at a time, from the last, reading `u` in its own order. DOMAIN for a `u` that isn't plain 32- or 64-bit floats. Transposes call it eagerly, and `Step::OverlapAdd` runs through it.
-pub(crate) fn overlap_added(u: &Value, windows: &[[usize; 3]], layout: &crate::array::Layout) -> Result<Value, Error> {
-    use rustymath::buffer::{Buffer, FloatBuf, Floats, View};
-    fn added<T: rustymath::linalg::Scalar>(x: &[T], windows: &[[usize; 3]], source: &[usize]) -> Vec<T> {
-        let mut x = Cow::Borrowed(x);
-        for (a, &[n, w, step]) in windows.iter().enumerate().rev() {
-            let (outer, mid) = windows[..a].iter().fold((1, 1), |(o, m), &[n, w, _]| (o * n, m * w));
-            x = Cow::Owned(rustymath::signal::overlap_add(&x, [outer, n, mid, w, crate::array::count(&source[a + 1..])], step, source[a]));
-        }
-        x.into_owned()
-    }
-    let source = layout.shape();
-    let out = match u.as_items() {
-        crate::array::Items::Compact(View::Floats(Floats::F64(x))) => FloatBuf::F64(added(x, windows, source)),
-        crate::array::Items::Compact(View::Floats(Floats::F32(x))) => FloatBuf::F32(added(x, windows, source)),
-        _ => return Err(Error::domain("an overlap add on items that aren't plain floats")),
-    };
-    Value::from_buffer(source, Buffer::Floats(out)).and_then(|v| v.with_layout(layout.clone())).described("invalid cotangent")
 }

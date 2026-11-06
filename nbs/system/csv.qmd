@@ -1,6 +1,6 @@
 # `•csv` — CSV
 
-`•csv text` parses CSV into a vector of columns. Headers become keys. Numeric columns become numbers. Missing numeric cells become the `fill` option's value, NaN by default. A fill takes its column's type wherever it keeps its value in that type: `["fill":0]` reads `0ₓ` at each missing cell of an integer column. A fill that doesn't keep its value, such as NaN or `0.5` in an integer column, makes the column floats. Missing text cells become `""`.
+`•csv text` parses CSV into a vector of columns. Headers become keys. Numeric columns become numbers. An integer outside the 64-bit range reads as its nearest float. Missing numeric cells become the `fill` option's value, NaN by default. A fill takes its column's type wherever it keeps its value in that type: `["fill":0]` reads `0ₓ` at each missing cell of an integer column. A fill that doesn't keep its value, such as NaN or `0.5` in an integer column, makes the column floats. Missing text cells become `""`.
 
 Under static kinds, every integer column reads at the `int` width whatever its values, as every new integer does. A value that doesn't fit is a `DOMAIN` error that names the column.
 

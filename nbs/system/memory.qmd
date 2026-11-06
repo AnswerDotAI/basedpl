@@ -5,7 +5,7 @@
 - `pending` counts the live pending arrays, whose items wait for their first read.
 - `bytes` counts the bytes that `x` keeps alive: its items, the base of a view, the arrays that a pending array reads, and the parts of a value that `∂` is differentiating. An allocation that `x` reaches twice counts once.
 
-`pending` counts the nodes that this thread made, even when another thread holds one. `•memory` reads no items, so it never forces a pending array, and it accepts values that `∂` is differentiating.
+`pending` counts the pending arrays that this thread made, even when another thread holds one. `•memory` reads no items, so it never forces a pending array, and it accepts values that `∂` is differentiating.
 
 ```bpl
 {+/⍵×⍵}∂ 1 2 3     ⍝ 2 4 6

@@ -51,7 +51,7 @@ pub mod timing;
 mod transform;
 mod xml;
 
-pub use array::{Prototype, Shape, Value};
+pub use array::{Layout, Prototype, Shape, Value};
 pub(crate) use error::{At, Described};
 pub use error::{Error, ErrorKind, Source, Span};
 pub(crate) use eval::session;

@@ -4,6 +4,11 @@ use super::{Desc, Laid, Node, Nodes, Origin, Read, Step, along, laid_out, steppe
 use crate::{agreement::{Agree, Agreement}, array::Layout, number::{Arithmetic, Numeric}, plan::Operand, primitive::{FoldKind, Primitive}};
 use rustymath::{agreement::Mapping, gather::Steps, layout::{count, strides}};
 
+/// The read that an unseeded fold by `p` along `axes` of `of` folds through in place of a `Step::Fold`: one product where the fold is a `+` of a `×` (`contracted`), or the source of a copy that repeats items, along `axes[0]` (`fold_of_copy`). `desc` is the fold's description along one axis. Recording and fusion both route a fold through here. `None`, adding nothing, where neither applies.
+pub(crate) fn routed(nodes: &mut Nodes, p: Primitive, kind: FoldKind, of: &Read, axes: &[usize], desc: &Desc, numeric: Numeric) -> Option<Read> {
+    contracted(nodes, p, kind, of, axes, desc).or_else(|| fold_of_copy(nodes, p, kind, of, axes[0], desc, numeric))
+}
+
 /// The read of new nodes in `nodes` that compute the fold by `p` along `axes` of `of` as one product (`product`), where the fold is a `+` reduction and `of` reads a `×`. `one`, the description of the fold along any one of the axes, gives the result's type, and the result keeps `of`'s other axes. Where no product computes such a fold, `•explain` lists the reason as a declined route. `None`, adding nothing, for any other fold, and where no product computes it.
 pub(crate) fn contracted(nodes: &mut Nodes, p: Primitive, kind: FoldKind, of: &Read, axes: &[usize], one: &Desc) -> Option<Read> {
     let Origin::Step(Step::Map { left: Some(x), right: y, plan }) = &nodes[of.of].origin else { return None };
@@ -95,7 +100,7 @@ fn factored(
     let laid = stepping.laid(nodes, frame, &[&sk[..], folded].concat()).ok_or("a read that isn't affine")?;
     let items = Desc { layout: Layout::from([lens(&sk), vec![lens(folded).iter().product()]].concat()), ..laid.desc.clone() };
     let plus = Primitive::Arithmetic(Arithmetic::Plus);
-    let (sum, axis) = crate::plan::fold(plus, kind, None, items.kind, numeric)?.desc(Some(sk.len()), None, &items)?;
+    let (sum, axis) = crate::plan::fold_desc(plus, kind, Some(sk.len()), None, &items, numeric)?;
     let of = Read::new(laid.added(nodes, stepping.of), items.layout.clone());
     let sum = nodes.add(Node { desc: sum, origin: Origin::Step(Step::Fold { p: plus, kind, axis, seed: None, of }) });
     let x = spread(nodes, sum, frame, &kept, &holds(&sk));
@@ -122,7 +127,7 @@ pub(crate) fn fold_of_copy(nodes: &mut Nodes, p: Primitive, kind: FoldKind, of: 
     let along = stepped(map, frame, &shape)?;
     let b = along[axis].filter(|&b| frame[axis] == shape[b])?;
     let items = nodes[source].desc.clone();
-    let (desc, b) = crate::plan::fold(p, kind, None, items.kind, numeric).and_then(|f| f.desc(Some(b), None, &items)).ok()?;
+    let (desc, b) = crate::plan::fold_desc(p, kind, Some(b), None, &items, numeric).ok()?;
     let read = Read::node(nodes, source);
     let folded = nodes.add(Node { desc, origin: Origin::Step(Step::Fold { p, kind, axis: b, seed: None, of: read }) });
     // Each other axis of the copy reads the axis of the fold's result that holds the source axis it stepped along.

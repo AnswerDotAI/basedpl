@@ -100,6 +100,10 @@ j←[¯3 0 3 1000]ₓ ⋄ j=3   ⍝ $f $f $t $f
 [{(•storage ⍵).kind}¨[⌹2 2⍴[2 1 1 3]ₓ;[1 2]ₓ⌹2 2⍴[2 1 1 3]ₓ;(⌹⍤2)2 2 2⍴[2 1 1 3]ₓ;∧[3 ¯4]ₓ;∧3ₓ;{2ₓ!⍵}∂5ₓ;{2ₓ!⍵}∂[5 6]ₓ;{!⍵}∂3ₓ;{!⍵}∂[3]ₓ;(×↢*)⁻¹ 3ₓ;(×↢*)⁻¹ [3]ₓ];⌹1r3]
 ["float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32" "float32";3ᵣ]
 
+⍝ — Dyadic `○` and `○⁻¹` give an integer argument the kind that they give a float, at every code from 0 to 8, under both kinds settings: none of their formulas has an integer form
+c←0↦8 ⋄ k←{x←⍵ ⋄ ({kind ⍵○x}¨c),{kind ⍵○⁻¹x}¨c} ⋄ s←(k⁝0ₓ)≡k⁝0 ⋄ •prefs ["kinds":"dynamic"] ⋄ d←(k⁝0ₓ)≡k⁝0 ⋄ •prefs ["kinds":"static"] ⋄ s d
+$t $t
+
 ⍝ — Under static kinds, `∂` computes an integer argument as floats of the width `÷` gives it: the derivative of `-⍵` at `3ₓ` is the float ¯1
 [{-⍵}∂3ₓ ; {+/-⍵}∂[2 3]ₓ ; {⍵*3ₓ}∂2ₓ ; •float {⍵}∂3ₓ ; •float {⍵}∂$t]
 [¯1 ; ¯1 ¯1 ; 12 ; 32ₓ ; 32ₓ]
@@ -151,6 +155,10 @@ f←{+/⍵×0ₓ₈+/u} ⋄ g←{+/⍵×0.5+/w} ⋄ u←[200 100 50]ₓ₁ ⋄ w
 ⍝ — A seeded fold of a pending array joins its block stage where the stage's compiled part folds at the result's type: by `⌈` or `⌊` with a wider seed, by `+` into the items' width, and by `+` as a count of Booleans with an integer seed. Each total takes the seed as its last item
 v←(⍳2*18)ₓ₁ ⋄ e←•explain "[5ₓ₁+/v×2ₓ₁ ; 300ₓ₂⌈/v×2ₓ₁ ; 100ₓ₂⌈/v×2ₓ₁ ; ¯5ₓ₂⌊/v×2ₓ₁ ; 7ₓ₄+/v>100ₓ₁]" ⋄ e.value,⊂e.fused.glyphs
 [5ₓ₂ 300ₓ₂ 254ₓ₂ ¯5ₓ₂ 262050ₓ₄ ["×+/" "×⌈/" "×⌈/" "×⌊/" ">+/"]]
+
+⍝ — A seeded fold along one axis of a keyed pending array keeps the other axis's name and keys, in its block stage as in the interpreter
+k←"a" "b":["r":2]⍴0 1 ⋄ m←(k+⍳["c":2*17])ₓ₁ ⋄ 5ₓ₁+/m×2ₓ₁
+["r":2]⍴["a":5 "b":3]ₓ₁
 
 ⍝ fill-free-name — A fill read from a free name follows the name: a call after the name changes reads the new fill
 f←{+/⍵×+/(5↑⍠["fill":z] ⍵)} ⋄ z←10 ⋄ r_1←f∂1 2 3 ⋄ z←20 ⋄ [r_1 ; f∂1 2 3]

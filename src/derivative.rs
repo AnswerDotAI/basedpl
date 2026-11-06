@@ -191,9 +191,25 @@ pub(crate) fn zeros(like: &Value) -> Value { let zero = like.prototype(); if lik
 
 /// Zeros in `like`'s layout as `∂`'s derivatives are: floats of `like`'s width, or of the default width where `like` is exact. A DOMAIN ERROR for a `like` that isn't numeric.
 pub(crate) fn float_zeros(like: &Value) -> Result<Value, Error> {
-    let numeric = crate::number::Numeric::current();
-    let width = match like.template_dtype() { Some(DType::Float(w)) => w, _ => numeric.width_of([None]) };
+    let width = partial_width(like).unwrap_or_else(|| crate::number::Numeric::current().width_of([None]));
     zeros(like).to_float_width(width).map_err(|_| Error::domain("∂ needs a numeric result"))
+}
+
+/// The float width of `∂`'s partials beside `like`: `like`'s own float width, or the default width where it holds exact numbers, because `∂` gives floats. None for characters, which have no partials.
+fn partial_width(like: &Value) -> Option<FloatWidth> {
+    match like.template_dtype() {
+        Some(DType::Float(w)) => Some(w),
+        Some(DType::Character) | None => None,
+        Some(_) => Some(crate::number::Numeric::current().width_of([None])),
+    }
+}
+
+/// `v` as floats of `width`, where it holds other numbers. Characters stay as they are.
+fn as_floats(v: Value, width: Option<FloatWidth>, span: &Span) -> Result<Value, Error> {
+    match (width, v.template_dtype()) {
+        (Some(w), d) if d != Some(DType::Float(w)) && d != Some(DType::Character) => converted(&v, DType::Float(w), span),
+        _ => Ok(v),
+    }
 }
 
 /// Writes `source` into `target` with `write` at level `tag`, as `transform::written` does for a dual: the primal into the primal and the tangent into the tangent. A side without the level has tangents of 0. An error from `write` leaves `target` unchanged.
@@ -619,16 +635,10 @@ fn pervasive(p: Primitive, left: Option<&Value>, right: &Value, tag: u64, span: 
     }
     // A call whose only dual is a circle code doesn't depend on it.
     if tx.is_none() && ty.is_none() { return Ok(r); }
-    // Partials are floats of the result's width, computed from arguments converted to that width, and from an exact result, as an attached rule gives `⌊`'s, floats of the default width, because `∂` gives floats. Partials of exact arguments, such as `÷y` of an exact count, would otherwise be exact fractions, computed one item at a time. A character argument has no partials and stays as it is.
-    let width = match r.template_dtype() {
-        Some(DType::Float(w)) => Some(w),
-        Some(DType::Character) | None => None,
-        Some(_) => Some(crate::number::Numeric::current().width_of([None])),
-    };
-    let floats = |v: Value| match (width, v.template_dtype()) {
-        (Some(w), d) if d != Some(DType::Float(w)) && d != Some(DType::Character) => converted(&v, DType::Float(w), span),
-        _ => Ok(v),
-    };
+    // Integer `÷` floors, as `⌊x÷y` does, so its partials are zero.
+    if p == Primitive::Arithmetic(Arithmetic::Divide) && r.template_dtype().is_some_and(DType::is_integral) { return Ok(dual(tag, r.clone(), float_zeros(&r)?)); }
+    let width = partial_width(&r);
+    let floats = |v: Value| as_floats(v, width, span);
     let (x, y, at) = (x.map(floats).transpose()?, floats(y)?, floats(r.clone())?);
     let [dx, dy] = partials(p, x.as_ref(), &y, &at, [tx.is_some(), ty.is_some()], span)?;
     let mut t: Option<Value> = None;
@@ -740,6 +750,9 @@ fn regular_inverse(a: &Value, glyph: &str, stacked: bool, span: &Span) -> Result
 fn decode(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
     let base = left.cloned().unwrap_or_else(crate::primitive::binary_base);
     let (xlen, ylen) = (base.shape().last().copied().unwrap_or(1), right.shape().last().copied().unwrap_or(1));
+    // Keyed bases and digits pair as `⊥` pairs them, and fail as it does where their keys don't (`Mapping::contract`).
+    rustymath::agreement::Mapping::contract(base.layout(), base.shape().len().saturating_sub(1), right.layout(), right.shape().len().saturating_sub(1))
+        .map_err(|e| Error::from(e).at(span))?;
     let len = crate::primitive::decode_length(xlen, ylen)?;
     if base.shape().len() > 1 { return Err(Error::new(ErrorKind::Unsupported, "∂ differentiates ⊥ only with a scalar or vector base")); }
     let reverse = |v: &Value, span: &Span| Primitive::Reverse(false).call(None, v, span);
@@ -859,6 +872,7 @@ fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &
     let (times, plus) = (Primitive::Arithmetic(Times), Primitive::Arithmetic(Plus));
     let r = fold(p, x)?;
     let t = if matches!(p, Primitive::Arithmetic(Times)) {
+        let x = &as_floats(x.clone(), partial_width(&r), span)?;
         let zero = call(Primitive::Compare(Equal), x, &Value::integer(0), span)?;
         let ones = call(plus, x, &zero, span)?;
         let rest = fold(p, &ones)?;
@@ -895,7 +909,7 @@ fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &
         let positions = match batch {
             Some(b) => {
                 let size = (all.len() / b.cells()) as i64;
-                crate::batch::batch(b.level, all.layout().integers(offsets.iter().map(|&o| o % size).collect()).described("invalid positions")?, b.frame)
+                crate::batch::batch(b.level, Value::integers(all.layout().clone(), offsets.iter().map(|&o| o % size).collect()).described("invalid positions")?, b.frame)
             }
             None => Value::integers(vec![offsets.len()], offsets).described("invalid positions")?,
         };
@@ -910,7 +924,7 @@ fn fold_rule(p: Primitive, kind: FoldKind, axis: Option<usize>, x: &Value, tx: &
 pub(crate) fn extreme_mask(p: Primitive, x: &Value, along: usize) -> Result<Value, Error> {
     let mut chosen = vec![false; x.len()];
     for at in picked_offsets(p, x, crate::array::Lanes::new(x.shape(), along)?, false)? { chosen[at as usize] = true; }
-    x.layout().booleans(chosen).described("invalid mask")
+    Value::booleans(x.layout().clone(), chosen).described("invalid mask")
 }
 
 /// The position in the ravel of `x` of each item that `p`, `⌈` or `⌊`, picks: the first of any ties in each of `lanes`' lanes, or where `scan`, in each running fold.
@@ -1051,11 +1065,8 @@ impl rustymath::recipe::Ops<f64> for Recorder<'_> {
     /// A Boolean is already the number 1 or 0.
     fn one_where(&self, m: Slot) -> Slot { m }
     fn constant(&self, v: Slot) -> Option<f64> { self.values.borrow()[v.0 as usize].as_real() }
-    /// The sign of `x`. Where the result holds floats, `∂|` gives it in floats of `x`'s width: a trace can't record monadic `×` on floats under dynamic kinds, whose result's type depends on values. Elsewhere, monadic `×`.
-    fn sign(&self, x: Slot) -> Slot {
-        let floats = matches!(self.like.template_dtype(), Some(DType::Float(_)));
-        self.call(if floats { Primitive::Special(crate::primitive::Special::Sign) } else { Primitive::Arithmetic(Arithmetic::Times) }, None, x)
-    }
+    /// The sign of `x`, through `∂|`, which gives it in floats of `x`'s width: a trace can't record monadic `×` on floats under dynamic kinds, whose result's type depends on values. `partials` records slopes only for float results, so `x` holds floats or complex numbers.
+    fn sign(&self, x: Slot) -> Slot { self.call(Primitive::Special(crate::primitive::Special::Sign), None, x) }
     /// Monadic `÷`.
     fn reciprocal(&self, x: Slot) -> Slot { self.call(Primitive::Arithmetic(Arithmetic::Divide), None, x) }
     /// One call of `*`, whose kernel takes the route that `rustymath::Exponent` gives `k`.

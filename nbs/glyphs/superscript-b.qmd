@@ -11,7 +11,7 @@ Monadic operator. Keys: `Alt-6 b`. Hanzi: `按`
 ~ᵇ6                ⍝ ¯7ₓ
 ```
 
-Arguments follow the usual [integer conversion](../numbers.qmd#exact-and-approximate), including whole floats such as bare `6`. Results are exact integers, or Booleans when every argument is Boolean. Agreement is pervasive.
+Arguments follow the usual [integer conversion](../numbers.qmd#exact-and-approximate): a float within `1E¯14` of a whole number, such as bare `6`, stands for that integer, whatever the `mathish` setting. Results are exact integers at any size, or Booleans when every argument is Boolean. Agreement is pervasive.
 
 ```bpl
 6 3∧ᵇ5             ⍝ [4 1]ₓ
@@ -23,3 +23,7 @@ For a monadic call, `f` is evaluated on `$f` and `$t`. For a dyadic call, it is 
 `ᵇ` is an ordinary monadic operator. It requires a function operand. Differentiation is unsupported.
 
 In Python, `f.bitwise` constructs `fᵇ`. Array and Function `&`, `|` and `~` use `∧ᵇ`, `∨ᵇ` and `~ᵇ`. Plain BPL `∧` and `∨` retain LCM and GCD.
+
+## Errors
+
+- `DOMAIN`: a character argument, or a float that isn't within `1E¯14` of a whole number.

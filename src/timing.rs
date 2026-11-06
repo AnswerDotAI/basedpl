@@ -227,17 +227,17 @@ pub fn route_request(spec: &JsonValue, interrupt: &InterruptHandle) -> Result<Js
     Ok(response(evaluation))
 }
 
-/// Capture every timed case outside its timed loop, with its ordinary setup and size.
-pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<Vec<Capture>, String> {
-    let mut result = Vec::new();
+/// Capture every timed case outside its timed loop, with its ordinary setup and size. A case whose capture fails, as one that runs past `reference::TIMEOUT` does, gives its label and message among the failures, and the cases after it are still captured.
+pub fn routes(files: &[File], only: Option<&[&str]>, interrupt: &InterruptHandle) -> Result<(Vec<Capture>, Vec<String>), String> {
+    let (mut result, mut failed) = (Vec::new(), Vec::new());
     each_case(files, only, "", |group, file, case| {
-        let mut route = route(group.session(case["section"].as_str().unwrap())?, case, interrupt)?;
-        route.file = file.name.clone();
-        route.label = label(file, case);
-        result.push(route);
+        match route(group.session(case["section"].as_str().unwrap())?, case, interrupt) {
+            Ok(route) => result.push(Capture { file: file.name.clone(), label: label(file, case), ..route }),
+            Err(message) => failed.push(format!("{}: {message}", label(file, case))),
+        }
         Ok(())
     })?;
-    Ok(result)
+    Ok((result, failed))
 }
 
 /// Times the cases in `files`, retimes each one over its native budget after each pause in `RETRY_PAUSES`, and gives the lines of those still over it. `print` gets the copy lines and every cost where `all` is set, each retry's lines, then each case still over its budget, marked `over`, and last each case whose gap's hold has outlived the gap, as `rustymath::timing::Budget::stale` decides from its first cost, marked `stale`.

@@ -21,7 +21,7 @@ mod tree;
 pub(crate) use binder::before;
 pub(crate) use bindings::Place;
 pub(crate) use operators::{cell_constant, fold, folded_along, folded_cells, matrices, primitive_expansion, primitive_fold, primitive_product, whole_cells};
-pub(crate) use rewrite::{combined, mapping_patterns, rewrites};
+pub(crate) use rewrite::combined;
 pub(crate) use tree::Recording;
 use {binder::*, bindings::{Bindings, Frame, FrameBindings}, dissect::*, operators::*};
 

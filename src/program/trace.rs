@@ -1,6 +1,6 @@
 //! The program that a running level builds from values that carry a type and a layout but no items (`Traced`). A trace builds one from a dfn's call, which later calls replay (`programmed`). Reverse mode's tape builds one from a `∂` call's linear calls on tangents, which `derivative::tape` runs backwards. Both record steps through one `Tracer`, and each traced value's `role` says which its program serves.
 
-use super::{Desc, Node, Nodes, Origin, Program, Read, Recent, Selector, Step, Writes, run};
+use super::{Desc, Node, Nodes, Origin, Program, Read, Recent, Selector, Step, run};
 use crate::{
     Error, ErrorKind, error::Described, Function, Number, Span, Value, array::{Layout, Seen, Shape, Storage}, eval::Place, number::Numeric, plan::{self, Operand},
     primitive::{FoldKind, Operation, Primitive, structural::Form}, session,
@@ -204,20 +204,14 @@ impl Traced {
     pub(crate) fn selected(&self, value: &Value, parts: &[IndexPart<Value>], paired: bool, span: &Span) -> Result<Value, Error> {
         gather(self.level, self.role, &self.tracer, value, parts, paired, span)
     }
-    /// The cotangent that this value, the cotangent of a copy of overlapping windows whose `[count, width, step]` along each source axis `windows` gives, adds back to the source laid out as `layout`: a new node whose step adds each frame where its window read (`Step::OverlapAdd`). `None` where this value isn't plain 32- or 64-bit floats (`plan::overlap`).
-    pub(crate) fn overlap_added(&self, windows: Vec<[usize; 3]>, layout: &Layout) -> Option<Value> {
-        let desc = plan::overlap(&self.desc(), layout).ok()?;
-        Some(self.stepped(desc, |of| Step::OverlapAdd { of: of.clone(), windows }))
-    }
     /// A mask of Booleans in this value's layout, true at the item of each lane along `axis` that `p`, `⌈` or `⌊`, picks (`Step::Picks`), or the reason that a program can't pick from these items (`plan::picks`).
     pub(crate) fn picked(&self, p: Primitive, axis: usize) -> Result<Value, &'static str> {
         let desc = plan::picks(&self.desc(), axis)?;
         Ok(self.stepped(desc, |of| Step::Picks { p, axis, of: of.clone() }))
     }
-    /// Plain zeros in this value's shape, as `Value::zeroed` gives them: the zero atom for an atom (`Desc::atom`, as `traced` decides), and an array otherwise, rank 0 included. A trace holds such an array as a constant of its length, so its program keys exact lengths (`Tracer::exact`).
+    /// Plain zeros in this value's shape, as `Value::zeroed` gives them: the zero atom for an atom (`Desc::atom`, as `traced` decides), and an array otherwise, rank 0 included. A trace holds such an array as its zero item and a broadcast copy, which holds its lengths (`Step::holds_lengths`), so its program keys exact lengths.
     pub(crate) fn zeroed(&self) -> Value {
         if self.desc().atom { return self.zero.clone(); }
-        if self.role == Role::Trace && !self.read.layout.shape().is_empty() { self.tracer.exact("zeros in a traced value's shape"); }
         Layout::from(self.read.layout.shape().to_vec()).filled(&self.zero)
     }
     /// The stop of this value's trace for `cause`, after noting `reason` for `•explain`.
@@ -388,13 +382,11 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) 
         (Operation::Primitive(p), Pairing::Axis(None), x) => plan::map(p, x.as_ref().map(Arg::operand).as_ref(), &args.1.operand(), left.is_some_and(|l| std::ptr::eq(l, right)), numeric).map(Planned::Map),
         (Operation::Fold(p, kind), Pairing::Axis(axis), x) => {
             let (seed, y) = (x.as_ref().map(desc), desc(&args.1));
-            plan::fold(p, kind, seed.as_ref().map(|s| s.kind), y.kind, numeric).and_then(|plan| plan.desc(axis, seed.as_ref(), &y))
-                .map(|(d, axis)| Planned::Fold(p, kind, d, axis))
+            plan::fold_desc(p, kind, axis, seed.as_ref(), &y, numeric).map(|(d, axis)| Planned::Fold(p, kind, d, axis))
         }
         (Operation::Product(f, g), Pairing::Axis(None) | Pairing::Matrices, Some(x)) => {
             let (x, y, stacked) = (desc(x), desc(&args.1), matches!(pairing, Pairing::Matrices));
-            plan::product(f, g, x.kind, y.kind, numeric).and_then(|plan| if stacked { plan.stacked_desc(&x, &y) } else { plan.desc(&x, &y) })
-                .map(|d| Planned::Product(f, g, d, stacked))
+            plan::product_desc(f, g, &x, &y, stacked, numeric).map(|d| Planned::Product(f, g, d, stacked))
         }
         (Operation::Primitive(p), Pairing::At(writes), Some(base)) => {
             plan::at(p, &desc(base), &desc(&args.1), numeric).map(|d| Planned::At(p, d, writes.into()))
@@ -402,25 +394,22 @@ pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, level: u64) 
         _ => Err("a call that programs don't take yet"),
     };
     let planned = match planned { Ok(planned) => planned, Err(reason) => return stop(reason) };
-    if role == Role::Trace {
-        if let Planned::Map(m) = &planned && let Some(kept) = crate::pervasive::unchanged(&m.plan, left, right) { return Some(Ok(kept.clone())); }
-        // An unseeded `+` fold of a traced `×` runs as one product where its operands allow (`contraction`), and an unseeded fold of a copy that repeats items folds the copy's source (`fold_of_copy`).
-        if let (Planned::Fold(p, kind, d, axis), None, Arg::Traced(read, _)) = (&planned, &args.0, &args.1) {
-            let mut builder = tracer.builder();
-            if let Some(read) = super::contraction::contracted(&mut builder.nodes, *p, *kind, read, &[*axis], d)
-                .or_else(|| super::contraction::fold_of_copy(&mut builder.nodes, *p, *kind, read, *axis, d, numeric)) {
-                    let desc = read.desc(&builder.nodes);
-                    drop(builder);
-                    return Some(Ok(traced(level, role, read, &desc, &tracer)));
-                }
-        }
+    if role == Role::Trace && let Planned::Map(m) = &planned && let Some(kept) = crate::pervasive::unchanged(&m.plan, left, right) { return Some(Ok(kept.clone())); }
+    // An unseeded `+` fold of a traced `×` runs as one product where its operands allow (`contraction`), and an unseeded fold of a copy that repeats items folds the copy's source (`fold_of_copy`). A tape records the same steps, and its transpose runs them as products and folds.
+    if let (Planned::Fold(p, kind, d, axis), None, Arg::Traced(read, _)) = (&planned, &args.0, &args.1) {
+        let mut builder = tracer.builder();
+        if let Some(read) = super::contraction::routed(&mut builder.nodes, *p, *kind, read, &[*axis], d, numeric) {
+                let desc = read.desc(&builder.nodes);
+                drop(builder);
+                return Some(Ok(traced(level, role, read, &desc, &tracer)));
+            }
     }
     let (left, right) = (args.0.map(|x| x.read(&tracer)), args.1.read(&tracer));
     let (desc, step) = match planned {
         Planned::Map(m) => (m.desc, Step::Map { left, right, plan: m.plan }),
         Planned::Fold(p, kind, d, axis) => (d, Step::Fold { p, kind, axis, seed: left, of: right }),
         Planned::Product(f, g, d, stacked) => (d, Step::Product { f, g, left: left.expect("a planned product has a left argument"), right, stacked }),
-        Planned::At(p, d, writes) => (d, Step::At { p, base: left.expect("an accumulation has a base"), items: right, writes: Writes::Map(writes) }),
+        Planned::At(p, d, writes) => (d, Step::At { p, base: left.expect("an accumulation has a base"), items: right, writes }),
     };
     Some(Ok(node(level, role, &tracer, desc, step)))
 }
@@ -435,11 +424,11 @@ fn shape_query(p: Primitive, t: &Traced, right: &Value, level: u64) -> Result<Va
     Ok(counted)
 }
 
-/// The `+` fold of `right`, a traced `×`, along `axes`, as one product (`contraction::contracted`), as `call` runs a fold along one axis. Each call folds along one axis, so `eval::folded_along` asks here first for a fold along several. `None` for any other value, including a tape value, and where no product computes the fold.
+/// The `+` fold of `right`, a traced `×`, along `axes`, as one product (`contraction::contracted`), as `call` runs a fold along one axis. Each call folds along one axis, so `eval::folded_along` asks here first for a fold along several. `None` for any other value, and where no product computes the fold.
 pub(crate) fn contracted(p: Primitive, kind: FoldKind, axes: &[usize], right: &Value) -> Option<Value> {
-    let t = right.carrier()?.traced().filter(|t| t.read.of != OUTSIDE && t.role == Role::Trace)?;
+    let t = right.carrier()?.traced().filter(|t| t.read.of != OUTSIDE)?;
     let items = t.desc();
-    let (one, _) = plan::fold(p, kind, None, items.kind, Numeric::current()).and_then(|f| f.desc(Some(axes[0]), None, &items)).ok()?;
+    let (one, _) = plan::fold_desc(p, kind, Some(axes[0]), None, &items, Numeric::current()).ok()?;
     let mut builder = t.tracer.builder();
     let read = super::contraction::contracted(&mut builder.nodes, p, kind, &t.read, axes, &one)?;
     let desc = read.desc(&builder.nodes);

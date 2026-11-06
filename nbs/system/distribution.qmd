@@ -34,4 +34,4 @@ Parameters are finite real units or vectors. Scale, shape, rate and degrees of f
 | `"lognormal"` | μ σ: mean and standard deviation of log(X) | 0 1 |
 | `"weibull"` | k λ: shape, scale | |
 
-Errors: `DOMAIN` for an unknown name, a name that isn't a string, a monadic call for a distribution with no standard parameters, invalid parameters, non-real inputs or p ∉ [0,1]; `LENGTH` for the wrong number of parameters; `RANK` for matrix parameters or shapes; `SYNTAX` for a dyadic call to `density`, `cdf` or `quantile`; `LIMIT` for oversized shapes or sampler ranges.
+Errors: `DOMAIN` for an unknown name, a name that isn't a string, a monadic call for a distribution with no standard parameters, invalid parameters (binomial trials or a Poisson rate past 2⁵³ among them) or non-real inputs; `LENGTH` for the wrong number of parameters; `RANK` for matrix parameters or shapes; `SYNTAX` for a dyadic call to `density`, `cdf` or `quantile`; `LIMIT` for oversized shapes. A `quantile` of a probability outside [0,1] gives NaN.

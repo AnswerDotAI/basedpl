@@ -63,8 +63,8 @@ pub fn with_names(value: Value, names: Vec<Option<String>>) -> Result<Value, Str
     value.with_axis_names(names.into_iter().map(|n| n.map(Into::into)).collect()).map_err(|k| k.to_string())
 }
 
-/// One name, or an array of names with its shape.
-pub(crate) enum Selector { One(Arc<str>), Many(Vec<usize>, Vec<Arc<str>>) }
+/// One name, or several names.
+pub(crate) enum Selector { One(Arc<str>), Many(Vec<Arc<str>>) }
 impl Selector {
     /// `None` when the value holds no names at all; mixed contents are a DOMAIN ERROR.
     pub fn of(value: &Value) -> Result<Option<Self>, ErrorKind> {
@@ -73,7 +73,7 @@ impl Selector {
         if let Some(k) = name(value) { return Ok(Some(Self::One(k))); }
         if value.is_atom() || value.is_empty() || !value.elements().any(|e| name(&e).is_some()) { return Ok(None); }
         let names = value.elements().map(|e| name(&e).ok_or(Kind::Domain)).collect::<Result<_, _>>()?;
-        Ok(Some(Self::Many(value.shape().to_vec(), names)))
+        Ok(Some(Self::Many(names)))
     }
 }
 
@@ -241,7 +241,7 @@ fn axis_selectors(value: &Value, axes: &[usize], named: bool) -> Result<Value, E
 
 /// The keys that `selector` names on its axis: one, an array of them, or none (`Selector::of`).
 pub(crate) fn selected_keys(selector: &Value) -> Result<Vec<Arc<str>>, ErrorKind> {
-    Ok(match Selector::of(selector)? { Some(Selector::One(k)) => vec![k], Some(Selector::Many(_, names)) => names, None => vec![] })
+    Ok(match Selector::of(selector)? { Some(Selector::One(k)) => vec![k], Some(Selector::Many(names)) => names, None => vec![] })
 }
 
 /// Adds an entry to `target` for each key in `added`, a list for each axis, as `structure::missing_keys` gives them. A new vector entry that a longer path descends into starts as a record. Otherwise a new entry starts as the prototype, which the assignment replaces. Mixed storage stays mixed. New keys on the leading axis alone append in place. New keys on another axis rebuild the array by `structure::extended`'s plan.

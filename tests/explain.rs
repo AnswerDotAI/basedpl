@@ -19,20 +19,25 @@ fn report(wrong: &mut Vec<String>, session: &Session, code: &str, expected: &str
     if !gives(session, code, expected) { wrong.push(format!("{code} didn't give {expected}")); }
 }
 
-/// Every speed case in `speed/*.bpl`, every idiom case below and every reference case with a route directive takes the routes its work needs, or names the gap. Run as `•explain` runs its text, after a warm-up run, a case takes each route that its `⍝⍝⍝ route` lines require, and records no slow-path event (`explain::Events::slow`) beyond the events that its directives name (`timing::Named`): `⍝⍝⍝ allows` lines, each with the principle that allows its event, and `⍝⍝⍝ gap` lines, each with what a faster route should do instead. A stopped trace needs a `gap` line. A `declined` event needs no line, because it explains another event, but a line may name one. A line whose event no longer appears is reported too, so the lines stay true and a fixed gap's line goes. The test also reports each route and kind of event in rustymath's inventory (`events::Route`) that no case exercises. It prints the gaps it tolerates and the case that exercised each event, which `cargo test -- --nocapture` shows. Route contracts and the route counts that `explain_and_memory` reads are release-2 obligations, which the test prints. It fails where an evaluation errs, or where a property that holds on every route breaks, such as a leaked pending array (`check`). Like the speed test, it runs each case at its full size on one thread. It holds the timing lock shared, as a test run does. It runs `explain_and_memory`'s checks first, because a capture records what every thread in its process does, so no other test may evaluate beside it.
+/// Every speed case in `speed/*.bpl`, every idiom case below and every reference case with a route directive takes the routes its work needs, or names the gap. Run as `•explain` runs its text, after a warm-up run, a case takes each route that its `⍝⍝⍝ route` lines require, and records no slow-path event (`explain::Events::slow`) beyond the events that its directives name (`timing::Named`): `⍝⍝⍝ allows` lines, each with the principle that allows its event, and `⍝⍝⍝ gap` lines, each with what a faster route should do instead. A stopped trace needs a `gap` line. A `declined` event needs no line, because it explains another event, but a line may name one. A line whose event no longer appears is reported too, so the lines stay true and a fixed gap's line goes. The test also reports each route and kind of event in rustymath's inventory (`events::Route`) that no case exercises. It prints the gaps it tolerates and the case that exercised each event, which `cargo test -- --nocapture` shows. Route contracts and the route counts that `explain_and_memory` reads are release-2 obligations, which the test prints. It fails where one of its own evaluations errs or a property that holds on every route breaks, such as a leaked pending array (`check`), and where a case fails to run, as one past its time limit does, though only after every other case has run and the test has printed what they report. Like the speed test, it runs each case at its full size on one thread. It holds the timing lock shared, as a test run does. It runs `explain_and_memory`'s checks first, because a capture records what every thread in its process does, so no other test may evaluate beside it.
 #[test]
 fn speed_cases_take_their_routes() {
     let _lock = rustymath::timing::shared().unwrap();
     rustymath::parallel::set_threads(1);
     let (mut routes, reported) = explain_and_memory();
+    // A case that fails to run, as one past its time limit does, joins `failed`. The cases after it still run, and the test fails only after it prints what every other case reported.
+    let mut failed = Vec::new();
     let files = basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/speed")).unwrap();
-    routes.extend(timing::routes(&files, None, &InterruptHandle::default()).unwrap());
+    match timing::routes(&files, None, &InterruptHandle::default()) {
+        Ok((captured, errors)) => { routes.extend(captured); failed.extend(errors) }
+        Err(message) => failed.push(message),
+    }
     for file in basedpl::reference::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/reference")).unwrap() {
         for case in file.cases.iter().filter(|case| basedpl::reference::routed(case)) {
-            let mut route = basedpl::reference::route(case, &file.setup, &InterruptHandle::default()).unwrap();
-            route.file = file.name.clone();
-            route.label = format!("{}:{}", file.name, route.label);
-            routes.push(route);
+            match basedpl::reference::route(case, &file.setup, &InterruptHandle::default()) {
+                Ok(route) => routes.push(timing::Capture { file: file.name.clone(), label: format!("{}:{}", file.name, route.label), ..route }),
+                Err(error) => failed.push(format!("{}:{}: {}", file.name, case["id"].as_str().unwrap_or_default(), error["message"])),
+            }
         }
     }
     let (mut wrong, mut gaps) = (reported, Vec::new());
@@ -54,6 +59,7 @@ fn speed_cases_take_their_routes() {
     }
     println!("gaps that route cases tolerate: {gaps:#?}");
     if !wrong.is_empty() { println!("route and report contracts, release-2 obligations that fail no run: {wrong:#?}"); }
+    assert!(failed.is_empty(), "cases that failed to run: {failed:#?}");
 }
 
 /// The checks of `•explain`'s and `•memory`'s reports, with the route captures they make, and each route count that differs from what it expects (`report`).
@@ -77,11 +83,11 @@ fn explain_and_memory() -> (Vec<timing::Capture>, Vec<String>) {
         ("{+/,(1000 2⍴v)×⍵+⊗0 0}∂ v", 0), ("{+/⌈⌿⍵}∂ 10 100⍴v", 0), ("{+/,(499 3⍴v)×[[3]⋄[2]]↕⍵}∂ v", 0),
         ("{+/⍵.[2|⍳≢⍵]}∂ v", 1),
     ] { report(&mut wrong, &session, &format!(r#"≢(•explain "{code}").accumulations.items"#), &format!("{scatters}ₓ")); }
-    // Each path that adds a selection's items has a name: in place, logged for exact integers whose sums can overflow, on a converted copy, in rounds for repeated positions, in one call for distinct ones, and item by item for a dfn.
+    // Each path that adds a selection's items has a name: in place, logged for exact integers whose sums can overflow, on a converted copy, in rounds for repeated positions, in one call for distinct ones, and item by item for a dfn that isn't one primitive's spelling.
     check(&session, "i←¿1000⍴1000 ⋄ z←1000⍴0 ⋄ zx←1000⍴0ₓ ⋄ zh←16 •float 1000⍴0 ⋄ zr←1000⍴1ᵣ2 ⋄ $t", "$t");
     for (code, path) in [
         ("z.[i]+←1", "in place"), ("zx.[i]+←1ₓ", "logged"), ("zh.[i]+←1", "on a copy"), ("zr.[i]+←1ᵣ3", "rounds"),
-        ("zr.[⍳10]+←1ᵣ3", "one call"), ("z.[i] {⍺+⍵}←1", "item by item"),
+        ("zr.[⍳10]+←1ᵣ3", "one call"), ("z.[i] {⍺+2×⍵}←1", "item by item"),
     ] { report(&mut wrong, &session, &format!(r#"(•explain "{code}").accumulations.path≡["{path}"]"#), "$t"); }
     // A fused group counts the runs that a long cycle splits its blocks into, and the items it copies out of inputs. A pending input that a name also holds is computed by the group as one of its outputs, with no `stored` row.
     report(&mut wrong, &session, r#"big←¿[256 5000]⍴0 ⋄ f←(•explain "q←2×big(+⍤1)¿5000⍴0 ⋄ q≡q").fused ⋄ ∧/f.runs>f.blocks"#, "$t");

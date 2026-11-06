@@ -42,7 +42,7 @@ impl Labels {
         let Some(l) = at_level(selected, level) else {
             // A map over no cells gives an empty result with no labels. It selects nothing, so its write writes nothing.
             return selected.is_empty()
-                .then(|| Read::Ids(selected.layout().integers(Vec::new()).expect("an empty layout holds no ids"), SelectionKind::Elements));
+                .then(|| Read::Ids(Value::integers(selected.layout().clone(), Vec::new()).expect("an empty layout holds no ids"), SelectionKind::Elements));
         };
         if let (SelectionKind::Elements, Lead::Mapped(mapping)) = (l.kind, &l.labels) {
             if let Some((base, steps)) = mapping.entries(l.layout.shape()) {
@@ -208,7 +208,7 @@ impl Labelled {
         let mapping = match &self.labels { Lead::Ids(ids) => return ids.clone(), Lead::Mapped(mapping) => mapping };
         if self.atom { return Value::integer(mapping.get(0).map_or(0, crate::transform::offset_id) as i64); }
         let (base, steps) = mapping.to_walk(self.layout.shape());
-        self.layout.integers(Steps::combined(base, &steps).into_iter().map(|o| crate::transform::offset_id(o) as i64).collect()).expect("ids fill the layout")
+        Value::integers(self.layout.clone(), Steps::combined(base, &steps).into_iter().map(|o| crate::transform::offset_id(o) as i64).collect()).expect("ids fill the layout")
     }
     /// Whether this is the root itself, unchanged, which a write replaces whole where its kind is one item.
     fn whole(&self) -> bool { !self.atom && matches!(self.labels, Lead::Mapped(Mapping::Linear(1))) && self.layout == *self.root.layout() }

@@ -91,7 +91,7 @@ impl std::fmt::Debug for Batch {
 pub(crate) fn batch(level: u64, whole: Value, frame: usize) -> Value {
     let whole = if whole.holds_values() && whole.elements().all(|v| matches!(v, Value::Number(_))) {
         let layout = whole.layout().clone();
-        Value::from_parts(whole.shape(), whole.elements().collect(), whole.prototype()).and_then(|v| v.with_layout(layout)).unwrap_or(whole)
+        Value::from_parts(layout, whole.elements().collect(), whole.prototype()).unwrap_or(whole)
     } else { whole };
     let cell = whole.layout().axes(frame..whole.shape().len());
     let carrier = Carrier::Batch(Arc::new(Batch::new(level, whole, frame)));
@@ -211,7 +211,7 @@ pub(crate) fn truths(value: &Value, level: u64) -> Option<Result<Value, ErrorKin
     let frame = b.frame_layout();
     if b.whole.len() != b.cells() { return Some(Err(rustymath::error::Kind::Length.into())); }
     if b.whole.dtype() == Some(DType::Boolean) { return Some(b.whole.relaid(frame)); }
-    Some(b.whole.elements().map(|e| e.boolean()).collect::<Result<Vec<_>, _>>().and_then(|bits| frame.booleans(bits)))
+    Some(b.whole.elements().map(|e| e.boolean()).collect::<Result<Vec<_>, _>>().and_then(|bits| Value::booleans(frame, bits)))
 }
 
 /// `value` as a case of run `level` sees it (`transform::Levels::case`): a batch of the run read by `read`, which takes the batch's whole and its number of frame axes and gives the case's whole and its number of frame axes. An array that holds such batches reads each. Any other value is the same for every cell.
@@ -444,16 +444,10 @@ fn frame_of(values: &[&Value], level: u64) -> Option<Layout> {
     values.iter().find_map(|v| match arg(v, level) { Arg::Batched(b) => Some(b.frame_layout()), Arg::Constant(_) => None })
 }
 
-/// Each cell's own offsets among a cell's items, where a tape value's gather reads and its scatter adds, and where a selection by each cell's own positions reads and writes (`primitive::Targets`), in batched run `level`. Cell `c` of the cells that `frame` lays out uses `list[c * n..][..n]`.
+/// Each cell's own offsets among a cell's items, where a tape value's gather reads, and where a selection by each cell's own positions reads and writes (`primitive::Targets`), in batched run `level`. Cell `c` of the cells that `frame` lays out uses `list[c * n..][..n]`.
 pub(crate) struct Cells { level: u64, frame: Layout, list: Vec<usize> }
 
 impl Cells {
-    /// The offsets `list` that the batch of ids `ids` gives its cells.
-    pub(crate) fn new(ids: &Batch, list: Vec<usize>) -> Self { Self { level: ids.level, frame: ids.frame_layout(), list } }
-
-    /// The bytes that the offsets hold.
-    pub(crate) fn footprint(&self) -> usize { self.list.capacity() * size_of::<usize>() }
-
     /// The number of offsets in each cell.
     pub(crate) fn len(&self) -> usize { self.counts().1 }
 
@@ -469,13 +463,6 @@ impl Cells {
         let (all, size) = match level_whole(source, self.level)? { Some(whole) => (whole, whole.len() / cells), None => (source, 0) };
         let read = crate::fusion::copied_at(all, placed(&self.list, n, n, cells, size), self.frame.concat(layout), None).described("invalid read")?;
         result(self.level, read, self.frame.shape().len(), || true, Stop::new(self.level, Cause::Rule))
-    }
-
-    /// Each cell's zeros of `layout`, with its items of `items` added at its own offsets, as a cotangent sums them (`derivative::sum_at`).
-    pub(crate) fn added(&self, items: &Value, layout: &Layout, zero: &Value, span: &Span) -> Result<Value, Error> {
-        scattered(&layout.zeros(zero), items, self.level, &self.frame, &self.list, self.counts().1, |whole, at, items| {
-            crate::derivative::sum_at(whole, Writes::Offsets(at), items, span)
-        })
     }
 
     /// `target` with each cell's items of `source` written at its own offsets (`scattered`).

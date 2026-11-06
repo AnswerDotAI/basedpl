@@ -2,12 +2,12 @@
 //!
 //! A tape value has no items, so reading them is a bug (`Traced::storage`). Tape values live only in the tangents of duals, and only code that handles tangents meets them.
 use super::{complex, dual, numbers, numeric, packed, split, strip, zeros};
-use crate::program::{Desc, Node, Origin, Program, Read, Step, Writes, run, trace::{self, Role, Traced, Tracer}};
+use crate::program::{Desc, Node, Origin, Program, Read, Step, run, trace::{self, Role, Traced, Tracer}};
 use crate::{
     Error, ErrorKind, Function, Span, Value, agreement::expand, array::Layout, error::Described, execution::check, number::Arithmetic,
     primitive::{FoldKind, Form, LinearMap, Operation, Primitive}, session, transform::{Carrier, Kind, Op, Pairing, walk}
 };
-use rustymath::{agreement::{Mapping, ReadAt}, buffer::DType, gather::{Steps, Writes as Places}};
+use rustymath::{agreement::{Mapping, Missing, ReadAt, ReadPlan}, buffer::DType, gather::{Steps, Writes as Places}};
 use std::{collections::HashMap, sync::Arc};
 
 const PLUS: Primitive = Primitive::Arithmetic(Arithmetic::Plus);
@@ -215,14 +215,32 @@ impl Back<'_> {
         self.add(read, v)
     }
 
-    /// Adds each item of `items` at its place in `places` of the node that `read` reads, to that node's cotangent in place, where the node depends on a seed (`sum_at`).
+    /// Adds each item of `items` at its place in `places` of the node that `read` reads, to that node's cotangent, where the node depends on a seed. Places that take each of the node's items once by affine axes, as a transpose or a reordering of axes writes them, add `items` read back through their inverse (`ReadPlan::inverse`): a copy, which fuses into its reader, and is `items` itself where the places run in order. An atom node, and other places, add each item in place (`sum_at`): read back through a copy, an atom's cotangent would be a one-item copy, not an atom.
     fn add_at(&mut self, read: &Read, places: Places<'_>, items: &Value) -> Result<(), Error> {
         if !self.live(read.of) { return Ok(()); }
+        let count = self.nodes[read.of].desc.layout.count();
+        let map = Mapping::from(places);
+        let shape = walk_shape(&map, &[places.len()]);
+        if !self.nodes[read.of].desc.atom && items.len() == places.len() && let Some(inverse) = ReadPlan::copy(0, count, map, places.len(), Missing::Invalid).inverse(0, &shape, count) {
+            let back = crate::fusion::copied(items, Layout::from(walk_shape(&inverse, &[count])), &inverse, None).described("a cotangent reads its copy back")?;
+            return self.add(read, back);
+        }
         let desc = &self.nodes[read.of].desc;
         let mut sum = self.cotangents[read.of].take().unwrap_or_else(|| desc.layout.zeros(&desc.zero()));
         sum_at(&mut sum, places, items, self.span)?;
         self.cotangents[read.of] = Some(sum);
         Ok(())
+    }
+
+    /// Adds `u` at the walk `base`, `steps` of the node that `read` reads. A broadcast's cotangent sums along the axes it repeats over (step 0) first, and only the remaining axes write back. A repeated axis reads one offset of its source, its start, which joins the base.
+    fn add_walked(&mut self, read: &Read, base: usize, steps: &[Steps], u: Value) -> Result<(), Error> {
+        let starts: Vec<(usize, usize)> = steps.iter().enumerate()
+            .filter_map(|(a, s)| match *s { Steps::Stride { start, len, step: 0 } if len > 1 => Some((a, start)), _ => None }).collect();
+        let repeated: Vec<usize> = starts.iter().map(|&(a, _)| a).collect();
+        let base = base + starts.iter().map(|&(_, start)| start).sum::<usize>();
+        let u = if repeated.is_empty() { u } else { crate::eval::folded_along(PLUS, FoldKind::REDUCE, &repeated, &u, self.span)? };
+        let kept: Vec<Steps> = steps.iter().enumerate().filter(|(a, _)| !repeated.contains(a)).map(|(_, s)| s.clone()).collect();
+        self.add_at(read, Places::Walk { base, steps: &kept }, &u)
     }
 
     /// The value that `read` gives of a node that doesn't depend on a seed: a coefficient or a position.
@@ -275,13 +293,20 @@ impl Back<'_> {
                 }
             }
             Step::Copy { of, map } => {
-                let offsets = Steps::combined(0, &map.tables(desc.shape()));
-                self.add_at(&Read::node(self.nodes, *of), Places::Offsets(&offsets), &flat(&u, span)?)
+                let (base, steps) = map.to_walk(desc.shape());
+                self.add_walked(&Read::node(self.nodes, *of), base, &steps, u)
             }
             Step::Structural { inputs, form, params, .. } => {
                 let params = params.iter().map(|r| self.held(r)).collect::<Result<Vec<_>, _>>()?;
                 let layouts: Vec<&Layout> = inputs.iter().map(|r| &r.layout).collect();
                 let (_, plan) = crate::primitive::structural::plan(form, &params, &layouts)?;
+                // A plan that reads one input by affine axes, as a transpose, reversal or reshape does, writes back along its walk, as a copy's does.
+                if let Some((source, map)) = plan.positional(desc.shape()) {
+                    // A source past the inputs is the fill, which takes no cotangent.
+                    let Some(input) = inputs.get(source) else { return Ok(()) };
+                    let (base, steps) = map.to_walk(desc.shape());
+                    return self.add_walked(input, base, &steps, u);
+                }
                 let u = flat(&u, span)?;
                 let mut supplied = vec![(Vec::new(), Vec::new()); inputs.len()];
                 for i in 0..plan.len() {
@@ -310,20 +335,7 @@ impl Back<'_> {
             Step::At { p, base, items, writes } if *p == PLUS => {
                 if self.live(items.of) {
                     // The cotangent reads at the writes, in their own shape, and sums down to the items' layout, where a single item spread over every write.
-                    let read = match writes {
-                        Writes::Map(map) => {
-                            let shape = match map { Mapping::Steps { steps, .. } => steps.iter().map(Steps::len).collect(), _ => items.layout.shape().to_vec() };
-                            crate::fusion::copied(&u, Layout::from(shape), map, None).described("a cotangent reads its writes")?
-                        }
-                        Writes::By(by) => {
-                            let parts = by.parts(|r| self.held(r).expect("a selection's positions are held"));
-                            crate::primitive::select(&u, &parts, None, by.paired, None, span)?
-                        }
-                        Writes::Structural { form, params } => {
-                            let params = params.iter().map(|r| self.held(r)).collect::<Result<Vec<_>, _>>()?;
-                            crate::fusion::copy(form, &params, &[&u], None)?
-                        }
-                    };
+                    let read = crate::fusion::copied(&u, Layout::from(walk_shape(writes, items.layout.shape())), writes, None).described("a cotangent reads its writes")?;
                     self.add_summed(items, &read, 0)?;
                 }
                 self.add(base, u)
@@ -376,6 +388,9 @@ fn laid(v: &Value, layout: &Layout, span: &Span) -> Result<Value, Error> {
 /// `v`'s items as a vector, or `v` itself for an atom.
 fn flat(v: &Value, span: &Span) -> Result<Value, Error> { if v.is_atom() { Ok(v.clone()) } else { Primitive::Ravel.call(None, v, span) } }
 
+/// The shape that `map` walks, one length for each of its steps: `otherwise` for a map without steps.
+fn walk_shape(map: &Mapping, otherwise: &[usize]) -> Vec<usize> { match map { Mapping::Steps { steps, .. } => steps.iter().map(Steps::len).collect(), _ => otherwise.to_vec() } }
+
 /// The cotangent of a `+` fold along `along` from `u`, the fold's cotangent: each summed item takes its lane's, as a length-1 axis broadcast back to `layout`.
 fn spread(u: &Value, along: usize, layout: &Layout, span: &Span) -> Result<Value, Error> {
     let mut shape = u.shape().to_vec();
@@ -412,15 +427,21 @@ pub(crate) fn swapped(c: &Value) -> Result<Value, Error> {
 /// The cotangent of `t`, laid out as `layout`, the tape operand of the product `c+.×t`, or `t+.×c` where `coefficient_left` is false, from `u`, the product's cotangent: `(⍉c)+.×u` or `u+.×⍉c`, with `c` and `u` taken as matrices.
 fn product_back(c: &Value, u: &Value, layout: &Layout, coefficient_left: bool, span: &Span) -> Result<Value, Error> {
     let (csize, tsize) = (c.len(), layout.count());
-    let transposed = |[rows, cols]: [usize; 2]| Primitive::Transpose.call(None, &crate::primitive::reshape_to(&[cols, rows], c, span)?, span);
-    let matrix = |shape: [usize; 2]| crate::primitive::reshape_to(&shape, u, span);
-    let result = if coefficient_left {
-        let k = c.shape().last().copied().unwrap_or(1).max(1);
-        plus_times(&transposed([k, csize / k])?, &matrix([csize / k, tsize / k])?, false, span)?
-    } else {
-        let k = c.shape().first().copied().unwrap_or(1).max(1);
-        plus_times(&matrix([tsize / k, csize / k])?, &transposed([csize / k, k])?, false, span)?
+    let reshaped = |shape: [usize; 2], v: &Value| crate::primitive::reshape_to(&shape, v, span);
+    let k = if coefficient_left { c.shape().last() } else { c.shape().first() }.copied().unwrap_or(1).max(1);
+    // `c` as a matrix whose rows run along its contracted axis, in the order of the keys on the tape operand's, as `+.×` pairs them (`Mapping::contract`).
+    let rows = if coefficient_left { Primitive::Transpose.call(None, &reshaped([csize / k, k], c)?, span)? } else { reshaped([k, csize / k], c)? };
+    let (c_axis, t_axis) = if coefficient_left { (c.shape().len().saturating_sub(1), 0) } else { (0, layout.shape().len().saturating_sub(1)) };
+    let rows = match Mapping::contract(layout, t_axis, c.layout(), c_axis)? {
+        Mapping::Steps { steps, .. } => {
+            let positions: Vec<i64> = Steps::combined(0, &steps).into_iter().map(|p| p as i64).collect();
+            let positions = Value::integers(vec![positions.len()], positions).described("invalid positions")?;
+            Primitive::Index.call(Some(&positions.enclose().expect("positions enclose")), &rows, span)?
+        }
+        _ => rows,
     };
+    let result = if coefficient_left { plus_times(&rows, &reshaped([csize / k, tsize / k], u)?, false, span)? }
+        else { plus_times(&reshaped([tsize / k, csize / k], u)?, &Primitive::Transpose.call(None, &rows, span)?, false, span)? };
     laid(&result, layout, span)
 }
 

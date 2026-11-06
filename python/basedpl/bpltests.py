@@ -7,14 +7,16 @@ from itertools import accumulate
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Annotated
-from fastws import store
-from fastws.cargo import run_tests
-from fastws.timelock import timing_lock
-from fastws.procs import JOB_ENV, bounded, kill_group
+try:
+    from fastws import store
+    from fastws.cargo import run_tests
+    from fastws.timelock import timing_lock
+    from fastws.procs import JOB_ENV, bounded, kill_group
+except ModuleNotFoundError as e: raise ModuleNotFoundError(f"{e.name} isn't installed. bpl-tests is basedpl's contributor tool and needs its dev dependencies: pip install 'basedpl[dev]'", name=e.name) from e
 from fastcore.script import parse_cli
 from fastcore.basics import listify
 from fastcore.meta import delegates
-from ._core import _captured_literal, _reference_file, _retry_pauses, _budget, _budget_lines, _budget_columns as _BUDGETS
+from ._core import _captured_literal, _reference_file, _reference_accounting, _reference_crashed, _retry_pauses, _budget, _budget_lines, _budget_columns as _BUDGETS
 from .reference import Corpus, _dyalog_string
 from . import BplError, _value
 from .worker import LIMIT, Limit, Worker, environment, fresh, resolved, _commented, _installed
@@ -26,7 +28,7 @@ OUTPUT = '⍝ ⎕:'
 ERROR = '⍝ error: '
 
 # The header options that set a flag on a case, as Rust's `reference::FLAGS` names them.
-FLAGS = 'unfused', 'batched', 'mixed', 'compiled', 'optimized'
+FLAGS = 'unfused', 'batched', 'mixed', 'compiled'
 
 
 @dataclass
@@ -40,7 +42,6 @@ class Case:
     unfused: bool = False
     batched: bool = False
     mixed: bool = False
-    optimized: bool = False
     compiled: bool = False
     line: int = field(default=0, compare=False, repr=False)
     section: str = ''
@@ -207,18 +208,19 @@ def _merged(replies):
 
 
 def _checked(worker, kind, spec, sentinel, bpl, limit):
-    "The reply that `worker` gives for a `kind` request, `reference` or `page`, with `spec`. A page request's text ends with an example that must fail, which `sentinel` picks and the reply leaves out. A page that the deadline ends early reports its first unchecked example instead (`reference::page`). Otherwise a reply that doesn't report it raises `ValueError`, as does a reference reply whose counts by mode (`accounting`) show no case, so a worker that checked nothing never reads as a pass. A reference worker notes each case on stderr as it starts it (`case LINE`). Where an abort, such as a stack overflow, ends the worker, or the worker starts nothing for `_STALL` seconds, the last noted case fails as `crashed` or `timeout`, and the cases after it run in a fresh worker of `bpl` while `limit` has time left. A stuck worker is closed, so no worker outlives the timing lock's hold (`_replies`). Each request gets what's left of `limit`."
+    "The reply that `worker` gives for a `kind` request, `reference` or `page`, with `spec`. A page request's text ends with an example that must fail, which `sentinel` picks and the reply leaves out. A page that the deadline ends early reports its first unchecked example instead (`reference::page`). Otherwise a reply that doesn't report it raises `ValueError`, as does a reference reply whose counts by mode (`accounting`) show no case, so a worker that checked nothing never reads as a pass. A reference worker notes each case on stderr as it starts it (`case LINE`). Where an abort, such as a stack overflow, ends the worker, or the worker starts nothing for `_STALL` seconds, the last noted case gets the reply that `reference::crashed` gives, with its counts by mode, and the worker's other cases run again in a fresh worker of `bpl` while `limit` has time left, since the stopped worker's results never arrived. A stuck worker is closed, so no worker outlives the timing lock's hold (`_replies`). Each request gets what's left of `limit`."
     try: r = worker.request({kind: spec}, timeout=limit.left(), stall=_STALL)
     except (EOFError, TimeoutError) as e:
         started = re.findall(r'^case (\d+)$', worker.diagnostics, re.M)
         if kind != 'reference' or not started: raise
-        line, stuck = int(started[-1]), isinstance(e, TimeoutError)
+        line = int(started[-1])
+        case = next(c for c in _reference_file(spec['text'])['cases'] if c['line'] == line)
         tail = worker.diagnostics.rsplit(f'case {line}\n', 1)[-1].strip()
-        rest = [i for i in spec['ids'] if not isinstance(i, int) or i > line]
+        rest = [i for i in spec['ids'] if i not in (line, case['id'])]
         try: limit.left()
         except TimeoutError: rest = None
-        message = (str(e) if stuck else 'the worker aborted') + (f': {tail}' if tail else '') + ('; the call reached its limit, so the cases after it are unchecked' if rest is None else '')
-        failed = dict(failures=[dict(id='', line=line, section='', comment='', code='', status='timeout' if stuck else 'crashed', message=message)])
+        message = (str(e) if isinstance(e, TimeoutError) else 'the worker aborted') + (f': {tail}' if tail else '') + ('; the call reached its limit, so its other cases are unchecked' if rest is None else '')
+        failed = _reference_crashed(json.dumps(case), message)
         if not rest: return failed
         with Worker(bpl, cwd=worker.cwd) as w: return _merged([failed, _checked(w, kind, dict(spec, ids=rest), sentinel, bpl, limit)])
     if e := r['error']: raise ValueError(e['message'])
@@ -280,38 +282,9 @@ def check_page(
     line = text.count('\n') - 1
     return _replies('page', [dict(text=text, batch=False if unbatched else None)], lambda f: f.get('line') == line, build, timeout)['failures']
 
-_INTEGRAL = re.compile(r'^[\[\]()⋄;\s¯\d]*\d[\[\]()⋄;\s¯\d]*ₓ[\])\s]*$')
-_UNRUN = ('skipped', 'unchecked')
-
-# A mismatch message is a path of `data[i]: ` steps into nested items, then the difference found there, such as `shape: [2] != [3]`.
-_STEPS, _SHAPES = re.compile(r'^(?:data\[\d+\]: )*'), re.compile(r'^shape: (\[[^\]]*\]) != (\[[^\]]*\])$')
-_LEAVES = {'atom versus array': 'atom versus array', 'atom': 'value differs', 'axis keys or names': 'keys or names differ', 'unexpected function or operator result': 'function result'}
-
 def _kind(r):
-    "A mismatch's kind: a float result where the expected value is a machine integer, a rank-0 array where it's an atom, or a rational result; otherwise the difference that its message names, with `in an item` where the difference is inside a nested item."
-    v, expected = (r.get('actual') or {}).get('value'), r.get('expected_code') or ''
-    integral = bool(_INTEGRAL.match(expected))
-    if isinstance(v, float) and integral: return 'float atom for int'
-    if isinstance(v, dict):
-        if 'rational' in v: return 'rational result'
-        if v.get('shape') == [] and not expected.lstrip('( ').startswith('⊂'): return 'rank-0 array for atom'
-        if integral and any(isinstance(x, float) for x in v.get('data', ())): return 'float array for int'
-    message = _unmoded(r)
-    steps = _STEPS.match(message)[0]
-    leaf = message[len(steps):]
-    if shapes := _SHAPES.match(leaf): kind = 'length differs' if len(re.findall(r'\d+', shapes[1])) == len(re.findall(r'\d+', shapes[2])) else 'rank differs'
-    elif re.fullmatch(r'data\[\d+\]', leaf): kind = 'value differs'
-    elif leaf.startswith('expected '): kind = 'error expected'
-    elif leaf.startswith('output: '): kind = 'output differs'
-    else: kind = _LEAVES.get(leaf, 'other mismatch')
-    return f'{kind} in an item' if steps and kind != 'other mismatch' else kind
-
-def _unmoded(r):
-    "A case's message without the name of the mode that gave it, so one message counts once whatever mode it came from."
-    m = r.get('message') or ''
-    for mode in r.get('modes', ()):
-        if m.startswith(p := f"{mode['mode']}: "): return m[len(p):]
-    return m
+    "A mismatch's kind, as `reference::Difference` records it under `mismatch`, with `in an item` where it lies inside a nested item."
+    return r.get('mismatch', 'other mismatch') + (' in an item' if r.get('in_item') else '')
 
 def _records(x):
     "Case records: `x` itself, or those in the JSON file at path `x`."
@@ -362,24 +335,19 @@ def reference_summary(
 ):
     "Summarise a reference run: its counts by mode, its failing value cases by status and mismatch kind, its commonest messages, its failures by file, and the cases with a run that no longer applies."
     results = _records(results)
+    counted = _reference_accounting(json.dumps(results))
     if baseline is not None: results = _against(results, _records(baseline))
-    modes = defaultdict(lambda: [0, 0, 0, 0, 0])
-    for r in results:
-        for m in r.get('modes', ()):
-            counts = modes[m['mode']]
-            if m['status'] == _LOST: counts[4] += 1
-            elif m['status'] == 'not applicable': counts[3] += 1
-            elif m['status'] in _UNRUN: counts[2] += 1
-            else: counts[0] += 1; counts[1] += m['status'] != 'pass'
-    failing = [r for r in results if r['status'] != 'pass' and r.get('class', 'value') == 'value']
+    lost = Counter(m['mode'] for r in results for m in r.get('modes', ()) if m['status'] == _LOST)
+    modes = {m: (c['checked'], c['failed'], c['planned']-c['checked'], c['not applicable']-lost[m], lost[m]) for m, c in counted['modes'].items()}
+    failing = [r for r, fails in zip(results, counted['fails']) if fails]
     statuses = Counter(_kind(r) if r['status'] == 'mismatch' else r['status'] for r in failing)
     kinds = defaultdict(list)
     for r in failing:
         if r['status'] == 'mismatch' and (k := _kind(r)) != 'other mismatch' and len(kinds[k]) < examples: kinds[k].append(r)
     return ReferenceSummary(
-        cases=len(results), obligations=sum(r['status'] != 'pass' for r in results if r.get('class') == 'report'), modes=dict(modes),
+        cases=len(results), obligations=sum(counted['obliged']), modes=modes,
         passing=Counter(m['mode'] for r in failing for m in r.get('modes', ()) if m['status'] == 'pass'), statuses=statuses, kinds=dict(kinds),
-        messages=Counter(_unmoded(r) for r in failing if r['status'] == 'error'), files=Counter(r.get('file') for r in failing),
+        messages=Counter(r.get('message') or '' for r in failing if r['status'] == 'error'), files=Counter(r.get('file') for r in failing),
         lost=[r for r in results if any(m['status'] == _LOST for m in r.get('modes', ()))], compared=baseline is not None)
 
 _ROOT = Path(__file__).parents[2]
@@ -537,9 +505,9 @@ _NAMES_N, _QUOTED = re.compile(r'(?<!\w)N(?!\w)'), re.compile(r'"(?:[^"]|"")*"|\
 _READY = 'bpl-profile-ready'
 
 def _command(case, n, setup, force=False, forever=False):
-    "The CLI arguments for one instruction-count or sampling process: an `-e` program, which the release's `bpl` runs as well as today's. A case that doesn't name `N` runs once per step inside a dfn, `N` times per process. With `force`, each such step reads an item of its result, which computes a pending result in full. With `forever`, the process warms one step, writes `_READY` to stdout, then repeats the step until it is killed; a case that names `N` repeats whole."
+    "The CLI arguments for one instruction-count or sampling process: an `-e` program, which the release's `bpl` runs as well as today's. A case that doesn't name `N` runs once per step inside a dfn, `N` times per process. With `force`, each such step writes an item of its result back into it (`s₀←s₀`), which computes a pending result in full; reading an item computes only that item. With `forever`, the process warms one step, writes `_READY` to stdout, then repeats the step until it is killed; a case that names `N` repeats whole."
     named = _NAMES_N.search(_QUOTED.sub('', case))
-    step = f'{{r←{case} ⋄ ⍵⊣⊃,r}}' if force and not named else f'{{{case} ⋄ ⍵}}'
+    step = f'{{r←{case} ⋄ s←,r ⋄ s₀←s₀ ⋄ ⍵}}' if force and not named else f'{{{case} ⋄ ⍵}}'
     if forever: return ['-e', f'{_setup(n, setup)}\nprofiled←{step}\nwarm←profiled 0\n⎕←"{_READY}"\nsteps←1000000000\nprofiled⍣steps 0']
     return ['-e', _program(case if named else f'{step}⍣N 0', n, setup)]
 
@@ -844,6 +812,11 @@ def _symbols(files):
     def listing(*flags): return [_NM_LINE.match(line) for line in subprocess.run(['nm', '-p', *flags, *files], capture_output=True, text=True).stdout.splitlines()]
     return [(m[1], m[2], d[2]) for m, d in zip(listing(), listing('-C')) if m and d]
 
+def _objdump():
+    "An `objdump` that takes `--disassemble-symbols`: the Rust toolchain's `llvm-objdump` (component `llvm-tools`) where it's installed, otherwise `objdump`, which is llvm's on macOS."
+    sysroot = Path(subprocess.run(['rustc', '--print', 'sysroot'], capture_output=True, text=True).stdout.strip())
+    return str(next(sysroot.glob('lib/rustlib/*/bin/llvm-objdump'), 'objdump'))
+
 def disasm(
     pattern, # A regex that the function's demangled name matches, such as `reduce::sliding::<f64, rustymath::reduce::Max>`
     x86=False, # Read the x86-64 code that CI and Linux run, in place of this Mac's
@@ -857,7 +830,7 @@ def disasm(
     if not matched: raise ValueError(f'{note}no function matches {pattern!r}. An inlined function has no code of its own. Search for its caller.')
     if len(matched) > 1: return Report(f'{note}{len(matched)} functions match {pattern!r}:\n' + '\n'.join(matched[:40]))
     wanted = list(dict.fromkeys(m for t, m, d in symbols if t in 'tT' and d == matched[0]))
-    p = subprocess.run(['objdump', '-d', '-r', '--no-show-raw-insn', f'--disassemble-symbols={",".join(wanted)}', *files], capture_output=True, text=True)
+    p = subprocess.run([_objdump(), '-d', '-r', '--no-show-raw-insn', f'--disassemble-symbols={",".join(wanted)}', *files], capture_output=True, text=True)
     if not (code := re.findall(r'^[0-9a-f]+ <.+>:\n(?:.+\n)*', p.stdout, re.M)): raise ValueError(p.stderr)
     # A branch within the function shows only its target's offset.
     code = re.sub(rf'<(?:{"|".join(map(re.escape, wanted))})\+', '<+', '\n'.join(code))
@@ -1082,7 +1055,7 @@ def bisect(
             return f'{type(e).__name__}: {e}'
     def checked(b):
         report = check_file(path, [case], build=b, timeout=limit.left())
-        return '; '.join(f"{m['status']}: {m.get('message') or ''}" for f in report['failures'] for m in f.get('modes') or [f] if m['status'] != 'pass')
+        return '; '.join(f"{m.get('mode', '')} {m['status']}: {m.get('message') or ''}".strip() for f in report['failures'] for m in f.get('modes') or [f] if m['status'] != 'pass')
     measure = dict(check=checked,
                    value=printed,
                    instructions=lambda b: instructions(case, setup, build=b, timeout=limit)[0][1],
@@ -1248,6 +1221,17 @@ def run_nbtest(
     "What `nbdev-test` prints for `nb`, tracebacks included, run in the package at `path` on `build`'s Python package."
     limit = Limit.of(timeout)
     with limit.running(): p = bounded([sys.executable, '-c', 'from nbdev.test import nbdev_test; nbdev_test()', '--path', nb], limit.left(), cwd=Path(path).expanduser(), env=os.environ | _python_path(path, build))
+    return Report(p.stdout + p.stderr)
+
+def regenerate(
+    path='.', # A package, such as basedpl, whose `pyproject.toml` names a `[tool.fastws] post-develop-module`, run in the tree at `path`
+    build:str=None, # The build whose Python package the generator imports, as `run_pytest` takes it
+    timeout:float=LIMIT # Seconds of work that the run gets, or a `Limit` to share (`worker.Limit`); None: no limit
+):
+    "What the package's post-develop generator prints, run in the tree at `path` on `build`'s Python package, as `cargo develop` runs it in the tree it builds."
+    module = tomllib.loads((Path(path).expanduser()/'pyproject.toml').read_text())['tool']['fastws']['post-develop-module']
+    limit = Limit.of(timeout)
+    with limit.running(): p = bounded([sys.executable, '-m', module], limit.left(), cwd=Path(path).expanduser(), env=os.environ | _python_path(path, build))
     return Report(p.stdout + p.stderr)
 
 class Report(str):
@@ -1617,7 +1601,7 @@ def dead_functions(
 
 
 
-_COMMANDS = 'check_file check_page reference_summary time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs run_pytest run_nbtest compare_costs bisect explain_diff wasm_test wasm_stack target_builds prerelease module_edges dead_functions'.split()
+_COMMANDS = 'check_file check_page reference_summary time_cases instructions instruction_budgets profile profile_diff call_profile disasm jit_disasm speed_costs thread_scaling cargo_costs pytest_costs run_pytest run_nbtest regenerate compare_costs bisect explain_diff wasm_test wasm_stack target_builds prerelease module_edges dead_functions'.split()
 
 def main():
     "Run a function in `_COMMANDS` from the shell, as `bpl-tests NAME ARGUMENT...`, and print its result. `bpl-tests NAME -h` lists NAME's arguments."

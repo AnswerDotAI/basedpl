@@ -2,20 +2,20 @@
 //!
 //! Each step computes at one type, which it reads its operands as: floats of 32 or 64 bits, Booleans, or integers, which wrap. It writes a run's items into a buffer of that type, or Booleans for a comparison that the stage stores or folds or that a step at another type reads. A comparison at a float width that only steps at float widths read writes 1 and 0 as floats, which those steps read as they read floats. A map step's kernel is its formula's, resolved at its type (`Pervasive::kernel`), which it runs through `Kernel::map`. A buffer holds a later step's items once every step that reads it has run, and the last step writes straight into its value, or into the block that the fold reads. A step reads an operand of another type by converting a run of its items (`Converts`).
 //!
-//! A stage's steps fall into parts (`Part`): runs of steps that lower to machine operations giving their kernels' results exactly (`lowered_op`), each at least two steps long or the whole stage, and the steps around them. A compiled part's kernel computes its steps for a run in one call, in registers. It reads the run's inputs where the driver places them, the stage's atoms as arguments and earlier parts' buffers, and writes each value that leaves the part: to its buffer, its output, the value's slots or the block that the fold reads. The steps around compiled parts run on their precompiled kernels, and so does every step where the stage doesn't compile. A stage compiles all its parts or none. The browser build compiles nothing.
+//! A stage's steps fall into parts (`Part`): runs of steps whose formulas' recipes record as machine operations giving their kernels' results exactly (`recorded`), each at least two steps long or the whole stage, and the steps around them. A compiled part's kernel computes its steps for a run in one call, in registers. It reads the run's inputs where the driver places them, the stage's atoms as arguments and earlier parts' buffers, and writes each value that leaves the part: to its buffer, its output, the value's slots or the block that the fold reads. The steps around compiled parts run on their precompiled kernels, and so does every step where the stage doesn't compile. A stage compiles all its parts or none. The browser build compiles nothing.
 //!
 //! The stage reads each array made outside it through the map that agreement gives it, or through the map of a copy or view of it, without making the copy. A block splits into runs at each repeat of at least the sizes' `run` items, and each run reads one repeat in place, except that a compiled part reads each repeat's item from a table, so that its runs needn't end there (`Reading::Tabled`). A cycle shorter than a block reads from its period, written out once. A map that walks entries for each cycle, as a broadcast of a transposed read does, reads one cycle, which the stage gathers once each time it runs. A map whose reads copy most blocks (`Mapping::copies`) copies each run into a buffer. Ranges of whole blocks split across threads. A stage with a fold folds each block's items while they're in the cache, in the pieces that its kernel's fold takes (`Kernel::fold_pieces`).
 
 use super::{Desc, Origin, Program, Read, Step, run::{Plan, Unit}};
 use crate::{
-    Number, Value, agreement::{Agree, Agreement}, array::{Layout, Shape, Storage, float_width_of}, element::{Converts, Stored}, explain::Tally,
+    Number, Value, agreement::{Agree, Agreement}, array::{Layout, Storage, float_width_of}, element::{Converts, Stored}, explain::Tally,
     number::Numeric, pervasive::{self, Reduce}, plan::Pervasive, primitive::{FoldKind, Primitive}
 };
 use rustymath::{
     Arg, agreement::{Mapping, Period, Walked, expanded, expanded_items, tiled_cycle, in_place}, buffer::{Buffer, DType, Element, FloatWidth, View, Width},
     gather::Steps, layout::strides, operation::{Kernel, Settings}, parallel::{self, Slots}, reduce, tolerant::{Exactly, Tolerance}
 };
-use std::{borrow::Cow, ops::Range, sync::atomic::{AtomicBool, Ordering::Relaxed}};
+use std::{borrow::Cow, ops::Range, sync::atomic::Ordering::Relaxed};
 #[cfg(not(web))]
 use {crate::jit, std::sync::{Arc, OnceLock}};
 
@@ -131,7 +131,7 @@ impl Group {
         if let Step::Fold { p, kind, axis, ref seed, ref of } = *step {
             let last = self.nodes.iter().rev().copied().find(|&i| !matches!(program.nodes[i].origin, Origin::Step(Step::Copy { .. })));
             let items = program.nodes[of.of].desc.dtype();
-            if kind.scan || last != Some(of.of) || of.layout.shape()[axis] < 2 || !(folds(p, items, node.desc.kind.fixed.is_some()) || alternates(p, items)) { return false; }
+            if kind.scan || last != Some(of.of) || of.layout.shape()[axis] < 2 || !(folds(p, items, &node.desc) || alternates(p, items)) { return false; }
             if seed.as_ref().is_some_and(|s| !program.nodes[s.of].desc.atom || !seeds(p, items, program.nodes[s.of].desc.dtype(), node.desc.dtype())) {
                 return false;
             }
@@ -202,12 +202,12 @@ fn read_through(program: &Program, readers: &[Vec<usize>], j: usize) -> bool {
         && pervasive::reads_widened(program.nodes[of.of].desc.dtype(), program.nodes[j].desc.dtype())
 }
 
-/// Whether a block stage folds items of `dtype` by `p` a block at a time (`reduction`): floats by `+`, `×`, `⌈` and `⌊`, integers by `⌈` and `⌊`, and by `+` where they wrap, and Booleans by the reductions their truth tables name.
-fn folds(p: Primitive, dtype: DType, wraps: bool) -> bool {
+/// Whether a block stage folds items of `dtype` by `p` a block at a time (`reduction`): floats by `+`, `×`, `⌈` and `⌊`, integers by `⌈` and `⌊`, and by `+` where `result`'s integers wrap (`Numeric::wraps`), and Booleans by the reductions their truth tables name.
+fn folds(p: Primitive, dtype: DType, result: &Desc) -> bool {
     let fold = reduction(p, dtype);
     match dtype {
         DType::Float(FloatWidth::F32 | FloatWidth::F64) => matches!(fold, Some(Reduce::Sum | Reduce::Product | Reduce::Max | Reduce::Min)),
-        DType::Integer(_) => matches!(fold, Some(Reduce::Max | Reduce::Min)) || wraps && matches!(fold, Some(Reduce::Sum)),
+        DType::Integer(_) => matches!(fold, Some(Reduce::Max | Reduce::Min)) || Numeric::current().wraps(result.kind.dtype, result.kind.fixed) && matches!(fold, Some(Reduce::Sum)),
         DType::Boolean => matches!(fold, Some(Reduce::Sum | Reduce::Min | Reduce::Max | Reduce::Xor | Reduce::Xnor)), _ => false
     }
 }
@@ -235,7 +235,7 @@ fn reduction(p: Primitive, dtype: DType) -> Option<Reduce> { pervasive::kernel_a
 
 /// Whether a stage folds a fold by `p` and `kind` along `len` positions of items of `items`, into a result that `result` describes, as one step of `p` for each position (`Blocks::window`): a fold, not a scan, along 2 to `DIRECT` positions, by a reduction that a stage folds (`folds`), into a result of its items' type, as a sum of Booleans isn't.
 pub(crate) fn short_window(p: Primitive, kind: FoldKind, len: usize, items: DType, result: &Desc) -> bool {
-    !kind.scan && (2..=reduce::DIRECT).contains(&len) && items == result.dtype() && folds(p, items, result.kind.fixed.is_some())
+    !kind.scan && (2..=reduce::DIRECT).contains(&len) && items == result.dtype() && folds(p, items, result)
 }
 
 /// For fold `j` along an axis of at most `DIRECT` positions of a copy, or along a second such axis of that copy's short fold by the same function, the copy and each folded axis of the copy with its length, the first fold's first. A stage reads each position of those axes as an input of its own (`Blocks::window`). `None` for any other node, and for a fold that `short_window` refuses.
@@ -285,9 +285,12 @@ pub(crate) fn computes(plan: &Pervasive, out: DType) -> Option<DType> {
     (made.kind() == at.kind() && out == at || made == DType::Boolean && out == DType::Boolean).then_some(at)
 }
 
-/// The most arrays, scalars or stored values that a compiled part takes. A run passes them to the kernel in fixed arrays on its stack.
+/// The most arrays or stored values that a compiled part takes. A run passes them to the kernel in fixed arrays on its stack.
 #[cfg(not(web))]
 const MOST: usize = 16;
+/// The most scalar slots that a compiled part takes: its scalars and strides, two for runs, then its constants (`jit::Kernel::constants`).
+#[cfg(not(web))]
+const SCALARS: usize = 64;
 
 /// The fewest items of a run, and the largest stride in items, at which a compiled part reads an input run by run in place of a copy (`Reading::Tabled`). Starting each run costs the kernel a few instructions, and reads far apart miss the cache, where the copy reads the source in blocks. Where the stage's fold has a kernel that folds floats, a run must also hold one item for each of its running totals, 32 (`jit::Kernel::totals`). A shorter run never reaches the loop that steps them all, and its chain of steps of one vector of totals reads slower than the copy. On this Mac on 27 October 2026, `+/,2×a+⊗b`, where `a` repeats over `b`'s f64 items, cost 360 and 351 ps an item from the table for repeats of 16 and 24 against 342 and 305 through the copy, and 153 against 280 for repeats of 32, and rows of 16 and 24 items in `+/,2×[0 1]↓m` cost 319 and 317 against 214 and 210. Without the fold, the table is faster from 16 items: `2×a+⊗b` cost 228 and 203 against 351 and 297 through the copy, and rows of 16 and 32 bytes in `2ₓ₁×[0 1]↓u` cost 72 against 154 and 107. `2×⍉t` with rows of 64 f64 items cost 8.96 copies read at their stride against 3.81 through the copy.
 #[cfg(not(web))]
@@ -317,41 +320,9 @@ pub fn compiled_runs() -> usize { COMPILED_RUNS.load(Relaxed) }
 #[cfg(web)]
 pub fn compiled_runs() -> usize { 0 }
 
-/// The machine operation that gives the results of a step that maps `plan` at type `at` as its kernel gives them, where `dyadic` says whether it reads two operands: `+ - ×`, `⌈ ⌊`, negation and magnitude, `÷` and square root, comparisons, and `∧ ∨ ~` on Booleans, since `∧` and `∨` give integers' lowest common multiple and greatest common divisor. Division lowers where Mathish is off, or where its divisor is a nonzero constant that the program holds (`divisor`), since zero divided by zero can't arise there. A comparison of floats within a tolerance doesn't lower, so its part runs on rustymath's kernel. `jit::Kernel::check` refuses an operation on types that don't take it.
+/// Steps recorded into `kernel` at type `ty`. As `rustymath::recipe::Ops`, it records a formula's recipe, so a compiled part computes as rustymath's kernels do. `held` pairs each operand that the program holds with its number, which a recipe reads while recording (`Ops::constant`). A recipe step that no compiled kernel takes, such as a shift, declines the recording (`declined`), and the step doesn't lower.
 #[cfg(not(web))]
-fn lowered_op(plan: &Pervasive, at: DType, dyadic: bool, divisor: Option<f64>) -> Option<jit::Op> {
-    use crate::number::{Arithmetic::*, Math};
-    use Primitive::{Arithmetic as A, Compare as C, Math as M};
-    let width = float_width_of(at);
-    Some(match (plan.p, dyadic) {
-        (A(Plus), true) => jit::Op::Add, (A(Minus), true) => jit::Op::Subtract, (A(Times), true) => jit::Op::Multiply,
-        (A(Divide), true) if !plan.numeric.mathish_at(width) || divisor.is_some_and(|d| d != 0.0) => jit::Op::Divide, (M(Math::Ceiling), true) => jit::Op::Maximum,
-        (M(Math::Floor), true) => jit::Op::Minimum, (M(Math::Lcm), true) if at == DType::Boolean => jit::Op::And, (M(Math::Gcd), true) if at == DType::Boolean => jit::Op::Or,
-        (M(Math::Not), false) => jit::Op::Not, (C(c), true) if plan.numeric.tolerance_of(at).is_exact() => jit::Op::Compare(cmp(c)),
-        (A(Minus), false) => jit::Op::Negate, (M(Math::Magnitude), false) => jit::Op::Magnitude, (M(Math::Root), false) => jit::Op::Sqrt, _ => return None
-    })
-}
-
-/// The machine comparison for `c`.
-#[cfg(not(web))]
-fn cmp(c: crate::primitive::Comparison) -> jit::Cmp {
-    use crate::primitive::Comparison::*;
-    match c {
-        Equal => jit::Cmp::Eq, NotEqual => jit::Cmp::Ne, Less => jit::Cmp::Lt, LessEqual => jit::Cmp::Le, Greater => jit::Cmp::Gt, GreaterEqual => jit::Cmp::Ge
-    }
-}
-
-/// `$body` with `$f` naming the float type of jit type `$ty`, `f32` or `f64`. `None` for any other type.
-#[cfg(not(web))]
-macro_rules! at_float {
-    ($ty:expr, |$f:ident| $body:expr) => {
-        match $ty { jit::Ty::F32 => { type $f = f32; $body } jit::Ty::F64 => { type $f = f64; $body } _ => None }
-    };
-}
-
-/// Steps recorded into `kernel` at float type `ty`. As `rustymath::recipe::Ops`, it records a recipe, so a compiled part computes the recipe as rustymath's kernels do.
-#[cfg(not(web))]
-struct Recording<'a> { kernel: std::cell::RefCell<&'a mut jit::Kernel>, ty: jit::Ty }
+struct Recording<'a> { kernel: std::cell::RefCell<&'a mut jit::Kernel>, ty: jit::Ty, held: [Option<(jit::Value, f64)>; 2], declined: std::cell::Cell<bool> }
 
 #[cfg(not(web))]
 impl Recording<'_> {
@@ -374,9 +345,34 @@ impl Recording<'_> {
         });
         jit::Value::Input(k)
     }
+    /// The number that `v` holds where it's known while recording: an operand that the program holds, or a constant input.
+    fn known(&self, v: jit::Value) -> Option<f64> {
+        if let Some(h) = self.held.iter().flatten().find(|h| h.0 == v) { return Some(h.1); }
+        let jit::Value::Input(k) = v else { return None };
+        match self.kernel.borrow().inputs[k] { jit::Input::Constant(t, bits) => Some(jit::Input::decoded(t, bits)), _ => None }
+    }
+    /// `x` in place of a step that no compiled kernel takes, which declines the recording.
+    fn decline(&self, x: jit::Value) -> jit::Value {
+        self.declined.set(true);
+        x
+    }
+    /// Whether the recording's values are integers or Booleans.
+    fn integral(&self) -> bool { !matches!(self.ty, jit::Ty::F32 | jit::Ty::F64) }
+    /// The Boolean function whose truth table is `t`, on `x`, through the kernel's `And`, `Or`, `Xor` and `Not`: for one argument, bit `i` is the result for `i`, and for two, bit `2x + y`. `None` for any table but those and their negations.
+    fn table(&self, t: u8, x: &[jit::Value]) -> Option<jit::Value> {
+        let b = |op, x, y| self.step(op, jit::Ty::Bool, x, y);
+        let (op, not) = match (x.len(), t) {
+            (1, 1) => return Some(b(jit::Op::Not, x[0], None)),
+            (2, 8) => (jit::Op::And, false), (2, 14) => (jit::Op::Or, false), (2, 6) => (jit::Op::Xor, false),
+            (2, 7) => (jit::Op::And, true), (2, 1) => (jit::Op::Or, true), (2, 9) => (jit::Op::Xor, true),
+            _ => return None,
+        };
+        let v = b(op, x[0], Some(x[1]));
+        Some(if not { b(jit::Op::Not, v, None) } else { v })
+    }
 }
 
-/// A function call is a step no compiled kernel takes, and no recipe that the JIT records makes one.
+/// A recipe step that no compiled kernel takes declines the recording (`Recording::decline`).
 #[cfg(not(web))]
 impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
     type V = jit::Value;
@@ -385,25 +381,39 @@ impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
     type W = jit::Value;
     fn width(&self) -> FloatWidth { if self.ty == jit::Ty::F32 { FloatWidth::F32 } else { FloatWidth::F64 } }
     fn fused(&self) -> bool { rustymath::FUSED }
+    fn integral(&self) -> bool { Recording::integral(self) }
+    fn constant(&self, v: jit::Value) -> Option<F> { self.known(v).map(F::narrow) }
     fn widen(&self, x: jit::Value) -> jit::Value { x }
     fn wide_number(&self, x: f64) -> jit::Value { self.constant(x) }
     fn wide_multiply_add(&self, x: jit::Value, y: jit::Value, z: jit::Value) -> jit::Value { <Self as rustymath::recipe::Ops<F>>::multiply_add(self, x, y, z) }
     fn narrow(&self, x: jit::Value) -> jit::Value { x }
-    fn integer(&self, _: i64) -> jit::Value { unreachable!("a compiled recipe calls integer operations") }
-    fn integer_op(&self, op: rustymath::recipe::Integer, _: jit::Value, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls {op:?}") }
-    fn integer_compare(&self, op: rustymath::recipe::Cmp, _: jit::Value, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls an integer {op:?}") }
-    fn integer_select(&self, _: jit::Value, _: jit::Value, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls an integer select") }
-    fn to_integer(&self, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls to_integer") }
-    fn from_integer(&self, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls from_integer") }
-    fn to_bits(&self, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls to_bits") }
-    fn from_bits(&self, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe calls from_bits") }
-    fn overflow(&self, op: rustymath::recipe::Binary, _: jit::Value, _: jit::Value) -> jit::Value { unreachable!("a compiled recipe checks overflow of {op:?}") }
+    fn integer(&self, x: i64) -> jit::Value {
+        let c = self.constant(x as f64);
+        if self.integral() { c } else { self.decline(c) }
+    }
+    fn integer_op(&self, op: rustymath::recipe::Integer, x: jit::Value, y: jit::Value) -> jit::Value {
+        use rustymath::recipe::Integer;
+        let op = match op {
+            Integer::Add => jit::Op::Add, Integer::Subtract => jit::Op::Subtract, Integer::And => jit::Op::And, Integer::Or => jit::Op::Or, Integer::Xor => jit::Op::Xor,
+            _ => return self.decline(x),
+        };
+        if self.integral() { self.at(op, x, Some(y)) } else { self.decline(x) }
+    }
+    fn integer_compare(&self, op: rustymath::recipe::Cmp, x: jit::Value, y: jit::Value) -> jit::Value {
+        if self.integral() { <Self as rustymath::recipe::Ops<F>>::compare(self, op, x, y) } else { self.decline(x) }
+    }
+    fn integer_select(&self, m: jit::Value, x: jit::Value, y: jit::Value) -> jit::Value { if self.integral() { self.at(jit::Op::Select(m), x, Some(y)) } else { self.decline(x) } }
+    fn to_integer(&self, x: jit::Value) -> jit::Value { if self.integral() { x } else { self.decline(x) } }
+    fn from_integer(&self, x: jit::Value) -> jit::Value { if self.integral() { x } else { self.decline(x) } }
+    fn to_bits(&self, x: jit::Value) -> jit::Value { if self.integral() { x } else { self.decline(x) } }
+    fn from_bits(&self, x: jit::Value) -> jit::Value { if self.integral() { x } else { self.decline(x) } }
+    fn overflow(&self, _: rustymath::recipe::Binary, x: jit::Value, _: jit::Value) -> jit::Value { self.decline(x) }
     fn number(&self, x: F) -> jit::Value { self.constant(x.wide()) }
     fn unary(&self, op: rustymath::recipe::Unary, x: jit::Value) -> jit::Value {
         use rustymath::recipe::Unary;
         let op = match op {
             Unary::Negate => jit::Op::Negate, Unary::Magnitude => jit::Op::Magnitude, Unary::Sqrt => jit::Op::Sqrt, Unary::Floor => jit::Op::Floor,
-            op => unreachable!("a compiled recipe calls {op:?}"),
+            _ => return self.decline(x),
         };
         self.at(op, x, None)
     }
@@ -411,7 +421,8 @@ impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
         use rustymath::recipe::Binary;
         let op = match op {
             Binary::Add => jit::Op::Add, Binary::Subtract => jit::Op::Subtract, Binary::Multiply => jit::Op::Multiply, Binary::Divide => jit::Op::Divide,
-            Binary::Larger => jit::Op::Maximum, Binary::Smaller => jit::Op::Minimum, op => unreachable!("a compiled recipe calls {op:?}"),
+            Binary::Larger => jit::Op::Maximum, Binary::Smaller => jit::Op::Minimum, Binary::BitAnd if self.integral() => jit::Op::And,
+            _ => return self.decline(x),
         };
         self.at(op, x, Some(y))
     }
@@ -430,60 +441,36 @@ impl<F: rustymath::Float> rustymath::recipe::Ops<F> for Recording<'_> {
     fn select(&self, m: jit::Value, x: jit::Value, y: jit::Value) -> jit::Value { self.at(jit::Op::Select(m), x, Some(y)) }
 }
 
-/// Records into `kernel` the steps that give a pervasive step of plan `plan` at type `at` from `x` and, for a dyad, `y`, where no one machine operation does (`lowered_op`), through the formulas that the step's kernel runs too. These are a reciprocal, `π`'s two forms, Mathish division, a power by a held exponent (`exponent` is its route, and `y` omits the exponent), tolerant comparisons (the recipe of the comparison's formula, `pervasive::formula`, against the one number the program holds where `held` gives one), a residue within a tolerance, and, where the step gives floats of type `at` (`made`), as static kinds do, sign, floor and ceiling, all through `rustymath::recipe`; and an integer residue by a held positive power of two, through `rustymath::integer::mask`. A comparison's last step gives Booleans. An exact float residue doesn't lower: rustymath's `Residue` recomputes the items whose quotient passes the float's precision, which a compiled step can't. `None` where the step doesn't lower.
+/// Records into `kernel` the steps of a pervasive step of plan `plan` at type `at` on `x` and, for a dyad, `y`, by the formula that the step's kernel runs (`pervasive::formula`), so a compiled part computes as the kernel does. `held` gives each operand's number where the program holds it. A recipe reads it while recording, as a power's exponent, a divisor or a comparison's one number. The last recorded step gives the result: a test's Booleans, or items of type `at`. A step whose type `made` differs from `at` lowers only for a test, since a kernel converts other results by rules that a compiled step doesn't follow. `None` where the step doesn't lower: its formula has no recipe here, or the recipe takes a step that no compiled kernel takes, as an exact float residue does.
 #[cfg(not(web))]
-fn recorded(kernel: &mut jit::Kernel, plan: &Pervasive, at: DType, made: jit::Ty, x: jit::Value, y: Option<jit::Value>, exponent: Option<rustymath::Exponent>, held: [Option<f64>; 2]) -> Option<()> {
-    use crate::number::{Arithmetic::*, Math};
-    use rustymath::{Float, recipe};
-    use Primitive::{Arithmetic as A, Compare as C, Math as M};
+fn recorded(kernel: &mut jit::Kernel, plan: &Pervasive, at: DType, made: jit::Ty, x: jit::Value, y: Option<jit::Value>, held: [Option<f64>; 2]) -> Option<()> {
     let ty = jit::Ty::of(at)?;
-    let o = Recording { kernel: std::cell::RefCell::new(kernel), ty };
-    let Some(width) = float_width_of(at) else {
-        // An integer residue by a held positive power of two is the bitwise and with rustymath's mask for it.
-        let (M(Math::Magnitude), Some(y), Some(d), DType::Integer(_)) = (plan.p, y, held[0], at) else { return None };
-        let m = rustymath::integer::mask(d as i64).filter(|_| d.fract() == 0.0)?;
-        let m = o.input(jit::Input::Constant(ty, m as u64));
-        o.at(jit::Op::And, y, Some(m));
-        return Some(());
-    };
-    let (numeric, floats) = (plan.numeric, made == ty);
-    let t = numeric.tolerance_of(at);
-    match (plan.p, y) {
-        (M(Math::Power), None) => { at_float!(ty, |G| recipe::power::<G, _>(&o, exponent?, x))?; }
-        (A(Divide), None) => { at_float!(ty, |G| Some(recipe::reciprocal::<G, _>(&o, x)))?; }
-        (M(Math::Pi), None) => { at_float!(ty, |G| Some(recipe::pi_times::<G, _>(&o, x)))?; }
-        (M(Math::Pi), Some(y)) => { at_float!(ty, |G| Some(recipe::pi_ratio::<G, _>(&o, x, y)))?; }
-        (A(Divide), Some(y)) if numeric.mathish_at(Some(width)) => { at_float!(ty, |G| Some(recipe::mathish_divide::<G, _>(&o, x, y)))?; }
-        (A(Times) | Primitive::Special(crate::primitive::Special::Sign), None) if floats => { at_float!(ty, |G| Some(recipe::sign::<G, _>(&o, x)))?; }
-        (M(Math::Floor), None) if floats => {
-            at_float!(ty, |G| Some(if t.is_exact() { recipe::exact_floor::<G, _>(&o, x) } else { recipe::floor::<G, _>(&o, recipe::Ops::<G>::number(&o, G::narrow(t.value())), x) }))?;
-        }
-        (M(Math::Ceiling), None) if floats => {
-            at_float!(ty, |G| Some(recipe::ceil::<G, _>(&o, x, |o, v| if t.is_exact() { recipe::exact_floor::<G, _>(o, v) } else { recipe::floor::<G, _>(o, recipe::Ops::<G>::number(o, G::narrow(t.value())), v) })))?;
-        }
-        (M(Math::Magnitude), Some(y)) if !t.is_exact() => {
-            at_float!(ty, |G| Some(recipe::residue::<G, _>(&o, Some(recipe::Ops::<G>::number(&o, G::narrow(t.value()))), x, y, |o, v| recipe::floor::<G, _>(o, recipe::Ops::<G>::number(o, G::narrow(t.value())), v))))?;
-        }
-        (C(_), Some(y)) => {
-            let held = match held { [_, Some(k)] => Some((k, x, true)), [Some(k), None] => Some((k, y, false)), _ => None };
-            at_float!(ty, |G| pervasive::formula(plan.p, 2, false, false, t, Compared::<G> { o: &o, x, y, held, at: std::marker::PhantomData }).flatten())?;
-        }
-        _ => return None,
-    }
-    Some(())
+    let o = Recording { kernel: std::cell::RefCell::new(kernel), ty, held: [held[0].map(|c| (x, c)), y.zip(held[1])], declined: std::cell::Cell::new(false) };
+    let (args, arity, integral) = ([x, y.unwrap_or(x)], 1 + usize::from(y.is_some()), o.integral());
+    let (mathish, t) = (plan.numeric.mathish_at(at), plan.numeric.tolerance_of(at));
+    let result = match ty {
+        jit::Ty::F32 => pervasive::formula(plan.p, arity, mathish, integral, t, Emitted::<f32> { o: &o, args, at: std::marker::PhantomData }),
+        _ => pervasive::formula(plan.p, arity, mathish, integral, t, Emitted::<f64> { o: &o, args, at: std::marker::PhantomData }),
+    }.flatten()?;
+    let steps = o.kernel.borrow().steps.len();
+    let gives = o.kernel.borrow().steps.last()?.ty;
+    (!o.declined.get() && result == jit::Value::Step(steps - 1) && (made == ty || gives == jit::Ty::Bool)).then_some(())
 }
 
-/// A comparison's recipe through `o` at float type `G`: against the one number that `held` gives, with the value it compares (`Formula::emit_against`), or on `x` and `y` (`Formula::emit_test`).
+/// A step's recipe through `o` at float type `G`, on `args`: on Booleans, the formula's truth table (`Recording::table`); for a test, against the one number that the program holds (`Formula::emit_against`) or on its arguments (`Formula::emit_test`); otherwise the formula's own recipe (`Formula::emit`).
 #[cfg(not(web))]
-struct Compared<'a, 'b, G> { o: &'a Recording<'b>, x: jit::Value, y: jit::Value, held: Option<(f64, jit::Value, bool)>, at: std::marker::PhantomData<G> }
+struct Emitted<'a, 'b, G> { o: &'a Recording<'b>, args: [jit::Value; 2], at: std::marker::PhantomData<G> }
 
 #[cfg(not(web))]
-impl<G: rustymath::Float> pervasive::Visit for Compared<'_, '_, G> {
-    type Out = Option<()>;
-    fn visit<K: rustymath::facts::Formula<N>, const N: usize>(self, k: K) -> Option<()> {
-        if let Some((c, v, left)) = self.held && k.emit_against::<G, _>(self.o, G::narrow(c), v, left).is_some() { return Some(()); }
-        if N != 2 { return None; }
-        k.emit_test::<G, _>(self.o, std::array::from_fn(|i| [self.x, self.y][i])).map(|_| ())
+impl<G: rustymath::Float> pervasive::Visit for Emitted<'_, '_, G> {
+    type Out = Option<jit::Value>;
+    fn visit<K: rustymath::facts::Formula<N>, const N: usize>(self, k: K) -> Option<jit::Value> {
+        let (o, args) = (self.o, std::array::from_fn(|i| self.args[i]));
+        if o.ty == jit::Ty::Bool && let Some(v) = k.truth_table().and_then(|t| o.table(t, &args)) { return Some(v); }
+        if !K::BOOLEAN { return k.emit::<G, _>(o, args); }
+        let against = match o.held { [_, Some((_, c))] => Some((c, self.args[0], true)), [Some((_, c)), None] => Some((c, self.args[1], false)), _ => None };
+        if N == 2 && let Some((c, v, left)) = against && let Some(b) = k.emit_against::<G, _>(o, G::narrow(c), v, left) { return Some(b); }
+        k.emit_test::<G, _>(o, args)
     }
 }
 
@@ -493,18 +480,18 @@ fn converts(from: DType, to: DType, tolerance: Tolerance) -> bool {
     from == to || (to != DType::Boolean && (matches!(to, DType::Float(_)) || !matches!(from, DType::Float(_)) || tolerance.is_exact()))
 }
 
-/// An array that a stage reads: the program's node `of`, planned at `dtype`, read through `map`. Where the node's own map walks entries for each cycle (`Period::Walks`), or cycles with a period shorter than a block, `gather` holds that map, the stage writes the node's cycle out once each time it runs (`gathered_once`), and `map` reads it as `Tiled`. Where the stage would walk each block of the node's map as one strided run, while the whole copy reads through the tiled transpose (`tiles_whole`), the stage gathers the whole copy through `gather` instead, and `map` reads it in order. Both maps find their walk and cycle once and keep them for every run (`Walked`).
+/// An array that a stage reads: the program's node `of`, read through `map`. Where the node's own map walks entries for each cycle (`Period::Walks`), or cycles with a period shorter than a block, `gather` holds that map, the stage writes the node's cycle out once each time it runs (`gathered_once`), and `map` reads it as `Tiled`. Where the stage would walk each block of the node's map as one strided run, while the whole copy reads through the tiled transpose (`tiles_whole`), the stage gathers the whole copy through `gather` instead, and `map` reads it in order. Both maps find their walk and cycle once and keep them for every run (`Walked`).
 #[derive(PartialEq)]
-struct Input { of: usize, dtype: DType, map: Walked<'static>, gather: Option<Walked<'static>> }
+struct Input { of: usize, map: Walked<'static>, gather: Option<Walked<'static>> }
 
 impl Input {
     /// Node `of` read through `map`, as its cycle written out once where `map` walks entries, or cycles with a period shorter than a block that a reader writes out (`Period::tiling`, as `tiled_cycle` writes it), or as one gathered copy where `map` tiles whole. A longer cycle reads in place.
-    fn new(of: usize, dtype: DType, map: Mapping) -> Self {
+    fn new(of: usize, map: Mapping) -> Self {
         let block = crate::settings::sizes().block;
         match map.period() {
-            Some(Period::Walks { len, .. }) => Self { of, dtype, map: Mapping::Tiled(len).into(), gather: Some(map.into()) },
-            Some(period @ Period::Cycles(p)) if p < block && period.tiling(block).is_some() => Self { of, dtype, map: Mapping::Tiled(p).into(), gather: Some(map.into()) },
-            _ if map.tiles_whole(block) => Self { of, dtype, map: Mapping::Linear(1).into(), gather: Some(map.into()) }, _ => Self { of, dtype, map: map.into(), gather: None }
+            Some(Period::Walks { len, .. }) => Self { of, map: Mapping::Tiled(len).into(), gather: Some(map.into()) },
+            Some(period @ Period::Cycles(p)) if p < block && period.tiling(block).is_some() => Self { of, map: Mapping::Tiled(p).into(), gather: Some(map.into()) },
+            _ if map.tiles_whole(block) => Self { of, map: Mapping::Linear(1).into(), gather: Some(map.into()) }, _ => Self { of, map: map.into(), gather: None }
         }
     }
 }
@@ -619,7 +606,7 @@ impl Blocks {
                 Step::Map { left, right, plan } => {
                     let at = computes(plan, node.desc.dtype())?;
                     let (x, y) = b.paired(program, members, left.as_ref(), right, shape)?;
-                    b.steps.push(BlockStep { kernel: Some(plan.kernel()?), ..made(Op::Map(*plan), [x, Some(y), None], at, Tolerance::EXACT) });
+                    b.steps.push(BlockStep { kernel: Some(plan.kernel()?.clone()), ..made(Op::Map(plan.clone()), [x, Some(y), None], at, Tolerance::EXACT) });
                 }
                 Step::Convert { of, numeric } => {
                     let y = b.operand(program, members, of, &Mapping::Linear(1), shape)?;
@@ -705,7 +692,7 @@ impl Blocks {
             let plan = crate::plan::pervasive(p, Some(items.kind), items.kind, [None, constant], crate::number::Numeric::current()).ok()?;
             let at = computes(&plan, node.desc.dtype())?;
             // As in a step of rustymath's `Folds`, each read is the left operand and the total the right. Beside a NaN, `Core::maximum` and `minimum` give the right operand, the total.
-            self.steps.push(BlockStep { j, kernel: Some(plan.kernel()?), op: Op::Map(plan), operands: [Some(x), Some(total), None], at,
+            self.steps.push(BlockStep { j, kernel: Some(plan.kernel()?.clone()), op: Op::Map(plan), operands: [Some(x), Some(total), None], at,
                 tolerance: Tolerance::EXACT, booleans: node.desc.dtype() == DType::Boolean, fixed: node.desc.kind.fixed.is_some(), layout: node.desc.layout.clone() });
             total = Operand::Step(self.steps.len() - 1);
         }
@@ -734,7 +721,7 @@ impl Blocks {
             });
             return Some(Operand::Constant(k));
         }
-        let input = Input::new(i, program.nodes[i].desc.dtype(), map);
+        let input = Input::new(i, map);
         let k = self.inputs.iter().position(|x| *x == input).unwrap_or_else(|| {
             self.inputs.push(input);
             self.inputs.len() - 1
@@ -792,7 +779,7 @@ impl Blocks {
                 }
             };
             #[cfg(not(web))]
-            let compiled = self.compiles(sizes, &inputs);
+            let compiled = self.compiles(sizes);
             #[cfg(web)]
             let compiled = false;
             let run = Run { inputs, constants, reads: &laid.reads, block: laid.block, tally: &tally, compiled };
@@ -825,24 +812,17 @@ impl Blocks {
         Some(())
     }
 
-    /// Whether the stage's compiled parts have compiled.
-    #[cfg(not(web))]
-    pub(crate) fn compiled(&self) -> bool { let mut kernels = self.kernels().peekable(); kernels.peek().is_some() && kernels.all(|c| c.code().is_some()) }
-    /// Whether the stage has compiled parts. The browser build compiles none.
-    #[cfg(web)]
-    pub(crate) fn compiled(&self) -> bool { false }
-
     /// The kernels of the stage's compiled parts.
     #[cfg(not(web))]
     fn kernels(&self) -> impl Iterator<Item = &Compiling> { self.parts.iter().filter_map(|p| p.lowered.as_ref()).map(|l| &l.code) }
 
-    /// Whether this run uses the stage's compiled parts, as the compile setting asks (`settings::compiles`). A stage compiles all its parts or none. `Never` uses none, and `Always` compiles them where they aren't compiled yet. The policy compiles them where the items repay a compile (`COMPILES_AT`) or where the first part's kernel ran or compiled before, in this stage or another (`jit::Kernel::seen`). A dfn program's stages therefore compile on the program's first reuse. A part reads an input as one item for the sizes it was lowered under (`one_item`), so it serves only runs under those sizes. It reads each input at its node's planned dtype, so it serves only runs whose inputs are stored at those dtypes: a dynamic ordinary integer stored narrower than planned (`Desc::matches`) runs the stage on its precompiled kernels. Each run that uses compiled parts counts in `compiled_runs` and takes the `compiled` route. Where the setting asks, each reason that `parted` found for a step that compiles in no part declines that route.
+    /// Whether this run uses the stage's compiled parts, as the compile setting asks (`settings::compiles`). A stage compiles all its parts or none. `Never` uses none, and `Always` compiles them where they aren't compiled yet. The policy compiles them where the items repay a compile (`COMPILES_AT`) or where the first part's kernel ran or compiled before, in this stage or another (`jit::Kernel::seen`). A dfn program's stages therefore compile on the program's first reuse. A part reads an input as one item for the sizes it was lowered under (`one_item`), so it serves only runs under those sizes. It reads each input at its node's planned dtype, which a program stores each step's items at (`run::node`). Each run that uses compiled parts counts in `compiled_runs` and takes the `compiled` route. Where the setting asks, each reason that `parted` found for a step that compiles in no part declines that route.
     #[cfg(not(web))]
-    fn compiles(&self, sizes: crate::fusion::Sizes, inputs: &[View<'_>]) -> bool {
+    fn compiles(&self, sizes: crate::fusion::Sizes) -> bool {
         use crate::settings::Compiles;
         use rustymath::events::{Route, declined, taken};
         let first = self.kernels().next();
-        let asks = sizes.run == self.laid.sizes.run && inputs.iter().zip(&self.inputs).all(|(v, x)| v.dtype() == x.dtype) && match crate::settings::compiles() {
+        let asks = sizes.run == self.laid.sizes.run && match crate::settings::compiles() {
             Compiles::Never => false, Compiles::Always => true,
             Compiles::Policy => compiles_on_first_run(self.n) || first.is_some_and(|f| f.code.get().is_some() || f.kernel.seen())
         };
@@ -944,18 +924,9 @@ impl Blocks {
         for s in steps.clone() {
             let mut lower = || -> Option<()> {
                 let (step, first) = (&self.steps[s], kernel.steps.len());
-                // A power by a held exponent that `rustymath::Exponent` routes off the general route reads no exponent (`recipe::power`).
-                let exponent = match &step.op {
-                    Op::Map(plan) if matches!(plan.p, Primitive::Math(crate::number::Math::Power)) => match self.held(step.operands[1], program).map(rustymath::Exponent::of) {
-                        Some(rustymath::Exponent::General) => None,
-                        e => e,
-                    },
-                    _ => None,
-                };
                 let (mut values, mut n) = ([None; 3], 0);
                 for (o, &operand) in step.operands.iter().enumerate() {
                     let Some(operand) = operand else { continue };
-                    if exponent.is_some() && o == 1 { continue; }
                     let (mut value, u) = if let Operand::Step(r) = operand && steps.contains(&r) {
                         (jit::Value::Step(index[r - steps.start]), self.steps[r].made())
                     } else {
@@ -993,10 +964,10 @@ impl Blocks {
                 let made = jit::Ty::of(step.made())?;
                 let (x, y) = (values[0]?.0, values[1].map(|v| v.0));
                 match &step.op {
-                    Op::Map(plan) => match exponent.is_none().then(|| lowered_op(plan, step.at, step.operands[0].is_some(), self.held(step.operands[1], program))).flatten() {
-                        Some(op) => kernel.steps.push(jit::Step { op, ty: if matches!(op, jit::Op::Compare(_)) { jit::Ty::Bool } else { made }, x, y }),
-                        None => { recorded(&mut kernel, plan, step.at, made, x, y, exponent, [self.held(step.operands[0], program), self.held(step.operands[1], program)])?; }
-                    },
+                    Op::Map(plan) => {
+                        let mut held = step.operands.iter().flatten().map(|&o| self.held(Some(o), program));
+                        recorded(&mut kernel, plan, step.at, made, x, y, [held.next().flatten(), held.next().flatten()])?;
+                    }
                     Op::Convert => kernel.steps.push(jit::Step { op: converts(values[0]?.1, step.at, step.tolerance).then_some(jit::Op::Convert)?, ty: made, x, y: None }),
                     Op::Select => kernel.steps.push(jit::Step { op: jit::Op::Select(values[2]?.0), ty: made, x, y }),
                 }
@@ -1018,7 +989,7 @@ impl Blocks {
             };
             lower().ok_or(Some(s))?;
         }
-        if arrays.len().max(scalars.len()).max(kernel.stores.len()) > MOST { return Err(None); }
+        if arrays.len().max(kernel.stores.len()) > MOST || scalars.len() + 2 + kernel.constants().count() > SCALARS { return Err(None); }
         Ok(Lowered { code: Compiling::new(kernel), arrays, scalars, stores })
     }
 
@@ -1203,7 +1174,7 @@ impl Blocks {
     #[cfg(not(web))]
     fn arguments(
         &self, lowered: &Lowered, run: &Run<'_>, got: &[Got<'_>], bufs: &mut [Buffer], from: usize, outs: &[Option<Shared>]
-    ) -> Option<([*const u8; MOST], [u64; MOST], [*mut u8; MOST], usize, usize)> {
+    ) -> Option<([*const u8; MOST], [u64; SCALARS], [*mut u8; MOST], usize, usize)> {
         let (mut arrays, mut a, mut runs) = ([std::ptr::null::<u8>(); MOST], 0, None);
         for &operand in &lowered.arrays {
             // A tabled input takes its item 0, then its table of runs' first items from the run that holds item `from`.
@@ -1226,7 +1197,7 @@ impl Blocks {
             };
             a += 1;
         }
-        let mut scalars = [0; MOST];
+        let mut scalars = [0; SCALARS];
         for (slot, &scalar) in scalars.iter_mut().zip(&lowered.scalars) {
             let item = match scalar {
                 Scalar::Input(k) => got[k], Scalar::Constant(s, o) => run.constants[s][o]?,
@@ -1241,6 +1212,10 @@ impl Blocks {
         if let Some(runs) = runs {
             scalars.get_mut(c..c + 2)?.copy_from_slice(&runs);
             c += 2;
+        }
+        for bits in lowered.code.kernel.constants() {
+            *scalars.get_mut(c)? = bits;
+            c += 1;
         }
         let mut places = [std::ptr::null_mut::<u8>(); MOST];
         for (place, &store) in places.iter_mut().zip(&lowered.stores) {
@@ -1482,7 +1457,7 @@ unsafe fn write(buffer: &Buffer, at: usize, out: &Shared, start: usize, n: usize
 
 /// The array of `shape` that `buffer` holds, as fixed integers where `fixed` says.
 fn built(buffer: Buffer, layout: &Layout, fixed: bool) -> Option<Value> {
-    Value::from_storage(Shape::from(layout.shape()), Storage::Compact(buffer).fixed(fixed)).ok()?.with_layout(layout.clone()).ok()
+    Value::from_storage(layout.clone(), Storage::Compact(buffer).fixed(fixed)).ok()
 }
 
 /// A stored step's room for the stage's items, which the stage's ranges write in parallel, each its own items.
@@ -1535,11 +1510,11 @@ macro_rules! items {
     };
     (@slot float) => {
         #[cfg(not(web))]
-        fn slot(self) -> u64 { f64::from(self).to_bits() }
+        fn slot(self) -> u64 { jit::float_slot(f64::from(self)) }
     };
     (@slot int) => {
         #[cfg(not(web))]
-        fn slot(self) -> u64 { i64::from(self) as u64 }
+        fn slot(self) -> u64 { jit::integer_slot(i64::from(self)) }
     };
     ($($t:ty => $v:ident, $s:ident, |$n:ident| $constant:expr, $k:ident);+) => {$(
         impl Item for $t {
@@ -1574,5 +1549,5 @@ impl Item for bool {
     fn constant(n: &Number) -> Option<Self> { n.as_bool() }
     fn truths<'a, 'b>(slots: &'a mut Slots<'b, bool>) -> Option<&'a mut Slots<'b, Self>> { Some(slots) }
     #[cfg(not(web))]
-    fn slot(self) -> u64 { u64::from(self) }
+    fn slot(self) -> u64 { jit::integer_slot(self.into()) }
 }

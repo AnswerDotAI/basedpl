@@ -178,8 +178,7 @@ fn floats<F: Float>(c: &[Number]) -> Result<Vec<F>, Error> { c.iter().map(Number
 /// The float results `y` at the points `x`, with `x`'s shape and layout.
 fn shaped<F: Float>(x: &Value, y: Vec<F>, width: FloatWidth) -> Result<Value, Error> {
     if x.is_unit() { return Ok(Value::Number(Number::float(y[0].wide(), width))); }
-    let y = F::build(x.shape(), y).ok_or(Kind::Limit).described("polynomial result exceeds array limits")?;
-    y.with_layout(x.layout().clone()).described("invalid polynomial result")
+    F::build(x.layout().clone(), y).ok_or(Kind::Limit).described("polynomial result exceeds array limits")
 }
 
 /// `C⌻X` for one polynomial of real coefficients at the compact real points `X`, when the result is a float. rustymath evaluates it over the points' slice.

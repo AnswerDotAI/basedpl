@@ -37,9 +37,6 @@ const DISTRIBUTIONS: &[(&str, &[f64], Constructor)] = &[
     ("poisson", &[], Constructor::Poisson), ("logistic", &standard::LOGISTIC, Constructor::Two(Distribution::logistic)),
 ];
 
-/// The largest trial count or Poisson rate. A sampler's whole numbers stay exact up to it.
-const WHOLE: u64 = 1 << 53;
-
 fn parameters<const N: usize>(right: &Value) -> Result<[f64; N], Error> {
     if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "parameters must be a unit or vector")); }
     if right.len() != N { return Err(Error::new(Kind::Length, format!("expected {N} distribution parameters"))); }
@@ -60,12 +57,10 @@ fn construct(constructor: &Constructor, right: &Value) -> Result<Distribution, E
         Constructor::Binomial => {
             let [_, p] = parameters(right)?;
             let n = numeric(&right.at(0))?.nonnegative_integer::<u64>().described("binomial trials must be a nonnegative whole number")?;
-            if n > WHOLE { return Err(Error::new(Kind::Limit, "binomial trials exceed the sampler's whole-number range")); }
             Distribution::binomial(n, p)
         }
         Constructor::Poisson => {
             let [rate] = parameters(right)?;
-            if rate > WHOLE as f64 { return Err(Error::new(Kind::Limit, "Poisson rate exceeds the sampler's whole-number range")); }
             Distribution::poisson(rate)
         }
     };
@@ -105,28 +100,26 @@ fn samples(d: &Distribution, shape: &[usize], len: usize, stream: &mut Stream) -
 }
 
 /// The density, cdf or quantile of `d` at each number in `right`, computed at the width of `right`'s floats, or the session's float width for other numbers. An array of compact numbers goes to rustymath as one slice, and its result keeps the array's layout. A discrete quantile is an exact integer, so it goes one number at a time, as atoms and nested arrays do.
-fn evaluate(d: &Distribution, op: Operation, right: &Value, span: &Span) -> Result<Value, Error> {
+fn evaluate(d: &Distribution, op: Operation, right: &Value) -> Result<Value, Error> {
     let quantile = op == Operation::Quantile;
     if !right.is_atom() && !(quantile && d.is_discrete()) {
         let width = right.float_width().unwrap_or(Numeric::current().width);
         let computed = with_float_width!(width, F => read_as::<F>(right).map(|x| {
-            if quantile && !x.iter().fold(true, |ok, p| ok & (0.0..=1.0).contains(&p.wide())) { return Err(Error::domain("probability must be in [0,1]")); }
             let mut out = Vec::with_capacity(x.len());
             match op {
                 Operation::Density => Pdf(*d).many(Arg::Many(&x), x.len(), &mut out), Operation::Cdf => Cdf(*d).many(Arg::Many(&x), x.len(), &mut out),
                 _ => Quantile(*d).many(Arg::Many(&x), x.len(), &mut out)
             };
-            F::build(right.shape(), out).ok_or(Kind::Limit).described("distribution result exceeds array limits")?.with_layout(right.layout().clone()).described("invalid distribution result")
+            F::build(right.layout().clone(), out).ok_or(Kind::Limit).described("distribution result exceeds array limits")
         }));
         if let Some(result) = computed { return result; }
     }
-    pervade(None, right, &|_, e| point(d, op, real(e)?, e.float_width().unwrap_or(Numeric::current().width)), &|_, _, _| None, span)
+    pervade(right, &|e| point(d, op, real(e)?, e.float_width().unwrap_or(Numeric::current().width)))
 }
 
 /// The density, cdf or quantile of `d` at one number x, computed at `width` as an array's items are, as a float of `width`. A discrete quantile is computed in `f64` and gives a machine integer where it's finite, because its integers can pass the largest that narrower floats hold exactly. A quantile past `i64` saturates, as Rust's `as` does.
 fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Result<Value, Error> {
     let quantile = op == Operation::Quantile;
-    if quantile && !(0.0..=1.0).contains(&x) { return Err(Error::domain("probability must be in [0,1]")); }
     if quantile && d.is_discrete() {
         let y = d.quantile(x);
         return Ok(if y.is_finite() { Value::integer(y as i64) } else { Value::Number(Number::float(y, width)) });
@@ -135,8 +128,8 @@ fn point(d: &Distribution, op: Operation, x: f64, width: FloatWidth) -> Result<V
     Ok(Value::Number(Number::float(y, width)))
 }
 
-pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
-    if op != Operation::Sample { return evaluate(d, op, right, span); }
+pub(crate) fn call(d: &Distribution, op: Operation, left: Option<&Value>, right: &Value, _: &Span) -> Result<Value, Error> {
+    if op != Operation::Sample { return evaluate(d, op, right); }
     if right.shape().len() > 1 { return Err(Error::new(Kind::Rank, "sample shape must be a unit or vector")); }
     let shape = right.as_items().nonnegative_integers().described("invalid sample dimension")?;
     let len = generated_len(&shape)?;

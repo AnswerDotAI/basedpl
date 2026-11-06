@@ -795,7 +795,7 @@ pub(super) fn inverse(f: &Function, bound: Option<(&Value, bool)>, right: &Value
                 // One argument makes a hook, `⍵ g h ⍵`. Only `×↢*` has a known inverse.
                 use crate::{number::{Arithmetic, Math}, primitive::Primitive as P};
                 if matches!(g.node(), Primitive(P::Arithmetic(Arithmetic::Times))) && matches!(h.node(), Primitive(P::Math(Math::Power))) {
-                    return crate::primitive::lambert_w(right, span).map(Bound::from);
+                    return P::Special(crate::primitive::Special::LambertW).call(None, right, span).map(Bound::from);
                 }
                 return Err(Error::domain("this hook has no known inverse"));
             };
@@ -890,9 +890,7 @@ fn inverse_scan(f: &Function, h: FoldKind, axis: Option<&Value>, seed: Option<&V
     let inverse = f.inverse(span)?;
     if let Some(p) = f.dyadic_primitive() {
         let seed = seed.map(|s| p.weaken_value(s, right).unwrap_or_else(|| s.clone()));
-        if let Some(result) = crate::pervasive::inverse_scan(p, right, seed.as_ref(), &axis) {
-            return result.with_layout(right.layout().clone()).described("invalid inverse scan");
-        }
+        if let Some(result) = crate::pervasive::inverse_scan(p, right, seed.as_ref(), &axis) { return Ok(result); }
     }
     crate::explain::itemwise(rustymath::events::Route::InverseScan, right.len());
     let mut data: Vec<_> = right.elements().collect();
@@ -1738,9 +1736,11 @@ pub(super) fn each_whole_left(operand: &Function, left: Option<&Value>, right: &
 /// The identity of a fold by `p` of items like `prototype`, which fills a fold's empty lanes.
 fn identity(p: Primitive, prototype: &Value, span: &Span) -> Result<Value, Error> {
     use crate::primitive::Identity::*;
-    let id = p.info().dyad.identity.ok_or_else(|| Error::domain("this function has no reduction identity"))?;
+    let none = || Error::domain("this function has no reduction identity");
+    let id = p.info().dyad.identity.ok_or_else(none)?;
     // A float identity, such as the ¯∞ of `⌈`, takes the width that a weak float takes beside these items under NEP 50.
     let number = |n: f64| Ok(Value::Number(crate::Number::float(n, Numeric::current().width_of([prototype.float_width()]))));
+    let truth = |b: bool| Ok(Value::Number(crate::Number::from_bool(b)));
     match (id, prototype) {
         (Empty(first), _) => {
             let axis = (!first).then(|| prototype.shape().len().saturating_sub(1));
@@ -1752,13 +1752,17 @@ fn identity(p: Primitive, prototype: &Value, span: &Span) -> Result<Value, Error
             let fill = identity(p, &a.prototype(), span)?;
             a.layout().collect(data, fill).described("invalid identity")
         }
-        (Boolean(b), _) => Ok(Value::Number(crate::Number::from_bool(b))),
-        (Logical(b), Value::Number(value)) if value.as_bool().is_some() => Ok(Value::Number(crate::Number::from_bool(b))),
-        (Infinity(positive), _) => number(if positive { f64::INFINITY } else { f64::NEG_INFINITY }),
         (Number(n), Value::Number(value)) => Ok(Value::Number(value.like(n))),
-        (Logical(b), Value::Number(value)) => Ok(Value::Number(value.like(b.into()))),
         (Number(n), _) => number(f64::from(n)),
-        (Logical(b), _) => number(f64::from(u8::from(b))),
+        (Formula | Logical, _) => {
+            let n = crate::pervasive::fold_identity(p).ok_or_else(none)?;
+            match prototype {
+                _ if crate::pervasive::booleans(p, true) => truth(n != 0.0),
+                Value::Number(value) if matches!(id, Logical) && value.as_bool().is_some() => truth(n != 0.0),
+                Value::Number(value) if n.is_finite() => Ok(Value::Number(value.like(n as i32))),
+                _ => number(n),
+            }
+        }
     }
 }
 

@@ -182,13 +182,16 @@ impl Storage {
             (Self::Compact(Buffer::Integers(v)), true) => Self::Fixed(v), (Self::Fixed(v), false) => Self::Compact(Buffer::Integers(v)), (storage, _) => storage
         }
     }
-    pub(crate) fn fixed_at(buffer: Buffer, width: Width) -> Self {
-        match buffer {
-            Buffer::Integers(v) if v.view().tag() == width => Self::Fixed(v),
-            Buffer::Integers(v) => {
+    /// `buffer` as storage: integers fixed at `fixed` where that's given, and otherwise ordinary integers at the width that stores them (`narrowed`). Other items stay compact.
+    pub(crate) fn at(buffer: Buffer, fixed: Option<Width>) -> Self {
+        match (buffer, fixed) {
+            (Buffer::Integers(v), Some(width)) if v.view().tag() == width => Self::Fixed(v),
+            (Buffer::Integers(v), Some(width)) => {
                 Self::Compact(with_width!(width, T => with_ints!(v.view(), |v| T::buffer(v.iter().map(|&n| T::from_i64(n.into())).collect())))).fixed(true)
             }
-            buffer => Self::Compact(buffer),
+            (Buffer::Integers(IntBuf::U8(v)), None) => Self::narrowed(v), (Buffer::Integers(IntBuf::I16(v)), None) => Self::narrowed(v),
+            (Buffer::Integers(IntBuf::I32(v)), None) => Self::narrowed(v), (Buffer::Integers(IntBuf::I64(v)), None) => Self::narrowed(v),
+            (buffer, _) => Self::Compact(buffer),
         }
     }
     pub(super) fn set_fixed(&mut self, fixed: bool) {
@@ -331,7 +334,7 @@ impl<'a> Items<'a> {
         Some(match self {
             Self::Fixed(v) => Value::Number(Number::fixed(0, v.tag())), Self::Compact(View::Booleans(_)) => Value::Number(Number::from_bool(false)),
             Self::Compact(View::Integers(_)) => Value::integer(0), Self::Compact(View::Floats(v)) => Value::Number(Number::float(0.0, v.tag())),
-            Self::Compact(View::Complexes(v)) => Value::Number(Number::float(0.0, v.tag().into())), Self::Compact(View::Characters(_)) => Value::Character(' '),
+            Self::Compact(View::Complexes(v)) => Value::Number(Number::float(0.0, v.tag().into())), Self::Compact(View::Characters(_)) => Value::Character(char::FILL),
             Self::Values(_) => return None
         })
     }
@@ -373,15 +376,13 @@ impl<'a> Items<'a> {
     }
     /// Each item as an integer. 64-bit integer storage is borrowed. A fraction, an infinity or a non-number is DOMAIN, and a value outside `i64` is LIMIT.
     pub(crate) fn integers(&self) -> Result<Cow<'a, [i64]>, ErrorKind> {
-        use rustymath::tolerant::{Tolerance, wholes};
         if let Some(ints) = self.ints() { return Ok(ints.widened()); }
-        // Floats that all stand for integers inside `i64` convert in one pass. Others go item by item, which gives the error.
-        const LIMIT: f64 = 9_223_372_036_854_775_808.0;
+        // Floats that all stand for integers inside `i64` convert in one pass, by the rule of an integer computation's float arguments (`whole_numbers`). Others go item by item, which gives the error.
         let converted = match *self {
-            Self::Compact(View::Floats(Floats::F64(d))) => wholes(Tolerance::DEFAULT, d, LIMIT),
-            Self::Compact(View::Floats(Floats::F32(d))) => wholes(Tolerance::DEFAULT, d, LIMIT), _ => None
+            Self::Compact(View::Floats(Floats::F64(d))) => rustymath::operation::whole_numbers(d).ok(),
+            Self::Compact(View::Floats(Floats::F32(d))) => rustymath::operation::whole_numbers(d).ok(), _ => None
         };
-        if let Some((n, _)) = converted { return Ok(Cow::Owned(n)); }
+        if let Some(n) = converted { return Ok(Cow::Owned(n)); }
         self.each(Ok, real::integer, Number::integer).map(Cow::Owned)
     }
     /// Each item as a signed position: an integer, or `None` for NaN, which reads a fill. Compact storage decodes through rustymath's `structure::signed_positions`, and every float as `structure::float_position` reads it. A fraction or an infinity also gives `None`. A non-number is DOMAIN.
@@ -535,21 +536,6 @@ impl Gather {
         if !source.is_empty() { return self.extend(source, 0..source.len()); }
         if source.dtype().is_none() { self.mixed(); }
     }
-    /// Appends each item of the vector `source` as many times as its count. `counts` holds one count for every item or one for each item. The counts are nonnegative and sum to `total`.
-    pub(crate) fn replicate(&mut self, source: &Value, counts: &[i64], total: usize) {
-        if self.leveled(source) { return self.each(source, false, |g, s| g.replicate(s, counts, total)); }
-        self.follow(source);
-        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::repeat(d, s, counts, total, f)) { return; }
-        let d = self.mixed();
-        for (i, x) in source.elements().enumerate() { d.extend(std::iter::repeat_n(x, counts[if counts.len() == 1 { 0 } else { i }] as usize)) }
-    }
-    /// Copies the items of the vector `source` whose count in the Boolean `mask` is 1. `total` counts are 1.
-    pub(crate) fn compress<M: Key>(&mut self, source: &Value, mask: &[M], total: usize) {
-        if self.leveled(source) { return self.each(source, false, |g, s| g.compress(s, mask, total)); }
-        self.follow(source);
-        if copy_into!(&mut self.data, source.as_items(), |d, s, f| rustymath::gather::compress(d, mask, total, |j| f(s[j]))) { return; }
-        self.mixed().extend(source.elements().zip(mask).filter(|&(_, &n)| n.key() == 1).map(|(x, _)| x))
-    }
     /// Copies the cells of `source` at `rows`, each `width` items long. Cells of one item gather in one typed loop. Wider cells, and every cell of a pending source, are read by `walk`, whose fixed-width loops copy a short cell as one unit where a copy of each row's slice would cost a call for each row.
     pub(crate) fn rows<R: num_traits::AsPrimitive<usize>>(&mut self, source: &Value, rows: &[R], width: usize) {
         if rows.is_empty() || width == 0 { return; }
@@ -589,38 +575,6 @@ impl Gather {
             true
         });
     }
-    /// Appends `outer` rows, each holding `lens[0]` items of `sources[0]`, then `lens[1]` items of `sources[1]`, as two arrays joined along an axis lay out their lanes. Where lanes are short, compact sources join through rustymath's `gather::interleave`, which writes each row whole, straight into the buffer (`interleaved`). Long lanes, joined duals and storage that isn't compact copy lane by lane.
-    pub(crate) fn lanes(&mut self, sources: [&Value; 2], lens: [usize; 2], outer: usize) {
-        // A lane of 64 items or more costs more to copy than the call that copies it (about 13 ns), so long lanes copy one at a time, converting as they copy.
-        if lens[0] + lens[1] < 128 && outer > 1 && self.interleaved(sources, lens, outer) { return; }
-        for i in 0..outer { for (source, len) in sources.into_iter().zip(lens) { self.extend(source, i * len..(i + 1) * len) } }
-    }
-    /// Appends the rows that `lanes` describes through `gather::interleave`, and gives whether it could: the buffer has no join, both sources are compact, and the buffer stays compact once both sources' dtypes join it. A source of another dtype converts first, in one pass.
-    fn interleaved(&mut self, sources: [&Value; 2], lens: [usize; 2], outer: usize) -> bool {
-        let [Some(a), Some(b)] = sources.map(|s| s.view()) else { return false };
-        if self.join.is_some() { return false; }
-        for (source, len) in sources.into_iter().zip(lens) { if len > 0 { self.follow(source) } }
-        let Some(dtype) = self.data.dtype() else { return false };
-        let mut converted = [None, None];
-        for ((v, len), c) in [a, b].into_iter().zip(lens).zip(&mut converted) {
-            if len == 0 || v.dtype() == dtype { continue; }
-            let mut s = Storage::with_capacity(Some(dtype), v.len());
-            if !copy_into!(&mut s, Items::Compact(v), |d, s, f| rustymath::gather::Convert::slice(&f, d, s)) { return false; }
-            *c = Some(s);
-        }
-        let fixed = self.data.fixed_width().is_some();
-        let buffer = std::mem::replace(&mut self.data, Storage::Compact(Buffer::Booleans(Vec::new()))).into_buffer().unwrap();
-        rustymath::with_dtype!(dtype, T => {
-            let [a, b] = [(a, &converted[0]), (b, &converted[1])].map(|(v, c)| match c.as_ref().map_or(Items::Compact(v), Storage::items) {
-                Items::Compact(v) => T::of(v).unwrap_or(&[]),
-                _ => unreachable!("compact storage"),
-            });
-            let mut out = T::vec(buffer).expect("the buffer has its dtype");
-            rustymath::gather::interleave(&mut out, [a, b], lens, outer);
-            self.data = Storage::Compact(T::buffer(out)).fixed(fixed);
-        });
-        true
-    }
     /// Copies the items of `source` that `steps` reach from `base`, through rustymath's `gather::walk`: one `Steps` for each axis, with the last varying fastest. An offset that reaches no item gives `fill`, or the prototype of `source` where there's none, and through a join only the values read `fill` (`transform::Part`). Compact storage is copied in one typed loop. A pending copy that the walk reads fewer items of is read through its map, without building it (`fusion::walk_through`).
     pub(crate) fn walk(&mut self, source: &Value, base: usize, steps: &[Steps], fill: Option<&Value>) {
         if self.leveled(source) {
@@ -643,12 +597,10 @@ impl Gather {
     /// The gathered array, laid out by `layout`. Mixed items that one compact dtype holds, under the rule for items gathered one at a time (`Widening::Items`), are held compact, as the same items written in brackets are. An empty array takes `prototype`, and the storage `prototype`'s kind gives it. A buffer with a join gives what the join finishes (`transform::Join::finish`).
     pub(crate) fn finish(self, layout: Layout, prototype: impl Prototype) -> Result<Value, ErrorKind> {
         if let Some(join) = self.join { return join.finish(layout, prototype); }
-        let shape = crate::Shape::from(layout.shape());
-        let value = match self.data {
-            data if data.len() == 0 => Value::empty(shape, prototype.value())?,
-            Storage::Mixed(items, _) => Value::from_storage(shape, Storage::compact(items, Widening::Items))?, data => Value::from_storage(shape, data)?
-        };
-        value.with_layout(layout)
+        match self.data {
+            data if data.len() == 0 => Value::empty(layout, prototype.value()),
+            Storage::Mixed(items, _) => Value::from_storage(layout, Storage::compact(items, Widening::Items)), data => Value::from_storage(layout, data)
+        }
     }
 }
 

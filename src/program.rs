@@ -43,11 +43,11 @@ impl Desc {
     pub(crate) fn dtype(&self) -> DType { self.kind.dtype.expect("a description has a type") }
     /// The shape of the described value.
     pub(crate) fn shape(&self) -> &[usize] { self.layout.shape() }
-    /// Whether `value` matches this description's kind in every way that later steps' plans read: its type, its fixed width, and whether it's an atom. A weak flag doesn't count, because an array is never weak and an atom's flag changes no kind that a plan gave. Nor does the width of an ordinary integer under dynamic kinds, which is the narrowest that holds its values, an atom's (`Number::dtype`) and an array's (`Storage::narrowed`): it matches any planned width that holds it, as a count by `+` of one item does. Nor does a running level's data on `value`, whose kind its template gives, as where a tape's coefficients carry an outer `∂`'s duals. Nor does the layout: a recording replays at new lengths, each step computing its own layout.
+    /// Whether `value` matches this description's kind in every way that later steps' plans read: its type, its fixed width, and whether it's an atom. A weak flag doesn't count, because an array is never weak and an atom's flag changes no kind that a plan gave. Nor does the width of an ordinary integer atom, a number with no storage width (`Number::dtype` gives the narrowest that holds it): it matches any planned width that holds it, as a count by `+` of one item does. An array's dtype matches exactly, because a program stores each step's items at its planned dtype (`run::node`, `Value::stored_at`). Nor does a running level's data on `value`, whose kind its template gives, as where a tape's coefficients carry an outer `∂`'s duals. Nor does the layout: a recording replays at new lengths, each step computing its own layout.
     fn matches(&self, value: &Value) -> bool {
         let kind = Kind::value(value);
         let dtype = match (kind.dtype, self.kind.dtype) {
-            (Some(DType::Integer(w)), Some(DType::Integer(planned))) if kind.fixed.is_none() => w.join(planned) == planned,
+            (Some(DType::Integer(w)), Some(DType::Integer(planned))) if value.is_atom() && kind.fixed.is_none() => w.join(planned) == planned,
             (dtype, planned) => dtype == planned,
         };
         value.is_atom() == self.atom && dtype && kind.fixed == self.kind.fixed
@@ -193,11 +193,10 @@ pub(crate) fn along(shape: &[usize], axes: &[usize]) -> Mapping {
     Mapping::from(axes.iter().map(|&a| Steps::along(shape[a], at[a])).collect::<Vec<_>>())
 }
 
-/// Node `of`'s items as `map` reads them, laid out as `layout`: a copy's description and map, or no map for a view of `of`, where `map` reads it in order.
+/// Node `of`'s items as `map` reads them, laid out as `layout`: a copy's description and map, or no map for a view of `of`, where `map` reads it in order (`Mapping::in_order`).
 pub(crate) fn laid_out(nodes: &[Node], of: usize, map: Mapping, layout: &Layout) -> Option<Laid> {
     let desc = crate::plan::copy(&nodes[of].desc, layout).ok()?;
-    let (base, tables) = map.to_walk(layout.shape());
-    let in_order = nodes[of].desc.layout.count() == desc.layout.count() && base == 0 && Steps::in_order(&tables);
+    let in_order = map.in_order(nodes[of].desc.layout.count(), layout.shape());
     Some(Laid { desc, map: (!in_order).then_some(map) })
 }
 
@@ -234,21 +233,15 @@ pub(crate) enum Step {
     Product { f: Primitive, g: Primitive, left: Read, right: Read, stacked: bool },
     /// `yes` where the Booleans of `mask` are true and `no` where they're false, each an array of the mask's layout or an atom (`plan::select`).
     Select { mask: Read, yes: Read, no: Read },
-    /// `base` with each item of `items` combined into it by `p` at the place that `writes` gives for that item, as `Pairing::At` pairs them (`plan::at`): accumulation where `p` is `+`.
-    At { p: Primitive, base: Read, items: Read, writes: Writes },
-    /// The cotangent `of` of a copy of overlapping windows, added back to the copy's source, which the node's layout lays out: each frame added where its window read, with the `[count, width, step]` of each source axis in `windows` (`run::overlap_added`).
-    OverlapAdd { of: Read, windows: Vec<[usize; 3]> },
+    /// `base` with each item of `items` combined into it by `p` at the place that `writes`, a map that the program holds (`Step::holds_lengths`), gives for that item, as `Pairing::At` pairs them (`plan::at`): accumulation where `p` is `+`.
+    At { p: Primitive, base: Read, items: Read, writes: Mapping },
     /// A mask of Booleans in the layout of `of`, true at the item of each lane along `axis` that `p`, `⌈` or `⌊`, picks, the first of any ties (`derivative::extreme_mask`, `plan::picks`).
     Picks { p: Primitive, axis: usize, of: Read },
     /// Monadic `p`, `≢` or `⍴`, of `of`, read from its value's layout when the step runs, so that a replay at new lengths gives the new count or shape (`trace::build` needn't key the lengths exactly).
     Shape { p: Primitive, of: Read },
 }
 
-/// Where an accumulation writes: through a map that the program holds, which only a fused chain holds (`Step::holds_lengths`), at the places that a selector's parts select from its base at replay, or through the read that a structural call plans at replay on its base's layout (`structural::plan`), as the transpose of a `Step::Structural` copy adds a cotangent back.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Writes { Map(Mapping), By(Selector), Structural { form: Form, params: Vec<Read> } }
-
-/// The index parts of a selection whose positions the program reads at replay (`Step::Gather`, `Writes::By`): each axis part a read of the node that holds its positions, with index arrays paired, as `.[]` pairs them, or crossed, as `⌷` crosses them.
+/// The index parts of a selection whose positions the program reads at replay (`Step::Gather`): each axis part a read of the node that holds its positions, with index arrays paired, as `.[]` pairs them, or crossed, as `⌷` crosses them.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Selector { pub(crate) parts: Vec<IndexPart<Read>>, pub(crate) paired: bool }
 
@@ -291,12 +284,7 @@ macro_rules! operands {
             Step::Copy { .. } => ([None, None, None], None, none()),
             Step::Structural { inputs, params, fill, .. } => ([fill.$as(), None, None], None, [Some(inputs), Some(params)]),
             Step::Gather { of, by } => ([Some(of), None, None], Some(by), none()),
-            Step::At { base, items, writes, .. } => match writes {
-                Writes::By(by) => ([Some(base), Some(items), None], Some(by), none()),
-                Writes::Map(_) => ([Some(base), Some(items), None], None, none()),
-                Writes::Structural { params, .. } => ([Some(base), Some(items), None], None, [Some(params), None]),
-            },
-            Step::OverlapAdd { of, .. } => ([Some(of), None, None], None, none()),
+            Step::At { base, items, .. } => ([Some(base), Some(items), None], None, none()),
             Step::Picks { of, .. } => ([Some(of), None, None], None, none()),
             Step::Shape { of, .. } => ([Some(of), None, None], None, none()),
         };
@@ -325,9 +313,9 @@ impl Step {
         for read in self.operands_mut() { read.of = at[read.of]; }
     }
     /// Whether this step holds a table of positions, as a copy or an accumulation does where a selection by data made its positions (`Mapping::tabled`). `planned` keeps no plan for a program with such a step.
-    pub(crate) fn tabled(&self) -> bool { matches!(self, Step::Copy { map, .. } | Step::At { writes: Writes::Map(map), .. } if map.tabled()) }
-    /// Whether this step holds lengths that fix it to one size: a copy or an accumulation through a raw map, or an overlap add. A recording that holds one replays only at the lengths it was built for (`trace::build`).
-    pub(crate) fn holds_lengths(&self) -> bool { matches!(self, Step::Copy { .. } | Step::At { writes: Writes::Map(_), .. } | Step::OverlapAdd { .. }) }
+    pub(crate) fn tabled(&self) -> bool { matches!(self, Step::Copy { map, .. } | Step::At { writes: map, .. } if map.tabled()) }
+    /// Whether this step holds lengths that fix it to one size: a copy or an accumulation through a raw map. A recording that holds one replays only at the lengths it was built for (`trace::build`).
+    pub(crate) fn holds_lengths(&self) -> bool { matches!(self, Step::Copy { .. } | Step::At { .. }) }
     /// The glyph that `•explain` lists for this step: the function's for a map or an accumulation, the fold's, the product's with `⍤2` on stacks, `⍚` for a select, the query's for a shape step, and none for a conversion, a copy, a structural call, a gather, an overlap add or picks.
     pub(crate) fn glyph(&self) -> String {
         match *self {
@@ -336,7 +324,7 @@ impl Step {
             Step::Product { f, g, stacked, .. } => Operation::Product(f, g).glyph() + if stacked { "⍤2" } else { "" },
             Step::Select { .. } => Operation::Select.glyph(),
             Step::Shape { p, .. } => p.glyph().into(),
-            Step::Convert { .. } | Step::Copy { .. } | Step::Structural { .. } | Step::Gather { .. } | Step::OverlapAdd { .. } | Step::Picks { .. } => String::new()
+            Step::Convert { .. } | Step::Copy { .. } | Step::Structural { .. } | Step::Gather { .. } | Step::Picks { .. } => String::new()
         }
     }
 }
@@ -371,14 +359,7 @@ impl Program {
                 }
                 Origin::Step(step @ Step::Product { left, right, .. }) => format!("{} {} {}", step.glyph(), read(left), read(right)),
                 Origin::Step(step @ Step::Select { mask, yes, no }) => format!("{} {} {} {}", step.glyph(), read(mask), read(yes), read(no)),
-                Origin::Step(step @ Step::At { base, items, writes, .. }) => format!(
-                    "{} into {} {}{}", step.glyph(), read(base), read(items), match writes {
-                        Writes::By(by) => format!(" at {}", by.listing(read)),
-                        Writes::Map(_) => String::new(),
-                        Writes::Structural { form, params } => format!(" by {form:?}{}", params.iter().map(|p| " ".to_owned() + &read(p)).collect::<String>()),
-                    }
-                ),
-                Origin::Step(Step::OverlapAdd { of, .. }) => format!("overlap-add {}", read(of)),
+                Origin::Step(step @ Step::At { base, items, .. }) => format!("{} into {} {}", step.glyph(), read(base), read(items)),
                 Origin::Step(Step::Picks { p, axis, of }) => format!("picks {} along {axis} {}", p.glyph(), read(of)),
                 Origin::Step(step @ Step::Shape { of, .. }) => format!("{} {}", step.glyph(), read(of)),
             };
