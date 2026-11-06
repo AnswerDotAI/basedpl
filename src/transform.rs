@@ -303,22 +303,22 @@ pub(crate) enum Op<'a> {
     System(&'a Function, &'a SystemFunction),
 }
 
-/// The call of `op` as the newest level among its arguments handles it, or `None` to run its own code, whose calls route again. A tape level records the call (`derivative::taped`), unless only the right argument is a tape value and a primitive's form copies it through a plan, whose own code records it. A `∂` call applies the operation's rule, or a rule that `f∂←g` attached (`derivative::call`). A batched map runs a call on its batches' whole arguments, or stops its run (`batch::call`). A label level takes a primitive along an axis (`selection::call`), and leaves other operations to their own code, whose calls of primitives carry the labels on. For `⌻`, `⌹`, `⊥`, monadic `f.g`, attached rules and system functions, the newest level can sit inside the arguments' nested arrays. An outer product broadcasts both arguments to its result's layout and calls the operation once. A level gives a seeded fold its rule only where the rule takes the seed. Otherwise the fold's own code runs, or the level refuses the fold. Outside every level it gives `None` at once, so call sites test no level state.
+/// The call of `op` as the newest level among its arguments handles it, or `None` to run its own code, whose calls route again. A tape level records the call (`derivative::taped`), unless only the right argument is a tape value and a primitive's form copies it through a plan, whose own code records it. A `∂` call applies the operation's rule, or a rule that `f∂←g` attached (`derivative::call`). A batched map runs a call on its batches' whole arguments, or stops its run (`batch::call`). A label level takes a primitive along an axis (`selection::call`), and leaves other operations to their own code, whose calls of primitives carry the labels on. For `⌻`, `⌹`, `⊥`, monadic `f.g`, attached rules and system functions, the newest level can sit inside the arguments' nested arrays. An outer product broadcasts both arguments to its result's layout and calls the operation once. A level gives a seeded fold its rule only where the rule takes the seed. Otherwise the fold's own code runs, or the level refuses the fold. Plain arguments give `None` without reading the session. Outside every level it gives `None` at once, so call sites test no level state.
 #[inline]
 pub(crate) fn call(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Value, Error>> {
-    if !session().transforming() { return None; }
-    routed(op, left, right, span)
-}
-
-/// `call` inside a running level.
-#[inline(never)]
-fn routed(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span) -> Option<Result<Value, Error>> {
     let within = match op {
         Op::Operation(Operation::Primitive(p), _) => matches!(p, Primitive::Polynomial | Primitive::MatrixDivide | Primitive::Decode),
         Op::Operation(Operation::Product(..), _) | Op::Product => left.is_none(), Op::Operation(..) | Op::Fold(..) => false,
         Op::Ruled(..) | Op::System(..) => true
     };
     let newest = newest(left, right, within)?;
+    if !session().transforming() { return None; }
+    routed(op, left, right, span, newest)
+}
+
+/// A call with a selected running level.
+#[inline(never)]
+fn routed(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span, newest: Mark) -> Option<Result<Value, Error>> {
     if let Op::Operation(operation, Pairing::Agreed(agreement)) = op {
         let (x, y) = agreement.laid(left, right);
         return Some(operation.call(Pairing::Axis(None), x.as_ref(), &y, span));
@@ -339,7 +339,7 @@ fn routed(op: Op<'_>, left: Option<&Value>, right: &Value, span: &Span) -> Optio
 }
 
 /// Whether a level that wraps values is running and `left` or `right` carries its data.
-pub(crate) fn carried(left: Option<&Value>, right: &Value) -> bool { session().transforming() && (right.carried() || left.is_some_and(Value::carried)) }
+pub(crate) fn carried(left: Option<&Value>, right: &Value) -> bool { (right.carried() || left.is_some_and(Value::carried)) && session().transforming() }
 /// The carrier of the newest level among `values`, as a structural call that reads them hands over to it (`fusion::copy`), or `None` where none carries any level's data.
 pub(crate) fn newest_carrier<'a>(values: impl IntoIterator<Item = &'a Value>) -> Option<&'a Carrier> {
     values.into_iter().filter_map(Value::carrier).max_by_key(|c| c.level())
